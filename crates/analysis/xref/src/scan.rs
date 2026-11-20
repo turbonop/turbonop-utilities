@@ -14,13 +14,19 @@
 //!   instruction may write the register, so an unrelated value is never
 //!   taken for one.
 //!
+//! - 32-bit ARM (Thumb-2: Windows on ARM's only code, and Linux's armhf
+//!   default): `BL`, `BLX`, `B`, `CBZ`/`CBNZ`; `ADR`; literal loads
+//!   (`LDR r0, [pc, #n]`), the address of the pool's word and (as code
+//!   holds an absolute address there) the address it holds; and `MOVW`
+//!   with `MOVT` to one register, a 32-bit address in two halves.
+//!
 //! 32-bit x86 code holds absolute addresses, which the image's relocations
 //! (not disassembly) find. Decoding is a linear sweep that stops at the
 //! first invalid instruction (data in a function's range, such as a
 //! literal pool or jump table, can follow its code).
 
-/// The instruction sets (x86, x64, and ARM64 code is scanned; others
-/// have no references found).
+/// The instruction sets (x86, x64, ARM64, and 32-bit ARM code is scanned;
+/// others have no references found).
 pub use hexcavator_core::Arch;
 
 /// How code refers to an address.
@@ -73,10 +79,26 @@ pub fn scan_image(
     image_base: Option<u64>,
     out: &mut Vec<CodeRef>,
 ) {
+    scan_absolute(arch, code, address, image_base, 0, out);
+}
+
+/// [`scan_image`], with the absolute addresses code builds (32-bit ARM's
+/// `MOVW` and `MOVT`, and its literal pools' words) moved by `bias` to the
+/// nodes' address space: a PE image's preferred base, whose addresses are
+/// relative to it.
+pub fn scan_absolute(
+    arch: Arch,
+    code: &[u8],
+    address: u64,
+    image_base: Option<u64>,
+    bias: u64,
+    out: &mut Vec<CodeRef>,
+) {
     match arch {
         Arch::X86 => x86(code, address, hexcavator_x86::Mode::Bits32, None, out),
         Arch::X64 => x86(code, address, hexcavator_x86::Mode::Bits64, image_base, out),
         Arch::Arm64 => arm64(code, address, out),
+        Arch::Arm => thumb(code, address & !1, bias, out),
         // (No scanner for the others yet: no references.)
         _ => {}
     }
@@ -224,6 +246,133 @@ fn x86(
 fn sext(v: u32, bits: u32) -> i64 {
     let shift = 64 - bits;
     (i64::from(v) << shift) >> shift
+}
+
+/// 32-bit ARM's Thumb-2 code (see the module's documentation); `bias`
+/// is taken from the absolute addresses it builds.
+fn thumb(code: &[u8], address: u64, bias: u64, out: &mut Vec<CodeRef>) {
+    use hexcavator_arm32::{decode_t32, format::branch_target, is_t32_wide};
+    let half = |at: usize| {
+        code.get(at..at + 2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+    };
+    let word = |at: u64| {
+        let i = usize::try_from(at.checked_sub(address)?).ok()?;
+        let b = code.get(i..i.checked_add(4)?)?;
+        Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    // Each register's low half, from a MOVW not yet overwritten; and the
+    // word a literal load put in it (position-independent code adds the
+    // PC to it: `ldr r4, [pc, #n]`, then `add r4, pc`).
+    let mut low = [None::<u32>; 16];
+    let mut loaded = [None::<u32>; 16];
+    let mut at = 0usize;
+    while let Some(first) = half(at) {
+        let second = if is_t32_wide(first) {
+            match half(at + 2) {
+                Some(s) => Some(s),
+                None => return,
+            }
+        } else {
+            None
+        };
+        let Some(i) = decode_t32(first, second) else {
+            return;
+        };
+        let pc = address.wrapping_add(at as u64);
+        at += usize::from(i.size);
+        let n = i.encoding.name;
+        let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
+        if let Some(to) = branch_target(&i, pc) {
+            push(
+                to,
+                if n.starts_with("BL_i") {
+                    Via::Call
+                } else {
+                    Via::Jump
+                },
+            );
+            continue;
+        }
+        let f = |name: &str| i.field(name).unwrap_or(0);
+        // (Thumb's PC reads as the instruction's address and 4, a word's.)
+        let base = pc.wrapping_add(4) & !3;
+        match n {
+            "LDR_l_T1" | "LDR_l_T2" => {
+                let off = if n == "LDR_l_T1" {
+                    i64::from(f("imm8") << 2)
+                } else if i.field("U") == Some(0) {
+                    -i64::from(f("imm12"))
+                } else {
+                    i64::from(f("imm12"))
+                };
+                let lit = base.wrapping_add_signed(off);
+                push(lit, Via::Address);
+                // (What a literal pool holds is an absolute address, as
+                // often as not; one of the image's, if it's anything.)
+                let rt = f("Rt") as usize & 15;
+                let w = word(lit);
+                if let Some(w) = w {
+                    push((u64::from(w) & !1).wrapping_sub(bias), Via::AddressOf);
+                }
+                low[rt] = None;
+                loaded[rt] = w;
+                continue;
+            }
+            // `add rd, pc`: a position-independent address, from the
+            // offset loaded into it.
+            "ADD_r_T2" if f("Rm") == 15 => {
+                let rd = (f("DN") << 3 | f("Rdn")) as usize & 15;
+                if let Some(w) = loaded[rd].take() {
+                    // (An offset either way, in a 32-bit address space.)
+                    let at = pc
+                        .wrapping_add(4)
+                        .wrapping_add_signed(i64::from(w.cast_signed()));
+                    push(at & 0xffff_ffff, Via::Address);
+                }
+                low[rd] = None;
+                continue;
+            }
+            "ADR_T1" => push(base.wrapping_add(u64::from(f("imm8") << 2)), Via::AddressOf),
+            "ADR_T2" | "ADR_T3" => {
+                let imm = u64::from(f("i") << 11 | f("imm3") << 8 | f("imm8"));
+                push(
+                    if n == "ADR_T2" {
+                        base.wrapping_sub(imm)
+                    } else {
+                        base.wrapping_add(imm)
+                    },
+                    Via::AddressOf,
+                );
+            }
+            "MOV_i_T3" => {
+                let imm = f("imm4") << 12 | f("i") << 11 | f("imm3") << 8 | f("imm8");
+                low[f("Rd") as usize & 15] = Some(imm);
+                continue;
+            }
+            "MOVT_T1" => {
+                let rd = f("Rd") as usize & 15;
+                if let Some(lo) = low[rd].take() {
+                    let hi = f("imm4") << 12 | f("i") << 11 | f("imm3") << 8 | f("imm8");
+                    // (A function's address has its Thumb bit set.)
+                    push(
+                        (u64::from(hi << 16 | lo) & !1).wrapping_sub(bias),
+                        Via::AddressOf,
+                    );
+                }
+                continue;
+            }
+            _ => {}
+        }
+        // Anything else that writes a register ends its half address,
+        // and its loaded word.
+        for r in ["Rd", "Rt", "Rdn"] {
+            if let Some(v) = i.field(r) {
+                low[v as usize & 15] = None;
+                loaded[v as usize & 15] = None;
+            }
+        }
+    }
 }
 
 fn arm64(code: &[u8], address: u64, out: &mut Vec<CodeRef>) {

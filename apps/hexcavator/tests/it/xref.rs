@@ -1278,3 +1278,39 @@ fn toolchains_of_every_format() {
         assert_eq!(v["toolchain"], toolchain, "{image}");
     }
 }
+
+/// 32-bit ARM (Thumb-2) code's references, on Linux (ELF, armhf, with
+/// DWARF; its data reached position-independently, a literal offset added
+/// to the PC) and Windows on ARM (PE with a PDB; its data by MOVW and
+/// MOVT, at the image's preferred base): the same graph (testdata/arm32).
+#[test]
+fn arm32_references() {
+    let arm32 = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/arm32");
+    for image in ["program-linux", "program.exe"] {
+        let path = arm32.join(image);
+        for (name, via) in [
+            ("square", "square(int)"),
+            ("twice", "calls apply(int)"),
+            ("counter", "refers to counter"),
+            ("greeting", "refers to greeting"),
+        ] {
+            let out = ok(&["-why", name], &path);
+            assert!(!out.contains("no root reaches it"), "{image} {name}: {out}");
+            assert!(out.contains(via), "{image} {name}: {out}");
+        }
+        let out = ok(&["-unreachable"], &path);
+        assert!(out.contains("unused(int)"), "{image}: {out}");
+        assert!(
+            !out.contains("greeting") && !out.contains("counter"),
+            "{image}: {out}"
+        );
+        // Its fingerprints: two functions of identical code.
+        let out = ok(&["-identical"], &path);
+        assert!(
+            out.starts_with("1 groups")
+                && out.contains("same_a(int)")
+                && out.contains("same_b(int)"),
+            "{image}: {out}"
+        );
+    }
+}

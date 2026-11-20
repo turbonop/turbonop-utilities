@@ -70,37 +70,14 @@ fn imports(image: &Image<'_>) -> rustc_hash::FxHashMap<u64, String> {
 /// The functions an ELF image's `.eh_frame` gives an LSDA (a language's
 /// exception table: catch clauses, cleanups), by address.
 fn lsda_functions(image: &Image<'_>) -> rustc_hash::FxHashSet<u64> {
-    use hexcavator_dwarf::cfi::{Cfi, CfiKind, Entry};
-    let mut out = rustc_hash::FxHashSet::default();
     if image.elf().is_none() {
-        return out;
+        return rustc_hash::FxHashSet::default();
     }
-    for s in image
-        .sections()
+    crate::frames::frames(image)
         .into_iter()
-        .filter(|s| s.name == b".eh_frame" && s.file_size > 0)
-    {
-        let Some(data) = image.bytes_at(s.addr, s.file_size.min(s.vm_size)) else {
-            continue;
-        };
-        let cfi = Cfi {
-            data,
-            kind: CfiKind::EhFrame,
-            endian: image.endian(),
-            address: s.addr,
-            address_size: image.arch().pointer_size().unwrap_or(8),
-            text_base: None,
-            data_base: None,
-        };
-        for e in cfi.entries() {
-            if let Entry::Fde(f) = e
-                && f.lsda.is_some()
-            {
-                out.insert(f.pc_begin);
-            }
-        }
-    }
-    out
+        .filter(|f| f.lsda.is_some())
+        .map(|f| f.function)
+        .collect()
 }
 
 /// Whether ELF's linkers fold nothing in an output section named `name`:

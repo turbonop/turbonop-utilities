@@ -1370,3 +1370,13 @@ fn pointers_without_relocations() {
         "{out}"
     );
 }
+
+/// An ELF image's exception data reached from its functions, as its
+/// .eh_frame says: the personality routine's pointer each CIE names
+/// (DW.ref.__gxx_personality_v0), and each function's LSDA.
+#[test]
+fn exception_data_attached() {
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/eh");
+    let out = ok(&["-unreachable"], &image);
+    assert!(!out.contains("DW.ref.__gxx_personality_v0"), "{out}");
+}

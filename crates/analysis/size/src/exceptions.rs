@@ -102,37 +102,12 @@ fn elf_costs(
     x: &Xref,
     costs: &mut FxHashMap<u32, (u64, u64)>,
 ) {
-    use hexcavator_dwarf::cfi::{Cfi, CfiKind, Entry};
     let sections = image.sections();
-    let mut fdes: Vec<(u64, u64, Option<u64>)> = Vec::new();
-    for s in sections
-        .iter()
-        .filter(|s| s.name == b".eh_frame" && s.file_size > 0)
-    {
-        let Some(data) = image.bytes_at(s.addr, s.file_size.min(s.vm_size)) else {
-            continue;
-        };
-        let cfi = Cfi {
-            data,
-            kind: CfiKind::EhFrame,
-            endian: image.endian(),
-            address: s.addr,
-            address_size: image.arch().pointer_size().unwrap_or(8),
-            text_base: None,
-            data_base: None,
-        };
-        let entries: Vec<Entry<'_>> = cfi.entries().collect();
-        let offset = |e: &Entry<'_>| match e {
-            Entry::Cie(c) => c.offset,
-            Entry::Fde(f) => f.offset,
-        };
-        for (i, e) in entries.iter().enumerate() {
-            if let Entry::Fde(f) = e {
-                let end = entries.get(i + 1).map_or(data.len() as u64, offset);
-                fdes.push((f.pc_begin, end.saturating_sub(f.offset), f.lsda));
-            }
-        }
-    }
+    let fdes: Vec<(u64, u64, Option<u64>)> = crate::frames::frames(image)
+        .into_iter()
+        .filter(|_| image.elf().is_some())
+        .map(|f| (f.function, f.size, f.lsda))
+        .collect();
     // The LSDAs, by address, each to the next (or its section's end).
     let tables: Vec<(u64, u64)> = sections
         .iter()

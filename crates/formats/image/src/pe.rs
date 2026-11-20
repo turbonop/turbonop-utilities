@@ -126,6 +126,27 @@ fn gnu_debuglink<'data>(pe: &PeFile<'data>) -> Option<DebugId<'data>> {
     })
 }
 
+/// Whether it is a separate debug file of a MinGW image (`objcopy
+/// --only-keep-debug`'s): its sections' contents gone but its DWARF's (and
+/// its build ID's).
+pub(crate) fn debug_only(pe: &PeFile<'_>) -> bool {
+    let mut emptied = false;
+    let mut dwarf = false;
+    for s in pe.sections() {
+        let name = pe.section_name(s);
+        if name.starts_with(b".debug_") {
+            dwarf = true;
+        } else if name == b".buildid" || name == b".gnu_debuglink" {
+        } else if s.virtual_size.get() > 0 {
+            if s.size_of_raw_data.get() != 0 {
+                return false;
+            }
+            emptied = true;
+        }
+    }
+    emptied && dwarf
+}
+
 pub(crate) fn pointer_slots(pe: &PeFile<'_>) -> Vec<crate::PointerSlot> {
     use hexcavator_pe::reloc::base_reloc;
     if pe.kind() == FileKind::Object {

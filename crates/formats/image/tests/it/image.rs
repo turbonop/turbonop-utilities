@@ -308,3 +308,20 @@ fn symbols_of_every_format() {
         "{syms:?}"
     );
 }
+
+/// Separate debug files (objcopy --only-keep-debug's) are debug files,
+/// as a dSYM's DWARF file is: an ELF image's, and a MinGW PE image's;
+/// their images are linked.
+#[test]
+fn debug_files() {
+    for (file, kind) in [
+        ("elf/program-split.debug", Kind::Debug),
+        ("mingw/program.debug", Kind::Debug),
+        ("mingw/program.exe", Kind::Linked),
+        ("mingw/program-stripped.exe", Kind::Linked),
+        ("linkopts/funcs-plain", Kind::Linked),
+    ] {
+        let data = fixture(file);
+        assert_eq!(Image::parse(&data).unwrap().kind(), kind, "{file}");
+    }
+}

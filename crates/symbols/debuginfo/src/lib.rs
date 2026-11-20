@@ -704,15 +704,37 @@ pub fn candidate_paths_in(
                         .join("_.dwarf"),
                 );
                 if let Some(name) = image_path.file_name() {
-                    let mut bundle = name.to_owned();
-                    bundle.push(".dSYM");
-                    push(
-                        dir.join(bundle)
-                            .join("Contents")
-                            .join("Resources")
-                            .join("DWARF")
-                            .join(name),
-                    );
+                    // Its dSYM, or (an image in a bundle) its bundle's.
+                    let bundle_name = image_path
+                        .ancestors()
+                        .skip(1)
+                        .find(|a| {
+                            a.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                                [
+                                    "app",
+                                    "framework",
+                                    "bundle",
+                                    "appex",
+                                    "kext",
+                                    "xpc",
+                                    "plugin",
+                                ]
+                                .iter()
+                                .any(|b| e.eq_ignore_ascii_case(b))
+                            })
+                        })
+                        .and_then(std::path::Path::file_name);
+                    for of in std::iter::once(name).chain(bundle_name) {
+                        let mut bundle = of.to_owned();
+                        bundle.push(".dSYM");
+                        push(
+                            dir.join(bundle)
+                                .join("Contents")
+                                .join("Resources")
+                                .join("DWARF")
+                                .join(name),
+                        );
+                    }
                 }
             }
             DebugId::DebugLink { path, .. } => {
@@ -840,8 +862,21 @@ fn beside(image_path: &std::path::Path, id: &DebugId<'_>) -> Vec<std::path::Path
         }
     };
     match *id {
-        DebugId::DebugLink { path, .. } => {
+        DebugId::DebugLink { path, crc } => {
             let name = String::from_utf8_lossy(path).into_owned();
+            // A WebAssembly module's external_debug_info (no CRC) is a URL,
+            // often relative: one beside the module or below it (no `..`,
+            // nothing absolute, no scheme) is followed.
+            if crc.is_none() && name.contains('/') && !name.contains("://") {
+                let rel = Path::new(name.trim_start_matches("./"));
+                if rel
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+                {
+                    push(dir.join(rel));
+                }
+                return out;
+            }
             if name.is_empty() || name.contains(['/', '\\']) {
                 // (A name, not a path: anything else isn't followed.)
                 return out;
@@ -871,15 +906,36 @@ fn beside(image_path: &std::path::Path, id: &DebugId<'_>) -> Vec<std::path::Path
         }
         DebugId::Uuid(_) => {
             if let Some(name) = image_path.file_name() {
-                let mut bundle = image_path.as_os_str().to_owned();
-                bundle.push(".dSYM");
-                push(
+                let in_dsym = |at: &Path| {
+                    let mut bundle = at.as_os_str().to_owned();
+                    bundle.push(".dSYM");
                     PathBuf::from(bundle)
                         .join("Contents")
                         .join("Resources")
                         .join("DWARF")
-                        .join(name),
-                );
+                        .join(name)
+                };
+                push(in_dsym(image_path));
+                // An image in a bundle (`Foo.app/Contents/MacOS/Foo`,
+                // `Foo.framework/Versions/A/Foo`): the bundle's dSYM beside
+                // it, as Xcode puts it (`Foo.app.dSYM`).
+                if let Some(bundle) = image_path.ancestors().skip(1).find(|a| {
+                    a.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                        [
+                            "app",
+                            "framework",
+                            "bundle",
+                            "appex",
+                            "kext",
+                            "xpc",
+                            "plugin",
+                        ]
+                        .iter()
+                        .any(|b| e.eq_ignore_ascii_case(b))
+                    })
+                }) {
+                    push(in_dsym(bundle));
+                }
             }
             return out;
         }

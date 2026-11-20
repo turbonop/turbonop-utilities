@@ -57,18 +57,8 @@ function isSymbolName(name) {
   return typeof name === "string" && name.length > 0 && !/^\[.*\]$/.test(name);
 }
 
-/**
- * Whether hexc can disassemble functions of the binary at `file`: PE
- * images (with their PDBs), ELF, Mach-O, and WebAssembly (not yet COFF
- * objects or libraries).
- */
-function canDisassembleFile(file) {
-  const m = /\.([A-Za-z0-9]+)$/.exec(String(file || "").replace(/^.*[\\/]/, ""));
-  return !m || !["obj", "lib", "pdb"].includes(m[1].toLowerCase());
-}
-
 if (typeof module !== "undefined") {
-  module.exports = { SCHEME, SYMBOL_SOURCES, disasmUri, parseDisasmQuery, withoutAddresses, isSymbolLevel, isSymbolName, canDisassembleFile };
+  module.exports = { SCHEME, SYMBOL_SOURCES, disasmUri, parseDisasmQuery, withoutAddresses, isSymbolLevel, isSymbolName };
 }
 
 /**

@@ -412,9 +412,9 @@ function attach(context, webview, onDispose, file, base, at, kind) {
         min: state.view.min || "",
         tools: caps && Array.isArray(caps.tools) ? caps.tools : undefined,
         format: caps && caps.format,
-        // (The Stripped box: for formats a strip takes something from.)
+        // (The Stripped box: for files a strip takes something from.)
         stripped,
-        strippable: !!caps && lib.STRIPPABLE.includes(caps.format),
+        strippable: lib.can(caps, "stripped"),
       });
       showStatus(state.report);
       names();
@@ -708,10 +708,10 @@ async function openTable(title, args, options) {
   const exe = () => lib.hexcPath(vscode.workspace.getConfiguration("hexcavator").get("path"));
   let shown = false;
   const load = async () => {
-    // (`pe`: the rows' symbols open in the views that need debug
+    // (`debug`: the rows' symbols open in the views that need debug
     // information.)
-    const full = lib.can(await sidebarModule.capsOf(file, runHexc), "why");
-    const message = { kind: "table", title: current.title, file, pe: full, query: current.query, command: lib.commandLine(exe(), current.args) };
+    const debug = lib.can(await sidebarModule.capsOf(file, runHexc), "why");
+    const message = { kind: "table", title: current.title, file, debug, query: current.query, command: lib.commandLine(exe(), current.args) };
     try {
       const out = await paneRun(panel.webview, `Running ${lib.commandLine("hexc", current.args)}…`, lib.jsonArgs(current.args));
       panel.webview.postMessage({ ...message, json: JSON.parse(out) });

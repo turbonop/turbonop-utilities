@@ -734,11 +734,11 @@
     return /^(\.text|\.init|\.fini|\.plt|__text|__stubs|__stub_helper|Code|PAGE|INIT|\.orpc)/i.test(path[i]) ? "code" : "data";
   }
 
-  const isPeFile = () => /\.(exe|dll|sys|efi)$/i.test(state.message.file || "");
-  // What hexc says the file supports (its tools), else what its name says.
+  // What hexc says the file supports (its tools; nothing if it couldn't
+  // say).
   const can = (tool) => {
     const tools = state.message.tools;
-    return Array.isArray(tools) ? tools.includes(tool) : isPeFile();
+    return Array.isArray(tools) && tools.includes(tool);
   };
 
   /**
@@ -751,7 +751,7 @@
       return null;
     }
     const kind = sectionKind(path);
-    const code = canDisassembleFile(state.message.file);
+    const code = can("disassemble");
     if (kind === "code") {
       return code ? "code" : null;
     }
@@ -800,7 +800,6 @@
     return JSON.stringify({
       webviewSection: diffSymbol ? "diffSymbol" : kind ? "symbol" : "row",
       symbolKind: diffSymbol ? sectionKind(path) : kind || "none",
-      peImage: isPeFile() && !isDiff(),
       canQuery: can("why") && !isDiff(),
       canData: can("data") && !isDiff(),
       // (A diff's: the base, and what happened to it: a function in both

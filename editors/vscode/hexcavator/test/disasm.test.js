@@ -96,16 +96,6 @@ test("variables named in instructions, as windbg does", () => {
   assert.strictEqual(d.displacement("+", "zz"), null);
 });
 
-test("which binaries can be disassembled", () => {
-  for (const f of ["a.o", "lib.so", "C:\\x\\mod.wasm", "/usr/bin/tool", "App.app/App", "x.dylib", "v1.2/prog",
-                   "app.exe", "C:\\x.y\\Lib.DLL", "drv.sys"]) {
-    assert.strictEqual(d.canDisassembleFile(f), true, f);
-  }
-  for (const f of ["a.obj", "b.LIB", "C:\\s\\app.pdb"]) {
-    assert.strictEqual(d.canDisassembleFile(f), false, f);
-  }
-});
-
 test("a diff's listings: without addresses, each side named by its binary", () => {
   const text = "transform(int):\n        140001040      mov         eax,ecx\n        14000108a  0:  lea         ecx,[r10+r9]\n";
   assert.strictEqual(d.withoutAddresses(text), "transform(int):\n              mov         eax,ecx\n          0:  lea         ecx,[r10+r9]\n");

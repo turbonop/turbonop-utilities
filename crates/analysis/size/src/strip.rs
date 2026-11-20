@@ -18,7 +18,11 @@
 //!   -x`); from an object, none. The names only they use go too.
 //! - WebAssembly: the custom sections `wasm-opt --strip-debug` removes:
 //!   `.debug_*`, `name`, `sourceMappingURL`, and `external_debug_info`.
-//! - PE and COFF: nothing (their debug information is in the PDB).
+//! - PE and COFF: what `strip` removes from an image MinGW (or clang's
+//!   windows-gnu targets) built: its DWARF sections (`.debug_*`), and the
+//!   COFF symbol table and string table after it; from an object (or a
+//!   library's), its DWARF sections only. (An image with a PDB has
+//!   neither: its debug information is already apart.)
 //!
 //! Alignment padding before what is removed, and the names of removed ELF
 //! sections in `.shstrtab`, are kept: a few bytes each.
@@ -28,6 +32,7 @@ use hexcavator_elf::ElfFile;
 use hexcavator_elf::consts::*;
 use hexcavator_macho::MachO;
 use hexcavator_macho::consts::{MH_EXECUTE, MH_OBJECT, N_EXT, N_TYPE, N_UNDF, S_ATTR_DEBUG};
+use hexcavator_pe::{FileKind, PeFile};
 
 /// `n_desc`'s `REFERENCED_DYNAMICALLY`: a symbol `strip` keeps in an
 /// executable (`__mh_execute_header`).
@@ -66,8 +71,52 @@ pub fn ranges(data: &[u8]) -> Vec<(u64, u64)> {
         } else if let Ok(e) = ElfFile::parse(data) {
             elf(&e, 0, &mut out);
         }
+    } else if Archive::is_archive(data) {
+        // A COFF library's objects.
+        if let Ok(ar) = Archive::parse(data) {
+            for m in ar.files() {
+                if let Ok(p) = PeFile::parse_object(m.data) {
+                    pe(&p, m.data_offset, &mut out);
+                }
+            }
+        }
+    } else if let Ok(p) = PeFile::parse(data) {
+        pe(&p, 0, &mut out);
     }
     merged(out)
+}
+
+/// A PE image's or COFF object's (at `offset` in the file): its DWARF
+/// sections, and an image's symbol and string tables.
+fn pe(p: &PeFile<'_>, offset: u64, out: &mut Vec<(u64, u64)>) {
+    let len = p.data().len() as u64;
+    for s in p.sections() {
+        let name = p.section_name(s);
+        if name.starts_with(b".debug_") || name.starts_with(b".zdebug_") {
+            let at = u64::from(s.pointer_to_raw_data.get());
+            let size = u64::from(s.size_of_raw_data.get());
+            out.push(clamped(offset, len, at, size));
+        }
+    }
+    if p.kind() == FileKind::Object {
+        // (Linking needs an object's symbols.)
+        return;
+    }
+    let header = p.file_header();
+    let at = u64::from(header.pointer_to_symbol_table.get());
+    if at == 0 {
+        return;
+    }
+    let records = u64::from(header.number_of_symbols.get()) * 18;
+    // The string table follows the records: its size (itself included)
+    // first.
+    let strings = usize::try_from(at + records)
+        .ok()
+        .and_then(|s| p.data().get(s..s + 4))
+        .map_or(0, |b| {
+            u64::from(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        });
+    out.push(clamped(offset, len, at, records + strings.max(4)));
 }
 
 /// `ranges`, sorted, with those that touch or overlap made one.

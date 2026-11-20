@@ -105,7 +105,7 @@
   function renderTree(box) {
     const root = data().value;
     if (!root) {
-      box.append(el("p", { class: "note" }, "No type for this datum in the PDB (a public, a string, or a compiler's table): its bytes only."));
+      box.append(el("p", { class: "note" }, "No type for this datum in the debug information (a public, a string, or a compiler's table): its bytes only."));
       return;
     }
     const rows = flatten(root);

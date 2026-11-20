@@ -1769,9 +1769,21 @@ fn stripped() {
             .any(|k| !k.starts_with('[') && !k.starts_with("func["))
     );
 
-    // PE: nothing to strip.
+    // PE with a PDB: nothing to strip.
     let pe = bin("PEParser.Tests.Dllx64.dll");
     assert_eq!(s(&pe, "sections", true), s(&pe, "sections", false));
+    // PE with DWARF (MinGW's): its DWARF, and the COFF symbol and string
+    // tables (as strip --strip-all leaves it).
+    let mingw = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/mingw/program.exe");
+    let (whole, stripped) = (s(&mingw, "sections", false), s(&mingw, "sections", true));
+    assert!(whole.contains_key(".debug_info") && whole.contains_key("[COFF Symbol Table]"));
+    assert!(
+        !stripped
+            .keys()
+            .any(|k| k.starts_with(".debug_") || k.starts_with("[COFF ")),
+        "{stripped:?}"
+    );
+    assert_eq!(stripped[".text"], whole[".text"]);
 
     // A diff of two stripped builds, and the -table.
     let (ok, stdout, stderr) = hexc(&[

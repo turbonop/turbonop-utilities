@@ -327,15 +327,10 @@ fn macho_symbols<'data>(m: &hexcavator_macho::MachO<'data>) -> Vec<ImageSymbol<'
     out
 }
 
+/// A module's functions, at their bodies (as DWARF's addresses are: see
+/// `wasm::function_range`).
 fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'data>> {
     let mut out = Vec::new();
-    let Some(code) = m
-        .sections()
-        .iter()
-        .find(|s| s.id == hexcavator_wasm::SECTION_CODE)
-    else {
-        return out;
-    };
     let functions = m.functions();
     let first = functions.first().map_or(0, |f| f.index);
     let function = |index: u32| {
@@ -354,12 +349,13 @@ fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'d
         .collect();
     let exported = |index: u32| exports.iter().any(|e| e.index == index);
     for n in m.names(hexcavator_wasm::NAME_FUNCTION) {
-        let Some(f) = function(n.index) else {
+        let Some((addr, size)) = function(n.index).and_then(|f| crate::wasm::function_range(m, f))
+        else {
             continue;
         };
         out.push(ImageSymbol {
-            addr: f.offset.saturating_sub(code.contents_offset),
-            size: Some(f.size),
+            addr,
+            size: Some(size),
             size_recorded: true,
             name: n.name,
             kind: SymbolKind::Function,
@@ -368,12 +364,13 @@ fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'d
         });
     }
     for e in &exports {
-        let Some(f) = function(e.index) else {
+        let Some((addr, size)) = function(e.index).and_then(|f| crate::wasm::function_range(m, f))
+        else {
             continue;
         };
         out.push(ImageSymbol {
-            addr: f.offset.saturating_sub(code.contents_offset),
-            size: Some(f.size),
+            addr,
+            size: Some(size),
             size_recorded: true,
             name: e.name,
             kind: SymbolKind::Function,

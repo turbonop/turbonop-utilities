@@ -71,6 +71,8 @@ pub fn startup(image: &Image<'_>, x: &Xref, model: &Model) -> Startup {
         elf_startup(image, elf, x)
     } else if let Some(m) = image.macho() {
         macho_startup(image, m, x)
+    } else if let Some(m) = image.wasm() {
+        wasm_startup(m, x)
     } else {
         Startup::default()
     };
@@ -394,6 +396,77 @@ fn macho_startup(image: &Image<'_>, m: &hexcavator_macho::MachO<'_>, x: &Xref) -
         phases,
         main,
     }
+}
+
+/// A WebAssembly module's: its start function (the runtime calls it when
+/// it instantiates the module), then a WASI reactor's `_initialize` (the
+/// host calls it before any other export) or wasm-ld's constructors
+/// (`__wasm_call_ctors`, which `_start` and `_initialize` call), then a
+/// WASI command's `_start`. A module without `_start` is a library.
+fn wasm_startup(m: &hexcavator_wasm::Module<'_>, x: &Xref) -> Startup {
+    let export = |name: &[u8]| {
+        m.exports()
+            .into_iter()
+            .find(|e| e.kind == 0 && e.name == name)
+            .map(|e| e.index)
+    };
+    let at = |index: u32| function_address(m, index);
+    let start = export(b"_start");
+    let mut phases = Vec::new();
+    if let Some(a) = m.start_function().and_then(at) {
+        phases.push(Phase {
+            name: "the start function".into(),
+            detail: "the runtime calls it when it instantiates the module, before the host can call an export",
+            entries: vec![entry(x, a, None)],
+        });
+    }
+    if let Some(a) = export(b"_initialize").and_then(at) {
+        phases.push(Phase {
+            name: "_initialize".into(),
+            detail: "a WASI reactor's: the host calls it before any other export; it calls __wasm_call_ctors",
+            entries: vec![entry(x, a, None)],
+        });
+    } else if let Some(n) = named(x, &["__wasm_call_ctors"]) {
+        let node = &x.graph.nodes()[n as usize];
+        phases.push(Phase {
+            name: "__wasm_call_ctors".into(),
+            detail: "wasm-ld's: global objects' constructors and C initializers, in order; _start calls it before main",
+            entries: vec![Entry {
+                addr: node.start,
+                node: Some(n),
+                slot: None,
+            }],
+        });
+    }
+    if let Some(a) = start.and_then(at) {
+        phases.push(Phase {
+            name: "the entry point".into(),
+            detail: "a WASI command's _start: the host calls it; it calls __wasm_call_ctors, then main",
+            entries: vec![entry(x, a, None)],
+        });
+    }
+    let library = start.is_none();
+    let main = if library {
+        None
+    } else {
+        named(x, &["main", "__main_argc_argv", "__original_main"])
+    };
+    Startup {
+        library,
+        phases,
+        main,
+    }
+}
+
+/// The address of a WebAssembly module's function `index`, as its graph
+/// has it: its body's, in the code section.
+fn function_address(m: &hexcavator_wasm::Module<'_>, index: u32) -> Option<u64> {
+    let code = m
+        .sections()
+        .iter()
+        .find(|s| s.id == hexcavator_wasm::SECTION_CODE)?;
+    let f = m.functions().into_iter().find(|f| f.index == index)?;
+    Some(m.body(&f)?.0.checked_sub(code.contents_offset)?)
 }
 
 /// The code `node` calls or jumps to (a tail call, a jump table), each

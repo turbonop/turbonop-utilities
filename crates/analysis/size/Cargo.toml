@@ -26,6 +26,7 @@ hexcavator-arm64.workspace = true
 hexcavator-xref.workspace = true
 hexcavator-code.workspace = true
 hexcavator-arm32.workspace = true
+hexcavator-unwind.workspace = true
 hexcavator-fingerprint.workspace = true
 hexcavator-query.workspace = true
 regex.workspace = true

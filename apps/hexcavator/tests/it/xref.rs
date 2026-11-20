@@ -1314,3 +1314,41 @@ fn arm32_references() {
         );
     }
 }
+
+/// 32-bit ARM's exception tables (EHABI): each function's .ARM.exidx
+/// entry, and a function with a cleanup's .ARM.extab entry, its opcodes
+/// (unwind information) and its LSDA (handlers' data), which it needs (it
+/// calls what may throw).
+#[test]
+fn arm32_exception_tables() {
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/arm32/eh-linux");
+    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        .args(["recommend", "-json"])
+        .arg(&image)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let e = &v["exceptions"];
+    let f = e["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "with_cleanup(int)")
+        .unwrap_or_else(|| panic!("{e}"));
+    // (Its index entry, and its table entry's personality and opcode words.)
+    assert_eq!(f["unwind"], 16, "{e}");
+    assert!(f["handlers"].as_u64().unwrap() > 0, "{e}");
+    assert_eq!(f["needless"], false, "{e}");
+    assert!(
+        e["functions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["unwind"].as_u64().unwrap() >= 8)
+    );
+}

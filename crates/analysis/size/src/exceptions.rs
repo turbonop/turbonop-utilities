@@ -1,8 +1,10 @@
 //! What exception handling costs each function ([`exceptions`]): its
-//! unwind information (an ELF `.eh_frame` FDE; a PE `.pdata` entry and its
-//! unwind data), and its handlers' data (an ELF LSDA in
-//! `.gcc_except_table`; MSVC's C++ EH tables, SEH scope tables): the
-//! cleanups and handlers it runs when an exception passes through it.
+//! unwind information (an ELF `.eh_frame` FDE, or 32-bit ARM's
+//! `.ARM.exidx` entry and its `.ARM.extab` opcodes; a PE `.pdata` entry
+//! and its unwind data), and its handlers' data (an ELF LSDA in
+//! `.gcc_except_table`, or after its opcodes in `.ARM.extab`; MSVC's C++
+//! EH tables, SEH scope tables): the cleanups and handlers it runs when an
+//! exception passes through it.
 //!
 //! And which functions carry cleanups though nothing they reach can throw
 //! ([`Exceptions::needless`]): their handlers' data is only there because
@@ -53,6 +55,7 @@ pub fn exceptions(image: &hexcavator_image::Image<'_>, x: &Xref, symbols: &[Symb
     let mut costs: FxHashMap<u32, (u64, u64)> = FxHashMap::default();
     if image.elf().is_some() {
         elf_costs(image, x, &mut costs);
+        arm_costs(image, x, &mut costs);
     } else if image.pe().is_some() {
         pe_costs(x, symbols, &mut costs);
     }
@@ -156,6 +159,78 @@ fn elf_costs(
         if let Some(l) = lsda {
             e.1 += lsda_size(l);
         }
+    }
+}
+
+/// 32-bit ARM's (EHABI): each function's `.ARM.exidx` entry (8 bytes)
+/// and, if its opcodes don't fit in it, its `.ARM.extab` entry: the words
+/// of its opcodes are unwind information, and what follows them to the
+/// next entry (a personality routine's data: GCC's LSDA) is its handlers'.
+fn arm_costs(
+    image: &hexcavator_image::Image<'_>,
+    x: &Xref,
+    costs: &mut FxHashMap<u32, (u64, u64)>,
+) {
+    use hexcavator_unwind::arm_ehabi::{Exidx, Model};
+    /// Reads `.ARM.extab` (or anything) by address, from the image.
+    struct Bytes<'a, 'd>(&'a hexcavator_image::Image<'d>);
+    impl hexcavator_unwind::Memory for Bytes<'_, '_> {
+        fn read(&self, address: u64, buf: &mut [u8]) -> bool {
+            match self.0.bytes_at(address, buf.len() as u64) {
+                Some(b) => {
+                    buf.copy_from_slice(b);
+                    true
+                }
+                None => false,
+            }
+        }
+    }
+    let sections = image.sections();
+    let Some(exidx) = sections.iter().find(|s| s.name == b".ARM.exidx") else {
+        return;
+    };
+    let Some(data) = image.bytes_at(exidx.addr, exidx.file_size.min(exidx.vm_size)) else {
+        return;
+    };
+    let index = Exidx {
+        data,
+        address: exidx.addr,
+        endian: image.endian(),
+    };
+    let memory = Bytes(image);
+    let entries: Vec<_> = (0..index.len())
+        .filter_map(|i| index.entry(i, &memory))
+        .collect();
+    // The table entries, by address, each to the next (or its section's
+    // end).
+    let extab_end = sections
+        .iter()
+        .find(|s| s.name == b".ARM.extab")
+        .map(|s| s.addr + s.vm_size);
+    let mut tables: Vec<u64> = entries.iter().filter_map(|e| e.table).collect();
+    tables.sort_unstable();
+    tables.dedup();
+    for e in &entries {
+        let Some(n) = x.graph.node_at(e.function & !1) else {
+            continue;
+        };
+        let mut unwind = 8;
+        let mut handlers = 0;
+        if let Some(t) = e.table {
+            let next = tables.get(tables.partition_point(|&a| a <= t)).copied();
+            let end = next.or(extab_end).unwrap_or(t).max(t);
+            // Its opcodes' words (and a generic model's personality word).
+            let words = match e.model {
+                Model::Generic { .. } => 4 + e.opcodes.len().div_ceil(4) as u64 * 4,
+                _ => e.opcodes.len().div_ceil(4) as u64 * 4,
+            };
+            let size = end - t;
+            unwind += words.min(size);
+            handlers = size.saturating_sub(words);
+        }
+        let c = costs.entry(n).or_default();
+        c.0 += unwind;
+        c.1 += handlers;
     }
 }
 
@@ -353,6 +428,23 @@ fn calls_unknown(image: &hexcavator_image::Image<'_>, x: &Xref, start: u64, end:
             // BLR, BLRAA/BLRAB/BLRAAZ/BLRABZ: the BLR group.
             word & 0xFFFF_FC1F == 0xD63F_0000 || word & 0xFEFF_F800 == 0xD63F_0800
         }),
+        // (Thumb-2: a call through a register, or to what isn't a
+        // function's start.)
+        Arch::Arm => {
+            let mut at = 0usize;
+            while at < code.len() {
+                let pc = start + at as u64;
+                let Some(i) = hexcavator_code::decode_arm32(&code[at..], pc, true) else {
+                    return false;
+                };
+                if i.flow == hexcavator_code::Flow::Call && i.target.is_none_or(|t| !known(t & !1))
+                {
+                    return true;
+                }
+                at += usize::from(i.len).max(2);
+            }
+            false
+        }
         _ => false,
     }
 }

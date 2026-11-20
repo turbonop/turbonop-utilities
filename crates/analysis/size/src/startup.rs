@@ -449,7 +449,10 @@ fn wasm_startup(m: &hexcavator_wasm::Module<'_>, x: &Xref) -> Startup {
     let main = if library {
         None
     } else {
-        named(x, &["main", "__main_argc_argv", "__original_main"])
+        named(
+            x,
+            &["main", "__main_void", "__main_argc_argv", "__original_main"],
+        )
     };
     Startup {
         library,
@@ -466,7 +469,7 @@ fn function_address(m: &hexcavator_wasm::Module<'_>, index: u32) -> Option<u64> 
         .iter()
         .find(|s| s.id == hexcavator_wasm::SECTION_CODE)?;
     let f = m.functions().into_iter().find(|f| f.index == index)?;
-    Some(m.body(&f)?.0.checked_sub(code.contents_offset)?)
+    m.body(&f)?.0.checked_sub(code.contents_offset)
 }
 
 /// The code `node` calls or jumps to (a tail call, a jump table), each

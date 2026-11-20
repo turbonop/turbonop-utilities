@@ -329,7 +329,9 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
 
     // Symbols for what the image itself describes.
     let Some(pe) = image.pe() else {
-        return Ok(from_debug);
+        // (DWARF describes only what was compiled with it: the image's own
+        // symbols name the rest, as a PDB's publics do.)
+        return Ok(with_image_symbols(image, model, from_debug));
     };
     let mut handlers: HashMap<u64, crate::eh::Handler> = HashMap::new();
     for s in shown.iter().chain(&hidden) {
@@ -377,6 +379,68 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         .collect();
     out.sort_by_key(|s| s.addr);
     Ok(out)
+}
+
+/// `symbols` (from the debug information, by address) with the image's
+/// own symbols (its symbol tables', its exports, a WebAssembly module's
+/// names) where none of them is: code and data the debug information
+/// doesn't describe (the C runtime's, assembly, what the linker made, a
+/// library built without it), as publics, as a PDB's publics name them.
+fn with_image_symbols(image: &Image<'_>, model: &Model, mut symbols: Vec<Symbol>) -> Vec<Symbol> {
+    use hexcavator_image::SymbolKind as ImageKind;
+    // What the debug information's symbols cover, by start.
+    let mut covered: Vec<(u64, u64)> = symbols
+        .iter()
+        .filter(|s| !s.folded)
+        .map(|s| (s.addr, s.addr + s.size.vm.max(s.size.file).max(1)))
+        .collect();
+    covered.sort_unstable();
+    let overlaps = |start: u64, end: u64| {
+        let i = covered.partition_point(|&(s, _)| s < end);
+        // (A few back: symbols inside others.)
+        covered[..i].iter().rev().take(8).any(|&(_, e)| e > start)
+    };
+    let macho = image.macho().is_some();
+    let mut demangler = hexcavator_demangle::Demangler::new();
+    let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut extra = Vec::new();
+    for s in image.symbols() {
+        let Some(size) = s.size.filter(|&n| n > 0) else {
+            continue;
+        };
+        if !matches!(s.kind, ImageKind::Function | ImageKind::Data)
+            || overlaps(s.addr, s.addr + size)
+            || !seen.insert(s.addr)
+        {
+            continue;
+        }
+        // Memory only past the file bytes of its section (zero-fill).
+        let file = model
+            .sections
+            .iter()
+            .find(|sec| s.addr >= sec.addr && s.addr < sec.addr + sec.size.vm.max(sec.size.file))
+            .map_or(0, |sec| {
+                (sec.addr + sec.size.file).saturating_sub(s.addr).min(size)
+            });
+        extra.push(Symbol {
+            addr: s.addr,
+            size: Size { file, vm: size },
+            kind: SymbolKind::Public,
+            folded: false,
+            name: demangler.source_name(
+                &String::from_utf8_lossy(s.name),
+                hexcavator_demangle::msvc::flags::NO_PTR64,
+                macho,
+            ),
+            compiland: None,
+            file_static: false,
+        });
+    }
+    if !extra.is_empty() {
+        symbols.extend(extra);
+        symbols.sort_by_key(|s| s.addr);
+    }
+    symbols
 }
 
 /// Names targets by the debug information's symbols, and knows handlers by

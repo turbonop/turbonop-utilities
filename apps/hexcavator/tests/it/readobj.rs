@@ -204,3 +204,34 @@ fn damaged_inputs_end() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// An option of one personality given for the other's files is said to
+/// be out of place (with what shows that part instead), not ignored;
+/// `-all` takes every file's every part, so nothing is.
+#[test]
+fn options_out_of_place() {
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .arg("dump")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let elf = testdata().join("linkopts/funcs-plain");
+    let elf = elf.to_str().unwrap();
+    let err = run(&["/disasm", "/unwindinfo", elf]);
+    assert!(
+        err.contains("not a PE or COFF file") && err.contains("hexc size -disassemble"),
+        "{err}"
+    );
+    assert!(err.contains("hexc dwarf -frames"), "{err}");
+    let pe = testdata().join("types/types.exe");
+    let err = run(&["--notes", pe.to_str().unwrap()]);
+    assert!(
+        err.contains("llvm-readobj's options are of ELF, Mach-O, and WebAssembly files"),
+        "{err}"
+    );
+    assert!(run(&["/all", elf]).is_empty());
+}

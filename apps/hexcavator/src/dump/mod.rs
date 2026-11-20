@@ -100,6 +100,38 @@ struct Options {
     tls: bool,
     /// Do not look for the image's PDB.
     nopdb: bool,
+    /// `-all`: every part of each file (none of them out of place).
+    all: bool,
+}
+
+impl Options {
+    /// The dumpbin options given that a file of another format (ELF,
+    /// Mach-O, WebAssembly) has no part for, each with what shows it.
+    fn pe_only(&self) -> Vec<&'static str> {
+        if self.all {
+            return Vec::new();
+        }
+        [
+            (
+                self.disasm,
+                "/disasm (hexc size -disassemble <function> disassembles any format's)",
+            ),
+            (
+                self.pdata,
+                "/pdata (hexc dwarf -frames shows DWARF's call frames)",
+            ),
+            (
+                self.unwindinfo,
+                "/unwindinfo (hexc dwarf -frames shows DWARF's call frames)",
+            ),
+            (self.tls, "/tls"),
+            (self.loadconfig, "/loadconfig"),
+            (self.nopdb, "/nopdb"),
+        ]
+        .into_iter()
+        .filter_map(|(given, what)| given.then_some(what))
+        .collect()
+    }
 }
 
 /// Section sizes accumulated across all files, by name.
@@ -124,6 +156,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 "tls" => options.tls = true,
                 "nopdb" => options.nopdb = true,
                 "all" => {
+                    options.all = true;
                     options.headers = true;
                     options.loadconfig = true;
                     options.imports = true;
@@ -178,11 +211,22 @@ fn option_name(arg: &str) -> Option<&str> {
 fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Result<bool> {
     let mut summary = Summary::new();
     let mut ok = true;
+    // (Each option out of place said once.)
+    let mut warned_pe_only = false;
+    let mut warned_readobj = false;
     for (i, path) in paths.iter().enumerate() {
         // ELF, Mach-O, and WebAssembly files: as llvm-readobj shows them.
         if let Ok(map) = Mmap::open(path)
             && let Some(result) = readobj_file(options, path, &map)
         {
+            let pe_only = options.pe_only();
+            if !pe_only.is_empty() && !warned_pe_only {
+                warned_pe_only = true;
+                ereport!(
+                    "hexc: warning: {path}: not a PE or COFF file, which these are of: {}",
+                    pe_only.join("; ")
+                );
+            }
             match result {
                 Ok(text) => out.write_all(text.as_bytes())?,
                 Err(message) => {
@@ -192,6 +236,13 @@ fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Res
                 }
             }
             continue;
+        }
+        // (llvm-readobj's parts are ELF's, Mach-O's, and WebAssembly's.)
+        if options.readobj.any() && !options.all && !warned_readobj {
+            warned_readobj = true;
+            ereport!(
+                "hexc: warning: {path}: llvm-readobj's options are of ELF, Mach-O, and WebAssembly files; dumpbin's (/headers, /exports, /relocations, ...) are of this one"
+            );
         }
         // Like `dumpbin /nologo`: a blank line before the first file, and a
         // form feed between files.

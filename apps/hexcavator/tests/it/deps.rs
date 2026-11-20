@@ -336,7 +336,7 @@ fn bad_arguments() {
     let readme = testdata("macho/sysroot/README");
     let (code, _, err) = hexc(&[readme.to_str().unwrap()]);
     assert_eq!(code, 1);
-    assert!(err.contains("not a PE, ELF, or Mach-O image"), "{err}");
+    assert!(err.contains("not a PE, ELF, Mach-O, or WebAssembly image"), "{err}");
 }
 
 /// Names that are paths where a name belongs (a hostile image's): not

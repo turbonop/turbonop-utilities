@@ -54,6 +54,8 @@ struct Charger<'m> {
     map: &'m mut DualMap,
     base: &'m DualMap,
     file_len: u64,
+    /// See [`DwarfInput::code_at`].
+    code_at: Option<u64>,
 }
 
 impl Charger<'_> {
@@ -71,9 +73,15 @@ impl Charger<'_> {
     }
 
     fn vm(&mut self, at: u64, len: u64, l: Label) {
-        if len > 0 {
-            self.map.add_vm(at, at.saturating_add(len), l, self.base);
+        if len == 0 {
+            return;
         }
+        // (A WebAssembly module's code: in its file, at its code section.)
+        if let Some(code) = self.code_at {
+            self.file(Some(code), at, len, l);
+            return;
+        }
+        self.map.add_vm(at, at.saturating_add(len), l, self.base);
     }
 }
 
@@ -89,6 +97,11 @@ pub struct DwarfInput<'d> {
     pub endian: hexcavator_core::Endian,
     /// (name without its `.debug_`/`__debug_` prefix, bytes, offset).
     pub sections: Vec<DwarfSection<'d>>,
+    /// A WebAssembly module's: its DWARF's addresses are its code
+    /// section's offsets, and its code is in the file from here (it has no
+    /// memory addresses of code; its variables', in linear memory, aren't
+    /// the file's).
+    pub code_at: Option<u64>,
 }
 
 /// Charges code, data, and the DWARF's own bytes to compile units in
@@ -135,6 +148,7 @@ pub fn compile_units(
         map,
         base,
         file_len,
+        code_at: input.code_at,
     };
     // Each abbreviation table, parsed once (a unit's is read for its name,
     // then for its DIEs).
@@ -369,7 +383,15 @@ fn line_spans(
                 Some(s) if row.end_sequence || (!last.is_empty() && name != last) => {
                     if row.address > s {
                         let l = labels.intern(&last);
-                        map.add_vm(s, row.address, l, base);
+                        // (A WebAssembly module's code: in its file.)
+                        match input.code_at {
+                            Some(code) => {
+                                map.add_file(code + s, code + row.address, l, base);
+                            }
+                            None => {
+                                map.add_vm(s, row.address, l, base);
+                            }
+                        }
                     }
                     start = (!row.end_sequence).then_some(row.address);
                 }

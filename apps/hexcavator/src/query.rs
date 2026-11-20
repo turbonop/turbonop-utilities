@@ -27,7 +27,7 @@ take k, M, G), then any of: group by <columns> (with count and summed
 sizes), sort by <column> [desc], select <columns>, limit <n>.
 
 options:
-  -pdb <path>   its debug information: a PDB, or a file with its DWARF
+  -debug <path> its debug information: a PDB, or a file with its DWARF
                 (or -debug; default: its own, or the one it names)
   -csv, -json   output format (default: a table)
   -columns      list the columns and what they hold";

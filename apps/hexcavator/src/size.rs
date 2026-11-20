@@ -25,7 +25,7 @@ images with a Unix linker's map are reported by data sources instead
 (bloaty's report, below; default: sections), as -d reports any image.
 
 options:
-  -pdb <path>       its debug information: a PDB, or a file with its DWARF
+  -debug <path>     its debug information: a PDB, or a file with its DWARF
                     (or -debug; default: its own, or the one it names)
   -map <path>       use the linker's map instead of debug information: MSVC's
                     (link /MAP): groups, and symbols attributed to their
@@ -48,7 +48,7 @@ bloaty-style reports (every byte of the file and of memory, labeled once):
   -s <vm|file|both> sort by memory size, file size, or the larger (default)
   -domain <vm|file|both>  which sizes to show (default both)
   -csv, -tsv, -json output format (default: a table)
-  -base-pdb <path>  the base image's PDB
+  -base-debug <path>  the base image's debug information (or -base-pdb)
   -base-map <path>  the base image's map
   -debug-file <path>  separate debug information for compileunits: a dSYM's
                     DWARF file (found next to a Mach-O image by default), an
@@ -255,7 +255,9 @@ fn parse(args: &[String]) -> Result<Options, String> {
             .or_else(|| arg.strip_prefix('/').filter(|_| !Path::new(arg).exists()));
         match option {
             Some("pdb" | "debug") => pdb = Some(PathBuf::from(value(&mut i, "pdb")?)),
-            Some("base-pdb") => base_pdb = Some(PathBuf::from(value(&mut i, "base-pdb")?)),
+            Some("base-pdb" | "base-debug") => {
+                base_pdb = Some(PathBuf::from(value(&mut i, "base-debug")?));
+            }
             Some("map") => map = Some(PathBuf::from(value(&mut i, "map")?)),
             Some("base-map") => base_map = Some(PathBuf::from(value(&mut i, "base-map")?)),
             Some("debug-file") => debug_file = Some(PathBuf::from(value(&mut i, "debug-file")?)),

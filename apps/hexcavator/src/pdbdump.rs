@@ -9,7 +9,10 @@ use hexcavator_codeview::types::{Field, TypeFormatter, leaf};
 use hexcavator_pdb::{Pdb, info::format_guid};
 
 pub const USAGE: &str = "\
-usage: hexc pdb [options] <file.pdb>
+usage: hexc pdb [options] <file>
+
+Dumps a PDB: the file given, or (given an image) the one found for it, as
+every command finds an image's debug information (-debug gives it).
 
 options:
   -summary          header, GUID/age, stream counts (default)
@@ -25,7 +28,10 @@ options:
   -linker           the linker's recorded environment (command line, ...)
   -find <name>      look up a global, public, and type by name
   -addr <sec:off>   the public symbol and source line at an address
-  -all              everything above except -find/-addr
+  -lookup <address> the same, at an address relative to the image (an RVA,
+                    hexadecimal), as hexc dwarf -lookup takes one
+  -debug <path>     the image's PDB, if it isn't found from the image
+  -all              everything above except -find/-addr/-lookup
   -diaformat        the line format of tools/diadump (for comparison tests)";
 
 #[derive(Default)]
@@ -43,12 +49,16 @@ struct Options {
     linker: bool,
     find: Vec<String>,
     addr: Vec<(u16, u32)>,
+    /// `-lookup`'s addresses (RVAs), to `section:offset` once the PDB's
+    /// sections are read.
+    lookup: Vec<u32>,
     dia: bool,
 }
 
 pub fn run(args: &[String]) -> ExitCode {
     let mut o = Options::default();
     let mut path = None;
+    let mut debug: Option<std::path::PathBuf> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.trim_start_matches(['-', '/']) {
@@ -79,13 +89,32 @@ pub fn run(args: &[String]) -> ExitCode {
             "diaformat" => o.dia = true,
             "find" => o.find.extend(it.next().cloned()),
             "addr" => {
-                if let Some((s, off)) = it.next().and_then(|v| v.split_once(':'))
-                    && let (Ok(s), Ok(off)) =
-                        (u16::from_str_radix(s, 16), u32::from_str_radix(off, 16))
-                {
-                    o.addr.push((s, off));
+                let v = it.next().map_or("", String::as_str);
+                match v.split_once(':').and_then(|(s, off)| {
+                    Some((
+                        u16::from_str_radix(s, 16).ok()?,
+                        u32::from_str_radix(off, 16).ok()?,
+                    ))
+                }) {
+                    Some(a) => o.addr.push(a),
+                    None => {
+                        ereport!("hexc pdb: -addr: not <section>:<offset> (hex): '{v}'");
+                        return ExitCode::from(2);
+                    }
                 }
             }
+            "lookup" => {
+                let v = it.next().map_or("", String::as_str);
+                let hex = v.trim_start_matches("0x").trim_start_matches("0X");
+                match u32::from_str_radix(hex, 16) {
+                    Ok(a) => o.lookup.push(a),
+                    Err(_) => {
+                        ereport!("hexc pdb: -lookup: not an address (hex): '{v}'");
+                        return ExitCode::from(2);
+                    }
+                }
+            }
+            "debug" | "pdb" => debug = it.next().map(std::path::PathBuf::from),
             _ if !a.starts_with('-') => path = Some(a.clone()),
             _ => {
                 ereport!("hexc pdb: unknown option '{a}'\n\n{USAGE}");
@@ -107,13 +136,13 @@ pub fn run(args: &[String]) -> ExitCode {
         || o.types
         || o.ids
         || o.linker;
-    if !has_any && !o.dia && o.find.is_empty() && o.addr.is_empty() {
+    if !has_any && !o.dia && o.find.is_empty() && o.addr.is_empty() && o.lookup.is_empty() {
         o.summary = true;
     }
-    let map = match hexcavator_mmap::Mmap::open(&path) {
+    let map = match pdb_of(std::path::Path::new(&path), debug.as_deref()) {
         Ok(m) => m,
         Err(e) => {
-            ereport!("hexc: {path}: {e}");
+            ereport!("hexc: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -124,6 +153,26 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // -lookup's addresses, by the image's sections (as the PDB has them).
+    if !o.lookup.is_empty() {
+        let sections = pdb.sections().unwrap_or_default();
+        for &rva in &o.lookup {
+            match sections
+                .iter()
+                .enumerate()
+                .find(|(_, (va, size, _))| rva >= *va && rva - va < (*size).max(1))
+            {
+                Some((i, &(va, _, _))) => {
+                    o.addr
+                        .push((u16::try_from(i + 1).unwrap_or(u16::MAX), rva - va));
+                }
+                None => {
+                    ereport!("hexc pdb: {rva:#x} is in none of the image's sections");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+    }
     let mut out = io::BufWriter::new(crate::out::stdout());
     let result = if o.dia {
         dia_format(&mut out, &pdb)
@@ -396,6 +445,30 @@ fn dump(out: &mut dyn Write, pdb: &Pdb<'_>, o: &Options) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// The PDB at `path`, or (an image) the one `debug` names or that is found
+/// for it.
+fn pdb_of(
+    path: &std::path::Path,
+    debug: Option<&std::path::Path>,
+) -> Result<hexcavator_mmap::Mmap, String> {
+    let show = |p: &std::path::Path| p.display().to_string();
+    let map = hexcavator_mmap::Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
+    if debug.is_none() && Pdb::parse(&map).is_ok() {
+        return Ok(map);
+    }
+    let image = hexcavator_image::Image::parse(&map)
+        .map_err(|e| format!("{}: not a PDB, nor an image: {e}", show(path)))?;
+    let (found, pdb) = hexcavator_program::find_debug(path, &image, debug)?;
+    if Pdb::parse(&pdb).is_err() {
+        return Err(format!(
+            "{}: its debug information ({}) isn't a PDB (hexc dwarf reads DWARF)",
+            show(path),
+            show(&found)
+        ));
+    }
+    Ok(pdb)
 }
 
 fn describe(rec: &hexcavator_codeview::SymbolRecord<'_>, tf: &TypeFormatter<'_>) -> String {

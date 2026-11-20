@@ -21,7 +21,7 @@ points into; and the slots the loader writes addresses into (base
 relocations, dynamic relocations, fixups).
 
 options:
-  -pdb <path>   its debug information: a PDB, or a file with its DWARF
+  -debug <path> its debug information: a PDB, or a file with its DWARF
                 (or -debug; default: its own, or the one it names)
   -max <bytes>  the most of it to read (default 1M)
   -json         as JSON";

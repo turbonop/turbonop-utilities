@@ -11,7 +11,12 @@ and where its bytes go.
   MS-DOS, NE, LE, and LX executables.
 - **Debug information:** PDBs (CodeView symbols, types, and lines) and
   DWARF (in the file, beside it, in a dSYM, or from a symbol server or
-  debuginfod).
+  debuginfod), for any format: a MinGW-built PE image's DWARF too, and a
+  relocatable object's, relocated.
+- **Every format alike:** each command and analysis reads PE, ELF,
+  Mach-O, and WebAssembly images the same way, with whatever debug
+  information they have (`-debug <path>` gives it; `-pdb` is another name
+  for it).
 - **Exploring:** headers and file-format dumps (as `dumpbin`,
   `llvm-readobj`, and `llvm-dwarfdump` show them), symbols, type layouts,
   source files and line tables, inlined functions, data values,
@@ -211,14 +216,14 @@ tabular ones `-csv` or `-tsv` too.
 ### Size analysis
 
 ```
-hexc size app.exe                          # sections, COFF groups, libraries, compilands (using the PDB)
+hexc size app.exe                          # sections (and COFF groups), libraries, compilands, by its debug information
 hexc size -d sections,symbols app.exe      # bloaty-style: every byte, by data sources, a level each
 hexc size -d compileunits -n 10 app.exe -- old\app.exe   # a diff against another build
 hexc size -d armembers,symbols foo.lib     # objects, import objects, and libraries need no PDB
 hexc size -d segments,symbols app.elf      # ELF executables, shared objects, objects, and .a archives too
 hexc size -d archs,segments App.app/App    # Mach-O and universal files too
 hexc size -d symbols app.wasm              # and WebAssembly modules
-hexc size -disassemble main app.wasm      # one function's code (PE with its PDB, ELF, Mach-O, WebAssembly), calls named
+hexc size -disassemble main app.wasm      # one function's code (PE, ELF, Mach-O, WebAssembly), calls named
 hexc size -d compileunits -debug-file app.debug app  # DWARF in a separate file (a dSYM next to a Mach-O image is found)
 hexc size -d compileunits,symbols app.elf  # ELF compile units from DWARF; symbols demangled (fullsymbols, rawsymbols)
 hexc size -d symbols -source-filter '^std::' app  # only labels a regular expression matches
@@ -228,7 +233,7 @@ hexc size -list-sources                    # sections, segments, groups, symbols
 hexc size -findings app.exe                # what wastes space (duplicate data, template bloat), with advice
 hexc size -map app.map app.exe             # no PDB? the linker's map attributes symbols to objects and libraries
 hexc linkerlog link.log -image app.exe     # the largest library members, and why each was linked
-hexc linkerlog link.log -why gshandler.obj # why one was (from `link ... /VERBOSE > link.log`)
+hexc linkerlog link.log -why gshandler.obj # why one was (from `link ... /VERBOSE > link.log`, or lld's --why-extract)
 hexc linkerlog new.log -- old.log          # members linked now and not before, and why
 ```
 

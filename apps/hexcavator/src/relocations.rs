@@ -175,46 +175,26 @@ pub(crate) fn debug_file_symbols(
     }
 }
 
-/// The image's own symbols' names, demangled (Itanium's; Mach-O's less
-/// their `_`).
+/// The image's own symbols' names as their sources name them: demangled,
+/// by whichever scheme mangled each (Microsoft's, Itanium's, Rust's,
+/// Swift's), and C names as they are (Mach-O's less their `_`).
 pub(crate) fn demangled(
     mut symbols: Vec<(u64, u64, String)>,
     image: &hexcavator_image::Image<'_>,
 ) -> Vec<(u64, u64, String)> {
     let macho = image.macho().is_some();
-    let mut d = hexcavator_demangle::itanium::Demangler::new();
-    let mut out = String::new();
+    let mut d = hexcavator_demangle::Demangler::new();
     for s in &mut symbols {
-        let raw = if macho {
-            s.2.strip_prefix('_').unwrap_or(&s.2)
-        } else {
-            &s.2
-        };
-        out.clear();
-        if d.demangle_into(raw, &mut out) {
-            s.2.clone_from(&out);
-        } else if macho {
-            s.2 = raw.to_string();
-        }
+        s.2 = d.source_name(&s.2, hexcavator_demangle::msvc::flags::NO_PTR64, macho);
     }
     symbols
 }
 
-/// A symbol's name demangled (Itanium's, with or without Mach-O's `_`), or
-/// as it is.
+/// A symbol's name demangled, by whichever scheme mangled it, or as it is.
 fn demangle(name: &str) -> String {
-    let mut out = String::new();
-    let mut d = hexcavator_demangle::itanium::Demangler::new();
-    if d.demangle_into(name, &mut out) {
-        return out;
-    }
-    out.clear();
-    if let Some(n) = name.strip_prefix('_')
-        && d.demangle_into(n, &mut out)
-    {
-        return out;
-    }
-    name.to_string()
+    hexcavator_demangle::Demangler::new()
+        .demangle(name, hexcavator_demangle::msvc::flags::NO_PTR64)
+        .unwrap_or_else(|| name.to_string())
 }
 
 /// The entry of `ranges` ((start, end, name), by start) holding `at`.

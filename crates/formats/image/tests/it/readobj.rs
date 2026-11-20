@@ -545,11 +545,7 @@ fn import_slots_of_every_format() {
         let macho = Image::parse(&data).unwrap().import_slots();
         assert_eq!(macho.len(), 1, "{name}: {macho:?}");
         assert_eq!(macho[0].imported, Imported::Name(b"_imported"), "{name}");
-        assert_eq!(
-            macho[0].qualified_name().ends_with("_imported"),
-            true,
-            "{name}"
-        );
+        assert!(macho[0].qualified_name().ends_with("_imported"), "{name}");
     }
 }
 

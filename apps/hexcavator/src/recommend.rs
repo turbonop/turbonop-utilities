@@ -134,20 +134,13 @@ pub(crate) fn with_exports(
     let name = ex.name.map(<[u8]>::to_vec).or(file_name);
     let imports = (!importers.is_empty()).then(|| scan_importers(importers, name.as_deref()));
     let macho = image.macho().is_some();
+    // (By whichever scheme mangled it; a Mach-O C name without its `_`.)
     let demangle = |n: &[u8]| -> String {
-        let raw = String::from_utf8_lossy(n);
-        // (Mach-O's names have a `_` before the mangled name.)
-        let mangled = if macho {
-            raw.strip_prefix('_').unwrap_or(&raw)
-        } else {
-            &raw
-        };
-        let mut out = String::new();
-        if hexcavator_demangle::itanium::Demangler::new().demangle_into(mangled, &mut out) {
-            out
-        } else {
-            mangled.to_string()
-        }
+        hexcavator_demangle::Demangler::new().source_name(
+            &String::from_utf8_lossy(n),
+            hexcavator_demangle::msvc::flags::NO_PTR64,
+            macho,
+        )
     };
     r.recs
         .extend(exports::recommend(&ex, imports.as_ref(), &demangle));

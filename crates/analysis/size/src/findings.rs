@@ -41,12 +41,12 @@ impl DuplicateData {
 
 /// The duplicated variables of an image, most wasteful first: copies of
 /// one file-scope variable, by name, size, and bytes, in several
-/// compilands. Where the debug information records definitions (DWARF),
-/// copies are of one definition (declared at one line of one file: a
-/// header's), and constant: variables that are only alike (a `static int
-/// count` in each of several files) are each its own, and a variable that
-/// isn't `const` is each compiland's own state, which one definition would
-/// share.
+/// compilands, and constant (by its type, as the debug information gives
+/// it: a variable that isn't `const` is each compiland's own state, which
+/// one definition would share). Where the debug information records
+/// definitions (DWARF), copies are of one definition (declared at one line
+/// of one file: a header's): variables that are only alike (a `static int
+/// count` in each of several files) are each its own.
 pub fn duplicate_data(
     image: &Image<'_>,
     debug: &hexcavator_debuginfo::DebugInfo<'_>,
@@ -68,17 +68,27 @@ pub fn duplicate_data(
         }
     }
     groups.retain(|_, members| members.len() > 1);
-    let definitions = if debug.dwarf().is_some() {
-        let wanted: std::collections::HashSet<(u64, u32)> = groups
-            .values()
-            .flatten()
-            .map(|s| (s.addr, s.compiland.expect("filtered")))
-            .collect();
-        Some(debug.variable_definitions(&wanted).unwrap_or_default())
-    } else {
-        None
-    };
+    let wanted: std::collections::HashSet<(u64, u32)> = groups
+        .values()
+        .flatten()
+        .map(|s| (s.addr, s.compiland.expect("filtered")))
+        .collect();
+    // (Of every debug information's: whether each is constant; DWARF's,
+    // where each is declared.)
+    let definitions =
+        (!wanted.is_empty()).then(|| debug.variable_definitions(&wanted).unwrap_or_default());
     let bytes = |s: &Symbol| image.bytes_at(s.addr, s.size.file);
+    // (A PDB's types don't always say `const`, a `static const`'s say
+    // only its type's: one in a section that isn't writable is constant
+    // too.)
+    let writable: Vec<(u64, u64)> = image
+        .sections()
+        .iter()
+        .filter(|s| s.flags.contains(hexcavator_image::SectionFlags::WRITE))
+        .filter_map(|s| Some((s.addr, s.end()?)))
+        .collect();
+    let read_only = |s: &Symbol| !writable.iter().any(|&(a, e)| s.addr >= a && s.addr < e);
+    let pdb = debug.pdb().is_some();
     let mut out = Vec::new();
     for ((name, file, vm), members) in groups {
         // Copies agree byte for byte (some same-named variables, such as
@@ -90,7 +100,8 @@ pub fn duplicate_data(
             let compiland = s.compiland.expect("filtered");
             let declared = match &definitions {
                 Some(defs) => match defs.get(&(s.addr, compiland)) {
-                    Some(d) if d.constant => d.declared.as_ref(),
+                    Some(d) if d.constant || (pdb && read_only(s)) => d.declared.as_ref(),
+                    None if pdb && read_only(s) => None,
                     _ => continue,
                 },
                 None => None,

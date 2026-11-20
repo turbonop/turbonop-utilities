@@ -1385,7 +1385,9 @@ fn sizebench_and_findings_on_every_format() {
     let (ok, stdout, stderr) = hexc(&[elf.as_os_str(), "-sizebench".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(
-        stdout.contains("COMPILAND ...no name found... | program.c size=165"),
+        // (Its code and its data: 165 bytes of .text, 20 of .data and
+        // .rodata, and 4,100 of .bss.)
+        stdout.contains("COMPILAND ...no name found... | program.c size=185 vsize=4285"),
         "{stdout}"
     );
     assert!(!stdout.contains("FILE SIZE"), "{stdout}");

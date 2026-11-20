@@ -187,16 +187,20 @@ mod tests {
         assert!(bss.writable());
         let cus: Vec<&str> = m.compilands.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(cus, ["program.c", "second.c"]);
-        // Every compile unit's code is in .text, charged to it.
+        // Every compile unit's code is in .text, charged to it; its data
+        // in the sections that hold it.
         assert!(!m.pieces.is_empty());
+        assert!(m.pieces.iter().all(|p| p.group == NO_GROUP));
         let text = names.iter().position(|n| *n == ".text").unwrap() as u32;
-        assert!(
-            m.pieces
-                .iter()
-                .all(|p| p.section == text && p.group == NO_GROUP)
-        );
-        let total: u64 = m.pieces.iter().map(|p| p.range.len).sum();
-        assert_eq!(total, 0x70 + 3 + 0x32 + 0x30 + 0x21);
+        let code: u64 = m
+            .pieces
+            .iter()
+            .filter(|p| p.section == text)
+            .map(|p| p.range.len)
+            .sum();
+        assert_eq!(code, 0x70 + 3 + 0x32 + 0x30 + 0x21);
+        let bss_index = names.iter().position(|n| *n == ".bss").unwrap() as u32;
+        assert!(m.pieces.iter().any(|p| p.section == bss_index));
     }
 
     #[test]

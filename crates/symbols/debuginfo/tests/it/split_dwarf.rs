@@ -157,10 +157,17 @@ fn skeletons_alone_are_compilands_named_by_their_files() {
             names,
             [format!("sd{v}-program.dwo"), format!("sd{v}-second.dwo")]
         );
-        // Their code and lines are the skeletons'.
+        // Their code and lines are the skeletons'. (Their data is the
+        // split files' variables: none without them.)
         let plain = testdata(&format!("split-dwarf{v}-plain"));
         let p = DebugInfo::parse(&plain).unwrap();
-        assert_eq!(d.contributions().unwrap(), p.contributions().unwrap());
+        let (skeletons, whole) = (d.contributions().unwrap(), p.contributions().unwrap());
+        assert_eq!(skeletons.len(), 2, "{skeletons:?}");
+        assert!(
+            skeletons.iter().all(|c| whole.contains(c)),
+            "{skeletons:?} {whole:?}"
+        );
+        assert!(whole.len() > skeletons.len());
         assert_eq!(d.source_lines().unwrap(), p.source_lines().unwrap());
         let ids = d.dwarf().unwrap().split_files();
         assert!(

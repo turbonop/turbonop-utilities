@@ -208,3 +208,30 @@ fn wasm_dwarf_serves_the_other_commands() {
         "{out}"
     );
 }
+
+/// A relocatable object's DWARF, with its relocations applied (its string
+/// offsets are their addends, in a RELA object; in place, in a REL one):
+/// every architecture's names read, as llvm-dwarfdump reads them.
+#[test]
+fn objects_relocated() {
+    let elf = root().join("testdata/elf");
+    for arch in [
+        "x86_64-linux-gnu",
+        "aarch64-linux-gnu",
+        "aarch64_be-linux-gnu",
+        "arm-linux-gnueabihf",
+        "armeb-linux-gnueabi",
+        "i386-linux-gnu",
+        "thumb-linux-gnueabihf",
+    ] {
+        let o = elf.join(format!("program-{arch}.o"));
+        let (ok, out, err) = hexc(&["dwarf", "-info", o.to_str().unwrap()]);
+        assert!(ok, "{arch}: {err}");
+        for name in ["program.c", "helper", "compute"] {
+            assert!(
+                out.contains(&format!("DW_AT_name\t(\"{name}\")")),
+                "{arch}: {name}"
+            );
+        }
+    }
+}

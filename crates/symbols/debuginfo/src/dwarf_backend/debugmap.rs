@@ -97,6 +97,15 @@ impl AddrMap {
         }
     }
 
+    /// Every address from `base` on, moved to `base`'s distance from it:
+    /// a PE image's DWARF (whose addresses are virtual) as the image's
+    /// relative ones.
+    pub fn rebased(base: u64) -> Self {
+        Self {
+            pieces: vec![(base, u64::MAX, 0)],
+        }
+    }
+
     /// Whether nothing is mapped.
     pub fn is_empty(&self) -> bool {
         self.pieces.is_empty()

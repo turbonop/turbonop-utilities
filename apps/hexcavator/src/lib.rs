@@ -682,7 +682,14 @@ fn info_json(path: &str) -> serde_json::Value {
         "arch": arch,
         "debug": debug,
         "debugError": debug_error,
-        "tools": tools_for(format, kind, has_debug, has_dwarf, strippable(data)),
+        "tools": tools_for(
+            format,
+            kind,
+            has_debug,
+            has_dwarf,
+            strippable(data),
+            debug.as_ref().is_some_and(|d| d["kind"] == "pdb"),
+        ),
     })
 }
 
@@ -693,14 +700,15 @@ fn strippable(data: &[u8]) -> bool {
 }
 
 /// The tools that apply to a file of `format` and `kind` (with debug
-/// information or not), by the editor's names for them: `stripped` if a
-/// strip would take something from it.
+/// information or not, a PDB or not), by the editor's names for them:
+/// `stripped` if a strip would take something from it.
 fn tools_for(
     format: &str,
     kind: &str,
     debug: bool,
     dwarf: bool,
     stripped: bool,
+    pdb: bool,
 ) -> Vec<&'static str> {
     let mut t = vec!["report", "compare", "info"];
     if stripped {
@@ -748,7 +756,8 @@ fn tools_for(
             "typesDiff",
             "lenses",
         ]);
-        if format == "pe" {
+        // (MSVC's `__annotation`s: a PDB's.)
+        if pdb {
             t.push("annotations");
         }
     }

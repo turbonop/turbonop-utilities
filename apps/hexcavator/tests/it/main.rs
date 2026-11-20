@@ -16,6 +16,7 @@ mod licenses;
 mod lines;
 mod linkmap;
 mod mcp;
+mod mingw;
 mod pdb;
 mod query;
 mod readobj;

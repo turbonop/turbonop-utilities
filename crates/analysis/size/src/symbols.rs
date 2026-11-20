@@ -378,6 +378,11 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         .chain(rsrc_symbols)
         .collect();
     out.sort_by_key(|s| s.addr);
+    // (With DWARF, as MinGW builds an image: its COFF symbols and exports
+    // name what the DWARF doesn't, as a PDB's publics would.)
+    if debug.pdb().is_none() {
+        out = with_image_symbols(image, model, out);
+    }
     Ok(out)
 }
 

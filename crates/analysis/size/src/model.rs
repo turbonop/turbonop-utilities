@@ -17,9 +17,12 @@ use crate::pe::Unsupported;
 use crate::range::Range;
 use crate::{Compiland, Library, Model, NO_GROUP, Piece, Section, Size};
 
-/// The model of `image` with `debug`.
+/// The model of `image` with `debug`: a PE image's with its PDB as
+/// SizeBench has it ([`crate::pe`]); every other's (a PE image's with
+/// DWARF, as MinGW builds one, too) from its sections and its debug
+/// information's contributions.
 pub fn model(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
-    if image.pe().is_some() {
+    if image.pe().is_some() && debug.pdb().is_some() {
         return crate::pe::model(image, debug);
     }
     build(image, debug)
@@ -27,8 +30,16 @@ pub fn model(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
 
 /// Checks that `image` and `debug` can be analyzed together.
 pub fn check(image: &Image<'_>, debug: &DebugInfo<'_>) -> std::result::Result<(), Unsupported> {
-    if image.pe().is_some() {
-        return crate::pe::check(image, debug);
+    if let Some(pe) = image.pe() {
+        if debug.pdb().is_some() {
+            return crate::pe::check(image, debug);
+        }
+        if pe
+            .data_directory(hexcavator_pe::consts::directory::COM_DESCRIPTOR)
+            .is_some()
+        {
+            return Err(Unsupported::Managed);
+        }
     }
     let ids = image.debug_ids();
     // (An image with its own DWARF names no other file; nor need it.)

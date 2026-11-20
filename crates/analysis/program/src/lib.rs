@@ -50,7 +50,9 @@ pub fn find_debug(
         let map = Mmap::open(p).map_err(Error::io(p))?;
         return Ok((p.to_path_buf(), map));
     }
-    if image.pe().is_none() && DebugInfo::parse(image.data()).is_ok() {
+    // (An image with its own DWARF: ELF's, Mach-O's, WebAssembly's, and
+    // a PE image MinGW built. A PE image's own isn't a PDB.)
+    if DebugInfo::parse(image.data()).is_ok() {
         let map = Mmap::open(image_path).map_err(Error::io(image_path))?;
         return Ok((image_path.to_path_buf(), map));
     }

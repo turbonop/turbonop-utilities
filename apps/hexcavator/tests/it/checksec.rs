@@ -182,9 +182,10 @@ fn audit_names_the_objects_built_differently() {
 
 #[test]
 fn not_an_image() {
+    // (A PDB: debug information, no image.)
     let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
         .args(["checksec"])
-        .arg(root().join("testdata/wasm/module.wasm"))
+        .arg(root().join("testdata/types/types.pdb"))
         .output()
         .unwrap();
     assert!(!out.status.success());
@@ -217,4 +218,28 @@ fn audit_of_a_debug_map_names_archives_members() {
         .unwrap();
     assert_eq!(program["library"], "");
     assert_eq!(program["source"], "program.c");
+}
+
+/// A WebAssembly module's: what a native image's mitigations guard is its
+/// runtime's (not applicable); its stack canaries (its stack is in its
+/// memory), its exported memory, and the features it was built for.
+#[test]
+fn wasm() {
+    let v = checks("testdata/wasm/startup.wasm");
+    assert_eq!(v["format"], "wasm");
+    assert_eq!(state(&v, "Isolated code"), "n/a");
+    assert_eq!(state(&v, "Stack canaries"), "off");
+    let features = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "Features")
+        .unwrap();
+    assert!(
+        features["detail"]
+            .as_str()
+            .unwrap()
+            .contains("+bulk-memory"),
+        "{features}"
+    );
 }

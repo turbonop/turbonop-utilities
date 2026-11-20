@@ -729,13 +729,14 @@ fn tools_for(
     }
     if kind == "linked" && ["pe", "elf", "macho", "wasm"].contains(&format) {
         t.push("deps");
-    }
-    if kind == "linked" && ["pe", "elf", "macho"].contains(&format) {
-        t.push("relocations");
         t.push("checksec");
         if debug {
             t.push("audit");
         }
+    }
+    // (A WebAssembly module's references are by index: it has none.)
+    if kind == "linked" && ["pe", "elf", "macho"].contains(&format) {
+        t.push("relocations");
     }
     if kind == "linked" && debug && ["pe", "elf", "macho", "wasm"].contains(&format) {
         t.push("init");

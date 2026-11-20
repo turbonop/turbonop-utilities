@@ -185,7 +185,12 @@ fn check(path: &str, o: &Options) -> Result<Report, String> {
         hexcavator_image::Image::Pe(pe) => ("pe", pe_checks(pe)),
         hexcavator_image::Image::Elf(elf) => ("elf", elf_checks(elf)),
         hexcavator_image::Image::MachO(m) => ("macho", macho_checks(m)),
-        _ => return Err(format!("{path}: checksec reads PE, ELF, and Mach-O images")),
+        hexcavator_image::Image::Wasm(m) => ("wasm", wasm_checks(m)),
+        _ => {
+            return Err(format!(
+                "{path}: checksec reads PE, ELF, Mach-O, and WebAssembly images"
+            ));
+        }
     };
     let (builds, linker, audit_note) = if o.audit {
         match audit(path, &image, o.pdb.as_deref()) {
@@ -203,6 +208,105 @@ fn check(path: &str, o: &Options) -> Result<Report, String> {
         linker,
         audit_note,
     })
+}
+
+// -------------------------------------------------------------- WebAssembly
+
+/// A WebAssembly module's: its runtime isolates it (its code can't be
+/// written or jumped into, its calls are checked by type), so what a
+/// native image's mitigations guard is the runtime's to; what's left is
+/// within its linear memory: stack canaries (its shadow stack is in
+/// memory), whether it gives its memory to its host, and the features it
+/// was built for.
+fn wasm_checks(m: &hexcavator_wasm::Module<'_>) -> Vec<Check> {
+    let mut out = Vec::new();
+    out.push(c(
+        "Isolated code",
+        State::NotApplicable,
+        "the runtime's: a module's code isn't in its memory, and its indirect calls are checked by type",
+    ));
+    // Its names: the module's name section's, imports', and exports'.
+    let names: Vec<Vec<u8>> = m
+        .names(hexcavator_wasm::NAME_FUNCTION)
+        .into_iter()
+        .map(|n| n.name.to_vec())
+        .chain(m.imports().into_iter().map(|i| i.field.to_vec()))
+        .collect();
+    let named = |n: &[u8]| names.iter().any(|x| x == n);
+    let canary = named(b"__stack_chk_fail") || named(b"__stack_chk_guard");
+    out.push(c(
+        "Stack canaries",
+        on_off(canary),
+        if canary {
+            "calls __stack_chk_fail (its stack is in linear memory)"
+        } else if names.is_empty() {
+            "no names to tell by (no name section)"
+        } else {
+            "no __stack_chk_fail (its stack is in linear memory)"
+        },
+    ));
+    // (Kind 2: a memory.)
+    let exported: Vec<String> = m
+        .exports()
+        .iter()
+        .filter(|e| e.kind == 2)
+        .map(|e| String::from_utf8_lossy(e.name).into_owned())
+        .collect();
+    out.push(c(
+        "Memory exported",
+        State::Info,
+        if exported.is_empty() {
+            "no: the host sees its memory only as its exports pass it".to_string()
+        } else {
+            format!(
+                "yes ({}): the host reads and writes all of it",
+                exported.join(", ")
+            )
+        },
+    ));
+    out.push(c(
+        "Memory",
+        State::Info,
+        if m.is_memory64() { "64-bit" } else { "32-bit" },
+    ));
+    // The features it was built for (wasm-ld's target_features section).
+    if let Some(features) = target_features(m) {
+        out.push(c("Features", State::Info, features.join(", ")));
+    }
+    out
+}
+
+/// A module's `target_features` section: each feature it uses (`+`) or
+/// mustn't (`-`), as wasm-ld records them.
+fn target_features(m: &hexcavator_wasm::Module<'_>) -> Option<Vec<String>> {
+    let s = m.custom(b"target_features")?;
+    let start = usize::try_from(s.data_offset).ok()?;
+    let end = usize::try_from(s.contents_offset + s.contents_size).ok()?;
+    let data = m.data().get(start..end)?;
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    let uleb = |at: &mut usize| -> Option<u64> {
+        let mut v = 0u64;
+        for shift in (0..64).step_by(7) {
+            let b = *data.get(*at)?;
+            *at += 1;
+            v |= u64::from(b & 0x7F) << shift;
+            if b & 0x80 == 0 {
+                return Some(v);
+            }
+        }
+        None
+    };
+    let count = uleb(&mut at)?;
+    for _ in 0..count.min(256) {
+        let prefix = *data.get(at)? as char;
+        at += 1;
+        let len = usize::try_from(uleb(&mut at)?).ok()?;
+        let name = data.get(at..at.checked_add(len)?)?;
+        at += len;
+        out.push(format!("{prefix}{}", String::from_utf8_lossy(name)));
+    }
+    Some(out)
 }
 
 fn c(name: &'static str, state: State, detail: impl Into<String>) -> Check {

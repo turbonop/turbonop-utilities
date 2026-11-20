@@ -1067,16 +1067,53 @@ impl<'data> DebugInfo<'data> {
     }
 
     /// The definitions of the variables at `wanted`'s (address,
-    /// compiland) pairs, where the debug information records them
-    /// (DWARF's; a PDB's records neither).
+    /// compiland) pairs: whether each is constant, and (DWARF's) where it
+    /// is declared. (A PDB records no declarations: its variables' types
+    /// say which are constant.)
     pub fn variable_definitions(
         &self,
         wanted: &std::collections::HashSet<(u64, u32)>,
     ) -> Result<std::collections::HashMap<(u64, u32), VariableDefinition>> {
         match self {
-            DebugInfo::Pdb(_) => Ok(Default::default()),
+            DebugInfo::Pdb(_) => {
+                let mut out = std::collections::HashMap::new();
+                for s in self.symbols()? {
+                    let Some(c) = s.compiland else { continue };
+                    if s.kind != SymbolKind::Data || !wanted.contains(&(s.addr, c)) {
+                        continue;
+                    }
+                    out.insert(
+                        (s.addr, c),
+                        VariableDefinition {
+                            declared: None,
+                            constant: self.is_const(TypeRef(s.type_index)),
+                        },
+                    );
+                }
+                Ok(out)
+            }
             DebugInfo::Dwarf(d) => d.variable_definitions(wanted),
         }
+    }
+
+    /// Whether type `ty` is `const` (an array's, if its elements are),
+    /// through qualifiers (a PDB has no typedefs in types).
+    fn is_const(&self, ty: TypeRef) -> bool {
+        let mut ty = ty;
+        // (A few levels: typedefs and arrays of arrays.)
+        for _ in 0..16 {
+            match self.type_shape(ty) {
+                TypeShape::Modified { qualifiers, base } => {
+                    if qualifiers.is_const {
+                        return true;
+                    }
+                    ty = base;
+                }
+                TypeShape::Array { element, .. } => ty = element,
+                _ => return false,
+            }
+        }
+        false
     }
 
     /// Every class definition, with its direct bases and its methods.

@@ -330,11 +330,18 @@ fn split_args(command: &str) -> Vec<String> {
     out
 }
 
-/// Whether `library` is one of the toolset's or the SDK's (its objects
-/// can't be rebuilt with other options).
+/// Whether `library` (a library, or an object or source file) is one of
+/// the toolset's, the system's, or the SDK's: its objects aren't rebuilt
+/// with other options. MSVC's and the Windows SDK's; a Unix system's C
+/// library and startup files, the compiler's runtime (libgcc,
+/// compiler-rt) and C++ library (libstdc++, libc++), Apple's SDK, and
+/// Rust's standard library, by their libraries' names or their sources'
+/// paths (as DWARF names them).
 fn system_library(library: &str) -> bool {
-    let lower = library.to_ascii_lowercase().replace('/', "\\");
-    let file = lower.rsplit('\\').next().unwrap_or(&lower);
+    let lower = library.to_ascii_lowercase().replace('\\', "/");
+    let file = lower.rsplit('/').next().unwrap_or(&lower);
+    // (A library member, `libc.a(printf.o)`: the library's.)
+    let file = file.split('(').next().unwrap_or(file);
     const NAMES: [&str; 14] = [
         "msvcrt.lib",
         "msvcrtd.lib",
@@ -351,11 +358,55 @@ fn system_library(library: &str) -> bool {
         "msvcprt.lib",
         "libcpmt.lib",
     ];
+    // A Unix system's: startup files, and libraries by their names' stems.
+    const STARTUP: [&str; 10] = [
+        "crt1.o",
+        "scrt1.o",
+        "rcrt1.o",
+        "gcrt1.o",
+        "crti.o",
+        "crtn.o",
+        "crtbegin.o",
+        "crtend.o",
+        "crtbegins.o",
+        "crtends.o",
+    ];
+    const LIBRARIES: [&str; 18] = [
+        "libc",
+        "libm",
+        "libpthread",
+        "libdl",
+        "librt",
+        "libc_nonshared",
+        "libgcc",
+        "libgcc_eh",
+        "libgcc_s",
+        "libstdc++",
+        "libsupc++",
+        "libc++",
+        "libc++abi",
+        "libunwind",
+        "libcompiler_rt",
+        "libssp_nonshared",
+        "libatomic",
+        "libsystem",
+    ];
+    let stem = file.split('.').next().unwrap_or(file);
     NAMES.contains(&file)
-        || lower.contains("\\microsoft visual studio\\")
-        || lower.contains("\\windows kits\\")
-        || lower.contains("\\vctools\\")
+        || STARTUP.contains(&file)
+        || LIBRARIES.contains(&stem)
+        || stem.starts_with("libclang_rt")
+        || lower.contains("/microsoft visual studio/")
+        || lower.contains("/windows kits/")
+        || lower.contains("/vctools/")
         || lower.starts_with("import:")
+        // Sources' paths: glibc's (sysdeps/, csu/), musl's, compiler-rt's,
+        // libc++'s, libstdc++'s, Apple's SDK's, Rust's library (/rustc/).
+        || ["/sysdeps/", "/csu/", "/musl/", "/compiler-rt/", "/libcxx/", "/libcxxabi/", "/libstdc++-v3/", "/libgcc/", "/rustc/", "/rustlib/", "/com.apple.xbs/", ".sdk/usr/"]
+            .iter()
+            .any(|p| lower.contains(p))
+        || lower.starts_with("sysdeps/")
+        || lower.starts_with("csu/")
 }
 
 /// How many examples a recommendation lists.
@@ -1343,5 +1394,25 @@ mod tests {
         assert!(system_library("Import:KERNEL32.dll"));
         assert!(!system_library(r"C:\src\app\build\mylib.lib"));
         assert!(!system_library(r"C:\src\app\dead.obj"));
+        // A Unix system's, and Apple's, and Rust's.
+        assert!(system_library("/usr/lib/x86_64-linux-gnu/libc.a"));
+        assert!(system_library("libc.a(printf.o)"));
+        assert!(system_library(
+            "/usr/lib/gcc/x86_64-linux-gnu/13/crtbegin.o"
+        ));
+        assert!(system_library("libstdc++.a"));
+        assert!(system_library("libclang_rt.builtins-x86_64.a"));
+        assert!(system_library("../sysdeps/x86_64/start.S"));
+        assert!(system_library("/build/glibc-xyz/csu/init-first.c"));
+        assert!(system_library(
+            "/llvm-project/compiler-rt/lib/builtins/udivti3.c"
+        ));
+        assert!(system_library("/rustc/abc123/library/core/src/fmt/mod.rs"));
+        assert!(system_library(
+            "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/stdio.h"
+        ));
+        assert!(!system_library("/home/user/src/app/libapp.a"));
+        assert!(!system_library("./funcs.c"));
+        assert!(!system_library("libcrypto.a"));
     }
 }

@@ -1839,3 +1839,36 @@ fn crates_source() {
     // Listed, and named so by -list-sources.
     assert!(run(&["-list-sources"]).contains("crates"));
 }
+
+/// -disassemble -json on ELF and Mach-O: each instruction's source line,
+/// and the function's parameters and locals, from its DWARF, as a PE
+/// image's are from its PDB.
+#[test]
+fn disassembly_with_debug_information_of_every_format() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts");
+    for image in ["funcs-plain", "macho-plain"] {
+        let (ok, stdout, stderr) = hexc(&[
+            dir.join(image).as_os_str(),
+            "-disassemble".as_ref(),
+            "add_a".as_ref(),
+            "-json".as_ref(),
+        ]);
+        assert!(ok, "{image}: {stderr}");
+        let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert!(
+            v["files"][0].as_str().unwrap().ends_with("funcs.c"),
+            "{image}: {v}"
+        );
+        assert!(v["lines"][0]["source"].is_array(), "{image}: {v}");
+        let vars: Vec<&str> = v["variables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["name"].as_str().unwrap())
+            .collect();
+        assert!(
+            vars.contains(&"x") && vars.contains(&"y"),
+            "{image}: {vars:?}"
+        );
+    }
+}

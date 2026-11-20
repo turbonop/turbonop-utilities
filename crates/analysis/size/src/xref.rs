@@ -47,6 +47,11 @@ pub enum Root {
     Initializers(String),
     /// Data the loader reads, by what it is.
     LoaderData(&'static str),
+    /// What the linker keeps whatever reaches it, and why: a section it
+    /// must not strip (Mach-O's `S_ATTR_NO_DEAD_STRIP`), one `__start_`
+    /// and `__stop_` symbols enumerate (ELF's), or a runtime's list
+    /// (Objective-C's classes, Swift's types).
+    Kept(String),
 }
 
 impl std::fmt::Display for Root {
@@ -57,6 +62,7 @@ impl std::fmt::Display for Root {
             Root::Directory(name) => write!(f, "the {name} directory"),
             Root::Initializers(group) => write!(f, "the initializers in {group}"),
             Root::LoaderData(what) => write!(f, "{what}, which the loader reads"),
+            Root::Kept(why) => f.write_str(why),
         }
     }
 }
@@ -880,6 +886,36 @@ pub fn macho(
             String::from_utf8_lossy(s.sectname)
         );
         let (start, end) = (s.addr, s.addr.saturating_add(s.size));
+        // What -dead_strip keeps whatever reaches it: a section marked
+        // so, and the lists the Objective-C and Swift runtimes read (and
+        // what they point to).
+        if let Some(why) = macho_kept(s.sectname, s.flags) {
+            let why = format!("{why} ({name})");
+            for n in within(&b, start, end) {
+                roots.push((n, Root::Kept(why.clone())));
+            }
+            if s.sectname.starts_with(b"__objc_") {
+                let i = slots.partition_point(|p| p.addr < start);
+                for p in slots[i..].iter().take_while(|p| p.addr < end) {
+                    if let Some(n) = p.target.and_then(|t| b.node_at(t)) {
+                        roots.push((n, Root::Kept(why.clone())));
+                    }
+                }
+            } else if s.sectname.starts_with(b"__swift5_") {
+                // (Arrays of 32-bit offsets from each entry, the low bits
+                // of a type's its kind.)
+                let bytes = file_bytes(image, start, s.size);
+                for (i, w) in bytes.as_chunks::<4>().0.iter().enumerate().take(1 << 20) {
+                    let off = i64::from(i32::from_le_bytes(*w));
+                    let at = start + 4 * i as u64;
+                    let to = at.wrapping_add_signed(off) & !3;
+                    if let Some(n) = b.node_at(to) {
+                        roots.push((n, Root::Kept(why.clone())));
+                    }
+                }
+            }
+            continue;
+        }
         match s.kind() {
             S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS => {
                 let i = slots.partition_point(|p| p.addr < start);
@@ -915,6 +951,37 @@ pub fn macho(
     let mut x = finish(b, &infos, roots, debug, arch, Linker::MachO, |_| true)?;
     units_of_data(&mut x, symbols, |_| true);
     Ok(x)
+}
+
+/// Why ld64 keeps a Mach-O section whatever reaches it, if it does: it's
+/// marked `S_ATTR_NO_DEAD_STRIP`, or the Objective-C runtime enumerates
+/// it (its classes, categories, and protocols), or Swift's (its types,
+/// protocols, conformances, and dynamic replacements).
+fn macho_kept(sectname: &[u8], flags: u32) -> Option<&'static str> {
+    use hexcavator_macho::consts::S_ATTR_NO_DEAD_STRIP;
+    let kept = match sectname {
+        b"__objc_classlist" | b"__objc_nlclslist" => {
+            Some("an Objective-C class, which the runtime registers from its list")
+        }
+        b"__objc_catlist" | b"__objc_catlist2" | b"__objc_nlcatlist" => {
+            Some("an Objective-C category, which the runtime attaches from its list")
+        }
+        b"__objc_protolist" => Some("an Objective-C protocol, which the runtime registers"),
+        b"__swift5_types" | b"__swift5_types2" => {
+            Some("a Swift type, which the runtime finds by its list")
+        }
+        b"__swift5_protos" => Some("a Swift protocol, which the runtime finds by its list"),
+        b"__swift5_proto" => Some("a Swift conformance, which the runtime finds by its list"),
+        b"__swift5_replace" | b"__swift5_replac2" => {
+            Some("a Swift dynamic replacement, which the runtime applies")
+        }
+        b"__swift5_acfuncs" => Some("a Swift accessible function, which the runtime finds"),
+        _ => None,
+    };
+    kept.or_else(|| {
+        (flags & S_ATTR_NO_DEAD_STRIP != 0)
+            .then_some("in a section -dead_strip keeps (S_ATTR_NO_DEAD_STRIP)")
+    })
 }
 
 /// The cross-reference graph of a WebAssembly module, from its symbols
@@ -1141,6 +1208,27 @@ pub fn elf(
     for p in file.segments().filter(|p| p.kind == PT_TLS) {
         for n in within(&b, p.vaddr, p.vaddr.saturating_add(p.memsz)) {
             roots.push((n, Root::LoaderData("thread-local data")));
+        }
+    }
+    // What --gc-sections keeps whatever reaches it: sections named as C
+    // identifiers that `__start_` and `__stop_` symbols enumerate (lld's
+    // and GNU ld's default; -z start-stop-gc collects them instead). (Not
+    // by SHF_GNU_RETAIN, `__attribute__((retain))`: the linker marks the
+    // whole output section, `.text` say, if one input section had it.)
+    let starts_of: std::collections::HashSet<Vec<u8>> = file
+        .sections()
+        .filter(|s| s.kind == SHT_SYMTAB || s.kind == SHT_DYNSYM)
+        .flat_map(|t| file.symbols(&t))
+        .filter_map(|s| s.name.strip_prefix(b"__start_").map(<[u8]>::to_vec))
+        .collect();
+    for s in file.sections().filter(|s| s.is_alloc() && s.size > 0) {
+        let name = String::from_utf8_lossy(s.name).into_owned();
+        if !starts_of.contains(s.name) {
+            continue;
+        }
+        let why = format!("in {name}, which __start_{name} and __stop_{name} enumerate");
+        for n in within(&b, s.addr, s.addr + s.size) {
+            roots.push((n, Root::Kept(why.clone())));
         }
     }
     // A function's code is a section of its own, which the linker can drop

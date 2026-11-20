@@ -66,3 +66,49 @@ fn pdb_matches_snapshot() {
     let problems = compare("test-x64", &expected, &actual);
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
+
+/// `hexc pdb` of an image: its PDB, found as every command finds it; and
+/// `-lookup <address>`, an address relative to the image (as `hexc dwarf
+/// -lookup` takes one), and `-addr`'s `section:offset` alike.
+#[test]
+fn of_an_image_and_by_address() {
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .arg("pdb")
+            .args(args)
+            .output()
+            .unwrap();
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    let exe = root().join("testdata/xref/xref-x64.exe");
+    let exe = exe.to_str().unwrap();
+    let (code, by_image, err) = run(&["-summary", exe]);
+    assert_eq!(code, Some(0), "{err}");
+    let pdb = root().join("testdata/xref/xref-x64.pdb");
+    let (_, by_pdb, _) = run(&["-summary", pdb.to_str().unwrap()]);
+    assert_eq!(by_image, by_pdb);
+    // inner(int), at RVA 0x1160: section 1, offset 0x160.
+    let (code, out, err) = run(&["-lookup", "0x1160", exe]);
+    assert_eq!(code, Some(0), "{err}");
+    assert!(
+        out.contains("Address 0001:00000160") && out.contains("?inner@@YAHH@Z"),
+        "{out}"
+    );
+    let (_, by_addr, _) = run(&["-addr", "1:160", exe]);
+    assert_eq!(out, by_addr);
+    // Bad addresses are errors, not ignored; an image with DWARF isn't a
+    // PDB's.
+    let (code, _, err) = run(&["-addr", "zz", exe]);
+    assert_eq!(code, Some(2), "{err}");
+    let elf = root().join("testdata/linkopts/funcs-plain");
+    let (code, _, err) = run(&[elf.to_str().unwrap()]);
+    assert_eq!(code, Some(1));
+    assert!(
+        err.contains("isn't a PDB (hexc dwarf reads DWARF)"),
+        "{err}"
+    );
+}

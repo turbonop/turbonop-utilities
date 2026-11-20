@@ -21,7 +21,7 @@ initializer). Without -why, -refs, -unreachable, -vtables, -identical, or
 a base image: a summary.
 
 options:
-  -pdb <path>      its debug information: a PDB, or a file with its DWARF
+  -debug <path>    its debug information: a PDB, or a file with its DWARF
                    (or -debug; default: its own, or the one it names)
   -why <name>      the chain from a root to the function or datum, or that
                    none reaches it
@@ -35,7 +35,7 @@ options:
   -- <base image>  the functions compared with a base build's: by name the
                    same or changed, then by fingerprint renamed (the same
                    code, another name), and the rest added or removed
-  -base-pdb <path> the base image's PDB
+  -base-debug <path>  the base image's debug information (or -base-pdb)
   -n <n>           rows to list (default 20; 0: all)
   -json            as JSON
 names are as the PDB gives them (`Square::area() const`), or without the
@@ -91,7 +91,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             Some("unreachable") => o.unreachable = true,
             Some("vtables") => o.vtables = true,
             Some("identical") => o.identical = true,
-            Some("base-pdb") => o.base_pdb = Some(value("base-pdb")?.into()),
+            Some("base-pdb" | "base-debug") => o.base_pdb = Some(value("base-debug")?.into()),
             Some("n") => {
                 o.rows = value("n")?
                     .parse()

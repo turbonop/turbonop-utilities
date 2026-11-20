@@ -54,7 +54,7 @@ commands:
   licenses                   the licenses of Hexcavator and of the code it includes
   linkerlog [options] <log>  the linker's /VERBOSE output: why each library member was linked
   mcp                        serve size, symbol, and reference tools to AI agents (MCP, stdio)
-  pdb [options] <file.pdb>   dump a PDB (see `hexc pdb` for options)
+  pdb [options] <file>       dump a PDB, or an image's (see `hexc pdb` for options)
   query <image> <query>      the image's symbols, filtered, grouped, and sorted
   recommend <image>          build changes that would make the image smaller, measured
   relocations <image>        what the loader patches, by type, section, data, and target
@@ -80,7 +80,10 @@ options:
                              (arm64, x86_64, ...; default: this machine's, else
                              the first)
 
-Debug information is looked for beside the image, then in the symbol
+Every command reads any format (PE, ELF, Mach-O, WebAssembly) with its
+debug information (a PDB, or DWARF: in the image, a separate debug file, a
+dSYM), which -debug <path> gives (-pdb is another name for it). Debug
+information is otherwise looked for beside the image, then in the symbol
 directories (HEXC_SYMBOL_PATH; _NT_SYMBOL_PATH's local directories and
 caches; debuginfod's cache), then on symbol servers, if given (nothing is
 asked of a server otherwise; files are fetched with curl):
@@ -762,6 +765,10 @@ fn tools_for(
         if pdb {
             t.push("annotations");
         }
+    }
+    // Its debug information's dump: a PDB's, or DWARF's.
+    if pdb {
+        t.push("pdb");
     }
     if dwarf {
         t.push("dwarf");

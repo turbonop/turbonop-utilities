@@ -21,7 +21,7 @@ functions inlined into it, and a function folded with others (identical
 code folding) counts once.
 
 options:
-  -pdb <path>       its debug information: a PDB, or a file with its DWARF
+  -debug <path>     its debug information: a PDB, or a file with its DWARF
                     (or -debug; default: its own, or the one it names)
   -inlinee <name>   one inlined function's copies, by the function each is in
                     (its name, or a regular expression that matches just one)
@@ -36,7 +36,7 @@ information's line tables: a PDB's, or DWARF's): headers too, for the functions 
 inlined (inlined code counts where it was inlined).
 
 options:
-  -pdb <path>     its debug information: a PDB, or a file with its DWARF
+  -debug <path>   its debug information: a PDB, or a file with its DWARF
                   (or -debug; default: its own, or the one it names)
   -file <name>    one file's code, by line (its path, or a regular expression
                   that matches just one)
@@ -440,7 +440,7 @@ there, and whether they are in an inlined copy of a function (or annotate
 a call to one). They take no space in the image.
 
 options:
-  -pdb <path>   its debug information: a PDB, or a file with its DWARF
+  -debug <path> its debug information: a PDB, or a file with its DWARF
                 (or -debug; default: its own, or the one it names)
   -json         as JSON";
 

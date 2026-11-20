@@ -30,7 +30,7 @@ options:
   -audit         also the compilers and options its objects were built with
                  (from the PDB's records, or DWARF's DW_AT_producer), and the
                  objects built differently from the rest
-  -pdb <path>    its debug information (for -audit; or -debug)
+  -debug <path>  its debug information (for -audit; or -pdb)
   -json          as JSON";
 
 #[derive(Default)]

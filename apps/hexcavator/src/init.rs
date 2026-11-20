@@ -34,7 +34,7 @@ options:
                    (its \"calls\", as -callees gives them)
   -callees <node>  (with -json) what the function node <node> calls, for an
                    editor's tree
-  -pdb <path>      its debug information: a PDB, or a file with its DWARF";
+  -debug <path>    its debug information: a PDB, or a file with its DWARF";
 
 struct Options {
     image: Option<String>,

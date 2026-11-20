@@ -21,7 +21,7 @@ vbptr, member (bitfields by bit), and hole. With a base: the types whose
 layout changed, and those added or removed.
 
 options:
-  -pdb <path>      the image's debug information: its PDB, or a file with
+  -debug <path>    the image's debug information: its PDB, or a file with
                    its DWARF (default: the one it names, or its own)
   -layout <name>   one type's layout (its name, or a regular expression that
                    matches just one)

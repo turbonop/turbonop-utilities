@@ -41,7 +41,7 @@ options:
   -return          addresses are return addresses: where the call before
                    each is (the address less one, looked up)
   -input <file>    the text to read, instead of standard input
-  -pdb <path>      the (first) image's debug information: a PDB, or a file
+  -debug <path>    the (first) image's debug information: a PDB, or a file
                    with its DWARF (or -debug; default: its own, or the one
                    it names)
   -json            each address and its frames as JSON";

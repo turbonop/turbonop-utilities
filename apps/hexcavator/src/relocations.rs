@@ -21,7 +21,7 @@ information's symbols, or else the image's own symbol table), and by
 what each points to.
 
 options:
-  -pdb <path>   its debug information: a PDB, or a file with its DWARF
+  -debug <path> its debug information: a PDB, or a file with its DWARF
                 (or -debug; default: its own, or the one it names)
   -n <n>        rows of each list (default 20; 0: all)
   -list         every relocation: where, its type, and what it points to

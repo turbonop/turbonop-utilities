@@ -80,7 +80,8 @@ pub(crate) fn sections<'data>(pe: &PeFile<'data>) -> Vec<Section<'data>> {
 }
 
 pub(crate) fn debug_ids<'data>(pe: &PeFile<'data>) -> Vec<DebugId<'data>> {
-    pe.debug_entries()
+    let mut out: Vec<DebugId<'data>> = pe
+        .debug_entries()
         .filter_map(|e| match e.codeview()? {
             CodeView::Rsds { guid, age, path } => Some(DebugId::Pdb { guid, age, path }),
             CodeView::Nb10 {
@@ -96,7 +97,33 @@ pub(crate) fn debug_ids<'data>(pe: &PeFile<'data>) -> Vec<DebugId<'data>> {
             // (Other forms, and forms yet to come, name no PDB.)
             _ => None,
         })
-        .collect()
+        .collect();
+    // A MinGW image's separate DWARF, as `objcopy --add-gnu-debuglink`
+    // names it: the file's name, NUL-padded to 4 bytes, and its CRC-32.
+    if let Some(link) = gnu_debuglink(pe) {
+        out.push(link);
+    }
+    out
+}
+
+/// A `.gnu_debuglink` section's file and CRC.
+fn gnu_debuglink<'data>(pe: &PeFile<'data>) -> Option<DebugId<'data>> {
+    let s = pe
+        .sections()
+        .iter()
+        .find(|s| pe.section_name(s) == b".gnu_debuglink")?;
+    let at = usize::try_from(s.pointer_to_raw_data.get()).ok()?;
+    let size = s.virtual_size.get().min(s.size_of_raw_data.get());
+    let bytes = pe
+        .data()
+        .get(at..at.checked_add(usize::try_from(size).ok()?)?)?;
+    let nul = bytes.iter().position(|&b| b == 0)?;
+    let crc_at = (nul + 1).next_multiple_of(4);
+    let crc = bytes.get(crc_at..crc_at + 4)?;
+    (nul > 0).then(|| DebugId::DebugLink {
+        path: &bytes[..nul],
+        crc: Some(u32::from_le_bytes([crc[0], crc[1], crc[2], crc[3]])),
+    })
 }
 
 pub(crate) fn pointer_slots(pe: &PeFile<'_>) -> Vec<crate::PointerSlot> {

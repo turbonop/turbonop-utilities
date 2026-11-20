@@ -515,9 +515,23 @@ pub fn pe(
         }
     }
 
-    finish(b, &infos, roots, debug, arch, Linker::Msvc, |c| {
-        c.characteristics & LNK_COMDAT != 0
-    })
+    if debug.pdb().is_some() {
+        return finish(b, &infos, roots, debug, arch, Linker::Msvc, |c| {
+            c.characteristics & LNK_COMDAT != 0
+        });
+    }
+    // With DWARF, MinGW's linkers (GNU ld, and lld's MinGW driver) link
+    // as ELF linkers do: a function's code is a section of its own if its
+    // object was compiled with -ffunction-sections, dropped by
+    // --gc-sections when nothing refers to it.
+    let compiled = crate::compiled::Compiled::of(debug);
+    let mut x = finish(b, &infos, roots, debug, arch, Linker::Elf, |c| {
+        compiled.function_sections(c.compiland) != Some(false)
+    })?;
+    units_of_data(&mut x, symbols, |c| {
+        compiled.data_sections(c) != Some(false)
+    });
+    Ok(x)
 }
 
 /// What the graph says of each node, while it is built.

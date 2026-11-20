@@ -114,6 +114,9 @@ pub struct DwarfInfo<'data> {
     functions: OnceCell<HashMap<u64, Vec<TypeRef>>>,
     /// The split files added (file 1 is the first).
     splits: Vec<Split<'data>>,
+    /// Where this file's own addresses are in the image, if they aren't
+    /// its (a PE image's: virtual, the image's relative).
+    rebase: Option<AddrMap>,
     /// How many more ranges [`DwarfInfo::ranges`] may give (see
     /// [`RANGES_PER_BYTE`]).
     ranges_left: Cell<u64>,
@@ -340,8 +343,14 @@ fn debug_sections<'d>(image: &Image<'d>) -> Vec<(&'d [u8], Cow<'d, [u8]>)> {
         else {
             continue;
         };
-        let (Ok(at), Ok(len)) = (usize::try_from(s.file_offset), usize::try_from(s.file_size))
-        else {
+        // (A PE section's file size is padded to the file alignment: its
+        // contents are its memory size's.)
+        let size = if image.pe().is_some() && s.vm_size > 0 {
+            s.file_size.min(s.vm_size)
+        } else {
+            s.file_size
+        };
+        let (Ok(at), Ok(len)) = (usize::try_from(s.file_offset), usize::try_from(size)) else {
             continue;
         };
         let Some(bytes) = data.get(at..at.saturating_add(len)) else {
@@ -366,16 +375,29 @@ impl<'data> DwarfInfo<'data> {
         if !sections.iter().any(|(n, _)| *n == b"info") {
             return Err(Error::new(ErrorKind::BadMagic, 0, "DWARF (no .debug_info)"));
         }
+        // (A PE image's, MinGW's: its CodeView record's GUID and age, which
+        // lld writes from its build ID, and which a separate debug file
+        // made from it keeps.)
         let ids = image
             .debug_ids()
             .into_iter()
-            .filter(|id| matches!(id, DebugId::BuildId(_) | DebugId::Uuid(_)))
+            .filter(|id| {
+                matches!(
+                    id,
+                    DebugId::BuildId(_) | DebugId::Uuid(_) | DebugId::Pdb { .. }
+                )
+            })
             .collect();
+        // A PE image's DWARF has virtual addresses; the image's are
+        // relative to its base.
+        let linked = !matches!(image.kind(), Kind::Object);
+        let rebase = (image.pe().is_some() && linked && image.image_base() != 0)
+            .then(|| AddrMap::rebased(image.image_base()));
         Ok(Self {
             data,
             endian: image.endian(),
             arch: image.arch(),
-            linked: !matches!(image.kind(), Kind::Object),
+            linked,
             ids,
             ranges_left: Cell::new(ranges_budget(data.len(), &sections)),
             sections,
@@ -383,6 +405,7 @@ impl<'data> DwarfInfo<'data> {
             parents: OnceCell::new(),
             functions: OnceCell::new(),
             splits: Vec::new(),
+            rebase,
         })
     }
 
@@ -512,6 +535,7 @@ impl<'data> DwarfInfo<'data> {
             parents: OnceCell::new(),
             functions: OnceCell::new(),
             splits: Vec::new(),
+            rebase: None,
         })
     }
 
@@ -565,16 +589,19 @@ impl<'data> DwarfInfo<'data> {
         Ok(())
     }
 
-    /// Where file `file`'s addresses are in the image, if it is an object
-    /// file of a debug map.
+    /// Where file `file`'s addresses are in the image, if they aren't the
+    /// image's: an object file's of a debug map, or (file 0) a PE image's
+    /// own (virtual addresses, the image's relative to its base).
     fn object_map(&self, file: u32) -> Option<&AddrMap> {
-        let i = usize::try_from(file.checked_sub(1)?).ok()?;
-        self.splits.get(i)?.map.as_ref()
+        let Some(i) = file.checked_sub(1) else {
+            return self.rebase.as_ref();
+        };
+        self.splits.get(usize::try_from(i).ok()?)?.map.as_ref()
     }
 
     /// Whether file `file` is an object file of a debug map.
     fn is_object(&self, file: u32) -> bool {
-        self.object_map(file).is_some()
+        file != 0 && self.object_map(file).is_some()
     }
 
     /// File `file`'s address `addr`, as the image has it (`None` if it
@@ -669,6 +696,9 @@ impl<'data> DwarfInfo<'data> {
                 .ids
                 .iter()
                 .any(|i| matches!(i, DebugId::Uuid(have) if *have == want)),
+            DebugId::Pdb { guid, age, .. } => self.ids.iter().any(
+                |i| matches!(i, DebugId::Pdb { guid: g, age: a, .. } if *g == guid && *a == age),
+            ),
             DebugId::DebugLink { crc: Some(crc), .. } => crc32(self.data) == crc,
             // (WebAssembly's link names a file, and gives nothing to check.)
             DebugId::DebugLink { crc: None, .. } => true,

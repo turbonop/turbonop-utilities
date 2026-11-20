@@ -27,12 +27,12 @@ wasm-ld's and Binaryen's):
   options come from the PDB's record of its command line; elsewhere, the
   image is the evidence);
 - define a variable once, when copies of it are in several objects;
-- hide exports (ELF shared objects, Mach-O images): template
+- hide exports (ELF shared objects, Mach-O images, PE DLLs): template
   instantiations and inline functions (-fvisibility=hidden); a library's
   calls to its own exports through the PLT (-Bsymbolic-functions); and,
   given its importers, what none of them imports (-fvisibility=hidden, a
-  version script), or a Mach-O executable's exports, which only plugins
-  could use.
+  version script; a DLL's __declspec(dllexport) or .def file), or a Mach-O
+  executable's exports, which only plugins could use.
 
 Without debug information (none given, and none found), only what the
 image's own structure shows: its exports, relative relocations as RELR

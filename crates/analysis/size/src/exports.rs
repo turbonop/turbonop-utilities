@@ -1,7 +1,8 @@
 //! What an image's exported symbols cost, and what hiding them would save
 //! (see [`recommend`]): each export's entry in the dynamic symbol table,
-//! its name, its hash entries, and its version (ELF), or its share of the
-//! exports trie (Mach-O); and, in an ELF shared object, the library's calls
+//! its name, its hash entries, and its version (ELF), its share of the
+//! exports trie (Mach-O), or its export address table entry, its name's
+//! pointer and ordinal, and its name (PE); and, in an ELF shared object, the library's calls
 //! to its own exported functions, which go through the PLT (a PLT entry, a
 //! GOT slot, and a relocation each) because another library might replace
 //! them.
@@ -30,6 +31,9 @@ pub struct Export<'d> {
     pub plt: u64,
     /// A function.
     pub function: bool,
+    /// Its ordinal (PE's), by which an importer may import it instead of
+    /// its name.
+    pub ordinal: Option<u32>,
     /// Of vague linkage: a C++ inline function or template instantiation
     /// (a weak definition of an Itanium-mangled function).
     pub vague: bool,
@@ -44,6 +48,8 @@ pub enum Exporter {
     MachOLibrary,
     /// A Mach-O executable (which exports its global symbols by default).
     MachOExecutable,
+    /// A PE image with an export table (a DLL, usually).
+    Pe,
 }
 
 /// An image's exports.
@@ -96,7 +102,52 @@ pub fn exports<'d>(image: &hexcavator_image::Image<'d>) -> Option<Exports<'d>> {
     if let Some(m) = image.macho() {
         return macho_exports(m);
     }
+    if let Some(pe) = image.pe() {
+        return pe_exports(image, pe);
+    }
     None
+}
+
+/// A PE image's exports: each one's export address table entry, its
+/// name's pointer and ordinal table entries, and its name (forwarders
+/// aside: another DLL's).
+fn pe_exports<'d>(
+    image: &hexcavator_image::Image<'d>,
+    pe: &hexcavator_pe::PeFile<'d>,
+) -> Option<Exports<'d>> {
+    use hexcavator_pe::exports::ExportTarget;
+    let table = pe.exports()?;
+    let code: Vec<(u64, u64)> = image
+        .sections()
+        .iter()
+        .filter(|s| s.flags.contains(hexcavator_image::SectionFlags::CODE))
+        .filter_map(|s| Some((s.addr, s.end()?)))
+        .collect();
+    let list = table
+        .iter()
+        .filter_map(|e| {
+            let ExportTarget::Rva(rva) = e.target else {
+                return None;
+            };
+            let at = u64::from(rva.0);
+            // (By ordinal alone: its address entry. By name: its name, a
+            // pointer to it, and an ordinal entry too.)
+            let cost = 4 + e.name.map_or(0, |n| 4 + 2 + n.len() as u64 + 1);
+            Some(Export {
+                name: e.name.unwrap_or_default(),
+                table: cost,
+                plt: 0,
+                function: code.iter().any(|&(s, end)| at >= s && at < end),
+                ordinal: Some(e.ordinal),
+                vague: false,
+            })
+        })
+        .collect();
+    Some(Exports {
+        exporter: Exporter::Pe,
+        name: table.dll_name(),
+        list,
+    })
 }
 
 fn elf_exports<'d>(elf: &hexcavator_elf::ElfFile<'d>) -> Option<Exports<'d>> {
@@ -188,6 +239,7 @@ fn elf_exports<'d>(elf: &hexcavator_elf::ElfFile<'d>) -> Option<Exports<'d>> {
                 table: entry + s.name.len() as u64 + 1 + versym + hash,
                 plt: plt_of.get(&(s.index as u32)).copied().unwrap_or(0),
                 function,
+                ordinal: None,
                 vague: function && s.bind == STB_WEAK && s.name.starts_with(b"_Z"),
             }
         })
@@ -253,6 +305,7 @@ fn macho_exports<'d>(m: &hexcavator_macho::MachO<'d>) -> Option<Exports<'d>> {
                 table: share,
                 plt: 0,
                 function,
+                ordinal: None,
                 vague: function
                     && e.flags & EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION != 0
                     && name.starts_with(b"__Z"),
@@ -349,6 +402,28 @@ pub fn imports_of(data: &[u8], name: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
                 .collect(),
         );
     }
+    if let Some(pe) = image.pe() {
+        // Its imports of the DLL (delay-loaded too), by name, or by
+        // ordinal (`#n`).
+        use hexcavator_pe::imports::ImportName;
+        let wanted =
+            |dll: &[u8]| name.is_none_or(|want| base(dll).eq_ignore_ascii_case(&base(want)));
+        let mut out = Vec::new();
+        let mut loads = false;
+        let mut take = |import: ImportName<'_>| match import {
+            ImportName::Name { name, .. } => out.push(name.to_vec()),
+            ImportName::Ordinal(o) => out.push(format!("#{o}").into_bytes()),
+        };
+        for dll in pe.imports().filter(|d| wanted(d.name)) {
+            loads = true;
+            dll.thunks().for_each(|t| take(t.import));
+        }
+        for dll in pe.delay_imports().filter(|d| wanted(d.name)) {
+            loads = true;
+            dll.thunks().for_each(|t| take(t.import));
+        }
+        return loads.then_some(out);
+    }
     None
 }
 
@@ -426,10 +501,16 @@ pub fn recommend(
     // The rest, unless imported.
     let executable = exports.exporter == Exporter::MachOExecutable;
     if imports.is_some() || executable {
+        // (A PE export imported by ordinal is imported too.)
+        let imported = |i: &Imports, e: &Export<'_>| {
+            (!e.name.is_empty() && i.names.contains(e.name))
+                || e.ordinal
+                    .is_some_and(|o| i.names.contains(format!("#{o}").as_bytes()))
+        };
         let hidable: Vec<&Export<'_>> = exports
             .list
             .iter()
-            .filter(|e| !e.vague && imports.is_none_or(|i| !i.names.contains(e.name)))
+            .filter(|e| !e.vague && imports.is_none_or(|i| !imported(i, e)))
             .collect();
         let saving: u64 = hidable.iter().map(|e| e.table).sum();
         if saving >= MIN_SAVING {
@@ -442,6 +523,11 @@ pub fn recommend(
                 (Exporter::MachOExecutable, None) => Some(format!(
                     "link with -Wl,-no_exported_symbols (or compile with -fvisibility=hidden): an executable exports its global symbols, {} here, which only plugins it loads could use",
                     hidable.len()
+                )),
+                (Exporter::Pe, Some(i)) => Some(format!(
+                    "stop exporting what isn't imported (its __declspec(dllexport), or its .def file's EXPORTS entry): {} exports aren't imported by {}",
+                    hidable.len(),
+                    by(i)
                 )),
                 (Exporter::ElfShared, Some(i)) => Some(format!(
                     "compile with -fvisibility=hidden, marking what's imported visible (or link with a version script exporting only it): {} exported symbols aren't imported by {}",

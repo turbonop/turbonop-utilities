@@ -48,6 +48,7 @@ STEPS = {
     "linkmap": (["cmd", "/c", r"R:\tools\linkmap\build.cmd"], ["LLVM_BIN"]),
     "linkopts": (["cmd", "/c", r"R:\tools\linkopts\build.cmd"], ["LLVM_BIN"]),
     "mingw": (["cmd", "/c", r"R:\tools\mingw\build.cmd"], ["LLVM_BIN"]),
+    "pe-exports": (["cmd", "/c", r"R:\tools\pe-exports\build.cmd"], ["LLVM_BIN"]),
     "arm32": (["cmd", "/c", r"R:\tools\arm32\build.cmd"], ["LLVM_BIN"]),
     "cfi": ([sys.executable, "-I", r"R:\tools\cfi\build.py", "fixtures"], ["LLVM_BIN"]),
     "wasm": (["cmd", "/c", r"R:\tools\wasm\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),

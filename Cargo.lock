@@ -572,6 +572,7 @@ dependencies = [
  "hexcavator-mmap",
  "hexcavator-pe",
  "hexcavator-query",
+ "hexcavator-unwind",
  "hexcavator-wasm",
  "hexcavator-wasm-isa",
  "hexcavator-x86",

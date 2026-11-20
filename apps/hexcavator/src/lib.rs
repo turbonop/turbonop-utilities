@@ -260,6 +260,28 @@ fn command(args: &[String]) -> ExitCode {
 
 /// What `hexc info` adds for a PE image: whether it is managed, the tools
 /// its Rich header names, its certificates, overlay, and bound imports.
+/// A COFF object's: its sections and symbols, and whether it has DWARF
+/// (clang's, or MinGW's) or CodeView.
+fn coff_details(o: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
+    let names: Vec<&[u8]> = o.sections().iter().map(|s| o.section_name(s)).collect();
+    let symbols = o.symbols().ok().flatten().map_or(0, |t| t.len());
+    let mut out = vec![format!("{} sections, {symbols} symbols", names.len())];
+    let debug: Vec<&str> = [
+        (
+            names.iter().any(|n| n.starts_with(b".debug$")),
+            "CodeView (.debug$S, .debug$T)",
+        ),
+        (names.iter().any(|n| n.starts_with(b".debug_")), "DWARF"),
+    ]
+    .into_iter()
+    .filter_map(|(has, what)| has.then_some(what))
+    .collect();
+    if !debug.is_empty() {
+        out.push(format!("debug information: {}", debug.join(", ")));
+    }
+    out
+}
+
 fn pe_details(pe: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
     use hexcavator_pe::extras::{
         COMIMAGE_FLAGS_32BITREQUIRED, COMIMAGE_FLAGS_ILONLY, COMIMAGE_FLAGS_STRONGNAMESIGNED,
@@ -776,6 +798,10 @@ fn info(args: &[String]) -> ExitCode {
                     }
                 } else if let Ok(m) = hexcavator_wasm::Module::parse(&map) {
                     for line in wasm_details(&m) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                } else if let Ok(o) = hexcavator_pe::PeFile::parse_object(&map) {
+                    for line in coff_details(&o) {
                         let _ = writeln!(out, "  {line}");
                     }
                 } else {

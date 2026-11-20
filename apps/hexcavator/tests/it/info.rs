@@ -47,3 +47,14 @@ fn elf() {
     assert!(info("elf/names.o").contains("\n  relocatable object\n"));
     assert!(info("elf/dwarf5-x86_64-linux-gnu").contains("\n  executable, entry 0x201290\n"));
 }
+
+#[test]
+fn coff_objects() {
+    assert_eq!(
+        info("coff/objects.obj"),
+        "COFF object, x64, 13231 bytes\n  \
+         48 sections, 139 symbols\n  \
+         debug information: CodeView (.debug$S, .debug$T)\n"
+    );
+    assert!(info("coff/objects-big.obj").starts_with("COFF object (bigobj), x64, "));
+}

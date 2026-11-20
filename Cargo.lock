@@ -396,6 +396,7 @@ dependencies = [
 name = "hexcavator-fingerprint"
 version = "0.0.7"
 dependencies = [
+ "hexcavator-arm32",
  "hexcavator-arm64",
  "hexcavator-core",
  "hexcavator-x86",
@@ -653,6 +654,7 @@ version = "0.0.7"
 name = "hexcavator-xref"
 version = "0.0.7"
 dependencies = [
+ "hexcavator-arm32",
  "hexcavator-arm64",
  "hexcavator-core",
  "hexcavator-x86",

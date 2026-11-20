@@ -19,7 +19,7 @@
 
 mod scan;
 
-pub use scan::{Arch, CodeRef, Via, scan, scan_image};
+pub use scan::{Arch, CodeRef, Via, scan, scan_absolute, scan_image};
 
 /// One node: `[start, end)`, and whether it is code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,6 +79,8 @@ pub struct Builder {
     edges: Vec<(u32, u32, Edge)>,
     refs: Vec<CodeRef>,
     image_base: Option<u64>,
+    /// See [`Builder::absolute_bias`].
+    bias: u64,
     /// Which nodes to split where they are referred to (empty: none).
     split: Vec<bool>,
     /// The edges to or from a node to split, by address.
@@ -113,6 +115,7 @@ impl Builder {
             edges: Vec::new(),
             refs: Vec::new(),
             image_base: None,
+            bias: 0,
             split: Vec::new(),
             addressed: Vec::new(),
         }
@@ -147,6 +150,12 @@ impl Builder {
     /// relative to it (see [`scan_image`]).
     pub fn image_base(&mut self, base: u64) {
         self.image_base = Some(base);
+    }
+
+    /// What absolute addresses code builds less the nodes' are (a PE
+    /// image's preferred base: see [`scan_absolute`]).
+    pub fn absolute_bias(&mut self, bias: u64) {
+        self.bias = bias;
     }
 
     /// The nodes, in the builder's order.
@@ -204,11 +213,12 @@ impl Builder {
     pub fn code(&mut self, node: u32, arch: Arch, code: &[u8]) {
         let mut refs = std::mem::take(&mut self.refs);
         refs.clear();
-        scan_image(
+        scan_absolute(
             arch,
             code,
             self.nodes[node as usize].start,
             self.image_base,
+            self.bias,
             &mut refs,
         );
         for r in &refs {

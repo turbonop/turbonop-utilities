@@ -187,12 +187,77 @@ pub fn code(
                 }
             }
         }
+        Arch::Arm => {
+            let mut at = 0usize;
+            for (off, inst) in thumb(code) {
+                at = off + usize::from(inst.size);
+                let pc = start + off as u64;
+                let mine = take_refs(&refs, &mut r, pc);
+                // (What holds an address, PC-relative or built, is left
+                // out: its encoding and registers are the instruction.)
+                if addresses(&inst) || !mine.is_empty() {
+                    h.write(inst.encoding.name.as_bytes());
+                    arm32_registers(&mut h, &inst);
+                } else {
+                    h.write_u32(inst.word);
+                }
+                for c in mine {
+                    target(&mut h, c.to, c.via, &mut item);
+                }
+            }
+            // (Then what isn't code: a literal pool, as it is.)
+            h.write(code.get(at..).unwrap_or_default());
+        }
         // (Code no decoder reads: its bytes, as they are.)
         _ => h.write(code),
     }
     h.write_usize(code.len());
     item.local = h.finish();
     item
+}
+
+/// 32-bit ARM Thumb-2 code's instructions, with their offsets, to the
+/// first that doesn't decode.
+fn thumb(code: &[u8]) -> impl Iterator<Item = (usize, hexcavator_arm32::Instruction)> + '_ {
+    let half = |at: usize| {
+        code.get(at..at + 2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+    };
+    let mut at = 0usize;
+    std::iter::from_fn(move || {
+        let first = half(at)?;
+        let second = if hexcavator_arm32::is_t32_wide(first) {
+            Some(half(at + 2)?)
+        } else {
+            None
+        };
+        let i = hexcavator_arm32::decode_t32(first, second)?;
+        let off = at;
+        at += usize::from(i.size);
+        Some((off, i))
+    })
+}
+
+/// Whether a 32-bit ARM instruction holds (part of) an address: a
+/// branch's or literal's offset, `ADR`'s, or `MOVW`'s and `MOVT`'s halves.
+fn addresses(i: &hexcavator_arm32::Instruction) -> bool {
+    let n = i.encoding.name;
+    n.starts_with("B_")
+        || n.starts_with("BL_i")
+        || n.starts_with("CBZ")
+        || n.starts_with("CBNZ")
+        || n.starts_with("LDR_l")
+        || n.starts_with("ADR")
+        || n == "MOV_i_T3"
+        || n.starts_with("MOVT")
+}
+
+/// A 32-bit ARM instruction's registers (its `Rd`, `Rn`, `Rt`, and `Rm`
+/// fields), into `h`.
+fn arm32_registers(h: &mut FxHasher, i: &hexcavator_arm32::Instruction) {
+    for name in ["Rd", "Rdn", "Rn", "Rt", "Rm"] {
+        h.write_u32(i.field(name).unwrap_or(u32::MAX));
+    }
 }
 
 /// The references at `pc`, advancing `r` past them (`refs` is in
@@ -303,6 +368,9 @@ fn arm64_address_bits(encoding: &str, refers: bool) -> u32 {
 ///   `rax` alike, `xmm0` and `ymm0` alike).
 /// - ARM64: each instruction's encoding less its width (`ADD_64_addsub_imm`
 ///   and `ADD_32_addsub_imm` alike), and its first two register fields.
+/// - 32-bit ARM (Thumb-2): each instruction's operation (its encoding less
+///   the encoding's number: `ADD_i_T1` and `ADD_i_T3` alike, 16 bits wide
+///   or 32), and its registers.
 pub fn shape(arch: Arch, code: &[u8], start: u64) -> Option<u64> {
     let mut h = hasher(b's');
     let mut count = 0usize;
@@ -361,6 +429,16 @@ pub fn shape(arch: Arch, code: &[u8], start: u64) -> Option<u64> {
                     }
                     None => h.write_u8(0xFF),
                 }
+                count += 1;
+            }
+        }
+        Arch::Arm => {
+            for (_, inst) in thumb(code) {
+                let n = inst.encoding.name;
+                // (`ADD_i_T3`: `ADD_i`.)
+                let op = n.rsplit_once('_').map_or(n, |(op, _)| op);
+                h.write(op.as_bytes());
+                arm32_registers(&mut h, &inst);
                 count += 1;
             }
         }

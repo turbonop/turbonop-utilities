@@ -236,6 +236,7 @@ pub fn pe(
         machine::AMD64 => Arch::X64,
         machine::I386 => Arch::X86,
         machine::ARM64 | machine::ARM64X => Arch::Arm64,
+        machine::ARMNT | machine::THUMB => Arch::Arm,
         m => return Err(format!("no cross-references for machine {m:#06x}")),
     };
     let executable = |addr: u64| {
@@ -276,8 +277,10 @@ pub fn pe(
         .collect();
     unlabeled_data(&mut nodes, relocs.iter().map(|r| r.0), model);
     let (mut b, infos) = builder(nodes);
-    // Nodes are at RVAs: the image starts at 0.
+    // Nodes are at RVAs: the image starts at 0, and an absolute address
+    // code builds (32-bit ARM's) is its preferred base more.
     b.image_base(0);
+    b.absolute_bias(file.optional_header().map_or(0, |h| h.image_base().get()));
 
     // Code.
     for i in 0..b.nodes().len() as u32 {
@@ -865,7 +868,7 @@ pub fn macho(
     use hexcavator_macho::consts::*;
     let m = image.macho().ok_or("not a Mach-O image")?;
     let arch = image.arch();
-    if !matches!(arch, Arch::X64 | Arch::X86 | Arch::Arm64) {
+    if !matches!(arch, Arch::X64 | Arch::X86 | Arch::Arm64 | Arch::Arm) {
         return Err(format!("no cross-references for {}", arch.name()));
     }
     let (b, infos, slots) = common(image, model, symbols, arch);
@@ -1117,7 +1120,7 @@ pub fn elf(
     use hexcavator_elf::consts::*;
     let file = image.elf().ok_or("not an ELF image")?;
     let arch = image.arch();
-    if !matches!(arch, Arch::X64 | Arch::X86 | Arch::Arm64) {
+    if !matches!(arch, Arch::X64 | Arch::X86 | Arch::Arm64 | Arch::Arm) {
         return Err(format!("no cross-references for {}", arch.name()));
     }
     let (mut b, infos, slots) = common(image, model, symbols, arch);

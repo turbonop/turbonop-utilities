@@ -303,19 +303,106 @@ pub fn elf_dwarf_sections<'d>(
             continue;
         };
         let data = elf.section_data(&sec);
-        if gnu {
-            if let Some(d) = gnu_zdebug(data) {
-                out.push((name, d.into(), None));
-            }
+        let mut section: DebugSection<'d> = if gnu {
+            let Some(d) = gnu_zdebug(data) else { continue };
+            (name, d.into(), None)
         } else if sec.flags & SHF_COMPRESSED != 0 {
-            if let Some(d) = elf_compressed(elf, &sec, data) {
-                out.push((name, d.into(), None));
-            }
+            let Some(d) = elf_compressed(elf, &sec, data) else {
+                continue;
+            };
+            (name, d.into(), None)
         } else {
-            out.push((name, data.into(), file_offset.map(|o| o + sec.offset)));
+            (name, data.into(), file_offset.map(|o| o + sec.offset))
+        };
+        // An object's: with its relocations applied, as a linker would
+        // (its string offsets and addresses are their addends, in RELA
+        // objects).
+        if elf.is_object()
+            && elf.sections().any(|r| {
+                matches!(
+                    r.kind,
+                    hexcavator_elf::consts::SHT_REL | hexcavator_elf::consts::SHT_RELA
+                ) && r.info as usize == sec.index
+            })
+            && relocate(elf, sec.index, section.1.to_mut())
+        {
+            section.2 = None;
         }
+        out.push(section);
     }
     out
+}
+
+/// Applies the relocations of an object's section `index` that write an
+/// absolute value (an address, an offset into another section: its
+/// symbol's value and the addend) to `data`, its contents. Whether any
+/// were.
+fn relocate(elf: &ElfFile<'_>, index: usize, data: &mut [u8]) -> bool {
+    use hexcavator_elf::consts::{EM_386, EM_AARCH64, EM_ARM, EM_PPC64, EM_RISCV, EM_X86_64};
+    use hexcavator_elf::consts::{SHT_REL, SHT_RELA};
+    let machine = elf.header().machine;
+    // The width an absolute relocation writes, by machine and type.
+    let width = |kind: u32| -> Option<usize> {
+        Some(match (machine, kind) {
+            // R_X86_64_64, _DTPOFF64; R_X86_64_32, _32S, _DTPOFF32.
+            (EM_X86_64, 1 | 17) => 8,
+            (EM_X86_64, 10 | 11 | 21) => 4,
+            // R_AARCH64_ABS64, _ABS32.
+            (EM_AARCH64, 257) => 8,
+            (EM_AARCH64, 258) => 4,
+            // R_386_32, R_386_TLS_LDO_32; R_ARM_ABS32, R_ARM_TLS_LDO32.
+            (EM_386, 1 | 32) | (EM_ARM, 2 | 106) => 4,
+            // R_RISCV_32, _64.
+            (EM_RISCV, 1) => 4,
+            (EM_RISCV, 2) => 8,
+            // R_PPC64_ADDR32, _ADDR64.
+            (EM_PPC64, 1) => 4,
+            (EM_PPC64, 38) => 8,
+            _ => return None,
+        })
+    };
+    let big = elf.endian() == hexcavator_core::Endian::Big;
+    let sections: Vec<_> = elf.sections().collect();
+    let mut any = false;
+    for rel in sections
+        .iter()
+        .filter(|s| matches!(s.kind, SHT_REL | SHT_RELA) && s.info as usize == index)
+    {
+        let symbols = sections
+            .get(rel.link as usize)
+            .map(|t| elf.symbols(t))
+            .unwrap_or_default();
+        for r in elf.relocations(rel) {
+            let Some(w) = width(r.kind) else { continue };
+            let (Ok(at), Some(sym)) = (usize::try_from(r.offset), symbols.get(r.symbol as usize))
+            else {
+                continue;
+            };
+            let Some(place) = data.get_mut(at..at.saturating_add(w)) else {
+                continue;
+            };
+            let read = |b: &[u8]| -> u64 {
+                if big {
+                    b.iter().fold(0, |v, &x| (v << 8) | u64::from(x))
+                } else {
+                    b.iter().rev().fold(0, |v, &x| (v << 8) | u64::from(x))
+                }
+            };
+            // (REL: the addend is the bytes it patches.)
+            let addend = r.addend.map_or_else(|| read(place), i64::cast_unsigned);
+            let value = sym.value.wrapping_add(addend);
+            let bytes = if big {
+                value.to_be_bytes()
+            } else {
+                value.to_le_bytes()
+            };
+            // (The low `w` bytes, in the image's order.)
+            let low = if big { &bytes[8 - w..] } else { &bytes[..w] };
+            place.copy_from_slice(low);
+            any = true;
+        }
+    }
+    any
 }
 
 fn elf_compressed(elf: &ElfFile<'_>, sec: &Section<'_>, data: &[u8]) -> Option<Vec<u8>> {

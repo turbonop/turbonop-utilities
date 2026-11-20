@@ -62,6 +62,9 @@ set EHLD=%LD% --unresolved-symbols=ignore-all
 %CC% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-nosections.o || exit /b 1
 %LD% funcs.o -o "%OUT%\funcs-plain" || exit /b 1
 %LD% --gc-sections funcs.o -o "%OUT%\funcs-gc" || exit /b 1
+rem Kept whatever reaches it: keep-elf (keep.c).
+%CC% %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0keep.c" -o keep.o || exit /b 1
+%LD% --gc-sections -z nostart-stop-gc keep.o -o "%OUT%\keep-elf" || exit /b 1
 %LD% --icf=all funcs.o -o "%OUT%\funcs-icf" || exit /b 1
 %LD% --gc-sections --icf=all funcs.o -o "%OUT%\funcs-gc-icf" || exit /b 1
 %LD% --gc-sections --icf=all funcs-nosections.o -o "%OUT%\funcs-nosections-gc-icf" || exit /b 1
@@ -94,6 +97,8 @@ set MLD="%LLVM_BIN%\ld64.lld.exe" -arch arm64 -platform_version macos 13.0 13.0 
 %MLD% macho-funcs.o -o macho-plain || exit /b 1
 %MLD% --icf=all macho-funcs.o -o macho-icf || exit /b 1
 %MLD% -dead_strip macho-funcs.o -o macho-dead || exit /b 1
+%MCC% -O2 -c "%~dp0keep.c" -o keep-macho.o || exit /b 1
+%MLD% -dead_strip keep-macho.o -o keep-macho || exit /b 1
 %MLD% -dead_strip --icf=all macho-funcs.o -o macho-dead-icf || exit /b 1
 %MLD% macho-funcs.o -o macho-ld || exit /b 1
 %MLD% macho-funcs-O1.o -o macho-ld-O1 || exit /b 1

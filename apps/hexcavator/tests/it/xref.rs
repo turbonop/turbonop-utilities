@@ -1230,3 +1230,22 @@ fn recommend_exceptions() {
         "{v}"
     );
 }
+
+/// What the linker keeps whatever reaches it is reached (testdata/linkopts's
+/// keep-*, from keep.c): a Mach-O section marked no_dead_strip, and the
+/// classes the Objective-C runtime registers from its list; an ELF section
+/// that __start_ and __stop_ symbols enumerate.
+#[test]
+fn kept_whatever_reaches_it() {
+    let linkopts = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts");
+    for (image, name, why) in [
+        ("keep-macho", "kept", "S_ATTR_NO_DEAD_STRIP"),
+        ("keep-macho", "class_method", "Objective-C class"),
+        ("keep-elf", "hooked", "__start_my_hooks"),
+    ] {
+        let (ok, out, err) = hexc(&["-why", name], &linkopts.join(image));
+        assert!(ok, "{image} {name}: {err}");
+        assert!(!out.contains("no root reaches it"), "{image} {name}: {out}");
+        assert!(out.contains(why), "{image} {name}: {out}");
+    }
+}

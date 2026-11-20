@@ -120,13 +120,54 @@ fn macho_executable() {
 
 #[test]
 fn not_exporters() {
-    // An object, and a PE image: none.
+    // An object: none. A PE image without an export table: none.
     let data = read("macho-funcs.o");
     assert!(exports(&Image::parse(&data).unwrap()).is_none());
     let pe = std::fs::read(format!(
-        "{}/../../../testdata/xref/xref-x64.exe",
+        "{}/../../../testdata/arm32/program.exe",
         env!("CARGO_MANIFEST_DIR")
     ))
     .unwrap();
     assert!(exports(&Image::parse(&pe).unwrap()).is_none());
+}
+
+/// A DLL's exports (testdata/pe-exports): each one's address table entry,
+/// its name's pointer and ordinal entries, and its name; and those its
+/// importer (app.exe, which imports two) doesn't import.
+#[test]
+fn pe_exports_and_importers() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/pe-exports");
+    let dll = std::fs::read(dir.join("exp.dll")).unwrap();
+    let image = hexcavator_image::Image::parse(&dll).unwrap();
+    let ex = exports(&image).unwrap();
+    assert_eq!(ex.exporter, Exporter::Pe);
+    assert_eq!(ex.name, Some(&b"exp.dll"[..]));
+    assert_eq!(ex.list.len(), 24);
+    let e = ex
+        .list
+        .iter()
+        .find(|e| e.name == b"exported_function_number_07")
+        .unwrap();
+    // (4 address, 4 name pointer, 2 ordinal, 27 + 1 name.)
+    assert_eq!(e.table, 4 + 4 + 2 + 28);
+    assert!(e.function && e.ordinal.is_some());
+    let app = std::fs::read(dir.join("app.exe")).unwrap();
+    let imported = imports_of(&app, ex.name).unwrap();
+    assert_eq!(imported.len(), 2, "{imported:?}");
+    // (None of a DLL it doesn't load.)
+    assert!(imports_of(&app, Some(b"other.dll")).is_none());
+    let imports = Imports {
+        importers: 1,
+        names: imported.into_iter().collect(),
+    };
+    let recs = recommend(&ex, Some(&imports), &|n| {
+        String::from_utf8_lossy(n).into_owned()
+    });
+    let r = recs.iter().find(|r| r.kind == "visibility").unwrap();
+    assert!(
+        r.advice.contains("22 exports aren't imported"),
+        "{}",
+        r.advice
+    );
+    assert_eq!(r.saving, 22 * 38);
 }

@@ -724,7 +724,7 @@ fn tools_for(
             t.push("audit");
         }
     }
-    if kind == "linked" && debug && ["pe", "elf", "macho"].contains(&format) {
+    if kind == "linked" && debug && ["pe", "elf", "macho", "wasm"].contains(&format) {
         t.push("init");
     }
     if kind == "linked" && debug {

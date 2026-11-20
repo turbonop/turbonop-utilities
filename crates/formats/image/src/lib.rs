@@ -370,6 +370,39 @@ impl<'data> Image<'data> {
         out
     }
 
+    /// Where it starts running, if it says (see the crate's addresses): a
+    /// PE image's `AddressOfEntryPoint` (a DLL's `DllMain` caller), an ELF
+    /// file's `e_entry`, a Mach-O executable's `LC_MAIN`, a WebAssembly
+    /// module's start function (or else its `_start` export, a WASI
+    /// command's). `None` for objects, and images that have none.
+    pub fn entry(&self) -> Option<u64> {
+        if self.kind() != Kind::Linked {
+            return None;
+        }
+        let at = match self {
+            Image::Pe(pe) => u64::from(pe.optional_header()?.address_of_entry_point()),
+            Image::Elf(elf) => elf.header().entry,
+            Image::MachO(m) => m.entry()?,
+            Image::Wasm(m) => {
+                let index = m.start_function().or_else(|| {
+                    m.exports()
+                        .into_iter()
+                        .find(|e| e.kind == 0 && e.name == b"_start")
+                        .map(|e| e.index)
+                })?;
+                return wasm::function_address(m, index);
+            }
+        };
+        // (0 is no entry point: a resource-only DLL's, a library's.)
+        let at = (at != 0).then_some(at)?;
+        // (A 32-bit ARM entry point's Thumb bit.)
+        Some(if self.arch() == Arch::Arm {
+            at & !1
+        } else {
+            at
+        })
+    }
+
     /// `len` bytes of file data at `addr`. They must all be present in the
     /// file, in one section: memory-only (zero-fill) bytes have no file
     /// data, and objects have no addresses.

@@ -69,6 +69,22 @@ pub(crate) fn debug_ids<'data>(m: &Module<'data>) -> Vec<DebugId<'data>> {
     out
 }
 
+/// The address of the module's function `index`, if it defines it: its
+/// body's offset into the code section's contents (after the entry's size
+/// field), as DWARF's addresses are.
+pub(crate) fn function_address(m: &Module<'_>, index: u32) -> Option<u64> {
+    let f = m.functions().into_iter().find(|f| f.index == index)?;
+    Some(function_range(m, &f)?.0)
+}
+
+/// A code section entry's body, as `(address, size)` (see
+/// [`function_address`]).
+pub(crate) fn function_range(m: &Module<'_>, f: &hexcavator_wasm::Piece) -> Option<(u64, u64)> {
+    let code = m.sections().iter().find(|s| s.id == SECTION_CODE)?;
+    let (at, body) = m.body(f)?;
+    Some((at.checked_sub(code.contents_offset)?, body.len() as u64))
+}
+
 /// Bytes of the code section, by offset into its contents.
 pub(crate) fn bytes_at<'data>(m: &Module<'data>, addr: u64, len: u64) -> Option<&'data [u8]> {
     if m.is_object() {

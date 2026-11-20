@@ -1,24 +1,21 @@
 //! `hexc mcp`: a Model Context Protocol server over stdio, so that LLM
 //! agents can ask what the bytes of a binary are.
 //!
-//! Messages are JSON-RPC 2.0, one per line. Tools:
-//!
-//! - `size_report`: a bloaty-style report by data sources (sections,
-//!   symbols, compilands, ...), optionally as a diff against a base.
-//! - `symbols`: the largest symbols, filtered by name, kind, or section.
-//! - `findings`: duplicate data and template bloat, with advice.
-//! - `lookup`: what is at an address, by every source.
+//! Messages are JSON-RPC 2.0, one per line. The tools (see [`tools`]) read
+//! PE, ELF, Mach-O, and WebAssembly files alike, with their debug
+//! information (a PDB, or DWARF), opened as `hexc`'s commands open them.
 //!
 //! Loaded binaries are cached for the session: the first question about a
-//! large image reads its PDB; later ones are fast.
+//! large image reads its debug information; later ones are fast.
 
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use hexcavator_debuginfo::DebugInfo;
 use hexcavator_image::Image;
 use serde_json::Value;
 
@@ -27,225 +24,143 @@ fn object<K: Into<String>>(members: impl IntoIterator<Item = (K, Value)>) -> Val
     Value::Object(members.into_iter().map(|(k, v)| (k.into(), v)).collect())
 }
 use hexcavator_mmap::Mmap;
+use hexcavator_size::Model;
 use hexcavator_size::rollup::{self, Domain, Report, Rollup, SortBy};
-use hexcavator_size::sources::{self, Maps, Source};
+use hexcavator_size::sources::{Maps, Source};
 use hexcavator_size::symbols::Symbol;
-use hexcavator_size::{Model, pe, symbols};
 
 pub const USAGE: &str = "\
 usage: hexc mcp
 
 Serves the Model Context Protocol on stdin and stdout (JSON-RPC 2.0, one
 message per line), with tools that report what the bytes of an executable,
-object, or library are: size_report, symbols, findings, and lookup.";
+library, or object (PE, ELF, Mach-O, WebAssembly) are, and why: size_report,
+symbols, findings, linker_log, query, why, recommend, dependencies,
+symbolize, initialization, resources, and lookup.";
 
 /// The protocol versions this server speaks, newest first.
 const PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 
-/// A binary, read once per session.
+/// A binary, read once per session: opened as every `hexc` command opens
+/// one (see [`hexcavator_program::Opened`]), whatever its format.
 struct Loaded {
     path: PathBuf,
     map: Mmap,
-    file_name: String,
-    /// An object, library, or ELF file: no PDB, bloaty-style sources only.
+    /// An object or library (no address space: no program to analyze).
     object: bool,
-    /// An ELF file, or an archive of them.
-    elf: bool,
-    /// A Mach-O or universal file.
-    macho: bool,
-    /// A WebAssembly module.
-    wasm: bool,
-    /// A module's source map, found beside it.
-    source_map: Option<hexcavator_size::sourcemap::SourceMap>,
-    pdb: Option<(PathBuf, Mmap)>,
-    /// The debug information given (`pdb`), if any.
+    /// A PE image (whose COFF groups are a source).
+    pe: bool,
+    /// The debug information given (`pdb`, or `debug`), if any.
     debug_arg: Option<PathBuf>,
-    /// The image and its debug information in any format (see
-    /// [`Loaded::opened`]), opened when first needed.
-    opened: std::cell::OnceCell<Result<hexcavator_program::Opened, hexcavator_program::Error>>,
+    /// The image and its debug information, opened when first needed.
+    opened: OnceCell<Result<hexcavator_program::Opened, String>>,
     /// The size model and symbols, built when first needed.
-    model: std::cell::OnceCell<Result<Model, String>>,
-    symbols: std::cell::OnceCell<Result<Vec<Symbol>, String>>,
+    built: OnceCell<Result<(Arc<Model>, Arc<Vec<Symbol>>), String>>,
     /// The cross-reference graph, built once.
-    xref: std::cell::OnceCell<Result<hexcavator_size::xref::Xref, String>>,
+    xref: OnceCell<Result<hexcavator_size::xref::Xref, String>>,
     /// Maps built so far, by their sources.
-    maps: std::cell::RefCell<HashMap<Vec<Source>, Rc<Maps>>>,
+    maps: RefCell<HashMap<Vec<Source>, Arc<Maps>>>,
 }
 
 impl Loaded {
-    fn open(path: &Path, pdb: Option<&Path>) -> Result<Self, String> {
-        let pdb_arg = pdb;
-        let show = |p: &Path| p.display().to_string();
-        let map = Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
-        let elf = hexcavator_size::elf::is_elf_input(&map);
-        let macho = hexcavator_size::macho::is_macho_input(&map);
-        let wasm = hexcavator_size::wasm::is_wasm_input(&map);
-        let object = elf || macho || wasm || crate::size::is_object_input(&map);
-        let pdb = if object {
-            None
-        } else {
-            let image = Image::parse(&map).map_err(|e| format!("{}: {e}", show(path)))?;
-            // Without a PDB, only the image's own sources are available.
-            hexcavator_program::find_debug(path, &image, pdb).ok()
-        };
-        let file_name = path
-            .file_name()
-            .map_or_else(|| show(path), |n| n.to_string_lossy().into_owned());
-        let source_map = if wasm {
-            crate::size::wasm_source_map(path, &map, None)?
-        } else {
-            None
-        };
+    fn open(path: &Path, debug: Option<&Path>) -> Result<Self, String> {
+        let map = Mmap::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let image = Image::parse(&map).ok();
+        let object = image
+            .as_ref()
+            .is_none_or(|i| i.kind() != hexcavator_image::Kind::Linked);
+        let pe = image.as_ref().is_some_and(|i| i.pe().is_some());
         Ok(Self {
             path: path.to_path_buf(),
             map,
-            file_name,
             object,
-            elf,
-            macho,
-            wasm,
-            source_map,
-            pdb,
-            debug_arg: pdb_arg.map(Path::to_path_buf),
-            opened: Default::default(),
-            model: Default::default(),
-            symbols: Default::default(),
-            xref: Default::default(),
-            maps: Default::default(),
+            pe,
+            debug_arg: debug.map(Path::to_path_buf),
+            opened: OnceCell::new(),
+            built: OnceCell::new(),
+            xref: OnceCell::new(),
+            maps: RefCell::default(),
         })
     }
 
-    fn debug(&self) -> Result<DebugInfo<'_>, String> {
-        let (path, map) = self
-            .pdb
+    /// The image and its debug information, of any format, opened once.
+    fn opened(&self) -> Result<&hexcavator_program::Opened, String> {
+        self.opened
+            .get_or_init(|| {
+                if self.object {
+                    return Err(format!(
+                        "{}: an object or library: only size_report reads it",
+                        self.path.display()
+                    ));
+                }
+                hexcavator_program::Opened::open(&self.path, self.debug_arg.as_deref())
+                    .map_err(|e| match e {
+                        hexcavator_program::Error::NoDebug { .. } => format!(
+                            "{e}; give the debug information (a PDB, a dSYM, or a DWARF file) with the `debug` argument"
+                        ),
+                        e => e.to_string(),
+                    })
+            })
             .as_ref()
-            .ok_or("no matching PDB was found; give one with the `pdb` argument")?;
-        DebugInfo::parse(map).map_err(|e| format!("{}: {e}", path.display()))
+            .map_err(Clone::clone)
+    }
+
+    /// Whether its debug information was found.
+    fn has_debug(&self) -> bool {
+        self.opened().is_ok()
+    }
+
+    /// The program: the image and its debug information, parsed.
+    fn program(&self) -> Result<hexcavator_program::Program<'_>, String> {
+        self.opened()?.program().map_err(|e| e.to_string())
+    }
+
+    fn built(&self) -> Result<&(Arc<Model>, Arc<Vec<Symbol>>), String> {
+        self.built
+            .get_or_init(|| self.program()?.into_built().map_err(|e| e.to_string()))
+            .as_ref()
+            .map_err(Clone::clone)
     }
 
     fn model(&self) -> Result<&Model, String> {
-        self.model
-            .get_or_init(|| {
-                let image = Image::parse(&self.map).map_err(|e| e.to_string())?;
-                let debug = self.debug()?;
-                pe::check(&image, &debug).map_err(|e| e.to_string())?;
-                pe::model(&image, &debug).map_err(|e| e.to_string())
-            })
-            .as_ref()
-            .map_err(Clone::clone)
+        Ok(&self.built()?.0)
     }
 
     fn symbols(&self) -> Result<&[Symbol], String> {
-        self.symbols
-            .get_or_init(|| {
-                let model = self.model()?;
-                let image = Image::parse(&self.map).map_err(|e| e.to_string())?;
-                let debug = self.debug()?;
-                let pdb = self.pdb.as_ref().map(|(p, _)| p.as_path());
-                let build = || symbols::build(&image, &debug, model).map_err(|e| e.to_string());
-                match pdb {
-                    Some(pdb) => hexcavator_program::cache::indexed(&self.path, &[pdb], build),
-                    None => build(),
-                }
-            })
-            .as_deref()
-            .map_err(Clone::clone)
-    }
-
-    /// Whether it's a PE image with its PDB (read by this session's own
-    /// model); other images are read as [`hexcavator_program`] reads them.
-    fn pe_with_pdb(&self) -> bool {
-        !self.object && self.pdb.is_some()
-    }
-
-    /// The image and its debug information, of any format (as `hexc`'s
-    /// commands open them), opened once.
-    fn opened(&self) -> Result<&hexcavator_program::Opened, &hexcavator_program::Error> {
-        self.opened
-            .get_or_init(|| hexcavator_program::Opened::open(&self.path, self.debug_arg.as_deref()))
-            .as_ref()
-    }
-
-    /// The cross-reference graph of an image other than a PE image with
-    /// its PDB, from its program, built once.
-    fn program_xref(
-        &self,
-        program: &hexcavator_program::Program<'_>,
-    ) -> Result<&hexcavator_size::xref::Xref, String> {
-        self.xref
-            .get_or_init(|| {
-                let model = program.model().map_err(|e| e.to_string())?;
-                let syms = program.symbols().map_err(|e| e.to_string())?;
-                hexcavator_size::xref::build(&program.image, &program.debug, model, syms)
-            })
-            .as_ref()
-            .map_err(Clone::clone)
+        Ok(&self.built()?.1)
     }
 
     /// The cross-reference graph of the image, built once.
     fn xref(&self) -> Result<&hexcavator_size::xref::Xref, String> {
         self.xref
             .get_or_init(|| {
-                let syms = self.symbols()?;
-                let model = self.model()?;
-                let image = Image::parse(&self.map).map_err(|e| e.to_string())?;
-                let debug = self.debug()?;
-                hexcavator_size::xref::build(&image, &debug, model, syms)
+                let program = self.program()?;
+                hexcavator_size::xref::build(
+                    &program.image,
+                    &program.debug,
+                    self.model()?,
+                    self.symbols()?,
+                )
             })
             .as_ref()
             .map_err(Clone::clone)
     }
 
-    /// The maps for `list`, built once.
-    fn maps(&self, list: &[Source]) -> Result<Rc<Maps>, String> {
+    /// The maps for `list` (as `hexc size` builds them), built once.
+    fn maps(&self, list: &[Source]) -> Result<Arc<Maps>, String> {
         if let Some(m) = self.maps.borrow().get(list) {
-            return Ok(Rc::clone(m));
+            return Ok(Arc::clone(m));
         }
-        // (Crates are full symbols, relabeled.)
-        let mut built = self.build_maps(&hexcavator_size::sources::built_as(list))?;
-        hexcavator_size::sources::label_crates(&mut built, list);
-        let m = Rc::new(built);
-        self.maps.borrow_mut().insert(list.to_vec(), Rc::clone(&m));
+        let m = crate::size::maps_of(
+            &self.path,
+            self.debug_arg.as_deref(),
+            None,
+            None,
+            list,
+            false,
+        )?;
+        self.maps.borrow_mut().insert(list.to_vec(), Arc::clone(&m));
         Ok(m)
-    }
-
-    fn build_maps(&self, list: &[Source]) -> Result<Maps, String> {
-        if self.wasm {
-            return hexcavator_size::wasm::maps_with_source_map(
-                &self.map,
-                &self.file_name,
-                list,
-                self.source_map.as_ref(),
-            )
-            .map_err(|e| e.to_string());
-        }
-        if self.macho {
-            return hexcavator_size::macho::maps(&self.map, &self.file_name, list)
-                .map_err(|e| e.to_string());
-        }
-        if self.elf {
-            return hexcavator_size::elf::maps(&self.map, &self.file_name, list)
-                .map_err(|e| e.to_string());
-        }
-        if self.object {
-            return hexcavator_size::objects::maps(&self.map, &self.file_name, list)
-                .map_err(|e| e.to_string());
-        }
-        let image = Image::parse(&self.map).map_err(|e| e.to_string())?;
-        let needs = list.iter().any(|s| s.needs_debug_info());
-        let model = if needs { Some(self.model()?) } else { None };
-        let syms = if list.iter().any(|s| s.is_symbols()) {
-            Some(self.symbols()?)
-        } else {
-            None
-        };
-        let inputs = sources::Inputs {
-            model,
-            symbols: syms,
-            file_name: &self.file_name,
-            lines: None,
-        };
-        Ok(sources::maps(&image, inputs, list))
     }
 }
 
@@ -309,8 +224,8 @@ impl Server {
 
     fn loaded_from(&mut self, args: &Value) -> Result<Rc<Loaded>, String> {
         let path = arg_path(args, "path").ok_or("`path` is required")?;
-        let pdb = arg_path(args, "pdb");
-        self.load(&path, pdb.as_deref())
+        let debug = arg_path(args, "debug").or_else(|| arg_path(args, "pdb"));
+        self.load(&path, debug.as_deref())
     }
 
     fn size_report(&mut self, args: &Value) -> ToolResult {
@@ -341,7 +256,7 @@ impl Server {
         let rollup = Rollup::filtered(&*loaded.maps(&list)?, filter.as_ref());
         let base = match arg_path(args, "base") {
             Some(b) => {
-                let base_pdb = arg_path(args, "base_pdb");
+                let base_pdb = arg_path(args, "base_debug").or_else(|| arg_path(args, "base_pdb"));
                 let l = self.load(&b, base_pdb.as_deref())?;
                 Some(Rollup::filtered(&*l.maps(&list)?, filter.as_ref()))
             }
@@ -366,8 +281,9 @@ impl Server {
                 .as_ref()
                 .is_none_or(|q| name.to_lowercase().contains(q))
         };
-        if loaded.object || loaded.pdb.is_none() {
-            // Objects, and images without a PDB: the symbols source's labels.
+        if !loaded.has_debug() {
+            // Objects, and images without debug information: the symbols
+            // source's labels.
             let maps = loaded.maps(&[Source::Symbols])?;
             let rollup = Rollup::new(&maps);
             let mut rows: Vec<(&str, i64, i64)> = rollup
@@ -452,7 +368,7 @@ impl Server {
                 object([
                     ("name", Value::from(s.name.as_str())),
                     ("kind", Value::from(s.kind.sizebench_name())),
-                    ("rva", Value::from(format!("0x{:x}", s.addr))),
+                    ("address", Value::from(format!("0x{:x}", s.addr))),
                     ("section", Value::from(section_of(s.addr))),
                     ("file_size", Value::from(s.size.file)),
                     ("vm_size", Value::from(s.size.vm)),
@@ -473,7 +389,7 @@ impl Server {
             .join("\n");
         Ok((
             format!(
-                "{total} symbols match ({total_size} file bytes); file size, memory size, RVA, name:\n{text}"
+                "{total} symbols match ({total_size} file bytes); file size, memory size, address, name:\n{text}"
             ),
             object([
                 ("matched", Value::from(total)),
@@ -488,16 +404,7 @@ impl Server {
             .ok_or("`name` is required")?
             .to_string();
         let loaded = self.loaded_from(args)?;
-        if loaded.pe_with_pdb() {
-            let x = loaded.xref()?;
-            let n = crate::xref::lookup(x, &name)?;
-            return Ok((crate::xref::why_text(x, n), crate::xref::why_json(x, n)));
-        }
-        // (ELF, Mach-O, WebAssembly, or PE with DWARF: with its debug
-        // information, as `hexc xref` reads it.)
-        let opened = loaded.opened().map_err(|e| format!("why: {e}"))?;
-        let program = opened.program().map_err(|e| format!("why: {e}"))?;
-        let x = loaded.program_xref(&program)?;
+        let x = loaded.xref().map_err(|e| format!("why: {e}"))?;
         let n = crate::xref::lookup(x, &name)?;
         Ok((crate::xref::why_text(x, n), crate::xref::why_json(x, n)))
     }
@@ -513,36 +420,21 @@ impl Server {
             Some(Value::String(s)) => vec![PathBuf::from(s)],
             Some(_) => return Err("`importers` must be an array of paths".into()),
         };
-        let mut r = if loaded.pe_with_pdb() {
+        let mut r = if loaded.has_debug() || loaded.debug_arg.is_some() {
+            let program = loaded.program().map_err(|e| format!("recommend: {e}"))?;
             let x = loaded.xref()?;
-            let model = loaded.model()?;
-            let syms = loaded.symbols()?;
-            let image = Image::parse(&loaded.map).map_err(|e| e.to_string())?;
-            let debug = loaded.debug()?;
-            crate::recommend::recommendations(&image, &debug, model, x, syms)
+            crate::recommend::recommendations(
+                &program.image,
+                &program.debug,
+                loaded.model()?,
+                x,
+                loaded.symbols()?,
+            )
         } else {
-            match loaded.opened() {
-                Ok(opened) => {
-                    let program = opened.program().map_err(|e| format!("recommend: {e}"))?;
-                    let x = loaded.program_xref(&program)?;
-                    let model = program.model().map_err(|e| e.to_string())?;
-                    let syms = program.symbols().map_err(|e| e.to_string())?;
-                    crate::recommend::recommendations(
-                        &program.image,
-                        &program.debug,
-                        model,
-                        x,
-                        syms,
-                    )
-                }
-                // Without debug information: what the image's structure
-                // shows, as `hexc recommend` gives it.
-                Err(hexcavator_program::Error::NoDebug { .. }) if loaded.debug_arg.is_none() => {
-                    let image = Image::parse(&loaded.map).map_err(|e| e.to_string())?;
-                    crate::recommend::structural_only(&image)
-                }
-                Err(e) => return Err(format!("recommend: {e}")),
-            }
+            // Without debug information: what the image's structure shows,
+            // as `hexc recommend` gives it.
+            let image = Image::parse(&loaded.map).map_err(|e| format!("recommend: {e}"))?;
+            crate::recommend::structural_only(&image)
         };
         let image = Image::parse(&loaded.map).map_err(|e| e.to_string())?;
         crate::recommend::with_exports(&mut r, &image, &loaded.path, &importers);
@@ -559,13 +451,11 @@ impl Server {
             query.limit = Some(50);
         }
         let loaded = self.loaded_from(args)?;
-        if loaded.object || loaded.pdb.is_none() {
-            return Err("query reads PE images with their PDBs".into());
-        }
+        let program = loaded.program().map_err(|e| format!("query: {e}"))?;
         let syms = loaded.symbols()?;
         let model = loaded.model()?;
-        let modules = loaded.debug()?.compilands().map_err(|e| e.to_string())?;
-        let lines = loaded.debug()?.source_lines().map_err(|e| e.to_string())?;
+        let modules = program.debug.compilands().map_err(|e| e.to_string())?;
+        let lines = program.debug.source_lines().map_err(|e| e.to_string())?;
         let out = hexcavator_query::run(
             &query,
             &SymbolTable::new(model, syms, &modules).with_lines(&lines),
@@ -600,16 +490,21 @@ impl Server {
             .and_then(parse_address)
             .ok_or("`address` is required (a number, or a hex string like \"0x1000\")")?;
         let file = arg_str(args, "domain") == Some("file");
+        // (Every format's sources; COFF groups are PE's, and segments the
+        // others'.)
         let mut list = vec![Source::Sections];
-        if loaded.elf || loaded.macho {
-            list.extend([Source::Segments, Source::Symbols, Source::ArMembers]);
-        } else if loaded.object || loaded.pdb.is_some() {
-            list.extend([
-                Source::Groups,
-                Source::Symbols,
-                Source::CompileUnits,
-                Source::Libraries,
-            ]);
+        if loaded.pe {
+            if loaded.has_debug() {
+                list.push(Source::Groups);
+            }
+        } else {
+            list.push(Source::Segments);
+        }
+        list.push(Source::Symbols);
+        if loaded.object {
+            list.push(Source::ArMembers);
+        } else if loaded.has_debug() {
+            list.extend([Source::CompileUnits, Source::Libraries]);
         }
         let maps = loaded.maps(&list)?;
         let mut by_source = Vec::new();
@@ -636,7 +531,7 @@ impl Server {
         }
         // Every name at the symbol's address (folded ones too).
         let mut names = Vec::new();
-        if !file && !loaded.object && loaded.pdb.is_some() {
+        if !file && loaded.has_debug() {
             let all = loaded.symbols()?;
             let i = all.partition_point(|s| s.addr <= addr);
             if let Some(start) = all[..i]
@@ -678,12 +573,9 @@ impl Server {
 
     fn findings(&mut self, args: &Value) -> ToolResult {
         let loaded = self.loaded_from(args)?;
-        if loaded.object || loaded.pdb.is_none() {
-            return Err("findings need an image and its PDB".into());
-        }
+        let program = loaded.program().map_err(|e| format!("findings: {e}"))?;
         let syms = loaded.symbols()?;
-        let image = Image::parse(&loaded.map).map_err(|e| e.to_string())?;
-        let debug = loaded.debug()?;
+        let (image, debug) = (&program.image, &program.debug);
         let modules = debug.compilands().map_err(|e| e.to_string())?;
         let name = |c: u32| {
             modules
@@ -695,8 +587,8 @@ impl Server {
             .and_then(Value::as_u64)
             .map_or(20, |l| usize::try_from(l).unwrap_or(usize::MAX));
         let (text, json) = hexcavator_size::findings::report(
-            &image,
-            &debug,
+            image,
+            debug,
             syms,
             &name,
             hexcavator_size::findings::ReportOptions { limit },
@@ -716,7 +608,7 @@ impl Server {
             base: arg_path(args, "base"),
             why: arg_str(args, "why").map(str::to_string),
             image: arg_path(args, "path"),
-            pdb: arg_path(args, "pdb"),
+            pdb: arg_path(args, "debug").or_else(|| arg_path(args, "pdb")),
             top: if limit == 0 { usize::MAX } else { limit },
             json,
         };
@@ -820,7 +712,7 @@ impl Server {
     }
 }
 
-const INSTRUCTIONS: &str = "hexc reports what the bytes of a Windows executable (PE, with its PDB), COFF object, or library are. Start with size_report on the file (sources: sections; then symbols, compileunits, libraries, or groups, or several for a breakdown). Use symbols to find the largest or a named symbol, findings for what wastes space and how to fix it, and lookup to ask what is at an address. Give `base` to size_report to diff two builds. Sizes are in bytes; `file` is bytes on disk, `vm` bytes in memory. For crash reports and stack traces of any executable (PE, ELF, Mach-O, WebAssembly), symbolize gives each address's function, source line, and inlined functions, or annotates a log's text. why (why a function is in an executable) and recommend (build changes that would make it smaller) read ELF, Mach-O, and WebAssembly executables and libraries too, with their DWARF.";
+const INSTRUCTIONS: &str = "hexc reports what the bytes of an executable, library, or object are, and why they're there: PE (Windows), ELF (Linux), Mach-O (macOS, iOS), and WebAssembly alike, with their debug information (a PDB, or DWARF: in the image, a separate debug file, or a dSYM), which is found from the image if it can be (else give it with `debug`). Start with size_report on the file (sources: sections; then symbols, compileunits, libraries, or several for a breakdown; groups are a PE image's COFF groups). Use symbols or query to find the largest or a named symbol, findings for what wastes space and how to fix it, recommend for build changes that would make it smaller, why for why a function is in it, and lookup to ask what is at an address. Give `base` to size_report to diff two builds. Sizes are in bytes; `file` is bytes on disk, `vm` bytes in memory. For crash reports and stack traces, symbolize gives each address's function, source line, and inlined functions, or annotates a log's text.";
 
 fn error(id: Value, code: i64, message: &str) -> Value {
     object([
@@ -921,8 +813,8 @@ fn symbolize(args: &Value) -> ToolResult {
     if args.get("return").and_then(Value::as_bool) == Some(true) {
         command.push("-return".into());
     }
-    if let Some(p) = arg_str(args, "pdb") {
-        command.extend(["-pdb".into(), p.to_string()]);
+    if let Some(p) = arg_str(args, "debug").or_else(|| arg_str(args, "pdb")) {
+        command.extend(["-debug".into(), p.to_string()]);
     }
     command.extend(images);
     command.extend(addresses);
@@ -947,8 +839,8 @@ fn symbolize(args: &Value) -> ToolResult {
 fn initialization(args: &Value) -> ToolResult {
     let path = arg_str(args, "path").ok_or("`path` is required")?;
     let mut command = vec!["init".to_string()];
-    if let Some(p) = arg_str(args, "pdb") {
-        command.extend(["-pdb".into(), p.to_string()]);
+    if let Some(p) = arg_str(args, "debug").or_else(|| arg_str(args, "pdb")) {
+        command.extend(["-debug".into(), p.to_string()]);
     }
     let depth = args
         .get("depth")
@@ -997,11 +889,11 @@ fn resources(args: &Value) -> ToolResult {
 fn tools() -> Value {
     let path = prop(
         "string",
-        "Path to an executable or DLL (PE), a COFF object (.obj), or a library (.lib).",
+        "Path to an executable or shared library (PE, ELF, Mach-O, WebAssembly), an object, or a static library.",
     );
     let pdb = prop(
         "string",
-        "Path to the image's PDB, if it isn't found from the image.",
+        "Path to the image's debug information (a PDB, a dSYM, or a DWARF file), if it isn't found from the image. (`pdb` is another name for it.)",
     );
     let sources: Vec<Value> = Source::ALL.iter().map(|s| Value::from(s.name())).collect();
     let tool = |name: &str, description: &str, input: Value| {
@@ -1020,7 +912,7 @@ fn tools() -> Value {
                 schema(
                     vec![
                         ("path", path.clone()),
-                        ("pdb", pdb.clone()),
+                        ("debug", pdb.clone()),
                         (
                             "sources",
                             object([
@@ -1069,8 +961,11 @@ fn tools() -> Value {
                             ),
                         ),
                         (
-                            "base_pdb",
-                            prop("string", "The base build's PDB, if it isn't found."),
+                            "base_debug",
+                            prop(
+                                "string",
+                                "The base build's debug information, if it isn't found.",
+                            ),
                         ),
                         (
                             "source_filter",
@@ -1089,7 +984,7 @@ fn tools() -> Value {
                 schema(
                     vec![
                         ("path", path.clone()),
-                        ("pdb", pdb.clone()),
+                        ("debug", pdb.clone()),
                         (
                             "query",
                             prop("string", "A case-insensitive substring of the name."),
@@ -1098,7 +993,7 @@ fn tools() -> Value {
                             "kind",
                             prop(
                                 "string",
-                                "A kind, such as function, data, public, string, pdata, or import (prefixes match).",
+                                "A kind, such as function, data, public, string, or import (prefixes match).",
                             ),
                         ),
                         (
@@ -1127,7 +1022,7 @@ fn tools() -> Value {
                 schema(
                     vec![
                         ("path", path.clone()),
-                        ("pdb", pdb.clone()),
+                        ("debug", pdb.clone()),
                         (
                             "limit",
                             prop("integer", "Items per finding (default 20; 0 for all)."),
@@ -1138,13 +1033,10 @@ fn tools() -> Value {
             ),
             tool(
                 "linker_log",
-                "What a link's /VERBOSE output (link ... /VERBOSE > log) says: which library members were linked, what /OPT:REF discarded and /OPT:ICF folded; with `why`, why one member was linked (the symbol it was loaded for, and who referenced it, back to the command line); with `path` (the image, with its PDB), its largest library members, each with why it was linked.",
+                "What a linker's log says: MSVC's /VERBOSE output, lld's and GNU ld's --trace and --why-extract, or ld64's -why_load and -t. Which library members were linked, what was discarded and folded; with `why`, why one member was linked (the symbol it was loaded for, and who referenced it, back to the command line); with `path` (the image, with its debug information), its largest library members, each with why it was linked.",
                 schema(
                     vec![
-                        (
-                            "log",
-                            prop("string", "Path to the linker's /VERBOSE output."),
-                        ),
+                        ("log", prop("string", "Path to the linker's log.")),
                         (
                             "why",
                             prop(
@@ -1166,7 +1058,7 @@ fn tools() -> Value {
                                 "A base build's log: what changed (members linked now and not then, with why; members no longer linked).",
                             ),
                         ),
-                        ("pdb", pdb.clone()),
+                        ("debug", pdb.clone()),
                         (
                             "limit",
                             prop(
@@ -1180,11 +1072,11 @@ fn tools() -> Value {
             ),
             tool(
                 "query",
-                "Query a PE image's symbols (from its PDB) as a table: filter, group, sort, and limit. Columns: name, kind (function, data, public, string, thunk, pdata, unwind, import-thunk, ...), file and vm (sizes), rva, section, group (COFF group), compiland, library, folded, static, source and line (where its code starts). The query is a filter (column op value joined by and/or/not and parentheses; ops = != < <= > >= ~ !~, ~ a regular expression; numbers take k, M, G), then any of: group by <columns> (count and summed sizes), sort by <column> [desc], select <columns>, limit <n> (default 50). Examples: \"kind=function file>4k sort by file desc limit 20\", \"name~'^std::' group by library\", \"static group by name sort by count desc\".",
+                "Query an image's symbols (from its debug information) as a table: filter, group, sort, and limit. Columns: name, kind (function, data, public, string, thunk, pdata, unwind, import-thunk, ...), file and vm (sizes), rva (the address from the image's start), section, group (a PE image's COFF group), compiland, library, folded, static, source and line (where its code starts). The query is a filter (column op value joined by and/or/not and parentheses; ops = != < <= > >= ~ !~, ~ a regular expression; numbers take k, M, G), then any of: group by <columns> (count and summed sizes), sort by <column> [desc], select <columns>, limit <n> (default 50). Examples: \"kind=function file>4k sort by file desc limit 20\", \"name~'^std::' group by library\", \"static group by name sort by count desc\".",
                 schema(
                     vec![
                         ("path", path.clone()),
-                        ("pdb", pdb.clone()),
+                        ("debug", pdb.clone()),
                         ("query", prop("string", "The query.")),
                     ],
                     &["path", "query"],
@@ -1192,16 +1084,16 @@ fn tools() -> Value {
             ),
             tool(
                 "why",
-                "Why a function or datum is in an executable or library (PE with its PDB; ELF, Mach-O, WebAssembly, or PE with DWARF): the chain of references from a root (the entry point, an export, a loader directory, a static initializer) to it (calls, branches, addresses its code uses, pointers in data such as vtable slots, exception data). If nothing reaches it, why the linker kept it anyway (its section isn't a COMDAT or its own, or a kept one refers to it) and what refers to it.",
+                "Why a function or datum is in an executable or library (PE, ELF, Mach-O, WebAssembly, with its debug information): the chain of references from a root (the entry point, an export, a loader directory, a static initializer) to it (calls, branches, addresses its code uses, pointers in data such as vtable slots, exception data). If nothing reaches it, why the linker kept it anyway (its section isn't a COMDAT or its own, or a kept one refers to it) and what refers to it.",
                 schema(
                     vec![
                         ("path", path.clone()),
-                        ("pdb", pdb.clone()),
+                        ("debug", pdb.clone()),
                         (
                             "name",
                             prop(
                                 "string",
-                                "The name as the PDB gives it (\"Square::area() const\"), or without the parameters if just one function has it.",
+                                "The name as the debug information gives it (\"Square::area() const\"), or without the parameters if just one function has it.",
                             ),
                         ),
                     ],
@@ -1214,7 +1106,7 @@ fn tools() -> Value {
                 schema(
                     vec![
                         ("path", path.clone()),
-                        ("pdb", pdb.clone()),
+                        ("debug", pdb.clone()),
                         (
                             "importers",
                             object([
@@ -1363,23 +1255,23 @@ fn tools() -> Value {
             ),
             tool(
                 "lookup",
-                "What is at an address of a binary, by every data source: section, COFF group, symbol (with every name folded there), compiland, and library.",
+                "What is at an address of a binary, by every data source: section, segment or COFF group, symbol (with every name folded there), compile unit, and library.",
                 schema(
                     vec![
                         ("path", path),
-                        ("pdb", pdb),
+                        ("debug", pdb),
                         (
                             "address",
                             prop(
                                 "string",
-                                "An RVA (or, with domain \"file\", a file offset), as a number or a hex string like \"0x1a2b0\".",
+                                "An address, as the image's tools show it (a PE image's from its start, an RVA), or with domain \"file\" a file offset; a number or a hex string like \"0x1a2b0\".",
                             ),
                         ),
                         (
                             "domain",
                             prop(
                                 "string",
-                                "\"vm\" (default: the address is an RVA) or \"file\".",
+                                "\"vm\" (default: the address is in memory) or \"file\".",
                             ),
                         ),
                     ],

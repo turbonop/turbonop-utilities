@@ -483,6 +483,66 @@ fn why_and_recommend_tools_beyond_pe() {
     assert!(e.to_string().contains("debug"), "{e}");
 }
 
+/// query, findings, symbols, and lookup beyond PE: an ELF and a Mach-O
+/// image with their DWARF, read as a PE image with its PDB is.
+#[test]
+fn every_tool_beyond_pe() {
+    let p = |rel: &str| Value::from(testdata(rel).to_string_lossy().into_owned());
+    for image in ["linkopts/funcs-plain", "linkopts/macho-plain"] {
+        let r = session(&[
+            (
+                "query",
+                object([
+                    ("path", p(image)),
+                    ("query", Value::from("name~'unused1' select name, kind")),
+                ]),
+            ),
+            ("findings", object([("path", p(image))])),
+            (
+                "symbols",
+                object([
+                    ("path", p(image)),
+                    ("query", Value::from("unused1")),
+                    ("kind", Value::from("function")),
+                ]),
+            ),
+        ]);
+        let v = result(&r[0]);
+        assert_eq!(v["matched"], 1, "{image}: {v}");
+        assert_eq!(v["rows"][0]["kind"], "function", "{image}: {v}");
+        let v = result(&r[1]);
+        assert!(v.get("duplicate_data").is_some(), "{image}: {v}");
+        let v = result(&r[2]);
+        assert_eq!(v["matched"], 1, "{image}: {v}");
+        let s = &v["symbols"][0];
+        assert!(
+            s["kind"].as_str().unwrap().contains("Function"),
+            "{image}: {v}"
+        );
+        let address = s["address"].as_str().unwrap().to_string();
+        // What's at the function: its section, symbol, and compile unit.
+        let r = session(&[(
+            "lookup",
+            object([("path", p(image)), ("address", Value::from(address))]),
+        )]);
+        let v = result(&r[0]);
+        let sources = &v["sources"];
+        assert!(
+            sources["symbols"]["label"]
+                .as_str()
+                .unwrap()
+                .contains("unused1"),
+            "{image}: {v}"
+        );
+        assert!(
+            sources["compileunits"]["label"]
+                .as_str()
+                .is_some_and(|l| !l.is_empty()),
+            "{image}: {v}"
+        );
+    }
+}
+
 /// symbolize: frames at addresses (structured as `hexc symbolize -json`
 /// gives them), and a log's text annotated; an image missing is an error.
 #[test]

@@ -1326,7 +1326,7 @@ fn customized(
 /// for it), as if stripped if `stripped`: kept in memory, if what is built
 /// is (`hexc serve`), until the files change. (A PDB found, not given, is
 /// the image's: the image changes when it is relinked.)
-fn maps_of(
+pub(crate) fn maps_of(
     path: &Path,
     pdb: Option<&Path>,
     map: Option<&Path>,

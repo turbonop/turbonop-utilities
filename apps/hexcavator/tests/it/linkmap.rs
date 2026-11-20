@@ -132,3 +132,24 @@ fn why_members_and_symbols() {
     .unwrap();
     assert_eq!(json["live"].as_array().unwrap().len(), 2);
 }
+
+/// `linkerlog -image` on an ELF image: its DWARF's compile units are
+/// matched to the members the log names (DWARF doesn't name archives), and
+/// ranked by size, each with why it was linked.
+#[test]
+fn largest_members_of_an_elf_image() {
+    let r = root();
+    let out = hexc(&[
+        "linkerlog",
+        "-json",
+        "-image",
+        r.join("program-elf-g").to_str().unwrap(),
+        r.join("elf-g.why").to_str().unwrap(),
+    ]);
+    let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let members = json["members"].as_array().unwrap();
+    assert_eq!(members.len(), 1, "{json}");
+    assert_eq!(members[0]["member"], "lib.a(used.o)");
+    assert!(members[0]["vm_size"].as_u64().unwrap() > 0, "{json}");
+    assert_eq!(members[0]["why"][0]["symbol"], "used_helper", "{json}");
+}

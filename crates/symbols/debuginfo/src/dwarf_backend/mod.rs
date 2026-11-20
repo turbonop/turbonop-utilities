@@ -1367,6 +1367,33 @@ impl<'data> DwarfInfo<'data> {
                 }
             }
         }
+        // Data: each unit's variables at fixed addresses (as a PDB's
+        // section contributions have its data too), where no code is,
+        // each address once (a variable many units define, an inline one,
+        // is the first's).
+        let mut code: Vec<(u64, u64)> = out.iter().map(|c| (c.addr, c.addr + c.size)).collect();
+        code.sort_unstable();
+        let in_code = |addr: u64| {
+            let i = code.partition_point(|&(s, _)| s <= addr);
+            i > 0 && addr < code[i - 1].1
+        };
+        let mut data: Vec<Contribution> = self
+            .symbols()?
+            .into_iter()
+            .filter(|s| s.kind == crate::SymbolKind::Data && !s.thread_local)
+            .filter_map(|s| {
+                let size = s.size.filter(|&n| n > 0)?;
+                (s.addr != 0 && !in_code(s.addr)).then_some(Contribution {
+                    addr: s.addr,
+                    size,
+                    compiland: s.compiland?,
+                    characteristics: 0,
+                })
+            })
+            .collect();
+        data.sort_unstable_by_key(|c| (c.addr, c.compiland));
+        data.dedup_by_key(|c| c.addr);
+        out.extend(data);
         out.sort_unstable_by_key(|c| (c.addr, c.size, c.compiland));
         Ok(out)
     }

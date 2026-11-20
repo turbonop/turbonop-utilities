@@ -3,24 +3,47 @@
 // tree, and the like. No `vscode` dependency, so it is tested under Node.
 "use strict";
 
-const PE = ["exe", "dll", "sys", "efi"];
-const COFF = ["obj", "lib"];
-
-/** The extension of `file`, lower case ("" if none). */
-function extOf(file) {
-  const m = /\.([A-Za-z0-9]+)$/.exec(baseName(file));
-  return m ? m[1].toLowerCase() : "";
-}
-
 /** The last part of a path (either separator). */
 function baseName(file) {
   return String(file || "").replace(/^.*[\\/]/, "");
 }
 
-/** "pe" (an image with a PDB: every tool), "coff", or "other". */
-function kindOf(file) {
-  const ext = extOf(file);
-  return PE.includes(ext) ? "pe" : COFF.includes(ext) ? "coff" : "other";
+/**
+ * The binary in an Apple bundle (a folder): a dSYM's DWARF file
+ * (`Foo.dSYM/Contents/Resources/DWARF/Foo`), a framework's
+ * (`Foo.framework/Foo`, or `Versions/Current/Foo`), or an app's, a
+ * plug-in's, or a kernel extension's (`Contents/MacOS/Foo`, or an iOS
+ * app's `Foo.app/Foo`). `isFile(path)` says whether a file is there; `list
+ * (dir)` names a folder's files (for a dSYM whose DWARF file is named
+ * otherwise). Null if `dir` isn't a bundle, or has no binary.
+ */
+function bundleBinary(dir, isFile, list) {
+  const m = /^(.*)\.(dSYM|framework|app|appex|bundle|kext|xpc|plugin)$/i.exec(baseName(String(dir || "").replace(/[\\/]+$/, "")));
+  if (!m) {
+    return null;
+  }
+  const sep = /\\/.test(dir) && !/\//.test(dir) ? "\\" : "/";
+  const join = (...parts) => [String(dir).replace(/[\\/]+$/, ""), ...parts].join(sep);
+  // (A dSYM's name is its image's, with the image's own extension: Foo.app.dSYM.)
+  const name = m[1].replace(/\.(app|framework|appex|bundle|kext|xpc|plugin|dylib)$/i, "");
+  const candidates =
+    m[2].toLowerCase() === "dsym"
+      ? [join("Contents", "Resources", "DWARF", name)]
+      : m[2].toLowerCase() === "framework"
+        ? [join(name), join("Versions", "Current", name)]
+        : [join("Contents", "MacOS", name), join(name)];
+  const found = candidates.find((c) => isFile(c));
+  if (found) {
+    return found;
+  }
+  if (m[2].toLowerCase() === "dsym" && list) {
+    const dwarf = join("Contents", "Resources", "DWARF");
+    const files = list(dwarf) || [];
+    if (files.length === 1) {
+      return dwarf + sep + files[0];
+    }
+  }
+  return null;
 }
 
 /** An argument as a shell would need it typed (for showing and copying). */
@@ -48,8 +71,6 @@ function linkSummary(r) {
   return r.link ? s : `${s} (as the image shows it)`;
 }
 
-/** The formats a strip takes something from (`hexc size -stripped`). */
-const STRIPPABLE = ["elf", "macho", "wasm"];
 
 /**
  * hexc's `args`, a size report's as if the file were stripped if
@@ -123,22 +144,12 @@ function sortedRows(row, domain) {
 
 /**
  * What hexc says a file supports (`hexc info -json`): its format, kind,
- * debug information, and `tools`. Without it (an older hexc), what the
- * file's extension suggests: everything for a PE image, headers for COFF,
- * and the rest for other files.
+ * debug information, and `tools`. Without it (hexc couldn't say), what
+ * every file has, whatever its name or format: its size report, a
+ * comparison, and what it is.
  */
-function capsFallback(file) {
-  const kind = kindOf(file);
-  if (kind === "pe") {
-    return {
-      format: "pe",
-      tools: ["report", "compare", "info", "dump", "deps", "resources", "relocations", "disassemble", "init", "findings", "recommend", "why", "refs", "xref", "unreachable", "vtables", "identical", "query", "types", "layout", "inlines", "sourcefiles", "annotations", "data", "functionsDiff", "findingsDiff", "typesDiff", "lenses"],
-    };
-  }
-  if (kind === "coff") {
-    return { format: "coff", tools: ["report", "compare", "info", "dump"] };
-  }
-  return { format: "other", tools: ["report", "compare", "info", "disassemble"] };
+function capsFallback() {
+  return { format: "other", tools: ["report", "compare", "info"] };
 }
 
 /** Whether `caps` (see capsFallback) has tool `id`. */
@@ -158,11 +169,11 @@ function can(caps, id) {
 function toolsFor(entry, caps, baseCaps) {
   const file = entry.file;
   const base = entry.base;
-  caps = caps || capsFallback(file);
+  caps = caps || capsFallback();
   const t = (id, label, icon, detail, more) => Object.assign({ id, label, icon, detail }, more);
   const keep = (tools, has) => tools.filter((tool) => has(tool.id));
   if (base) {
-    baseCaps = baseCaps || capsFallback(base);
+    baseCaps = baseCaps || capsFallback();
     const both = (id) => id === "sizeDiff" || id === "sectionsDiff" || (can(caps, id) && can(baseCaps, id));
     return [
       {
@@ -254,7 +265,7 @@ function toolsFor(entry, caps, baseCaps) {
  * tools, and where its debug information is.
  */
 function sidebarFor(entry, caps) {
-  caps = caps || capsFallback(entry.file);
+  caps = caps || capsFallback();
   const all = toolsFor({ file: entry.file }, caps).flatMap((g) => g.tools);
   const tool = (id) => all.find((t) => t.id === id);
   const file = entry.file;
@@ -644,7 +655,6 @@ function serveLaunch(get) {
 }
 
 module.exports = {
-  PE,
   hexcPath,
   serveLaunch,
   mapSource,
@@ -652,12 +662,10 @@ module.exports = {
   sharedTail,
   capsFallback,
   can,
-  extOf,
   baseName,
-  kindOf,
+  bundleBinary,
   quote,
   commandLine,
-  STRIPPABLE,
   withStripped,
   linkSummary,
   nameIs,

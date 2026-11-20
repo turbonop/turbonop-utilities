@@ -558,7 +558,7 @@ fn legacy_details(data: &[u8]) -> Vec<String> {
 }
 
 /// What a file is and what hexc does with it, for editors: its format
-/// (`pe`, `coff`, `elf`, `macho`, `wasm`, `archive`, `other`), its kind
+/// (`pe`, `elf`, `macho`, `wasm`, `archive`, `other`), its kind
 /// (`linked`, `object`, `dump`, `debug`), its architectures, the debug
 /// information found for it (or why none was), and the tools that apply
 /// (see [`tools_for`]).
@@ -573,17 +573,17 @@ fn info_json(path: &str) -> serde_json::Value {
     let archive = hexcavator_archive::Archive::is_archive(data);
     let fat = hexcavator_macho::fat_archs(data);
     let image = hexcavator_image::Image::parse(data).ok();
+    // (A COFF object is a PE file of kind object, as an ELF or Mach-O
+    // object is of its format.)
+    let coff = image.is_none() && size::is_object_input(data);
     let format = match &image {
         _ if archive => "archive",
-        Some(hexcavator_image::Image::Pe(pe)) if pe.kind() == hexcavator_pe::FileKind::Object => {
-            "coff"
-        }
         Some(hexcavator_image::Image::Pe(_)) => "pe",
         Some(hexcavator_image::Image::Elf(_)) => "elf",
         Some(hexcavator_image::Image::MachO(_)) => "macho",
         Some(hexcavator_image::Image::Wasm(_)) => "wasm",
         Some(_) => "other",
-        None if size::is_object_input(data) => "coff",
+        None if coff => "pe",
         None => "other",
     };
     let kind = match image.as_ref().map(hexcavator_image::Image::kind) {
@@ -593,7 +593,7 @@ fn info_json(path: &str) -> serde_json::Value {
         Some(hexcavator_image::Kind::Dump) => "dump",
         Some(hexcavator_image::Kind::Debug) => "debug",
         Some(_) => "other",
-        None if format == "coff" => "object",
+        None if coff => "object",
         None => "other",
     };
     let archs: Vec<String> = match (&fat, &image) {
@@ -660,15 +660,31 @@ fn info_json(path: &str) -> serde_json::Value {
         "arch": arch,
         "debug": debug,
         "debugError": debug_error,
-        "tools": tools_for(format, kind, has_debug, has_dwarf),
+        "tools": tools_for(format, kind, has_debug, has_dwarf, strippable(data)),
     })
 }
 
+/// Whether stripping the file would take something from it (its debug
+/// information or symbols: see `hexcavator_size::strip`).
+fn strippable(data: &[u8]) -> bool {
+    !hexcavator_size::strip::ranges(data).is_empty()
+}
+
 /// The tools that apply to a file of `format` and `kind` (with debug
-/// information or not), by the editor's names for them.
-fn tools_for(format: &str, kind: &str, debug: bool, dwarf: bool) -> Vec<&'static str> {
+/// information or not), by the editor's names for them: `stripped` if a
+/// strip would take something from it.
+fn tools_for(
+    format: &str,
+    kind: &str,
+    debug: bool,
+    dwarf: bool,
+    stripped: bool,
+) -> Vec<&'static str> {
     let mut t = vec!["report", "compare", "info"];
-    let dumps = ["pe", "coff", "archive", "elf", "macho", "wasm"].contains(&format);
+    if stripped {
+        t.push("stripped");
+    }
+    let dumps = ["pe", "archive", "elf", "macho", "wasm"].contains(&format);
     if dumps {
         t.push("dump");
     }

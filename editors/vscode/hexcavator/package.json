@@ -222,7 +222,7 @@
       "explorer/context": [
         {
           "command": "hexcavator.openInPane",
-          "when": "resourceExtname =~ /^\\.(exe|dll|sys|efi|obj|lib|so|o|a|ko|elf|axf|out|dylib|bundle|wasm)$/i || resourceExtname == '' && !explorerResourceIsFolder",
+          "when": "resourceExtname =~ /^\\.(exe|dll|sys|efi|ocx|cpl|scr|drv|pyd|node|obj|lib|so|o|a|ko|elf|axf|out|dylib|bundle|wasm|debug|dwo|dwp)$/i || resourceFilename =~ /\\.so(\\.[0-9]+)+$/ || resourceExtname == '' && !explorerResourceIsFolder || explorerResourceIsFolder && resourceExtname =~ /^\\.(dSYM|framework|app|appex|bundle|kext|xpc|plugin)$/i",
           "group": "hexc@0"
         }
       ],
@@ -671,7 +671,7 @@
         "hexcavator.codeLens": {
           "type": "boolean",
           "default": true,
-          "description": "Above each function in a source file, its size in each binary open in the Hexcavator sidebar (from the PDB's line tables), with links to its code and why it is there."
+          "description": "Above each function in a source file, its size in each binary open in the Hexcavator sidebar (from its debug information's line tables), with links to its code and why it is there."
         }
       }
     },
@@ -727,6 +727,36 @@
           },
           {
             "filenamePattern": "*.wasm"
+          },
+          {
+            "filenamePattern": "*.so.*"
+          },
+          {
+            "filenamePattern": "*.ocx"
+          },
+          {
+            "filenamePattern": "*.cpl"
+          },
+          {
+            "filenamePattern": "*.scr"
+          },
+          {
+            "filenamePattern": "*.drv"
+          },
+          {
+            "filenamePattern": "*.pyd"
+          },
+          {
+            "filenamePattern": "*.node"
+          },
+          {
+            "filenamePattern": "*.debug"
+          },
+          {
+            "filenamePattern": "*.dwo"
+          },
+          {
+            "filenamePattern": "*.dwp"
           }
         ],
         "priority": "option"

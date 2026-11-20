@@ -60,7 +60,7 @@
       return { text: v.toLocaleString(), sort: v };
     }
     const text = cellText(v);
-    if (m.pe && NAME_KEYS.includes(col.key) && typeof v === "string" && v && !/^\[/.test(v)) {
+    if (m.debug && NAME_KEYS.includes(col.key) && typeof v === "string" && v && !/^\[/.test(v)) {
       const link = el(
         "a",
         {
@@ -107,11 +107,10 @@
     const m = state.message;
     const name = NAME_KEYS.map((k) => row[k]).find((v) => typeof v === "string" && v);
     return JSON.stringify({
-      webviewSection: m.pe && name ? "symbol" : "row",
+      webviewSection: m.debug && name ? "symbol" : "row",
       symbolKind: "any",
-      peImage: !!m.pe,
-      canQuery: !!m.pe,
-      canData: !!m.pe,
+      canQuery: !!m.debug,
+      canData: !!m.debug,
       file: m.file,
       name: name || "",
       preventDefaultContextMenuItems: true,

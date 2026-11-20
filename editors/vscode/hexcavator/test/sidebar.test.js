@@ -40,13 +40,39 @@ test("what a link did, in its toolchain's terms", () => {
   assert.strictEqual(h.linkSummary({ toolchain: "gnu", link: null, judged: null, debug: false }), "");
 });
 
-test("kinds of files", () => {
-  assert.strictEqual(h.kindOf("C:\\a\\b.DLL"), "pe");
-  assert.strictEqual(h.kindOf("/x/y.lib"), "coff");
-  assert.strictEqual(h.kindOf("libz.so"), "other");
-  assert.strictEqual(h.kindOf("noext"), "other");
+test("file names", () => {
   assert.strictEqual(h.baseName("C:\\a/b\\c.exe"), "c.exe");
 });
+
+test("the binary in an Apple bundle", () => {
+  const files = new Set([
+    "/b/Foo.app.dSYM/Contents/Resources/DWARF/Foo",
+    "/b/Bar.dSYM/Contents/Resources/DWARF/libbar.dylib",
+    "/b/Foo.app/Contents/MacOS/Foo",
+    "/b/Phone.app/Phone",
+    "/b/Kit.framework/Versions/Current/Kit",
+    "/b/Flat.framework/Flat",
+    "C:\\b\\Drv.kext\\Contents\\MacOS\\Drv",
+  ]);
+  const isFile = (p) => files.has(p);
+  const list = (dir) => [...files].filter((f) => f.startsWith(dir + "/")).map((f) => f.slice(dir.length + 1)).filter((f) => !f.includes("/"));
+  assert.strictEqual(h.bundleBinary("/b/Foo.app.dSYM", isFile, list), "/b/Foo.app.dSYM/Contents/Resources/DWARF/Foo");
+  // (A dSYM whose DWARF file is named for its image's file: the one there.)
+  assert.strictEqual(h.bundleBinary("/b/Bar.dSYM/", isFile, list), "/b/Bar.dSYM/Contents/Resources/DWARF/libbar.dylib");
+  assert.strictEqual(h.bundleBinary("/b/Foo.app", isFile, list), "/b/Foo.app/Contents/MacOS/Foo");
+  assert.strictEqual(h.bundleBinary("/b/Phone.app", isFile, list), "/b/Phone.app/Phone");
+  assert.strictEqual(h.bundleBinary("/b/Kit.framework", isFile, list), "/b/Kit.framework/Versions/Current/Kit");
+  assert.strictEqual(h.bundleBinary("/b/Flat.framework", isFile, list), "/b/Flat.framework/Flat");
+  assert.strictEqual(h.bundleBinary("C:\\b\\Drv.kext", isFile, list), "C:\\b\\Drv.kext\\Contents\\MacOS\\Drv");
+  assert.strictEqual(h.bundleBinary("/b/Empty.app", isFile, list), null);
+  assert.strictEqual(h.bundleBinary("/b/src", isFile, list), null);
+});
+
+/** What hexc says an image with debug information supports (of any format). */
+const IMAGE = {
+  format: "pe",
+  tools: ["report", "compare", "info", "dump", "deps", "resources", "relocations", "disassemble", "init", "findings", "recommend", "why", "refs", "xref", "unreachable", "vtables", "identical", "query", "types", "layout", "inlines", "sourcefiles", "annotations", "data", "functionsDiff", "findingsDiff", "typesDiff", "lenses"],
+};
 
 test("command lines quote what a shell would split", () => {
   assert.strictEqual(h.commandLine("hexc", ["xref", "-why", "main(int, char**)", "C:\\a b\\x.exe"]), 'hexc xref -why "main(int, char**)" "C:\\a b\\x.exe"');
@@ -83,18 +109,20 @@ test("rows roll up: children counted, diffs signed", () => {
   assert.deepStrictEqual(kids.map((k) => k.name), ["b", "c", "a"]);
 });
 
-test("tools: every one for a PE image, fewer for others, comparisons for a diff", () => {
-  const ids = (entry) => h.toolsFor(entry).flatMap((g) => g.tools.map((t) => t.id));
-  const pe = ids({ file: "a.exe" });
+test("tools: every one for an image with debug information, the same few for any file hexc can't say of, comparisons for a diff", () => {
+  const ids = (entry, caps, base) => h.toolsFor(entry, caps, base).flatMap((g) => g.tools.map((t) => t.id));
+  const image = ids({ file: "a.exe" }, IMAGE);
   for (const id of ["report", "compare", "findings", "why", "refs", "xref", "unreachable", "vtables", "identical", "query", "types", "layout", "inlines", "sourcefiles", "annotations", "disassemble", "dump"]) {
-    assert.ok(pe.includes(id), id);
+    assert.ok(image.includes(id), id);
   }
-  assert.deepStrictEqual(ids({ file: "a.o" }), ["report", "compare", "disassemble", "info"]);
-  assert.deepStrictEqual(ids({ file: "a.lib" }), ["report", "compare", "dump", "info"]);
-  assert.deepStrictEqual(ids({ file: "a.exe", base: "b.exe" }), ["sizeDiff", "sectionsDiff", "functionsDiff", "findingsDiff", "typesDiff"]);
+  // (Whatever its name says.)
+  for (const file of ["a.o", "a.lib", "a.exe", "libz.so.1", "noext"]) {
+    assert.deepStrictEqual(ids({ file }), ["report", "compare", "info"], file);
+  }
+  assert.deepStrictEqual(ids({ file: "a.exe", base: "b.exe" }, IMAGE, IMAGE), ["sizeDiff", "sectionsDiff", "functionsDiff", "findingsDiff", "typesDiff"]);
   assert.deepStrictEqual(ids({ file: "a.so", base: "b.so" }), ["sizeDiff", "sectionsDiff"]);
   // Every tool runs something: arguments, or a question first.
-  for (const g of h.toolsFor({ file: "a.exe" })) {
+  for (const g of h.toolsFor({ file: "a.exe" }, IMAGE)) {
     for (const t of g.tools) {
       assert.ok(["panel", "pick-base", "disassemble", "tree", "text"].includes(t.run), t.id);
       if (t.run === "text") {
@@ -122,7 +150,7 @@ test("tools: as hexc says the file supports them, whatever its name", () => {
 });
 
 test("tools that ask", () => {
-  const tools = h.toolsFor({ file: "a.exe" }).flatMap((g) => g.tools);
+  const tools = h.toolsFor({ file: "a.exe" }, IMAGE).flatMap((g) => g.tools);
   const tool = (id) => tools.find((t) => t.id === id);
   assert.deepStrictEqual(h.argsWith(tool("query"), { file: "a.exe" }, "group by library"), ["query", "a.exe", "group by library"]);
   assert.deepStrictEqual(h.argsWith(tool("layout"), { file: "a.exe" }, "Diamond"), ["types", "-layout", "Diamond", "a.exe"]);
@@ -131,7 +159,7 @@ test("tools that ask", () => {
 });
 
 test("tools shown as tables, with -json", () => {
-  const tools = h.toolsFor({ file: "a.exe" }).flatMap((g) => g.tools);
+  const tools = h.toolsFor({ file: "a.exe" }, IMAGE).flatMap((g) => g.tools);
   const tool = (id) => tools.find((t) => t.id === id);
   for (const id of ["unreachable", "vtables", "identical", "types", "inlines", "sourcefiles", "annotations", "query", "layout"]) {
     assert.ok(h.isTable(tool(id)), id);
@@ -416,7 +444,7 @@ async function treeTests(exe) {
   for (const id of ["disassemble", "why", "refs", "query", "layout", "checksec", "audit", "types", "sourcefiles", "recommend", "findings", "annotations"]) {
     assert.ok(!tools.some((t) => t.tool.id === id), id);
   }
-  const whyTool = { tool: h.toolsFor({ file: image }, h.capsFallback(image)).flatMap((g) => g.tools).find((t) => t.id === "why"), entry: roots[0].entry };
+  const whyTool = { tool: h.toolsFor({ file: image }, IMAGE).flatMap((g) => g.tools).find((t) => t.id === "why"), entry: roots[0].entry };
   assert.ok(sidebar.commandFor(whyTool).includes(`xref -why "<symbol>"`));
   assert.ok(sidebar.commandFor(whyTool, "main").endsWith(`xref -why main ${image}`));
 

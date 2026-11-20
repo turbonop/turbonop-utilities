@@ -10,6 +10,33 @@ const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
 const h = require("./lib/hexc.js");
+
+/** Whether `p` is a folder. */
+function isFolder(p) {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/** Whether `p` is a file. */
+function isFileAt(p) {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** The files in folder `p` (none if it can't be read). */
+function listFolder(p) {
+  try {
+    return fs.readdirSync(p, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
 const disasm = require("./media/disasm.js");
 
 const STORE = "hexcavator.entries";
@@ -198,13 +225,13 @@ class Sidebar {
    */
   caps(entry, which = "file") {
     const file = which === "base" ? entry.base : entry.file;
-    return this.once(entry, which + "Caps", ["info", "-json", file], (out) => parseCaps(out, file)).catch(() => h.capsFallback(file));
+    return this.once(entry, which + "Caps", ["info", "-json", file], (out) => parseCaps(out, file)).catch(() => h.capsFallback());
   }
 
   /** `caps`, if it has finished (else what the file's name suggests). */
   capsNow(entry, which = "file") {
     const file = which === "base" ? entry.base : entry.file;
-    return this.value(entry, which + "Caps") || h.capsFallback(file);
+    return this.value(entry, which + "Caps") || h.capsFallback();
   }
 
   /** The functions of a diff's builds compared (`hexc xref -- base`). */
@@ -850,7 +877,16 @@ function register(context, deps) {
   const cmd = (id, fn) => vscode.commands.registerCommand(id, fn);
   /** Open Binary: the file given (from the Explorer), or one picked, in the pane. */
   const open = async (uri) => {
-    const file = uri && uri.fsPath ? uri.fsPath : (await deps.pickBinary("Binary to open in Hexcavator"))?.fsPath;
+    let file = uri && uri.fsPath ? uri.fsPath : (await deps.pickBinary("Binary to open in Hexcavator"))?.fsPath;
+    // An Apple bundle (a dSYM, a framework, an app): the binary in it.
+    if (file && isFolder(file)) {
+      const inside = h.bundleBinary(file, isFileAt, listFolder);
+      if (!inside) {
+        vscode.window.showWarningMessage(`Hexcavator: no binary found in ${h.baseName(file)}`);
+        return;
+      }
+      file = inside;
+    }
     if (file) {
       reveal(sidebar.add(file, null));
       vscode.commands.executeCommand("hexcavator.binaries.focus");
@@ -1031,9 +1067,9 @@ function parseCaps(out, file) {
   try {
     const all = JSON.parse(out);
     const caps = Array.isArray(all) ? all[0] : null;
-    return caps && Array.isArray(caps.tools) ? caps : h.capsFallback(file);
+    return caps && Array.isArray(caps.tools) ? caps : h.capsFallback();
   } catch {
-    return h.capsFallback(file);
+    return h.capsFallback();
   }
 }
 
@@ -1049,7 +1085,7 @@ function capsOf(file, runHexc) {
   if (kept && Date.now() - kept.at < 60000) {
     return kept.caps;
   }
-  const caps = runHexc(["info", "-json", file]).then((out) => parseCaps(out, file), () => h.capsFallback(file));
+  const caps = runHexc(["info", "-json", file]).then((out) => parseCaps(out, file), () => h.capsFallback());
   looseCaps.set(file, { at: Date.now(), caps });
   return caps;
 }

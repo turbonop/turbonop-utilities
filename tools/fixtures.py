@@ -47,6 +47,7 @@ STEPS = {
     "macho": (["cmd", "/c", r"R:\tools\macho\build.cmd"], ["LLVM_BIN"]),
     "linkmap": (["cmd", "/c", r"R:\tools\linkmap\build.cmd"], ["LLVM_BIN"]),
     "linkopts": (["cmd", "/c", r"R:\tools\linkopts\build.cmd"], ["LLVM_BIN"]),
+    "mingw": (["cmd", "/c", r"R:\tools\mingw\build.cmd"], ["LLVM_BIN"]),
     "cfi": ([sys.executable, "-I", r"R:\tools\cfi\build.py", "fixtures"], ["LLVM_BIN"]),
     "wasm": (["cmd", "/c", r"R:\tools\wasm\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),
     "rust": (["cmd", "/c", r"R:\tools\rust\build.cmd"], ["LLVM_BIN"]),

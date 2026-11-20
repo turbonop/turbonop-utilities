@@ -12,7 +12,12 @@
 //! may throw if it throws (`__cxa_throw`, `__cxa_rethrow`,
 //! `_Unwind_RaiseException`, `_CxxThrowException`), calls through a pointer
 //! (anything), calls an import of C++ (not C's: C doesn't throw), or calls
-//! one that may. (Mach-O's compact unwind isn't read yet: none there.)
+//! one that may.
+//!
+//! Mach-O's: each function's share of its compact unwind
+//! (`__unwind_info`), its FDE in `__eh_frame` if it has one (the compact
+//! encoding can't say how to unwind it), and the LSDA the compact unwind's
+//! index names for it (in `__gcc_except_tab`).
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -56,6 +61,8 @@ pub fn exceptions(image: &hexcavator_image::Image<'_>, x: &Xref, symbols: &[Symb
     if image.elf().is_some() {
         elf_costs(image, x, &mut costs);
         arm_costs(image, x, &mut costs);
+    } else if let Some(m) = image.macho() {
+        macho_costs(image, m, x, &mut costs);
     } else if image.pe().is_some() {
         pe_costs(x, symbols, &mut costs);
     }
@@ -134,6 +141,69 @@ fn elf_costs(
         if let Some(l) = lsda {
             e.1 += lsda_size(l);
         }
+    }
+}
+
+/// Mach-O: each function's share of `__unwind_info` (the section's bytes
+/// over its entries), its `__eh_frame` FDE if it has one, and its LSDA (to
+/// the next LSDA, or `__gcc_except_tab`'s end) as the compact unwind's
+/// index names it.
+fn macho_costs(
+    image: &hexcavator_image::Image<'_>,
+    m: &hexcavator_macho::MachO<'_>,
+    x: &Xref,
+    costs: &mut FxHashMap<u32, (u64, u64)>,
+) {
+    use hexcavator_macho::unwind_info::UnwindInfo;
+    let sections = image.sections();
+    let base = m
+        .segments()
+        .iter()
+        .find(|s| s.fileoff == 0 && s.filesize > 0)
+        .map_or(0, |s| s.vmaddr);
+    // Each function's FDE.
+    for f in crate::frames::frames(image) {
+        if let Some(n) = x.graph.node_starting_at(f.function) {
+            costs.entry(n).or_default().0 += f.size;
+        }
+    }
+    let Some(s) = sections.iter().find(|s| s.name == b"__unwind_info") else {
+        return;
+    };
+    let Some(data) = image.bytes_at(s.addr, s.file_size.min(s.vm_size)) else {
+        return;
+    };
+    let Some(info) = UnwindInfo::parse(data, image.endian()) else {
+        return;
+    };
+    let entries = info.entries();
+    let share = data.len() as u64 / entries.len().max(1) as u64;
+    let lsdas: Vec<(u64, u64)> = entries
+        .iter()
+        .filter_map(|e| {
+            let l = info.lsda(e.function)?;
+            Some((base + u64::from(e.function), base + u64::from(l)))
+        })
+        .collect();
+    let mut starts: Vec<u64> = lsdas.iter().map(|l| l.1).collect();
+    starts.sort_unstable();
+    starts.dedup();
+    let table_end = sections
+        .iter()
+        .find(|s| s.name == b"__gcc_except_tab")
+        .map(|s| s.addr + s.vm_size);
+    for e in &entries {
+        if let Some(n) = x.graph.node_starting_at(base + u64::from(e.function)) {
+            costs.entry(n).or_default().0 += share;
+        }
+    }
+    for (function, lsda) in lsdas {
+        let Some(n) = x.graph.node_starting_at(function) else {
+            continue;
+        };
+        let next = starts.get(starts.partition_point(|&a| a <= lsda)).copied();
+        let end = next.or(table_end).unwrap_or(lsda).max(lsda);
+        costs.entry(n).or_default().1 += end - lsda;
     }
 }
 

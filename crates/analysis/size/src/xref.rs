@@ -662,6 +662,49 @@ fn builder(mut nodes: Vec<(Node, Info)>) -> (Builder, Vec<Info>) {
 }
 
 /// The nodes wholly within `[start, end)`.
+/// Exception data, attached to each function its frame description (an
+/// ELF image's `.eh_frame`, a Mach-O image's `__eh_frame`) names it for:
+/// its LSDA (what is in it, to the next LSDA or its section's end: its
+/// type table's slots, which point to type information) and its
+/// personality routine (or the pointer to it).
+fn attach_exception_data(b: &mut Builder, image: &hexcavator_image::Image<'_>) {
+    let frames = crate::frames::frames(image);
+    let tables: Vec<(u64, u64)> = image
+        .sections()
+        .iter()
+        .filter(|s| s.name == b".gcc_except_table" || s.name == b"__gcc_except_tab")
+        .map(|s| (s.addr, s.addr + s.vm_size))
+        .collect();
+    let mut lsdas: Vec<u64> = frames.iter().filter_map(|f| f.lsda).collect();
+    lsdas.sort_unstable();
+    lsdas.dedup();
+    for f in &frames {
+        let Some(func) = b.node_starting_at(f.function) else {
+            continue;
+        };
+        let mut attached: Vec<u32> = Vec::new();
+        if let Some(at) = f.lsda {
+            let end = tables
+                .iter()
+                .find(|t| (t.0..t.1).contains(&at))
+                .map_or(at, |t| t.1);
+            let next = lsdas
+                .get(lsdas.partition_point(|&l| l <= at))
+                .copied()
+                .filter(|&n| n < end)
+                .unwrap_or(end);
+            attached.extend(b.node_at(at));
+            attached.extend(within(b, at, next));
+        }
+        attached.extend(f.personality.and_then(|p| b.node_at(p)));
+        attached.sort_unstable();
+        attached.dedup();
+        for t in attached.into_iter().filter(|&t| t != func) {
+            b.edge(func, t, Edge::Attached);
+        }
+    }
+}
+
 fn within(b: &Builder, start: u64, end: u64) -> Vec<u32> {
     let nodes = b.nodes();
     let i = nodes.partition_point(|n| n.start < start);
@@ -920,7 +963,8 @@ pub fn macho(
     if !matches!(arch, Arch::X64 | Arch::X86 | Arch::Arm64 | Arch::Arm) {
         return Err(format!("no cross-references for {}", arch.name()));
     }
-    let (b, infos, slots) = common(image, model, symbols, arch);
+    let (mut b, infos, slots) = common(image, model, symbols, arch);
+    attach_exception_data(&mut b, image);
 
     let mut roots: Vec<(u32, Root)> = Vec::new();
     if let Some(n) = m.entry().and_then(|e| b.node_at(e)) {
@@ -1191,44 +1235,7 @@ pub fn elf(
         data_words(&mut b, image, model, width, 0);
     }
 
-    // Exception data: each function's LSDA (what is in it, to the next
-    // LSDA or its section's end: its type table's slots, which point to
-    // type information) and personality, attached.
-    let frames = crate::frames::frames(image);
-    let tables: Vec<(u64, u64)> = image
-        .sections()
-        .iter()
-        .filter(|s| s.name == b".gcc_except_table")
-        .map(|s| (s.addr, s.addr + s.vm_size))
-        .collect();
-    let mut lsdas: Vec<u64> = frames.iter().filter_map(|f| f.lsda).collect();
-    lsdas.sort_unstable();
-    lsdas.dedup();
-    for f in &frames {
-        let Some(func) = b.node_starting_at(f.function) else {
-            continue;
-        };
-        let mut attached: Vec<u32> = Vec::new();
-        if let Some(at) = f.lsda {
-            let end = tables
-                .iter()
-                .find(|t| (t.0..t.1).contains(&at))
-                .map_or(at, |t| t.1);
-            let next = lsdas
-                .get(lsdas.partition_point(|&l| l <= at))
-                .copied()
-                .filter(|&n| n < end)
-                .unwrap_or(end);
-            attached.extend(b.node_at(at));
-            attached.extend(within(&b, at, next));
-        }
-        attached.extend(f.personality.and_then(|p| b.node_at(p)));
-        attached.sort_unstable();
-        attached.dedup();
-        for t in attached.into_iter().filter(|&t| t != func) {
-            b.edge(func, t, Edge::Attached);
-        }
-    }
+    attach_exception_data(&mut b, image);
 
     // Roots.
     let mut roots: Vec<(u32, Root)> = Vec::new();

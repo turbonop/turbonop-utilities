@@ -1380,3 +1380,36 @@ fn exception_data_attached() {
     let out = ok(&["-unreachable"], &image);
     assert!(!out.contains("DW.ref.__gxx_personality_v0"), "{out}");
 }
+
+/// A Mach-O image's exception handling (testdata/linkopts/macho-noexc.dylib):
+/// each function's share of its compact unwind, and its LSDA, as the
+/// compact unwind's index names it; and the function whose cleanups
+/// nothing it calls can throw through.
+#[test]
+fn macho_exception_handling() {
+    let image =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/macho-noexc.dylib");
+    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        .args(["recommend", "-json"])
+        .arg(&image)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let functions = v["exceptions"]["functions"].as_array().unwrap();
+    let f = |name: &str| {
+        functions
+            .iter()
+            .find(|f| f["name"] == name)
+            .unwrap_or_else(|| panic!("{v}"))
+    };
+    assert!(f("needless(int)")["handlers"].as_u64().unwrap() > 0);
+    assert_eq!(f("needless(int)")["needless"], true);
+    assert_eq!(f("needed(int)")["needless"], false);
+    assert_eq!(f("helper(int)")["handlers"], 0);
+    assert!(functions.iter().all(|f| f["unwind"].as_u64().unwrap() > 0));
+}

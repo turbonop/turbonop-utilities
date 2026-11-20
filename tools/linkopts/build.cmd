@@ -98,6 +98,12 @@ set MLD="%LLVM_BIN%\ld64.lld.exe" -arch arm64 -platform_version macos 13.0 13.0 
 %MLD% --icf=all macho-funcs.o -o macho-icf || exit /b 1
 %MLD% -dead_strip macho-funcs.o -o macho-dead || exit /b 1
 %MCC% -O2 -c "%~dp0keep.c" -o keep-macho.o || exit /b 1
+rem Exceptions: macho-noexc.dylib (noexc*.cpp, noexc-main.c), its compact
+rem unwind and LSDAs; its personality and unwinder looked up when loaded.
+%MCC% -O2 -fexceptions -c "%~dp0noexc.cpp" -o macho-noexc.o || exit /b 1
+%MCC% -O2 -fexceptions -c "%~dp0noexc-helpers.cpp" -o macho-noexc-helpers.o || exit /b 1
+%MCC% -O2 -c "%~dp0noexc-main.c" -o macho-noexc-main.o || exit /b 1
+%MLD% -dylib -undefined dynamic_lookup macho-noexc.o macho-noexc-helpers.o macho-noexc-main.o -o macho-noexc.dylib || exit /b 1
 %MLD% -dead_strip keep-macho.o -o keep-macho || exit /b 1
 %MLD% -dead_strip --icf=all macho-funcs.o -o macho-dead-icf || exit /b 1
 %MLD% macho-funcs.o -o macho-ld || exit /b 1

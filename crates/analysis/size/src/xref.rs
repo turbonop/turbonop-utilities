@@ -1156,8 +1156,11 @@ pub fn wasm(
 ///   `.init_array`, `.fini_array`, `.ctors`, `.dtors`, `DT_INIT`,
 ///   `DT_FINI`), and thread-local data.
 ///
-/// (Exception data, `.eh_frame`'s FDEs, isn't followed yet: a function's
-/// is its own.) Contributions are compile units', whose input sections
+/// - Exception data: a function's LSDA (its catch clauses and cleanups, in
+///   `.gcc_except_table`, with the type information they name) and its
+///   personality routine are attached to it, as its `.eh_frame` FDE says.
+///
+/// Contributions are compile units', whose input sections
 /// DWARF doesn't record: each is taken as one the linker could drop alone
 /// (as `-ffunction-sections` and `--gc-sections` make them).
 pub fn elf(
@@ -1186,6 +1189,45 @@ pub fn elf(
     };
     if slots.is_empty() && !file.is_object() {
         data_words(&mut b, image, model, width, 0);
+    }
+
+    // Exception data: each function's LSDA (what is in it, to the next
+    // LSDA or its section's end: its type table's slots, which point to
+    // type information) and personality, attached.
+    let frames = crate::frames::frames(image);
+    let tables: Vec<(u64, u64)> = image
+        .sections()
+        .iter()
+        .filter(|s| s.name == b".gcc_except_table")
+        .map(|s| (s.addr, s.addr + s.vm_size))
+        .collect();
+    let mut lsdas: Vec<u64> = frames.iter().filter_map(|f| f.lsda).collect();
+    lsdas.sort_unstable();
+    lsdas.dedup();
+    for f in &frames {
+        let Some(func) = b.node_starting_at(f.function) else {
+            continue;
+        };
+        let mut attached: Vec<u32> = Vec::new();
+        if let Some(at) = f.lsda {
+            let end = tables
+                .iter()
+                .find(|t| (t.0..t.1).contains(&at))
+                .map_or(at, |t| t.1);
+            let next = lsdas
+                .get(lsdas.partition_point(|&l| l <= at))
+                .copied()
+                .filter(|&n| n < end)
+                .unwrap_or(end);
+            attached.extend(b.node_at(at));
+            attached.extend(within(&b, at, next));
+        }
+        attached.extend(f.personality.and_then(|p| b.node_at(p)));
+        attached.sort_unstable();
+        attached.dedup();
+        for t in attached.into_iter().filter(|&t| t != func) {
+            b.edge(func, t, Edge::Attached);
+        }
     }
 
     // Roots.

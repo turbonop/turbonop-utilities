@@ -381,71 +381,24 @@ pub fn pointer_tables(
     out
 }
 
-/// An image's own symbols (ELF's `.symtab`, or `.dynsym`; Mach-O's symbol
-/// table), as (start, end, name) by start, for where relocations are
-/// without debug information. A Mach-O symbol ends where the next in its
-/// section starts.
+/// An image's own symbols, of any format (see
+/// [`hexcavator_image::Image::symbols`]), as (start, end, name) by start,
+/// for where relocations are without debug information: each address's
+/// first name.
 pub fn image_symbols(image: &hexcavator_image::Image<'_>) -> Vec<(u64, u64, String)> {
-    let mut out: Vec<(u64, u64, String)> = Vec::new();
-    if let Some(elf) = image.elf() {
-        use hexcavator_elf::consts::*;
-        let sections: Vec<_> = elf.sections().collect();
-        let table = sections
-            .iter()
-            .find(|s| s.kind == SHT_SYMTAB)
-            .or_else(|| sections.iter().find(|s| s.kind == SHT_DYNSYM));
-        if let Some(t) = table {
-            out = elf
-                .symbols(t)
-                .into_iter()
-                .filter(|s| {
-                    s.shndx != u32::from(SHN_UNDEF)
-                        && s.shndx < u32::from(SHN_LORESERVE)
-                        && s.size > 0
-                        && !s.name.is_empty()
-                        && matches!(s.kind, STT_OBJECT | STT_FUNC | STT_NOTYPE | 10)
-                })
-                .map(|s| {
-                    (
-                        s.value,
-                        s.value + s.size,
-                        String::from_utf8_lossy(s.name).into_owned(),
-                    )
-                })
-                .collect();
-        }
-    } else if let Some(m) = image.macho() {
-        let mut syms: Vec<(u64, u8, String)> = m
-            .symbols()
-            .into_iter()
-            .filter(|s| s.is_section_defined() && !s.name.is_empty())
-            .map(|s| {
-                (
-                    s.n_value,
-                    s.n_sect,
-                    String::from_utf8_lossy(s.name).into_owned(),
-                )
-            })
-            .collect();
-        syms.sort();
-        syms.dedup_by(|a, b| a.0 == b.0);
-        let sections = m.sections();
-        for (i, (at, sect, name)) in syms.iter().enumerate() {
-            let end = syms
-                .get(i + 1)
-                .filter(|n| n.1 == *sect)
-                .map(|n| n.0)
-                .or_else(|| {
-                    let s = sections.get(usize::from(*sect).checked_sub(1)?)?;
-                    Some(s.addr + s.size)
-                })
-                .unwrap_or(*at);
-            if end > *at {
-                out.push((*at, end, name.clone()));
-            }
-        }
-    }
-    out.sort_by_key(|s| s.0);
+    let mut out: Vec<(u64, u64, String)> = image
+        .symbols()
+        .into_iter()
+        .filter_map(|s| {
+            let size = s.size.filter(|&n| n > 0)?;
+            Some((
+                s.addr,
+                s.addr + size,
+                String::from_utf8_lossy(s.name).into_owned(),
+            ))
+        })
+        .collect();
+    out.dedup_by(|a, b| a.0 == b.0);
     out
 }
 

@@ -11,8 +11,27 @@ pub(crate) fn kind(elf: &ElfFile<'_>) -> Kind {
     match elf.header().kind {
         ET_REL => Kind::Object,
         ET_CORE => Kind::Dump,
+        _ if debug_only(elf) => Kind::Debug,
         _ => Kind::Linked,
     }
+}
+
+/// Whether it is a separate debug file (`objcopy --only-keep-debug`'s, or
+/// `eu-strip -f`'s): its loaded sections described but empty (`SHT_NOBITS`;
+/// its notes kept, its build ID among them), its DWARF all its contents.
+fn debug_only(elf: &ElfFile<'_>) -> bool {
+    let mut loaded = false;
+    let mut dwarf = false;
+    for s in elf.sections() {
+        if s.flags & SHF_ALLOC != 0 && s.size > 0 && s.kind != SHT_NOTE {
+            if s.kind != SHT_NOBITS {
+                return false;
+            }
+            loaded = true;
+        }
+        dwarf |= s.name == b".debug_info" || s.name == b".zdebug_info";
+    }
+    loaded && dwarf
 }
 
 /// Translates a section's type and flags to [`SectionFlags`].

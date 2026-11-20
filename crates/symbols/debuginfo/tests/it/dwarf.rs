@@ -534,6 +534,25 @@ fn where_separate_debug_files_are_looked_for() {
         };
         assert!(candidate_paths(image, &id).is_empty());
     }
+    // A WebAssembly module's external_debug_info (no CRC): a URL, followed
+    // beside the module or below it, not above or elsewhere.
+    let module = Path::new("/srv/www/app.wasm");
+    let ext = |p: &'static [u8]| DebugId::DebugLink { path: p, crc: None };
+    assert_eq!(
+        candidate_paths(module, &ext(b"debug/app.debug.wasm")),
+        [PathBuf::from("/srv/www/debug/app.debug.wasm")]
+    );
+    assert_eq!(
+        candidate_paths(module, &ext(b"./app.debug.wasm"))[0],
+        PathBuf::from("/srv/www/app.debug.wasm")
+    );
+    for bad in [
+        &b"../secret/x.wasm"[..],
+        b"/etc/x.wasm",
+        b"https://cdn/x.wasm",
+    ] {
+        assert!(candidate_paths(module, &ext(bad)).is_empty(), "{bad:?}");
+    }
     let id = DebugId::BuildId(&[0xAB, 0xCD, 0xEF, 0x01]);
     assert_eq!(
         candidate_paths(image, &id),
@@ -556,6 +575,26 @@ fn where_separate_debug_files_are_looked_for() {
             PathBuf::from("/Users/me/app.dwarf"),
         ]
     );
+    // An image in a bundle: its own dSYM, then the bundle's beside it.
+    let dwarf = |at: &str, name: &str| {
+        Path::new(at)
+            .join("Contents")
+            .join("Resources")
+            .join("DWARF")
+            .join(name)
+    };
+    let in_app = Path::new("/b/Foo.app/Contents/MacOS/Foo");
+    let found = candidate_paths(in_app, &DebugId::Uuid([0; 16]));
+    assert_eq!(
+        found[..2],
+        [
+            dwarf("/b/Foo.app/Contents/MacOS/Foo.dSYM", "Foo"),
+            dwarf("/b/Foo.app.dSYM", "Foo")
+        ]
+    );
+    let in_framework = Path::new("/b/Kit.framework/Versions/A/Kit");
+    let found = candidate_paths(in_framework, &DebugId::Uuid([0; 16]));
+    assert_eq!(found[1], dwarf("/b/Kit.framework.dSYM", "Kit"));
     let alt = DebugId::AltLink {
         path: b"/usr/lib/debug/.dwz/app.debug",
         build_id: &[1, 2],

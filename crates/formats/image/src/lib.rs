@@ -253,6 +253,7 @@ impl<'data> Image<'data> {
     pub fn kind(&self) -> Kind {
         match self {
             Image::Pe(pe) => match pe.kind() {
+                hexcavator_pe::FileKind::Image if pe::debug_only(pe) => Kind::Debug,
                 hexcavator_pe::FileKind::Image => Kind::Linked,
                 hexcavator_pe::FileKind::Object => Kind::Object,
             },

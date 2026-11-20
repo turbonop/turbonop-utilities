@@ -1352,3 +1352,21 @@ fn arm32_exception_tables() {
             .all(|f| f["unwind"].as_u64().unwrap() >= 8)
     );
 }
+
+/// A PE image linked /FIXED (no base relocations to say where pointers
+/// are): its data's words that are its addresses are its pointers, as a
+/// static ELF executable's are (testdata/pe-exports/fixed.exe).
+#[test]
+fn pointers_without_relocations() {
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/pe-exports/fixed.exe");
+    let out = ok(&["-why", "two"], &image);
+    assert!(
+        out.contains("points to table") && out.contains("points to two(int)"),
+        "{out}"
+    );
+    let out = ok(&["-unreachable"], &image);
+    assert!(
+        !out.contains("two(int)") && !out.contains("one(int)"),
+        "{out}"
+    );
+}

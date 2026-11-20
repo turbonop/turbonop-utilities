@@ -227,11 +227,12 @@ fn is_initializer_group(name: &str) -> bool {
 /// The graph of `file`, with its debug information and the model and
 /// symbols built from it.
 pub fn pe(
-    file: &PeFile<'_>,
+    image: &hexcavator_image::Image<'_>,
     debug: &hexcavator_debuginfo::DebugInfo<'_>,
     model: &Model,
     symbols: &[Symbol],
 ) -> Result<Xref, String> {
+    let file: &PeFile<'_> = image.pe().ok_or("not a PE image")?;
     let arch = match file.machine() {
         machine::AMD64 => Arch::X64,
         machine::I386 => Arch::X86,
@@ -354,6 +355,11 @@ pub fn pe(
                 Edge::Pointer
             },
         );
+    }
+    // Linked /FIXED (no base relocations): its data's words that are its
+    // addresses, as an ELF executable's without relocations are.
+    if relocs.is_empty() {
+        data_words(&mut b, image, model, pointer_size, base);
     }
 
     // Exception data: functions own their .pdata entries, which own their
@@ -749,8 +755,8 @@ pub fn build(
     model: &Model,
     symbols: &[Symbol],
 ) -> Result<Xref, String> {
-    if let Some(file) = image.pe() {
-        return pe(file, debug, model, symbols);
+    if image.pe().is_some() {
+        return pe(image, debug, model, symbols);
     }
     if image.elf().is_some() {
         return elf(image, debug, model, symbols);
@@ -812,6 +818,49 @@ fn file_bytes<'d>(image: &hexcavator_image::Image<'d>, start: u64, len: u64) -> 
 }
 
 /// A pointer at `slot` to `to`: an address code takes, or data's pointer.
+/// An image whose addresses are resolved in place (a static ELF
+/// executable; a PE image linked `/FIXED`: no relocations to say where
+/// they are): its data's words that are a node's start (less `bias`, a PE
+/// image's preferred base), as pointers.
+fn data_words(
+    b: &mut Builder,
+    image: &hexcavator_image::Image<'_>,
+    model: &Model,
+    width: u64,
+    bias: u64,
+) {
+    let starts: rustc_hash::FxHashSet<u64> = b.nodes().iter().map(|n| n.start).collect();
+    let big = image.endian() == hexcavator_core::Endian::Big;
+    for s in model
+        .sections
+        .iter()
+        .filter(|s| !s.executable() && s.size.file > 0)
+    {
+        // (The bytes the file has: a section's size is what its header
+        // says, which a damaged file can make anything.)
+        // (A PE section's file size is padded past its contents.)
+        let size = if s.size.vm > 0 {
+            s.size.file.min(s.size.vm)
+        } else {
+            s.size.file
+        };
+        let first = s.addr.checked_next_multiple_of(width).unwrap_or(u64::MAX);
+        let data = file_bytes(image, first, size.saturating_sub(first - s.addr));
+        for (i, w) in data.chunks_exact(width as usize).enumerate() {
+            let v = if big {
+                w.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x))
+            } else {
+                w.iter().rev().fold(0u64, |v, &x| (v << 8) | u64::from(x))
+            };
+            if let Some(to) = v.checked_sub(bias)
+                && starts.contains(&to)
+            {
+                pointer_edge(b, first + i as u64 * width, to);
+            }
+        }
+    }
+}
+
 fn pointer_edge(b: &mut Builder, slot: u64, to: u64) {
     let in_code = b.node_at(slot).is_some_and(|f| b.nodes()[f as usize].code);
     b.edge_at(
@@ -1136,31 +1185,7 @@ pub fn elf(
         })
     };
     if slots.is_empty() && !file.is_object() {
-        // Every address resolved in place: data's words that start a node.
-        let starts: rustc_hash::FxHashSet<u64> = b.nodes().iter().map(|n| n.start).collect();
-        for s in model
-            .sections
-            .iter()
-            .filter(|s| !s.executable() && s.size.file > 0)
-        {
-            // (The bytes the file has: a section's size is what its header
-            // says, which a damaged file can make anything.)
-            let first = s.addr.checked_next_multiple_of(width).unwrap_or(u64::MAX);
-            let data = bytes(first, s.size.file.saturating_sub(first - s.addr));
-            for (i, w) in data.chunks_exact(width as usize).enumerate() {
-                let v = match file.endian() {
-                    hexcavator_core::Endian::Little => {
-                        w.iter().rev().fold(0u64, |v, &x| (v << 8) | u64::from(x))
-                    }
-                    hexcavator_core::Endian::Big => {
-                        w.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x))
-                    }
-                };
-                if starts.contains(&v) {
-                    pointer_edge(&mut b, first + i as u64 * width, v);
-                }
-            }
-        }
+        data_words(&mut b, image, model, width, 0);
     }
 
     // Roots.

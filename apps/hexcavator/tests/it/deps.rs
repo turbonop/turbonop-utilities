@@ -383,3 +383,32 @@ fn hostile_names() {
     }
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// A WebAssembly module's: the modules its imports are from, each with
+/// what it imports, the host's (`env`) unless a module of its name is
+/// beside it (then that module).
+#[test]
+fn wasm() {
+    let wasm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm");
+    let run = |image: &Path| -> Value {
+        let (code, out, err) = hexc(&["-json", image.to_str().unwrap()]);
+        assert_eq!(code, 0, "{err}");
+        serde_json::from_str(&out).unwrap()
+    };
+    let g = run(&wasm.join("module.wasm"));
+    assert_eq!(g["modules"][0]["format"], "WebAssembly");
+    let (d, m) = dep(&g, 0, "env");
+    assert_eq!(d["kind"], "import");
+    assert_eq!(m["status"], "host");
+    assert!(import(d, "log")["name"] == "log");
+    // A module of the import's name beside it: that module.
+    let dir = std::env::temp_dir().join(format!("hexcavator-deps-wasm-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(wasm.join("module.wasm"), dir.join("module.wasm")).unwrap();
+    std::fs::copy(wasm.join("startup.wasm"), dir.join("env.wasm")).unwrap();
+    let g = run(&dir.join("module.wasm"));
+    std::fs::remove_dir_all(&dir).ok();
+    let (_, m) = dep(&g, 0, "env");
+    assert_eq!(m["status"], "found", "{m}");
+    assert!(m["path"].as_str().unwrap().ends_with("env.wasm"));
+}

@@ -84,6 +84,13 @@ pub(crate) fn is_executable(ctx: &Ctx<'_>, m: usize) -> bool {
         }),
         crate::Format::MachO => crate::macho::is_executable(ctx, m),
         crate::Format::Pe => true,
+        // (A WASI command, by its _start.)
+        crate::Format::Wasm => ctx
+            .loaded
+            .get(m)
+            .and_then(Option::as_ref)
+            .and_then(|l| hexcavator_wasm::Module::parse(l.data()).ok())
+            .is_some_and(|w| w.exports().iter().any(|e| e.name == b"_start")),
     }
 }
 

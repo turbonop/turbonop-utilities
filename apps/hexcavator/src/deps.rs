@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 pub const USAGE: &str = "\
 usage: hexc deps [options] <image>
 
-What an executable or library (PE, ELF, Mach-O) loads, as a tree: each
+What an executable or library (PE, ELF, Mach-O, WebAssembly) loads, as a
+tree: each
 library it names, where its platform's loader would find it, what that
 loads, and what's missing (libraries, and the symbols imported from them).
 Nothing is loaded or run: files are read.
@@ -25,6 +26,9 @@ Nothing is loaded or run: files are read.
       ld.so.conf, the default directories; $ORIGIN; the interpreter.
   Mach-O: install names, @executable_path, @loader_path, @rpath; system
       libraries in the dyld shared cache.
+  WebAssembly: its imports' modules, its host's (its runtime's, or
+      JavaScript's) unless a module of the name is beside it or in the -L
+      directories; dylink.0's needed libraries, there too.
 
 options:
   -sysroot <dir>   the system: a Windows directory (PE), or the root of a
@@ -159,6 +163,7 @@ fn where_is(status: &Status, pe: bool) -> String {
         }
         Status::SharedCache => "(in the dyld shared cache)".into(),
         Status::Unsearched => "(a system library: not searched)".into(),
+        Status::Host => "(the host's: its runtime, or JavaScript)".into(),
         Status::Assembly { dir: Some(d) } => format!("{}  (side-by-side assembly)", display(d)),
         Status::Assembly { dir: None } => "(side-by-side assembly, not found)".into(),
     }
@@ -356,6 +361,7 @@ fn as_json(g: &Graph) -> Value {
                 Status::ApiSet { host, known } => ("apiSet", None, None, json!({ "host": host, "known": known })),
                 Status::SharedCache => ("sharedCache", None, None, Value::Null),
                 Status::Unsearched => ("unsearched", None, None, Value::Null),
+                Status::Host => ("host", None, None, Value::Null),
                 Status::ApiSetHostMissing { host, tried } => (
                     "apiSetHostMissing",
                     None,

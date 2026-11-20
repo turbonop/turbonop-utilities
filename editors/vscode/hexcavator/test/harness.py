@@ -133,7 +133,28 @@ setTimeout(function () {{ {then} }}, 50);</script>
 </body></html>"""
 
 
+# hexc's path (main sets it), and each file's tools, as `hexc info -json`
+# says them (the extension gives every page its file's).
+EXE = None
+TOOLS = {}
+
+
+def tools_of(file):
+    """What hexc says `file` supports, or None (no such file, or no hexc)."""
+    if EXE is None or not os.path.exists(file):
+        return None
+    if file not in TOOLS:
+        info = subprocess.run([EXE, "info", "-json", file], capture_output=True, text=True)
+        TOOLS[file] = json.loads(info.stdout)[0].get("tools") if info.returncode == 0 else None
+    return TOOLS[file]
+
+
 def render(message, then="", shot=None, vscode=False, html_page=None):
+    # (A page's message has its file's tools, as the extension gives them.)
+    if isinstance(message, dict) and "tools" not in message and isinstance(message.get("file"), str):
+        tools = tools_of(message["file"])
+        if tools is not None:
+            message = dict(message, tools=tools)
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "page.html")
         with open(path, "w", encoding="utf-8") as f:
@@ -154,6 +175,8 @@ def main():
     # (A full path: Windows can't start `target/release/hexc.exe`, a relative
     # path with forward slashes, as given in CI.)
     exe, image, other = os.path.abspath(sys.argv[1]), sys.argv[2], sys.argv[3]
+    global EXE
+    EXE = exe
     shots = sys.argv[4] if len(sys.argv) > 4 else None
     shot = (lambda name: os.path.join(shots, name + ".png")) if shots else (lambda name: None)
     report = hexc(exe, "size", "-d", "sections,symbols", "-n", "20", "-json", image)
@@ -869,7 +892,7 @@ def table_checks(exe, image, shot):
     """Tools' output as tables: the unreachable list (sizes sortable,
     names that open), and a query with its query to edit."""
     unreachable = hexc(exe, "xref", "-json", "-unreachable", "-n", "0", image)
-    message = {"kind": "table", "title": "Unreachable Code and Data", "file": image, "pe": True, "command": "hexc xref -unreachable", "json": unreachable}
+    message = {"kind": "table", "title": "Unreachable Code and Data", "file": image, "debug": True, "command": "hexc xref -unreachable", "json": unreachable}
     dom = render(None, shot=shot("table"), html_page=table_page(message))
     rows = len(unreachable["unreachable"])
     assert f"{rows} rows" in dom, "the row count"
@@ -890,7 +913,7 @@ def table_checks(exe, image, shot):
     assert posted and '"command":"inspect"' in html.unescape(posted.group(1)), "inspect"
     # A query: its box, and Enter runs it.
     query = hexc(exe, "query", "-json", image, "group by library")
-    qmessage = {"kind": "table", "title": "Query", "file": image, "pe": True, "query": "group by library", "command": "hexc query", "json": query}
+    qmessage = {"kind": "table", "title": "Query", "file": image, "debug": True, "query": "group by library", "command": "hexc query", "json": query}
     dom = render(None, shot=shot("query"), html_page=table_page(qmessage, "var q = document.getElementById('query'); q.value = 'kind=data'; q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));"))
     assert 'id="query"' in dom, "the query box"
     posted = re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S)

@@ -952,7 +952,55 @@ fn disassemble(
         Err("-disassemble reads PE images, ELF and Mach-O files, and WebAssembly modules".into())
     }
     .map_err(|e| format!("{}: {e}", path.display()))?;
+    if style == Style::Json {
+        // With its source lines and variables, as a PE image's, if its
+        // debug information is found.
+        if let Ok(opened) = hexcavator_program::Opened::open(path, pdb)
+            && let Ok(program) = opened.program()
+        {
+            let compiland = program.symbols().ok().and_then(|syms| {
+                syms.iter()
+                    .find(|s| s.addr == f.address && !s.folded)
+                    .and_then(|s| s.compiland)
+            });
+            return with_debug(&program, &f, compiland);
+        }
+    }
     Ok(render(&f, style, None))
+}
+
+/// A function's listing as JSON, with each instruction's source line and
+/// the function's parameters and locals (where each lives), from the
+/// program's debug information.
+fn with_debug(
+    program: &hexcavator_program::Program<'_>,
+    f: &hexcavator_size::disasm::Function<'_>,
+    compiland: Option<u32>,
+) -> Result<String, String> {
+    let base = program.image.image_base();
+    let lines = program
+        .debug
+        .source_lines()
+        .map_err(|e| format!("{}: {e}", program.debug_path.display()))?;
+    let source = |address: u64| -> Option<(String, u32)> {
+        let rva = address.checked_sub(base)?;
+        let i = lines
+            .spans
+            .partition_point(|s| s.addr <= rva)
+            .checked_sub(1)?;
+        let span = &lines.spans[i];
+        if rva >= span.addr + span.size.max(1) {
+            return None;
+        }
+        Some((lines.files.get(span.file as usize)?.clone(), span.line))
+    };
+    let text = render(f, Style::Json, Some(&source));
+    let mut json: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let at = f.address.wrapping_sub(base);
+    json["variables"] = variables_json(&program.variables(compiland, at, f.isa));
+    let mut s = serde_json::to_string_pretty(&json).unwrap_or_default();
+    s.push('\n');
+    Ok(s)
 }
 
 /// A function's listing, in `style`, with its lines' sources if known.
@@ -1103,7 +1151,6 @@ fn pe_listing(
     };
     let opened = hexcavator_program::Opened::open(path, pdb)?;
     let program = opened.program()?;
-    let (debug, pdb_path) = (&program.debug, opened.debug_path());
     let syms = program.symbols()?;
     let code = |k: SymbolKind| {
         matches!(
@@ -1159,29 +1206,7 @@ fn pe_listing(
     if style != Style::Json {
         return Ok(render(&f, style, None));
     }
-    // Each instruction's source line, from the PDB's line tables.
-    let lines = debug
-        .source_lines()
-        .map_err(|e| format!("{}: {e}", pdb_path.display()))?;
-    let source = |address: u64| -> Option<(String, u32)> {
-        let rva = address.checked_sub(base)?;
-        let i = lines
-            .spans
-            .partition_point(|s| s.addr <= rva)
-            .checked_sub(1)?;
-        let span = &lines.spans[i];
-        if rva >= span.addr + span.size.max(1) {
-            return None;
-        }
-        Some((lines.files.get(span.file as usize)?.clone(), span.line))
-    };
-    let text = render(&f, style, Some(&source));
-    // Its parameters and locals, with where each lives (from the PDB).
-    let mut json: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    json["variables"] = variables_json(&program.variables(target.compiland, target.addr, isa));
-    let mut s = serde_json::to_string_pretty(&json).unwrap_or_default();
-    s.push('\n');
-    Ok(s)
+    with_debug(&program, &f, target.compiland)
 }
 
 /// A function's parameters and locals as JSON: each one's name, type,

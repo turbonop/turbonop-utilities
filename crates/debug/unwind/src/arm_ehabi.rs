@@ -25,31 +25,10 @@ const LR: u16 = 14;
 const PC: u16 = 15;
 const D0: u16 = 256;
 
-/// How an index entry says to unwind.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Model {
-    /// `EXIDX_CANTUNWIND`: the function can't be unwound through.
-    CantUnwind,
-    /// Arm's compact model, with personality routine 0, 1, or 2
-    /// (`__aeabi_unwind_cpp_pr0`..`pr2`).
-    Compact { personality: u8, inline: bool },
-    /// A personality routine of its own (its address), with opcodes in
-    /// the GNU layout after it.
-    Generic { personality: u64 },
-}
+pub use hexcavator_elf::arm_exidx::{Entry, Model};
 
-/// An index entry.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Entry {
-    pub function: u64,
-    /// The `.ARM.extab` entry's address, if not inline.
-    pub table: Option<u64>,
-    pub model: Model,
-    /// The unwind opcodes (with any trailing `finish` padding).
-    pub opcodes: Vec<u8>,
-}
-
-/// An `.ARM.exidx` section.
+/// An `.ARM.exidx` section (see [`hexcavator_elf::arm_exidx::Exidx`]),
+/// its table entries read from [`Memory`].
 #[derive(Clone, Copy, Debug)]
 pub struct Exidx<'d> {
     pub data: &'d [u8],
@@ -58,129 +37,40 @@ pub struct Exidx<'d> {
     pub endian: Endian,
 }
 
-/// The most extra words a table entry's opcodes may take.
-const MAX_WORDS: u64 = 255;
-
 impl Exidx<'_> {
-    fn word(&self, at: usize) -> Option<u32> {
-        let b: [u8; 4] = self.data.get(at..at.checked_add(4)?)?.try_into().ok()?;
-        Some(match self.endian {
-            Endian::Little => u32::from_le_bytes(b),
-            Endian::Big => u32::from_be_bytes(b),
-        })
+    fn index(&self) -> hexcavator_elf::arm_exidx::Exidx<'_> {
+        hexcavator_elf::arm_exidx::Exidx {
+            data: self.data,
+            address: self.address,
+            endian: self.endian,
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.data.len() / 8
+        self.index().len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.index().is_empty()
     }
 
     /// Entry `i`; `extab` reads table entries (by address).
     pub fn entry(&self, i: usize, extab: &dyn Memory) -> Option<Entry> {
-        let at = i.checked_mul(8)?;
-        let w0 = self.word(at)?;
-        let w1 = self.word(at + 4)?;
-        let here = self.address.wrapping_add(at as u64);
-        let function = prel31(w0, here);
-        if w1 == 1 {
-            return Some(Entry {
-                function,
-                table: None,
-                model: Model::CantUnwind,
-                opcodes: Vec::new(),
-            });
-        }
-        if w1 & 0x8000_0000 != 0 {
-            let personality = ((w1 >> 24) & 0xF) as u8;
-            return Some(Entry {
-                function,
-                table: None,
-                model: Model::Compact {
-                    personality,
-                    inline: true,
-                },
-                opcodes: bytes_of(w1, 3).collect(),
-            });
-        }
-        let table = prel31(w1, here.wrapping_add(4));
-        let read = |a: u64| -> Option<u32> {
+        let endian = self.endian;
+        self.index().entry(i, &|a| {
             let mut b = [0u8; 4];
-            extab.read(a, &mut b).then(|| match self.endian {
+            extab.read(a, &mut b).then(|| match endian {
                 Endian::Little => u32::from_le_bytes(b),
                 Endian::Big => u32::from_be_bytes(b),
             })
-        };
-        let t0 = read(table)?;
-        let mut opcodes = Vec::new();
-        let (model, first, extra_at) = if t0 & 0x8000_0000 != 0 {
-            let personality = ((t0 >> 24) & 0xF) as u8;
-            let model = Model::Compact {
-                personality,
-                inline: false,
-            };
-            if personality == 0 {
-                opcodes.extend(bytes_of(t0, 3));
-                (model, 0, 0)
-            } else {
-                opcodes.extend(bytes_of(t0, 2));
-                (model, (t0 >> 16) & 0xFF, table.wrapping_add(4))
-            }
-        } else {
-            // A personality routine; then the GNU layout: a word count and
-            // three opcode bytes, then the words.
-            let personality = prel31(t0, table);
-            let t1 = read(table.wrapping_add(4))?;
-            opcodes.extend(bytes_of(t1, 3));
-            (
-                Model::Generic { personality },
-                t1 >> 24,
-                table.wrapping_add(8),
-            )
-        };
-        if u64::from(first) > MAX_WORDS {
-            return None;
-        }
-        for k in 0..u64::from(first) {
-            opcodes.extend(bytes_of(read(extra_at.wrapping_add(4 * k))?, 4));
-        }
-        Some(Entry {
-            function,
-            table: Some(table),
-            model,
-            opcodes,
         })
     }
 
     /// The index of the entry covering `pc` (the last starting at or
     /// before it; entries are sorted by function).
     pub fn lookup(&self, pc: u64) -> Option<usize> {
-        let (mut lo, mut hi) = (0usize, self.len());
-        while lo < hi {
-            let mid = lo + (hi - lo) / 2;
-            let w0 = self.word(mid * 8)?;
-            if prel31(w0, self.address.wrapping_add(mid as u64 * 8)) <= pc {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
-        }
-        lo.checked_sub(1)
+        self.index().lookup(pc)
     }
-}
-
-/// A 31-bit place-relative offset's target.
-fn prel31(word: u32, place: u64) -> u64 {
-    let offset = i64::from(((word << 1) as i32) >> 1);
-    place.wrapping_add(offset as u64) & 0xFFFF_FFFF
-}
-
-/// A word's low `n` bytes, most significant first.
-fn bytes_of(word: u32, n: usize) -> impl Iterator<Item = u8> {
-    let b = word.to_be_bytes();
-    (4 - n.min(4)..4).map(move |i| b[i])
 }
 
 /// Runs an entry's opcodes on `registers` (r13 is the frame's SP): they

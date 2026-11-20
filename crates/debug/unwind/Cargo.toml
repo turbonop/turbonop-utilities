@@ -16,6 +16,7 @@ test = false
 [dependencies]
 hexcavator-core.workspace = true
 hexcavator-dwarf.workspace = true
+hexcavator-elf.workspace = true
 hexcavator-pe.workspace = true
 
 [lints]
@@ -27,4 +28,3 @@ hexcavator-x86.workspace = true
 hexcavator-arm64.workspace = true
 hexcavator-arm32.workspace = true
 hexcavator-pdb.workspace = true
-hexcavator-elf.workspace = true

@@ -171,20 +171,7 @@ fn arm_costs(
     x: &Xref,
     costs: &mut FxHashMap<u32, (u64, u64)>,
 ) {
-    use hexcavator_unwind::arm_ehabi::{Exidx, Model};
-    /// Reads `.ARM.extab` (or anything) by address, from the image.
-    struct Bytes<'a, 'd>(&'a hexcavator_image::Image<'d>);
-    impl hexcavator_unwind::Memory for Bytes<'_, '_> {
-        fn read(&self, address: u64, buf: &mut [u8]) -> bool {
-            match self.0.bytes_at(address, buf.len() as u64) {
-                Some(b) => {
-                    buf.copy_from_slice(b);
-                    true
-                }
-                None => false,
-            }
-        }
-    }
+    use hexcavator_elf::arm_exidx::Exidx;
     let sections = image.sections();
     let Some(exidx) = sections.iter().find(|s| s.name == b".ARM.exidx") else {
         return;
@@ -197,9 +184,18 @@ fn arm_costs(
         address: exidx.addr,
         endian: image.endian(),
     };
-    let memory = Bytes(image);
+    // (A table entry's words, from the image.)
+    let big = image.endian() == hexcavator_core::Endian::Big;
+    let word = |a: u64| {
+        let b: [u8; 4] = image.bytes_at(a, 4)?.try_into().ok()?;
+        Some(if big {
+            u32::from_be_bytes(b)
+        } else {
+            u32::from_le_bytes(b)
+        })
+    };
     let entries: Vec<_> = (0..index.len())
-        .filter_map(|i| index.entry(i, &memory))
+        .filter_map(|i| index.entry(i, &word))
         .collect();
     // The table entries, by address, each to the next (or its section's
     // end).
@@ -219,11 +215,7 @@ fn arm_costs(
         if let Some(t) = e.table {
             let next = tables.get(tables.partition_point(|&a| a <= t)).copied();
             let end = next.or(extab_end).unwrap_or(t).max(t);
-            // Its opcodes' words (and a generic model's personality word).
-            let words = match e.model {
-                Model::Generic { .. } => 4 + e.opcodes.len().div_ceil(4) as u64 * 4,
-                _ => e.opcodes.len().div_ceil(4) as u64 * 4,
-            };
+            let words = e.table_unwind_bytes();
             let size = end - t;
             unwind += words.min(size);
             handlers = size.saturating_sub(words);

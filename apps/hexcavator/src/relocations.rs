@@ -361,10 +361,12 @@ fn list_json(s: &Summary) -> Value {
             .iter()
             .enumerate()
             .map(|(i, r)| {
+                // (Addresses as every command's JSON has them: relative to
+                // the image's start, in hexadecimal.)
                 json!({
-                    "addr": r.addr,
+                    "rva": format!("{:#x}", r.addr),
                     "type": r.kind,
-                    "target": r.target,
+                    "target": r.target.map(|t| format!("{t:#x}")),
                     "symbol": r.symbol,
                     "relative": r.relative,
                     "in": within(&s.symbols, r.addr),

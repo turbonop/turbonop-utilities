@@ -371,7 +371,8 @@ impl Server {
                 object([
                     ("name", Value::from(s.name.as_str())),
                     ("kind", Value::from(s.kind.sizebench_name())),
-                    ("address", Value::from(format!("0x{:x}", s.addr))),
+                    // (Relative to the image's start, as hexc query's rva.)
+                    ("rva", Value::from(format!("0x{:x}", s.addr))),
                     ("section", Value::from(section_of(s.addr))),
                     ("file_size", Value::from(s.size.file)),
                     ("vm_size", Value::from(s.size.vm)),

@@ -519,7 +519,7 @@ fn every_tool_beyond_pe() {
             s["kind"].as_str().unwrap().contains("Function"),
             "{image}: {v}"
         );
-        let address = s["address"].as_str().unwrap().to_string();
+        let address = s["rva"].as_str().unwrap().to_string();
         // What's at the function: its section, symbol, and compile unit.
         let r = session(&[(
             "lookup",

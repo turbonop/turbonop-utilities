@@ -21,6 +21,7 @@
     ["libraries", "Library", "the library each symbol's object came from"],
     ["compileunits", "Object", "the object file (compiland) each symbol came from"],
     ["groups", "Group", "the COFF group (.text$mn, .rdata$r, ...) each symbol is in"],
+    ["crates", "Crate", "the Rust crate (or C++ namespace) each symbol is in"],
     ["sourcefiles", "Source", "the source file each byte of code came from (its line tables: an inlined header's code, the header's)"],
   ];
 
@@ -322,7 +323,8 @@
    */
   function groupingChips(sources) {
     const on = sources.filter((x) => x !== "symbols" && CHIPS.some((c) => c[0] === x));
-    const available = (id) => id !== "groups" || (state.message.format || "pe") === "pe";
+    // (COFF groups are a PE image's; the rest, every format's.)
+    const available = (id) => id !== "groups" || state.message.format === "pe";
     const apply = (levels) => {
       const m = state.message;
       // (Made here when the table has each level; else hexc makes the
@@ -352,7 +354,7 @@
           disabled: ok ? undefined : true,
           title: ok
             ? `${active ? "Grouped" : "Group"} by ${about}${active ? " (drag to reorder; Alt+Left and Alt+Right move it)" : ""}`
-            : "This file has no COFF groups (a PE image's PDB has them)",
+            : "This file has no COFF groups (a PE image's debug information has them)",
           "aria-pressed": String(active),
           "data-id": id,
           onclick: () => apply(active ? on.filter((x) => x !== id) : [...on, id]),

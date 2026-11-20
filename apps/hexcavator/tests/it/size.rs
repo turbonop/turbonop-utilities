@@ -106,9 +106,12 @@ fn errors() {
     std::fs::create_dir_all(&dir).unwrap();
     let lonely = dir.join("PEParser.Tests.Dllx64.dll");
     std::fs::copy(&image, &lonely).unwrap();
-    let (ok, _, stderr) = hexc(&[lonely.as_os_str()]);
+    // (Reported by its sections, as any image without debug information
+    // is, with a note saying why.)
+    let (ok, stdout, stderr) = hexc(&[lonely.as_os_str()]);
     std::fs::remove_dir_all(&dir).ok();
-    assert!(!ok);
+    assert!(ok, "{stderr}");
+    assert!(stdout.contains("FILE SIZE"), "{stdout}");
     assert!(stderr.contains("no matching PDB found"), "{stderr}");
 
     // Not an image; no such file; bad usage.
@@ -388,10 +391,16 @@ fn elf_files() {
     ] {
         let path = elf(name);
         let len = std::fs::metadata(&path).unwrap().len() as i64;
-        // The default report is by sections, as for objects.
+        // The default report: an object's or archive's by sections; a
+        // linked image's by sections, libraries, and compilands, as a PE
+        // image's is.
         let (ok, stdout, stderr) = hexc(&[path.as_os_str()]);
         assert!(ok, "{name}: {stderr}");
-        assert!(stdout.contains("    .text\n"), "{name}: {stdout}");
+        if name.ends_with(".o") || name.ends_with(".a") {
+            assert!(stdout.contains("    .text\n"), "{name}: {stdout}");
+        } else {
+            assert!(stdout.contains("\n.text "), "{name}: {stdout}");
+        }
         for sources in [
             "sections",
             "segments",
@@ -1390,9 +1399,11 @@ fn sizebench_and_findings_on_every_format() {
     ]);
     assert!(ok, "{stderr}");
     assert!(stdout.starts_with("Duplicate data:"), "{stdout}");
-    // Without them, ELF's default report is still bloaty's.
+    // Without them, ELF's default report is a PE image's: sections,
+    // libraries, and compilands.
     let (ok, stdout, _) = hexc(&[elf.as_os_str()]);
-    assert!(ok && stdout.contains("FILE SIZE"), "{stdout}");
+    assert!(ok && stdout.contains("Compilands: 2"), "{stdout}");
+    assert!(stdout.contains("bytes in sections"), "{stdout}");
     // Objects have no debug information to read that way.
     let obj = coff("objects-big.obj");
     let (ok, _, stderr) = hexc(&[obj.as_os_str(), "-sizebench".as_ref()]);

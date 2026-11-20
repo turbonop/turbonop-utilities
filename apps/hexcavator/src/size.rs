@@ -1,6 +1,7 @@
-//! `hexc size`: what the bytes of an image are, by section, COFF group,
-//! library, and compiland; or, with `-d`, a bloaty-style report by any
-//! data sources, optionally as a diff against a base image.
+//! `hexc size`: what the bytes of an image are, by section (and COFF
+//! group), library, and compiland, of any format; or, with `-d`, a
+//! bloaty-style report by any data sources, optionally as a diff against a
+//! base image.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -16,12 +17,12 @@ use hexcavator_size::{Model, NO_GROUP, Size, report, symbols};
 pub const USAGE: &str = "\
 usage: hexc size [options] <image>... [-- <base image>...]
 
-Attributes the image's bytes to sections, COFF groups, libraries, and
-compilands, using its PDB. For ELF, Mach-O, and WebAssembly files, and
-COFF objects, import objects, and libraries (.obj, .lib), reports by data
-sources (default: sections), compile units and inlines from their DWARF,
-objects and libraries from their linker's map (-map); -sizebench and
--findings read DWARF as they read PDBs.
+Attributes an image's bytes (PE, ELF, Mach-O, or WebAssembly) to sections
+(and a PE image's COFF groups), libraries, and compilands, using its debug
+information (a PDB, or DWARF), or a PE image's map (-map). Objects and
+libraries (archives), images whose debug information isn't found, and
+images with a Unix linker's map are reported by data sources instead
+(bloaty's report, below; default: sections), as -d reports any image.
 
 options:
   -pdb <path>       its debug information: a PDB, or a file with its DWARF
@@ -1790,20 +1791,22 @@ fn analyze(options: &Options) -> Result<(), String> {
         let text = disassemble(&options.image, function, options.pdb.as_deref(), style)?;
         return finish(crate::out::stdout().write_all(text.as_bytes()));
     }
-    let object = Mmap::open(&options.image).is_ok_and(|m| {
-        is_object_input(&m)
-            || hexcavator_size::elf::is_elf_input(&m)
-            || hexcavator_size::macho::is_macho_input(&m)
-            || hexcavator_size::wasm::is_wasm_input(&m)
-    });
-    // (-sizebench and -findings read the image's debug information, of any
-    // format; without them, the other formats' report is bloaty's.)
+    // A linked image of any format is reported by its sections, COFF
+    // groups, libraries, and compilands, from its debug information (or a
+    // PE image's map); an object or library, an image whose debug
+    // information isn't found, or one with a Unix linker's map, by data
+    // sources (bloaty's).
     let wants_model = options.sizebench || options.findings;
-    if !options.sources.is_empty() || (object && !wants_model) {
+    let debug_option = options.pdb.as_deref().or(options.debug_file.as_deref());
+    let opened = if options.sources.is_empty() {
+        default_program(options, debug_option, wants_model)?
+    } else {
+        None
+    };
+    if opened.is_none() {
         let mut options_with_default;
         let options = if options.sources.is_empty() {
-            // Objects, libraries, and ELF, Mach-O, and WebAssembly files
-            // report bloaty-style by default.
+            // Reported by sections by default.
             options_with_default = Options {
                 sources: vec![Source::Sections],
                 ..options.clone()
@@ -1823,12 +1826,6 @@ fn analyze(options: &Options) -> Result<(), String> {
     let path = &options.image;
     let show = |p: &Path| p.display().to_string();
     let image_map = Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
-    if is_object_input(&image_map) {
-        return Err(format!(
-            "{}: -sizebench and -findings read linked images, not objects or libraries",
-            show(path)
-        ));
-    }
     let image = Image::parse(&image_map).map_err(|e| format!("{}: {e}", show(path)))?;
     if let Some(map_path) = &options.map {
         if options.findings {
@@ -1851,8 +1848,9 @@ fn analyze(options: &Options) -> Result<(), String> {
         };
         return finish(result.and_then(|()| out.flush()));
     }
-    let debug_option = options.pdb.as_deref().or(options.debug_file.as_deref());
-    let opened = hexcavator_program::Opened::open(path, debug_option)?;
+    let Some(Some(opened)) = opened else {
+        return Err(format!("{}: no debug information", show(path)));
+    };
     let program = opened.program()?;
     let (debug, pdb_path) = (&program.debug, opened.debug_path());
     let model = program.model()?;
@@ -1926,6 +1924,59 @@ fn analyze(options: &Options) -> Result<(), String> {
     finish(result.and_then(|()| out.flush()))
 }
 
+/// How `hexc size` reports the image of `options` without data sources
+/// given: `None` by data sources (an object or library; an image with a
+/// Unix linker's map, or whose debug information isn't found); else by its
+/// model, with its debug information opened (`Some(None)`: a PE image's
+/// map instead).
+fn default_program(
+    options: &Options,
+    debug: Option<&Path>,
+    wants_model: bool,
+) -> Result<Option<Option<hexcavator_program::Opened>>, String> {
+    let path = &options.image;
+    let show = || path.display().to_string();
+    let map = Mmap::open(path).map_err(|e| format!("{}: {e}", show()))?;
+    let linked = !is_object_input(&map)
+        && Image::parse(&map).is_ok_and(|i| i.kind() == hexcavator_image::Kind::Linked);
+    if !linked {
+        if wants_model {
+            return Err(format!(
+                "{}: -sizebench and -findings read linked images, not objects or libraries",
+                show()
+            ));
+        }
+        return Ok(None);
+    }
+    let pe = Image::parse(&map).is_ok_and(|i| i.pe().is_some());
+    if options.map.is_some() {
+        // (A PE image's map is a model; a Unix linker's labels the data
+        // sources.)
+        return match (pe, wants_model) {
+            (true, _) => Ok(Some(None)),
+            (false, false) => Ok(None),
+            (false, true) => Err(format!(
+                "{}: -sizebench and -findings read debug information (or a PE image's map), not a Unix linker's map",
+                show()
+            )),
+        };
+    }
+    let wasm = hexcavator_size::wasm::is_wasm_input(&map);
+    match hexcavator_program::Opened::open(path, debug) {
+        Ok(opened) => Ok(Some(Some(opened))),
+        // Without debug information: its data sources, which its own
+        // structures and symbols label.
+        Err(e @ hexcavator_program::Error::NoDebug { .. }) if debug.is_none() && !wants_model => {
+            ereport!("hexc size: {e}: reporting by sections (give it with -debug)");
+            Ok(None)
+        }
+        // (A module's source map, given, isn't debug information that a
+        // model is built from: it labels compile units.)
+        Err(_) if wasm && !wants_model => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 /// `n` with thousands separators.
 fn num(n: u64) -> String {
     let digits = n.to_string();
@@ -1959,10 +2010,19 @@ fn write_tables(
         .sections
         .iter()
         .fold(Size::default(), |acc, s| acc + s.size);
+    // (COFF groups are a PE image's; other formats' sections stand alone.)
+    let grouped = !model.groups.is_empty();
     writeln!(
         out,
         "{:<32} {:>14} {:>14} {:>12}",
-        "Section / COFF group", "File size", "Memory size", "Padding"
+        if grouped {
+            "Section / COFF group"
+        } else {
+            "Section"
+        },
+        "File size",
+        "Memory size",
+        "Padding"
     )?;
     for (si, s) in model.sections.iter().enumerate() {
         writeln!(
@@ -2052,22 +2112,28 @@ fn write_tables(
         )?;
     }
 
-    // What the model doesn't attribute yet: bytes of groups no compiland
-    // contributed (linker-generated tables, padding, ...).
-    let attributed = model.totals(|p| (p.group != NO_GROUP).then_some(()));
+    // What the model doesn't attribute yet: bytes of groups (or, without
+    // COFF groups, sections) no compiland contributed (linker-generated
+    // tables, padding, ...).
+    let (attributed, of, what) = if grouped {
+        let attributed = model.totals(|p| (p.group != NO_GROUP).then_some(()));
+        let in_groups = model
+            .groups
+            .iter()
+            .fold(Size::default(), |acc, g| acc + g.size);
+        (attributed, in_groups, "COFF groups")
+    } else {
+        (model.totals(|_| Some(())), total, "sections")
+    };
     let attributed = attributed.get(&()).map_or(Size::default(), |t| t.size);
-    let in_groups = model
-        .groups
-        .iter()
-        .fold(Size::default(), |acc, g| acc + g.size);
     writeln!(out)?;
     writeln!(
         out,
-        "Attributed to compilands: {} of {} bytes in COFF groups ({} of {} in memory)",
+        "Attributed to compilands: {} of {} bytes in {what} ({} of {} in memory)",
         num(attributed.file),
-        num(in_groups.file),
+        num(of.file),
         num(attributed.vm),
-        num(in_groups.vm)
+        num(of.vm)
     )?;
     Ok(())
 }

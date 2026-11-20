@@ -488,11 +488,69 @@ fn pointer_slots_of_other_files() {
         .filter_map(hexcavator_image::Section::end)
         .max()
         .unwrap();
+    // Its base relocations' slots hold its own addresses; its import
+    // address tables' hold other modules' (none known), each an import.
+    assert!(slots.iter().all(|s| s.width == 8));
+    let imports = image.import_slots();
+    assert!(!imports.is_empty());
+    for s in &slots {
+        let import = imports.iter().any(|i| i.addr == s.addr);
+        assert!(
+            if import {
+                s.target.is_none()
+            } else {
+                s.target.is_some_and(|t| t < end)
+            },
+            "{s:?}"
+        );
+    }
+}
+
+/// The slots each format's loader fills with other modules' addresses,
+/// named: PE's import address tables (by DLL), ELF's GOT and PLT entries
+/// (by symbol), Mach-O's binds (by dylib).
+#[test]
+fn import_slots_of_every_format() {
+    use hexcavator_image::Imported;
+    let read = |p: &str| {
+        std::fs::read(format!(
+            "{}/../../../testdata/{p}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+    };
+    let data = read("types/types.exe");
+    let pe = Image::parse(&data).unwrap().import_slots();
     assert!(
-        slots
-            .iter()
-            .all(|s| s.width == 8 && s.target.is_some_and(|t| t < end))
+        pe.iter().any(|s| s
+            .library
+            .is_some_and(|l| l.eq_ignore_ascii_case(b"KERNEL32.dll"))
+            && !s.delayed),
+        "{pe:?}"
     );
+    let data = read("elf/consumer.so");
+    let elf = Image::parse(&data).unwrap().import_slots();
+    assert!(
+        elf.iter()
+            .all(|s| s.library.is_none() && matches!(s.imported, Imported::Name(_))),
+        "{elf:?}"
+    );
+    assert!(!elf.is_empty());
+    // (Chained fixups, and the older bind opcodes, alike.)
+    for name in [
+        "macho/pointers-arm64.dylib",
+        "macho/pointers-arm64-opcodes.dylib",
+    ] {
+        let data = read(name);
+        let macho = Image::parse(&data).unwrap().import_slots();
+        assert_eq!(macho.len(), 1, "{name}: {macho:?}");
+        assert_eq!(macho[0].imported, Imported::Name(b"_imported"), "{name}");
+        assert_eq!(
+            macho[0].qualified_name().ends_with("_imported"),
+            true,
+            "{name}"
+        );
+    }
 }
 
 /// Android's packed relocations (APS2), and the same unpacked: the slots

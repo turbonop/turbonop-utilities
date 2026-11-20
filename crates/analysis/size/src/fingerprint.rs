@@ -56,64 +56,15 @@ pub struct Fingerprints {
 }
 
 /// Each slot that holds an import's address, and the import, by slot
-/// address: PE's import address tables' (`dll!function`, or
-/// `dll!#ordinal`), ELF's GOT and PLT entries for symbols it doesn't
-/// define (`function`).
+/// address, of any format (see [`Image::import_slots`]): `dll!function`
+/// (or `dll!#ordinal`) for PE's, `dylib!symbol` for Mach-O's binds, and
+/// `function` for ELF's GOT and PLT entries.
 fn imports(image: &Image<'_>) -> rustc_hash::FxHashMap<u64, String> {
-    use hexcavator_pe::imports::ImportName;
-    let mut out = rustc_hash::FxHashMap::default();
-    if let Some(elf) = image.elf() {
-        use hexcavator_elf::consts::{SHN_UNDEF, SHT_REL, SHT_RELA};
-        let sections: Vec<_> = elf.sections().collect();
-        let machine = elf.header().machine;
-        for s in sections
-            .iter()
-            .filter(|s| s.is_alloc() && (s.kind == SHT_REL || s.kind == SHT_RELA))
-        {
-            let symbols = sections
-                .get(s.link as usize)
-                .map(|t| elf.symbols(t))
-                .unwrap_or_default();
-            for r in elf.relocations(s) {
-                if hexcavator_elf::address_relocation(machine, r.kind)
-                    != Some(hexcavator_elf::AddressRelocation::Symbol)
-                {
-                    continue;
-                }
-                if let Some(sym) = symbols
-                    .get(r.symbol as usize)
-                    .filter(|sym| sym.shndx == u32::from(SHN_UNDEF) && !sym.name.is_empty())
-                {
-                    out.insert(r.offset, String::from_utf8_lossy(sym.name).into_owned());
-                }
-            }
-        }
-        return out;
-    }
-    let Some(file) = image.pe() else {
-        return out;
-    };
-    let name = |dll: &[u8], import: ImportName<'_>| match import {
-        ImportName::Name { name, .. } => {
-            format!(
-                "{}!{}",
-                String::from_utf8_lossy(dll),
-                String::from_utf8_lossy(name)
-            )
-        }
-        ImportName::Ordinal(o) => format!("{}!#{o}", String::from_utf8_lossy(dll)),
-    };
-    for dll in file.imports() {
-        for t in dll.thunks() {
-            out.insert(u64::from(t.iat_rva.0), name(dll.name, t.import));
-        }
-    }
-    for dll in file.delay_imports() {
-        for t in dll.thunks() {
-            out.insert(u64::from(t.iat_rva.0), name(dll.name, t.import));
-        }
-    }
-    out
+    image
+        .import_slots()
+        .into_iter()
+        .map(|s| (s.addr, s.qualified_name()))
+        .collect()
 }
 
 /// The functions an ELF image's `.eh_frame` gives an LSDA (a language's

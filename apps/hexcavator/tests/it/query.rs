@@ -194,3 +194,32 @@ fn elf_and_macho_with_dwarf() {
     assert_eq!(code, 1);
     assert!(err.contains("does not match"), "{err}");
 }
+
+/// With DWARF, the image's own symbols name what the DWARF doesn't
+/// describe, as publics (as a PDB's publics do): an ELF image's typeinfo
+/// (which the compiler emits without DWARF), and a WebAssembly module's
+/// function wasm-ld made.
+#[test]
+fn image_symbols_beside_dwarf() {
+    let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
+    for (image, name) in [
+        ("types/types-x86_64-linux-gnu", "typeinfo for Derived"),
+        ("wasm/startup.wasm", "__wasm_call_ctors"),
+    ] {
+        let path = testdata.join(image);
+        let (code, out, err) = hexc(&[
+            "-json",
+            path.to_str().unwrap(),
+            "kind=public select name, compiland, file",
+        ]);
+        assert_eq!(code, 0, "{image}: {err}");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let row = v["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["name"] == name)
+            .unwrap_or_else(|| panic!("{image}: {v}"));
+        assert!(row["file"].as_u64().unwrap() > 0, "{image}: {row}");
+    }
+}

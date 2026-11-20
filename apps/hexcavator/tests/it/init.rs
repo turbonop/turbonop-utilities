@@ -355,3 +355,35 @@ fn sections_larger_than_the_file() {
         assert!(finished, "{image}: hexc init still running after {limit} s");
     }
 }
+
+/// A WebAssembly module's: wasm-ld's constructors (a function with no
+/// DWARF, named by the module's own names) and a WASI command's _start,
+/// then main; a reactor's _initialize, and no main (a library).
+#[test]
+fn wasm() {
+    let v = json("../wasm/startup.wasm", &[]);
+    assert_eq!(v["library"], false);
+    assert_eq!(
+        phases(&v),
+        [
+            (
+                "__wasm_call_ctors".to_string(),
+                vec!["__wasm_call_ctors".to_string()]
+            ),
+            ("the entry point".to_string(), vec!["_start()".to_string()]),
+        ]
+    );
+    let ctors = entry(&v, "__wasm_call_ctors", "__wasm_call_ctors");
+    assert_eq!(
+        callees("../wasm/startup.wasm", &ctors["node"]),
+        ["init_counter()"]
+    );
+    assert_eq!(v["main"]["name"], "main()");
+    let v = json("../wasm/startup-reactor.wasm", &[]);
+    assert_eq!(v["library"], true);
+    assert_eq!(
+        phases(&v),
+        [("_initialize".to_string(), vec!["_initialize()".to_string()])]
+    );
+    assert!(v["main"].is_null());
+}

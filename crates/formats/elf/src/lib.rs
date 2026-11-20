@@ -19,6 +19,7 @@ use alloc::vec::Vec;
 use hexcavator_core::{Endian, Error, ErrorKind, Result, bytes_at, cstr_at};
 
 pub mod arm;
+pub mod arm_exidx;
 pub mod consts;
 pub mod eh_frame;
 #[allow(missing_docs, reason = "generated: each names a constant")]

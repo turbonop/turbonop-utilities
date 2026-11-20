@@ -54,7 +54,6 @@ hexcavator-size = { path = "crates/analysis/size" }
 hexcavator-x86 = { path = "crates/isa/x86" }
 hexcavator-arm64 = { path = "crates/isa/arm64" }
 hexcavator-arm32 = { path = "crates/isa/arm32" }
-hexcavator-unwind = { path = "crates/debug/unwind" }
 hexcavator-codeview = { path = "crates/symbols/codeview" }
 hexcavator-pdb = { path = "crates/symbols/pdb" }
 hexcavator-demangle = { path = "crates/symbols/demangle" }

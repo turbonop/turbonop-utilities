@@ -1249,3 +1249,32 @@ fn kept_whatever_reaches_it() {
         assert!(out.contains(why), "{image} {name}: {out}");
     }
 }
+
+/// Each image's toolchain, with or without debug information: MSVC's for
+/// a PE image with a PDB, GCC's and Clang's for one MinGW built (its DWARF
+/// sections say so), wasm-ld's for a WebAssembly module (whose identical
+/// functions wasm-opt folds, not the linker).
+#[test]
+fn toolchains_of_every_format() {
+    let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
+    for (image, toolchain) in [
+        ("types/types.exe", "msvc"),
+        ("mingw/program.exe", "gnu"),
+        ("wasm/sample-dwarf.wasm", "wasm"),
+        ("linkopts/funcs-plain", "gnu"),
+        ("linkopts/macho-plain", "apple"),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .args(["recommend", "-json"])
+            .arg(testdata.join(image))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{image}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(v["toolchain"], toolchain, "{image}");
+    }
+}

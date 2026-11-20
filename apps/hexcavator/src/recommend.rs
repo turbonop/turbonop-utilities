@@ -12,18 +12,20 @@ use serde_json::json;
 pub const USAGE: &str = "\
 usage: hexc recommend [options] <image>
 
-Changes to the build that would make an image smaller (PE, ELF, or
-Mach-O), largest saving first, each measured from the image and its debug
-information (what can't be measured isn't recommended), in the terms of
-its toolchain (MSVC's, GCC's and Clang's, or Apple's):
+Changes to the build that would make an image smaller (PE, ELF, Mach-O, or
+WebAssembly), largest saving first, each measured from the image and its
+debug information (what can't be measured isn't recommended), in the terms
+of its toolchain (MSVC's; GCC's and Clang's, MinGW's too; Apple's; or
+wasm-ld's and Binaryen's):
 
 - compile an object with /Gy or /Gw (-ffunction-sections or
   -fdata-sections), when it has functions or data nothing reaches that the
   linker kept with the sections they share;
-- link with /OPT:REF or /OPT:ICF (--gc-sections or -dead_strip, --icf),
-  when the link didn't, by the unreferenced functions and data and the
-  identical functions there are (the link's options come from the PDB's
-  record of its command line; elsewhere, the image is the evidence);
+- link with /OPT:REF or /OPT:ICF (--gc-sections or -dead_strip, --icf;
+  for WebAssembly, wasm-opt), when the link didn't, by the unreferenced
+  functions and data and the identical functions there are (the link's
+  options come from the PDB's record of its command line; elsewhere, the
+  image is the evidence);
 - define a variable once, when copies of it are in several objects;
 - hide exports (ELF shared objects, Mach-O images): template
   instantiations and inline functions (-fvisibility=hidden); a library's
@@ -37,8 +39,8 @@ image's own structure shows: its exports, relative relocations as RELR
 and a .hash beside .gnu.hash (ELF), or custom sections (WebAssembly).
 
 options:
-  -pdb <path>   its debug information: a PDB, or a file with its DWARF
-                (or -debug; default: its own, or the one it names)
+  -debug <path> its debug information: a PDB, or a file with its DWARF
+                (or -pdb; default: its own, or the one it names)
   -importers <path>
                 an executable or library that loads it, or a directory of
                 them (searched, with its subdirectories, for those that do):
@@ -267,13 +269,7 @@ fn string_recommendations(
 /// structure shows ([`hexcavator_size::recommend::structural`]).
 pub(crate) fn structural_only(image: &hexcavator_image::Image<'_>) -> Recommended {
     let mut recs = hexcavator_size::recommend::structural(image);
-    let toolchain = if image.macho().is_some() {
-        Toolchain::Apple
-    } else if image.pe().is_some() {
-        Toolchain::Msvc
-    } else {
-        Toolchain::Gnu
-    };
+    let toolchain = Toolchain::of(image, None);
     let own =
         crate::relocations::demangled(hexcavator_size::relocations::image_symbols(image), image);
     recs.extend(string_recommendations(image, toolchain, &own, false));
@@ -297,7 +293,7 @@ pub(crate) fn recommendations(
     x: &hexcavator_size::xref::Xref,
     syms: &[hexcavator_size::symbols::Symbol],
 ) -> Recommended {
-    let toolchain = Toolchain::of(image, debug);
+    let toolchain = Toolchain::of(image, Some(debug));
     // (A Rust program's advice is in Rust's terms.)
     let rust = hexcavator_size::recommend::is_rust(syms);
     let link = debug
@@ -406,11 +402,7 @@ pub(crate) fn recommendations(
 }
 
 fn toolchain_name(t: Toolchain) -> &'static str {
-    match t {
-        Toolchain::Msvc => "msvc",
-        Toolchain::Gnu => "gnu",
-        Toolchain::Apple | Toolchain::AppleLd => "apple",
-    }
+    t.name()
 }
 
 pub(crate) fn as_text(r: &Recommended) -> String {
@@ -432,11 +424,7 @@ pub(crate) fn as_text(r: &Recommended) -> String {
                 out,
                 "The link's options aren't recorded: as the image shows it, the link {} collect unreferenced functions ({}) and {} fold identical ones (ICF).",
                 did(judged.opt_ref),
-                match r.toolchain {
-                    Toolchain::Msvc => "/OPT:REF",
-                    Toolchain::Gnu => "--gc-sections",
-                    Toolchain::Apple | Toolchain::AppleLd => "-dead_strip",
-                },
+                r.toolchain.gc_option().trim_start_matches("-Wl,"),
                 did(judged.opt_icf)
             );
             if r.toolchain == Toolchain::AppleLd {

@@ -72,13 +72,21 @@ pub enum Toolchain {
     /// `LC_BUILD_VERSION` names it: it folds identical functions unless
     /// given `-no_deduplicate`.
     AppleLd,
+    /// Clang (or rustc, or Emscripten) with wasm-ld, for WebAssembly: it
+    /// collects what nothing reaches by default and folds nothing
+    /// (Binaryen's wasm-opt does).
+    Wasm,
 }
 
 impl Toolchain {
-    /// The toolchain of an image with this debug information.
+    /// The toolchain of an image, with its debug information if it has
+    /// any: Apple's (by the linker `LC_BUILD_VERSION` names) for Mach-O;
+    /// MSVC's for PE, unless its debug information is DWARF or the image
+    /// carries MinGW's marks (DWARF sections, a COFF symbol table); wasm-ld
+    /// for WebAssembly; else GCC's and Clang's.
     pub fn of(
         image: &hexcavator_image::Image<'_>,
-        debug: &hexcavator_debuginfo::DebugInfo<'_>,
+        debug: Option<&hexcavator_debuginfo::DebugInfo<'_>>,
     ) -> Self {
         if let Some(m) = image.macho() {
             if m.linker()
@@ -88,32 +96,58 @@ impl Toolchain {
             } else {
                 Toolchain::Apple
             }
-        } else if image.pe().is_some() && debug.pdb().is_some() {
-            Toolchain::Msvc
+        } else if image.wasm().is_some() {
+            Toolchain::Wasm
+        } else if let Some(pe) = image.pe() {
+            let gnu = match debug {
+                Some(d) => d.pdb().is_none(),
+                None => {
+                    pe.file_header().pointer_to_symbol_table.get() != 0
+                        || pe
+                            .sections()
+                            .iter()
+                            .any(|s| pe.section_name(s).starts_with(b".debug_"))
+                }
+            };
+            if gnu { Toolchain::Gnu } else { Toolchain::Msvc }
         } else {
             Toolchain::Gnu
+        }
+    }
+
+    /// Its name, as JSON gives it: `msvc`, `gnu`, `apple`, or `wasm`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Toolchain::Msvc => "msvc",
+            Toolchain::Gnu => "gnu",
+            Toolchain::Apple | Toolchain::AppleLd => "apple",
+            Toolchain::Wasm => "wasm",
         }
     }
 
     fn function_sections(self) -> &'static str {
         match self {
             Toolchain::Msvc => "/Gy",
-            Toolchain::Gnu | Toolchain::Apple | Toolchain::AppleLd => "-ffunction-sections",
+            Toolchain::Gnu | Toolchain::Apple | Toolchain::AppleLd | Toolchain::Wasm => {
+                "-ffunction-sections"
+            }
         }
     }
 
     fn data_sections(self) -> &'static str {
         match self {
             Toolchain::Msvc => "/Gw",
-            Toolchain::Gnu | Toolchain::Apple | Toolchain::AppleLd => "-fdata-sections",
+            Toolchain::Gnu | Toolchain::Apple | Toolchain::AppleLd | Toolchain::Wasm => {
+                "-fdata-sections"
+            }
         }
     }
 
     /// The linker's option that drops what nothing reaches.
-    fn gc_option(self) -> &'static str {
+    pub fn gc_option(self) -> &'static str {
         match self {
             Toolchain::Msvc => "/OPT:REF",
-            Toolchain::Gnu => "-Wl,--gc-sections",
+            Toolchain::Gnu | Toolchain::Wasm => "-Wl,--gc-sections",
             Toolchain::Apple | Toolchain::AppleLd => "-Wl,-dead_strip",
         }
     }
@@ -133,6 +167,9 @@ impl Toolchain {
             Toolchain::Apple | Toolchain::AppleLd => {
                 "link with -Wl,-dead_strip: functions and data nothing reaches are kept"
             }
+            Toolchain::Wasm => {
+                "link without -Wl,--no-gc-sections (wasm-ld collects by default): functions and data nothing reaches are kept"
+            }
         }
     }
 
@@ -140,6 +177,9 @@ impl Toolchain {
     fn icf(self, sections: bool) -> &'static str {
         match self {
             Toolchain::Msvc => "link with /OPT:ICF",
+            Toolchain::Wasm => {
+                "run wasm-opt -O2 on the module (Binaryen's duplicate-function elimination; wasm-ld has no --icf)"
+            }
             Toolchain::Gnu if sections => "link with -Wl,--icf=all (lld or gold)",
             Toolchain::Gnu => {
                 "link with -Wl,--icf=all (lld or gold; compiling with -ffunction-sections)"
@@ -208,7 +248,7 @@ impl Link {
         }
         if image.macho().is_some() {
             link.opt_icf |= macho_folded(image);
-            if Toolchain::of(image, debug) == Toolchain::AppleLd && !compiled.unoptimized() {
+            if Toolchain::of(image, Some(debug)) == Toolchain::AppleLd && !compiled.unoptimized() {
                 link.opt_icf = true;
             }
         }

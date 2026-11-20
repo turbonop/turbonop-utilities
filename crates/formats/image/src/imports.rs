@@ -75,7 +75,10 @@ fn pe_slots<'data>(pe: &hexcavator_pe::PeFile<'data>) -> Vec<ImportSlot<'data>> 
     if pe.kind() == hexcavator_pe::FileKind::Object {
         return out;
     }
-    let width = if pe.optional_header().is_some_and(|h| h.is_64()) {
+    let width = if pe
+        .optional_header()
+        .is_some_and(hexcavator_pe::OptionalHeader::is_64)
+    {
         8
     } else {
         4

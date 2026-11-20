@@ -278,6 +278,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         }
     }
     let mut demangler = hexcavator_demangle::msvc::Demangler::default();
+    let mut any = hexcavator_demangle::Demangler::new();
     // The publics at each address, for naming vtables.
     let mut publics_at: HashMap<u64, Vec<&str>> = HashMap::new();
     for s in shown.iter().filter(|s| s.kind == DebugKind::Public) {
@@ -285,20 +286,11 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
     }
     let mut display = |s: &DebugSymbol, kind: SymbolKind, size: u64, name: String| match kind {
         SymbolKind::String => string_name(image, s.addr, size, &s.name).unwrap_or(name),
-        SymbolKind::Public => {
-            // Rust's and Swift's publics are mangled their own ways, on
-            // Windows too.
-            let mut rust = String::new();
-            if hexcavator_demangle::rust::demangle_into(&name, &mut rust) {
-                rust
-            } else if let Some(swift) = hexcavator_demangle::swift::demangle(&name) {
-                swift
-            } else {
-                demangler
-                    .demangle(&name, hexcavator_demangle::msvc::flags::NO_PTR64)
-                    .unwrap_or(name)
-            }
-        }
+        // (Mangled by whichever scheme: Microsoft's, Rust's and Swift's on
+        // Windows too, and Itanium's in a MinGW image's.)
+        SymbolKind::Public => any
+            .demangle(&name, hexcavator_demangle::msvc::flags::NO_PTR64)
+            .unwrap_or(name),
         // A thunk is named by its public, if it has one (x86 C names keep
         // their underscore), undecorated without access, `virtual`, return
         // type, calling convention, `this` qualifiers, or class-keys:

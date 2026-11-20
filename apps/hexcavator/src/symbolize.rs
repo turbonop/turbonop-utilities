@@ -436,28 +436,14 @@ fn image_symbol(m: &mut Module<'_>, addr: u64) -> Option<Frame> {
 
 /// Names as linked, demangled.
 #[derive(Default)]
-struct Demangler {
-    msvc: hexcavator_demangle::msvc::Demangler,
-    itanium: hexcavator_demangle::itanium::Demangler,
-}
+struct Demangler(hexcavator_demangle::Demangler);
 
 impl Demangler {
     /// `name` demangled: a Microsoft C++ name's qualified name, another's
     /// in full; a C name as is (a Mach-O one without its leading `_`).
     fn name(&mut self, name: &str, macho: bool) -> String {
-        if name.starts_with('?') {
-            let flags = hexcavator_demangle::msvc::flags::NAME_ONLY;
-            if let Some(n) = self.msvc.demangle(name, flags) {
-                return n;
-            }
-        }
-        if let Some(n) = self.itanium.demangle(name) {
-            return n;
-        }
-        match name.strip_prefix('_') {
-            Some(c) if macho => c.to_string(),
-            _ => name.to_string(),
-        }
+        self.0
+            .source_name(name, hexcavator_demangle::msvc::flags::NAME_ONLY, macho)
     }
 }
 

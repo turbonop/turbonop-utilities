@@ -66,7 +66,8 @@ function linkSummary(r) {
   if (!l) {
     return "";
   }
-  const [ref, icf] = r.toolchain === "msvc" ? ["/OPT:REF", "/OPT:ICF"] : r.toolchain === "apple" ? ["-dead_strip", "ICF"] : ["--gc-sections", "--icf"];
+  const terms = { msvc: ["/OPT:REF", "/OPT:ICF"], apple: ["-dead_strip", "ICF"], wasm: ["--gc-sections", "wasm-opt"] };
+  const [ref, icf] = terms[r.toolchain] || ["--gc-sections", "--icf"];
   const s = `${ref} ${l.optRef ? "on" : "off"}, ${icf} ${l.optIcf ? "on" : "off"}`;
   return r.link ? s : `${s} (as the image shows it)`;
 }

@@ -57,6 +57,34 @@ fn add(
 }
 
 /// Builds the maps of a WebAssembly module for `sources`.
+/// A module's own DWARF (its `.debug_*` custom sections), its code's
+/// addresses its code section's offsets.
+fn dwarf_input<'d>(m: &Module<'d>) -> Option<crate::dwarf_units::DwarfInput<'d>> {
+    let code = m
+        .sections()
+        .iter()
+        .find(|s| s.id == hexcavator_wasm::SECTION_CODE)?;
+    let data = m.data();
+    let sections: Vec<crate::dwarf_units::DwarfSection<'d>> = m
+        .sections()
+        .iter()
+        .filter_map(|s| {
+            let name = s.name.strip_prefix(b".debug_")?;
+            let start = usize::try_from(s.data_offset).ok()?;
+            let end = usize::try_from(s.contents_offset + s.contents_size).ok()?;
+            Some((name, data.get(start..end)?.into(), Some(s.data_offset)))
+        })
+        .collect();
+    sections
+        .iter()
+        .any(|(n, _, _)| *n == b"info")
+        .then_some(crate::dwarf_units::DwarfInput {
+            endian: hexcavator_core::Endian::Little,
+            sections,
+            code_at: Some(code.contents_offset),
+        })
+}
+
 pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
     maps_with_source_map(data, file_name, sources, None)
 }
@@ -157,6 +185,28 @@ pub fn maps_with_source_map(
             Source::Archs => {
                 let l = labels.intern("wasm32");
                 map.fill_from(&base, |_| l);
+            }
+            Source::CompileUnits | Source::Inlines | Source::SourceFiles
+                if source_map.is_none() =>
+            {
+                // Its DWARF's, if it has any: its code's units and lines,
+                // and its DWARF's own bytes.
+                if let Some(input) = dwarf_input(&m) {
+                    match source {
+                        Source::CompileUnits => crate::dwarf_units::compile_units(
+                            &input,
+                            &HashMap::new(),
+                            len,
+                            &mut labels,
+                            &mut map,
+                            &base,
+                        ),
+                        Source::Inlines => {
+                            crate::dwarf_units::inlines(&input, &mut labels, &mut map, &base);
+                        }
+                        _ => crate::dwarf_units::source_files(&input, &mut labels, &mut map, &base),
+                    }
+                }
             }
             Source::CompileUnits | Source::Inlines | Source::SourceFiles => {
                 if let Some(sm) = source_map {

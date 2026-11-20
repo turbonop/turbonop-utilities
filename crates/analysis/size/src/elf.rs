@@ -466,6 +466,7 @@ fn elf_compile_units(
     let input = crate::dwarf_units::DwarfInput {
         endian: elf.endian(),
         sections: crate::decompress::elf_dwarf_sections(elf, in_input.then_some(file_offset)),
+        code_at: None,
     };
     // Symbol sizes, by start address, for variables' locations.
     let mut sizes = std::collections::HashMap::new();
@@ -490,6 +491,7 @@ fn elf_inlines(
     let input = crate::dwarf_units::DwarfInput {
         endian: elf.endian(),
         sections: crate::decompress::elf_dwarf_sections(elf, None),
+        code_at: None,
     };
     if with_line {
         crate::dwarf_units::inlines(&input, labels, map, base);

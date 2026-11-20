@@ -1874,3 +1874,29 @@ fn disassembly_with_debug_information_of_every_format() {
         );
     }
 }
+
+/// A WebAssembly module's compileunits, sourcefiles, and inlines from its
+/// own DWARF, without a source map (its DWARF's addresses are its code
+/// section's offsets).
+#[test]
+fn wasm_compile_units_from_dwarf() {
+    let module = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/startup.wasm");
+    for (source, label) in [
+        ("compileunits", "startup.c"),
+        ("sourcefiles", "startup.c"),
+        ("inlines", "startup.c:13"),
+    ] {
+        let (ok, stdout, stderr) = hexc(&[
+            module.as_os_str(),
+            "-d".as_ref(),
+            source.as_ref(),
+            "-n".as_ref(),
+            "0".as_ref(),
+        ]);
+        assert!(ok, "{source}: {stderr}");
+        assert!(
+            stdout.lines().any(|l| l.trim_end().ends_with(label)),
+            "{source}: {stdout}"
+        );
+    }
+}

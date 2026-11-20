@@ -1,5 +1,6 @@
-//! `hexc batch`: a summary of each of many PE images, one JSON line each,
-//! for tracking sizes across a product's binaries and builds.
+//! `hexc batch`: a summary of each of many images (PE, ELF, Mach-O,
+//! WebAssembly), one JSON line each, for tracking sizes across a product's
+//! binaries and builds.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -10,12 +11,14 @@ use serde_json::{Value, json};
 pub const USAGE: &str = "\
 usage: hexc batch [options] <file or directory>...
 
-A summary of each PE image (.exe, .dll, .sys, .efi) given, or found in the
-directories given, with its PDB: one JSON object per line, with its path,
-its PDB's, its sections' sizes, its largest libraries and compilands, and
-its findings' totals (wasted bytes of duplicated data, and template
-families' bytes). An image that can't be read gets a line with its error,
-and the rest go on.
+A summary of each image (an executable or shared library: PE, ELF, Mach-O,
+or WebAssembly) given, or found in the directories given (by what the files
+are, not their names), with its debug information: one JSON object per
+line, with its path, its debug information's, its sections' sizes, its
+largest libraries and compilands, and its findings' totals (wasted bytes of
+duplicated data, and template families' bytes). An image that can't be read
+gets a line with its error, and the rest go on. Images are read in
+parallel; the lines are in the images' order.
 
 options:
   -r          look in directories' subdirectories too
@@ -54,10 +57,11 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
     images.sort();
+    let lines = summaries(&images, top, findings);
     let mut out = io::BufWriter::new(crate::out::stdout());
     let mut failed = false;
-    for path in &images {
-        let line = match summary(path, top, findings) {
+    for (path, line) in images.iter().zip(lines) {
+        let line = match line {
             Ok(v) => v,
             Err(e) => {
                 failed = true;
@@ -83,8 +87,39 @@ fn usage(message: &str) -> ExitCode {
     ExitCode::from(2)
 }
 
-/// The PE images in `dir` (and its subdirectories, if `recurse`), by
-/// extension.
+/// Each image's summary, in order, read in parallel (each thread taking
+/// the next image as it finishes one).
+fn summaries(images: &[PathBuf], top: usize, findings: bool) -> Vec<Result<Value, String>> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZero::get)
+        .min(images.len().max(1));
+    let next = AtomicUsize::new(0);
+    let mut done: Vec<(usize, Result<Value, String>)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(path) = images.get(i) else { break };
+                        mine.push((i, summary(path, top, findings)));
+                    }
+                    mine
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap_or_default())
+            .collect()
+    });
+    done.sort_by_key(|(i, _)| *i);
+    done.into_iter().map(|(_, r)| r).collect()
+}
+
+/// The images in `dir` (and its subdirectories, if `recurse`): the files
+/// that are executables or shared libraries, of any format.
 fn collect(dir: &Path, recurse: bool, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
@@ -95,21 +130,26 @@ fn collect(dir: &Path, recurse: bool, out: &mut Vec<PathBuf>) {
             if recurse {
                 collect(&path, recurse, out);
             }
-        } else if path.extension().and_then(|x| x.to_str()).is_some_and(|x| {
-            ["exe", "dll", "sys", "efi"]
-                .iter()
-                .any(|k| x.eq_ignore_ascii_case(k))
-        }) {
+        } else if is_image(&path) {
             out.push(path);
         }
     }
+}
+
+/// Whether the file at `path` is a linked image (an executable or shared
+/// library, not an object, a dump, or a debug file).
+fn is_image(path: &Path) -> bool {
+    let Ok(map) = hexcavator_mmap::Mmap::open(path) else {
+        return false;
+    };
+    hexcavator_image::Image::parse(&map).is_ok_and(|i| i.kind() == hexcavator_image::Kind::Linked)
 }
 
 /// The summary of the image at `path`.
 fn summary(path: &Path, top: usize, findings: bool) -> Result<Value, String> {
     let opened = hexcavator_program::Opened::open(path, None)?;
     let program = opened.program()?;
-    let (image, debug, data, pdb_path) = (
+    let (image, debug, data, debug_path) = (
         &program.image,
         &program.debug,
         opened.data(),
@@ -156,7 +196,7 @@ fn summary(path: &Path, top: usize, findings: bool) -> Result<Value, String> {
     });
     let mut v = json!({
         "path": path.display().to_string(),
-        "pdb": pdb_path.display().to_string(),
+        "debug": debug_path.display().to_string(),
         "fileSize": data.len(),
         "sections": sections,
         "libraries": libraries,

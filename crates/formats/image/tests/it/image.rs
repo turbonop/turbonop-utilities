@@ -258,3 +258,53 @@ fn corrupted_images_do_not_panic() {
         }
     }
 }
+
+fn fixture(path: &str) -> Vec<u8> {
+    let path = format!("{}/../../../testdata/{path}", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// Every format's own symbols alike: code or data by their sections where
+/// the format doesn't say, sized to the next symbol where it records no
+/// size, and WebAssembly's exports global.
+#[test]
+fn symbols_of_every_format() {
+    use hexcavator_image::{SymbolKind, SymbolSource};
+    // Mach-O: no kinds or sizes of its own.
+    let data = fixture("linkopts/macho-plain");
+    let image = Image::parse(&data).unwrap();
+    let syms = image.symbols();
+    let by = |name: &[u8]| syms.iter().find(|s| s.name == name).unwrap();
+    let add = by(b"_add_a");
+    assert_eq!(add.kind, SymbolKind::Function);
+    assert!(!add.size_recorded);
+    assert_eq!(add.size, Some(by(b"_add_b").addr - add.addr));
+    assert_eq!(by(b"_table1").kind, SymbolKind::Data);
+    // PE: its exports, by their sections.
+    let data = fixture("xref/xref-x64.exe");
+    let image = Image::parse(&data).unwrap();
+    let syms = image.symbols();
+    let e = syms.iter().find(|s| s.name == b"exported_twice").unwrap();
+    assert_eq!(
+        (e.kind, e.source),
+        (SymbolKind::Function, SymbolSource::Exported)
+    );
+    assert!(e.size.is_some_and(|n| n > 0));
+    // ELF: as its symbol table records them.
+    let data = fixture("linkopts/funcs-plain");
+    let image = Image::parse(&data).unwrap();
+    let syms = image.symbols();
+    let add = syms.iter().find(|s| s.name == b"add_a").unwrap();
+    assert!(add.size_recorded && add.kind == SymbolKind::Function);
+    // WebAssembly: exported functions are global, by their export names
+    // too.
+    let data = fixture("wasm/module.wasm");
+    let image = Image::parse(&data).unwrap();
+    let syms = image.symbols();
+    assert!(
+        syms.iter().any(|s| s.global
+            && s.source == SymbolSource::Exported
+            && s.kind == SymbolKind::Function),
+        "{syms:?}"
+    );
+}

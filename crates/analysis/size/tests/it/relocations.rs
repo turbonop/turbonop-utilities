@@ -133,8 +133,12 @@ fn pointer_tables_and_symbols() {
     let data = read("xref/xref-x64.exe");
     let image = Image::parse(&data).unwrap();
     let r = relocations(&image);
-    // (No symbol table in a PE image: none of its own.)
-    assert!(image_symbols(&image).is_empty());
+    // (No symbol table in a PE image with a PDB: its own are its exports,
+    // each to the next symbol or its section's end.)
+    let own = image_symbols(&image);
+    assert_eq!(own.len(), 1, "{own:?}");
+    assert_eq!((own[0].0, own[0].2.as_str()), (0x11E8, "exported_twice"));
+    assert!(own[0].1 > own[0].0);
     let symbols = vec![(0u64, 0x10_0000u64, "everything".to_string())];
     let t = pointer_tables(&r, &symbols, 1);
     assert_eq!(t.len(), 1);

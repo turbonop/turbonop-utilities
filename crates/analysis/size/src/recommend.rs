@@ -206,8 +206,8 @@ impl Link {
                 }
             }
         }
-        if let Some(m) = image.macho() {
-            link.opt_icf |= macho_folded(m);
+        if image.macho().is_some() {
+            link.opt_icf |= macho_folded(image);
             if Toolchain::of(image, debug) == Toolchain::AppleLd && !compiled.unoptimized() {
                 link.opt_icf = true;
             }
@@ -253,14 +253,14 @@ impl Link {
 
 /// Whether a Mach-O image's symbol table has functions of different names
 /// at one address (ICF folded them).
-fn macho_folded(m: &hexcavator_macho::MachO<'_>) -> bool {
-    let code = macho_code_sections(m);
+fn macho_folded(image: &hexcavator_image::Image<'_>) -> bool {
+    use hexcavator_image::{SymbolKind, SymbolSource};
     let mut at: rustc_hash::FxHashMap<u64, &[u8]> = rustc_hash::FxHashMap::default();
-    for s in m.symbols() {
-        if !s.is_section_defined() || s.name.is_empty() || !code.contains(&s.n_sect) {
+    for s in image.symbols() {
+        if s.kind != SymbolKind::Function || s.source != SymbolSource::SymbolTable {
             continue;
         }
-        match at.entry(s.n_value) {
+        match at.entry(s.addr) {
             std::collections::hash_map::Entry::Occupied(e) if *e.get() != s.name => return true,
             std::collections::hash_map::Entry::Occupied(_) => {}
             std::collections::hash_map::Entry::Vacant(e) => {
@@ -271,54 +271,40 @@ fn macho_folded(m: &hexcavator_macho::MachO<'_>) -> bool {
     false
 }
 
-/// The (1-based) numbers of a Mach-O image's sections of code.
-fn macho_code_sections(m: &hexcavator_macho::MachO<'_>) -> rustc_hash::FxHashSet<u8> {
-    use hexcavator_macho::consts::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
-    m.sections()
-        .iter()
-        .filter(|s| s.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0)
-        .filter_map(|s| u8::try_from(s.index + 1).ok())
-        .collect()
-}
-
-/// The names of the functions an image's symbol table defines (ELF's, or
-/// its debug file's if it has none; Mach-O's, less the `_` prefix C names
-/// take), if it has one.
-fn defined_functions<'a>(
-    image: &'a hexcavator_image::Image<'_>,
-    debug: &'a hexcavator_debuginfo::DebugInfo<'_>,
-) -> Option<rustc_hash::FxHashSet<&'a [u8]>> {
-    use hexcavator_elf::consts::{SHN_UNDEF, SHT_SYMTAB, STT_FUNC};
-    if let Some(m) = image.macho() {
-        let code = macho_code_sections(m);
-        let names: rustc_hash::FxHashSet<&'a [u8]> = m
+/// The names of the functions an image's full symbol table defines (its
+/// own, or its debug file's if it has none; a Mach-O image's less the `_`
+/// prefix C names take), if it has one: of any format (see
+/// [`hexcavator_image::Image::symbols`]).
+fn defined_functions(
+    image: &hexcavator_image::Image<'_>,
+    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+) -> Option<rustc_hash::FxHashSet<Vec<u8>>> {
+    use hexcavator_image::{SymbolKind, SymbolSource};
+    let of = |image: &hexcavator_image::Image<'_>| -> Option<rustc_hash::FxHashSet<Vec<u8>>> {
+        let macho = image.macho().is_some();
+        let names: rustc_hash::FxHashSet<Vec<u8>> = image
             .symbols()
             .into_iter()
-            .filter(|s| s.is_section_defined() && code.contains(&s.n_sect))
-            .filter_map(|s| s.name.strip_prefix(b"_"))
+            .filter(|s| {
+                s.kind == SymbolKind::Function
+                    && matches!(s.source, SymbolSource::SymbolTable | SymbolSource::Names)
+            })
+            .filter_map(|s| {
+                if macho {
+                    s.name.strip_prefix(b"_")
+                } else {
+                    Some(s.name)
+                }
+            })
             .filter(|n| !n.is_empty())
+            .map(<[u8]>::to_vec)
             .collect();
-        return (!names.is_empty()).then_some(names);
-    }
-    // (`STT_GNU_IFUNC`: a function chosen at load.)
-    const STT_GNU_IFUNC: u8 = 10;
-    let of = |elf: &hexcavator_elf::ElfFile<'a>| -> Option<rustc_hash::FxHashSet<&'a [u8]>> {
-        let table = elf.sections().find(|s| s.kind == SHT_SYMTAB)?;
-        Some(
-            elf.symbols(&table)
-                .into_iter()
-                .filter(|s| {
-                    matches!(s.kind, STT_FUNC | STT_GNU_IFUNC)
-                        && s.shndx != u32::from(SHN_UNDEF)
-                        && !s.name.is_empty()
-                })
-                .map(|s| s.name)
-                .collect(),
-        )
+        (!names.is_empty()).then_some(names)
     };
-    of(image.elf()?).or_else(|| {
+    of(image).or_else(|| {
+        // (A stripped ELF image: its debug file's symbol table.)
         let data = debug.dwarf()?.file_data();
-        of(&hexcavator_elf::ElfFile::parse(data).ok()?)
+        of(&hexcavator_image::Image::parse(data).ok()?)
     })
 }
 

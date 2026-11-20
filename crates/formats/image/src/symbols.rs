@@ -14,7 +14,8 @@ pub enum SymbolKind {
     Function,
     /// Data.
     Data,
-    /// Something else, or not said (a Mach-O symbol, a PE export).
+    /// Something else, or not said: in a linked image, only what is in no
+    /// section (the others are known by their sections).
     Other,
 }
 
@@ -35,8 +36,13 @@ pub enum SymbolSource {
 pub struct ImageSymbol<'data> {
     /// Its address (see the crate's addresses).
     pub addr: u64,
-    /// Its size, if the format records it (ELF, WebAssembly).
+    /// Its size: as the format records it (ELF, WebAssembly), or else, in
+    /// a linked image, to the next symbol in its section or the section's
+    /// end (see [`ImageSymbol::size_recorded`]).
     pub size: Option<u64>,
+    /// Whether the format recorded its size (not measured to the next
+    /// symbol).
+    pub size_recorded: bool,
     /// Its name, as linked (decorated, mangled).
     pub name: &'data [u8],
     /// What it names.
@@ -52,6 +58,12 @@ impl<'data> Image<'data> {
     /// address named in more than one table, the full table's first. Files
     /// and sections' names, and undefined and absolute symbols, are left
     /// out.
+    ///
+    /// In a linked image every format's are alike: each symbol is code or
+    /// data by its section if its format doesn't say (a Mach-O symbol, a
+    /// PE export), has a size (to the next symbol in its section, if its
+    /// format records none), and a 32-bit ARM function's address is
+    /// without its Thumb bit.
     pub fn symbols(&self) -> Vec<ImageSymbol<'data>> {
         let mut out = match self {
             Image::Pe(pe) => pe_symbols(pe),
@@ -59,13 +71,61 @@ impl<'data> Image<'data> {
             Image::MachO(m) => macho_symbols(m),
             Image::Wasm(m) => wasm_symbols(m),
         };
-        out.sort_by(|a, b| {
-            (a.addr, a.source, b.size.is_some())
-                .cmp(&(b.addr, b.source, a.size.is_some()))
-                .then_with(|| a.name.cmp(b.name))
-        });
-        out.dedup_by(|a, b| a.addr == b.addr && a.name == b.name);
+        if self.kind() == crate::Kind::Linked {
+            self.complete(&mut out);
+        }
+        sort(&mut out);
         out
+    }
+
+    /// `symbols`' kinds, Thumb bits, and sizes, by their sections.
+    fn complete(&self, symbols: &mut Vec<ImageSymbol<'data>>) {
+        use crate::section::SectionFlags as F;
+        let mut sections: Vec<crate::Section<'data>> = self
+            .sections()
+            .into_iter()
+            .filter(|s| s.vm_size > 0 && !s.flags.contains(F::NOT_LOADED))
+            .collect();
+        sections.sort_by_key(|s| s.addr);
+        let section_of = |addr: u64| {
+            let i = sections
+                .partition_point(|s| s.addr <= addr)
+                .checked_sub(1)?;
+            sections.get(i).filter(|s| s.contains(addr))
+        };
+        let thumb = self.arch() == crate::Arch::Arm;
+        for s in symbols.iter_mut() {
+            let Some(section) = section_of(s.addr) else {
+                continue;
+            };
+            if s.kind == SymbolKind::Other {
+                // (Code by what the section holds, not its mapping: a
+                // Mach-O image's `__TEXT,__const` is executable data.)
+                s.kind = if section.flags.contains(F::CODE) {
+                    SymbolKind::Function
+                } else {
+                    SymbolKind::Data
+                };
+            }
+            if thumb && s.kind == SymbolKind::Function {
+                s.addr &= !1;
+            }
+        }
+        sort(symbols);
+        // Sizes: to the next address named in the same section, or its end.
+        let starts: Vec<u64> = symbols.iter().map(|s| s.addr).collect();
+        for s in symbols.iter_mut().filter(|s| s.size.is_none()) {
+            let Some(section) = section_of(s.addr) else {
+                continue;
+            };
+            let end = section.end().unwrap_or(u64::MAX);
+            let next = starts[starts.partition_point(|&a| a <= s.addr)..]
+                .first()
+                .copied()
+                .filter(|&n| n < end)
+                .unwrap_or(end);
+            s.size = Some(next - s.addr).filter(|&n| n > 0);
+        }
     }
 
     /// The image's extent in memory, as `[start, end)` in the format's
@@ -123,6 +183,17 @@ impl<'data> Image<'data> {
     }
 }
 
+/// By address; at an address, the full symbol table's first, then those
+/// with sizes; each name at an address once.
+fn sort(symbols: &mut Vec<ImageSymbol<'_>>) {
+    symbols.sort_by(|a, b| {
+        (a.addr, a.source, !a.size_recorded, b.size.is_some())
+            .cmp(&(b.addr, b.source, !b.size_recorded, a.size.is_some()))
+            .then_with(|| a.name.cmp(b.name))
+    });
+    symbols.dedup_by(|a, b| a.addr == b.addr && a.name == b.name);
+}
+
 fn pe_symbols<'data>(pe: &hexcavator_pe::PeFile<'data>) -> Vec<ImageSymbol<'data>> {
     use hexcavator_pe::exports::ExportTarget;
     let mut out = Vec::new();
@@ -132,6 +203,7 @@ fn pe_symbols<'data>(pe: &hexcavator_pe::PeFile<'data>) -> Vec<ImageSymbol<'data
                 out.push(ImageSymbol {
                     addr: u64::from(rva.0),
                     size: None,
+                    size_recorded: false,
                     name,
                     kind: SymbolKind::Other,
                     source: SymbolSource::Exported,
@@ -168,6 +240,7 @@ fn pe_symbols<'data>(pe: &hexcavator_pe::PeFile<'data>) -> Vec<ImageSymbol<'data
             out.push(ImageSymbol {
                 addr: u64::from(header.virtual_address.get()) + u64::from(s.value),
                 size: None,
+                size_recorded: false,
                 name,
                 kind: if code {
                     SymbolKind::Function
@@ -223,6 +296,7 @@ fn elf_symbols<'data>(elf: &hexcavator_elf::ElfFile<'data>) -> Vec<ImageSymbol<'
                     s.value
                 },
                 size: (s.size > 0).then_some(s.size),
+                size_recorded: s.size > 0,
                 name: s.name,
                 kind,
                 source,
@@ -243,6 +317,7 @@ fn macho_symbols<'data>(m: &hexcavator_macho::MachO<'data>) -> Vec<ImageSymbol<'
         out.push(ImageSymbol {
             addr: s.n_value,
             size: None,
+            size_recorded: false,
             name: s.name,
             kind: SymbolKind::Other,
             source: SymbolSource::SymbolTable,
@@ -263,21 +338,47 @@ fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'d
     };
     let functions = m.functions();
     let first = functions.first().map_or(0, |f| f.index);
-    for n in m.names(hexcavator_wasm::NAME_FUNCTION) {
-        let Some(f) = n
-            .index
+    let function = |index: u32| {
+        index
             .checked_sub(first)
             .and_then(|i| functions.get(usize::try_from(i).ok()?))
-        else {
+    };
+    // (Exported functions are global: seen from the host, by their export
+    // names too.)
+    /// An export's kind: a function.
+    const EXPORT_FUNCTION: u8 = 0;
+    let exports: Vec<hexcavator_wasm::Export<'data>> = m
+        .exports()
+        .into_iter()
+        .filter(|e| e.kind == EXPORT_FUNCTION)
+        .collect();
+    let exported = |index: u32| exports.iter().any(|e| e.index == index);
+    for n in m.names(hexcavator_wasm::NAME_FUNCTION) {
+        let Some(f) = function(n.index) else {
             continue;
         };
         out.push(ImageSymbol {
             addr: f.offset.saturating_sub(code.contents_offset),
             size: Some(f.size),
+            size_recorded: true,
             name: n.name,
             kind: SymbolKind::Function,
             source: SymbolSource::Names,
-            global: false,
+            global: exported(n.index),
+        });
+    }
+    for e in &exports {
+        let Some(f) = function(e.index) else {
+            continue;
+        };
+        out.push(ImageSymbol {
+            addr: f.offset.saturating_sub(code.contents_offset),
+            size: Some(f.size),
+            size_recorded: true,
+            name: e.name,
+            kind: SymbolKind::Function,
+            source: SymbolSource::Exported,
+            global: true,
         });
     }
     out

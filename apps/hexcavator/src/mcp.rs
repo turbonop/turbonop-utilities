@@ -41,6 +41,9 @@ symbolize, initialization, resources, and lookup.";
 /// The protocol versions this server speaks, newest first.
 const PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 
+/// A program's model and symbols, built.
+type Built = (Arc<Model>, Arc<Vec<Symbol>>);
+
 /// A binary, read once per session: opened as every `hexc` command opens
 /// one (see [`hexcavator_program::Opened`]), whatever its format.
 struct Loaded {
@@ -55,7 +58,7 @@ struct Loaded {
     /// The image and its debug information, opened when first needed.
     opened: OnceCell<Result<hexcavator_program::Opened, String>>,
     /// The size model and symbols, built when first needed.
-    built: OnceCell<Result<(Arc<Model>, Arc<Vec<Symbol>>), String>>,
+    built: OnceCell<Result<Built, String>>,
     /// The cross-reference graph, built once.
     xref: OnceCell<Result<hexcavator_size::xref::Xref, String>>,
     /// Maps built so far, by their sources.
@@ -115,7 +118,7 @@ impl Loaded {
         self.opened()?.program().map_err(|e| e.to_string())
     }
 
-    fn built(&self) -> Result<&(Arc<Model>, Arc<Vec<Symbol>>), String> {
+    fn built(&self) -> Result<&Built, String> {
         self.built
             .get_or_init(|| self.program()?.into_built().map_err(|e| e.to_string()))
             .as_ref()

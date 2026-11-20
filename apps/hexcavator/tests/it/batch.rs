@@ -74,11 +74,37 @@ fn batch() {
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
         .collect();
-    assert_eq!(lines.len(), 2, "{out}");
-    assert!(lines[0]["path"].as_str().unwrap().ends_with("types-v2.exe"));
-    assert!(lines[1]["path"].as_str().unwrap().ends_with("types.exe"));
+    // Every image in the directory, of any format, by what it is: the two
+    // PE images (with their PDBs) and the ELF images (with their DWARF),
+    // not the PDBs, the split DWARF files, or the text.
+    let path = |l: &serde_json::Value| {
+        Path::new(l["path"].as_str().unwrap())
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    };
+    let names: Vec<String> = lines.iter().map(path).collect();
+    assert_eq!(
+        names,
+        [
+            "types-split4",
+            "types-split4-plain",
+            "types-split5",
+            "types-split5-plain",
+            "types-v2.exe",
+            "types-x86_64-linux-gnu",
+            "types-x86_64-linux-gnu-names",
+            "types-x86_64-linux-gnu-v2",
+            "types.exe"
+        ],
+        "{out}"
+    );
     for l in &lines {
-        assert!(l["pdb"].as_str().unwrap().ends_with(".pdb"));
+        assert!(l.get("error").is_none(), "{l}");
+        let pe = path(l).ends_with(".exe");
+        let debug = l["debug"].as_str().unwrap();
+        assert_eq!(debug.ends_with(".pdb"), pe, "{l}");
         assert!(
             l["sections"]
                 .as_array()
@@ -86,7 +112,9 @@ fn batch() {
                 .iter()
                 .any(|s| s["name"] == ".text")
         );
-        assert_eq!(l["libraries"].as_array().unwrap().len(), 3);
+        if pe {
+            assert_eq!(l["libraries"].as_array().unwrap().len(), 3);
+        }
         assert!(l["compilands"].as_array().unwrap().len() <= 3);
         assert!(l.get("findings").is_none());
     }

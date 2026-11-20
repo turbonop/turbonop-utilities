@@ -6,30 +6,36 @@ leave this list when they ship.
 ## Every format alike
 
 Every command and analysis should work the same, and as well, on PE,
-ELF, Mach-O, and WebAssembly, with a PDB or DWARF.
+ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 
-1. **One loader.** The MCP server's `query`, `findings`, `size_report`,
-   `lookup`, and `symbols`; `linkerlog -image`; `size`'s default report;
-   `batch`'s directory scan; and the extension's checks go through
-   `Opened`, as the CLI's other commands do.
-2. **`Image` complete enough that nothing reads a format by hand.**
-   Symbols (Mach-O kinds and sizes, PE exports' kinds, Thumb bits), import
-   slots naming their import (PE's IAT too), exports and imports, entry
-   points, and one demangler for every scheme.
-3. **Accuracy.** The image's own symbols merged with DWARF's (code with
-   no debug information); Mach-O's dead-strip roots (Objective-C, Swift,
-   `S_ATTR_NO_DEAD_STRIP`) and ELF's (`SHF_GNU_RETAIN`, `__start_`
-   sections); one DWARF attribution of compile units; system libraries on
-   ELF and Mach-O; duplicated variables judged alike.
-4. **What's missing.** DWARF in PE images (MinGW); DWARF in relocatable
-   objects relocated; 32-bit ARM's xrefs and fingerprints, and its
-   exception tables (`.ARM.exidx`); a WebAssembly toolchain (wasm-opt, not
-   ICF), data segments mapped, and its dependencies, initialization,
-   relocations, and build information; export costs for PE; pointer edges
-   for PE images without relocations.
-5. **One vocabulary.** `-debug` (with `-pdb` its alias), one address
-   field in JSON, "debug information" for "PDB", `hexc pdb` and
-   `hexc dwarf` alike.
+- **WebAssembly's data.** A module's data segments aren't mapped (only
+  its code has addresses), so its model, strings, duplicated data, and
+  `-fdata-sections` advice see none; and wasm-ld's `-map` isn't applied
+  to its report. Its code's addresses (code section offsets) and its
+  data's (linear memory) are two spaces that DWARF mixes: they need
+  telling apart first.
+- **Trace symbolization** (`hexcavator-symbolize`, for traces) reads
+  PDBs only; it should build on `DebugInfo` and `Image::symbols` as
+  `hexc symbolize` does. The unwind crate's `Image` trait is PE's alone
+  (`u32` RVAs), and nothing picks an unwinder by format and
+  architecture.
+- **`checksec -audit`** reads PDBs and DWARF units itself (and a Mach-O
+  debug map its own way): it should read them through `Opened`, as every
+  other command does, and give DWARF images their linker's record
+  (`.comment`, `LC_BUILD_VERSION`) as it gives a PDB's.
+- **dumpbin's `/symbols`** (a COFF symbol table) isn't dumped, for
+  objects or for MinGW's images.
+- **Cleanups.** `hexc size`'s bloaty-style maps are built by four
+  per-format paths; Mach-O's section relocations are read in the app, not
+  its crate; startup and the graph's roots each enumerate the
+  initializer lists; objects of every format but Mach-O have no
+  addresses (`bytes_at`); `Section::index` counts differently by format.
+- **More advice.** Unused libraries (`--as-needed`,
+  `-dead_strip_dylibs`); Mach-O's rebase and bind opcodes, where chained
+  fixups would be smaller.
+- **More instruction sets.** RISC-V, PowerPC, MIPS, and LoongArch images
+  are read, but their code isn't decoded: no disassembly, references, or
+  fingerprints.
 
 ## Size analysis
 

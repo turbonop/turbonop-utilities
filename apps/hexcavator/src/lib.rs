@@ -724,9 +724,11 @@ fn tools_for(
     if kind == "linked" && ["pe", "elf", "macho", "wasm"].contains(&format) {
         t.push("resources");
     }
+    if kind == "linked" && ["pe", "elf", "macho", "wasm"].contains(&format) {
+        t.push("deps");
+    }
     if kind == "linked" && ["pe", "elf", "macho"].contains(&format) {
         t.push("relocations");
-        t.push("deps");
         t.push("checksec");
         if debug {
             t.push("audit");

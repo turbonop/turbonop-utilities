@@ -164,3 +164,28 @@ fn memory64_defined_or_imported() {
     let damaged = module(&[(SECTION_IMPORT, &[5, 1, b'e'])]);
     assert!(!Module::parse(&damaged).unwrap().is_memory64());
 }
+
+/// A dynamically linked module's `dylink.0`: its needed libraries (the
+/// `WASM_DYLINK_NEEDED` subsection), past the others (its memory info).
+#[test]
+fn needed_libraries() {
+    let mut m = b"\0asm\x01\0\0\0".to_vec();
+    let mut body = vec![8];
+    body.extend_from_slice(b"dylink.0");
+    // WASM_DYLINK_MEM_INFO (1): four zeros.
+    body.extend_from_slice(&[1, 4, 0, 0, 0, 0]);
+    // WASM_DYLINK_NEEDED (2): libfoo.so, libbar.so.
+    let mut needed = vec![2];
+    for lib in [&b"libfoo.so"[..], b"libbar.so"] {
+        uleb(lib.len() as u64, &mut needed);
+        needed.extend_from_slice(lib);
+    }
+    body.push(2);
+    uleb(needed.len() as u64, &mut body);
+    body.extend_from_slice(&needed);
+    section(SECTION_CUSTOM, &body, &mut m);
+    let module = Module::parse(&m).unwrap();
+    assert_eq!(module.needed(), [&b"libfoo.so"[..], b"libbar.so"]);
+    // (None without the section.)
+    assert!(Module::parse(&sample()).unwrap().needed().is_empty());
+}

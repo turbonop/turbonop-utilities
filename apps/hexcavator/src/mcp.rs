@@ -1129,7 +1129,7 @@ fn tools() -> Value {
             ),
             tool(
                 "dependencies",
-                "What an executable or library (PE, ELF, Mach-O) loads, found as its platform's loader would find each library (known DLLs, the application's directory, System32, API sets, side-by-side assemblies; rpath, runpath, ld.so.conf; @rpath, @loader_path, the dyld shared cache), and what's missing: libraries not found or for another architecture, and imported symbols a library doesn't export. Text: the problems; structured: the whole graph (modules, each with its dependencies and imports).",
+                "What an executable or library (PE, ELF, Mach-O, WebAssembly) loads, found as its platform's loader would find each library (known DLLs, the application's directory, System32, API sets, side-by-side assemblies; rpath, runpath, ld.so.conf; @rpath, @loader_path, the dyld shared cache; a WebAssembly module's imports' modules, its host's or beside it, and dylink.0's libraries), and what's missing: libraries not found or for another architecture, and imported symbols a library doesn't export. Text: the problems; structured: the whole graph (modules, each with its dependencies and imports).",
                 schema(
                     vec![
                         ("path", prop("string", "The executable or library.")),

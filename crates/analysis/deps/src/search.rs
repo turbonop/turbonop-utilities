@@ -33,6 +33,10 @@ enum Key {
     MachO {
         cputype: u32,
     },
+    /// WebAssembly: 64-bit memory or 32-bit.
+    Wasm {
+        memory64: bool,
+    },
 }
 
 const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
@@ -104,6 +108,10 @@ pub(crate) fn identify(data: &[u8], cputype: Option<u32>) -> Option<(Format, Ran
     if hexcavator_macho::MachO::parse(data).is_ok() {
         return Some((Format::MachO, 0..data.len()));
     }
+    // (A module, not a relocatable object, which nothing loads.)
+    if hexcavator_wasm::Module::parse(data).is_ok_and(|m| !m.is_object()) {
+        return Some((Format::Wasm, 0..data.len()));
+    }
     None
 }
 
@@ -144,6 +152,14 @@ pub(crate) fn arch_of(format: Format, data: &[u8]) -> Option<Arch> {
             Some(Arch {
                 name: hexcavator_macho::arch_name(h.cputype, h.cpusubtype),
                 key: Key::MachO { cputype: h.cputype },
+            })
+        }
+        Format::Wasm => {
+            let m = hexcavator_wasm::Module::parse(data).ok()?;
+            let memory64 = m.is_memory64();
+            Some(Arch {
+                name: if memory64 { "wasm64" } else { "wasm32" }.to_string(),
+                key: Key::Wasm { memory64 },
             })
         }
     }

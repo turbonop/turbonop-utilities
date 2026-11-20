@@ -339,6 +339,38 @@ impl<'d> Module<'d> {
         n
     }
 
+    /// The shared libraries a dynamically linked module (Emscripten's side
+    /// module, or a main module that loads them) needs: its `dylink.0`
+    /// section's `WASM_DYLINK_NEEDED` subsection.
+    pub fn needed(&self) -> Vec<&'d [u8]> {
+        /// `WASM_DYLINK_NEEDED`.
+        const NEEDED: u8 = 2;
+        let mut out = Vec::new();
+        let Some(s) = self.custom(b"dylink.0") else {
+            return out;
+        };
+        // (After the section's name.)
+        let mut r = self.contents(s);
+        r.pos = usize::try_from(s.data_offset).unwrap_or(r.data.len());
+        while let (Some(kind), Some(len)) = (r.u8(), r.u32()) {
+            let Some(body) = r.bytes(u64::from(len)) else {
+                break;
+            };
+            if kind != NEEDED {
+                continue;
+            }
+            let mut b = Reader { data: body, pos: 0 };
+            let Some(n) = b.u32() else { break };
+            for _ in 0..n {
+                match b.name() {
+                    Some(lib) => out.push(lib),
+                    None => break,
+                }
+            }
+        }
+        out
+    }
+
     /// The export section's entries: name, kind (`EXTERNAL_*`: 0 a
     /// function, 1 a table, 2 a memory, 3 a global, 4 a tag), and index.
     pub fn exports(&self) -> Vec<Export<'d>> {

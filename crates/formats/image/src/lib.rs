@@ -28,6 +28,7 @@ extern crate alloc;
 
 mod arch;
 mod elf;
+mod imports;
 mod macho;
 mod pe;
 mod section;
@@ -43,6 +44,7 @@ use hexcavator_pe::PeFile;
 use hexcavator_wasm::Module;
 
 pub use arch::{Arch, Hybrid, coff_machine_name, is_known_coff_machine};
+pub use imports::{ImportSlot, Imported};
 /// A COFF section's characteristics, as [`SectionFlags`].
 pub use pe::flags as coff_section_flags;
 pub use section::{Section, SectionFlags};
@@ -341,11 +343,12 @@ impl<'data> Image<'data> {
     }
 
     /// The words the loader writes addresses into, by address: PE's base
-    /// relocations; ELF's dynamic relocations that write an address
-    /// (relative, absolute, GOT and PLT entries, indirect functions) and
-    /// its packed relative relocations (RELR); Mach-O's rebases and binds
-    /// (chained fixups, or the older opcodes). Objects have none: their
-    /// relocations are the linker's.
+    /// relocations and import address tables; ELF's dynamic relocations
+    /// that write an address (relative, absolute, GOT and PLT entries,
+    /// indirect functions) and its packed relative relocations (RELR);
+    /// Mach-O's rebases and binds (chained fixups, or the older opcodes).
+    /// Objects have none: their relocations are the linker's. (Those that
+    /// hold another module's address, [`Image::import_slots`] names.)
     pub fn pointer_slots(&self) -> Vec<PointerSlot> {
         let mut out = match self {
             Image::Pe(pe) => pe::pointer_slots(pe),
@@ -353,6 +356,15 @@ impl<'data> Image<'data> {
             Image::MachO(m) => macho::pointer_slots(m),
             Image::Wasm(_) => Vec::new(),
         };
+        // (A PE image's imports are bound without relocations: its import
+        // address tables.)
+        if self.pe().is_some() {
+            out.extend(self.import_slots().into_iter().map(|s| PointerSlot {
+                addr: s.addr,
+                width: s.width,
+                target: None,
+            }));
+        }
         out.sort_unstable_by_key(|s| s.addr);
         out.dedup_by_key(|s| s.addr);
         out

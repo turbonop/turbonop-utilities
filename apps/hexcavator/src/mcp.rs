@@ -393,7 +393,7 @@ impl Server {
             .join("\n");
         Ok((
             format!(
-                "{total} symbols match ({total_size} file bytes); file size, memory size, address, name:\n{text}"
+                "{total} symbols match ({total_size} file bytes); file size, memory size, RVA (from the image's start), name:\n{text}"
             ),
             object([
                 ("matched", Value::from(total)),

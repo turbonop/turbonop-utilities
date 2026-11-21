@@ -1263,7 +1263,14 @@ pub fn elf(
     let arch = image.arch();
     if !matches!(
         arch,
-        Arch::X64 | Arch::X86 | Arch::Arm64 | Arch::Arm | Arch::RiscV32 | Arch::RiscV64
+        Arch::X64
+            | Arch::X86
+            | Arch::Arm64
+            | Arch::Arm
+            | Arch::RiscV32
+            | Arch::RiscV64
+            | Arch::LoongArch32
+            | Arch::LoongArch64
     ) {
         return Err(format!("no cross-references for {}", arch.name()));
     }

@@ -1,0 +1,81 @@
+
+program-loongarch32-linux-gnu:	file format elf32-loongarch
+
+Disassembly of section .text:
+
+000201a0 <compute>:
+   201a0:      	blez	$a0, 0x78 <.L0 +0x44>
+   201a4:      	move	$a1, $zero
+   201a8:      	move	$a6, $zero
+
+000201ac <.Lpcadd_hi0>:
+   201ac:      	pcaddu12i	$a2, 0x21
+   201b0:      	ld.w	$a5, $a2, 0xe0
+
+000201b4 <.Lpcadd_hi1>:
+   201b4:      	pcaddu12i	$a2, -0x10
+   201b8:      	addi.w	$a2, $a2, -0x3c
+   201bc:      	lu12i.w	$a3, -0x77778
+   201c0:      	ori	$a3, $a3, 0x889
+   201c4:      	nop
+   201c8:      	nop
+   201cc:      	nop
+   201d0:      	move	$a4, $a6
+
+000201d4 <.L0 >:
+   201d4:      	mulh.wu	$a6, $a1, $a3
+   201d8:      	srli.w	$a6, $a6, 0x3
+   201dc:      	slli.w	$a7, $a6, 0x4
+   201e0:      	add.w	$a6, $a2, $a6
+   201e4:      	sub.w	$a6, $a6, $a7
+   201e8:      	ld.b	$a7, $a6, 0x0
+   201ec:      	addi.w	$a1, $a1, 0x1
+   201f0:      	addi.w	$a0, $a0, -0x1
+   201f4:      	addi.w	$a2, $a2, 0x1
+   201f8:      	add.w	$a6, $a5, $a4
+   201fc:      	addi.w	$a5, $a5, 0x3
+   20200:      	add.w	$a6, $a6, $a7
+   20204:      	bne	$a0, $zero, -0x34 <.Lpcadd_hi1+0x1c>
+   20208:      	add.w	$a0, $a4, $a7
+   2020c:      	add.w	$a0, $a0, $a5
+   20210:      	addi.w	$a0, $a0, -0x3
+   20214:      	ret
+   20218:      	move	$a0, $zero
+   2021c:      	ret
+
+00020220 <optional_hook>:
+   20220:      	move	$a0, $zero
+   20224:      	ret
+   20228:      	nop
+   2022c:      	nop
+   20230:      	nop
+   20234:      	nop
+   20238:      	nop
+   2023c:      	nop
+
+00020240 <_start>:
+   20240:      	addi.w	$sp, $sp, -0x10
+   20244:      	st.w	$ra, $sp, 0xc
+
+00020248 <.Lpcadd_hi2>:
+   20248:      	pcaddu12i	$a0, 0x20
+   2024c:      	ld.w	$a0, $a0, 0x40
+   20250:      	bl	-0xb0 <compute>
+
+00020254 <.Lpcadd_hi3>:
+   20254:      	pcaddu12i	$a1, 0x20
+   20258:      	st.b	$a0, $a1, 0x38
+   2025c:      	bl	-0x3c <optional_hook>
+
+00020260 <.L0 >:
+   20260:      	lu12i.w	$a1, 0x0
+   20264:      	add.w	$a1, $a1, $tp
+   20268:      	ld.w	$a1, $a1, 0x0
+   2026c:      	add.w	$a0, $a1, $a0
+
+00020270 <.Lpcadd_hi4>:
+   20270:      	pcaddu12i	$a1, 0x21
+   20274:      	st.w	$a0, $a1, 0x1c
+   20278:      	nop
+   2027c:      	nop
+   20280:      	b	0x0 <.Lpcadd_hi4+0x10>

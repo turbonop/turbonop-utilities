@@ -210,29 +210,42 @@ pub fn code(
             // (Then what isn't code: a literal pool, as it is.)
             h.write(code.get(at..).unwrap_or_default());
         }
-        Arch::RiscV32 | Arch::RiscV64 => {
-            let insts = riscv(arch, code);
-            // The LUIs whose registers an addressing instruction then uses
-            // (their upper parts are an address's).
+        Arch::RiscV32 | Arch::RiscV64 | Arch::LoongArch32 | Arch::LoongArch64 => {
+            // (Both decoded by tables: what holds an address PC-relative,
+            // what an absolute one's upper part, and the base register
+            // an addressing instruction adds to.)
+            let (insts, pc_relative, upper, base): (_, &[&str], _, _) =
+                if matches!(arch, Arch::RiscV32 | Arch::RiscV64) {
+                    (riscv(arch, code), &["AUIPC"], "LUI", "rs1")
+                } else {
+                    (
+                        loongarch(arch, code),
+                        &["PCALAU12I", "PCADDU12I", "PCADDU18I", "PCADDI"],
+                        "LU12I_W",
+                        "rj",
+                    )
+                };
+            // The upper parts whose registers an addressing instruction
+            // then uses (they are an address's).
             let mut masked = vec![false; insts.len()];
-            let mut lui = [None::<usize>; 32];
+            let mut uppers = [None::<usize>; 32];
             let referring: std::collections::HashSet<u64> = refs.iter().map(|c| c.from).collect();
             for (k, (off, i)) in insts.iter().enumerate() {
                 let pc = start + *off as u64;
-                if i.name() == "AUIPC" {
+                if pc_relative.contains(&i.name()) {
                     masked[k] = true;
                 }
                 if referring.contains(&pc) {
                     masked[k] = true;
-                    if let Some(rs) = i.operand("rs1").and_then(hexcavator_riscv::gpr_of)
-                        && let Some(l) = lui[usize::from(rs)]
+                    if let Some(rs) = i.operand(base).and_then(gpr)
+                        && let Some(l) = uppers[usize::from(rs)]
                     {
                         masked[l] = true;
                     }
                 }
                 for op in i.operands().iter().take(usize::from(i.inst().defs)) {
-                    if let Some(rd) = hexcavator_riscv::gpr_of(*op) {
-                        lui[usize::from(rd)] = (i.name() == "LUI").then_some(k);
+                    if let Some(rd) = gpr(*op) {
+                        uppers[usize::from(rd)] = (i.name() == upper).then_some(k);
                     }
                 }
             }
@@ -241,7 +254,7 @@ pub fn code(
                 at = off + usize::from(i.size);
                 let pc = start + *off as u64;
                 let mine = take_refs(&refs, &mut r, pc);
-                riscv_instruction(&mut h, i, masked[k]);
+                table_instruction(&mut h, i, masked[k]);
                 for c in mine {
                     target(&mut h, c.to, c.via, &mut item);
                 }
@@ -274,15 +287,39 @@ fn riscv(arch: Arch, code: &[u8]) -> Vec<(usize, hexcavator_riscv::Instruction)>
     out
 }
 
-/// A RISC-V instruction: its operation and operands; if `masked` (it holds
-/// part of an address), its operation and registers alone.
-fn riscv_instruction(h: &mut FxHasher, i: &hexcavator_riscv::Instruction, masked: bool) {
+/// LoongArch code's instructions, with their offsets, to the first that
+/// doesn't decode.
+fn loongarch(arch: Arch, code: &[u8]) -> Vec<(usize, hexcavator_loongarch::Instruction)> {
+    let features = if arch == Arch::LoongArch64 {
+        hexcavator_loongarch::Features::la64()
+    } else {
+        hexcavator_loongarch::Features::la32()
+    };
+    code.as_chunks::<4>()
+        .0
+        .iter()
+        .map_while(|w| hexcavator_loongarch::decode(w, &features))
+        .enumerate()
+        .map(|(n, i)| (4 * n, i))
+        .collect()
+}
+
+/// An integer register's number (RISC-V's and LoongArch's tables both
+/// number theirs file 0).
+fn gpr(o: hexcavator_riscv::Operand) -> Option<u8> {
+    o.reg().filter(|r| r.file == 0).map(|r| r.n)
+}
+
+/// A RISC-V or LoongArch instruction: its operation and operands; if
+/// `masked` (it holds part of an address), its operation and registers
+/// alone.
+fn table_instruction(h: &mut FxHasher, i: &hexcavator_riscv::Instruction, masked: bool) {
     h.write(i.name().as_bytes());
     for op in i.operands() {
         match op {
             hexcavator_riscv::Operand::Reg(r) => {
                 h.write_u8(b'r');
-                riscv_reg(h, *r);
+                table_reg(h, *r);
             }
             hexcavator_riscv::Operand::Imm(v) => {
                 h.write_u8(b'i');
@@ -294,7 +331,7 @@ fn riscv_instruction(h: &mut FxHasher, i: &hexcavator_riscv::Instruction, masked
     }
 }
 
-fn riscv_reg(h: &mut FxHasher, r: hexcavator_riscv::Reg) {
+fn table_reg(h: &mut FxHasher, r: hexcavator_riscv::Reg) {
     h.write_u8(r.file);
     h.write_u8(r.n);
 }
@@ -527,12 +564,17 @@ pub fn shape(arch: Arch, code: &[u8], start: u64) -> Option<u64> {
                 count += 1;
             }
         }
-        Arch::RiscV32 | Arch::RiscV64 => {
-            for (_, i) in riscv(arch, code) {
+        Arch::RiscV32 | Arch::RiscV64 | Arch::LoongArch32 | Arch::LoongArch64 => {
+            let insts = if matches!(arch, Arch::RiscV32 | Arch::RiscV64) {
+                riscv(arch, code)
+            } else {
+                loongarch(arch, code)
+            };
+            for (_, i) in insts {
                 h.write(i.name().as_bytes());
                 for op in i.operands() {
                     if let hexcavator_riscv::Operand::Reg(r) = op {
-                        riscv_reg(&mut h, *r);
+                        table_reg(&mut h, *r);
                     }
                 }
                 count += 1;

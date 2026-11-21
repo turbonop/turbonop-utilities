@@ -1507,11 +1507,12 @@ fn chained_fixups() {
     }
 }
 
-/// RISC-V (RV64GC and RV32IMAC, compressed code): the same program's graph
-/// as on x86-64, from its calls, and its AUIPC-relative loads and address
-/// computations (tools/elf's program.c).
+/// RISC-V (RV64GC and RV32IMAC, compressed code) and LoongArch (LA64,
+/// LA32): the same program's graph as on x86-64, from its calls, and its
+/// PC-relative loads and address computations (AUIPC's; PCALAU12I's and
+/// PCADDI's) (tools/elf's program.c).
 #[test]
-fn riscv_graph_is_x86_64s() {
+fn riscv_and_loongarch_graph_is_x86_64s() {
     let elf = |t: &str| {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../testdata/elf")
@@ -1536,16 +1537,16 @@ fn riscv_graph_is_x86_64s() {
         want.iter().any(|l| l.contains("refers to hidden_state")),
         "{want:?}"
     );
-    for t in ["riscv64", "riscv32"] {
+    for t in ["riscv64", "riscv32", "loongarch64", "loongarch32"] {
         assert_eq!(graph(t), want, "{t}");
     }
 }
 
-/// RISC-V's fingerprints (compressed instructions by their full forms,
-/// AUIPC-built addresses masked): the identical functions of funcs.c
-/// (tools/linkopts, linked plain) as x86-64's.
+/// RISC-V's and LoongArch's fingerprints (compressed instructions by
+/// their full forms, PC-relative addresses masked): the identical
+/// functions of funcs.c (tools/linkopts, linked plain) as x86-64's.
 #[test]
-fn riscv_identical_functions() {
+fn riscv_and_loongarch_identical_functions() {
     let linkopts = |name: &str| {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../testdata/linkopts")
@@ -1563,7 +1564,7 @@ fn riscv_identical_functions() {
         want,
         ["add_a(int, int)", "add_b(int, int)", "add_c(int, int)"]
     );
-    for t in ["riscv64", "riscv32"] {
+    for t in ["riscv64", "riscv32", "loongarch64", "loongarch32"] {
         assert_eq!(groups(&format!("funcs-plain-{t}")), want, "{t}");
     }
 }

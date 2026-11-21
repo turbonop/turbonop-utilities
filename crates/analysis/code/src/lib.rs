@@ -69,7 +69,14 @@ impl Insn {
 pub fn decodes(arch: Arch) -> bool {
     matches!(
         arch,
-        Arch::X86 | Arch::X64 | Arch::Arm64 | Arch::Arm | Arch::RiscV32 | Arch::RiscV64
+        Arch::X86
+            | Arch::X64
+            | Arch::Arm64
+            | Arch::Arm
+            | Arch::RiscV32
+            | Arch::RiscV64
+            | Arch::LoongArch32
+            | Arch::LoongArch64
     )
 }
 
@@ -115,6 +122,14 @@ pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
         Arch::RiscV32 | Arch::RiscV64 => {
             let features = hexcavator_riscv::Features::standard(arch == Arch::RiscV64);
             decode_riscv(bytes, address, &features)
+        }
+        Arch::LoongArch32 | Arch::LoongArch64 => {
+            let features = if arch == Arch::LoongArch64 {
+                hexcavator_loongarch::Features::la64()
+            } else {
+                hexcavator_loongarch::Features::la32()
+            };
+            decode_loongarch(bytes, address, &features)
         }
         _ => None,
     }
@@ -181,6 +196,55 @@ pub fn riscv_flow(
         "BEQ" | "BNE" | "BLT" | "BGE" | "BLTU" | "BGEU" => (Flow::Branch, target("imm12")),
         "EBREAK" | "C_EBREAK" | "UNIMP" | "C_UNIMP" => (Flow::Stop, None),
         "MRET" | "SRET" | "DRET" | "MNRET" => (Flow::Return, None),
+        _ => (Flow::Next, None),
+    }
+}
+
+/// The LoongArch instruction at the start of `bytes`, which is at
+/// `address`, with `features` on (LA32's or LA64's), or `None` if it
+/// doesn't decode.
+pub fn decode_loongarch(
+    bytes: &[u8],
+    address: u64,
+    features: &hexcavator_loongarch::Features,
+) -> Option<Insn> {
+    let i = hexcavator_loongarch::decode(bytes, features)?;
+    let (flow, target) = loongarch_flow(&i, address);
+    Some(Insn {
+        address,
+        len: 4,
+        flow,
+        target,
+    })
+}
+
+/// How control leaves a LoongArch instruction, and a direct jump's,
+/// call's, or branch's target: `b` jumps, `bl` calls; `jirl` to `$zero`
+/// through `$ra` with no offset returns (`ret`), else jumps (`jr`, a
+/// `call36` tail call), and to another register calls; the conditional
+/// branches (on registers, or on a condition flag) branch; `break`,
+/// `dbcl` and `ud` stop, as `ertn` (the exception return) leaves.
+pub fn loongarch_flow(i: &hexcavator_loongarch::Instruction, address: u64) -> (Flow, Option<u64>) {
+    let reg = |n: &str| i.operand(n).and_then(hexcavator_loongarch::gpr_of);
+    let imm = |n: &str| i.operand(n).and_then(hexcavator_loongarch::Operand::imm);
+    let target = hexcavator_loongarch::branch_target(i, address);
+    match i.name() {
+        "B" => (Flow::Jump, target),
+        "BL" => (Flow::Call, target),
+        "JIRL" => {
+            if reg("rd") != Some(0) {
+                (Flow::Call, None)
+            } else if reg("rj") == Some(1) && imm("imm16") == Some(0) {
+                (Flow::Return, None)
+            } else {
+                (Flow::Jump, None)
+            }
+        }
+        "BEQ" | "BNE" | "BLT" | "BGE" | "BLTU" | "BGEU" | "BEQZ" | "BNEZ" | "BCEQZ" | "BCNEZ" => {
+            (Flow::Branch, target)
+        }
+        "BREAK" | "DBCL" | "UD" => (Flow::Stop, None),
+        "ERTN" => (Flow::Return, None),
         _ => (Flow::Next, None),
     }
 }

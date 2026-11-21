@@ -547,8 +547,6 @@ class Extractor:
 
     # ----------------------------------------------------------------- emit
 
-    # ----------------------------------------------------------------- emit
-
     # LLVM's printer methods, as hexcavator-tablegen's `Print` names them.
     BASE_PRINTS = {
         "printOperand": "Operand",

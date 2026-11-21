@@ -256,6 +256,7 @@ fn default_dirs(ctx: &Ctx<'_>) -> Vec<PathBuf> {
             Some("arm64" | "aarch64") => Some("aarch64-linux-gnu"),
             Some("arm" | "thumb") => Some("arm-linux-gnueabihf"),
             Some("riscv64") => Some("riscv64-linux-gnu"),
+            Some("loongarch64") => Some("loongarch64-linux-gnu"),
             _ => None,
         };
         if let Some(t) = triple {

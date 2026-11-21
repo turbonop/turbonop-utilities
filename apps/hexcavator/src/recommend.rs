@@ -304,7 +304,17 @@ pub(crate) fn recommendations(
     // (Objects compiled without -ffunction-sections leave nothing to judge
     // an ELF link's options by.)
     let unsectioned = link.is_none() && image.elf().is_some() && compiled.no_function_sections();
-    let judged = link.unwrap_or_else(|| Link::evidence(image, debug, &compiled));
+    let mut judged = link.unwrap_or_else(|| Link::evidence(image, debug, &compiled));
+    // wasm-ld collects unreferenced functions and data unless given
+    // --no-gc-sections: a module that keeps none it could have dropped was
+    // linked so.
+    if link.is_none() && image.wasm().is_some() {
+        judged.opt_ref = !x.ids().any(|n| {
+            !x.reach.is_reached(n)
+                && x.kinds[n as usize].is_some()
+                && matches!(x.kept(n), hexcavator_size::xref::Kept::Comdat)
+        });
+    }
     let classes = hexcavator_size::fingerprint::build(
         image,
         model,

@@ -15,7 +15,9 @@ use crate::Program;
 /// (`name+0x10`).
 #[derive(Clone, Debug, Default)]
 pub struct AddressNames {
-    /// The image's base: the names are of virtual addresses.
+    /// What a pointer's value is less its address in the image (see
+    /// `hexcavator_image::Image::pointer_base`): the names are of
+    /// pointers' values.
     base: u64,
     /// (rva, size, name), by address.
     symbols: Vec<(u64, u64, String)>,
@@ -36,9 +38,11 @@ impl AddressNames {
         }
     }
 
-    /// The symbol virtual address `va` is in, and the offset into it.
+    /// The symbol a pointer's value `va` (a virtual address) is in, and
+    /// the offset into it.
     pub fn name(&self, va: u64) -> Option<String> {
-        let rva = va.checked_sub(self.base)?;
+        // (Below the base: past every symbol, as it wraps.)
+        let rva = va.wrapping_sub(self.base);
         let i = self
             .symbols
             .partition_point(|s| s.0 <= rva)
@@ -111,7 +115,10 @@ impl Program<'_> {
     ///
     /// If the debug information is damaged.
     pub fn address_names(&self) -> Result<AddressNames, crate::Error> {
-        Ok(AddressNames::new(self.image.image_base(), self.symbols()?))
+        Ok(AddressNames::new(
+            self.image.pointer_base(),
+            self.symbols()?,
+        ))
     }
 
     /// The datum named `name` (else the one whose name is it with
@@ -161,7 +168,7 @@ impl Program<'_> {
         };
         // (`max` bounds it: the caller's choice of how much to hold.)
         bytes.resize(usize::try_from(read).unwrap_or(usize::MAX), 0);
-        let base = self.image.image_base();
+        let base = self.image.pointer_base();
         let section = self
             .model()?
             .sections
@@ -220,7 +227,7 @@ impl Program<'_> {
             name: target.name.clone(),
             kind: target.kind,
             rva,
-            address: base + rva,
+            address: self.image.shown_address(rva),
             section,
             size,
             file_size: target.size.file,

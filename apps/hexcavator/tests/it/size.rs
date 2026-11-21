@@ -1900,3 +1900,46 @@ fn wasm_compile_units_from_dwarf() {
         );
     }
 }
+
+fn wasm_data_module() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/data.wasm")
+}
+
+/// A WebAssembly module's data (tools/wasm/data.c): its segments are
+/// sections of the report, and its variables its compile unit's, as its
+/// DWARF says; by wasm-ld's map, its object's.
+#[test]
+fn wasm_data() {
+    let image = wasm_data_module();
+    let (ok, out, err) = hexc(&[image.as_os_str()]);
+    assert!(ok, "{err}");
+    for section in ["Code", ".rodata", ".data"] {
+        assert!(
+            out.lines().any(|l| l.starts_with(section)),
+            "{section}: {out}"
+        );
+    }
+    assert!(
+        out.contains("Attributed to compilands: 294 of 296 bytes"),
+        "{out}"
+    );
+    let (ok, out, err) = hexc(&[image.as_os_str(), "-d".as_ref(), "compileunits".as_ref()]);
+    assert!(ok, "{err}");
+    assert!(!out.contains("[section Data]"), "{out}");
+    let map = image.with_extension("wasm.map");
+    let (ok, out, err) = hexc(&[
+        image.as_os_str(),
+        "-map".as_ref(),
+        map.as_os_str(),
+        "-d".as_ref(),
+        "compileunits".as_ref(),
+    ]);
+    assert!(ok, "{err}");
+    // (Its code, 0x6a bytes, and data, 0xa4.)
+    assert!(
+        out.lines()
+            .any(|l| l.ends_with(" data.o") && l.contains(" 270 ")),
+        "{out}"
+    );
+    assert!(out.lines().any(|l| l.ends_with(" [linker]")), "{out}");
+}

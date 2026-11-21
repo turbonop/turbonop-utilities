@@ -82,7 +82,43 @@ fn dwarf_input<'d>(m: &Module<'d>) -> Option<crate::dwarf_units::DwarfInput<'d>>
             endian: hexcavator_core::Endian::Little,
             sections,
             code_at: Some(code.contents_offset),
+            data_at: data_segments(m.data()),
         })
+}
+
+/// The module's active data segments: (address in linear memory, size,
+/// file offset), as the image places them.
+fn data_segments(data: &[u8]) -> Vec<(u64, u64, u64)> {
+    let Ok(image) = hexcavator_image::Image::parse(data) else {
+        return Vec::new();
+    };
+    image
+        .sections()
+        .iter()
+        .filter(|s| s.raw_flags == u32::from(hexcavator_wasm::SECTION_DATA) && s.vm_size > 0)
+        .filter_map(|s| {
+            Some((
+                s.addr.checked_sub(hexcavator_image::WASM_MEMORY)?,
+                s.vm_size,
+                s.file_offset,
+            ))
+        })
+        .collect()
+}
+
+/// Its variables' sizes, by address in linear memory (from their types,
+/// as its DWARF describes them).
+fn variable_sizes(data: &[u8]) -> HashMap<u64, u64> {
+    let Ok(debug) = hexcavator_debuginfo::DebugInfo::parse(data) else {
+        return HashMap::new();
+    };
+    debug
+        .symbols()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| s.kind == hexcavator_debuginfo::SymbolKind::Data && !s.thread_local)
+        .filter_map(|s| Some((s.addr.checked_sub(hexcavator_image::WASM_MEMORY)?, s.size?)))
+        .collect()
 }
 
 pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
@@ -195,7 +231,7 @@ pub fn maps_with_source_map(
                     match source {
                         Source::CompileUnits => crate::dwarf_units::compile_units(
                             &input,
-                            &HashMap::new(),
+                            &variable_sizes(data),
                             len,
                             &mut labels,
                             &mut map,

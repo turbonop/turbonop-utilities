@@ -618,6 +618,17 @@ impl<'data> DwarfInfo<'data> {
         }
     }
 
+    /// File `file`'s address `addr` of data (a variable's), as the image
+    /// has it: a WebAssembly module's is in its linear memory, which the
+    /// image has at `hexcavator_image::WASM_MEMORY` (its code's addresses
+    /// are its code section's offsets).
+    fn image_data_addr(&self, file: u32, addr: u64) -> Option<u64> {
+        if matches!(self.arch, Arch::Wasm32 | Arch::Wasm64) {
+            return Some(hexcavator_image::WASM_MEMORY.wrapping_add(addr));
+        }
+        self.image_addr(file, addr)
+    }
+
     /// File `file`'s location list entries, as the image has them.
     fn image_list<'a>(
         &self,
@@ -1608,10 +1619,20 @@ impl<'data> DwarfInfo<'data> {
                     let Some((addr, tls)) = static_address(u, &loc.value) else {
                         return Walk::Into;
                     };
-                    let Some(addr) = self.image_addr(u.source, addr) else {
+                    // (Thread-local data's is an offset in its block.)
+                    let raw = addr;
+                    let addr = if tls {
+                        self.image_addr(u.source, addr)
+                    } else {
+                        self.image_data_addr(u.source, addr)
+                    };
+                    let Some(addr) = addr else {
                         return Walk::Into;
                     };
-                    if self.linked && !tls && !u.is_valid_address(addr) {
+                    // (A discarded variable's address, as the linker left
+                    // it: in linear memory, before it is placed there.)
+                    let wasm = matches!(self.arch, Arch::Wasm32 | Arch::Wasm64);
+                    if self.linked && !tls && !u.is_valid_address(if wasm { raw } else { addr }) {
                         return Walk::Into;
                     }
                     let (decl, _) = self.origin(w.at);
@@ -1740,7 +1761,7 @@ impl<'data> DwarfInfo<'data> {
             let Some((addr, false)) = static_address(u, &loc.value) else {
                 return Walk::Into;
             };
-            let Some(addr) = self.image_addr(u.source, addr) else {
+            let Some(addr) = self.image_data_addr(u.source, addr) else {
                 return Walk::Into;
             };
             if wanted.contains(&(addr, compiland)) {

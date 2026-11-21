@@ -236,8 +236,15 @@ fn wasm_sections_are_readobjs() {
     assert_eq!(image.format(), Format::Wasm);
     assert_eq!(image.arch(), arch_of(&arch));
     assert_eq!(image.kind(), Kind::Linked);
-    let sections = image.sections();
-    assert_eq!(sections.len(), listed.len());
+    let all = image.sections();
+    // The file's sections, as readobj lists them; then its data segments,
+    // in linear memory (see `wasm_data_in_linear_memory`).
+    assert!(all.len() > listed.len());
+    let (sections, segments) = all.split_at(listed.len());
+    for s in segments {
+        assert!(s.addr >= hexcavator_image::WASM_MEMORY, "{s:?}");
+        assert!(s.flags.contains(SectionFlags::DATA), "{s:?}");
+    }
     for (s, l) in sections.iter().zip(&listed) {
         assert_eq!(s.file_size, l.size, "{l:?}");
         if l.kind.starts_with("CUSTOM") {

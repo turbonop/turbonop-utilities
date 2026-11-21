@@ -49,6 +49,7 @@ pub use imports::{ImportSlot, Imported};
 pub use pe::flags as coff_section_flags;
 pub use section::{Section, SectionFlags};
 pub use symbols::{ImageSymbol, SymbolKind, SymbolSource};
+pub use wasm::MEMORY as WASM_MEMORY;
 
 /// The container format of a file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -301,6 +302,30 @@ impl<'data> Image<'data> {
         match self {
             Image::Pe(pe) => pe.optional_header().map_or(0, |h| h.image_base().get()),
             _ => 0,
+        }
+    }
+
+    /// An address of the image (see the crate's addresses) as the
+    /// format's own tools show it: a PE image's at its preferred base (a
+    /// virtual address); a WebAssembly module's data at its address in
+    /// linear memory (its code's offsets as they are); others' as they
+    /// are.
+    pub fn shown_address(&self, addr: u64) -> u64 {
+        match self {
+            Image::Wasm(_) if addr >= wasm::MEMORY => addr - wasm::MEMORY,
+            _ => addr.wrapping_add(self.image_base()),
+        }
+    }
+
+    /// What a pointer's value, as the program holds it, is less the
+    /// address in the image it points to (wrapping): a PE image's
+    /// preferred base; a WebAssembly module's pointers, addresses in its
+    /// linear memory, are less [`WASM_MEMORY`] (its functions' are table
+    /// indices, which point at no address); 0 elsewhere.
+    pub fn pointer_base(&self) -> u64 {
+        match self {
+            Image::Wasm(_) => wasm::MEMORY.wrapping_neg(),
+            _ => self.image_base(),
         }
     }
 

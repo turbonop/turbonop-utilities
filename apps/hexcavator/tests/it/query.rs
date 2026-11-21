@@ -223,3 +223,59 @@ fn image_symbols_beside_dwarf() {
         assert!(row["file"].as_u64().unwrap() > 0, "{image}: {row}");
     }
 }
+
+/// A WebAssembly module's data: each variable in its segment, with its
+/// compile unit; and `hexc data` reading one at its address in linear
+/// memory, and `hexc recommend` finding everything reached (code's
+/// constant addresses and offsets are references to data).
+#[test]
+fn wasm_data() {
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/data.wasm");
+    // (Each command: its options, the image, what follows it.)
+    let run = |args: &[&str], after: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .args(args)
+            .arg(&image)
+            .args(after)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let rows: serde_json::Value =
+        serde_json::from_str(&run(&["query", "-json"], &["kind=data"])).unwrap();
+    let row = |name: &str| {
+        rows["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["name"] == name)
+            .unwrap_or_else(|| panic!("{name}: {rows}"))
+            .clone()
+    };
+    for (name, section) in [
+        ("primes", ".rodata"),
+        ("twice_b", ".rodata"),
+        ("counter", ".data"),
+    ] {
+        let r = row(name);
+        assert_eq!(r["section"], section, "{r}");
+        assert!(r["compiland"].as_str().unwrap().ends_with("data.c"), "{r}");
+    }
+    let text = run(&["data"], &["counter"]);
+    assert!(
+        text.starts_with("counter  (4 bytes at 0x100bc, .data)"),
+        "{text}"
+    );
+    assert!(text.contains("int = 42"), "{text}");
+    let text = run(&["recommend"], &[]);
+    assert!(
+        text.contains("the link did collect unreferenced functions"),
+        "{text}"
+    );
+    assert!(!text.contains("--no-gc-sections"), "{text}");
+}

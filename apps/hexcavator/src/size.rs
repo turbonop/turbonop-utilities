@@ -1416,13 +1416,14 @@ fn build_maps(
         } else {
             None
         };
-        let maps = hexcavator_size::wasm::maps_with_source_map(
+        let mut maps = hexcavator_size::wasm::maps_with_source_map(
             &image_map,
             &file_name,
             sources,
             source_map.as_ref(),
         )
         .map_err(|e| format!("{}: {e}", show(path)))?;
+        unix_map(&mut maps, map)?;
         return Ok(maps);
     }
     // Mach-O and universal files: bloaty's Mach-O sources.

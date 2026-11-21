@@ -1206,6 +1206,7 @@ fn pe_listing(
         symbols: names,
         riscv_arch: None,
         big_endian: false,
+        mips_flags: 0,
     };
     if style != Style::Json {
         return Ok(render(&f, style, None));

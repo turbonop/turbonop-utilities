@@ -176,7 +176,12 @@ fn print_operand(
         | Print::MemRegImm
         | Print::MemRegReg
         | Print::AbsBranch
-        | Print::CrBitM => {
+        | Print::CrBitM
+        | Print::UImm { .. }
+        | Print::Mem
+        | Print::Cop0
+        | Print::Fcc
+        | Print::FromEnd(_) => {
             if let Operand::Reg(r) = o {
                 out.push_str(&reg_name(r));
             }

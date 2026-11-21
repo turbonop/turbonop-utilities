@@ -81,6 +81,7 @@ fn at_entry(image: &Image<'_>, bias: u64, start: u64) -> (Method, u64, u64) {
         | hexcavator_core::Arch::LoongArch32
         | hexcavator_core::Arch::LoongArch64 => Some(1),
         hexcavator_core::Arch::PowerPc | hexcavator_core::Arch::PowerPc64 => Some(65),
+        hexcavator_core::Arch::Mips | hexcavator_core::Arch::Mips64 => Some(31),
         _ => None,
     };
     let mut r = registers(&[(pc, bias + start), (sp, top)]);
@@ -102,6 +103,7 @@ fn elf_dwarf_at_function_starts() {
         ("elf/unwind-riscv64-linux-gnu", 0),
         ("elf/unwind-loongarch64-linux-gnu", 0),
         ("elf/unwind-powerpc64le-linux-gnu", 0),
+        ("elf/unwind-mipsel-linux-gnu", 0),
     ] {
         let data = testdata(file);
         let image = Image::parse(&data).unwrap();

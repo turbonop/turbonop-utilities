@@ -1279,6 +1279,8 @@ pub fn elf(
             | Arch::LoongArch64
             | Arch::PowerPc
             | Arch::PowerPc64
+            | Arch::Mips
+            | Arch::Mips64
     ) {
         return Err(format!("no cross-references for {}", arch.name()));
     }

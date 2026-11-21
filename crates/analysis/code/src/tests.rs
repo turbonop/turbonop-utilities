@@ -144,7 +144,7 @@ fn arm64_targets_agree_with_the_formatter() {
 fn nothing_to_decode() {
     assert_eq!(sweep(Arch::Arm64, &[1, 2], 0), (vec![], Some(0)));
     assert_eq!(
-        sweep(Arch::Mips64, &[0, 0, 0, 0], 0x10),
+        sweep(Arch::Sparc64, &[0, 0, 0, 0], 0x10),
         (vec![], Some(0x10))
     );
     assert!(blocks(&[]).is_empty());
@@ -218,4 +218,49 @@ fn powerpc_flow() {
     let i = decode_in(Arch::PowerPc64, true, &pld, at).unwrap();
     assert_eq!((i.len, i.flow), (8, Flow::Next));
     assert!(decodes(Arch::PowerPc));
+}
+
+/// MIPS's control flow, big- and little-endian (each instruction's own);
+/// and a sweep's, a delayed branch's flow at its delay slot.
+#[test]
+fn mips_flow() {
+    let at = 0x1000;
+    let cases: [(u32, Flow, Option<u64>); 8] = [
+        (0x1085_0005, Flow::Branch, Some(0x1018)), // beq $4, $5, .+0x18
+        (0x1000_0003, Flow::Jump, Some(0x1010)),   // b .+0x10
+        (0x0c10_0040, Flow::Call, Some(0x40_0100)), // jal 0x400100
+        (0x03e0_0008, Flow::Return, None),         // jr $ra
+        (0x0320_f809, Flow::Call, None),           // jalr $25
+        (0x0411_fff7, Flow::Call, Some(0xfe0)),    // bal .-0x20
+        (0x0000_000d, Flow::Stop, None),           // break
+        (0x27bd_ffe0, Flow::Next, None),           // addiu $sp, $sp, -0x20
+    ];
+    for (w, flow, target) in cases {
+        for big in [true, false] {
+            let bytes = if big {
+                w.to_be_bytes()
+            } else {
+                w.to_le_bytes()
+            };
+            let i = decode_in(Arch::Mips, big, &bytes, at).unwrap();
+            assert_eq!(
+                (i.flow, i.target, i.len),
+                (flow, target, 4),
+                "{w:08x} {big}"
+            );
+        }
+    }
+    // jr $ra; addiu $sp, $sp, 0x20 (its delay slot): the block ends at the
+    // slot.
+    let code: Vec<u8> = [0x03e0_0008u32, 0x27bd_0020]
+        .iter()
+        .flat_map(|w| w.to_be_bytes())
+        .collect();
+    let (insns, stop) = sweep_in(Arch::Mips, true, &code, at);
+    assert_eq!(stop, None);
+    assert_eq!(
+        insns.iter().map(|i| i.flow).collect::<Vec<_>>(),
+        [Flow::Next, Flow::Return]
+    );
+    assert!(decodes(Arch::Mips64));
 }

@@ -70,6 +70,9 @@ class Extractor:
     KEY16 = []
     KEY32 = []
     KEY64 = []
+    # Each decoder table's features, by its namespace: (all of these, none
+    # of those), by name; a table not named here is always tried.
+    SPACES = {}
     PRINTS = {}
     SOURCE = ""
 
@@ -156,6 +159,13 @@ class Extractor:
 
     def members(self, x):
         """The registers a member list dag names: a set of (file, n)."""
+        return set(self.member_list(x))
+
+    def member_list(self, x):
+        """The registers a member list dag names, in its order (TableGen's
+        set operators': `add` concatenates, `sub` removes, `sequence`
+        counts, `decimate`, `trunc`, `rotl`, `rotr`, and `shl` take and
+        turn the list), each once: a list of (file, n)."""
         d = self.d
         if isinstance(x, list):
             x = x[0]
@@ -163,40 +173,46 @@ class Extractor:
             name = x["def"]
             r = d[name]
             if "MemberList" in r:
-                return self.members(r["MemberList"])
+                return self.member_list(r["MemberList"])
             reg = self.reg_of(name)
-            return {reg} if reg else set()
+            return [reg] if reg else []
         if isinstance(x, dict) and x.get("kind") == "dag":
             op = x["operator"]["def"]
             args = x["args"]
             if op == "add":
-                s = set()
+                out = []
                 for a in args:
-                    s |= self.members(a[0])
-                return s
-            if op == "sub":
-                s = self.members(args[0][0])
+                    out += self.member_list(a[0])
+            elif op == "sub":
+                gone = set()
                 for a in args[1:]:
-                    s -= self.members(a[0])
-                return s
-            if op == "sequence":
+                    gone |= self.members(a[0])
+                out = [r for r in self.member_list(args[0][0]) if r not in gone]
+            elif op == "and":
+                keep = self.members(args[1][0])
+                out = [r for r in self.member_list(args[0][0]) if r in keep]
+            elif op == "sequence":
                 fmt, lo, hi = args[0][0], args[1][0], args[2][0]
                 step = -1 if lo > hi else 1
-                s = set()
+                out = []
                 for i in range(lo, hi + step, step):
                     reg = self.reg_of(fmt.replace("%u", str(i)))
                     if reg:
-                        s.add(reg)
-                return s
-            if op == "decimate":
-                regs = sorted(self.members(args[0][0]), key=lambda r: r[1])
-                return set(regs[:: args[1][0]])
-            if op == "trunc":
-                regs = self.ordered(args[0][0])
-                return set(regs[: args[1][0]])
-            if op in ("rotl", "rotr", "shl"):
-                return self.members(args[0][0])
-            raise ValueError(f"member list {op}")
+                        out.append(reg)
+            elif op == "decimate":
+                out = self.member_list(args[0][0])[:: args[1][0]]
+            elif op == "trunc":
+                out = self.member_list(args[0][0])[: args[1][0]]
+            elif op in ("rotl", "rotr"):
+                regs = self.member_list(args[0][0])
+                k = args[1][0] % len(regs) if regs else 0
+                out = regs[k:] + regs[:k] if op == "rotl" else regs[len(regs) - k :] + regs[: len(regs) - k]
+            elif op == "shl":
+                out = self.member_list(args[0][0])[args[1][0] :]
+            else:
+                raise ValueError(f"member list {op}")
+            seen = set()
+            return [r for r in out if not (r in seen or seen.add(r))]
         raise ValueError(f"member list {x}")
 
     def ordered(self, x):
@@ -212,16 +228,17 @@ class Extractor:
         name = self.reg_class_record(name)
         if name in self.class_index:
             return self.class_index[name]
-        regs = self.members({"kind": "def", "def": name})
+        regs = self.member_list({"kind": "def", "def": name})
         files = {f for f, _ in regs}
         if len(files) != 1:
             raise ValueError(f"register class {name}: files {files}")
         f = files.pop()
         mask = 0
         for _, n in regs:
-            mask |= 1 << n
+            if n < 64:
+                mask |= 1 << n
         idx = len(self.classes)
-        self.classes.append((name, f, mask))
+        self.classes.append((name, f, mask, [n for _, n in regs]))
         self.class_index[name] = idx
         return idx
 
@@ -239,15 +256,23 @@ class Extractor:
         pcrel = r.get("OperandType") == "OPERAND_PCREL"
         dec = r.get("DecoderMethod", "") or ""
         reg = None
-        if "RegisterClass" in supers or "RegisterOperand" in supers:
+        # (A pointer class, PointerLikeRegClass, is the register class the
+        # target says: `reg_class_record`.)
+        pointer = "PointerLikeRegClass" in supers or "RegClassByHwMode" in supers
+        if "RegisterClass" in supers or "RegisterOperand" in supers or pointer:
             rc = r["RegClass"]["def"] if "RegisterOperand" in supers else cls
             rc = self.reg_class_record(rc)
             if not dec and rc != cls:
                 dec = d[rc].get("DecoderMethod", "") or ""
             if not dec:
                 dec = f"Decode{rc}RegisterClass"
-            reg = self.reg_class(rc)
             decode = self.reg_decoder(dec, rc)
+            # (A decoder of another class than the operand's: MIPS's
+            # `ldc1`, an AFGR64 operand decoded as FGR64.)
+            if len(decode) == 3:
+                rc = decode[2]
+                decode = decode[:2]
+            reg = self.reg_class(rc)
         else:
             decode = self.imm_decoder(dec, cls)
         kind = (cls, reg, decode, print_method, pcrel, self.imm_pred(cls))
@@ -340,6 +365,21 @@ class Extractor:
                 continue
             if c:
                 self.compress.append(c)
+        # Each decoder table's condition, as a predicate.
+        self.space_preds = []
+        for ns in self.NAMESPACES:
+            all_of, none_of = self.SPACES.get(ns, ([], []))
+            names = {name: i for i, (name, _) in enumerate(self.feature_list)}
+            cond = (
+                "all",
+                tuple(names[f] for f in all_of),
+                tuple(names[f] for f in none_of),
+            )
+            key = (cond,) if all_of or none_of else ()
+            if key not in self.pred_index:
+                self.pred_index[key] = len(self.preds)
+                self.preds.append(key)
+            self.space_preds.append(self.pred_index[key])
         self.more()
 
     def more(self):
@@ -404,10 +444,12 @@ class Extractor:
                 # (Not an operand: a placeholder for any more.)
                 continue
             subs = self.sub_operands(cls)
-            if subs:
+            if len(subs) > 1:
                 raise Skip(f"{n}: complex operand {name} without its fields")
             slots.append((len(flat), 1))
-            flat.append((name, self.operand_kind(cls), name))
+            # (A complex operand of one: that one, printed as the whole.)
+            kind = self.complex_kind(cls) if subs else self.operand_kind(cls)
+            flat.append((name, kind, name))
         names = [f[0] for f in flat]
         # (Constraints name operands, and complex operands' sub-operands.)
         index_of = dict(dotted)
@@ -709,8 +751,11 @@ class Extractor:
         w("];")
         w("")
         w("pub static CLASSES: &[Class] = &[")
-        for name, f, mask in self.classes:
-            w(f"    Class {{ name: {json.dumps(name)}, file: {self.FILES[f]}, members: {mask:#x} }},")
+        for name, f, mask, order in self.classes:
+            w(
+                f"    Class {{ name: {json.dumps(name)}, file: {self.FILES[f]}, members: {mask:#x}, "
+                f"order: &{order} }},"
+            )
         w("];")
         w("")
         w("pub static KINDS: &[Kind] = &[")
@@ -835,6 +880,7 @@ class Extractor:
         w(f"    key32: &{self.KEY32},")
         w("    buckets64: BUCKETS64,")
         w(f"    key64: &{self.KEY64},")
+        w(f"    spaces: &{self.space_preds},")
         w("};")
         w("")
         self.emit_more(w)
@@ -857,7 +903,11 @@ def main(extractor):
     open(out, "w", encoding="utf-8", newline="\n").write(E.emit())
     reasons = {}
     for n, why in E.skipped.items():
-        reasons.setdefault(why.split(":")[0] if ":" in why else why, []).append(n)
+        # (By the reason, its instruction's name aside: `X: operand y has
+        # no field` and `register decoder D (C)` alike.)
+        why = why[len(n) + 2 :] if why.startswith(n + ": ") else why
+        why = re.sub(r" \(.*\)$", "", why)
+        reasons.setdefault(why, []).append(n)
     print(
         f"{len(E.insts)} instructions ({len(E.skipped)} left out), "
         f"{len(E.aliases)} aliases, {len(E.compress)} compressed forms",

@@ -511,6 +511,7 @@ fn machine_name(machine: u16) -> String {
         EM_ARM => "arm".into(),
         EM_RISCV => "riscv".into(),
         EM_LOONGARCH => "loongarch".into(),
+        EM_MIPS => "mips".into(),
         EM_PPC => "powerpc".into(),
         EM_PPC64 => "powerpc64".into(),
         m => format!("machine_{m}"),
@@ -636,6 +637,11 @@ pub fn function<'d>(
         symbols: names,
         riscv_arch: elf.riscv_arch().map(str::to_string),
         big_endian: elf.endian() == hexcavator_core::Endian::Big,
+        mips_flags: if elf.header().machine == EM_MIPS {
+            elf.header().flags
+        } else {
+            0
+        },
     })
 }
 

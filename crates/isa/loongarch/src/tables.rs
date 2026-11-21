@@ -91,46 +91,73 @@ pub static CLASSES: &[Class] = &[
         name: "GPR",
         file: 0,
         members: 0xffffffff,
+        order: &[
+            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27,
+            28, 29, 30, 31, 0, 1, 2, 3, 21,
+        ],
     },
     Class {
         name: "CFR",
         file: 4,
         members: 0xff,
+        order: &[0, 1, 2, 3, 4, 5, 6, 7],
     },
     Class {
         name: "GPRNoR0R1",
         file: 0,
         members: 0xfffffffc,
+        order: &[
+            4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27,
+            28, 29, 30, 31, 2, 3, 21,
+        ],
     },
     Class {
         name: "FPR64",
         file: 1,
         members: 0xffffffff,
+        order: &[
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31,
+        ],
     },
     Class {
         name: "FPR32",
         file: 1,
         members: 0xffffffff,
+        order: &[
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31,
+        ],
     },
     Class {
         name: "FCSR",
         file: 5,
         members: 0xf,
+        order: &[0, 1, 2, 3],
     },
     Class {
         name: "SCR",
         file: 6,
         members: 0xf,
+        order: &[0, 1, 2, 3],
     },
     Class {
         name: "LSX128",
         file: 2,
         members: 0xffffffff,
+        order: &[
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31,
+        ],
     },
     Class {
         name: "LASX256",
         file: 3,
         members: 0xffffffff,
+        order: &[
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 28, 29, 30, 31,
+        ],
     },
 ];
 
@@ -66882,4 +66909,5 @@ pub static TARGET: Target = Target {
     key32: &[22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
     buckets64: BUCKETS64,
     key64: &[],
+    spaces: &[0],
 };

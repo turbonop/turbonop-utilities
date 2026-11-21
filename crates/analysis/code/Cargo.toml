@@ -16,6 +16,7 @@ hexcavator-arm32.workspace = true
 hexcavator-riscv.workspace = true
 hexcavator-loongarch.workspace = true
 hexcavator-powerpc.workspace = true
+hexcavator-mips.workspace = true
 
 [lints]
 workspace = true

@@ -81,6 +81,12 @@ for %%t in (powerpc64le powerpc64 powerpc) do (
   "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu !ABI! -O2 -g -ffreestanding -fno-stack-protector -fno-ident -ffile-prefix-map=%~dp0= -fdebug-compilation-dir=. %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-%%t.o || exit /b 1
   "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start funcs-%%t.o -o "%OUT%\funcs-plain-%%t" || exit /b 1
 )
+rem MIPS (32-bit big- and little-endian, 64-bit little-endian; not PIC):
+rem funcs.c linked plain, likewise.
+for %%t in (mips mipsel mips64el) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -fno-pic -mno-abicalls -G0 -O2 -g -ffreestanding -fno-stack-protector -fno-ident -ffile-prefix-map=%~dp0= -fdebug-compilation-dir=. %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-%%t.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start funcs-%%t.o -o "%OUT%\funcs-plain-%%t" || exit /b 1
+)
 rem LoongArch (LA64, LA32): funcs.c linked plain, likewise.
 for %%t in (loongarch64 loongarch32) do (
   "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -O2 -g -ffreestanding -fno-stack-protector -fno-ident -ffile-prefix-map=%~dp0= -fdebug-compilation-dir=. %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-%%t.o || exit /b 1

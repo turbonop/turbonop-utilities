@@ -690,6 +690,7 @@ pub fn function<'d>(
         symbols: names,
         riscv_arch: None,
         big_endian: image.header().endian == hexcavator_core::Endian::Big,
+        mips_flags: 0,
     })
 }
 

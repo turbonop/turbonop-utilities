@@ -2477,131 +2477,193 @@ pub static CLASSES: &[Class] = &[
         name: "GPR",
         file: 0,
         members: 0xffffffff,
+        order: &[
+            10, 11, 12, 13, 14, 15, 16, 17, 5, 6, 7, 28, 29, 30, 31, 8, 9, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 0, 1, 2, 3, 4,
+        ],
     },
     Class {
         name: "GPRPair",
         file: 0,
         members: 0x55555555,
+        order: &[10, 12, 14, 16, 6, 28, 30, 8, 18, 20, 22, 24, 26, 0, 2, 4],
     },
     Class {
         name: "GPRS07",
         file: 0,
         members: 0xfc0300,
+        order: &[8, 9, 18, 19, 20, 21, 22, 23],
     },
     Class {
         name: "GPRNoX0",
         file: 0,
         members: 0xfffffffe,
+        order: &[
+            10, 11, 12, 13, 14, 15, 16, 17, 5, 6, 7, 28, 29, 30, 31, 8, 9, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 1, 2, 3, 4,
+        ],
     },
     Class {
         name: "SP",
         file: 0,
         members: 0x4,
+        order: &[2],
     },
     Class {
         name: "GPRC",
         file: 0,
         members: 0xff00,
+        order: &[10, 11, 12, 13, 14, 15, 8, 9],
     },
     Class {
         name: "FPR64C",
         file: 1,
         members: 0xff00,
+        order: &[15, 14, 13, 12, 11, 10, 8, 9],
     },
     Class {
         name: "FPR64",
         file: 1,
         members: 0xffffffff,
+        order: &[
+            15, 14, 13, 12, 11, 10, 0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 28, 29, 30, 31, 8, 9, 18, 19,
+            20, 21, 22, 23, 24, 25, 26, 27,
+        ],
     },
     Class {
         name: "FPR32C",
         file: 1,
         members: 0xff00,
+        order: &[15, 14, 13, 12, 11, 10, 8, 9],
     },
     Class {
         name: "FPR32",
         file: 1,
         members: 0xffffffff,
+        order: &[
+            15, 14, 13, 12, 11, 10, 0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 28, 29, 30, 31, 8, 9, 18, 19,
+            20, 21, 22, 23, 24, 25, 26, 27,
+        ],
     },
     Class {
         name: "GPRPairNoX0",
         file: 0,
         members: 0x55555554,
+        order: &[10, 12, 14, 16, 6, 28, 30, 8, 18, 20, 22, 24, 26, 2, 4],
     },
     Class {
         name: "GPRPairC",
         file: 0,
         members: 0x5500,
+        order: &[10, 12, 14, 8],
     },
     Class {
         name: "GPRNoX2",
         file: 0,
         members: 0xfffffffb,
+        order: &[
+            10, 11, 12, 13, 14, 15, 16, 17, 5, 6, 7, 28, 29, 30, 31, 8, 9, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 0, 1, 3, 4,
+        ],
     },
     Class {
         name: "GPRX5",
         file: 0,
         members: 0x20,
+        order: &[5],
     },
     Class {
         name: "GPRX1",
         file: 0,
         members: 0x2,
+        order: &[1],
     },
     Class {
         name: "FPR16",
         file: 1,
         members: 0xffffffff,
+        order: &[
+            15, 14, 13, 12, 11, 10, 0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 28, 29, 30, 31, 8, 9, 18, 19,
+            20, 21, 22, 23, 24, 25, 26, 27,
+        ],
     },
     Class {
         name: "GPRF16",
         file: 0,
         members: 0xffffffff,
+        order: &[
+            10, 11, 12, 13, 14, 15, 16, 17, 5, 6, 7, 28, 29, 30, 31, 8, 9, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 0, 1, 2, 3, 4,
+        ],
     },
     Class {
         name: "FPR128",
         file: 1,
         members: 0xffffffff,
+        order: &[
+            15, 14, 13, 12, 11, 10, 0, 1, 2, 3, 4, 5, 6, 7, 16, 17, 28, 29, 30, 31, 8, 9, 18, 19,
+            20, 21, 22, 23, 24, 25, 26, 27,
+        ],
     },
     Class {
         name: "GPRF32",
         file: 0,
         members: 0xffffffff,
+        order: &[
+            10, 11, 12, 13, 14, 15, 16, 17, 5, 6, 7, 28, 29, 30, 31, 8, 9, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 0, 1, 2, 3, 4,
+        ],
     },
     Class {
         name: "GPRX1X5",
         file: 0,
         members: 0x22,
+        order: &[1, 5],
     },
     Class {
         name: "VR",
         file: 2,
         members: 0xffffffff,
+        order: &[
+            8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+            30, 31, 7, 6, 5, 4, 3, 2, 1, 0,
+        ],
     },
     Class {
         name: "VMV0",
         file: 2,
         members: 0x1,
+        order: &[0],
     },
     Class {
         name: "VRM2",
         file: 2,
         members: 0xffffff7f,
+        order: &[
+            8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+            30, 31, 6, 5, 4, 3, 2, 1, 0,
+        ],
     },
     Class {
         name: "VRM4",
         file: 2,
         members: 0x11111111,
+        order: &[8, 12, 16, 20, 24, 28, 4, 0],
     },
     Class {
         name: "VRM8",
         file: 2,
         members: 0x1010101,
+        order: &[8, 16, 24, 0],
     },
     Class {
         name: "GPRNoX0X2",
         file: 0,
         members: 0xfffffffa,
+        order: &[
+            10, 11, 12, 13, 14, 15, 16, 17, 5, 6, 7, 28, 29, 30, 31, 8, 9, 18, 19, 20, 21, 22, 23,
+            24, 25, 26, 27, 1, 3, 4,
+        ],
     },
 ];
 
@@ -57359,6 +57421,7 @@ pub static TARGET: Target = Target {
     key32: &[0, 1, 2, 3, 4, 5, 6, 12, 13, 14],
     buckets64: BUCKETS64,
     key64: &[],
+    spaces: &[0, 0, 0, 0, 0],
 };
 
 pub static CSRS: &[crate::Csr] = &[

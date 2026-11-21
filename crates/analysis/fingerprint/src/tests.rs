@@ -319,5 +319,5 @@ fn shapes() {
     // (sub, not add)
     assert_ne!(w, arm(&[0xB940_0400, 0x5100_0C00, 0xD65F_03C0]));
     // No decoder: no shape.
-    assert_eq!(shape(Arch::Mips, false, &[0, 0, 0, 0], 0), None);
+    assert_eq!(shape(Arch::Sparc, false, &[0, 0, 0, 0], 0), None);
 }

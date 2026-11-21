@@ -69,6 +69,9 @@ pub struct Function<'d> {
     /// `ppc64le`'s; ARM's and ARM64's code is little-endian whatever the
     /// image's byte order).
     pub big_endian: bool,
+    /// For MIPS: the ELF image's `e_flags`, which name its ISA level and
+    /// ASEs (0: none named).
+    pub mips_flags: u32,
 }
 
 /// The fallback when no function is named exactly as asked: the one
@@ -251,6 +254,12 @@ fn riscv_features(f: &Function<'_>) -> hexcavator_riscv::Features {
     }
 }
 
+/// The MIPS features a listing decodes with: as llvm-objdump takes them
+/// from the image's flags.
+fn mips_features(f: &Function<'_>) -> hexcavator_mips::Features {
+    hexcavator_mips::Features::from_elf(f.mips_flags, f.isa == Arch::Mips64)
+}
+
 /// The LoongArch features a listing decodes with: LA64's or LA32's.
 fn loongarch_features(isa: Arch) -> hexcavator_loongarch::Features {
     if isa == Arch::LoongArch64 {
@@ -274,6 +283,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
         RiscV(hexcavator_riscv::Instruction),
         LoongArch(hexcavator_loongarch::Instruction),
         PowerPc(hexcavator_powerpc::Instruction),
+        Mips(hexcavator_mips::Instruction),
     }
     struct Decoded {
         pc: u64,
@@ -284,6 +294,8 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
         target: Option<u64>,
         /// Every address the instruction names (bloaty labels each).
         named: Vec<u64>,
+        /// Whether it has a delay slot (MIPS's branches).
+        delayed: bool,
     }
     let mut insts: Vec<Decoded> = Vec::new();
     let mut rest = 0usize;
@@ -310,6 +322,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     flow,
                     target,
                     named: target.into_iter().collect(),
+                    delayed: false,
                 });
                 rest += i.len();
             }
@@ -335,6 +348,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     flow,
                     target,
                     named,
+                    delayed: false,
                 });
                 rest += 4;
             }
@@ -391,6 +405,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     flow,
                     target: c.target,
                     named: c.target.into_iter().collect(),
+                    delayed: false,
                 });
                 rest += usize::from(c.len);
             }
@@ -410,6 +425,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     flow,
                     target,
                     named: target.into_iter().collect(),
+                    delayed: false,
                 });
                 rest += usize::from(i.size);
             }
@@ -429,6 +445,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     flow,
                     target,
                     named: target.into_iter().collect(),
+                    delayed: false,
                 });
                 rest += 4;
             }
@@ -449,8 +466,30 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     flow,
                     target,
                     named: target.into_iter().collect(),
+                    delayed: false,
                 });
                 rest += usize::from(i.size);
+            }
+        }
+        Arch::Mips | Arch::Mips64 => {
+            let features = mips_features(f);
+            while rest < f.code.len() {
+                let pc = f.address + rest as u64;
+                let Some(i) = hexcavator_mips::decode(&f.code[rest..], f.big_endian, &features)
+                else {
+                    break;
+                };
+                let (flow, target) = hexcavator_code::mips_flow(&i, pc);
+                insts.push(Decoded {
+                    pc,
+                    len: 4,
+                    inst: Inst::Mips(i),
+                    flow,
+                    target,
+                    named: target.into_iter().collect(),
+                    delayed: hexcavator_mips::has_delay_slot(&i),
+                });
+                rest += 4;
             }
         }
         // (No decoder for the others: the code shows as bytes.)
@@ -459,7 +498,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
     let starts_inst =
         |t: &u64| *t >= f.address && *t < end && insts.binary_search_by_key(t, |i| i.pc).is_ok();
     // The blocks (hexcavator-code's), and where they start.
-    let insns: Vec<hexcavator_code::Insn> = insts
+    let mut insns: Vec<hexcavator_code::Insn> = insts
         .iter()
         .map(|d| hexcavator_code::Insn {
             address: d.pc,
@@ -468,6 +507,9 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             target: d.target,
         })
         .collect();
+    // (A delayed branch takes effect after its delay slot.)
+    let delayed: Vec<bool> = insts.iter().map(|d| d.delayed).collect();
+    hexcavator_code::delay_slots(&mut insns, &delayed);
     let branched = hexcavator_code::branch_targets(&insns);
     let blocks = hexcavator_code::blocks(&insns);
     let starts: Vec<u64> = blocks.iter().map(|b| insns[b.first].address).collect();
@@ -535,6 +577,16 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     && let Some(at) = s.rfind([' ', '\t'])
                 {
                     s.replace_range(at + 1.., name);
+                }
+                s
+            }
+            Inst::Mips(i) => {
+                let mut s = hexcavator_mips::format::format(i, d.pc, &mips_features(f));
+                // (The target by its label or symbol, where it has one.)
+                if let Some(t) = d.target
+                    && let Some(name) = names.name(t)
+                {
+                    s = s.replace(&format!("{:#x}", t & 0xFFFF_FFFF), name);
                 }
                 s
             }
@@ -777,6 +829,7 @@ mod tests {
             symbols: vec![(0x1000, "f".into()), (0x2000, "helper".into())],
             riscv_arch: None,
             big_endian: false,
+            mips_flags: 0,
         };
         let l = decode(&f, Labels::Blocks);
         let texts: Vec<&str> = l
@@ -831,6 +884,7 @@ mod tests {
             symbols: vec![],
             riscv_arch: None,
             big_endian: false,
+            mips_flags: 0,
         };
         let l = decode(&f, Labels::Blocks);
         assert_eq!(l.lines[0].label, Some(1));
@@ -899,6 +953,7 @@ mod tests {
             symbols: vec![(0x1000, "f".into()), (0x2000, "helper".into())],
             riscv_arch: None,
             big_endian: false,
+            mips_flags: 0,
         };
         let text = listing(&f);
         let lines: Vec<&str> = text.lines().collect();
@@ -933,6 +988,7 @@ mod tests {
             symbols: vec![(0x2010, "helper".into())],
             riscv_arch: None,
             big_endian: false,
+            mips_flags: 0,
         };
         let text = listing(&f);
         let lines: Vec<&str> = text.lines().collect();

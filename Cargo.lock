@@ -307,6 +307,7 @@ dependencies = [
  "hexcavator-arm32",
  "hexcavator-arm64",
  "hexcavator-core",
+ "hexcavator-riscv",
  "hexcavator-x86",
 ]
 
@@ -400,6 +401,7 @@ dependencies = [
  "hexcavator-arm32",
  "hexcavator-arm64",
  "hexcavator-core",
+ "hexcavator-riscv",
  "hexcavator-x86",
  "hexcavator-xref",
  "rustc-hash",
@@ -539,6 +541,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "hexcavator-riscv"
+version = "0.0.7"
+
+[[package]]
 name = "hexcavator-signature"
 version = "0.0.7"
 dependencies = [
@@ -573,6 +579,7 @@ dependencies = [
  "hexcavator-mmap",
  "hexcavator-pe",
  "hexcavator-query",
+ "hexcavator-riscv",
  "hexcavator-wasm",
  "hexcavator-wasm-isa",
  "hexcavator-x86",
@@ -662,6 +669,7 @@ dependencies = [
  "hexcavator-arm32",
  "hexcavator-arm64",
  "hexcavator-core",
+ "hexcavator-riscv",
  "hexcavator-x86",
 ]
 

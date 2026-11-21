@@ -12,6 +12,7 @@ repository.workspace = true
 hexcavator-core.workspace = true
 hexcavator-x86.workspace = true
 hexcavator-arm32.workspace = true
+hexcavator-riscv.workspace = true
 hexcavator-arm64.workspace = true
 
 [lints]

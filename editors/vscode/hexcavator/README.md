@@ -262,7 +262,7 @@ fixups) are marked in the bytes and listed.
 
 **Disassemble** (⟨/⟩ on a symbol's row, `D`, the sidebar, or a source
 file's size code lens) shows a function's code, for PE images, ELF and
-Mach-O files (x86, x86-64, ARM64, 32-bit ARM), and WebAssembly
+Mach-O files (x86, x86-64, ARM64, 32-bit ARM, RISC-V), and WebAssembly
 modules, four ways:
 
 - **Raw**: a line per instruction, with its address and label.

@@ -7,7 +7,9 @@
 //! instructions with every address masked out: a branch within the
 //! function counts as its offset from the function's start; anything else
 //! it refers to (a call's target, the data an operand reaches) is a
-//! reference, in the order the code makes them. Data's is of its bytes with
+//! reference, in the order the code makes them (RISC-V's `AUIPC`, and
+//! the `LUI` an address is built on, count by their registers alone).
+//! Data's is of its bytes with
 //! its pointers masked out, which are its references. What is known by its
 //! name (an import) is its name.
 //!
@@ -208,12 +210,101 @@ pub fn code(
             // (Then what isn't code: a literal pool, as it is.)
             h.write(code.get(at..).unwrap_or_default());
         }
+        Arch::RiscV32 | Arch::RiscV64 => {
+            let insts = riscv(arch, code);
+            // The LUIs whose registers an addressing instruction then uses
+            // (their upper parts are an address's).
+            let mut masked = vec![false; insts.len()];
+            let mut lui = [None::<usize>; 32];
+            let referring: std::collections::HashSet<u64> = refs.iter().map(|c| c.from).collect();
+            for (k, (off, i)) in insts.iter().enumerate() {
+                let pc = start + *off as u64;
+                if i.name() == "AUIPC" {
+                    masked[k] = true;
+                }
+                if referring.contains(&pc) {
+                    masked[k] = true;
+                    if let Some(hexcavator_riscv::Operand::Reg(hexcavator_riscv::Reg::X(rs))) =
+                        i.operand("rs1")
+                        && let Some(l) = lui[usize::from(rs)]
+                    {
+                        masked[l] = true;
+                    }
+                }
+                for op in i.operands().iter().take(usize::from(i.inst().defs)) {
+                    if let hexcavator_riscv::Operand::Reg(hexcavator_riscv::Reg::X(rd)) = op {
+                        lui[usize::from(*rd)] = (i.name() == "LUI").then_some(k);
+                    }
+                }
+            }
+            let mut at = 0usize;
+            for (k, (off, i)) in insts.iter().enumerate() {
+                at = off + usize::from(i.size);
+                let pc = start + *off as u64;
+                let mine = take_refs(&refs, &mut r, pc);
+                riscv_instruction(&mut h, i, masked[k]);
+                for c in mine {
+                    target(&mut h, c.to, c.via, &mut item);
+                }
+            }
+            h.write(code.get(at..).unwrap_or_default());
+        }
         // (Code no decoder reads: its bytes, as they are.)
         _ => h.write(code),
     }
     h.write_usize(code.len());
     item.local = h.finish();
     item
+}
+
+/// RISC-V code's instructions (compressed ones by their full forms), with
+/// their offsets, to the first that doesn't decode.
+fn riscv(arch: Arch, code: &[u8]) -> Vec<(usize, hexcavator_riscv::Instruction)> {
+    let features = hexcavator_riscv::Features::standard(arch == Arch::RiscV64);
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while at < code.len() {
+        let Some(i) = hexcavator_riscv::decode(&code[at..], &features) else {
+            break;
+        };
+        let size = i.size;
+        let full = hexcavator_riscv::uncompress(&i, &features).unwrap_or(i);
+        out.push((at, full));
+        at += usize::from(size);
+    }
+    out
+}
+
+/// A RISC-V instruction: its operation and operands; if `masked` (it holds
+/// part of an address), its operation and registers alone.
+fn riscv_instruction(h: &mut FxHasher, i: &hexcavator_riscv::Instruction, masked: bool) {
+    h.write(i.name().as_bytes());
+    for op in i.operands() {
+        match op {
+            hexcavator_riscv::Operand::Reg(r) => {
+                h.write_u8(b'r');
+                riscv_reg(h, *r);
+            }
+            hexcavator_riscv::Operand::Imm(v) => {
+                h.write_u8(b'i');
+                if !masked {
+                    h.write_i64(*v);
+                }
+            }
+        }
+    }
+}
+
+fn riscv_reg(h: &mut FxHasher, r: hexcavator_riscv::Reg) {
+    use hexcavator_riscv::Reg;
+    let (file, n) = match r {
+        Reg::None => (0, 0),
+        Reg::X(n) => (1, n),
+        Reg::F(n) => (2, n),
+        Reg::V(n) => (3, n),
+    };
+    h.write_u8(file);
+    h.write_u8(n);
 }
 
 /// 32-bit ARM Thumb-2 code's instructions, with their offsets, to the
@@ -371,6 +462,8 @@ fn arm64_address_bits(encoding: &str, refers: bool) -> u32 {
 /// - 32-bit ARM (Thumb-2): each instruction's operation (its encoding less
 ///   the encoding's number: `ADD_i_T1` and `ADD_i_T3` alike, 16 bits wide
 ///   or 32), and its registers.
+/// - RISC-V: each instruction's operation (a compressed one's full form's:
+///   `c.addi` and `addi` alike) and its registers.
 pub fn shape(arch: Arch, code: &[u8], start: u64) -> Option<u64> {
     let mut h = hasher(b's');
     let mut count = 0usize;
@@ -439,6 +532,17 @@ pub fn shape(arch: Arch, code: &[u8], start: u64) -> Option<u64> {
                 let op = n.rsplit_once('_').map_or(n, |(op, _)| op);
                 h.write(op.as_bytes());
                 arm32_registers(&mut h, &inst);
+                count += 1;
+            }
+        }
+        Arch::RiscV32 | Arch::RiscV64 => {
+            for (_, i) in riscv(arch, code) {
+                h.write(i.name().as_bytes());
+                for op in i.operands() {
+                    if let hexcavator_riscv::Operand::Reg(r) = op {
+                        riscv_reg(&mut h, *r);
+                    }
+                }
                 count += 1;
             }
         }

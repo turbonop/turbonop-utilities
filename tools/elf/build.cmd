@@ -23,6 +23,15 @@ for %%m in (arm thumb) do (
   "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%m-linux-gnueabihf.o -o program-%%m-linux-gnueabihf || exit /b 1
   "%LLVM_BIN%\llvm-objdump.exe" -d --no-print-imm-hex --no-show-raw-insn program-%%m-linux-gnueabihf > program-%%m-linux-gnueabihf.objdump.txt || exit /b 1
 )
+rem RISC-V: RV64GC and RV32IMAC (compressed code), and llvm-objdump's listing
+rem of each (no bytes) for the disassembler's test.
+for %%t in (riscv64 riscv32) do (
+  set MARCH=-march=rv64gc
+  if %%t==riscv32 set MARCH=-march=rv32imac
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu !MARCH! %CFLAGS% -c "%~dp0program.c" -o program-%%t-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
+)
 "%LLVM_BIN%\clang.exe" --target=x86_64-linux-gnu %CFLAGS% -fPIC -c "%~dp0program.c" -o program-pic.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -shared --build-id=sha1 program-pic.o -o program.so || exit /b 1
 del program-pic.o

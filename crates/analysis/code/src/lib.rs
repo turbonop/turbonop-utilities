@@ -67,7 +67,10 @@ impl Insn {
 
 /// Which architectures [`decode`] reads.
 pub fn decodes(arch: Arch) -> bool {
-    matches!(arch, Arch::X86 | Arch::X64 | Arch::Arm64 | Arch::Arm)
+    matches!(
+        arch,
+        Arch::X86 | Arch::X64 | Arch::Arm64 | Arch::Arm | Arch::RiscV32 | Arch::RiscV64
+    )
 }
 
 /// The instruction at the start of `bytes`, which is at `address`, or
@@ -109,7 +112,77 @@ pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
             let thumb = address & 1 == 1;
             decode_arm32(bytes, address & !1, thumb)
         }
+        Arch::RiscV32 | Arch::RiscV64 => {
+            let features = hexcavator_riscv::Features::standard(arch == Arch::RiscV64);
+            decode_riscv(bytes, address, &features)
+        }
         _ => None,
+    }
+}
+
+/// The RISC-V instruction at the start of `bytes`, which is at `address`,
+/// with `features` on, or `None` if it doesn't decode. ([`decode`] takes
+/// every standard extension to be on; an image's attributes may say
+/// which.)
+pub fn decode_riscv(
+    bytes: &[u8],
+    address: u64,
+    features: &hexcavator_riscv::Features,
+) -> Option<Insn> {
+    let i = hexcavator_riscv::decode(bytes, features)?;
+    let (flow, target) = riscv_flow(&i, address, features);
+    Some(Insn {
+        address,
+        len: i.size,
+        flow,
+        target,
+    })
+}
+
+/// How control leaves a RISC-V instruction (a compressed one by its full
+/// form), and a direct jump's, call's, or branch's target: `jal` to
+/// `zero` jumps, to another register calls; `jalr` to `zero` through
+/// `ra` or `t0` with no offset returns (as the return address stack's
+/// hints have it), else jumps, and to another register calls; the
+/// conditional branches branch; `ebreak` and `unimp` stop, as the trap
+/// returns (`mret`, `sret`, `dret`) leave.
+pub fn riscv_flow(
+    i: &hexcavator_riscv::Instruction,
+    address: u64,
+    features: &hexcavator_riscv::Features,
+) -> (Flow, Option<u64>) {
+    use hexcavator_riscv::Reg;
+    let full = hexcavator_riscv::uncompress(i, features);
+    let i = full.as_ref().unwrap_or(i);
+    let reg = |n: &str| i.operand(n).and_then(hexcavator_riscv::Operand::reg);
+    let imm = |n: &str| i.operand(n).and_then(hexcavator_riscv::Operand::imm);
+    let target = |n: &str| imm(n).map(|v| address.wrapping_add_signed(v));
+    match i.name() {
+        "JAL" => {
+            let flow = if reg("rd") == Some(Reg::X(0)) {
+                Flow::Jump
+            } else {
+                Flow::Call
+            };
+            (flow, target("imm20"))
+        }
+        "JALR" => {
+            let rd = reg("rd");
+            let rs1 = reg("rs1");
+            if rd == Some(Reg::X(0)) {
+                if matches!(rs1, Some(Reg::X(1 | 5))) && imm("imm12") == Some(0) {
+                    (Flow::Return, None)
+                } else {
+                    (Flow::Jump, None)
+                }
+            } else {
+                (Flow::Call, None)
+            }
+        }
+        "BEQ" | "BNE" | "BLT" | "BGE" | "BLTU" | "BGEU" => (Flow::Branch, target("imm12")),
+        "EBREAK" | "C_EBREAK" | "UNIMP" | "C_UNIMP" => (Flow::Stop, None),
+        "MRET" | "SRET" | "DRET" | "MNRET" => (Flow::Return, None),
+        _ => (Flow::Next, None),
     }
 }
 

@@ -66,6 +66,12 @@ set EHLD=%LD% --unresolved-symbols=ignore-all
 %CC% %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs.o || exit /b 1
 %CC% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-nosections.o || exit /b 1
 %LD% funcs.o -o "%OUT%\funcs-plain" || exit /b 1
+rem RISC-V (RV64GC, RV32IMAC): funcs.c linked plain, for identical
+rem functions found in compressed code.
+"%LLVM_BIN%\clang.exe" --target=riscv64-linux-gnu -march=rv64gc -O2 -g -ffreestanding -fno-stack-protector -fno-ident -ffile-prefix-map=%~dp0= -fdebug-compilation-dir=. %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-riscv64.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start funcs-riscv64.o -o "%OUT%\funcs-plain-riscv64" || exit /b 1
+"%LLVM_BIN%\clang.exe" --target=riscv32-linux-gnu -march=rv32imac -O2 -g -ffreestanding -fno-stack-protector -fno-ident -ffile-prefix-map=%~dp0= -fdebug-compilation-dir=. %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-riscv32.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start funcs-riscv32.o -o "%OUT%\funcs-plain-riscv32" || exit /b 1
 %LD% --gc-sections funcs.o -o "%OUT%\funcs-gc" || exit /b 1
 rem Kept whatever reaches it: keep-elf (keep.c).
 %CC% %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0keep.c" -o keep.o || exit /b 1

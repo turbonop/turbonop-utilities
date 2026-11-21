@@ -8,5 +8,8 @@ license = "Apache-2.0 AND Apache-2.0 WITH LLVM-exception"
 authors.workspace = true
 repository.workspace = true
 
+[dependencies]
+hexcavator-tablegen.workspace = true
+
 [lints]
 workspace = true

@@ -11,7 +11,7 @@ use hexcavator_etl::Etl;
 use hexcavator_symbolize::SymbolPath;
 use hexcavator_trace::{Trace, etw};
 use hexcavator_trace_analysis::{
-    Filter, FrameMode, Framer, GroupBy, Keys, NodeId, PdbSymbolizer, Precise, Resolver,
+    DebugSymbolizer, Filter, FrameMode, Framer, GroupBy, Keys, NodeId, Precise, Resolver,
     SwitchWeight, Symbolizer, Tree, label, sources,
 };
 
@@ -57,9 +57,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("import {:.2} s", t.elapsed().as_secs_f64());
 
     let resolver = Resolver::new(&trace);
-    // Functions from the PDBs found on this machine; images without one
-    // show as whole modules.
-    let symbols = PdbSymbolizer::new(SymbolPath::from_env());
+    // Functions from the debug information found on this machine (PDBs,
+    // DWARF), or images' own symbols; images with none show as whole modules.
+    let symbols = DebugSymbolizer::new(SymbolPath::from_env());
     let mut framer = Framer::new(&trace, &resolver, &symbols, FrameMode::Function);
     let mut keys = Keys::default();
 

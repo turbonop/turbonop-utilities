@@ -588,10 +588,10 @@ dependencies = [
 name = "hexcavator-symbolize"
 version = "0.0.7"
 dependencies = [
- "hexcavator-codeview",
  "hexcavator-core",
  "hexcavator-debuginfo",
  "hexcavator-demangle",
+ "hexcavator-image",
  "hexcavator-mmap",
  "hexcavator-pdb",
 ]
@@ -611,7 +611,9 @@ dependencies = [
 name = "hexcavator-trace-analysis"
 version = "0.0.7"
 dependencies = [
+ "hexcavator-debuginfo",
  "hexcavator-etl",
+ "hexcavator-image",
  "hexcavator-mmap",
  "hexcavator-symbolize",
  "hexcavator-trace",

@@ -1204,6 +1204,7 @@ fn pe_listing(
         address: base.wrapping_add(target.addr),
         code: bytes,
         symbols: names,
+        riscv_arch: None,
     };
     if style != Style::Json {
         return Ok(render(&f, style, None));

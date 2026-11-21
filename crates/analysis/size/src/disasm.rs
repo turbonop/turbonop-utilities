@@ -62,6 +62,9 @@ pub struct Function<'d> {
     pub address: u64,
     pub code: &'d [u8],
     pub symbols: Vec<(u64, String)>,
+    /// For RISC-V: the ISA string the image's attributes name, which says
+    /// which extensions its code may use.
+    pub riscv_arch: Option<String>,
 }
 
 /// The fallback when no function is named exactly as asked: the one
@@ -234,11 +237,14 @@ impl Listing {
     }
 }
 
-/// The RISC-V extensions a listing decodes with: every standard one (an
-/// image's code uses some of them; LLVM's disassembler, given them all,
-/// writes the same).
-fn riscv_features(isa: Arch) -> hexcavator_riscv::Features {
-    hexcavator_riscv::Features::standard(isa == Arch::RiscV64)
+/// The RISC-V extensions a listing decodes with: those the image's
+/// attributes name (as `llvm-objdump` takes them), or else every standard
+/// one.
+fn riscv_features(f: &Function<'_>) -> hexcavator_riscv::Features {
+    match &f.riscv_arch {
+        Some(arch) => hexcavator_riscv::Features::from_arch(arch),
+        None => hexcavator_riscv::Features::standard(f.isa == Arch::RiscV64),
+    }
 }
 
 /// The function's instructions, decoded, with their labels and blocks:
@@ -375,7 +381,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             }
         }
         Arch::RiscV32 | Arch::RiscV64 => {
-            let features = riscv_features(f.isa);
+            let features = riscv_features(f);
             while rest < f.code.len() {
                 let pc = f.address + rest as u64;
                 let Some(i) = hexcavator_riscv::decode(&f.code[rest..], &features) else {
@@ -456,7 +462,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             }
             Inst::Arm64(i) => hexcavator_arm64::format_with(i, &names),
             Inst::RiscV(i) => {
-                let mut s = hexcavator_riscv::format::format(i, d.pc, &riscv_features(f.isa));
+                let mut s = hexcavator_riscv::format::format(i, d.pc, &riscv_features(f));
                 // (The target by its label or symbol, where it has one.)
                 if let Some(t) = d.target
                     && let Some(name) = names.name(t)
@@ -690,6 +696,7 @@ mod tests {
             address: 0x1000,
             code: &code,
             symbols: vec![(0x1000, "f".into()), (0x2000, "helper".into())],
+            riscv_arch: None,
         };
         let l = decode(&f, Labels::Blocks);
         let texts: Vec<&str> = l
@@ -742,6 +749,7 @@ mod tests {
             address: 0x1000,
             code: &code,
             symbols: vec![],
+            riscv_arch: None,
         };
         let l = decode(&f, Labels::Blocks);
         assert_eq!(l.lines[0].label, Some(1));
@@ -808,6 +816,7 @@ mod tests {
             address: 0x1000,
             code: &code,
             symbols: vec![(0x1000, "f".into()), (0x2000, "helper".into())],
+            riscv_arch: None,
         };
         let text = listing(&f);
         let lines: Vec<&str> = text.lines().collect();
@@ -840,6 +849,7 @@ mod tests {
             address: 0x1000,
             code: &words,
             symbols: vec![(0x2010, "helper".into())],
+            riscv_arch: None,
         };
         let text = listing(&f);
         let lines: Vec<&str> = text.lines().collect();

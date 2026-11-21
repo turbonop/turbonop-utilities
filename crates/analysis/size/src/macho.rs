@@ -688,6 +688,7 @@ pub fn function<'d>(
         address: s.n_value,
         code,
         symbols: names,
+        riscv_arch: None,
     })
 }
 

@@ -631,6 +631,7 @@ pub fn function<'d>(
         address: sym.value & !u64::from(thumb),
         code,
         symbols: names,
+        riscv_arch: elf.riscv_arch().map(str::to_string),
     })
 }
 

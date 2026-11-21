@@ -22,6 +22,7 @@ pub mod arm;
 pub mod arm_exidx;
 pub mod consts;
 pub mod eh_frame;
+pub mod riscv;
 #[allow(missing_docs, reason = "generated: each names a constant")]
 pub mod spelling;
 pub mod versions;

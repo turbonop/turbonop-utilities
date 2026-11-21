@@ -118,6 +118,7 @@ pub fn scan_absolute(
         Arch::PowerPc | Arch::PowerPc64 => {
             powerpc(code, address, big, arch == Arch::PowerPc64, out);
         }
+        Arch::Mips | Arch::Mips64 => mips(code, address, big, arch, out),
         // (No scanner for the others yet: no references.)
         _ => {}
     }
@@ -725,6 +726,185 @@ fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<Code
                 known[r] = None;
             }
         }
+    }
+}
+
+/// MIPS's references: its branches and jumps (`j`'s and `jal`'s region
+/// taken from their delay slot's address), and addresses built in a
+/// register, then used: from `lui`, through `addiu`, `daddiu`, `ori`, and
+/// `dsll` (a 64-bit address takes six: `lui`, `daddiu`, `dsll`, `daddiu`,
+/// `dsll`, and its use), to a load or store, a `jalr` or `jr` through it,
+/// or any other use (an address computed: a pointer passed); and Release
+/// 6's PC-relative ones (`auipc`, `addiupc`, `lwpc`, ...). A call's delay
+/// slot runs before it, with the registers as they were. (The GOT, and
+/// small data, `$gp`-relative, aren't followed.)
+fn mips(code: &[u8], address: u64, big: bool, arch: Arch, out: &mut Vec<CodeRef>) {
+    use hexcavator_code::Flow;
+    let features = hexcavator_code::mips_features(arch);
+    let mips64 = arch == Arch::Mips64;
+    let wrap = |v: u64| if mips64 { v } else { v & 0xFFFF_FFFF };
+    // Each register's value, if built from a `lui` (or PC-relative); and
+    // the address it holds that nothing has used yet (from where).
+    let mut known = [None::<u64>; 32];
+    let mut pending = [None::<(u64, u64)>; 32];
+    let flush = |pending: &mut [Option<(u64, u64)>; 32], r: usize, out: &mut Vec<CodeRef>| {
+        if let Some((from, to)) = pending[r].take() {
+            out.push(CodeRef {
+                from,
+                to,
+                via: Via::AddressOf,
+            });
+        }
+    };
+    // (A call's clobbers, after its delay slot.)
+    let mut clobber = false;
+    for (n, w) in code.as_chunks::<4>().0.iter().enumerate() {
+        let pc = address.wrapping_add(n as u64 * 4);
+        let Some(i) = hexcavator_mips::decode(w, big, &features) else {
+            break;
+        };
+        let reg = |name: &str| {
+            i.operand(name)
+                .and_then(hexcavator_mips::gpr_of)
+                .map(usize::from)
+        };
+        let imm = |name: &str| i.operand(name).and_then(hexcavator_mips::Operand::imm);
+        let (flow, target) = hexcavator_code::mips_flow(&i, pc);
+        let name = i.name();
+        // What it sets its destination to, and the registers whose values
+        // it continues building (not a use of them).
+        let mut set = None;
+        let mut building = [None::<usize>; 1];
+        let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
+        if let Some(to) = target {
+            push(
+                wrap(to),
+                if flow == Flow::Call {
+                    Via::Call
+                } else {
+                    Via::Jump
+                },
+            );
+        } else {
+            match name {
+                "LUi" => {
+                    let hi = sext(
+                        u32::try_from(imm("imm16").unwrap_or(0) & 0xFFFF).unwrap_or(0) << 16,
+                        32,
+                    );
+                    set = Some(wrap(hi.cast_unsigned()));
+                }
+                "AUIPC" | "ALUIPC" => {
+                    let hi = imm("imm").unwrap_or(0) << 16;
+                    let base = if name == "ALUIPC" { pc & !0xFFFF } else { pc };
+                    set = Some(wrap(base.wrapping_add_signed(hi)));
+                }
+                "ADDIUPC" => {
+                    let to = wrap(pc.wrapping_add_signed(imm("imm").unwrap_or(0)));
+                    push(to, Via::AddressOf);
+                }
+                "LWPC" | "LWUPC" | "LDPC" => {
+                    let base = if name == "LDPC" { pc & !7 } else { pc };
+                    push(
+                        wrap(base.wrapping_add_signed(imm("imm").unwrap_or(0))),
+                        Via::Address,
+                    );
+                }
+                "ADDiu" | "DADDiu" | "ORi" => {
+                    if let (Some(r), Some(lo)) = (reg("rs"), imm("imm16"))
+                        && let Some(b) = known[r]
+                    {
+                        let to = if name == "ORi" {
+                            b | (lo.cast_unsigned() & 0xFFFF)
+                        } else {
+                            b.wrapping_add_signed(lo)
+                        };
+                        set = Some(wrap(to));
+                        building[0] = Some(r);
+                    }
+                }
+                "DSLL" | "DSLL32" => {
+                    if let (Some(r), Some(sa)) = (reg("rt"), imm("shamt"))
+                        && let Some(b) = known[r]
+                    {
+                        let sa = sa + if name == "DSLL32" { 32 } else { 0 };
+                        set = Some(b.checked_shl(u32::try_from(sa).unwrap_or(64)).unwrap_or(0));
+                        building[0] = Some(r);
+                    }
+                }
+                _ => {
+                    // A load or store (`lw $2, %lo(x)($1)`), or a jump or call
+                    // through a register whose value is known.
+                    if let (Some(r), Some(off)) = (reg("base"), imm("offset"))
+                        && let Some(b) = known[r]
+                    {
+                        push(wrap(b.wrapping_add_signed(off)), Via::Address);
+                        pending[r] = None;
+                        building[0] = Some(r);
+                    } else if matches!(flow, Flow::Call | Flow::Jump)
+                        && let Some(r) = reg("rs")
+                        && let Some(to) = known[r]
+                    {
+                        push(
+                            to,
+                            if flow == Flow::Call {
+                                Via::Call
+                            } else {
+                                Via::Jump
+                            },
+                        );
+                        pending[r] = None;
+                        building[0] = Some(r);
+                    }
+                }
+            }
+        }
+        let defs = usize::from(i.inst().defs);
+        // What it reads otherwise uses the addresses there.
+        for op in i.operands().iter().skip(defs) {
+            if let Some(r) = hexcavator_mips::gpr_of(*op).map(usize::from)
+                && building[0] != Some(r)
+            {
+                flush(&mut pending, r, out);
+            }
+        }
+        if let Some(r) = building[0] {
+            pending[r] = None;
+        }
+        // The registers it writes forget what they held (but what it set).
+        for (k, op) in i.operands().iter().enumerate().take(defs) {
+            if let Some(r) = hexcavator_mips::gpr_of(*op).map(usize::from) {
+                flush(&mut pending, r, out);
+                known[r] = if k == 0 { set } else { None };
+                if k == 0
+                    && let Some(to) = set
+                    && building[0].is_some()
+                {
+                    pending[r] = Some((pc, to));
+                }
+            }
+        }
+        known[0] = None;
+        pending[0] = None;
+        // (A call leaves the caller-saved registers unknown, once its delay
+        // slot has run.)
+        let mut forget = |known: &mut [Option<u64>; 32], pending: &mut [Option<(u64, u64)>; 32]| {
+            for r in (1..16).chain([24, 25, 31]) {
+                flush(pending, r, out);
+                known[r] = None;
+            }
+        };
+        if clobber {
+            forget(&mut known, &mut pending);
+        }
+        clobber = flow == Flow::Call;
+        if clobber && !hexcavator_mips::has_delay_slot(&i) {
+            forget(&mut known, &mut pending);
+            clobber = false;
+        }
+    }
+    for r in 0..32 {
+        flush(&mut pending, r, out);
     }
 }
 

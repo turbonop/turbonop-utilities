@@ -1,0 +1,97 @@
+
+program-mips64el-linux-gnu:	file format elf64-mips
+
+Disassembly of section .text:
+
+0000000000020320 <compute>:
+   20320:      	blez	$4, 0x203dc <compute+0xbc>
+   20324:      	nop
+   20328:      	lui	$1, 0x0
+   2032c:      	daddiu	$1, $1, 0x0
+   20330:      	dsll	$1, $1, 0x10
+   20334:      	daddiu	$1, $1, 0x1
+   20338:      	dsll	$1, $1, 0x10
+   2033c:      	addiu	$2, $4, -0x1
+   20340:      	lui	$3, 0x0
+   20344:      	dext	$5, $2, 0x0, 0x20
+   20348:      	daddiu	$4, $1, 0x30c
+   2034c:      	daddiu	$1, $3, 0x0
+   20350:      	dsll	$1, $1, 0x10
+   20354:      	daddiu	$1, $1, 0x4
+   20358:      	dsll	$1, $1, 0x10
+   2035c:      	lw	$3, 0x14a0($1)
+   20360:      	addiu	$1, $zero, 0x3
+   20364:      	subu	$2, $1, $3
+   20368:      	daddu	$1, $5, $4
+   2036c:      	addiu	$6, $zero, 0x0
+   20370:      	daddiu	$5, $1, 0x1
+   20374:      	daddiu	$7, $zero, 0x0
+   20378:      	lui	$1, 0x8889
+   2037c:      	daddiu	$1, $1, -0x7777
+   20380:      	dsll	$1, $1, 0x10
+   20384:      	daddiu	$1, $1, -0x7777
+   20388:      	dsll	$1, $1, 0x10
+   2038c:      	daddiu	$8, $1, -0x7777
+   20390:      	dmultu	$7, $8
+   20394:      	mfhi	$1
+   20398:      	addiu	$10, $3, 0x3
+   2039c:      	addiu	$2, $2, -0x3
+   203a0:      	daddiu	$7, $7, 0x1
+   203a4:      	daddiu	$11, $4, 0x1
+   203a8:      	dsrl	$1, $1, 0x3
+   203ac:      	dsll	$9, $1, 0x4
+   203b0:      	dsubu	$1, $1, $9
+   203b4:      	daddu	$1, $4, $1
+   203b8:      	lb	$1, 0x0($1)
+   203bc:      	addu	$9, $6, $1
+   203c0:      	addu	$6, $3, $9
+   203c4:      	move	$3, $10
+   203c8:      	bne	$11, $5, 0x20390 <compute+0x70>
+   203cc:      	move	$4, $11
+   203d0:      	subu	$2, $9, $2
+   203d4:      	jr	$ra
+   203d8:      	sll	$2, $2, 0x0
+   203dc:      	addiu	$2, $zero, 0x0
+   203e0:      	jr	$ra
+   203e4:      	sll	$2, $2, 0x0
+
+00000000000203e8 <optional_hook>:
+   203e8:      	jr	$ra
+   203ec:      	daddiu	$2, $zero, 0x0
+
+00000000000203f0 <_start>:
+   203f0:      	daddiu	$sp, $sp, -0x20
+   203f4:      	sd	$ra, 0x18($sp)
+   203f8:      	sd	$17, 0x10($sp)
+   203fc:      	sd	$16, 0x8($sp)
+   20400:      	lui	$1, 0x0
+   20404:      	daddiu	$1, $1, 0x0
+   20408:      	dsll	$1, $1, 0x10
+   2040c:      	daddiu	$1, $1, 0x4
+   20410:      	dsll	$1, $1, 0x10
+   20414:      	jal	0x20320 <compute>
+   20418:      	lw	$4, 0x480($1)
+   2041c:      	lui	$1, 0x0
+   20420:      	lui	$3, 0x0
+   20424:      	daddiu	$4, $3, -0x7000
+   20428:      	daddiu	$1, $1, 0x0
+   2042c:      	dsll	$1, $1, 0x10
+   20430:      	daddiu	$1, $1, 0x4
+   20434:      	dsll	$1, $1, 0x10
+   20438:      	lui	$5, 0x0
+   2043c:      	.set	push
+	.set	mips32r2
+	rdhwr	$3, $29
+	.set	pop
+   20440:      	sb	$2, 0x4a0($1)
+   20444:      	daddu	$16, $3, $4
+   20448:      	daddiu	$1, $5, 0x0
+   2044c:      	dsll	$1, $1, 0x10
+   20450:      	daddiu	$1, $1, 0x4
+   20454:      	jal	0x203e8 <optional_hook>
+   20458:      	dsll	$17, $1, 0x10
+   2045c:      	lw	$1, 0x0($16)
+   20460:      	addu	$1, $1, $2
+   20464:      	sw	$1, 0x14a0($17)
+   20468:      	j	0x20468 <_start+0x78>
+   2046c:      	nop

@@ -56,6 +56,7 @@ STEPS = {
     "riscv": (["cmd", "/c", r"R:\tools\riscv\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),
     "loongarch": (["cmd", "/c", r"R:\tools\loongarch\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),
     "powerpc": (["cmd", "/c", r"R:\tools\powerpc\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),
+    "mips": (["cmd", "/c", r"R:\tools\mips\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),
     "rust": (["cmd", "/c", r"R:\tools\rust\build.cmd"], ["LLVM_BIN"]),
 }
 

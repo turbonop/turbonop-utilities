@@ -308,6 +308,7 @@ dependencies = [
  "hexcavator-arm64",
  "hexcavator-core",
  "hexcavator-loongarch",
+ "hexcavator-mips",
  "hexcavator-powerpc",
  "hexcavator-riscv",
  "hexcavator-x86",
@@ -402,8 +403,10 @@ version = "0.0.7"
 dependencies = [
  "hexcavator-arm32",
  "hexcavator-arm64",
+ "hexcavator-code",
  "hexcavator-core",
  "hexcavator-loongarch",
+ "hexcavator-mips",
  "hexcavator-powerpc",
  "hexcavator-riscv",
  "hexcavator-x86",
@@ -486,6 +489,13 @@ name = "hexcavator-minidump"
 version = "0.0.7"
 dependencies = [
  "hexcavator-core",
+]
+
+[[package]]
+name = "hexcavator-mips"
+version = "0.0.7"
+dependencies = [
+ "hexcavator-tablegen",
 ]
 
 [[package]]
@@ -598,6 +608,7 @@ dependencies = [
  "hexcavator-linkmap",
  "hexcavator-loongarch",
  "hexcavator-macho",
+ "hexcavator-mips",
  "hexcavator-mmap",
  "hexcavator-pe",
  "hexcavator-powerpc",
@@ -698,6 +709,7 @@ dependencies = [
  "hexcavator-code",
  "hexcavator-core",
  "hexcavator-loongarch",
+ "hexcavator-mips",
  "hexcavator-powerpc",
  "hexcavator-riscv",
  "hexcavator-x86",

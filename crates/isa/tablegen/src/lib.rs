@@ -71,13 +71,15 @@ impl Reg {
     }
 }
 
-/// A register class: its file, and which of its registers it has (bit n:
-/// register n).
+/// A register class: its file, which of its registers it has (bit n:
+/// register n, for those below 64), and its registers in its order (the
+/// order LLVM's decoders index some classes by).
 #[derive(Debug)]
 pub struct Class {
     pub name: &'static str,
     pub file: u8,
     pub members: u64,
+    pub order: &'static [u8],
 }
 
 /// How an operand's field decodes (as LLVM's decoder methods do; each
@@ -180,6 +182,33 @@ pub enum Decode {
     /// A register pair by its even field: register field / 2, plus the
     /// base (PowerPC's VSX pairs).
     RegHalf(u32),
+    /// The class's register the field indexes, in the class's order
+    /// (MIPS's `getReg(Decoder, ClassID, RegNo)`); below this many, if it
+    /// isn't 0 (MIPS's MSA control registers: 8 of the class's 32).
+    RegIndex(u32),
+    /// The register the field must be (MIPS's hardware register 29).
+    RegOnly(u32),
+    /// MIPS's coprocessor 0 register: a register and its select (`reg <<
+    /// 5 | sel`, the select under 8), the class's `sel * 32 + reg`th.
+    RegSelect(u32),
+    /// An unsigned field shifted left `arg` bits.
+    UImmLsl {
+        bits: u32,
+        arg: i64,
+    },
+    /// A branch's offset from the instruction: a signed value of `bits`
+    /// bits whose low `arg` bits are zero (and aren't encoded), plus 4
+    /// (MIPS's: from its delay slot).
+    BranchPlus4 {
+        bits: u32,
+        arg: i64,
+    },
+    /// MIPS's `ins` size: the field (its last bit) less operand `arg`
+    /// (its first), plus 1.
+    InsSize {
+        bits: u32,
+        arg: i64,
+    },
 }
 
 /// How an operand prints (as LLVM's printer methods do; the target's
@@ -213,6 +242,21 @@ pub enum Print {
     AbsBranch,
     /// PowerPC's one-hot condition register field.
     CrBitM,
+    /// An unsigned immediate of `bits` bits above `offset`, as MIPS's
+    /// printer writes it (`printUImm<Bits, Offset>`).
+    UImm {
+        bits: u32,
+        offset: u32,
+    },
+    /// MIPS's memory operand: the next operand (an offset), then this
+    /// one (its base) in parentheses.
+    Mem,
+    /// MIPS's coprocessor 0 register: its number, then its select.
+    Cop0,
+    /// MIPS's floating point condition (`f`, `un`, `eq`, ...).
+    Fcc,
+    /// The instruction's operand this far from its last.
+    FromEnd(u32),
 }
 
 /// An operand kind: its class (registers), and how it decodes and prints.
@@ -338,6 +382,10 @@ pub struct Target {
     /// prefix the high word).
     pub buckets64: &'static [&'static [u16]],
     pub key64: &'static [u8],
+    /// Each decoder table's features (an index into the predicates): its
+    /// instructions decode only with them on (MIPS's tables, each tried
+    /// with some features).
+    pub spaces: &'static [u16],
 }
 
 /// The most operands an instruction has.
@@ -522,6 +570,21 @@ pub fn decode(
     rv64: bool,
     rve: bool,
 ) -> Option<Instruction> {
+    decode_from(t, w, size, features, 0, rv64, rve)
+}
+
+/// [`decode`], trying only the decoder tables from `first` on: where a
+/// target's own decoding of an instruction fails, as LLVM goes on to its
+/// next table (MIPS's R6 branch groups).
+pub fn decode_from(
+    t: &'static Target,
+    w: u64,
+    size: u8,
+    features: &Features,
+    first: u8,
+    rv64: bool,
+    rve: bool,
+) -> Option<Instruction> {
     let (key_bits, buckets) = match size {
         2 => (t.key16, t.buckets16),
         8 => (t.key64, t.buckets64),
@@ -533,7 +596,16 @@ pub fn decode(
     }
     for &c in *buckets.get(key)? {
         let inst = &t.instructions[usize::from(c)];
-        if inst.size != size || w & inst.mask != inst.value || !features.satisfies(t, inst.pred) {
+        if inst.size != size
+            || inst.space < first
+            || w & inst.mask != inst.value
+            || !features.satisfies(t, inst.pred)
+        {
+            continue;
+        }
+        if let Some(&space) = t.spaces.get(usize::from(inst.space))
+            && !features.satisfies(t, space)
+        {
             continue;
         }
         if let Some(i) = decode_operands(t, c, inst, w, rv64, rve) {
@@ -556,6 +628,30 @@ pub fn decode_as(
     let index = t.instructions.iter().position(|i| i.name == name)?;
     let inst = &t.instructions[index];
     decode_operands(t, u16::try_from(index).ok()?, inst, w, rv64, rve)
+}
+
+/// An instruction of `t` (by its LLVM name) of `size` bytes with these
+/// operands, as a target's own decoding builds it (MIPS's `dext`, whose
+/// operands LLVM's decoder computes).
+pub fn build(
+    t: &'static Target,
+    name: &str,
+    size: u8,
+    operands: &[Operand],
+) -> Option<Instruction> {
+    let index = t.instructions.iter().position(|i| i.name == name)?;
+    if operands.len() > MAX_OPERANDS {
+        return None;
+    }
+    let mut ops = [Operand::Imm(0); MAX_OPERANDS];
+    ops[..operands.len()].copy_from_slice(operands);
+    Some(Instruction {
+        target: t,
+        index: u16::try_from(index).ok()?,
+        size,
+        ops,
+        count: u8::try_from(operands.len()).ok()?,
+    })
 }
 
 /// A field's value: its pieces gathered.
@@ -631,7 +727,13 @@ pub fn in_class(t: &Target, r: Reg, c: u16) -> bool {
     let Some(class) = t.classes.get(usize::from(c)) else {
         return false;
     };
-    !r.is_none() && class.file == r.file && r.n < 64 && class.members >> r.n & 1 != 0
+    !r.is_none()
+        && class.file == r.file
+        && if r.n < 64 {
+            class.members >> r.n & 1 != 0
+        } else {
+            class.order.contains(&r.n)
+        }
 }
 
 /// Zcmp's s0-s7, by their number: x8, x9, x18 to x23.
@@ -677,6 +779,42 @@ fn operand(
                 return None;
             }
             reg(n)?
+        }
+        Decode::RegOnly(n) => {
+            if v? != u64::from(n) {
+                return None;
+            }
+            reg(u64::from(n))?
+        }
+        Decode::UImmLsl { bits, arg } => {
+            Operand::Imm(i64::try_from(fits_in(v?, bits)? << arg).ok()?)
+        }
+        Decode::BranchPlus4 { bits, arg } => Operand::Imm(sext(v? << arg, bits) + 4),
+        Decode::InsSize { arg, .. } => {
+            let pos = before.get(usize::try_from(arg).ok()?)?.imm()?;
+            Operand::Imm(sext(
+                (i64::try_from(v?).ok()? - pos + 1).cast_unsigned() & 0xFFFF,
+                16,
+            ))
+        }
+        Decode::RegSelect(_) => {
+            let (_, k) = class?;
+            let f = v?;
+            let (n, sel) = (f >> 5, f & 31);
+            if n >= 32 || sel >= 8 {
+                return None;
+            }
+            let n = *k.order.get(usize::try_from(sel * 32 + n).ok()?)?;
+            Operand::Reg(Reg::new(k.file, n))
+        }
+        Decode::RegIndex(limit) => {
+            let (_, k) = class?;
+            let f = v?;
+            if limit > 0 && f >= u64::from(limit) {
+                return None;
+            }
+            let n = *k.order.get(usize::try_from(f).ok()?)?;
+            Operand::Reg(Reg::new(k.file, n))
         }
         Decode::RegHalf(base) => {
             let f = v?;
@@ -911,6 +1049,12 @@ fn write_asm(out: &mut String, asm: &str, mut operand: impl FnMut(&mut String, &
             continue;
         }
         i += 1;
+        // (`$$`: a `$`, MIPS's `div $$zero, ...`.)
+        if b.get(i) == Some(&b'$') {
+            out.push('$');
+            i += 1;
+            continue;
+        }
         let (name, end) = if b.get(i) == Some(&b'{') {
             let close = asm[i..].find('}').map_or(b.len(), |n| i + n);
             (&asm[(i + 1).min(close)..close], (close + 1).min(b.len()))

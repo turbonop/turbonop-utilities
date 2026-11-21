@@ -216,7 +216,9 @@ pub fn code(
         | Arch::LoongArch32
         | Arch::LoongArch64
         | Arch::PowerPc
-        | Arch::PowerPc64 => {
+        | Arch::PowerPc64
+        | Arch::Mips
+        | Arch::Mips64 => {
             // (All decoded by tables: what holds an address PC-relative,
             // what an absolute one's upper part, and the base registers
             // an addressing instruction adds to.)
@@ -235,6 +237,17 @@ pub fn code(
                     |n| matches!(n, "PCALAU12I" | "PCADDU12I" | "PCADDU18I" | "PCADDI"),
                     &["LU12I_W"],
                     &["rj"],
+                ),
+                Arch::Mips | Arch::Mips64 => (
+                    mips(arch, big, code),
+                    |n| {
+                        matches!(
+                            n,
+                            "AUIPC" | "ALUIPC" | "ADDIUPC" | "LWPC" | "LWUPC" | "LDPC"
+                        )
+                    },
+                    &["LUi"],
+                    &["rs", "base"],
                 ),
                 _ => (
                     powerpc(arch, big, code),
@@ -347,8 +360,21 @@ fn powerpc(arch: Arch, big: bool, code: &[u8]) -> Vec<(usize, hexcavator_powerpc
     out
 }
 
-/// An integer register's number (RISC-V's, LoongArch's, and PowerPC's
-/// tables all number theirs file 0).
+/// MIPS code's instructions, its words big-endian (`big`) or not, with
+/// their offsets, to the first that doesn't decode.
+fn mips(arch: Arch, big: bool, code: &[u8]) -> Vec<(usize, hexcavator_mips::Instruction)> {
+    let features = hexcavator_code::mips_features(arch);
+    code.as_chunks::<4>()
+        .0
+        .iter()
+        .map_while(|w| hexcavator_mips::decode(w, big, &features))
+        .enumerate()
+        .map(|(n, i)| (4 * n, i))
+        .collect()
+}
+
+/// An integer register's number (RISC-V's, LoongArch's, PowerPC's, and
+/// MIPS's tables all number theirs file 0).
 fn gpr(o: hexcavator_riscv::Operand) -> Option<u8> {
     o.reg().filter(|r| r.file == 0).map(|r| r.n)
 }
@@ -612,10 +638,13 @@ pub fn shape(arch: Arch, big: bool, code: &[u8], start: u64) -> Option<u64> {
         | Arch::LoongArch32
         | Arch::LoongArch64
         | Arch::PowerPc
-        | Arch::PowerPc64 => {
+        | Arch::PowerPc64
+        | Arch::Mips
+        | Arch::Mips64 => {
             let insts = match arch {
                 Arch::RiscV32 | Arch::RiscV64 => riscv(arch, code),
                 Arch::LoongArch32 | Arch::LoongArch64 => loongarch(arch, code),
+                Arch::Mips | Arch::Mips64 => mips(arch, big, code),
                 _ => powerpc(arch, big, code),
             };
             for (_, i) in insts {

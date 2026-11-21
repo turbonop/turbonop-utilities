@@ -43,6 +43,14 @@ for %%t in (powerpc64le powerpc64 powerpc) do (
   "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
   "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
 )
+rem MIPS: 32-bit big- and little-endian, 64-bit little-endian (not PIC, as
+rem the others aren't, and no small data, $gp-relative), and llvm-objdump's
+rem listing of each (no bytes) for the disassembler's test.
+for %%t in (mips mipsel mips64el) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -fno-pic -mno-abicalls -G0 %CFLAGS% -c "%~dp0program.c" -o program-%%t-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
+)
 rem LoongArch: LA64 and LA32, and llvm-objdump's listing of each (no bytes)
 rem for the disassembler's test.
 for %%t in (loongarch64 loongarch32) do (
@@ -131,6 +139,10 @@ rem PowerPC (64-bit little-endian) likewise.
 "%LLVM_BIN%\clang.exe" --target=powerpc64le-linux-gnu %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-powerpc64le-linux-gnu.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-powerpc64le-linux-gnu.o -o unwind-powerpc64le-linux-gnu || exit /b 1
 del unwind-powerpc64le-linux-gnu.o
+rem MIPS (32-bit little-endian) likewise.
+"%LLVM_BIN%\clang.exe" --target=mipsel-linux-gnu -fno-pic -mno-abicalls -G0 %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-mipsel-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-mipsel-linux-gnu.o -o unwind-mipsel-linux-gnu || exit /b 1
+del unwind-mipsel-linux-gnu.o
 rem LoongArch (LA64) likewise.
 "%LLVM_BIN%\clang.exe" --target=loongarch64-linux-gnu %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-loongarch64-linux-gnu.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-loongarch64-linux-gnu.o -o unwind-loongarch64-linux-gnu || exit /b 1

@@ -57,6 +57,7 @@ hexcavator-arm32 = { path = "crates/isa/arm32" }
 hexcavator-riscv = { path = "crates/isa/riscv" }
 hexcavator-loongarch = { path = "crates/isa/loongarch" }
 hexcavator-powerpc = { path = "crates/isa/powerpc" }
+hexcavator-mips = { path = "crates/isa/mips" }
 hexcavator-tablegen = { path = "crates/isa/tablegen" }
 hexcavator-codeview = { path = "crates/symbols/codeview" }
 hexcavator-pdb = { path = "crates/symbols/pdb" }

@@ -1545,6 +1545,9 @@ fn riscv_and_loongarch_graph_is_x86_64s() {
         "powerpc64le",
         "powerpc64",
         "powerpc",
+        "mips",
+        "mipsel",
+        "mips64el",
     ] {
         assert_eq!(graph(t), want, "{t}");
     }
@@ -1580,6 +1583,9 @@ fn riscv_and_loongarch_identical_functions() {
         "powerpc64le",
         "powerpc64",
         "powerpc",
+        "mips",
+        "mipsel",
+        "mips64el",
     ] {
         assert_eq!(groups(&format!("funcs-plain-{t}")), want, "{t}");
     }

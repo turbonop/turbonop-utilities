@@ -412,3 +412,42 @@ fn powerpc_toc_relative() {
         ]
     );
 }
+
+/// MIPS64 (n64, little-endian): 64-bit addresses built in six
+/// instructions (`lui`, `daddiu`, `dsll`, `daddiu`, `dsll`, and their
+/// use), one computed (a pointer) and one loaded from.
+#[test]
+fn mips64_addresses() {
+    // tools/elf's program.c's compute, mips64el.
+    let words: [u32; 16] = [
+        0x1880_002e, // blez $4, ...
+        0x0000_0000, // nop
+        0x3c01_0000, // lui $1, 0x0
+        0x6421_0000, // daddiu $1, $1, 0x0
+        0x0001_0c38, // dsll $1, $1, 0x10
+        0x6421_0001, // daddiu $1, $1, 0x1
+        0x0001_0c38, // dsll $1, $1, 0x10
+        0x2482_ffff, // addiu $2, $4, -0x1
+        0x3c03_0000, // lui $3, 0x0
+        0x7c45_f803, // dext $5, $2, 0x0, 0x20
+        0x6424_030c, // daddiu $4, $1, 0x30c: message
+        0x6461_0000, // daddiu $1, $3, 0x0
+        0x0001_0c38, // dsll $1, $1, 0x10
+        0x6421_0004, // daddiu $1, $1, 0x4
+        0x0001_0c38, // dsll $1, $1, 0x10
+        0x8c23_14a0, // lw $3, 0x14a0($1): hidden_state
+    ];
+    let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    let mut out = Vec::new();
+    scan_image(Arch::Mips64, false, &code, 0x2_0320, None, &mut out);
+    let mut got: Vec<(u64, u64, Via)> = out.iter().map(|r| (r.from, r.to, r.via)).collect();
+    got.sort_unstable_by_key(|r| r.0);
+    assert_eq!(
+        got,
+        [
+            (0x2_0320, 0x2_03dc, Via::Jump),
+            (0x2_0348, 0x1_030c, Via::AddressOf),
+            (0x2_035c, 0x4_14a0, Via::Address),
+        ]
+    );
+}

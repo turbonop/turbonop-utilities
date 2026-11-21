@@ -265,6 +265,10 @@ fn default_dirs(ctx: &Ctx<'_>) -> Vec<PathBuf> {
             Some("powerpc64") if big => Some("powerpc64-linux-gnu"),
             Some("powerpc64") => Some("powerpc64le-linux-gnu"),
             Some("powerpc") => Some("powerpc-linux-gnu"),
+            Some("mips") if big => Some("mips-linux-gnu"),
+            Some("mips") => Some("mipsel-linux-gnu"),
+            Some("mips64") if big => Some("mips64-linux-gnuabi64"),
+            Some("mips64") => Some("mips64el-linux-gnuabi64"),
             _ => None,
         };
         if let Some(t) = triple {

@@ -79,6 +79,8 @@ pub fn decodes(arch: Arch) -> bool {
             | Arch::LoongArch64
             | Arch::PowerPc
             | Arch::PowerPc64
+            | Arch::Mips
+            | Arch::Mips64
     )
 }
 
@@ -144,6 +146,10 @@ pub fn decode_in(arch: Arch, big: bool, bytes: &[u8], address: u64) -> Option<In
         Arch::PowerPc | Arch::PowerPc64 => {
             let features = hexcavator_powerpc::Features::standard(arch == Arch::PowerPc64);
             decode_powerpc(bytes, big, address, &features)
+        }
+        Arch::Mips | Arch::Mips64 => {
+            let features = mips_features(arch);
+            decode_mips(bytes, big, address, &features).map(|(i, _)| i)
         }
         _ => None,
     }
@@ -332,6 +338,119 @@ pub fn powerpc_flow(
     }
 }
 
+/// The MIPS features [`decode`] takes code to have, not knowing its
+/// image's flags: Release 2's (MIPS32R2's, or MIPS64R2's), the commonest,
+/// and a superset of the earlier levels' (Release 6's encodings differ).
+pub fn mips_features(arch: Arch) -> hexcavator_mips::Features {
+    // (EF_MIPS_ARCH_32R2, EF_MIPS_ARCH_64R2.)
+    let flags = if arch == Arch::Mips64 {
+        0x8000_0000
+    } else {
+        0x7000_0000
+    };
+    hexcavator_mips::Features::from_elf(flags, arch == Arch::Mips64)
+}
+
+/// The MIPS instruction at the start of `bytes`, which is at `address`,
+/// its word big-endian (`big`) or little-endian, with `features` on, and
+/// whether it has a delay slot; `None` if it doesn't decode. (Its flow is
+/// its own: see [`delay_slots`].)
+pub fn decode_mips(
+    bytes: &[u8],
+    big: bool,
+    address: u64,
+    features: &hexcavator_mips::Features,
+) -> Option<(Insn, bool)> {
+    let i = hexcavator_mips::decode(bytes, big, features)?;
+    let (flow, target) = mips_flow(&i, address);
+    Some((
+        Insn {
+            address,
+            len: 4,
+            flow,
+            target,
+        },
+        hexcavator_mips::has_delay_slot(&i),
+    ))
+}
+
+/// How control leaves a MIPS instruction, and a direct jump's, call's, or
+/// branch's target: `j` jumps, `jal` and `bal` call (as the branches and
+/// links do, `bgezal`, Release 6's `balc` and `beqzalc`); `jr $ra`
+/// returns (and `jic $ra, 0`), `jr` to another register jumps, `jalr`
+/// calls; `beq $zero, $zero` (`b`) jumps, the other branches branch;
+/// `break` and `sdbbp` stop, as `eret` and `deret` leave.
+pub fn mips_flow(i: &hexcavator_mips::Instruction, address: u64) -> (Flow, Option<u64>) {
+    let target = hexcavator_mips::branch_target(i, address);
+    let reg = |k: usize| {
+        i.operands()
+            .get(k)
+            .and_then(|o| hexcavator_mips::gpr_of(*o))
+    };
+    let name = i.name();
+    match name {
+        "J" => (Flow::Jump, target),
+        "JAL" | "JALX" | "BAL" | "BALC" => (Flow::Call, target),
+        "BC" => (Flow::Jump, target),
+        "BEQ" | "BEQ64" if reg(0) == Some(0) && reg(1) == Some(0) => (Flow::Jump, target),
+        "BGEZAL" if reg(0) == Some(0) => (Flow::Call, target),
+        "BGEZAL" | "BLTZAL" | "BGEZALL" | "BLTZALL" | "BEQZALC" | "BNEZALC" | "BLEZALC"
+        | "BGEZALC" | "BGTZALC" | "BLTZALC" => (Flow::Call, target),
+        "JR" | "JR64" | "JR_HB" | "JR_HB64" | "JR_HB_R6" | "JR_HB64_R6" => (
+            if reg(0) == Some(31) {
+                Flow::Return
+            } else {
+                Flow::Jump
+            },
+            None,
+        ),
+        "JALR" | "JALR64" | "JALR_HB" | "JALR_HB64" => {
+            if reg(0) == Some(0) {
+                (
+                    if reg(1) == Some(31) {
+                        Flow::Return
+                    } else {
+                        Flow::Jump
+                    },
+                    None,
+                )
+            } else {
+                (Flow::Call, None)
+            }
+        }
+        "JIC" | "JIC64" => {
+            let off = i.operands().get(1).and_then(|o| o.imm());
+            (
+                if reg(0) == Some(31) && off == Some(0) {
+                    Flow::Return
+                } else {
+                    Flow::Jump
+                },
+                None,
+            )
+        }
+        "JIALC" | "JIALC64" => (Flow::Call, None),
+        "BREAK" | "SDBBP" | "SDBBP_R6" => (Flow::Stop, None),
+        "ERET" | "ERETNC" | "DERET" => (Flow::Return, None),
+        _ if target.is_some() => (Flow::Branch, target),
+        _ => (Flow::Next, None),
+    }
+}
+
+/// Moves each delayed branch's flow to its delay slot (`delayed[k]`: the
+/// instruction `k` has one), where it takes effect: so a block ends after
+/// the slot, which runs on either way.
+pub fn delay_slots(insns: &mut [Insn], delayed: &[bool]) {
+    for k in 0..insns.len().saturating_sub(1) {
+        if delayed.get(k) == Some(&true) && insns[k].flow != Flow::Next {
+            insns[k + 1].flow = insns[k].flow;
+            insns[k + 1].target = insns[k].target;
+            insns[k].flow = Flow::Next;
+            insns[k].target = None;
+        }
+    }
+}
+
 /// The A32 (or, if `thumb`, T32) instruction at the start of `bytes`,
 /// which is at `address`, or `None` if it doesn't decode. ([`decode`]
 /// can't tell which a 32-bit ARM function is: its symbol says.)
@@ -497,8 +616,28 @@ pub fn sweep(arch: Arch, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) 
     sweep_in(arch, false, code, address)
 }
 
-/// [`sweep`], its words big-endian if `big` (as [`decode_in`]).
+/// [`sweep`], its words big-endian if `big` (as [`decode_in`]); MIPS's
+/// delayed branches' flow at their delay slots (see [`delay_slots`]).
 pub fn sweep_in(arch: Arch, big: bool, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) {
+    if matches!(arch, Arch::Mips | Arch::Mips64) {
+        let features = mips_features(arch);
+        let mut out = Vec::new();
+        let mut delayed = Vec::new();
+        let mut at = 0usize;
+        let mut stop = None;
+        while at < code.len() {
+            let pc = address.wrapping_add(at as u64);
+            let Some((i, d)) = decode_mips(&code[at..], big, pc, &features) else {
+                stop = Some(pc);
+                break;
+            };
+            at += 4;
+            out.push(i);
+            delayed.push(d);
+        }
+        delay_slots(&mut out, &delayed);
+        return (out, stop);
+    }
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < code.len() {

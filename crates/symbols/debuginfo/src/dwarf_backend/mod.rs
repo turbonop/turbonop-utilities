@@ -1616,7 +1616,7 @@ impl<'data> DwarfInfo<'data> {
                     let Some(loc) = d.attr(DW_AT_LOCATION) else {
                         return Walk::Into;
                     };
-                    let Some((addr, tls)) = static_address(u, &loc.value) else {
+                    let Some((addr, tls, based)) = static_address(u, &loc.value) else {
                         return Walk::Into;
                     };
                     // (Thread-local data's is an offset in its block.)
@@ -1632,7 +1632,12 @@ impl<'data> DwarfInfo<'data> {
                     // (A discarded variable's address, as the linker left
                     // it: in linear memory, before it is placed there.)
                     let wasm = matches!(self.arch, Arch::Wasm32 | Arch::Wasm64);
-                    if self.linked && !tls && !u.is_valid_address(if wasm { raw } else { addr }) {
+                    // (One from a module's memory base is valid at 0.)
+                    if self.linked
+                        && !tls
+                        && !based
+                        && !u.is_valid_address(if wasm { raw } else { addr })
+                    {
                         return Walk::Into;
                     }
                     let (decl, _) = self.origin(w.at);
@@ -1758,7 +1763,7 @@ impl<'data> DwarfInfo<'data> {
             let Some(loc) = d.attr(DW_AT_LOCATION) else {
                 return Walk::Into;
             };
-            let Some((addr, false)) = static_address(u, &loc.value) else {
+            let Some((addr, false, _)) = static_address(u, &loc.value) else {
                 return Walk::Into;
             };
             let Some(addr) = self.image_data_addr(u.source, addr) else {
@@ -2019,15 +2024,22 @@ fn is_scope(tag: u16) -> bool {
     )
 }
 
-/// The address of a variable at a fixed place (`DW_OP_addr`), or at an
-/// offset in the thread-local storage block (a constant, then
-/// `DW_OP_form_tls_address` or GNU's `DW_OP_GNU_push_tls_address`):
-/// (address, thread-local).
-fn static_address(u: &Unit<'_>, v: &Value<'_>) -> Option<(u64, bool)> {
+/// The address of a variable at a fixed place (`DW_OP_addr`), at one from
+/// a position-independent WebAssembly module's memory base (a global,
+/// `__memory_base`, taken as 0: `DW_OP_WASM_location`, then `DW_OP_addr`
+/// and `DW_OP_plus`), or at an offset in the thread-local storage block (a
+/// constant, then `DW_OP_form_tls_address` or GNU's
+/// `DW_OP_GNU_push_tls_address`): (address, thread-local, from a memory
+/// base).
+fn static_address(u: &Unit<'_>, v: &Value<'_>) -> Option<(u64, bool, bool)> {
     if let Some(a) = u.location_address(v) {
-        return Some((a, false));
+        return Some((a, false, false));
     }
     let Value::Block(b) = *v else { return None };
+    if let Some(a) = wasm_based_address(u, b) {
+        // (wasm-ld's tombstone for discarded data, from the base too.)
+        return (a != 0xFFFF_FFFF && a != u64::MAX).then_some((a, false, true));
+    }
     let (&last, rest) = b.split_last()?;
     if last != DW_OP_FORM_TLS_ADDRESS && last != DW_OP_GNU_PUSH_TLS_ADDRESS {
         return None;
@@ -2041,7 +2053,33 @@ fn static_address(u: &Unit<'_>, v: &Value<'_>) -> Option<(u64, bool)> {
         DW_OP_CONSTX | DW_OP_GNU_CONST_INDEX => u.indexed_address(r.uleb()?)?,
         _ => return None,
     };
-    r.is_empty().then_some((at, true))
+    r.is_empty().then_some((at, true, false))
+}
+
+/// A position-independent WebAssembly module's variable's address, less
+/// its memory base: `DW_OP_WASM_location` of a global (kind 1, its index
+/// a ULEB128; or 3, a 4-byte index), then `DW_OP_addr` (or `DW_OP_addrx`),
+/// then `DW_OP_plus`.
+fn wasm_based_address(u: &Unit<'_>, b: &[u8]) -> Option<u64> {
+    if *b.first()? != DW_OP_WASM_LOCATION {
+        return None;
+    }
+    let mut r = hexcavator_dwarf::Reader::new(b, 1, u.sections().endian);
+    match r.uleb()? {
+        1 => {
+            r.uleb()?;
+        }
+        3 => {
+            r.uint(4)?;
+        }
+        _ => return None,
+    }
+    let a = match r.u8()? {
+        DW_OP_ADDR => r.uint(usize::from(u.address_size))?,
+        DW_OP_ADDRX | DW_OP_GNU_ADDR_INDEX => u.indexed_address(r.uleb()?)?,
+        _ => return None,
+    };
+    (r.u8()? == DW_OP_PLUS && r.is_empty()).then_some(a)
 }
 
 /// The CRC-32 `.gnu_debuglink` checks (ISO 3309, as zlib's).

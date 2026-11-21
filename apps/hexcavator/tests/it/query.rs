@@ -279,3 +279,70 @@ fn wasm_data() {
     );
     assert!(!text.contains("--no-gc-sections"), "{text}");
 }
+
+/// A WebAssembly module's data where code puts it: with shared memory,
+/// its passive segments where `__wasm_init_memory` copies them, and the
+/// `.bss` it zeroes; as a position-independent module, its segment and
+/// `.bss` from its `__memory_base` (as 0), and its variables' addresses,
+/// DWARF's, from the same base. Each variable reads as it is.
+#[test]
+fn wasm_data_placed_by_code() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm");
+    let data = |module: &str, name: &str| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .arg("data")
+            .arg(dir.join(module))
+            .arg(name)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{module} {name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    // (As wasm-ld's map for the shared module says.)
+    for (module, name, head, value) in [
+        (
+            "data-shared.wasm",
+            "primes",
+            "primes  (32 bytes at 0x10000, .rodata)",
+            "[7] = 19",
+        ),
+        (
+            "data-shared.wasm",
+            "counter",
+            "counter  (4 bytes at 0x100bc, .data)",
+            "int = 42",
+        ),
+        (
+            "data-shared.wasm",
+            "scratch",
+            "scratch  (64 bytes at 0x100c0, .bss)",
+            "[15] = 0",
+        ),
+        (
+            "data-pic.wasm",
+            "primes",
+            "primes  (32 bytes at 0x0, .data)",
+            "[7] = 19",
+        ),
+        (
+            "data-pic.wasm",
+            "counter",
+            "counter  (4 bytes at 0xbc, .data)",
+            "int = 42",
+        ),
+        (
+            "data-pic.wasm",
+            "scratch",
+            "scratch  (64 bytes at 0xc0, .bss)",
+            "[15] = 0",
+        ),
+    ] {
+        let text = data(module, name);
+        assert!(text.starts_with(head), "{module} {name}: {text}");
+        assert!(text.contains(value), "{module} {name}: {text}");
+    }
+}

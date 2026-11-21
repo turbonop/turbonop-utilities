@@ -337,6 +337,11 @@ fn read_word(data: &[u8], offset: u64, class: Class, endian: Endian) -> Option<u
     }
 }
 
+/// Where an object's first allocated section is laid out (see
+/// [`ElfFile::section_addresses`]): a page in, as a linker would put code,
+/// so that no symbol is at 0, which tools take for none.
+pub const OBJECT_BASE: u64 = 0x1000;
+
 impl<'data> ElfFile<'data> {
     /// Whether `data` starts with the ELF magic.
     pub fn is_elf(data: &[u8]) -> bool {
@@ -463,6 +468,49 @@ impl<'data> ElfFile<'data> {
     /// Whether this is a relocatable object (`ET_REL`).
     pub fn is_object(&self) -> bool {
         self.header.kind == ET_REL
+    }
+
+    /// Each section's address, by its index: a linked file's, as its
+    /// headers say; an object's, as a linker would lay its allocated
+    /// sections out (in order, from [`OBJECT_BASE`], each at its
+    /// alignment), its others at 0 (an object's sections all say 0, and
+    /// its symbols' values and DWARF's addresses are offsets in their
+    /// sections).
+    pub fn section_addresses(&self) -> Vec<u64> {
+        let object = self.is_object();
+        let mut next = OBJECT_BASE;
+        self.sections()
+            .map(|s| {
+                if !object {
+                    return s.addr;
+                }
+                if !s.is_alloc() || s.kind == SHT_NULL {
+                    return 0;
+                }
+                let align = s.addralign.clamp(1, 1 << 32);
+                let at = next.checked_next_multiple_of(align).unwrap_or(next);
+                next = at.saturating_add(s.size);
+                at
+            })
+            .collect()
+    }
+
+    /// A symbol's address, its section's addresses (see
+    /// [`ElfFile::section_addresses`]) given: an object's, its value in its
+    /// section, from where its section is laid out; a linked file's, its
+    /// value.
+    pub fn symbol_address(&self, sym: &Symbol<'_>, sections: &[u64]) -> u64 {
+        if !self.is_object() {
+            return sym.value;
+        }
+        // (A special index, SHN_ABS or SHN_COMMON, is no section's, as
+        // where the file has fewer sections than they are.)
+        let special = sym.shndx >= u32::from(SHN_LORESERVE)
+            && u64::from(self.header.shnum) <= u64::from(SHN_LORESERVE);
+        match sections.get(sym.shndx as usize) {
+            Some(&base) if sym.shndx != 0 && !special => base.wrapping_add(sym.value),
+            _ => sym.value,
+        }
     }
 
     /// The file range of the file header.

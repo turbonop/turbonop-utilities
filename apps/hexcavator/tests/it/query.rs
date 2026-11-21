@@ -346,3 +346,55 @@ fn wasm_data_placed_by_code() {
         assert!(text.contains(value), "{module} {name}: {text}");
     }
 }
+
+/// An ELF object's functions and data where a linker would lay its
+/// sections out (an object's addresses are all its sections' offsets):
+/// each at its own address, in its section, with its source line; and a
+/// datum read there.
+#[test]
+fn object_symbols_laid_out() {
+    let object =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/elf/program-x86_64-linux-gnu.o");
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .args(&args[..1])
+            .arg(&object)
+            .args(&args[1..])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let rows: serde_json::Value =
+        serde_json::from_str(&run(&["query", "-json", "kind=function or kind=data"])).unwrap();
+    let rows = rows["rows"].as_array().unwrap();
+    let row = |name: &str| {
+        rows.iter()
+            .find(|r| r["name"] == name)
+            .unwrap_or_else(|| panic!("{name}: {rows:?}"))
+    };
+    for (name, section) in [
+        ("compute(int)", ".text"),
+        ("_start()", ".text"),
+        ("counter", ".data"),
+        ("buffer", ".bss"),
+    ] {
+        assert_eq!(row(name)["section"], section, "{name}");
+    }
+    assert_eq!(row("compute(int)")["line"], 15);
+    // (No two at one address.)
+    let mut at: Vec<u64> = rows.iter().filter_map(|r| r["rva"].as_u64()).collect();
+    let n = at.len();
+    at.sort_unstable();
+    at.dedup();
+    assert_eq!(at.len(), n, "{rows:?}");
+    let text = run(&["data", "counter"]);
+    assert!(
+        text.contains(".data)") && text.contains("int = 3"),
+        "{text}"
+    );
+}

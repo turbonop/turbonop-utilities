@@ -665,6 +665,8 @@ fn examples(x: &Xref, nodes: &[u32]) -> Vec<(String, u64)> {
 ///   (`--hash-style=gnu`).
 /// - WebAssembly: custom sections a module doesn't need to run (names,
 ///   producers, DWARF, source map links): a module is downloaded whole.
+/// - Mach-O: rebase and bind opcodes where chained fixups would be
+///   smaller (`-fixup_chains`).
 pub fn structural(image: &hexcavator_image::Image<'_>) -> Vec<Recommendation> {
     let mut out = Vec::new();
     if let Some(elf) = image.elf() {
@@ -673,6 +675,9 @@ pub fn structural(image: &hexcavator_image::Image<'_>) -> Vec<Recommendation> {
     }
     if let Some(m) = image.wasm() {
         wasm_custom(m, &mut out);
+    }
+    if let Some(m) = image.macho() {
+        macho_chained(m, &mut out);
     }
     out.retain(|r| r.saving >= MIN_SAVING);
     out
@@ -709,6 +714,131 @@ pub fn unused_libraries(
         saving: libraries.iter().map(|l| l.1).sum(),
         examples,
     })
+}
+
+/// Mach-O's rebase and bind opcodes (`LC_DYLD_INFO`), where chained fixups
+/// (`LC_DYLD_CHAINED_FIXUPS`, `-fixup_chains`) would be smaller: the
+/// opcodes' bytes (and `__stub_helper`'s, which lazy binding needs and
+/// chained fixups don't), less the chained fixups' (see
+/// [`chained_fixups_size`]). Only for x86-64 and ARM64 images whose
+/// fixups are all word-aligned (a chain links words).
+fn macho_chained(m: &hexcavator_macho::MachO<'_>, out: &mut Vec<Recommendation>) {
+    use hexcavator_macho::consts::*;
+    let cpu = m.header().cputype;
+    if m.is_object() || !(cpu == CPU_TYPE_ARM64 || cpu == CPU_TYPE_X86_64) {
+        return;
+    }
+    let commands = m.load_commands();
+    if commands.iter().any(|c| c.cmd == LC_DYLD_CHAINED_FIXUPS) {
+        return;
+    }
+    let Some(info) = commands
+        .iter()
+        .find(|c| c.cmd == LC_DYLD_INFO || c.cmd == LC_DYLD_INFO_ONLY)
+        .and_then(|c| m.dyld_info(c))
+    else {
+        return;
+    };
+    let opcodes = u64::from(info.rebase.1)
+        + u64::from(info.bind.1)
+        + u64::from(info.weak_bind.1)
+        + u64::from(info.lazy_bind.1);
+    let fixups = m.fixups();
+    if fixups.is_empty()
+        || fixups
+            .iter()
+            .any(|f| f.addr % u64::from(f.width.max(1)) != 0)
+    {
+        return;
+    }
+    let page = if cpu == CPU_TYPE_ARM64 {
+        0x4000
+    } else {
+        0x1000
+    };
+    let chained = chained_fixups_size(&m.segments(), &fixups, page);
+    let helper: u64 = if info.lazy_bind.1 > 0 {
+        m.sections()
+            .iter()
+            .filter(|s| s.sectname == b"__stub_helper")
+            .map(|s| s.size)
+            .sum()
+    } else {
+        0
+    };
+    let saving = (opcodes + helper).saturating_sub(chained);
+    if saving == 0 {
+        return;
+    }
+    out.push(Recommendation {
+        kind: "chained-fixups",
+        advice: format!(
+            "link with -Wl,-fixup_chains (a deployment target of macOS 11, iOS 13.4, or later; Apple's ld does by default for macOS 12 and iOS 15): its {} fixups' rebase and bind opcodes ({opcodes} bytes{}) become {chained} bytes of chained fixups, each pointer holding the next's offset",
+            fixups.len(),
+            if helper > 0 {
+                format!(", and {helper} of __stub_helper")
+            } else {
+                String::new()
+            }
+        ),
+        saving,
+        examples: Vec::new(),
+    });
+}
+
+/// The size of the chained fixups (`LC_DYLD_CHAINED_FIXUPS`'s data) that
+/// would hold `fixups` (an image's rebases and binds, as its opcodes
+/// have them), as ld64.lld lays them out, each part aligned to 8 bytes:
+/// the header (28 bytes); the image's starts (a count, and an offset for
+/// each of `segments`); each segment with fixups, its starts (22 bytes,
+/// and 2 for each of its pages of `page` bytes); the imports, 4 bytes each
+/// (8 if any has an addend, 16 if one needs more than 32 bits), one for
+/// each symbol bound (by library, name, and weakness); and their names.
+pub fn chained_fixups_size(
+    segments: &[hexcavator_macho::Segment<'_>],
+    fixups: &[hexcavator_macho::Fixup<'_>],
+    page: u64,
+) -> u64 {
+    use hexcavator_macho::FixupKind;
+    let align8 = |n: u64| n.next_multiple_of(8);
+    let mut size = align8(28) + align8(4 + 4 * segments.len() as u64);
+    for s in segments {
+        let has = fixups
+            .iter()
+            .any(|f| f.addr >= s.vmaddr && f.addr - s.vmaddr < s.vmsize);
+        if has {
+            let pages = s.vmsize.div_ceil(page.max(1));
+            size += align8(22 + 2 * pages);
+        }
+    }
+    let mut imports: Vec<(i32, &[u8], bool)> = Vec::new();
+    let mut addend = 0u64;
+    for f in fixups {
+        if let FixupKind::Bind {
+            symbol,
+            library,
+            addend: a,
+            weak,
+        } = f.kind
+        {
+            imports.push((library, symbol, weak));
+            addend = addend.max(a.unsigned_abs());
+        }
+    }
+    imports.sort_unstable();
+    imports.dedup();
+    let entry = match addend {
+        0 => 4,
+        a if a <= u64::from(u32::MAX >> 1) => 8,
+        _ => 16,
+    };
+    size += entry * imports.len() as u64;
+    // (Each name once.)
+    let mut names: Vec<&[u8]> = imports.iter().map(|i| i.1).collect();
+    names.sort_unstable();
+    names.dedup();
+    size += names.iter().map(|n| n.len() as u64 + 1).sum::<u64>();
+    align8(size)
 }
 
 /// The recommendation inlining makes ([`crate::inlining::weigh`]): calling

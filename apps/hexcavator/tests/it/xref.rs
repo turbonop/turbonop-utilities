@@ -1464,3 +1464,45 @@ fn unused_libraries() {
         assert_eq!(examples, [unused], "{image}");
     }
 }
+
+/// A Mach-O image's rebase and bind opcodes where chained fixups would be
+/// smaller (testdata/macho's table-*-opcodes.dylib, a sparse pointer
+/// table: 264 bytes of opcodes, 80 of chained fixups as ld64.lld writes
+/// them); and none where they wouldn't (pointers-*-opcodes.dylib, whose
+/// few fixups' opcodes are smaller), or are already chained.
+#[test]
+fn chained_fixups() {
+    let advice = |name: &str| -> Option<serde_json::Value> {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .args(["recommend", "-json"])
+            .arg(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../testdata/macho")
+                    .join(name),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        v["recommendations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == "chained-fixups")
+            .cloned()
+    };
+    for arch in ["arm64", "x86_64"] {
+        let rec = advice(&format!("table-{arch}-opcodes.dylib")).unwrap();
+        assert_eq!(rec["saving"], 264 - 80, "{rec}");
+        assert!(
+            rec["advice"].as_str().unwrap().contains("-fixup_chains"),
+            "{rec}"
+        );
+        assert!(advice(&format!("pointers-{arch}-opcodes.dylib")).is_none());
+        assert!(advice(&format!("table-{arch}.dylib")).is_none());
+    }
+}

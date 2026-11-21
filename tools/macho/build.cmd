@@ -25,6 +25,14 @@ for %%a in (arm64 x86_64) do (
   "%LLVM_BIN%\llvm-objdump.exe" --macho --dyld-info pointers-%%a.dylib > pointers-%%a.dylib.fixups.txt || exit /b 1
   "%LLVM_BIN%\llvm-objdump.exe" --macho --rebase --bind --lazy-bind --weak-bind pointers-%%a-opcodes.dylib > pointers-%%a-opcodes.dylib.fixups.txt || exit /b 1
 )
+rem A sparse pointer table: a dylib with the older opcodes, where chained
+rem fixups would be smaller, and with chained fixups.
+for %%a in (arm64 x86_64) do (
+  "%LLVM_BIN%\clang.exe" --target=%%a-apple-macos13 -O1 -ffreestanding -fno-stack-protector -fno-ident -c "%~dp0table.c" -o table-%%a.o || exit /b 1
+  "%LLVM_BIN%\ld64.lld.exe" -arch %%a -platform_version macos 13.0 13.0 -dylib -no_fixup_chains -install_name @rpath/libtable.dylib table-%%a.o -o table-%%a-opcodes.dylib || exit /b 1
+  "%LLVM_BIN%\ld64.lld.exe" -arch %%a -platform_version macos 13.0 13.0 -dylib -install_name @rpath/libtable.dylib table-%%a.o -o table-%%a.dylib || exit /b 1
+  del table-%%a.o
+)
 rem Compact unwind: functions of several frame shapes, in a dylib, with
 rem llvm-objdump's unwind info and function starts (and the programs').
 for %%a in (arm64 x86_64) do (

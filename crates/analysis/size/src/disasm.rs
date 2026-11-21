@@ -65,6 +65,10 @@ pub struct Function<'d> {
     /// For RISC-V: the ISA string the image's attributes name, which says
     /// which extensions its code may use.
     pub riscv_arch: Option<String>,
+    /// Whether the code's words are big-endian (PowerPC's, but for
+    /// `ppc64le`'s; ARM's and ARM64's code is little-endian whatever the
+    /// image's byte order).
+    pub big_endian: bool,
 }
 
 /// The fallback when no function is named exactly as asked: the one
@@ -269,6 +273,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
         Arm32(hexcavator_arm32::Instruction, Option<u32>),
         RiscV(hexcavator_riscv::Instruction),
         LoongArch(hexcavator_loongarch::Instruction),
+        PowerPc(hexcavator_powerpc::Instruction),
     }
     struct Decoded {
         pc: u64,
@@ -428,6 +433,26 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 rest += 4;
             }
         }
+        Arch::PowerPc | Arch::PowerPc64 => {
+            let features = hexcavator_powerpc::Features::standard(f.isa == Arch::PowerPc64);
+            while rest < f.code.len() {
+                let pc = f.address + rest as u64;
+                let Some(i) = hexcavator_powerpc::decode(&f.code[rest..], f.big_endian, &features)
+                else {
+                    break;
+                };
+                let (flow, target) = hexcavator_code::powerpc_flow(&i, pc, &features);
+                insts.push(Decoded {
+                    pc,
+                    len: usize::from(i.size),
+                    inst: Inst::PowerPc(i),
+                    flow,
+                    target,
+                    named: target.into_iter().collect(),
+                });
+                rest += usize::from(i.size);
+            }
+        }
         // (No decoder for the others: the code shows as bytes.)
         _ => {}
     }
@@ -510,6 +535,17 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     && let Some(at) = s.rfind([' ', '\t'])
                 {
                     s.replace_range(at + 1.., name);
+                }
+                s
+            }
+            Inst::PowerPc(i) => {
+                let features = hexcavator_powerpc::Features::standard(f.isa == Arch::PowerPc64);
+                let mut s = hexcavator_powerpc::format::format(i, d.pc, &features);
+                // (The target by its label or symbol, where it has one.)
+                if let Some(t) = d.target
+                    && let Some(name) = names.name(t)
+                {
+                    s = s.replace(&format!("{t:#x}"), name);
                 }
                 s
             }
@@ -602,7 +638,8 @@ pub fn references_in_image(
     out: &mut Vec<Reference>,
 ) {
     let mut refs = Vec::new();
-    hexcavator_xref::scan_image(arch, code, address, image_base, &mut refs);
+    // (Its callers' code is x86-64's and ARM64's: little-endian.)
+    hexcavator_xref::scan_image(arch, false, code, address, image_base, &mut refs);
     out.extend(
         refs.iter()
             .filter(|r| {
@@ -739,6 +776,7 @@ mod tests {
             code: &code,
             symbols: vec![(0x1000, "f".into()), (0x2000, "helper".into())],
             riscv_arch: None,
+            big_endian: false,
         };
         let l = decode(&f, Labels::Blocks);
         let texts: Vec<&str> = l
@@ -792,6 +830,7 @@ mod tests {
             code: &code,
             symbols: vec![],
             riscv_arch: None,
+            big_endian: false,
         };
         let l = decode(&f, Labels::Blocks);
         assert_eq!(l.lines[0].label, Some(1));
@@ -859,6 +898,7 @@ mod tests {
             code: &code,
             symbols: vec![(0x1000, "f".into()), (0x2000, "helper".into())],
             riscv_arch: None,
+            big_endian: false,
         };
         let text = listing(&f);
         let lines: Vec<&str> = text.lines().collect();
@@ -892,6 +932,7 @@ mod tests {
             code: &words,
             symbols: vec![(0x2010, "helper".into())],
             riscv_arch: None,
+            big_endian: false,
         };
         let text = listing(&f);
         let lines: Vec<&str> = text.lines().collect();

@@ -250,6 +250,11 @@ fn default_dirs(ctx: &Ctx<'_>) -> Vec<PathBuf> {
         }
         dirs.push(format!("/apex/com.android.runtime/{lib}/bionic"));
     } else {
+        let big = ctx
+            .search
+            .arch
+            .as_ref()
+            .is_some_and(super::search::Arch::big_endian);
         let triple = match ctx.search.arch.as_ref().map(|a| a.name.as_str()) {
             Some("x64" | "x86_64") => Some("x86_64-linux-gnu"),
             Some("x86" | "i386") => Some("i386-linux-gnu"),
@@ -257,6 +262,9 @@ fn default_dirs(ctx: &Ctx<'_>) -> Vec<PathBuf> {
             Some("arm" | "thumb") => Some("arm-linux-gnueabihf"),
             Some("riscv64") => Some("riscv64-linux-gnu"),
             Some("loongarch64") => Some("loongarch64-linux-gnu"),
+            Some("powerpc64") if big => Some("powerpc64-linux-gnu"),
+            Some("powerpc64") => Some("powerpc64le-linux-gnu"),
+            Some("powerpc") => Some("powerpc-linux-gnu"),
             _ => None,
         };
         if let Some(t) = triple {

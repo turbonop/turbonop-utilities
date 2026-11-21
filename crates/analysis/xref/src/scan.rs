@@ -65,9 +65,10 @@ pub struct CodeRef {
     pub via: Via,
 }
 
-/// Appends the references of `code`, which is at `address`, to `out`.
+/// Appends the references of `code`, which is at `address`, to `out` (its
+/// words little-endian: see [`scan_image`] for big-endian code).
 pub fn scan(arch: Arch, code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
-    scan_image(arch, code, address, None, out);
+    scan_image(arch, false, code, address, None, out);
 }
 
 /// [`scan`], knowing where the image starts (`image_base`, in the same
@@ -79,14 +80,17 @@ pub fn scan(arch: Arch, code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
 /// it: the sweep is in address order, not control flow, and code after a
 /// call can be reached without one; a compiler reloads the register before
 /// using it again after a call that changes it, and the reload is a write.
+/// `big` says the code's words are big-endian (PowerPC's, but for
+/// `ppc64le`'s: see [`hexcavator_code::decode_in`]).
 pub fn scan_image(
     arch: Arch,
+    big: bool,
     code: &[u8],
     address: u64,
     image_base: Option<u64>,
     out: &mut Vec<CodeRef>,
 ) {
-    scan_absolute(arch, code, address, image_base, 0, out);
+    scan_absolute(arch, big, code, address, image_base, 0, out);
 }
 
 /// [`scan_image`], with the absolute addresses code builds (32-bit ARM's
@@ -95,6 +99,7 @@ pub fn scan_image(
 /// relative to it.
 pub fn scan_absolute(
     arch: Arch,
+    big: bool,
     code: &[u8],
     address: u64,
     image_base: Option<u64>,
@@ -109,6 +114,9 @@ pub fn scan_absolute(
         Arch::RiscV32 | Arch::RiscV64 => riscv(code, address, arch == Arch::RiscV64, out),
         Arch::LoongArch32 | Arch::LoongArch64 => {
             loongarch(code, address, arch == Arch::LoongArch64, out);
+        }
+        Arch::PowerPc | Arch::PowerPc64 => {
+            powerpc(code, address, big, arch == Arch::PowerPc64, out);
         }
         // (No scanner for the others yet: no references.)
         _ => {}
@@ -590,6 +598,133 @@ fn loongarch(code: &[u8], address: u64, la64: bool, out: &mut Vec<CodeRef>) {
         // ($zero holds nothing.)
         upper[0] = None;
         addrs[0] = None;
+    }
+}
+
+/// PowerPC's references: `b`, `bl`, `bc` and its kin (their targets,
+/// relative or absolute); and addresses built in a register, then used:
+/// `lis` (an absolute upper half), or `addis` to a register
+/// whose value is known (an upper half above it: the TOC pointer, `r2`,
+/// as an ELFv2 function's global entry computes it from `r12`, its own
+/// address), each with an `addi`, `ori`, load, or store after; and the
+/// prefixed instructions' PC-relative addresses (`pld 3, x@pcrel`,
+/// `paddi 3, 0, x@pcrel, 1`). `r12` holds the function's address at its
+/// start (the ELFv2 ABI's global entry).
+fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<CodeRef>) {
+    let features = hexcavator_powerpc::Features::standard(ppc64);
+    // Each register's value, if known, and whether it's an upper half
+    // (from `addis`), until it's written.
+    let mut known = [None::<(u64, bool)>; 32];
+    known[12] = Some((address, false));
+    let wrap = |v: u64| if ppc64 { v } else { v & 0xFFFF_FFFF };
+    let mut at = 0usize;
+    while at < code.len() {
+        let pc = address.wrapping_add(at as u64);
+        let Some(i) = hexcavator_powerpc::decode(&code[at..], big, &features) else {
+            return;
+        };
+        at += usize::from(i.size);
+        let reg = |name: &str| {
+            i.operand(name)
+                .and_then(hexcavator_powerpc::gpr_of)
+                .map(usize::from)
+        };
+        let imm = |name: &str| i.operand(name).and_then(hexcavator_powerpc::Operand::imm);
+        // (A load's or store's displacement and base.)
+        let memory = hexcavator_powerpc::memory(&i)
+            .and_then(|(d, r)| Some((d, usize::from(hexcavator_powerpc::gpr(r)?))));
+        let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
+        let name = i.name();
+        let mut set = None;
+        if let Some(to) = hexcavator_powerpc::branch_target(&i, pc, &features) {
+            let flow = hexcavator_code::powerpc_flow(&i, pc, &features).0;
+            push(
+                wrap(to),
+                if flow == hexcavator_code::Flow::Call {
+                    Via::Call
+                } else {
+                    Via::Jump
+                },
+            );
+        } else if name.starts_with('P') && name.ends_with("pc") {
+            // A prefixed PC-relative instruction: `pld`, `plwz`, `pstd`,
+            // `paddi`, ... (its displacement the address's offset).
+            if let Some(d) = memory.map(|(d, _)| d).or_else(|| imm("SI")) {
+                let to = wrap(pc.wrapping_add_signed(d));
+                if name.starts_with("PADDI") || name.starts_with("PLI") {
+                    push(to, Via::AddressOf);
+                    set = Some((to, false));
+                } else {
+                    push(to, Via::Address);
+                }
+            }
+        } else {
+            match name {
+                "LIS" => {
+                    let hi = imm("D").unwrap_or(0) << 16;
+                    set = Some((wrap(hi.cast_unsigned()), true));
+                }
+                "ADDIS" => {
+                    // (RA r0 is read as 0: `lis`.)
+                    let ra = reg("RA");
+                    let hi = imm("D").unwrap_or(0) << 16;
+                    let from = match ra {
+                        Some(0) => Some(0),
+                        Some(r) => known[r].map(|(v, _)| v),
+                        None => None,
+                    };
+                    set = from.map(|b| (wrap(b.wrapping_add_signed(hi)), true));
+                }
+                "ADDI" | "ORI" => {
+                    let src = if name == "ORI" { reg("RS") } else { reg("RA") };
+                    if let (Some(r), Some(lo)) = (src, imm("D"))
+                        && let Some((b, upper)) = known[r]
+                    {
+                        let to = if name == "ORI" {
+                            b | (lo.cast_unsigned() & 0xFFFF)
+                        } else {
+                            b.wrapping_add_signed(lo)
+                        };
+                        let to = wrap(to);
+                        // (r2, the TOC pointer, and r12 at entry: the
+                        // ABI's, not an object's address.)
+                        if upper {
+                            push(to, Via::AddressOf);
+                        }
+                        set = Some((to, false));
+                    }
+                }
+                _ => {
+                    // A load or store: `lwz 3, x@toc@l(4)`.
+                    if let Some((d, r)) = memory
+                        && let Some((b, true)) = known[r]
+                    {
+                        push(wrap(b.wrapping_add_signed(d)), Via::Address);
+                    }
+                }
+            }
+        }
+        // The registers it writes forget what they held (but what it set).
+        for (k, op) in i
+            .operands()
+            .iter()
+            .enumerate()
+            .take(usize::from(i.inst().defs))
+        {
+            if let Some(r) = hexcavator_powerpc::gpr_of(*op) {
+                known[usize::from(r)] = if k == 0 { set } else { None };
+            }
+        }
+        // (A call leaves r12 and the volatile registers unknown; r2 is
+        // restored.)
+        if matches!(
+            hexcavator_code::powerpc_flow(&i, pc, &features).0,
+            hexcavator_code::Flow::Call
+        ) {
+            for r in [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] {
+                known[r] = None;
+            }
+        }
     }
 }
 

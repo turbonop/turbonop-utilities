@@ -13,8 +13,14 @@ subclasses `Extractor`: its decoder tables (`NAMESPACES`), its register
 files (`FILES`, and `reg_of`, which names a register record's file and
 number), how its decoder methods decode (`reg_decoder`, `imm_decoder`),
 its print methods (`PRINTS`), the bits its encodings are bucketed by
-(`KEY16`, `KEY32`), and what else it reads and writes (`more`,
-`emit_more`).
+(`KEY16`, `KEY32`, `KEY64`), the register class a class chosen by
+hardware mode is (`reg_class_record`), and what else it reads and writes
+(`more`, `emit_more`).
+
+An operand of several (a complex operand: PowerPC's `memri`, a
+displacement and a base) is its sub-operands, each with its own fields;
+the first is named for the whole and prints as it does (its print
+method reads the rest).
 """
 
 import json
@@ -50,6 +56,11 @@ class Extractor:
         self.class_index = {}
         self.insts = []
         self.inst_index = {}
+        # (A target whose encodings number their bits from the top, as
+        # PowerPC's do: `Inst{0}` the most significant.)
+        self.reversed_bits = any(
+            int(d[n].get("isLittleEndianEncoding", 0)) for n in d["!instanceof"].get("InstrInfo", [])
+        )
 
     # ---------------------------------------------------------- features
 
@@ -58,6 +69,7 @@ class Extractor:
     FILES = {}
     KEY16 = []
     KEY32 = []
+    KEY64 = []
     PRINTS = {}
     SOURCE = ""
 
@@ -92,23 +104,31 @@ class Extractor:
                     continue
                 raise ValueError(f"{pred}: nested {inner}")
             feats.append(v["def"])
-        for f in feats + neg:
-            if f not in self.features:
-                raise ValueError(f"{pred}: {f}")
+        # (A feature that isn't a `Feature*` record, PowerPC's `AIXOS`,
+        # is a target's, never on here.)
         kind = {"all_of": "all", "any_of": "any", "none_of": "none"}[op]
         # (A feature that isn't standard is never on: an `any` of others
         # holds without it, an `all` never, a `none` or `not` always.)
+        def standard(f):
+            return f in self.features and self.standard(f)
+
         if kind == "any":
-            feats = [f for f in feats if self.standard(f)]
+            # (`any_of (not X), Y` holds when X is never on: PowerPC's
+            # `ModernAs`, for any OS but AIX.)
+            if any(not standard(f) for f in neg):
+                return None
+            if neg:
+                raise ValueError(f"{pred}: any_of with a negated feature")
+            feats = [f for f in feats if standard(f)]
             if not feats:
                 raise Skip(pred)
         elif kind == "all":
             for f in feats:
-                if not self.standard(f):
+                if not standard(f):
                     raise Skip(f)
         else:
-            feats = [f for f in feats if self.standard(f)]
-        neg = [f for f in neg if self.standard(f)]
+            feats = [f for f in feats if standard(f)]
+        neg = [f for f in neg if standard(f)]
         return (
             kind,
             tuple(self.features[f] for f in feats),
@@ -182,8 +202,14 @@ class Extractor:
     def ordered(self, x):
         return sorted(self.members(x), key=lambda r: r[1])
 
+    def reg_class_record(self, rc):
+        """The register class record `rc` is (a class chosen by hardware
+        mode: the one to decode with)."""
+        return rc
+
     def reg_class(self, name):
         """The index of register class `name` (by its record), and its file."""
+        name = self.reg_class_record(name)
         if name in self.class_index:
             return self.class_index[name]
         regs = self.members({"kind": "def", "def": name})
@@ -215,6 +241,7 @@ class Extractor:
         reg = None
         if "RegisterClass" in supers or "RegisterOperand" in supers:
             rc = r["RegClass"]["def"] if "RegisterOperand" in supers else cls
+            rc = self.reg_class_record(rc)
             if not dec and rc != cls:
                 dec = d[rc].get("DecoderMethod", "") or ""
             if not dec:
@@ -227,6 +254,26 @@ class Extractor:
         idx = len(self.kinds)
         self.kinds.append(kind)
         self.kind_index[cls] = idx
+        return idx
+
+    def sub_operands(self, cls):
+        """A complex operand class's sub-operands' classes (none for a
+        simple one)."""
+        info = self.d[cls].get("MIOperandInfo") or {}
+        return [a[0]["def"] for a in info.get("args", [])]
+
+    def complex_kind(self, cls):
+        """The kind of a complex operand's first sub-operand: decoded as
+        that sub-operand's class, printed as the complex operand."""
+        key = cls + "#"
+        if key in self.kind_index:
+            return self.kind_index[key]
+        first = self.kinds[self.operand_kind(self.sub_operands(cls)[0])]
+        print_method = self.d[cls].get("PrintMethod") or "printOperand"
+        kind = (cls, first[1], first[2], print_method, first[4], first[5])
+        idx = len(self.kinds)
+        self.kinds.append(kind)
+        self.kind_index[key] = idx
         return idx
 
     def reg_decoder(self, dec, rc):
@@ -257,7 +304,7 @@ class Extractor:
             and not d[n].get("isAsmParserOnly")
             and d[n].get("Inst")
             and d[n].get("DecoderNamespace") in self.NAMESPACES
-            and d[n].get("Size") in (2, 4)
+            and d[n].get("Size") in (2, 4, 8)
         )
         self.skipped = {}
         for n in names:
@@ -273,6 +320,16 @@ class Extractor:
                 continue
             if a:
                 self.aliases.append(a)
+        # (Aliases of an instruction whose conditions are another's are
+        # ambiguous: LLVM's AsmWriterEmitter prints neither, whatever
+        # their text.)
+        def conditions(a):
+            return (a["inst"], a["pred"], tuple(tuple(c) for c in a["conds"]))
+
+        seen = {}
+        for a in self.aliases:
+            seen[conditions(a)] = seen.get(conditions(a), 0) + 1
+        self.aliases = [a for a in self.aliases if seen[conditions(a)] == 1]
         # By priority, highest first; then as defined.
         self.aliases.sort(key=lambda a: (-a["priority"], a["order"]))
         self.compress = []
@@ -294,12 +351,18 @@ class Extractor:
         pred = self.predicate(r["Predicates"])
         bits = r["Inst"]
         width = r["Size"] * 8
+        bits = bits[:width]
+        if self.reversed_bits:
+            bits = bits[::-1]
         mask = value = 0
         fields = {}
-        for i, b in enumerate(bits[:width]):
+        for i, b in enumerate(bits):
             if isinstance(b, int):
                 mask |= 1 << i
                 value |= b << i
+            elif b is None:
+                # (A bit the encoding leaves unset: any.)
+                continue
             elif b["kind"] == "varbit":
                 fields.setdefault(b["var"], []).append((i, b["index"]))
             elif b["kind"] == "var":
@@ -309,31 +372,68 @@ class Extractor:
         tied = {}
         for c in constraints.split(","):
             c = c.strip()
-            m = re.fullmatch(r"\$(\w+)\s*=\s*\$(\w+)", c)
+            m = re.fullmatch(r"\$([\w.]+)\s*=\s*\$([\w.]+)", c)
             if m:
                 tied[m[1]] = m[2]
                 tied[m[2]] = m[1]
-        args = r["OutOperandList"]["args"] + r["InOperandList"]["args"]
-        names = [a[1] for a in args]
-        for (cls, name) in args:
+        # Each operand (a complex one's sub-operands: the first named for
+        # it), its kind, and the field it's encoded in; and the slots
+        # dags list them by (an MI operand index, and how many).
+        flat = []
+        slots = []
+        # (A sub-operand is also `operand.sub`, by the complex class's
+        # names for them: `$addr.reg`.)
+        dotted = {}
+        for (cls, name) in r["OutOperandList"]["args"] + r["InOperandList"]["args"]:
+            if cls.get("kind") == "dag":
+                cplx = cls["operator"]["def"]
+                subs = self.sub_operands(cplx)
+                sub_names = [a[1] for a in cls["args"]]
+                if len(subs) != len(sub_names) or not subs:
+                    raise Skip(f"{n}: complex operand {name}")
+                slots.append((len(flat), len(subs)))
+                info = (d[cplx].get("MIOperandInfo") or {}).get("args", [])
+                for k, a in enumerate(info):
+                    dotted[f"{name}.{a[1]}"] = len(flat) + k
+                for k, (sc, sn) in enumerate(zip(subs, sub_names)):
+                    kind = self.complex_kind(cplx) if k == 0 else self.operand_kind(sc)
+                    flat.append((name if k == 0 else f"{name}.{sn}", kind, sn))
+                continue
             cls = cls["def"]
-            kind = self.operand_kind(cls)
+            if cls == "variable_ops":
+                # (Not an operand: a placeholder for any more.)
+                continue
+            subs = self.sub_operands(cls)
+            if subs:
+                raise Skip(f"{n}: complex operand {name} without its fields")
+            slots.append((len(flat), 1))
+            flat.append((name, self.operand_kind(cls), name))
+        names = [f[0] for f in flat]
+        # (Constraints name operands, and complex operands' sub-operands.)
+        index_of = dict(dotted)
+        for k, (name, _, field_name) in enumerate(flat):
+            index_of.setdefault(field_name, k)
+            index_of[name] = k
+        for (name, kind, field_name) in flat:
             segs = []
-            if name in fields:
+            if field_name in fields:
                 # (inst bit, field bit) pairs, as runs.
-                pairs = sorted(fields[name], key=lambda p: p[1])
+                pairs = sorted(fields[field_name], key=lambda p: p[1])
                 for ib, fb in pairs:
                     if segs and segs[-1][0] + segs[-1][2] == ib and segs[-1][1] + segs[-1][2] == fb:
                         segs[-1][2] += 1
                     else:
                         segs.append([ib, fb, 1])
             tie = None
-            if not segs and name in tied:
-                tie = names.index(tied[name])
-            elif not segs and isinstance(r.get(name), list) and all(isinstance(b, int) for b in r[name]):
+            if not segs and (name in tied or field_name in tied):
+                other = tied.get(name) or tied[field_name]
+                if other not in index_of:
+                    raise Skip(f"{n}: tied to {other}")
+                tie = index_of[other]
+            elif not segs and isinstance(r.get(field_name), list) and all(isinstance(b, int) for b in r[field_name]):
                 # (Its value set in the record, as a constant field:
                 # FCVTMOD.W.D's rounding mode.)
-                v = sum(b << i for i, b in enumerate(r[name]))
+                v = sum(b << i for i, b in enumerate(r[field_name]))
                 segs = [(-1, v, 0)]
             elif not segs and self.kinds[kind][2][0] == "VMask":
                 # (A carry-in or merge mask: v0, encoded in no field.)
@@ -344,8 +444,8 @@ class Extractor:
         # Tied pairs (the later of each is the one dags leave out).
         ties = []
         for a, b in tied.items():
-            if a in names and b in names and names.index(a) < names.index(b):
-                ties.append((names.index(a), names.index(b)))
+            if a in index_of and b in index_of and index_of[a] < index_of[b]:
+                ties.append((index_of[a], index_of[b]))
         self.inst_index[n] = len(self.insts)
         self.insts.append(
             {
@@ -359,7 +459,8 @@ class Extractor:
                 "ops": ops,
                 "fixed": bin(mask).count("1"),
                 "ties": ties,
-                "defs": len(r["OutOperandList"]["args"]),
+                "slots": slots,
+                "defs": sum(c for _, c in slots[: len(r["OutOperandList"]["args"])]),
             }
         )
 
@@ -367,15 +468,20 @@ class Extractor:
 
     def mi_ops(self, inst):
         """An instruction's operands as an alias's or pattern's dag lists
-        them: each MI operand's index, those tied to an earlier one of the
-        same class left out."""
+        them: each one's first MI operand's index (a complex operand's
+        sub-operands are one), those tied to an earlier one of the same
+        class left out."""
+        return [first for first, _ in self.mi_slots(inst)]
+
+    def mi_slots(self, inst):
+        """As `mi_ops`, each with how many MI operands it is."""
         out = []
         i_ = self.insts[self.inst_index[inst]]
         ops = i_["ops"]
         later = {b for a, b in i_["ties"] if self.kinds[ops[a][1]][0] == self.kinds[ops[b][1]][0]}
-        for i in range(len(ops)):
-            if i not in later:
-                out.append(i)
+        for first, count in i_["slots"]:
+            if first not in later:
+                out.append((first, count))
         return out
 
     def dag_operand(self, arg):
@@ -386,6 +492,8 @@ class Extractor:
             return ("imm", v)
         if isinstance(v, list) and all(isinstance(b, int) for b in v):
             return ("imm", sum(b << i for i, b in enumerate(v)))
+        if isinstance(v, dict) and v.get("kind") == "dag":
+            raise Skip(f"dag argument {v.get('printable')}")
         if isinstance(v, dict) and v.get("kind") == "def":
             dn = v["def"]
             if name is not None:
@@ -409,7 +517,9 @@ class Extractor:
         if inst not in self.inst_index:
             return None
         pred = self.predicate(r["Predicates"])
-        mi = self.mi_ops(inst)
+        slots = self.mi_slots(inst)
+        mi = [first for first, _ in slots]
+        counts = {first: count for first, count in slots}
         args = res["args"]
         if len(args) != len(mi):
             raise Skip(f"{n}: operand count")
@@ -418,6 +528,8 @@ class Extractor:
         names = {}
         for a, i in zip(args, mi):
             o = self.dag_operand(a)
+            if counts[i] > 1 and o[0] != "op":
+                raise Skip(f"{n}: complex operand's value")
             if o[0] == "op":
                 cls, name = o[1], o[2]
                 r2 = d[cls]
@@ -431,7 +543,10 @@ class Extractor:
                 pm = r2.get("PrintMethod") or ""
                 names[name + "#print"] = pm if pm and pm != "printOperand" else ""
                 names[name + "#pcrel"] = r2.get("OperandType") == "OPERAND_PCREL"
-                if is_reg:
+                if counts[i] > 1:
+                    # (A complex operand, as the instruction prints it.)
+                    names[name + "#print"] = ""
+                elif is_reg:
                     rc = r2["RegClass"]["def"] if "RegisterOperand" in supers else cls
                     conds.append(("class", i, self.reg_class(rc)))
                 else:
@@ -446,9 +561,13 @@ class Extractor:
                 conds.append(("imm", i, o[1]))
         # The alias's text: its operands, by the MI operand each is.
         asm = r["AsmString"]
-        nops = len(re.findall(r"\$\{?\w+", asm))
-        inst_nops = len(re.findall(r"\$\{?\w+", self.insts[self.inst_index[inst]]["asm"]))
-        if nops > inst_nops:
+        # (LLVM prints an alias only if it has no more operands than its
+        # instruction, counting them as its AsmWriterEmitter does: by the
+        # spaces and tabs in each's syntax.)
+        def count(text):
+            return text.count(" ") + text.count("\t")
+
+        if count(asm) > count(self.insts[self.inst_index[inst]]["asm"]):
             return None
         refs = []
 
@@ -598,7 +717,7 @@ class Extractor:
         for cls, reg, dec, pm, pcrel, ipred in self.kinds:
             dk = dec[0]
             reg_s = f"Some({reg})" if reg is not None else "None"
-            if dk.startswith("Reg") or dk in ("VMask", "Mvsa01"):
+            if dk.startswith("Reg") or dk in ("VMask", "Mvsa01", "CrBitM"):
                 dec_s = f"Decode::{dk}({dec[1]})"
             elif dk in ("Fixed",):
                 dec_s = f"Decode::Fixed({dec[2]})"
@@ -649,7 +768,11 @@ class Extractor:
         # The instructions each value of an encoding's key bits can be, in
         # the order they're tried: by decoder table, then the most fixed
         # bits first (the more specific encoding).
-        for size, label, kb in ((4, "BUCKETS32", self.KEY32), (2, "BUCKETS16", self.KEY16)):
+        for size, label, kb in (
+            (4, "BUCKETS32", self.KEY32),
+            (2, "BUCKETS16", self.KEY16),
+            (8, "BUCKETS64", self.KEY64),
+        ):
             buckets = [[] for _ in range(1 << len(kb))]
             for idx, i in enumerate(self.insts):
                 if i["size"] != size:
@@ -710,6 +833,8 @@ class Extractor:
         w(f"    key16: &{self.KEY16},")
         w("    buckets32: BUCKETS32,")
         w(f"    key32: &{self.KEY32},")
+        w("    buckets64: BUCKETS64,")
+        w(f"    key64: &{self.KEY64},")
         w("};")
         w("")
         self.emit_more(w)

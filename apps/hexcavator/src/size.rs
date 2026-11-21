@@ -1205,6 +1205,7 @@ fn pe_listing(
         code: bytes,
         symbols: names,
         riscv_arch: None,
+        big_endian: false,
     };
     if style != Style::Json {
         return Ok(render(&f, style, None));

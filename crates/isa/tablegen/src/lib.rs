@@ -3,7 +3,8 @@
 //! fixed bits, the features it needs, its operands' fields and how they
 //! decode, its syntax; the aliases LLVM prints instructions as; and, for
 //! targets with compressed instructions, their full forms. A target's
-//! crate (`hexcavator-riscv`, `hexcavator-loongarch`) holds its generated
+//! crate (`hexcavator-riscv`, `hexcavator-loongarch`,
+//! `hexcavator-powerpc`) holds its generated
 //! [`Target`], how its features are named, and how its operands print.
 //!
 //! [`decode`] finds an encoding's instruction as LLVM's disassembler does:
@@ -163,6 +164,22 @@ pub enum Decode {
         bits: u32,
         arg: i64,
     },
+    /// A field that must be 0 (PowerPC's `immZero`).
+    Zero {
+        bits: u32,
+        arg: i64,
+    },
+    /// PowerPC's hash store and check displacement: -8 to -512, by 8.
+    RiHash {
+        bits: u32,
+        arg: i64,
+    },
+    /// PowerPC's one-hot condition register field (`mtocrf`'s): 0x80 is
+    /// cr0, 0x01 cr7; the argument is the fields' register file.
+    CrBitM(u32),
+    /// A register pair by its even field: register field / 2, plus the
+    /// base (PowerPC's VSX pairs).
+    RegHalf(u32),
 }
 
 /// How an operand prints (as LLVM's printer methods do; the target's
@@ -186,6 +203,16 @@ pub enum Print {
     RegReg,
     /// LoongArch's atomic memory operand (`$rj`, printed bare).
     AtomicMem,
+    /// A displacement and its base register (PowerPC's `8(1)`): this
+    /// operand and the next.
+    MemRegImm,
+    /// A base and an index register (PowerPC's `0, 5`): this operand and
+    /// the next.
+    MemRegReg,
+    /// An absolute branch target.
+    AbsBranch,
+    /// PowerPC's one-hot condition register field.
+    CrBitM,
 }
 
 /// An operand kind: its class (registers), and how it decodes and prints.
@@ -212,15 +239,15 @@ pub struct Op {
 
 /// An instruction: its LLVM name, size in bytes, decoder table, fixed
 /// bits, the features it needs (an index into the predicates), how many
-/// operands it writes, its syntax (operands as `$name` or `${name}`), and
-/// its operands.
+/// operands it writes, its syntax (operands as `$name`, `${name}`, or
+/// `${name:modifier}`), and its operands.
 #[derive(Debug)]
 pub struct Inst {
     pub name: &'static str,
     pub size: u8,
     pub space: u8,
-    pub mask: u32,
-    pub value: u32,
+    pub mask: u64,
+    pub value: u64,
     pub pred: u16,
     pub defs: u8,
     pub asm: &'static str,
@@ -307,6 +334,10 @@ pub struct Target {
     /// The same of 32-bit encodings.
     pub buckets32: &'static [&'static [u16]],
     pub key32: &'static [u8],
+    /// The same of 64-bit encodings (PowerPC's prefixed instructions: the
+    /// prefix the high word).
+    pub buckets64: &'static [&'static [u16]],
+    pub key64: &'static [u8],
 }
 
 /// The most operands an instruction has.
@@ -480,21 +511,21 @@ impl Instruction {
     }
 }
 
-/// The instruction `w` (of `size` bytes, 2 or 4) is, with `features` on,
-/// if any; `rv64` says whether shift amounts may be 6 bits, `rve` whether
-/// integer registers are 16.
+/// The instruction `w` (of `size` bytes, 2, 4, or 8) is, with `features`
+/// on, if any; `rv64` says whether shift amounts may be 6 bits, `rve`
+/// whether integer registers are 16.
 pub fn decode(
     t: &'static Target,
-    w: u32,
+    w: u64,
     size: u8,
     features: &Features,
     rv64: bool,
     rve: bool,
 ) -> Option<Instruction> {
-    let (key_bits, buckets) = if size == 2 {
-        (t.key16, t.buckets16)
-    } else {
-        (t.key32, t.buckets32)
+    let (key_bits, buckets) = match size {
+        2 => (t.key16, t.buckets16),
+        8 => (t.key64, t.buckets64),
+        _ => (t.key32, t.buckets32),
     };
     let mut key = 0usize;
     for (j, &b) in key_bits.iter().enumerate() {
@@ -518,7 +549,7 @@ pub fn decode(
 pub fn decode_as(
     t: &'static Target,
     name: &str,
-    w: u32,
+    w: u64,
     rv64: bool,
     rve: bool,
 ) -> Option<Instruction> {
@@ -528,15 +559,16 @@ pub fn decode_as(
 }
 
 /// A field's value: its pieces gathered.
-fn field(w: u32, fields: &[(u8, u8, u8)]) -> u32 {
-    let mut v = 0u32;
+fn field(w: u64, fields: &[(u8, u8, u8)]) -> u64 {
+    let mut v = 0u64;
     for &(at, to, len) in fields {
-        let m = if len >= 32 {
-            u32::MAX
+        let m = if len >= 64 {
+            u64::MAX
         } else {
-            (1u32 << len) - 1
+            (1u64 << len) - 1
         };
-        v |= ((w >> at) & m) << to;
+        let piece = w.checked_shr(u32::from(at)).unwrap_or(0) & m;
+        v |= piece.checked_shl(u32::from(to)).unwrap_or(0);
     }
     v
 }
@@ -553,7 +585,7 @@ fn decode_operands(
     t: &'static Target,
     index: u16,
     inst: &Inst,
-    w: u32,
+    w: u64,
     rv64: bool,
     rve: bool,
 ) -> Option<Instruction> {
@@ -567,12 +599,12 @@ fn decode_operands(
         // fields'.
         let source = match (op.fields, op.constant, op.tied) {
             (f, _, _) if !f.is_empty() => Some(field(w, f)),
-            (_, Some(c), _) => Some(c),
+            (_, Some(c), _) => Some(u64::from(c)),
             (_, None, Some(tie)) => {
                 let other = inst.ops.get(usize::from(tie))?;
                 match (other.fields, other.constant) {
                     (f, _) if !f.is_empty() => Some(field(w, f)),
-                    (_, c) => c,
+                    (_, c) => c.map(u64::from),
                 }
             }
             _ => None,
@@ -588,6 +620,12 @@ fn decode_operands(
     })
 }
 
+/// `v`, if it has no more than `bits` bits (as LLVM's decoder methods
+/// check: a field may be wider than its operand).
+fn fits_in(v: u64, bits: u32) -> Option<u64> {
+    (bits == 0 || bits >= 64 || v >> bits == 0).then_some(v)
+}
+
 /// Whether register `r` is in class `c`.
 pub fn in_class(t: &Target, r: Reg, c: u16) -> bool {
     let Some(class) = t.classes.get(usize::from(c)) else {
@@ -597,7 +635,7 @@ pub fn in_class(t: &Target, r: Reg, c: u16) -> bool {
 }
 
 /// Zcmp's s0-s7, by their number: x8, x9, x18 to x23.
-fn s07(f: u32) -> Option<u8> {
+fn s07(f: u64) -> Option<u8> {
     u8::try_from(if f < 2 { 8 + f } else { 16 + f }).ok()
 }
 
@@ -605,7 +643,7 @@ fn s07(f: u32) -> Option<u8> {
 fn operand(
     t: &Target,
     kind: &Kind,
-    v: Option<u32>,
+    v: Option<u64>,
     before: &[Operand],
     rv64: bool,
     rve: bool,
@@ -613,7 +651,7 @@ fn operand(
     let class = kind
         .class
         .and_then(|c| t.classes.get(usize::from(c)).map(|k| (c, k)));
-    let reg = |n: u32| -> Option<Operand> {
+    let reg = |n: u64| -> Option<Operand> {
         let (c, k) = class?;
         let r = Reg::new(k.file, u8::try_from(n).ok().filter(|&n| n < 64)?);
         // (RVE has 16 integer registers.)
@@ -624,21 +662,50 @@ fn operand(
     };
     let file = class.map_or(0, |(_, k)| k.file);
     Some(match kind.decode {
-        Decode::RegSimple(base) => reg(base + v?)?,
-        Decode::RegSingle(n) => reg(n)?,
+        Decode::RegSimple(base) => reg(u64::from(base) + v?)?,
+        Decode::RegSingle(n) => reg(u64::from(n))?,
         Decode::RegGroup(lmul) => {
             let f = v?;
-            if lmul == 0 || f % lmul != 0 {
+            if lmul == 0 || f % u64::from(lmul) != 0 {
                 return None;
             }
             reg(f)?
         }
         Decode::RegPair(base) => {
-            let n = base + v?;
+            let n = u64::from(base) + v?;
             if n % 2 != 0 {
                 return None;
             }
             reg(n)?
+        }
+        Decode::RegHalf(base) => {
+            let f = v?;
+            if f % 2 != 0 {
+                return None;
+            }
+            reg(u64::from(base) + f / 2)?
+        }
+        Decode::CrBitM(file) => {
+            // (One bit set, of 8: 0x80 is field 0.)
+            let f = v?;
+            let zeros = f.trailing_zeros();
+            if zeros >= 8 {
+                return None;
+            }
+            Operand::Reg(Reg::new(
+                u8::try_from(file).ok()?,
+                u8::try_from(7 - zeros).ok()?,
+            ))
+        }
+        Decode::Zero { .. } => {
+            if v? != 0 {
+                return None;
+            }
+            Operand::Imm(0)
+        }
+        Decode::RiHash { .. } => {
+            let f = (v? & 0x3F) + 64;
+            Operand::Imm(sext(f, 7) * 8)
         }
         Decode::RegS07(_) | Decode::Mvsa01(_) => {
             let f = v?;
@@ -657,31 +724,31 @@ fn operand(
             _ => return None,
         },
         Decode::Fixed(c) => Operand::Imm(c),
-        Decode::Raw { .. } => Operand::Imm(i64::from(v?)),
-        Decode::UImm { arg, .. } => {
-            let f = i64::from(v?);
+        Decode::Raw { .. } => Operand::Imm(i64::try_from(v?).ok()?),
+        Decode::UImm { bits, arg } => {
+            let f = i64::try_from(fits_in(v?, bits)?).ok()?;
             if f < arg {
                 return None;
             }
             Operand::Imm(f)
         }
-        Decode::UImmAdd { arg, .. } => Operand::Imm(i64::from(v?) + arg),
-        Decode::SImm { bits, .. } => Operand::Imm(sext(u64::from(v?), bits)),
+        Decode::UImmAdd { arg, .. } => Operand::Imm(i64::try_from(v?).ok()? + arg),
+        Decode::SImm { bits, .. } => Operand::Imm(sext(fits_in(v?, bits)?, bits)),
         Decode::SImmNonZero { bits, .. } => {
             let f = v?;
             if f == 0 {
                 return None;
             }
-            Operand::Imm(sext(u64::from(f), bits))
+            Operand::Imm(sext(f, bits))
         }
         Decode::UImmNonZero { .. } => {
             let f = v?;
             if f == 0 {
                 return None;
             }
-            Operand::Imm(i64::from(f))
+            Operand::Imm(i64::try_from(f).ok()?)
         }
-        Decode::SImmLsl { bits, arg } => Operand::Imm(sext(u64::from(v?) << arg, bits)),
+        Decode::SImmLsl { bits, arg } => Operand::Imm(sext(v? << arg, bits)),
         Decode::Log2XLen { .. } | Decode::Log2XLenNonZero { .. } => {
             let f = v?;
             if (!rv64 && f >= 32)
@@ -689,10 +756,10 @@ fn operand(
             {
                 return None;
             }
-            Operand::Imm(i64::from(f))
+            Operand::Imm(i64::try_from(f).ok()?)
         }
         Decode::UImmPlus1 { arg, .. } => {
-            let f = i64::from(v?) + 1;
+            let f = i64::try_from(v?).ok()? + 1;
             if f < arg {
                 return None;
             }
@@ -703,21 +770,21 @@ fn operand(
             if f == 0 {
                 return None;
             }
-            Operand::Imm(sext(u64::from(f), 6) & 0xFFFFF)
+            Operand::Imm(sext(f, 6) & 0xFFFFF)
         }
         Decode::Frm { .. } => {
             let f = v?;
             if f == 5 || f == 6 {
                 return None;
             }
-            Operand::Imm(i64::from(f))
+            Operand::Imm(i64::try_from(f).ok()?)
         }
         Decode::Rlist { .. } => {
             let f = v?;
             if f < 4 || (rve && f >= 7) {
                 return None;
             }
-            Operand::Imm(i64::from(f))
+            Operand::Imm(i64::try_from(f).ok()?)
         }
     })
 }
@@ -788,29 +855,38 @@ pub fn uncompress(i: &Instruction, features: &Features) -> Option<Instruction> {
 
 /// Writes `i` as LLVM's printer does: as the first alias (by priority)
 /// whose features are on and whose checks it passes, else as its own
-/// syntax; each operand (its index, and how the alias or its kind says
-/// to print it) by `operand`.
+/// syntax; each operand (its index, how the alias or its kind says to
+/// print it, and its modifier: `${name:modifier}`'s, else empty) by
+/// `operand`.
 pub fn write(
     out: &mut String,
     i: &Instruction,
     features: &Features,
-    mut operand: impl FnMut(&mut String, usize, Print),
+    mut operand: impl FnMut(&mut String, usize, Print, &str),
 ) {
     let t = i.target;
     for a in t.aliases.iter().filter(|a| a.inst == i.index) {
         if !features.satisfies(t, a.pred) || !passes(t, i.operands(), a.checks) {
             continue;
         }
-        write_asm(out, a.asm, |out, name| {
+        write_asm(out, a.asm, |out, name, modifier| {
             let Some(r) = name.parse::<usize>().ok().and_then(|n| a.refs.get(n)) else {
                 return;
             };
-            operand(out, usize::from(r.op), r.print.unwrap_or(Print::Operand));
+            let print = r.print.unwrap_or_else(|| {
+                // (An operand the alias prints as the instruction does.)
+                i.inst()
+                    .ops
+                    .get(usize::from(r.op))
+                    .and_then(|o| t.kinds.get(usize::from(o.kind)))
+                    .map_or(Print::Operand, |k| k.print)
+            });
+            operand(out, usize::from(r.op), print, modifier);
         });
         return;
     }
     let inst = i.inst();
-    write_asm(out, inst.asm, |out, name| {
+    write_asm(out, inst.asm, |out, name, modifier| {
         let Some(op) = inst.ops.iter().position(|o| o.name == name) else {
             return;
         };
@@ -818,12 +894,13 @@ pub fn write(
             .kinds
             .get(usize::from(inst.ops[op].kind))
             .map_or(Print::Operand, |k| k.print);
-        operand(out, op, print);
+        operand(out, op, print, modifier);
     });
 }
 
-/// Writes `asm`, each operand (`$name`, `${name}`) by `operand`.
-fn write_asm(out: &mut String, asm: &str, mut operand: impl FnMut(&mut String, &str)) {
+/// Writes `asm`, each operand (`$name`, `${name}`, `${name:modifier}`) by
+/// `operand`.
+fn write_asm(out: &mut String, asm: &str, mut operand: impl FnMut(&mut String, &str, &str)) {
     let b = asm.as_bytes();
     let mut i = 0;
     while i < b.len() {
@@ -843,7 +920,8 @@ fn write_asm(out: &mut String, asm: &str, mut operand: impl FnMut(&mut String, &
                 .map_or(b.len(), |n| i + n);
             (&asm[i..end], end)
         };
-        operand(out, name);
+        let (name, modifier) = name.split_once(':').unwrap_or((name, ""));
+        operand(out, name, modifier);
         i = end;
     }
 }

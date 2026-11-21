@@ -1,0 +1,53 @@
+
+program-powerpc-linux-gnu:	file format elf32-powerpc
+
+Disassembly of section .text:
+
+10010188 <compute>:
+10010188:      	cmpwi	3, 0
+1001018c:      	bf	1, 0x100101e8 <compute+0x60>
+10010190:      	lis 5, 4099
+10010194:      	lwz 6, 4668(5)
+10010198:      	lis 7, 4096
+1001019c:      	lis 8, -30584
+100101a0:      	li 4, 0
+100101a4:      	mtctr 3
+100101a8:      	addi 3, 7, 376
+100101ac:      	ori 5, 8, 34953
+100101b0:      	li 7, 0
+100101b4:      	mulhwu 8, 4, 5
+100101b8:      	srwi 8, 8, 3
+100101bc:      	addi 4, 4, 1
+100101c0:      	mulli 8, 8, -15
+100101c4:      	lbzx 8, 3, 8
+100101c8:      	addi 3, 3, 1
+100101cc:      	add 8, 7, 8
+100101d0:      	add 7, 6, 8
+100101d4:      	addi 6, 6, 3
+100101d8:      	bdnz 0x100101b4 <compute+0x2c>
+100101dc:      	add 3, 8, 6
+100101e0:      	addi 3, 3, -3
+100101e4:      	blr
+100101e8:      	li 3, 0
+100101ec:      	blr
+
+100101f0 <optional_hook>:
+100101f0:      	li 3, 0
+100101f4:      	blr
+
+100101f8 <_start>:
+100101f8:      	mflr 0
+100101fc:      	stwu 1, -16(1)
+10010200:      	stw 0, 20(1)
+10010204:      	lis 3, 4099
+10010208:      	lwz 3, 568(3)
+1001020c:      	bl 0x10010188 <compute>
+10010210:      	lis 4, 4099
+10010214:      	stb 3, 572(4)
+10010218:      	bl 0x100101f0 <optional_hook>
+1001021c:      	addis 4, 2, 0
+10010220:      	lwz 4, -28672(4)
+10010224:      	add 3, 4, 3
+10010228:      	lis 4, 4099
+1001022c:      	stw 3, 4668(4)
+10010230:      	b 0x10010230 <_start+0x38>

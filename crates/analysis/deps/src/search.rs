@@ -43,6 +43,11 @@ const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
 const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
 
 impl Arch {
+    /// Whether it is a big-endian ELF image's.
+    pub(crate) fn big_endian(&self) -> bool {
+        matches!(self.key, Key::Elf { big: true, .. })
+    }
+
     /// Whether an image of `self` can be loaded by a process of `root`.
     fn loads_in(&self, root: &Arch) -> bool {
         match (self.key, root.key) {

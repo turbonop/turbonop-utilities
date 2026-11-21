@@ -20,7 +20,7 @@ and where its bytes go.
 - **Exploring:** headers and file-format dumps (as `dumpbin`,
   `llvm-readobj`, and `llvm-dwarfdump` show them), symbols, type layouts,
   source files and line tables, inlined functions, data values,
-  disassembly (x86/x64, ARM64, ARM32, RISC-V, LoongArch, WebAssembly), demangled names
+  disassembly (x86/x64, ARM64, ARM32, RISC-V, LoongArch, PowerPC, WebAssembly), demangled names
   (Microsoft C++, Itanium C++, Rust, Swift), code signatures checked on
   any platform, and exploit mitigations and the compiler options behind
   them.
@@ -81,7 +81,8 @@ compared.
 | `crates/isa/arm32` (`hexcavator-arm32`) | AArch32 (A32 and T32) instruction decoder |
 | `crates/isa/riscv` (`hexcavator-riscv`) | RISC-V instruction decoder (RV32 and RV64, the standard extensions: compressed, vector, crypto, ...), from LLVM's TableGen records, written as LLVM writes it |
 | `crates/isa/loongarch` (`hexcavator-loongarch`) | LoongArch instruction decoder (LA32 and LA64; FP, LSX, LASX, LVZ, LBT), from LLVM's TableGen records, written as LLVM writes it |
-| `crates/isa/tablegen` (`hexcavator-tablegen`) | Instruction decoding by tables generated from LLVM's TableGen records (`tools/tablegen`): the decoder, aliases, and compressed instructions' full forms that the RISC-V and LoongArch crates share |
+| `crates/isa/powerpc` (`hexcavator-powerpc`) | PowerPC instruction decoder (32- and 64-bit, big- and little-endian; Altivec, VSX, ISA 3.1's prefixed instructions, MMA), from LLVM's TableGen records, written as llvm-objdump writes it |
+| `crates/isa/tablegen` (`hexcavator-tablegen`) | Instruction decoding by tables generated from LLVM's TableGen records (`tools/tablegen`): the decoder, aliases, complex operands, and compressed instructions' full forms that the RISC-V, LoongArch, and PowerPC crates share |
 | `crates/isa/arm64` (`hexcavator-arm64`) | AArch64 decoder (base, FP, AdvSIMD, SVE/SVE2, SME/SME2, ...) generated from Arm's AARCHMRS and LLVM's AArch64 target, with a dumpbin-style formatter |
 | `crates/isa/wasm` (`hexcavator-wasm-isa`) | The WebAssembly instruction decoder (the whole instruction set, through GC, threads, and relaxed SIMD) with text output |
 | `crates/isa/x86` (`hexcavator-x86`) | x86/x86-64 decoder (legacy, x87, SSE, AVX, AVX-512, AMX, ...) and dumpbin-style formatter |

@@ -222,19 +222,25 @@ pub const fn address_relocation(machine: u16, kind: u32) -> Option<AddressReloca
         | (EM_AARCH64, R_AARCH64_RELATIVE)
         | (EM_ARM, R_ARM_RELATIVE)
         | (EM_RISCV, R_RISCV_RELATIVE)
-        | (EM_LOONGARCH, R_LARCH_RELATIVE) => Relative,
+        | (EM_LOONGARCH, R_LARCH_RELATIVE)
+        | (EM_PPC, R_PPC_RELATIVE)
+        | (EM_PPC64, R_PPC64_RELATIVE) => Relative,
         (EM_X86_64, R_X86_64_64 | R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT)
         | (EM_386, R_386_32 | R_386_GLOB_DAT | R_386_JMP_SLOT)
         | (EM_AARCH64, R_AARCH64_ABS64 | R_AARCH64_GLOB_DAT | R_AARCH64_JUMP_SLOT)
         | (EM_ARM, R_ARM_ABS32 | R_ARM_GLOB_DAT | R_ARM_JUMP_SLOT)
         | (EM_RISCV, R_RISCV_32 | R_RISCV_64 | R_RISCV_JUMP_SLOT)
-        | (EM_LOONGARCH, R_LARCH_32 | R_LARCH_64 | R_LARCH_JUMP_SLOT) => Symbol,
+        | (EM_LOONGARCH, R_LARCH_32 | R_LARCH_64 | R_LARCH_JUMP_SLOT)
+        | (EM_PPC, R_PPC_ADDR32 | R_PPC_GLOB_DAT | R_PPC_JMP_SLOT)
+        | (EM_PPC64, R_PPC64_ADDR64 | R_PPC64_GLOB_DAT | R_PPC64_JMP_SLOT) => Symbol,
         (EM_X86_64, R_X86_64_IRELATIVE)
         | (EM_386, R_386_IRELATIVE)
         | (EM_AARCH64, R_AARCH64_IRELATIVE)
         | (EM_ARM, R_ARM_IRELATIVE)
         | (EM_RISCV, R_RISCV_IRELATIVE)
-        | (EM_LOONGARCH, R_LARCH_IRELATIVE) => IndirectFunction,
+        | (EM_LOONGARCH, R_LARCH_IRELATIVE)
+        | (EM_PPC, R_PPC_IRELATIVE)
+        | (EM_PPC64, R_PPC64_IRELATIVE) => IndirectFunction,
         _ => return None,
     })
 }

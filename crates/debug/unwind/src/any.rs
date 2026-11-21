@@ -18,7 +18,9 @@
 //! 8..15, RIP 16, XMM0..XMM15 17..32; AArch64: X0..X30 0..30, SP 31, PC 32,
 //! V0..V31 64..95; ARM: R0..R15 0..15, D0..D31 256..287; x86: EIP 8, ESP
 //! 4; RISC-V: x0..x31 0..31, f0..f31 32..63, its PC [`RISCV_PC`];
-//! LoongArch: r0..r31 0..31, f0..f31 32..63, its PC [`LOONGARCH_PC`]).
+//! LoongArch: r0..r31 0..31, f0..f31 32..63, its PC [`LOONGARCH_PC`];
+//! PowerPC: r0..r31 0..31, f0..f31 32..63, LR 65, CTR 66, its PC
+//! [`POWERPC_PC`]).
 //! 32-bit x86 frames need a PDB's frame data ([`crate::windows_x86`]), which an image doesn't have: they aren't
 //! unwound here.
 
@@ -66,8 +68,13 @@ pub const RISCV_PC: u16 = Registers::LIMIT - 1;
 /// address column is `$ra`'s, 1).
 pub const LOONGARCH_PC: u16 = Registers::LIMIT - 1;
 
+/// Where [`Registers`] keeps a PowerPC frame's PC: likewise, DWARF numbers
+/// none (its CFI's return address column is the link register's, 65).
+pub const POWERPC_PC: u16 = Registers::LIMIT - 1;
+
 /// The DWARF numbers of an architecture's PC and stack pointer (RISC-V's
-/// PC: [`RISCV_PC`]; LoongArch's: [`LOONGARCH_PC`]).
+/// PC: [`RISCV_PC`]; LoongArch's: [`LOONGARCH_PC`]; PowerPC's:
+/// [`POWERPC_PC`]).
 pub fn registers_of(arch: Arch) -> Option<(u16, u16)> {
     match arch {
         Arch::X64 => Some((16, 7)),
@@ -76,6 +83,7 @@ pub fn registers_of(arch: Arch) -> Option<(u16, u16)> {
         Arch::X86 => Some((8, 4)),
         Arch::RiscV32 | Arch::RiscV64 => Some((RISCV_PC, 2)),
         Arch::LoongArch32 | Arch::LoongArch64 => Some((LOONGARCH_PC, 3)),
+        Arch::PowerPc | Arch::PowerPc64 => Some((POWERPC_PC, 1)),
         _ => None,
     }
 }
@@ -137,12 +145,17 @@ pub fn unwind(
     let found = match found {
         Some(u) => u,
         // A PE image's code that no `.pdata` entry covers is a leaf; so is
-        // RISC-V and LoongArch code without CFI (its return address in
-        // `ra`).
+        // RISC-V, LoongArch, and PowerPC code without CFI (its return
+        // address in `ra`, or the link register).
         None if (image.pe().is_some() && matches!(arch, Arch::X64 | Arch::Arm64 | Arch::Arm))
             || matches!(
                 arch,
-                Arch::RiscV32 | Arch::RiscV64 | Arch::LoongArch32 | Arch::LoongArch64
+                Arch::RiscV32
+                    | Arch::RiscV64
+                    | Arch::LoongArch32
+                    | Arch::LoongArch64
+                    | Arch::PowerPc
+                    | Arch::PowerPc64
             ) =>
         {
             leaf(arch, registers, memory)?
@@ -189,11 +202,14 @@ fn leaf(arch: Arch, registers: &mut Registers, memory: &dyn Memory) -> Result<Un
         | Arch::RiscV32
         | Arch::RiscV64
         | Arch::LoongArch32
-        | Arch::LoongArch64 => {
+        | Arch::LoongArch64
+        | Arch::PowerPc
+        | Arch::PowerPc64 => {
             let (pc, sp, lr) = match arch {
                 Arch::Arm64 => (32, 31, 30),
                 Arch::Arm => (15, 13, 14),
                 Arch::LoongArch32 | Arch::LoongArch64 => (LOONGARCH_PC, 3, 1),
+                Arch::PowerPc | Arch::PowerPc64 => (POWERPC_PC, 1, 65),
                 _ => (RISCV_PC, 2, 1),
             };
             let ra = get(registers, lr)?;

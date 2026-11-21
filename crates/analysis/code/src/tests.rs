@@ -144,7 +144,7 @@ fn arm64_targets_agree_with_the_formatter() {
 fn nothing_to_decode() {
     assert_eq!(sweep(Arch::Arm64, &[1, 2], 0), (vec![], Some(0)));
     assert_eq!(
-        sweep(Arch::PowerPc64, &[0x60, 0, 0, 0], 0x10),
+        sweep(Arch::Mips64, &[0, 0, 0, 0], 0x10),
         (vec![], Some(0x10))
     );
     assert!(blocks(&[]).is_empty());
@@ -176,4 +176,46 @@ fn loongarch_flow() {
     assert!(decodes(Arch::LoongArch32));
     // (LA64's own: not LA32's.)
     assert!(decode(Arch::LoongArch32, &0x0010_8c85u32.to_le_bytes(), at).is_none());
+}
+
+/// PowerPC's control flow, big- and little-endian: calls, returns, jumps,
+/// conditional and unconditional `bc`, branches on the count register,
+/// traps; a prefixed instruction's 8 bytes.
+#[test]
+fn powerpc_flow() {
+    let at = 0x1000;
+    let cases: [(u32, Flow, Option<u64>); 11] = [
+        (0x4800_0011, Flow::Call, Some(0x1010)),   // bl .+16
+        (0x4bff_fff8, Flow::Jump, Some(0xff8)),    // b .-8
+        (0x4800_0102, Flow::Jump, Some(0x100)),    // ba 0x100
+        (0x4e80_0020, Flow::Return, None),         // blr
+        (0x4e80_0420, Flow::Jump, None),           // bctr
+        (0x4e80_0421, Flow::Call, None),           // bctrl
+        (0x4182_0008, Flow::Branch, Some(0x1008)), // beq .+8 (bt 2)
+        (0x4280_0008, Flow::Jump, Some(0x1008)),   // bc 20, 0, .+8
+        (0x4200_0008, Flow::Branch, Some(0x1008)), // bdnz .+8
+        (0x7fe0_0008, Flow::Stop, None),           // trap
+        (0x3863_0001, Flow::Next, None),           // addi 3, 3, 1
+    ];
+    for (w, flow, target) in cases {
+        for big in [true, false] {
+            let bytes = if big {
+                w.to_be_bytes()
+            } else {
+                w.to_le_bytes()
+            };
+            let i = decode_in(Arch::PowerPc64, big, &bytes, at).unwrap();
+            assert_eq!(
+                (i.flow, i.target, i.len),
+                (flow, target, 4),
+                "{w:08x} {big}"
+            );
+        }
+    }
+    // pld 3, 8(4), 0: 8 bytes, the prefix first.
+    let mut pld = 0x0400_0000u32.to_be_bytes().to_vec();
+    pld.extend(0xe464_0008u32.to_be_bytes());
+    let i = decode_in(Arch::PowerPc64, true, &pld, at).unwrap();
+    assert_eq!((i.len, i.flow), (8, Flow::Next));
+    assert!(decodes(Arch::PowerPc));
 }

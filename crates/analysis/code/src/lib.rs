@@ -77,14 +77,24 @@ pub fn decodes(arch: Arch) -> bool {
             | Arch::RiscV64
             | Arch::LoongArch32
             | Arch::LoongArch64
+            | Arch::PowerPc
+            | Arch::PowerPc64
     )
 }
 
 /// The instruction at the start of `bytes`, which is at `address`, or
-/// `None` if it doesn't decode (or no decoder reads `arch`). For 32-bit
-/// ARM, an odd `address` means T32 code (at the even one), as ELF
-/// symbols say; see [`decode_arm32`].
+/// `None` if it doesn't decode (or no decoder reads `arch`), its words
+/// little-endian (as most code's are). For 32-bit ARM, an odd `address`
+/// means T32 code (at the even one), as ELF symbols say; see
+/// [`decode_arm32`]. See [`decode_in`] for big-endian code.
 pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
+    decode_in(arch, false, bytes, address)
+}
+
+/// [`decode`], its words big-endian if `big` (PowerPC's, but for
+/// `ppc64le`'s; an instruction set whose words are little-endian whatever
+/// the image's byte order, as ARM64's, ignores it).
+pub fn decode_in(arch: Arch, big: bool, bytes: &[u8], address: u64) -> Option<Insn> {
     match arch {
         Arch::X86 | Arch::X64 => {
             let mode = if arch == Arch::X86 {
@@ -130,6 +140,10 @@ pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
                 hexcavator_loongarch::Features::la32()
             };
             decode_loongarch(bytes, address, &features)
+        }
+        Arch::PowerPc | Arch::PowerPc64 => {
+            let features = hexcavator_powerpc::Features::standard(arch == Arch::PowerPc64);
+            decode_powerpc(bytes, big, address, &features)
         }
         _ => None,
     }
@@ -245,6 +259,75 @@ pub fn loongarch_flow(i: &hexcavator_loongarch::Instruction, address: u64) -> (F
         }
         "BREAK" | "DBCL" | "UD" => (Flow::Stop, None),
         "ERTN" => (Flow::Return, None),
+        _ => (Flow::Next, None),
+    }
+}
+
+/// The PowerPC instruction at the start of `bytes`, which is at
+/// `address`, its words big-endian (`big`) or little-endian, with
+/// `features` on, or `None` if it doesn't decode.
+pub fn decode_powerpc(
+    bytes: &[u8],
+    big: bool,
+    address: u64,
+    features: &hexcavator_powerpc::Features,
+) -> Option<Insn> {
+    let i = hexcavator_powerpc::decode(bytes, big, features)?;
+    let (flow, target) = powerpc_flow(&i, address, features);
+    Some(Insn {
+        address,
+        len: i.size,
+        flow,
+        target,
+    })
+}
+
+/// How control leaves a PowerPC instruction, and a direct jump's, call's,
+/// or branch's target: `b` jumps, `bl` calls (and `bcl`, which `bcl 20,
+/// 31` uses to read the PC, calls the next instruction); a conditional
+/// branch (`bc`, `bdnz`) branches, unless its BO field says always (its
+/// bits 0x14), when it jumps; `blr` returns, `bctr` jumps through the
+/// count register, and their linking forms call; conditional ones of
+/// those branch (to no known target); `trap`, `attn`, and `stop` stop, as
+/// the interrupt returns (`rfid`, `hrfid`, ...) leave.
+pub fn powerpc_flow(
+    i: &hexcavator_powerpc::Instruction,
+    address: u64,
+    features: &hexcavator_powerpc::Features,
+) -> (Flow, Option<u64>) {
+    let target = hexcavator_powerpc::branch_target(i, address, features);
+    let always = || {
+        i.operand("BO")
+            .and_then(hexcavator_powerpc::Operand::imm)
+            .is_some_and(|bo| bo & 0x14 == 0x14)
+    };
+    let name = i.name();
+    // (The `-` and `+` hint forms: as the instruction.)
+    let base = name.trim_end_matches(['m', 'p']);
+    match base {
+        "B" | "BA" => (Flow::Jump, target),
+        "BL" | "BLA" | "gBCL" | "gBCLA" => (Flow::Call, target),
+        "gBC" | "gBCA" if always() => (Flow::Jump, target),
+        "gBC" | "gBCA" => (Flow::Branch, target),
+        "BLR" => (Flow::Return, None),
+        "BCTR" => (Flow::Jump, None),
+        "BLRL" | "BCTRL" | "gBCLRL" | "gBCCTRL" => (Flow::Call, None),
+        "gBCLR" if always() => (Flow::Return, None),
+        "gBCCTR" if always() => (Flow::Jump, None),
+        "gBCLR" | "gBCCTR" => (Flow::Branch, None),
+        "TRAP" | "ATTN" | "STOP" => (Flow::Stop, None),
+        "RFI" | "RFID" | "HRFID" | "RFCI" | "RFDI" | "RFMCI" | "RFEBB" => (Flow::Return, None),
+        // `bdnz` and `bdz` (on the count register): conditional; their
+        // linking forms call; their returns (`bdnzlr`) branch.
+        _ if base.starts_with("BDNZ") || base.starts_with("BDZ") => {
+            let rest = base.trim_start_matches("BDNZ").trim_start_matches("BDZ");
+            match rest {
+                "" | "A" => (Flow::Branch, target),
+                "L" | "LA" => (Flow::Call, target),
+                "LR" => (Flow::Branch, None),
+                _ => (Flow::Call, None),
+            }
+        }
         _ => (Flow::Next, None),
     }
 }
@@ -408,13 +491,19 @@ fn arm64_target(word: u32, pc: u64) -> Option<u64> {
 }
 
 /// The instructions of `code` (at `address`), in order, up to the first
-/// that doesn't decode; and where that is (`None` if all did).
+/// that doesn't decode; and where that is (`None` if all did). Its words
+/// are little-endian; see [`sweep_in`].
 pub fn sweep(arch: Arch, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) {
+    sweep_in(arch, false, code, address)
+}
+
+/// [`sweep`], its words big-endian if `big` (as [`decode_in`]).
+pub fn sweep_in(arch: Arch, big: bool, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
-        let Some(i) = decode(arch, &code[at..], pc) else {
+        let Some(i) = decode_in(arch, big, &code[at..], pc) else {
             return (out, Some(pc));
         };
         at += usize::from(i.len.max(1));

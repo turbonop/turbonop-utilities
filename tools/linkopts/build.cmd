@@ -49,7 +49,7 @@ rem                       macho-funcs-O1.o, -O1 recorded), then marked as
 rem                       Apple's ld's (as-apple-ld.py), which folds
 rem                       identical functions unless given -no_deduplicate
 rem                       (as clang does when it links at -O0 or -O1).
-setlocal
+setlocal enabledelayedexpansion
 if "%LLVM_BIN%"=="" (echo set LLVM_BIN to the bin directory of an LLVM build or release 1>&2 & exit /b 1)
 set OUT=%~dp0..\..\testdata\linkopts
 if not exist "%OUT%" mkdir "%OUT%"
@@ -72,6 +72,15 @@ rem functions found in compressed code.
 "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start funcs-riscv64.o -o "%OUT%\funcs-plain-riscv64" || exit /b 1
 "%LLVM_BIN%\clang.exe" --target=riscv32-linux-gnu -march=rv32imac -O2 -g -ffreestanding -fno-stack-protector -fno-ident -ffile-prefix-map=%~dp0= -fdebug-compilation-dir=. %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-riscv32.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start funcs-riscv32.o -o "%OUT%\funcs-plain-riscv32" || exit /b 1
+rem PowerPC (64-bit little- and big-endian, 32-bit): funcs.c linked plain,
+rem likewise.
+for %%t in (powerpc64le powerpc64 powerpc) do (
+  set ABI=
+  if %%t==powerpc64 set ABI=-mabi=elfv2
+  if %%t==powerpc set ABI=-fno-pic
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu !ABI! -O2 -g -ffreestanding -fno-stack-protector -fno-ident -ffile-prefix-map=%~dp0= -fdebug-compilation-dir=. %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-%%t.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start funcs-%%t.o -o "%OUT%\funcs-plain-%%t" || exit /b 1
+)
 rem LoongArch (LA64, LA32): funcs.c linked plain, likewise.
 for %%t in (loongarch64 loongarch32) do (
   "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -O2 -g -ffreestanding -fno-stack-protector -fno-ident -ffile-prefix-map=%~dp0= -fdebug-compilation-dir=. %SECTIONS% -fno-asynchronous-unwind-tables -c "%~dp0funcs.c" -o funcs-%%t.o || exit /b 1

@@ -80,7 +80,7 @@ pub fn format(i: &Instruction, address: u64, features: &Features) -> String {
     let full = crate::uncompress(i, features);
     let mi = full.as_ref().unwrap_or(i);
     let mut out = String::new();
-    hexcavator_tablegen::write(&mut out, mi, &features.0, |out, op, print| {
+    hexcavator_tablegen::write(&mut out, mi, &features.0, |out, op, print, _| {
         print_operand(out, mi, op, print, address, features);
     });
     out
@@ -171,8 +171,12 @@ fn print_operand(
             }
             out.push_str(".scale");
         }
-        // (LoongArch's.)
-        Print::AtomicMem => {
+        // (Other targets'.)
+        Print::AtomicMem
+        | Print::MemRegImm
+        | Print::MemRegReg
+        | Print::AbsBranch
+        | Print::CrBitM => {
             if let Operand::Reg(r) = o {
                 out.push_str(&reg_name(r));
             }

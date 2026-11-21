@@ -17,11 +17,13 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   per-format paths; objects of every format but Mach-O have no addresses
   (`bytes_at`): their sections would need laying out, as a linker would,
   the same way their relocated DWARF is.
-- **More instruction sets.** PowerPC and MIPS images are read, but their
-  code isn't decoded: no disassembly, references, or fingerprints.
-  (RISC-V's and LoongArch's decoders are generated from LLVM's TableGen
-  records, by `tools/tablegen` and hexcavator-tablegen; theirs could be
-  alike.)
+- **More instruction sets.** MIPS images are read, but their code isn't
+  decoded: no disassembly, references, or fingerprints. (RISC-V's,
+  LoongArch's, and PowerPC's decoders are generated from LLVM's TableGen
+  records, by `tools/tablegen` and hexcavator-tablegen; MIPS's could be
+  alike, though its decoder has many hand-written methods.) 32-bit
+  PowerPC's PIC code (its GOT pointer from `bcl 20, 31` and `mflr`) isn't
+  followed: its references through the GOT are missed.
 
 ## Size analysis
 

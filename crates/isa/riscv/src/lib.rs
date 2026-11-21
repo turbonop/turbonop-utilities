@@ -266,7 +266,7 @@ pub fn decode(bytes: &[u8], features: &Features) -> Option<Instruction> {
     };
     hexcavator_tablegen::decode(
         &tables::TARGET,
-        w,
+        u64::from(w),
         size,
         &features.0,
         features.rv64(),

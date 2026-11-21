@@ -2,7 +2,8 @@
 //! ELF, Mach-O), each on, off, or not applicable, with why; and, with
 //! `-audit`, the compilers and options its objects were built with, from
 //! its debug information (a PDB's S_COMPILE3 and build information; DWARF
-//! units' DW_AT_producer), and the objects that differ from the rest.
+//! units' DW_AT_producer), the objects that differ from the rest, and the
+//! tools that linked it.
 //!
 //! Everything is read from the files; nothing is run. Every list read
 //! from them is bounded by them.
@@ -28,8 +29,11 @@ encryption. Each is on, off, or n/a, with what says so.
 
 options:
   -audit         also the compilers and options its objects were built with
-                 (from the PDB's records, or DWARF's DW_AT_producer), and the
-                 objects built differently from the rest
+                 (from the PDB's records, or DWARF's units), the objects
+                 built differently from the rest, and the tools that linked
+                 it (a PE image's linker version and its PDB's record of the
+                 link; ELF's .comment; Mach-O's LC_BUILD_VERSION;
+                 WebAssembly's producers)
   -debug <path>  its debug information (for -audit; or -pdb)
   -json          as JSON";
 
@@ -172,8 +176,8 @@ pub struct Report {
     pub format: &'static str,
     pub checks: Vec<Check>,
     pub builds: Option<Vec<Build>>,
-    /// The linker's record of the link (a PDB's `S_ENVBLOCK`: `cwd`,
-    /// `exe`, `pdb`, `cmd`).
+    /// The record of the link: the image's own (see [`image_record`]),
+    /// and a PDB's (`S_ENVBLOCK`: `cwd`, `exe`, `pdb`, `cmd`).
     pub linker: Vec<(String, String)>,
     pub audit_note: Option<String>,
 }
@@ -193,9 +197,13 @@ fn check(path: &str, o: &Options) -> Result<Report, String> {
         }
     };
     let (builds, linker, audit_note) = if o.audit {
-        match audit(path, &image, o.pdb.as_deref()) {
-            Ok((b, l)) => (Some(b), l, None),
-            Err(e) => (None, Vec::new(), Some(e)),
+        let mut linker = image_record(&image);
+        match audit(path, o.pdb.as_deref()) {
+            Ok((b, l)) => {
+                linker.extend(l);
+                (Some(b), linker, None)
+            }
+            Err(e) => (None, linker, Some(e)),
         }
     } else {
         (None, Vec::new(), None)
@@ -1077,51 +1085,87 @@ fn entitlements(m: &hexcavator_macho::MachO<'_>) -> String {
 
 // ------------------------------------------------------------------ audit
 
-/// The objects' builds: a PDB's modules (S_COMPILE3, and the command line
-/// S_BUILDINFO names), or DWARF's units (DW_AT_producer).
-fn audit(
-    path: &str,
-    image: &hexcavator_image::Image<'_>,
-    pdb: Option<&str>,
-) -> Result<(Vec<Build>, Environment), String> {
-    let (_, map) = match hexcavator_program::find_debug(Path::new(path), image, pdb.map(Path::new))
-    {
-        Ok(found) => found,
-        Err(e) => {
-            // A Mach-O image's debug map: each object's units.
-            let opened = hexcavator_program::Opened::open(Path::new(path), None)
-                .map_err(|_| e.to_string())?;
-            if !opened.is_debug_map() {
-                return Err(e.to_string());
-            }
-            let mut out = Vec::new();
-            for (name, data) in opened.debug_map_files() {
-                if let Ok(builds) = dwarf_builds(data) {
-                    // (An archive's member: `lib.a(member.o)`.)
-                    let (library, object) =
-                        match name.strip_suffix(')').and_then(|n| n.split_once('(')) {
-                            Some((lib, member)) => (lib.to_string(), member.to_string()),
-                            None => (String::new(), name.clone()),
-                        };
-                    out.extend(builds.into_iter().map(|mut b| {
-                        b.library = library.clone();
-                        b.object = object.clone();
-                        b
-                    }));
-                }
-            }
-            return Ok((out, Vec::new()));
-        }
-    };
-    if let Ok(p) = hexcavator_pdb::Pdb::parse(&map) {
-        let linker = hexcavator_debuginfo::DebugInfo::parse(&map)
-            .ok()
-            .and_then(|d| d.linker_info().ok())
+/// The objects' builds, from the debug information every command finds
+/// (a PDB's modules: S_COMPILE3, and the command line S_BUILDINFO names;
+/// DWARF's units, a dSYM's or a debug map's objects', split units'
+/// too), and a PDB's record of the link (`S_ENVBLOCK`).
+fn audit(path: &str, debug: Option<&str>) -> Result<(Vec<Build>, Environment), String> {
+    let opened = hexcavator_program::Opened::open(Path::new(path), debug.map(Path::new))
+        .map_err(|e| e.to_string())?;
+    let info = opened.debug_info().map_err(|e| e.to_string())?;
+    if let Some(p) = info.pdb() {
+        let linker = info
+            .linker_info()
             .map(|i| i.environment)
             .unwrap_or_default();
-        return Ok((pdb_builds(&p)?, linker));
+        return Ok((pdb_builds(p)?, linker));
     }
-    Ok((dwarf_builds(&map)?, Vec::new()))
+    Ok((dwarf_builds(&info)?, Vec::new()))
+}
+
+/// What the image itself records of the tools that built it: a PE
+/// image's linker version; an ELF image's `.comment` (each tool's); a
+/// Mach-O image's `LC_BUILD_VERSION` (its platform, minimum OS, and SDK,
+/// and each tool's version); a WebAssembly module's `producers`.
+fn image_record(image: &hexcavator_image::Image<'_>) -> Environment {
+    use hexcavator_image::Image;
+    let mut out = Vec::new();
+    match image {
+        Image::Pe(pe) => {
+            if let Some(h) = pe.optional_header() {
+                out.push((
+                    "linker version".into(),
+                    format!(
+                        "{}.{:02}",
+                        h.major_linker_version(),
+                        h.minor_linker_version()
+                    ),
+                ));
+            }
+        }
+        Image::Elf(e) => {
+            if let Some(s) = e.section_by_name(b".comment") {
+                let mut tools: Vec<String> = Vec::new();
+                for t in e.section_data(&s).split(|&b| b == 0).take(256) {
+                    let t = String::from_utf8_lossy(t).trim().to_string();
+                    if !t.is_empty() && !tools.contains(&t) {
+                        tools.push(t);
+                    }
+                }
+                if !tools.is_empty() {
+                    out.push(("comment".into(), tools.join("; ")));
+                }
+            }
+        }
+        Image::MachO(m) => {
+            use hexcavator_macho::version_string;
+            for b in m.build_versions().into_iter().take(16) {
+                let mut platform = format!("{} {}", b.platform_name(), version_string(b.minos));
+                if b.sdk != 0 {
+                    let _ = write!(platform, " (SDK {})", version_string(b.sdk));
+                }
+                out.push(("platform".into(), platform));
+                for t in b.tools.iter().take(64) {
+                    let name = t
+                        .name()
+                        .map_or_else(|| format!("tool {}", t.tool), str::to_string);
+                    out.push((name, version_string(t.version)));
+                }
+            }
+        }
+        Image::Wasm(m) => {
+            if let Some(s) = m.custom(b"producers") {
+                let data = m.data();
+                let start = usize::try_from(s.data_offset).unwrap_or(usize::MAX);
+                let end = usize::try_from(s.contents_offset + s.contents_size).unwrap_or(0);
+                out.extend(crate::resources::producers(
+                    data.get(start..end).unwrap_or_default(),
+                ));
+            }
+        }
+        _ => {}
+    }
+    out
 }
 
 /// The most modules or units read.
@@ -1169,8 +1213,10 @@ fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
                         v[3]
                     );
                     let lang = flags & 0xFF;
-                    b.options
-                        .insert("language".into(), language_name(lang).into());
+                    b.options.insert(
+                        "language".into(),
+                        hexcavator_debuginfo::codeview_language(lang).into(),
+                    );
                     // What the linker made (import libraries' objects,
                     // resources) and assemblers aren't compiled: they have
                     // no compiler's options.
@@ -1230,35 +1276,6 @@ fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
     Ok(out)
 }
 
-fn language_name(l: u32) -> &'static str {
-    match l {
-        0 => "C",
-        1 => "C++",
-        2 => "Fortran",
-        3 => "MASM",
-        4 => "Pascal",
-        5 => "Basic",
-        6 => "COBOL",
-        7 => "LINK",
-        8 => "CVTRES",
-        9 => "CVTPGD",
-        10 => "C#",
-        11 => "Visual Basic",
-        12 => "ILASM",
-        13 => "Java",
-        14 => "JScript",
-        15 => "MSIL",
-        16 => "HLSL",
-        17 => "Objective-C",
-        18 => "Objective-C++",
-        19 => "Swift",
-        20 => "ALIASOBJ",
-        21 => "Rust",
-        22 => "Go",
-        _ => "other",
-    }
-}
-
 /// The options that matter of an MSVC command line, by name.
 fn msvc_switches(cmd: &str) -> Vec<(String, String)> {
     let mut out: BTreeMap<String, String> = BTreeMap::new();
@@ -1308,77 +1325,41 @@ fn msvc_switches(cmd: &str) -> Vec<(String, String)> {
     out.into_iter().collect()
 }
 
-fn dwarf_builds(data: &[u8]) -> Result<Vec<Build>, String> {
-    use hexcavator_dwarf::consts::*;
-    let info =
-        hexcavator_debuginfo::dwarf_backend::DwarfInfo::parse(data).map_err(|e| e.to_string())?;
-    let s = info.sections();
+/// Each DWARF unit's build: its compiler, and the options it records
+/// (GCC's `-grecord-gcc-switches` and clang's `-grecord-command-line`, in
+/// `DW_AT_producer`; Apple's `DW_AT_APPLE_flags`; clang's
+/// `-frecord-command-line`; see [`hexcavator_debuginfo::options`]).
+fn dwarf_builds(debug: &hexcavator_debuginfo::DebugInfo<'_>) -> Result<Vec<Build>, String> {
+    let units = debug.compilands().map_err(|e| e.to_string())?;
+    let options = debug.compile_options().map_err(|e| e.to_string())?;
     let mut out = Vec::new();
-    for unit in
-        hexcavator_dwarf::Unit::iter(s, hexcavator_dwarf::UnitSection::Info, 0).take(MAX_OBJECTS)
-    {
-        let Some(abbrevs) =
-            hexcavator_dwarf::Abbrevs::parse(s.abbrev, unit.abbrev_offset, s.endian)
-        else {
-            continue;
-        };
-        let mut unit = unit;
-        let mut r = unit.dies();
-        let mut attrs = Vec::new();
-        let Some(a) = r.next(&abbrevs) else { continue };
-        if r.attrs(&unit, a, &mut attrs).is_none() {
-            continue;
-        }
-        unit.set_bases(&attrs);
-        let text = |n: u16| -> String {
-            attrs
-                .iter()
-                .find(|x| x.name == n)
-                .and_then(|x| unit.string(&x.value))
-                .map(|s| String::from_utf8_lossy(s.bytes).into_owned())
-                .unwrap_or_default()
-        };
-        let producer = text(DW_AT_PRODUCER);
+    for (c, o) in units.into_iter().zip(options).take(MAX_OBJECTS) {
+        let command: Vec<&str> = std::iter::once(o.compiler.as_str())
+            .chain(o.args.iter().flatten().map(String::as_str))
+            .filter(|w| !w.is_empty())
+            .collect();
         let mut b = Build {
-            object: text(DW_AT_NAME),
-            source: text(DW_AT_NAME),
-            cwd: text(DW_AT_COMP_DIR),
-            command: producer.clone(),
+            object: if o.object.is_empty() {
+                c.name
+            } else {
+                o.object.clone()
+            },
+            library: c.library,
+            command: command.join(" "),
+            compiler: o.compiler,
+            cwd: o.directory,
+            source: o.source,
             ..Build::default()
         };
-        if let Some(l) = attrs
-            .iter()
-            .find(|x| x.name == DW_AT_LANGUAGE)
-            .and_then(|x| unit.uint(&x.value))
-        {
-            b.options.insert(
-                "language".into(),
-                hexcavator_dwarf::spelling::language(l)
-                    .unwrap_or("?")
-                    .trim_start_matches("DW_LANG_")
-                    .to_string(),
-            );
+        if !o.language.is_empty() {
+            b.options.insert("language".into(), o.language);
         }
-        let (compiler, opts) = gnu_producer(&producer);
-        b.compiler = compiler;
-        for (k, v) in opts {
-            b.options.insert(k, v);
+        for w in o.args.iter().flatten().take(4096) {
+            option(&mut b.options, w);
         }
         out.push(b);
     }
     Ok(out)
-}
-
-/// A DW_AT_producer's compiler, and the options in it that matter (GCC
-/// with -grecord-gcc-switches and clang with -grecord-command-line record
-/// them; see [`hexcavator_debuginfo::options`]).
-fn gnu_producer(p: &str) -> (String, Vec<(String, String)>) {
-    let parsed = hexcavator_debuginfo::options::parse_producer(p);
-    let mut opts: BTreeMap<String, String> = BTreeMap::new();
-    for w in parsed.args.iter().flatten().take(4096) {
-        option(&mut opts, w);
-    }
-    (parsed.compiler, opts.into_iter().collect())
 }
 
 fn option(opts: &mut BTreeMap<String, String>, w: &str) {
@@ -1439,6 +1420,13 @@ impl Report {
         if let Some(builds) = &self.builds {
             audit_text(builds, out);
         }
+        if !self.linker.is_empty() {
+            let _ = writeln!(out, "\n  linked by:");
+            let w = self.linker.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+            for (k, x) in &self.linker {
+                let _ = writeln!(out, "    {k:<w$}  {x}");
+            }
+        }
         out.push('\n');
     }
 
@@ -1451,13 +1439,20 @@ impl Report {
         let mut v = json!({ "path": self.path, "format": self.format, "checks": checks });
         if let Some(b) = &self.builds {
             v["audit"] = audit_json(b);
-            if !self.linker.is_empty() {
-                let mut l = json!({});
-                for (k, x) in &self.linker {
-                    l[k.as_str()] = json!(x);
-                }
-                v["audit"]["linker"] = l;
+        }
+        if !self.linker.is_empty() {
+            let mut l = json!({});
+            for (k, x) in &self.linker {
+                // (A key twice, as Mach-O's tools of two commands: each.)
+                l[k.as_str()] = match l.get(k.as_str()).and_then(Json::as_str) {
+                    Some(was) if was != x => json!(format!("{was}; {x}")),
+                    _ => json!(x),
+                };
             }
+            if v.get("audit").is_none() {
+                v["audit"] = json!({});
+            }
+            v["audit"]["linker"] = l;
         }
         if let Some(n) = &self.audit_note {
             v["auditError"] = json!(n);

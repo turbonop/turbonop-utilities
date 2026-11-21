@@ -101,6 +101,7 @@ mod tests {
         CompileOptions {
             compiler: "GNU C17 13.2.0".into(),
             args: args.map(|a| a.iter().map(ToString::to_string).collect()),
+            ..CompileOptions::default()
         }
     }
 
@@ -116,6 +117,7 @@ mod tests {
                 CompileOptions {
                     compiler: "clang LLVM (rustc version 1.80.0 (051478957 2024-07-21))".into(),
                     args: None,
+                    ..CompileOptions::default()
                 },
                 opts(Some(&["-fdata-sections"])),
             ],

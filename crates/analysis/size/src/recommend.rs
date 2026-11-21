@@ -47,7 +47,8 @@ use crate::xref::{Kept, Xref};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Recommendation {
     /// What kind it is: `function-sections`, `data-sections`, `gc`, `icf`,
-    /// `duplicates`, `relr`, `hash-style`, `strip`.
+    /// `duplicates`, `relr`, `hash-style`, `strip`, `unused-libraries`,
+    /// ...
     pub kind: &'static str,
     /// What to do.
     pub advice: String,
@@ -149,6 +150,18 @@ impl Toolchain {
             Toolchain::Msvc => "/OPT:REF",
             Toolchain::Gnu | Toolchain::Wasm => "-Wl,--gc-sections",
             Toolchain::Apple | Toolchain::AppleLd => "-Wl,-dead_strip",
+        }
+    }
+
+    /// The option that leaves out of a link the libraries nothing uses:
+    /// `--as-needed`, `-dead_strip_dylibs` (none for MSVC's, which names
+    /// only DLLs something is imported from, and wasm-ld's, whose imports
+    /// are each a function's).
+    pub fn as_needed_option(self) -> Option<&'static str> {
+        match self {
+            Toolchain::Gnu => Some("-Wl,--as-needed"),
+            Toolchain::Apple | Toolchain::AppleLd => Some("-Wl,-dead_strip_dylibs"),
+            Toolchain::Msvc | Toolchain::Wasm => None,
         }
     }
 
@@ -663,6 +676,39 @@ pub fn structural(image: &hexcavator_image::Image<'_>) -> Vec<Recommendation> {
     }
     out.retain(|r| r.saving >= MIN_SAVING);
     out
+}
+
+/// The recommendation the libraries an image is linked with that nothing
+/// of it uses make (`libraries`: each one's name, and the bytes naming it
+/// costs the image: an ELF image's `DT_NEEDED` entry and name, a Mach-O
+/// image's load command): to link without them, as `--as-needed` (or
+/// `-dead_strip_dylibs`) would. The loader loads them all the same (and
+/// runs their initializers): what's saved is more than the bytes.
+pub fn unused_libraries(
+    toolchain: Toolchain,
+    libraries: &[(String, u64)],
+) -> Option<Recommendation> {
+    let option = toolchain.as_needed_option()?;
+    if libraries.is_empty() {
+        return None;
+    }
+    let mut examples = libraries.to_vec();
+    examples.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    examples.truncate(EXAMPLES);
+    Some(Recommendation {
+        kind: "unused-libraries",
+        advice: if libraries.len() == 1 {
+            format!(
+                "link with {option} (or without it): a library it's linked with that nothing of it uses, which the loader loads (and initializes) all the same"
+            )
+        } else {
+            format!(
+                "link with {option} (or without them): libraries it's linked with that nothing of it uses, which the loader loads (and initializes) all the same"
+            )
+        },
+        saving: libraries.iter().map(|l| l.1).sum(),
+        examples,
+    })
 }
 
 /// The recommendation inlining makes ([`crate::inlining::weigh`]): calling

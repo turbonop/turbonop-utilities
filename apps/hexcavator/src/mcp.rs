@@ -442,6 +442,7 @@ impl Server {
         };
         let image = Image::parse(&loaded.map).map_err(|e| e.to_string())?;
         crate::recommend::with_exports(&mut r, &image, &loaded.path, &importers);
+        crate::recommend::with_libraries(&mut r, &image, &loaded.path);
         let structured =
             serde_json::from_str(&crate::recommend::as_json(&r)).map_err(|e| e.to_string())?;
         Ok((crate::recommend::as_text(&r), structured))

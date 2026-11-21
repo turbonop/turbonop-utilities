@@ -997,6 +997,57 @@ fn disassemble() {
             );
         }
     }
+    // RISC-V, RV64GC and RV32IMAC (compressed instructions as their full
+    // forms): as llvm-objdump writes each line (but a branch's or call's
+    // target, which reads as a label or a name).
+    for xlen in ["riscv64", "riscv32"] {
+        let file = elf(&format!("program-{xlen}-linux-gnu"));
+        let objdump = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../testdata/elf/program-{xlen}-linux-gnu.objdump.txt"
+        )))
+        .unwrap();
+        let mut theirs = std::collections::HashMap::new();
+        for line in objdump.lines() {
+            let Some((at, text)) = line.trim_start().split_once(':') else {
+                continue;
+            };
+            let Ok(at) = u64::from_str_radix(at, 16) else {
+                continue;
+            };
+            theirs.insert(at, text.split_whitespace().collect::<Vec<_>>().join(" "));
+        }
+        for name in ["compute", "_start"] {
+            let (ok, stdout, stderr) =
+                hexc(&[file.as_os_str(), "-disassemble".as_ref(), name.as_ref()]);
+            assert!(ok, "{xlen} {name}: {stderr}");
+            let mut lines = 0;
+            for line in stdout.lines().skip(1) {
+                let mut it = line.split_whitespace();
+                let Some(at) = it.next().and_then(|a| u64::from_str_radix(a, 16).ok()) else {
+                    continue;
+                };
+                let rest: Vec<&str> = it.filter(|w| !w.ends_with(':')).collect();
+                let ours = rest.join(" ");
+                let want = &theirs[&at];
+                let branch = [
+                    "j", "jal", "beqz", "bnez", "blez", "bgez", "bltz", "bgtz", "beq", "bne",
+                    "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu",
+                ]
+                .contains(&rest[0]);
+                if branch {
+                    assert_eq!(rest[0], want.split(' ').next().unwrap(), "{xlen} {at:x}");
+                } else {
+                    assert_eq!(&ours, want, "{xlen} {at:x}");
+                }
+                lines += 1;
+            }
+            assert!(
+                lines > 5,
+                "{xlen} {name}:
+{stdout}"
+            );
+        }
+    }
     // A module without -d: its sections.
     let wasm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/module.wasm");
     let (ok, stdout, stderr) = hexc(&[wasm.as_os_str()]);

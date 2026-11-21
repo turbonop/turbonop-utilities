@@ -68,8 +68,8 @@ bloaty-style reports (every byte of the file and of memory, labeled once):
                     any grouping of them is their rows summed (with -d,
                     of those sources: -d sourcefiles,symbols)
   -disassemble <function>  print the function's disassembly (PE images with
-                    their PDBs, ELF and Mach-O: x86, x86-64, ARM32, ARM64;
-                    WebAssembly), its name as the PDB, symbol table, or
+                    their PDBs, ELF and Mach-O: x86, x86-64, ARM32, ARM64,
+                    RISC-V; WebAssembly), its name as the PDB, symbol table, or
                     name section has it, or demangled; or, if just one
                     function has it, its name without the parameters.
                     Labels are bloaty's (0:, >0 ahead, <0 behind), except:

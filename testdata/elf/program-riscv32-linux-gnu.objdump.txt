@@ -1,0 +1,65 @@
+
+program-riscv32-linux-gnu:	file format elf32-littleriscv
+
+Disassembly of section .text:
+
+000111a8 <compute>:
+   111a8:      	blez	a0, 0x111fc <.Lpcrel_hi1+0x42>
+   111ac:      	li	a1, 0x0
+   111ae:      	li	a3, 0x0
+
+000111b0 <.Lpcrel_hi0>:
+   111b0:      	auipc	a2, 0x3
+   111b4:      	lw	a2, 0x84(a2)
+   111b8:      	li	a4, 0x3
+
+000111ba <.Lpcrel_hi1>:
+   111ba:      	auipc	a5, 0xfffff
+   111be:      	lui	a6, 0x88889
+   111c2:      	sub	a4, a4, a2
+   111c4:      	addi	a5, a5, -0x22
+   111c8:      	addi	a6, a6, -0x777
+   111cc:      	mulhu	a7, a1, a6
+   111d0:      	srli	a7, a7, 0x3
+   111d4:      	slli	t0, a7, 0x4
+   111d8:      	add	a7, a7, a5
+   111da:      	sub	a7, a7, t0
+   111de:      	lbu	a7, 0x0(a7)
+   111e2:      	mv	t0, a3
+   111e4:      	addi	a1, a1, 0x1
+   111e6:      	addi	a5, a5, 0x1
+   111e8:      	addi	a4, a4, -0x3
+   111ea:      	add	a3, a3, a2
+   111ec:      	addi	a2, a2, 0x3
+   111ee:      	add	a3, a3, a7
+   111f0:      	bne	a1, a0, 0x111cc <.Lpcrel_hi1+0x12>
+   111f4:      	add	a0, t0, a7
+   111f8:      	sub	a0, a0, a4
+   111fa:      	ret
+   111fc:      	li	a0, 0x0
+   111fe:      	ret
+
+00011200 <optional_hook>:
+   11200:      	li	a0, 0x0
+   11202:      	ret
+
+00011204 <_start>:
+   11204:      	addi	sp, sp, -0x10
+   11206:      	sw	ra, 0xc(sp)
+
+00011208 <.Lpcrel_hi2>:
+   11208:      	auipc	a0, 0x2
+   1120c:      	lw	a0, 0x28(a0)
+   11210:      	jal	0x111a8 <compute>
+
+00011212 <.Lpcrel_hi3>:
+   11212:      	auipc	a1, 0x2
+   11216:      	sb	a0, 0x22(a1)
+   1121a:      	jal	0x11200 <optional_hook>
+   1121c:      	lw	a1, 0x0(tp)
+   11220:      	add	a0, a0, a1
+
+00011222 <.Lpcrel_hi4>:
+   11222:      	auipc	a1, 0x3
+   11226:      	sw	a0, 0x12(a1)
+   1122a:      	j	0x1122a <.Lpcrel_hi4+0x8>

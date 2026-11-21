@@ -1261,7 +1261,10 @@ pub fn elf(
     use hexcavator_elf::consts::*;
     let file = image.elf().ok_or("not an ELF image")?;
     let arch = image.arch();
-    if !matches!(arch, Arch::X64 | Arch::X86 | Arch::Arm64 | Arch::Arm) {
+    if !matches!(
+        arch,
+        Arch::X64 | Arch::X86 | Arch::Arm64 | Arch::Arm | Arch::RiscV32 | Arch::RiscV64
+    ) {
         return Err(format!("no cross-references for {}", arch.name()));
     }
     let (mut b, infos, slots) = common(image, model, symbols, arch);

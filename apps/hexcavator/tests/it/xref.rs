@@ -1506,3 +1506,64 @@ fn chained_fixups() {
         assert!(advice(&format!("table-{arch}.dylib")).is_none());
     }
 }
+
+/// RISC-V (RV64GC and RV32IMAC, compressed code): the same program's graph
+/// as on x86-64, from its calls, and its AUIPC-relative loads and address
+/// computations (tools/elf's program.c).
+#[test]
+fn riscv_graph_is_x86_64s() {
+    let elf = |t: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/elf")
+            .join(format!("program-{t}-linux-gnu"))
+    };
+    let graph = |t: &str| {
+        let mut lines: Vec<String> = ["compute", "_start"]
+            .iter()
+            .flat_map(|f| {
+                ok(&["-refs", f], &elf(t))
+                    .lines()
+                    .skip(1)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        lines.push(ok(&[], &elf(t)).lines().next().unwrap().to_string());
+        lines
+    };
+    let want = graph("x86_64");
+    assert!(
+        want.iter().any(|l| l.contains("refers to hidden_state")),
+        "{want:?}"
+    );
+    for t in ["riscv64", "riscv32"] {
+        assert_eq!(graph(t), want, "{t}");
+    }
+}
+
+/// RISC-V's fingerprints (compressed instructions by their full forms,
+/// AUIPC-built addresses masked): the identical functions of funcs.c
+/// (tools/linkopts, linked plain) as x86-64's.
+#[test]
+fn riscv_identical_functions() {
+    let linkopts = |name: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/linkopts")
+            .join(name)
+    };
+    let groups = |name: &str| -> Vec<String> {
+        ok(&["-identical"], &linkopts(name))
+            .lines()
+            .filter(|l| l.starts_with("              "))
+            .map(|l| l.trim().to_string())
+            .collect()
+    };
+    let want = groups("funcs-plain");
+    assert_eq!(
+        want,
+        ["add_a(int, int)", "add_b(int, int)", "add_c(int, int)"]
+    );
+    for t in ["riscv64", "riscv32"] {
+        assert_eq!(groups(&format!("funcs-plain-{t}")), want, "{t}");
+    }
+}

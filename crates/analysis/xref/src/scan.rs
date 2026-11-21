@@ -20,6 +20,13 @@
 //!   holds an absolute address there) the address it holds; and `MOVW`
 //!   with `MOVT` to one register, a 32-bit address in two halves.
 //!
+//! - RISC-V (compressed instructions by their full forms): `JAL` and the
+//!   branches; `AUIPC` (a PC-relative upper part) or `LUI` (an absolute
+//!   one) completed by the `ADDI`, load, store, or `JALR` (a far call or
+//!   tail call) that uses them, and the loads and stores relative to an
+//!   address an `ADDI` computed so. A register's part is forgotten when an
+//!   instruction writes the register.
+//!
 //! 32-bit x86 code holds absolute addresses, which the image's relocations
 //! (not disassembly) find. Decoding is a linear sweep that stops at the
 //! first invalid instruction (data in a function's range, such as a
@@ -99,6 +106,7 @@ pub fn scan_absolute(
         Arch::X64 => x86(code, address, hexcavator_x86::Mode::Bits64, image_base, out),
         Arch::Arm64 => arm64(code, address, out),
         Arch::Arm => thumb(code, address & !1, bias, out),
+        Arch::RiscV32 | Arch::RiscV64 => riscv(code, address, arch == Arch::RiscV64, out),
         // (No scanner for the others yet: no references.)
         _ => {}
     }
@@ -372,6 +380,105 @@ fn thumb(code: &[u8], address: u64, bias: u64, out: &mut Vec<CodeRef>) {
                 loaded[v as usize & 15] = None;
             }
         }
+    }
+}
+
+fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
+    use hexcavator_riscv::{Operand, Reg};
+    let features = hexcavator_riscv::Features::standard(rv64);
+    // Each register's upper part (from AUIPC or LUI), and its address
+    // (from an ADDI to an upper part), until it's written.
+    let mut upper = [None::<u64>; 32];
+    let mut addrs = [None::<u64>; 32];
+    // (An address on RV32 wraps at 32 bits.)
+    let wrap = |v: u64| if rv64 { v } else { v & 0xFFFF_FFFF };
+    let mut at = 0usize;
+    while at < code.len() {
+        let pc = address.wrapping_add(at as u64);
+        let Some(compact) = hexcavator_riscv::decode(&code[at..], &features) else {
+            return;
+        };
+        at += usize::from(compact.size);
+        let full = hexcavator_riscv::uncompress(&compact, &features);
+        let i = full.as_ref().unwrap_or(&compact);
+        let x = |n: &str| match i.operand(n) {
+            Some(Operand::Reg(Reg::X(r))) => Some(usize::from(r)),
+            _ => None,
+        };
+        let imm = |n: &str| i.operand(n).and_then(Operand::imm);
+        let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
+        let name = i.name();
+        // What the instruction leaves in its destination: an upper part,
+        // an address, or neither.
+        let mut set_upper = None;
+        let mut set_addr = None;
+        match name {
+            "AUIPC" | "LUI" => {
+                // (The upper 20 bits, sign-extended from bit 31.)
+                let hi = sext(
+                    u32::try_from(imm("imm20").unwrap_or(0)).unwrap_or(0) << 12,
+                    32,
+                );
+                let base = if name == "AUIPC" { pc } else { 0 };
+                set_upper = Some(wrap(base.wrapping_add_signed(hi)));
+            }
+            "JAL" => {
+                if let Some(off) = imm("imm20") {
+                    let via = if x("rd") == Some(0) {
+                        Via::Jump
+                    } else {
+                        Via::Call
+                    };
+                    push(wrap(pc.wrapping_add_signed(off)), via);
+                }
+            }
+            "BEQ" | "BNE" | "BLT" | "BGE" | "BLTU" | "BGEU" => {
+                if let Some(off) = imm("imm12") {
+                    push(wrap(pc.wrapping_add_signed(off)), Via::Jump);
+                }
+            }
+            "JALR" => {
+                if let (Some(b), Some(off)) = (x("rs1").and_then(|r| upper[r]), imm("imm12")) {
+                    let via = if x("rd") == Some(0) {
+                        Via::Jump
+                    } else {
+                        Via::Call
+                    };
+                    push(wrap(b.wrapping_add_signed(off)), via);
+                }
+            }
+            "ADDI" => {
+                if let (Some(b), Some(off)) = (x("rs1").and_then(|r| upper[r]), imm("imm12")) {
+                    let to = wrap(b.wrapping_add_signed(off));
+                    push(to, Via::AddressOf);
+                    set_addr = Some(to);
+                }
+            }
+            "LB" | "LH" | "LW" | "LD" | "LBU" | "LHU" | "LWU" | "SB" | "SH" | "SW" | "SD"
+            | "FLH" | "FLW" | "FLD" | "FLQ" | "FSH" | "FSW" | "FSD" | "FSQ" => {
+                let base = x("rs1").and_then(|r| upper[r].or(addrs[r]));
+                if let (Some(b), Some(off)) = (base, imm("imm12")) {
+                    push(wrap(b.wrapping_add_signed(off)), Via::Address);
+                }
+            }
+            _ => {}
+        }
+        // The registers it writes forget what they held (but what it set).
+        for (k, op) in i
+            .operands()
+            .iter()
+            .enumerate()
+            .take(usize::from(i.inst().defs))
+        {
+            if let Operand::Reg(Reg::X(r)) = op {
+                let r = usize::from(*r);
+                upper[r] = if k == 0 { set_upper } else { None };
+                addrs[r] = if k == 0 { set_addr } else { None };
+            }
+        }
+        // (x0 holds nothing.)
+        upper[0] = None;
+        addrs[0] = None;
     }
 }
 

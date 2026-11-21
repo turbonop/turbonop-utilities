@@ -144,7 +144,7 @@ fn arm64_targets_agree_with_the_formatter() {
 fn nothing_to_decode() {
     assert_eq!(sweep(Arch::Arm64, &[1, 2], 0), (vec![], Some(0)));
     assert_eq!(
-        sweep(Arch::RiscV64, &[0x13, 0, 0, 0], 0x10),
+        sweep(Arch::PowerPc64, &[0x60, 0, 0, 0], 0x10),
         (vec![], Some(0x10))
     );
     assert!(blocks(&[]).is_empty());

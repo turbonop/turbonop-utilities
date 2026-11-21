@@ -234,6 +234,13 @@ impl Listing {
     }
 }
 
+/// The RISC-V extensions a listing decodes with: every standard one (an
+/// image's code uses some of them; LLVM's disassembler, given them all,
+/// writes the same).
+fn riscv_features(isa: Arch) -> hexcavator_riscv::Features {
+    hexcavator_riscv::Features::standard(isa == Arch::RiscV64)
+}
+
 /// The function's instructions, decoded, with their labels and blocks:
 /// where a branch within the function lands starts a block, as does the
 /// instruction after a branch, jump, return, or trap. Other targets, and
@@ -245,6 +252,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
         Arm64(hexcavator_arm64::Instruction),
         /// With the condition an IT block gives it.
         Arm32(hexcavator_arm32::Instruction, Option<u32>),
+        RiscV(hexcavator_riscv::Instruction),
     }
     struct Decoded {
         pc: u64,
@@ -366,6 +374,25 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 rest += usize::from(c.len);
             }
         }
+        Arch::RiscV32 | Arch::RiscV64 => {
+            let features = riscv_features(f.isa);
+            while rest < f.code.len() {
+                let pc = f.address + rest as u64;
+                let Some(i) = hexcavator_riscv::decode(&f.code[rest..], &features) else {
+                    break;
+                };
+                let (flow, target) = hexcavator_code::riscv_flow(&i, pc, &features);
+                insts.push(Decoded {
+                    pc,
+                    len: usize::from(i.size),
+                    inst: Inst::RiscV(i),
+                    flow,
+                    target,
+                    named: target.into_iter().collect(),
+                });
+                rest += usize::from(i.size);
+            }
+        }
         // (No decoder for the others: the code shows as bytes.)
         _ => {}
     }
@@ -428,6 +455,16 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 s
             }
             Inst::Arm64(i) => hexcavator_arm64::format_with(i, &names),
+            Inst::RiscV(i) => {
+                let mut s = hexcavator_riscv::format::format(i, d.pc, &riscv_features(f.isa));
+                // (The target by its label or symbol, where it has one.)
+                if let Some(t) = d.target
+                    && let Some(name) = names.name(t)
+                {
+                    s = s.replace(&format!("{t:#x}"), name);
+                }
+                s
+            }
             Inst::Arm32(i, cond) => {
                 use hexcavator_arm32::format::{Targets, format_in_it};
                 let mut s = String::new();

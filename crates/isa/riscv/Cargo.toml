@@ -1,0 +1,12 @@
+[package]
+name = "hexcavator-riscv"
+description = "RISC-V instruction decoder (the standard extensions), from LLVM's TableGen records"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0 AND Apache-2.0 WITH LLVM-exception"
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

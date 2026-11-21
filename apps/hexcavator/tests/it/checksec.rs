@@ -243,3 +243,74 @@ fn wasm() {
         "{features}"
     );
 }
+
+fn audit(file: &str) -> serde_json::Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        .args(["checksec", "-audit", "-json"])
+        .arg(root().join(file))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+/// Split DWARF's units are audited as the same program's are without it
+/// (each split unit's name and language, over its skeleton's).
+#[test]
+fn audit_of_split_dwarf() {
+    let builds = |file: &str| -> Vec<(String, String)> {
+        let v = audit(file);
+        v["audit"]["builds"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{file}: {v}"))
+            .iter()
+            .map(|b| {
+                (
+                    b["object"].as_str().unwrap().to_string(),
+                    b["language"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    };
+    let split = builds("testdata/elf/split-dwarf5");
+    assert_eq!(split, builds("testdata/elf/split-dwarf5-plain"));
+    assert_eq!(
+        split,
+        [
+            ("program.c".to_string(), "C11".to_string()),
+            ("second.c".to_string(), "C11".to_string())
+        ]
+    );
+}
+
+/// Every format's record of the tools that linked it: an ELF image's
+/// `.comment`, a Mach-O image's `LC_BUILD_VERSION`, a WebAssembly module's
+/// `producers` (with its debug information found or not).
+#[test]
+fn audit_names_the_linker_of_every_format() {
+    let v = audit("testdata/linkmap/program-elf-g");
+    let comment = v["audit"]["linker"]["comment"].as_str().unwrap();
+    assert!(comment.starts_with("Linker: LLD "), "{v}");
+    // (No dSYM: the record still.)
+    let v = audit("testdata/linkmap/program-macho");
+    assert!(v["auditError"].is_string(), "{v}");
+    assert_eq!(v["audit"]["linker"]["platform"], "macos 13.0 (SDK 13.0)");
+    assert!(v["audit"]["linker"]["lld"].is_string(), "{v}");
+    let v = audit("testdata/wasm/sample-dwarf.wasm");
+    assert_eq!(v["audit"]["linker"]["language"], "Rust", "{v}");
+    assert!(
+        v["audit"]["linker"]["processed-by"]
+            .as_str()
+            .unwrap()
+            .starts_with("rustc "),
+        "{v}"
+    );
+    // A PE image's linker version, with its PDB's record.
+    let v = audit("testdata/xref/xref-x64.exe");
+    assert!(v["audit"]["linker"]["linker version"].is_string(), "{v}");
+    assert!(v["audit"]["linker"]["exe"].is_string(), "{v}");
+}

@@ -20,6 +20,17 @@ pub struct CompileOptions {
     /// Its arguments, unescaped, if recorded (not the program's path):
     /// `None` when the debug information doesn't record them.
     pub args: Option<Vec<String>>,
+    /// Its source language, as the debug information names it (DWARF's
+    /// `C11`, `C_plus_plus_17`, `Rust`; CodeView's `C++`), if recorded.
+    pub language: String,
+    /// The directory it was compiled in, if recorded.
+    pub directory: String,
+    /// Its main source file, if recorded.
+    pub source: String,
+    /// The object file it was compiled to, where the debug information
+    /// names it apart from the compiland (a Mach-O debug map's object:
+    /// `program.o`, or an archive's member, `member.o`).
+    pub object: String,
 }
 
 impl CompileOptions {
@@ -82,6 +93,7 @@ pub fn parse_producer(producer: &str) -> CompileOptions {
         return CompileOptions {
             compiler: String::new(),
             args: (!args.is_empty()).then_some(args),
+            ..CompileOptions::default()
         };
     }
     let clang = is_clang(producer);
@@ -104,6 +116,7 @@ pub fn parse_producer(producer: &str) -> CompileOptions {
     CompileOptions {
         compiler: head[..name_len].join(" "),
         args: first.map(|i| words[i..].to_vec()),
+        ..CompileOptions::default()
     }
 }
 
@@ -315,6 +328,7 @@ mod tests {
                 .map(String::from)
                 .to_vec(),
             ),
+            ..CompileOptions::default()
         };
         assert_eq!(
             o.last_of(&["-ffunction-sections", "-fno-function-sections"]),

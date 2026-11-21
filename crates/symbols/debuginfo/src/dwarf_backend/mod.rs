@@ -150,6 +150,8 @@ struct Split<'data> {
     map: Option<AddrMap>,
     /// The library (archive) an object file is from, if any.
     library: String,
+    /// An object file's name (a member's, for one of an archive).
+    object: String,
 }
 
 /// A package's unit: its extent in `.debug_info` (or `.debug_types`), and
@@ -499,6 +501,7 @@ impl<'data> DwarfInfo<'data> {
             rows,
             map: None,
             library: String::new(),
+            object: String::new(),
         });
         self.index = OnceCell::new();
         self.parents = OnceCell::new();
@@ -553,6 +556,7 @@ impl<'data> DwarfInfo<'data> {
         data: &'data [u8],
         symbols: &[hexcavator_macho::debugmap::DebugMapSymbol<'_>],
         library: &str,
+        object_name: &str,
     ) -> Result<()> {
         let image = Image::parse(data)?;
         let Some(object) = image.macho() else {
@@ -582,6 +586,7 @@ impl<'data> DwarfInfo<'data> {
             rows: None,
             map: Some(map),
             library: library.to_string(),
+            object: object_name.to_string(),
         });
         self.index = OnceCell::new();
         self.parents = OnceCell::new();
@@ -1256,6 +1261,15 @@ impl<'data> DwarfInfo<'data> {
             let d = u.entry(a, u.dies)?;
             Self::string(&u, &d, n)
         };
+        let language = |m: &UnitMeta| {
+            let (u, a) = self.unit(m)?;
+            let d = u.entry(a, u.dies)?;
+            let l = Self::uint(&u, &d, DW_AT_LANGUAGE)?;
+            Some(hexcavator_dwarf::spelling::language(l).map_or_else(
+                || format!("{l:#x}"),
+                |s| s.trim_start_matches("DW_LANG_").into(),
+            ))
+        };
         for m in &self.index().units {
             let Some(c) = m.compiland else { continue };
             let producer = attr(m, DW_AT_PRODUCER);
@@ -1268,10 +1282,15 @@ impl<'data> DwarfInfo<'data> {
                     if let Some(p) = producer {
                         let parsed = options::parse_producer(&p);
                         if parsed.args.is_some() || o.0.compiler.is_empty() {
-                            o.0 = parsed;
+                            o.0.compiler = parsed.compiler;
+                            o.0.args = parsed.args;
                         }
                     }
+                    if let Some(l) = language(m) {
+                        o.0.language = l;
+                    }
                     if !name.is_empty() {
+                        o.0.source.clone_from(&name);
                         o.1 = name;
                     }
                 }
@@ -1281,6 +1300,16 @@ impl<'data> DwarfInfo<'data> {
                     .unwrap_or_default();
                 if o.args.is_none() {
                     o.args = apple;
+                }
+                o.language = language(m).unwrap_or_default();
+                o.directory = attr(m, DW_AT_COMP_DIR).unwrap_or_default();
+                o.source.clone_from(&name);
+                if let Some(f) = m
+                    .file
+                    .checked_sub(1)
+                    .and_then(|i| self.splits.get(usize::try_from(i).ok()?))
+                {
+                    o.object.clone_from(&f.object);
                 }
                 out.push((o, name));
             }

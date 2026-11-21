@@ -797,7 +797,7 @@ fn wasm_name(data: &[u8], at: &mut usize) -> Option<String> {
 
 /// The `producers` section: fields (language, processed-by, sdk), each
 /// with names and versions.
-fn producers(data: &[u8]) -> Vec<(String, String)> {
+pub(crate) fn producers(data: &[u8]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut at = 0;
     let Some(fields) = leb(data, &mut at) else {

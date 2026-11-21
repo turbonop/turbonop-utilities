@@ -31,7 +31,7 @@ use hexcavator_core::Result;
 use hexcavator_image::DebugId;
 
 pub use locate::{Frame, Locator};
-pub use pdb_backend::{LINKER_MODULE, LinkerInfo, build_info};
+pub use pdb_backend::{LINKER_MODULE, LinkerInfo, build_info, codeview_language};
 
 /// A translation unit linked into an image.
 #[derive(Clone, Debug, PartialEq, Eq)]

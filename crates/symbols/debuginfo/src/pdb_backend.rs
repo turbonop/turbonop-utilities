@@ -704,6 +704,7 @@ impl<'data> PdbInfo<'data> {
                 for rec in stream.symbols().take(64) {
                     match rec.parse() {
                         Ok(Symbol::Compile3 {
+                            flags,
                             frontend,
                             backend,
                             version,
@@ -718,10 +719,16 @@ impl<'data> PdbInfo<'data> {
                             };
                             o.compiler =
                                 format!("{} {}.{}.{}.{}", lossy(version), v[0], v[1], v[2], v[3]);
+                            o.language = codeview_language(flags & 0xFF).into();
                         }
                         Ok(Symbol::BuildInfo { id }) => {
-                            if let Some(cmd) = ids.and_then(|ids| build_info(ids, id)[4].clone()) {
-                                o.args = Some(crate::options::parse_msvc_command_line(&cmd));
+                            if let Some(ids) = ids {
+                                let [cwd, _, source, _, cmd] = build_info(ids, id);
+                                if let Some(cmd) = cmd {
+                                    o.args = Some(crate::options::parse_msvc_command_line(&cmd));
+                                }
+                                o.directory = cwd.unwrap_or_default();
+                                o.source = source.unwrap_or_default();
                             }
                         }
                         _ => {}
@@ -758,6 +765,37 @@ impl<'data> PdbInfo<'data> {
                 .info()
                 .has_feature(info::feature::MINIMAL_DEBUG_INFO),
         })
+    }
+}
+
+/// The name of a CodeView source language (`S_COMPILE3`'s `CV_CFL_*`):
+/// `C`, `C++`, `MASM`, `LINK` (what the linker made), `Rust`, ...
+pub fn codeview_language(l: u32) -> &'static str {
+    match l {
+        0 => "C",
+        1 => "C++",
+        2 => "Fortran",
+        3 => "MASM",
+        4 => "Pascal",
+        5 => "Basic",
+        6 => "COBOL",
+        7 => "LINK",
+        8 => "CVTRES",
+        9 => "CVTPGD",
+        10 => "C#",
+        11 => "Visual Basic",
+        12 => "ILASM",
+        13 => "Java",
+        14 => "JScript",
+        15 => "MSIL",
+        16 => "HLSL",
+        17 => "Objective-C",
+        18 => "Objective-C++",
+        19 => "Swift",
+        20 => "ALIASOBJ",
+        21 => "Rust",
+        22 => "Go",
+        _ => "other",
     }
 }
 

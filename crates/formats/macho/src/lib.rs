@@ -443,6 +443,34 @@ pub struct BuildTool {
     pub version: u32,
 }
 
+impl BuildVersion {
+    /// The platform's name (see [`platform_name`]).
+    pub fn platform_name(&self) -> alloc::string::String {
+        platform_name(self.platform)
+    }
+}
+
+/// A platform's name (`LC_BUILD_VERSION`'s `PLATFORM_*`), as
+/// `ld -platform_version` spells it: `macos`, `ios`, `iossim`,
+/// `macCatalyst`, `xros`, ...
+pub fn platform_name(platform: u32) -> alloc::string::String {
+    alloc::string::String::from(match platform {
+        1 => "macos",
+        2 => "ios",
+        3 => "tvos",
+        4 => "watchos",
+        5 => "bridgeos",
+        6 => "macCatalyst",
+        7 => "iossim",
+        8 => "tvossim",
+        9 => "watchossim",
+        10 => "driverkit",
+        11 => "xros",
+        12 => "xrsimulator",
+        v => return alloc::format!("unknown({v})"),
+    })
+}
+
 impl BuildTool {
     /// The tool's name: `clang`, `swift`, `ld`, `lld`, ...
     pub fn name(&self) -> Option<&'static str> {

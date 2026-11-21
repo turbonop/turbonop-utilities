@@ -363,8 +363,10 @@ impl Opened {
                 continue;
             };
             let library = o.member.as_ref().map_or("", |m| m.2.as_str());
+            let path = o.path.display().to_string();
+            let object = o.member.as_ref().map_or(path.as_str(), |m| m.3.as_str());
             // (An object without DWARF, or not one: left out.)
-            let _ = d.add_object(o.data(), &entry.symbols, library);
+            let _ = d.add_object(o.data(), &entry.symbols, library, object);
         }
         Ok(DebugInfo::Dwarf(Box::new(d)))
     }

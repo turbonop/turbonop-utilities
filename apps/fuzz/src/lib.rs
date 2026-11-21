@@ -350,7 +350,7 @@ fn debug_map_object(data: &[u8], _: &Scratch) {
             let Ok(mut d) = DwarfInfo::from_debug_map(image) else {
                 continue;
             };
-            if d.add_object(data, &o.symbols, "").is_ok() {
+            if d.add_object(data, &o.symbols, "", "").is_ok() {
                 queries(&hexcavator_debuginfo::DebugInfo::Dwarf(Box::new(d)));
             }
         }

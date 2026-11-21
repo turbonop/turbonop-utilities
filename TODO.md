@@ -19,10 +19,6 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   `hexc symbolize` does. The unwind crate's `Image` trait is PE's alone
   (`u32` RVAs), and nothing picks an unwinder by format and
   architecture.
-- **`checksec -audit`** reads PDBs and DWARF units itself (and a Mach-O
-  debug map its own way): it should read them through `Opened`, as every
-  other command does, and give DWARF images their linker's record
-  (`.comment`, `LC_BUILD_VERSION`) as it gives a PDB's.
 - **dumpbin's `/symbols`** (a COFF symbol table) isn't dumped, for
   objects or for MinGW's images.
 - **Cleanups.** `hexc size`'s bloaty-style maps are built by four

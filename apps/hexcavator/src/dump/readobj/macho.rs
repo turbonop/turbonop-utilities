@@ -558,21 +558,7 @@ fn version(v: u32) -> String {
 }
 
 fn platform(v: u32) -> String {
-    match v {
-        1 => "macos".into(),
-        2 => "ios".into(),
-        3 => "tvos".into(),
-        4 => "watchos".into(),
-        5 => "bridgeos".into(),
-        6 => "macCatalyst".into(),
-        7 => "iossim".into(),
-        8 => "tvossim".into(),
-        9 => "watchossim".into(),
-        10 => "driverkit".into(),
-        11 => "xros".into(),
-        12 => "xrsimulator".into(),
-        _ => format!("unknown({v})"),
-    }
+    hexcavator_macho::platform_name(v)
 }
 
 fn version_min(p: &mut Printer<'_>, m: &MachO<'_>) {

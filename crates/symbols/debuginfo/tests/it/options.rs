@@ -37,9 +37,14 @@ fn dwarf_producer() {
             "funcs.c"
         ]
     );
+    // The unit's language, directory, and source.
+    assert_eq!(
+        (o.language.as_str(), o.directory.as_str(), o.source.as_str()),
+        ("C11", ".", "funcs.c")
+    );
     // Not recorded (and -fno-ident: an empty producer).
     let o = options(&testdata("linkopts/funcs-plain"));
-    assert_eq!(o[0].1, hexcavator_debuginfo::CompileOptions::default());
+    assert_eq!((o[0].1.compiler.as_str(), &o[0].1.args), ("", &None));
     // (Producers with versions: options.rs's unit tests; the fixtures here
     // are all built with -fno-ident.)
 }
@@ -66,6 +71,9 @@ fn pdb_build_info() {
     };
     let main = of("main.obj");
     assert!(main.compiler.contains("Microsoft"), "{main:?}");
+    assert_eq!(main.language, "C++");
+    assert!(main.source.ends_with("main.cpp"), "{main:?}");
+    assert!(!main.directory.is_empty(), "{main:?}");
     assert_eq!(main.last_of(&["-Gy", "-Gy-"]), Some("-Gy"), "{main:?}");
     assert_eq!(main.last_of(&["-O1", "-O2"]), Some("-O1"), "{main:?}");
     // (cl records a switch that's on: /Gy- isn't recorded, being off by

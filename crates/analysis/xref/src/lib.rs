@@ -81,6 +81,8 @@ pub struct Builder {
     image_base: Option<u64>,
     /// See [`Builder::absolute_bias`].
     bias: u64,
+    /// See [`Builder::big_endian`].
+    big: bool,
     /// Which nodes to split where they are referred to (empty: none).
     split: Vec<bool>,
     /// The edges to or from a node to split, by address.
@@ -116,6 +118,7 @@ impl Builder {
             refs: Vec::new(),
             image_base: None,
             bias: 0,
+            big: false,
             split: Vec::new(),
             addressed: Vec::new(),
         }
@@ -158,6 +161,16 @@ impl Builder {
         self.bias = bias;
     }
 
+    /// Whether the code's words are big-endian (see [`scan_image`]).
+    pub fn big_endian(&mut self, big: bool) {
+        self.big = big;
+    }
+
+    /// Whether the code's words are big-endian, as set.
+    pub fn is_big_endian(&self) -> bool {
+        self.big
+    }
+
     /// The nodes, in the builder's order.
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
@@ -173,6 +186,16 @@ impl Builder {
     pub fn node_starting_at(&self, address: u64) -> Option<u32> {
         let i = self.nodes.partition_point(|n| n.start < address);
         (self.nodes.get(i)?.start == address).then_some(index(i))
+    }
+
+    /// The code node whose ELFv2 local entry point `address` may be: one
+    /// starting 4, 8, 16, 32, or 64 bytes before it.
+    fn local_entry_of(&self, address: u64) -> Option<u32> {
+        [4u64, 8, 16, 32, 64].into_iter().find_map(|off| {
+            let n = self.node_starting_at(address.checked_sub(off)?)?;
+            let node = self.nodes[n as usize];
+            (node.code && address < node.end).then_some(n)
+        })
     }
 
     /// The node starting at most [`NEAR`] bytes after `address`: the one
@@ -206,7 +229,9 @@ impl Builder {
     /// Scans the code of node `node` (`code`, its bytes) and adds the edges
     /// it makes. A call or branch counts only to the start of a node (to
     /// within one, it is the node's own control flow, or a decoding of data
-    /// as code); an address counts anywhere in a node, or in no node but
+    /// as code), or, on 64-bit PowerPC, to a function's local entry point
+    /// (ELFv2's: 4, 8, 16, 32, or 64 bytes in, past where its global entry
+    /// computes its TOC pointer); an address counts anywhere in a node, or in no node but
     /// just before one (see [`NEAR`]), and a computed one ([`Via::AddressOf`])
     /// just before a node counts for it too, even inside another (`table - 1`
     /// where tables are packed back to back).
@@ -215,6 +240,7 @@ impl Builder {
         refs.clear();
         scan_absolute(
             arch,
+            self.big,
             code,
             self.nodes[node as usize].start,
             self.image_base,
@@ -224,7 +250,12 @@ impl Builder {
         for r in &refs {
             let (to, kind) = match r.via {
                 Via::Call | Via::Jump => {
-                    let Some(to) = self.node_starting_at(r.to) else {
+                    let local = || {
+                        (arch == Arch::PowerPc64)
+                            .then(|| self.local_entry_of(r.to))
+                            .flatten()
+                    };
+                    let Some(to) = self.node_starting_at(r.to).or_else(local) else {
                         continue;
                     };
                     (

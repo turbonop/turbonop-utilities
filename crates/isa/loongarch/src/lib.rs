@@ -97,7 +97,7 @@ impl Features {
 /// The instruction at the start of `bytes` (a little-endian word), with
 /// `features` on; `None` if it isn't one (or `bytes` is too short).
 pub fn decode(bytes: &[u8], features: &Features) -> Option<Instruction> {
-    let w = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+    let w = u64::from(u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?));
     let t = &tables::TARGET;
     let i = hexcavator_tablegen::decode(t, w, 4, &features.0, false, false)?;
     // `ud` is `amswap.w` with rk 1 and rd rj: otherwise it's `amswap.w`

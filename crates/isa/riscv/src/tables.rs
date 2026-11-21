@@ -55122,6 +55122,8 @@ static BUCKETS16: &[&[u16]] = &[
     &[],
 ];
 
+static BUCKETS64: &[&[u16]] = &[&[]];
+
 static ALIASES: &[Alias] = &[
     Alias {
         inst: 601,
@@ -57355,6 +57357,8 @@ pub static TARGET: Target = Target {
     key16: &[0, 1, 13, 14, 15],
     buckets32: BUCKETS32,
     key32: &[0, 1, 2, 3, 4, 5, 6, 12, 13, 14],
+    buckets64: BUCKETS64,
+    key64: &[],
 };
 
 pub static CSRS: &[crate::Csr] = &[

@@ -86,6 +86,9 @@ pub struct Xref {
     pub linker: Linker,
     /// The instruction set of the image's code.
     pub arch: Arch,
+    /// Whether its code's words are big-endian (PowerPC's, but for
+    /// `ppc64le`'s).
+    pub big: bool,
     pub graph: Graph,
     /// Each node's name (its first symbol's, or a group's in brackets).
     pub names: Vec<String>,
@@ -727,6 +730,7 @@ fn finish(
     linker: Linker,
     comdat: impl Fn(&hexcavator_debuginfo::Contribution) -> bool,
 ) -> Result<Xref, String> {
+    let big = b.is_big_endian();
     let graph = b.finish();
     // Roots and names, for the graph's nodes (pieces of split ones).
     let roots: Vec<(u32, Root)> = roots
@@ -777,6 +781,7 @@ fn finish(
     Ok(Xref {
         linker,
         arch,
+        big,
         graph,
         names,
         aliases,
@@ -833,6 +838,7 @@ fn common(
     let slots = image.pointer_slots();
     unlabeled_data(&mut nodes, slots.iter().map(|s| s.addr), model);
     let (mut b, infos) = builder(nodes);
+    b.big_endian(image.endian() == hexcavator_core::Endian::Big);
     for i in 0..b.nodes().len() as u32 {
         let n = b.nodes()[i as usize];
         if n.code {
@@ -1271,6 +1277,8 @@ pub fn elf(
             | Arch::RiscV64
             | Arch::LoongArch32
             | Arch::LoongArch64
+            | Arch::PowerPc
+            | Arch::PowerPc64
     ) {
         return Err(format!("no cross-references for {}", arch.name()));
     }

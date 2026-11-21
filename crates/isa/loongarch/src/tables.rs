@@ -66744,6 +66744,8 @@ static BUCKETS32: &[&[u16]] = &[
 
 static BUCKETS16: &[&[u16]] = &[&[]];
 
+static BUCKETS64: &[&[u16]] = &[&[]];
+
 static ALIASES: &[Alias] = &[
     Alias {
         inst: 67,
@@ -66878,4 +66880,6 @@ pub static TARGET: Target = Target {
     key16: &[],
     buckets32: BUCKETS32,
     key32: &[22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
+    buckets64: BUCKETS64,
+    key64: &[],
 };

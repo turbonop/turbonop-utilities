@@ -308,6 +308,7 @@ dependencies = [
  "hexcavator-arm64",
  "hexcavator-core",
  "hexcavator-loongarch",
+ "hexcavator-powerpc",
  "hexcavator-riscv",
  "hexcavator-x86",
 ]
@@ -403,6 +404,7 @@ dependencies = [
  "hexcavator-arm64",
  "hexcavator-core",
  "hexcavator-loongarch",
+ "hexcavator-powerpc",
  "hexcavator-riscv",
  "hexcavator-x86",
  "hexcavator-xref",
@@ -526,6 +528,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hexcavator-powerpc"
+version = "0.0.7"
+dependencies = [
+ "hexcavator-tablegen",
+]
+
+[[package]]
 name = "hexcavator-program"
 version = "0.0.7"
 dependencies = [
@@ -591,6 +600,7 @@ dependencies = [
  "hexcavator-macho",
  "hexcavator-mmap",
  "hexcavator-pe",
+ "hexcavator-powerpc",
  "hexcavator-query",
  "hexcavator-riscv",
  "hexcavator-wasm",
@@ -685,8 +695,10 @@ version = "0.0.7"
 dependencies = [
  "hexcavator-arm32",
  "hexcavator-arm64",
+ "hexcavator-code",
  "hexcavator-core",
  "hexcavator-loongarch",
+ "hexcavator-powerpc",
  "hexcavator-riscv",
  "hexcavator-x86",
 ]

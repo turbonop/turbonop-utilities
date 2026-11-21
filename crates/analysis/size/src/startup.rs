@@ -410,7 +410,14 @@ pub fn callees(image: &Image<'_>, x: &Xref, node: u32) -> Vec<(u32, Edge)> {
             continue;
         };
         if let Some(code) = image.bytes_at(n.start, n.end.saturating_sub(n.start)) {
-            hexcavator_xref::scan_image(x.arch, code, n.start, image.pe().map(|_| 0), &mut refs);
+            hexcavator_xref::scan_image(
+                x.arch,
+                x.big,
+                code,
+                n.start,
+                image.pe().map(|_| 0),
+                &mut refs,
+            );
         }
     }
     let mut out = Vec::with_capacity(set.len());

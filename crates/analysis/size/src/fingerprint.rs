@@ -208,6 +208,7 @@ pub fn build(image: &Image<'_>, model: &Model, x: &Xref, mode: Mode) -> Fingerpr
                 let image_base = (x.arch == Arch::X64).then_some(0);
                 apart(code(
                     x.arch,
+                    x.big,
                     bytes(node.start, node.end),
                     node.start,
                     image_base,
@@ -314,7 +315,7 @@ pub fn near_identical(
                             if code.len() as u64 != node.end - node.start {
                                 return None;
                             }
-                            hexcavator_fingerprint::shape(x.arch, code, node.start)
+                            hexcavator_fingerprint::shape(x.arch, x.big, code, node.start)
                         })
                         .collect::<Vec<_>>()
                 })

@@ -101,6 +101,7 @@ pub fn data(bytes: &[u8], size: u64, pointers: &[(u64, u32, Option<u32>)]) -> It
 /// each one's slot and the address there), sorted by slot.
 pub fn code(
     arch: Arch,
+    big: bool,
     code: &[u8],
     start: u64,
     image_base: Option<u64>,
@@ -108,7 +109,7 @@ pub fn code(
     resolve: &impl Resolve,
 ) -> Item {
     let mut refs = Vec::new();
-    hexcavator_xref::scan_image(arch, code, start, image_base, &mut refs);
+    hexcavator_xref::scan_image(arch, big, code, start, image_base, &mut refs);
     let end = start + code.len() as u64;
     let mut item = Item::default();
     let mut h = hasher(b'c');
@@ -210,21 +211,39 @@ pub fn code(
             // (Then what isn't code: a literal pool, as it is.)
             h.write(code.get(at..).unwrap_or_default());
         }
-        Arch::RiscV32 | Arch::RiscV64 | Arch::LoongArch32 | Arch::LoongArch64 => {
-            // (Both decoded by tables: what holds an address PC-relative,
-            // what an absolute one's upper part, and the base register
+        Arch::RiscV32
+        | Arch::RiscV64
+        | Arch::LoongArch32
+        | Arch::LoongArch64
+        | Arch::PowerPc
+        | Arch::PowerPc64 => {
+            // (All decoded by tables: what holds an address PC-relative,
+            // what an absolute one's upper part, and the base registers
             // an addressing instruction adds to.)
-            let (insts, pc_relative, upper, base): (_, &[&str], _, _) =
-                if matches!(arch, Arch::RiscV32 | Arch::RiscV64) {
-                    (riscv(arch, code), &["AUIPC"], "LUI", "rs1")
-                } else {
-                    (
-                        loongarch(arch, code),
-                        &["PCALAU12I", "PCADDU12I", "PCADDU18I", "PCADDI"],
-                        "LU12I_W",
-                        "rj",
-                    )
-                };
+            type Table = (
+                Vec<(usize, hexcavator_riscv::Instruction)>,
+                fn(&str) -> bool,
+                &'static [&'static str],
+                &'static [&'static str],
+            );
+            let (insts, pc_relative, upper, base): Table = match arch {
+                Arch::RiscV32 | Arch::RiscV64 => {
+                    (riscv(arch, code), |n| n == "AUIPC", &["LUI"], &["rs1"])
+                }
+                Arch::LoongArch32 | Arch::LoongArch64 => (
+                    loongarch(arch, code),
+                    |n| matches!(n, "PCALAU12I" | "PCADDU12I" | "PCADDU18I" | "PCADDI"),
+                    &["LU12I_W"],
+                    &["rj"],
+                ),
+                _ => (
+                    powerpc(arch, big, code),
+                    // (The prefixed PC-relative forms: `pld`'s `PLDpc`.)
+                    |n| n.starts_with('P') && n.ends_with("pc"),
+                    &["ADDIS", "LIS"],
+                    &["RA", "RS"],
+                ),
+            };
             // The upper parts whose registers an addressing instruction
             // then uses (they are an address's).
             let mut masked = vec![false; insts.len()];
@@ -232,12 +251,19 @@ pub fn code(
             let referring: std::collections::HashSet<u64> = refs.iter().map(|c| c.from).collect();
             for (k, (off, i)) in insts.iter().enumerate() {
                 let pc = start + *off as u64;
-                if pc_relative.contains(&i.name()) {
+                if pc_relative(i.name()) {
                     masked[k] = true;
                 }
                 if referring.contains(&pc) {
                     masked[k] = true;
-                    if let Some(rs) = i.operand(base).and_then(gpr)
+                    // (A PowerPC load's or store's base: its memory
+                    // operand's.)
+                    let memory_base = matches!(arch, Arch::PowerPc | Arch::PowerPc64)
+                        .then(|| hexcavator_powerpc::memory(i))
+                        .flatten()
+                        .and_then(|(_, r)| gpr(hexcavator_powerpc::Operand::Reg(r)));
+                    if let Some(rs) =
+                        memory_base.or_else(|| base.iter().find_map(|b| i.operand(b).and_then(gpr)))
                         && let Some(l) = uppers[usize::from(rs)]
                     {
                         masked[l] = true;
@@ -245,7 +271,7 @@ pub fn code(
                 }
                 for op in i.operands().iter().take(usize::from(i.inst().defs)) {
                     if let Some(rd) = gpr(*op) {
-                        uppers[usize::from(rd)] = (i.name() == upper).then_some(k);
+                        uppers[usize::from(rd)] = upper.contains(&i.name()).then_some(k);
                     }
                 }
             }
@@ -304,8 +330,25 @@ fn loongarch(arch: Arch, code: &[u8]) -> Vec<(usize, hexcavator_loongarch::Instr
         .collect()
 }
 
-/// An integer register's number (RISC-V's and LoongArch's tables both
-/// number theirs file 0).
+/// PowerPC code's instructions (a prefixed one's 8 bytes as one), its
+/// words big-endian (`big`) or not, with their offsets, to the first that
+/// doesn't decode.
+fn powerpc(arch: Arch, big: bool, code: &[u8]) -> Vec<(usize, hexcavator_powerpc::Instruction)> {
+    let features = hexcavator_powerpc::Features::standard(arch == Arch::PowerPc64);
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while at < code.len() {
+        let Some(i) = hexcavator_powerpc::decode(&code[at..], big, &features) else {
+            break;
+        };
+        out.push((at, i));
+        at += usize::from(i.size);
+    }
+    out
+}
+
+/// An integer register's number (RISC-V's, LoongArch's, and PowerPC's
+/// tables all number theirs file 0).
 fn gpr(o: hexcavator_riscv::Operand) -> Option<u8> {
     o.reg().filter(|r| r.file == 0).map(|r| r.n)
 }
@@ -493,7 +536,7 @@ fn arm64_address_bits(encoding: &str, refers: bool) -> u32 {
 ///   or 32), and its registers.
 /// - RISC-V: each instruction's operation (a compressed one's full form's:
 ///   `c.addi` and `addi` alike) and its registers.
-pub fn shape(arch: Arch, code: &[u8], start: u64) -> Option<u64> {
+pub fn shape(arch: Arch, big: bool, code: &[u8], start: u64) -> Option<u64> {
     let mut h = hasher(b's');
     let mut count = 0usize;
     match arch {
@@ -564,11 +607,16 @@ pub fn shape(arch: Arch, code: &[u8], start: u64) -> Option<u64> {
                 count += 1;
             }
         }
-        Arch::RiscV32 | Arch::RiscV64 | Arch::LoongArch32 | Arch::LoongArch64 => {
-            let insts = if matches!(arch, Arch::RiscV32 | Arch::RiscV64) {
-                riscv(arch, code)
-            } else {
-                loongarch(arch, code)
+        Arch::RiscV32
+        | Arch::RiscV64
+        | Arch::LoongArch32
+        | Arch::LoongArch64
+        | Arch::PowerPc
+        | Arch::PowerPc64 => {
+            let insts = match arch {
+                Arch::RiscV32 | Arch::RiscV64 => riscv(arch, code),
+                Arch::LoongArch32 | Arch::LoongArch64 => loongarch(arch, code),
+                _ => powerpc(arch, big, code),
             };
             for (_, i) in insts {
                 h.write(i.name().as_bytes());

@@ -998,10 +998,18 @@ fn disassemble() {
         }
     }
     // RISC-V, RV64GC and RV32IMAC (compressed instructions as their full
-    // forms), and LoongArch, LA64 and LA32: as llvm-objdump writes each
-    // line (but a branch's or call's target, which reads as a label or a
-    // name).
-    for xlen in ["riscv64", "riscv32", "loongarch64", "loongarch32"] {
+    // forms), LoongArch, LA64 and LA32, and PowerPC, 64-bit little- and
+    // big-endian and 32-bit: as llvm-objdump writes each line (but a
+    // branch's or call's target, which reads as a label or a name).
+    for xlen in [
+        "riscv64",
+        "riscv32",
+        "loongarch64",
+        "loongarch32",
+        "powerpc64le",
+        "powerpc64",
+        "powerpc",
+    ] {
         let file = elf(&format!("program-{xlen}-linux-gnu"));
         let objdump = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
             "../../testdata/elf/program-{xlen}-linux-gnu.objdump.txt"
@@ -1022,7 +1030,13 @@ fn disassemble() {
                 hexc(&[file.as_os_str(), "-disassemble".as_ref(), name.as_ref()]);
             assert!(ok, "{xlen} {name}: {stderr}");
             let mut lines = 0;
-            for line in stdout.lines().skip(1) {
+            // (PowerPC's zeros after a function's return, in its symbol:
+            // not instructions, which llvm-objdump shows as `...`.)
+            for line in stdout
+                .lines()
+                .skip(1)
+                .filter(|l| !l.contains("(not instructions)"))
+            {
                 let mut it = line.split_whitespace();
                 let Some(at) = it.next().and_then(|a| u64::from_str_radix(a, 16).ok()) else {
                     continue;
@@ -1033,7 +1047,7 @@ fn disassemble() {
                 let branch = [
                     "j", "jal", "beqz", "bnez", "blez", "bgez", "bltz", "bgtz", "beq", "bne",
                     "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu", "b", "bl", "bceqz",
-                    "bcnez",
+                    "bcnez", "bt", "bf", "bdnz", "bdz", "bc", "bcl",
                 ]
                 .contains(&rest[0]);
                 if branch {

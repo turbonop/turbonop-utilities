@@ -32,6 +32,17 @@ for %%t in (riscv64 riscv32) do (
   "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
   "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
 )
+rem PowerPC: 64-bit little- and big-endian (ELFv2, which lld links), and
+rem 32-bit (not PIC, as the others aren't), and llvm-objdump's listing of each (no bytes) for the
+rem disassembler's test.
+for %%t in (powerpc64le powerpc64 powerpc) do (
+  set ABI=
+  if %%t==powerpc64 set ABI=-mabi=elfv2
+  if %%t==powerpc set ABI=-fno-pic
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu !ABI! %CFLAGS% -c "%~dp0program.c" -o program-%%t-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
+)
 rem LoongArch: LA64 and LA32, and llvm-objdump's listing of each (no bytes)
 rem for the disassembler's test.
 for %%t in (loongarch64 loongarch32) do (
@@ -116,6 +127,10 @@ rem RISC-V (RV64GC) with call frame information, for the unwinder.
 "%LLVM_BIN%\clang.exe" --target=riscv64-linux-gnu -march=rv64gc %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-riscv64-linux-gnu.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-riscv64-linux-gnu.o -o unwind-riscv64-linux-gnu || exit /b 1
 del unwind-riscv64-linux-gnu.o
+rem PowerPC (64-bit little-endian) likewise.
+"%LLVM_BIN%\clang.exe" --target=powerpc64le-linux-gnu %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-powerpc64le-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-powerpc64le-linux-gnu.o -o unwind-powerpc64le-linux-gnu || exit /b 1
+del unwind-powerpc64le-linux-gnu.o
 rem LoongArch (LA64) likewise.
 "%LLVM_BIN%\clang.exe" --target=loongarch64-linux-gnu %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-loongarch64-linux-gnu.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-loongarch64-linux-gnu.o -o unwind-loongarch64-linux-gnu || exit /b 1

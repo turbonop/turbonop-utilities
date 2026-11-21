@@ -1537,7 +1537,15 @@ fn riscv_and_loongarch_graph_is_x86_64s() {
         want.iter().any(|l| l.contains("refers to hidden_state")),
         "{want:?}"
     );
-    for t in ["riscv64", "riscv32", "loongarch64", "loongarch32"] {
+    for t in [
+        "riscv64",
+        "riscv32",
+        "loongarch64",
+        "loongarch32",
+        "powerpc64le",
+        "powerpc64",
+        "powerpc",
+    ] {
         assert_eq!(graph(t), want, "{t}");
     }
 }
@@ -1564,7 +1572,15 @@ fn riscv_and_loongarch_identical_functions() {
         want,
         ["add_a(int, int)", "add_b(int, int)", "add_c(int, int)"]
     );
-    for t in ["riscv64", "riscv32", "loongarch64", "loongarch32"] {
+    for t in [
+        "riscv64",
+        "riscv32",
+        "loongarch64",
+        "loongarch32",
+        "powerpc64le",
+        "powerpc64",
+        "powerpc",
+    ] {
         assert_eq!(groups(&format!("funcs-plain-{t}")), want, "{t}");
     }
 }

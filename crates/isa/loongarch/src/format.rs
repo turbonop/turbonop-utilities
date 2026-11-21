@@ -42,7 +42,7 @@ pub fn reg_name(r: Reg) -> String {
 pub fn format(i: &Instruction, address: u64, features: &Features) -> String {
     let _ = address;
     let mut out = String::new();
-    hexcavator_tablegen::write(&mut out, i, &features.0, |out, op, _print| {
+    hexcavator_tablegen::write(&mut out, i, &features.0, |out, op, _, _| {
         // (Every LoongArch operand prints as itself: registers by name,
         // immediates and branch offsets in hex.)
         let Some(&o) = i.operands().get(op) else {

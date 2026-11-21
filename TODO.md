@@ -17,15 +17,10 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   per-format paths; objects of every format but Mach-O have no addresses
   (`bytes_at`): their sections would need laying out, as a linker would,
   the same way their relocated DWARF is.
-- **Instruction sets' loose ends.** 32-bit PowerPC's PIC code (its GOT
-  pointer from `bcl 20, 31` and `mflr`) isn't followed, nor MIPS's
-  `$gp`-relative references (the GOT, small data): their references
-  through them are missed. microMIPS and MIPS16 code isn't decoded. MIPS's
-  references and fingerprints decode as Release 2 (the image's flags
-  aren't passed down: Release 6 code is misread there; its listings are
-  right). MIPS's dynamic pointers (`R_MIPS_REL32`, and the local GOT
+- **Instruction sets' loose ends.** microMIPS and MIPS16 code isn't
+  decoded. MIPS's dynamic pointers (`R_MIPS_REL32`, and the local GOT
   entries the loader relocates by `DT_MIPS_LOCAL_GOTNO`) aren't read as
-  pointer slots.
+  pointer slots (a dynamic image's GOT is read as its file holds it).
 
 ## Size analysis
 

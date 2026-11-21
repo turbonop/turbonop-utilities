@@ -1548,6 +1548,11 @@ fn riscv_and_loongarch_graph_is_x86_64s() {
         "mips",
         "mipsel",
         "mips64el",
+        // (Its small data, $gp-relative; and PIC code, through the GOT.)
+        "mipsel-sdata",
+        "mipsel-pic",
+        // (32-bit PowerPC's PIC code: its GOT pointer computed.)
+        "powerpc-pic",
     ] {
         assert_eq!(graph(t), want, "{t}");
     }

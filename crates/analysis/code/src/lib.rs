@@ -65,6 +65,33 @@ impl Insn {
     }
 }
 
+/// How code of an architecture is read, beyond its instruction set: its
+/// words' byte order (big-endian: PowerPC's, but for `ppc64le`'s; MIPS's,
+/// but for `mipsel`'s; an instruction set whose words are little-endian
+/// whatever the image's byte order, as ARM64's, ignores it), and, for
+/// MIPS, its ELF image's `e_flags` (its ISA level and ASEs) and the value
+/// of `$gp` its code assumes, if known.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Mode {
+    /// Whether its words are big-endian.
+    pub big: bool,
+    /// MIPS's ELF `e_flags`, if known.
+    pub mips_flags: Option<u32>,
+    /// MIPS's `$gp`, if known (its small data's and GOT's base).
+    pub mips_gp: Option<u64>,
+}
+
+impl Mode {
+    /// Big-endian code (`big`), or little-endian.
+    pub fn endian(big: bool) -> Mode {
+        Mode {
+            big,
+            mips_flags: None,
+            mips_gp: None,
+        }
+    }
+}
+
 /// Which architectures [`decode`] reads.
 pub fn decodes(arch: Arch) -> bool {
     matches!(
@@ -90,13 +117,12 @@ pub fn decodes(arch: Arch) -> bool {
 /// means T32 code (at the even one), as ELF symbols say; see
 /// [`decode_arm32`]. See [`decode_in`] for big-endian code.
 pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
-    decode_in(arch, false, bytes, address)
+    decode_in(arch, Mode::default(), bytes, address)
 }
 
-/// [`decode`], its words big-endian if `big` (PowerPC's, but for
-/// `ppc64le`'s; an instruction set whose words are little-endian whatever
-/// the image's byte order, as ARM64's, ignores it).
-pub fn decode_in(arch: Arch, big: bool, bytes: &[u8], address: u64) -> Option<Insn> {
+/// [`decode`], its code read as `mode` says.
+pub fn decode_in(arch: Arch, mode: Mode, bytes: &[u8], address: u64) -> Option<Insn> {
+    let big = mode.big;
     match arch {
         Arch::X86 | Arch::X64 => {
             let mode = if arch == Arch::X86 {
@@ -148,7 +174,7 @@ pub fn decode_in(arch: Arch, big: bool, bytes: &[u8], address: u64) -> Option<In
             decode_powerpc(bytes, big, address, &features)
         }
         Arch::Mips | Arch::Mips64 => {
-            let features = mips_features(arch);
+            let features = mips_features_in(arch, mode);
             decode_mips(bytes, big, address, &features).map(|(i, _)| i)
         }
         _ => None,
@@ -338,17 +364,23 @@ pub fn powerpc_flow(
     }
 }
 
-/// The MIPS features [`decode`] takes code to have, not knowing its
-/// image's flags: Release 2's (MIPS32R2's, or MIPS64R2's), the commonest,
-/// and a superset of the earlier levels' (Release 6's encodings differ).
-pub fn mips_features(arch: Arch) -> hexcavator_mips::Features {
+/// The MIPS features code read as `mode` has: as llvm-objdump takes them
+/// from its image's flags; not knowing them, Release 2's (MIPS32R2's, or
+/// MIPS64R2's), the commonest, and a superset of the earlier levels'
+/// (Release 6's encodings differ).
+pub fn mips_features_in(arch: Arch, mode: Mode) -> hexcavator_mips::Features {
     // (EF_MIPS_ARCH_32R2, EF_MIPS_ARCH_64R2.)
-    let flags = if arch == Arch::Mips64 {
+    let flags = mode.mips_flags.unwrap_or(if arch == Arch::Mips64 {
         0x8000_0000
     } else {
         0x7000_0000
-    };
+    });
     hexcavator_mips::Features::from_elf(flags, arch == Arch::Mips64)
+}
+
+/// [`mips_features_in`], not knowing the image's flags.
+pub fn mips_features(arch: Arch) -> hexcavator_mips::Features {
+    mips_features_in(arch, Mode::default())
 }
 
 /// The MIPS instruction at the start of `bytes`, which is at `address`,
@@ -613,14 +645,15 @@ fn arm64_target(word: u32, pc: u64) -> Option<u64> {
 /// that doesn't decode; and where that is (`None` if all did). Its words
 /// are little-endian; see [`sweep_in`].
 pub fn sweep(arch: Arch, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) {
-    sweep_in(arch, false, code, address)
+    sweep_in(arch, Mode::default(), code, address)
 }
 
-/// [`sweep`], its words big-endian if `big` (as [`decode_in`]); MIPS's
+/// [`sweep`], its code read as `mode` says (as [`decode_in`]); MIPS's
 /// delayed branches' flow at their delay slots (see [`delay_slots`]).
-pub fn sweep_in(arch: Arch, big: bool, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) {
+pub fn sweep_in(arch: Arch, mode: Mode, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) {
+    let big = mode.big;
     if matches!(arch, Arch::Mips | Arch::Mips64) {
-        let features = mips_features(arch);
+        let features = mips_features_in(arch, mode);
         let mut out = Vec::new();
         let mut delayed = Vec::new();
         let mut at = 0usize;
@@ -642,7 +675,7 @@ pub fn sweep_in(arch: Arch, big: bool, code: &[u8], address: u64) -> (Vec<Insn>,
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
-        let Some(i) = decode_in(arch, big, &code[at..], pc) else {
+        let Some(i) = decode_in(arch, mode, &code[at..], pc) else {
             return (out, Some(pc));
         };
         at += usize::from(i.len.max(1));

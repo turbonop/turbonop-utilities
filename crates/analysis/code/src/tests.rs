@@ -204,7 +204,7 @@ fn powerpc_flow() {
             } else {
                 w.to_le_bytes()
             };
-            let i = decode_in(Arch::PowerPc64, big, &bytes, at).unwrap();
+            let i = decode_in(Arch::PowerPc64, Mode::endian(big), &bytes, at).unwrap();
             assert_eq!(
                 (i.flow, i.target, i.len),
                 (flow, target, 4),
@@ -215,7 +215,7 @@ fn powerpc_flow() {
     // pld 3, 8(4), 0: 8 bytes, the prefix first.
     let mut pld = 0x0400_0000u32.to_be_bytes().to_vec();
     pld.extend(0xe464_0008u32.to_be_bytes());
-    let i = decode_in(Arch::PowerPc64, true, &pld, at).unwrap();
+    let i = decode_in(Arch::PowerPc64, Mode::endian(true), &pld, at).unwrap();
     assert_eq!((i.len, i.flow), (8, Flow::Next));
     assert!(decodes(Arch::PowerPc));
 }
@@ -242,7 +242,7 @@ fn mips_flow() {
             } else {
                 w.to_le_bytes()
             };
-            let i = decode_in(Arch::Mips, big, &bytes, at).unwrap();
+            let i = decode_in(Arch::Mips, Mode::endian(big), &bytes, at).unwrap();
             assert_eq!(
                 (i.flow, i.target, i.len),
                 (flow, target, 4),
@@ -256,7 +256,7 @@ fn mips_flow() {
         .iter()
         .flat_map(|w| w.to_be_bytes())
         .collect();
-    let (insns, stop) = sweep_in(Arch::Mips, true, &code, at);
+    let (insns, stop) = sweep_in(Arch::Mips, Mode::endian(true), &code, at);
     assert_eq!(stop, None);
     assert_eq!(
         insns.iter().map(|i| i.flow).collect::<Vec<_>>(),

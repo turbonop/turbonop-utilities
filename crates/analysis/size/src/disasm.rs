@@ -254,6 +254,19 @@ fn riscv_features(f: &Function<'_>) -> hexcavator_riscv::Features {
     }
 }
 
+/// How an image's code is read: its byte order, and, for a MIPS ELF
+/// image, its flags.
+pub fn code_mode(image: &hexcavator_image::Image<'_>) -> hexcavator_code::Mode {
+    hexcavator_code::Mode {
+        big: image.endian() == hexcavator_core::Endian::Big,
+        mips_flags: image
+            .elf()
+            .filter(|e| e.header().machine == hexcavator_elf::consts::EM_MIPS)
+            .map(|e| e.header().flags),
+        mips_gp: image.elf().and_then(hexcavator_elf::ElfFile::mips_gp),
+    }
+}
+
 /// The MIPS features a listing decodes with: as llvm-objdump takes them
 /// from the image's flags.
 fn mips_features(f: &Function<'_>) -> hexcavator_mips::Features {
@@ -691,7 +704,14 @@ pub fn references_in_image(
 ) {
     let mut refs = Vec::new();
     // (Its callers' code is x86-64's and ARM64's: little-endian.)
-    hexcavator_xref::scan_image(arch, false, code, address, image_base, &mut refs);
+    hexcavator_xref::scan_image(
+        arch,
+        hexcavator_code::Mode::default(),
+        code,
+        address,
+        image_base,
+        &mut refs,
+    );
     out.extend(
         refs.iter()
             .filter(|r| {

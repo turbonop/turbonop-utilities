@@ -32,3 +32,28 @@ fn compressed_as_full() {
     assert_eq!(text(&0x4515u16.to_le_bytes(), true), "li\ta0, 0x5");
     assert_eq!(text(&0x8082u16.to_le_bytes(), true), "ret");
 }
+
+/// An image's ISA string (its `.riscv.attributes` arch): the extensions
+/// it names, versions aside, and what they imply (C with D: Zcd); and
+/// only those decode.
+#[test]
+fn features_from_arch() {
+    let f = Features::from_arch(
+        "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0_zifencei2p0_zmmul1p0_zaamo1p0_zalrsc1p0_zca1p0_zcd1p0",
+    );
+    for n in [
+        "64bit", "m", "a", "f", "d", "c", "zicsr", "zifencei", "zca", "zcd", "zaamo",
+    ] {
+        assert!(f.contains(n), "{n}");
+    }
+    assert!(!f.contains("zba") && !f.contains("v"));
+    let g = Features::from_arch("rv32gc");
+    for n in ["m", "a", "f", "d", "c", "zicsr", "zifencei", "zcf", "zcd"] {
+        assert!(g.contains(n), "{n}");
+    }
+    assert!(!g.rv64());
+    // sh1add a0, a1, a2 (Zba): not rv64gc's.
+    let sh1add = 0x20C5_A533u32.to_le_bytes();
+    assert!(decode(&sh1add, &f).is_none());
+    assert_eq!(text(&sh1add, true), "sh1add\ta0, a1, a2");
+}

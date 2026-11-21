@@ -105,6 +105,10 @@ for %%t in (x86_64-linux-gnu aarch64_be-linux-gnu i386-linux-gnu) do (
   "%LLVM_BIN%\llvm-readobj.exe" --unwind --relocs unwind-%%t > unwind-%%t.unwind.txt || exit /b 1
   "%LLVM_BIN%\llvm-readobj.exe" --relocs unwind-%%t.o > unwind-%%t.o.relocs.txt || exit /b 1
 )
+rem RISC-V (RV64GC) with call frame information, for the unwinder.
+"%LLVM_BIN%\clang.exe" --target=riscv64-linux-gnu -march=rv64gc %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-riscv64-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-riscv64-linux-gnu.o -o unwind-riscv64-linux-gnu || exit /b 1
+del unwind-riscv64-linux-gnu.o
 rem Anonymous data only code refers to (-O2, for the lookup and jump
 rem tables), and llvm-objdump's disassembly, which names the targets.
 for %%t in (x86_64-linux-gnu aarch64-linux-gnu) do (

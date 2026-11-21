@@ -303,16 +303,6 @@ fn sections(p: &mut Printer<'_>, m: &MachO<'_>) {
 fn relocations(p: &mut Printer<'_>, m: &MachO<'_>) {
     let syms = m.symbols();
     let sections = m.sections();
-    let data = m.data();
-    let big = m.header().endian == hexcavator_core::Endian::Big;
-    let word = |at: usize| -> Option<u32> {
-        let b: [u8; 4] = data.get(at..at + 4)?.try_into().ok()?;
-        Some(if big {
-            u32::from_be_bytes(b)
-        } else {
-            u32::from_le_bytes(b)
-        })
-    };
     p.open("Relocations [");
     for s in &sections {
         if s.nreloc == 0 {
@@ -322,42 +312,33 @@ fn relocations(p: &mut Printer<'_>, m: &MachO<'_>) {
             "Section {} {{",
             String::from_utf8_lossy(s.sectname)
         ));
-        for i in 0..s.nreloc.min(1 << 20) as usize {
-            let at = s.reloff as usize + i * 8;
-            let (Some(a), Some(b)) = (word(at), word(at + 4)) else {
-                break;
-            };
-            if a & 0x8000_0000 != 0 {
-                // Scattered.
-                let pcrel = (a >> 30) & 1;
-                let len = (a >> 28) & 3;
-                let kind = (a >> 24) & 0xF;
-                let offset = a & 0x00FF_FFFF;
+        for r in m.relocations(s) {
+            let kind = reloc_type(m.header().cputype, u32::from(r.kind));
+            let (pcrel, len) = (u8::from(r.pcrel), r.length);
+            if let Some(value) = r.value {
                 p.raw(format_args!(
-                    "0x{offset:X} {pcrel} {len} n/a {} 1 0x{b:X}",
-                    reloc_type(m.header().cputype, kind)
+                    "0x{:X} {pcrel} {len} n/a {kind} 1 0x{value:X}",
+                    r.address
                 ));
                 continue;
             }
-            let symnum = b & 0x00FF_FFFF;
-            let pcrel = (b >> 24) & 1;
-            let len = (b >> 25) & 3;
-            let ext = (b >> 27) & 1;
-            let kind = b >> 28;
-            let target = if ext == 1 {
-                syms.get(symnum as usize).map_or_else(
+            let target = if r.external {
+                syms.get(r.symbolnum as usize).map_or_else(
                     || "-".to_string(),
                     |s| String::from_utf8_lossy(s.name).into_owned(),
                 )
             } else {
-                sections.get((symnum as usize).wrapping_sub(1)).map_or_else(
-                    || "-".to_string(),
-                    |s| String::from_utf8_lossy(s.sectname).into_owned(),
-                )
+                sections
+                    .get((r.symbolnum as usize).wrapping_sub(1))
+                    .map_or_else(
+                        || "-".to_string(),
+                        |s| String::from_utf8_lossy(s.sectname).into_owned(),
+                    )
             };
             p.raw(format_args!(
-                "0x{a:X} {pcrel} {len} {ext} {} 0 {target}",
-                reloc_type(m.header().cputype, kind)
+                "0x{:X} {pcrel} {len} {} {kind} 0 {target}",
+                r.address,
+                u8::from(r.external)
             ));
         }
         p.close("}");

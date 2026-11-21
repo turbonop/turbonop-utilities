@@ -47,6 +47,10 @@ for %%a in (arm64 x86_64) do (
 for %%f in (program-arm64 program-x86_64 program-arm64.o program-x86_64.o libsecond-arm64.dylib) do (
   "%LLVM_BIN%\llvm-readobj.exe" --file-headers --sections --symbols --macho-segment --macho-dysymtab --macho-version-min %%f > %%f.readobj.txt || exit /b 1
 )
+rem The objects' relocations, as llvm-readobj lists them.
+for %%f in (program-arm64.o program-x86_64.o) do (
+  "%LLVM_BIN%\llvm-readobj.exe" --relocations %%f > %%f.relocs.txt || exit /b 1
+)
 "%LLVM_BIN%\llvm-objdump.exe" --macho --private-headers program-arm64 > program-arm64.loadcmds.txt || exit /b 1
 "%LLVM_BIN%\llvm-objdump.exe" --macho --universal-headers program-universal > program-universal.fat.txt || exit /b 1
 rem The debug information of each executable, as dsymutil gathers it from

@@ -99,44 +99,7 @@ fn entry(x: &Xref, addr: u64, slot: Option<u64>) -> Entry {
     }
 }
 
-/// The words of `[start, end)` (pointer-sized, in the image's byte
-/// order), each with its address: as the loader leaves them (a slot's
-/// relocation target, where it writes one).
-fn words(
-    image: &Image<'_>,
-    start: u64,
-    end: u64,
-    wide: bool,
-    slots: &[hexcavator_image::PointerSlot],
-) -> Vec<(u64, u64)> {
-    let w: u64 = if wide { 8 } else { 4 };
-    let big = image.endian() == hexcavator_core::Endian::Big;
-    let mut out = Vec::new();
-    // (At most so many words, read or not: a list's size is what its
-    // header says, which a damaged file can make anything.)
-    let count = (end.saturating_sub(start) / w).min(MAX_ENTRIES);
-    for i in 0..count {
-        let at = start + i * w;
-        let relocated = slots
-            .binary_search_by_key(&at, |p| p.addr)
-            .ok()
-            .and_then(|i| slots[i].target);
-        let raw = image.bytes_at(at, w).map(|b| {
-            let mut v = [0u8; 8];
-            if big {
-                v[8 - b.len()..].copy_from_slice(b);
-                u64::from_be_bytes(v)
-            } else {
-                v[..b.len()].copy_from_slice(b);
-                u64::from_le_bytes(v)
-            }
-        });
-        if let Some(value) = relocated.or(raw) {
-            out.push((at, value));
-        }
-    }
-    out
-}
+use crate::loader_lists::words;
 
 /// The code node named one of `names` (by its name without parameters),
 /// a global one first.
@@ -250,60 +213,37 @@ fn pe_startup(
 }
 
 fn elf_startup(image: &Image<'_>, elf: &hexcavator_elf::ElfFile<'_>, x: &Xref) -> Startup {
+    use crate::loader_lists::{List, When};
     use hexcavator_elf::consts::*;
     let h = elf.header();
-    let wide = h.class == hexcavator_elf::Class::Elf64;
     let library = h.kind == ET_DYN && !elf.segments().any(|s| s.kind == PT_INTERP);
-    let slots = image.pointer_slots();
     // (Thumb functions' addresses have their low bit set.)
-    let thumb = h.machine == EM_ARM;
-    let code = |v: u64| if thumb { v & !1 } else { v };
-    let list = |kind: u32, name: &str, reverse: bool| -> Vec<Entry> {
-        let mut out = Vec::new();
-        for s in elf
-            .sections()
-            .filter(|s| s.kind == kind || (kind == 0 && s.name == name.as_bytes()))
-        {
-            if !s.is_alloc() {
-                continue;
-            }
-            let mut w = words(image, s.addr, s.addr.saturating_add(s.size), wide, &slots);
-            if reverse {
-                w.reverse();
-            }
-            // (`.ctors` has -1 and 0 at its ends.)
-            let all = if wide { u64::MAX } else { u64::from(u32::MAX) };
-            out.extend(
-                w.into_iter()
-                    .filter(|&(_, v)| v != 0 && v != all)
-                    .map(|(slot, v)| entry(x, code(v), Some(slot))),
-            );
-        }
-        out
+    let code = |v: u64| if h.machine == EM_ARM { v & !1 } else { v };
+    let lists = crate::loader_lists::lists(image);
+    let of = |pick: &dyn Fn(&List) -> bool| -> Vec<Entry> {
+        lists
+            .iter()
+            .filter(|l| pick(l))
+            .flat_map(|l| l.entries.iter().map(|&(slot, v)| entry(x, v, slot)))
+            .collect()
     };
     let mut phases = Vec::new();
     if !library {
         phases.push(Phase {
             name: ".preinit_array".into(),
             detail: "the dynamic loader calls these first, before any library's initializers (a program's only)",
-            entries: list(SHT_PREINIT_ARRAY, "", false),
+            entries: of(&|l| l.when == When::PreInit),
         });
     }
-    let init: Vec<Entry> = elf
-        .dynamic()
-        .iter()
-        .filter(|d| d.tag == DT_INIT)
-        .map(|d| entry(x, code(d.value), None))
-        .collect();
     phases.push(Phase {
         name: "DT_INIT".into(),
         detail: "the loader calls it (_init), before .init_array",
-        entries: init,
+        entries: of(&|l| l.when == When::Init && l.section.is_none()),
     });
     phases.push(Phase {
         name: ".ctors".into(),
         detail: "older constructors' list: _init's __do_global_ctors_aux calls them, last first",
-        entries: list(0, ".ctors", true),
+        entries: of(&|l| l.name == ".ctors"),
     });
     phases.push(Phase {
         name: ".init_array".into(),
@@ -312,7 +252,7 @@ fn elf_startup(image: &Image<'_>, elf: &hexcavator_elf::ElfFile<'_>, x: &Xref) -
         } else {
             "the loader (or, in a static program, __libc_start_main) calls these in order, before main"
         },
-        entries: list(SHT_INIT_ARRAY, "", false),
+        entries: of(&|l| l.when == When::Init && l.section.is_some() && l.name != ".ctors"),
     });
     if !library && h.entry != 0 {
         phases.push(Phase {
@@ -330,45 +270,17 @@ fn elf_startup(image: &Image<'_>, elf: &hexcavator_elf::ElfFile<'_>, x: &Xref) -
 }
 
 fn macho_startup(image: &Image<'_>, m: &hexcavator_macho::MachO<'_>, x: &Xref) -> Startup {
-    use hexcavator_macho::consts::*;
+    use crate::loader_lists::When;
     const MH_EXECUTE: u32 = 2;
     let library = m.header().filetype != MH_EXECUTE;
-    let wide = m.header().is64;
-    let slots = image.pointer_slots();
-    let base = m
-        .segments()
-        .iter()
-        .find(|s| s.fileoff == 0 && s.filesize > 0)
-        .map_or(0, |s| s.vmaddr);
     let mut entries = Vec::new();
     let mut names = Vec::new();
-    for s in m.sections() {
-        let (start, end) = (s.addr, s.addr.saturating_add(s.size));
-        match s.kind() {
-            S_MOD_INIT_FUNC_POINTERS => {
-                entries.extend(
-                    words(image, start, end, wide, &slots)
-                        .into_iter()
-                        .filter(|&(_, v)| v != 0)
-                        .map(|(slot, v)| entry(x, v, Some(slot))),
-                );
-            }
-            S_INIT_FUNC_OFFSETS => {
-                let bytes = image.bytes_at(start, s.size).unwrap_or_default();
-                for (i, w) in bytes
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .enumerate()
-                    .take(MAX_ENTRIES as usize)
-                {
-                    let off = u64::from(u32::from_le_bytes(*w));
-                    entries.push(entry(x, base.wrapping_add(off), Some(start + 4 * i as u64)));
-                }
-            }
-            _ => continue,
-        }
-        names.push(String::from_utf8_lossy(s.sectname).into_owned());
+    for l in crate::loader_lists::lists(image)
+        .into_iter()
+        .filter(|l| l.when == When::Init)
+    {
+        entries.extend(l.entries.iter().map(|&(slot, v)| entry(x, v, slot)));
+        names.push(l.name);
     }
     let mut phases = vec![Phase {
         name: if names.is_empty() {

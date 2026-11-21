@@ -143,7 +143,9 @@ fn elf_sections_are_readobjs() {
         assert_eq!(sections.len(), listed.len(), "{name}");
         for (s, l) in sections.iter().zip(&listed) {
             let what = format!("{name} {}", l.name);
-            assert_eq!(Some(s.index), l.index, "{what}");
+            // (Counted from 0 among `Image`'s sections: the header index
+            // less the null section.)
+            assert_eq!(Some(s.index + 1), l.index, "{what}");
             assert_eq!(String::from_utf8_lossy(s.name), l.name, "{what}");
             assert_eq!(s.addr, l.address, "{what}");
             assert_eq!(s.file_offset, l.offset, "{what}");

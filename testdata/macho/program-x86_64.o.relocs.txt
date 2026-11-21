@@ -1,0 +1,45 @@
+
+File: program-x86_64.o
+Format: Mach-O 64-bit x86-64
+Arch: x86_64
+AddressSize: 64bit
+Relocations [
+  Section __text {
+    0xAB 1 2 1 X86_64_RELOC_SIGNED 0 _hidden_state
+    0xA3 1 2 1 X86_64_RELOC_BRANCH 0 _second_len
+    0x9A 1 2 1 X86_64_RELOC_TLV 0 _per_thread
+    0x93 1 2 1 X86_64_RELOC_SIGNED 0 _buffer
+    0x8D 1 2 1 X86_64_RELOC_BRANCH 0 _compute
+    0x88 1 2 1 X86_64_RELOC_SIGNED 0 _counter
+    0x2D 1 2 1 X86_64_RELOC_SIGNED 0 _message
+    0x1B 1 2 1 X86_64_RELOC_SIGNED 0 _hidden_state
+  }
+  Section __thread_vars {
+    0x10 0 3 1 X86_64_RELOC_UNSIGNED 0 _per_thread$tlv$init
+    0x0 0 3 1 X86_64_RELOC_UNSIGNED 0 __tlv_bootstrap
+  }
+  Section __debug_info {
+    0x19B 0 3 0 X86_64_RELOC_UNSIGNED 0 __cstring
+    0x16B 0 3 0 X86_64_RELOC_UNSIGNED 0 __common
+    0x156 0 3 0 X86_64_RELOC_UNSIGNED 0 __bss
+    0x140 0 3 0 X86_64_RELOC_UNSIGNED 0 __thread_vars
+    0x12B 0 3 0 X86_64_RELOC_UNSIGNED 0 __data
+    0x10A 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0xFD 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0xF1 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0xD0 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0xBE 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0x9E 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0x67 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0x2F 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0x22 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+  }
+  Section __debug_frame {
+    0x60 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0x40 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+    0x20 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+  }
+  Section __debug_line {
+    0x2E 0 3 0 X86_64_RELOC_UNSIGNED 0 __text
+  }
+]

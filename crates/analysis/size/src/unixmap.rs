@@ -4,7 +4,8 @@
 //! (`main.o`, `lib.a(used.o)`), as a PE image's compilands are, and
 //! `libraries` by its archive (`lib.a`; `[no library]` for objects linked
 //! directly), without debug information. The rest of the image keeps the
-//! base's labels.
+//! base's labels. (A WebAssembly module's map is applied by its pieces'
+//! file offsets, as its report labels the file's bytes.)
 
 use hexcavator_linkmap::unix::{UnixMap, split_member};
 
@@ -33,7 +34,16 @@ pub fn apply(maps: &mut Maps, link: &UnixMap) {
                 input
             };
             let l = maps.labels.intern(name);
-            m.add_vm(p.addr, p.addr.saturating_add(p.size), l, &maps.base);
+            match p.offset {
+                // (wasm-ld's: 0 is what isn't in the file.)
+                Some(0) => {}
+                Some(at) => {
+                    m.add_file(at, at.saturating_add(p.size), l, &maps.base);
+                }
+                None => {
+                    m.add_vm(p.addr, p.addr.saturating_add(p.size), l, &maps.base);
+                }
+            }
         }
         m.fill_from(&maps.base, |l| l);
         m.vm.compress();

@@ -56,6 +56,8 @@ struct Charger<'m> {
     file_len: u64,
     /// See [`DwarfInput::code_at`].
     code_at: Option<u64>,
+    /// See [`DwarfInput::data_at`].
+    data_at: &'m [(u64, u64, u64)],
 }
 
 impl Charger<'_> {
@@ -83,6 +85,21 @@ impl Charger<'_> {
         }
         self.map.add_vm(at, at.saturating_add(len), l, self.base);
     }
+
+    /// A variable's `len` bytes at `at` (a WebAssembly module's: in its
+    /// linear memory, in the file where its data segment is).
+    fn data(&mut self, at: u64, len: u64, l: Label) {
+        if self.code_at.is_none() {
+            return self.vm(at, len, l);
+        }
+        if let Some(&(addr, _, offset)) = self
+            .data_at
+            .iter()
+            .find(|&&(addr, size, _)| at >= addr && at - addr < size)
+        {
+            self.file(Some(offset), at - addr, len, l);
+        }
+    }
 }
 
 /// A DWARF section: its name without the `.debug_`/`__debug_` prefix, its
@@ -102,6 +119,10 @@ pub struct DwarfInput<'d> {
     /// memory addresses of code; its variables', in linear memory, aren't
     /// the file's).
     pub code_at: Option<u64>,
+    /// A WebAssembly module's active data segments: each one's address in
+    /// linear memory, its size, and where it is in the file (where its
+    /// variables' bytes are).
+    pub data_at: Vec<(u64, u64, u64)>,
 }
 
 /// Charges code, data, and the DWARF's own bytes to compile units in
@@ -149,6 +170,7 @@ pub fn compile_units(
         base,
         file_len,
         code_at: input.code_at,
+        data_at: &input.data_at,
     };
     // Each abbreviation table, parsed once (a unit's is read for its name,
     // then for its DIEs).
@@ -470,7 +492,7 @@ fn add_die(
     if let Some(loc) = get(DW_AT_LOCATION) {
         if let Some(addr) = unit.location_address(&loc.value) {
             if let Some(&size) = sizes.get(&addr) {
-                c.vm(addr, size, l);
+                c.data(addr, size, l);
             }
         } else if unit.version < 5
             && matches!(loc.form, DW_FORM_SEC_OFFSET | DW_FORM_DATA4 | DW_FORM_DATA8)

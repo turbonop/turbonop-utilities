@@ -71,7 +71,7 @@ compared.
 | `crates/formats/ne` (`hexcavator-ne`) | 16-bit NE (New Executable) files: Windows 1.x-3.x and OS/2 1.x modules and fonts |
 | `crates/formats/pe` (`hexcavator-pe`) | PE images and COFF objects: headers, sections, symbols, RVA mapping, debug directory, imports, exports, relocations, load config (Guard CF, DVRT, CHPE/ARM64EC metadata), exception and unwind data, C++ EH and SEH handler data, TLS |
 | `crates/formats/signature` (`hexcavator-signature`) | Code signatures, verified the same on every platform: DER, X.509, CMS, Authenticode (nested signatures, RFC 3161 and PKCS #9 timestamps), and Apple code signing (code directories, page hashes, requirements, entitlements); the cryptography is RustCrypto's, trust a bundled set of roots |
-| `crates/formats/wasm` (`hexcavator-wasm`) | WebAssembly modules: sections, the name section, imports, function bodies, data segments |
+| `crates/formats/wasm` (`hexcavator-wasm`) | WebAssembly modules: sections, the name section, imports, globals, function bodies, data segments |
 | `crates/symbols/codeview` (`hexcavator-codeview`) | CodeView records, as cvinfo.h defines them: symbols, types (with a C++-style formatter and type layouts), C13 line and checksum subsections, inline annotations, register numbers |
 | `crates/symbols/debuginfo` (`hexcavator-debuginfo`) | A format-independent view of debug information: compilands, contributions, groups (PDB so far), and finding an image's PDB |
 | `crates/symbols/demangle` (`hexcavator-demangle`) | Symbol demanglers: Microsoft C++ (a syntax tree of the name, for queries, printed exactly as `UnDecorateSymbolName` does), Itanium C++, Rust (v0 and legacy), and Swift |

@@ -325,3 +325,60 @@ fn debug_files() {
         assert_eq!(Image::parse(&data).unwrap().kind(), kind, "{file}");
     }
 }
+
+/// A WebAssembly module's data (testdata/wasm/data.wasm, from
+/// tools/wasm/data.c): each active segment a section in linear memory, at
+/// `WASM_MEMORY`, named as the `name` section names it (`.rodata`
+/// read-only), its bytes there; exported globals' addresses, data symbols;
+/// and addresses shown, and pointers' bases, as linear memory's.
+#[test]
+fn wasm_data_in_linear_memory() {
+    use hexcavator_image::{SymbolKind, SymbolSource, WASM_MEMORY};
+    let data = fixture("wasm/data.wasm");
+    let image = Image::parse(&data).unwrap();
+    let sections = image.sections();
+    let segment = |name: &[u8]| {
+        sections
+            .iter()
+            .find(|s| s.name == name && s.addr >= WASM_MEMORY)
+            .unwrap_or_else(|| panic!("{}", String::from_utf8_lossy(name)))
+    };
+    let rodata = segment(b".rodata");
+    assert_eq!((rodata.addr, rodata.vm_size), (WASM_MEMORY + 0x10000, 0xb9));
+    assert!(!rodata.flags.contains(SectionFlags::WRITE));
+    assert!(rodata.flags.contains(SectionFlags::DATA));
+    let rw = segment(b".data");
+    assert_eq!((rw.addr, rw.vm_size), (WASM_MEMORY + 0x100bc, 4));
+    assert!(rw.flags.contains(SectionFlags::WRITE));
+    // (Code still at its section's offsets.)
+    assert!(
+        sections
+            .iter()
+            .any(|s| s.flags.contains(SectionFlags::CODE) && s.addr == 0)
+    );
+    // primes[0..2] = {2, 3}; counter = 42.
+    assert_eq!(
+        image.bytes_at(WASM_MEMORY + 0x10000, 8),
+        Some(&[2, 0, 0, 0, 3, 0, 0, 0][..])
+    );
+    assert_eq!(
+        image.bytes_at(WASM_MEMORY + 0x100bc, 4),
+        Some(&[42, 0, 0, 0][..])
+    );
+    // (Past a segment's end, or between segments: none.)
+    assert_eq!(image.bytes_at(WASM_MEMORY + 0x100bc, 5), None);
+    assert_eq!(image.bytes_at(WASM_MEMORY + 0x20000, 1), None);
+    let syms = image.symbols();
+    let counter = syms.iter().find(|s| s.name == b"counter").unwrap();
+    assert_eq!(
+        (counter.addr, counter.kind, counter.source),
+        (
+            WASM_MEMORY + 0x100bc,
+            SymbolKind::Data,
+            SymbolSource::Exported
+        )
+    );
+    assert_eq!(image.shown_address(WASM_MEMORY + 0x100bc), 0x100bc);
+    assert_eq!(image.shown_address(0x40), 0x40);
+    assert_eq!(0x100bc_u64.wrapping_sub(image.pointer_base()), counter.addr);
+}

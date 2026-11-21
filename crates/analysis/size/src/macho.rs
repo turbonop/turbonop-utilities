@@ -494,6 +494,7 @@ fn dwarf_input<'d>(img: &Image<'d>, debug: Option<&'d [u8]>) -> DwarfInput<'d> {
         endian: dwarf_image.endian(),
         sections: Vec::new(),
         code_at: None,
+        data_at: Vec::new(),
     };
     for s in dwarf_image.sections() {
         let start = s.offset as usize;

@@ -8,12 +8,11 @@ leave this list when they ship.
 Every command and analysis should work the same, and as well, on PE,
 ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 
-- **WebAssembly's data.** A module's data segments aren't mapped (only
-  its code has addresses), so its model, strings, duplicated data, and
-  `-fdata-sections` advice see none; and wasm-ld's `-map` isn't applied
-  to its report. Its code's addresses (code section offsets) and its
-  data's (linear memory) are two spaces that DWARF mixes: they need
-  telling apart first.
+- **WebAssembly's passive data.** A module's active data segments are
+  in linear memory (at `WASM_MEMORY`), but passive ones (shared memory's,
+  which `__wasm_init_memory` copies) and a position-independent module's
+  (relative to its imported `__memory_base`) aren't placed; nor is its
+  `.bss`, which no segment holds.
 - **Cleanups.** `hexc size`'s bloaty-style maps are built by four
   per-format paths; Mach-O's section relocations are read in the app, not
   its crate; startup and the graph's roots each enumerate the

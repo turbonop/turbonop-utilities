@@ -359,7 +359,7 @@ pub fn pe(
     // Linked /FIXED (no base relocations): its data's words that are its
     // addresses, as an ELF executable's without relocations are.
     if relocs.is_empty() {
-        data_words(&mut b, image, model, pointer_size, base);
+        data_words(&mut b, image, model, pointer_size, |v| v.checked_sub(base));
     }
 
     // Exception data: functions own their .pdata entries, which own their
@@ -863,14 +863,15 @@ fn file_bytes<'d>(image: &hexcavator_image::Image<'d>, start: u64, len: u64) -> 
 /// A pointer at `slot` to `to`: an address code takes, or data's pointer.
 /// An image whose addresses are resolved in place (a static ELF
 /// executable; a PE image linked `/FIXED`: no relocations to say where
-/// they are): its data's words that are a node's start (less `bias`, a PE
-/// image's preferred base), as pointers.
+/// they are; a WebAssembly module): its data's words that are a node's
+/// start (as `target` gives a word's address in the image: less a PE
+/// image's preferred base, or in a module's linear memory), as pointers.
 fn data_words(
     b: &mut Builder,
     image: &hexcavator_image::Image<'_>,
     model: &Model,
     width: u64,
-    bias: u64,
+    target: impl Fn(u64) -> Option<u64>,
 ) {
     let starts: rustc_hash::FxHashSet<u64> = b.nodes().iter().map(|n| n.start).collect();
     let big = image.endian() == hexcavator_core::Endian::Big;
@@ -895,7 +896,7 @@ fn data_words(
             } else {
                 w.iter().rev().fold(0u64, |v, &x| (v << 8) | u64::from(x))
             };
-            if let Some(to) = v.checked_sub(bias)
+            if let Some(to) = target(v)
                 && starts.contains(&to)
             {
                 pointer_edge(b, first + i as u64 * width, to);
@@ -1095,11 +1096,15 @@ fn macho_kept(sectname: &[u8], flags: u32) -> Option<&'static str> {
 }
 
 /// The cross-reference graph of a WebAssembly module, from its symbols
-/// (functions at their bodies' code-section offsets, as DWARF has them)
-/// and code: its calls, tail calls, and `ref.func`s. Roots: its exports,
-/// its start function, and the functions its element segments put in
-/// tables (any of them can be called indirectly). Its linker is taken to
-/// be wasm-ld, which drops functions as ELF linkers drop sections
+/// (functions at their bodies' code-section offsets, as DWARF has them;
+/// data at its addresses in linear memory, `WASM_MEMORY` on) and code: its
+/// calls, tail calls, and `ref.func`s; its constants and memory accesses'
+/// offsets that are data's addresses (as wasm-ld resolves them in place);
+/// and its data's words that are data's addresses. Roots: its exports
+/// (functions, and data an exported global holds the address of), its
+/// start function, and the functions its element segments put in tables
+/// (any of them can be called indirectly). Its linker is taken to be
+/// wasm-ld, which drops functions and data as ELF linkers drop sections
 /// (`--gc-sections`).
 pub fn wasm(
     image: &hexcavator_image::Image<'_>,
@@ -1138,6 +1143,29 @@ pub fn wasm(
         let first = at - code_at + locals.code_start as u64;
         for (off, inst) in code::instructions(instructions) {
             let Ok(i) = inst else { break };
+            let pc = first + off as u64;
+            // A constant or an access's offset that is data's address
+            // (wasm-ld resolves them in place: `i32.const`, or a load's
+            // offset from a zero base).
+            let memory = match &i.imm {
+                code::Imm::I32(v) => Some(u64::from(v.cast_unsigned())),
+                code::Imm::I64(v) => Some(v.cast_unsigned()),
+                code::Imm::MemArg(a) | code::Imm::MemArgLane(a, _) => Some(a.offset),
+                _ => None,
+            };
+            if let Some(v) = memory.filter(|&v| v != 0)
+                && let Some(to) = hexcavator_image::WASM_MEMORY.checked_add(v)
+                && let Some(n) = b.node_at(to)
+                && !b.nodes()[n as usize].code
+            {
+                let to = b.nodes()[n as usize].start;
+                if b.node_at(pc).is_some() {
+                    b.edge_at(pc, to, Edge::Address);
+                } else {
+                    b.edge_at(from, to, Edge::Address);
+                }
+                continue;
+            }
             let code::Imm::Index(f) = i.imm else { continue };
             let kind = match i.op.name {
                 "call" => Edge::Call,
@@ -1147,7 +1175,6 @@ pub fn wasm(
             };
             if let Some(&to) = address.get(&f) {
                 // (From the instruction, in the calling function.)
-                let pc = first + off as u64;
                 if b.node_at(pc).is_some() {
                     b.edge_at(pc, to, kind);
                 } else {
@@ -1183,6 +1210,27 @@ pub fn wasm(
             ));
         }
     }
+    // Exported data: the image's data symbols from exported globals.
+    for s in image.symbols() {
+        if s.kind == hexcavator_image::SymbolKind::Data
+            && s.source == hexcavator_image::SymbolSource::Exported
+            && let Some(n) = b.node_at(s.addr)
+            && b.nodes()[n as usize].start == s.addr
+        {
+            roots.push((
+                n,
+                Root::Export(String::from_utf8_lossy(s.name).into_owned()),
+            ));
+        }
+    }
+    // Data's pointers to data (a module's pointers are linear memory's
+    // addresses; its functions' are table indices).
+    let width = u64::from(arch.pointer_size().unwrap_or(4));
+    data_words(&mut b, image, model, width, |v| {
+        (v != 0)
+            .then(|| hexcavator_image::WASM_MEMORY.checked_add(v))
+            .flatten()
+    });
     let mut x = finish(b, &infos, roots, debug, arch, Linker::Elf, |_| true)?;
     units_of_data(&mut x, symbols, |_| true);
     Ok(x)
@@ -1232,7 +1280,7 @@ pub fn elf(
         })
     };
     if slots.is_empty() && !file.is_object() {
-        data_words(&mut b, image, model, width, 0);
+        data_words(&mut b, image, model, width, Some);
     }
 
     attach_exception_data(&mut b, image);

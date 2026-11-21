@@ -491,7 +491,8 @@ Address  Size     Align Out     In      Symbol
         .join("\n");
         let wasm = wasm.as_str();
         let m = parse(wasm).unwrap();
-        // (Code, at no address, isn't placed; data is, by its address.)
+        // (Code, at no address, isn't placed, but its pieces are where
+        // they are in the file; data is placed by its address.)
         assert_eq!(
             m.sections,
             [OutputSection {
@@ -500,14 +501,13 @@ Address  Size     Align Out     In      Symbol
                 size: 0x20
             }]
         );
-        assert_eq!(
-            (
-                m.pieces[0].name.as_str(),
-                m.pieces[0].addr,
-                m.pieces[0].size
-            ),
-            (".data.table", 0x400, 0x20)
-        );
+        let piece = |i: usize| {
+            let p: &crate::unix::Piece = &m.pieces[i];
+            (p.name.as_str(), p.addr, p.size, p.offset)
+        };
+        assert_eq!(piece(0), (".text", 0, 0x10, Some(0xe)));
+        assert_eq!(piece(1), (".data.table", 0x400, 0x20, Some(0x40)));
+        assert_eq!(m.symbols.len(), 1);
         assert_eq!(m.symbols[0].name, "table");
     }
 

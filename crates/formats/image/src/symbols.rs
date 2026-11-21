@@ -378,5 +378,32 @@ fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'d
             global: true,
         });
     }
+    // Exported globals that hold addresses in linear memory (wasm-ld's for
+    // exported data, `__data_end`, `__heap_base`): data there. (A mutable
+    // one, the stack pointer, holds no data's address.)
+    /// An export's kind: a global.
+    const EXPORT_GLOBAL: u8 = 3;
+    if !m.is_object() {
+        let globals = m.globals();
+        for e in m.exports().into_iter().filter(|e| e.kind == EXPORT_GLOBAL) {
+            let Some(g) = globals.iter().find(|g| g.index == e.index && !g.mutable) else {
+                continue;
+            };
+            let at = match g.init {
+                hexcavator_wasm::Init::I32(v) => u64::from(v.cast_unsigned()),
+                hexcavator_wasm::Init::I64(v) => v.cast_unsigned(),
+                _ => continue,
+            };
+            out.push(ImageSymbol {
+                addr: crate::wasm::MEMORY.wrapping_add(at),
+                size: None,
+                size_recorded: false,
+                name: e.name,
+                kind: SymbolKind::Data,
+                source: SymbolSource::Exported,
+                global: true,
+            });
+        }
+    }
     out
 }

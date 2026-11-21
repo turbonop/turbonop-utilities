@@ -123,3 +123,28 @@ fn symbols_match_dumpbin_snapshots() {
         assert!(expected.iter().any(|l| l == "COFF SYMBOL TABLE"), "{file}");
     }
 }
+
+/// 32-bit ARM's `/unwindinfo` (and `/pdata`, the same): its function
+/// table, by address, with the PDB's names; dumpbin shows no unwind codes
+/// for it. To refresh (in testdata\sizebench\bin):
+///
+///     dumpbin /nologo /unwindinfo PEParser.Tests.Dllarm32.dll > apps\hexcavator\tests\data\Dllarm32.unwind.txt
+#[test]
+fn arm32_unwind_matches_dumpbin_snapshot() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let expected = std::fs::read_to_string(root.join("tests/data/Dllarm32.unwind.txt")).unwrap();
+    for option in ["-unwindinfo", "-pdata"] {
+        let actual = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .args(["dump", option, "PEParser.Tests.Dllarm32.dll"])
+            .current_dir(root.join("../../testdata/sizebench/bin"))
+            .output()
+            .unwrap();
+        assert!(actual.status.success(), "{option}");
+        let expected = normalize(&expected);
+        let actual = normalize(&String::from_utf8(actual.stdout).unwrap());
+        for (i, (e, a)) in expected.iter().zip(&actual).enumerate() {
+            assert_eq!(e, a, "{option}: line {}", i + 1);
+        }
+        assert_eq!(expected.len(), actual.len(), "{option}");
+    }
+}

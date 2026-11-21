@@ -630,6 +630,8 @@ dependencies = [
  "hexcavator-core",
  "hexcavator-dwarf",
  "hexcavator-elf",
+ "hexcavator-image",
+ "hexcavator-macho",
  "hexcavator-pdb",
  "hexcavator-pe",
  "hexcavator-x86",

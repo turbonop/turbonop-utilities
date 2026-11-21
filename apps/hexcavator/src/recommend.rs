@@ -104,6 +104,7 @@ fn report(
                 hexcavator_image::Image::parse(&map).map_err(|e| format!("{}: {e}", show(path)))?;
             let mut r = structural_only(&image);
             with_exports(&mut r, &image, path, importers);
+            with_libraries(&mut r, &image, path);
             return Ok(if json { as_json(&r) } else { as_text(&r) });
         }
         Err(e) => return Err(e.to_string()),
@@ -116,7 +117,77 @@ fn report(
         .map_err(|e| format!("{}: {e}", show(path)))?;
     let mut r = recommendations(image, debug, model, &x, syms);
     with_exports(&mut r, image, path, importers);
+    with_libraries(&mut r, image, path);
     Ok(if json { as_json(&r) } else { as_text(&r) })
+}
+
+/// Adds the libraries the image at `path` is linked with that nothing of
+/// it uses ([`hexcavator_size::recommend::unused_libraries`]), as its
+/// loader finds them ([`hexcavator_deps`]): an ELF image's `DT_NEEDED`
+/// libraries, found, that define none of its undefined symbols; a Mach-O
+/// image's dylibs (not re-exported or upward ones) none of its binds name,
+/// unless it binds any by flat namespace (which any library could
+/// satisfy). Largest saving first with the rest.
+pub(crate) fn with_libraries(
+    r: &mut Recommended,
+    image: &hexcavator_image::Image<'_>,
+    path: &Path,
+) {
+    use hexcavator_deps::DepKind;
+    if r.toolchain.as_needed_option().is_none()
+        || (image.elf().is_none() && image.macho().is_none())
+    {
+        return;
+    }
+    let options = hexcavator_deps::Options {
+        max_modules: 256,
+        ..hexcavator_deps::Options::default()
+    };
+    let Ok(graph) = hexcavator_deps::analyze(path, &options) else {
+        return;
+    };
+    let Some(root) = graph.modules.first() else {
+        return;
+    };
+    let mut unused: Vec<(String, u64)> = Vec::new();
+    if let Some(elf) = image.elf() {
+        // (Each `DT_NEEDED` entry, and its name in `.dynstr`.)
+        let entry = if elf.class() == hexcavator_elf::Class::Elf64 {
+            16
+        } else {
+            8
+        };
+        for d in &root.deps {
+            let found = graph
+                .modules
+                .get(d.module)
+                .is_some_and(|m| m.status.path().is_some());
+            if d.kind == DepKind::Needed && found && d.imports.is_empty() {
+                unused.push((d.name.clone(), entry + d.name.len() as u64 + 1));
+            }
+        }
+    } else if let Some(m) = image.macho()
+        && root.unresolved.is_empty()
+    {
+        let dylibs = m.dylibs();
+        for d in &root.deps {
+            let kind = matches!(
+                d.kind,
+                DepKind::Dylib | DepKind::WeakDylib | DepKind::LazyDylib
+            );
+            if kind && d.imports.is_empty() {
+                let size = dylibs
+                    .iter()
+                    .find(|l| l.name == d.name.as_bytes())
+                    .map_or(0, |l| u64::from(l.size));
+                unused.push((d.name.clone(), size));
+            }
+        }
+    }
+    if let Some(rec) = hexcavator_size::recommend::unused_libraries(r.toolchain, &unused) {
+        r.recs.push(rec);
+        r.recs.sort_by_key(|r| std::cmp::Reverse(r.saving));
+    }
 }
 
 /// Adds what an image's exports recommend ([`hexcavator_size::exports`]),

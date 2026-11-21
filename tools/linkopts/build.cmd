@@ -33,6 +33,11 @@ rem   noexc               noexc.cpp: a function whose cleanup nothing it calls
 rem                       can throw through (needless), and one whose callee
 rem                       throws (needed); noexc-main.c stands in for the
 rem                       C++ runtime's exception functions.
+rem   needed, macho-needed
+rem                       needed-main.c, linked with two libraries
+rem                       (--no-as-needed): libneeded-used (needed-used.c),
+rem                       which it calls, and libneeded-unused
+rem                       (needed-unused.c), which it doesn't; beside it.
 rem (What's recorded is given to clang's cc1 as its driver would, so no
 rem path of this machine's is: the driver would record its own.)
 rem   macho-<link>        funcs.c for arm64 macOS (-O2 recorded), linked by
@@ -149,3 +154,22 @@ rem Exceptions: noexc, with DWARF.
 %CC% %SECTIONS% -fexceptions -c "%~dp0noexc-helpers.cpp" -o noexc-helpers.o || exit /b 1
 %CC% %SECTIONS% -c "%~dp0noexc-main.c" -o noexc-main.o || exit /b 1
 %LD% --gc-sections noexc.o noexc-helpers.o noexc-main.o -o "%OUT%/noexc" || exit /b 1
+
+rem Unused libraries: needed (ELF, its run path $ORIGIN) and macho-needed
+rem (its run path @executable_path), each linked with a library it calls and
+rem one it doesn't. No debug information.
+cd /d "%WORK%" || exit /b 1
+%XCC% -c "%~dp0needed-used.c" -o needed-used.o || exit /b 1
+%XCC% -c "%~dp0needed-unused.c" -o needed-unused.o || exit /b 1
+%XCC% -c "%~dp0needed-main.c" -o needed-main.o || exit /b 1
+%XLD% -shared -soname libneeded-used.so needed-used.o -o "%OUT%\libneeded-used.so" || exit /b 1
+%XLD% -shared -soname libneeded-unused.so needed-unused.o -o "%OUT%\libneeded-unused.so" || exit /b 1
+%XLD% -pie -e _start --no-as-needed -rpath $ORIGIN needed-main.o "%OUT%\libneeded-used.so" "%OUT%\libneeded-unused.so" -o "%OUT%\needed" || exit /b 1
+set DCC="%LLVM_BIN%\clang.exe" --target=arm64-apple-macos13 -O1 -ffreestanding -fno-stack-protector -fno-ident
+set DLD="%LLVM_BIN%\ld64.lld.exe" -arch arm64 -platform_version macos 13.0 13.0
+%DCC% -c "%~dp0needed-used.c" -o macho-needed-used.o || exit /b 1
+%DCC% -c "%~dp0needed-unused.c" -o macho-needed-unused.o || exit /b 1
+%DCC% -c "%~dp0needed-main.c" -o macho-needed-main.o || exit /b 1
+%DLD% -dylib -install_name @rpath/libneeded-used.dylib macho-needed-used.o -o "%OUT%\libneeded-used.dylib" || exit /b 1
+%DLD% -dylib -install_name @rpath/libneeded-unused.dylib macho-needed-unused.o -o "%OUT%\libneeded-unused.dylib" || exit /b 1
+%DLD% -e __start -rpath @executable_path macho-needed-main.o "%OUT%\libneeded-used.dylib" "%OUT%\libneeded-unused.dylib" -o "%OUT%\macho-needed" || exit /b 1

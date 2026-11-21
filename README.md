@@ -411,14 +411,21 @@ hexc size -findings new.exe -- old.exe     # each finding's change from a base b
 hexc recommend app.exe          # build changes that would make the image smaller, each with its saving
 ```
 
-Each recommendation is measured from the image and its PDB, and what can't
-be measured isn't made: compile an object with `/Gy` or `/Gw` (what
-nothing reaches that the linker kept with the sections it shares, from the
-cross-reference graph and the PDB's section contributions); link with
-`/OPT:REF` or `/OPT:ICF` when the link didn't (from the linker's command
-line in the PDB; by the unreferenced COMDATs, and by the functions it could
-fold); define a duplicated variable once. Objects of the toolset's and the
-SDK's own libraries are left out: they can't be rebuilt.
+Each recommendation is measured from the image and its debug information,
+and what can't be measured isn't made, in the terms of the toolchain that
+built it (MSVC's; GCC's and Clang's with GNU ld or lld; Apple's; wasm-ld's):
+compile an object so the linker can drop what nothing reaches (`/Gy`,
+`/Gw`; `-ffunction-sections`, `-fdata-sections`: what nothing reaches that
+the linker kept with the sections it shares, from the cross-reference graph
+and the debug information's contributions); link so it does (`/OPT:REF`,
+`--gc-sections`, `-dead_strip`), or folds identical functions (`/OPT:ICF`,
+`--icf`), when the link didn't (from the linker's command line in a PDB, or
+by what the link left); define a duplicated variable once; link without
+the libraries nothing of the image uses (`--as-needed`,
+`-dead_strip_dylibs`, as its loader finds them); pack relative relocations
+(RELR); and more of strings, exports, exception handling, and inlining.
+Objects of the toolset's and the system's own libraries are left out: they
+can't be rebuilt.
 
 ### Cross-references
 

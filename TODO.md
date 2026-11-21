@@ -17,8 +17,7 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   per-format paths; objects of every format but Mach-O have no addresses
   (`bytes_at`): their sections would need laying out, as a linker would,
   the same way their relocated DWARF is.
-- **More advice.** Unused libraries (`--as-needed`,
-  `-dead_strip_dylibs`); Mach-O's rebase and bind opcodes, where chained
+- **More advice.** Mach-O's rebase and bind opcodes, where chained
   fixups would be smaller.
 - **More instruction sets.** RISC-V, PowerPC, MIPS, and LoongArch images
   are read, but their code isn't decoded: no disassembly, references, or

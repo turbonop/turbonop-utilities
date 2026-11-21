@@ -1413,3 +1413,54 @@ fn macho_exception_handling() {
     assert_eq!(f("helper(int)")["handlers"], 0);
     assert!(functions.iter().all(|f| f["unwind"].as_u64().unwrap() > 0));
 }
+
+/// Libraries an image is linked with that nothing of it uses (tools/
+/// linkopts: needed and macho-needed, each linked with a library it calls
+/// and one it doesn't, which its run path finds beside it): to link with
+/// --as-needed (ELF: its DT_NEEDED entry and name) or -dead_strip_dylibs
+/// (Mach-O: its load command).
+#[test]
+fn unused_libraries() {
+    let linkopts = |name: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/linkopts")
+            .join(name)
+    };
+    for (image, option, unused, saving) in [
+        ("needed", "-Wl,--as-needed", "libneeded-unused.so", 16 + 20),
+        (
+            "macho-needed",
+            "-Wl,-dead_strip_dylibs",
+            "@rpath/libneeded-unused.dylib",
+            56,
+        ),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .args(["recommend", "-json"])
+            .arg(linkopts(image))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let rec = v["recommendations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == "unused-libraries")
+            .unwrap_or_else(|| panic!("{image}: {v}"));
+        assert!(rec["advice"].as_str().unwrap().contains(option), "{rec}");
+        assert_eq!(rec["saving"], saving, "{image}: {rec}");
+        let examples: Vec<&str> = rec["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["name"].as_str().unwrap())
+            .collect();
+        // (Not the library it calls.)
+        assert_eq!(examples, [unused], "{image}");
+    }
+}

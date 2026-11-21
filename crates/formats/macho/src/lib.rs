@@ -296,6 +296,8 @@ pub struct Dylib<'d> {
     pub name: &'d [u8],
     pub current_version: u32,
     pub compatibility_version: u32,
+    /// The command's size (`cmdsize`).
+    pub size: u32,
 }
 
 /// A section, normalized.
@@ -652,6 +654,7 @@ impl<'d> MachO<'d> {
                 name: self.lc_str(lc, 8).unwrap_or_default(),
                 current_version: self.u32(lc.offset + 16).unwrap_or(0),
                 compatibility_version: self.u32(lc.offset + 20).unwrap_or(0),
+                size: lc.size,
             })
             .collect()
     }

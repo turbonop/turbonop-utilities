@@ -20,3 +20,7 @@ for %%l in (objects imports) do (
   lib /nologo /list %%l.lib > %%l.lib.list.txt || exit /b 1
   dumpbin /nologo /linkermember:2 %%l.lib > %%l.lib.linkermember.txt || exit /b 1
 )
+rem dumpbin's view of each object's symbol table (hexc dump -symbols matches).
+for %%o in (objects.obj objects-big.obj) do (
+  dumpbin /nologo /symbols %%o > %%o.symbols.txt || exit /b 1
+)

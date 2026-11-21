@@ -1,0 +1,47 @@
+
+Dump of file weak-arm64.o
+
+File Type: COFF OBJECT
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length   58, #relocs    6, #linenums    0, checksum CAFB8924
+002 00000000 SECT2  notype       Static       | .data
+    Section length    0, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT3  notype       Static       | .bss
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+006 00000000 SECT4  notype       Static       | .xdata
+    Section length    0, #relocs    0, #linenums    0, checksum        0
+008 00000000 SECT5  notype       Static       | .rdata$.refptr.other
+    Section length    8, #relocs    1, #linenums    0, checksum        0, selection    2 (pick any)
+00A 00000000 SECT5  notype       External     | .refptr.other
+00B 00000000 SECT6  notype       Static       | .debug$S
+    Section length   34, #relocs    0, #linenums    0, checksum 719A80AA
+00D 00000000 SECT7  notype       Static       | .pdata
+    Section length    8, #relocs    1, #linenums    0, checksum 70E105C4
+00F 00000000 SECT8  notype       Static       | .llvm_addrsig
+    Section length    1, #relocs    0, #linenums    0, checksum 83D385C7
+011 00000000 ABS    notype       Static       | @feat.00
+012 00000000 UNDEF  notype       WeakExternal | maybe
+    Default index       14 Alias record
+014 00000000 SECT1  notype ()    External     | .weak.maybe.default.use
+015 00000008 SECT1  notype ()    External     | use
+016 00000000 SECT3  notype       Static       | counter
+017 00000000 UNDEF  notype       WeakExternal | other
+    Default index       19 Alias record
+019 00000000 ABS    notype       External     | .weak.other.default.use
+01A 00000000 DEBUG  notype       Filename     | .file
+    weak.c
+
+String Table Size = 0x57 bytes
+
+  Summary
+
+           4 .bss
+           0 .data
+          34 .debug$S
+           1 .llvm_addrsig
+           8 .pdata
+           8 .rdata$.refptr.other
+          58 .text
+           0 .xdata

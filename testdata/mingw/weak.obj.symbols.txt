@@ -1,0 +1,58 @@
+
+Dump of file weak.obj
+
+File Type: COFF OBJECT
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    0, #relocs    0, #linenums    0, checksum        0
+002 00000000 SECT2  notype       Static       | .data
+    Section length    0, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT3  notype       Static       | .bss
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+006 00000000 SECT4  notype       Static       | .text
+    Section length    4, #relocs    0, #linenums    0, checksum 751D2B5A, selection    1 (pick no duplicates)
+008 00000000 UNDEF  notype       WeakExternal | maybe
+    Default index       1F Alias record
+00A 00000000 SECT5  notype       Static       | .text
+    Section length   34, #relocs    4, #linenums    0, checksum 4CFF9A57, selection    1 (pick no duplicates)
+00C 00000000 SECT5  notype ()    External     | use
+00D 00000000 SECTA  notype       Static       | .xdata
+    Section length    C, #relocs    0, #linenums    0, checksum C9ADBD79, selection    5 (pick associative Section 0x5)
+00F 00000000 SECT6  notype       Static       | .rdata$.refptr.other
+    Section length    8, #relocs    1, #linenums    0, checksum        0, selection    2 (pick any)
+011 00000000 SECT6  notype       External     | .refptr.other
+012 00000000 SECT7  notype       Static       | .debug$S
+    Section length   BC, #relocs    2, #linenums    0, checksum D72356DE
+014 00000000 SECTB  notype       Static       | .debug$S
+    Section length   A4, #relocs    6, #linenums    0, checksum 12C5127D, selection    5 (pick associative Section 0x4)
+016 00000000 SECTC  notype       Static       | .debug$S
+    Section length   C0, #relocs    8, #linenums    0, checksum 959593D5, selection    5 (pick associative Section 0x5)
+018 00000000 SECT8  notype       Static       | .debug$T
+    Section length  784, #relocs    0, #linenums    0, checksum B25698E5
+01A 00000000 SECTD  notype       Static       | .pdata
+    Section length    C, #relocs    3, #linenums    0, checksum  1875D87, selection    5 (pick associative Section 0x5)
+01C 00000000 SECT9  notype       Static       | .llvm_addrsig
+    Section length    1, #relocs    0, #linenums    0, checksum 4C69105E
+01E 00000000 ABS    notype       Static       | @feat.00
+01F 00000000 SECT4  notype ()    External     | .weak.maybe.default.use
+020 00000000 SECT3  notype       Static       | counter
+021 00000000 UNDEF  notype       WeakExternal | other
+    Default index       23 Alias record
+023 00000000 ABS    notype       External     | .weak.other.default.use
+024 00000000 DEBUG  notype       Filename     | .file
+    weak.c
+
+String Table Size = 0x57 bytes
+
+  Summary
+
+           4 .bss
+           0 .data
+         220 .debug$S
+         784 .debug$T
+           1 .llvm_addrsig
+           C .pdata
+           8 .rdata$.refptr.other
+          38 .text
+           C .xdata

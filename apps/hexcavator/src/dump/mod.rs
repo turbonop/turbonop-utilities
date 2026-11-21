@@ -5,6 +5,7 @@
 //! (DOS, NE, LE/LX) get output in the same style.
 
 mod arm64_unwind;
+mod coff_symbols;
 mod debug;
 mod disasm;
 mod dos;
@@ -57,6 +58,7 @@ options (dumpbin-style; write as /name, -name, or --name):
   /pdata        exception directory (function table)
   /relocations  base relocations
   /summary      section size totals (the default)
+  /symbols      COFF symbol table (an object's, or an image's that has one)
   /tls          thread-local storage directory
   /unwindinfo   function table with unwind information
 
@@ -65,7 +67,7 @@ llvm-readobj shows them, with its options' names: --file-headers,
 --sections, --program-headers, --dynamic-table, --relocations, --symbols,
 --dyn-symbols, --notes, --needed-libs, --macho-segment, --macho-dysymtab,
 --macho-version-min. /headers gives the file header, sections, and
-segments; /relocations, the relocations; /imports or /exports, the
+segments; /relocations, the relocations; /symbols, the symbols; /imports or /exports, the
 dynamic symbols and needed libraries; /all, everything; and nothing, the
 file header and sections.";
 
@@ -81,6 +83,7 @@ const OPTIONS: &[&str] = &[
     "pdata",
     "relocations",
     "summary",
+    "symbols",
     "tls",
     "unwindinfo",
 ];
@@ -98,6 +101,8 @@ struct Options {
     pdata: bool,
     unwindinfo: bool,
     tls: bool,
+    /// The COFF symbol table (and, of other formats, their symbols).
+    symbols: bool,
     /// Do not look for the image's PDB.
     nopdb: bool,
     /// `-all`: every part of each file (none of them out of place).
@@ -154,6 +159,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 "pdata" => options.pdata = true,
                 "unwindinfo" => options.unwindinfo = true,
                 "tls" => options.tls = true,
+                "symbols" => options.symbols = true,
                 "nopdb" => options.nopdb = true,
                 "all" => {
                     options.all = true;
@@ -164,6 +170,7 @@ pub fn run(args: &[String]) -> ExitCode {
                     options.relocations = true;
                     options.unwindinfo = true;
                     options.tls = true;
+                    options.symbols = true;
                     options.disasm = true;
                 }
                 "summary" => {}
@@ -281,6 +288,9 @@ fn readobj_file(options: &Options, path: &str, data: &[u8]) -> Option<Result<Str
     }
     if options.relocations {
         parts.relocations = true;
+    }
+    if options.symbols {
+        parts.symbols = true;
     }
     if options.imports || options.exports {
         parts.dyn_symbols = true;

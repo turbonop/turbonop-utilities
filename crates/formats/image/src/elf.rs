@@ -66,6 +66,7 @@ pub(crate) fn flags(kind: u32, flags: u64, comdat: bool) -> SectionFlags {
 
 pub(crate) fn sections<'data>(elf: &ElfFile<'data>) -> Vec<Section<'data>> {
     let object = elf.is_object();
+    let addresses = elf.section_addresses();
     // The members of COMDAT groups.
     let mut comdat: Vec<u32> = elf
         .groups()
@@ -85,7 +86,8 @@ pub(crate) fn sections<'data>(elf: &ElfFile<'data>) -> Vec<Section<'data>> {
             Section {
                 index,
                 name: s.name,
-                addr: if object { 0 } else { s.addr },
+                // (An object's, laid out as a linker would.)
+                addr: addresses.get(s.index).copied().unwrap_or(s.addr),
                 vm_size,
                 file_offset: s.offset,
                 file_size: s.file_size(),
@@ -187,18 +189,20 @@ pub(crate) fn pointer_slots(elf: &ElfFile<'_>) -> Vec<crate::PointerSlot> {
 }
 
 pub(crate) fn bytes_at<'data>(elf: &ElfFile<'data>, addr: u64, len: u64) -> Option<&'data [u8]> {
-    if elf.is_object() {
-        return None;
-    }
+    // (An object's sections where they're laid out: see
+    // `ElfFile::section_addresses`.)
+    let addresses = elf.section_addresses();
+    let start = |s: &hexcavator_elf::Section<'_>| addresses.get(s.index).copied().unwrap_or(s.addr);
     let s = elf.sections().find(|s| {
+        let base = start(s);
         s.is_alloc()
             && s.has_file_data()
-            && addr >= s.addr
-            && addr - s.addr < s.size
-            && len <= s.size - (addr - s.addr)
+            && addr >= base
+            && addr - base < s.size
+            && len <= s.size - (addr - base)
     })?;
     let data = elf.section_data(&s);
-    let at = usize::try_from(addr - s.addr).ok()?;
+    let at = usize::try_from(addr - start(&s)).ok()?;
     data.get(at..at.checked_add(usize::try_from(len).ok()?)?)
 }
 

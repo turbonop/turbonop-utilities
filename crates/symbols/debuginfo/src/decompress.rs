@@ -363,6 +363,9 @@ fn relocate(elf: &ElfFile<'_>, index: usize, data: &mut [u8]) -> bool {
     };
     let big = elf.endian() == hexcavator_core::Endian::Big;
     let sections: Vec<_> = elf.sections().collect();
+    // (Where a linker would lay the sections out: so the object's
+    // addresses don't overlap, as its image's sections don't.)
+    let addresses = elf.section_addresses();
     let mut any = false;
     for rel in sections
         .iter()
@@ -390,7 +393,7 @@ fn relocate(elf: &ElfFile<'_>, index: usize, data: &mut [u8]) -> bool {
             };
             // (REL: the addend is the bytes it patches.)
             let addend = r.addend.map_or_else(|| read(place), i64::cast_unsigned);
-            let value = sym.value.wrapping_add(addend);
+            let value = elf.symbol_address(sym, &addresses).wrapping_add(addend);
             let bytes = if big {
                 value.to_be_bytes()
             } else {

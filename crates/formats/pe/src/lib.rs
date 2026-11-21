@@ -32,7 +32,7 @@ pub mod tls;
 pub mod version;
 
 pub use debug::{CodeView, CoffGroup, DebugEntry, Pogo};
-pub use file::{FileKind, OptionalHeader, PeFile};
+pub use file::{FileKind, OBJECT_BASE, OptionalHeader, PeFile};
 pub use load_config::{
     CodeKind, CodeRange, EnclaveConfig, EnclaveImport, GuardEntry, GuardTable, HybridMetadata,
     LoadConfig, VolatileMetadata,

@@ -183,9 +183,11 @@ fn coff_object() {
     let sections = image.sections();
     assert_eq!(sections.len(), 2);
     assert_eq!(sections[0].name, b".text");
+    // (Laid out as a linker would: from a page in, each section at its
+    // alignment.)
     assert_eq!(
         (sections[0].addr, sections[0].vm_size, sections[0].file_size),
-        (0, 1, 1)
+        (0x1000, 1, 1)
     );
     assert_eq!(sections[0].file_offset, 100);
     assert!(
@@ -195,9 +197,12 @@ fn coff_object() {
     );
     assert_eq!(sections[1].name, b".bss");
     assert_eq!((sections[1].vm_size, sections[1].file_size), (64, 0));
+    assert!(sections[1].addr > 0x1000);
     assert!(sections[1].flags.contains(SectionFlags::ZERO_FILL));
-    // Objects have no address space.
+    // Its bytes where it is laid out; none before, nor in zero-fill.
+    assert_eq!(image.bytes_at(0x1000, 1), Some(&[0xC3][..]));
     assert_eq!(image.bytes_at(0, 1), None);
+    assert_eq!(image.bytes_at(sections[1].addr, 1), None);
 }
 
 #[test]

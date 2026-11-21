@@ -7,6 +7,10 @@ use crate::raw::{
 };
 use crate::symbols::{StringTable, SymbolTable};
 
+/// Where an object's first section is laid out (see
+/// [`PeFile::section_addresses`]): a page in, as a linker would put code.
+pub const OBJECT_BASE: u64 = 0x1000;
+
 /// Whether a file is a linked image or an object.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FileKind {
@@ -373,6 +377,34 @@ impl<'data> PeFile<'data> {
     #[inline]
     pub fn sections(&self) -> &'data [SectionHeader] {
         self.sections
+    }
+
+    /// Each section's address, by its index: an image's, its RVA; an
+    /// object's, as a linker would lay its sections out (those it keeps
+    /// in the image, not discardable or the linker's information, in
+    /// order from [`OBJECT_BASE`], each at the alignment it asks for), its
+    /// others at 0 (an object's sections have none, and its symbols'
+    /// values are offsets in their sections).
+    pub fn section_addresses(&self) -> alloc::vec::Vec<u64> {
+        use crate::consts::section_characteristics as sc;
+        let object = self.kind() == FileKind::Object;
+        let mut next = OBJECT_BASE;
+        self.sections
+            .iter()
+            .map(|h| {
+                if !object {
+                    return u64::from(h.virtual_address.get());
+                }
+                let c = h.characteristics.get();
+                if c & (sc::LNK_REMOVE | sc::LNK_INFO | sc::MEM_DISCARDABLE) != 0 {
+                    return 0;
+                }
+                let align = u64::from(sc::alignment(c).unwrap_or(16));
+                let at = next.checked_next_multiple_of(align).unwrap_or(next);
+                next = at.saturating_add(u64::from(h.size_of_raw_data.get()));
+                at
+            })
+            .collect()
     }
 
     /// A section's name, with `/offset` long names resolved through the

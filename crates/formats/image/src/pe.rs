@@ -43,6 +43,7 @@ pub fn flags(characteristics: u32) -> SectionFlags {
 
 pub(crate) fn sections<'data>(pe: &PeFile<'data>) -> Vec<Section<'data>> {
     let object = pe.kind() == FileKind::Object;
+    let addresses = pe.section_addresses();
     pe.sections()
         .iter()
         .enumerate()
@@ -56,7 +57,8 @@ pub(crate) fn sections<'data>(pe: &PeFile<'data>) -> Vec<Section<'data>> {
                 raw_size
             };
             let (addr, vm_size) = if object {
-                (0, raw_size)
+                // (Laid out as a linker would: `section_addresses`.)
+                (addresses.get(index).copied().unwrap_or(0), raw_size)
             } else {
                 // A virtual size of 0 means the raw size (old linkers).
                 let vsize = match h.virtual_size.get() {
@@ -177,7 +179,20 @@ pub(crate) fn pointer_slots(pe: &PeFile<'_>) -> Vec<crate::PointerSlot> {
 
 pub(crate) fn bytes_at<'data>(pe: &PeFile<'data>, addr: u64, len: u64) -> Option<&'data [u8]> {
     if pe.kind() == FileKind::Object {
-        return None;
+        // (Where its sections are laid out: `section_addresses`.)
+        let addresses = pe.section_addresses();
+        let (h, base) = pe.sections().iter().zip(addresses).find(|(h, base)| {
+            let size = u64::from(h.size_of_raw_data.get());
+            *base != 0
+                && h.pointer_to_raw_data.get() != 0
+                && addr >= *base
+                && addr - base < size
+                && len <= size - (addr - base)
+        })?;
+        let at = usize::try_from(u64::from(h.pointer_to_raw_data.get()) + (addr - base)).ok()?;
+        return pe
+            .data()
+            .get(at..at.checked_add(usize::try_from(len).ok()?)?);
     }
     let rva = u32::try_from(addr).ok()?;
     let len = u32::try_from(len).ok()?;

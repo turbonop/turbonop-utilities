@@ -16,6 +16,7 @@ struct Listed {
     address: u64,
     size: u64,
     offset: u64,
+    align: u64,
     flags: Vec<String>,
 }
 
@@ -81,6 +82,7 @@ fn listing(text: &str) -> (String, Vec<Listed>) {
             "Address" => c.address = number(value),
             "Size" => c.size = number(value),
             "Offset" => c.offset = number(value),
+            "AddressAlignment" => c.align = number(value),
             _ => {}
         }
     }
@@ -141,13 +143,26 @@ fn elf_sections_are_readobjs() {
         // (`Image` leaves out the null section.)
         let listed: Vec<&Listed> = listed.iter().filter(|l| l.index != Some(0)).collect();
         assert_eq!(sections.len(), listed.len(), "{name}");
+        // An object's sections where a linker would lay them out: its
+        // allocated ones in order, from a page in, each at its alignment
+        // (its listing's addresses all 0); others at 0.
+        let mut next = hexcavator_elf::OBJECT_BASE;
         for (s, l) in sections.iter().zip(&listed) {
+            let address = if !object {
+                l.address
+            } else if l.flags.iter().any(|f| f == "SHF_ALLOC") {
+                let at = next.next_multiple_of(l.align.max(1));
+                next = at + l.size;
+                at
+            } else {
+                0
+            };
             let what = format!("{name} {}", l.name);
             // (Counted from 0 among `Image`'s sections: the header index
             // less the null section.)
             assert_eq!(Some(s.index + 1), l.index, "{what}");
             assert_eq!(String::from_utf8_lossy(s.name), l.name, "{what}");
-            assert_eq!(s.addr, l.address, "{what}");
+            assert_eq!(s.addr, address, "{what}");
             assert_eq!(s.file_offset, l.offset, "{what}");
             let nobits = l.kind.starts_with("SHT_NOBITS");
             assert_eq!(s.file_size, if nobits { 0 } else { l.size }, "{what}");

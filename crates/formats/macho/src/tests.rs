@@ -250,3 +250,70 @@ fn cpu_types_name_architectures() {
     assert_eq!(arch(CPU_TYPE_MC680X0), Arch::M68k);
     assert_eq!(arch(CPU_TYPE_HPPA), Arch::Unknown);
 }
+
+/// Relocation entries, as LLVM reads them: a 32-bit target's scattered
+/// ones (an address with its high bit set), a big-endian target's plain
+/// ones packed from the high bits; and on ARM64 (and x86-64), which have
+/// no scattered entries, a high bit that's just the address's.
+#[test]
+fn relocation_entries() {
+    // (`count` entries claimed, from `at`.)
+    let entries = |data: &[u8], at: usize, count: u32| {
+        let m = MachO::parse(data).unwrap();
+        let mut s = m.sections()[0];
+        s.reloff = u32::try_from(at).unwrap();
+        s.nreloc = count;
+        m.relocations(&s)
+    };
+    // PowerPC (big-endian, 32-bit): a plain entry (symbol 5, PC-relative,
+    // four bytes, external, type 3), a scattered one (type 4, at 0x20, of
+    // 0x1234), and a section's (section 1, not external).
+    let mut data = sample(false, Endian::Big);
+    data[4..8].copy_from_slice(&18u32.to_be_bytes());
+    let at = data.len();
+    for w in [0x10u32, 0x5D3, 0xA400_0020, 0x1234, 0x30, 0x140] {
+        data.extend_from_slice(&w.to_be_bytes());
+    }
+    let r = entries(&data, at, 4);
+    // (The fourth runs past the file: none.)
+    assert_eq!(r.len(), 3);
+    assert_eq!(
+        r[0],
+        Relocation {
+            address: 0x10,
+            symbolnum: 5,
+            value: None,
+            pcrel: true,
+            length: 2,
+            external: true,
+            kind: 3,
+        }
+    );
+    assert!(r[1].is_scattered());
+    assert_eq!(
+        (r[1].address, r[1].value, r[1].length, r[1].kind, r[1].pcrel),
+        (0x20, Some(0x1234), 2, 4, false)
+    );
+    assert_eq!(
+        (r[2].symbolnum, r[2].external, r[2].length, r[2].kind),
+        (1, false, 2, 0)
+    );
+    // ARM64 (little-endian): the high bit is the address's.
+    let mut data = sample(true, Endian::Little);
+    let at = data.len();
+    for w in [0x8000_0010u32, 0x2D00_0007] {
+        data.extend_from_slice(&w.to_le_bytes());
+    }
+    let r = entries(&data, at, 1);
+    assert!(!r[0].is_scattered());
+    assert_eq!(
+        (
+            r[0].address,
+            r[0].symbolnum,
+            r[0].length,
+            r[0].external,
+            r[0].kind
+        ),
+        (0x8000_0010, 7, 2, true, 2)
+    );
+}

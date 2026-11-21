@@ -35,7 +35,12 @@ impl SectionFlags {
 /// A section of a file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Section<'data> {
-    /// The section's index in the file's section table (0-based).
+    /// Its position among the image's sections (see
+    /// [`crate::Image::sections`]), from 0, whatever the format: a PE
+    /// image's section number less one, as a Mach-O section's ordinal
+    /// (`n_sect`) is; an ELF section's header index less one (the table's
+    /// null section isn't one); a WebAssembly module's sections', then
+    /// its data segments'.
     pub index: usize,
     /// Its name (in a format's own encoding; for a Mach-O section, without
     /// its segment's).

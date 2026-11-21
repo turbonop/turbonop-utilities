@@ -14,10 +14,9 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   (relative to its imported `__memory_base`) aren't placed; nor is its
   `.bss`, which no segment holds.
 - **Cleanups.** `hexc size`'s bloaty-style maps are built by four
-  per-format paths; Mach-O's section relocations are read in the app, not
-  its crate; startup and the graph's roots each enumerate the
-  initializer lists; objects of every format but Mach-O have no
-  addresses (`bytes_at`); `Section::index` counts differently by format.
+  per-format paths; objects of every format but Mach-O have no addresses
+  (`bytes_at`): their sections would need laying out, as a linker would,
+  the same way their relocated DWARF is.
 - **More advice.** Unused libraries (`--as-needed`,
   `-dead_strip_dylibs`); Mach-O's rebase and bind opcodes, where chained
   fixups would be smaller.

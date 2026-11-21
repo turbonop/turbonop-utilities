@@ -76,13 +76,14 @@ pub(crate) fn sections<'data>(elf: &ElfFile<'data>) -> Vec<Section<'data>> {
     comdat.sort_unstable();
     elf.sections()
         .filter(|s| s.kind != SHT_NULL)
-        .map(|s| {
+        .enumerate()
+        .map(|(index, s)| {
             let in_comdat = u32::try_from(s.index).is_ok_and(|i| comdat.binary_search(&i).is_ok());
             // Sections that aren't loaded have no extent in memory (their
             // address is 0); objects' sections have their size.
             let vm_size = if object || s.is_alloc() { s.size } else { 0 };
             Section {
-                index: s.index,
+                index,
                 name: s.name,
                 addr: if object { 0 } else { s.addr },
                 vm_size,

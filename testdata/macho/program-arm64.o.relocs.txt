@@ -1,0 +1,51 @@
+
+File: program-arm64.o
+Format: Mach-O arm64
+Arch: aarch64
+AddressSize: 64bit
+Relocations [
+  Section __text {
+    0xB4 0 2 1 ARM64_RELOC_PAGEOFF12 0 _hidden_state
+    0xB0 1 2 1 ARM64_RELOC_PAGE21 0 _hidden_state
+    0xA8 1 2 1 ARM64_RELOC_BRANCH26 0 _second_len
+    0x98 0 2 1 ARM64_RELOC_TLVP_LOAD_PAGEOFF12 0 _per_thread
+    0x94 1 2 1 ARM64_RELOC_TLVP_LOAD_PAGE21 0 _per_thread
+    0x90 0 2 1 ARM64_RELOC_PAGEOFF12 0 _buffer
+    0x8C 1 2 1 ARM64_RELOC_PAGE21 0 _buffer
+    0x88 1 2 1 ARM64_RELOC_BRANCH26 0 _compute
+    0x84 0 2 1 ARM64_RELOC_PAGEOFF12 0 _counter
+    0x80 1 2 1 ARM64_RELOC_PAGE21 0 _counter
+    0x20 0 2 1 ARM64_RELOC_PAGEOFF12 0 _message
+    0x1C 1 2 1 ARM64_RELOC_PAGE21 0 _message
+    0x18 0 2 1 ARM64_RELOC_PAGEOFF12 0 _hidden_state
+    0x14 1 2 1 ARM64_RELOC_PAGE21 0 _hidden_state
+  }
+  Section __thread_vars {
+    0x10 0 3 1 ARM64_RELOC_UNSIGNED 0 _per_thread$tlv$init
+    0x0 0 3 1 ARM64_RELOC_UNSIGNED 0 __tlv_bootstrap
+  }
+  Section __debug_info {
+    0x19A 0 3 0 ARM64_RELOC_UNSIGNED 0 __cstring
+    0x16A 0 3 0 ARM64_RELOC_UNSIGNED 0 __common
+    0x155 0 3 0 ARM64_RELOC_UNSIGNED 0 __bss
+    0x13F 0 3 0 ARM64_RELOC_UNSIGNED 0 __thread_vars
+    0x12A 0 3 0 ARM64_RELOC_UNSIGNED 0 __data
+    0x109 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0xFC 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0xF1 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0xD0 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0xBE 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0x9E 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0x67 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0x2F 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0x22 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+  }
+  Section __debug_frame {
+    0x50 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0x38 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+    0x20 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+  }
+  Section __debug_line {
+    0x31 0 3 0 ARM64_RELOC_UNSIGNED 0 __text
+  }
+]

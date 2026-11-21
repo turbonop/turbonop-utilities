@@ -420,6 +420,42 @@ impl Nlist<'_> {
     }
 }
 
+/// A section's relocation entry: a plain one (`relocation_info`), or a
+/// scattered one (`scattered_relocation_info`, 32-bit targets' only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Relocation {
+    /// The offset in its section of what it relocates (`r_address`).
+    pub address: u32,
+    /// A plain entry's symbol (its index in the symbol table) if
+    /// `external`, else its section's number (from 1; `R_ABS`, 0, for
+    /// none): `r_symbolnum`. A scattered entry's is 0.
+    pub symbolnum: u32,
+    /// A scattered entry's value (`r_value`): the address it refers to.
+    pub value: Option<u32>,
+    /// Whether it is relative to the PC (`r_pcrel`).
+    pub pcrel: bool,
+    /// Its length, as a power of two: 0 a byte, 1 two, 2 four, 3 eight
+    /// (`r_length`).
+    pub length: u8,
+    /// Whether `symbolnum` is a symbol's (`r_extern`).
+    pub external: bool,
+    /// Its type (`r_type`): `GENERIC_RELOC_*`, `X86_64_RELOC_*`,
+    /// `ARM64_RELOC_*`, `ARM_RELOC_*`, `PPC_RELOC_*`.
+    pub kind: u8,
+}
+
+impl Relocation {
+    /// Whether it is a scattered entry.
+    pub fn is_scattered(&self) -> bool {
+        self.value.is_some()
+    }
+}
+
+/// A relocation field (masked: it fits).
+fn bits(v: u32) -> u8 {
+    u8::try_from(v).unwrap_or(u8::MAX)
+}
+
 /// An `LC_BUILD_VERSION` command.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BuildVersion {
@@ -869,6 +905,58 @@ impl<'d> MachO<'d> {
             .into_iter()
             .flat_map(|b| b.tools)
             .find(|t| matches!(t.tool, TOOL_LD | TOOL_LLD))
+    }
+
+    /// The relocation entries of `section` (an object's, normally), as
+    /// LLVM reads them: an entry whose address has its high bit set is
+    /// scattered, except on x86-64 and ARM64, which have none; a plain
+    /// entry's fields are packed from the low bits of its second word on
+    /// a little-endian target, from the high bits on a big-endian one. At
+    /// most the entries the file has.
+    pub fn relocations(&self, section: &Section<'_>) -> Vec<Relocation> {
+        let mut out = Vec::new();
+        let cpu = self.header.cputype;
+        let scatters = cpu != CPU_TYPE_X86_64 && cpu != CPU_TYPE_ARM64;
+        let big = self.header.endian == Endian::Big;
+        for i in 0..u64::from(section.nreloc) {
+            let at = u64::from(section.reloff) + i * 8;
+            let (Some(a), Some(b)) = (self.u32(at), self.u32(at + 4)) else {
+                break;
+            };
+            if scatters && a & 0x8000_0000 != 0 {
+                out.push(Relocation {
+                    address: a & 0x00FF_FFFF,
+                    symbolnum: 0,
+                    value: Some(b),
+                    pcrel: (a >> 30) & 1 != 0,
+                    length: bits(a >> 28 & 3),
+                    external: false,
+                    kind: bits(a >> 24 & 0xF),
+                });
+                continue;
+            }
+            let (symbolnum, pcrel, length, external, kind) = if big {
+                (b >> 8, (b >> 7) & 1, (b >> 5) & 3, (b >> 4) & 1, b & 0xF)
+            } else {
+                (
+                    b & 0x00FF_FFFF,
+                    (b >> 24) & 1,
+                    (b >> 25) & 3,
+                    (b >> 27) & 1,
+                    b >> 28,
+                )
+            };
+            out.push(Relocation {
+                address: a,
+                symbolnum,
+                value: None,
+                pcrel: pcrel != 0,
+                length: bits(length),
+                external: external != 0,
+                kind: bits(kind),
+            });
+        }
+        out
     }
 
     /// `LC_UUID`.

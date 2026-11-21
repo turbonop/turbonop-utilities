@@ -104,6 +104,9 @@ fn macho_is_llvm_readobjs() {
         &[],
     );
     assert_eq!(n, 5);
+    // Objects' relocations: plain ones (x86-64's and ARM64's have no
+    // scattered ones), by symbol and by section.
+    assert_eq!(each("macho", ".relocs.txt", &["--relocations"], &[]), 2);
 }
 
 #[test]

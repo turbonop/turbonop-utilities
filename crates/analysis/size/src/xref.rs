@@ -860,6 +860,23 @@ fn file_bytes<'d>(image: &hexcavator_image::Image<'d>, start: u64, len: u64) -> 
     image.bytes_at(start, len).unwrap_or(&[])
 }
 
+/// The functions the loader calls (see [`crate::loader_lists`]): roots,
+/// with what is in their lists' sections.
+fn loader_roots(b: &Builder, image: &hexcavator_image::Image<'_>, roots: &mut Vec<(u32, Root)>) {
+    for l in crate::loader_lists::lists(image) {
+        for &(_, to) in &l.entries {
+            if let Some(n) = b.node_at(to) {
+                roots.push((n, Root::Initializers(l.full_name.clone())));
+            }
+        }
+        if let Some((start, end)) = l.section {
+            for n in within(b, start, end) {
+                roots.push((n, Root::Initializers(l.full_name.clone())));
+            }
+        }
+    }
+}
+
 /// A pointer at `slot` to `to`: an address code takes, or data's pointer.
 /// An image whose addresses are resolved in place (a static ELF
 /// executable; a PE image linked `/FIXED`: no relocations to say where
@@ -985,11 +1002,6 @@ pub fn macho(
             }
         }
     }
-    let base = m
-        .segments()
-        .iter()
-        .find(|s| s.fileoff == 0 && s.filesize > 0)
-        .map_or(0, |s| s.vmaddr);
     for s in m.sections() {
         let name = format!(
             "{},{}",
@@ -1028,23 +1040,6 @@ pub fn macho(
             continue;
         }
         match s.kind() {
-            S_MOD_INIT_FUNC_POINTERS | S_MOD_TERM_FUNC_POINTERS => {
-                let i = slots.partition_point(|p| p.addr < start);
-                for p in slots[i..].iter().take_while(|p| p.addr < end) {
-                    if let Some(n) = p.target.and_then(|t| b.node_at(t)) {
-                        roots.push((n, Root::Initializers(name.clone())));
-                    }
-                }
-            }
-            S_INIT_FUNC_OFFSETS => {
-                let bytes = file_bytes(image, start, s.size);
-                for w in bytes.as_chunks::<4>().0.iter().take(1 << 20) {
-                    let off = u64::from(u32::from_le_bytes([w[0], w[1], w[2], w[3]]));
-                    if let Some(n) = b.node_at(base.wrapping_add(off)) {
-                        roots.push((n, Root::Initializers(name.clone())));
-                    }
-                }
-            }
             S_THREAD_LOCAL_REGULAR
             | S_THREAD_LOCAL_ZEROFILL
             | S_THREAD_LOCAL_VARIABLES
@@ -1059,6 +1054,8 @@ pub fn macho(
             roots.push((n, Root::Initializers(name.clone())));
         }
     }
+    // dyld's initializers and terminators.
+    loader_roots(&b, image, &mut roots);
     let mut x = finish(b, &infos, roots, debug, arch, Linker::MachO, |_| true)?;
     units_of_data(&mut x, symbols, |_| true);
     Ok(x)
@@ -1268,17 +1265,7 @@ pub fn elf(
         return Err(format!("no cross-references for {}", arch.name()));
     }
     let (mut b, infos, slots) = common(image, model, symbols, arch);
-    let bytes = |start: u64, len: u64| file_bytes(image, start, len);
     let width = u64::from(arch.pointer_size().unwrap_or(8));
-    let word = |at: u64| -> Option<u64> {
-        let w = bytes(at, width);
-        (w.len() as u64 == width).then(|| match file.endian() {
-            hexcavator_core::Endian::Little => {
-                w.iter().rev().fold(0u64, |v, &x| (v << 8) | u64::from(x))
-            }
-            hexcavator_core::Endian::Big => w.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x)),
-        })
-    };
     if slots.is_empty() && !file.is_object() {
         data_words(&mut b, image, model, width, Some);
     }
@@ -1310,38 +1297,7 @@ pub fn elf(
     }
     // The loader's initializers and finalizers: arrays of them, and the
     // dynamic table's single ones.
-    for s in file.sections() {
-        let name = String::from_utf8_lossy(s.name).into_owned();
-        let array = matches!(s.kind, SHT_INIT_ARRAY | SHT_FINI_ARRAY | SHT_PREINIT_ARRAY)
-            || matches!(name.as_str(), ".ctors" | ".dtors");
-        if !array || !s.is_alloc() {
-            continue;
-        }
-        for i in 0..(s.size / width).min(1 << 20) {
-            let at = s.addr + i * width;
-            let to = slots
-                .binary_search_by_key(&at, |p| p.addr)
-                .ok()
-                .and_then(|j| slots[j].target)
-                .or_else(|| word(at));
-            if let Some(n) = to.and_then(|t| b.node_at(t)) {
-                roots.push((n, Root::Initializers(name.clone())));
-            }
-        }
-        for n in within(&b, s.addr, s.addr + s.size) {
-            roots.push((n, Root::Initializers(name.clone())));
-        }
-    }
-    for d in file.dynamic() {
-        let what = match d.tag {
-            DT_INIT => "DT_INIT",
-            DT_FINI => "DT_FINI",
-            _ => continue,
-        };
-        if let Some(n) = b.node_at(d.value) {
-            roots.push((n, Root::Initializers(what.to_string())));
-        }
-    }
+    loader_roots(&b, image, &mut roots);
     // Thread-local data: code reaches it by offsets from the thread's
     // block, which no relocation or address shows.
     for p in file.segments().filter(|p| p.kind == PT_TLS) {

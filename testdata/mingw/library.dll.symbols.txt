@@ -1,0 +1,17 @@
+
+Dump of file library.dll
+
+File Type: DLL
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype ()    External     | add
+001 00000010 SECT1  notype ()    External     | triple
+002 00000020 SECT1  notype ()    External     | DllMainCRTStartup
+
+String Table Size = 0x16 bytes
+
+  Summary
+
+        1000 .buildid
+        1000 .rdata
+        1000 .text

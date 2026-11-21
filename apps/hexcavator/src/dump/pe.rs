@@ -115,6 +115,9 @@ pub fn dump(
             part(out, file)?;
         }
     }
+    if options.symbols {
+        super::coff_symbols::dump(out, file)?;
+    }
 
     let alignment = file
         .optional_header()

@@ -1,0 +1,162 @@
+
+Dump of file objects-big.obj
+
+File Type: EXTENDED COFF OBJECT
+
+COFF SYMBOL TABLE
+000 01058DA4 ABS    notype       Static       | @comp.id
+001 80010090 ABS    notype       Static       | @feat.00
+002 00000000 SECT1  notype       Static       | .drectve
+    Section length   40, #relocs    0, #linenums    0, checksum 4831D51F
+004 00000000 SECT2  notype       Static       | .debug$S
+    Section length  4C0, #relocs    E, #linenums    0, checksum        0
+006 00000000 SECT3  notype       Static       | .bss
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+008 00000000 SECT3  notype       External     | ?counter@@3HA (int counter)
+009 00000000 SECT4  notype       Static       | .data
+    Section length   40, #relocs    0, #linenums    0, checksum E75C02B3
+00B 00000000 SECT4  notype       External     | ?table@@3PAHA (int * table)
+00C 00000000 SECT5  notype       Static       | .rdata
+    Section length   14, #relocs    0, #linenums    0, checksum D5B3230D
+00E 00000000 SECT5  notype       Static       | ?text@@3QBDB (char const * const text)
+00F 00000000 SECT6  notype       Static       | .text$mn
+    Section length    4, #relocs    0, #linenums    0, checksum CB95EE79, selection    2 (pick any)
+011 00000000 SECT7  notype       Static       | .debug$S
+    Section length   B4, #relocs    6, #linenums    0, checksum        0, selection    5 (pick associative Section 0x6)
+013 00000000 SECT8  notype       Static       | .text$mn
+    Section length    5, #relocs    0, #linenums    0, checksum A316FDF1, selection    2 (pick any)
+015 00000000 SECT9  notype       Static       | .debug$S
+    Section length   B8, #relocs    6, #linenums    0, checksum        0, selection    5 (pick associative Section 0x8)
+017 00000000 SECTA  notype       Static       | .text$mn
+    Section length    E, #relocs    1, #linenums    0, checksum 1D727DB6, selection    2 (pick any)
+019 00000000 SECTB  notype       Static       | .debug$S
+    Section length   94, #relocs    4, #linenums    0, checksum        0, selection    5 (pick associative Section 0xA)
+01B 00000000 SECTC  notype       Static       | .text$mn
+    Section length   11, #relocs    1, #linenums    0, checksum 61CDF10F, selection    2 (pick any)
+01D 00000000 SECTD  notype       Static       | .debug$S
+    Section length   F8, #relocs    8, #linenums    0, checksum        0, selection    5 (pick associative Section 0xC)
+01F 00000000 SECTE  notype       Static       | .text$mn
+    Section length    B, #relocs    1, #linenums    0, checksum 9ED5CDC2, selection    2 (pick any)
+021 00000000 SECTF  notype       Static       | .debug$S
+    Section length   C0, #relocs    6, #linenums    0, checksum        0, selection    5 (pick associative Section 0xE)
+023 00000000 SECT10 notype       Static       | .text$mn
+    Section length    B, #relocs    1, #linenums    0, checksum 9ED5CDC2, selection    2 (pick any)
+025 00000000 SECT11 notype       Static       | .debug$S
+    Section length   A4, #relocs    4, #linenums    0, checksum        0, selection    5 (pick associative Section 0x10)
+027 00000000 SECT12 notype       Static       | .text$mn
+    Section length   2B, #relocs    2, #linenums    0, checksum 6A164E5E, selection    2 (pick any)
+029 00000000 SECT13 notype       Static       | .debug$S
+    Section length   C8, #relocs    6, #linenums    0, checksum        0, selection    5 (pick associative Section 0x12)
+02B 00000000 SECT14 notype       Static       | .text$mn
+    Section length   2B, #relocs    2, #linenums    0, checksum 53E4BC4A, selection    2 (pick any)
+02D 00000000 SECT15 notype       Static       | .debug$S
+    Section length   C8, #relocs    6, #linenums    0, checksum        0, selection    5 (pick associative Section 0x14)
+02F 00000000 SECT16 notype       Static       | .text$mn
+    Section length    7, #relocs    0, #linenums    0, checksum 3DB5624F, selection    2 (pick any)
+031 00000000 SECT17 notype       Static       | .debug$S
+    Section length   BC, #relocs    6, #linenums    0, checksum        0, selection    5 (pick associative Section 0x16)
+033 00000000 SECT18 notype       Static       | .text$mn
+    Section length   21, #relocs    3, #linenums    0, checksum AFF56FD6, selection    1 (pick no duplicates)
+035 00000000 SECT19 notype       Static       | .debug$S
+    Section length  104, #relocs    A, #linenums    0, checksum        0, selection    5 (pick associative Section 0x18)
+037 00000000 SECT1A notype       Static       | .text$mn
+    Section length   54, #relocs    6, #linenums    0, checksum 3B1AE499, selection    1 (pick no duplicates)
+039 00000000 SECT1B notype       Static       | .debug$S
+    Section length  194, #relocs    E, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1A)
+03B 00000000 UNDEF  notype ()    External     | _purecall
+03C 00000000 UNDEF  notype ()    External     | ??3@YAXPEAX_K@Z (void __cdecl operator delete(void *,unsigned __int64))
+03D 00000000 SECTE  notype ()    External     | ??1Shape@@UEAA@XZ (public: virtual __cdecl Shape::~Shape(void))
+03E 00000000 SECTA  notype ()    External     | ??0Shape@@QEAA@XZ (public: __cdecl Shape::Shape(void))
+03F 00000000 SECT12 notype ()    External     | ??_GShape@@UEAAPEAXI@Z (public: virtual void * __cdecl Shape::`scalar deleting destructor'(unsigned int))
+040 00000000 UNDEF  notype ()    WeakExternal | ??_EShape@@UEAAPEAXI@Z (public: virtual void * __cdecl Shape::`vector deleting destructor'(unsigned int))
+    Default index       3F No library search
+042 00000000 SECTC  notype ()    External     | ??0Square@@QEAA@H@Z (public: __cdecl Square::Square(int))
+043 00000000 SECT16 notype ()    External     | ?area@Square@@UEBAHXZ (public: virtual int __cdecl Square::area(void)const )
+044 00000000 SECT10 notype ()    External     | ??1Square@@UEAA@XZ (public: virtual __cdecl Square::~Square(void))
+045 00000000 SECT14 notype ()    External     | ??_GSquare@@UEAAPEAXI@Z (public: virtual void * __cdecl Square::`scalar deleting destructor'(unsigned int))
+046 00000000 UNDEF  notype ()    WeakExternal | ??_ESquare@@UEAAPEAXI@Z (public: virtual void * __cdecl Square::`vector deleting destructor'(unsigned int))
+    Default index       45 No library search
+048 00000000 SECT18 notype ()    External     | ?use_statics@@YAHH@Z (int __cdecl use_statics(int))
+049 00000000 SECT1A notype ()    External     | exported
+04A 00000000 SECT6  notype ()    External     | ??$twice@H@@YAHH@Z (int __cdecl twice<int>(int))
+04B 00000000 SECT8  notype ()    External     | ??$twice@_J@@YA_J_J@Z (__int64 __cdecl twice<__int64>(__int64))
+04C 00000000 SECT12 notype       Label        | $LN5
+04D 00000000 SECT14 notype       Label        | $LN5
+04E 00000000 SECT1C notype       Static       | .xdata
+    Section length    8, #relocs    0, #linenums    0, checksum F4D9A8A3, selection    5 (pick associative Section 0x12)
+050 00000000 SECT1C notype       Static       | $unwind$??_GShape@@UEAAPEAXI@Z
+051 00000000 SECT1D notype       Static       | .pdata
+    Section length    C, #relocs    3, #linenums    0, checksum A41C7E00, selection    5 (pick associative Section 0x12)
+053 00000000 SECT1D notype       Static       | $pdata$??_GShape@@UEAAPEAXI@Z
+054 00000000 SECT1E notype       Static       | .xdata
+    Section length    8, #relocs    0, #linenums    0, checksum F4D9A8A3, selection    5 (pick associative Section 0x14)
+056 00000000 SECT1E notype       Static       | $unwind$??_GSquare@@UEAAPEAXI@Z
+057 00000000 SECT1F notype       Static       | .pdata
+    Section length    C, #relocs    3, #linenums    0, checksum A41C7E00, selection    5 (pick associative Section 0x14)
+059 00000000 SECT1F notype       Static       | $pdata$??_GSquare@@UEAAPEAXI@Z
+05A 00000000 SECT20 notype       Static       | .rdata
+    Section length   18, #relocs    3, #linenums    0, checksum        0, selection    6 (pick largest)
+05C 00000008 SECT20 notype       External     | ??_7Shape@@6B@ (const Shape::`vftable')
+05D 00000000 SECT21 notype       Static       | .rdata
+    Section length   18, #relocs    3, #linenums    0, checksum        0, selection    6 (pick largest)
+05F 00000008 SECT21 notype       External     | ??_7Square@@6B@ (const Square::`vftable')
+060 00000000 SECT22 notype       Static       | .bss
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    2 (pick any)
+062 00000000 SECT22 notype       Static       | ?calls@?1??use_statics@@YAHH@Z@4HA (int `int __cdecl use_statics(int)'::`2'::calls)
+063 00000000 SECT23 notype       Static       | .rdata$r
+    Section length   24, #relocs    3, #linenums    0, checksum 81256527, selection    2 (pick any)
+065 00000000 SECT23 notype       External     | ??_R4Shape@@6B@ (const Shape::`RTTI Complete Object Locator')
+066 00000000 SECT24 notype       Static       | .data$rs
+    Section length   1C, #relocs    1, #linenums    0, checksum D6BED0F8, selection    2 (pick any)
+068 00000000 SECT24 notype       External     | ??_R0?AUShape@@@8 (struct Shape `RTTI Type Descriptor')
+069 00000000 SECT25 notype       Static       | .rdata$r
+    Section length   14, #relocs    1, #linenums    0, checksum CCAA009E, selection    2 (pick any)
+06B 00000000 SECT25 notype       External     | ??_R3Shape@@8 (Shape::`RTTI Class Hierarchy Descriptor')
+06C 00000000 SECT26 notype       Static       | .rdata$r
+    Section length    C, #relocs    1, #linenums    0, checksum        0, selection    2 (pick any)
+06E 00000000 SECT26 notype       External     | ??_R2Shape@@8 (Shape::`RTTI Base Class Array')
+06F 00000000 SECT27 notype       Static       | .rdata$r
+    Section length   24, #relocs    2, #linenums    0, checksum 3AD97647, selection    2 (pick any)
+071 00000000 SECT27 notype       External     | ??_R1A@?0A@EA@Shape@@8 (Shape::`RTTI Base Class Descriptor at (0,-1,0,64)')
+072 00000000 SECT28 notype       Static       | .rdata$r
+    Section length   24, #relocs    3, #linenums    0, checksum 81256527, selection    2 (pick any)
+074 00000000 SECT28 notype       External     | ??_R4Square@@6B@ (const Square::`RTTI Complete Object Locator')
+075 00000000 SECT29 notype       Static       | .data$rs
+    Section length   1D, #relocs    1, #linenums    0, checksum 3E0ADC86, selection    2 (pick any)
+077 00000000 SECT29 notype       External     | ??_R0?AUSquare@@@8 (struct Square `RTTI Type Descriptor')
+078 00000000 SECT2A notype       Static       | .rdata$r
+    Section length   14, #relocs    1, #linenums    0, checksum 4225077D, selection    2 (pick any)
+07A 00000000 SECT2A notype       External     | ??_R3Square@@8 (Square::`RTTI Class Hierarchy Descriptor')
+07B 00000000 SECT2B notype       Static       | .rdata$r
+    Section length   14, #relocs    2, #linenums    0, checksum        0, selection    2 (pick any)
+07D 00000000 SECT2B notype       External     | ??_R2Square@@8 (Square::`RTTI Base Class Array')
+07E 00000000 SECT2C notype       Static       | .rdata$r
+    Section length   24, #relocs    2, #linenums    0, checksum BBFC1360, selection    2 (pick any)
+080 00000000 SECT2C notype       External     | ??_R1A@?0A@EA@Square@@8 (Square::`RTTI Base Class Descriptor at (0,-1,0,64)')
+081 00000000 UNDEF  notype       External     | ??_7type_info@@6B@ (const type_info::`vftable')
+082 00000000 UNDEF  notype       External     | __ImageBase
+083 00000000 SECT2D notype       Static       | .debug$S
+    Section length   2C, #relocs    2, #linenums    0, checksum        0, selection    5 (pick associative Section 0x20)
+085 00000000 SECT2E notype       Static       | .debug$S
+    Section length   2C, #relocs    2, #linenums    0, checksum        0, selection    5 (pick associative Section 0x21)
+087 00000000 SECT2F notype       Static       | .debug$T
+    Section length  734, #relocs    0, #linenums    0, checksum        0
+089 00000000 SECT30 notype       Static       | .chks64
+    Section length  180, #relocs    0, #linenums    0, checksum        0
+
+String Table Size = 0x2D0 bytes
+
+  Summary
+
+           8 .bss
+         180 .chks64
+          40 .data
+          39 .data$rs
+         E58 .debug$S
+         734 .debug$T
+          40 .drectve
+          18 .pdata
+          44 .rdata
+          D8 .rdata$r
+         110 .text$mn
+          10 .xdata

@@ -19,8 +19,6 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   `hexc symbolize` does. The unwind crate's `Image` trait is PE's alone
   (`u32` RVAs), and nothing picks an unwinder by format and
   architecture.
-- **dumpbin's `/symbols`** (a COFF symbol table) isn't dumped, for
-  objects or for MinGW's images.
 - **Cleanups.** `hexc size`'s bloaty-style maps are built by four
   per-format paths; Mach-O's section relocations are read in the app, not
   its crate; startup and the graph's roots each enumerate the

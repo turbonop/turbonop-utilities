@@ -9,3 +9,5 @@ Built by `tools/coff/build.cmd` with MSVC (x64, `/Brepro`) from
 - `objects.lib`: a static library of both.
 - `imports.lib`: an import library (short import objects by name, by
   ordinal, undecorated, data, and renamed).
+- `*.symbols.txt`: dumpbin's `/symbols` of each object, which
+  `hexc dump -symbols` matches.

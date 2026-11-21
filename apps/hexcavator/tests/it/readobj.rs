@@ -235,3 +235,28 @@ fn options_out_of_place() {
     );
     assert!(run(&["/all", elf]).is_empty());
 }
+
+/// dumpbin's `/symbols` of another format's file: its symbols, as
+/// llvm-readobj's `--symbols` shows them.
+#[test]
+fn dumpbin_symbols_of_other_formats() {
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            .arg("dump")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        assert!(
+            out.stderr.is_empty(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let elf = testdata().join("linkopts/funcs-plain");
+    let elf = elf.to_str().unwrap();
+    let symbols = run(&["/symbols", elf]);
+    assert_eq!(symbols, run(&["--symbols", elf]));
+    assert!(symbols.contains("Symbols ["), "{symbols}");
+}

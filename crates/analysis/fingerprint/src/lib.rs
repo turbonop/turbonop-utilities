@@ -101,7 +101,7 @@ pub fn data(bytes: &[u8], size: u64, pointers: &[(u64, u32, Option<u32>)]) -> It
 /// each one's slot and the address there), sorted by slot.
 pub fn code(
     arch: Arch,
-    big: bool,
+    mode: hexcavator_code::Mode,
     code: &[u8],
     start: u64,
     image_base: Option<u64>,
@@ -109,7 +109,8 @@ pub fn code(
     resolve: &impl Resolve,
 ) -> Item {
     let mut refs = Vec::new();
-    hexcavator_xref::scan_image(arch, big, code, start, image_base, &mut refs);
+    hexcavator_xref::scan_image(arch, mode, code, start, image_base, &mut refs);
+    let big = mode.big;
     let end = start + code.len() as u64;
     let mut item = Item::default();
     let mut h = hasher(b'c');
@@ -239,7 +240,7 @@ pub fn code(
                     &["rj"],
                 ),
                 Arch::Mips | Arch::Mips64 => (
-                    mips(arch, big, code),
+                    mips(arch, mode, code),
                     |n| {
                         matches!(
                             n,
@@ -362,8 +363,13 @@ fn powerpc(arch: Arch, big: bool, code: &[u8]) -> Vec<(usize, hexcavator_powerpc
 
 /// MIPS code's instructions, its words big-endian (`big`) or not, with
 /// their offsets, to the first that doesn't decode.
-fn mips(arch: Arch, big: bool, code: &[u8]) -> Vec<(usize, hexcavator_mips::Instruction)> {
-    let features = hexcavator_code::mips_features(arch);
+fn mips(
+    arch: Arch,
+    mode: hexcavator_code::Mode,
+    code: &[u8],
+) -> Vec<(usize, hexcavator_mips::Instruction)> {
+    let features = hexcavator_code::mips_features_in(arch, mode);
+    let big = mode.big;
     code.as_chunks::<4>()
         .0
         .iter()
@@ -562,7 +568,8 @@ fn arm64_address_bits(encoding: &str, refers: bool) -> u32 {
 ///   or 32), and its registers.
 /// - RISC-V: each instruction's operation (a compressed one's full form's:
 ///   `c.addi` and `addi` alike) and its registers.
-pub fn shape(arch: Arch, big: bool, code: &[u8], start: u64) -> Option<u64> {
+pub fn shape(arch: Arch, mode: hexcavator_code::Mode, code: &[u8], start: u64) -> Option<u64> {
+    let big = mode.big;
     let mut h = hasher(b's');
     let mut count = 0usize;
     match arch {
@@ -644,7 +651,7 @@ pub fn shape(arch: Arch, big: bool, code: &[u8], start: u64) -> Option<u64> {
             let insts = match arch {
                 Arch::RiscV32 | Arch::RiscV64 => riscv(arch, code),
                 Arch::LoongArch32 | Arch::LoongArch64 => loongarch(arch, code),
-                Arch::Mips | Arch::Mips64 => mips(arch, big, code),
+                Arch::Mips | Arch::Mips64 => mips(arch, mode, code),
                 _ => powerpc(arch, big, code),
             };
             for (_, i) in insts {

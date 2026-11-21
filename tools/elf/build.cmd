@@ -51,6 +51,19 @@ for %%t in (mips mipsel mips64el) do (
   "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
   "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
 )
+rem 32-bit PowerPC as clang compiles it by default: PIC (its GOT pointer
+rem from `bcl 20, 31` and `mflr`, and a literal; its data through .got2).
+"%LLVM_BIN%\clang.exe" --target=powerpc-linux-gnu -fPIC %CFLAGS% -c "%~dp0program.c" -o program-powerpc-pic-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-powerpc-pic-linux-gnu.o -o program-powerpc-pic-linux-gnu || exit /b 1
+del program-powerpc-pic-linux-gnu.o
+rem MIPS (32-bit little-endian) as most of it is: with small data
+rem ($gp-relative), and PIC (its data through the GOT; its TLS local-exec,
+rem to link static), for references through $gp.
+"%LLVM_BIN%\clang.exe" --target=mipsel-linux-gnu -fno-pic -mno-abicalls %CFLAGS% -c "%~dp0program.c" -o program-mipsel-sdata-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-mipsel-sdata-linux-gnu.o -o program-mipsel-sdata-linux-gnu || exit /b 1
+"%LLVM_BIN%\clang.exe" --target=mipsel-linux-gnu -fPIC -ftls-model=local-exec %CFLAGS% -c "%~dp0program.c" -o program-mipsel-pic-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-mipsel-pic-linux-gnu.o -o program-mipsel-pic-linux-gnu || exit /b 1
+del program-mipsel-sdata-linux-gnu.o program-mipsel-pic-linux-gnu.o
 rem LoongArch: LA64 and LA32, and llvm-objdump's listing of each (no bytes)
 rem for the disassembler's test.
 for %%t in (loongarch64 loongarch32) do (

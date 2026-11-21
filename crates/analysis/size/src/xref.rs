@@ -86,9 +86,8 @@ pub struct Xref {
     pub linker: Linker,
     /// The instruction set of the image's code.
     pub arch: Arch,
-    /// Whether its code's words are big-endian (PowerPC's, but for
-    /// `ppc64le`'s).
-    pub big: bool,
+    /// How its code is read (its words' byte order, MIPS's flags).
+    pub mode: hexcavator_code::Mode,
     pub graph: Graph,
     /// Each node's name (its first symbol's, or a group's in brackets).
     pub names: Vec<String>,
@@ -730,7 +729,7 @@ fn finish(
     linker: Linker,
     comdat: impl Fn(&hexcavator_debuginfo::Contribution) -> bool,
 ) -> Result<Xref, String> {
-    let big = b.is_big_endian();
+    let mode = b.code_mode();
     let graph = b.finish();
     // Roots and names, for the graph's nodes (pieces of split ones).
     let roots: Vec<(u32, Root)> = roots
@@ -781,7 +780,7 @@ fn finish(
     Ok(Xref {
         linker,
         arch,
-        big,
+        mode,
         graph,
         names,
         aliases,
@@ -838,11 +837,33 @@ fn common(
     let slots = image.pointer_slots();
     unlabeled_data(&mut nodes, slots.iter().map(|s| s.addr), model);
     let (mut b, infos) = builder(nodes);
-    b.big_endian(image.endian() == hexcavator_core::Endian::Big);
+    b.mode(crate::disasm::code_mode(image));
+    got_entries(&mut b, image, model, &slots);
+    // (Code's literals: its sections' words.)
+    let width = u64::from(arch.pointer_size().unwrap_or(8));
+    let big = image.endian() == hexcavator_core::Endian::Big;
+    let literal = |at: u64| -> Option<u64> {
+        if !executable(at) {
+            return None;
+        }
+        let w = file_bytes(image, at, width);
+        (w.len() as u64 == width).then(|| {
+            if big {
+                w.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x))
+            } else {
+                w.iter().rev().fold(0u64, |v, &x| (v << 8) | u64::from(x))
+            }
+        })
+    };
     for i in 0..b.nodes().len() as u32 {
         let n = b.nodes()[i as usize];
         if n.code {
-            b.code(i, arch, file_bytes(image, n.start, n.end - n.start));
+            b.code_with(
+                i,
+                arch,
+                file_bytes(image, n.start, n.end - n.start),
+                &literal,
+            );
         }
     }
     for s in &slots {
@@ -851,6 +872,47 @@ fn common(
         }
     }
     (b, infos, slots)
+}
+
+/// An ELF image's GOT entries (`.got`'s and `.got2`'s words), each one's target (its
+/// relocation's, or the word itself, in place: a static image's), for
+/// code that loads them (see [`Builder::through`]).
+fn got_entries(
+    b: &mut Builder,
+    image: &hexcavator_image::Image<'_>,
+    model: &Model,
+    slots: &[hexcavator_image::PointerSlot],
+) {
+    if image.elf().is_none() {
+        return;
+    }
+    let width = u64::from(image.arch().pointer_size().unwrap_or(8));
+    let big = image.endian() == hexcavator_core::Endian::Big;
+    let relocated: rustc_hash::FxHashMap<u64, u64> = slots
+        .iter()
+        .filter_map(|s| Some((s.addr, s.target?)))
+        .collect();
+    // (32-bit PowerPC's PIC code's entries are `.got2`'s.)
+    for s in model
+        .sections
+        .iter()
+        .filter(|s| s.name == ".got" || s.name == ".got2")
+    {
+        let data = file_bytes(image, s.addr, s.size.file.min(s.size.vm.max(s.size.file)));
+        for (i, w) in data.chunks_exact(width as usize).enumerate() {
+            let slot = s.addr + i as u64 * width;
+            let word = if big {
+                w.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x))
+            } else {
+                w.iter().rev().fold(0u64, |v, &x| (v << 8) | u64::from(x))
+            };
+            // (MIPS's local entries hold pages' addresses: no node's.)
+            let to = relocated.get(&slot).copied().unwrap_or(word);
+            if to != 0 {
+                b.through(slot, to);
+            }
+        }
+    }
 }
 
 /// The file's bytes at an address: as many as its section has there.

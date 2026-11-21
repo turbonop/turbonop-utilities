@@ -109,7 +109,7 @@ fn x86_64_tables_by_image_offset() {
 
 fn refs_with_base(code: &[u8], at: u64, base: u64) -> Vec<(u64, u64, Via)> {
     let mut out = Vec::new();
-    scan_image(Arch::X64, false, code, at, Some(base), &mut out);
+    scan_image(Arch::X64, Mode::default(), code, at, Some(base), &mut out);
     out.iter().map(|r| (r.from, r.to, r.via)).collect()
 }
 
@@ -397,7 +397,14 @@ fn powerpc_toc_relative() {
     ];
     let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
     let mut out = Vec::new();
-    scan_image(Arch::PowerPc64, false, &code, 0x1001_0340, None, &mut out);
+    scan_image(
+        Arch::PowerPc64,
+        Mode::default(),
+        &code,
+        0x1001_0340,
+        None,
+        &mut out,
+    );
     let got: Vec<(u64, u64, Via)> = out.iter().map(|r| (r.from, r.to, r.via)).collect();
     assert_eq!(
         got,
@@ -439,7 +446,14 @@ fn mips64_addresses() {
     ];
     let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
     let mut out = Vec::new();
-    scan_image(Arch::Mips64, false, &code, 0x2_0320, None, &mut out);
+    scan_image(
+        Arch::Mips64,
+        Mode::default(),
+        &code,
+        0x2_0320,
+        None,
+        &mut out,
+    );
     let mut got: Vec<(u64, u64, Via)> = out.iter().map(|r| (r.from, r.to, r.via)).collect();
     got.sort_unstable_by_key(|r| r.0);
     assert_eq!(

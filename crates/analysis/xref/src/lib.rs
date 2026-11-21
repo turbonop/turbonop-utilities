@@ -19,7 +19,7 @@
 
 mod scan;
 
-pub use scan::{Arch, CodeRef, Via, scan, scan_absolute, scan_image};
+pub use scan::{Arch, CodeRef, Memory, Mode, Via, scan, scan_absolute, scan_image, scan_with};
 
 /// One node: `[start, end)`, and whether it is code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,8 +81,10 @@ pub struct Builder {
     image_base: Option<u64>,
     /// See [`Builder::absolute_bias`].
     bias: u64,
-    /// See [`Builder::big_endian`].
-    big: bool,
+    /// See [`Builder::mode`].
+    mode: Mode,
+    /// See [`Builder::through`].
+    through: std::collections::BTreeMap<u64, u64>,
     /// Which nodes to split where they are referred to (empty: none).
     split: Vec<bool>,
     /// The edges to or from a node to split, by address.
@@ -118,7 +120,8 @@ impl Builder {
             refs: Vec::new(),
             image_base: None,
             bias: 0,
-            big: false,
+            mode: Mode::default(),
+            through: std::collections::BTreeMap::new(),
             split: Vec::new(),
             addressed: Vec::new(),
         }
@@ -161,14 +164,23 @@ impl Builder {
         self.bias = bias;
     }
 
-    /// Whether the code's words are big-endian (see [`scan_image`]).
-    pub fn big_endian(&mut self, big: bool) {
-        self.big = big;
+    /// How the code is read (its words' byte order, MIPS's image's flags:
+    /// see [`scan_image`]).
+    pub fn mode(&mut self, mode: Mode) {
+        self.mode = mode;
     }
 
-    /// Whether the code's words are big-endian, as set.
-    pub fn is_big_endian(&self) -> bool {
-        self.big
+    /// How the code is read, as set.
+    pub fn code_mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// The word at `slot` (a GOT's entry) holds `to`: code that loads it
+    /// refers to `to`, not to the GOT (as PIC code reaches its data and
+    /// functions, MIPS's and others' whose linker didn't relax the load).
+    /// Call it before scanning code.
+    pub fn through(&mut self, slot: u64, to: u64) {
+        self.through.insert(slot, to);
     }
 
     /// The nodes, in the builder's order.
@@ -236,18 +248,47 @@ impl Builder {
     /// just before a node counts for it too, even inside another (`table - 1`
     /// where tables are packed back to back).
     pub fn code(&mut self, node: u32, arch: Arch, code: &[u8]) {
+        self.code_with(node, arch, code, &|_| None);
+    }
+
+    /// [`Builder::code`], knowing the code's literals (`literal`: the word
+    /// at an address in code's sections), and the GOT's entries (see
+    /// [`Builder::through`]; [`scan_with`]).
+    pub fn code_with(
+        &mut self,
+        node: u32,
+        arch: Arch,
+        code: &[u8],
+        literal: &dyn Fn(u64) -> Option<u64>,
+    ) {
         let mut refs = std::mem::take(&mut self.refs);
         refs.clear();
-        scan_absolute(
+        let through = &self.through;
+        let got = |at: u64| through.get(&at).copied();
+        scan_with(
             arch,
-            self.big,
+            self.mode,
             code,
             self.nodes[node as usize].start,
             self.image_base,
             self.bias,
+            &Memory { got: &got, literal },
             &mut refs,
         );
         for r in &refs {
+            // (A load of a GOT's entry: of what it points to.)
+            let through = (r.via == Via::Address)
+                .then(|| self.through.get(&r.to).copied())
+                .flatten();
+            let r = &CodeRef {
+                from: r.from,
+                to: through.unwrap_or(r.to),
+                via: if through.is_some() {
+                    Via::AddressOf
+                } else {
+                    r.via
+                },
+            };
             let (to, kind) = match r.via {
                 Via::Call | Via::Jump => {
                     let local = || {

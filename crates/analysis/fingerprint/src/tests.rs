@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use hexcavator_code::Mode;
 
 /// Nodes as `[start, end)` ranges.
 struct Nodes(Vec<(u64, u64)>);
@@ -110,7 +111,7 @@ fn x86_64_code_is_position_independent() {
     ]);
     let a = code(
         Arch::X64,
-        false,
+        Mode::default(),
         &make(0x1000, 0x5000, 0x6000),
         0x1000,
         None,
@@ -119,7 +120,7 @@ fn x86_64_code_is_position_independent() {
     );
     let b = code(
         Arch::X64,
-        false,
+        Mode::default(),
         &make(0x2000, 0x5000, 0x6004),
         0x2000,
         None,
@@ -131,7 +132,7 @@ fn x86_64_code_is_position_independent() {
     // Calling another node: the same local hash, other references.
     let c = code(
         Arch::X64,
-        false,
+        Mode::default(),
         &make(0x2000, 0x7000, 0x6000),
         0x2000,
         None,
@@ -144,14 +145,14 @@ fn x86_64_code_is_position_independent() {
     let mut d = make(0x2000, 0x5000, 0x6000);
     d[7] = 0x0D; // lea rcx
     assert_ne!(
-        code(Arch::X64, false, &d, 0x2000, None, &[], &nodes).local,
+        code(Arch::X64, Mode::default(), &d, 0x2000, None, &[], &nodes).local,
         a.local
     );
     // A different immediate (not an address): a different hash.
     let imm = |v: u8| {
         code(
             Arch::X64,
-            false,
+            Mode::default(),
             &[0x83, 0xC0, v, 0xC3],
             0x1000,
             None,
@@ -164,7 +165,7 @@ fn x86_64_code_is_position_independent() {
     // A call to no node: hashed as such, no reference.
     let e = code(
         Arch::X64,
-        false,
+        Mode::default(),
         &make(0x2000, 0x9000, 0x6000),
         0x2000,
         None,
@@ -193,7 +194,7 @@ fn x86_absolute_addresses() {
     ]);
     let a = code(
         Arch::X86,
-        false,
+        Mode::default(),
         &make(0x40_3000),
         0x40_1000,
         None,
@@ -202,7 +203,7 @@ fn x86_absolute_addresses() {
     );
     let b = code(
         Arch::X86,
-        false,
+        Mode::default(),
         &make(0x40_4000),
         0x40_1000,
         None,
@@ -214,7 +215,7 @@ fn x86_absolute_addresses() {
     // Without the relocation, the value is just a value.
     let c = code(
         Arch::X86,
-        false,
+        Mode::default(),
         &make(0x40_4000),
         0x40_1000,
         None,
@@ -247,7 +248,7 @@ fn arm64_code_is_position_independent() {
     ]);
     let a = code(
         Arch::Arm64,
-        false,
+        Mode::default(),
         &make(0x1000, 0x5000, 0x3_6010),
         0x1000,
         None,
@@ -256,7 +257,7 @@ fn arm64_code_is_position_independent() {
     );
     let b = code(
         Arch::Arm64,
-        false,
+        Mode::default(),
         &make(0x8000, 0x5000, 0x3_6010),
         0x8000,
         None,
@@ -293,7 +294,7 @@ fn data_masks_pointers() {
 /// and callees; unlike for other operations or registers.
 #[test]
 fn shapes() {
-    let x64 = |code: &[u8]| shape(Arch::X64, false, code, 0x1000).unwrap();
+    let x64 = |code: &[u8]| shape(Arch::X64, Mode::default(), code, 0x1000).unwrap();
     // mov eax, [rdi+4]; add eax, 3; ret  vs  mov rax, [rdi+8]; add rax, 5; ret
     let a = x64(&[0x8B, 0x47, 0x04, 0x83, 0xC0, 0x03, 0xC3]);
     let b = x64(&[0x48, 0x8B, 0x47, 0x08, 0x48, 0x83, 0xC0, 0x05, 0xC3]);
@@ -311,7 +312,7 @@ fn shapes() {
     // other offsets and constants.
     let arm = |words: &[u32]| {
         let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
-        shape(Arch::Arm64, false, &bytes, 0x1000).unwrap()
+        shape(Arch::Arm64, Mode::default(), &bytes, 0x1000).unwrap()
     };
     let w = arm(&[0xB940_0400, 0x1100_0C00, 0xD65F_03C0]);
     let x = arm(&[0xF940_0400, 0x9100_1400, 0xD65F_03C0]);
@@ -319,5 +320,5 @@ fn shapes() {
     // (sub, not add)
     assert_ne!(w, arm(&[0xB940_0400, 0x5100_0C00, 0xD65F_03C0]));
     // No decoder: no shape.
-    assert_eq!(shape(Arch::Sparc, false, &[0, 0, 0, 0], 0), None);
+    assert_eq!(shape(Arch::Sparc, Mode::default(), &[0, 0, 0, 0], 0), None);
 }

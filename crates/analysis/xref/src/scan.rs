@@ -32,8 +32,10 @@
 //! first invalid instruction (data in a function's range, such as a
 //! literal pool or jump table, can follow its code).
 
-/// The instruction sets (x86, x64, ARM64, and 32-bit ARM code is scanned;
-/// others have no references found).
+/// How code is read (its words' byte order, MIPS's image's flags).
+pub use hexcavator_code::Mode;
+/// The instruction sets (x86, x64, ARM64, 32-bit ARM, RISC-V, LoongArch,
+/// PowerPC, and MIPS code is scanned; others have no references found).
 pub use hexcavator_core::Arch;
 
 /// How code refers to an address.
@@ -68,7 +70,7 @@ pub struct CodeRef {
 /// Appends the references of `code`, which is at `address`, to `out` (its
 /// words little-endian: see [`scan_image`] for big-endian code).
 pub fn scan(arch: Arch, code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
-    scan_image(arch, false, code, address, None, out);
+    scan_image(arch, Mode::default(), code, address, None, out);
 }
 
 /// [`scan`], knowing where the image starts (`image_base`, in the same
@@ -80,17 +82,17 @@ pub fn scan(arch: Arch, code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
 /// it: the sweep is in address order, not control flow, and code after a
 /// call can be reached without one; a compiler reloads the register before
 /// using it again after a call that changes it, and the reload is a write.
-/// `big` says the code's words are big-endian (PowerPC's, but for
-/// `ppc64le`'s: see [`hexcavator_code::decode_in`]).
+/// `mode` says how the code is read (its words' byte order; MIPS's
+/// image's flags: see [`Mode`]).
 pub fn scan_image(
     arch: Arch,
-    big: bool,
+    mode: Mode,
     code: &[u8],
     address: u64,
     image_base: Option<u64>,
     out: &mut Vec<CodeRef>,
 ) {
-    scan_absolute(arch, big, code, address, image_base, 0, out);
+    scan_absolute(arch, mode, code, address, image_base, 0, out);
 }
 
 /// [`scan_image`], with the absolute addresses code builds (32-bit ARM's
@@ -99,13 +101,60 @@ pub fn scan_image(
 /// relative to it.
 pub fn scan_absolute(
     arch: Arch,
-    big: bool,
+    mode: Mode,
     code: &[u8],
     address: u64,
     image_base: Option<u64>,
     bias: u64,
     out: &mut Vec<CodeRef>,
 ) {
+    scan_with(
+        arch,
+        mode,
+        code,
+        address,
+        image_base,
+        bias,
+        &Memory::NONE,
+        out,
+    );
+}
+
+/// What an image's words hold, for code that loads them.
+#[derive(Clone, Copy)]
+pub struct Memory<'a> {
+    /// A GOT entry's pointer, by its address (if it is one's).
+    pub got: &'a dyn Fn(u64) -> Option<u64>,
+    /// A word in code's sections (a literal: PowerPC's offset to its GOT),
+    /// by its address.
+    pub literal: &'a dyn Fn(u64) -> Option<u64>,
+}
+
+impl Memory<'_> {
+    /// Nothing known.
+    pub const NONE: Memory<'static> = Memory {
+        got: &|_| None,
+        literal: &|_| None,
+    };
+}
+
+/// [`scan_absolute`], knowing what the image's GOT entries and code's
+/// literals hold (`memory`): code that loads a GOT entry has its value,
+/// an address (as PIC code loads its data's addresses, and MIPS's its
+/// data's 64 KiB pages'); one that loads a literal, its value (32-bit
+/// PowerPC's PIC code its GOT's offset).
+#[allow(clippy::too_many_arguments)]
+pub fn scan_with(
+    arch: Arch,
+    mode: Mode,
+    code: &[u8],
+    address: u64,
+    image_base: Option<u64>,
+    bias: u64,
+    memory: &Memory<'_>,
+    out: &mut Vec<CodeRef>,
+) {
+    let got = memory.got;
     match arch {
         Arch::X86 => x86(code, address, hexcavator_x86::Mode::Bits32, None, out),
         Arch::X64 => x86(code, address, hexcavator_x86::Mode::Bits64, image_base, out),
@@ -116,9 +165,16 @@ pub fn scan_absolute(
             loongarch(code, address, arch == Arch::LoongArch64, out);
         }
         Arch::PowerPc | Arch::PowerPc64 => {
-            powerpc(code, address, big, arch == Arch::PowerPc64, out);
+            powerpc(
+                code,
+                address,
+                mode.big,
+                arch == Arch::PowerPc64,
+                memory,
+                out,
+            );
         }
-        Arch::Mips | Arch::Mips64 => mips(code, address, big, arch, out),
+        Arch::Mips | Arch::Mips64 => mips(code, address, mode, arch, got, out),
         // (No scanner for the others yet: no references.)
         _ => {}
     }
@@ -611,8 +667,20 @@ fn loongarch(code: &[u8], address: u64, la64: bool, out: &mut Vec<CodeRef>) {
 /// prefixed instructions' PC-relative addresses (`pld 3, x@pcrel`,
 /// `paddi 3, 0, x@pcrel, 1`). `r12` holds the function's address at its
 /// start (the ELFv2 ABI's global entry).
-fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<CodeRef>) {
+#[allow(clippy::too_many_lines)]
+fn powerpc(
+    code: &[u8],
+    address: u64,
+    big: bool,
+    ppc64: bool,
+    memory: &Memory<'_>,
+    out: &mut Vec<CodeRef>,
+) {
     let features = hexcavator_powerpc::Features::standard(ppc64);
+    // The link register, after a call (`bcl 20, 31, .+4`: the PC).
+    let mut lr = None::<u64>;
+    // Where a call just past itself lands (over a literal).
+    let mut resume = None::<u64>;
     // Each register's value, if known, and whether it's an upper half
     // (from `addis`), until it's written.
     let mut known = [None::<(u64, bool)>; 32];
@@ -622,7 +690,15 @@ fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<Code
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
         let Some(i) = hexcavator_powerpc::decode(&code[at..], big, &features) else {
-            return;
+            // (A literal a call steps over, `bl .+8`, as PIC code reads its
+            // address: on, after it.)
+            match resume.filter(|&t| t > pc) {
+                Some(t) => {
+                    at = usize::try_from(t - address).unwrap_or(usize::MAX);
+                    continue;
+                }
+                None => return,
+            }
         };
         at += usize::from(i.size);
         let reg = |name: &str| {
@@ -632,13 +708,14 @@ fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<Code
         };
         let imm = |name: &str| i.operand(name).and_then(hexcavator_powerpc::Operand::imm);
         // (A load's or store's displacement and base.)
-        let memory = hexcavator_powerpc::memory(&i)
+        let mem = hexcavator_powerpc::memory(&i)
             .and_then(|(d, r)| Some((d, usize::from(hexcavator_powerpc::gpr(r)?))));
         let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
         let name = i.name();
         let mut set = None;
+        let flow = hexcavator_code::powerpc_flow(&i, pc, &features).0;
+        let next_lr = (flow == hexcavator_code::Flow::Call).then(|| wrap(pc + 4));
         if let Some(to) = hexcavator_powerpc::branch_target(&i, pc, &features) {
-            let flow = hexcavator_code::powerpc_flow(&i, pc, &features).0;
             push(
                 wrap(to),
                 if flow == hexcavator_code::Flow::Call {
@@ -650,7 +727,7 @@ fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<Code
         } else if name.starts_with('P') && name.ends_with("pc") {
             // A prefixed PC-relative instruction: `pld`, `plwz`, `pstd`,
             // `paddi`, ... (its displacement the address's offset).
-            if let Some(d) = memory.map(|(d, _)| d).or_else(|| imm("SI")) {
+            if let Some(d) = mem.map(|(d, _)| d).or_else(|| imm("SI")) {
                 let to = wrap(pc.wrapping_add_signed(d));
                 if name.starts_with("PADDI") || name.starts_with("PLI") {
                     push(to, Via::AddressOf);
@@ -676,6 +753,14 @@ fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<Code
                     };
                     set = from.map(|b| (wrap(b.wrapping_add_signed(hi)), true));
                 }
+                "MFLR" => set = lr.map(|v| (v, false)),
+                "ADD4" => {
+                    if let (Some(a), Some(b)) = (reg("RA"), reg("RB"))
+                        && let (Some((x, _)), Some((y, _))) = (known[a], known[b])
+                    {
+                        set = Some((wrap(x.wrapping_add(y)), false));
+                    }
+                }
                 "ADDI" | "ORI" => {
                     let src = if name == "ORI" { reg("RS") } else { reg("RA") };
                     if let (Some(r), Some(lo)) = (src, imm("D"))
@@ -696,11 +781,23 @@ fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<Code
                     }
                 }
                 _ => {
-                    // A load or store: `lwz 3, x@toc@l(4)`.
-                    if let Some((d, r)) = memory
-                        && let Some((b, true)) = known[r]
+                    // A load or store: `lwz 3, x@toc@l(4)`; or a load of a
+                    // GOT entry (an address, which it takes) or of a
+                    // literal (its value) from a register whose value is
+                    // known.
+                    let load = matches!(name, "LWZ" | "LD");
+                    if let Some((d, r)) = mem
+                        && let Some((b, upper)) = known[r]
                     {
-                        push(wrap(b.wrapping_add_signed(d)), Via::Address);
+                        let at = wrap(b.wrapping_add_signed(d));
+                        if let Some(v) = (memory.got)(at).filter(|_| load) {
+                            push(v, Via::AddressOf);
+                            set = Some((v, true));
+                        } else if let Some(v) = (memory.literal)(at).filter(|_| load) {
+                            set = Some((v, false));
+                        } else if upper {
+                            push(at, Via::Address);
+                        }
                     }
                 }
             }
@@ -718,14 +815,18 @@ fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<Code
         }
         // (A call leaves r12 and the volatile registers unknown; r2 is
         // restored.)
-        if matches!(
-            hexcavator_code::powerpc_flow(&i, pc, &features).0,
-            hexcavator_code::Flow::Call
-        ) {
+        if flow == hexcavator_code::Flow::Call {
             for r in [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] {
                 known[r] = None;
             }
         }
+        // (The link register: a call's return address; `mtlr` sets it to
+        // what isn't followed.)
+        if next_lr.is_some() || name == "MTLR" {
+            lr = next_lr;
+        }
+        resume = hexcavator_powerpc::branch_target(&i, pc, &features)
+            .filter(|&t| flow == hexcavator_code::Flow::Call && t > pc + 4 && t <= pc + 16);
     }
 }
 
@@ -735,18 +836,30 @@ fn powerpc(code: &[u8], address: u64, big: bool, ppc64: bool, out: &mut Vec<Code
 /// `dsll` (a 64-bit address takes six: `lui`, `daddiu`, `dsll`, `daddiu`,
 /// `dsll`, and its use), to a load or store, a `jalr` or `jr` through it,
 /// or any other use (an address computed: a pointer passed); and Release
-/// 6's PC-relative ones (`auipc`, `addiupc`, `lwpc`, ...). A call's delay
-/// slot runs before it, with the registers as they were. (The GOT, and
-/// small data, `$gp`-relative, aren't followed.)
-fn mips(code: &[u8], address: u64, big: bool, arch: Arch, out: &mut Vec<CodeRef>) {
+/// 6's PC-relative ones (`auipc`, `addiupc`, `lwpc`, ...). `$gp` holds
+/// the image's `$gp` (`mode`'s), its small data and GOT `$gp`-relative,
+/// whatever reloads it; `$t9` holds the function's address at its start
+/// (PIC code computes `$gp` from it, with `addu`). A call's delay slot
+/// runs before it, with the registers as they were.
+fn mips(
+    code: &[u8],
+    address: u64,
+    mode: Mode,
+    arch: Arch,
+    got: &dyn Fn(u64) -> Option<u64>,
+    out: &mut Vec<CodeRef>,
+) {
     use hexcavator_code::Flow;
-    let features = hexcavator_code::mips_features(arch);
+    let features = hexcavator_code::mips_features_in(arch, mode);
+    let big = mode.big;
     let mips64 = arch == Arch::Mips64;
     let wrap = |v: u64| if mips64 { v } else { v & 0xFFFF_FFFF };
     // Each register's value, if built from a `lui` (or PC-relative); and
     // the address it holds that nothing has used yet (from where).
     let mut known = [None::<u64>; 32];
     let mut pending = [None::<(u64, u64)>; 32];
+    known[25] = Some(address);
+    known[28] = mode.mips_gp;
     let flush = |pending: &mut [Option<(u64, u64)>; 32], r: usize, out: &mut Vec<CodeRef>| {
         if let Some((from, to)) = pending[r].take() {
             out.push(CodeRef {
@@ -823,6 +936,14 @@ fn mips(code: &[u8], address: u64, big: bool, arch: Arch, out: &mut Vec<CodeRef>
                         building[0] = Some(r);
                     }
                 }
+                "ADDu" | "DADDu" => {
+                    if let (Some(a), Some(b)) = (reg("rs"), reg("rt"))
+                        && let (Some(x), Some(y)) = (known[a], known[b])
+                    {
+                        set = Some(wrap(x.wrapping_add(y)));
+                        building[0] = Some(a);
+                    }
+                }
                 "DSLL" | "DSLL32" => {
                     if let (Some(r), Some(sa)) = (reg("rt"), imm("shamt"))
                         && let Some(b) = known[r]
@@ -838,7 +959,13 @@ fn mips(code: &[u8], address: u64, big: bool, arch: Arch, out: &mut Vec<CodeRef>
                     if let (Some(r), Some(off)) = (reg("base"), imm("offset"))
                         && let Some(b) = known[r]
                     {
-                        push(wrap(b.wrapping_add_signed(off)), Via::Address);
+                        let at = wrap(b.wrapping_add_signed(off));
+                        // (A GOT entry's load: its value, an address, as
+                        // the register's.)
+                        match got(at).filter(|_| matches!(name, "LW" | "LD")) {
+                            Some(v) => set = Some(v),
+                            None => push(at, Via::Address),
+                        }
                         pending[r] = None;
                         building[0] = Some(r);
                     } else if matches!(flow, Flow::Call | Flow::Jump)
@@ -876,6 +1003,12 @@ fn mips(code: &[u8], address: u64, big: bool, arch: Arch, out: &mut Vec<CodeRef>
             if let Some(r) = hexcavator_mips::gpr_of(*op).map(usize::from) {
                 flush(&mut pending, r, out);
                 known[r] = if k == 0 { set } else { None };
+                // (`$gp` is the image's, however it's set: computed, or
+                // reloaded after a call.)
+                if r == 28 && mode.mips_gp.is_some() {
+                    known[r] = mode.mips_gp;
+                    continue;
+                }
                 if k == 0
                     && let Some(to) = set
                     && building[0].is_some()

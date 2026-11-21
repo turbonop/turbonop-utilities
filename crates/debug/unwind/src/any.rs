@@ -17,8 +17,9 @@
 //! (x86-64: RAX 0, RDX 1, RCX 2, RBX 3, RSI 4, RDI 5, RBP 6, RSP 7, R8..R15
 //! 8..15, RIP 16, XMM0..XMM15 17..32; AArch64: X0..X30 0..30, SP 31, PC 32,
 //! V0..V31 64..95; ARM: R0..R15 0..15, D0..D31 256..287; x86: EIP 8, ESP
-//! 4; RISC-V: x0..x31 0..31, f0..f31 32..63, its PC [`RISCV_PC`]). 32-bit x86 frames need a PDB's frame data
-//! ([`crate::windows_x86`]), which an image doesn't have: they aren't
+//! 4; RISC-V: x0..x31 0..31, f0..f31 32..63, its PC [`RISCV_PC`];
+//! LoongArch: r0..r31 0..31, f0..f31 32..63, its PC [`LOONGARCH_PC`]).
+//! 32-bit x86 frames need a PDB's frame data ([`crate::windows_x86`]), which an image doesn't have: they aren't
 //! unwound here.
 
 use alloc::vec::Vec;
@@ -60,8 +61,13 @@ pub struct Unwound {
 /// address column is `ra`'s, 1), so this is past every number it does.
 pub const RISCV_PC: u16 = Registers::LIMIT - 1;
 
+/// Where [`Registers`] keeps a LoongArch frame's PC: likewise, DWARF
+/// numbers none (r0 to r31 are 0 to 31, f0 to f31 32 to 63; its return
+/// address column is `$ra`'s, 1).
+pub const LOONGARCH_PC: u16 = Registers::LIMIT - 1;
+
 /// The DWARF numbers of an architecture's PC and stack pointer (RISC-V's
-/// PC: [`RISCV_PC`]).
+/// PC: [`RISCV_PC`]; LoongArch's: [`LOONGARCH_PC`]).
 pub fn registers_of(arch: Arch) -> Option<(u16, u16)> {
     match arch {
         Arch::X64 => Some((16, 7)),
@@ -69,6 +75,7 @@ pub fn registers_of(arch: Arch) -> Option<(u16, u16)> {
         Arch::Arm => Some((15, 13)),
         Arch::X86 => Some((8, 4)),
         Arch::RiscV32 | Arch::RiscV64 => Some((RISCV_PC, 2)),
+        Arch::LoongArch32 | Arch::LoongArch64 => Some((LOONGARCH_PC, 3)),
         _ => None,
     }
 }
@@ -130,9 +137,13 @@ pub fn unwind(
     let found = match found {
         Some(u) => u,
         // A PE image's code that no `.pdata` entry covers is a leaf; so is
-        // RISC-V code without CFI (its return address in `ra`).
+        // RISC-V and LoongArch code without CFI (its return address in
+        // `ra`).
         None if (image.pe().is_some() && matches!(arch, Arch::X64 | Arch::Arm64 | Arch::Arm))
-            || matches!(arch, Arch::RiscV32 | Arch::RiscV64) =>
+            || matches!(
+                arch,
+                Arch::RiscV32 | Arch::RiscV64 | Arch::LoongArch32 | Arch::LoongArch64
+            ) =>
         {
             leaf(arch, registers, memory)?
         }
@@ -173,10 +184,16 @@ fn leaf(arch: Arch, registers: &mut Registers, memory: &dyn Memory) -> Result<Un
                 saved: alloc::vec![(16, sp)],
             }
         }
-        Arch::Arm64 | Arch::Arm | Arch::RiscV32 | Arch::RiscV64 => {
+        Arch::Arm64
+        | Arch::Arm
+        | Arch::RiscV32
+        | Arch::RiscV64
+        | Arch::LoongArch32
+        | Arch::LoongArch64 => {
             let (pc, sp, lr) = match arch {
                 Arch::Arm64 => (32, 31, 30),
                 Arch::Arm => (15, 13, 14),
+                Arch::LoongArch32 | Arch::LoongArch64 => (LOONGARCH_PC, 3, 1),
                 _ => (RISCV_PC, 2, 1),
             };
             let ra = get(registers, lr)?;

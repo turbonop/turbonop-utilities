@@ -107,6 +107,9 @@ pub fn scan_absolute(
         Arch::Arm64 => arm64(code, address, out),
         Arch::Arm => thumb(code, address & !1, bias, out),
         Arch::RiscV32 | Arch::RiscV64 => riscv(code, address, arch == Arch::RiscV64, out),
+        Arch::LoongArch32 | Arch::LoongArch64 => {
+            loongarch(code, address, arch == Arch::LoongArch64, out);
+        }
         // (No scanner for the others yet: no references.)
         _ => {}
     }
@@ -478,6 +481,113 @@ fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
             }
         }
         // (x0 holds nothing.)
+        upper[0] = None;
+        addrs[0] = None;
+    }
+}
+
+/// LoongArch's references: `b`, `bl` and the conditional branches; and
+/// addresses built in a register, then used: `pcalau12i` (the 4 KiB page,
+/// PC-relative), `pcaddu12i` and `pcaddu18i` (PC-relative upper parts),
+/// `lu12i.w` (an absolute one), each with an `addi`, `ori`, load, store,
+/// or `jirl` (`call36`) after; and `pcaddi` (an address, PC-relative).
+fn loongarch(code: &[u8], address: u64, la64: bool, out: &mut Vec<CodeRef>) {
+    let features = if la64 {
+        hexcavator_loongarch::Features::la64()
+    } else {
+        hexcavator_loongarch::Features::la32()
+    };
+    // Each register's upper part, and its address (from an `addi` or
+    // `ori` to an upper part, or `pcaddi`), until it's written.
+    let mut upper = [None::<u64>; 32];
+    let mut addrs = [None::<u64>; 32];
+    // (An address on LA32 wraps at 32 bits.)
+    let wrap = |v: u64| if la64 { v } else { v & 0xFFFF_FFFF };
+    for (n, w) in code.as_chunks::<4>().0.iter().enumerate() {
+        let pc = address.wrapping_add(n as u64 * 4);
+        let Some(i) = hexcavator_loongarch::decode(w, &features) else {
+            return;
+        };
+        let x = |name: &str| {
+            i.operand(name)
+                .and_then(hexcavator_loongarch::gpr_of)
+                .map(usize::from)
+        };
+        // (Each instruction here has one immediate.)
+        let imm = i.operands().iter().find_map(|o| o.imm());
+        let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
+        let name = i.name();
+        let mut set_upper = None;
+        let mut set_addr = None;
+        match name {
+            "PCALAU12I" | "PCADDU12I" | "PCADDU18I" | "LU12I_W" => {
+                let (base, shift) = match name {
+                    "PCALAU12I" => (pc & !0xFFF, 12),
+                    "PCADDU18I" => (pc, 18),
+                    "PCADDU12I" => (pc, 12),
+                    _ => (0, 12),
+                };
+                let hi = imm.unwrap_or(0) << shift;
+                set_upper = Some(wrap(base.wrapping_add_signed(hi)));
+            }
+            "PCADDI" => {
+                let to = wrap(pc.wrapping_add_signed(imm.unwrap_or(0) << 2));
+                push(to, Via::AddressOf);
+                set_addr = Some(to);
+            }
+            "B" | "BL" | "BEQ" | "BNE" | "BLT" | "BGE" | "BLTU" | "BGEU" | "BEQZ" | "BNEZ"
+            | "BCEQZ" | "BCNEZ" => {
+                if let Some(to) = hexcavator_loongarch::branch_target(&i, pc) {
+                    let via = if name == "BL" { Via::Call } else { Via::Jump };
+                    push(wrap(to), via);
+                }
+            }
+            "JIRL" => {
+                if let (Some(b), Some(off)) = (x("rj").and_then(|r| upper[r]), imm) {
+                    let via = if x("rd") == Some(0) {
+                        Via::Jump
+                    } else {
+                        Via::Call
+                    };
+                    push(wrap(b.wrapping_add_signed(off)), via);
+                }
+            }
+            "ADDI_W" | "ADDI_D" | "ORI" => {
+                if let (Some(b), Some(off)) = (x("rj").and_then(|r| upper[r]), imm) {
+                    let to = if name == "ORI" {
+                        b | off.cast_unsigned()
+                    } else {
+                        b.wrapping_add_signed(off)
+                    };
+                    let to = wrap(to);
+                    push(to, Via::AddressOf);
+                    set_addr = Some(to);
+                }
+            }
+            "LD_B" | "LD_H" | "LD_W" | "LD_D" | "LD_BU" | "LD_HU" | "LD_WU" | "ST_B" | "ST_H"
+            | "ST_W" | "ST_D" | "LDPTR_W" | "LDPTR_D" | "STPTR_W" | "STPTR_D" | "FLD_S"
+            | "FLD_D" | "FST_S" | "FST_D" | "VLD" | "VST" | "XVLD" | "XVST" | "PRELD" => {
+                let base = x("rj").and_then(|r| upper[r].or(addrs[r]));
+                if let (Some(b), Some(off)) = (base, imm) {
+                    push(wrap(b.wrapping_add_signed(off)), Via::Address);
+                }
+            }
+            _ => {}
+        }
+        // The registers it writes forget what they held (but what it set).
+        for (k, op) in i
+            .operands()
+            .iter()
+            .enumerate()
+            .take(usize::from(i.inst().defs))
+        {
+            if let Some(r) = hexcavator_loongarch::gpr_of(*op) {
+                let r = usize::from(r);
+                upper[r] = if k == 0 { set_upper } else { None };
+                addrs[r] = if k == 0 { set_addr } else { None };
+            }
+        }
+        // ($zero holds nothing.)
         upper[0] = None;
         addrs[0] = None;
     }

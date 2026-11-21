@@ -32,6 +32,13 @@ for %%t in (riscv64 riscv32) do (
   "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
   "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
 )
+rem LoongArch: LA64 and LA32, and llvm-objdump's listing of each (no bytes)
+rem for the disassembler's test.
+for %%t in (loongarch64 loongarch32) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu %CFLAGS% -c "%~dp0program.c" -o program-%%t-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
+)
 "%LLVM_BIN%\clang.exe" --target=x86_64-linux-gnu %CFLAGS% -fPIC -c "%~dp0program.c" -o program-pic.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -shared --build-id=sha1 program-pic.o -o program.so || exit /b 1
 del program-pic.o
@@ -109,6 +116,10 @@ rem RISC-V (RV64GC) with call frame information, for the unwinder.
 "%LLVM_BIN%\clang.exe" --target=riscv64-linux-gnu -march=rv64gc %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-riscv64-linux-gnu.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-riscv64-linux-gnu.o -o unwind-riscv64-linux-gnu || exit /b 1
 del unwind-riscv64-linux-gnu.o
+rem LoongArch (LA64) likewise.
+"%LLVM_BIN%\clang.exe" --target=loongarch64-linux-gnu %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-loongarch64-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-loongarch64-linux-gnu.o -o unwind-loongarch64-linux-gnu || exit /b 1
+del unwind-loongarch64-linux-gnu.o
 rem Anonymous data only code refers to (-O2, for the lookup and jump
 rem tables), and llvm-objdump's disassembly, which names the targets.
 for %%t in (x86_64-linux-gnu aarch64-linux-gnu) do (

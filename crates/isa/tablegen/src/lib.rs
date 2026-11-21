@@ -512,6 +512,21 @@ pub fn decode(
     None
 }
 
+/// `w`'s operands decoded as the instruction named `name` (LLVM's name),
+/// whatever its fixed bits: for what a target's decoder chooses between by
+/// hand (LoongArch's `ud` and `amswap.w`, one encoding).
+pub fn decode_as(
+    t: &'static Target,
+    name: &str,
+    w: u32,
+    rv64: bool,
+    rve: bool,
+) -> Option<Instruction> {
+    let index = t.instructions.iter().position(|i| i.name == name)?;
+    let inst = &t.instructions[index];
+    decode_operands(t, u16::try_from(index).ok()?, inst, w, rv64, rve)
+}
+
 /// A field's value: its pieces gathered.
 fn field(w: u32, fields: &[(u8, u8, u8)]) -> u32 {
     let mut v = 0u32;

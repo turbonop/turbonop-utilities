@@ -54,6 +54,7 @@ STEPS = {
     "wasm": (["cmd", "/c", r"R:\tools\wasm\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),
     "wasm-c": (["cmd", "/c", r"R:\tools\wasm\build-c.cmd"], ["LLVM_BIN"]),
     "riscv": (["cmd", "/c", r"R:\tools\riscv\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),
+    "loongarch": (["cmd", "/c", r"R:\tools\loongarch\build.cmd"], ["LLVM_BIN", "LLVM_SRC"]),
     "rust": (["cmd", "/c", r"R:\tools\rust\build.cmd"], ["LLVM_BIN"]),
 }
 

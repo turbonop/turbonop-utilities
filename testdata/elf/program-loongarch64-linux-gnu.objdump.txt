@@ -1,0 +1,99 @@
+
+program-loongarch64-linux-gnu:	file format elf64-loongarch
+
+Disassembly of section .text:
+
+0000000000020280 <compute>:
+   20280:      	blez	$a0, 0x7c <.L0 >
+
+0000000000020284 <.L0 >:
+   20284:      	pcalau12i	$a1, 0x21
+   20288:      	ld.w	$a1, $a1, 0x35c
+   2028c:      	pcaddi	$a2, -0x400c
+   20290:      	move	$a3, $zero
+   20294:      	move	$a4, $zero
+   20298:      	lu12i.w	$a5, -0x77778
+   2029c:      	ori	$a5, $a5, 0x889
+   202a0:      	lu32i.d	$a5, -0x77778
+   202a4:      	lu52i.d	$a5, $a5, -0x778
+
+00000000000202a8 <.L0 >:
+   202a8:      	nop
+   202ac:      	nop
+
+00000000000202b0 <.L0 >:
+   202b0:      	mulh.du	$a6, $a3, $a5
+   202b4:      	srli.d	$a6, $a6, 0x3
+   202b8:      	slli.d	$a7, $a6, 0x4
+   202bc:      	sub.d	$a6, $a6, $a7
+
+00000000000202c0 <.L0 >:
+   202c0:      	ldx.b	$a7, $a2, $a6
+
+00000000000202c4 <.L0 >:
+   202c4:      	move	$a6, $a4
+   202c8:      	add.d	$a4, $a1, $a4
+   202cc:      	add.d	$a4, $a4, $a7
+
+00000000000202d0 <.L0 >:
+   202d0:      	addi.w	$a0, $a0, -0x1
+
+00000000000202d4 <.L0 >:
+   202d4:      	addi.d	$a2, $a2, 0x1
+   202d8:      	addi.d	$a3, $a3, 0x1
+   202dc:      	addi.d	$a1, $a1, 0x3
+   202e0:      	bnez	$a0, -0x30 <.L0 >
+
+00000000000202e4 <.L0 >:
+   202e4:      	andi	$a0, $a7, 0xff
+   202e8:      	ext.w.b	$a0, $a0
+   202ec:      	add.d	$a1, $a6, $a1
+   202f0:      	add.d	$a0, $a1, $a0
+   202f4:      	addi.w	$a0, $a0, -0x3
+   202f8:      	ret
+
+00000000000202fc <.L0 >:
+   202fc:      	move	$a0, $zero
+
+0000000000020300 <.L0 >:
+   20300:      	ret
+
+0000000000020304 <.L0 >:
+   20304:      	nop
+
+0000000000020308 <optional_hook>:
+   20308:      	move	$a0, $zero
+   2030c:      	ret
+   20310:      	nop
+   20314:      	nop
+
+0000000000020318 <_start>:
+   20318:      	addi.d	$sp, $sp, -0x10
+   2031c:      	st.d	$ra, $sp, 0x8
+   20320:      	pcalau12i	$a0, 0x20
+   20324:      	ld.w	$a0, $a0, 0x358
+
+0000000000020328 <.L0 >:
+   20328:      	bl	-0xa8 <compute>
+
+000000000002032c <.L0 >:
+   2032c:      	pcalau12i	$a1, 0x20
+   20330:      	st.b	$a0, $a1, 0x35c
+
+0000000000020334 <.L0 >:
+   20334:      	bl	-0x2c <optional_hook>
+
+0000000000020338 <.L0 >:
+   20338:      	ld.w	$a1, $tp, 0x0
+
+000000000002033c <.L0 >:
+   2033c:      	add.d	$a0, $a1, $a0
+   20340:      	pcalau12i	$a1, 0x21
+   20344:      	st.w	$a0, $a1, 0x35c
+
+0000000000020348 <.L0 >:
+   20348:      	nop
+   2034c:      	nop
+
+0000000000020350 <.L0 >:
+   20350:      	b	0x0 <.L0 >

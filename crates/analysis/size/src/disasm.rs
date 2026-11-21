@@ -247,6 +247,15 @@ fn riscv_features(f: &Function<'_>) -> hexcavator_riscv::Features {
     }
 }
 
+/// The LoongArch features a listing decodes with: LA64's or LA32's.
+fn loongarch_features(isa: Arch) -> hexcavator_loongarch::Features {
+    if isa == Arch::LoongArch64 {
+        hexcavator_loongarch::Features::la64()
+    } else {
+        hexcavator_loongarch::Features::la32()
+    }
+}
+
 /// The function's instructions, decoded, with their labels and blocks:
 /// where a branch within the function lands starts a block, as does the
 /// instruction after a branch, jump, return, or trap. Other targets, and
@@ -259,6 +268,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
         /// With the condition an IT block gives it.
         Arm32(hexcavator_arm32::Instruction, Option<u32>),
         RiscV(hexcavator_riscv::Instruction),
+        LoongArch(hexcavator_loongarch::Instruction),
     }
     struct Decoded {
         pc: u64,
@@ -399,6 +409,25 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 rest += usize::from(i.size);
             }
         }
+        Arch::LoongArch32 | Arch::LoongArch64 => {
+            let features = loongarch_features(f.isa);
+            while rest < f.code.len() {
+                let pc = f.address + rest as u64;
+                let Some(i) = hexcavator_loongarch::decode(&f.code[rest..], &features) else {
+                    break;
+                };
+                let (flow, target) = hexcavator_code::loongarch_flow(&i, pc);
+                insts.push(Decoded {
+                    pc,
+                    len: 4,
+                    inst: Inst::LoongArch(i),
+                    flow,
+                    target,
+                    named: target.into_iter().collect(),
+                });
+                rest += 4;
+            }
+        }
         // (No decoder for the others: the code shows as bytes.)
         _ => {}
     }
@@ -468,6 +497,19 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     && let Some(name) = names.name(t)
                 {
                     s = s.replace(&format!("{t:#x}"), name);
+                }
+                s
+            }
+            Inst::LoongArch(i) => {
+                let mut s =
+                    hexcavator_loongarch::format::format(i, d.pc, &loongarch_features(f.isa));
+                // (The target by its label or symbol, where it has one, for
+                // the offset LLVM writes, the last operand.)
+                if let Some(t) = d.target
+                    && let Some(name) = names.name(t)
+                    && let Some(at) = s.rfind([' ', '\t'])
+                {
+                    s.replace_range(at + 1.., name);
                 }
                 s
             }

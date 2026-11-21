@@ -510,6 +510,7 @@ fn machine_name(machine: u16) -> String {
         EM_AARCH64 => "aarch64".into(),
         EM_ARM => "arm".into(),
         EM_RISCV => "riscv".into(),
+        EM_LOONGARCH => "loongarch".into(),
         m => format!("machine_{m}"),
     }
 }

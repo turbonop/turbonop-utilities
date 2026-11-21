@@ -998,9 +998,10 @@ fn disassemble() {
         }
     }
     // RISC-V, RV64GC and RV32IMAC (compressed instructions as their full
-    // forms): as llvm-objdump writes each line (but a branch's or call's
-    // target, which reads as a label or a name).
-    for xlen in ["riscv64", "riscv32"] {
+    // forms), and LoongArch, LA64 and LA32: as llvm-objdump writes each
+    // line (but a branch's or call's target, which reads as a label or a
+    // name).
+    for xlen in ["riscv64", "riscv32", "loongarch64", "loongarch32"] {
         let file = elf(&format!("program-{xlen}-linux-gnu"));
         let objdump = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
             "../../testdata/elf/program-{xlen}-linux-gnu.objdump.txt"
@@ -1031,7 +1032,8 @@ fn disassemble() {
                 let want = &theirs[&at];
                 let branch = [
                     "j", "jal", "beqz", "bnez", "blez", "bgez", "bltz", "bgtz", "beq", "bne",
-                    "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu",
+                    "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu", "b", "bl", "bceqz",
+                    "bcnez",
                 ]
                 .contains(&rest[0]);
                 if branch {

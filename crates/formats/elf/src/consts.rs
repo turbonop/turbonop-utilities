@@ -298,6 +298,11 @@ pub const R_RISCV_64: u32 = 2;
 pub const R_RISCV_RELATIVE: u32 = 3;
 pub const R_RISCV_JUMP_SLOT: u32 = 5;
 pub const R_RISCV_IRELATIVE: u32 = 58;
+pub const R_LARCH_32: u32 = 1;
+pub const R_LARCH_64: u32 = 2;
+pub const R_LARCH_RELATIVE: u32 = 3;
+pub const R_LARCH_JUMP_SLOT: u32 = 5;
+pub const R_LARCH_IRELATIVE: u32 = 12;
 
 pub const ELFCOMPRESS_ZLIB: u32 = 1;
 pub const ELFCOMPRESS_ZSTD: u32 = 2;

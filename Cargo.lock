@@ -307,6 +307,7 @@ dependencies = [
  "hexcavator-arm32",
  "hexcavator-arm64",
  "hexcavator-core",
+ "hexcavator-loongarch",
  "hexcavator-riscv",
  "hexcavator-x86",
 ]
@@ -401,6 +402,7 @@ dependencies = [
  "hexcavator-arm32",
  "hexcavator-arm64",
  "hexcavator-core",
+ "hexcavator-loongarch",
  "hexcavator-riscv",
  "hexcavator-x86",
  "hexcavator-xref",
@@ -454,6 +456,13 @@ version = "0.0.7"
 [[package]]
 name = "hexcavator-linkmap"
 version = "0.0.7"
+
+[[package]]
+name = "hexcavator-loongarch"
+version = "0.0.7"
+dependencies = [
+ "hexcavator-tablegen",
+]
 
 [[package]]
 name = "hexcavator-lx"
@@ -578,6 +587,7 @@ dependencies = [
  "hexcavator-fingerprint",
  "hexcavator-image",
  "hexcavator-linkmap",
+ "hexcavator-loongarch",
  "hexcavator-macho",
  "hexcavator-mmap",
  "hexcavator-pe",
@@ -676,6 +686,7 @@ dependencies = [
  "hexcavator-arm32",
  "hexcavator-arm64",
  "hexcavator-core",
+ "hexcavator-loongarch",
  "hexcavator-riscv",
  "hexcavator-x86",
 ]

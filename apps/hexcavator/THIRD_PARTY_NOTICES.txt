@@ -214,8 +214,8 @@ limitations under the License.
 
 ============================================================================
 hexcavator, hexcavator-arm64, hexcavator-demangle, hexcavator-dwarf,
-hexcavator-elf, hexcavator-riscv, hexcavator-x86: derived in part from the
-LLVM Project (Apache-2.0 WITH LLVM-exception)
+hexcavator-elf, hexcavator-loongarch, hexcavator-riscv, hexcavator-x86:
+derived in part from the LLVM Project (Apache-2.0 WITH LLVM-exception)
 ============================================================================
 
 ==============================================================================

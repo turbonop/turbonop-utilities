@@ -151,3 +151,29 @@ fn nothing_to_decode() {
     assert!(!decodes(Arch::Wasm32));
     assert!(decodes(Arch::X86));
 }
+
+/// LoongArch's control flow: calls, returns, jumps, branches (to their
+/// targets), traps.
+#[test]
+fn loongarch_flow() {
+    let at = 0x1000;
+    let insn = |w: u32| decode(Arch::LoongArch64, &w.to_le_bytes(), at).unwrap();
+    let cases: [(u32, Flow, Option<u64>); 9] = [
+        (0x5400_0400, Flow::Call, Some(0x1004)),   // bl 4
+        (0x53ff_ffff, Flow::Jump, Some(0xffc)),    // b -4
+        (0x4c00_0020, Flow::Return, None),         // ret
+        (0x4c00_0280, Flow::Jump, None),           // jr $t8
+        (0x4c00_0281, Flow::Call, None),           // jirl $ra, $t8, 0
+        (0x5800_1085, Flow::Branch, Some(0x1010)), // beq $a0, $a1, 16
+        (0x4800_0400, Flow::Branch, Some(0x1004)), // bceqz $fcc0, 4
+        (0x002a_0000, Flow::Stop, None),           // break 0
+        (0x0010_8c85, Flow::Next, None),           // add.d $a1, $a0, $sp
+    ];
+    for (w, flow, target) in cases {
+        let i = insn(w);
+        assert_eq!((i.flow, i.target, i.len), (flow, target, 4), "{w:08x}");
+    }
+    assert!(decodes(Arch::LoongArch32));
+    // (LA64's own: not LA32's.)
+    assert!(decode(Arch::LoongArch32, &0x0010_8c85u32.to_le_bytes(), at).is_none());
+}

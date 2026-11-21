@@ -543,6 +543,9 @@ dependencies = [
 [[package]]
 name = "hexcavator-riscv"
 version = "0.0.7"
+dependencies = [
+ "hexcavator-tablegen",
+]
 
 [[package]]
 name = "hexcavator-signature"
@@ -602,6 +605,10 @@ dependencies = [
  "hexcavator-mmap",
  "hexcavator-pdb",
 ]
+
+[[package]]
+name = "hexcavator-tablegen"
+version = "0.0.7"
 
 [[package]]
 name = "hexcavator-trace"

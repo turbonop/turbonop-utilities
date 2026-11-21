@@ -384,7 +384,7 @@ fn thumb(code: &[u8], address: u64, bias: u64, out: &mut Vec<CodeRef>) {
 }
 
 fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
-    use hexcavator_riscv::{Operand, Reg};
+    use hexcavator_riscv::Operand;
     let features = hexcavator_riscv::Features::standard(rv64);
     // Each register's upper part (from AUIPC or LUI), and its address
     // (from an ADDI to an upper part), until it's written.
@@ -401,9 +401,10 @@ fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
         at += usize::from(compact.size);
         let full = hexcavator_riscv::uncompress(&compact, &features);
         let i = full.as_ref().unwrap_or(&compact);
-        let x = |n: &str| match i.operand(n) {
-            Some(Operand::Reg(Reg::X(r))) => Some(usize::from(r)),
-            _ => None,
+        let x = |n: &str| {
+            i.operand(n)
+                .and_then(hexcavator_riscv::gpr_of)
+                .map(usize::from)
         };
         let imm = |n: &str| i.operand(n).and_then(Operand::imm);
         let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
@@ -470,8 +471,8 @@ fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
             .enumerate()
             .take(usize::from(i.inst().defs))
         {
-            if let Operand::Reg(Reg::X(r)) = op {
-                let r = usize::from(*r);
+            if let Some(r) = hexcavator_riscv::gpr_of(*op) {
+                let r = usize::from(r);
                 upper[r] = if k == 0 { set_upper } else { None };
                 addrs[r] = if k == 0 { set_addr } else { None };
             }

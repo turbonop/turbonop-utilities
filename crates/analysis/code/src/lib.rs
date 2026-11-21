@@ -151,15 +151,14 @@ pub fn riscv_flow(
     address: u64,
     features: &hexcavator_riscv::Features,
 ) -> (Flow, Option<u64>) {
-    use hexcavator_riscv::Reg;
     let full = hexcavator_riscv::uncompress(i, features);
     let i = full.as_ref().unwrap_or(i);
-    let reg = |n: &str| i.operand(n).and_then(hexcavator_riscv::Operand::reg);
+    let reg = |n: &str| i.operand(n).and_then(hexcavator_riscv::gpr_of);
     let imm = |n: &str| i.operand(n).and_then(hexcavator_riscv::Operand::imm);
     let target = |n: &str| imm(n).map(|v| address.wrapping_add_signed(v));
     match i.name() {
         "JAL" => {
-            let flow = if reg("rd") == Some(Reg::X(0)) {
+            let flow = if reg("rd") == Some(0) {
                 Flow::Jump
             } else {
                 Flow::Call
@@ -169,8 +168,8 @@ pub fn riscv_flow(
         "JALR" => {
             let rd = reg("rd");
             let rs1 = reg("rs1");
-            if rd == Some(Reg::X(0)) {
-                if matches!(rs1, Some(Reg::X(1 | 5))) && imm("imm12") == Some(0) {
+            if rd == Some(0) {
+                if matches!(rs1, Some(1 | 5)) && imm("imm12") == Some(0) {
                     (Flow::Return, None)
                 } else {
                     (Flow::Jump, None)

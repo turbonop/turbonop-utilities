@@ -8,9 +8,10 @@
 use alloc::string::String;
 use core::fmt::Write as _;
 
+use hexcavator_tablegen::Print;
+
 use crate::tables;
-use crate::tables_types::{Csr, Print};
-use crate::{Features, Instruction, Operand, Reg};
+use crate::{Csr, F, Features, Instruction, Operand, Reg, V, X};
 
 const X_NAMES: [&str; 32] = [
     "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0", "a1", "a2", "a3", "a4",
@@ -64,11 +65,11 @@ const FP_IMMS: [&str; 32] = [
 
 /// A register's ABI name (`a0`, `fs1`, `v8`); none's is empty.
 pub fn reg_name(r: Reg) -> String {
-    match r {
-        Reg::X(n) => X_NAMES.get(usize::from(n)).copied().unwrap_or("?").into(),
-        Reg::F(n) => F_NAMES.get(usize::from(n)).copied().unwrap_or("?").into(),
-        Reg::V(n) => alloc::format!("v{n}"),
-        Reg::None => String::new(),
+    match r.file {
+        X => X_NAMES.get(usize::from(r.n)).copied().unwrap_or("?").into(),
+        F => F_NAMES.get(usize::from(r.n)).copied().unwrap_or("?").into(),
+        V => alloc::format!("v{}", r.n),
+        _ => String::new(),
     }
 }
 
@@ -79,57 +80,10 @@ pub fn format(i: &Instruction, address: u64, features: &Features) -> String {
     let full = crate::uncompress(i, features);
     let mi = full.as_ref().unwrap_or(i);
     let mut out = String::new();
-    for a in tables::ALIASES.iter().filter(|a| a.inst == mi.index) {
-        if !features.satisfies(a.pred) || !crate::passes(mi.operands(), a.checks) {
-            continue;
-        }
-        write_asm(&mut out, a.asm, |out, name| {
-            let Some(r) = name.parse::<usize>().ok().and_then(|n| a.refs.get(n)) else {
-                return;
-            };
-            let op = usize::from(r.op);
-            let print = r.print.unwrap_or(Print::Operand);
-            print_operand(out, mi, op, print, address, features);
-        });
-        return out;
-    }
-    let inst = mi.inst();
-    write_asm(&mut out, inst.asm, |out, name| {
-        let Some(op) = inst.ops.iter().position(|o| o.name == name) else {
-            return;
-        };
-        let print = tables::KINDS
-            .get(usize::from(inst.ops[op].kind))
-            .map_or(Print::Operand, |k| k.print);
+    hexcavator_tablegen::write(&mut out, mi, &features.0, |out, op, print| {
         print_operand(out, mi, op, print, address, features);
     });
     out
-}
-
-/// Writes `asm`, each operand (`$name`, `${name}`) by `operand`.
-fn write_asm(out: &mut String, asm: &str, mut operand: impl FnMut(&mut String, &str)) {
-    let b = asm.as_bytes();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] != b'$' {
-            let next = asm[i..].find('$').map_or(b.len(), |n| i + n);
-            out.push_str(&asm[i..next]);
-            i = next;
-            continue;
-        }
-        i += 1;
-        let (name, end) = if b.get(i) == Some(&b'{') {
-            let close = asm[i..].find('}').map_or(b.len(), |n| i + n);
-            (&asm[(i + 1).min(close)..close], (close + 1).min(b.len()))
-        } else {
-            let end = asm[i..]
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .map_or(b.len(), |n| i + n);
-            (&asm[i..end], end)
-        };
-        operand(out, name);
-        i = end;
-    }
 }
 
 fn print_operand(
@@ -203,7 +157,7 @@ fn print_operand(
         }
         Print::VMask => {
             if let Operand::Reg(r) = o
-                && r != Reg::None
+                && !r.is_none()
             {
                 out.push_str(", ");
                 out.push_str(&reg_name(r));
@@ -216,6 +170,12 @@ fn print_operand(
                 out.push_str(&reg_name(r));
             }
             out.push_str(".scale");
+        }
+        // (LoongArch's.)
+        Print::AtomicMem => {
+            if let Operand::Reg(r) = o {
+                out.push_str(&reg_name(r));
+            }
         }
         Print::RegReg => {
             if let Some(Operand::Reg(offset)) = i.operands().get(op + 1) {
@@ -301,7 +261,7 @@ fn reg_list(out: &mut String, v: i64) {
         if v == 15 {
             last += 1;
         }
-        out.push_str(&reg_name(Reg::X(u8::try_from(last).unwrap_or(0))));
+        out.push_str(&reg_name(crate::x(u8::try_from(last).unwrap_or(0))));
     }
     out.push('}');
 }

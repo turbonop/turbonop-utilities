@@ -1,0 +1,12 @@
+[package]
+name = "hexcavator-tablegen"
+description = "Instruction decoding driven by tables generated from LLVM's TableGen records"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

@@ -224,16 +224,15 @@ pub fn code(
                 }
                 if referring.contains(&pc) {
                     masked[k] = true;
-                    if let Some(hexcavator_riscv::Operand::Reg(hexcavator_riscv::Reg::X(rs))) =
-                        i.operand("rs1")
+                    if let Some(rs) = i.operand("rs1").and_then(hexcavator_riscv::gpr_of)
                         && let Some(l) = lui[usize::from(rs)]
                     {
                         masked[l] = true;
                     }
                 }
                 for op in i.operands().iter().take(usize::from(i.inst().defs)) {
-                    if let hexcavator_riscv::Operand::Reg(hexcavator_riscv::Reg::X(rd)) = op {
-                        lui[usize::from(*rd)] = (i.name() == "LUI").then_some(k);
+                    if let Some(rd) = hexcavator_riscv::gpr_of(*op) {
+                        lui[usize::from(rd)] = (i.name() == "LUI").then_some(k);
                     }
                 }
             }
@@ -296,15 +295,8 @@ fn riscv_instruction(h: &mut FxHasher, i: &hexcavator_riscv::Instruction, masked
 }
 
 fn riscv_reg(h: &mut FxHasher, r: hexcavator_riscv::Reg) {
-    use hexcavator_riscv::Reg;
-    let (file, n) = match r {
-        Reg::None => (0, 0),
-        Reg::X(n) => (1, n),
-        Reg::F(n) => (2, n),
-        Reg::V(n) => (3, n),
-    };
-    h.write_u8(file);
-    h.write_u8(n);
+    h.write_u8(r.file);
+    h.write_u8(r.n);
 }
 
 /// 32-bit ARM Thumb-2 code's instructions, with their offsets, to the

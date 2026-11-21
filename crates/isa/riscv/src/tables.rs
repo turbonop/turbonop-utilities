@@ -4,7 +4,7 @@
 
 #![allow(clippy::unreadable_literal)]
 
-use crate::tables_types::*;
+use hexcavator_tablegen::*;
 
 pub static FEATURES: &[Feature] = &[
     Feature {
@@ -2475,132 +2475,132 @@ pub static PREDICATES: &[&[Cond]] = &[
 pub static CLASSES: &[Class] = &[
     Class {
         name: "GPR",
-        file: File::X,
+        file: 0,
         members: 0xffffffff,
     },
     Class {
         name: "GPRPair",
-        file: File::X,
+        file: 0,
         members: 0x55555555,
     },
     Class {
         name: "GPRS07",
-        file: File::X,
+        file: 0,
         members: 0xfc0300,
     },
     Class {
         name: "GPRNoX0",
-        file: File::X,
+        file: 0,
         members: 0xfffffffe,
     },
     Class {
         name: "SP",
-        file: File::X,
+        file: 0,
         members: 0x4,
     },
     Class {
         name: "GPRC",
-        file: File::X,
+        file: 0,
         members: 0xff00,
     },
     Class {
         name: "FPR64C",
-        file: File::F,
+        file: 1,
         members: 0xff00,
     },
     Class {
         name: "FPR64",
-        file: File::F,
+        file: 1,
         members: 0xffffffff,
     },
     Class {
         name: "FPR32C",
-        file: File::F,
+        file: 1,
         members: 0xff00,
     },
     Class {
         name: "FPR32",
-        file: File::F,
+        file: 1,
         members: 0xffffffff,
     },
     Class {
         name: "GPRPairNoX0",
-        file: File::X,
+        file: 0,
         members: 0x55555554,
     },
     Class {
         name: "GPRPairC",
-        file: File::X,
+        file: 0,
         members: 0x5500,
     },
     Class {
         name: "GPRNoX2",
-        file: File::X,
+        file: 0,
         members: 0xfffffffb,
     },
     Class {
         name: "GPRX5",
-        file: File::X,
+        file: 0,
         members: 0x20,
     },
     Class {
         name: "GPRX1",
-        file: File::X,
+        file: 0,
         members: 0x2,
     },
     Class {
         name: "FPR16",
-        file: File::F,
+        file: 1,
         members: 0xffffffff,
     },
     Class {
         name: "GPRF16",
-        file: File::X,
+        file: 0,
         members: 0xffffffff,
     },
     Class {
         name: "FPR128",
-        file: File::F,
+        file: 1,
         members: 0xffffffff,
     },
     Class {
         name: "GPRF32",
-        file: File::X,
+        file: 0,
         members: 0xffffffff,
     },
     Class {
         name: "GPRX1X5",
-        file: File::X,
+        file: 0,
         members: 0x22,
     },
     Class {
         name: "VR",
-        file: File::V,
+        file: 2,
         members: 0xffffffff,
     },
     Class {
         name: "VMV0",
-        file: File::V,
+        file: 2,
         members: 0x1,
     },
     Class {
         name: "VRM2",
-        file: File::V,
+        file: 2,
         members: 0xffffff7f,
     },
     Class {
         name: "VRM4",
-        file: File::V,
+        file: 2,
         members: 0x11111111,
     },
     Class {
         name: "VRM8",
-        file: File::V,
+        file: 2,
         members: 0x1010101,
     },
     Class {
         name: "GPRNoX0X2",
-        file: File::X,
+        file: 0,
         members: 0xfffffffa,
     },
 ];
@@ -53885,7 +53885,7 @@ pub static INSTRUCTIONS: &[Inst] = &[
     },
 ];
 
-pub static BUCKETS32: &[&[u16]] = &[
+static BUCKETS32: &[&[u16]] = &[
     &[],
     &[],
     &[],
@@ -55085,7 +55085,7 @@ pub static BUCKETS32: &[&[u16]] = &[
     &[],
 ];
 
-pub static BUCKETS16: &[&[u16]] = &[
+static BUCKETS16: &[&[u16]] = &[
     &[295, 235],
     &[274, 275, 233],
     &[286],
@@ -55122,14 +55122,14 @@ pub static BUCKETS16: &[&[u16]] = &[
     &[],
 ];
 
-pub static ALIASES: &[Alias] = &[
+static ALIASES: &[Alias] = &[
     Alias {
         inst: 601,
         pred: 0,
         asm: "ret",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
-            Check::Reg(1, Reg::X(1)),
+            Check::Reg(0, Reg::new(0, 0)),
+            Check::Reg(1, Reg::new(0, 1)),
             Check::Imm(2, 0),
         ],
         refs: &[],
@@ -55139,8 +55139,8 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "nop",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::Imm(2, 0),
         ],
         refs: &[],
@@ -55150,7 +55150,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "jr\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Class(1, 0),
             Check::Imm(2, 0),
         ],
@@ -55161,7 +55161,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "jalr\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(1)),
+            Check::Reg(0, Reg::new(0, 1)),
             Check::Class(1, 0),
             Check::Imm(2, 0),
         ],
@@ -55173,7 +55173,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "li\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -55200,7 +55200,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 3074),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55211,7 +55211,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 3072),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55222,7 +55222,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 3073),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55233,7 +55233,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 3202),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55244,7 +55244,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 3200),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55255,7 +55255,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 3201),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55263,21 +55263,21 @@ pub static ALIASES: &[Alias] = &[
         inst: 719,
         pred: 0,
         asm: "sfence.vma",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Reg(1, Reg::X(0))],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Reg(1, Reg::new(0, 0))],
         refs: &[],
     },
     Alias {
         inst: 583,
         pred: 69,
         asm: "hfence.gvma",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Reg(1, Reg::X(0))],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Reg(1, Reg::new(0, 0))],
         refs: &[],
     },
     Alias {
         inst: 584,
         pred: 69,
         asm: "hfence.vvma",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Reg(1, Reg::X(0))],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Reg(1, Reg::new(0, 0))],
         refs: &[],
     },
     Alias {
@@ -55287,7 +55287,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 3),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55296,7 +55296,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 114,
         asm: "fscsr\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Imm(1, 3),
             Check::Class(2, 0),
         ],
@@ -55309,7 +55309,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 2),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55318,7 +55318,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 114,
         asm: "fsrm\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Imm(1, 2),
             Check::Class(2, 0),
         ],
@@ -55329,7 +55329,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 114,
         asm: "fsrmi\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Imm(1, 2),
             Check::ImmFits(
                 2,
@@ -55350,7 +55350,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Imm(1, 1),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }],
     },
@@ -55359,7 +55359,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 114,
         asm: "fsflags\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Imm(1, 1),
             Check::Class(2, 0),
         ],
@@ -55370,7 +55370,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 114,
         asm: "fsflagsi\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Imm(1, 1),
             Check::ImmFits(
                 2,
@@ -55404,7 +55404,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "neg\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::Class(2, 0),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 2, print: None }],
@@ -55415,7 +55415,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "negw\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::Class(2, 0),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 2, print: None }],
@@ -55440,7 +55440,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "snez\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::Class(2, 0),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 2, print: None }],
@@ -55452,7 +55452,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Class(1, 0),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -55462,7 +55462,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "sgtz\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::Class(2, 0),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 2, print: None }],
@@ -55473,7 +55473,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "beqz\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -55498,7 +55498,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "bnez\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -55522,7 +55522,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "blez\t$0, $1",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Class(1, 0),
             Check::ImmFits(
                 2,
@@ -55548,7 +55548,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "bgez\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -55573,7 +55573,7 @@ pub static ALIASES: &[Alias] = &[
         asm: "bltz\t$0, $1",
         checks: &[
             Check::Class(0, 0),
-            Check::Reg(1, Reg::X(0)),
+            Check::Reg(1, Reg::new(0, 0)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -55597,7 +55597,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "bgtz\t$0, $1",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Class(1, 0),
             Check::ImmFits(
                 2,
@@ -55622,7 +55622,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "j\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::ImmFits(
                 1,
                 ImmRange {
@@ -55643,7 +55643,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "jal\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(1)),
+            Check::Reg(0, Reg::new(0, 1)),
             Check::ImmFits(
                 1,
                 ImmRange {
@@ -55664,7 +55664,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "jr\t$0($1)",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::Class(1, 0),
             Check::ImmFits(
                 2,
@@ -55683,7 +55683,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "jalr\t$0($1)",
         checks: &[
-            Check::Reg(0, Reg::X(1)),
+            Check::Reg(0, Reg::new(0, 1)),
             Check::Class(1, 0),
             Check::ImmFits(
                 2,
@@ -55715,7 +55715,7 @@ pub static ALIASES: &[Alias] = &[
         inst: 224,
         pred: 0,
         asm: "csrr\t$0, $1",
-        checks: &[Check::Class(0, 0), Check::Reg(2, Reg::X(0))],
+        checks: &[Check::Class(0, 0), Check::Reg(2, Reg::new(0, 0))],
         refs: &[
             Ref { op: 0, print: None },
             Ref {
@@ -55728,7 +55728,7 @@ pub static ALIASES: &[Alias] = &[
         inst: 226,
         pred: 0,
         asm: "csrw\t$0, $1",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Class(2, 0)],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Class(2, 0)],
         refs: &[
             Ref {
                 op: 1,
@@ -55741,7 +55741,7 @@ pub static ALIASES: &[Alias] = &[
         inst: 224,
         pred: 0,
         asm: "csrs\t$0, $1",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Class(2, 0)],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Class(2, 0)],
         refs: &[
             Ref {
                 op: 1,
@@ -55754,7 +55754,7 @@ pub static ALIASES: &[Alias] = &[
         inst: 222,
         pred: 0,
         asm: "csrc\t$0, $1",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Class(2, 0)],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Class(2, 0)],
         refs: &[
             Ref {
                 op: 1,
@@ -55768,7 +55768,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "csrwi\t$0, $1",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -55792,7 +55792,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "csrsi\t$0, $1",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -55816,7 +55816,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "csrci\t$0, $1",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -55839,21 +55839,21 @@ pub static ALIASES: &[Alias] = &[
         inst: 719,
         pred: 0,
         asm: "sfence.vma\t$0",
-        checks: &[Check::Class(0, 0), Check::Reg(1, Reg::X(0))],
+        checks: &[Check::Class(0, 0), Check::Reg(1, Reg::new(0, 0))],
         refs: &[Ref { op: 0, print: None }],
     },
     Alias {
         inst: 583,
         pred: 69,
         asm: "hfence.gvma\t$0",
-        checks: &[Check::Class(0, 0), Check::Reg(1, Reg::X(0))],
+        checks: &[Check::Class(0, 0), Check::Reg(1, Reg::new(0, 0))],
         refs: &[Ref { op: 0, print: None }],
     },
     Alias {
         inst: 584,
         pred: 69,
         asm: "hfence.vvma\t$0",
-        checks: &[Check::Class(0, 0), Check::Reg(1, Reg::X(0))],
+        checks: &[Check::Class(0, 0), Check::Reg(1, Reg::new(0, 0))],
         refs: &[Ref { op: 0, print: None }],
     },
     Alias {
@@ -55861,9 +55861,9 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "ntl.p1",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
-            Check::Reg(1, Reg::X(0)),
-            Check::Reg(2, Reg::X(2)),
+            Check::Reg(0, Reg::new(0, 0)),
+            Check::Reg(1, Reg::new(0, 0)),
+            Check::Reg(2, Reg::new(0, 2)),
         ],
         refs: &[],
     },
@@ -55872,9 +55872,9 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "ntl.pall",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
-            Check::Reg(1, Reg::X(0)),
-            Check::Reg(2, Reg::X(3)),
+            Check::Reg(0, Reg::new(0, 0)),
+            Check::Reg(1, Reg::new(0, 0)),
+            Check::Reg(2, Reg::new(0, 3)),
         ],
         refs: &[],
     },
@@ -55883,9 +55883,9 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "ntl.s1",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
-            Check::Reg(1, Reg::X(0)),
-            Check::Reg(2, Reg::X(4)),
+            Check::Reg(0, Reg::new(0, 0)),
+            Check::Reg(1, Reg::new(0, 0)),
+            Check::Reg(2, Reg::new(0, 4)),
         ],
         refs: &[],
     },
@@ -55894,9 +55894,9 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "ntl.all",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
-            Check::Reg(1, Reg::X(0)),
-            Check::Reg(2, Reg::X(5)),
+            Check::Reg(0, Reg::new(0, 0)),
+            Check::Reg(1, Reg::new(0, 0)),
+            Check::Reg(2, Reg::new(0, 5)),
         ],
         refs: &[],
     },
@@ -55912,7 +55912,7 @@ pub static ALIASES: &[Alias] = &[
         pred: 0,
         asm: "lpad\t$0",
         checks: &[
-            Check::Reg(0, Reg::X(0)),
+            Check::Reg(0, Reg::new(0, 0)),
             Check::ImmFits(
                 1,
                 ImmRange {
@@ -56159,7 +56159,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 0),
             Check::Class(1, 0),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -56222,7 +56222,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 20),
             Check::Class(1, 20),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
             Check::Class(3, 21),
         ],
         refs: &[
@@ -56241,8 +56241,8 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 20),
             Check::Class(1, 20),
-            Check::Reg(2, Reg::X(0)),
-            Check::Reg(3, Reg::None),
+            Check::Reg(2, Reg::new(0, 0)),
+            Check::Reg(3, Reg::NONE),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -56253,7 +56253,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 20),
             Check::Class(1, 20),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
             Check::Class(3, 21),
         ],
         refs: &[
@@ -56272,8 +56272,8 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 20),
             Check::Class(1, 20),
-            Check::Reg(2, Reg::X(0)),
-            Check::Reg(3, Reg::None),
+            Check::Reg(2, Reg::new(0, 0)),
+            Check::Reg(3, Reg::NONE),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -56284,7 +56284,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 20),
             Check::Class(1, 20),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
             Check::Class(3, 21),
         ],
         refs: &[
@@ -56303,8 +56303,8 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 20),
             Check::Class(1, 20),
-            Check::Reg(2, Reg::X(0)),
-            Check::Reg(3, Reg::None),
+            Check::Reg(2, Reg::new(0, 0)),
+            Check::Reg(3, Reg::NONE),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -56335,7 +56335,7 @@ pub static ALIASES: &[Alias] = &[
             Check::Class(0, 20),
             Check::Class(1, 20),
             Check::Imm(2, -1),
-            Check::Reg(3, Reg::None),
+            Check::Reg(3, Reg::NONE),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -56346,7 +56346,7 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 20),
             Check::Class(1, 20),
-            Check::Reg(2, Reg::X(0)),
+            Check::Reg(2, Reg::new(0, 0)),
             Check::Class(3, 21),
         ],
         refs: &[
@@ -56365,8 +56365,8 @@ pub static ALIASES: &[Alias] = &[
         checks: &[
             Check::Class(0, 20),
             Check::Class(1, 20),
-            Check::Reg(2, Reg::X(0)),
-            Check::Reg(3, Reg::None),
+            Check::Reg(2, Reg::new(0, 0)),
+            Check::Reg(3, Reg::NONE),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -56397,7 +56397,7 @@ pub static ALIASES: &[Alias] = &[
             Check::Class(0, 20),
             Check::Class(1, 20),
             Check::Tied(2, 1),
-            Check::Reg(3, Reg::None),
+            Check::Reg(3, Reg::NONE),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -56428,7 +56428,7 @@ pub static ALIASES: &[Alias] = &[
             Check::Class(0, 20),
             Check::Class(1, 20),
             Check::Tied(2, 1),
-            Check::Reg(3, Reg::None),
+            Check::Reg(3, Reg::NONE),
         ],
         refs: &[Ref { op: 0, print: None }, Ref { op: 1, print: None }],
     },
@@ -56464,33 +56464,33 @@ pub static ALIASES: &[Alias] = &[
         inst: 232,
         pred: 27,
         asm: "c.ntl.p1",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Reg(2, Reg::X(2))],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Reg(2, Reg::new(0, 2))],
         refs: &[],
     },
     Alias {
         inst: 232,
         pred: 27,
         asm: "c.ntl.pall",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Reg(2, Reg::X(3))],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Reg(2, Reg::new(0, 3))],
         refs: &[],
     },
     Alias {
         inst: 232,
         pred: 27,
         asm: "c.ntl.s1",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Reg(2, Reg::X(4))],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Reg(2, Reg::new(0, 4))],
         refs: &[],
     },
     Alias {
         inst: 232,
         pred: 27,
         asm: "c.ntl.all",
-        checks: &[Check::Reg(0, Reg::X(0)), Check::Reg(2, Reg::X(5))],
+        checks: &[Check::Reg(0, Reg::new(0, 0)), Check::Reg(2, Reg::new(0, 5))],
         refs: &[],
     },
 ];
 
-pub static UNCOMPRESS: &[Uncompress] = &[
+static UNCOMPRESS: &[Uncompress] = &[
     Uncompress {
         from: 235,
         to: 1,
@@ -56591,7 +56591,11 @@ pub static UNCOMPRESS: &[Uncompress] = &[
         to: 1,
         pred: 27,
         checks: &[],
-        build: &[Build::Reg(Reg::X(0)), Build::Reg(Reg::X(0)), Build::Imm(0)],
+        build: &[
+            Build::Reg(Reg::new(0, 0)),
+            Build::Reg(Reg::new(0, 0)),
+            Build::Imm(0),
+        ],
     },
     Uncompress {
         from: 233,
@@ -56625,7 +56629,7 @@ pub static UNCOMPRESS: &[Uncompress] = &[
                 nonzero: false,
             },
         )],
-        build: &[Build::Reg(Reg::X(1)), Build::From(0)],
+        build: &[Build::Reg(Reg::new(0, 1)), Build::From(0)],
     },
     Uncompress {
         from: 236,
@@ -56662,14 +56666,14 @@ pub static UNCOMPRESS: &[Uncompress] = &[
                 },
             ),
         ],
-        build: &[Build::From(0), Build::Reg(Reg::X(0)), Build::From(1)],
+        build: &[Build::From(0), Build::Reg(Reg::new(0, 0)), Build::From(1)],
     },
     Uncompress {
         from: 234,
         to: 1,
         pred: 27,
         checks: &[
-            Check::Reg(0, Reg::X(2)),
+            Check::Reg(0, Reg::new(0, 2)),
             Check::ImmFits(
                 2,
                 ImmRange {
@@ -56680,7 +56684,11 @@ pub static UNCOMPRESS: &[Uncompress] = &[
                 },
             ),
         ],
-        build: &[Build::Reg(Reg::X(2)), Build::Reg(Reg::X(2)), Build::From(2)],
+        build: &[
+            Build::Reg(Reg::new(0, 2)),
+            Build::Reg(Reg::new(0, 2)),
+            Build::From(2),
+        ],
     },
     Uncompress {
         from: 263,
@@ -56777,7 +56785,7 @@ pub static UNCOMPRESS: &[Uncompress] = &[
                 nonzero: false,
             },
         )],
-        build: &[Build::Reg(Reg::X(0)), Build::From(0)],
+        build: &[Build::Reg(Reg::new(0, 0)), Build::From(0)],
     },
     Uncompress {
         from: 240,
@@ -56795,7 +56803,7 @@ pub static UNCOMPRESS: &[Uncompress] = &[
                 },
             ),
         ],
-        build: &[Build::From(0), Build::Reg(Reg::X(0)), Build::From(1)],
+        build: &[Build::From(0), Build::Reg(Reg::new(0, 0)), Build::From(1)],
     },
     Uncompress {
         from: 241,
@@ -56813,7 +56821,7 @@ pub static UNCOMPRESS: &[Uncompress] = &[
                 },
             ),
         ],
-        build: &[Build::From(0), Build::Reg(Reg::X(0)), Build::From(1)],
+        build: &[Build::From(0), Build::Reg(Reg::new(0, 0)), Build::From(1)],
     },
     Uncompress {
         from: 286,
@@ -56865,7 +56873,7 @@ pub static UNCOMPRESS: &[Uncompress] = &[
         to: 601,
         pred: 27,
         checks: &[Check::Class(0, 3)],
-        build: &[Build::Reg(Reg::X(0)), Build::From(0), Build::Imm(0)],
+        build: &[Build::Reg(Reg::new(0, 0)), Build::From(0), Build::Imm(0)],
     },
     Uncompress {
         from: 273,
@@ -56893,7 +56901,7 @@ pub static UNCOMPRESS: &[Uncompress] = &[
         to: 601,
         pred: 27,
         checks: &[Check::Class(0, 3)],
-        build: &[Build::Reg(Reg::X(1)), Build::From(0), Build::Imm(0)],
+        build: &[Build::Reg(Reg::new(0, 1)), Build::From(0), Build::Imm(0)],
     },
     Uncompress {
         from: 232,
@@ -57139,7 +57147,7 @@ pub static UNCOMPRESS: &[Uncompress] = &[
         to: 4,
         pred: 122,
         checks: &[Check::Class(0, 5), Check::Class(0, 5)],
-        build: &[Build::From(0), Build::From(0), Build::Reg(Reg::X(0))],
+        build: &[Build::From(0), Build::From(0), Build::Reg(Reg::new(0, 0))],
     },
     Uncompress {
         from: 276,
@@ -57323,2738 +57331,2752 @@ pub static UNCOMPRESS: &[Uncompress] = &[
         from: 290,
         to: 776,
         pred: 124,
-        checks: &[Check::Reg(0, Reg::X(1))],
-        build: &[Build::Reg(Reg::X(1))],
+        checks: &[Check::Reg(0, Reg::new(0, 1))],
+        build: &[Build::Reg(Reg::new(0, 1))],
     },
     Uncompress {
         from: 289,
         to: 775,
         pred: 124,
-        checks: &[Check::Reg(0, Reg::X(5))],
-        build: &[Build::Reg(Reg::X(5))],
+        checks: &[Check::Reg(0, Reg::new(0, 5))],
+        build: &[Build::Reg(Reg::new(0, 5))],
     },
 ];
 
-pub static CSRS: &[Csr] = &[
-    Csr {
+pub static TARGET: Target = Target {
+    features: FEATURES,
+    predicates: PREDICATES,
+    classes: CLASSES,
+    kinds: KINDS,
+    instructions: INSTRUCTIONS,
+    aliases: ALIASES,
+    uncompress: UNCOMPRESS,
+    buckets16: BUCKETS16,
+    key16: &[0, 1, 13, 14, 15],
+    buckets32: BUCKETS32,
+    key32: &[0, 1, 2, 3, 4, 5, 6, 12, 13, 14],
+};
+
+pub static CSRS: &[crate::Csr] = &[
+    crate::Csr {
         encoding: 0x1,
         name: "fflags",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x2,
         name: "frm",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3,
         name: "fcsr",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x8,
         name: "vstart",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x9,
         name: "vxsat",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xa,
         name: "vxrm",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xf,
         name: "vcsr",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x11,
         name: "ssp",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x15,
         name: "seed",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x17,
         name: "jvt",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x100,
         name: "sstatus",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x104,
         name: "sie",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x105,
         name: "stvec",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x106,
         name: "scounteren",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x107,
         name: "sijt",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x10a,
         name: "senvcfg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x10c,
         name: "sstateen0",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x10d,
         name: "sstateen1",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x10e,
         name: "sstateen2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x10f,
         name: "sstateen3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x114,
         name: "sieh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x120,
         name: "scountinhibit",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x140,
         name: "sscratch",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x141,
         name: "sepc",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x142,
         name: "scause",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x143,
         name: "stval",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x144,
         name: "sip",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x146,
         name: "sistatus",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x147,
         name: "sithreshold",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x148,
         name: "stopsi",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x149,
         name: "sspcs",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x14d,
         name: "stimecmp",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x14e,
         name: "sctrctl",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x14f,
         name: "sctrstatus",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x150,
         name: "siselect",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x151,
         name: "sireg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x152,
         name: "sireg2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x153,
         name: "sireg3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x154,
         name: "siph",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x155,
         name: "sireg4",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x156,
         name: "sireg5",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x157,
         name: "sireg6",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x15c,
         name: "stopei",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x15d,
         name: "stimecmph",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x15f,
         name: "sctrdepth",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x180,
         name: "satp",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x181,
         name: "srmcfg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x183,
         name: "spmpen",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x193,
         name: "spmpenh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x200,
         name: "vsstatus",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x204,
         name: "vsie",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x205,
         name: "vstvec",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x214,
         name: "vsieh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x240,
         name: "vsscratch",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x241,
         name: "vsepc",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x242,
         name: "vscause",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x243,
         name: "vstval",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x244,
         name: "vsip",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x24d,
         name: "vstimecmp",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x24e,
         name: "vsctrctl",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x250,
         name: "vsiselect",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x251,
         name: "vsireg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x252,
         name: "vsireg2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x253,
         name: "vsireg3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x254,
         name: "vsiph",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x255,
         name: "vsireg4",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x256,
         name: "vsireg5",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x257,
         name: "vsireg6",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x25c,
         name: "vstopei",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x25d,
         name: "vstimecmph",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x280,
         name: "vsatp",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x300,
         name: "mstatus",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x301,
         name: "misa",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x302,
         name: "medeleg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x303,
         name: "mideleg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x304,
         name: "mie",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x305,
         name: "mtvec",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x306,
         name: "mcounteren",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x307,
         name: "mijt",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x308,
         name: "mvien",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x309,
         name: "mvip",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x30a,
         name: "menvcfg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x30c,
         name: "mstateen0",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x30d,
         name: "mstateen1",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x30e,
         name: "mstateen2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x30f,
         name: "mstateen3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x310,
         name: "mstatush",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x312,
         name: "medelegh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x313,
         name: "midelegh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x314,
         name: "mieh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x316,
         name: "mpmpdeleg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x318,
         name: "mvienh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x319,
         name: "mviph",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x31a,
         name: "menvcfgh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x31c,
         name: "mstateen0h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x31d,
         name: "mstateen1h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x31e,
         name: "mstateen2h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x31f,
         name: "mstateen3h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x320,
         name: "mcountinhibit",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x321,
         name: "mcyclecfg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x322,
         name: "minstretcfg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x323,
         name: "mhpmevent3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x324,
         name: "mhpmevent4",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x325,
         name: "mhpmevent5",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x326,
         name: "mhpmevent6",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x327,
         name: "mhpmevent7",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x328,
         name: "mhpmevent8",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x329,
         name: "mhpmevent9",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x32a,
         name: "mhpmevent10",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x32b,
         name: "mhpmevent11",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x32c,
         name: "mhpmevent12",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x32d,
         name: "mhpmevent13",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x32e,
         name: "mhpmevent14",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x32f,
         name: "mhpmevent15",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x330,
         name: "mhpmevent16",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x331,
         name: "mhpmevent17",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x332,
         name: "mhpmevent18",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x333,
         name: "mhpmevent19",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x334,
         name: "mhpmevent20",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x335,
         name: "mhpmevent21",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x336,
         name: "mhpmevent22",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x337,
         name: "mhpmevent23",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x338,
         name: "mhpmevent24",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x339,
         name: "mhpmevent25",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x33a,
         name: "mhpmevent26",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x33b,
         name: "mhpmevent27",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x33c,
         name: "mhpmevent28",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x33d,
         name: "mhpmevent29",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x33e,
         name: "mhpmevent30",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x33f,
         name: "mhpmevent31",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x340,
         name: "mscratch",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x341,
         name: "mepc",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x342,
         name: "mcause",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x343,
         name: "mtval",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x344,
         name: "mip",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x346,
         name: "mistatus",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x347,
         name: "mithreshold",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x348,
         name: "mtopsi",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x349,
         name: "mspcs",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x34a,
         name: "mtinst",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x34b,
         name: "mtval2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x34e,
         name: "mctrctl",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x350,
         name: "miselect",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x351,
         name: "mireg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x352,
         name: "mireg2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x353,
         name: "mireg3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x354,
         name: "miph",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x355,
         name: "mireg4",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x356,
         name: "mireg5",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x357,
         name: "mireg6",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x35c,
         name: "mtopei",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a0,
         name: "pmpcfg0",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a1,
         name: "pmpcfg1",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a2,
         name: "pmpcfg2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a3,
         name: "pmpcfg3",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a4,
         name: "pmpcfg4",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a5,
         name: "pmpcfg5",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a6,
         name: "pmpcfg6",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a7,
         name: "pmpcfg7",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a8,
         name: "pmpcfg8",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3a9,
         name: "pmpcfg9",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3aa,
         name: "pmpcfg10",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ab,
         name: "pmpcfg11",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ac,
         name: "pmpcfg12",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ad,
         name: "pmpcfg13",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ae,
         name: "pmpcfg14",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3af,
         name: "pmpcfg15",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b0,
         name: "pmpaddr0",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b1,
         name: "pmpaddr1",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b2,
         name: "pmpaddr2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b3,
         name: "pmpaddr3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b4,
         name: "pmpaddr4",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b5,
         name: "pmpaddr5",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b6,
         name: "pmpaddr6",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b7,
         name: "pmpaddr7",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b8,
         name: "pmpaddr8",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3b9,
         name: "pmpaddr9",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ba,
         name: "pmpaddr10",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3bb,
         name: "pmpaddr11",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3bc,
         name: "pmpaddr12",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3bd,
         name: "pmpaddr13",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3be,
         name: "pmpaddr14",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3bf,
         name: "pmpaddr15",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c0,
         name: "pmpaddr16",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c1,
         name: "pmpaddr17",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c2,
         name: "pmpaddr18",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c3,
         name: "pmpaddr19",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c4,
         name: "pmpaddr20",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c5,
         name: "pmpaddr21",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c6,
         name: "pmpaddr22",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c7,
         name: "pmpaddr23",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c8,
         name: "pmpaddr24",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3c9,
         name: "pmpaddr25",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ca,
         name: "pmpaddr26",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3cb,
         name: "pmpaddr27",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3cc,
         name: "pmpaddr28",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3cd,
         name: "pmpaddr29",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ce,
         name: "pmpaddr30",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3cf,
         name: "pmpaddr31",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d0,
         name: "pmpaddr32",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d1,
         name: "pmpaddr33",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d2,
         name: "pmpaddr34",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d3,
         name: "pmpaddr35",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d4,
         name: "pmpaddr36",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d5,
         name: "pmpaddr37",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d6,
         name: "pmpaddr38",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d7,
         name: "pmpaddr39",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d8,
         name: "pmpaddr40",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3d9,
         name: "pmpaddr41",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3da,
         name: "pmpaddr42",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3db,
         name: "pmpaddr43",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3dc,
         name: "pmpaddr44",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3dd,
         name: "pmpaddr45",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3de,
         name: "pmpaddr46",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3df,
         name: "pmpaddr47",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e0,
         name: "pmpaddr48",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e1,
         name: "pmpaddr49",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e2,
         name: "pmpaddr50",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e3,
         name: "pmpaddr51",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e4,
         name: "pmpaddr52",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e5,
         name: "pmpaddr53",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e6,
         name: "pmpaddr54",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e7,
         name: "pmpaddr55",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e8,
         name: "pmpaddr56",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3e9,
         name: "pmpaddr57",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ea,
         name: "pmpaddr58",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3eb,
         name: "pmpaddr59",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ec,
         name: "pmpaddr60",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ed,
         name: "pmpaddr61",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ee,
         name: "pmpaddr62",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x3ef,
         name: "pmpaddr63",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x5a8,
         name: "scontext",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x600,
         name: "hstatus",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x602,
         name: "hedeleg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x603,
         name: "hideleg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x604,
         name: "hie",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x605,
         name: "htimedelta",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x606,
         name: "hcounteren",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x607,
         name: "hgeie",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x608,
         name: "hvien",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x609,
         name: "hvictl",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x60a,
         name: "henvcfg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x60c,
         name: "hstateen0",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x60d,
         name: "hstateen1",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x60e,
         name: "hstateen2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x60f,
         name: "hstateen3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x612,
         name: "hedelegh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x613,
         name: "hidelegh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x615,
         name: "htimedeltah",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x618,
         name: "hvienh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x61a,
         name: "henvcfgh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x61c,
         name: "hstateen0h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x61d,
         name: "hstateen1h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x61e,
         name: "hstateen2h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x61f,
         name: "hstateen3h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x643,
         name: "htval",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x644,
         name: "hip",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x645,
         name: "hvip",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x646,
         name: "hviprio1",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x647,
         name: "hviprio2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x64a,
         name: "htinst",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x655,
         name: "hviph",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x656,
         name: "hviprio1h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x657,
         name: "hviprio2h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x680,
         name: "hgatp",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x6a8,
         name: "hcontext",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x721,
         name: "mcyclecfgh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x722,
         name: "minstretcfgh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x723,
         name: "mhpmevent3h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x724,
         name: "mhpmevent4h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x725,
         name: "mhpmevent5h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x726,
         name: "mhpmevent6h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x727,
         name: "mhpmevent7h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x728,
         name: "mhpmevent8h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x729,
         name: "mhpmevent9h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x72a,
         name: "mhpmevent10h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x72b,
         name: "mhpmevent11h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x72c,
         name: "mhpmevent12h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x72d,
         name: "mhpmevent13h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x72e,
         name: "mhpmevent14h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x72f,
         name: "mhpmevent15h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x730,
         name: "mhpmevent16h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x731,
         name: "mhpmevent17h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x732,
         name: "mhpmevent18h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x733,
         name: "mhpmevent19h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x734,
         name: "mhpmevent20h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x735,
         name: "mhpmevent21h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x736,
         name: "mhpmevent22h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x737,
         name: "mhpmevent23h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x738,
         name: "mhpmevent24h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x739,
         name: "mhpmevent25h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x73a,
         name: "mhpmevent26h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x73b,
         name: "mhpmevent27h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x73c,
         name: "mhpmevent28h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x73d,
         name: "mhpmevent29h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x73e,
         name: "mhpmevent30h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x73f,
         name: "mhpmevent31h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x740,
         name: "mnscratch",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x741,
         name: "mnepc",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x742,
         name: "mncause",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x744,
         name: "mnstatus",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x747,
         name: "mseccfg",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x757,
         name: "mseccfgh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7a0,
         name: "tselect",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7a1,
         name: "tdata1",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7a2,
         name: "tdata2",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7a3,
         name: "tdata3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7a4,
         name: "tinfo",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7a5,
         name: "tcontrol",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7a8,
         name: "mcontext",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7aa,
         name: "mscontext",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7b0,
         name: "dcsr",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7b1,
         name: "dpc",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7b2,
         name: "dscratch0",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0x7b3,
         name: "dscratch1",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb00,
         name: "mcycle",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb02,
         name: "minstret",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb03,
         name: "mhpmcounter3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb04,
         name: "mhpmcounter4",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb05,
         name: "mhpmcounter5",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb06,
         name: "mhpmcounter6",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb07,
         name: "mhpmcounter7",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb08,
         name: "mhpmcounter8",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb09,
         name: "mhpmcounter9",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb0a,
         name: "mhpmcounter10",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb0b,
         name: "mhpmcounter11",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb0c,
         name: "mhpmcounter12",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb0d,
         name: "mhpmcounter13",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb0e,
         name: "mhpmcounter14",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb0f,
         name: "mhpmcounter15",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb10,
         name: "mhpmcounter16",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb11,
         name: "mhpmcounter17",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb12,
         name: "mhpmcounter18",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb13,
         name: "mhpmcounter19",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb14,
         name: "mhpmcounter20",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb15,
         name: "mhpmcounter21",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb16,
         name: "mhpmcounter22",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb17,
         name: "mhpmcounter23",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb18,
         name: "mhpmcounter24",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb19,
         name: "mhpmcounter25",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb1a,
         name: "mhpmcounter26",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb1b,
         name: "mhpmcounter27",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb1c,
         name: "mhpmcounter28",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb1d,
         name: "mhpmcounter29",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb1e,
         name: "mhpmcounter30",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb1f,
         name: "mhpmcounter31",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb80,
         name: "mcycleh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb82,
         name: "minstreth",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb83,
         name: "mhpmcounter3h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb84,
         name: "mhpmcounter4h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb85,
         name: "mhpmcounter5h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb86,
         name: "mhpmcounter6h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb87,
         name: "mhpmcounter7h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb88,
         name: "mhpmcounter8h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb89,
         name: "mhpmcounter9h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb8a,
         name: "mhpmcounter10h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb8b,
         name: "mhpmcounter11h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb8c,
         name: "mhpmcounter12h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb8d,
         name: "mhpmcounter13h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb8e,
         name: "mhpmcounter14h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb8f,
         name: "mhpmcounter15h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb90,
         name: "mhpmcounter16h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb91,
         name: "mhpmcounter17h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb92,
         name: "mhpmcounter18h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb93,
         name: "mhpmcounter19h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb94,
         name: "mhpmcounter20h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb95,
         name: "mhpmcounter21h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb96,
         name: "mhpmcounter22h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb97,
         name: "mhpmcounter23h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb98,
         name: "mhpmcounter24h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb99,
         name: "mhpmcounter25h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb9a,
         name: "mhpmcounter26h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb9b,
         name: "mhpmcounter27h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb9c,
         name: "mhpmcounter28h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb9d,
         name: "mhpmcounter29h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb9e,
         name: "mhpmcounter30h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xb9f,
         name: "mhpmcounter31h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc00,
         name: "cycle",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc01,
         name: "time",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc02,
         name: "instret",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc03,
         name: "hpmcounter3",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc04,
         name: "hpmcounter4",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc05,
         name: "hpmcounter5",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc06,
         name: "hpmcounter6",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc07,
         name: "hpmcounter7",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc08,
         name: "hpmcounter8",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc09,
         name: "hpmcounter9",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc0a,
         name: "hpmcounter10",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc0b,
         name: "hpmcounter11",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc0c,
         name: "hpmcounter12",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc0d,
         name: "hpmcounter13",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc0e,
         name: "hpmcounter14",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc0f,
         name: "hpmcounter15",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc10,
         name: "hpmcounter16",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc11,
         name: "hpmcounter17",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc12,
         name: "hpmcounter18",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc13,
         name: "hpmcounter19",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc14,
         name: "hpmcounter20",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc15,
         name: "hpmcounter21",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc16,
         name: "hpmcounter22",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc17,
         name: "hpmcounter23",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc18,
         name: "hpmcounter24",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc19,
         name: "hpmcounter25",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc1a,
         name: "hpmcounter26",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc1b,
         name: "hpmcounter27",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc1c,
         name: "hpmcounter28",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc1d,
         name: "hpmcounter29",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc1e,
         name: "hpmcounter30",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc1f,
         name: "hpmcounter31",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc20,
         name: "vl",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc21,
         name: "vtype",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc22,
         name: "vlenb",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc80,
         name: "cycleh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc81,
         name: "timeh",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc82,
         name: "instreth",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc83,
         name: "hpmcounter3h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc84,
         name: "hpmcounter4h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc85,
         name: "hpmcounter5h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc86,
         name: "hpmcounter6h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc87,
         name: "hpmcounter7h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc88,
         name: "hpmcounter8h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc89,
         name: "hpmcounter9h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc8a,
         name: "hpmcounter10h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc8b,
         name: "hpmcounter11h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc8c,
         name: "hpmcounter12h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc8d,
         name: "hpmcounter13h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc8e,
         name: "hpmcounter14h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc8f,
         name: "hpmcounter15h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc90,
         name: "hpmcounter16h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc91,
         name: "hpmcounter17h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc92,
         name: "hpmcounter18h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc93,
         name: "hpmcounter19h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc94,
         name: "hpmcounter20h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc95,
         name: "hpmcounter21h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc96,
         name: "hpmcounter22h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc97,
         name: "hpmcounter23h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc98,
         name: "hpmcounter24h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc99,
         name: "hpmcounter25h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc9a,
         name: "hpmcounter26h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc9b,
         name: "hpmcounter27h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc9c,
         name: "hpmcounter28h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc9d,
         name: "hpmcounter29h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc9e,
         name: "hpmcounter30h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xc9f,
         name: "hpmcounter31h",
         features: &[],
         rv32_only: true,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xda0,
         name: "scountovf",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xdb0,
         name: "stopi",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xe12,
         name: "hgeip",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xeb0,
         name: "vstopi",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xf11,
         name: "mvendorid",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xf12,
         name: "marchid",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xf13,
         name: "mimpid",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xf14,
         name: "mhartid",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xf15,
         name: "mconfigptr",
         features: &[],
         rv32_only: false,
     },
-    Csr {
+    crate::Csr {
         encoding: 0xfb0,
         name: "mtopi",
         features: &[],

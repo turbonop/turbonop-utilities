@@ -120,7 +120,7 @@ pub fn lookup(
 }
 
 fn read_entry(image: &(impl Image + ?Sized), rva: u32) -> Option<RuntimeFunction> {
-    let b = image.bytes(rva, 12)?;
+    let b = crate::rva_bytes(image, rva, 12)?;
     let w = |i: usize| u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]);
     Some(RuntimeFunction {
         begin: w(0),
@@ -184,7 +184,7 @@ struct Info<'a> {
 impl<'a> Info<'a> {
     fn read(image: &'a (impl Image + ?Sized), rva: u32) -> Result<Self> {
         let bad = Error::UnwindData { rva };
-        let h = image.bytes(rva, 4).ok_or(bad)?;
+        let h = crate::rva_bytes(image, rva, 4).ok_or(bad)?;
         let version = h[0] & 7;
         if !(1..=2).contains(&version) {
             return Err(bad);
@@ -194,7 +194,7 @@ impl<'a> Info<'a> {
         let codes = if count == 0 {
             &[][..]
         } else {
-            image.bytes(codes_rva, count * 2).ok_or(bad)?
+            crate::rva_bytes(image, codes_rva, count * 2).ok_or(bad)?
         };
         Ok(Self {
             rva,
@@ -273,11 +273,11 @@ const MAX_CHAIN: usize = 32;
 fn exception_directory(image: &(impl Image + ?Sized)) -> Option<(u32, u32)> {
     let u32_at = |rva: u32| {
         image
-            .bytes(rva, 4)
+            .bytes(u64::from(rva), 4)
             .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     };
     let optional = u32_at(0x3C)?.checked_add(24)?;
-    let magic = image.bytes(optional, 2)?;
+    let magic = crate::rva_bytes(image, optional, 2)?;
     if magic != [0x0B, 0x02] {
         return None;
     }
@@ -406,7 +406,7 @@ pub fn unwind(
 }
 
 fn read_u32(image: &(impl Image + ?Sized), rva: u32) -> Result<u32> {
-    let b = image.bytes(rva, 4).ok_or(Error::UnwindData { rva })?;
+    let b = crate::rva_bytes(image, rva, 4).ok_or(Error::UnwindData { rva })?;
     Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
 }
 
@@ -506,7 +506,7 @@ impl Epilog {
         function: RuntimeFunction,
         info: &Info<'_>,
     ) -> Option<Self> {
-        let byte = |i: u32| image.bytes(pc_rva.checked_add(i)?, 1).map(|b| b[0]);
+        let byte = |i: u32| crate::rva_bytes(image, pc_rva.checked_add(i)?, 1).map(|b| b[0]);
         let mut i = 0u32;
         let mut epilog = Epilog {
             rsp: None,

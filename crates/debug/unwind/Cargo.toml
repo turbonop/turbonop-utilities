@@ -17,6 +17,8 @@ test = false
 hexcavator-core.workspace = true
 hexcavator-dwarf.workspace = true
 hexcavator-elf.workspace = true
+hexcavator-image.workspace = true
+hexcavator-macho.workspace = true
 hexcavator-pe.workspace = true
 
 [lints]

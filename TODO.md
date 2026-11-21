@@ -14,8 +14,6 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   to its report. Its code's addresses (code section offsets) and its
   data's (linear memory) are two spaces that DWARF mixes: they need
   telling apart first.
-- **Unwinding.** The unwind crate's `Image` trait is PE's alone (`u32`
-  RVAs), and nothing picks an unwinder by format and architecture.
 - **Cleanups.** `hexc size`'s bloaty-style maps are built by four
   per-format paths; Mach-O's section relocations are read in the app, not
   its crate; startup and the graph's roots each enumerate the

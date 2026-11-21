@@ -544,7 +544,7 @@ pub fn unwind(
             writeln!(out, "{e}")?;
         }
         if active && op.instruction {
-            offset += 4;
+            offset = offset.wrapping_add(4);
         }
     }
     if !seq.is_empty() {
@@ -597,12 +597,16 @@ pub fn unwind(
                 writeln!(out, "{e}")?;
             }
             if active && op.instruction {
-                offset += 4;
+                offset = offset.wrapping_add(4);
             }
         }
         // Codes that run out without an `end` have no end.
         if seq.last().is_some_and(|&(_, c, _)| c == Code::End) {
-            writeln!(out, "                   +{:04X} (end sequence)", offset + 4)?;
+            writeln!(
+                out,
+                "                   +{:04X} (end sequence)",
+                offset.wrapping_add(4)
+            )?;
         }
     }
 

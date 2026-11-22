@@ -10,13 +10,13 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use rustc_hash::FxHashMap;
+use hexcavator_hash::Map;
 
 /// Interned labels.
 #[derive(Clone, Debug, Default)]
 pub struct Labels {
     names: Vec<Arc<str>>,
-    index: FxHashMap<Arc<str>, u32>,
+    index: Map<Arc<str>, u32>,
 }
 
 /// A label's index in its [`Labels`].
@@ -125,6 +125,17 @@ impl RangeMap {
     /// Replaces `out` with the unlabeled parts of `[start, end)`.
     fn gaps_into(&self, start: u64, end: u64, out: &mut Vec<(u64, u64)>) {
         out.clear();
+        // Past everything labeled (as sorted symbols come): all of it.
+        if self
+            .map
+            .last_key_value()
+            .is_none_or(|(_, v)| v.end <= start)
+        {
+            if start < end {
+                out.push((start, end));
+            }
+            return;
+        }
         let mut cur = start;
         if let Some((_, v)) = self.map.range(..=cur).next_back()
             && v.end > cur

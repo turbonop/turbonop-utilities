@@ -127,8 +127,10 @@ fn answer(id: &Value, args: &[String]) -> Vec<u8> {
     let _ = serde_json::to_writer(&mut line, &String::from_utf8_lossy(&out.stdout));
     line.extend_from_slice(b",\"stderr\":");
     let _ = serde_json::to_writer(&mut line, &String::from_utf8_lossy(&out.stderr));
-    line.extend_from_slice(b"}
-");
+    line.extend_from_slice(
+        b"}
+",
+    );
     line
 }
 

@@ -35,6 +35,28 @@ and as an MCP server for AI agents. The VS Code extension
 (`editors/vscode/hexcavator`) puts it in a sidebar of binaries and builds
 compared.
 
+## Getting it
+
+Each release has `hexcavator` for each platform as a single program,
+named by its target triple. The newest is always at
+`https://github.com/hexcavator/hexcavator/releases/latest/download/<name>`:
+
+| Platform | Program |
+| --- | --- |
+| Windows x64 | `hexcavator-x86_64-pc-windows-msvc.exe` |
+| Windows ARM64 | `hexcavator-aarch64-pc-windows-msvc.exe` |
+| macOS (Apple silicon) | `hexcavator-aarch64-apple-darwin` |
+| macOS (Intel) | `hexcavator-x86_64-apple-darwin` |
+| Linux x64 (static: any distribution) | `hexcavator-x86_64-unknown-linux-musl` |
+| Linux ARM64 (static: any distribution) | `hexcavator-aarch64-unknown-linux-musl` |
+| WASI (wasmtime and the like) | `hexcavator-wasm32-wasip1.wasm` |
+
+The Windows programs are signed; the macOS ones are signed and
+notarized. Each program's symbols are beside it
+(`<name>-symbols.zip` or `.tar.gz`), and `SHA256SUMS` has every file's
+hash. On Windows, winget installs it too: `winget install
+Hexcavator.Hexcavator`.
+
 ## Principles
 
 - **Few dependencies.** Every parser, decoder, demangler, and analysis is

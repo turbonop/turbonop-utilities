@@ -93,7 +93,10 @@ pub fn run(args: &[String]) -> ExitCode {
         "json" => json_text(&out),
         _ => table_text(&out),
     };
-    crate::out::print(text.as_bytes())
+    let code = crate::out::print(text.as_bytes());
+    crate::out::dispose((out, table));
+    crate::out::dispose((model, syms, modules, lines));
+    code
 }
 
 fn usage(message: &str) -> ExitCode {
@@ -114,15 +117,22 @@ pub(crate) fn load(path: &Path, pdb: Option<&Path>) -> Result<Loaded, String> {
     let opened = hexcavator_program::Opened::open(path, pdb)?;
     let program = opened.program()?;
     let show = opened.debug_path().display();
-    let modules = program
-        .debug
-        .compilands()
-        .map_err(|e| format!("{show}: {e}"))?;
-    let lines = program
-        .debug
-        .source_lines()
-        .map_err(|e| format!("{show}: {e}"))?;
+    // (The compilands and lines are read while the symbols are built.)
+    let (modules, lines, built) = std::thread::scope(|scope| {
+        let modules = scope.spawn(|| program.debug.compilands());
+        let lines = scope.spawn(|| program.debug.source_lines());
+        let built = program.symbols().map(|_| ());
+        (
+            modules.join().expect("compilands"),
+            lines.join().expect("source lines"),
+            built,
+        )
+    });
+    built?;
+    let modules = modules.map_err(|e| format!("{show}: {e}"))?;
+    let lines = lines.map_err(|e| format!("{show}: {e}"))?;
     let (model, syms) = program.into_built()?;
+    crate::out::dispose(opened);
     Ok((model, syms, modules, lines))
 }
 

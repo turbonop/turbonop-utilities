@@ -7,7 +7,7 @@
 //! hash stream also gives each record's hash bucket, so a lookup by name
 //! only has to look at records in the name's bucket.
 
-use std::cell::OnceCell;
+use std::sync::OnceLock as OnceCell;
 
 use hexcavator_core::{
     Error, ErrorKind, Reader, Result, U16Le, U32Le, pod, read_at, read_slice_at,
@@ -144,7 +144,7 @@ pub struct TypeStream<'s> {
     offsets: OnceCell<Vec<u32>>,
     /// How many lookups have walked from the hash stream's index (after
     /// [`MAX_WALKS`] of them, every record's offset is found once).
-    walks: std::cell::Cell<u32>,
+    walks: std::sync::atomic::AtomicU32,
     /// Lazily built: records by hash bucket (CSR layout).
     buckets: OnceCell<(Vec<u32>, Vec<u32>)>,
 }
@@ -167,7 +167,7 @@ impl<'s> TypeStream<'s> {
                 records: StreamData::Borrowed(&[]),
                 hash,
                 offsets: OnceCell::new(),
-                walks: std::cell::Cell::new(0),
+                walks: std::sync::atomic::AtomicU32::new(0),
                 buckets: OnceCell::new(),
             });
         }
@@ -191,7 +191,7 @@ impl<'s> TypeStream<'s> {
             records,
             hash,
             offsets: OnceCell::new(),
-            walks: std::cell::Cell::new(0),
+            walks: std::sync::atomic::AtomicU32::new(0),
             buckets: OnceCell::new(),
         })
     }
@@ -257,8 +257,11 @@ impl<'s> TypeStream<'s> {
         // Far from the nearest index entry (a stream whose index is sparse,
         // or missing), or after many lookups (dumping every type): every
         // record's offset, found once, rather than a walk per lookup.
-        self.walks.set(self.walks.get().saturating_add(1));
-        if ti.0 - cur.min(ti.0) > MAX_WALK || self.walks.get() > MAX_WALKS {
+        let walks = self
+            .walks
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(1);
+        if ti.0 - cur.min(ti.0) > MAX_WALK || walks > MAX_WALKS {
             let off = *self.build_offsets().get((ti.0 - self.begin().0) as usize)?;
             return TypeRecord::read(&mut Reader::new(self.records.get(off as usize..)?)).ok();
         }

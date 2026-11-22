@@ -22,6 +22,27 @@ pub struct Captured {
     pub stderr: Vec<u8>,
 }
 
+/// Whether this process runs one command and exits (`hexc <command>`,
+/// not `hexc serve` or `hexc mcp`): then what a command is done with
+/// needn't be freed, as the process ends next.
+static ONE_SHOT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks this process as one that runs one command and exits.
+pub fn one_shot() {
+    ONE_SHOT.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Done with `value`: in a process that runs one command, it is left for
+/// the exit to reclaim (freeing a big program's symbols, types, and
+/// mappings takes a good part of a second); otherwise dropped.
+pub fn dispose<T>(value: T) {
+    if ONE_SHOT.load(std::sync::atomic::Ordering::Relaxed) {
+        std::mem::forget(value);
+    } else {
+        drop(value);
+    }
+}
+
 thread_local! {
     static CAPTURE: RefCell<Option<Captured>> = const { RefCell::new(None) };
 }

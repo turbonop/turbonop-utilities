@@ -233,19 +233,44 @@ fn gather<'data>(
     if contiguous {
         return hexcavator_core::bytes_at(data, start, u64::from(size)).map(Cow::Borrowed);
     }
-    let mut out = Vec::with_capacity(size as usize);
-    let mut remaining = u64::from(size);
-    for block in blocks {
-        let take = remaining.min(bs);
-        out.extend_from_slice(hexcavator_core::bytes_at(
-            data,
-            u64::from(block.get()) * bs,
-            take,
-        )?);
-        remaining -= take;
-        if remaining == 0 {
-            break;
+    let size = size as usize;
+    let block = bs as usize;
+    // (A stream with fewer blocks than its size needs reads as the blocks
+    // it has.)
+    let count = size.div_ceil(block.max(1)).min(blocks.len());
+    let blocks = &blocks[..count];
+    let size = size.min(count * block);
+    let mut out = vec![0u8; size];
+    // Copies blocks `blocks` into `dest` (which starts at a block).
+    let copy = |dest: &mut [u8], blocks: &[U32Le]| -> Result<()> {
+        for (d, b) in dest.chunks_mut(block).zip(blocks) {
+            d.copy_from_slice(hexcavator_core::bytes_at(
+                data,
+                u64::from(b.get()) * bs,
+                d.len() as u64,
+            )?);
         }
+        Ok(())
+    };
+    // A large stream (a big program's types: hundreds of megabytes) is
+    // copied by every core: the copy is bound by the page faults of
+    // reading the mapped file, which run in parallel.
+    const PARALLEL: usize = 8 << 20;
+    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    if size < PARALLEL || threads < 2 || block == 0 {
+        copy(&mut out, blocks)?;
+    } else {
+        let per = count.div_ceil(threads);
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = out
+                .chunks_mut(per * block)
+                .zip(blocks.chunks(per))
+                .map(|(d, b)| scope.spawn(move || copy(d, b)))
+                .collect();
+            handles
+                .into_iter()
+                .try_for_each(|h| h.join().unwrap_or(Ok(())))
+        })?;
     }
     Ok(Cow::Owned(out))
 }

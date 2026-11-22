@@ -72,13 +72,16 @@ struct Builder<'a, 'data, C: Context> {
     context: &'a C,
     seen: HashSet<u64>,
     out: Vec<Symbol>,
+    /// Each of `out`'s symbols' target (they are named last, in
+    /// parallel).
+    targets: Vec<u64>,
     x64_gs_alignment: bool,
 }
 
 impl<C: Context> Builder<'_, '_, C> {
-    fn name(&self, kind: SymbolKind, target: u64) -> String {
+    fn name(context: &C, kind: SymbolKind, target: u64) -> String {
         let prefix = kind.prefix().unwrap_or("");
-        match self.context.target_name(target) {
+        match context.target_name(target) {
             Some(n) => format!("{prefix} {n}"),
             None => format!("{prefix} <unnamed code at 0x{target:X}>"),
         }
@@ -90,13 +93,13 @@ impl<C: Context> Builder<'_, '_, C> {
         if size == 0 || !self.seen.insert(addr) {
             return false;
         }
-        let name = self.name(kind, target);
+        self.targets.push(target);
         self.out.push(Symbol {
             addr,
             size: Size::new(size, size),
             kind,
             folded: false,
-            name,
+            name: String::new(),
             compiland: None,
             file_static: false,
         });
@@ -319,13 +322,14 @@ impl<C: Context> Builder<'_, '_, C> {
 }
 
 /// The exception-handling symbols of `pe`.
-pub fn symbols(pe: &PeFile<'_>, context: &impl Context) -> Vec<Symbol> {
+pub fn symbols(pe: &PeFile<'_>, context: &(impl Context + Sync)) -> Vec<Symbol> {
     let arm32 = pe.machine() == machine::ARMNT;
     let mut b = Builder {
         pe,
         context,
         seen: HashSet::new(),
         out: Vec::new(),
+        targets: Vec::new(),
         x64_gs_alignment: !matches!(pe.machine(), machine::ARMNT | machine::ARM64),
     };
     let entries: Vec<_> = pe
@@ -373,6 +377,15 @@ pub fn symbols(pe: &PeFile<'_>, context: &impl Context) -> Vec<Symbol> {
             RuntimeFunction::Arm { .. } => {}
         }
     }
+    // Named on every core.
+    let mut named: Vec<(&mut Symbol, u64)> =
+        b.out.iter_mut().zip(b.targets.iter().copied()).collect();
+    hexcavator_par::for_each_chunk_mut(&mut named, 4096, |part| {
+        for (s, target) in part {
+            s.name = Builder::name(context, s.kind, *target);
+        }
+    });
+    drop(named);
     b.out.sort_by_key(|s| s.addr);
     b.out
 }

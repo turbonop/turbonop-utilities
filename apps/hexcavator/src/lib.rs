@@ -213,7 +213,10 @@ pub fn run(args: &[String]) -> ExitCode {
     match args.first().map(String::as_str) {
         Some("mcp") => mcp::run(&args[1..]),
         Some("serve") => serve::run(&args[1..]),
-        _ => command(&args),
+        _ => {
+            out::one_shot();
+            command(&args)
+        }
     }
 }
 

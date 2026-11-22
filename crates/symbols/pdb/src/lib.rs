@@ -26,7 +26,7 @@ pub mod msf;
 pub mod names;
 pub mod tpi;
 
-use std::cell::OnceCell;
+use std::sync::OnceLock as OnceCell;
 
 use hexcavator_codeview::symbols::SymbolRecord;
 use hexcavator_core::{Error, ErrorKind, Result};

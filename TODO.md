@@ -52,8 +52,6 @@ Every command should be as fast as the hardware allows (on clang.exe,
   what is left after reading the PDB.
 - **size's range maps** (0.8 s for `-d symbols`): a symbol at a time
   into a B-tree; symbols come sorted, so most could be appended.
-- **ARM64 listings** (`dump -disasm`) are made on one core; x86's are
-  made on all.
 - **`hexc serve`'s JSON**: a command's `-json` output is a string inside
   the response, parsed twice by the editor.
 

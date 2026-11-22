@@ -1332,7 +1332,9 @@ fn finish_rollup(
     filter: Option<&regex::Regex>,
 ) -> Rollup {
     let maps = customized(maps, customs);
-    Rollup::filtered(&maps, filter)
+    let rollup = Rollup::filtered(&maps, filter);
+    crate::out::dispose(maps);
+    rollup
 }
 
 /// `maps` with custom sources' labels rewritten (a copy, if there are any:
@@ -1509,7 +1511,13 @@ fn build_maps(
             file_name: &file_name,
             lines: lines.as_ref(),
         };
-        sources::maps(&image, inputs, sources)
+        let maps = sources::maps(&image, inputs, sources);
+        // (Freeing the program's symbols and types takes longer than
+        // building the maps from them did.)
+        crate::out::dispose(lines);
+        crate::out::dispose(program);
+        crate::out::dispose(opened);
+        maps
     } else {
         let inputs = sources::Inputs {
             model: None,

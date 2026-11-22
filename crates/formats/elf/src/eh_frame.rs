@@ -88,7 +88,7 @@ impl Cursor<'_> {
 
     fn cstr(&mut self) -> Option<&[u8]> {
         let rest = self.data.get(self.pos..)?;
-        let n = rest.iter().position(|&b| b == 0)?;
+        let n = hexcavator_core::find_nul(rest)?;
         self.pos += n + 1;
         Some(&rest[..n])
     }

@@ -255,7 +255,7 @@ fn dynamic_str(elf: &ElfFile<'_>, off: u64) -> Option<String> {
     let base = elf.vaddr_to_offset(strtab)?;
     let start = usize::try_from(base.checked_add(off)?).ok()?;
     let rest = elf.data().get(start..)?;
-    let end = rest.iter().position(|&b| b == 0)?;
+    let end = hexcavator_core::find_nul(rest)?;
     Some(String::from_utf8_lossy(&rest[..end.min(4096)]).into_owned())
 }
 

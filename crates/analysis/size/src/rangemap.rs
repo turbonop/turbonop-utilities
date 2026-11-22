@@ -357,7 +357,8 @@ impl RangeMap {
     }
 
     pub fn compress(&mut self) {
-        let mut out: BTreeMap<u64, Value> = BTreeMap::new();
+        // (In order: a map built from them in bulk, not entry by entry.)
+        let mut out: Vec<(u64, Value)> = Vec::with_capacity(self.map.len());
         let mut last: Option<(u64, Value)> = None;
         for (&s, &v) in &self.map {
             if let Some((ls, lv)) = &mut last
@@ -372,15 +373,17 @@ impl RangeMap {
                 lv.end = v.end;
                 continue;
             }
-            if let Some((ls, lv)) = last.take() {
-                out.insert(ls, lv);
+            if let Some(entry) = last.take() {
+                out.push(entry);
             }
             last = Some((s, v));
         }
-        if let Some((ls, lv)) = last {
-            out.insert(ls, lv);
+        out.extend(last);
+        let old = std::mem::replace(&mut self.map, out.into_iter().collect());
+        // (Freed on another thread: a big map's nodes take a while.)
+        if old.len() > 64 * 1024 {
+            std::thread::spawn(move || drop(old));
         }
-        self.map = out;
     }
 }
 

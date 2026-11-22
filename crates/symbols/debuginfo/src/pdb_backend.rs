@@ -396,58 +396,64 @@ impl<'data> PdbInfo<'data> {
 
     pub fn symbols(&self) -> Result<Vec<DebugSymbol>> {
         let dbi = self.pdb.dbi()?;
-        // Read the module streams first (gathering any that are not
-        // contiguous), then decode them in parallel: they are independent.
-        let mut streams = Vec::new();
-        for module in dbi.modules() {
-            if let Some(stream) = self.pdb.module_stream(module)? {
-                // Module indexes come from a 16-bit field.
-                streams.push((u32::try_from(module.index).unwrap_or(u32::MAX), stream));
-            }
-        }
-        let threads = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZero::get)
-            .min(streams.len().max(1));
-        let chunk = streams.len().div_ceil(threads).max(1);
         let sections = &self.sections;
-        let mut out: Vec<DebugSymbol> = std::thread::scope(|scope| {
-            let handles: Vec<_> = streams
-                .chunks(chunk)
-                .map(|part| {
-                    scope.spawn(move || {
-                        let mut out = Vec::new();
-                        for (index, stream) in part {
-                            module_symbols(sections, *index, stream.symbols(), &mut out);
-                        }
-                        out
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .flat_map(|h| h.join().unwrap_or_default())
-                .collect()
-        });
-
-        // Publics and global data, from the shared symbol record stream.
-        for record in SymbolIter::new(self.pdb.symbol_records(), 0) {
-            let Ok(symbol) = record.parse() else { continue };
-            if let Some(s) = shared_symbol(sections, symbol) {
-                out.push(s);
-            }
-        }
+        // The types and ids, read and indexed (for the many lookups that
+        // follow) while the symbols are.
+        let (indexed, out) = hexcavator_par::join(
+            || {
+                let types = self.pdb.types().inspect(|t| {
+                    t.build_offsets();
+                });
+                if let Ok(ids) = self.pdb.ids() {
+                    ids.build_offsets();
+                }
+                types
+            },
+            || -> Result<Vec<DebugSymbol>> {
+                // Modules, each read (gathering a stream that is not
+                // contiguous) and decoded on whichever thread is free: their
+                // sizes differ by thousands of times.
+                let modules = dbi.modules();
+                let per_module = hexcavator_par::map_balanced(modules, 4, |module| {
+                    let mut out = Vec::new();
+                    let stream = self.pdb.module_stream(module)?;
+                    if let Some(stream) = stream {
+                        // Module indexes come from a 16-bit field.
+                        let index = u32::try_from(module.index).unwrap_or(u32::MAX);
+                        module_symbols(sections, index, stream.symbols(), &mut out);
+                    }
+                    Ok::<_, Error>(out)
+                });
+                // Publics and global data, from the shared symbol record
+                // stream: its records found, then decoded on every core.
+                let records: Vec<_> = SymbolIter::new(self.pdb.symbol_records(), 0).collect();
+                let shared: Vec<DebugSymbol> = hexcavator_par::map_chunks(&records, 8192, |part| {
+                    part.iter()
+                        .filter_map(|r| shared_symbol(sections, r.parse().ok()?))
+                        .collect()
+                });
+                let mut out = Vec::with_capacity(
+                    per_module
+                        .iter()
+                        .map(|m| m.as_ref().map_or(0, Vec::len))
+                        .sum::<usize>()
+                        + shared.len(),
+                );
+                for m in per_module {
+                    out.extend(m?);
+                }
+                out.extend(shared);
+                Ok(out)
+            },
+        );
+        let mut out = out?;
 
         // Data sizes from their types (looked up once per type).
-        let types = self.pdb.types()?;
-        // Many lookups follow: index every record once.
-        types.build_offsets();
+        let types = indexed?;
         let formatter = TypeFormatter { types };
         // Functions' statics in inlined copies: name the inlined function.
         if out.iter().any(|s| s.flags & INLINEE_PENDING != 0) {
             let ids = self.pdb.ids().ok();
-            if let Some(ids) = ids {
-                ids.build_offsets();
-            }
             let mut names: HashMap<u64, Option<(String, TypeRef)>> = HashMap::default();
             for s in out.iter_mut().filter(|s| s.flags & INLINEE_PENDING != 0) {
                 s.flags &= !INLINEE_PENDING;
@@ -683,7 +689,7 @@ impl<'data> PdbInfo<'data> {
                 }
                 let text = s.data.get(4..)?;
                 String::from_utf8_lossy(
-                    &text[..text.iter().position(|&b| b == 0).unwrap_or(text.len())],
+                    &text[..hexcavator_core::find_nul(text).unwrap_or(text.len())],
                 )
                 .into_owned()
             } else {
@@ -845,7 +851,7 @@ fn string_id(ids: &hexcavator_pdb::tpi::TypeStream<'_>, id: u32, depth: usize) -
     let d = rec.data;
     let sub = u32::from_le_bytes(d.get(0..4)?.try_into().ok()?);
     let text = d.get(4..)?;
-    let text = &text[..text.iter().position(|&b| b == 0).unwrap_or(text.len())];
+    let text = &text[..hexcavator_core::find_nul(text).unwrap_or(text.len())];
     let mut s = String::new();
     if sub != 0 {
         let list = ids.record(TypeIndex(sub))?;
@@ -1451,14 +1457,17 @@ fn module_symbols(
         out.push(s);
     };
     // Procedures by the offset of their record, which nested records name
-    // as their parent.
-    let mut procedures: HashMap<u32, (u64, &[u8], u32)> = HashMap::default();
-    let mut last_procedure: Option<(u64, &[u8], u32)> = None;
+    // as their parent (in order of offset: as read).
+    let mut procedures: Vec<(u32, ProcedureAt<'_>)> = Vec::new();
+    let mut last_procedure: Option<ProcedureAt<'_>> = None;
     // The procedures seen (address, name, type, parameters), and the open
     // scopes, each with the procedure it lies in, if any, and whether it is
     // that procedure's own scope (where its parameters are).
     let mut procs: Vec<Proc<'_>> = Vec::new();
     let mut scopes: Vec<(Option<usize>, bool)> = Vec::new();
+    // Procedures' parameters: (procedure, name, type), in order. (Only
+    // their statics need them: they are copied for those alone.)
+    let mut params: Vec<(usize, &[u8], TypeRef)> = Vec::new();
     // Data declared in procedures: (index in `out`, procedure).
     let mut statics: Vec<(usize, usize)> = Vec::new();
     for record in records {
@@ -1466,9 +1475,16 @@ fn module_symbols(
             scopes.pop();
         }
         let (enclosing, top) = scopes.last().copied().unwrap_or((None, false));
-        if kind::opens_scope(record.kind) {
-            let own = match record.parse() {
-                Ok(Symbol::Procedure {
+        let opens = kind::opens_scope(record.kind);
+        // (Each record parsed once, and only those of kinds read here.)
+        let parsed = if wanted_in_module(record.kind) {
+            record.parse().ok()
+        } else {
+            None
+        };
+        if opens {
+            let own = match parsed {
+                Some(Symbol::Procedure {
                     offset,
                     segment,
                     name,
@@ -1479,19 +1495,17 @@ fn module_symbols(
                         addr: rva_in(sections, segment, offset),
                         name,
                         ty: ty.0,
-                        params: Vec::new(),
                         inlinee: None,
                     });
                     Some(procs.len() - 1)
                 }
                 // An inlined copy of a function: its locals are that
                 // function's (named from its id, later).
-                Ok(Symbol::InlineSite { inlinee, .. }) => {
+                Some(Symbol::InlineSite { inlinee, .. }) => {
                     procs.push(Proc {
                         addr: enclosing.and_then(|p| procs[p].addr),
                         name: b"",
                         ty: 0,
-                        params: Vec::new(),
                         inlinee: Some(inlinee.0),
                     });
                     Some(procs.len() - 1)
@@ -1505,14 +1519,14 @@ fn module_symbols(
         // such (`this` is the object pointer, not a parameter).
         if top
             && let Some(p) = enclosing
-            && let Ok(Symbol::Local { ty, flags, name }) = record.parse()
+            && let Some(Symbol::Local { ty, flags, name }) = parsed
             && flags & 1 != 0
             && name != b"this"
         {
-            procs[p].params.push((lossy(name), to_ref(ty)));
+            params.push((p, name, to_ref(ty)));
             continue;
         }
-        let Ok(parsed) = record.parse() else { continue };
+        let Some(parsed) = parsed else { continue };
         match parsed {
             Symbol::Procedure {
                 global,
@@ -1527,7 +1541,7 @@ fn module_symbols(
                 let Some(addr) = rva_in(sections, segment, offset) else {
                     continue;
                 };
-                procedures.insert(record.offset, (addr, name, ty.0));
+                procedures.push((record.offset, (addr, name, ty.0)));
                 last_procedure = Some((addr, name, ty.0));
                 push(
                     out,
@@ -1557,7 +1571,10 @@ fn module_symbols(
                 // folded by ICF they give the address of the copy that was
                 // discarded.
                 let function = if parent != 0 {
-                    procedures.get(&parent).copied()
+                    procedures
+                        .binary_search_by_key(&parent, |p| p.0)
+                        .ok()
+                        .map(|i| procedures[i].1)
                 } else {
                     last_procedure
                 };
@@ -1656,12 +1673,21 @@ fn module_symbols(
             _ => {}
         }
     }
-    for (i, p) in statics {
-        let p = &procs[p];
+    // (Grouped by procedure, each's in order.)
+    if !statics.is_empty() {
+        params.sort_by_key(|q| q.0);
+    }
+    for (i, k) in statics {
+        let p = &procs[k];
+        let from = params.partition_point(|q| q.0 < k);
+        let to = params.partition_point(|q| q.0 <= k);
         out[i].function = Some(Box::new(EnclosingFunction {
             name: lossy(p.name),
             ty: TypeRef(u64::from(p.ty)),
-            params: p.params.clone(),
+            params: params[from..to]
+                .iter()
+                .map(|&(_, name, ty)| (lossy(name), ty))
+                .collect(),
         }));
         if let Some(id) = p.inlinee {
             // Resolved from the id stream once all modules are read.
@@ -1684,12 +1710,40 @@ fn method_kind(attributes: u16) -> MethodKind {
     }
 }
 
+/// A procedure's address, name, and type.
+type ProcedureAt<'a> = (u64, &'a [u8], u32);
+
+/// Whether `module_symbols` reads records of `kind` (others it passes
+/// over, but for the scopes they open and close).
+fn wanted_in_module(kind: u16) -> bool {
+    use kind::*;
+    matches!(
+        kind,
+        S_GPROC32
+            | S_LPROC32
+            | S_GPROC32_ID
+            | S_LPROC32_ID
+            | S_LPROC32_DPC
+            | S_LPROC32_DPC_ID
+            | S_INLINESITE
+            | S_INLINESITE2
+            | S_LOCAL
+            | S_SEPCODE
+            | S_BLOCK32
+            | S_THUNK32
+            | S_LABEL32
+            | S_GDATA32
+            | S_LDATA32
+            | S_GTHREAD32
+            | S_LTHREAD32
+    )
+}
+
 /// A procedure, or an inlined copy of one, that holds declarations.
 struct Proc<'a> {
     addr: Option<u64>,
     name: &'a [u8],
     ty: u32,
-    params: Vec<(String, TypeRef)>,
     /// For an inlined copy: the inlined function's id (IPI).
     inlinee: Option<u32>,
 }

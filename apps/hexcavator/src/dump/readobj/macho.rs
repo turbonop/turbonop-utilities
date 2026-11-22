@@ -480,7 +480,7 @@ fn needed(p: &mut Printer<'_>, m: &MachO<'_>) {
             u32::from_le_bytes(b)
         } as usize;
         if let Some(rest) = lc.data.get(off..) {
-            let end = rest.iter().position(|&c| c == 0).unwrap_or(rest.len());
+            let end = hexcavator_core::find_nul(rest).unwrap_or(rest.len());
             libs.push(String::from_utf8_lossy(&rest[..end]).into_owned());
         }
     }

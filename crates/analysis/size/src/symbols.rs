@@ -304,50 +304,54 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
                 .collect()
         }))
         .collect();
-    let mut demangler = hexcavator_demangle::msvc::Demangler::default();
     // The publics at each address, for naming vtables.
     let mut publics_at: HashMap<u64, Vec<&str>> = HashMap::default();
     for s in shown.iter().filter(|s| s.kind == DebugKind::Public) {
         publics_at.entry(s.addr).or_default().push(&s.name);
     }
-    let mut display = |s: &DebugSymbol, kind: SymbolKind, size: u64, name: String| match kind {
-        SymbolKind::String => string_name(image, s.addr, size, &s.name).unwrap_or(name),
-        SymbolKind::Public => undecorated.get(name.as_str()).cloned().unwrap_or(name),
-        // A thunk is named by its public, if it has one (x86 C names keep
-        // their underscore), undecorated without access, `virtual`, return
-        // type, calling convention, `this` qualifiers, or class-keys:
-        // `[thunk]:C::f`adjustor{8}' (void)` (undname flags 0xA2E6).
-        SymbolKind::Thunk => match publics_at.get(&s.addr).and_then(|p| p.iter().min()) {
-            Some(public) => {
-                use hexcavator_demangle::msvc::flags::*;
-                let flags = NO_ACCESS_SPECIFIERS
-                    | NO_MEMBER_TYPE
-                    | NO_FUNCTION_RETURNS
-                    | NO_MS_KEYWORDS
-                    | NO_THISTYPE
-                    | NO_ECSU
-                    | NO_PTR64;
-                demangler
-                    .demangle(public, flags)
-                    .unwrap_or_else(|| public.to_string())
-            }
-            None => name,
-        },
-        // A vtable's data symbol records `X::`vftable'`; its public has the
-        // whole name, `X::`vftable'{for `Base'}`. Of several publics here
-        // (vtables folded together), the least name.
-        SymbolKind::Data if name.ends_with("`vftable'") => publics_at
-            .get(&s.addr)
-            .into_iter()
-            .flatten()
-            .filter_map(|p| demangler.demangle(p, hexcavator_demangle::msvc::flags::NO_PTR64))
-            .map(|p| p.strip_prefix("const ").map(str::to_string).unwrap_or(p))
-            .filter(|p| p.starts_with(name.as_str()))
-            .min()
-            .unwrap_or(name),
-        _ => name,
+    // (A namer for each thread: its own demangler.)
+    let (undecorated, publics_at) = (&undecorated, &publics_at);
+    let make_display = || {
+        let mut demangler = hexcavator_demangle::msvc::Demangler::default();
+        move |s: &DebugSymbol, kind: SymbolKind, size: u64, name: String| match kind {
+            SymbolKind::String => string_name(image, s.addr, size, &s.name).unwrap_or(name),
+            SymbolKind::Public => undecorated.get(name.as_str()).cloned().unwrap_or(name),
+            // A thunk is named by its public, if it has one (x86 C names keep
+            // their underscore), undecorated without access, `virtual`, return
+            // type, calling convention, `this` qualifiers, or class-keys:
+            // `[thunk]:C::f`adjustor{8}' (void)` (undname flags 0xA2E6).
+            SymbolKind::Thunk => match publics_at.get(&s.addr).and_then(|p| p.iter().min()) {
+                Some(public) => {
+                    use hexcavator_demangle::msvc::flags::*;
+                    let flags = NO_ACCESS_SPECIFIERS
+                        | NO_MEMBER_TYPE
+                        | NO_FUNCTION_RETURNS
+                        | NO_MS_KEYWORDS
+                        | NO_THISTYPE
+                        | NO_ECSU
+                        | NO_PTR64;
+                    demangler
+                        .demangle(public, flags)
+                        .unwrap_or_else(|| public.to_string())
+                }
+                None => name,
+            },
+            // A vtable's data symbol records `X::`vftable'`; its public has the
+            // whole name, `X::`vftable'{for `Base'}`. Of several publics here
+            // (vtables folded together), the least name.
+            SymbolKind::Data if name.ends_with("`vftable'") => publics_at
+                .get(&s.addr)
+                .into_iter()
+                .flatten()
+                .filter_map(|p| demangler.demangle(p, hexcavator_demangle::msvc::flags::NO_PTR64))
+                .map(|p| p.strip_prefix("const ").map(str::to_string).unwrap_or(p))
+                .filter(|p| p.starts_with(name.as_str()))
+                .min()
+                .unwrap_or(name),
+            _ => name,
+        }
     };
-    let from_debug = from_debug_symbols(&shown, &hidden, model, &mut display);
+    let from_debug = from_debug_symbols(&shown, &hidden, model, &make_display);
 
     // Symbols for what the image itself describes.
     let Some(pe) = image
@@ -569,31 +573,71 @@ fn zero_fill_at(model: &Model, addr: u64) -> bool {
 /// are not shown but size the publics at their addresses.
 /// `display` gives each candidate's shown name from the symbol, its kind,
 /// its size, and its name so far.
-pub fn from_debug_symbols(
+pub fn from_debug_symbols<D>(
     symbols: &[DebugSymbol],
     hidden: &[DebugSymbol],
     model: &Model,
-    display: &mut dyn FnMut(&DebugSymbol, SymbolKind, u64, String) -> String,
-) -> Vec<Symbol> {
-    // A public at the same address as a sized symbol has that size.
-    let mut sized_at: HashMap<u64, u64> = HashMap::default();
-    for s in symbols.iter().chain(hidden) {
-        if matches!(s.kind, DebugKind::Function | DebugKind::Thunk)
-            && let Some(size) = s.size
-        {
-            sized_at.entry(s.addr).or_insert(size);
+    make_display: &(impl Fn() -> D + Sync),
+) -> Vec<Symbol>
+where
+    D: FnMut(&DebugSymbol, SymbolKind, u64, String) -> String,
+{
+    // (The tables below, each made on its own core.)
+    let sized_at = || {
+        // A public at the same address as a sized symbol has that size.
+        let mut sized_at: HashMap<u64, u64> = HashMap::default();
+        for s in symbols.iter().chain(hidden) {
+            if matches!(s.kind, DebugKind::Function | DebugKind::Thunk)
+                && let Some(size) = s.size
+            {
+                sized_at.entry(s.addr).or_insert(size);
+            }
         }
-    }
+        sized_at
+    };
     // Publics have no size of their own: they extend to the next public or
     // to the end of the contribution that holds them, whichever is first
     // (a vtable's public starts after the pointer to its complete object
     // locator, and the next vtable may follow in the same contribution).
-    let mut public_addrs: Vec<u64> = symbols
-        .iter()
-        .filter(|s| s.kind == DebugKind::Public)
-        .map(|s| s.addr)
-        .collect();
-    public_addrs.dedup();
+    let public_addrs = || {
+        let mut public_addrs: Vec<u64> = symbols
+            .iter()
+            .filter(|s| s.kind == DebugKind::Public)
+            .map(|s| s.addr)
+            .collect();
+        public_addrs.dedup();
+        public_addrs
+    };
+    // Data of a basic type takes no more than its public says: assembly
+    // declares labels such as `Foo_End` as (say) 8-byte integers.
+    let public_by_name = || -> HashMap<&str, u64> {
+        symbols
+            .iter()
+            .filter(|s| s.kind == DebugKind::Public)
+            .map(|s| (s.name.as_str(), s.addr))
+            .collect()
+    };
+    // Labels: a public at one is an alternate entry point into code.
+    let labels = || -> HashSet<u64> {
+        symbols
+            .iter()
+            .filter(|s| s.kind == DebugKind::Label)
+            .map(|s| s.addr)
+            .collect()
+    };
+    // Functions whose code is split: their addresses.
+    let split = || -> HashSet<u64> {
+        symbols
+            .iter()
+            .filter(|s| s.kind == DebugKind::SeparatedBlock)
+            .filter_map(|s| s.parent)
+            .collect()
+    };
+    use hexcavator_par::join;
+    let ((sized_at, public_addrs), (public_by_name, (labels, split))) = join(
+        || join(sized_at, public_addrs),
+        || join(public_by_name, || join(labels, split)),
+    );
     // A public outside every contribution has size 0.
     let public_size = |addr: u64| -> u64 {
         let i = model.pieces.partition_point(|p| p.range.addr <= addr);
@@ -609,32 +653,11 @@ pub fn from_debug_symbols(
         let next = public_addrs.partition_point(|&a| a <= addr);
         public_addrs.get(next).map_or(limit, |&n| n.min(limit)) - addr
     };
-    // Data of a basic type takes no more than its public says: assembly
-    // declares labels such as `Foo_End` as (say) 8-byte integers.
-    let public_by_name: HashMap<&str, u64> = symbols
-        .iter()
-        .filter(|s| s.kind == DebugKind::Public)
-        .map(|s| (s.name.as_str(), s.addr))
-        .collect();
-    // Labels: a public at one is an alternate entry point into code.
-    let labels: HashSet<u64> = symbols
-        .iter()
-        .filter(|s| s.kind == DebugKind::Label)
-        .map(|s| s.addr)
-        .collect();
-    // Functions whose code is split: their addresses.
-    let mut split: HashMap<u64, ()> = HashMap::default();
-    for s in symbols
-        .iter()
-        .filter(|s| s.kind == DebugKind::SeparatedBlock)
-    {
-        if let Some(p) = s.parent {
-            split.insert(p, ());
-        }
-    }
 
-    let mut out = Vec::new();
-    let mut previous_end: Option<(u64, u64)> = None; // (start, end) of the last non-folded symbol
+    // Each address's symbols (`symbols[i..j]`), resolved on every core:
+    // each pushes its names to `out` and says what it covers. Which of them
+    // lie within the symbol before them is decided after, in order.
+    let mut groups: Vec<(usize, usize)> = Vec::new();
     let mut i = 0;
     while i < symbols.len() {
         let addr = symbols[i].addr;
@@ -642,18 +665,26 @@ pub fn from_debug_symbols(
         while j < symbols.len() && symbols[j].addr == addr {
             j += 1;
         }
-        let here = &symbols[i..j];
-        i = j;
-        if addr == 0 {
-            continue;
+        if addr != 0 {
+            groups.push((i, j));
         }
+        i = j;
+    }
+    let resolve = |i: usize,
+                   j: usize,
+                   display: &mut dyn FnMut(&DebugSymbol, SymbolKind, u64, String) -> String,
+                   out: &mut Vec<Symbol>|
+     -> Option<Resolved> {
+        let addr = symbols[i].addr;
+        let here = &symbols[i..j];
+        let i = j;
 
         // The candidates at this address, in the order names are considered:
         // code and data, then thunks, then publics.
         let mut candidates: Vec<Candidate<'_>> = Vec::new();
         for s in here {
             let (kind, name) = match s.kind {
-                DebugKind::Function if split.contains_key(&s.addr) => (
+                DebugKind::Function if split.contains(&s.addr) => (
                     SymbolKind::PrimaryBlock,
                     format!("Block of code in {}", s.name),
                 ),
@@ -759,7 +790,7 @@ pub fn from_debug_symbols(
             });
         }
         if candidates.is_empty() {
-            continue;
+            return None;
         }
         let rank = |k: SymbolKind| match k {
             SymbolKind::Thunk => 1,
@@ -829,22 +860,6 @@ pub fn from_debug_symbols(
         // points inside a function, say).
         let primary_size = names.iter().map(|c| c.size).max().unwrap_or(0);
         let end = addr + primary_size.max(1);
-        if let Some((start, prev_end)) = previous_end {
-            if start <= addr && end <= prev_end {
-                continue;
-            }
-            // An alternate entry point (a public at a label) that starts
-            // within the previous symbol is part of it, even if the public
-            // seems to extend beyond it.
-            if start <= addr
-                && addr < prev_end
-                && best_rank == rank(SymbolKind::Public)
-                && labels.contains(&addr)
-            {
-                continue;
-            }
-        }
-        previous_end = Some((addr, end));
 
         // The canonical name is the least; it carries the size.
         let canonical = names
@@ -875,8 +890,56 @@ pub fn from_debug_symbols(
                     && c.debug.compiland.is_some(),
             });
         }
+        Some(Resolved {
+            addr,
+            end,
+            public: best_rank == rank(SymbolKind::Public),
+            len: names.len(),
+        })
+    };
+    let batches: Vec<&[(usize, usize)]> = groups.chunks(1024).collect();
+    let parts = hexcavator_par::map_balanced(&batches, 1, |part| {
+        let mut display = make_display();
+        let (mut heads, mut out) = (Vec::new(), Vec::new());
+        for &(i, j) in *part {
+            heads.extend(resolve(i, j, &mut display, &mut out));
+        }
+        (heads, out)
+    });
+    let mut out = Vec::with_capacity(parts.iter().map(|p| p.1.len()).sum());
+    let mut previous_end: Option<(u64, u64)> = None; // (start, end) of the last non-folded symbol
+    for (heads, symbols) in parts {
+        let mut symbols = symbols.into_iter();
+        for h in heads {
+            let these = symbols.by_ref().take(h.len);
+            // Everything at an address within the previous symbol is
+            // skipped (labels and alternate entry points inside a
+            // function, say). An alternate entry point (a public at a
+            // label) that starts within the previous symbol is part of it,
+            // even if the public seems to extend beyond it.
+            let within = previous_end.is_some_and(|(start, prev_end)| {
+                start <= h.addr
+                    && (h.end <= prev_end
+                        || (h.addr < prev_end && h.public && labels.contains(&h.addr)))
+            });
+            if within {
+                these.for_each(drop);
+                continue;
+            }
+            previous_end = Some((h.addr, h.end));
+            out.extend(these);
+        }
     }
     out
+}
+
+/// What one address's symbols resolved to: the names pushed (`len` of
+/// them), the extent of the largest, and whether they are publics.
+struct Resolved {
+    addr: u64,
+    end: u64,
+    public: bool,
+    len: usize,
 }
 
 #[cfg(test)]
@@ -948,7 +1011,7 @@ mod tests {
     fn run(symbols: &[DebugSymbol], hidden: &[DebugSymbol]) -> Vec<Symbol> {
         let mut sorted = symbols.to_vec();
         sorted.sort_by_key(|s| s.addr);
-        from_debug_symbols(&sorted, hidden, &model(), &mut |_, _, _, n| n)
+        from_debug_symbols(&sorted, hidden, &model(), &|| |_: &DebugSymbol, _, _, n| n)
     }
 
     #[test]

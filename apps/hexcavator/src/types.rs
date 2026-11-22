@@ -192,7 +192,9 @@ fn layouts_of<R>(
                 show(files.last().copied().unwrap_or(Path::new("")))
             )
         })?;
-        all.sort_by(|a, b| b.waste().cmp(&a.waste()).then_with(|| a.name.cmp(&b.name)));
+        hexcavator_par::sort_by(&mut all, |a, b| {
+            b.waste().cmp(&a.waste()).then_with(|| a.name.cmp(&b.name))
+        });
         Ok::<_, String>(Catalog::new(all))
     })?;
     f(debug, &catalog)
@@ -212,10 +214,13 @@ pub(crate) struct Catalog {
 
 impl Catalog {
     fn new(all: Vec<Layout>) -> Self {
-        let mangled: Vec<Option<String>> = all.iter().map(mangled).collect();
-        let lower: Vec<String> = all.iter().map(|l| l.name.to_lowercase()).collect();
+        // (On every core.)
+        let (mangled, lower): (Vec<Option<String>>, Vec<String>) = hexcavator_par::join(
+            || hexcavator_par::map(&all, 1024, mangled),
+            || hexcavator_par::map(&all, 1024, |l| l.name.to_lowercase()),
+        );
         let mut by_name: Vec<u32> = (0..u32::try_from(all.len()).unwrap_or(u32::MAX)).collect();
-        by_name.sort_by(|&a, &b| {
+        hexcavator_par::sort_by(&mut by_name, |&a, &b| {
             let (a, b) = (a as usize, b as usize);
             lower[a]
                 .cmp(&lower[b])

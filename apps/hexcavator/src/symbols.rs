@@ -54,6 +54,20 @@ impl SymbolMap {
     }
 
     fn from_pdb(pdb: &Pdb<'_>, file: &PeFile<'_>) -> Self {
+        use hexcavator_codeview::symbols::kind::{
+            S_GPROC32, S_GPROC32_ID, S_LPROC32, S_LPROC32_DPC, S_LPROC32_DPC_ID, S_LPROC32_ID,
+        };
+        let is_procedure = |k: u16| {
+            matches!(
+                k,
+                S_GPROC32
+                    | S_LPROC32
+                    | S_GPROC32_ID
+                    | S_LPROC32_ID
+                    | S_LPROC32_DPC
+                    | S_LPROC32_DPC_ID
+            )
+        };
         let base = file.optional_header().map_or(0, |h| h.image_base().get());
         let Ok(sections) = pdb.sections() else {
             return Self::default();
@@ -95,11 +109,17 @@ impl SymbolMap {
                 }
             }
             contributions.sort_unstable();
-            for m in dbi.modules() {
+            // Each module's procedures, on whichever thread is free (in
+            // module order); only procedure records parsed.
+            let per_module = hexcavator_par::map_balanced(dbi.modules(), 4, |m| {
+                let mut out = Vec::new();
                 let Ok(Some(stream)) = pdb.module_stream(m) else {
-                    continue;
+                    return out;
                 };
                 for rec in stream.symbols() {
+                    if !is_procedure(rec.kind) {
+                        continue;
+                    }
                     if let Ok(Symbol::Procedure {
                         offset,
                         segment,
@@ -108,10 +128,12 @@ impl SymbolMap {
                     }) = rec.parse()
                         && let Some(a) = va(segment, offset)
                     {
-                        entries.push((a, String::from_utf8_lossy(name).into_owned()));
+                        out.push((a, String::from_utf8_lossy(name).into_owned()));
                     }
                 }
-            }
+                out
+            });
+            entries.extend(per_module.into_iter().flatten());
         }
         // Keep the first name for each address, preferring publics.
         let mut keyed: Vec<(u64, usize, String)> = entries
@@ -119,7 +141,7 @@ impl SymbolMap {
             .enumerate()
             .map(|(i, (a, n))| (a, usize::from(i >= publics), n))
             .collect();
-        keyed.sort_by_key(|e| (e.0, e.1));
+        hexcavator_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
         keyed.dedup_by_key(|e| e.0);
         Self {
             entries: keyed

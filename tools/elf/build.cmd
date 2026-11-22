@@ -86,6 +86,18 @@ rem consumer.c linked against it, needing those versions.
 del consumer.o
 for %%f in (libversions.so consumer.so) do "%LLVM_BIN%\llvm-readobj.exe" --version-info --dyn-syms %%f > %%f.versions.txt || exit /b 1
 del relr.o
+rem MIPS's dynamic pointers: relr.c, consumer.c, and locals.c in one shared
+rem object, for mipsel and mips64el (its R_MIPS_REL32 relocations, and its
+rem GOT: local entries the loader relocates, global ones it sets to their
+rem symbols').
+for %%t in (mipsel mips64el) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -O1 -ffreestanding -fno-stack-protector -fno-asynchronous-unwind-tables -fno-ident -fPIC -c "%~dp0relr.c" -o relr-%%t.o || exit /b 1
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -O1 -ffreestanding -fno-stack-protector -fno-asynchronous-unwind-tables -fno-ident -fPIC -c "%~dp0consumer.c" -o consumer-%%t.o || exit /b 1
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -O1 -ffreestanding -fno-stack-protector -fno-asynchronous-unwind-tables -fno-ident -fPIC -c "%~dp0locals.c" -o locals-%%t.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -shared --build-id=sha1 relr-%%t.o consumer-%%t.o locals-%%t.o -o relr-%%t.so || exit /b 1
+  "%LLVM_BIN%\llvm-readobj.exe" --relocations --dynamic-table --arch-specific relr-%%t.so > relr-%%t.so.readobj.txt || exit /b 1
+  del relr-%%t.o consumer-%%t.o locals-%%t.o
+)
 rem Android's packed relocations (APS2), and the same unpacked.
 "%LLVM_BIN%\clang.exe" --target=aarch64-linux-android29 -O1 -ffreestanding -fno-stack-protector -fno-ident -fPIC -c "%~dp0relr.c" -o relr-android.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -shared --build-id=sha1 --pack-dyn-relocs=android relr-android.o -o relr-android.so || exit /b 1

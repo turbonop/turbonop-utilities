@@ -246,6 +246,18 @@ pub const DT_PREINIT_ARRAYSZ: u64 = 33;
 pub const DT_SYMTAB_SHNDX: u64 = 34;
 pub const DT_RELRSZ: u64 = 35;
 pub const DT_RELR: u64 = 36;
+/// MIPS's GOT: how many local entries it starts with (the reserved ones
+/// counted), which the loader relocates by the load address.
+pub const DT_MIPS_LOCAL_GOTNO: u64 = 0x7000_000A;
+/// MIPS's dynamic symbols: how many.
+pub const DT_MIPS_SYMTABNO: u64 = 0x7000_0011;
+/// MIPS's first dynamic symbol with a (global) GOT entry: those from it
+/// on have one each, in order, after the local entries.
+pub const DT_MIPS_GOTSYM: u64 = 0x7000_0013;
+/// MIPS's relative or symbol relocation of a word (`S + A`, or the load
+/// address plus `A` without a symbol); MIPS64's dynamic ones are packed
+/// with `R_MIPS_64` as their second type.
+pub const R_MIPS_REL32: u32 = 3;
 pub const DT_RELRENT: u64 = 37;
 pub const DT_GNU_HASH: u64 = 0x6FFF_FEF5;
 pub const DT_VERSYM: u64 = 0x6FFF_FFF0;

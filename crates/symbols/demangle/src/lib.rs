@@ -37,14 +37,14 @@ impl Demangler {
         if name.starts_with('?') {
             return self.msvc.demangle_into(name, msvc_flags, out);
         }
-        if self.itanium.demangle_into(name, out) {
+        if self.itanium.demangle_symbol_into(name, out) {
             return true;
         }
         // (Mach-O's names, and x86 Windows' C names, have a `_` before the
         // name as mangled.)
         match name.strip_prefix('_') {
             Some(rest) if !rest.is_empty() && rest.starts_with(['_', '$']) => {
-                self.itanium.demangle_into(rest, out)
+                self.itanium.demangle_symbol_into(rest, out)
             }
             _ => false,
         }
@@ -92,6 +92,17 @@ mod tests {
                 .is_some_and(|n| n.ends_with("mycrate::foo"))
         );
         assert!(d.demangle("main", f).is_none());
+        // A C name that is a type's mangling is a name, not the type.
+        for c in ["a", "b", "c", "f", "i", "v", "Pc", "St"] {
+            assert!(d.demangle(c, f).is_none(), "{c}");
+        }
+        assert_eq!(d.source_name("c", f, false), "c");
+        // (Blocks', and Swift's, still.)
+        assert!(d.demangle("___Z1fv_block_invoke", f).is_some());
+        assert_eq!(
+            d.demangle("__alloc_token_0__Z1fv", f).as_deref(),
+            Some("f() (.alloc_token)")
+        );
         assert_eq!(d.source_name("_main", f, true), "main");
         assert_eq!(d.source_name("_main", f, false), "_main");
     }

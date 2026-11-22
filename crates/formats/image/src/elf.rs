@@ -167,6 +167,25 @@ pub(crate) fn pointer_slots(elf: &ElfFile<'_>) -> Vec<crate::PointerSlot> {
             .map(|t| elf.symbols(t))
             .unwrap_or_default();
         for r in elf.relocations(s) {
+            // MIPS's: the word it patches plus its symbol's value, or the
+            // load address (without one).
+            if machine == EM_MIPS && r.kind & 0xFF == R_MIPS_REL32 {
+                let addend = word(r.offset);
+                let target = if r.symbol == 0 {
+                    addend
+                } else {
+                    symbols
+                        .get(r.symbol as usize)
+                        .filter(|sym| sym.shndx != u32::from(SHN_UNDEF))
+                        .and_then(|sym| Some(sym.value.wrapping_add(addend?)))
+                };
+                out.push(crate::PointerSlot {
+                    addr: r.offset,
+                    width,
+                    target,
+                });
+                continue;
+            }
             let Some(how) = hexcavator_elf::address_relocation(machine, r.kind) else {
                 continue;
             };
@@ -185,7 +204,73 @@ pub(crate) fn pointer_slots(elf: &ElfFile<'_>) -> Vec<crate::PointerSlot> {
             });
         }
     }
+    if machine == EM_MIPS {
+        mips_got_slots(elf, width, &word, &mut out);
+        out.sort_by_key(|s| s.addr);
+    }
     out
+}
+
+/// MIPS's GOT entries the loader writes (no relocation says so): the
+/// local ones, which it relocates by the load address (each the address
+/// the file holds), and the global ones, which it sets to their symbols'
+/// addresses (those defined here: an undefined symbol's is another
+/// module's). The reserved entries (the lazy resolver's, and GNU's module
+/// pointer, its top bit set) are none.
+fn mips_got_slots(
+    elf: &ElfFile<'_>,
+    width: u8,
+    word: &dyn Fn(u64) -> Option<u64>,
+    out: &mut Vec<crate::PointerSlot>,
+) {
+    let dynamic = elf.dynamic();
+    let tag = |t: u64| dynamic.iter().find(|d| d.tag == t).map(|d| d.value);
+    let (Some(got), Some(local)) = (tag(DT_PLTGOT), tag(DT_MIPS_LOCAL_GOTNO)) else {
+        return;
+    };
+    let w = u64::from(width);
+    // (Bounded by what the file holds: a hostile count is not a loop of
+    // billions.)
+    let fits = |n: u64| bytes_at(elf, got, n.saturating_mul(w)).is_some();
+    let local = if fits(local) { local } else { 0 };
+    let top = 1u64 << (w * 8 - 1);
+    for i in 0..local {
+        let addr = got + i * w;
+        let value = word(addr);
+        if i == 0 || (i == 1 && value.is_some_and(|v| v & top != 0)) {
+            continue;
+        }
+        out.push(crate::PointerSlot {
+            addr,
+            width,
+            target: value,
+        });
+    }
+    let (Some(first), Some(count)) = (tag(DT_MIPS_GOTSYM), tag(DT_MIPS_SYMTABNO)) else {
+        return;
+    };
+    let symbols = elf
+        .sections()
+        .find(|s| s.kind == SHT_DYNSYM)
+        .map(|t| elf.symbols(&t))
+        .unwrap_or_default();
+    let globals = count.saturating_sub(first);
+    if !fits(local.saturating_add(globals)) {
+        return;
+    }
+    for (i, sym) in symbols
+        .iter()
+        .enumerate()
+        .skip(usize::try_from(first).unwrap_or(usize::MAX))
+        .take(usize::try_from(globals).unwrap_or(0))
+    {
+        let index = local + (i as u64 - first);
+        out.push(crate::PointerSlot {
+            addr: got + index * w,
+            width,
+            target: (sym.shndx != u32::from(SHN_UNDEF)).then_some(sym.value),
+        });
+    }
 }
 
 pub(crate) fn bytes_at<'data>(elf: &ElfFile<'data>, addr: u64, len: u64) -> Option<&'data [u8]> {

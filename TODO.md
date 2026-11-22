@@ -16,9 +16,7 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   per-format paths (ELF's, Mach-O's, and WebAssembly's follow bloaty's own;
   PE's is the Model's): groups and libraries are PE's alone.
 - **Instruction sets' loose ends.** microMIPS and MIPS16 code isn't
-  decoded. MIPS's dynamic pointers (`R_MIPS_REL32`, and the local GOT
-  entries the loader relocates by `DT_MIPS_LOCAL_GOTNO`) aren't read as
-  pointer slots (a dynamic image's GOT is read as its file holds it).
+  decoded.
 
 ## Size analysis
 

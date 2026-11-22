@@ -128,8 +128,8 @@ fn elf_relocations(
         let mut entries = 0u64;
         if s.kind == SHT_RELA || s.kind == SHT_REL {
             for r in elf.relocations(s) {
-                let kind = hexcavator_elf::spelling::relocation(machine, r.kind)
-                    .map_or_else(|| format!("type {}", r.kind), str::to_string);
+                let kind = hexcavator_elf::relocation_name(machine, r.kind)
+                    .unwrap_or_else(|| format!("type {}", r.kind));
                 let sym = (r.symbol != 0)
                     .then(|| dynsym.get(r.symbol as usize))
                     .flatten();

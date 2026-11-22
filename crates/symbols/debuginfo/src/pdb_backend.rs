@@ -179,61 +179,79 @@ impl<'data> PdbInfo<'data> {
     /// are decoded in parallel; each inlined function is named once.
     pub fn inline_sites(&self) -> Result<crate::InlineSites> {
         let dbi = self.pdb.dbi()?;
-        let mut streams = Vec::new();
-        for module in dbi.modules() {
-            if let Some(stream) = self.pdb.module_stream(module)? {
-                streams.push((u32::try_from(module.index).unwrap_or(u32::MAX), stream));
-            }
-        }
-        let threads = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZero::get)
-            .min(streams.len().max(1));
-        let chunk = streams.len().div_ceil(threads).max(1);
         let sections = &self.sections;
-        // Sites with their inlinees' id records for now.
-        let mut sites: Vec<crate::InlineSite> = std::thread::scope(|scope| {
-            let handles: Vec<_> = streams
-                .chunks(chunk)
-                .map(|part| {
-                    scope.spawn(move || {
-                        let mut out = Vec::new();
-                        for (compiland, stream) in part {
-                            module_inline_sites(sections, *compiland, stream.symbols(), &mut out);
-                        }
-                        out
+        // Sites with their inlinees' id records for now: each module read
+        // and decoded on whichever thread is free, while another reads and
+        // indexes the types and ids that name them.
+        let (indexed, sites) = hexcavator_par::join(
+            || -> Result<_> {
+                let types = self.pdb.types()?;
+                let ids = self.pdb.ids()?;
+                hexcavator_par::join(|| types.build_offsets(), || ids.build_offsets());
+                Ok((types, ids))
+            },
+            || -> Result<Vec<crate::InlineSite>> {
+                let per_module = hexcavator_par::map_balanced(dbi.modules(), 4, |module| {
+                    let mut out = Vec::new();
+                    if let Some(stream) = self.pdb.module_stream(module)? {
+                        let compiland = u32::try_from(module.index).unwrap_or(u32::MAX);
+                        module_inline_sites(sections, compiland, stream.symbols(), &mut out);
+                    }
+                    Ok::<_, Error>(out)
+                });
+                let mut sites = Vec::new();
+                for m in per_module {
+                    sites.extend(m?);
+                }
+                Ok(sites)
+            },
+        );
+        let (types, ids) = indexed?;
+        let mut sites = sites?;
+        // Each inlinee named once, on every core: the distinct ids in the
+        // order first seen, then named.
+        let mut seen: HashMap<u32, u32> = HashMap::default();
+        let mut distinct: Vec<u32> = Vec::new();
+        for s in &sites {
+            seen.entry(s.inlinee).or_insert_with(|| {
+                distinct.push(s.inlinee);
+                u32::try_from(distinct.len() - 1).unwrap_or(u32::MAX)
+            });
+        }
+        let named: Vec<(String, Option<u32>)> =
+            hexcavator_par::map_chunks(&distinct, 256, |part| {
+                let formatter = TypeFormatter { types };
+                part.iter()
+                    .map(|&id| {
+                        let found = inlinee(ids, &formatter, id);
+                        let count = found
+                            .as_ref()
+                            .and_then(|(_, ty)| parameter_count(types, self::index(*ty)));
+                        let name = found.map_or_else(|| format!("<inlinee {id:#x}>"), |(n, _)| n);
+                        (name, count)
                     })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .flat_map(|h| h.join().unwrap_or_default())
-                .collect()
-        });
-        // Name each inlinee once.
-        let types = self.pdb.types()?;
-        types.build_offsets();
-        let ids = self.pdb.ids()?;
-        ids.build_offsets();
-        let formatter = TypeFormatter { types };
+                    .collect()
+            });
         // (Id records of one name are one function: an index per name.)
-        let mut index: HashMap<u32, u32> = HashMap::default();
-        let mut by_name: HashMap<String, u32> = HashMap::default();
+        let mut by_name: HashMap<&str, u32> = HashMap::default();
         let mut inlinees: Vec<String> = Vec::new();
         let mut params: Vec<Option<u32>> = Vec::new();
-        for s in &mut sites {
-            let id = s.inlinee;
-            s.inlinee = *index.entry(id).or_insert_with(|| {
-                let found = inlinee(ids, &formatter, id);
-                let count = found
-                    .as_ref()
-                    .and_then(|(_, ty)| parameter_count(types, self::index(*ty)));
-                let name = found.map_or_else(|| format!("<inlinee {id:#x}>"), |(n, _)| n);
-                *by_name.entry(name.clone()).or_insert_with(|| {
-                    inlinees.push(name);
-                    params.push(count);
+        let slot: Vec<u32> = named
+            .iter()
+            .map(|(name, count)| {
+                *by_name.entry(name.as_str()).or_insert_with(|| {
+                    inlinees.push(name.clone());
+                    params.push(*count);
                     u32::try_from(inlinees.len() - 1).unwrap_or(u32::MAX)
                 })
-            });
+            })
+            .collect();
+        for s in &mut sites {
+            s.inlinee = seen
+                .get(&s.inlinee)
+                .and_then(|&k| slot.get(k as usize))
+                .copied()
+                .unwrap_or(u32::MAX);
         }
         Ok(crate::InlineSites {
             inlinees,

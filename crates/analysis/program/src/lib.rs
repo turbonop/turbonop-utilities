@@ -530,6 +530,26 @@ pub struct Program<'a> {
     symbols: OnceCell<Arc<Vec<Symbol>>>,
 }
 
+/// Whether a program dropped leaves what it built for the process's exit
+/// to reclaim (see [`leave_to_exit`]).
+static LEAVE_TO_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// In a process that runs one command and exits: a program dropped leaves
+/// its symbols and model (millions of allocations, which take a good part
+/// of a second to free) for the exit to reclaim.
+pub fn leave_to_exit(on: bool) {
+    LEAVE_TO_EXIT.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+impl Drop for Program<'_> {
+    fn drop(&mut self) {
+        if LEAVE_TO_EXIT.load(std::sync::atomic::Ordering::Relaxed) {
+            std::mem::forget(self.symbols.take());
+            std::mem::forget(self.model.take());
+        }
+    }
+}
+
 impl Program<'_> {
     /// Its debug files' paths.
     fn debug_files(&self) -> Vec<&Path> {
@@ -589,11 +609,11 @@ impl Program<'_> {
     /// # Errors
     ///
     /// If the debug information is damaged.
-    pub fn into_built(self) -> Result<(Arc<Model>, Arc<Vec<Symbol>>), Error> {
+    pub fn into_built(mut self) -> Result<(Arc<Model>, Arc<Vec<Symbol>>), Error> {
         self.symbols()?;
         // (Both are built now.)
-        let model = self.model.into_inner().unwrap_or_default();
-        let symbols = self.symbols.into_inner().unwrap_or_default();
+        let model = self.model.take().unwrap_or_default();
+        let symbols = self.symbols.take().unwrap_or_default();
         Ok((model, symbols))
     }
 }

@@ -108,15 +108,15 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 /// A function's name, place, and source line, as shown.
-struct Named<'x> {
-    image: &'x hexcavator_image::Image<'x>,
+struct Named<'x, 'data> {
+    image: &'x hexcavator_image::Image<'data>,
     x: &'x Xref,
-    locator: hexcavator_debuginfo::Locator<'x, 'x>,
+    locator: hexcavator_debuginfo::Locator<'x, 'data>,
     /// What the image's tools add to its addresses (a PE image's base).
     base: u64,
 }
 
-impl Named<'_> {
+impl Named<'_, '_> {
     fn name(&self, n: u32) -> &str {
         self.x.names.get(n as usize).map_or("?", String::as_str)
     }
@@ -177,14 +177,14 @@ fn report(o: &Options) -> Result<String, String> {
 }
 
 /// What `n` calls, each as `function_json` gives it.
-fn callees_json(named: &mut Named<'_>, n: u32) -> Vec<Value> {
+fn callees_json(named: &mut Named<'_, '_>, n: u32) -> Vec<Value> {
     startup::callees(named.image, named.x, n)
         .into_iter()
         .map(|(c, e)| function_json(named, c, Some(e)))
         .collect()
 }
 
-fn function_json(named: &mut Named<'_>, n: u32, edge: Option<Edge>) -> Value {
+fn function_json(named: &mut Named<'_, '_>, n: u32, edge: Option<Edge>) -> Value {
     let line = named.line(n);
     let start = named.x.graph.nodes().get(n as usize).map_or(0, |n| n.start);
     json!({
@@ -200,8 +200,8 @@ fn function_json(named: &mut Named<'_>, n: u32, edge: Option<Edge>) -> Value {
 
 /// The phases and main as JSON; with `calls`, each function with what it
 /// calls.
-fn as_json(s: &Startup, named: &mut Named<'_>, calls: bool) -> Value {
-    let listed = |named: &mut Named<'_>, n: u32| {
+fn as_json(s: &Startup, named: &mut Named<'_, '_>, calls: bool) -> Value {
+    let listed = |named: &mut Named<'_, '_>, n: u32| {
         let mut v = function_json(named, n, None);
         if calls {
             v["calls"] = callees_json(named, n).into();
@@ -239,7 +239,7 @@ fn as_json(s: &Startup, named: &mut Named<'_>, calls: bool) -> Value {
     })
 }
 
-fn as_text(s: &Startup, named: &mut Named<'_>, file: &str, depth: usize) -> String {
+fn as_text(s: &Startup, named: &mut Named<'_, '_>, file: &str, depth: usize) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
@@ -302,7 +302,7 @@ fn as_text(s: &Startup, named: &mut Named<'_>, file: &str, depth: usize) -> Stri
 /// "(above)").
 fn callees(
     out: &mut String,
-    named: &mut Named<'_>,
+    named: &mut Named<'_, '_>,
     n: u32,
     pad: &str,
     depth: usize,

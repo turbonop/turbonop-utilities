@@ -298,7 +298,7 @@ fn data_line(out: &mut dyn Write, width: usize, address: u64, bytes: &[u8]) -> i
 /// How dumpbin shows a byte as text. It reads the byte as Windows-1252 and
 /// writes the console's code page (437): printable ASCII as itself;
 /// characters code page 437 has as themselves (dumpbin writes their 437
-/// bytes; hexc writes the characters); others as Windows' "best fit" ASCII
+/// bytes; hexcavator writes the characters); others as Windows' "best fit" ASCII
 /// (`Ì` as `I`, `‘` as a backquote); anything else as a dot.
 fn shown_char(b: u8) -> char {
     const IN_CP437: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥ƒáíóúñÑªº¿¬½¼¡«»ßµ±÷°·²§¶•¤";

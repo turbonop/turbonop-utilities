@@ -1,4 +1,4 @@
-//! `hexc resources`: what a binary holds besides its code and data, and
+//! `hexcavator resources`: what a binary holds besides its code and data, and
 //! what it says of itself: a PE image's resources, decoded (version
 //! information, manifests, string and message tables, dialogs, menus,
 //! accelerators, icons, cursors, bitmaps); a Mach-O image's Info.plist,
@@ -16,7 +16,7 @@ use hexcavator_pe::resources::{ResourceName, ResourceTarget};
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-usage: hexc resources [options] <image>
+usage: hexcavator resources [options] <image>
 
 What a binary holds besides its code, and what it says of itself:
 
@@ -81,7 +81,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc resources: {e}\n\n{USAGE}");
+            ereport!("hexcavator resources: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
@@ -89,14 +89,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let map = match Mmap::open(&path) {
         Ok(m) => m,
         Err(e) => {
-            ereport!("hexc resources: {path}: {e}");
+            ereport!("hexcavator resources: {path}: {e}");
             return ExitCode::FAILURE;
         }
     };
     let items = match items(&map) {
         Ok(i) => i,
         Err(e) => {
-            ereport!("hexc resources: {path}: {e}");
+            ereport!("hexcavator resources: {path}: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -109,20 +109,20 @@ pub fn run(args: &[String]) -> ExitCode {
             .find(|i| i.id == id)
             .or_else(|| items.iter().find(|i| i.id.eq_ignore_ascii_case(id)))
             .ok_or_else(|| {
-                format!("{file} has no resource '{id}' (hexc resources {path} lists them)")
+                format!("{file} has no resource '{id}' (hexcavator resources {path} lists them)")
             })
     };
     let text = if let Some((id, out)) = &o.save {
         let item = match found(id) {
             Ok(i) => i,
             Err(e) => {
-                ereport!("hexc resources: {e}");
+                ereport!("hexcavator resources: {e}");
                 return ExitCode::FAILURE;
             }
         };
         let bytes = saved(item, &items);
         if let Err(e) = std::fs::write(out, &bytes) {
-            ereport!("hexc resources: {}: {e}", out.display());
+            ereport!("hexcavator resources: {}: {e}", out.display());
             return ExitCode::FAILURE;
         }
         format!("{}: {} bytes to {}\n", item.id, bytes.len(), out.display())
@@ -130,7 +130,7 @@ pub fn run(args: &[String]) -> ExitCode {
         let item = match found(id) {
             Ok(i) => i,
             Err(e) => {
-                ereport!("hexc resources: {e}");
+                ereport!("hexcavator resources: {e}");
                 return ExitCode::FAILURE;
             }
         };
@@ -764,7 +764,7 @@ fn wasm_items<'d>(m: &hexcavator_wasm::Module<'d>) -> Vec<Item<'d>> {
             || name == "linking"
             || name.starts_with("reloc.")
         {
-            // (Shown elsewhere: hexc dwarf, hexc dump.)
+            // (Shown elsewhere: hexcavator dwarf, hexcavator dump.)
             continue;
         } else if looks_like_text(bytes) {
             item.view = View::Text;
@@ -1527,14 +1527,14 @@ fn detail_text(item: &Item<'_>, v: &Value) -> String {
             }
             let _ = writeln!(
                 out,
-                "\n(hexc resources -save {} <file.ico> writes it out)",
+                "\n(hexcavator resources -save {} <file.ico> writes it out)",
                 item.id
             );
         }
         View::Image { .. } | View::Bitmap => {
             let _ = writeln!(
                 out,
-                "{}\n(hexc resources -save {} <file> writes it out)",
+                "{}\n(hexcavator resources -save {} <file> writes it out)",
                 s(&v["summary"]),
                 item.id
             );

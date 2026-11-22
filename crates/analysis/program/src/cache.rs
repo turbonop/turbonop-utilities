@@ -3,9 +3,9 @@
 //! is on unless asked for:
 //!
 //! - In memory ([`keep_in_memory`], [`remember`]), for a process that
-//!   answers many requests (`hexc serve`): what is built from the same
+//!   answers many requests (`hexcavator serve`): what is built from the same
 //!   files again is what was built the first time, until they change.
-//! - In an index file ([`set_file`], `hexc --cache <path>`): the symbols,
+//! - In an index file ([`set_file`], `hexcavator --cache <path>`): the symbols,
 //!   in `path` if it is a file, or in `path/{name}.{hash}.hexc-index` if it
 //!   is a directory (`hash` of the image's full path, so that images of the
 //!   same name don't share one).

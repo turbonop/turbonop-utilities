@@ -13,8 +13,8 @@ fn mingw(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn hexc(args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(args)
         .output()
         .unwrap();
@@ -33,7 +33,7 @@ fn symbols_at_the_images_addresses() {
         ("program-arm64.exe", 0x1000, 0x100C),
     ] {
         let path = mingw(image);
-        let out = hexc(&[
+        let out = hexcavator(&[
             "query",
             "-json",
             path.to_str().unwrap(),
@@ -63,7 +63,7 @@ fn symbols_at_the_images_addresses() {
 /// The stripped image's DWARF, from the debug file .gnu_debuglink names.
 #[test]
 fn separate_debug_file() {
-    let info = hexc(&[
+    let info = hexcavator(&[
         "info",
         "-json",
         mingw("program-stripped.exe").to_str().unwrap(),
@@ -88,7 +88,7 @@ fn separate_debug_file() {
         tools.contains(&"why") && !tools.contains(&"annotations"),
         "{tools:?}"
     );
-    let out = hexc(&[
+    let out = hexcavator(&[
         "symbolize",
         mingw("program-stripped.exe").to_str().unwrap(),
         "0x140001010",
@@ -103,7 +103,7 @@ fn separate_debug_file() {
 /// --gc-sections, not COMDATs and /OPT:REF.
 #[test]
 fn in_its_linkers_terms() {
-    let out = hexc(&[
+    let out = hexcavator(&[
         "xref",
         "-why",
         "unused",
@@ -113,7 +113,7 @@ fn in_its_linkers_terms() {
         out.contains("--gc-sections") && !out.contains("/Gy"),
         "{out}"
     );
-    let out = hexc(&["recommend", "-json", mingw("program.exe").to_str().unwrap()]);
+    let out = hexcavator(&["recommend", "-json", mingw("program.exe").to_str().unwrap()]);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["toolchain"], "gnu");
     assert_eq!(v["debug"], true);

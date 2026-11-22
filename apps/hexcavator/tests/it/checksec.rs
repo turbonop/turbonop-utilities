@@ -1,4 +1,4 @@
-//! `hexc checksec`: each mitigation on or off as the fixtures were built
+//! `hexcavator checksec`: each mitigation on or off as the fixtures were built
 //! (the hardened ELF images of tools/elf/hardened.c against the plain
 //! program; the xref PE image, built without /guard:cf but with CRT code
 //! that has it; a Mach-O image signed ad hoc), and `-audit` naming the
@@ -12,7 +12,7 @@ fn root() -> PathBuf {
 }
 
 fn checks(file: &str) -> serde_json::Value {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-json"])
         .arg(root().join(file))
         .output()
@@ -97,7 +97,7 @@ fn pe_and_macho() {
 
 #[test]
 fn audit_names_the_objects_built_differently() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-audit", "-json"])
         .arg(root().join("testdata/xref/xref-x64.exe"))
         .output()
@@ -168,7 +168,7 @@ fn audit_names_the_objects_built_differently() {
         "{linker}"
     );
     // Text: the same, readable.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-audit"])
         .arg(root().join("testdata/xref/xref-x64.exe"))
         .output()
@@ -183,7 +183,7 @@ fn audit_names_the_objects_built_differently() {
 #[test]
 fn not_an_image() {
     // (A PDB: debug information, no image.)
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec"])
         .arg(root().join("testdata/types/types.pdb"))
         .output()
@@ -193,7 +193,7 @@ fn not_an_image() {
 
 #[test]
 fn audit_of_a_debug_map_names_archives_members() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-audit", "-json"])
         .arg(root().join("testdata/macho/oso/oso-arm64"))
         .output()
@@ -245,7 +245,7 @@ fn wasm() {
 }
 
 fn audit(file: &str) -> serde_json::Value {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-audit", "-json"])
         .arg(root().join(file))
         .output()

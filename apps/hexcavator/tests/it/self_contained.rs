@@ -88,7 +88,7 @@ fn tests_read_nothing_outside_the_repository() {
     .unwrap();
     // The dependency test's Windows directory of stand-ins
     // (testdata/deps/pe/windows) has a System32 and a SysWOW64 of its own:
-    // its tests name those, and give hexc that directory, never the
+    // its tests name those, and give hexcavator that directory, never the
     // system's.
     let stand_ins = Regex::new(r"System32|SysWOW64").unwrap();
     let mut found = Vec::new();

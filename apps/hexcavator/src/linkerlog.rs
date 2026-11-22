@@ -1,4 +1,4 @@
-//! `hexc linkerlog`: what a link's `/VERBOSE` output says, and why each
+//! `hexcavator linkerlog`: what a link's `/VERBOSE` output says, and why each
 //! library member is in the image.
 
 use std::fmt::Write as _;
@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use hexcavator_linkerlog::{LinkerLog, parse};
 
 pub const USAGE: &str = "\
-usage: hexc linkerlog [options] <log> [-- <base log>]
+usage: hexcavator linkerlog [options] <log> [-- <base log>]
 
 Reads what a linker says about a link: which library members were linked
 and why, what was discarded, and what was folded. The MSVC linker's
@@ -94,14 +94,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc linkerlog: {e}\n\n{USAGE}");
+            ereport!("hexcavator linkerlog: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match report(&options) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc linkerlog: {e}");
+            ereport!("hexcavator linkerlog: {e}");
             ExitCode::FAILURE
         }
     }

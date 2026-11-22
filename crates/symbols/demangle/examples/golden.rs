@@ -1,5 +1,5 @@
 //! Writes `tests/data/golden.txt` from `undname` outputs: a sample of the
-//! names hexc undecorates as undname does, with flags 0 and `NO_PTR64`.
+//! names hexcavator undecorates as undname does, with flags 0 and `NO_PTR64`.
 //!
 //!     golden <names.txt> <undname-0.txt> <undname-20000.txt> <every-nth>
 

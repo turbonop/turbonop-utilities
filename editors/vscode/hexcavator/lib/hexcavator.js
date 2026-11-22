@@ -1,5 +1,5 @@
 // What the sidebar shows and runs, as plain data: the tools for a binary
-// or a diff (each with its hexc command line), how a size row reads in a
+// or a diff (each with its hexcavator command line), how a size row reads in a
 // tree, and the like. No `vscode` dependency, so it is tested under Node.
 "use strict";
 
@@ -56,7 +56,7 @@ function quote(arg) {
 }
 
 /**
- * What a link did, from `hexc recommend -json`'s report `r`, in its
+ * What a link did, from `hexcavator recommend -json`'s report `r`, in its
  * toolchain's terms: its recorded options (a PDB's), or else what the
  * image shows (`judged`): "/OPT:REF on, /OPT:ICF off", "--gc-sections on,
  * --icf off (as the image shows it)". Empty if neither is there.
@@ -74,7 +74,7 @@ function linkSummary(r) {
 
 
 /**
- * hexc's `args`, a size report's as if the file were stripped if
+ * hexcavator's `args`, a size report's as if the file were stripped if
  * `stripped` (a page's Stripped box): its debug information and symbol
  * tables still name what is left, but their own bytes don't count.
  */
@@ -82,7 +82,7 @@ function withStripped(args, stripped) {
   return stripped && args[0] === "size" && !args.includes("-stripped") ? ["size", "-stripped", ...args.slice(1)] : args;
 }
 
-/** The command line that runs hexc `exe` with `args`. */
+/** The command line that runs hexcavator `exe` with `args`. */
 function commandLine(exe, args) {
   return [exe, ...args].map(quote).join(" ");
 }
@@ -144,8 +144,8 @@ function sortedRows(row, domain) {
 }
 
 /**
- * What hexc says a file supports (`hexc info -json`): its format, kind,
- * debug information, and `tools`. Without it (hexc couldn't say), what
+ * What hexcavator says a file supports (`hexcavator info -json`): its format, kind,
+ * debug information, and `tools`. Without it (hexcavator couldn't say), what
  * every file has, whatever its name or format: its size report, a
  * comparison, and what it is.
  */
@@ -160,10 +160,10 @@ function can(caps, id) {
 
 /**
  * The tools for an entry (a binary, or a binary and its base), in groups,
- * as `caps` (and `baseCaps`, the base's) allow: what hexc says the files
+ * as `caps` (and `baseCaps`, the base's) allow: what hexcavator says the files
  * support (see capsFallback). Each tool has an `id`, a `label`, an `icon`
  * (a codicon), a `detail` (what it shows), and `run`: "panel" (a
- * webview), "text" (hexc's output as a document; its `args`, with `ask`
+ * webview), "text" (hexcavator's output as a document; its `args`, with `ask`
  * naming what to ask for first: "symbol", "function", "type", "inlinee",
  * "source", or "query"), or "tree" (the result shown in the sidebar).
  */
@@ -262,7 +262,7 @@ function toolsFor(entry, caps, baseCaps) {
  * and the pages of
  * its contents (Symbols, Types), then Compare; and the rest, under
  * Miscellaneous Queries (Recommendations among them, as `recommend`).
- * `caps` is what hexc says the file supports (`hexc info -json`): its
+ * `caps` is what hexcavator says the file supports (`hexcavator info -json`): its
  * tools, and where its debug information is.
  */
 function sidebarFor(entry, caps) {
@@ -325,7 +325,7 @@ function sidebarFor(entry, caps) {
   // on the Build Information page.)
   // (Not Recommendations and type layouts by padding either: the Findings
   // and Types pages have them; nor code by source file: the Sources page.)
-  // (Annotations either: few binaries have any; hexc annotations shows them.)
+  // (Annotations either: few binaries have any; hexcavator annotations shows them.)
   const shown = new Set(["report", "compare", "dump", "info", "dwarf", "types", "disassemble", "layout", "query", "why", "refs", "checksec", "audit", "sourcefiles", "findings", "annotations"]);
   const misc = all.filter((x) => !shown.has(x.id));
   return { items, misc };
@@ -369,7 +369,7 @@ function symbolsArgs(file, functionsOnly) {
 }
 
 /**
- * The why-chain (`hexc xref -why -json`) as tree rows: the root, then each
+ * The why-chain (`hexcavator xref -why -json`) as tree rows: the root, then each
  * step, or why there is none.
  */
 function whyRows(why) {
@@ -386,7 +386,7 @@ function whyRows(why) {
   return rows;
 }
 
-/** A diff of functions (`hexc xref -json -- base`) in a line. */
+/** A diff of functions (`hexcavator xref -json -- base`) in a line. */
 function functionsSummary(d) {
   const parts = [];
   const add = (n, what) => n && parts.push(`${n} ${what}`);
@@ -594,18 +594,18 @@ function percent(part, whole) {
 }
 
 /**
- * The hexc to run: `configured` (the hexcavator.path setting) if set;
+ * The hexcavator to run: `configured` (the hexcavator.path setting) if set;
  * else the one the extension's package carries (bin/, in a release
  * VSIX); else the build in the repository this extension is in (release,
- * then debug), so that F5 from the repository runs the hexc just built;
- * else `hexc` on PATH. `exists` is for testing.
+ * then debug), so that F5 from the repository runs the hexcavator just built;
+ * else `hexcavator` on PATH. `exists` is for testing.
  */
 function hexcPath(configured, exists = require("fs").existsSync) {
   if (configured) {
     return configured;
   }
   const path = require("path");
-  const exe = process.platform === "win32" ? "hexc.exe" : "hexc";
+  const exe = process.platform === "win32" ? "hexcavator.exe" : "hexcavator";
   const bundled = path.join(__dirname, "..", "bin", exe);
   if (exists(bundled)) {
     return bundled;
@@ -616,11 +616,11 @@ function hexcPath(configured, exists = require("fs").existsSync) {
       return candidate;
     }
   }
-  return "hexc";
+  return "hexcavator";
 }
 
 /**
- * How to start `hexc serve` for the extension's settings (`get(name)`
+ * How to start `hexcavator serve` for the extension's settings (`get(name)`
  * reads one): its arguments (global options first: `--arch`, symbol
  * servers, the symbol cache) and the environment it adds (the symbol
  * directories, as HEXC_SYMBOL_PATH). Nothing is asked of a server unless

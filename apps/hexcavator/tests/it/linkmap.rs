@@ -11,8 +11,8 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkmap")
 }
 
-fn hexc(args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(args)
         .output()
         .unwrap();
@@ -40,7 +40,7 @@ fn size_by_object_and_library() {
     let r = root();
     let elf = r.join("program-elf");
     let map = r.join("elf.map");
-    let units = rows(&hexc(&[
+    let units = rows(&hexcavator(&[
         "size",
         "-d",
         "compileunits",
@@ -55,7 +55,7 @@ fn size_by_object_and_library() {
     // from lib.a's used.o.
     assert_eq!(units.get("main.o"), Some(&(0x22 + 0x40)), "{units:?}");
     assert_eq!(units.get("lib.a(used.o)"), Some(&0xa), "{units:?}");
-    let libs = rows(&hexc(&[
+    let libs = rows(&hexcavator(&[
         "size",
         "-d",
         "libraries",
@@ -71,7 +71,7 @@ fn size_by_object_and_library() {
     // Mach-O: ld64's map, by symbol and file.
     let macho = r.join("program-macho");
     let map = r.join("macho.map");
-    let units = rows(&hexc(&[
+    let units = rows(&hexcavator(&[
         "size",
         "-d",
         "compileunits",
@@ -85,7 +85,7 @@ fn size_by_object_and_library() {
     assert_eq!(units.get("lib.a(used.o)"), Some(&0xc), "{units:?}");
     assert_eq!(units.get("main.o"), Some(&(0x2c + 0x40)), "{units:?}");
     // Not a map.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["size", "-d", "compileunits", "-map"])
         .arg(r.join("elf.why"))
         .arg(&elf)
@@ -97,7 +97,7 @@ fn size_by_object_and_library() {
 #[test]
 fn why_members_and_symbols() {
     let r = root();
-    let why = hexc(&[
+    let why = hexcavator(&[
         "linkerlog",
         "-why",
         "lib.a(used.o)",
@@ -107,7 +107,7 @@ fn why_members_and_symbols() {
         why.contains("lib.a(used.o) was loaded for used_helper, referenced in main.o"),
         "{why}"
     );
-    let log = hexc(&["linkerlog", r.join("elf.log").to_str().unwrap()]);
+    let log = hexcavator(&["linkerlog", r.join("elf.log").to_str().unwrap()]);
     assert!(
         log.contains("Sections removed as unused (garbage collected): 5"),
         "{log}"
@@ -119,12 +119,12 @@ fn why_members_and_symbols() {
         ),
         "{log}"
     );
-    let macho = hexc(&["linkerlog", r.join("macho.log").to_str().unwrap()]);
+    let macho = hexcavator(&["linkerlog", r.join("macho.log").to_str().unwrap()]);
     assert!(
         macho.contains("lib.a(used.o):(_used_helper)\n    referenced by main.o:(__start)"),
         "{macho}"
     );
-    let json: serde_json::Value = serde_json::from_str(&hexc(&[
+    let json: serde_json::Value = serde_json::from_str(&hexcavator(&[
         "linkerlog",
         "-json",
         r.join("macho.log").to_str().unwrap(),
@@ -139,7 +139,7 @@ fn why_members_and_symbols() {
 #[test]
 fn largest_members_of_an_elf_image() {
     let r = root();
-    let out = hexc(&[
+    let out = hexcavator(&[
         "linkerlog",
         "-json",
         "-image",

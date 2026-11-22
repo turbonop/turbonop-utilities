@@ -1,4 +1,4 @@
-//! `hexc dump` of ELF, Mach-O, and WebAssembly files, as llvm-readobj
+//! `hexcavator dump` of ELF, Mach-O, and WebAssembly files, as llvm-readobj
 //! shows them (its LLVM style): file headers, sections, segments,
 //! symbols, relocations, the dynamic table, notes, and the like, in its
 //! layout and spelling, so that its output and ours can be compared line

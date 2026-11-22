@@ -71,7 +71,7 @@ struct Grows {
 };
 
 // Annotations (the __annotation intrinsic): strings attached to code in
-// the PDB, for hexc annotations.
+// the PDB, for hexcavator annotations.
 FORCEINLINE int annotated_inline(int x) {
     ANNOTATE(L"Hexcavator", L"in an inlined copy");
     return x + 1;
@@ -83,7 +83,7 @@ NOINLINE int use(Padded* p, Bits* b, Derived* d, WithEmpty* w, Diamond* m, Eithe
            g->first;
 }
 
-// Globals for hexc data: each kind of value, initialized (in .data, the
+// Globals for hexcavator data: each kind of value, initialized (in .data, the
 // string pointer relocated), and one with a vtable (in .bss until its
 // constructor runs).
 enum Color { Red = 1, Green = 2, Blue = 4 };

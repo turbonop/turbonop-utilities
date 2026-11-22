@@ -1,4 +1,4 @@
-//! `hexc dump`: a dumpbin-compatible dumper.
+//! `hexcavator dump`: a dumpbin-compatible dumper.
 //!
 //! For PE images and COFF objects the output follows `dumpbin` closely, so
 //! that the two can be compared line by line. Formats dumpbin does not handle
@@ -45,7 +45,7 @@ pub fn undecorate(name: &str) -> Option<String> {
 }
 
 pub const USAGE: &str = "\
-usage: hexc dump [options] <file>...
+usage: hexcavator dump [options] <file>...
 
 options (dumpbin-style; write as /name, -name, or --name):
   /all          everything below
@@ -119,15 +119,15 @@ impl Options {
         [
             (
                 self.disasm,
-                "/disasm (hexc size -disassemble <function> disassembles any format's)",
+                "/disasm (hexcavator size -disassemble <function> disassembles any format's)",
             ),
             (
                 self.pdata,
-                "/pdata (hexc dwarf -frames shows DWARF's call frames)",
+                "/pdata (hexcavator dwarf -frames shows DWARF's call frames)",
             ),
             (
                 self.unwindinfo,
-                "/unwindinfo (hexc dwarf -frames shows DWARF's call frames)",
+                "/unwindinfo (hexcavator dwarf -frames shows DWARF's call frames)",
             ),
             (self.tls, "/tls"),
             (self.loadconfig, "/loadconfig"),
@@ -175,7 +175,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 }
                 "summary" => {}
                 other if options.readobj.set(other) => {}
-                _ => ereport!("hexc: warning: unrecognized option '{arg}'; ignored"),
+                _ => ereport!("hexcavator: warning: unrecognized option '{arg}'; ignored"),
             },
             None => paths.push(arg.as_str()),
         }
@@ -192,7 +192,7 @@ pub fn run(args: &[String]) -> ExitCode {
         // A closed pipe (e.g. `| head`) is not an error.
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(e) => {
-            ereport!("hexc: {e}");
+            ereport!("hexcavator: {e}");
             ExitCode::FAILURE
         }
     }
@@ -230,7 +230,7 @@ fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Res
             if !pe_only.is_empty() && !warned_pe_only {
                 warned_pe_only = true;
                 ereport!(
-                    "hexc: warning: {path}: not a PE or COFF file, which these are of: {}",
+                    "hexcavator: warning: {path}: not a PE or COFF file, which these are of: {}",
                     pe_only.join("; ")
                 );
             }
@@ -238,7 +238,7 @@ fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Res
                 Ok(text) => out.write_all(text.as_bytes())?,
                 Err(message) => {
                     out.flush()?;
-                    ereport!("hexc: {path}: {message}");
+                    ereport!("hexcavator: {path}: {message}");
                     ok = false;
                 }
             }
@@ -248,7 +248,7 @@ fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Res
         if options.readobj.any() && !options.all && !warned_readobj {
             warned_readobj = true;
             ereport!(
-                "hexc: warning: {path}: llvm-readobj's options are of ELF, Mach-O, and WebAssembly files; dumpbin's (/headers, /exports, /relocations, ...) are of this one"
+                "hexcavator: warning: {path}: llvm-readobj's options are of ELF, Mach-O, and WebAssembly files; dumpbin's (/headers, /exports, /relocations, ...) are of this one"
             );
         }
         // Like `dumpbin /nologo`: a blank line before the first file, and a
@@ -261,7 +261,7 @@ fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Res
         };
         if let Err(message) = result? {
             out.flush()?;
-            ereport!("hexc: {path}: {message}");
+            ereport!("hexcavator: {path}: {message}");
             ok = false;
         }
     }
@@ -410,7 +410,7 @@ fn dump_file(
 
 /// An LTCG (`/GL`) object, as dumpbin shows one: its anonymous object
 /// header (with /headers), and nothing more (its contents are the
-/// compiler's: `hexc ltcg` dumps them).
+/// compiler's: `hexcavator ltcg` dumps them).
 fn ltcg_header(out: &mut dyn Write, options: &Options, data: &[u8]) -> io::Result<()> {
     writeln!(out, "File Type: ANONYMOUS OBJECT")?;
     if !options.headers {

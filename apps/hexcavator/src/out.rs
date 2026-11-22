@@ -8,7 +8,7 @@
 //! escapes (`\u{1b}`) instead; anything else (a file, a pipe) gets the
 //! bytes as they are.
 //!
-//! A thread may instead [`capture`] what it writes to both (`hexc serve`
+//! A thread may instead [`capture`] what it writes to both (`hexcavator serve`
 //! runs each request so).
 
 use std::cell::RefCell;
@@ -22,8 +22,8 @@ pub struct Captured {
     pub stderr: Vec<u8>,
 }
 
-/// Whether this process runs one command and exits (`hexc <command>`,
-/// not `hexc serve` or `hexc mcp`): then what a command is done with
+/// Whether this process runs one command and exits (`hexcavator <command>`,
+/// not `hexcavator serve` or `hexcavator mcp`): then what a command is done with
 /// needn't be freed, as the process ends next.
 static ONE_SHOT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -85,7 +85,7 @@ fn captured(data: &[u8], stderr: bool) -> bool {
 }
 
 /// Whether this thread is capturing what it writes (it runs a request of
-/// `hexc serve`, whose standard input is its requests).
+/// `hexcavator serve`, whose standard input is its requests).
 pub fn capturing() -> bool {
     CAPTURE.with(|c| c.borrow().is_some())
 }
@@ -119,7 +119,7 @@ pub fn printed(bytes: &[u8]) -> bool {
         Ok(()) => true,
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => true,
         Err(e) => {
-            stderr_line(&format!("hexc: writing the output: {e}"));
+            stderr_line(&format!("hexcavator: writing the output: {e}"));
             false
         }
     }

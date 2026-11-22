@@ -1,4 +1,4 @@
-//! Compares `hexc pdb -diaformat` with Microsoft's DIA SDK (via
+//! Compares `hexcavator pdb -diaformat` with Microsoft's DIA SDK (via
 //! tools/diadump): modules, publics, functions, global data, UDTs, and line
 //! records must match exactly.
 //!
@@ -18,14 +18,14 @@ fn root() -> PathBuf {
 }
 
 fn hexc_lines(pdb: &Path) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["pdb", "-diaformat"])
         .arg(pdb)
         .output()
         .unwrap();
     assert!(
         out.status.success(),
-        "hexc failed on {}: {}",
+        "hexcavator failed on {}: {}",
         pdb.display(),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -67,13 +67,13 @@ fn pdb_matches_snapshot() {
     assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
-/// `hexc pdb` of an image: its PDB, found as every command finds it; and
-/// `-lookup <address>`, an address relative to the image (as `hexc dwarf
+/// `hexcavator pdb` of an image: its PDB, found as every command finds it; and
+/// `-lookup <address>`, an address relative to the image (as `hexcavator dwarf
 /// -lookup` takes one), and `-addr`'s `section:offset` alike.
 #[test]
 fn of_an_image_and_by_address() {
     let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("pdb")
             .args(args)
             .output()
@@ -108,7 +108,7 @@ fn of_an_image_and_by_address() {
     let (code, _, err) = run(&[elf.to_str().unwrap()]);
     assert_eq!(code, Some(1));
     assert!(
-        err.contains("isn't a PDB (hexc dwarf reads DWARF)"),
+        err.contains("isn't a PDB (hexcavator dwarf reads DWARF)"),
         "{err}"
     );
 }

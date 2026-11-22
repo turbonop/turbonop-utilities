@@ -16,7 +16,7 @@ del lib.a 2>nul
 "%LLVM_BIN%\llvm-ar.exe" rcsD lib.a used.o unused.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --gc-sections -e _start -Map=elf.map --why-extract=elf.why --print-gc-sections --why-live=used_helper --why-live=shared_table main.o lib.a -o program-elf > elf.log 2>&1 || exit /b 1
 del main.o used.o unused.o lib.a
-rem The same with DWARF (program-elf-g, and elf-g.why), for hexc linkerlog -image.
+rem The same with DWARF (program-elf-g, and elf-g.why), for hexcavator linkerlog -image.
 for %%c in (main used unused) do "%LLVM_BIN%\clang.exe" --target=x86_64-linux-gnu %CF% -g -c "%~dp0%%c.c" -o %%c.o || exit /b 1
 "%LLVM_BIN%\llvm-ar.exe" rcsD lib.a used.o unused.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --gc-sections -e _start --why-extract=elf-g.why main.o lib.a -o program-elf-g || exit /b 1

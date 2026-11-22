@@ -1,8 +1,8 @@
-// The Dependencies page: what a binary loads (hexc deps -json), as a tree:
+// The Dependencies page: what a binary loads (hexcavator deps -json), as a tree:
 // each library it names, where its platform's loader would find it, what
 // that loads (each library once: later, a pointer to it), and what's
 // missing. The problems first (each opens to its library); a filter;
-// system libraries' own dependencies on request (hexc deps -system); and
+// system libraries' own dependencies on request (hexcavator deps -system); and
 // the selected library's imports (what's missing marked) below the tree.
 "use strict";
 
@@ -361,7 +361,7 @@
       return;
     }
     if (m.kind === "failed") {
-      $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexc failed")), el("div", { class: "path" }, m.message || ""));
+      $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexcavator failed")), el("div", { class: "path" }, m.message || ""));
       return;
     }
     if (m.kind === "deps") {

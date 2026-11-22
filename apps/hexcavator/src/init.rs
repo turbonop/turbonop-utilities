@@ -1,4 +1,4 @@
-//! `hexc init`: what runs when an image is loaded, before its `main` (see
+//! `hexcavator init`: what runs when an image is loaded, before its `main` (see
 //! `hexcavator_size::startup`), with what each function calls.
 
 use std::collections::HashSet;
@@ -12,7 +12,7 @@ use hexcavator_xref::Edge;
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-usage: hexc init [options] <image>
+usage: hexcavator init [options] <image>
 
 What runs when an image is loaded, before its own code's main (of a
 library: when it's loaded), in the order it runs, with what each function
@@ -94,14 +94,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc init: {e}\n\n{USAGE}");
+            ereport!("hexcavator init: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match report(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc init: {e}");
+            ereport!("hexcavator init: {e}");
             ExitCode::FAILURE
         }
     }

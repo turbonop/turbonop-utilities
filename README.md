@@ -30,7 +30,7 @@ and where its bytes go.
   diffs, queries over an image's symbols, and size reports with measured
   recommendations.
 
-`hexc` does all of it on the command line, with JSON for scripts and CI,
+`hexcavator` does all of it on the command line, with JSON for scripts and CI,
 and as an MCP server for AI agents. The VS Code extension
 (`editors/vscode/hexcavator`) puts it in a sidebar of binaries and builds
 compared.
@@ -92,14 +92,14 @@ compared.
 | `crates/analysis/code` (`hexcavator-code`) | Code independent of the instruction set: instructions' control flow, and functions' basic blocks |
 | `crates/analysis/fingerprint` (`hexcavator-fingerprint`) | Fingerprints of functions and data that don't depend on where they are: instructions with addresses masked, then what they refer to, refined until stable (as linkers fold identical code), so builds compare and unfolded duplicates show |
 | `crates/analysis/program` (`hexcavator-program`) | Loading a program once: an image, its debug information, its model and symbols, for every analysis and front end |
-| `crates/analysis/query` (`hexcavator-query`) | A small query language over tables of an image's facts: filters, grouping with counts and summed sizes, sorting, limits; shared by `hexc query` and the MCP server |
+| `crates/analysis/query` (`hexcavator-query`) | A small query language over tables of an image's facts: filters, grouping with counts and summed sizes, sorting, limits; shared by `hexcavator query` and the MCP server |
 | `crates/analysis/size` (`hexcavator-size`) | Size attribution: which sections, COFF groups, libraries, compilands, and symbols account for each byte (a SizeBench replacement), and bloaty-style reports by data source for images, objects, and libraries |
 | `crates/analysis/deps` (`hexcavator-deps`) | What an executable or library loads: its libraries, found as each platform's loader would find them (PE, ELF, Mach-O), and the imports they lack |
 | `crates/analysis/xref` (`hexcavator-xref`) | Cross-references: a graph of what each function and datum refers to (calls, branches, addresses code uses, pointers in data), found by disassembly, and why each is reachable from the image's roots |
 | `crates/trace/etw` (`hexcavator-etw`) | Decoders for Windows kernel and trace-control events in ETL files |
 | `crates/trace/trace` (`hexcavator-trace`) | A platform-neutral model of performance traces, and importers that build it |
 | `crates/trace/trace-analysis` (`hexcavator-trace-analysis`) | Queries over traces: stack trees, callers and callees, CPU and wait analysis |
-| `apps/hexcavator` | `hexc`: the command line, the MCP server for agents, and the server the VS Code extension runs |
+| `apps/hexcavator` | `hexcavator`: the command line, the MCP server for agents, and the server the VS Code extension runs |
 | `apps/fuzz` | The fuzzer: every parser and command, on mutated inputs, for crashes, hangs, and blowups |
 | `apps/xtask` | Development tasks: `cargo xtask test` builds every test and runs them all at once |
 | `editors/vscode/hexcavator` | The VS Code extension: a sidebar of binaries and builds compared, with their headers, symbols, types, sources, data, and disassembly, size treemaps, and why each thing is there |
@@ -113,7 +113,7 @@ cargo run -- info C:\Windows\System32\kernel32.dll
 cargo run -- dump /headers C:\Windows\System32\kernel32.dll
 ```
 
-`hexc dump` mirrors `dumpbin`, and accepts options as `/name`, `-name`, or
+`hexcavator dump` mirrors `dumpbin`, and accepts options as `/name`, `-name`, or
 `--name` (use the dash forms from Git Bash, which rewrites `/name` into a
 path).
 
@@ -193,7 +193,7 @@ test.
 
 ### hexcavator-size testing
 
-`hexc size -sizebench <image>` prints the analysis in the form
+`hexcavator size -sizebench <image>` prints the analysis in the form
 `tools/sizebench-oracle` prints SizeBench's. `testdata/sizebench` holds
 SizeBench's own test binaries (x86, x64, ARM32; MSVC, clang-cl/lld-link,
 Rust, Zig, Fortran) and SizeBench's analysis of each; `cargo test` checks
@@ -212,12 +212,12 @@ with its bugs classified and not copied (see `crates/analysis/size/src/elf.rs`).
 byte orders), and big-endian ARM, built by `tools/elf/build.cmd` with the
 `llvm-readobj` dumps that `hexcavator-elf` is checked against field by field.
 
-## Using hexc
+## Using hexcavator
 
-`hexc help` lists the commands. `hexc info` identifies files, `hexc dump`,
-`hexc pdb`, and `hexc dwarf` show their contents, and the commands below
+`hexcavator help` lists the commands. `hexcavator info` identifies files, `hexcavator dump`,
+`hexcavator pdb`, and `hexcavator dwarf` show their contents, and the commands below
 analyze them. Most analyses take `-json` for scripts and CI, and the
-tabular ones `-csv` or `-tsv` too. `hexc ltcg` dumps Visual C++ LTCG
+tabular ones `-csv` or `-tsv` too. `hexcavator ltcg` dumps Visual C++ LTCG
 objects (`/GL`), and libraries of them: the compiler's intermediate
 language, undocumented, read as far as it is known (the back end and its
 command line, the source files and their checksums, the linker
@@ -226,25 +226,25 @@ directives, the functions and variables, and the CodeView types).
 ### Size analysis
 
 ```
-hexc size app.exe                          # sections (and COFF groups), libraries, compilands, by its debug information
-hexc size -d sections,symbols app.exe      # bloaty-style: every byte, by data sources, a level each
-hexc size -d compileunits -n 10 app.exe -- old\app.exe   # a diff against another build
-hexc size -d armembers,symbols foo.lib     # objects, import objects, and libraries need no PDB
-hexc size -d segments,symbols app.elf      # ELF executables, shared objects, objects, and .a archives too
-hexc size -d archs,segments App.app/App    # Mach-O and universal files too
-hexc size -d symbols app.wasm              # and WebAssembly modules
-hexc size -disassemble main app.wasm      # one function's code (PE, ELF, Mach-O, WebAssembly), calls named
-hexc size -d compileunits -debug-file app.debug app  # DWARF in a separate file (a dSYM next to a Mach-O image is found)
-hexc size -d compileunits,symbols app.elf  # ELF compile units from DWARF; symbols demangled (fullsymbols, rawsymbols)
-hexc size -d symbols -source-filter '^std::' app  # only labels a regular expression matches
-hexc size -stripped -d symbols app.elf     # as if stripped: DWARF and .symtab name things but aren't counted
-hexc size -c project.bloaty app             # bloaty config files: custom sources rewriting labels
-hexc size -list-sources                    # sections, segments, groups, symbols, compileunits, ...
-hexc size -findings app.exe                # what wastes space (duplicate data, template bloat), with advice
-hexc size -map app.map app.exe             # no PDB? the linker's map attributes symbols to objects and libraries
-hexc linkerlog link.log -image app.exe     # the largest library members, and why each was linked
-hexc linkerlog link.log -why gshandler.obj # why one was (from `link ... /VERBOSE > link.log`, or lld's --why-extract)
-hexc linkerlog new.log -- old.log          # members linked now and not before, and why
+hexcavator size app.exe                          # sections (and COFF groups), libraries, compilands, by its debug information
+hexcavator size -d sections,symbols app.exe      # bloaty-style: every byte, by data sources, a level each
+hexcavator size -d compileunits -n 10 app.exe -- old\app.exe   # a diff against another build
+hexcavator size -d armembers,symbols foo.lib     # objects, import objects, and libraries need no PDB
+hexcavator size -d segments,symbols app.elf      # ELF executables, shared objects, objects, and .a archives too
+hexcavator size -d archs,segments App.app/App    # Mach-O and universal files too
+hexcavator size -d symbols app.wasm              # and WebAssembly modules
+hexcavator size -disassemble main app.wasm      # one function's code (PE, ELF, Mach-O, WebAssembly), calls named
+hexcavator size -d compileunits -debug-file app.debug app  # DWARF in a separate file (a dSYM next to a Mach-O image is found)
+hexcavator size -d compileunits,symbols app.elf  # ELF compile units from DWARF; symbols demangled (fullsymbols, rawsymbols)
+hexcavator size -d symbols -source-filter '^std::' app  # only labels a regular expression matches
+hexcavator size -stripped -d symbols app.elf     # as if stripped: DWARF and .symtab name things but aren't counted
+hexcavator size -c project.bloaty app             # bloaty config files: custom sources rewriting labels
+hexcavator size -list-sources                    # sections, segments, groups, symbols, compileunits, ...
+hexcavator size -findings app.exe                # what wastes space (duplicate data, template bloat), with advice
+hexcavator size -map app.map app.exe             # no PDB? the linker's map attributes symbols to objects and libraries
+hexcavator linkerlog link.log -image app.exe     # the largest library members, and why each was linked
+hexcavator linkerlog link.log -why gshandler.obj # why one was (from `link ... /VERBOSE > link.log`, or lld's --why-extract)
+hexcavator linkerlog new.log -- old.log          # members linked now and not before, and why
 ```
 
 Reports print as bloaty prints them, or with `-csv`, `-tsv`, or `-json`.
@@ -252,11 +252,11 @@ Reports print as bloaty prints them, or with `-csv`, `-tsv`, or `-json`.
 ### Queries
 
 ```
-hexc query app.exe "kind=function file>4k sort by file desc limit 20"
-hexc query app.exe "group by library"                       # count, file and memory bytes per library
-hexc query app.exe "name~'^std::' group by compiland limit 10"
-hexc query app.exe "static group by name sort by count desc" # file-scope variables copied into many objects
-hexc query -columns                                         # name, kind, file, vm, rva, section, group, compiland, library, folded, static, source, line
+hexcavator query app.exe "kind=function file>4k sort by file desc limit 20"
+hexcavator query app.exe "group by library"                       # count, file and memory bytes per library
+hexcavator query app.exe "name~'^std::' group by compiland limit 10"
+hexcavator query app.exe "static group by name sort by count desc" # file-scope variables copied into many objects
+hexcavator query -columns                                         # name, kind, file, vm, rva, section, group, compiland, library, folded, static, source, line
 ```
 
 A query is a filter (`column op value`, joined by `and` or a space, `or`,
@@ -268,10 +268,10 @@ the same language.
 ### Dependencies
 
 ```
-hexc deps app.exe                          # what it loads, as a tree, and what's missing
-hexc deps -imports app.exe                 # each library's imported symbols, the missing marked
-hexc deps -problems app.exe                # only what's missing (exit 1 if it won't load)
-hexc deps -sysroot /mnt/linux-root prog    # another system's libraries (an ELF or Mach-O image on Windows)
+hexcavator deps app.exe                          # what it loads, as a tree, and what's missing
+hexcavator deps -imports app.exe                 # each library's imported symbols, the missing marked
+hexcavator deps -problems app.exe                # only what's missing (exit 1 if it won't load)
+hexcavator deps -sysroot /mnt/linux-root prog    # another system's libraries (an ELF or Mach-O image on Windows)
 ```
 
 Like Dependency Walker, for PE, ELF, and Mach-O, from the files alone:
@@ -288,9 +288,9 @@ images, each platform's with a system of stand-ins.
 ### Signatures
 
 ```
-hexc signature app.exe                     # its company, product, and versions; Authenticode: signer, timestamp, chain, and whether it's unchanged and trusted
-hexc signature -json App.app/Contents/MacOS/App   # Apple code signing: each architecture's pages, cdhashes, requirements, Developer ID
-hexc signature -root my-ca.cer app.exe     # trust another root too (DER or PEM)
+hexcavator signature app.exe                     # its company, product, and versions; Authenticode: signer, timestamp, chain, and whether it's unchanged and trusted
+hexcavator signature -json App.app/Contents/MacOS/App   # Apple code signing: each architecture's pages, cdhashes, requirements, Developer ID
+hexcavator signature -root my-ca.cer app.exe     # trust another root too (DER or PEM)
 ```
 
 A Windows binary verifies on macOS or Linux, and a Mac binary on Windows:
@@ -309,17 +309,17 @@ product, versions, copyright; U.S. English where there are several
 languages), or a Mach-O image's versions and Info.plist.
 `tools/signature/version-oracle.ps1` compares those with Windows'
 `FileVersionInfo`: 1,984 of 1,985 agree (Windows takes a localized file's
-strings from its `.mui` satellite, which has its own versions; hexc reads
+strings from its `.mui` satellite, which has its own versions; hexcavator reads
 the file's own, so those are skipped).
 
 ### Resources and metadata
 
 ```
-hexc resources app.exe                     # each resource (by type, name, language) and what it says, in a line
-hexc resources -show VERSION/#1/1033 app.exe   # one decoded: version information, a dialog's controls, a menu, strings, ...
-hexc resources -save GROUP_ICON/#1/1033 app.ico app.exe   # an icon group as an .ico file (a cursor's as .cur, a bitmap as .bmp)
-hexc resources -show Entitlements App.app/Contents/MacOS/App   # a Mach-O image's entitlements (or Info.plist, Versions)
-hexc resources -all -json libfoo.so        # everything, decoded, as JSON: an ELF image's notes and .comment
+hexcavator resources app.exe                     # each resource (by type, name, language) and what it says, in a line
+hexcavator resources -show VERSION/#1/1033 app.exe   # one decoded: version information, a dialog's controls, a menu, strings, ...
+hexcavator resources -save GROUP_ICON/#1/1033 app.ico app.exe   # an icon group as an .ico file (a cursor's as .cur, a bitmap as .bmp)
+hexcavator resources -show Entitlements App.app/Contents/MacOS/App   # a Mach-O image's entitlements (or Info.plist, Versions)
+hexcavator resources -all -json libfoo.so        # everything, decoded, as JSON: an ELF image's notes and .comment
 ```
 
 What a binary holds besides its code, and what it says of itself. A PE
@@ -338,9 +338,9 @@ image's resources. `tools/resources` builds the test's images.
 ### Type layouts
 
 ```
-hexc types app.exe                         # classes, structures, and unions by the bytes their padding wastes
-hexc types -layout Widget app.exe          # one type: bases, vfptr, vbptr, members (bitfields by bit), holes
-hexc types new.exe -- old.exe              # the types whose layout changed between builds
+hexcavator types app.exe                         # classes, structures, and unions by the bytes their padding wastes
+hexcavator types -layout Widget app.exe          # one type: bases, vfptr, vbptr, members (bitfields by bit), holes
+hexcavator types new.exe -- old.exe              # the types whose layout changed between builds
 ```
 
 Layouts come from the PDB's type records (an image's, or a PDB given
@@ -353,10 +353,10 @@ the PDB is marked incomplete rather than counted as padding. On clang's
 ### Inlining and source files
 
 ```
-hexc inlines app.exe                       # functions inlined into the code, by their copies' bytes
-hexc inlines -inlinee "Twine::Twine" app.exe   # one function's copies, by the function each is in
-hexc sourcefiles app.exe                   # the code by source file (headers too)
-hexc sourcefiles -file "DenseMap\.h$" app.exe  # one file's code, by line
+hexcavator inlines app.exe                       # functions inlined into the code, by their copies' bytes
+hexcavator inlines -inlinee "Twine::Twine" app.exe   # one function's copies, by the function each is in
+hexcavator sourcefiles app.exe                   # the code by source file (headers too)
+hexcavator sourcefiles -file "DenseMap\.h$" app.exe  # one file's code, by line
 ```
 
 Inline sites come from the PDB's `S_INLINESITE` records and their binary
@@ -370,9 +370,9 @@ code counts where it was inlined. On clang: 4.3 million inline sites of
 ### What runs before main
 
 ```
-hexc init app.exe                          # what runs when it loads, before main, in order, with what each calls
-hexc init -depth 4 libfoo.so               # a library: what runs when it's loaded, callees four levels down
-hexc init -json app.exe                    # as JSON (hexc init -json -callees <node>: what a function calls)
+hexcavator init app.exe                          # what runs when it loads, before main, in order, with what each calls
+hexcavator init -depth 4 libfoo.so               # a library: what runs when it's loaded, callees four levels down
+hexcavator init -json app.exe                    # as JSON (hexcavator init -json -callees <node>: what a function calls)
 ```
 
 The phases in the order they run, from the image and its debug
@@ -388,10 +388,10 @@ calls them (a tail call marked). `tools/init` builds the test's images.
 ### Symbolizing addresses and crash logs
 
 ```
-hexc symbolize app.exe 0x140001043                   # function, file:line, and inlined functions, innermost first
-hexc symbolize app.exe@0x7ff6a1b20000 0x7ff6a1b21043 # an address as loaded at a base
-hexc symbolize libfoo.so libfoo.so+0x1a2b            # an offset from the image's start
-hexc symbolize app.exe@0x7ff6a1b20000 helper.dll@0x7ffb10c40000 < crash.txt   # a log, each address annotated
+hexcavator symbolize app.exe 0x140001043                   # function, file:line, and inlined functions, innermost first
+hexcavator symbolize app.exe@0x7ff6a1b20000 0x7ff6a1b21043 # an address as loaded at a base
+hexcavator symbolize libfoo.so libfoo.so+0x1a2b            # an offset from the image's start
+hexcavator symbolize app.exe@0x7ff6a1b20000 helper.dll@0x7ffb10c40000 < crash.txt   # a log, each address annotated
 ```
 
 A lookup reads only what holds the address: a PDB's module (by the section
@@ -401,7 +401,7 @@ DIEs). Inline frames come from `S_INLINESITE` annotations or
 `DW_TAG_inlined_subroutine`s, each frame's line where the call inlined into
 it is. Without debug information, the image's own symbols name addresses
 (exports, ELF and Mach-O symbol tables). On every byte of the source lines
-test program's code, hexc answers as DIA does (the PE image) and as
+test program's code, hexcavator answers as DIA does (the PE image) and as
 llvm-symbolizer does (ELF, plain and split DWARF); see
 `tools/lines/symbolize-oracle.py`. On clang's 1.4 GB PDB, three addresses
 take about 90 ms; 1,000 random addresses in .NET's `libcoreclr.so` about
@@ -410,15 +410,15 @@ take about 90 ms; 1,000 random addresses in .NET's `libcoreclr.so` about
 ### Annotations, batches, and findings compared
 
 ```
-hexc annotations app.exe                   # strings code attached to addresses (__annotation), with file:line
-hexc batch -r -findings C:\build\bin > sizes.jsonl   # one JSON line per image: sections, libraries, compilands, findings
-hexc size -findings new.exe -- old.exe     # each finding's change from a base build, item by item
+hexcavator annotations app.exe                   # strings code attached to addresses (__annotation), with file:line
+hexcavator batch -r -findings C:\build\bin > sizes.jsonl   # one JSON line per image: sections, libraries, compilands, findings
+hexcavator size -findings new.exe -- old.exe     # each finding's change from a base build, item by item
 ```
 
 ### Recommendations
 
 ```
-hexc recommend app.exe          # build changes that would make the image smaller, each with its saving
+hexcavator recommend app.exe          # build changes that would make the image smaller, each with its saving
 ```
 
 Each recommendation is measured from the image and its debug information,
@@ -440,13 +440,13 @@ can't be rebuilt.
 ### Cross-references
 
 ```
-hexc xref app.exe                          # references, roots, and what no root reaches
-hexc xref -why "Square::area" app.exe      # the chain from a root: why a function or datum is in the image
-hexc xref -refs "Square::\`vftable'" app.exe  # what refers to it, and what it refers to
-hexc xref -unreachable -n 0 app.exe        # everything no root reaches, largest first
-hexc xref -vtables app.exe                 # vtables no constructor or destructor stores, and what refers to them
-hexc xref -identical app.exe               # functions /OPT:ICF could have folded but didn't
-hexc xref app.exe -- old\app.exe           # functions unchanged, changed, renamed (by fingerprint), added, removed
+hexcavator xref app.exe                          # references, roots, and what no root reaches
+hexcavator xref -why "Square::area" app.exe      # the chain from a root: why a function or datum is in the image
+hexcavator xref -refs "Square::\`vftable'" app.exe  # what refers to it, and what it refers to
+hexcavator xref -unreachable -n 0 app.exe        # everything no root reaches, largest first
+hexcavator xref -vtables app.exe                 # vtables no constructor or destructor stores, and what refers to them
+hexcavator xref -identical app.exe               # functions /OPT:ICF could have folded but didn't
+hexcavator xref app.exe -- old\app.exe           # functions unchanged, changed, renamed (by fingerprint), added, removed
 ```
 
 Fingerprints (`hexcavator-fingerprint`) hash each function's instructions
@@ -463,7 +463,7 @@ functions by name, then the rest by fingerprint (renamed); a function is
 unchanged if its code is and it refers to the same things, or their
 renamed pairs.
 
-`hexc xref` builds a graph of a PE image (x64, x86, ARM64) from its PDB's
+`hexcavator xref` builds a graph of a PE image (x64, x86, ARM64) from its PDB's
 symbols, its code (direct calls and branches, RIP-relative and
 image-relative operands, ARM64 `ADRP` pairs), its base relocations
 (pointers in data, such as vtable slots), and its exception data (a
@@ -491,14 +491,14 @@ reference patterns found by checking the rest against clang's object files'
 relocations (MSVC's tables by image offset, scaled and with the base added
 after, and across forward jumps) are in `crates/analysis/xref/src/scan.rs`.
 
-`hexc mcp` serves the same analysis to LLM agents over the Model Context
+`hexcavator mcp` serves the same analysis to LLM agents over the Model Context
 Protocol (stdio), with tools `size_report`, `symbols`, `findings`, `why`, `recommend`,
 `linker_log`, `query`, and `lookup`; the
 first question about an image reads its PDB, and later ones reuse it. For
 example, for Claude Code:
 
 ```
-claude mcp add hexc -- C:\path\to\hexc.exe mcp
+claude mcp add hexcavator -- C:\path\to\hexcavator.exe mcp
 ```
 
 ## License
@@ -512,7 +512,7 @@ tables (generated from Intel XED's data). Those parts also carry their
 sources' licenses, all permissive. The crate holding each part has its
 source's license file (`LICENSE-LLVM`, `LICENSE-SWIFT`, `LICENSE-ARM`,
 `NOTICE-XED`), and [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
-says what came from where. `hexc licenses` prints the notices of
+says what came from where. `hexcavator licenses` prints the notices of
 everything the program includes. The licenses test keeps that list
 current, checks each crate's `license` against its license files, and
 allows only permissive licenses.

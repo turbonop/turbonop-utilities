@@ -1,7 +1,7 @@
 // The Hexcavator sidebar: the binaries and diffs opened. A binary's items
 // say what it is (Headers, File Format, Build Information, Debug
 // Information) and open its contents (the Symbols, Types, and Sources
-// pages); Compare adds a diff; the other queries (each with its hexc
+// pages); Compare adds a diff; the other queries (each with its hexcavator
 // command line, Findings among them) are under Miscellaneous Queries; and
 // the answers asked for (why a symbol is there, what refers to it) follow.
 "use strict";
@@ -9,7 +9,7 @@
 const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
-const h = require("./lib/hexc.js");
+const h = require("./lib/hexcavator.js");
 
 /** Whether `p` is a folder. */
 function isFolder(p) {
@@ -45,7 +45,7 @@ const OUT_SCHEME = "hexc-out";
 
 const keyOf = (entry) => `${entry.file}\u0000${entry.base || ""}`;
 
-/** hexc's output as a read-only document (`hexc-out:` URIs). */
+/** hexcavator's output as a read-only document (`hexc-out:` URIs). */
 class OutputProvider {
   constructor(runHexc) {
     this.runHexc = runHexc;
@@ -219,9 +219,9 @@ class Sidebar {
   }
 
   /**
-   * What hexc says `file` (the entry's, or its base's) supports: its
-   * format, debug information, and tools (`hexc info -json`); what its
-   * name suggests if hexc can't say.
+   * What hexcavator says `file` (the entry's, or its base's) supports: its
+   * format, debug information, and tools (`hexcavator info -json`); what its
+   * name suggests if hexcavator can't say.
    */
   caps(entry, which = "file") {
     const file = which === "base" ? entry.base : entry.file;
@@ -234,7 +234,7 @@ class Sidebar {
     return this.value(entry, which + "Caps") || h.capsFallback();
   }
 
-  /** The functions of a diff's builds compared (`hexc xref -- base`). */
+  /** The functions of a diff's builds compared (`hexcavator xref -- base`). */
   functionsDiff(entry) {
     return this.once(entry, "fdiff", ["xref", "-json", "-n", "500", entry.file, "--", entry.base], JSON.parse);
   }
@@ -261,7 +261,7 @@ class Sidebar {
   }
 
   /** The source file and line of the symbol `name`, if the debug information has them. */
-  /** Where function `name` is defined (hexc size -definition): its file and line, or null. */
+  /** Where function `name` is defined (hexcavator size -definition): its file and line, or null. */
   async sourceOf(entry, name) {
     try {
       return await this.once(entry, "source:" + name, ["size", "-definition", name, "-json", entry.file], (out) => {
@@ -476,7 +476,7 @@ class Sidebar {
         const item = new vscode.TreeItem("Recommendations", C.Collapsed);
         item.id = "recs:" + keyOf(node.entry);
         item.iconPath = icon("lightbulb", "charts.yellow");
-        item.tooltip = "Build changes that would make it smaller, each measured (hexc recommend)";
+        item.tooltip = "Build changes that would make it smaller, each measured (hexcavator recommend)";
         const r = this.value(node.entry, "recs");
         if (r) {
           item.description = r.saving ? `save ${h.formatSize(r.saving)}` : "none";
@@ -528,7 +528,7 @@ class Sidebar {
         const item = new vscode.TreeItem("Functions", C.Collapsed);
         item.id = "fdiff:" + keyOf(node.entry);
         item.iconPath = icon("symbol-method");
-        item.tooltip = "The functions of the two builds compared: by name the same or changed, then by fingerprint renamed (the same code under another name), and the rest added or removed (hexc xref -- base)";
+        item.tooltip = "The functions of the two builds compared: by name the same or changed, then by fingerprint renamed (the same code under another name), and the rest added or removed (hexcavator xref -- base)";
         const d = this.value(node.entry, "fdiff");
         if (d) {
           item.description = h.functionsSummary(d);
@@ -619,7 +619,7 @@ class Sidebar {
 }
 
 function failure(e) {
-  return { type: "info", label: "hexc failed", description: e.message.split("\n")[0], tooltip: e.message, icon: "error", color: "errorForeground" };
+  return { type: "info", label: "hexcavator failed", description: e.message.split("\n")[0], tooltip: e.message, icon: "error", color: "errorForeground" };
 }
 
 /** An icon for a report level's rows, by its data source. */
@@ -646,11 +646,11 @@ function levelIcon(source) {
 
 /**
  * Asks for a symbol (or a function, or a type) of `entry`, from a list
- * hexc gives, largest first; a name typed that is not listed is taken as
+ * hexcavator gives, largest first; a name typed that is not listed is taken as
  * given.
  */
 async function askName(sidebar, entry, what) {
-  // (A list to pick from needs the symbols hexc's queries give.)
+  // (A list to pick from needs the symbols hexcavator's queries give.)
   const listed = h.can(await sidebar.caps(entry), "query");
   if (!listed || what === "query") {
     return vscode.window.showInputBox({
@@ -696,7 +696,7 @@ async function askName(sidebar, entry, what) {
     },
     (e) => {
       qp.busy = false;
-      qp.placeholder = `hexc could not list them (${e.message.split("\n")[0]}): type a name`;
+      qp.placeholder = `hexcavator could not list them (${e.message.split("\n")[0]}): type a name`;
     }
   );
   return new Promise((resolve) => {
@@ -958,8 +958,8 @@ function register(context, deps) {
         return;
       }
       const exe = h.hexcPath(vscode.workspace.getConfiguration("hexcavator").get("path"));
-      // hexc itself, not a shell: nothing to quote.
-      const term = vscode.window.createTerminal({ name: `hexc ${args[0]}`, shellPath: exe, shellArgs: args, isTransient: true });
+      // hexcavator itself, not a shell: nothing to quote.
+      const term = vscode.window.createTerminal({ name: `hexcavator ${args[0]}`, shellPath: exe, shellArgs: args, isTransient: true });
       term.show();
     }),
     cmd("hexcavator.removeResult", (node) => node && sidebar.removeResult(node.entry, node.result)),
@@ -1011,7 +1011,7 @@ function register(context, deps) {
       try {
         await openDefinition(await sidebar.sourceOf(s.entry, s.name), s.name, s.entry.file);
       } catch (e) {
-        vscode.window.showErrorMessage(`hexc: ${e.message}`);
+        vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
       }
     })
   );
@@ -1048,7 +1048,7 @@ function sourceMaps() {
 
 /**
  * Where the source file a binary (`binary`) records as `recorded` is on
- * this machine (see lib/hexc.js localSource): looked for under the
+ * this machine (see lib/hexcavator.js localSource): looked for under the
  * workspace's folders and the binary's directories; `null` if nowhere.
  */
 function findSource(recorded, binary) {
@@ -1062,7 +1062,7 @@ function findSource(recorded, binary) {
   return h.localSource(recorded, sourceMaps(), roots);
 }
 
-/** `hexc info -json`'s answer for `file`, else what its name suggests. */
+/** `hexcavator info -json`'s answer for `file`, else what its name suggests. */
 function parseCaps(out, file) {
   try {
     const all = JSON.parse(out);
@@ -1073,11 +1073,11 @@ function parseCaps(out, file) {
   }
 }
 
-/** What hexc says files support, outside the sidebar's entries, by path. */
+/** What hexcavator says files support, outside the sidebar's entries, by path. */
 const looseCaps = new Map();
 
 /**
- * What hexc says `file` supports (`hexc info -json`), with `runHexc`; kept
+ * What hexcavator says `file` supports (`hexcavator info -json`), with `runHexc`; kept
  * for a minute (a rebuilt file may say otherwise).
  */
 function capsOf(file, runHexc) {

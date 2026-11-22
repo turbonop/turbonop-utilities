@@ -110,7 +110,7 @@ function sortableTable(columns, rows, options) {
   return table;
 }
 
-// ------------------------------------------------- hexc's JSON as tables
+// ------------------------------------------------- hexcavator's JSON as tables
 
 /** Keys that hold sizes in bytes. */
 const SIZE_KEY = /^(size|bytes|waste|padding|bitPadding|file|vm|saving|wasted|wasted_file|wasted_vm|file_size|vm_size|per_slot|oldSize|newSize|withoutCodeSize|unreachableSize|base|new)$|Size$/;
@@ -142,7 +142,7 @@ function cellText(v) {
 }
 
 /**
- * hexc's JSON as tables: each list of objects in it (at the top, or in an
+ * hexcavator's JSON as tables: each list of objects in it (at the top, or in an
  * object at the top) a table, its columns the objects' keys; and the
  * numbers and words beside them a summary. `sizes` tells which columns
  * hold sizes.

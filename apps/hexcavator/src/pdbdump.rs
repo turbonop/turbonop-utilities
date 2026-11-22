@@ -1,4 +1,4 @@
-//! `hexc pdb`: dumps PDB contents.
+//! `hexcavator pdb`: dumps PDB contents.
 
 use std::io::{self, Write};
 use std::process::ExitCode;
@@ -9,7 +9,7 @@ use hexcavator_codeview::types::{Field, TypeFormatter, leaf};
 use hexcavator_pdb::{Pdb, info::format_guid};
 
 pub const USAGE: &str = "\
-usage: hexc pdb [options] <file>
+usage: hexcavator pdb [options] <file>
 
 Dumps a PDB: the file given, or (given an image) the one found for it, as
 every command finds an image's debug information (-debug gives it).
@@ -29,7 +29,7 @@ options:
   -find <name>      look up a global, public, and type by name
   -addr <sec:off>   the public symbol and source line at an address
   -lookup <address> the same, at an address relative to the image (an RVA,
-                    hexadecimal), as hexc dwarf -lookup takes one
+                    hexadecimal), as hexcavator dwarf -lookup takes one
   -debug <path>     the image's PDB, if it isn't found from the image
   -all              everything above except -find/-addr/-lookup
   -diaformat        the line format of tools/diadump (for comparison tests)";
@@ -98,7 +98,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 }) {
                     Some(a) => o.addr.push(a),
                     None => {
-                        ereport!("hexc pdb: -addr: not <section>:<offset> (hex): '{v}'");
+                        ereport!("hexcavator pdb: -addr: not <section>:<offset> (hex): '{v}'");
                         return ExitCode::from(2);
                     }
                 }
@@ -109,7 +109,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 match u32::from_str_radix(hex, 16) {
                     Ok(a) => o.lookup.push(a),
                     Err(_) => {
-                        ereport!("hexc pdb: -lookup: not an address (hex): '{v}'");
+                        ereport!("hexcavator pdb: -lookup: not an address (hex): '{v}'");
                         return ExitCode::from(2);
                     }
                 }
@@ -117,7 +117,7 @@ pub fn run(args: &[String]) -> ExitCode {
             "debug" | "pdb" => debug = it.next().map(std::path::PathBuf::from),
             _ if !a.starts_with('-') => path = Some(a.clone()),
             _ => {
-                ereport!("hexc pdb: unknown option '{a}'\n\n{USAGE}");
+                ereport!("hexcavator pdb: unknown option '{a}'\n\n{USAGE}");
                 return ExitCode::from(2);
             }
         }
@@ -142,14 +142,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let map = match pdb_of(std::path::Path::new(&path), debug.as_deref()) {
         Ok(m) => m,
         Err(e) => {
-            ereport!("hexc: {e}");
+            ereport!("hexcavator: {e}");
             return ExitCode::FAILURE;
         }
     };
     let pdb = match Pdb::parse(&map) {
         Ok(p) => p,
         Err(e) => {
-            ereport!("hexc: {path}: {e}");
+            ereport!("hexcavator: {path}: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -167,7 +167,7 @@ pub fn run(args: &[String]) -> ExitCode {
                         .push((u16::try_from(i + 1).unwrap_or(u16::MAX), rva - va));
                 }
                 None => {
-                    ereport!("hexc pdb: {rva:#x} is in none of the image's sections");
+                    ereport!("hexcavator pdb: {rva:#x} is in none of the image's sections");
                     return ExitCode::FAILURE;
                 }
             }
@@ -189,7 +189,7 @@ pub fn run(args: &[String]) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(e) => {
-            ereport!("hexc: {e}");
+            ereport!("hexcavator: {e}");
             ExitCode::FAILURE
         }
     }
@@ -463,7 +463,7 @@ fn pdb_of(
     let (found, pdb) = hexcavator_program::find_debug(path, &image, debug)?;
     if Pdb::parse(&pdb).is_err() {
         return Err(format!(
-            "{}: its debug information ({}) isn't a PDB (hexc dwarf reads DWARF)",
+            "{}: its debug information ({}) isn't a PDB (hexcavator dwarf reads DWARF)",
             show(path),
             show(&found)
         ));

@@ -1,5 +1,5 @@
 // The Relocations page: what the loader patches when it loads a binary
-// (hexc relocations -json): its relocation tables, then the relocations
+// (hexcavator relocations -json): its relocation tables, then the relocations
 // by type, by the section and the data (or code) each patches, and by what
 // each points to; and the tables of pointers that offsets could replace.
 // Each is a card with a sortable table; sizes are each relocation's share
@@ -122,7 +122,7 @@
     }
     if (m.kind === "failed") {
       if (!state.report) {
-        $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexc failed")), el("div", { class: "path" }, m.message || ""));
+        $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexcavator failed")), el("div", { class: "path" }, m.message || ""));
       }
       return;
     }

@@ -1,5 +1,5 @@
 //! The fuzzer's targets: each takes an input's bytes and runs everything
-//! that reads that kind of input. File formats run every `hexc` command
+//! that reads that kind of input. File formats run every `hexcavator` command
 //! that reads them (in-process, on a scratch file); the rest (demanglers,
 //! decoders, text formats) are called directly.
 //!
@@ -38,9 +38,9 @@ impl Scratch {
     }
 }
 
-/// Runs `hexc` with `args`, as the command line would (its output goes
+/// Runs `hexcavator` with `args`, as the command line would (its output goes
 /// to the child's standard output, which the supervisor discards).
-fn hexc(args: &[&str]) {
+fn hexcavator(args: &[&str]) {
     let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
     let _ = hexcavator::run(&args);
 }
@@ -177,15 +177,15 @@ fn image(data: &[u8]) {
 fn pe(data: &[u8], s: &Scratch) {
     image(data);
     let f = s.file("input-pe.bin", data);
-    hexc(&["dump", "/all", "/nopdb", &f]);
-    hexc(&["size", "-d", "sections,segments", "-n", "0", &f]);
-    hexc(&["info", &f]);
-    hexc(&["batch", &f]);
-    hexc(&["checksec", "-json", &f]);
-    hexc(&["signature", "-json", &f]);
-    hexc(&["signature", &f]);
-    hexc(&["deps", "-json", "-imports", &f]);
-    hexc(&[
+    hexcavator(&["dump", "/all", "/nopdb", &f]);
+    hexcavator(&["size", "-d", "sections,segments", "-n", "0", &f]);
+    hexcavator(&["info", &f]);
+    hexcavator(&["batch", &f]);
+    hexcavator(&["checksec", "-json", &f]);
+    hexcavator(&["signature", "-json", &f]);
+    hexcavator(&["signature", &f]);
+    hexcavator(&["deps", "-json", "-imports", &f]);
+    hexcavator(&[
         "symbolize",
         &f,
         "0x1000",
@@ -201,9 +201,9 @@ fn coff(data: &[u8], s: &Scratch) {
         debug_info(&pdb);
     }
     let f = s.file("input-coff.bin", data);
-    hexc(&["dump", "/all", &f]);
-    hexc(&["size", "-d", "sections,symbols,armembers", "-n", "0", &f]);
-    hexc(&["query", &f, "kind!=public"]);
+    hexcavator(&["dump", "/all", &f]);
+    hexcavator(&["size", "-d", "sections,symbols,armembers", "-n", "0", &f]);
+    hexcavator(&["query", &f, "kind!=public"]);
 }
 
 fn ltcg(data: &[u8], s: &Scratch) {
@@ -214,34 +214,34 @@ fn ltcg(data: &[u8], s: &Scratch) {
         let _ = o.types();
     }
     let f = s.file("input-ltcg.bin", data);
-    hexc(&["ltcg", "-all", &f]);
-    hexc(&["dump", "/all", &f]);
-    hexc(&["info", &f]);
+    hexcavator(&["ltcg", "-all", &f]);
+    hexcavator(&["dump", "/all", &f]);
+    hexcavator(&["info", &f]);
 }
 
 fn archive(data: &[u8], s: &Scratch) {
     let f = s.file("input-archive.bin", data);
-    hexc(&["dump", "/all", &f]);
-    hexc(&["size", "-d", "armembers,sections,symbols", "-n", "0", &f]);
+    hexcavator(&["dump", "/all", &f]);
+    hexcavator(&["size", "-d", "armembers,sections,symbols", "-n", "0", &f]);
 }
 
 fn unix(name: &str, data: &[u8], s: &Scratch) {
     image(data);
     debug_info(data);
     let f = s.file(name, data);
-    hexc(&["size", "-d", SIZE_SOURCES, "-n", "0", &f]);
-    hexc(&["size", "-d", "symbols", "-n", "0", "-csv", &f]);
-    hexc(&["info", &f]);
-    hexc(&["info", "-json", &f]);
-    hexc(&["checksec", "-audit", &f]);
-    hexc(&["dump", "-all", &f]);
-    hexc(&["checksec", "-json", &f]);
-    hexc(&["signature", "-json", &f]);
-    hexc(&["dwarf", "-all", &f]);
-    hexc(&["dwarf", "-lookup", "0x1000", &f]);
-    hexc(&["dwarf", "-find", "main", &f]);
-    hexc(&["deps", "-json", &f]);
-    hexc(&[
+    hexcavator(&["size", "-d", SIZE_SOURCES, "-n", "0", &f]);
+    hexcavator(&["size", "-d", "symbols", "-n", "0", "-csv", &f]);
+    hexcavator(&["info", &f]);
+    hexcavator(&["info", "-json", &f]);
+    hexcavator(&["checksec", "-audit", &f]);
+    hexcavator(&["dump", "-all", &f]);
+    hexcavator(&["checksec", "-json", &f]);
+    hexcavator(&["signature", "-json", &f]);
+    hexcavator(&["dwarf", "-all", &f]);
+    hexcavator(&["dwarf", "-lookup", "0x1000", &f]);
+    hexcavator(&["dwarf", "-find", "main", &f]);
+    hexcavator(&["deps", "-json", &f]);
+    hexcavator(&[
         "symbolize",
         "-json",
         &f,
@@ -250,14 +250,14 @@ fn unix(name: &str, data: &[u8], s: &Scratch) {
         "0x100000f00",
         "0x10",
     ]);
-    hexc(&["init", "-json", &f]);
-    hexc(&["init", "-depth", "8", &f]);
-    hexc(&["resources", "-all", &f]);
-    hexc(&["resources", "-all", "-json", &f]);
+    hexcavator(&["init", "-json", &f]);
+    hexcavator(&["init", "-depth", "8", &f]);
+    hexcavator(&["resources", "-all", &f]);
+    hexcavator(&["resources", "-all", "-json", &f]);
     // Each function's code, by the names its symbols give.
     for name in ["main", "compute", "jumps", "_main", "add", "square"] {
-        hexc(&["size", "-disassemble", name, &f]);
-        hexc(&["size", "-disassemble", name, "-json", &f]);
+        hexcavator(&["size", "-disassemble", name, &f]);
+        hexcavator(&["size", "-disassemble", name, "-json", &f]);
     }
 }
 
@@ -297,12 +297,12 @@ fn wasm(data: &[u8], s: &Scratch) {
 
 fn pdb(data: &[u8], s: &Scratch) {
     let f = s.file("input-pdb.bin", data);
-    hexc(&["pdb", "-all", &f]);
-    hexc(&["types", "-n", "0", &f]);
+    hexcavator(&["pdb", "-all", &f]);
+    hexcavator(&["types", "-n", "0", &f]);
     debug_info(data);
 }
 
-/// A 16-bit NE or linear (LE/LX) executable: every table, and hexc info.
+/// A 16-bit NE or linear (LE/LX) executable: every table, and hexcavator info.
 fn legacy(data: &[u8], s: &Scratch) {
     if let Ok(ne) = hexcavator_ne::NeFile::parse(data) {
         for seg in ne.segments() {
@@ -331,8 +331,8 @@ fn legacy(data: &[u8], s: &Scratch) {
         }
     }
     let f = s.file("input-legacy.bin", data);
-    hexc(&["info", &f]);
-    hexc(&["dump", &f]);
+    hexcavator(&["info", &f]);
+    hexcavator(&["dump", &f]);
 }
 
 /// A split DWARF file (a `.dwo`, or a `.dwp`), read with the skeletons of
@@ -444,7 +444,7 @@ fn text(data: &[u8], s: &Scratch) {
     let _ = hexcavator_linkmap::parse(&text);
     let _ = hexcavator_linkerlog::parse(&text);
     let f = s.file("input-text.bin", data);
-    hexc(&["linkerlog", &f]);
+    hexcavator(&["linkerlog", &f]);
 }
 
 fn etl(data: &[u8], _: &Scratch) {
@@ -712,7 +712,7 @@ pub const TARGETS: &[Target] = &[
     },
     Target {
         name: "ltcg",
-        about: "LTCG (/GL) objects: hexc ltcg, dump, info",
+        about: "LTCG (/GL) objects: hexcavator ltcg, dump, info",
         seeds: is_ltcg,
         run: ltcg,
     },

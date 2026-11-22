@@ -25,7 +25,7 @@ set CF=-g -O1 -ffreestanding -nostdlib -fno-ident -fuse-ld=lld -ffunction-sectio
 set OF=-g -O1 -ffreestanding -fno-ident -ffunction-sections -fdata-sections -c
 "%LLVM_BIN%\clang.exe" --target=x86_64-w64-windows-gnu %OF% "%~dp0program.c" -o program.o || exit /b 1
 "%LLVM_BIN%\clang.exe" --target=aarch64-w64-windows-gnu %OF% "%~dp0program.c" -o program-arm64.o || exit /b 1
-rem dumpbin's view of each symbol table, which hexc dump -symbols matches.
+rem dumpbin's view of each symbol table, which hexcavator dump -symbols matches.
 for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VS=%%i
 call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" amd64 >nul 2>&1 || exit /b 1
 for %%f in (program.exe library.dll weak.o weak-arm64.o weak.obj) do (

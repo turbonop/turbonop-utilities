@@ -1,4 +1,4 @@
-//! `hexc size`: what the bytes of an image are, by section (and COFF
+//! `hexcavator size`: what the bytes of an image are, by section (and COFF
 //! group), library, and compiland, of any format; or, with `-d`, a
 //! bloaty-style report by any data sources, optionally as a diff against a
 //! base image.
@@ -15,7 +15,7 @@ use hexcavator_size::sources::{self, Source};
 use hexcavator_size::{Model, NO_GROUP, Size, report, symbols};
 
 pub const USAGE: &str = "\
-usage: hexc size [options] <image>... [-- <base image>...]
+usage: hexcavator size [options] <image>... [-- <base image>...]
 
 Attributes an image's bytes (PE, ELF, Mach-O, or WebAssembly) to sections
 (and a PE image's COFF groups), libraries, and compilands, using its debug
@@ -1272,14 +1272,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc size: {e}\n\n{USAGE}");
+            ereport!("hexcavator size: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match analyze(&options) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            ereport!("hexc size: {e}");
+            ereport!("hexcavator size: {e}");
             ExitCode::FAILURE
         }
     }
@@ -1357,7 +1357,7 @@ fn customized(
 
 /// The maps of `sources` for the image at `path` (with the files given
 /// for it), as if stripped if `stripped`: kept in memory, if what is built
-/// is (`hexc serve`), until the files change. (A PDB found, not given, is
+/// is (`hexcavator serve`), until the files change. (A PDB found, not given, is
 /// the image's: the image changes when it is relinked.)
 pub(crate) fn maps_of(
     path: &Path,
@@ -1802,7 +1802,7 @@ fn analyze(options: &Options) -> Result<(), String> {
     if options.version {
         return finish(writeln!(
             crate::out::stdout(),
-            "hexc {}",
+            "hexcavator {}",
             env!("CARGO_PKG_VERSION")
         ));
     }
@@ -1974,7 +1974,7 @@ fn analyze(options: &Options) -> Result<(), String> {
     finish(result.and_then(|()| out.flush()))
 }
 
-/// How `hexc size` reports the image of `options` without data sources
+/// How `hexcavator size` reports the image of `options` without data sources
 /// given: `None` by data sources (an object or library; an image with a
 /// Unix linker's map, or whose debug information isn't found); else by its
 /// model, with its debug information opened (`Some(None)`: a PE image's
@@ -2017,7 +2017,7 @@ fn default_program(
         // Without debug information: its data sources, which its own
         // structures and symbols label.
         Err(e @ hexcavator_program::Error::NoDebug { .. }) if debug.is_none() && !wants_model => {
-            ereport!("hexc size: {e}: reporting by sections (give it with -debug)");
+            ereport!("hexcavator size: {e}: reporting by sections (give it with -debug)");
             Ok(None)
         }
         // (A module's source map, given, isn't debug information that a

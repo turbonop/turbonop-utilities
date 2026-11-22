@@ -1,4 +1,4 @@
-//! `hexc types`: the layouts of a program's classes, structures, and unions
+//! `hexcavator types`: the layouts of a program's classes, structures, and unions
 //! (from its debug information: a PDB, or DWARF), and the bytes their
 //! padding wastes.
 
@@ -13,7 +13,7 @@ use hexcavator_mmap::Mmap;
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-usage: hexc types [options] <image or debug file> [-- <base image or debug file>]
+usage: hexcavator types [options] <image or debug file> [-- <base image or debug file>]
 
 The classes, structures, and unions of a program (from its PDB or DWARF),
 by the bytes their padding wastes; or one type's layout: each base, vfptr,
@@ -138,14 +138,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc types: {e}\n\n{USAGE}");
+            ereport!("hexcavator types: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match report(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc types: {e}");
+            ereport!("hexcavator types: {e}");
             ExitCode::FAILURE
         }
     }
@@ -177,7 +177,7 @@ pub(crate) fn with_layouts<R>(
 }
 
 /// `with_layouts`, the debug information read (from `files`: the image
-/// first, then its debug files). The layouts are kept (`hexc serve` keeps
+/// first, then its debug files). The layouts are kept (`hexcavator serve` keeps
 /// them for the next command) until the files change.
 fn layouts_of<R>(
     debug: &DebugInfo<'_>,

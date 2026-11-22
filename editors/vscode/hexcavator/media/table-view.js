@@ -1,4 +1,4 @@
-// A tool's output as tables (hexc ... -json): its numbers as a summary,
+// A tool's output as tables (hexcavator ... -json): its numbers as a summary,
 // each list as a sortable table with a filter, names that open their
 // symbols, and source paths that open their files. A query's view has
 // its query to edit and run again.
@@ -146,7 +146,7 @@
         { class: "actions" },
         vscode ? el("button", { class: "icon", title: "This command's output as text", onclick: () => post({ command: "openText" }) }, "Open as Text") : null,
         vscode ? el("button", { class: "icon", title: "Copy the command line", onclick: () => post({ command: "copy", text: m.command, what: "the command line" }) }, "Copy Command") : null,
-        vscode ? el("button", { class: "icon", title: "Run hexc again", onclick: () => post({ command: "refresh" }) }, "⟳") : null
+        vscode ? el("button", { class: "icon", title: "Run hexcavator again", onclick: () => post({ command: "refresh" }) }, "⟳") : null
       )
     );
     const query =

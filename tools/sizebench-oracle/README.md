@@ -1,7 +1,7 @@
 # sizebench-oracle
 
 Prints SizeBench's analysis of a binary as sorted text lines (format at the
-top of `Program.cs`), to test `hexc`'s size analysis against it.
+top of `Program.cs`), to test `hexcavator`'s size analysis against it.
 
 Requires a SizeBench checkout (<https://github.com/microsoft/SizeBench>) and
 the .NET SDK. Give the checkout's location with

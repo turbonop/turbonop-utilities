@@ -14,7 +14,7 @@
   const post = (m) => vscode && vscode.postMessage(m);
   const $ = (id) => document.getElementById(id);
 
-  // The levels a report can be grouped by (hexc's data sources), as the
+  // The levels a report can be grouped by (hexcavator's data sources), as the
   // grouping chips name them; symbols are always the last level.
   const CHIPS = [
     ["sections", "Section", "the section (or segment) each symbol is in"],
@@ -42,7 +42,7 @@
     invalid: false,
     // The report as the filter leaves it (null: unfiltered).
     filtered: null,
-    // Each symbol's mangled name, by its shown name (hexc size -mangled).
+    // Each symbol's mangled name, by its shown name (hexcavator size -mangled).
     mangled: new Map(),
     showMangled: false,
     selected: -1,
@@ -189,7 +189,7 @@
             )
           : null,
         vscode ? el("button", { class: "icon", title: "Compare with another build…", onclick: () => post({ command: "compare" }) }, "⇄ Compare") : null,
-        vscode ? el("button", { class: "icon", title: "Run hexc again", onclick: () => post({ command: "refresh" }) }, "⟳") : null,
+        vscode ? el("button", { class: "icon", title: "Run hexcavator again", onclick: () => post({ command: "refresh" }) }, "⟳") : null,
         vscode ? el("button", { class: "icon", title: "Export the report", onclick: () => post({ command: "export" }) }, "⤓") : null
       )
     );
@@ -327,7 +327,7 @@
     const available = (id) => id !== "groups" || state.message.format === "pe";
     const apply = (levels) => {
       const m = state.message;
-      // (Made here when the table has each level; else hexc makes the
+      // (Made here when the table has each level; else hexcavator makes the
       // table that has: the source files' is apart, being costly.)
       if (m.table && levels.every((l) => m.table.columns.includes(l))) {
         // (Made here at once; the extension remembers the grouping.)
@@ -412,9 +412,9 @@
   }
 
   /**
-   * A report from hexc's table (`hexc size -table`: a row per distinct set
+   * A report from hexcavator's table (`hexcavator size -table`: a row per distinct set
    * of labels, one per source, with its sizes), grouped by `levels` (in
-   * order), then symbols: the rows summed by those labels, as hexc rolls
+   * order), then symbols: the rows summed by those labels, as hexcavator rolls
    * them up (rows of no size left out; a row whose one child is [None] or
    * [Unmapped], below the top, or has its own name, has none).
    */
@@ -422,7 +422,7 @@
     const columns = [...levels, "symbols"].map((l) => t.columns.indexOf(l)).filter((i) => i >= 0);
     const S = t.strings;
     // (A diff's rows: the change in file and memory size, then the base's
-    // sizes; a row unchanged is left out, as hexc's diffs leave it, but
+    // sizes; a row unchanged is left out, as hexcavator's diffs leave it, but
     // counts in its groups' base sizes.)
     const diff = !!t.diff;
     const root = { name: "TOTAL", file: 0, vm: 0, old_file: 0, old_vm: 0, kids: new Map() };
@@ -736,7 +736,7 @@
     return /^(\.text|\.init|\.fini|\.plt|__text|__stubs|__stub_helper|Code|PAGE|INIT|\.orpc)/i.test(path[i]) ? "code" : "data";
   }
 
-  // What hexc says the file supports (its tools; nothing if it couldn't
+  // What hexcavator says the file supports (its tools; nothing if it couldn't
   // say).
   const can = (tool) => {
     const tools = state.message.tools;
@@ -745,7 +745,7 @@
 
   /**
    * How a row can be opened: "code" (disassembled), "data" (its bytes
-   * and value), "any" (hexc decides), or null (not a symbol, or nothing
+   * and value), "any" (hexcavator decides), or null (not a symbol, or nothing
    * opens it here).
    */
   function openKind(row, path) {
@@ -1281,7 +1281,7 @@
   function renderFindings() {
     const f = state.message.findings;
     const file = state.message.file || "";
-    // Build changes (hexc recommend): each measured, an estimate of the bytes
+    // Build changes (hexcavator recommend): each measured, an estimate of the bytes
     // the change would save. (Not its duplicated variables: Duplicate data,
     // below, lists them.)
     const all = state.message.recommendations;
@@ -1365,7 +1365,7 @@
         `${i.class}: ${[...i.pure_with_one_override.map((n) => n + " (pure, one override)"), ...i.never_overridden.map((n) => n + " (never overridden)")].join("; ")}`,
       ])
     );
-    // Exception handling (hexc recommend's): what it costs each function,
+    // Exception handling (hexcavator recommend's): what it costs each function,
     // and the cleanups nothing a function calls can throw through.
     const eh = all && all.exceptions;
     if (eh) {
@@ -1485,7 +1485,7 @@
     if (m.kind === "failed") {
       // (A grouping this file lacks, say: the report shown stays.)
       if (!state.message) {
-        $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, m.message === "Cancelled" ? "Cancelled" : "hexc failed")), el("div", { class: "path" }, m.message || ""));
+        $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, m.message === "Cancelled" ? "Cancelled" : "hexcavator failed")), el("div", { class: "path" }, m.message || ""));
       }
       return;
     }
@@ -1505,7 +1505,7 @@
     }
     // A refresh keeps the place, where it still exists.
     const keep = state.message && m.refresh && state.message.file === m.file ? state.path : [];
-    // Every label of every symbol at once (hexc size -table): the report
+    // Every label of every symbol at once (hexcavator size -table): the report
     // is made here, by the grouping chosen, and made again when it changes.
     if (m.kind === "report" && m.table) {
       m.report = fromTable(m.table, m.levels || []);

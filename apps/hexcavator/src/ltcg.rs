@@ -1,4 +1,4 @@
-//! `hexc ltcg`: dumps Visual C++ link-time code generation (`/GL`)
+//! `hexcavator ltcg`: dumps Visual C++ link-time code generation (`/GL`)
 //! objects, and the ones in libraries: what their intermediate language
 //! records (see `hexcavator_pe::ltcg`).
 
@@ -11,7 +11,7 @@ use hexcavator_mmap::Mmap;
 use hexcavator_pe::ltcg::{self, DirectiveKind, LtcgObject, Storage, SymbolKind};
 
 pub const USAGE: &str = "\
-usage: hexc ltcg [options] <file>...
+usage: hexcavator ltcg [options] <file>...
 
 Dumps Visual C++ LTCG objects (compiled with /GL), and those in libraries:
 the intermediate language the linker hands to the compiler's back end.
@@ -65,7 +65,7 @@ pub fn run(args: &[String]) -> ExitCode {
             }
             "h" | "help" => return crate::out::print(format!("{USAGE}\n").as_bytes()),
             _ => {
-                ereport!("hexc ltcg: unknown option '{a}'\n\n{USAGE}");
+                ereport!("hexcavator ltcg: unknown option '{a}'\n\n{USAGE}");
                 return ExitCode::from(2);
             }
         }
@@ -96,12 +96,12 @@ pub fn run(args: &[String]) -> ExitCode {
             Ok(Ok(())) => {}
             Ok(Err(message)) => {
                 let _ = out.flush();
-                ereport!("hexc: {path}: {message}");
+                ereport!("hexcavator: {path}: {message}");
                 ok = false;
             }
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => return ExitCode::SUCCESS,
             Err(e) => {
-                ereport!("hexc: {e}");
+                ereport!("hexcavator: {e}");
                 return ExitCode::FAILURE;
             }
         }

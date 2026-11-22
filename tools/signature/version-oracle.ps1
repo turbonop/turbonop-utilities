@@ -1,10 +1,10 @@
-# Compares hexc signature's version details (a PE image's version resource)
+# Compares hexcavator signature's version details (a PE image's version resource)
 # with Windows' own reader (FileVersionInfo) on the PE files under the given
 # directories: company, description, product, versions, copyright, original
 # name, and the binary versions. Files whose strings Windows takes from a .mui
-# satellite are skipped (hexc reads the file's own).
+# satellite are skipped (hexcavator reads the file's own).
 #
-#   & tools/signature/version-oracle.ps1 <hexc.exe> @(<dir>, ...) [-Max 500]
+#   & tools/signature/version-oracle.ps1 <hexcavator.exe> @(<dir>, ...) [-Max 500]
 param(
   [Parameter(Mandatory = $true, Position = 0)] [string] $Hexc,
   [Parameter(Mandatory = $true, Position = 1)] [string[]] $Dirs,
@@ -20,7 +20,7 @@ $n = 0; $same = 0; $differ = @()
 foreach ($f in ($files | Select-Object -First $Max)) {
   $v = $f.VersionInfo
   # (Windows reads a localized file's strings from its .mui satellite, which
-  # has its own versions: hexc reads the file's own. Not compared.)
+  # has its own versions: hexcavator reads the file's own. Not compared.)
   if ("$($v.OriginalFilename)" -like '*.mui' -or (Test-Path (Join-Path $f.DirectoryName "en-US\$($f.Name).mui"))) { continue }
   $out = & $Hexc signature -json $f.FullName 2>$null | ConvertFrom-Json
   if (-not $out) { continue }

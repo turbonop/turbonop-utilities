@@ -1,9 +1,9 @@
 // The Initialization page: what runs when a binary is loaded, before its
-// main (hexc init -json), as a list in the order it runs: each phase (TLS
+// main (hexcavator init -json), as a list in the order it runs: each phase (TLS
 // callbacks, the entry point, the CRT's lists, .init_array, ...) with its
 // functions, closed to begin, each opening to what it calls (given with the
-// list: hexc init -calls), and what those call, asked of hexc as they're
-// opened (hexc init -callees). A function whose source is
+// list: hexcavator init -calls), and what those call, asked of hexcavator as they're
+// opened (hexcavator init -callees). A function whose source is
 // known opens there (double-click); its context menu disassembles it, says
 // why it's there, and what refers to it.
 "use strict";
@@ -211,15 +211,15 @@
       return;
     }
     if (m.kind === "failed") {
-      $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexc failed")), el("div", { class: "path" }, m.message || ""));
+      $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexcavator failed")), el("div", { class: "path" }, m.message || ""));
       return;
     }
     if (m.kind === "init") {
       state.file = m.file;
       state.data = m.data;
       // Closed, to begin (a program may have thousands of initializers),
-      // with what each listed function calls given with it (hexc init
-      // -calls): asked of hexc only further down.
+      // with what each listed function calls given with it (hexcavator init
+      // -calls): asked of hexcavator only further down.
       state.callees.clear();
       state.asked.clear();
       state.open.clear();

@@ -15,9 +15,9 @@ Built by `tools/coff/build.cmd` with MSVC (x64, `/Brepro`) from
 - `ltcg.obj`: `tools/coff/ltcg.cpp` with `/GL` (an LTCG object: the
   compiler's IL), and `ltcg.lib` of it; `ltcg-x86.obj`, `tools/coff/ltcg.c`
   for x86 (C's common symbols, decorated names). Beside them: dumpbin's
-  `/headers` (`*.headers.txt`, which `hexc dump` matches), lib.exe's symbol
-  index (`*.lib.linkermember.txt`, which `hexc ltcg -publics` holds), and
+  `/headers` (`*.headers.txt`, which `hexcavator dump` matches), lib.exe's symbol
+  index (`*.lib.linkermember.txt`, which `hexcavator ltcg -publics` holds), and
   the directives of `ltcg.cpp` compiled without `/GL`
   (`ltcg.directives.txt`).
 - `*.symbols.txt`: dumpbin's `/symbols` of each object, which
-  `hexc dump -symbols` matches.
+  `hexcavator dump -symbols` matches.

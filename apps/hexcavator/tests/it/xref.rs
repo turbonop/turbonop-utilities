@@ -1,4 +1,4 @@
-//! `hexc xref` end to end, over the cross-reference test program
+//! `hexcavator xref` end to end, over the cross-reference test program
 //! (tools/xref: virtual functions reached through their classes'
 //! constructors, a static initializer, a table of function pointers, an
 //! export, and code the linker kept that nothing reaches), built for x64
@@ -13,8 +13,8 @@ fn fixture(arch: &str) -> PathBuf {
         .join(format!("xref-{arch}.exe"))
 }
 
-fn hexc(args: &[&str], image: &Path) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str], image: &Path) -> (bool, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("xref")
         .args(args)
         .arg(image)
@@ -28,7 +28,7 @@ fn hexc(args: &[&str], image: &Path) -> (bool, String, String) {
 }
 
 fn ok(args: &[&str], image: &Path) -> String {
-    let (ok, stdout, stderr) = hexc(args, image);
+    let (ok, stdout, stderr) = hexcavator(args, image);
     assert!(ok, "{args:?}: {stderr}");
     stdout
 }
@@ -266,19 +266,19 @@ fn summary_and_errors() {
     );
     assert!(lines[9].starts_with("  (16 more"), "{out}");
 
-    let (good, _, stderr) = hexc(&["-why", "nope"], &image);
+    let (good, _, stderr) = hexcavator(&["-why", "nope"], &image);
     assert!(!good && stderr.contains("nothing named 'nope'"), "{stderr}");
-    let (good, _, stderr) = hexc(&["-bogus"], &image);
+    let (good, _, stderr) = hexcavator(&["-bogus"], &image);
     assert!(
         !good && stderr.contains("unknown option 'bogus'"),
         "{stderr}"
     );
-    let (good, _, stderr) = hexc(&["-n", "x"], &image);
+    let (good, _, stderr) = hexcavator(&["-n", "x"], &image);
     assert!(!good && stderr.contains("-n needs a number"), "{stderr}");
     // -why takes the image as its name, leaving none.
-    let (good, _, stderr) = hexc(&["-why"], &image);
+    let (good, _, stderr) = hexcavator(&["-why"], &image);
     assert!(!good && stderr.contains("no image given"), "{stderr}");
-    let (good, _, stderr) = hexc(&["a.exe"], &image);
+    let (good, _, stderr) = hexcavator(&["a.exe"], &image);
     assert!(!good && stderr.contains("unexpected argument"), "{stderr}");
 }
 
@@ -343,7 +343,7 @@ fn identical() {
 #[test]
 fn compare_builds() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/xref");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args([
             "xref".as_ref(),
             dir.join("xref-x64-renamed.exe").as_os_str(),
@@ -369,7 +369,7 @@ fn compare_builds() {
     );
     // A build against itself: all unchanged.
     let image = fixture("arm64");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args([
             "xref".as_ref(),
             "-json".as_ref(),
@@ -388,7 +388,7 @@ fn compare_builds() {
     // with the same code (renamed), DllMain grew, and the C++ stream code
     // came in.
     let bin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/sizebench/bin");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["xref", "-n", "0"])
         .arg(bin.join("CppTestCases_BasicDiffObjectsAfter.dll"))
         .arg("--")
@@ -409,7 +409,7 @@ fn compare_builds() {
     );
     assert!(!text.contains("Removed,"), "{text}");
     // Options go before the base image.
-    let (good, _, stderr) = hexc(&["--", "a.exe", "-n"], &image);
+    let (good, _, stderr) = hexcavator(&["--", "a.exe", "-n"], &image);
     assert!(!good && stderr.contains("unexpected argument"), "{stderr}");
 }
 
@@ -445,7 +445,7 @@ fn unlabeled_vtables() {
 /// /OPT:ICF, and the CRT's objects can't be rebuilt.
 #[test]
 fn recommend() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("recommend")
         .arg(fixture("x64"))
         .output()
@@ -464,7 +464,7 @@ fn recommend() {
     );
     assert!(lines[3].ends_with("308  compile dead.obj with /Gy: its functions nothing reaches are kept with the sections they share with ones that are used"), "{text}");
     assert!(lines[4].ends_with("66    dead_entry(int)"), "{text}");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(fixture("arm64"))
         .output()
@@ -493,7 +493,7 @@ fn elf(name: &str) -> PathBuf {
 /// a shared object whose exports are its roots.
 #[test]
 fn elf_images() {
-    let (ok, out, err) = hexc(&["-json"], &elf("dwarf5-x86_64-linux-gnu"));
+    let (ok, out, err) = hexcavator(&["-json"], &elf("dwarf5-x86_64-linux-gnu"));
     assert!(ok, "{err}");
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     let unreached: Vec<&str> = v["unreachable"]
@@ -507,18 +507,18 @@ fn elf_images() {
         ["second_table", "second_sum(int)", "second_len()"]
     );
     // Each in its compile unit, in ELF's terms.
-    let (ok, out, _) = hexc(&[], &elf("dwarf5-x86_64-linux-gnu"));
+    let (ok, out, _) = hexcavator(&[], &elf("dwarf5-x86_64-linux-gnu"));
     assert!(ok);
     assert!(out.contains("[maybe its own section, second.c]"), "{out}");
     assert!(!out.contains("COMDAT"), "{out}");
-    let (ok, out, _) = hexc(&["-why", "second_sum"], &elf("dwarf5-x86_64-linux-gnu"));
+    let (ok, out, _) = hexcavator(&["-why", "second_sum"], &elf("dwarf5-x86_64-linux-gnu"));
     assert!(ok);
     assert!(out.contains("--gc-sections"), "{out}");
     // A shared object: every function is exported, so reached.
-    let (ok, out, err) = hexc(&[], &elf("program.so"));
+    let (ok, out, err) = hexcavator(&[], &elf("program.so"));
     assert!(ok, "{err}");
     assert!(out.contains("0 unreachable"), "{out}");
-    let (ok, out, _) = hexc(&["-why", "compute"], &elf("program.so"));
+    let (ok, out, _) = hexcavator(&["-why", "compute"], &elf("program.so"));
     assert!(ok);
     assert!(out.contains("exported as compute"), "{out}");
 }
@@ -532,17 +532,17 @@ fn macho_images() {
     let macho = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/macho");
     let dwarf = macho.join("program-arm64.dwarf");
     let image = macho.join("program-arm64");
-    let (ok, out, err) = hexc(&["-pdb", dwarf.to_str().unwrap()], &image);
+    let (ok, out, err) = hexcavator(&["-pdb", dwarf.to_str().unwrap()], &image);
     assert!(ok, "{err}");
     // second_sum, exported but uncalled; and the program's stand-in for
     // dyld's __tlv_bootstrap, which its thread-local variable's descriptor
     // names in a way not seen here (a real program imports it).
     assert!(out.contains("2 unreachable"), "{out}");
     assert!(out.contains("second_sum(int)"), "{out}");
-    let (ok, out, _) = hexc(&["-pdb", dwarf.to_str().unwrap(), "-why", "start"], &image);
+    let (ok, out, _) = hexcavator(&["-pdb", dwarf.to_str().unwrap(), "-why", "start"], &image);
     assert!(ok);
     assert!(out.contains("the entry point"), "{out}");
-    let (ok, out, _) = hexc(
+    let (ok, out, _) = hexcavator(
         &["-pdb", dwarf.to_str().unwrap(), "-why", "compute"],
         &image,
     );
@@ -556,7 +556,7 @@ fn macho_images() {
 #[test]
 fn recommend_without_debug_information() {
     // Nothing to find for it: what the image's structure shows.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("recommend")
         .arg(elf("relr-rela.so"))
         .output()
@@ -578,7 +578,7 @@ fn recommend_without_debug_information() {
         "{text}"
     );
     assert!(lines[3].contains("pack-relative-relocs"), "{text}");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(elf("relr-rela.so"))
         .output()
@@ -588,7 +588,7 @@ fn recommend_without_debug_information() {
     assert!(v["judged"].is_null() && v["link"].is_null(), "{v}");
     assert_eq!(v["recommendations"][0]["kind"], "relr", "{v}");
     // Already packed: nothing.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("recommend")
         .arg(elf("relr.so"))
         .output()
@@ -600,7 +600,7 @@ fn recommend_without_debug_information() {
             .contains("No recommendations")
     );
     // Debug information given, but not found: still an error.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-debug", "no-such-file"])
         .arg(elf("relr-rela.so"))
         .output()
@@ -610,7 +610,7 @@ fn recommend_without_debug_information() {
 
 #[test]
 fn recommend_elf() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("recommend")
         .arg(elf("dwarf5-x86_64-linux-gnu"))
         .output()
@@ -633,7 +633,7 @@ fn recommend_elf() {
     );
     assert!(lines[3].ends_with("209  link with -Wl,--gc-sections (compiling with -ffunction-sections -fdata-sections): functions and data nothing reaches are kept"), "{text}");
     assert!(!text.contains("/OPT") && !text.contains("PDB"), "{text}");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(elf("dwarf5-x86_64-linux-gnu"))
         .output()
@@ -655,7 +655,7 @@ fn recommend_judges_the_link() {
             .join(name)
     };
     let recommend = |name: &str| -> serde_json::Value {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["recommend", "-json"])
             .arg(linkopts(name))
             .output()
@@ -776,7 +776,7 @@ fn recommend_judges_the_link() {
             "{v}"
         );
     }
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("recommend")
         .arg(linkopts("funcs-rec-nosections-gc-icf"))
         .output()
@@ -794,7 +794,7 @@ fn recommend_judges_the_link() {
 #[test]
 fn recommend_judges_a_macho_link() {
     let run = |args: &[&str], name: &str| {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("recommend")
             .args(args)
             .arg(
@@ -882,7 +882,7 @@ fn recommend_judges_a_macho_link() {
 fn recommend_exports() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts");
     let recommend = |args: &[&str], name: &str| -> serde_json::Value {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("recommend")
             .arg("-json")
             .args(args)
@@ -1010,7 +1010,7 @@ fn recommend_exports() {
 /// total<T>, apply<F>), and not those that differ (pick<T>).
 #[test]
 fn recommend_near_identical() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/near"))
         .output()
@@ -1052,7 +1052,7 @@ fn recommend_near_identical() {
 /// parameters); nothing else is worth it.
 #[test]
 fn recommend_inlining() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/inline"))
         .output()
@@ -1110,7 +1110,7 @@ fn recommend_inlining() {
 #[test]
 fn recommend_strings() {
     let recommend = |name: &str| -> serde_json::Value {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["recommend", "-json"])
             .arg(
                 Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1173,7 +1173,7 @@ fn recommend_strings() {
 #[test]
 fn recommend_exceptions() {
     let recommend = |name: &str| -> serde_json::Value {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["recommend", "-json"])
             .arg(
                 Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1243,7 +1243,7 @@ fn kept_whatever_reaches_it() {
         ("keep-macho", "class_method", "Objective-C class"),
         ("keep-elf", "hooked", "__start_my_hooks"),
     ] {
-        let (ok, out, err) = hexc(&["-why", name], &linkopts.join(image));
+        let (ok, out, err) = hexcavator(&["-why", name], &linkopts.join(image));
         assert!(ok, "{image} {name}: {err}");
         assert!(!out.contains("no root reaches it"), "{image} {name}: {out}");
         assert!(out.contains(why), "{image} {name}: {out}");
@@ -1264,7 +1264,7 @@ fn toolchains_of_every_format() {
         ("linkopts/funcs-plain", "gnu"),
         ("linkopts/macho-plain", "apple"),
     ] {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["recommend", "-json"])
             .arg(testdata.join(image))
             .output()
@@ -1322,7 +1322,7 @@ fn arm32_references() {
 #[test]
 fn arm32_exception_tables() {
     let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/arm32/eh-linux");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(&image)
         .output()
@@ -1389,7 +1389,7 @@ fn exception_data_attached() {
 fn macho_exception_handling() {
     let image =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/macho-noexc.dylib");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(&image)
         .output()
@@ -1435,7 +1435,7 @@ fn unused_libraries() {
             56,
         ),
     ] {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["recommend", "-json"])
             .arg(linkopts(image))
             .output()
@@ -1473,7 +1473,7 @@ fn unused_libraries() {
 #[test]
 fn chained_fixups() {
     let advice = |name: &str| -> Option<serde_json::Value> {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["recommend", "-json"])
             .arg(
                 Path::new(env!("CARGO_MANIFEST_DIR"))

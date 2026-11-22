@@ -1,4 +1,4 @@
-//! `hexc inlines` and `hexc sourcefiles` end to end, over the source lines
+//! `hexcavator inlines` and `hexcavator sourcefiles` end to end, over the source lines
 //! test program (tools/lines: a header's code, and inline sites, one
 //! nested in another).
 
@@ -9,8 +9,8 @@ fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/lines/lines.exe")
 }
 
-fn hexc(command: &str, args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(command: &str, args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg(command)
         .args(args)
         .arg(fixture())
@@ -24,7 +24,7 @@ fn hexc(command: &str, args: &[&str]) -> (i32, String, String) {
 }
 
 fn ok(command: &str, args: &[&str]) -> String {
-    let (code, out, err) = hexc(command, args);
+    let (code, out, err) = hexcavator(command, args);
     assert_eq!(code, 0, "{command} {args:?}: {err}");
     out
 }
@@ -120,21 +120,21 @@ fn sourcefiles() {
 
 #[test]
 fn errors() {
-    let (code, _, err) = hexc("inlines", &["-inlinee", "nope"]);
+    let (code, _, err) = hexcavator("inlines", &["-inlinee", "nope"]);
     assert_eq!(code, 1);
     assert!(err.contains("no inlined function 'nope'"), "{err}");
-    let (code, _, err) = hexc("sourcefiles", &["-file", r"\.(h|cpp)$"]);
+    let (code, _, err) = hexcavator("sourcefiles", &["-file", r"\.(h|cpp)$"]);
     assert_eq!(code, 1);
     assert!(
         err.contains("source files") && err.contains("give one exactly"),
         "{err}"
     );
-    let (code, _, err) = hexc("sourcefiles", &["-bogus"]);
+    let (code, _, err) = hexcavator("sourcefiles", &["-bogus"]);
     assert_eq!(code, 2);
     assert!(err.contains("unknown option 'bogus'"), "{err}");
     // A stripped image with no debug file to be found.
     let elf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/elf/program-stripped");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("inlines")
         .arg(elf)
         .output()

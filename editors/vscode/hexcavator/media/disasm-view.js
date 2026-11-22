@@ -1,4 +1,4 @@
-// The disassembly view: a function's code (hexc size -disassemble -json) as
+// The disassembly view: a function's code (hexcavator size -disassemble -json) as
 // a listing (raw), by basic block, with its source lines, or as a graph of
 // its blocks. Labels and calls are links; it talks to the extension through
 // messages (disassemble, openSource, openText, copy, mode).
@@ -516,7 +516,7 @@
         { class: "actions" },
         vscode ? el("button", { class: "icon", title: "Open this listing as a text document", onclick: () => post({ command: "openText", mode: state.mode }) }, "Open as Text") : null,
         vscode ? el("button", { class: "icon", title: "Copy the listing", onclick: () => post({ command: "copy", text: plainText() }) }, "Copy") : null,
-        vscode ? el("button", { class: "icon", title: "Run hexc again", onclick: () => post({ command: "refresh" }) }, "⟳") : null
+        vscode ? el("button", { class: "icon", title: "Run hexcavator again", onclick: () => post({ command: "refresh" }) }, "⟳") : null
       )
     );
   }

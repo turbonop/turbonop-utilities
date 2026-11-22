@@ -1,4 +1,4 @@
-//! Compares `hexc dump` with a committed `dumpbin` snapshot, so that the
+//! Compares `hexcavator dump` with a committed `dumpbin` snapshot, so that the
 //! PE structure dumps are checked on every host, not only where Visual
 //! Studio is installed.
 //!
@@ -17,7 +17,7 @@ fn dump_matches_dumpbin_snapshot() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let image = root.join("../../crates/symbols/pdb/tests/data/test-x64.exe");
     let expected = std::fs::read_to_string(root.join("tests/data/test-x64.dumpbin.txt")).unwrap();
-    let actual = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let actual = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args([
             "dump",
             "-nopdb",
@@ -50,7 +50,7 @@ fn disasm_with_pdb_matches_dumpbin_snapshot() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let image = root.join("../../crates/symbols/pdb/tests/data/test-x64.exe");
     let expected = std::fs::read_to_string(root.join("tests/data/test-x64.disasm.txt")).unwrap();
-    let actual = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let actual = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["dump", "-disasm"])
         .arg(&image)
         .output()
@@ -73,7 +73,7 @@ fn unwind_with_pdb_matches_dumpbin_snapshot() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let image = root.join("../../crates/symbols/pdb/tests/data/test-x64.exe");
     let expected = std::fs::read_to_string(root.join("tests/data/test-x64.unwind.txt")).unwrap();
-    let actual = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let actual = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["dump", "-unwindinfo"])
         .arg(&image)
         .output()
@@ -108,7 +108,7 @@ fn symbols_match_dumpbin_snapshots() {
     ] {
         let dir = root.join(dir);
         let expected = std::fs::read_to_string(dir.join(format!("{file}.symbols.txt"))).unwrap();
-        let actual = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let actual = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["dump", "-symbols", file])
             .current_dir(&dir)
             .output()
@@ -134,7 +134,7 @@ fn arm32_unwind_matches_dumpbin_snapshot() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let expected = std::fs::read_to_string(root.join("tests/data/Dllarm32.unwind.txt")).unwrap();
     for option in ["-unwindinfo", "-pdata"] {
-        let actual = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let actual = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["dump", option, "PEParser.Tests.Dllarm32.dll"])
             .current_dir(root.join("../../testdata/sizebench/bin"))
             .output()

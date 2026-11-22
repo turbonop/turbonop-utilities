@@ -12,8 +12,8 @@ fn dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/macho/oso")
 }
 
-fn hexc(args: &[&str]) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (bool, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(args)
         .current_dir(dir())
         .output()
@@ -55,9 +55,9 @@ fn the_debug_map_reads_as_dsymutil_s_dsym() {
             mapped.extend(&tail);
             let mut oracle = vec![*cmd, "-pdb", &dsym];
             oracle.extend(&tail);
-            let (ok, got, err) = hexc(&mapped);
+            let (ok, got, err) = hexcavator(&mapped);
             assert!(ok, "{arch} {c:?}: {err}");
-            let (ok, want, err) = hexc(&oracle);
+            let (ok, want, err) = hexcavator(&oracle);
             assert!(ok, "{arch} {c:?} (dSYM): {err}");
             // (SizeBench's lines without their libraries: each compiland's
             // and range's, in order.)
@@ -83,7 +83,7 @@ fn the_debug_map_reads_as_dsymutil_s_dsym() {
             assert!(!got.trim().is_empty(), "{arch} {c:?}: nothing");
         }
         // Each object's code is there, by source line.
-        let (_, q, _) = hexc(&["query", &image, QUERY]);
+        let (_, q, _) = hexcavator(&["query", &image, QUERY]);
         for name in [
             "compute(int)",
             "second_sum(int)",
@@ -98,13 +98,13 @@ fn the_debug_map_reads_as_dsymutil_s_dsym() {
 
 #[test]
 fn objects_of_an_archive_name_it_and_info_lists_them() {
-    let (ok, q, err) = hexc(&["query", "oso-arm64", "select name, library"]);
+    let (ok, q, err) = hexcavator(&["query", "oso-arm64", "select name, library"]);
     assert!(ok, "{err}");
     let line = q.lines().find(|l| l.starts_with("second_sum")).unwrap();
     assert!(line.contains("libsecond-arm64.a"), "{line}");
     let line = q.lines().find(|l| l.starts_with("compute")).unwrap();
     assert!(!line.contains(".a"), "{line}");
-    let (ok, info, err) = hexc(&["info", "-json", "oso-arm64"]);
+    let (ok, info, err) = hexcavator(&["info", "-json", "oso-arm64"]);
     assert!(ok, "{err}");
     let v: serde_json::Value = serde_json::from_str(&info).unwrap();
     let debug = &v[0]["debug"];
@@ -125,8 +125,8 @@ fn objects_of_an_archive_name_it_and_info_lists_them() {
         .map(|t| t.as_str().unwrap())
         .collect();
     assert!(tools.contains(&"dwarf"), "{tools:?}");
-    // hexc dwarf: each object's, in turn.
-    let (ok, out, err) = hexc(&["dwarf", "-summary", "oso-arm64"]);
+    // hexcavator dwarf: each object's, in turn.
+    let (ok, out, err) = hexcavator(&["dwarf", "-summary", "oso-arm64"]);
     assert!(ok, "{err}");
     assert!(out.contains("program-arm64.o: DWARF"), "{out}");
     assert!(
@@ -141,7 +141,7 @@ fn without_its_objects_an_image_has_no_debug_information() {
     std::fs::create_dir_all(&tmp).unwrap();
     let image = tmp.join("oso-arm64");
     std::fs::copy(dir().join("oso-arm64"), &image).unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["query"])
         .arg(&image)
         .arg("select name")
@@ -158,7 +158,7 @@ fn without_its_objects_an_image_has_no_debug_information() {
 /// them), each with its members' compilands.
 #[test]
 fn size_libraries_are_the_debug_maps_archives() {
-    let (ok, out, err) = hexc(&["size", "oso-arm64"]);
+    let (ok, out, err) = hexcavator(&["size", "oso-arm64"]);
     assert!(ok, "{err}");
     assert!(out.contains("Libraries: 2"), "{out}");
     let line = out
@@ -169,7 +169,7 @@ fn size_libraries_are_the_debug_maps_archives() {
     assert!(line.split_whitespace().next() == Some("236"), "{line}");
     // bloaty's libraries source, too: the archive's, and the object
     // linked directly in none.
-    let (ok, out, err) = hexc(&["size", "-d", "libraries", "oso-arm64"]);
+    let (ok, out, err) = hexcavator(&["size", "-d", "libraries", "oso-arm64"]);
     assert!(ok, "{err}");
     assert!(out.contains("libsecond-arm64.a"), "{out}");
     assert!(out.contains("[no library]"), "{out}");

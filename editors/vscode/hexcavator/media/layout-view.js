@@ -1,7 +1,7 @@
 // A type's layout as a tree: each base, vfptr, vbptr, member (bitfields by
 // bit), and hole, by offset; a base or member that is a class, structure,
 // or union (or an array of them) opens to show its own layout, a layer at
-// a time, asked of hexc when first opened (hexc types -ty). Offsets are
+// a time, asked of hexcavator when first opened (hexcavator types -ty). Offsets are
 // from the start of the outermost type.
 "use strict";
 
@@ -186,7 +186,7 @@
     }
     if (m.kind === "failed") {
       if (!state.layout) {
-        $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexc failed")), el("div", { class: "path" }, m.message || ""));
+        $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexcavator failed")), el("div", { class: "path" }, m.message || ""));
       }
       return;
     }

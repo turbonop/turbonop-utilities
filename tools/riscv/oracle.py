@@ -1,7 +1,7 @@
 """Writes crates/isa/riscv/tests/golden.txt: LLVM's text (llvm-objdump -d)
-for encodings of each RISC-V instruction hexc's decoder knows (up to four
+for encodings of each RISC-V instruction hexcavator's decoder knows (up to four
 of each, their operand bits random), and for random 16- and 32-bit words,
-on RV32 and RV64, with the standard extensions hexc's
+on RV32 and RV64, with the standard extensions hexcavator's
 `Features::standard` turns on; `<unknown>` where LLVM decodes nothing.
 
 Usage: python oracle.py <LLVM bin directory> <crates/isa/riscv>

@@ -1,4 +1,4 @@
-"""Fetches the root certificates hexc trusts for code signatures, and
+"""Fetches the root certificates hexcavator trusts for code signatures, and
 writes them (crates/formats/signature/roots/*.cer) with the Rust list of
 them (crates/formats/signature/src/roots_list.rs).
 
@@ -83,7 +83,7 @@ def main():
             sha256 = hashlib.sha256(f.read()).hexdigest()
         lines.append(f'    ("{name}", "{sha256}", include_bytes!("../roots/{file}")),')
     with open(os.path.join(CRATE, "src", "roots_list.rs"), "w", encoding="utf-8", newline="\n") as f:
-        f.write("// Written by tools/signature/roots.py: the roots hexc trusts for code\n")
+        f.write("// Written by tools/signature/roots.py: the roots hexcavator trusts for code\n")
         f.write("// signatures (name, SHA-256 thumbprint, certificate).\n\n")
         f.write("pub(crate) static ROOTS: &[(&str, &str, &[u8])] = &[\n")
         f.write("\n".join(lines) + "\n];\n")

@@ -1,4 +1,4 @@
-//! `hexc serve`: each request answered as the command line would answer
+//! `hexcavator serve`: each request answered as the command line would answer
 //! it, from what is kept in memory, until the binary changes.
 
 use std::io::{BufRead, BufReader, Write};
@@ -13,8 +13,8 @@ fn bin(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn hexc(args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(args)
         .output()
         .unwrap();
@@ -26,7 +26,7 @@ fn hexc(args: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
-/// A `hexc serve`, asked one request at a time.
+/// A `hexcavator serve`, asked one request at a time.
 struct Server {
     child: std::process::Child,
     lines: std::io::Lines<BufReader<std::process::ChildStdout>>,
@@ -35,7 +35,7 @@ struct Server {
 
 impl Server {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("serve")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -89,7 +89,7 @@ fn answers_as_the_command_line_does() {
             "-json",
         ],
     ] {
-        let want = hexc(args);
+        let want = hexcavator(args);
         // Built, then kept: the same both times.
         assert_eq!(s.stdout(args), want, "{args:?}");
         assert_eq!(s.stdout(args), want, "{args:?}");
@@ -133,10 +133,10 @@ fn a_changed_binary_is_read_again() {
     let mut s = Server::start();
     put("Before");
     let before = s.stdout(&args);
-    assert_eq!(before, hexc(&args));
+    assert_eq!(before, hexcavator(&args));
     put("After");
     let after = s.stdout(&args);
-    assert_eq!(after, hexc(&args));
+    assert_eq!(after, hexcavator(&args));
     assert_ne!(before, after);
     drop(s);
     std::fs::remove_dir_all(&dir).unwrap();
@@ -147,8 +147,8 @@ fn a_changed_binary_is_read_again() {
 fn requests_run_together() {
     let dll = bin("CppTestCases_BasicDiffObjectsAfter.dll");
     let dll = dll.to_str().unwrap();
-    let want = hexc(&["size", "-d", "symbols", "-n", "0", "-csv", dll]);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let want = hexcavator(&["size", "-d", "symbols", "-n", "0", "-csv", dll]);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("serve")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

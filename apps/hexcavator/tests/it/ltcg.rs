@@ -1,4 +1,4 @@
-//! `hexc ltcg` on LTCG (/GL) objects (testdata/coff: tools/coff/ltcg.cpp
+//! `hexcavator ltcg` on LTCG (/GL) objects (testdata/coff: tools/coff/ltcg.cpp
 //! and ltcg.c, see tools/coff/build.cmd), against what the tools show of
 //! them: dumpbin's header, lib.exe's symbol index, and the directives of
 //! the same source compiled without /GL.
@@ -11,8 +11,8 @@ fn coff() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/coff")
 }
 
-fn hexc(args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(args)
         .current_dir(coff())
         .output()
@@ -25,9 +25,9 @@ fn hexc(args: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
-/// The symbols `hexc ltcg` lists: (kind, storage, size, name).
+/// The symbols `hexcavator ltcg` lists: (kind, storage, size, name).
 fn symbols(file: &str, option: &str) -> Vec<(String, String, String, String)> {
-    let text = hexc(&["ltcg", option, file]);
+    let text = hexcavator(&["ltcg", option, file]);
     let mut out = Vec::new();
     for line in text.lines() {
         let t: Vec<&str> = line.split_whitespace().collect();
@@ -62,7 +62,7 @@ fn index(file: &str) -> BTreeSet<String> {
 #[test]
 fn dump_headers_as_dumpbin() {
     for name in ["ltcg.obj", "ltcg-x86.obj"] {
-        let ours = hexc(&["dump", "-headers", name]);
+        let ours = hexcavator(&["dump", "-headers", name]);
         let theirs = std::fs::read_to_string(coff().join(format!("{name}.headers.txt"))).unwrap();
         let a: Vec<&str> = theirs.trim().lines().map(str::trim_end).collect();
         let b: Vec<&str> = ours.trim().lines().map(str::trim_end).collect();
@@ -70,8 +70,8 @@ fn dump_headers_as_dumpbin() {
     }
 }
 
-/// Every public symbol lib.exe indexes is one hexc finds defined (lib.exe
-/// leaves out inline functions nothing uses, which hexc lists).
+/// Every public symbol lib.exe indexes is one hexcavator finds defined (lib.exe
+/// leaves out inline functions nothing uses, which hexcavator lists).
 #[test]
 fn public_definitions_hold_libs_index() {
     let ours: BTreeSet<String> = symbols("ltcg.obj", "-publics")
@@ -164,7 +164,7 @@ fn kinds_storage_and_sizes() {
 /// itself, its libraries and exports, are the back end's).
 #[test]
 fn directives_are_the_sources() {
-    let text = hexc(&["ltcg", "-directives", "ltcg.obj"]);
+    let text = hexcavator(&["ltcg", "-directives", "ltcg.obj"]);
     let ours: Vec<String> = text
         .lines()
         .filter(|l| l.starts_with("    /"))
@@ -184,7 +184,7 @@ fn directives_are_the_sources() {
 
 #[test]
 fn sources_options_and_types() {
-    let text = hexc(&["ltcg", "-all", "ltcg.obj"]);
+    let text = hexcavator(&["ltcg", "-all", "ltcg.obj"]);
     assert!(
         text.contains("    R:\\tools\\coff\\ltcg.cpp\n      SHA-256 "),
         "{text}"
@@ -197,15 +197,15 @@ fn sources_options_and_types() {
     assert!(text.contains("LF_CLASS") || text.contains("LF_STRUCTURE Shape size 8\n"));
     assert!(text.contains("LF_BUILDINFO"));
     // A library of them: each member.
-    let lib = hexc(&["ltcg", "-headers", "ltcg.lib"]);
+    let lib = hexcavator(&["ltcg", "-headers", "ltcg.lib"]);
     assert!(lib.starts_with("LTCG object ltcg.lib(ltcg.obj)\n"), "{lib}");
-    let info = hexc(&["info", "ltcg.obj"]);
+    let info = hexcavator(&["info", "ltcg.obj"]);
     assert!(info.contains("Visual C++ LTCG object"), "{info}");
 }
 
 #[test]
 fn not_ltcg() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["ltcg", "objects.obj"])
         .current_dir(coff())
         .output()

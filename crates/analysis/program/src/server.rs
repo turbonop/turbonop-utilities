@@ -3,7 +3,7 @@
 //! `symstore` shares over HTTP, .NET's symbol servers) and debuginfod.
 //!
 //! Nothing is asked of a server unless servers are given
-//! ([`set_servers`]: hexc's `--symbol-server` and `--debuginfod`, or
+//! ([`set_servers`]: hexcavator's `--symbol-server` and `--debuginfod`, or
 //! `HEXC_SYMBOL_SERVER` and `HEXC_DEBUGINFOD`). debuginfod's own
 //! `DEBUGINFOD_URLS` is not followed: distributions set it for every
 //! user, and asking a server tells it which builds are being looked at.
@@ -181,7 +181,7 @@ pub fn fetch(url: &str, cached: Option<&Path>) -> Option<Mmap> {
         "--max-filesize",
         &MAX_FILE.to_string(),
         "--user-agent",
-        concat!("hexc/", env!("CARGO_PKG_VERSION")),
+        concat!("hexcavator/", env!("CARGO_PKG_VERSION")),
     ]);
     match cached {
         Some(path) => {

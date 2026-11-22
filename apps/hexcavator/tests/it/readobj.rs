@@ -1,4 +1,4 @@
-//! `hexc dump` of ELF, Mach-O, and WebAssembly files against
+//! `hexcavator dump` of ELF, Mach-O, and WebAssembly files against
 //! llvm-readobj's output beside the fixtures (testdata/elf, macho, wasm):
 //! the same, line for line, with the options each was made with. (On
 //! .NET's coreclr, libcoreclr.so's 15,412 lines with every ELF part and
@@ -13,9 +13,9 @@ fn testdata() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata")
 }
 
-/// hexc's dump of `name` in `dir` (named as llvm-readobj was given it).
+/// hexcavator's dump of `name` in `dir` (named as llvm-readobj was given it).
 fn dump(dir: &Path, name: &str, options: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("dump")
         .args(options)
         .arg(name)
@@ -192,7 +192,7 @@ fn damaged_inputs_end() {
         }
         for d in cases {
             std::fs::write(&path, &d).unwrap();
-            let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
                 .args(["dump", "-all"])
                 .arg(&path)
                 .output()
@@ -214,7 +214,7 @@ fn damaged_inputs_end() {
 #[test]
 fn options_out_of_place() {
     let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("dump")
             .args(args)
             .output()
@@ -226,10 +226,10 @@ fn options_out_of_place() {
     let elf = elf.to_str().unwrap();
     let err = run(&["/disasm", "/unwindinfo", elf]);
     assert!(
-        err.contains("not a PE or COFF file") && err.contains("hexc size -disassemble"),
+        err.contains("not a PE or COFF file") && err.contains("hexcavator size -disassemble"),
         "{err}"
     );
-    assert!(err.contains("hexc dwarf -frames"), "{err}");
+    assert!(err.contains("hexcavator dwarf -frames"), "{err}");
     let pe = testdata().join("types/types.exe");
     let err = run(&["--notes", pe.to_str().unwrap()]);
     assert!(
@@ -244,7 +244,7 @@ fn options_out_of_place() {
 #[test]
 fn dumpbin_symbols_of_other_formats() {
     let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("dump")
             .args(args)
             .output()

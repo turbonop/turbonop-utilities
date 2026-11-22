@@ -1,4 +1,4 @@
-//! `hexc info`: each format's one-line description and details.
+//! `hexcavator info`: each format's one-line description and details.
 
 use std::path::Path;
 use std::process::Command;
@@ -7,7 +7,7 @@ fn info(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata")
         .join(path);
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("info")
         .arg(&p)
         .output()

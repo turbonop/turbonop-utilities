@@ -1,6 +1,6 @@
 [package]
 name = "hexcavator"
-description = "hexc: explore executables, objects, and libraries and their debug information (PE, ELF, Mach-O, WebAssembly; PDB, DWARF) from the command line, or serve it to editors and AI agents"
+description = "hexcavator: explore executables, objects, and libraries and their debug information (PE, ELF, Mach-O, WebAssembly; PDB, DWARF) from the command line, or serve it to editors and AI agents"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,7 +12,7 @@ repository.workspace = true
 path = "src/lib.rs"
 
 [[bin]]
-name = "hexc"
+name = "hexcavator"
 path = "src/main.rs"
 
 [dependencies]

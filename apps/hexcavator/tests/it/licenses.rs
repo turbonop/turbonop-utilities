@@ -1,7 +1,7 @@
 //! Licensing: our crates are Apache-2.0, plus the licenses of the parts
 //! derived from others' work (each part's license file in the crate says
-//! which); every third-party crate in the `hexc` binary has a permissive
-//! license; and `THIRD_PARTY_NOTICES.txt` (which `hexc licenses` prints)
+//! which); every third-party crate in the `hexcavator` binary has a permissive
+//! license; and `THIRD_PARTY_NOTICES.txt` (which `hexcavator licenses` prints)
 //! has our license and all of their notices. After a dependency or a
 //! license file changes, regenerate the notices with
 //! `HEXC_UPDATE_NOTICES=1 cargo test -p hexcavator --test it licenses::`.
@@ -105,7 +105,7 @@ fn metadata() -> Value {
     serde_json::from_slice(&out.stdout).unwrap()
 }
 
-/// The packages linked into `hexc`: normal dependencies, not build or dev
+/// The packages linked into `hexcavator`: normal dependencies, not build or dev
 /// ones, and not proc macros (or what only they use), which run at
 /// compile time.
 fn linked(m: &Value) -> Vec<&Value> {
@@ -252,7 +252,7 @@ fn notices() -> String {
     let mut out = String::from(
         "Hexcavator is licensed under the Apache License 2.0, below. Parts of it\n\
          are derived from others' work and carry those works' licenses too, and\n\
-         the hexc program includes the third-party crates below; their notices\n\
+         the hexcavator program includes the third-party crates below; their notices\n\
          follow.\n",
     );
     let section = |out: &mut String, title: &str, text: &str| {
@@ -352,7 +352,7 @@ fn notices_are_current() {
         "THIRD_PARTY_NOTICES.txt is out of date: HEXC_UPDATE_NOTICES=1 cargo test -p hexcavator --test it licenses::"
     );
     // And the program prints them.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("licenses")
         .output()
         .unwrap();

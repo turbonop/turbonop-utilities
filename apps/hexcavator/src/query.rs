@@ -1,4 +1,4 @@
-//! `hexc query`: an image's symbols, filtered, grouped, and sorted (see
+//! `hexcavator query`: an image's symbols, filtered, grouped, and sorted (see
 //! `hexcavator_query` for the language).
 
 use std::fmt::Write as _;
@@ -11,15 +11,15 @@ use hexcavator_size::{Model, symbols};
 use serde_json::json;
 
 pub const USAGE: &str = "\
-usage: hexc query [options] <image> <query>
+usage: hexcavator query [options] <image> <query>
 
 An image's symbols (from its PDB or DWARF), as a table to filter, group,
 and sort:
 
-  hexc query app.exe \"kind=function file>4k sort by file desc limit 20\"
-  hexc query app.exe \"group by library\"
-  hexc query app.exe \"name~'^std::' group by compiland limit 10\"
-  hexc query app.exe \"section=.rdata static group by name sort by count desc\"
+  hexcavator query app.exe \"kind=function file>4k sort by file desc limit 20\"
+  hexcavator query app.exe \"group by library\"
+  hexcavator query app.exe \"name~'^std::' group by compiland limit 10\"
+  hexcavator query app.exe \"section=.rdata static group by name sort by count desc\"
 
 The query is a filter (column op value, joined by and, or, not, and
 parentheses; ops = != < <= > >= ~ !~, ~ a regular expression; numbers
@@ -69,14 +69,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let parsed = match hexcavator_query::parse(query, &COLUMNS) {
         Ok(q) => q,
         Err(e) => {
-            ereport!("hexc query: {e}\n  {query}\n  {}^", " ".repeat(e.at));
+            ereport!("hexcavator query: {e}\n  {query}\n  {}^", " ".repeat(e.at));
             return ExitCode::from(2);
         }
     };
     let (model, syms, modules, lines) = match load(Path::new(image), pdb.as_deref()) {
         Ok(x) => x,
         Err(e) => {
-            ereport!("hexc query: {e}");
+            ereport!("hexcavator query: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -84,7 +84,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let out = match hexcavator_query::run(&parsed, &table) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc query: {}", e.message);
+            ereport!("hexcavator query: {}", e.message);
             return ExitCode::from(2);
         }
     };
@@ -100,7 +100,7 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 fn usage(message: &str) -> ExitCode {
-    ereport!("hexc query: {message}\n\n{USAGE}");
+    ereport!("hexcavator query: {message}\n\n{USAGE}");
     ExitCode::from(2)
 }
 

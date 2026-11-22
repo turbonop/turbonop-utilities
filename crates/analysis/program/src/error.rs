@@ -88,7 +88,7 @@ impl fmt::Display for Error {
             }
             Error::IsCode { path, name } => write!(
                 f,
-                "{}: '{name}' is code: see hexc size -disassemble",
+                "{}: '{name}' is code: see hexcavator size -disassemble",
                 path.display()
             ),
         }

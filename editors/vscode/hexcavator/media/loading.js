@@ -1,4 +1,4 @@
-// The pane's own "working" indicator: a spinner over the pane while hexc
+// The pane's own "working" indicator: a spinner over the pane while hexcavator
 // runs (with what it's doing, and Cancel), in place of a notification.
 // It shows as the page opens; a "loading" message shows it again (over
 // what is there, on a refresh); any other message hides it.
@@ -39,7 +39,7 @@
       box.append(card);
       document.body.append(box);
     }
-    box.querySelector(".text").textContent = text || "Running hexc…";
+    box.querySelector(".text").textContent = text || "Running hexcavator…";
     const cancel = box.querySelector(".cancel");
     cancel.disabled = false;
     cancel.hidden = !cancellable;

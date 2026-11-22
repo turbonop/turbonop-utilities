@@ -1,5 +1,5 @@
 // The resources of Hexcavator's resource test program: one of each kind
-// `hexc resources` decodes, some in two languages.
+// `hexcavator resources` decodes, some in two languages.
 #include <windows.h>
 
 #define IDM_OPEN 101

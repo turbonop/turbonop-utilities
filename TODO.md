@@ -8,10 +8,6 @@ leave this list when they ship.
 Every command and analysis should work the same, and as well, on PE,
 ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 
-- **WebAssembly's `.bss`, without shared memory.** A module's zeroed data
-  is in no segment, and nothing but its DWARF says where it is: its
-  variables there have addresses but no section. (With shared memory,
-  what `__wasm_init_memory` zeroes is its `.bss`.)
 - **Cleanups.** `hexc size`'s bloaty-style maps are built by four
   per-format paths (ELF's, Mach-O's, and WebAssembly's follow bloaty's own;
   PE's is the Model's): groups and libraries are PE's alone.

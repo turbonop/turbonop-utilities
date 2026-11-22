@@ -83,6 +83,49 @@ fn section_names(image: &Image<'_>) -> Vec<String> {
     names
 }
 
+/// A WebAssembly module's `.bss`: from the first variable in its memory
+/// (at [`hexcavator_image::WASM_MEMORY`]) that is in no section to past
+/// the last, if there are any, and none of `sections` overlaps them.
+fn wasm_bss(sections: &[Section], debug: &DebugInfo<'_>) -> Result<Option<Section>> {
+    use hexcavator_debuginfo::SymbolKind as DebugKind;
+    let within = |a: u64| {
+        sections
+            .iter()
+            .any(|s| a >= s.addr && a - s.addr < s.size.vm)
+    };
+    let mut range: Option<(u64, u64)> = None;
+    for s in debug.symbols()? {
+        if s.kind != DebugKind::Data
+            || s.thread_local
+            || s.addr < hexcavator_image::WASM_MEMORY
+            || within(s.addr)
+        {
+            continue;
+        }
+        let end = s.addr.saturating_add(s.size.unwrap_or(0).max(1));
+        range = Some(range.map_or((s.addr, end), |(a, b)| (a.min(s.addr), b.max(end))));
+    }
+    let Some((start, end)) = range else {
+        return Ok(None);
+    };
+    if sections
+        .iter()
+        .any(|s| s.addr < end && start < s.addr.saturating_add(s.size.vm))
+    {
+        return Ok(None);
+    }
+    Ok(Some(Section {
+        name: ".bss".to_string(),
+        addr: start,
+        size: Size::new(0, end - start),
+        vm_padding: 0,
+        characteristics: 11,
+        flags: SectionFlags(
+            SectionFlags::READ | SectionFlags::WRITE | SectionFlags::DATA | SectionFlags::ZERO_FILL,
+        ),
+    }))
+}
+
 /// Builds the model of a non-PE image from its sections and `debug`.
 pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
     let names = section_names(image);
@@ -108,6 +151,16 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
             flags: s.flags,
         })
         .collect();
+    // A WebAssembly module's zeroed data (`.bss`), without shared memory,
+    // is in no segment (memory starts zeroed), and only its debug
+    // information's variables say where.
+    if wasm
+        && linked
+        && !sections.iter().any(|s| s.name.starts_with(".bss"))
+        && let Some(bss) = wasm_bss(&sections, debug)?
+    {
+        sections.push(bss);
+    }
     sections.sort_by_key(|s| s.addr);
 
     // One library (formats without archives' names in their debug

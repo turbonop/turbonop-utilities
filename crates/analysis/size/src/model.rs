@@ -163,17 +163,26 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
     }
     sections.sort_by_key(|s| s.addr);
 
-    // One library (formats without archives' names in their debug
-    // information), and the compilands as the debug information lists them.
-    let libraries = vec![Library {
+    // The compilands as the debug information lists them, and their
+    // libraries as it names them: a Mach-O debug map's archives (its
+    // objects linked directly, and other formats' compilands, in none).
+    let mut libraries = vec![Library {
         name: String::new(),
     }];
+    let mut library_index: HashMap<String, u32> = HashMap::new();
+    library_index.insert(String::new(), 0);
     let compilands: Vec<Compiland> = debug
         .compilands()?
         .into_iter()
-        .map(|c| Compiland {
-            name: c.name,
-            library: 0,
+        .map(|c| {
+            let library = *library_index.entry(c.library.clone()).or_insert_with(|| {
+                libraries.push(Library { name: c.library });
+                u32::try_from(libraries.len() - 1).unwrap_or(u32::MAX)
+            });
+            Compiland {
+                name: c.name,
+                library,
+            }
         })
         .collect();
 

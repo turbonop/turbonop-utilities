@@ -471,6 +471,46 @@ fn fallback(labels: &mut Labels, label: Label) -> Label {
     }
 }
 
+/// Relabels `maps`' `libraries` source by `model`'s libraries (each of its
+/// compilands' pieces by the library the compiland is in; a compiland in
+/// none, `[no library]`), the rest of the image keeping the base's
+/// labels: an image's libraries its debug information names (a Mach-O
+/// debug map's archives), as a Unix linker's map names them
+/// ([`crate::unixmap`]).
+pub fn apply_libraries(maps: &mut Maps, model: &Model) {
+    for (source, map) in &mut maps.sources {
+        if *source != Source::Libraries {
+            continue;
+        }
+        let libs: Vec<Label> = model
+            .libraries
+            .iter()
+            .map(|l| {
+                maps.labels.intern(if l.name.is_empty() {
+                    "[no library]"
+                } else {
+                    &l.name
+                })
+            })
+            .collect();
+        let mut m = DualMap::default();
+        for p in &model.pieces {
+            let Some(&l) = model
+                .compilands
+                .get(p.compiland as usize)
+                .and_then(|c| libs.get(c.library as usize))
+            else {
+                continue;
+            };
+            m.add_vm(p.range.addr, p.range.end(), l, &maps.base);
+        }
+        m.fill_from(&maps.base, |l| l);
+        m.vm.compress();
+        m.file.compress();
+        *map = m;
+    }
+}
+
 fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
     let mut cache = std::collections::HashMap::new();
     map.fill_from(base, |l| {

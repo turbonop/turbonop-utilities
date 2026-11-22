@@ -2,7 +2,8 @@
 //! debug map names (testdata/macho/oso: one object given whole, one a
 //! member of an archive; see tools/macho/build.cmd), against dsymutil's
 //! dSYM of the same image (`oso-<arch>.dsymutil`): each command's output
-//! the same either way.
+//! the same either way (but the libraries, which only the debug map
+//! names: a dSYM doesn't keep its objects' archives).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -58,7 +59,27 @@ fn the_debug_map_reads_as_dsymutil_s_dsym() {
             assert!(ok, "{arch} {c:?}: {err}");
             let (ok, want, err) = hexc(&oracle);
             assert!(ok, "{arch} {c:?} (dSYM): {err}");
-            assert_eq!(got, want, "{arch} {c:?}");
+            // (SizeBench's lines without their libraries: each compiland's
+            // and range's, in order.)
+            let unlibrary = |text: &str| -> Vec<String> {
+                let mut lines: Vec<String> = text
+                    .lines()
+                    .filter(|l| !l.starts_with("LIB"))
+                    .map(|l| match l.split_once(' ') {
+                        Some((tag, rest)) if tag.starts_with("COMPILAND") || tag == "RANGE" => {
+                            format!("{tag} {}", rest.split_once(" | ").map_or(rest, |r| r.1))
+                        }
+                        _ => l.to_string(),
+                    })
+                    .collect();
+                lines.sort();
+                lines
+            };
+            if *cmd == "size" {
+                assert_eq!(unlibrary(&got), unlibrary(&want), "{arch} {c:?}");
+            } else {
+                assert_eq!(got, want, "{arch} {c:?}");
+            }
             assert!(!got.trim().is_empty(), "{arch} {c:?}: nothing");
         }
         // Each object's code is there, by source line.
@@ -131,4 +152,25 @@ fn without_its_objects_an_image_has_no_debug_information() {
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("no matching debug information"), "{err}");
+}
+
+/// The size report's libraries are the debug map's archives (as it names
+/// them), each with its members' compilands.
+#[test]
+fn size_libraries_are_the_debug_maps_archives() {
+    let (ok, out, err) = hexc(&["size", "oso-arm64"]);
+    assert!(ok, "{err}");
+    assert!(out.contains("Libraries: 2"), "{out}");
+    let line = out
+        .lines()
+        .find(|l| l.trim_end().ends_with("libsecond-arm64.a"))
+        .unwrap_or_else(|| panic!("{out}"));
+    // (second.c's code and data, and nothing of program.c's.)
+    assert!(line.split_whitespace().next() == Some("236"), "{line}");
+    // bloaty's libraries source, too: the archive's, and the object
+    // linked directly in none.
+    let (ok, out, err) = hexc(&["size", "-d", "libraries", "oso-arm64"]);
+    assert!(ok, "{err}");
+    assert!(out.contains("libsecond-arm64.a"), "{out}");
+    assert!(out.contains("[no library]"), "{out}");
 }

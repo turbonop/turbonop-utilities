@@ -10,7 +10,9 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 
 - **Cleanups.** `hexc size`'s bloaty-style maps are built by four
   per-format paths (ELF's, Mach-O's, and WebAssembly's follow bloaty's own;
-  PE's is the Model's): groups and libraries are PE's alone.
+  PE's is the Model's). Libraries come from a PDB, a Unix linker's map,
+  or a Mach-O debug map's archives (DWARF names none); COFF groups are
+  PE's alone, as no other format has them.
 - **MIPS16.** MIPS16 code isn't decoded: LLVM's disassembler has no
   decoder for it to generate one from (its records encode MIPS16, for
   clang's `-mips16`, but no decoder tables), nor llvm-objdump text to

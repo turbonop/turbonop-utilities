@@ -30,6 +30,13 @@ const DERIVED: &[(&str, &str, &str)] = &[
     ("NOTICE-XED", "Intel XED", "Apache-2.0"),
 ];
 
+/// License files of code a crate bundles (C sources it builds), which
+/// aren't at its top: (crate, the file within it).
+const BUNDLED: &[(&str, &str)] = &[
+    // Microsoft's mimalloc (v2, the crate's default), which it compiles.
+    ("libmimalloc-sys", "c_src/mimalloc/v2/LICENSE"),
+];
+
 fn derived(file: &str) -> (&'static str, &'static str) {
     DERIVED.iter().find(|(f, _, _)| *f == file).map_or_else(
         || panic!("{file}: not a license file we know (see DERIVED)"),
@@ -306,6 +313,14 @@ fn notices() -> String {
         );
         let dir = package_dir(p);
         let mut files = license_files(&dir);
+        for &(_, file) in BUNDLED.iter().filter(|(c, _)| *c == name) {
+            let text = std::fs::read_to_string(dir.join(file))
+                .unwrap_or_else(|e| panic!("{name}: {file}: {e}"));
+            files.push((
+                file.to_string(),
+                text.replace("\r\n", "\n").trim_end().to_string(),
+            ));
+        }
         if files.is_empty() {
             // A package without its license text: ours for it.
             let supplied =

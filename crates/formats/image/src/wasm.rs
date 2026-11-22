@@ -59,23 +59,31 @@ struct Derived {
 
 impl Derived {
     fn of(m: &Module<'_>) -> Self {
+        // (Not through `init_memory`: that would wait on this.)
+        let init = init_memory_of(m);
         Self {
-            placed: placed_segments_of(m),
-            init: init_memory_of(m),
+            placed: placed_segments_with(m, &init),
+            init,
         }
     }
 }
 
 fn placed_segments_of(m: &Module<'_>) -> Vec<Placed> {
+    let init = init_memory_of(m);
+    placed_segments_with(m, &init)
+}
+
+/// The placed segments, with `init`, the module's `init_memory`.
+fn placed_segments_with(m: &Module<'_>, init: &InitMemory) -> Vec<Placed> {
     let mut out = Vec::new();
     let globals = m.globals();
     let imported = m.imported_globals();
     let pieces = m.data_segments();
     let details = m.data_segment_details();
-    let copies = if details.iter().any(|d| d.offset == SegmentOffset::Passive) {
-        init_memory(m).copies
+    let copies: &[(u32, u64)] = if details.iter().any(|d| d.offset == SegmentOffset::Passive) {
+        &init.copies
     } else {
-        Vec::new()
+        &[]
     };
     for (piece, d) in pieces.iter().zip(details) {
         let at = match d.offset {

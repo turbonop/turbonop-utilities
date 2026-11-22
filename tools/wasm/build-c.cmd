@@ -5,8 +5,8 @@ rem a reactor's _initialize, wasm-ld's __wasm_call_ctors), with DWARF, by
 rem clang and wasm-ld alone; and data.wasm from tools\wasm\data.c: a
 rem module's data in linear memory (with DWARF, and wasm-ld's map,
 rem data.wasm.map), and data-shared.wasm and data-pic.wasm, the same with
-rem shared memory and as a position-independent module. LLVM_BIN names an
-rem LLVM bin directory.
+rem shared memory and as a position-independent module; and data.o, the
+rem object data.wasm is linked from. LLVM_BIN names an LLVM bin directory.
 setlocal
 if "%LLVM_BIN%"=="" (echo set LLVM_BIN to the bin directory of an LLVM build or release 1>&2 & exit /b 1)
 set OUT=%~dp0..\..\testdata\wasm
@@ -17,7 +17,6 @@ set CF=--target=wasm32 -g -O0 -nostdlib -fno-ident
 rem (Compiled first, so the map names data.o, not a temporary file.)
 "%LLVM_BIN%\clang.exe" --target=wasm32 -g -O1 -fno-ident -c "%~dp0data.c" -o data.o || exit /b 1
 "%LLVM_BIN%\wasm-ld.exe" --no-entry --export=counter -Map=data.wasm.map data.o -o data.wasm || exit /b 1
-del data.o
 rem The same with shared memory (passive segments, which
 rem __wasm_init_memory copies, and .bss it zeroes), and as a
 rem position-independent module (its data from its __memory_base).

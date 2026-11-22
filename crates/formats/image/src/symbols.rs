@@ -131,9 +131,20 @@ impl<'data> Image<'data> {
     /// The image's extent in memory, as `[start, end)` in the format's
     /// tools' addresses (PE images with their preferred base added): where
     /// its first loaded byte goes, and past its last. The start is what a
-    /// `module+offset` address counts from. `None` for objects, and for
-    /// images that load nothing.
+    /// `module+offset` address counts from. An object's is from 0 to past
+    /// its last section, as its sections are laid out (see
+    /// [`Section::addr`](crate::Section)): its offsets are its addresses.
+    /// `None` for images that load nothing.
     pub fn extent(&self) -> Option<(u64, u64)> {
+        if self.kind() == crate::Kind::Object {
+            let end = self
+                .sections()
+                .iter()
+                .filter(|s| s.addr != 0)
+                .filter_map(|s| s.addr.checked_add(s.vm_size))
+                .max()?;
+            return Some((0, end));
+        }
         match self {
             Image::Pe(pe) => {
                 let h = pe.optional_header()?;

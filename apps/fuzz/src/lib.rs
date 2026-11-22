@@ -193,9 +193,14 @@ fn pe(data: &[u8], s: &Scratch) {
 
 fn coff(data: &[u8], s: &Scratch) {
     image(data);
+    // (Its CodeView, as the PDB a linker would write of it.)
+    if let Some(pdb) = hexcavator_debuginfo::coff_object::pdb_of(data) {
+        debug_info(&pdb);
+    }
     let f = s.file("input-coff.bin", data);
     hexc(&["dump", "/all", &f]);
     hexc(&["size", "-d", "sections,symbols,armembers", "-n", "0", &f]);
+    hexc(&["query", &f, "kind!=public"]);
 }
 
 fn archive(data: &[u8], s: &Scratch) {

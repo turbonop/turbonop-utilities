@@ -40,12 +40,11 @@ pub(crate) struct Placed {
 /// order: an active one's (an `i32.const` or `i64.const`, an immutable
 /// global initialized to one, or an imported global, `__memory_base`,
 /// taken as 0), and a passive one's where `__wasm_init_memory` copies it
-/// (see [`init_memory`]).
+/// (see [`init_memory`]). (An object's are active, each at its offset in
+/// the object's own layout of its data, which its symbols' offsets and
+/// its DWARF's relocated addresses are in.)
 pub(crate) fn placed_segments(m: &Module<'_>) -> Vec<Placed> {
     let mut out = Vec::new();
-    if m.is_object() {
-        return out;
-    }
     let globals = m.globals();
     let imported = m.imported_globals();
     let pieces = m.data_segments();
@@ -312,14 +311,22 @@ pub(crate) fn sections<'data>(m: &Module<'data>) -> Vec<Section<'data>> {
             }
         })
         .collect();
-    // The data segments, in linear memory.
+    // The data segments, in linear memory: named as the `name` section
+    // names them, or an object's `linking` section (`.rodata.x`).
     let names = m.names(NAME_DATA_SEGMENT);
+    let info = if m.is_object() {
+        m.segment_info()
+    } else {
+        Vec::new()
+    };
     let first = out.len();
     for (i, p) in placed_segments(m).into_iter().enumerate() {
         let name: &'data [u8] = names
             .iter()
             .find(|n| n.index == p.index)
-            .map_or(b"data", |n| n.name);
+            .map(|n| n.name)
+            .or_else(|| info.get(p.index as usize).map(|s| s.name))
+            .unwrap_or(b"data");
         // (wasm-ld names read-only data `.rodata`; the rest is writable.)
         let mut f = SectionFlags::READ | SectionFlags::DATA;
         if !name.starts_with(b".rodata") {
@@ -384,9 +391,6 @@ pub(crate) fn function_range(m: &Module<'_>, f: &hexcavator_wasm::Piece) -> Opti
 /// Bytes of the code section, by offset into its contents; or of a data
 /// segment, by its address in linear memory (see [`MEMORY`]).
 pub(crate) fn bytes_at<'data>(m: &Module<'data>, addr: u64, len: u64) -> Option<&'data [u8]> {
-    if m.is_object() {
-        return None;
-    }
     if addr >= MEMORY {
         let p = placed_segments(m)
             .into_iter()

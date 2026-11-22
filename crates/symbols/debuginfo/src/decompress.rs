@@ -11,6 +11,7 @@
 
 use hexcavator_elf::consts::{ELFCOMPRESS_ZLIB, ELFCOMPRESS_ZSTD, SHF_COMPRESSED};
 use hexcavator_elf::{ElfFile, Section};
+use hexcavator_pe::PeFile;
 
 /// A debug section: its name without its prefix (`info` for
 /// `.debug_info`), its contents (decompressed if they were compressed),
@@ -404,6 +405,83 @@ fn relocate(elf: &ElfFile<'_>, index: usize, data: &mut [u8]) -> bool {
             place.copy_from_slice(low);
             any = true;
         }
+    }
+    any
+}
+
+/// Applies the relocations of a COFF object's section `index` (0-based)
+/// that write an absolute value to `data`, its contents: an address
+/// (`ADDR64`, `ADDR32`, `ADDR32NB`: its symbol's, as the object's sections
+/// are laid out, see [`PeFile::section_addresses`]), an offset in a
+/// section (`SECREL`), or a section's number (`SECTION`); each address
+/// and offset plus the bytes it patches (COFF's addend). Whether any were.
+pub fn coff_relocate(pe: &PeFile<'_>, index: usize, data: &mut [u8]) -> bool {
+    use hexcavator_pe::consts::machine as m;
+    #[derive(Clone, Copy)]
+    enum Write {
+        Address(usize),
+        SectionOffset,
+        Section,
+    }
+    let machine = pe.machine();
+    let write = |kind: u16| -> Option<Write> {
+        Some(match (machine, kind) {
+            (m::AMD64, 1) | (m::ARM64 | m::ARM64EC | m::ARM64X, 0x0E) => Write::Address(8),
+            (m::AMD64, 2 | 3)
+            | (m::I386, 6 | 7)
+            | (m::ARM64 | m::ARM64EC | m::ARM64X | m::ARM | m::ARMNT | m::THUMB, 1 | 2) => {
+                Write::Address(4)
+            }
+            (m::AMD64 | m::I386, 0x0B)
+            | (m::ARM64 | m::ARM64EC | m::ARM64X, 0x08)
+            | (m::ARM | m::ARMNT | m::THUMB, 0x0F) => Write::SectionOffset,
+            (m::AMD64 | m::I386, 0x0A)
+            | (m::ARM64 | m::ARM64EC | m::ARM64X, 0x0D)
+            | (m::ARM | m::ARMNT | m::THUMB, 0x0E) => Write::Section,
+            _ => return None,
+        })
+    };
+    let (Some(header), Ok(Some(symbols))) = (pe.sections().get(index), pe.symbols()) else {
+        return false;
+    };
+    let addresses = pe.section_addresses();
+    let mut any = false;
+    for r in pe.section_relocations(header) {
+        let Some(w) = write(r.kind.get()) else {
+            continue;
+        };
+        let (Ok(at), Some(sym)) = (
+            usize::try_from(r.virtual_address.get()),
+            symbols.get(r.symbol_table_index.get() as usize),
+        ) else {
+            continue;
+        };
+        let width = match w {
+            Write::Address(n) => n,
+            Write::SectionOffset => 4,
+            Write::Section => 2,
+        };
+        let Some(place) = data.get_mut(at..at.saturating_add(width)) else {
+            continue;
+        };
+        let mut addend = [0u8; 8];
+        addend[..width].copy_from_slice(place);
+        let addend = u64::from_le_bytes(addend);
+        let section = usize::try_from(sym.section)
+            .ok()
+            .and_then(|n| n.checked_sub(1));
+        let value = match w {
+            Write::Address(_) => section
+                .and_then(|n| addresses.get(n))
+                .copied()
+                .unwrap_or(0)
+                .wrapping_add(u64::from(sym.value))
+                .wrapping_add(addend),
+            Write::SectionOffset => u64::from(sym.value).wrapping_add(addend),
+            Write::Section => u64::try_from(sym.section).unwrap_or(0),
+        };
+        place.copy_from_slice(&value.to_le_bytes()[..width]);
+        any = true;
     }
     any
 }

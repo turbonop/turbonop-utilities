@@ -12,7 +12,8 @@ and where its bytes go.
 - **Debug information:** PDBs (CodeView symbols, types, and lines) and
   DWARF (in the file, beside it, in a dSYM, or from a symbol server or
   debuginfod), for any format: a MinGW-built PE image's DWARF too, and a
-  relocatable object's, relocated.
+  relocatable object's (ELF, COFF, WebAssembly), relocated; and a COFF
+  object's own CodeView, read as the PDB a linker would write of it.
 - **Every format alike:** each command and analysis reads PE, ELF,
   Mach-O, and WebAssembly images the same way, with whatever debug
   information they have (`-debug <path>` gives it; `-pdb` is another name
@@ -73,7 +74,7 @@ compared.
 | `crates/formats/signature` (`hexcavator-signature`) | Code signatures, verified the same on every platform: DER, X.509, CMS, Authenticode (nested signatures, RFC 3161 and PKCS #9 timestamps), and Apple code signing (code directories, page hashes, requirements, entitlements); the cryptography is RustCrypto's, trust a bundled set of roots |
 | `crates/formats/wasm` (`hexcavator-wasm`) | WebAssembly modules: sections, the name section, imports, globals, function bodies, data segments |
 | `crates/symbols/codeview` (`hexcavator-codeview`) | CodeView records, as cvinfo.h defines them: symbols, types (with a C++-style formatter and type layouts), C13 line and checksum subsections, inline annotations, register numbers |
-| `crates/symbols/debuginfo` (`hexcavator-debuginfo`) | A format-independent view of debug information: compilands, contributions, groups (PDB so far), and finding an image's PDB |
+| `crates/symbols/debuginfo` (`hexcavator-debuginfo`) | A format-independent view of debug information (a PDB, DWARF, or a COFF object's CodeView, as a PDB): compilands, contributions, groups, symbols, types, lines, and finding an image's |
 | `crates/symbols/demangle` (`hexcavator-demangle`) | Symbol demanglers: Microsoft C++ (a syntax tree of the name, for queries, printed exactly as `UnDecorateSymbolName` does), Itanium C++, Rust (v0 and legacy), and Swift |
 | `crates/symbols/dwarf` (`hexcavator-dwarf`) | DWARF 2-5: units, abbreviations, DIEs and attributes, string and address indirection, range and location lists, aranges, name tables, each with where its bytes lie |
 | `crates/symbols/pdb` (`hexcavator-pdb`) | The PDB container: MSF, info, DBI, TPI/IPI with their hash streams, publics and globals, module streams |

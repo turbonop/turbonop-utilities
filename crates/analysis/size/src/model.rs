@@ -19,10 +19,11 @@ use crate::{Compiland, Library, Model, NO_GROUP, Piece, Section, Size};
 
 /// The model of `image` with `debug`: a PE image's with its PDB as
 /// SizeBench has it ([`crate::pe`]); every other's (a PE image's with
-/// DWARF, as MinGW builds one, too) from its sections and its debug
-/// information's contributions.
+/// DWARF, as MinGW builds one, and a COFF object's, its CodeView read as
+/// a PDB, too) from its sections and its debug information's
+/// contributions.
 pub fn model(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
-    if image.pe().is_some() && debug.pdb().is_some() {
+    if image.pe().is_some() && image.kind() != Kind::Object && debug.pdb().is_some() {
         return crate::pe::model(image, debug);
     }
     build(image, debug)
@@ -31,7 +32,7 @@ pub fn model(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
 /// Checks that `image` and `debug` can be analyzed together.
 pub fn check(image: &Image<'_>, debug: &DebugInfo<'_>) -> std::result::Result<(), Unsupported> {
     if let Some(pe) = image.pe() {
-        if debug.pdb().is_some() {
+        if debug.pdb().is_some() && image.kind() != Kind::Object {
             return crate::pe::check(image, debug);
         }
         if pe
@@ -86,12 +87,17 @@ fn section_names(image: &Image<'_>) -> Vec<String> {
 pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
     let names = section_names(image);
     let linked = image.kind() != Kind::Object;
+    // (An object's sections at 0 aren't laid out, but a WebAssembly
+    // object's code is at its offsets, from 0, as a module's is.)
+    let wasm = image.wasm().is_some();
     let mut sections: Vec<Section> = image
         .sections()
         .iter()
         .zip(names)
         .filter(|(s, _)| {
-            s.vm_size > 0 && !s.flags.contains(SectionFlags::NOT_LOADED) && (linked || s.addr != 0)
+            s.vm_size > 0
+                && !s.flags.contains(SectionFlags::NOT_LOADED)
+                && (linked || s.addr != 0 || (wasm && s.flags.contains(SectionFlags::CODE)))
         })
         .map(|(s, name)| Section {
             name,

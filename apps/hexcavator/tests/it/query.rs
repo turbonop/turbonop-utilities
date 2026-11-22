@@ -547,3 +547,25 @@ fn wasm_object_data_placed() {
         "{text}"
     );
 }
+
+/// A WebAssembly module's `.bss` without shared memory (in no segment):
+/// where its DWARF's variables past the segments are, as wasm-ld's map
+/// says (`.bss` at 0x100c0, 0x40 bytes), zeroed.
+#[test]
+fn wasm_bss_from_debug_information() {
+    let rows = rows_of("wasm/data.wasm", "kind=data");
+    let scratch = rows.iter().find(|r| r["name"] == "scratch").unwrap();
+    assert_eq!(scratch["section"], ".bss");
+    let text = run_on("data", "wasm/data.wasm", &["scratch"]);
+    assert!(
+        text.starts_with("scratch  (64 bytes at 0x100c0, .bss)"),
+        "{text}"
+    );
+    assert!(text.contains("[15] = 0  (int)"), "{text}");
+    let text = run_on("size", "wasm/data.wasm", &[]);
+    assert!(
+        text.lines()
+            .any(|l| l.split_whitespace().collect::<Vec<_>>() == [".bss", "0", "64", "0"]),
+        "{text}"
+    );
+}

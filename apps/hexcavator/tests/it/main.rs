@@ -15,6 +15,7 @@ mod layers;
 mod licenses;
 mod lines;
 mod linkmap;
+mod ltcg;
 mod mcp;
 mod mingw;
 mod pdb;

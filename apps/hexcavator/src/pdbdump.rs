@@ -625,7 +625,7 @@ fn type_name(ti: TypeIndex, tf: &TypeFormatter<'_>) -> String {
     tf.name(ti)
 }
 
-fn describe_type(
+pub(crate) fn describe_type(
     ti: TypeIndex,
     rec: &hexcavator_codeview::TypeRecord<'_>,
     tf: &TypeFormatter<'_>,

@@ -2,7 +2,9 @@
 rem Builds Hexcavator's COFF test inputs into testdata\coff: objects.obj (/Z7,
 rem /Gy), objects-big.obj (/bigobj), objects-zi.obj (/Zi: its types in
 rem objects-zi.pdb, a type server), objects.lib (objects.obj and
-rem objects-big.obj), and imports.lib (an import library from imports.def).
+rem objects-big.obj), imports.lib (an import library from imports.def), and
+rem LTCG (/GL) objects: ltcg.obj (x64, from ltcg.cpp; and ltcg.lib of it) and
+rem ltcg-x86.obj (x86, from ltcg.c).
 setlocal
 rem (Run from R:, the repository mapped: see ..\neutral.cmd.)
 if /i not "%~d0"=="R:" (call "%~dp0..\neutral.cmd" "%~f0" & exit /b)
@@ -26,3 +28,22 @@ rem dumpbin's view of each object's symbol table (hexc dump -symbols matches).
 for %%o in (objects.obj objects-big.obj) do (
   dumpbin /nologo /symbols %%o > %%o.symbols.txt || exit /b 1
 )
+rem LTCG objects, and the tools' views of them: dumpbin's /headers (which
+rem hexc dump matches), lib's symbol index (which the symbols hexc ltcg finds
+rem as public definitions hold), and the directives of the same source
+rem compiled without /GL.
+cl /nologo /c /O1 /GL /GS- /Brepro "%~dp0ltcg.cpp" /Fo:ltcg.obj || exit /b 1
+cl /nologo /c /O1 /GS- /Brepro "%~dp0ltcg.cpp" /Fo:ltcg-nogl.obj || exit /b 1
+dumpbin /nologo /directives ltcg-nogl.obj > ltcg.directives.txt || exit /b 1
+del ltcg-nogl.obj
+lib /nologo /Brepro /out:ltcg.lib ltcg.obj || exit /b 1
+dumpbin /nologo /headers ltcg.obj > ltcg.obj.headers.txt || exit /b 1
+dumpbin /nologo /linkermember:2 ltcg.lib > ltcg.lib.linkermember.txt || exit /b 1
+setlocal
+call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x86 >nul 2>&1 || exit /b 1
+cl /nologo /c /O1 /GL /GS- /Brepro "%~dp0ltcg.c" /Fo:ltcg-x86.obj || exit /b 1
+lib /nologo /Brepro /out:ltcg-x86.lib ltcg-x86.obj || exit /b 1
+dumpbin /nologo /headers ltcg-x86.obj > ltcg-x86.obj.headers.txt || exit /b 1
+dumpbin /nologo /linkermember:2 ltcg-x86.lib > ltcg-x86.lib.linkermember.txt || exit /b 1
+del ltcg-x86.lib
+endlocal

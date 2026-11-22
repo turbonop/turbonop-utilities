@@ -52,6 +52,13 @@ fn describe_coff(data: &[u8]) -> Option<String> {
         };
         return Some(format!("{kind}, {}", pe_machine(object.machine())));
     }
+    if hexcavator_pe::ltcg::LtcgObject::is_ltcg(data) {
+        let machine = u16::from_le_bytes([data[6], data[7]]);
+        return Some(format!(
+            "Visual C++ LTCG object (/GL: the compiler's intermediate language), {}",
+            pe_machine(machine)
+        ));
+    }
     // An import object: Sig1 0, Sig2 0xFFFF (as a /bigobj object's), then
     // its version (0) and machine.
     if data.len() >= 20 && data[0..6] == [0, 0, 0xFF, 0xFF, 0, 0] {

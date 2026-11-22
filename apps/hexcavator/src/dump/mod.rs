@@ -267,9 +267,12 @@ fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Res
     }
     // (dumpbin's summary: of the PE and COFF files dumped, if any were.)
     if !summary.is_empty()
-        || paths
-            .iter()
-            .all(|p| Mmap::open(p).is_ok_and(|m| readobj_file(options, p, &m).is_none()))
+        || paths.iter().all(|p| {
+            Mmap::open(p).is_ok_and(|m| {
+                readobj_file(options, p, &m).is_none()
+                    && !hexcavator_pe::ltcg::LtcgObject::is_ltcg(&m)
+            })
+        })
     {
         pe::summary(out, &summary)?;
     }
@@ -394,12 +397,65 @@ fn dump_file(
             _ => dos::dump(out, options, &mz).map(Ok),
         };
     }
+    if hexcavator_pe::ltcg::LtcgObject::is_ltcg(data) {
+        return ltcg_header(out, options, data).map(Ok);
+    }
     match PeFile::parse_object(data) {
         Ok(file) if hexcavator_pe::consts::machine::name(file.machine()).is_some() => {
             pe::dump(out, options, path, &file, summary).map(Ok)
         }
         Ok(_) | Err(_) => Ok(Err("unrecognized file format".to_string())),
     }
+}
+
+/// An LTCG (`/GL`) object, as dumpbin shows one: its anonymous object
+/// header (with /headers), and nothing more (its contents are the
+/// compiler's: `hexc ltcg` dumps them).
+fn ltcg_header(out: &mut dyn Write, options: &Options, data: &[u8]) -> io::Result<()> {
+    writeln!(out, "File Type: ANONYMOUS OBJECT")?;
+    if !options.headers {
+        return Ok(());
+    }
+    let u16_at = |o: usize| u16::from_le_bytes([data[o], data[o + 1]]);
+    let u32_at = |o: usize| u32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]);
+    let machine = u16_at(6);
+    let stamp = u32_at(8);
+    let date = if stamp == 0 || stamp > 0x7FFF_FFFF {
+        String::new()
+    } else {
+        format!(" {} UTC", crate::time::asctime_utc(stamp.into()))
+    };
+    let c = &data[12..28];
+    writeln!(
+        out,
+        "
+ANON OBJECT HEADER VALUES"
+    )?;
+    writeln!(out, "{:16X} version", u16_at(4))?;
+    writeln!(
+        out,
+        "{machine:16X} machine ({})",
+        hexcavator_pe::consts::machine::name(machine).unwrap_or("Unknown")
+    )?;
+    writeln!(out, "{stamp:16X} time date stamp{date}")?;
+    writeln!(
+        out,
+        "                 ClassID: {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
+        u32::from_le_bytes([c[0], c[1], c[2], c[3]]),
+        u16::from_le_bytes([c[4], c[5]]),
+        u16::from_le_bytes([c[6], c[7]]),
+        c[8],
+        c[9],
+        c[10],
+        c[11],
+        c[12],
+        c[13],
+        c[14],
+        c[15]
+    )?;
+    writeln!(out, "{:16X} size", u32_at(28))?;
+    // (Version 1 has no flags; dumpbin shows 0.)
+    writeln!(out, "{:16X} flags", 0)
 }
 
 #[cfg(test)]

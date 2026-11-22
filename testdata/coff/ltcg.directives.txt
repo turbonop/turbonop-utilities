@@ -1,0 +1,29 @@
+
+Dump of file ltcg-nogl.obj
+
+File Type: COFF OBJECT
+
+   Linker Directives
+   -----------------
+   /FAILIFMISMATCH:_CRT_STDIO_ISO_WIDE_SPECIFIERS=0
+   /DEFAULTLIB:advapi32.lib
+   /INCLUDE:ltcg_kept
+   /FAILIFMISMATCH:ltcg_mode=test
+   /DEFAULTLIB:LIBCMT
+   /DEFAULTLIB:OLDNAMES
+   /EXPORT:?exported_value@@3HA,DATA
+   /EXPORT:exported
+
+  Summary
+
+          B8 .bss
+         168 .chks64
+           8 .data
+          39 .data$rs
+          70 .debug$S
+          E4 .drectve
+          3C .pdata
+          4F .rdata
+          D8 .rdata$r
+         1EA .text$mn
+          38 .xdata

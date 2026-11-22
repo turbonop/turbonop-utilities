@@ -437,6 +437,7 @@ dependencies = [
  "hexcavator-mz",
  "hexcavator-ne",
  "hexcavator-pdb",
+ "hexcavator-pe",
  "hexcavator-powerpc",
  "hexcavator-query",
  "hexcavator-riscv",

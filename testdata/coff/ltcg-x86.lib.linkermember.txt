@@ -1,0 +1,24 @@
+
+Dump of file ltcg-x86.lib
+
+File Type: LIBRARY
+
+Archive member name at 98: /               
+FFFFFFFFFFFFFFFF time/date
+         uid
+         gid
+       0 mode
+      51 size
+correct header end
+
+    1 offsets
+
+        1      126
+
+    5 public symbols
+
+        1 @fast_fn@8
+        1 _cdecl_fn
+        1 _std_fn@8
+        1 _tentative
+        1 _tentative_array

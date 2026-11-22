@@ -184,7 +184,8 @@ struct MapObject {
     path: PathBuf,
     map: Mmap,
     /// The member's place in the archive (start, end), the archive's
-    /// path, and the member's name, for a member of one.
+    /// path (as the debug map names it), and the member's name, for a
+    /// member of one.
     member: Option<(usize, usize, String, String)>,
     /// Its entry of the debug map.
     entry: usize,
@@ -268,7 +269,13 @@ fn open_debug_map(image_path: &Path, image: &Image<'_>) -> Vec<MapObject> {
                     let Some(place) = member_place(&map, name) else {
                         continue;
                     };
-                    Some((place.0, place.1, p.display().to_string(), name.clone()))
+                    // (The archive as the debug map names it, wherever
+                    // it was found.)
+                    let archive = o.path.iter().rposition(|&b| b == b'(').map_or_else(
+                        || p.display().to_string(),
+                        |i| String::from_utf8_lossy(&o.path[..i]).into_owned(),
+                    );
+                    Some((place.0, place.1, archive, name.clone()))
                 }
             };
             out.push(MapObject {

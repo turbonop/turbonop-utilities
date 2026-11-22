@@ -1442,6 +1442,17 @@ fn build_maps(
             debug.as_deref(),
         )
         .map_err(|e| format!("{}: {e}", show(path)))?;
+        // (Without a linker's map, a debug map's archives are the
+        // libraries.)
+        if map.is_none()
+            && sources.contains(&Source::Libraries)
+            && let Ok(opened) = hexcavator_program::Opened::open(path, debug_file)
+            && opened.is_debug_map()
+            && let Ok(program) = opened.program()
+            && let Ok(model) = program.model()
+        {
+            sources::apply_libraries(&mut maps, model);
+        }
         unix_map(&mut maps, map)?;
         return Ok(maps);
     }

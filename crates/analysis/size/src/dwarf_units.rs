@@ -18,7 +18,7 @@
 //! strings a unit's own name uses are charged to it (bloaty charges them
 //! to an empty name); and strings include their terminating NUL.
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 
 use hexcavator_dwarf::consts::*;
 use hexcavator_dwarf::{
@@ -185,7 +185,7 @@ pub fn compile_units(
             .insert(offset, std::rc::Rc::clone(&a));
         Some(a)
     };
-    let mut names: HashMap<u64, Label> = HashMap::new();
+    let mut names: HashMap<u64, Label> = HashMap::default();
     let mut unit_name = |labels: &mut Labels, info_offset: u64| -> Label {
         *names.entry(info_offset).or_insert_with(|| {
             let name = Unit::at(s, info_offset)
@@ -212,7 +212,7 @@ pub fn compile_units(
         c.file(off.aranges, set.offset, set.size, l);
     }
 
-    let mut stmt_names: HashMap<u64, String> = HashMap::new();
+    let mut stmt_names: HashMap<u64, String> = HashMap::default();
     let mut attrs: Vec<Attr<'_>> = Vec::new();
     for (section, section_off) in [
         (UnitSection::Info, off.info),

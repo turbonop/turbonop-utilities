@@ -20,7 +20,7 @@
 //! files and in the DWARF `inlines` (bloaty prints the map's zero-based
 //! lines).
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 
 use hexcavator_core::Result;
 use hexcavator_demangle::itanium::Demangler;
@@ -110,7 +110,7 @@ fn data_segments(data: &[u8]) -> Vec<(u64, u64, u64)> {
 /// as its DWARF describes them).
 fn variable_sizes(data: &[u8]) -> HashMap<u64, u64> {
     let Ok(debug) = hexcavator_debuginfo::DebugInfo::parse(data) else {
-        return HashMap::new();
+        return HashMap::default();
     };
     debug
         .symbols()
@@ -189,7 +189,7 @@ pub fn maps_with_source_map(
                 let base_index = m.imported_functions();
                 // (By index, the first of each: a lookup per function, not
                 // a search of every name.)
-                let (mut func_names, mut seg_names) = (HashMap::new(), HashMap::new());
+                let (mut func_names, mut seg_names) = (HashMap::default(), HashMap::default());
                 for n in &funcs {
                     func_names.entry(n.index).or_insert(n.name);
                 }
@@ -333,7 +333,7 @@ pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, Strin
     // As the name section has it, demangled short or in full (as for ELF
     // symbols), or by its index; else the one function whose name is it
     // with parameters (as for PE images).
-    let mut raw_names = HashMap::new();
+    let mut raw_names = HashMap::default();
     for n in &funcs {
         raw_names.entry(n.index).or_insert(n.name);
     }
@@ -425,7 +425,7 @@ pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, Strin
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use hexcavator_hash::Map as HashMap;
     use std::path::PathBuf;
 
     use super::*;
@@ -439,7 +439,7 @@ mod tests {
     }
 
     fn file_totals(maps: &Maps, k: usize) -> HashMap<String, u64> {
-        let mut out = HashMap::new();
+        let mut out = HashMap::default();
         sweep(&[&maps.base.file, &maps.sources[k].1.file], |s, e, l| {
             *out.entry(l[1].map_or("<none>", |l| maps.labels.name(l)).to_string())
                 .or_default() += e - s;

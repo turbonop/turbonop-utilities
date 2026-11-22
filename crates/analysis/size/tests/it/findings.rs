@@ -76,7 +76,7 @@ fn duplicate_data_matches_sizebench() {
             .filter(|s| s.flags.contains(hexcavator_image::SectionFlags::WRITE))
             .filter_map(|s| Some((s.addr, s.end()?)))
             .collect();
-        let wanted: std::collections::HashSet<(u64, u32)> = syms
+        let wanted: hexcavator_hash::Set<(u64, u32)> = syms
             .iter()
             .filter_map(|s| Some((s.addr, s.compiland?)))
             .collect();

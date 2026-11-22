@@ -22,6 +22,7 @@ hexcavator-wasm.workspace = true
 hexcavator-wasm-isa.workspace = true
 hexcavator-demangle.workspace = true
 hexcavator-par.workspace = true
+hexcavator-hash.workspace = true
 hexcavator-x86.workspace = true
 hexcavator-arm64.workspace = true
 hexcavator-xref.workspace = true

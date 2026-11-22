@@ -11,7 +11,7 @@
 //! size; the others are listed as *folded*, with size 0, so that sizes sum
 //! to the bytes the image holds.
 
-use std::collections::HashMap;
+use hexcavator_hash::{Map as HashMap, Set as HashSet};
 
 use hexcavator_core::Result;
 use hexcavator_debuginfo::{DebugInfo, Symbol as DebugSymbol, SymbolKind as DebugKind};
@@ -256,8 +256,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
     // same addresses their sizes. (Other symbols of such modules are shown:
     // a module all of whose code was folded into others' contributes
     // nothing, but its functions are folded names.)
-    let contributing: std::collections::HashSet<u32> =
-        debug.contributions()?.iter().map(|c| c.compiland).collect();
+    let contributing: HashSet<u32> = debug.contributions()?.iter().map(|c| c.compiland).collect();
     let (mut shown, hidden): (Vec<DebugSymbol>, Vec<DebugSymbol>) =
         symbols.into_iter().partition(|s| {
             s.kind != DebugKind::Thunk || s.compiland.is_none_or(|m| contributing.contains(&m))
@@ -307,7 +306,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         .collect();
     let mut demangler = hexcavator_demangle::msvc::Demangler::default();
     // The publics at each address, for naming vtables.
-    let mut publics_at: HashMap<u64, Vec<&str>> = HashMap::new();
+    let mut publics_at: HashMap<u64, Vec<&str>> = HashMap::default();
     for s in shown.iter().filter(|s| s.kind == DebugKind::Public) {
         publics_at.entry(s.addr).or_default().push(&s.name);
     }
@@ -360,7 +359,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         // symbols name what its CodeView doesn't.)
         return Ok(with_image_symbols(image, model, from_debug));
     };
-    let mut handlers: HashMap<u64, crate::eh::Handler> = HashMap::new();
+    let mut handlers: HashMap<u64, crate::eh::Handler> = HashMap::default();
     for s in shown.iter().chain(&hidden) {
         if matches!(
             s.kind,
@@ -394,7 +393,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
     let rsrc = crate::rsrc::resource_range(pe);
     let outside =
         |range: Option<(u64, u64)>, addr: u64| range.is_none_or(|(a, e)| addr < a || addr >= e);
-    let structures: std::collections::HashSet<u64> = pe_symbols.iter().map(|s| s.addr).collect();
+    let structures: HashSet<u64> = pe_symbols.iter().map(|s| s.addr).collect();
     let mut out: Vec<Symbol> = from_debug
         .into_iter()
         .filter(|s| {
@@ -434,7 +433,7 @@ fn with_image_symbols(image: &Image<'_>, model: &Model, mut symbols: Vec<Symbol>
     };
     let macho = image.macho().is_some();
     let mut demangler = hexcavator_demangle::Demangler::new();
-    let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+    let mut seen: HashSet<u64> = HashSet::default();
     let mut extra = Vec::new();
     for s in image.symbols() {
         let Some(size) = s.size.filter(|&n| n > 0) else {
@@ -577,7 +576,7 @@ pub fn from_debug_symbols(
     display: &mut dyn FnMut(&DebugSymbol, SymbolKind, u64, String) -> String,
 ) -> Vec<Symbol> {
     // A public at the same address as a sized symbol has that size.
-    let mut sized_at: HashMap<u64, u64> = HashMap::new();
+    let mut sized_at: HashMap<u64, u64> = HashMap::default();
     for s in symbols.iter().chain(hidden) {
         if matches!(s.kind, DebugKind::Function | DebugKind::Thunk)
             && let Some(size) = s.size
@@ -618,13 +617,13 @@ pub fn from_debug_symbols(
         .map(|s| (s.name.as_str(), s.addr))
         .collect();
     // Labels: a public at one is an alternate entry point into code.
-    let labels: std::collections::HashSet<u64> = symbols
+    let labels: HashSet<u64> = symbols
         .iter()
         .filter(|s| s.kind == DebugKind::Label)
         .map(|s| s.addr)
         .collect();
     // Functions whose code is split: their addresses.
-    let mut split: HashMap<u64, ()> = HashMap::new();
+    let mut split: HashMap<u64, ()> = HashMap::default();
     for s in symbols
         .iter()
         .filter(|s| s.kind == DebugKind::SeparatedBlock)
@@ -789,7 +788,7 @@ pub fn from_debug_symbols(
         // Index into `names` by identity (one address can have hundreds of
         // folded names); all thunks share one slot: folded thunks are
         // shown as one.
-        let mut index: HashMap<&str, usize> = HashMap::new();
+        let mut index: HashMap<&str, usize> = HashMap::default();
         let mut thunk: Option<usize> = None;
         for c in &candidates {
             if rank(c.kind) != best_rank {

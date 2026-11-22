@@ -11,8 +11,8 @@
 //! its virtual bases, whose offsets are computed at run time and are
 //! placed here after the rest of the object, aligned, in order.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use hexcavator_hash::Map as HashMap;
+use hexcavator_hash::Set as HashSet;
 
 use hexcavator_core::Endian;
 use hexcavator_dwarf::consts::*;
@@ -224,7 +224,7 @@ impl DwarfInfo<'_> {
     /// Whether a class has no data: no members, vtable pointer, or virtual
     /// bases, and only empty bases.
     fn is_empty_class(&self, ty: TypeRef) -> bool {
-        self.is_empty_class_in(ty, 0, &mut HashMap::new())
+        self.is_empty_class_in(ty, 0, &mut HashMap::default())
     }
 
     /// [`Self::is_empty_class`], each class's answer kept in `known`: a
@@ -426,7 +426,7 @@ impl DwarfInfo<'_> {
             }
             Walk::Into
         });
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut out = Vec::new();
         for at in defs {
             if let Some(l) = self.layout(at)

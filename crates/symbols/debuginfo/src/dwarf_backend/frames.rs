@@ -5,7 +5,7 @@
 //! innermost's from the unit's line table, each other's from the call
 //! inlined into it (`DW_AT_call_file`, `DW_AT_call_line`).
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 
 use hexcavator_dwarf::consts::*;
 use hexcavator_dwarf::{Die, UnitSection};
@@ -62,9 +62,9 @@ impl<'a, 'data> DwarfLocator<'a, 'data> {
         Self {
             info,
             code: None,
-            tables: HashMap::new(),
-            parents: HashMap::new(),
-            functions: HashMap::new(),
+            tables: HashMap::default(),
+            parents: HashMap::default(),
+            functions: HashMap::default(),
         }
     }
 
@@ -157,7 +157,7 @@ impl<'a, 'data> DwarfLocator<'a, 'data> {
                     let parents = self.unit_parents(u);
                     info.qualified_in(decl, name, parents)
                 }
-                None => info.qualified_in(decl, name, &HashMap::new()),
+                None => info.qualified_in(decl, name, &HashMap::default()),
             };
         }
         frames
@@ -170,7 +170,7 @@ impl<'a, 'data> DwarfLocator<'a, 'data> {
             let _ = self.chain(unit, None);
         }
         static NONE: std::sync::LazyLock<HashMap<u64, u64>> =
-            std::sync::LazyLock::new(HashMap::new);
+            std::sync::LazyLock::new(HashMap::default);
         self.parents.get(&unit).unwrap_or(&NONE)
     }
 

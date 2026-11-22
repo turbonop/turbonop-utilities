@@ -27,8 +27,8 @@ impl AddrMap {
             .map(|s| (s.n_sect, s.n_value, s.name))
             .collect();
         defined.sort_unstable();
-        let mut by_name: std::collections::HashMap<&[u8], &DebugMapSymbol<'_>> =
-            std::collections::HashMap::with_capacity(symbols.len());
+        let mut by_name: hexcavator_hash::Map<&[u8], &DebugMapSymbol<'_>> =
+            hexcavator_hash::map_with_capacity(symbols.len());
         for s in symbols {
             by_name.entry(s.name).or_insert(s);
         }

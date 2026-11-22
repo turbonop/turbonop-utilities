@@ -351,7 +351,7 @@ pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
         match source {
             Source::Groups => map = b.base.clone(),
             Source::Sections | Source::Segments => {
-                let mut cache = std::collections::HashMap::new();
+                let mut cache = hexcavator_hash::Map::default();
                 let labels = &mut b.labels;
                 map.fill_from(&b.base, |l| {
                     *cache.entry(l).or_insert_with(|| {
@@ -483,7 +483,7 @@ fn unit<'d>(data: &'d [u8], offset: u64, member: String) -> Unit<'d> {
 
 /// Fills `map`'s unlabeled bytes from `base`, sections as `[section x]`.
 fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
-    let mut cache = std::collections::HashMap::new();
+    let mut cache = hexcavator_hash::Map::default();
     map.fill_from(base, |l| {
         *cache.entry(l).or_insert_with(|| {
             let name = labels.name(l).to_string();

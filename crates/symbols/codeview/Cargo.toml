@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 hexcavator-core.workspace = true
+hexcavator-hash.workspace = true
 hexcavator-par.workspace = true
 
 [lints]

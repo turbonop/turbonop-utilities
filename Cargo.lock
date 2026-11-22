@@ -319,6 +319,7 @@ name = "hexcavator-codeview"
 version = "0.0.7"
 dependencies = [
  "hexcavator-core",
+ "hexcavator-hash",
  "hexcavator-par",
 ]
 
@@ -334,6 +335,7 @@ dependencies = [
  "hexcavator-core",
  "hexcavator-dwarf",
  "hexcavator-elf",
+ "hexcavator-hash",
  "hexcavator-image",
  "hexcavator-macho",
  "hexcavator-par",
@@ -450,6 +452,10 @@ dependencies = [
  "hexcavator-wasm",
  "hexcavator-x86",
 ]
+
+[[package]]
+name = "hexcavator-hash"
+version = "0.0.7"
 
 [[package]]
 name = "hexcavator-image"
@@ -616,6 +622,7 @@ dependencies = [
  "hexcavator-dwarf",
  "hexcavator-elf",
  "hexcavator-fingerprint",
+ "hexcavator-hash",
  "hexcavator-image",
  "hexcavator-linkmap",
  "hexcavator-loongarch",

@@ -6,7 +6,7 @@
 //! shared by several functions (folded functions share their unwind data)
 //! is listed once, for the first function, in `.pdata` order.
 
-use std::collections::HashSet;
+use hexcavator_hash::Set as HashSet;
 
 use hexcavator_core::Rva;
 use hexcavator_pe::PeFile;
@@ -327,7 +327,7 @@ pub fn symbols(pe: &PeFile<'_>, context: &(impl Context + Sync)) -> Vec<Symbol> 
     let mut b = Builder {
         pe,
         context,
-        seen: HashSet::new(),
+        seen: HashSet::default(),
         out: Vec::new(),
         targets: Vec::new(),
         x64_gs_alignment: !matches!(pe.machine(), machine::ARMNT | machine::ARM64),

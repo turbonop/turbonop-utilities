@@ -7,7 +7,7 @@
 //! the debug information's, so the name is the recorded name plus the
 //! signature.
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 
 use hexcavator_debuginfo::{BasicType, DebugInfo, PointerKind, Qualifiers, TypeRef, TypeShape};
 
@@ -34,8 +34,8 @@ impl<'d, 'data> Namer<'d, 'data> {
     pub fn new(debug: &'d DebugInfo<'data>) -> Self {
         Self {
             debug,
-            cache: HashMap::new(),
-            signatures: HashMap::new(),
+            cache: HashMap::default(),
+            signatures: HashMap::default(),
         }
     }
 

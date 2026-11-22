@@ -470,7 +470,7 @@ fn elf_compile_units(
         data_at: Vec::new(),
     };
     // Symbol sizes, by start address, for variables' locations.
-    let mut sizes = std::collections::HashMap::new();
+    let mut sizes = hexcavator_hash::Map::default();
     for table in elf.sections().filter(|t| t.kind == SHT_SYMTAB) {
         for sym in elf.symbols(&table) {
             if sym.kind != STT_SECTION && sym.shndx != u32::from(SHN_UNDEF) && sym.size > 0 {

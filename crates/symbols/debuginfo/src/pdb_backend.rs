@@ -1,6 +1,6 @@
 //! The PDB backend.
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 
 use hexcavator_codeview::symbols::{Symbol, SymbolIter, kind};
 use hexcavator_codeview::{TypeFormatter, TypeIndex};
@@ -216,8 +216,8 @@ impl<'data> PdbInfo<'data> {
         ids.build_offsets();
         let formatter = TypeFormatter { types };
         // (Id records of one name are one function: an index per name.)
-        let mut index: HashMap<u32, u32> = HashMap::new();
-        let mut by_name: HashMap<String, u32> = HashMap::new();
+        let mut index: HashMap<u32, u32> = HashMap::default();
+        let mut by_name: HashMap<String, u32> = HashMap::default();
         let mut inlinees: Vec<String> = Vec::new();
         let mut params: Vec<Option<u32>> = Vec::new();
         for s in &mut sites {
@@ -344,7 +344,7 @@ impl<'data> PdbInfo<'data> {
         let dbi = self.pdb.dbi()?;
         let names = self.pdb.names()?;
         let mut files: Vec<String> = Vec::new();
-        let mut file_index: HashMap<String, u32> = HashMap::new();
+        let mut file_index: HashMap<String, u32> = HashMap::default();
         let mut spans = Vec::new();
         for module in dbi.modules() {
             let Some(stream) = self.pdb.module_stream(module)? else {
@@ -352,7 +352,7 @@ impl<'data> PdbInfo<'data> {
             };
             let compiland = u32::try_from(module.index).unwrap_or(u32::MAX);
             // A module's checksum offsets name its files: look each up once.
-            let mut by_offset: HashMap<u32, u32> = HashMap::new();
+            let mut by_offset: HashMap<u32, u32> = HashMap::default();
             let mut entries = Vec::new();
             for group in &function_line_blocks(&stream) {
                 let Some(block) = group.first() else { continue };
@@ -448,7 +448,7 @@ impl<'data> PdbInfo<'data> {
             if let Some(ids) = ids {
                 ids.build_offsets();
             }
-            let mut names: HashMap<u64, Option<(String, TypeRef)>> = HashMap::new();
+            let mut names: HashMap<u64, Option<(String, TypeRef)>> = HashMap::default();
             for s in out.iter_mut().filter(|s| s.flags & INLINEE_PENDING != 0) {
                 s.flags &= !INLINEE_PENDING;
                 let Some(f) = s.function.as_mut() else {
@@ -467,7 +467,7 @@ impl<'data> PdbInfo<'data> {
                 }
             }
         }
-        let mut sizes: HashMap<u64, Option<u64>> = HashMap::new();
+        let mut sizes: HashMap<u64, Option<u64>> = HashMap::default();
         for s in out.iter_mut().filter(|s| s.kind == SymbolKind::Data) {
             s.size = *sizes
                 .entry(s.type_index)
@@ -1094,7 +1094,7 @@ pub(crate) fn function_line_blocks<'s>(
     stream: &'s hexcavator_pdb::ModuleStream<'_>,
 ) -> Vec<Vec<hexcavator_codeview::lines::LineBlock<'s>>> {
     use hexcavator_codeview::lines::{parse_lines, subsection};
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = hexcavator_hash::Set::default();
     let mut out = Vec::new();
     for (kind, body) in stream.subsections() {
         if kind != subsection::DEBUG_S_LINES {
@@ -1452,7 +1452,7 @@ fn module_symbols(
     };
     // Procedures by the offset of their record, which nested records name
     // as their parent.
-    let mut procedures: HashMap<u32, (u64, &[u8], u32)> = HashMap::new();
+    let mut procedures: HashMap<u32, (u64, &[u8], u32)> = HashMap::default();
     let mut last_procedure: Option<(u64, &[u8], u32)> = None;
     // The procedures seen (address, name, type, parameters), and the open
     // scopes, each with the procedure it lies in, if any, and whether it is

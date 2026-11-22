@@ -397,7 +397,7 @@ impl Builder<'_> {
         for i in 0..self.images.len() {
             let img = &self.images[i];
             let input = dwarf_input(img, debug);
-            let sizes: std::collections::HashMap<u64, u64> = extents(&img.m)
+            let sizes: hexcavator_hash::Map<u64, u64> = extents(&img.m)
                 .into_iter()
                 .map(|(s, end)| (s.n_value, end - s.n_value))
                 .collect();

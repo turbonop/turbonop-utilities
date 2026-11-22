@@ -43,6 +43,10 @@ hexcavator-query.workspace = true
 hexcavator-signature.workspace = true
 hexcavator-size.workspace = true
 hexcavator-x86.workspace = true
+hexcavator-riscv.workspace = true
+hexcavator-loongarch.workspace = true
+hexcavator-powerpc.workspace = true
+hexcavator-mips.workspace = true
 
 [features]
 # Coverage-guided fuzzing: build with RUSTFLAGS="-C instrument-coverage"

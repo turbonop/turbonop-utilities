@@ -124,23 +124,108 @@ pub fn listing(
     bytes: &[u8],
     symbols: Option<&SymbolMap>,
 ) -> io::Result<()> {
+    // Code in parts, each listed on its own core, then joined where the
+    // sweep of the part before ended. What a line shows depends only on
+    // its offset, and a linear sweep falls back into step within a few
+    // instructions of any start: the part is taken from the line at that
+    // offset, or listed again from it if it has none. The output is the
+    // one sweep's, part for part.
+    const PART: usize = 256 * 1024;
+    let threads = hexcavator_par::threads();
+    if threads < 2 || bytes.len() < 2 * PART {
+        let mut buf = Vec::new();
+        let _ = sweep(
+            &mut buf,
+            mode,
+            address,
+            bytes,
+            0,
+            bytes.len(),
+            symbols,
+            None,
+        );
+        return out.write_all(&buf);
+    }
+    let starts: Vec<usize> = (0..bytes.len()).step_by(PART).collect();
+    // (A window of parts at a time: their text, held until written, is
+    // some 20 times the code.)
+    let mut at = 0usize;
+    for window in starts.chunks(threads * 2) {
+        let parts = hexcavator_par::map(window, 1, |&from| {
+            let to = (from + PART).min(bytes.len());
+            let mut buf = Vec::new();
+            let mut lines = Vec::new();
+            let end = sweep(
+                &mut buf,
+                mode,
+                address,
+                bytes,
+                from,
+                to,
+                symbols,
+                Some(&mut lines),
+            );
+            (from, to, buf, lines, end)
+        });
+        for (from, to, buf, lines, end) in parts {
+            if at >= to {
+                continue;
+            }
+            if at == from {
+                out.write_all(&buf)?;
+                at = end;
+                continue;
+            }
+            match lines.binary_search_by_key(&at, |l: &(usize, usize)| l.0) {
+                Ok(k) => {
+                    out.write_all(&buf[lines[k].1..])?;
+                    at = end;
+                }
+                Err(_) => {
+                    let mut again = Vec::new();
+                    at = sweep(&mut again, mode, address, bytes, at, to, symbols, None);
+                    out.write_all(&again)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Lists `bytes[from..]` (at `address`) to `out` until a line starts at or
+/// after `to`; returns where it stopped. `lines` gets each line's offset in
+/// `bytes` and where its text starts in `out`.
+#[allow(clippy::too_many_arguments)]
+fn sweep(
+    out: &mut Vec<u8>,
+    mode: Mode,
+    address: u64,
+    bytes: &[u8],
+    from: usize,
+    to: usize,
+    symbols: Option<&SymbolMap>,
+    mut lines: Option<&mut Vec<(usize, usize)>>,
+) -> usize {
     let none = hexcavator_x86::format::NoSymbols;
     let names: &dyn hexcavator_x86::format::Symbols = match symbols {
         Some(s) => s,
         None => &none,
     };
     let width = if mode == Mode::Bits64 { 16 } else { 8 };
-    let mut offset = 0usize;
-    while offset < bytes.len() {
+    let mut offset = from;
+    while offset < to {
+        if let Some(lines) = lines.as_deref_mut() {
+            lines.push((offset, out.len()));
+        }
         let here = address + offset as u64;
         if let Some(label) = symbols.and_then(|s| s.at(here)) {
-            writeln!(out, "{label}:")?;
+            let _ = writeln!(out, "{label}:");
         }
         // Bytes no object contributed are shown as data.
         if let Some(end) = symbols.and_then(|s| s.gap_end(here)) {
             let room = usize::try_from(end - here).unwrap_or(usize::MAX);
             let n = room.min(16).min(bytes.len() - offset);
-            data_line(out, width, here, &bytes[offset..offset + n])?;
+            let _ = data_line(out, width, here, &bytes[offset..offset + n]);
             offset += n;
             continue;
         }
@@ -155,10 +240,10 @@ pub fn listing(
             inst.as_ref(),
             names,
         );
-        out.write_all(text.as_bytes())?;
+        out.extend_from_slice(text.as_bytes());
         offset += len;
     }
-    Ok(())
+    offset
 }
 
 impl hexcavator_arm64::Symbols for SymbolMap {

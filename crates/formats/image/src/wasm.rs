@@ -44,6 +44,29 @@ pub(crate) struct Placed {
 /// the object's own layout of its data, which its symbols' offsets and
 /// its DWARF's relocated addresses are in.)
 pub(crate) fn placed_segments(m: &Module<'_>) -> Vec<Placed> {
+    match m.derived(|| Derived::of(m)) {
+        Some(d) => d.placed.clone(),
+        None => placed_segments_of(m),
+    }
+}
+
+/// What reading a module needs often (its data's places, which reading
+/// any datum needs; `__wasm_init_memory`'s copies and fills), made once.
+struct Derived {
+    placed: Vec<Placed>,
+    init: InitMemory,
+}
+
+impl Derived {
+    fn of(m: &Module<'_>) -> Self {
+        Self {
+            placed: placed_segments_of(m),
+            init: init_memory_of(m),
+        }
+    }
+}
+
+fn placed_segments_of(m: &Module<'_>) -> Vec<Placed> {
     let mut out = Vec::new();
     let globals = m.globals();
     let imported = m.imported_globals();
@@ -88,6 +111,7 @@ pub(crate) fn placed_segments(m: &Module<'_>) -> Vec<Placed> {
 }
 
 /// What `__wasm_init_memory` does (see [`init_memory`]).
+#[derive(Clone)]
 pub(crate) struct InitMemory {
     /// Each `memory.init`: its segment, and where it copies it.
     pub copies: Vec<(u32, u64)>,
@@ -104,6 +128,13 @@ pub(crate) struct InitMemory {
 /// wasm-ld writes it (see [`InitCode`]): an instruction it doesn't write
 /// ends the reading, with what was found.
 pub(crate) fn init_memory(m: &Module<'_>) -> InitMemory {
+    match m.derived(|| Derived::of(m)) {
+        Some(d) => d.init.clone(),
+        None => init_memory_of(m),
+    }
+}
+
+fn init_memory_of(m: &Module<'_>) -> InitMemory {
     let mut copies = Vec::new();
     let mut fills = Vec::new();
     let names = m.names(hexcavator_wasm::NAME_FUNCTION);

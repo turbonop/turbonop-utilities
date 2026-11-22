@@ -844,11 +844,12 @@ fn common(
     // (Code's literals: its sections' words.)
     let width = u64::from(arch.pointer_size().unwrap_or(8));
     let big = image.endian() == hexcavator_core::Endian::Big;
+    let sections = image.sections();
     let literal = |at: u64| -> Option<u64> {
         if !executable(at) {
             return None;
         }
-        let w = file_bytes(image, at, width);
+        let w = file_bytes_in(image, &sections, at, width);
         (w.len() as u64 == width).then(|| {
             if big {
                 w.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x))
@@ -861,7 +862,7 @@ fn common(
         .filter(|&i| b.nodes()[i as usize].code)
         .map(|i| {
             let n = b.nodes()[i as usize];
-            (i, file_bytes(image, n.start, n.end - n.start))
+            (i, file_bytes_in(image, &sections, n.start, n.end - n.start))
         })
         .collect();
     b.code_all(arch, &code, &literal);
@@ -916,9 +917,19 @@ fn got_entries(
 
 /// The file's bytes at an address: as many as its section has there.
 fn file_bytes<'d>(image: &hexcavator_image::Image<'d>, start: u64, len: u64) -> &'d [u8] {
-    let Some(s) = image
-        .sections()
-        .into_iter()
+    file_bytes_in(image, &image.sections(), start, len)
+}
+
+/// [`file_bytes`], of `sections` (the image's, listed once: a
+/// WebAssembly module's take reading its names).
+fn file_bytes_in<'d>(
+    image: &hexcavator_image::Image<'d>,
+    sections: &[hexcavator_image::Section<'d>],
+    start: u64,
+    len: u64,
+) -> &'d [u8] {
+    let Some(s) = sections
+        .iter()
         .find(|s| s.file_size > 0 && start >= s.addr && start - s.addr < s.file_size)
     else {
         return &[];

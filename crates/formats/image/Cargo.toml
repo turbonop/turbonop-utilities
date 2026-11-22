@@ -13,7 +13,7 @@ hexcavator-core.workspace = true
 hexcavator-pe.workspace = true
 hexcavator-elf.workspace = true
 hexcavator-macho.workspace = true
-hexcavator-wasm.workspace = true
+hexcavator-wasm = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 hexcavator-macho.workspace = true

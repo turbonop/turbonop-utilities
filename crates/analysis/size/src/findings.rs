@@ -911,16 +911,24 @@ pub fn report(
     } else {
         options.limit
     };
-    let dups = duplicate_data(image, debug, symbols);
-    let families = template_families(Some(image), symbols);
     let word = u64::from(image.arch().pointer_size().unwrap_or(8));
-    let virtuals = match debug.classes() {
+    // (Three analyses, independent: at once.)
+    let virtuals = || match debug.classes() {
         Ok(classes) => {
             let mut namer = crate::names::Namer::new(debug);
             wasteful_virtuals(&classes, &mut namer, word)
         }
         Err(_) => Vec::new(),
     };
+    let ((dups, families), virtuals) = hexcavator_par::join(
+        || {
+            hexcavator_par::join(
+                || duplicate_data(image, debug, symbols),
+                || template_families(Some(image), symbols),
+            )
+        },
+        virtuals,
+    );
     let wasted_slots: u64 = virtuals.iter().map(WastefulVirtual::wasted).sum();
     let wasted = dups.iter().fold(Size::default(), |a, d| a + d.wasted());
     let mut text = String::new();

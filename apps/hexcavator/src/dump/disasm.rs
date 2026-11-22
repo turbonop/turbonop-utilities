@@ -124,47 +124,72 @@ pub fn listing(
     bytes: &[u8],
     symbols: Option<&SymbolMap>,
 ) -> io::Result<()> {
-    // Code in parts, each listed on its own core, then joined where the
-    // sweep of the part before ended. What a line shows depends only on
-    // its offset, and a linear sweep falls back into step within a few
-    // instructions of any start: the part is taken from the line at that
-    // offset, or listed again from it if it has none. The output is the
-    // one sweep's, part for part.
+    let none = hexcavator_x86::format::NoSymbols;
+    let width = if mode == Mode::Bits64 { 16 } else { 8 };
+    in_parts(out, bytes.len(), |offset, out| {
+        let names: &dyn hexcavator_x86::format::Symbols = match symbols {
+            Some(s) => s,
+            None => &none,
+        };
+        let here = address + offset as u64;
+        if let Some(label) = symbols.and_then(|s| s.at(here)) {
+            let _ = writeln!(out, "{label}:");
+        }
+        // Bytes no object contributed are shown as data.
+        if let Some(end) = symbols.and_then(|s| s.gap_end(here)) {
+            let room = usize::try_from(end - here).unwrap_or(usize::MAX);
+            let n = room.min(16).min(bytes.len() - offset);
+            let _ = data_line(out, width, here, &bytes[offset..offset + n]);
+            return Some(offset + n);
+        }
+        let (len, inst) = match decode(&bytes[offset..], mode, here) {
+            Ok(inst) => (inst.len(), Some(inst)),
+            Err(_) => (1, None),
+        };
+        let text = format::listing_with(
+            mode,
+            here,
+            &bytes[offset..offset + len],
+            inst.as_ref(),
+            names,
+        );
+        out.extend_from_slice(text.as_bytes());
+        Some(offset + len)
+    })
+}
+
+/// Writes the listing of `len` bytes that `line` makes a line at a time
+/// (each line's text, given its offset, to the buffer; the next line's
+/// offset, or `None` at the end), on every core.
+///
+/// The bytes are listed in parts, each on its own core, then joined where
+/// the sweep of the part before ended. What a line shows depends only on
+/// its offset, and a linear sweep falls back into step within a few
+/// instructions of any start: each part is taken from the line at that
+/// offset, or listed again from it if it has none. The output is the one
+/// sweep's, part for part.
+fn in_parts(
+    out: &mut dyn Write,
+    len: usize,
+    line: impl Fn(usize, &mut Vec<u8>) -> Option<usize> + Sync,
+) -> io::Result<()> {
     const PART: usize = 256 * 1024;
     let threads = hexcavator_par::threads();
-    if threads < 2 || bytes.len() < 2 * PART {
+    if threads < 2 || len < 2 * PART {
         let mut buf = Vec::new();
-        let _ = sweep(
-            &mut buf,
-            mode,
-            address,
-            bytes,
-            0,
-            bytes.len(),
-            symbols,
-            None,
-        );
+        sweep(&mut buf, 0, len, len, &line, None);
         return out.write_all(&buf);
     }
-    let starts: Vec<usize> = (0..bytes.len()).step_by(PART).collect();
+    let starts: Vec<usize> = (0..len).step_by(PART).collect();
     // (A window of parts at a time: their text, held until written, is
     // some 20 times the code.)
     let mut at = 0usize;
     for window in starts.chunks(threads * 2) {
         let parts = hexcavator_par::map(window, 1, |&from| {
-            let to = (from + PART).min(bytes.len());
+            let to = (from + PART).min(len);
             let mut buf = Vec::new();
             let mut lines = Vec::new();
-            let end = sweep(
-                &mut buf,
-                mode,
-                address,
-                bytes,
-                from,
-                to,
-                symbols,
-                Some(&mut lines),
-            );
+            let end = sweep(&mut buf, from, to, len, &line, Some(&mut lines));
             (from, to, buf, lines, end)
         });
         for (from, to, buf, lines, end) in parts {
@@ -183,7 +208,7 @@ pub fn listing(
                 }
                 Err(_) => {
                     let mut again = Vec::new();
-                    at = sweep(&mut again, mode, address, bytes, at, to, symbols, None);
+                    at = sweep(&mut again, at, to, len, &line, None);
                     out.write_all(&again)?;
                 }
             }
@@ -192,56 +217,29 @@ pub fn listing(
     Ok(())
 }
 
-/// Lists `bytes[from..]` (at `address`) to `out` until a line starts at or
-/// after `to`; returns where it stopped. `lines` gets each line's offset in
-/// `bytes` and where its text starts in `out`.
-#[allow(clippy::too_many_arguments)]
+/// Lists from offset `from` until a line starts at or after `to` (or
+/// there are no more, at `len`); returns where it stopped. `lines` gets
+/// each line's offset and where its text starts in `out`.
 fn sweep(
     out: &mut Vec<u8>,
-    mode: Mode,
-    address: u64,
-    bytes: &[u8],
     from: usize,
     to: usize,
-    symbols: Option<&SymbolMap>,
+    len: usize,
+    line: &impl Fn(usize, &mut Vec<u8>) -> Option<usize>,
     mut lines: Option<&mut Vec<(usize, usize)>>,
 ) -> usize {
-    let none = hexcavator_x86::format::NoSymbols;
-    let names: &dyn hexcavator_x86::format::Symbols = match symbols {
-        Some(s) => s,
-        None => &none,
-    };
-    let width = if mode == Mode::Bits64 { 16 } else { 8 };
     let mut offset = from;
     while offset < to {
-        if let Some(lines) = lines.as_deref_mut() {
-            lines.push((offset, out.len()));
+        let mark = out.len();
+        match line(offset, out) {
+            Some(next) => {
+                if let Some(lines) = lines.as_deref_mut() {
+                    lines.push((offset, mark));
+                }
+                offset = next;
+            }
+            None => return len,
         }
-        let here = address + offset as u64;
-        if let Some(label) = symbols.and_then(|s| s.at(here)) {
-            let _ = writeln!(out, "{label}:");
-        }
-        // Bytes no object contributed are shown as data.
-        if let Some(end) = symbols.and_then(|s| s.gap_end(here)) {
-            let room = usize::try_from(end - here).unwrap_or(usize::MAX);
-            let n = room.min(16).min(bytes.len() - offset);
-            let _ = data_line(out, width, here, &bytes[offset..offset + n]);
-            offset += n;
-            continue;
-        }
-        let (len, inst) = match decode(&bytes[offset..], mode, here) {
-            Ok(inst) => (inst.len(), Some(inst)),
-            Err(_) => (1, None),
-        };
-        let text = format::listing_with(
-            mode,
-            here,
-            &bytes[offset..offset + len],
-            inst.as_ref(),
-            names,
-        );
-        out.extend_from_slice(text.as_bytes());
-        offset += len;
     }
     offset
 }
@@ -259,30 +257,30 @@ fn arm64_listing(
     bytes: &[u8],
     symbols: Option<&SymbolMap>,
 ) -> io::Result<()> {
-    let mut offset = 0usize;
-    while offset + 4 <= bytes.len() {
+    in_parts(out, bytes.len(), |offset, out| {
+        if offset + 4 > bytes.len() {
+            return None;
+        }
         let here = address + offset as u64;
         if let Some(label) = symbols.and_then(|s| s.at(here)) {
-            writeln!(out, "{label}:")?;
+            let _ = writeln!(out, "{label}:");
         }
         if let Some(end) = symbols.and_then(|s| s.gap_end(here)) {
             let room = usize::try_from(end - here).unwrap_or(usize::MAX);
             let n = room.min(16).min(bytes.len() - offset);
-            data_line(out, 16, here, &bytes[offset..offset + n])?;
-            offset += n;
-            continue;
+            let _ = data_line(out, 16, here, &bytes[offset..offset + n]);
+            return Some(offset + n);
         }
-        let word = u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+        let word = u32::from_le_bytes(bytes[offset..offset + 4].try_into().ok()?);
         let text =
             hexcavator_arm64::decode(word, here).map_or_else(String::new, |inst| match symbols {
                 Some(s) => hexcavator_arm64::format_with(&inst, s),
                 None => hexcavator_arm64::format(&inst),
             });
         let line = format!("  {here:016X}: {word:08X}  {text}");
-        writeln!(out, "{}", line.trim_end())?;
-        offset += 4;
-    }
-    Ok(())
+        let _ = writeln!(out, "{}", line.trim_end());
+        Some(offset + 4)
+    })
 }
 
 /// A line of raw bytes: hex, then the bytes as text.

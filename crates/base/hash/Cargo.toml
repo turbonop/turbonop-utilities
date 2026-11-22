@@ -1,0 +1,12 @@
+[package]
+name = "hexcavator-hash"
+description = "A fast keyed hash for Hexcavator's hash maps"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

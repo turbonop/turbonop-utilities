@@ -306,7 +306,7 @@ pub struct LayoutDiff<'a> {
 /// can't be told apart across builds, and are left out. Parts are compared
 /// but for their type references, which are each file's own.
 pub fn compare<'a>(old: &'a [Layout], new: &'a [Layout]) -> LayoutDiff<'a> {
-    use std::collections::HashMap;
+    use hexcavator_hash::Map as HashMap;
     let named = |l: &&Layout| !is_anonymous(&l.name);
     let by_key = |v: &'a [Layout]| -> HashMap<&'a str, &'a Layout> {
         v.iter()

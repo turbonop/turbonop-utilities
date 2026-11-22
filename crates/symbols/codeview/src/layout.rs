@@ -91,8 +91,8 @@ pub fn layout(types: &dyn TypeSource, ti: TypeIndex) -> Option<Layout> {
 /// looks up a definition by name.
 #[derive(Default)]
 struct Cache {
-    sizes: std::collections::HashMap<u32, Option<u64>>,
-    empty: std::collections::HashMap<u32, bool>,
+    sizes: hexcavator_hash::Map<u32, Option<u64>>,
+    empty: hexcavator_hash::Map<u32, bool>,
 }
 
 impl Cache {
@@ -328,7 +328,7 @@ fn is_empty(
     types: &dyn TypeSource,
     ti: TypeIndex,
     depth: u32,
-    known: &mut std::collections::HashMap<u32, bool>,
+    known: &mut hexcavator_hash::Map<u32, bool>,
 ) -> bool {
     if let Some(&e) = known.get(&ti.0) {
         return e;
@@ -346,7 +346,7 @@ fn is_empty_uncached(
     types: &dyn TypeSource,
     ti: TypeIndex,
     depth: u32,
-    known: &mut std::collections::HashMap<u32, bool>,
+    known: &mut hexcavator_hash::Map<u32, bool>,
 ) -> bool {
     let ti = types.resolve_forward(ti);
     let Some(udt) = types.record(ti).and_then(|r| r.udt()) else {
@@ -390,7 +390,7 @@ fn pointer_size(types: &dyn TypeSource, list: TypeIndex) -> Option<u64> {
 /// name), with its layout, without the parts' type names (see
 /// [`layout`] for one with them).
 pub fn all(types: &(dyn TypeSource + Sync)) -> Vec<Layout> {
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = hexcavator_hash::Set::default();
     let mut wanted = Vec::new();
     // Every record's offset, once: lookups by index then cost nothing.
     for (ti, rec) in types.records() {

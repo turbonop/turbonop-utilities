@@ -2,7 +2,7 @@
 //! labels every byte the base does, and segments, sections, link-edit
 //! tables, symbols, and architectures get what the file says they span.
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 use std::path::PathBuf;
 
 use super::*;
@@ -43,7 +43,7 @@ const SOURCES: &[Source] = &[
 
 fn totals(maps: &Maps, k: usize) -> (HashMap<String, u64>, HashMap<String, u64>) {
     let map = &maps.sources[k].1;
-    let mut out = (HashMap::new(), HashMap::new());
+    let mut out = (HashMap::default(), HashMap::default());
     for (domain, base, m) in [
         (&mut out.0, &maps.base.vm, &map.vm),
         (&mut out.1, &maps.base.file, &map.file),

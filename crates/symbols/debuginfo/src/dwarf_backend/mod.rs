@@ -24,8 +24,8 @@ mod layouts;
 mod types;
 mod vars;
 
+use hexcavator_hash::Map as HashMap;
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock as OnceCell;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -763,7 +763,7 @@ impl<'data> DwarfInfo<'data> {
     fn build_index(&self) -> Index {
         let mut index = Index::default();
         let mut compilands = 0u32;
-        let mut skeletons: HashMap<u64, Skeleton> = HashMap::new();
+        let mut skeletons: HashMap<u64, Skeleton> = HashMap::default();
         let mut attrs = Vec::new();
         for (file, split) in (0u32..).zip(std::iter::once(None).chain(self.splits.iter().map(Some)))
         {
@@ -923,7 +923,7 @@ impl<'data> DwarfInfo<'data> {
     /// address.
     fn functions(&self) -> &HashMap<u64, Vec<TypeRef>> {
         self.functions.get_or_init(|| {
-            let mut out: HashMap<u64, Vec<TypeRef>> = HashMap::new();
+            let mut out: HashMap<u64, Vec<TypeRef>> = HashMap::default();
             self.walk(|w| {
                 if w.die.tag == DW_TAG_SUBPROGRAM
                     && let Some(&(low, _)) = self.ranges(w.unit, w.die).first()
@@ -1057,7 +1057,7 @@ impl<'data> DwarfInfo<'data> {
     /// union, or enumeration.
     fn parents(&self) -> &HashMap<u64, u64> {
         self.parents.get_or_init(|| {
-            let mut out = HashMap::new();
+            let mut out = HashMap::default();
             self.walk(|w| {
                 if let Some(p) = w.stack.last()
                     && is_scope(p.tag)
@@ -1395,7 +1395,7 @@ impl<'data> DwarfInfo<'data> {
     pub fn contributions(&self) -> Result<Vec<Contribution>> {
         let mut out: Vec<Contribution> = Vec::new();
         // The compilands with code so far.
-        let mut with_code = std::collections::HashSet::new();
+        let mut with_code = hexcavator_hash::Set::default();
         for m in &self.index().units {
             let Some(compiland) = m.compiland else {
                 continue;
@@ -1476,7 +1476,7 @@ impl<'data> DwarfInfo<'data> {
     /// The line tables (see [`crate::DebugInfo::source_lines`]).
     pub fn source_lines(&self) -> Result<SourceLines> {
         let mut files: Vec<String> = Vec::new();
-        let mut by_name: HashMap<String, u32> = HashMap::new();
+        let mut by_name: HashMap<String, u32> = HashMap::default();
         let mut spans = Vec::new();
         for m in &self.index().units {
             // (A split unit's lines are its skeleton's.)
@@ -1486,7 +1486,7 @@ impl<'data> DwarfInfo<'data> {
             let Some(lines) = self.unit_lines(m) else {
                 continue;
             };
-            let mut local: HashMap<u64, u32> = HashMap::new();
+            let mut local: HashMap<u64, u32> = HashMap::default();
             for &(addr, size, index, line) in &lines.rows {
                 let file = *local.entry(index).or_insert_with(|| {
                     let name = lines.path(index).unwrap_or_default();
@@ -1715,7 +1715,7 @@ impl<'data> DwarfInfo<'data> {
         }
         // Kept: each function's qualified name, and (address, compiland,
         // name) of each; dropped: its qualified and its symbol's name.
-        let mut kept_names = std::collections::HashSet::new();
+        let mut kept_names = hexcavator_hash::Set::default();
         let mut kept = Vec::new();
         let mut dropped = Vec::new();
         self.walk(|w| {
@@ -1781,9 +1781,9 @@ impl<'data> DwarfInfo<'data> {
     /// constant.
     pub fn variable_definitions(
         &self,
-        wanted: &std::collections::HashSet<(u64, u32)>,
+        wanted: &hexcavator_hash::Set<(u64, u32)>,
     ) -> Result<HashMap<(u64, u32), crate::VariableDefinition>> {
-        let mut out = HashMap::new();
+        let mut out = HashMap::default();
         if wanted.is_empty() {
             return Ok(out);
         }
@@ -1891,7 +1891,7 @@ impl<'data> DwarfInfo<'data> {
     pub fn inline_sites(&self) -> Result<InlineSites> {
         let mut inlinees: Vec<String> = Vec::new();
         let mut params: Vec<Option<u32>> = Vec::new();
-        let mut by_origin: HashMap<u64, u32> = HashMap::new();
+        let mut by_origin: HashMap<u64, u32> = HashMap::default();
         let mut sites = Vec::new();
         self.walk(|w| {
             let d = w.die;

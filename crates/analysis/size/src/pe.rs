@@ -21,7 +21,7 @@
 //! [`extract`] reads the inputs from the files; [`build`] is a pure
 //! function of them.
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 
 use hexcavator_core::{Error, ErrorKind, Result};
 use hexcavator_debuginfo::{Contribution, DebugInfo, Group as DebugGroup};
@@ -459,7 +459,7 @@ fn raw_groups(inputs: &PeInputs) -> Vec<RawGroup> {
         }
     }
 
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = hexcavator_hash::Set::default();
     for g in &mut merged {
         if !seen.insert(g.name.clone()) {
             g.name = format!("{} ({:X})", g.name, g.characteristics);
@@ -539,9 +539,9 @@ pub fn build(inputs: &PeInputs) -> Model {
 
     // Libraries and compilands, keyed case-insensitively.
     let mut libraries: Vec<Library> = Vec::new();
-    let mut library_index: HashMap<String, u32> = HashMap::new();
+    let mut library_index: HashMap<String, u32> = HashMap::default();
     let mut compilands: Vec<Compiland> = Vec::new();
-    let mut compiland_index: HashMap<(u32, String), u32> = HashMap::new();
+    let mut compiland_index: HashMap<(u32, String), u32> = HashMap::default();
     let mut module_compiland: Vec<Option<u32>> = vec![None; inputs.compilands.len()];
     let mut compiland_for = |module: usize,
                              libraries: &mut Vec<Library>,

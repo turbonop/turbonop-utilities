@@ -7,7 +7,7 @@
 //! pieces are the debug information's contributions (DWARF's compile
 //! units' ranges), in the sections that hold them.
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 
 use hexcavator_core::Result;
 use hexcavator_debuginfo::DebugInfo;
@@ -72,7 +72,7 @@ fn section_names(image: &Image<'_>) -> Vec<String> {
             .map(|s| String::from_utf8_lossy(s.name).into_owned())
             .collect(),
     };
-    let mut seen: HashMap<String, u32> = HashMap::new();
+    let mut seen: HashMap<String, u32> = HashMap::default();
     for n in &mut names {
         let count = seen.entry(n.clone()).or_insert(0);
         *count += 1;
@@ -169,7 +169,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>) -> Result<Model> {
     let mut libraries = vec![Library {
         name: String::new(),
     }];
-    let mut library_index: HashMap<String, u32> = HashMap::new();
+    let mut library_index: HashMap<String, u32> = HashMap::default();
     library_index.insert(String::new(), 0);
     let compilands: Vec<Compiland> = debug
         .compilands()?

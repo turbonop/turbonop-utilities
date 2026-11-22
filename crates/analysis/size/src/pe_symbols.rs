@@ -15,7 +15,7 @@
 //! - Guard tables are found whenever the load configuration's own size
 //!   holds their fields, not by the data directory's size.
 
-use std::collections::HashSet;
+use hexcavator_hash::Set as HashSet;
 
 use hexcavator_core::{Rva, Va, cstr_at};
 use hexcavator_pe::PeFile;
@@ -380,7 +380,7 @@ pub fn symbols(pe: &PeFile<'_>) -> Vec<Symbol> {
     };
     let mut b = Builder {
         pe,
-        seen: HashSet::new(),
+        seen: HashSet::default(),
         out: Vec::new(),
         word,
     };

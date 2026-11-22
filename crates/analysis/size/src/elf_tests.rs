@@ -2,7 +2,7 @@
 //! labels every byte the base map does, and the charges are what the
 //! file's own structures (read through hexcavator-elf) say they should be.
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 use std::path::PathBuf;
 
 use super::*;
@@ -54,7 +54,7 @@ const SOURCES: &[Source] = &[
 /// Bytes per label of source `k` (VM, file), over what the base labels.
 fn totals(maps: &Maps, k: usize) -> (HashMap<String, u64>, HashMap<String, u64>) {
     let map = &maps.sources[k].1;
-    let mut out = (HashMap::new(), HashMap::new());
+    let mut out = (HashMap::default(), HashMap::default());
     for (domain, base, m) in [
         (&mut out.0, &maps.base.vm, &map.vm),
         (&mut out.1, &maps.base.file, &map.file),
@@ -177,8 +177,8 @@ fn object_segments_are_section_flags() {
     let elf = ElfFile::parse(&data).unwrap();
     let maps = maps(&data, "x.o", &[Source::Segments, Source::Sections]).unwrap();
     let (vm, file) = totals(&maps, 0);
-    let mut want_vm: HashMap<String, u64> = HashMap::new();
-    let mut want_file: HashMap<String, u64> = HashMap::new();
+    let mut want_vm: HashMap<String, u64> = HashMap::default();
+    let mut want_file: HashMap<String, u64> = HashMap::default();
     for s in elf.sections().skip(1) {
         *want_file.entry(flags_label(s.flags)).or_default() += s.file_size();
         if s.is_alloc() {
@@ -428,9 +428,8 @@ fn symbol_names_by_source() {
         &[Source::FullSymbols, Source::Symbols, Source::RawSymbols],
     )
     .unwrap();
-    let names = |k: usize| -> std::collections::HashSet<String> {
-        totals(&maps, k).1.into_keys().collect()
-    };
+    let names =
+        |k: usize| -> hexcavator_hash::Set<String> { totals(&maps, k).1.into_keys().collect() };
     let (full, short, raw) = (names(0), names(1), names(2));
     let nm = |file: &str| -> Vec<String> {
         let text = String::from_utf8(fixture(file)).unwrap();

@@ -1218,11 +1218,11 @@ impl<'data> DebugInfo<'data> {
     /// say which are constant.)
     pub fn variable_definitions(
         &self,
-        wanted: &std::collections::HashSet<(u64, u32)>,
-    ) -> Result<std::collections::HashMap<(u64, u32), VariableDefinition>> {
+        wanted: &hexcavator_hash::Set<(u64, u32)>,
+    ) -> Result<hexcavator_hash::Map<(u64, u32), VariableDefinition>> {
         match self {
             DebugInfo::Pdb(_) => {
-                let mut out = std::collections::HashMap::new();
+                let mut out = hexcavator_hash::Map::default();
                 for s in self.symbols()? {
                     let Some(c) = s.compiland else { continue };
                     if s.kind != SymbolKind::Data || !wanted.contains(&(s.addr, c)) {

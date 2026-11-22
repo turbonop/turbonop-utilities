@@ -193,7 +193,7 @@ pub fn label_crates(maps: &mut Maps, sources: &[Source]) {
             continue;
         };
         *source = Source::Crates;
-        let mut to: std::collections::HashMap<Label, Label> = std::collections::HashMap::new();
+        let mut to: hexcavator_hash::Map<Label, Label> = hexcavator_hash::Map::default();
         let labels = &mut maps.labels;
         let mut relabel = |l: Label| -> Label {
             if let Some(&t) = to.get(&l) {
@@ -512,7 +512,7 @@ pub fn apply_libraries(maps: &mut Maps, model: &Model) {
 }
 
 fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
-    let mut cache = std::collections::HashMap::new();
+    let mut cache = hexcavator_hash::Map::default();
     map.fill_from(base, |l| {
         *cache.entry(l).or_insert_with(|| fallback(labels, l))
     });

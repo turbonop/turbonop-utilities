@@ -8,7 +8,7 @@
 //! function's unnamed data, string literals, and padding go to the symbol
 //! before them) but needs nothing but the map.
 
-use std::collections::HashMap;
+use hexcavator_hash::Map as HashMap;
 
 use hexcavator_core::{Error, ErrorKind, Result};
 use hexcavator_debuginfo::{Compiland, Contribution, Group as DebugGroup};
@@ -87,7 +87,7 @@ pub fn inputs(image: &Image<'_>, map: &LinkMap) -> Result<(PeInputs, Vec<Symbol>
         .collect();
     located.sort();
     located.dedup_by_key(|l| l.0);
-    let mut compilands: HashMap<(String, String), u32> = HashMap::new();
+    let mut compilands: HashMap<(String, String), u32> = HashMap::default();
     let mut symbols = Vec::new();
     let mut demangler = hexcavator_demangle::msvc::Demangler::default();
     for (k, &(rva, i)) in located.iter().enumerate() {

@@ -1051,7 +1051,7 @@ mod tests {
 /// Parsing llvm-objdump's disassembly, the oracle for [`references`].
 #[cfg(test)]
 pub(crate) mod oracle {
-    use std::collections::HashMap;
+    use hexcavator_hash::Map as HashMap;
 
     /// Each function's references, as llvm-objdump's disassembly gives them:
     /// on x86-64 the `# 0x...` target of each RIP-relative operand; on ARM64
@@ -1060,7 +1060,7 @@ pub(crate) mod oracle {
     pub(crate) fn objdump_references(text: &str) -> Vec<(String, Vec<u64>)> {
         let hex = |s: &str| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok();
         let mut out: Vec<(String, Vec<u64>)> = Vec::new();
-        let mut pages: HashMap<String, u64> = HashMap::new();
+        let mut pages: HashMap<String, u64> = HashMap::default();
         for line in text.lines() {
             if let Some(name) = line.strip_suffix(">:").and_then(|l| l.split_once(" <")) {
                 out.push((name.1.to_string(), Vec::new()));

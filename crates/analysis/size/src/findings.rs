@@ -14,7 +14,8 @@
 //!   Virtuals", and its numbers): each costs a vtable slot in its class
 //!   and every class derived from it.
 
-use std::collections::{BTreeMap, HashMap};
+use hexcavator_hash::Map as HashMap;
+use std::collections::BTreeMap;
 
 use hexcavator_image::Image;
 
@@ -68,7 +69,7 @@ pub fn duplicate_data(
         }
     }
     groups.retain(|_, members| members.len() > 1);
-    let wanted: std::collections::HashSet<(u64, u32)> = groups
+    let wanted: hexcavator_hash::Set<(u64, u32)> = groups
         .values()
         .flatten()
         .map(|s| (s.addr, s.compiland.expect("filtered")))
@@ -234,7 +235,7 @@ pub fn wasteful_virtuals(
     // Whether a base of class `i` (at any depth) declares virtual
     // `signature`; each class is visited once.
     let in_base = |i: usize, signature: &str| -> bool {
-        let mut visited = std::collections::HashSet::new();
+        let mut visited = hexcavator_hash::Set::default();
         let mut stack: Vec<hexcavator_debuginfo::TypeRef> = classes[i].bases.clone();
         while let Some(b) = stack.pop() {
             let Some(&j) = index.get(&b) else { continue };
@@ -414,9 +415,9 @@ pub fn strip_parameters(name: &str) -> &str {
 
 /// Template families with at least two instances, largest first.
 pub fn template_families(image: Option<&Image<'_>>, symbols: &[Symbol]) -> Vec<TemplateFamily> {
-    let mut families: HashMap<String, TemplateFamily> = HashMap::new();
+    let mut families: HashMap<String, TemplateFamily> = HashMap::default();
     // Each family's functions in one piece: (address, size).
-    let mut code: HashMap<String, Vec<(u64, u64)>> = HashMap::new();
+    let mut code: HashMap<String, Vec<(u64, u64)>> = HashMap::default();
     for s in symbols.iter().filter(|s| {
         !s.folded
             && matches!(

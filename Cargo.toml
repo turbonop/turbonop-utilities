@@ -36,6 +36,7 @@ rustc-hash = "2.1"
 hexcavator-core = { path = "crates/base/core" }
 hexcavator-mmap = { path = "crates/base/mmap" }
 hexcavator-par = { path = "crates/base/par" }
+hexcavator-hash = { path = "crates/base/hash" }
 hexcavator-mz = { path = "crates/formats/mz" }
 hexcavator-ne = { path = "crates/formats/ne" }
 hexcavator-lx = { path = "crates/formats/lx" }

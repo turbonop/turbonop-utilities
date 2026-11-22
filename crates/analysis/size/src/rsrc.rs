@@ -19,7 +19,7 @@
 //!   name is shown by that name.
 //! - A name is read to its full 16-bit length (not its low 8 bits).
 
-use std::collections::{HashMap, HashSet};
+use hexcavator_hash::{Map as HashMap, Set as HashSet};
 
 use hexcavator_core::Rva;
 use hexcavator_pe::PeFile;
@@ -251,7 +251,7 @@ impl Walker<'_, '_> {
     }
 
     fn data_symbols(&mut self) {
-        let mut images: HashMap<u16, Vec<usize>> = HashMap::new();
+        let mut images: HashMap<u16, Vec<usize>> = HashMap::default();
         for (i, r) in self.resources.iter().enumerate() {
             if matches!(r.kind, Some(rt::ICON | rt::CURSOR))
                 && let Some(id) = r.id
@@ -346,8 +346,8 @@ pub fn symbols(pe: &PeFile<'_>) -> Vec<Symbol> {
     let mut w = Walker {
         pe,
         base: root.base(),
-        seen: HashSet::new(),
-        directories: HashSet::new(),
+        seen: HashSet::default(),
+        directories: HashSet::default(),
         out: Vec::new(),
         resources: Vec::new(),
     };

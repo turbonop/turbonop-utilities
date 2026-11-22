@@ -43,10 +43,10 @@ pub(crate) struct Placed {
 /// (see [`init_memory`]). (An object's are active, each at its offset in
 /// the object's own layout of its data, which its symbols' offsets and
 /// its DWARF's relocated addresses are in.)
-pub(crate) fn placed_segments(m: &Module<'_>) -> Vec<Placed> {
+pub(crate) fn placed_segments<'m>(m: &'m Module<'_>) -> alloc::borrow::Cow<'m, [Placed]> {
     match m.derived(|| Derived::of(m)) {
-        Some(d) => d.placed.clone(),
-        None => placed_segments_of(m),
+        Some(d) => alloc::borrow::Cow::Borrowed(&d.placed),
+        None => alloc::borrow::Cow::Owned(placed_segments_of(m)),
     }
 }
 
@@ -359,7 +359,7 @@ pub(crate) fn sections<'data>(m: &Module<'data>) -> Vec<Section<'data>> {
         Vec::new()
     };
     let first = out.len();
-    for (i, p) in placed_segments(m).into_iter().enumerate() {
+    for (i, p) in placed_segments(m).iter().copied().enumerate() {
         let name: &'data [u8] = names
             .iter()
             .find(|n| n.index == p.index)
@@ -431,8 +431,8 @@ pub(crate) fn function_range(m: &Module<'_>, f: &hexcavator_wasm::Piece) -> Opti
 /// segment, by its address in linear memory (see [`MEMORY`]).
 pub(crate) fn bytes_at<'data>(m: &Module<'data>, addr: u64, len: u64) -> Option<&'data [u8]> {
     if addr >= MEMORY {
-        let p = placed_segments(m)
-            .into_iter()
+        let p = *placed_segments(m)
+            .iter()
             .find(|p| addr >= p.addr && addr - p.addr < p.size)?;
         if len > p.size - (addr - p.addr) {
             return None;

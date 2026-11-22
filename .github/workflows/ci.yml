@@ -57,7 +57,7 @@ jobs:
           name: fuzz-findings
           path: fuzz-findings/
 
-  # The VS Code extension: its helpers' tests (with hexc for the sidebar's
+  # The VS Code extension: its helpers' tests (with hexcavator for the sidebar's
   # tree), and, on Windows, the views rendered in headless Edge.
   vscode:
     strategy:
@@ -74,8 +74,8 @@ jobs:
       - shell: bash
         working-directory: editors/vscode/hexcavator
         run: |
-          exe=$PWD/../../../target/release/hexc
+          exe=$PWD/../../../target/release/hexcavator
           if [ -f "$exe.exe" ]; then exe=$exe.exe; fi
           for t in test/*.test.js; do node "$t" "$exe" || exit 1; done
       - if: runner.os == 'Windows'
-        run: python editors/vscode/hexcavator/test/harness.py target/release/hexc.exe testdata/xref/xref-x64.exe testdata/xref/xref-x64-renamed.exe
+        run: python editors/vscode/hexcavator/test/harness.py target/release/hexcavator.exe testdata/xref/xref-x64.exe testdata/xref/xref-x64-renamed.exe

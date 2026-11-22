@@ -1,9 +1,9 @@
-//! `hexc mcp`: a Model Context Protocol server over stdio, so that LLM
+//! `hexcavator mcp`: a Model Context Protocol server over stdio, so that LLM
 //! agents can ask what the bytes of a binary are.
 //!
 //! Messages are JSON-RPC 2.0, one per line. The tools (see [`tools`]) read
 //! PE, ELF, Mach-O, and WebAssembly files alike, with their debug
-//! information (a PDB, or DWARF), opened as `hexc`'s commands open them.
+//! information (a PDB, or DWARF), opened as `hexcavator`'s commands open them.
 //!
 //! Loaded binaries are cached for the session: the first question about a
 //! large image reads its debug information; later ones are fast.
@@ -30,7 +30,7 @@ use hexcavator_size::sources::{Maps, Source};
 use hexcavator_size::symbols::Symbol;
 
 pub const USAGE: &str = "\
-usage: hexc mcp
+usage: hexcavator mcp
 
 Serves the Model Context Protocol on stdin and stdout (JSON-RPC 2.0, one
 message per line), with tools that report what the bytes of an executable,
@@ -44,7 +44,7 @@ const PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 /// A program's model and symbols, built.
 type Built = (Arc<Model>, Arc<Vec<Symbol>>);
 
-/// A binary, read once per session: opened as every `hexc` command opens
+/// A binary, read once per session: opened as every `hexcavator` command opens
 /// one (see [`hexcavator_program::Opened`]), whatever its format.
 struct Loaded {
     path: PathBuf,
@@ -149,7 +149,7 @@ impl Loaded {
             .map_err(Clone::clone)
     }
 
-    /// The maps for `list` (as `hexc size` builds them), built once.
+    /// The maps for `list` (as `hexcavator size` builds them), built once.
     fn maps(&self, list: &[Source]) -> Result<Arc<Maps>, String> {
         if let Some(m) = self.maps.borrow().get(list) {
             return Ok(Arc::clone(m));
@@ -371,7 +371,7 @@ impl Server {
                 object([
                     ("name", Value::from(s.name.as_str())),
                     ("kind", Value::from(s.kind.sizebench_name())),
-                    // (Relative to the image's start, as hexc query's rva.)
+                    // (Relative to the image's start, as hexcavator query's rva.)
                     ("rva", Value::from(format!("0x{:x}", s.addr))),
                     ("section", Value::from(section_of(s.addr))),
                     ("file_size", Value::from(s.size.file)),
@@ -436,7 +436,7 @@ impl Server {
             )
         } else {
             // Without debug information: what the image's structure shows,
-            // as `hexc recommend` gives it.
+            // as `hexcavator recommend` gives it.
             let image = Image::parse(&loaded.map).map_err(|e| format!("recommend: {e}"))?;
             crate::recommend::structural_only(&image)
         };
@@ -667,7 +667,7 @@ impl Server {
                     (
                         "serverInfo",
                         object([
-                            ("name", Value::from("hexc")),
+                            ("name", Value::from("hexcavator")),
                             ("version", Value::from(env!("CARGO_PKG_VERSION"))),
                         ]),
                     ),
@@ -717,7 +717,7 @@ impl Server {
     }
 }
 
-const INSTRUCTIONS: &str = "hexc reports what the bytes of an executable, library, or object are, and why they're there: PE (Windows), ELF (Linux), Mach-O (macOS, iOS), and WebAssembly alike, with their debug information (a PDB, or DWARF: in the image, a separate debug file, or a dSYM), which is found from the image if it can be (else give it with `debug`). Start with size_report on the file (sources: sections; then symbols, compileunits, libraries, or several for a breakdown; groups are a PE image's COFF groups). Use symbols or query to find the largest or a named symbol, findings for what wastes space and how to fix it, recommend for build changes that would make it smaller, why for why a function is in it, and lookup to ask what is at an address. Give `base` to size_report to diff two builds. Sizes are in bytes; `file` is bytes on disk, `vm` bytes in memory. For crash reports and stack traces, symbolize gives each address's function, source line, and inlined functions, or annotates a log's text.";
+const INSTRUCTIONS: &str = "hexcavator reports what the bytes of an executable, library, or object are, and why they're there: PE (Windows), ELF (Linux), Mach-O (macOS, iOS), and WebAssembly alike, with their debug information (a PDB, or DWARF: in the image, a separate debug file, or a dSYM), which is found from the image if it can be (else give it with `debug`). Start with size_report on the file (sources: sections; then symbols, compileunits, libraries, or several for a breakdown; groups are a PE image's COFF groups). Use symbols or query to find the largest or a named symbol, findings for what wastes space and how to fix it, recommend for build changes that would make it smaller, why for why a function is in it, and lookup to ask what is at an address. Give `base` to size_report to diff two builds. Sizes are in bytes; `file` is bytes on disk, `vm` bytes in memory. For crash reports and stack traces, symbolize gives each address's function, source line, and inlined functions, or annotates a log's text.";
 
 fn error(id: Value, code: i64, message: &str) -> Value {
     object([
@@ -751,7 +751,7 @@ fn prop(kind: &str, description: &str) -> Value {
     ])
 }
 
-/// The `dependencies` tool: what an image loads (`hexc deps -json`).
+/// The `dependencies` tool: what an image loads (`hexcavator deps -json`).
 fn dependencies(args: &Value) -> ToolResult {
     let path = arg_str(args, "path").ok_or("`path` is required")?;
     let mut command = vec!["deps".to_string(), "-json".to_string()];
@@ -777,7 +777,7 @@ fn dependencies(args: &Value) -> ToolResult {
     ))
 }
 
-/// The `symbolize` tool: the frames at addresses (as `hexc symbolize`
+/// The `symbolize` tool: the frames at addresses (as `hexcavator symbolize`
 /// gives them), or text with where each address in it is added.
 fn symbolize(args: &Value) -> ToolResult {
     let mut images: Vec<String> = match args.get("images") {
@@ -840,7 +840,7 @@ fn symbolize(args: &Value) -> ToolResult {
     Ok((text, object([("addresses", structured)])))
 }
 
-/// The `initialization` tool: what runs when an image loads (`hexc init`).
+/// The `initialization` tool: what runs when an image loads (`hexcavator init`).
 fn initialization(args: &Value) -> ToolResult {
     let path = arg_str(args, "path").ok_or("`path` is required")?;
     let mut command = vec!["init".to_string()];
@@ -866,7 +866,7 @@ fn initialization(args: &Value) -> ToolResult {
 }
 
 /// The `resources` tool: a binary's resources and metadata, or one of
-/// them decoded (`hexc resources`).
+/// them decoded (`hexcavator resources`).
 fn resources(args: &Value) -> ToolResult {
     let path = arg_str(args, "path").ok_or("`path` is required")?;
     let mut command = vec!["resources".to_string()];
@@ -1317,7 +1317,7 @@ pub fn run(args: &[String]) -> ExitCode {
     match serve(stdin, stdout) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            ereport!("hexc mcp: {e}");
+            ereport!("hexcavator mcp: {e}");
             ExitCode::FAILURE
         }
     }
@@ -1362,7 +1362,7 @@ mod tests {
                 .get("name")
                 .unwrap()
                 .as_str(),
-            Some("hexc")
+            Some("hexcavator")
         );
         assert_eq!(r[1].get("id").unwrap().as_str(), Some("two"));
         let tools = r[1]

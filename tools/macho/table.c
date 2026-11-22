@@ -1,7 +1,7 @@
 /* A table of pointers, irregularly spaced (null between them, as a
    sparse dispatch table has): rebase opcodes encode them one at a time,
    chained fixups in the pointers themselves (testdata/macho's
-   table-*-opcodes.dylib, where hexc recommend advises -fixup_chains).
+   table-*-opcodes.dylib, where hexcavator recommend advises -fixup_chains).
    Written once by a seeded generator; its pattern is arbitrary. */
 
 int words[64];

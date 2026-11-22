@@ -1,5 +1,5 @@
 """Writes crates/isa/loongarch/tests/golden.txt: LLVM's text (llvm-objdump
--d) for encodings of each LoongArch instruction hexc's decoder knows (up
+-d) for encodings of each LoongArch instruction hexcavator's decoder knows (up
 to four of each, their operand bits random), and for random words, on
 LA32 and LA64; `<unknown>` where LLVM decodes nothing.
 

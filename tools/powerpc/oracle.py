@@ -1,5 +1,5 @@
 """Writes crates/isa/powerpc/tests/golden.txt: LLVM's text (llvm-objdump
--d) for encodings of each PowerPC instruction hexc's decoder knows (up to
+-d) for encodings of each PowerPC instruction hexcavator's decoder knows (up to
 four of each, their operand bits random), and for random words and
 prefixed pairs, on 64-bit little- and big-endian and 32-bit big-endian
 PowerPC; `<unknown>` where LLVM decodes nothing.

@@ -1,4 +1,4 @@
-//! `hexc recommend`: changes to a build that would make an image smaller,
+//! `hexcavator recommend`: changes to a build that would make an image smaller,
 //! each with the bytes it would save.
 
 use std::fmt::Write as _;
@@ -10,7 +10,7 @@ use hexcavator_size::recommend::{Link, Recommendation, Toolchain, recommend};
 use serde_json::json;
 
 pub const USAGE: &str = "\
-usage: hexc recommend [options] <image>
+usage: hexcavator recommend [options] <image>
 
 Changes to the build that would make an image smaller (PE, ELF, Mach-O, or
 WebAssembly), largest saving first, each measured from the image and its
@@ -75,14 +75,14 @@ pub fn run(args: &[String]) -> ExitCode {
     match report(&image, pdb.as_deref(), json, &importers) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc recommend: {e}");
+            ereport!("hexcavator recommend: {e}");
             ExitCode::FAILURE
         }
     }
 }
 
 fn usage(message: &str) -> ExitCode {
-    ereport!("hexc recommend: {message}\n\n{USAGE}");
+    ereport!("hexcavator recommend: {message}\n\n{USAGE}");
     ExitCode::from(2)
 }
 

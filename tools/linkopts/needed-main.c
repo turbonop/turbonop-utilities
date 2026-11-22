@@ -1,5 +1,5 @@
 /* A program linked with two libraries (--no-as-needed), calling one: what
-   hexc recommend finds unused, by what each library provides. */
+   hexcavator recommend finds unused, by what each library provides. */
 
 int used_fn(int x);
 

@@ -1,6 +1,6 @@
-//! The roots hexc trusts: Microsoft's and Apple's, and the public code
+//! The roots hexcavator trusts: Microsoft's and Apple's, and the public code
 //! signing and timestamping authorities (see tools/signature/roots.py),
-//! and any the caller adds (`hexc signature -root <file>`).
+//! and any the caller adds (`hexcavator signature -root <file>`).
 //!
 //! Trust is ours to say, the same on every platform: not the machine's
 //! store, and without checking revocation (that needs the network).
@@ -138,6 +138,6 @@ mod tests {
 
     #[test]
     fn pem_decodes() {
-        assert_eq!(decode_base64("aGV4Yw==").unwrap(), b"hexc");
+        assert_eq!(decode_base64("aGV4Y2F2YXRvcg==").unwrap(), b"hexcavator");
     }
 }

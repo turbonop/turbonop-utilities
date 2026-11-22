@@ -1,4 +1,4 @@
-//! `hexc relocations`: what the loader patches when it loads an image,
+//! `hexcavator relocations`: what the loader patches when it loads an image,
 //! and what that costs (see `hexcavator_size::relocations`).
 
 use std::fmt::Write as _;
@@ -11,7 +11,7 @@ use hexcavator_size::relocations::{
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-usage: hexc relocations [options] <image>
+usage: hexcavator relocations [options] <image>
 
 What the loader patches when it loads an image (ELF's dynamic relocations,
 packed RELR ones too; PE's base relocations; Mach-O's rebases and binds),
@@ -67,14 +67,14 @@ pub fn run(args: &[String]) -> ExitCode {
     match report(&image, &a) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc relocations: {e}");
+            ereport!("hexcavator relocations: {e}");
             ExitCode::FAILURE
         }
     }
 }
 
 fn usage(message: &str) -> ExitCode {
-    ereport!("hexc relocations: {message}\n\n{USAGE}");
+    ereport!("hexcavator relocations: {message}\n\n{USAGE}");
     ExitCode::from(2)
 }
 

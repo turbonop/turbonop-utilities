@@ -1,8 +1,8 @@
-//! `hexc serve`: hexc's commands, for an editor, from one process that
+//! `hexcavator serve`: hexcavator's commands, for an editor, from one process that
 //! keeps what they read.
 //!
 //! Requests come on standard input and responses go to standard output,
-//! one JSON object per line. A request is a command line, as hexc would be
+//! one JSON object per line. A request is a command line, as hexcavator would be
 //! given it:
 //!
 //! ```text
@@ -29,9 +29,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-usage: hexc serve
+usage: hexcavator serve
 
-Runs hexc's commands for an editor, keeping what they read from each binary
+Runs hexcavator's commands for an editor, keeping what they read from each binary
 (its model and symbols) in memory for the next. Requests on standard input,
 one JSON object per line: {\"id\": 1, \"args\": [\"size\", \"app.exe\"]}.
 Responses on standard output, one per line, as each finishes:
@@ -50,7 +50,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let stdout = Arc::new(Mutex::new(io::stdout()));
     let result = serve(io::stdin().lock(), &stdout);
     if let Err(e) = result {
-        ereport!("hexc serve: {e}");
+        ereport!("hexcavator serve: {e}");
         return ExitCode::FAILURE;
     }
     ExitCode::SUCCESS
@@ -74,7 +74,7 @@ fn serve<W: Write + Send + 'static>(input: impl BufRead, output: &Arc<Mutex<W>>)
         };
         let output = Arc::clone(output);
         let spawned = std::thread::Builder::new()
-            .name("hexc serve".into())
+            .name("hexcavator serve".into())
             .stack_size(STACK)
             .spawn(move || {
                 let _ = send_line(&output, answer(&id, &args));
@@ -116,7 +116,7 @@ fn request(line: &str) -> Result<(Value, Vec<String>), (Value, String)> {
 fn answer(id: &Value, args: &[String]) -> Vec<u8> {
     let (code, out) = crate::out::capture(|| {
         std::panic::catch_unwind(|| crate::command(args)).unwrap_or_else(|_| {
-            ereport!("hexc: internal error (a bug: please report it)");
+            ereport!("hexcavator: internal error (a bug: please report it)");
             ExitCode::from(101)
         })
     });
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(all[0]["code"], 0);
         assert_eq!(
             all[0]["stdout"],
-            format!("hexc {}\n", env!("CARGO_PKG_VERSION"))
+            format!("hexcavator {}\n", env!("CARGO_PKG_VERSION"))
         );
         assert_eq!(all[0]["stderr"], "");
         assert_eq!(all[1]["code"], 2);
@@ -195,7 +195,7 @@ mod tests {
             all[1]["stderr"]
                 .as_str()
                 .unwrap()
-                .starts_with("hexc: unknown command 'nonesuch'")
+                .starts_with("hexcavator: unknown command 'nonesuch'")
         );
     }
 

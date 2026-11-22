@@ -1,4 +1,4 @@
-//! `hexc data`: a datum of an image, its bytes and, from its debug information, its
+//! `hexcavator data`: a datum of an image, its bytes and, from its debug information, its
 //! value read as its type: each member, element, and pointer (named by
 //! the symbol it points into), and the slots the image's base relocations
 //! say hold addresses.
@@ -12,7 +12,7 @@ use hexcavator_program::data::AddressNames;
 use serde_json::{Value as Json, json};
 
 pub const USAGE: &str = "\
-usage: hexc data [options] <image> <name>
+usage: hexcavator data [options] <image> <name>
 
 A datum of an image (a variable, a string, a table): its bytes, and its
 value read as its type (from its PDB or DWARF): each base, member
@@ -78,7 +78,7 @@ pub fn run(args: &[String]) -> ExitCode {
         Ok(o) => o,
         Err(e) => {
             if !e.is_empty() {
-                ereport!("hexc data: {e}\n");
+                ereport!("hexcavator data: {e}\n");
             }
             ereport!("{USAGE}");
             return ExitCode::from(2);
@@ -87,7 +87,7 @@ pub fn run(args: &[String]) -> ExitCode {
     match report(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc data: {e}");
+            ereport!("hexcavator data: {e}");
             ExitCode::FAILURE
         }
     }

@@ -25,7 +25,7 @@ assert.deepStrictEqual(col(t.sortRows(rows, 2, true), 2), [10, 3, 1, ""]);
 const same = [["a", 1], ["b", 1], ["c", 1]];
 assert.deepStrictEqual(t.sortRows(same, 1, true).map((r) => r[0]), ["a", "b", "c"]);
 
-// hexc's JSON as tables: the lists, and the numbers beside them.
+// hexcavator's JSON as tables: the lists, and the numbers beside them.
 const xref = {
   nodes: 10,
   unreachableSize: 936,

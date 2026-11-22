@@ -137,7 +137,7 @@ pub fn dump(
         let key = (name.to_vec(), flags);
         if !summary.contains_key(&key) && summary.keys().any(|(n, _)| n == name) {
             ereport!(
-                "hexc: warning: multiple '{}' sections found with different attributes ({flags:08X})",
+                "hexcavator: warning: multiple '{}' sections found with different attributes ({flags:08X})",
                 String::from_utf8_lossy(name)
             );
         }

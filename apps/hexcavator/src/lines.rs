@@ -1,4 +1,4 @@
-//! `hexc inlines` and `hexc sourcefiles`: an image's code by the
+//! `hexcavator inlines` and `hexcavator sourcefiles`: an image's code by the
 //! functions inlined into it, and by the source files (and lines) it came
 //! from, from its debug information (a PDB, or DWARF).
 
@@ -12,7 +12,7 @@ use hexcavator_size::symbols::{Symbol, SymbolKind};
 use serde_json::{Value, json};
 
 pub const INLINES_USAGE: &str = "\
-usage: hexc inlines [options] <image>
+usage: hexcavator inlines [options] <image>
 
 The functions inlined into an image's code (from its PDB or DWARF), by the bytes
 their inlined copies take: each with how many copies there are and how
@@ -29,7 +29,7 @@ options:
   -json             as JSON";
 
 pub const SOURCEFILES_USAGE: &str = "\
-usage: hexc sourcefiles [options] <image>
+usage: hexcavator sourcefiles [options] <image>
 
 An image's code by the source files it came from (from its debug
 information's line tables: a PDB's, or DWARF's): headers too, for the functions defined in them that weren't
@@ -101,14 +101,14 @@ fn run(
     let o = match parse(args, one) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc {command}: {e}\n\n{usage}");
+            ereport!("hexcavator {command}: {e}\n\n{usage}");
             return ExitCode::from(2);
         }
     };
     match f(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc {command}: {e}");
+            ereport!("hexcavator {command}: {e}");
             ExitCode::FAILURE
         }
     }
@@ -456,7 +456,7 @@ fn sourcefiles(o: &Options) -> Result<String, String> {
 }
 
 pub const ANNOTATIONS_USAGE: &str = "\
-usage: hexc annotations [options] <image>
+usage: hexcavator annotations [options] <image>
 
 The annotations in a PE image's PDB: strings its code attached to an
 address (MSVC's __annotation intrinsic), with the source file and line

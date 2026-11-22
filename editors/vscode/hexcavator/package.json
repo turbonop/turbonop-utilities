@@ -209,12 +209,12 @@
       },
       {
         "command": "hexcavator.showLog",
-        "title": "Show hexc's Log",
+        "title": "Show hexcavator's Log",
         "category": "Hexcavator"
       },
       {
         "command": "hexcavator.restartServer",
-        "title": "Restart hexc",
+        "title": "Restart hexcavator",
         "category": "Hexcavator"
       }
     ],
@@ -223,7 +223,7 @@
         {
           "command": "hexcavator.openInPane",
           "when": "resourceExtname =~ /^\\.(exe|dll|sys|efi|ocx|cpl|scr|drv|pyd|node|obj|lib|so|o|a|ko|elf|axf|out|dylib|bundle|wasm|debug|dwo|dwp)$/i || resourceFilename =~ /\\.so(\\.[0-9]+)+$/ || resourceExtname == '' && !explorerResourceIsFolder || explorerResourceIsFolder && resourceExtname =~ /^\\.(dSYM|framework|app|appex|bundle|kext|xpc|plugin)$/i",
-          "group": "hexc@0"
+          "group": "hexcavator@0"
         }
       ],
       "view/title": [
@@ -261,42 +261,42 @@
       "view/item/context": [
         {
           "command": "hexcavator.showReport",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.(binary|diff)$/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.(binary|diff)$/",
           "group": "inline@1"
         },
         {
           "command": "hexcavator.remove",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.(binary|diff)$/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.(binary|diff)$/",
           "group": "inline@2"
         },
         {
           "command": "hexcavator.showReport",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.(binary|diff)$/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.(binary|diff)$/",
           "group": "1@1"
         },
         {
           "command": "hexcavator.refresh",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.(binary|diff)$/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.(binary|diff)$/",
           "group": "1@2"
         },
         {
           "command": "hexcavator.revealFile",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.(binary|diff)$/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.(binary|diff)$/",
           "group": "1@3"
         },
         {
           "command": "hexcavator.remove",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.(binary|diff)$/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.(binary|diff)$/",
           "group": "2@1"
         },
         {
           "command": "hexcavator.showReport",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.(row|size)/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.(row|size)/",
           "group": "inline@1"
         },
         {
           "command": "hexcavator.showReport",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.(row|size)/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.(row|size)/",
           "group": "1@1"
         },
         {
@@ -336,17 +336,17 @@
         },
         {
           "command": "hexcavator.copyCommand",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.tool/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.tool/",
           "group": "inline@1"
         },
         {
           "command": "hexcavator.runTool",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.tool/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.tool/",
           "group": "1@1"
         },
         {
           "command": "hexcavator.copyCommand",
-          "when": "view == hexcavator.binaries && viewItem =~ /^hexc\\.tool/",
+          "when": "view == hexcavator.binaries && viewItem =~ /^hexcavator\\.tool/",
           "group": "1@2"
         },
         {
@@ -556,7 +556,7 @@
         "hexcavator.symbolPath": {
           "type": "string",
           "default": "",
-          "description": "Directories to look for debug information in (PDBs, .debug files, dSYMs, symbol caches), separated as PATH's are (HEXC_SYMBOL_PATH). hexc also looks beside the binary, in _NT_SYMBOL_PATH's local directories, and in debuginfod's cache."
+          "description": "Directories to look for debug information in (PDBs, .debug files, dSYMs, symbol caches), separated as PATH's are (HEXC_SYMBOL_PATH). hexcavator also looks beside the binary, in _NT_SYMBOL_PATH's local directories, and in debuginfod's cache."
         },
         "hexcavator.symbolServers": {
           "type": "array",
@@ -564,7 +564,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Symbol servers with Microsoft's layout to ask for debug information hexc doesn't find (such as https://msdl.microsoft.com/download/symbols). Nothing is asked of a server unless one is set."
+          "description": "Symbol servers with Microsoft's layout to ask for debug information hexcavator doesn't find (such as https://msdl.microsoft.com/download/symbols). Nothing is asked of a server unless one is set."
         },
         "hexcavator.debuginfod": {
           "type": "array",
@@ -595,7 +595,7 @@
         "hexcavator.path": {
           "type": "string",
           "default": "",
-          "description": "The hexc executable (a full path, or a name on PATH). Empty: the hexc this extension comes with; else, when it runs from a clone of the repository, its build (target/release, then target/debug); else hexc on PATH."
+          "description": "The hexcavator executable (a full path, or a name on PATH). Empty: the hexcavator this extension comes with; else, when it runs from a clone of the repository, its build (target/release, then target/debug); else hexcavator on PATH."
         },
         "hexcavator.sources": {
           "type": "array",
@@ -806,7 +806,7 @@
     "viewsWelcome": [
       {
         "view": "hexcavator.binaries",
-        "contents": "Explore an executable, object, library, or WebAssembly module with its debug information: its headers, symbols, types, sources, data, and disassembly, why each function is there, and where its bytes go.\n[Open Binary…](command:hexcavator.open)\n[Diff Binaries…](command:hexcavator.openDiff)\nOr right-click a binary in the Explorer. Everything here runs [hexc](command:workbench.action.openSettings?%5B%22hexcavator.path%22%5D), whose command lines each tool shows."
+        "contents": "Explore an executable, object, library, or WebAssembly module with its debug information: its headers, symbols, types, sources, data, and disassembly, why each function is there, and where its bytes go.\n[Open Binary…](command:hexcavator.open)\n[Diff Binaries…](command:hexcavator.openDiff)\nOr right-click a binary in the Explorer. Everything here runs [hexcavator](command:workbench.action.openSettings?%5B%22hexcavator.path%22%5D), whose command lines each tool shows."
       }
     ]
   }

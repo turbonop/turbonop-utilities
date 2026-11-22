@@ -1,9 +1,9 @@
 // The Resources page: what a binary holds besides its code, and what it says
-// of itself (hexc resources -json): a PE image's resources by type, name,
+// of itself (hexcavator resources -json): a PE image's resources by type, name,
 // and language; a Mach-O image's Info.plist, entitlements, and versions; an
 // ELF image's notes; a WebAssembly module's custom sections. The list
 // (grouped, filtered) on the left; the selected one, decoded, on the right
-// (hexc resources -json -show <id>): its version information, text, strings,
+// (hexcavator resources -json -show <id>): its version information, text, strings,
 // a dialog drawn from its template, a menu, accelerators, icons, cursors,
 // and bitmaps as images, or its bytes. Each can be saved (as an .ico, .cur,
 // or .bmp file where it's an image) or copied.
@@ -377,7 +377,7 @@
       return;
     }
     if (m.kind === "failed") {
-      $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexc failed")), el("div", { class: "path" }, m.message || ""));
+      $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexcavator failed")), el("div", { class: "path" }, m.message || ""));
       return;
     }
     if (m.kind === "resources") {
@@ -391,7 +391,7 @@
       renderItem();
     }
     if (m.kind === "itemFailed" && m.id === state.selected) {
-      $("resitem").replaceChildren(el("div", { class: "bad" }, m.message || "hexc failed"));
+      $("resitem").replaceChildren(el("div", { class: "bad" }, m.message || "hexcavator failed"));
     }
   });
   post({ command: "ready" });

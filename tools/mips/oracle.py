@@ -1,5 +1,5 @@
 """Writes crates/isa/mips/tests/golden.txt: LLVM's text (llvm-objdump -d)
-for encodings of each MIPS instruction hexc's decoder knows (up to four
+for encodings of each MIPS instruction hexcavator's decoder knows (up to four
 of each, their operand bits random), and for random words, in several
 configurations (an ISA level, a byte order, and the ASEs llvm-objdump is
 given with --mattr); `<unknown>` where LLVM decodes nothing. And

@@ -1,6 +1,6 @@
 # Runs test/integration/index.js in a separate VS Code (its own user data
 # and extensions), against the repository's test binaries:
-#   powershell -File test\integration\run.ps1 <hexc.exe>
+#   powershell -File test\integration\run.ps1 <hexcavator.exe>
 # (VS Code won't start while an update of it is pending: restart it first.)
 param([Parameter(Mandatory)] [string] $Hexc)
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path

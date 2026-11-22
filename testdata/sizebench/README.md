@@ -9,7 +9,7 @@ distributed under SizeBench's MIT license, reproduced in [`LICENSE`](LICENSE).
 (from `src/TestPEProjects`) describes what each binary exercises.
 
 `oracle/` holds the output of `tools/sizebench-oracle` (SizeBench's analysis
-engine, run over each binary in `bin/`). hexc's size analysis is tested
+engine, run over each binary in `bin/`). hexcavator's size analysis is tested
 against it. Two binaries have no oracle output, because SizeBench rejects
 them by design: `Dllx64Managed` (managed code) and `Dllx64MinimalPDB`
 (`/DEBUG:FASTLINK` PDB).

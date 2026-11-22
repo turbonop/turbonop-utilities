@@ -1,8 +1,8 @@
-# Compares hexc signature with Windows' own verifier (Get-AuthenticodeSignature)
+# Compares hexcavator signature with Windows' own verifier (Get-AuthenticodeSignature)
 # on the PE files under the given directories that carry an embedded signature
 # (catalog-signed files are skipped: their signature isn't in the file).
 #
-#   powershell -File tools/signature/oracle.ps1 <hexc.exe> <dir>... [-Max 500]
+#   powershell -File tools/signature/oracle.ps1 <hexcavator.exe> <dir>... [-Max 500]
 param(
   [Parameter(Mandatory = $true, Position = 0)] [string] $Hexc,
   [Parameter(Mandatory = $true, Position = 1)] [string[]] $Dirs,

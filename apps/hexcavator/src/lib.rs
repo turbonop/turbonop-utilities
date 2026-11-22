@@ -1,5 +1,5 @@
-//! The `hexc` command-line driver, as a library: [`run`] runs one command
-//! (`hexc size ...` is `run(&["size", ...])`). The binary is a thin
+//! The `hexcavator` command-line driver, as a library: [`run`] runs one command
+//! (`hexcavator size ...` is `run(&["size", ...])`). The binary is a thin
 //! `main` around it; the fuzzer drives every command through it.
 
 #[macro_use]
@@ -36,10 +36,10 @@ use std::process::ExitCode;
 use hexcavator_mmap::Mmap;
 
 const USAGE: &str = "\
-hexc (Hexcavator): explore executables, objects, and libraries, and their
+Hexcavator: explore executables, objects, and libraries, and their
 debug information.
 
-usage: hexc [--cache <path>] [--arch <name>] [symbol servers] <command> [args]
+usage: hexcavator [--cache <path>] [--arch <name>] [symbol servers] <command> [args]
 
 commands:
   annotations <image>        the strings code attached to addresses (__annotation)
@@ -47,8 +47,8 @@ commands:
   checksec [-audit] <image>  its exploit mitigations; -audit: its objects' compilers and options
   data [options] <image> <name>  a datum's bytes, and its value read as its type
   deps [options] <image>     what it loads (as its loader finds it), and what's missing
-  dump [options] <file>...   dumpbin-style dump (see `hexc dump` for options)
-  dwarf [options] <file>     dump a file's DWARF, as llvm-dwarfdump does (see `hexc dwarf`)
+  dump [options] <file>...   dumpbin-style dump (see `hexcavator dump` for options)
+  dwarf [options] <file>     dump a file's DWARF, as llvm-dwarfdump does (see `hexcavator dwarf`)
   info <file>...             identify the format of each file
   init [options] <image>     what runs before main (or when a library loads), and what it calls
   inlines [options] <image>  the functions inlined into its code, by their copies' bytes
@@ -56,7 +56,7 @@ commands:
   linkerlog [options] <log>  the linker's /VERBOSE output: why each library member was linked
   ltcg [options] <file>...   dump Visual C++ LTCG (/GL) objects, and libraries of them
   mcp                        serve size, symbol, and reference tools to AI agents (MCP, stdio)
-  pdb [options] <file>       dump a PDB, or an image's (see `hexc pdb` for options)
+  pdb [options] <file>       dump a PDB, or an image's (see `hexcavator pdb` for options)
   query <image> <query>      the image's symbols, filtered, grouped, and sorted
   recommend <image>          build changes that would make the image smaller, measured
   relocations <image>        what the loader patches, by type, section, data, and target
@@ -101,7 +101,7 @@ A Mach-O image with no dSYM found has its DWARF read from the object files
 its debug map names (as the linker left them: relative to the image, or
 where the linker ran; archive members too).";
 
-/// hexc's own options, wherever they are among a command's.
+/// hexcavator's own options, wherever they are among a command's.
 #[derive(Default)]
 struct Global {
     /// `--cache <path>`: the last given.
@@ -137,7 +137,7 @@ fn server_option<'a>(
     Ok(None)
 }
 
-/// `args` without hexc's own options (any before a `--`), and those
+/// `args` without hexcavator's own options (any before a `--`), and those
 /// options.
 fn global_options(args: &[String]) -> Result<(Vec<String>, Global), String> {
     let mut rest = Vec::with_capacity(args.len());
@@ -190,13 +190,13 @@ fn global_options(args: &[String]) -> Result<(Vec<String>, Global), String> {
 }
 
 /// Runs the command `args` names (without the program's name), with
-/// hexc's own options (`--cache`, `--arch`, the symbol servers') anywhere
+/// hexcavator's own options (`--cache`, `--arch`, the symbol servers') anywhere
 /// among them.
 pub fn run(args: &[String]) -> ExitCode {
     let (args, global) = match global_options(args) {
         Ok(x) => x,
         Err(e) => {
-            ereport!("hexc: {e}");
+            ereport!("hexcavator: {e}");
             return ExitCode::from(2);
         }
     };
@@ -258,16 +258,16 @@ fn command(args: &[String]) -> ExitCode {
         }
         "help" | "-h" | "--help" => out::print(format!("{USAGE}\n").as_bytes()),
         "version" | "-V" | "--version" => {
-            out::print(format!("hexc {}\n", env!("CARGO_PKG_VERSION")).as_bytes())
+            out::print(format!("hexcavator {}\n", env!("CARGO_PKG_VERSION")).as_bytes())
         }
         other => {
-            ereport!("hexc: unknown command '{other}'\n\n{USAGE}");
+            ereport!("hexcavator: unknown command '{other}'\n\n{USAGE}");
             ExitCode::from(2)
         }
     }
 }
 
-/// What `hexc info` adds for a PE image: whether it is managed, the tools
+/// What `hexcavator info` adds for a PE image: whether it is managed, the tools
 /// its Rich header names, its certificates, overlay, and bound imports.
 /// A COFF object's: its sections and symbols, and whether it has DWARF
 /// (clang's, or MinGW's) or CodeView.
@@ -291,7 +291,7 @@ fn coff_details(o: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for an LTCG object: what its IL holds (`hexc
+/// What `hexcavator info` adds for an LTCG object: what its IL holds (`hexcavator
 /// ltcg` dumps it).
 fn ltcg_details(o: &hexcavator_pe::ltcg::LtcgObject<'_>) -> Vec<String> {
     let mut out = Vec::new();
@@ -310,7 +310,7 @@ fn ltcg_details(o: &hexcavator_pe::ltcg::LtcgObject<'_>) -> Vec<String> {
     if let Some(c) = o.compiler() {
         out.push(format!("back end: {}", String::from_utf8_lossy(c)));
     }
-    out.push("dump it with `hexc ltcg`".into());
+    out.push("dump it with `hexcavator ltcg`".into());
     out
 }
 
@@ -371,7 +371,7 @@ fn pe_details(pe: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for a Mach-O image: its Objective-C metadata,
+/// What `hexcavator info` adds for a Mach-O image: its Objective-C metadata,
 /// function starts, compact unwind, and code signature.
 fn macho_details(m: &hexcavator_macho::MachO<'_>) -> Vec<String> {
     let mut out = Vec::new();
@@ -433,7 +433,7 @@ fn macho_details(m: &hexcavator_macho::MachO<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for an ELF file: its kind, interpreter, the
+/// What `hexcavator info` adds for an ELF file: its kind, interpreter, the
 /// libraries it needs and its own name, search paths, and debug links.
 fn elf_details(e: &hexcavator_elf::ElfFile<'_>) -> Vec<String> {
     use hexcavator_elf::consts::*;
@@ -507,7 +507,7 @@ fn elf_details(e: &hexcavator_elf::ElfFile<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for a WebAssembly module: its functions, data,
+/// What `hexcavator info` adds for a WebAssembly module: its functions, data,
 /// custom sections, and debug links.
 fn wasm_details(m: &hexcavator_wasm::Module<'_>) -> Vec<String> {
     let mut out = Vec::new();
@@ -542,7 +542,7 @@ fn wasm_details(m: &hexcavator_wasm::Module<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for a 16-bit NE or a linear (LE/LX) executable:
+/// What `hexcavator info` adds for a 16-bit NE or a linear (LE/LX) executable:
 /// its name, description, and tables' sizes.
 fn legacy_details(data: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
@@ -611,7 +611,7 @@ fn legacy_details(data: &[u8]) -> Vec<String> {
     out
 }
 
-/// What a file is and what hexc does with it, for editors: its format
+/// What a file is and what hexcavator does with it, for editors: its format
 /// (`pe`, `elf`, `macho`, `wasm`, `archive`, `other`), its kind
 /// (`linked`, `object`, `dump`, `debug`), its architectures, the debug
 /// information found for it (or why none was), and the tools that apply
@@ -813,7 +813,7 @@ fn info(args: &[String]) -> ExitCode {
         .filter(|a| *a != "-json" && *a != "/json")
         .collect();
     if paths.is_empty() {
-        ereport!("usage: hexc info [-json] <file>...");
+        ereport!("usage: hexcavator info [-json] <file>...");
         return ExitCode::from(2);
     }
     if json {
@@ -866,7 +866,7 @@ fn info(args: &[String]) -> ExitCode {
                 }
             }
             Err(err) => {
-                ereport!("hexc: {path}: {err}");
+                ereport!("hexcavator: {path}: {err}");
                 status = ExitCode::FAILURE;
             }
         }

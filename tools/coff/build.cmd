@@ -24,12 +24,12 @@ for %%l in (objects imports) do (
   lib /nologo /list %%l.lib > %%l.lib.list.txt || exit /b 1
   dumpbin /nologo /linkermember:2 %%l.lib > %%l.lib.linkermember.txt || exit /b 1
 )
-rem dumpbin's view of each object's symbol table (hexc dump -symbols matches).
+rem dumpbin's view of each object's symbol table (hexcavator dump -symbols matches).
 for %%o in (objects.obj objects-big.obj) do (
   dumpbin /nologo /symbols %%o > %%o.symbols.txt || exit /b 1
 )
 rem LTCG objects, and the tools' views of them: dumpbin's /headers (which
-rem hexc dump matches), lib's symbol index (which the symbols hexc ltcg finds
+rem hexcavator dump matches), lib's symbol index (which the symbols hexcavator ltcg finds
 rem as public definitions hold), and the directives of the same source
 rem compiled without /GL.
 cl /nologo /c /O1 /GL /GS- /Brepro "%~dp0ltcg.cpp" /Fo:ltcg.obj || exit /b 1

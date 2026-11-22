@@ -2,7 +2,7 @@
 rem Builds the link-option test inputs into testdata\linkopts with clang and
 rem ld.lld from LLVM (LLVM_BIN names its bin directory): static x86-64
 rem executables, with DWARF, linked with and without --gc-sections and
-rem --icf=all, for what hexc recommend judges a link did from what it left.
+rem --icf=all, for what hexcavator recommend judges a link did from what it left.
 rem
 rem   funcs-<link>        funcs.c (-ffunction-sections -fdata-sections),
 rem                       linked plain, -gc, -icf, -gc-icf; and

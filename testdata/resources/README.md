@@ -1,6 +1,6 @@
 # Resource test images
 
-`tools/resources/build.cmd` builds them, for `hexc resources`
+`tools/resources/build.cmd` builds them, for `hexcavator resources`
 (`apps/hexcavator/tests/it/resources.rs`):
 
 - `resources.exe`: `resources.c` (a stand-in) with `resources.rc`'s

@@ -1,4 +1,4 @@
-//! `hexc signature`: a binary's code signatures (Authenticode, Apple code
+//! `hexcavator signature`: a binary's code signatures (Authenticode, Apple code
 //! signing), read and verified here, whatever the platform: who signed it,
 //! when, with what, and whether it's unchanged and trusted.
 
@@ -13,7 +13,7 @@ use hexcavator_signature::{
 use serde_json::{Value as Json, json};
 
 const USAGE: &str = "\
-usage: hexc signature [-json] [-root <cert>]... <image>...
+usage: hexcavator signature [-json] [-root <cert>]... <image>...
 
 Reads and verifies a PE image's Authenticode signatures (and those nested in
 them) or a Mach-O image's code signature (each architecture's), on any
@@ -21,7 +21,7 @@ platform: the file's hash, the signer's signature, the certificate chain,
 the timestamps, and (for Mach-O) each page of code, the entitlements, and
 the requirements.
 
-Trust is hexc's own list of roots (Microsoft's, Apple's, and the public code
+Trust is hexcavator's own list of roots (Microsoft's, Apple's, and the public code
 signing authorities), not the machine's; -root adds one (DER or PEM).
 Revocation isn't checked, nor signatures kept outside the file (a Windows
 catalog's, a notarization ticket).
@@ -42,17 +42,17 @@ pub fn run(args: &[String]) -> ExitCode {
                 {
                     Ok(_) => {}
                     Err(e) => {
-                        ereport!("hexc signature: -root {p}: {e}");
+                        ereport!("hexcavator signature: -root {p}: {e}");
                         return ExitCode::from(2);
                     }
                 },
                 None => {
-                    ereport!("hexc signature: -root: expected a certificate's path");
+                    ereport!("hexcavator signature: -root: expected a certificate's path");
                     return ExitCode::from(2);
                 }
             },
             Some(x) if !x.is_empty() && !Path::new(a).exists() => {
-                ereport!("hexc signature: unknown option '{a}'\n\n{USAGE}");
+                ereport!("hexcavator signature: unknown option '{a}'\n\n{USAGE}");
                 return ExitCode::from(2);
             }
             _ => files.push(a.clone()),
@@ -81,7 +81,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 }
             }
             Err(e) => {
-                ereport!("hexc signature: {e}");
+                ereport!("hexcavator signature: {e}");
                 status = ExitCode::FAILURE;
             }
         }

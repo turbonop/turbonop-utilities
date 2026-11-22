@@ -1,4 +1,4 @@
-//! `hexc mcp` end to end: a client's session over stdio.
+//! `hexcavator mcp` end to end: a client's session over stdio.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ fn testdata(rel: &str) -> PathBuf {
 /// Sends `requests` (with ids 1, 2, ...) after initializing; returns the
 /// responses by id.
 fn session(requests: &[(&str, Value)]) -> Vec<Value> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("mcp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -425,7 +425,7 @@ fn why_and_recommend_tools() {
 }
 
 /// The why and recommend tools beyond PE: ELF and Mach-O images with
-/// their DWARF (as `hexc xref` and `hexc recommend` read them), and one
+/// their DWARF (as `hexcavator xref` and `hexcavator recommend` read them), and one
 /// without debug information (what its structure shows).
 #[test]
 fn why_and_recommend_tools_beyond_pe() {
@@ -543,7 +543,7 @@ fn every_tool_beyond_pe() {
     }
 }
 
-/// symbolize: frames at addresses (structured as `hexc symbolize -json`
+/// symbolize: frames at addresses (structured as `hexcavator symbolize -json`
 /// gives them), and a log's text annotated; an image missing is an error.
 #[test]
 fn symbolize_session() {

@@ -7,7 +7,7 @@ linker's `/VERBOSE` output (`xref-<arch>.verbose.txt`, trimmed).
 `xref-x64-renamed.exe` is the x64 build with `inner` renamed
 (`inner_renamed`, by `RENAMED`), for comparing builds.
 
-What it holds, for `hexc xref` (`apps/hexcavator/tests/xref.rs`):
+What it holds, for `hexcavator xref` (`apps/hexcavator/tests/xref.rs`):
 
 - `Square`, constructed by `main`: its virtual functions are reached
   through its constructor and vtable.

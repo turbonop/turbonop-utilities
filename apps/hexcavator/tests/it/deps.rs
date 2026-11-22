@@ -1,4 +1,4 @@
-//! `hexc deps` end to end, over the dependency test's images
+//! `hexcavator deps` end to end, over the dependency test's images
 //! (tools/deps): each with a system root of stand-ins, so the search is
 //! the loader's over known files.
 //!
@@ -25,8 +25,8 @@ fn testdata(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-fn hexc(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("deps")
         .args(args)
         .output()
@@ -45,7 +45,7 @@ fn graph(image: &str, sysroot: &str, more: &[&str]) -> Value {
     let mut args = vec!["-json", "-sysroot", sysroot.to_str().unwrap()];
     args.extend(more);
     args.push(image.to_str().unwrap());
-    let (_, out, err) = hexc(&args);
+    let (_, out, err) = hexcavator(&args);
     serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}{err}"))
 }
 
@@ -158,7 +158,7 @@ fn pe() {
 fn text() {
     let image = testdata("pe/app/app.exe");
     let sysroot = testdata("pe/windows");
-    let (code, out, _) = hexc(&[
+    let (code, out, _) = hexcavator(&[
         "-sysroot",
         sysroot.to_str().unwrap(),
         image.to_str().unwrap(),
@@ -181,7 +181,7 @@ fn text() {
         "{out}"
     );
     // -problems: only those; the 32-bit program has none (exit 0).
-    let (code, out, _) = hexc(&[
+    let (code, out, _) = hexcavator(&[
         "-problems",
         "-sysroot",
         sysroot.to_str().unwrap(),
@@ -302,7 +302,7 @@ fn macho() {
 #[test]
 fn no_system_root() {
     let image = testdata("macho/app/main");
-    let (code, out, _) = hexc(&[image.to_str().unwrap()]);
+    let (code, out, _) = hexcavator(&[image.to_str().unwrap()]);
     if cfg!(target_os = "macos") {
         return;
     }
@@ -327,14 +327,14 @@ fn bad_arguments() {
         &["-depth", "x", "y"],
         &["a", "b"],
     ] {
-        let (code, _, err) = hexc(args);
+        let (code, _, err) = hexcavator(args);
         assert_eq!(code, 2, "{args:?}: {err}");
-        assert!(err.contains("usage: hexc deps"), "{err}");
+        assert!(err.contains("usage: hexcavator deps"), "{err}");
     }
-    let (code, _, err) = hexc(&["no-such-file.exe"]);
+    let (code, _, err) = hexcavator(&["no-such-file.exe"]);
     assert_eq!(code, 1, "{err}");
     let readme = testdata("macho/sysroot/README");
-    let (code, _, err) = hexc(&[readme.to_str().unwrap()]);
+    let (code, _, err) = hexcavator(&[readme.to_str().unwrap()]);
     assert_eq!(code, 1);
     assert!(
         err.contains("not a PE, ELF, Mach-O, or WebAssembly image"),
@@ -365,7 +365,7 @@ fn hostile_names() {
         let path = dir.join("app.exe");
         std::fs::write(&path, &data).unwrap();
         let sysroot = testdata("pe/windows");
-        let (code, out, err) = hexc(&[
+        let (code, out, err) = hexcavator(&[
             "-json",
             "-sysroot",
             sysroot.to_str().unwrap(),
@@ -394,7 +394,7 @@ fn hostile_names() {
 fn wasm() {
     let wasm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm");
     let run = |image: &Path| -> Value {
-        let (code, out, err) = hexc(&["-json", image.to_str().unwrap()]);
+        let (code, out, err) = hexcavator(&["-json", image.to_str().unwrap()]);
         assert_eq!(code, 0, "{err}");
         serde_json::from_str(&out).unwrap()
     };

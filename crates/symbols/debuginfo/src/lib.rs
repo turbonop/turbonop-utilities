@@ -952,7 +952,7 @@ pub fn symbol_dirs() -> Vec<std::path::PathBuf> {
 
 /// [`symbol_dirs`] from the values given (for testing).
 pub fn symbol_dirs_from(
-    hexc: Option<&std::ffi::OsStr>,
+    hexcavator: Option<&std::ffi::OsStr>,
     nt: Option<&str>,
     debuginfod: Option<std::path::PathBuf>,
 ) -> Vec<std::path::PathBuf> {
@@ -963,7 +963,7 @@ pub fn symbol_dirs_from(
             out.push(p);
         }
     };
-    if let Some(h) = hexc {
+    if let Some(h) = hexcavator {
         std::env::split_paths(h).for_each(&mut push);
     }
     nt_symbol_dirs(nt.unwrap_or(""))

@@ -1,7 +1,7 @@
 {
-  // F5: build hexc (release), then a new VS Code window with the extension
+  // F5: build hexcavator (release), then a new VS Code window with the extension
   // loaded from editors/vscode/hexcavator, on the repository's test
-  // binaries. The extension runs the hexc just built (target/release)
+  // binaries. The extension runs the hexcavator just built (target/release)
   // unless its path setting says otherwise.
   "version": "0.2.0",
   "configurations": [
@@ -9,7 +9,7 @@
       "name": "Hexcavator extension",
       "type": "extensionHost",
       "request": "launch",
-      "preLaunchTask": "build hexc (release)",
+      "preLaunchTask": "build hexcavator (release)",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/editors/vscode/hexcavator",
         "${workspaceFolder}/testdata"

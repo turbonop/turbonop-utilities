@@ -128,7 +128,7 @@ function fieldAt(fields, offset) {
 
 /**
  * What an instruction's registers and memory operands hold, at `address`
- * (a BigInt), by `variables` (hexc size -disassemble -json's): "rcx = p",
+ * (a BigInt), by `variables` (hexcavator size -disassemble -json's): "rcx = p",
  * "ecx = s.count" (a field in a register), "[rsp+40h] = buf.len" (a
  * variable in memory), "[rbp+4] = p->b" (through a pointer variable).
  */

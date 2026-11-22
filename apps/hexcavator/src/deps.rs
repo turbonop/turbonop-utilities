@@ -1,4 +1,4 @@
-//! `hexc deps`: what an executable or library loads, found as its loader
+//! `hexcavator deps`: what an executable or library loads, found as its loader
 //! would find it (see `hexcavator_deps`), and what's missing.
 
 use std::fmt::Write as _;
@@ -9,7 +9,7 @@ use hexcavator_deps::{DepKind, Graph, ImportStatus, Options, Severity, Status};
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-usage: hexc deps [options] <image>
+usage: hexcavator deps [options] <image>
 
 What an executable or library (PE, ELF, Mach-O, WebAssembly) loads, as a
 tree: each
@@ -106,7 +106,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let graph = match hexcavator_deps::analyze(std::path::Path::new(image), &a.options) {
         Ok(g) => g,
         Err(e) => {
-            ereport!("hexc deps: {e}");
+            ereport!("hexcavator deps: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -128,7 +128,7 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 fn usage(message: &str) -> ExitCode {
-    ereport!("hexc deps: {message}\n\n{USAGE}");
+    ereport!("hexcavator deps: {message}\n\n{USAGE}");
     ExitCode::from(2)
 }
 

@@ -1,4 +1,4 @@
-//! `hexc data` end to end: the globals of the type layout test program
+//! `hexcavator data` end to end: the globals of the type layout test program
 //! (tools/types) read as their types, and the xref program's tables.
 
 use std::path::{Path, PathBuf};
@@ -13,8 +13,8 @@ fn fixture(dir: &str, name: &str) -> PathBuf {
         .join(name)
 }
 
-fn hexc(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("data")
         .args(args)
         .output()
@@ -27,7 +27,7 @@ fn hexc(args: &[&str]) -> (i32, String, String) {
 }
 
 fn json(image: &Path, name: &str) -> Value {
-    let (code, out, err) = hexc(&["-json", image.to_str().unwrap(), name]);
+    let (code, out, err) = hexcavator(&["-json", image.to_str().unwrap(), name]);
     assert_eq!(code, 0, "{name}: {err}");
     serde_json::from_str(&out).unwrap()
 }
@@ -130,21 +130,21 @@ fn tables_and_text() {
     assert_eq!(v["children"].as_array().unwrap().len(), 3);
     assert_eq!(j["pointers"].as_array().unwrap().len(), 3);
     // Text: the tree, the bytes as a debugger shows them, the pointers.
-    let (code, out, err) = hexc(&[exe.to_str().unwrap(), "ops"]);
+    let (code, out, err) = hexcavator(&[exe.to_str().unwrap(), "ops"]);
     assert_eq!(code, 0, "{err}");
     assert!(out.starts_with("ops  (16 bytes at 0x"), "{out}");
     assert!(out.contains("[1] = 0x"), "{out}");
     assert!(out.contains("op_sub(int)"), "{out}");
     assert!(out.contains("pointers (base relocations):"), "{out}");
     // Code isn't data; nothing named so isn't anything.
-    let (code, _, err) = hexc(&[exe.to_str().unwrap(), "main(int, char**)"]);
+    let (code, _, err) = hexcavator(&[exe.to_str().unwrap(), "main(int, char**)"]);
     assert!(code != 0 && err.contains("is code"), "{err}");
-    let (code, _, err) = hexc(&[exe.to_str().unwrap(), "nope"]);
+    let (code, _, err) = hexcavator(&[exe.to_str().unwrap(), "nope"]);
     assert!(code != 0 && err.contains("no datum named 'nope'"), "{err}");
-    let (code, _, _) = hexc(&[exe.to_str().unwrap()]);
+    let (code, _, _) = hexcavator(&[exe.to_str().unwrap()]);
     assert_eq!(code, 2);
     // -max: the first bytes only.
-    let (code, out, _) = hexc(&["-json", "-max", "8", exe.to_str().unwrap(), "ops"]);
+    let (code, out, _) = hexcavator(&["-json", "-max", "8", exe.to_str().unwrap(), "ops"]);
     assert_eq!(code, 0);
     let j: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(

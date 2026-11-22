@@ -1,4 +1,4 @@
-//! `hexc batch`: a summary of each of many images (PE, ELF, Mach-O,
+//! `hexcavator batch`: a summary of each of many images (PE, ELF, Mach-O,
 //! WebAssembly), one JSON line each, for tracking sizes across a product's
 //! binaries and builds.
 
@@ -9,7 +9,7 @@ use std::process::ExitCode;
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-usage: hexc batch [options] <file or directory>...
+usage: hexcavator batch [options] <file or directory>...
 
 A summary of each image (an executable or shared library: PE, ELF, Mach-O,
 or WebAssembly) given, or found in the directories given (by what the files
@@ -83,7 +83,7 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 fn usage(message: &str) -> ExitCode {
-    ereport!("hexc batch: {message}\n\n{USAGE}");
+    ereport!("hexcavator batch: {message}\n\n{USAGE}");
     ExitCode::from(2)
 }
 
@@ -220,7 +220,7 @@ fn lost(e: &io::Error) -> ExitCode {
     if e.kind() == io::ErrorKind::BrokenPipe {
         ExitCode::SUCCESS
     } else {
-        ereport!("hexc batch: writing the output: {e}");
+        ereport!("hexcavator batch: writing the output: {e}");
         ExitCode::FAILURE
     }
 }

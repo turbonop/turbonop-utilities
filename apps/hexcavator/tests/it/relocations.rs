@@ -1,5 +1,5 @@
-//! `hexc relocations`: what the loader patches, by table, type, section,
-//! data, and target; and the pointer tables `hexc recommend` finds.
+//! `hexcavator relocations`: what the loader patches, by table, type, section,
+//! data, and target; and the pointer tables `hexcavator recommend` finds.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -10,8 +10,8 @@ fn testdata(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-fn hexc(args: &[&str], file: &Path) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str], file: &Path) -> (bool, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(args)
         .arg(file)
         .output()
@@ -28,7 +28,7 @@ fn text_and_json() {
     // libptrs.so: color_names's 8 string pointers and Shape's vtable's 6
     // function pointers (RELATIVE), and a call through the PLT.
     let lib = testdata("linkopts/libptrs.so");
-    let (ok, out, err) = hexc(&["relocations"], &lib);
+    let (ok, out, err) = hexcavator(&["relocations"], &lib);
     assert!(ok, "{err}");
     assert!(
         out.starts_with("15 relocations, 360 bytes in 2 tables:"),
@@ -38,7 +38,7 @@ fn text_and_json() {
     assert!(out.contains("color_names"), "{out}");
     assert!(out.contains("vtable for Shape"), "{out}");
     assert!(out.contains("Shape::area() const"), "{out}");
-    let (ok, out, _) = hexc(&["relocations", "-json", "-list"], &lib);
+    let (ok, out, _) = hexcavator(&["relocations", "-json", "-list"], &lib);
     assert!(ok);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["count"], 15);
@@ -76,14 +76,14 @@ fn text_and_json() {
     assert_eq!(list[0]["in"], "color_names");
     assert!(list.iter().any(|r| r["to"] == "Shape::area() const"));
     // -n: rows of each list.
-    let (_, out, _) = hexc(&["relocations", "-n", "1"], &lib);
+    let (_, out, _) = hexcavator(&["relocations", "-n", "1"], &lib);
     assert!(out.contains("(1 more)"), "{out}");
 }
 
 #[test]
 fn other_formats() {
     // A PE image's base relocations, and its symbols from its PDB.
-    let (ok, out, err) = hexc(&["relocations"], &testdata("xref/xref-x64.exe"));
+    let (ok, out, err) = hexcavator(&["relocations"], &testdata("xref/xref-x64.exe"));
     assert!(ok, "{err}");
     assert!(
         out.starts_with("62 relocations, 144 bytes in 1 table:"),
@@ -92,7 +92,7 @@ fn other_formats() {
     assert!(out.contains("DIR64"), "{out}");
     assert!(out.contains("Circle::`vftable'"), "{out}");
     // Mach-O fixups, chained; no debug information (the image's symbols).
-    let (ok, out, err) = hexc(
+    let (ok, out, err) = hexcavator(
         &["relocations", "-json"],
         &testdata("macho/pointers-arm64.dylib"),
     );
@@ -110,11 +110,11 @@ fn other_formats() {
         "{v}"
     );
     // Without relocations: said so.
-    let (ok, out, _) = hexc(&["relocations"], &testdata("linkopts/funcs-plain"));
+    let (ok, out, _) = hexcavator(&["relocations"], &testdata("linkopts/funcs-plain"));
     assert!(ok);
     assert_eq!(out, "No relocations: the loader patches nothing.\n");
     // Debug information given but not found: an error.
-    let (ok, _, err) = hexc(
+    let (ok, _, err) = hexcavator(
         &["relocations", "-debug", "nope"],
         &testdata("linkopts/libptrs.so"),
     );
@@ -123,7 +123,7 @@ fn other_formats() {
 
 #[test]
 fn pointer_tables_recommended() {
-    let (ok, out, err) = hexc(&["recommend", "-json"], &testdata("linkopts/libptrs.so"));
+    let (ok, out, err) = hexcavator(&["recommend", "-json"], &testdata("linkopts/libptrs.so"));
     assert!(ok, "{err}");
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     let rec = |kind: &str| {
@@ -156,6 +156,6 @@ fn pointer_tables_recommended() {
         "{vt}"
     );
     // MSVC has no relative vtables: none for a PE image with its PDB.
-    let (_, out, _) = hexc(&["recommend", "-json"], &testdata("xref/xref-x64.exe"));
+    let (_, out, _) = hexcavator(&["recommend", "-json"], &testdata("xref/xref-x64.exe"));
     assert!(!out.contains("relative-vtables"), "{out}");
 }

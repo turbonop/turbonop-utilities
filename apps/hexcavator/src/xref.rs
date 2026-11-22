@@ -1,4 +1,4 @@
-//! `hexc xref`: what refers to what in an image, and why each function and
+//! `hexcavator xref`: what refers to what in an image, and why each function and
 //! datum is in it.
 
 use std::fmt::Write as _;
@@ -10,7 +10,7 @@ use hexcavator_size::xref::{Kept, Xref};
 use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
-usage: hexc xref [options] <image> [-- <base image>]
+usage: hexcavator xref [options] <image> [-- <base image>]
 
 What each function and datum of an image (PE, ELF, Mach-O, WebAssembly)
 refers to (calls, branches, addresses its code uses, pointers in data,
@@ -117,14 +117,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc xref: {e}\n\n{USAGE}");
+            ereport!("hexcavator xref: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match report(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc xref: {e}");
+            ereport!("hexcavator xref: {e}");
             ExitCode::FAILURE
         }
     }

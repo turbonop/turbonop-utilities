@@ -1,11 +1,11 @@
-//! Writes `tests/data/golden-flags.txt`: names hexc undecorates as undname
+//! Writes `tests/data/golden-flags.txt`: names hexcavator undecorates as undname
 //! does under each of several flags, for the hermetic test.
 //!
 //!     golden_flags <per-flag> <names.txt> <undname-0.txt> <flags>=<undname-flags.txt>...
 //!
 //! For each flag it keeps up to `per-flag` names whose output the flag
 //! changes (evenly spread through the list), and names that use rarer parts
-//! of the grammar, wherever hexc and undname agree.
+//! of the grammar, wherever hexcavator and undname agree.
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

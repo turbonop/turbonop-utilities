@@ -57,7 +57,7 @@ async function run() {
         fail("the document doesn't start with its command line");
       }
       if (/failed/.test(text.split("\n").slice(0, 3).join("\n"))) {
-        fail("hexc failed: " + text.slice(0, 300));
+        fail("hexcavator failed: " + text.slice(0, 300));
       }
     }
     // ELF and Mach-O images with DWARF (no extension, or a loose DWARF

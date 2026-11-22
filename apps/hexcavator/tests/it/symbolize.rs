@@ -1,4 +1,4 @@
-//! `hexc symbolize` end to end. Every byte of the source lines test
+//! `hexcavator symbolize` end to end. Every byte of the source lines test
 //! program's code (tools/lines: inline sites, one nested in another, and a
 //! header's code), as the reference symbolizers see it
 //! (tools/lines/symbolize-oracle.py): DIA for the PE image (its PDB), and
@@ -18,8 +18,8 @@ fn testdata(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-fn hexc(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("symbolize")
         .args(args)
         .stdin(Stdio::null())
@@ -33,7 +33,7 @@ fn hexc(args: &[&str]) -> (i32, String, String) {
 }
 
 fn ok(args: &[&str]) -> String {
-    let (code, out, err) = hexc(args);
+    let (code, out, err) = hexcavator(args);
     assert_eq!(code, 0, "{args:?}: {err}");
     out
 }
@@ -41,7 +41,7 @@ fn ok(args: &[&str]) -> String {
 /// A frame: function, file, line, inlined.
 type Frame = (String, String, u64, bool);
 
-/// llvm-symbolizer's name without what hexc leaves out: its parameters
+/// llvm-symbolizer's name without what hexcavator leaves out: its parameters
 /// (`square(int)`), and a function template's return type
 /// (`int twice<int>(int)`).
 fn base_name(name: &str) -> String {
@@ -97,7 +97,7 @@ fn golden(rel: &str, elf: bool) -> Vec<(u64, Vec<Frame>)> {
     out
 }
 
-/// hexc's answers for `addrs` in `image` (with -json).
+/// hexcavator's answers for `addrs` in `image` (with -json).
 fn answers(image: &Path, addrs: &[u64]) -> Vec<Vec<Frame>> {
     let image = image.to_str().unwrap();
     let mut out = Vec::new();
@@ -128,7 +128,7 @@ fn answers(image: &Path, addrs: &[u64]) -> Vec<Vec<Frame>> {
     out
 }
 
-/// hexc gives what the golden file does at each of its addresses.
+/// hexcavator gives what the golden file does at each of its addresses.
 fn matches_golden(image: &str, elf: bool) {
     let want = golden(&format!("lines/{image}.symbolize.txt"), elf);
     let addrs: Vec<u64> = want.iter().map(|w| w.0).collect();
@@ -269,7 +269,7 @@ fn text_read() {
 fn standard_input() {
     use std::io::Write;
     let exe = testdata("lines/lines.exe");
-    let mut child = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["symbolize", exe.to_str().unwrap()])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -338,35 +338,38 @@ fn bad_arguments() {
         &[exe, "0x1", "-input", "x.txt"],
         &["lines.exe@nothex"],
     ] {
-        let (code, out, err) = hexc(args);
+        let (code, out, err) = hexcavator(args);
         assert_eq!(code, 2, "{args:?}: {out}{err}");
-        assert!(err.contains("usage: hexc symbolize"), "{args:?}: {err}");
+        assert!(
+            err.contains("usage: hexcavator symbolize"),
+            "{args:?}: {err}"
+        );
     }
     // An image that isn't there, or isn't one.
-    let (code, _, err) = hexc(&["no-such-file.exe", "0x1"]);
+    let (code, _, err) = hexcavator(&["no-such-file.exe", "0x1"]);
     assert_eq!(code, 1, "{err}");
     let notes = testdata("lines/lines.exe.symbolize.txt");
-    let (code, _, err) = hexc(&[notes.to_str().unwrap(), "0x1"]);
+    let (code, _, err) = hexcavator(&[notes.to_str().unwrap(), "0x1"]);
     assert_eq!(code, 1, "{err}");
     // An image name not given: said, and the rest answered.
-    let (code, out, err) = hexc(&[exe, "other.dll+0x10", "0x140001062"]);
+    let (code, out, err) = hexcavator(&[exe, "other.dll+0x10", "0x140001062"]);
     assert_eq!(code, 1);
     assert!(err.contains("no image named 'other.dll'"), "{err}");
     assert!(out.starts_with("0x140001062  main+0x2"), "{out}");
     // Addresses past anything (and past 64 bits): nothing there.
-    let (code, out, _) = hexc(&[exe, "0xffffffffffffffff", "-offset"]);
+    let (code, out, _) = hexcavator(&[exe, "0xffffffffffffffff", "-offset"]);
     assert_eq!(code, 0);
     assert!(out.contains("??"), "{out}");
 }
 
-/// Served (`hexc serve`): addresses are answered; text is read from a
+/// Served (`hexcavator serve`): addresses are answered; text is read from a
 /// file only (standard input is the server's requests).
 #[test]
 fn served() {
     use std::io::Write;
     let exe = testdata("lines/lines.exe");
     let exe = serde_json::to_string(exe.to_str().unwrap()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("serve")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

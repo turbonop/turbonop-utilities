@@ -1,4 +1,4 @@
-//! `hexc types` end to end, over the type layout test program
+//! `hexcavator types` end to end, over the type layout test program
 //! (tools/types: one structure for each kind of part and hole).
 
 use std::path::{Path, PathBuf};
@@ -10,8 +10,8 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn hexc(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("types")
         .args(args)
         .output()
@@ -25,7 +25,7 @@ fn hexc(args: &[&str]) -> (i32, String, String) {
 
 fn layout(name: &str) -> String {
     let exe = fixture("types.exe");
-    let (code, out, err) = hexc(&["-layout", name, exe.to_str().unwrap()]);
+    let (code, out, err) = hexcavator(&["-layout", name, exe.to_str().unwrap()]);
     assert_eq!(code, 0, "{name}: {err}");
     out
 }
@@ -83,7 +83,7 @@ fn layouts() {
 fn list_and_json() {
     let exe = fixture("types.exe");
     let exe = exe.to_str().unwrap();
-    let (code, out, _) = hexc(&["-n", "0", exe]);
+    let (code, out, _) = hexcavator(&["-n", "0", exe]);
     assert_eq!(code, 0);
     let rows: Vec<&str> = out.lines().skip(2).collect();
     for (name, size, wasted) in [
@@ -102,20 +102,20 @@ fn list_and_json() {
         .filter_map(|r| r.split_whitespace().nth(1).and_then(|w| w.parse().ok()))
         .collect();
     assert!(wastes.windows(2).all(|w| w[0] >= w[1]), "{out}");
-    let (_, out, _) = hexc(&["-json", "-layout", "Bits", exe]);
+    let (_, out, _) = hexcavator(&["-json", "-layout", "Bits", exe]);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["bitPadding"], 24);
     assert_eq!(v["parts"][1]["name"], "b");
     assert_eq!(v["parts"][1]["bit"], 3);
     assert_eq!(v["parts"][1]["bits"], 5);
     assert_eq!(v["parts"][2]["kind"], "bit padding");
-    let (_, out, _) = hexc(&["-json", "-n", "2", exe]);
+    let (_, out, _) = hexcavator(&["-json", "-n", "2", exe]);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(v["list"].as_array().unwrap().len(), 2);
     assert_eq!(v["list"][0]["name"], "Diamond");
     // A PDB directly.
     let pdb = fixture("types.pdb");
-    let (code, out, _) = hexc(&["-layout", "Padded", pdb.to_str().unwrap()]);
+    let (code, out, _) = hexcavator(&["-layout", "Padded", pdb.to_str().unwrap()]);
     assert_eq!(code, 0);
     assert_eq!(out, layout("Padded"));
 }
@@ -123,7 +123,7 @@ fn list_and_json() {
 #[test]
 fn diff() {
     let (new, old) = (fixture("types-v2.exe"), fixture("types.exe"));
-    let (code, out, err) = hexc(&[new.to_str().unwrap(), "--", old.to_str().unwrap()]);
+    let (code, out, err) = hexcavator(&[new.to_str().unwrap(), "--", old.to_str().unwrap()]);
     assert_eq!(code, 0, "{err}");
     assert_eq!(
         out,
@@ -134,7 +134,7 @@ fn diff() {
          \x20       -4  Padded (12 -> 8 bytes; wasted 6 -> 2)\n\
          \x20       +0  Sample (72 -> 72 bytes; wasted 3 -> 7)\n"
     );
-    let (_, out, _) = hexc(&["-json", new.to_str().unwrap(), "--", old.to_str().unwrap()]);
+    let (_, out, _) = hexcavator(&["-json", new.to_str().unwrap(), "--", old.to_str().unwrap()]);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     // (Sample holds a Padded: its padding moved with Padded's.)
     assert_eq!(v["changedCount"], 3);
@@ -145,22 +145,22 @@ fn diff() {
 fn errors() {
     let exe = fixture("types.exe");
     let exe = exe.to_str().unwrap();
-    let (code, _, err) = hexc(&["-layout", "Nope", exe]);
+    let (code, _, err) = hexcavator(&["-layout", "Nope", exe]);
     assert_eq!(code, 1);
     assert!(err.contains("no type named 'Nope'"), "{err}");
-    let (code, _, err) = hexc(&["-layout", "^(Padded|Bits)$", exe]);
+    let (code, _, err) = hexcavator(&["-layout", "^(Padded|Bits)$", exe]);
     assert_eq!(code, 1);
     assert!(
         err.contains("matches 2 types (Bits, Padded); give one exactly")
             || err.contains("matches 2 types"),
         "{err}"
     );
-    let (code, _, err) = hexc(&["-bogus", exe]);
+    let (code, _, err) = hexcavator(&["-bogus", exe]);
     assert_eq!(code, 2);
     assert!(err.contains("unknown option 'bogus'"), "{err}");
     // An image with no debug information to be found.
     let elf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/elf/program-stripped");
-    let (code, _, err) = hexc(&[elf.to_str().unwrap()]);
+    let (code, _, err) = hexcavator(&[elf.to_str().unwrap()]);
     assert_eq!(code, 1);
     assert!(err.contains("no matching debug information found"), "{err}");
 }
@@ -171,18 +171,18 @@ fn errors() {
 fn dwarf() {
     let image = fixture("types-x86_64-linux-gnu");
     let image = image.to_str().unwrap();
-    let (code, out, err) = hexc(&[image]);
+    let (code, out, err) = hexcavator(&[image]);
     assert_eq!(code, 0, "{err}");
     assert!(
         out.starts_with("11 types; their padding wastes 17 bytes"),
         "{out}"
     );
-    let (code, out, _) = hexc(&["-layout", "Diamond", image]);
+    let (code, out, _) = hexcavator(&["-layout", "Diamond", image]);
     assert_eq!(code, 0);
     assert!(out.contains("12     4  [virtual base]  VBase"), "{out}");
     assert!(!out.contains("vbptr"), "{out}");
     let v2 = fixture("types-x86_64-linux-gnu-v2");
-    let (code, out, _) = hexc(&[image, "--", v2.to_str().unwrap()]);
+    let (code, out, _) = hexcavator(&[image, "--", v2.to_str().unwrap()]);
     assert_eq!(code, 0);
     assert!(
         out.starts_with("Types: 3 changed layout, 0 added, 0 removed"),
@@ -196,7 +196,7 @@ fn dwarf() {
 fn mangled_names_and_references() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
     let run = |args: &[&str]| {
-        let out = std::process::Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("types")
             .args(args)
             .current_dir(&root)
@@ -236,7 +236,7 @@ fn mangled_names_and_references() {
 fn pages_of_types_and_layouts_by_reference() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
     let run = |args: &[&str]| {
-        let out = std::process::Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("types")
             .args(args)
             .current_dir(&root)
@@ -327,7 +327,7 @@ fn type_definitions() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/types");
     for image in ["types.exe", "types-x86_64-linux-gnu", "types-split5"] {
         for (name, line) in [("Derived", 43), ("Diamond", 57)] {
-            let out = std::process::Command::new(env!("CARGO_BIN_EXE_hexc"))
+            let out = std::process::Command::new(env!("CARGO_BIN_EXE_hexcavator"))
                 .args(["types", "-definition", name, "-json"])
                 .arg(root.join(image))
                 .output()

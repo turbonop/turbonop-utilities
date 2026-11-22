@@ -1,4 +1,4 @@
-//! `hexc dwarf`: a file's DWARF, as `llvm-dwarfdump` shows it: units and
+//! `hexcavator dwarf`: a file's DWARF, as `llvm-dwarfdump` shows it: units and
 //! their DIEs (`-info`, in llvm-dwarfdump's layout: each attribute's
 //! value as it prints them, expressions, location and range lists, and
 //! referenced types by name), line tables (`-lines`), address ranges
@@ -6,7 +6,7 @@
 //! information (`-frames`: CIEs, FDEs, and their unwind rows), and a
 //! summary of what is there (the default).
 //!
-//! The counterpart of `hexc pdb` for DWARF. The file is an ELF or Mach-O
+//! The counterpart of `hexcavator pdb` for DWARF. The file is an ELF or Mach-O
 //! image or object with its own DWARF, a separate debug file (a dSYM's
 //! DWARF, a `.debug` file), or an image whose debug file is found as
 //! every command finds it.
@@ -30,7 +30,7 @@ mod types;
 use types::Types;
 
 const USAGE: &str = "\
-usage: hexc dwarf [options] <file>
+usage: hexcavator dwarf [options] <file>
 
 A file's DWARF, as llvm-dwarfdump shows it. The file: an ELF or Mach-O
 image or object with DWARF, a separate debug file (a dSYM's DWARF, a .debug
@@ -132,7 +132,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc dwarf: {e}\n\n{USAGE}");
+            ereport!("hexcavator dwarf: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
@@ -149,13 +149,13 @@ pub fn run(args: &[String]) -> ExitCode {
                 Ok(()) => ExitCode::SUCCESS,
                 Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
                 Err(e) => {
-                    ereport!("hexc: writing the output: {e}");
+                    ereport!("hexcavator: writing the output: {e}");
                     ExitCode::FAILURE
                 }
             }
         }
         Err(e) => {
-            ereport!("hexc dwarf: {e}");
+            ereport!("hexcavator dwarf: {e}");
             ExitCode::FAILURE
         }
     }
@@ -189,7 +189,7 @@ fn open(o: &Options) -> Result<(String, Mmap, Mmap), String> {
     let (path, map) = hexcavator_program::find_debug(Path::new(file), &parsed, None)
         .map_err(|e| e.to_string())?;
     if hexcavator_pdb::check(&map).is_ok() {
-        return Err(format!("{}: a PDB (see hexc pdb)", path.display()));
+        return Err(format!("{}: a PDB (see hexcavator pdb)", path.display()));
     }
     Ok((path.display().to_string(), image, map))
 }

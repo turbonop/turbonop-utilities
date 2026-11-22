@@ -1,6 +1,6 @@
 Hexcavator is licensed under the Apache License 2.0, below. Parts of it
 are derived from others' work and carry those works' licenses too, and
-the hexc program includes the third-party crates below; their notices
+the hexcavator program includes the third-party crates below; their notices
 follow.
 
 ============================================================================

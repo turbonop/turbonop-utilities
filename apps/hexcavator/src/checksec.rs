@@ -1,4 +1,4 @@
-//! `hexc checksec`: the exploit mitigations an image was built with (PE,
+//! `hexcavator checksec`: the exploit mitigations an image was built with (PE,
 //! ELF, Mach-O), each on, off, or not applicable, with why; and, with
 //! `-audit`, the compilers and options its objects were built with, from
 //! its debug information (a PDB's S_COMPILE3 and build information; DWARF
@@ -17,7 +17,7 @@ use hexcavator_mmap::Mmap;
 use serde_json::{Value as Json, json};
 
 const USAGE: &str = "\
-usage: hexc checksec [options] <image>...
+usage: hexcavator checksec [options] <image>...
 
 The exploit mitigations each image was built with: for PE images ASLR,
 high-entropy ASLR, DEP, CFG, XFG, CET shadow stacks, EH continuation,
@@ -55,12 +55,12 @@ pub fn run(args: &[String]) -> ExitCode {
             Some("pdb" | "debug") => match it.next() {
                 Some(p) => o.pdb = Some(p.clone()),
                 None => {
-                    ereport!("hexc checksec: -pdb: expected a path");
+                    ereport!("hexcavator checksec: -pdb: expected a path");
                     return ExitCode::from(2);
                 }
             },
             Some(x) if !x.is_empty() && !Path::new(a).exists() => {
-                ereport!("hexc checksec: unknown option '{a}'\n\n{USAGE}");
+                ereport!("hexcavator checksec: unknown option '{a}'\n\n{USAGE}");
                 return ExitCode::from(2);
             }
             _ => o.files.push(a.clone()),
@@ -83,7 +83,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 }
             }
             Err(e) => {
-                ereport!("hexc checksec: {e}");
+                ereport!("hexcavator checksec: {e}");
                 status = ExitCode::FAILURE;
             }
         }

@@ -1,4 +1,4 @@
-//! `hexc query` end to end, over the cross-reference test program
+//! `hexcavator query` end to end, over the cross-reference test program
 //! (testdata/xref).
 
 use std::path::{Path, PathBuf};
@@ -8,8 +8,8 @@ fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/xref/xref-x64.exe")
 }
 
-fn hexc(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("query")
         .args(args)
         .output()
@@ -26,7 +26,7 @@ fn query(q: &str, extra: &[&str]) -> String {
     let mut args = extra.to_vec();
     args.push(image.to_str().unwrap());
     args.push(q);
-    let (code, out, err) = hexc(&args);
+    let (code, out, err) = hexcavator(&args);
     assert_eq!(code, 0, "{q}: {err}");
     out
 }
@@ -114,28 +114,28 @@ fn grouping() {
 fn errors_and_help() {
     let image = fixture();
     let image = image.to_str().unwrap();
-    let (code, _, err) = hexc(&[image, "size>1k"]);
+    let (code, _, err) = hexcavator(&[image, "size>1k"]);
     assert_eq!(code, 2);
     assert!(err.contains("no column 'size'"), "{err}");
     assert!(err.contains("\n  size>1k\n  ^\n"), "{err}");
-    let (code, _, err) = hexc(&[image, "file>big"]);
+    let (code, _, err) = hexcavator(&[image, "file>big"]);
     assert_eq!(code, 2);
     assert!(err.contains("\n  file>big\n       ^\n"), "{err}");
-    let (code, _, err) = hexc(&[image]);
+    let (code, _, err) = hexcavator(&[image]);
     assert_eq!(code, 2);
     assert!(err.contains("no query given"), "{err}");
-    let (code, _, err) = hexc(&[image, "kind=function", "extra"]);
+    let (code, _, err) = hexcavator(&[image, "kind=function", "extra"]);
     assert_eq!(code, 2);
     assert!(err.contains("too many arguments"), "{err}");
-    let (code, _, err) = hexc(&[image, "sort by nope"]);
+    let (code, _, err) = hexcavator(&[image, "sort by nope"]);
     assert_eq!(code, 2);
     assert!(err.contains("can't sort by 'nope'"), "{err}");
     // A stripped image with no debug file to be found.
     let elf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/elf/program-stripped");
-    let (code, _, err) = hexc(&[elf.to_str().unwrap(), "kind=function"]);
+    let (code, _, err) = hexcavator(&[elf.to_str().unwrap(), "kind=function"]);
     assert_eq!(code, 1);
     assert!(err.contains("no matching debug information found"), "{err}");
-    let (code, out, _) = hexc(&["-columns"]);
+    let (code, out, _) = hexcavator(&["-columns"]);
     assert_eq!(code, 0);
     assert!(
         out.contains("  name       the symbol's name, demangled\n"),
@@ -156,7 +156,7 @@ fn elf_and_macho_with_dwarf() {
             .to_string()
     };
     let elf = data("elf/dwarf5-x86_64-linux-gnu");
-    let (code, out, err) = hexc(&[&elf, "kind=function sort by name", "-csv"]);
+    let (code, out, err) = hexcavator(&[&elf, "kind=function sort by name", "-csv"]);
     assert_eq!(code, 0, "{err}");
     let names: Vec<&str> = out
         .lines()
@@ -185,12 +185,12 @@ fn elf_and_macho_with_dwarf() {
     // A dSYM's DWARF, given.
     let image = data("macho/program-arm64");
     let dwarf = data("macho/program-arm64.dwarf");
-    let (code, out, err) = hexc(&[&image, "kind=function", "-pdb", &dwarf, "-csv"]);
+    let (code, out, err) = hexcavator(&[&image, "kind=function", "-pdb", &dwarf, "-csv"]);
     assert_eq!(code, 0, "{err}");
     assert!(out.lines().any(|l| l.starts_with("compute(int),")), "{out}");
     // Not another image's.
     let other = data("macho/program-x86_64.dwarf");
-    let (code, _, err) = hexc(&[&image, "kind=function", "-pdb", &other]);
+    let (code, _, err) = hexcavator(&[&image, "kind=function", "-pdb", &other]);
     assert_eq!(code, 1);
     assert!(err.contains("does not match"), "{err}");
 }
@@ -207,7 +207,7 @@ fn image_symbols_beside_dwarf() {
         ("wasm/startup.wasm", "__wasm_call_ctors"),
     ] {
         let path = testdata.join(image);
-        let (code, out, err) = hexc(&[
+        let (code, out, err) = hexcavator(&[
             "-json",
             path.to_str().unwrap(),
             "kind=public select name, compiland, file",
@@ -225,15 +225,15 @@ fn image_symbols_beside_dwarf() {
 }
 
 /// A WebAssembly module's data: each variable in its segment, with its
-/// compile unit; and `hexc data` reading one at its address in linear
-/// memory, and `hexc recommend` finding everything reached (code's
+/// compile unit; and `hexcavator data` reading one at its address in linear
+/// memory, and `hexcavator recommend` finding everything reached (code's
 /// constant addresses and offsets are references to data).
 #[test]
 fn wasm_data() {
     let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/data.wasm");
     // (Each command: its options, the image, what follows it.)
     let run = |args: &[&str], after: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(args)
             .arg(&image)
             .args(after)
@@ -289,7 +289,7 @@ fn wasm_data() {
 fn wasm_data_placed_by_code() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm");
     let data = |module: &str, name: &str| {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("data")
             .arg(dir.join(module))
             .arg(name)
@@ -356,7 +356,7 @@ fn object_symbols_laid_out() {
     let object =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/elf/program-x86_64-linux-gnu.o");
     let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(&args[..1])
             .arg(&object)
             .args(&args[1..])
@@ -399,12 +399,12 @@ fn object_symbols_laid_out() {
     );
 }
 
-/// Runs `hexc <command> <testdata/path> <args>`, which must succeed.
+/// Runs `hexcavator <command> <testdata/path> <args>`, which must succeed.
 fn run_on(command: &str, path: &str, args: &[&str]) -> String {
     let file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata")
         .join(path);
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg(command)
         .arg(&file)
         .args(args)
@@ -418,7 +418,7 @@ fn run_on(command: &str, path: &str, args: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
-/// `hexc query -json <path> <q>`'s rows.
+/// `hexcavator query -json <path> <q>`'s rows.
 fn rows_of(path: &str, q: &str) -> Vec<serde_json::Value> {
     let rows: serde_json::Value =
         serde_json::from_str(&run_on("query", path, &["-json", q])).unwrap();

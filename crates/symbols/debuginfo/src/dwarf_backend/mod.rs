@@ -358,13 +358,26 @@ fn debug_sections<'d>(image: &Image<'d>) -> Vec<(&'d [u8], Cow<'d, [u8]>)> {
         let Some(bytes) = data.get(at..at.saturating_add(len)) else {
             continue;
         };
-        if gnu {
-            if let Some(d) = crate::decompress::gnu_zdebug(bytes) {
-                out.push((name, Cow::Owned(d)));
+        let mut data = if gnu {
+            match crate::decompress::gnu_zdebug(bytes) {
+                Some(d) => Cow::Owned(d),
+                None => continue,
             }
         } else {
-            out.push((name, Cow::Borrowed(bytes)));
+            Cow::Borrowed(bytes)
+        };
+        // A COFF object's (MinGW's): with its relocations applied, as a
+        // linker would.
+        if let Some(pe) = image.pe()
+            && image.kind() == Kind::Object
+            && pe
+                .sections()
+                .get(s.index)
+                .is_some_and(|h| h.number_of_relocations.get() > 0)
+        {
+            crate::decompress::coff_relocate(pe, s.index, data.to_mut());
         }
+        out.push((name, data));
     }
     out
 }

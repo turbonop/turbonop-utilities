@@ -17,6 +17,7 @@
 
 #![warn(missing_docs)]
 
+pub mod coff_object;
 pub mod decompress;
 pub mod dwarf_backend;
 pub mod layout;

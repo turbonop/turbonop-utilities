@@ -13,6 +13,7 @@ hexcavator-codeview.workspace = true
 hexcavator-core.workspace = true
 hexcavator-image.workspace = true
 hexcavator-pdb.workspace = true
+hexcavator-pe.workspace = true
 hexcavator-dwarf.workspace = true
 hexcavator-elf.workspace = true
 hexcavator-macho.workspace = true

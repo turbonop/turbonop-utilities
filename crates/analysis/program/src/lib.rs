@@ -56,6 +56,11 @@ pub fn find_debug(
         let map = Mmap::open(image_path).map_err(Error::io(image_path))?;
         return Ok((image_path.to_path_buf(), map));
     }
+    // (A COFF object's CodeView: read as the PDB a linker would write of
+    // it.)
+    if let Some(pdb) = hexcavator_debuginfo::coff_object::pdb_of(image.data()) {
+        return Ok((image_path.to_path_buf(), Mmap::from(pdb)));
+    }
     let ids = image.debug_ids();
     let servers = server::servers();
     let mut dirs = hexcavator_debuginfo::symbol_dirs();

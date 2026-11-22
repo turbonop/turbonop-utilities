@@ -398,3 +398,152 @@ fn object_symbols_laid_out() {
         "{text}"
     );
 }
+
+/// Runs `hexc <command> <testdata/path> <args>`, which must succeed.
+fn run_on(command: &str, path: &str, args: &[&str]) -> String {
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata")
+        .join(path);
+    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        .arg(command)
+        .arg(&file)
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{command} {path}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// `hexc query -json <path> <q>`'s rows.
+fn rows_of(path: &str, q: &str) -> Vec<serde_json::Value> {
+    let rows: serde_json::Value =
+        serde_json::from_str(&run_on("query", path, &["-json", q])).unwrap();
+    rows["rows"].as_array().unwrap().clone()
+}
+
+/// A COFF object's CodeView is its debug information (read as the PDB a
+/// linker would write of it): its functions with their source lines, a
+/// function's static, vtables as large as their publics say, the
+/// functions inlined at an address, and data read as its type.
+#[test]
+fn coff_object_codeview() {
+    let rows = rows_of("coff/objects.obj", "kind!=public");
+    let row = |name: &str| {
+        rows.iter()
+            .find(|r| r["name"] == name)
+            .unwrap_or_else(|| panic!("{name}: {rows:?}"))
+    };
+    for (name, line) in [
+        ("exported(int)", 26),
+        ("use_statics(int)", 22),
+        ("Square::area() const", 17),
+        ("twice<int>(int)", 8),
+    ] {
+        assert_eq!(row(name)["line"], line, "{name}");
+        assert_eq!(row(name)["source"], r"R:\tools\coff\objects.cpp", "{name}");
+        assert!(
+            row(name)["section"]
+                .as_str()
+                .unwrap()
+                .starts_with(".text$mn"),
+            "{name}"
+        );
+    }
+    assert_eq!(
+        row("calls (in int use_statics(int n))")["section"],
+        ".bss (2)"
+    );
+    assert_eq!(row("Square::`vftable'")["vm"], 16);
+    assert_eq!(row("counter")["section"], ".bss");
+    // (Its publics name what CodeView doesn't: RTTI.)
+    let publics = rows_of("coff/objects.obj", "kind=public");
+    assert!(
+        publics
+            .iter()
+            .any(|r| r["name"] == "Square::`RTTI Base Class Array'"),
+        "{publics:?}"
+    );
+    // exported's code at 0x28 is use_statics', inlined.
+    let at = row("exported(int)")["rva"].as_u64().unwrap() + 0x28;
+    let text = run_on("symbolize", "coff/objects.obj", &[&format!("{at:#x}")]);
+    assert!(
+        text.contains(r"use_statics    R:\tools\coff\objects.cpp:23  (inlined)")
+            && text.contains(r"exported+0x28  R:\tools\coff\objects.cpp:29"),
+        "{text}"
+    );
+    let text = run_on("data", "coff/objects.obj", &["table"]);
+    assert!(text.contains("[2] = 3  (int)"), "{text}");
+    let text = run_on("types", "coff/objects.obj", &[]);
+    assert!(text.contains("Square") && text.contains("Shape"), "{text}");
+    // clang's, too.
+    let rows = rows_of("mingw/weak.obj", "kind=function");
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0]["line"], 12);
+}
+
+/// A MinGW object's DWARF, relocated as a linker would: each function in
+/// its section with its source line, and data read where it is.
+#[test]
+fn mingw_object_dwarf() {
+    for object in ["mingw/program.o", "mingw/program-arm64.o"] {
+        let rows = rows_of(object, "kind=function or kind=data");
+        let row = |name: &str| {
+            rows.iter()
+                .find(|r| r["name"] == name)
+                .unwrap_or_else(|| panic!("{object} {name}: {rows:?}"))
+        };
+        for (name, section) in [
+            ("used(int)", ".text$used"),
+            ("unused(int)", ".text$unused"),
+            ("start()", ".text$start"),
+            ("table", ".data$table"),
+            ("message", ".rdata$message"),
+        ] {
+            assert_eq!(row(name)["section"], section, "{object} {name}");
+        }
+        assert_eq!(row("start()")["line"], 15, "{object}");
+        assert_eq!(row("unused(int)")["source"], r"R:\tools\mingw\program.c");
+        let text = run_on("data", object, &["table"]);
+        assert!(text.contains("[3] = 4"), "{object}: {text}");
+        let at = row("unused(int)")["rva"].as_u64().unwrap();
+        let text = run_on("symbolize", object, &[&format!("{at:#x}")]);
+        assert!(
+            text.contains(r"unused  R:\tools\mingw\program.c:9"),
+            "{object}: {text}"
+        );
+    }
+}
+
+/// A WebAssembly object's data segments, each where the object's own
+/// layout puts it (named as its `linking` section names them), and its
+/// data read there.
+#[test]
+fn wasm_object_data_placed() {
+    let rows = rows_of("wasm/data.o", "kind=function or kind=data");
+    let row = |name: &str| {
+        rows.iter()
+            .find(|r| r["name"] == name)
+            .unwrap_or_else(|| panic!("{name}: {rows:?}"))
+    };
+    for (name, section) in [
+        ("primes", ".rodata.primes"),
+        ("counter", ".data.counter"),
+        ("scratch", ".bss.scratch"),
+        ("lookup(int)", "Code"),
+    ] {
+        assert_eq!(row(name)["section"], section, "{name}");
+    }
+    let text = run_on("data", "wasm/data.o", &["counter"]);
+    assert!(text.contains("int = 42"), "{text}");
+    let text = run_on("data", "wasm/data.o", &["primes"]);
+    assert!(text.contains("[7] = 19"), "{text}");
+    let text = run_on("symbolize", "wasm/data.o", &["0x10"]);
+    assert!(
+        text.contains(r"lookup+0xe  R:\tools\wasm\data.c:20"),
+        "{text}"
+    );
+}

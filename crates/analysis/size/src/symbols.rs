@@ -328,9 +328,13 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
     let from_debug = from_debug_symbols(&shown, &hidden, model, &mut display);
 
     // Symbols for what the image itself describes.
-    let Some(pe) = image.pe() else {
+    let Some(pe) = image
+        .pe()
+        .filter(|_| image.kind() != hexcavator_image::Kind::Object)
+    else {
         // (DWARF describes only what was compiled with it: the image's own
-        // symbols name the rest, as a PDB's publics do.)
+        // symbols name the rest, as a PDB's publics do; and an object's
+        // symbols name what its CodeView doesn't.)
         return Ok(with_image_symbols(image, model, from_debug));
     };
     let mut handlers: HashMap<u64, crate::eh::Handler> = HashMap::new();

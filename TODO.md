@@ -15,11 +15,6 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 - **Cleanups.** `hexc size`'s bloaty-style maps are built by four
   per-format paths (ELF's, Mach-O's, and WebAssembly's follow bloaty's own;
   PE's is the Model's): groups and libraries are PE's alone.
-- **Objects' debug information.** An ELF or COFF object's sections are
-  laid out as a linker would (`section_addresses`), and an ELF object's
-  DWARF relocated to them; but a COFF object's CodeView (`.debug$S`) isn't
-  read as its debug information, nor a MinGW object's DWARF relocated, and
-  a WebAssembly object's data segments aren't placed.
 - **Instruction sets' loose ends.** microMIPS and MIPS16 code isn't
   decoded. MIPS's dynamic pointers (`R_MIPS_REL32`, and the local GOT
   entries the loader relocates by `DT_MIPS_LOCAL_GOTNO`) aren't read as

@@ -118,7 +118,12 @@ fn report(
     let mut r = recommendations(image, debug, model, &x, syms);
     with_exports(&mut r, image, path, importers);
     with_libraries(&mut r, image, path);
-    Ok(if json { as_json(&r) } else { as_text(&r) })
+    let out = if json { as_json(&r) } else { as_text(&r) };
+    // (Freeing a big program's analyses takes seconds: left to the exit.)
+    crate::out::dispose(x);
+    crate::out::dispose(program);
+    crate::out::dispose(opened);
+    Ok(out)
 }
 
 /// Adds the libraries the image at `path` is linked with that nothing of
@@ -386,19 +391,25 @@ pub(crate) fn recommendations(
                 && matches!(x.kept(n), hexcavator_size::xref::Kept::Comdat)
         });
     }
-    let classes = hexcavator_size::fingerprint::build(
-        image,
-        model,
-        x,
-        hexcavator_size::fingerprint::Mode::Foldable,
-    )
-    .classes;
-    // Identical functions matter only if the link didn't fold them.
-    let foldable = (!judged.opt_icf).then_some(&classes[..]);
-    let duplicates = findings::duplicate_data(image, debug, syms);
-    let mut recs = recommend(x, toolchain, Some(judged), foldable, &duplicates, &compiled);
+    use hexcavator_par::join;
+    // The analyses below are independent: each runs on its own thread
+    // (and most across cores themselves). Their advice is gathered in
+    // the same order as ever.
+    let fingerprints = || {
+        let classes = hexcavator_size::fingerprint::build(
+            image,
+            model,
+            x,
+            hexcavator_size::fingerprint::Mode::Foldable,
+        )
+        .classes;
+        // Templates' instantiations alike but for constants, sizes, callees.
+        let near = hexcavator_size::fingerprint::near_identical(image, model, x, &classes);
+        (classes, near)
+    };
     // Functions inlined where calls would cost less.
-    if let Ok(sites) = debug.inline_sites() {
+    let inlined = || -> Option<Recommendation> {
+        let sites = debug.inline_sites().ok()?;
         let defined: rustc_hash::FxHashSet<&str> = syms
             .iter()
             .filter(|s| matches!(s.kind, hexcavator_size::symbols::SymbolKind::Function))
@@ -406,38 +417,51 @@ pub(crate) fn recommendations(
             .collect();
         let weighed =
             hexcavator_size::inlining::weigh(sites, image.arch(), &|n| defined.contains(n));
-        recs.extend(hexcavator_size::recommend::inlining(
-            &weighed,
-            toolchain,
-            image.arch(),
-            rust,
-        ));
-    }
-    // Pointer-heavy data, whose pointers each cost a relocation.
-    let mut data: Vec<(u64, u64, String)> = syms
-        .iter()
-        .filter(|s| {
-            s.size.vm > 0 && !matches!(s.kind, hexcavator_size::symbols::SymbolKind::Function)
-        })
-        .map(|s| (s.addr, s.addr + s.size.vm, s.name.clone()))
-        .collect();
-    data.sort_by_key(|s| s.0);
-    // (The image's own symbols where the debug information has none.)
-    let data = hexcavator_size::relocations::merge_symbols(
-        hexcavator_size::relocations::merge_symbols(
-            data,
-            crate::relocations::debug_file_symbols(debug),
-        ),
-        crate::relocations::demangled(hexcavator_size::relocations::image_symbols(image), image),
-    );
-    let relocs = hexcavator_size::relocations::relocations(image);
-    recs.extend(hexcavator_size::recommend::pointer_tables(
-        &relocs, &data, toolchain,
-    ));
-    // The build's paths, and string literals with copies.
-    recs.extend(string_recommendations(image, toolchain, &data, rust));
+        hexcavator_size::recommend::inlining(&weighed, toolchain, image.arch(), rust)
+    };
+    let pointers_and_strings = || {
+        // Pointer-heavy data, whose pointers each cost a relocation.
+        let mut data: Vec<(u64, u64, String)> = syms
+            .iter()
+            .filter(|s| {
+                s.size.vm > 0 && !matches!(s.kind, hexcavator_size::symbols::SymbolKind::Function)
+            })
+            .map(|s| (s.addr, s.addr + s.size.vm, s.name.clone()))
+            .collect();
+        data.sort_by_key(|s| s.0);
+        // (The image's own symbols where the debug information has none.)
+        let data = hexcavator_size::relocations::merge_symbols(
+            hexcavator_size::relocations::merge_symbols(
+                data,
+                crate::relocations::debug_file_symbols(debug),
+            ),
+            crate::relocations::demangled(
+                hexcavator_size::relocations::image_symbols(image),
+                image,
+            ),
+        );
+        let relocs = hexcavator_size::relocations::relocations(image);
+        let pointers = hexcavator_size::recommend::pointer_tables(&relocs, &data, toolchain);
+        // The build's paths, and string literals with copies.
+        let strings = string_recommendations(image, toolchain, &data, rust);
+        (pointers, strings)
+    };
     // Exception handling: cleanups nothing can throw through.
-    let eh = hexcavator_size::exceptions::exceptions(image, x, syms);
+    let exceptions = || hexcavator_size::exceptions::exceptions(image, x, syms);
+    let (((classes, near), duplicates), ((inlined, (pointers, strings)), eh)) = join(
+        || {
+            join(fingerprints, || {
+                findings::duplicate_data(image, debug, syms)
+            })
+        },
+        || join(|| join(inlined, pointers_and_strings), exceptions),
+    );
+    // Identical functions matter only if the link didn't fold them.
+    let foldable = (!judged.opt_icf).then_some(&classes[..]);
+    let mut recs = recommend(x, toolchain, Some(judged), foldable, &duplicates, &compiled);
+    recs.extend(inlined);
+    recs.extend(pointers);
+    recs.extend(strings);
     recs.extend(hexcavator_size::recommend::noexcept(
         x, &eh, toolchain, rust,
     ));
@@ -463,8 +487,6 @@ pub(crate) fn recommendations(
             })
             .collect(),
     });
-    // Templates' instantiations alike but for constants, sizes, callees.
-    let near = hexcavator_size::fingerprint::near_identical(image, model, x, &classes);
     recs.extend(hexcavator_size::recommend::near_identical(&near, rust));
     // And what the image's structure says, largest saving first with the
     // rest.

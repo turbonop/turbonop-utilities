@@ -269,6 +269,7 @@ dependencies = [
  "hexcavator-mmap",
  "hexcavator-mz",
  "hexcavator-ne",
+ "hexcavator-par",
  "hexcavator-pdb",
  "hexcavator-pe",
  "hexcavator-program",

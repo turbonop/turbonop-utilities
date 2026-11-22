@@ -77,7 +77,7 @@ fn serve<W: Write + Send + 'static>(input: impl BufRead, output: &Arc<Mutex<W>>)
             .name("hexc serve".into())
             .stack_size(STACK)
             .spawn(move || {
-                let _ = send(&output, &answer(&id, &args));
+                let _ = send_line(&output, answer(&id, &args));
             })?;
         running.push(spawned);
         // (Those that have finished needn't wait to be joined.)
@@ -110,20 +110,26 @@ fn request(line: &str) -> Result<(Value, Vec<String>), (Value, String)> {
     }
 }
 
-/// Runs the command `args`, and its response to request `id`.
-fn answer(id: &Value, args: &[String]) -> Value {
+/// Runs the command `args`, and its response to request `id`: a line of
+/// JSON. (Written as it is made: a command's output can be hundreds of
+/// megabytes, which a JSON value would copy and copy again.)
+fn answer(id: &Value, args: &[String]) -> Vec<u8> {
     let (code, out) = crate::out::capture(|| {
         std::panic::catch_unwind(|| crate::command(args)).unwrap_or_else(|_| {
             ereport!("hexc: internal error (a bug: please report it)");
             ExitCode::from(101)
         })
     });
-    json!({
-        "id": id,
-        "code": code_of(code),
-        "stdout": String::from_utf8_lossy(&out.stdout),
-        "stderr": String::from_utf8_lossy(&out.stderr),
-    })
+    let mut line = Vec::with_capacity(out.stdout.len() + out.stderr.len() + 64);
+    line.extend_from_slice(b"{\"id\":");
+    let _ = serde_json::to_writer(&mut line, id);
+    line.extend_from_slice(format!(",\"code\":{},\"stdout\":", code_of(code)).as_bytes());
+    let _ = serde_json::to_writer(&mut line, &String::from_utf8_lossy(&out.stdout));
+    line.extend_from_slice(b",\"stderr\":");
+    let _ = serde_json::to_writer(&mut line, &String::from_utf8_lossy(&out.stderr));
+    line.extend_from_slice(b"}
+");
+    line
 }
 
 /// `code` as a number. (An exit code says only whether it equals another.)
@@ -131,6 +137,13 @@ fn code_of(code: ExitCode) -> u8 {
     (0..=u8::MAX)
         .find(|&n| ExitCode::from(n) == code)
         .unwrap_or(1)
+}
+
+/// Writes `line` (a message and its newline), whole.
+fn send_line<W: Write>(output: &Mutex<W>, line: Vec<u8>) -> io::Result<()> {
+    let mut out = output.lock().unwrap_or_else(PoisonError::into_inner);
+    out.write_all(&line)?;
+    out.flush()
 }
 
 /// Writes `message`, a line, whole.

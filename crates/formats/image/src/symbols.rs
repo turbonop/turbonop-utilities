@@ -358,7 +358,10 @@ fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'d
         .into_iter()
         .filter(|e| e.kind == EXPORT_FUNCTION)
         .collect();
-    let exported = |index: u32| exports.iter().any(|e| e.index == index);
+    // (Their indexes, sorted: a module can export thousands.)
+    let mut indexes: Vec<u32> = exports.iter().map(|e| e.index).collect();
+    indexes.sort_unstable();
+    let exported = |index: u32| indexes.binary_search(&index).is_ok();
     for n in m.names(hexcavator_wasm::NAME_FUNCTION) {
         let Some((addr, size)) = function(n.index).and_then(|f| crate::wasm::function_range(m, f))
         else {

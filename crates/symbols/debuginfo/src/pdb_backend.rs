@@ -652,10 +652,12 @@ impl<'data> PdbInfo<'data> {
 
     pub fn layouts(&self) -> Result<Vec<crate::layout::Layout>> {
         let types = self.pdb.types()?;
-        Ok(hexcavator_codeview::layout::all(types)
-            .into_iter()
-            .map(neutral_layout)
-            .collect())
+        // (Each filled out on every core.)
+        Ok(hexcavator_par::map_into(
+            hexcavator_codeview::layout::all(types),
+            1024,
+            neutral_layout,
+        ))
     }
 
     pub fn type_shape(&self, ty: TypeRef) -> TypeShape {

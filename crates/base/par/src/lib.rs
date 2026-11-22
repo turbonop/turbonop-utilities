@@ -35,6 +35,36 @@ pub fn map<T: Sync, R: Send>(items: &[T], min: usize, f: impl Fn(&T) -> R + Sync
     map_chunks(items, min, |part| part.iter().map(&f).collect())
 }
 
+/// `f` of each item of `items` (taken: for work that consumes them), in
+/// order; split across the threads when there are at least twice `min`.
+pub fn map_into<T: Send, R: Send>(
+    mut items: Vec<T>,
+    min: usize,
+    f: impl Fn(T) -> R + Sync,
+) -> Vec<R> {
+    let Some(size) = chunk(items.len(), min) else {
+        return items.into_iter().map(f).collect();
+    };
+    let mut parts: Vec<Vec<T>> = Vec::new();
+    while !items.is_empty() {
+        let at = items.len().saturating_sub(size);
+        parts.push(items.split_off(at));
+    }
+    parts.reverse();
+    let f = &f;
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = parts
+            .into_iter()
+            .map(|part| scope.spawn(move || part.into_iter().map(f).collect::<Vec<R>>()))
+            .collect();
+        let mut out = Vec::new();
+        for h in handles {
+            out.extend(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
+        }
+        out
+    })
+}
+
 /// `f` of each index of `0..len`, in order; split across the threads when
 /// there are at least twice `min` of them.
 pub fn map_range<R: Send>(len: usize, min: usize, f: impl Fn(usize) -> R + Sync) -> Vec<R> {
@@ -245,6 +275,13 @@ mod tests {
             );
         }
         assert!(map_balanced(&[] as &[u32], 4, |x| *x).is_empty());
+        for len in [0usize, 1, 19, 10_000] {
+            let owned: Vec<String> = (0..len).map(|i| i.to_string()).collect();
+            assert_eq!(
+                map_into(owned.clone(), 3, |s| s + "!"),
+                owned.iter().map(|s| format!("{s}!")).collect::<Vec<_>>()
+            );
+        }
         for len in [0, 1, 19, 10_000] {
             assert_eq!(
                 map_range(len, 3, |i| i * 7),

@@ -25,9 +25,10 @@ mod types;
 mod vars;
 
 use std::borrow::Cow;
-use std::cell::{Cell, OnceCell};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock as OnceCell;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use hexcavator_core::{Arch, Endian, Error, ErrorKind, Result};
 use hexcavator_dwarf::consts::*;
@@ -119,7 +120,7 @@ pub struct DwarfInfo<'data> {
     rebase: Option<AddrMap>,
     /// How many more ranges [`DwarfInfo::ranges`] may give (see
     /// [`RANGES_PER_BYTE`]).
-    ranges_left: Cell<u64>,
+    ranges_left: AtomicU64,
 }
 
 /// The most ranges DIEs may have, all told: this many per byte of debug
@@ -432,7 +433,7 @@ impl<'data> DwarfInfo<'data> {
             arch: image.arch(),
             linked,
             ids,
-            ranges_left: Cell::new(ranges_budget(data.len(), &sections)),
+            ranges_left: AtomicU64::new(ranges_budget(data.len(), &sections)),
             sections,
             index: OnceCell::new(),
             parents: OnceCell::new(),
@@ -525,8 +526,9 @@ impl<'data> DwarfInfo<'data> {
             ));
         }
         let more = ranges_budget(0, &sections);
+        let left = self.ranges_left.load(Ordering::Relaxed);
         self.ranges_left
-            .set(self.ranges_left.get().saturating_add(more));
+            .store(left.saturating_add(more), Ordering::Relaxed);
         self.splits.push(Split {
             sections,
             rows,
@@ -563,7 +565,7 @@ impl<'data> DwarfInfo<'data> {
             arch: parsed.arch(),
             linked: true,
             ids,
-            ranges_left: Cell::new(ranges_budget(0, &[])),
+            ranges_left: AtomicU64::new(ranges_budget(0, &[])),
             sections: Vec::new(),
             index: OnceCell::new(),
             parents: OnceCell::new(),
@@ -610,8 +612,9 @@ impl<'data> DwarfInfo<'data> {
         }
         let map = AddrMap::new(object, symbols);
         let more = ranges_budget(data.len(), &sections);
+        let left = self.ranges_left.load(Ordering::Relaxed);
         self.ranges_left
-            .set(self.ranges_left.get().saturating_add(more));
+            .store(left.saturating_add(more), Ordering::Relaxed);
         self.splits.push(Split {
             sections,
             rows: None,
@@ -1217,11 +1220,12 @@ impl<'data> DwarfInfo<'data> {
                 }),
             };
             if let Some((list, _)) = list {
-                let left = self.ranges_left.get();
+                let left = self.ranges_left.load(Ordering::Relaxed);
                 let n = list.len() as u64;
                 let take = usize::try_from(n.min(left.max(1))).unwrap_or(usize::MAX);
                 out.extend(list.into_iter().take(take));
-                self.ranges_left.set(left.saturating_sub(n));
+                self.ranges_left
+                    .store(left.saturating_sub(n), Ordering::Relaxed);
             }
         }
         let mut out = self.image_ranges(u.source, out);

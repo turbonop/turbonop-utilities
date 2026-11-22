@@ -335,6 +335,7 @@ dependencies = [
  "hexcavator-elf",
  "hexcavator-image",
  "hexcavator-macho",
+ "hexcavator-par",
  "hexcavator-pdb",
  "hexcavator-pe",
  "hexcavator-wasm",
@@ -528,6 +529,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "hexcavator-par"
+version = "0.0.7"
+
+[[package]]
 name = "hexcavator-pdb"
 version = "0.0.7"
 dependencies = [
@@ -616,6 +621,7 @@ dependencies = [
  "hexcavator-macho",
  "hexcavator-mips",
  "hexcavator-mmap",
+ "hexcavator-par",
  "hexcavator-pe",
  "hexcavator-powerpc",
  "hexcavator-query",

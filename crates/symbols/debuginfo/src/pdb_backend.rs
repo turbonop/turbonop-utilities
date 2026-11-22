@@ -476,7 +476,7 @@ impl<'data> PdbInfo<'data> {
 
         // Copies without a compiland sort after those with one, so that
         // `dedup_by` keeps the one with.
-        out.sort_by(|a, b| {
+        hexcavator_par::sort_by(&mut out, |a, b| {
             (
                 a.addr,
                 a.kind,

@@ -263,22 +263,49 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
             s.kind != DebugKind::Thunk || s.compiland.is_none_or(|m| contributing.contains(&m))
         });
     // Functions are named with their signatures, which also tells
-    // overloads apart.
-    let mut namer = crate::names::Namer::new(debug);
-    for s in &mut shown {
-        if matches!(s.kind, DebugKind::Function | DebugKind::SeparatedBlock) {
-            s.name = namer.function(&s.name, hexcavator_debuginfo::TypeRef(s.type_index));
-        } else if let (DebugKind::Data, Some(f)) = (s.kind, &s.function) {
-            // A function's static: `x (in static bool C::f())`.
-            s.name = format!(
-                "{} (in {})",
-                s.name,
-                namer.qualified_function(&f.name, f.ty, &f.params)
-            );
+    // overloads apart. (On every core, each with its own cache.)
+    hexcavator_par::for_each_chunk_mut(&mut shown, 2048, |part| {
+        let mut namer = crate::names::Namer::new(debug);
+        for s in part {
+            if matches!(s.kind, DebugKind::Function | DebugKind::SeparatedBlock) {
+                s.name = namer.function(&s.name, hexcavator_debuginfo::TypeRef(s.type_index));
+            } else if let (DebugKind::Data, Some(f)) = (s.kind, &s.function) {
+                // A function's static: `x (in static bool C::f())`.
+                s.name = format!(
+                    "{} (in {})",
+                    s.name,
+                    namer.qualified_function(&f.name, f.ty, &f.params)
+                );
+            }
         }
-    }
+    });
+    // Publics undecorated (mangled by whichever scheme: Microsoft's, Rust's
+    // and Swift's on Windows too, and Itanium's in a MinGW image's), each
+    // once, on every core.
+    let public_names: Vec<&str> = {
+        let mut v: Vec<&str> = shown
+            .iter()
+            .filter(|s| s.kind == DebugKind::Public && !s.name.starts_with("??_C@"))
+            .map(|s| s.name.as_str())
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    let undecorated: HashMap<&str, String> = public_names
+        .iter()
+        .copied()
+        .zip(hexcavator_par::map_chunks(&public_names, 1024, |part| {
+            let mut any = hexcavator_demangle::Demangler::new();
+            part.iter()
+                .map(|n| {
+                    any.demangle(n, hexcavator_demangle::msvc::flags::NO_PTR64)
+                        .unwrap_or_else(|| (*n).to_string())
+                })
+                .collect()
+        }))
+        .collect();
     let mut demangler = hexcavator_demangle::msvc::Demangler::default();
-    let mut any = hexcavator_demangle::Demangler::new();
     // The publics at each address, for naming vtables.
     let mut publics_at: HashMap<u64, Vec<&str>> = HashMap::new();
     for s in shown.iter().filter(|s| s.kind == DebugKind::Public) {
@@ -286,11 +313,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
     }
     let mut display = |s: &DebugSymbol, kind: SymbolKind, size: u64, name: String| match kind {
         SymbolKind::String => string_name(image, s.addr, size, &s.name).unwrap_or(name),
-        // (Mangled by whichever scheme: Microsoft's, Rust's and Swift's on
-        // Windows too, and Itanium's in a MinGW image's.)
-        SymbolKind::Public => any
-            .demangle(&name, hexcavator_demangle::msvc::flags::NO_PTR64)
-            .unwrap_or(name),
+        SymbolKind::Public => undecorated.get(name.as_str()).cloned().unwrap_or(name),
         // A thunk is named by its public, if it has one (x86 C names keep
         // their underscore), undecorated without access, `virtual`, return
         // type, calling convention, `this` qualifiers, or class-keys:
@@ -381,7 +404,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         .chain(pe_symbols)
         .chain(rsrc_symbols)
         .collect();
-    out.sort_by_key(|s| s.addr);
+    hexcavator_par::sort_by(&mut out, |a, b| a.addr.cmp(&b.addr));
     // (With DWARF, as MinGW builds an image: its COFF symbols and exports
     // name what the DWARF doesn't, as a PDB's publics would.)
     if debug.pdb().is_none() {

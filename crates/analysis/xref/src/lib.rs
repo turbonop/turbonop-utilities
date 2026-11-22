@@ -279,14 +279,20 @@ impl Builder {
         code: &[(u32, &[u8])],
         literal: &(dyn Fn(u64) -> Option<u64> + Sync),
     ) {
+        // (Scanned and resolved to nodes on every core, then added.)
         let this = &*self;
-        let scanned: Vec<Vec<CodeRef>> = hexcavator_par::map(code, 64, |&(node, bytes)| {
-            let mut refs = Vec::new();
-            this.scan_into(node, arch, bytes, literal, &mut refs);
-            refs
-        });
-        for (&(node, _), refs) in code.iter().zip(&scanned) {
-            self.apply(node, arch, refs);
+        let resolved: Vec<Vec<Addition>> =
+            hexcavator_par::map_balanced(code, 256, |&(node, bytes)| {
+                let mut refs = Vec::new();
+                this.scan_into(node, arch, bytes, literal, &mut refs);
+                let mut adds = Vec::with_capacity(refs.len());
+                this.resolve(node, arch, &refs, &mut adds);
+                adds
+            });
+        for adds in resolved {
+            for (f, fa, t, ta, k) in adds {
+                self.add(f, fa, t, ta, k);
+            }
         }
     }
 
@@ -315,6 +321,16 @@ impl Builder {
 
     /// Adds the edges of `refs`, references from `node`'s code.
     fn apply(&mut self, node: u32, arch: Arch, refs: &[CodeRef]) {
+        let mut adds = Vec::new();
+        self.resolve(node, arch, refs, &mut adds);
+        for (f, fa, t, ta, k) in adds {
+            self.add(f, fa, t, ta, k);
+        }
+    }
+
+    /// The edges `refs` (references from `node`'s code) make, to add in
+    /// order: (from, its address, to, its address, kind).
+    fn resolve(&self, node: u32, arch: Arch, refs: &[CodeRef], out: &mut Vec<Addition>) {
         for r in refs {
             // (A load of a GOT's entry: of what it points to.)
             let through = (r.via == Via::Address)
@@ -360,7 +376,13 @@ impl Builder {
                         && a != n
                         && r.to != self.nodes[a as usize].start
                     {
-                        self.edge(node, n, Edge::Address);
+                        out.push((
+                            node,
+                            self.nodes[node as usize].start,
+                            n,
+                            self.nodes[n as usize].start,
+                            Edge::Address,
+                        ));
                     }
                     let Some(to) = at.or(next) else {
                         continue;
@@ -370,7 +392,7 @@ impl Builder {
             };
             // (An address just before a node is its start.)
             let at = r.to.max(self.nodes[to as usize].start);
-            self.add(node, r.from, to, at, kind);
+            out.push((node, r.from, to, at, kind));
         }
     }
 
@@ -398,7 +420,8 @@ impl Builder {
                 }
             }
         }
-        edges.sort_unstable();
+        // (Whole edges: a total order, sorted on every core.)
+        hexcavator_par::sort_by(&mut edges, Ord::cmp);
         edges.dedup_by_key(|e| (e.0, e.1));
         let n = nodes.len();
         let out = Csr::new(n, edges.iter().map(|&(f, t, k)| (f, t, k)));
@@ -474,6 +497,9 @@ impl Builder {
         (nodes, origin, pieces)
     }
 }
+
+/// An edge to add: (from, its address, to, its address, kind).
+type Addition = (u32, u64, u32, u64, Edge);
 
 fn node_at(nodes: &[Node], address: u64) -> Option<u32> {
     let i = nodes.partition_point(|n| n.start <= address);

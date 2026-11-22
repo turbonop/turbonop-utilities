@@ -60,6 +60,59 @@ pub fn map_chunks<T: Sync, R: Send>(
     })
 }
 
+/// `f` of each item, in order, for items whose costs differ widely (one
+/// may take a thousand times another's): threads take `batch` items at a
+/// time as they finish, rather than an equal share each up front.
+pub fn map_balanced<T: Sync, R: Send>(
+    items: &[T],
+    batch: usize,
+    f: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let batch = batch.max(1);
+    let batches = items.len().div_ceil(batch);
+    let threads = threads().min(batches);
+    if threads < 2 {
+        return items.iter().map(f).collect();
+    }
+    let next = AtomicUsize::new(0);
+    let (f, next) = (&f, &next);
+    let done: Vec<Vec<(usize, Vec<R>)>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(move || {
+                    let mut mine = Vec::new();
+                    loop {
+                        let b = next.fetch_add(1, Ordering::Relaxed);
+                        let start = b.saturating_mul(batch);
+                        let Some(part) = items.get(start..items.len().min(start + batch)) else {
+                            break;
+                        };
+                        if part.is_empty() {
+                            break;
+                        }
+                        mine.push((b, part.iter().map(f).collect()));
+                    }
+                    mine
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+            .collect()
+    });
+    let mut parts: Vec<Option<Vec<R>>> = (0..batches).map(|_| None).collect();
+    for (b, part) in done.into_iter().flatten() {
+        parts[b] = Some(part);
+    }
+    let mut out = Vec::with_capacity(items.len());
+    for part in parts.into_iter().flatten() {
+        out.extend(part);
+    }
+    out
+}
+
 /// `f` over chunks of `items`, mutably, in parallel.
 pub fn for_each_chunk_mut<T: Send>(items: &mut [T], min: usize, f: impl Fn(&mut [T]) + Sync) {
     let Some(size) = chunk(items.len(), min) else {
@@ -165,6 +218,13 @@ mod tests {
         for_each_chunk_mut(&mut m, 10, |p| p.iter_mut().for_each(|x| *x += 3));
         assert_eq!(m, items.iter().map(|x| x + 3).collect::<Vec<_>>());
         assert!(map(&[] as &[u32], 1, |x| *x).is_empty());
+        for batch in [1, 3, 64, 10_000, 20_000] {
+            assert_eq!(
+                map_balanced(&items, batch, |x| x * 5),
+                items.iter().map(|x| x * 5).collect::<Vec<_>>()
+            );
+        }
+        assert!(map_balanced(&[] as &[u32], 4, |x| *x).is_empty());
         assert_eq!(join(|| 1, || 2), (1, 2));
         // A stable sort: of equal keys, the original order.
         let mut pairs: Vec<(u32, u32)> = (0..200_000u32).map(|i| ((i * 7919) % 1000, i)).collect();

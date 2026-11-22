@@ -311,7 +311,7 @@ fn gnu(data: &[u8], wide: bool) -> Option<Vec<ArchiveSymbol<'_>>> {
     let mut names = &data[w + count * w..];
     let mut out = Vec::with_capacity(count.min(1 << 20));
     for o in offsets.chunks_exact(w) {
-        let end = names.iter().position(|&b| b == 0)?;
+        let end = hexcavator_core::find_nul(names)?;
         out.push(ArchiveSymbol {
             name: &names[..end],
             member: be(o),
@@ -336,7 +336,7 @@ fn microsoft_second(data: &[u8]) -> Option<Vec<ArchiveSymbol<'_>>> {
     let mut out = Vec::with_capacity(symbol_count.min(1 << 20));
     for i in indexes.as_chunks::<2>().0 {
         let index = usize::from(u16::from_le_bytes([i[0], i[1]]));
-        let end = names.iter().position(|&b| b == 0)?;
+        let end = hexcavator_core::find_nul(names)?;
         let member = index
             .checked_sub(1)
             .and_then(|k| offsets.get(k * 4..k * 4 + 4))
@@ -367,7 +367,7 @@ fn bsd(data: &[u8], wide: bool) -> Option<Vec<ArchiveSymbol<'_>>> {
         let name_at = usize::try_from(le(&e[..w])).ok()?;
         let member = le(&e[w..]);
         let rest = strings.get(name_at..)?;
-        let end = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
+        let end = hexcavator_core::find_nul(rest).unwrap_or(rest.len());
         out.push(ArchiveSymbol {
             name: &rest[..end],
             member,

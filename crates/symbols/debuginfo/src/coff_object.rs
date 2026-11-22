@@ -722,7 +722,7 @@ fn dbi_stream(
     for &f in files.iter().take(usize::from(count)) {
         u32s(&mut info, &[u32::try_from(names.len()).unwrap_or(0)]);
         let s = module.strings.get(f as usize..).unwrap_or_default();
-        let end = s.iter().position(|&b| b == 0).unwrap_or(s.len());
+        let end = hexcavator_core::find_nul(s).unwrap_or(s.len());
         names.extend_from_slice(&s[..end]);
         names.push(0);
     }

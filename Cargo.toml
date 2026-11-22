@@ -33,6 +33,8 @@ memmap2 = "0.9"
 libc = { version = "0.2", default-features = false }
 bumpalo = "3.20"
 rustc-hash = "2.1"
+# A NUL or byte found with SIMD (already in the build: regex's).
+memchr = { version = "2.8", default-features = false }
 hexcavator-core = { path = "crates/base/core" }
 hexcavator-mmap = { path = "crates/base/mmap" }
 hexcavator-par = { path = "crates/base/par" }

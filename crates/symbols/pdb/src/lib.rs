@@ -123,6 +123,22 @@ impl<'data> Pdb<'data> {
     }
 
     fn type_stream(&self, index: u32) -> Result<TypeStream<'data>> {
+        // The header read first, then the records alone gathered (not the
+        // whole stream, then moved down over its header).
+        if index != u32::from(msf::SN_NIL) && self.msf.stream_size(index).is_some() {
+            let size = std::mem::size_of::<tpi::TpiHeader>();
+            let head = self.msf.read(index, 0, size as u64)?;
+            if let Ok(&header) = hexcavator_core::read_at::<tpi::TpiHeader>(&head, 0) {
+                let hash = match header.hash_stream_index.get() {
+                    msf::SN_NIL => StreamData::Borrowed(&[]),
+                    h => self.msf.stream_or_empty(u32::from(h))?,
+                };
+                let start = header.header_size.get() as usize;
+                let end = start.saturating_add(header.type_record_bytes.get() as usize);
+                let records = self.msf.stream_range(index, start, end)?;
+                return TypeStream::from_records(header, records, hash);
+            }
+        }
         let data = self.msf.stream_or_empty(index)?;
         let hash = match tpi::hash_stream_of(&data) {
             Some(h) => self.msf.stream_or_empty(h)?,

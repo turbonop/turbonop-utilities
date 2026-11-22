@@ -166,6 +166,17 @@ impl<'data> Msf<'data> {
         gather(self.data, self.block_size, blocks, size)
     }
 
+    /// Bytes `[from, to)` of stream `index` (fewer at its end), as
+    /// [`Msf::stream`] would give them: borrowed if contiguous, else
+    /// gathered (on every core, if large).
+    pub fn stream_range(&self, index: u32, from: usize, to: usize) -> Result<StreamData<'data>> {
+        let what = "MSF stream";
+        let bad = || Error::new(ErrorKind::Malformed, u64::from(index), what);
+        let size = self.stream_size(index).ok_or_else(bad)?;
+        let blocks = self.stream_blocks(index).ok_or_else(bad)?;
+        gather_range(self.data, self.block_size, blocks, size, from, to)
+    }
+
     /// Like `stream`, but a missing or nil stream is empty.
     pub fn stream_or_empty(&self, index: u32) -> Result<StreamData<'data>> {
         if index == u32::from(SN_NIL) || self.stream_size(index).is_none() {
@@ -222,33 +233,52 @@ fn gather<'data>(
     blocks: &[U32Le],
     size: u32,
 ) -> Result<StreamData<'data>> {
+    gather_range(data, block_size, blocks, size, 0, size as usize)
+}
+
+/// Bytes `[from, to)` of the `size` bytes of `blocks` (fewer, if the
+/// stream ends first), borrowing when they are contiguous. A stream with
+/// fewer blocks than its size needs reads as the blocks it has.
+fn gather_range<'data>(
+    data: &'data [u8],
+    block_size: u32,
+    blocks: &[U32Le],
+    size: u32,
+    from: usize,
+    to: usize,
+) -> Result<StreamData<'data>> {
     let bs = u64::from(block_size);
     let Some(first) = blocks.first() else {
         return Ok(Cow::Borrowed(&[]));
     };
-    let start = u64::from(first.get()) * bs;
     let contiguous = blocks
         .windows(2)
         .all(|w| w[1].get() == w[0].get().wrapping_add(1));
     if contiguous {
-        return hexcavator_core::bytes_at(data, start, u64::from(size)).map(Cow::Borrowed);
+        let to = to.min(size as usize);
+        let from = from.min(to);
+        let start = u64::from(first.get()) * bs + from as u64;
+        return hexcavator_core::bytes_at(data, start, (to - from) as u64).map(Cow::Borrowed);
     }
-    let size = size as usize;
     let block = bs as usize;
-    // (A stream with fewer blocks than its size needs reads as the blocks
-    // it has.)
-    let count = size.div_ceil(block.max(1)).min(blocks.len());
+    if block == 0 {
+        return Ok(Cow::Borrowed(&[]));
+    }
+    let count = (size as usize).div_ceil(block).min(blocks.len());
     let blocks = &blocks[..count];
-    let size = size.min(count * block);
-    let mut out = vec![0u8; size];
-    // Copies blocks `blocks` into `dest` (which starts at a block).
-    let copy = |dest: &mut [u8], blocks: &[U32Le]| -> Result<()> {
-        for (d, b) in dest.chunks_mut(block).zip(blocks) {
-            d.copy_from_slice(hexcavator_core::bytes_at(
-                data,
-                u64::from(b.get()) * bs,
-                d.len() as u64,
-            )?);
+    let to = to.min(size as usize).min(count * block);
+    let from = from.min(to);
+    let mut out = vec![0u8; to - from];
+    // Copies the stream's bytes from offset `at` into `dest`.
+    let copy = |dest: &mut [u8], mut at: usize| -> Result<()> {
+        let mut d = 0;
+        while d < dest.len() {
+            let (b, within) = (at / block, at % block);
+            let take = (block - within).min(dest.len() - d);
+            let src = u64::from(blocks[b].get()) * bs + within as u64;
+            dest[d..d + take].copy_from_slice(hexcavator_core::bytes_at(data, src, take as u64)?);
+            d += take;
+            at += take;
         }
         Ok(())
     };
@@ -257,15 +287,16 @@ fn gather<'data>(
     // reading the mapped file, which run in parallel.
     const PARALLEL: usize = 8 << 20;
     let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
-    if size < PARALLEL || threads < 2 || block == 0 {
-        copy(&mut out, blocks)?;
+    if out.len() < PARALLEL || threads < 2 {
+        copy(&mut out, from)?;
     } else {
-        let per = count.div_ceil(threads);
+        // (Parts of whole blocks, but for the first's start.)
+        let per = out.len().div_ceil(threads).div_ceil(block) * block;
         std::thread::scope(|scope| {
             let handles: Vec<_> = out
-                .chunks_mut(per * block)
-                .zip(blocks.chunks(per))
-                .map(|(d, b)| scope.spawn(move || copy(d, b)))
+                .chunks_mut(per)
+                .enumerate()
+                .map(|(k, d)| scope.spawn(move || copy(d, from + k * per)))
                 .collect();
             handles
                 .into_iter()

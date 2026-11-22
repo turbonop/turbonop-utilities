@@ -629,7 +629,7 @@ impl<'d> MachO<'d> {
             Endian::Little => u32::from_le_bytes(b),
         };
         let rest = lc.data.get(usize::try_from(off).ok()?..)?;
-        let end = rest.iter().position(|&c| c == 0).unwrap_or(rest.len());
+        let end = hexcavator_core::find_nul(rest).unwrap_or(rest.len());
         Some(&rest[..end])
     }
 

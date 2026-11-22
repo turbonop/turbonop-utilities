@@ -512,15 +512,19 @@ impl<'data> PdbInfo<'data> {
     pub fn classes(&self) -> Result<Vec<Class>> {
         use hexcavator_codeview::types::{Field, leaf};
         let types = self.pdb.types()?;
-        types.build_offsets();
-        let mut out = Vec::new();
-        for (ti, rec) in types.iter() {
+        // (Every record indexed, then read on every core.)
+        let count = u32::try_from(types.build_offsets().len()).unwrap_or(u32::MAX);
+        let first = types.begin().0;
+        let indexes: Vec<u32> = (first..first.saturating_add(count)).collect();
+        let classes: Vec<Option<Class>> = hexcavator_par::map(&indexes, 4096, |&i| {
+            let ti = TypeIndex(i);
+            let rec = types.record(ti)?;
             if !leaf::is_class(rec.kind) {
-                continue;
+                return None;
             }
-            let Some(udt) = rec.udt() else { continue };
+            let udt = rec.udt()?;
             if udt.is_forward_ref() || udt.field_list.0 == 0 {
-                continue;
+                return None;
             }
             let mut class = Class {
                 name: lossy(udt.name),
@@ -572,9 +576,9 @@ impl<'data> PdbInfo<'data> {
                     _ => break,
                 }
             }
-            out.push(class);
-        }
-        Ok(out)
+            Some(class)
+        });
+        Ok(classes.into_iter().flatten().collect())
     }
 
     pub fn type_size(&self, ty: TypeRef) -> Option<u64> {

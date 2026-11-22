@@ -194,29 +194,43 @@ pub fn wasteful_virtuals(
             stack.extend(classes[j].bases.iter().copied());
         }
     }
-    // Each class's methods: (signature, virtual, pure).
-    let methods: Vec<Vec<(String, bool, bool)>> = classes
-        .iter()
-        .map(|c| {
-            c.methods
-                .iter()
-                .map(|m| {
-                    let is_static = m.kind == MethodKind::Static;
-                    let signature = format!(
-                        "{}{}{}",
-                        if is_static { "static " } else { "" },
-                        m.name,
-                        namer.signature_suffix(m.ty)
-                    );
-                    (
-                        signature,
-                        m.kind.is_virtual() && !is_static,
-                        m.kind.is_pure(),
-                    )
+    // Each class's methods: (signature, virtual, pure). Only those of
+    // classes in a hierarchy (with a base or a class derived from them)
+    // are ever compared; they are named on every core.
+    let mut in_hierarchy: Vec<bool> = derived.iter().map(|d| !d.is_empty()).collect();
+    for d in derived.iter().flatten() {
+        in_hierarchy[*d] = true;
+    }
+    let numbered: Vec<(usize, &hexcavator_debuginfo::Class)> = classes.iter().enumerate().collect();
+    let base = &*namer;
+    let methods: Vec<Vec<(String, bool, bool)>> =
+        hexcavator_par::map_chunks(&numbered, 64, |part| {
+            let mut namer = base.fork();
+            part.iter()
+                .map(|&(i, c)| {
+                    if !in_hierarchy[i] {
+                        return Vec::new();
+                    }
+                    c.methods
+                        .iter()
+                        .map(|m| {
+                            let is_static = m.kind == MethodKind::Static;
+                            let signature = format!(
+                                "{}{}{}",
+                                if is_static { "static " } else { "" },
+                                m.name,
+                                namer.signature_suffix(m.ty)
+                            );
+                            (
+                                signature,
+                                m.kind.is_virtual() && !is_static,
+                                m.kind.is_pure(),
+                            )
+                        })
+                        .collect()
                 })
                 .collect()
-        })
-        .collect();
+        });
     // Whether a base of class `i` (at any depth) declares virtual
     // `signature`; each class is visited once.
     let in_base = |i: usize, signature: &str| -> bool {

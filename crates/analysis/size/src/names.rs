@@ -39,6 +39,12 @@ impl<'d, 'data> Namer<'d, 'data> {
         }
     }
 
+    /// A namer of the same debug information, with caches of its own (for
+    /// another thread).
+    pub fn fork(&self) -> Namer<'d, 'data> {
+        Namer::new(self.debug)
+    }
+
     /// `name` with the argument types and qualifiers of function type
     /// `ty`: `name(int, const char*) const`. If `ty` is not a function
     /// type, `name()`.

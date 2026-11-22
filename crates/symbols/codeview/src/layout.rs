@@ -389,22 +389,25 @@ fn pointer_size(types: &dyn TypeSource, list: TypeIndex) -> Option<u64> {
 /// Every defined class, structure, and union of `types` (one per unique
 /// name), with its layout, without the parts' type names (see
 /// [`layout`] for one with them).
-pub fn all(types: &dyn TypeSource) -> Vec<Layout> {
+pub fn all(types: &(dyn TypeSource + Sync)) -> Vec<Layout> {
     let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    let mut cache = Cache::default();
+    let mut wanted = Vec::new();
     // Every record's offset, once: lookups by index then cost nothing.
     for (ti, rec) in types.records() {
         if !leaf::is_class(rec.kind) && !leaf::is_union(rec.kind) {
             continue;
         }
         let Some(udt) = rec.udt() else { continue };
-        if udt.is_forward_ref() || !seen.insert(udt.unique_name.unwrap_or(udt.name).to_vec()) {
+        if udt.is_forward_ref() || !seen.insert(udt.unique_name.unwrap_or(udt.name)) {
             continue;
         }
-        if let Some(l) = build(types, ti, false, &mut cache) {
-            out.push(l);
-        }
+        wanted.push(ti);
     }
-    out
+    // Laid out on every core, each with its own cache.
+    hexcavator_par::map_chunks(&wanted, 256, |part| {
+        let mut cache = Cache::default();
+        part.iter()
+            .filter_map(|&ti| build(types, ti, false, &mut cache))
+            .collect()
+    })
 }

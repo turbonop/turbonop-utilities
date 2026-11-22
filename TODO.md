@@ -38,6 +38,25 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 - **The other IL sections.** `.cil$ex`, `.cil$sy`, and `.cil$in` are
   shown by size only.
 
+## Speed
+
+Every command should be as fast as the hardware allows (on clang.exe,
+175 MB with a 1.1 GB PDB, as measured). What's left:
+
+- **x86 decoding** (49 ns an instruction): cross-references and
+  fingerprints need only an instruction's length, flow, and addresses,
+  not its operands as text would; a lighter decode for them, or a faster
+  full one (table lookups for the candidates, not a search).
+- **A program's symbols** (1.1 s, under query, xref, size, recommend):
+  naming functions from their types and undecorating publics are most of
+  what is left after reading the PDB.
+- **size's range maps** (0.8 s for `-d symbols`): a symbol at a time
+  into a B-tree; symbols come sorted, so most could be appended.
+- **ARM64 listings** (`dump -disasm`) are made on one core; x86's are
+  made on all.
+- **`hexc serve`'s JSON**: a command's `-json` output is a string inside
+  the response, parsed twice by the editor.
+
 ## Waiting
 
 - **GCC, GNU ld, gold, and mold.** `hexc recommend` judges what an ELF

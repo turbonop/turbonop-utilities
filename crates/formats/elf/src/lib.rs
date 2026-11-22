@@ -213,6 +213,23 @@ pub enum AddressRelocation {
     IndirectFunction,
 }
 
+/// The name of relocation type `kind` on `machine`, as llvm-readobj
+/// spells it: MIPS64's three packed types (see [`Relocation::kind`]) each
+/// named, the first first (`R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE`).
+pub fn relocation_name(machine: u16, kind: u32) -> Option<alloc::string::String> {
+    if machine == consts::EM_MIPS && kind > 0xFF {
+        let mut out = alloc::string::String::new();
+        for (i, shift) in [0, 8, 16].into_iter().enumerate() {
+            if i > 0 {
+                out.push('/');
+            }
+            out.push_str(spelling::relocation(machine, (kind >> shift) & 0xFF)?);
+        }
+        return Some(out);
+    }
+    spelling::relocation(machine, kind).map(alloc::string::String::from)
+}
+
 /// Whether a relocation of `kind` for `machine` writes an address word, and
 /// how. (Relocations of code, and of words that hold offsets, don't.)
 pub const fn address_relocation(machine: u16, kind: u32) -> Option<AddressRelocation> {

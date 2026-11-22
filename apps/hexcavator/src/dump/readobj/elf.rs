@@ -392,8 +392,8 @@ fn relocations(p: &mut Printer<'_>, elf: &ElfFile<'_>) {
                 Vec::new()
             };
             for r in elf.relocations(s) {
-                let kind = spelling::relocation(machine, r.kind)
-                    .map_or_else(|| format!("Unknown ({})", r.kind), str::to_string);
+                let kind = hexcavator_elf::relocation_name(machine, r.kind)
+                    .unwrap_or_else(|| format!("Unknown ({})", r.kind));
                 let sym = syms.get(r.symbol as usize).map_or_else(
                     || "-".to_string(),
                     |sym| {

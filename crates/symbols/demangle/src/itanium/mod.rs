@@ -106,6 +106,26 @@ impl Demangler {
         ok
     }
 
+    /// Appends the demangled form of the symbol name `name` to `out`;
+    /// returns `false` (appending nothing) if it is not a mangled name.
+    /// Unlike [`Demangler::demangle_into`], which (as `__cxa_demangle`
+    /// does) reads a bare type's mangling too (`c`, `char`), a symbol's
+    /// name is demangled only if it is a mangled symbol's (`_Z`, a block's
+    /// `___Z`, Rust's, Swift's): a C variable named `c` stays `c`.
+    pub fn demangle_symbol_into(&mut self, name: &str, out: &mut String) -> bool {
+        if crate::rust::demangle_into(name, out) || self.swift.demangle_into(name, out) {
+            return true;
+        }
+        let symbol = name
+            .strip_prefix("__alloc_token_")
+            .and_then(|r| r.split_once('_'))
+            .map_or(name, |(_, r)| r);
+        if !(symbol.starts_with("_Z") || symbol.starts_with("__Z") || symbol.starts_with("___Z")) {
+            return false;
+        }
+        self.demangle_into(name, out)
+    }
+
     /// Demangles `name`, or returns `None` if it is not a mangled name.
     pub fn demangle(&mut self, name: &str) -> Option<String> {
         let mut out = String::new();

@@ -424,6 +424,98 @@ fn listed_relocations(text: &str) -> Vec<(u64, String)> {
     out
 }
 
+/// GOT entries: each (address, value).
+type Entries = Vec<(u64, u64)>;
+
+/// llvm-readobj's MIPS GOT (`--arch-specific`): each local entry's
+/// (address, initial value), and each global entry's (address, value).
+fn listed_mips_got(text: &str) -> (Entries, Entries) {
+    let (mut local, mut global) = (Vec::new(), Vec::new());
+    let mut block = "";
+    let mut address = 0;
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(name) = t.strip_suffix(" entries [") {
+            block = if name == "Local" || name == "Global" {
+                name
+            } else {
+                ""
+            };
+        } else if t == "]" {
+            block = "";
+        } else if let Some(a) = t.strip_prefix("Address: ") {
+            address = number(a);
+        } else if let Some(v) = t.strip_prefix("Initial: ")
+            && block == "Local"
+        {
+            local.push((address, number(v)));
+        } else if let Some(v) = t.strip_prefix("Value: ")
+            && block == "Global"
+        {
+            global.push((address, number(v)));
+        }
+    }
+    (local, global)
+}
+
+/// MIPS's dynamic pointers (tools/elf/relr.c, consumer.c, and locals.c in
+/// a shared object, 32- and 64-bit): each `R_MIPS_REL32`'s slot, holding
+/// one of relr.c's objects; the GOT's local entries (the reserved two
+/// left out), which the loader relocates; and its global ones, its
+/// symbols' addresses; as readobj lists them.
+#[test]
+fn mips_pointer_slots() {
+    for (name, width) in [("relr-mipsel.so", 4), ("relr-mips64el.so", 8)] {
+        let (data, text) = load("elf", name);
+        let image = Image::parse(&data).unwrap();
+        let slots = image.pointer_slots();
+        assert!(slots.iter().all(|s| s.width == width), "{name}");
+        let at = |addr: u64| slots.iter().find(|s| s.addr == addr);
+        let relocations = listed_relocations(&text);
+        assert_eq!(relocations.len(), 9, "{name}");
+        let elf = image.elf().unwrap();
+        let named = |n: &[u8]| {
+            elf.all_symbols()
+                .into_iter()
+                .find(|s| s.name == n)
+                .unwrap()
+                .value
+        };
+        let objects = [
+            named(b"a"),
+            named(b"b"),
+            named(b"c"),
+            named(b"f"),
+            named(b"far"),
+        ];
+        let pointed: Vec<usize> = relocations
+            .iter()
+            .map(|&(addr, _)| {
+                let target = at(addr)
+                    .unwrap_or_else(|| panic!("{name} {addr:#x}"))
+                    .target;
+                objects.iter().position(|&o| Some(o) == target).unwrap()
+            })
+            .collect();
+        // table (a b c a _ b c), handlers (f f), far (c). (consumer.c
+        // reaches `table` and `far` through the GOT's global entries.)
+        assert_eq!(pointed, [0, 1, 2, 0, 1, 2, 3, 3, 2], "{name}");
+        let (local, global) = listed_mips_got(&text);
+        assert_eq!(local.len(), 4, "{name}");
+        for (addr, value) in local.into_iter().chain(global.iter().copied()) {
+            let s = at(addr).unwrap_or_else(|| panic!("{name} {addr:#x}"));
+            assert_eq!(s.target, Some(value), "{name} {addr:#x}");
+        }
+        assert_eq!(
+            global.iter().map(|g| g.1).collect::<Vec<_>>(),
+            [named(b"table"), named(b"far")],
+            "{name}"
+        );
+        // (Nothing else: the reserved entries aren't slots.)
+        assert_eq!(slots.len(), 9 + 4 + 2, "{name}");
+    }
+}
+
 /// Pointer slots: RELR and RELA builds of the same object (tools/elf/relr.c)
 /// hold the same pointers, each to one of its objects; readobj lists
 /// them.

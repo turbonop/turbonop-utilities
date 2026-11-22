@@ -1,0 +1,124 @@
+
+File: relr-mips64el.so
+Format: elf64-mips
+Arch: mips64el
+AddressSize: 64bit
+LoadName: <Not found>
+DynamicSection [ (16 entries)
+  Tag                Type              Name/Value
+  0x0000000000000011 REL               0x4B0
+  0x0000000000000012 RELSZ             144 (bytes)
+  0x0000000000000013 RELENT            16 (bytes)
+  0x0000000000000006 SYMTAB            0x2A0
+  0x000000000000000B SYMENT            24 (bytes)
+  0x0000000000000005 STRTAB            0x488
+  0x000000000000000A STRSZ             33 (bytes)
+  0x0000000000000004 HASH              0x348
+  0x0000000070000001 MIPS_RLD_VERSION  1
+  0x0000000070000005 MIPS_FLAGS        NOTPOT 
+  0x0000000070000006 MIPS_BASE_ADDRESS 0x0
+  0x0000000070000011 MIPS_SYMTABNO     7
+  0x000000007000000A MIPS_LOCAL_GOTNO  6
+  0x0000000070000013 MIPS_GOTSYM       0x5
+  0x0000000000000003 PLTGOT            0x20850
+  0x0000000000000000 NULL              0x0
+]
+Relocations [
+  Section (8) .rel.dyn {
+    0x205C0 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+    0x205C8 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+    0x205D0 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+    0x205D8 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+    0x205E8 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+    0x205F0 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+    0x205F8 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+    0x20600 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+    0x20838 R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE -
+  }
+]
+MIPS ABI Flags {
+  Version: 0
+  ISA: MIPS64r2
+  ISA Extension: None (0x0)
+  ASEs [ (0x0)
+  ]
+  FP ABI: Hard float (double precision) (0x1)
+  GPR size: 64
+  CPR1 size: 64
+  CPR2 size: 0
+  Flags 1 [ (0x1)
+    ODDSPREG (0x1)
+  ]
+  Flags 2: 0x0
+}
+MIPS Options {
+  ODK_REGINFO {
+    GP: 0x28840
+    General Mask: 0x8200001F
+    Co-Proc Mask0: 0x0
+    Co-Proc Mask1: 0x0
+    Co-Proc Mask2: 0x0
+    Co-Proc Mask3: 0x0
+  }
+}
+There is no .reginfo section in the file.
+Primary GOT {
+  Canonical gp value: 0x28840
+  Reserved entries [
+    Entry {
+      Address: 0x20850
+      Access: -32752
+      Initial: 0x0
+      Purpose: Lazy resolver
+    }
+    Entry {
+      Address: 0x20858
+      Access: -32744
+      Initial: 0x8000000000000000
+      Purpose: Module pointer (GNU extension)
+    }
+  ]
+  Local entries [
+    Entry {
+      Address: 0x20860
+      Access: -32736
+      Initial: 0x20000
+    }
+    Entry {
+      Address: 0x20868
+      Access: -32728
+      Initial: 0x30000
+    }
+    Entry {
+      Address: 0x20870
+      Access: -32720
+      Initial: 0x20000
+    }
+    Entry {
+      Address: 0x20878
+      Access: -32712
+      Initial: 0x30000
+    }
+  ]
+  Global entries [
+    Entry {
+      Address: 0x20880
+      Access: -32704
+      Initial: 0x205C0
+      Value: 0x205C0
+      Type: Object (0x1)
+      Section: .data (0xA)
+      Name: table (1)
+    }
+    Entry {
+      Address: 0x20888
+      Access: -32696
+      Initial: 0x20838
+      Value: 0x20838
+      Type: Object (0x1)
+      Section: .data (0xA)
+      Name: far (20)
+    }
+  ]
+  Number of TLS and multi-GOT entries: 0
+}

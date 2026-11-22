@@ -871,11 +871,13 @@ fn mips(
     };
     // (A call's clobbers, after its delay slot.)
     let mut clobber = false;
-    for (n, w) in code.as_chunks::<4>().0.iter().enumerate() {
-        let pc = address.wrapping_add(n as u64 * 4);
-        let Some(i) = hexcavator_mips::decode(w, big, &features) else {
+    let mut at = 0usize;
+    while at < code.len() {
+        let pc = address.wrapping_add(at as u64);
+        let Some(i) = hexcavator_mips::decode(&code[at..], big, &features) else {
             break;
         };
+        at += hexcavator_mips::size(&i);
         let reg = |name: &str| {
             i.operand(name)
                 .and_then(hexcavator_mips::gpr_of)
@@ -883,7 +885,20 @@ fn mips(
         };
         let imm = |name: &str| i.operand(name).and_then(hexcavator_mips::Operand::imm);
         let (flow, target) = hexcavator_code::mips_flow(&i, pc);
-        let name = i.name();
+        // (microMIPS's by their standard forms' names: their operands'
+        // are the same.)
+        let name = match i.name() {
+            "LUi_MM" | "LUI_MMR6" => "LUi",
+            "ADDiu_MM" => "ADDiu",
+            "ORi_MM" => "ORi",
+            "ADDu_MM" | "ADDU16_MM" => "ADDu",
+            "AUIPC_MMR6" => "AUIPC",
+            "ALUIPC_MMR6" => "ALUIPC",
+            "ADDIUPC_MM" | "ADDIUPC_MMR6" => "ADDIUPC",
+            "LWPC_MMR6" => "LWPC",
+            "LW_MM" | "LW16_MM" | "LWSP_MM" | "LWGP_MM" => "LW",
+            other => other,
+        };
         // What it sets its destination to, and the registers whose values
         // it continues building (not a use of them).
         let mut set = None;
@@ -913,7 +928,13 @@ fn mips(
                     set = Some(wrap(base.wrapping_add_signed(hi)));
                 }
                 "ADDIUPC" => {
-                    let to = wrap(pc.wrapping_add_signed(imm("imm").unwrap_or(0)));
+                    // (microMIPS's from its address's word.)
+                    let base = if hexcavator_mips::is_micromips(&i) {
+                        pc & !3
+                    } else {
+                        pc
+                    };
+                    let to = wrap(base.wrapping_add_signed(imm("imm").unwrap_or(0)));
                     push(to, Via::AddressOf);
                 }
                 "LWPC" | "LWUPC" | "LDPC" => {

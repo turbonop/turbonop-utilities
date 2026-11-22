@@ -209,7 +209,69 @@ pub enum Decode {
         bits: u32,
         arg: i64,
     },
+    /// The field, `arg` if it is 0 (microMIPS's 16-bit shifts: 0 is 8).
+    ZeroIs {
+        bits: u32,
+        arg: i64,
+    },
+    /// The field, -1 if all its `bits` are set (microMIPS's `li16`, and
+    /// `lbu16`'s offset).
+    MaxIsMinus1 {
+        bits: u32,
+        arg: i64,
+    },
+    /// microMIPS's `andi16` immediate: one of 16 masks, by the field.
+    Andi16 {
+        bits: u32,
+        arg: i64,
+    },
+    /// microMIPS's `addiur2` immediate: 1 (0), -1 (7), else the field
+    /// times 4.
+    Addiur2 {
+        bits: u32,
+        arg: i64,
+    },
+    /// microMIPS's `addiusp` immediate: a signed 9-bit field times 4,
+    /// whose four values nearest 0 (which other instructions encode) are
+    /// instead 256, 257, -258, and -257.
+    Simm9Sp {
+        bits: u32,
+        arg: i64,
+    },
+    /// microMIPS's register lists (for `lwm`, `swm`): `arg` 0 the 32-bit
+    /// instructions' (a count of $16 on, to $fp as the ninth, under 10
+    /// and not 0; bit 4 $ra), 1 the 16-bit ones' (one to four of $16 on,
+    /// and $ra). Decoded alike: the count of registers from $16, and bit 4
+    /// for $ra.
+    MipsRegList {
+        bits: u32,
+        arg: i64,
+    },
+    /// microMIPS's `movep` destinations: of the field's pair of
+    /// registers, the first (`arg` 0) or the second (1).
+    MoveP {
+        bits: u32,
+        arg: i64,
+    },
 }
+
+/// microMIPS's `andi16` masks, by their encoding (LLVM's DecodeANDI16Imm).
+const ANDI16: [i64; 16] = [
+    128, 1, 2, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 255, 32768, 65535,
+];
+
+/// microMIPS's `movep` register pairs, by their encoding (LLVM's
+/// DecodeMovePRegPair).
+const MOVEP: [(u64, u64); 8] = [
+    (5, 6),
+    (5, 7),
+    (6, 7),
+    (4, 21),
+    (4, 22),
+    (4, 5),
+    (4, 6),
+    (4, 7),
+];
 
 /// How an operand prints (as LLVM's printer methods do; the target's
 /// crate prints each).
@@ -923,6 +985,50 @@ fn operand(
                 return None;
             }
             Operand::Imm(i64::try_from(f).ok()?)
+        }
+        Decode::ZeroIs { arg, .. } => match v? {
+            0 => Operand::Imm(arg),
+            f => Operand::Imm(i64::try_from(f).ok()?),
+        },
+        Decode::MaxIsMinus1 { bits, .. } => {
+            let f = v?;
+            if bits < 64 && f == (1 << bits) - 1 {
+                Operand::Imm(-1)
+            } else {
+                Operand::Imm(i64::try_from(f).ok()?)
+            }
+        }
+        Decode::Andi16 { .. } => Operand::Imm(*ANDI16.get(usize::try_from(v?).ok()?)?),
+        Decode::Addiur2 { .. } => Operand::Imm(match v? {
+            0 => 1,
+            7 => -1,
+            f => i64::try_from(f).ok()? << 2,
+        }),
+        Decode::Simm9Sp { .. } => Operand::Imm(
+            4 * match v? {
+                0 => 256,
+                1 => 257,
+                510 => -258,
+                511 => -257,
+                f => sext(f & 0x1FF, 9),
+            },
+        ),
+        Decode::MipsRegList { arg, .. } => {
+            let f = v?;
+            let (count, ra) = if arg == 1 {
+                ((f & 3) + 1, true)
+            } else {
+                // (Empty, and counts of 10 to 15, are reserved.)
+                if f == 0 || f & 0xF > 9 {
+                    return None;
+                }
+                (f & 0xF, f & 0x10 != 0)
+            };
+            Operand::Imm(i64::try_from(count | if ra { 0x10 } else { 0 }).ok()?)
+        }
+        Decode::MoveP { arg, .. } => {
+            let (a, b) = *MOVEP.get(usize::try_from(v?).ok()?)?;
+            reg(if arg == 0 { a } else { b })?
         }
     })
 }

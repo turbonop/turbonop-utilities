@@ -64,6 +64,14 @@ rem to link static), for references through $gp.
 "%LLVM_BIN%\clang.exe" --target=mipsel-linux-gnu -fPIC -ftls-model=local-exec %CFLAGS% -c "%~dp0program.c" -o program-mipsel-pic-linux-gnu.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-mipsel-pic-linux-gnu.o -o program-mipsel-pic-linux-gnu || exit /b 1
 del program-mipsel-sdata-linux-gnu.o program-mipsel-pic-linux-gnu.o
+rem microMIPS: 32-bit big- and little-endian (its 16- and 32-bit
+rem instructions), and llvm-objdump's listing of each.
+for %%t in (mips mipsel) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -mmicromips -fno-pic -mno-abicalls -G0 %CFLAGS% -c "%~dp0program.c" -o program-%%t-micromips-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-micromips-linux-gnu.o -o program-%%t-micromips-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-micromips-linux-gnu > program-%%t-micromips-linux-gnu.objdump.txt || exit /b 1
+  del program-%%t-micromips-linux-gnu.o
+)
 rem LoongArch: LA64 and LA32, and llvm-objdump's listing of each (no bytes)
 rem for the disassembler's test.
 for %%t in (loongarch64 loongarch32) do (

@@ -1553,6 +1553,10 @@ fn riscv_and_loongarch_graph_is_x86_64s() {
         "mipsel-pic",
         // (32-bit PowerPC's PIC code: its GOT pointer computed.)
         "powerpc-pic",
+        // (microMIPS: 16- and 32-bit instructions, its addresses' ISA
+        // bit.)
+        "mips-micromips",
+        "mipsel-micromips",
     ] {
         assert_eq!(graph(t), want, "{t}");
     }

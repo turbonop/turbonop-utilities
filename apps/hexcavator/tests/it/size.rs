@@ -1013,6 +1013,9 @@ fn disassemble() {
         "mips",
         "mipsel",
         "mips64el",
+        // (16- and 32-bit instructions.)
+        "mips-micromips",
+        "mipsel-micromips",
     ] {
         let file = elf(&format!("program-{xlen}-linux-gnu"));
         let objdump = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
@@ -1051,7 +1054,9 @@ fn disassemble() {
                 let branch = [
                     "j", "jal", "beqz", "bnez", "blez", "bgez", "bltz", "bgtz", "beq", "bne",
                     "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu", "b", "bl", "bceqz",
-                    "bcnez", "bt", "bf", "bdnz", "bdz", "bc", "bcl", "bal", "jal",
+                    "bcnez", "bt", "bf", "bdnz", "bdz", "bc", "bcl", "bal", "jal", "jals", "jalx",
+                    "b16", "bc16", "beqz16", "bnez16", "beqzc", "bnezc", "beqzc16", "bnezc16",
+                    "balc", "bgezals", "bltzals",
                 ]
                 .contains(&rest[0]);
                 if branch {

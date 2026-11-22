@@ -370,13 +370,17 @@ fn mips(
 ) -> Vec<(usize, hexcavator_mips::Instruction)> {
     let features = hexcavator_code::mips_features_in(arch, mode);
     let big = mode.big;
-    code.as_chunks::<4>()
-        .0
-        .iter()
-        .map_while(|w| hexcavator_mips::decode(w, big, &features))
-        .enumerate()
-        .map(|(n, i)| (4 * n, i))
-        .collect()
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(i) = code
+        .get(at..)
+        .and_then(|c| hexcavator_mips::decode(c, big, &features))
+    {
+        let n = hexcavator_mips::size(&i);
+        out.push((at, i));
+        at += n;
+    }
+    out
 }
 
 /// An integer register's number (RISC-V's, LoongArch's, PowerPC's, and

@@ -98,12 +98,14 @@ pub fn stdout() -> Out {
             inner: None,
             clean: false,
             carry: Vec::new(),
+            held: Vec::new(),
         };
     }
     Out {
         inner: Some(io::stdout().lock()),
         clean: io::stdout().is_terminal(),
         carry: Vec::new(),
+        held: Vec::new(),
     }
 }
 
@@ -163,7 +165,14 @@ pub struct Out {
     clean: bool,
     /// The start of a UTF-8 sequence that the last write ended in.
     carry: Vec<u8>,
+    /// What is written to a file or a pipe, held until there is plenty
+    /// (standard output writes each line as it ends: a system call per
+    /// line). A terminal gets each line as it ends.
+    held: Vec<u8>,
 }
+
+/// How much [`Out`] holds before writing it to a file or a pipe.
+const HOLD: usize = 64 * 1024;
 
 impl Write for Out {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -172,7 +181,16 @@ impl Write for Out {
             return Ok(buf.len());
         };
         if !self.clean {
-            return inner.write(buf);
+            if self.held.len() + buf.len() > HOLD {
+                inner.write_all(&self.held)?;
+                self.held.clear();
+                if buf.len() >= HOLD {
+                    inner.write_all(buf)?;
+                    return Ok(buf.len());
+                }
+            }
+            self.held.extend_from_slice(buf);
+            return Ok(buf.len());
         }
         let mut data = std::mem::take(&mut self.carry);
         data.extend_from_slice(buf);
@@ -186,6 +204,10 @@ impl Write for Out {
         let Some(inner) = &mut self.inner else {
             return Ok(());
         };
+        if !self.held.is_empty() {
+            let held = std::mem::take(&mut self.held);
+            inner.write_all(&held)?;
+        }
         if !self.carry.is_empty() {
             let carry = std::mem::take(&mut self.carry);
             inner.write_all(&carry)?;

@@ -35,6 +35,26 @@ pub fn map<T: Sync, R: Send>(items: &[T], min: usize, f: impl Fn(&T) -> R + Sync
     map_chunks(items, min, |part| part.iter().map(&f).collect())
 }
 
+/// `f` of each index of `0..len`, in order; split across the threads when
+/// there are at least twice `min` of them.
+pub fn map_range<R: Send>(len: usize, min: usize, f: impl Fn(usize) -> R + Sync) -> Vec<R> {
+    let Some(size) = chunk(len, min) else {
+        return (0..len).map(f).collect();
+    };
+    let f = &f;
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..len)
+            .step_by(size)
+            .map(|at| scope.spawn(move || (at..len.min(at + size)).map(f).collect::<Vec<R>>()))
+            .collect();
+        let mut out = Vec::with_capacity(len);
+        for h in handles {
+            out.extend(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
+        }
+        out
+    })
+}
+
 /// `f` of each chunk of `items` (each chunk's results in order, the
 /// chunks' in order): for work that keeps state across a chunk's items
 /// (a cache, a reusable buffer).
@@ -225,6 +245,12 @@ mod tests {
             );
         }
         assert!(map_balanced(&[] as &[u32], 4, |x| *x).is_empty());
+        for len in [0, 1, 19, 10_000] {
+            assert_eq!(
+                map_range(len, 3, |i| i * 7),
+                (0..len).map(|i| i * 7).collect::<Vec<_>>()
+            );
+        }
         assert_eq!(join(|| 1, || 2), (1, 2));
         // A stable sort: of equal keys, the original order.
         let mut pairs: Vec<(u32, u32)> = (0..200_000u32).map(|i| ((i * 7919) % 1000, i)).collect();

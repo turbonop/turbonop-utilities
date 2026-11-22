@@ -109,7 +109,10 @@ pub fn code(
     resolve: &impl Resolve,
 ) -> Item {
     let mut refs = Vec::new();
-    hexcavator_xref::scan_image(arch, mode, code, start, image_base, &mut refs);
+    // (x86's are found as the code is decoded below: decoded once.)
+    if !matches!(arch, Arch::X86 | Arch::X64) {
+        hexcavator_xref::scan_image(arch, mode, code, start, image_base, &mut refs);
+    }
     let big = mode.big;
     let end = start + code.len() as u64;
     let mut item = Item::default();
@@ -143,6 +146,8 @@ pub fn code(
             } else {
                 hexcavator_x86::Mode::Bits64
             };
+            let mut sweep =
+                hexcavator_xref::X86Sweep::new(image_base.filter(|_| arch == Arch::X64));
             let mut a = 0;
             let mut at = 0usize;
             while at < code.len() {
@@ -155,7 +160,9 @@ pub fn code(
                 let next = pc + inst.len() as u64;
                 // The references this instruction makes, and the absolute
                 // addresses in it.
-                let mine = take_refs(&refs, &mut r, pc);
+                refs.clear();
+                sweep.step(&inst, pc, &mut refs);
+                let mine = &refs[..];
                 let first = a;
                 while a < absolute.len() && absolute[a].0 < next {
                     a += 1;
@@ -681,19 +688,17 @@ pub fn refine(items: &[Item], rounds: usize) -> Vec<u64> {
     let mut classes: Vec<u64> = items.iter().map(|i| i.local).collect();
     let mut count = distinct(&classes);
     for _ in 0..rounds {
-        let next: Vec<u64> = items
-            .iter()
-            .zip(&classes)
-            .map(|(item, &own)| {
-                let mut h = hasher(b'r');
-                h.write_u64(own);
-                h.write_usize(item.refs.len());
-                for &r in &item.refs {
-                    h.write_u64(classes.get(r as usize).copied().unwrap_or(0));
-                }
-                h.finish()
-            })
-            .collect();
+        // (Each item's next class from this round's: on every core.)
+        let next: Vec<u64> = hexcavator_par::map_range(items.len(), 16 * 1024, |i| {
+            let item = &items[i];
+            let mut h = hasher(b'r');
+            h.write_u64(classes[i]);
+            h.write_usize(item.refs.len());
+            for &r in &item.refs {
+                h.write_u64(classes.get(r as usize).copied().unwrap_or(0));
+            }
+            h.finish()
+        });
         let n = distinct(&next);
         classes = next;
         if n == count {
@@ -706,7 +711,7 @@ pub fn refine(items: &[Item], rounds: usize) -> Vec<u64> {
 
 fn distinct(v: &[u64]) -> usize {
     let mut s: Vec<u64> = v.to_vec();
-    s.sort_unstable();
+    hexcavator_par::sort_by(&mut s, u64::cmp);
     s.dedup();
     s.len()
 }

@@ -187,48 +187,77 @@ fn x86(
     image_base: Option<u64>,
     out: &mut Vec<CodeRef>,
 ) {
-    use hexcavator_x86::{Flow, Mnemonic, Operand, RegClass, Register};
-    let gpr = |r: Register| {
-        matches!(
-            r.class(),
-            RegClass::Gpr8
-                | RegClass::Gpr8High
-                | RegClass::Gpr16
-                | RegClass::Gpr32
-                | RegClass::Gpr64
-        )
-        .then(|| r.full().index())
-        .filter(|&i| i < 32)
-    };
-    // The registers holding the image's address, by number; and what they
-    // are at the targets of jumps ahead, where the sweep merges them in (a
-    // register holds it there if it does on any path seen).
-    let mut based = 0u32;
-    // Those that held it anywhere so far.
-    let mut ever = 0u32;
-    let mut ahead: Vec<(u64, u32)> = Vec::new();
-    let holds_base =
-        |based: u32, r: Option<Register>| r.and_then(gpr).is_some_and(|i| based & (1 << i) != 0);
+    let mut sweep = X86Sweep::new(image_base);
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
-        if !ahead.is_empty() {
-            ahead.retain(|&(target, regs)| {
+        let Ok(inst) = hexcavator_x86::decode(&code[at..], mode, pc) else {
+            return;
+        };
+        sweep.step(&inst, pc, out);
+        at += inst.len().max(1);
+    }
+}
+
+/// The x86 sweep of [`scan_image`] an instruction at a time, for a caller
+/// that decodes the code itself (and would otherwise decode it twice):
+/// each instruction's references, given in order from the code's start
+/// until one doesn't decode.
+pub struct X86Sweep {
+    image_base: Option<u64>,
+    /// The registers holding the image's address, by number; and what
+    /// they are at the targets of jumps ahead, where the sweep merges them
+    /// in (a register holds it there if it does on any path seen).
+    based: u32,
+    /// Those that held it anywhere so far.
+    ever: u32,
+    ahead: Vec<(u64, u32)>,
+}
+
+impl X86Sweep {
+    /// A sweep of x86 code; `image_base`, x64's (see [`scan_image`]).
+    pub fn new(image_base: Option<u64>) -> Self {
+        Self {
+            image_base,
+            based: 0,
+            ever: 0,
+            ahead: Vec::new(),
+        }
+    }
+
+    /// The references of `inst`, at `pc`, pushed to `out`.
+    pub fn step(&mut self, inst: &hexcavator_x86::Instruction, pc: u64, out: &mut Vec<CodeRef>) {
+        use hexcavator_x86::{Flow, Mnemonic, Operand, RegClass, Register};
+        let gpr = |r: Register| {
+            matches!(
+                r.class(),
+                RegClass::Gpr8
+                    | RegClass::Gpr8High
+                    | RegClass::Gpr16
+                    | RegClass::Gpr32
+                    | RegClass::Gpr64
+            )
+            .then(|| r.full().index())
+            .filter(|&i| i < 32)
+        };
+        let holds_base = |based: u32, r: Option<Register>| {
+            r.and_then(gpr).is_some_and(|i| based & (1 << i) != 0)
+        };
+        if !self.ahead.is_empty() {
+            let based = &mut self.based;
+            self.ahead.retain(|&(target, regs)| {
                 if target == pc {
-                    based |= regs;
+                    *based |= regs;
                 }
                 target > pc
             });
         }
-        let Ok(inst) = hexcavator_x86::decode(&code[at..], mode, pc) else {
-            return;
-        };
-        if based != 0
+        if self.based != 0
             && matches!(inst.flow(), Flow::Jump | Flow::ConditionalJump)
             && let Some(target) = inst.branch_target()
             && target > pc
         {
-            ahead.push((target, based));
+            self.ahead.push((target, self.based));
         }
         let branch = matches!(inst.flow(), Flow::Call | Flow::Jump | Flow::ConditionalJump);
         let ops = inst.operands();
@@ -237,7 +266,7 @@ fn x86(
         } else {
             Via::Address
         };
-        if let Some(base) = image_base {
+        if let Some(base) = self.image_base {
             for op in ops {
                 // [base + index*scale + table], or [index*scale + table]
                 // with the image's address added after (`lea rax,
@@ -252,12 +281,12 @@ fn x86(
                     continue;
                 };
                 let sticky = m.disp >= 0x1000;
-                let held = |r| holds_base(based, r) || (sticky && holds_base(ever, r));
+                let held = |r| holds_base(self.based, r) || (sticky && holds_base(self.ever, r));
                 if !m.is_rip_relative()
                     && m.disp > 0
                     && (held(m.base)
                         || (m.scale <= 1 && held(m.index))
-                        || (m.base.is_none() && m.index.is_some() && (based | ever) != 0))
+                        || (m.base.is_none() && m.index.is_some() && (self.based | self.ever) != 0))
                 {
                     out.push(CodeRef {
                         from: pc,
@@ -281,11 +310,11 @@ fn x86(
             if let Some(Operand::Reg(r)) = ops.first()
                 && let Some(i) = gpr(*r)
             {
-                based &= !(1 << i);
+                self.based &= !(1 << i);
             }
             if let Some(i) = lea_of_base {
-                based |= 1 << i;
-                ever |= 1 << i;
+                self.based |= 1 << i;
+                self.ever |= 1 << i;
             }
         }
         for op in ops {
@@ -314,7 +343,6 @@ fn x86(
                 _ => {}
             }
         }
-        at += inst.len().max(1);
     }
 }
 

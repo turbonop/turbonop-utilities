@@ -21,8 +21,7 @@
 //! fewer argument moves (arguments already where they go).
 
 use hexcavator_core::Arch;
-use hexcavator_debuginfo::{InlineSites, exclusive_sizes};
-use rustc_hash::{FxHashMap, FxHashSet};
+use hexcavator_debuginfo::{InlineSites, exclusive_sizes_by_index};
 
 /// What a call costs, in bytes, on an architecture.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,22 +123,45 @@ pub fn weigh(sites: InlineSites, arch: Arch, defined: &dyn Fn(&str) -> bool) -> 
     };
     struct Acc {
         copies: u64,
-        functions: FxHashSet<u64>,
+        functions: u64,
         inlined: u64,
         largest: u64,
     }
-    let mut by: FxHashMap<u32, Acc> = FxHashMap::default();
-    for (site, own) in exclusive_sizes(sites.sites) {
-        let a = by.entry(site.inlinee).or_insert_with(|| Acc {
-            copies: 0,
-            functions: FxHashSet::default(),
-            inlined: 0,
-            largest: 0,
-        });
-        a.copies += 1;
-        a.functions.insert(site.function);
-        a.inlined += own;
-        a.largest = a.largest.max(own);
+    let mut sites = sites;
+    let own = exclusive_sizes_by_index(&sites.sites);
+    // Each inlinee's copies, in how many functions, their bytes, and the
+    // largest copy's: the sites by inlinee and function (on every core),
+    // then counted.
+    let mut keyed: Vec<(u32, u64, u64)> = sites
+        .sites
+        .iter()
+        .zip(&own)
+        .filter_map(|(s, &own)| Some((s.inlinee, s.function, own?)))
+        .collect();
+    // (Freed on another thread: millions of small allocations.)
+    let ranges = std::mem::take(&mut sites.sites);
+    std::thread::spawn(move || drop(ranges));
+    hexcavator_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    let mut by: Vec<(u32, Acc)> = Vec::new();
+    for (k, &(inlinee, function, own)) in keyed.iter().enumerate() {
+        let new_function = k == 0 || keyed[k - 1].0 != inlinee || keyed[k - 1].1 != function;
+        match by.last_mut() {
+            Some((i, a)) if *i == inlinee => {
+                a.copies += 1;
+                a.functions += u64::from(new_function);
+                a.inlined += own;
+                a.largest = a.largest.max(own);
+            }
+            _ => by.push((
+                inlinee,
+                Acc {
+                    copies: 1,
+                    functions: 1,
+                    inlined: own,
+                    largest: own,
+                },
+            )),
+        }
     }
     let mut out: Vec<Inlinee> = by
         .into_iter()
@@ -152,7 +174,7 @@ pub fn weigh(sites: InlineSites, arch: Arch, defined: &dyn Fn(&str) -> bool) -> 
                 body: if out_of_line { 0 } else { a.largest + cost.ret },
                 name,
                 copies: a.copies,
-                functions: a.functions.len() as u64,
+                functions: a.functions,
                 parameters,
                 inlined: a.inlined,
                 largest: a.largest,

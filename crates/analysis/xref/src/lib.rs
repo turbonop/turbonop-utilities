@@ -19,7 +19,9 @@
 
 mod scan;
 
-pub use scan::{Arch, CodeRef, Memory, Mode, Via, scan, scan_absolute, scan_image, scan_with};
+pub use scan::{
+    Arch, CodeRef, Memory, Mode, Via, X86Sweep, scan, scan_absolute, scan_image, scan_with,
+};
 
 /// One node: `[start, end)`, and whether it is code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

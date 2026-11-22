@@ -416,6 +416,7 @@ dependencies = [
  "hexcavator-core",
  "hexcavator-loongarch",
  "hexcavator-mips",
+ "hexcavator-par",
  "hexcavator-powerpc",
  "hexcavator-riscv",
  "hexcavator-x86",

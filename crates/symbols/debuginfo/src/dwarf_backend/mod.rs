@@ -383,6 +383,24 @@ fn debug_sections<'d>(image: &Image<'d>) -> Vec<(&'d [u8], Cow<'d, [u8]>)> {
 }
 
 impl<'data> DwarfInfo<'data> {
+    /// The line program at `offset` in `s`: its rows' addresses as the
+    /// code's (a microMIPS row's without the ISA bit LLVM writes in it:
+    /// MIPS code is at even addresses).
+    pub(crate) fn line_program<'s>(
+        &self,
+        s: &Sections<'s>,
+        offset: u64,
+        address_size: u8,
+    ) -> Option<hexcavator_dwarf::LineProgram<'s>> {
+        let mut p = line_program(s, offset, address_size)?;
+        if matches!(self.arch, Arch::Mips | Arch::Mips64) {
+            for r in &mut p.rows {
+                r.address &= !1;
+            }
+        }
+        Some(p)
+    }
+
     /// Reads the DWARF of the ELF, Mach-O, or WebAssembly file `data`.
     pub fn parse(data: &'data [u8]) -> Result<Self> {
         let image = Image::parse(data)?;
@@ -995,7 +1013,7 @@ impl<'data> DwarfInfo<'data> {
                 let root = u.entry(a, u.dies)?;
                 let offset = Self::uint(&u, &root, DW_AT_STMT_LIST)?;
                 let s = self.sections_of(u.source);
-                let program = line_program(&s, offset, u.address_size)?;
+                let program = self.line_program(&s, offset, u.address_size)?;
                 let comp_dir = Self::string(&u, &root, DW_AT_COMP_DIR).unwrap_or_default();
                 let path = program.path(file, comp_dir.as_bytes())?;
                 return Some((path, u32::try_from(line).unwrap_or(u32::MAX)));
@@ -1503,7 +1521,7 @@ impl<'data> DwarfInfo<'data> {
             None => Vec::new(),
         };
         code.sort_unstable();
-        let program = line_program(&s, offset, u.address_size)?;
+        let program = self.line_program(&s, offset, u.address_size)?;
         let comp_dir = Self::string(&u, &d, DW_AT_COMP_DIR).unwrap_or_default();
         let mut rows = Vec::new();
         for w in program.rows.windows(2) {

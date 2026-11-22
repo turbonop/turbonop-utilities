@@ -398,7 +398,7 @@ pub fn decode_mips(
     Some((
         Insn {
             address,
-            len: 4,
+            len: u8::try_from(hexcavator_mips::size(&i)).unwrap_or(4),
             flow,
             target,
         },
@@ -411,7 +411,9 @@ pub fn decode_mips(
 /// links do, `bgezal`, Release 6's `balc` and `beqzalc`); `jr $ra`
 /// returns (and `jic $ra, 0`), `jr` to another register jumps, `jalr`
 /// calls; `beq $zero, $zero` (`b`) jumps, the other branches branch;
-/// `break` and `sdbbp` stop, as `eret` and `deret` leave.
+/// `break` and `sdbbp` stop, as `eret` and `deret` leave. microMIPS's
+/// are as their standard forms (`jrc $ra` returns, `jalrs16` calls, `b16`
+/// jumps), and `jraddiusp` returns.
 pub fn mips_flow(i: &hexcavator_mips::Instruction, address: u64) -> (Flow, Option<u64>) {
     let target = hexcavator_mips::branch_target(i, address);
     let reg = |k: usize| {
@@ -419,7 +421,34 @@ pub fn mips_flow(i: &hexcavator_mips::Instruction, address: u64) -> (Flow, Optio
             .get(k)
             .and_then(|o| hexcavator_mips::gpr_of(*o))
     };
-    let name = i.name();
+    let name = match i.name() {
+        "J_MM" => "J",
+        "JAL_MM" | "JALS_MM" | "JALX_MM" => "JAL",
+        "B16_MM" | "BC16_MMR6" | "BC_MMR6" => "BC",
+        "BALC_MMR6" => "BALC",
+        "BEQ_MM" => "BEQ",
+        "BGEZAL_MM" | "BGEZALS_MM" => "BGEZAL",
+        "BLTZAL_MM" | "BLTZALS_MM" => "BLTZAL",
+        "BEQZALC_MMR6" => "BEQZALC",
+        "BNEZALC_MMR6" => "BNEZALC",
+        "BLEZALC_MMR6" => "BLEZALC",
+        "BGEZALC_MMR6" => "BGEZALC",
+        "BGTZALC_MMR6" => "BGTZALC",
+        "BLTZALC_MMR6" => "BLTZALC",
+        "JR_MM" | "JR16_MM" | "JRC16_MM" | "JRC16_MMR6" | "JR_HB_MM" => "JR",
+        "JALR_MM" | "JALRS_MM" | "JALRC_MMR6" | "JALR_HB_MM" | "JALRC_HB_MMR6" => "JALR",
+        "JIC_MMR6" => "JIC",
+        "JIALC_MMR6" => "JIALC",
+        "BREAK_MM" | "BREAK16_MM" | "BREAK16_MMR6" | "BREAK_MMR6" => "BREAK",
+        "SDBBP_MM" | "SDBBP16_MM" | "SDBBP16_MMR6" | "SDBBP_MMR6" => "SDBBP",
+        "ERET_MM" | "ERET_MMR6" | "ERETNC_MMR6" => "ERET",
+        "DERET_MM" | "DERET_MMR6" => "DERET",
+        // (16-bit calls through a register, linking $ra; returns that pop
+        // the stack.)
+        "JALR16_MM" | "JALRS16_MM" | "JALRC16_MMR6" => return (Flow::Call, None),
+        "JRADDIUSP" | "JRCADDIUSP_MMR6" => return (Flow::Return, None),
+        other => other,
+    };
     match name {
         "J" => (Flow::Jump, target),
         "JAL" | "JALX" | "BAL" | "BALC" => (Flow::Call, target),
@@ -664,7 +693,7 @@ pub fn sweep_in(arch: Arch, mode: Mode, code: &[u8], address: u64) -> (Vec<Insn>
                 stop = Some(pc);
                 break;
             };
-            at += 4;
+            at += usize::from(i.len.max(1));
             out.push(i);
             delayed.push(d);
         }

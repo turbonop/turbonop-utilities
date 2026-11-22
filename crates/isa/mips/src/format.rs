@@ -170,6 +170,24 @@ fn operand(
         }
         Print::Fcc => out.push_str(FCC[(imm & 15) as usize]),
         Print::FromEnd(n) => plain(out, ops.len().saturating_sub(n as usize)),
+        // microMIPS's register lists: a count of registers from $16 (the
+        // ninth $fp), and $ra (bit 4).
+        Print::RegList => {
+            let count = u8::try_from(imm & 0xF).unwrap_or(0);
+            let mut regs: alloc::vec::Vec<u8> = (0..count.min(9))
+                .map(|k| if k == 8 { 30 } else { 16 + k })
+                .collect();
+            if imm & 0x10 != 0 {
+                regs.push(31);
+            }
+            for (n, r) in regs.into_iter().enumerate() {
+                if n > 0 {
+                    out.push_str(", ");
+                }
+                out.push('$');
+                out.push_str(&reg_name(crate::r(r)));
+            }
+        }
         _ => plain(out, op),
     }
 }

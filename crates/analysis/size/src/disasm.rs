@@ -493,16 +493,17 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     break;
                 };
                 let (flow, target) = hexcavator_code::mips_flow(&i, pc);
+                let len = hexcavator_mips::size(&i);
                 insts.push(Decoded {
                     pc,
-                    len: 4,
+                    len,
                     inst: Inst::Mips(i),
                     flow,
                     target,
                     named: target.into_iter().collect(),
                     delayed: hexcavator_mips::has_delay_slot(&i),
                 });
-                rest += 4;
+                rest += len;
             }
         }
         // (No decoder for the others: the code shows as bytes.)

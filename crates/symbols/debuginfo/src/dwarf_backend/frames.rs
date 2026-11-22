@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Die, UnitSection, line_program};
+use hexcavator_dwarf::{Die, UnitSection};
 
 use super::{DwarfInfo, MAX_DEPTH, UnitMeta, is_scope, locate as place, to_ref};
 use crate::TypeRef;
@@ -418,7 +418,7 @@ fn split_files<'a>(
     let d = u.entry(a, u.dies)?;
     let offset = DwarfInfo::uint(&u, &d, DW_AT_STMT_LIST).unwrap_or(0);
     let s = info.sections_of(dm.file);
-    let program = line_program(&s, offset, u.address_size)?;
+    let program = info.line_program(&s, offset, u.address_size)?;
     Some((program, dir))
 }
 

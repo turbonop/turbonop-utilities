@@ -560,6 +560,79 @@ fn arm32(data: &[u8], _: &Scratch) {
     let _ = hexcavator_code::sweep(hexcavator_code::Arch::Arm, data, 1);
 }
 
+/// The decoders generated from LLVM's TableGen records (RISC-V,
+/// LoongArch, PowerPC, MIPS and microMIPS), each in its configurations,
+/// with their formatters; and code read as each, its control flow.
+fn tablegen(data: &[u8], _: &Scratch) {
+    let data = &data[..data.len().min(1 << 15)];
+    // Each decoder over every offset (a halfword's: RISC-V's compressed
+    // instructions, microMIPS's), each instruction written at an address
+    // near the top of memory.
+    let at = |k: usize| u64::MAX.wrapping_sub(k as u64 * 2);
+    for rv64 in [false, true] {
+        let f = hexcavator_riscv::Features::standard(rv64);
+        for k in (0..data.len()).step_by(2) {
+            if let Some(i) = hexcavator_riscv::decode(&data[k..], &f) {
+                let _ = hexcavator_riscv::format::format(&i, at(k), &f);
+            }
+        }
+    }
+    for f in [
+        hexcavator_loongarch::Features::la64(),
+        hexcavator_loongarch::Features::la32(),
+    ] {
+        for k in (0..data.len()).step_by(4) {
+            if let Some(i) = hexcavator_loongarch::decode(&data[k..], &f) {
+                let _ = hexcavator_loongarch::format::format(&i, at(k), &f);
+            }
+        }
+    }
+    for (ppc64, big) in [(true, true), (true, false), (false, true)] {
+        let f = hexcavator_powerpc::Features::standard(ppc64);
+        for k in (0..data.len()).step_by(4) {
+            if let Some(i) = hexcavator_powerpc::decode(&data[k..], big, &f) {
+                let _ = hexcavator_powerpc::format::format(&i, at(k), &f);
+            }
+        }
+    }
+    // MIPS: R2, R6, 64-bit, Octeon; microMIPS R2 and R6.
+    for (flags, mips64, step) in [
+        (0x7000_0000, false, 4),
+        (0x9000_0000, false, 4),
+        (0x8000_0000, true, 4),
+        (0x808B_0000, true, 4),
+        (0x7200_0000, false, 2),
+        (0x9200_0000, false, 2),
+    ] {
+        let f = hexcavator_mips::Features::from_elf(flags, mips64);
+        for big in [true, false] {
+            for k in (0..data.len()).step_by(step) {
+                if let Some(i) = hexcavator_mips::decode(&data[k..], big, &f) {
+                    let _ = hexcavator_mips::format::format(&i, at(k), &f);
+                    let _ = hexcavator_mips::branch_target(&i, at(k));
+                }
+            }
+        }
+    }
+    // Their code's flow, as each reads it.
+    use hexcavator_code::{Arch, Mode};
+    for (arch, mode) in [
+        (Arch::RiscV64, Mode::default()),
+        (Arch::LoongArch64, Mode::default()),
+        (Arch::PowerPc64, Mode::endian(true)),
+        (
+            Arch::Mips,
+            Mode {
+                mips_flags: Some(0x7200_0000),
+                ..Mode::endian(true)
+            },
+        ),
+        (Arch::Mips64, Mode::endian(false)),
+    ] {
+        let _ = hexcavator_code::sweep_in(arch, mode, data, 0x1000);
+    }
+}
+
 fn query(data: &[u8], _: &Scratch) {
     let text = String::from_utf8_lossy(data);
     let _ = hexcavator_query::parse(&text, &hexcavator_size::table::COLUMNS);
@@ -716,6 +789,12 @@ pub const TARGETS: &[Target] = &[
         about: "the x86 decoder and formatter, in 16-, 32-, and 64-bit modes",
         seeds: is_code,
         run: x86,
+    },
+    Target {
+        name: "tablegen",
+        about: "the RISC-V, LoongArch, PowerPC, MIPS, and microMIPS decoders and formatters, and their code's flow",
+        seeds: is_code,
+        run: tablegen,
     },
     Target {
         name: "arm64",

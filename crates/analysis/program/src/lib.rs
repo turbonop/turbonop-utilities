@@ -57,8 +57,11 @@ pub fn find_debug(
         return Ok((image_path.to_path_buf(), map));
     }
     // (A COFF object's CodeView: read as the PDB a linker would write of
-    // it.)
-    if let Some(pdb) = hexcavator_debuginfo::coff_object::pdb_of(image.data()) {
+    // it, with its type server's types, if it names one that is found.)
+    let server = type_server(image_path, image.data());
+    if let Some(pdb) =
+        hexcavator_debuginfo::coff_object::pdb_of_with(image.data(), server.as_deref())
+    {
         return Ok((image_path.to_path_buf(), Mmap::from(pdb)));
     }
     let ids = image.debug_ids();
@@ -127,6 +130,35 @@ pub fn find_debug(
         path: image_path.to_path_buf(),
         what,
         tried,
+    })
+}
+
+/// The type server of the object `data` at `object_path` (the PDB a `/Zi`
+/// object's types are in), opened: where the object says it is, else by
+/// its name beside the object; the one whose GUID is the one the object
+/// records (or any, if that is unset, as `/Brepro` leaves it).
+fn type_server(object_path: &Path, data: &[u8]) -> Option<Mmap> {
+    let (guid, _, name) = hexcavator_debuginfo::coff_object::type_server(data)?;
+    let recorded = path_of_bytes(name);
+    let mut candidates = vec![recorded];
+    if let Some(file) = name
+        .rsplit(|&b| b == b'\\' || b == b'/')
+        .next()
+        .filter(|n| !n.is_empty())
+    {
+        candidates.push(
+            object_path
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(path_of_bytes(file)),
+        );
+    }
+    candidates.into_iter().find_map(|p| {
+        let map = Mmap::open_named(&p).ok()?;
+        let pdb = hexcavator_pdb::Pdb::parse(&map).ok()?;
+        (guid == [0xFF; 16] || pdb.info().guid() == guid).then_some(())?;
+        drop(pdb);
+        Some(map)
     })
 }
 

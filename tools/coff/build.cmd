@@ -1,7 +1,8 @@
 @echo off
 rem Builds Hexcavator's COFF test inputs into testdata\coff: objects.obj (/Z7,
-rem /Gy), objects-big.obj (/bigobj), objects.lib (both), and imports.lib
-rem (an import library from imports.def).
+rem /Gy), objects-big.obj (/bigobj), objects-zi.obj (/Zi: its types in
+rem objects-zi.pdb, a type server), objects.lib (objects.obj and
+rem objects-big.obj), and imports.lib (an import library from imports.def).
 setlocal
 rem (Run from R:, the repository mapped: see ..\neutral.cmd.)
 if /i not "%~d0"=="R:" (call "%~dp0..\neutral.cmd" "%~f0" & exit /b)
@@ -11,6 +12,7 @@ call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" amd64 >nul 2>&1 || exit /b 1
 cd /d "%OUT%" || exit /b 1
 cl /nologo /c /O1 /Gy /Z7 /GS- /Brepro "%~dp0objects.cpp" /Fo:objects.obj || exit /b 1
 cl /nologo /c /O1 /Gy /Z7 /GS- /Brepro /bigobj "%~dp0objects.cpp" /Fo:objects-big.obj || exit /b 1
+cl /nologo /c /O1 /Gy /Zi /GS- /Brepro /Fdobjects-zi.pdb "%~dp0objects.cpp" /Fo:objects-zi.obj || exit /b 1
 lib /nologo /Brepro /out:objects.lib objects.obj objects-big.obj || exit /b 1
 lib /nologo /Brepro /machine:x64 /def:"%~dp0imports.def" /out:imports.lib || exit /b 1
 del imports.exp

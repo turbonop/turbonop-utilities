@@ -479,6 +479,24 @@ fn coff_object_codeview() {
     assert!(text.contains("[2] = 3  (int)"), "{text}");
     let text = run_on("types", "coff/objects.obj", &[]);
     assert!(text.contains("Square") && text.contains("Shape"), "{text}");
+    // /Zi's (its types in objects-zi.pdb, its type server, found beside
+    // it: where it says it is, R:, isn't), the same functions, by type.
+    let names = |path: &str| -> Vec<(String, String)> {
+        let mut v: Vec<(String, String)> = rows_of(path, "kind=function")
+            .iter()
+            .map(|r| {
+                (
+                    r["name"].as_str().unwrap().to_string(),
+                    r["line"].to_string(),
+                )
+            })
+            .collect();
+        v.sort();
+        v
+    };
+    assert_eq!(names("coff/objects-zi.obj"), names("coff/objects.obj"));
+    let text = run_on("types", "coff/objects-zi.obj", &[]);
+    assert!(text.contains("Square") && text.contains("Shape"), "{text}");
     // clang's, too.
     let rows = rows_of("mingw/weak.obj", "kind=function");
     assert_eq!(rows.len(), 1, "{rows:?}");

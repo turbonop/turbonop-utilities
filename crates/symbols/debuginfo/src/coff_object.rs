@@ -12,12 +12,15 @@
 //! (`S_GPROC32`), as a linker turns them; its line tables and file
 //! checksums; the `/names` table its checksums name files in (the
 //! object's string table); its types, as both the type and the id stream
-//! (an object's types and ids share one index space); and the object's
-//! section headers, at those addresses.
+//! (an object's types and ids share one index space); its publics (its
+//! external symbols, as a linker's: hashed, and by address); and the
+//! object's section headers, at those addresses.
 //!
 //! An object whose types are in a PDB of their own (`/Zi`: its `.debug$T`
-//! a reference, `LF_TYPESERVER2`) or a precompiled header's (`LF_PRECOMP`)
-//! has its symbols and lines read, and no types.
+//! a reference, `LF_TYPESERVER2`, to the PDB [`type_server`] names) has
+//! that PDB's types and ids, given ([`pdb_of_with`]); else, as an object
+//! whose types are a precompiled header's (`LF_PRECOMP`), its symbols and
+//! lines, and no types.
 
 use hexcavator_codeview::lines::subsection;
 use hexcavator_codeview::symbols::kind;
@@ -48,6 +51,40 @@ const HASH_BUCKETS: u32 = 0x3FFFF;
 /// object and its compiler, which clang records in every object): see the
 /// module's documentation.
 pub fn pdb_of(data: &[u8]) -> Option<Vec<u8>> {
+    pdb_of_with(data, None)
+}
+
+/// The PDB whose types an object compiled with `/Zi` uses (its
+/// `.debug$T`'s `LF_TYPESERVER2`): its GUID, age, and path, as the
+/// compiler recorded them.
+pub fn type_server(data: &[u8]) -> Option<([u8; 16], u32, &[u8])> {
+    let pe = PeFile::parse(data).ok()?;
+    if pe.kind() != FileKind::Object {
+        return None;
+    }
+    let t = pe
+        .sections()
+        .iter()
+        .filter(|s| pe.section_name(s) == b".debug$T")
+        .find_map(|s| section_bytes(&pe, s))?;
+    let mut r = Reader::new(t.get(4..)?);
+    let len = usize::from(r.u16_le().ok()?);
+    let body = r.bytes(len).ok()?;
+    if u16::from_le_bytes([*body.first()?, *body.get(1)?]) != LF_TYPESERVER2 {
+        return None;
+    }
+    let guid: [u8; 16] = body.get(2..18)?.try_into().ok()?;
+    let age = u32::from_le_bytes(body.get(18..22)?.try_into().ok()?);
+    let name = body.get(22..)?;
+    let end = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+    Some((guid, age, &name[..end]))
+}
+
+/// [`pdb_of`], the types and ids of an object compiled with `/Zi` from
+/// `server` (the PDB [`type_server`] names, its contents), if given and
+/// it is one: its type and id streams, as they are (the object's symbols
+/// index them).
+pub fn pdb_of_with(data: &[u8], server: Option<&[u8]>) -> Option<Vec<u8>> {
     let pe = PeFile::parse(data).ok()?;
     if pe.kind() != FileKind::Object {
         return None;
@@ -65,8 +102,23 @@ pub fn pdb_of(data: &[u8]) -> Option<Vec<u8>> {
     let types = named(b".debug$T")
         .chain(named(b".debug$P"))
         .find_map(|(_, s)| section_bytes(&pe, s))
-        .and_then(type_records)
-        .unwrap_or_default();
+        .and_then(type_records);
+    // A type server's types (only for an object that names one).
+    let server = server
+        .filter(|_| types.is_none())
+        .and_then(|s| hexcavator_pdb::Pdb::parse(s).ok());
+    let types = types.unwrap_or_default();
+    // The type of each function id: the object's, or its type server's.
+    let function = |id: u32| -> Option<u32> {
+        if let Some(s) = &server {
+            let r = s.ids().ok()?.record(hexcavator_codeview::TypeIndex(id))?;
+            if !matches!(r.kind, LF_FUNC_ID | LF_MFUNC_ID) {
+                return None;
+            }
+            return Some(u32::from_le_bytes(r.data.get(4..8)?.try_into().ok()?));
+        }
+        function_type(&types, id)
+    };
     let mut module = Module::default();
     for (index, s) in named(b".debug$S") {
         let Some(bytes) = section_bytes(&pe, s) else {
@@ -74,7 +126,7 @@ pub fn pdb_of(data: &[u8]) -> Option<Vec<u8>> {
         };
         let mut bytes = bytes.to_vec();
         relocate(&pe, index, &mut bytes);
-        module.add(&bytes, &types);
+        module.add(&bytes, &function);
     }
     if !module.describes {
         return None;
@@ -105,14 +157,37 @@ pub fn pdb_of(data: &[u8]) -> Option<Vec<u8>> {
             })
         })
         .collect();
-    let (tpi, hash) = type_stream(&types, stream::HASH);
+    // The types and ids: the object's, both alike; or its type server's,
+    // their streams as they are (their hashes' streams renumbered).
+    let (tpi, hash, ipi, ipi_hash) = match &server {
+        Some(s) => {
+            let stream = |n: u32, hash: u16| -> Option<(Vec<u8>, Vec<u8>)> {
+                let mut t = s.msf().stream_or_empty(n).ok()?.into_owned();
+                let h = match hexcavator_pdb::tpi::hash_stream_of(&t) {
+                    Some(i) => s.msf().stream_or_empty(i).ok()?.into_owned(),
+                    None => Vec::new(),
+                };
+                if let Some(at) = t.get_mut(20..22) {
+                    at.copy_from_slice(&hash.to_le_bytes());
+                }
+                Some((t, h))
+            };
+            let (tpi, hash) = stream(hexcavator_pdb::stream::TPI, stream::HASH)?;
+            let (ipi, ipi_hash) = stream(hexcavator_pdb::stream::IPI, stream::IPI_HASH)?;
+            (tpi, hash, ipi, ipi_hash)
+        }
+        None => {
+            let (tpi, hash) = type_stream(&types, stream::HASH);
+            (tpi.clone(), hash, tpi, Vec::new())
+        }
+    };
     let (records, publics) = publics(&pe);
     let streams = [
         Vec::new(),
         info_stream(stream::NAMES),
-        tpi.clone(),
-        dbi_stream(&pe, &module, &object_name, &contributions),
         tpi,
+        dbi_stream(&pe, &module, &object_name, &contributions),
+        ipi,
         module.stream(),
         names_stream(&module.strings),
         headers,
@@ -120,6 +195,7 @@ pub fn pdb_of(data: &[u8]) -> Option<Vec<u8>> {
         records,
         publics,
         symbol_hash(&[]),
+        ipi_hash,
     ];
     msf(&streams)
 }
@@ -235,6 +311,9 @@ mod stream {
     pub const RECORDS: u16 = 9;
     pub const PUBLICS: u16 = 10;
     pub const GLOBALS: u16 = 11;
+    /// The IPI's hash, a type server's (an object's types and ids share
+    /// the TPI's).
+    pub const IPI_HASH: u16 = 12;
 }
 
 /// A section's bytes, if it starts with the CodeView signature (after it).
@@ -349,7 +428,7 @@ struct Module {
 
 impl Module {
     /// Adds a `.debug$S` section's subsections (its contents, relocated).
-    fn add(&mut self, data: &[u8], types: &[&[u8]]) {
+    fn add(&mut self, data: &[u8], function: &dyn Fn(u32) -> Option<u32>) {
         let mut r = Reader::new(data.get(4..).unwrap_or_default());
         while !r.is_empty() {
             let (Ok(kind), Ok(len)) = (r.u32_le(), r.u32_le()) else {
@@ -361,7 +440,7 @@ impl Module {
             // (Each subsection is padded to 4 bytes.)
             let _ = r.align_to(4);
             match kind {
-                subsection::DEBUG_S_SYMBOLS => self.add_symbols(body, types),
+                subsection::DEBUG_S_SYMBOLS => self.add_symbols(body, function),
                 subsection::DEBUG_S_LINES | subsection::DEBUG_S_INLINEELINES => {
                     self.describes = true;
                     push_subsection(&mut self.c13, kind, body);
@@ -378,7 +457,7 @@ impl Module {
     }
 
     /// Adds a symbols subsection's records.
-    fn add_symbols(&mut self, body: &[u8], types: &[&[u8]]) {
+    fn add_symbols(&mut self, body: &[u8], function: &dyn Fn(u32) -> Option<u32>) {
         let mut r = Reader::new(body);
         while !r.is_empty() {
             let Ok(len) = r.u16_le() else { break };
@@ -401,7 +480,7 @@ impl Module {
                 k = to;
                 if let Some(t) = data.get_mut(24..28) {
                     let id = u32::from_le_bytes([t[0], t[1], t[2], t[3]]);
-                    let ty = function_type(types, id).unwrap_or(0);
+                    let ty = function(id).unwrap_or(0);
                     t.copy_from_slice(&ty.to_le_bytes());
                 }
             }
@@ -913,6 +992,37 @@ mod tests {
             functions += 1;
         }
         assert_eq!(functions, 25);
+    }
+
+    /// A /Zi object's types and ids are its type server's: without it, its
+    /// procedures have no types; with it, each is a procedure's.
+    #[test]
+    fn a_type_server() {
+        let object = fixture("coff/objects-zi.obj");
+        let (_, _, name) = type_server(&object).unwrap();
+        assert_eq!(name, br"R:\testdata\coff\objects-zi.pdb");
+        let server = fixture("coff/objects-zi.pdb");
+        for (with, typed) in [(None, false), (Some(&server[..]), true)] {
+            let data = pdb_of_with(&object, with).unwrap();
+            let pdb = hexcavator_pdb::Pdb::parse(&data).unwrap();
+            let types = pdb.types().unwrap();
+            assert_eq!(!types.is_empty(), typed);
+            let dbi = pdb.dbi().unwrap();
+            let stream = pdb.module_stream(&dbi.modules()[0]).unwrap().unwrap();
+            let mut procedures = 0;
+            for r in stream.symbols().filter(|r| r.kind == kind::S_GPROC32) {
+                procedures += 1;
+                let ty = u32::from_le_bytes(r.data[24..28].try_into().unwrap());
+                assert_eq!(ty != 0, typed);
+                if typed {
+                    let rec = types.record(hexcavator_codeview::TypeIndex(ty)).unwrap();
+                    assert!(matches!(rec.kind, 0x1008 | 0x1009), "{rec:?}");
+                }
+            }
+            assert_eq!(procedures, 11);
+        }
+        // (An object with its types has no type server.)
+        assert!(type_server(&fixture("coff/objects.obj")).is_none());
     }
 
     /// An object without CodeView, or a damaged one, has none (or what of

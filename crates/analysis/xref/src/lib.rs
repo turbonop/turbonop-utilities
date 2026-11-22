@@ -263,6 +263,40 @@ impl Builder {
     ) {
         let mut refs = std::mem::take(&mut self.refs);
         refs.clear();
+        self.scan_into(node, arch, code, literal, &mut refs);
+        self.apply(node, arch, &refs);
+        self.refs = refs;
+    }
+
+    /// [`Builder::code_with`] of each `(node, code)`: scanned on every
+    /// core, then added in order (the graph is as if each were added in
+    /// turn).
+    pub fn code_all(
+        &mut self,
+        arch: Arch,
+        code: &[(u32, &[u8])],
+        literal: &(dyn Fn(u64) -> Option<u64> + Sync),
+    ) {
+        let this = &*self;
+        let scanned: Vec<Vec<CodeRef>> = hexcavator_par::map(code, 64, |&(node, bytes)| {
+            let mut refs = Vec::new();
+            this.scan_into(node, arch, bytes, literal, &mut refs);
+            refs
+        });
+        for (&(node, _), refs) in code.iter().zip(&scanned) {
+            self.apply(node, arch, refs);
+        }
+    }
+
+    /// The references `node`'s code makes, into `refs`.
+    fn scan_into(
+        &self,
+        node: u32,
+        arch: Arch,
+        code: &[u8],
+        literal: &dyn Fn(u64) -> Option<u64>,
+        refs: &mut Vec<CodeRef>,
+    ) {
         let through = &self.through;
         let got = |at: u64| through.get(&at).copied();
         scan_with(
@@ -273,9 +307,13 @@ impl Builder {
             self.image_base,
             self.bias,
             &Memory { got: &got, literal },
-            &mut refs,
+            refs,
         );
-        for r in &refs {
+    }
+
+    /// Adds the edges of `refs`, references from `node`'s code.
+    fn apply(&mut self, node: u32, arch: Arch, refs: &[CodeRef]) {
+        for r in refs {
             // (A load of a GOT's entry: of what it points to.)
             let through = (r.via == Via::Address)
                 .then(|| self.through.get(&r.to).copied())
@@ -332,7 +370,6 @@ impl Builder {
             let at = r.to.max(self.nodes[to as usize].start);
             self.add(node, r.from, to, at, kind);
         }
-        self.refs = refs;
     }
 
     /// The graph: edges deduplicated, keeping the first kind (in [`Edge`]'s

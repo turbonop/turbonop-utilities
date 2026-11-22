@@ -149,91 +149,90 @@ pub fn build(image: &Image<'_>, model: &Model, x: &Xref, mode: Mode) -> Fingerpr
             None => x.names[n as usize].clone(),
         })
         .collect();
-    let items: Vec<Item> = x
-        .ids()
-        .map(|n| {
-            let node = graph.nodes()[n as usize];
-            // An import address table slot is the function it imports.
-            if let Some(import) = slots.get(&node.start) {
-                return named(import);
-            }
-            if matches!(
-                x.kinds[n as usize],
-                Some(SymbolKind::ImportThunk | SymbolKind::ImportByName | SymbolKind::ImportString)
-            ) {
-                return named(&x.names[n as usize]);
-            }
-            // Writable data is a variable: two are never the same, however
-            // alike their starting values (code that uses one isn't code
-            // that uses the other). So it is known by its name; read-only
-            // data, which a linker may fold, by its contents.
-            // (Data with no symbol has no name to be known by.)
-            // (Within one image, two variables of one name, a file-scope
-            // `static` in each of several objects, are two: code that uses
-            // one doesn't do what code that uses the other does.)
-            if !node.code && writable(node.start) && x.kinds[n as usize].is_some() {
-                return match mode {
-                    Mode::Same => named(&format!(
-                        "{}\0{}",
-                        x.names[n as usize],
-                        node.end - node.start
-                    )),
-                    Mode::Foldable => named(&format!("{}\0{:#x}", x.names[n as usize], node.start)),
-                };
-            }
-            // What the linker can't fold is only itself.
-            let section = section_of(node.start);
-            if mode == Mode::Foldable
-                && (!matches!(x.contribution[n as usize], Some((_, true)))
-                    || elf
-                        && (node.code && lsda.contains(&node.start)
-                            || section.is_none_or(|i| elf_unfoldable(&model.sections[i].name))))
-            {
-                return named(&format!("{}\0{:#x}", x.names[n as usize], node.start));
-            }
-            let here = in_range(node.start, node.end);
-            // (Nor across output sections.)
-            let apart = |mut item: Item| {
-                if elf && let Some(i) = section {
-                    item.local ^= (i as u64 + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15);
-                }
-                item
+    // (Each node's fingerprint is its own: on every core.)
+    let ids: Vec<u32> = x.ids().collect();
+    let items: Vec<Item> = hexcavator_par::map(&ids, 256, |&n| {
+        let node = graph.nodes()[n as usize];
+        // An import address table slot is the function it imports.
+        if let Some(import) = slots.get(&node.start) {
+            return named(import);
+        }
+        if matches!(
+            x.kinds[n as usize],
+            Some(SymbolKind::ImportThunk | SymbolKind::ImportByName | SymbolKind::ImportString)
+        ) {
+            return named(&x.names[n as usize]);
+        }
+        // Writable data is a variable: two are never the same, however
+        // alike their starting values (code that uses one isn't code
+        // that uses the other). So it is known by its name; read-only
+        // data, which a linker may fold, by its contents.
+        // (Data with no symbol has no name to be known by.)
+        // (Within one image, two variables of one name, a file-scope
+        // `static` in each of several objects, are two: code that uses
+        // one doesn't do what code that uses the other does.)
+        if !node.code && writable(node.start) && x.kinds[n as usize].is_some() {
+            return match mode {
+                Mode::Same => named(&format!(
+                    "{}\0{}",
+                    x.names[n as usize],
+                    node.end - node.start
+                )),
+                Mode::Foldable => named(&format!("{}\0{:#x}", x.names[n as usize], node.start)),
             };
-            if node.code {
-                let absolute: Vec<(u64, u64)> = if x.arch == Arch::X86 {
-                    here.iter().map(|&(s, _, t)| (s, t)).collect()
-                } else {
-                    Vec::new()
-                };
-                let image_base = (x.arch == Arch::X64).then_some(0);
-                apart(code(
-                    x.arch,
-                    x.mode,
-                    bytes(node.start, node.end),
-                    node.start,
-                    image_base,
-                    &absolute,
-                    &resolve,
-                ))
-            } else {
-                let ptrs: Vec<(u64, u32, Option<u32>)> = here
-                    .iter()
-                    .map(|&(s, w, t)| (s - node.start, w, graph.node_at(t)))
-                    .collect();
-                let mut item = data(bytes(node.start, node.end), node.end - node.start, &ptrs);
-                // What belongs to it is part of it (a vtable's RTTI slot,
-                // which the linker keeps in the vtable's COMDAT).
-                item.refs.extend(
-                    graph
-                        .references(n)
-                        .iter()
-                        .filter(|r| r.1 == hexcavator_xref::Edge::Attached)
-                        .map(|r| r.0),
-                );
-                apart(item)
+        }
+        // What the linker can't fold is only itself.
+        let section = section_of(node.start);
+        if mode == Mode::Foldable
+            && (!matches!(x.contribution[n as usize], Some((_, true)))
+                || elf
+                    && (node.code && lsda.contains(&node.start)
+                        || section.is_none_or(|i| elf_unfoldable(&model.sections[i].name))))
+        {
+            return named(&format!("{}\0{:#x}", x.names[n as usize], node.start));
+        }
+        let here = in_range(node.start, node.end);
+        // (Nor across output sections.)
+        let apart = |mut item: Item| {
+            if elf && let Some(i) = section {
+                item.local ^= (i as u64 + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15);
             }
-        })
-        .collect();
+            item
+        };
+        if node.code {
+            let absolute: Vec<(u64, u64)> = if x.arch == Arch::X86 {
+                here.iter().map(|&(s, _, t)| (s, t)).collect()
+            } else {
+                Vec::new()
+            };
+            let image_base = (x.arch == Arch::X64).then_some(0);
+            apart(code(
+                x.arch,
+                x.mode,
+                bytes(node.start, node.end),
+                node.start,
+                image_base,
+                &absolute,
+                &resolve,
+            ))
+        } else {
+            let ptrs: Vec<(u64, u32, Option<u32>)> = here
+                .iter()
+                .map(|&(s, w, t)| (s - node.start, w, graph.node_at(t)))
+                .collect();
+            let mut item = data(bytes(node.start, node.end), node.end - node.start, &ptrs);
+            // What belongs to it is part of it (a vtable's RTTI slot,
+            // which the linker keeps in the vtable's COMDAT).
+            item.refs.extend(
+                graph
+                    .references(n)
+                    .iter()
+                    .filter(|r| r.1 == hexcavator_xref::Edge::Attached)
+                    .map(|r| r.0),
+            );
+            apart(item)
+        }
+    });
     let classes = refine(&items, ROUNDS);
     Fingerprints {
         items,

@@ -319,6 +319,7 @@ name = "hexcavator-codeview"
 version = "0.0.7"
 dependencies = [
  "hexcavator-core",
+ "hexcavator-par",
 ]
 
 [[package]]
@@ -722,6 +723,7 @@ dependencies = [
  "hexcavator-core",
  "hexcavator-loongarch",
  "hexcavator-mips",
+ "hexcavator-par",
  "hexcavator-powerpc",
  "hexcavator-riscv",
  "hexcavator-x86",

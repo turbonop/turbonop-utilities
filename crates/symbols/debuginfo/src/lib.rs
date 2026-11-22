@@ -105,31 +105,120 @@ pub fn exclusive_sizes(mut sites: Vec<InlineSite>) -> Vec<(InlineSite, u64)> {
     sites.dedup_by(|a, b| {
         a.function == b.function && a.ranges == b.ranges && a.inlinee == b.inlinee
     });
-    let mut own = vec![0u64; sites.len()];
     // One function at a time, deepest first, then by address (a nested
     // site claims its bytes before the site it is in); every byte once,
     // across functions too (two procedure records can cover one piece of
-    // code).
-    let mut claimed: std::collections::BTreeMap<u64, u64> = std::collections::BTreeMap::new();
-    let mut touched: Vec<(u64, u64)> = Vec::new();
-    let mut order: Vec<usize> = Vec::new();
+    // code). Each function's sites are claimed on their own (on every
+    // core), keeping what each claimed; then, in order, a function whose
+    // code an earlier one's overlaps loses what that one claimed first.
+    let mut groups: Vec<(usize, usize)> = Vec::new();
     let mut start = 0;
     while start < sites.len() {
         let mut end = start + 1;
         while end < sites.len() && sites[end].function == sites[start].function {
             end += 1;
         }
-        order.clear();
-        order.extend(start..end);
-        order.sort_unstable_by_key(|&i| (std::cmp::Reverse(sites[i].depth), first(&sites[i])));
-        for &i in &order {
-            for &(at, size) in &sites[i].ranges {
-                own[i] += claim(&mut claimed, &mut touched, at, at.saturating_add(size));
-            }
-        }
+        groups.push((start, end));
         start = end;
     }
+    struct Local {
+        /// Each site's (index, pieces it claimed).
+        pieces: Vec<(usize, Vec<(u64, u64)>)>,
+        /// What the function's sites cover, as disjoint intervals.
+        union: Vec<(u64, u64)>,
+    }
+    let local: Vec<Local> = hexcavator_par::map(&groups, 64, |&(start, end)| {
+        let mut order: Vec<usize> = (start..end).collect();
+        order.sort_unstable_by_key(|&i| (std::cmp::Reverse(sites[i].depth), first(&sites[i])));
+        let mut claimed = std::collections::BTreeMap::new();
+        let mut touched = Vec::new();
+        let mut pieces = Vec::with_capacity(order.len());
+        for i in order {
+            let mut mine = Vec::new();
+            for &(at, size) in &sites[i].ranges {
+                claim_pieces(
+                    &mut claimed,
+                    &mut touched,
+                    at,
+                    at.saturating_add(size),
+                    &mut mine,
+                );
+            }
+            pieces.push((i, mine));
+        }
+        Local {
+            pieces,
+            union: claimed.into_iter().collect(),
+        }
+    });
+    let mut own = vec![0u64; sites.len()];
+    // What earlier functions claimed.
+    let mut earlier: std::collections::BTreeMap<u64, u64> = std::collections::BTreeMap::new();
+    let mut touched: Vec<(u64, u64)> = Vec::new();
+    for l in &local {
+        let overlaps = l.union.iter().any(|&(s, e)| covered(&earlier, s, e) > 0);
+        for (i, mine) in &l.pieces {
+            own[*i] = mine
+                .iter()
+                .map(|&(s, e)| (e - s) - if overlaps { covered(&earlier, s, e) } else { 0 })
+                .sum();
+        }
+        for &(s, e) in &l.union {
+            claim(&mut earlier, &mut touched, s, e);
+        }
+    }
     sites.into_iter().zip(own).collect()
+}
+
+/// How many of `[start, end)`'s bytes `claimed` (disjoint intervals)
+/// covers.
+fn covered(claimed: &std::collections::BTreeMap<u64, u64>, start: u64, end: u64) -> u64 {
+    if end <= start {
+        return 0;
+    }
+    let from = match claimed.range(..=start).next_back() {
+        Some((&s, &e)) if e > start => s,
+        _ => start,
+    };
+    claimed
+        .range(from..end)
+        .map(|(&s, &e)| e.min(end).saturating_sub(s.max(start)))
+        .sum()
+}
+
+/// [`claim`], adding the pieces of `[start, end)` it newly claims to
+/// `pieces`.
+fn claim_pieces(
+    claimed: &mut std::collections::BTreeMap<u64, u64>,
+    touched: &mut Vec<(u64, u64)>,
+    start: u64,
+    end: u64,
+    pieces: &mut Vec<(u64, u64)>,
+) {
+    if end <= start {
+        return;
+    }
+    let from = match claimed.range(..=start).next_back() {
+        Some((&s, &e)) if e >= start => s,
+        _ => start,
+    };
+    touched.clear();
+    touched.extend(claimed.range(from..=end).map(|(&s, &e)| (s, e)));
+    // The gaps between the intervals already claimed are new.
+    let mut at = start;
+    for &(s, e) in touched.iter() {
+        if s > at {
+            pieces.push((at, s.min(end)));
+        }
+        at = at.max(e);
+        if at >= end {
+            break;
+        }
+    }
+    if at < end {
+        pieces.push((at, end));
+    }
+    claim(claimed, touched, start, end);
 }
 
 /// Claims `[start, end)` in `claimed` (disjoint intervals, start to end),
@@ -1335,6 +1424,59 @@ mod tests {
         ]);
         assert_eq!(got, [("big".into(), 100), ("in".into(), 0)]);
         assert!(exclusive_sizes(Vec::new()).is_empty());
+        // Against a serial claim of every site in order, on random sites
+        // (overlapping within and across functions).
+        let mut seed = 0x1234_5678u64;
+        let mut rand = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let mut sites = Vec::new();
+        for k in 0..3000u32 {
+            let function = rand(200) * 100;
+            let ranges: Vec<(u64, u64)> = (0..1 + rand(3))
+                .map(|_| (function + rand(150), 1 + rand(40)))
+                .collect();
+            let names = [
+                "outer", "inner", "a", "b", "f", "x", "y", "deep1", "deep2", "wide",
+            ];
+            sites.push(site(
+                names[k as usize % names.len()],
+                function,
+                &ranges,
+                u32::try_from(rand(4)).unwrap(),
+            ));
+        }
+        let got = exclusive_sizes(sites.clone());
+        // (The serial algorithm, as it was.)
+        let first = |s: &InlineSite| s.ranges.first().map_or(0, |r| r.0);
+        let mut want = sites;
+        want.sort_unstable_by_key(|s| (s.function, first(s), s.inlinee, s.ranges.len(), s.depth));
+        want.dedup_by(|a, b| {
+            a.function == b.function && a.ranges == b.ranges && a.inlinee == b.inlinee
+        });
+        let mut own = vec![0u64; want.len()];
+        let mut claimed = std::collections::BTreeMap::new();
+        let mut touched = Vec::new();
+        let mut start = 0;
+        while start < want.len() {
+            let mut end = start + 1;
+            while end < want.len() && want[end].function == want[start].function {
+                end += 1;
+            }
+            let mut order: Vec<usize> = (start..end).collect();
+            order.sort_unstable_by_key(|&i| (std::cmp::Reverse(want[i].depth), first(&want[i])));
+            for i in order {
+                for &(at, size) in &want[i].ranges {
+                    own[i] += claim(&mut claimed, &mut touched, at, at + size);
+                }
+            }
+            start = end;
+        }
+        let want: Vec<(InlineSite, u64)> = want.into_iter().zip(own).collect();
+        assert_eq!(got, want);
         // Hostile: a range running past the address space.
         let got = exclusive_sizes(vec![site("h", 0, &[(u64::MAX - 4, 100)], 0)]);
         assert_eq!(got[0].1, 4);

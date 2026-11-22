@@ -285,7 +285,8 @@ pub fn pe(
     b.image_base(0);
     b.absolute_bias(file.optional_header().map_or(0, |h| h.image_base().get()));
 
-    // Code.
+    // Code (scanned on every core).
+    let mut code: Vec<(u32, &[u8])> = Vec::new();
     for i in 0..b.nodes().len() as u32 {
         let n = b.nodes()[i as usize];
         if !n.code {
@@ -295,13 +296,14 @@ pub fn pe(
         let Ok(rva) = u32::try_from(n.start) else {
             continue;
         };
-        if let Ok(code) = file.bytes_at_rva(Rva(rva), len).or_else(|_| {
+        if let Ok(bytes) = file.bytes_at_rva(Rva(rva), len).or_else(|_| {
             // A function's last bytes can lie past its section's file data.
             file.bytes_at_rva(Rva(rva), 0).map(|_| &[][..])
         }) {
-            b.code(i, arch, code);
+            code.push((i, bytes));
         }
     }
+    b.code_all(arch, &code, &|_| None);
 
     // Each vtable's RTTI slot: the pointer just before it.
     let pointer_size: u64 = if file
@@ -855,17 +857,14 @@ fn common(
             }
         })
     };
-    for i in 0..b.nodes().len() as u32 {
-        let n = b.nodes()[i as usize];
-        if n.code {
-            b.code_with(
-                i,
-                arch,
-                file_bytes(image, n.start, n.end - n.start),
-                &literal,
-            );
-        }
-    }
+    let code: Vec<(u32, &[u8])> = (0..b.nodes().len() as u32)
+        .filter(|&i| b.nodes()[i as usize].code)
+        .map(|i| {
+            let n = b.nodes()[i as usize];
+            (i, file_bytes(image, n.start, n.end - n.start))
+        })
+        .collect();
+    b.code_all(arch, &code, &literal);
     for s in &slots {
         if let Some(to) = s.target {
             pointer_edge(&mut b, s.addr, to);

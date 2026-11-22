@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::{DebugInfo, InlineSite, SourceLines, exclusive_sizes};
+use hexcavator_debuginfo::{DebugInfo, InlineSite, SourceLines, exclusive_sizes_by_index};
 use hexcavator_size::symbols::{Symbol, SymbolKind};
 use serde_json::{Value, json};
 
@@ -181,27 +181,45 @@ struct Inlinee<'a> {
     functions: usize,
 }
 
-fn by_inlinee<'a>(sites: &[(InlineSite, u64)], names: &'a [String]) -> Vec<Inlinee<'a>> {
-    let mut map: HashMap<&str, (u64, usize, Vec<u64>)> = HashMap::new();
-    for (s, own) in sites {
-        let e = map.entry(names[s.inlinee as usize].as_str()).or_default();
-        e.0 += own;
-        e.1 += 1;
-        e.2.push(s.function);
-    }
-    let mut out: Vec<Inlinee<'_>> = map
-        .into_iter()
-        .map(|(name, (bytes, sites, mut fns))| {
-            fns.sort_unstable();
-            fns.dedup();
-            Inlinee {
-                name,
-                bytes,
-                sites,
-                functions: fns.len(),
-            }
+fn by_inlinee<'a>(sites: &[(&InlineSite, u64)], names: &'a [String]) -> Vec<Inlinee<'a>> {
+    // Inlinees by name (DWARF's are by their origins, several to a name:
+    // one's from each compile unit): each index as its name's first.
+    let mut first: HashMap<&str, u32> = HashMap::new();
+    let canonical: Vec<u32> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            *first
+                .entry(n.as_str())
+                .or_insert(u32::try_from(i).unwrap_or(u32::MAX))
         })
         .collect();
+    let canon = |i: u32| canonical.get(i as usize).copied().unwrap_or(i);
+    // The sites by inlinee and function, sorted on every core, then
+    // counted.
+    let mut keyed: Vec<(u32, u64, u64)> = sites
+        .iter()
+        .map(|(s, own)| (canon(s.inlinee), s.function, *own))
+        .collect();
+    hexcavator_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    let mut out: Vec<Inlinee<'_>> = Vec::new();
+    for (k, &(inlinee, function, own)) in keyed.iter().enumerate() {
+        let new_function = k == 0 || keyed[k - 1].0 != inlinee || keyed[k - 1].1 != function;
+        let same = k > 0 && keyed[k - 1].0 == inlinee;
+        if !same {
+            out.push(Inlinee {
+                name: names.get(inlinee as usize).map_or("", String::as_str),
+                bytes: 0,
+                sites: 0,
+                functions: 0,
+            });
+        }
+        if let Some(e) = out.last_mut() {
+            e.bytes += own;
+            e.sites += 1;
+            e.functions += usize::from(new_function);
+        }
+    }
     out.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.name.cmp(b.name)));
     out
 }
@@ -226,7 +244,13 @@ fn inlines(o: &Options) -> Result<String, String> {
         |debug, syms| {
             let found = debug.inline_sites().map_err(|e| e.to_string())?;
             let names = found.inlinees;
-            let sites = exclusive_sizes(found.sites);
+            let own = exclusive_sizes_by_index(&found.sites);
+            let sites: Vec<(&InlineSite, u64)> = found
+                .sites
+                .iter()
+                .zip(own)
+                .filter_map(|(s, own)| Some((s, own?)))
+                .collect();
             let all = by_inlinee(&sites, &names);
             let take = |len: usize| if o.rows == 0 { len } else { o.rows.min(len) };
             if let Some(name) = &o.one {

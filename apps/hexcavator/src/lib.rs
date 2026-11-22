@@ -14,6 +14,7 @@ mod dwarfdump;
 mod init;
 mod lines;
 mod linkerlog;
+mod ltcg;
 mod mcp;
 mod pdbdump;
 mod query;
@@ -53,6 +54,7 @@ commands:
   inlines [options] <image>  the functions inlined into its code, by their copies' bytes
   licenses                   the licenses of Hexcavator and of the code it includes
   linkerlog [options] <log>  the linker's /VERBOSE output: why each library member was linked
+  ltcg [options] <file>...   dump Visual C++ LTCG (/GL) objects, and libraries of them
   mcp                        serve size, symbol, and reference tools to AI agents (MCP, stdio)
   pdb [options] <file>       dump a PDB, or an image's (see `hexc pdb` for options)
   query <image> <query>      the image's symbols, filtered, grouped, and sorted
@@ -228,6 +230,7 @@ fn command(args: &[String]) -> ExitCode {
         "dump" => dump::run(rest),
         "pdb" => pdbdump::run(rest),
         "dwarf" => dwarfdump::run(rest),
+        "ltcg" => ltcg::run(rest),
         "checksec" => checksec::run(rest),
         "signature" => signature::run(rest),
         "size" => size::run(rest),
@@ -282,6 +285,29 @@ fn coff_details(o: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
     if !debug.is_empty() {
         out.push(format!("debug information: {}", debug.join(", ")));
     }
+    out
+}
+
+/// What `hexc info` adds for an LTCG object: what its IL holds (`hexc
+/// ltcg` dumps it).
+fn ltcg_details(o: &hexcavator_pe::ltcg::LtcgObject<'_>) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(g) = o.globals() {
+        let defined = g
+            .symbols
+            .iter()
+            .filter(|s| s.storage().is_public_definition())
+            .count();
+        out.push(format!(
+            "{} symbols ({defined} public definitions), {} source files",
+            g.symbols.len(),
+            g.source_files.len()
+        ));
+    }
+    if let Some(c) = o.compiler() {
+        out.push(format!("back end: {}", String::from_utf8_lossy(c)));
+    }
+    out.push("dump it with `hexc ltcg`".into());
     out
 }
 
@@ -817,6 +843,10 @@ fn info(args: &[String]) -> ExitCode {
                     }
                 } else if let Ok(m) = hexcavator_wasm::Module::parse(&map) {
                     for line in wasm_details(&m) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                } else if let Ok(o) = hexcavator_pe::ltcg::LtcgObject::parse(&map) {
+                    for line in ltcg_details(&o) {
                         let _ = writeln!(out, "  {line}");
                     }
                 } else if let Ok(o) = hexcavator_pe::PeFile::parse_object(&map) {

@@ -55,6 +55,9 @@ fn is_pe(_: &Path, d: &[u8]) -> bool {
 fn is_coff_object(p: &Path, d: &[u8]) -> bool {
     p.extension().is_some_and(|e| e == "obj") && !starts(d, b"MZ")
 }
+fn is_ltcg(_: &Path, d: &[u8]) -> bool {
+    hexcavator_pe::ltcg::LtcgObject::is_ltcg(d)
+}
 fn is_archive(_: &Path, d: &[u8]) -> bool {
     starts(d, b"!<arch>\n") || starts(d, b"!<thin>\n")
 }
@@ -201,6 +204,19 @@ fn coff(data: &[u8], s: &Scratch) {
     hexc(&["dump", "/all", &f]);
     hexc(&["size", "-d", "sections,symbols,armembers", "-n", "0", &f]);
     hexc(&["query", &f, "kind!=public"]);
+}
+
+fn ltcg(data: &[u8], s: &Scratch) {
+    if let Ok(o) = hexcavator_pe::ltcg::LtcgObject::parse(data) {
+        let _ = o.backend_args();
+        let _ = o.compiler();
+        let _ = o.globals();
+        let _ = o.types();
+    }
+    let f = s.file("input-ltcg.bin", data);
+    hexc(&["ltcg", "-all", &f]);
+    hexc(&["dump", "/all", &f]);
+    hexc(&["info", &f]);
 }
 
 fn archive(data: &[u8], s: &Scratch) {
@@ -693,6 +709,12 @@ pub const TARGETS: &[Target] = &[
         about: "COFF objects: dump, size",
         seeds: is_coff_object,
         run: coff,
+    },
+    Target {
+        name: "ltcg",
+        about: "LTCG (/GL) objects: hexc ltcg, dump, info",
+        seeds: is_ltcg,
+        run: ltcg,
     },
     Target {
         name: "archive",

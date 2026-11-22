@@ -1,0 +1,50 @@
+
+Dump of file ltcg.lib
+
+File Type: LIBRARY
+
+Archive member name at 328: /               
+FFFFFFFFFFFFFFFF time/date
+         uid
+         gid
+       0 mode
+     2AD size
+correct header end
+
+    1 offsets
+
+        1      612
+
+    31 public symbols
+
+        1 ??$twice@H@@YAHH@Z
+        1 ??0Shape@@QEAA@XZ
+        1 ??0Square@@QEAA@H@Z
+        1 ??1Shape@@UEAA@XZ
+        1 ??1Square@@UEAA@XZ
+        1 ??_7Shape@@6B@
+        1 ??_7Square@@6B@
+        1 ??_C@_06JBLMLCKL@?$CFs?5?$CFd?6@
+        1 ??_C@_08JKGPMEKK@negative@
+        1 ??_GShape@@UEAAPEAXI@Z
+        1 ??_GSquare@@UEAAPEAXI@Z
+        1 ??_R0?AUShape@@@8
+        1 ??_R0?AUSquare@@@8
+        1 ??_R1A@?0A@EA@Shape@@8
+        1 ??_R1A@?0A@EA@Square@@8
+        1 ??_R2Shape@@8
+        1 ??_R2Square@@8
+        1 ??_R3Shape@@8
+        1 ??_R3Square@@8
+        1 ??_R4Shape@@6B@
+        1 ??_R4Square@@6B@
+        1 ?_OptionsStorage@?1??__local_stdio_printf_options@@9@4_KA
+        1 ?area@Square@@UEBAHXZ
+        1 ?callee_pops@@YAHHH@Z
+        1 ?counter@@3HA
+        1 ?exported_value@@3HA
+        1 __local_stdio_printf_options
+        1 _vfprintf_l
+        1 exported
+        1 ltcg_kept
+        1 printf

@@ -21,6 +21,7 @@ mod file;
 pub mod import_object;
 pub mod imports;
 pub mod load_config;
+pub mod ltcg;
 pub mod raw;
 pub mod reloc;
 pub mod resource_data;

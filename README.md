@@ -70,7 +70,7 @@ compared.
 | `crates/formats/minidump` (`hexcavator-minidump`) | Minidumps (MDMP): Windows, Breakpad, and Crashpad crash dumps (threads, modules, memory, exception, system information) |
 | `crates/formats/mz` (`hexcavator-mz`) | MS-DOS MZ headers; dispatch to PE/NE/LE/LX new headers |
 | `crates/formats/ne` (`hexcavator-ne`) | 16-bit NE (New Executable) files: Windows 1.x-3.x and OS/2 1.x modules and fonts |
-| `crates/formats/pe` (`hexcavator-pe`) | PE images and COFF objects: headers, sections, symbols, RVA mapping, debug directory, imports, exports, relocations, load config (Guard CF, DVRT, CHPE/ARM64EC metadata), exception and unwind data, C++ EH and SEH handler data, TLS |
+| `crates/formats/pe` (`hexcavator-pe`) | PE images and COFF objects: headers, sections, symbols, RVA mapping, debug directory, imports, exports, relocations, load config (Guard CF, DVRT, CHPE/ARM64EC metadata), exception and unwind data, C++ EH and SEH handler data, TLS; Visual C++ LTCG (`/GL`) objects' IL |
 | `crates/formats/signature` (`hexcavator-signature`) | Code signatures, verified the same on every platform: DER, X.509, CMS, Authenticode (nested signatures, RFC 3161 and PKCS #9 timestamps), and Apple code signing (code directories, page hashes, requirements, entitlements); the cryptography is RustCrypto's, trust a bundled set of roots |
 | `crates/formats/wasm` (`hexcavator-wasm`) | WebAssembly modules: sections, the name section, imports, globals, function bodies, data segments |
 | `crates/symbols/codeview` (`hexcavator-codeview`) | CodeView records, as cvinfo.h defines them: symbols, types (with a C++-style formatter and type layouts), C13 line and checksum subsections, inline annotations, register numbers |
@@ -217,7 +217,11 @@ byte orders), and big-endian ARM, built by `tools/elf/build.cmd` with the
 `hexc help` lists the commands. `hexc info` identifies files, `hexc dump`,
 `hexc pdb`, and `hexc dwarf` show their contents, and the commands below
 analyze them. Most analyses take `-json` for scripts and CI, and the
-tabular ones `-csv` or `-tsv` too.
+tabular ones `-csv` or `-tsv` too. `hexc ltcg` dumps Visual C++ LTCG
+objects (`/GL`), and libraries of them: the compiler's intermediate
+language, undocumented, read as far as it is known (the back end and its
+command line, the source files and their checksums, the linker
+directives, the functions and variables, and the CodeView types).
 
 ### Size analysis
 

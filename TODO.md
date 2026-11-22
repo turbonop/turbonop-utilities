@@ -26,6 +26,18 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   `impl$12::fmt`, not which trait: `-Zfmt-debug`'s saving is measured on
   ELF and Mach-O only.
 
+## LTCG objects
+
+- **The IL's records, walked.** `hexc ltcg` finds `.cil$gl`'s functions
+  and variables by their records' heads, as the rest of each record's
+  grammar isn't known. Walked one after another, they would give each
+  function's IL (its offset and size in `.cil$ex`, so `hexc size` could
+  weigh a `/GL` library's functions), what each refers to (so the public
+  definitions could be told from inline functions nothing uses, as
+  lib.exe does), and their types.
+- **The other IL sections.** `.cil$ex`, `.cil$sy`, and `.cil$in` are
+  shown by size only.
+
 ## Waiting
 
 - **GCC, GNU ld, gold, and mold.** `hexc recommend` judges what an ELF

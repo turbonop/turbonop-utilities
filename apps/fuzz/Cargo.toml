@@ -39,6 +39,7 @@ hexcavator-mz.workspace = true
 hexcavator-ne.workspace = true
 hexcavator-lx.workspace = true
 hexcavator-pdb.workspace = true
+hexcavator-pe.workspace = true
 hexcavator-query.workspace = true
 hexcavator-signature.workspace = true
 hexcavator-size.workspace = true

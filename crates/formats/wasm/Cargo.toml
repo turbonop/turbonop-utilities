@@ -11,5 +11,9 @@ repository.workspace = true
 [dependencies]
 hexcavator-core.workspace = true
 
+[features]
+# The module's cache of what its readers derive (Module::derived).
+std = []
+
 [lints]
 workspace = true

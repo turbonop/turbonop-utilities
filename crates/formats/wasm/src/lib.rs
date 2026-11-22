@@ -11,6 +11,8 @@
 #![warn(missing_docs)]
 
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 use alloc::vec::Vec;
 
@@ -242,12 +244,29 @@ pub const NAME_FUNCTION: u8 = 1;
 pub const NAME_DATA_SEGMENT: u8 = 9;
 
 /// A WebAssembly module.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Module<'d> {
     data: &'d [u8],
     /// The binary format's version (1).
     pub version: u32,
     sections: Vec<Section<'d>>,
+    /// What a reader of the module derives from it, made once (see
+    /// [`Module::derived`]).
+    #[cfg(feature = "std")]
+    derived: std::sync::OnceLock<alloc::boxed::Box<dyn core::any::Any + Send + Sync>>,
+}
+
+impl Clone for Module<'_> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data,
+            version: self.version,
+            sections: self.sections.clone(),
+            // (A clone derives its own.)
+            #[cfg(feature = "std")]
+            derived: std::sync::OnceLock::new(),
+        }
+    }
 }
 
 /// Whether `data` starts like a module.
@@ -303,7 +322,19 @@ impl<'d> Module<'d> {
             data,
             version,
             sections,
+            #[cfg(feature = "std")]
+            derived: std::sync::OnceLock::new(),
         })
+    }
+
+    /// What `make` derives from the module (its reader's tables, built
+    /// once and kept with it), or `None` if something of another type was
+    /// kept first.
+    #[cfg(feature = "std")]
+    pub fn derived<T: core::any::Any + Send + Sync>(&self, make: impl FnOnce() -> T) -> Option<&T> {
+        self.derived
+            .get_or_init(|| alloc::boxed::Box::new(make()))
+            .downcast_ref::<T>()
     }
 
     /// The module's bytes.

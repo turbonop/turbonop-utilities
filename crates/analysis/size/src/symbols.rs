@@ -278,91 +278,8 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
             }
         }
     });
-    // Publics undecorated (mangled by whichever scheme: Microsoft's, Rust's
-    // and Swift's on Windows too, and Itanium's in a MinGW image's), each
-    // once, on every core.
-    let public_names: Vec<&str> = {
-        let mut v: Vec<&str> = shown
-            .iter()
-            .filter(|s| s.kind == DebugKind::Public && !s.name.starts_with("??_C@"))
-            .map(|s| s.name.as_str())
-            .collect();
-        v.sort_unstable();
-        v.dedup();
-        v
-    };
-    let undecorated: HashMap<&str, String> = public_names
-        .iter()
-        .copied()
-        .zip(hexcavator_par::map_chunks(&public_names, 1024, |part| {
-            let mut any = hexcavator_demangle::Demangler::new();
-            part.iter()
-                .map(|n| {
-                    any.demangle(n, hexcavator_demangle::msvc::flags::NO_PTR64)
-                        .unwrap_or_else(|| (*n).to_string())
-                })
-                .collect()
-        }))
-        .collect();
-    // The publics at each address, for naming vtables.
-    let mut publics_at: HashMap<u64, Vec<&str>> = HashMap::default();
-    for s in shown.iter().filter(|s| s.kind == DebugKind::Public) {
-        publics_at.entry(s.addr).or_default().push(&s.name);
-    }
-    // (A namer for each thread: its own demangler.)
-    let (undecorated, publics_at) = (&undecorated, &publics_at);
-    let make_display = || {
-        let mut demangler = hexcavator_demangle::msvc::Demangler::default();
-        move |s: &DebugSymbol, kind: SymbolKind, size: u64, name: String| match kind {
-            SymbolKind::String => string_name(image, s.addr, size, &s.name).unwrap_or(name),
-            SymbolKind::Public => undecorated.get(name.as_str()).cloned().unwrap_or(name),
-            // A thunk is named by its public, if it has one (x86 C names keep
-            // their underscore), undecorated without access, `virtual`, return
-            // type, calling convention, `this` qualifiers, or class-keys:
-            // `[thunk]:C::f`adjustor{8}' (void)` (undname flags 0xA2E6).
-            SymbolKind::Thunk => match publics_at.get(&s.addr).and_then(|p| p.iter().min()) {
-                Some(public) => {
-                    use hexcavator_demangle::msvc::flags::*;
-                    let flags = NO_ACCESS_SPECIFIERS
-                        | NO_MEMBER_TYPE
-                        | NO_FUNCTION_RETURNS
-                        | NO_MS_KEYWORDS
-                        | NO_THISTYPE
-                        | NO_ECSU
-                        | NO_PTR64;
-                    demangler
-                        .demangle(public, flags)
-                        .unwrap_or_else(|| public.to_string())
-                }
-                None => name,
-            },
-            // A vtable's data symbol records `X::`vftable'`; its public has the
-            // whole name, `X::`vftable'{for `Base'}`. Of several publics here
-            // (vtables folded together), the least name.
-            SymbolKind::Data if name.ends_with("`vftable'") => publics_at
-                .get(&s.addr)
-                .into_iter()
-                .flatten()
-                .filter_map(|p| demangler.demangle(p, hexcavator_demangle::msvc::flags::NO_PTR64))
-                .map(|p| p.strip_prefix("const ").map(str::to_string).unwrap_or(p))
-                .filter(|p| p.starts_with(name.as_str()))
-                .min()
-                .unwrap_or(name),
-            _ => name,
-        }
-    };
-    let from_debug = from_debug_symbols(&shown, &hidden, model, &make_display);
-
-    // Symbols for what the image itself describes.
-    let Some(pe) = image
-        .pe()
-        .filter(|_| image.kind() != hexcavator_image::Kind::Object)
-    else {
-        // (DWARF describes only what was compiled with it: the image's own
-        // symbols name the rest, as a PDB's publics do; and an object's
-        // symbols name what its CodeView doesn't.)
-        return Ok(with_image_symbols(image, model, from_debug));
-    };
+    // The exception handlers, by address (for the exception data's
+    // symbols, found while the rest are named).
     let mut handlers: HashMap<u64, crate::eh::Handler> = HashMap::default();
     for s in shown.iter().chain(&hidden) {
         if matches!(
@@ -375,13 +292,115 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
             }
         }
     }
+    let image_pe = image
+        .pe()
+        .filter(|_| image.kind() != hexcavator_image::Kind::Object);
+    let scan = || {
+        image_pe.map(|pe| {
+            crate::eh::scan(pe, &|addr| {
+                handlers
+                    .get(&addr)
+                    .copied()
+                    .unwrap_or(crate::eh::Handler::Other)
+            })
+        })
+    };
+    let (scanned, from_debug) = hexcavator_par::join(scan, || {
+        // Publics undecorated (mangled by whichever scheme: Microsoft's, Rust's
+        // and Swift's on Windows too, and Itanium's in a MinGW image's), each
+        // once, on every core.
+        let public_names: Vec<&str> = {
+            let mut v: Vec<&str> = shown
+                .iter()
+                .filter(|s| s.kind == DebugKind::Public && !s.name.starts_with("??_C@"))
+                .map(|s| s.name.as_str())
+                .collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        let undecorated: HashMap<&str, String> = public_names
+            .iter()
+            .copied()
+            .zip(hexcavator_par::map_chunks(&public_names, 1024, |part| {
+                let mut any = hexcavator_demangle::Demangler::new();
+                part.iter()
+                    .map(|n| {
+                        any.demangle(n, hexcavator_demangle::msvc::flags::NO_PTR64)
+                            .unwrap_or_else(|| (*n).to_string())
+                    })
+                    .collect()
+            }))
+            .collect();
+        // The publics at each address, for naming vtables.
+        let mut publics_at: HashMap<u64, Vec<&str>> = HashMap::default();
+        for s in shown.iter().filter(|s| s.kind == DebugKind::Public) {
+            publics_at.entry(s.addr).or_default().push(&s.name);
+        }
+        // (A namer for each thread: its own demangler.)
+        let (undecorated, publics_at) = (&undecorated, &publics_at);
+        let make_display = || {
+            let mut demangler = hexcavator_demangle::msvc::Demangler::default();
+            move |s: &DebugSymbol, kind: SymbolKind, size: u64, name: String| match kind {
+                SymbolKind::String => string_name(image, s.addr, size, &s.name).unwrap_or(name),
+                SymbolKind::Public => undecorated.get(name.as_str()).cloned().unwrap_or(name),
+                // A thunk is named by its public, if it has one (x86 C names keep
+                // their underscore), undecorated without access, `virtual`, return
+                // type, calling convention, `this` qualifiers, or class-keys:
+                // `[thunk]:C::f`adjustor{8}' (void)` (undname flags 0xA2E6).
+                SymbolKind::Thunk => match publics_at.get(&s.addr).and_then(|p| p.iter().min()) {
+                    Some(public) => {
+                        use hexcavator_demangle::msvc::flags::*;
+                        let flags = NO_ACCESS_SPECIFIERS
+                            | NO_MEMBER_TYPE
+                            | NO_FUNCTION_RETURNS
+                            | NO_MS_KEYWORDS
+                            | NO_THISTYPE
+                            | NO_ECSU
+                            | NO_PTR64;
+                        demangler
+                            .demangle(public, flags)
+                            .unwrap_or_else(|| public.to_string())
+                    }
+                    None => name,
+                },
+                // A vtable's data symbol records `X::`vftable'`; its public has the
+                // whole name, `X::`vftable'{for `Base'}`. Of several publics here
+                // (vtables folded together), the least name.
+                SymbolKind::Data if name.ends_with("`vftable'") => publics_at
+                    .get(&s.addr)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| {
+                        demangler.demangle(p, hexcavator_demangle::msvc::flags::NO_PTR64)
+                    })
+                    .map(|p| p.strip_prefix("const ").map(str::to_string).unwrap_or(p))
+                    .filter(|p| p.starts_with(name.as_str()))
+                    .min()
+                    .unwrap_or(name),
+                _ => name,
+            }
+        };
+        from_debug_symbols(&shown, &hidden, model, &make_display)
+    });
+
+    // Symbols for what the image itself describes.
+    let Some(pe) = image
+        .pe()
+        .filter(|_| image.kind() != hexcavator_image::Kind::Object)
+    else {
+        // (DWARF describes only what was compiled with it: the image's own
+        // symbols name the rest, as a PDB's publics do; and an object's
+        // symbols name what its CodeView doesn't.)
+        return Ok(with_image_symbols(image, model, from_debug));
+    };
     // Targets are named by the canonical (non-folded) symbol holding them.
     let canonical: Vec<&Symbol> = from_debug.iter().filter(|s| !s.folded).collect();
     let context = Targets {
         symbols: &canonical,
         handlers,
     };
-    let eh_symbols = crate::eh::symbols(pe, &context);
+    let eh_symbols = scanned.map(|s| s.named(&context)).unwrap_or_default();
     let pe_symbols = crate::pe_symbols::symbols(pe);
     let rsrc_symbols = crate::rsrc::symbols(pe);
 

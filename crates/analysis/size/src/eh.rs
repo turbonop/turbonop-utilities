@@ -67,9 +67,10 @@ pub trait Context {
     fn handler(&self, addr: u64) -> Handler;
 }
 
-struct Builder<'a, 'data, C: Context> {
+struct Builder<'a, 'data> {
     pe: &'a PeFile<'data>,
-    context: &'a C,
+    /// The handler whose code is at an address.
+    handler: &'a dyn Fn(u64) -> Handler,
     seen: HashSet<u64>,
     out: Vec<Symbol>,
     /// Each of `out`'s symbols' target (they are named last, in
@@ -78,8 +79,8 @@ struct Builder<'a, 'data, C: Context> {
     x64_gs_alignment: bool,
 }
 
-impl<C: Context> Builder<'_, '_, C> {
-    fn name(context: &C, kind: SymbolKind, target: u64) -> String {
+impl Builder<'_, '_> {
+    fn name(context: &impl Context, kind: SymbolKind, target: u64) -> String {
         let prefix = kind.prefix().unwrap_or("");
         match context.target_name(target) {
             Some(n) => format!("{prefix} {n}"),
@@ -134,7 +135,7 @@ impl<C: Context> Builder<'_, '_, C> {
         let data = info.handler_data().map(hexcavator_core::Rva::get);
         let extra = match (info.handler(), data) {
             (Some(handler), Some(data)) => {
-                let kind = self.context.handler(u64::from(handler.get()));
+                let kind = (self.handler)(u64::from(handler.get()));
                 self.handler_data(target, kind, data)
             }
             _ => 0,
@@ -153,7 +154,7 @@ impl<C: Context> Builder<'_, '_, C> {
         let extra = match handler {
             Some(h) => {
                 let h = if arm32 { h.get() & !1 } else { h.get() };
-                let kind = self.context.handler(u64::from(h));
+                let kind = (self.handler)(u64::from(h));
                 self.handler_data(target, kind, rva + size)
             }
             None => 0,
@@ -323,10 +324,22 @@ impl<C: Context> Builder<'_, '_, C> {
 
 /// The exception-handling symbols of `pe`.
 pub fn symbols(pe: &PeFile<'_>, context: &(impl Context + Sync)) -> Vec<Symbol> {
+    scan(pe, &|addr| context.handler(addr)).named(context)
+}
+
+/// The exception-handling symbols of `pe`, found (`handler`: the handler
+/// at an address), to be named (see [`Scanned::named`]).
+pub struct Scanned {
+    out: Vec<Symbol>,
+    targets: Vec<u64>,
+}
+
+/// [`symbols`], but for their names: what needs only the handlers.
+pub fn scan(pe: &PeFile<'_>, handler: &dyn Fn(u64) -> Handler) -> Scanned {
     let arm32 = pe.machine() == machine::ARMNT;
     let mut b = Builder {
         pe,
-        context,
+        handler,
         seen: HashSet::default(),
         out: Vec::new(),
         targets: Vec::new(),
@@ -377,17 +390,30 @@ pub fn symbols(pe: &PeFile<'_>, context: &(impl Context + Sync)) -> Vec<Symbol> 
             RuntimeFunction::Arm { .. } => {}
         }
     }
-    // Named on every core.
-    let mut named: Vec<(&mut Symbol, u64)> =
-        b.out.iter_mut().zip(b.targets.iter().copied()).collect();
-    hexcavator_par::for_each_chunk_mut(&mut named, 4096, |part| {
-        for (s, target) in part {
-            s.name = Builder::name(context, s.kind, *target);
-        }
-    });
-    drop(named);
-    b.out.sort_by_key(|s| s.addr);
-    b.out
+    Scanned {
+        out: b.out,
+        targets: b.targets,
+    }
+}
+
+impl Scanned {
+    /// The symbols, each named by what `context` says is at its target
+    /// (on every core), by address.
+    pub fn named(mut self, context: &(impl Context + Sync)) -> Vec<Symbol> {
+        let mut named: Vec<(&mut Symbol, u64)> = self
+            .out
+            .iter_mut()
+            .zip(self.targets.iter().copied())
+            .collect();
+        hexcavator_par::for_each_chunk_mut(&mut named, 4096, |part| {
+            for (s, target) in part {
+                s.name = Builder::name(context, s.kind, *target);
+            }
+        });
+        drop(named);
+        self.out.sort_by_key(|s| s.addr);
+        self.out
+    }
 }
 
 #[cfg(test)]

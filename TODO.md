@@ -28,11 +28,6 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   fully ABI-compatible with Apple's arm64e; build and ship one (a
   universal program with arm64) once it is tier 2, or sooner if it
   proves sound.
-- **What isn't read yet.** Threaded binds (arm64e's first ABI, iOS 12's:
-  `BIND_OPCODE_THREADED`) and `DYLD_CHAINED_PTR_ARM64E_SEGMENTED`
-  (firmware's), neither of which lld can make, for test inputs; and
-  `hexcavator size` names an arm64e image's architecture `arm64` (the
-  Model knows only the ISA).
 
 ## The web version
 

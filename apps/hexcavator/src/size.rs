@@ -1891,6 +1891,7 @@ fn analyze(options: &Options) -> Result<(), String> {
             write_tables(
                 &mut out,
                 &model,
+                &arch_label(&image, &model),
                 path,
                 &format!("Map: {}", map_path.display()),
                 options.top,
@@ -1958,6 +1959,7 @@ fn analyze(options: &Options) -> Result<(), String> {
         write_tables(
             &mut out,
             model,
+            &arch_label(&image, model),
             path,
             &format!(
                 "{}: {}",
@@ -2044,14 +2046,23 @@ fn or_unknown(name: &str) -> &str {
     if name.is_empty() { "[unknown]" } else { name }
 }
 
+/// The image's architecture, as the header names it: a Mach-O image's by
+/// its CPU subtype too (`arm64e`), others' by the ISA.
+fn arch_label(image: &Image<'_>, model: &Model) -> String {
+    match image {
+        Image::MachO(m) => hexcavator_macho::arch_name(m.header().cputype, m.header().cpusubtype),
+        _ => model.arch.map_or("unknown", |a| a.name()).to_string(),
+    }
+}
+
 fn write_tables(
     out: &mut impl Write,
     model: &Model,
+    arch: &str,
     image: &Path,
     source: &str,
     top: usize,
 ) -> io::Result<()> {
-    let arch = model.arch.map_or("unknown", |a| a.name());
     writeln!(out, "{} ({arch})", image.display())?;
     writeln!(out, "{source}")?;
     writeln!(out)?;

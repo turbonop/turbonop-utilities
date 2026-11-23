@@ -2023,3 +2023,15 @@ fn wasm_data() {
     );
     assert!(out.lines().any(|l| l.ends_with(" [linker]")), "{out}");
 }
+
+/// A Mach-O image is named by its CPU subtype too: arm64e, not arm64.
+#[test]
+fn arm64e_named_so() {
+    let macho = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/macho");
+    for (name, arch) in [("program-arm64e", "(arm64e)"), ("program-arm64", "(arm64)")] {
+        let p = macho.join(name);
+        let (ok, out, err) = hexcavator(&[p.as_os_str()]);
+        assert!(ok, "{err}");
+        assert!(out.lines().next().unwrap().ends_with(arch), "{out}");
+    }
+}

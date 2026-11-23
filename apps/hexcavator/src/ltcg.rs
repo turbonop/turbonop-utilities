@@ -23,6 +23,8 @@ options:
   -directives   the linker directives (default)
   -symbols      the functions and variables (default)
   -publics      of those, only the public definitions
+  -refs         what each function refers to: what it calls (directly or
+                virtually), reads or writes, and takes the address of
   -types        the CodeView type and id records
   -all          everything above
 
@@ -37,6 +39,7 @@ struct Options {
     symbols: bool,
     publics: bool,
     types: bool,
+    refs: bool,
 }
 
 pub fn run(args: &[String]) -> ExitCode {
@@ -52,6 +55,7 @@ pub fn run(args: &[String]) -> ExitCode {
             "symbols" => o.symbols = true,
             "publics" => o.publics = true,
             "types" => o.types = true,
+            "refs" => o.refs = true,
             "all" => {
                 o = Options {
                     headers: true,
@@ -61,6 +65,7 @@ pub fn run(args: &[String]) -> ExitCode {
                     symbols: true,
                     publics: false,
                     types: true,
+                    refs: true,
                 }
             }
             "h" | "help" => return crate::out::print(format!("{USAGE}\n").as_bytes()),
@@ -74,7 +79,15 @@ pub fn run(args: &[String]) -> ExitCode {
         ereport!("{USAGE}");
         return ExitCode::from(2);
     }
-    if !(o.headers || o.options || o.sources || o.directives || o.symbols || o.publics || o.types) {
+    if !(o.headers
+        || o.options
+        || o.sources
+        || o.directives
+        || o.symbols
+        || o.publics
+        || o.types
+        || o.refs)
+    {
         o = Options {
             headers: true,
             options: true,
@@ -83,6 +96,7 @@ pub fn run(args: &[String]) -> ExitCode {
             symbols: true,
             publics: false,
             types: false,
+            refs: false,
         };
     }
     let mut out = io::BufWriter::new(crate::out::stdout());
@@ -242,7 +256,7 @@ fn dump_object(
         }
         writeln!(out)?;
     }
-    let need_globals = o.sources || o.directives || o.symbols || o.publics;
+    let need_globals = o.sources || o.directives || o.symbols || o.publics || o.refs;
     let globals = if need_globals {
         match obj.globals() {
             Ok(g) => Some(g),
@@ -295,10 +309,17 @@ fn dump_object(
                 "    {:>6}  {:<8}  {:<9}  {:>6}  flags  {:<20}  name",
                 "id", "kind", "storage", "size", "attributes"
             )?;
-            for x in list {
-                symbol_line(out, x)?;
+            let il = obj.stream(b".cil$ex").map_or(0, <[u8]>::len);
+            let sizes = g.il_sizes(il);
+            for (i, x) in g.symbols.iter().enumerate() {
+                if !o.publics || o.symbols || x.storage().is_public_definition() {
+                    symbol_line(out, x, sizes[i])?;
+                }
             }
             writeln!(out)?;
+        }
+        if o.refs {
+            refs(out, g)?;
         }
     }
     if o.types {
@@ -310,7 +331,38 @@ fn dump_object(
     Ok(Ok(()))
 }
 
-fn symbol_line(out: &mut dyn Write, x: &ltcg::IlSymbol<'_>) -> io::Result<()> {
+/// What each function refers to, by name: calls, and uses.
+fn refs(out: &mut dyn Write, g: &ltcg::Globals<'_>) -> io::Result<()> {
+    let by_id: std::collections::HashMap<u32, &ltcg::IlSymbol<'_>> =
+        g.symbols.iter().map(|x| (x.id, x)).collect();
+    let with: Vec<_> = g.symbols.iter().filter(|x| x.il.is_some()).collect();
+    writeln!(out, "  References ({} functions)", with.len())?;
+    for x in with {
+        writeln!(out, "    {}", s(x.name))?;
+        for (id, kind) in x.il.iter().flat_map(ltcg::FunctionIl::refs) {
+            let target = by_id.get(&id);
+            let function = target.is_some_and(|t| matches!(t.kind, SymbolKind::Function { .. }));
+            let how = match kind {
+                ltcg::RefKind::Direct if function => "calls".to_string(),
+                ltcg::RefKind::Direct => "uses".to_string(),
+                ltcg::RefKind::Address => "takes the address of".to_string(),
+                ltcg::RefKind::Virtual => "calls virtually".to_string(),
+                ltcg::RefKind::Other(k) => format!("refers ({k}) to"),
+            };
+            match target {
+                Some(t) => writeln!(out, "      {how} {}", s(t.name))?,
+                None => writeln!(out, "      {how} symbol {id:X}")?,
+            }
+        }
+    }
+    writeln!(out)
+}
+
+fn symbol_line(
+    out: &mut dyn Write,
+    x: &ltcg::IlSymbol<'_>,
+    il_size: Option<u32>,
+) -> io::Result<()> {
     let mut attrs = Vec::new();
     let (kind, storage, size) = match x.kind {
         SymbolKind::Function {
@@ -332,7 +384,12 @@ fn symbol_line(out: &mut dyn Write, x: &ltcg::IlSymbol<'_>) -> io::Result<()> {
             if body && storage == Storage::Declared {
                 attrs.push("body");
             }
-            ("function", storage, String::new())
+            // (Its IL's size, if it has a body.)
+            (
+                "function",
+                storage,
+                il_size.map(|n| format!("{n:X}")).unwrap_or_default(),
+            )
         }
         SymbolKind::Data {
             storage,

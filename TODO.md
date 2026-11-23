@@ -38,15 +38,16 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 
 ## LTCG objects
 
-- **The IL's records, walked.** `hexcavator ltcg` finds `.cil$gl`'s functions
-  and variables by their records' heads, as the rest of each record's
-  grammar isn't known. Walked one after another, they would give each
-  function's IL (its offset and size in `.cil$ex`, so `hexcavator size` could
-  weigh a `/GL` library's functions), what each refers to (so the public
-  definitions could be told from inline functions nothing uses, as
-  lib.exe does), and their types.
-- **The other IL sections.** `.cil$ex`, `.cil$sy`, and `.cil$in` are
-  shown by size only.
+- **The rest of the IL's records.** A function with a body is read
+  whole (its IL's place and size, its types, what it refers to and
+  how); other records (declared functions, variables, the kinds of
+  record between them) are still found by their heads, and the byte
+  that grows with a body isn't known. With every record walked, `hexcavator
+  size` could weigh a `/GL` library's functions, and the public
+  definitions could be told from inline functions nothing refers to,
+  as lib.exe tells them.
+- **The other IL sections.** `.cil$ex` (each function's IL), `.cil$sy`
+  (its locals), and `.cil$in`: their contents.
 
 ## Speed
 

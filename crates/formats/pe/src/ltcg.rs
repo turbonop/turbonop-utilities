@@ -22,7 +22,30 @@
 //!
 //! Symbols are found by their records' heads (tag, id, flags, name, and
 //! the attributes that follow): the records' full grammar is not known,
-//! so they are not walked one after another.
+//! so they are not walked one after another. A function with a body
+//! (tag 0x0E) has more after its attributes, worked out from objects
+//! that differ by a function, a call, or a body's length:
+//!
+//! - two 32-bit fields, the second the kind of function (0 a free
+//!   function, 1 a virtual one, 2 a constructor, 3 a destructor), and a
+//!   few bytes more for a member function;
+//! - its type's index and its id's (`.cil$db`'s `LF_PROCEDURE` or
+//!   `LF_MFUNCTION`, and its `LF_FUNC_ID`), a compressed value and 32
+//!   bits;
+//! - its IL's offset in `.cil$ex` and its local symbols' in `.cil$sy`
+//!   (compressed; the bodies follow one another in the records' order,
+//!   after `.cil$ex`'s header, so each one's size is the distance to the
+//!   next);
+//! - a byte that grows with the body (what it counts is not known), and
+//!   eight bytes;
+//! - its parameter count (`this` counted), and what it refers to: a
+//!   count, then each symbol's id and how (1 directly: a call, or a
+//!   variable read or written; 2 its address taken; 0 a virtual call,
+//!   through the vtable).
+//!
+//! (Checked against `tools/coff/ltcg.cpp`: `exported` calls what it
+//! calls, reads `counter`, `banner`, and `elsewhere`, takes its string
+//! literals' addresses, and calls `area` virtually.)
 
 use alloc::vec::Vec;
 use hexcavator_core::{Error, ErrorKind, Result};
@@ -351,6 +374,61 @@ pub enum SymbolKind {
     },
 }
 
+/// What a function with a body (tag 0x0E) records of it: see the module's
+/// documentation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FunctionIl<'data> {
+    /// Its type's index in `.cil$db` (an `LF_PROCEDURE` or `LF_MFUNCTION`).
+    pub type_index: u32,
+    /// Its id record's index in `.cil$db` (an `LF_FUNC_ID` or
+    /// `LF_MFUNC_ID`).
+    pub id_index: u32,
+    /// Where its IL starts in `.cil$ex`.
+    pub il_offset: u32,
+    /// Where its local symbols start in `.cil$sy`.
+    pub symbols_offset: u32,
+    /// How many parameters it takes (`this` counted).
+    pub params: u8,
+    /// What it refers to: each symbol's id, and how.
+    refs: &'data [u8],
+    ref_count: u8,
+}
+
+/// How a function refers to a symbol.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefKind {
+    /// Directly: it calls the function, or reads or writes the variable.
+    Direct,
+    /// It takes its address.
+    Address,
+    /// It calls the virtual function through a vtable.
+    Virtual,
+    Other(u8),
+}
+
+impl RefKind {
+    fn of(b: u8) -> Self {
+        match b {
+            0 => Self::Virtual,
+            1 => Self::Direct,
+            2 => Self::Address,
+            other => Self::Other(other),
+        }
+    }
+}
+
+impl FunctionIl<'_> {
+    /// What it refers to: each symbol's id (as [`IlSymbol::id`]), and how.
+    pub fn refs(&self) -> impl Iterator<Item = (u32, RefKind)> + '_ {
+        let mut r = Reader { d: self.refs, p: 0 };
+        (0..self.ref_count).map_while(move |_| {
+            let id = r.id()?;
+            let kind = r.u8()?;
+            Some((id, RefKind::of(kind)))
+        })
+    }
+}
+
 /// A function or variable in the global symbol table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IlSymbol<'data> {
@@ -365,6 +443,8 @@ pub struct IlSymbol<'data> {
     /// Its decorated name (x86 C names without the leading underscore).
     pub name: &'data [u8],
     pub kind: SymbolKind,
+    /// A function with a body: its IL, type, and what it refers to.
+    pub il: Option<FunctionIl<'data>>,
 }
 
 impl IlSymbol<'_> {
@@ -381,6 +461,28 @@ pub struct Globals<'data> {
     pub source_files: Vec<SourceFile<'data>>,
     pub symbols: Vec<IlSymbol<'data>>,
     pub directives: Vec<Directive<'data>>,
+}
+
+impl Globals<'_> {
+    /// Each symbol's IL size (a function with a body's; `None` for the
+    /// rest), in the order of [`Globals::symbols`]: from its offset in
+    /// `.cil$ex` (`il_len` bytes long) to the next body's, or the end.
+    pub fn il_sizes(&self, il_len: usize) -> Vec<Option<u32>> {
+        let mut at: Vec<(u32, usize)> = self
+            .symbols
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| Some((s.il?.il_offset, i)))
+            .collect();
+        at.sort_unstable();
+        let mut out = alloc::vec![None; self.symbols.len()];
+        let end = u32::try_from(il_len).unwrap_or(u32::MAX);
+        for (k, &(offset, i)) in at.iter().enumerate() {
+            let next = at.get(k + 1).map_or(end, |n| n.0);
+            out[i] = next.checked_sub(offset);
+        }
+        out
+    }
 }
 
 /// The size of `.cil$gl`'s header.
@@ -622,6 +724,7 @@ impl<'data> Globals<'data> {
             return None;
         }
         let end = r.p;
+        let attrs_at = r.p;
         let a = g.get(r.p..r.p + 6)?;
         // (The first attribute: the value's machine type, 0x80-0x8F.)
         if a[0] & 0xF0 != 0x80 {
@@ -666,6 +769,11 @@ impl<'data> Globals<'data> {
                 size: size.into(),
             }
         };
+        let il = if tag == 0x0E {
+            Self::function_il(g, attrs_at + 6)
+        } else {
+            None
+        };
         Some((
             IlSymbol {
                 offset: p,
@@ -673,9 +781,48 @@ impl<'data> Globals<'data> {
                 flags,
                 name,
                 kind,
+                il,
             },
             end,
         ))
+    }
+
+    /// A function body's record after its attributes (at `p`): see the
+    /// module's documentation. The bytes a member function has before its
+    /// type are skipped to its type's index and its id's: a compressed
+    /// type index (`0x80`, then 32 bits) and an id index after it, both
+    /// past `.cil$db`'s first index and the id past the type.
+    fn function_il(g: &'data [u8], p: usize) -> Option<FunctionIl<'data>> {
+        let first = Types::FIRST_INDEX;
+        let at = (p + 8..p + 24).find(|&q| {
+            g.get(q) == Some(&0x80)
+                && matches!(
+                    (u32_at(g, q + 1), u32_at(g, q + 5)),
+                    (Some(t), Some(i)) if t >= first && t < 0x0100_0000 && i > t && i < 0x0100_0000
+                )
+        })?;
+        let mut r = Reader { d: g, p: at };
+        let type_index = r.c32()?;
+        let id_index = r.u32()?;
+        let il_offset = r.c32()?;
+        let symbols_offset = r.c32()?;
+        r.p += 1 + 8;
+        let params = r.u8()?;
+        let ref_count = r.u8()?;
+        let start = r.p;
+        for _ in 0..ref_count {
+            r.id()?;
+            r.u8()?;
+        }
+        Some(FunctionIl {
+            type_index,
+            id_index,
+            il_offset,
+            symbols_offset,
+            params,
+            refs: g.get(start..r.p)?,
+            ref_count,
+        })
     }
 }
 

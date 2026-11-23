@@ -507,8 +507,10 @@ impl<'data> PdbInfo<'data> {
         }
 
         // Copies without a compiland sort after those with one, so that
-        // `dedup_by` keeps the one with.
-        hexcavator_par::sort_by(&mut out, |a, b| {
+        // `dedup_by` keeps the one with. (Small keys sorted, the rest of
+        // the order only where they tie; then each symbol moved once,
+        // rather than through every merge.)
+        let full = |a: &DebugSymbol, b: &DebugSymbol| {
             (
                 a.addr,
                 a.kind,
@@ -525,7 +527,22 @@ impl<'data> PdbInfo<'data> {
                     b.compiland.is_none(),
                     b.compiland,
                 ))
+        };
+        let mut keys: Vec<(u64, SymbolKind, u32)> = out
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.addr, s.kind, u32::try_from(i).unwrap_or(u32::MAX)))
+            .collect();
+        hexcavator_par::sort_by(&mut keys, |a, b| {
+            (a.0, a.1)
+                .cmp(&(b.0, b.1))
+                .then_with(|| full(&out[a.2 as usize], &out[b.2 as usize]))
         });
+        let mut slots: Vec<Option<DebugSymbol>> = out.into_iter().map(Some).collect();
+        let mut out: Vec<DebugSymbol> = keys
+            .iter()
+            .filter_map(|&(_, _, i)| slots[i as usize].take())
+            .collect();
         // The same symbol from two places: a module's static and its copy
         // in the global stream (which has no compiland), say. (Overloads
         // folded together in one module share an address and a name, but

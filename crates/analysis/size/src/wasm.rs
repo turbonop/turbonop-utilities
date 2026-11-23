@@ -219,7 +219,8 @@ pub fn maps_with_source_map(
                 map.fill_from(&base, |_| l);
             }
             Source::Archs => {
-                let l = labels.intern("wasm32");
+                // (A module with a 64-bit memory: wasm64.)
+                let l = labels.intern(if m.is_memory64() { "wasm64" } else { "wasm32" });
                 map.fill_from(&base, |_| l);
             }
             Source::CompileUnits | Source::Inlines | Source::SourceFiles
@@ -491,6 +492,10 @@ mod tests {
         assert_eq!(symbols["log"], names[0].size);
         assert!(symbols.contains_key("[section Code]"));
         assert_eq!(file_totals(&maps, 2)["wasm32"], data.len() as u64);
+        // A module with a 64-bit memory (one page, the memory64 flag): wasm64.
+        let m64 = b"\0asm\x01\0\0\0\x05\x03\x01\x04\x01";
+        let maps64 = super::maps(m64, "m64.wasm", &[Source::Archs]).unwrap();
+        assert_eq!(file_totals(&maps64, 0)["wasm64"], m64.len() as u64);
         assert!(super::maps(b"\0asm", "x", &all).is_err());
     }
 

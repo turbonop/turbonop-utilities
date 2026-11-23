@@ -641,22 +641,27 @@ pub fn maps(image: &Image<'_>, inputs: Inputs<'_>, sources: &[Source]) -> Maps {
             Source::Symbols | Source::RawSymbols | Source::FullSymbols | Source::Crates => {
                 pe_header_symbols(pe, &mut labels, &mut map, &base);
                 if let Some(symbols) = inputs.symbols {
-                    for s in symbols.iter().filter(|s| !s.folded) {
+                    let kept: Vec<_> = symbols
+                        .iter()
+                        .filter(|s| !s.folded && s.size.vm.max(s.size.file) > 0)
+                        .collect();
+                    // A function's exception data (`[pdata] f`, `[unwind]
+                    // f`, its C++ EH tables) is charged to the function, as
+                    // ELF's unwind entries are; the sections source still
+                    // tells them apart.
+                    let names: Vec<&str> = kept
+                        .iter()
+                        .map(|s| {
+                            s.kind
+                                .prefix()
+                                .and_then(|p| s.name.strip_prefix(p))
+                                .and_then(|n| n.strip_prefix(' '))
+                                .unwrap_or(&s.name)
+                        })
+                        .collect();
+                    let ls = labels.intern_many(&names);
+                    for (s, l) in kept.iter().zip(ls) {
                         let size = s.size.vm.max(s.size.file);
-                        if size == 0 {
-                            continue;
-                        }
-                        // A function's exception data (`[pdata] f`,
-                        // `[unwind] f`, its C++ EH tables) is charged to
-                        // the function, as ELF's unwind entries are; the
-                        // sections source still tells them apart.
-                        let name = s
-                            .kind
-                            .prefix()
-                            .and_then(|p| s.name.strip_prefix(p))
-                            .and_then(|n| n.strip_prefix(' '))
-                            .unwrap_or(&s.name);
-                        let l = labels.intern(name);
                         map.add_vm(s.addr, s.addr.saturating_add(size), l, &base);
                     }
                     pe_references(pe, symbols, &mut map, &base);

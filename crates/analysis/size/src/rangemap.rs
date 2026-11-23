@@ -13,10 +13,22 @@ use std::sync::Arc;
 use hexcavator_hash::Map;
 
 /// Interned labels.
+///
+/// The index is by each name's hash (computed once, and for a batch of
+/// names on every core: see [`Labels::intern_many`]), the names compared
+/// on a match; names whose hashes collide with another's are indexed by
+/// name apart.
 #[derive(Clone, Debug, Default)]
 pub struct Labels {
     names: Vec<Arc<str>>,
-    index: Map<Arc<str>, u32>,
+    index: Map<u64, u32>,
+    collided: Map<Arc<str>, u32>,
+}
+
+/// A name's hash, for the index.
+fn name_hash(name: &str) -> u64 {
+    use std::hash::BuildHasher;
+    hexcavator_hash::State::default().hash_one(name)
 }
 
 /// A label's index in its [`Labels`].
@@ -24,14 +36,44 @@ pub type Label = u32;
 
 impl Labels {
     pub fn intern(&mut self, name: &str) -> Label {
-        if let Some(&i) = self.index.get(name) {
-            return i;
+        let h = name_hash(name);
+        self.intern_hashed(name, h, |n| Arc::from(n))
+    }
+
+    /// Each name's label, interning those new: the names hashed on every
+    /// core first (a big program's symbols: most of the time interning
+    /// takes is hashing their long names).
+    pub fn intern_many(&mut self, names: &[&str]) -> Vec<Label> {
+        let hashes = hexcavator_par::map(names, 16 * 1024, |n| name_hash(n));
+        names
+            .iter()
+            .zip(hashes)
+            .map(|(n, h)| self.intern_hashed(n, h, |n| Arc::from(n)))
+            .collect()
+    }
+
+    fn intern_hashed(&mut self, name: &str, h: u64, make: impl FnOnce(&str) -> Arc<str>) -> Label {
+        let next = || u32::try_from(self.names.len()).expect("fewer than 2^32 labels");
+        match self.index.get(&h) {
+            Some(&i) if &*self.names[i as usize] == name => i,
+            Some(_) => {
+                // (Another name with this hash: by name.)
+                if let Some(&i) = self.collided.get(name) {
+                    return i;
+                }
+                let i = next();
+                let name = make(name);
+                self.names.push(name.clone());
+                self.collided.insert(name, i);
+                i
+            }
+            None => {
+                let i = next();
+                self.names.push(make(name));
+                self.index.insert(h, i);
+                i
+            }
         }
-        let i = u32::try_from(self.names.len()).expect("fewer than 2^32 labels");
-        let name: Arc<str> = name.into();
-        self.names.push(name.clone());
-        self.index.insert(name, i);
-        i
     }
 
     pub fn name(&self, label: Label) -> &str {
@@ -115,6 +157,39 @@ impl RangeMap {
         self.scratch = gaps;
     }
 
+    /// Labels what is unlabeled of each of `base`'s ranges (disjoint, as a
+    /// map's are) with the label `f` gives its, as [`RangeMap::add_dual`]
+    /// of each would: in one pass, the new entries merged in at once
+    /// (thousands of gaps between a map's symbols, each inserted alone,
+    /// was most of filling).
+    pub fn fill_from(&mut self, base: &RangeMap, mut f: impl FnMut(Label) -> Label) {
+        let mut fresh: Vec<(u64, Value)> = Vec::new();
+        let mut gaps = std::mem::take(&mut self.scratch);
+        for e in base.iter() {
+            let label = f(e.label);
+            self.gaps_into(e.start, e.end, &mut gaps);
+            fresh.extend(gaps.iter().map(|&(s, end)| {
+                let other = e.other.map(|o| o.wrapping_add(s - e.start));
+                (s, Value { end, label, other })
+            }));
+        }
+        self.scratch = gaps;
+        match fresh.len() {
+            0 => {}
+            // (A few: inserted.)
+            n if n < 64 || n * 8 < self.map.len() => self.map.extend(fresh),
+            // (Many: the map rebuilt from both, in order, at once.)
+            _ => {
+                let mut all: Vec<(u64, Value)> =
+                    std::mem::take(&mut self.map).into_iter().collect();
+                all.extend(fresh);
+                // (Two runs in order: the stable sort merges them.)
+                all.sort_by_key(|&(s, _)| s);
+                self.map = all.into_iter().collect();
+            }
+        }
+    }
+
     /// The unlabeled parts of `[start, end)`.
     pub fn gaps(&self, start: u64, end: u64) -> Vec<(u64, u64)> {
         let mut out = Vec::new();
@@ -142,18 +217,20 @@ impl RangeMap {
         {
             cur = v.end;
         }
-        while cur < end {
-            match self.map.range(cur..end).next() {
-                Some((&s, v)) => {
-                    if s > cur {
-                        out.push((cur, s));
-                    }
-                    cur = v.end;
+        // (One walk through the entries within: they are disjoint and in
+        // order, so each gap is between one's end and the next's start.)
+        if cur < end {
+            for (&s, v) in self.map.range(cur..end) {
+                if s > cur {
+                    out.push((cur, s));
                 }
-                None => {
-                    out.push((cur, end));
+                cur = cur.max(v.end);
+                if cur >= end {
                     break;
                 }
+            }
+            if cur < end {
+                out.push((cur, end));
             }
         }
     }
@@ -434,14 +511,8 @@ impl DualMap {
     /// Labels everything `base` labels that this map doesn't, with the
     /// label `fallback` gives `base`'s label (bloaty's `[section .text]`).
     pub fn fill_from(&mut self, base: &DualMap, mut fallback: impl FnMut(Label) -> Label) {
-        for e in base.vm.iter() {
-            let label = fallback(e.label);
-            self.vm.add_dual(e.start, e.end, e.other, label);
-        }
-        for e in base.file.iter() {
-            let label = fallback(e.label);
-            self.file.add_dual(e.start, e.end, e.other, label);
-        }
+        self.vm.fill_from(&base.vm, &mut fallback);
+        self.file.fill_from(&base.file, &mut fallback);
     }
 }
 

@@ -146,6 +146,9 @@ pub const DYLD_CHAINED_PTR_ARM64E_FIRMWARE: u16 = 10;
 pub const DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE: u16 = 11;
 pub const DYLD_CHAINED_PTR_ARM64E_USERLAND24: u16 = 12;
 pub const DYLD_CHAINED_PTR_ARM64E_SHARED_CACHE: u16 = 13;
+/// Firmware's: rebases only, each a segment's index and an offset in it
+/// (stride 4).
+pub const DYLD_CHAINED_PTR_ARM64E_SEGMENTED: u16 = 14;
 const DYLD_CHAINED_PTR_START_NONE: u16 = 0xFFFF;
 const DYLD_CHAINED_PTR_START_MULTI: u16 = 0x8000;
 const DYLD_CHAINED_PTR_START_LAST: u16 = 0x8000;
@@ -534,6 +537,16 @@ impl<'d> MachO<'d> {
                     };
                     (kind, next)
                 }
+                DYLD_CHAINED_PTR_ARM64E_SEGMENTED => {
+                    if bits(v, 63, 1) == 1 {
+                        auth = Some(signed(v));
+                    }
+                    let target = segments
+                        .get(index(bits(v, 28, 4)))
+                        .map_or(0, |s| s.vmaddr)
+                        .wrapping_add(bits(v, 0, 28));
+                    (FixupKind::Rebase { target }, bits(v, 51, 12))
+                }
                 DYLD_CHAINED_PTR_64_KERNEL_CACHE | DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE => {
                     if bits(v, 63, 1) == 1 {
                         auth = Some(signed(v));
@@ -701,6 +714,12 @@ impl<'d> MachO<'d> {
         let mut weak = false;
         let mut addend = 0i64;
         let (mut seg, mut offset) = (None::<usize>, 0u64);
+        // Threaded binds (arm64e's first ABI, before chained fixups): the
+        // binds after BIND_SUBOPCODE_THREADED_SET_BIND_ORDINAL_TABLE_SIZE
+        // fill a table of imports, and each APPLY walks a chain of
+        // DYLD_CHAINED_PTR_ARM64E pointers (rebases and binds of that
+        // table) from the current segment and offset.
+        let mut threaded: Option<Vec<Import<'d>>> = None;
         let bind = |seg: Option<usize>,
                     offset: u64,
                     symbol: &'d [u8],
@@ -769,6 +788,17 @@ impl<'d> MachO<'d> {
                     offset = offset.wrapping_add(o);
                 }
                 0x90 => {
+                    if let Some(table) = &mut threaded {
+                        if table.len() < MAX_ENTRIES {
+                            table.push(Import {
+                                symbol,
+                                library,
+                                addend,
+                                weak,
+                            });
+                        }
+                        continue;
+                    }
                     if !bind(seg, offset, symbol, library, addend, weak, out) {
                         return;
                     }
@@ -798,7 +828,38 @@ impl<'d> MachO<'d> {
                         offset = offset.wrapping_add(skip).wrapping_add(w);
                     }
                 }
-                // (Threaded binds, of arm64e's first ABI: not read.)
+                // BIND_OPCODE_THREADED.
+                0xD0 => match imm {
+                    // ..._SET_BIND_ORDINAL_TABLE_SIZE_ULEB
+                    0x00 => {
+                        let Some(n) = c.uleb() else { return };
+                        threaded = Some(Vec::with_capacity(index(n).min(MAX_ENTRIES)));
+                    }
+                    // ..._APPLY
+                    0x01 => {
+                        let (Some(table), Some(s)) = (&threaded, seg.and_then(|i| segments.get(i)))
+                        else {
+                            return;
+                        };
+                        let start = s.vmaddr.wrapping_add(offset);
+                        let base = Self::base_address(segments);
+                        self.chain(
+                            segments,
+                            table,
+                            DYLD_CHAINED_PTR_ARM64E,
+                            0,
+                            start,
+                            u64::MAX,
+                            0,
+                            base,
+                            out,
+                        );
+                        if out.len() >= limit {
+                            return;
+                        }
+                    }
+                    _ => return,
+                },
                 _ => return,
             }
         }

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>App test</title>
+<style>html, body, iframe { margin: 0; width: 100%; height: 100%; border: 0; }</style>
+<iframe id="app"></iframe>
+<script>
+// The web version end to end, in the page as a person would use it: a
+// binary and its PDB opened (as if dropped), the sidebar's entry and its
+// tools, then the Symbols page (the extension's own view, in its webview)
+// with the binary's functions in it, and a text tool's output. What it
+// finds is posted to the test server (serve.py's /__report).
+(async () => {
+  const report = (v) => fetch("/__report", { method: "POST", body: JSON.stringify(v) });
+  const log = (v) => fetch("/__log", { method: "POST", body: String(v) });
+  const frame = document.getElementById("app");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const until = async (what, f, ms = 30000) => {
+    const t = Date.now();
+    for (;;) {
+      const v = await f();
+      if (v) {
+        return v;
+      }
+      if (Date.now() - t > ms) {
+        throw new Error(`timed out: ${what}`);
+      }
+      await sleep(100);
+    }
+  };
+  const out = {};
+  try {
+    const exe = "/testdata/xref/xref-x64.exe";
+    frame.src = `../index.html?theme=dark&open=${exe},/testdata/xref/xref-x64.pdb`;
+    await until("load", () => frame.contentDocument && frame.contentDocument.readyState === "complete");
+    const w = frame.contentWindow;
+    const d = () => frame.contentDocument;
+    await until("ready", () => w.hexcavatorReady);
+    const rows = () => [...d().querySelectorAll(".tree-row")].map((r) => r.textContent.trim());
+    // The entry, expanded: its tools (as the sidebar lists them).
+    await until("the entry", () => rows().some((r) => r.startsWith("xref-x64.exe")));
+    await until("its tools", () => rows().length > 3, 60000);
+    out.tree = rows().slice(0, 40);
+    out.isolated = w.crossOriginIsolated;
+    // The Symbols page (Show in Treemap: the report).
+    const t0 = performance.now();
+    await w.HexcavatorVscode.api.commands.executeCommand("hexcavator.showReport", { type: "entry", entry: { file: "/files/xref-x64.exe", base: null } });
+    const tabs = () => [...d().querySelectorAll(".tab")].map((t) => t.textContent.trim());
+    await until("a tab", () => tabs().length > 0);
+    const view = () => d().querySelector(".editor:not([hidden]) iframe.webview");
+    const page = await until("its page", () => view() && view().contentDocument && view().contentDocument.body);
+    await until("its rows", () => /main|dead_helper/.test(view().contentDocument.body.innerText || ""), 60000);
+    out.symbolsMs = Math.round(performance.now() - t0);
+    out.tabs = tabs();
+    out.symbols = (view().contentDocument.body.innerText || "").slice(0, 1500);
+    // The tree as a person uses it: Headers expanded, its first tool
+    // clicked (its output, a text tab).
+    const row = (text) => [...d().querySelectorAll(".tree-row")].find((r) => r.textContent.trim() === text);
+    const tabsBefore = tabs().length;
+    row("Headers").click();
+    await until("its tab", () => tabs().length > tabsBefore, 60000);
+    await until("its output", () => {
+      const ed = d().querySelector(".editor:not([hidden])");
+      const t = ed && (ed.querySelector("pre.text") ? ed.querySelector("pre.text").textContent : ed.querySelector("iframe") && ed.querySelector("iframe").contentDocument && ed.querySelector("iframe").contentDocument.body && ed.querySelector("iframe").contentDocument.body.innerText);
+      return t && t.length > 40 && !/Reading|Running/.test(t.slice(0, 40)) ? (out.text = t.slice(0, 600)) : null;
+    }, 60000);
+    out.tabs = tabs();
+    // A row's context menu (its data-vscode-context, the manifest's
+    // webview/context entries): Disassemble opens main's code.
+    d().querySelectorAll(".tab")[0].click();
+    const vd = view().contentDocument;
+    const mainRow = await until("main's row", () => [...vd.querySelectorAll("[data-vscode-context]")].find((r) => /main\(int, char\*\*\)/.test(r.textContent)));
+    mainRow.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 40 }));
+    const items = await until("the menu", () => {
+      const m = d().querySelector(".menu");
+      return m && [...m.querySelectorAll(".menu-item")];
+    });
+    out.menu = items.map((i) => i.textContent);
+    const tabsNow = tabs().length;
+    items.find((i) => /Disassemble/.test(i.textContent)).click();
+    await until("main's code", () => tabs().length > tabsNow, 60000);
+    const code = await until("its listing", () => {
+      const f = view();
+      const t = f && f.contentDocument && f.contentDocument.body && f.contentDocument.body.innerText;
+      return t && /call/.test(t) ? t : null;
+    }, 60000);
+    out.disasm = code.slice(0, 300);
+    out.tabs = tabs();
+    out.status = d().getElementById("status").textContent.trim();
+    out.toasts = [...d().querySelectorAll(".toast")].map((t) => t.textContent);
+    await report(out);
+  } catch (e) {
+    out.error = String(e.stack || e);
+    try {
+      const d = frame.contentDocument;
+      out.tree = [...d.querySelectorAll(".tree-row")].map((r) => r.textContent.trim());
+      out.toasts = [...d.querySelectorAll(".toast")].map((t) => t.textContent);
+      out.tabs = [...d.querySelectorAll(".tab")].map((t) => t.textContent.trim());
+    } catch {}
+    await report(out);
+  }
+})();
+</script>

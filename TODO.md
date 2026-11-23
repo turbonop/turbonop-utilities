@@ -36,6 +36,13 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 
 ## The web version
 
+- **An allocator for WebAssembly's threads.** wasi-libc's dlmalloc (the
+  wasm32-wasip1-threads allocator) takes one lock for every thread's
+  allocations: past two threads, they wait more than they work
+  (llvm-objdump.exe's `inlines`: 1.4 s on one thread, 1.0 s on two, 2.4
+  s on eight; natively, 0.2 s), so the web version runs two. A
+  thread-caching allocator (per-thread size-class caches over the
+  shared heap) would let it use every core.
 - **Reading files piecewise.** WebAssembly's 32-bit address space (4
   GiB, and the browser's copy of each file besides) won't hold clang.exe
   and its 1.1 GB PDB with everything built from them; and 64-bit memory

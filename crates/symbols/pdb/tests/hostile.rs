@@ -149,3 +149,34 @@ fn a_procedure_whose_arguments_are_itself() {
     );
     read_all(&types);
 }
+
+/// A real PDB read by range (a source) reads as it does from its bytes:
+/// its streams, its modules' symbols, and its types.
+#[test]
+fn a_pdb_read_by_range_is_the_same() {
+    let data = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/test-x64.pdb"
+    ))
+    .unwrap();
+    let mapped = hexcavator_pdb::Pdb::parse(&data).unwrap();
+    let source: &dyn hexcavator_core::Source = &data;
+    let read = hexcavator_pdb::Pdb::parse_source(source).unwrap();
+    assert_eq!(read.info().guid(), mapped.info().guid());
+    let (m, r) = (mapped.msf(), read.msf());
+    assert_eq!(m.stream_count(), r.stream_count());
+    for i in 0..u32::try_from(m.stream_count()).unwrap() {
+        assert_eq!(
+            m.stream_or_empty(i).unwrap(),
+            r.stream_or_empty(i).unwrap(),
+            "stream {i}"
+        );
+    }
+    assert_eq!(mapped.sections().unwrap(), read.sections().unwrap());
+    assert_eq!(
+        mapped.types().unwrap().iter().count(),
+        read.types().unwrap().iter().count()
+    );
+    assert!(read.types().unwrap().iter().count() > 0);
+    assert_eq!(mapped.symbol_records(), read.symbol_records());
+}

@@ -4,10 +4,76 @@
 //! each numbered stream, its size and the blocks that hold it. Streams are
 //! usually laid out contiguously by the linker; those are borrowed straight
 //! from the file. Fragmented streams are gathered into an owned buffer.
+//!
+//! The file is its bytes (mapped), or a [`Source`] that reads them by range
+//! as they are asked for (where nothing can be mapped: WebAssembly), whose
+//! streams are read whole when asked for, one at a time: what a command
+//! doesn't read of the file is never read.
 
 use std::borrow::Cow;
 
-use hexcavator_core::{Error, ErrorKind, Result, U32Le, pod, read_at, read_slice_at};
+use hexcavator_core::{Error, ErrorKind, Result, Source, U32Le, pod, read_at, read_slice_at};
+
+/// The file: its bytes, or a source that reads them by range.
+#[derive(Clone, Copy)]
+enum Bytes<'data> {
+    Mapped(&'data [u8]),
+    Read(&'data dyn Source),
+}
+
+impl std::fmt::Debug for Bytes<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Bytes::Mapped(d) => write!(f, "Mapped({} bytes)", d.len()),
+            Bytes::Read(s) => write!(f, "Read({} bytes)", s.len()),
+        }
+    }
+}
+
+impl<'data> Bytes<'data> {
+    fn len(&self) -> u64 {
+        match self {
+            Bytes::Mapped(d) => <[u8]>::len(d) as u64,
+            Bytes::Read(s) => s.len(),
+        }
+    }
+
+    /// `len` bytes at `offset`: borrowed from the mapped file, or read.
+    fn get(&self, offset: u64, len: u64) -> Result<Cow<'data, [u8]>> {
+        match *self {
+            Bytes::Mapped(d) => hexcavator_core::bytes_at(d, offset, len).map(Cow::Borrowed),
+            Bytes::Read(s) => {
+                let short = || Error::new(ErrorKind::Truncated, offset, "MSF block");
+                if offset.checked_add(len).is_none_or(|end| end > s.len()) {
+                    return Err(short());
+                }
+                let mut out = vec![0u8; usize::try_from(len).map_err(|_| short())?];
+                if s.fill(offset, &mut out) {
+                    Ok(Cow::Owned(out))
+                } else {
+                    Err(short())
+                }
+            }
+        }
+    }
+
+    /// Fills `dest` with the bytes at `offset`.
+    fn copy(&self, offset: u64, dest: &mut [u8]) -> Result<()> {
+        match *self {
+            Bytes::Mapped(d) => {
+                dest.copy_from_slice(hexcavator_core::bytes_at(d, offset, dest.len() as u64)?);
+                Ok(())
+            }
+            Bytes::Read(s) => {
+                if s.fill(offset, dest) {
+                    Ok(())
+                } else {
+                    Err(Error::new(ErrorKind::Truncated, offset, "MSF block"))
+                }
+            }
+        }
+    }
+}
 
 /// The signature of an MSF 7.00 ("big MSF") file.
 pub const MAGIC: &[u8; 32] = b"Microsoft C/C++ MSF 7.00\r\n\x1aDS\0\0\0";
@@ -37,7 +103,7 @@ struct StreamEntry {
 /// A parsed MSF file.
 #[derive(Debug)]
 pub struct Msf<'data> {
-    data: &'data [u8],
+    data: Bytes<'data>,
     block_size: u32,
     directory: Cow<'data, [u8]>,
     /// Offset in `directory` of the first block index.
@@ -56,7 +122,17 @@ pub const BLOCK_SIZES: [u32; 7] = [512, 1024, 2048, 4096, 8192, 16384, 32768];
 
 impl<'data> Msf<'data> {
     pub fn parse(data: &'data [u8]) -> Result<Self> {
-        let sb: &SuperBlock = read_at(data, 0)?;
+        Self::of(Bytes::Mapped(data))
+    }
+
+    /// The MSF a source reads (by range: a file not mapped).
+    pub fn parse_source(source: &'data dyn Source) -> Result<Self> {
+        Self::of(Bytes::Read(source))
+    }
+
+    fn of(data: Bytes<'data>) -> Result<Self> {
+        let head = data.get(0, size_of::<SuperBlock>() as u64)?;
+        let sb: &SuperBlock = read_at(&head, 0)?;
         if &sb.magic != MAGIC {
             return Err(Error::new(ErrorKind::BadMagic, 0, "MSF superblock"));
         }
@@ -69,8 +145,8 @@ impl<'data> Msf<'data> {
         // is larger than the file, and the streams together hold no more
         // blocks than it has. (A hostile block list that names one block
         // over and over could otherwise ask for gigabytes.)
-        let file_blocks = (data.len() as u64).div_ceil(u64::from(block_size));
-        if u64::from(dir_bytes) > data.len() as u64 {
+        let file_blocks = data.len().div_ceil(u64::from(block_size));
+        if u64::from(dir_bytes) > data.len() {
             return Err(Error::new(
                 ErrorKind::Malformed,
                 44,
@@ -79,7 +155,8 @@ impl<'data> Msf<'data> {
         }
         let dir_blocks = dir_bytes.div_ceil(block_size);
         let map_offset = u64::from(sb.block_map_addr.get()) * u64::from(block_size);
-        let dir_block_list: &[U32Le] = read_slice_at(data, map_offset, u64::from(dir_blocks))?;
+        let list_bytes = data.get(map_offset, u64::from(dir_blocks) * 4)?;
+        let dir_block_list: &[U32Le] = read_slice_at(&list_bytes, 0, u64::from(dir_blocks))?;
         let directory = gather(data, block_size, dir_block_list, dir_bytes)?;
 
         let count = read_at::<U32Le>(&directory, 0)?.get() as usize;
@@ -212,14 +289,14 @@ impl<'data> Msf<'data> {
             matches!((a, b), (Some(a), Some(b)) if b.get() == a.get().wrapping_add(1))
         });
         if run {
-            return hexcavator_core::bytes_at(self.data, block(offset)?, end - offset)
-                .map(Cow::Borrowed);
+            return self.data.get(block(offset)?, end - offset);
         }
-        let mut out = Vec::with_capacity(usize::try_from(end - offset).unwrap_or(0));
+        let mut out = vec![0u8; usize::try_from(end - offset).map_err(|_| bad())?];
         let mut at = offset;
         while at < end {
             let take = (bs - at % bs).min(end - at);
-            out.extend_from_slice(hexcavator_core::bytes_at(self.data, block(at)?, take)?);
+            let d = usize::try_from(at - offset).map_err(|_| bad())?;
+            self.data.copy(block(at)?, &mut out[d..d + take as usize])?;
             at += take;
         }
         Ok(Cow::Owned(out))
@@ -228,7 +305,7 @@ impl<'data> Msf<'data> {
 
 /// Assembles `size` bytes from `blocks`, borrowing when they are contiguous.
 fn gather<'data>(
-    data: &'data [u8],
+    data: Bytes<'data>,
     block_size: u32,
     blocks: &[U32Le],
     size: u32,
@@ -240,7 +317,7 @@ fn gather<'data>(
 /// stream ends first), borrowing when they are contiguous. A stream with
 /// fewer blocks than its size needs reads as the blocks it has.
 fn gather_range<'data>(
-    data: &'data [u8],
+    data: Bytes<'data>,
     block_size: u32,
     blocks: &[U32Le],
     size: u32,
@@ -258,7 +335,7 @@ fn gather_range<'data>(
         let to = to.min(size as usize);
         let from = from.min(to);
         let start = u64::from(first.get()) * bs + from as u64;
-        return hexcavator_core::bytes_at(data, start, (to - from) as u64).map(Cow::Borrowed);
+        return data.get(start, (to - from) as u64);
     }
     let block = bs as usize;
     if block == 0 {
@@ -269,14 +346,27 @@ fn gather_range<'data>(
     let to = to.min(size as usize).min(count * block);
     let from = from.min(to);
     let mut out = vec![0u8; to - from];
-    // Copies the stream's bytes from offset `at` into `dest`.
+    // Copies the stream's bytes from offset `at` into `dest`: a block at a
+    // time from the mapped file; from a source, each run of adjacent
+    // blocks at once (a source's read is a call to make, not a copy).
+    let read = matches!(data, Bytes::Read(_));
     let copy = |dest: &mut [u8], mut at: usize| -> Result<()> {
         let mut d = 0;
         while d < dest.len() {
             let (b, within) = (at / block, at % block);
-            let take = (block - within).min(dest.len() - d);
+            let mut take = (block - within).min(dest.len() - d);
             let src = u64::from(blocks[b].get()) * bs + within as u64;
-            dest[d..d + take].copy_from_slice(hexcavator_core::bytes_at(data, src, take as u64)?);
+            if read {
+                let mut next = b + 1;
+                while d + take < dest.len()
+                    && next < blocks.len()
+                    && blocks[next].get() == blocks[next - 1].get().wrapping_add(1)
+                {
+                    take += block.min(dest.len() - d - take);
+                    next += 1;
+                }
+            }
+            data.copy(src, &mut dest[d..d + take])?;
             d += take;
             at += take;
         }
@@ -286,7 +376,11 @@ fn gather_range<'data>(
     // copied by every core: the copy is bound by the page faults of
     // reading the mapped file, which run in parallel.
     const PARALLEL: usize = 8 << 20;
-    let threads = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    // (A source reads one range at a time: no use in threads.)
+    let threads = match data {
+        Bytes::Mapped(_) => std::thread::available_parallelism().map_or(1, std::num::NonZero::get),
+        Bytes::Read(_) => 1,
+    };
     if out.len() < PARALLEL || threads < 2 {
         copy(&mut out, from)?;
     } else {
@@ -413,6 +507,44 @@ pub(crate) mod tests {
         assert!(matches!(msf.read(1, 500, 30).unwrap(), Cow::Owned(_)));
         assert!(matches!(msf.read(0, 500, 30).unwrap(), Cow::Borrowed(_)));
         assert!(msf.read(9, 0, 1).is_err());
+    }
+
+    /// Read by range (a source, as where nothing is mapped): every stream,
+    /// range, and read the same as from the bytes, fragmented or not.
+    #[test]
+    fn a_source_reads_as_the_bytes() {
+        let a: Vec<u8> = (0..1000u32).map(|i| i as u8).collect();
+        let b: Vec<u8> = (0..5000u32).map(|i| (i * 7) as u8).collect();
+        let c: Vec<u8> = (0..3u32).map(|i| i as u8).collect();
+        let file = build(&[&a, &b, &c]);
+        let mapped = Msf::parse(&file).unwrap();
+        let source: &dyn Source = &file;
+        let read = Msf::parse_source(source).unwrap();
+        assert_eq!(read.stream_count(), mapped.stream_count());
+        for i in 0..mapped.stream_count() as u32 {
+            assert_eq!(read.stream(i).unwrap(), mapped.stream(i).unwrap(), "{i}");
+            for (from, to) in [(0, 10), (100, 2000), (511, 513), (4000, 9000)] {
+                assert_eq!(
+                    read.stream_range(i, from, to).unwrap(),
+                    mapped.stream_range(i, from, to).unwrap(),
+                    "{i}: {from}..{to}"
+                );
+            }
+            for (at, len) in [(0, 1), (500, 30), (1000, 1100), (4990, 50)] {
+                assert_eq!(
+                    read.read(i, at, len).unwrap(),
+                    mapped.read(i, at, len).unwrap(),
+                    "{i}: {at}+{len}"
+                );
+            }
+        }
+        // (A truncated source fails as the bytes do.)
+        let short = file[..file.len() - 600].to_vec();
+        let short: &dyn Source = &short;
+        assert_eq!(
+            Msf::parse_source(short).is_err(),
+            Msf::parse(&file[..file.len() - 600]).is_err()
+        );
     }
 
     #[test]

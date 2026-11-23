@@ -8,6 +8,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[dependencies]
+hexcavator-core.workspace = true
+
 [target.'cfg(any(windows, unix))'.dependencies]
 memmap2.workspace = true
 

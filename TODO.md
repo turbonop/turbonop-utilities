@@ -36,17 +36,15 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 
 ## The web version
 
-- **Reading files piecewise.** WebAssembly's 32-bit address space (4
-  GiB, and the browser's copy of each file besides) won't hold clang.exe
-  and its 1.1 GB PDB with everything built from them; and 64-bit memory
-  isn't in Safari, is tier 3 in Rust, and costs speed. So: read files by
-  their parts instead of whole, behind a source that reads a range
-  (`read_at`), mapped where there's mapping and read on demand where
-  there isn't (a browser `File`'s slices): a PDB's streams one at a time
-  (an MSF's pages are scattered anyway; most commands need a few
-  streams), an image's sections as asked for, and the big tables (a
-  PDB's symbol records, DWARF's .debug_info) walked in windows rather
-  than held.
+- **Faster reading by range.** A PDB is read by its streams in the
+  browser (as a command asks for them), which keeps clang.exe's whole
+  session within 4 GiB, but its reads go through the file system worker
+  one at a time (FileReaderSync, then a copy into WebAssembly's memory):
+  clang.exe's `types` takes 6 s, against 2.6 s with the PDB read whole.
+  Reads on several workers at once, or a stream's blocks read ahead.
+- **DWARF by range.** DWARF (an ELF or Mach-O file's, a dSYM's) is still
+  read whole in the browser: its sections could be read as a PDB's
+  streams are.
 
 ## Size analysis
 

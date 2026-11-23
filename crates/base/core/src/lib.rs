@@ -19,6 +19,7 @@ mod endian;
 mod error;
 mod pod;
 mod reader;
+mod source;
 pub mod stack;
 
 pub use addr::{FileOffset, Rva, Va};
@@ -30,3 +31,4 @@ pub use endian::{
 pub use error::{Error, ErrorKind, Result};
 pub use pod::{Pod, as_bytes, from_bytes, slice_from_bytes};
 pub use reader::{Reader, bytes_at, cstr_at, find_nul, read_at, read_slice_at, to_usize};
+pub use source::Source;

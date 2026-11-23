@@ -1148,6 +1148,13 @@ impl<'data> DebugInfo<'data> {
         }
     }
 
+    /// The debug information a source reads (by range: a file not mapped):
+    /// a PDB, whose streams are read as they are asked for. (DWARF is read
+    /// from a file's bytes: see [`DebugInfo::parse`].)
+    pub fn parse_source(source: &'data dyn hexcavator_core::Source) -> Result<Self> {
+        pdb_backend::PdbInfo::parse_source(source).map(|p| DebugInfo::Pdb(Box::new(p)))
+    }
+
     /// The name of register `n` (by the format's numbering: see
     /// [`Place::Register`]) of `arch`.
     pub fn register_name(&self, arch: hexcavator_core::Arch, n: u16) -> Option<String> {

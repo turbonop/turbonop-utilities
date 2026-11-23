@@ -69,17 +69,17 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 Every command should be as fast as the hardware allows (on clang.exe,
 175 MB with a 1.1 GB PDB, as measured). What's left:
 
-- **x86 decoding** (49 ns an instruction): cross-references and
-  fingerprints need only an instruction's length, flow, and addresses,
-  not its operands as text would; a lighter decode for them, or a faster
-  full one (table lookups for the candidates, not a search).
-- **A program's symbols** (1.1 s, under query, xref, size, recommend):
-  naming functions from their types and undecorating publics are most of
-  what is left after reading the PDB.
-- **size's range maps** (0.8 s for `-d symbols`): a symbol at a time
-  into a B-tree; symbols come sorted, so most could be appended.
-- **`hexcavator serve`'s JSON**: a command's `-json` output is a string inside
-  the response, parsed twice by the editor.
+- **x86 decoding** (60 ns an instruction, on clang.exe's code): building
+  the instruction is half of it (`Decoder::build`: its operands, and the
+  instruction returned), finding the entry among an opcode's candidates
+  a sixth. (Building the operands in the instruction returned, rather
+  than gathering them and copying them in, was slower.) What would pay:
+  operands built lazily, or a decode for cross-references and
+  fingerprints that builds only memory operands and branch targets.
+- **A program's symbols** (1.1 s under most commands on clang.exe): the
+  PDB's symbols read (0.43 s, on every core), then named (0.15 s, on
+  every core) and resolved (0.45 s); what is left is a few sequential
+  steps of 50 ms each.
 
 ## Waiting
 

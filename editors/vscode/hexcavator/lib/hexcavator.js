@@ -655,7 +655,17 @@ function serveLaunch(get) {
   return { args, env };
 }
 
+/**
+ * A command's JSON output, parsed: hexcavator serve gives it as a value when
+ * asked (`"json": true`, as runHexc asks for `-json` commands), else as
+ * the text it printed.
+ */
+function parsed(out) {
+  return typeof out === "string" ? JSON.parse(out) : out;
+}
+
 module.exports = {
+  parsed,
   hexcPath,
   serveLaunch,
   mapSource,

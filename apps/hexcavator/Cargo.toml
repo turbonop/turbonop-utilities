@@ -22,6 +22,7 @@ hexcavator-core.workspace = true
 hexcavator-mmap.workspace = true
 hexcavator-mz.workspace = true
 hexcavator-par.workspace = true
+hexcavator-hash.workspace = true
 hexcavator-pe.workspace = true
 hexcavator-signature.workspace = true
 hexcavator-x86.workspace = true

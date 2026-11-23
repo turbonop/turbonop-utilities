@@ -278,6 +278,7 @@ dependencies = [
  "hexcavator-deps",
  "hexcavator-dwarf",
  "hexcavator-elf",
+ "hexcavator-hash",
  "hexcavator-image",
  "hexcavator-linkerlog",
  "hexcavator-linkmap",

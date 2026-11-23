@@ -36,12 +36,6 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   read whole in the browser: its sections could be read as a PDB's
   streams are.
 
-## Size analysis
-
-- **Rust's Debug implementations on Windows.** Rust's PDB names say
-  `impl$12::fmt`, not which trait: `-Zfmt-debug`'s saving is measured on
-  ELF and Mach-O only.
-
 ## LTCG objects
 
 - **The IL's records, walked.** `hexcavator ltcg` finds `.cil$gl`'s functions

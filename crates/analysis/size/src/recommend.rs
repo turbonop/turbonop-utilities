@@ -1159,9 +1159,15 @@ fn count(n: usize, one: &str, many: &str) -> String {
 ///   `panic_unwind` crate (at least: not the landing pads' code).
 /// - `fmt-debug`: `-Zfmt-debug=none` (nightly), which makes `Debug`
 ///   output nothing: the `<T as core::fmt::Debug>::fmt` implementations.
+///
+/// `debug_impls`: the addresses of `Debug` implementations named so by
+/// other symbols than the functions' own ([`debug_impls`]: a PDB's
+/// publics, as CodeView names a trait method by its impl block's number,
+/// `m::impl$12::fmt`, which says nothing of the trait).
 pub fn rust(
     symbols: &[crate::symbols::Symbol],
     eh: &crate::exceptions::Exceptions,
+    debug_impls: &hexcavator_hash::Set<u64>,
 ) -> Vec<Recommendation> {
     use crate::sources::crate_of;
     use crate::symbols::SymbolKind;
@@ -1203,7 +1209,7 @@ pub fn rust(
     // Debug formatting.
     let debug: Vec<&&crate::symbols::Symbol> = functions
         .iter()
-        .filter(|s| s.name.contains(" as core::fmt::Debug>::fmt"))
+        .filter(|s| s.name.contains(" as core::fmt::Debug>::fmt") || debug_impls.contains(&s.addr))
         .collect();
     let saving: u64 = debug.iter().map(|s| s.size.vm).sum();
     if saving >= MIN_SAVING {
@@ -1222,6 +1228,39 @@ pub fn rust(
         });
     }
     out
+}
+
+/// The addresses of a Rust program's `Debug` implementations by its PDB's
+/// public symbols (`<T as core::fmt::Debug>::fmt`, mangled: in Rust's
+/// legacy scheme or v0), for [`rust`]: CodeView's own names for them
+/// (`m::impl$12::fmt`) don't say which trait's they are.
+pub fn debug_impls(debug: &hexcavator_debuginfo::DebugInfo<'_>) -> hexcavator_hash::Set<u64> {
+    // (The mangled names first, by the trait's name in them: legacy
+    // `core..fmt..Debug`; v0 `5Debug`, the identifier where it first
+    // appears, its path a back-reference when the type named `core::fmt`
+    // before it. Demangling then says whose it is.)
+    let found = debug.publics_matching(maybe_debug_impl);
+    let mut demangler = hexcavator_demangle::Demangler::new();
+    found
+        .into_iter()
+        .filter(|(_, raw)| is_debug_impl(&mut demangler, raw))
+        .map(|(addr, _)| addr)
+        .collect()
+}
+
+/// Whether a mangled Rust name may be a `Debug` implementation's (a test
+/// of its bytes, before demangling).
+fn maybe_debug_impl(name: &[u8]) -> bool {
+    let has = |pat: &[u8]| name.windows(pat.len()).any(|w| w == pat);
+    has(b"fmt..Debug") || has(b"5Debug")
+}
+
+/// Whether a mangled Rust name is a `Debug` implementation's `fmt`.
+fn is_debug_impl(demangler: &mut hexcavator_demangle::Demangler, name: &[u8]) -> bool {
+    maybe_debug_impl(name)
+        && demangler
+            .demangle(&String::from_utf8_lossy(name), 0)
+            .is_some_and(|d| d.ends_with(" as core::fmt::Debug>::fmt"))
 }
 
 /// The recommendation near-identical functions make
@@ -1407,6 +1446,22 @@ fn wasm_custom(m: &hexcavator_wasm::Module<'_>, out: &mut Vec<Recommendation>) {
 mod tests {
     use super::*;
 
+    /// Debug implementations by their mangled names: Rust's legacy scheme,
+    /// v0, and v0 with the trait's path a back-reference; not Display's.
+    #[test]
+    fn debug_impls_by_mangled_name() {
+        let mut d = hexcavator_demangle::Demangler::new();
+        for (name, debug) in [
+            (&b"_RNvXs1_NtCsg6mp758xznh_12aho_corasick3dfaNtB5_3DFANtNtCs4mxzSKgHcRc_4core3fmt5Debug3fmt"[..], true),
+            (b"_RNvXsh_NtCs4mxzSKgHcRc_4core3fmteNtB5_5Debug3fmt", true),
+            (b"_ZN59_$LT$aho_corasick..dfa..DFA$u20$as$u20$core..fmt..Debug$GT$3fmt17h0123456789abcdefE", true),
+            (b"_RNvXsg_NtCs4mxzSKgHcRc_4core3fmtbNtB5_7Display3fmt", false),
+            (b"?fmt@Debug@@QEAAXXZ", false),
+        ] {
+            assert_eq!(is_debug_impl(&mut d, name), debug, "{}", String::from_utf8_lossy(name));
+        }
+    }
+
     fn symbol(name: &str, size: u64) -> crate::symbols::Symbol {
         crate::symbols::Symbol {
             addr: 0,
@@ -1456,7 +1511,7 @@ mod tests {
             ],
             needless: Vec::new(),
         };
-        let r = rust(&syms, &eh);
+        let r = rust(&syms, &eh, &hexcavator_hash::Set::default());
         let kinds: Vec<&str> = r.iter().map(|r| r.kind).collect();
         assert_eq!(kinds, ["panic-abort", "fmt-debug"]);
         assert_eq!(r[0].saving, 30 + 200);
@@ -1468,11 +1523,18 @@ mod tests {
         assert_eq!(r[1].saving, 210);
         assert_eq!(r[1].examples[0].0, "<app::Point as core::fmt::Debug>::fmt");
         // Not Rust's: none.
-        assert!(rust(&[symbol("main", 400), symbol("llvm::foo()", 900)], &eh).is_empty());
+        assert!(
+            rust(
+                &[symbol("main", 400), symbol("llvm::foo()", 900)],
+                &eh,
+                &hexcavator_hash::Set::default()
+            )
+            .is_empty()
+        );
         // Nothing unwinding: no panic-abort.
         let none = Exceptions::default();
         assert_eq!(
-            rust(&syms, &none)
+            rust(&syms, &none, &hexcavator_hash::Set::default())
                 .iter()
                 .map(|r| r.kind)
                 .collect::<Vec<_>>(),

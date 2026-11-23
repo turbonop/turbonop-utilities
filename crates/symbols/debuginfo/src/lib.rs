@@ -1196,6 +1196,16 @@ impl<'data> DebugInfo<'data> {
         }
     }
 
+    /// A PDB's public symbols whose raw names `keep` keeps: their
+    /// addresses and names (none for DWARF, whose linkage names are its
+    /// functions' own).
+    pub fn publics_matching(&self, keep: impl Fn(&[u8]) -> bool + Sync) -> Vec<(u64, &[u8])> {
+        match self {
+            DebugInfo::Pdb(p) => p.publics_matching(keep),
+            DebugInfo::Dwarf(_) => Vec::new(),
+        }
+    }
+
     /// The contributions, sorted by address. Contributions whose address
     /// cannot be determined (an unknown section) are left out.
     pub fn contributions(&self) -> Result<Vec<Contribution>> {

@@ -73,6 +73,26 @@ impl<'data> PdbInfo<'data> {
         Self::of(Pdb::parse_source(source)?)
     }
 
+    /// The public symbols whose (raw, mangled) names `keep` keeps: each
+    /// one's address (RVA) and name. (`keep` sees every public: a test of
+    /// its bytes, before anything is demangled.)
+    pub fn publics_matching(&self, keep: impl Fn(&[u8]) -> bool + Sync) -> Vec<(u64, &[u8])> {
+        let records: Vec<_> = SymbolIter::new(self.pdb.symbol_records(), 0).collect();
+        hexcavator_par::map_chunks(&records, 8192, |part| {
+            part.iter()
+                .filter_map(|r| match r.parse().ok()? {
+                    Symbol::Public {
+                        offset,
+                        segment,
+                        name,
+                        ..
+                    } if keep(name) => Some((rva_in(&self.sections, segment, offset)?, name)),
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+
     pub fn pdb(&self) -> &Pdb<'data> {
         &self.pdb
     }

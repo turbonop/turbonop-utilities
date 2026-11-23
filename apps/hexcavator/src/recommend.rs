@@ -466,7 +466,13 @@ pub(crate) fn recommendations(
         x, &eh, toolchain, rust,
     ));
     // A Rust program's panics and Debug formatting.
-    recs.extend(hexcavator_size::recommend::rust(syms, &eh));
+    // (A Rust program's: its PDB's publics name its Debug implementations.)
+    let debug_impls = if rust {
+        hexcavator_size::recommend::debug_impls(debug)
+    } else {
+        hexcavator_hash::Set::default()
+    };
+    recs.extend(hexcavator_size::recommend::rust(syms, &eh, &debug_impls));
     let needless: rustc_hash::FxHashSet<usize> = eh.needless.iter().copied().collect();
     let (unwind, handlers) = eh.totals();
     let exceptions = (unwind + handlers > 0).then(|| ExceptionSummary {

@@ -1,7 +1,8 @@
 //! A Mach-O file, as llvm-readobj shows it (`--file-headers`,
 //! `--sections`, `--relocations`, `--symbols`, `--macho-segment`,
 //! `--macho-version-min`, `--macho-dysymtab`, `--needed-libs`), following
-//! LLVM's MachODumper.
+//! LLVM's MachODumper; and its fixups as llvm-objdump lists them
+//! (`--dyld-info`).
 
 use hexcavator_macho::MachO;
 use hexcavator_macho::consts::*;
@@ -76,6 +77,131 @@ fn one(out: &mut String, file_name: &str, m: &MachO<'_>, parts: &Parts) {
     }
     if parts.macho_dysymtab {
         dysymtab(&mut p, m);
+    }
+    if parts.dyld_info {
+        dyld_info(&mut p, m);
+    }
+}
+
+/// The fixups (rebases and binds), as llvm-objdump's `--macho
+/// --dyld-info` lists them, column for column: each pointer as the file
+/// holds it, and what it becomes; on arm64e, how each authenticated
+/// pointer is signed (its diversity, whether its address is blended in,
+/// and its key). (llvm-objdump lists only chained fixups; the older
+/// opcodes' are listed so too.)
+fn dyld_info(p: &mut Printer<'_>, m: &MachO<'_>) {
+    use hexcavator_macho::FixupKind;
+    use hexcavator_macho::fixups::{DYLD_CHAINED_PTR_ARM64E, DYLD_CHAINED_PTR_ARM64E_USERLAND24};
+    let fixups = m.fixups();
+    let segments = m.segments();
+    let sections = m.sections();
+    let dylibs = m.dylibs();
+    let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    // (LLVM's HexLength: digits of the floor of the logarithm, rounded
+    // up; 1 has none.)
+    let hex_length = |n: u64| {
+        if n == 0 {
+            1
+        } else {
+            (63 - n.leading_zeros() as usize).div_ceil(4)
+        }
+    };
+    let places = |addr: u64| {
+        let segment = segments
+            .iter()
+            .find(|s| addr >= s.vmaddr && addr - s.vmaddr < s.vmsize)
+            .map_or_else(String::new, |s| text(s.name));
+        let section = sections
+            .iter()
+            .find(|s| addr >= s.addr && addr - s.addr < s.size)
+            .map_or_else(String::new, |s| text(s.sectname));
+        (segment, section)
+    };
+    let ordinal = |o: i32| -> String {
+        match o {
+            0 => "this-image".into(),
+            -1 => "main-executable".into(),
+            -2 => "flat-namespace".into(),
+            -3 => "weak".into(),
+            o if o > 0 => dylibs.get(o as usize - 1).map_or_else(
+                || "<<bad library ordinal>>".into(),
+                |d| text(d.short_name()),
+            ),
+            _ => "<<unknown special ordinal>>".into(),
+        }
+    };
+    let rows: Vec<_> = fixups.iter().map(|f| (f, places(f.addr))).collect();
+    let (mut seg_w, mut sect_w, mut addr_w, mut addend_w, mut dylib_w) = (7, 7, 7, 6, 5);
+    let mut auth_columns = false;
+    for (f, (segment, section)) in &rows {
+        seg_w = seg_w.max(segment.len());
+        sect_w = sect_w.max(section.len());
+        addr_w = addr_w.max(hex_length(f.addr) + 2);
+        if let FixupKind::Bind { symbol, addend, .. } = f.kind {
+            addend_w = addend_w.max(hex_length(addend as u64) + 2);
+            // (As llvm-objdump does: the symbol's length, not the
+            // library's.)
+            dylib_w = dylib_w.max(symbol.len());
+        }
+        auth_columns |= matches!(
+            f.format,
+            DYLD_CHAINED_PTR_ARM64E | DYLD_CHAINED_PTR_ARM64E_USERLAND24
+        );
+    }
+    let pointer_w = if m.header().is64 { 18 } else { 10 };
+    p.raw("dyld information:");
+    p.raw(format!(
+        "{:seg_w$} {:sect_w$} {:addr_w$} {:pointer_w$} type   {}{:addend_w$} {:dylib_w$} symbol/vm address",
+        "segment",
+        "section",
+        "address",
+        "pointer",
+        if auth_columns { "div    addr  key " } else { "" },
+        "addend",
+        "dylib",
+    ));
+    for (f, (segment, section)) in &rows {
+        let mut line = format!(
+            "{segment:seg_w$} {section:sect_w$} 0x{:aw$} 0x{:0pw$X} ",
+            format!("{:X}", f.addr),
+            f.value,
+            aw = addr_w - 2,
+            pw = pointer_w - 2,
+        );
+        let bind = matches!(f.kind, FixupKind::Bind { .. });
+        line.push_str(if bind { "bind   " } else { "rebase " });
+        match f.auth {
+            Some(a) if auth_columns => line.push_str(&format!(
+                "0x{:04X} {:5} {:3} ",
+                a.diversity,
+                if a.address { "true" } else { "false" },
+                a.key.name()
+            )),
+            _ if auth_columns => line.push_str(&" ".repeat(17)),
+            _ => {}
+        }
+        match f.kind {
+            FixupKind::Bind {
+                symbol,
+                library,
+                addend,
+                weak,
+            } => {
+                line.push_str(&format!(
+                    "0x{:ad$} {:dylib_w$} {}{}",
+                    format!("{:X}", addend as u64),
+                    ordinal(library),
+                    text(symbol),
+                    if weak { " (weak import)" } else { "" },
+                    ad = addend_w - 2,
+                ));
+            }
+            FixupKind::Rebase { target } => {
+                line.push_str(&" ".repeat(addend_w + dylib_w + 1));
+                line.push_str(&format!("0x{target:X}"));
+            }
+        }
+        p.raw(line);
     }
 }
 

@@ -24,7 +24,8 @@ impl DwarfInfo<'_> {
             };
             let q = qualifiers.as_deref_mut();
             match (d.tag, q) {
-                (DW_TAG_TYPEDEF, _) => at = self.type_of(&u, &d),
+                // (A `__ptrauth` pointer is laid out as the pointer is.)
+                (DW_TAG_TYPEDEF | DW_TAG_LLVM_PTRAUTH_TYPE, _) => at = self.type_of(&u, &d),
                 (DW_TAG_CONST_TYPE, Some(q)) => {
                     q.is_const = true;
                     at = self.type_of(&u, &d);

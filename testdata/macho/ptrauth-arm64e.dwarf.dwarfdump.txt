@@ -1,0 +1,135 @@
+ptrauth-arm64e.dwarf:	file format Mach-O arm64
+
+.debug_info contents:
+0x00000000: Compile Unit: length = 0x000000e4, format = DWARF32, version = 0x0004, abbr_offset = 0x0000, addr_size = 0x08 (next unit at 0x000000e8)
+
+0x0000000b: DW_TAG_compile_unit
+              DW_AT_producer	("")
+              DW_AT_language	(DW_LANG_C11)
+              DW_AT_name	("ptrauth.c")
+              DW_AT_LLVM_sysroot	("/")
+              DW_AT_stmt_list	(0x00000000)
+              DW_AT_comp_dir	(".")
+              DW_AT_APPLE_optimized	(true)
+              DW_AT_low_pc	(0x00000000000002d8)
+              DW_AT_high_pc	(0x00000000000002e0)
+
+0x0000002e:   DW_TAG_subprogram
+                DW_AT_low_pc	(0x00000000000002d8)
+                DW_AT_high_pc	(0x00000000000002e0)
+                DW_AT_APPLE_omit_frame_ptr	(true)
+                DW_AT_frame_base	(DW_OP_reg31 WSP)
+                DW_AT_call_all_calls	(true)
+                DW_AT_name	("use")
+                DW_AT_decl_file	(".\ptrauth.c")
+                DW_AT_decl_line	(13)
+                DW_AT_prototyped	(true)
+                DW_AT_type	(0x000000b9 "int")
+                DW_AT_external	(true)
+                DW_AT_APPLE_optimized	(true)
+
+0x00000047:     DW_TAG_formal_parameter
+                  DW_AT_location	(0x00000000: 
+                     [0x00000000000002d8, 0x00000000000002dc): DW_OP_reg0 W0
+                     [0x00000000000002dc, 0x00000000000002e0): DW_OP_entry_value(DW_OP_reg0 W0), DW_OP_stack_value)
+                  DW_AT_name	("c")
+                  DW_AT_decl_file	(".\ptrauth.c")
+                  DW_AT_decl_line	(13)
+                  DW_AT_type	(0x000000e2 "callbacks *")
+
+0x00000056:     NULL
+
+0x00000057:   DW_TAG_variable
+                DW_AT_name	("table")
+                DW_AT_type	(0x0000006c "callbacks")
+                DW_AT_external	(true)
+                DW_AT_decl_file	(".\ptrauth.c")
+                DW_AT_decl_line	(11)
+                DW_AT_location	(DW_OP_addr 0x4000)
+
+0x0000006c:   DW_TAG_structure_type
+                DW_AT_name	("callbacks")
+                DW_AT_byte_size	(0x20)
+                DW_AT_decl_file	(".\ptrauth.c")
+                DW_AT_decl_line	(4)
+
+0x00000074:     DW_TAG_member
+                  DW_AT_name	("on_event")
+                  DW_AT_type	(0x000000a5 "void (*__ptrauth(0, 1, 0x01234)")
+                  DW_AT_decl_file	(".\ptrauth.c")
+                  DW_AT_decl_line	(5)
+                  DW_AT_data_member_location	(0x00)
+
+0x00000080:     DW_TAG_member
+                  DW_AT_name	("data")
+                  DW_AT_type	(0x000000c0 "void *__ptrauth(2, 0, 0x04d)")
+                  DW_AT_decl_file	(".\ptrauth.c")
+                  DW_AT_decl_line	(6)
+                  DW_AT_data_member_location	(0x08)
+
+0x0000008c:     DW_TAG_member
+                  DW_AT_name	("name")
+                  DW_AT_type	(0x000000c9 "const char *__ptrauth(3, 1, 0x00)")
+                  DW_AT_decl_file	(".\ptrauth.c")
+                  DW_AT_decl_line	(7)
+                  DW_AT_data_member_location	(0x10)
+
+0x00000098:     DW_TAG_member
+                  DW_AT_name	("plain")
+                  DW_AT_type	(0x000000b9 "int")
+                  DW_AT_decl_file	(".\ptrauth.c")
+                  DW_AT_decl_line	(8)
+                  DW_AT_data_member_location	(0x18)
+
+0x000000a4:     NULL
+
+0x000000a5:   DW_TAG_LLVM_ptrauth_type
+                DW_AT_type	(0x000000ad "void (*)(int)")
+                DW_AT_LLVM_ptrauth_key	(0x00)
+                DW_AT_LLVM_ptrauth_address_discriminated	(true)
+                DW_AT_LLVM_ptrauth_extra_discriminator	(0x1234)
+
+0x000000ad:   DW_TAG_pointer_type
+                DW_AT_type	(0x000000b2 "void (int)")
+
+0x000000b2:   DW_TAG_subroutine_type
+                DW_AT_prototyped	(true)
+
+0x000000b3:     DW_TAG_formal_parameter
+                  DW_AT_type	(0x000000b9 "int")
+
+0x000000b8:     NULL
+
+0x000000b9:   DW_TAG_base_type
+                DW_AT_name	("int")
+                DW_AT_encoding	(DW_ATE_signed)
+                DW_AT_byte_size	(0x04)
+
+0x000000c0:   DW_TAG_LLVM_ptrauth_type
+                DW_AT_type	(0x000000c8 "void *")
+                DW_AT_LLVM_ptrauth_key	(0x02)
+                DW_AT_LLVM_ptrauth_extra_discriminator	(0x004d)
+
+0x000000c8:   DW_TAG_pointer_type
+
+0x000000c9:   DW_TAG_LLVM_ptrauth_type
+                DW_AT_type	(0x000000d1 "const char *")
+                DW_AT_LLVM_ptrauth_key	(0x03)
+                DW_AT_LLVM_ptrauth_address_discriminated	(true)
+                DW_AT_LLVM_ptrauth_extra_discriminator	(0x0000)
+
+0x000000d1:   DW_TAG_pointer_type
+                DW_AT_type	(0x000000d6 "const char")
+
+0x000000d6:   DW_TAG_const_type
+                DW_AT_type	(0x000000db "char")
+
+0x000000db:   DW_TAG_base_type
+                DW_AT_name	("char")
+                DW_AT_encoding	(DW_ATE_signed_char)
+                DW_AT_byte_size	(0x01)
+
+0x000000e2:   DW_TAG_pointer_type
+                DW_AT_type	(0x0000006c "callbacks")
+
+0x000000e7:   NULL

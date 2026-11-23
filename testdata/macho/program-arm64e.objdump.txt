@@ -1,0 +1,91 @@
+
+program-arm64e:	file format mach-o arm64
+
+Disassembly of section __TEXT,__text:
+
+00000001000004b8 <__tlv_bootstrap>:
+1000004b8:     	ret
+
+00000001000004bc <_compute>:
+1000004bc:     	cmp	w0, #0x1
+1000004c0:     	b.lt	0x100000524 <_compute+0x68>
+1000004c4:     	mov	x8, #0x0                ; =0
+1000004c8:     	mov	w12, #0x0               ; =0
+1000004cc:     	nop
+1000004d0:     	ldr	w9, 0x1000050a4 <_hidden_state>
+1000004d4:     	adr	x10, 0x1000005ec <_message>
+1000004d8:     	nop
+1000004dc:     	mov	x11, #-0x7777777777777778 ; =-8608480567731124088
+1000004e0:     	movk	x11, #0x8889
+1000004e4:     	mov	x13, x12
+1000004e8:     	umulh	x12, x8, x11
+1000004ec:     	lsr	x12, x12, #3
+1000004f0:     	sub	x12, x12, x12, lsl #4
+1000004f4:     	ldrsb	w14, [x10, x12]
+1000004f8:     	add	w12, w9, w13
+1000004fc:     	add	w12, w12, w14
+100000500:     	add	x10, x10, #0x1
+100000504:     	add	x8, x8, #0x1
+100000508:     	add	w9, w9, #0x3
+10000050c:     	subs	w0, w0, #0x1
+100000510:     	b.ne	0x1000004e4 <_compute+0x28>
+100000514:     	add	w8, w13, w14
+100000518:     	add	w8, w8, w9
+10000051c:     	sub	w0, w8, #0x3
+100000520:     	ret
+100000524:     	mov	w0, #0x0                ; =0
+100000528:     	ret
+
+000000010000052c <_start>:
+10000052c:     	pacibsp
+100000530:     	stp	x20, x19, [sp, #-0x20]!
+100000534:     	stp	x29, x30, [sp, #0x10]
+100000538:     	add	x29, sp, #0x10
+10000053c:     	nop
+100000540:     	ldr	w0, 0x100004000 <_counter>
+100000544:     	bl	0x1000004bc <_compute>
+100000548:     	adrp	x8, 0x100004000 <_counter>
+10000054c:     	strb	w0, [x8, #0xa4]
+100000550:     	adrp	x0, 0x100004000 <_counter>
+100000554:     	add	x0, x0, #0x88
+100000558:     	ldr	x8, [x0]
+10000055c:     	blraaz	x8
+100000560:     	ldr	w19, [x0]
+100000564:     	bl	0x1000005c0 <_second_len>
+100000568:     	add	w0, w0, w19
+10000056c:     	adrp	x8, 0x100005000 <_buffer+0xf5c>
+100000570:     	str	w0, [x8, #0xa4]
+100000574:     	ldp	x29, x30, [sp, #0x10]
+100000578:     	ldp	x20, x19, [sp], #0x20
+10000057c:     	retab
+
+0000000100000580 <_second_sum>:
+100000580:     	cmp	w0, #0x1
+100000584:     	b.lt	0x1000005b8 <_second_sum+0x38>
+100000588:     	mov	x8, x0
+10000058c:     	mov	w0, #0x0                ; =0
+100000590:     	mov	w9, #0x20               ; =32
+100000594:     	cmp	w8, #0x20
+100000598:     	csel	w8, w8, w9, lt
+10000059c:     	adr	x9, 0x100004004 <_second_table>
+1000005a0:     	nop
+1000005a4:     	ldr	w10, [x9], #0x4
+1000005a8:     	add	w0, w10, w0
+1000005ac:     	subs	x8, x8, #0x1
+1000005b0:     	b.ne	0x1000005a4 <_second_sum+0x24>
+1000005b4:     	ret
+1000005b8:     	mov	w0, #0x0                ; =0
+1000005bc:     	ret
+
+00000001000005c0 <_second_len>:
+1000005c0:     	mov	x9, #0x0                ; =0
+1000005c4:     	mov	w8, #0x0                ; =0
+1000005c8:     	adr	x10, 0x100004004 <_second_table>
+1000005cc:     	nop
+1000005d0:     	ldr	w11, [x10, x9]
+1000005d4:     	add	w8, w11, w8
+1000005d8:     	add	x9, x9, #0x4
+1000005dc:     	cmp	x9, #0xc
+1000005e0:     	b.ne	0x1000005d0 <_second_len+0x10>
+1000005e4:     	add	w0, w8, #0xc
+1000005e8:     	ret

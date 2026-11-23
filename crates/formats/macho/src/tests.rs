@@ -317,3 +317,41 @@ fn relocation_entries() {
         (0x8000_0010, 7, 2, true, 2)
     );
 }
+
+#[test]
+fn library_short_names_as_llvm_gives_them() {
+    for (name, short) in [
+        ("/usr/lib/libSystem.B.dylib", Some("libSystem")),
+        // (A one-character version, letter or digit, is taken off.)
+        ("/usr/lib/libc++.1.dylib", Some("libc++")),
+        ("/usr/lib/libobjc.A.dylib", Some("libobjc")),
+        ("@rpath/libsecond.dylib", Some("libsecond")),
+        ("libfoo.dylib", Some("libfoo")),
+        ("/usr/lib/libfoo_debug.dylib", Some("libfoo")),
+        ("/usr/lib/libfoo_profile.A.dylib", Some("libfoo")),
+        ("/usr/lib/libATS.A_profile.dylib", Some("libATS")),
+        ("/usr/lib/lib_x.dylib", Some("lib_x")),
+        (
+            "/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+            Some("Foundation"),
+        ),
+        (
+            "/System/Library/Frameworks/AppKit.framework/AppKit",
+            Some("AppKit"),
+        ),
+        (
+            "/System/Library/Frameworks/AppKit.framework/AppKit_debug",
+            Some("AppKit"),
+        ),
+        ("/Library/QuickTime/QT.A.qtx", Some("QT")),
+        ("/usr/lib/libfoo.so", None),
+        ("/usr/lib/noextension", None),
+        ("noslash", None),
+    ] {
+        assert_eq!(
+            library_short_name(name.as_bytes()),
+            short.map(str::as_bytes),
+            "{name}"
+        );
+    }
+}

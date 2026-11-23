@@ -25,7 +25,7 @@ pub mod info;
 pub mod objc;
 pub mod unwind_info;
 
-pub use fixups::{Export, Fixup, FixupKind};
+pub use fixups::{Export, Fixup, FixupKind, PtrAuth, PtrAuthKey};
 
 use consts::*;
 
@@ -298,6 +298,102 @@ pub struct Dylib<'d> {
     pub compatibility_version: u32,
     /// The command's size (`cmdsize`).
     pub size: u32,
+}
+
+impl<'d> Dylib<'d> {
+    /// The library's short name, as LLVM's tools give it (llvm-objdump
+    /// names a bind's library so): a framework's name (`Foundation` of
+    /// `.../Foundation.framework/Versions/C/Foundation`), or a library's
+    /// without its directory, version letter, and extension (`libSystem`
+    /// of `/usr/lib/libSystem.B.dylib`); else the whole install name.
+    pub fn short_name(&self) -> &'d [u8] {
+        match library_short_name(self.name) {
+            Some(short) if !short.is_empty() => short,
+            _ => self.name,
+        }
+    }
+}
+
+/// LLVM's `guessLibraryShortName`, step for step (its quirks too): a
+/// framework's name, a `.dylib`'s or `.qtx`'s short name (without a
+/// `_debug` or `_profile` suffix), or `None` if the install name is
+/// neither.
+pub fn library_short_name(name: &[u8]) -> Option<&[u8]> {
+    let n = name.len();
+    // (StringRef's rfind: the last at an index below `from`.)
+    let rfind = |c: u8, from: usize| name[..from.min(n)].iter().rposition(|&x| x == c);
+    let substr = |start: usize, len: usize| {
+        let s = start.min(n);
+        &name[s..s.saturating_add(len).min(n)]
+    };
+    let slice = |start: usize, end: usize| {
+        let s = start.min(n);
+        &name[s..end.min(n).max(s)]
+    };
+    const FRAMEWORK: &[u8] = b".framework/";
+    'framework: {
+        let Some(a) = rfind(b'/', n).filter(|&a| a != 0) else {
+            break 'framework;
+        };
+        let mut last = &name[a + 1..];
+        if let Some(i) = last.iter().rposition(|&x| x == b'_')
+            && last.len() >= 2
+            && matches!(&last[i..], b"_debug" | b"_profile")
+        {
+            last = &last[..i];
+        }
+        // Foo.framework/Foo
+        let b = rfind(b'/', a);
+        let at = b.map_or(0, |b| b + 1);
+        if substr(at, last.len()) == last && substr(at + last.len(), FRAMEWORK.len()) == FRAMEWORK {
+            return Some(last);
+        }
+        // Foo.framework/Versions/A/Foo
+        let Some(b) = b else {
+            break 'framework;
+        };
+        let Some(c) = rfind(b'/', b).filter(|&c| c != 0) else {
+            break 'framework;
+        };
+        if !name[c + 1..].starts_with(b"Versions/") {
+            break 'framework;
+        }
+        let at = rfind(b'/', c).map_or(0, |d| d + 1);
+        if substr(at, last.len()) == last && substr(at + last.len(), FRAMEWORK.len()) == FRAMEWORK {
+            return Some(last);
+        }
+    }
+    let a = rfind(b'.', n).filter(|&a| a != 0)?;
+    // (A version letter's ".A" before the extension, taken off.)
+    let unversioned = |lib: &'_ [u8]| -> usize {
+        if lib.len() >= 3 && lib[lib.len() - 2] == b'.' {
+            lib.len() - 2
+        } else {
+            lib.len()
+        }
+    };
+    match &name[a..] {
+        b".dylib" => {
+            let mut a = a;
+            if a >= 3 && name[a - 2] == b'.' {
+                a -= 2;
+            }
+            let b = rfind(b'/', a).map_or(0, |b| b + 1);
+            let lib = match rfind(b'_', n) {
+                Some(i) if i != b && matches!(slice(i, a), b"_debug" | b"_profile") => slice(b, i),
+                _ => slice(b, a),
+            };
+            Some(&lib[..unversioned(lib)])
+        }
+        b".qtx" => {
+            let lib = match rfind(b'/', a) {
+                None => slice(0, a),
+                Some(b) => slice(b + 1, a),
+            };
+            Some(&lib[..unversioned(lib)])
+        }
+        _ => None,
+    }
 }
 
 /// A section, normalized.

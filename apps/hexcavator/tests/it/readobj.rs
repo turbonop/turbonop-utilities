@@ -103,10 +103,32 @@ fn macho_is_llvm_readobjs() {
         ],
         &[],
     );
-    assert_eq!(n, 5);
+    // (program-arm64e's too: arm64e.)
+    assert_eq!(n, 6);
     // Objects' relocations: plain ones (x86-64's and ARM64's have no
     // scattered ones), by symbol and by section.
     assert_eq!(each("macho", ".relocs.txt", &["--relocations"], &[]), 2);
+}
+
+/// `--dyld-info`: a Mach-O file's fixups as llvm-objdump's `--macho
+/// --dyld-info` lists them, line for line: chained fixups of arm64,
+/// x86-64, and arm64e (with its signed pointers' columns).
+#[test]
+fn macho_fixups_are_llvm_objdumps() {
+    let dir = testdata().join("macho");
+    for name in [
+        "pointers-arm64.dylib",
+        "pointers-x86_64.dylib",
+        "pointers-arm64e.dylib",
+    ] {
+        let ours = dump(&dir, name, &["--dyld-info"]);
+        let table = &ours[ours.find("dyld information:").expect("a table")..];
+        let theirs = std::fs::read_to_string(dir.join(format!("{name}.fixups.txt"))).unwrap();
+        // (Theirs starts with the file's name.)
+        let theirs: Vec<&str> = theirs.trim().lines().skip(1).map(str::trim_end).collect();
+        let table: Vec<&str> = table.trim().lines().map(str::trim_end).collect();
+        assert_eq!(table, theirs, "{name}");
+    }
 }
 
 #[test]

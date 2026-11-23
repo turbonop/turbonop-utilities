@@ -190,6 +190,48 @@ fn dwarf() {
     );
 }
 
+/// arm64e's `__ptrauth`-qualified pointers (tools/macho/ptrauth.c): laid
+/// out as pointers (their structure's padding known), and named with their
+/// signing as the source gives it.
+#[test]
+fn ptrauth_pointers() {
+    let macho = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/macho");
+    let (image, dwarf) = (
+        macho.join("ptrauth-arm64e.dylib"),
+        macho.join("ptrauth-arm64e.dwarf"),
+    );
+    let args = |extra: &[&'static str]| {
+        let mut v: Vec<String> = extra.iter().map(|s| (*s).to_string()).collect();
+        v.extend([
+            "-debug".into(),
+            dwarf.display().to_string(),
+            image.display().to_string(),
+        ]);
+        v
+    };
+    let run = |a: Vec<String>| {
+        let a: Vec<&str> = a.iter().map(String::as_str).collect();
+        hexcavator(&a)
+    };
+    let (code, out, err) = run(args(&[]));
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        out.starts_with("1 types; their padding wastes 4 bytes"),
+        "{out}"
+    );
+    assert!(!out.contains("no definition"), "{out}");
+    let (code, out, err) = run(args(&["-layout", "callbacks"]));
+    assert_eq!(code, 0, "{err}");
+    for part in [
+        "0     8  on_event        void (int) *__ptrauth(0, 1, 4660)",
+        "8     8  data            void *__ptrauth(2, 0, 77)",
+        "16     8  name            const char *__ptrauth(3, 1, 0)",
+        "28     4  [tail padding]",
+    ] {
+        assert!(out.contains(part), "{part}: {out}");
+    }
+}
+
 /// Each type's mangled name (a PDB's unique name; DWARF's made, Itanium),
 /// and what refers to one type.
 #[test]

@@ -280,6 +280,10 @@ impl<'d> Printer<'_, '_, 'd> {
                 self.word = false;
             }
             DW_TAG_CONST_TYPE | DW_TAG_VOLATILE_TYPE => self.const_volatile_before(d),
+            // (Its qualifier follows: see `after`.)
+            DW_TAG_LLVM_PTRAUTH_TYPE => {
+                self.qualified_name_before(inner.as_ref());
+            }
             DW_TAG_NAMESPACE => match self.t.string(d, DW_AT_NAME) {
                 Some(n) => self.out.push_str(&n),
                 None => self.out.push_str("(anonymous namespace)"),
@@ -345,6 +349,42 @@ impl<'d> Printer<'_, '_, 'd> {
             }
             DW_TAG_ARRAY_TYPE => self.array(d),
             DW_TAG_CONST_TYPE | DW_TAG_VOLATILE_TYPE => self.const_volatile_after(d),
+            // `__ptrauth(key, address discriminated, 0x0<discriminator>)`, as
+            // llvm-dwarfdump spells it (its options too). (Not the pointed-to
+            // type's own close: llvm-dwarfdump leaves a function pointer's
+            // `)(int)` off, `void (*__ptrauth(0, 1, 0x01234)`.)
+            DW_TAG_LLVM_PTRAUTH_TYPE => {
+                // (As LLVM's getAsUnsignedConstant: a flag's value too.)
+                let value = |attr| {
+                    self.t
+                        .constant(d, attr)
+                        .unwrap_or_else(|| u64::from(d.die.flag(attr)))
+                };
+                let mut options = Vec::new();
+                if value(DW_AT_LLVM_PTRAUTH_ISA_POINTER) != 0 {
+                    options.push("isa-pointer");
+                }
+                if value(DW_AT_LLVM_PTRAUTH_AUTHENTICATES_NULL_VALUES) != 0 {
+                    options.push("authenticates-null-values");
+                }
+                match self.t.constant(d, DW_AT_LLVM_PTRAUTH_AUTHENTICATION_MODE) {
+                    Some(0 | 1) => options.push("strip"),
+                    Some(2) => options.push("sign-and-strip"),
+                    _ => {}
+                }
+                let options = if options.is_empty() {
+                    String::new()
+                } else {
+                    format!(", \"{}\"", options.join(","))
+                };
+                let _ = write!(
+                    self.out,
+                    "__ptrauth({}, {}, 0x0{:x}{options})",
+                    value(DW_AT_LLVM_PTRAUTH_KEY),
+                    value(DW_AT_LLVM_PTRAUTH_ADDRESS_DISCRIMINATED),
+                    value(DW_AT_LLVM_PTRAUTH_EXTRA_DISCRIMINATOR),
+                );
+            }
             DW_TAG_PTR_TO_MEMBER_TYPE
             | DW_TAG_REFERENCE_TYPE
             | DW_TAG_RVALUE_REFERENCE_TYPE

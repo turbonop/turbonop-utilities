@@ -1,9 +1,10 @@
 //! Fixups and exports of the dylibs tools/macho/build.cmd links from
 //! pointers.c (arm64 and x86-64; chained fixups, and the older rebase and
-//! bind opcodes), against llvm-objdump's decoding of each
+//! bind opcodes), and build-arm64e.cmd (arm64e: chained fixups, some
+//! pointers signed), against llvm-objdump's decoding of each
 //! (`*.fixups.txt`).
 
-use hexcavator_macho::{FixupKind, MachO};
+use hexcavator_macho::{FixupKind, MachO, PtrAuth};
 
 fn testdata(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -23,23 +24,47 @@ enum Listed {
     Bind(u64, String, i64),
 }
 
+/// A signed pointer's signing as objdump lists it: diversity, address
+/// diversity, key.
+type Signing = (u16, bool, String);
+
 /// `--dyld-info` (chained fixups): `segment section address pointer type
-/// [addend dylib symbol | vm address]`.
-fn chained(text: &str) -> Vec<Listed> {
+/// [div addr key] [addend dylib symbol | vm address]` (arm64e's three
+/// columns blank for a pointer not signed), each with its signing.
+fn chained_signed(text: &str) -> Vec<(Listed, Option<Signing>)> {
     let mut out = Vec::new();
     for line in text.lines() {
         let f: Vec<&str> = line.split_whitespace().collect();
-        match f.get(4) {
-            Some(&"rebase") => out.push(Listed::Rebase(hex(f[2]), Some(hex(f[5])))),
-            Some(&"bind") => out.push(Listed::Bind(
-                hex(f[2]),
-                f[7].to_string(),
-                i64::try_from(hex(f[5])).unwrap(),
+        let Some(&kind) = f.get(4) else { continue };
+        let (signing, rest) = match f.get(6) {
+            Some(&("true" | "false")) => (
+                Some((
+                    u16::try_from(hex(f[5])).unwrap(),
+                    f[6] == "true",
+                    f[7].to_string(),
+                )),
+                &f[8..],
+            ),
+            _ => (None, &f[5..]),
+        };
+        match kind {
+            "rebase" => out.push((Listed::Rebase(hex(f[2]), Some(hex(rest[0]))), signing)),
+            "bind" => out.push((
+                Listed::Bind(
+                    hex(f[2]),
+                    rest[2].to_string(),
+                    i64::try_from(hex(rest[0])).unwrap(),
+                ),
+                signing,
             )),
             _ => {}
         }
     }
     out
+}
+
+fn chained(text: &str) -> Vec<Listed> {
+    chained_signed(text).into_iter().map(|(l, _)| l).collect()
 }
 
 /// `--rebase --bind ...` (opcodes): the tables' rows.
@@ -191,6 +216,7 @@ fn function_starts_and_unwind_info() {
         "program-x86_64",
         "unwind-arm64.dylib",
         "unwind-x86_64.dylib",
+        "unwind-arm64e.dylib",
     ] {
         let data = std::fs::read(testdata(name)).unwrap();
         let text = std::fs::read_to_string(testdata(&format!("{name}.unwind.txt"))).unwrap();
@@ -272,4 +298,48 @@ fn ad_hoc_code_signatures() {
     // x86-64's aren't signed.
     let data = std::fs::read(testdata("program-x86_64")).unwrap();
     assert!(MachO::parse(&data).unwrap().code_signature().is_none());
+}
+
+/// arm64e: chained fixups of the userland24 format, function pointers
+/// signed: each rebase and bind, and each signed pointer's diversity,
+/// address diversity, and key, as llvm-objdump decodes them.
+#[test]
+fn arm64e_fixups_and_their_signing_match_llvm_objdump() {
+    let name = "pointers-arm64e.dylib";
+    let data = std::fs::read(testdata(name)).unwrap();
+    let text = std::fs::read_to_string(testdata(&format!("{name}.fixups.txt"))).unwrap();
+    let m = MachO::parse(&data).unwrap();
+    let mut want = chained_signed(&text);
+    want.sort();
+    assert_eq!(want.len(), 10);
+    assert!(
+        want.iter().filter(|(_, s)| s.is_some()).count() >= 2,
+        "{want:?}"
+    );
+    let mut got: Vec<(Listed, Option<Signing>)> = m
+        .fixups()
+        .into_iter()
+        .map(|f| {
+            let listed = match f.kind {
+                FixupKind::Rebase { target } => Listed::Rebase(f.addr, Some(target)),
+                FixupKind::Bind { symbol, addend, .. } => {
+                    Listed::Bind(f.addr, String::from_utf8_lossy(symbol).into_owned(), addend)
+                }
+            };
+            let signing = f.auth.map(
+                |PtrAuth {
+                     key,
+                     diversity,
+                     address,
+                 }| (diversity, address, key.name().to_string()),
+            );
+            (listed, signing)
+        })
+        .collect();
+    got.sort();
+    assert_eq!(got, want);
+    // (And arm64's build of the same source: the same fixups, unsigned.)
+    let plain = std::fs::read(testdata("pointers-arm64.dylib")).unwrap();
+    let plain = MachO::parse(&plain).unwrap();
+    assert!(plain.fixups().iter().all(|f| f.auth.is_none()));
 }

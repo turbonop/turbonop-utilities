@@ -25,10 +25,13 @@ workflow publishes it to GitHub Pages.
   page: `sw.js` adds the headers that make it so where the host can't
   (GitHub Pages).
 
+hexcavator's allocator there is `hexcavator-alloc` (crates/base/alloc):
+wasi-libc's takes one lock for every thread's allocations, which left
+eight threads slower than one; with it, they share the work (clang.exe's
+`types`: 46 s before, 2.6 s after).
+
 WebAssembly's memory is 32-bit, 4 GiB: clang.exe with its 1.1 GB PDB
-fits, with room to spare for most binaries. (See TODO.md for what's
-planned: reading files by their parts, and an allocator that lets more
-than two threads help.)
+fits, a command at a time. (See TODO.md: reading files by their parts.)
 
 ## Trying it
 

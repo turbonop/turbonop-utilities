@@ -52,6 +52,10 @@ serde_json.workspace = true
 [target.'cfg(target_env = "musl")'.dependencies]
 mimalloc.workspace = true
 
+# (WebAssembly's threads: see src/main.rs.)
+[target.'cfg(target_family = "wasm")'.dependencies]
+hexcavator-alloc.workspace = true
+
 [dev-dependencies]
 serde_json.workspace = true
 

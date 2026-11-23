@@ -185,11 +185,8 @@
   const child_process = {
     spawn(_exe, args, options) {
       const env = Object.assign({}, (options && options.env) || {});
-      // Two threads: wasi-libc's allocator (wasm32-wasip1-threads') takes
-      // one lock for every thread's allocations, and past two threads
-      // they wait on it more than they work (measured: see TODO.md).
-      // (hexcavator can't ask the browser how many cores there are.)
-      env.HEXC_THREADS = env.HEXC_THREADS || String(Math.min(2, navigator.hardwareConcurrency || 2));
+      // Every core (hexcavator can't ask the browser how many there are).
+      env.HEXC_THREADS = env.HEXC_THREADS || String(navigator.hardwareConcurrency || 4);
       return runtime.spawn(args || [], env);
     },
   };

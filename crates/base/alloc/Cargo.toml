@@ -1,0 +1,12 @@
+[package]
+name = "hexcavator-alloc"
+description = "A thread-caching allocator for WebAssembly's threads (wasi-threads), for Hexcavator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true

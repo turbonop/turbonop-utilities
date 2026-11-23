@@ -38,6 +38,7 @@ memchr = { version = "2.8", default-features = false }
 # The allocator of the static (musl) Linux build: musl's own serializes
 # every thread's allocations.
 mimalloc = { version = "0.1", default-features = false }
+hexcavator-alloc = { path = "crates/base/alloc" }
 hexcavator-core = { path = "crates/base/core" }
 hexcavator-mmap = { path = "crates/base/mmap" }
 hexcavator-par = { path = "crates/base/par" }

@@ -46,15 +46,98 @@ pub fn find_debug(
     image: &Image<'_>,
     given: Option<&Path>,
 ) -> Result<(PathBuf, Mmap), Error> {
+    let (path, file) = find_debug_file(image_path, image, given)?;
+    let map = file.into_mmap().map_err(Error::io(&path))?;
+    Ok((path, map))
+}
+
+/// A debug information file: its bytes, mapped (or, where nothing can be
+/// mapped, read whole); or, where nothing can be mapped, a PDB read by
+/// range, its streams read as they are asked for (WebAssembly's memory,
+/// 4 GiB, need not hold a big program's PDB whole beside what is built
+/// from it).
+pub enum DebugFile {
+    /// Its bytes.
+    Mapped(Mmap),
+    /// A PDB, read by range.
+    Read(hexcavator_mmap::ReadFile),
+}
+
+impl DebugFile {
+    /// Opens the file at `path` (`named`: a path a file named, checked as
+    /// [`Mmap::open_named`] checks it).
+    pub fn open(path: &Path, named: bool) -> std::io::Result<Self> {
+        #[cfg(not(any(windows, unix)))]
+        {
+            let file = if named {
+                hexcavator_mmap::ReadFile::open_named(path)?
+            } else {
+                hexcavator_mmap::ReadFile::open(path)?
+            };
+            use hexcavator_mmap::Source;
+            let mut head = [0u8; 32];
+            let n = (file.len() as usize).min(head.len());
+            if file.fill(0, &mut head[..n]) && hexcavator_pdb::check(&head[..n]).is_ok() {
+                return Ok(Self::Read(file));
+            }
+            file.read_all().map(Self::Mapped)
+        }
+        #[cfg(any(windows, unix))]
+        {
+            if named {
+                Mmap::open_named(path)
+            } else {
+                Mmap::open(path)
+            }
+            .map(Self::Mapped)
+        }
+    }
+
+    /// Its debug information, parsed.
+    pub fn parse(&self) -> hexcavator_core::Result<DebugInfo<'_>> {
+        match self {
+            Self::Mapped(m) => DebugInfo::parse(m),
+            Self::Read(r) => DebugInfo::parse_source(r),
+        }
+    }
+
+    /// Its bytes, if it is held whole.
+    pub fn bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Mapped(m) => Some(m),
+            Self::Read(_) => None,
+        }
+    }
+
+    /// Its bytes, read whole if they aren't.
+    pub fn into_mmap(self) -> std::io::Result<Mmap> {
+        match self {
+            Self::Mapped(m) => Ok(m),
+            Self::Read(r) => r.read_all(),
+        }
+    }
+}
+
+/// [`find_debug`]'s file, as a [`DebugFile`]: a PDB read by range where
+/// nothing can be mapped.
+///
+/// # Errors
+///
+/// As [`find_debug`].
+pub fn find_debug_file(
+    image_path: &Path,
+    image: &Image<'_>,
+    given: Option<&Path>,
+) -> Result<(PathBuf, DebugFile), Error> {
     if let Some(p) = given {
-        let map = Mmap::open(p).map_err(Error::io(p))?;
+        let map = DebugFile::open(p, false).map_err(Error::io(p))?;
         return Ok((p.to_path_buf(), map));
     }
     // (An image with its own DWARF: ELF's, Mach-O's, WebAssembly's, and
     // a PE image MinGW built. A PE image's own isn't a PDB.)
     if DebugInfo::parse(image.data()).is_ok() {
         let map = Mmap::open(image_path).map_err(Error::io(image_path))?;
-        return Ok((image_path.to_path_buf(), map));
+        return Ok((image_path.to_path_buf(), DebugFile::Mapped(map)));
     }
     // (A COFF object's CodeView: read as the PDB a linker would write of
     // it, with its type server's types, if it names one that is found.)
@@ -62,7 +145,7 @@ pub fn find_debug(
     if let Some(pdb) =
         hexcavator_debuginfo::coff_object::pdb_of_with(image.data(), server.as_deref())
     {
-        return Ok((image_path.to_path_buf(), Mmap::from(pdb)));
+        return Ok((image_path.to_path_buf(), DebugFile::Mapped(Mmap::from(pdb))));
     }
     let ids = image.debug_ids();
     let servers = server::servers();
@@ -76,13 +159,18 @@ pub fn find_debug(
     let mut tried = Vec::new();
     for id in &ids {
         for candidate in hexcavator_debuginfo::candidate_paths_in(image_path, id, &dirs) {
-            let Ok(map) = Mmap::open_named(&candidate) else {
+            let Ok(map) = DebugFile::open(&candidate, true) else {
                 tried.push(format!("{} (not found)", candidate.display()));
                 continue;
             };
-            match DebugInfo::parse(&map) {
-                Ok(d) if d.matches(id) => return Ok((candidate, map)),
-                Ok(_) => tried.push(format!("{} (does not match)", candidate.display())),
+            let matched = match map.parse() {
+                Ok(d) if d.matches(id) => Ok(true),
+                Ok(_) => Ok(false),
+                Err(e) => Err(e),
+            };
+            match matched {
+                Ok(true) => return Ok((candidate, map)),
+                Ok(false) => tried.push(format!("{} (does not match)", candidate.display())),
                 Err(e) => tried.push(format!("{} ({e})", candidate.display())),
             }
         }
@@ -96,7 +184,7 @@ pub fn find_debug(
             };
             let found = cached.unwrap_or_else(|| PathBuf::from(&url));
             match DebugInfo::parse(&map) {
-                Ok(d) if d.matches(id) => return Ok((found, map)),
+                Ok(d) if d.matches(id) => return Ok((found, DebugFile::Mapped(map))),
                 Ok(_) => tried.push(format!("{url} (does not match)")),
                 Err(e) => tried.push(format!("{url} ({e})")),
             }
@@ -335,7 +423,7 @@ pub struct Opened {
     path: PathBuf,
     data: Mmap,
     debug_path: PathBuf,
-    debug: Mmap,
+    debug: DebugFile,
     /// Split DWARF files.
     splits: Vec<(PathBuf, Mmap)>,
     /// The object files of a Mach-O image's debug map, when its DWARF is
@@ -355,7 +443,7 @@ impl Opened {
         let data = Mmap::open(path).map_err(Error::io(path))?;
         let image = Image::parse(&data).map_err(Error::format(path))?;
         let given = debug.is_some();
-        let (debug_path, debug) = match find_debug(path, &image, debug) {
+        let (debug_path, debug) = match find_debug_file(path, &image, debug) {
             Ok(found) => found,
             // A Mach-O image without a dSYM: the DWARF of the objects its
             // debug map names, if any are found.
@@ -369,14 +457,15 @@ impl Opened {
                     path: path.to_path_buf(),
                     data,
                     debug_path: path.to_path_buf(),
-                    debug: again,
+                    debug: DebugFile::Mapped(again),
                     splits: Vec::new(),
                     objects,
                 });
             }
             Err(e) => return Err(e),
         };
-        let splits = DebugInfo::parse(&debug)
+        let splits = debug
+            .parse()
             .map(|d| open_splits(path, &debug_path, &d))
             .unwrap_or_default();
         Ok(Self {
@@ -393,9 +482,11 @@ impl Opened {
     /// map (see [`Opened::open`]).
     fn debug_map_info(&self, image: &Image<'_>) -> Result<DebugInfo<'_>, Error> {
         use hexcavator_debuginfo::dwarf_backend::DwarfInfo;
-        let image_data = match hexcavator_macho::preferred_slice(&self.debug) {
+        // (The debug map's image: always mapped, as the image itself.)
+        let debug = self.debug.bytes().unwrap_or_default();
+        let image_data = match hexcavator_macho::preferred_slice(debug) {
             Some((_, slice)) => slice,
-            None => &self.debug[..],
+            None => debug,
         };
         let mut d = DwarfInfo::from_debug_map(image_data).map_err(Error::format(&self.path))?;
         let map = image
@@ -453,7 +544,9 @@ impl Opened {
 
     fn debug_info_of(&self, image: &Image<'_>) -> Result<DebugInfo<'_>, Error> {
         let mut debug = if self.objects.is_empty() {
-            DebugInfo::parse(&self.debug).map_err(Error::format(&self.debug_path))?
+            self.debug
+                .parse()
+                .map_err(Error::format(&self.debug_path))?
         } else {
             self.debug_map_info(image)?
         };

@@ -27,6 +27,8 @@ use std::io;
 use std::ops::Deref;
 use std::path::Path;
 
+pub use hexcavator_core::Source;
+
 /// A read-only view of a file's contents.
 pub struct Mmap {
     inner: Inner,
@@ -73,34 +75,8 @@ impl Mmap {
     /// credentials), a device, or a FIFO (whose opening blocks). Only a
     /// local regular file is opened (see [`is_local_path`]).
     pub fn open_named(path: impl AsRef<Path>) -> io::Result<Self> {
-        let path = path.as_ref();
-        if !is_local_path(path) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "not a local file's path",
-            ));
-        }
-        // A regular file before it's opened (a FIFO's open blocks; a
-        // device's can do anything)...
-        if !std::fs::metadata(path)?.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "not a regular file",
-            ));
-        }
-        // ...and what was opened, checked by its handle, not its path again
-        // (which another process could have pointed elsewhere since): what
-        // is mapped is what was checked. (On Unix, opened without blocking:
-        // a FIFO swapped in since opens at once, and is refused here.)
-        let file = open_named_read_only(path)?;
-        let meta = file.metadata()?;
-        if !meta.is_file() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "not a regular file",
-            ));
-        }
-        Self::of_file(file, meta.len())
+        let (file, len) = open_named_checked(path.as_ref())?;
+        Self::of_file(file, len)
     }
 
     #[cfg(any(windows, unix))]
@@ -168,6 +144,100 @@ impl fmt::Debug for Mmap {
             .field("len", &self.len())
             .field("mapped", &self.is_mapped())
             .finish()
+    }
+}
+
+/// The local regular file at `path` (one a file names: see
+/// [`Mmap::open_named`]), opened, and its length.
+fn open_named_checked(path: &Path) -> io::Result<(File, u64)> {
+    if !is_local_path(path) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a local file's path",
+        ));
+    }
+    // A regular file before it's opened (a FIFO's open blocks; a
+    // device's can do anything)...
+    if !std::fs::metadata(path)?.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    // ...and what was opened, checked by its handle, not its path again
+    // (which another process could have pointed elsewhere since): what
+    // is mapped is what was checked. (On Unix, opened without blocking:
+    // a FIFO swapped in since opens at once, and is refused here.)
+    let file = open_named_read_only(path)?;
+    let meta = file.metadata()?;
+    if !meta.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    Ok((file, meta.len()))
+}
+
+/// A file read by range, as its parts are asked for (a [`Source`]): for
+/// files too large to read whole where nothing can be mapped (WebAssembly).
+/// Natively, files are mapped instead ([`Mmap`]).
+pub struct ReadFile {
+    file: std::sync::Mutex<File>,
+    len: u64,
+}
+
+impl ReadFile {
+    /// Opens the file at `path`.
+    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+        let file = open_read_only(path.as_ref())?;
+        let len = file.metadata()?.len();
+        Ok(Self {
+            file: std::sync::Mutex::new(file),
+            len,
+        })
+    }
+
+    /// Opens the file at `path` when the path came from a file's contents
+    /// (see [`Mmap::open_named`]).
+    pub fn open_named(path: impl AsRef<Path>) -> io::Result<Self> {
+        let (file, len) = open_named_checked(path.as_ref())?;
+        Ok(Self {
+            file: std::sync::Mutex::new(file),
+            len,
+        })
+    }
+
+    /// The whole file, read (for what reads a file's bytes rather than its
+    /// parts).
+    pub fn read_all(&self) -> io::Result<Mmap> {
+        let mut data =
+            vec![0u8; usize::try_from(self.len).map_err(|_| io::Error::other("too large"))?];
+        if self.fill(0, &mut data) {
+            Ok(Mmap::from(data))
+        } else {
+            Err(io::Error::other("the file changed while it was read"))
+        }
+    }
+}
+
+impl Source for ReadFile {
+    fn len(&self) -> u64 {
+        self.len
+    }
+
+    fn fill(&self, offset: u64, buf: &mut [u8]) -> bool {
+        use std::io::{Read, Seek, SeekFrom};
+        let Ok(mut file) = self.file.lock() else {
+            return false;
+        };
+        file.seek(SeekFrom::Start(offset)).is_ok() && file.read_exact(buf).is_ok()
+    }
+}
+
+impl fmt::Debug for ReadFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReadFile").field("len", &self.len).finish()
     }
 }
 

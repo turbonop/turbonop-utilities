@@ -63,7 +63,22 @@ pub struct Pdb<'data> {
 
 impl<'data> Pdb<'data> {
     pub fn parse(data: &'data [u8]) -> Result<Self> {
-        let msf = Msf::parse(data)?;
+        Self::of(Msf::parse(data)?)
+    }
+
+    /// The PDB a source reads (by range: a file not mapped), its streams
+    /// read as they are asked for.
+    pub fn parse_source(source: &'data dyn hexcavator_core::Source) -> Result<Self> {
+        let mut head = [0u8; 64];
+        let n = (source.len() as usize).min(head.len());
+        if !source.fill(0, &mut head[..n]) {
+            return Err(Error::new(ErrorKind::Truncated, 0, "PDB"));
+        }
+        check(&head[..n])?;
+        Self::of(Msf::parse_source(source)?)
+    }
+
+    fn of(msf: Msf<'data>) -> Result<Self> {
         let info = msf.stream(stream::INFO)?;
         InfoStream::parse(&info)?;
         let dbi_data = msf.stream_or_empty(stream::DBI)?;

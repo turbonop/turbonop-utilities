@@ -56,13 +56,21 @@ fn lossy(bytes: &[u8]) -> String {
 impl<'data> PdbInfo<'data> {
     pub fn parse(data: &'data [u8]) -> Result<Self> {
         hexcavator_pdb::check(data)?;
-        let pdb = Pdb::parse(data)?;
+        Self::of(Pdb::parse(data)?)
+    }
+
+    fn of(pdb: Pdb<'data>) -> Result<Self> {
         let sections = pdb
             .sections()?
             .into_iter()
             .map(|(va, size, _)| (va, size))
             .collect();
         Ok(Self { pdb, sections })
+    }
+
+    /// The PDB a source reads (by range: a file not mapped).
+    pub fn parse_source(source: &'data dyn hexcavator_core::Source) -> Result<Self> {
+        Self::of(Pdb::parse_source(source)?)
     }
 
     pub fn pdb(&self) -> &Pdb<'data> {

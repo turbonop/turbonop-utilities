@@ -177,3 +177,44 @@ fn requests_run_together() {
     ids.sort_unstable();
     assert_eq!(ids, (0..8).collect::<Vec<_>>());
 }
+
+/// `"json": true`: a command's JSON output as a value in the response (the
+/// same value as its `stdout` string's, parsed), once; output that isn't
+/// JSON (a failure, a text command) is a string, as without it.
+#[test]
+fn json_output_as_a_value() {
+    let mut s = Server::start();
+    let exe = bin("CppTestCases_BasicDiffObjectsAfter.dll");
+    let exe = exe.to_str().unwrap();
+    let mut ask_json = |args: &[&str]| -> Value {
+        let id = s.next;
+        s.next += 1;
+        let stdin = s.child.stdin.as_mut().unwrap();
+        writeln!(stdin, "{}", json!({ "id": id, "args": args, "json": true })).unwrap();
+        stdin.flush().unwrap();
+        let v: Value = serde_json::from_str(&s.lines.next().unwrap().unwrap()).unwrap();
+        assert_eq!(v["id"], id);
+        v
+    };
+    for args in [
+        &["info", "-json", exe][..],
+        &["size", "-d", "sections", "-json", exe][..],
+        &["types", "-json", "-n", "5", exe][..],
+    ] {
+        let v = ask_json(args);
+        assert_eq!(v["code"], 0, "{args:?}: {v}");
+        assert_eq!(v["stdout"], "", "{args:?}");
+        let theirs: Value = serde_json::from_str(&hexcavator(args)).unwrap();
+        assert_eq!(v["json"], theirs, "{args:?}");
+    }
+    // Text: a string.
+    let v = ask_json(&["info", exe]);
+    assert!(
+        v.get("json").is_none() && v["stdout"].as_str().unwrap().contains("PE32"),
+        "{v}"
+    );
+    // A failure: its output a string, as without.
+    let v = ask_json(&["size", "-json", "no-such-file.exe"]);
+    assert_ne!(v["code"], 0);
+    assert!(v.get("json").is_none(), "{v}");
+}

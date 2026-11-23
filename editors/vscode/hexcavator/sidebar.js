@@ -74,7 +74,8 @@ class OutputProvider {
     const exe = h.hexcPath(vscode.workspace.getConfiguration("hexcavator").get("path"));
     const header = `$ ${h.commandLine(exe, args)}\n\n`;
     try {
-      return header + (await this.runHexc(args, cancel));
+      // (Its text, a `-json` command's too.)
+      return header + (await this.runHexc(args, cancel, true));
     } catch (e) {
       return header + `(failed: ${e.message})\n`;
     }
@@ -236,7 +237,7 @@ class Sidebar {
 
   /** The functions of a diff's builds compared (`hexcavator xref -- base`). */
   functionsDiff(entry) {
-    return this.once(entry, "fdiff", ["xref", "-json", "-n", "500", entry.file, "--", entry.base], JSON.parse);
+    return this.once(entry, "fdiff", ["xref", "-json", "-n", "500", entry.file, "--", entry.base], h.parsed);
   }
 
   /** What `once` gave for `what`, if it has finished. */
@@ -253,11 +254,11 @@ class Sidebar {
     if (entry.base) {
       args.push("--", entry.base);
     }
-    return this.once(entry, "report", args, JSON.parse);
+    return this.once(entry, "report", args, h.parsed);
   }
 
   symbols(entry, functionsOnly) {
-    return this.once(entry, functionsOnly ? "functions" : "symbols", h.symbolsArgs(entry.file, functionsOnly), (out) => JSON.parse(out).rows || []);
+    return this.once(entry, functionsOnly ? "functions" : "symbols", h.symbolsArgs(entry.file, functionsOnly), (out) => h.parsed(out).rows || []);
   }
 
   /** The source file and line of the symbol `name`, if the debug information has them. */
@@ -265,7 +266,7 @@ class Sidebar {
   async sourceOf(entry, name) {
     try {
       return await this.once(entry, "source:" + name, ["size", "-definition", name, "-json", entry.file], (out) => {
-        const r = JSON.parse(out);
+        const r = h.parsed(out);
         return r && r.file ? { file: r.file, line: r.line || 1 } : null;
       });
     } catch {
@@ -334,7 +335,7 @@ class Sidebar {
       case "row":
         return this.rowsOf(entry, node.report, node.row, node.path);
       case "recs":
-        return this.once(entry, "recs", ["recommend", "-json", entry.file], JSON.parse).then(
+        return this.once(entry, "recs", ["recommend", "-json", entry.file], h.parsed).then(
           (r) => {
             const kids = (r.recommendations || []).map((rec) => ({ type: "rec", entry, rec }));
             const linked = h.linkSummary(r);
@@ -398,7 +399,7 @@ class Sidebar {
 
   resultChildren(entry, result) {
     if (result.kind === "why") {
-      return this.once(entry, "why:" + result.name, ["xref", "-why", result.name, "-json", entry.file], JSON.parse).then(
+      return this.once(entry, "why:" + result.name, ["xref", "-why", result.name, "-json", entry.file], h.parsed).then(
         (why) =>
           h.whyRows(why).map((r) => (r.name ? { type: "symbol", entry, name: r.name, label: r.label, description: r.description, icon: r.icon } : { type: "info", ...r })),
         (e) => [failure(e)]
@@ -408,7 +409,7 @@ class Sidebar {
   }
 
   refsOf(entry, name) {
-    return this.once(entry, "refs:" + name, ["xref", "-refs", name, "-json", entry.file], JSON.parse).then(
+    return this.once(entry, "refs:" + name, ["xref", "-refs", name, "-json", entry.file], h.parsed).then(
       (r) => {
         const groups = [];
         const head = { type: "info", label: r.reached ? "Reached from a root" : "Nothing reaches it", description: `${h.formatSize(r.size)}${r.code ? " of code" : ""}`, icon: r.reached ? "pass" : "circle-slash" };
@@ -674,7 +675,7 @@ async function askName(sidebar, entry, what) {
   const load =
     what === "type"
       ? sidebar
-          .once(entry, "types", ["types", "-json", "-n", "0", entry.file], (out) => JSON.parse(out).list || [])
+          .once(entry, "types", ["types", "-json", "-n", "0", entry.file], (out) => h.parsed(out).list || [])
           .then((list) =>
             list
               .slice()
@@ -1065,7 +1066,7 @@ function findSource(recorded, binary) {
 /** `hexcavator info -json`'s answer for `file`, else what its name suggests. */
 function parseCaps(out, file) {
   try {
-    const all = JSON.parse(out);
+    const all = h.parsed(out);
     const caps = Array.isArray(all) ? all[0] : null;
     return caps && Array.isArray(caps.tools) ? caps : h.capsFallback();
   } catch {

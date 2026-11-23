@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hexcavator</title>
+<meta name="description" content="Explore executables, objects, libraries, and WebAssembly modules with their debug information, in your browser: nothing you open leaves your computer.">
+<link rel="icon" href="ext/media/icon.png">
+<link rel="stylesheet" href="codicons/codicon.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar" aria-label="Hexcavator">
+    <div id="sidebar-title">
+      <span class="sidebar-name">HEXCAVATOR</span>
+      <span id="sidebar-actions"></span>
+    </div>
+    <div id="tree" role="tree"></div>
+    <div id="sidebar-empty" class="sidebar-empty">
+      <p>Explore an executable, object, library, or WebAssembly module with its debug information: its headers, symbols, types, sources, data, and disassembly, why each function is there, and where its bytes go.</p>
+      <button id="open-button" class="button">Open Binary…</button>
+      <button id="diff-button" class="button secondary">Diff Binaries…</button>
+      <p class="hint">Or drop a binary and its debug information (a PDB, a .debug file, a dSYM) anywhere on this page.</p>
+    </div>
+    <div id="sidebar-sash" title="Drag to resize"></div>
+  </aside>
+  <main id="main">
+    <div id="tabs" role="tablist"></div>
+    <div id="editors">
+      <div id="welcome" class="welcome">
+        <img src="ext/media/icon.png" alt="" width="96" height="96">
+        <h1>Hexcavator</h1>
+        <p class="tagline">Dig into your binaries.</p>
+        <p>Drop a binary and its debug information here (or <a href="#" id="welcome-open">open them</a>): PE images and COFF objects, ELF and Mach-O files, archives, and WebAssembly modules, with PDBs or DWARF (in the file, a .debug file, or a dSYM).</p>
+        <p class="private">Everything runs here, in your browser (hexcavator, compiled to WebAssembly). Nothing you open is uploaded anywhere.</p>
+        <p class="links"><a href="https://github.com/hexcavator/hexcavator" target="_blank" rel="noopener">GitHub</a> · <a href="https://marketplace.visualstudio.com/items?itemName=hexcavator.hexcavator" target="_blank" rel="noopener">VS Code extension</a> · <a href="https://github.com/hexcavator/hexcavator/releases/latest" target="_blank" rel="noopener">hexcavator for the command line</a></p>
+        <p id="unsupported" class="error" hidden></p>
+      </div>
+    </div>
+  </main>
+</div>
+<footer id="status">
+  <span id="status-left"><span class="status-item"><span class="codicon codicon-file-binary"></span> Hexcavator for the web</span></span>
+  <span id="status-right"></span>
+</footer>
+<div id="overlay"></div>
+<div id="toasts"></div>
+<div id="drop" hidden><div class="drop-box"><span class="codicon codicon-cloud-upload"></span><div>Drop binaries and their debug information</div></div></div>
+<input id="picker" type="file" multiple hidden>
+<script src="wasi/process.js"></script>
+<script src="host/node.js"></script>
+<script src="host/vscode.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

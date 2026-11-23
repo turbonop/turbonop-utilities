@@ -44,6 +44,29 @@ jobs:
       # (The web version's: threads, as Web Workers.)
       - run: cargo clippy -p hexcavator --target wasm32-wasip1-threads
 
+  # The web version (editors/web): hexcavator for wasi-threads, in a
+  # headless Edge, as the page runs it and as a person uses the page.
+  web:
+    runs-on: windows-latest
+    env:
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_STRIP: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup target add wasm32-wasip1-threads
+      - run: cargo build --release -p hexcavator --target wasm32-wasip1-threads
+        env:
+          RUSTFLAGS: -C link-arg=--max-memory=4294967296
+      - shell: bash
+        run: |
+          npm pack @vscode/codicons@0.0.36
+          mkdir codicons && tar -xzf vscode-codicons-0.0.36.tgz -C codicons
+      - run: python editors/web/test/run.py --wasm target/wasm32-wasip1-threads/release/hexcavator.wasm --codicons codicons/package/dist
+
   # Linux releases are static, with musl (and mimalloc, compiled with
   # musl-gcc, in musl's allocator's place): the tests, built so.
   musl:

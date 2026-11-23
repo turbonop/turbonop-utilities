@@ -57,6 +57,12 @@ notarized. Each program's symbols are beside it
 hash. On Windows, winget installs it too: `winget install
 Hexcavator.Hexcavator`.
 
+Or use it in a browser, nothing to install: the web version
+(https://hexcavator.github.io/hexcavator/) is the VS Code extension's
+sidebar and views with hexcavator compiled to WebAssembly. Drop a binary
+and its debug information on the page; nothing leaves your computer (see
+`editors/web`).
+
 ## Principles
 
 - **Few dependencies.** Every parser, decoder, demangler, and analysis is
@@ -125,6 +131,7 @@ Hexcavator.Hexcavator`.
 | `apps/fuzz` | The fuzzer: every parser and command, on mutated inputs, for crashes, hangs, and blowups |
 | `apps/xtask` | Development tasks: `cargo xtask test` builds every test and runs them all at once |
 | `editors/vscode/hexcavator` | The VS Code extension: a sidebar of binaries and builds compared, with their headers, symbols, types, sources, data, and disassembly, size treemaps, and why each thing is there |
+| `editors/web` | The web version: the extension's sidebar and views in a browser, with hexcavator compiled to WebAssembly (wasi-threads, its threads Web Workers) |
 
 ## Building
 

@@ -213,3 +213,76 @@ fn not_ltcg() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("not an LTCG object"));
 }
+
+/// What each function refers to, as `tools/coff/ltcg.cpp` has it:
+/// `exported` calls (directly and virtually), reads variables, and takes
+/// its string literals' addresses; `helper` uses `hidden`.
+#[test]
+fn references() {
+    let text = hexcavator(&["ltcg", "-refs", "ltcg.obj"]);
+    let of = |function: &str| -> Vec<String> {
+        let mut lines = text.lines().skip_while(|l| l.trim() != function).skip(1);
+        let mut out = Vec::new();
+        for l in lines.by_ref() {
+            if !l.starts_with("      ") {
+                break;
+            }
+            out.push(l.trim().to_string());
+        }
+        out
+    };
+    let e = of("exported");
+    for want in [
+        "calls printf",
+        "uses ?counter@@3HA",
+        "uses ?banner@@3QBDB",
+        "uses ?elsewhere@@3HA",
+        "calls ?imported@@YAHH@Z",
+        "calls virtually ?area@Shape@@UEBAHXZ",
+        "calls ??0Square@@QEAA@H@Z",
+        "calls ?helper@@YAHH@Z",
+        "calls ?fail@@YAXPEBD@Z",
+        "calls ?callee_pops@@YAHHH@Z",
+        "calls ??$twice@H@@YAHH@Z",
+        "takes the address of ??_C@_08JKGPMEKK@negative@",
+    ] {
+        assert!(e.iter().any(|l| l == want), "{want}: {e:#?}");
+    }
+    assert_eq!(of("?helper@@YAHH@Z"), ["uses ?hidden@@3PAHA"]);
+    assert!(of("??$twice@H@@YAHH@Z").is_empty());
+    assert_eq!(of("??0Square@@QEAA@H@Z").len(), 3, "{text}");
+}
+
+/// Each function's IL: the bodies follow one another in `.cil$ex` after
+/// its header, so their sizes add up to the rest of it.
+#[test]
+fn function_bodies_tile_the_il() {
+    let data = std::fs::read(coff().join("ltcg.obj")).unwrap();
+    let obj = hexcavator_pe::ltcg::LtcgObject::parse(&data).unwrap();
+    let g = obj.globals().unwrap();
+    let il = obj.stream(b".cil$ex").unwrap();
+    let bodies: Vec<_> = g.symbols.iter().filter_map(|s| s.il).collect();
+    assert_eq!(bodies.len(), 52);
+    let sizes: u64 = g
+        .il_sizes(il.len())
+        .into_iter()
+        .flatten()
+        .map(u64::from)
+        .sum();
+    let first = bodies.iter().map(|b| b.il_offset).min().unwrap();
+    assert_eq!(sizes, (il.len() as u64) - u64::from(first));
+    // (In the records' order; and each function's parameters, `this` too.)
+    let offsets: Vec<u32> = bodies.iter().map(|b| b.il_offset).collect();
+    assert!(offsets.is_sorted());
+    let params = |name: &[u8]| {
+        g.symbols
+            .iter()
+            .find(|s| s.name == name)
+            .and_then(|s| s.il)
+            .unwrap()
+            .params
+    };
+    assert_eq!(params(b"??0Square@@QEAA@H@Z"), 2);
+    assert_eq!(params(b"?callee_pops@@YAHHH@Z"), 2);
+    assert_eq!(params(b"??1Shape@@UEAA@XZ"), 1);
+}

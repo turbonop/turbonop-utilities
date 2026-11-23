@@ -70,6 +70,9 @@ fn info_is_llvm_dwarfdumps() {
         // DWARF in a WebAssembly module (rustc's): 32-bit addresses, code
         // section offsets, DW_OP_WASM_location, Rust's templates.
         "testdata/wasm/sample-dwarf.wasm",
+        // arm64e's __ptrauth-qualified pointers (DW_TAG_LLVM_ptrauth_type),
+        // named as llvm-dwarfdump names them.
+        "testdata/macho/ptrauth-arm64e.dwarf",
     ];
     for f in fixtures {
         let path = root().join(f);

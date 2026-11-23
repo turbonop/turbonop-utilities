@@ -1,0 +1,13 @@
+pointers-arm64e.dylib:
+dyld information:
+segment section address pointer            type   div    addr  key addend dylib     symbol/vm address
+__DATA  __data  0x4000  0x00080000000062B8 rebase                                  0x62B8
+__DATA  __data  0x4008  0x00080000000062BC rebase                                  0x62BC
+__DATA  __data  0x4010  0x00080000000062C0 rebase                                  0x62C0
+__DATA  __data  0x4018  0x00100000000062B8 rebase                                  0x62B8
+__DATA  __data  0x4028  0x00080000000062BC rebase                                  0x62BC
+__DATA  __data  0x4030  0x00080000000062C0 rebase                                  0x62C0
+__DATA  __data  0x4038  0x8008000000000330 rebase 0x0000 false IA                  0x330
+__DATA  __data  0x4040  0xA268000000000330 rebase 0x0000 false IA                  0x330
+__DATA  __data  0x62A8  0x00080000000062C0 rebase                                  0x62C0
+__DATA  __data  0x62B0  0x4000000000000000 bind                    0x0    flat-namespace _imported

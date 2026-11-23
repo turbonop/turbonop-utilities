@@ -1599,3 +1599,25 @@ fn riscv_and_loongarch_identical_functions() {
         assert_eq!(groups(&format!("funcs-plain-{t}")), want, "{t}");
     }
 }
+
+/// arm64e (tools/macho/build-arm64e.cmd): code that signs its return
+/// addresses (pacibsp, retab); the same program's graph as arm64's build
+/// (start() a word longer, for its pacibsp).
+#[test]
+fn arm64e_graph_is_arm64s() {
+    let macho = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/macho");
+    let graph = |arch: &str| -> Vec<String> {
+        ["compute", "start"]
+            .iter()
+            .map(|f| ok(&["-refs", f], &macho.join(format!("program-{arch}"))))
+            .collect()
+    };
+    let (e, plain) = (graph("arm64e"), graph("arm64"));
+    assert!(e[0].contains("start() calls it"), "{}", e[0]);
+    assert!(e[1].contains("calls compute(int)"), "{}", e[1]);
+    assert_eq!(e[0], plain[0]);
+    assert_eq!(
+        e[1],
+        plain[1].replacen("start() (80 bytes)", "start() (84 bytes)", 1)
+    );
+}

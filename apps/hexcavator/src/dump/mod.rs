@@ -69,7 +69,9 @@ llvm-readobj shows them, with its options' names: --file-headers,
 --macho-version-min. /headers gives the file header, sections, and
 segments; /relocations, the relocations; /symbols, the symbols; /imports or /exports, the
 dynamic symbols and needed libraries; /all, everything; and nothing, the
-file header and sections.";
+file header and sections. A Mach-O file's fixups (rebases and binds, and
+arm64e's signed pointers' keys and discriminators) are listed as
+llvm-objdump's --macho --dyld-info lists them, with --dyld-info.";
 
 /// Options that may be written with a leading `/` as well as `-`/`--`.
 const OPTIONS: &[&str] = &[

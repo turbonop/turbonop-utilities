@@ -79,6 +79,20 @@ impl DwarfInfo<'_> {
                     self.write_name(target, out, depth + 1);
                 }
             }
+            // A signed pointer (arm64e): `void *__ptrauth(2, 0, 77)`, as
+            // the source says it (its key, whether its address is blended
+            // in, and its discriminator).
+            DW_TAG_LLVM_PTRAUTH_TYPE => {
+                self.write_name(target, out, depth + 1);
+                let value =
+                    |attr| Self::uint(&u, &d, attr).unwrap_or_else(|| u64::from(d.flag(attr)));
+                out.push_str(&format!(
+                    "__ptrauth({}, {}, {})",
+                    value(DW_AT_LLVM_PTRAUTH_KEY),
+                    value(DW_AT_LLVM_PTRAUTH_ADDRESS_DISCRIMINATED),
+                    value(DW_AT_LLVM_PTRAUTH_EXTRA_DISCRIMINATOR),
+                ));
+            }
             DW_TAG_RESTRICT_TYPE => {
                 self.write_name(target, out, depth + 1);
                 out.push_str(" __restrict");
@@ -202,6 +216,7 @@ impl DwarfInfo<'_> {
                     | DW_TAG_REFERENCE_TYPE
                     | DW_TAG_RVALUE_REFERENCE_TYPE
                     | DW_TAG_PTR_TO_MEMBER_TYPE
+                    | DW_TAG_LLVM_PTRAUTH_TYPE
             )
         })
     }

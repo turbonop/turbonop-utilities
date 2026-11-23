@@ -20,6 +20,34 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   specification, tested against clang's own MIPS16 output (`-mips16 -S`
   against `-c`).
 
+## arm64e
+
+- **hexcavator as arm64e.** macOS and iOS 26 run third-party arm64e
+  programs (big apps, at least; command-line programs too, to be
+  checked). Rust's `arm64e-apple-darwin` is a tier-3 target, not yet
+  fully ABI-compatible with Apple's arm64e; build and ship one (a
+  universal program with arm64) once it is tier 2, or sooner if it
+  proves sound.
+- **What isn't read yet.** Threaded binds (arm64e's first ABI, iOS 12's:
+  `BIND_OPCODE_THREADED`) and `DYLD_CHAINED_PTR_ARM64E_SEGMENTED`
+  (firmware's), neither of which lld can make, for test inputs; and
+  `hexcavator size` names an arm64e image's architecture `arm64` (the
+  Model knows only the ISA).
+
+## The web version
+
+- **Reading files piecewise.** WebAssembly's 32-bit address space (4
+  GiB, and the browser's copy of each file besides) won't hold clang.exe
+  and its 1.1 GB PDB with everything built from them; and 64-bit memory
+  isn't in Safari, is tier 3 in Rust, and costs speed. So: read files by
+  their parts instead of whole, behind a source that reads a range
+  (`read_at`), mapped where there's mapping and read on demand where
+  there isn't (a browser `File`'s slices): a PDB's streams one at a time
+  (an MSF's pages are scattered anyway; most commands need a few
+  streams), an image's sections as asked for, and the big tables (a
+  PDB's symbol records, DWARF's .debug_info) walked in windows rather
+  than held.
+
 ## Size analysis
 
 - **Rust's Debug implementations on Windows.** Rust's PDB names say

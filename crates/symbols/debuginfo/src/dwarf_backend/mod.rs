@@ -1828,7 +1828,11 @@ impl<'data> DwarfInfo<'data> {
             };
             match d.tag {
                 DW_TAG_CONST_TYPE => return true,
-                DW_TAG_TYPEDEF | DW_TAG_VOLATILE_TYPE | DW_TAG_ATOMIC_TYPE | DW_TAG_ARRAY_TYPE => {
+                DW_TAG_TYPEDEF
+                | DW_TAG_VOLATILE_TYPE
+                | DW_TAG_ATOMIC_TYPE
+                | DW_TAG_LLVM_PTRAUTH_TYPE
+                | DW_TAG_ARRAY_TYPE => {
                     at = self.type_of(&u, &d);
                 }
                 _ => return false,

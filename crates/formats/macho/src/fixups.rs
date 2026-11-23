@@ -57,6 +57,56 @@ pub struct Fixup<'d> {
     pub addr: u64,
     pub width: u8,
     pub kind: FixupKind<'d>,
+    /// How the pointer is signed (arm64e's authenticated pointers).
+    pub auth: Option<PtrAuth>,
+    /// The pointer as the file holds it (a chained fixup's encoding).
+    pub value: u64,
+    /// Its chained pointer format (`DYLD_CHAINED_PTR_*`; 0 for the rebase
+    /// and bind opcodes').
+    pub format: u16,
+}
+
+/// An authenticated pointer's signing (arm64e): the key, and the
+/// discriminator it is signed with (the 16-bit diversity, blended with
+/// the pointer's own address when `address`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PtrAuth {
+    pub key: PtrAuthKey,
+    pub diversity: u16,
+    pub address: bool,
+}
+
+/// A pointer authentication key: the instruction keys (IA, IB) sign code
+/// pointers; the data keys (DA, DB), data pointers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PtrAuthKey {
+    IA,
+    IB,
+    DA,
+    DB,
+}
+
+impl PtrAuthKey {
+    /// The key of a chained pointer's (or a `__ptrauth` qualifier's) two
+    /// key bits.
+    pub fn from_bits(bits: u64) -> Self {
+        match bits & 3 {
+            0 => Self::IA,
+            1 => Self::IB,
+            2 => Self::DA,
+            _ => Self::DB,
+        }
+    }
+
+    /// Its name: `IA`, `IB`, `DA`, `DB`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::IA => "IA",
+            Self::IB => "IB",
+            Self::DA => "DA",
+            Self::DB => "DB",
+        }
+    }
 }
 
 /// An exported symbol: its name, flags (`EXPORT_SYMBOL_FLAGS_*`), and
@@ -424,6 +474,13 @@ impl<'d> MachO<'d> {
             else {
                 return;
             };
+            // (A signed pointer's diversity, address diversity, and key.)
+            let signed = |v: u64| PtrAuth {
+                diversity: u16::try_from(bits(v, 32, 16)).unwrap_or(0),
+                address: bits(v, 48, 1) == 1,
+                key: PtrAuthKey::from_bits(bits(v, 49, 2)),
+            };
+            let mut auth = None;
             let (kind, next) = match format {
                 DYLD_CHAINED_PTR_64 | DYLD_CHAINED_PTR_64_OFFSET => {
                     let next = bits(v, 51, 12);
@@ -436,6 +493,8 @@ impl<'d> MachO<'d> {
                         } else {
                             target
                         };
+                        // (Its top byte, a tag, as dyld writes it.)
+                        let target = target | bits(v, 36, 8) << 56;
                         (FixupKind::Rebase { target }, next)
                     }
                 }
@@ -446,10 +505,13 @@ impl<'d> MachO<'d> {
                 | DYLD_CHAINED_PTR_ARM64E_FIRMWARE
                 | DYLD_CHAINED_PTR_ARM64E_SHARED_CACHE => {
                     let next = bits(v, 51, 11);
-                    let (is_bind, auth) = (bits(v, 62, 1) == 1, bits(v, 63, 1) == 1);
+                    let (is_bind, is_auth) = (bits(v, 62, 1) == 1, bits(v, 63, 1) == 1);
                     let wide_ordinal = format == DYLD_CHAINED_PTR_ARM64E_USERLAND24;
                     let ordinal = bits(v, 0, if wide_ordinal { 24 } else { 16 });
-                    let kind = match (is_bind, auth) {
+                    if is_auth {
+                        auth = Some(signed(v));
+                    }
+                    let kind = match (is_bind, is_auth) {
                         (true, true) => bind(ordinal, 0),
                         (true, false) => bind(ordinal, sign(bits(v, 32, 19), 19)),
                         // An authenticated rebase: an offset from the base.
@@ -465,17 +527,24 @@ impl<'d> MachO<'d> {
                             } else {
                                 base.wrapping_add(target)
                             };
+                            // (Its top byte, a tag, as dyld writes it.)
+                            let target = target | bits(v, 43, 8) << 56;
                             FixupKind::Rebase { target }
                         }
                     };
                     (kind, next)
                 }
-                DYLD_CHAINED_PTR_64_KERNEL_CACHE | DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE => (
-                    FixupKind::Rebase {
-                        target: base.wrapping_add(bits(v, 0, 30)),
-                    },
-                    bits(v, 51, 12),
-                ),
+                DYLD_CHAINED_PTR_64_KERNEL_CACHE | DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE => {
+                    if bits(v, 63, 1) == 1 {
+                        auth = Some(signed(v));
+                    }
+                    (
+                        FixupKind::Rebase {
+                            target: base.wrapping_add(bits(v, 0, 30)),
+                        },
+                        bits(v, 51, 12),
+                    )
+                }
                 DYLD_CHAINED_PTR_32 => {
                     let next = bits(v, 26, 5);
                     if bits(v, 31, 1) == 1 {
@@ -507,7 +576,14 @@ impl<'d> MachO<'d> {
                 ),
                 _ => return,
             };
-            out.push(Fixup { addr, width, kind });
+            out.push(Fixup {
+                addr,
+                width,
+                kind,
+                auth,
+                value: v,
+                format,
+            });
             if next == 0 || out.len() >= MAX_ENTRIES {
                 return;
             }
@@ -541,6 +617,9 @@ impl<'d> MachO<'d> {
                 addr,
                 width,
                 kind: FixupKind::Rebase { target },
+                auth: None,
+                value: target,
+                format: 0,
             });
             out.len() < limit
         };
@@ -632,15 +711,23 @@ impl<'d> MachO<'d> {
             let Some(s) = seg.and_then(|i| segments.get(i)) else {
                 return false;
             };
+            let addr = s.vmaddr.wrapping_add(offset);
+            let width = self.pointer_width();
+            let value = Self::file_offset(segments, addr)
+                .and_then(|o| self.read_at(o, width))
+                .unwrap_or(0);
             out.push(Fixup {
-                addr: s.vmaddr.wrapping_add(offset),
-                width: self.pointer_width(),
+                addr,
+                width,
                 kind: FixupKind::Bind {
                     symbol,
                     library,
                     addend,
                     weak,
                 },
+                auth: None,
+                value,
+                format: 0,
             });
             out.len() < limit
         };

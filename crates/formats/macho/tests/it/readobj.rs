@@ -233,6 +233,8 @@ fn matches_llvm_readobj() {
     for f in [
         "program-arm64",
         "program-x86_64",
+        // (arm64e: its CPU subtype, pointer authentication's ABI version.)
+        "program-arm64e",
         "program-arm64.o",
         "program-x86_64.o",
         "libsecond-arm64.dylib",

@@ -238,7 +238,7 @@
         return;
       }
       if (m.kind === "grow") {
-        this.grow(8);
+        this.grow(16);
       } else if (m.kind === "exit") {
         this.finish(m.code);
       } else if (m.kind === "trap") {

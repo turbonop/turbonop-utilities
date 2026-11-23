@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script>
+// Scaling of plain computation across workers (no shared memory).
+const src = `onmessage = () => { let x = 0; for (let i = 0; i < 3e8; i++) x = (x + i * 7) | 0; postMessage(x); };`;
+const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+async function run(n) {
+  const ws = Array.from({ length: n }, () => new Worker(url));
+  const t = performance.now();
+  await Promise.all(ws.map((w) => new Promise((r) => { w.onmessage = r; w.postMessage(0); })));
+  const ms = performance.now() - t;
+  ws.forEach((w) => w.terminate());
+  return Math.round(ms);
+}
+(async () => {
+  const out = {};
+  for (const n of [1, 2, 4, 8]) out[n] = await run(n);
+  fetch("/__report", { method: "POST", body: JSON.stringify(out) });
+})();
+</script>

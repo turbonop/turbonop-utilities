@@ -268,6 +268,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 name = "hexcavator"
 version = "0.0.7"
 dependencies = [
+ "hexcavator-alloc",
  "hexcavator-archive",
  "hexcavator-arm64",
  "hexcavator-codeview",
@@ -301,6 +302,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "hexcavator-alloc"
+version = "0.0.7"
 
 [[package]]
 name = "hexcavator-archive"
@@ -560,6 +565,9 @@ dependencies = [
 [[package]]
 name = "hexcavator-par"
 version = "0.0.7"
+dependencies = [
+ "hexcavator-alloc",
+]
 
 [[package]]
 name = "hexcavator-pdb"

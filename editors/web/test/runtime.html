@@ -15,7 +15,17 @@
     if (!HexcavatorRuntime.supported()) {
       return report({ error: "not cross-origin isolated" });
     }
-    const rt = new HexcavatorRuntime("/hexcavator.wasm");
+    const q0 = new URLSearchParams(location.search);
+    const rt = new HexcavatorRuntime(q0.get("wasm") || "/hexcavator.wasm");
+    // (?exec=<args>: the module run with them, its output reported.)
+    if (q0.get("exec") !== null) {
+      const p = rt.spawn(q0.get("exec").split(" ").filter(Boolean), { HEXC_THREADS: q0.get("threads") || "8" });
+      let o = "";
+      p.stdout.on("data", (t) => (o += t));
+      p.stderr.on("data", (t) => (o += t));
+      p.on("exit", (c) => report({ code: c, out: o }));
+      return;
+    }
     // (?files=<url>,<url>&run=<command>|<command>: others than these.)
     const q = new URLSearchParams(location.search);
     const urls = (q.get("files") || "/testdata/xref/xref-x64.exe,/testdata/xref/xref-x64.pdb").split(",");
@@ -51,9 +61,10 @@
           waits.set(id, resolve);
           p0.stdin.write(JSON.stringify({ id, args }) + "\n");
         });
-        results.push({ cmd, ms: Math.round(performance.now() - t), code: v.code, out: (v.stdout || "").slice(0, 300), err: (v.stderr || "").slice(0, 300) });
+        results.push({ cmd, mib: p0.memory ? p0.memory.buffer.byteLength >>> 20 : 0, ms: Math.round(performance.now() - t), code: v.code, out: (v.stdout || "").slice(0, 300), err: (v.stderr || "").slice(0, 300) });
         log(JSON.stringify(results[results.length - 1]));
       }
+      window.hexDone = true;
       await report({ results, memoryMiB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null });
       return;
     }

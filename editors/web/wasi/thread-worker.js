@@ -98,9 +98,10 @@ function now() {
 }
 
 function spawn(arg) {
-  const slots = Atomics.load(pool, 2);
   const tid = Atomics.add(pool, 0, 1);
   for (let tries = 0; tries < 6000; tries++) {
+    // (Read each time: the page adds threads while this waits.)
+    const slots = Atomics.load(pool, 2);
     for (let i = 1; i < slots; i++) {
       const b = HEADER + i * SLOT;
       if (Atomics.compareExchange(pool, b, IDLE, CLAIMED) === IDLE) {

@@ -79,13 +79,31 @@ pub fn words(
     let big = image.endian() == hexcavator_core::Endian::Big;
     let mut out = Vec::new();
     let count = (end.saturating_sub(start) / w).min(MAX_ENTRIES);
+    // The list's bytes in the file, read once: as many of its words as
+    // are there (a list lies in one section, which may claim more than
+    // the file holds). Found by halving: a lookup per word costs as much
+    // as all the rest.
+    let (mut lo, mut hi) = (0u64, count);
+    while lo < hi {
+        let mid = lo + (hi - lo).div_ceil(2);
+        if image.bytes_at(start, mid * w).is_some() {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let bytes = image.bytes_at(start, lo * w).unwrap_or_default();
+    let width = usize::from(wide) * 4 + 4;
     for i in 0..count {
         let at = start + i * w;
         let relocated = slots
             .binary_search_by_key(&at, |p| p.addr)
             .ok()
             .and_then(|i| slots[i].target);
-        let raw = image.bytes_at(at, w).map(|b| {
+        let word = usize::try_from(i)
+            .ok()
+            .and_then(|i| bytes.get(i * width..(i + 1) * width));
+        let raw = word.map(|b| {
             let mut v = [0u8; 8];
             if big {
                 v[8 - b.len()..].copy_from_slice(b);

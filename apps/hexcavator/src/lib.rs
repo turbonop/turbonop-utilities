@@ -76,7 +76,7 @@ options:
   --cache <path>             keep an index of each image's symbols, so that the
                              next command on it needn't build them: in <path>
                              if it is a file, or in the directory <path> (as
-                             app.exe.<hash>.hexcavator-index); '--cache .' keeps them
+                             app.exe.<hash>.turbonop-index); '--cache .' keeps them
                              in the current directory
   --arch <name>              the image of universal (fat) Mach-O files to read
                              (arm64, x86_64, ...; default: this machine's, else

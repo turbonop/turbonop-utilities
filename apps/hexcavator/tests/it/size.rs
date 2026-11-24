@@ -1287,7 +1287,7 @@ fn disassemble_variables() {
 /// file.
 #[test]
 fn symbol_index() {
-    let dir = std::env::temp_dir().join(format!("hexcavator-index-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-index-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let image = dir.join("CppTestCases_BasicDiffObjectsAfter.dll");
@@ -1301,7 +1301,7 @@ fn symbol_index() {
         let mut all: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().path())
-            .filter(|p| p.to_string_lossy().ends_with(".hexcavator-index"))
+            .filter(|p| p.to_string_lossy().ends_with(".turbonop-index"))
             .collect();
         all.sort();
         all

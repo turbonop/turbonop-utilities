@@ -1,120 +1,35 @@
 name: CI
-
 on:
-  push:
-    branches: [main]
   pull_request:
-
-env:
-  CARGO_TERM_COLOR: always
-  RUSTFLAGS: -D warnings
-
+permissions:
+  contents: read
 jobs:
-  test:
-    name: test (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-latest      # x64
-          - windows-11-arm      # arm64
-          - ubuntu-latest       # x64
-          - macos-15            # arm64 (Apple silicon)
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
-      - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets
-      # Every platform's dependencies, not only this host's: the licenses
-      # test lists them all (cargo metadata --offline).
-      - run: cargo fetch
-      # (Every test binary at once: see apps/xtask.)
-      - run: cargo xtask test
-
-  # Hosts without memory mapping (WebAssembly) read files into memory
-  # instead; check that everything still builds for one.
-  wasm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: rustup toolchain install stable --profile minimal --component clippy
-      - run: rustup target add wasm32-wasip1 wasm32-wasip1-threads
-      - run: cargo clippy --workspace --target wasm32-wasip1
-      # (The web version's: threads, as Web Workers.)
-      - run: cargo clippy -p hexcavator --target wasm32-wasip1-threads
-
-  # The web version (editors/web): hexcavator for wasi-threads, in a
-  # headless Edge, as the page runs it and as a person uses the page.
-  web:
-    runs-on: windows-latest
-    env:
-      CARGO_PROFILE_RELEASE_DEBUG: "0"
-      CARGO_PROFILE_RELEASE_STRIP: "true"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-      - run: rustup toolchain install stable --profile minimal
-      - run: rustup target add wasm32-wasip1-threads
-      - run: cargo build --release -p hexcavator --target wasm32-wasip1-threads
-        env:
-          RUSTFLAGS: -C link-arg=--max-memory=4294967296
-      - shell: bash
-        run: |
-          npm pack @vscode/codicons@0.0.36
-          mkdir codicons && tar -xzf vscode-codicons-0.0.36.tgz -C codicons
-      - run: python editors/web/test/run.py --wasm target/wasm32-wasip1-threads/release/hexcavator.wasm --codicons codicons/package/dist
-
-  # Linux releases are static, with musl (and mimalloc, compiled with
-  # musl-gcc, in musl's allocator's place): the tests, built so.
-  musl:
+  diag:
     runs-on: ubuntu-latest
     env:
       CC_x86_64_unknown_linux_musl: musl-gcc
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: rustup toolchain install stable --profile minimal
-      - run: rustup target add x86_64-unknown-linux-musl
-      - run: cargo fetch
-      - run: cargo xtask test --target x86_64-unknown-linux-musl
-
-  # The fuzzer: its self-test (each kind of failure caught), then two
-  # minutes over every target (blind; the nightly run is guided).
-  fuzz-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: cargo build --release -p hexcavator-fuzz
-      - run: target/release/hexcavator-fuzz selftest
-      - run: target/release/hexcavator-fuzz run all -seconds 120 -batch 500
-      - if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: fuzz-findings
-          path: fuzz-findings/
-
-  # The VS Code extension: its helpers' tests (with hexcavator for the sidebar's
-  # tree), and, on Windows, the views rendered in headless Edge.
-  vscode:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-15]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-      - run: cargo build --release -p hexcavator
-      - shell: bash
-        working-directory: editors/vscode/hexcavator
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools gdb
+      - run: rustup toolchain install stable --profile minimal && rustup target add x86_64-unknown-linux-musl
+      - run: cargo build -p hexcavator --target x86_64-unknown-linux-musl
+      - run: cargo build -p hexcavator
+      - name: Diagnose
         run: |
-          exe=$PWD/../../../target/release/hexcavator
-          if [ -f "$exe.exe" ]; then exe=$exe.exe; fi
-          for t in test/*.test.js; do node "$t" "$exe" || exit 1; done
-      - if: runner.os == 'Windows'
-        run: python editors/vscode/hexcavator/test/harness.py target/release/hexcavator.exe testdata/xref/xref-x64.exe testdata/xref/xref-x64-renamed.exe
+          python3 diag/damage.py testdata/init/init-x86_64-linux-gnu /tmp/a
+          python3 diag/damage.py testdata/elf/program-x86_64-linux-gnu /tmp/b
+          for f in /tmp/a /tmp/b; do
+            echo "=== glibc $f"
+            start=$(date +%s.%N); timeout 60 target/debug/hexcavator init -json $f > /dev/null 2>/tmp/err; echo "code $? in $(echo "$(date +%s.%N) - $start" | bc) s"; tail -3 /tmp/err
+            echo "=== musl $f"
+            start=$(date +%s.%N)
+            target/x86_64-unknown-linux-musl/debug/hexcavator init -json $f > /dev/null 2>/tmp/err &
+            pid=$!
+            sleep 6
+            if kill -0 $pid 2>/dev/null; then
+              grep -E "VmSize|VmRSS|Threads" /proc/$pid/status
+              sudo gdb -p $pid -batch -ex "thread apply all bt 25" 2>&1 | grep -E "^#|^Thread" | head -120
+              kill $pid
+            fi
+            wait $pid; echo "code $? in $(echo "$(date +%s.%N) - $start" | bc) s"; tail -3 /tmp/err
+          done

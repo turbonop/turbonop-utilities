@@ -145,12 +145,17 @@ jobs:
             exit 1
           fi
           "out/bin/hexcavator${{ matrix.exe }}" version
-          # Linux: static, needing nothing of the system (no loader, no
-          # C library): hexcavator says so of itself.
+          # Linux: static, needing nothing of the system: no loader to
+          # run it (PT_INTERP) and no shared libraries (DT_NEEDED). (Not
+          # file(1)'s words: x86-64's is a static PIE, "static-pie
+          # linked".)
           if [[ "$RUNNER_OS" == Linux ]]; then
             file out/bin/hexcavator
-            if ! file out/bin/hexcavator | grep -q 'statically linked'; then
+            if readelf -lW out/bin/hexcavator | grep -q INTERP ||
+               readelf -dW out/bin/hexcavator | grep -q NEEDED; then
               echo "::error::hexcavator isn't statically linked"
+              readelf -lW out/bin/hexcavator | grep -A1 INTERP
+              readelf -dW out/bin/hexcavator | grep NEEDED
               exit 1
             fi
           fi

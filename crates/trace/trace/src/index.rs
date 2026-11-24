@@ -10,7 +10,7 @@
 //! tampered with): every count, index and stack reference is checked, and
 //! a bad file is an error, never a panic.
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 use crate::model::{
     Clock, ContextSwitches, DebugId, Image, Process, ProcessIx, ReadyIx, ReadyThreads, Samples,

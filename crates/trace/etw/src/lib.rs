@@ -1,6 +1,6 @@
 //! Decoders for the events in Windows traces.
 //!
-//! [`hexcavator_etl`] reads an ETL file's events; this crate reads their
+//! [`turbonop_etl`] reads an ETL file's events; this crate reads their
 //! payloads:
 //!
 //! - [`kernel::decode`]: typed decoders for the events trace analysis is

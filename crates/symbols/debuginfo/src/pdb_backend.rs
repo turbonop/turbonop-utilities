@@ -1,12 +1,12 @@
 //! The PDB backend.
 
-use hexcavator_hash::Map as HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_codeview::symbols::{Symbol, SymbolIter, kind};
-use hexcavator_codeview::{TypeFormatter, TypeIndex};
-use hexcavator_core::{Error, ErrorKind, Reader, Result};
-use hexcavator_image::DebugId;
-use hexcavator_pdb::{Pdb, info};
+use turbonop_codeview::symbols::{Symbol, SymbolIter, kind};
+use turbonop_codeview::{TypeFormatter, TypeIndex};
+use turbonop_core::{Error, ErrorKind, Reader, Result};
+use turbonop_image::DebugId;
+use turbonop_pdb::{Pdb, info};
 
 use crate::{
     BasicType, Class, Compiland, Contribution, EnclosingFunction, Group, Method, MethodKind,
@@ -55,7 +55,7 @@ fn lossy(bytes: &[u8]) -> String {
 
 impl<'data> PdbInfo<'data> {
     pub fn parse(data: &'data [u8]) -> Result<Self> {
-        hexcavator_pdb::check(data)?;
+        turbonop_pdb::check(data)?;
         Self::of(Pdb::parse(data)?)
     }
 
@@ -69,7 +69,7 @@ impl<'data> PdbInfo<'data> {
     }
 
     /// The PDB a source reads (by range: a file not mapped).
-    pub fn parse_source(source: &'data dyn hexcavator_core::Source) -> Result<Self> {
+    pub fn parse_source(source: &'data dyn turbonop_core::Source) -> Result<Self> {
         Self::of(Pdb::parse_source(source)?)
     }
 
@@ -78,7 +78,7 @@ impl<'data> PdbInfo<'data> {
     /// its bytes, before anything is demangled.)
     pub fn publics_matching(&self, keep: impl Fn(&[u8]) -> bool + Sync) -> Vec<(u64, &[u8])> {
         let records: Vec<_> = SymbolIter::new(self.pdb.symbol_records(), 0).collect();
-        hexcavator_par::map_chunks(&records, 8192, |part| {
+        turbonop_par::map_chunks(&records, 8192, |part| {
             part.iter()
                 .filter_map(|r| match r.parse().ok()? {
                     Symbol::Public {
@@ -211,15 +211,15 @@ impl<'data> PdbInfo<'data> {
         // Sites with their inlinees' id records for now: each module read
         // and decoded on whichever thread is free, while another reads and
         // indexes the types and ids that name them.
-        let (indexed, sites) = hexcavator_par::join(
+        let (indexed, sites) = turbonop_par::join(
             || -> Result<_> {
                 let types = self.pdb.types()?;
                 let ids = self.pdb.ids()?;
-                hexcavator_par::join(|| types.build_offsets(), || ids.build_offsets());
+                turbonop_par::join(|| types.build_offsets(), || ids.build_offsets());
                 Ok((types, ids))
             },
             || -> Result<Vec<crate::InlineSite>> {
-                let per_module = hexcavator_par::map_balanced(dbi.modules(), 4, |module| {
+                let per_module = turbonop_par::map_balanced(dbi.modules(), 4, |module| {
                     let mut out = Vec::new();
                     if let Some(stream) = self.pdb.module_stream(module)? {
                         let compiland = u32::try_from(module.index).unwrap_or(u32::MAX);
@@ -246,20 +246,19 @@ impl<'data> PdbInfo<'data> {
                 u32::try_from(distinct.len() - 1).unwrap_or(u32::MAX)
             });
         }
-        let named: Vec<(String, Option<u32>)> =
-            hexcavator_par::map_chunks(&distinct, 256, |part| {
-                let formatter = TypeFormatter { types };
-                part.iter()
-                    .map(|&id| {
-                        let found = inlinee(ids, &formatter, id);
-                        let count = found
-                            .as_ref()
-                            .and_then(|(_, ty)| parameter_count(types, self::index(*ty)));
-                        let name = found.map_or_else(|| format!("<inlinee {id:#x}>"), |(n, _)| n);
-                        (name, count)
-                    })
-                    .collect()
-            });
+        let named: Vec<(String, Option<u32>)> = turbonop_par::map_chunks(&distinct, 256, |part| {
+            let formatter = TypeFormatter { types };
+            part.iter()
+                .map(|&id| {
+                    let found = inlinee(ids, &formatter, id);
+                    let count = found
+                        .as_ref()
+                        .and_then(|(_, ty)| parameter_count(types, self::index(*ty)));
+                    let name = found.map_or_else(|| format!("<inlinee {id:#x}>"), |(n, _)| n);
+                    (name, count)
+                })
+                .collect()
+        });
         // (Id records of one name are one function: an index per name.)
         let mut by_name: HashMap<&str, u32> = HashMap::default();
         let mut inlinees: Vec<String> = Vec::new();
@@ -445,7 +444,7 @@ impl<'data> PdbInfo<'data> {
         let sections = &self.sections;
         // The types and ids, read and indexed (for the many lookups that
         // follow) while the symbols are.
-        let (indexed, out) = hexcavator_par::join(
+        let (indexed, out) = turbonop_par::join(
             || {
                 let types = self.pdb.types().inspect(|t| {
                     t.build_offsets();
@@ -460,7 +459,7 @@ impl<'data> PdbInfo<'data> {
                 // contiguous) and decoded on whichever thread is free: their
                 // sizes differ by thousands of times.
                 let modules = dbi.modules();
-                let per_module = hexcavator_par::map_balanced(modules, 4, |module| {
+                let per_module = turbonop_par::map_balanced(modules, 4, |module| {
                     let mut out = Vec::new();
                     let stream = self.pdb.module_stream(module)?;
                     if let Some(stream) = stream {
@@ -473,7 +472,7 @@ impl<'data> PdbInfo<'data> {
                 // Publics and global data, from the shared symbol record
                 // stream: its records found, then decoded on every core.
                 let records: Vec<_> = SymbolIter::new(self.pdb.symbol_records(), 0).collect();
-                let shared: Vec<DebugSymbol> = hexcavator_par::map_chunks(&records, 8192, |part| {
+                let shared: Vec<DebugSymbol> = turbonop_par::map_chunks(&records, 8192, |part| {
                     part.iter()
                         .filter_map(|r| shared_symbol(sections, r.parse().ok()?))
                         .collect()
@@ -553,7 +552,7 @@ impl<'data> PdbInfo<'data> {
             .enumerate()
             .map(|(i, s)| (s.addr, s.kind, u32::try_from(i).unwrap_or(u32::MAX)))
             .collect();
-        hexcavator_par::sort_by(&mut keys, |a, b| {
+        turbonop_par::sort_by(&mut keys, |a, b| {
             (a.0, a.1)
                 .cmp(&(b.0, b.1))
                 .then_with(|| full(&out[a.2 as usize], &out[b.2 as usize]))
@@ -579,13 +578,13 @@ impl<'data> PdbInfo<'data> {
     }
 
     pub fn classes(&self) -> Result<Vec<Class>> {
-        use hexcavator_codeview::types::{Field, leaf};
+        use turbonop_codeview::types::{Field, leaf};
         let types = self.pdb.types()?;
         // (Every record indexed, then read on every core.)
         let count = u32::try_from(types.build_offsets().len()).unwrap_or(u32::MAX);
         let first = types.begin().0;
         let indexes: Vec<u32> = (first..first.saturating_add(count)).collect();
-        let classes: Vec<Option<Class>> = hexcavator_par::map(&indexes, 4096, |&i| {
+        let classes: Vec<Option<Class>> = turbonop_par::map(&indexes, 4096, |&i| {
             let ti = TypeIndex(i);
             let rec = types.record(ti)?;
             if !leaf::is_class(rec.kind) {
@@ -656,7 +655,7 @@ impl<'data> PdbInfo<'data> {
     }
 
     pub fn enumerators(&self, ty: TypeRef) -> Option<crate::Enumerators> {
-        use hexcavator_codeview::types::{Field, leaf};
+        use turbonop_codeview::types::{Field, leaf};
         let types = self.pdb.types().ok()?;
         let ti = types.resolve_forward(index(ty));
         let rec = types.record(ti)?;
@@ -692,14 +691,14 @@ impl<'data> PdbInfo<'data> {
 
     pub fn layout(&self, ty: TypeRef) -> Option<crate::layout::Layout> {
         let types = self.pdb.types().ok()?;
-        hexcavator_codeview::layout::layout(types, index(ty)).map(neutral_layout)
+        turbonop_codeview::layout::layout(types, index(ty)).map(neutral_layout)
     }
 
     pub fn layouts(&self) -> Result<Vec<crate::layout::Layout>> {
         let types = self.pdb.types()?;
         // (Each filled out on every core.)
-        Ok(hexcavator_par::map_into(
-            hexcavator_codeview::layout::all(types),
+        Ok(turbonop_par::map_into(
+            turbonop_codeview::layout::all(types),
             1024,
             neutral_layout,
         ))
@@ -724,7 +723,7 @@ impl<'data> PdbInfo<'data> {
     /// file a string ID) or `LF_UDT_MOD_SRC_LINE` (the file in the names
     /// stream) for it.
     pub fn type_definition(&self, ty: TypeRef) -> Option<(String, u32)> {
-        use hexcavator_codeview::types::leaf;
+        use turbonop_codeview::types::leaf;
         let ids = self.pdb.ids().ok()?;
         let mut wanted = vec![ty.pdb_index().0];
         if let Ok(types) = self.pdb.types() {
@@ -754,7 +753,7 @@ impl<'data> PdbInfo<'data> {
                 }
                 let text = s.data.get(4..)?;
                 String::from_utf8_lossy(
-                    &text[..hexcavator_core::find_nul(text).unwrap_or(text.len())],
+                    &text[..turbonop_core::find_nul(text).unwrap_or(text.len())],
                 )
                 .into_owned()
             } else {
@@ -877,12 +876,12 @@ pub fn codeview_language(l: u32) -> &'static str {
 /// The strings of an `LF_BUILDINFO` record in the IDs stream: the working
 /// directory, the tool, the source file, the PDB, and the command line's
 /// arguments (those it has).
-pub fn build_info(ids: &hexcavator_pdb::tpi::TypeStream<'_>, id: TypeIndex) -> [Option<String>; 5] {
+pub fn build_info(ids: &turbonop_pdb::tpi::TypeStream<'_>, id: TypeIndex) -> [Option<String>; 5] {
     let mut out = [None, None, None, None, None];
     let Some(rec) = ids.record(id) else {
         return out;
     };
-    if rec.kind != hexcavator_codeview::types::leaf::LF_BUILDINFO {
+    if rec.kind != turbonop_codeview::types::leaf::LF_BUILDINFO {
         return out;
     }
     let d = rec.data;
@@ -904,8 +903,8 @@ pub fn build_info(ids: &hexcavator_pdb::tpi::TypeStream<'_>, id: TypeIndex) -> [
 
 /// An `LF_STRING_ID`'s string: its substrings (`LF_SUBSTR_LIST`), then its
 /// own text.
-fn string_id(ids: &hexcavator_pdb::tpi::TypeStream<'_>, id: u32, depth: usize) -> Option<String> {
-    use hexcavator_codeview::types::leaf;
+fn string_id(ids: &turbonop_pdb::tpi::TypeStream<'_>, id: u32, depth: usize) -> Option<String> {
+    use turbonop_codeview::types::leaf;
     if depth > 4 || id == 0 {
         return None;
     }
@@ -916,7 +915,7 @@ fn string_id(ids: &hexcavator_pdb::tpi::TypeStream<'_>, id: u32, depth: usize) -
     let d = rec.data;
     let sub = u32::from_le_bytes(d.get(0..4)?.try_into().ok()?);
     let text = d.get(4..)?;
-    let text = &text[..hexcavator_core::find_nul(text).unwrap_or(text.len())];
+    let text = &text[..turbonop_core::find_nul(text).unwrap_or(text.len())];
     let mut s = String::new();
     if sub != 0 {
         let list = ids.record(TypeIndex(sub))?;
@@ -939,9 +938,9 @@ fn string_id(ids: &hexcavator_pdb::tpi::TypeStream<'_>, id: u32, depth: usize) -
 /// to one by the index's mode bits.
 /// A type index as a [`TypeRef`].
 /// A PDB type's parts, laid out with the holes between them.
-fn neutral_layout(l: hexcavator_codeview::layout::Layout) -> crate::layout::Layout {
+fn neutral_layout(l: turbonop_codeview::layout::Layout) -> crate::layout::Layout {
     use crate::layout::PartKind as K;
-    use hexcavator_codeview::layout::PartKind as P;
+    use turbonop_codeview::layout::PartKind as P;
     let kind = |k: P| match k {
         P::Base => K::Base,
         P::VirtualBase => K::VirtualBase,
@@ -980,7 +979,7 @@ fn index(r: TypeRef) -> TypeIndex {
 }
 
 fn simple_shape(ti: u32) -> TypeShape {
-    use hexcavator_codeview::types::simple::*;
+    use turbonop_codeview::types::simple::*;
     if !is_valid(ti) {
         return TypeShape::Unknown;
     }
@@ -1038,12 +1037,8 @@ fn simple_shape(ti: u32) -> TypeShape {
 }
 
 /// The shape of a type record.
-fn record_shape(
-    types: &hexcavator_pdb::TypeStream<'_>,
-    kind: u16,
-    data: &[u8],
-) -> Option<TypeShape> {
-    use hexcavator_codeview::types::leaf;
+fn record_shape(types: &turbonop_pdb::TypeStream<'_>, kind: u16, data: &[u8]) -> Option<TypeShape> {
+    use turbonop_codeview::types::leaf;
     let mut r = Reader::new(data);
     let ti = |r: &mut Reader<'_>| r.u32_le().map(|t| TypeRef(u64::from(t))).ok();
     let qualifiers_of_modifier = |mods: u16| Qualifiers {
@@ -1067,7 +1062,7 @@ fn record_shape(
         leaf::LF_POINTER => {
             let target = ti(&mut r)?;
             let attrs = r.u32_le().ok()?;
-            use hexcavator_codeview::types::pointer::*;
+            use turbonop_codeview::types::pointer::*;
             let kind = match (attrs >> PTRMODE_SHIFT) & PTRMODE_MASK {
                 CV_PTR_MODE_LVREF => PointerKind::LValueReference,
                 CV_PTR_MODE_PMEM | CV_PTR_MODE_PMFUNC => PointerKind::Member,
@@ -1091,13 +1086,13 @@ fn record_shape(
             qualifiers: qualifiers_of_modifier(r.u16_le().ok()?),
         },
         k if leaf::is_class(k) || leaf::is_union(k) => {
-            let rec = hexcavator_codeview::TypeRecord { kind, data };
+            let rec = turbonop_codeview::TypeRecord { kind, data };
             TypeShape::Udt {
                 name: lossy(rec.udt()?.name),
             }
         }
         leaf::LF_ENUM => {
-            let rec = hexcavator_codeview::TypeRecord { kind, data };
+            let rec = turbonop_codeview::TypeRecord { kind, data };
             TypeShape::Enum {
                 name: lossy(rec.udt()?.name),
             }
@@ -1105,7 +1100,7 @@ fn record_shape(
         leaf::LF_ARRAY => {
             let element = ti(&mut r)?;
             let _index = ti(&mut r)?;
-            let size = hexcavator_codeview::types::read_numeric(&mut r)
+            let size = turbonop_codeview::types::read_numeric(&mut r)
                 .ok()?
                 .as_u64();
             TypeShape::Array { element, size }
@@ -1162,10 +1157,10 @@ fn record_shape(
 /// for the same code (functions folded into one), the first's (as DIA has
 /// it).
 pub(crate) fn function_line_blocks<'s>(
-    stream: &'s hexcavator_pdb::ModuleStream<'_>,
-) -> Vec<Vec<hexcavator_codeview::lines::LineBlock<'s>>> {
-    use hexcavator_codeview::lines::{parse_lines, subsection};
-    let mut seen = hexcavator_hash::Set::default();
+    stream: &'s turbonop_pdb::ModuleStream<'_>,
+) -> Vec<Vec<turbonop_codeview::lines::LineBlock<'s>>> {
+    use turbonop_codeview::lines::{parse_lines, subsection};
+    let mut seen = turbonop_hash::Set::default();
     let mut out = Vec::new();
     for (kind, body) in stream.subsections() {
         if kind != subsection::DEBUG_S_LINES {
@@ -1274,7 +1269,7 @@ fn module_inline_sites(
             }) => {
                 scopes.push((enclosing, depth + 1));
                 let Some(base) = enclosing else { continue };
-                let site = hexcavator_codeview::annotations::decode(annotations);
+                let site = turbonop_codeview::annotations::decode(annotations);
                 out.push(crate::InlineSite {
                     inlinee: inlinee.0,
                     function: base,
@@ -1467,7 +1462,7 @@ fn def_range(
             r.u16_le().ok()?;
             Place::Field {
                 register,
-                field: r.u32_le().ok()? & hexcavator_codeview::symbols::OFFSET_PARENT_MASK,
+                field: r.u32_le().ok()? & turbonop_codeview::symbols::OFFSET_PARENT_MASK,
             }
         }
         kind::S_DEFRANGE_FRAMEPOINTER_REL_FULL_SCOPE => {
@@ -1820,8 +1815,8 @@ const INLINEE_PENDING: u32 = 1 << 31;
 /// An inlined function's qualified name, from its id record.
 /// How many parameters a procedure type (`LF_PROCEDURE`, or
 /// `LF_MFUNCTION`, with its `this`) takes.
-fn parameter_count(types: &hexcavator_pdb::TypeStream<'_>, ty: TypeIndex) -> Option<u32> {
-    use hexcavator_codeview::types::leaf;
+fn parameter_count(types: &turbonop_pdb::TypeStream<'_>, ty: TypeIndex) -> Option<u32> {
+    use turbonop_codeview::types::leaf;
     let rec = types.record(ty)?;
     let mut r = Reader::new(rec.data);
     match rec.kind {
@@ -1844,7 +1839,7 @@ fn parameter_count(types: &hexcavator_pdb::TypeStream<'_>, ty: TypeIndex) -> Opt
 }
 
 pub(crate) fn inlinee_name(
-    ids: &hexcavator_pdb::TypeStream<'_>,
+    ids: &turbonop_pdb::TypeStream<'_>,
     formatter: &TypeFormatter<'_>,
     id: u32,
 ) -> Option<String> {
@@ -1855,11 +1850,11 @@ pub(crate) fn inlinee_name(
 /// (`LF_FUNC_ID`: scope string, type, name; `LF_MFUNC_ID`: class, type,
 /// name).
 fn inlinee(
-    ids: &hexcavator_pdb::TypeStream<'_>,
+    ids: &turbonop_pdb::TypeStream<'_>,
     formatter: &TypeFormatter<'_>,
     id: u32,
 ) -> Option<(String, TypeRef)> {
-    use hexcavator_codeview::types::leaf;
+    use turbonop_codeview::types::leaf;
     let rec = ids.record(TypeIndex(id))?;
     let mut r = Reader::new(rec.data);
     let scope = r.u32_le().ok()?;

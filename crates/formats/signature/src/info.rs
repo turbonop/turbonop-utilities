@@ -3,9 +3,9 @@
 //! copyright); a Mach-O image's versions (its dylib's, its source's) and
 //! embedded Info.plist (bundle identifier, name, versions, copyright).
 
-use hexcavator_macho::MachO;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::version::dotted;
+use turbonop_macho::MachO;
+use turbonop_pe::PeFile;
+use turbonop_pe::version::dotted;
 
 /// Labeled details, in the order shown.
 pub type Details = Vec<(String, String)>;
@@ -64,7 +64,7 @@ pub fn pe(pe: &PeFile<'_>) -> Details {
 pub fn macho(m: &MachO<'_>) -> Details {
     let mut out: Details = Vec::new();
     let data = m.data();
-    let little = matches!(m.endian(), hexcavator_core::Endian::Little);
+    let little = matches!(m.endian(), turbonop_core::Endian::Little);
     let u32_at = |at: u64| -> Option<u32> {
         let at = usize::try_from(at).ok()?;
         let b: [u8; 4] = data.get(at..at.checked_add(4)?)?.try_into().ok()?;
@@ -87,7 +87,7 @@ pub fn macho(m: &MachO<'_>) -> Details {
     let version = |v: u32| format!("{}.{}.{}", v >> 16, (v >> 8) & 0xFF, v & 0xFF);
     for lc in m.load_commands() {
         match lc.cmd {
-            hexcavator_macho::consts::LC_ID_DYLIB if lc.size >= 24 => {
+            turbonop_macho::consts::LC_ID_DYLIB if lc.size >= 24 => {
                 // (0.0.0, as many write, says nothing.)
                 for (at, label) in [(16, "Current version"), (20, "Compatibility version")] {
                     if let Some(v) = u32_at(lc.offset + at).filter(|&v| v != 0) {
@@ -95,7 +95,7 @@ pub fn macho(m: &MachO<'_>) -> Details {
                     }
                 }
             }
-            hexcavator_macho::consts::LC_SOURCE_VERSION if lc.size >= 16 => {
+            turbonop_macho::consts::LC_SOURCE_VERSION if lc.size >= 16 => {
                 if let Some(v) = u64_at(lc.offset + 8).filter(|&v| v != 0) {
                     // (Packed a.b.c.d.e in 24.10.10.10.10 bits.)
                     let parts = [

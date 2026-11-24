@@ -1,39 +1,41 @@
-name: Release
+name: hexcavator release
 
 # hexcavator for each platform: Windows signed with Azure Artifact Signing,
 # macOS with an Apple Developer ID and notarized, Linux static (musl), so
 # that it runs on any distribution. Each is published as itself, named by
 # its target triple (hexcavator-x86_64-pc-windows-msvc.exe,
-# hexcavator-aarch64-apple-darwin, ...), so that
-# releases/latest/download/<name> always fetches the newest, with its
-# symbols beside it. Also hexcavator for WASI
+# hexcavator-aarch64-apple-darwin, ...), at
+# releases/download/hexcavator-v<version>/<name>, with its symbols beside
+# it. (Not releases/latest: the repository's latest release may be
+# another tool's.) Also hexcavator for WASI
 # (hexcavator-wasm32-wasip1.wasm), the VS Code extension packaged for
 # each platform with its hexcavator inside, and the web version, on
 # GitHub Pages.
 #
-# - A tag v<version> (the version in Cargo.toml and in the extension's
-#   package.json) builds, tests, signs, and packages, then makes a draft
+# - A tag hexcavator-v<version> (the version in apps/hexcavator/Cargo.toml
+#   and in the extension's package.json) builds, tests, signs, and packages, then makes a draft
 #   GitHub release; publishing the extension to the Marketplace waits for
 #   approval (the marketplace environment). Publishing the draft sends
-#   hexcavator to winget (winget.yml).
-# - Run by hand (Actions > Release > Run workflow), it builds, tests, and
+#   hexcavator to winget (hexcavator-winget.yml).
+# - Run by hand (Actions > hexcavator release > Run workflow), it builds, tests, and
 #   packages, unsigned, as workflow artifacts only: a dry run.
 #
 # Signing happens only in the release environment (protect it: tags only,
 # with a required reviewer). Windows signs through OIDC (no secrets);
 # Apple has no OIDC, so macOS signing reads secrets kept on the release
-# environment. See the variables and secrets each job reads.
+# environment. See the variables and secrets each job reads. (Signing is
+# every tool's: .github/actions/sign-windows and sign-macos.)
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["hexcavator-v*"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: hexcavator-release-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -54,12 +56,12 @@ jobs:
         shell: bash
         run: |
           extension=$(node -p "require('./editors/vscode/hexcavator/package.json').version")
-          cargo=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          cargo=$(sed -n 's/^version = "\(.*\)"$/\1/p' apps/hexcavator/Cargo.toml | head -n 1)
           echo "extension $extension, hexcavator $cargo"
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            tag=${GITHUB_REF_NAME#v}
+          if [[ "$GITHUB_REF" == refs/tags/hexcavator-v* ]]; then
+            tag=${GITHUB_REF_NAME#hexcavator-v}
             if [[ "$tag" != "$extension" || "$tag" != "$cargo" ]]; then
-              echo "::error::tag $GITHUB_REF_NAME, but package.json says $extension and Cargo.toml $cargo"
+              echo "::error::tag $GITHUB_REF_NAME, but package.json says $extension and apps/hexcavator/Cargo.toml $cargo"
               exit 1
             fi
           fi
@@ -154,7 +156,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: hexcavator-${{ matrix.vscode }}
+          name: turbonop-${{ matrix.vscode }}
           path: out/
           if-no-files-found: error
 
@@ -205,7 +207,7 @@ jobs:
   # ARTIFACT_SIGNING_ENDPOINT, ARTIFACT_SIGNING_ACCOUNT,
   # ARTIFACT_SIGNING_PROFILE.
   sign-windows:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/hexcavator-v')
     needs: build
     runs-on: windows-latest
     environment: release
@@ -213,6 +215,7 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: hexcavator-win32-x64
@@ -221,35 +224,17 @@ jobs:
         with:
           name: hexcavator-win32-arm64
           path: arm64
-      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+      - uses: ./.github/actions/sign-windows
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true
-      - uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
-        with:
-          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
-          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
-          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
           files: |
             ${{ github.workspace }}\x64\bin\hexcavator.exe
             ${{ github.workspace }}\arm64\bin\hexcavator.exe
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
           description: Hexcavator
-          description-url: ${{ github.server_url }}/${{ github.repository }}
-          # (Only the login above: no time spent trying other kinds.)
-          exclude-environment-credential: true
-          exclude-workload-identity-credential: true
-          exclude-managed-identity-credential: true
-          exclude-shared-token-cache-credential: true
-          exclude-visual-studio-credential: true
-          exclude-visual-studio-code-credential: true
-          exclude-azure-cli-credential: false
-          exclude-azure-powershell-credential: true
-          exclude-azure-developer-cli-credential: true
-          exclude-interactive-browser-credential: true
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          account: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          profile: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
       # hexcavator checks its own signatures (and fails unless both verify).
       - run: x64\bin\hexcavator.exe signature x64\bin\hexcavator.exe arm64\bin\hexcavator.exe
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -272,7 +257,7 @@ jobs:
   # APPLE_API_ISSUER_ID, for notarytool. (A bare program can't have its
   # notarization ticket stapled to it; Gatekeeper looks the ticket up.)
   sign-macos:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/hexcavator-v')
     needs: build
     strategy:
       fail-fast: false
@@ -283,71 +268,19 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: hexcavator-${{ matrix.vscode }}
+          name: turbonop-${{ matrix.vscode }}
           path: mac
-      - name: Keychain
-        env:
-          P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
-          P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
-        run: |
-          # A keychain of its own, unlocked, that codesign may use without
-          # asking, searched first.
-          keychain="$RUNNER_TEMP/signing.keychain-db"
-          password=$(openssl rand -hex 32)
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 3600 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
-          security import "$RUNNER_TEMP/id.p12" -k "$keychain" -P "$P12_PASSWORD" -f pkcs12 -T /usr/bin/codesign
-          rm "$RUNNER_TEMP/id.p12"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
-          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
-          # The Developer ID Application identity, by its SHA-1 (exactly
-          # one, or stop).
-          security find-identity -v -p codesigning "$keychain"
-          identity=$(security find-identity -v -p codesigning "$keychain" \
-            | awk '/"Developer ID Application: /{print $2}')
-          if [[ $(printf '%s\n' "$identity" | grep -c .) != 1 ]]; then
-            echo "::error::expected one Developer ID Application identity in APPLE_DEVELOPER_ID_P12"
-            exit 1
-          fi
-          echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
-          echo "IDENTITY=$identity" >> "$GITHUB_ENV"
-      - name: Sign
-        run: |
-          chmod +x mac/bin/hexcavator
-          codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" \
-            --options runtime --timestamp mac/bin/hexcavator
-          codesign --verify --strict --verbose=2 mac/bin/hexcavator
-          codesign --display --verbose=2 mac/bin/hexcavator
-      - name: Notarize
-        env:
-          API_KEY: ${{ secrets.APPLE_API_KEY }}
-          API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: |
-          key="$RUNNER_TEMP/AuthKey.p8"
-          printf '%s\n' "$API_KEY" > "$key"
-          auth=(--key "$key" --key-id "$API_KEY_ID" --issuer "$API_ISSUER_ID")
-          ditto -c -k --keepParent mac/bin/hexcavator "$RUNNER_TEMP/hexcavator.zip"
-          # (Three hours: a new team's first submissions can take over an
-          # hour; usually it's minutes.)
-          xcrun notarytool submit "$RUNNER_TEMP/hexcavator.zip" "${auth[@]}" \
-            --wait --timeout 3h --output-format json | tee "$RUNNER_TEMP/notary.json"
-          id=$(jq -r .id "$RUNNER_TEMP/notary.json")
-          # (No status when the wait times out; then Apple's message.)
-          status=$(jq -r '.status // .message' "$RUNNER_TEMP/notary.json")
-          # Apple's log says what it found, accepted or not.
-          if [[ -n "$id" && "$id" != null ]]; then
-            xcrun notarytool log "$id" "${auth[@]}" || true
-          fi
-          rm "$key"
-          if [[ "$status" != Accepted ]]; then
-            echo "::error::notarization: $status"
-            exit 1
-          fi
+      - uses: ./.github/actions/sign-macos
+        with:
+          program: mac/bin/hexcavator
+          p12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          api-key: ${{ secrets.APPLE_API_KEY }}
+          api-key-id: ${{ secrets.APPLE_API_KEY_ID }}
+          api-issuer-id: ${{ secrets.APPLE_API_ISSUER_ID }}
       - name: Check
         run: |
           # Gatekeeper's verdict, asked about the ticket Apple now holds.
@@ -361,13 +294,9 @@ jobs:
           jq -e '.status == "pass" and (.apple | length > 0)
             and all(.apple[]; .adhoc == false and .team != null and .runtime != null)' \
             "$RUNNER_TEMP/signature.json"
-      - if: always()
-        run: |
-          if [[ -n "${KEYCHAIN:-}" ]]; then security delete-keychain "$KEYCHAIN" || true; fi
-          rm -f "$RUNNER_TEMP/id.p12" "$RUNNER_TEMP/AuthKey.p8"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: hexcavator-${{ matrix.vscode }}
+          name: turbonop-${{ matrix.vscode }}
           path: mac/
           overwrite: true
 
@@ -400,7 +329,7 @@ jobs:
           node-version: 22
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: hexcavator-${{ matrix.from }}
+          name: turbonop-${{ matrix.from }}
           path: built
       - name: VSIX
         run: |
@@ -418,13 +347,13 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(p, null, 2) + "\n");
           ' "$ext/package.json" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           (cd "$ext" && npx --yes "$VSCE" package --no-dependencies --target ${{ matrix.vscode }} \
-            --out "$GITHUB_WORKSPACE/dist/hexcavator-$VERSION-${{ matrix.vscode }}.vsix")
+            --out "$GITHUB_WORKSPACE/dist/turbonop-$VERSION-${{ matrix.vscode }}.vsix")
       # (hexcavator prints its license and its notices: `hexcavator
       # licenses`.)
       - name: hexcavator and its symbols
         if: matrix.target != ''
         run: |
-          base="hexcavator-${{ matrix.target }}"
+          base="turbonop-${{ matrix.target }}"
           cp "built/bin/hexcavator${{ matrix.exe }}" "dist/$base${{ matrix.exe }}"
           mkdir -p "$base-symbols"
           cp -R built/symbols/. "$base-symbols/"
@@ -447,7 +376,7 @@ jobs:
   # this job whenever any job before it was skipped, as a signing job is
   # when its platform isn't released.)
   release:
-    if: ${{ !cancelled() && needs.package.result == 'success' && needs.wasm.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ !cancelled() && needs.package.result == 'success' && needs.wasm.result == 'success' && startsWith(github.ref, 'refs/tags/hexcavator-v') }}
     needs: [package, wasm]
     runs-on: ubuntu-latest
     permissions:
@@ -475,7 +404,7 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "Hexcavator $GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "Hexcavator ${GITHUB_REF_NAME#turbonop-}" --generate-notes
 
   # The web version (editors/web: the extension's own views, with
   # hexcavator for wasi-threads, in the browser), assembled and tried in
@@ -502,13 +431,19 @@ jobs:
           mkdir codicons && tar -xzf vscode-codicons-0.0.36.tgz -C codicons
       - name: Tests
         run: python editors/web/test/run.py --wasm wasm/hexcavator-wasm32-wasip1-threads.wasm --codicons codicons/package/dist
-      - run: python editors/web/site.py --wasm wasm/hexcavator-wasm32-wasip1-threads.wasm --codicons codicons/package --out site
+      - run: python editors/web/site.py --wasm wasm/hexcavator-wasm32-wasip1-threads.wasm --codicons codicons/package --out site/hexcavator
+      # (The repository's site has a directory for each tool's web version;
+      # its root, for now, sends visitors to hexcavator's.)
+      - shell: bash
+        run: >-
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>TurboNOP Utilities</title><meta http-equiv="refresh" content="0; url=hexcavator/"><a href="hexcavator/">Hexcavator</a>'
+          > site/index.html
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
 
   pages:
-    if: ${{ !cancelled() && needs.release.result == 'success' && needs.web.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.web.result == 'success' && startsWith(github.ref, 'refs/tags/hexcavator-v') }}
     needs: [release, web]
     runs-on: ubuntu-latest
     environment:
@@ -528,7 +463,7 @@ jobs:
   # first, and give the marketplace environment a required reviewer.
   publish-marketplace:
     # (Names release's result, for the reason release names package's.)
-    if: ${{ !cancelled() && needs.release.result == 'success' && startsWith(github.ref, 'refs/tags/v') }}
+    if: ${{ !cancelled() && needs.release.result == 'success' && startsWith(github.ref, 'refs/tags/hexcavator-v') }}
     needs: release
     runs-on: ubuntu-latest
     environment: marketplace

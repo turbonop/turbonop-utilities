@@ -2,12 +2,12 @@
 //! labels every byte the base does, and segments, sections, link-edit
 //! tables, symbols, and architectures get what the file says they span.
 
-use hexcavator_hash::Map as HashMap;
 use std::path::PathBuf;
+use turbonop_hash::Map as HashMap;
 
 use super::*;
 use crate::rangemap::sweep;
-use hexcavator_archive::{Archive, MemberKind};
+use turbonop_archive::{Archive, MemberKind};
 
 fn fixture(name: &str) -> Vec<u8> {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -186,7 +186,7 @@ fn symbols_run_to_the_next() {
 #[test]
 fn universal_files_by_arch() {
     let data = fixture("program-universal");
-    let archs = hexcavator_macho::fat_archs(&data).unwrap();
+    let archs = turbonop_macho::fat_archs(&data).unwrap();
     let maps = maps(&data, "u", &[Source::Archs, Source::Segments]).unwrap();
     let (_, file) = totals(&maps, 0);
     for (a, name) in archs.iter().zip(["x86_64", "arm64"]) {
@@ -287,12 +287,12 @@ fn static_libraries() {
 #[test]
 fn universal_static_libraries() {
     let data = fixture("libprogram-universal.a");
-    let archs = hexcavator_macho::fat_archs(&data).unwrap();
+    let archs = turbonop_macho::fat_archs(&data).unwrap();
     let maps = maps(&data, "u.a", &[Source::Archs, Source::ArMembers]).unwrap();
     let (_, file) = totals(&maps, 0);
     let mut names: Vec<String> = Vec::new();
     for a in &archs {
-        let name = hexcavator_macho::arch_name(a.cputype, a.cpusubtype);
+        let name = turbonop_macho::arch_name(a.cputype, a.cpusubtype);
         assert_eq!(get(&file, &name), a.size, "{name}");
         names.push(name);
     }

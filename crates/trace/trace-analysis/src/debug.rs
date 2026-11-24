@@ -6,11 +6,11 @@ use std::rc::Rc;
 
 use rustc_hash::FxHashMap;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_mmap::Mmap;
-use hexcavator_symbolize::{FunctionTable, SymbolPath};
-use hexcavator_trace::{ImageIx, Trace};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_mmap::Mmap;
+use turbonop_symbolize::{FunctionTable, SymbolPath};
+use turbonop_trace::{ImageIx, Trace};
 
 use crate::keys::Symbolizer;
 
@@ -75,7 +75,7 @@ impl DebugSymbolizer {
     /// The table of the image file at the path the trace records, if it's
     /// the image the trace saw: from its debug information if found, or
     /// else its own symbols.
-    fn table_of_file(&self, img: &hexcavator_trace::Image) -> Option<FunctionTable> {
+    fn table_of_file(&self, img: &turbonop_trace::Image) -> Option<FunctionTable> {
         // (The trace names the path: only a local regular file is opened.)
         let map = Mmap::open_named(Path::new(&img.path)).ok()?;
         let image = Image::parse(&map).ok()?;
@@ -105,7 +105,7 @@ impl DebugSymbolizer {
 /// Whether `image` (a file) is the image the trace saw: of its size in
 /// memory, with its timestamp and checksum (a PE image's), and its debug
 /// identity, where the trace records them.
-fn is_same_image(image: &Image<'_>, seen: &hexcavator_trace::Image) -> bool {
+fn is_same_image(image: &Image<'_>, seen: &turbonop_trace::Image) -> bool {
     if let Some(pe) = image.pe()
         && let Some(h) = pe.optional_header()
     {
@@ -125,7 +125,7 @@ fn is_same_image(image: &Image<'_>, seen: &hexcavator_trace::Image) -> bool {
         return true;
     };
     image.debug_ids().iter().any(|d| match d {
-        hexcavator_image::DebugId::Pdb { guid, age, .. } => *guid == id.guid && *age == id.age,
+        turbonop_image::DebugId::Pdb { guid, age, .. } => *guid == id.guid && *age == id.age,
         _ => false,
     })
 }

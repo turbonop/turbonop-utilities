@@ -3,7 +3,7 @@
 //! the v0 mangling), legacy names by rustc-demangle's rules, and hostile
 //! names.
 
-use hexcavator_demangle::rust::{demangle_into, is_rust};
+use turbonop_demangle::rust::{demangle_into, is_rust};
 
 fn demangle(name: &str) -> Option<String> {
     let mut out = String::new();
@@ -265,7 +265,7 @@ fn base62(n: u64) -> String {
 /// around the depth limit.
 #[test]
 fn deep_names_print_what_recursion_prints() {
-    use hexcavator_demangle::rust::demangle_with_native_depth;
+    use turbonop_demangle::rust::demangle_with_native_depth;
     let print = |name: &str, levels| {
         let mut out = String::new();
         demangle_with_native_depth(name, &mut out, levels).then_some(out)

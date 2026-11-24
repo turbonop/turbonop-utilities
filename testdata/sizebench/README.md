@@ -16,7 +16,7 @@ them by design: `Dllx64Managed` (managed code) and `Dllx64MinimalPDB`
 
 Not copied: SizeBench's `TestPEs/External` binaries (Microsoft.UI.Xaml,
 ReactNativeXaml; 317 MB). Tests that use them read them from a SizeBench
-checkout named by `HEXC_SIZEBENCH_DIR` and are skipped otherwise.
+checkout named by `HEXCAVATOR_SIZEBENCH_DIR` and are skipped otherwise.
 
 To regenerate `oracle/`, build `tools/sizebench-oracle` and run it over each
 image and PDB pair (see that tool's README).

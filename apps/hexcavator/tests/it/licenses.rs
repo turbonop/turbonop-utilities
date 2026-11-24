@@ -4,7 +4,7 @@
 //! license; and `THIRD_PARTY_NOTICES.txt` (which `hexcavator licenses` prints)
 //! has our license and all of their notices. After a dependency or a
 //! license file changes, regenerate the notices with
-//! `HEXC_UPDATE_NOTICES=1 cargo test -p hexcavator --test it licenses::`.
+//! `HEXCAVATOR_UPDATE_NOTICES=1 cargo test -p hexcavator --test it licenses::`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -356,7 +356,7 @@ fn notices() -> String {
 fn notices_are_current() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("THIRD_PARTY_NOTICES.txt");
     let want = notices();
-    if std::env::var_os("HEXC_UPDATE_NOTICES").is_some() {
+    if std::env::var_os("HEXCAVATOR_UPDATE_NOTICES").is_some() {
         std::fs::write(&path, &want).unwrap();
     }
     let have = std::fs::read_to_string(&path)
@@ -364,7 +364,7 @@ fn notices_are_current() {
         .replace("\r\n", "\n");
     assert!(
         have == want,
-        "THIRD_PARTY_NOTICES.txt is out of date: HEXC_UPDATE_NOTICES=1 cargo test -p hexcavator --test it licenses::"
+        "THIRD_PARTY_NOTICES.txt is out of date: HEXCAVATOR_UPDATE_NOTICES=1 cargo test -p hexcavator --test it licenses::"
     );
     // And the program prints them.
     let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))

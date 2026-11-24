@@ -3,8 +3,8 @@
 //! LA64) decoded and written the same, or not decoded where LLVM decodes
 //! nothing.
 
-use hexcavator_loongarch::format::format;
-use hexcavator_loongarch::{Features, decode};
+use turbonop_loongarch::format::format;
+use turbonop_loongarch::{Features, decode};
 
 #[test]
 fn llvm_text() {

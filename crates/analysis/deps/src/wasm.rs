@@ -12,9 +12,9 @@ use std::path::PathBuf;
 use crate::search::Reject;
 use crate::{Ctx, DepKind, Found, Import, ImportStatus, Resolved, Status, Wanted};
 
-fn parsed<'a>(ctx: &'a Ctx<'_>, m: usize) -> Option<hexcavator_wasm::Module<'a>> {
+fn parsed<'a>(ctx: &'a Ctx<'_>, m: usize) -> Option<turbonop_wasm::Module<'a>> {
     let loaded = ctx.loaded.get(m)?.as_ref()?;
-    hexcavator_wasm::Module::parse(loaded.data()).ok()
+    turbonop_wasm::Module::parse(loaded.data()).ok()
 }
 
 /// Module `m`'s imports' modules (each once, in the order first imported

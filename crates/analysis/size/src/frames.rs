@@ -3,8 +3,8 @@
 //! Mach-O image's), with its size, its LSDA (its language's exception
 //! table: catch clauses, cleanups), and its personality routine.
 
-use hexcavator_dwarf::cfi::{Cfi, CfiKind, Entry};
-use hexcavator_image::Image;
+use turbonop_dwarf::cfi::{Cfi, CfiKind, Entry};
+use turbonop_image::Image;
 
 /// A function's frame description.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,7 +50,7 @@ pub fn frames(image: &Image<'_>) -> Vec<Frame> {
         };
         // Each CIE's personality routine, by its offset (the first CIE
         // at an offset, as a search from the start finds).
-        let mut personalities = hexcavator_hash::Map::default();
+        let mut personalities = turbonop_hash::Map::default();
         for e in &entries {
             if let Entry::Cie(c) = e {
                 personalities.entry(c.offset).or_insert(c.personality);

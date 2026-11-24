@@ -69,15 +69,15 @@ impl<'data> Image<'data> {
     }
 }
 
-fn pe_slots<'data>(pe: &hexcavator_pe::PeFile<'data>) -> Vec<ImportSlot<'data>> {
-    use hexcavator_pe::imports::ImportName;
+fn pe_slots<'data>(pe: &turbonop_pe::PeFile<'data>) -> Vec<ImportSlot<'data>> {
+    use turbonop_pe::imports::ImportName;
     let mut out = Vec::new();
-    if pe.kind() == hexcavator_pe::FileKind::Object {
+    if pe.kind() == turbonop_pe::FileKind::Object {
         return out;
     }
     let width = if pe
         .optional_header()
-        .is_some_and(hexcavator_pe::OptionalHeader::is_64)
+        .is_some_and(turbonop_pe::OptionalHeader::is_64)
     {
         8
     } else {
@@ -112,15 +112,15 @@ fn pe_slots<'data>(pe: &hexcavator_pe::PeFile<'data>) -> Vec<ImportSlot<'data>> 
     out
 }
 
-fn elf_slots<'data>(elf: &hexcavator_elf::ElfFile<'data>) -> Vec<ImportSlot<'data>> {
-    use hexcavator_elf::consts::{SHN_UNDEF, SHT_REL, SHT_RELA};
+fn elf_slots<'data>(elf: &turbonop_elf::ElfFile<'data>) -> Vec<ImportSlot<'data>> {
+    use turbonop_elf::consts::{SHN_UNDEF, SHT_REL, SHT_RELA};
     let mut out = Vec::new();
     if elf.is_object() {
         return out;
     }
     let width = match elf.class() {
-        hexcavator_elf::Class::Elf32 => 4,
-        hexcavator_elf::Class::Elf64 => 8,
+        turbonop_elf::Class::Elf32 => 4,
+        turbonop_elf::Class::Elf64 => 8,
     };
     let machine = elf.header().machine;
     let sections: Vec<_> = elf.sections().collect();
@@ -133,8 +133,8 @@ fn elf_slots<'data>(elf: &hexcavator_elf::ElfFile<'data>) -> Vec<ImportSlot<'dat
             .map(|t| elf.symbols(t))
             .unwrap_or_default();
         for r in elf.relocations(s) {
-            if hexcavator_elf::address_relocation(machine, r.kind)
-                != Some(hexcavator_elf::AddressRelocation::Symbol)
+            if turbonop_elf::address_relocation(machine, r.kind)
+                != Some(turbonop_elf::AddressRelocation::Symbol)
             {
                 continue;
             }
@@ -155,14 +155,14 @@ fn elf_slots<'data>(elf: &hexcavator_elf::ElfFile<'data>) -> Vec<ImportSlot<'dat
     out
 }
 
-fn macho_slots<'data>(m: &hexcavator_macho::MachO<'data>) -> Vec<ImportSlot<'data>> {
+fn macho_slots<'data>(m: &turbonop_macho::MachO<'data>) -> Vec<ImportSlot<'data>> {
     let mut out = Vec::new();
     if m.is_object() {
         return out;
     }
     let dylibs = m.dylibs();
     for f in m.fixups() {
-        let hexcavator_macho::FixupKind::Bind {
+        let turbonop_macho::FixupKind::Bind {
             symbol, library, ..
         } = f.kind
         else {

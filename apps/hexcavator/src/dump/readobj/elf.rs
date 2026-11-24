@@ -2,16 +2,16 @@
 //! `--program-headers`, `--dynamic-table`, `--relocations`, `--symbols`,
 //! `--dyn-symbols`, `--notes`).
 
-use hexcavator_elf::consts::*;
-use hexcavator_elf::spelling;
-use hexcavator_elf::{Class, ElfFile, Section};
+use turbonop_elf::consts::*;
+use turbonop_elf::spelling;
+use turbonop_elf::{Class, ElfFile, Section};
 
 use super::{Parts, Printer};
 
 /// llvm-readobj's `Format:`, `Arch:`, and `AddressSize:` for a file.
 fn identity(elf: &ElfFile<'_>) -> (String, &'static str, &'static str) {
     let h = elf.header();
-    let big = elf.endian() == hexcavator_core::Endian::Big;
+    let big = elf.endian() == turbonop_core::Endian::Big;
     let wide = elf.class() == Class::Elf64;
     let (format, arch) = match h.machine {
         EM_X86_64 => ("x86-64".to_string(), "x86_64"),
@@ -255,7 +255,7 @@ fn dynamic_str(elf: &ElfFile<'_>, off: u64) -> Option<String> {
     let base = elf.vaddr_to_offset(strtab)?;
     let start = usize::try_from(base.checked_add(off)?).ok()?;
     let rest = elf.data().get(start..)?;
-    let end = hexcavator_core::find_nul(rest)?;
+    let end = turbonop_core::find_nul(rest)?;
     Some(String::from_utf8_lossy(&rest[..end.min(4096)]).into_owned())
 }
 
@@ -271,7 +271,7 @@ fn dynamic_table(p: &mut Printer<'_>, elf: &ElfFile<'_>) {
         return;
     }
     // (llvm-readobj lists the terminating DT_NULL too.)
-    entries.push(hexcavator_elf::Dynamic {
+    entries.push(turbonop_elf::Dynamic {
         tag: DT_NULL,
         value: 0,
     });
@@ -392,7 +392,7 @@ fn relocations(p: &mut Printer<'_>, elf: &ElfFile<'_>) {
                 Vec::new()
             };
             for r in elf.relocations(s) {
-                let kind = hexcavator_elf::relocation_name(machine, r.kind)
+                let kind = turbonop_elf::relocation_name(machine, r.kind)
                     .unwrap_or_else(|| format!("Unknown ({})", r.kind));
                 let sym = syms.get(r.symbol as usize).map_or_else(
                     || "-".to_string(),
@@ -510,7 +510,7 @@ fn symbols(p: &mut Printer<'_>, elf: &ElfFile<'_>, kind: u32, head: &str) {
 /// A dynamic symbol's version as llvm-readobj appends it: `@version` for
 /// one needed (or hidden), `@@version` for one defined, the default.
 fn version_suffix(
-    versions: &[Option<hexcavator_elf::versions::SymbolVersion<'_>>],
+    versions: &[Option<turbonop_elf::versions::SymbolVersion<'_>>],
     i: usize,
     shndx: u32,
 ) -> String {

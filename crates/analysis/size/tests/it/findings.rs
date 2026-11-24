@@ -1,9 +1,9 @@
 //! Findings against SizeBench's analyses (`testdata/sizebench/findings`,
 //! from `tools/sizebench-oracle --findings`).
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::{findings, pe, symbols};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::{findings, pe, symbols};
 
 fn root() -> String {
     format!("{}/../../../testdata/sizebench", env!("CARGO_MANIFEST_DIR"))
@@ -73,10 +73,10 @@ fn duplicate_data_matches_sizebench() {
         let writable: Vec<(u64, u64)> = image
             .sections()
             .iter()
-            .filter(|s| s.flags.contains(hexcavator_image::SectionFlags::WRITE))
+            .filter(|s| s.flags.contains(turbonop_image::SectionFlags::WRITE))
             .filter_map(|s| Some((s.addr, s.end()?)))
             .collect();
-        let wanted: hexcavator_hash::Set<(u64, u32)> = syms
+        let wanted: turbonop_hash::Set<(u64, u32)> = syms
             .iter()
             .filter_map(|s| Some((s.addr, s.compiland?)))
             .collect();
@@ -137,7 +137,7 @@ fn wasteful_virtuals_match_sizebench() {
         let debug = DebugInfo::parse(&pdb_data).unwrap();
         let word = u64::from(image.arch().pointer_size().unwrap_or(8));
         let classes = debug.classes().unwrap();
-        let mut namer = hexcavator_size::names::Namer::new(&debug);
+        let mut namer = turbonop_size::names::Namer::new(&debug);
         let mut ours: Vec<String> = findings::wasteful_virtuals(&classes, &mut namer, word)
             .iter()
             .map(|w| {

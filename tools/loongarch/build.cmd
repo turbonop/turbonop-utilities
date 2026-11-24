@@ -1,5 +1,5 @@
 @echo off
-rem Writes hexcavator-loongarch's tables (crates\isa\loongarch\src\tables.rs)
+rem Writes turbonop-loongarch's tables (crates\isa\loongarch\src\tables.rs)
 rem from LLVM's TableGen records of its LoongArch target, and the decoder's
 rem golden file (crates\isa\loongarch\tests\golden.txt) from llvm-objdump's
 rem text for encodings of each instruction. LLVM_BIN names an LLVM bin

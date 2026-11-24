@@ -9,7 +9,7 @@
 use alloc::string::String;
 use core::fmt::Write as _;
 
-use hexcavator_tablegen::Print;
+use turbonop_tablegen::Print;
 
 use crate::{Features, Instruction, Operand, Reg, files};
 
@@ -36,7 +36,7 @@ pub fn format(i: &Instruction, address: u64, features: &Features) -> String {
     if by_hand(&mut out, i, features) {
         return out;
     }
-    hexcavator_tablegen::write(&mut out, i, &features.set, |out, op, print, _| {
+    turbonop_tablegen::write(&mut out, i, &features.set, |out, op, print, _| {
         print_operand(out, i, op, print, address, features);
     });
     out

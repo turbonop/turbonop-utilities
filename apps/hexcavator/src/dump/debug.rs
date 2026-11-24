@@ -3,8 +3,8 @@
 
 use std::io::{self, Write};
 
-use hexcavator_pe::consts::{debug_type, machine};
-use hexcavator_pe::{CodeView, PeFile};
+use turbonop_pe::consts::{debug_type, machine};
+use turbonop_pe::{CodeView, PeFile};
 
 /// dumpbin's short name for each debug entry type.
 fn type_name(kind: u32) -> Option<&'static str> {

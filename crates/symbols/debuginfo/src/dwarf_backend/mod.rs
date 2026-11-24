@@ -24,16 +24,16 @@ mod layouts;
 mod types;
 mod vars;
 
-use hexcavator_hash::Map as HashMap;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock as OnceCell;
 use std::sync::atomic::{AtomicU64, Ordering};
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_core::{Arch, Endian, Error, ErrorKind, Result};
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Abbrevs, Attr, Die, Sections, Unit, UnitSection, Value, line_program};
-use hexcavator_image::{DebugId, Image, Kind};
+use turbonop_core::{Arch, Endian, Error, ErrorKind, Result};
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Abbrevs, Attr, Die, Sections, Unit, UnitSection, Value, line_program};
+use turbonop_image::{DebugId, Image, Kind};
 
 pub use debugmap::AddrMap;
 
@@ -276,7 +276,7 @@ pub fn split_paths(image_path: &Path, debug_path: &Path, f: &SplitFile) -> Vec<P
 /// The units a `.dwp`'s `.debug_cu_index` or `.debug_tu_index` lists
 /// (versions 2, GNU's, and 5), or `None` if it is damaged.
 fn package_rows(d: &[u8], endian: Endian) -> Option<Vec<Row>> {
-    use hexcavator_dwarf::Reader;
+    use turbonop_dwarf::Reader;
     let version = if Reader::new(d, 0, endian).uint(2)? == 5 {
         5
     } else if Reader::new(d, 0, endian).uint(4)? == 2 {
@@ -392,7 +392,7 @@ impl<'data> DwarfInfo<'data> {
         s: &Sections<'s>,
         offset: u64,
         address_size: u8,
-    ) -> Option<hexcavator_dwarf::LineProgram<'s>> {
+    ) -> Option<turbonop_dwarf::LineProgram<'s>> {
         let mut p = line_program(s, offset, address_size)?;
         if matches!(self.arch, Arch::Mips | Arch::Mips64) {
             for r in &mut p.rows {
@@ -577,7 +577,7 @@ impl<'data> DwarfInfo<'data> {
 
     /// Adds an object file of the image's debug map, whose functions and
     /// variables the image has at `symbols` (see
-    /// [`hexcavator_macho::MachO::debug_map`]), from the archive `library`
+    /// [`turbonop_macho::MachO::debug_map`]), from the archive `library`
     /// (empty if none): its units, their addresses moved to the image's.
     ///
     /// # Errors
@@ -587,7 +587,7 @@ impl<'data> DwarfInfo<'data> {
     pub fn add_object(
         &mut self,
         data: &'data [u8],
-        symbols: &[hexcavator_macho::debugmap::DebugMapSymbol<'_>],
+        symbols: &[turbonop_macho::debugmap::DebugMapSymbol<'_>],
         library: &str,
         object_name: &str,
     ) -> Result<()> {
@@ -654,11 +654,11 @@ impl<'data> DwarfInfo<'data> {
 
     /// File `file`'s address `addr` of data (a variable's), as the image
     /// has it: a WebAssembly module's is in its linear memory, which the
-    /// image has at `hexcavator_image::WASM_MEMORY` (its code's addresses
+    /// image has at `turbonop_image::WASM_MEMORY` (its code's addresses
     /// are its code section's offsets).
     fn image_data_addr(&self, file: u32, addr: u64) -> Option<u64> {
         if matches!(self.arch, Arch::Wasm32 | Arch::Wasm64) {
-            return Some(hexcavator_image::WASM_MEMORY.wrapping_add(addr));
+            return Some(turbonop_image::WASM_MEMORY.wrapping_add(addr));
         }
         self.image_addr(file, addr)
     }
@@ -1311,7 +1311,7 @@ impl<'data> DwarfInfo<'data> {
             let (u, a) = self.unit(m)?;
             let d = u.entry(a, u.dies)?;
             let l = Self::uint(&u, &d, DW_AT_LANGUAGE)?;
-            Some(hexcavator_dwarf::spelling::language(l).map_or_else(
+            Some(turbonop_dwarf::spelling::language(l).map_or_else(
                 || format!("{l:#x}"),
                 |s| s.trim_start_matches("DW_LANG_").into(),
             ))
@@ -1377,7 +1377,7 @@ impl<'data> DwarfInfo<'data> {
     /// `-frecord-command-line`), each split; none if it's not ELF or has
     /// none.
     fn recorded_command_lines(&self) -> Vec<Vec<String>> {
-        let Ok(elf) = hexcavator_elf::ElfFile::parse(self.data) else {
+        let Ok(elf) = turbonop_elf::ElfFile::parse(self.data) else {
             return Vec::new();
         };
         let Some(s) = elf.section_by_name(b".GCC.command.line") else {
@@ -1395,7 +1395,7 @@ impl<'data> DwarfInfo<'data> {
     pub fn contributions(&self) -> Result<Vec<Contribution>> {
         let mut out: Vec<Contribution> = Vec::new();
         // The compilands with code so far.
-        let mut with_code = hexcavator_hash::Set::default();
+        let mut with_code = turbonop_hash::Set::default();
         for m in &self.index().units {
             let Some(compiland) = m.compiland else {
                 continue;
@@ -1429,7 +1429,7 @@ impl<'data> DwarfInfo<'data> {
                 .filter(|m| m.file == 0 && m.section == UnitSection::Info)
                 .filter_map(|m| Some((m.offset, m.compiland?)))
                 .collect();
-            for e in hexcavator_dwarf::aranges(s.aranges, s.endian) {
+            for e in turbonop_dwarf::aranges(s.aranges, s.endian) {
                 if let Some(&compiland) = by_offset.get(&e.info_offset)
                     && e.length > 0
                 {
@@ -1715,7 +1715,7 @@ impl<'data> DwarfInfo<'data> {
         }
         // Kept: each function's qualified name, and (address, compiland,
         // name) of each; dropped: its qualified and its symbol's name.
-        let mut kept_names = hexcavator_hash::Set::default();
+        let mut kept_names = turbonop_hash::Set::default();
         let mut kept = Vec::new();
         let mut dropped = Vec::new();
         self.walk(|w| {
@@ -1781,7 +1781,7 @@ impl<'data> DwarfInfo<'data> {
     /// constant.
     pub fn variable_definitions(
         &self,
-        wanted: &hexcavator_hash::Set<(u64, u32)>,
+        wanted: &turbonop_hash::Set<(u64, u32)>,
     ) -> Result<HashMap<(u64, u32), crate::VariableDefinition>> {
         let mut out = HashMap::default();
         if wanted.is_empty() {
@@ -1987,7 +1987,7 @@ fn clip(spans: &mut Vec<(u64, u64)>, code: &[(u64, u64)]) {
 /// and its file table.
 struct UnitLines<'a> {
     rows: Vec<(u64, u64, u64, u32)>,
-    program: hexcavator_dwarf::LineProgram<'a>,
+    program: turbonop_dwarf::LineProgram<'a>,
     comp_dir: String,
 }
 
@@ -2083,7 +2083,7 @@ fn static_address(u: &Unit<'_>, v: &Value<'_>) -> Option<(u64, bool, bool)> {
     if last != DW_OP_FORM_TLS_ADDRESS && last != DW_OP_GNU_PUSH_TLS_ADDRESS {
         return None;
     }
-    let mut r = hexcavator_dwarf::Reader::new(rest, 1, u.sections().endian);
+    let mut r = turbonop_dwarf::Reader::new(rest, 1, u.sections().endian);
     let at = match *rest.first()? {
         DW_OP_CONST4U => r.uint(4)?,
         DW_OP_CONST8U => r.uint(8)?,
@@ -2103,7 +2103,7 @@ fn wasm_based_address(u: &Unit<'_>, b: &[u8]) -> Option<u64> {
     if *b.first()? != DW_OP_WASM_LOCATION {
         return None;
     }
-    let mut r = hexcavator_dwarf::Reader::new(b, 1, u.sections().endian);
+    let mut r = turbonop_dwarf::Reader::new(b, 1, u.sections().endian);
     match r.uleb()? {
         1 => {
             r.uleb()?;

@@ -5,8 +5,8 @@
 
 use std::time::{Duration, Instant};
 
-use hexcavator_debuginfo::value::{self, Limits};
-use hexcavator_debuginfo::{DebugInfo, TypeRef};
+use turbonop_debuginfo::value::{self, Limits};
+use turbonop_debuginfo::{DebugInfo, TypeRef};
 
 const LF_MODIFIER: u16 = 0x1001;
 const LF_POINTER: u16 = 0x1002;
@@ -115,8 +115,8 @@ fn read_all(records: &[(u16, Vec<u8>)]) {
         let ty = TypeRef(0x1000 + i as u64);
         let _ = (d.type_name(ty), d.type_size(ty), d.type_shape(ty));
         let _ = (d.layout(ty), d.enumerators(ty));
-        let _ = hexcavator_debuginfo::layout::flat_fields(&d, ty);
-        let _ = hexcavator_debuginfo::layout::pointer_target(&d, ty);
+        let _ = turbonop_debuginfo::layout::flat_fields(&d, ty);
+        let _ = turbonop_debuginfo::layout::pointer_target(&d, ty);
         for bytes in [&[0x5A; 64][..], &[]] {
             let _ = value::read(&d, ty, bytes, Limits::default());
         }

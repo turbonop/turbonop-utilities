@@ -47,7 +47,7 @@ pub fn charge(map: &mut DualMap, base: &DualMap, refs: &[Reference], loaded: &[(
 
 /// The instruction sets (x86, x64, and ARM64 are decoded; others show as
 /// bytes).
-pub use hexcavator_core::Arch;
+pub use turbonop_core::Arch;
 
 /// A function to disassemble: its code, where it is, and the names of the
 /// image's addresses (sorted by address), for its branches and data.
@@ -165,13 +165,13 @@ impl Names<'_> {
     }
 }
 
-impl hexcavator_x86::format::Symbols for Names<'_> {
+impl turbonop_x86::format::Symbols for Names<'_> {
     fn name_at(&self, address: u64) -> Option<&str> {
         self.name(address)
     }
 }
 
-impl hexcavator_arm64::Symbols for Names<'_> {
+impl turbonop_arm64::Symbols for Names<'_> {
     fn name_at(&self, address: u64) -> Option<&str> {
         self.name(address)
     }
@@ -181,15 +181,15 @@ impl hexcavator_arm64::Symbols for Names<'_> {
 /// and literal targets.
 struct Targets(std::cell::RefCell<Vec<u64>>);
 
-impl hexcavator_arm64::Symbols for Targets {
+impl turbonop_arm64::Symbols for Targets {
     fn name_at(&self, address: u64) -> Option<&str> {
         self.0.borrow_mut().push(address);
         None
     }
 }
 
-/// How control moves: hexcavator-code's, which builds the blocks.
-pub use hexcavator_code::{Block, Edge, Flow};
+/// How control moves: turbonop-code's, which builds the blocks.
+pub use turbonop_code::{Block, Edge, Flow};
 
 /// How the labels of a listing are named.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -247,38 +247,38 @@ impl Listing {
 /// The RISC-V extensions a listing decodes with: those the image's
 /// attributes name (as `llvm-objdump` takes them), or else every standard
 /// one.
-fn riscv_features(f: &Function<'_>) -> hexcavator_riscv::Features {
+fn riscv_features(f: &Function<'_>) -> turbonop_riscv::Features {
     match &f.riscv_arch {
-        Some(arch) => hexcavator_riscv::Features::from_arch(arch),
-        None => hexcavator_riscv::Features::standard(f.isa == Arch::RiscV64),
+        Some(arch) => turbonop_riscv::Features::from_arch(arch),
+        None => turbonop_riscv::Features::standard(f.isa == Arch::RiscV64),
     }
 }
 
 /// How an image's code is read: its byte order, and, for a MIPS ELF
 /// image, its flags.
-pub fn code_mode(image: &hexcavator_image::Image<'_>) -> hexcavator_code::Mode {
-    hexcavator_code::Mode {
-        big: image.endian() == hexcavator_core::Endian::Big,
+pub fn code_mode(image: &turbonop_image::Image<'_>) -> turbonop_code::Mode {
+    turbonop_code::Mode {
+        big: image.endian() == turbonop_core::Endian::Big,
         mips_flags: image
             .elf()
-            .filter(|e| e.header().machine == hexcavator_elf::consts::EM_MIPS)
+            .filter(|e| e.header().machine == turbonop_elf::consts::EM_MIPS)
             .map(|e| e.header().flags),
-        mips_gp: image.elf().and_then(hexcavator_elf::ElfFile::mips_gp),
+        mips_gp: image.elf().and_then(turbonop_elf::ElfFile::mips_gp),
     }
 }
 
 /// The MIPS features a listing decodes with: as llvm-objdump takes them
 /// from the image's flags.
-fn mips_features(f: &Function<'_>) -> hexcavator_mips::Features {
-    hexcavator_mips::Features::from_elf(f.mips_flags, f.isa == Arch::Mips64)
+fn mips_features(f: &Function<'_>) -> turbonop_mips::Features {
+    turbonop_mips::Features::from_elf(f.mips_flags, f.isa == Arch::Mips64)
 }
 
 /// The LoongArch features a listing decodes with: LA64's or LA32's.
-fn loongarch_features(isa: Arch) -> hexcavator_loongarch::Features {
+fn loongarch_features(isa: Arch) -> turbonop_loongarch::Features {
     if isa == Arch::LoongArch64 {
-        hexcavator_loongarch::Features::la64()
+        turbonop_loongarch::Features::la64()
     } else {
-        hexcavator_loongarch::Features::la32()
+        turbonop_loongarch::Features::la32()
     }
 }
 
@@ -289,14 +289,14 @@ fn loongarch_features(isa: Arch) -> hexcavator_loongarch::Features {
 /// the rest is kept as bytes.
 pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
     enum Inst {
-        X86(hexcavator_x86::Instruction),
-        Arm64(hexcavator_arm64::Instruction),
+        X86(turbonop_x86::Instruction),
+        Arm64(turbonop_arm64::Instruction),
         /// With the condition an IT block gives it.
-        Arm32(hexcavator_arm32::Instruction, Option<u32>),
-        RiscV(hexcavator_riscv::Instruction),
-        LoongArch(hexcavator_loongarch::Instruction),
-        PowerPc(hexcavator_powerpc::Instruction),
-        Mips(hexcavator_mips::Instruction),
+        Arm32(turbonop_arm32::Instruction, Option<u32>),
+        RiscV(turbonop_riscv::Instruction),
+        LoongArch(turbonop_loongarch::Instruction),
+        PowerPc(turbonop_powerpc::Instruction),
+        Mips(turbonop_mips::Instruction),
     }
     struct Decoded {
         pc: u64,
@@ -316,16 +316,16 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
     match f.isa {
         Arch::X86 | Arch::X64 => {
             let mode = if f.isa == Arch::X86 {
-                hexcavator_x86::Mode::Bits32
+                turbonop_x86::Mode::Bits32
             } else {
-                hexcavator_x86::Mode::Bits64
+                turbonop_x86::Mode::Bits64
             };
             while rest < f.code.len() {
                 let pc = f.address + rest as u64;
-                let Ok(i) = hexcavator_x86::decode(&f.code[rest..], mode, pc) else {
+                let Ok(i) = turbonop_x86::decode(&f.code[rest..], mode, pc) else {
                     break;
                 };
-                let insn = hexcavator_code::decode(f.isa, &f.code[rest..], pc);
+                let insn = turbonop_code::decode(f.isa, &f.code[rest..], pc);
                 let flow = insn.map_or(Flow::Next, |c| c.flow);
                 let target = i.branch_target();
                 insts.push(Decoded {
@@ -344,14 +344,14 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             for w in f.code.as_chunks::<4>().0 {
                 let pc = f.address + rest as u64;
                 let word = u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
-                let Some(i) = hexcavator_arm64::decode(word, pc) else {
+                let Some(i) = turbonop_arm64::decode(word, pc) else {
                     break;
                 };
                 // The formatter's own targets: branches' and literals'.
                 let record = Targets(Default::default());
-                hexcavator_arm64::format_with(&i, &record);
+                turbonop_arm64::format_with(&i, &record);
                 let named = record.0.into_inner();
-                let insn = hexcavator_code::decode(Arch::Arm64, w, pc);
+                let insn = turbonop_code::decode(Arch::Arm64, w, pc);
                 let flow = insn.map_or(Flow::Next, |c| c.flow);
                 let target = insn.and_then(|c| c.target);
                 insts.push(Decoded {
@@ -375,16 +375,16 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 .map_or(f.code.len(), |d| d.min(f.code.len()));
             while rest < stop {
                 let pc = f.address + rest as u64;
-                let Some(c) = hexcavator_code::decode_arm32(&f.code[rest..], pc, f.thumb) else {
+                let Some(c) = turbonop_code::decode_arm32(&f.code[rest..], pc, f.thumb) else {
                     break;
                 };
                 let bytes = &f.code[rest..];
                 let i = if f.thumb {
                     let first = u16::from_le_bytes([bytes[0], bytes[1]]);
                     let second = (c.len == 4).then(|| u16::from_le_bytes([bytes[2], bytes[3]]));
-                    hexcavator_arm32::decode_t32(first, second)
+                    turbonop_arm32::decode_t32(first, second)
                 } else {
-                    hexcavator_arm32::decode_a32(u32::from_le_bytes([
+                    turbonop_arm32::decode_a32(u32::from_le_bytes([
                         bytes[0], bytes[1], bytes[2], bytes[3],
                     ]))
                 };
@@ -408,7 +408,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                             .find(|x| x.0 == name)
                             .map_or(0, |x| (i.word >> x.2) & ((1 << (x.1 - x.2 + 1)) - 1))
                     };
-                    it = hexcavator_arm32::format::it_conditions(field("firstcond"), field("mask"))
+                    it = turbonop_arm32::format::it_conditions(field("firstcond"), field("mask"))
                         .collect();
                 }
                 insts.push(Decoded {
@@ -427,10 +427,10 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             let features = riscv_features(f);
             while rest < f.code.len() {
                 let pc = f.address + rest as u64;
-                let Some(i) = hexcavator_riscv::decode(&f.code[rest..], &features) else {
+                let Some(i) = turbonop_riscv::decode(&f.code[rest..], &features) else {
                     break;
                 };
-                let (flow, target) = hexcavator_code::riscv_flow(&i, pc, &features);
+                let (flow, target) = turbonop_code::riscv_flow(&i, pc, &features);
                 insts.push(Decoded {
                     pc,
                     len: usize::from(i.size),
@@ -447,10 +447,10 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             let features = loongarch_features(f.isa);
             while rest < f.code.len() {
                 let pc = f.address + rest as u64;
-                let Some(i) = hexcavator_loongarch::decode(&f.code[rest..], &features) else {
+                let Some(i) = turbonop_loongarch::decode(&f.code[rest..], &features) else {
                     break;
                 };
-                let (flow, target) = hexcavator_code::loongarch_flow(&i, pc);
+                let (flow, target) = turbonop_code::loongarch_flow(&i, pc);
                 insts.push(Decoded {
                     pc,
                     len: 4,
@@ -464,14 +464,14 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             }
         }
         Arch::PowerPc | Arch::PowerPc64 => {
-            let features = hexcavator_powerpc::Features::standard(f.isa == Arch::PowerPc64);
+            let features = turbonop_powerpc::Features::standard(f.isa == Arch::PowerPc64);
             while rest < f.code.len() {
                 let pc = f.address + rest as u64;
-                let Some(i) = hexcavator_powerpc::decode(&f.code[rest..], f.big_endian, &features)
+                let Some(i) = turbonop_powerpc::decode(&f.code[rest..], f.big_endian, &features)
                 else {
                     break;
                 };
-                let (flow, target) = hexcavator_code::powerpc_flow(&i, pc, &features);
+                let (flow, target) = turbonop_code::powerpc_flow(&i, pc, &features);
                 insts.push(Decoded {
                     pc,
                     len: usize::from(i.size),
@@ -488,12 +488,12 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             let features = mips_features(f);
             while rest < f.code.len() {
                 let pc = f.address + rest as u64;
-                let Some(i) = hexcavator_mips::decode(&f.code[rest..], f.big_endian, &features)
+                let Some(i) = turbonop_mips::decode(&f.code[rest..], f.big_endian, &features)
                 else {
                     break;
                 };
-                let (flow, target) = hexcavator_code::mips_flow(&i, pc);
-                let len = hexcavator_mips::size(&i);
+                let (flow, target) = turbonop_code::mips_flow(&i, pc);
+                let len = turbonop_mips::size(&i);
                 insts.push(Decoded {
                     pc,
                     len,
@@ -501,7 +501,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     flow,
                     target,
                     named: target.into_iter().collect(),
-                    delayed: hexcavator_mips::has_delay_slot(&i),
+                    delayed: turbonop_mips::has_delay_slot(&i),
                 });
                 rest += len;
             }
@@ -511,10 +511,10 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
     }
     let starts_inst =
         |t: &u64| *t >= f.address && *t < end && insts.binary_search_by_key(t, |i| i.pc).is_ok();
-    // The blocks (hexcavator-code's), and where they start.
-    let mut insns: Vec<hexcavator_code::Insn> = insts
+    // The blocks (turbonop-code's), and where they start.
+    let mut insns: Vec<turbonop_code::Insn> = insts
         .iter()
-        .map(|d| hexcavator_code::Insn {
+        .map(|d| turbonop_code::Insn {
             address: d.pc,
             len: u8::try_from(d.len).unwrap_or(u8::MAX),
             flow: d.flow,
@@ -523,9 +523,9 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
         .collect();
     // (A delayed branch takes effect after its delay slot.)
     let delayed: Vec<bool> = insts.iter().map(|d| d.delayed).collect();
-    hexcavator_code::delay_slots(&mut insns, &delayed);
-    let branched = hexcavator_code::branch_targets(&insns);
-    let blocks = hexcavator_code::blocks(&insns);
+    turbonop_code::delay_slots(&mut insns, &delayed);
+    let branched = turbonop_code::branch_targets(&insns);
+    let blocks = turbonop_code::blocks(&insns);
     let starts: Vec<u64> = blocks.iter().map(|b| insns[b.first].address).collect();
     // Labels, numbered in address order (bloaty's from 0, blocks' from 1).
     let mut labeled: Vec<u64> = match style {
@@ -567,12 +567,12 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
         let text = match &d.inst {
             Inst::X86(i) => {
                 let mut s = String::new();
-                hexcavator_x86::format::format_with(i, &mut s, &names);
+                turbonop_x86::format::format_with(i, &mut s, &names);
                 s
             }
-            Inst::Arm64(i) => hexcavator_arm64::format_with(i, &names),
+            Inst::Arm64(i) => turbonop_arm64::format_with(i, &names),
             Inst::RiscV(i) => {
-                let mut s = hexcavator_riscv::format::format(i, d.pc, &riscv_features(f));
+                let mut s = turbonop_riscv::format::format(i, d.pc, &riscv_features(f));
                 // (The target by its label or symbol, where it has one.)
                 if let Some(t) = d.target
                     && let Some(name) = names.name(t)
@@ -582,8 +582,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 s
             }
             Inst::LoongArch(i) => {
-                let mut s =
-                    hexcavator_loongarch::format::format(i, d.pc, &loongarch_features(f.isa));
+                let mut s = turbonop_loongarch::format::format(i, d.pc, &loongarch_features(f.isa));
                 // (The target by its label or symbol, where it has one, for
                 // the offset LLVM writes, the last operand.)
                 if let Some(t) = d.target
@@ -595,7 +594,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 s
             }
             Inst::Mips(i) => {
-                let mut s = hexcavator_mips::format::format(i, d.pc, &mips_features(f));
+                let mut s = turbonop_mips::format::format(i, d.pc, &mips_features(f));
                 // (The target by its label or symbol, where it has one.)
                 if let Some(t) = d.target
                     && let Some(name) = names.name(t)
@@ -605,8 +604,8 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 s
             }
             Inst::PowerPc(i) => {
-                let features = hexcavator_powerpc::Features::standard(f.isa == Arch::PowerPc64);
-                let mut s = hexcavator_powerpc::format::format(i, d.pc, &features);
+                let features = turbonop_powerpc::Features::standard(f.isa == Arch::PowerPc64);
+                let mut s = turbonop_powerpc::format::format(i, d.pc, &features);
                 // (The target by its label or symbol, where it has one.)
                 if let Some(t) = d.target
                     && let Some(name) = names.name(t)
@@ -616,7 +615,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 s
             }
             Inst::Arm32(i, cond) => {
-                use hexcavator_arm32::format::{Targets, format_in_it};
+                use turbonop_arm32::format::{Targets, format_in_it};
                 let mut s = String::new();
                 format_in_it(i, d.pc, Targets::Addresses, *cond, &mut s);
                 // (The target by its label or symbol, where it has one.)
@@ -688,7 +687,7 @@ pub struct Reference {
 
 /// The references in `code`, which is at `address`: the addresses its
 /// operands compute or access (not its calls and branches; see
-/// `hexcavator_xref::scan`).
+/// `turbonop_xref::scan`).
 pub fn references(arch: Arch, code: &[u8], address: u64, out: &mut Vec<Reference>) {
     references_in_image(arch, code, address, None, out);
 }
@@ -705,9 +704,9 @@ pub fn references_in_image(
 ) {
     let mut refs = Vec::new();
     // (Its callers' code is x86-64's and ARM64's: little-endian.)
-    hexcavator_xref::scan_image(
+    turbonop_xref::scan_image(
         arch,
-        hexcavator_code::Mode::default(),
+        turbonop_code::Mode::default(),
         code,
         address,
         image_base,
@@ -718,7 +717,7 @@ pub fn references_in_image(
             .filter(|r| {
                 matches!(
                     r.via,
-                    hexcavator_xref::Via::Address | hexcavator_xref::Via::AddressOf
+                    turbonop_xref::Via::Address | turbonop_xref::Via::AddressOf
                 )
             })
             .map(|r| Reference {
@@ -913,42 +912,30 @@ mod tests {
         assert_eq!(l.blocks.len(), 1);
         assert_eq!(l.blocks[0].successors, [(0, Edge::Jump)]);
         // ARM64: conditional, test, and compare branches; calls; returns.
+        assert_eq!(turbonop_code::arm64_flow("B_only_condbranch"), Flow::Branch);
+        assert_eq!(turbonop_code::arm64_flow("CBZ_64_compbranch"), Flow::Branch);
         assert_eq!(
-            hexcavator_code::arm64_flow("B_only_condbranch"),
+            turbonop_code::arm64_flow("TBNZ_only_testbranch"),
             Flow::Branch
         );
+        assert_eq!(turbonop_code::arm64_flow("B_only_branch_imm"), Flow::Jump);
+        assert_eq!(turbonop_code::arm64_flow("BR_64_branch_reg"), Flow::Jump);
+        assert_eq!(turbonop_code::arm64_flow("BRAA_64P_branch_reg"), Flow::Jump);
+        assert_eq!(turbonop_code::arm64_flow("BL_only_branch_imm"), Flow::Call);
         assert_eq!(
-            hexcavator_code::arm64_flow("CBZ_64_compbranch"),
-            Flow::Branch
-        );
-        assert_eq!(
-            hexcavator_code::arm64_flow("TBNZ_only_testbranch"),
-            Flow::Branch
-        );
-        assert_eq!(hexcavator_code::arm64_flow("B_only_branch_imm"), Flow::Jump);
-        assert_eq!(hexcavator_code::arm64_flow("BR_64_branch_reg"), Flow::Jump);
-        assert_eq!(
-            hexcavator_code::arm64_flow("BRAA_64P_branch_reg"),
-            Flow::Jump
-        );
-        assert_eq!(
-            hexcavator_code::arm64_flow("BL_only_branch_imm"),
+            turbonop_code::arm64_flow("BLRAAZ_64_branch_reg"),
             Flow::Call
         );
         assert_eq!(
-            hexcavator_code::arm64_flow("BLRAAZ_64_branch_reg"),
-            Flow::Call
-        );
-        assert_eq!(
-            hexcavator_code::arm64_flow("RET_64R_branch_reg"),
+            turbonop_code::arm64_flow("RET_64R_branch_reg"),
             Flow::Return
         );
         assert_eq!(
-            hexcavator_code::arm64_flow("RETAA_64E_branch_reg"),
+            turbonop_code::arm64_flow("RETAA_64E_branch_reg"),
             Flow::Return
         );
-        assert_eq!(hexcavator_code::arm64_flow("BRK_EX_exception"), Flow::Stop);
-        assert_eq!(hexcavator_code::arm64_flow("ADD_64_addsub_imm"), Flow::Next);
+        assert_eq!(turbonop_code::arm64_flow("BRK_EX_exception"), Flow::Stop);
+        assert_eq!(turbonop_code::arm64_flow("ADD_64_addsub_imm"), Flow::Next);
     }
 
     #[test]
@@ -1036,7 +1023,7 @@ mod tests {
         let got = refs(Arch::Arm64, &code, 0);
         assert_eq!(got, [(16, 0x10008), (28, 0x10008), (32, 0x10010)]);
         // An undecodable word ends the function.
-        assert!(hexcavator_arm64::decode(0xFFFF_FFFF, 0).is_none());
+        assert!(turbonop_arm64::decode(0xFFFF_FFFF, 0).is_none());
         assert_eq!(
             refs(
                 Arch::Arm64,
@@ -1051,7 +1038,7 @@ mod tests {
 /// Parsing llvm-objdump's disassembly, the oracle for [`references`].
 #[cfg(test)]
 pub(crate) mod oracle {
-    use hexcavator_hash::Map as HashMap;
+    use turbonop_hash::Map as HashMap;
 
     /// Each function's references, as llvm-objdump's disassembly gives them:
     /// on x86-64 the `# 0x...` target of each RIP-relative operand; on ARM64

@@ -4,7 +4,7 @@
 //! (`IMAGE_SYMBOL_EX`, with a 32-bit section number); auxiliary records are
 //! the same size as the symbols they follow.
 
-use hexcavator_core::{U32Le, bytes_at, cstr_at, read_at};
+use turbonop_core::{U32Le, bytes_at, cstr_at, read_at};
 
 use crate::consts::storage_class;
 
@@ -141,7 +141,7 @@ impl<'data> SymbolTable<'data> {
         offset: u64,
         count: u64,
         big: bool,
-    ) -> hexcavator_core::Result<Self> {
+    ) -> turbonop_core::Result<Self> {
         let stride: usize = if big { 20 } else { 18 };
         let size = count.saturating_mul(stride as u64);
         let data = bytes_at(file, offset, size)?;

@@ -16,7 +16,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use hexcavator_core::{Endian, Error, ErrorKind, Result, bytes_at, cstr_at};
+use turbonop_core::{Endian, Error, ErrorKind, Result, bytes_at, cstr_at};
 
 pub mod arm;
 pub mod arm_exidx;
@@ -39,8 +39,8 @@ pub enum Class {
 
 /// The instruction set of a machine (`e_machine`) in a file of `class`
 /// (some machines name an architecture of either width).
-pub const fn arch(machine: u16, class: Class) -> hexcavator_core::Arch {
-    use hexcavator_core::Arch;
+pub const fn arch(machine: u16, class: Class) -> turbonop_core::Arch {
+    use turbonop_core::Arch;
     let wide = matches!(class, Class::Elf64);
     match machine {
         EM_386 | EM_IAMCU => Arch::X86,

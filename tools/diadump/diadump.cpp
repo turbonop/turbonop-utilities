@@ -1,5 +1,5 @@
 // diadump: prints a PDB's contents via the DIA SDK in a simple line format,
-// as a reference for hexcavator-pdb's tests.
+// as a reference for turbonop-pdb's tests.
 //
 // Build (from a VS developer prompt):
 //   cl /nologo /EHsc /O2 /I "%VSINSTALLDIR%DIA SDK\include" diadump.cpp ^

@@ -4,7 +4,7 @@
 //! file; its requirements and entitlements; and its CMS signature (a
 //! Developer ID's, or Apple's), checked as Authenticode's are.
 
-use hexcavator_macho::MachO;
+use turbonop_macho::MachO;
 
 use crate::authenticode::{Signature, summarize, unreadable};
 use crate::cms::SignedData;
@@ -121,7 +121,7 @@ pub fn macho(m: &MachO<'_>, arch: String) -> Option<CodeSignature> {
     let lc = m
         .load_commands()
         .into_iter()
-        .find(|c| c.cmd == hexcavator_macho::consts::LC_CODE_SIGNATURE)?;
+        .find(|c| c.cmd == turbonop_macho::consts::LC_CODE_SIGNATURE)?;
     let (off, size) = m.linkedit_data(&lc)?;
     let image = m.data();
     let Some(sig) = image.get(off as usize..(off as usize).checked_add(size as usize)?) else {

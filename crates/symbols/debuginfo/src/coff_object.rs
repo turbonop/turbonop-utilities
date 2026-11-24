@@ -22,10 +22,10 @@
 //! whose types are a precompiled header's (`LF_PRECOMP`), its symbols and
 //! lines, and no types.
 
-use hexcavator_codeview::lines::subsection;
-use hexcavator_codeview::symbols::kind;
-use hexcavator_core::Reader;
-use hexcavator_pe::{FileKind, PeFile};
+use turbonop_codeview::lines::subsection;
+use turbonop_codeview::symbols::kind;
+use turbonop_core::Reader;
+use turbonop_pe::{FileKind, PeFile};
 
 /// `CV_SIGNATURE_C13`: what `.debug$S` and `.debug$T` start with.
 const SIGNATURE: u32 = 4;
@@ -106,12 +106,12 @@ pub fn pdb_of_with(data: &[u8], server: Option<&[u8]>) -> Option<Vec<u8>> {
     // A type server's types (only for an object that names one).
     let server = server
         .filter(|_| types.is_none())
-        .and_then(|s| hexcavator_pdb::Pdb::parse(s).ok());
+        .and_then(|s| turbonop_pdb::Pdb::parse(s).ok());
     let types = types.unwrap_or_default();
     // The type of each function id: the object's, or its type server's.
     let function = |id: u32| -> Option<u32> {
         if let Some(s) = &server {
-            let r = s.ids().ok()?.record(hexcavator_codeview::TypeIndex(id))?;
+            let r = s.ids().ok()?.record(turbonop_codeview::TypeIndex(id))?;
             if !matches!(r.kind, LF_FUNC_ID | LF_MFUNC_ID) {
                 return None;
             }
@@ -163,7 +163,7 @@ pub fn pdb_of_with(data: &[u8], server: Option<&[u8]>) -> Option<Vec<u8>> {
         Some(s) => {
             let stream = |n: u32, hash: u16| -> Option<(Vec<u8>, Vec<u8>)> {
                 let mut t = s.msf().stream_or_empty(n).ok()?.into_owned();
-                let h = match hexcavator_pdb::tpi::hash_stream_of(&t) {
+                let h = match turbonop_pdb::tpi::hash_stream_of(&t) {
                     Some(i) => s.msf().stream_or_empty(i).ok()?.into_owned(),
                     None => Vec::new(),
                 };
@@ -172,8 +172,8 @@ pub fn pdb_of_with(data: &[u8], server: Option<&[u8]>) -> Option<Vec<u8>> {
                 }
                 Some((t, h))
             };
-            let (tpi, hash) = stream(hexcavator_pdb::stream::TPI, stream::HASH)?;
-            let (ipi, ipi_hash) = stream(hexcavator_pdb::stream::IPI, stream::IPI_HASH)?;
+            let (tpi, hash) = stream(turbonop_pdb::stream::TPI, stream::HASH)?;
+            let (ipi, ipi_hash) = stream(turbonop_pdb::stream::IPI, stream::IPI_HASH)?;
             (tpi, hash, ipi, ipi_hash)
         }
         None => {
@@ -204,7 +204,7 @@ pub fn pdb_of_with(data: &[u8], server: Option<&[u8]>) -> Option<Vec<u8>> {
 /// (an `S_PUB32` for each external symbol it defines), and the publics
 /// stream: their hash, and their address map.
 fn publics(pe: &PeFile<'_>) -> (Vec<u8>, Vec<u8>) {
-    use hexcavator_pe::consts::storage_class;
+    use turbonop_pe::consts::storage_class;
     let mut records = Vec::new();
     // (Offset, section, offset in it, name) of each.
     let mut publics: Vec<(u32, u16, u32, Vec<u8>)> = Vec::new();
@@ -268,7 +268,7 @@ fn symbol_hash(symbols: &[(u32, &[u8])]) -> Vec<u8> {
     const BUCKETS: usize = 4096;
     let mut by_bucket: Vec<(usize, u32)> = symbols
         .iter()
-        .map(|&(at, name)| (hexcavator_pdb::hash::hash_v1(name) as usize % BUCKETS, at))
+        .map(|&(at, name)| (turbonop_pdb::hash::hash_v1(name) as usize % BUCKETS, at))
         .collect();
     by_bucket.sort_unstable();
     let mut records = Vec::new();
@@ -317,7 +317,7 @@ mod stream {
 }
 
 /// A section's bytes, if it starts with the CodeView signature (after it).
-fn section_bytes<'d>(pe: &PeFile<'d>, s: &hexcavator_pe::raw::SectionHeader) -> Option<&'d [u8]> {
+fn section_bytes<'d>(pe: &PeFile<'d>, s: &turbonop_pe::raw::SectionHeader) -> Option<&'d [u8]> {
     let at = usize::try_from(s.pointer_to_raw_data.get()).ok()?;
     let len = usize::try_from(s.size_of_raw_data.get()).ok()?;
     let bytes = pe.data().get(at..at.checked_add(len)?)?;
@@ -329,7 +329,7 @@ fn section_bytes<'d>(pe: &PeFile<'d>, s: &hexcavator_pe::raw::SectionHeader) -> 
 /// section, added to the bytes it patches) and `SECTION` (its section's
 /// number).
 fn relocate(pe: &PeFile<'_>, index: usize, data: &mut [u8]) {
-    use hexcavator_pe::consts::machine as m;
+    use turbonop_pe::consts::machine as m;
     let Some(header) = pe.sections().get(index) else {
         return;
     };
@@ -609,7 +609,7 @@ fn info_stream(names: u32) -> Vec<u8> {
     // deleted bits), "/names" (at 0) to its stream.
     u32s(&mut out, &[1, 1, 1, 1, 0, 0, names]);
     // (Its features: an IPI, as VC140's.)
-    u32s(&mut out, &[hexcavator_pdb::info::feature::VC140]);
+    u32s(&mut out, &[turbonop_pdb::info::feature::VC140]);
     out
 }
 
@@ -634,10 +634,10 @@ fn type_stream(types: &[&[u8]], hash_stream: u16) -> (Vec<u8>, Vec<u8>) {
         // A user-defined type by its name; the rest in bucket 0 (looked
         // up by index alone).
         let mut rr = Reader::new(&records[records.len() - body.len() - 2..]);
-        let hash = hexcavator_codeview::types::TypeRecord::read(&mut rr)
+        let hash = turbonop_codeview::types::TypeRecord::read(&mut rr)
             .ok()
             .and_then(|t| t.udt())
-            .map_or(0, |u| hexcavator_pdb::hash::hash_v1(u.name) % HASH_BUCKETS);
+            .map_or(0, |u| turbonop_pdb::hash::hash_v1(u.name) % HASH_BUCKETS);
         u32s(&mut hashes, &[hash]);
     }
     let count = u32::try_from(hashes.len() / 4).unwrap_or(0);
@@ -722,7 +722,7 @@ fn dbi_stream(
     for &f in files.iter().take(usize::from(count)) {
         u32s(&mut info, &[u32::try_from(names.len()).unwrap_or(0)]);
         let s = module.strings.get(f as usize..).unwrap_or_default();
-        let end = hexcavator_core::find_nul(s).unwrap_or(s.len());
+        let end = turbonop_core::find_nul(s).unwrap_or(s.len());
         names.extend_from_slice(&s[..end]);
         names.push(0);
     }
@@ -733,7 +733,7 @@ fn dbi_stream(
     // The optional debug header: the section headers' stream alone.
     let mut debug = Vec::new();
     for i in 0..11 {
-        let s = if i == hexcavator_pdb::dbi::dbg_stream::SECTION_HEADERS {
+        let s = if i == turbonop_pdb::dbi::dbg_stream::SECTION_HEADERS {
             stream::SECTION_HEADERS
         } else {
             0xFFFF
@@ -801,7 +801,7 @@ fn names_stream(strings: &[u8]) -> Vec<u8> {
             .iter()
             .position(|&b| b == 0)
             .map_or(strings.len(), |e| o + e);
-        let start = hexcavator_pdb::hash::hash_v1(&strings[o..end]) as usize % count;
+        let start = turbonop_pdb::hash::hash_v1(&strings[o..end]) as usize % count;
         for probe in 0..count {
             let b = &mut buckets[(start + probe) % count];
             if *b == 0 {
@@ -853,7 +853,7 @@ fn msf(streams: &[Vec<u8>]) -> Option<Vec<u8>> {
     let map = dir_start.checked_add(dir_blocks)?;
     let total = map.checked_add(1)?;
     let mut out = Vec::with_capacity(total as usize * BLOCK);
-    out.extend_from_slice(hexcavator_pdb::msf::MAGIC);
+    out.extend_from_slice(turbonop_pdb::msf::MAGIC);
     u32s(
         &mut out,
         &[
@@ -907,9 +907,9 @@ mod tests {
     fn an_msvc_object() {
         let object = fixture("coff/objects.obj");
         let data = pdb_of(&object).unwrap();
-        let pdb = hexcavator_pdb::Pdb::parse(&data).unwrap();
+        let pdb = turbonop_pdb::Pdb::parse(&data).unwrap();
         let dbi = pdb.dbi().unwrap();
-        assert_eq!(dbi.machine(), hexcavator_pe::consts::machine::AMD64);
+        assert_eq!(dbi.machine(), turbonop_pe::consts::machine::AMD64);
         let modules = dbi.modules();
         assert_eq!(modules.len(), 1);
         assert_eq!(modules[0].name, br"R:\testdata\coff\objects.obj");
@@ -934,7 +934,7 @@ mod tests {
                 // (By type: a procedure's, not an id.)
                 let ty = u32::from_le_bytes(r.data[24..28].try_into().unwrap());
                 let types = pdb.types().unwrap();
-                let rec = types.record(hexcavator_codeview::TypeIndex(ty)).unwrap();
+                let rec = types.record(turbonop_codeview::TypeIndex(ty)).unwrap();
                 assert!(matches!(rec.kind, 0x1008 | 0x1009), "{rec:?}");
             }
         }
@@ -1004,7 +1004,7 @@ mod tests {
         let server = fixture("coff/objects-zi.pdb");
         for (with, typed) in [(None, false), (Some(&server[..]), true)] {
             let data = pdb_of_with(&object, with).unwrap();
-            let pdb = hexcavator_pdb::Pdb::parse(&data).unwrap();
+            let pdb = turbonop_pdb::Pdb::parse(&data).unwrap();
             let types = pdb.types().unwrap();
             assert_eq!(!types.is_empty(), typed);
             let dbi = pdb.dbi().unwrap();
@@ -1015,7 +1015,7 @@ mod tests {
                 let ty = u32::from_le_bytes(r.data[24..28].try_into().unwrap());
                 assert_eq!(ty != 0, typed);
                 if typed {
-                    let rec = types.record(hexcavator_codeview::TypeIndex(ty)).unwrap();
+                    let rec = types.record(turbonop_codeview::TypeIndex(ty)).unwrap();
                     assert!(matches!(rec.kind, 0x1008 | 0x1009), "{rec:?}");
                 }
             }
@@ -1050,7 +1050,7 @@ mod tests {
     fn names_are_found() {
         let strings = b"\0a.c\0dir\\b.h\0";
         let s = names_stream(strings);
-        let t = hexcavator_pdb::StringTable::parse(&s).unwrap();
+        let t = turbonop_pdb::StringTable::parse(&s).unwrap();
         assert_eq!(t.find(b"a.c"), Some(1));
         assert_eq!(t.find(b"dir\\b.h"), Some(5));
         assert_eq!(t.find(b"c.c"), None);

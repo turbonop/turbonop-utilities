@@ -7,8 +7,8 @@
 //! and for testing against TDH. The typed decoders in [`crate::kernel`] read
 //! the high-volume events at fixed offsets.
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_etl::{Event, Guid, event::flags};
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_etl::{Event, Guid, event::flags};
 
 use crate::guids;
 

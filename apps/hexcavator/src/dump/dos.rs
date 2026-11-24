@@ -3,7 +3,7 @@
 
 use std::io::{self, Write};
 
-use hexcavator_mz::{MzFile, NewHeaderKind};
+use turbonop_mz::{MzFile, NewHeaderKind};
 
 use super::Options;
 

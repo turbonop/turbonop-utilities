@@ -3,7 +3,7 @@
 //! LASX vector extensions, LVZ's virtualization instructions, LBT's binary
 //! translation ones, and LA v1.1's and v1.2's additions), from LLVM's
 //! TableGen records (see `tools/loongarch/extract.py`, which writes
-//! `tables.rs`, and `hexcavator-tablegen`, which decodes by them).
+//! `tables.rs`, and `turbonop-tablegen`, which decodes by them).
 //!
 //! [`decode`] finds the instruction a 32-bit word is, as LLVM does; LA64's
 //! own instructions (`ld.d`, `add.d`, ...) only with [`Features::la64`]
@@ -19,7 +19,7 @@ mod tables;
 
 pub mod format;
 
-pub use hexcavator_tablegen::{Inst, Instruction, Op, Operand, Reg};
+pub use turbonop_tablegen::{Inst, Instruction, Op, Operand, Reg};
 
 /// The integer registers' file.
 pub const R: u8 = 0;
@@ -57,12 +57,12 @@ pub fn gpr_of(o: Operand) -> Option<u8> {
 }
 
 /// The most operands an instruction has.
-pub const MAX_OPERANDS: usize = hexcavator_tablegen::MAX_OPERANDS;
+pub const MAX_OPERANDS: usize = turbonop_tablegen::MAX_OPERANDS;
 
 /// A set of features: what an image's code may use. Of LLVM's, only
 /// `64bit` changes what decodes (its disassembler checks no other).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Features(hexcavator_tablegen::Features);
+pub struct Features(turbonop_tablegen::Features);
 
 impl Features {
     /// LA32's.
@@ -80,7 +80,7 @@ impl Features {
     /// The features named (as LLVM names them), and what they imply.
     /// Names it doesn't know are left out.
     pub fn of(names: &[&str]) -> Self {
-        Self(hexcavator_tablegen::Features::of(&tables::TARGET, names))
+        Self(turbonop_tablegen::Features::of(&tables::TARGET, names))
     }
 
     /// Whether a feature (by name) is on.
@@ -99,11 +99,11 @@ impl Features {
 pub fn decode(bytes: &[u8], features: &Features) -> Option<Instruction> {
     let w = u64::from(u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?));
     let t = &tables::TARGET;
-    let i = hexcavator_tablegen::decode(t, w, 4, &features.0, false, false)?;
+    let i = turbonop_tablegen::decode(t, w, 4, &features.0, false, false)?;
     // `ud` is `amswap.w` with rk 1 and rd rj: otherwise it's `amswap.w`
     // (as LLVM's DecodeAMOrUDInstruction decides, whatever the features).
     if i.name() == "UD" && (w >> 5) & 31 != w & 31 {
-        return hexcavator_tablegen::decode_as(t, "AMSWAP_W", w, false, false);
+        return turbonop_tablegen::decode_as(t, "AMSWAP_W", w, false, false);
     }
     Some(i)
 }
@@ -115,7 +115,7 @@ pub fn branch_target(i: &Instruction, address: u64) -> Option<u64> {
     let t = i.target();
     inst.ops.iter().enumerate().find_map(|(k, op)| {
         let kind = t.kinds.get(usize::from(op.kind))?;
-        if kind.print != hexcavator_tablegen::Print::Branch {
+        if kind.print != turbonop_tablegen::Print::Branch {
             return None;
         }
         let off = i.operands().get(k)?.imm()?;

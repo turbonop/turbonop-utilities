@@ -3,12 +3,12 @@
 // Synthetic test data: small values, casts are exact.
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 use crate::support::{STACK, Stack};
-use hexcavator_unwind::Error;
-use hexcavator_unwind::arm_ehabi::{self, Entry, Exidx, Model};
-use hexcavator_unwind::dwarf_cfi::Registers;
+use turbonop_unwind::Error;
+use turbonop_unwind::arm_ehabi::{self, Entry, Exidx, Model};
+use turbonop_unwind::dwarf_cfi::Registers;
 
 const SP: u16 = 13;
 const LR: u16 = 14;
@@ -49,7 +49,7 @@ fn run(
     opcodes: &[u8],
 ) -> (
     Registers,
-    hexcavator_unwind::Result<hexcavator_unwind::dwarf_cfi::Frame>,
+    turbonop_unwind::Result<turbonop_unwind::dwarf_cfi::Frame>,
 ) {
     let mut r = regs();
     let result = arm_ehabi::unwind(&compact(opcodes), Endian::Little, &mut r, &words());
@@ -217,7 +217,7 @@ fn exidx_section() -> Vec<u8> {
 /// Memory with the table at 0x9000.
 struct Table;
 
-impl hexcavator_unwind::Memory for Table {
+impl turbonop_unwind::Memory for Table {
     fn read(&self, address: u64, buf: &mut [u8]) -> bool {
         let words: [(u64, u32); 5] = [
             // pr1: one more word, opcodes 97 41, then 84 0D B0 B0.
@@ -296,7 +296,7 @@ fn index_entries() {
     }
     // Table entries that aren't there; a truncated index.
     struct Nothing;
-    impl hexcavator_unwind::Memory for Nothing {
+    impl turbonop_unwind::Memory for Nothing {
         fn read(&self, _: u64, _: &mut [u8]) -> bool {
             false
         }

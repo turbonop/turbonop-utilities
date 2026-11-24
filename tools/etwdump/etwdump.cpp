@@ -2,10 +2,10 @@
 //
 // It reads a trace through Windows' own API (OpenTrace/ProcessTrace, with
 // raw timestamps) and prints one line per event, which tests compare with
-// what hexcavator-etl reads. With -schema it prints, for each distinct event
+// what turbonop-etl reads. With -schema it prints, for each distinct event
 // kind, what TDH knows about its layout. With -props it prints each event's
 // top-level properties as TDH extracts them (name and raw bytes), for
-// comparison with hexcavator-etw's decoders.
+// comparison with turbonop-etw's decoders.
 //
 // Usage:
 //   etwdump [-schema | -props] [-provider GUID] trace.etl

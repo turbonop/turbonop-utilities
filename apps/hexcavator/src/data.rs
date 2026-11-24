@@ -7,9 +7,9 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::value::{self, Value};
-use hexcavator_program::data::AddressNames;
 use serde_json::{Value as Json, json};
+use turbonop_debuginfo::value::{self, Value};
+use turbonop_program::data::AddressNames;
 
 pub const USAGE: &str = "\
 usage: hexcavator data [options] <image> <name>
@@ -50,8 +50,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
             }
             Some("max") => {
                 let v = it.next().ok_or("-max needs a size")?;
-                max = match hexcavator_size::rollup::Threshold::parse(v) {
-                    Some(hexcavator_size::rollup::Threshold::Bytes(b)) if b > 0 => b as u64,
+                max = match turbonop_size::rollup::Threshold::parse(v) {
+                    Some(turbonop_size::rollup::Threshold::Bytes(b)) if b > 0 => b as u64,
                     _ => return Err(format!("-max: a size (4096, 64k, 1M), not '{v}'")),
                 };
             }
@@ -94,7 +94,7 @@ pub fn run(args: &[String]) -> ExitCode {
 }
 
 fn report(o: &Options) -> Result<String, String> {
-    let opened = hexcavator_program::Opened::open(&o.image, o.pdb.as_deref())?;
+    let opened = turbonop_program::Opened::open(&o.image, o.pdb.as_deref())?;
     let program = opened.program()?;
     let d = program.datum(&o.name, o.max)?;
     let names = program.address_names()?;

@@ -268,505 +268,40 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 name = "hexcavator"
 version = "0.0.7"
 dependencies = [
- "hexcavator-alloc",
- "hexcavator-archive",
- "hexcavator-arm64",
- "hexcavator-codeview",
- "hexcavator-core",
- "hexcavator-debuginfo",
- "hexcavator-demangle",
- "hexcavator-deps",
- "hexcavator-dwarf",
- "hexcavator-elf",
- "hexcavator-hash",
- "hexcavator-image",
- "hexcavator-linkerlog",
- "hexcavator-linkmap",
- "hexcavator-lx",
- "hexcavator-macho",
- "hexcavator-mmap",
- "hexcavator-mz",
- "hexcavator-ne",
- "hexcavator-par",
- "hexcavator-pdb",
- "hexcavator-pe",
- "hexcavator-program",
- "hexcavator-query",
- "hexcavator-signature",
- "hexcavator-size",
- "hexcavator-wasm",
- "hexcavator-x86",
- "hexcavator-xref",
  "mimalloc",
  "regex",
  "rustc-hash",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "hexcavator-alloc"
-version = "0.0.7"
-
-[[package]]
-name = "hexcavator-archive"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-pe",
-]
-
-[[package]]
-name = "hexcavator-arm32"
-version = "0.0.7"
-
-[[package]]
-name = "hexcavator-arm64"
-version = "0.0.7"
-
-[[package]]
-name = "hexcavator-code"
-version = "0.0.7"
-dependencies = [
- "hexcavator-arm32",
- "hexcavator-arm64",
- "hexcavator-core",
- "hexcavator-loongarch",
- "hexcavator-mips",
- "hexcavator-powerpc",
- "hexcavator-riscv",
- "hexcavator-x86",
-]
-
-[[package]]
-name = "hexcavator-codeview"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-hash",
- "hexcavator-par",
-]
-
-[[package]]
-name = "hexcavator-core"
-version = "0.0.7"
-dependencies = [
- "memchr",
-]
-
-[[package]]
-name = "hexcavator-debuginfo"
-version = "0.0.7"
-dependencies = [
- "hexcavator-codeview",
- "hexcavator-core",
- "hexcavator-dwarf",
- "hexcavator-elf",
- "hexcavator-hash",
- "hexcavator-image",
- "hexcavator-macho",
- "hexcavator-par",
- "hexcavator-pdb",
- "hexcavator-pe",
- "hexcavator-wasm",
- "lzma-rust2",
- "miniz_oxide",
- "ruzstd",
-]
-
-[[package]]
-name = "hexcavator-demangle"
-version = "0.0.7"
-dependencies = [
- "bumpalo",
- "hexcavator-core",
-]
-
-[[package]]
-name = "hexcavator-deps"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-elf",
- "hexcavator-image",
- "hexcavator-macho",
- "hexcavator-mmap",
- "hexcavator-pe",
- "hexcavator-wasm",
-]
-
-[[package]]
-name = "hexcavator-dwarf"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-elf",
-]
-
-[[package]]
-name = "hexcavator-elf"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
-]
-
-[[package]]
-name = "hexcavator-etl"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-mmap",
-]
-
-[[package]]
-name = "hexcavator-etw"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-etl",
- "hexcavator-mmap",
- "hexcavator-pe",
- "rustc-hash",
-]
-
-[[package]]
-name = "hexcavator-fingerprint"
-version = "0.0.7"
-dependencies = [
- "hexcavator-arm32",
- "hexcavator-arm64",
- "hexcavator-code",
- "hexcavator-core",
- "hexcavator-loongarch",
- "hexcavator-mips",
- "hexcavator-par",
- "hexcavator-powerpc",
- "hexcavator-riscv",
- "hexcavator-x86",
- "hexcavator-xref",
- "rustc-hash",
-]
-
-[[package]]
-name = "hexcavator-fuzz"
-version = "0.0.7"
-dependencies = [
- "hexcavator",
- "hexcavator-arm32",
- "hexcavator-arm64",
- "hexcavator-code",
- "hexcavator-debuginfo",
- "hexcavator-demangle",
- "hexcavator-etl",
- "hexcavator-etw",
- "hexcavator-image",
- "hexcavator-linkerlog",
- "hexcavator-linkmap",
- "hexcavator-loongarch",
- "hexcavator-lx",
- "hexcavator-macho",
- "hexcavator-mips",
- "hexcavator-mz",
- "hexcavator-ne",
- "hexcavator-pdb",
- "hexcavator-pe",
- "hexcavator-powerpc",
- "hexcavator-query",
- "hexcavator-riscv",
- "hexcavator-signature",
- "hexcavator-size",
- "hexcavator-trace",
- "hexcavator-trace-analysis",
- "hexcavator-wasm",
- "hexcavator-x86",
-]
-
-[[package]]
-name = "hexcavator-hash"
-version = "0.0.7"
-
-[[package]]
-name = "hexcavator-image"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-elf",
- "hexcavator-macho",
- "hexcavator-pe",
- "hexcavator-wasm",
-]
-
-[[package]]
-name = "hexcavator-linkerlog"
-version = "0.0.7"
-
-[[package]]
-name = "hexcavator-linkmap"
-version = "0.0.7"
-
-[[package]]
-name = "hexcavator-loongarch"
-version = "0.0.7"
-dependencies = [
- "hexcavator-tablegen",
-]
-
-[[package]]
-name = "hexcavator-lx"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-mz",
-]
-
-[[package]]
-name = "hexcavator-macho"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
-]
-
-[[package]]
-name = "hexcavator-minidump"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
-]
-
-[[package]]
-name = "hexcavator-mips"
-version = "0.0.7"
-dependencies = [
- "hexcavator-tablegen",
-]
-
-[[package]]
-name = "hexcavator-mmap"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "libc",
- "memmap2",
-]
-
-[[package]]
-name = "hexcavator-mz"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
-]
-
-[[package]]
-name = "hexcavator-ne"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-mz",
-]
-
-[[package]]
-name = "hexcavator-par"
-version = "0.0.7"
-dependencies = [
- "hexcavator-alloc",
-]
-
-[[package]]
-name = "hexcavator-pdb"
-version = "0.0.7"
-dependencies = [
- "hexcavator-codeview",
- "hexcavator-core",
- "hexcavator-par",
-]
-
-[[package]]
-name = "hexcavator-pe"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-mz",
-]
-
-[[package]]
-name = "hexcavator-powerpc"
-version = "0.0.7"
-dependencies = [
- "hexcavator-tablegen",
-]
-
-[[package]]
-name = "hexcavator-program"
-version = "0.0.7"
-dependencies = [
- "hexcavator-archive",
- "hexcavator-codeview",
- "hexcavator-core",
- "hexcavator-debuginfo",
- "hexcavator-image",
- "hexcavator-macho",
- "hexcavator-mmap",
- "hexcavator-pdb",
- "hexcavator-pe",
- "hexcavator-size",
- "rustc-hash",
-]
-
-[[package]]
-name = "hexcavator-query"
-version = "0.0.7"
-dependencies = [
- "regex",
-]
-
-[[package]]
-name = "hexcavator-riscv"
-version = "0.0.7"
-dependencies = [
- "hexcavator-tablegen",
-]
-
-[[package]]
-name = "hexcavator-signature"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-macho",
- "hexcavator-pe",
- "md-5",
- "p256",
- "p384",
- "rsa",
- "sha1",
- "sha2",
-]
-
-[[package]]
-name = "hexcavator-size"
-version = "0.0.7"
-dependencies = [
- "hexcavator-archive",
- "hexcavator-arm32",
- "hexcavator-arm64",
- "hexcavator-code",
- "hexcavator-core",
- "hexcavator-debuginfo",
- "hexcavator-demangle",
- "hexcavator-dwarf",
- "hexcavator-elf",
- "hexcavator-fingerprint",
- "hexcavator-hash",
- "hexcavator-image",
- "hexcavator-linkmap",
- "hexcavator-loongarch",
- "hexcavator-macho",
- "hexcavator-mips",
- "hexcavator-mmap",
- "hexcavator-par",
- "hexcavator-pe",
- "hexcavator-powerpc",
- "hexcavator-query",
- "hexcavator-riscv",
- "hexcavator-wasm",
- "hexcavator-wasm-isa",
- "hexcavator-x86",
- "hexcavator-xref",
- "miniz_oxide",
- "regex",
- "rustc-hash",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "hexcavator-symbolize"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-debuginfo",
- "hexcavator-demangle",
- "hexcavator-image",
- "hexcavator-mmap",
- "hexcavator-pdb",
-]
-
-[[package]]
-name = "hexcavator-tablegen"
-version = "0.0.7"
-
-[[package]]
-name = "hexcavator-trace"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
- "hexcavator-etl",
- "hexcavator-etw",
- "hexcavator-mmap",
- "rustc-hash",
-]
-
-[[package]]
-name = "hexcavator-trace-analysis"
-version = "0.0.7"
-dependencies = [
- "hexcavator-debuginfo",
- "hexcavator-etl",
- "hexcavator-image",
- "hexcavator-mmap",
- "hexcavator-symbolize",
- "hexcavator-trace",
- "rustc-hash",
-]
-
-[[package]]
-name = "hexcavator-unwind"
-version = "0.0.7"
-dependencies = [
- "hexcavator-arm32",
- "hexcavator-arm64",
- "hexcavator-codeview",
- "hexcavator-core",
- "hexcavator-dwarf",
- "hexcavator-elf",
- "hexcavator-image",
- "hexcavator-macho",
- "hexcavator-pdb",
- "hexcavator-pe",
- "hexcavator-x86",
-]
-
-[[package]]
-name = "hexcavator-wasm"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
-]
-
-[[package]]
-name = "hexcavator-wasm-isa"
-version = "0.0.7"
-dependencies = [
- "hexcavator-core",
-]
-
-[[package]]
-name = "hexcavator-x86"
-version = "0.0.7"
-
-[[package]]
-name = "hexcavator-xref"
-version = "0.0.7"
-dependencies = [
- "hexcavator-arm32",
- "hexcavator-arm64",
- "hexcavator-code",
- "hexcavator-core",
- "hexcavator-loongarch",
- "hexcavator-mips",
- "hexcavator-par",
- "hexcavator-powerpc",
- "hexcavator-riscv",
- "hexcavator-x86",
+ "turbonop-alloc",
+ "turbonop-archive",
+ "turbonop-arm64",
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-demangle",
+ "turbonop-deps",
+ "turbonop-dwarf",
+ "turbonop-elf",
+ "turbonop-hash",
+ "turbonop-image",
+ "turbonop-linkerlog",
+ "turbonop-linkmap",
+ "turbonop-lx",
+ "turbonop-macho",
+ "turbonop-mmap",
+ "turbonop-mz",
+ "turbonop-ne",
+ "turbonop-par",
+ "turbonop-pdb",
+ "turbonop-pe",
+ "turbonop-program",
+ "turbonop-query",
+ "turbonop-signature",
+ "turbonop-size",
+ "turbonop-wasm",
+ "turbonop-x86",
+ "turbonop-xref",
 ]
 
 [[package]]
@@ -1203,6 +738,471 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "turbonop-alloc"
+version = "0.0.7"
+
+[[package]]
+name = "turbonop-archive"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-pe",
+]
+
+[[package]]
+name = "turbonop-arm32"
+version = "0.0.7"
+
+[[package]]
+name = "turbonop-arm64"
+version = "0.0.7"
+
+[[package]]
+name = "turbonop-code"
+version = "0.0.7"
+dependencies = [
+ "turbonop-arm32",
+ "turbonop-arm64",
+ "turbonop-core",
+ "turbonop-loongarch",
+ "turbonop-mips",
+ "turbonop-powerpc",
+ "turbonop-riscv",
+ "turbonop-x86",
+]
+
+[[package]]
+name = "turbonop-codeview"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-hash",
+ "turbonop-par",
+]
+
+[[package]]
+name = "turbonop-core"
+version = "0.0.7"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "turbonop-debuginfo"
+version = "0.0.7"
+dependencies = [
+ "lzma-rust2",
+ "miniz_oxide",
+ "ruzstd",
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-dwarf",
+ "turbonop-elf",
+ "turbonop-hash",
+ "turbonop-image",
+ "turbonop-macho",
+ "turbonop-par",
+ "turbonop-pdb",
+ "turbonop-pe",
+ "turbonop-wasm",
+]
+
+[[package]]
+name = "turbonop-demangle"
+version = "0.0.7"
+dependencies = [
+ "bumpalo",
+ "turbonop-core",
+]
+
+[[package]]
+name = "turbonop-deps"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-elf",
+ "turbonop-image",
+ "turbonop-macho",
+ "turbonop-mmap",
+ "turbonop-pe",
+ "turbonop-wasm",
+]
+
+[[package]]
+name = "turbonop-dwarf"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-elf",
+]
+
+[[package]]
+name = "turbonop-elf"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+]
+
+[[package]]
+name = "turbonop-etl"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-mmap",
+]
+
+[[package]]
+name = "turbonop-etw"
+version = "0.0.7"
+dependencies = [
+ "rustc-hash",
+ "turbonop-core",
+ "turbonop-etl",
+ "turbonop-mmap",
+ "turbonop-pe",
+]
+
+[[package]]
+name = "turbonop-fingerprint"
+version = "0.0.7"
+dependencies = [
+ "rustc-hash",
+ "turbonop-arm32",
+ "turbonop-arm64",
+ "turbonop-code",
+ "turbonop-core",
+ "turbonop-loongarch",
+ "turbonop-mips",
+ "turbonop-par",
+ "turbonop-powerpc",
+ "turbonop-riscv",
+ "turbonop-x86",
+ "turbonop-xref",
+]
+
+[[package]]
+name = "turbonop-fuzz"
+version = "0.0.7"
+dependencies = [
+ "hexcavator",
+ "turbonop-arm32",
+ "turbonop-arm64",
+ "turbonop-code",
+ "turbonop-debuginfo",
+ "turbonop-demangle",
+ "turbonop-etl",
+ "turbonop-etw",
+ "turbonop-image",
+ "turbonop-linkerlog",
+ "turbonop-linkmap",
+ "turbonop-loongarch",
+ "turbonop-lx",
+ "turbonop-macho",
+ "turbonop-mips",
+ "turbonop-mz",
+ "turbonop-ne",
+ "turbonop-pdb",
+ "turbonop-pe",
+ "turbonop-powerpc",
+ "turbonop-query",
+ "turbonop-riscv",
+ "turbonop-signature",
+ "turbonop-size",
+ "turbonop-trace",
+ "turbonop-trace-analysis",
+ "turbonop-wasm",
+ "turbonop-x86",
+]
+
+[[package]]
+name = "turbonop-hash"
+version = "0.0.7"
+
+[[package]]
+name = "turbonop-image"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-elf",
+ "turbonop-macho",
+ "turbonop-pe",
+ "turbonop-wasm",
+]
+
+[[package]]
+name = "turbonop-linkerlog"
+version = "0.0.7"
+
+[[package]]
+name = "turbonop-linkmap"
+version = "0.0.7"
+
+[[package]]
+name = "turbonop-loongarch"
+version = "0.0.7"
+dependencies = [
+ "turbonop-tablegen",
+]
+
+[[package]]
+name = "turbonop-lx"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-mz",
+]
+
+[[package]]
+name = "turbonop-macho"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+]
+
+[[package]]
+name = "turbonop-minidump"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+]
+
+[[package]]
+name = "turbonop-mips"
+version = "0.0.7"
+dependencies = [
+ "turbonop-tablegen",
+]
+
+[[package]]
+name = "turbonop-mmap"
+version = "0.0.7"
+dependencies = [
+ "libc",
+ "memmap2",
+ "turbonop-core",
+]
+
+[[package]]
+name = "turbonop-mz"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+]
+
+[[package]]
+name = "turbonop-ne"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-mz",
+]
+
+[[package]]
+name = "turbonop-par"
+version = "0.0.7"
+dependencies = [
+ "turbonop-alloc",
+]
+
+[[package]]
+name = "turbonop-pdb"
+version = "0.0.7"
+dependencies = [
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-par",
+]
+
+[[package]]
+name = "turbonop-pe"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-mz",
+]
+
+[[package]]
+name = "turbonop-powerpc"
+version = "0.0.7"
+dependencies = [
+ "turbonop-tablegen",
+]
+
+[[package]]
+name = "turbonop-program"
+version = "0.0.7"
+dependencies = [
+ "rustc-hash",
+ "turbonop-archive",
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-image",
+ "turbonop-macho",
+ "turbonop-mmap",
+ "turbonop-pdb",
+ "turbonop-pe",
+ "turbonop-size",
+]
+
+[[package]]
+name = "turbonop-query"
+version = "0.0.7"
+dependencies = [
+ "regex",
+]
+
+[[package]]
+name = "turbonop-riscv"
+version = "0.0.7"
+dependencies = [
+ "turbonop-tablegen",
+]
+
+[[package]]
+name = "turbonop-signature"
+version = "0.0.7"
+dependencies = [
+ "md-5",
+ "p256",
+ "p384",
+ "rsa",
+ "sha1",
+ "sha2",
+ "turbonop-core",
+ "turbonop-macho",
+ "turbonop-pe",
+]
+
+[[package]]
+name = "turbonop-size"
+version = "0.0.7"
+dependencies = [
+ "miniz_oxide",
+ "regex",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "turbonop-archive",
+ "turbonop-arm32",
+ "turbonop-arm64",
+ "turbonop-code",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-demangle",
+ "turbonop-dwarf",
+ "turbonop-elf",
+ "turbonop-fingerprint",
+ "turbonop-hash",
+ "turbonop-image",
+ "turbonop-linkmap",
+ "turbonop-loongarch",
+ "turbonop-macho",
+ "turbonop-mips",
+ "turbonop-mmap",
+ "turbonop-par",
+ "turbonop-pe",
+ "turbonop-powerpc",
+ "turbonop-query",
+ "turbonop-riscv",
+ "turbonop-wasm",
+ "turbonop-wasm-isa",
+ "turbonop-x86",
+ "turbonop-xref",
+]
+
+[[package]]
+name = "turbonop-symbolize"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-demangle",
+ "turbonop-image",
+ "turbonop-mmap",
+ "turbonop-pdb",
+]
+
+[[package]]
+name = "turbonop-tablegen"
+version = "0.0.7"
+
+[[package]]
+name = "turbonop-trace"
+version = "0.0.7"
+dependencies = [
+ "rustc-hash",
+ "turbonop-core",
+ "turbonop-etl",
+ "turbonop-etw",
+ "turbonop-mmap",
+]
+
+[[package]]
+name = "turbonop-trace-analysis"
+version = "0.0.7"
+dependencies = [
+ "rustc-hash",
+ "turbonop-debuginfo",
+ "turbonop-etl",
+ "turbonop-image",
+ "turbonop-mmap",
+ "turbonop-symbolize",
+ "turbonop-trace",
+]
+
+[[package]]
+name = "turbonop-unwind"
+version = "0.0.7"
+dependencies = [
+ "turbonop-arm32",
+ "turbonop-arm64",
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-dwarf",
+ "turbonop-elf",
+ "turbonop-image",
+ "turbonop-macho",
+ "turbonop-pdb",
+ "turbonop-pe",
+ "turbonop-x86",
+]
+
+[[package]]
+name = "turbonop-wasm"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+]
+
+[[package]]
+name = "turbonop-wasm-isa"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+]
+
+[[package]]
+name = "turbonop-x86"
+version = "0.0.7"
+
+[[package]]
+name = "turbonop-xref"
+version = "0.0.7"
+dependencies = [
+ "turbonop-arm32",
+ "turbonop-arm64",
+ "turbonop-code",
+ "turbonop-core",
+ "turbonop-loongarch",
+ "turbonop-mips",
+ "turbonop-par",
+ "turbonop-powerpc",
+ "turbonop-riscv",
+ "turbonop-x86",
 ]
 
 [[package]]

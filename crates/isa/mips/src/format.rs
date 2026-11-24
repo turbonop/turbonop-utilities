@@ -9,7 +9,7 @@
 use alloc::string::String;
 use core::fmt::Write as _;
 
-use hexcavator_tablegen::Print;
+use turbonop_tablegen::Print;
 
 use crate::{Features, Instruction, Operand, Reg, files, tables};
 
@@ -40,7 +40,7 @@ pub fn format(i: &Instruction, address: u64, features: &Features) -> String {
     // (LLVM's TableGen aliases first, then its printer's own; else the
     // instruction's syntax.)
     if has_alias(i, features) || !by_hand(&mut out, i, address, features) {
-        hexcavator_tablegen::write(&mut out, i, &features.0, |out, op, print, _| {
+        turbonop_tablegen::write(&mut out, i, &features.0, |out, op, print, _| {
             operand(out, i, op, print, address, features);
         });
     }
@@ -56,7 +56,7 @@ fn has_alias(i: &Instruction, features: &Features) -> bool {
     t.aliases.iter().any(|a| {
         usize::from(a.inst) == usize::from(i.index())
             && features.0.satisfies(t, a.pred)
-            && hexcavator_tablegen::passes(t, i.operands(), a.checks)
+            && turbonop_tablegen::passes(t, i.operands(), a.checks)
     })
 }
 

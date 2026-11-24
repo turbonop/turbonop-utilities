@@ -6,8 +6,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::consts::*;
+use turbonop_macho::MachO;
+use turbonop_macho::consts::*;
 
 use crate::search::Reject;
 use crate::{Ctx, DepKind, Found, Import, ImportStatus, Resolved, Status, Wanted};
@@ -36,7 +36,7 @@ pub(crate) fn wanted(ctx: &mut Ctx<'_>, m: usize) -> Vec<Wanted> {
     let mut seen: Vec<HashSet<Vec<u8>>> = vec![HashSet::new(); dylibs.len()];
     let mut flat = Vec::new();
     for f in image.fixups().into_iter().take(MAX_BINDS) {
-        let hexcavator_macho::FixupKind::Bind {
+        let turbonop_macho::FixupKind::Bind {
             symbol,
             library,
             weak,

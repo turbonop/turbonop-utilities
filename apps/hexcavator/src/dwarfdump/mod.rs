@@ -20,11 +20,11 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
-use hexcavator_core::Arch;
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::spelling;
-use hexcavator_dwarf::{Abbrevs, Attr, Die, Reader, Sections, Unit, UnitSection, Value};
-use hexcavator_mmap::Mmap;
+use turbonop_core::Arch;
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::spelling;
+use turbonop_dwarf::{Abbrevs, Attr, Die, Reader, Sections, Unit, UnitSection, Value};
+use turbonop_mmap::Mmap;
 
 mod types;
 use types::Types;
@@ -181,14 +181,14 @@ fn open(o: &Options) -> Result<(String, Mmap, Mmap), String> {
         let map = Mmap::open(d).map_err(|e| format!("{d}: {e}"))?;
         return Ok((d.clone(), image, map));
     }
-    if hexcavator_debuginfo::dwarf_backend::DwarfInfo::parse(&image).is_ok() {
+    if turbonop_debuginfo::dwarf_backend::DwarfInfo::parse(&image).is_ok() {
         let again = Mmap::open(file).map_err(|e| format!("{file}: {e}"))?;
         return Ok((file.to_string(), image, again));
     }
-    let parsed = hexcavator_image::Image::parse(&image).map_err(|e| format!("{file}: {e}"))?;
-    let (path, map) = hexcavator_program::find_debug(Path::new(file), &parsed, None)
-        .map_err(|e| e.to_string())?;
-    if hexcavator_pdb::check(&map).is_ok() {
+    let parsed = turbonop_image::Image::parse(&image).map_err(|e| format!("{file}: {e}"))?;
+    let (path, map) =
+        turbonop_program::find_debug(Path::new(file), &parsed, None).map_err(|e| e.to_string())?;
+    if turbonop_pdb::check(&map).is_ok() {
         return Err(format!("{}: a PDB (see hexcavator pdb)", path.display()));
     }
     Ok((path.display().to_string(), image, map))
@@ -215,7 +215,7 @@ fn debug_map(o: &Options, why: String) -> Result<String, String> {
     if o.debug.is_some() {
         return Err(why);
     }
-    let Ok(opened) = hexcavator_program::Opened::open(Path::new(file), None) else {
+    let Ok(opened) = turbonop_program::Opened::open(Path::new(file), None) else {
         return Err(why);
     };
     if !opened.is_debug_map() {
@@ -236,7 +236,7 @@ fn dump_one(
     debug: &[u8],
     spill: Option<Spill>,
 ) -> Result<(String, Option<Spill>), String> {
-    let info = hexcavator_debuginfo::dwarf_backend::DwarfInfo::parse(debug)
+    let info = turbonop_debuginfo::dwarf_backend::DwarfInfo::parse(debug)
         .map_err(|e| format!("{path}: {e}"))?;
     let s = info.sections();
     let mut d = Dumper {
@@ -306,7 +306,7 @@ struct Dumper<'d> {
 pub struct Ready<'d> {
     pub unit: Unit<'d>,
     pub abbrevs: Abbrevs,
-    line: Option<hexcavator_dwarf::LineProgram<'d>>,
+    line: Option<turbonop_dwarf::LineProgram<'d>>,
     comp_dir: Vec<u8>,
     /// Its `DW_AT_language`.
     pub language: Option<u64>,
@@ -422,9 +422,8 @@ impl<'d> Dumper<'d> {
                         }
                     }
                 }
-                let line = stmt.and_then(|off| {
-                    hexcavator_dwarf::line_program(&self.s, off, unit.address_size)
-                });
+                let line = stmt
+                    .and_then(|off| turbonop_dwarf::line_program(&self.s, off, unit.address_size));
                 out.push(Ready {
                     unit,
                     abbrevs,
@@ -1375,7 +1374,7 @@ impl<'d> Dumper<'d> {
     fn aranges(&mut self) {
         self.out.push_str("\n.debug_aranges contents:\n");
         let mut last = None;
-        for e in hexcavator_dwarf::aranges(self.s.aranges, self.s.endian) {
+        for e in turbonop_dwarf::aranges(self.s.aranges, self.s.endian) {
             if last != Some(e.info_offset) {
                 let _ = writeln!(
                     self.out,
@@ -1454,16 +1453,16 @@ impl<'d> Dumper<'d> {
     // ------------------------------------------------------------- frames
 
     fn frames(&mut self, data: &[u8]) {
-        let Ok(image) = hexcavator_image::Image::parse(data) else {
+        let Ok(image) = turbonop_image::Image::parse(data) else {
             return;
         };
         for s in image.sections() {
             let (kind, label) = match s.name {
                 b".eh_frame" | b"__eh_frame" => {
-                    (hexcavator_dwarf::cfi::CfiKind::EhFrame, ".eh_frame")
+                    (turbonop_dwarf::cfi::CfiKind::EhFrame, ".eh_frame")
                 }
                 b".debug_frame" | b"__debug_frame" => {
-                    (hexcavator_dwarf::cfi::CfiKind::DebugFrame, ".debug_frame")
+                    (turbonop_dwarf::cfi::CfiKind::DebugFrame, ".debug_frame")
                 }
                 _ => continue,
             };
@@ -1477,7 +1476,7 @@ impl<'d> Dumper<'d> {
             if bytes.is_empty() {
                 continue;
             }
-            let cfi = hexcavator_dwarf::cfi::Cfi {
+            let cfi = turbonop_dwarf::cfi::Cfi {
                 data: bytes,
                 kind,
                 endian: image.endian(),
@@ -1491,7 +1490,7 @@ impl<'d> Dumper<'d> {
             for e in cfi.entries() {
                 self.spill();
                 match e {
-                    hexcavator_dwarf::cfi::Entry::Cie(c) => {
+                    turbonop_dwarf::cfi::Entry::Cie(c) => {
                         let _ = writeln!(
                             self.out,
                             "{:08x} CIE\n  Version:               {}\n  Augmentation:          \"{}\"\n  Code alignment factor: {}\n  Data alignment factor: {}\n  Return address column: {}\n",
@@ -1504,7 +1503,7 @@ impl<'d> Dumper<'d> {
                         );
                         cies.insert(c.offset, c);
                     }
-                    hexcavator_dwarf::cfi::Entry::Fde(f) => {
+                    turbonop_dwarf::cfi::Entry::Fde(f) => {
                         let _ = writeln!(
                             self.out,
                             "{:08x} FDE cie={:08x} pc={:08x}...{:08x}",
@@ -1514,8 +1513,7 @@ impl<'d> Dumper<'d> {
                             f.pc_begin.wrapping_add(f.pc_range)
                         );
                         if let Some(c) = cies.get(&f.cie) {
-                            for row in hexcavator_dwarf::cfi::rows(&cfi, c, &f).unwrap_or_default()
-                            {
+                            for row in turbonop_dwarf::cfi::rows(&cfi, c, &f).unwrap_or_default() {
                                 let _ = writeln!(
                                     self.out,
                                     "  0x{:x}: {}",
@@ -1531,8 +1529,8 @@ impl<'d> Dumper<'d> {
         }
     }
 
-    fn unwind_row(&self, row: &hexcavator_dwarf::cfi::UnwindRow<'_>) -> String {
-        use hexcavator_dwarf::cfi::{CfaRule, RegisterRule};
+    fn unwind_row(&self, row: &turbonop_dwarf::cfi::UnwindRow<'_>) -> String {
+        use turbonop_dwarf::cfi::{CfaRule, RegisterRule};
         let reg = |n: u16| register_name(self.arch, n);
         let mut s = match row.cfa {
             CfaRule::RegisterOffset { register, offset } => {
@@ -1677,11 +1675,11 @@ pub fn register_name(arch: Arch, n: u16) -> String {
             0..=30 => format!("W{n}"),
             31 => "WSP".into(),
             64..=95 => format!("B{}", n - 64),
-            _ => hexcavator_dwarf::registers::name(arch, n)
+            _ => turbonop_dwarf::registers::name(arch, n)
                 .map_or_else(|| format!("reg{n}"), |s| s.to_ascii_uppercase()),
         };
     }
-    hexcavator_dwarf::registers::name(arch, n)
+    turbonop_dwarf::registers::name(arch, n)
         .map_or_else(|| format!("reg{n}"), |s| s.to_ascii_uppercase())
 }
 
@@ -1693,7 +1691,7 @@ const MAX_NESTING: usize = 8;
 /// An expression, operation by operation, as llvm-dwarfdump prints it.
 pub fn expression(
     expr: &[u8],
-    endian: hexcavator_core::Endian,
+    endian: turbonop_core::Endian,
     addr_size: u8,
     dwarf64: bool,
     arch: Arch,
@@ -1711,7 +1709,7 @@ pub type BaseTypes<'a> = dyn Fn(u64) -> Option<(u64, String)> + 'a;
 #[allow(clippy::too_many_arguments)]
 pub fn expression_with(
     expr: &[u8],
-    endian: hexcavator_core::Endian,
+    endian: turbonop_core::Endian,
     addr_size: u8,
     dwarf64: bool,
     arch: Arch,
@@ -1747,7 +1745,7 @@ fn operands(
     addr_size: u8,
     dwarf64: bool,
     arch: Arch,
-    endian: hexcavator_core::Endian,
+    endian: turbonop_core::Endian,
     nesting: usize,
     base: &BaseTypes<'_>,
 ) -> Option<String> {

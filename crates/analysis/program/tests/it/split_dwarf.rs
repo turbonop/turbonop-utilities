@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use hexcavator_program::Opened;
+use turbonop_program::Opened;
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,7 +15,7 @@ fn testdata(name: &str) -> PathBuf {
 /// A directory of its own for a test, emptied.
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir()
-        .join("hexcavator-program-tests")
+        .join("turbonop-program-tests")
         .join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -101,7 +101,7 @@ fn split_files_are_found() {
 
 #[test]
 fn where_split_files_are_looked_for() {
-    use hexcavator_debuginfo::dwarf_backend::{SplitFile, package_paths, split_paths};
+    use turbonop_debuginfo::dwarf_backend::{SplitFile, package_paths, split_paths};
     let f = |name: &str, comp_dir: &str| SplitFile {
         name: name.into(),
         comp_dir: comp_dir.into(),

@@ -1,5 +1,5 @@
 """Instruction tables from LLVM's TableGen records (`llvm-tblgen
---dump-json` of a target), for hexcavator-tablegen's decoder: each
+--dump-json` of a target), for turbonop-tablegen's decoder: each
 instruction LLVM's disassembler decodes (of the decoder tables and
 features a target's extractor takes), its encoding's fixed bits, its
 decoder table, the features it needs, its syntax, and its operands (each
@@ -708,7 +708,7 @@ class Extractor:
 
     # ----------------------------------------------------------------- emit
 
-    # LLVM's printer methods, as hexcavator-tablegen's `Print` names them.
+    # LLVM's printer methods, as turbonop-tablegen's `Print` names them.
     BASE_PRINTS = {
         "printOperand": "Operand",
         "printBranchOperand": "Branch",
@@ -733,7 +733,7 @@ class Extractor:
         w("")
         w("#![allow(clippy::unreadable_literal)]")
         w("")
-        w("use hexcavator_tablegen::*;")
+        w("use turbonop_tablegen::*;")
         w("")
         w("pub static FEATURES: &[Feature] = &[")
         for name, rec in self.feature_list:

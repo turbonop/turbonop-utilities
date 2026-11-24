@@ -1,14 +1,14 @@
 //! `hexcavator ltcg`: dumps Visual C++ link-time code generation (`/GL`)
 //! objects, and the ones in libraries: what their intermediate language
-//! records (see `hexcavator_pe::ltcg`).
+//! records (see `turbonop_pe::ltcg`).
 
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use hexcavator_codeview::TypeIndex;
-use hexcavator_codeview::types::{TypeFormatter, TypeRecord, TypeSource, leaf};
-use hexcavator_mmap::Mmap;
-use hexcavator_pe::ltcg::{self, DirectiveKind, LtcgObject, Storage, SymbolKind};
+use turbonop_codeview::TypeIndex;
+use turbonop_codeview::types::{TypeFormatter, TypeRecord, TypeSource, leaf};
+use turbonop_mmap::Mmap;
+use turbonop_pe::ltcg::{self, DirectiveKind, LtcgObject, Storage, SymbolKind};
 
 pub const USAGE: &str = "\
 usage: hexcavator ltcg [options] <file>...
@@ -141,14 +141,14 @@ fn dump_file(
     if LtcgObject::is_ltcg(data) {
         return dump_object(out, o, path, data);
     }
-    if hexcavator_archive::Archive::is_archive(data) {
-        let ar = match hexcavator_archive::Archive::parse(data) {
+    if turbonop_archive::Archive::is_archive(data) {
+        let ar = match turbonop_archive::Archive::parse(data) {
             Ok(a) => a,
             Err(e) => return Ok(Err(e.to_string())),
         };
         let mut any = false;
         for m in ar.members() {
-            if m.kind != hexcavator_archive::MemberKind::File || !LtcgObject::is_ltcg(m.data) {
+            if m.kind != turbonop_archive::MemberKind::File || !LtcgObject::is_ltcg(m.data) {
                 continue;
             }
             any = true;
@@ -214,7 +214,7 @@ fn dump_object(
     };
     writeln!(out, "LTCG object {name}\n")?;
     if o.headers {
-        let machine = hexcavator_pe::consts::machine::name(obj.machine).unwrap_or("unknown");
+        let machine = turbonop_pe::consts::machine::name(obj.machine).unwrap_or("unknown");
         writeln!(out, "  machine          {:X} ({machine})", obj.machine)?;
         writeln!(out, "  time date stamp  {:08X}", obj.time_date_stamp)?;
         writeln!(out, "  class ID         {}", guid(&obj.class_id))?;

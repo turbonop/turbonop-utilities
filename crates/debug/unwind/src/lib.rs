@@ -45,22 +45,22 @@ pub trait Memory {
 
 /// An image's bytes as they are when it is loaded (code, unwind data), by
 /// the image's own addresses: a PE image's RVAs; an ELF or Mach-O image's
-/// virtual addresses, as it was linked (see [`hexcavator_image`]'s).
+/// virtual addresses, as it was linked (see [`turbonop_image`]'s).
 pub trait Image {
     /// `len` bytes at `address`, or None if any of them is not in the
     /// image.
     fn bytes(&self, address: u64, len: u64) -> Option<&[u8]>;
 }
 
-impl Image for hexcavator_pe::PeFile<'_> {
+impl Image for turbonop_pe::PeFile<'_> {
     fn bytes(&self, address: u64, len: u64) -> Option<&[u8]> {
         let rva = u32::try_from(address).ok()?;
         let len = u32::try_from(len).ok()?;
-        self.bytes_at_rva(hexcavator_core::Rva(rva), len).ok()
+        self.bytes_at_rva(turbonop_core::Rva(rva), len).ok()
     }
 }
 
-impl Image for hexcavator_image::Image<'_> {
+impl Image for turbonop_image::Image<'_> {
     fn bytes(&self, address: u64, len: u64) -> Option<&[u8]> {
         self.bytes_at(address, len)
     }

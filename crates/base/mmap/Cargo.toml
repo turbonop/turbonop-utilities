@@ -1,6 +1,6 @@
 [package]
-name = "hexcavator-mmap"
-description = "Read-only file mapping for Hexcavator"
+name = "turbonop-mmap"
+description = "Read-only file mapping"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,7 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
 
 [target.'cfg(any(windows, unix))'.dependencies]
 memmap2.workspace = true

@@ -3,8 +3,8 @@
 //! This is a stopgap: it reads just enough of each header to name the format
 //! and will move into the format crates as they are written.
 
-use hexcavator_core::{Endian, U16E, U16Le, U32E, read_at};
-use hexcavator_mz::NewHeaderKind;
+use turbonop_core::{Endian, U16E, U16Le, U32E, read_at};
+use turbonop_mz::NewHeaderKind;
 
 const MSF7_MAGIC: &[u8] = b"Microsoft C/C++ MSF 7.00\r\n\x1aDS\0\0\0";
 
@@ -24,11 +24,11 @@ pub fn describe(data: &[u8]) -> String {
     if let Some(desc) = describe_macho(data) {
         return desc;
     }
-    if hexcavator_wasm::is_wasm(data) {
+    if turbonop_wasm::is_wasm(data) {
         let version = data
             .get(4..8)
             .map_or(0, |v| u32::from_le_bytes([v[0], v[1], v[2], v[3]]));
-        let object = hexcavator_wasm::Module::parse(data).is_ok_and(|m| m.is_object());
+        let object = turbonop_wasm::Module::parse(data).is_ok_and(|m| m.is_object());
         return format!(
             "WebAssembly {} (version {version})",
             if object { "object" } else { "module" }
@@ -44,7 +44,7 @@ pub fn describe(data: &[u8]) -> String {
 
 /// A COFF object (or a /bigobj one, or an import object), if `data` is.
 fn describe_coff(data: &[u8]) -> Option<String> {
-    if let Ok(object) = hexcavator_pe::PeFile::parse_object(data) {
+    if let Ok(object) = turbonop_pe::PeFile::parse_object(data) {
         let kind = if object.is_bigobj() {
             "COFF object (bigobj)"
         } else {
@@ -52,7 +52,7 @@ fn describe_coff(data: &[u8]) -> Option<String> {
         };
         return Some(format!("{kind}, {}", pe_machine(object.machine())));
     }
-    if hexcavator_pe::ltcg::LtcgObject::is_ltcg(data) {
+    if turbonop_pe::ltcg::LtcgObject::is_ltcg(data) {
         let machine = u16::from_le_bytes([data[6], data[7]]);
         return Some(format!(
             "Visual C++ LTCG object (/GL: the compiler's intermediate language), {}",
@@ -69,7 +69,7 @@ fn describe_coff(data: &[u8]) -> Option<String> {
 }
 
 fn describe_mz(data: &[u8]) -> String {
-    let new_header = hexcavator_mz::MzFile::parse(data)
+    let new_header = turbonop_mz::MzFile::parse(data)
         .ok()
         .and_then(|mz| mz.new_header());
     let e_lfanew = match new_header {
@@ -91,7 +91,7 @@ fn describe_mz(data: &[u8]) -> String {
 }
 
 fn pe_machine(machine: u16) -> String {
-    match hexcavator_pe::consts::machine::name(machine) {
+    match turbonop_pe::consts::machine::name(machine) {
         Some(name) => name.to_string(),
         None => format!("machine {machine:#06x}"),
     }

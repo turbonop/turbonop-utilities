@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-trace-analysis"
+name = "turbonop-trace-analysis"
 description = "Queries over traces: stack trees, callers and callees, CPU and wait analysis"
 version.workspace = true
 edition.workspace = true
@@ -9,15 +9,15 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-debuginfo.workspace = true
-hexcavator-image.workspace = true
-hexcavator-symbolize.workspace = true
-hexcavator-trace.workspace = true
-hexcavator-mmap.workspace = true
+turbonop-debuginfo.workspace = true
+turbonop-image.workspace = true
+turbonop-symbolize.workspace = true
+turbonop-trace.workspace = true
+turbonop-mmap.workspace = true
 rustc-hash.workspace = true
 
 [dev-dependencies]
-hexcavator-etl.workspace = true
+turbonop-etl.workspace = true
 
 [lints]
 workspace = true

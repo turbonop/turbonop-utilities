@@ -2,7 +2,7 @@
 //! its inlined copies cost, against what calling one out-of-line copy of
 //! it instead would ([`weigh`]).
 //!
-//! A copy's cost is its own bytes ([`hexcavator_debuginfo::exclusive_sizes`]:
+//! A copy's cost is its own bytes ([`turbonop_debuginfo::exclusive_sizes`]:
 //! not those of functions inlined into it, which are weighed as theirs).
 //! A call's is estimated ([`CallCost`]): the call instruction, putting each
 //! argument in its register (a constant or an address as often as another
@@ -20,8 +20,8 @@
 //! copy; and a call can cost more registers' saving than allowed for, or
 //! fewer argument moves (arguments already where they go).
 
-use hexcavator_core::Arch;
-use hexcavator_debuginfo::{InlineSites, exclusive_sizes_by_index};
+use turbonop_core::Arch;
+use turbonop_debuginfo::{InlineSites, exclusive_sizes_by_index};
 
 /// What a call costs, in bytes, on an architecture.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,7 +141,7 @@ pub fn weigh(sites: InlineSites, arch: Arch, defined: &dyn Fn(&str) -> bool) -> 
     // (Freed on another thread: millions of small allocations.)
     let ranges = std::mem::take(&mut sites.sites);
     std::thread::spawn(move || drop(ranges));
-    hexcavator_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    turbonop_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
     let mut by: Vec<(u32, Acc)> = Vec::new();
     for (k, &(inlinee, function, own)) in keyed.iter().enumerate() {
         let new_function = k == 0 || keyed[k - 1].0 != inlinee || keyed[k - 1].1 != function;
@@ -193,7 +193,7 @@ pub fn weigh(sites: InlineSites, arch: Arch, defined: &dyn Fn(&str) -> bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hexcavator_debuginfo::InlineSite;
+    use turbonop_debuginfo::InlineSite;
 
     fn site(inlinee: u32, function: u64, at: u64, size: u64) -> InlineSite {
         InlineSite {

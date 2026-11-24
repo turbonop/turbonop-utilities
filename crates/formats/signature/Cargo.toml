@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-signature"
+name = "turbonop-signature"
 description = "Code signatures (Authenticode, Apple code signing): parsed, hashed, and verified on any platform"
 version.workspace = true
 edition.workspace = true
@@ -9,9 +9,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
-hexcavator-pe.workspace = true
-hexcavator-macho.workspace = true
+turbonop-core.workspace = true
+turbonop-pe.workspace = true
+turbonop-macho.workspace = true
 # The cryptography (never ours): RustCrypto's.
 sha1.workspace = true
 sha2.workspace = true

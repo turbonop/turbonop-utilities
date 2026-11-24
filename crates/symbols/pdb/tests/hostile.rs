@@ -1,12 +1,12 @@
 //! Hostile type records: each must give an answer (or none), never hang or
 //! overflow the stack. (Values and layouts' holes, which are read above
-//! this crate, have the same tests in hexcavator-debuginfo's
+//! this crate, have the same tests in turbonop-debuginfo's
 //! tests/hostile_pdb.rs.) (A PDB is read as found beside an image: anyone who
 //! can put a file there can write these.)
 
-use hexcavator_codeview::layout;
-use hexcavator_codeview::{TypeFormatter, TypeIndex};
-use hexcavator_pdb::{StreamData, TypeStream};
+use turbonop_codeview::layout;
+use turbonop_codeview::{TypeFormatter, TypeIndex};
+use turbonop_pdb::{StreamData, TypeStream};
 
 const LF_MODIFIER: u16 = 0x1001;
 const LF_POINTER: u16 = 0x1002;
@@ -137,7 +137,7 @@ fn a_procedure_whose_arguments_are_itself() {
     let started = std::time::Instant::now();
     let name = TypeFormatter { types: &types }.name(TypeIndex(0x1000));
     assert!(
-        name.len() <= hexcavator_codeview::types::MAX_NAME_LEN + 512,
+        name.len() <= turbonop_codeview::types::MAX_NAME_LEN + 512,
         "{} bytes",
         name.len()
     );
@@ -159,9 +159,9 @@ fn a_pdb_read_by_range_is_the_same() {
         "/tests/data/test-x64.pdb"
     ))
     .unwrap();
-    let mapped = hexcavator_pdb::Pdb::parse(&data).unwrap();
-    let source: &dyn hexcavator_core::Source = &data;
-    let read = hexcavator_pdb::Pdb::parse_source(source).unwrap();
+    let mapped = turbonop_pdb::Pdb::parse(&data).unwrap();
+    let source: &dyn turbonop_core::Source = &data;
+    let read = turbonop_pdb::Pdb::parse_source(source).unwrap();
     assert_eq!(read.info().guid(), mapped.info().guid());
     let (m, r) = (mapped.msf(), read.msf());
     assert_eq!(m.stream_count(), r.stream_count());

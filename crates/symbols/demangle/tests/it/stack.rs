@@ -4,7 +4,7 @@
 //! recursed on the thread's stack per level of nesting would overflow it
 //! (and abort the test process).
 
-use hexcavator_demangle::{itanium, msvc::Demangler, rust, swift};
+use turbonop_demangle::{itanium, msvc::Demangler, rust, swift};
 
 /// The stack each case runs on.
 const STACK: usize = 128 << 10;

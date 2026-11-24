@@ -1,6 +1,6 @@
 //! On-disk PE/COFF structures, as laid out in the file.
 
-use hexcavator_core::{I16Le, U16Le, U32Le, U64Le, pod};
+use turbonop_core::{I16Le, U16Le, U32Le, U64Le, pod};
 
 pod! {
     /// `IMAGE_FILE_HEADER`: the COFF header shared by images and objects.

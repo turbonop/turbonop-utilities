@@ -4,10 +4,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use hexcavator_pe::PeFile;
-use hexcavator_pe::apiset::{ApiSetSchema, is_api_set_name};
-use hexcavator_pe::exports::ExportTarget;
-use hexcavator_pe::imports::ImportName;
+use turbonop_pe::PeFile;
+use turbonop_pe::apiset::{ApiSetSchema, is_api_set_name};
+use turbonop_pe::exports::ExportTarget;
+use turbonop_pe::imports::ImportName;
 
 use crate::manifest::{self, Assembly};
 use crate::search::{Reject, is_plain_name};
@@ -119,7 +119,7 @@ impl State {
 
 /// The API set schema in the `.apiset` section of the DLL at `path`.
 fn read_schema(path: &Path) -> Option<ApiSetSchema> {
-    let map = hexcavator_mmap::Mmap::open_named(path).ok()?;
+    let map = turbonop_mmap::Mmap::open_named(path).ok()?;
     let pe = PeFile::parse_image(&map).ok()?;
     let section = pe.sections().iter().find(|s| s.raw_name() == b".apiset")?;
     let start = usize::try_from(section.pointer_to_raw_data.get()).ok()?;
@@ -199,7 +199,7 @@ pub(crate) fn wanted(ctx: &mut Ctx<'_>, m: usize) -> Vec<Wanted> {
 /// The assemblies the image's manifest (`RT_MANIFEST` 1, 2, or 3) depends
 /// on.
 fn manifest_assemblies(pe: &PeFile<'_>) -> Vec<Assembly> {
-    use hexcavator_pe::resources::{ResourceName, ResourceTarget, resource_type};
+    use turbonop_pe::resources::{ResourceName, ResourceTarget, resource_type};
     let Some(root) = pe.resource_root() else {
         return Vec::new();
     };
@@ -229,7 +229,7 @@ fn manifest_assemblies(pe: &PeFile<'_>) -> Vec<Assembly> {
                     continue;
                 };
                 if let Ok(data) =
-                    pe.bytes_at_rva(hexcavator_core::Rva(entry.data.get()), entry.size.get())
+                    pe.bytes_at_rva(turbonop_core::Rva(entry.data.get()), entry.size.get())
                 {
                     out.extend(manifest::dependencies(data));
                 }

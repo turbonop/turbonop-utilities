@@ -27,7 +27,7 @@ use std::io;
 use std::ops::Deref;
 use std::path::Path;
 
-pub use hexcavator_core::Source;
+pub use turbonop_core::Source;
 
 /// A read-only view of a file's contents.
 pub struct Mmap {
@@ -292,7 +292,7 @@ mod tests {
 
     fn temp_file(name: &str, contents: &[u8]) -> std::path::PathBuf {
         let path =
-            std::env::temp_dir().join(format!("hexcavator-mmap-{}-{}", std::process::id(), name));
+            std::env::temp_dir().join(format!("turbonop-mmap-{}-{}", std::process::id(), name));
         std::fs::write(&path, contents).unwrap();
         path
     }
@@ -364,8 +364,7 @@ mod tests {
     fn named_fifos_are_refused_without_blocking() {
         use std::os::unix::ffi::OsStrExt;
         use std::os::unix::fs::FileTypeExt;
-        let path =
-            std::env::temp_dir().join(format!("hexcavator-mmap-{}-fifo", std::process::id()));
+        let path = std::env::temp_dir().join(format!("turbonop-mmap-{}-fifo", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
         // SAFETY: a NUL-terminated path.

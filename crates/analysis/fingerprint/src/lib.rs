@@ -25,8 +25,8 @@
 
 use std::hash::Hasher;
 
-use hexcavator_xref::{Arch, CodeRef, Via};
 use rustc_hash::FxHasher;
+use turbonop_xref::{Arch, CodeRef, Via};
 
 /// A node's local hash and what it refers to (node indexes, in order).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -96,12 +96,12 @@ pub fn data(bytes: &[u8], size: u64, pointers: &[(u64, u32, Option<u32>)]) -> It
 }
 
 /// Code: the function `[start, start + code.len())` in `arch`, with
-/// `image_base` as for [`hexcavator_xref::scan_image`], and `absolute`
+/// `image_base` as for [`turbonop_xref::scan_image`], and `absolute`
 /// the addresses its instructions hold that relocations name (32-bit x86:
 /// each one's slot and the address there), sorted by slot.
 pub fn code(
     arch: Arch,
-    mode: hexcavator_code::Mode,
+    mode: turbonop_code::Mode,
     code: &[u8],
     start: u64,
     image_base: Option<u64>,
@@ -111,7 +111,7 @@ pub fn code(
     let mut refs = Vec::new();
     // (x86's are found as the code is decoded below: decoded once.)
     if !matches!(arch, Arch::X86 | Arch::X64) {
-        hexcavator_xref::scan_image(arch, mode, code, start, image_base, &mut refs);
+        turbonop_xref::scan_image(arch, mode, code, start, image_base, &mut refs);
     }
     let big = mode.big;
     let end = start + code.len() as u64;
@@ -142,17 +142,16 @@ pub fn code(
     match arch {
         Arch::X86 | Arch::X64 => {
             let mode = if arch == Arch::X86 {
-                hexcavator_x86::Mode::Bits32
+                turbonop_x86::Mode::Bits32
             } else {
-                hexcavator_x86::Mode::Bits64
+                turbonop_x86::Mode::Bits64
             };
-            let mut sweep =
-                hexcavator_xref::X86Sweep::new(image_base.filter(|_| arch == Arch::X64));
+            let mut sweep = turbonop_xref::X86Sweep::new(image_base.filter(|_| arch == Arch::X64));
             let mut a = 0;
             let mut at = 0usize;
             while at < code.len() {
                 let pc = start + at as u64;
-                let Ok(inst) = hexcavator_x86::decode(&code[at..], mode, pc) else {
+                let Ok(inst) = turbonop_x86::decode(&code[at..], mode, pc) else {
                     h.write_u8(0xFF);
                     h.write(&code[at..]);
                     break;
@@ -188,7 +187,7 @@ pub fn code(
                 };
                 let word = u32::from_le_bytes(w);
                 let mine = take_refs(&refs, &mut r, pc);
-                let Some(inst) = hexcavator_arm64::decode(word, pc) else {
+                let Some(inst) = turbonop_arm64::decode(word, pc) else {
                     h.write_u32(word);
                     continue;
                 };
@@ -231,7 +230,7 @@ pub fn code(
             // what an absolute one's upper part, and the base registers
             // an addressing instruction adds to.)
             type Table = (
-                Vec<(usize, hexcavator_riscv::Instruction)>,
+                Vec<(usize, turbonop_riscv::Instruction)>,
                 fn(&str) -> bool,
                 &'static [&'static str],
                 &'static [&'static str],
@@ -280,9 +279,9 @@ pub fn code(
                     // (A PowerPC load's or store's base: its memory
                     // operand's.)
                     let memory_base = matches!(arch, Arch::PowerPc | Arch::PowerPc64)
-                        .then(|| hexcavator_powerpc::memory(i))
+                        .then(|| turbonop_powerpc::memory(i))
                         .flatten()
-                        .and_then(|(_, r)| gpr(hexcavator_powerpc::Operand::Reg(r)));
+                        .and_then(|(_, r)| gpr(turbonop_powerpc::Operand::Reg(r)));
                     if let Some(rs) =
                         memory_base.or_else(|| base.iter().find_map(|b| i.operand(b).and_then(gpr)))
                         && let Some(l) = uppers[usize::from(rs)]
@@ -318,16 +317,16 @@ pub fn code(
 
 /// RISC-V code's instructions (compressed ones by their full forms), with
 /// their offsets, to the first that doesn't decode.
-fn riscv(arch: Arch, code: &[u8]) -> Vec<(usize, hexcavator_riscv::Instruction)> {
-    let features = hexcavator_riscv::Features::standard(arch == Arch::RiscV64);
+fn riscv(arch: Arch, code: &[u8]) -> Vec<(usize, turbonop_riscv::Instruction)> {
+    let features = turbonop_riscv::Features::standard(arch == Arch::RiscV64);
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < code.len() {
-        let Some(i) = hexcavator_riscv::decode(&code[at..], &features) else {
+        let Some(i) = turbonop_riscv::decode(&code[at..], &features) else {
             break;
         };
         let size = i.size;
-        let full = hexcavator_riscv::uncompress(&i, &features).unwrap_or(i);
+        let full = turbonop_riscv::uncompress(&i, &features).unwrap_or(i);
         out.push((at, full));
         at += usize::from(size);
     }
@@ -336,16 +335,16 @@ fn riscv(arch: Arch, code: &[u8]) -> Vec<(usize, hexcavator_riscv::Instruction)>
 
 /// LoongArch code's instructions, with their offsets, to the first that
 /// doesn't decode.
-fn loongarch(arch: Arch, code: &[u8]) -> Vec<(usize, hexcavator_loongarch::Instruction)> {
+fn loongarch(arch: Arch, code: &[u8]) -> Vec<(usize, turbonop_loongarch::Instruction)> {
     let features = if arch == Arch::LoongArch64 {
-        hexcavator_loongarch::Features::la64()
+        turbonop_loongarch::Features::la64()
     } else {
-        hexcavator_loongarch::Features::la32()
+        turbonop_loongarch::Features::la32()
     };
     code.as_chunks::<4>()
         .0
         .iter()
-        .map_while(|w| hexcavator_loongarch::decode(w, &features))
+        .map_while(|w| turbonop_loongarch::decode(w, &features))
         .enumerate()
         .map(|(n, i)| (4 * n, i))
         .collect()
@@ -354,12 +353,12 @@ fn loongarch(arch: Arch, code: &[u8]) -> Vec<(usize, hexcavator_loongarch::Instr
 /// PowerPC code's instructions (a prefixed one's 8 bytes as one), its
 /// words big-endian (`big`) or not, with their offsets, to the first that
 /// doesn't decode.
-fn powerpc(arch: Arch, big: bool, code: &[u8]) -> Vec<(usize, hexcavator_powerpc::Instruction)> {
-    let features = hexcavator_powerpc::Features::standard(arch == Arch::PowerPc64);
+fn powerpc(arch: Arch, big: bool, code: &[u8]) -> Vec<(usize, turbonop_powerpc::Instruction)> {
+    let features = turbonop_powerpc::Features::standard(arch == Arch::PowerPc64);
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < code.len() {
-        let Some(i) = hexcavator_powerpc::decode(&code[at..], big, &features) else {
+        let Some(i) = turbonop_powerpc::decode(&code[at..], big, &features) else {
             break;
         };
         out.push((at, i));
@@ -372,18 +371,18 @@ fn powerpc(arch: Arch, big: bool, code: &[u8]) -> Vec<(usize, hexcavator_powerpc
 /// their offsets, to the first that doesn't decode.
 fn mips(
     arch: Arch,
-    mode: hexcavator_code::Mode,
+    mode: turbonop_code::Mode,
     code: &[u8],
-) -> Vec<(usize, hexcavator_mips::Instruction)> {
-    let features = hexcavator_code::mips_features_in(arch, mode);
+) -> Vec<(usize, turbonop_mips::Instruction)> {
+    let features = turbonop_code::mips_features_in(arch, mode);
     let big = mode.big;
     let mut out = Vec::new();
     let mut at = 0;
     while let Some(i) = code
         .get(at..)
-        .and_then(|c| hexcavator_mips::decode(c, big, &features))
+        .and_then(|c| turbonop_mips::decode(c, big, &features))
     {
-        let n = hexcavator_mips::size(&i);
+        let n = turbonop_mips::size(&i);
         out.push((at, i));
         at += n;
     }
@@ -392,22 +391,22 @@ fn mips(
 
 /// An integer register's number (RISC-V's, LoongArch's, PowerPC's, and
 /// MIPS's tables all number theirs file 0).
-fn gpr(o: hexcavator_riscv::Operand) -> Option<u8> {
+fn gpr(o: turbonop_riscv::Operand) -> Option<u8> {
     o.reg().filter(|r| r.file == 0).map(|r| r.n)
 }
 
 /// A RISC-V or LoongArch instruction: its operation and operands; if
 /// `masked` (it holds part of an address), its operation and registers
 /// alone.
-fn table_instruction(h: &mut FxHasher, i: &hexcavator_riscv::Instruction, masked: bool) {
+fn table_instruction(h: &mut FxHasher, i: &turbonop_riscv::Instruction, masked: bool) {
     h.write(i.name().as_bytes());
     for op in i.operands() {
         match op {
-            hexcavator_riscv::Operand::Reg(r) => {
+            turbonop_riscv::Operand::Reg(r) => {
                 h.write_u8(b'r');
                 table_reg(h, *r);
             }
-            hexcavator_riscv::Operand::Imm(v) => {
+            turbonop_riscv::Operand::Imm(v) => {
                 h.write_u8(b'i');
                 if !masked {
                     h.write_i64(*v);
@@ -417,14 +416,14 @@ fn table_instruction(h: &mut FxHasher, i: &hexcavator_riscv::Instruction, masked
     }
 }
 
-fn table_reg(h: &mut FxHasher, r: hexcavator_riscv::Reg) {
+fn table_reg(h: &mut FxHasher, r: turbonop_riscv::Reg) {
     h.write_u8(r.file);
     h.write_u8(r.n);
 }
 
 /// 32-bit ARM Thumb-2 code's instructions, with their offsets, to the
 /// first that doesn't decode.
-fn thumb(code: &[u8]) -> impl Iterator<Item = (usize, hexcavator_arm32::Instruction)> + '_ {
+fn thumb(code: &[u8]) -> impl Iterator<Item = (usize, turbonop_arm32::Instruction)> + '_ {
     let half = |at: usize| {
         code.get(at..at + 2)
             .map(|b| u16::from_le_bytes([b[0], b[1]]))
@@ -432,12 +431,12 @@ fn thumb(code: &[u8]) -> impl Iterator<Item = (usize, hexcavator_arm32::Instruct
     let mut at = 0usize;
     std::iter::from_fn(move || {
         let first = half(at)?;
-        let second = if hexcavator_arm32::is_t32_wide(first) {
+        let second = if turbonop_arm32::is_t32_wide(first) {
             Some(half(at + 2)?)
         } else {
             None
         };
-        let i = hexcavator_arm32::decode_t32(first, second)?;
+        let i = turbonop_arm32::decode_t32(first, second)?;
         let off = at;
         at += usize::from(i.size);
         Some((off, i))
@@ -446,7 +445,7 @@ fn thumb(code: &[u8]) -> impl Iterator<Item = (usize, hexcavator_arm32::Instruct
 
 /// Whether a 32-bit ARM instruction holds (part of) an address: a
 /// branch's or literal's offset, `ADR`'s, or `MOVW`'s and `MOVT`'s halves.
-fn addresses(i: &hexcavator_arm32::Instruction) -> bool {
+fn addresses(i: &turbonop_arm32::Instruction) -> bool {
     let n = i.encoding.name;
     n.starts_with("B_")
         || n.starts_with("BL_i")
@@ -460,7 +459,7 @@ fn addresses(i: &hexcavator_arm32::Instruction) -> bool {
 
 /// A 32-bit ARM instruction's registers (its `Rd`, `Rn`, `Rt`, and `Rm`
 /// fields), into `h`.
-fn arm32_registers(h: &mut FxHasher, i: &hexcavator_arm32::Instruction) {
+fn arm32_registers(h: &mut FxHasher, i: &turbonop_arm32::Instruction) {
     for name in ["Rd", "Rdn", "Rn", "Rt", "Rm"] {
         h.write_u32(i.field(name).unwrap_or(u32::MAX));
     }
@@ -482,14 +481,14 @@ fn take_refs<'a>(refs: &'a [CodeRef], r: &mut usize, pc: u64) -> &'a [CodeRef] {
 /// Hashes an x86 instruction: its operation and operands, with
 /// displacements and immediates that may be addresses left out if
 /// `masked` (the instruction refers to something).
-fn x86_instruction(h: &mut FxHasher, inst: &hexcavator_x86::Instruction, masked: bool) {
-    use hexcavator_x86::Operand;
+fn x86_instruction(h: &mut FxHasher, inst: &turbonop_x86::Instruction, masked: bool) {
+    use turbonop_x86::Operand;
     h.write_u16(inst.mnemonic() as u16);
     h.write_u16(inst.prefixes());
     h.write_u8(inst.mask().unwrap_or(0xFF));
     h.write_u8(u8::from(inst.zeroing()));
     h.write_u8(inst.vector_length());
-    let reg = |h: &mut FxHasher, r: Option<hexcavator_x86::Register>| match r {
+    let reg = |h: &mut FxHasher, r: Option<turbonop_x86::Register>| match r {
         Some(r) => {
             h.write_u8(r.class() as u8);
             h.write_u8(r.index());
@@ -579,25 +578,25 @@ fn arm64_address_bits(encoding: &str, refers: bool) -> u32 {
 ///   or 32), and its registers.
 /// - RISC-V: each instruction's operation (a compressed one's full form's:
 ///   `c.addi` and `addi` alike) and its registers.
-pub fn shape(arch: Arch, mode: hexcavator_code::Mode, code: &[u8], start: u64) -> Option<u64> {
+pub fn shape(arch: Arch, mode: turbonop_code::Mode, code: &[u8], start: u64) -> Option<u64> {
     let big = mode.big;
     let mut h = hasher(b's');
     let mut count = 0usize;
     match arch {
         Arch::X86 | Arch::X64 => {
-            use hexcavator_x86::Operand;
+            use turbonop_x86::Operand;
             let mode = if arch == Arch::X86 {
-                hexcavator_x86::Mode::Bits32
+                turbonop_x86::Mode::Bits32
             } else {
-                hexcavator_x86::Mode::Bits64
+                turbonop_x86::Mode::Bits64
             };
-            let reg = |h: &mut FxHasher, r: Option<hexcavator_x86::Register>| {
-                h.write_u8(r.map_or(0xFF, hexcavator_x86::Register::index));
+            let reg = |h: &mut FxHasher, r: Option<turbonop_x86::Register>| {
+                h.write_u8(r.map_or(0xFF, turbonop_x86::Register::index));
             };
             let mut at = 0usize;
             while at < code.len() {
                 let pc = start + at as u64;
-                let Ok(inst) = hexcavator_x86::decode(&code[at..], mode, pc) else {
+                let Ok(inst) = turbonop_x86::decode(&code[at..], mode, pc) else {
                     h.write_u8(0xFF);
                     break;
                 };
@@ -626,7 +625,7 @@ pub fn shape(arch: Arch, mode: hexcavator_code::Mode, code: &[u8], start: u64) -
         Arch::Arm64 => {
             for (i, w) in code.as_chunks::<4>().0.iter().enumerate() {
                 let word = u32::from_le_bytes(*w);
-                match hexcavator_arm64::decode(word, start + i as u64 * 4) {
+                match turbonop_arm64::decode(word, start + i as u64 * 4) {
                     Some(inst) => {
                         for part in inst.encoding_name().split('_') {
                             if part != "32" && part != "64" {
@@ -668,7 +667,7 @@ pub fn shape(arch: Arch, mode: hexcavator_code::Mode, code: &[u8], start: u64) -
             for (_, i) in insts {
                 h.write(i.name().as_bytes());
                 for op in i.operands() {
-                    if let hexcavator_riscv::Operand::Reg(r) = op {
+                    if let turbonop_riscv::Operand::Reg(r) = op {
                         table_reg(&mut h, *r);
                     }
                 }
@@ -689,7 +688,7 @@ pub fn refine(items: &[Item], rounds: usize) -> Vec<u64> {
     let mut count = distinct(&classes);
     for _ in 0..rounds {
         // (Each item's next class from this round's: on every core.)
-        let next: Vec<u64> = hexcavator_par::map_range(items.len(), 16 * 1024, |i| {
+        let next: Vec<u64> = turbonop_par::map_range(items.len(), 16 * 1024, |i| {
             let item = &items[i];
             let mut h = hasher(b'r');
             h.write_u64(classes[i]);
@@ -711,7 +710,7 @@ pub fn refine(items: &[Item], rounds: usize) -> Vec<u64> {
 
 fn distinct(v: &[u64]) -> usize {
     let mut s: Vec<u64> = v.to_vec();
-    hexcavator_par::sort_by(&mut s, u64::cmp);
+    turbonop_par::sort_by(&mut s, u64::cmp);
     s.dedup();
     s.len()
 }

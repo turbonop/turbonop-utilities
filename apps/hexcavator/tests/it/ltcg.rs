@@ -258,7 +258,7 @@ fn references() {
 #[test]
 fn function_bodies_tile_the_il() {
     let data = std::fs::read(coff().join("ltcg.obj")).unwrap();
-    let obj = hexcavator_pe::ltcg::LtcgObject::parse(&data).unwrap();
+    let obj = turbonop_pe::ltcg::LtcgObject::parse(&data).unwrap();
     let g = obj.globals().unwrap();
     let il = obj.stream(b".cil$ex").unwrap();
     let bodies: Vec<_> = g.symbols.iter().filter_map(|s| s.il).collect();

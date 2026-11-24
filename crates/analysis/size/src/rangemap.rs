@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use hexcavator_hash::Map;
+use turbonop_hash::Map;
 
 /// Interned labels.
 ///
@@ -28,7 +28,7 @@ pub struct Labels {
 /// A name's hash, for the index.
 fn name_hash(name: &str) -> u64 {
     use std::hash::BuildHasher;
-    hexcavator_hash::State::default().hash_one(name)
+    turbonop_hash::State::default().hash_one(name)
 }
 
 /// A label's index in its [`Labels`].
@@ -44,7 +44,7 @@ impl Labels {
     /// core first (a big program's symbols: most of the time interning
     /// takes is hashing their long names).
     pub fn intern_many(&mut self, names: &[&str]) -> Vec<Label> {
-        let hashes = hexcavator_par::map(names, 16 * 1024, |n| name_hash(n));
+        let hashes = turbonop_par::map(names, 16 * 1024, |n| name_hash(n));
         names
             .iter()
             .zip(hashes)

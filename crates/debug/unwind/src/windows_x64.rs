@@ -37,7 +37,7 @@
 //!   from an epilog's `ret`.
 //! - A machine frame restores only RIP and RSP.
 
-use hexcavator_pe::exception::{X64UnwindCode, unwind_flags, x64_unwind_codes};
+use turbonop_pe::exception::{X64UnwindCode, unwind_flags, x64_unwind_codes};
 
 use crate::{Error, Image, Memory, Result, read_u64, read_u128};
 

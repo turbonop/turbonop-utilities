@@ -15,7 +15,7 @@
 //! Larger and more aligned blocks go to the system allocator as they are.
 //!
 //! Small blocks are never given back to the system allocator: each class
-//! keeps what it has held at most. (hexcavator's peaks are its big
+//! keeps what it has held at most. (A program's peaks are its big
 //! tables, which aren't small.)
 //!
 //! Native builds don't use it (their allocators have per-thread caches

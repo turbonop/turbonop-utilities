@@ -6,11 +6,11 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
-use hexcavator_signature::{
+use serde_json::{Value as Json, json};
+use turbonop_mmap::Mmap;
+use turbonop_signature::{
     CertInfo, Check, CodeSignature, Report, Signature, Signer, Status, Timestamp,
 };
-use serde_json::{Value as Json, json};
 
 const USAGE: &str = "\
 usage: hexcavator signature [-json] [-root <cert>]... <image>...
@@ -38,7 +38,7 @@ pub fn run(args: &[String]) -> ExitCode {
             Some("root") => match it.next() {
                 Some(p) => match std::fs::read(p)
                     .map_err(|e| e.to_string())
-                    .and_then(|d| hexcavator_signature::roots::add(&d))
+                    .and_then(|d| turbonop_signature::roots::add(&d))
                 {
                     Ok(_) => {}
                     Err(e) => {
@@ -68,7 +68,7 @@ pub fn run(args: &[String]) -> ExitCode {
     for f in &files {
         let report = Mmap::open(f)
             .map_err(|e| format!("{f}: {e}"))
-            .and_then(|m| hexcavator_signature::of_file(&m).map_err(|e| format!("{f}: {e}")));
+            .and_then(|m| turbonop_signature::of_file(&m).map_err(|e| format!("{f}: {e}")));
         match report {
             Ok(r) => {
                 if !verified(&r) {
@@ -131,7 +131,7 @@ pub fn to_json(path: &str, r: &Report) -> Json {
         "info": r.info.iter().map(|(k, v)| json!({ "name": k, "value": v })).collect::<Vec<_>>(),
         "authenticode": r.authenticode.iter().map(signature_json).collect::<Vec<_>>(),
         "apple": r.apple.iter().map(apple_json).collect::<Vec<_>>(),
-        "roots": hexcavator_signature::roots::bundled_names().count(),
+        "roots": turbonop_signature::roots::bundled_names().count(),
     })
 }
 

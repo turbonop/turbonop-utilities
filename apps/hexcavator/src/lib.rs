@@ -33,7 +33,7 @@ mod xref;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
+use turbonop_mmap::Mmap;
 
 const USAGE: &str = "\
 Hexcavator: explore executables, objects, and libraries, and their
@@ -76,7 +76,7 @@ options:
   --cache <path>             keep an index of each image's symbols, so that the
                              next command on it needn't build them: in <path>
                              if it is a file, or in the directory <path> (as
-                             app.exe.<hash>.hexc-index); '--cache .' keeps them
+                             app.exe.<hash>.hexcavator-index); '--cache .' keeps them
                              in the current directory
   --arch <name>              the image of universal (fat) Mach-O files to read
                              (arm64, x86_64, ...; default: this machine's, else
@@ -86,15 +86,15 @@ Every command reads any format (PE, ELF, Mach-O, WebAssembly) with its
 debug information (a PDB, or DWARF: in the image, a separate debug file, a
 dSYM), which -debug <path> gives (-pdb is another name for it). Debug
 information is otherwise looked for beside the image, then in the symbol
-directories (HEXC_SYMBOL_PATH; _NT_SYMBOL_PATH's local directories and
+directories (TURBONOP_SYMBOL_PATH; _NT_SYMBOL_PATH's local directories and
 caches; debuginfod's cache), then on symbol servers, if given (nothing is
 asked of a server otherwise; files are fetched with curl):
   --symbol-server <url>      a server with Microsoft's layout (SSQP), such as
                              https://msdl.microsoft.com/download/symbols
-                             (HEXC_SYMBOL_SERVER: URLs separated by ';')
-  --debuginfod <url>         a debuginfod server (HEXC_DEBUGINFOD: URLs
+                             (TURBONOP_SYMBOL_SERVER: URLs separated by ';')
+  --debuginfod <url>         a debuginfod server (TURBONOP_DEBUGINFOD: URLs
                              separated by spaces)
-  --symbol-cache <dir>       where to keep what is fetched (HEXC_SYMBOL_CACHE;
+  --symbol-cache <dir>       where to keep what is fetched (TURBONOP_SYMBOL_CACHE;
                              else it is kept in memory only)
 
 A Mach-O image with no dSYM found has its DWARF read from the object files
@@ -109,7 +109,7 @@ struct Global {
     /// `--arch <name>`: the last given.
     arch: Option<String>,
     /// `--symbol-server`, `--debuginfod`, `--symbol-cache`.
-    servers: hexcavator_program::server::Servers,
+    servers: turbonop_program::server::Servers,
 }
 
 /// A symbol-server option at `a` (`--symbol-server <url>` or
@@ -178,9 +178,9 @@ fn global_options(args: &[String]) -> Result<(Vec<String>, Global), String> {
         return Err("--cache: expected a file or directory".into());
     }
     if let Some(name) = &global.arch
-        && !hexcavator_macho::set_preferred_arch(Some(name))
+        && !turbonop_macho::set_preferred_arch(Some(name))
     {
-        let known: Vec<String> = hexcavator_macho::arch_names().collect();
+        let known: Vec<String> = turbonop_macho::arch_names().collect();
         return Err(format!(
             "--arch: no architecture named '{name}' (the names are {})",
             known.join(", ")
@@ -200,16 +200,16 @@ pub fn run(args: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    hexcavator_program::cache::set_file(global.cache);
+    turbonop_program::cache::set_file(global.cache);
     // Servers given here; else the environment's (if any).
     let mut servers = global.servers;
     if servers.is_empty() {
-        let env = hexcavator_program::server::Servers::from_env();
+        let env = turbonop_program::server::Servers::from_env();
         servers.symbol_servers = env.symbol_servers;
         servers.debuginfod = env.debuginfod;
         servers.cache = servers.cache.or(env.cache);
     }
-    hexcavator_program::server::set_servers(servers);
+    turbonop_program::server::set_servers(servers);
     match args.first().map(String::as_str) {
         Some("mcp") => mcp::run(&args[1..]),
         Some("serve") => serve::run(&args[1..]),
@@ -271,7 +271,7 @@ fn command(args: &[String]) -> ExitCode {
 /// its Rich header names, its certificates, overlay, and bound imports.
 /// A COFF object's: its sections and symbols, and whether it has DWARF
 /// (clang's, or MinGW's) or CodeView.
-fn coff_details(o: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
+fn coff_details(o: &turbonop_pe::PeFile<'_>) -> Vec<String> {
     let names: Vec<&[u8]> = o.sections().iter().map(|s| o.section_name(s)).collect();
     let symbols = o.symbols().ok().flatten().map_or(0, |t| t.len());
     let mut out = vec![format!("{} sections, {symbols} symbols", names.len())];
@@ -293,7 +293,7 @@ fn coff_details(o: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
 
 /// What `hexcavator info` adds for an LTCG object: what its IL holds (`hexcavator
 /// ltcg` dumps it).
-fn ltcg_details(o: &hexcavator_pe::ltcg::LtcgObject<'_>) -> Vec<String> {
+fn ltcg_details(o: &turbonop_pe::ltcg::LtcgObject<'_>) -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(g) = o.globals() {
         let defined = g
@@ -314,8 +314,8 @@ fn ltcg_details(o: &hexcavator_pe::ltcg::LtcgObject<'_>) -> Vec<String> {
     out
 }
 
-fn pe_details(pe: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
-    use hexcavator_pe::extras::{
+fn pe_details(pe: &turbonop_pe::PeFile<'_>) -> Vec<String> {
+    use turbonop_pe::extras::{
         COMIMAGE_FLAGS_32BITREQUIRED, COMIMAGE_FLAGS_ILONLY, COMIMAGE_FLAGS_STRONGNAMESIGNED,
     };
     let mut out = Vec::new();
@@ -373,7 +373,7 @@ fn pe_details(pe: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
 
 /// What `hexcavator info` adds for a Mach-O image: its Objective-C metadata,
 /// function starts, compact unwind, and code signature.
-fn macho_details(m: &hexcavator_macho::MachO<'_>) -> Vec<String> {
+fn macho_details(m: &turbonop_macho::MachO<'_>) -> Vec<String> {
     let mut out = Vec::new();
     let objc = m.objc();
     if !objc.classes.is_empty() || !objc.categories.is_empty() || !objc.protocols.is_empty() {
@@ -435,8 +435,8 @@ fn macho_details(m: &hexcavator_macho::MachO<'_>) -> Vec<String> {
 
 /// What `hexcavator info` adds for an ELF file: its kind, interpreter, the
 /// libraries it needs and its own name, search paths, and debug links.
-fn elf_details(e: &hexcavator_elf::ElfFile<'_>) -> Vec<String> {
-    use hexcavator_elf::consts::*;
+fn elf_details(e: &turbonop_elf::ElfFile<'_>) -> Vec<String> {
+    use turbonop_elf::consts::*;
     let mut out = Vec::new();
     let kind = match e.header().kind {
         ET_REL => "relocatable object",
@@ -509,7 +509,7 @@ fn elf_details(e: &hexcavator_elf::ElfFile<'_>) -> Vec<String> {
 
 /// What `hexcavator info` adds for a WebAssembly module: its functions, data,
 /// custom sections, and debug links.
-fn wasm_details(m: &hexcavator_wasm::Module<'_>) -> Vec<String> {
+fn wasm_details(m: &turbonop_wasm::Module<'_>) -> Vec<String> {
     let mut out = Vec::new();
     let defined = m.functions().len();
     out.push(format!(
@@ -547,13 +547,13 @@ fn wasm_details(m: &hexcavator_wasm::Module<'_>) -> Vec<String> {
 fn legacy_details(data: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
     let quote = |s: Option<String>| s.map_or_else(String::new, |s| format!(" {s:?}"));
-    if let Ok(ne) = hexcavator_ne::NeFile::parse(data) {
+    if let Ok(ne) = turbonop_ne::NeFile::parse(data) {
         let h = ne.header();
         let os = match h.target_os {
-            hexcavator_ne::NE_OS_OS2 => "OS/2",
-            hexcavator_ne::NE_OS_WINDOWS => "Windows",
-            hexcavator_ne::NE_OS_DOS4 => "DOS 4",
-            hexcavator_ne::NE_OS_WIN386 => "Windows/386",
+            turbonop_ne::NE_OS_OS2 => "OS/2",
+            turbonop_ne::NE_OS_WINDOWS => "Windows",
+            turbonop_ne::NE_OS_DOS4 => "DOS 4",
+            turbonop_ne::NE_OS_WIN386 => "Windows/386",
             _ => "an unknown system",
         };
         out.push(format!(
@@ -580,11 +580,11 @@ fn legacy_details(data: &[u8]) -> Vec<String> {
                 m => m.join(", "),
             }
         ));
-    } else if let Ok(lx) = hexcavator_lx::LxFile::parse(data) {
+    } else if let Ok(lx) = turbonop_lx::LxFile::parse(data) {
         let h = lx.header();
         let what = if lx.is_vxd() {
             format!("virtual device driver (ID {:#06x})", h.device_id)
-        } else if h.flags & hexcavator_lx::MOD_LIBRARY != 0 {
+        } else if h.flags & turbonop_lx::MOD_LIBRARY != 0 {
             "library".to_string()
         } else {
             "program".to_string()
@@ -624,28 +624,28 @@ fn info_json(path: &str) -> serde_json::Value {
     };
     let data: &[u8] = &map;
     let description = detect::describe(data);
-    let archive = hexcavator_archive::Archive::is_archive(data);
-    let fat = hexcavator_macho::fat_archs(data);
-    let image = hexcavator_image::Image::parse(data).ok();
+    let archive = turbonop_archive::Archive::is_archive(data);
+    let fat = turbonop_macho::fat_archs(data);
+    let image = turbonop_image::Image::parse(data).ok();
     // (A COFF object is a PE file of kind object, as an ELF or Mach-O
     // object is of its format.)
     let coff = image.is_none() && size::is_object_input(data);
     let format = match &image {
         _ if archive => "archive",
-        Some(hexcavator_image::Image::Pe(_)) => "pe",
-        Some(hexcavator_image::Image::Elf(_)) => "elf",
-        Some(hexcavator_image::Image::MachO(_)) => "macho",
-        Some(hexcavator_image::Image::Wasm(_)) => "wasm",
+        Some(turbonop_image::Image::Pe(_)) => "pe",
+        Some(turbonop_image::Image::Elf(_)) => "elf",
+        Some(turbonop_image::Image::MachO(_)) => "macho",
+        Some(turbonop_image::Image::Wasm(_)) => "wasm",
         Some(_) => "other",
         None if coff => "pe",
         None => "other",
     };
-    let kind = match image.as_ref().map(hexcavator_image::Image::kind) {
+    let kind = match image.as_ref().map(turbonop_image::Image::kind) {
         _ if archive => "object",
-        Some(hexcavator_image::Kind::Linked) => "linked",
-        Some(hexcavator_image::Kind::Object) => "object",
-        Some(hexcavator_image::Kind::Dump) => "dump",
-        Some(hexcavator_image::Kind::Debug) => "debug",
+        Some(turbonop_image::Kind::Linked) => "linked",
+        Some(turbonop_image::Kind::Object) => "object",
+        Some(turbonop_image::Kind::Dump) => "dump",
+        Some(turbonop_image::Kind::Debug) => "debug",
         Some(_) => "other",
         None if coff => "object",
         None => "other",
@@ -653,24 +653,24 @@ fn info_json(path: &str) -> serde_json::Value {
     let archs: Vec<String> = match (&fat, &image) {
         (Some(archs), _) => archs
             .iter()
-            .map(|a| hexcavator_macho::arch_name(a.cputype, a.cpusubtype))
+            .map(|a| turbonop_macho::arch_name(a.cputype, a.cpusubtype))
             .collect(),
         (None, Some(i)) => vec![i.arch().name().to_string()],
         (None, None) => Vec::new(),
     };
     let arch = image.as_ref().map(|i| match i {
-        hexcavator_image::Image::MachO(m) => {
-            hexcavator_macho::arch_name(m.header().cputype, m.header().cpusubtype)
+        turbonop_image::Image::MachO(m) => {
+            turbonop_macho::arch_name(m.header().cputype, m.header().cpusubtype)
         }
         other => other.arch().name().to_string(),
     });
     // Debug information: linked images only (objects' needs relocating).
     let (debug, debug_error) = match &image {
         Some(i) if kind == "linked" => {
-            match hexcavator_program::find_debug(Path::new(path), i, None) {
+            match turbonop_program::find_debug(Path::new(path), i, None) {
                 Ok((p, m)) => {
-                    let what = match hexcavator_debuginfo::DebugInfo::parse(&m) {
-                        Ok(hexcavator_debuginfo::DebugInfo::Pdb(_)) => "pdb",
+                    let what = match turbonop_debuginfo::DebugInfo::parse(&m) {
+                        Ok(turbonop_debuginfo::DebugInfo::Pdb(_)) => "pdb",
                         Ok(_) => "dwarf",
                         Err(_) => "unreadable",
                     };
@@ -680,7 +680,7 @@ fn info_json(path: &str) -> serde_json::Value {
                         None,
                     )
                 }
-                Err(e) => match hexcavator_program::Opened::open(Path::new(path), None) {
+                Err(e) => match turbonop_program::Opened::open(Path::new(path), None) {
                     // A Mach-O image's debug map: its objects' DWARF.
                     Ok(o) if o.is_debug_map() => (
                         Some(json!({
@@ -702,8 +702,7 @@ fn info_json(path: &str) -> serde_json::Value {
     let has_dwarf = debug
         .as_ref()
         .is_some_and(|d| d["kind"] == "dwarf" || d["kind"] == "debugmap")
-        || (kind != "linked"
-            && hexcavator_debuginfo::dwarf_backend::DwarfInfo::parse(data).is_ok());
+        || (kind != "linked" && turbonop_debuginfo::dwarf_backend::DwarfInfo::parse(data).is_ok());
     json!({
         "path": path,
         "description": description,
@@ -726,9 +725,9 @@ fn info_json(path: &str) -> serde_json::Value {
 }
 
 /// Whether stripping the file would take something from it (its debug
-/// information or symbols: see `hexcavator_size::strip`).
+/// information or symbols: see `turbonop_size::strip`).
 fn strippable(data: &[u8]) -> bool {
-    !hexcavator_size::strip::ranges(data).is_empty()
+    !turbonop_size::strip::ranges(data).is_empty()
 }
 
 /// The tools that apply to a file of `format` and `kind` (with debug
@@ -832,27 +831,27 @@ fn info(args: &[String]) -> ExitCode {
                     detect::describe(&map),
                     map.len()
                 );
-                if let Ok(pe) = hexcavator_pe::PeFile::parse_image(&map) {
+                if let Ok(pe) = turbonop_pe::PeFile::parse_image(&map) {
                     for line in pe_details(&pe) {
                         let _ = writeln!(out, "  {line}");
                     }
-                } else if let Ok(m) = hexcavator_macho::MachO::parse(&map) {
+                } else if let Ok(m) = turbonop_macho::MachO::parse(&map) {
                     for line in macho_details(&m) {
                         let _ = writeln!(out, "  {line}");
                     }
-                } else if let Ok(e) = hexcavator_elf::ElfFile::parse(&map) {
+                } else if let Ok(e) = turbonop_elf::ElfFile::parse(&map) {
                     for line in elf_details(&e) {
                         let _ = writeln!(out, "  {line}");
                     }
-                } else if let Ok(m) = hexcavator_wasm::Module::parse(&map) {
+                } else if let Ok(m) = turbonop_wasm::Module::parse(&map) {
                     for line in wasm_details(&m) {
                         let _ = writeln!(out, "  {line}");
                     }
-                } else if let Ok(o) = hexcavator_pe::ltcg::LtcgObject::parse(&map) {
+                } else if let Ok(o) = turbonop_pe::ltcg::LtcgObject::parse(&map) {
                     for line in ltcg_details(&o) {
                         let _ = writeln!(out, "  {line}");
                     }
-                } else if let Ok(o) = hexcavator_pe::PeFile::parse_object(&map) {
+                } else if let Ok(o) = turbonop_pe::PeFile::parse_object(&map) {
                     for line in coff_details(&o) {
                         let _ = writeln!(out, "  {line}");
                     }

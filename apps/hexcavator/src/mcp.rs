@@ -16,18 +16,18 @@ use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use hexcavator_image::Image;
 use serde_json::Value;
+use turbonop_image::Image;
 
 /// An object from members, in order.
 fn object<K: Into<String>>(members: impl IntoIterator<Item = (K, Value)>) -> Value {
     Value::Object(members.into_iter().map(|(k, v)| (k.into(), v)).collect())
 }
-use hexcavator_mmap::Mmap;
-use hexcavator_size::Model;
-use hexcavator_size::rollup::{self, Domain, Report, Rollup, SortBy};
-use hexcavator_size::sources::{Maps, Source};
-use hexcavator_size::symbols::Symbol;
+use turbonop_mmap::Mmap;
+use turbonop_size::Model;
+use turbonop_size::rollup::{self, Domain, Report, Rollup, SortBy};
+use turbonop_size::sources::{Maps, Source};
+use turbonop_size::symbols::Symbol;
 
 pub const USAGE: &str = "\
 usage: hexcavator mcp
@@ -45,7 +45,7 @@ const PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
 type Built = (Arc<Model>, Arc<Vec<Symbol>>);
 
 /// A binary, read once per session: opened as every `hexcavator` command opens
-/// one (see [`hexcavator_program::Opened`]), whatever its format.
+/// one (see [`turbonop_program::Opened`]), whatever its format.
 struct Loaded {
     path: PathBuf,
     map: Mmap,
@@ -56,11 +56,11 @@ struct Loaded {
     /// The debug information given (`pdb`, or `debug`), if any.
     debug_arg: Option<PathBuf>,
     /// The image and its debug information, opened when first needed.
-    opened: OnceCell<Result<hexcavator_program::Opened, String>>,
+    opened: OnceCell<Result<turbonop_program::Opened, String>>,
     /// The size model and symbols, built when first needed.
     built: OnceCell<Result<Built, String>>,
     /// The cross-reference graph, built once.
-    xref: OnceCell<Result<hexcavator_size::xref::Xref, String>>,
+    xref: OnceCell<Result<turbonop_size::xref::Xref, String>>,
     /// Maps built so far, by their sources.
     maps: RefCell<HashMap<Vec<Source>, Arc<Maps>>>,
 }
@@ -71,7 +71,7 @@ impl Loaded {
         let image = Image::parse(&map).ok();
         let object = image
             .as_ref()
-            .is_none_or(|i| i.kind() != hexcavator_image::Kind::Linked);
+            .is_none_or(|i| i.kind() != turbonop_image::Kind::Linked);
         let pe = image.as_ref().is_some_and(|i| i.pe().is_some());
         Ok(Self {
             path: path.to_path_buf(),
@@ -87,7 +87,7 @@ impl Loaded {
     }
 
     /// The image and its debug information, of any format, opened once.
-    fn opened(&self) -> Result<&hexcavator_program::Opened, String> {
+    fn opened(&self) -> Result<&turbonop_program::Opened, String> {
         self.opened
             .get_or_init(|| {
                 if self.object {
@@ -96,9 +96,9 @@ impl Loaded {
                         self.path.display()
                     ));
                 }
-                hexcavator_program::Opened::open(&self.path, self.debug_arg.as_deref())
+                turbonop_program::Opened::open(&self.path, self.debug_arg.as_deref())
                     .map_err(|e| match e {
-                        hexcavator_program::Error::NoDebug { .. } => format!(
+                        turbonop_program::Error::NoDebug { .. } => format!(
                             "{e}; give the debug information (a PDB, a dSYM, or a DWARF file) with the `debug` argument"
                         ),
                         e => e.to_string(),
@@ -114,7 +114,7 @@ impl Loaded {
     }
 
     /// The program: the image and its debug information, parsed.
-    fn program(&self) -> Result<hexcavator_program::Program<'_>, String> {
+    fn program(&self) -> Result<turbonop_program::Program<'_>, String> {
         self.opened()?.program().map_err(|e| e.to_string())
     }
 
@@ -134,11 +134,11 @@ impl Loaded {
     }
 
     /// The cross-reference graph of the image, built once.
-    fn xref(&self) -> Result<&hexcavator_size::xref::Xref, String> {
+    fn xref(&self) -> Result<&turbonop_size::xref::Xref, String> {
         self.xref
             .get_or_init(|| {
                 let program = self.program()?;
-                hexcavator_size::xref::build(
+                turbonop_size::xref::build(
                     &program.image,
                     &program.debug,
                     self.model()?,
@@ -449,9 +449,9 @@ impl Server {
     }
 
     fn query(&mut self, args: &Value) -> ToolResult {
-        use hexcavator_size::table::{COLUMNS, SymbolTable};
+        use turbonop_size::table::{COLUMNS, SymbolTable};
         let text = arg_str(args, "query").unwrap_or("");
-        let mut query = hexcavator_query::parse(text, &COLUMNS).map_err(|e| e.to_string())?;
+        let mut query = turbonop_query::parse(text, &COLUMNS).map_err(|e| e.to_string())?;
         if query.limit.is_none() {
             query.limit = Some(50);
         }
@@ -461,7 +461,7 @@ impl Server {
         let model = loaded.model()?;
         let modules = program.debug.compilands().map_err(|e| e.to_string())?;
         let lines = program.debug.source_lines().map_err(|e| e.to_string())?;
-        let out = hexcavator_query::run(
+        let out = turbonop_query::run(
             &query,
             &SymbolTable::new(model, syms, &modules).with_lines(&lines),
         )
@@ -591,12 +591,12 @@ impl Server {
             .get("limit")
             .and_then(Value::as_u64)
             .map_or(20, |l| usize::try_from(l).unwrap_or(usize::MAX));
-        let (text, json) = hexcavator_size::findings::report(
+        let (text, json) = turbonop_size::findings::report(
             image,
             debug,
             syms,
             &name,
-            hexcavator_size::findings::ReportOptions { limit },
+            turbonop_size::findings::ReportOptions { limit },
         );
         let structured = serde_json::from_str::<Value>(&json).map_err(|e| e.to_string())?;
         Ok((text, structured))

@@ -33,10 +33,10 @@
 //! literal pool or jump table, can follow its code).
 
 /// How code is read (its words' byte order, MIPS's image's flags).
-pub use hexcavator_code::Mode;
+pub use turbonop_code::Mode;
 /// The instruction sets (x86, x64, ARM64, 32-bit ARM, RISC-V, LoongArch,
 /// PowerPC, and MIPS code is scanned; others have no references found).
-pub use hexcavator_core::Arch;
+pub use turbonop_core::Arch;
 
 /// How code refers to an address.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -156,8 +156,8 @@ pub fn scan_with(
 ) {
     let got = memory.got;
     match arch {
-        Arch::X86 => x86(code, address, hexcavator_x86::Mode::Bits32, None, out),
-        Arch::X64 => x86(code, address, hexcavator_x86::Mode::Bits64, image_base, out),
+        Arch::X86 => x86(code, address, turbonop_x86::Mode::Bits32, None, out),
+        Arch::X64 => x86(code, address, turbonop_x86::Mode::Bits64, image_base, out),
         Arch::Arm64 => arm64(code, address, out),
         Arch::Arm => thumb(code, address & !1, bias, out),
         Arch::RiscV32 | Arch::RiscV64 => riscv(code, address, arch == Arch::RiscV64, out),
@@ -183,7 +183,7 @@ pub fn scan_with(
 fn x86(
     code: &[u8],
     address: u64,
-    mode: hexcavator_x86::Mode,
+    mode: turbonop_x86::Mode,
     image_base: Option<u64>,
     out: &mut Vec<CodeRef>,
 ) {
@@ -191,7 +191,7 @@ fn x86(
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
-        let Ok(inst) = hexcavator_x86::decode(&code[at..], mode, pc) else {
+        let Ok(inst) = turbonop_x86::decode(&code[at..], mode, pc) else {
             return;
         };
         sweep.step(&inst, pc, out);
@@ -226,8 +226,8 @@ impl X86Sweep {
     }
 
     /// The references of `inst`, at `pc`, pushed to `out`.
-    pub fn step(&mut self, inst: &hexcavator_x86::Instruction, pc: u64, out: &mut Vec<CodeRef>) {
-        use hexcavator_x86::{Flow, Mnemonic, Operand, RegClass, Register};
+    pub fn step(&mut self, inst: &turbonop_x86::Instruction, pc: u64, out: &mut Vec<CodeRef>) {
+        use turbonop_x86::{Flow, Mnemonic, Operand, RegClass, Register};
         let gpr = |r: Register| {
             matches!(
                 r.class(),
@@ -355,7 +355,7 @@ fn sext(v: u32, bits: u32) -> i64 {
 /// 32-bit ARM's Thumb-2 code (see the module's documentation); `bias`
 /// is taken from the absolute addresses it builds.
 fn thumb(code: &[u8], address: u64, bias: u64, out: &mut Vec<CodeRef>) {
-    use hexcavator_arm32::{decode_t32, format::branch_target, is_t32_wide};
+    use turbonop_arm32::{decode_t32, format::branch_target, is_t32_wide};
     let half = |at: usize| {
         code.get(at..at + 2)
             .map(|b| u16::from_le_bytes([b[0], b[1]]))
@@ -480,8 +480,8 @@ fn thumb(code: &[u8], address: u64, bias: u64, out: &mut Vec<CodeRef>) {
 }
 
 fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
-    use hexcavator_riscv::Operand;
-    let features = hexcavator_riscv::Features::standard(rv64);
+    use turbonop_riscv::Operand;
+    let features = turbonop_riscv::Features::standard(rv64);
     // Each register's upper part (from AUIPC or LUI), and its address
     // (from an ADDI to an upper part), until it's written.
     let mut upper = [None::<u64>; 32];
@@ -491,15 +491,15 @@ fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
-        let Some(compact) = hexcavator_riscv::decode(&code[at..], &features) else {
+        let Some(compact) = turbonop_riscv::decode(&code[at..], &features) else {
             return;
         };
         at += usize::from(compact.size);
-        let full = hexcavator_riscv::uncompress(&compact, &features);
+        let full = turbonop_riscv::uncompress(&compact, &features);
         let i = full.as_ref().unwrap_or(&compact);
         let x = |n: &str| {
             i.operand(n)
-                .and_then(hexcavator_riscv::gpr_of)
+                .and_then(turbonop_riscv::gpr_of)
                 .map(usize::from)
         };
         let imm = |n: &str| i.operand(n).and_then(Operand::imm);
@@ -567,7 +567,7 @@ fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
             .enumerate()
             .take(usize::from(i.inst().defs))
         {
-            if let Some(r) = hexcavator_riscv::gpr_of(*op) {
+            if let Some(r) = turbonop_riscv::gpr_of(*op) {
                 let r = usize::from(r);
                 upper[r] = if k == 0 { set_upper } else { None };
                 addrs[r] = if k == 0 { set_addr } else { None };
@@ -586,9 +586,9 @@ fn riscv(code: &[u8], address: u64, rv64: bool, out: &mut Vec<CodeRef>) {
 /// or `jirl` (`call36`) after; and `pcaddi` (an address, PC-relative).
 fn loongarch(code: &[u8], address: u64, la64: bool, out: &mut Vec<CodeRef>) {
     let features = if la64 {
-        hexcavator_loongarch::Features::la64()
+        turbonop_loongarch::Features::la64()
     } else {
-        hexcavator_loongarch::Features::la32()
+        turbonop_loongarch::Features::la32()
     };
     // Each register's upper part, and its address (from an `addi` or
     // `ori` to an upper part, or `pcaddi`), until it's written.
@@ -598,12 +598,12 @@ fn loongarch(code: &[u8], address: u64, la64: bool, out: &mut Vec<CodeRef>) {
     let wrap = |v: u64| if la64 { v } else { v & 0xFFFF_FFFF };
     for (n, w) in code.as_chunks::<4>().0.iter().enumerate() {
         let pc = address.wrapping_add(n as u64 * 4);
-        let Some(i) = hexcavator_loongarch::decode(w, &features) else {
+        let Some(i) = turbonop_loongarch::decode(w, &features) else {
             return;
         };
         let x = |name: &str| {
             i.operand(name)
-                .and_then(hexcavator_loongarch::gpr_of)
+                .and_then(turbonop_loongarch::gpr_of)
                 .map(usize::from)
         };
         // (Each instruction here has one immediate.)
@@ -630,7 +630,7 @@ fn loongarch(code: &[u8], address: u64, la64: bool, out: &mut Vec<CodeRef>) {
             }
             "B" | "BL" | "BEQ" | "BNE" | "BLT" | "BGE" | "BLTU" | "BGEU" | "BEQZ" | "BNEZ"
             | "BCEQZ" | "BCNEZ" => {
-                if let Some(to) = hexcavator_loongarch::branch_target(&i, pc) {
+                if let Some(to) = turbonop_loongarch::branch_target(&i, pc) {
                     let via = if name == "BL" { Via::Call } else { Via::Jump };
                     push(wrap(to), via);
                 }
@@ -674,7 +674,7 @@ fn loongarch(code: &[u8], address: u64, la64: bool, out: &mut Vec<CodeRef>) {
             .enumerate()
             .take(usize::from(i.inst().defs))
         {
-            if let Some(r) = hexcavator_loongarch::gpr_of(*op) {
+            if let Some(r) = turbonop_loongarch::gpr_of(*op) {
                 let r = usize::from(r);
                 upper[r] = if k == 0 { set_upper } else { None };
                 addrs[r] = if k == 0 { set_addr } else { None };
@@ -704,7 +704,7 @@ fn powerpc(
     memory: &Memory<'_>,
     out: &mut Vec<CodeRef>,
 ) {
-    let features = hexcavator_powerpc::Features::standard(ppc64);
+    let features = turbonop_powerpc::Features::standard(ppc64);
     // The link register, after a call (`bcl 20, 31, .+4`: the PC).
     let mut lr = None::<u64>;
     // Where a call just past itself lands (over a literal).
@@ -717,7 +717,7 @@ fn powerpc(
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
-        let Some(i) = hexcavator_powerpc::decode(&code[at..], big, &features) else {
+        let Some(i) = turbonop_powerpc::decode(&code[at..], big, &features) else {
             // (A literal a call steps over, `bl .+8`, as PIC code reads its
             // address: on, after it.)
             match resume.filter(|&t| t > pc) {
@@ -731,22 +731,22 @@ fn powerpc(
         at += usize::from(i.size);
         let reg = |name: &str| {
             i.operand(name)
-                .and_then(hexcavator_powerpc::gpr_of)
+                .and_then(turbonop_powerpc::gpr_of)
                 .map(usize::from)
         };
-        let imm = |name: &str| i.operand(name).and_then(hexcavator_powerpc::Operand::imm);
+        let imm = |name: &str| i.operand(name).and_then(turbonop_powerpc::Operand::imm);
         // (A load's or store's displacement and base.)
-        let mem = hexcavator_powerpc::memory(&i)
-            .and_then(|(d, r)| Some((d, usize::from(hexcavator_powerpc::gpr(r)?))));
+        let mem = turbonop_powerpc::memory(&i)
+            .and_then(|(d, r)| Some((d, usize::from(turbonop_powerpc::gpr(r)?))));
         let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
         let name = i.name();
         let mut set = None;
-        let flow = hexcavator_code::powerpc_flow(&i, pc, &features).0;
-        let next_lr = (flow == hexcavator_code::Flow::Call).then(|| wrap(pc + 4));
-        if let Some(to) = hexcavator_powerpc::branch_target(&i, pc, &features) {
+        let flow = turbonop_code::powerpc_flow(&i, pc, &features).0;
+        let next_lr = (flow == turbonop_code::Flow::Call).then(|| wrap(pc + 4));
+        if let Some(to) = turbonop_powerpc::branch_target(&i, pc, &features) {
             push(
                 wrap(to),
-                if flow == hexcavator_code::Flow::Call {
+                if flow == turbonop_code::Flow::Call {
                     Via::Call
                 } else {
                     Via::Jump
@@ -837,13 +837,13 @@ fn powerpc(
             .enumerate()
             .take(usize::from(i.inst().defs))
         {
-            if let Some(r) = hexcavator_powerpc::gpr_of(*op) {
+            if let Some(r) = turbonop_powerpc::gpr_of(*op) {
                 known[usize::from(r)] = if k == 0 { set } else { None };
             }
         }
         // (A call leaves r12 and the volatile registers unknown; r2 is
         // restored.)
-        if flow == hexcavator_code::Flow::Call {
+        if flow == turbonop_code::Flow::Call {
             for r in [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] {
                 known[r] = None;
             }
@@ -853,8 +853,8 @@ fn powerpc(
         if next_lr.is_some() || name == "MTLR" {
             lr = next_lr;
         }
-        resume = hexcavator_powerpc::branch_target(&i, pc, &features)
-            .filter(|&t| flow == hexcavator_code::Flow::Call && t > pc + 4 && t <= pc + 16);
+        resume = turbonop_powerpc::branch_target(&i, pc, &features)
+            .filter(|&t| flow == turbonop_code::Flow::Call && t > pc + 4 && t <= pc + 16);
     }
 }
 
@@ -877,8 +877,8 @@ fn mips(
     got: &dyn Fn(u64) -> Option<u64>,
     out: &mut Vec<CodeRef>,
 ) {
-    use hexcavator_code::Flow;
-    let features = hexcavator_code::mips_features_in(arch, mode);
+    use turbonop_code::Flow;
+    let features = turbonop_code::mips_features_in(arch, mode);
     let big = mode.big;
     let mips64 = arch == Arch::Mips64;
     let wrap = |v: u64| if mips64 { v } else { v & 0xFFFF_FFFF };
@@ -902,17 +902,17 @@ fn mips(
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
-        let Some(i) = hexcavator_mips::decode(&code[at..], big, &features) else {
+        let Some(i) = turbonop_mips::decode(&code[at..], big, &features) else {
             break;
         };
-        at += hexcavator_mips::size(&i);
+        at += turbonop_mips::size(&i);
         let reg = |name: &str| {
             i.operand(name)
-                .and_then(hexcavator_mips::gpr_of)
+                .and_then(turbonop_mips::gpr_of)
                 .map(usize::from)
         };
-        let imm = |name: &str| i.operand(name).and_then(hexcavator_mips::Operand::imm);
-        let (flow, target) = hexcavator_code::mips_flow(&i, pc);
+        let imm = |name: &str| i.operand(name).and_then(turbonop_mips::Operand::imm);
+        let (flow, target) = turbonop_code::mips_flow(&i, pc);
         // (microMIPS's by their standard forms' names: their operands'
         // are the same.)
         let name = match i.name() {
@@ -957,7 +957,7 @@ fn mips(
                 }
                 "ADDIUPC" => {
                     // (microMIPS's from its address's word.)
-                    let base = if hexcavator_mips::is_micromips(&i) {
+                    let base = if turbonop_mips::is_micromips(&i) {
                         pc & !3
                     } else {
                         pc
@@ -1038,7 +1038,7 @@ fn mips(
         let defs = usize::from(i.inst().defs);
         // What it reads otherwise uses the addresses there.
         for op in i.operands().iter().skip(defs) {
-            if let Some(r) = hexcavator_mips::gpr_of(*op).map(usize::from)
+            if let Some(r) = turbonop_mips::gpr_of(*op).map(usize::from)
                 && building[0] != Some(r)
             {
                 flush(&mut pending, r, out);
@@ -1049,7 +1049,7 @@ fn mips(
         }
         // The registers it writes forget what they held (but what it set).
         for (k, op) in i.operands().iter().enumerate().take(defs) {
-            if let Some(r) = hexcavator_mips::gpr_of(*op).map(usize::from) {
+            if let Some(r) = turbonop_mips::gpr_of(*op).map(usize::from) {
                 flush(&mut pending, r, out);
                 known[r] = if k == 0 { set } else { None };
                 // (`$gp` is the image's, however it's set: computed, or
@@ -1080,7 +1080,7 @@ fn mips(
             forget(&mut known, &mut pending);
         }
         clobber = flow == Flow::Call;
-        if clobber && !hexcavator_mips::has_delay_slot(&i) {
+        if clobber && !turbonop_mips::has_delay_slot(&i) {
             forget(&mut known, &mut pending);
             clobber = false;
         }
@@ -1099,7 +1099,7 @@ fn arm64(code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
     for (i, w) in code.as_chunks::<4>().0.iter().enumerate() {
         let word = u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
         let pc = address.wrapping_add(i as u64 * 4);
-        let Some(inst) = hexcavator_arm64::decode(word, pc) else {
+        let Some(inst) = turbonop_arm64::decode(word, pc) else {
             return;
         };
         let name = inst.encoding_name();

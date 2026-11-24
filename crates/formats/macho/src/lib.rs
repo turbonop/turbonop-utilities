@@ -16,7 +16,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use hexcavator_core::{Endian, Error, ErrorKind, Result};
+use turbonop_core::{Endian, Error, ErrorKind, Result};
 
 pub mod consts;
 pub mod debugmap;
@@ -217,8 +217,8 @@ pub fn fat_header_size(data: &[u8]) -> u64 {
 }
 
 /// The instruction set of a CPU type.
-pub const fn arch(cputype: u32) -> hexcavator_core::Arch {
-    use hexcavator_core::Arch;
+pub const fn arch(cputype: u32) -> turbonop_core::Arch {
+    use turbonop_core::Arch;
     match cputype {
         CPU_TYPE_X86 => Arch::X86,
         CPU_TYPE_X86_64 => Arch::X64,
@@ -725,7 +725,7 @@ impl<'d> MachO<'d> {
             Endian::Little => u32::from_le_bytes(b),
         };
         let rest = lc.data.get(usize::try_from(off).ok()?..)?;
-        let end = hexcavator_core::find_nul(rest).unwrap_or(rest.len());
+        let end = turbonop_core::find_nul(rest).unwrap_or(rest.len());
         Some(&rest[..end])
     }
 

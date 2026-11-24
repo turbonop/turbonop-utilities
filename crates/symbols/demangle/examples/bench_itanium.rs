@@ -11,7 +11,7 @@ fn main() {
         .expect("usage: bench_itanium <names.txt>");
     let text = std::fs::read_to_string(path).unwrap();
     let names: Vec<&str> = text.lines().collect();
-    let mut d = hexcavator_demangle::itanium::Demangler::new();
+    let mut d = turbonop_demangle::itanium::Demangler::new();
     let mut out = String::new();
 
     best("parse", &names, |n| {
@@ -20,7 +20,7 @@ fn main() {
             1
         })
     });
-    let mut d = hexcavator_demangle::itanium::Demangler::new();
+    let mut d = turbonop_demangle::itanium::Demangler::new();
     best("demangle", &names, |n| {
         out.clear();
         if d.demangle_into(n, &mut out) {

@@ -64,7 +64,7 @@ pub struct Exports<'d> {
 
 /// The JUMP_SLOT relocation type of `machine`.
 fn jump_slot_type(machine: u16) -> Option<u32> {
-    use hexcavator_elf::consts::*;
+    use turbonop_elf::consts::*;
     Some(match machine {
         EM_X86_64 | EM_386 => 7,
         EM_AARCH64 => 1026,
@@ -95,7 +95,7 @@ fn linker_defined(name: &[u8]) -> bool {
 
 /// An image's exports, if it's an ELF shared object (or PIE) with a
 /// dynamic symbol table, or a Mach-O image with an exports trie.
-pub fn exports<'d>(image: &hexcavator_image::Image<'d>) -> Option<Exports<'d>> {
+pub fn exports<'d>(image: &turbonop_image::Image<'d>) -> Option<Exports<'d>> {
     if let Some(elf) = image.elf() {
         return elf_exports(elf);
     }
@@ -112,15 +112,15 @@ pub fn exports<'d>(image: &hexcavator_image::Image<'d>) -> Option<Exports<'d>> {
 /// name's pointer and ordinal table entries, and its name (forwarders
 /// aside: another DLL's).
 fn pe_exports<'d>(
-    image: &hexcavator_image::Image<'d>,
-    pe: &hexcavator_pe::PeFile<'d>,
+    image: &turbonop_image::Image<'d>,
+    pe: &turbonop_pe::PeFile<'d>,
 ) -> Option<Exports<'d>> {
-    use hexcavator_pe::exports::ExportTarget;
+    use turbonop_pe::exports::ExportTarget;
     let table = pe.exports()?;
     let code: Vec<(u64, u64)> = image
         .sections()
         .iter()
-        .filter(|s| s.flags.contains(hexcavator_image::SectionFlags::CODE))
+        .filter(|s| s.flags.contains(turbonop_image::SectionFlags::CODE))
         .filter_map(|s| Some((s.addr, s.end()?)))
         .collect();
     let list = table
@@ -150,15 +150,15 @@ fn pe_exports<'d>(
     })
 }
 
-fn elf_exports<'d>(elf: &hexcavator_elf::ElfFile<'d>) -> Option<Exports<'d>> {
-    use hexcavator_elf::consts::*;
+fn elf_exports<'d>(elf: &turbonop_elf::ElfFile<'d>) -> Option<Exports<'d>> {
+    use turbonop_elf::consts::*;
     if elf.is_object() {
         return None;
     }
     let sections: Vec<_> = elf.sections().collect();
     let dynsym = sections.iter().find(|s| s.kind == SHT_DYNSYM)?;
     let symbols = elf.symbols(dynsym);
-    let word: u64 = if elf.class() == hexcavator_elf::Class::Elf64 {
+    let word: u64 = if elf.class() == turbonop_elf::Class::Elf64 {
         8
     } else {
         4
@@ -258,8 +258,8 @@ fn elf_exports<'d>(elf: &hexcavator_elf::ElfFile<'d>) -> Option<Exports<'d>> {
 
 /// The string at `offset` in the dynamic string table.
 fn dynstr<'d>(
-    elf: &hexcavator_elf::ElfFile<'d>,
-    sections: &[hexcavator_elf::Section<'d>],
+    elf: &turbonop_elf::ElfFile<'d>,
+    sections: &[turbonop_elf::Section<'d>],
     offset: u64,
 ) -> Option<&'d [u8]> {
     let s = sections.iter().find(|s| s.name == b".dynstr")?;
@@ -267,9 +267,9 @@ fn dynstr<'d>(
     Some(&data[..data.iter().position(|&b| b == 0)?])
 }
 
-fn macho_exports<'d>(m: &hexcavator_macho::MachO<'d>) -> Option<Exports<'d>> {
-    use hexcavator_macho::consts::*;
-    use hexcavator_macho::fixups::EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION;
+fn macho_exports<'d>(m: &turbonop_macho::MachO<'d>) -> Option<Exports<'d>> {
+    use turbonop_macho::consts::*;
+    use turbonop_macho::fixups::EXPORT_SYMBOL_FLAGS_WEAK_DEFINITION;
     let trie = m.export_trie();
     if trie.is_empty() {
         return None;
@@ -328,9 +328,9 @@ fn macho_exports<'d>(m: &hexcavator_macho::MachO<'d>) -> Option<Exports<'d>> {
     })
 }
 
-fn read32(m: &hexcavator_macho::MachO<'_>, d: &[u8], at: usize) -> Option<u32> {
+fn read32(m: &turbonop_macho::MachO<'_>, d: &[u8], at: usize) -> Option<u32> {
     let b: [u8; 4] = d.get(at..at + 4)?.try_into().ok()?;
-    Some(if m.header().endian == hexcavator_core::Endian::Big {
+    Some(if m.header().endian == turbonop_core::Endian::Big {
         u32::from_be_bytes(b)
     } else {
         u32::from_le_bytes(b)
@@ -352,7 +352,7 @@ pub struct Imports {
 /// undefined symbols, if it loads that image (`DT_NEEDED`, a Mach-O
 /// dylib command), or any image when `name` is `None`.
 pub fn imports_of(data: &[u8], name: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
-    let image = hexcavator_image::Image::parse(data).ok()?;
+    let image = turbonop_image::Image::parse(data).ok()?;
     let base = |p: &[u8]| -> Vec<u8> {
         p.rsplit(|&c| c == b'/' || c == b'\\')
             .next()
@@ -360,7 +360,7 @@ pub fn imports_of(data: &[u8], name: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
             .to_vec()
     };
     if let Some(elf) = image.elf() {
-        use hexcavator_elf::consts::*;
+        use turbonop_elf::consts::*;
         let sections: Vec<_> = elf.sections().collect();
         if let Some(want) = name {
             let needed = elf
@@ -383,7 +383,7 @@ pub fn imports_of(data: &[u8], name: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
         );
     }
     if let Some(m) = image.macho() {
-        use hexcavator_macho::consts::*;
+        use turbonop_macho::consts::*;
         if let Some(want) = name {
             let loads = m
                 .dylibs()
@@ -405,7 +405,7 @@ pub fn imports_of(data: &[u8], name: Option<&[u8]>) -> Option<Vec<Vec<u8>>> {
     if let Some(pe) = image.pe() {
         // Its imports of the DLL (delay-loaded too), by name, or by
         // ordinal (`#n`).
-        use hexcavator_pe::imports::ImportName;
+        use turbonop_pe::imports::ImportName;
         let wanted =
             |dll: &[u8]| name.is_none_or(|want| base(dll).eq_ignore_ascii_case(&base(want)));
         let mut out = Vec::new();

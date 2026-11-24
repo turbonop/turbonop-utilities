@@ -9,13 +9,11 @@
 
 use std::sync::OnceLock as OnceCell;
 
-use hexcavator_core::{
-    Error, ErrorKind, Reader, Result, U16Le, U32Le, pod, read_at, read_slice_at,
-};
+use turbonop_core::{Error, ErrorKind, Reader, Result, U16Le, U32Le, pod, read_at, read_slice_at};
 
 use crate::hash::hash_v1;
 use crate::msf::{Msf, SN_NIL, StreamData};
-use hexcavator_codeview::types::{TypeIndex, TypeRecord, TypeSource, leaf};
+use turbonop_codeview::types::{TypeIndex, TypeRecord, TypeSource, leaf};
 
 pod! {
     #[derive(Debug)]
@@ -179,7 +177,7 @@ impl<'s> TypeStream<'s> {
     /// Parses a type stream, given its contents and its hash stream's.
     pub fn parse(stream: StreamData<'s>, hash: StreamData<'s>) -> Result<Self> {
         if stream.is_empty() {
-            let header = *hexcavator_core::from_bytes::<TpiHeader>(&[0u8; 56]).expect("56 bytes");
+            let header = *turbonop_core::from_bytes::<TpiHeader>(&[0u8; 56]).expect("56 bytes");
             return Ok(Self {
                 header,
                 records: StreamData::Borrowed(&[]),
@@ -332,7 +330,7 @@ impl<'s> TypeStream<'s> {
     /// part must end where the next begins).
     fn offsets_in_parallel(&self) -> Option<Vec<u32>> {
         const MIN_PART: usize = 4 << 20;
-        let threads = hexcavator_par::threads();
+        let threads = turbonop_par::threads();
         if threads < 2 || self.records.len() < 2 * MIN_PART {
             return None;
         }
@@ -360,7 +358,7 @@ impl<'s> TypeStream<'s> {
                 (at, count, starts.get(i + 1).map_or(usize::MAX, |s| s.1))
             })
             .collect();
-        let walked = hexcavator_par::map(&bounds, 1, |&(at, count, next)| {
+        let walked = turbonop_par::map(&bounds, 1, |&(at, count, next)| {
             let (offsets, end, whole) = walk(&self.records, at, count);
             (offsets, next == usize::MAX || (whole && end == next))
         });
@@ -648,7 +646,7 @@ mod tests {
                 let want = s.walk_offsets();
                 assert_eq!(want.len(), records.len(), "case {case}, cut {cut}");
                 assert_eq!(s.build_offsets(), &want[..], "case {case}, cut {cut}");
-                if case == 0 && cut == 0 && hexcavator_par::threads() > 1 {
+                if case == 0 && cut == 0 && turbonop_par::threads() > 1 {
                     assert!(s.offsets_in_parallel().is_some());
                 }
             }

@@ -3,7 +3,7 @@
 // compact_unwind_encoding.h; see crates/debug/unwind/LICENSE-LLVM.)
 
 //! Darwin compact unwind encodings (from `__unwind_info`, read by
-//! `hexcavator_macho::unwind_info`) applied to a frame, for x86-64 and
+//! `turbonop_macho::unwind_info`) applied to a frame, for x86-64 and
 //! ARM64. Registers are by DWARF number, as in [`crate::dwarf_cfi`], and the
 //! result is the same [`Frame`].
 //!

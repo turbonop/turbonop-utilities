@@ -6,12 +6,12 @@
 //! shared by several functions (folded functions share their unwind data)
 //! is listed once, for the first function, in `.pdata` order.
 
-use hexcavator_hash::Set as HashSet;
+use turbonop_hash::Set as HashSet;
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::consts::machine;
-use hexcavator_pe::exception::{RuntimeFunction, arm_xdata_extent};
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::consts::machine;
+use turbonop_pe::exception::{RuntimeFunction, arm_xdata_extent};
 
 use crate::Size;
 use crate::symbols::{Symbol, SymbolKind};
@@ -132,7 +132,7 @@ impl Builder<'_, '_> {
             }
             return;
         }
-        let data = info.handler_data().map(hexcavator_core::Rva::get);
+        let data = info.handler_data().map(turbonop_core::Rva::get);
         let extra = match (info.handler(), data) {
             (Some(handler), Some(data)) => {
                 let kind = (self.handler)(u64::from(handler.get()));
@@ -405,7 +405,7 @@ impl Scanned {
             .iter_mut()
             .zip(self.targets.iter().copied())
             .collect();
-        hexcavator_par::for_each_chunk_mut(&mut named, 4096, |part| {
+        turbonop_par::for_each_chunk_mut(&mut named, 4096, |part| {
             for (s, target) in part {
                 s.name = Builder::name(context, s.kind, *target);
             }

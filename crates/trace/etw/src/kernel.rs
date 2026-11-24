@@ -6,8 +6,8 @@
 //! samples, switches and stacks) and agree with the layouts in
 //! [`crate::schema`], which are tested against TDH.
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_etl::{Event, Guid};
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_etl::{Event, Guid};
 
 use crate::{guids, schema::pointer_size};
 

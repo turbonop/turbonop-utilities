@@ -23,7 +23,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::symbols::{Symbol, SymbolKind};
 use crate::xref::Xref;
-use hexcavator_xref::Edge;
+use turbonop_xref::Edge;
 
 /// What exception handling costs one function.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,7 +56,7 @@ impl Exceptions {
 }
 
 /// The exception handling of the image of graph `x`.
-pub fn exceptions(image: &hexcavator_image::Image<'_>, x: &Xref, symbols: &[Symbol]) -> Exceptions {
+pub fn exceptions(image: &turbonop_image::Image<'_>, x: &Xref, symbols: &[Symbol]) -> Exceptions {
     let mut costs: FxHashMap<u32, (u64, u64)> = FxHashMap::default();
     if image.elf().is_some() {
         elf_costs(image, x, &mut costs);
@@ -104,11 +104,7 @@ pub fn exceptions(image: &hexcavator_image::Image<'_>, x: &Xref, symbols: &[Symb
 /// ELF: each function's FDE (its entry in `.eh_frame`, to the next), and
 /// its LSDA (in `.gcc_except_table`, to the next LSDA or the section's
 /// end).
-fn elf_costs(
-    image: &hexcavator_image::Image<'_>,
-    x: &Xref,
-    costs: &mut FxHashMap<u32, (u64, u64)>,
-) {
+fn elf_costs(image: &turbonop_image::Image<'_>, x: &Xref, costs: &mut FxHashMap<u32, (u64, u64)>) {
     let sections = image.sections();
     let fdes: Vec<(u64, u64, Option<u64>)> = crate::frames::frames(image)
         .into_iter()
@@ -149,12 +145,12 @@ fn elf_costs(
 /// the next LSDA, or `__gcc_except_tab`'s end) as the compact unwind's
 /// index names it.
 fn macho_costs(
-    image: &hexcavator_image::Image<'_>,
-    m: &hexcavator_macho::MachO<'_>,
+    image: &turbonop_image::Image<'_>,
+    m: &turbonop_macho::MachO<'_>,
     x: &Xref,
     costs: &mut FxHashMap<u32, (u64, u64)>,
 ) {
-    use hexcavator_macho::unwind_info::UnwindInfo;
+    use turbonop_macho::unwind_info::UnwindInfo;
     let sections = image.sections();
     let base = m
         .segments()
@@ -211,12 +207,8 @@ fn macho_costs(
 /// and, if its opcodes don't fit in it, its `.ARM.extab` entry: the words
 /// of its opcodes are unwind information, and what follows them to the
 /// next entry (a personality routine's data: GCC's LSDA) is its handlers'.
-fn arm_costs(
-    image: &hexcavator_image::Image<'_>,
-    x: &Xref,
-    costs: &mut FxHashMap<u32, (u64, u64)>,
-) {
-    use hexcavator_elf::arm_exidx::Exidx;
+fn arm_costs(image: &turbonop_image::Image<'_>, x: &Xref, costs: &mut FxHashMap<u32, (u64, u64)>) {
+    use turbonop_elf::arm_exidx::Exidx;
     let sections = image.sections();
     let Some(exidx) = sections.iter().find(|s| s.name == b".ARM.exidx") else {
         return;
@@ -230,7 +222,7 @@ fn arm_costs(
         endian: image.endian(),
     };
     // (A table entry's words, from the image.)
-    let big = image.endian() == hexcavator_core::Endian::Big;
+    let big = image.endian() == turbonop_core::Endian::Big;
     let word = |a: u64| {
         let b: [u8; 4] = image.bytes_at(a, 4)?.try_into().ok()?;
         Some(if big {
@@ -344,7 +336,7 @@ fn throws_by_name(name: &str) -> bool {
 /// The functions of graph `x` that may throw: those that throw, call
 /// through a pointer, or call (or tail-call) an import of C++'s, and those
 /// that call them.
-fn may_throw(image: &hexcavator_image::Image<'_>, x: &Xref) -> FxHashSet<u32> {
+fn may_throw(image: &turbonop_image::Image<'_>, x: &Xref) -> FxHashSet<u32> {
     let nodes = x.graph.nodes();
     let mut out: FxHashSet<u32> = FxHashSet::default();
     let mut code = Vec::new();
@@ -422,8 +414,8 @@ fn reaches_throw(x: &Xref, f: u32, throws: &FxHashSet<u32>) -> bool {
 /// pointer (x86's `call` of a register or memory, an import's address
 /// table entry among them; ARM64's `blr` and its authenticated forms), or
 /// an address no function of `x` starts at (an unresolved symbol's).
-fn calls_unknown(image: &hexcavator_image::Image<'_>, x: &Xref, start: u64, end: u64) -> bool {
-    use hexcavator_core::Arch;
+fn calls_unknown(image: &turbonop_image::Image<'_>, x: &Xref, start: u64, end: u64) -> bool {
+    use turbonop_core::Arch;
     let arch = x.arch;
     let known = |to: u64| x.graph.node_starting_at(to).is_some();
     let Some(code) = image.bytes_at(start, end - start) else {
@@ -432,19 +424,19 @@ fn calls_unknown(image: &hexcavator_image::Image<'_>, x: &Xref, start: u64, end:
     match arch {
         Arch::X86 | Arch::X64 => {
             let mode = if arch == Arch::X86 {
-                hexcavator_x86::Mode::Bits32
+                turbonop_x86::Mode::Bits32
             } else {
-                hexcavator_x86::Mode::Bits64
+                turbonop_x86::Mode::Bits64
             };
             let mut at = 0usize;
             while at < code.len() {
-                let Ok(inst) = hexcavator_x86::decode(&code[at..], mode, start + at as u64) else {
+                let Ok(inst) = turbonop_x86::decode(&code[at..], mode, start + at as u64) else {
                     return false;
                 };
-                if inst.mnemonic() == hexcavator_x86::Mnemonic::Call
+                if inst.mnemonic() == turbonop_x86::Mnemonic::Call
                     && inst.operands().iter().any(|o| match o {
-                        hexcavator_x86::Operand::Reg(_) | hexcavator_x86::Operand::Mem(_) => true,
-                        hexcavator_x86::Operand::Rel(to) => !known(*to),
+                        turbonop_x86::Operand::Reg(_) | turbonop_x86::Operand::Mem(_) => true,
+                        turbonop_x86::Operand::Rel(to) => !known(*to),
                         _ => false,
                     })
                 {
@@ -471,11 +463,10 @@ fn calls_unknown(image: &hexcavator_image::Image<'_>, x: &Xref, start: u64, end:
             let mut at = 0usize;
             while at < code.len() {
                 let pc = start + at as u64;
-                let Some(i) = hexcavator_code::decode_arm32(&code[at..], pc, true) else {
+                let Some(i) = turbonop_code::decode_arm32(&code[at..], pc, true) else {
                     return false;
                 };
-                if i.flow == hexcavator_code::Flow::Call && i.target.is_none_or(|t| !known(t & !1))
-                {
+                if i.flow == turbonop_code::Flow::Call && i.target.is_none_or(|t| !known(t & !1)) {
                     return true;
                 }
                 at += usize::from(i.len).max(2);

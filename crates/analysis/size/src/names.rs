@@ -7,9 +7,9 @@
 //! the debug information's, so the name is the recorded name plus the
 //! signature.
 
-use hexcavator_hash::Map as HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_debuginfo::{BasicType, DebugInfo, PointerKind, Qualifiers, TypeRef, TypeShape};
+use turbonop_debuginfo::{BasicType, DebugInfo, PointerKind, Qualifiers, TypeRef, TypeShape};
 
 /// Bounds the nesting of type references followed (types are untrusted).
 const MAX_DEPTH: u32 = 64;

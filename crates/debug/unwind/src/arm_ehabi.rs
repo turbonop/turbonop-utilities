@@ -15,7 +15,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 use crate::dwarf_cfi::{Frame, Registers};
 use crate::{Error, Memory, Result};
@@ -25,9 +25,9 @@ const LR: u16 = 14;
 const PC: u16 = 15;
 const D0: u16 = 256;
 
-pub use hexcavator_elf::arm_exidx::{Entry, Model};
+pub use turbonop_elf::arm_exidx::{Entry, Model};
 
-/// An `.ARM.exidx` section (see [`hexcavator_elf::arm_exidx::Exidx`]),
+/// An `.ARM.exidx` section (see [`turbonop_elf::arm_exidx::Exidx`]),
 /// its table entries read from [`Memory`].
 #[derive(Clone, Copy, Debug)]
 pub struct Exidx<'d> {
@@ -38,8 +38,8 @@ pub struct Exidx<'d> {
 }
 
 impl Exidx<'_> {
-    fn index(&self) -> hexcavator_elf::arm_exidx::Exidx<'_> {
-        hexcavator_elf::arm_exidx::Exidx {
+    fn index(&self) -> turbonop_elf::arm_exidx::Exidx<'_> {
+        turbonop_elf::arm_exidx::Exidx {
             data: self.data,
             address: self.address,
             endian: self.endian,

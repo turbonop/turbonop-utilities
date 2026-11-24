@@ -1,5 +1,5 @@
 @echo off
-rem Writes hexcavator-powerpc's tables (crates\isa\powerpc\src\tables.rs)
+rem Writes turbonop-powerpc's tables (crates\isa\powerpc\src\tables.rs)
 rem from LLVM's TableGen records of its PowerPC target, and the decoder's
 rem golden file (crates\isa\powerpc\tests\golden.txt) from llvm-objdump's
 rem text for encodings of each instruction. LLVM_BIN names an LLVM bin

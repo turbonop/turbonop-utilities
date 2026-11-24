@@ -7,8 +7,8 @@
 
 use std::path::Path;
 
-use hexcavator_wasm_isa::code::{self, BlockType, Catch, Imm, Instruction, ValType, natural_align};
-use hexcavator_wasm_isa::ops::Kind;
+use turbonop_wasm_isa::code::{self, BlockType, Catch, Imm, Instruction, ValType, natural_align};
+use turbonop_wasm_isa::ops::Kind;
 
 fn root() -> &'static Path {
     Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."))

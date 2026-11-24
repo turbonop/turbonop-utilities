@@ -7,8 +7,8 @@
 
 use std::io::{self, Write};
 
-use hexcavator_pe::consts::section_characteristics as scn;
-use hexcavator_pe::{CoffSymbol, PeFile, SymbolTable};
+use turbonop_pe::consts::section_characteristics as scn;
+use turbonop_pe::{CoffSymbol, PeFile, SymbolTable};
 
 /// `IMAGE_SYM_CLASS_*`.
 mod class {

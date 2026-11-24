@@ -1,11 +1,11 @@
-//! Compares hexcavator-arm64 with LLVM's disassembler (llvm-objdump, every
+//! Compares turbonop-arm64 with LLVM's disassembler (llvm-objdump, every
 //! feature on) over a range of words, up to all 2^32: whether each word is
 //! an instruction at all, and its mnemonic. Prints the differences by our
 //! encoding (or LLVM's mnemonic, for words only it decodes), with examples:
 //! a classification to review, not a verdict (LLVM is an oracle, not the
 //! specification).
 //!
-//!     cargo run --release -p hexcavator-arm64 --example llvm_diff -- \
+//!     cargo run --release -p turbonop-arm64 --example llvm_diff -- \
 //!         <llvm-objdump> [start] [count] [stride] [threads]
 //!
 //! (count 0x100000000 and stride 1: every word.) Words go to llvm-objdump
@@ -78,8 +78,8 @@ fn note(classes: &mut Classes, class: String, example: String) {
 /// Our mnemonic for an instruction (lower case), and whether we mark it
 /// CONSTRAINED UNPREDICTABLE.
 fn ours(word: u32) -> Option<(String, bool)> {
-    let inst = hexcavator_arm64::decode(word, 0)?;
-    let text = hexcavator_arm64::format(&inst);
+    let inst = turbonop_arm64::decode(word, 0)?;
+    let text = turbonop_arm64::format(&inst);
     let m = text
         .trim_start_matches('?')
         .split_whitespace()
@@ -157,7 +157,7 @@ fn run_chunk(
             (None, None) => same += 1,
             (Some((a, _)), Some(b)) if same_mnemonic(a, b) => same += 1,
             (Some((a, marked)), None) => {
-                let enc = hexcavator_arm64::decode(word, 0).map_or("?", |i| i.encoding_name());
+                let enc = turbonop_arm64::decode(word, 0).map_or("?", |i| i.encoding_name());
                 let how = if *marked {
                     "only ours (marked unpredictable)"
                 } else {
@@ -175,7 +175,7 @@ fn run_chunk(
                 format!("{word:08x} {}", rest.trim()),
             ),
             (Some((a, _)), Some(b)) => {
-                let enc = hexcavator_arm64::decode(word, 0).map_or("?", |i| i.encoding_name());
+                let enc = turbonop_arm64::decode(word, 0).map_or("?", |i| i.encoding_name());
                 note(
                     &mut local,
                     format!("mnemonic: {enc}: {a} vs {b}"),
@@ -216,7 +216,7 @@ fn main() {
         4,
         std::thread::available_parallelism().map_or(8, |n| n.get() as u64),
     ) as usize;
-    let dir = std::env::temp_dir().join(format!("hexcavator-llvm-diff-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-llvm-diff-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a scratch directory");
     let classes = Mutex::new(Classes::new());
     let agree = AtomicU64::new(0);

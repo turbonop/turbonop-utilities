@@ -1,9 +1,9 @@
-//! Checks hexcavator-x86 against `tests/data/golden.txt`: a sample of every
+//! Checks turbonop-x86 against `tests/data/golden.txt`: a sample of every
 //! opcode space, as disassembled by dumpbin (regenerate it with the
 //! `generate_golden` test in `dumpbin.rs`). Unlike the dumpbin tests, this
 //! runs everywhere.
 
-use hexcavator_x86::{Mode, decode, format};
+use turbonop_x86::{Mode, decode, format};
 
 #[test]
 fn golden() {

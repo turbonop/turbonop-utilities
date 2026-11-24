@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-mips"
+name = "turbonop-mips"
 description = "MIPS instruction decoder (MIPS I to MIPS64 R6; MSA, DSP, Cavium), from LLVM's TableGen records"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-tablegen.workspace = true
+turbonop-tablegen.workspace = true
 
 [lints]
 workspace = true

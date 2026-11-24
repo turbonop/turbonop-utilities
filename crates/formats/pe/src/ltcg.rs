@@ -48,7 +48,7 @@
 //! literals' addresses, and calls `area` virtually.)
 
 use alloc::vec::Vec;
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 /// The class ID of an LTCG object, `{0CB3FE38-D9A5-4DAB-AC9B-D6B6222653C2}`,
 /// as stored.

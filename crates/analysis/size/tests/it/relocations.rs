@@ -1,10 +1,10 @@
-//! An image's relocations (hexcavator_size::relocations): ELF's (RELA and
+//! An image's relocations (turbonop_size::relocations): ELF's (RELA and
 //! RELR), PE's base relocations, Mach-O's fixups (chained, and opcodes),
 //! each with its type, where it is, what it points to, and its share of
 //! its table; and the pointer tables they make.
 
-use hexcavator_image::Image;
-use hexcavator_size::relocations::{
+use turbonop_image::Image;
+use turbonop_size::relocations::{
     containing, image_symbols, merge_symbols, pointer_tables, relocations,
 };
 
@@ -37,7 +37,7 @@ fn elf_rela_and_relr() {
     assert!(r.list.windows(2).all(|w| w[0].addr <= w[1].addr));
     assert_eq!(r.share(&r.list[0]), 24.0);
     // (Where they are, from the first: the links lay out a little apart.)
-    let apart = |r: &hexcavator_size::relocations::Relocations| -> Vec<u64> {
+    let apart = |r: &turbonop_size::relocations::Relocations| -> Vec<u64> {
         r.list.iter().map(|x| x.addr - r.list[0].addr).collect()
     };
     let rela = apart(&r);

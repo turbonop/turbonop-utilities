@@ -7,7 +7,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use hexcavator_archive::Archive;
+use turbonop_archive::Archive;
 
 fn coff(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -88,7 +88,7 @@ fn libraries_read_as_lib_and_dumpbin_say() {
 
 #[test]
 fn import_library_members_name_their_dll() {
-    use hexcavator_pe::import_object::ImportObject;
+    use turbonop_pe::import_object::ImportObject;
     let data = std::fs::read(coff("imports.lib")).unwrap();
     let ar = Archive::parse(&data).unwrap();
     let mut imports = 0;
@@ -104,7 +104,7 @@ fn import_library_members_name_their_dll() {
             imports += 1;
         } else {
             // (The import descriptor and thunk-data members are objects.)
-            hexcavator_pe::PeFile::parse(m.data).unwrap();
+            turbonop_pe::PeFile::parse(m.data).unwrap();
         }
     }
     // ByName, ByOrdinal, Renamed, Decorated, Data.

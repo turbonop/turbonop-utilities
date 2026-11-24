@@ -5,7 +5,7 @@
 
 #![allow(clippy::cast_possible_truncation, reason = "small test files")]
 
-use hexcavator_image::{Arch, Format, Image, Kind, SectionFlags};
+use turbonop_image::{Arch, Format, Image, Kind, SectionFlags};
 
 /// A section as `llvm-readobj` lists it.
 #[derive(Debug, Default)]
@@ -146,7 +146,7 @@ fn elf_sections_are_readobjs() {
         // An object's sections where a linker would lay them out: its
         // allocated ones in order, from a page in, each at its alignment
         // (its listing's addresses all 0); others at 0.
-        let mut next = hexcavator_elf::OBJECT_BASE;
+        let mut next = turbonop_elf::OBJECT_BASE;
         for (s, l) in sections.iter().zip(&listed) {
             let address = if !object {
                 l.address
@@ -238,7 +238,7 @@ fn macho_sections_are_readobjs() {
         // Linked images name their dSYM by UUID.
         if !object {
             assert!(
-                matches!(image.debug_ids()[..], [hexcavator_image::DebugId::Uuid(_)]),
+                matches!(image.debug_ids()[..], [turbonop_image::DebugId::Uuid(_)]),
                 "{name}"
             );
         }
@@ -259,7 +259,7 @@ fn wasm_sections_are_readobjs() {
     assert!(all.len() > listed.len());
     let (sections, segments) = all.split_at(listed.len());
     for s in segments {
-        assert!(s.addr >= hexcavator_image::WASM_MEMORY, "{s:?}");
+        assert!(s.addr >= turbonop_image::WASM_MEMORY, "{s:?}");
         assert!(s.flags.contains(SectionFlags::DATA), "{s:?}");
     }
     for (s, l) in sections.iter().zip(&listed) {
@@ -294,7 +294,7 @@ fn elf_debug_identities() {
     let (data, _) = load("elf", "program-x86_64-linux-gnu");
     let image = Image::parse(&data).unwrap();
     let ids = image.debug_ids();
-    assert!(matches!(ids[..], [hexcavator_image::DebugId::BuildId(id)] if id.len() == 20));
+    assert!(matches!(ids[..], [turbonop_image::DebugId::BuildId(id)] if id.len() == 20));
     // A stripped program links its debug file by name and CRC (and keeps
     // its build ID).
     let read = |name: &str| {
@@ -307,9 +307,9 @@ fn elf_debug_identities() {
     let linked = read("program-linked");
     let image = Image::parse(&linked).unwrap();
     let ids = image.debug_ids();
-    assert!(matches!(ids[0], hexcavator_image::DebugId::BuildId(_)));
+    assert!(matches!(ids[0], turbonop_image::DebugId::BuildId(_)));
     let link = ids.iter().find_map(|id| match *id {
-        hexcavator_image::DebugId::DebugLink { path, crc } => Some((path, crc)),
+        turbonop_image::DebugId::DebugLink { path, crc } => Some((path, crc)),
         _ => None,
     });
     let (path, crc) = link.expect("a debug link");
@@ -334,7 +334,7 @@ fn crc32(data: &[u8]) -> u32 {
 }
 
 /// A universal file parses as the image of the architecture chosen
-/// (`hexcavator_macho::set_preferred_arch`), else the host's, else the
+/// (`turbonop_macho::set_preferred_arch`), else the host's, else the
 /// first; one without the architecture chosen is refused.
 #[test]
 fn universal_files_parse_as_the_image_chosen() {
@@ -345,7 +345,7 @@ fn universal_files_parse_as_the_image_chosen() {
     .unwrap();
     let arch_of = |i: &Image<'_>| {
         let h = i.macho().unwrap().header();
-        hexcavator_macho::arch_name(h.cputype, h.cpusubtype)
+        turbonop_macho::arch_name(h.cputype, h.cpusubtype)
     };
     // The default: the host's (both of the fixture's are x86_64 and arm64).
     let image = Image::parse(&data).unwrap();
@@ -356,16 +356,16 @@ fn universal_files_parse_as_the_image_chosen() {
     };
     assert_eq!(arch_of(&image), host);
     for want in ["arm64", "x86_64"] {
-        assert!(hexcavator_macho::set_preferred_arch(Some(want)));
+        assert!(turbonop_macho::set_preferred_arch(Some(want)));
         assert_eq!(arch_of(&Image::parse(&data).unwrap()), want);
     }
-    assert!(hexcavator_macho::set_preferred_arch(Some("i386")));
+    assert!(turbonop_macho::set_preferred_arch(Some("i386")));
     let e = Image::parse(&data).unwrap_err();
-    assert_eq!(e.kind, hexcavator_core::ErrorKind::Unsupported);
-    assert!(!hexcavator_macho::set_preferred_arch(Some("no-such-arch")));
-    assert!(hexcavator_macho::set_preferred_arch(None));
+    assert_eq!(e.kind, turbonop_core::ErrorKind::Unsupported);
+    assert!(!turbonop_macho::set_preferred_arch(Some("no-such-arch")));
+    assert!(turbonop_macho::set_preferred_arch(None));
     // Each of its images parses.
-    for a in hexcavator_macho::fat_archs(&data).unwrap() {
+    for a in turbonop_macho::fat_archs(&data).unwrap() {
         let at = a.offset as usize;
         let image = Image::parse(&data[at..at + a.size as usize]).unwrap();
         assert_eq!(image.format(), Format::MachO);
@@ -557,7 +557,7 @@ fn elf_pointer_slots() {
         let dynamic = elf.dynamic();
         let relr = dynamic
             .iter()
-            .any(|d| d.tag == hexcavator_elf::consts::DT_RELR);
+            .any(|d| d.tag == turbonop_elf::consts::DT_RELR);
         assert_eq!(relr, name == "relr.so");
     }
     // The same pointers, packed or not: table (a b c a _ b c), handlers
@@ -601,7 +601,7 @@ fn pointer_slots_of_other_files() {
     let end = image
         .sections()
         .iter()
-        .filter_map(hexcavator_image::Section::end)
+        .filter_map(turbonop_image::Section::end)
         .max()
         .unwrap();
     // Its base relocations' slots hold its own addresses; its import
@@ -627,7 +627,7 @@ fn pointer_slots_of_other_files() {
 /// (by symbol), Mach-O's binds (by dylib).
 #[test]
 fn import_slots_of_every_format() {
-    use hexcavator_image::Imported;
+    use turbonop_image::Imported;
     let read = |p: &str| {
         std::fs::read(format!(
             "{}/../../../testdata/{p}",
@@ -692,10 +692,10 @@ fn android_packed_relocations() {
     }
     // Damaged: an APS2 stream cut anywhere, or overwritten.
     let (clean, _) = load("elf", "relr-android.so");
-    let elf = hexcavator_elf::ElfFile::parse(&clean).unwrap();
+    let elf = turbonop_elf::ElfFile::parse(&clean).unwrap();
     let s = elf
         .sections()
-        .find(|s| s.kind == hexcavator_elf::consts::SHT_ANDROID_RELA)
+        .find(|s| s.kind == turbonop_elf::consts::SHT_ANDROID_RELA)
         .unwrap();
     let mut d = clean.clone();
     for at in s.offset as usize..(s.offset + s.size) as usize {

@@ -9,7 +9,7 @@
 #![no_std]
 #![warn(missing_docs)]
 
-use hexcavator_core::{Error, ErrorKind, Result, U16Le, U32Le, pod, read_at, read_slice_at};
+use turbonop_core::{Error, ErrorKind, Result, U16Le, U32Le, pod, read_at, read_slice_at};
 
 pod! {
     /// The original DOS 2.0 header: the first 28 bytes of every MZ file.

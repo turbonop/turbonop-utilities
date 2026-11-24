@@ -6,11 +6,11 @@
 
 use std::io::{self, Write};
 
-use hexcavator_core::Rva;
-use hexcavator_pe::consts::{machine, section_characteristics as scn};
-use hexcavator_pe::raw::SectionHeader;
-use hexcavator_pe::{CodeKind, FileKind, PeFile};
-use hexcavator_x86::{Mode, decode, format};
+use turbonop_core::Rva;
+use turbonop_pe::consts::{machine, section_characteristics as scn};
+use turbonop_pe::raw::SectionHeader;
+use turbonop_pe::{CodeKind, FileKind, PeFile};
+use turbonop_x86::{Mode, decode, format};
 
 use crate::symbols::SymbolMap;
 
@@ -124,10 +124,10 @@ pub fn listing(
     bytes: &[u8],
     symbols: Option<&SymbolMap>,
 ) -> io::Result<()> {
-    let none = hexcavator_x86::format::NoSymbols;
+    let none = turbonop_x86::format::NoSymbols;
     let width = if mode == Mode::Bits64 { 16 } else { 8 };
     in_parts(out, bytes.len(), |offset, out| {
-        let names: &dyn hexcavator_x86::format::Symbols = match symbols {
+        let names: &dyn turbonop_x86::format::Symbols = match symbols {
             Some(s) => s,
             None => &none,
         };
@@ -174,7 +174,7 @@ fn in_parts(
     line: impl Fn(usize, &mut Vec<u8>) -> Option<usize> + Sync,
 ) -> io::Result<()> {
     const PART: usize = 256 * 1024;
-    let threads = hexcavator_par::threads();
+    let threads = turbonop_par::threads();
     if threads < 2 || len < 2 * PART {
         let mut buf = Vec::new();
         sweep(&mut buf, 0, len, len, &line, None);
@@ -185,7 +185,7 @@ fn in_parts(
     // some 20 times the code.)
     let mut at = 0usize;
     for window in starts.chunks(threads * 2) {
-        let parts = hexcavator_par::map(window, 1, |&from| {
+        let parts = turbonop_par::map(window, 1, |&from| {
             let to = (from + PART).min(len);
             let mut buf = Vec::new();
             let mut lines = Vec::new();
@@ -244,7 +244,7 @@ fn sweep(
     offset
 }
 
-impl hexcavator_arm64::Symbols for SymbolMap {
+impl turbonop_arm64::Symbols for SymbolMap {
     fn name_at(&self, address: u64) -> Option<&str> {
         self.public_at(address)
     }
@@ -273,9 +273,9 @@ fn arm64_listing(
         }
         let word = u32::from_le_bytes(bytes[offset..offset + 4].try_into().ok()?);
         let text =
-            hexcavator_arm64::decode(word, here).map_or_else(String::new, |inst| match symbols {
-                Some(s) => hexcavator_arm64::format_with(&inst, s),
-                None => hexcavator_arm64::format(&inst),
+            turbonop_arm64::decode(word, here).map_or_else(String::new, |inst| match symbols {
+                Some(s) => turbonop_arm64::format_with(&inst, s),
+                None => turbonop_arm64::format(&inst),
             });
         let line = format!("  {here:016X}: {word:08X}  {text}");
         let _ = writeln!(out, "{}", line.trim_end());

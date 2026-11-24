@@ -3,7 +3,7 @@
 //! the virtualization and microcontroller ASEs, and Cavium's Octeon
 //! instructions) and in microMIPS's (its 16- and 32-bit instructions, and
 //! Release 6's), from LLVM's TableGen records (see `tools/mips/extract.py`,
-//! which writes `tables.rs` and `micromips.rs`, and `hexcavator-tablegen`,
+//! which writes `tables.rs` and `micromips.rs`, and `turbonop-tablegen`,
 //! which decodes by them). MIPS16 code, which LLVM doesn't decode, isn't.
 //!
 //! [`decode`] finds the instruction a word is, big- or little-endian, as
@@ -23,7 +23,7 @@ mod tables;
 
 pub mod format;
 
-pub use hexcavator_tablegen::{Inst, Instruction, Op, Operand, Reg};
+pub use turbonop_tablegen::{Inst, Instruction, Op, Operand, Reg};
 
 /// The register files (as the tables number them).
 pub mod files {
@@ -68,11 +68,11 @@ pub fn gpr_of(o: Operand) -> Option<u8> {
 }
 
 /// The most operands an instruction has.
-pub const MAX_OPERANDS: usize = hexcavator_tablegen::MAX_OPERANDS;
+pub const MAX_OPERANDS: usize = turbonop_tablegen::MAX_OPERANDS;
 
 /// The features code may use (an ISA level, its ASEs).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Features(hexcavator_tablegen::Features);
+pub struct Features(turbonop_tablegen::Features);
 
 /// ELF's `e_flags`: the ISA level, the machine, and the ASEs.
 const EF_MIPS_ARCH: u32 = 0xF000_0000;
@@ -85,7 +85,7 @@ impl Features {
     /// The features named (as LLVM names them: `mips32r2`, `msa`,
     /// `cnmips`, ...), and what they imply.
     pub fn of(names: &[&str]) -> Self {
-        Self(hexcavator_tablegen::Features::of(&tables::TARGET, names))
+        Self(turbonop_tablegen::Features::of(&tables::TARGET, names))
     }
 
     /// The features llvm-objdump takes an ELF image's code to have: its
@@ -151,7 +151,7 @@ pub fn decode(bytes: &[u8], big: bool, features: &Features) -> Option<Instructio
     let mut first = 0u8;
     loop {
         let i =
-            hexcavator_tablegen::decode_from(t, u64::from(w), 4, &features.0, first, false, false)?;
+            turbonop_tablegen::decode_from(t, u64::from(w), 4, &features.0, first, false, false)?;
         match by_hand(&i, w) {
             Some(Some(j)) => return Some(j),
             Some(None) => first = space_of(&i) + 1,
@@ -167,7 +167,7 @@ fn by_hand(i: &Instruction, w: u32) -> Option<Option<Instruction>> {
     let t = &tables::TARGET;
     let rs = (w >> 21) & 31;
     let rt = (w >> 16) & 31;
-    let as_ = |name: &str| hexcavator_tablegen::decode_as(t, name, u64::from(w), false, false);
+    let as_ = |name: &str| turbonop_tablegen::decode_as(t, name, u64::from(w), false, false);
     // Release 6's compact branches: each group's encoding, its fields
     // compared (LLVM's Decode*GroupBranch).
     let group = match i.name() {
@@ -249,7 +249,7 @@ fn by_hand(i: &Instruction, w: u32) -> Option<Option<Instruction>> {
         "DINSU" => ("DINS", lsb + 32, msbd + 33 - (lsb + 32)),
         _ => return None,
     };
-    Some(hexcavator_tablegen::build(
+    Some(turbonop_tablegen::build(
         t,
         name,
         4,
@@ -278,13 +278,13 @@ pub fn decode_micromips(bytes: &[u8], big: bool, features: &Features) -> Option<
     };
     let t = &micromips::TARGET;
     let high = half(0)?;
-    if let Some(i) = hexcavator_tablegen::decode_from(t, high, 2, &features.0, 0, false, false) {
+    if let Some(i) = turbonop_tablegen::decode_from(t, high, 2, &features.0, 0, false, false) {
         return Some(i);
     }
     let w = high << 16 | half(2)?;
     let mut first = 0u8;
     loop {
-        let i = hexcavator_tablegen::decode_from(t, w, 4, &features.0, first, false, false)?;
+        let i = turbonop_tablegen::decode_from(t, w, 4, &features.0, first, false, false)?;
         match micromips_by_hand(&i, w) {
             Some(Some(j)) => return Some(j),
             Some(None) => first = space_of(&i) + 1,
@@ -305,7 +305,7 @@ fn micromips_by_hand(i: &Instruction, w: u64) -> Option<Option<Instruction>> {
     let (half, word) = (Operand::Imm(offset * 2 + 4), Operand::Imm(offset * 4 + 4));
     let (rt_, rs_) = (Operand::Reg(r(rt)), Operand::Reg(r(rs)));
     let build =
-        |name: &str, ops: &[Operand]| Some(Some(hexcavator_tablegen::build(t, name, 4, ops)?));
+        |name: &str, ops: &[Operand]| Some(Some(turbonop_tablegen::build(t, name, 4, ops)?));
     let name = i.name();
     let either = |a: &str, b: &str, c: &str| name == a || name == b || name == c;
     if either("BOVC_MMR6", "BEQC_MMR6", "BEQZALC_MMR6")
@@ -377,7 +377,7 @@ pub fn has_delay_slot(i: &Instruction) -> bool {
 /// it), a jump's region (its delay slot's top bits) and its 28 bits (a
 /// microMIPS jump's 27).
 pub fn branch_target(i: &Instruction, address: u64) -> Option<u64> {
-    use hexcavator_tablegen::Decode;
+    use turbonop_tablegen::Decode;
     let t = i.target();
     let micro = is_micromips(i);
     i.inst().ops.iter().enumerate().find_map(|(k, op)| {
@@ -387,7 +387,7 @@ pub fn branch_target(i: &Instruction, address: u64) -> Option<u64> {
             // (A microMIPS branch's offset LLVM has from the branch, but
             // the instruction after it is what it is from: but those
             // whose offsets LLVM gives from 4 on, from the next 32 bits.)
-            hexcavator_tablegen::Print::Branch => {
+            turbonop_tablegen::Print::Branch => {
                 let next = if micro && !matches!(kind.decode, Decode::BranchPlus4 { .. }) {
                     size(i) as u64
                 } else {
@@ -395,7 +395,7 @@ pub fn branch_target(i: &Instruction, address: u64) -> Option<u64> {
                 };
                 Some(address.wrapping_add_signed(v).wrapping_add(next))
             }
-            hexcavator_tablegen::Print::AbsBranch => {
+            turbonop_tablegen::Print::AbsBranch => {
                 let bits = match kind.decode {
                     Decode::UImmLsl { bits, arg } => bits + u32::try_from(arg).ok()?,
                     _ => 28,

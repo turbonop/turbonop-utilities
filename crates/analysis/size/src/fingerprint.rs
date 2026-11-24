@@ -1,14 +1,14 @@
 //! Fingerprints of a PE image's functions and data (see
-//! `hexcavator_fingerprint`), over its cross-reference graph's nodes.
+//! `turbonop_fingerprint`), over its cross-reference graph's nodes.
 //!
 //! Code is hashed from its instructions; data from its bytes with its
 //! pointers (the base relocations in it) masked; imports by name. The
 //! classes compare across images: two builds' functions with the same
 //! class do the same thing and refer to things that are the same.
 
-use hexcavator_fingerprint::{Item, Resolve, code, data, named, refine};
-use hexcavator_image::Image;
-use hexcavator_xref::Arch;
+use turbonop_fingerprint::{Item, Resolve, code, data, named, refine};
+use turbonop_image::Image;
+use turbonop_xref::Arch;
 
 use crate::Model;
 use crate::symbols::SymbolKind;
@@ -18,7 +18,7 @@ use crate::xref::Xref;
 /// do; a chain of references this long is far past what images have).
 const ROUNDS: usize = 64;
 
-struct Nodes<'a>(&'a hexcavator_xref::Graph);
+struct Nodes<'a>(&'a turbonop_xref::Graph);
 
 impl Resolve for Nodes<'_> {
     fn node_at(&self, address: u64) -> Option<u32> {
@@ -151,7 +151,7 @@ pub fn build(image: &Image<'_>, model: &Model, x: &Xref, mode: Mode) -> Fingerpr
         .collect();
     // (Each node's fingerprint is its own: on every core.)
     let ids: Vec<u32> = x.ids().collect();
-    let items: Vec<Item> = hexcavator_par::map(&ids, 256, |&n| {
+    let items: Vec<Item> = turbonop_par::map(&ids, 256, |&n| {
         let node = graph.nodes()[n as usize];
         // An import address table slot is the function it imports.
         if let Some(import) = slots.get(&node.start) {
@@ -227,7 +227,7 @@ pub fn build(image: &Image<'_>, model: &Model, x: &Xref, mode: Mode) -> Fingerpr
                 graph
                     .references(n)
                     .iter()
-                    .filter(|r| r.1 == hexcavator_xref::Edge::Attached)
+                    .filter(|r| r.1 == turbonop_xref::Edge::Attached)
                     .map(|r| r.0),
             );
             apart(item)
@@ -243,7 +243,7 @@ pub fn build(image: &Image<'_>, model: &Model, x: &Xref, mode: Mode) -> Fingerpr
 
 /// A family of near-identical functions: instantiations of one template
 /// (one name, its template arguments aside) whose code has one shape
-/// ([`hexcavator_fingerprint::shape`]) but isn't identical: they differ
+/// ([`turbonop_fingerprint::shape`]) but isn't identical: they differ
 /// only in constants, the sizes of what they work on, or what they call,
 /// which a shared, non-template core could take as arguments.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -314,7 +314,7 @@ pub fn near_identical(
                             if code.len() as u64 != node.end - node.start {
                                 return None;
                             }
-                            hexcavator_fingerprint::shape(x.arch, x.mode, code, node.start)
+                            turbonop_fingerprint::shape(x.arch, x.mode, code, node.start)
                         })
                         .collect::<Vec<_>>()
                 })

@@ -56,7 +56,7 @@ fn is_coff_object(p: &Path, d: &[u8]) -> bool {
     p.extension().is_some_and(|e| e == "obj") && !starts(d, b"MZ")
 }
 fn is_ltcg(_: &Path, d: &[u8]) -> bool {
-    hexcavator_pe::ltcg::LtcgObject::is_ltcg(d)
+    turbonop_pe::ltcg::LtcgObject::is_ltcg(d)
 }
 fn is_archive(_: &Path, d: &[u8]) -> bool {
     starts(d, b"!<arch>\n") || starts(d, b"!<thin>\n")
@@ -79,10 +79,10 @@ fn is_wasm(_: &Path, d: &[u8]) -> bool {
     starts(d, b"\0asm")
 }
 fn is_legacy(_: &Path, d: &[u8]) -> bool {
-    hexcavator_mz::MzFile::parse(d)
+    turbonop_mz::MzFile::parse(d)
         .ok()
         .and_then(|m| m.new_header())
-        .is_some_and(|h| h.kind != hexcavator_mz::NewHeaderKind::Pe)
+        .is_some_and(|h| h.kind != turbonop_mz::NewHeaderKind::Pe)
 }
 fn is_split_dwarf(p: &Path, d: &[u8]) -> bool {
     is_elf(p, d) && p.extension().is_some_and(|e| e == "dwo" || e == "dwp")
@@ -119,7 +119,7 @@ fn is_der(p: &Path, d: &[u8]) -> bool {
 /// DER from a signature: as a certificate, a CMS SignedData (and its
 /// signers' checks), and a code requirement.
 fn der(data: &[u8], _: &Scratch) {
-    use hexcavator_signature::{cms, verify, x509};
+    use turbonop_signature::{cms, verify, x509};
     if let Ok(c) = x509::Certificate::from_der(data) {
         let _ = verify::CertInfo::of(&c);
         let _ = (
@@ -140,7 +140,7 @@ fn der(data: &[u8], _: &Scratch) {
                 &mut signer,
                 at,
                 what,
-                hexcavator_signature::oid::EKU_CODE_SIGNING,
+                turbonop_signature::oid::EKU_CODE_SIGNING,
             );
         }
         if let Some(c) = &sd.content {
@@ -148,15 +148,15 @@ fn der(data: &[u8], _: &Scratch) {
             let _ = cms::TstInfo::parse(&c.digested());
         }
     }
-    let _ = hexcavator_signature::requirement::decode(data);
-    let _ = hexcavator_signature::requirement::decode_set(data);
+    let _ = turbonop_signature::requirement::decode(data);
+    let _ = turbonop_signature::requirement::decode_set(data);
 }
 
 const SIZE_SOURCES: &str = "sections,segments,symbols,rawsymbols,fullsymbols,compileunits,armembers,inputfiles,inlines,archs";
 
 /// The format-independent view: everything it reads.
 fn image(data: &[u8]) {
-    let Ok(image) = hexcavator_image::Image::parse(data) else {
+    let Ok(image) = turbonop_image::Image::parse(data) else {
         return;
     };
     let _ = (
@@ -197,7 +197,7 @@ fn pe(data: &[u8], s: &Scratch) {
 fn coff(data: &[u8], s: &Scratch) {
     image(data);
     // (Its CodeView, as the PDB a linker would write of it.)
-    if let Some(pdb) = hexcavator_debuginfo::coff_object::pdb_of(data) {
+    if let Some(pdb) = turbonop_debuginfo::coff_object::pdb_of(data) {
         debug_info(&pdb);
     }
     let f = s.file("input-coff.bin", data);
@@ -207,7 +207,7 @@ fn coff(data: &[u8], s: &Scratch) {
 }
 
 fn ltcg(data: &[u8], s: &Scratch) {
-    if let Ok(o) = hexcavator_pe::ltcg::LtcgObject::parse(data) {
+    if let Ok(o) = turbonop_pe::ltcg::LtcgObject::parse(data) {
         let _ = o.backend_args();
         let _ = o.compiler();
         let _ = o.globals();
@@ -267,7 +267,7 @@ fn is_xz(_: &Path, d: &[u8]) -> bool {
 
 fn xz(data: &[u8], _: &Scratch) {
     // (A small limit: what matters is that damage is refused cleanly.)
-    let _ = hexcavator_debuginfo::decompress::xz(data, 1 << 24);
+    let _ = turbonop_debuginfo::decompress::xz(data, 1 << 24);
 }
 
 fn elf(data: &[u8], s: &Scratch) {
@@ -275,7 +275,7 @@ fn elf(data: &[u8], s: &Scratch) {
 }
 
 fn macho(data: &[u8], s: &Scratch) {
-    if let Ok(m) = hexcavator_macho::MachO::parse(data) {
+    if let Ok(m) = turbonop_macho::MachO::parse(data) {
         let _ = (m.objc(), m.fixups(), m.exports());
         let _ = (m.function_starts(), m.unwind_info(), m.code_signature());
         let _ = m.debug_map();
@@ -284,7 +284,7 @@ fn macho(data: &[u8], s: &Scratch) {
 }
 
 fn wasm(data: &[u8], s: &Scratch) {
-    if let Ok(m) = hexcavator_wasm::Module::parse(data) {
+    if let Ok(m) = turbonop_wasm::Module::parse(data) {
         let _ = (
             m.imports(),
             m.linking_symbols(),
@@ -304,7 +304,7 @@ fn pdb(data: &[u8], s: &Scratch) {
 
 /// A 16-bit NE or linear (LE/LX) executable: every table, and hexcavator info.
 fn legacy(data: &[u8], s: &Scratch) {
-    if let Ok(ne) = hexcavator_ne::NeFile::parse(data) {
+    if let Ok(ne) = turbonop_ne::NeFile::parse(data) {
         for seg in ne.segments() {
             let _ = (ne.segment_data(&seg), ne.relocations(&seg));
         }
@@ -318,7 +318,7 @@ fn legacy(data: &[u8], s: &Scratch) {
             ne.entries(),
         );
     }
-    if let Ok(lx) = hexcavator_lx::LxFile::parse(data) {
+    if let Ok(lx) = turbonop_lx::LxFile::parse(data) {
         let _ = (
             lx.objects(),
             lx.resources(),
@@ -343,7 +343,7 @@ fn split_dwarf(data: &[u8], _: &Scratch) {
         include_bytes!("../../../testdata/elf/split-dwarf5"),
     ];
     for image in IMAGES {
-        let Ok(mut debug) = hexcavator_debuginfo::DebugInfo::parse(image) else {
+        let Ok(mut debug) = turbonop_debuginfo::DebugInfo::parse(image) else {
             continue;
         };
         if let Some(d) = debug.dwarf_mut()
@@ -358,13 +358,13 @@ fn split_dwarf(data: &[u8], _: &Scratch) {
 /// debug maps of testdata/macho/oso's images (its addresses moved to the
 /// image's by that object's map), and each query asked.
 fn debug_map_object(data: &[u8], _: &Scratch) {
-    use hexcavator_debuginfo::dwarf_backend::DwarfInfo;
+    use turbonop_debuginfo::dwarf_backend::DwarfInfo;
     static IMAGES: [&[u8]; 2] = [
         include_bytes!("../../../testdata/macho/oso/oso-arm64"),
         include_bytes!("../../../testdata/macho/oso/oso-x86_64"),
     ];
     for image in IMAGES {
-        let Ok(m) = hexcavator_macho::MachO::parse(image) else {
+        let Ok(m) = turbonop_macho::MachO::parse(image) else {
             continue;
         };
         for o in m.debug_map() {
@@ -372,7 +372,7 @@ fn debug_map_object(data: &[u8], _: &Scratch) {
                 continue;
             };
             if d.add_object(data, &o.symbols, "", "").is_ok() {
-                queries(&hexcavator_debuginfo::DebugInfo::Dwarf(Box::new(d)));
+                queries(&turbonop_debuginfo::DebugInfo::Dwarf(Box::new(d)));
             }
         }
     }
@@ -380,12 +380,12 @@ fn debug_map_object(data: &[u8], _: &Scratch) {
 
 /// The debug information's every query (a PDB's, or DWARF's).
 fn debug_info(data: &[u8]) {
-    if let Ok(debug) = hexcavator_debuginfo::DebugInfo::parse(data) {
+    if let Ok(debug) = turbonop_debuginfo::DebugInfo::parse(data) {
         queries(&debug);
     }
 }
 
-fn queries(debug: &hexcavator_debuginfo::DebugInfo<'_>) {
+fn queries(debug: &turbonop_debuginfo::DebugInfo<'_>) {
     let _ = debug.compilands();
     let _ = debug.contributions();
     let _ = debug.inline_sites();
@@ -409,18 +409,18 @@ fn queries(debug: &hexcavator_debuginfo::DebugInfo<'_>) {
         for sym in symbols.iter().take(64) {
             let _ = debug.variables(sym.compiland, sym.addr);
             if sym.type_index != 0 {
-                let ty = hexcavator_debuginfo::TypeRef(sym.type_index);
+                let ty = turbonop_debuginfo::TypeRef(sym.type_index);
                 let _ = (
                     debug.type_size(ty),
                     debug.type_shape(ty),
                     debug.type_name(ty),
                 );
                 let _ = (debug.enumerators(ty), debug.layout(ty));
-                let _ = hexcavator_debuginfo::value::read(
+                let _ = turbonop_debuginfo::value::read(
                     debug,
                     ty,
                     &[0xA5; 256],
-                    hexcavator_debuginfo::value::Limits::default(),
+                    turbonop_debuginfo::value::Limits::default(),
                 );
             }
         }
@@ -428,12 +428,12 @@ fn queries(debug: &hexcavator_debuginfo::DebugInfo<'_>) {
     if let Ok(layouts) = debug.layouts() {
         for l in layouts.iter().take(256) {
             let _ = debug.layout(l.ty);
-            let _ = hexcavator_debuginfo::layout::flat_fields(debug, l.ty);
-            let _ = hexcavator_debuginfo::value::read(
+            let _ = turbonop_debuginfo::layout::flat_fields(debug, l.ty);
+            let _ = turbonop_debuginfo::value::read(
                 debug,
                 l.ty,
                 &[0xA5; 256],
-                hexcavator_debuginfo::value::Limits::default(),
+                turbonop_debuginfo::value::Limits::default(),
             );
         }
     }
@@ -441,14 +441,14 @@ fn queries(debug: &hexcavator_debuginfo::DebugInfo<'_>) {
 
 fn text(data: &[u8], s: &Scratch) {
     let text = String::from_utf8_lossy(data);
-    let _ = hexcavator_linkmap::parse(&text);
-    let _ = hexcavator_linkerlog::parse(&text);
+    let _ = turbonop_linkmap::parse(&text);
+    let _ = turbonop_linkerlog::parse(&text);
     let f = s.file("input-text.bin", data);
     hexcavator(&["linkerlog", &f]);
 }
 
 fn etl(data: &[u8], _: &Scratch) {
-    let Ok(etl) = hexcavator_etl::Etl::parse(data) else {
+    let Ok(etl) = turbonop_etl::Etl::parse(data) else {
         return;
     };
     for buffer in etl.buffers() {
@@ -469,13 +469,13 @@ fn etl(data: &[u8], _: &Scratch) {
 }
 
 fn etl_import(data: &[u8], _: &Scratch) {
-    if let Ok(etl) = hexcavator_etl::Etl::parse(data) {
-        let _ = hexcavator_trace::etw::import(&etl);
+    if let Ok(etl) = turbonop_etl::Etl::parse(data) {
+        let _ = turbonop_trace::etw::import(&etl);
     }
 }
 
 fn hxtrace(data: &[u8], _: &Scratch) {
-    let Ok(trace) = hexcavator_trace::index::read(data, None) else {
+    let Ok(trace) = turbonop_trace::index::read(data, None) else {
         return;
     };
     for s in trace.samples.stack.iter().chain(&trace.switches.stack) {
@@ -484,7 +484,7 @@ fn hxtrace(data: &[u8], _: &Scratch) {
 }
 
 fn manifest(data: &[u8], _: &Scratch) {
-    use hexcavator_etw::manifest::{Manifest, decode, wevt_template};
+    use turbonop_etw::manifest::{Manifest, decode, wevt_template};
     // The resource of an image, or the input as a resource itself.
     let wevt = wevt_template(data).unwrap_or(data);
     if let Ok(m) = Manifest::parse(wevt) {
@@ -500,43 +500,43 @@ fn manifest(data: &[u8], _: &Scratch) {
 
 fn stacktags(data: &[u8], _: &Scratch) {
     let text = String::from_utf8_lossy(data);
-    if let Ok(tags) = hexcavator_trace_analysis::StackTags::from_xml(&text) {
+    if let Ok(tags) = turbonop_trace_analysis::StackTags::from_xml(&text) {
         let _ = tags.frame_tag("ntdll.dll", Some("RtlAllocateHeap"));
     }
-    if let Ok(folds) = hexcavator_trace_analysis::Folds::from_text(&text) {
+    if let Ok(folds) = turbonop_trace_analysis::Folds::from_text(&text) {
         let _ = folds.frame_rule("ntdll.dll", None);
     }
 }
 
 fn demangle(data: &[u8], _: &Scratch) {
     let name = String::from_utf8_lossy(data);
-    let _ = hexcavator_demangle::msvc::demangle(&name, 0);
-    let _ = hexcavator_demangle::itanium::demangle(&name);
+    let _ = turbonop_demangle::msvc::demangle(&name, 0);
+    let _ = turbonop_demangle::itanium::demangle(&name);
     let mut out = String::new();
-    let _ = hexcavator_demangle::rust::demangle_into(&name, &mut out);
+    let _ = turbonop_demangle::rust::demangle_into(&name, &mut out);
     // Swift: as is, and as a Swift name whatever its start (most inputs
     // would stop at the prefix check), in both printings.
-    let mut swift = hexcavator_demangle::swift::Demangler::new();
+    let mut swift = turbonop_demangle::swift::Demangler::new();
     for name in [name.to_string(), format!("$s{name}"), format!("_T{name}")] {
         out.clear();
         let _ = swift.demangle_into(&name, &mut out);
         let _ = swift.demangle_short_into(&name, &mut out);
     }
-    let mut tree = hexcavator_demangle::swift::Tree::default();
-    let _ = hexcavator_demangle::swift::demangle_type_as_node(&mut tree, &name);
+    let mut tree = turbonop_demangle::swift::Tree::default();
+    let _ = turbonop_demangle::swift::demangle_type_as_node(&mut tree, &name);
 }
 
 fn x86(data: &[u8], _: &Scratch) {
     for mode in [
-        hexcavator_x86::Mode::Bits16,
-        hexcavator_x86::Mode::Bits32,
-        hexcavator_x86::Mode::Bits64,
+        turbonop_x86::Mode::Bits16,
+        turbonop_x86::Mode::Bits32,
+        turbonop_x86::Mode::Bits64,
     ] {
         let mut at = 0;
         while at < data.len().min(1 << 16) {
-            match hexcavator_x86::decode(&data[at..], mode, at as u64) {
+            match turbonop_x86::decode(&data[at..], mode, at as u64) {
                 Ok(i) => {
-                    let _ = hexcavator_x86::format::to_string(&i);
+                    let _ = turbonop_x86::format::to_string(&i);
                     at += i.len().max(1);
                 }
                 Err(_) => at += 1,
@@ -548,10 +548,10 @@ fn x86(data: &[u8], _: &Scratch) {
 fn arm64(data: &[u8], _: &Scratch) {
     for (i, w) in data.as_chunks::<4>().0.iter().take(1 << 14).enumerate() {
         let word = u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
-        if let Some(inst) = hexcavator_arm64::decode(word, i as u64 * 4) {
-            let _ = hexcavator_arm64::format(&inst);
+        if let Some(inst) = turbonop_arm64::decode(word, i as u64 * 4) {
+            let _ = turbonop_arm64::format(&inst);
         }
-        let _ = hexcavator_arm64::explain(word);
+        let _ = turbonop_arm64::explain(word);
     }
 }
 
@@ -559,21 +559,21 @@ fn arm64(data: &[u8], _: &Scratch) {
 /// with branch targets at the top of the address space.
 #[allow(clippy::cast_possible_truncation)]
 fn arm32(data: &[u8], _: &Scratch) {
-    use hexcavator_arm32::format::{Targets, format, format_in_it};
+    use turbonop_arm32::format::{Targets, format, format_in_it};
     for (i, w) in data.as_chunks::<4>().0.iter().take(1 << 14).enumerate() {
         let word = u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
         let at = u64::from(u32::MAX).wrapping_sub(i as u64 * 4);
-        if let Some(inst) = hexcavator_arm32::decode_a32(word) {
+        if let Some(inst) = turbonop_arm32::decode_a32(word) {
             let _ = format(&inst, at, Targets::Addresses);
         }
         let first = (word >> 16) as u16;
-        if let Some(inst) = hexcavator_arm32::decode_t32(first, Some(word as u16)) {
+        if let Some(inst) = turbonop_arm32::decode_t32(first, Some(word as u16)) {
             let mut s = String::new();
             format_in_it(&inst, at, Targets::Offsets, Some(word & 15), &mut s);
-            let _ = hexcavator_arm32::format::branch_target(&inst, at);
+            let _ = turbonop_arm32::format::branch_target(&inst, at);
         }
     }
-    let _ = hexcavator_code::sweep(hexcavator_code::Arch::Arm, data, 1);
+    let _ = turbonop_code::sweep(turbonop_code::Arch::Arm, data, 1);
 }
 
 /// The decoders generated from LLVM's TableGen records (RISC-V,
@@ -586,28 +586,28 @@ fn tablegen(data: &[u8], _: &Scratch) {
     // near the top of memory.
     let at = |k: usize| u64::MAX.wrapping_sub(k as u64 * 2);
     for rv64 in [false, true] {
-        let f = hexcavator_riscv::Features::standard(rv64);
+        let f = turbonop_riscv::Features::standard(rv64);
         for k in (0..data.len()).step_by(2) {
-            if let Some(i) = hexcavator_riscv::decode(&data[k..], &f) {
-                let _ = hexcavator_riscv::format::format(&i, at(k), &f);
+            if let Some(i) = turbonop_riscv::decode(&data[k..], &f) {
+                let _ = turbonop_riscv::format::format(&i, at(k), &f);
             }
         }
     }
     for f in [
-        hexcavator_loongarch::Features::la64(),
-        hexcavator_loongarch::Features::la32(),
+        turbonop_loongarch::Features::la64(),
+        turbonop_loongarch::Features::la32(),
     ] {
         for k in (0..data.len()).step_by(4) {
-            if let Some(i) = hexcavator_loongarch::decode(&data[k..], &f) {
-                let _ = hexcavator_loongarch::format::format(&i, at(k), &f);
+            if let Some(i) = turbonop_loongarch::decode(&data[k..], &f) {
+                let _ = turbonop_loongarch::format::format(&i, at(k), &f);
             }
         }
     }
     for (ppc64, big) in [(true, true), (true, false), (false, true)] {
-        let f = hexcavator_powerpc::Features::standard(ppc64);
+        let f = turbonop_powerpc::Features::standard(ppc64);
         for k in (0..data.len()).step_by(4) {
-            if let Some(i) = hexcavator_powerpc::decode(&data[k..], big, &f) {
-                let _ = hexcavator_powerpc::format::format(&i, at(k), &f);
+            if let Some(i) = turbonop_powerpc::decode(&data[k..], big, &f) {
+                let _ = turbonop_powerpc::format::format(&i, at(k), &f);
             }
         }
     }
@@ -620,18 +620,18 @@ fn tablegen(data: &[u8], _: &Scratch) {
         (0x7200_0000, false, 2),
         (0x9200_0000, false, 2),
     ] {
-        let f = hexcavator_mips::Features::from_elf(flags, mips64);
+        let f = turbonop_mips::Features::from_elf(flags, mips64);
         for big in [true, false] {
             for k in (0..data.len()).step_by(step) {
-                if let Some(i) = hexcavator_mips::decode(&data[k..], big, &f) {
-                    let _ = hexcavator_mips::format::format(&i, at(k), &f);
-                    let _ = hexcavator_mips::branch_target(&i, at(k));
+                if let Some(i) = turbonop_mips::decode(&data[k..], big, &f) {
+                    let _ = turbonop_mips::format::format(&i, at(k), &f);
+                    let _ = turbonop_mips::branch_target(&i, at(k));
                 }
             }
         }
     }
     // Their code's flow, as each reads it.
-    use hexcavator_code::{Arch, Mode};
+    use turbonop_code::{Arch, Mode};
     for (arch, mode) in [
         (Arch::RiscV64, Mode::default()),
         (Arch::LoongArch64, Mode::default()),
@@ -645,20 +645,20 @@ fn tablegen(data: &[u8], _: &Scratch) {
         ),
         (Arch::Mips64, Mode::endian(false)),
     ] {
-        let _ = hexcavator_code::sweep_in(arch, mode, data, 0x1000);
+        let _ = turbonop_code::sweep_in(arch, mode, data, 0x1000);
     }
 }
 
 fn query(data: &[u8], _: &Scratch) {
     let text = String::from_utf8_lossy(data);
-    let _ = hexcavator_query::parse(&text, &hexcavator_size::table::COLUMNS);
+    let _ = turbonop_query::parse(&text, &turbonop_size::table::COLUMNS);
 }
 
 fn sourcemap(data: &[u8], _: &Scratch) {
-    let _ = hexcavator_size::sourcemap::parse(data);
+    let _ = turbonop_size::sourcemap::parse(data);
 }
 
-/// The harness's own check (`hexcavator-fuzz selftest`): an input's first
+/// The harness's own check (`turbonop-fuzz selftest`): an input's first
 /// byte says what to do wrong: panic, overflow the stack, allocate too
 /// much, or never return.
 fn selftest(data: &[u8], _: &Scratch) {

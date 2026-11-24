@@ -3,12 +3,12 @@
 // Synthetic test data: small values, casts are exact.
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_core::Endian;
-use hexcavator_dwarf::cfi::{CfaRule, RegisterRule, UnwindRow};
+use turbonop_core::Endian;
+use turbonop_dwarf::cfi::{CfaRule, RegisterRule, UnwindRow};
 
 use crate::support::{STACK, Stack};
-use hexcavator_unwind::Error;
-use hexcavator_unwind::dwarf_cfi::{self, Registers, Target};
+use turbonop_unwind::Error;
+use turbonop_unwind::dwarf_cfi::{self, Registers, Target};
 
 const X64: Target = Target {
     endian: Endian::Little,

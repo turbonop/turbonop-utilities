@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-etl"
+name = "turbonop-etl"
 description = "Reader for Windows event trace log (ETL) files"
 version.workspace = true
 edition.workspace = true
@@ -9,10 +9,10 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
 
 [dev-dependencies]
-hexcavator-mmap.workspace = true
+turbonop-mmap.workspace = true
 
 [lints]
 workspace = true

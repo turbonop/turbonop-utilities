@@ -41,11 +41,11 @@ const disasm = require("./media/disasm.js");
 
 const STORE = "hexcavator.entries";
 const MAX_ENTRIES = 20;
-const OUT_SCHEME = "hexc-out";
+const OUT_SCHEME = "hexcavator-out";
 
 const keyOf = (entry) => `${entry.file}\u0000${entry.base || ""}`;
 
-/** hexcavator's output as a read-only document (`hexc-out:` URIs). */
+/** hexcavator's output as a read-only document (`hexcavator-out:` URIs). */
 class OutputProvider {
   constructor(runHexc) {
     this.runHexc = runHexc;
@@ -437,7 +437,7 @@ class Sidebar {
         item.description = path.dirname(e.file);
         item.tooltip = e.base ? `${e.file}\ncompared with\n${e.base}` : e.file;
         item.iconPath = icon(e.base ? "diff" : "file-binary");
-        item.contextValue = e.base ? "hexc.diff" : "hexc.binary";
+        item.contextValue = e.base ? "hexcavator.diff" : "hexcavator.binary";
         item.resourceUri = undefined;
         return item;
       }
@@ -445,7 +445,7 @@ class Sidebar {
         const item = new vscode.TreeItem(node.entry.base ? "Size Change" : "Size", C.Collapsed);
         item.id = "size:" + keyOf(node.entry);
         item.iconPath = icon("graph");
-        item.contextValue = "hexc.size";
+        item.contextValue = "hexcavator.size";
         item.tooltip = "Where the bytes go, rolled up at every level (file sizes). The levels are hexcavator.treeSources (or hexcavator.sources).";
         // The totals, once read (reading starts when it is expanded).
         const r = this.value(node.entry, "report");
@@ -470,7 +470,7 @@ class Sidebar {
         }
         // (Symbols of an image with debug information: why, references, data.)
         const full = !node.entry.base && h.can(this.capsNow(node.entry), "why");
-        item.contextValue = node.symbol ? (full ? "hexc.row.symbol.pe" : "hexc.row.symbol") : "hexc.row";
+        item.contextValue = node.symbol ? (full ? "hexcavator.row.symbol.pe" : "hexcavator.row.symbol") : "hexcavator.row";
         return item;
       }
       case "recs": {
@@ -499,7 +499,7 @@ class Sidebar {
         item.id = `result:${keyOf(node.entry)}\u0000${r.kind}\u0000${r.name}`;
         item.description = r.kind === "why" ? "why is it here?" : "references";
         item.iconPath = icon(r.kind === "why" ? "debug-step-into" : "references", "charts.blue");
-        item.contextValue = "hexc.result";
+        item.contextValue = "hexcavator.result";
         item.tooltip = r.kind === "why" ? `The chain of references from a root to ${r.name}` : `What refers to ${r.name}, and what it refers to: expand each to follow it`;
         return item;
       }
@@ -513,7 +513,7 @@ class Sidebar {
         const item = new vscode.TreeItem(node.name, C.Collapsed);
         item.description = node.edge;
         item.iconPath = icon(node.edge.startsWith("call") ? "symbol-method" : node.edge.startsWith("owns") ? "symbol-namespace" : "symbol-variable");
-        item.contextValue = "hexc.symbol.pe";
+        item.contextValue = "hexcavator.symbol.pe";
         item.tooltip = `${node.edge} ${node.name}`;
         return item;
       }
@@ -521,7 +521,7 @@ class Sidebar {
         const item = new vscode.TreeItem(node.label || node.name, C.None);
         item.description = node.description;
         item.iconPath = icon(node.icon || "symbol-misc", node.color);
-        item.contextValue = "hexc.symbol.pe";
+        item.contextValue = "hexcavator.symbol.pe";
         item.tooltip = node.tooltip || node.name;
         return item;
       }
@@ -555,7 +555,7 @@ class Sidebar {
         const item = new vscode.TreeItem(t.label, C.None);
         item.iconPath = icon(t.icon);
         item.command = { command: "hexcavator.runTool", title: t.label, arguments: [node] };
-        item.contextValue = t.args || t.ask ? "hexc.tool.command" : "hexc.tool";
+        item.contextValue = t.args || t.ask ? "hexcavator.tool.command" : "hexcavator.tool";
         const md = new vscode.MarkdownString();
         md.appendText(t.detail);
         const line = this.commandFor(node);

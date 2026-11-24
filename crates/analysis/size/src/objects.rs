@@ -15,11 +15,11 @@
 //! `.xdata`, too) to its COMDAT symbol, and other sections' bytes to the
 //! symbol at or before them.
 
-use hexcavator_archive::{Archive, MemberKind};
-use hexcavator_core::Result;
-use hexcavator_pe::consts::section_characteristics as scn;
-use hexcavator_pe::import_object::ImportObject;
-use hexcavator_pe::{CoffSymbol, PeFile, comdat_select};
+use turbonop_archive::{Archive, MemberKind};
+use turbonop_core::Result;
+use turbonop_pe::consts::section_characteristics as scn;
+use turbonop_pe::import_object::ImportObject;
+use turbonop_pe::{CoffSymbol, PeFile, comdat_select};
 
 use crate::rangemap::{DualMap, Label, Labels};
 use crate::sources::{Maps, Source, UNMAPPED};
@@ -161,7 +161,7 @@ impl Builder {
 
 /// The bytes of a section's relocation table (with the count entry of an
 /// overflowed one).
-fn relocation_bytes(pe: &PeFile<'_>, s: &hexcavator_pe::raw::SectionHeader) -> u64 {
+fn relocation_bytes(pe: &PeFile<'_>, s: &turbonop_pe::raw::SectionHeader) -> u64 {
     if s.pointer_to_relocations.get() == 0 {
         return 0;
     }
@@ -172,21 +172,21 @@ fn relocation_bytes(pe: &PeFile<'_>, s: &hexcavator_pe::raw::SectionHeader) -> u
 }
 
 /// A symbol's name as reports show it: undecorated, if decorated.
-fn display(demangler: &mut hexcavator_demangle::msvc::Demangler, name: &[u8]) -> String {
+fn display(demangler: &mut turbonop_demangle::msvc::Demangler, name: &[u8]) -> String {
     let name = String::from_utf8_lossy(name);
     if name.starts_with('?') {
         demangler
-            .demangle(&name, hexcavator_demangle::msvc::flags::NO_PTR64)
+            .demangle(&name, turbonop_demangle::msvc::flags::NO_PTR64)
             .unwrap_or_else(|| name.into_owned())
     } else {
-        hexcavator_demangle::swift::demangle(&name).unwrap_or_else(|| name.into_owned())
+        turbonop_demangle::swift::demangle(&name).unwrap_or_else(|| name.into_owned())
     }
 }
 
 /// Whether a symbol names a place worth charging bytes to (not a label,
 /// a section's own symbol, or a file name).
-fn charges(symbols: &hexcavator_pe::SymbolTable<'_>, s: &CoffSymbol<'_>) -> bool {
-    use hexcavator_pe::consts::storage_class;
+fn charges(symbols: &turbonop_pe::SymbolTable<'_>, s: &CoffSymbol<'_>) -> bool {
+    use turbonop_pe::consts::storage_class;
     if s.section <= 0 || s.section_definition().is_some() {
         return false;
     }
@@ -210,7 +210,7 @@ fn symbol_pieces(pe: &PeFile<'_>, labels: &mut Labels) -> Vec<Vec<Piece>> {
     let Ok(Some(symbols)) = pe.symbols() else {
         return out;
     };
-    let mut demangler = hexcavator_demangle::msvc::Demangler::default();
+    let mut demangler = turbonop_demangle::msvc::Demangler::default();
     let comdats = symbols.comdat_symbols(sections.len());
     // Section definitions, for COMDAT selection and associations.
     let mut defs = vec![None; sections.len() + 1];
@@ -235,7 +235,7 @@ fn symbol_pieces(pe: &PeFile<'_>, labels: &mut Labels) -> Vec<Vec<Piece>> {
     // A COMDAT's label, following associations to their parents.
     let comdat_label = |n: usize,
                         labels: &mut Labels,
-                        demangler: &mut hexcavator_demangle::msvc::Demangler|
+                        demangler: &mut turbonop_demangle::msvc::Demangler|
      -> Option<Label> {
         let mut n = n;
         for _ in 0..8 {
@@ -351,7 +351,7 @@ pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
         match source {
             Source::Groups => map = b.base.clone(),
             Source::Sections | Source::Segments => {
-                let mut cache = hexcavator_hash::Map::default();
+                let mut cache = turbonop_hash::Map::default();
                 let labels = &mut b.labels;
                 map.fill_from(&b.base, |l| {
                     *cache.entry(l).or_insert_with(|| {
@@ -370,7 +370,7 @@ pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
                     .iter()
                     .find_map(|u| {
                         u.pe.as_ref()
-                            .map(|p| hexcavator_image::coff_machine_name(p.machine()))
+                            .map(|p| turbonop_image::coff_machine_name(p.machine()))
                     })
                     .unwrap_or("unknown");
                 let l = b.labels.intern(name);
@@ -483,7 +483,7 @@ fn unit<'d>(data: &'d [u8], offset: u64, member: String) -> Unit<'d> {
 
 /// Fills `map`'s unlabeled bytes from `base`, sections as `[section x]`.
 fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
-    let mut cache = hexcavator_hash::Map::default();
+    let mut cache = turbonop_hash::Map::default();
     map.fill_from(base, |l| {
         *cache.entry(l).or_insert_with(|| {
             let name = labels.name(l).to_string();

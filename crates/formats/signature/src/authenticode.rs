@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use hexcavator_pe::PeFile;
+use turbonop_pe::PeFile;
 
 use crate::cms::{IndirectData, MAX_NESTING, OpusInfo, SignedData};
 use crate::crypto::Hash;
@@ -63,9 +63,9 @@ pub fn image_hash(pe: &PeFile<'_>, h: Hash) -> Option<Vec<u8>> {
     let data = pe.data();
     let len = data.len() as u64;
     let (checksum, entry) =
-        pe.checksum_and_directory_offsets(hexcavator_pe::consts::directory::SECURITY)?;
+        pe.checksum_and_directory_offsets(turbonop_pe::consts::directory::SECURITY)?;
     let (start, size) = pe
-        .data_directory(hexcavator_pe::consts::directory::SECURITY)
+        .data_directory(turbonop_pe::consts::directory::SECURITY)
         .map_or((len, 0), |d| {
             (u64::from(d.virtual_address.get()), u64::from(d.size.get()))
         });
@@ -99,7 +99,7 @@ pub fn pe(pe: &PeFile<'_>) -> Vec<Signature> {
         if out.len() >= MAX_SIGNATURES {
             break;
         }
-        if cert.kind != hexcavator_pe::extras::WIN_CERT_TYPE_PKCS_SIGNED_DATA {
+        if cert.kind != turbonop_pe::extras::WIN_CERT_TYPE_PKCS_SIGNED_DATA {
             out.push(unreadable(
                 "Authenticode",
                 format!("a certificate of type {:#x}, not PKCS #7", cert.kind),

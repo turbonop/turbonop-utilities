@@ -1,4 +1,4 @@
-//! Compares `hexcavator_demangle::msvc::demangle` with `undname` outputs:
+//! Compares `turbonop_demangle::msvc::demangle` with `undname` outputs:
 //!
 //!     compare <names.txt> <undname-output.txt> <flags-hex> [max]
 //!
@@ -11,7 +11,7 @@ fn main() {
     let flags = u32::from_str_radix(args[3].trim_start_matches("0x"), 16).unwrap();
     let max: usize = args.get(4).map_or(30, |a| a.parse().unwrap());
     let expected: Vec<&str> = expected.trim_start_matches('\u{feff}').lines().collect();
-    let mut demangler = hexcavator_demangle::msvc::Demangler::new();
+    let mut demangler = turbonop_demangle::msvc::Demangler::new();
     let mut bad = 0usize;
     let mut total = 0usize;
     let mut failed = 0usize;
@@ -61,7 +61,7 @@ fn main() {
                     .collect()
             };
             if got == name {
-                let at = hexcavator_demangle::msvc::failure_position(name)
+                let at = turbonop_demangle::msvc::failure_position(name)
                     .unwrap_or(0)
                     .min(name.len());
                 let before: String = name[..at]
@@ -86,15 +86,13 @@ fn main() {
 
 /// Whether `name` is a variable whose own name is a template (`??$x@...`).
 fn is_variable_template(name: &str) -> bool {
-    let mut d = hexcavator_demangle::msvc::Demangler::new();
+    let mut d = turbonop_demangle::msvc::Demangler::new();
     d.parse(name).is_some_and(|s| {
-        matches!(
-            s.kind,
-            hexcavator_demangle::msvc::SymbolKind::Variable { .. }
-        ) && matches!(
-            s.name.last(),
-            Some(hexcavator_demangle::msvc::Name::Template { .. })
-        )
+        matches!(s.kind, turbonop_demangle::msvc::SymbolKind::Variable { .. })
+            && matches!(
+                s.name.last(),
+                Some(turbonop_demangle::msvc::Name::Template { .. })
+            )
     })
 }
 

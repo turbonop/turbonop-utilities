@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-symbolize"
+name = "turbonop-symbolize"
 description = "Finding an image's debug information and the function at an address (PDBs, DWARF, its own symbols), for traces and dumps"
 version.workspace = true
 edition.workspace = true
@@ -9,12 +9,12 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
-hexcavator-debuginfo.workspace = true
-hexcavator-demangle.workspace = true
-hexcavator-image.workspace = true
-hexcavator-mmap.workspace = true
-hexcavator-pdb.workspace = true
+turbonop-core.workspace = true
+turbonop-debuginfo.workspace = true
+turbonop-demangle.workspace = true
+turbonop-image.workspace = true
+turbonop-mmap.workspace = true
+turbonop-pdb.workspace = true
 
 [lints]
 workspace = true

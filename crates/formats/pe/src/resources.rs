@@ -5,7 +5,7 @@
 //! Offsets within the tree are relative to the resource directory's start;
 //! data entries hold RVAs.
 
-use hexcavator_core::{Rva, U16Le, U32Le, pod, read_at, read_slice_at};
+use turbonop_core::{Rva, U16Le, U32Le, pod, read_at, read_slice_at};
 
 use crate::PeFile;
 use crate::consts::directory;

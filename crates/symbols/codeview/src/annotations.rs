@@ -12,7 +12,7 @@
 //! MSVC emits) leaves it at the entry's start. A site's code is its
 //! entries'; a nested site's code is within its caller's (DIA's reading).
 
-use hexcavator_core::Reader;
+use turbonop_core::Reader;
 
 /// The opcodes (`BinaryAnnotationOpcode`: `BA_OP_*`).
 pub mod op {

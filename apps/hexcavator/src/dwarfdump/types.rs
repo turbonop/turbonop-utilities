@@ -9,8 +9,8 @@
 
 use std::fmt::Write as _;
 
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Die, Value};
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Die, Value};
 
 /// The longest name built.
 const MAX_TEXT: usize = 4096;
@@ -119,7 +119,7 @@ impl<'i, 'd> Types<'i, 'd> {
 
     /// The language's default lower bound for arrays, as LLVM knows it.
     fn default_lower_bound(&self, d: &Node<'d>) -> Option<u64> {
-        hexcavator_dwarf::spelling::language_lower_bound(self.index.units[d.unit].language?)
+        turbonop_dwarf::spelling::language_lower_bound(self.index.units[d.unit].language?)
     }
 }
 
@@ -301,7 +301,7 @@ impl<'d> Printer<'_, '_, 'd> {
             _ => {
                 let Some(name) = self.t.string(d, DW_AT_NAME) else {
                     // The tag's name: `struct `, `union `.
-                    if let Some(t) = hexcavator_dwarf::spelling::tag(u64::from(d.die.tag))
+                    if let Some(t) = turbonop_dwarf::spelling::tag(u64::from(d.die.tag))
                         && let Some(k) = t
                             .strip_prefix("DW_TAG_")
                             .and_then(|r| r.strip_suffix("_type"))

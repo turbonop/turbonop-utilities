@@ -4,10 +4,10 @@
 // Synthetic test data: small values, casts are exact.
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_unwind::windows_x86::{
+use turbonop_unwind::windows_x86::{
     self, Context, Env, Fpo, FrameData, FrameTable, Method, Record,
 };
-use hexcavator_unwind::{Error, Memory};
+use turbonop_unwind::{Error, Memory};
 
 const STACK: u32 = 0x0010_0000;
 /// Addresses "after a call", for the return address test.

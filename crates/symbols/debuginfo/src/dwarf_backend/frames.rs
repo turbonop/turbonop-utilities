@@ -5,10 +5,10 @@
 //! innermost's from the unit's line table, each other's from the call
 //! inlined into it (`DW_AT_call_file`, `DW_AT_call_line`).
 
-use hexcavator_hash::Map as HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Die, UnitSection};
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Die, UnitSection};
 
 use super::{DwarfInfo, MAX_DEPTH, UnitMeta, is_scope, locate as place, to_ref};
 use crate::TypeRef;
@@ -36,7 +36,7 @@ pub(crate) struct DwarfLocator<'a, 'data> {
 #[derive(Default)]
 struct Table<'a> {
     rows: Vec<(u64, u64, u64, u32)>,
-    files: Option<(hexcavator_dwarf::LineProgram<'a>, String)>,
+    files: Option<(turbonop_dwarf::LineProgram<'a>, String)>,
 }
 
 impl Table<'_> {
@@ -256,9 +256,9 @@ struct Walked {
 fn walk<'u>(
     info: &DwarfInfo<'_>,
     m: &UnitMeta,
-    u: &hexcavator_dwarf::Unit<'u>,
-    abbrevs: &hexcavator_dwarf::Abbrevs,
-    mut r: hexcavator_dwarf::DieReader<'u>,
+    u: &turbonop_dwarf::Unit<'u>,
+    abbrevs: &turbonop_dwarf::Abbrevs,
+    mut r: turbonop_dwarf::DieReader<'u>,
     addr: Option<u64>,
     mut walked: Option<&mut Walked>,
 ) -> Option<Vec<Found>> {
@@ -388,7 +388,7 @@ fn unit_code(info: &DwarfInfo<'_>) -> Vec<(u64, u64, usize)> {
             .filter(|(_, m)| m.file == 0 && m.section == UnitSection::Info && !m.split)
             .map(|(i, m)| (m.offset, i))
             .collect();
-        for e in hexcavator_dwarf::aranges(s.aranges, s.endian) {
+        for e in turbonop_dwarf::aranges(s.aranges, s.endian) {
             if let Some(&i) = by_offset.get(&e.info_offset)
                 && e.length > 0
             {
@@ -407,7 +407,7 @@ fn split_files<'a>(
     info: &'a DwarfInfo<'_>,
     dm: &UnitMeta,
     m: &UnitMeta,
-) -> Option<(hexcavator_dwarf::LineProgram<'a>, String)> {
+) -> Option<(turbonop_dwarf::LineProgram<'a>, String)> {
     let comp_dir = |um: &UnitMeta| {
         let (u, a) = info.unit(um)?;
         let d = u.entry(a, u.dies)?;

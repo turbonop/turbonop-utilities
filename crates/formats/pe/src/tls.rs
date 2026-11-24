@@ -1,6 +1,6 @@
 //! The TLS directory (`IMAGE_TLS_DIRECTORY32/64`).
 
-use hexcavator_core::{Rva, Va};
+use turbonop_core::{Rva, Va};
 
 use crate::PeFile;
 use crate::consts::directory;

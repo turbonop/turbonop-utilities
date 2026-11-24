@@ -2,7 +2,7 @@
 //! instructions and their immediates, and [`ops`] lists every instruction
 //! (through GC, threads and relaxed SIMD).
 //!
-//! Finding the function bodies in a module is `hexcavator-wasm`'s job.
+//! Finding the function bodies in a module is `turbonop-wasm`'s job.
 //! Malformed code gives errors, never a panic.
 
 #![no_std]

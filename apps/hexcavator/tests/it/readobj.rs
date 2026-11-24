@@ -192,7 +192,7 @@ fn dumpbin_names_choose_parts() {
 
 #[test]
 fn damaged_inputs_end() {
-    let dir = std::env::temp_dir().join(format!("hexc-readobj-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-readobj-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for (sub, name) in [
         ("elf", "program.so"),

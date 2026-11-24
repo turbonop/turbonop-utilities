@@ -109,7 +109,7 @@ fn arm64_branches() {
 #[test]
 fn arm64_targets_agree_with_the_formatter() {
     struct Record(core::cell::RefCell<Vec<u64>>);
-    impl hexcavator_arm64::Symbols for Record {
+    impl turbonop_arm64::Symbols for Record {
         fn name_at(&self, address: u64) -> Option<&str> {
             self.0.borrow_mut().push(address);
             None
@@ -122,14 +122,14 @@ fn arm64_targets_agree_with_the_formatter() {
         for low in (0..1u32 << 24).step_by(4093) {
             let word = top << 24 | low;
             let pc = 0x4000_0000;
-            let Some(i) = hexcavator_arm64::decode(word, pc) else {
+            let Some(i) = turbonop_arm64::decode(word, pc) else {
                 continue;
             };
             let Some(insn) = decode(Arch::Arm64, &word.to_le_bytes(), pc) else {
                 continue;
             };
             let r = Record(core::cell::RefCell::new(Vec::new()));
-            hexcavator_arm64::format_with(&i, &r);
+            turbonop_arm64::format_with(&i, &r);
             let named = r.0.into_inner().first().copied();
             if matches!(insn.flow, Flow::Call | Flow::Jump | Flow::Branch) {
                 assert_eq!(insn.target, named, "{word:08x}");

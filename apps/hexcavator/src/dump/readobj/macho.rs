@@ -4,8 +4,8 @@
 //! LLVM's MachODumper; and its fixups as llvm-objdump lists them
 //! (`--dyld-info`).
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::consts::*;
+use turbonop_macho::MachO;
+use turbonop_macho::consts::*;
 
 use super::{Parts, Printer};
 
@@ -90,8 +90,8 @@ fn one(out: &mut String, file_name: &str, m: &MachO<'_>, parts: &Parts) {
 /// and its key). (llvm-objdump lists only chained fixups; the older
 /// opcodes' are listed so too.)
 fn dyld_info(p: &mut Printer<'_>, m: &MachO<'_>) {
-    use hexcavator_macho::FixupKind;
-    use hexcavator_macho::fixups::{DYLD_CHAINED_PTR_ARM64E, DYLD_CHAINED_PTR_ARM64E_USERLAND24};
+    use turbonop_macho::FixupKind;
+    use turbonop_macho::fixups::{DYLD_CHAINED_PTR_ARM64E, DYLD_CHAINED_PTR_ARM64E_USERLAND24};
     let fixups = m.fixups();
     let segments = m.segments();
     let sections = m.sections();
@@ -220,7 +220,7 @@ fn header(p: &mut Printer<'_>, m: &MachO<'_>) {
     };
     p.open("MachHeader {");
     // (llvm-readobj shows the magic as the host reads it: little-endian.)
-    let shown = if h.endian == hexcavator_core::Endian::Big {
+    let shown = if h.endian == turbonop_core::Endian::Big {
         magic.swap_bytes()
     } else {
         magic
@@ -588,7 +588,7 @@ fn symbols(p: &mut Printer<'_>, m: &MachO<'_>) {
 
 fn needed(p: &mut Printer<'_>, m: &MachO<'_>) {
     let mut libs: Vec<String> = Vec::new();
-    let big = m.header().endian == hexcavator_core::Endian::Big;
+    let big = m.header().endian == turbonop_core::Endian::Big;
     for lc in m.load_commands() {
         if !matches!(
             lc.cmd,
@@ -606,7 +606,7 @@ fn needed(p: &mut Printer<'_>, m: &MachO<'_>) {
             u32::from_le_bytes(b)
         } as usize;
         if let Some(rest) = lc.data.get(off..) {
-            let end = hexcavator_core::find_nul(rest).unwrap_or(rest.len());
+            let end = turbonop_core::find_nul(rest).unwrap_or(rest.len());
             libs.push(String::from_utf8_lossy(&rest[..end]).into_owned());
         }
     }
@@ -665,11 +665,11 @@ fn version(v: u32) -> String {
 }
 
 fn platform(v: u32) -> String {
-    hexcavator_macho::platform_name(v)
+    turbonop_macho::platform_name(v)
 }
 
 fn version_min(p: &mut Printer<'_>, m: &MachO<'_>) {
-    let big = m.header().endian == hexcavator_core::Endian::Big;
+    let big = m.header().endian == turbonop_core::Endian::Big;
     let word = |d: &[u8], at: usize| -> u32 {
         let b: [u8; 4] = d
             .get(at..at + 4)

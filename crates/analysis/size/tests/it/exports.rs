@@ -1,9 +1,9 @@
-//! What exported symbols cost (hexcavator_size::exports), of
+//! What exported symbols cost (turbonop_size::exports), of
 //! testdata/linkopts's libexp*.so (and exp-main, which imports exp_used)
 //! and macho-plain (an executable exporting its global symbols).
 
-use hexcavator_image::Image;
-use hexcavator_size::exports::{Exporter, Imports, exports, imports_of, recommend};
+use turbonop_image::Image;
+use turbonop_size::exports::{Exporter, Imports, exports, imports_of, recommend};
 
 fn read(name: &str) -> Vec<u8> {
     let p = format!(
@@ -138,7 +138,7 @@ fn not_exporters() {
 fn pe_exports_and_importers() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/pe-exports");
     let dll = std::fs::read(dir.join("exp.dll")).unwrap();
-    let image = hexcavator_image::Image::parse(&dll).unwrap();
+    let image = turbonop_image::Image::parse(&dll).unwrap();
     let ex = exports(&image).unwrap();
     assert_eq!(ex.exporter, Exporter::Pe);
     assert_eq!(ex.name, Some(&b"exp.dll"[..]));

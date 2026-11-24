@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-code"
+name = "turbonop-code"
 description = "Code independent of the instruction set: instructions' control flow, and functions' basic blocks"
 version.workspace = true
 edition.workspace = true
@@ -9,14 +9,14 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
-hexcavator-x86.workspace = true
-hexcavator-arm64.workspace = true
-hexcavator-arm32.workspace = true
-hexcavator-riscv.workspace = true
-hexcavator-loongarch.workspace = true
-hexcavator-powerpc.workspace = true
-hexcavator-mips.workspace = true
+turbonop-core.workspace = true
+turbonop-x86.workspace = true
+turbonop-arm64.workspace = true
+turbonop-arm32.workspace = true
+turbonop-riscv.workspace = true
+turbonop-loongarch.workspace = true
+turbonop-powerpc.workspace = true
+turbonop-mips.workspace = true
 
 [lints]
 workspace = true

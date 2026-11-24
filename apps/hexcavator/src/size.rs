@@ -7,12 +7,12 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_image::Image;
-use hexcavator_mmap::Mmap;
-use hexcavator_size::custom::{Config, CustomSource};
-use hexcavator_size::rollup::{self, Domain, Report, Rollup, SortBy};
-use hexcavator_size::sources::{self, Source};
-use hexcavator_size::{Model, NO_GROUP, Size, report, symbols};
+use turbonop_image::Image;
+use turbonop_mmap::Mmap;
+use turbonop_size::custom::{Config, CustomSource};
+use turbonop_size::rollup::{self, Domain, Report, Rollup, SortBy};
+use turbonop_size::sources::{self, Source};
+use turbonop_size::{Model, NO_GROUP, Size, report, symbols};
 
 pub const USAGE: &str = "\
 usage: hexcavator size [options] <image>... [-- <base image>...]
@@ -150,7 +150,7 @@ struct Options {
     definition: Option<String>,
     /// `-mangled`: each symbol's shown name and its mangled one.
     mangled: bool,
-    /// `-stripped`: the file as if stripped (see `hexcavator_size::strip`).
+    /// `-stripped`: the file as if stripped (see `turbonop_size::strip`).
     stripped: bool,
     /// `-table`: every source's labels at once, for a viewer to group.
     table: bool,
@@ -298,7 +298,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
                 let path = value(&mut i, "c")?;
                 let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
                 config = Some(
-                    hexcavator_size::custom::parse_config(&text)
+                    turbonop_size::custom::parse_config(&text)
                         .map_err(|e| format!("{path}: {e}"))?,
                 );
             }
@@ -468,7 +468,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
 /// `-budget`: checks the image (and its growth from the base) against a
 /// budget's rules.
 fn check_budget(options: &Options, path: &Path, out: &mut impl Write) -> Result<(), String> {
-    use hexcavator_size::budget::{Budget, Totals, report};
+    use turbonop_size::budget::{Budget, Totals, report};
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let budget = Budget::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
     let names = budget.sources();
@@ -576,7 +576,7 @@ enum Style {
 
 /// `-table`: `{"columns": [source names], "strings": [labels], "rows":
 /// [[label index per column..., file, vm]], "file", "vm"}`, the rows those
-/// of [`hexcavator_size::rollup::table`] by the sections, groups,
+/// of [`turbonop_size::rollup::table`] by the sections, groups,
 /// compileunits, libraries, and symbols sources (and rawsymbols, where
 /// names are mangled: not PE's). A label a source doesn't give is
 /// `[None]`.
@@ -615,7 +615,7 @@ fn size_table(options: &Options) -> Result<String, String> {
                    debug: Option<&Path>|
      -> Result<Rows, String> {
         let maps = maps_of(path, pdb, map, debug, &sources, options.stripped)?;
-        Ok(hexcavator_size::rollup::table(&maps)
+        Ok(turbonop_size::rollup::table(&maps)
             .into_iter()
             .map(|(labels, f, v)| {
                 let names = labels
@@ -770,12 +770,12 @@ fn mangled_names(options: &Options) -> Result<String, String> {
     let data = Mmap::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut pairs: Vec<(String, String)> = Vec::new();
     if data.starts_with(b"MZ") {
-        let opened = hexcavator_program::Opened::open(path, options.pdb.as_deref())?;
+        let opened = turbonop_program::Opened::open(path, options.pdb.as_deref())?;
         let program = opened.program()?;
         let mut decorated: HashMap<u64, String> = HashMap::new();
         if let Ok(list) = program.debug.symbols() {
             for s in list {
-                if s.kind == hexcavator_debuginfo::SymbolKind::Public
+                if s.kind == turbonop_debuginfo::SymbolKind::Public
                     && (s.name.starts_with('?')
                         || s.name.starts_with('_')
                         || s.name.starts_with('@'))
@@ -802,7 +802,7 @@ fn mangled_names(options: &Options) -> Result<String, String> {
         )?;
         let shown = &maps.sources[0].1.vm;
         let raw = &maps.sources[1].1.vm;
-        let mut at: HashMap<u64, hexcavator_size::rangemap::Label> = HashMap::new();
+        let mut at: HashMap<u64, turbonop_size::rangemap::Label> = HashMap::new();
         for e in shown.iter() {
             at.entry(e.start).or_insert(e.label);
         }
@@ -834,14 +834,14 @@ fn mangled_names(options: &Options) -> Result<String, String> {
 /// an ELF or Mach-O image, as -disassemble finds it).
 fn definition(options: &Options, name: &str) -> Result<String, String> {
     let path = &options.image;
-    let opened = hexcavator_program::Opened::open(path, options.pdb.as_deref())?;
+    let opened = turbonop_program::Opened::open(path, options.pdb.as_deref())?;
     let program = opened.program()?;
     let syms = program.symbols()?;
     let live = || {
         syms.iter()
             .filter(|s| !s.folded && s.size.vm.max(s.size.file) > 0)
     };
-    let extent = |s: &hexcavator_size::symbols::Symbol| (s.addr, s.size.vm.max(s.size.file));
+    let extent = |s: &turbonop_size::symbols::Symbol| (s.addr, s.size.vm.max(s.size.file));
     let mut addr = live().find(|s| s.name == name).map(extent);
     if addr.is_none() {
         let bare = |n: &str| n.split('(').next().unwrap_or(n).trim().to_string();
@@ -852,10 +852,10 @@ fn definition(options: &Options, name: &str) -> Result<String, String> {
     }
     if addr.is_none() {
         let data = Mmap::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let f = if hexcavator_size::macho::is_macho_input(&data) {
-            hexcavator_size::macho::function(&data, name).ok()
-        } else if hexcavator_size::elf::is_elf_input(&data) {
-            hexcavator_size::elf::function(&data, name).ok()
+        let f = if turbonop_size::macho::is_macho_input(&data) {
+            turbonop_size::macho::function(&data, name).ok()
+        } else if turbonop_size::elf::is_elf_input(&data) {
+            turbonop_size::elf::function(&data, name).ok()
         } else {
             None
         };
@@ -863,10 +863,9 @@ fn definition(options: &Options, name: &str) -> Result<String, String> {
     }
     let (addr, _) = addr.ok_or_else(|| format!("no function '{name}'"))?;
     let files = [path.as_path()];
-    let lines = hexcavator_program::cache::remember(&files, "source lines", || {
-        program.debug.source_lines()
-    })
-    .map_err(|e| e.to_string())?;
+    let lines =
+        turbonop_program::cache::remember(&files, "source lines", || program.debug.source_lines())
+            .map_err(|e| e.to_string())?;
     let i = lines.spans.partition_point(|s| s.addr <= addr);
     let span = i
         .checked_sub(1)
@@ -881,20 +880,20 @@ fn definition(options: &Options, name: &str) -> Result<String, String> {
     let mut line = span.line;
     // DWARF: the function's own declaration (an optimized function's first
     // row may be its body's), its DIE the symbol's reference.
-    if matches!(program.debug, hexcavator_debuginfo::DebugInfo::Dwarf(_))
+    if matches!(program.debug, turbonop_debuginfo::DebugInfo::Dwarf(_))
         && let Ok(all) = program.debug.symbols()
     {
         let decl = all
             .iter()
             .find(|s| {
                 s.addr == addr
-                    && s.kind == hexcavator_debuginfo::SymbolKind::Function
+                    && s.kind == turbonop_debuginfo::SymbolKind::Function
                     && s.type_index != 0
             })
             .and_then(|s| {
                 program
                     .debug
-                    .type_definition(hexcavator_debuginfo::TypeRef(s.type_index))
+                    .type_definition(turbonop_debuginfo::TypeRef(s.type_index))
             });
         if let Some((f, l)) = decl {
             file = f;
@@ -921,8 +920,8 @@ fn disassemble(
     style: Style,
 ) -> Result<String, String> {
     let data = Mmap::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    if hexcavator_size::wasm::is_wasm_input(&data) {
-        let text = hexcavator_size::wasm::listing(&data, function)
+    if turbonop_size::wasm::is_wasm_input(&data) {
+        let text = turbonop_size::wasm::listing(&data, function)
             .map_err(|e| format!("{}: {e}", path.display()))?;
         // (A module's code is structured already: no blocks to find.)
         return Ok(if style == Style::Json {
@@ -946,10 +945,10 @@ fn disassemble(
     if data.starts_with(b"MZ") {
         return pe_listing(path, &data, function, pdb, style);
     }
-    let f = if hexcavator_size::macho::is_macho_input(&data) {
-        hexcavator_size::macho::function(&data, function)
-    } else if hexcavator_size::elf::is_elf_input(&data) {
-        hexcavator_size::elf::function(&data, function)
+    let f = if turbonop_size::macho::is_macho_input(&data) {
+        turbonop_size::macho::function(&data, function)
+    } else if turbonop_size::elf::is_elf_input(&data) {
+        turbonop_size::elf::function(&data, function)
     } else {
         Err("-disassemble reads PE images, ELF and Mach-O files, and WebAssembly modules".into())
     }
@@ -957,7 +956,7 @@ fn disassemble(
     if style == Style::Json {
         // With its source lines and variables, as a PE image's, if its
         // debug information is found.
-        if let Ok(opened) = hexcavator_program::Opened::open(path, pdb)
+        if let Ok(opened) = turbonop_program::Opened::open(path, pdb)
             && let Ok(program) = opened.program()
         {
             let compiland = program.symbols().ok().and_then(|syms| {
@@ -975,8 +974,8 @@ fn disassemble(
 /// the function's parameters and locals (where each lives), from the
 /// program's debug information.
 fn with_debug(
-    program: &hexcavator_program::Program<'_>,
-    f: &hexcavator_size::disasm::Function<'_>,
+    program: &turbonop_program::Program<'_>,
+    f: &turbonop_size::disasm::Function<'_>,
     compiland: Option<u32>,
 ) -> Result<String, String> {
     let base = program.image.image_base();
@@ -1007,12 +1006,12 @@ fn with_debug(
 
 /// A function's listing, in `style`, with its lines' sources if known.
 fn render(
-    f: &hexcavator_size::disasm::Function<'_>,
+    f: &turbonop_size::disasm::Function<'_>,
     style: Style,
     sources: Option<&dyn Fn(u64) -> Option<(String, u32)>>,
 ) -> String {
-    use hexcavator_size::disasm::{self, Arch, Edge, Flow, Labels};
     use std::fmt::Write as _;
+    use turbonop_size::disasm::{self, Arch, Edge, Flow, Labels};
     let labels = if style == Style::Bloaty {
         Labels::Bloaty
     } else {
@@ -1132,9 +1131,9 @@ fn pe_listing(
     pdb: Option<&Path>,
     style: Style,
 ) -> Result<String, String> {
-    use hexcavator_pe::consts::machine;
-    use hexcavator_size::disasm::{Arch, Function};
-    use hexcavator_size::symbols::SymbolKind;
+    use turbonop_pe::consts::machine;
+    use turbonop_size::disasm::{Arch, Function};
+    use turbonop_size::symbols::SymbolKind;
     let image = Image::parse(data).map_err(|e| format!("{}: {e}", path.display()))?;
     let file = image
         .pe()
@@ -1151,7 +1150,7 @@ fn pe_listing(
             ));
         }
     };
-    let opened = hexcavator_program::Opened::open(path, pdb)?;
+    let opened = turbonop_program::Opened::open(path, pdb)?;
     let program = opened.program()?;
     let syms = program.symbols()?;
     let code = |k: SymbolKind| {
@@ -1163,7 +1162,7 @@ fn pe_listing(
                 | SymbolKind::Thunk
         )
     };
-    let candidates: Vec<&hexcavator_size::symbols::Symbol> = syms
+    let candidates: Vec<&turbonop_size::symbols::Symbol> = syms
         .iter()
         .filter(|s| code(s.kind) && !s.folded && s.size.file > 0)
         .collect();
@@ -1173,7 +1172,7 @@ fn pe_listing(
         .find(|s| s.name == function)
         .copied()
         .or_else(|| {
-            let mut alone = hexcavator_size::disasm::ByNameAlone::new(function);
+            let mut alone = turbonop_size::disasm::ByNameAlone::new(function);
             for s in &candidates {
                 alone.offer(s.addr, &s.name, || *s);
             }
@@ -1185,7 +1184,7 @@ fn pe_listing(
     let size =
         u32::try_from(target.size.file).map_err(|_| format!("{}: bad size", path.display()))?;
     let bytes = file
-        .bytes_at_rva(hexcavator_core::Rva(rva), size)
+        .bytes_at_rva(turbonop_core::Rva(rva), size)
         .map_err(|e| format!("{}: {}: {e}", path.display(), target.name))?;
     let base = image.image_base();
     let mut names: Vec<(u64, String)> = syms
@@ -1217,10 +1216,10 @@ fn pe_listing(
 /// A function's parameters and locals as JSON: each one's name, type,
 /// size, fields and its pointee's fields, and where it lives over which
 /// addresses.
-fn variables_json(vars: &[hexcavator_program::variables::Variable]) -> serde_json::Value {
-    use hexcavator_program::variables::Where;
+fn variables_json(vars: &[turbonop_program::variables::Variable]) -> serde_json::Value {
     use serde_json::{Value, json};
-    let fields = |f: &[hexcavator_debuginfo::layout::FlatField]| {
+    use turbonop_program::variables::Where;
+    let fields = |f: &[turbonop_debuginfo::layout::FlatField]| {
         f.iter()
             .map(|f| json!({ "name": f.name, "offset": f.offset, "size": f.size }))
             .collect::<Vec<_>>()
@@ -1291,16 +1290,16 @@ pub fn run(args: &[String]) -> ExitCode {
 fn map_model(
     image: &Image<'_>,
     map_path: &Path,
-) -> Result<(Model, Vec<hexcavator_size::symbols::Symbol>), String> {
+) -> Result<(Model, Vec<turbonop_size::symbols::Symbol>), String> {
     let text = std::fs::read(map_path).map_err(|e| format!("{}: {e}", map_path.display()))?;
-    let map = hexcavator_linkmap::parse(&String::from_utf8_lossy(&text));
+    let map = turbonop_linkmap::parse(&String::from_utf8_lossy(&text));
     if map.groups.is_empty() {
         return Err(format!(
             "{}: not a linker map (no COFF groups)",
             map_path.display()
         ));
     }
-    hexcavator_size::map::model(image, &map).map_err(|e| format!("{}: {e}", map_path.display()))
+    turbonop_size::map::model(image, &map).map_err(|e| format!("{}: {e}", map_path.display()))
 }
 
 fn rollup_of(
@@ -1327,7 +1326,7 @@ fn rollup_of(
 
 /// Rewrites custom sources' labels, then rolls up (filtered).
 fn finish_rollup(
-    maps: std::sync::Arc<hexcavator_size::sources::Maps>,
+    maps: std::sync::Arc<turbonop_size::sources::Maps>,
     customs: &[Option<CustomSource>],
     filter: Option<&regex::Regex>,
 ) -> Rollup {
@@ -1340,9 +1339,9 @@ fn finish_rollup(
 /// `maps` with custom sources' labels rewritten (a copy, if there are any:
 /// the maps may be kept).
 fn customized(
-    maps: std::sync::Arc<hexcavator_size::sources::Maps>,
+    maps: std::sync::Arc<turbonop_size::sources::Maps>,
     customs: &[Option<CustomSource>],
-) -> std::sync::Arc<hexcavator_size::sources::Maps> {
+) -> std::sync::Arc<turbonop_size::sources::Maps> {
     if customs.iter().all(Option::is_none) {
         return maps;
     }
@@ -1366,7 +1365,7 @@ pub(crate) fn maps_of(
     debug_file: Option<&Path>,
     sources: &[Source],
     stripped: bool,
-) -> Result<std::sync::Arc<hexcavator_size::sources::Maps>, String> {
+) -> Result<std::sync::Arc<turbonop_size::sources::Maps>, String> {
     let mut files = vec![path];
     files.extend(pdb);
     files.extend(map);
@@ -1379,19 +1378,19 @@ pub(crate) fn maps_of(
     );
     if stripped {
         // (The whole file's maps, kept too, less what a strip removes.)
-        return hexcavator_program::cache::remember(&files, &format!("{what} stripped"), || {
+        return turbonop_program::cache::remember(&files, &format!("{what} stripped"), || {
             let whole = maps_of(path, pdb, map, debug_file, sources, false)?;
             let data = Mmap::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
             let mut maps = std::sync::Arc::unwrap_or_clone(whole);
-            maps.strip(&hexcavator_size::strip::ranges(&data));
+            maps.strip(&turbonop_size::strip::ranges(&data));
             Ok(maps)
         });
     }
-    hexcavator_program::cache::remember(&files, &what, || {
+    turbonop_program::cache::remember(&files, &what, || {
         // (Crates are full symbols, relabeled.)
-        let built = hexcavator_size::sources::built_as(sources);
+        let built = turbonop_size::sources::built_as(sources);
         let mut maps = build_maps(path, pdb, map, debug_file, &built)?;
-        hexcavator_size::sources::label_crates(&mut maps, sources);
+        turbonop_size::sources::label_crates(&mut maps, sources);
         Ok(maps)
     })
 }
@@ -1402,7 +1401,7 @@ fn build_maps(
     map: Option<&Path>,
     debug_file: Option<&Path>,
     sources: &[Source],
-) -> Result<hexcavator_size::sources::Maps, String> {
+) -> Result<turbonop_size::sources::Maps, String> {
     let show = |p: &Path| p.display().to_string();
     let image_map = Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
     // (-pdb and -debug name an ELF, Mach-O, or WebAssembly file's DWARF
@@ -1412,7 +1411,7 @@ fn build_maps(
     // outside an archive).
     let file_name = show(path);
     // WebAssembly modules: bloaty's sources for them.
-    if hexcavator_size::wasm::is_wasm_input(&image_map) {
+    if turbonop_size::wasm::is_wasm_input(&image_map) {
         let source_map = if sources
             .iter()
             .any(|s| matches!(s, Source::CompileUnits | Source::Inlines))
@@ -1421,7 +1420,7 @@ fn build_maps(
         } else {
             None
         };
-        let mut maps = hexcavator_size::wasm::maps_with_source_map(
+        let mut maps = turbonop_size::wasm::maps_with_source_map(
             &image_map,
             &file_name,
             sources,
@@ -1432,12 +1431,12 @@ fn build_maps(
         return Ok(maps);
     }
     // Mach-O and universal files: bloaty's Mach-O sources.
-    if hexcavator_size::macho::is_macho_input(&image_map) {
+    if turbonop_size::macho::is_macho_input(&image_map) {
         let debug = match debug_file {
             Some(_) => debug_map(debug_file)?,
             None => found_debug(path, &image_map),
         };
-        let mut maps = hexcavator_size::macho::maps_with_debug(
+        let mut maps = turbonop_size::macho::maps_with_debug(
             &image_map,
             &file_name,
             sources,
@@ -1448,7 +1447,7 @@ fn build_maps(
         // libraries.)
         if map.is_none()
             && sources.contains(&Source::Libraries)
-            && let Ok(opened) = hexcavator_program::Opened::open(path, debug_file)
+            && let Ok(opened) = turbonop_program::Opened::open(path, debug_file)
             && opened.is_debug_map()
             && let Ok(program) = opened.program()
             && let Ok(model) = program.model()
@@ -1459,24 +1458,20 @@ fn build_maps(
         return Ok(maps);
     }
     // ELF files and archives of them: bloaty's ELF sources.
-    if hexcavator_size::elf::is_elf_input(&image_map) {
+    if turbonop_size::elf::is_elf_input(&image_map) {
         let debug = match debug_file {
             Some(_) => debug_map(debug_file)?,
             None => found_debug(path, &image_map),
         };
-        let mut maps = hexcavator_size::elf::maps_with_debug(
-            &image_map,
-            &file_name,
-            sources,
-            debug.as_deref(),
-        )
-        .map_err(|e| format!("{}: {e}", show(path)))?;
+        let mut maps =
+            turbonop_size::elf::maps_with_debug(&image_map, &file_name, sources, debug.as_deref())
+                .map_err(|e| format!("{}: {e}", show(path)))?;
         unix_map(&mut maps, map)?;
         return Ok(maps);
     }
     // Objects, import objects, and libraries have no PDB to read.
     if is_object_input(&image_map) {
-        let maps = hexcavator_size::objects::maps(&image_map, &file_name, sources)
+        let maps = turbonop_size::objects::maps(&image_map, &file_name, sources)
             .map_err(|e| format!("{}: {e}", show(path)))?;
         return Ok(maps);
     }
@@ -1491,7 +1486,7 @@ fn build_maps(
         };
         sources::maps(&image, inputs, sources)
     } else if sources.iter().any(|s| s.needs_debug_info()) {
-        let opened = hexcavator_program::Opened::open(path, pdb)?;
+        let opened = turbonop_program::Opened::open(path, pdb)?;
         let program = opened.program()?;
         let model = program.model()?;
         let syms: &[symbols::Symbol] = if sources.iter().any(|s| s.is_symbols()) {
@@ -1536,11 +1531,11 @@ pub(crate) fn wasm_source_map(
     module_path: &Path,
     module: &[u8],
     explicit: Option<&Path>,
-) -> Result<Option<hexcavator_size::sourcemap::SourceMap>, String> {
+) -> Result<Option<turbonop_size::sourcemap::SourceMap>, String> {
     let path = match explicit {
         Some(p) => p.to_path_buf(),
         None => {
-            let Some(url) = hexcavator_wasm::Module::parse(module)
+            let Some(url) = turbonop_wasm::Module::parse(module)
                 .ok()
                 .and_then(|m| m.source_mapping_url())
             else {
@@ -1564,14 +1559,14 @@ pub(crate) fn wasm_source_map(
             }
             let p = module_path.parent().unwrap_or(Path::new("")).join(url);
             // (Named by the module: a share or device isn't asked about.)
-            if !hexcavator_mmap::is_local_path(&p) || !p.is_file() {
+            if !turbonop_mmap::is_local_path(&p) || !p.is_file() {
                 return Ok(None);
             }
             p
         }
     };
     let text = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    hexcavator_size::sourcemap::parse(&text)
+    turbonop_size::sourcemap::parse(&text)
         .map(Some)
         .map_err(|e| format!("{}: {e}", path.display()))
 }
@@ -1587,7 +1582,7 @@ fn source_map_option(image: &Path, maps: &[(String, PathBuf)]) -> Option<PathBuf
         return Some(p.clone());
     }
     let data = Mmap::open(image).ok()?;
-    let module = hexcavator_wasm::Module::parse(&data).ok()?;
+    let module = turbonop_wasm::Module::parse(&data).ok()?;
     let url = String::from_utf8_lossy(module.source_mapping_url()?).into_owned();
     maps.iter()
         .find(|(id, _)| *id == url)
@@ -1601,28 +1596,27 @@ fn debug_map(path: Option<&Path>) -> Result<Option<Mmap>, String> {
 }
 
 /// With a Unix linker's map (`-map`: lld's, GNU ld's, ld64's), `maps`'
-/// `compileunits` and `libraries` from it (see `hexcavator_size::unixmap`).
-fn unix_map(maps: &mut hexcavator_size::sources::Maps, map: Option<&Path>) -> Result<(), String> {
+/// `compileunits` and `libraries` from it (see `turbonop_size::unixmap`).
+fn unix_map(maps: &mut turbonop_size::sources::Maps, map: Option<&Path>) -> Result<(), String> {
     let Some(path) = map else { return Ok(()) };
     let text = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let link =
-        hexcavator_linkmap::unix::parse(&String::from_utf8_lossy(&text)).ok_or_else(|| {
-            format!(
-                "{}: not a linker map (lld's, GNU ld's, or ld64's)",
-                path.display()
-            )
-        })?;
-    hexcavator_size::unixmap::apply(maps, &link);
+    let link = turbonop_linkmap::unix::parse(&String::from_utf8_lossy(&text)).ok_or_else(|| {
+        format!(
+            "{}: not a linker map (lld's, GNU ld's, or ld64's)",
+            path.display()
+        )
+    })?;
+    turbonop_size::unixmap::apply(maps, &link);
     Ok(())
 }
 
 /// The separate debug file of the ELF or Mach-O image at `path`, found
-/// as every command finds it (see `hexcavator_program::find_debug`): none
+/// as every command finds it (see `turbonop_program::find_debug`): none
 /// if the image has its own DWARF, or none is found (its symbol table
 /// then serves).
 fn found_debug(path: &Path, data: &[u8]) -> Option<Mmap> {
     let image = Image::parse(data).ok()?;
-    let (found, map) = hexcavator_program::find_debug(path, &image, None).ok()?;
+    let (found, map) = turbonop_program::find_debug(path, &image, None).ok()?;
     (found != path).then_some(map)
 }
 
@@ -1630,12 +1624,12 @@ fn found_debug(path: &Path, data: &[u8]) -> Option<Mmap> {
 pub(crate) fn is_object_input(data: &[u8]) -> bool {
     // (A COFF object's header has no magic: an ELF, Mach-O, or WebAssembly
     // file's start can read as one, and isn't.)
-    let other = hexcavator_size::elf::is_elf_input(data)
-        || hexcavator_size::macho::is_macho_input(data)
-        || hexcavator_size::wasm::is_wasm_input(data);
-    hexcavator_archive::Archive::is_archive(data)
-        || hexcavator_pe::import_object::ImportObject::is_import_object(data)
-        || (!other && !data.starts_with(b"MZ") && hexcavator_pe::PeFile::parse_object(data).is_ok())
+    let other = turbonop_size::elf::is_elf_input(data)
+        || turbonop_size::macho::is_macho_input(data)
+        || turbonop_size::wasm::is_wasm_input(data);
+    turbonop_archive::Archive::is_archive(data)
+        || turbonop_pe::import_object::ImportObject::is_import_object(data)
+        || (!other && !data.starts_with(b"MZ") && turbonop_pe::PeFile::parse_object(data).is_ok())
 }
 
 fn bloaty(options: &Options, out: &mut impl Write) -> Result<(), String> {
@@ -1710,15 +1704,14 @@ fn bloaty(options: &Options, out: &mut impl Write) -> Result<(), String> {
 /// source's label at each address asked about, then (if asked) every map's
 /// ranges.
 fn explain(
-    maps: &hexcavator_size::sources::Maps,
+    maps: &turbonop_size::sources::Maps,
     names: &[String],
     options: &Options,
     out: &mut String,
 ) {
     use std::fmt::Write as _;
     let name = |l| maps.labels.name(l);
-    let mut sources: Vec<(&str, &hexcavator_size::rangemap::DualMap)> =
-        vec![("[base]", &maps.base)];
+    let mut sources: Vec<(&str, &turbonop_size::rangemap::DualMap)> = vec![("[base]", &maps.base)];
     for (i, (_, m)) in maps.sources.iter().enumerate() {
         sources.push((names.get(i).map_or("?", String::as_str), m));
     }
@@ -1921,13 +1914,13 @@ fn analyze(options: &Options) -> Result<(), String> {
         };
         if let Some(base_path) = &options.base {
             let base_opened =
-                hexcavator_program::Opened::open(base_path, options.base_pdb.as_deref())?;
+                turbonop_program::Opened::open(base_path, options.base_pdb.as_deref())?;
             let base = base_opened.program()?;
             let (base_image, base_debug) = (&base.image, &base.debug);
             let base_syms = base.symbols()?;
-            let new = hexcavator_size::findings::find(&image, debug, syms);
-            let old = hexcavator_size::findings::find(base_image, base_debug, base_syms);
-            let (text, json) = hexcavator_size::findings::compare(&new, &old, limit);
+            let new = turbonop_size::findings::find(&image, debug, syms);
+            let old = turbonop_size::findings::find(base_image, base_debug, base_syms);
+            let (text, json) = turbonop_size::findings::compare(&new, &old, limit);
             let out = if options.format == Format::Json {
                 json
             } else {
@@ -1935,12 +1928,12 @@ fn analyze(options: &Options) -> Result<(), String> {
             };
             return finish(crate::out::stdout().write_all(out.as_bytes()));
         }
-        let (text, json) = hexcavator_size::findings::report(
+        let (text, json) = turbonop_size::findings::report(
             &image,
             debug,
             syms,
             &name,
-            hexcavator_size::findings::ReportOptions { limit },
+            turbonop_size::findings::ReportOptions { limit },
         );
         let out = if options.format == Format::Json {
             json
@@ -1985,12 +1978,12 @@ fn default_program(
     options: &Options,
     debug: Option<&Path>,
     wants_model: bool,
-) -> Result<Option<Option<hexcavator_program::Opened>>, String> {
+) -> Result<Option<Option<turbonop_program::Opened>>, String> {
     let path = &options.image;
     let show = || path.display().to_string();
     let map = Mmap::open(path).map_err(|e| format!("{}: {e}", show()))?;
     let linked = !is_object_input(&map)
-        && Image::parse(&map).is_ok_and(|i| i.kind() == hexcavator_image::Kind::Linked);
+        && Image::parse(&map).is_ok_and(|i| i.kind() == turbonop_image::Kind::Linked);
     if !linked {
         if wants_model {
             return Err(format!(
@@ -2013,12 +2006,12 @@ fn default_program(
             )),
         };
     }
-    let wasm = hexcavator_size::wasm::is_wasm_input(&map);
-    match hexcavator_program::Opened::open(path, debug) {
+    let wasm = turbonop_size::wasm::is_wasm_input(&map);
+    match turbonop_program::Opened::open(path, debug) {
         Ok(opened) => Ok(Some(Some(opened))),
         // Without debug information: its data sources, which its own
         // structures and symbols label.
-        Err(e @ hexcavator_program::Error::NoDebug { .. }) if debug.is_none() && !wants_model => {
+        Err(e @ turbonop_program::Error::NoDebug { .. }) if debug.is_none() && !wants_model => {
             ereport!("hexcavator size: {e}: reporting by sections (give it with -debug)");
             Ok(None)
         }
@@ -2050,7 +2043,7 @@ fn or_unknown(name: &str) -> &str {
 /// its CPU subtype too (`arm64e`), others' by the ISA.
 fn arch_label(image: &Image<'_>, model: &Model) -> String {
     match image {
-        Image::MachO(m) => hexcavator_macho::arch_name(m.header().cputype, m.header().cpusubtype),
+        Image::MachO(m) => turbonop_macho::arch_name(m.header().cputype, m.header().cpusubtype),
         _ => model.arch.map_or("unknown", |a| a.name()).to_string(),
     }
 }

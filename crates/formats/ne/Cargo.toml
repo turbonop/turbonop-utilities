@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-ne"
+name = "turbonop-ne"
 description = "16-bit NE (New Executable) files: Windows 1.x-3.x and OS/2 1.x modules and fonts"
 version.workspace = true
 edition.workspace = true
@@ -9,8 +9,8 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
-hexcavator-mz.workspace = true
+turbonop-core.workspace = true
+turbonop-mz.workspace = true
 
 [lints]
 workspace = true

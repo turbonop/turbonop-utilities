@@ -86,12 +86,12 @@ impl Toolchain {
     /// carries MinGW's marks (DWARF sections, a COFF symbol table); wasm-ld
     /// for WebAssembly; else GCC's and Clang's.
     pub fn of(
-        image: &hexcavator_image::Image<'_>,
-        debug: Option<&hexcavator_debuginfo::DebugInfo<'_>>,
+        image: &turbonop_image::Image<'_>,
+        debug: Option<&turbonop_debuginfo::DebugInfo<'_>>,
     ) -> Self {
         if let Some(m) = image.macho() {
             if m.linker()
-                .is_some_and(|t| t.tool == hexcavator_macho::consts::TOOL_LD)
+                .is_some_and(|t| t.tool == turbonop_macho::consts::TOOL_LD)
             {
                 Toolchain::AppleLd
             } else {
@@ -228,7 +228,7 @@ impl Link {
     }
 
     /// A link whose options aren't recorded, judged from what it left
-    /// (`image`, and `debug`'s [`hexcavator_debuginfo::DiscardedFunctions`]):
+    /// (`image`, and `debug`'s [`turbonop_debuginfo::DiscardedFunctions`]):
     /// it folded identical functions if functions of different names from
     /// different compilands are at one address, or a function it dropped
     /// still has its symbol (folded symbols are the kept one's); it
@@ -242,8 +242,8 @@ impl Link {
     /// `-O0` or `-O1`: it's taken to have, unless every object whose
     /// options are recorded was compiled so (`compiled`).
     pub fn evidence(
-        image: &hexcavator_image::Image<'_>,
-        debug: &hexcavator_debuginfo::DebugInfo<'_>,
+        image: &turbonop_image::Image<'_>,
+        debug: &turbonop_debuginfo::DebugInfo<'_>,
         compiled: &crate::compiled::Compiled,
     ) -> Link {
         let mut link = Link::judged();
@@ -306,8 +306,8 @@ impl Link {
 
 /// Whether a Mach-O image's symbol table has functions of different names
 /// at one address (ICF folded them).
-fn macho_folded(image: &hexcavator_image::Image<'_>) -> bool {
-    use hexcavator_image::{SymbolKind, SymbolSource};
+fn macho_folded(image: &turbonop_image::Image<'_>) -> bool {
+    use turbonop_image::{SymbolKind, SymbolSource};
     let mut at: rustc_hash::FxHashMap<u64, &[u8]> = rustc_hash::FxHashMap::default();
     for s in image.symbols() {
         if s.kind != SymbolKind::Function || s.source != SymbolSource::SymbolTable {
@@ -327,13 +327,13 @@ fn macho_folded(image: &hexcavator_image::Image<'_>) -> bool {
 /// The names of the functions an image's full symbol table defines (its
 /// own, or its debug file's if it has none; a Mach-O image's less the `_`
 /// prefix C names take), if it has one: of any format (see
-/// [`hexcavator_image::Image::symbols`]).
+/// [`turbonop_image::Image::symbols`]).
 fn defined_functions(
-    image: &hexcavator_image::Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    image: &turbonop_image::Image<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
 ) -> Option<rustc_hash::FxHashSet<Vec<u8>>> {
-    use hexcavator_image::{SymbolKind, SymbolSource};
-    let of = |image: &hexcavator_image::Image<'_>| -> Option<rustc_hash::FxHashSet<Vec<u8>>> {
+    use turbonop_image::{SymbolKind, SymbolSource};
+    let of = |image: &turbonop_image::Image<'_>| -> Option<rustc_hash::FxHashSet<Vec<u8>>> {
         let macho = image.macho().is_some();
         let names: rustc_hash::FxHashSet<Vec<u8>> = image
             .symbols()
@@ -357,7 +357,7 @@ fn defined_functions(
     of(image).or_else(|| {
         // (A stripped ELF image: its debug file's symbol table.)
         let data = debug.dwarf()?.file_data();
-        of(&hexcavator_image::Image::parse(data).ok()?)
+        of(&turbonop_image::Image::parse(data).ok()?)
     })
 }
 
@@ -640,7 +640,7 @@ pub fn recommend(
 fn owned_by_code(x: &Xref, n: u32, depth: u32) -> bool {
     depth > 0
         && x.graph.referrers(n).iter().any(|&(f, e)| {
-            e == hexcavator_xref::Edge::Attached
+            e == turbonop_xref::Edge::Attached
                 && (x.graph.nodes()[f as usize].code || owned_by_code(x, f, depth - 1))
         })
 }
@@ -667,7 +667,7 @@ fn examples(x: &Xref, nodes: &[u32]) -> Vec<(String, u64)> {
 ///   producers, DWARF, source map links): a module is downloaded whole.
 /// - Mach-O: rebase and bind opcodes where chained fixups would be
 ///   smaller (`-fixup_chains`).
-pub fn structural(image: &hexcavator_image::Image<'_>) -> Vec<Recommendation> {
+pub fn structural(image: &turbonop_image::Image<'_>) -> Vec<Recommendation> {
     let mut out = Vec::new();
     if let Some(elf) = image.elf() {
         elf_relr(elf, &mut out);
@@ -722,8 +722,8 @@ pub fn unused_libraries(
 /// chained fixups don't), less the chained fixups' (see
 /// [`chained_fixups_size`]). Only for x86-64 and ARM64 images whose
 /// fixups are all word-aligned (a chain links words).
-fn macho_chained(m: &hexcavator_macho::MachO<'_>, out: &mut Vec<Recommendation>) {
-    use hexcavator_macho::consts::*;
+fn macho_chained(m: &turbonop_macho::MachO<'_>, out: &mut Vec<Recommendation>) {
+    use turbonop_macho::consts::*;
     let cpu = m.header().cputype;
     if m.is_object() || !(cpu == CPU_TYPE_ARM64 || cpu == CPU_TYPE_X86_64) {
         return;
@@ -795,11 +795,11 @@ fn macho_chained(m: &hexcavator_macho::MachO<'_>, out: &mut Vec<Recommendation>)
 /// (8 if any has an addend, 16 if one needs more than 32 bits), one for
 /// each symbol bound (by library, name, and weakness); and their names.
 pub fn chained_fixups_size(
-    segments: &[hexcavator_macho::Segment<'_>],
-    fixups: &[hexcavator_macho::Fixup<'_>],
+    segments: &[turbonop_macho::Segment<'_>],
+    fixups: &[turbonop_macho::Fixup<'_>],
     page: u64,
 ) -> u64 {
-    use hexcavator_macho::FixupKind;
+    use turbonop_macho::FixupKind;
     let align8 = |n: u64| n.next_multiple_of(8);
     let mut size = align8(28) + align8(4 + 4 * segments.len() as u64);
     for s in segments {
@@ -847,7 +847,7 @@ pub fn chained_fixups_size(
 pub fn inlining(
     inlinees: &[crate::inlining::Inlinee],
     toolchain: Toolchain,
-    arch: hexcavator_core::Arch,
+    arch: turbonop_core::Arch,
     rust: bool,
 ) -> Option<Recommendation> {
     let worth: Vec<&crate::inlining::Inlinee> = inlinees
@@ -994,7 +994,7 @@ pub fn pointer_tables(
 ///   (`-fmerge-constants`, MSVC's `/GF`) would merge; `named` says whether
 ///   an address is in named data (an array, not merged).
 pub fn strings(
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
     toolchain: Toolchain,
     named: &dyn Fn(u64) -> bool,
     rust: bool,
@@ -1167,7 +1167,7 @@ fn count(n: usize, one: &str, many: &str) -> String {
 pub fn rust(
     symbols: &[crate::symbols::Symbol],
     eh: &crate::exceptions::Exceptions,
-    debug_impls: &hexcavator_hash::Set<u64>,
+    debug_impls: &turbonop_hash::Set<u64>,
 ) -> Vec<Recommendation> {
     use crate::sources::crate_of;
     use crate::symbols::SymbolKind;
@@ -1234,13 +1234,13 @@ pub fn rust(
 /// public symbols (`<T as core::fmt::Debug>::fmt`, mangled: in Rust's
 /// legacy scheme or v0), for [`rust`]: CodeView's own names for them
 /// (`m::impl$12::fmt`) don't say which trait's they are.
-pub fn debug_impls(debug: &hexcavator_debuginfo::DebugInfo<'_>) -> hexcavator_hash::Set<u64> {
+pub fn debug_impls(debug: &turbonop_debuginfo::DebugInfo<'_>) -> turbonop_hash::Set<u64> {
     // (The mangled names first, by the trait's name in them: legacy
     // `core..fmt..Debug`; v0 `5Debug`, the identifier where it first
     // appears, its path a back-reference when the type named `core::fmt`
     // before it. Demangling then says whose it is.)
     let found = debug.publics_matching(maybe_debug_impl);
-    let mut demangler = hexcavator_demangle::Demangler::new();
+    let mut demangler = turbonop_demangle::Demangler::new();
     found
         .into_iter()
         .filter(|(_, raw)| is_debug_impl(&mut demangler, raw))
@@ -1256,7 +1256,7 @@ fn maybe_debug_impl(name: &[u8]) -> bool {
 }
 
 /// Whether a mangled Rust name is a `Debug` implementation's `fmt`.
-fn is_debug_impl(demangler: &mut hexcavator_demangle::Demangler, name: &[u8]) -> bool {
+fn is_debug_impl(demangler: &mut turbonop_demangle::Demangler, name: &[u8]) -> bool {
     maybe_debug_impl(name)
         && demangler
             .demangle(&String::from_utf8_lossy(name), 0)
@@ -1298,7 +1298,7 @@ pub fn near_identical(
 
 /// The relative relocation type of `machine`.
 fn relative_type(machine: u16) -> Option<u32> {
-    use hexcavator_elf::consts::*;
+    use turbonop_elf::consts::*;
     Some(match machine {
         EM_X86_64 | EM_386 => 8,
         EM_AARCH64 => 1027,
@@ -1309,8 +1309,8 @@ fn relative_type(machine: u16) -> Option<u32> {
     })
 }
 
-fn elf_relr(elf: &hexcavator_elf::ElfFile<'_>, out: &mut Vec<Recommendation>) {
-    use hexcavator_elf::consts::*;
+fn elf_relr(elf: &turbonop_elf::ElfFile<'_>, out: &mut Vec<Recommendation>) {
+    use turbonop_elf::consts::*;
     let Some(relative) = relative_type(elf.header().machine) else {
         return;
     };
@@ -1322,7 +1322,7 @@ fn elf_relr(elf: &hexcavator_elf::ElfFile<'_>, out: &mut Vec<Recommendation>) {
     {
         return;
     }
-    let word: u64 = if elf.class() == hexcavator_elf::Class::Elf64 {
+    let word: u64 = if elf.class() == turbonop_elf::Class::Elf64 {
         8
     } else {
         4
@@ -1397,8 +1397,8 @@ pub fn relr_size(offsets: &[u64], word: u64) -> u64 {
     entries * word
 }
 
-fn elf_hash(elf: &hexcavator_elf::ElfFile<'_>, out: &mut Vec<Recommendation>) {
-    use hexcavator_elf::consts::*;
+fn elf_hash(elf: &turbonop_elf::ElfFile<'_>, out: &mut Vec<Recommendation>) {
+    use turbonop_elf::consts::*;
     let sections: Vec<_> = elf.sections().collect();
     let (Some(hash), true) = (
         sections.iter().find(|s| s.kind == SHT_HASH),
@@ -1414,7 +1414,7 @@ fn elf_hash(elf: &hexcavator_elf::ElfFile<'_>, out: &mut Vec<Recommendation>) {
     });
 }
 
-fn wasm_custom(m: &hexcavator_wasm::Module<'_>, out: &mut Vec<Recommendation>) {
+fn wasm_custom(m: &turbonop_wasm::Module<'_>, out: &mut Vec<Recommendation>) {
     let strippable = |name: &[u8]| {
         name == b"name"
             || name == b"producers"
@@ -1426,7 +1426,7 @@ fn wasm_custom(m: &hexcavator_wasm::Module<'_>, out: &mut Vec<Recommendation>) {
     let mut examples: Vec<(String, u64)> = m
         .sections()
         .iter()
-        .filter(|s| s.id == hexcavator_wasm::SECTION_CUSTOM && strippable(s.name))
+        .filter(|s| s.id == turbonop_wasm::SECTION_CUSTOM && strippable(s.name))
         .map(|s| (String::from_utf8_lossy(s.name).into_owned(), s.size))
         .collect();
     if examples.is_empty() || m.is_object() {
@@ -1450,7 +1450,7 @@ mod tests {
     /// v0, and v0 with the trait's path a back-reference; not Display's.
     #[test]
     fn debug_impls_by_mangled_name() {
-        let mut d = hexcavator_demangle::Demangler::new();
+        let mut d = turbonop_demangle::Demangler::new();
         for (name, debug) in [
             (&b"_RNvXs1_NtCsg6mp758xznh_12aho_corasick3dfaNtB5_3DFANtNtCs4mxzSKgHcRc_4core3fmt5Debug3fmt"[..], true),
             (b"_RNvXsh_NtCs4mxzSKgHcRc_4core3fmteNtB5_5Debug3fmt", true),
@@ -1511,7 +1511,7 @@ mod tests {
             ],
             needless: Vec::new(),
         };
-        let r = rust(&syms, &eh, &hexcavator_hash::Set::default());
+        let r = rust(&syms, &eh, &turbonop_hash::Set::default());
         let kinds: Vec<&str> = r.iter().map(|r| r.kind).collect();
         assert_eq!(kinds, ["panic-abort", "fmt-debug"]);
         assert_eq!(r[0].saving, 30 + 200);
@@ -1527,14 +1527,14 @@ mod tests {
             rust(
                 &[symbol("main", 400), symbol("llvm::foo()", 900)],
                 &eh,
-                &hexcavator_hash::Set::default()
+                &turbonop_hash::Set::default()
             )
             .is_empty()
         );
         // Nothing unwinding: no panic-abort.
         let none = Exceptions::default();
         assert_eq!(
-            rust(&syms, &none, &hexcavator_hash::Set::default())
+            rust(&syms, &none, &turbonop_hash::Set::default())
                 .iter()
                 .map(|r| r.kind)
                 .collect::<Vec<_>>(),
@@ -1581,7 +1581,7 @@ mod tests {
         let r = inlining(
             std::slice::from_ref(&i),
             Toolchain::Msvc,
-            hexcavator_core::Arch::X64,
+            turbonop_core::Arch::X64,
             true,
         )
         .unwrap();
@@ -1590,7 +1590,7 @@ mod tests {
             "{}",
             r.advice
         );
-        let c = inlining(&[i], Toolchain::Msvc, hexcavator_core::Arch::X64, false).unwrap();
+        let c = inlining(&[i], Toolchain::Msvc, turbonop_core::Arch::X64, false).unwrap();
         assert!(
             c.advice.starts_with("mark a function __declspec(noinline)"),
             "{}",

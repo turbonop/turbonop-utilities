@@ -11,12 +11,12 @@
 //! its virtual bases, whose offsets are computed at run time and are
 //! placed here after the rest of the object, aligned, in order.
 
-use hexcavator_hash::Map as HashMap;
-use hexcavator_hash::Set as HashSet;
+use turbonop_hash::Map as HashMap;
+use turbonop_hash::Set as HashSet;
 
-use hexcavator_core::Endian;
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Die, Unit, Value};
+use turbonop_core::Endian;
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Die, Unit, Value};
 
 use super::{DwarfInfo, VOID, Walk};
 use crate::TypeRef;
@@ -226,7 +226,7 @@ impl DwarfInfo<'_> {
     fn member_offset(u: &Unit<'_>, d: &Die<'_>) -> Option<u64> {
         let a = d.attr(DW_AT_DATA_MEMBER_LOCATION)?;
         if let Value::Block(b) = a.value {
-            let mut r = hexcavator_dwarf::Reader::new(b, 1, u.sections().endian);
+            let mut r = turbonop_dwarf::Reader::new(b, 1, u.sections().endian);
             return match *b.first()? {
                 DW_OP_PLUS_UCONST => r.uleb().filter(|_| r.is_empty()),
                 DW_OP_CONSTU => r.uleb().filter(|_| r.is_empty()),
@@ -424,7 +424,7 @@ impl DwarfInfo<'_> {
 
     /// Every defined class, structure, and union (one per key), with its
     /// layout.
-    pub fn layouts(&self) -> Result<Vec<Layout>, hexcavator_core::Error> {
+    pub fn layouts(&self) -> Result<Vec<Layout>, turbonop_core::Error> {
         let mut defs = Vec::new();
         self.walk(|w| {
             let d = w.die;

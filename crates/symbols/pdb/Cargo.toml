@@ -1,6 +1,6 @@
 [package]
-name = "hexcavator-pdb"
-description = "Zero-copy PDB reader: the MSF container and its streams (the CodeView records in them are hexcavator-codeview's)"
+name = "turbonop-pdb"
+description = "Zero-copy PDB reader: the MSF container and its streams (the CodeView records in them are turbonop-codeview's)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,9 +9,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-codeview.workspace = true
-hexcavator-core.workspace = true
-hexcavator-par.workspace = true
+turbonop-codeview.workspace = true
+turbonop-core.workspace = true
+turbonop-par.workspace = true
 
 [lints]
 workspace = true

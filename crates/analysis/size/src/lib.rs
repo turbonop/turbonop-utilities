@@ -22,7 +22,7 @@
 pub mod budget;
 pub mod custom;
 /// (Moved to the debug information crate, which reads DWARF too.)
-pub use hexcavator_debuginfo::decompress;
+pub use turbonop_debuginfo::decompress;
 pub mod compiled;
 pub mod disasm;
 pub mod dwarf_units;
@@ -66,7 +66,7 @@ pub mod xref;
 
 use std::collections::BTreeMap;
 
-use hexcavator_image::Arch;
+use turbonop_image::Arch;
 
 pub use range::Range;
 
@@ -116,16 +116,16 @@ pub struct Section {
     /// The format's section flags (PE: `Characteristics`).
     pub characteristics: u32,
     /// What it holds and how it is mapped, whatever the format.
-    pub flags: hexcavator_image::SectionFlags,
+    pub flags: turbonop_image::SectionFlags,
 }
 
 impl Section {
     pub fn executable(&self) -> bool {
-        self.flags.contains(hexcavator_image::SectionFlags::EXECUTE)
+        self.flags.contains(turbonop_image::SectionFlags::EXECUTE)
     }
 
     pub fn writable(&self) -> bool {
-        self.flags.contains(hexcavator_image::SectionFlags::WRITE)
+        self.flags.contains(turbonop_image::SectionFlags::WRITE)
     }
 }
 

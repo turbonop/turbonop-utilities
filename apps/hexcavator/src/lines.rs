@@ -7,9 +7,9 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::{DebugInfo, InlineSite, SourceLines, exclusive_sizes_by_index};
-use hexcavator_size::symbols::{Symbol, SymbolKind};
 use serde_json::{Value, json};
+use turbonop_debuginfo::{DebugInfo, InlineSite, SourceLines, exclusive_sizes_by_index};
+use turbonop_size::symbols::{Symbol, SymbolKind};
 
 pub const INLINES_USAGE: &str = "\
 usage: hexcavator inlines [options] <image>
@@ -130,7 +130,7 @@ fn with_debug<R>(
     with_symbols: bool,
     f: impl FnOnce(&DebugInfo<'_>, &[Symbol]) -> Result<R, String>,
 ) -> Result<R, String> {
-    let opened = hexcavator_program::Opened::open(path, pdb)?;
+    let opened = turbonop_program::Opened::open(path, pdb)?;
     let program = opened.program()?;
     let syms = if with_symbols {
         program.symbols()?
@@ -201,7 +201,7 @@ fn by_inlinee<'a>(sites: &[(&InlineSite, u64)], names: &'a [String]) -> Vec<Inli
         .iter()
         .map(|(s, own)| (canon(s.inlinee), s.function, *own))
         .collect();
-    hexcavator_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    turbonop_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
     let mut out: Vec<Inlinee<'_>> = Vec::new();
     for (k, &(inlinee, function, own)) in keyed.iter().enumerate() {
         let new_function = k == 0 || keyed[k - 1].0 != inlinee || keyed[k - 1].1 != function;

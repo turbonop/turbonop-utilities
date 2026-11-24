@@ -19,8 +19,8 @@
 //! groups) or the sections; their entries are read from the file, through
 //! the loader's relocations where it writes them.
 
-use hexcavator_image::Image;
-use hexcavator_xref::Edge;
+use turbonop_image::Image;
+use turbonop_xref::Edge;
 
 use crate::Model;
 use crate::xref::Xref;
@@ -121,16 +121,11 @@ fn named(x: &Xref, names: &[&str]) -> Option<u32> {
     })
 }
 
-fn pe_startup(
-    image: &Image<'_>,
-    pe: &hexcavator_pe::PeFile<'_>,
-    x: &Xref,
-    model: &Model,
-) -> Startup {
+fn pe_startup(image: &Image<'_>, pe: &turbonop_pe::PeFile<'_>, x: &Xref, model: &Model) -> Startup {
     let base = image.image_base();
     let wide = pe
         .optional_header()
-        .is_some_and(hexcavator_pe::OptionalHeader::is_64);
+        .is_some_and(turbonop_pe::OptionalHeader::is_64);
     let library = pe.is_dll();
     let mut phases = Vec::new();
     let tls: Vec<Entry> = pe
@@ -212,9 +207,9 @@ fn pe_startup(
     }
 }
 
-fn elf_startup(image: &Image<'_>, elf: &hexcavator_elf::ElfFile<'_>, x: &Xref) -> Startup {
+fn elf_startup(image: &Image<'_>, elf: &turbonop_elf::ElfFile<'_>, x: &Xref) -> Startup {
     use crate::loader_lists::{List, When};
-    use hexcavator_elf::consts::*;
+    use turbonop_elf::consts::*;
     let h = elf.header();
     let library = h.kind == ET_DYN && !elf.segments().any(|s| s.kind == PT_INTERP);
     // (Thumb functions' addresses have their low bit set.)
@@ -269,7 +264,7 @@ fn elf_startup(image: &Image<'_>, elf: &hexcavator_elf::ElfFile<'_>, x: &Xref) -
     }
 }
 
-fn macho_startup(image: &Image<'_>, m: &hexcavator_macho::MachO<'_>, x: &Xref) -> Startup {
+fn macho_startup(image: &Image<'_>, m: &turbonop_macho::MachO<'_>, x: &Xref) -> Startup {
     use crate::loader_lists::When;
     const MH_EXECUTE: u32 = 2;
     let library = m.header().filetype != MH_EXECUTE;
@@ -315,7 +310,7 @@ fn macho_startup(image: &Image<'_>, m: &hexcavator_macho::MachO<'_>, x: &Xref) -
 /// host calls it before any other export) or wasm-ld's constructors
 /// (`__wasm_call_ctors`, which `_start` and `_initialize` call), then a
 /// WASI command's `_start`. A module without `_start` is a library.
-fn wasm_startup(m: &hexcavator_wasm::Module<'_>, x: &Xref) -> Startup {
+fn wasm_startup(m: &turbonop_wasm::Module<'_>, x: &Xref) -> Startup {
     let export = |name: &[u8]| {
         m.exports()
             .into_iter()
@@ -375,11 +370,11 @@ fn wasm_startup(m: &hexcavator_wasm::Module<'_>, x: &Xref) -> Startup {
 
 /// The address of a WebAssembly module's function `index`, as its graph
 /// has it: its body's, in the code section.
-fn function_address(m: &hexcavator_wasm::Module<'_>, index: u32) -> Option<u64> {
+fn function_address(m: &turbonop_wasm::Module<'_>, index: u32) -> Option<u64> {
     let code = m
         .sections()
         .iter()
-        .find(|s| s.id == hexcavator_wasm::SECTION_CODE)?;
+        .find(|s| s.id == turbonop_wasm::SECTION_CODE)?;
     let f = m.functions().into_iter().find(|f| f.index == index)?;
     m.body(&f)?.0.checked_sub(code.contents_offset)
 }
@@ -410,7 +405,7 @@ pub fn callees(image: &Image<'_>, x: &Xref, node: u32) -> Vec<(u32, Edge)> {
             continue;
         };
         if let Some(code) = image.bytes_at(n.start, n.end.saturating_sub(n.start)) {
-            hexcavator_xref::scan_image(
+            turbonop_xref::scan_image(
                 x.arch,
                 x.mode,
                 code,

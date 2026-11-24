@@ -25,7 +25,7 @@ workflow publishes it to GitHub Pages.
   page: `sw.js` adds the headers that make it so where the host can't
   (GitHub Pages).
 
-hexcavator's allocator there is `hexcavator-alloc` (crates/base/alloc):
+hexcavator's allocator there is `turbonop-alloc` (crates/base/alloc):
 wasi-libc's takes one lock for every thread's allocations, which left
 eight threads slower than one; with it, they share the work (clang.exe's
 `types`: 46 s before, 2.6 s after).

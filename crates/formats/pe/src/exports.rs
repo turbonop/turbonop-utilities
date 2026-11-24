@@ -7,7 +7,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::{Rva, U16Le, U32Le, cstr_at, pod, read_at, read_slice_at};
+use turbonop_core::{Rva, U16Le, U32Le, cstr_at, pod, read_at, read_slice_at};
 
 use crate::PeFile;
 use crate::consts::directory;

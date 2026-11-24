@@ -76,7 +76,7 @@ impl DebugFile {
             };
             use hexcavator_mmap::Source;
             let mut head = [0u8; 32];
-            let n = (file.len() as usize).min(head.len());
+            let n = usize::try_from(file.len()).map_or(head.len(), |l| l.min(head.len()));
             if file.fill(0, &mut head[..n]) && hexcavator_pdb::check(&head[..n]).is_ok() {
                 return Ok(Self::Read(file));
             }

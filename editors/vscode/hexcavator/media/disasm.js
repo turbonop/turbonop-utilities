@@ -1,9 +1,9 @@
-// Disassembly documents: what a `hexc-disasm:` URI names (a binary and a
+// Disassembly documents: what a `hexcavator-disasm:` URI names (a binary and a
 // function in it), and which report levels list functions. Plain
 // functions with no `vscode` dependency, so they are tested under Node.
 "use strict";
 
-const SCHEME = "hexc-disasm";
+const SCHEME = "hexcavator-disasm";
 
 /** Data sources whose rows are symbols (functions among them). */
 const SYMBOL_SOURCES = ["symbols", "fullsymbols", "rawsymbols"];
@@ -35,7 +35,7 @@ function withoutAddresses(text) {
   return String(text || "").replace(/^(\s*)[0-9a-fA-F]{4,16}(?= )/gm, "$1");
 }
 
-/** The binary and function a `hexc-disasm:` URI's query names (and its style), or null. */
+/** The binary and function a `hexcavator-disasm:` URI's query names (and its style), or null. */
 function parseDisasmQuery(query) {
   const q = new URLSearchParams(query || "");
   const file = q.get("file");

@@ -235,7 +235,7 @@ fn offsets_bases_and_names() {
 /// and text as they were.
 #[test]
 fn text_read() {
-    let dir = std::env::temp_dir().join(format!("hexc-symbolize-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-symbolize-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let log = dir.join("crash.txt");
     std::fs::write(

@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-dwarf"
+name = "turbonop-dwarf"
 description = "DWARF debug information (versions 2 to 5): units, abbreviations, DIEs and attributes, strings, addresses, range and location lists, aranges"
 version.workspace = true
 edition.workspace = true
@@ -9,10 +9,10 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-hexcavator-elf.workspace = true
+turbonop-elf.workspace = true

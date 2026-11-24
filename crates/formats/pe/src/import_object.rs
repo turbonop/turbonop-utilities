@@ -2,7 +2,7 @@
 //! libraries: each describes one function or variable a DLL exports,
 //! from which the linker synthesizes the import thunk and descriptors.
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 /// The size of the header.
 pub const HEADER_SIZE: usize = 20;

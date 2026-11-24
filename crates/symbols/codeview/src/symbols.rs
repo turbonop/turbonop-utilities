@@ -1,6 +1,6 @@
 //! CodeView symbol records.
 
-use hexcavator_core::{Reader, Result};
+use turbonop_core::{Reader, Result};
 
 use crate::types::TypeIndex;
 

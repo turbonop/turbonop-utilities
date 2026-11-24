@@ -1,6 +1,6 @@
 [package]
-name = "hexcavator-alloc"
-description = "A thread-caching allocator for WebAssembly's threads (wasi-threads), for Hexcavator"
+name = "turbonop-alloc"
+description = "A thread-caching allocator for WebAssembly's threads (wasi-threads)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

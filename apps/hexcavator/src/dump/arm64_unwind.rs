@@ -9,9 +9,9 @@ use std::io::{self, Write};
 /// table prints a row for each, as dumpbin does) can't print billions.
 const MAX_ROWS: u32 = 0x1_0000;
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::exception::{Arm64PackedUnwind, Arm64UnwindCode as Code, Arm64Xdata};
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::exception::{Arm64PackedUnwind, Arm64UnwindCode as Code, Arm64Xdata};
 
 /// What dumpbin shows for one unwind code.
 struct Op {
@@ -395,11 +395,11 @@ impl Listing<'_, '_> {
             return (None, String::new());
         };
         let address = self.base + u64::from(self.begin) + u64::from(offset);
-        let text = hexcavator_arm64::decode(word, address).map_or_else(String::new, |i| match self
-            .symbols
-        {
-            Some(s) => hexcavator_arm64::format_with(&i, s),
-            None => hexcavator_arm64::format(&i),
+        let text = turbonop_arm64::decode(word, address).map_or_else(String::new, |i| {
+            match self.symbols {
+                Some(s) => turbonop_arm64::format_with(&i, s),
+                None => turbonop_arm64::format(&i),
+            }
         });
         (Some(word), text.trim_end().to_string())
     }
@@ -751,7 +751,7 @@ fn cxx_eh(
     va: &dyn Fn(u32) -> u64,
 ) -> io::Result<bool> {
     let magic = r.word(out, rva)?;
-    if magic & 0x1FFF_FFFF != hexcavator_pe::eh::magic::VC8 {
+    if magic & 0x1FFF_FFFF != turbonop_pe::eh::magic::VC8 {
         return Ok(false);
     }
     let mut f = [0u32; 10];

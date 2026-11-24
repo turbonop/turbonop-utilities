@@ -2,11 +2,11 @@
 
 use std::io::{self, Write};
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::exports::ExportTarget;
-use hexcavator_pe::imports::ImportName;
-use hexcavator_pe::reloc::base_reloc;
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::exports::ExportTarget;
+use turbonop_pe::imports::ImportName;
+use turbonop_pe::reloc::base_reloc;
 
 fn lossy(b: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(b)
@@ -210,7 +210,7 @@ fn reloc_name(kind: u8) -> Option<&'static str> {
 }
 
 pub fn relocations(out: &mut dyn Write, file: &PeFile<'_>) -> io::Result<()> {
-    let Some(dir) = file.data_directory(hexcavator_pe::consts::directory::BASERELOC) else {
+    let Some(dir) = file.data_directory(turbonop_pe::consts::directory::BASERELOC) else {
         return Ok(());
     };
     let rva = dir.virtual_address.get();
@@ -305,9 +305,9 @@ pub fn object_relocations(out: &mut dyn Write, file: &PeFile<'_>, index: usize) 
     for r in relocs {
         let offset = r.virtual_address.get();
         let kind = r.kind.get();
-        let name = hexcavator_pe::reloc::coff_reloc_name(machine, kind)
+        let name = turbonop_pe::reloc::coff_reloc_name(machine, kind)
             .map_or_else(|| format!("{kind:X}"), str::to_string);
-        let size = hexcavator_pe::reloc::coff_reloc_size(machine, kind);
+        let size = turbonop_pe::reloc::coff_reloc_size(machine, kind);
         let at = offset as usize;
         let applied = match data.get(at..at + size) {
             Some(b) if size == 8 => {

@@ -41,11 +41,11 @@
 //! Mach-O (bloaty reads them as ELF archives, every member `[AR Non-ELF
 //! Member File]`).
 
-use hexcavator_archive::{Archive, MemberKind};
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_demangle::itanium::Demangler;
-use hexcavator_macho::consts::*;
-use hexcavator_macho::{MachO, fat_archs, fat_header_size, is_fat};
+use turbonop_archive::{Archive, MemberKind};
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_demangle::itanium::Demangler;
+use turbonop_macho::consts::*;
+use turbonop_macho::{MachO, fat_archs, fat_header_size, is_fat};
 
 use crate::dwarf_units::DwarfInput;
 use crate::elf::{AR_HEADERS, AR_SYMBOLS};
@@ -58,7 +58,7 @@ pub const AR_NON_MACHO: &str = "[AR Non-Mach-O Member File]";
 /// Whether `data` is a Mach-O file, a static library whose first member
 /// file is one, or a universal file of them.
 pub fn is_macho_input(data: &[u8]) -> bool {
-    hexcavator_macho::is_macho(data) || is_fat(data) || is_macho_archive(data)
+    turbonop_macho::is_macho(data) || is_fat(data) || is_macho_archive(data)
 }
 
 fn is_macho_archive(data: &[u8]) -> bool {
@@ -66,7 +66,7 @@ fn is_macho_archive(data: &[u8]) -> bool {
         && Archive::parse(data)
             .ok()
             .and_then(|ar| ar.files().next())
-            .is_some_and(|m| hexcavator_macho::is_macho(m.data))
+            .is_some_and(|m| turbonop_macho::is_macho(m.data))
 }
 
 /// One image: the whole file, a slice of a universal one, or a member of
@@ -352,12 +352,12 @@ impl Builder<'_> {
                 continue;
             }
             let m = &img.m;
-            let arch = hexcavator_macho::arch(m.header().cputype);
+            let arch = turbonop_macho::arch(m.header().cputype);
             if !matches!(arch, crate::disasm::Arch::X64 | crate::disasm::Arch::Arm64) {
                 continue;
             }
             let sections = m.sections();
-            let code = |s: &hexcavator_macho::Section<'_>| {
+            let code = |s: &turbonop_macho::Section<'_>| {
                 s.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
             };
             refs.clear();
@@ -397,7 +397,7 @@ impl Builder<'_> {
         for i in 0..self.images.len() {
             let img = &self.images[i];
             let input = dwarf_input(img, debug);
-            let sizes: hexcavator_hash::Map<u64, u64> = extents(&img.m)
+            let sizes: turbonop_hash::Map<u64, u64> = extents(&img.m)
                 .into_iter()
                 .map(|(s, end)| (s.n_value, end - s.n_value))
                 .collect();
@@ -549,14 +549,14 @@ fn debug_image<'d>(debug: &'d [u8], m: &MachO<'_>, uuid: Option<[u8; 16]>) -> Op
 
 /// Whether a symbol is one to charge: not STABS, and at a nonzero address
 /// or defined in a section (an object's first function is at 0).
-fn is_defined(s: &hexcavator_macho::Nlist<'_>) -> bool {
+fn is_defined(s: &turbonop_macho::Nlist<'_>) -> bool {
     !s.is_stab() && (s.n_value != 0 || s.is_section_defined())
 }
 
 /// Each defined symbol (see [`is_defined`]) and where it ends: at
 /// the next symbol's address or its section's end, whichever is first.
 /// Symbols outside every section are left out.
-fn extents<'d>(m: &MachO<'d>) -> Vec<(hexcavator_macho::Nlist<'d>, u64)> {
+fn extents<'d>(m: &MachO<'d>) -> Vec<(turbonop_macho::Nlist<'d>, u64)> {
     let sections = m.sections();
     let syms: Vec<_> = m.symbols().into_iter().filter(is_defined).collect();
     let mut starts: Vec<u64> = syms.iter().map(|s| s.n_value).collect();
@@ -586,7 +586,7 @@ fn extents<'d>(m: &MachO<'d>) -> Vec<(hexcavator_macho::Nlist<'d>, u64)> {
 
 /// `__TEXT,__text`: the section's segment and name. An object's sections
 /// share one unnamed segment, so their own segment names are used.
-fn section_label(segment: &[u8], s: &hexcavator_macho::Section<'_>) -> String {
+fn section_label(segment: &[u8], s: &turbonop_macho::Section<'_>) -> String {
     let seg = if segment.is_empty() {
         s.segname
     } else {
@@ -626,8 +626,8 @@ pub fn function<'d>(
         }
         None => MachO::parse(data).map_err(|e| e.to_string())?,
     };
-    let isa: Arch = hexcavator_macho::arch(image.header().cputype);
-    if !hexcavator_code::decodes(isa) {
+    let isa: Arch = turbonop_macho::arch(image.header().cputype);
+    if !turbonop_code::decodes(isa) {
         return Err(format!(
             "no disassembler for CPU type {:#x}",
             image.header().cputype
@@ -689,7 +689,7 @@ pub fn function<'d>(
         code,
         symbols: names,
         riscv_arch: None,
-        big_endian: image.header().endian == hexcavator_core::Endian::Big,
+        big_endian: image.header().endian == turbonop_core::Endian::Big,
         mips_flags: 0,
     })
 }
@@ -725,7 +725,7 @@ pub fn maps_with_debug(
             let Some(slice) = data.get(s..s.saturating_add(n).min(data.len())) else {
                 continue;
             };
-            let arch = hexcavator_macho::arch_name(a.cputype, a.cpusubtype);
+            let arch = turbonop_macho::arch_name(a.cputype, a.cpusubtype);
             if b.add_input(slice, a.offset).is_ok() {
                 b.slices.push((a.offset, slice.len() as u64, arch));
             }
@@ -737,7 +737,7 @@ pub fn maps_with_debug(
         b.add_input(data, 0)?;
         let arch = b.images.first().map_or_else(
             || String::from("unknown"),
-            |i| hexcavator_macho::arch_name(i.m.header().cputype, i.m.header().cpusubtype),
+            |i| turbonop_macho::arch_name(i.m.header().cputype, i.m.header().cpusubtype),
         );
         b.slices.push((0, data.len() as u64, arch));
     }

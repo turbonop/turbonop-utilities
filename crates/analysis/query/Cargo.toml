@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-query"
+name = "turbonop-query"
 description = "A small query language over tables of an image's facts: filters, grouping with counts and sums, sorting, and limits, for the command line, the MCP server, and editors alike"
 version.workspace = true
 edition.workspace = true

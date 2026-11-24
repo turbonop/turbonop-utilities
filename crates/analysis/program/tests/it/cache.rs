@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use hexcavator_program::{Opened, cache};
+use turbonop_program::{Opened, cache};
 
 fn bin(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -23,7 +23,7 @@ fn built(path: &Path, pdb: &Path) -> (usize, usize, Vec<String>) {
 
 #[test]
 fn kept_until_the_files_change() {
-    let dir = std::env::temp_dir().join(format!("hexc-kept-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-kept-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let (image, pdb) = (dir.join("app.dll"), dir.join("app.pdb"));

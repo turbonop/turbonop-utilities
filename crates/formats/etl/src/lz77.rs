@@ -5,7 +5,7 @@
 //!
 //! [MS-XCA]: https://learn.microsoft.com/openspecs/windows_protocols/ms-xca
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 /// Decompresses `input`, appending to `out`, which must end up exactly
 /// `expected` bytes longer. Back references may reach only into what this

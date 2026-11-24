@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-linkmap"
+name = "turbonop-linkmap"
 description = "Linker map files (MSVC link /MAP so far): COFF groups, and every public and static symbol with its object and library"
 version.workspace = true
 edition.workspace = true

@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-linkerlog"
+name = "turbonop-linkerlog"
 description = "The MSVC linker's /VERBOSE output: why each library member was linked, what /OPT:REF discarded, and what /OPT:ICF folded"
 version.workspace = true
 edition.workspace = true

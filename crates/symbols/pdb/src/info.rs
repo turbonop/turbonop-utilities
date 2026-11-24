@@ -1,7 +1,7 @@
 //! The PDB info stream (stream 1): signature, age, GUID, and the named
 //! stream map (`/names`, `/LinkInfo`, `/src/headerblock`, ...).
 
-use hexcavator_core::{Error, ErrorKind, Reader, Result, U32Le, pod};
+use turbonop_core::{Error, ErrorKind, Reader, Result, U32Le, pod};
 
 pod! {
     #[derive(Debug)]

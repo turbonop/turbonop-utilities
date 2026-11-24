@@ -27,12 +27,12 @@
 //! Alignment padding before what is removed, and the names of removed ELF
 //! sections in `.shstrtab`, are kept: a few bytes each.
 
-use hexcavator_archive::{Archive, MemberKind};
-use hexcavator_elf::ElfFile;
-use hexcavator_elf::consts::*;
-use hexcavator_macho::MachO;
-use hexcavator_macho::consts::{MH_EXECUTE, MH_OBJECT, N_EXT, N_TYPE, N_UNDF, S_ATTR_DEBUG};
-use hexcavator_pe::{FileKind, PeFile};
+use turbonop_archive::{Archive, MemberKind};
+use turbonop_elf::ElfFile;
+use turbonop_elf::consts::*;
+use turbonop_macho::MachO;
+use turbonop_macho::consts::{MH_EXECUTE, MH_OBJECT, N_EXT, N_TYPE, N_UNDF, S_ATTR_DEBUG};
+use turbonop_pe::{FileKind, PeFile};
 
 /// `n_desc`'s `REFERENCED_DYNAMICALLY`: a symbol `strip` keeps in an
 /// executable (`__mh_execute_header`).
@@ -45,7 +45,7 @@ pub fn ranges(data: &[u8]) -> Vec<(u64, u64)> {
     if crate::wasm::is_wasm_input(data) {
         wasm(data, &mut out);
     } else if crate::macho::is_macho_input(data) {
-        match hexcavator_macho::fat_archs(data) {
+        match turbonop_macho::fat_archs(data) {
             Some(archs) => {
                 for a in archs {
                     let (Ok(s), Ok(n)) = (usize::try_from(a.offset), usize::try_from(a.size))
@@ -154,7 +154,7 @@ fn elf(e: &ElfFile<'_>, offset: u64, out: &mut Vec<(u64, u64)>) {
     let object = e.header().kind == ET_REL;
     let shstrndx = e.header().shstrndx as usize;
     let kept_anyway =
-        |s: &hexcavator_elf::Section<'_>| s.flags & SHF_ALLOC != 0 || !s.has_file_data();
+        |s: &turbonop_elf::Section<'_>| s.flags & SHF_ALLOC != 0 || !s.has_file_data();
     let mut gone = vec![false; sections.len()];
     for s in &sections {
         if !kept_anyway(s) && (elf_debug_name(s.name) || (!object && s.kind == SHT_SYMTAB)) {
@@ -210,8 +210,8 @@ fn elf(e: &ElfFile<'_>, offset: u64, out: &mut Vec<(u64, u64)>) {
         .filter(|s| s.kind == SHT_SYMTAB && !gone[s.index])
     {
         let stride = match (t.entsize, e.class()) {
-            (0, hexcavator_elf::Class::Elf32) => 16,
-            (0, hexcavator_elf::Class::Elf64) => 24,
+            (0, turbonop_elf::Class::Elf32) => 16,
+            (0, turbonop_elf::Class::Elf64) => 24,
             (n, _) => n,
         };
         for sym in e.symbols(t) {
@@ -230,7 +230,7 @@ fn elf(e: &ElfFile<'_>, offset: u64, out: &mut Vec<(u64, u64)>) {
         .get(shstrndx)
         .filter(|n| !gone[n.index] && n.has_file_data())
     {
-        let name = |s: &hexcavator_elf::Section<'_>| {
+        let name = |s: &turbonop_elf::Section<'_>| {
             let at = u64::from(s.name_offset);
             (at, at + s.name.len() as u64 + 1)
         };
@@ -305,7 +305,7 @@ fn macho(m: &MachO<'_>, offset: u64, out: &mut Vec<(u64, u64)>) {
     }
     let Some(st) = m.symtab() else { return };
     let filetype = m.header().filetype;
-    let keep = |n: &hexcavator_macho::Nlist<'_>| {
+    let keep = |n: &turbonop_macho::Nlist<'_>| {
         if n.is_stab() {
             return false;
         }
@@ -380,7 +380,7 @@ fn without(ranges: &[(u64, u64)], holes: &[(u64, u64)]) -> Vec<(u64, u64)> {
 
 /// What stripping removes of a WebAssembly module.
 fn wasm(data: &[u8], out: &mut Vec<(u64, u64)>) {
-    let Ok(m) = hexcavator_wasm::Module::parse(data) else {
+    let Ok(m) = turbonop_wasm::Module::parse(data) else {
         return;
     };
     for s in m.sections() {
@@ -389,7 +389,7 @@ fn wasm(data: &[u8], out: &mut Vec<(u64, u64)>) {
                 s.name,
                 b"name" | b"sourceMappingURL" | b"external_debug_info"
             );
-        if s.id == hexcavator_wasm::SECTION_CUSTOM && debug {
+        if s.id == turbonop_wasm::SECTION_CUSTOM && debug {
             out.push((s.offset, s.offset + s.size));
         }
     }

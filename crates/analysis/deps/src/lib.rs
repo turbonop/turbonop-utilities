@@ -41,7 +41,7 @@ mod wasm;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
-use hexcavator_mmap::Mmap;
+use turbonop_mmap::Mmap;
 
 /// How far the analysis goes.
 #[derive(Clone, Debug)]

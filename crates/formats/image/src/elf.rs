@@ -2,8 +2,8 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_elf::consts::*;
-use hexcavator_elf::{AddressRelocation, Class, ElfFile};
+use turbonop_elf::consts::*;
+use turbonop_elf::{AddressRelocation, Class, ElfFile};
 
 use crate::{DebugId, Kind, Section, SectionFlags};
 
@@ -135,10 +135,10 @@ pub(crate) fn pointer_slots(elf: &ElfFile<'_>) -> Vec<crate::PointerSlot> {
     let word = |addr: u64| {
         let b = bytes_at(elf, addr, u64::from(width))?;
         Some(match elf.endian() {
-            hexcavator_core::Endian::Little => {
+            turbonop_core::Endian::Little => {
                 b.iter().rev().fold(0u64, |v, &x| (v << 8) | u64::from(x))
             }
-            hexcavator_core::Endian::Big => b.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x)),
+            turbonop_core::Endian::Big => b.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x)),
         })
     };
     for s in &sections {
@@ -186,7 +186,7 @@ pub(crate) fn pointer_slots(elf: &ElfFile<'_>) -> Vec<crate::PointerSlot> {
                 });
                 continue;
             }
-            let Some(how) = hexcavator_elf::address_relocation(machine, r.kind) else {
+            let Some(how) = turbonop_elf::address_relocation(machine, r.kind) else {
                 continue;
             };
             let addend = r.addend.map(|a| a as u64).or_else(|| word(r.offset));
@@ -277,7 +277,7 @@ pub(crate) fn bytes_at<'data>(elf: &ElfFile<'data>, addr: u64, len: u64) -> Opti
     // (An object's sections where they're laid out: see
     // `ElfFile::section_addresses`.)
     let addresses = elf.section_addresses();
-    let start = |s: &hexcavator_elf::Section<'_>| addresses.get(s.index).copied().unwrap_or(s.addr);
+    let start = |s: &turbonop_elf::Section<'_>| addresses.get(s.index).copied().unwrap_or(s.addr);
     let s = elf.sections().find(|s| {
         let base = start(s);
         s.is_alloc()

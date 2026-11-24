@@ -1,8 +1,8 @@
 //! Hexcavator's fuzzer.
 //!
-//!     hexcavator-fuzz list
-//!     hexcavator-fuzz run <target>... [-seconds N] [-seed S] [-batch N] [-timeout S]
-//!     hexcavator-fuzz replay <target> <file>
+//!     turbonop-fuzz list
+//!     turbonop-fuzz run <target>... [-seconds N] [-seed S] [-batch N] [-timeout S]
+//!     turbonop-fuzz replay <target> <file>
 //!
 //! `run` mutates the corpus's inputs (the repository's `testdata`, each file
 //! seeding the targets that read its kind) and runs each in a child process,
@@ -28,7 +28,7 @@ use std::process::{Command, ExitCode, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use hexcavator_fuzz::{Scratch, TARGETS, Target, target};
+use turbonop_fuzz::{Scratch, TARGETS, Target, target};
 
 // ------------------------------------------------------------ allocation
 
@@ -478,7 +478,7 @@ fn child(t: &Target, seed: u64, batch: u64, count: u64, current: &Path) -> ExitC
 }
 
 fn scratch_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("hexcavator-fuzz-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-fuzz-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }
@@ -603,7 +603,7 @@ fn save(t: &Target, data: &[u8], why: &str) -> PathBuf {
     let _ = std::fs::write(
         path.with_extension("txt"),
         format!(
-            "target: {}\nwhat: {why}\nreplay: hexcavator-fuzz replay {} {}\n",
+            "target: {}\nwhat: {why}\nreplay: turbonop-fuzz replay {} {}\n",
             t.name,
             t.name,
             path.display()
@@ -643,7 +643,7 @@ fn run(o: &Options) -> ExitCode {
                         tot.batches
                     };
                     let current = tmp.join(format!(
-                        "hexcavator-fuzz-current-{}-{k}-{batch}.bin",
+                        "turbonop-fuzz-current-{}-{k}-{batch}.bin",
                         std::process::id()
                     ));
                     let args = [
@@ -703,8 +703,7 @@ fn run(o: &Options) -> ExitCode {
 
 fn replay(t: &Target, path: &Path) -> ExitCode {
     let data = std::fs::read(path).expect("reading the input");
-    let scratch =
-        std::env::temp_dir().join(format!("hexcavator-fuzz-replay-{}", std::process::id()));
+    let scratch = std::env::temp_dir().join(format!("turbonop-fuzz-replay-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&scratch);
     CAP.store(cap_for(data.len()), Ordering::Relaxed);
     let start = Instant::now();
@@ -723,7 +722,7 @@ fn replay(t: &Target, path: &Path) -> ExitCode {
 /// wrong, run in a child as a fuzzed input would be.
 fn selftest() -> ExitCode {
     let exe = std::env::current_exe().expect("this program's path");
-    let dir = std::env::temp_dir().join(format!("hexcavator-fuzz-selftest-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-fuzz-selftest-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     let mut ok = true;
     for (input, expect) in [
@@ -765,11 +764,11 @@ fn selftest() -> ExitCode {
 }
 
 const USAGE: &str = "usage:
-  hexcavator-fuzz list
-  hexcavator-fuzz run <target>...|all [-seconds N] [-seed S] [-batch N] [-timeout S] [-jobs N]
-  hexcavator-fuzz replay <target> <file>       (in a capped, timed child)
-  hexcavator-fuzz replay-here <target> <file>  (in this process, capped: to debug)
-  hexcavator-fuzz selftest";
+  turbonop-fuzz list
+  turbonop-fuzz run <target>...|all [-seconds N] [-seed S] [-batch N] [-timeout S] [-jobs N]
+  turbonop-fuzz replay <target> <file>       (in a capped, timed child)
+  turbonop-fuzz replay-here <target> <file>  (in this process, capped: to debug)
+  turbonop-fuzz selftest";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -860,7 +859,7 @@ fn main() -> ExitCode {
                     name => match target(name) {
                         Some(t) => o.targets.push(t),
                         None => {
-                            eprintln!("no target named '{name}' (hexcavator-fuzz list)");
+                            eprintln!("no target named '{name}' (turbonop-fuzz list)");
                             return ExitCode::from(2);
                         }
                     },

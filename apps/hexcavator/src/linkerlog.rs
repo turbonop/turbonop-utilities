@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_linkerlog::{LinkerLog, parse};
+use turbonop_linkerlog::{LinkerLog, parse};
 
 pub const USAGE: &str = "\
 usage: hexcavator linkerlog [options] <log> [-- <base log>]
@@ -458,13 +458,13 @@ fn largest_members(
 ) -> Result<String, String> {
     // (Of any format, with its debug information, as every command opens
     // one.)
-    let opened = hexcavator_program::Opened::open(image_path, pdb)?;
+    let opened = turbonop_program::Opened::open(image_path, pdb)?;
     let program = opened.program()?;
     let model = program.model()?;
     let members = Members::of(log);
     // Compilands as the linker names library members: `lib(member)`.
     let totals = model.totals(|p| Some(p.compiland));
-    let mut sizes: std::collections::HashMap<String, hexcavator_size::Size> =
+    let mut sizes: std::collections::HashMap<String, turbonop_size::Size> =
         std::collections::HashMap::new();
     for (&c, t) in &totals {
         let comp = &model.compilands[c as usize];
@@ -483,7 +483,7 @@ fn largest_members(
         s.file += t.size.file;
         s.vm += t.size.vm;
     }
-    let mut rows: Vec<(String, hexcavator_size::Size)> = sizes.into_iter().collect();
+    let mut rows: Vec<(String, turbonop_size::Size)> = sizes.into_iter().collect();
     rows.sort_by(|a, b| {
         b.1.file
             .max(b.1.vm)
@@ -561,10 +561,10 @@ mod tests {
 
     #[test]
     fn diffs() {
-        let old = hexcavator_linkerlog::parse(
+        let old = turbonop_linkerlog::parse(
             "Searching libraries\n    Searching a.lib:\n      Found x\n        Referenced in main.obj\n        Loaded a.lib(x.obj)\n      Found y\n        Referenced in main.obj\n        Loaded a.lib(y.obj)\n",
         );
-        let new = hexcavator_linkerlog::parse(
+        let new = turbonop_linkerlog::parse(
             "Searching libraries\n    Searching a.lib:\n      Found x\n        Referenced in main.obj\n        Loaded A.LIB(X.OBJ)\n      Found z\n        Referenced in main.obj\n        Loaded a.lib(z.obj)\n",
         );
         let (added, removed) = member_changes(&new, &old);

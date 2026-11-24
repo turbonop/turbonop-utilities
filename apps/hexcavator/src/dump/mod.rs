@@ -20,16 +20,16 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
-use hexcavator_mz::{MzFile, NewHeaderKind};
-use hexcavator_pe::PeFile;
+use turbonop_mmap::Mmap;
+use turbonop_mz::{MzFile, NewHeaderKind};
+use turbonop_pe::PeFile;
 
 /// `name` undecorated as dumpbin shows it (without `__ptr64`), if it is a
 /// decorated C++ name (or the import thunk of one).
 pub fn undecorate(name: &str) -> Option<String> {
     use std::cell::RefCell;
     thread_local! {
-        static DEMANGLER: RefCell<hexcavator_demangle::msvc::Demangler> = RefCell::default();
+        static DEMANGLER: RefCell<turbonop_demangle::msvc::Demangler> = RefCell::default();
     }
     if let Some(imported) = name.strip_prefix("__imp_") {
         return undecorate(imported).map(|u| format!("__declspec(dllimport) {u}"));
@@ -39,7 +39,7 @@ pub fn undecorate(name: &str) -> Option<String> {
     }
     DEMANGLER.with(|d| {
         d.borrow_mut()
-            .demangle(name, hexcavator_demangle::msvc::flags::NO_PTR64)
+            .demangle(name, turbonop_demangle::msvc::flags::NO_PTR64)
             .filter(|s| s != name)
     })
 }
@@ -272,7 +272,7 @@ fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Res
         || paths.iter().all(|p| {
             Mmap::open(p).is_ok_and(|m| {
                 readobj_file(options, p, &m).is_none()
-                    && !hexcavator_pe::ltcg::LtcgObject::is_ltcg(&m)
+                    && !turbonop_pe::ltcg::LtcgObject::is_ltcg(&m)
             })
         })
     {
@@ -324,8 +324,8 @@ fn readobj_bytes(
     parts: &readobj::Parts,
     depth: u32,
 ) -> Option<Result<(), String>> {
-    if hexcavator_elf::ElfFile::is_elf(data) {
-        return Some(match hexcavator_elf::ElfFile::parse(data) {
+    if turbonop_elf::ElfFile::is_elf(data) {
+        return Some(match turbonop_elf::ElfFile::parse(data) {
             Ok(elf) => {
                 readobj::elf::dump(out, name, &elf, parts);
                 Ok(())
@@ -333,17 +333,17 @@ fn readobj_bytes(
             Err(e) => Err(e.to_string()),
         });
     }
-    if hexcavator_macho::is_macho(data) {
+    if turbonop_macho::is_macho(data) {
         return Some(readobj::macho::dump(out, name, data, parts));
     }
-    if hexcavator_wasm::is_wasm(data) {
+    if turbonop_wasm::is_wasm(data) {
         return Some(readobj::wasm::dump(out, name, data, parts));
     }
     // (A universal file of archives holds archives; nothing nests deeper.)
     if depth > 1 {
         return None;
     }
-    if let Some(archs) = hexcavator_macho::fat_archs(data) {
+    if let Some(archs) = turbonop_macho::fat_archs(data) {
         for a in archs.iter().take(64) {
             let (Ok(s), Ok(n)) = (usize::try_from(a.offset), usize::try_from(a.size)) else {
                 continue;
@@ -357,14 +357,14 @@ fn readobj_bytes(
         }
         return Some(Ok(()));
     }
-    if hexcavator_archive::Archive::is_archive(data) {
-        let ar = match hexcavator_archive::Archive::parse(data) {
+    if turbonop_archive::Archive::is_archive(data) {
+        let ar = match turbonop_archive::Archive::parse(data) {
             Ok(a) => a,
             Err(e) => return Some(Err(e.to_string())),
         };
         let mut any = false;
         for m in ar.members() {
-            if m.kind != hexcavator_archive::MemberKind::File {
+            if m.kind != turbonop_archive::MemberKind::File {
                 continue;
             }
             let member = format!("{name}({})", String::from_utf8_lossy(&m.name));
@@ -399,11 +399,11 @@ fn dump_file(
             _ => dos::dump(out, options, &mz).map(Ok),
         };
     }
-    if hexcavator_pe::ltcg::LtcgObject::is_ltcg(data) {
+    if turbonop_pe::ltcg::LtcgObject::is_ltcg(data) {
         return ltcg_header(out, options, data).map(Ok);
     }
     match PeFile::parse_object(data) {
-        Ok(file) if hexcavator_pe::consts::machine::name(file.machine()).is_some() => {
+        Ok(file) if turbonop_pe::consts::machine::name(file.machine()).is_some() => {
             pe::dump(out, options, path, &file, summary).map(Ok)
         }
         Ok(_) | Err(_) => Ok(Err("unrecognized file format".to_string())),
@@ -437,7 +437,7 @@ ANON OBJECT HEADER VALUES"
     writeln!(
         out,
         "{machine:16X} machine ({})",
-        hexcavator_pe::consts::machine::name(machine).unwrap_or("Unknown")
+        turbonop_pe::consts::machine::name(machine).unwrap_or("Unknown")
     )?;
     writeln!(out, "{stamp:16X} time date stamp{date}")?;
     writeln!(

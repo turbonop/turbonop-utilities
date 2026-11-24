@@ -12,7 +12,7 @@
 
 use std::borrow::Cow;
 
-use hexcavator_core::{Error, ErrorKind, Result, Source, U32Le, pod, read_at, read_slice_at};
+use turbonop_core::{Error, ErrorKind, Result, Source, U32Le, pod, read_at, read_slice_at};
 
 /// The file: its bytes, or a source that reads them by range.
 #[derive(Clone, Copy)]
@@ -41,7 +41,7 @@ impl<'data> Bytes<'data> {
     /// `len` bytes at `offset`: borrowed from the mapped file, or read.
     fn get(&self, offset: u64, len: u64) -> Result<Cow<'data, [u8]>> {
         match *self {
-            Bytes::Mapped(d) => hexcavator_core::bytes_at(d, offset, len).map(Cow::Borrowed),
+            Bytes::Mapped(d) => turbonop_core::bytes_at(d, offset, len).map(Cow::Borrowed),
             Bytes::Read(s) => {
                 let short = || Error::new(ErrorKind::Truncated, offset, "MSF block");
                 if offset.checked_add(len).is_none_or(|end| end > s.len()) {
@@ -61,7 +61,7 @@ impl<'data> Bytes<'data> {
     fn copy(&self, offset: u64, dest: &mut [u8]) -> Result<()> {
         match *self {
             Bytes::Mapped(d) => {
-                dest.copy_from_slice(hexcavator_core::bytes_at(d, offset, dest.len() as u64)?);
+                dest.copy_from_slice(turbonop_core::bytes_at(d, offset, dest.len() as u64)?);
                 Ok(())
             }
             Bytes::Read(s) => {

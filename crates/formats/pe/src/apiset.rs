@@ -12,7 +12,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use hexcavator_core::Reader;
+use turbonop_core::Reader;
 
 /// The most sets and hosts read (Windows 11 has about 2,000 sets).
 const MAX_SETS: u32 = 1 << 16;

@@ -14,10 +14,10 @@
 //!   Virtuals", and its numbers): each costs a vtable slot in its class
 //!   and every class derived from it.
 
-use hexcavator_hash::Map as HashMap;
 use std::collections::BTreeMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_image::Image;
+use turbonop_image::Image;
 
 use crate::Size;
 use crate::symbols::{Symbol, SymbolKind};
@@ -50,7 +50,7 @@ impl DuplicateData {
 /// count` in each of several files) are each its own.
 pub fn duplicate_data(
     image: &Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     symbols: &[Symbol],
 ) -> Vec<DuplicateData> {
     // Candidates by (name, size).
@@ -69,7 +69,7 @@ pub fn duplicate_data(
         }
     }
     groups.retain(|_, members| members.len() > 1);
-    let wanted: hexcavator_hash::Set<(u64, u32)> = groups
+    let wanted: turbonop_hash::Set<(u64, u32)> = groups
         .values()
         .flatten()
         .map(|s| (s.addr, s.compiland.expect("filtered")))
@@ -85,7 +85,7 @@ pub fn duplicate_data(
     let writable: Vec<(u64, u64)> = image
         .sections()
         .iter()
-        .filter(|s| s.flags.contains(hexcavator_image::SectionFlags::WRITE))
+        .filter(|s| s.flags.contains(turbonop_image::SectionFlags::WRITE))
         .filter_map(|s| Some((s.addr, s.end()?)))
         .collect();
     let read_only = |s: &Symbol| !writable.iter().any(|&(a, e)| s.addr >= a && s.addr < e);
@@ -172,19 +172,19 @@ impl WastefulVirtual {
 /// Functions are matched by name, arguments, and qualifiers. `word` is
 /// the size of a pointer.
 pub fn wasteful_virtuals(
-    classes: &[hexcavator_debuginfo::Class],
+    classes: &[turbonop_debuginfo::Class],
     namer: &mut crate::names::Namer<'_, '_>,
     word: u64,
 ) -> Vec<WastefulVirtual> {
-    use hexcavator_debuginfo::MethodKind;
-    let index: HashMap<hexcavator_debuginfo::TypeRef, usize> =
+    use turbonop_debuginfo::MethodKind;
+    let index: HashMap<turbonop_debuginfo::TypeRef, usize> =
         classes.iter().enumerate().map(|(i, c)| (c.ty, i)).collect();
     // Every class's descendants (direct or not), each once. (Base lists
     // are untrusted: a walk visits each class once, so cycles end.)
     let mut derived: Vec<Vec<usize>> = vec![Vec::new(); classes.len()];
     let mut seen = vec![usize::MAX; classes.len()];
     for (i, c) in classes.iter().enumerate() {
-        let mut stack: Vec<hexcavator_debuginfo::TypeRef> = c.bases.clone();
+        let mut stack: Vec<turbonop_debuginfo::TypeRef> = c.bases.clone();
         while let Some(b) = stack.pop() {
             let Some(&j) = index.get(&b) else { continue };
             if j == i || seen[j] == i {
@@ -202,41 +202,40 @@ pub fn wasteful_virtuals(
     for d in derived.iter().flatten() {
         in_hierarchy[*d] = true;
     }
-    let numbered: Vec<(usize, &hexcavator_debuginfo::Class)> = classes.iter().enumerate().collect();
+    let numbered: Vec<(usize, &turbonop_debuginfo::Class)> = classes.iter().enumerate().collect();
     let base = &*namer;
-    let methods: Vec<Vec<(String, bool, bool)>> =
-        hexcavator_par::map_chunks(&numbered, 64, |part| {
-            let mut namer = base.fork();
-            part.iter()
-                .map(|&(i, c)| {
-                    if !in_hierarchy[i] {
-                        return Vec::new();
-                    }
-                    c.methods
-                        .iter()
-                        .map(|m| {
-                            let is_static = m.kind == MethodKind::Static;
-                            let signature = format!(
-                                "{}{}{}",
-                                if is_static { "static " } else { "" },
-                                m.name,
-                                namer.signature_suffix(m.ty)
-                            );
-                            (
-                                signature,
-                                m.kind.is_virtual() && !is_static,
-                                m.kind.is_pure(),
-                            )
-                        })
-                        .collect()
-                })
-                .collect()
-        });
+    let methods: Vec<Vec<(String, bool, bool)>> = turbonop_par::map_chunks(&numbered, 64, |part| {
+        let mut namer = base.fork();
+        part.iter()
+            .map(|&(i, c)| {
+                if !in_hierarchy[i] {
+                    return Vec::new();
+                }
+                c.methods
+                    .iter()
+                    .map(|m| {
+                        let is_static = m.kind == MethodKind::Static;
+                        let signature = format!(
+                            "{}{}{}",
+                            if is_static { "static " } else { "" },
+                            m.name,
+                            namer.signature_suffix(m.ty)
+                        );
+                        (
+                            signature,
+                            m.kind.is_virtual() && !is_static,
+                            m.kind.is_pure(),
+                        )
+                    })
+                    .collect()
+            })
+            .collect()
+    });
     // Whether a base of class `i` (at any depth) declares virtual
     // `signature`; each class is visited once.
     let in_base = |i: usize, signature: &str| -> bool {
-        let mut visited = hexcavator_hash::Set::default();
-        let mut stack: Vec<hexcavator_debuginfo::TypeRef> = classes[i].bases.clone();
+        let mut visited = turbonop_hash::Set::default();
+        let mut stack: Vec<turbonop_debuginfo::TypeRef> = classes[i].bases.clone();
         while let Some(b) = stack.pop() {
             let Some(&j) = index.get(&b) else { continue };
             if !visited.insert(j) {
@@ -495,7 +494,7 @@ pub struct Findings {
 /// The findings of `image`, with its debug information and symbols.
 pub fn find(
     image: &Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     symbols: &[Symbol],
 ) -> Findings {
     let word = u64::from(image.arch().pointer_size().unwrap_or(8));
@@ -777,16 +776,16 @@ mod tests {
 
     #[test]
     fn cyclic_class_hierarchies_end() {
-        use hexcavator_debuginfo::{Class, TypeRef};
+        use turbonop_debuginfo::{Class, TypeRef};
         // A and B each derive from both: a cycle with branching.
         let class = |n: &str, ty: u32, bases: &[u32]| Class {
             name: n.into(),
             ty: TypeRef(u64::from(ty)),
             bases: bases.iter().map(|b| TypeRef(u64::from(*b))).collect(),
-            methods: vec![hexcavator_debuginfo::Method {
+            methods: vec![turbonop_debuginfo::Method {
                 name: "f".into(),
                 ty: TypeRef(0),
-                kind: hexcavator_debuginfo::MethodKind::IntroVirtual,
+                kind: turbonop_debuginfo::MethodKind::IntroVirtual,
             }],
         };
         let classes: Vec<Class> = (0..40)
@@ -803,7 +802,7 @@ mod tests {
             env!("CARGO_MANIFEST_DIR")
         ))
         .unwrap();
-        let debug = hexcavator_debuginfo::DebugInfo::parse(&pdb).unwrap();
+        let debug = turbonop_debuginfo::DebugInfo::parse(&pdb).unwrap();
         let mut namer = crate::names::Namer::new(&debug);
         // Every class declares f, which a base (by the cycle) declares
         // too, so nothing is reported; the walks must end.
@@ -900,7 +899,7 @@ struct VirtualJson<'a> {
 /// compiland.
 pub fn report(
     image: &Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     symbols: &[Symbol],
     compiland_name: &dyn Fn(u32) -> String,
     options: ReportOptions,
@@ -920,9 +919,9 @@ pub fn report(
         }
         Err(_) => Vec::new(),
     };
-    let ((dups, families), virtuals) = hexcavator_par::join(
+    let ((dups, families), virtuals) = turbonop_par::join(
         || {
-            hexcavator_par::join(
+            turbonop_par::join(
                 || duplicate_data(image, debug, symbols),
                 || template_families(Some(image), symbols),
             )

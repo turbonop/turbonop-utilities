@@ -104,7 +104,7 @@ fn matches_libcxxabi() {
     let n = failures.len();
     for f in failures
         .iter()
-        .take(if std::env::var_os("HEXC_ALL_FAILURES").is_some() {
+        .take(if std::env::var_os("TURBONOP_ALL_FAILURES").is_some() {
             usize::MAX
         } else {
             40

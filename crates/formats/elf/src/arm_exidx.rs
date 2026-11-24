@@ -1,11 +1,11 @@
 //! 32-bit ARM's exception index (Arm's "Exception Handling ABI for the
 //! Arm Architecture"): `.ARM.exidx` entries, each a function and how to
 //! unwind it, inline or in an `.ARM.extab` table entry (whose words a
-//! caller reads). Unwinding by the opcodes is `hexcavator-unwind`'s.
+//! caller reads). Unwinding by the opcodes is `turbonop-unwind`'s.
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 /// How an index entry says to unwind.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

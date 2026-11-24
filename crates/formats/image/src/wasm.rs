@@ -15,7 +15,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_wasm::{
+use turbonop_wasm::{
     Init, Module, NAME_DATA_SEGMENT, SECTION_CODE, SECTION_CUSTOM, SECTION_DATA, SegmentOffset,
 };
 
@@ -145,7 +145,7 @@ pub(crate) fn init_memory(m: &Module<'_>) -> InitMemory {
 fn init_memory_of(m: &Module<'_>) -> InitMemory {
     let mut copies = Vec::new();
     let mut fills = Vec::new();
-    let names = m.names(hexcavator_wasm::NAME_FUNCTION);
+    let names = m.names(turbonop_wasm::NAME_FUNCTION);
     let Some(f) = names
         .iter()
         .find(|n| n.name == b"__wasm_init_memory")
@@ -421,7 +421,7 @@ pub(crate) fn function_address(m: &Module<'_>, index: u32) -> Option<u64> {
 
 /// A code section entry's body, as `(address, size)` (see
 /// [`function_address`]).
-pub(crate) fn function_range(m: &Module<'_>, f: &hexcavator_wasm::Piece) -> Option<(u64, u64)> {
+pub(crate) fn function_range(m: &Module<'_>, f: &turbonop_wasm::Piece) -> Option<(u64, u64)> {
     let code = m.sections().iter().find(|s| s.id == SECTION_CODE)?;
     let (at, body) = m.body(f)?;
     Some((at.checked_sub(code.contents_offset)?, body.len() as u64))
@@ -461,7 +461,7 @@ mod tests {
         assert!(flags(SECTION_DATA).contains(SectionFlags::DATA | SectionFlags::WRITE));
         assert!(flags(SECTION_CUSTOM).contains(SectionFlags::NOT_LOADED));
         assert_eq!(
-            flags(hexcavator_wasm::SECTION_TYPE),
+            flags(turbonop_wasm::SECTION_TYPE),
             SectionFlags(SectionFlags::READ)
         );
     }

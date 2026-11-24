@@ -9,9 +9,9 @@
 //! compilands, ...) and leaves the rest to its *fallback*: the base map's
 //! label, with section names written `[section .text]`, as bloaty does.
 
-use hexcavator_image::Image;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::consts::directory;
+use turbonop_image::Image;
+use turbonop_pe::PeFile;
+use turbonop_pe::consts::directory;
 
 use crate::Model;
 use crate::rangemap::{DualMap, Label, Labels};
@@ -193,7 +193,7 @@ pub fn label_crates(maps: &mut Maps, sources: &[Source]) {
             continue;
         };
         *source = Source::Crates;
-        let mut to: hexcavator_hash::Map<Label, Label> = hexcavator_hash::Map::default();
+        let mut to: turbonop_hash::Map<Label, Label> = turbonop_hash::Map::default();
         let labels = &mut maps.labels;
         let mut relabel = |l: Label| -> Label {
             if let Some(&t) = to.get(&l) {
@@ -351,7 +351,7 @@ pub struct Inputs<'a> {
     /// The input file's name.
     pub file_name: &'a str,
     /// The line tables (for `sourcefiles`).
-    pub lines: Option<&'a hexcavator_debuginfo::SourceLines>,
+    pub lines: Option<&'a turbonop_debuginfo::SourceLines>,
 }
 
 /// The base map of a PE image.
@@ -512,7 +512,7 @@ pub fn apply_libraries(maps: &mut Maps, model: &Model) {
 }
 
 fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
-    let mut cache = hexcavator_hash::Map::default();
+    let mut cache = turbonop_hash::Map::default();
     map.fill_from(base, |l| {
         *cache.entry(l).or_insert_with(|| fallback(labels, l))
     });
@@ -527,7 +527,7 @@ fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
 fn pe_references(pe: &PeFile<'_>, symbols: &[Symbol], map: &mut DualMap, base: &DualMap) {
     use crate::disasm::Arch;
     use crate::symbols::SymbolKind;
-    use hexcavator_pe::consts::machine;
+    use turbonop_pe::consts::machine;
     let arch = match pe.machine() {
         machine::AMD64 => Arch::X64,
         machine::ARM64 => Arch::Arm64,
@@ -554,10 +554,7 @@ fn pe_references(pe: &PeFile<'_>, symbols: &[Symbol], map: &mut DualMap, base: &
         .filter_map(|s| {
             let rva = u32::try_from(s.addr).ok()?;
             let size = u32::try_from(s.size.file).ok()?;
-            Some((
-                s.addr,
-                pe.bytes_at_rva(hexcavator_core::Rva(rva), size).ok()?,
-            ))
+            Some((s.addr, pe.bytes_at_rva(turbonop_core::Rva(rva), size).ok()?))
         })
         .collect();
     // The functions in parts, a thread each; their references in order

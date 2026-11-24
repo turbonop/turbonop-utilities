@@ -3,8 +3,8 @@
 //! configurations) decoded and written the same, or not decoded where
 //! LLVM decodes nothing.
 
-use hexcavator_mips::format::format;
-use hexcavator_mips::{Features, decode};
+use turbonop_mips::format::format;
+use turbonop_mips::{Features, decode};
 
 /// Each configuration's byte order and features (as llvm-objdump has
 /// them: its default CPU's, the ISA level's, and those given it).
@@ -135,7 +135,7 @@ fn llvm_micromips_text() {
                 h.to_le_bytes()
             });
         }
-        let got = match hexcavator_mips::decode_micromips(&bytes, *big, f) {
+        let got = match turbonop_mips::decode_micromips(&bytes, *big, f) {
             Some(i) => format(&i, at, f),
             None => "<unknown>".into(),
         };

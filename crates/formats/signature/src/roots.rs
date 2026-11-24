@@ -1,6 +1,6 @@
-//! The roots hexcavator trusts: Microsoft's and Apple's, and the public code
+//! The roots trusted: Microsoft's and Apple's, and the public code
 //! signing and timestamping authorities (see tools/signature/roots.py),
-//! and any the caller adds (`hexcavator signature -root <file>`).
+//! and any the caller adds (as `hexcavator signature -root <file>` does).
 //!
 //! Trust is ours to say, the same on every platform: not the machine's
 //! store, and without checking revocation (that needs the network).

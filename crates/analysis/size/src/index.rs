@@ -5,7 +5,7 @@
 //! The file is a header (magic, format version, the key), the symbols, and
 //! a checksum. The key says what the symbols were built from (the image's
 //! and debug file's sizes and times, and the tool's own identity, so that a
-//! rebuilt Hexcavator doesn't trust an old index); an index whose key, version, or
+//! rebuilt program doesn't trust an old index); an index whose key, version, or
 //! checksum differs is ignored, as is any that doesn't decode exactly. It
 //! is read as untrusted input: every length is checked, names must be
 //! UTF-8, and nothing it says is believed beyond its own bytes.

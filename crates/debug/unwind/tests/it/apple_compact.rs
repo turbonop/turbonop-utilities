@@ -4,9 +4,9 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use crate::support::{STACK, Stack};
-use hexcavator_unwind::Error;
-use hexcavator_unwind::apple_compact::{self, Step};
-use hexcavator_unwind::dwarf_cfi::{Frame, Registers};
+use turbonop_unwind::Error;
+use turbonop_unwind::apple_compact::{self, Step};
+use turbonop_unwind::dwarf_cfi::{Frame, Registers};
 
 const RETURN: u64 = 0x7777_0000;
 // DWARF numbers.

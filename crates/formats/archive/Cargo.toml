@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-archive"
+name = "turbonop-archive"
 description = "ar archives (.lib, .a): members, long names, and symbol tables, in their GNU, BSD, and Microsoft forms"
 version.workspace = true
 edition.workspace = true
@@ -9,10 +9,10 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
 
 [dev-dependencies]
-hexcavator-pe.workspace = true
+turbonop-pe.workspace = true
 
 [lints]
 workspace = true

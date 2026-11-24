@@ -1,6 +1,6 @@
 //! CodeView type records (leaves).
 
-use hexcavator_core::{Reader, Result};
+use turbonop_core::{Reader, Result};
 
 /// A type index. Values below `0x1000` are built-in (simple) types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

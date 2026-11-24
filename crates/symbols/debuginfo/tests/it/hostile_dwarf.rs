@@ -6,7 +6,7 @@
 
 #![allow(clippy::cast_possible_truncation, reason = "small test data")]
 
-use hexcavator_debuginfo::DebugInfo;
+use turbonop_debuginfo::DebugInfo;
 
 /// A little-endian ELF64 relocatable object with these sections.
 fn elf(sections: &[(&str, &[u8])]) -> Vec<u8> {
@@ -205,7 +205,7 @@ fn a_range_list_many_functions_name_is_bounded() {
     assert!(symbols <= budget + functions as u64, "{symbols}");
     // (About 2 s natively. Under emulation, as CI's big-endian job runs
     // it, the job says how much slower it is.)
-    let slowdown: u64 = std::env::var("HEXC_TEST_SLOWDOWN")
+    let slowdown: u64 = std::env::var("TURBONOP_TEST_SLOWDOWN")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);

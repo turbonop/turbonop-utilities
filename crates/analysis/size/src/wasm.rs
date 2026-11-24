@@ -20,11 +20,11 @@
 //! files and in the DWARF `inlines` (bloaty prints the map's zero-based
 //! lines).
 
-use hexcavator_hash::Map as HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_core::Result;
-use hexcavator_demangle::itanium::Demangler;
-use hexcavator_wasm::{Module, NAME_DATA_SEGMENT, NAME_FUNCTION};
+use turbonop_core::Result;
+use turbonop_demangle::itanium::Demangler;
+use turbonop_wasm::{Module, NAME_DATA_SEGMENT, NAME_FUNCTION};
 
 use crate::rangemap::{DualMap, Labels};
 use crate::sourcemap::SourceMap;
@@ -33,7 +33,7 @@ use crate::sources::{Maps, Source, UNMAPPED};
 pub const WASM_HEADER: &str = "[WASM Header]";
 
 pub fn is_wasm_input(data: &[u8]) -> bool {
-    hexcavator_wasm::is_wasm(data)
+    turbonop_wasm::is_wasm(data)
 }
 
 fn add(
@@ -63,7 +63,7 @@ fn dwarf_input<'d>(m: &Module<'d>) -> Option<crate::dwarf_units::DwarfInput<'d>>
     let code = m
         .sections()
         .iter()
-        .find(|s| s.id == hexcavator_wasm::SECTION_CODE)?;
+        .find(|s| s.id == turbonop_wasm::SECTION_CODE)?;
     let data = m.data();
     let sections: Vec<crate::dwarf_units::DwarfSection<'d>> = m
         .sections()
@@ -79,7 +79,7 @@ fn dwarf_input<'d>(m: &Module<'d>) -> Option<crate::dwarf_units::DwarfInput<'d>>
         .iter()
         .any(|(n, _, _)| *n == b"info")
         .then_some(crate::dwarf_units::DwarfInput {
-            endian: hexcavator_core::Endian::Little,
+            endian: turbonop_core::Endian::Little,
             sections,
             code_at: Some(code.contents_offset),
             data_at: data_segments(m.data()),
@@ -89,16 +89,16 @@ fn dwarf_input<'d>(m: &Module<'d>) -> Option<crate::dwarf_units::DwarfInput<'d>>
 /// The module's active data segments: (address in linear memory, size,
 /// file offset), as the image places them.
 fn data_segments(data: &[u8]) -> Vec<(u64, u64, u64)> {
-    let Ok(image) = hexcavator_image::Image::parse(data) else {
+    let Ok(image) = turbonop_image::Image::parse(data) else {
         return Vec::new();
     };
     image
         .sections()
         .iter()
-        .filter(|s| s.raw_flags == u32::from(hexcavator_wasm::SECTION_DATA) && s.vm_size > 0)
+        .filter(|s| s.raw_flags == u32::from(turbonop_wasm::SECTION_DATA) && s.vm_size > 0)
         .filter_map(|s| {
             Some((
-                s.addr.checked_sub(hexcavator_image::WASM_MEMORY)?,
+                s.addr.checked_sub(turbonop_image::WASM_MEMORY)?,
                 s.vm_size,
                 s.file_offset,
             ))
@@ -109,15 +109,15 @@ fn data_segments(data: &[u8]) -> Vec<(u64, u64, u64)> {
 /// Its variables' sizes, by address in linear memory (from their types,
 /// as its DWARF describes them).
 fn variable_sizes(data: &[u8]) -> HashMap<u64, u64> {
-    let Ok(debug) = hexcavator_debuginfo::DebugInfo::parse(data) else {
+    let Ok(debug) = turbonop_debuginfo::DebugInfo::parse(data) else {
         return HashMap::default();
     };
     debug
         .symbols()
         .unwrap_or_default()
         .into_iter()
-        .filter(|s| s.kind == hexcavator_debuginfo::SymbolKind::Data && !s.thread_local)
-        .filter_map(|s| Some((s.addr.checked_sub(hexcavator_image::WASM_MEMORY)?, s.size?)))
+        .filter(|s| s.kind == turbonop_debuginfo::SymbolKind::Data && !s.thread_local)
+        .filter_map(|s| Some((s.addr.checked_sub(turbonop_image::WASM_MEMORY)?, s.size?)))
         .collect()
 }
 
@@ -305,8 +305,8 @@ pub fn maps_with_source_map(
 const MAX_INDENT: usize = 32;
 
 pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, String> {
-    use hexcavator_wasm_isa::code;
     use std::fmt::Write as _;
+    use turbonop_wasm_isa::code;
     let m = Module::parse(data).map_err(|e| e.to_string())?;
     let funcs = m.names(NAME_FUNCTION);
     let base = m.imported_functions();
@@ -402,7 +402,7 @@ pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, Strin
         }
         let mut text = i.to_string();
         // Calls: the callee's name.
-        if let (hexcavator_wasm_isa::code::Imm::Index(f), "call" | "return_call" | "ref.func") =
+        if let (turbonop_wasm_isa::code::Imm::Index(f), "call" | "return_call" | "ref.func") =
             (&i.imm, i.op.name)
             && let Some(name) = name_of(*f)
         {
@@ -426,8 +426,8 @@ pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, Strin
 
 #[cfg(test)]
 mod tests {
-    use hexcavator_hash::Map as HashMap;
     use std::path::PathBuf;
+    use turbonop_hash::Map as HashMap;
 
     use super::*;
     use crate::rangemap::sweep;

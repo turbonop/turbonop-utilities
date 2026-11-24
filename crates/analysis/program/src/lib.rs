@@ -7,8 +7,8 @@
 //! compilands, and its symbols (and kept, see [`cache`]).
 //!
 //! ```no_run
-//! # fn f(path: &std::path::Path) -> Result<(), hexcavator_program::Error> {
-//! let opened = hexcavator_program::Opened::open(path, None)?;
+//! # fn f(path: &std::path::Path) -> Result<(), turbonop_program::Error> {
+//! let opened = turbonop_program::Opened::open(path, None)?;
 //! let program = opened.program()?;
 //! let symbols = program.symbols()?;
 //! # Ok(())
@@ -30,16 +30,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub use error::Error;
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_mmap::Mmap;
-use hexcavator_size::symbols::{self, Symbol};
-use hexcavator_size::{Model, model};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_mmap::Mmap;
+use turbonop_size::symbols::{self, Symbol};
+use turbonop_size::{Model, model};
 
 /// The debug information for the image at `image_path`: `given`, if one
 /// is; else the image itself, if it has DWARF of its own; else the first
 /// file of those the image's debug identities name, beside it or in the
-/// symbol directories (see `hexcavator_debuginfo::candidate_paths_in` and
+/// symbol directories (see `turbonop_debuginfo::candidate_paths_in` and
 /// `symbol_dirs`), that matches it; and its path.
 pub fn find_debug(
     image_path: &Path,
@@ -60,7 +60,7 @@ pub enum DebugFile {
     /// Its bytes.
     Mapped(Mmap),
     /// A PDB, read by range.
-    Read(hexcavator_mmap::ReadFile),
+    Read(turbonop_mmap::ReadFile),
 }
 
 impl DebugFile {
@@ -70,14 +70,14 @@ impl DebugFile {
         #[cfg(not(any(windows, unix)))]
         {
             let file = if named {
-                hexcavator_mmap::ReadFile::open_named(path)?
+                turbonop_mmap::ReadFile::open_named(path)?
             } else {
-                hexcavator_mmap::ReadFile::open(path)?
+                turbonop_mmap::ReadFile::open(path)?
             };
-            use hexcavator_mmap::Source;
+            use turbonop_mmap::Source;
             let mut head = [0u8; 32];
             let n = usize::try_from(file.len()).map_or(head.len(), |l| l.min(head.len()));
-            if file.fill(0, &mut head[..n]) && hexcavator_pdb::check(&head[..n]).is_ok() {
+            if file.fill(0, &mut head[..n]) && turbonop_pdb::check(&head[..n]).is_ok() {
                 return Ok(Self::Read(file));
             }
             file.read_all().map(Self::Mapped)
@@ -94,7 +94,7 @@ impl DebugFile {
     }
 
     /// Its debug information, parsed.
-    pub fn parse(&self) -> hexcavator_core::Result<DebugInfo<'_>> {
+    pub fn parse(&self) -> turbonop_core::Result<DebugInfo<'_>> {
         match self {
             Self::Mapped(m) => DebugInfo::parse(m),
             Self::Read(r) => DebugInfo::parse_source(r),
@@ -142,14 +142,13 @@ pub fn find_debug_file(
     // (A COFF object's CodeView: read as the PDB a linker would write of
     // it, with its type server's types, if it names one that is found.)
     let server = type_server(image_path, image.data());
-    if let Some(pdb) =
-        hexcavator_debuginfo::coff_object::pdb_of_with(image.data(), server.as_deref())
+    if let Some(pdb) = turbonop_debuginfo::coff_object::pdb_of_with(image.data(), server.as_deref())
     {
         return Ok((image_path.to_path_buf(), DebugFile::Mapped(Mmap::from(pdb))));
     }
     let ids = image.debug_ids();
     let servers = server::servers();
-    let mut dirs = hexcavator_debuginfo::symbol_dirs();
+    let mut dirs = turbonop_debuginfo::symbol_dirs();
     // (What was fetched before is in the symbol cache.)
     if let Some(c) = &servers.cache
         && !dirs.contains(c)
@@ -158,7 +157,7 @@ pub fn find_debug_file(
     }
     let mut tried = Vec::new();
     for id in &ids {
-        for candidate in hexcavator_debuginfo::candidate_paths_in(image_path, id, &dirs) {
+        for candidate in turbonop_debuginfo::candidate_paths_in(image_path, id, &dirs) {
             let Ok(map) = DebugFile::open(&candidate, true) else {
                 tried.push(format!("{} (not found)", candidate.display()));
                 continue;
@@ -226,7 +225,7 @@ pub fn find_debug_file(
 /// its name beside the object; the one whose GUID is the one the object
 /// records (or any, if that is unset, as `/Brepro` leaves it).
 fn type_server(object_path: &Path, data: &[u8]) -> Option<Mmap> {
-    let (guid, _, name) = hexcavator_debuginfo::coff_object::type_server(data)?;
+    let (guid, _, name) = turbonop_debuginfo::coff_object::type_server(data)?;
     let recorded = path_of_bytes(name);
     let mut candidates = vec![recorded];
     if let Some(file) = name
@@ -243,7 +242,7 @@ fn type_server(object_path: &Path, data: &[u8]) -> Option<Mmap> {
     }
     candidates.into_iter().find_map(|p| {
         let map = Mmap::open_named(&p).ok()?;
-        let pdb = hexcavator_pdb::Pdb::parse(&map).ok()?;
+        let pdb = turbonop_pdb::Pdb::parse(&map).ok()?;
         (guid == [0xFF; 16] || pdb.info().guid() == guid).then_some(())?;
         drop(pdb);
         Some(map)
@@ -253,14 +252,14 @@ fn type_server(object_path: &Path, data: &[u8]) -> Option<Mmap> {
 /// The split DWARF files the debug information at `debug_path` (of the
 /// image at `image_path`) names, opened: its `.dwp` package if there is
 /// one, else each `.dwo` file found (see
-/// [`hexcavator_debuginfo::dwarf_backend::split_paths`]). Those not found are left
+/// [`turbonop_debuginfo::dwarf_backend::split_paths`]). Those not found are left
 /// out: their compilands are then their skeletons alone.
 pub fn open_splits(
     image_path: &Path,
     debug_path: &Path,
     debug: &DebugInfo<'_>,
 ) -> Vec<(PathBuf, Mmap)> {
-    use hexcavator_debuginfo::dwarf_backend as dwarf;
+    use turbonop_debuginfo::dwarf_backend as dwarf;
     let Some(d) = debug.dwarf() else {
         return Vec::new();
     };
@@ -412,7 +411,7 @@ fn open_debug_map(image_path: &Path, image: &Image<'_>) -> Vec<MapObject> {
 
 /// Where the archive `data`'s member `name` is in it (start, end).
 fn member_place(data: &[u8], name: &str) -> Option<(usize, usize)> {
-    let archive = hexcavator_archive::Archive::parse(data).ok()?;
+    let archive = turbonop_archive::Archive::parse(data).ok()?;
     let m = archive.files().find(|m| &*m.name == name.as_bytes())?;
     let start = usize::try_from(m.data_offset).ok()?;
     Some((start, start.checked_add(m.data.len())?))
@@ -481,17 +480,17 @@ impl Opened {
     /// The debug information read from the objects of the image's debug
     /// map (see [`Opened::open`]).
     fn debug_map_info(&self, image: &Image<'_>) -> Result<DebugInfo<'_>, Error> {
-        use hexcavator_debuginfo::dwarf_backend::DwarfInfo;
+        use turbonop_debuginfo::dwarf_backend::DwarfInfo;
         // (The debug map's image: always mapped, as the image itself.)
         let debug = self.debug.bytes().unwrap_or_default();
-        let image_data = match hexcavator_macho::preferred_slice(debug) {
+        let image_data = match turbonop_macho::preferred_slice(debug) {
             Some((_, slice)) => slice,
             None => debug,
         };
         let mut d = DwarfInfo::from_debug_map(image_data).map_err(Error::format(&self.path))?;
         let map = image
             .macho()
-            .map(hexcavator_macho::MachO::debug_map)
+            .map(turbonop_macho::MachO::debug_map)
             .unwrap_or_default();
         for o in &self.objects {
             let Some(entry) = map.get(o.entry) else {

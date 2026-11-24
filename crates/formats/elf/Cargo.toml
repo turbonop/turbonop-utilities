@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-elf"
+name = "turbonop-elf"
 description = "ELF files (executables, shared objects, relocatable objects; 32- and 64-bit, either byte order): headers, segments, sections, symbols, notes"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
 
 [lints]
 workspace = true

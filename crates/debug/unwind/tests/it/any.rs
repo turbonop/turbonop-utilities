@@ -15,10 +15,10 @@
 
 use std::path::Path;
 
-use hexcavator_dwarf::cfi::{Cfi, CfiKind, Entry};
-use hexcavator_image::Image;
-use hexcavator_unwind::any::{self, Method};
-use hexcavator_unwind::dwarf_cfi::Registers;
+use turbonop_dwarf::cfi::{Cfi, CfiKind, Entry};
+use turbonop_image::Image;
+use turbonop_unwind::any::{self, Method};
+use turbonop_unwind::dwarf_cfi::Registers;
 
 use crate::support::{STACK, Stack};
 
@@ -74,14 +74,14 @@ fn at_entry(image: &Image<'_>, bias: u64, start: u64) -> (Method, u64, u64) {
     let top = STACK + 0x100;
     stack.set(top, RETURN);
     let lr = match image.arch() {
-        hexcavator_core::Arch::Arm64 => Some(30),
-        hexcavator_core::Arch::Arm => Some(14),
-        hexcavator_core::Arch::RiscV32
-        | hexcavator_core::Arch::RiscV64
-        | hexcavator_core::Arch::LoongArch32
-        | hexcavator_core::Arch::LoongArch64 => Some(1),
-        hexcavator_core::Arch::PowerPc | hexcavator_core::Arch::PowerPc64 => Some(65),
-        hexcavator_core::Arch::Mips | hexcavator_core::Arch::Mips64 => Some(31),
+        turbonop_core::Arch::Arm64 => Some(30),
+        turbonop_core::Arch::Arm => Some(14),
+        turbonop_core::Arch::RiscV32
+        | turbonop_core::Arch::RiscV64
+        | turbonop_core::Arch::LoongArch32
+        | turbonop_core::Arch::LoongArch64 => Some(1),
+        turbonop_core::Arch::PowerPc | turbonop_core::Arch::PowerPc64 => Some(65),
+        turbonop_core::Arch::Mips | turbonop_core::Arch::Mips64 => Some(31),
         _ => None,
     };
     let mut r = registers(&[(pc, bias + start), (sp, top)]);
@@ -127,11 +127,11 @@ fn elf_dwarf_at_function_starts() {
 fn pdata_starts(image: &Image<'_>) -> Vec<u64> {
     let pe = image.pe().unwrap();
     let dir = pe
-        .data_directory(hexcavator_pe::consts::directory::EXCEPTION)
+        .data_directory(turbonop_pe::consts::directory::EXCEPTION)
         .unwrap();
     let (rva, size) = (dir.virtual_address.get(), dir.size.get());
     let data = image.bytes_at(u64::from(rva), u64::from(size)).unwrap();
-    let stride = if image.arch() == hexcavator_core::Arch::X64 {
+    let stride = if image.arch() == turbonop_core::Arch::X64 {
         12
     } else {
         8
@@ -147,7 +147,7 @@ fn pdata_starts(image: &Image<'_>) -> Vec<u64> {
     // (An ARM64 `.xdata` record's unwind codes, with an `end_c`.)
     let end_c = |e: &[u8]| {
         let unwind = u32::from_le_bytes([e[4], e[5], e[6], e[7]]);
-        if image.arch() != hexcavator_core::Arch::Arm64 || unwind & 3 != 0 {
+        if image.arch() != turbonop_core::Arch::Arm64 || unwind & 3 != 0 {
             return false;
         }
         let Some(h) = image.bytes_at(u64::from(unwind), 4) else {
@@ -163,7 +163,7 @@ fn pdata_starts(image: &Image<'_>) -> Vec<u64> {
     // (An ARM fragment: packed (flag 2), or `.xdata` with its F bit.)
     let fragment = |e: &[u8]| {
         let unwind = u32::from_le_bytes([e[4], e[5], e[6], e[7]]);
-        if image.arch() != hexcavator_core::Arch::Arm {
+        if image.arch() != turbonop_core::Arch::Arm {
             return false;
         }
         match unwind & 3 {
@@ -197,7 +197,7 @@ fn pe_pdata_at_function_starts() {
         let data = testdata(file);
         let image = Image::parse(&data).unwrap();
         // (ARM's addresses are 32 bits.)
-        let base = if image.arch() == hexcavator_core::Arch::Arm {
+        let base = if image.arch() == turbonop_core::Arch::Arm {
             0x40_0000
         } else {
             BASE
@@ -243,11 +243,11 @@ fn pe_leaves() {
 /// encoding names.
 #[test]
 fn macho_compact_in_bodies() {
-    use hexcavator_macho::unwind_info::UnwindInfo;
+    use turbonop_macho::unwind_info::UnwindInfo;
     for file in ["macho/unwind-arm64.dylib", "macho/unwind-x86_64.dylib"] {
         let data = testdata(file);
         let image = Image::parse(&data).unwrap();
-        let arm64 = image.arch() == hexcavator_core::Arch::Arm64;
+        let arm64 = image.arch() == turbonop_core::Arch::Arm64;
         let m = image.macho().unwrap();
         let s = image
             .sections()
@@ -301,7 +301,7 @@ fn macho_compact_in_bodies() {
 /// applies them.
 #[test]
 fn elf_arm_exidx() {
-    use hexcavator_unwind::arm_ehabi;
+    use turbonop_unwind::arm_ehabi;
     let data = testdata("arm32/eh-linux");
     let image = Image::parse(&data).unwrap();
     let s = image
@@ -315,7 +315,7 @@ fn elf_arm_exidx() {
         endian: image.endian(),
     };
     struct Bytes<'a, 'd>(&'a Image<'d>);
-    impl hexcavator_unwind::Memory for Bytes<'_, '_> {
+    impl turbonop_unwind::Memory for Bytes<'_, '_> {
         fn read(&self, address: u64, buf: &mut [u8]) -> bool {
             self.0
                 .bytes_at(address, buf.len() as u64)

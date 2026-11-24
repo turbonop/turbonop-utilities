@@ -19,8 +19,8 @@
 //! All offsets in the resource are relative to its start (the `CRIM`
 //! header).
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_etl::Guid;
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_etl::Guid;
 
 use crate::schema::{Field, Property};
 
@@ -109,8 +109,8 @@ pub enum Size {
 
 /// The `WEVT_TEMPLATE` resource of a PE image, if it has one.
 pub fn wevt_template(image: &[u8]) -> Option<&[u8]> {
-    use hexcavator_pe::resources::{ResourceName, ResourceTarget};
-    let pe = hexcavator_pe::PeFile::parse(image).ok()?;
+    use turbonop_pe::resources::{ResourceName, ResourceTarget};
+    let pe = turbonop_pe::PeFile::parse(image).ok()?;
     let root = pe.resource_root()?;
     let by_type = root.iter().find(|e| {
         matches!(e.name, Some(ResourceName::Name { .. }))
@@ -132,7 +132,7 @@ pub fn wevt_template(image: &[u8]) -> Option<&[u8]> {
         return None;
     };
     let entry = pe.resource_data_entry(rva)?;
-    pe.bytes_at_rva(hexcavator_core::Rva(entry.data.get()), entry.size.get())
+    pe.bytes_at_rva(turbonop_core::Rva(entry.data.get()), entry.size.get())
         .ok()
 }
 
@@ -612,10 +612,7 @@ impl Manifests {
 
     /// Decodes a manifest-based event's payload, if its provider's manifest
     /// defines the event.
-    pub fn decode<'a>(
-        &self,
-        event: &hexcavator_etl::Event<'a>,
-    ) -> Option<Result<Vec<Property<'a>>>> {
+    pub fn decode<'a>(&self, event: &turbonop_etl::Event<'a>) -> Option<Result<Vec<Property<'a>>>> {
         let provider = self.get(&event.provider)?;
         let def = provider.event(event.descriptor.id, event.descriptor.version)?;
         let Some(template) = provider.template(def) else {

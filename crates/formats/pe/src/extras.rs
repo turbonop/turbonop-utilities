@@ -8,7 +8,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::{Rva, bytes_at};
+use turbonop_core::{Rva, bytes_at};
 
 use crate::PeFile;
 use crate::consts::directory;

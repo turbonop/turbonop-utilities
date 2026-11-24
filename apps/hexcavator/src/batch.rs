@@ -139,15 +139,15 @@ fn collect(dir: &Path, recurse: bool, out: &mut Vec<PathBuf>) {
 /// Whether the file at `path` is a linked image (an executable or shared
 /// library, not an object, a dump, or a debug file).
 fn is_image(path: &Path) -> bool {
-    let Ok(map) = hexcavator_mmap::Mmap::open(path) else {
+    let Ok(map) = turbonop_mmap::Mmap::open(path) else {
         return false;
     };
-    hexcavator_image::Image::parse(&map).is_ok_and(|i| i.kind() == hexcavator_image::Kind::Linked)
+    turbonop_image::Image::parse(&map).is_ok_and(|i| i.kind() == turbonop_image::Kind::Linked)
 }
 
 /// The summary of the image at `path`.
 fn summary(path: &Path, top: usize, findings: bool) -> Result<Value, String> {
-    let opened = hexcavator_program::Opened::open(path, None)?;
+    let opened = turbonop_program::Opened::open(path, None)?;
     let program = opened.program()?;
     let (image, debug, data, debug_path) = (
         &program.image,
@@ -163,9 +163,9 @@ fn summary(path: &Path, top: usize, findings: bool) -> Result<Value, String> {
         .map(|s| json!({"name": s.name, "file": s.size.file, "vm": s.size.vm}))
         .collect();
     // Libraries and compilands, largest first.
-    let ranked = |totals: std::collections::BTreeMap<u32, hexcavator_size::Totals>,
+    let ranked = |totals: std::collections::BTreeMap<u32, turbonop_size::Totals>,
                   name: &dyn Fn(u32) -> String| {
-        let mut v: Vec<(u32, hexcavator_size::Size)> =
+        let mut v: Vec<(u32, turbonop_size::Size)> =
             totals.into_iter().map(|(k, t)| (k, t.size)).collect();
         v.sort_by(|a, b| {
             b.1.file
@@ -204,11 +204,11 @@ fn summary(path: &Path, top: usize, findings: bool) -> Result<Value, String> {
     });
     if findings {
         let syms = program.symbols()?;
-        let f = hexcavator_size::findings::find(image, debug, syms);
+        let f = turbonop_size::findings::find(image, debug, syms);
         v["findings"] = json!({
             "duplicateData": f.duplicates.iter().map(|d| d.wasted().file).sum::<u64>(),
             "templateFamilies": f.families.iter().map(|t| t.size.file).sum::<u64>(),
-            "wastefulVirtuals": f.virtuals.iter().map(hexcavator_size::findings::WastefulVirtual::wasted).sum::<u64>(),
+            "wastefulVirtuals": f.virtuals.iter().map(turbonop_size::findings::WastefulVirtual::wasted).sum::<u64>(),
         });
     }
     Ok(v)

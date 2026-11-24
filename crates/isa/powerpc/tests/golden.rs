@@ -4,8 +4,8 @@
 //! PowerPC) decoded and written the same, or not decoded where LLVM
 //! decodes nothing.
 
-use hexcavator_powerpc::format::format;
-use hexcavator_powerpc::{Features, decode};
+use turbonop_powerpc::format::format;
+use turbonop_powerpc::{Features, decode};
 
 #[test]
 fn llvm_text() {

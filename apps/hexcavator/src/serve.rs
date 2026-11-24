@@ -25,7 +25,7 @@
 //! Requests run at once, each on its own thread, and are answered as they
 //! finish (in any order). What commands build from a program (its model
 //! and symbols) is kept in memory, so that the next command on it starts
-//! from there, until its files change (see `hexcavator_program::cache`).
+//! from there, until its files change (see `turbonop_program::cache`).
 //! At the end of input, the requests running finish and are answered.
 
 use std::io::{self, BufRead, Write};
@@ -54,7 +54,7 @@ pub fn run(args: &[String]) -> ExitCode {
         ereport!("{USAGE}");
         return ExitCode::from(2);
     }
-    hexcavator_program::cache::keep_in_memory(true);
+    turbonop_program::cache::keep_in_memory(true);
     let stdout = Arc::new(Mutex::new(io::stdout()));
     let result = serve(io::stdin().lock(), &stdout);
     if let Err(e) = result {

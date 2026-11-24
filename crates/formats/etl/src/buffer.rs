@@ -1,6 +1,6 @@
 //! ETL buffers: the fixed-size blocks a trace file is made of.
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 use crate::bytes::{i64_at, u16_at, u32_at, u64_at};
 use crate::event::Records;

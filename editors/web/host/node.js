@@ -186,7 +186,7 @@
     spawn(_exe, args, options) {
       const env = Object.assign({}, (options && options.env) || {});
       // Every core (hexcavator can't ask the browser how many there are).
-      env.HEXC_THREADS = env.HEXC_THREADS || String(navigator.hardwareConcurrency || 4);
+      env.TURBONOP_THREADS = env.TURBONOP_THREADS || String(navigator.hardwareConcurrency || 4);
       return runtime.spawn(args || [], env);
     },
   };

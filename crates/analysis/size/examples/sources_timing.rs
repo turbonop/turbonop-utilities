@@ -3,11 +3,11 @@
 
 use std::time::Instant;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::rollup::{Options, Report, Rollup};
-use hexcavator_size::sources::{self, Inputs, Source};
-use hexcavator_size::{pe, symbols};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::rollup::{Options, Report, Rollup};
+use turbonop_size::sources::{self, Inputs, Source};
+use turbonop_size::{pe, symbols};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -21,8 +21,8 @@ fn main() {
         .split(',')
         .map(|s| Source::parse(s).expect("a data source"))
         .collect();
-    let image_map = hexcavator_mmap::Mmap::open(image_path).unwrap();
-    let pdb_map = hexcavator_mmap::Mmap::open(pdb_path).unwrap();
+    let image_map = turbonop_mmap::Mmap::open(image_path).unwrap();
+    let pdb_map = turbonop_mmap::Mmap::open(pdb_path).unwrap();
     let mut t = Instant::now();
     let mut lap = |what: &str| {
         eprintln!("{what:>10}: {:7.3} s", t.elapsed().as_secs_f64());

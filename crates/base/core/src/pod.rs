@@ -59,15 +59,15 @@ pub fn as_bytes<T: Pod>(value: &T) -> &[u8] {
 /// and no padding.
 ///
 /// ```
-/// hexcavator_core::pod! {
+/// turbonop_core::pod! {
 ///     #[derive(Debug)]
 ///     pub struct Header {
 ///         pub magic: [u8; 4],
-///         pub count: hexcavator_core::U32Le,
+///         pub count: turbonop_core::U32Le,
 ///     }
 /// }
 /// let bytes = [b'R', b'B', b'A', b'T', 3, 0, 0, 0];
-/// let header: &Header = hexcavator_core::from_bytes(&bytes).unwrap();
+/// let header: &Header = turbonop_core::from_bytes(&bytes).unwrap();
 /// assert_eq!(header.count.get(), 3);
 /// ```
 #[macro_export]

@@ -14,7 +14,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-pub use hexcavator_core::Arch;
+pub use turbonop_core::Arch;
 
 /// How control leaves an instruction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -126,11 +126,11 @@ pub fn decode_in(arch: Arch, mode: Mode, bytes: &[u8], address: u64) -> Option<I
     match arch {
         Arch::X86 | Arch::X64 => {
             let mode = if arch == Arch::X86 {
-                hexcavator_x86::Mode::Bits32
+                turbonop_x86::Mode::Bits32
             } else {
-                hexcavator_x86::Mode::Bits64
+                turbonop_x86::Mode::Bits64
             };
-            let i = hexcavator_x86::decode(bytes, mode, address).ok()?;
+            let i = turbonop_x86::decode(bytes, mode, address).ok()?;
             Some(Insn {
                 address,
                 len: u8::try_from(i.len()).ok()?,
@@ -140,7 +140,7 @@ pub fn decode_in(arch: Arch, mode: Mode, bytes: &[u8], address: u64) -> Option<I
         }
         Arch::Arm64 => {
             let word = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-            let i = hexcavator_arm64::decode(word, address)?;
+            let i = turbonop_arm64::decode(word, address)?;
             let flow = arm64_flow(i.encoding_name());
             let target = match flow {
                 Flow::Call | Flow::Jump | Flow::Branch => arm64_target(word, address),
@@ -158,19 +158,19 @@ pub fn decode_in(arch: Arch, mode: Mode, bytes: &[u8], address: u64) -> Option<I
             decode_arm32(bytes, address & !1, thumb)
         }
         Arch::RiscV32 | Arch::RiscV64 => {
-            let features = hexcavator_riscv::Features::standard(arch == Arch::RiscV64);
+            let features = turbonop_riscv::Features::standard(arch == Arch::RiscV64);
             decode_riscv(bytes, address, &features)
         }
         Arch::LoongArch32 | Arch::LoongArch64 => {
             let features = if arch == Arch::LoongArch64 {
-                hexcavator_loongarch::Features::la64()
+                turbonop_loongarch::Features::la64()
             } else {
-                hexcavator_loongarch::Features::la32()
+                turbonop_loongarch::Features::la32()
             };
             decode_loongarch(bytes, address, &features)
         }
         Arch::PowerPc | Arch::PowerPc64 => {
-            let features = hexcavator_powerpc::Features::standard(arch == Arch::PowerPc64);
+            let features = turbonop_powerpc::Features::standard(arch == Arch::PowerPc64);
             decode_powerpc(bytes, big, address, &features)
         }
         Arch::Mips | Arch::Mips64 => {
@@ -188,9 +188,9 @@ pub fn decode_in(arch: Arch, mode: Mode, bytes: &[u8], address: u64) -> Option<I
 pub fn decode_riscv(
     bytes: &[u8],
     address: u64,
-    features: &hexcavator_riscv::Features,
+    features: &turbonop_riscv::Features,
 ) -> Option<Insn> {
-    let i = hexcavator_riscv::decode(bytes, features)?;
+    let i = turbonop_riscv::decode(bytes, features)?;
     let (flow, target) = riscv_flow(&i, address, features);
     Some(Insn {
         address,
@@ -208,14 +208,14 @@ pub fn decode_riscv(
 /// conditional branches branch; `ebreak` and `unimp` stop, as the trap
 /// returns (`mret`, `sret`, `dret`) leave.
 pub fn riscv_flow(
-    i: &hexcavator_riscv::Instruction,
+    i: &turbonop_riscv::Instruction,
     address: u64,
-    features: &hexcavator_riscv::Features,
+    features: &turbonop_riscv::Features,
 ) -> (Flow, Option<u64>) {
-    let full = hexcavator_riscv::uncompress(i, features);
+    let full = turbonop_riscv::uncompress(i, features);
     let i = full.as_ref().unwrap_or(i);
-    let reg = |n: &str| i.operand(n).and_then(hexcavator_riscv::gpr_of);
-    let imm = |n: &str| i.operand(n).and_then(hexcavator_riscv::Operand::imm);
+    let reg = |n: &str| i.operand(n).and_then(turbonop_riscv::gpr_of);
+    let imm = |n: &str| i.operand(n).and_then(turbonop_riscv::Operand::imm);
     let target = |n: &str| imm(n).map(|v| address.wrapping_add_signed(v));
     match i.name() {
         "JAL" => {
@@ -252,9 +252,9 @@ pub fn riscv_flow(
 pub fn decode_loongarch(
     bytes: &[u8],
     address: u64,
-    features: &hexcavator_loongarch::Features,
+    features: &turbonop_loongarch::Features,
 ) -> Option<Insn> {
-    let i = hexcavator_loongarch::decode(bytes, features)?;
+    let i = turbonop_loongarch::decode(bytes, features)?;
     let (flow, target) = loongarch_flow(&i, address);
     Some(Insn {
         address,
@@ -270,10 +270,10 @@ pub fn decode_loongarch(
 /// `call36` tail call), and to another register calls; the conditional
 /// branches (on registers, or on a condition flag) branch; `break`,
 /// `dbcl` and `ud` stop, as `ertn` (the exception return) leaves.
-pub fn loongarch_flow(i: &hexcavator_loongarch::Instruction, address: u64) -> (Flow, Option<u64>) {
-    let reg = |n: &str| i.operand(n).and_then(hexcavator_loongarch::gpr_of);
-    let imm = |n: &str| i.operand(n).and_then(hexcavator_loongarch::Operand::imm);
-    let target = hexcavator_loongarch::branch_target(i, address);
+pub fn loongarch_flow(i: &turbonop_loongarch::Instruction, address: u64) -> (Flow, Option<u64>) {
+    let reg = |n: &str| i.operand(n).and_then(turbonop_loongarch::gpr_of);
+    let imm = |n: &str| i.operand(n).and_then(turbonop_loongarch::Operand::imm);
+    let target = turbonop_loongarch::branch_target(i, address);
     match i.name() {
         "B" => (Flow::Jump, target),
         "BL" => (Flow::Call, target),
@@ -302,9 +302,9 @@ pub fn decode_powerpc(
     bytes: &[u8],
     big: bool,
     address: u64,
-    features: &hexcavator_powerpc::Features,
+    features: &turbonop_powerpc::Features,
 ) -> Option<Insn> {
-    let i = hexcavator_powerpc::decode(bytes, big, features)?;
+    let i = turbonop_powerpc::decode(bytes, big, features)?;
     let (flow, target) = powerpc_flow(&i, address, features);
     Some(Insn {
         address,
@@ -323,14 +323,14 @@ pub fn decode_powerpc(
 /// those branch (to no known target); `trap`, `attn`, and `stop` stop, as
 /// the interrupt returns (`rfid`, `hrfid`, ...) leave.
 pub fn powerpc_flow(
-    i: &hexcavator_powerpc::Instruction,
+    i: &turbonop_powerpc::Instruction,
     address: u64,
-    features: &hexcavator_powerpc::Features,
+    features: &turbonop_powerpc::Features,
 ) -> (Flow, Option<u64>) {
-    let target = hexcavator_powerpc::branch_target(i, address, features);
+    let target = turbonop_powerpc::branch_target(i, address, features);
     let always = || {
         i.operand("BO")
-            .and_then(hexcavator_powerpc::Operand::imm)
+            .and_then(turbonop_powerpc::Operand::imm)
             .is_some_and(|bo| bo & 0x14 == 0x14)
     };
     let name = i.name();
@@ -368,18 +368,18 @@ pub fn powerpc_flow(
 /// from its image's flags; not knowing them, Release 2's (MIPS32R2's, or
 /// MIPS64R2's), the commonest, and a superset of the earlier levels'
 /// (Release 6's encodings differ).
-pub fn mips_features_in(arch: Arch, mode: Mode) -> hexcavator_mips::Features {
+pub fn mips_features_in(arch: Arch, mode: Mode) -> turbonop_mips::Features {
     // (EF_MIPS_ARCH_32R2, EF_MIPS_ARCH_64R2.)
     let flags = mode.mips_flags.unwrap_or(if arch == Arch::Mips64 {
         0x8000_0000
     } else {
         0x7000_0000
     });
-    hexcavator_mips::Features::from_elf(flags, arch == Arch::Mips64)
+    turbonop_mips::Features::from_elf(flags, arch == Arch::Mips64)
 }
 
 /// [`mips_features_in`], not knowing the image's flags.
-pub fn mips_features(arch: Arch) -> hexcavator_mips::Features {
+pub fn mips_features(arch: Arch) -> turbonop_mips::Features {
     mips_features_in(arch, Mode::default())
 }
 
@@ -391,18 +391,18 @@ pub fn decode_mips(
     bytes: &[u8],
     big: bool,
     address: u64,
-    features: &hexcavator_mips::Features,
+    features: &turbonop_mips::Features,
 ) -> Option<(Insn, bool)> {
-    let i = hexcavator_mips::decode(bytes, big, features)?;
+    let i = turbonop_mips::decode(bytes, big, features)?;
     let (flow, target) = mips_flow(&i, address);
     Some((
         Insn {
             address,
-            len: u8::try_from(hexcavator_mips::size(&i)).unwrap_or(4),
+            len: u8::try_from(turbonop_mips::size(&i)).unwrap_or(4),
             flow,
             target,
         },
-        hexcavator_mips::has_delay_slot(&i),
+        turbonop_mips::has_delay_slot(&i),
     ))
 }
 
@@ -414,13 +414,9 @@ pub fn decode_mips(
 /// `break` and `sdbbp` stop, as `eret` and `deret` leave. microMIPS's
 /// are as their standard forms (`jrc $ra` returns, `jalrs16` calls, `b16`
 /// jumps), and `jraddiusp` returns.
-pub fn mips_flow(i: &hexcavator_mips::Instruction, address: u64) -> (Flow, Option<u64>) {
-    let target = hexcavator_mips::branch_target(i, address);
-    let reg = |k: usize| {
-        i.operands()
-            .get(k)
-            .and_then(|o| hexcavator_mips::gpr_of(*o))
-    };
+pub fn mips_flow(i: &turbonop_mips::Instruction, address: u64) -> (Flow, Option<u64>) {
+    let target = turbonop_mips::branch_target(i, address);
+    let reg = |k: usize| i.operands().get(k).and_then(|o| turbonop_mips::gpr_of(*o));
     let name = match i.name() {
         "J_MM" => "J",
         "JAL_MM" | "JALS_MM" | "JALX_MM" => "JAL",
@@ -518,19 +514,19 @@ pub fn delay_slots(insns: &mut [Insn], delayed: &[bool]) {
 pub fn decode_arm32(bytes: &[u8], address: u64, thumb: bool) -> Option<Insn> {
     let i = if thumb {
         let first = u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?);
-        let second = if hexcavator_arm32::is_t32_wide(first) {
+        let second = if turbonop_arm32::is_t32_wide(first) {
             Some(u16::from_le_bytes(bytes.get(2..4)?.try_into().ok()?))
         } else {
             None
         };
-        hexcavator_arm32::decode_t32(first, second)?
+        turbonop_arm32::decode_t32(first, second)?
     } else {
-        hexcavator_arm32::decode_a32(u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?))?
+        turbonop_arm32::decode_a32(u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?))?
     };
     let flow = arm32_flow(&i);
     let target = match flow {
         Flow::Call | Flow::Jump | Flow::Branch => {
-            hexcavator_arm32::format::branch_target(&i, address)
+            turbonop_arm32::format::branch_target(&i, address)
         }
         _ => None,
     };
@@ -546,7 +542,7 @@ pub fn decode_arm32(bytes: &[u8], address: u64, thumb: bool) -> Option<Insn> {
 /// instruction that writes the PC is a branch; T32's conditions come from
 /// IT blocks, which aren't followed: such an instruction is taken as
 /// unconditional.)
-pub fn arm32_flow(i: &hexcavator_arm32::Instruction) -> Flow {
+pub fn arm32_flow(i: &turbonop_arm32::Instruction) -> Flow {
     let n = i.encoding.name;
     let w = i.word;
     let field = |name: &str| {
@@ -621,8 +617,8 @@ pub fn arm32_flow(i: &hexcavator_arm32::Instruction) -> Flow {
     Flow::Next
 }
 
-fn x86_flow(f: hexcavator_x86::Flow) -> Flow {
-    use hexcavator_x86::Flow as X;
+fn x86_flow(f: turbonop_x86::Flow) -> Flow {
+    use turbonop_x86::Flow as X;
     match f {
         X::Next | X::Interrupt => Flow::Next,
         X::Call => Flow::Call,

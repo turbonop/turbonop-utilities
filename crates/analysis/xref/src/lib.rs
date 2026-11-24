@@ -282,7 +282,7 @@ impl Builder {
         // (Scanned and resolved to nodes on every core, then added.)
         let this = &*self;
         let resolved: Vec<Vec<Addition>> =
-            hexcavator_par::map_balanced(code, 256, |&(node, bytes)| {
+            turbonop_par::map_balanced(code, 256, |&(node, bytes)| {
                 let mut refs = Vec::new();
                 this.scan_into(node, arch, bytes, literal, &mut refs);
                 let mut adds = Vec::with_capacity(refs.len());
@@ -421,7 +421,7 @@ impl Builder {
             }
         }
         // (Whole edges: a total order, sorted on every core.)
-        hexcavator_par::sort_by(&mut edges, Ord::cmp);
+        turbonop_par::sort_by(&mut edges, Ord::cmp);
         edges.dedup_by_key(|e| (e.0, e.1));
         let n = nodes.len();
         let out = Csr::new(n, edges.iter().map(|&(f, t, k)| (f, t, k)));

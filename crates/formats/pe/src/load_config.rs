@@ -6,7 +6,7 @@
 //! the linker wrote, and fields beyond it are absent. Each accessor returns
 //! `None` for a field the image's structure does not cover.
 
-use hexcavator_core::{Reader, Rva, U32Le, Va};
+use turbonop_core::{Reader, Rva, U32Le, Va};
 
 use crate::PeFile;
 use crate::consts::{directory, machine};
@@ -254,7 +254,7 @@ impl<'data> LoadConfig<'data> {
                 .file
                 .bytes_at_va(Va(va), u32::try_from(count.checked_mul(4)?).ok()?)
                 .ok()?;
-            hexcavator_core::slice_from_bytes(bytes, usize::try_from(count).ok()?)
+            turbonop_core::slice_from_bytes(bytes, usize::try_from(count).ok()?)
         })()
         .unwrap_or(&[])
     }
@@ -364,7 +364,7 @@ impl<'data> VolatileMetadata<'data> {
         self.file
             .bytes_at_rva(rva, size / 4 * 4)
             .ok()
-            .and_then(|b| hexcavator_core::slice_from_bytes(b, b.len() / 4))
+            .and_then(|b| turbonop_core::slice_from_bytes(b, b.len() / 4))
             .unwrap_or(&[])
     }
 
@@ -547,7 +547,7 @@ impl<'data> HybridMetadata<'data> {
         let entries: &[U32Le] = (|| {
             let len = self.code_map_count().checked_mul(8)?;
             let b = self.file.bytes_at_rva(self.code_map_rva(), len).ok()?;
-            hexcavator_core::slice_from_bytes(b, b.len() / 4)
+            turbonop_core::slice_from_bytes(b, b.len() / 4)
         })()
         .unwrap_or(&[]);
         entries.as_chunks::<2>().0.iter().map(move |e| {
@@ -690,7 +690,7 @@ impl<'data> EnclaveConfig<'data> {
             let name = (name_rva != 0)
                 .then(|| {
                     let offset = file.rva_to_offset(Rva(name_rva))?;
-                    hexcavator_core::cstr_at(file.data(), offset).ok()
+                    turbonop_core::cstr_at(file.data(), offset).ok()
                 })
                 .flatten();
             Some(EnclaveImport {

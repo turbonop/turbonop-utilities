@@ -133,7 +133,7 @@ fn micromips() {
 /// `Features` serves both).
 #[test]
 fn features_alike() {
-    let names = |f: &[hexcavator_tablegen::Feature]| f.iter().map(|f| f.name).collect::<Vec<_>>();
+    let names = |f: &[turbonop_tablegen::Feature]| f.iter().map(|f| f.name).collect::<Vec<_>>();
     assert_eq!(
         names(crate::tables::FEATURES),
         names(crate::micromips::FEATURES)

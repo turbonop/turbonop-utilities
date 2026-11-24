@@ -13,7 +13,7 @@ test("a URI round-trips its file and function", () => {
   const file = "C:\\builds\\app & co\\app.wasm";
   const name = "std::vector<int>::push_back(int const&)";
   const u = d.disasmUri(file, name);
-  assert.strictEqual(u.scheme, "hexc-disasm");
+  assert.strictEqual(u.scheme, "hexcavator-disasm");
   assert.deepStrictEqual(d.parseDisasmQuery(u.query), { file, name, style: "raw" });
   const b = d.disasmUri(file, name, "blocks");
   assert.deepStrictEqual(d.parseDisasmQuery(b.query), { file, name, style: "blocks" });

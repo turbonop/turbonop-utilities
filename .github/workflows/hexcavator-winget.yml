@@ -1,7 +1,8 @@
-name: winget
+name: hexcavator winget
 
 # hexcavator to the Windows Package Manager: when a release is published
-# (the draft the release workflow made), its manifests (a portable
+# (the draft hexcavator-release.yml made; other tools' releases are
+# left alone), its manifests (a portable
 # package: the two signed programs as they are, x64 and ARM64, run as
 # `hexcavator`) are written from the release's assets and sent to
 # microsoft/winget-pkgs as a pull request, which winget's maintainers'
@@ -18,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: The release's tag (v0.0.8, say)
+        description: The release's tag (hexcavator-v0.0.8, say)
         required: true
       submit:
         description: Send the pull request
@@ -29,10 +30,11 @@ permissions:
   contents: read
 
 env:
-  ID: Hexcavator.Hexcavator
+  ID: TurboNOP.Hexcavator
 
 jobs:
   winget:
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'hexcavator-v')
     runs-on: windows-latest
     steps:
       - name: Manifests
@@ -41,7 +43,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          version=${TAG#v}
+          version=${TAG#hexcavator-v}
           url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS
           sha() { awk -v f="$1" '$2 == f || $2 == "*" f {print toupper($1)}' SHA256SUMS; }
@@ -82,7 +84,7 @@ jobs:
           PackageIdentifier: $ID
           PackageVersion: $version
           PackageLocale: en-US
-          Publisher: James McNellis
+          Publisher: TurboNOP Systems
           PublisherUrl: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY
           PackageName: Hexcavator
           PackageUrl: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY

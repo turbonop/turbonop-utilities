@@ -1,0 +1,104 @@
+name: Sign and notarize a macOS program
+description: >-
+  Signs a macOS program with a Developer ID certificate (hardened runtime,
+  secure timestamp) and has Apple notarize it. Any TurboNOP tool's release
+  uses it. (A bare program can't have its notarization ticket stapled to
+  it; Gatekeeper looks the ticket up.)
+
+inputs:
+  program:
+    description: The program to sign.
+    required: true
+  p12:
+    description: APPLE_DEVELOPER_ID_P12 (the certificate and its private key, with Apple's Developer ID G2 intermediate, as a PKCS#12 file in base64).
+    required: true
+  p12-password:
+    description: APPLE_DEVELOPER_ID_P12_PASSWORD.
+    required: true
+  api-key:
+    description: APPLE_API_KEY (an App Store Connect API key's .p8 file, as text), for notarytool.
+    required: true
+  api-key-id:
+    description: APPLE_API_KEY_ID.
+    required: true
+  api-issuer-id:
+    description: APPLE_API_ISSUER_ID.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Keychain
+      shell: bash
+      env:
+        PROGRAM: ${{ inputs.program }}
+        P12: ${{ inputs.p12 }}
+        P12_PASSWORD: ${{ inputs.p12-password }}
+      run: |
+        # A keychain of its own, unlocked, that codesign may use without
+        # asking, searched first.
+        keychain="$RUNNER_TEMP/signing.keychain-db"
+        password=$(openssl rand -hex 32)
+        security create-keychain -p "$password" "$keychain"
+        security set-keychain-settings -lut 3600 "$keychain"
+        security unlock-keychain -p "$password" "$keychain"
+        printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/id.p12"
+        security import "$RUNNER_TEMP/id.p12" -k "$keychain" -P "$P12_PASSWORD" -f pkcs12 -T /usr/bin/codesign
+        rm "$RUNNER_TEMP/id.p12"
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+        security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+        # The Developer ID Application identity, by its SHA-1 (exactly
+        # one, or stop).
+        security find-identity -v -p codesigning "$keychain"
+        identity=$(security find-identity -v -p codesigning "$keychain" \
+          | awk '/"Developer ID Application: /{print $2}')
+        if [[ $(printf '%s\n' "$identity" | grep -c .) != 1 ]]; then
+          echo "::error::expected one Developer ID Application identity in APPLE_DEVELOPER_ID_P12"
+          exit 1
+        fi
+        echo "KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+        echo "IDENTITY=$identity" >> "$GITHUB_ENV"
+    - name: Sign
+      shell: bash
+      env:
+        PROGRAM: ${{ inputs.program }}
+      run: |
+        chmod +x "$PROGRAM"
+        codesign --force --sign "$IDENTITY" --keychain "$KEYCHAIN" \
+          --options runtime --timestamp "$PROGRAM"
+        codesign --verify --strict --verbose=2 "$PROGRAM"
+        codesign --display --verbose=2 "$PROGRAM"
+    - name: Notarize
+      shell: bash
+      env:
+        PROGRAM: ${{ inputs.program }}
+        API_KEY: ${{ inputs.api-key }}
+        API_KEY_ID: ${{ inputs.api-key-id }}
+        API_ISSUER_ID: ${{ inputs.api-issuer-id }}
+      run: |
+        key="$RUNNER_TEMP/AuthKey.p8"
+        printf '%s\n' "$API_KEY" > "$key"
+        auth=(--key "$key" --key-id "$API_KEY_ID" --issuer "$API_ISSUER_ID")
+        ditto -c -k --keepParent "$PROGRAM" "$RUNNER_TEMP/program.zip"
+        # (Three hours: a new team's first submissions can take over an
+        # hour; usually it's minutes.)
+        xcrun notarytool submit "$RUNNER_TEMP/program.zip" "${auth[@]}" \
+          --wait --timeout 3h --output-format json | tee "$RUNNER_TEMP/notary.json"
+        id=$(jq -r .id "$RUNNER_TEMP/notary.json")
+        # (No status when the wait times out; then Apple's message.)
+        status=$(jq -r '.status // .message' "$RUNNER_TEMP/notary.json")
+        # Apple's log says what it found, accepted or not.
+        if [[ -n "$id" && "$id" != null ]]; then
+          xcrun notarytool log "$id" "${auth[@]}" || true
+        fi
+        rm "$key"
+        if [[ "$status" != Accepted ]]; then
+          echo "::error::notarization: $status"
+          exit 1
+        fi
+    - name: Clean up
+      if: always()
+      shell: bash
+      run: |
+        if [[ -n "${KEYCHAIN:-}" ]]; then security delete-keychain "$KEYCHAIN" || true; fi
+        rm -f "$RUNNER_TEMP/id.p12" "$RUNNER_TEMP/AuthKey.p8"

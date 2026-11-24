@@ -3,8 +3,8 @@
 // Test inputs are small: their offsets fit any integer type.
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_etl::Guid;
-use hexcavator_etw::manifest::{Item, Manifest, Size, decode};
+use turbonop_etl::Guid;
+use turbonop_etw::manifest::{Item, Manifest, Size, decode};
 
 /// One template item: name, input type, output type, flags, the count
 /// field and the length field (or a struct's first member and member

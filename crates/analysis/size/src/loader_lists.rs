@@ -12,13 +12,13 @@
 //!
 //! Each list's entries are read from the file, through the loader's
 //! relocations where it writes them (see
-//! [`hexcavator_image::Image::pointer_slots`]); a Thumb function's address
+//! [`turbonop_image::Image::pointer_slots`]); a Thumb function's address
 //! is without its low bit.
 //!
 //! (A PE image's CRT groups, `.CRT$X*`, are the debug information's COFF
 //! groups: the model's, not the image's alone.)
 
-use hexcavator_image::Image;
+use turbonop_image::Image;
 
 /// The most entries read of one list (its size is what its header says,
 /// which a damaged file can make anything).
@@ -73,10 +73,10 @@ pub fn words(
     start: u64,
     end: u64,
     wide: bool,
-    slots: &[hexcavator_image::PointerSlot],
+    slots: &[turbonop_image::PointerSlot],
 ) -> Vec<(u64, u64)> {
     let w: u64 = if wide { 8 } else { 4 };
-    let big = image.endian() == hexcavator_core::Endian::Big;
+    let big = image.endian() == turbonop_core::Endian::Big;
     let mut out = Vec::new();
     let count = (end.saturating_sub(start) / w).min(MAX_ENTRIES);
     // The list's bytes in the file, read once: as many of its words as
@@ -120,10 +120,10 @@ pub fn words(
     out
 }
 
-fn elf_lists(image: &Image<'_>, elf: &hexcavator_elf::ElfFile<'_>) -> Vec<List> {
-    use hexcavator_elf::consts::*;
+fn elf_lists(image: &Image<'_>, elf: &turbonop_elf::ElfFile<'_>) -> Vec<List> {
+    use turbonop_elf::consts::*;
     let h = elf.header();
-    let wide = h.class == hexcavator_elf::Class::Elf64;
+    let wide = h.class == turbonop_elf::Class::Elf64;
     let slots = image.pointer_slots();
     let thumb = h.machine == EM_ARM;
     let code = |v: u64| if thumb { v & !1 } else { v };
@@ -149,7 +149,7 @@ fn elf_lists(image: &Image<'_>, elf: &hexcavator_elf::ElfFile<'_>) -> Vec<List> 
             });
         }
     }
-    for s in elf.sections().filter(hexcavator_elf::Section::is_alloc) {
+    for s in elf.sections().filter(turbonop_elf::Section::is_alloc) {
         let (when, reverse) = match (s.kind, s.name) {
             (SHT_PREINIT_ARRAY, _) => (When::PreInit, false),
             (SHT_INIT_ARRAY, _) => (When::Init, false),
@@ -178,8 +178,8 @@ fn elf_lists(image: &Image<'_>, elf: &hexcavator_elf::ElfFile<'_>) -> Vec<List> 
     out
 }
 
-fn macho_lists(image: &Image<'_>, m: &hexcavator_macho::MachO<'_>) -> Vec<List> {
-    use hexcavator_macho::consts::*;
+fn macho_lists(image: &Image<'_>, m: &turbonop_macho::MachO<'_>) -> Vec<List> {
+    use turbonop_macho::consts::*;
     let wide = m.header().is64;
     let slots = image.pointer_slots();
     let base = m

@@ -213,10 +213,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ============================================================================
-hexcavator, hexcavator-arm64, hexcavator-demangle, hexcavator-dwarf,
-hexcavator-elf, hexcavator-loongarch, hexcavator-mips, hexcavator-powerpc,
-hexcavator-riscv, hexcavator-x86: derived in part from the LLVM Project
-(Apache-2.0 WITH LLVM-exception)
+hexcavator, turbonop-arm64, turbonop-demangle, turbonop-dwarf, turbonop-elf,
+turbonop-loongarch, turbonop-mips, turbonop-powerpc, turbonop-riscv,
+turbonop-x86: derived in part from the LLVM Project (Apache-2.0 WITH
+LLVM-exception)
 ============================================================================
 
 ==============================================================================
@@ -532,7 +532,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ============================================================================
-hexcavator-arm32: derived in part from Arm's AARCHMRS (BSD-3-Clause)
+turbonop-arm32: derived in part from Arm's AARCHMRS (BSD-3-Clause)
 ============================================================================
 
 The A32 and T32 instruction tables (tables/aarch32.txt) are generated from
@@ -568,7 +568,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 ============================================================================
-hexcavator-arm64: derived in part from Arm's AARCHMRS (BSD-3-Clause)
+turbonop-arm64: derived in part from Arm's AARCHMRS (BSD-3-Clause)
 ============================================================================
 
 The A64 instruction tables (tables/a64.txt, with LLVM's AArch64 target; see
@@ -606,7 +606,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 ============================================================================
-hexcavator-demangle: derived in part from the Swift Project (Apache-2.0 WITH
+turbonop-demangle: derived in part from the Swift Project (Apache-2.0 WITH
 Swift-exception)
 ============================================================================
 
@@ -828,7 +828,7 @@ Exception (copyright Apple Inc. and the Swift project authors):
     otherwise be required by Sections 4(a), 4(b) and 4(d) of the License.
 
 ============================================================================
-hexcavator-x86: derived in part from Intel XED (Apache-2.0)
+turbonop-x86: derived in part from Intel XED (Apache-2.0)
 ============================================================================
 
 The x86 instruction tables tables/07-avx512fp16.txt, tables/08-avx10.txt,

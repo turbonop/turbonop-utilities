@@ -6,8 +6,8 @@
 //! Computed values (`DW_OP_stack_value`, implicit values and pointers,
 //! entry values) aren't places, and are left out.
 
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Abbrevs, Die, Reader, Unit, Value};
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Abbrevs, Die, Reader, Unit, Value};
 
 use super::{DwarfInfo, MAX_DEPTH};
 use crate::{FunctionVariables, Place, TypeRef, VarRange, Variable};
@@ -117,7 +117,7 @@ impl DwarfInfo<'_> {
         &self,
         compiland: Option<u32>,
         addr: u64,
-    ) -> Result<Option<FunctionVariables>, hexcavator_core::Error> {
+    ) -> Result<Option<FunctionVariables>, turbonop_core::Error> {
         let Some(candidates) = self.functions().get(&addr) else {
             return Ok(None);
         };
@@ -254,8 +254,8 @@ impl DwarfInfo<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hexcavator_core::Endian;
-    use hexcavator_dwarf::{Sections, UnitSection};
+    use turbonop_core::Endian;
+    use turbonop_dwarf::{Sections, UnitSection};
 
     /// A unit to read expressions with (little-endian, 8-byte addresses).
     fn with_unit(f: impl FnOnce(&Unit<'_>)) {

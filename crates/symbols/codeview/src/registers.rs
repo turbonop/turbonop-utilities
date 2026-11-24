@@ -3,7 +3,7 @@
 
 /// The instruction sets (CodeView numbers registers of x86, x64, and
 /// ARM64; others have none here).
-pub use hexcavator_core::Arch;
+pub use turbonop_core::Arch;
 
 const X86_LOW: [&str; 24] = [
     "al", "cl", "dl", "bl", "ah", "ch", "dh", "bh", "ax", "cx", "dx", "bx", "sp", "bp", "si", "di",

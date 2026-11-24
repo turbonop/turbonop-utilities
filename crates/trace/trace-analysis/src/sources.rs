@@ -9,7 +9,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use hexcavator_trace::{ProcessIx, StackId, ThreadIx, Trace};
+use turbonop_trace::{ProcessIx, StackId, ThreadIx, Trace};
 
 use crate::keys::{FrameMode, Framer, Key, KeyId, Keys};
 use crate::tree::Instances;

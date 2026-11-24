@@ -11,7 +11,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use hexcavator_core::Reader;
+use turbonop_core::Reader;
 
 /// The most items read of one resource (strings, messages, controls, menu
 /// items, accelerators, images).

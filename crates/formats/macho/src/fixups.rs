@@ -10,7 +10,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 use crate::consts::*;
 use crate::{MachO, Segment};
@@ -201,7 +201,7 @@ impl<'d> Cursor<'d> {
     }
     fn cstr(&mut self) -> Option<&'d [u8]> {
         let rest = self.data.get(self.pos..)?;
-        let n = hexcavator_core::find_nul(rest)?;
+        let n = turbonop_core::find_nul(rest)?;
         self.pos += n + 1;
         Some(&rest[..n])
     }

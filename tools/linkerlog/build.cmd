@@ -7,7 +7,7 @@ setlocal
 set OUT=%~dp0..\..\testdata\linkerlog
 for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VS=%%i
 call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" amd64 >nul 2>&1 || exit /b 1
-set WORK=%TEMP%\hexcavator-linkerlog
+set WORK=%TEMP%\turbonop-linkerlog
 if not exist "%WORK%" mkdir "%WORK%"
 cd /d "%WORK%" || exit /b 1
 cl /nologo /c /O1 /Gy /EHsc "%~dp0main.cpp" || exit /b 1

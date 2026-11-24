@@ -11,7 +11,7 @@
 //! - [`Group`]s: named subdivisions of sections, such as COFF groups
 //!   (`.text$mn`, `.CRT$XCU`, ...), which the linker sorts input sections by.
 //!
-//! Addresses follow `hexcavator-image`'s convention: RVAs for PE images,
+//! Addresses follow `turbonop-image`'s convention: RVAs for PE images,
 //! virtual addresses for ELF and Mach-O, code section offsets for
 //! WebAssembly.
 
@@ -28,8 +28,8 @@ mod pdb_backend;
 mod pdb_locate;
 pub mod value;
 
-use hexcavator_core::Result;
-use hexcavator_image::DebugId;
+use turbonop_core::Result;
+use turbonop_image::DebugId;
 
 pub use locate::{Frame, Locator};
 pub use pdb_backend::{LINKER_MODULE, LinkerInfo, build_info, codeview_language};
@@ -127,11 +127,11 @@ fn exclusive_order(all: &[InlineSite]) -> (Vec<u32>, Vec<u64>) {
     // sites claim their bytes in, depend on nothing else): by function and
     // first address, sorted on every core as compact keys; then the rest.
     let key = |s: &InlineSite| (s.inlinee, s.ranges.len(), s.depth);
-    let mut order: Vec<(u64, u64, u32)> = hexcavator_par::map_range(all.len(), 64 * 1024, |i| {
+    let mut order: Vec<(u64, u64, u32)> = turbonop_par::map_range(all.len(), 64 * 1024, |i| {
         let s = &all[i];
         (s.function, first(s), u32::try_from(i).unwrap_or(u32::MAX))
     });
-    hexcavator_par::sort_by(&mut order, |a, b| {
+    turbonop_par::sort_by(&mut order, |a, b| {
         (a.0, a.1).cmp(&(b.0, b.1)).then_with(|| {
             let (x, y) = (&all[a.2 as usize], &all[b.2 as usize]);
             // (Copies, alike but for their compilands, side by side.)
@@ -180,7 +180,7 @@ fn claimed_in_order(sites: &[&InlineSite]) -> Vec<u64> {
         /// What the function's sites cover, as disjoint intervals.
         union: Vec<(u64, u64)>,
     }
-    let local: Vec<Local> = hexcavator_par::map(&groups, 64, |&(start, end)| {
+    let local: Vec<Local> = turbonop_par::map(&groups, 64, |&(start, end)| {
         let mut order: Vec<usize> = (start..end).collect();
         order.sort_unstable_by_key(|&i| (std::cmp::Reverse(sites[i].depth), first(sites[i]), i));
         let mut claimed = std::collections::BTreeMap::new();
@@ -607,8 +607,8 @@ pub struct TypeRef(pub u64);
 
 impl TypeRef {
     /// As a PDB type index (one too wide for any is no type, 0).
-    pub fn pdb_index(self) -> hexcavator_codeview::TypeIndex {
-        hexcavator_codeview::TypeIndex(u32::try_from(self.0).unwrap_or(0))
+    pub fn pdb_index(self) -> turbonop_codeview::TypeIndex {
+        turbonop_codeview::TypeIndex(u32::try_from(self.0).unwrap_or(0))
     }
 }
 
@@ -920,7 +920,7 @@ fn file_name_of(path: &[u8]) -> Option<String> {
 /// The directories to look for debug information in, besides the image's
 /// own, from the environment:
 ///
-/// - `HEXC_SYMBOL_PATH`: directories, separated as `PATH`'s are;
+/// - `TURBONOP_SYMBOL_PATH`: directories, separated as `PATH`'s are;
 /// - `_NT_SYMBOL_PATH`: its local directories and symbol-server caches
 ///   (`srv*C:\symbols*https://...` gives `C:\symbols`; servers on the
 ///   network aren't asked);
@@ -930,7 +930,7 @@ fn file_name_of(path: &[u8]) -> Option<String> {
 pub fn symbol_dirs() -> Vec<std::path::PathBuf> {
     let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
     symbol_dirs_from(
-        var("HEXC_SYMBOL_PATH").as_deref(),
+        var("TURBONOP_SYMBOL_PATH").as_deref(),
         var("_NT_SYMBOL_PATH")
             .and_then(|v| v.into_string().ok())
             .as_deref(),
@@ -952,7 +952,7 @@ pub fn symbol_dirs() -> Vec<std::path::PathBuf> {
 
 /// [`symbol_dirs`] from the values given (for testing).
 pub fn symbol_dirs_from(
-    hexcavator: Option<&std::ffi::OsStr>,
+    turbonop: Option<&std::ffi::OsStr>,
     nt: Option<&str>,
     debuginfod: Option<std::path::PathBuf>,
 ) -> Vec<std::path::PathBuf> {
@@ -963,7 +963,7 @@ pub fn symbol_dirs_from(
             out.push(p);
         }
     };
-    if let Some(h) = hexcavator {
+    if let Some(h) = turbonop {
         std::env::split_paths(h).for_each(&mut push);
     }
     nt_symbol_dirs(nt.unwrap_or(""))
@@ -1138,7 +1138,7 @@ pub enum DebugInfo<'data> {
 impl<'data> DebugInfo<'data> {
     /// Parses `data`, detecting its format.
     pub fn parse(data: &'data [u8]) -> Result<Self> {
-        if hexcavator_pdb::check(data).is_ok() {
+        if turbonop_pdb::check(data).is_ok() {
             return pdb_backend::PdbInfo::parse(data).map(|p| DebugInfo::Pdb(Box::new(p)));
         }
         match dwarf_backend::DwarfInfo::parse(data) {
@@ -1151,16 +1151,16 @@ impl<'data> DebugInfo<'data> {
     /// The debug information a source reads (by range: a file not mapped):
     /// a PDB, whose streams are read as they are asked for. (DWARF is read
     /// from a file's bytes: see [`DebugInfo::parse`].)
-    pub fn parse_source(source: &'data dyn hexcavator_core::Source) -> Result<Self> {
+    pub fn parse_source(source: &'data dyn turbonop_core::Source) -> Result<Self> {
         pdb_backend::PdbInfo::parse_source(source).map(|p| DebugInfo::Pdb(Box::new(p)))
     }
 
     /// The name of register `n` (by the format's numbering: see
     /// [`Place::Register`]) of `arch`.
-    pub fn register_name(&self, arch: hexcavator_core::Arch, n: u16) -> Option<String> {
+    pub fn register_name(&self, arch: turbonop_core::Arch, n: u16) -> Option<String> {
         match self {
-            DebugInfo::Pdb(_) => hexcavator_codeview::registers::name(arch, n),
-            DebugInfo::Dwarf(_) => hexcavator_dwarf::registers::name(arch, n),
+            DebugInfo::Pdb(_) => turbonop_codeview::registers::name(arch, n),
+            DebugInfo::Dwarf(_) => turbonop_dwarf::registers::name(arch, n),
         }
     }
 
@@ -1305,11 +1305,11 @@ impl<'data> DebugInfo<'data> {
     /// say which are constant.)
     pub fn variable_definitions(
         &self,
-        wanted: &hexcavator_hash::Set<(u64, u32)>,
-    ) -> Result<hexcavator_hash::Map<(u64, u32), VariableDefinition>> {
+        wanted: &turbonop_hash::Set<(u64, u32)>,
+    ) -> Result<turbonop_hash::Map<(u64, u32), VariableDefinition>> {
         match self {
             DebugInfo::Pdb(_) => {
-                let mut out = hexcavator_hash::Map::default();
+                let mut out = turbonop_hash::Map::default();
                 for s in self.symbols()? {
                     let Some(c) = s.compiland else { continue };
                     if s.kind != SymbolKind::Data || !wanted.contains(&(s.addr, c)) {
@@ -1427,7 +1427,7 @@ impl<'data> DebugInfo<'data> {
     }
 
     /// The underlying PDB reader, if this is a PDB.
-    pub fn pdb(&self) -> Option<&hexcavator_pdb::Pdb<'data>> {
+    pub fn pdb(&self) -> Option<&turbonop_pdb::Pdb<'data>> {
         match self {
             DebugInfo::Pdb(p) => Some(p.pdb()),
             DebugInfo::Dwarf(_) => None,

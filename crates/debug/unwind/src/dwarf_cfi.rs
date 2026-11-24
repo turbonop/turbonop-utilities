@@ -1,6 +1,6 @@
 //! DWARF call frame information unwinding (`.eh_frame`, `.debug_frame`):
 //! applying the unwind rule table's row for a PC (from
-//! `hexcavator_dwarf::cfi`) to a frame's registers and its stack.
+//! `turbonop_dwarf::cfi`) to a frame's registers and its stack.
 //!
 //! Registers are by DWARF number, so this serves every architecture; the
 //! caller says which is the stack pointer. The CFA becomes the caller's
@@ -10,9 +10,9 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
-use hexcavator_dwarf::cfi::{CfaRule, RegisterRule, UnwindRow};
-use hexcavator_dwarf::expr::{self, ExprContext, ExprError};
+use turbonop_core::Endian;
+use turbonop_dwarf::cfi::{CfaRule, RegisterRule, UnwindRow};
+use turbonop_dwarf::expr::{self, ExprContext, ExprError};
 
 use crate::{Error, Memory, Result};
 

@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use hexcavator_pdb::Pdb;
-use hexcavator_symbolize::{FunctionTable, SymbolPath, symbol_store_key};
+use turbonop_pdb::Pdb;
+use turbonop_symbolize::{FunctionTable, SymbolPath, symbol_store_key};
 
 fn testdata() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/lines")
@@ -78,17 +78,17 @@ fn reads_dwarf_and_image_symbols() {
     ] {
         let image_path = mingw(name);
         let data = std::fs::read(&image_path).unwrap();
-        let image = hexcavator_image::Image::parse(&data).unwrap();
+        let image = turbonop_image::Image::parse(&data).unwrap();
         let found = path.find_debug(&image_path, &image).unwrap();
         assert_eq!(found, mingw(debug), "{name}");
         let debug_data = std::fs::read(&found).unwrap();
-        let info = hexcavator_debuginfo::DebugInfo::parse(&debug_data).unwrap();
+        let info = turbonop_debuginfo::DebugInfo::parse(&debug_data).unwrap();
         let table = FunctionTable::from_debug(&info, Some(&image)).unwrap();
         assert_eq!(table.function(0x1011), Some((0x1010, "unused")), "{name}");
         assert!(table.line(0x1010).unwrap().0.ends_with("program.c"));
     }
     let data = std::fs::read(mingw("library.dll")).unwrap();
-    let image = hexcavator_image::Image::parse(&data).unwrap();
+    let image = turbonop_image::Image::parse(&data).unwrap();
     assert_eq!(path.find_debug(&mingw("library.dll"), &image), None);
     let table = FunctionTable::from_image(&image);
     let names: Vec<(u64, &str)> = table.iter().map(|(s, _, n)| (s, n)).collect();

@@ -1,5 +1,5 @@
 @echo off
-rem Writes hexcavator-riscv's tables (crates\isa\riscv\src\tables.rs) from
+rem Writes turbonop-riscv's tables (crates\isa\riscv\src\tables.rs) from
 rem LLVM's TableGen records of its RISC-V target, and the decoder's golden
 rem file (crates\isa\riscv\tests\golden.txt) from llvm-objdump's text for
 rem encodings of each instruction. LLVM_BIN names an LLVM bin directory

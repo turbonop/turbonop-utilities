@@ -1,7 +1,7 @@
 //! 16-bit "NE" (New Executable) files: Windows 1.0 to 3.x programs,
 //! libraries, drivers, and fonts (`.fon`), and OS/2 1.x programs.
 //!
-//! After the MZ header (see `hexcavator-mz`), the NE header gives the
+//! After the MZ header (see `turbonop-mz`), the NE header gives the
 //! module's segments (each with its relocations), resources, entry points
 //! (by ordinal), the names exported by name (resident and nonresident),
 //! and the modules it imports from. Everything is read from the file as
@@ -18,8 +18,8 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_mz::{MzFile, NewHeaderKind};
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_mz::{MzFile, NewHeaderKind};
 
 /// `ne_flags`: the module is a library (DLL or driver).
 pub const NE_FFLAGS_LIBMODULE: u16 = 0x8000;

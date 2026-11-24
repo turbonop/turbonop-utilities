@@ -3,7 +3,7 @@
 //!
 //! `fixtures` uses testdata/cfi (built by tools/cfi/build.py, with
 //! llvm-dwarfdump's output beside each file). The ignored `corpus` runs
-//! llvm-dwarfdump live on the files `HEXC_CFI_FILES` lists (separated by
+//! llvm-dwarfdump live on the files `TURBONOP_CFI_FILES` lists (separated by
 //! `;`; `build.py corpus` builds compiler-rt's builtins for each target),
 //! with `LLVM_BIN` naming llvm-dwarfdump's directory.
 
@@ -13,10 +13,10 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-use hexcavator_core::Endian;
-use hexcavator_dwarf::Reader;
-use hexcavator_dwarf::cfi::{self, CfaRule, Cfi, CfiKind, Entry, RegisterRule, UnwindRow};
-use hexcavator_elf::{Class, ElfFile};
+use turbonop_core::Endian;
+use turbonop_dwarf::Reader;
+use turbonop_dwarf::cfi::{self, CfaRule, Cfi, CfiKind, Entry, RegisterRule, UnwindRow};
+use turbonop_elf::{Class, ElfFile};
 
 /// llvm-dwarfdump's register names.
 fn register(machine: u16, n: u16) -> String {

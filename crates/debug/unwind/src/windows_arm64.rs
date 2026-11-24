@@ -56,7 +56,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_pe::exception::{Arm64PackedUnwind, Arm64UnwindCode};
+use turbonop_pe::exception::{Arm64PackedUnwind, Arm64UnwindCode};
 
 use crate::{Error, Image, Memory, Result, read_u64, read_u128};
 

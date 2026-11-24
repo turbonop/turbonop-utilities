@@ -146,7 +146,7 @@ fn every_section_and_option() {
 #[test]
 fn damaged_inputs_end() {
     let data = std::fs::read(root().join("testdata/elf/dwarf5-x86_64-linux-gnu")).unwrap();
-    let dir = std::env::temp_dir().join(format!("hexc-dwarf-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-dwarf-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("damaged");
     let p = path.to_str().unwrap();

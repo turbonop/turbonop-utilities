@@ -1,14 +1,14 @@
 //! `hexcavator relocations`: what the loader patches when it loads an image,
-//! and what that costs (see `hexcavator_size::relocations`).
+//! and what that costs (see `turbonop_size::relocations`).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_size::relocations::{
+use serde_json::{Value, json};
+use turbonop_size::relocations::{
     Relocations, image_symbols, merge_symbols, pointer_tables, relocations,
 };
-use serde_json::{Value, json};
 
 pub const USAGE: &str = "\
 usage: hexcavator relocations [options] <image>
@@ -91,10 +91,10 @@ pub(crate) struct Summary {
 
 fn report(path: &Path, a: &Args) -> Result<String, String> {
     let show = |p: &Path| p.display().to_string();
-    let map = hexcavator_mmap::Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
-    let image = hexcavator_image::Image::parse(&map).map_err(|e| format!("{}: {e}", show(path)))?;
+    let map = turbonop_mmap::Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
+    let image = turbonop_image::Image::parse(&map).map_err(|e| format!("{}: {e}", show(path)))?;
     // The debug information's symbols, if any is found; else the image's.
-    let debug_symbols = match hexcavator_program::Opened::open(path, a.pdb.as_deref()) {
+    let debug_symbols = match turbonop_program::Opened::open(path, a.pdb.as_deref()) {
         Ok(opened) => {
             let program = opened.program()?;
             let syms = program.symbols()?;
@@ -108,7 +108,7 @@ fn report(path: &Path, a: &Args) -> Result<String, String> {
             // statics among them.)
             Some(merge_symbols(v, debug_file_symbols(&program.debug)))
         }
-        Err(hexcavator_program::Error::NoDebug { .. }) if a.pdb.is_none() => None,
+        Err(turbonop_program::Error::NoDebug { .. }) if a.pdb.is_none() => None,
         Err(e) => return Err(e.to_string()),
     };
     let s = summarize(&image, debug_symbols);
@@ -126,7 +126,7 @@ fn report(path: &Path, a: &Args) -> Result<String, String> {
 /// The relocations of `image`, with the symbols to name where they are
 /// (`debug_symbols`, else the image's own).
 pub(crate) fn summarize(
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
     debug_symbols: Option<Vec<(u64, u64, String)>>,
 ) -> Summary {
     let relocs = relocations(image);
@@ -161,15 +161,15 @@ pub(crate) fn summarize(
 /// The symbol table of the file the DWARF is in (a separate debug file's,
 /// which keeps what stripping the image removed), demangled.
 pub(crate) fn debug_file_symbols(
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
 ) -> Vec<(u64, u64, String)> {
     let Some(data) = debug
         .dwarf()
-        .map(hexcavator_debuginfo::dwarf_backend::DwarfInfo::file_data)
+        .map(turbonop_debuginfo::dwarf_backend::DwarfInfo::file_data)
     else {
         return Vec::new();
     };
-    match hexcavator_image::Image::parse(data) {
+    match turbonop_image::Image::parse(data) {
         Ok(file) if file.elf().is_some() => demangled(image_symbols(&file), &file),
         _ => Vec::new(),
     }
@@ -180,26 +180,26 @@ pub(crate) fn debug_file_symbols(
 /// Swift's), and C names as they are (Mach-O's less their `_`).
 pub(crate) fn demangled(
     mut symbols: Vec<(u64, u64, String)>,
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
 ) -> Vec<(u64, u64, String)> {
     let macho = image.macho().is_some();
-    let mut d = hexcavator_demangle::Demangler::new();
+    let mut d = turbonop_demangle::Demangler::new();
     for s in &mut symbols {
-        s.2 = d.source_name(&s.2, hexcavator_demangle::msvc::flags::NO_PTR64, macho);
+        s.2 = d.source_name(&s.2, turbonop_demangle::msvc::flags::NO_PTR64, macho);
     }
     symbols
 }
 
 /// A symbol's name demangled, by whichever scheme mangled it, or as it is.
 fn demangle(name: &str) -> String {
-    hexcavator_demangle::Demangler::new()
-        .demangle(name, hexcavator_demangle::msvc::flags::NO_PTR64)
+    turbonop_demangle::Demangler::new()
+        .demangle(name, turbonop_demangle::msvc::flags::NO_PTR64)
         .unwrap_or_else(|| name.to_string())
 }
 
 /// The entry of `ranges` ((start, end, name), by start) holding `at`.
 fn within(ranges: &[(u64, u64, String)], at: u64) -> Option<&str> {
-    hexcavator_size::relocations::containing(ranges, at).map(|i| ranges[i].2.as_str())
+    turbonop_size::relocations::containing(ranges, at).map(|i| ranges[i].2.as_str())
 }
 
 /// Bytes (a sum of shares of tables), rounded to whole ones.

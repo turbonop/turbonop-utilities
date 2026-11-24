@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use hexcavator_elf::{Class, ElfFile, consts::*};
+use turbonop_elf::{Class, ElfFile, consts::*};
 
 fn testdata() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/elf")
@@ -248,7 +248,7 @@ fn fixtures_cover_classes_and_byte_orders() {
         let elf = ElfFile::parse(&data).unwrap();
         seen.insert((elf.class(), elf.endian(), elf.is_object()));
     }
-    use hexcavator_core::Endian::{Big, Little};
+    use turbonop_core::Endian::{Big, Little};
     for want in [
         (Class::Elf64, Little, true),
         (Class::Elf64, Little, false),
@@ -519,7 +519,7 @@ fn section_groups_match_llvm_readobj() {
 /// llvm-readobj --version-info has them.
 #[test]
 fn symbol_versions_and_hash_lookups() {
-    use hexcavator_elf::versions::VER_FLG_BASE;
+    use turbonop_elf::versions::VER_FLG_BASE;
     let read = |n: &str| std::fs::read(testdata().join(n)).unwrap();
     let lib = read("libversions.so");
     let elf = ElfFile::parse(&lib).unwrap();
@@ -531,7 +531,7 @@ fn symbol_versions_and_hash_lookups() {
     assert!(defs.iter().all(|d| d.predecessors.is_empty()));
     // The hashes are the SysV hashes of the names.
     for d in &defs {
-        assert_eq!(d.hash, hexcavator_elf::versions::sysv_hash(d.name));
+        assert_eq!(d.hash, turbonop_elf::versions::sysv_hash(d.name));
     }
     let text = std::fs::read_to_string(testdata().join("libversions.so.versions.txt")).unwrap();
     assert!(text.contains("Hash: 95058209") && text.contains("Name: VERS_1"));
@@ -596,7 +596,7 @@ fn symbol_versions_and_hash_lookups() {
 /// function symbol's address, in order; each unwinds one of the three ways.
 #[test]
 fn arm_exception_index() {
-    use hexcavator_elf::arm::ExidxUnwind;
+    use turbonop_elf::arm::ExidxUnwind;
     let data = std::fs::read(testdata().join("program-armeb-linux-gnueabi")).unwrap();
     let elf = ElfFile::parse(&data).unwrap();
     let s = elf.sections().find(|s| s.kind == SHT_ARM_EXIDX).unwrap();

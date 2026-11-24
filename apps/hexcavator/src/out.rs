@@ -30,7 +30,7 @@ static ONE_SHOT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 /// Marks this process as one that runs one command and exits.
 pub fn one_shot() {
     ONE_SHOT.store(true, std::sync::atomic::Ordering::Relaxed);
-    hexcavator_program::leave_to_exit(true);
+    turbonop_program::leave_to_exit(true);
 }
 
 /// Done with `value`: in a process that runs one command, it is left for

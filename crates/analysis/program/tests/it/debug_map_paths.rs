@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use hexcavator_program::debug_map_paths;
+use turbonop_program::debug_map_paths;
 
 #[test]
 fn an_archives_member_and_a_relative_object() {

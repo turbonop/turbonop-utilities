@@ -1,4 +1,4 @@
-//! Byte-level primitives shared by every Hexcavator crate.
+//! Byte-level primitives shared by every TurboNOP crate.
 //!
 //! Everything here is host-independent: on-disk integers carry an explicit
 //! byte order, on-disk structures have alignment 1 so they can be overlaid at

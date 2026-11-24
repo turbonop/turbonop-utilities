@@ -5,9 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use hexcavator_symbolize::SymbolPath;
-use hexcavator_trace::{Clock, Image, ImageIx, ProcessIx, Trace};
-use hexcavator_trace_analysis::{DebugSymbolizer, Symbolizer};
+use turbonop_symbolize::SymbolPath;
+use turbonop_trace::{Clock, Image, ImageIx, ProcessIx, Trace};
+use turbonop_trace_analysis::{DebugSymbolizer, Symbolizer};
 
 fn mingw(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))

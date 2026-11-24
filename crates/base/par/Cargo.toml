@@ -1,6 +1,6 @@
 [package]
-name = "hexcavator-par"
-description = "Data parallelism for Hexcavator: work split across every core"
+name = "turbonop-par"
+description = "Data parallelism: work split across every core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,4 +12,4 @@ repository.workspace = true
 workspace = true
 
 [dev-dependencies]
-hexcavator-alloc.workspace = true
+turbonop-alloc.workspace = true

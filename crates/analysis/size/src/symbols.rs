@@ -11,11 +11,11 @@
 //! size; the others are listed as *folded*, with size 0, so that sizes sum
 //! to the bytes the image holds.
 
-use hexcavator_hash::{Map as HashMap, Set as HashSet};
+use turbonop_hash::{Map as HashMap, Set as HashSet};
 
-use hexcavator_core::Result;
-use hexcavator_debuginfo::{DebugInfo, Symbol as DebugSymbol, SymbolKind as DebugKind};
-use hexcavator_image::Image;
+use turbonop_core::Result;
+use turbonop_debuginfo::{DebugInfo, Symbol as DebugSymbol, SymbolKind as DebugKind};
+use turbonop_image::Image;
 
 use crate::{Model, Size};
 
@@ -263,11 +263,11 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         });
     // Functions are named with their signatures, which also tells
     // overloads apart. (On every core, each with its own cache.)
-    hexcavator_par::for_each_chunk_mut(&mut shown, 2048, |part| {
+    turbonop_par::for_each_chunk_mut(&mut shown, 2048, |part| {
         let mut namer = crate::names::Namer::new(debug);
         for s in part {
             if matches!(s.kind, DebugKind::Function | DebugKind::SeparatedBlock) {
-                s.name = namer.function(&s.name, hexcavator_debuginfo::TypeRef(s.type_index));
+                s.name = namer.function(&s.name, turbonop_debuginfo::TypeRef(s.type_index));
             } else if let (DebugKind::Data, Some(f)) = (s.kind, &s.function) {
                 // A function's static: `x (in static bool C::f())`.
                 s.name = format!(
@@ -294,7 +294,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
     }
     let image_pe = image
         .pe()
-        .filter(|_| image.kind() != hexcavator_image::Kind::Object);
+        .filter(|_| image.kind() != turbonop_image::Kind::Object);
     let scan = || {
         image_pe.map(|pe| {
             crate::eh::scan(pe, &|addr| {
@@ -305,7 +305,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
             })
         })
     };
-    let (scanned, from_debug) = hexcavator_par::join(scan, || {
+    let (scanned, from_debug) = turbonop_par::join(scan, || {
         // Publics undecorated (mangled by whichever scheme: Microsoft's, Rust's
         // and Swift's on Windows too, and Itanium's in a MinGW image's), each
         // once, on every core.
@@ -322,11 +322,11 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         let undecorated: HashMap<&str, String> = public_names
             .iter()
             .copied()
-            .zip(hexcavator_par::map_chunks(&public_names, 1024, |part| {
-                let mut any = hexcavator_demangle::Demangler::new();
+            .zip(turbonop_par::map_chunks(&public_names, 1024, |part| {
+                let mut any = turbonop_demangle::Demangler::new();
                 part.iter()
                     .map(|n| {
-                        any.demangle(n, hexcavator_demangle::msvc::flags::NO_PTR64)
+                        any.demangle(n, turbonop_demangle::msvc::flags::NO_PTR64)
                             .unwrap_or_else(|| (*n).to_string())
                     })
                     .collect()
@@ -340,7 +340,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         // (A namer for each thread: its own demangler.)
         let (undecorated, publics_at) = (&undecorated, &publics_at);
         let make_display = || {
-            let mut demangler = hexcavator_demangle::msvc::Demangler::default();
+            let mut demangler = turbonop_demangle::msvc::Demangler::default();
             move |s: &DebugSymbol, kind: SymbolKind, size: u64, name: String| match kind {
                 SymbolKind::String => string_name(image, s.addr, size, &s.name).unwrap_or(name),
                 SymbolKind::Public => undecorated.get(name.as_str()).cloned().unwrap_or(name),
@@ -350,7 +350,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
                 // `[thunk]:C::f`adjustor{8}' (void)` (undname flags 0xA2E6).
                 SymbolKind::Thunk => match publics_at.get(&s.addr).and_then(|p| p.iter().min()) {
                     Some(public) => {
-                        use hexcavator_demangle::msvc::flags::*;
+                        use turbonop_demangle::msvc::flags::*;
                         let flags = NO_ACCESS_SPECIFIERS
                             | NO_MEMBER_TYPE
                             | NO_FUNCTION_RETURNS
@@ -371,9 +371,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
                     .get(&s.addr)
                     .into_iter()
                     .flatten()
-                    .filter_map(|p| {
-                        demangler.demangle(p, hexcavator_demangle::msvc::flags::NO_PTR64)
-                    })
+                    .filter_map(|p| demangler.demangle(p, turbonop_demangle::msvc::flags::NO_PTR64))
                     .map(|p| p.strip_prefix("const ").map(str::to_string).unwrap_or(p))
                     .filter(|p| p.starts_with(name.as_str()))
                     .min()
@@ -387,7 +385,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
     // Symbols for what the image itself describes.
     let Some(pe) = image
         .pe()
-        .filter(|_| image.kind() != hexcavator_image::Kind::Object)
+        .filter(|_| image.kind() != turbonop_image::Kind::Object)
     else {
         // (DWARF describes only what was compiled with it: the image's own
         // symbols name the rest, as a PDB's publics do; and an object's
@@ -408,7 +406,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
     // (the entries and resources are), nor those at the address of one of
     // the image's own structures.
     let pdata = pe
-        .data_directory(hexcavator_pe::consts::directory::EXCEPTION)
+        .data_directory(turbonop_pe::consts::directory::EXCEPTION)
         .map(|d| {
             let start = u64::from(d.virtual_address.get());
             (start, start + u64::from(d.size.get()))
@@ -426,7 +424,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
         .chain(pe_symbols)
         .chain(rsrc_symbols)
         .collect();
-    hexcavator_par::sort_by(&mut out, |a, b| a.addr.cmp(&b.addr));
+    turbonop_par::sort_by(&mut out, |a, b| a.addr.cmp(&b.addr));
     // (With DWARF, as MinGW builds an image: its COFF symbols and exports
     // name what the DWARF doesn't, as a PDB's publics would.)
     if debug.pdb().is_none() {
@@ -441,7 +439,7 @@ pub fn build(image: &Image<'_>, debug: &DebugInfo<'_>, model: &Model) -> Result<
 /// doesn't describe (the C runtime's, assembly, what the linker made, a
 /// library built without it), as publics, as a PDB's publics name them.
 fn with_image_symbols(image: &Image<'_>, model: &Model, mut symbols: Vec<Symbol>) -> Vec<Symbol> {
-    use hexcavator_image::SymbolKind as ImageKind;
+    use turbonop_image::SymbolKind as ImageKind;
     // What the debug information's symbols cover, by start.
     let mut covered: Vec<(u64, u64)> = symbols
         .iter()
@@ -455,7 +453,7 @@ fn with_image_symbols(image: &Image<'_>, model: &Model, mut symbols: Vec<Symbol>
         covered[..i].iter().rev().take(8).any(|&(_, e)| e > start)
     };
     let macho = image.macho().is_some();
-    let mut demangler = hexcavator_demangle::Demangler::new();
+    let mut demangler = turbonop_demangle::Demangler::new();
     let mut seen: HashSet<u64> = HashSet::default();
     let mut extra = Vec::new();
     for s in image.symbols() {
@@ -483,7 +481,7 @@ fn with_image_symbols(image: &Image<'_>, model: &Model, mut symbols: Vec<Symbol>
             folded: false,
             name: demangler.source_name(
                 &String::from_utf8_lossy(s.name),
-                hexcavator_demangle::msvc::flags::NO_PTR64,
+                turbonop_demangle::msvc::flags::NO_PTR64,
                 macho,
             ),
             compiland: None,
@@ -652,7 +650,7 @@ where
             .filter_map(|s| s.parent)
             .collect()
     };
-    use hexcavator_par::join;
+    use turbonop_par::join;
     let ((sized_at, public_addrs), (public_by_name, (labels, split))) = join(
         || join(sized_at, public_addrs),
         || join(public_by_name, || join(labels, split)),
@@ -755,7 +753,7 @@ where
                 // nothing.)
                 SymbolKind::Data
                     if s.global
-                        && hexcavator_debuginfo::TypeRef(s.type_index)
+                        && turbonop_debuginfo::TypeRef(s.type_index)
                             .pdb_index()
                             .is_simple() =>
                 {
@@ -917,7 +915,7 @@ where
         })
     };
     let batches: Vec<&[(usize, usize)]> = groups.chunks(1024).collect();
-    let parts = hexcavator_par::map_balanced(&batches, 1, |part| {
+    let parts = turbonop_par::map_balanced(&batches, 1, |part| {
         let mut display = make_display();
         let (mut heads, mut out) = (Vec::new(), Vec::new());
         for &(i, j) in *part {
@@ -993,7 +991,7 @@ mod tests {
                     size: Size::new(0x1000, 0x1000),
                     vm_padding: 0,
                     characteristics: 0x6000_0020,
-                    flags: hexcavator_image::coff_section_flags(0x6000_0020),
+                    flags: turbonop_image::coff_section_flags(0x6000_0020),
                 },
                 Section {
                     name: ".data".into(),
@@ -1001,7 +999,7 @@ mod tests {
                     size: Size::new(0, 0x100),
                     vm_padding: 0,
                     characteristics: 0xC000_0080,
-                    flags: hexcavator_image::coff_section_flags(0xC000_0080),
+                    flags: turbonop_image::coff_section_flags(0xC000_0080),
                 },
             ],
             groups: vec![Group {

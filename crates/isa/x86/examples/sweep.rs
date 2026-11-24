@@ -1,9 +1,9 @@
 //! Decodes a file's bytes from `offset` for `length` (hexadecimal) as
 //! 64-bit code, linearly, and reports how fast: the decoder's throughput.
 //!
-//!     cargo run --release -p hexcavator-x86 --example sweep -- clang.exe 400 630EF97
+//!     cargo run --release -p turbonop-x86 --example sweep -- clang.exe 400 630EF97
 
-use hexcavator_x86::{Mode, decode};
+use turbonop_x86::{Mode, decode};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

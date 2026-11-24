@@ -10,7 +10,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 use crate::{Reader, sext};
 

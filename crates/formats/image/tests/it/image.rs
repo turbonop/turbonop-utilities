@@ -1,8 +1,8 @@
 //! `Image` over real binaries (SizeBench's test binaries, in `testdata`) and
 //! over synthetic and malformed input.
 
-use hexcavator_core::ErrorKind;
-use hexcavator_image::{Arch, DebugId, Format, Image, Kind, SectionFlags};
+use turbonop_core::ErrorKind;
+use turbonop_image::{Arch, DebugId, Format, Image, Kind, SectionFlags};
 
 fn testdata(name: &str) -> Vec<u8> {
     let path = format!(
@@ -274,7 +274,7 @@ fn fixture(path: &str) -> Vec<u8> {
 /// size, and WebAssembly's exports global.
 #[test]
 fn symbols_of_every_format() {
-    use hexcavator_image::{SymbolKind, SymbolSource};
+    use turbonop_image::{SymbolKind, SymbolSource};
     // Mach-O: no kinds or sizes of its own.
     let data = fixture("linkopts/macho-plain");
     let image = Image::parse(&data).unwrap();
@@ -338,7 +338,7 @@ fn debug_files() {
 /// and addresses shown, and pointers' bases, as linear memory's.
 #[test]
 fn wasm_data_in_linear_memory() {
-    use hexcavator_image::{SymbolKind, SymbolSource, WASM_MEMORY};
+    use turbonop_image::{SymbolKind, SymbolSource, WASM_MEMORY};
     let data = fixture("wasm/data.wasm");
     let image = Image::parse(&data).unwrap();
     let sections = image.sections();

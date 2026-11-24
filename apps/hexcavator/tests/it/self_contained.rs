@@ -83,7 +83,7 @@ fn tests_read_nothing_outside_the_repository() {
     let outside = Regex::new(concat!(
         r"vswhere|Microsoft Visual Studio|Windows Kits|System32|SysWOW64",
         r#"|env::var(_os)?\("(WINDIR|SystemRoot|ProgramFiles[^"]*|LLVM_[A-Z_]+|XED_DIR"#,
-        r#"|SWIFT_DEMANGLE|HEXC_CORPUS|HEXC_DUMPBIN|HEXC_SIZEBENCH_DIR|HEXC_LLVM_BUILD)""#,
+        r#"|SWIFT_DEMANGLE|HEXCAVATOR_CORPUS|HEXCAVATOR_DUMPBIN|HEXCAVATOR_SIZEBENCH_DIR|HEXCAVATOR_LLVM_BUILD)""#,
     ))
     .unwrap();
     // The dependency test's Windows directory of stand-ins

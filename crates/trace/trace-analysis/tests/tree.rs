@@ -1,9 +1,7 @@
 //! Stack trees over a small trace built by hand.
 
-use hexcavator_trace::{
-    Clock, Image, ImageIx, Process, ProcessIx, StackId, Thread, ThreadIx, Trace,
-};
-use hexcavator_trace_analysis::{
+use turbonop_trace::{Clock, Image, ImageIx, Process, ProcessIx, StackId, Thread, ThreadIx, Trace};
+use turbonop_trace_analysis::{
     Filter, FrameMode, Framer, GroupBy, Key, KeyId, Keys, NoSymbols, NodeId, Precise, Resolver,
     SwitchWeight, Symbolizer, Tree, label, sources,
 };
@@ -377,7 +375,7 @@ fn precise_times() {
         sw.wait_reason.push(0);
         sw.old_state.push(0);
         sw.stack.push(stack);
-        sw.ready.push(hexcavator_trace::ReadyIx::NONE);
+        sw.ready.push(turbonop_trace::ReadyIx::NONE);
     }
     let p = Precise::new(&t);
     assert_eq!(p.running, [5, 25, 0]);
@@ -413,7 +411,7 @@ fn precise_times() {
 
 #[test]
 fn stack_tags_group_by_the_deepest_match() {
-    use hexcavator_trace_analysis::StackTags;
+    use turbonop_trace_analysis::StackTags;
     let t = sampled();
     let resolver = Resolver::new(&t);
     let tags = StackTags::from_xml(
@@ -465,7 +463,7 @@ fn stack_tags_group_by_the_deepest_match() {
 
 #[test]
 fn folding_collapses_runs() {
-    use hexcavator_trace_analysis::Folds;
+    use turbonop_trace_analysis::Folds;
     let t = sampled();
     let resolver = Resolver::new(&t);
     let folds = Folds::from_text("fold App module=app.exe").unwrap();

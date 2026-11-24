@@ -7,10 +7,10 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::{DebugInfo, Frame, Locator};
-use hexcavator_image::{Image, ImageSymbol};
-use hexcavator_mmap::Mmap;
 use serde_json::{Value, json};
+use turbonop_debuginfo::{DebugInfo, Frame, Locator};
+use turbonop_image::{Image, ImageSymbol};
+use turbonop_mmap::Mmap;
 
 pub const USAGE: &str = "\
 usage: hexcavator symbolize [options] <image>[@<base>]... [<address>...]
@@ -141,7 +141,7 @@ fn is_address(s: &str) -> bool {
 
 /// An image opened: with its debug information, or without.
 enum Opened {
-    Debug(hexcavator_program::Opened),
+    Debug(turbonop_program::Opened),
     Plain(Mmap),
 }
 
@@ -284,7 +284,7 @@ fn with_modules<R>(
     let mut opened = Vec::with_capacity(o.images.len());
     for (i, (path, _)) in o.images.iter().enumerate() {
         let pdb = o.pdb.as_deref().filter(|_| i == 0).map(Path::new);
-        match hexcavator_program::Opened::open(Path::new(path), pdb) {
+        match turbonop_program::Opened::open(Path::new(path), pdb) {
             Ok(x) => opened.push(Opened::Debug(x)),
             Err(e) if pdb.is_some() => return Err(e.to_string()),
             Err(_) => match Mmap::open(path) {
@@ -436,14 +436,14 @@ fn image_symbol(m: &mut Module<'_>, addr: u64) -> Option<Frame> {
 
 /// Names as linked, demangled.
 #[derive(Default)]
-struct Demangler(hexcavator_demangle::Demangler);
+struct Demangler(turbonop_demangle::Demangler);
 
 impl Demangler {
     /// `name` demangled: a Microsoft C++ name's qualified name, another's
     /// in full; a C name as is (a Mach-O one without its leading `_`).
     fn name(&mut self, name: &str, macho: bool) -> String {
         self.0
-            .source_name(name, hexcavator_demangle::msvc::flags::NAME_ONLY, macho)
+            .source_name(name, turbonop_demangle::msvc::flags::NAME_ONLY, macho)
     }
 }
 

@@ -19,7 +19,7 @@
     const rt = new HexcavatorRuntime(q0.get("wasm") || "/hexcavator.wasm");
     // (?exec=<args>: the module run with them, its output reported.)
     if (q0.get("exec") !== null) {
-      const p = rt.spawn(q0.get("exec").split(" ").filter(Boolean), { HEXC_THREADS: q0.get("threads") || "8" });
+      const p = rt.spawn(q0.get("exec").split(" ").filter(Boolean), { TURBONOP_THREADS: q0.get("threads") || "8" });
       let o = "";
       p.stdout.on("data", (t) => (o += t));
       p.stderr.on("data", (t) => (o += t));
@@ -37,7 +37,7 @@
     const main = "/files/" + urls[0].split("/").pop();
     if (q.get("run")) {
       const results = [];
-      const p0 = rt.spawn(["serve"], { HEXC_THREADS: q.get("threads") || String(navigator.hardwareConcurrency || 4) });
+      const p0 = rt.spawn(["serve"], { TURBONOP_THREADS: q.get("threads") || String(navigator.hardwareConcurrency || 4) });
       let buf = "";
       const waits = new Map();
       p0.stdout.on("data", (t) => {
@@ -68,7 +68,7 @@
       await report({ results, memoryMiB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null });
       return;
     }
-    const p = rt.spawn(["serve"], { HEXC_THREADS: String(navigator.hardwareConcurrency || 4) });
+    const p = rt.spawn(["serve"], { TURBONOP_THREADS: String(navigator.hardwareConcurrency || 4) });
     const answers = new Map();
     let waiting = new Map();
     p.stdout.on("data", (t) => {

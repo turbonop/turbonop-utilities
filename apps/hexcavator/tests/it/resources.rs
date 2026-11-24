@@ -209,7 +209,7 @@ fn pe_images() {
     let at = u32::from_le_bytes(file[6 + 16 + 12..6 + 16 + 16].try_into().unwrap()) as usize;
     assert_eq!(&file[at..at + 4], b"\x89PNG");
     assert_eq!(group["images"][0]["width"], 16);
-    let dir = std::env::temp_dir().join(format!("hexc-resources-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-resources-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let saved = dir.join("icon.ico");
     let out = ok(&[

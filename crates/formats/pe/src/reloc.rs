@@ -3,7 +3,7 @@
 //! Both use the same block layout: a page RVA, a block size, and then
 //! entries for locations within that page.
 
-use hexcavator_core::{Reader, Rva, U16Le, Va};
+use turbonop_core::{Reader, Rva, U16Le, Va};
 
 use crate::PeFile;
 use crate::consts::directory;
@@ -22,7 +22,7 @@ pub struct RelocBlock<'data> {
 impl<'data> RelocBlock<'data> {
     /// The entries as 16-bit values (base relocations and most DVRT kinds).
     pub fn entries_u16(&self) -> &'data [U16Le] {
-        hexcavator_core::slice_from_bytes(self.entries, self.entries.len() / 2).unwrap_or(&[])
+        turbonop_core::slice_from_bytes(self.entries, self.entries.len() / 2).unwrap_or(&[])
     }
 
     /// The entries as 32-bit values (import control transfer DVRT kinds).
@@ -447,12 +447,11 @@ impl<'data> PeFile<'data> {
         // (itself included).
         if section.characteristics.get() & scn::LNK_NRELOC_OVFL != 0
             && count == 0xFFFF
-            && let Ok(first) =
-                hexcavator_core::read_at::<crate::raw::Relocation>(self.data(), offset)
+            && let Ok(first) = turbonop_core::read_at::<crate::raw::Relocation>(self.data(), offset)
         {
             count = u64::from(first.virtual_address.get()).saturating_sub(1);
             start += size_of::<crate::raw::Relocation>() as u64;
         }
-        hexcavator_core::read_slice_at(self.data(), start, count).unwrap_or(&[])
+        turbonop_core::read_slice_at(self.data(), start, count).unwrap_or(&[])
     }
 }

@@ -1,11 +1,11 @@
 //! Prints a PDB's x86 frame records near an RVA, and the public symbol at
 //! it (a diagnostic).
-//! `cargo run -p hexcavator-unwind --example windows_x86_records -- PDB RVA`
+//! `cargo run -p turbonop-unwind --example windows_x86_records -- PDB RVA`
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let data = std::fs::read(&args[1]).unwrap();
     let rva = u32::from_str_radix(args[2].trim_start_matches("0x"), 16).unwrap();
-    let pdb = hexcavator_pdb::Pdb::parse(&data).unwrap();
+    let pdb = turbonop_pdb::Pdb::parse(&data).unwrap();
     let dbi = pdb.dbi().unwrap();
     let names = pdb.names().unwrap();
     // The public symbol at or before the RVA (in the first section, .text).
@@ -26,13 +26,13 @@ fn main() {
         let s = pdb.msf().stream(i).unwrap();
         println!("{label}: stream {i}, {} bytes", s.len());
         if which == 0 {
-            for f in hexcavator_unwind::windows_x86::Fpo::parse(&s) {
+            for f in turbonop_unwind::windows_x86::Fpo::parse(&s) {
                 if f.start.abs_diff(rva) < 0x80 {
                     println!("  {f:?}");
                 }
             }
         } else {
-            for d in hexcavator_unwind::windows_x86::FrameData::parse(&s) {
+            for d in turbonop_unwind::windows_x86::FrameData::parse(&s) {
                 if d.start.abs_diff(rva) < 0x80 {
                     println!("  {d:?} {:?}", names.get_str(d.program));
                 }

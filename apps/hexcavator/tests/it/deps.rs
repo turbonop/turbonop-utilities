@@ -352,7 +352,7 @@ fn hostile_names() {
         .windows(10)
         .position(|w| w == b"helper.dll")
         .expect("the import's name");
-    let dir = std::env::temp_dir().join(format!("hexc-deps-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-deps-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for name in [
         &b"..\\x\\y.dll"[..],
@@ -405,7 +405,7 @@ fn wasm() {
     assert_eq!(m["status"], "host");
     assert!(import(d, "log")["name"] == "log");
     // A module of the import's name beside it: that module.
-    let dir = std::env::temp_dir().join(format!("hexcavator-deps-wasm-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-deps-wasm-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::copy(wasm.join("module.wasm"), dir.join("module.wasm")).unwrap();
     std::fs::copy(wasm.join("startup.wasm"), dir.join("env.wasm")).unwrap();

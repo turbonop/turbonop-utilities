@@ -3,7 +3,7 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_demangle::msvc::{Demangler, flags};
+use turbonop_demangle::msvc::{Demangler, flags};
 
 fn golden() -> Vec<(&'static str, &'static str, &'static str)> {
     include_str!("../data/golden.txt")
@@ -142,11 +142,11 @@ fn recursive_descent_builds_what_the_machine_builds() {
     let mut bad = 0;
     for n in &names {
         let (a1, a2) = (
-            hexcavator_demangle::msvc::Arena::new(),
-            hexcavator_demangle::msvc::Arena::new(),
+            turbonop_demangle::msvc::Arena::new(),
+            turbonop_demangle::msvc::Arena::new(),
         );
-        let both = hexcavator_demangle::msvc::parse_in(&a1, n);
-        let machine = hexcavator_demangle::msvc::parse_slowly_in(&a2, n);
+        let both = turbonop_demangle::msvc::parse_in(&a1, n);
+        let machine = turbonop_demangle::msvc::parse_slowly_in(&a2, n);
         if both != machine {
             bad += 1;
             if bad < 10 {

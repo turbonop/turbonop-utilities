@@ -1,9 +1,9 @@
-//! Importing synthetic ETL traces (built with `hexcavator_etl::write`).
+//! Importing synthetic ETL traces (built with `turbonop_etl::write`).
 
-use hexcavator_etl::write::{self, Classic, Kernel, Writer, WriterOptions};
-use hexcavator_etl::{Etl, Guid, classic};
-use hexcavator_etw::guids;
-use hexcavator_trace::{ProcessIx, ReadyIx, ThreadIx, etw};
+use turbonop_etl::write::{self, Classic, Kernel, Writer, WriterOptions};
+use turbonop_etl::{Etl, Guid, classic};
+use turbonop_etw::guids;
+use turbonop_trace::{ProcessIx, ReadyIx, ThreadIx, etw};
 
 #[derive(Default)]
 struct P(Vec<u8>);
@@ -362,7 +362,7 @@ fn rich() -> Vec<u8> {
 
 #[test]
 fn index_round_trips() {
-    use hexcavator_trace::index;
+    use turbonop_trace::index;
     let data = rich();
     let etl = Etl::parse(&data).unwrap();
     let (trace, _) = etw::import(&etl).unwrap();
@@ -398,7 +398,7 @@ fn index_round_trips() {
 
 #[test]
 fn hostile_indexes_are_errors() {
-    use hexcavator_trace::index;
+    use turbonop_trace::index;
     let data = rich();
     let etl = Etl::parse(&data).unwrap();
     let (trace, _) = etw::import(&etl).unwrap();
@@ -429,23 +429,23 @@ fn hostile_indexes_are_errors() {
 }
 
 /// `testdata/etl/rich.hxtrace`, which seeds the fuzzer's index target, is
-/// the index of `rich()`. `HEXC_BLESS=1` rewrites it.
+/// the index of `rich()`. `TURBONOP_BLESS=1` rewrites it.
 #[test]
 fn testdata_index_is_current() {
-    use hexcavator_trace::index;
+    use turbonop_trace::index;
     let data = rich();
     let etl = Etl::parse(&data).unwrap();
     let (trace, _) = etw::import(&etl).unwrap();
     let saved = index::write(&trace, index::Source::of(&data));
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/etl/rich.hxtrace");
-    if std::env::var_os("HEXC_BLESS").is_some() {
+    if std::env::var_os("TURBONOP_BLESS").is_some() {
         std::fs::write(&path, &saved).unwrap();
     }
     let committed =
-        std::fs::read(&path).expect("testdata/etl/rich.hxtrace (HEXC_BLESS=1 writes it)");
+        std::fs::read(&path).expect("testdata/etl/rich.hxtrace (TURBONOP_BLESS=1 writes it)");
     assert!(
         committed == saved,
-        "rich.hxtrace is stale; HEXC_BLESS=1 rewrites it"
+        "rich.hxtrace is stale; TURBONOP_BLESS=1 rewrites it"
     );
 }

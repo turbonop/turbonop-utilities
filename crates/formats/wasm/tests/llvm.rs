@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use hexcavator_wasm::{Module, NAME_DATA_SEGMENT, NAME_FUNCTION};
+use turbonop_wasm::{Module, NAME_DATA_SEGMENT, NAME_FUNCTION};
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -133,7 +133,7 @@ fn functions_match_llvm_objdump() {
     let ds = m
         .sections()
         .iter()
-        .find(|s| s.id == hexcavator_wasm::SECTION_DATA)
+        .find(|s| s.id == turbonop_wasm::SECTION_DATA)
         .unwrap();
     let last = segs.last().unwrap();
     assert_eq!(last.offset + last.size, ds.offset + ds.size);

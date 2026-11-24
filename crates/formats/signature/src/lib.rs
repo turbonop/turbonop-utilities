@@ -52,7 +52,7 @@ impl Report {
 /// universal file).
 pub fn of_file(data: &[u8]) -> Result<Report, String> {
     if data.starts_with(b"MZ") {
-        let pe = hexcavator_pe::PeFile::parse_image(data).map_err(|e| e.to_string())?;
+        let pe = turbonop_pe::PeFile::parse_image(data).map_err(|e| e.to_string())?;
         return Ok(Report {
             format: "pe",
             authenticode: authenticode::pe(&pe),
@@ -60,7 +60,7 @@ pub fn of_file(data: &[u8]) -> Result<Report, String> {
             info: info::pe(&pe),
         });
     }
-    if let Some(archs) = hexcavator_macho::fat_archs(data) {
+    if let Some(archs) = turbonop_macho::fat_archs(data) {
         let mut apple = Vec::new();
         let mut details = None;
         for a in archs.iter().take(32) {
@@ -71,8 +71,8 @@ pub fn of_file(data: &[u8]) -> Result<Report, String> {
             else {
                 continue;
             };
-            let name = hexcavator_macho::arch_name(a.cputype, a.cpusubtype);
-            if let Ok(m) = hexcavator_macho::MachO::parse(slice) {
+            let name = turbonop_macho::arch_name(a.cputype, a.cpusubtype);
+            if let Ok(m) = turbonop_macho::MachO::parse(slice) {
                 // (The first architecture's details: they're the same.)
                 details.get_or_insert_with(|| info::macho(&m));
                 if let Some(s) = apple::macho(&m, name) {
@@ -87,9 +87,9 @@ pub fn of_file(data: &[u8]) -> Result<Report, String> {
             info: details.unwrap_or_default(),
         });
     }
-    if let Ok(m) = hexcavator_macho::MachO::parse(data) {
+    if let Ok(m) = turbonop_macho::MachO::parse(data) {
         let h = m.header();
-        let name = hexcavator_macho::arch_name(h.cputype, h.cpusubtype);
+        let name = turbonop_macho::arch_name(h.cputype, h.cpusubtype);
         return Ok(Report {
             format: "macho",
             authenticode: Vec::new(),

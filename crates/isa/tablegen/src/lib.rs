@@ -3,8 +3,8 @@
 //! fixed bits, the features it needs, its operands' fields and how they
 //! decode, its syntax; the aliases LLVM prints instructions as; and, for
 //! targets with compressed instructions, their full forms. A target's
-//! crate (`hexcavator-riscv`, `hexcavator-loongarch`,
-//! `hexcavator-powerpc`) holds its generated
+//! crate (`turbonop-riscv`, `turbonop-loongarch`,
+//! `turbonop-powerpc`) holds its generated
 //! [`Target`], how its features are named, and how its operands print.
 //!
 //! [`decode`] finds an encoding's instruction as LLVM's disassembler does:

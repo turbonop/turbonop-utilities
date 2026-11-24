@@ -4,7 +4,7 @@
 fn main() {
     let path = std::env::args().nth(1).expect("a file");
     let data = std::fs::read(&path).unwrap();
-    let d = hexcavator_debuginfo::DebugInfo::parse(&data).unwrap();
+    let d = turbonop_debuginfo::DebugInfo::parse(&data).unwrap();
     println!("compilands {:?}", d.compilands().unwrap());
     println!("contributions {:x?}", d.contributions().unwrap());
     let lines = d.source_lines().unwrap();
@@ -26,10 +26,10 @@ fn main() {
             s.function.map(|f| (f.name, f.params))
         );
         if s.type_index != 0 {
-            let t = hexcavator_debuginfo::TypeRef(s.type_index);
+            let t = turbonop_debuginfo::TypeRef(s.type_index);
             println!("   shape {:?} size {:?}", d.type_shape(t), d.type_size(t));
         }
-        if s.kind == hexcavator_debuginfo::SymbolKind::Function
+        if s.kind == turbonop_debuginfo::SymbolKind::Function
             && let Ok(Some(v)) = d.variables(s.compiland, s.addr)
         {
             for var in v.variables {

@@ -1,6 +1,6 @@
 //! Compares the size model of a binary with SizeBench's, and times it.
 //!
-//!     cargo run --release -p hexcavator-size --example sizebench_compare -- <image> <pdb> [oracle.txt]
+//!     cargo run --release -p turbonop-size --example sizebench_compare -- <image> <pdb> [oracle.txt]
 //!
 //! The oracle file is `tools/sizebench-oracle`'s output for the same image.
 //! Without one, prints our lines (in the oracle's format) to stdout.
@@ -8,9 +8,9 @@
 use std::collections::BTreeSet;
 use std::time::Instant;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::{pe, report};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::{pe, report};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -19,8 +19,8 @@ fn main() {
         std::process::exit(2);
     }
     let start = Instant::now();
-    let image_map = hexcavator_mmap::Mmap::open(std::path::Path::new(&args[0])).expect("image");
-    let pdb_map = hexcavator_mmap::Mmap::open(std::path::Path::new(&args[1])).expect("pdb");
+    let image_map = turbonop_mmap::Mmap::open(std::path::Path::new(&args[0])).expect("image");
+    let pdb_map = turbonop_mmap::Mmap::open(std::path::Path::new(&args[1])).expect("pdb");
     let image = Image::parse(&image_map).expect("parse image");
     let debug = DebugInfo::parse(&pdb_map).expect("parse pdb");
     if let Err(e) = pe::check(&image, &debug) {

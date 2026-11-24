@@ -5,7 +5,7 @@
 //!
 //! Malformed modules give errors or fewer entries, never a panic.
 //!
-//! Decoding function bodies' instructions is `hexcavator-wasm-isa`'s job.
+//! Decoding function bodies' instructions is `turbonop-wasm-isa`'s job.
 
 #![no_std]
 #![warn(missing_docs)]
@@ -23,7 +23,7 @@ pub use linking::{
     relocation_has_addend, relocation_name,
 };
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 /// The module's first four bytes.
 pub const MAGIC: &[u8; 4] = b"\0asm";

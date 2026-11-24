@@ -1,5 +1,5 @@
-use hexcavator_core::{Error, ErrorKind, Result, Rva, Va, bytes_at, read_at, read_slice_at};
-use hexcavator_mz::{MzFile, NewHeaderKind};
+use turbonop_core::{Error, ErrorKind, Result, Rva, Va, bytes_at, read_at, read_slice_at};
+use turbonop_mz::{MzFile, NewHeaderKind};
 
 use crate::consts::{debug_type, directory, file_characteristics, magic};
 use crate::raw::{
@@ -171,7 +171,7 @@ impl<'data> PeFile<'data> {
         let optional_offset = file_header_offset + size_of::<FileHeader>() as u64;
         let optional_size = u64::from(file_header.size_of_optional_header.get());
 
-        let magic: u16 = read_at::<hexcavator_core::U16Le>(data, optional_offset)?.get();
+        let magic: u16 = read_at::<turbonop_core::U16Le>(data, optional_offset)?.get();
         let optional = match magic {
             magic::PE32 => OptionalHeader::Pe32(read_at(data, optional_offset)?),
             magic::PE32_PLUS => OptionalHeader::Pe64(read_at(data, optional_offset)?),
@@ -237,7 +237,7 @@ impl<'data> PeFile<'data> {
             0xC7, 0xA1, 0xBA, 0xD1, 0xEE, 0xBA, 0xA9, 0x4B, 0xAF, 0x20, 0xFA, 0xF6, 0x6A, 0xA4,
             0xDC, 0xB8,
         ];
-        let header = hexcavator_core::bytes_at(data, 0, 56)?;
+        let header = turbonop_core::bytes_at(data, 0, 56)?;
         let u16_at = |o: usize| u16::from_le_bytes([header[o], header[o + 1]]);
         let u32_at =
             |o: usize| u32::from_le_bytes([header[o], header[o + 1], header[o + 2], header[o + 3]]);
@@ -255,7 +255,7 @@ impl<'data> PeFile<'data> {
         raw[4..8].copy_from_slice(&header[8..12]); // time stamp
         raw[8..12].copy_from_slice(&header[48..52]); // symbol table
         raw[12..16].copy_from_slice(&header[52..56]); // symbol count
-        let file_header = *hexcavator_core::from_bytes::<FileHeader>(&raw).expect("20 bytes");
+        let file_header = *turbonop_core::from_bytes::<FileHeader>(&raw).expect("20 bytes");
         Self::finish(
             data,
             FileKind::Object,

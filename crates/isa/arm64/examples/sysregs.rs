@@ -2,7 +2,7 @@
 //! machine-readable specification (AARCHMRS `Registers.json`, BSD
 //! licensed) into `tables/sysregs.txt`:
 //!
-//!     cargo run --release -p hexcavator-arm64 --example sysregs -- Registers.json > crates/isa/arm64/tables/sysregs.txt
+//!     cargo run --release -p turbonop-arm64 --example sysregs -- Registers.json > crates/isa/arm64/tables/sysregs.txt
 //!
 //! Each line is `op0 op1 CRn CRm op2 NAME` (decimal). Register arrays such
 //! as `PMEVCNTR<n>_EL0` are expanded.

@@ -240,7 +240,7 @@ fn rejects_and_survives_damage() {
 
 #[test]
 fn cpu_types_name_architectures() {
-    use hexcavator_core::Arch;
+    use turbonop_core::Arch;
     assert_eq!(arch(CPU_TYPE_X86_64), Arch::X64);
     assert_eq!(arch(CPU_TYPE_X86), Arch::X86);
     assert_eq!(arch(CPU_TYPE_ARM64), Arch::Arm64);

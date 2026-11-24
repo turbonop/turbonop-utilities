@@ -2,9 +2,9 @@
 
 use std::io::{self, Write};
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::exception::{PdataEntry, RuntimeFunction, X64UnwindCode, unwind_flags};
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::exception::{PdataEntry, RuntimeFunction, X64UnwindCode, unwind_flags};
 
 use crate::symbols::SymbolMap;
 
@@ -57,7 +57,7 @@ fn table(
             .iter()
             .any(|e| matches!(e.function, RuntimeFunction::Arm { .. }));
     let pdata_rva = file
-        .data_directory(hexcavator_pe::consts::directory::EXCEPTION)
+        .data_directory(turbonop_pe::consts::directory::EXCEPTION)
         .map_or(0, |d| d.virtual_address.get());
     if hybrid {
         writeln!(out, "\nFunction Table")?;
@@ -66,7 +66,7 @@ fn table(
     }
     // (32-bit ARM's table names functions by address, and dumpbin shows
     // no unwind codes for them.)
-    let armnt = file.machine() == hexcavator_pe::consts::machine::ARMNT;
+    let armnt = file.machine() == turbonop_pe::consts::machine::ARMNT;
     let base = file.optional_header().map_or(0, |h| h.image_base().get());
     let mut current: Option<bool> = None;
     for entry in &entries {
@@ -264,7 +264,7 @@ fn x64_unwind(
 
 /// An object's `.pdata` section: raw entries, before relocation.
 pub fn object_pdata(out: &mut dyn Write, file: &PeFile<'_>, index: usize) -> io::Result<()> {
-    use hexcavator_pe::consts::machine;
+    use turbonop_pe::consts::machine;
     let section = &file.sections()[index];
     if !file.section_name(section).starts_with(b".pdata") {
         return Ok(());

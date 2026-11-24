@@ -1,12 +1,12 @@
 //! `hexcavator deps`: what an executable or library loads, found as its loader
-//! would find it (see `hexcavator_deps`), and what's missing.
+//! would find it (see `turbonop_deps`), and what's missing.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use hexcavator_deps::{DepKind, Graph, ImportStatus, Options, Severity, Status};
 use serde_json::{Value, json};
+use turbonop_deps::{DepKind, Graph, ImportStatus, Options, Severity, Status};
 
 pub const USAGE: &str = "\
 usage: hexcavator deps [options] <image>
@@ -103,7 +103,7 @@ pub fn run(args: &[String]) -> ExitCode {
         Err(e) => return usage(&e),
     };
     let image = a.image.as_deref().unwrap_or_default();
-    let graph = match hexcavator_deps::analyze(std::path::Path::new(image), &a.options) {
+    let graph = match turbonop_deps::analyze(std::path::Path::new(image), &a.options) {
         Ok(g) => g,
         Err(e) => {
             ereport!("hexcavator deps: {e}");
@@ -186,7 +186,7 @@ fn tag(kind: DepKind) -> &'static str {
 
 /// Whether the graph is of PE images.
 fn is_pe(g: &Graph) -> bool {
-    g.modules.first().and_then(|m| m.format) == Some(hexcavator_deps::Format::Pe)
+    g.modules.first().and_then(|m| m.format) == Some(turbonop_deps::Format::Pe)
 }
 
 fn as_text(g: &Graph, a: &Args) -> String {
@@ -197,7 +197,7 @@ fn as_text(g: &Graph, a: &Args) -> String {
             out,
             "{}  {} {}  {}",
             root.name,
-            root.format.map_or("", hexcavator_deps::Format::name),
+            root.format.map_or("", turbonop_deps::Format::name),
             root.arch.as_deref().unwrap_or(""),
             root.status
                 .path()
@@ -270,7 +270,7 @@ fn tree(g: &Graph, a: &Args, m: usize, depth: usize, shown: &mut [bool], out: &m
     for d in &module.deps {
         let t = &g.modules[d.module];
         // An API set whose host was found: with the others of that host.
-        let api_set = hexcavator_pe::apiset::is_api_set_name(&d.name) && t.status.path().is_some();
+        let api_set = turbonop_pe::apiset::is_api_set_name(&d.name) && t.status.path().is_some();
         if api_set && !a.apisets {
             match grouped.iter_mut().find(|(h, _)| *h == d.module) {
                 Some((_, names)) => names.push(&d.name),
@@ -324,7 +324,7 @@ fn line(
 }
 
 /// An edge's imported symbols (with -imports).
-fn imports(a: &Args, pad: &str, d: &hexcavator_deps::Dep, out: &mut String) {
+fn imports(a: &Args, pad: &str, d: &turbonop_deps::Dep, out: &mut String) {
     if !a.imports {
         return;
     }
@@ -377,7 +377,7 @@ fn as_json(g: &Graph) -> Value {
                 "path": path,
                 "how": how,
                 "detail": extra,
-                "format": m.format.map(hexcavator_deps::Format::name),
+                "format": m.format.map(turbonop_deps::Format::name),
                 "arch": m.arch,
                 "depth": m.depth,
                 "system": m.system,
@@ -406,7 +406,7 @@ fn as_json(g: &Graph) -> Value {
     })
 }
 
-fn import_json(i: &hexcavator_deps::Import) -> Value {
+fn import_json(i: &turbonop_deps::Import) -> Value {
     json!({
         "name": i.name,
         "ordinal": i.ordinal,

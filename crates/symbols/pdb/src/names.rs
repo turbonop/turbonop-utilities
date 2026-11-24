@@ -1,7 +1,7 @@
 //! The `/names` string table: NUL-terminated strings referenced by offset,
 //! with a hash table for lookup by value.
 
-use hexcavator_core::{Error, ErrorKind, Reader, Result, U32Le, cstr_at};
+use turbonop_core::{Error, ErrorKind, Reader, Result, U32Le, cstr_at};
 
 use crate::hash::{hash_v1, hash_v2};
 

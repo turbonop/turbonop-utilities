@@ -11,9 +11,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::{pe, symbols};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::{pe, symbols};
 
 fn root() -> String {
     format!("{}/../../../testdata/sizebench", env!("CARGO_MANIFEST_DIR"))
@@ -398,17 +398,17 @@ fn string_literal_lengths() {
 #[test]
 fn corrupted_exception_data_does_not_panic() {
     struct Nothing;
-    impl hexcavator_size::eh::Context for Nothing {
+    impl turbonop_size::eh::Context for Nothing {
         fn target_name(&self, _: u64) -> Option<String> {
             None
         }
-        fn handler(&self, addr: u64) -> hexcavator_size::eh::Handler {
+        fn handler(&self, addr: u64) -> turbonop_size::eh::Handler {
             // Pretend every handler is each kind in turn.
             match addr % 4 {
-                0 => hexcavator_size::eh::Handler::Cxx3,
-                1 => hexcavator_size::eh::Handler::Cxx4,
-                2 => hexcavator_size::eh::Handler::GsSeh,
-                _ => hexcavator_size::eh::Handler::GsCxx4,
+                0 => turbonop_size::eh::Handler::Cxx3,
+                1 => turbonop_size::eh::Handler::Cxx4,
+                2 => turbonop_size::eh::Handler::GsSeh,
+                _ => turbonop_size::eh::Handler::GsCxx4,
             }
         }
     }
@@ -432,7 +432,7 @@ fn corrupted_exception_data_does_not_panic() {
                 )
             })
             .collect();
-        let baseline = hexcavator_size::eh::symbols(&pe, &Nothing).len();
+        let baseline = turbonop_size::eh::symbols(&pe, &Nothing).len();
         assert!(baseline > 0, "{name}");
         let mut copy = data.clone();
         let mut seed = 0x9E37_79B9_7F4A_7C15u64;
@@ -445,7 +445,7 @@ fn corrupted_exception_data_does_not_panic() {
             let original = copy[at];
             copy[at] = (seed >> 32).to_le_bytes()[0];
             if let Ok(image) = Image::parse(&copy) {
-                let _ = hexcavator_size::eh::symbols(image.pe().unwrap(), &Nothing);
+                let _ = turbonop_size::eh::symbols(image.pe().unwrap(), &Nothing);
             }
             if !seed.is_multiple_of(3) {
                 copy[at] = original;
@@ -463,10 +463,10 @@ fn corrupted_imports_and_resources_do_not_panic() {
         let image = Image::parse(&data).unwrap();
         let pe = *image.pe().unwrap();
         assert!(
-            !hexcavator_size::pe_symbols::symbols(&pe).is_empty(),
+            !turbonop_size::pe_symbols::symbols(&pe).is_empty(),
             "{name}"
         );
-        assert!(!hexcavator_size::rsrc::symbols(&pe).is_empty(), "{name}");
+        assert!(!turbonop_size::rsrc::symbols(&pe).is_empty(), "{name}");
         let ranges: Vec<(usize, usize)> = image
             .sections()
             .iter()
@@ -490,8 +490,8 @@ fn corrupted_imports_and_resources_do_not_panic() {
             copy[at] = (seed >> 32).to_le_bytes()[0];
             if let Ok(image) = Image::parse(&copy) {
                 let pe = image.pe().unwrap();
-                let _ = hexcavator_size::pe_symbols::symbols(pe);
-                let _ = hexcavator_size::rsrc::symbols(pe);
+                let _ = turbonop_size::pe_symbols::symbols(pe);
+                let _ = turbonop_size::rsrc::symbols(pe);
             }
             if !seed.is_multiple_of(3) {
                 copy[at] = original;

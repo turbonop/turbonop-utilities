@@ -14,8 +14,8 @@ use rustc_hash::FxHashMap;
 /// are read-only data too: ELF's `.rodata` (and `.rodata.*`), PE's
 /// `.rdata`, and its `.data` (where MSVC puts them unless it pools them,
 /// `/GF`), Mach-O's `__cstring` and `__const`.
-fn read_only<'d>(image: &hexcavator_image::Image<'d>) -> Vec<(u64, &'d [u8])> {
-    use hexcavator_image::SectionFlags;
+fn read_only<'d>(image: &turbonop_image::Image<'d>) -> Vec<(u64, &'d [u8])> {
+    use turbonop_image::SectionFlags;
     let pe = image.pe().is_some();
     image
         .sections()
@@ -96,7 +96,7 @@ pub fn source_paths(bytes: &[u8]) -> Vec<&[u8]> {
 /// grouped by the directories they start with (the deepest each group
 /// shares, at least two levels down, such as `/home/me/project`), largest
 /// saving first.
-pub fn build_paths(image: &hexcavator_image::Image<'_>) -> Vec<PathRoot> {
+pub fn build_paths(image: &turbonop_image::Image<'_>) -> Vec<PathRoot> {
     let mut found: FxHashMap<String, u64> = FxHashMap::default();
     for (_, bytes) in read_only(image) {
         for p in source_paths(bytes) {
@@ -175,7 +175,7 @@ pub struct DuplicateString {
 /// says none of a string's copies is in named data (an array, which can't
 /// be merged: its address is its own), largest waste first.
 pub fn duplicate_strings(
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
     named: &dyn Fn(u64) -> bool,
 ) -> Vec<DuplicateString> {
     let mut seen: FxHashMap<&[u8], Vec<u64>> = FxHashMap::default();

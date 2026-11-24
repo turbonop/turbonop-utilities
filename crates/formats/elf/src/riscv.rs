@@ -7,7 +7,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 /// `Tag_RISCV_stack_align`: the stack's alignment, in bytes.
 pub const TAG_STACK_ALIGN: u64 = 4;

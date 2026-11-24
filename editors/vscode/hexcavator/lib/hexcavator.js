@@ -623,7 +623,7 @@ function hexcPath(configured, exists = require("fs").existsSync) {
  * How to start `hexcavator serve` for the extension's settings (`get(name)`
  * reads one): its arguments (global options first: `--arch`, symbol
  * servers, the symbol cache) and the environment it adds (the symbol
- * directories, as HEXC_SYMBOL_PATH). Nothing is asked of a server unless
+ * directories, as TURBONOP_SYMBOL_PATH). Nothing is asked of a server unless
  * one is set.
  */
 function serveLaunch(get) {
@@ -650,7 +650,7 @@ function serveLaunch(get) {
   const env = {};
   const dirs = String(get("symbolPath") || "").trim();
   if (dirs) {
-    env.HEXC_SYMBOL_PATH = dirs;
+    env.TURBONOP_SYMBOL_PATH = dirs;
   }
   return { args, env };
 }

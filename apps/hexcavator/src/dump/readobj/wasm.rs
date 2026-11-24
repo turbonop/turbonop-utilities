@@ -5,7 +5,7 @@
 //! LLVM's WasmObjectFile makes them; an object's are its `linking`
 //! section's symbol table, and its relocations its `reloc.*` sections'.
 
-use hexcavator_wasm::{Module, SegmentOffset};
+use turbonop_wasm::{Module, SegmentOffset};
 
 use super::{Parts, Printer};
 
@@ -63,7 +63,7 @@ fn sections(p: &mut Printer<'_>, m: &Module<'_>) {
         );
         // (llvm-readobj's size: a custom section's after its name; its
         // offset: where the contents start, name and all.)
-        let size = if s.id == hexcavator_wasm::SECTION_CUSTOM {
+        let size = if s.id == turbonop_wasm::SECTION_CUSTOM {
             s.contents_size - (s.data_offset - s.contents_offset)
         } else {
             s.contents_size
@@ -71,10 +71,10 @@ fn sections(p: &mut Printer<'_>, m: &Module<'_>) {
         let offset = s.contents_offset;
         p.line("Size", size);
         p.line("Offset", offset);
-        if s.id == hexcavator_wasm::SECTION_CUSTOM {
+        if s.id == turbonop_wasm::SECTION_CUSTOM {
             p.line("Name", String::from_utf8_lossy(s.name));
         }
-        if s.id == hexcavator_wasm::SECTION_MEMORY {
+        if s.id == turbonop_wasm::SECTION_MEMORY {
             p.open("Memories [");
             for (min, max) in memories(m, s) {
                 p.open("Memory {");
@@ -87,7 +87,7 @@ fn sections(p: &mut Printer<'_>, m: &Module<'_>) {
             }
             p.close("]");
         }
-        if s.id == hexcavator_wasm::SECTION_DATA {
+        if s.id == turbonop_wasm::SECTION_DATA {
             p.open("Segments [");
             let info = m.segment_info();
             for (i, seg) in m.data_segment_details().iter().enumerate() {
@@ -119,7 +119,7 @@ fn sections(p: &mut Printer<'_>, m: &Module<'_>) {
 
 /// The memory section's limits: each memory's minimum, and maximum if it
 /// has one.
-fn memories(m: &Module<'_>, s: &hexcavator_wasm::Section<'_>) -> Vec<(u64, Option<u64>)> {
+fn memories(m: &Module<'_>, s: &turbonop_wasm::Section<'_>) -> Vec<(u64, Option<u64>)> {
     let data = m.data();
     let (Ok(start), Ok(len)) = (
         usize::try_from(s.contents_offset),
@@ -180,20 +180,20 @@ fn object_symbols<'d>(m: &Module<'d>) -> Vec<ObjectSymbol<'d>> {
             // The import an undefined function's, global's, tag's, or
             // table's index names (imports come first in each space).
             let external = match s.kind {
-                hexcavator_wasm::SYMBOL_FUNCTION => Some(0),
-                hexcavator_wasm::SYMBOL_TABLE => Some(1),
-                hexcavator_wasm::SYMBOL_GLOBAL => Some(3),
-                hexcavator_wasm::SYMBOL_TAG => Some(4),
+                turbonop_wasm::SYMBOL_FUNCTION => Some(0),
+                turbonop_wasm::SYMBOL_TABLE => Some(1),
+                turbonop_wasm::SYMBOL_GLOBAL => Some(3),
+                turbonop_wasm::SYMBOL_TAG => Some(4),
                 _ => None,
             };
-            let import = (s.flags & hexcavator_wasm::SYMBOL_UNDEFINED != 0)
+            let import = (s.flags & turbonop_wasm::SYMBOL_UNDEFINED != 0)
                 .then_some(external)
                 .flatten()
                 .and_then(|k| imports.iter().filter(|i| i.kind == k).nth(s.index as usize))
                 .map(|i| (i.module, i.field));
             let name = match (s.name, s.kind) {
                 (Some(n), _) => n,
-                (None, hexcavator_wasm::SYMBOL_SECTION) => {
+                (None, turbonop_wasm::SYMBOL_SECTION) => {
                     sections.get(s.index as usize).map_or(&b""[..], |x| x.name)
                 }
                 (None, _) => import.map_or(&b""[..], |i| i.1),
@@ -220,7 +220,7 @@ fn relocations(p: &mut Printer<'_>, m: &Module<'_>) {
         let Some(section) = sections.get(target as usize) else {
             continue;
         };
-        let name = if section.id == hexcavator_wasm::SECTION_CUSTOM {
+        let name = if section.id == turbonop_wasm::SECTION_CUSTOM {
             String::from_utf8_lossy(section.name).into_owned()
         } else {
             SECTION_TYPES
@@ -231,7 +231,7 @@ fn relocations(p: &mut Printer<'_>, m: &Module<'_>) {
         };
         p.open(&format!("Section ({}) {name} {{", target + 1));
         for r in relocs {
-            let kind = hexcavator_wasm::relocation_name(r.kind).unwrap_or("Unknown");
+            let kind = turbonop_wasm::relocation_name(r.kind).unwrap_or("Unknown");
             // (A type index names a type, not a symbol.)
             let what = if r.kind == 6 {
                 r.index.to_string()
@@ -273,23 +273,23 @@ fn symbols(p: &mut Printer<'_>, m: &Module<'_>) {
             p.line(
                 "Type",
                 match s.kind {
-                    hexcavator_wasm::SYMBOL_FUNCTION => "FUNCTION (0x0)",
-                    hexcavator_wasm::SYMBOL_DATA => "DATA (0x1)",
-                    hexcavator_wasm::SYMBOL_GLOBAL => "GLOBAL (0x2)",
-                    hexcavator_wasm::SYMBOL_SECTION => "SECTION (0x3)",
-                    hexcavator_wasm::SYMBOL_TAG => "TAG (0x4)",
+                    turbonop_wasm::SYMBOL_FUNCTION => "FUNCTION (0x0)",
+                    turbonop_wasm::SYMBOL_DATA => "DATA (0x1)",
+                    turbonop_wasm::SYMBOL_GLOBAL => "GLOBAL (0x2)",
+                    turbonop_wasm::SYMBOL_SECTION => "SECTION (0x3)",
+                    turbonop_wasm::SYMBOL_TAG => "TAG (0x4)",
                     _ => "TABLE (0x5)",
                 },
             );
             p.flags("Flags", u64::from(s.flags), FLAGS);
-            let undefined = s.flags & hexcavator_wasm::SYMBOL_UNDEFINED != 0;
+            let undefined = s.flags & turbonop_wasm::SYMBOL_UNDEFINED != 0;
             if undefined && let Some((module, field)) = s.import {
                 if field != s.name {
                     p.line("ImportName", String::from_utf8_lossy(field));
                 }
                 p.line("ImportModule", String::from_utf8_lossy(module));
             }
-            if s.kind != hexcavator_wasm::SYMBOL_DATA {
+            if s.kind != turbonop_wasm::SYMBOL_DATA {
                 p.line("ElementIndex", format_args!("0x{:X}", s.index));
             } else if let Some((segment, offset, size)) = s.data {
                 p.line("Offset", format_args!("0x{offset:X}"));
@@ -309,33 +309,33 @@ fn symbols(p: &mut Printer<'_>, m: &Module<'_>) {
     // section's order.)
     let mut any = false;
     for kind in [
-        hexcavator_wasm::NAME_FUNCTION,
-        hexcavator_wasm::NAME_GLOBAL,
-        hexcavator_wasm::NAME_DATA_SEGMENT,
+        turbonop_wasm::NAME_FUNCTION,
+        turbonop_wasm::NAME_GLOBAL,
+        turbonop_wasm::NAME_DATA_SEGMENT,
     ] {
         for n in m.names(kind) {
             any = true;
             p.open("Symbol {");
             p.line("Name", String::from_utf8_lossy(n.name));
             let flags: u64 = match kind {
-                hexcavator_wasm::NAME_FUNCTION if n.index < imported[0] => 0x10,
-                hexcavator_wasm::NAME_FUNCTION
+                turbonop_wasm::NAME_FUNCTION if n.index < imported[0] => 0x10,
+                turbonop_wasm::NAME_FUNCTION
                     if exports.iter().any(|e| e.kind == 0 && e.index == n.index) =>
                 {
                     0
                 }
-                hexcavator_wasm::NAME_FUNCTION => 0x2,
-                hexcavator_wasm::NAME_GLOBAL if n.index < imported[3] => 0x10,
-                hexcavator_wasm::NAME_GLOBAL => 0,
+                turbonop_wasm::NAME_FUNCTION => 0x2,
+                turbonop_wasm::NAME_GLOBAL if n.index < imported[3] => 0x10,
+                turbonop_wasm::NAME_GLOBAL => 0,
                 _ => 0x2,
             };
             match kind {
-                hexcavator_wasm::NAME_FUNCTION => p.line("Type", "FUNCTION (0x0)"),
-                hexcavator_wasm::NAME_GLOBAL => p.line("Type", "GLOBAL (0x2)"),
+                turbonop_wasm::NAME_FUNCTION => p.line("Type", "FUNCTION (0x0)"),
+                turbonop_wasm::NAME_GLOBAL => p.line("Type", "GLOBAL (0x2)"),
                 _ => p.line("Type", "DATA (0x1)"),
             }
             p.flags("Flags", flags, FLAGS);
-            if kind == hexcavator_wasm::NAME_DATA_SEGMENT {
+            if kind == turbonop_wasm::NAME_DATA_SEGMENT {
                 p.line("Offset", "0x0");
                 p.line("Segment", format_args!("0x{:X}", n.index));
                 p.line(

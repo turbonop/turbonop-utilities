@@ -99,8 +99,8 @@ pub mod machine {
     /// The instruction set a machine value's code is in. (ARM64EC and
     /// ARM64X images hold ARM64 code, with x64 code beside it in places;
     /// CHPE images, x86 code.)
-    pub const fn arch(machine: u16) -> hexcavator_core::Arch {
-        use hexcavator_core::Arch;
+    pub const fn arch(machine: u16) -> turbonop_core::Arch {
+        use turbonop_core::Arch;
         match machine {
             I386 | CHPE_X86 => Arch::X86,
             AMD64 => Arch::X64,

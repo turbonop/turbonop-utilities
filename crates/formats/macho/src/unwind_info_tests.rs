@@ -4,7 +4,7 @@
 use alloc::vec;
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 use crate::unwind_info::{Entry, Found, UnwindInfo};
 

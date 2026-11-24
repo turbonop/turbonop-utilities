@@ -4,12 +4,12 @@
 
 use std::collections::BTreeMap;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::rangemap::RangeMap;
-use hexcavator_size::rollup::{Options, Report, Rollup};
-use hexcavator_size::sources::{self, Inputs, Source};
-use hexcavator_size::{pe, symbols};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::rangemap::RangeMap;
+use turbonop_size::rollup::{Options, Report, Rollup};
+use turbonop_size::sources::{self, Inputs, Source};
+use turbonop_size::{pe, symbols};
 
 fn root() -> String {
     format!("{}/../../../testdata/sizebench", env!("CARGO_MANIFEST_DIR"))

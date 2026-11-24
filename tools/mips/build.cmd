@@ -1,5 +1,5 @@
 @echo off
-rem Writes hexcavator-mips's tables (crates\isa\mips\src\tables.rs, and
+rem Writes turbonop-mips's tables (crates\isa\mips\src\tables.rs, and
 rem micromips.rs, microMIPS's) from LLVM's TableGen records of its MIPS
 rem target, and the decoder's golden files (crates\isa\mips\tests\golden.txt
 rem and golden-micromips.txt) from llvm-objdump's text for encodings of

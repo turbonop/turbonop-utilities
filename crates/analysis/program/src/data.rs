@@ -5,9 +5,9 @@
 //! (Pointer slots are the image's: PE's base relocations, ELF's dynamic
 //! and packed relocations; Mach-O's, not yet.)
 
-use hexcavator_debuginfo::TypeRef;
-use hexcavator_debuginfo::value::{self, Limits, Value};
-use hexcavator_size::symbols::{Symbol, SymbolKind};
+use turbonop_debuginfo::TypeRef;
+use turbonop_debuginfo::value::{self, Limits, Value};
+use turbonop_size::symbols::{Symbol, SymbolKind};
 
 use crate::Program;
 
@@ -16,7 +16,7 @@ use crate::Program;
 #[derive(Clone, Debug, Default)]
 pub struct AddressNames {
     /// What a pointer's value is less its address in the image (see
-    /// `hexcavator_image::Image::pointer_base`): the names are of
+    /// `turbonop_image::Image::pointer_base`): the names are of
     /// pointers' values.
     base: u64,
     /// (rva, size, name), by address.
@@ -143,7 +143,7 @@ impl Program<'_> {
                         name: name.to_string(),
                     });
                 }
-                let mut alone = hexcavator_size::disasm::ByNameAlone::new(name);
+                let mut alone = turbonop_size::disasm::ByNameAlone::new(name);
                 for s in &candidates {
                     alone.offer(s.addr, &s.name, || *s);
                 }
@@ -187,7 +187,7 @@ impl Program<'_> {
             .min_by_key(|d| {
                 (
                     d.name != target.name,
-                    d.kind != hexcavator_debuginfo::SymbolKind::Data,
+                    d.kind != turbonop_debuginfo::SymbolKind::Data,
                 )
             })
             .map(|d| TypeRef(d.type_index));
@@ -241,7 +241,7 @@ impl Program<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hexcavator_size::Size;
+    use turbonop_size::Size;
 
     fn sym(addr: u64, size: u64, name: &str, folded: bool) -> Symbol {
         Symbol {

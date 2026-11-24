@@ -1,15 +1,15 @@
 //! `hexcavator init`: what runs when an image is loaded, before its `main` (see
-//! `hexcavator_size::startup`), with what each function calls.
+//! `turbonop_size::startup`), with what each function calls.
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_size::startup::{self, Startup};
-use hexcavator_size::xref::Xref;
-use hexcavator_xref::Edge;
 use serde_json::{Value, json};
+use turbonop_size::startup::{self, Startup};
+use turbonop_size::xref::Xref;
+use turbonop_xref::Edge;
 
 pub const USAGE: &str = "\
 usage: hexcavator init [options] <image>
@@ -109,9 +109,9 @@ pub fn run(args: &[String]) -> ExitCode {
 
 /// A function's name, place, and source line, as shown.
 struct Named<'x, 'data> {
-    image: &'x hexcavator_image::Image<'data>,
+    image: &'x turbonop_image::Image<'data>,
     x: &'x Xref,
-    locator: hexcavator_debuginfo::Locator<'x, 'data>,
+    locator: turbonop_debuginfo::Locator<'x, 'data>,
     /// What the image's tools add to its addresses (a PE image's base).
     base: u64,
 }
@@ -140,13 +140,13 @@ impl Named<'_, '_> {
 
 fn report(o: &Options) -> Result<String, String> {
     let path = Path::new(o.image.as_deref().unwrap_or_default());
-    let opened = hexcavator_program::Opened::open(path, o.pdb.as_deref())?;
+    let opened = turbonop_program::Opened::open(path, o.pdb.as_deref())?;
     let program = opened.program()?;
     let model = program.model()?;
     let syms = program.symbols()?;
     // (Kept, for an editor's next question: what a function calls.)
-    let x = hexcavator_program::cache::remember(&program.files(), "xref", || {
-        hexcavator_size::xref::build(&program.image, &program.debug, model, syms)
+    let x = turbonop_program::cache::remember(&program.files(), "xref", || {
+        turbonop_size::xref::build(&program.image, &program.debug, model, syms)
     })
     .map_err(|e| format!("{}: {e}", path.display()))?;
     let s = startup::startup(&program.image, &x, model);

@@ -1,9 +1,9 @@
 //! Prints the events and templates of a binary's instrumentation manifest
 //! (`WEVT_TEMPLATE`), with each item descriptor's raw bytes.
 //!
-//!     cargo run -p hexcavator-etw --example manifestdump -- provider.dll [event-id ...]
+//!     cargo run -p turbonop-etw --example manifestdump -- provider.dll [event-id ...]
 
-use hexcavator_etw::manifest::{Item, Manifest, wevt_template};
+use turbonop_etw::manifest::{Item, Manifest, wevt_template};
 
 fn print(items: &[Item], depth: usize) {
     for it in items {

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use super::*;
 use crate::rollup::Rollup;
 use crate::testimage::Buf;
-use hexcavator_pe::consts::storage_class;
+use turbonop_pe::consts::storage_class;
 
 const AMD64: u16 = 0x8664;
 
@@ -239,7 +239,7 @@ fn library() -> Vec<u8> {
     import.extend_from_slice(&0u16.to_le_bytes());
     import.extend_from_slice(&(1u16 << 2).to_le_bytes());
     import.extend_from_slice(names);
-    let mut out = hexcavator_archive::MAGIC.to_vec();
+    let mut out = turbonop_archive::MAGIC.to_vec();
     out.extend(member("x.obj/", &object()));
     out.extend(member("k.dll/", &import));
     out.extend(member("junk/", b"not an object"));

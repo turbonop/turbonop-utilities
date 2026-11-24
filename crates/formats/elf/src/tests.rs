@@ -659,7 +659,7 @@ fn hostile_inputs_never_panic() {
 
 #[test]
 fn machines_name_architectures() {
-    use hexcavator_core::Arch;
+    use turbonop_core::Arch;
     assert_eq!(arch(EM_X86_64, Class::Elf64), Arch::X64);
     // x32: ELF32, x64 instructions.
     assert_eq!(arch(EM_X86_64, Class::Elf32), Arch::X64);

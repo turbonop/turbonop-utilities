@@ -79,7 +79,7 @@ impl Relocations {
 }
 
 /// An image's relocations (none for an object, or a format without them).
-pub fn relocations(image: &hexcavator_image::Image<'_>) -> Relocations {
+pub fn relocations(image: &turbonop_image::Image<'_>) -> Relocations {
     let slots: FxHashMap<u64, Option<u64>> = image
         .pointer_slots()
         .into_iter()
@@ -99,11 +99,11 @@ pub fn relocations(image: &hexcavator_image::Image<'_>) -> Relocations {
 }
 
 fn elf_relocations(
-    elf: &hexcavator_elf::ElfFile<'_>,
+    elf: &turbonop_elf::ElfFile<'_>,
     slots: &FxHashMap<u64, Option<u64>>,
 ) -> Relocations {
-    use hexcavator_elf::consts::*;
-    let word: u8 = if elf.class() == hexcavator_elf::Class::Elf64 {
+    use turbonop_elf::consts::*;
+    let word: u8 = if elf.class() == turbonop_elf::Class::Elf64 {
         8
     } else {
         4
@@ -128,7 +128,7 @@ fn elf_relocations(
         let mut entries = 0u64;
         if s.kind == SHT_RELA || s.kind == SHT_REL {
             for r in elf.relocations(s) {
-                let kind = hexcavator_elf::relocation_name(machine, r.kind)
+                let kind = turbonop_elf::relocation_name(machine, r.kind)
                     .unwrap_or_else(|| format!("type {}", r.kind));
                 let sym = (r.symbol != 0)
                     .then(|| dynsym.get(r.symbol as usize))
@@ -176,7 +176,7 @@ fn elf_relocations(
 
 /// The relative relocation type of `machine`.
 fn relative_type(machine: u16) -> Option<u32> {
-    use hexcavator_elf::consts::*;
+    use turbonop_elf::consts::*;
     Some(match machine {
         EM_X86_64 | EM_386 => 8,
         EM_AARCH64 => 1027,
@@ -188,14 +188,14 @@ fn relative_type(machine: u16) -> Option<u32> {
 }
 
 fn pe_relocations(
-    pe: &hexcavator_pe::PeFile<'_>,
+    pe: &turbonop_pe::PeFile<'_>,
     base: u64,
     slots: &FxHashMap<u64, Option<u64>>,
 ) -> Relocations {
-    use hexcavator_pe::reloc::base_reloc as kind;
+    use turbonop_pe::reloc::base_reloc as kind;
     let word: u8 = if pe
         .optional_header()
-        .is_some_and(hexcavator_pe::OptionalHeader::is_64)
+        .is_some_and(turbonop_pe::OptionalHeader::is_64)
     {
         8
     } else {
@@ -207,7 +207,7 @@ fn pe_relocations(
     };
     // (The directory's bytes, padding and block headers among them.)
     let size = pe
-        .data_directory(hexcavator_pe::consts::directory::BASERELOC)
+        .data_directory(turbonop_pe::consts::directory::BASERELOC)
         .map_or(0, |d| u64::from(d.size.get()));
     for r in pe.base_relocs() {
         let name = match r.kind {
@@ -254,9 +254,9 @@ fn pe_relocations(
     out
 }
 
-fn macho_relocations(m: &hexcavator_macho::MachO<'_>) -> Relocations {
-    use hexcavator_macho::FixupKind;
-    use hexcavator_macho::consts::*;
+fn macho_relocations(m: &turbonop_macho::MachO<'_>) -> Relocations {
+    use turbonop_macho::FixupKind;
+    use turbonop_macho::consts::*;
     let mut out = Relocations {
         word: if m.header().is64 { 8 } else { 4 },
         ..Relocations::default()
@@ -382,10 +382,10 @@ pub fn pointer_tables(
 }
 
 /// An image's own symbols, of any format (see
-/// [`hexcavator_image::Image::symbols`]), as (start, end, name) by start,
+/// [`turbonop_image::Image::symbols`]), as (start, end, name) by start,
 /// for where relocations are without debug information: each address's
 /// first name.
-pub fn image_symbols(image: &hexcavator_image::Image<'_>) -> Vec<(u64, u64, String)> {
+pub fn image_symbols(image: &turbonop_image::Image<'_>) -> Vec<(u64, u64, String)> {
     let mut out: Vec<(u64, u64, String)> = image
         .symbols()
         .into_iter()

@@ -7,7 +7,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use hexcavator_core::Rva;
+use turbonop_core::Rva;
 
 use crate::PeFile;
 use crate::resources::{ResourceName, ResourceTarget, resource_type};

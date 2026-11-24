@@ -5,9 +5,9 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_size::findings;
-use hexcavator_size::recommend::{Link, Recommendation, Toolchain, recommend};
 use serde_json::json;
+use turbonop_size::findings;
+use turbonop_size::recommend::{Link, Recommendation, Toolchain, recommend};
 
 pub const USAGE: &str = "\
 usage: hexcavator recommend [options] <image>
@@ -93,15 +93,15 @@ fn report(
     importers: &[PathBuf],
 ) -> Result<String, String> {
     let show = |p: &Path| p.display().to_string();
-    let opened = match hexcavator_program::Opened::open(path, pdb) {
+    let opened = match turbonop_program::Opened::open(path, pdb) {
         Ok(o) => o,
         // No debug information to be found: what the image's structure
         // shows, which needs none.
-        Err(hexcavator_program::Error::NoDebug { .. }) if pdb.is_none() => {
+        Err(turbonop_program::Error::NoDebug { .. }) if pdb.is_none() => {
             let map =
-                hexcavator_mmap::Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
+                turbonop_mmap::Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
             let image =
-                hexcavator_image::Image::parse(&map).map_err(|e| format!("{}: {e}", show(path)))?;
+                turbonop_image::Image::parse(&map).map_err(|e| format!("{}: {e}", show(path)))?;
             let mut r = structural_only(&image);
             with_exports(&mut r, &image, path, importers);
             with_libraries(&mut r, &image, path);
@@ -113,7 +113,7 @@ fn report(
     let (image, debug) = (&program.image, &program.debug);
     let model = program.model()?;
     let syms = program.symbols()?;
-    let x = hexcavator_size::xref::build(image, debug, model, syms)
+    let x = turbonop_size::xref::build(image, debug, model, syms)
         .map_err(|e| format!("{}: {e}", show(path)))?;
     let mut r = recommendations(image, debug, model, &x, syms);
     with_exports(&mut r, image, path, importers);
@@ -127,28 +127,24 @@ fn report(
 }
 
 /// Adds the libraries the image at `path` is linked with that nothing of
-/// it uses ([`hexcavator_size::recommend::unused_libraries`]), as its
-/// loader finds them ([`hexcavator_deps`]): an ELF image's `DT_NEEDED`
+/// it uses ([`turbonop_size::recommend::unused_libraries`]), as its
+/// loader finds them ([`turbonop_deps`]): an ELF image's `DT_NEEDED`
 /// libraries, found, that define none of its undefined symbols; a Mach-O
 /// image's dylibs (not re-exported or upward ones) none of its binds name,
 /// unless it binds any by flat namespace (which any library could
 /// satisfy). Largest saving first with the rest.
-pub(crate) fn with_libraries(
-    r: &mut Recommended,
-    image: &hexcavator_image::Image<'_>,
-    path: &Path,
-) {
-    use hexcavator_deps::DepKind;
+pub(crate) fn with_libraries(r: &mut Recommended, image: &turbonop_image::Image<'_>, path: &Path) {
+    use turbonop_deps::DepKind;
     if r.toolchain.as_needed_option().is_none()
         || (image.elf().is_none() && image.macho().is_none())
     {
         return;
     }
-    let options = hexcavator_deps::Options {
+    let options = turbonop_deps::Options {
         max_modules: 256,
-        ..hexcavator_deps::Options::default()
+        ..turbonop_deps::Options::default()
     };
-    let Ok(graph) = hexcavator_deps::analyze(path, &options) else {
+    let Ok(graph) = turbonop_deps::analyze(path, &options) else {
         return;
     };
     let Some(root) = graph.modules.first() else {
@@ -157,7 +153,7 @@ pub(crate) fn with_libraries(
     let mut unused: Vec<(String, u64)> = Vec::new();
     if let Some(elf) = image.elf() {
         // (Each `DT_NEEDED` entry, and its name in `.dynstr`.)
-        let entry = if elf.class() == hexcavator_elf::Class::Elf64 {
+        let entry = if elf.class() == turbonop_elf::Class::Elf64 {
             16
         } else {
             8
@@ -189,22 +185,22 @@ pub(crate) fn with_libraries(
             }
         }
     }
-    if let Some(rec) = hexcavator_size::recommend::unused_libraries(r.toolchain, &unused) {
+    if let Some(rec) = turbonop_size::recommend::unused_libraries(r.toolchain, &unused) {
         r.recs.push(rec);
         r.recs.sort_by_key(|r| std::cmp::Reverse(r.saving));
     }
 }
 
-/// Adds what an image's exports recommend ([`hexcavator_size::exports`]),
+/// Adds what an image's exports recommend ([`turbonop_size::exports`]),
 /// judged by what `importers` (files, or directories of them) import of
 /// it, if any are given; largest saving first with the rest.
 pub(crate) fn with_exports(
     r: &mut Recommended,
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
     path: &Path,
     importers: &[PathBuf],
 ) {
-    use hexcavator_size::exports;
+    use turbonop_size::exports;
     let Some(ex) = exports::exports(image) else {
         return;
     };
@@ -214,9 +210,9 @@ pub(crate) fn with_exports(
     let macho = image.macho().is_some();
     // (By whichever scheme mangled it; a Mach-O C name without its `_`.)
     let demangle = |n: &[u8]| -> String {
-        hexcavator_demangle::Demangler::new().source_name(
+        turbonop_demangle::Demangler::new().source_name(
             &String::from_utf8_lossy(n),
-            hexcavator_demangle::msvc::flags::NO_PTR64,
+            turbonop_demangle::msvc::flags::NO_PTR64,
             macho,
         )
     };
@@ -228,7 +224,7 @@ pub(crate) fn with_exports(
 
 /// What the importers given (files, or directories searched with their
 /// subdirectories) import of the image named `name`, read in parallel.
-fn scan_importers(paths: &[PathBuf], name: Option<&[u8]>) -> hexcavator_size::exports::Imports {
+fn scan_importers(paths: &[PathBuf], name: Option<&[u8]>) -> turbonop_size::exports::Imports {
     let mut files = Vec::new();
     for p in paths {
         gather(p, 0, &mut files);
@@ -244,8 +240,8 @@ fn scan_importers(paths: &[PathBuf], name: Option<&[u8]>) -> hexcavator_size::ex
                 scope.spawn(move || {
                     part.iter()
                         .filter_map(|p| {
-                            let map = hexcavator_mmap::Mmap::open(p).ok()?;
-                            hexcavator_size::exports::imports_of(&map, name)
+                            let map = turbonop_mmap::Mmap::open(p).ok()?;
+                            turbonop_size::exports::imports_of(&map, name)
                         })
                         .collect::<Vec<_>>()
                 })
@@ -256,7 +252,7 @@ fn scan_importers(paths: &[PathBuf], name: Option<&[u8]>) -> hexcavator_size::ex
             .flat_map(|h| h.join().unwrap_or_default())
             .collect()
     });
-    hexcavator_size::exports::Imports {
+    turbonop_size::exports::Imports {
         importers: found.len(),
         names: found.into_iter().flatten().collect(),
     }
@@ -323,31 +319,31 @@ pub(crate) struct ExceptionSummary {
 /// The most functions an exception summary lists.
 const EH_FUNCTIONS: usize = 500;
 
-/// What an image's strings recommend (`hexcavator_size::recommend::strings`),
+/// What an image's strings recommend (`turbonop_size::recommend::strings`),
 /// a string in `symbols` (data, by start) being in named data unless the
 /// symbol is a string literal's (a PDB's `` `string' ``).
 fn string_recommendations(
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
     toolchain: Toolchain,
     symbols: &[(u64, u64, String)],
     rust: bool,
 ) -> Vec<Recommendation> {
     let named = |at: u64| {
-        hexcavator_size::relocations::containing(symbols, at).is_some_and(|i| {
+        turbonop_size::relocations::containing(symbols, at).is_some_and(|i| {
             let n = symbols[i].2.as_str();
             n != "`string'" && !n.starts_with(".L") && n != "(anonymous)"
         })
     };
-    hexcavator_size::recommend::strings(image, toolchain, &named, rust)
+    turbonop_size::recommend::strings(image, toolchain, &named, rust)
 }
 
 /// The recommendations for an image without debug information: what its
-/// structure shows ([`hexcavator_size::recommend::structural`]).
-pub(crate) fn structural_only(image: &hexcavator_image::Image<'_>) -> Recommended {
-    let mut recs = hexcavator_size::recommend::structural(image);
+/// structure shows ([`turbonop_size::recommend::structural`]).
+pub(crate) fn structural_only(image: &turbonop_image::Image<'_>) -> Recommended {
+    let mut recs = turbonop_size::recommend::structural(image);
     let toolchain = Toolchain::of(image, None);
     let own =
-        crate::relocations::demangled(hexcavator_size::relocations::image_symbols(image), image);
+        crate::relocations::demangled(turbonop_size::relocations::image_symbols(image), image);
     recs.extend(string_recommendations(image, toolchain, &own, false));
     recs.sort_by_key(|r| std::cmp::Reverse(r.saving));
     Recommended {
@@ -363,20 +359,20 @@ pub(crate) fn structural_only(image: &hexcavator_image::Image<'_>) -> Recommende
 }
 
 pub(crate) fn recommendations(
-    image: &hexcavator_image::Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
-    model: &hexcavator_size::Model,
-    x: &hexcavator_size::xref::Xref,
-    syms: &[hexcavator_size::symbols::Symbol],
+    image: &turbonop_image::Image<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
+    model: &turbonop_size::Model,
+    x: &turbonop_size::xref::Xref,
+    syms: &[turbonop_size::symbols::Symbol],
 ) -> Recommended {
     let toolchain = Toolchain::of(image, Some(debug));
     // (A Rust program's advice is in Rust's terms.)
-    let rust = hexcavator_size::recommend::is_rust(syms);
+    let rust = turbonop_size::recommend::is_rust(syms);
     let link = debug
         .linker_info()
         .ok()
         .and_then(|i| i.command_line().map(Link::from_command_line));
-    let compiled = hexcavator_size::compiled::Compiled::of(debug);
+    let compiled = turbonop_size::compiled::Compiled::of(debug);
     // (Objects compiled without -ffunction-sections leave nothing to judge
     // an ELF link's options by.)
     let unsectioned = link.is_none() && image.elf().is_some() && compiled.no_function_sections();
@@ -388,23 +384,23 @@ pub(crate) fn recommendations(
         judged.opt_ref = !x.ids().any(|n| {
             !x.reach.is_reached(n)
                 && x.kinds[n as usize].is_some()
-                && matches!(x.kept(n), hexcavator_size::xref::Kept::Comdat)
+                && matches!(x.kept(n), turbonop_size::xref::Kept::Comdat)
         });
     }
-    use hexcavator_par::join;
+    use turbonop_par::join;
     // The analyses below are independent: each runs on its own thread
     // (and most across cores themselves). Their advice is gathered in
     // the same order as ever.
     let fingerprints = || {
-        let classes = hexcavator_size::fingerprint::build(
+        let classes = turbonop_size::fingerprint::build(
             image,
             model,
             x,
-            hexcavator_size::fingerprint::Mode::Foldable,
+            turbonop_size::fingerprint::Mode::Foldable,
         )
         .classes;
         // Templates' instantiations alike but for constants, sizes, callees.
-        let near = hexcavator_size::fingerprint::near_identical(image, model, x, &classes);
+        let near = turbonop_size::fingerprint::near_identical(image, model, x, &classes);
         (classes, near)
     };
     // Functions inlined where calls would cost less.
@@ -412,42 +408,38 @@ pub(crate) fn recommendations(
         let sites = debug.inline_sites().ok()?;
         let defined: rustc_hash::FxHashSet<&str> = syms
             .iter()
-            .filter(|s| matches!(s.kind, hexcavator_size::symbols::SymbolKind::Function))
+            .filter(|s| matches!(s.kind, turbonop_size::symbols::SymbolKind::Function))
             .map(|s| findings::strip_parameters(&s.name))
             .collect();
-        let weighed =
-            hexcavator_size::inlining::weigh(sites, image.arch(), &|n| defined.contains(n));
-        hexcavator_size::recommend::inlining(&weighed, toolchain, image.arch(), rust)
+        let weighed = turbonop_size::inlining::weigh(sites, image.arch(), &|n| defined.contains(n));
+        turbonop_size::recommend::inlining(&weighed, toolchain, image.arch(), rust)
     };
     let pointers_and_strings = || {
         // Pointer-heavy data, whose pointers each cost a relocation.
         let mut data: Vec<(u64, u64, String)> = syms
             .iter()
             .filter(|s| {
-                s.size.vm > 0 && !matches!(s.kind, hexcavator_size::symbols::SymbolKind::Function)
+                s.size.vm > 0 && !matches!(s.kind, turbonop_size::symbols::SymbolKind::Function)
             })
             .map(|s| (s.addr, s.addr + s.size.vm, s.name.clone()))
             .collect();
         data.sort_by_key(|s| s.0);
         // (The image's own symbols where the debug information has none.)
-        let data = hexcavator_size::relocations::merge_symbols(
-            hexcavator_size::relocations::merge_symbols(
+        let data = turbonop_size::relocations::merge_symbols(
+            turbonop_size::relocations::merge_symbols(
                 data,
                 crate::relocations::debug_file_symbols(debug),
             ),
-            crate::relocations::demangled(
-                hexcavator_size::relocations::image_symbols(image),
-                image,
-            ),
+            crate::relocations::demangled(turbonop_size::relocations::image_symbols(image), image),
         );
-        let relocs = hexcavator_size::relocations::relocations(image);
-        let pointers = hexcavator_size::recommend::pointer_tables(&relocs, &data, toolchain);
+        let relocs = turbonop_size::relocations::relocations(image);
+        let pointers = turbonop_size::recommend::pointer_tables(&relocs, &data, toolchain);
         // The build's paths, and string literals with copies.
         let strings = string_recommendations(image, toolchain, &data, rust);
         (pointers, strings)
     };
     // Exception handling: cleanups nothing can throw through.
-    let exceptions = || hexcavator_size::exceptions::exceptions(image, x, syms);
+    let exceptions = || turbonop_size::exceptions::exceptions(image, x, syms);
     let (((classes, near), duplicates), ((inlined, (pointers, strings)), eh)) = join(
         || {
             join(fingerprints, || {
@@ -462,17 +454,15 @@ pub(crate) fn recommendations(
     recs.extend(inlined);
     recs.extend(pointers);
     recs.extend(strings);
-    recs.extend(hexcavator_size::recommend::noexcept(
-        x, &eh, toolchain, rust,
-    ));
+    recs.extend(turbonop_size::recommend::noexcept(x, &eh, toolchain, rust));
     // A Rust program's panics and Debug formatting.
     // (A Rust program's: its PDB's publics name its Debug implementations.)
     let debug_impls = if rust {
-        hexcavator_size::recommend::debug_impls(debug)
+        turbonop_size::recommend::debug_impls(debug)
     } else {
-        hexcavator_hash::Set::default()
+        turbonop_hash::Set::default()
     };
-    recs.extend(hexcavator_size::recommend::rust(syms, &eh, &debug_impls));
+    recs.extend(turbonop_size::recommend::rust(syms, &eh, &debug_impls));
     let needless: rustc_hash::FxHashSet<usize> = eh.needless.iter().copied().collect();
     let (unwind, handlers) = eh.totals();
     let exceptions = (unwind + handlers > 0).then(|| ExceptionSummary {
@@ -493,10 +483,10 @@ pub(crate) fn recommendations(
             })
             .collect(),
     });
-    recs.extend(hexcavator_size::recommend::near_identical(&near, rust));
+    recs.extend(turbonop_size::recommend::near_identical(&near, rust));
     // And what the image's structure says, largest saving first with the
     // rest.
-    recs.extend(hexcavator_size::recommend::structural(image));
+    recs.extend(turbonop_size::recommend::structural(image));
     recs.sort_by_key(|r| std::cmp::Reverse(r.saving));
     Recommended {
         recs,

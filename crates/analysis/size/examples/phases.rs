@@ -1,18 +1,18 @@
 //! Times the phases of a symbols report on one image and its PDB:
-//! `cargo run --release -p hexcavator-size --example phases -- <image> <pdb>`.
+//! `cargo run --release -p turbonop-size --example phases -- <image> <pdb>`.
 
 use std::time::Instant;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::sources::{self, Inputs, Source};
-use hexcavator_size::{pe, rollup, symbols};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::sources::{self, Inputs, Source};
+use turbonop_size::{pe, rollup, symbols};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let t = Instant::now();
-    let image_map = hexcavator_mmap::Mmap::open(&args[1]).unwrap();
-    let pdb_map = hexcavator_mmap::Mmap::open(&args[2]).unwrap();
+    let image_map = turbonop_mmap::Mmap::open(&args[1]).unwrap();
+    let pdb_map = turbonop_mmap::Mmap::open(&args[2]).unwrap();
     let image = Image::parse(&image_map).unwrap();
     let debug = DebugInfo::parse(&pdb_map).unwrap();
     println!("open+parse   {:>8.3}s", t.elapsed().as_secs_f64());

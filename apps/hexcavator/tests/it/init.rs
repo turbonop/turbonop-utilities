@@ -322,7 +322,8 @@ fn sections_larger_than_the_file() {
             }
         }
         assert!(damaged > 0, "{image}");
-        let dir = std::env::temp_dir().join(format!("hexc-init-damaged-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("hexcavator-init-damaged-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join(path.file_name().unwrap());
         std::fs::write(&file, &data).unwrap();
@@ -334,7 +335,7 @@ fn sections_larger_than_the_file() {
             .unwrap();
         // (20 s natively. Under emulation, as CI's big-endian job runs it,
         // the job says how much slower it is.)
-        let slowdown: u64 = std::env::var("HEXC_TEST_SLOWDOWN")
+        let slowdown: u64 = std::env::var("TURBONOP_TEST_SLOWDOWN")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(1);

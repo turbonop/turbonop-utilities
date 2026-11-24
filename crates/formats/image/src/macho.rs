@@ -2,8 +2,8 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::consts::*;
+use turbonop_macho::MachO;
+use turbonop_macho::consts::*;
 
 use crate::{DebugId, Kind, Section, SectionFlags};
 
@@ -108,8 +108,8 @@ pub(crate) fn pointer_slots(m: &MachO<'_>) -> Vec<crate::PointerSlot> {
             addr: f.addr,
             width: f.width,
             target: match f.kind {
-                hexcavator_macho::FixupKind::Rebase { target } => Some(target),
-                hexcavator_macho::FixupKind::Bind { .. } => None,
+                turbonop_macho::FixupKind::Rebase { target } => Some(target),
+                turbonop_macho::FixupKind::Bind { .. } => None,
             },
         })
         .collect()

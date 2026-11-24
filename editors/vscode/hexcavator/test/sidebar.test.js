@@ -225,7 +225,7 @@ test("hexcavator serve's options from the settings", () => {
     "C:\\symcache",
     "serve",
   ]);
-  assert.deepStrictEqual(l.env, { HEXC_SYMBOL_PATH: "C:\\syms;D:\\more" });
+  assert.deepStrictEqual(l.env, { TURBONOP_SYMBOL_PATH: "C:\\syms;D:\\more" });
 });
 
 test("source paths from another machine", () => {

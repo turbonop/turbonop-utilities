@@ -1,18 +1,18 @@
 //! Imports a trace and prints counts and consistency checks (no names or
 //! paths, so the output is safe to share).
 //!
-//!     cargo run --release -p hexcavator-trace --example traceinfo -- trace.etl [index.hxtrace]
+//!     cargo run --release -p turbonop-trace --example traceinfo -- trace.etl [index.hxtrace]
 //!
 //! With a second argument, also writes the index there and times reading it.
 
-use hexcavator_etl::Etl;
-use hexcavator_trace::{ThreadIx, etw};
+use turbonop_etl::Etl;
+use turbonop_trace::{ThreadIx, etw};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args()
         .nth(1)
         .ok_or("usage: traceinfo trace.etl")?;
-    let map = hexcavator_mmap::Mmap::open(path)?;
+    let map = turbonop_mmap::Mmap::open(path)?;
     let etl = Etl::parse(&map)?;
     let start = std::time::Instant::now();
     let (trace, stats) = etw::import(&etl)?;
@@ -20,14 +20,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("imported in {secs:.2} s: {stats:?}");
     if let Some(out) = std::env::args().nth(2) {
         let t = std::time::Instant::now();
-        let source = hexcavator_trace::index::Source::of(&map);
-        let bytes = hexcavator_trace::index::write(&trace, source);
+        let source = turbonop_trace::index::Source::of(&map);
+        let bytes = turbonop_trace::index::write(&trace, source);
         std::fs::write(&out, &bytes)?;
         let written = t.elapsed().as_secs_f64();
         let t = std::time::Instant::now();
-        let saved = hexcavator_mmap::Mmap::open(&out)?;
+        let saved = turbonop_mmap::Mmap::open(&out)?;
         let back =
-            hexcavator_trace::index::read(&saved, Some(hexcavator_trace::index::Source::of(&map)))?;
+            turbonop_trace::index::read(&saved, Some(turbonop_trace::index::Source::of(&map)))?;
         println!(
             "index: {} MB written in {written:.2} s, read back in {:.2} s ({} switches)",
             bytes.len() >> 20,

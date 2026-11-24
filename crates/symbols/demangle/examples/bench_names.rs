@@ -18,11 +18,11 @@ fn main() {
         .filter(|n| !n.is_empty() && !n.starts_with('#'))
         .collect();
     let mut out = String::new();
-    let mut swift = hexcavator_demangle::swift::Demangler::new();
+    let mut swift = turbonop_demangle::swift::Demangler::new();
     let mut f = |n: &str| {
         out.clear();
         let ok = match kind {
-            "rust" => hexcavator_demangle::rust::demangle_into(n, &mut out),
+            "rust" => turbonop_demangle::rust::demangle_into(n, &mut out),
             "swift" => swift.demangle_into(n, &mut out),
             _ => panic!("rust or swift"),
         };

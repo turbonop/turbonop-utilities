@@ -187,10 +187,10 @@ impl<'d> Reader<'_, 'd> {
     fn uint(&self, addr: u64, n: u64) -> Option<u64> {
         let b = self.bytes(addr)?.get(..usize::try_from(n).ok()?)?;
         Some(match self.macho.endian() {
-            hexcavator_core::Endian::Little => {
+            turbonop_core::Endian::Little => {
                 b.iter().rev().fold(0u64, |v, &x| (v << 8) | u64::from(x))
             }
-            hexcavator_core::Endian::Big => b.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x)),
+            turbonop_core::Endian::Big => b.iter().fold(0u64, |v, &x| (v << 8) | u64::from(x)),
         })
     }
 

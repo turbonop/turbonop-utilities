@@ -5,8 +5,8 @@
 // Synthetic test data: small values, casts are exact.
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_unwind::Error;
-use hexcavator_unwind::windows_x64::{self, Context, Handler, Position, RuntimeFunction, reg};
+use turbonop_unwind::Error;
+use turbonop_unwind::windows_x64::{self, Context, Handler, Position, RuntimeFunction, reg};
 
 use crate::support::{STACK, Stack};
 

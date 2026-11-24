@@ -16,11 +16,11 @@
 
 use std::path::{Path, PathBuf};
 
-use hexcavator_core::Result;
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_demangle::Demangler;
-use hexcavator_image::Image;
-use hexcavator_pdb::Pdb;
+use turbonop_core::Result;
+use turbonop_debuginfo::DebugInfo;
+use turbonop_demangle::Demangler;
+use turbonop_image::Image;
+use turbonop_pdb::Pdb;
 
 /// Where to look for symbol files.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -39,7 +39,7 @@ impl SymbolPath {
     /// caches of `srv*` and `cache*` entries (URLs are skipped).
     pub fn parse(path: &str) -> Self {
         Self {
-            dirs: hexcavator_debuginfo::nt_symbol_dirs(path),
+            dirs: turbonop_debuginfo::nt_symbol_dirs(path),
         }
     }
 
@@ -71,8 +71,8 @@ impl SymbolPath {
             return Some(image_path.to_path_buf());
         }
         for id in image.debug_ids() {
-            for candidate in hexcavator_debuginfo::candidate_paths_in(image_path, &id, &self.dirs) {
-                let Ok(map) = hexcavator_mmap::Mmap::open_named(&candidate) else {
+            for candidate in turbonop_debuginfo::candidate_paths_in(image_path, &id, &self.dirs) {
+                let Ok(map) = turbonop_mmap::Mmap::open_named(&candidate) else {
                     continue;
                 };
                 if DebugInfo::parse(&map).is_ok_and(|d| d.matches(&id)) {
@@ -84,13 +84,13 @@ impl SymbolPath {
     }
 }
 
-pub use hexcavator_debuginfo::symbol_store_key;
+pub use turbonop_debuginfo::symbol_store_key;
 
 /// Whether the PDB at `path` has `guid` and `age`. (The first candidate
 /// is the path the trace records: a hostile trace could name a network
 /// share, a device, or a FIFO, so only a local regular file is opened.)
 fn matches(path: &Path, guid: &[u8; 16], age: u32) -> bool {
-    let Ok(map) = hexcavator_mmap::Mmap::open_named(path) else {
+    let Ok(map) = turbonop_mmap::Mmap::open_named(path) else {
         return false;
     };
     let Ok(pdb) = Pdb::parse(&map) else {
@@ -143,7 +143,7 @@ impl FunctionTable {
     ///
     /// If the debug information's symbols can't be read.
     pub fn from_debug(info: &DebugInfo<'_>, image: Option<&Image<'_>>) -> Result<Self> {
-        use hexcavator_debuginfo::SymbolKind as K;
+        use turbonop_debuginfo::SymbolKind as K;
         let symbols = info.symbols()?;
         let mut demangler = Demangler::new();
         let mut procs: Vec<(u64, u64, String)> = Vec::new();
@@ -315,7 +315,7 @@ fn image_functions(image: &Image<'_>, demangler: &mut Demangler) -> Vec<(u64, St
     image
         .symbols()
         .into_iter()
-        .filter(|s| s.kind == hexcavator_image::SymbolKind::Function && !s.name.is_empty())
+        .filter(|s| s.kind == turbonop_image::SymbolKind::Function && !s.name.is_empty())
         .map(|s| {
             let raw = String::from_utf8_lossy(s.name);
             let raw = match raw.strip_prefix('_') {
@@ -336,7 +336,7 @@ fn undecorate(demangler: &mut Demangler, raw: &str) -> String {
     let mut out = String::new();
     if !raw.starts_with('?')
         && (raw.starts_with("_ZN") || raw.starts_with("_R"))
-        && hexcavator_demangle::rust::demangle_into(raw, &mut out)
+        && turbonop_demangle::rust::demangle_into(raw, &mut out)
     {
         // Rust's legacy names end in a hash; trees read better without it.
         if let Some(i) = out.rfind("::h")
@@ -348,7 +348,7 @@ fn undecorate(demangler: &mut Demangler, raw: &str) -> String {
         return out;
     }
     out.clear();
-    if demangler.demangle_into(raw, hexcavator_demangle::msvc::flags::NAME_ONLY, &mut out) {
+    if demangler.demangle_into(raw, turbonop_demangle::msvc::flags::NAME_ONLY, &mut out) {
         return out;
     }
     raw.to_string()

@@ -12,7 +12,7 @@ fn main() {
     let rounds = 10;
     let mb = (bytes * rounds) as f64 / 1e6;
 
-    let mut d = hexcavator_demangle::msvc::Demangler::new();
+    let mut d = turbonop_demangle::msvc::Demangler::new();
     let t = Instant::now();
     let mut ok = 0usize;
     for _ in 0..rounds {
@@ -35,7 +35,7 @@ fn main() {
     let mut len = 0usize;
     for _ in 0..rounds {
         for n in &names {
-            if let Some(s) = d.demangle(n, hexcavator_demangle::msvc::flags::NO_PTR64) {
+            if let Some(s) = d.demangle(n, turbonop_demangle::msvc::flags::NO_PTR64) {
                 len += s.len();
             }
         }

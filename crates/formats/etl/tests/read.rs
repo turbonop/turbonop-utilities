@@ -3,9 +3,9 @@
 // Test inputs are small: their sizes and indexes fit any integer type.
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_etl::event::{ext_type, flags};
-use hexcavator_etl::write::{self, Classic, EventFields, Kernel, Writer, WriterOptions};
-use hexcavator_etl::{ClockType, Etl, Guid, HeaderKind, classic};
+use turbonop_etl::event::{ext_type, flags};
+use turbonop_etl::write::{self, Classic, EventFields, Kernel, Writer, WriterOptions};
+use turbonop_etl::{ClockType, Etl, Guid, HeaderKind, classic};
 
 const PERFINFO: u16 = 0x0f;
 const THREAD: u16 = 0x05;
@@ -482,21 +482,21 @@ fn random_garbage() {
 }
 
 /// The synthetic traces in `testdata/etl`, which seed the fuzzer, are what
-/// `sample` writes. `HEXC_BLESS=1` rewrites them.
+/// `sample` writes. `TURBONOP_BLESS=1` rewrites them.
 #[test]
 fn testdata_is_current() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/etl");
     for (name, compress) in [("sample.etl", false), ("sample-compressed.etl", true)] {
         let path = dir.join(name);
         let data = sample(compress);
-        if std::env::var_os("HEXC_BLESS").is_some() {
+        if std::env::var_os("TURBONOP_BLESS").is_some() {
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(&path, &data).unwrap();
         }
-        let committed = std::fs::read(&path).expect("testdata/etl (HEXC_BLESS=1 writes it)");
+        let committed = std::fs::read(&path).expect("testdata/etl (TURBONOP_BLESS=1 writes it)");
         assert!(
             committed == data,
-            "{name} is stale; HEXC_BLESS=1 rewrites it"
+            "{name} is stale; TURBONOP_BLESS=1 rewrites it"
         );
     }
 }

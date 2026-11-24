@@ -3,7 +3,7 @@
 
   python symbols.py OUT [SNAPSHOT...]
 
-OUT is where they go (the extended tests read $HEXC_CORPUS/symbols/x86);
+OUT is where they go (the extended tests read $HEXCAVATOR_CORPUS/symbols/x86);
 the snapshots default to
 testdata/x86fpo/*.sync. Each module's CodeView record (RSDS: PDB name,
 GUID, age) gives its symbol server path; PDBs are stored flat, by name,

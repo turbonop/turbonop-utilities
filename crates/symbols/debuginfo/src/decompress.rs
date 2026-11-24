@@ -9,9 +9,9 @@
 //! Also xz ([`xz`]), for ELF's MiniDebugInfo (`.gnu_debugdata`): the
 //! container is read here, its LZMA2 data by `lzma-rust2`.
 
-use hexcavator_elf::consts::{ELFCOMPRESS_ZLIB, ELFCOMPRESS_ZSTD, SHF_COMPRESSED};
-use hexcavator_elf::{ElfFile, Section};
-use hexcavator_pe::PeFile;
+use turbonop_elf::consts::{ELFCOMPRESS_ZLIB, ELFCOMPRESS_ZSTD, SHF_COMPRESSED};
+use turbonop_elf::{ElfFile, Section};
+use turbonop_pe::PeFile;
 
 /// A debug section: its name without its prefix (`info` for
 /// `.debug_info`), its contents (decompressed if they were compressed),
@@ -322,7 +322,7 @@ pub fn elf_dwarf_sections<'d>(
             && elf.sections().any(|r| {
                 matches!(
                     r.kind,
-                    hexcavator_elf::consts::SHT_REL | hexcavator_elf::consts::SHT_RELA
+                    turbonop_elf::consts::SHT_REL | turbonop_elf::consts::SHT_RELA
                 ) && r.info as usize == sec.index
             })
             && relocate(elf, sec.index, section.1.to_mut())
@@ -339,8 +339,8 @@ pub fn elf_dwarf_sections<'d>(
 /// symbol's value and the addend) to `data`, its contents. Whether any
 /// were.
 fn relocate(elf: &ElfFile<'_>, index: usize, data: &mut [u8]) -> bool {
-    use hexcavator_elf::consts::{EM_386, EM_AARCH64, EM_ARM, EM_PPC64, EM_RISCV, EM_X86_64};
-    use hexcavator_elf::consts::{SHT_REL, SHT_RELA};
+    use turbonop_elf::consts::{EM_386, EM_AARCH64, EM_ARM, EM_PPC64, EM_RISCV, EM_X86_64};
+    use turbonop_elf::consts::{SHT_REL, SHT_RELA};
     let machine = elf.header().machine;
     // The width an absolute relocation writes, by machine and type.
     let width = |kind: u32| -> Option<usize> {
@@ -362,7 +362,7 @@ fn relocate(elf: &ElfFile<'_>, index: usize, data: &mut [u8]) -> bool {
             _ => return None,
         })
     };
-    let big = elf.endian() == hexcavator_core::Endian::Big;
+    let big = elf.endian() == turbonop_core::Endian::Big;
     let sections: Vec<_> = elf.sections().collect();
     // (Where a linker would lay the sections out: so the object's
     // addresses don't overlap, as its image's sections don't.)
@@ -416,7 +416,7 @@ fn relocate(elf: &ElfFile<'_>, index: usize, data: &mut [u8]) -> bool {
 /// section (`SECREL`), or a section's number (`SECTION`); each address
 /// and offset plus the bytes it patches (COFF's addend). Whether any were.
 pub fn coff_relocate(pe: &PeFile<'_>, index: usize, data: &mut [u8]) -> bool {
-    use hexcavator_pe::consts::machine as m;
+    use turbonop_pe::consts::machine as m;
     #[derive(Clone, Copy)]
     enum Write {
         Address(usize),

@@ -17,7 +17,7 @@
 //! Mach-O objects lay their sections out in one.
 //!
 //! A universal (fat) Mach-O file holds several images: [`Image::parse`]
-//! reads the one `hexcavator_macho::preferred_slice` gives (the host's
+//! reads the one `turbonop_macho::preferred_slice` gives (the host's
 //! architecture, unless another was chosen), and its offsets are within
 //! that image.
 
@@ -37,11 +37,11 @@ mod wasm;
 
 use alloc::vec::Vec;
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_elf::ElfFile;
-use hexcavator_macho::MachO;
-use hexcavator_pe::PeFile;
-use hexcavator_wasm::Module;
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_elf::ElfFile;
+use turbonop_macho::MachO;
+use turbonop_pe::PeFile;
+use turbonop_wasm::Module;
 
 pub use arch::{Arch, Hybrid, coff_machine_name, is_known_coff_machine};
 pub use imports::{ImportSlot, Imported};
@@ -168,13 +168,13 @@ impl<'data> Image<'data> {
         if ElfFile::is_elf(data) {
             return ElfFile::parse(data).map(Image::Elf);
         }
-        if hexcavator_macho::is_macho(data) {
+        if turbonop_macho::is_macho(data) {
             return MachO::parse(data).map(Image::MachO);
         }
-        if hexcavator_macho::is_fat(data) {
+        if turbonop_macho::is_fat(data) {
             // One of its images: the one chosen (see
-            // `hexcavator_macho::preferred_slice`).
-            let Some((_, slice)) = hexcavator_macho::preferred_slice(data) else {
+            // `turbonop_macho::preferred_slice`).
+            let Some((_, slice)) = turbonop_macho::preferred_slice(data) else {
                 return Err(Error::new(
                     ErrorKind::Unsupported,
                     0,
@@ -183,7 +183,7 @@ impl<'data> Image<'data> {
             };
             return MachO::parse(slice).map(Image::MachO);
         }
-        if hexcavator_wasm::is_wasm(data) {
+        if turbonop_wasm::is_wasm(data) {
             return Module::parse(data).map(Image::Wasm);
         }
         // A COFF object has no magic number, only a machine type. Accept
@@ -254,9 +254,9 @@ impl<'data> Image<'data> {
     pub fn kind(&self) -> Kind {
         match self {
             Image::Pe(pe) => match pe.kind() {
-                hexcavator_pe::FileKind::Image if pe::debug_only(pe) => Kind::Debug,
-                hexcavator_pe::FileKind::Image => Kind::Linked,
-                hexcavator_pe::FileKind::Object => Kind::Object,
+                turbonop_pe::FileKind::Image if pe::debug_only(pe) => Kind::Debug,
+                turbonop_pe::FileKind::Image => Kind::Linked,
+                turbonop_pe::FileKind::Object => Kind::Object,
             },
             Image::Elf(elf) => elf::kind(elf),
             Image::MachO(m) => macho::kind(m),
@@ -265,11 +265,11 @@ impl<'data> Image<'data> {
     }
 
     /// The byte order of its data.
-    pub fn endian(&self) -> hexcavator_core::Endian {
+    pub fn endian(&self) -> turbonop_core::Endian {
         match self {
             Image::Elf(elf) => elf.endian(),
             Image::MachO(m) => m.endian(),
-            Image::Pe(_) | Image::Wasm(_) => hexcavator_core::Endian::Little,
+            Image::Pe(_) | Image::Wasm(_) => turbonop_core::Endian::Little,
         }
     }
 
@@ -277,9 +277,9 @@ impl<'data> Image<'data> {
     /// code: see [`Image::hybrid`]).
     pub fn arch(&self) -> Arch {
         match self {
-            Image::Pe(pe) => hexcavator_pe::consts::machine::arch(pe.machine()),
-            Image::Elf(elf) => hexcavator_elf::arch(elf.header().machine, elf.class()),
-            Image::MachO(m) => hexcavator_macho::arch(m.header().cputype),
+            Image::Pe(pe) => turbonop_pe::consts::machine::arch(pe.machine()),
+            Image::Elf(elf) => turbonop_elf::arch(elf.header().machine, elf.class()),
+            Image::MachO(m) => turbonop_macho::arch(m.header().cputype),
             Image::Wasm(m) if m.is_memory64() => Arch::Wasm64,
             Image::Wasm(_) => Arch::Wasm32,
         }

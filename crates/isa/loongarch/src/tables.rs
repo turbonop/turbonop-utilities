@@ -4,7 +4,7 @@
 
 #![allow(clippy::unreadable_literal)]
 
-use hexcavator_tablegen::*;
+use turbonop_tablegen::*;
 
 pub static FEATURES: &[Feature] = &[
     Feature {

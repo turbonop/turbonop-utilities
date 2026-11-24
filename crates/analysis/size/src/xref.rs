@@ -1,4 +1,4 @@
-//! The cross-reference graph of a PE image (see `hexcavator_xref`), built
+//! The cross-reference graph of a PE image (see `turbonop_xref`), built
 //! from its symbols, code, relocations, and exception data, and what its
 //! roots reach.
 //!
@@ -25,12 +25,12 @@
 //!   block), and the initializer groups, whose entries the CRT calls
 //!   between bounds it names, not entry by entry.
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::consts::{directory, machine};
-use hexcavator_pe::exception::RuntimeFunction;
-use hexcavator_pe::reloc::base_reloc;
-use hexcavator_xref::{Arch, Builder, Edge, Graph, Node, Reach};
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::consts::{directory, machine};
+use turbonop_pe::exception::RuntimeFunction;
+use turbonop_pe::reloc::base_reloc;
+use turbonop_xref::{Arch, Builder, Edge, Graph, Node, Reach};
 
 use crate::Model;
 use crate::symbols::{Symbol, SymbolKind};
@@ -87,7 +87,7 @@ pub struct Xref {
     /// The instruction set of the image's code.
     pub arch: Arch,
     /// How its code is read (its words' byte order, MIPS's flags).
-    pub mode: hexcavator_code::Mode,
+    pub mode: turbonop_code::Mode,
     pub graph: Graph,
     /// Each node's name (its first symbol's, or a group's in brackets).
     pub names: Vec<String>,
@@ -229,8 +229,8 @@ fn is_initializer_group(name: &str) -> bool {
 /// The graph of `file`, with its debug information and the model and
 /// symbols built from it.
 pub fn pe(
-    image: &hexcavator_image::Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    image: &turbonop_image::Image<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     model: &Model,
     symbols: &[Symbol],
 ) -> Result<Xref, String> {
@@ -308,7 +308,7 @@ pub fn pe(
     // Each vtable's RTTI slot: the pointer just before it.
     let pointer_size: u64 = if file
         .optional_header()
-        .is_some_and(hexcavator_pe::OptionalHeader::is_64)
+        .is_some_and(turbonop_pe::OptionalHeader::is_64)
     {
         8
     } else {
@@ -465,7 +465,7 @@ pub fn pe(
     }
     if let Some(exports) = file.exports() {
         for e in exports.iter() {
-            if let hexcavator_pe::exports::ExportTarget::Rva(rva) = e.target
+            if let turbonop_pe::exports::ExportTarget::Rva(rva) = e.target
                 && let Some(n) = b.node_at(u64::from(rva.0))
             {
                 let name = e.name.map_or_else(
@@ -671,7 +671,7 @@ fn builder(mut nodes: Vec<(Node, Info)>) -> (Builder, Vec<Info>) {
 /// its LSDA (what is in it, to the next LSDA or its section's end: its
 /// type table's slots, which point to type information) and its
 /// personality routine (or the pointer to it).
-fn attach_exception_data(b: &mut Builder, image: &hexcavator_image::Image<'_>) {
+fn attach_exception_data(b: &mut Builder, image: &turbonop_image::Image<'_>) {
     let frames = crate::frames::frames(image);
     let tables: Vec<(u64, u64)> = image
         .sections()
@@ -726,10 +726,10 @@ fn finish(
     b: Builder,
     infos: &[Info],
     roots: Vec<(u32, Root)>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     arch: Arch,
     linker: Linker,
-    comdat: impl Fn(&hexcavator_debuginfo::Contribution) -> bool,
+    comdat: impl Fn(&turbonop_debuginfo::Contribution) -> bool,
 ) -> Result<Xref, String> {
     let mode = b.code_mode();
     let graph = b.finish();
@@ -799,8 +799,8 @@ fn finish(
 /// The cross-reference graph of an image: PE's (see [`pe`]) or ELF's
 /// (see [`elf`]).
 pub fn build(
-    image: &hexcavator_image::Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    image: &turbonop_image::Image<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     model: &Model,
     symbols: &[Symbol],
 ) -> Result<Xref, String> {
@@ -824,11 +824,11 @@ pub fn build(
 /// references, and the pointers the image's slots hold. The builder, the
 /// nodes' names, and the slots.
 fn common(
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
     model: &Model,
     symbols: &[Symbol],
     arch: Arch,
-) -> (Builder, Vec<Info>, Vec<hexcavator_image::PointerSlot>) {
+) -> (Builder, Vec<Info>, Vec<turbonop_image::PointerSlot>) {
     let executable = |addr: u64| {
         model
             .sections
@@ -843,7 +843,7 @@ fn common(
     got_entries(&mut b, image, model, &slots);
     // (Code's literals: its sections' words.)
     let width = u64::from(arch.pointer_size().unwrap_or(8));
-    let big = image.endian() == hexcavator_core::Endian::Big;
+    let big = image.endian() == turbonop_core::Endian::Big;
     let sections = image.sections();
     let literal = |at: u64| -> Option<u64> {
         if !executable(at) {
@@ -879,15 +879,15 @@ fn common(
 /// code that loads them (see [`Builder::through`]).
 fn got_entries(
     b: &mut Builder,
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
     model: &Model,
-    slots: &[hexcavator_image::PointerSlot],
+    slots: &[turbonop_image::PointerSlot],
 ) {
     if image.elf().is_none() {
         return;
     }
     let width = u64::from(image.arch().pointer_size().unwrap_or(8));
-    let big = image.endian() == hexcavator_core::Endian::Big;
+    let big = image.endian() == turbonop_core::Endian::Big;
     let relocated: rustc_hash::FxHashMap<u64, u64> = slots
         .iter()
         .filter_map(|s| Some((s.addr, s.target?)))
@@ -916,15 +916,15 @@ fn got_entries(
 }
 
 /// The file's bytes at an address: as many as its section has there.
-fn file_bytes<'d>(image: &hexcavator_image::Image<'d>, start: u64, len: u64) -> &'d [u8] {
+fn file_bytes<'d>(image: &turbonop_image::Image<'d>, start: u64, len: u64) -> &'d [u8] {
     file_bytes_in(image, &image.sections(), start, len)
 }
 
 /// [`file_bytes`], of `sections` (the image's, listed once: a
 /// WebAssembly module's take reading its names).
 fn file_bytes_in<'d>(
-    image: &hexcavator_image::Image<'d>,
-    sections: &[hexcavator_image::Section<'d>],
+    image: &turbonop_image::Image<'d>,
+    sections: &[turbonop_image::Section<'d>],
     start: u64,
     len: u64,
 ) -> &'d [u8] {
@@ -940,7 +940,7 @@ fn file_bytes_in<'d>(
 
 /// The functions the loader calls (see [`crate::loader_lists`]): roots,
 /// with what is in their lists' sections.
-fn loader_roots(b: &Builder, image: &hexcavator_image::Image<'_>, roots: &mut Vec<(u32, Root)>) {
+fn loader_roots(b: &Builder, image: &turbonop_image::Image<'_>, roots: &mut Vec<(u32, Root)>) {
     for l in crate::loader_lists::lists(image) {
         for &(_, to) in &l.entries {
             if let Some(n) = b.node_at(to) {
@@ -963,13 +963,13 @@ fn loader_roots(b: &Builder, image: &hexcavator_image::Image<'_>, roots: &mut Ve
 /// image's preferred base, or in a module's linear memory), as pointers.
 fn data_words(
     b: &mut Builder,
-    image: &hexcavator_image::Image<'_>,
+    image: &turbonop_image::Image<'_>,
     model: &Model,
     width: u64,
     target: impl Fn(u64) -> Option<u64>,
 ) {
     let starts: rustc_hash::FxHashSet<u64> = b.nodes().iter().map(|n| n.start).collect();
-    let big = image.endian() == hexcavator_core::Endian::Big;
+    let big = image.endian() == turbonop_core::Endian::Big;
     for s in model
         .sections
         .iter()
@@ -1048,12 +1048,12 @@ fn units_of_data(x: &mut Xref, symbols: &[Symbol], comdat: impl Fn(u32) -> bool)
 /// aren't: `-dead_strip` drops them). Contributions are
 /// compile units', taken as atoms `-dead_strip` could drop alone.
 pub fn macho(
-    image: &hexcavator_image::Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    image: &turbonop_image::Image<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     model: &Model,
     symbols: &[Symbol],
 ) -> Result<Xref, String> {
-    use hexcavator_macho::consts::*;
+    use turbonop_macho::consts::*;
     let m = image.macho().ok_or("not a Mach-O image")?;
     let arch = image.arch();
     if !matches!(arch, Arch::X64 | Arch::X86 | Arch::Arm64 | Arch::Arm) {
@@ -1144,7 +1144,7 @@ pub fn macho(
 /// it (its classes, categories, and protocols), or Swift's (its types,
 /// protocols, conformances, and dynamic replacements).
 fn macho_kept(sectname: &[u8], flags: u32) -> Option<&'static str> {
-    use hexcavator_macho::consts::S_ATTR_NO_DEAD_STRIP;
+    use turbonop_macho::consts::S_ATTR_NO_DEAD_STRIP;
     let kept = match sectname {
         b"__objc_classlist" | b"__objc_nlclslist" => {
             Some("an Objective-C class, which the runtime registers from its list")
@@ -1182,19 +1182,19 @@ fn macho_kept(sectname: &[u8], flags: u32) -> Option<&'static str> {
 /// wasm-ld, which drops functions and data as ELF linkers drop sections
 /// (`--gc-sections`).
 pub fn wasm(
-    image: &hexcavator_image::Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    image: &turbonop_image::Image<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     model: &Model,
     symbols: &[Symbol],
 ) -> Result<Xref, String> {
-    use hexcavator_wasm_isa::code;
+    use turbonop_wasm_isa::code;
     let m = image.wasm().ok_or("not a WebAssembly module")?;
     let arch = image.arch();
     let (mut b, infos, _) = common(image, model, symbols, arch);
     let code_at = m
         .sections()
         .iter()
-        .find(|s| s.id == hexcavator_wasm::SECTION_CODE)
+        .find(|s| s.id == turbonop_wasm::SECTION_CODE)
         .map_or(0, |s| s.contents_offset);
     // Each defined function's address: its body's (after its size), in
     // the code section.
@@ -1229,7 +1229,7 @@ pub fn wasm(
                 _ => None,
             };
             if let Some(v) = memory.filter(|&v| v != 0)
-                && let Some(to) = hexcavator_image::WASM_MEMORY.checked_add(v)
+                && let Some(to) = turbonop_image::WASM_MEMORY.checked_add(v)
                 && let Some(n) = b.node_at(to)
                 && !b.nodes()[n as usize].code
             {
@@ -1287,8 +1287,8 @@ pub fn wasm(
     }
     // Exported data: the image's data symbols from exported globals.
     for s in image.symbols() {
-        if s.kind == hexcavator_image::SymbolKind::Data
-            && s.source == hexcavator_image::SymbolSource::Exported
+        if s.kind == turbonop_image::SymbolKind::Data
+            && s.source == turbonop_image::SymbolSource::Exported
             && let Some(n) = b.node_at(s.addr)
             && b.nodes()[n as usize].start == s.addr
         {
@@ -1303,7 +1303,7 @@ pub fn wasm(
     let width = u64::from(arch.pointer_size().unwrap_or(4));
     data_words(&mut b, image, model, width, |v| {
         (v != 0)
-            .then(|| hexcavator_image::WASM_MEMORY.checked_add(v))
+            .then(|| turbonop_image::WASM_MEMORY.checked_add(v))
             .flatten()
     });
     let mut x = finish(b, &infos, roots, debug, arch, Linker::Elf, |_| true)?;
@@ -1331,12 +1331,12 @@ pub fn wasm(
 /// DWARF doesn't record: each is taken as one the linker could drop alone
 /// (as `-ffunction-sections` and `--gc-sections` make them).
 pub fn elf(
-    image: &hexcavator_image::Image<'_>,
-    debug: &hexcavator_debuginfo::DebugInfo<'_>,
+    image: &turbonop_image::Image<'_>,
+    debug: &turbonop_debuginfo::DebugInfo<'_>,
     model: &Model,
     symbols: &[Symbol],
 ) -> Result<Xref, String> {
-    use hexcavator_elf::consts::*;
+    use turbonop_elf::consts::*;
     let file = image.elf().ok_or("not an ELF image")?;
     let arch = image.arch();
     if !matches!(

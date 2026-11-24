@@ -4,8 +4,8 @@
 // Synthetic test data: small values, casts are exact.
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_unwind::windows_arm32::{self, Context, Op, Position, RuntimeFunction, reg};
-use hexcavator_unwind::{Error, Memory};
+use turbonop_unwind::windows_arm32::{self, Context, Op, Position, RuntimeFunction, reg};
+use turbonop_unwind::{Error, Memory};
 
 const BASE: u32 = 0x0040_0000;
 const STACK: u32 = 0x0010_0000;

@@ -1,7 +1,7 @@
 //! Lists the debug symbols whose names contain a string, with their
 //! modules: `symfind <pdb> <text>`.
 
-use hexcavator_debuginfo::DebugInfo;
+use turbonop_debuginfo::DebugInfo;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -9,7 +9,7 @@ fn main() {
         eprintln!("usage: symfind <pdb> <text>");
         std::process::exit(2);
     };
-    let map = hexcavator_mmap::Mmap::open(std::path::Path::new(pdb)).expect("pdb");
+    let map = turbonop_mmap::Mmap::open(std::path::Path::new(pdb)).expect("pdb");
     let debug = DebugInfo::parse(&map).expect("parse pdb");
     let comps = debug.compilands().unwrap();
     for s in debug

@@ -2,9 +2,9 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Rva;
-use hexcavator_pe::consts::section_characteristics as sc;
-use hexcavator_pe::{CodeView, FileKind, PeFile};
+use turbonop_core::Rva;
+use turbonop_pe::consts::section_characteristics as sc;
+use turbonop_pe::{CodeView, FileKind, PeFile};
 
 use crate::{DebugId, Format, Section, SectionFlags};
 
@@ -150,7 +150,7 @@ pub(crate) fn debug_only(pe: &PeFile<'_>) -> bool {
 }
 
 pub(crate) fn pointer_slots(pe: &PeFile<'_>) -> Vec<crate::PointerSlot> {
-    use hexcavator_pe::reloc::base_reloc;
+    use turbonop_pe::reloc::base_reloc;
     if pe.kind() == FileKind::Object {
         return Vec::new();
     }

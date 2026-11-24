@@ -3,8 +3,8 @@
 //! RV64 with the standard extensions on) decoded and written the same, or
 //! not decoded where LLVM decodes nothing.
 
-use hexcavator_riscv::format::format;
-use hexcavator_riscv::{Features, decode};
+use turbonop_riscv::format::format;
+use turbonop_riscv::{Features, decode};
 
 #[test]
 fn llvm_text() {

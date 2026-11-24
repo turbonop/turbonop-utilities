@@ -1,9 +1,9 @@
 //! How an image's objects were compiled, where the debug information
-//! records it ([`hexcavator_debuginfo::options`]), as it matters to its
+//! records it ([`turbonop_debuginfo::options`]), as it matters to its
 //! size: whether each object's functions are in sections of their own,
 //! which a linker can drop (`--gc-sections`) or fold (ICF) one by one.
 
-use hexcavator_debuginfo::{CompileOptions, DebugInfo};
+use turbonop_debuginfo::{CompileOptions, DebugInfo};
 
 /// The compile options of an image's compilands, by index.
 #[derive(Clone, Debug, Default)]

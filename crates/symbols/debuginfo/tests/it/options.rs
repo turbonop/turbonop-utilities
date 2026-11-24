@@ -2,7 +2,7 @@
 //! DWARF's DW_AT_producer, a `.GCC.command.line` section, and a PDB's
 //! S_COMPILE3 and LF_BUILDINFO.
 
-use hexcavator_debuginfo::DebugInfo;
+use turbonop_debuginfo::DebugInfo;
 
 fn testdata(path: &str) -> Vec<u8> {
     let p = format!("{}/../../../testdata/{path}", env!("CARGO_MANIFEST_DIR"));
@@ -10,7 +10,7 @@ fn testdata(path: &str) -> Vec<u8> {
 }
 
 /// Each compiland's (name, options).
-fn options(data: &[u8]) -> Vec<(String, hexcavator_debuginfo::CompileOptions)> {
+fn options(data: &[u8]) -> Vec<(String, turbonop_debuginfo::CompileOptions)> {
     let d = DebugInfo::parse(data).unwrap();
     let names = d.compilands().unwrap();
     let opts = d.compile_options().unwrap();

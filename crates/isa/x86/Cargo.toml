@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-x86"
+name = "turbonop-x86"
 description = "x86 / x86-64 instruction decoder and formatter"
 version.workspace = true
 edition.workspace = true

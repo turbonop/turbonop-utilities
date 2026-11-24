@@ -1,4 +1,4 @@
-//! Checks hexcavator-arm64 against a committed golden file of dumpbin's output:
+//! Checks turbonop-arm64 against a committed golden file of dumpbin's output:
 //! up to four words of every encoding dumpbin decodes, and words both
 //! reject. Runs everywhere; regenerate with `examples/golden.rs`.
 
@@ -20,7 +20,7 @@ fn golden() {
         let (word, expected) = rest.split_once(' ').unwrap_or((rest, ""));
         let word = u32::from_str_radix(word, 16).unwrap();
         if address == "-" {
-            if let Some(inst) = hexcavator_arm64::decode(word, 0) {
+            if let Some(inst) = turbonop_arm64::decode(word, 0) {
                 if NEWER.iter().any(|(name, _)| *name == inst.encoding_name()) {
                     continue;
                 }
@@ -31,14 +31,14 @@ fn golden() {
                 }
                 failures.push(format!(
                     "{word:08X}: expected invalid, got {}",
-                    hexcavator_arm64::format(&inst)
+                    turbonop_arm64::format(&inst)
                 ));
             }
             continue;
         }
         let address = u64::from_str_radix(address, 16).unwrap();
-        let ours = hexcavator_arm64::decode(word, address)
-            .map(|i| hexcavator_arm64::format(&i))
+        let ours = turbonop_arm64::decode(word, address)
+            .map(|i| turbonop_arm64::format(&i))
             .unwrap_or_default();
         if !ours.split_whitespace().eq(expected.split_whitespace()) {
             failures.push(format!("{word:08X}: expected '{expected}', got '{ours}'"));

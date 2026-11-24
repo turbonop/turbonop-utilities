@@ -3,7 +3,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use hexcavator_size::pe::Unsupported;
+use turbonop_size::pe::Unsupported;
 
 /// Why a program couldn't be opened or analyzed. Each names the file it is
 /// about; as text, it reads `path: what` (as the command line prints it).
@@ -23,7 +23,7 @@ pub enum Error {
         /// The file.
         path: PathBuf,
         /// What is wrong.
-        error: hexcavator_core::Error,
+        error: turbonop_core::Error,
     },
     /// The image can't be analyzed (managed code; a `/DEBUG:FASTLINK`
     /// PDB; debug information of another image).
@@ -88,7 +88,7 @@ impl fmt::Display for Error {
             }
             Error::IsCode { path, name } => write!(
                 f,
-                "{}: '{name}' is code: see hexcavator size -disassemble",
+                "{}: '{name}' is code, not data: disassemble it instead",
                 path.display()
             ),
         }
@@ -122,7 +122,7 @@ impl Error {
 
     pub(crate) fn format(
         path: &std::path::Path,
-    ) -> impl FnOnce(hexcavator_core::Error) -> Error + '_ {
+    ) -> impl FnOnce(turbonop_core::Error) -> Error + '_ {
         move |error| Error::Format {
             path: path.to_path_buf(),
             error,

@@ -1,7 +1,7 @@
 //! The xz decoder (MiniDebugInfo's container) against streams Python's
 //! lzma module (liblzma) wrote: testdata/xz, from tools/elf/minidebuginfo.py.
 
-use hexcavator_debuginfo::decompress::xz;
+use turbonop_debuginfo::decompress::xz;
 
 fn testdata(name: &str) -> Vec<u8> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-minidump"
+name = "turbonop-minidump"
 description = "Minidumps (MDMP): Windows, Breakpad, and Crashpad crash dumps (threads, modules, memory, exception, system information)"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
 
 [lints]
 workspace = true

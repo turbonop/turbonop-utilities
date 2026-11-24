@@ -1,9 +1,9 @@
-//! An image's symbols as a table to query (see `hexcavator_query`): one
+//! An image's symbols as a table to query (see `turbonop_query`): one
 //! row per symbol, with where it is and where it came from.
 
 use std::borrow::Cow;
 
-use hexcavator_query::{Column, Kind, Table, Value};
+use turbonop_query::{Column, Kind, Table, Value};
 
 use crate::Model;
 use crate::symbols::Symbol;
@@ -103,18 +103,18 @@ fn text(name: Option<&str>) -> Value<'_> {
 pub struct SymbolTable<'a> {
     model: &'a Model,
     symbols: &'a [Symbol],
-    modules: &'a [hexcavator_debuginfo::Compiland],
+    modules: &'a [turbonop_debuginfo::Compiland],
     /// Each symbol's section and group (indexes, or `u32::MAX`).
     places: Vec<(u32, u32)>,
     /// The line tables, if given.
-    lines: Option<&'a hexcavator_debuginfo::SourceLines>,
+    lines: Option<&'a turbonop_debuginfo::SourceLines>,
 }
 
 impl<'a> SymbolTable<'a> {
     pub fn new(
         model: &'a Model,
         symbols: &'a [Symbol],
-        modules: &'a [hexcavator_debuginfo::Compiland],
+        modules: &'a [turbonop_debuginfo::Compiland],
     ) -> Self {
         let find = |addr: u64, starts: &[(u64, u64)]| -> u32 {
             let i = starts.partition_point(|s| s.0 <= addr);
@@ -147,13 +147,13 @@ impl<'a> SymbolTable<'a> {
     }
 
     /// With the line tables, for the `file` and `line` columns.
-    pub fn with_lines(mut self, lines: &'a hexcavator_debuginfo::SourceLines) -> Self {
+    pub fn with_lines(mut self, lines: &'a turbonop_debuginfo::SourceLines) -> Self {
         self.lines = Some(lines);
         self
     }
 
     /// The line span at `addr`.
-    fn line_at(&self, addr: u64) -> Option<&'a hexcavator_debuginfo::LineSpan> {
+    fn line_at(&self, addr: u64) -> Option<&'a turbonop_debuginfo::LineSpan> {
         let spans = &self.lines?.spans;
         let i = spans.partition_point(|s| s.addr <= addr);
         spans[..i].last().filter(|s| addr < s.addr + s.size)

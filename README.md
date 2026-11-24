@@ -1,67 +1,16 @@
-# Hexcavator
+# TurboNOP Utilities
 
-*Dig into your binaries.*
+Fast, free tools for looking inside programs, from TurboNOP Systems. The
+tools share one set of libraries (`crates/`): file formats, debug
+information, instruction decoders, demanglers, and analyses, written here
+and kept fast.
 
-A fast, free toolkit for exploring executables and their debug information:
-what a binary holds, how it was built, what its code refers to and why,
-and where its bytes go.
-
-- **Formats:** PE images, COFF objects, and libraries; ELF and Mach-O
-  (thin and universal) files and archives; WebAssembly modules; and
-  MS-DOS, NE, LE, and LX executables.
-- **Debug information:** PDBs (CodeView symbols, types, and lines) and
-  DWARF (in the file, beside it, in a dSYM, or from a symbol server or
-  debuginfod), for any format: a MinGW-built PE image's DWARF too, and a
-  relocatable object's (ELF, COFF, WebAssembly), relocated; and a COFF
-  object's own CodeView, read as the PDB a linker would write of it.
-- **Every format alike:** each command and analysis reads PE, ELF,
-  Mach-O, and WebAssembly images the same way, with whatever debug
-  information they have (`-debug <path>` gives it; `-pdb` is another name
-  for it).
-- **Exploring:** headers and file-format dumps (as `dumpbin`,
-  `llvm-readobj`, and `llvm-dwarfdump` show them), symbols, type layouts,
-  source files and line tables, inlined functions, data values,
-  disassembly (x86/x64, ARM64, ARM32, RISC-V, LoongArch, PowerPC, MIPS, WebAssembly), demangled names
-  (Microsoft C++, Itanium C++, Rust, Swift), code signatures checked on
-  any platform, and exploit mitigations and the compiler options behind
-  them.
-- **Analysis:** cross-references (why each function and datum is in the
-  image), function fingerprints that survive rebuilds, build-to-build
-  diffs, queries over an image's symbols, and size reports with measured
-  recommendations.
-
-`hexcavator` does all of it on the command line, with JSON for scripts and CI,
-and as an MCP server for AI agents. The VS Code extension
-(`editors/vscode/hexcavator`) puts it in a sidebar of binaries and builds
-compared.
-
-## Getting it
-
-Each release has `hexcavator` for each platform as a single program,
-named by its target triple. The newest is always at
-`https://github.com/hexcavator/hexcavator/releases/latest/download/<name>`:
-
-| Platform | Program |
+| Tool | What it is |
 | --- | --- |
-| Windows x64 | `hexcavator-x86_64-pc-windows-msvc.exe` |
-| Windows ARM64 | `hexcavator-aarch64-pc-windows-msvc.exe` |
-| macOS (Apple silicon) | `hexcavator-aarch64-apple-darwin` |
-| macOS (Intel) | `hexcavator-x86_64-apple-darwin` |
-| Linux x64 (static: any distribution) | `hexcavator-x86_64-unknown-linux-musl` |
-| Linux ARM64 (static: any distribution) | `hexcavator-aarch64-unknown-linux-musl` |
-| WASI (wasmtime and the like) | `hexcavator-wasm32-wasip1.wasm` |
+| [Hexcavator](apps/hexcavator/README.md) (`apps/hexcavator`) | *Dig into your binaries.* Executables, objects, libraries, and WebAssembly modules with their debug information: on the command line, as an MCP server, in VS Code, and in a browser |
 
-The Windows programs are signed; the macOS ones are signed and
-notarized. Each program's symbols are beside it
-(`<name>-symbols.zip` or `.tar.gz`), and `SHA256SUMS` has every file's
-hash. On Windows, winget installs it too: `winget install
-Hexcavator.Hexcavator`.
-
-Or use it in a browser, nothing to install: the web version
-(https://hexcavator.github.io/hexcavator/) is the VS Code extension's
-sidebar and views with hexcavator compiled to WebAssembly. Drop a binary
-and its debug information on the page; nothing leaves your computer (see
-`editors/web`).
+Each tool is released on its own, with tags named for it
+(`hexcavator-v0.0.8`).
 
 ## Principles
 
@@ -75,7 +24,7 @@ and its debug information on the page; nothing leaves your computer (see
   On-disk integers have an explicit byte order (`U32Le`, `U32Be`, or a
   runtime `Endian`), on-disk structures have alignment 1, and target-derived
   sizes are `u64` until checked against the host buffer. Host-specific code
-  lives only in `hexcavator-mmap`.
+  lives only in `turbonop-mmap`.
 - **Hostile input.** Parsers never panic on malformed data; they return
   errors or partial results.
 - **Read view and edit model are separate.** Reading is a borrowed view; editing
@@ -85,48 +34,48 @@ and its debug information on the page; nothing leaves your computer (see
 
 | Crate | Purpose |
 |---|---|
-| `crates/base/core` (`hexcavator-core`) | Endian types, `Pod` overlays, bounds-checked readers, typed addresses, a bump arena |
-| `crates/base/mmap` (`hexcavator-mmap`) | Read-only file mapping (Win32 / POSIX `mmap`) |
-| `crates/formats/archive` (`hexcavator-archive`) | `ar` archives (`.lib`, `.a`) in their GNU, Microsoft, and BSD forms, and thin archives: members, long names, symbol tables |
-| `crates/formats/elf` (`hexcavator-elf`) | ELF files of either class and byte order: headers (extended numbering), segments, sections, symbols, notes and build IDs, relocations, `.eh_frame`/`.eh_frame_hdr` |
-| `crates/formats/etl` (`hexcavator-etl`) | Reader for Windows event trace log (ETL) files |
-| `crates/formats/image` (`hexcavator-image`) | A format-independent view of executables and objects: architecture, sections, debug identity |
-| `crates/formats/linkerlog` (`hexcavator-linkerlog`) | The MSVC linker's `/VERBOSE` output: why each library member was linked, what `/OPT:REF` discarded and `/OPT:ICF` folded |
-| `crates/formats/linkmap` (`hexcavator-linkmap`) | Linker maps (MSVC `/MAP` so far): COFF groups, and every symbol with its object and library |
-| `crates/formats/lx` (`hexcavator-lx`) | LE and LX (linear executable) files: VxDs, DOS extenders, and 32-bit OS/2 modules |
-| `crates/formats/macho` (`hexcavator-macho`) | Mach-O files of either width and byte order, and universal files: load commands, segments, sections, symbols, link-edit tables |
-| `crates/formats/minidump` (`hexcavator-minidump`) | Minidumps (MDMP): Windows, Breakpad, and Crashpad crash dumps (threads, modules, memory, exception, system information) |
-| `crates/formats/mz` (`hexcavator-mz`) | MS-DOS MZ headers; dispatch to PE/NE/LE/LX new headers |
-| `crates/formats/ne` (`hexcavator-ne`) | 16-bit NE (New Executable) files: Windows 1.x-3.x and OS/2 1.x modules and fonts |
-| `crates/formats/pe` (`hexcavator-pe`) | PE images and COFF objects: headers, sections, symbols, RVA mapping, debug directory, imports, exports, relocations, load config (Guard CF, DVRT, CHPE/ARM64EC metadata), exception and unwind data, C++ EH and SEH handler data, TLS; Visual C++ LTCG (`/GL`) objects' IL |
-| `crates/formats/signature` (`hexcavator-signature`) | Code signatures, verified the same on every platform: DER, X.509, CMS, Authenticode (nested signatures, RFC 3161 and PKCS #9 timestamps), and Apple code signing (code directories, page hashes, requirements, entitlements); the cryptography is RustCrypto's, trust a bundled set of roots |
-| `crates/formats/wasm` (`hexcavator-wasm`) | WebAssembly modules: sections, the name section, imports, globals, function bodies, data segments |
-| `crates/symbols/codeview` (`hexcavator-codeview`) | CodeView records, as cvinfo.h defines them: symbols, types (with a C++-style formatter and type layouts), C13 line and checksum subsections, inline annotations, register numbers |
-| `crates/symbols/debuginfo` (`hexcavator-debuginfo`) | A format-independent view of debug information (a PDB, DWARF, or a COFF object's CodeView, as a PDB): compilands, contributions, groups, symbols, types, lines, and finding an image's |
-| `crates/symbols/demangle` (`hexcavator-demangle`) | Symbol demanglers: Microsoft C++ (a syntax tree of the name, for queries, printed exactly as `UnDecorateSymbolName` does), Itanium C++, Rust (v0 and legacy), and Swift |
-| `crates/symbols/dwarf` (`hexcavator-dwarf`) | DWARF 2-5: units, abbreviations, DIEs and attributes, string and address indirection, range and location lists, aranges, name tables, each with where its bytes lie |
-| `crates/symbols/pdb` (`hexcavator-pdb`) | The PDB container: MSF, info, DBI, TPI/IPI with their hash streams, publics and globals, module streams |
-| `crates/symbols/symbolize` (`hexcavator-symbolize`) | Finding an image's symbols and the function at an address, for traces and dumps |
-| `crates/isa/arm32` (`hexcavator-arm32`) | AArch32 (A32 and T32) instruction decoder |
-| `crates/isa/riscv` (`hexcavator-riscv`) | RISC-V instruction decoder (RV32 and RV64, the standard extensions: compressed, vector, crypto, ...), from LLVM's TableGen records, written as LLVM writes it |
-| `crates/isa/loongarch` (`hexcavator-loongarch`) | LoongArch instruction decoder (LA32 and LA64; FP, LSX, LASX, LVZ, LBT), from LLVM's TableGen records, written as LLVM writes it |
-| `crates/isa/powerpc` (`hexcavator-powerpc`) | PowerPC instruction decoder (32- and 64-bit, big- and little-endian; Altivec, VSX, ISA 3.1's prefixed instructions, MMA), from LLVM's TableGen records, written as llvm-objdump writes it |
-| `crates/isa/mips` (`hexcavator-mips`) | MIPS instruction decoder (MIPS I to MIPS64 Release 6, big- and little-endian; MSA, DSP, Octeon; microMIPS, its 16- and 32-bit instructions and Release 6's), from LLVM's TableGen records, written as llvm-objdump writes it |
-| `crates/isa/tablegen` (`hexcavator-tablegen`) | Instruction decoding by tables generated from LLVM's TableGen records (`tools/tablegen`): the decoder, aliases, complex operands, and compressed instructions' full forms that the RISC-V, LoongArch, PowerPC, and MIPS crates share |
-| `crates/isa/arm64` (`hexcavator-arm64`) | AArch64 decoder (base, FP, AdvSIMD, SVE/SVE2, SME/SME2, ...) generated from Arm's AARCHMRS and LLVM's AArch64 target, with a dumpbin-style formatter |
-| `crates/isa/wasm` (`hexcavator-wasm-isa`) | The WebAssembly instruction decoder (the whole instruction set, through GC, threads, and relaxed SIMD) with text output |
-| `crates/isa/x86` (`hexcavator-x86`) | x86/x86-64 decoder (legacy, x87, SSE, AVX, AVX-512, AMX, ...) and dumpbin-style formatter |
-| `crates/debug/unwind` (`hexcavator-unwind`) | Virtual stack unwinders: recover a caller's registers from a frame's registers, its stack, and the image's unwind data (Windows' `.pdata`, DWARF CFI, Apple's compact unwind, ARM EHABI), picked for an image of any format |
-| `crates/analysis/code` (`hexcavator-code`) | Code independent of the instruction set: instructions' control flow, and functions' basic blocks |
-| `crates/analysis/fingerprint` (`hexcavator-fingerprint`) | Fingerprints of functions and data that don't depend on where they are: instructions with addresses masked, then what they refer to, refined until stable (as linkers fold identical code), so builds compare and unfolded duplicates show |
-| `crates/analysis/program` (`hexcavator-program`) | Loading a program once: an image, its debug information, its model and symbols, for every analysis and front end |
-| `crates/analysis/query` (`hexcavator-query`) | A small query language over tables of an image's facts: filters, grouping with counts and summed sizes, sorting, limits; shared by `hexcavator query` and the MCP server |
-| `crates/analysis/size` (`hexcavator-size`) | Size attribution: which sections, COFF groups, libraries, compilands, and symbols account for each byte (a SizeBench replacement), and bloaty-style reports by data source for images, objects, and libraries |
-| `crates/analysis/deps` (`hexcavator-deps`) | What an executable or library loads: its libraries, found as each platform's loader would find them (PE, ELF, Mach-O), and the imports they lack |
-| `crates/analysis/xref` (`hexcavator-xref`) | Cross-references: a graph of what each function and datum refers to (calls, branches, addresses code uses, pointers in data), found by disassembly, and why each is reachable from the image's roots |
-| `crates/trace/etw` (`hexcavator-etw`) | Decoders for Windows kernel and trace-control events in ETL files |
-| `crates/trace/trace` (`hexcavator-trace`) | A platform-neutral model of performance traces, and importers that build it |
-| `crates/trace/trace-analysis` (`hexcavator-trace-analysis`) | Queries over traces: stack trees, callers and callees, CPU and wait analysis |
+| `crates/base/core` (`turbonop-core`) | Endian types, `Pod` overlays, bounds-checked readers, typed addresses, a bump arena |
+| `crates/base/mmap` (`turbonop-mmap`) | Read-only file mapping (Win32 / POSIX `mmap`) |
+| `crates/formats/archive` (`turbonop-archive`) | `ar` archives (`.lib`, `.a`) in their GNU, Microsoft, and BSD forms, and thin archives: members, long names, symbol tables |
+| `crates/formats/elf` (`turbonop-elf`) | ELF files of either class and byte order: headers (extended numbering), segments, sections, symbols, notes and build IDs, relocations, `.eh_frame`/`.eh_frame_hdr` |
+| `crates/formats/etl` (`turbonop-etl`) | Reader for Windows event trace log (ETL) files |
+| `crates/formats/image` (`turbonop-image`) | A format-independent view of executables and objects: architecture, sections, debug identity |
+| `crates/formats/linkerlog` (`turbonop-linkerlog`) | The MSVC linker's `/VERBOSE` output: why each library member was linked, what `/OPT:REF` discarded and `/OPT:ICF` folded |
+| `crates/formats/linkmap` (`turbonop-linkmap`) | Linker maps (MSVC `/MAP` so far): COFF groups, and every symbol with its object and library |
+| `crates/formats/lx` (`turbonop-lx`) | LE and LX (linear executable) files: VxDs, DOS extenders, and 32-bit OS/2 modules |
+| `crates/formats/macho` (`turbonop-macho`) | Mach-O files of either width and byte order, and universal files: load commands, segments, sections, symbols, link-edit tables |
+| `crates/formats/minidump` (`turbonop-minidump`) | Minidumps (MDMP): Windows, Breakpad, and Crashpad crash dumps (threads, modules, memory, exception, system information) |
+| `crates/formats/mz` (`turbonop-mz`) | MS-DOS MZ headers; dispatch to PE/NE/LE/LX new headers |
+| `crates/formats/ne` (`turbonop-ne`) | 16-bit NE (New Executable) files: Windows 1.x-3.x and OS/2 1.x modules and fonts |
+| `crates/formats/pe` (`turbonop-pe`) | PE images and COFF objects: headers, sections, symbols, RVA mapping, debug directory, imports, exports, relocations, load config (Guard CF, DVRT, CHPE/ARM64EC metadata), exception and unwind data, C++ EH and SEH handler data, TLS; Visual C++ LTCG (`/GL`) objects' IL |
+| `crates/formats/signature` (`turbonop-signature`) | Code signatures, verified the same on every platform: DER, X.509, CMS, Authenticode (nested signatures, RFC 3161 and PKCS #9 timestamps), and Apple code signing (code directories, page hashes, requirements, entitlements); the cryptography is RustCrypto's, trust a bundled set of roots |
+| `crates/formats/wasm` (`turbonop-wasm`) | WebAssembly modules: sections, the name section, imports, globals, function bodies, data segments |
+| `crates/symbols/codeview` (`turbonop-codeview`) | CodeView records, as cvinfo.h defines them: symbols, types (with a C++-style formatter and type layouts), C13 line and checksum subsections, inline annotations, register numbers |
+| `crates/symbols/debuginfo` (`turbonop-debuginfo`) | A format-independent view of debug information (a PDB, DWARF, or a COFF object's CodeView, as a PDB): compilands, contributions, groups, symbols, types, lines, and finding an image's |
+| `crates/symbols/demangle` (`turbonop-demangle`) | Symbol demanglers: Microsoft C++ (a syntax tree of the name, for queries, printed exactly as `UnDecorateSymbolName` does), Itanium C++, Rust (v0 and legacy), and Swift |
+| `crates/symbols/dwarf` (`turbonop-dwarf`) | DWARF 2-5: units, abbreviations, DIEs and attributes, string and address indirection, range and location lists, aranges, name tables, each with where its bytes lie |
+| `crates/symbols/pdb` (`turbonop-pdb`) | The PDB container: MSF, info, DBI, TPI/IPI with their hash streams, publics and globals, module streams |
+| `crates/symbols/symbolize` (`turbonop-symbolize`) | Finding an image's symbols and the function at an address, for traces and dumps |
+| `crates/isa/arm32` (`turbonop-arm32`) | AArch32 (A32 and T32) instruction decoder |
+| `crates/isa/riscv` (`turbonop-riscv`) | RISC-V instruction decoder (RV32 and RV64, the standard extensions: compressed, vector, crypto, ...), from LLVM's TableGen records, written as LLVM writes it |
+| `crates/isa/loongarch` (`turbonop-loongarch`) | LoongArch instruction decoder (LA32 and LA64; FP, LSX, LASX, LVZ, LBT), from LLVM's TableGen records, written as LLVM writes it |
+| `crates/isa/powerpc` (`turbonop-powerpc`) | PowerPC instruction decoder (32- and 64-bit, big- and little-endian; Altivec, VSX, ISA 3.1's prefixed instructions, MMA), from LLVM's TableGen records, written as llvm-objdump writes it |
+| `crates/isa/mips` (`turbonop-mips`) | MIPS instruction decoder (MIPS I to MIPS64 Release 6, big- and little-endian; MSA, DSP, Octeon; microMIPS, its 16- and 32-bit instructions and Release 6's), from LLVM's TableGen records, written as llvm-objdump writes it |
+| `crates/isa/tablegen` (`turbonop-tablegen`) | Instruction decoding by tables generated from LLVM's TableGen records (`tools/tablegen`): the decoder, aliases, complex operands, and compressed instructions' full forms that the RISC-V, LoongArch, PowerPC, and MIPS crates share |
+| `crates/isa/arm64` (`turbonop-arm64`) | AArch64 decoder (base, FP, AdvSIMD, SVE/SVE2, SME/SME2, ...) generated from Arm's AARCHMRS and LLVM's AArch64 target, with a dumpbin-style formatter |
+| `crates/isa/wasm` (`turbonop-wasm-isa`) | The WebAssembly instruction decoder (the whole instruction set, through GC, threads, and relaxed SIMD) with text output |
+| `crates/isa/x86` (`turbonop-x86`) | x86/x86-64 decoder (legacy, x87, SSE, AVX, AVX-512, AMX, ...) and dumpbin-style formatter |
+| `crates/debug/unwind` (`turbonop-unwind`) | Virtual stack unwinders: recover a caller's registers from a frame's registers, its stack, and the image's unwind data (Windows' `.pdata`, DWARF CFI, Apple's compact unwind, ARM EHABI), picked for an image of any format |
+| `crates/analysis/code` (`turbonop-code`) | Code independent of the instruction set: instructions' control flow, and functions' basic blocks |
+| `crates/analysis/fingerprint` (`turbonop-fingerprint`) | Fingerprints of functions and data that don't depend on where they are: instructions with addresses masked, then what they refer to, refined until stable (as linkers fold identical code), so builds compare and unfolded duplicates show |
+| `crates/analysis/program` (`turbonop-program`) | Loading a program once: an image, its debug information, its model and symbols, for every analysis and front end |
+| `crates/analysis/query` (`turbonop-query`) | A small query language over tables of an image's facts: filters, grouping with counts and summed sizes, sorting, limits; shared by `hexcavator query` and the MCP server |
+| `crates/analysis/size` (`turbonop-size`) | Size attribution: which sections, COFF groups, libraries, compilands, and symbols account for each byte (a SizeBench replacement), and bloaty-style reports by data source for images, objects, and libraries |
+| `crates/analysis/deps` (`turbonop-deps`) | What an executable or library loads: its libraries, found as each platform's loader would find them (PE, ELF, Mach-O), and the imports they lack |
+| `crates/analysis/xref` (`turbonop-xref`) | Cross-references: a graph of what each function and datum refers to (calls, branches, addresses code uses, pointers in data), found by disassembly, and why each is reachable from the image's roots |
+| `crates/trace/etw` (`turbonop-etw`) | Decoders for Windows kernel and trace-control events in ETL files |
+| `crates/trace/trace` (`turbonop-trace`) | A platform-neutral model of performance traces, and importers that build it |
+| `crates/trace/trace-analysis` (`turbonop-trace-analysis`) | Queries over traces: stack trees, callers and callees, CPU and wait analysis |
 | `apps/hexcavator` | `hexcavator`: the command line, the MCP server for agents, and the server the VS Code extension runs |
 | `apps/fuzz` | The fuzzer: every parser and command, on mutated inputs, for crashes, hangs, and blowups |
 | `apps/xtask` | Development tasks: `cargo xtask test` builds every test and runs them all at once |
@@ -150,7 +99,7 @@ path).
 
 `cargo xtask test` builds every test and runs all the test binaries at
 once (`cargo test` runs them one after another): about five seconds once
-built. Arguments go to `cargo test` (`-p hexcavator-x86`), and after
+built. Arguments go to `cargo test` (`-p turbonop-x86`), and after
 `--` to the test binaries (a name filter). Each crate's integration
 tests are one binary, `tests/it`, a module per file.
 
@@ -174,9 +123,9 @@ The dumpbin comparison covers system images, the fixtures in `tools/fixtures`
 as dumpbin does, and decodes the handler data the way dumpbin does: by what
 it looks like, not by which handler it belongs to.
 
-### hexcavator-x86 testing
+### turbonop-x86 testing
 
-`hexcavator-x86`'s opcode tables (`crates/isa/x86/tables/*.txt`) are written in the
+`turbonop-x86`'s opcode tables (`crates/isa/x86/tables/*.txt`) are written in the
 Intel SDM's operand notation and compiled by `build.rs`. They are checked
 against `dumpbin /disasm` by enumerating whole opcode spaces (every opcode with
 every ModRM byte under prefix, VEX, and EVEX field combinations: about 11
@@ -188,9 +137,9 @@ copying dumpbin. A sample of the agreed results is kept in
 every host. Not yet supported: AVX512-FP16, most of AVX10.2, APX (REX2 is
 decoded; EVEX promotions are not), AMX-AVX512, and Xeon Phi extensions.
 
-### hexcavator-arm64 testing
+### turbonop-arm64 testing
 
-`hexcavator-arm64`'s tables (`crates/isa/arm64/tables/a64.txt`) are generated by
+`turbonop-arm64`'s tables (`crates/isa/arm64/tables/a64.txt`) are generated by
 `tools/arm64/extract.py` from openly licensed sources only: Arm's Machine
 Readable Specification (AARCHMRS) and LLVM's AArch64 target (neither is
 needed to build). They hold every encoding's fixed bits, its
@@ -204,9 +153,9 @@ encodings ARM reserves that dumpbin decodes anyway, and dumpbin's bugs (in
 `crates/isa/arm64/tests/dumpbin.rs`). `crates/isa/arm64/tests/data/golden.txt` keeps up
 to four agreed words of every encoding for the hermetic test.
 
-### hexcavator-demangle testing
+### turbonop-demangle testing
 
-`hexcavator-demangle` parses a decorated name into a tree in an arena (so a
+`turbonop-demangle` parses a decorated name into a tree in an arena (so a
 `Demangler` reused across names allocates nothing once warm), with limits
 on nesting depth and on the work back-references can cause, since names
 come from untrusted files. Its output was compared with `undname` (which
@@ -220,7 +169,7 @@ template's own name as a back-reference, and cannot read names containing
 `crates/symbols/demangle/tests/data/golden.txt` keeps a sample for the hermetic
 test.
 
-### hexcavator-size testing
+### turbonop-size testing
 
 `hexcavator size -sizebench <image>` prints the analysis in the form
 `tools/sizebench-oracle` prints SizeBench's. `testdata/sizebench` holds
@@ -239,296 +188,7 @@ catch-all fallbacks, table entries charged to the symbols they describe),
 with its bugs classified and not copied (see `crates/analysis/size/src/elf.rs`).
 `testdata/elf` holds clang/ld.lld output for x86-64, i386, AArch64 (both
 byte orders), and big-endian ARM, built by `tools/elf/build.cmd` with the
-`llvm-readobj` dumps that `hexcavator-elf` is checked against field by field.
-
-## Using hexcavator
-
-`hexcavator help` lists the commands. `hexcavator info` identifies files, `hexcavator dump`,
-`hexcavator pdb`, and `hexcavator dwarf` show their contents, and the commands below
-analyze them. Most analyses take `-json` for scripts and CI, and the
-tabular ones `-csv` or `-tsv` too. `hexcavator ltcg` dumps Visual C++ LTCG
-objects (`/GL`), and libraries of them: the compiler's intermediate
-language, undocumented, read as far as it is known (the back end and its
-command line, the source files and their checksums, the linker
-directives, the functions and variables, and the CodeView types).
-
-### Size analysis
-
-```
-hexcavator size app.exe                          # sections (and COFF groups), libraries, compilands, by its debug information
-hexcavator size -d sections,symbols app.exe      # bloaty-style: every byte, by data sources, a level each
-hexcavator size -d compileunits -n 10 app.exe -- old\app.exe   # a diff against another build
-hexcavator size -d armembers,symbols foo.lib     # objects, import objects, and libraries need no PDB
-hexcavator size -d segments,symbols app.elf      # ELF executables, shared objects, objects, and .a archives too
-hexcavator size -d archs,segments App.app/App    # Mach-O and universal files too
-hexcavator size -d symbols app.wasm              # and WebAssembly modules
-hexcavator size -disassemble main app.wasm      # one function's code (PE, ELF, Mach-O, WebAssembly), calls named
-hexcavator size -d compileunits -debug-file app.debug app  # DWARF in a separate file (a dSYM next to a Mach-O image is found)
-hexcavator size -d compileunits,symbols app.elf  # ELF compile units from DWARF; symbols demangled (fullsymbols, rawsymbols)
-hexcavator size -d symbols -source-filter '^std::' app  # only labels a regular expression matches
-hexcavator size -stripped -d symbols app.elf     # as if stripped: DWARF and .symtab name things but aren't counted
-hexcavator size -c project.bloaty app             # bloaty config files: custom sources rewriting labels
-hexcavator size -list-sources                    # sections, segments, groups, symbols, compileunits, ...
-hexcavator size -findings app.exe                # what wastes space (duplicate data, template bloat), with advice
-hexcavator size -map app.map app.exe             # no PDB? the linker's map attributes symbols to objects and libraries
-hexcavator linkerlog link.log -image app.exe     # the largest library members, and why each was linked
-hexcavator linkerlog link.log -why gshandler.obj # why one was (from `link ... /VERBOSE > link.log`, or lld's --why-extract)
-hexcavator linkerlog new.log -- old.log          # members linked now and not before, and why
-```
-
-Reports print as bloaty prints them, or with `-csv`, `-tsv`, or `-json`.
-
-### Queries
-
-```
-hexcavator query app.exe "kind=function file>4k sort by file desc limit 20"
-hexcavator query app.exe "group by library"                       # count, file and memory bytes per library
-hexcavator query app.exe "name~'^std::' group by compiland limit 10"
-hexcavator query app.exe "static group by name sort by count desc" # file-scope variables copied into many objects
-hexcavator query -columns                                         # name, kind, file, vm, rva, section, group, compiland, library, folded, static, source, line
-```
-
-A query is a filter (`column op value`, joined by `and` or a space, `or`,
-`not`, and parentheses; `~` is a regular expression; numbers take `k`, `M`,
-`G`), then any of `group by`, `sort by ... [desc]`, `select`, and `limit`.
-Output is a table, `-csv`, or `-json`; the MCP server's `query` tool takes
-the same language.
-
-### Dependencies
-
-```
-hexcavator deps app.exe                          # what it loads, as a tree, and what's missing
-hexcavator deps -imports app.exe                 # each library's imported symbols, the missing marked
-hexcavator deps -problems app.exe                # only what's missing (exit 1 if it won't load)
-hexcavator deps -sysroot /mnt/linux-root prog    # another system's libraries (an ELF or Mach-O image on Windows)
-```
-
-Like Dependency Walker, for PE, ELF, and Mach-O, from the files alone:
-each platform's loader search (known DLLs, the application's directory,
-`System32` or `SysWOW64`, API sets by the system's API set schema,
-side-by-side assemblies in `WinSxS`; rpath, runpath, `ld.so.conf`, the
-default directories; `@rpath`, `@loader_path`, `@executable_path`, the
-dyld shared cache), each library's architecture checked, and imports
-against exports (PE functions by name and ordinal, forwarders followed; ELF
-symbols with their versions; Mach-O binds, re-exports followed). System
-libraries are leaves unless `-system`. `tools/deps` builds the test's
-images, each platform's with a system of stand-ins.
-
-### Signatures
-
-```
-hexcavator signature app.exe                     # its company, product, and versions; Authenticode: signer, timestamp, chain, and whether it's unchanged and trusted
-hexcavator signature -json App.app/Contents/MacOS/App   # Apple code signing: each architecture's pages, cdhashes, requirements, Developer ID
-hexcavator signature -root my-ca.cer app.exe     # trust another root too (DER or PEM)
-```
-
-A Windows binary verifies on macOS or Linux, and a Mac binary on Windows:
-the file's hash, the signer's signature, each certificate of the chain,
-the timestamps, and what each certificate may be used for are checked here,
-with RustCrypto's hashes, RSA, and ECDSA. Trust is a bundled list of roots
-(Microsoft's, Apple's, and the public code-signing and timestamping
-authorities; `tools/signature/roots.py` fetches and checks them), not the
-machine's, so the answer is the same everywhere. Revocation isn't checked
-(it needs the network), nor are signatures outside the file (a Windows
-catalog's, a notarization ticket). `tools/signature/oracle.ps1` compares the
-verdicts with Windows' own (`Get-AuthenticodeSignature`): 3,000 of 3,000
-signed files agree. Before the signatures, it shows what the file says it
-is, as `sigcheck` does: a PE image's version resource (company, description,
-product, versions, copyright; U.S. English where there are several
-languages), or a Mach-O image's versions and Info.plist.
-`tools/signature/version-oracle.ps1` compares those with Windows'
-`FileVersionInfo`: 1,984 of 1,985 agree (Windows takes a localized file's
-strings from its `.mui` satellite, which has its own versions; hexcavator reads
-the file's own, so those are skipped).
-
-### Resources and metadata
-
-```
-hexcavator resources app.exe                     # each resource (by type, name, language) and what it says, in a line
-hexcavator resources -show VERSION/#1/1033 app.exe   # one decoded: version information, a dialog's controls, a menu, strings, ...
-hexcavator resources -save GROUP_ICON/#1/1033 app.ico app.exe   # an icon group as an .ico file (a cursor's as .cur, a bitmap as .bmp)
-hexcavator resources -show Entitlements App.app/Contents/MacOS/App   # a Mach-O image's entitlements (or Info.plist, Versions)
-hexcavator resources -all -json libfoo.so        # everything, decoded, as JSON: an ELF image's notes and .comment
-```
-
-What a binary holds besides its code, and what it says of itself. A PE
-image's resources, decoded: version information, manifests (in a line: the
-assemblies it needs, the privileges it asks for), string tables, message
-tables, dialogs (`DIALOG` and `DIALOGEX`), menus (`MENU` and `MENUEX`),
-accelerators, icon and cursor groups and their images (PNG or bitmap),
-bitmaps, HTML, and the rest as text or bytes. A Mach-O image's Info.plist
-(`__TEXT,__info_plist`), its code signature's entitlements, and its
-versions (platform, minimum OS, SDK, UUID, the bundle's). An ELF image's
-notes (build ID, ABI tag, package metadata, GNU properties: IBT, SHSTK, BTI,
-PAC, ...), `.comment`, and `.gnu_debuglink`. A WebAssembly module's
-`producers`, `target_features`, and other custom sections. A 16-bit
-image's resources. `tools/resources` builds the test's images.
-
-### Type layouts
-
-```
-hexcavator types app.exe                         # classes, structures, and unions by the bytes their padding wastes
-hexcavator types -layout Widget app.exe          # one type: bases, vfptr, vbptr, members (bitfields by bit), holes
-hexcavator types new.exe -- old.exe              # the types whose layout changed between builds
-```
-
-Layouts come from the PDB's type records (an image's, or a PDB given
-directly). An empty base takes no space; virtual bases, whose offsets the
-records don't give, are placed after the rest of the object, aligned, as
-MSVC places them. A type with a member of a type that has no definition in
-the PDB is marked incomplete rather than counted as padding. On clang's
-1.45 GB PDB, 292,170 types are laid out in about 2.5 seconds.
-
-### Inlining and source files
-
-```
-hexcavator inlines app.exe                       # functions inlined into the code, by their copies' bytes
-hexcavator inlines -inlinee "Twine::Twine" app.exe   # one function's copies, by the function each is in
-hexcavator sourcefiles app.exe                   # the code by source file (headers too)
-hexcavator sourcefiles -file "DenseMap\.h$" app.exe  # one file's code, by line
-```
-
-Inline sites come from the PDB's `S_INLINESITE` records and their binary
-annotations (`hexcavator-pdb`'s `annotations`), which give each inlined
-copy's code ranges. A copy's bytes are its own: a site nested in another
-claims its bytes first, and the copies of one function that identical code
-folding merged count once. Source files come from the line tables; inlined
-code counts where it was inlined. On clang: 4.3 million inline sites of
-361,000 functions, 40.0 MB of its 82 MB of code, in about 5 seconds.
-
-### What runs before main
-
-```
-hexcavator init app.exe                          # what runs when it loads, before main, in order, with what each calls
-hexcavator init -depth 4 libfoo.so               # a library: what runs when it's loaded, callees four levels down
-hexcavator init -json app.exe                    # as JSON (hexcavator init -json -callees <node>: what a function calls)
-```
-
-The phases in the order they run, from the image and its debug
-information: a PE image's TLS callbacks, its entry point, and the CRT's
-lists (`.rtc$I*`, `.CRT$XI*`, `.CRT$XC*`: global objects' constructors),
-each group's entries in order, then `main` (or `DllMain`); an ELF image's
-`.preinit_array`, `DT_INIT`, `.ctors`, `.init_array` (through the loader's
-relocations, in a position-independent image), and entry point; a Mach-O
-image's `__mod_init_func` (or `__init_offsets`) and entry point. What each
-function calls comes from the cross-reference graph, in the order its code
-calls them (a tail call marked). `tools/init` builds the test's images.
-
-### Symbolizing addresses and crash logs
-
-```
-hexcavator symbolize app.exe 0x140001043                   # function, file:line, and inlined functions, innermost first
-hexcavator symbolize app.exe@0x7ff6a1b20000 0x7ff6a1b21043 # an address as loaded at a base
-hexcavator symbolize libfoo.so libfoo.so+0x1a2b            # an offset from the image's start
-hexcavator symbolize app.exe@0x7ff6a1b20000 helper.dll@0x7ffb10c40000 < crash.txt   # a log, each address annotated
-```
-
-A lookup reads only what holds the address: a PDB's module (by the section
-contributions; type and id records a few KB at a time, not a 350 MB type
-stream), or a DWARF compile unit (by its ranges; then only the function's
-DIEs). Inline frames come from `S_INLINESITE` annotations or
-`DW_TAG_inlined_subroutine`s, each frame's line where the call inlined into
-it is. Without debug information, the image's own symbols name addresses
-(exports, ELF and Mach-O symbol tables). On every byte of the source lines
-test program's code, hexcavator answers as DIA does (the PE image) and as
-llvm-symbolizer does (ELF, plain and split DWARF); see
-`tools/lines/symbolize-oracle.py`. On clang's 1.4 GB PDB, three addresses
-take about 90 ms; 1,000 random addresses in .NET's `libcoreclr.so` about
-0.3 s.
-
-### Annotations, batches, and findings compared
-
-```
-hexcavator annotations app.exe                   # strings code attached to addresses (__annotation), with file:line
-hexcavator batch -r -findings C:\build\bin > sizes.jsonl   # one JSON line per image: sections, libraries, compilands, findings
-hexcavator size -findings new.exe -- old.exe     # each finding's change from a base build, item by item
-```
-
-### Recommendations
-
-```
-hexcavator recommend app.exe          # build changes that would make the image smaller, each with its saving
-```
-
-Each recommendation is measured from the image and its debug information,
-and what can't be measured isn't made, in the terms of the toolchain that
-built it (MSVC's; GCC's and Clang's with GNU ld or lld; Apple's; wasm-ld's):
-compile an object so the linker can drop what nothing reaches (`/Gy`,
-`/Gw`; `-ffunction-sections`, `-fdata-sections`: what nothing reaches that
-the linker kept with the sections it shares, from the cross-reference graph
-and the debug information's contributions); link so it does (`/OPT:REF`,
-`--gc-sections`, `-dead_strip`), or folds identical functions (`/OPT:ICF`,
-`--icf`), when the link didn't (from the linker's command line in a PDB, or
-by what the link left); define a duplicated variable once; link without
-the libraries nothing of the image uses (`--as-needed`,
-`-dead_strip_dylibs`, as its loader finds them); pack relative relocations
-(RELR); and more of strings, exports, exception handling, and inlining.
-Objects of the toolset's and the system's own libraries are left out: they
-can't be rebuilt.
-
-### Cross-references
-
-```
-hexcavator xref app.exe                          # references, roots, and what no root reaches
-hexcavator xref -why "Square::area" app.exe      # the chain from a root: why a function or datum is in the image
-hexcavator xref -refs "Square::\`vftable'" app.exe  # what refers to it, and what it refers to
-hexcavator xref -unreachable -n 0 app.exe        # everything no root reaches, largest first
-hexcavator xref -vtables app.exe                 # vtables no constructor or destructor stores, and what refers to them
-hexcavator xref -identical app.exe               # functions /OPT:ICF could have folded but didn't
-hexcavator xref app.exe -- old\app.exe           # functions unchanged, changed, renamed (by fingerprint), added, removed
-```
-
-Fingerprints (`hexcavator-fingerprint`) hash each function's instructions
-with every address masked (a branch inside it counts by offset; anything
-else it refers to is a reference, in order), then rehash each with its
-references' hashes until the classes stop splitting, so two functions
-alike but for their callees differ unless the callees are alike, and
-recursion needs nothing special. Read-only data counts by its bytes,
-variables by name, and imports by the import table's `dll!function`.
-`-identical` counts only what the linker could fold (COMDAT code and
-read-only COMDAT data by contents; anything else is only itself): none in
-the test program, which is linked with `/OPT:ICF`. Comparing builds pairs
-functions by name, then the rest by fingerprint (renamed); a function is
-unchanged if its code is and it refers to the same things, or their
-renamed pairs.
-
-`hexcavator xref` builds a graph of a PE image (x64, x86, ARM64) from its PDB's
-symbols, its code (direct calls and branches, RIP-relative and
-image-relative operands, ARM64 `ADRP` pairs), its base relocations
-(pointers in data, such as vtable slots), and its exception data (a
-function owns its `.pdata`, unwind data, and EH tables, which name its
-funclets). The roots are the entry point, the exports, what the loader
-reads, and the CRT's initializer tables. A virtual function needs no
-special case: its vtable points to it, and the constructors and
-destructors that store the vtable refer to it, so the chain runs through
-whoever constructs the object (or through the object itself, for one
-initialized at compile time; on clang, all 278 vtables no code stores are
-such objects'). Data holding pointers that has no symbol (a Rust trait
-object's vtable) is split where code takes its address, so each such
-object keeps only what it points to.
-
-What no root reaches is code and data the linker kept anyway, and the PDB's
-section contributions say why: its section was not a COMDAT (code compiled
-without `/Gy`, data without `/Gw`), which the linker keeps whole when
-anything in it is used; or it is a COMDAT that such a section refers to; or
-it is a COMDAT kept for a reason the graph doesn't see (`/OPT:NOREF`,
-`/INCLUDE`, a reference it misses). `testdata/xref` holds the test program
-(`tools/xref`), built for x64 and ARM64, where every unreachable item is of
-the first two kinds. On clang's 108 MB image (in about 2 seconds, with its
-symbols indexed), 16 data items (562 bytes) and no code are unreached; the
-reference patterns found by checking the rest against clang's object files'
-relocations (MSVC's tables by image offset, scaled and with the base added
-after, and across forward jumps) are in `crates/analysis/xref/src/scan.rs`.
-
-`hexcavator mcp` serves the same analysis to LLM agents over the Model Context
-Protocol (stdio), with tools `size_report`, `symbols`, `findings`, `why`, `recommend`,
-`linker_log`, `query`, and `lookup`; the
-first question about an image reads its PDB, and later ones reuse it. For
-example, for Claude Code:
-
-```
-claude mcp add hexcavator -- C:\path\to\hexcavator.exe mcp
-```
+`llvm-readobj` dumps that `turbonop-elf` is checked against field by field.
 
 ## License
 

@@ -4,7 +4,7 @@
 )]
 
 use super::*;
-use hexcavator_code::Mode;
+use turbonop_code::Mode;
 
 /// Nodes as `[start, end)` ranges.
 struct Nodes(Vec<(u64, u64)>);

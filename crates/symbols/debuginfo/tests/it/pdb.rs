@@ -3,8 +3,8 @@
 
 use std::collections::BTreeSet;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
 
 fn root() -> String {
     format!("{}/../../../testdata/sizebench", env!("CARGO_MANIFEST_DIR"))
@@ -214,9 +214,9 @@ fn truncated_and_corrupted_pdbs_do_not_panic() {
 
 #[test]
 fn candidate_paths() {
-    use hexcavator_debuginfo::candidate_paths;
-    use hexcavator_image::DebugId;
     use std::path::{Path, PathBuf};
+    use turbonop_debuginfo::candidate_paths;
+    use turbonop_image::DebugId;
     let id = |path: &'static [u8]| DebugId::Pdb {
         guid: [0; 16],
         age: 1,

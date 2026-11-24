@@ -1,7 +1,7 @@
 //! Lists every word of the golden file (tests/data/golden.txt, dumpbin's
-//! output) that hexcavator-arm64 decodes differently, with the encoding it chose,
+//! output) that turbonop-arm64 decodes differently, with the encoding it chose,
 //! and a count by encoding, largest first:
-//! `cargo run -p hexcavator-arm64 --example golden_report [filter]`.
+//! `cargo run -p turbonop-arm64 --example golden_report [filter]`.
 
 use std::collections::BTreeMap;
 
@@ -21,10 +21,8 @@ fn main() {
         } else {
             u64::from_str_radix(address, 16).unwrap()
         };
-        let inst = hexcavator_arm64::decode(w, address);
-        let ours = inst
-            .map(|i| hexcavator_arm64::format(&i))
-            .unwrap_or_default();
+        let inst = turbonop_arm64::decode(w, address);
+        let ours = inst.map(|i| turbonop_arm64::format(&i)).unwrap_or_default();
         let name = inst.map_or("(invalid)", |i| i.encoding_name());
         let same = if line.starts_with("- ") {
             // (FMININM postdates dumpbin: see tests/golden.rs.)

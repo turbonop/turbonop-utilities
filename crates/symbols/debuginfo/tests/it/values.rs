@@ -3,9 +3,9 @@
 //! checked against golden trees in tests/values_golden.rs; the reader
 //! matched the PDB crate's own, which it replaced, value for value.)
 
-use hexcavator_debuginfo::value::{self, Limits};
-use hexcavator_debuginfo::{DebugInfo, TypeRef};
-use hexcavator_image::Image;
+use turbonop_debuginfo::value::{self, Limits};
+use turbonop_debuginfo::{DebugInfo, TypeRef};
+use turbonop_image::Image;
 
 fn testdata(p: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

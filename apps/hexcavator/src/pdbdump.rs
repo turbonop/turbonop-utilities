@@ -3,10 +3,10 @@
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use hexcavator_codeview::TypeIndex;
-use hexcavator_codeview::symbols::{Symbol, kind};
-use hexcavator_codeview::types::{Field, TypeFormatter, leaf};
-use hexcavator_pdb::{Pdb, info::format_guid};
+use turbonop_codeview::TypeIndex;
+use turbonop_codeview::symbols::{Symbol, kind};
+use turbonop_codeview::types::{Field, TypeFormatter, leaf};
+use turbonop_pdb::{Pdb, info::format_guid};
 
 pub const USAGE: &str = "\
 usage: hexcavator pdb [options] <file>
@@ -197,7 +197,7 @@ pub fn run(args: &[String]) -> ExitCode {
 
 /// The linker's environment block (`S_ENVBLOCK` in `* Linker *`).
 fn linker(out: &mut impl Write, data: &[u8]) -> io::Result<()> {
-    let info = hexcavator_debuginfo::DebugInfo::parse(data)
+    let info = turbonop_debuginfo::DebugInfo::parse(data)
         .and_then(|d| d.linker_info())
         .map_err(io::Error::other)?;
     writeln!(out, "Linker")?;
@@ -221,7 +221,7 @@ fn s(b: &[u8]) -> std::borrow::Cow<'_, str> {
     String::from_utf8_lossy(b)
 }
 
-fn err(e: hexcavator_core::Error) -> io::Error {
+fn err(e: turbonop_core::Error) -> io::Error {
     io::Error::other(e.to_string())
 }
 
@@ -313,7 +313,7 @@ fn dump(out: &mut dyn Write, pdb: &Pdb<'_>, o: &Options) -> io::Result<()> {
                 offset,
                 segment,
                 name,
-            })) = hexcavator_pdb::gsi::symbol_at(records, off.get()).map(|r| r.parse())
+            })) = turbonop_pdb::gsi::symbol_at(records, off.get()).map(|r| r.parse())
             {
                 writeln!(
                     out,
@@ -329,8 +329,7 @@ fn dump(out: &mut dyn Write, pdb: &Pdb<'_>, o: &Options) -> io::Result<()> {
     if o.globals {
         writeln!(out, "Global symbols")?;
         for h in pdb.globals().map_err(err)?.records() {
-            if let Some(rec) = hexcavator_pdb::gsi::symbol_at(records, (h.offset.get() - 1) as u32)
-            {
+            if let Some(rec) = turbonop_pdb::gsi::symbol_at(records, (h.offset.get() - 1) as u32) {
                 writeln!(out, "  {}", describe(&rec, &tf))?;
             }
         }
@@ -452,15 +451,15 @@ fn dump(out: &mut dyn Write, pdb: &Pdb<'_>, o: &Options) -> io::Result<()> {
 fn pdb_of(
     path: &std::path::Path,
     debug: Option<&std::path::Path>,
-) -> Result<hexcavator_mmap::Mmap, String> {
+) -> Result<turbonop_mmap::Mmap, String> {
     let show = |p: &std::path::Path| p.display().to_string();
-    let map = hexcavator_mmap::Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
+    let map = turbonop_mmap::Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
     if debug.is_none() && Pdb::parse(&map).is_ok() {
         return Ok(map);
     }
-    let image = hexcavator_image::Image::parse(&map)
+    let image = turbonop_image::Image::parse(&map)
         .map_err(|e| format!("{}: not a PDB, nor an image: {e}", show(path)))?;
-    let (found, pdb) = hexcavator_program::find_debug(path, &image, debug)?;
+    let (found, pdb) = turbonop_program::find_debug(path, &image, debug)?;
     if Pdb::parse(&pdb).is_err() {
         return Err(format!(
             "{}: its debug information ({}) isn't a PDB (hexcavator dwarf reads DWARF)",
@@ -471,7 +470,7 @@ fn pdb_of(
     Ok(pdb)
 }
 
-fn describe(rec: &hexcavator_codeview::SymbolRecord<'_>, tf: &TypeFormatter<'_>) -> String {
+fn describe(rec: &turbonop_codeview::SymbolRecord<'_>, tf: &TypeFormatter<'_>) -> String {
     let name = kind::name(rec.kind);
     match rec.parse() {
         Ok(Symbol::Public {
@@ -568,7 +567,7 @@ fn describe(rec: &hexcavator_codeview::SymbolRecord<'_>, tf: &TypeFormatter<'_>)
             flags,
         }) => format!(
             "{name} machine {machine:#x} lang {} fe {}.{}.{}.{} be {}.{}.{}.{} {}",
-            flags & hexcavator_codeview::symbols::COMPILE3_LANGUAGE_MASK,
+            flags & turbonop_codeview::symbols::COMPILE3_LANGUAGE_MASK,
             frontend[0],
             frontend[1],
             frontend[2],
@@ -627,7 +626,7 @@ fn type_name(ti: TypeIndex, tf: &TypeFormatter<'_>) -> String {
 
 pub(crate) fn describe_type(
     ti: TypeIndex,
-    rec: &hexcavator_codeview::TypeRecord<'_>,
+    rec: &turbonop_codeview::TypeRecord<'_>,
     tf: &TypeFormatter<'_>,
 ) -> String {
     if let Some(u) = rec.udt() {
@@ -746,7 +745,7 @@ fn dia_format(out: &mut dyn Write, pdb: &Pdb<'_>) -> io::Result<()> {
             segment,
             name,
             ..
-        })) = hexcavator_pdb::gsi::symbol_at(records, off.get()).map(|r| r.parse())
+        })) = turbonop_pdb::gsi::symbol_at(records, off.get()).map(|r| r.parse())
         {
             writeln!(out, "PUBLIC {segment:X}:{offset:X} {}", s(name))?;
         }
@@ -759,7 +758,7 @@ fn dia_format(out: &mut dyn Write, pdb: &Pdb<'_>) -> io::Result<()> {
             thread: false,
             ..
         })) =
-            hexcavator_pdb::gsi::symbol_at(records, (h.offset.get() - 1) as u32).map(|r| r.parse())
+            turbonop_pdb::gsi::symbol_at(records, (h.offset.get() - 1) as u32).map(|r| r.parse())
             && let Some(r) = rva(segment, offset)
         {
             writeln!(out, "DATA {r:X} {}", s(name))?;

@@ -3,7 +3,7 @@
 //! instructions, Altivec, VSX, ISA 3.1's prefixed instructions, MMA, and
 //! what follows them; not SPE's or BookE's), from LLVM's TableGen records
 //! (see `tools/powerpc/extract.py`, which writes `tables.rs`, and
-//! `hexcavator-tablegen`, which decodes by them).
+//! `turbonop-tablegen`, which decodes by them).
 //!
 //! [`decode`] finds the instruction at an address, big- or little-endian:
 //! a prefixed (8-byte) one first, as LLVM does, then a 4-byte one.
@@ -19,7 +19,7 @@ mod tables;
 
 pub mod format;
 
-pub use hexcavator_tablegen::{Inst, Instruction, Op, Operand, Reg};
+pub use turbonop_tablegen::{Inst, Instruction, Op, Operand, Reg};
 
 /// The register files (as the tables number them).
 pub mod files {
@@ -63,13 +63,13 @@ pub fn gpr_of(o: Operand) -> Option<u8> {
 }
 
 /// The most operands an instruction has.
-pub const MAX_OPERANDS: usize = hexcavator_tablegen::MAX_OPERANDS;
+pub const MAX_OPERANDS: usize = turbonop_tablegen::MAX_OPERANDS;
 
 /// The features code may use, and whether it is 64-bit code (whose
 /// branch targets don't wrap at 32 bits).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Features {
-    set: hexcavator_tablegen::Features,
+    set: turbonop_tablegen::Features,
     ppc64: bool,
 }
 
@@ -88,7 +88,7 @@ impl Features {
     /// Names it doesn't know are left out.
     pub fn of(names: &[&str], ppc64: bool) -> Self {
         Self {
-            set: hexcavator_tablegen::Features::of(&tables::TARGET, names),
+            set: turbonop_tablegen::Features::of(&tables::TARGET, names),
             ppc64,
         }
     }
@@ -124,11 +124,11 @@ pub fn decode(bytes: &[u8], big: bool, features: &Features) -> Option<Instructio
         && features.contains("prefix-instrs")
         && let Some(second) = word(4)
         && let Some(i) =
-            hexcavator_tablegen::decode(t, first << 32 | second, 8, &features.set, false, false)
+            turbonop_tablegen::decode(t, first << 32 | second, 8, &features.set, false, false)
     {
         return Some(i);
     }
-    hexcavator_tablegen::decode(t, first, 4, &features.set, false, false)
+    turbonop_tablegen::decode(t, first, 4, &features.set, false, false)
 }
 
 /// Where a branch goes, if `i` is one with a target (`b`, `bl`, `bc`,
@@ -140,8 +140,8 @@ pub fn branch_target(i: &Instruction, address: u64, features: &Features) -> Opti
         let kind = t.kinds.get(usize::from(op.kind))?;
         let v = i.operands().get(k)?.imm()?;
         let to = match kind.print {
-            hexcavator_tablegen::Print::Branch => address.wrapping_add_signed(v),
-            hexcavator_tablegen::Print::AbsBranch => v.cast_unsigned(),
+            turbonop_tablegen::Print::Branch => address.wrapping_add_signed(v),
+            turbonop_tablegen::Print::AbsBranch => v.cast_unsigned(),
             _ => return None,
         };
         Some(if features.ppc64() {
@@ -159,7 +159,7 @@ pub fn memory(i: &Instruction) -> Option<(i64, Reg)> {
     let k = i.inst().ops.iter().position(|op| {
         t.kinds
             .get(usize::from(op.kind))
-            .is_some_and(|kind| kind.print == hexcavator_tablegen::Print::MemRegImm)
+            .is_some_and(|kind| kind.print == turbonop_tablegen::Print::MemRegImm)
     })?;
     let ops = i.operands();
     Some((ops.get(k)?.imm()?, ops.get(k + 1)?.reg()?))

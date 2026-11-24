@@ -3,7 +3,7 @@
 //! extensions, B's, the scalar crypto ones, V and its Zv* extensions, the
 //! hypervisor's, Zfa, Zfh, Zicond, ...), from LLVM's TableGen records (see
 //! `tools/riscv/extract.py`, which writes `tables.rs`, and
-//! `hexcavator-tablegen`, which decodes by them).
+//! `turbonop-tablegen`, which decodes by them).
 //!
 //! [`decode`] finds the instruction a 16- or 32-bit encoding is, as LLVM
 //! does: its decoder tables in their order, the instructions whose fixed
@@ -20,7 +20,7 @@ mod tables;
 
 pub mod format;
 
-pub use hexcavator_tablegen::{Inst, Instruction, Op, Operand, Reg};
+pub use turbonop_tablegen::{Inst, Instruction, Op, Operand, Reg};
 
 /// The integer registers' file.
 pub const X: u8 = 0;
@@ -65,11 +65,11 @@ pub struct Csr {
 }
 
 /// The most operands an instruction has.
-pub const MAX_OPERANDS: usize = hexcavator_tablegen::MAX_OPERANDS;
+pub const MAX_OPERANDS: usize = turbonop_tablegen::MAX_OPERANDS;
 
 /// A set of features (extensions, `64bit`): what an image's code may use.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Features(hexcavator_tablegen::Features);
+pub struct Features(turbonop_tablegen::Features);
 
 /// The standard extensions [`Features::standard`] enables (LLVM's names):
 /// every ratified one but those that conflict with these (Zfinx and its
@@ -151,13 +151,13 @@ const STANDARD: &[&str] = &[
 impl Features {
     /// No features (RV32I).
     pub fn none() -> Self {
-        Self(hexcavator_tablegen::Features::none())
+        Self(turbonop_tablegen::Features::none())
     }
 
     /// The features named (as LLVM names them), and what they imply.
     /// Names it doesn't know are left out.
     pub fn of(names: &[&str]) -> Self {
-        let mut f = Self(hexcavator_tablegen::Features::of(&tables::TARGET, names));
+        let mut f = Self(turbonop_tablegen::Features::of(&tables::TARGET, names));
         f.complete();
         f
     }
@@ -264,7 +264,7 @@ pub fn decode(bytes: &[u8], features: &Features) -> Option<Instruction> {
     } else {
         (u32::from(u16::from_le_bytes([b0, *bytes.get(1)?])), 2)
     };
-    hexcavator_tablegen::decode(
+    turbonop_tablegen::decode(
         &tables::TARGET,
         u64::from(w),
         size,
@@ -297,7 +297,7 @@ pub fn length(b0: u8, b1: u8) -> Option<usize> {
 /// runs): `c.addi a0, 1` is `addi a0, a0, 1`. `None` for an instruction
 /// that isn't compressed (or has no full form).
 pub fn uncompress(i: &Instruction, features: &Features) -> Option<Instruction> {
-    hexcavator_tablegen::uncompress(i, &features.0)
+    turbonop_tablegen::uncompress(i, &features.0)
 }
 
 #[cfg(test)]

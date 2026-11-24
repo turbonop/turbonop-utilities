@@ -1,7 +1,7 @@
 //! Imports (`IMAGE_IMPORT_DESCRIPTOR`) and delay-load imports
 //! (`IMAGE_DELAYLOAD_DESCRIPTOR`).
 
-use hexcavator_core::{Rva, U32Le, cstr_at, pod, read_at};
+use turbonop_core::{Rva, U32Le, cstr_at, pod, read_at};
 
 use crate::PeFile;
 use crate::consts::directory;
@@ -210,7 +210,7 @@ impl<'data> DelayImportedDll<'data> {
         if self.is_rva_based() {
             Some(Rva(value))
         } else {
-            self.file.va_to_rva(hexcavator_core::Va(u64::from(value)))
+            self.file.va_to_rva(turbonop_core::Va(u64::from(value)))
         }
     }
 

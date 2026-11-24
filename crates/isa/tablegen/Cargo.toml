@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-tablegen"
+name = "turbonop-tablegen"
 description = "Instruction decoding driven by tables generated from LLVM's TableGen records"
 version.workspace = true
 edition.workspace = true

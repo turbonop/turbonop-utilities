@@ -8,7 +8,7 @@
 use alloc::string::String;
 use core::fmt::Write as _;
 
-use hexcavator_tablegen::Print;
+use turbonop_tablegen::Print;
 
 use crate::tables;
 use crate::{Csr, F, Features, Instruction, Operand, Reg, V, X};
@@ -80,7 +80,7 @@ pub fn format(i: &Instruction, address: u64, features: &Features) -> String {
     let full = crate::uncompress(i, features);
     let mi = full.as_ref().unwrap_or(i);
     let mut out = String::new();
-    hexcavator_tablegen::write(&mut out, mi, &features.0, |out, op, print, _| {
+    turbonop_tablegen::write(&mut out, mi, &features.0, |out, op, print, _| {
         print_operand(out, mi, op, print, address, features);
     });
     out

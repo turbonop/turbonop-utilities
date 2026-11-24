@@ -1,8 +1,8 @@
 //! The libraries an image links, its run paths, and its install name, of
 //! the dependency test's images (tools/deps/build-unix.cmd).
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::consts::{LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, LC_REEXPORT_DYLIB};
+use turbonop_macho::MachO;
+use turbonop_macho::consts::{LC_LOAD_DYLIB, LC_LOAD_WEAK_DYLIB, LC_REEXPORT_DYLIB};
 
 fn read(name: &str) -> Vec<u8> {
     std::fs::read(

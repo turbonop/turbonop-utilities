@@ -19,11 +19,11 @@
 //!   name is shown by that name.
 //! - A name is read to its full 16-bit length (not its low 8 bits).
 
-use hexcavator_hash::{Map as HashMap, Set as HashSet};
+use turbonop_hash::{Map as HashMap, Set as HashSet};
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::resources::{
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::resources::{
     DATA_ENTRY_SIZE, ResourceEntry, ResourceName, ResourceTarget, resource_type as rt,
 };
 
@@ -333,7 +333,7 @@ impl Walker<'_, '_> {
 
 /// The range of the resource directory, if there is one.
 pub fn resource_range(pe: &PeFile<'_>) -> Option<(u64, u64)> {
-    let d = pe.data_directory(hexcavator_pe::consts::directory::RESOURCE)?;
+    let d = pe.data_directory(turbonop_pe::consts::directory::RESOURCE)?;
     let start = u64::from(d.virtual_address.get());
     (start != 0).then(|| (start, start + u64::from(d.size.get())))
 }

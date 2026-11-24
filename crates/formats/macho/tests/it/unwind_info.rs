@@ -7,8 +7,8 @@
 
 use std::path::PathBuf;
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::unwind_info::{Entry, UnwindInfo};
+use turbonop_macho::MachO;
+use turbonop_macho::unwind_info::{Entry, UnwindInfo};
 
 fn theirs(text: &str) -> Vec<Entry> {
     let mut out = Vec::new();

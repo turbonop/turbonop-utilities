@@ -1,14 +1,14 @@
 //! Prints a trace's events in the line format of `tools/etwdump`, for
 //! comparison with Windows' `ProcessTrace`.
 //!
-//!     cargo run --release -p hexcavator-etl --example etldump -- trace.etl [-buffers | -raw]
+//!     cargo run --release -p turbonop-etl --example etldump -- trace.etl [-buffers | -raw]
 //!
 //! `-count` only counts events and times the read. `-buffers` prints each buffer's header instead; `-raw` prints events in
 //! file order rather than timestamp order, with each record's hook ID.
 
 use std::io::{BufWriter, Write};
 
-use hexcavator_etl::{Etl, Event};
+use turbonop_etl::{Etl, Event};
 
 fn fnv(data: &[u8]) -> u64 {
     let mut h = 0xcbf2_9ce4_8422_2325u64;
@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .find(|a| !a.starts_with('-'))
         .ok_or("usage: etldump trace.etl")?;
-    let map = hexcavator_mmap::Mmap::open(path)?;
+    let map = turbonop_mmap::Mmap::open(path)?;
     let etl = Etl::parse(&map)?;
     let stdout = std::io::stdout();
     let mut out = BufWriter::with_capacity(1 << 20, stdout.lock());

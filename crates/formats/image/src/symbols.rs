@@ -152,7 +152,7 @@ impl<'data> Image<'data> {
                 Some((base, base.checked_add(u64::from(h.size_of_image()))?))
             }
             Image::Elf(elf) => {
-                use hexcavator_elf::consts::PT_LOAD;
+                use turbonop_elf::consts::PT_LOAD;
                 let mut range: Option<(u64, u64)> = None;
                 for s in elf.segments().filter(|s| s.kind == PT_LOAD && s.memsz > 0) {
                     // (The first page holds the headers: a load segment
@@ -205,8 +205,8 @@ fn sort(symbols: &mut Vec<ImageSymbol<'_>>) {
     symbols.dedup_by(|a, b| a.addr == b.addr && a.name == b.name);
 }
 
-fn pe_symbols<'data>(pe: &hexcavator_pe::PeFile<'data>) -> Vec<ImageSymbol<'data>> {
-    use hexcavator_pe::exports::ExportTarget;
+fn pe_symbols<'data>(pe: &turbonop_pe::PeFile<'data>) -> Vec<ImageSymbol<'data>> {
+    use turbonop_pe::exports::ExportTarget;
     let mut out = Vec::new();
     if let Some(exports) = pe.exports() {
         for e in exports.iter() {
@@ -266,8 +266,8 @@ fn pe_symbols<'data>(pe: &hexcavator_pe::PeFile<'data>) -> Vec<ImageSymbol<'data
     out
 }
 
-fn elf_symbols<'data>(elf: &hexcavator_elf::ElfFile<'data>) -> Vec<ImageSymbol<'data>> {
-    use hexcavator_elf::consts::{SHT_DYNSYM, SHT_SYMTAB, STB_LOCAL, STT_FUNC, STT_OBJECT};
+fn elf_symbols<'data>(elf: &turbonop_elf::ElfFile<'data>) -> Vec<ImageSymbol<'data>> {
+    use turbonop_elf::consts::{SHT_DYNSYM, SHT_SYMTAB, STB_LOCAL, STT_FUNC, STT_OBJECT};
     /// `STT_GNU_IFUNC`: an indirect function (a resolver's).
     const STT_GNU_IFUNC: u8 = 10;
     /// `STT_TLS`: thread-local data, at an offset, not an address.
@@ -300,7 +300,7 @@ fn elf_symbols<'data>(elf: &hexcavator_elf::ElfFile<'data>) -> Vec<ImageSymbol<'
             out.push(ImageSymbol {
                 // (Thumb functions' addresses have their low bit set.)
                 addr: if kind == SymbolKind::Function
-                    && elf.header().machine == hexcavator_elf::consts::EM_ARM
+                    && elf.header().machine == turbonop_elf::consts::EM_ARM
                 {
                     s.value & !1
                 } else {
@@ -318,8 +318,8 @@ fn elf_symbols<'data>(elf: &hexcavator_elf::ElfFile<'data>) -> Vec<ImageSymbol<'
     out
 }
 
-fn macho_symbols<'data>(m: &hexcavator_macho::MachO<'data>) -> Vec<ImageSymbol<'data>> {
-    use hexcavator_macho::consts::N_EXT;
+fn macho_symbols<'data>(m: &turbonop_macho::MachO<'data>) -> Vec<ImageSymbol<'data>> {
+    use turbonop_macho::consts::N_EXT;
     let mut out = Vec::new();
     for s in m.symbols() {
         if !s.is_section_defined() || s.name.is_empty() {
@@ -340,7 +340,7 @@ fn macho_symbols<'data>(m: &hexcavator_macho::MachO<'data>) -> Vec<ImageSymbol<'
 
 /// A module's functions, at their bodies (as DWARF's addresses are: see
 /// `wasm::function_range`).
-fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'data>> {
+fn wasm_symbols<'data>(m: &turbonop_wasm::Module<'data>) -> Vec<ImageSymbol<'data>> {
     let mut out = Vec::new();
     let functions = m.functions();
     let first = functions.first().map_or(0, |f| f.index);
@@ -353,7 +353,7 @@ fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'d
     // names too.)
     /// An export's kind: a function.
     const EXPORT_FUNCTION: u8 = 0;
-    let exports: Vec<hexcavator_wasm::Export<'data>> = m
+    let exports: Vec<turbonop_wasm::Export<'data>> = m
         .exports()
         .into_iter()
         .filter(|e| e.kind == EXPORT_FUNCTION)
@@ -362,7 +362,7 @@ fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'d
     let mut indexes: Vec<u32> = exports.iter().map(|e| e.index).collect();
     indexes.sort_unstable();
     let exported = |index: u32| indexes.binary_search(&index).is_ok();
-    for n in m.names(hexcavator_wasm::NAME_FUNCTION) {
+    for n in m.names(turbonop_wasm::NAME_FUNCTION) {
         let Some((addr, size)) = function(n.index).and_then(|f| crate::wasm::function_range(m, f))
         else {
             continue;
@@ -404,8 +404,8 @@ fn wasm_symbols<'data>(m: &hexcavator_wasm::Module<'data>) -> Vec<ImageSymbol<'d
                 continue;
             };
             let at = match g.init {
-                hexcavator_wasm::Init::I32(v) => u64::from(v.cast_unsigned()),
-                hexcavator_wasm::Init::I64(v) => v.cast_unsigned(),
+                turbonop_wasm::Init::I32(v) => u64::from(v.cast_unsigned()),
+                turbonop_wasm::Init::I64(v) => v.cast_unsigned(),
                 _ => continue,
             };
             out.push(ImageSymbol {

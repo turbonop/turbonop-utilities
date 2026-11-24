@@ -10,7 +10,7 @@
 use alloc::format;
 use alloc::string::String;
 
-use hexcavator_core::Arch;
+use turbonop_core::Arch;
 
 /// The name of register `n` of `arch`, if the ABI assigns `n`.
 pub fn name(arch: Arch, n: u16) -> Option<String> {

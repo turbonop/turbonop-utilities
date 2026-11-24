@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Compares hexcavator-arm32's text with LLVM's for random words.
+"""Compares turbonop-arm32's text with LLVM's for random words.
 
 Usage: python oracle.py <llvm bin dir> [A32|T16|T32|NEON-A32|NEON-T32 ...]
                         [-n N] [-seed S] [-show ENCODING] [-golden FILE]
@@ -10,7 +10,7 @@ encoding that LLVM writes as we do (`ISET word address<TAB>text`).
 The words are assembled with `.inst` into an object (llvm-mc) and
 disassembled (llvm-objdump, immediates in decimal); each word's text is
 the line at its address. Ours comes from the crate's `oracle` example
-(cargo build --release -p hexcavator-arm32 --example oracle), with the
+(cargo build --release -p turbonop-arm32 --example oracle), with the
 same addresses. Prints, per encoding, how many words differ and the first
 differences, the encodings with the most differences first.
 """

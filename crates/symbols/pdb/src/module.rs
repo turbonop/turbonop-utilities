@@ -1,9 +1,9 @@
 //! Module (compiland) streams: symbols, and C13 debug subsections (line
 //! numbers, file checksums, inlinee lines, ...).
 
-use hexcavator_codeview::lines::{self, FileChecksum, LineBlock, LineEntry, subsection};
-use hexcavator_codeview::symbols::{SymbolIter, SymbolRecord};
-use hexcavator_core::{Reader, U32Le};
+use turbonop_codeview::lines::{self, FileChecksum, LineBlock, LineEntry, subsection};
+use turbonop_codeview::symbols::{SymbolIter, SymbolRecord};
+use turbonop_core::{Reader, U32Le};
 
 use crate::dbi::Module;
 use crate::msf::StreamData;

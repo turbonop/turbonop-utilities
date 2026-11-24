@@ -5,9 +5,9 @@
 
 use std::path::PathBuf;
 
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Abbrevs, Sections, Unit, UnitSection, Value, aranges};
-use hexcavator_elf::ElfFile;
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Abbrevs, Sections, Unit, UnitSection, Value, aranges};
+use turbonop_elf::ElfFile;
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -167,13 +167,12 @@ fn ours(s: Sections<'_>) -> Vec<Die> {
                             && b.first() == Some(&DW_OP_ADDR)
                             && b.len() == 1 + usize::from(unit.address_size)
                         {
-                            d.addr =
-                                hexcavator_dwarf::Reader::new(b, 1, s.endian).uint(b.len() - 1);
+                            d.addr = turbonop_dwarf::Reader::new(b, 1, s.endian).uint(b.len() - 1);
                         }
                         if let Value::Block(b) = at.value
                             && b.first() == Some(&DW_OP_ADDRX)
                         {
-                            d.addrx = hexcavator_dwarf::Reader::new(b, 1, s.endian).uleb();
+                            d.addrx = turbonop_dwarf::Reader::new(b, 1, s.endian).uleb();
                             // The helper resolves it through .debug_addr.
                             assert!(unit.location_address(&at.value).is_some());
                         }
@@ -295,7 +294,7 @@ fn line_tables_match_llvm_dwarfdump() {
         }
         assert_eq!(theirs.len(), 2, "{f}");
         for (offset, files, rows) in &theirs {
-            let p = hexcavator_dwarf::line_program(&s, *offset, 8).unwrap();
+            let p = turbonop_dwarf::line_program(&s, *offset, 8).unwrap();
             let ours_rows: Vec<_> = p
                 .rows
                 .iter()

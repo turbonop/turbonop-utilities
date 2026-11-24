@@ -4,7 +4,7 @@
 //! pointers signed), against llvm-objdump's decoding of each
 //! (`*.fixups.txt`).
 
-use hexcavator_macho::{FixupKind, MachO, PtrAuth};
+use turbonop_macho::{FixupKind, MachO, PtrAuth};
 
 fn testdata(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -259,7 +259,7 @@ fn function_starts_and_unwind_info() {
 /// directory for the file up to the signature, page by page.
 #[test]
 fn ad_hoc_code_signatures() {
-    use hexcavator_macho::info::{CS_HASHTYPE_SHA256, CSMAGIC_CODEDIRECTORY};
+    use turbonop_macho::info::{CS_HASHTYPE_SHA256, CSMAGIC_CODEDIRECTORY};
     // (A dylib is identified by its install name's leaf.)
     for (name, identifier) in [
         ("program-arm64", "program-arm64"),
@@ -290,7 +290,7 @@ fn ad_hoc_code_signatures() {
         let lc = m
             .load_commands()
             .into_iter()
-            .find(|c| c.cmd == hexcavator_macho::consts::LC_CODE_SIGNATURE)
+            .find(|c| c.cmd == turbonop_macho::consts::LC_CODE_SIGNATURE)
             .unwrap();
         let (off, _) = m.linkedit_data(&lc).unwrap();
         assert_eq!(cd.code_limit, u64::from(off), "{name}");

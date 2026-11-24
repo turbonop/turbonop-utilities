@@ -5,9 +5,9 @@
 
 use std::io::{self, Write};
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::eh4::{Continuation4, Handler4, TryBlock4, UnwindEntry4};
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::eh4::{Continuation4, Handler4, TryBlock4, UnwindEntry4};
 
 /// Writes the data for `handler` (by name) at `data`.
 pub fn handler_data(
@@ -162,7 +162,7 @@ fn unwind_map_fh4(out: &mut dyn Write, r: &Bytes<'_, '_>, map: u32) -> io::Resul
             .iter()
             .position(|p| p.offset == target)
             .map_or(-1, |i| i64::try_from(i).unwrap_or(-1));
-        let rva = e.action.map_or(0, hexcavator_core::Rva::get);
+        let rva = e.action.map_or(0, turbonop_core::Rva::get);
         let object = e.object.unwrap_or(0);
         let action = match e.kind {
             0 => "No unwind state".to_string(),

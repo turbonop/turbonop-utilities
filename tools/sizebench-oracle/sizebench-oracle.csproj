@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Dumps SizeBench's analysis model as text, as an oracle for hexcavator-size.
+  <!-- Dumps SizeBench's analysis model as text, as an oracle for turbonop-size.
        Build: dotnet build -c Release   (needs a SizeBench checkout; see README.md) -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>

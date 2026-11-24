@@ -1,4 +1,4 @@
-"""Generates hexcavator-x86 opcode table lines from Intel XED's EVEX data.
+"""Generates turbonop-x86 opcode table lines from Intel XED's EVEX data.
 
     python -I tools/x86/xed2dsl.py <xed>/datafiles/avx512-fp16/avx512-fp16-isa.xed.txt ... > table.txt
 

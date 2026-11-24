@@ -2,7 +2,7 @@
 //! tools/macho/build.cmd): each object, and its functions' and variables'
 //! addresses and sizes as llvm-nm -ap shows the STABS entries.
 
-use hexcavator_macho::MachO;
+use turbonop_macho::MachO;
 
 fn testdata(name: &str) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

@@ -2,10 +2,10 @@
 
 use rustc_hash::FxHashMap;
 
-use hexcavator_core::Result;
-use hexcavator_etl::{Etl, Event};
-use hexcavator_etw::kernel::{KernelEvent, Lifetime, decode};
-use hexcavator_etw::stacks::StackMatcher;
+use turbonop_core::Result;
+use turbonop_etl::{Etl, Event};
+use turbonop_etw::kernel::{KernelEvent, Lifetime, decode};
+use turbonop_etw::stacks::StackMatcher;
 
 use crate::model::{
     Clock, DebugId, Image, ImageIx, Process, ProcessIx, ReadyIx, Thread, ThreadIx, Trace,
@@ -101,8 +101,8 @@ impl Builder {
     fn event(&mut self, e: &Event<'_>) {
         // The sampling interval: PerfInfo's CollectionStart for the profile
         // source (0), in 100 ns units.
-        if e.provider == hexcavator_etw::guids::PERF_INFO && e.descriptor.opcode == 73 {
-            if let Some(Ok(p)) = hexcavator_etw::Properties::of(e) {
+        if e.provider == turbonop_etw::guids::PERF_INFO && e.descriptor.opcode == 73 {
+            if let Some(Ok(p)) = turbonop_etw::Properties::of(e) {
                 let field = |n: &str| {
                     p.get(n)
                         .and_then(|f| f.data.get(..4))
@@ -276,7 +276,7 @@ impl Builder {
         ix
     }
 
-    fn process(&mut self, t: i64, p: &hexcavator_etw::kernel::ProcessEvent<'_>) {
+    fn process(&mut self, t: i64, p: &turbonop_etw::kernel::ProcessEvent<'_>) {
         let existing = self.live_processes.get(&p.process_id).copied();
         let same = existing.filter(|ix| {
             let q = &self.trace.processes[ix.index()];
@@ -325,7 +325,7 @@ impl Builder {
         }
     }
 
-    fn thread_event(&mut self, t: i64, th: &hexcavator_etw::kernel::ThreadEvent) {
+    fn thread_event(&mut self, t: i64, th: &turbonop_etw::kernel::ThreadEvent) {
         let process = self
             .live_processes
             .get(&th.process_id)
@@ -381,7 +381,7 @@ impl Builder {
         }
     }
 
-    fn image(&mut self, t: i64, im: &hexcavator_etw::kernel::ImageEvent<'_>) {
+    fn image(&mut self, t: i64, im: &turbonop_etw::kernel::ImageEvent<'_>) {
         let key = (im.process_id, im.base);
         let process = if im.process_id == 0 {
             ProcessIx::NONE

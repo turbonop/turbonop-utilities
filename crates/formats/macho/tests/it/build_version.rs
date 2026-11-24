@@ -1,8 +1,8 @@
 //! `LC_BUILD_VERSION`: the platform, its versions, and the tools that
 //! built an image (MachO::build_versions, MachO::linker).
 
-use hexcavator_macho::consts::{TOOL_LD, TOOL_LLD};
-use hexcavator_macho::{BuildTool, MachO, version_string};
+use turbonop_macho::consts::{TOOL_LD, TOOL_LLD};
+use turbonop_macho::{BuildTool, MachO, version_string};
 
 fn read(name: &str) -> Vec<u8> {
     std::fs::read(

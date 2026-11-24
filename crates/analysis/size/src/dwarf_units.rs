@@ -18,10 +18,10 @@
 //! strings a unit's own name uses are charged to it (bloaty charges them
 //! to an empty name); and strings include their terminating NUL.
 
-use hexcavator_hash::Map as HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{
     Abbrevs, Attr, Sections, StrSection, Unit, UnitSection, Value, aranges, contribution,
     line_program_len, name_sets,
 };
@@ -105,13 +105,13 @@ impl Charger<'_> {
 /// A DWARF section: its name without the `.debug_`/`__debug_` prefix, its
 /// contents (decompressed if need be), and where those start in the input
 /// (`None` when they aren't the input's own bytes).
-pub type DwarfSection<'d> = hexcavator_debuginfo::decompress::DebugSection<'d>;
+pub type DwarfSection<'d> = turbonop_debuginfo::decompress::DebugSection<'d>;
 
 /// DWARF sections, each with where it starts in the input file (`None`
 /// when it comes from a separate debug file: its bytes are not the
 /// input's to charge).
 pub struct DwarfInput<'d> {
-    pub endian: hexcavator_core::Endian,
+    pub endian: turbonop_core::Endian,
     /// (name without its `.debug_`/`__debug_` prefix, bytes, offset).
     pub sections: Vec<DwarfSection<'d>>,
     /// A WebAssembly module's: its DWARF's addresses are its code
@@ -383,7 +383,7 @@ fn line_spans(
         else {
             continue;
         };
-        let Some(program) = hexcavator_dwarf::line_program(&s, sl, unit.address_size) else {
+        let Some(program) = turbonop_dwarf::line_program(&s, sl, unit.address_size) else {
             continue;
         };
         let mut start: Option<u64> = None;

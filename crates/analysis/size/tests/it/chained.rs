@@ -16,7 +16,7 @@ fn macho(name: &str) -> Vec<u8> {
 
 #[test]
 fn estimates_match_the_linkers() {
-    use hexcavator_macho::consts::LC_DYLD_CHAINED_FIXUPS;
+    use turbonop_macho::consts::LC_DYLD_CHAINED_FIXUPS;
     for name in [
         "pointers-arm64",
         "pointers-x86_64",
@@ -26,16 +26,16 @@ fn estimates_match_the_linkers() {
         "table-x86_64",
     ] {
         let opcodes = macho(&format!("{name}-opcodes.dylib"));
-        let m = hexcavator_macho::MachO::parse(&opcodes).unwrap();
-        let page = if m.header().cputype == hexcavator_macho::consts::CPU_TYPE_ARM64 {
+        let m = turbonop_macho::MachO::parse(&opcodes).unwrap();
+        let page = if m.header().cputype == turbonop_macho::consts::CPU_TYPE_ARM64 {
             0x4000
         } else {
             0x1000
         };
         let estimate =
-            hexcavator_size::recommend::chained_fixups_size(&m.segments(), &m.fixups(), page);
+            turbonop_size::recommend::chained_fixups_size(&m.segments(), &m.fixups(), page);
         let chained = macho(&format!("{name}.dylib"));
-        let c = hexcavator_macho::MachO::parse(&chained).unwrap();
+        let c = turbonop_macho::MachO::parse(&chained).unwrap();
         let lc = c
             .load_commands()
             .into_iter()

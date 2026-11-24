@@ -13,8 +13,8 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
 use serde_json::{Value as Json, json};
+use turbonop_mmap::Mmap;
 
 const USAGE: &str = "\
 usage: hexcavator checksec [options] <image>...
@@ -184,12 +184,12 @@ pub struct Report {
 
 fn check(path: &str, o: &Options) -> Result<Report, String> {
     let map = Mmap::open(path).map_err(|e| format!("{path}: {e}"))?;
-    let image = hexcavator_image::Image::parse(&map).map_err(|e| format!("{path}: {e}"))?;
+    let image = turbonop_image::Image::parse(&map).map_err(|e| format!("{path}: {e}"))?;
     let (format, checks) = match &image {
-        hexcavator_image::Image::Pe(pe) => ("pe", pe_checks(pe)),
-        hexcavator_image::Image::Elf(elf) => ("elf", elf_checks(elf)),
-        hexcavator_image::Image::MachO(m) => ("macho", macho_checks(m)),
-        hexcavator_image::Image::Wasm(m) => ("wasm", wasm_checks(m)),
+        turbonop_image::Image::Pe(pe) => ("pe", pe_checks(pe)),
+        turbonop_image::Image::Elf(elf) => ("elf", elf_checks(elf)),
+        turbonop_image::Image::MachO(m) => ("macho", macho_checks(m)),
+        turbonop_image::Image::Wasm(m) => ("wasm", wasm_checks(m)),
         _ => {
             return Err(format!(
                 "{path}: checksec reads PE, ELF, Mach-O, and WebAssembly images"
@@ -226,7 +226,7 @@ fn check(path: &str, o: &Options) -> Result<Report, String> {
 /// within its linear memory: stack canaries (its shadow stack is in
 /// memory), whether it gives its memory to its host, and the features it
 /// was built for.
-fn wasm_checks(m: &hexcavator_wasm::Module<'_>) -> Vec<Check> {
+fn wasm_checks(m: &turbonop_wasm::Module<'_>) -> Vec<Check> {
     let mut out = Vec::new();
     out.push(c(
         "Isolated code",
@@ -235,7 +235,7 @@ fn wasm_checks(m: &hexcavator_wasm::Module<'_>) -> Vec<Check> {
     ));
     // Its names: the module's name section's, imports', and exports'.
     let names: Vec<Vec<u8>> = m
-        .names(hexcavator_wasm::NAME_FUNCTION)
+        .names(turbonop_wasm::NAME_FUNCTION)
         .into_iter()
         .map(|n| n.name.to_vec())
         .chain(m.imports().into_iter().map(|i| i.field.to_vec()))
@@ -286,7 +286,7 @@ fn wasm_checks(m: &hexcavator_wasm::Module<'_>) -> Vec<Check> {
 
 /// A module's `target_features` section: each feature it uses (`+`) or
 /// mustn't (`-`), as wasm-ld records them.
-fn target_features(m: &hexcavator_wasm::Module<'_>) -> Option<Vec<String>> {
+fn target_features(m: &turbonop_wasm::Module<'_>) -> Option<Vec<String>> {
     let s = m.custom(b"target_features")?;
     let start = usize::try_from(s.data_offset).ok()?;
     let end = usize::try_from(s.contents_offset + s.contents_size).ok()?;
@@ -331,10 +331,10 @@ fn on_off(b: bool) -> State {
 
 // --------------------------------------------------------------------- PE
 
-fn pe_checks(pe: &hexcavator_pe::PeFile<'_>) -> Vec<Check> {
-    use hexcavator_pe::consts::dll_characteristics as dc;
-    use hexcavator_pe::consts::file_characteristics as fc;
-    use hexcavator_pe::load_config::{field, guard_flags as gf};
+fn pe_checks(pe: &turbonop_pe::PeFile<'_>) -> Vec<Check> {
+    use turbonop_pe::consts::dll_characteristics as dc;
+    use turbonop_pe::consts::file_characteristics as fc;
+    use turbonop_pe::load_config::{field, guard_flags as gf};
     let mut out = Vec::new();
     let Some(h) = pe.optional_header() else {
         out.push(c("image", State::Info, "an object, not an image"));
@@ -344,7 +344,7 @@ fn pe_checks(pe: &hexcavator_pe::PeFile<'_>) -> Vec<Check> {
     let file = pe.file_header().characteristics.get();
     let is64 = h.is_64();
     let machine = pe.machine();
-    let x86 = machine == hexcavator_pe::consts::machine::I386;
+    let x86 = machine == turbonop_pe::consts::machine::I386;
     let relocs = pe.data_directory(5).is_some_and(|d| d.size.get() != 0);
     let dynamic = dll & dc::DYNAMIC_BASE != 0;
     out.push(
@@ -383,7 +383,7 @@ fn pe_checks(pe: &hexcavator_pe::PeFile<'_>) -> Vec<Check> {
     let lc = pe.load_config();
     let flags = lc
         .as_ref()
-        .map_or(0, hexcavator_pe::load_config::LoadConfig::guard_flags);
+        .map_or(0, turbonop_pe::load_config::LoadConfig::guard_flags);
     let cfg = dll & dc::GUARD_CF != 0 && flags & gf::CF_INSTRUMENTED != 0;
     out.push(c(
         "Control Flow Guard",
@@ -541,8 +541,8 @@ fn pe_checks(pe: &hexcavator_pe::PeFile<'_>) -> Vec<Check> {
 
 // -------------------------------------------------------------------- ELF
 
-fn elf_checks(elf: &hexcavator_elf::ElfFile<'_>) -> Vec<Check> {
-    use hexcavator_elf::consts::*;
+fn elf_checks(elf: &turbonop_elf::ElfFile<'_>) -> Vec<Check> {
+    use turbonop_elf::consts::*;
     let mut out = Vec::new();
     if elf.is_object() {
         out.push(c("image", State::Info, "a relocatable object, not linked"));
@@ -825,14 +825,14 @@ fn elf_checks(elf: &hexcavator_elf::ElfFile<'_>) -> Vec<Check> {
 }
 
 /// The image's GNU properties: x86's and AArch64's feature bits.
-fn gnu_properties(elf: &hexcavator_elf::ElfFile<'_>) -> (u32, u32) {
+fn gnu_properties(elf: &turbonop_elf::ElfFile<'_>) -> (u32, u32) {
     let (mut x86, mut arm) = (0u32, 0u32);
-    let word = if elf.class() == hexcavator_elf::Class::Elf64 {
+    let word = if elf.class() == turbonop_elf::Class::Elf64 {
         8
     } else {
         4
     };
-    let big = elf.endian() == hexcavator_core::Endian::Big;
+    let big = elf.endian() == turbonop_core::Endian::Big;
     let u32_at = |d: &[u8], at: usize| -> Option<u32> {
         let b: [u8; 4] = d.get(at..at + 4)?.try_into().ok()?;
         Some(if big {
@@ -843,7 +843,7 @@ fn gnu_properties(elf: &hexcavator_elf::ElfFile<'_>) -> (u32, u32) {
     };
     for s in elf
         .sections()
-        .filter(|s| s.kind == hexcavator_elf::consts::SHT_NOTE)
+        .filter(|s| s.kind == turbonop_elf::consts::SHT_NOTE)
     {
         for n in elf.notes(elf.section_data(&s)) {
             if n.kind != 5 || n.name != b"GNU\0" && n.name != b"GNU" {
@@ -875,8 +875,8 @@ fn gnu_properties(elf: &hexcavator_elf::ElfFile<'_>) -> (u32, u32) {
 
 // ----------------------------------------------------------------- Mach-O
 
-fn macho_checks(m: &hexcavator_macho::MachO<'_>) -> Vec<Check> {
-    use hexcavator_macho::consts::*;
+fn macho_checks(m: &turbonop_macho::MachO<'_>) -> Vec<Check> {
+    use turbonop_macho::consts::*;
     let mut out = Vec::new();
     let h = m.header();
     let exec = h.filetype == MH_EXECUTE;
@@ -1051,14 +1051,14 @@ fn macho_checks(m: &hexcavator_macho::MachO<'_>) -> Vec<Check> {
 }
 
 /// The entitlements in a Mach-O image's code signature, as text.
-fn entitlements(m: &hexcavator_macho::MachO<'_>) -> String {
+fn entitlements(m: &turbonop_macho::MachO<'_>) -> String {
     let Some(sig) = m.code_signature() else {
         return String::new();
     };
     let Some(lc) = m
         .load_commands()
         .into_iter()
-        .find(|l| l.cmd == hexcavator_macho::consts::LC_CODE_SIGNATURE)
+        .find(|l| l.cmd == turbonop_macho::consts::LC_CODE_SIGNATURE)
     else {
         return String::new();
     };
@@ -1070,7 +1070,7 @@ fn entitlements(m: &hexcavator_macho::MachO<'_>) -> String {
         return String::new();
     };
     for b in &sig.blobs {
-        if b.magic == hexcavator_macho::info::CSMAGIC_EMBEDDED_ENTITLEMENTS {
+        if b.magic == turbonop_macho::info::CSMAGIC_EMBEDDED_ENTITLEMENTS {
             let s = b.offset as usize + 8;
             let e = (b.offset as usize)
                 .saturating_add(b.length as usize)
@@ -1090,7 +1090,7 @@ fn entitlements(m: &hexcavator_macho::MachO<'_>) -> String {
 /// DWARF's units, a dSYM's or a debug map's objects', split units'
 /// too), and a PDB's record of the link (`S_ENVBLOCK`).
 fn audit(path: &str, debug: Option<&str>) -> Result<(Vec<Build>, Environment), String> {
-    let opened = hexcavator_program::Opened::open(Path::new(path), debug.map(Path::new))
+    let opened = turbonop_program::Opened::open(Path::new(path), debug.map(Path::new))
         .map_err(|e| e.to_string())?;
     let info = opened.debug_info().map_err(|e| e.to_string())?;
     if let Some(p) = info.pdb() {
@@ -1107,8 +1107,8 @@ fn audit(path: &str, debug: Option<&str>) -> Result<(Vec<Build>, Environment), S
 /// image's linker version; an ELF image's `.comment` (each tool's); a
 /// Mach-O image's `LC_BUILD_VERSION` (its platform, minimum OS, and SDK,
 /// and each tool's version); a WebAssembly module's `producers`.
-fn image_record(image: &hexcavator_image::Image<'_>) -> Environment {
-    use hexcavator_image::Image;
+fn image_record(image: &turbonop_image::Image<'_>) -> Environment {
+    use turbonop_image::Image;
     let mut out = Vec::new();
     match image {
         Image::Pe(pe) => {
@@ -1138,7 +1138,7 @@ fn image_record(image: &hexcavator_image::Image<'_>) -> Environment {
             }
         }
         Image::MachO(m) => {
-            use hexcavator_macho::version_string;
+            use turbonop_macho::version_string;
             for b in m.build_versions().into_iter().take(16) {
                 let mut platform = format!("{} {}", b.platform_name(), version_string(b.minos));
                 if b.sdk != 0 {
@@ -1171,8 +1171,8 @@ fn image_record(image: &hexcavator_image::Image<'_>) -> Environment {
 /// The most modules or units read.
 const MAX_OBJECTS: usize = 1 << 20;
 
-fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
-    use hexcavator_codeview::symbols::Symbol;
+fn pdb_builds(pdb: &turbonop_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
+    use turbonop_codeview::symbols::Symbol;
     let dbi = pdb.dbi().map_err(|e| e.to_string())?;
     let ids = pdb.ids().ok();
     let mut out = Vec::new();
@@ -1215,7 +1215,7 @@ fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
                     let lang = flags & 0xFF;
                     b.options.insert(
                         "language".into(),
-                        hexcavator_debuginfo::codeview_language(lang).into(),
+                        turbonop_debuginfo::codeview_language(lang).into(),
                     );
                     // What the linker made (import libraries' objects,
                     // resources) and assemblers aren't compiled: they have
@@ -1243,7 +1243,7 @@ fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
                 }
                 Ok(Symbol::BuildInfo { id }) => {
                     if let Some(ids) = &ids {
-                        let info = hexcavator_debuginfo::build_info(ids, id);
+                        let info = turbonop_debuginfo::build_info(ids, id);
                         let [cwd, tool, source, pdb, cmd] = info.map(Option::unwrap_or_default);
                         b.cwd = cwd;
                         b.tool = tool;
@@ -1328,8 +1328,8 @@ fn msvc_switches(cmd: &str) -> Vec<(String, String)> {
 /// Each DWARF unit's build: its compiler, and the options it records
 /// (GCC's `-grecord-gcc-switches` and clang's `-grecord-command-line`, in
 /// `DW_AT_producer`; Apple's `DW_AT_APPLE_flags`; clang's
-/// `-frecord-command-line`; see [`hexcavator_debuginfo::options`]).
-fn dwarf_builds(debug: &hexcavator_debuginfo::DebugInfo<'_>) -> Result<Vec<Build>, String> {
+/// `-frecord-command-line`; see [`turbonop_debuginfo::options`]).
+fn dwarf_builds(debug: &turbonop_debuginfo::DebugInfo<'_>) -> Result<Vec<Build>, String> {
     let units = debug.compilands().map_err(|e| e.to_string())?;
     let options = debug.compile_options().map_err(|e| e.to_string())?;
     let mut out = Vec::new();

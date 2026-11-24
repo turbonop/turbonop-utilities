@@ -137,7 +137,7 @@ fn objects_of_an_archive_name_it_and_info_lists_them() {
 
 #[test]
 fn without_its_objects_an_image_has_no_debug_information() {
-    let tmp = std::env::temp_dir().join(format!("hexc-debugmap-test-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("hexcavator-debugmap-test-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     let image = tmp.join("oso-arm64");
     std::fs::copy(dir().join("oso-arm64"), &image).unwrap();

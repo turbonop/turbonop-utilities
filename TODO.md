@@ -1,7 +1,21 @@
 # To do
 
-What's planned for Hexcavator, and what's waiting on something. Items
+What's planned for TurboNOP's tools (Hexcavator so far) and their
+libraries, and what's waiting on something. Items
 leave this list when they ship.
+
+## TurboNOP's tools
+
+- **One site for every tool's web version.** GitHub Pages has one site per
+  repository, and a deploy replaces all of it: hexcavator's release
+  deploys `/hexcavator/` (and a root that sends visitors there). Once a
+  second tool has a web version, assemble the site from each tool's
+  latest release (its site as a release asset) in one workflow, so that
+  no tool's release removes another's.
+- **A release workflow for each tool.** `<tool>-release.yml` on
+  `<tool>-v*` tags, signing through the shared actions
+  (`.github/actions/sign-windows`, `sign-macos`), with the release
+  environment's tag rule allowing its tags.
 
 ## Every format alike
 

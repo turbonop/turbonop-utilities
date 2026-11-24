@@ -3,23 +3,23 @@
 //! is on unless asked for:
 //!
 //! - In memory ([`keep_in_memory`], [`remember`]), for a process that
-//!   answers many requests (`hexcavator serve`): what is built from the same
+//!   answers many requests (`hexcavator serve`, say): what is built from the same
 //!   files again is what was built the first time, until they change.
-//! - In an index file ([`set_file`], `hexcavator --cache <path>`): the symbols,
-//!   in `path` if it is a file, or in `path/{name}.{hash}.hexc-index` if it
+//! - In an index file ([`set_file`], as `hexcavator --cache <path>` asks): the symbols,
+//!   in `path` if it is a file, or in `path/{name}.{hash}.turbonop-index` if it
 //!   is a directory (`hash` of the image's full path, so that images of the
 //!   same name don't share one).
 //!
 //! Either is used only while what it was built from is unchanged: the same
-//! Hexcavator, and the files of the same sizes and modification times.
+//! program, and the files of the same sizes and modification times.
 
 use std::any::Any;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
-use hexcavator_size::index::{Key, decode, encode};
-use hexcavator_size::symbols::Symbol;
+use turbonop_size::index::{Key, decode, encode};
+use turbonop_size::symbols::Symbol;
 
 /// Where index files go, if anywhere.
 static FILE: RwLock<Option<PathBuf>> = RwLock::new(None);
@@ -38,7 +38,7 @@ static KEPT: Mutex<Vec<Kept>> = Mutex::new(Vec::new());
 struct Kept {
     /// What it is, and of which files (their full paths).
     what: Vec<u8>,
-    /// The files' identities, and Hexcavator's, when it was built.
+    /// The files' identities, and the program's, when it was built.
     key: Key,
     /// It, once built. (Locked while it is built: another request for it
     /// waits for that build.)
@@ -66,13 +66,13 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// What is built from `files` (an image first, then its debug files) by
-/// this Hexcavator depends on: their sizes and modification times.
+/// this program depends on: their sizes and modification times.
 fn key(files: &[&Path]) -> Option<Key> {
     let mut key = Key::default();
     key.bytes(env!("CARGO_PKG_VERSION").as_bytes());
     // (A universal file's image is the architecture chosen.)
-    key.bytes(&hexcavator_macho::preferred_arch_key().to_le_bytes());
-    // The executable itself: a rebuilt Hexcavator may build differently.
+    key.bytes(&turbonop_macho::preferred_arch_key().to_le_bytes());
+    // The executable itself: a rebuilt program may build differently.
     key.file(&std::fs::metadata(std::env::current_exe().ok()?).ok()?);
     for f in files {
         key.file(&std::fs::metadata(f).ok()?);
@@ -85,7 +85,7 @@ fn key(files: &[&Path]) -> Option<Key> {
 fn identity(files: &[&Path], what: &str) -> Option<Vec<u8>> {
     let mut id = Key::default();
     id.bytes(what.as_bytes());
-    id.bytes(&hexcavator_macho::preferred_arch_key().to_le_bytes());
+    id.bytes(&turbonop_macho::preferred_arch_key().to_le_bytes());
     for f in files {
         let full = std::fs::canonicalize(f).ok()?;
         id.bytes(full.as_os_str().as_encoded_bytes());
@@ -166,7 +166,7 @@ pub fn index_path(image: &Path) -> Option<PathBuf> {
         .file_name()
         .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
     Some(at.join(format!(
-        "{name}.{:016x}.hexc-index",
+        "{name}.{:016x}.turbonop-index",
         std::hash::Hasher::finish(&h)
     )))
 }

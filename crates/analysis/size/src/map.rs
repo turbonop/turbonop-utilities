@@ -8,13 +8,13 @@
 //! function's unnamed data, string literals, and padding go to the symbol
 //! before them) but needs nothing but the map.
 
-use hexcavator_hash::Map as HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_debuginfo::{Compiland, Contribution, Group as DebugGroup};
-use hexcavator_image::Image;
-use hexcavator_linkmap::{LinkMap, MapSource};
-use hexcavator_pe::consts::section_characteristics as sc;
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_debuginfo::{Compiland, Contribution, Group as DebugGroup};
+use turbonop_image::Image;
+use turbonop_linkmap::{LinkMap, MapSource};
+use turbonop_pe::consts::section_characteristics as sc;
 
 use crate::pe::{PeInputs, extract_image};
 use crate::symbols::{Symbol, SymbolKind};
@@ -89,7 +89,7 @@ pub fn inputs(image: &Image<'_>, map: &LinkMap) -> Result<(PeInputs, Vec<Symbol>
     located.dedup_by_key(|l| l.0);
     let mut compilands: HashMap<(String, String), u32> = HashMap::default();
     let mut symbols = Vec::new();
-    let mut demangler = hexcavator_demangle::msvc::Demangler::default();
+    let mut demangler = turbonop_demangle::msvc::Demangler::default();
     for (k, &(rva, i)) in located.iter().enumerate() {
         let Some(group) = group_at(rva) else { continue };
         let group_end = group.addr + group.size;
@@ -118,10 +118,10 @@ pub fn inputs(image: &Image<'_>, map: &LinkMap) -> Result<(PeInputs, Vec<Symbol>
         let len = end - rva;
         let name = if s.name.starts_with('?') {
             demangler
-                .demangle(&s.name, hexcavator_demangle::msvc::flags::NO_PTR64)
+                .demangle(&s.name, turbonop_demangle::msvc::flags::NO_PTR64)
                 .unwrap_or_else(|| s.name.clone())
         } else {
-            hexcavator_demangle::swift::demangle(&s.name).unwrap_or_else(|| s.name.clone())
+            turbonop_demangle::swift::demangle(&s.name).unwrap_or_else(|| s.name.clone())
         };
         symbols.push(Symbol {
             addr: rva,

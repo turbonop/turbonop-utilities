@@ -7,11 +7,11 @@
 //! pieces are the debug information's contributions (DWARF's compile
 //! units' ranges), in the sections that hold them.
 
-use hexcavator_hash::Map as HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_core::Result;
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::{Image, Kind, SectionFlags};
+use turbonop_core::Result;
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::{Image, Kind, SectionFlags};
 
 use crate::pe::Unsupported;
 use crate::range::Range;
@@ -36,7 +36,7 @@ pub fn check(image: &Image<'_>, debug: &DebugInfo<'_>) -> std::result::Result<()
             return crate::pe::check(image, debug);
         }
         if pe
-            .data_directory(hexcavator_pe::consts::directory::COM_DESCRIPTOR)
+            .data_directory(turbonop_pe::consts::directory::COM_DESCRIPTOR)
             .is_some()
         {
             return Err(Unsupported::Managed);
@@ -84,10 +84,10 @@ fn section_names(image: &Image<'_>) -> Vec<String> {
 }
 
 /// A WebAssembly module's `.bss`: from the first variable in its memory
-/// (at [`hexcavator_image::WASM_MEMORY`]) that is in no section to past
+/// (at [`turbonop_image::WASM_MEMORY`]) that is in no section to past
 /// the last, if there are any, and none of `sections` overlaps them.
 fn wasm_bss(sections: &[Section], debug: &DebugInfo<'_>) -> Result<Option<Section>> {
-    use hexcavator_debuginfo::SymbolKind as DebugKind;
+    use turbonop_debuginfo::SymbolKind as DebugKind;
     let within = |a: u64| {
         sections
             .iter()
@@ -97,7 +97,7 @@ fn wasm_bss(sections: &[Section], debug: &DebugInfo<'_>) -> Result<Option<Sectio
     for s in debug.symbols()? {
         if s.kind != DebugKind::Data
             || s.thread_local
-            || s.addr < hexcavator_image::WASM_MEMORY
+            || s.addr < turbonop_image::WASM_MEMORY
             || within(s.addr)
         {
             continue;

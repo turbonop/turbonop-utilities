@@ -1,8 +1,8 @@
 //! Decodes hex byte strings (64-bit mode unless `-32`) and prints each.
 //!
-//!     cargo run -p hexcavator-x86 --example hex -- "d5 08 50" "62f4fc1801cb"
+//!     cargo run -p turbonop-x86 --example hex -- "d5 08 50" "62f4fc1801cb"
 
-use hexcavator_x86::{Mode, decode, format};
+use turbonop_x86::{Mode, decode, format};
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();

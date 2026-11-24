@@ -107,7 +107,7 @@ fn answers_as_the_command_line_does() {
 /// A binary rebuilt (replaced) while the server runs is read again.
 #[test]
 fn a_changed_binary_is_read_again() {
-    let dir = std::env::temp_dir().join(format!("hexc-serve-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-serve-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let image = dir.join("app.dll");

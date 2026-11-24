@@ -1,6 +1,6 @@
 //! Type layouts' parts: where each part of a class, structure, or union
 //! lies, as its records say (the holes between them, and comparisons, are
-//! format-independent: `hexcavator_debuginfo::layout`).
+//! format-independent: `turbonop_debuginfo::layout`).
 //!
 //! From a type's field list: its base classes, its virtual function table
 //! pointer, its members (bitfields with their bit positions), and its
@@ -10,7 +10,7 @@
 //! object, aligned, in order, so they are laid out there. An empty base takes no space (the empty base
 //! optimization).
 
-use hexcavator_core::Reader;
+use turbonop_core::Reader;
 
 use crate::types::{Field, TypeFormatter, leaf};
 use crate::types::{TypeIndex, TypeSource};
@@ -91,8 +91,8 @@ pub fn layout(types: &dyn TypeSource, ti: TypeIndex) -> Option<Layout> {
 /// looks up a definition by name.
 #[derive(Default)]
 struct Cache {
-    sizes: hexcavator_hash::Map<u32, Option<u64>>,
-    empty: hexcavator_hash::Map<u32, bool>,
+    sizes: turbonop_hash::Map<u32, Option<u64>>,
+    empty: turbonop_hash::Map<u32, bool>,
 }
 
 impl Cache {
@@ -328,7 +328,7 @@ fn is_empty(
     types: &dyn TypeSource,
     ti: TypeIndex,
     depth: u32,
-    known: &mut hexcavator_hash::Map<u32, bool>,
+    known: &mut turbonop_hash::Map<u32, bool>,
 ) -> bool {
     if let Some(&e) = known.get(&ti.0) {
         return e;
@@ -346,7 +346,7 @@ fn is_empty_uncached(
     types: &dyn TypeSource,
     ti: TypeIndex,
     depth: u32,
-    known: &mut hexcavator_hash::Map<u32, bool>,
+    known: &mut turbonop_hash::Map<u32, bool>,
 ) -> bool {
     let ti = types.resolve_forward(ti);
     let Some(udt) = types.record(ti).and_then(|r| r.udt()) else {
@@ -390,7 +390,7 @@ fn pointer_size(types: &dyn TypeSource, list: TypeIndex) -> Option<u64> {
 /// name), with its layout, without the parts' type names (see
 /// [`layout`] for one with them).
 pub fn all(types: &(dyn TypeSource + Sync)) -> Vec<Layout> {
-    let mut seen = hexcavator_hash::Set::default();
+    let mut seen = turbonop_hash::Set::default();
     let mut wanted = Vec::new();
     // Every record's offset, once: lookups by index then cost nothing.
     for (ti, rec) in types.records() {
@@ -404,7 +404,7 @@ pub fn all(types: &(dyn TypeSource + Sync)) -> Vec<Layout> {
         wanted.push(ti);
     }
     // Laid out on every core, each with its own cache.
-    hexcavator_par::map_chunks(&wanted, 256, |part| {
+    turbonop_par::map_chunks(&wanted, 256, |part| {
         let mut cache = Cache::default();
         part.iter()
             .filter_map(|&ti| build(types, ti, false, &mut cache))

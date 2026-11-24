@@ -3,8 +3,8 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
-use hexcavator_arm32::format::{Targets, format};
-use hexcavator_arm32::{decode_a32, decode_t32};
+use turbonop_arm32::format::{Targets, format};
+use turbonop_arm32::{decode_a32, decode_t32};
 
 #[test]
 fn llvm_text() {

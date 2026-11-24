@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use hexcavator_elf::ElfFile;
-use hexcavator_elf::consts::*;
+use turbonop_elf::ElfFile;
+use turbonop_elf::consts::*;
 
 use crate::search::Reject;
 use crate::{Ctx, DepKind, Found, Import, ImportStatus, Resolved, Status, Wanted};
@@ -89,7 +89,7 @@ pub(crate) fn is_executable(ctx: &Ctx<'_>, m: usize) -> bool {
             .loaded
             .get(m)
             .and_then(Option::as_ref)
-            .and_then(|l| hexcavator_wasm::Module::parse(l.data()).ok())
+            .and_then(|l| turbonop_wasm::Module::parse(l.data()).ok())
             .is_some_and(|w| w.exports().iter().any(|e| e.name == b"_start")),
     }
 }

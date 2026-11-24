@@ -1,7 +1,7 @@
 //! The debug directory (`IMAGE_DEBUG_DIRECTORY` entries) and the payloads
 //! of its common entry types.
 
-use hexcavator_core::{Reader, Rva, U32Le, bytes_at};
+use turbonop_core::{Reader, Rva, U32Le, bytes_at};
 
 use crate::PeFile;
 use crate::consts::debug_type;
@@ -64,7 +64,7 @@ impl<'data> DebugEntry<'data> {
         }
         let data = self.data?;
         let n = data.len() / 4;
-        hexcavator_core::slice_from_bytes(&data[..n * 4], n)
+        turbonop_core::slice_from_bytes(&data[..n * 4], n)
     }
 
     /// The extended DLL characteristics (`IMAGE_DLLCHARACTERISTICS_EX_*`).

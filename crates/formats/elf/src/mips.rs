@@ -4,7 +4,7 @@
 //! (`SHT_MIPS_OPTIONS`, n64's and n32's: an `ODK_REGINFO` option, its
 //! `Elf64_RegInfo`) records it, or else the `_gp` symbol says.
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 /// `SHT_MIPS_REGINFO`.
 pub const SHT_MIPS_REGINFO: u32 = 0x7000_0006;

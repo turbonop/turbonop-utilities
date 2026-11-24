@@ -9,8 +9,8 @@
 
 use std::collections::BTreeSet;
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::objc::{Method, Objc};
+use turbonop_macho::MachO;
+use turbonop_macho::objc::{Method, Objc};
 
 fn testdata(name: &str) -> Vec<u8> {
     let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

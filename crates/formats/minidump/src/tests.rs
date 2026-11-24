@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 
 use crate::context::{self, Context};
 use crate::{CodeView, Minidump, cpu, platform, stream};
-use hexcavator_core::ErrorKind;
+use turbonop_core::ErrorKind;
 
 /// Writes a minidump: streams are appended, then the directory.
 struct Writer {

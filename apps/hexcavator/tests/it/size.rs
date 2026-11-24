@@ -102,7 +102,7 @@ fn errors() {
     assert!(stderr.contains("FASTLINK"), "{stderr}");
 
     // No PDB beside the image.
-    let dir = std::env::temp_dir().join(format!("hexcavator-size-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-size-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let lonely = dir.join("PEParser.Tests.Dllx64.dll");
     std::fs::copy(&image, &lonely).unwrap();
@@ -667,7 +667,7 @@ fn maps_instead_of_pdbs() {
 #[test]
 fn debug_files() {
     // A dSYM bundle next to the image is found.
-    let dir = std::env::temp_dir().join(format!("hexc-dsym-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-dsym-{}", std::process::id()));
     let dwarf_dir = dir.join("program-arm64.dSYM/Contents/Resources/DWARF");
     std::fs::create_dir_all(&dwarf_dir).unwrap();
     let image = dir.join("program-arm64");
@@ -776,7 +776,7 @@ fn wasm_source_maps() {
     );
 
     // A copy elsewhere, with another file name, so only the options find it.
-    let tmp = std::env::temp_dir().join(format!("hexc-sourcemap-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("hexcavator-sourcemap-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     let copy = tmp.join("module.wasm");
     std::fs::copy(&module, &copy).unwrap();
@@ -867,7 +867,7 @@ fn source_filters_and_custom_sources() {
     ]);
     assert!(!ok && stderr.contains("-source-filter"), "{stderr}");
     // A custom source from a config file.
-    let dir = std::env::temp_dir().join(format!("hexc-config-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-config-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = dir.join("x.bloaty");
     std::fs::write(
@@ -1287,7 +1287,7 @@ fn disassemble_variables() {
 /// file.
 #[test]
 fn symbol_index() {
-    let dir = std::env::temp_dir().join(format!("hexc-index-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-index-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let image = dir.join("CppTestCases_BasicDiffObjectsAfter.dll");
@@ -1301,7 +1301,7 @@ fn symbol_index() {
         let mut all: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().path())
-            .filter(|p| p.to_string_lossy().ends_with(".hexc-index"))
+            .filter(|p| p.to_string_lossy().ends_with(".turbonop-index"))
             .collect();
         all.sort();
         all
@@ -1376,7 +1376,7 @@ fn cache_option_needs_a_path() {
 /// what exceeds them, when anything does.
 #[test]
 fn size_budgets() {
-    let dir = std::env::temp_dir().join(format!("hexc-budget-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-budget-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let image = elf("program-x86_64-linux-gnu");
     let base = elf("program-i386-linux-gnu");

@@ -1,14 +1,14 @@
 //! `hexcavator query`: an image's symbols, filtered, grouped, and sorted (see
-//! `hexcavator_query` for the language).
+//! `turbonop_query` for the language).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_query::{Output, Value};
-use hexcavator_size::table::{COLUMNS, SymbolTable};
-use hexcavator_size::{Model, symbols};
 use serde_json::json;
+use turbonop_query::{Output, Value};
+use turbonop_size::table::{COLUMNS, SymbolTable};
+use turbonop_size::{Model, symbols};
 
 pub const USAGE: &str = "\
 usage: hexcavator query [options] <image> <query>
@@ -66,7 +66,7 @@ pub fn run(args: &[String]) -> ExitCode {
             "too many arguments (quote the query: \"kind=function ...\")"
         });
     };
-    let parsed = match hexcavator_query::parse(query, &COLUMNS) {
+    let parsed = match turbonop_query::parse(query, &COLUMNS) {
         Ok(q) => q,
         Err(e) => {
             ereport!("hexcavator query: {e}\n  {query}\n  {}^", " ".repeat(e.at));
@@ -81,7 +81,7 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
     let table = SymbolTable::new(&model, &syms, &modules).with_lines(&lines);
-    let out = match hexcavator_query::run(&parsed, &table) {
+    let out = match turbonop_query::run(&parsed, &table) {
         Ok(o) => o,
         Err(e) => {
             ereport!("hexcavator query: {}", e.message);
@@ -108,13 +108,13 @@ fn usage(message: &str) -> ExitCode {
 type Loaded = (
     std::sync::Arc<Model>,
     std::sync::Arc<Vec<symbols::Symbol>>,
-    Vec<hexcavator_debuginfo::Compiland>,
-    hexcavator_debuginfo::SourceLines,
+    Vec<turbonop_debuginfo::Compiland>,
+    turbonop_debuginfo::SourceLines,
 );
 
 /// The model and symbols of the image at `path`.
 pub(crate) fn load(path: &Path, pdb: Option<&Path>) -> Result<Loaded, String> {
-    let opened = hexcavator_program::Opened::open(path, pdb)?;
+    let opened = turbonop_program::Opened::open(path, pdb)?;
     let program = opened.program()?;
     let show = opened.debug_path().display();
     // (The compilands and lines are read while the symbols are built.)

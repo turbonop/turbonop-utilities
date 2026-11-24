@@ -1,14 +1,14 @@
-# hexcavator-fuzz
+# turbonop-fuzz
 
 Hexcavator's fuzzer: every parser and every `hexcavator` command, on mutated
 inputs, looking for denial of service: panics, stack overflows, hangs, and
 runaway allocation. (Rust rules out memory unsafety; these it doesn't.)
 It is in-house and runs on stable Rust, with no dependencies.
 
-    cargo run --release -p hexcavator-fuzz -- list
-    cargo run --release -p hexcavator-fuzz -- selftest
-    cargo run --release -p hexcavator-fuzz -- run all -seconds 600
-    cargo run --release -p hexcavator-fuzz -- replay pdb fuzz-findings/pdb-0123456789abcdef.bin
+    cargo run --release -p turbonop-fuzz -- list
+    cargo run --release -p turbonop-fuzz -- selftest
+    cargo run --release -p turbonop-fuzz -- run all -seconds 600
+    cargo run --release -p turbonop-fuzz -- replay pdb fuzz-findings/pdb-0123456789abcdef.bin
 
 Run it from the repository: its seeds are the files under `testdata`, each
 seeding the targets that read its kind (PE images, COFF objects, archives,
@@ -46,8 +46,8 @@ counter value it hasn't seen (by AFL's buckets) in its pool and in
 `fuzz-corpus/<target>/`, which later runs start from.
 
     set RUSTFLAGS=-C instrument-coverage
-    cargo build --release -p hexcavator-fuzz --features coverage --target-dir target/fuzz-cov
-    target\fuzz-cov\release\hexcavator-fuzz run all -seconds 3600
+    cargo build --release -p turbonop-fuzz --features coverage --target-dir target/fuzz-cov
+    target\fuzz-cov\release\turbonop-fuzz run all -seconds 3600
 
 Without it, mutation is blind (but much faster per input).
 

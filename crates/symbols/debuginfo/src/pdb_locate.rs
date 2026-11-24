@@ -7,13 +7,13 @@
 //! line at an address of a site nested in it is where it calls the nested
 //! one, as is the procedure's at an address of its sites'.
 
-use hexcavator_hash::Map as HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_codeview::TypeFormatter;
-use hexcavator_codeview::annotations;
-use hexcavator_codeview::lines::{self, subsection};
-use hexcavator_codeview::symbols::{Symbol, kind};
-use hexcavator_pdb::{DbiStream, LazyTypeStream, ModuleStream, StringTable};
+use turbonop_codeview::TypeFormatter;
+use turbonop_codeview::annotations;
+use turbonop_codeview::lines::{self, subsection};
+use turbonop_codeview::symbols::{Symbol, kind};
+use turbonop_pdb::{DbiStream, LazyTypeStream, ModuleStream, StringTable};
 
 use crate::locate::{Frame, MAX_FRAMES};
 use crate::pdb_backend::{
@@ -271,10 +271,10 @@ fn lazy_inlinee(
     types: &LazyTypeStream<'_, '_>,
     id: u32,
 ) -> Option<String> {
-    use hexcavator_codeview::types::{TypeIndex, leaf};
+    use turbonop_codeview::types::{TypeIndex, leaf};
     let lossy = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
     let (kind, scope, name) = ids.with_record(TypeIndex(id), |rec| {
-        let mut r = hexcavator_core::Reader::new(rec.data);
+        let mut r = turbonop_core::Reader::new(rec.data);
         let scope = r.u32_le().ok()?;
         let _ty = r.u32_le().ok()?;
         Some((rec.kind, scope, lossy(r.cstr().ok()?)))

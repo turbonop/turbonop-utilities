@@ -55,7 +55,7 @@ def main():
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, fmt, *a):
-            if os.environ.get("HEXC_WEB_LOG"):
+            if os.environ.get("HEXCAVATOR_WEB_LOG"):
                 print(fmt % a, file=sys.stderr, flush=True)
 
         def headers_out(self, status, ctype, length):

@@ -605,7 +605,7 @@ async function findings(context, uri) {
 }
 
 /**
- * Disassembly documents (`hexc-disasm:` URIs): `hexcavator size -disassemble`'s
+ * Disassembly documents (`hexcavator-disasm:` URIs): `hexcavator size -disassemble`'s
  * listing of one function, read-only, highlighted by the extension's
  * grammar. Opening one again shows it again (VS Code keeps the document).
  */
@@ -867,8 +867,8 @@ async function openData(file, name) {
 async function openDisassemblyText(file, name, style) {
   const uri = vscode.Uri.from(disasm.disasmUri(file, name, style));
   const doc = await vscode.workspace.openTextDocument(uri);
-  if (doc.languageId !== "hexc-disasm") {
-    await vscode.languages.setTextDocumentLanguage(doc, "hexc-disasm");
+  if (doc.languageId !== "hexcavator-disasm") {
+    await vscode.languages.setTextDocumentLanguage(doc, "hexcavator-disasm");
   }
   await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: true });
 }

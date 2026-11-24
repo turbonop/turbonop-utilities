@@ -27,9 +27,9 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Arch;
-use hexcavator_dwarf::cfi::{Cfi, CfiKind, Entry as CfiEntry};
-use hexcavator_image::{Image, Section};
+use turbonop_core::Arch;
+use turbonop_dwarf::cfi::{Cfi, CfiKind, Entry as CfiEntry};
+use turbonop_image::{Image, Section};
 
 use crate::dwarf_cfi::{self, Frame, Registers, Target};
 use crate::{Error, Memory, Result};
@@ -255,13 +255,13 @@ const X64_DWARF: [u16; 16] = [0, 2, 1, 3, 7, 6, 4, 5, 8, 9, 10, 11, 12, 13, 14, 
 /// The frame by the `.pdata` entry covering `rva`, if one does.
 fn pdata(
     image: &Image<'_>,
-    pe: &hexcavator_pe::PeFile<'_>,
+    pe: &turbonop_pe::PeFile<'_>,
     bias: u64,
     rva: u64,
     registers: &mut Registers,
     memory: &dyn Memory,
 ) -> Result<Option<Unwound>> {
-    use hexcavator_pe::consts::directory::EXCEPTION;
+    use turbonop_pe::consts::directory::EXCEPTION;
     let Some(dir) = pe.data_directory(EXCEPTION) else {
         return Ok(None);
     };
@@ -409,7 +409,7 @@ fn compact(
     };
     let Some(info) = section(image, b"__unwind_info")
         .and_then(|s| section_bytes(image, &s))
-        .and_then(|d| hexcavator_macho::unwind_info::UnwindInfo::parse(d, image.endian()))
+        .and_then(|d| turbonop_macho::unwind_info::UnwindInfo::parse(d, image.endian()))
     else {
         return Ok(None);
     };
@@ -579,7 +579,7 @@ fn dwarf(
     let Some((cie, fde)) = found else {
         return Ok(None);
     };
-    let Some(row) = hexcavator_dwarf::cfi::row_at(&cfi, &cie, &fde, address) else {
+    let Some(row) = turbonop_dwarf::cfi::row_at(&cfi, &cie, &fde, address) else {
         return Ok(None);
     };
     let target = Target {

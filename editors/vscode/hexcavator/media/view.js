@@ -1271,7 +1271,7 @@
   function markdown(row, kids) {
     const lines = [`| ${row.name} | File | Virtual |`, "|---|--:|--:|"];
     for (const c of kids) {
-      lines.push(`| ${c.name.replace(/\|/g, "\\|")} | ${shown(c.file)} | ${shown(c.vm)} |`);
+      lines.push(`| ${c.name.replace(/[\\|]/g, "\\$&")} | ${shown(c.file)} | ${shown(c.vm)} |`);
     }
     return lines.join("\n");
   }

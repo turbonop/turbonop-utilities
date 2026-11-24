@@ -57,6 +57,11 @@ window.acquireVsCodeApi = function () {
 """
 
 
+def without_scripts(dom):
+    """`dom` without its script elements (any case, any end tag's spacing)."""
+    return re.sub(r"<script\b.*?</script\b[^>]*>", "", dom, flags=re.S | re.I)
+
+
 def page(message, then="", vscode=False):
     def read(name):
         with open(os.path.join(MEDIA, name), encoding="utf-8") as f:
@@ -321,7 +326,7 @@ def main():
     dup = {"kind": "duplicates", "advice": "define 3 variables once", "saving": 1000000, "examples": []}
     with_dup = dict(recs, recommendations=recs["recommendations"] + [dup], saving=recs["saving"] + dup["saving"])
     rdom = render({"kind": "findings", "file": image, "findings": findings, "recommendations": with_dup}, "document.querySelector('details').open = true;", shot=shot("buildchanges"))
-    drawn = re.sub(r"<script.*?</script>", "", rdom, flags=re.S)
+    drawn = without_scripts(rdom)
     assert "define 3 variables once" not in drawn, "duplicates left to Duplicate data"
     assert "save 976 KiB" not in drawn and "Size Reduction Opportunities" in drawn
     assert "<h2>Build changes</h2>" in rdom and rdom.index("Build changes") < rdom.index("Duplicate data"), "build changes first"
@@ -574,10 +579,10 @@ def diff_checks(exe, shot):
     dom = render(tmessage, vscode=True)
     for name, want in [("added_fn(int)", "added"), ("removed_fn(int)", "removed"), ("transform(int)", "grew"), ("g_removed_table", "removed")]:
         assert mark(name) == want, f"table: {name}: {mark(name)}"
-    assert html.escape("kept_same(int)") not in re.sub(r"<script.*?</script>", "", dom, flags=re.S), "the unchanged left out"
+    assert html.escape("kept_same(int)") not in without_scripts(dom), "the unchanged left out"
     # Only what was added.
     dom = render(tmessage, "document.querySelector('.gchip.kind[data-kind=\"added\"]').click();", vscode=True)
-    drawn = [html.unescape(n) for n in order(re.sub(r"<script.*?</script>", "", dom, flags=re.S))]
+    drawn = [html.unescape(n) for n in order(without_scripts(dom))]
     assert sorted(drawn) == ["added_fn(int)", "g_added_table"], f"added only: {drawn}"
     # By section, here (no hexcavator asked).
     dom = render(tmessage, "document.querySelector('.gchip[data-id=\"sections\"]').click();", vscode=True)
@@ -765,7 +770,7 @@ def init_checks(exe, shot):
 
     def shown(dom):
         """The page's text (not its scripts': the message is in one)."""
-        return html.unescape(re.sub("<[^>]+>", " ", re.sub(r"<script>.*?</script>", "", dom, flags=re.S)))
+        return html.unescape(re.sub("<[^>]+>", " ", without_scripts(dom)))
 
     def posted(dom):
         return html.unescape(re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S).group(1))

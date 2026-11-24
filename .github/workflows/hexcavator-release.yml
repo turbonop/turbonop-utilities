@@ -156,7 +156,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: turbonop-${{ matrix.vscode }}
+          name: hexcavator-${{ matrix.vscode }}
           path: out/
           if-no-files-found: error
 
@@ -271,7 +271,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: turbonop-${{ matrix.vscode }}
+          name: hexcavator-${{ matrix.vscode }}
           path: mac
       - uses: ./.github/actions/sign-macos
         with:
@@ -296,7 +296,7 @@ jobs:
             "$RUNNER_TEMP/signature.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: turbonop-${{ matrix.vscode }}
+          name: hexcavator-${{ matrix.vscode }}
           path: mac/
           overwrite: true
 
@@ -329,7 +329,7 @@ jobs:
           node-version: 22
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: turbonop-${{ matrix.from }}
+          name: hexcavator-${{ matrix.from }}
           path: built
       - name: VSIX
         run: |
@@ -347,13 +347,13 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(p, null, 2) + "\n");
           ' "$ext/package.json" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           (cd "$ext" && npx --yes "$VSCE" package --no-dependencies --target ${{ matrix.vscode }} \
-            --out "$GITHUB_WORKSPACE/dist/turbonop-$VERSION-${{ matrix.vscode }}.vsix")
+            --out "$GITHUB_WORKSPACE/dist/hexcavator-$VERSION-${{ matrix.vscode }}.vsix")
       # (hexcavator prints its license and its notices: `hexcavator
       # licenses`.)
       - name: hexcavator and its symbols
         if: matrix.target != ''
         run: |
-          base="turbonop-${{ matrix.target }}"
+          base="hexcavator-${{ matrix.target }}"
           cp "built/bin/hexcavator${{ matrix.exe }}" "dist/$base${{ matrix.exe }}"
           mkdir -p "$base-symbols"
           cp -R built/symbols/. "$base-symbols/"
@@ -404,7 +404,7 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "Hexcavator ${GITHUB_REF_NAME#turbonop-}" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "Hexcavator ${GITHUB_REF_NAME#hexcavator-}" --generate-notes
 
   # The web version (editors/web: the extension's own views, with
   # hexcavator for wasi-threads, in the browser), assembled and tried in

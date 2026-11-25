@@ -136,8 +136,23 @@ pub fn scopes(name: &str) -> Vec<&str> {
 
 /// The type (one of `types`, by its index) that owns the symbol `name`:
 /// the innermost of its scopes that is one. A function's static (`x (in
-/// static bool C::f())`) is the function's type's.
+/// static bool C::f())`) is the function's type's; the Itanium ABI's
+/// tables of a type (`vtable for C`, `typeinfo for C`, `typeinfo name for
+/// C`, `VTT for C`, `construction vtable for C-in-D`) are the type's.
 fn owner(name: &str, types: &HashMap<String, u32>) -> Option<u32> {
+    for prefix in [
+        "vtable for ",
+        "typeinfo for ",
+        "typeinfo name for ",
+        "VTT for ",
+        "construction vtable for ",
+    ] {
+        if let Some(t) = name.strip_prefix(prefix) {
+            // (`C-in-D`: C's vtable, built for D's construction.)
+            let t = t.split_once("-in-").map_or(t, |(c, _)| c);
+            return types.get(&normalize(t)).copied();
+        }
+    }
     let qualified = match name.split_once(" (in ") {
         Some((_, f)) if name.ends_with(')') => {
             // The function's name, then a scope of its own.
@@ -252,14 +267,20 @@ mod tests {
             symbol("ns::f()", SymbolKind::Function, 50),
             symbol("ns::V<int, ns::C>::push(int)", SymbolKind::Function, 40),
             symbol("[pdata] ns::C::f(int)", SymbolKind::Pdata, 12),
+            // The Itanium ABI's tables of a type.
+            symbol("vtable for ns::C", SymbolKind::Data, 24),
+            symbol("typeinfo for ns::C", SymbolKind::Data, 16),
+            symbol("typeinfo name for ns::C", SymbolKind::Data, 6),
+            symbol("construction vtable for ns::C-in-ns::V<int, ns::C>", SymbolKind::Data, 8),
+            symbol("non-virtual thunk to ns::C::f(int)", SymbolKind::Function, 5),
         ];
         let types = ["ns::C", "ns::V<int,ns::C>", "ns::Unused"];
         let owned = by_type(&symbols, &types);
         let c = &owned[&0];
-        assert_eq!(c.code, Size::new(160, 160));
-        assert_eq!(c.data, Size::new(28, 28));
-        assert_eq!(c.functions, 3);
-        assert_eq!(c.symbols, [0, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(c.code, Size::new(165, 165));
+        assert_eq!(c.data, Size::new(82, 82));
+        assert_eq!(c.functions, 4);
+        assert_eq!(c.symbols, [0, 1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14]);
         let v = &owned[&1];
         assert_eq!((v.code.file, v.functions), (40, 1));
         assert!(!owned.contains_key(&2));

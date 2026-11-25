@@ -151,6 +151,14 @@
 //!   frequency (`levels`),
 //!   `{mhz, timeNs, share}`, most first. (Read from the trace file the
 //!   first time, then kept.)
+//! - `assembly` `{trace, fn, time?}` → `{name, module, offset, size,
+//!   samples, own, hottest, lines, blocks, undecoded}`: the function `fn`
+//!   names (a Functions row's ID), disassembled from its image file (if
+//!   it's here and the image the trace saw), with the CPU samples in
+//!   `time` by instruction: `lines` `{address, offset, bytes, text,
+//!   label, block, own, callees}` (`own`, samples at it; `callees`, at a
+//!   call, samples in what it called), its basic blocks `{index, first,
+//!   count, own, successors, loop}`, and the 3 hottest lines.
 //! - `marks` `{trace}` → `{rows}`: the marks in the trace (text a
 //!   recorder put in it: WPR marks the start of its rundown, its
 //!   profiles and the recording's name), in time order, each `{timeNs,
@@ -1297,6 +1305,21 @@ impl State {
                 ))
             }
             "marks" => crate::marks::marks(trace, &self.loaded.path),
+            "assembly" => {
+                let spec = TreeSpec::from_json(params)?;
+                let id = params
+                    .get("fn")
+                    .and_then(Value::as_str)
+                    .ok_or("fn: expected a function's ID")?;
+                crate::assembly::assembly(
+                    trace,
+                    &self.loaded.path,
+                    &self.resolver,
+                    &self.symbols,
+                    id,
+                    ticks(trace, spec.time),
+                )
+            }
             "dotnet" => {
                 let spec = TreeSpec::from_json(params)?;
                 let limit = count(params, "limit", 1000)?;

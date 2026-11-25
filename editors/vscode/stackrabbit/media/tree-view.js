@@ -55,6 +55,9 @@
     if (listedKind) {
       loadEventList(listedKind);
     }
+    if (tab === "assembly") {
+      loadAssembly();
+    }
   }
   let view = null; // the engine's view ID
   let unit = "samples";
@@ -1188,7 +1191,7 @@
     if (name === "regions") {
       loadRegions();
     }
-    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
+    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "assembly", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
       $(`tab-${t}`).classList.toggle("active", name === t);
       $(`${t}-pane`).classList.toggle("hidden", name !== t);
     }
@@ -1200,6 +1203,9 @@
     }
     if (name === "symbols") {
       loadSymbols();
+    }
+    if (name === "assembly") {
+      loadAssembly();
     }
     // (After the pane shows: it loads only if it does.)
     if (summaryTabs[name] && summaryTabs[name].stale) {
@@ -1217,6 +1223,7 @@
   $("tab-idle").addEventListener("click", () => showTab("idle"));
   $("tab-gpu").addEventListener("click", () => showTab("gpu"));
   $("tab-dotnet").addEventListener("click", () => showTab("dotnet"));
+  $("tab-assembly").addEventListener("click", () => showTab("assembly"));
   $("tab-registry").addEventListener("click", () => showTab("registry"));
   $("tab-hardfaults").addEventListener("click", () => showTab("hardfaults"));
   $("tab-vmem").addEventListener("click", () => showTab("vmem"));
@@ -1409,6 +1416,57 @@
     lit = lit && lit.fn === row.fn ? null : { fn: row.fn, label: row.label };
     saveState();
     loadGraph();
+    if (tab === "assembly") {
+      loadAssembly();
+    }
+  }
+
+  // The highlighted function's instructions, each with the samples at it
+  // and under it (its calls, and faults and interrupts while at it), in
+  // the time selected: the hottest three marked, a heat bar for the rest.
+  async function loadAssembly() {
+    const title = $("assembly-title");
+    const table = $("assembly");
+    if (!lit || !/\|[0-9a-f]+$/.test(lit.fn)) {
+      title.textContent =
+        "Highlight a function (click one in Functions, or press H on a stack row) to see its instructions here.";
+      table.innerHTML = "";
+      return;
+    }
+    title.textContent = `Reading ${lit.label}…`;
+    try {
+      const params = { fn: lit.fn };
+      if (selection) {
+        params.time = selection;
+      }
+      const d = await request("assembly", params);
+      const n = (v) => v.toLocaleString("en-US");
+      const loops = d.blocks.filter((b) => b.loop).length;
+      title.textContent =
+        `${d.name} (${d.module}): ${n(d.size)} bytes, ${n(d.lines.length)} instructions in ${n(d.blocks.length)} blocks` +
+        `${loops ? ` (${n(loops)} loop${loops === 1 ? "" : "s"})` : ""}; ${n(d.own)} samples in it, ${n(d.samples)} with it on the stack` +
+        `${selection ? " in the time selected" : ""}.`;
+      const most = Math.max(1, ...d.lines.map((l) => l.own));
+      const hot = new Set(d.hottest);
+      const loopHeads = new Set(d.blocks.filter((b) => b.loop).map((b) => b.first));
+      const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+      const rows = d.lines.map((l, i) => {
+        const heat = Math.round((100 * l.own) / most);
+        const label = l.label ? `${esc(l.label)}:${loopHeads.has(i) ? " ↺" : ""}` : "";
+        return (
+          `<tr data-i="${i}" class="${hot.has(i) ? "hot" : ""}"><td class="label">${label}</td>` +
+          `<td class="num">${esc(l.address)}</td><td class="cmd">${esc(l.text)}</td>` +
+          `<td class="num"><span class="heat" style="width:${heat}%"></span>${l.own ? n(l.own) : ""}</td>` +
+          `<td class="num">${l.callees ? n(l.callees) : ""}</td></tr>`
+        );
+      });
+      table.innerHTML =
+        "<thead><tr><th></th><th>Address</th><th>Instruction</th><th>Samples at it</th><th>Under it (calls, faults)</th></tr></thead>" +
+        `<tbody>${rows.join("")}</tbody>`;
+    } catch (e) {
+      title.textContent = e.message;
+      table.innerHTML = "";
+    }
   }
 
   /**
@@ -1461,7 +1519,7 @@
     if (s.lit && typeof s.lit.fn === "string") {
       lit = { fn: s.lit.fn, label: String(s.lit.label || s.lit.fn) };
     }
-    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
+    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "assembly", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
       showTab(s.tab);
     }
   }

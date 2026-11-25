@@ -271,3 +271,23 @@ table.processes tr.selected td {
   width: 14px;
   cursor: pointer;
 }
+
+/* Annotated assembly: the hottest instructions, and a heat bar for each. */
+.assembly td.num {
+  position: relative;
+}
+.assembly .heat {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(255, 99, 71, 0.35);
+  pointer-events: none;
+}
+.assembly tr.hot td {
+  color: #ff6347;
+  font-weight: bold;
+}
+.assembly td.label {
+  color: var(--vscode-descriptionForeground);
+}

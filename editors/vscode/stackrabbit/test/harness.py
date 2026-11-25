@@ -161,6 +161,7 @@ window.acquireVsCodeApi = function () {
     else if (m.method === "idle" && A.idle) r.result = A.idle;
     else if (m.method === "gpu" && A.gpu) r.result = A.gpu;
     else if (m.method === "dotnet" && A.dotnet) r.result = A.dotnet;
+    else if (m.method === "assembly" && A.assembly) r.result = A.assembly;
     else if (m.method === "events.list" && A.sampleKind && m.params.opcode === A.sampleKind.opcode && m.params.guid === A.sampleKind.guid) r.result = A.sampleList;
     else if (m.method === "events.list") r.result = A.eventList;
     else if (m.method === "symbols") r.result = A.symbols;
@@ -939,6 +940,29 @@ def main():
     assert "2 garbage collections pausing 0.17 ms, 150 KB allocated, 2 exceptions, 1 methods compiled." in html.unescape(dom), "the .NET title"
     rest = html.unescape(dom[dom.index('id="dotnet-collections"'):])
     assert "AllocSmall" in rest and "Induced" in rest and "FileNotFoundException" in rest and "App.Main" in rest and "System.String" in rest
+    # The Assembly tab: nothing until a function is highlighted; then its
+    # instructions, the hottest marked.
+    dom = render(data, "document.getElementById('tab-assembly').click();")
+    assert "Highlight a function" in dom, "the Assembly tab's note"
+    ad = json.loads(json.dumps(data))
+    ad["assembly"] = {
+        "name": "memset", "module": "vcruntime.dll", "offset": 6560, "size": 12, "samples": 9, "own": 8, "hottest": [1],
+        "lines": [{"address": "1800019a0", "offset": 6560, "bytes": "48 8b c1", "text": "mov rax,rcx", "label": None, "block": 0, "own": 1, "callees": 0},
+                  {"address": "1800019a3", "offset": 6563, "bytes": "c3", "text": "rep stosb", "label": "L1", "block": 1, "own": 7, "callees": 1}],
+        "blocks": [{"index": 0, "first": 0, "count": 1, "own": 1, "successors": [1], "loop": False},
+                   {"index": 1, "first": 1, "count": 1, "own": 7, "successors": [1], "loop": True}],
+        "undecoded": None,
+    }
+    # (The second function, the one clicked, as a function's ID.)
+    ad["functions"]["functions"][1]["fn"] = "vcruntime.dll|19a0"
+    click = ("document.getElementById('tab-functions').click();"
+             "setTimeout(function () { document.querySelector('#functions tbody tr[data-i=\"1\"]').click(); }, 50);"
+             "setTimeout(function () { document.getElementById('tab-assembly').click(); }, 150);")
+    dom = render(ad, click, shot=shot("assembly"))
+    t = re.search(r'id="assembly-title"[^>]*>(.*?)<', dom, re.S)
+    assert "memset (vcruntime.dll): 12 bytes, 2 instructions in 2 blocks (1 loop)" in html.unescape(dom), ("the Assembly title", t and t.group(1))
+    listing = html.unescape(dom[dom.index('id="assembly"'):])
+    assert "rep stosb" in listing and 'class="hot"' in listing and "↺" in listing
     # The registry tab: totals by the grouping chosen (and how many of all
     # the groups), and the longest; changing the grouping asks again.
     regd = json.loads(json.dumps(data))

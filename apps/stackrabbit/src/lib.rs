@@ -14,6 +14,7 @@
 use std::process::ExitCode;
 
 pub mod allocs;
+pub mod assembly;
 pub mod bench;
 pub mod disk;
 pub mod dotnet;

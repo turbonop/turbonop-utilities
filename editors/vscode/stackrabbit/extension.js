@@ -10,7 +10,7 @@ const { Session } = require("./lib/protocol");
 const { LineHeat } = require("./lib/line-heat");
 
 /** The requests a view may make of the engine about its trace. */
-const VIEW_METHODS = new Set(["summary", "graph", "processes", "threads", "functions", "symbols", "events", "events.list", "regions", "marks", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "registry", "hardfaults", "vmem", "heap", "pool", "memory", "tree.create", "tree.children", "tree.hotPath", "tree.close"]);
+const VIEW_METHODS = new Set(["summary", "graph", "processes", "threads", "functions", "symbols", "events", "events.list", "regions", "marks", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "assembly", "registry", "hardfaults", "vmem", "heap", "pool", "memory", "tree.create", "tree.children", "tree.hotPath", "tree.close"]);
 
 let channel;
 
@@ -266,7 +266,7 @@ function html(webview, media) {
 <div class="graph"><canvas id="graph"></canvas><div id="graph-tip" class="graph-tip hidden"></div><div id="legend" class="legend"></div></div>
 <div id="lost" class="lost"></div>
 <div id="selection" class="selection">All of the trace. Drag across the graph to select a time range; double-click it to clear.</div>
-<div class="tabs"><button id="tab-stacks" class="tab active">Stacks</button><button id="tab-functions" class="tab">Functions</button><button id="tab-processes" class="tab">Processes</button><button id="tab-symbols" class="tab">Symbols</button><button id="tab-events" class="tab">Events</button><button id="tab-regions" class="tab">Regions</button><button id="tab-disk" class="tab">Disk</button><button id="tab-fileio" class="tab">File I/O</button><button id="tab-minifilter" class="tab">Mini-Filters</button><button id="tab-dpc" class="tab">DPC/ISR</button><button id="tab-frequency" class="tab">Frequency</button><button id="tab-idle" class="tab">Idle States</button><button id="tab-gpu" class="tab">GPU</button><button id="tab-dotnet" class="tab">.NET</button><button id="tab-registry" class="tab">Registry</button><button id="tab-hardfaults" class="tab">Hard Faults</button><button id="tab-vmem" class="tab">Virtual Memory</button><button id="tab-heap" class="tab">Heap</button><button id="tab-pool" class="tab">Pool</button><button id="tab-memory" class="tab">Memory</button></div>
+<div class="tabs"><button id="tab-stacks" class="tab active">Stacks</button><button id="tab-functions" class="tab">Functions</button><button id="tab-assembly" class="tab">Assembly</button><button id="tab-processes" class="tab">Processes</button><button id="tab-symbols" class="tab">Symbols</button><button id="tab-events" class="tab">Events</button><button id="tab-regions" class="tab">Regions</button><button id="tab-disk" class="tab">Disk</button><button id="tab-fileio" class="tab">File I/O</button><button id="tab-minifilter" class="tab">Mini-Filters</button><button id="tab-dpc" class="tab">DPC/ISR</button><button id="tab-frequency" class="tab">Frequency</button><button id="tab-idle" class="tab">Idle States</button><button id="tab-gpu" class="tab">GPU</button><button id="tab-dotnet" class="tab">.NET</button><button id="tab-registry" class="tab">Registry</button><button id="tab-hardfaults" class="tab">Hard Faults</button><button id="tab-vmem" class="tab">Virtual Memory</button><button id="tab-heap" class="tab">Heap</button><button id="tab-pool" class="tab">Pool</button><button id="tab-memory" class="tab">Memory</button></div>
 <div id="stacks-pane" class="pane">
 <div id="focus-bar" class="focus-bar hidden"><span id="focus-text"></span> <button id="focus-clear" title="The whole tree again">Show all</button></div>
 <div class="header"><span class="name">Stack</span><span class="num">Weight</span><span class="num">%</span><span class="num">Self</span></div>
@@ -316,6 +316,7 @@ function html(webview, media) {
 <div class="threads-title">Exceptions</div><table id="dotnet-exceptions" class="processes"></table>
 <div class="threads-title">The slowest JIT compilations</div><table id="dotnet-compilations" class="processes"></table>
 <div class="threads-title">Allocations by type (the runtime's samples)</div><table id="dotnet-allocations" class="processes"></table></div>
+<div id="assembly-pane" class="pane hidden"><div id="assembly-title" class="threads-title"></div><table id="assembly" class="processes assembly"></table></div>
 <div id="registry-pane" class="pane hidden"><div class="threads-title"><span id="registry-title"></span> <label>Group by <select id="registry-by">
     <option value="process">Process</option><option value="key">Key</option><option value="operation">Operation</option>
   </select></label></div><table id="registry-groups" class="processes"></table>

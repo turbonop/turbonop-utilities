@@ -19,7 +19,11 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+turbonop-code.workspace = true
 turbonop-core.workspace = true
+turbonop-image.workspace = true
+turbonop-par.workspace = true
+turbonop-size.workspace = true
 turbonop-mmap.workspace = true
 turbonop-etl.workspace = true
 turbonop-etw.workspace = true

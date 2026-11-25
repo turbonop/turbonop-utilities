@@ -3701,3 +3701,27 @@ fn dotnet_collections_allocations_exceptions_and_compilations() {
     // To 400 us: the first GC only.
     assert_eq!(result(&a, 3)["gcs"], 1);
 }
+
+#[test]
+fn assembly_says_why_it_cant_show_a_function() {
+    let dir = scratch("serve-assembly");
+    let (path, s) = write_trace(&dir, "t.etl", &small());
+    let exe = s
+        .truth
+        .modules
+        .iter()
+        .find(|m| m.name.ends_with(".exe"))
+        .unwrap()
+        .name
+        .clone();
+    let a = session(&[
+        json!({"method": "open", "params": {"path": path, "useIndex": true}}),
+        json!({"method": "assembly", "params": {"trace": 1, "fn": "nothing"}}),
+        json!({"method": "assembly", "params": {"trace": 1, "fn": "nowhere.dll|10"}}),
+        json!({"method": "assembly", "params": {"trace": 1, "fn": format!("{exe}|10")}}),
+    ]);
+    assert!(error(&a, 2).contains("not a function's ID"), "{}", error(&a, 2));
+    assert!(error(&a, 3).contains("no module nowhere.dll"), "{}", error(&a, 3));
+    // (Its PDB isn't anywhere: no extent.)
+    assert!(error(&a, 4).contains("no symbols"), "{}", error(&a, 4));
+}

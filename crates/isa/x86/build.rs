@@ -35,6 +35,9 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
+#[path = "build/access.rs"]
+mod access;
+
 const MAPS: &[(&str, usize)] = &[
     ("0F", 1),
     ("0F38", 2),
@@ -87,6 +90,9 @@ struct Form {
     nd: u8,
     nf: u8,
     scc: u8,
+    /// An APX new-data-destination form made from one without (`ndd`): its
+    /// first operand is the one added.
+    ndd_dest: bool,
     origin: String,
 }
 
@@ -306,6 +312,7 @@ fn parse_line(line: &str, origin: String) -> Result<Vec<Form>, String> {
         nd: 0,
         nf: 0,
         scc: 0xFF,
+        ndd_dest: false,
         origin,
     };
     // Expansions: `NP66` (both, 66 setting a 16-bit operand size), `SCC`
@@ -523,6 +530,7 @@ fn parse_line(line: &str, origin: String) -> Result<Vec<Form>, String> {
                 f.attrs.retain(|a| *a != "NDD");
                 let mut nd = f.clone();
                 nd.nd = 2;
+                nd.ndd_dest = true;
                 nd.attrs
                     .retain(|a| *a != "EVEX_PROMOTED" && *a != "EVEX_VEX");
                 // The destination is EVEX.vvvv, as wide as the first operand.
@@ -724,6 +732,50 @@ fn main() {
         .unwrap();
     }
     out.push_str("];\n\n");
+
+    // Where each form came from, `file:line` (with the operands as
+    // written): for tests and table tools.
+    writeln!(
+        out,
+        "pub(crate) static ORIGINS: [&str; {}] = [",
+        ordered.len()
+    )
+    .unwrap();
+    for &i in &ordered {
+        let f = &forms[i];
+        writeln!(
+            out,
+            "    {:?},",
+            format!("{} {} {}", f.origin, f.mnemonic, f.raw_ops.join(","))
+        )
+        .unwrap();
+    }
+    out.push_str("];\n\n");
+
+    let rules = std::fs::read_to_string(dir.join("access.rules")).expect("tables/access.rules");
+    let infos: Vec<access::FormInfo> = ordered
+        .iter()
+        .map(|&i| {
+            let f = &forms[i];
+            access::FormInfo {
+                mnemonic: &f.mnemonic,
+                raw_ops: if f.ndd_dest {
+                    &f.raw_ops[1..]
+                } else {
+                    &f.raw_ops
+                },
+                map: f.map,
+                origin: &f.origin,
+                ndd_dest: f.ndd_dest,
+            }
+        })
+        .collect();
+    if let Err(errors) = access::generate(&rules, &infos, &mut out) {
+        for e in &errors {
+            println!("cargo:warning={e}");
+        }
+        panic!("{} error(s) in access rules", errors.len());
+    }
 
     writeln!(
         out,

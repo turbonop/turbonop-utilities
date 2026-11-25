@@ -696,10 +696,12 @@ impl<'a> Decoder<'a> {
 
         let (start, count) = INDEX[self.map][usize::from(opcode)];
         let candidates = &ENTRIES[usize::from(start)..usize::from(start) + usize::from(count)];
-        let entry = candidates
+        let found = candidates
             .iter()
-            .find(|e| self.matches(e))
+            .position(|e| self.matches(e))
             .ok_or(DecodeError::Invalid)?;
+        let entry = &candidates[found];
+        let form = start + found as u16;
 
         // dumpbin treats conflicting mandatory prefixes on SIMD instructions
         // as invalid (it shows the earlier prefix as a lone byte).
@@ -754,7 +756,7 @@ impl<'a> Decoder<'a> {
         }
         // (The instruction is built in place: returned as it is, not
         // copied out and back to finish it.)
-        self.build(entry, self.opcode, apx)
+        self.build(entry, form, self.opcode, apx)
     }
 
     /// Checks an APX EVEX form's payload, which holds ND, NF, and SCC in
@@ -814,7 +816,13 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn build(&mut self, e: &Entry, opcode: u8, apx: Apx) -> Result<Instruction, DecodeError> {
+    fn build(
+        &mut self,
+        e: &Entry,
+        form: u16,
+        opcode: u8,
+        apx: Apx,
+    ) -> Result<Instruction, DecodeError> {
         let os = self.operand_size(e);
         let asz = self.address_size();
         let vl = self.vector_length(e);
@@ -1357,6 +1365,8 @@ impl<'a> Decoder<'a> {
             pseudo_imm,
             apx: apx_flags,
             dfv: apx.dfv,
+            form,
+            sizes: os | asz << 4,
         })
     }
 

@@ -42,9 +42,9 @@ What's left, in order (the plan's status table says what's done):
   the code (shared with hexcavator's), and a release workflow
   (`dump-analyzer-release.yml`, its signing and packaging).
 - **Instruction access data.** Read and written operands, implicit
-  operands, and flags for x86 and ARM64 (ARM64 first gets an operand API),
-  matching XED and LLVM; then `turbonop-paths`'s own x86-64 write sets
-  replaced by them.
+  operands, and flags: x86's done (checked against XED), ARM64's done (checked
+  against llvm-mc; its memory accesses still have no size). Left:
+  `turbonop-paths`'s own x86-64 write sets replaced by them.
 - **The IR and its lifters.** `turbonop-ir`, and x64 and ARM64 lifters for
   the instructions compilers emit, tested on real CPUs; then the paths
   analysis's symbolic execution and solver (values computed from others,

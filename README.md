@@ -64,7 +64,7 @@ Each tool is released on its own, with tags named for it
 | `crates/isa/tablegen` (`turbonop-tablegen`) | Instruction decoding by tables generated from LLVM's TableGen records (`tools/tablegen`): the decoder, aliases, complex operands, and compressed instructions' full forms that the RISC-V, LoongArch, PowerPC, and MIPS crates share |
 | `crates/isa/arm64` (`turbonop-arm64`) | AArch64 decoder (base, FP, AdvSIMD, SVE/SVE2, SME/SME2, ...) generated from Arm's AARCHMRS and LLVM's AArch64 target, with a dumpbin-style formatter |
 | `crates/isa/wasm` (`turbonop-wasm-isa`) | The WebAssembly instruction decoder (the whole instruction set, through GC, threads, and relaxed SIMD) with text output |
-| `crates/isa/x86` (`turbonop-x86`) | x86/x86-64 decoder (legacy, x87, SSE, AVX, AVX-512, AMX, ...) and dumpbin-style formatter |
+| `crates/isa/x86` (`turbonop-x86`) | x86/x86-64 decoder (legacy, x87, SSE, AVX, AVX-512, AMX, ...), what each instruction reads and writes, and dumpbin-style formatter |
 | `crates/debug/abi` (`turbonop-abi`) | Calling conventions for each platform: which registers a call preserves, argument, result, and return-address registers, red zones, home space, and DWARF register numbers |
 | `crates/debug/unwind` (`turbonop-unwind`) | Virtual stack unwinders: recover a caller's registers from a frame's registers, its stack, and the image's unwind data (Windows' `.pdata`, DWARF CFI, Apple's compact unwind, ARM EHABI), picked for an image of any format |
 | `crates/analysis/code` (`turbonop-code`) | Code independent of the instruction set: instructions' control flow, and functions' basic blocks |
@@ -142,6 +142,12 @@ copying dumpbin. A sample of the agreed results is kept in
 `crates/isa/x86/tests/data/golden.txt` so that `cargo test` covers the decoder on
 every host. Not yet supported: AVX512-FP16, most of AVX10.2, APX (REX2 is
 decoded; EVEX promotions are not), AMX-AVX512, and Xeon Phi extensions.
+
+What each instruction reads and writes (`crates/isa/x86/tables/access.rules`)
+is checked against Intel XED: `tools/x86access` builds XED and runs it over an
+encoding of every opcode table form, into
+`crates/isa/x86/tests/data/access.txt`. Nothing XED reads or writes may be
+missing, and every write XED doesn't have is listed with its reason.
 
 ### turbonop-arm64 testing
 

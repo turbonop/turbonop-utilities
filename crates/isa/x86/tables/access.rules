@@ -1,0 +1,410 @@
+# What each instruction reads and writes: operand accesses, implicit
+# operands, and flags (Intel SDM Vol. 2, each instruction's Operation and
+# Flags Affected; checked against Intel XED by tests/it/access.rs). The
+# syntax is in build/access.rs:
+#
+#     <mnemonic>[/<selector>] ... : [<operand accesses>] [<implicit>...] [f=<read>/<written>/<undefined>]
+#
+# A missing write gives wrong answers downstream; an extra one only loses
+# precision. Where unsure, these over-approximate, and say so.
+
+# --- Arithmetic and logic ---------------------------------------------------
+
+add sub : rw,r f=/oszapc/
+adc sbb : rw,r f=c/oszapc/
+and or xor : rw,r f=/oszpc/a
+cmp : r,r f=/oszapc/
+test : r,r f=/oszpc/a
+inc dec : rw f=/oszap/
+neg : rw f=/oszapc/
+not : rw
+adcx : rw,r f=c/c/
+adox : rw,r f=o/o/
+# Decimal adjustment.
+daa das : al:rw f=ca/oszapc/o
+aaa aas : ax:rw f=a/ca/oszp
+aam aad : r ax:rw f=/szp/oac
+
+# Multiply and divide: OF and CF are defined, SF ZF AF PF not; division
+# leaves them all undefined. AL forms write all of AX.
+mul/al,Eb : rw,r ax:w f=/oc/szap
+mul/rAX,Ev : rw,r rDX:w f=/oc/szap
+imul/Eb : r ax:rw f=/oc/szap
+imul/Ev : r rAX:rw rDX:w f=/oc/szap
+imul/2 : rw,r f=/oc/szap
+imul/3 imulzu : w,r,r f=/oc/szap
+div/al,Eb : rw,r ax:rw f=//oszapc
+div/rAX,Ev idiv/rAX,Ev : rw,r rDX:rw f=//oszapc
+idiv/Eb : r ax:rw f=//oszapc
+mulx : w,w,r rDX:r
+
+# Shifts and rotates (a zero count leaves the flags alone: may-write).
+rol ror : rw,r f=/oc/o
+rcl rcr : rw,r f=c/oc/o
+shl sal shr sar : rw,r f=/oszapc/ao
+shld shrd : rw,r,r f=/oszapc/ao
+rorx sarx shlx shrx : w,r,r
+
+# Bits.
+bt : r,r f=/c/osap
+bts btr btc : rw,r f=/c/osap
+# The destination is undefined (Intel) or unchanged (AMD) for a zero source.
+bsf bsr : cw,r f=/z/ocsap
+tzcnt lzcnt : w,r f=/zc/osap
+popcnt : w,r f=/oszapc/
+bswap : rw
+andn : w,r,r f=/oszc/ap
+bextr : w,r,r f=/oszc/asp
+blsi blsmsk blsr : w,r f=/oszc/ap
+bzhi : w,r,r f=/oszc/ap
+pdep pext : w,r,r
+crc32 : rw,r
+# AMD TBM.
+blcfill blci blcic blcmsk blcs blsfill blsic t1mskc tzmsk : w,r f=/oszc/ap
+
+# --- Moves -------------------------------------------------------------------
+
+mov movzx movsx movsxd movbe movnti movdiri movrs : w,r
+lea : w,n
+xchg : rw,rw
+xadd : rw,rw f=/oszapc/
+cmpxchg/Eb,Gb : rcw,r al:rw f=/oszapc/
+cmpxchg/Ev,Gv : rcw,r rAX:rw f=/oszapc/
+cmpxchg8b : rcw edx:rw eax:rw ecx:r ebx:r f=/z/
+cmpxchg16b : rcw rdx:rw rax:rw rcx:r rbx:r f=/z/
+cbw cwde cdqe : rAX:rw
+cwd cdq cqo : rAX:r rDX:w
+xlat : r al:rw
+lahf : ah:w f=szapc//
+sahf : ah:r f=/szapc/
+cmov* : cw,r f=cc//
+# APX: with a new destination, written either way.
+cmov*/Bv,Gv,Ev : w,r,r f=cc//
+# APX conditional-faulting moves: the store form's memory is written only if
+# the condition holds; the three-operand form zeroes its destination
+# otherwise.
+cfcmov*/Gv,Ev cfcmov*/Ev,Gv : cw,r f=cc//
+cfcmov*/Bv,Gv,Ev : w,r,r f=cc//
+set* setzu* : w f=cc//
+# Segment loads.
+les : w,r es:w
+lds : w,r ds:w
+lss : w,r ss:w
+lfs : w,r fs:w
+lgs : w,r gs:w
+# Atomic memory operations (RAO-INT).
+aadd aand aor axor : rw,r
+# Compare and add if the condition holds; the register gets the old value.
+cmpbexadd cmpbxadd cmplexadd cmplxadd cmpnbexadd cmpnbxadd cmpnlexadd cmpnlxadd cmpnoxadd cmpnpxadd cmpnsxadd cmpnzxadd cmpoxadd cmppxadd cmpsxadd cmpzxadd : rcw,rw,r f=/oszapc/
+# 64-byte stores to the address in the first operand.
+movdir64b : r,r mem@op0:w/64
+enqcmd enqcmds : r,r mem@op0:w/64 f=/oszapc/
+
+# --- Strings -----------------------------------------------------------------
+
+movs : w,r aSI:rw aDI:rw aCX:rw?rep f=d//
+cmps : r,r aSI:rw aDI:rw aCX:rw?rep f=d/oszapc/
+stos/Yb : w al:r aDI:rw aCX:rw?rep f=d//
+stos/Yv : w rAX:r aDI:rw aCX:rw?rep f=d//
+lods/Xb : r al:w aSI:rw aCX:rw?rep f=d//
+lods/Xv : r rAX:w aSI:rw aCX:rw?rep f=d//
+scas/Yb : r al:r aDI:rw aCX:rw?rep f=d/oszapc/
+scas/Yv : r rAX:r aDI:rw aCX:rw?rep f=d/oszapc/
+ins : w,r aDI:rw aCX:rw?rep f=d//
+outs : r,r aSI:rw aCX:rw?rep f=d//
+in : w,r
+out : r,r
+
+# --- Stack -------------------------------------------------------------------
+
+push pushp : r push
+pop popp : w pop
+push2 push2p : r,r push*2
+pop2 pop2p : w,w pop*2
+pusha pushad : gpr*:r push*8
+popa popad : gpr*:w pop*8
+pushf pushfd pushfq : push f=all//
+# (Not VM or VIP: POPF leaves them.)
+popf popfd popfq : pop f=/oszapctid,iopl,nt,rf,ac,vif,id/
+# The nesting level's frame pointers are copied too: the size isn't known.
+enter : r,r sBP:rw push*0
+leave : sBP:rw pop@bp
+
+# --- Control flow --------------------------------------------------------------
+
+j* : r f=cc//
+jmp jmpabs jmpe : r
+jmp/Ap jmp/Mp : r cs:w
+jcxz : r cx:r
+jecxz : r ecx:r
+jrcxz : r rcx:r
+loop : r aCX:rw
+loope loopne : r aCX:rw f=z//
+# Calls and returns also push and pop the CET shadow stack, if it is
+# enabled (its memory, at SSP, isn't modeled).
+call : r push ssp:rw
+call/Ap call/Mp : r push*2 cs:w ssp:rw
+ret : pop ssp:rw
+ret/1 : r pop ssp:rw
+# A far return to an outer privilege level also pops the stack pointer and
+# SS.
+retf retfq : pop*2 cs:w ss:w ssp:rw
+retf/1 retfq/1 : r pop*2 cs:w ss:w ssp:rw
+iret iretd iretq : pop*5 cs:w ss:w ssp:rw f=/all/
+# The handler (a debugger's) isn't modeled.
+int : r f=/t,i,nt,rf,vm,ac,vif/
+into : f=o/t,i,nt,rf,vm,ac/
+# A software interrupt is a system call, whose results the kernel writes:
+# every general-purpose register (an over-approximation).
+int/Ib : r gpr*:w f=/all/
+syscall sysenter : gpr*:w cs:w ss:w f=/all/
+sysret sysretq : rcx:r r11:r cs:w ss:w f=/oszapctid,iopl,nt,rf,ac,vif,vip,id/
+sysexit : rcx:r rdx:r rsp:w cs:w ss:w
+xbegin : r eax:w
+xabort : r eax:rw
+xend :
+xtest : f=/oszapc/
+ud2 hlt pause :
+nop/0 :
+nop/1 : n
+endbr32 endbr64 :
+wait :
+
+# --- Flags ---------------------------------------------------------------------
+
+clc stc : f=/c/
+cmc : f=c/c/
+cld std : f=/d/
+cli sti : f=/i,vif/
+clac stac : f=/ac/
+
+# --- System --------------------------------------------------------------------
+
+cpuid : eax:rw ecx:rw ebx:w edx:w
+rdtsc : eax:w edx:w msr:r
+rdtscp : eax:w edx:w ecx:w msr:r
+rdpmc : ecx:r eax:w edx:w msr:r
+rdmsr/0 : ecx:r eax:w edx:w msr:r
+rdmsr/2 urdmsr : w,r msr:r
+# (The FS and GS bases are MSRs too.)
+wrmsr/0 wrmsrns/0 : ecx:r eax:r edx:r msr:w fs:w gs:w
+wrmsrns/2 : r,r msr:w fs:w gs:w
+uwrmsr : r,r msr:w
+rdmsrlist : rsi:rw rdi:rw rcx:rw msr:r
+wrmsrlist : rsi:rw rdi:rw rcx:rw msr:w fs:w gs:w
+rdpru : ecx:r eax:w edx:w f=/oszapc/
+rdpid : w msr:r
+rdrand rdseed : w f=/oszapc/
+rdpkru : ecx:r eax:w edx:w pkru:r
+wrpkru : eax:r ecx:r edx:r pkru:w
+xgetbv : ecx:r eax:w edx:w xcr0:r
+xsetbv : ecx:r eax:r edx:r xcr0:w
+rdfsbase : w fs:r
+rdgsbase : w gs:r
+wrfsbase : r fs:w
+wrgsbase : r gs:w
+swapgs : gs:w msr:rw
+lkgs : r msr:w
+sldt : w ldtr:r
+str : w tr:r
+lldt : r ldtr:w
+ltr : r tr:w
+sgdt : w gdtr:r
+sidt : w idtr:r
+lgdt : r gdtr:w
+lidt : r idtr:w
+smsw : w cr0:r
+lmsw : r cr0:w
+clts : cr0:w
+verr verw : r f=/z/
+lar : cw,r f=/z/
+lsl : rcw,r f=/z/
+arpl : rw,r f=/z/
+bound : r,r
+invd wbinvd wbnoinvd invlpga tlbsync serialize lfence mfence sfence pcommit :
+invlpgb : r,r edx:r
+# (Address-only, but XED counts these as reads.)
+invlpg prefetch* cldemote clflush clflushopt clwb : r
+clzero : mem@aAX:w/64
+monitor monitorx : r,r,r
+mwait : r,r
+mwaitx : rw,r,r
+umonitor : r
+umwait tpause : r edx:r eax:r f=/oszapc/
+hreset : r,r
+ptwrite : r
+senduipi : r
+uiret : pop*3 uif:w f=/all/
+testui : uif:r f=/oszapc/
+clui stui : uif:w
+# CET shadow stacks.
+incsspd incsspq : r ssp:rw
+rdsspd rdsspq : cw ssp:r
+rstorssp : rw ssp:w f=/oszapc/
+saveprevssp : ssp:r
+setssbsy : ssp:w f=/oszapc/
+clrssbsy : rw f=/oszapc/
+wrssd wrssq wrussd wrussq : w,r
+# State save and restore: every register the state components cover.
+fxsave fxsave64 : w st*:r vec16:r mxcsr:r fpsw:r fpcw:r fptw:r
+fxrstor fxrstor64 : r st*:w vec16:w mxcsr:w fpsw:w fpcw:w fptw:w
+xsave xsave64 xsavec xsavec64 xsaveopt xsaveopt64 : rw eax:r edx:r xcr0:r st*:r zmm*:r k*:r bnd*:r tmm*:r mxcsr:r fpsw:r fpcw:r fptw:r pkru:r tilecfg:r
+xsaves xsaves64 : rw eax:r edx:r xcr0:r st*:r zmm*:r k*:r bnd*:r tmm*:r mxcsr:r fpsw:r fpcw:r fptw:r pkru:r tilecfg:r msr:r ssp:r
+xrstor xrstor64 : r eax:r edx:r xcr0:r st*:w zmm*:w k*:w bnd*:w tmm*:w mxcsr:w fpsw:w fpcw:w fptw:w pkru:w tilecfg:w
+xrstors xrstors64 : r eax:r edx:r xcr0:r st*:w zmm*:w k*:w bnd*:w tmm*:w mxcsr:w fpsw:w fpcw:w fptw:w pkru:w tilecfg:w msr:w ssp:w
+xsusldtrk xresldtrk :
+ldmxcsr vldmxcsr : r mxcsr:w
+stmxcsr vstmxcsr : w mxcsr:r
+# Leaves of these take and return values in the low general-purpose
+# registers and the flags; which ones depends on the leaf.
+getsec encls enclu enclv pconfig : rax:rw rbx:rw rcx:rw rdx:rw f=/oszapc/
+pbndkb : rax:w rbx:r rcx:r f=/oszapc/
+# Calls into a hypervisor, TDX module, or SMM return with whatever it
+# leaves: every general-purpose register (an over-approximation).
+vmcall vmmcall vmgexit tdcall seamcall seamret seamops rsm : gpr*:rw f=/all/
+skinit : r gpr*:w f=/all/
+# Entry loads the guest's RFLAGS.
+vmlaunch vmresume : f=/oszapctid,iopl,nt,rf,ac,vif,vip,id/
+vmxoff : f=/oszapc/
+vmfunc : eax:r ecx:r
+vmclear vmptrld vmxon : r f=/oszapc/
+vmptrst : w f=/oszapc/
+vmread : w,r f=/oszapc/
+vmwrite : r,r f=/oszapc/
+invept invvpid : r,r f=/oszapc/
+invpcid : r,r
+vmrun : r gpr*:w mem@aAX:rw f=/all/
+vmload : r mem@aAX:r fs:w gs:w ldtr:w tr:w msr:w
+vmsave : r mem@aAX:w fs:r gs:r ldtr:r tr:r msr:r
+stgi clgi :
+psmash : r rax:w f=/oszapc/
+pvalidate rmpadjust rmpupdate : r,r,r rax:w f=/oszapc/
+rmpquery : r,r,r rax:w rcx:w rdx:w f=/oszapc/
+rmpread : r,r rax:w rdx:w f=/oszapc/
+# FRED returns.
+erets eretu : pop*5 cs:w ss:w gs:w msr:rw f=/all/
+# 386 bit-string instructions (the offset in AX, the length in CL).
+xbts : w,r rAX:r cl:r
+ibts : rw,r rAX:r cl:r
+
+# --- MPX -----------------------------------------------------------------------
+
+bndcl bndcn bndcu : r,r
+bndmk : w,n
+bndmov bndldx : w,r
+bndstx : w,r
+
+# --- AMX -----------------------------------------------------------------------
+
+ldtilecfg : r tilecfg:w tmm*:w
+sttilecfg : w tilecfg:r
+tilerelease : tilecfg:w tmm*:w
+tilezero : w tilecfg:r
+tileloadd tileloaddrs tileloaddrst1 tileloaddt1 : w,r tilecfg:r
+tilestored : w,r tilecfg:r
+tcmmimfp16ps tcmmrlfp16ps tdpbf16ps tdpbf8ps tdpbhf8ps tdpbssd tdpbsud tdpbusd tdpbuud tdpfp16ps tdphbf8ps tdphf8ps tmmultf32ps : rw,r,r tilecfg:r
+tcvtrowd2ps tcvtrowps2bf16h tcvtrowps2bf16l tcvtrowps2phh tcvtrowps2phl tilemovrow : w,r,r tilecfg:r
+
+# --- APX conditional compares --------------------------------------------------
+
+# A false condition sets OF SF ZF CF to the default flags value (and clears
+# the others).
+ccmp* ctest* : r,r f=cc/oszapc/
+
+# --- x87 -----------------------------------------------------------------------
+#
+# Every x87 instruction may write the status word (its condition codes and
+# exception flags). A push or pop changes the top of the stack, which
+# renames every st(i): all of them are written (x87push, x87pop).
+
+fadd fmul fsub fsubr fdiv fdivr fiadd fimul fisub fisubr fidiv fidivr : r st0:rw x87
+fadd/2 fmul/2 fsub/2 fsubr/2 fdiv/2 fdivr/2 : rw,r x87
+faddp fmulp fsubp fsubrp fdivp fdivrp : rw,r x87pop
+fcom fcom2 ficom fucom : r st0:r x87
+fcomp fcomp3 fcomp5 ficomp fucomp : r st0:r x87pop
+fcompp fucompp : st0:r st1:r x87pop
+fcomi fucomi : r,r x87 f=/oszapc/
+fcomip fucomip : r,r x87pop f=/oszapc/
+fld fild fbld : r x87push
+fld1 fldl2t fldl2e fldpi fldlg2 fldln2 fldz : x87push
+fst fist : w st0:r x87
+fstp fstp1 fstp8 fstp9 fistp fisttp fbstp : w st0:r x87pop
+fxch fxch4 fxch7 : rw st0:rw x87
+fcmov* : cw,r f=cc// x87
+fchs fabs f2xm1 fsqrt frndint fsin fcos : st0:rw x87
+# (XED has these write ST0.)
+ftst fxam : st0:rw x87
+fyl2x fpatan fyl2xp1 : st0:r st1:rw x87pop
+fptan fxtract fsincos : st0:rw x87push
+fprem fprem1 fscale : st0:rw st1:r x87
+fdecstp fincstp : x87push
+ffree : r fptw:rw x87
+ffreep : r x87pop
+fnop :
+fnclex : fpsw:w
+fninit : x87push fpcw:w
+feni fdisi fsetpm : fpcw:w
+fldcw : r fpcw:w x87
+fnstcw : w fpcw:r x87
+fnstsw : w x87
+fldenv : r fpsw:w fpcw:w fptw:w
+# Storing the environment also masks every exception.
+fnstenv : w fpsw:rw fpcw:rw fptw:r
+frstor : r st*:w fpsw:w fpcw:w fptw:w
+# Saving reinitializes the unit.
+fnsave : w st*:rw fpsw:rw fpcw:rw fptw:rw
+emms femms : fptw:w
+
+# --- SIMD ----------------------------------------------------------------------
+#
+# Without a rule, a SIMD form writes its first operand (and reads it too if
+# it is legacy-encoded with a source: destructive) and reads the rest.
+
+# Legacy-encoded forms that write their whole destination.
+movq movd movapd movaps movdqa movdqu movupd movups movddup movshdup movsldup movntdqa lddqu movq2dq movdq2q : w,r
+cvtdq2ps cvtpd2ps cvtpi2pd cvtps2dq cvtps2pd cvttps2dq cvtdq2pd cvtpd2dq cvttpd2dq cvtpd2pi cvtps2pi cvttpd2pi cvttps2pi : w,r
+pabsb pabsw pabsd phminposuw pmovsx* pmovzx* pshufd pshufhw pshuflw pshufw : w,r
+rcpps rsqrtps sqrtpd sqrtps roundpd roundps aesimc aeskeygenassist : w,r
+
+# Compares into the flags.
+comiss comisd ucomiss ucomisd vcomiss vcomisd vucomiss vucomisd vcomish vucomish vcomisbf16 : r,r f=/oszapc/
+vcomx* vucomx* : r,r f=/oszapc/
+ptest vptest vtestps vtestpd : r,r f=/oszapc/
+kortestb kortestw kortestd kortestq ktestb ktestw ktestd ktestq : r,r f=/oszapc/
+# String compares: the index in ECX, or a mask in XMM0; explicit lengths in
+# rAX and rDX.
+pcmpestri vpcmpestri : r,r,r rAX:r rDX:r ecx:w f=/oszapc/
+pcmpestrm vpcmpestrm : r,r,r rAX:r rDX:r xmm0:w f=/oszapc/
+pcmpistri vpcmpistri : r,r,r ecx:w f=/oszapc/
+pcmpistrm vpcmpistrm : r,r,r xmm0:w f=/oszapc/
+# Byte-masked stores to [rDI].
+maskmovq : r,r mem@aDI:w/8
+maskmovdqu vmaskmovdqu : r,r mem@aDI:w/16
+vzeroupper vzeroall : vec16:w
+# Gathers clear their mask; scatters too.
+vpgatherdd/3 vpgatherdq/3 vpgatherqd/3 vpgatherqq/3 vgatherdps/3 vgatherdpd/3 vgatherqps/3 vgatherqpd/3 : rw,r,rw
+vpgatherdd/2 vpgatherdq/2 vpgatherqd/2 vpgatherqq/2 vgatherdps/2 vgatherdpd/2 vgatherqps/2 vgatherqpd/2 : rw,r kmask:rw
+vpscatterdd vpscatterdq vpscatterqd vpscatterqq vscatterdps vscatterdpd vscatterqps vscatterqpd : w,r kmask:rw
+# A pair of mask registers.
+vp2intersectd vp2intersectq : w,r,r pair0:w
+# Accumulating into the destination.
+vfmadd1* vfmadd2* vfmsub1* vfmsub2* vfnmadd1* vfnmadd2* vfnmsub1* vfnmsub2* : rw,r,r
+vfmaddsub1* vfmaddsub2* vfmsubadd1* vfmsubadd2* : rw,r,r
+vfmaddcph vfcmaddcph vfmaddcsh vfcmaddcsh : rw,r,r
+vpermi2* vpermt2* : rw,r,r
+vpdp* vpmadd52* vdpbf16ps vdpphps : rw,r,r
+vpshldv* vpshrdv* : rw,r,r
+vpternlogd vpternlogq : rw,r,r,r
+vbmacor16x16x16 vbmacxor16x16x16 : rw,r,r
+vsm3msg1 vsm3msg2 vsm3rnds2 vsha512msg1 vsha512msg2 vsha512rnds2 : rw
+vfixupimm* : rw,r,r,r
+# Key Locker: the wide forms work on XMM0-XMM7.
+encodekey128 encodekey256 : w,r vec8:rw f=/oszapc/
+aesenc128kl aesenc256kl aesdec128kl aesdec256kl : rw,r f=/oszapc/
+aesencwide128kl aesencwide256kl aesdecwide128kl aesdecwide256kl : r vec8:rw f=/oszapc/
+loadiwkey : r,r eax:r xmm0:r f=/oszapc/
+# AMD LWP.
+llwpcb : rw
+slwpcb : w
+lwpins : rw,r,r f=/c/
+lwpval : rw,r,r

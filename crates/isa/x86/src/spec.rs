@@ -325,3 +325,58 @@ pub(crate) mod map {
     pub const VEX5: usize = 19;
     pub const COUNT: usize = 20;
 }
+
+/// A form's access data: how its operands are accessed, its implicit
+/// operands, and its flags.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct AccessSpec {
+    /// Each operand's access, three bits apiece (an `access::rw` code).
+    pub ops: u16,
+    /// Its implicit operands: `IMPLICIT[implicit..implicit + implicit_len]`.
+    pub implicit: u16,
+    pub implicit_len: u8,
+    /// Its flags: `FLAG_SETS[flags]`, the flags read, written (including
+    /// undefined), and left undefined.
+    pub flags: u8,
+}
+
+/// The kinds of implicit operand.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImpKind {
+    /// Register `b` of class `a` (`RegClass as u8`).
+    Reg,
+    /// General-purpose register `a`, of the operand size.
+    GprOs,
+    /// General-purpose register `a`, of the address size.
+    GprAs,
+    /// General-purpose register `a`, of the stack size (the mode's).
+    GprSs,
+    /// Registers 0 to `b & 0x7F` - 1 of class `a`; with `b & 0x80`, only
+    /// eight outside 64-bit mode.
+    Group,
+    /// The other register of operand `a`'s even/odd pair.
+    Pair,
+    /// The EVEX opmask register (if any).
+    MaskField,
+    /// `a` stack slots of the operand size pushed (0: an unknown number).
+    Push,
+    /// `a` stack slots popped, at the stack pointer (`b` = 0) or at
+    /// general-purpose register `b` of the stack size (`leave`).
+    Pop,
+    /// Memory at general-purpose register `a` (of the address size), or
+    /// with `a & 0x80`, at the address in operand `a & 0x7F`'s register;
+    /// `b` bytes (0: unknown).
+    MemAt,
+}
+
+/// An implicit operand.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Imp {
+    pub kind: ImpKind,
+    pub a: u8,
+    pub b: u8,
+    /// Its access (an `access::rw` code, with `access::rw::REP` if only a
+    /// `rep` prefix makes it).
+    pub rw: u8,
+}

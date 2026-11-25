@@ -1,11 +1,11 @@
 //! What x86-64 instructions do, as far as the path analysis needs: which
-//! registers each may write (every register, for one not described: so a
-//! value is never taken to survive one), whether it may write memory,
+//! registers each may write and whether it may write memory (by the
+//! decoder's access data),
 //! which set the flags a branch tests and how, and what a branch's
 //! condition is.
 
 use turbonop_abi::{Abi, Preserved, regs};
-use turbonop_x86::{Instruction, Mnemonic, Operand, RegClass, Register};
+use turbonop_x86::{Instruction, Mnemonic, RegClass, Register};
 
 /// A set of the 16 general registers (by DWARF number's bit), or all.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -35,111 +35,31 @@ fn bit(n: u16) -> u32 {
     1u32 << n
 }
 
-/// What `i` may write. Calls write what the convention lets a callee
-/// write (the volatile registers), the stack pointer, and memory.
+/// What `i` may write, by the decoder's access data (every instruction's
+/// registers and memory, explicit and implicit, checked against XED). A
+/// call writes, besides, what the convention lets a callee write: the
+/// volatile registers.
 pub fn writes(i: &Instruction, abi: Abi) -> Writes {
-    use Mnemonic as M;
-    let ops = i.operands();
-    let dest = |w: &mut Writes| match ops.first() {
-        // (A vector or other register: not one of these.)
-        Some(Operand::Reg(r)) => {
-            if let Some(n) = dwarf(*r) {
+    let mut w = Writes {
+        memory: i.writes_memory(),
+        ..Writes::default()
+    };
+    // (Vector and other registers aren't these.)
+    for r in i.written_registers().iter() {
+        if let Some(n) = dwarf(r) {
+            w.registers |= bit(n);
+        }
+    }
+    if i.mnemonic() == Mnemonic::Call {
+        for &n in &regs::x64::BY_ENCODING {
+            if abi.preserved(n) == Preserved::Not {
                 w.registers |= bit(n);
             }
         }
-        Some(Operand::Mem(_)) => w.memory = true,
-        _ => {}
-    };
-    let rsp = bit(regs::x64::RSP);
-    let mut w = Writes::default();
-    match i.mnemonic() {
-        // No register or memory written (flags, at most).
-        M::Cmp | M::Test | M::Nop | M::Jmp | M::Bt => {}
-        m if is_jcc(m) => {}
-        M::Mov
-        | M::Movzx
-        | M::Movsx
-        | M::Movsxd
-        | M::Lea
-        | M::Add
-        | M::Sub
-        | M::And
-        | M::Or
-        | M::Xor
-        | M::Inc
-        | M::Dec
-        | M::Neg
-        | M::Not
-        | M::Shl
-        | M::Shr
-        | M::Sar
-        | M::Rol
-        | M::Ror
-        | M::Adc
-        | M::Sbb
-        | M::Bsf
-        | M::Bsr
-        | M::Popcnt
-        | M::Lzcnt
-        | M::Tzcnt
-        | M::Bswap
-        | M::Bts
-        | M::Btr
-        | M::Btc => dest(&mut w),
-        m if is_cmov(m) || is_setcc(m) => dest(&mut w),
-        M::Imul if ops.len() >= 2 => dest(&mut w),
-        M::Imul | M::Mul | M::Div | M::Idiv => {
-            w.registers |= bit(regs::x64::RAX) | bit(regs::x64::RDX);
-        }
-        M::Cdq | M::Cqo | M::Cwd => w.registers |= bit(regs::x64::RDX),
-        M::Cdqe | M::Cwde | M::Cbw => w.registers |= bit(regs::x64::RAX),
-        M::Xchg | M::Xadd => {
-            for o in ops {
-                match o {
-                    Operand::Reg(r) => {
-                        if let Some(n) = dwarf(*r) {
-                            w.registers |= bit(n);
-                        }
-                    }
-                    Operand::Mem(_) => w.memory = true,
-                    _ => {}
-                }
-            }
-        }
-        M::Cmpxchg => {
-            dest(&mut w);
-            w.registers |= bit(regs::x64::RAX);
-        }
-        M::Push => {
-            w.registers |= rsp;
-            w.memory = true;
-        }
-        M::Pop => {
-            dest(&mut w);
-            w.registers |= rsp;
-        }
-        M::Leave => w.registers |= rsp | bit(regs::x64::RBP),
-        M::Ret => w.registers |= rsp,
-        M::Call => {
-            for &n in &regs::x64::BY_ENCODING {
-                if abi.preserved(n) == Preserved::Not {
-                    w.registers |= bit(n);
-                }
-            }
-            w.registers |= rsp;
-            w.memory = true;
-        }
-        // (int 3, ud2, hlt: they don't return.)
-        M::Int | M::Ud2 | M::Hlt => {}
-        // Anything else: anything.
-        _ => {
-            w.all = true;
-            w.memory = true;
-        }
+        w.memory = true;
     }
     w
 }
-
 fn is_jcc(m: Mnemonic) -> bool {
     condition(m).is_some()
 }
@@ -271,7 +191,8 @@ pub fn flags(i: &Instruction) -> Option<Option<FlagSetter>> {
         | M::Xchg
         | M::Bswap => None,
         m if is_cmov(m) || is_setcc(m) || is_jcc(m) => None,
-        // Anything else may set them.
+        // Anything else: whatever the access data says.
+        _ if i.flags().written == turbonop_x86::Flags::NONE => None,
         _ => Some(None),
     }
 }

@@ -115,9 +115,12 @@ fn what_isnt_known_isnt_claimed() {
         "{}",
         r.branches[0].why
     );
-    // An instruction not modeled on the way (cpuid): anything may be
-    // written.
+    // cpuid on the way writes EAX, EBX, ECX, EDX (the decoder's access
+    // data), not EDI: it survives.
     let r = run(&[0x0F, 0xA2], Some(7));
+    assert_eq!(r.branches[0].way, Way::NotTaken);
+    // syscall: the kernel may set any register.
+    let r = run(&[0x0F, 0x05], Some(7));
     assert_eq!(r.branches[0].way, Way::Unknown);
     // A call on the way: it clobbers rdi (volatile), and rbx is preserved.
     let r = run(&[0xE8, 0, 0, 0, 0], Some(7));

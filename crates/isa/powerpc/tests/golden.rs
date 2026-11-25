@@ -68,3 +68,8 @@ fn llvm_text() {
         wrong[..wrong.len().min(80)].join("\n")
     );
 }
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(not(target_family = "wasm"))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

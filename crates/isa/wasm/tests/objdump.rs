@@ -202,3 +202,8 @@ fn compiled_code_matches_llvm_objdump() {
     let checked = check("sample.wasm");
     assert!(checked > 200, "only {checked} instructions checked");
 }
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(not(target_family = "wasm"))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

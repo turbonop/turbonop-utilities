@@ -27,3 +27,8 @@ pub use keys::{FrameMode, Framer, Key, KeyId, Keys, NoSymbols, Resolver, Symboli
 pub use shape::{Folds, Glob, StackTags};
 pub use sources::{Filter, GroupBy, Precise, SwitchWeight};
 pub use tree::{BinTotals, Instances, NO_BIN, NodeId, Tree};
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(all(test, not(target_family = "wasm")))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

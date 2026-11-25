@@ -571,3 +571,8 @@ fn processes_known_only_from_their_ends_keep_their_threads() {
     assert_eq!((gone.pid, gone.exit_status), (500, Some(0)));
     assert_eq!(trace.processes.len(), 3);
 }
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(not(target_family = "wasm"))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

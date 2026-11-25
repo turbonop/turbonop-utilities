@@ -37,7 +37,10 @@ rustc-hash = "2.1"
 memchr = { version = "2.8", default-features = false }
 # The allocator of the static (musl) Linux build: musl's own serializes
 # every thread's allocations.
-mimalloc = { version = "0.1", default-features = false }
+# (mimalloc v2: v3, the crate's default, crashes on Windows when a block is
+# freed after the thread that allocated it has exited: turbonop-par's
+# map_into test, 2026-11-24.)
+mimalloc = { version = "0.1", default-features = false, features = ["v2"] }
 turbonop-alloc = { path = "crates/base/alloc" }
 turbonop-core = { path = "crates/base/core" }
 turbonop-mmap = { path = "crates/base/mmap" }

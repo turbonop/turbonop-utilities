@@ -727,6 +727,7 @@ dependencies = [
 name = "stackrabbit"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "rustc-hash",
  "serde_json",
  "turbonop-core",
@@ -765,6 +766,7 @@ version = "0.0.7"
 name = "turbonop-archive"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-pe",
 ]
@@ -772,15 +774,22 @@ dependencies = [
 [[package]]
 name = "turbonop-arm32"
 version = "0.0.7"
+dependencies = [
+ "mimalloc",
+]
 
 [[package]]
 name = "turbonop-arm64"
 version = "0.0.7"
+dependencies = [
+ "mimalloc",
+]
 
 [[package]]
 name = "turbonop-code"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-arm32",
  "turbonop-arm64",
  "turbonop-core",
@@ -795,6 +804,7 @@ dependencies = [
 name = "turbonop-codeview"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-hash",
  "turbonop-par",
@@ -805,6 +815,7 @@ name = "turbonop-core"
 version = "0.0.7"
 dependencies = [
  "memchr",
+ "mimalloc",
 ]
 
 [[package]]
@@ -812,6 +823,7 @@ name = "turbonop-debuginfo"
 version = "0.0.7"
 dependencies = [
  "lzma-rust2",
+ "mimalloc",
  "miniz_oxide",
  "ruzstd",
  "turbonop-codeview",
@@ -832,6 +844,7 @@ name = "turbonop-demangle"
 version = "0.0.7"
 dependencies = [
  "bumpalo",
+ "mimalloc",
  "turbonop-core",
 ]
 
@@ -839,6 +852,7 @@ dependencies = [
 name = "turbonop-deps"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-elf",
  "turbonop-image",
@@ -852,6 +866,7 @@ dependencies = [
 name = "turbonop-dwarf"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-elf",
 ]
@@ -860,6 +875,7 @@ dependencies = [
 name = "turbonop-elf"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
 ]
 
@@ -867,6 +883,7 @@ dependencies = [
 name = "turbonop-etl"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-mmap",
 ]
@@ -875,6 +892,7 @@ dependencies = [
 name = "turbonop-etw"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "rustc-hash",
  "turbonop-core",
  "turbonop-etl",
@@ -886,6 +904,7 @@ dependencies = [
 name = "turbonop-fingerprint"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "rustc-hash",
  "turbonop-arm32",
  "turbonop-arm64",
@@ -905,6 +924,7 @@ name = "turbonop-fuzz"
 version = "0.0.7"
 dependencies = [
  "hexcavator",
+ "mimalloc",
  "turbonop-arm32",
  "turbonop-arm64",
  "turbonop-code",
@@ -937,11 +957,15 @@ dependencies = [
 [[package]]
 name = "turbonop-hash"
 version = "0.0.7"
+dependencies = [
+ "mimalloc",
+]
 
 [[package]]
 name = "turbonop-image"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-elf",
  "turbonop-macho",
@@ -952,15 +976,22 @@ dependencies = [
 [[package]]
 name = "turbonop-linkerlog"
 version = "0.0.7"
+dependencies = [
+ "mimalloc",
+]
 
 [[package]]
 name = "turbonop-linkmap"
 version = "0.0.7"
+dependencies = [
+ "mimalloc",
+]
 
 [[package]]
 name = "turbonop-loongarch"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-tablegen",
 ]
 
@@ -968,6 +999,7 @@ dependencies = [
 name = "turbonop-lx"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-mz",
 ]
@@ -976,6 +1008,7 @@ dependencies = [
 name = "turbonop-macho"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
 ]
 
@@ -983,6 +1016,7 @@ dependencies = [
 name = "turbonop-minidump"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
 ]
 
@@ -990,6 +1024,7 @@ dependencies = [
 name = "turbonop-mips"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-tablegen",
 ]
 
@@ -999,6 +1034,7 @@ version = "0.0.7"
 dependencies = [
  "libc",
  "memmap2",
+ "mimalloc",
  "turbonop-core",
 ]
 
@@ -1006,6 +1042,7 @@ dependencies = [
 name = "turbonop-mz"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
 ]
 
@@ -1013,6 +1050,7 @@ dependencies = [
 name = "turbonop-ne"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-mz",
 ]
@@ -1021,6 +1059,7 @@ dependencies = [
 name = "turbonop-par"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-alloc",
 ]
 
@@ -1028,6 +1067,7 @@ dependencies = [
 name = "turbonop-pdb"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-codeview",
  "turbonop-core",
  "turbonop-par",
@@ -1037,6 +1077,7 @@ dependencies = [
 name = "turbonop-pe"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-mz",
 ]
@@ -1045,6 +1086,7 @@ dependencies = [
 name = "turbonop-powerpc"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-tablegen",
 ]
 
@@ -1052,6 +1094,7 @@ dependencies = [
 name = "turbonop-program"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "rustc-hash",
  "turbonop-archive",
  "turbonop-codeview",
@@ -1069,6 +1112,7 @@ dependencies = [
 name = "turbonop-query"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "regex",
 ]
 
@@ -1076,6 +1120,7 @@ dependencies = [
 name = "turbonop-riscv"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-tablegen",
 ]
 
@@ -1084,6 +1129,7 @@ name = "turbonop-signature"
 version = "0.0.7"
 dependencies = [
  "md-5",
+ "mimalloc",
  "p256",
  "p384",
  "rsa",
@@ -1098,6 +1144,7 @@ dependencies = [
 name = "turbonop-size"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "miniz_oxide",
  "regex",
  "rustc-hash",
@@ -1135,6 +1182,7 @@ dependencies = [
 name = "turbonop-symbolize"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
  "turbonop-debuginfo",
  "turbonop-demangle",
@@ -1146,11 +1194,15 @@ dependencies = [
 [[package]]
 name = "turbonop-tablegen"
 version = "0.0.7"
+dependencies = [
+ "mimalloc",
+]
 
 [[package]]
 name = "turbonop-trace"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "rustc-hash",
  "turbonop-core",
  "turbonop-etl",
@@ -1162,6 +1214,7 @@ dependencies = [
 name = "turbonop-trace-analysis"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "rustc-hash",
  "turbonop-debuginfo",
  "turbonop-etl",
@@ -1176,6 +1229,7 @@ dependencies = [
 name = "turbonop-trace-synth"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "rustc-hash",
  "turbonop-etl",
  "turbonop-etw",
@@ -1187,6 +1241,7 @@ dependencies = [
 name = "turbonop-unwind"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-arm32",
  "turbonop-arm64",
  "turbonop-codeview",
@@ -1204,6 +1259,7 @@ dependencies = [
 name = "turbonop-wasm"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
 ]
 
@@ -1211,17 +1267,22 @@ dependencies = [
 name = "turbonop-wasm-isa"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-core",
 ]
 
 [[package]]
 name = "turbonop-x86"
 version = "0.0.7"
+dependencies = [
+ "mimalloc",
+]
 
 [[package]]
 name = "turbonop-xref"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "turbonop-arm32",
  "turbonop-arm64",
  "turbonop-code",
@@ -1268,6 +1329,7 @@ dependencies = [
 name = "xtask"
 version = "0.0.7"
 dependencies = [
+ "mimalloc",
  "serde_json",
 ]
 

@@ -239,6 +239,11 @@ fn instances(
     out
 }
 
+/// What a stack's frame at a depth made, for the next stack: its
+/// address, whether a return address, whether folded, its key, and its
+/// inlined calls' range in the memo's keys.
+type Memo = (u64, bool, bool, KeyId, (u32, u32));
+
 /// Turns buckets into instances.
 fn chunk_instances(
     trace: &Trace,
@@ -261,7 +266,7 @@ fn chunk_instances(
     // here (if the same frames).
     let mut path: Vec<StackId> = Vec::new();
     let mut fresh: Vec<StackId> = Vec::new();
-    let mut memo: Vec<(u64, bool, bool, KeyId, (u32, u32))> = Vec::new();
+    let mut memo: Vec<Memo> = Vec::new();
     let mut memo_inlined: Vec<KeyId> = Vec::new();
     let mut memo_process = ProcessIx::NONE;
     for &((thread, cpu, stack, ip), (weight, count)) in buckets {

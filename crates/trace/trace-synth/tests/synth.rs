@@ -403,3 +403,8 @@ fn every_kind_of_event_is_counted() {
         assert_eq!(found, kind.count, "kind {k}");
     }
 }
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(not(target_family = "wasm"))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

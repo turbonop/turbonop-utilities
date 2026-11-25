@@ -99,3 +99,8 @@ pub fn of_file(data: &[u8]) -> Result<Report, String> {
     }
     Err("signatures are read from PE and Mach-O images".into())
 }
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(all(test, not(target_family = "wasm")))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

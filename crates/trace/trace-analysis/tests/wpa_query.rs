@@ -121,3 +121,8 @@ fn rows_hold_queries() {
     // An empty value.
     assert!(holds(r#"[Thread Name]:="""#, &row));
 }
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(not(target_family = "wasm"))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

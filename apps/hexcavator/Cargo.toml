@@ -49,8 +49,8 @@ turbonop-program.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-# (Linux releases are static, with musl: see src/main.rs.)
-[target.'cfg(target_env = "musl")'.dependencies]
+# (Every native build allocates with mimalloc: see src/main.rs.)
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
 mimalloc.workspace = true
 
 # (WebAssembly's threads: see src/main.rs.)
@@ -62,3 +62,7 @@ serde_json.workspace = true
 
 [lints]
 workspace = true
+
+# (Tests allocate with mimalloc, as the programs do.)
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+mimalloc.workspace = true

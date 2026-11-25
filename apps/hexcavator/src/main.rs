@@ -2,10 +2,10 @@
 
 use std::process::ExitCode;
 
-// musl's allocator takes one lock for every thread's allocations, which
-// leaves most cores waiting on it in hexcavator's parallel work; mimalloc
-// gives each thread its own heap. (Other platforms' allocators already do.)
-#[cfg(target_env = "musl")]
+// mimalloc gives each thread its own heap, for hexcavator's parallel work
+// (musl's allocator takes one lock for every thread's allocations, which
+// leaves most cores waiting on it; mimalloc is faster on the others too).
+#[cfg(not(target_family = "wasm"))]
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

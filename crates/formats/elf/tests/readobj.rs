@@ -631,3 +631,8 @@ fn arm_exception_index() {
     assert!(!entries.is_empty());
     assert!(entries.iter().all(|e| e.unwind == ExidxUnwind::CantUnwind));
 }
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(not(target_family = "wasm"))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

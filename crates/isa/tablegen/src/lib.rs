@@ -1175,3 +1175,8 @@ fn write_asm(out: &mut String, asm: &str, mut operand: impl FnMut(&mut String, &
         i = end;
     }
 }
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(all(test, not(target_family = "wasm")))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

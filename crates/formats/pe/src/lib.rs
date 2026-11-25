@@ -39,3 +39,8 @@ pub use load_config::{
     LoadConfig, VolatileMetadata,
 };
 pub use symbols::{CoffSymbol, SectionDefinition, StringTable, SymbolTable, comdat_select};
+
+// (Tests allocate with mimalloc, as the programs do.)
+#[cfg(all(test, not(target_family = "wasm")))]
+#[global_allocator]
+static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

@@ -3079,3 +3079,26 @@ fn marks_in_time_order() {
         ])
     );
 }
+
+#[test]
+fn nt_paths_read_as_dos_paths() {
+    let b = |s: &str| s.replace('/', "\\");
+    let v = stackrabbit::reading::Volumes::from_maps(vec![
+        (b("/Device/HarddiskVolume3/"), b("C:/")),
+        (b("/Device/HarddiskVolume30/"), b("H:/")),
+        (b("/??/"), String::new()),
+        (b("/Device/Mup/"), b("//")),
+    ]);
+    let dos = |p: &str| v.dos(&b(p)).replace('\\', "/");
+    assert_eq!(dos("/Device/HarddiskVolume3/a/b.txt"), "C:/a/b.txt");
+    // (The longest prefix first: Volume30 isn't Volume3's.)
+    assert_eq!(dos("/Device/HarddiskVolume30/x"), "H:/x");
+    assert_eq!(dos("/device/harddiskvolume3/case"), "C:/case");
+    assert_eq!(dos("/??/C:/x"), "C:/x");
+    assert_eq!(dos("/Device/Mup/server/share"), "//server/share");
+    assert_eq!(dos("/Device/Other/x"), "/Device/Other/x");
+    assert_eq!(
+        stackrabbit::reading::Volumes::default().dos("anything"),
+        "anything"
+    );
+}

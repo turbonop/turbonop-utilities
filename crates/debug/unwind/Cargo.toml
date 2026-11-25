@@ -30,3 +30,7 @@ turbonop-x86.workspace = true
 turbonop-arm64.workspace = true
 turbonop-arm32.workspace = true
 turbonop-pdb.workspace = true
+
+# (Tests allocate with mimalloc, as the programs do.)
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+mimalloc.workspace = true

@@ -19,6 +19,7 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+mimalloc.workspace = true
 turbonop-core.workspace = true
 turbonop-mmap.workspace = true
 turbonop-etl.workspace = true
@@ -35,3 +36,7 @@ turbonop-pdb.workspace = true
 
 [lints]
 workspace = true
+
+# (Tests allocate with mimalloc, as the programs do.)
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+mimalloc.workspace = true

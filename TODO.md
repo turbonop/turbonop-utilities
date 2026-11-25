@@ -21,13 +21,6 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
-- **mimalloc everywhere.** Every native program and test binary should
-  allocate with mimalloc, on every platform. Today only hexcavator's
-  static Linux (musl) build does; hexcavator on Windows and macOS,
-  stackrabbit, fuzz, xtask, and the test binaries use the system
-  allocator. (WebAssembly keeps `turbonop-alloc`.) Measure before and
-  after on the parallel work (hexcavator on clang.exe, Stackrabbit's
-  import of s04).
 
 ## Stackrabbit
 

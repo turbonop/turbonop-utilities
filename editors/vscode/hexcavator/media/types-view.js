@@ -211,7 +211,7 @@
         {
           class: (cls || "") + " sortable" + (state.sort.key === key ? " sorted" : ""),
           onclick: () => {
-            state.sort = { key, desc: state.sort.key === key ? !state.sort.desc : key === "size" || key === "waste" };
+            state.sort = { key, desc: state.sort.key === key ? !state.sort.desc : key === "size" || key === "waste" || key === "code" };
             save();
             restart();
           },
@@ -222,7 +222,21 @@
     const table = el(
       "table",
       { class: "rows tree types", role: "grid", "aria-rowcount": String(state.matched || 0) },
-      el("thead", {}, el("tr", {}, head("name", "Name"), state.showMangled ? head("mangled", "Mangled") : null, head("size", "Size", "n"), head("waste", "Padding", "n"))),
+      el(
+        "thead",
+        {},
+        el(
+          "tr",
+          {},
+          head("name", "Name"),
+          state.showMangled ? head("mangled", "Mangled") : null,
+          head("size", "Size", "n"),
+          head("waste", "Padding", "n"),
+          // (What it owns in the binary: an image's types, not a PDB's alone.)
+          state.hasCode ? head("code", "Code", "n") : null,
+          state.hasCode ? el("th", { class: "n", title: "its static members, vtables, and RTTI" }, "Data") : null
+        )
+      ),
       el("tbody")
     );
     const count =
@@ -268,7 +282,7 @@
       tbody.replaceChildren();
       return;
     }
-    const columns = state.showMangled ? 4 : 3;
+    const columns = 3 + (state.showMangled ? 1 : 0) + (state.hasCode ? 2 : 0);
     const spacer = (n) => {
       const tr = el("tr", { class: "spacer", "aria-hidden": "true" }, el("td", { colspan: String(columns) }));
       tr.style.height = n * ROW + "px";
@@ -284,7 +298,7 @@
         out.push(el("tr", { class: "pending" }, el("td", { colspan: String(columns), class: "muted" }, "…")));
         continue;
       }
-      const [name, mangled, size, waste, union, incomplete] = t;
+      const [name, mangled, size, waste, union, incomplete, code, data, functions] = t;
       const tr = el(
         "tr",
         {
@@ -302,7 +316,11 @@
         el("td", { class: "tname", title: mangled ? `${name}\n${mangled}` : name }, el("span", { class: "label" }, (union ? "union " : "") + name)),
         state.showMangled ? el("td", { class: "mangled mono", title: mangled || "" }, mangled || "") : null,
         el("td", { class: "n", title: `${size.toLocaleString()} bytes` }, formatSize(size)),
-        el("td", { class: "n muted" }, incomplete ? "?" : waste ? formatSize(waste) : "")
+        el("td", { class: "n muted" }, incomplete ? "?" : waste ? formatSize(waste) : ""),
+        state.hasCode
+          ? el("td", { class: "n", title: code ? `${functions} functions, ${code.toLocaleString()} bytes of code` : "no code in the binary" }, code ? formatSize(code) : "")
+          : null,
+        state.hasCode ? el("td", { class: "n muted", title: data ? `${data.toLocaleString()} bytes` : "" }, data ? formatSize(data) : "") : null
       );
       out.push(tr);
     }
@@ -354,7 +372,10 @@
       state.matched = m.matched;
       state.error = null;
       m.list.forEach((row, k) => state.rows.set(m.from + k, row));
-      if (fresh) {
+      // (Rows carry their code where hexcavator read the image's symbols.)
+      const hasCode = m.list.some((row) => row[6] != null);
+      if (fresh || hasCode !== !!state.hasCode) {
+        state.hasCode = hasCode;
         // (Not the toolbar: the filter box is being typed in.)
         renderHeader();
         renderTable();

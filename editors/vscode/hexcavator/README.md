@@ -41,9 +41,15 @@ Mach-O file with DWARF gets what a PE image with its PDB does):
   unreferenced vtables, identical functions, and inlined functions.
   (`hexcavator annotations` lists the strings MSVC's `__annotation` attaches to
   code, as drivers' WPP tracing does; few binaries have any.) (Disassembly, **Why Is This Here?**,
-  **References**, queries, a type's layout, and **View Definition** are on
-  the Symbols and Types pages' context menus; types by padding on the Types
-  page; code by source file on the Sources page.)
+  **About This Symbol** (everything known of a function or datum: where it
+  is, what was folded into it and inlined into it, what its class and PGO
+  say of it; or why the binary doesn't have it), **Compare Disassembly
+  With…** (another function of the binary, side by side: another instance
+  of its template, say), **References**, queries, a type's layout, and
+  **View Definition** are on the Symbols and Types pages' context menus;
+  types by padding and by code on the Types page; code by source file on
+  the Sources page.) Each section and COFF group says what it holds, after
+  its name and in its hover card.
   Hover one for its `hexcavator` command line; right-click to copy it or run it
   in a terminal. Each opens as tables (from `-json`): its numbers as a
   summary, each list sortable by any column, filterable, and copyable as
@@ -212,8 +218,9 @@ active page's totals. The views take their colors from the editor's theme.
 ## The Types page
 
 Every class, structure, and union of a binary (from its PDB or DWARF), with
-its size and the bytes its padding wastes: by name at first, or sorted by
-any column; filtered as you type (name or mangled name; `.*` for a regular
+its size and the bytes its padding wastes, and (for a binary, from its
+symbols) the code and data it owns (its member functions, static members,
+vtables, and RTTI): by name at first, or sorted by any column; filtered as you type (name or mangled name; `.*` for a regular
 expression); with an optional **Mangled names** column (a PDB's unique
 names; for DWARF, the Itanium name where it can be made exactly). `hexcavator`
 keeps the types in memory and sends the rows in view, so a program with
@@ -223,7 +230,10 @@ right-click **View Layout**, for its layout; right-click **References** for
 the types it is a base or member of, and the variables and functions whose
 types name it; right-click **View Definition** for its source file, at the
 line that defines it (where the debug information records it: a PDB's
-`LF_UDT_SRC_LINE`, DWARF's declaration; `hexcavator types -definition`).
+`LF_UDT_SRC_LINE`, DWARF's declaration; `hexcavator types -definition`). A
+layout lists, below its parts, the type's functions and data in the
+binary, and the methods it declares that have no code there (inlined
+wherever called, or never called and removed).
 
 Source paths recorded on another machine are found here as lenses' are
 (`hexcavator.sourcePathMap`, else by their last directories).
@@ -236,7 +246,10 @@ such as compiling an object with `/Gy` or linking with `/OPT:REF`, each
 measured on this build: its saving is the bytes it would no longer hold;
 its duplicated variables are left to the next section), **Duplicate
 data**, **Wasteful virtuals**, and **Template families**. The header's
-**Recoverable** sums them.
+**Recoverable** sums them. Wasteful virtuals leave out COM classes, whose
+virtual functions are interfaces other code calls, unless **Include COM
+classes** is checked; a template family's **compare…** picks two of its
+instances to see side by side.
 
 ## The Layout page
 

@@ -53,6 +53,8 @@ struct Loaded {
     object: bool,
     /// A PE image (whose COFF groups are a source).
     pe: bool,
+    /// Its format, if it is an image (for what its sections hold).
+    format: Option<turbonop_image::Format>,
     /// The debug information given (`pdb`, or `debug`), if any.
     debug_arg: Option<PathBuf>,
     /// The image and its debug information, opened when first needed.
@@ -73,11 +75,13 @@ impl Loaded {
             .as_ref()
             .is_none_or(|i| i.kind() != turbonop_image::Kind::Linked);
         let pe = image.as_ref().is_some_and(|i| i.pe().is_some());
+        let format = image.as_ref().map(Image::format);
         Ok(Self {
             path: path.to_path_buf(),
             map,
             object,
             pe,
+            format,
             debug_arg: debug.map(Path::to_path_buf),
             opened: OnceCell::new(),
             built: OnceCell::new(),
@@ -257,16 +261,20 @@ impl Server {
             .map(|f| regex::Regex::new(f).map_err(|e| format!("source_filter: {e}")))
             .transpose()?;
         let rollup = Rollup::filtered(&*loaded.maps(&list)?, filter.as_ref());
+        let mut format = loaded.format;
         let base = match arg_path(args, "base") {
             Some(b) => {
                 let base_pdb = arg_path(args, "base_debug").or_else(|| arg_path(args, "base_pdb"));
                 let l = self.load(&b, base_pdb.as_deref())?;
+                // (Described only if both are of one format.)
+                format = format.filter(|f| l.format == Some(*f));
                 Some(Rollup::filtered(&*l.maps(&list)?, filter.as_ref()))
             }
             None => None,
         };
         let names: Vec<&str> = list.iter().map(|s| s.name()).collect();
-        let report = Report::new(&names, &rollup, base.as_ref(), &options);
+        let mut report = Report::new(&names, &rollup, base.as_ref(), &options);
+        report.format = format;
         let structured =
             serde_json::from_str::<Value>(&report.json()).map_err(|e| e.to_string())?;
         Ok((report.pretty(&options), structured))
@@ -576,6 +584,13 @@ impl Server {
         ))
     }
 
+    fn about(&mut self, args: &Value) -> ToolResult {
+        let path = arg_path(args, "path").ok_or("about: no path")?;
+        let name = arg_str(args, "name").ok_or("about: no name")?;
+        let pdb = arg_path(args, "debug").or_else(|| arg_path(args, "pdb"));
+        crate::about::report(&path, pdb.as_deref(), name)
+    }
+
     fn findings(&mut self, args: &Value) -> ToolResult {
         let loaded = self.loaded_from(args)?;
         let program = loaded.program().map_err(|e| format!("findings: {e}"))?;
@@ -596,7 +611,10 @@ impl Server {
             debug,
             syms,
             &name,
-            turbonop_size::findings::ReportOptions { limit },
+            turbonop_size::findings::ReportOptions {
+                limit,
+                com: args.get("com").and_then(Value::as_bool).unwrap_or(false),
+            },
         );
         let structured = serde_json::from_str::<Value>(&json).map_err(|e| e.to_string())?;
         Ok((text, structured))
@@ -627,6 +645,7 @@ impl Server {
         Some(match name {
             "linker_log" => self.linker_log(args),
             "findings" => self.findings(args),
+            "about" => self.about(args),
             "size_report" => self.size_report(args),
             "symbols" => self.symbols(args),
             "lookup" => self.lookup(args),
@@ -1023,7 +1042,7 @@ fn tools() -> Value {
             ),
             tool(
                 "findings",
-                "What wastes space in an image, with advice: variables duplicated across compilands (file-scope statics and non-extern consts in headers), and template families (instantiations of one template) by total size.",
+                "What wastes space in an image, with advice: variables duplicated across compilands (file-scope statics and non-extern consts in headers), template families (instantiations of one template) by total size, and wasteful virtuals (virtual functions no derived class overrides; COM classes' left out unless `com`).",
                 schema(
                     vec![
                         ("path", path.clone()),
@@ -1032,8 +1051,33 @@ fn tools() -> Value {
                             "limit",
                             prop("integer", "Items per finding (default 20; 0 for all)."),
                         ),
+                        (
+                            "com",
+                            prop(
+                                "boolean",
+                                "Include COM classes' wasteful virtuals (their virtual functions are interfaces other code calls).",
+                            ),
+                        ),
                     ],
                     &["path"],
+                ),
+            ),
+            tool(
+                "about",
+                "Everything known about one function or datum of an image: where it is (section, COFF group and what it holds, compiland, library, source line), its size, the names identical code folding merged with it (or the one it was merged into), the functions inlined into it, what its class says of it (virtual, pure, static), and what PGO's training counted of it. A name the image doesn't have is explained: inlined wherever it is called (its copies, and where), or declared but never kept.",
+                schema(
+                    vec![
+                        ("path", path.clone()),
+                        ("debug", pdb.clone()),
+                        (
+                            "name",
+                            prop(
+                                "string",
+                                "The function or datum: its name as the symbols give it, or without its parameters if just one has that.",
+                            ),
+                        ),
+                    ],
+                    &["path", "name"],
                 ),
             ),
             tool(
@@ -1382,6 +1426,7 @@ mod tests {
                 "size_report",
                 "symbols",
                 "findings",
+                "about",
                 "linker_log",
                 "query",
                 "why",

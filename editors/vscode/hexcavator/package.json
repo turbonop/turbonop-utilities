@@ -107,6 +107,12 @@
         "icon": "$(debug-step-into)"
       },
       {
+        "command": "hexcavator.symbol.about",
+        "title": "About This Symbol",
+        "category": "Hexcavator",
+        "icon": "$(info)"
+      },
+      {
         "command": "hexcavator.symbol.refs",
         "title": "References",
         "category": "Hexcavator",
@@ -142,6 +148,12 @@
         "icon": "$(code)"
       },
       {
+        "command": "hexcavator.row.compareWith",
+        "title": "Compare Disassembly With…",
+        "category": "Hexcavator",
+        "icon": "$(diff)"
+      },
+      {
         "command": "hexcavator.row.disassemblyDiff",
         "title": "Compare Disassembly",
         "category": "Hexcavator",
@@ -158,6 +170,12 @@
         "title": "Why Is This Here?",
         "category": "Hexcavator",
         "icon": "$(debug-step-into)"
+      },
+      {
+        "command": "hexcavator.row.about",
+        "title": "About This Symbol",
+        "category": "Hexcavator",
+        "icon": "$(info)"
       },
       {
         "command": "hexcavator.row.refs",
@@ -315,6 +333,11 @@
           "group": "2@1"
         },
         {
+          "command": "hexcavator.symbol.about",
+          "when": "view == hexcavator.binaries && viewItem =~ /symbol\\.pe/",
+          "group": "2@0"
+        },
+        {
           "command": "hexcavator.symbol.refs",
           "when": "view == hexcavator.binaries && viewItem =~ /symbol\\.pe/",
           "group": "2@2"
@@ -404,6 +427,10 @@
           "when": "false"
         },
         {
+          "command": "hexcavator.symbol.about",
+          "when": "false"
+        },
+        {
           "command": "hexcavator.symbol.refs",
           "when": "false"
         },
@@ -428,11 +455,19 @@
           "when": "false"
         },
         {
+          "command": "hexcavator.row.compareWith",
+          "when": "false"
+        },
+        {
           "command": "hexcavator.row.viewData",
           "when": "false"
         },
         {
           "command": "hexcavator.row.why",
+          "when": "false"
+        },
+        {
+          "command": "hexcavator.row.about",
           "when": "false"
         },
         {
@@ -499,6 +534,11 @@
           "group": "1@1"
         },
         {
+          "command": "hexcavator.row.compareWith",
+          "when": "(webviewId == 'hexcSize' || webviewId == 'hexcavator.sizeEditor' || webviewId == 'hexcTable' || webviewId == 'hexcInit') && webviewSection == 'symbol' && symbolKind != 'data'",
+          "group": "1@2"
+        },
+        {
           "command": "hexcavator.row.disassemblyDiff",
           "when": "(webviewId == 'hexcSize' || webviewId == 'hexcavator.sizeEditor') && webviewSection == 'diffSymbol' && symbolKind != 'data' && (symbolChange == 'grew' || symbolChange == 'shrank' || symbolChange == 'same')",
           "group": "1@0"
@@ -512,6 +552,11 @@
           "command": "hexcavator.row.why",
           "when": "(webviewId == 'hexcSize' || webviewId == 'hexcavator.sizeEditor' || webviewId == 'hexcTable' || webviewId == 'hexcInit') && webviewSection == 'symbol' && canQuery",
           "group": "2@1"
+        },
+        {
+          "command": "hexcavator.row.about",
+          "when": "(webviewId == 'hexcSize' || webviewId == 'hexcavator.sizeEditor' || webviewId == 'hexcTable' || webviewId == 'hexcInit') && webviewSection == 'symbol' && canQuery",
+          "group": "2@0"
         },
         {
           "command": "hexcavator.row.refs",

@@ -2035,3 +2035,62 @@ fn arm64e_named_so() {
         assert!(out.lines().next().unwrap().ends_with(arch), "{out}");
     }
 }
+
+#[test]
+fn two_functions_compared() {
+    // Two instances of one template: alike but for their element type's
+    // size (the maximum size, and how a count becomes bytes).
+    let image = bin("SizeBenchV2.AnalysisEngine.Tests.CppTestCasesBefore.dll");
+    let a = "std::vector<wchar_t,std::allocator<wchar_t> >::_Reallocate(unsigned int64)";
+    let b = "std::vector<int,std::allocator<int> >::_Reallocate(unsigned int64)";
+    let (ok, out, err) = hexcavator(&[
+        "-disassemble".as_ref(),
+        a.as_ref(),
+        "-compare".as_ref(),
+        b.as_ref(),
+        "-json".as_ref(),
+        image.as_os_str(),
+    ]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["a"], a);
+    assert_eq!(v["b"], b);
+    let similarity = v["similarity"].as_f64().unwrap();
+    assert!(similarity > 0.8 && similarity < 1.0, "{similarity}");
+    let lines = v["lines"].as_array().unwrap();
+    assert!(lines.iter().any(|l| l[0] == "-") && lines.iter().any(|l| l[0] == "+"));
+    // No addresses: the lines are the instructions alone.
+    assert!(
+        lines
+            .iter()
+            .all(|l| !l[1].as_str().unwrap().starts_with("18000")),
+        "{out}"
+    );
+    // A function and itself: the same.
+    let (ok, out, _) = hexcavator(&[
+        "-disassemble".as_ref(),
+        a.as_ref(),
+        "-compare".as_ref(),
+        a.as_ref(),
+        image.as_os_str(),
+    ]);
+    assert!(ok);
+    assert!(out.contains("100% of their lines alike"), "{out}");
+    // The findings name each template family's functions, to compare.
+    let (ok, out, err) = hexcavator(&["-findings".as_ref(), "-json".as_ref(), image.as_os_str()]);
+    assert!(ok, "{err}");
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let family = v["template_families"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["family"] == "std::vector<>::_Reallocate")
+        .unwrap();
+    let names: Vec<&str> = family["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert!(names.contains(&a) && names.contains(&b), "{names:?}");
+}

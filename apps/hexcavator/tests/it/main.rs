@@ -5,6 +5,7 @@ use turbonop_global_alloc as _;
 
 mod common;
 
+mod about;
 mod batch;
 mod checksec;
 mod data;

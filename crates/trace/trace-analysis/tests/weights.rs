@@ -1,5 +1,7 @@
 //! Samples' weights, as WPA gives them.
 
+use turbonop_global_alloc as _;
+
 use turbonop_trace::{Clock, Process, ProcessIx, StackId, Thread, ThreadIx, Trace};
 use turbonop_trace_analysis::weights::sample_weights_ns;
 

@@ -28,6 +28,7 @@ const DERIVED: &[(&str, &str, &str)] = &[
     ),
     ("LICENSE-ARM", "Arm's AARCHMRS", "BSD-3-Clause"),
     ("NOTICE-XED", "Intel XED", "Apache-2.0"),
+    ("LICENSE-SIZEBENCH", "Microsoft's SizeBench", "MIT"),
 ];
 
 /// License files of code a crate bundles (C sources it builds), which

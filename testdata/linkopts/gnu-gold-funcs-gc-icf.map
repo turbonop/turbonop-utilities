@@ -1,0 +1,101 @@
+
+Discarded input sections
+
+ .text          0x0000000000000000        0x0 funcs.o
+ .data          0x0000000000000000        0x0 funcs.o
+ .bss           0x0000000000000000        0x0 funcs.o
+ .text.add_b    0x0000000000000000       0x56 funcs.o
+ .text.add_c    0x0000000000000000       0x56 funcs.o
+ .text.unused1  0x0000000000000000       0x76 funcs.o
+ .text.unused2  0x0000000000000000       0x76 funcs.o
+ .rodata.table2
+                0x0000000000000000       0xc8 funcs.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 funcs.o
+
+Memory map
+
+ ** file header
+                0x0000000000400000       0x40
+ ** segment headers
+                0x0000000000400040      0x118
+
+.note.gnu.property
+                0x0000000000400158       0x20
+ ** note header
+                0x0000000000400158       0x10
+ ** fill        0x0000000000400168       0x10
+
+.note.gnu.build-id
+                0x0000000000400178       0x24
+ ** note header
+                0x0000000000400178       0x10
+ ** zero fill   0x0000000000400188       0x14
+
+.text           0x00000000004001a0       0xbc
+ .text.add_a    0x00000000004001a0       0x56 funcs.o
+                0x00000000004001a0                add_a
+ ** fill        0x00000000004001f6        0xa
+ .text._start   0x0000000000400200       0x5c funcs.o
+                0x0000000000400200                _start
+
+.rodata         0x0000000000400260       0xc8
+ .rodata.table1
+                0x0000000000400260       0xc8 funcs.o
+
+.bss            0x0000000000401328        0x4
+ .bss.sink      0x0000000000401328        0x4 funcs.o
+                0x0000000000401328                sink
+
+.debug_info     0x0000000000000000      0x309
+ .debug_info    0x0000000000000000      0x309 funcs.o
+
+.debug_abbrev   0x0000000000000000      0x12b
+ .debug_abbrev  0x0000000000000000      0x12b funcs.o
+
+.debug_loclists
+                0x0000000000000000      0x240
+ .debug_loclists
+                0x0000000000000000      0x240 funcs.o
+
+.debug_aranges  0x0000000000000000       0x80
+ .debug_aranges
+                0x0000000000000000       0x80 funcs.o
+
+.debug_rnglists
+                0x0000000000000000       0xab
+ .debug_rnglists
+                0x0000000000000000       0xab funcs.o
+
+.debug_line     0x0000000000000000      0x31e
+ .debug_line    0x0000000000000000      0x31e funcs.o
+
+.debug_str      0x0000000000000000      0x169
+ ** merge strings
+                0x0000000000000000      0x169
+
+.debug_line_str
+                0x0000000000000000       0x30
+ ** merge strings
+                0x0000000000000000       0x30
+
+.debug_frame    0x0000000000000000       0xa8
+ .debug_frame   0x0000000000000000       0xa8 funcs.o
+
+.note.gnu.gold-version
+                0x0000000000000000       0x1c
+ ** note header
+                0x0000000000000000       0x10
+ ** fill        0x0000000000000010        0x9
+ ** zero fill   0x0000000000000019        0x3
+
+.symtab         0x0000000000000000      0x108
+ ** symtab      0x0000000000000000      0x108
+
+.strtab         0x0000000000000000       0x46
+ ** string table
+                0x0000000000000000       0x46
+
+.shstrtab       0x0000000000000000       0xe8
+ ** string table
+                0x0000000000000000       0xe8

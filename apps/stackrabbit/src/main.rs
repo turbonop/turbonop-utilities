@@ -1,5 +1,8 @@
 //! The `stackrabbit` command-line driver (see the library for the commands).
 
+// (mimalloc: see turbonop-global-alloc.)
+use turbonop_global_alloc as _;
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

@@ -4,6 +4,8 @@
 //! PowerPC) decoded and written the same, or not decoded where LLVM
 //! decodes nothing.
 
+use turbonop_global_alloc as _;
+
 use turbonop_powerpc::format::format;
 use turbonop_powerpc::{Features, decode};
 

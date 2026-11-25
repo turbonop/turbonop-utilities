@@ -3,6 +3,8 @@
 //!
 //!     cargo run --release -p turbonop-x86 --example sweep -- clang.exe 400 630EF97
 
+use turbonop_global_alloc as _;
+
 use turbonop_x86::{Mode, decode};
 
 fn main() {

@@ -19,8 +19,12 @@
 // padding is computed in wrapping 32-bit arithmetic on purpose (see `pe`).
 #![allow(clippy::cast_possible_truncation)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod budget;
 pub mod custom;
+pub mod describe;
 /// (Moved to the debug information crate, which reads DWARF too.)
 pub use turbonop_debuginfo::decompress;
 pub mod compiled;
@@ -36,9 +40,11 @@ pub mod frames;
 pub mod index;
 pub mod inlining;
 pub mod lcid;
+pub mod linediff;
 pub mod loader_lists;
 pub mod macho;
 pub mod map;
+pub mod members;
 pub mod model;
 pub mod names;
 pub mod objects;

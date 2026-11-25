@@ -6,6 +6,8 @@
 //! `-count` only counts events and times the read. `-buffers` prints each buffer's header instead; `-raw` prints events in
 //! file order rather than timestamp order, with each record's hook ID.
 
+use turbonop_global_alloc as _;
+
 use std::io::{BufWriter, Write};
 
 use turbonop_etl::{Etl, Event};

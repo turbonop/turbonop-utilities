@@ -15,6 +15,9 @@
 //! undecorated names, for finding the function an address is in, and the
 //! calls inlined there and its source line.
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 use std::path::{Path, PathBuf};
 
 mod saved;

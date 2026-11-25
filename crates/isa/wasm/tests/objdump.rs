@@ -5,6 +5,8 @@
 //! instruction (`<unknown>`: relaxed SIMD and half-precision ops), ours
 //! must still decode it to the bytes LLVM shows.
 
+use turbonop_global_alloc as _;
+
 use std::path::Path;
 
 use turbonop_wasm_isa::code::{self, BlockType, Catch, Imm, Instruction, ValType, natural_align};

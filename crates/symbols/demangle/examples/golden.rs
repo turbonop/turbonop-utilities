@@ -3,6 +3,8 @@
 //!
 //!     golden <names.txt> <undname-0.txt> <undname-20000.txt> <every-nth>
 
+use turbonop_global_alloc as _;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let read = |p: &str| std::fs::read_to_string(p).unwrap();

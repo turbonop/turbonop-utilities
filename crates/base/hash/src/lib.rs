@@ -5,6 +5,9 @@
 //! state, which is not linear: collisions for one seed are not
 //! collisions for another). It is not a cryptographic hash.
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 use std::hash::{BuildHasher, Hasher};
 
 /// A `HashMap` with [`State`].

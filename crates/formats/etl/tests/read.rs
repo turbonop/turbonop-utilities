@@ -3,6 +3,8 @@
 // Test inputs are small: their sizes and indexes fit any integer type.
 #![allow(clippy::cast_possible_truncation)]
 
+use turbonop_global_alloc as _;
+
 use turbonop_etl::event::{ext_type, flags};
 use turbonop_etl::write::{self, Classic, EventFields, Kernel, Writer, WriterOptions};
 use turbonop_etl::{ClockType, Etl, Guid, HeaderKind, classic};

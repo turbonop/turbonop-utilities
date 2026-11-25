@@ -1,0 +1,77 @@
+{
+  "name": "procupine-vscode",
+  "displayName": "Procupine",
+  "description": "The processes running on this machine, as a process explorer shows them: a live tree with CPU, memory, and I/O, each process's history, its details, and killing, suspending, and resuming. Windows, Linux, and macOS, and the remote machine of a remote window (SSH, WSL, containers).",
+  "version": "0.0.1",
+  "publisher": "turbonop",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "process",
+    "process explorer",
+    "task manager",
+    "top",
+    "htop",
+    "kill",
+    "cpu",
+    "memory",
+    "activity monitor"
+  ],
+  "main": "./extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "procupine.show",
+        "title": "Show Processes",
+        "category": "Procupine",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "procupine.findProcess",
+        "title": "Show Process by ID…",
+        "category": "Procupine"
+      },
+      {
+        "command": "procupine.showLog",
+        "title": "Show Log",
+        "category": "Procupine"
+      }
+    ],
+    "configuration": {
+      "title": "Procupine",
+      "properties": {
+        "procupine.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "The procupine program to run (empty: the one this extension carries)."
+        },
+        "procupine.interval": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 100,
+          "description": "How often the processes are sampled, in milliseconds (the panel's own choice, once made, is kept with it)."
+        },
+        "procupine.confirmKill": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask before killing or terminating processes."
+        }
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/turbonop/turbonop-utilities"
+  }
+}

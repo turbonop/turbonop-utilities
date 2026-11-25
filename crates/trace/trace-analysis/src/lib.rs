@@ -10,6 +10,9 @@
 //! Frames become tree keys through [`keys::Framer`]: by function (with a
 //! [`Symbolizer`]), by image, or by address.
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod debug;
 pub mod keys;
 pub mod lines;

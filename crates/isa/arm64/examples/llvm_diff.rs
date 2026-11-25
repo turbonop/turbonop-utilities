@@ -17,6 +17,8 @@
     reason = "word arithmetic over a 32-bit space"
 )]
 
+use turbonop_global_alloc as _;
+
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};

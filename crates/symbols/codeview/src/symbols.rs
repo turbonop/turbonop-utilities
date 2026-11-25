@@ -389,6 +389,18 @@ pub enum Symbol<'a> {
     End {
         kind: u16,
     },
+    /// S_POGODATA (`POGOINFO`): what PGO's training counted of the
+    /// function it is in.
+    PogoData {
+        /// How many times the function was called.
+        invocations: u32,
+        /// How many of its instructions ran, in all.
+        dynamic_instructions: u64,
+        /// How many instructions it has.
+        instructions: u32,
+        /// How many of them ran at all (were "live").
+        live_instructions: u32,
+    },
     Other {
         kind: u16,
         data: &'a [u8],
@@ -578,6 +590,12 @@ impl<'a> SymbolRecord<'a> {
                 data: self.data,
             },
             S_END | S_PROC_ID_END | S_INLINESITE_END => Symbol::End { kind: self.kind },
+            S_POGODATA => Symbol::PogoData {
+                invocations: r.u32_le()?,
+                dynamic_instructions: r.u64_le()?,
+                instructions: r.u32_le()?,
+                live_instructions: r.u32_le()?,
+            },
             _ => Symbol::Other {
                 kind: self.kind,
                 data: self.data,
@@ -680,6 +698,38 @@ mod tests {
                 other => panic!("{other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn pogo_data() {
+        let mut body = Vec::new();
+        body.extend_from_slice(&7u32.to_le_bytes());
+        body.extend_from_slice(&0x1_0000_0002u64.to_le_bytes());
+        body.extend_from_slice(&40u32.to_le_bytes());
+        body.extend_from_slice(&31u32.to_le_bytes());
+        let data = record(kind::S_POGODATA, &body);
+        let rec = SymbolIter::new(&data, 0).next().unwrap();
+        match rec.parse().unwrap() {
+            Symbol::PogoData {
+                invocations,
+                dynamic_instructions,
+                instructions,
+                live_instructions,
+            } => assert_eq!(
+                (
+                    invocations,
+                    dynamic_instructions,
+                    instructions,
+                    live_instructions
+                ),
+                (7, 0x1_0000_0002, 40, 31)
+            ),
+            other => panic!("{other:?}"),
+        }
+        // Cut short: an error, not a guess.
+        let data = record(kind::S_POGODATA, &body[..10]);
+        let rec = SymbolIter::new(&data, 0).next().unwrap();
+        assert!(rec.parse().is_err());
     }
 
     #[test]

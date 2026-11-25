@@ -21,6 +21,9 @@
 #![allow(unsafe_code)]
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 use std::fmt;
 use std::fs::File;
 use std::io;

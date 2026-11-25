@@ -249,3 +249,46 @@ fn json_escapes_control_characters() {
     assert_eq!(out, "\"a\\nb\\t\\\\\\u0001é\"");
     assert_eq!(csv_escape("plain"), "plain");
 }
+
+#[test]
+fn diffs_pair_paths_moved_to_another_directory() {
+    // One program built in two checkouts: its objects are the same files
+    // under another root. (Two `dup.obj`s: each pairs with the one whose
+    // path agrees longest; a third, with no counterpart, is new.)
+    let old = rollup(&[
+        (&["C:/a/src/x.obj"], 100, 100),
+        (&["C:/a/src/y.obj"], 50, 50),
+        (&["C:/a/lib/dup.obj"], 10, 10),
+        (&["C:/a/other/dup.obj"], 20, 20),
+        (&["C:/a/src/gone.obj"], 7, 7),
+    ]);
+    let new = rollup(&[
+        (&["D:/agent/src/X.obj"], 120, 120),
+        (&["D:/agent/src/y.obj"], 50, 50),
+        (&["D:/agent/lib/dup.obj"], 10, 10),
+        (&["D:/agent/other/dup.obj"], 25, 25),
+        (&["D:/agent/third/dup.obj"], 3, 3),
+    ]);
+    let options = Options::default();
+    let report = Report::new(&["compileunits"], &new, Some(&old), &options);
+    let rows: Vec<(&str, i64, i64)> = report
+        .total
+        .children
+        .iter()
+        .map(|r| (r.name.as_str(), r.file, r.old_file))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("D:/agent/src/X.obj", 20, 100),
+            ("D:/agent/other/dup.obj", 5, 20),
+            ("D:/agent/third/dup.obj", 3, 0),
+            ("C:/a/src/gone.obj", -7, 7),
+        ]
+    );
+    // Labels that aren't paths pair only by their names.
+    let old = rollup(&[(&["f()"], 10, 10)]);
+    let new = rollup(&[(&["g()"], 10, 10)]);
+    let report = Report::new(&["symbols"], &new, Some(&old), &options);
+    assert_eq!(names(&report.total.children), ["g()", "f()"]);
+}

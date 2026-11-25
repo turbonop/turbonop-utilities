@@ -18,6 +18,7 @@ turbonop-etl.workspace = true
 turbonop-etw.workspace = true
 
 [dev-dependencies]
+turbonop-global-alloc.workspace = true
 turbonop-trace.workspace = true
 turbonop-trace-analysis.workspace = true
 rustc-hash.workspace = true

@@ -266,14 +266,12 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hexcavator"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
- "mimalloc",
  "regex",
  "rustc-hash",
  "serde",
  "serde_json",
- "turbonop-alloc",
  "turbonop-archive",
  "turbonop-arm64",
  "turbonop-codeview",
@@ -283,6 +281,7 @@ dependencies = [
  "turbonop-deps",
  "turbonop-dwarf",
  "turbonop-elf",
+ "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-image",
  "turbonop-linkerlog",
@@ -512,6 +511,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "procupine"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "turbonop-global-alloc",
+ "turbonop-process",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -733,6 +741,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-etl",
  "turbonop-etw",
+ "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-mmap",
  "turbonop-par",
@@ -764,22 +773,32 @@ dependencies = [
 [[package]]
 name = "turbonop-alloc"
 version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
 
 [[package]]
 name = "turbonop-archive"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-pe",
 ]
 
 [[package]]
 name = "turbonop-arm32"
 version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
 
 [[package]]
 name = "turbonop-arm64"
 version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
 
 [[package]]
 name = "turbonop-code"
@@ -788,6 +807,7 @@ dependencies = [
  "turbonop-arm32",
  "turbonop-arm64",
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-loongarch",
  "turbonop-mips",
  "turbonop-powerpc",
@@ -800,6 +820,7 @@ name = "turbonop-codeview"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-par",
 ]
@@ -809,6 +830,7 @@ name = "turbonop-core"
 version = "0.0.7"
 dependencies = [
  "memchr",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -822,6 +844,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-dwarf",
  "turbonop-elf",
+ "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-image",
  "turbonop-macho",
@@ -837,6 +860,7 @@ version = "0.0.7"
 dependencies = [
  "bumpalo",
  "turbonop-core",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -845,6 +869,7 @@ version = "0.0.7"
 dependencies = [
  "turbonop-core",
  "turbonop-elf",
+ "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-macho",
  "turbonop-mmap",
@@ -858,6 +883,7 @@ version = "0.0.7"
 dependencies = [
  "turbonop-core",
  "turbonop-elf",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -865,6 +891,7 @@ name = "turbonop-elf"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -872,6 +899,7 @@ name = "turbonop-etl"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-mmap",
 ]
 
@@ -882,6 +910,7 @@ dependencies = [
  "rustc-hash",
  "turbonop-core",
  "turbonop-etl",
+ "turbonop-global-alloc",
  "turbonop-mmap",
  "turbonop-pe",
 ]
@@ -895,6 +924,7 @@ dependencies = [
  "turbonop-arm64",
  "turbonop-code",
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-loongarch",
  "turbonop-mips",
  "turbonop-par",
@@ -909,6 +939,7 @@ name = "turbonop-fuzz"
 version = "0.0.7"
 dependencies = [
  "hexcavator",
+ "mimalloc",
  "turbonop-arm32",
  "turbonop-arm64",
  "turbonop-code",
@@ -939,8 +970,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-global-alloc"
+version = "0.0.7"
+dependencies = [
+ "mimalloc",
+ "turbonop-alloc",
+]
+
+[[package]]
 name = "turbonop-hash"
 version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
 
 [[package]]
 name = "turbonop-image"
@@ -948,6 +990,7 @@ version = "0.0.7"
 dependencies = [
  "turbonop-core",
  "turbonop-elf",
+ "turbonop-global-alloc",
  "turbonop-macho",
  "turbonop-pe",
  "turbonop-wasm",
@@ -956,15 +999,22 @@ dependencies = [
 [[package]]
 name = "turbonop-linkerlog"
 version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
 
 [[package]]
 name = "turbonop-linkmap"
 version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
 
 [[package]]
 name = "turbonop-loongarch"
 version = "0.0.7"
 dependencies = [
+ "turbonop-global-alloc",
  "turbonop-tablegen",
 ]
 
@@ -973,6 +1023,7 @@ name = "turbonop-lx"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-mz",
 ]
 
@@ -981,6 +1032,7 @@ name = "turbonop-macho"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -988,12 +1040,14 @@ name = "turbonop-minidump"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
 name = "turbonop-mips"
 version = "0.0.7"
 dependencies = [
+ "turbonop-global-alloc",
  "turbonop-tablegen",
 ]
 
@@ -1004,6 +1058,7 @@ dependencies = [
  "libc",
  "memmap2",
  "turbonop-core",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -1011,6 +1066,7 @@ name = "turbonop-mz"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -1018,6 +1074,7 @@ name = "turbonop-ne"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-mz",
 ]
 
@@ -1025,7 +1082,7 @@ dependencies = [
 name = "turbonop-par"
 version = "0.0.7"
 dependencies = [
- "turbonop-alloc",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -1034,6 +1091,7 @@ version = "0.0.7"
 dependencies = [
  "turbonop-codeview",
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-par",
 ]
 
@@ -1042,6 +1100,7 @@ name = "turbonop-pe"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-mz",
 ]
 
@@ -1049,7 +1108,18 @@ dependencies = [
 name = "turbonop-powerpc"
 version = "0.0.7"
 dependencies = [
+ "turbonop-global-alloc",
  "turbonop-tablegen",
+]
+
+[[package]]
+name = "turbonop-process"
+version = "0.0.7"
+dependencies = [
+ "libc",
+ "rustc-hash",
+ "turbonop-global-alloc",
+ "turbonop-par",
 ]
 
 [[package]]
@@ -1061,6 +1131,7 @@ dependencies = [
  "turbonop-codeview",
  "turbonop-core",
  "turbonop-debuginfo",
+ "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-macho",
  "turbonop-mmap",
@@ -1074,12 +1145,14 @@ name = "turbonop-query"
 version = "0.0.7"
 dependencies = [
  "regex",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
 name = "turbonop-riscv"
 version = "0.0.7"
 dependencies = [
+ "turbonop-global-alloc",
  "turbonop-tablegen",
 ]
 
@@ -1094,6 +1167,7 @@ dependencies = [
  "sha1",
  "sha2",
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-macho",
  "turbonop-pe",
 ]
@@ -1117,6 +1191,7 @@ dependencies = [
  "turbonop-dwarf",
  "turbonop-elf",
  "turbonop-fingerprint",
+ "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-image",
  "turbonop-linkmap",
@@ -1142,6 +1217,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-debuginfo",
  "turbonop-demangle",
+ "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-mmap",
  "turbonop-pdb",
@@ -1150,6 +1226,9 @@ dependencies = [
 [[package]]
 name = "turbonop-tablegen"
 version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
 
 [[package]]
 name = "turbonop-trace"
@@ -1159,6 +1238,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-etl",
  "turbonop-etw",
+ "turbonop-global-alloc",
  "turbonop-mmap",
 ]
 
@@ -1169,6 +1249,7 @@ dependencies = [
  "rustc-hash",
  "turbonop-debuginfo",
  "turbonop-etl",
+ "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-mmap",
  "turbonop-par",
@@ -1183,6 +1264,7 @@ dependencies = [
  "rustc-hash",
  "turbonop-etl",
  "turbonop-etw",
+ "turbonop-global-alloc",
  "turbonop-trace",
  "turbonop-trace-analysis",
 ]
@@ -1197,6 +1279,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-dwarf",
  "turbonop-elf",
+ "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-macho",
  "turbonop-pdb",
@@ -1209,6 +1292,7 @@ name = "turbonop-wasm"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -1216,11 +1300,15 @@ name = "turbonop-wasm-isa"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-global-alloc",
 ]
 
 [[package]]
 name = "turbonop-x86"
 version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
+]
 
 [[package]]
 name = "turbonop-xref"
@@ -1230,6 +1318,7 @@ dependencies = [
  "turbonop-arm64",
  "turbonop-code",
  "turbonop-core",
+ "turbonop-global-alloc",
  "turbonop-loongarch",
  "turbonop-mips",
  "turbonop-par",
@@ -1273,6 +1362,7 @@ name = "xtask"
 version = "0.0.7"
 dependencies = [
  "serde_json",
+ "turbonop-global-alloc",
 ]
 
 [[package]]

@@ -4,6 +4,8 @@
 //!
 //!     cargo run --release -p turbonop-etw --example stackstat -- trace.etl
 
+use turbonop_global_alloc as _;
+
 use std::collections::{BTreeMap, HashMap};
 
 use turbonop_etl::Etl;

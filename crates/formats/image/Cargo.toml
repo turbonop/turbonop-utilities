@@ -16,6 +16,7 @@ turbonop-macho.workspace = true
 turbonop-wasm = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+turbonop-global-alloc.workspace = true
 turbonop-macho.workspace = true
 
 [lints]

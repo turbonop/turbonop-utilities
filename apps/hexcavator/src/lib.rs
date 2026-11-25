@@ -2,8 +2,12 @@
 //! (`hexcavator size ...` is `run(&["size", ...])`). The binary is a thin
 //! `main` around it; the fuzzer drives every command through it.
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 #[macro_use]
 mod out;
+mod about;
 mod batch;
 mod checksec;
 mod data;
@@ -42,6 +46,8 @@ debug information.
 usage: hexcavator [--cache <path>] [--arch <name>] [symbol servers] <command> [args]
 
 commands:
+  about <image> <name>       everything known about one function or datum, or
+                             why the image doesn't have it
   annotations <image>        the strings code attached to addresses (__annotation)
   batch <files or dirs>...   a JSON line summarizing each image (sections, libraries, ...)
   checksec [-audit] <image>  its exploit mitigations; -audit: its objects' compilers and options
@@ -191,8 +197,20 @@ fn global_options(args: &[String]) -> Result<(Vec<String>, Global), String> {
 
 /// Runs the command `args` names (without the program's name), with
 /// hexcavator's own options (`--cache`, `--arch`, the symbol servers') anywhere
-/// among them.
+/// among them. The process is taken to end after it: what the command is
+/// done with (a program's symbols, its files' mappings) is left for the
+/// exit to reclaim.
 pub fn run(args: &[String]) -> ExitCode {
+    run_as(args, true)
+}
+
+/// [`run`], for a process that runs many commands (the fuzzer): what each
+/// command is done with is freed, its files closed, before the next.
+pub fn run_in_process(args: &[String]) -> ExitCode {
+    run_as(args, false)
+}
+
+fn run_as(args: &[String], one_shot: bool) -> ExitCode {
     let (args, global) = match global_options(args) {
         Ok(x) => x,
         Err(e) => {
@@ -214,7 +232,9 @@ pub fn run(args: &[String]) -> ExitCode {
         Some("mcp") => mcp::run(&args[1..]),
         Some("serve") => serve::run(&args[1..]),
         _ => {
-            out::one_shot();
+            if one_shot {
+                out::one_shot();
+            }
             command(&args)
         }
     }
@@ -228,6 +248,7 @@ fn command(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     };
     match command.as_str() {
+        "about" => about::run(rest),
         "data" => data::run(rest),
         "deps" => deps::run(rest),
         "dump" => dump::run(rest),

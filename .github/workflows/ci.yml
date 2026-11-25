@@ -70,16 +70,12 @@ jobs:
           mkdir codicons && tar -xzf vscode-codicons-0.0.36.tgz -C codicons
       - run: python editors/web/test/run.py --wasm target/wasm32-wasip1-threads/release/hexcavator.wasm --codicons codicons/package/dist
 
-  # Linux releases are static, with musl (and mimalloc, compiled with
-  # musl-gcc, in musl's allocator's place): the tests, built so.
+  # Linux releases are static, with musl: the tests, built so (with
+  # mimalloc, every program's allocator, compiled with musl-gcc).
   musl:
     runs-on: ubuntu-latest
     env:
       CC_x86_64_unknown_linux_musl: musl-gcc
-      # (The tests' own binaries allocate with musl's allocator, which is
-      # many times slower than glibc's: only the hexcavator program has
-      # mimalloc. The timed tests bound blow-ups, not speed.)
-      TURBONOP_TEST_SLOWDOWN: "4"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y musl-tools
@@ -136,7 +132,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - run: cargo build --release -p stackrabbit
@@ -148,3 +144,27 @@ jobs:
           for t in test/*.test.js; do node "$t" "$exe" || exit 1; done
       - if: runner.os == 'Windows'
         run: python editors/vscode/stackrabbit/test/harness.py target/release/stackrabbit.exe
+
+  # Procupine's VS Code extension: its model's and server client's tests
+  # (with procupine, on each platform), and, on Windows, the view rendered
+  # in headless Edge with real samples.
+  vscode-procupine:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: cargo build --release -p procupine
+      - shell: bash
+        working-directory: editors/vscode/procupine
+        run: |
+          exe=$PWD/../../../target/release/procupine
+          if [ -f "$exe.exe" ]; then exe=$exe.exe; fi
+          for t in test/*.test.js; do node "$t" "$exe" || exit 1; done
+      - if: runner.os == 'Windows'
+        run: python editors/vscode/procupine/test/harness.py target/release/procupine.exe

@@ -19,6 +19,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod cache;
 pub mod data;
 mod error;

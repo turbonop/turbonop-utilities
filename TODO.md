@@ -21,63 +21,118 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
-- **mimalloc everywhere.** Every native program and test binary should
-  allocate with mimalloc (version 2: 3 crashes on Windows and macOS
-  reallocating across threads), on every platform. Done on the
-  `mimalloc-everywhere` branch (the `turbonop-global-alloc` crate); once
-  it's on main, Stackrabbit (its program and tests) links it too. On a
-  busy machine, Stackrabbit's import of s06 and l01 was about 14% faster
-  with mimalloc, and l01's first tree 0.21 -> 0.17 s.
+- **Release notes.** A release's notes are GitHub's list of the pull
+  requests since the last release; write them from the changes instead
+  (what a user would notice, by command).
+- **hexcavator on crates.io.** `cargo binstall hexcavator` finds the crate
+  on crates.io (its metadata names the release's programs); until it is
+  published there (and with it every `turbonop-*` crate it depends on),
+  `cargo binstall --git https://github.com/turbonop/turbonop-utilities
+  hexcavator` reads it from the repository.
+- **Packages where they fit.** GitHub Packages holds container images and
+  npm, NuGet, and Maven packages, not programs: a container image of
+  hexcavator; the web version as an npm package.
+- **A new extension's first release.** For 0.0.10, the extension's first as
+  `turbonop.hexcavator-vscode`, the Marketplace served one of eight
+  platforms' VSIXs: the first, whose validation created the extension; the
+  rest were reported published and never served (published after it was
+  served, too). An extension that exists takes every platform's (as
+  `hexcavator.hexcavator` did). The job waits up to two hours now; a
+  release that fails so could publish the missing platforms again.
+- **musl's speed.** With mimalloc in musl's allocator's place, the test
+  suite still runs about four times as long under musl as under glibc
+  (35 s against 9 s, in WSL): musl's `memcpy`, `memchr`, and string
+  functions are simple loops. Measure where the time goes; what's fast
+  enough to ship in the static Linux build matters more than the tests.
+
+## Procupine
+
+- **The extension's server test on macOS.** On CI's macOS runner,
+  `editors/vscode/procupine/test/server.test.js` waited 20 s for a sample
+  event that never came, though `apps/procupine/tests/serve.rs` (the same
+  watch, kill and end, from Rust) passes there. The test says which wait
+  timed out, the last events, and procupine's stderr; its live part is
+  skipped on macOS until that's found and fixed.
+- **The system's CPU on macOS.** In `turbonop-process`'s live
+  `cpu_usage` test on CI's macOS runner, the system's CPU share over a
+  300 ms busy loop was once 0 (this process's own share was right): the
+  `host_statistics` load ticks, unchanged or misread. That check is
+  skipped on macOS (`crates/system/process/tests/live.rs`) until fixed.
+- **A release.** `procupine-release.yml` on `procupine-v*` tags, as
+  hexcavator's: signed binaries for each platform, the extension packaged
+  per platform with `bin/procupine`, its licenses test and third-party
+  notices (serde_json, mimalloc, libc, rustc-hash).
+- **An elevated helper.** Without administrator rights (root), other
+  users' processes show less and can't be acted on. A second `procupine
+  serve`, started elevated on request (UAC on Windows, `pkexec` on Linux,
+  an authorization prompt on macOS), that the extension talks to over a
+  pipe only it may open.
+- **Details on demand.** For the selected process: its modules (DLLs,
+  shared libraries), threads (with stacks, symbolized by
+  `turbonop-symbolize`), handles and open files, environment, memory
+  regions, and network connections. On Windows, its image's version
+  information (description, company) from `turbonop-pe`, as Process
+  Explorer's Description and Company columns.
+- **Finding a handle or module** across every process (Process
+  Explorer's Find), on every core.
+- **Lifetimes.** Processes too short-lived for a sample, from the
+  system's own events (ETW's kernel process provider, Linux's process
+  connector, macOS's `kqueue`): a timeline of every process that started
+  and exited.
+- **More counters:** GPU use (D3DKMT on Windows), per-process network
+  bytes, Linux's cgroups and namespaces (which container), Windows' job
+  objects, services' names for svchost.
+- **macOS, run.** The collector is built and its parsing tested on every
+  platform, and CI runs its live tests on macOS; it hasn't been used by a
+  person on a Mac.
 
 ## Stackrabbit
 
-The trace viewer (`apps/stackrabbit`, `editors/vscode/stackrabbit`; plan
-and status in the Stackrabbit docs). In order, roughly:
+The trace viewer (`apps/stackrabbit`, `editors/vscode/stackrabbit`). The
+plan, the decisions behind it, and where the work stands are in
+[docs/stackrabbit](docs/stackrabbit/README.md). Nothing is published
+until the extension is mostly done. What's left, roughly in order:
 
-- **Compared with WPA's numbers.** `wpaexporter` with WPA's built-in
-  profiles exports its CPU (sampled and precise) by process without
-  admin rights; compare every corpus trace's per-process counts with
-  Stackrabbit's, then every other table the built-in profiles export
-  (Disk, File I/O, Registry, DPC/ISR, Hard Faults, memory), and explain
-  or fix each difference.
-- **Mini-filters.** The last M3 table, from `s14-minifilter.etl`.
-- **Samples without stacks** in l03 and l04: why (compression, the 8 kHz
-  rate), and whether the recording script should change.
-- **Context switch version 5's last 4 bytes**: name them, from WPA's
-  columns.
-- **Trees in 50 ms** on the big build traces (0.17 s now): build them from
-  the stack trie, not each stack's frames.
-- **Decode on every core**: it stops scaling at about 4 threads. Measure
-  per worker (busy, waiting, P- and E-cores); a WPR profile of the import
-  on a quiet machine (WSL idle) will help.
-- **Import and reopen** budgets on s04 (6.9 GB): 19–26 s to import now.
+- **Trees in 50 ms** on the big build traces (0.29 s on l01, measured on
+  a busy machine): build them from the stack trie, not each stack's
+  frames. `loops` (time by loop) costs a whole `functions` pass, 0.35 s
+  on l01, and gets faster with it.
+- **Import and reopen** budgets on s04 (6.9 GB): 14 s to import now.
 - **Saved names for every image**: images named from their own files
   (DWARF, exports) are not saved in `.hxsyms` yet, only PDBs' tables.
 - **One set of parallel helpers**: Stackrabbit's `on_every_core` and
-  friends against main's `turbonop-par`.
+  friends against `turbonop-par`.
 - **WPA filters and regions left**: the sampled CPU table's DPC/ISR
   column, Disk's Init Time, filters on Regions; regions by Duration,
   endpoints, Parent, SelfNest and Filter.
-- **Marks** (M2), tested on synthetic traces until a real one has them.
-- **M5 tables**, corpus first: CPU idle states and frequency (s09), GPU
-  (s10), .NET GC, JIT and exceptions (s07), hardware counters; then
-  TCP/IP, UI delays, boot phases, working sets, battery and energy.
+- **Differences from WPA still open**: Idle's sample weight (WPA counts
+  time no sample covers as Idle); DPC/ISR runs of KMDF drivers (WPA
+  credits the client driver, Stackrabbit names the framework); WPA leaves
+  out each processor's first DPC/ISR run; WPA's CPU Frequency shows
+  nominal speeds (Power event 51). GPU and Frequency have no comparison:
+  no built-in profile has the columns. Context switch version 5's last 4
+  bytes are still unnamed (8c9fa26 says what they are not).
+- **Re-record l03 and l04**: neither contains a build (cargo failed at
+  once), which is why they have almost no stacks. Delete both, then run
+  `record-corpus.cmd large` as administrator.
+- **M5 tables left**: hardware counters (PMC samples); then TCP/IP, UI
+  delays, boot phases, working sets, battery and energy. Each needs a new
+  recording. Done: CPU idle states, frequency, GPU, .NET.
 - **M6, the Profile Explorer ideas, left**: source servers and
   SourceLink; annotations by call path or thread; time per branch arm
   (needs LBR or branch counters: samples alone can't say which way a
   branch went). Done: annotated assembly with time per instruction,
   blocks and loops, time by inlinee, sampled call targets, source lines
-  over the instructions, and a CodeLens per loop. Gaps: no end-to-end
+  over the instructions, and a CodeLens per loop. Gap: no end-to-end
   engine test of `assembly` (it needs a trace naming an image file that
   is here: patch a synthetic trace's image path, size and timestamp to
-  testdata's lines.exe); `loops` costs a whole `functions` pass (0.35 s
-  on l01), to cache or to drop with the tree work.
+  testdata's lines.exe).
 - **Robustness**: fuzz the ETL reader, the index, saved names and WPA
   profiles; peak memory on the largest traces; 32-bit, ARM64 and
   unmerged traces end to end; the Edge harness on corpus traces, not only
   synthetic ones.
-- **Release (M7)**: a `stackrabbit-release.yml` and VSIX packaging.
-  Waiting on the name and the Marketplace publisher.
+- **Release (M7)**: a `stackrabbit-release.yml` and VSIX packaging. The
+  Marketplace publisher is `turbonop`; the name isn't final.
 
 ## Every format alike
 
@@ -142,16 +197,28 @@ Every command should be as fast as the hardware allows (on clang.exe,
   every core) and resolved (0.45 s); what is left is a few sequential
   steps of 50 ms each.
 
-## Waiting
+## Size
 
-- **GCC, GNU ld, gold, and mold.** `hexcavator recommend` judges what an ELF
-  link did (`--gc-sections`, ICF) from what lld leaves in the image, and
-  is tested only with lld; and GNU ld's maps (and its map's archive
-  members and discarded sections, for `hexcavator linkerlog`) are read, but
-  tested only on text written for the tests; gold's and mold's maps not
-  at all. Check them against each linker's, with test binaries and maps
-  from each in `testdata`. Waiting on a Linux environment (WSL) to build
-  them.
+hexcavator itself has grown: 12.8 MB to 16.3 MB on Windows x64 from
+0.0.7 to 0.0.10 (`hexcavator size -d crates,symbols` on each, with its
+PDB), and 17.1 MB (glibc, dynamic) to 22.9 MB (musl, static) on Linux
+x64. Where the 3.5 MB went:
+
+- **The new decoders, about 1.1 MB.** PowerPC's code (365 KB) and
+  LoongArch's (265 KB); MIPS's tables (about 275 KB: three of 64 KB and
+  more) and RISC-V's (106 KB), anonymous read-only data (`anon.*`, by
+  their objects). Tables of exactly 64 KB are likely indexed by 16 bits
+  and mostly empty: a denser form (by ranges, or a second level) could
+  take a fraction.
+- **Generic code, about 1.15 MB**, counted to `core` (+668 KB), `std`
+  (+306 KB), and `alloc` (+180 KB): our generics instantiated for each
+  type, much of it likely `turbonop_par`'s (+111 KB itself, new)
+  closures and sorts, a copy per caller. Which, by symbol; then fewer
+  copies (a non-generic core taking `&dyn Fn`, as `map_range` could).
+- **Features, about 0.5 MB**: the app (+178 KB), `turbonop_size`
+  (+205 KB), `turbonop_debuginfo` (+85 KB), and the rest.
+- **Base relocations, +88 KB**: more pointers in data (vtables, tables
+  of strings).
 
 ## Ideas
 

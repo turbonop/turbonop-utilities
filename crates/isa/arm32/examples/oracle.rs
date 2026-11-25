@@ -5,6 +5,8 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
+use turbonop_global_alloc as _;
+
 use std::io::{BufRead, Write};
 
 use turbonop_arm32::format::{Targets, format};

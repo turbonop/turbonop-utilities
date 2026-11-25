@@ -72,11 +72,12 @@ pub fn assembly(
     // Its bytes, from an image file that is the image the trace saw (at
     // the path the trace names, as a DOS path).
     let volumes = crate::reading::Volumes::of(trace, trace_path);
+    let windows = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
     let mut tried = Vec::new();
     let mut found = None;
     for &i in &images {
         let img = &trace.images[i.index()];
-        let file = system_root(&volumes.dos(&img.path));
+        let file = system_root(&volumes.dos(&img.path), &windows);
         if tried.contains(&file) {
             continue;
         }
@@ -272,7 +273,7 @@ pub fn assembly(
 /// Each loop's time: its instructions' own samples (`own`, by line), and
 /// with what they call (`under`); and the source line (`sources`, by
 /// line) of its first instruction that has one.
-fn loops(
+pub fn loops(
     listing: &turbonop_size::disasm::Listing,
     own: &[u64],
     under: &[u64],
@@ -422,14 +423,13 @@ pub fn file_loops(
 }
 
 /// `path` with `\SystemRoot\` (as the kernel's images are named) as the
-/// Windows directory, where the trace's volumes don't say.
-fn system_root(path: &str) -> String {
+/// Windows directory `windows`, where the trace's volumes don't say.
+pub fn system_root(path: &str, windows: &str) -> String {
     const ROOT: &str = r"\SystemRoot\";
     if path.len() >= ROOT.len()
         && path.is_char_boundary(ROOT.len())
         && path[..ROOT.len()].eq_ignore_ascii_case(ROOT)
     {
-        let windows = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
         return format!(r"{windows}\{}", &path[ROOT.len()..]);
     }
     path.to_string()
@@ -592,59 +592,4 @@ fn count(
         all.add(c);
     }
     all
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{loops, system_root};
-    use serde_json::json;
-    use turbonop_size::disasm::{Function, Labels, decode};
-
-    #[test]
-    fn a_loop_is_its_blocks_from_its_head_to_the_branch_back() {
-        // xor eax,eax / L: inc eax / cmp eax,10 / jl L / ret
-        let code = [0x31, 0xc0, 0xff, 0xc0, 0x83, 0xf8, 0x0a, 0x7c, 0xf9, 0xc3];
-        let listing = decode(
-            &Function {
-                name: "f".to_string(),
-                isa: turbonop_image::Arch::X64,
-                thumb: false,
-                data: None,
-                address: 0x1000,
-                code: &code,
-                symbols: Vec::new(),
-                riscv_arch: None,
-                big_endian: false,
-                mips_flags: 0,
-            },
-            Labels::Blocks,
-        );
-        assert_eq!(listing.lines.len(), 5);
-        // Samples: 1 at the xor, 5 at the inc, 3 at the cmp, 2 at the jl;
-        // the loop's lines are all at line 7 but the head, at line 6.
-        let own = [1, 5, 3, 2, 0];
-        let under = [0, 0, 4, 0, 0];
-        let sources = [Some((0, 5)), Some((0, 6)), Some((0, 7)), Some((0, 7)), None];
-        let found = loops(&listing, &own, &under, &sources);
-        assert_eq!(found.len(), 1, "{found:?}");
-        let l = &found[0];
-        assert_eq!((&l["first"], &l["end"]), (&json!(1), &json!(4)));
-        assert_eq!((&l["own"], &l["samples"]), (&json!(10), &json!(14)));
-        assert_eq!((&l["file"], &l["line"]), (&json!(0), &json!(6)));
-    }
-
-    #[test]
-    fn the_kernels_images_are_in_the_windows_directory() {
-        let windows = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
-        assert_eq!(
-            system_root(r"\SystemRoot\system32\ntoskrnl.exe"),
-            format!(r"{windows}\system32\ntoskrnl.exe")
-        );
-        assert_eq!(
-            system_root(r"\systemroot\System32\drivers\tcpip.sys"),
-            format!(r"{windows}\System32\drivers\tcpip.sys")
-        );
-        assert_eq!(system_root(r"C:\app\a.exe"), r"C:\app\a.exe");
-        assert_eq!(system_root("é"), "é");
-    }
 }

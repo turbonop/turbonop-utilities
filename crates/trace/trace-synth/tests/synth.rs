@@ -2,6 +2,8 @@
 //! and decoded, every stack matched, and the counts and trees of the
 //! import equal to the simulation's.
 
+use turbonop_global_alloc as _;
+
 use rustc_hash::FxHashMap;
 
 use turbonop_etl::Etl;

@@ -1,6 +1,8 @@
 //! Downloading PDBs from a symbol server (a local one, serving the
 //! repository's test PDBs) into a cache.
 
+use turbonop_global_alloc as _;
+
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};

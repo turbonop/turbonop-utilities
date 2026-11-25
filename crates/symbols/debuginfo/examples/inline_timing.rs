@@ -1,6 +1,8 @@
 //! Times reading a PDB's inline sites and attributing their bytes:
 //! `cargo run --release -p turbonop-debuginfo --example inline_timing -- <pdb>`.
 
+use turbonop_global_alloc as _;
+
 fn main() {
     let path = std::env::args().nth(1).expect("a PDB");
     let data = std::fs::read(&path).expect("readable");

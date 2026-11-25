@@ -1,6 +1,8 @@
 //! Reading a mapped file ahead of its parser, and evicting it from the
 //! cache.
 
+use turbonop_global_alloc as _;
+
 use turbonop_mmap::{Mmap, evict_from_cache};
 
 fn scratch(name: &str, bytes: &[u8]) -> std::path::PathBuf {

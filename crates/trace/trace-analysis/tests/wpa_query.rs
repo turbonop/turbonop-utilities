@@ -1,5 +1,7 @@
 //! WPA's filter queries: read, and held (or not) by rows.
 
+use turbonop_global_alloc as _;
+
 use turbonop_trace_analysis::wpa_query::{Cell, Op, Query};
 
 /// Whether a row of `(column, cell)` holds `query`.

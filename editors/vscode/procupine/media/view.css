@@ -1,0 +1,550 @@
+/* Procupine's view. Colors come from the editor's theme (--vscode-*), with
+   fallbacks for a plain page (the tests). */
+
+:root {
+  --fg: var(--vscode-foreground, #ccc);
+  --muted: var(--vscode-descriptionForeground, #999);
+  --bg: var(--vscode-editor-background, #1e1e1e);
+  --panel: var(--vscode-sideBar-background, #252526);
+  --border: var(--vscode-panel-border, #333);
+  --link: var(--vscode-textLink-foreground, #3794ff);
+  --focus: var(--vscode-focusBorder, #007fd4);
+  --button: var(--vscode-button-secondaryBackground, #3a3d41);
+  --button-fg: var(--vscode-button-secondaryForeground, #fff);
+  --button-hover: var(--vscode-button-secondaryHoverBackground, #45494e);
+  --input: var(--vscode-input-background, #3c3c3c);
+  --input-fg: var(--vscode-input-foreground, #ccc);
+  --input-border: var(--vscode-input-border, transparent);
+  --hover: var(--vscode-list-hoverBackground, #2a2d2e);
+  --selected: var(--vscode-list-activeSelectionBackground, #04395e);
+  --selected-fg: var(--vscode-list-activeSelectionForeground, #fff);
+  --inactive-selected: var(--vscode-list-inactiveSelectionBackground, #37373d);
+  --widget: var(--vscode-editorWidget-background, #252526);
+  --widget-border: var(--vscode-editorWidget-border, #454545);
+  --menu: var(--vscode-menu-background, #252526);
+  --menu-fg: var(--vscode-menu-foreground, #ccc);
+  --menu-selected: var(--vscode-menu-selectionBackground, #04395e);
+  --menu-separator: var(--vscode-menu-separatorBackground, #454545);
+  /* Process kinds, as Process Explorer marks them (softened for the theme). */
+  --new: rgba(70, 180, 93, 0.35);
+  --exited: rgba(229, 83, 75, 0.4);
+  --other: rgba(214, 112, 214, 0.1);
+  --suspended: var(--vscode-disabledForeground, #777);
+  --cpu: #3d9df3;
+  --cpu-fill: rgba(61, 157, 243, 0.22);
+  --memory: #e0a33a;
+  --memory-fill: rgba(224, 163, 58, 0.2);
+  --io: #46b45d;
+  --io-fill: rgba(70, 180, 93, 0.2);
+  --row: 22px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--fg);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+
+button,
+select,
+input {
+  font: inherit;
+}
+
+button {
+  color: var(--button-fg);
+  background: var(--button);
+  border: none;
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled) {
+  background: var(--button-hover);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.on {
+  outline: 1px solid var(--focus);
+}
+
+select,
+input[type="search"] {
+  color: var(--input-fg);
+  background: var(--input);
+  border: 1px solid var(--input-border);
+  border-radius: 2px;
+  padding: 2px 6px;
+}
+
+input[type="search"] {
+  width: 240px;
+}
+
+input:focus,
+select:focus,
+button:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: -1px;
+}
+
+/* The system's graphs. */
+#system {
+  display: flex;
+  gap: 16px;
+  padding: 6px 10px 4px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-wrap: wrap;
+}
+
+.meter {
+  display: grid;
+  grid-template-columns: 120px auto;
+  gap: 0 8px;
+  align-items: center;
+}
+
+.meter svg {
+  grid-row: span 2;
+  width: 120px;
+  height: 34px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.meter .label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.meter .value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#counts {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+/* The toolbar. */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+#toolbar .gap {
+  flex: 1;
+}
+
+#toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+#status {
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The table. */
+#table {
+  flex: 1;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  outline: none;
+}
+
+#head {
+  display: grid;
+  grid-template-columns: var(--cols);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  overflow: hidden;
+  flex: none;
+}
+
+#head .h {
+  position: relative;
+  padding: 3px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+#head .h:hover {
+  color: var(--fg);
+}
+
+#head .h.r {
+  text-align: right;
+}
+
+#head .h .arrow {
+  color: var(--fg);
+  margin: 0 2px;
+}
+
+#head .grip {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+}
+
+#head .grip:hover {
+  background: var(--focus);
+}
+
+#scroll {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+}
+
+#spacer {
+  position: relative;
+}
+
+#rows {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: var(--cols);
+  height: var(--row);
+  line-height: var(--row);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.row:hover {
+  background: var(--hover);
+}
+
+.row.other {
+  background: var(--other);
+}
+
+.row.new {
+  background: var(--new);
+}
+
+.row.exited {
+  background: var(--exited);
+}
+
+.row.suspended,
+.row.kernel {
+  color: var(--suspended);
+}
+
+.row.suspended .c-name {
+  font-style: italic;
+}
+
+.row.nomatch {
+  opacity: 0.5;
+}
+
+#table:focus .row.sel {
+  background: var(--selected);
+  color: var(--selected-fg);
+}
+
+.row.sel {
+  background: var(--inactive-selected);
+}
+
+.c {
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
+.c.r {
+  text-align: right;
+}
+
+.c-name {
+  display: flex;
+  align-items: center;
+  padding-left: 2px;
+}
+
+.c-name .twisty {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.c-name .label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.c-name .badge {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* CPU: a bar behind the number. */
+.c.bar {
+  position: relative;
+}
+
+.c.bar .fill {
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  background: var(--cpu-fill);
+  border-right: 1px solid var(--cpu);
+}
+
+.c.bar .num {
+  position: relative;
+}
+
+.c.spark svg {
+  width: 100%;
+  height: calc(var(--row) - 4px);
+  vertical-align: middle;
+}
+
+.spark-cpu {
+  fill: none;
+  stroke: var(--cpu);
+  stroke-width: 1;
+}
+
+#empty {
+  padding: 20px;
+  color: var(--muted);
+}
+
+/* The details of the selected process. */
+#splitter {
+  height: 5px;
+  cursor: row-resize;
+  border-top: 1px solid var(--border);
+  flex: none;
+}
+
+#splitter:hover {
+  background: var(--focus);
+}
+
+#details {
+  flex: none;
+  height: 240px;
+  overflow: auto;
+  padding: 8px 12px;
+  background: var(--panel);
+  user-select: text;
+}
+
+#details .title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+#details .title .sub {
+  color: var(--muted);
+  font-weight: normal;
+  font-size: 12px;
+}
+
+#details .cols {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+#details dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+#details dt {
+  color: var(--muted);
+}
+
+#details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+#details dd .act {
+  margin-left: 6px;
+  color: var(--link);
+  cursor: pointer;
+  user-select: none;
+}
+
+#details dd .act:hover {
+  text-decoration: underline;
+}
+
+#details .charts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 300px;
+  flex: none;
+}
+
+#details .chart {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+#details .chart svg {
+  grid-column: span 2;
+  width: 100%;
+  height: 44px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.line-cpu {
+  fill: var(--cpu-fill);
+  stroke: var(--cpu);
+}
+
+.line-memory {
+  fill: var(--memory-fill);
+  stroke: var(--memory);
+}
+
+.line-io {
+  fill: var(--io-fill);
+  stroke: var(--io);
+}
+
+.line-cpu,
+.line-memory,
+.line-io {
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Menus. */
+#menu {
+  position: fixed;
+  z-index: 10;
+  min-width: 200px;
+  padding: 4px 0;
+  background: var(--menu);
+  color: var(--menu-fg);
+  border: 1px solid var(--widget-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.36);
+}
+
+#menu .item {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 3px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+#menu .item:hover,
+#menu .item.active {
+  background: var(--menu-selected);
+}
+
+#menu .item.disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+#menu .item .key {
+  color: var(--muted);
+}
+
+#menu .item .check {
+  width: 14px;
+  display: inline-block;
+}
+
+#menu .sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--menu-separator);
+}
+
+#message {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--vscode-editorWarning-foreground, #cca700);
+}
+
+[hidden] {
+  display: none !important;
+}

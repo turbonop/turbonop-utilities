@@ -1,5 +1,5 @@
 //! An ELF, Mach-O, or WebAssembly image's inputs, from its Unix linker's
-//! map (lld's, GNU ld's, ld64's: see `turbonop_linkmap::unix`): the
+//! map (lld's and mold's, GNU ld's, gold's, ld64's: see `turbonop_linkmap::unix`): the
 //! `compileunits` source labels each input's contributions by the object
 //! (`main.o`, `lib.a(used.o)`), as a PE image's compilands are, and
 //! `libraries` by its archive (`lib.a`; `[no library]` for objects linked

@@ -7,6 +7,8 @@
 //! Each line is `op0 op1 CRn CRm op2 NAME` (decimal). Register arrays such
 //! as `PMEVCNTR<n>_EL0` are expanded.
 
+use turbonop_global_alloc as _;
+
 use std::collections::BTreeMap;
 
 /// A minimal JSON value.

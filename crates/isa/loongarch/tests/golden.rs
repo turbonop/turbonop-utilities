@@ -3,6 +3,8 @@
 //! LA64) decoded and written the same, or not decoded where LLVM decodes
 //! nothing.
 
+use turbonop_global_alloc as _;
+
 use turbonop_loongarch::format::format;
 use turbonop_loongarch::{Features, decode};
 

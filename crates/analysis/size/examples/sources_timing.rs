@@ -1,6 +1,8 @@
 //! Times each step of a bloaty-style report: `sources_timing <image> <pdb>
 //! [sources]` (default `symbols`).
 
+use turbonop_global_alloc as _;
+
 use std::time::Instant;
 
 use turbonop_debuginfo::DebugInfo;

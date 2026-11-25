@@ -1,5 +1,7 @@
 //! WPA profiles: both formats, read to views, graphs and presets.
 
+use turbonop_global_alloc as _;
+
 use turbonop_trace_analysis::wpa_profile::{Column, Profile};
 
 /// A profile in the XAML format: a view of a sampled CPU graph (a typed

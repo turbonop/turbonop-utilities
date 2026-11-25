@@ -100,6 +100,11 @@ pub fn attributes(data: &[u8], endian: Endian) -> Vec<Attribute<'_>> {
                 let Some(size) = u32_at(p) else { break };
                 p += 4;
                 let sub_end = start.saturating_add(size as usize).min(end);
+                // (One smaller than its own tag and size is damaged: going
+                // on from its end would read it again, without end.)
+                if sub_end < p {
+                    break;
+                }
                 if tag != 1 {
                     p = sub_end;
                     continue;
@@ -194,5 +199,45 @@ mod tests {
             let _ = attributes(&d[..n], Endian::Little);
         }
         assert!(attributes(b"B", Endian::Little).is_empty());
+    }
+
+    /// A sub-subsection whose size is less than its own tag and size (a
+    /// fuzzer's: 0, which once read it again forever) ends the attributes;
+    /// one that holds just its header is empty, and those after it count.
+    #[test]
+    #[allow(clippy::cast_possible_truncation, reason = "a small test section")]
+    fn damaged_sizes_end() {
+        let section = |subs: &[u8]| {
+            let mut s = b"riscv\0".to_vec();
+            s.extend_from_slice(subs);
+            let mut d = alloc::vec![b'A'];
+            d.extend_from_slice(&((4 + s.len()) as u32).to_le_bytes());
+            d.extend_from_slice(&s);
+            d
+        };
+        for tag in [1u8, 2] {
+            for size in 0u32..5 {
+                let mut subs = alloc::vec![tag];
+                subs.extend_from_slice(&size.to_le_bytes());
+                subs.extend_from_slice(&[4, 16]);
+                assert!(
+                    attributes(&section(&subs), Endian::Little).is_empty(),
+                    "tag {tag}, size {size}"
+                );
+            }
+        }
+        // (Just a header: empty; then the file's.)
+        let mut subs = alloc::vec![2u8];
+        subs.extend_from_slice(&5u32.to_le_bytes());
+        subs.push(1);
+        subs.extend_from_slice(&7u32.to_le_bytes());
+        subs.extend_from_slice(&[4, 16]);
+        assert_eq!(
+            attributes(&section(&subs), Endian::Little),
+            [Attribute {
+                tag: TAG_STACK_ALIGN,
+                value: Value::Int(16)
+            }]
+        );
     }
 }

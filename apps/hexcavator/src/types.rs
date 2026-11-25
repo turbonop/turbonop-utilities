@@ -2,9 +2,11 @@
 //! (from its debug information: a PDB, or DWARF), and the bytes their
 //! padding wastes.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use serde_json::{Value, json};
 use turbonop_debuginfo::DebugInfo;
@@ -32,12 +34,19 @@ options:
   -refs <name>     what refers to one type: the types it is a base or a
                    member of, and the variables and functions whose types
                    name it
+  -code            the types by the code and data they own: their member
+                   functions (and the lambdas in them), static members,
+                   vtables, and RTTI, largest first (an image's: its
+                   symbols); with -layout, a type's, symbol by symbol, and
+                   the methods it declares that have no code here
+  -templates       with -code: a template's instantiations together
   -n <n>           rows to list (default 20; 0: all)
   -json            as JSON
   -filter <text>   with -json: the types whose name or mangled name has it
                    (any case; -regex: a regular expression), a page of them:
-  -sort <by>       name (the default), mangled, size, or waste; -desc for the
-                   largest (or last) first
+  -sort <by>       name (the default), mangled, size, waste, or code (an
+                   image's: what it owns); -desc for the largest (or
+                   last) first
   -from <n>        the first row (with -n, how many)";
 
 struct Options {
@@ -58,6 +67,10 @@ struct Options {
     from: usize,
     rows: usize,
     json: bool,
+    /// `-code`: what each type's code and data are.
+    code: bool,
+    /// `-templates`: with `-code`, by template.
+    templates: bool,
 }
 
 fn parse(args: &[String]) -> Result<Options, String> {
@@ -76,6 +89,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
         from: 0,
         rows: 20,
         json: false,
+        code: false,
+        templates: false,
     };
     let mut input = None;
     let mut it = args.iter();
@@ -119,6 +134,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
                     .map_err(|_| "-n needs a number".to_string())?;
             }
             Some("json") => o.json = true,
+            Some("code") => o.code = true,
+            Some("templates") => o.templates = true,
             Some(other) if !other.is_empty() && input.is_none() && !Path::new(a).exists() => {
                 return Err(format!("unknown option '{other}'"));
             }
@@ -156,7 +173,7 @@ pub fn run(args: &[String]) -> ExitCode {
 pub(crate) fn with_layouts<R>(
     path: &Path,
     pdb: Option<&Path>,
-    f: impl FnOnce(&DebugInfo<'_>, &Catalog) -> Result<R, String>,
+    f: impl FnOnce(&DebugInfo<'_>, &Catalog, &Code<'_>) -> Result<R, String>,
 ) -> Result<R, String> {
     let show = |p: &Path| p.display().to_string();
     let data = Mmap::open(path).map_err(|e| format!("{}: {e}", show(path)))?;
@@ -170,10 +187,18 @@ pub(crate) fn with_layouts<R>(
         let debug = opened.debug_info()?;
         let mut files = vec![opened.path(), opened.debug_path()];
         files.extend(opened.split_paths());
-        return layouts_of(&debug, &files, f);
+        let code = Code {
+            opened: Some(&opened),
+            files: files.clone(),
+        };
+        return layouts_of(&debug, &files, |d, c| f(d, c, &code));
     }
     let debug = DebugInfo::parse(&data).map_err(|e| format!("{}: {e}", show(path)))?;
-    layouts_of(&debug, &[path], f)
+    let code = Code {
+        opened: None,
+        files: vec![path],
+    };
+    layouts_of(&debug, &[path], |d, c| f(d, c, &code))
 }
 
 /// `with_layouts`, the debug information read (from `files`: the image
@@ -247,9 +272,9 @@ impl std::ops::Deref for Catalog {
 }
 
 fn report(o: &Options) -> Result<String, String> {
-    with_layouts(&o.input, o.pdb.as_deref(), |debug, all| {
+    with_layouts(&o.input, o.pdb.as_deref(), |debug, all, code| {
         if let Some(base) = &o.base {
-            let old = with_layouts(base, None, |_, old| Ok(old.to_vec()))?;
+            let old = with_layouts(base, None, |_, old, _| Ok(old.to_vec()))?;
             return Ok(diff(&old, all, o.rows, o.json));
         }
         if let Some(name) = &o.refs {
@@ -284,21 +309,58 @@ fn report(o: &Options) -> Result<String, String> {
             (None, None) => None,
         };
         if let Some(l) = one {
+            // With -code, what it owns: its symbols, and what it declares
+            // that has no code here. (Nothing more, for a PDB alone.)
+            let owned = match o.code.then(|| code.get(all)) {
+                Some(Ok(found)) => {
+                    let at = all.iter().position(|x| x.ty == l.ty);
+                    let owned = at
+                        .and_then(|i| found.owned.get(i))
+                        .and_then(Option::as_ref)
+                        .cloned();
+                    let absent = absent_methods(debug, &l, owned.as_ref());
+                    Some((owned, absent))
+                }
+                _ => None,
+            };
             return Ok(if o.json {
-                pretty(&layout_json(debug, &l))
+                let mut v = layout_json(debug, &l);
+                if let Some((owned, absent)) = &owned {
+                    v["owns"] = owned_json(owned.as_ref(), absent);
+                }
+                pretty(&v)
             } else {
-                layout_text(&l)
+                let mut text = layout_text(&l);
+                if let Some((owned, absent)) = &owned {
+                    text.push_str(&owned_text(owned.as_ref(), absent, o.rows));
+                }
+                text
             });
         }
+        if o.code {
+            return Ok(code_list(all, &*code.get(all)?, o));
+        }
         if o.json && (o.filter.is_some() || o.sort.is_some() || o.from > 0) {
-            return page(all, o);
+            return page(all, code, o);
         }
         Ok(list(all, o.rows, o.json))
     })
 }
 
-/// A row of a page: name, mangled name, size, waste, union, incomplete.
-type PageRow<'a> = (&'a str, Option<&'a str>, u64, u64, bool, bool);
+/// A row of a page: name, mangled name, size, waste, union, incomplete,
+/// and (from the image's symbols, if it was given) the bytes of code and
+/// data it owns and its functions.
+type PageRow<'a> = (
+    &'a str,
+    Option<&'a str>,
+    u64,
+    u64,
+    bool,
+    bool,
+    Option<u64>,
+    Option<u64>,
+    Option<usize>,
+);
 
 /// A page of the list, for a viewer (`-json` with `-filter`, `-sort`, or
 /// `-from`): the types whose name or mangled name has `-filter` (any case;
@@ -306,8 +368,16 @@ type PageRow<'a> = (&'a str, Option<&'a str>, u64, u64, bool, bool);
 /// size, or waste; `-desc` for largest or last first), `-n` of them from
 /// `-from`: `{"types", "matched", "from", "list": [[name, mangled, size,
 /// waste, union, incomplete], ...]}`.
-fn page(cat: &Catalog, o: &Options) -> Result<String, String> {
+fn page(cat: &Catalog, code: &Code<'_>, o: &Options) -> Result<String, String> {
     let all = &cat.all;
+    // (What each owns, if the input is an image; the page without, else.)
+    let owned = code.get(cat).ok();
+    let owns = |i: usize| {
+        owned
+            .as_ref()
+            .and_then(|c| c.owned.get(i))
+            .and_then(Option::as_ref)
+    };
     let mangled_names = &cat.mangled;
     // (By name already: the catalog's order.)
     let order = cat.by_name.iter().map(|&i| i as usize);
@@ -347,6 +417,7 @@ fn page(cat: &Catalog, o: &Options) -> Result<String, String> {
     match by {
         "size" => kept.sort_by_key(|&i| (all[i].size, cat.rank[i])),
         "waste" => kept.sort_by_key(|&i| (all[i].waste(), cat.rank[i])),
+        "code" => kept.sort_by_key(|&i| (owns(i).map_or(0, |t| t.code), cat.rank[i])),
         "mangled" => kept.sort_by(|&a, &b| {
             mangled_names[a]
                 .cmp(&mangled_names[b])
@@ -374,6 +445,9 @@ fn page(cat: &Catalog, o: &Options) -> Result<String, String> {
                 l.waste(),
                 l.union,
                 l.incomplete,
+                owned.as_ref().map(|_| owns(i).map_or(0, |t| t.code)),
+                owned.as_ref().map(|_| owns(i).map_or(0, |t| t.data)),
+                owned.as_ref().map(|_| owns(i).map_or(0, |t| t.functions)),
             )
         })
         .collect();
@@ -388,6 +462,302 @@ fn page(cat: &Catalog, o: &Options) -> Result<String, String> {
     .unwrap_or_default();
     out.push('\n');
     Ok(out)
+}
+
+/// The image's symbols, for what each type's code and data are: found
+/// when first asked for (see [`Code::get`]), if the input is an image.
+pub(crate) struct Code<'a> {
+    opened: Option<&'a turbonop_program::Opened>,
+    files: Vec<&'a Path>,
+}
+
+/// One symbol a type owns.
+#[derive(Clone, Debug)]
+pub(crate) struct Member {
+    name: String,
+    kind: &'static str,
+    addr: u64,
+    size: turbonop_size::Size,
+    folded: bool,
+    code: bool,
+}
+
+/// What one type owns: its code, its data, its functions, and those
+/// symbols (largest first).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct OwnedType {
+    code: u64,
+    data: u64,
+    functions: usize,
+    members: Vec<Member>,
+}
+
+/// What each type of a catalog owns, by its index there.
+pub(crate) struct TypeCode {
+    owned: Vec<Option<OwnedType>>,
+}
+
+impl Code<'_> {
+    /// What each type of `cat` owns (made once per image, and kept as
+    /// the catalog is).
+    fn get(&self, cat: &Catalog) -> Result<Arc<TypeCode>, String> {
+        let opened = self
+            .opened
+            .ok_or("what types' code is needs the image, not its debug information alone")?;
+        turbonop_program::cache::remember(&self.files, "type code", || {
+            let program = opened.program().map_err(|e| e.to_string())?;
+            let symbols = program.symbols().map_err(|e| e.to_string())?;
+            let names: Vec<&str> = cat.all.iter().map(|l| l.name.as_str()).collect();
+            let by = turbonop_size::members::by_type(symbols, &names);
+            let mut owned: Vec<Option<OwnedType>> = vec![None; cat.all.len()];
+            for (t, o) in by {
+                let mut members: Vec<Member> = o
+                    .symbols
+                    .iter()
+                    .filter_map(|&i| symbols.get(i as usize))
+                    .map(|s| Member {
+                        name: s.name.clone(),
+                        kind: s.kind.label(),
+                        addr: s.addr,
+                        size: s.size,
+                        folded: s.folded,
+                        code: matches!(
+                            s.kind,
+                            turbonop_size::symbols::SymbolKind::Function
+                                | turbonop_size::symbols::SymbolKind::PrimaryBlock
+                                | turbonop_size::symbols::SymbolKind::SeparatedBlock
+                                | turbonop_size::symbols::SymbolKind::Thunk
+                        ),
+                    })
+                    .collect();
+                members.sort_by(|a, b| {
+                    b.size
+                        .file
+                        .max(b.size.vm)
+                        .cmp(&a.size.file.max(a.size.vm))
+                        .then_with(|| a.name.cmp(&b.name))
+                });
+                if let Some(slot) = owned.get_mut(t as usize) {
+                    *slot = Some(OwnedType {
+                        code: o.code.file.max(o.code.vm),
+                        data: o.data.file.max(o.data.vm),
+                        functions: o.functions,
+                        members,
+                    });
+                }
+            }
+            Ok::<_, String>(TypeCode { owned })
+        })
+    }
+}
+
+/// The types by the code they own, largest first (`-code`); with
+/// `-templates`, a template's instantiations together.
+fn code_list(cat: &Catalog, code: &TypeCode, o: &Options) -> String {
+    // (Name, code, data, functions, instances.)
+    let mut rows: Vec<(String, u64, u64, usize, usize)> = Vec::new();
+    if o.templates {
+        let mut families: BTreeMap<String, (u64, u64, usize, usize)> = BTreeMap::new();
+        for (l, t) in cat.all.iter().zip(&code.owned) {
+            if let Some(t) = t {
+                let family = turbonop_size::findings::template_family(&l.name)
+                    .unwrap_or_else(|| l.name.clone());
+                let f = families.entry(family).or_default();
+                f.0 += t.code;
+                f.1 += t.data;
+                f.2 += t.functions;
+                f.3 += 1;
+            }
+        }
+        rows.extend(
+            families
+                .into_iter()
+                .map(|(n, (c, d, f, i))| (n, c, d, f, i)),
+        );
+    } else {
+        rows.extend(cat.all.iter().zip(&code.owned).filter_map(|(l, t)| {
+            t.as_ref()
+                .map(|t| (l.name.clone(), t.code, t.data, t.functions, 1))
+        }));
+    }
+    rows.sort_by(|a, b| (b.1 + b.2).cmp(&(a.1 + a.2)).then_with(|| a.0.cmp(&b.0)));
+    let (code_total, data_total) = rows.iter().fold((0, 0), |(c, d), r| (c + r.1, d + r.2));
+    let shown = if o.rows == 0 {
+        rows.len()
+    } else {
+        o.rows.min(rows.len())
+    };
+    if o.json {
+        let list: Vec<Value> = rows
+            .iter()
+            .take(shown)
+            .map(|(name, code, data, functions, instances)| {
+                let mut v =
+                    json!({ "name": name, "code": code, "data": data, "functions": functions });
+                if o.templates {
+                    v["instances"] = json!(instances);
+                }
+                v
+            })
+            .collect();
+        let mut out = serde_json::to_string(&json!({
+            "types": rows.len(),
+            "code": code_total,
+            "data": data_total,
+            "list": list,
+        }))
+        .unwrap_or_default();
+        out.push('\n');
+        return out;
+    }
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "{} {} own {code_total} bytes of code and {data_total} of data: member functions (and the lambdas in them), static members, vtables, RTTI.",
+        rows.len(),
+        if o.templates {
+            "templates and types"
+        } else {
+            "types"
+        }
+    );
+    let _ = writeln!(
+        out,
+        "{:>10} {:>10} {:>9}{}  Type",
+        "Code",
+        "Data",
+        "Functions",
+        if o.templates { "  Instances" } else { "" }
+    );
+    for (name, code, data, functions, instances) in rows.iter().take(shown) {
+        let _ = writeln!(
+            out,
+            "{code:>10} {data:>10} {functions:>9}{}  {name}",
+            if o.templates {
+                format!("  {instances:>9}")
+            } else {
+                String::new()
+            }
+        );
+    }
+    if shown < rows.len() {
+        let _ = writeln!(out, "({} more: -n 0 lists them all)", rows.len() - shown);
+    }
+    out
+}
+
+/// A function's name without its scopes and parameters (`f` of
+/// `ns::C::f(int) const`).
+fn short_name(name: &str) -> &str {
+    let unqualified = turbonop_size::findings::strip_parameters(name);
+    match turbonop_size::members::scopes(name).first() {
+        Some(scope) => unqualified
+            .strip_prefix(*scope)
+            .and_then(|r| r.strip_prefix("::"))
+            .unwrap_or(unqualified),
+        None => unqualified,
+    }
+}
+
+/// The methods `l` declares that have no code in the binary, by name:
+/// inlined wherever they are called, or never called and removed.
+fn absent_methods(debug: &DebugInfo<'_>, l: &Layout, owned: Option<&OwnedType>) -> Vec<String> {
+    let Ok(classes) = debug.classes() else {
+        return Vec::new();
+    };
+    let Some(class) = classes.iter().find(|c| c.ty == l.ty) else {
+        return Vec::new();
+    };
+    let present: std::collections::HashSet<&str> = owned
+        .into_iter()
+        .flat_map(|o| &o.members)
+        .filter(|m| m.code)
+        .map(|m| short_name(&m.name))
+        .collect();
+    let mut absent: Vec<String> = class
+        .methods
+        .iter()
+        .map(|m| m.name.clone())
+        // (Not the compiler's own helpers, which MSVC declares as methods:
+        // `__vecDelDtor`, `__local_vftable_ctor_closure`, ...)
+        .filter(|n| !n.starts_with("__") && !present.contains(n.as_str()))
+        .collect();
+    absent.sort();
+    absent.dedup();
+    absent
+}
+
+/// What `l` owns, as text after its layout.
+fn owned_text(owned: Option<&OwnedType>, absent: &[String], rows: usize) -> String {
+    let mut out = String::new();
+    let Some(o) = owned else {
+        let _ = writeln!(out, "\nIts code: none in the binary.");
+        return out;
+    };
+    let _ = writeln!(
+        out,
+        "\nIts code: {} functions, {} bytes; its data (static members, vtables, RTTI): {} bytes.",
+        o.functions, o.code, o.data
+    );
+    let shown = if rows == 0 {
+        o.members.len()
+    } else {
+        rows.min(o.members.len())
+    };
+    for m in o.members.iter().take(shown) {
+        let _ = writeln!(
+            out,
+            "{:>10}  {}{}",
+            m.size.file.max(m.size.vm),
+            m.name,
+            if m.folded {
+                "  (folded into another: no bytes of its own)"
+            } else {
+                ""
+            }
+        );
+    }
+    if shown < o.members.len() {
+        let _ = writeln!(
+            out,
+            "({} more: -n 0 lists them all)",
+            o.members.len() - shown
+        );
+    }
+    if !absent.is_empty() {
+        let _ = writeln!(
+            out,
+            "Declared, with no code in the binary (inlined wherever called, or never called and removed): {}",
+            absent.join(", ")
+        );
+    }
+    out
+}
+
+/// What `l` owns, as JSON.
+fn owned_json(owned: Option<&OwnedType>, absent: &[String]) -> Value {
+    let members: Vec<Value> = owned
+        .into_iter()
+        .flat_map(|o| &o.members)
+        .map(|m| {
+            json!({
+                "name": m.name,
+                "kind": m.kind,
+                "rva": format!("0x{:x}", m.addr),
+                "file": m.size.file,
+                "vm": m.size.vm,
+                "folded": m.folded,
+                "code": m.code,
+            })
+        })
+        .collect();
+    json!({
+        "code": owned.map_or(0, |o| o.code),
+        "data": owned.map_or(0, |o| o.data),
+        "functions": owned.map_or(0, |o| o.functions),
+        "symbols": members,
+        "absent": absent,
+    })
 }
 
 fn list(all: &[Layout], rows: usize, json_out: bool) -> String {

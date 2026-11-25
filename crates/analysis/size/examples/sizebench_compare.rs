@@ -5,6 +5,8 @@
 //! The oracle file is `tools/sizebench-oracle`'s output for the same image.
 //! Without one, prints our lines (in the oracle's format) to stdout.
 
+use turbonop_global_alloc as _;
+
 use std::collections::BTreeSet;
 use std::time::Instant;
 

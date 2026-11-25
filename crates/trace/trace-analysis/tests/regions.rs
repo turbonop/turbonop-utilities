@@ -1,6 +1,8 @@
 //! Regions of interest: WPA's region files read, and start and stop events
 //! paired into instances.
 
+use turbonop_global_alloc as _;
+
 use turbonop_etl::Guid;
 use turbonop_trace_analysis::regions::{Endpoint, Instance, Occurrence, Regions, instances};
 

@@ -242,6 +242,9 @@ pub struct Report {
     pub diff: bool,
     /// Bytes a source filter left out (file, VM).
     pub filtered: (i64, i64),
+    /// The format of the image (or images, all of one format), for what
+    /// its sections and COFF groups hold (`description` in the JSON).
+    pub format: Option<turbonop_image::Format>,
 }
 
 fn percent(part: i64, whole: i64) -> f64 {
@@ -288,6 +291,7 @@ impl Report {
             total,
             diff: base.is_some(),
             filtered: (rollup.filtered_file, rollup.filtered_vm),
+            format: None,
         }
     }
 
@@ -429,7 +433,7 @@ impl Report {
         let report = JsonReport {
             sources: &self.sources,
             diff: self.diff,
-            total: self.json_row(&self.total),
+            total: self.json_row(&self.total, 0),
             filtered: (self.filtered != (0, 0)).then_some(Filtered {
                 vm: self.filtered.1,
                 file: self.filtered.0,
@@ -440,15 +444,27 @@ impl Report {
         out
     }
 
-    fn json_row<'r>(&self, row: &'r Row) -> JsonRow<'r> {
+    fn json_row<'r>(&self, row: &'r Row, depth: usize) -> JsonRow<'r> {
+        // (A row's level is the source before its depth: TOTAL is 0.)
+        let source = depth.checked_sub(1).and_then(|d| self.sources.get(d));
+        let description = match (source.map(String::as_str), self.format) {
+            (Some("sections" | "segments"), Some(f)) => crate::describe::section(f, &row.name),
+            (Some("groups"), _) => crate::describe::group(&row.name),
+            _ => None,
+        };
         JsonRow {
             name: &row.name,
+            description,
             vm: row.vm,
             file: row.file,
             old_vm: self.diff.then_some(row.old_vm),
             old_file: self.diff.then_some(row.old_file),
             other_count: (row.other_count > 0).then_some(row.other_count),
-            children: row.children.iter().map(|c| self.json_row(c)).collect(),
+            children: row
+                .children
+                .iter()
+                .map(|c| self.json_row(c, depth + 1))
+                .collect(),
         }
     }
 }
@@ -475,6 +491,10 @@ struct Filtered {
 #[derive(serde::Serialize)]
 struct JsonRow<'r> {
     name: &'r str,
+    /// What a section, segment, or COFF group holds (see
+    /// [`crate::describe`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'static str>,
     vm: i64,
     file: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -518,7 +538,11 @@ fn create_rows(
         row.vm_percent = percent(rollup.vm - b.vm, b.vm);
         row.file_percent = percent(rollup.file - b.file, b.file);
     }
-    // Children, with labels the base has but this rollup lost.
+    // Children, with labels the base has but this rollup lost. A path the
+    // base has under another directory (the same build from another
+    // checkout, or another build machine) is the same row: see
+    // `moved_paths`.
+    let moved = base.map(|b| moved_paths(rollup, b)).unwrap_or_default();
     let mut children: Vec<Candidate<'_>> = Vec::with_capacity(rollup.children.len());
     let delta = |child: &Rollup, old: Option<&Rollup>| {
         let vm = child.vm - old.map_or(0, |o| o.vm);
@@ -526,7 +550,12 @@ fn create_rows(
         (vm != 0 || file != 0).then_some((vm, file))
     };
     for (name, child) in &rollup.children {
-        let old = base.map(|b| b.children.get(name).unwrap_or(&EMPTY));
+        let old = base.map(|b| {
+            b.children
+                .get(name)
+                .or_else(|| moved.get(name).and_then(|m| b.children.get(*m)))
+                .unwrap_or(&EMPTY)
+        });
         if let Some((vm, file)) = delta(child, old) {
             children.push(Candidate {
                 name,
@@ -538,10 +567,11 @@ fn create_rows(
         }
     }
     if let Some(b) = base {
+        let paired: std::collections::HashSet<&Arc<str>> = moved.values().copied().collect();
         for (name, old) in b
             .children
             .iter()
-            .filter(|(k, _)| !rollup.children.contains_key(*k))
+            .filter(|(k, _)| !rollup.children.contains_key(*k) && !paired.contains(k))
         {
             if let Some((vm, file)) = delta(&EMPTY, Some(old)) {
                 children.push(Candidate {
@@ -555,6 +585,79 @@ fn create_rows(
         }
     }
     sort_and_aggregate(row, children, base.is_some(), options, top);
+}
+
+/// A label and its path's parts (lowercase).
+type PathLabel<'a> = (&'a Arc<str>, Vec<String>);
+
+/// The labels of `rollup` that are paths the base has under another
+/// directory: each (unmatched) new label with the unmatched base label of
+/// the same file name, the one whose path agrees with it longest from the
+/// end (by directory, case and separators aside), if just one does. Two
+/// builds of one program from different checkouts or build machines name
+/// their objects and libraries `C:\a\src\x.obj` and `D:\agent\src\x.obj`;
+/// SizeBench pairs them too (by file name, then likeness of path).
+fn moved_paths<'a>(rollup: &'a Rollup, base: &'a Rollup) -> FxHashMap<&'a Arc<str>, &'a Arc<str>> {
+    let is_path = |l: &str| l.contains(['/', '\\']);
+    let parts = |l: &str| -> Vec<String> {
+        l.split(['/', '\\'])
+            .filter(|p| !p.is_empty())
+            .map(str::to_ascii_lowercase)
+            .collect()
+    };
+    // The base's unmatched paths, by file name.
+    let mut by_file: FxHashMap<String, Vec<PathLabel<'_>>> = FxHashMap::default();
+    for k in base.children.keys() {
+        if is_path(k) && !rollup.children.contains_key(k) {
+            let p = parts(k);
+            if let Some(file) = p.last().cloned() {
+                by_file.entry(file).or_default().push((k, p));
+            }
+        }
+    }
+    let mut out: FxHashMap<&Arc<str>, &Arc<str>> = FxHashMap::default();
+    if by_file.is_empty() {
+        return out;
+    }
+    let mut taken: std::collections::HashSet<&Arc<str>> = std::collections::HashSet::new();
+    // (In label order, so that which pairs is the same every run.)
+    let mut mine: Vec<&Arc<str>> = rollup
+        .children
+        .keys()
+        .filter(|k| is_path(k) && !base.children.contains_key(*k))
+        .collect();
+    mine.sort();
+    for k in mine {
+        let p = parts(k);
+        let Some(candidates) = p.last().and_then(|f| by_file.get(f)) else {
+            continue;
+        };
+        let agree = |q: &[String]| {
+            p.iter()
+                .rev()
+                .zip(q.iter().rev())
+                .take_while(|(a, b)| a == b)
+                .count()
+        };
+        let mut best: Option<(&Arc<str>, usize)> = None;
+        let mut tied = false;
+        for (c, q) in candidates.iter().filter(|(c, _)| !taken.contains(c)) {
+            let n = agree(q);
+            match best {
+                Some((_, m)) if n < m => {}
+                Some((_, m)) if n == m => tied = true,
+                _ => {
+                    best = Some((c, n));
+                    tied = false;
+                }
+            }
+        }
+        if let (Some((c, _)), false) = (best, tied) {
+            taken.insert(c);
+            out.insert(k, c);
+        }
+    }
+    out
 }
 
 fn key(vm: i64, file: i64, by: SortBy, magnitude: bool) -> i64 {

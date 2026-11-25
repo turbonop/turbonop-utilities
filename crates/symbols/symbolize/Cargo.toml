@@ -16,9 +16,8 @@ turbonop-image.workspace = true
 turbonop-mmap.workspace = true
 turbonop-pdb.workspace = true
 
-[dev-dependencies]
-turbonop-pdb.workspace = true
-turbonop-mmap.workspace = true
-
 [lints]
 workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true

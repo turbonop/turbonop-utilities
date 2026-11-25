@@ -1,6 +1,9 @@
 //! Prints a PDB's x86 frame records near an RVA, and the public symbol at
 //! it (a diagnostic).
 //! `cargo run -p turbonop-unwind --example windows_x86_records -- PDB RVA`
+
+use turbonop_global_alloc as _;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let data = std::fs::read(&args[1]).unwrap();

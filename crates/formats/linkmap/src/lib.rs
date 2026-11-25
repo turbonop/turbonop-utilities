@@ -31,6 +31,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 #[allow(missing_docs, reason = "the fields say what the maps say")]
 pub mod unix;
 
@@ -578,6 +581,72 @@ OUTPUT(a.out elf64-x86-64)
             .map(|s| (s.name.as_str(), s.file))
             .collect();
         assert_eq!(s, [("main", Some(0)), ("foo", Some(1)), ("table", Some(0))]);
+        assert_eq!(m.sections.len(), 2);
+    }
+
+    #[test]
+    fn gold_maps() {
+        // gold's (-Map): laid out as GNU ld's, its own parts (fill, headers)
+        // where input sections would be, their addresses on the line or the
+        // next.
+        let text = "
+Discarded input sections
+
+ .text.unused1  0x0000000000000000       0x76 funcs.o
+
+Memory map
+
+ ** file header
+                0x0000000000400000       0x40
+ ** segment headers
+                0x0000000000400040      0x118
+
+.text           0x00000000004001a0      0x17c
+ .text.add_a    0x00000000004001a0       0x56 funcs.o
+                0x00000000004001a0                add_a
+ ** fill        0x00000000004001f6        0xa
+ .text.add_b    0x0000000000400200       0x56 funcs.o
+                0x0000000000400200                add_b
+ ** fill        0x0000000000400256        0xa
+ .text.a_long_name_that_wraps
+                0x0000000000400260       0x56 lib.a(c.o)
+
+.rodata         0x0000000000400320       0xc8
+ .rodata.table1
+                0x0000000000400320       0xc8 funcs.o
+";
+        let m = parse(text).unwrap();
+        assert_eq!(m.linker, Linker::Gold);
+        let p: Vec<(&str, &str, &str, u64, u64)> = m
+            .pieces
+            .iter()
+            .map(|p| {
+                (
+                    p.section.as_str(),
+                    p.name.as_str(),
+                    m.files[p.file].as_str(),
+                    p.addr,
+                    p.size,
+                )
+            })
+            .collect();
+        assert_eq!(
+            p,
+            [
+                (".text", ".text.add_a", "funcs.o", 0x4001a0, 0x56),
+                (".text", ".text.add_b", "funcs.o", 0x400200, 0x56),
+                (
+                    ".text",
+                    ".text.a_long_name_that_wraps",
+                    "lib.a(c.o)",
+                    0x400260,
+                    0x56
+                ),
+                (".rodata", ".rodata.table1", "funcs.o", 0x400320, 0xc8),
+            ]
+        );
+        let s: Vec<&str> = m.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(s, ["add_a", "add_b"]);
         assert_eq!(m.sections.len(), 2);
     }
 

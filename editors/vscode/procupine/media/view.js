@@ -229,12 +229,12 @@
         if (p.elevated && info.platform === "win32" && p.integrity === "High") {
           badges.push("admin");
         }
-        return `<div class="c c-name" style="padding-left:${2 + r.depth * 14}px" title="${esc(p.path || p.name)}${p.commandLine ? "\n" + esc(p.commandLine) : ""}"><span class="twisty" data-twisty="${p.id}">${twisty}</span><span class="label">${esc(p.name)}</span>${badges.map((b) => `<span class="badge">${b}</span>`).join("")}</div>`;
+        return `<div class="c c-name" style="padding-left:${2 + r.depth * 14}px" title="${esc(p.path || p.name)}${p.commandLine ? "\n" + esc(p.commandLine) : ""}"><span class="twisty" data-twisty="${esc(p.id)}">${twisty}</span><span class="label">${esc(p.name)}</span>${badges.map((b) => `<span class="badge">${b}</span>`).join("")}</div>`;
       }
       case "cpu": {
         const pct = Math.min(100, (v.cpu || 0) * 100);
         const fill = pct > 0 ? `<span class="fill" style="width:${Math.max(1, pct).toFixed(1)}%"></span>` : "";
-        return `<div class="c r bar">${fill}<span class="num">${M.percent(v.cpu)}</span></div>`;
+        return `<div class="c r bar">${fill}<span class="num">${esc(M.percent(v.cpu))}</span></div>`;
       }
       case "cpuHistory": {
         const values = p.history.cpu.list();
@@ -245,27 +245,27 @@
         return `<div class="c spark"><svg viewBox="0 0 ${w} 18" preserveAspectRatio="none"><polyline class="spark-cpu" points="${M.sparkPoints(values, w, 18, max)}"/></svg></div>`;
       }
       case "pid":
-        return `<div class="c r">${p.pid}</div>`;
+        return `<div class="c r">${esc(p.pid)}</div>`;
       case "private":
       case "resident":
       case "virtual":
-        return `<div class="c r">${M.bytes(v[c.key])}</div>`;
+        return `<div class="c r">${esc(M.bytes(v[c.key]))}</div>`;
       case "io":
-        return `<div class="c r">${M.rate((v.readRate || 0) + (v.writeRate || 0))}</div>`;
+        return `<div class="c r">${esc(M.rate((v.readRate || 0) + (v.writeRate || 0)))}</div>`;
       case "readRate":
       case "writeRate":
-        return `<div class="c r">${M.rate(v[c.key])}</div>`;
+        return `<div class="c r">${esc(M.rate(v[c.key]))}</div>`;
       case "threads":
       case "handles":
       case "priority":
-        return `<div class="c r">${M.count(v[c.key])}</div>`;
+        return `<div class="c r">${esc(M.count(v[c.key]))}</div>`;
       case "pageFaults":
       case "contextSwitches":
         return `<div class="c r">${v[c.key] ? M.count(Math.round(v[c.key])) : ""}</div>`;
       case "cpuTime":
-        return `<div class="c r">${M.duration((v.userTime || 0) + (v.kernelTime || 0))}</div>`;
+        return `<div class="c r">${esc(M.duration((v.userTime || 0) + (v.kernelTime || 0)))}</div>`;
       case "start":
-        return `<div class="c">${M.startTime(p.start)}</div>`;
+        return `<div class="c">${esc(M.startTime(p.start))}</div>`;
       case "state":
         return `<div class="c">${esc(v.state)}</div>`;
       case "user":
@@ -315,7 +315,7 @@
     const out = [];
     for (let i = first; i < last; i++) {
       const r = rows[i];
-      out.push(`<div class="${rowClass(r)}" data-id="${r.p.id}" data-i="${i}">${cols.map((c) => cell(c, r)).join("")}</div>`);
+      out.push(`<div class="${rowClass(r)}" data-id="${esc(r.p.id)}" data-i="${i}">${cols.map((c) => cell(c, r)).join("")}</div>`);
     }
     const el = $("rows");
     el.style.transform = `translateY(${first * rowHeight}px)`;
@@ -342,14 +342,14 @@
     };
     const used = s.memoryTotal - s.memoryAvailable;
     let html = `
-      <div class="meter">${graph(h.cpu, "line-cpu")}<span class="label">CPU</span><span class="value">${(s.cpu * 100).toFixed(1)}% of ${s.cpus} processors</span></div>
-      <div class="meter">${graph(h.memory, "line-memory")}<span class="label">Memory</span><span class="value">${M.bytes(used)} of ${M.bytes(s.memoryTotal)}</span></div>`;
+      <div class="meter">${graph(h.cpu, "line-cpu")}<span class="label">CPU</span><span class="value">${(s.cpu * 100).toFixed(1)}% of ${esc(s.cpus)} processors</span></div>
+      <div class="meter">${graph(h.memory, "line-memory")}<span class="label">Memory</span><span class="value">${esc(M.bytes(used))} of ${esc(M.bytes(s.memoryTotal))}</span></div>`;
     if (s.commitLimit) {
-      html += `<div class="meter">${graph(h.commit, "line-io")}<span class="label">Commit</span><span class="value">${M.bytes(s.commit)} of ${M.bytes(s.commitLimit)}</span></div>`;
+      html += `<div class="meter">${graph(h.commit, "line-io")}<span class="label">Commit</span><span class="value">${esc(M.bytes(s.commit))} of ${esc(M.bytes(s.commitLimit))}</span></div>`;
     } else if (s.swapTotal) {
-      html += `<div class="meter"><svg viewBox="0 0 120 34"></svg><span class="label">Swap</span><span class="value">${M.bytes(s.swapUsed)} of ${M.bytes(s.swapTotal)}</span></div>`;
+      html += `<div class="meter"><svg viewBox="0 0 120 34"></svg><span class="label">Swap</span><span class="value">${esc(M.bytes(s.swapUsed))} of ${esc(M.bytes(s.swapTotal))}</span></div>`;
     }
-    html += `<div id="counts"><span>${M.count(s.processes)} processes</span><span>${M.count(s.threads)} threads</span><span>${M.count(s.handles)} ${info.platform === "win32" ? "handles" : "files"}</span><span>up ${uptime(s.uptime)}</span></div>`;
+    html += `<div id="counts"><span>${esc(M.count(s.processes))} processes</span><span>${esc(M.count(s.threads))} threads</span><span>${esc(M.count(s.handles))} ${info.platform === "win32" ? "handles" : "files"}</span><span>up ${esc(uptime(s.uptime))}</span></div>`;
     $("system").innerHTML = html;
   }
 
@@ -384,29 +384,29 @@
     const pathActs = p.path ? act("Copy", "copy-path") + act("Reveal", "reveal") + (info.hexcavator ? act("Open in Hexcavator", "hexcavator") : "") : "";
     const cpus = model.system ? model.system.cpus : 1;
     el.innerHTML = `
-      <div class="title">${esc(p.name)} <span class="sub">PID ${p.pid}${v.state ? " · " + esc(v.state) : ""}${model.isExited(p) ? " · exited" : ""}</span></div>
+      <div class="title">${esc(p.name)} <span class="sub">PID ${esc(p.pid)}${v.state ? " · " + esc(v.state) : ""}${model.isExited(p) ? " · exited" : ""}</span></div>
       <div class="cols">
         <dl>
           ${field("Path", esc(p.path), pathActs)}
           ${field("Command line", p.commandLine ? `<code>${esc(p.commandLine)}</code>` : "", p.commandLine ? act("Copy", "copy-command") : "")}
           ${field("User", esc(p.user))}
-          ${field("Parent", parent ? `${esc(parent.name)} (${parent.pid})` : p.parentPid != null ? `${p.parentPid} (exited)` : "", parent ? act("Select", "parent") : "")}
+          ${field("Parent", parent ? `${esc(parent.name)} (${esc(parent.pid)})` : p.parentPid != null ? `${esc(p.parentPid)} (exited)` : "", parent ? act("Select", "parent") : "")}
           ${field("Started", p.start ? esc(new Date(p.start).toLocaleString()) : "")}
           ${field("Architecture", esc(p.architecture))}
           ${field("Integrity", esc(p.integrity))}
           ${field("Elevated", p.elevated == null ? "" : p.elevated ? "yes" : "no")}
-          ${field("CPU time", `${M.duration((v.userTime || 0) + (v.kernelTime || 0))} (user ${M.duration(v.userTime)}, kernel ${M.duration(v.kernelTime)})`)}
-          ${field("Memory", `private ${M.bytes(v.private)}, working set ${M.bytes(v.resident)}, virtual ${M.bytes(v.virtual)}`)}
-          ${field("I/O", v.readBytes == null ? "" : `read ${M.bytes(v.readBytes)}, written ${M.bytes(v.writeBytes)}`)}
-          ${field("Threads", M.count(v.threads))}
-          ${field(info.platform === "win32" ? "Handles" : "Files", M.count(v.handles))}
-          ${field("Priority", M.count(v.priority))}
-          ${field("Session", p.session == null ? "" : String(p.session))}
+          ${field("CPU time", `${esc(M.duration((v.userTime || 0) + (v.kernelTime || 0)))} (user ${esc(M.duration(v.userTime))}, kernel ${esc(M.duration(v.kernelTime))})`)}
+          ${field("Memory", `private ${esc(M.bytes(v.private))}, working set ${esc(M.bytes(v.resident))}, virtual ${esc(M.bytes(v.virtual))}`)}
+          ${field("I/O", v.readBytes == null ? "" : `read ${esc(M.bytes(v.readBytes))}, written ${esc(M.bytes(v.writeBytes))}`)}
+          ${field("Threads", esc(M.count(v.threads)))}
+          ${field(info.platform === "win32" ? "Handles" : "Files", esc(M.count(v.handles)))}
+          ${field("Priority", esc(M.count(v.priority)))}
+          ${field("Session", p.session == null ? "" : esc(p.session))}
         </dl>
         <div class="charts">
-          <div class="chart"><span>CPU</span><span>${M.percent(v.cpu) || "0"}% (peak ${M.percent(p.history.cpu.max()) || "0"}%)</span>${chart(p.history.cpu, "line-cpu", Math.max(1 / cpus, p.history.cpu.max()))}</div>
-          <div class="chart"><span>Private bytes</span><span>${M.bytes(v.private)}</span>${chart(p.history.private, "line-memory", p.history.private.max() * 1.1)}</div>
-          <div class="chart"><span>I/O</span><span>${M.rate((v.readRate || 0) + (v.writeRate || 0)) || "0 B/s"}</span>${chart(p.history.io, "line-io", p.history.io.max() * 1.1)}</div>
+          <div class="chart"><span>CPU</span><span>${esc(M.percent(v.cpu) || "0")}% (peak ${esc(M.percent(p.history.cpu.max()) || "0")}%)</span>${chart(p.history.cpu, "line-cpu", Math.max(1 / cpus, p.history.cpu.max()))}</div>
+          <div class="chart"><span>Private bytes</span><span>${esc(M.bytes(v.private))}</span>${chart(p.history.private, "line-memory", p.history.private.max() * 1.1)}</div>
+          <div class="chart"><span>I/O</span><span>${esc(M.rate((v.readRate || 0) + (v.writeRate || 0)) || "0 B/s")}</span>${chart(p.history.io, "line-io", p.history.io.max() * 1.1)}</div>
         </div>
       </div>`;
   }

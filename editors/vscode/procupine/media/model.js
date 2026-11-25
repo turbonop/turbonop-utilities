@@ -41,13 +41,61 @@
     }
   }
 
+  const list = (x) => (Array.isArray(x) ? x : []);
+
+  // What a sample may hold, by type: anything else is dropped (null), so
+  // the view never shows a value of a type it doesn't expect (markup where
+  // a number belongs, say).
+  const num = (x) => (typeof x === "number" && Number.isFinite(x) ? x : null);
+  const str = (x) => (typeof x === "string" ? x : null);
+  const bool = (x) => (typeof x === "boolean" ? x : null);
+  const DETAILS = {
+    id: num,
+    pid: num,
+    parent: num,
+    parentPid: num,
+    name: str,
+    start: num,
+    path: str,
+    commandLine: str,
+    user: str,
+    architecture: str,
+    elevated: bool,
+    integrity: str,
+    kernel: bool,
+    session: num,
+  };
+  /** The rows' columns that aren't numbers. */
+  const TEXT_COLUMNS = new Set(["state"]);
+  const SYSTEM = ["cpus", "cpu", "memoryTotal", "memoryAvailable", "commit", "commitLimit", "swapTotal", "swapUsed", "uptime", "processes", "threads", "handles"];
+
+  /** A process's details, as sent, with only what they may hold. */
+  function cleanDetails(d) {
+    const out = {};
+    for (const k in DETAILS) {
+      out[k] = DETAILS[k](d && d[k]);
+    }
+    out.name = out.name || "";
+    return out;
+  }
+
+  /** The system's numbers, as sent, with only what they may hold. */
+  function cleanSystem(s) {
+    const out = {};
+    for (const k of SYSTEM) {
+      out[k] = num(s[k]);
+    }
+    return out;
+  }
+
   /**
    * The processes, from `procupine serve`'s sample events. `columns` are
    * the rows' columns (the server's `columns`).
    */
   class Model {
     constructor(columns) {
-      this.columns = columns;
+      this.columns = list(columns).map((c) => String(c));
+      columns = this.columns;
       this.index = {};
       columns.forEach((c, i) => (this.index[c] = i));
       /** Processes by session ID. */
@@ -71,7 +119,11 @@
           this.processes.delete(id);
         }
       }
-      for (const d of event.added || []) {
+      for (const sent of list(event.added)) {
+        const d = cleanDetails(sent);
+        if (d.id === null) {
+          continue;
+        }
         const old = this.processes.get(d.id);
         if (old) {
           // (A refresh: everything again.)
@@ -86,21 +138,21 @@
           exited: null,
         });
       }
-      for (const id of event.removed || []) {
-        const p = this.processes.get(id);
+      for (const id of list(event.removed)) {
+        const p = this.processes.get(num(id));
         if (p) {
           p.exited = now;
         }
       }
       const cols = this.columns;
       const updated = new Set();
-      for (const row of event.rows || []) {
-        const p = this.processes.get(row[0]);
+      for (const row of list(event.rows)) {
+        const p = Array.isArray(row) ? this.processes.get(num(row[0])) : null;
         if (!p) {
           continue;
         }
         for (let i = 1; i < cols.length; i++) {
-          p.v[cols[i]] = row[i];
+          p.v[cols[i]] = TEXT_COLUMNS.has(cols[i]) ? str(row[i]) : num(row[i]);
         }
         p.parent = p.v.parent;
         updated.add(p);
@@ -115,9 +167,9 @@
         p.history.private.push(p.v.private || 0);
         p.history.io.push((p.v.readRate || 0) + (p.v.writeRate || 0));
       }
-      if (event.system) {
-        this.system = event.system;
-        const s = event.system;
+      if (event.system && typeof event.system === "object") {
+        const s = cleanSystem(event.system);
+        this.system = s;
         this.systemHistory.cpu.push(s.cpu);
         this.systemHistory.memory.push(s.memoryTotal ? 1 - s.memoryAvailable / s.memoryTotal : 0);
         this.systemHistory.commit.push(s.commitLimit ? s.commit / s.commitLimit : 0);

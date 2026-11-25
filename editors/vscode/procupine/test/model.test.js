@@ -153,4 +153,42 @@ assert.strictEqual(m.isUser("root", "me"), false);
 assert.strictEqual(m.isUser(null, "me"), false);
 assert.strictEqual(m.sortValue({ v: {}, pid: 1, history: { cpu: new m.Ring() } }, "private"), -Infinity);
 
+// What a sample holds, checked by type: markup where a number belongs (or
+// anything not of its type) is dropped, so the view never draws it.
+{
+  const x = "<img src=x onerror=alert(1)>";
+  const model = new m.Model(COLUMNS);
+  const bad = row(1, null, 0.1, 100);
+  bad[3] = x; // private
+  bad[6] = { toString: () => x }; // threads
+  bad[14] = 7; // state: not text
+  model.apply({
+    added: [proc(1, x, null, "evil", { session: x, parentPid: [x], elevated: "yes", kernel: 1, extra: x }), { id: x, pid: 2, name: "no id" }, null],
+    removed: [x],
+    rows: [bad, x, [x]],
+    system: { ...system, cpus: x, uptime: x, swapTotal: { x } },
+  });
+  const p = model.get(1);
+  assert.strictEqual(p.name, "evil");
+  assert.strictEqual(p.pid, null);
+  assert.strictEqual(p.session, null);
+  assert.strictEqual(p.parentPid, null);
+  assert.strictEqual(p.elevated, null);
+  assert.strictEqual(p.kernel, null);
+  assert.strictEqual(p.extra, undefined, "unknown fields are dropped");
+  assert.strictEqual(p.v.private, null);
+  assert.strictEqual(p.v.threads, null);
+  assert.strictEqual(p.v.state, null);
+  assert.strictEqual(p.v.cpu, 0.1);
+  assert.strictEqual(model.processes.size, 1, "a process without a numeric ID is dropped");
+  assert.strictEqual(model.system.cpus, null);
+  assert.strictEqual(model.system.uptime, null);
+  assert.strictEqual(model.system.swapTotal, null);
+  assert.strictEqual(model.system.memoryTotal, 100);
+  // (And an event that isn't one at all does nothing.)
+  model.apply({ added: x, removed: {}, rows: 5, system: x });
+  assert.strictEqual(model.processes.size, 1);
+  assert.strictEqual(model.system.memoryTotal, 100);
+}
+
 console.log("model: ok");

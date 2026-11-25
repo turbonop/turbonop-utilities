@@ -4,7 +4,7 @@
 //! | Rank | Layers |
 //! |---|---|
 //! | 0 | `crates/base` |
-//! | 1 | `crates/formats` |
+//! | 1 | `crates/formats`, `crates/system` |
 //! | 2 | `crates/symbols`, `crates/isa` |
 //! | 3 | `crates/debug`, `crates/analysis`, `crates/trace` |
 //! | 4 | `crates/debugger` |
@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 const LAYERS: &[(&str, u32)] = &[
     ("crates/base", 0),
     ("crates/formats", 1),
+    ("crates/system", 1),
     ("crates/symbols", 2),
     ("crates/isa", 2),
     ("crates/debug", 3),

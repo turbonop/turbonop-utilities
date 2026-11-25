@@ -32,13 +32,14 @@ leave this list when they ship.
 - **Packages where they fit.** GitHub Packages holds container images and
   npm, NuGet, and Maven packages, not programs: a container image of
   hexcavator; the web version as an npm package.
-- **A new extension's first release.** For 0.0.10, the extension's first as
-  `turbonop.hexcavator-vscode`, the Marketplace served one of eight
-  platforms' VSIXs: the first, whose validation created the extension; the
-  rest were reported published and never served (published after it was
-  served, too). An extension that exists takes every platform's (as
-  `hexcavator.hexcavator` did). The job waits up to two hours now; a
-  release that fails so could publish the missing platforms again.
+- **winget's token.** Microsoft's enterprise, which owns
+  `microsoft/winget-pkgs`, refuses classic tokens that live more than 8
+  days, and a fine-grained token can't open a pull request on another
+  owner's repository: each release needs a fresh classic token
+  (`public_repo`, 7 days) in `WINGET_TOKEN`, or its winget job fails
+  (rerun it with `hexcavator-winget.yml` by hand). Find a way that doesn't
+  need a person each release: a GitHub App's token, if the enterprise
+  takes one.
 - **musl's speed.** With mimalloc in musl's allocator's place, the test
   suite still runs about four times as long under musl as under glibc
   (35 s against 9 s, in WSL): musl's `memcpy`, `memchr`, and string
@@ -55,6 +56,14 @@ decisions, and its status table are in `docs/dump-analyzer.md`. Neither
 the app nor the extension is released: publishing is a step of its own,
 when they're ready. What's left:
 
+- **Where to pick up.** Everything through the first "how did we get
+  here" (x86-64) is merged; the next big step is the IR and its
+  lifters, then the corpus run below. Fixtures are rebuilt by
+  `tools/minidump/make.cmd x64|x86` (Windows, in the repository's
+  `target` directory so no other path lands in them) and
+  `tools/coredump/make.sh` (Linux, in WSL); their oracles' output
+  (`cdb.txt`, `dv.txt`, `gdb.txt`) sits beside them. Not yet run: the
+  nightly exhaustive ARM64 access test on the merged code.
 - **Release.** `dump-analyzer-release.yml` on `dump-analyzer-v*` tags (its
   builds, signing, and VSIX packaging, as hexcavator's), and the
   Marketplace's listing for `turbonop.dump-analyzer`.
@@ -98,6 +107,47 @@ when they're ready. What's left:
   whole range (rCX elements)? ARM64's memory accesses have no size yet,
   and MSR SVCR and SMSTART's operands don't decode.
 - **SLEIGH, then the decompiler.** Ghidra's, ported.
+## Procupine
+
+- **The extension's server test on macOS.** On CI's macOS runner,
+  `editors/vscode/procupine/test/server.test.js` waited 20 s for a sample
+  event that never came, though `apps/procupine/tests/serve.rs` (the same
+  watch, kill and end, from Rust) passes there. The test says which wait
+  timed out, the last events, and procupine's stderr; its live part is
+  skipped on macOS until that's found and fixed.
+- **The system's CPU on macOS.** In `turbonop-process`'s live
+  `cpu_usage` test on CI's macOS runner, the system's CPU share over a
+  300 ms busy loop was once 0 (this process's own share was right): the
+  `host_statistics` load ticks, unchanged or misread. That check is
+  skipped on macOS (`crates/system/process/tests/live.rs`) until fixed.
+- **A release.** `procupine-release.yml` on `procupine-v*` tags, as
+  hexcavator's: signed binaries for each platform, the extension packaged
+  per platform with `bin/procupine`, its licenses test and third-party
+  notices (serde_json, mimalloc, libc, rustc-hash).
+- **An elevated helper.** Without administrator rights (root), other
+  users' processes show less and can't be acted on. A second `procupine
+  serve`, started elevated on request (UAC on Windows, `pkexec` on Linux,
+  an authorization prompt on macOS), that the extension talks to over a
+  pipe only it may open.
+- **Details on demand.** For the selected process: its modules (DLLs,
+  shared libraries), threads (with stacks, symbolized by
+  `turbonop-symbolize`), handles and open files, environment, memory
+  regions, and network connections. On Windows, its image's version
+  information (description, company) from `turbonop-pe`, as Process
+  Explorer's Description and Company columns.
+- **Finding a handle or module** across every process (Process
+  Explorer's Find), on every core.
+- **Lifetimes.** Processes too short-lived for a sample, from the
+  system's own events (ETW's kernel process provider, Linux's process
+  connector, macOS's `kqueue`): a timeline of every process that started
+  and exited.
+- **More counters:** GPU use (D3DKMT on Windows), per-process network
+  bytes, Linux's cgroups and namespaces (which container), Windows' job
+  objects, services' names for svchost.
+- **macOS, run.** The collector is built and its parsing tested on every
+  platform, and CI runs its live tests on macOS; it hasn't been used by a
+  person on a Mac.
+
 ## Every format alike
 
 Every command and analysis should work the same, and as well, on PE,
@@ -171,17 +221,26 @@ Every command should be as fast as the hardware allows (on clang.exe,
 
 ## Size
 
-hexcavator itself has grown: 12.2 MB to 15.5 MB on Windows x64 from
-0.0.7 to 0.0.9, and 17.1 MB (glibc, dynamic) to 22.9 MB (musl, static)
-on Linux x64 (and the release now ships the bare programs, not ~4 MB
-archives). What's left:
+hexcavator itself has grown: 12.8 MB to 16.3 MB on Windows x64 from
+0.0.7 to 0.0.10 (`hexcavator size -d crates,symbols` on each, with its
+PDB), and 17.1 MB (glibc, dynamic) to 22.9 MB (musl, static) on Linux
+x64. Where the 3.5 MB went:
 
-- **Where it went.** `hexcavator size` and `recommend` on hexcavator,
-  with its symbols: by crate, by symbol, and against 0.0.7. The likely
-  parts: the TableGen decoders (RISC-V, LoongArch, PowerPC, MIPS,
-  microMIPS) and their tables, 32-bit ARM, monomorphized generics,
-  formatting, and what the static C library and mimalloc add on Linux.
-  Then make it smaller, as hexcavator advises others to.
+- **The new decoders, about 1.1 MB.** PowerPC's code (365 KB) and
+  LoongArch's (265 KB); MIPS's tables (about 275 KB: three of 64 KB and
+  more) and RISC-V's (106 KB), anonymous read-only data (`anon.*`, by
+  their objects). Tables of exactly 64 KB are likely indexed by 16 bits
+  and mostly empty: a denser form (by ranges, or a second level) could
+  take a fraction.
+- **Generic code, about 1.15 MB**, counted to `core` (+668 KB), `std`
+  (+306 KB), and `alloc` (+180 KB): our generics instantiated for each
+  type, much of it likely `turbonop_par`'s (+111 KB itself, new)
+  closures and sorts, a copy per caller. Which, by symbol; then fewer
+  copies (a non-generic core taking `&dyn Fn`, as `map_range` could).
+- **Features, about 0.5 MB**: the app (+178 KB), `turbonop_size`
+  (+205 KB), `turbonop_debuginfo` (+85 KB), and the rest.
+- **Base relocations, +88 KB**: more pointers in data (vtables, tables
+  of strings).
 
 ## Ideas
 

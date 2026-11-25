@@ -8,6 +8,7 @@ and kept fast.
 | Tool | What it is |
 | --- | --- |
 | [Hexcavator](apps/hexcavator/README.md) (`apps/hexcavator`) | *Dig into your binaries.* Executables, objects, libraries, and WebAssembly modules with their debug information: on the command line, as an MCP server, in VS Code, and in a browser |
+| [Procupine](apps/procupine/README.md) (`apps/procupine`) | The processes running on a machine, as a process explorer shows them: a live tree with CPU, memory, and I/O and each process's history; kill, suspend, resume. On the command line and in VS Code (local or remote), on Windows, Linux, and macOS |
 
 Each tool is released on its own, with tags named for it
 (`hexcavator-v0.0.8`).
@@ -83,6 +84,8 @@ Each tool is released on its own, with tags named for it
 | `crates/debugger/paths` (`turbonop-paths`) | How did we get here: which way each branch of a crashed frame's function went, by its control flow and by the values that survive in the dump, each decision with its proof |
 | `apps/hexcavator` | `hexcavator`: the command line, the MCP server for agents, and the server the VS Code extension runs |
 | `apps/dump-analyzer` | `dump-analyzer`: post-mortem debugging of crash dumps (minidumps; Linux and Mach-O core files) from the command line, the server the "Dump Analyzer" VS Code extension runs, and an MCP server for agents |
+| `crates/system/process` (`turbonop-process`) | This machine's processes: snapshots of each (counters and details) on Windows (`NtQuerySystemInformation`), Linux (`/proc`), and macOS (`libproc`); rates between them; kill, suspend, and resume by a key that a reused ID can't reach |
+| `apps/procupine` | `procupine`: the command line, and the server its VS Code extension runs |
 | `apps/fuzz` | The fuzzer: every parser and command, on mutated inputs, for crashes, hangs, and blowups |
 | `apps/xtask` | Development tasks: `cargo xtask test` builds every test and runs them all at once |
 | `editors/vscode/hexcavator` | The VS Code extension: a sidebar of binaries and builds compared, with their headers, symbols, types, sources, data, and disassembly, size treemaps, and why each thing is there |

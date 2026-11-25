@@ -286,7 +286,7 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hexcavator"
-version = "0.0.10"
+version = "0.0.11"
 dependencies = [
  "regex",
  "rustc-hash",
@@ -528,6 +528,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "procupine"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "turbonop-global-alloc",
+ "turbonop-process",
 ]
 
 [[package]]
@@ -1158,6 +1167,16 @@ version = "0.0.7"
 dependencies = [
  "turbonop-global-alloc",
  "turbonop-tablegen",
+]
+
+[[package]]
+name = "turbonop-process"
+version = "0.0.7"
+dependencies = [
+ "libc",
+ "rustc-hash",
+ "turbonop-global-alloc",
+ "turbonop-par",
 ]
 
 [[package]]

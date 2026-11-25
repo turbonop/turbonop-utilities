@@ -3,6 +3,8 @@
 //! and a count by encoding, largest first:
 //! `cargo run -p turbonop-arm64 --example golden_report [filter]`.
 
+use turbonop_global_alloc as _;
+
 use std::collections::BTreeMap;
 
 fn main() {

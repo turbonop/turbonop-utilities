@@ -4,6 +4,8 @@
 //! tests/hostile_pdb.rs.) (A PDB is read as found beside an image: anyone who
 //! can put a file there can write these.)
 
+use turbonop_global_alloc as _;
+
 use turbonop_codeview::layout;
 use turbonop_codeview::{TypeFormatter, TypeIndex};
 use turbonop_pdb::{StreamData, TypeStream};

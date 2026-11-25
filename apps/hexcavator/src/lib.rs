@@ -2,6 +2,9 @@
 //! (`hexcavator size ...` is `run(&["size", ...])`). The binary is a thin
 //! `main` around it; the fuzzer drives every command through it.
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 #[macro_use]
 mod out;
 mod batch;

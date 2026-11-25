@@ -3,6 +3,8 @@
 
 #![allow(clippy::cast_possible_truncation)]
 
+use turbonop_global_alloc as _;
+
 use turbonop_arm32::format::{Targets, format};
 use turbonop_arm32::{decode_a32, decode_t32};
 

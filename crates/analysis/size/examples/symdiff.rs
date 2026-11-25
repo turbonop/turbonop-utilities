@@ -3,6 +3,8 @@
 //!
 //!     cargo run --release -p turbonop-size --example symdiff -- <image> <pdb> <oracle.txt> [kind...]
 
+use turbonop_global_alloc as _;
+
 use std::collections::BTreeMap;
 use std::time::Instant;
 

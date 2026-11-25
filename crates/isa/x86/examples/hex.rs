@@ -2,6 +2,8 @@
 //!
 //!     cargo run -p turbonop-x86 --example hex -- "d5 08 50" "62f4fc1801cb"
 
+use turbonop_global_alloc as _;
+
 use turbonop_x86::{Mode, decode, format};
 
 fn main() {

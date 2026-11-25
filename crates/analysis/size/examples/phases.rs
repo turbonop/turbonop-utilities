@@ -1,6 +1,8 @@
 //! Times the phases of a symbols report on one image and its PDB:
 //! `cargo run --release -p turbonop-size --example phases -- <image> <pdb>`.
 
+use turbonop_global_alloc as _;
+
 use std::time::Instant;
 
 use turbonop_debuginfo::DebugInfo;

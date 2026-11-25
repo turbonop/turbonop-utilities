@@ -17,6 +17,7 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
+turbonop-global-alloc.workspace = true
 serde_json.workspace = true
 
 [lints]

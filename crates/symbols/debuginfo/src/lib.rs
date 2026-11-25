@@ -17,6 +17,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod coff_object;
 pub mod decompress;
 pub mod dwarf_backend;

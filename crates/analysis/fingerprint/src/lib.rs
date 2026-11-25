@@ -23,6 +23,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 use std::hash::Hasher;
 
 use rustc_hash::FxHasher;

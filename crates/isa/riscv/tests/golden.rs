@@ -3,6 +3,8 @@
 //! RV64 with the standard extensions on) decoded and written the same, or
 //! not decoded where LLVM decodes nothing.
 
+use turbonop_global_alloc as _;
+
 use turbonop_riscv::format::format;
 use turbonop_riscv::{Features, decode};
 

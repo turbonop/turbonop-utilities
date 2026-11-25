@@ -2,6 +2,8 @@
 //! testdata's images (SizeBench's test binaries, MSVC- and lld-linked, and
 //! a managed DLL; the CLR header's values are dumpbin /clrheader's).
 
+use turbonop_global_alloc as _;
+
 use turbonop_pe::PeFile;
 
 fn images() -> Vec<(String, Vec<u8>)> {

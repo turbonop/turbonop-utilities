@@ -11,6 +11,9 @@
 // `pod.rs`.
 #![allow(unsafe_code)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 extern crate alloc;
 
 mod addr;

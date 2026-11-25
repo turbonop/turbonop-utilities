@@ -9,6 +9,8 @@
 //!
 //! With no `-p`/`--package`, it is the whole workspace.
 
+use turbonop_global_alloc as _;
+
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};

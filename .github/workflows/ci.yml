@@ -70,16 +70,12 @@ jobs:
           mkdir codicons && tar -xzf vscode-codicons-0.0.36.tgz -C codicons
       - run: python editors/web/test/run.py --wasm target/wasm32-wasip1-threads/release/hexcavator.wasm --codicons codicons/package/dist
 
-  # Linux releases are static, with musl (and mimalloc, compiled with
-  # musl-gcc, in musl's allocator's place): the tests, built so.
+  # Linux releases are static, with musl: the tests, built so (with
+  # mimalloc, every program's allocator, compiled with musl-gcc).
   musl:
     runs-on: ubuntu-latest
     env:
       CC_x86_64_unknown_linux_musl: musl-gcc
-      # (The tests' own binaries allocate with musl's allocator, which is
-      # many times slower than glibc's: only the hexcavator program has
-      # mimalloc. The timed tests bound blow-ups, not speed.)
-      TURBONOP_TEST_SLOWDOWN: "4"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y musl-tools

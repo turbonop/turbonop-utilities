@@ -31,6 +31,9 @@
 //! files are opened, and names that are paths where a name belongs are
 //! not searched for.
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 mod elf;
 mod macho;
 mod manifest;

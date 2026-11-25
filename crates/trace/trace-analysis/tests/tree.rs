@@ -1,5 +1,7 @@
 //! Stack trees over a small trace built by hand.
 
+use turbonop_global_alloc as _;
+
 use turbonop_trace::{Clock, Image, ImageIx, Process, ProcessIx, StackId, Thread, ThreadIx, Trace};
 use turbonop_trace_analysis::{
     Filter, FrameMode, Framer, GroupBy, Key, KeyId, Keys, NoSymbols, NodeId, Precise, Resolver,

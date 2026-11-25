@@ -20,6 +20,7 @@ turbonop-pe.workspace = true
 rustc-hash.workspace = true
 
 [dev-dependencies]
+turbonop-global-alloc.workspace = true
 turbonop-mmap.workspace = true
 
 [lints]

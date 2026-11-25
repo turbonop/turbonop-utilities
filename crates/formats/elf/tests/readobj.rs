@@ -3,6 +3,8 @@
 //! ARM) against llvm-readobj's dump of it: the file header, every section,
 //! program header, symbol, and dynamic symbol, and the build ID.
 
+use turbonop_global_alloc as _;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

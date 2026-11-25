@@ -9,6 +9,9 @@
 #![no_std]
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 use turbonop_core::{Error, ErrorKind, Result, U16Le, U32Le, pod, read_at, read_slice_at};
 
 pod! {

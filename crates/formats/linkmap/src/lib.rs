@@ -31,6 +31,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 #[allow(missing_docs, reason = "the fields say what the maps say")]
 pub mod unix;
 

@@ -24,6 +24,9 @@
 // The allocator's own: raw blocks, and the GlobalAlloc contract.
 #![allow(unsafe_code)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 use core::alloc::{GlobalAlloc, Layout};
 use core::cell::UnsafeCell;
 use core::ptr;

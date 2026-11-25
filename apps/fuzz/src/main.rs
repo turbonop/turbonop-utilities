@@ -21,7 +21,7 @@
     reason = "random bytes and indexes, truncated on purpose"
 )]
 
-use std::alloc::{GlobalAlloc, Layout, System};
+use std::alloc::{GlobalAlloc, Layout};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -32,9 +32,16 @@ use turbonop_fuzz::{Scratch, TARGETS, Target, target};
 
 // ------------------------------------------------------------ allocation
 
-/// The system allocator, counting live bytes; past the cap it aborts the
-/// process (a finding: an input that makes a parser ask for too much).
+/// The allocator every program has (mimalloc: see turbonop-global-alloc),
+/// counting live bytes; past the cap it aborts the process (a finding: an
+/// input that makes a parser ask for too much).
 struct Counting;
+
+#[cfg(not(target_family = "wasm"))]
+static INNER: mimalloc::MiMalloc = mimalloc::MiMalloc;
+// (WASI, where the fuzzer is only checked to build.)
+#[cfg(target_family = "wasm")]
+static INNER: std::alloc::System = std::alloc::System;
 
 static LIVE: AtomicUsize = AtomicUsize::new(0);
 static CAP: AtomicUsize = AtomicUsize::new(usize::MAX);
@@ -49,14 +56,24 @@ unsafe impl GlobalAlloc for Counting {
         if live > CAP.load(Ordering::Relaxed) {
             over_cap(live);
         }
-        // SAFETY: the caller's contract is the system allocator's.
-        unsafe { System.alloc(layout) }
+        // SAFETY: the caller's contract is the inner allocator's.
+        unsafe { INNER.alloc(layout) }
+    }
+
+    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+        let live = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
+        if live > CAP.load(Ordering::Relaxed) {
+            over_cap(live);
+        }
+        // SAFETY: as above (memory the allocator zeroes, often already
+        // zero from the system, rather than zeroed here again).
+        unsafe { INNER.alloc_zeroed(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
         // SAFETY: as above.
-        unsafe { System.dealloc(ptr, layout) }
+        unsafe { INNER.dealloc(ptr, layout) }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new: usize) -> *mut u8 {
@@ -69,7 +86,7 @@ unsafe impl GlobalAlloc for Counting {
             LIVE.fetch_sub(layout.size() - new, Ordering::Relaxed);
         }
         // SAFETY: as above.
-        unsafe { System.realloc(ptr, layout, new) }
+        unsafe { INNER.realloc(ptr, layout, new) }
     }
 }
 

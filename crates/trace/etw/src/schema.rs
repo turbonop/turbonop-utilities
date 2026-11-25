@@ -334,7 +334,12 @@ const THREAD_PRIORITY: &[(&str, Field)] = &[
 ];
 
 /// `CSwitch`, as documented. Versions after 2 append fields we don't
-/// name; they are left in `rest`.
+/// name; they are left in `rest`. (Version 5, 28 bytes, adds 4: on the
+/// corpus only the first byte is ever set, to 0 to 15, as if 4 flags; bit
+/// 3 is set on most switches to the idle thread and bit 1 on most from
+/// it. It isn't any of WPA's columns of the switch: not the threads'
+/// ranks, nor Direct Switch Attempt, compared switch by switch on l03.
+/// Nothing on the machine describes it, so it isn't named.)
 const CSWITCH_V2: &[(&str, Field)] = &[
     ("NewThreadId", U32),
     ("OldThreadId", U32),

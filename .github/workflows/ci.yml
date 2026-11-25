@@ -124,8 +124,9 @@ jobs:
       # Dump Analyzer's debug adapter session: with canned answers, and with
       # dump-analyzer serve on the repository's dumps.
       - run: cargo build --release -p dump-analyzer
-      - working-directory: editors/vscode/dump-analyzer
-        run: node --test test/
+      - shell: bash
+        working-directory: editors/vscode/dump-analyzer
+        run: node --test test/*.test.js
 
   # Procupine's VS Code extension: its model's and server client's tests
   # (with procupine, on each platform), and, on Windows, the view rendered

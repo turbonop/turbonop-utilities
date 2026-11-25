@@ -957,6 +957,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-fold"
+version = "0.0.7"
+dependencies = [
+ "serde",
+ "turbonop-archive",
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-hash",
+ "turbonop-par",
+ "turbonop-pe",
+]
+
+[[package]]
 name = "turbonop-frames"
 version = "0.0.7"
 dependencies = [
@@ -1329,6 +1343,19 @@ dependencies = [
  "turbonop-mmap",
  "turbonop-symbolize",
  "turbonop-trace",
+]
+
+[[package]]
+name = "turbonop-turbolib"
+version = "0.0.1"
+dependencies = [
+ "serde",
+ "serde_json",
+ "turbonop-archive",
+ "turbonop-fold",
+ "turbonop-global-alloc",
+ "turbonop-mmap",
+ "turbonop-par",
 ]
 
 [[package]]

@@ -6,7 +6,7 @@
 //! | 0 | `crates/base` |
 //! | 1 | `crates/formats`, `crates/system` |
 //! | 2 | `crates/symbols`, `crates/isa` |
-//! | 3 | `crates/debug`, `crates/analysis`, `crates/trace` |
+//! | 3 | `crates/debug`, `crates/analysis`, `crates/trace`, `crates/link` |
 //! | 4 | `crates/debugger` |
 //! | 5 | `apps` |
 //!
@@ -25,6 +25,7 @@ const LAYERS: &[(&str, u32)] = &[
     ("crates/debug", 3),
     ("crates/analysis", 3),
     ("crates/trace", 3),
+    ("crates/link", 3),
     ("crates/debugger", 4),
     ("apps", 5),
 ];

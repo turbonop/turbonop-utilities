@@ -242,6 +242,26 @@ x64. Where the 3.5 MB went:
 - **Base relocations, +88 KB**: more pointers in data (vtables, tables
   of strings).
 
+## turbolib
+
+- **The rest of phase 0 of [the plan](docs/turbolib.md).**
+  - Whether incremental linking uses `.chks64`: neither linker checks it
+    in a full link. And `.retplne`.
+  - Which sections of ASan and SanCov objects are per object.
+  - Whether `/DEFAULTLIB` directives that differ from the rest of a
+    library's count as side effects for `--pull=preserve`.
+- **Phase 1: the writers.**
+  - A COFF object model that round-trips byte-identically.
+  - The Microsoft archive writer, with `lib.exe`'s member order (the
+    reverse of its command line).
+  - CodeView symbol records' index fields: types have them, in
+    `turbonop_codeview::type_refs`.
+  - `turbolib` as `lib` with `--fold=none`.
+- **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
+  scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
+  their own units and records. Measure again, and profile with
+  Stackrabbit.
+
 ## Ideas
 
 - **A size check for pull requests.** A GitHub Action that comments on a

@@ -60,7 +60,7 @@ hash. On Windows, winget installs it too: `winget install
 TurboNOP.Hexcavator`.
 
 Or use it in a browser, nothing to install: the web version
-(https://turbonop.github.io/turbonop-utilities/hexcavator/) is the VS Code extension's
+(https://turbonop.com/turbonop-utilities/hexcavator/) is the VS Code extension's
 sidebar and views with hexcavator compiled to WebAssembly. Drop a binary
 and its debug information on the page; nothing leaves your computer (see
 `editors/web`).

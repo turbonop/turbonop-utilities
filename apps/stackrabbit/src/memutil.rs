@@ -183,6 +183,9 @@ pub fn summary(
                 GroupBy::Process => format!("{} ({})", pr.name, pr.pid),
                 GroupBy::Name => pr.name.clone(),
             }
+        } else if let Some(name) = system_working_set(pid) {
+            // (The system's own working sets, as WPA names them.)
+            name.to_string()
         } else {
             match group {
                 GroupBy::Process => format!("Unknown process ({pid})"),
@@ -275,4 +278,16 @@ pub fn summary(
         })).collect::<Vec<_>>(),
         "series": series,
     })
+}
+
+/// The name of the system working set a snapshot gives as process `pid`
+/// (IDs no process has: the system cache's, paged pool's and system
+/// PTEs'), as WPA names them; none for a process's.
+fn system_working_set(pid: u32) -> Option<&'static str> {
+    match pid {
+        0xffff_ffff => Some("SystemCacheWs"),
+        0xffff_fffe => Some("PagedPoolWs"),
+        0xffff_fffd => Some("SystemPteWs"),
+        _ => None,
+    }
 }

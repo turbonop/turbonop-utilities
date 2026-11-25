@@ -64,6 +64,9 @@ pub struct VmemTable {
 struct Read {
     free: bool,
     time: i64,
+    /// Where it is in the file: events of one time are taken in the order
+    /// they were logged (a region freed and committed again at once).
+    offset: u64,
     base: u64,
     size: u64,
     process_id: u32,
@@ -84,6 +87,7 @@ pub fn table(trace: &Trace, path: &Path) -> Result<VmemTable, String> {
         mine.push(Read {
             free: e.descriptor.opcode == FREE,
             time: e.timestamp,
+            offset: e.file_offset,
             base: int(p.get("BaseAddress")),
             size: int(p.get("RegionSize")),
             process_id: u32::try_from(int(p.get("ProcessId"))).unwrap_or(u32::MAX),
@@ -91,7 +95,7 @@ pub fn table(trace: &Trace, path: &Path) -> Result<VmemTable, String> {
             thread_id: e.thread_id,
         });
     })?;
-    all.sort_by_key(|r| (r.time, r.free));
+    all.sort_by_key(|r| (r.time, !r.free, r.offset));
     Ok(lifetimes(trace, &all))
 }
 
@@ -178,9 +182,14 @@ fn lifetimes(trace: &Trace, events: &[Read]) -> VmemTable {
             }
         }
     }
-    // Still committed at the end.
+    // Still committed at the end: until the process exits, if it does in
+    // the trace (as WPA has it), else for good.
     for (pid, pieces) in committed {
         let process = process_of.get(&pid).copied().unwrap_or(ProcessIx::NONE);
+        let exit = process
+            .is_some()
+            .then(|| trace.processes[process.index()].end)
+            .flatten();
         for (base, (end, commit, by)) in pieces {
             out.push(Lifetime {
                 process,
@@ -188,7 +197,7 @@ fn lifetimes(trace: &Trace, events: &[Read]) -> VmemTable {
                 base,
                 size: end - base,
                 commit,
-                decommit: None,
+                decommit: exit.filter(|&e| e >= commit),
                 decommitter: ThreadIx::NONE,
             });
         }

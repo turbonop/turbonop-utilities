@@ -18,8 +18,27 @@ use std::io::{self, Read, Write};
 
 use serde_json::Value;
 
-/// The largest header a frame may have.
+/// The largest header a frame may have (unless [`unbound_headers`]).
 pub const MAX_HEADER: u32 = 16 << 20;
+
+/// Whether headers of any size are written and read (see
+/// [`unbound_headers`]).
+static UNBOUNDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Lets headers of any size (up to 4 GB) be written and read, in this
+/// process: for `stackrabbit query`, whose frames never leave it (the
+/// limit is for the editor's connection).
+pub fn unbound_headers() {
+    UNBOUNDED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn header_limit() -> u32 {
+    if UNBOUNDED.load(std::sync::atomic::Ordering::Relaxed) {
+        u32::MAX
+    } else {
+        MAX_HEADER
+    }
+}
 /// The largest payload a frame may have.
 pub const MAX_PAYLOAD: u32 = 1 << 30;
 
@@ -59,7 +78,7 @@ pub fn read_frame(r: &mut impl Read) -> io::Result<Option<Frame>> {
     }
     let header_len = u32::from_le_bytes([prefix[0], prefix[1], prefix[2], prefix[3]]);
     let payload_len = u32::from_le_bytes([prefix[4], prefix[5], prefix[6], prefix[7]]);
-    if header_len > MAX_HEADER {
+    if header_len > header_limit() {
         return Err(invalid("a frame's header is too large"));
     }
     if payload_len > MAX_PAYLOAD {
@@ -80,7 +99,7 @@ pub fn write_frame(w: &mut (impl Write + ?Sized), frame: &Frame) -> io::Result<(
     let header = serde_json::to_vec(&frame.header).map_err(io::Error::other)?;
     let header_len = u32::try_from(header.len())
         .ok()
-        .filter(|&n| n <= MAX_HEADER)
+        .filter(|&n| n <= header_limit())
         .ok_or_else(|| invalid("a frame's header is too large"))?;
     let payload_len = u32::try_from(frame.payload.len())
         .ok()

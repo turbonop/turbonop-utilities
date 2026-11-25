@@ -31,6 +31,8 @@ Options:
 
 /// Runs `stackrabbit query`.
 pub fn run(args: &[String]) -> ExitCode {
+    // (The answer is printed, not sent: it may be as large as it is.)
+    crate::protocol::unbound_headers();
     match query(args) {
         Ok(text) => {
             let mut out = io::stdout().lock();

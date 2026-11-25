@@ -11,9 +11,6 @@
 #![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 #![warn(missing_docs)]
 
-#[cfg(test)]
-use turbonop_global_alloc as _;
-
 extern crate alloc;
 
 mod alias;

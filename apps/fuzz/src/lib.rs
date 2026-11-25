@@ -484,6 +484,18 @@ fn minidump(data: &[u8], _: &Scratch) {
     }
 }
 
+fn macho_core(data: &[u8], _: &Scratch) {
+    // (Any Mach-O file, made a core: its type changed.)
+    let mut d = data.to_vec();
+    if d.len() >= 16 && d.starts_with(&[0xCF, 0xFA, 0xED, 0xFE]) {
+        d[12..16].copy_from_slice(&4u32.to_le_bytes());
+    }
+    if let Ok(t) = turbonop_target::MachCoreTarget::new(&d) {
+        examine(&t);
+        let _ = t.addressable_bits();
+    }
+}
+
 fn core(data: &[u8], _: &Scratch) {
     if let Ok(t) = turbonop_target::CoreTarget::new(data) {
         examine(&t);
@@ -811,6 +823,12 @@ pub const TARGETS: &[Target] = &[
         about: "ELF core files as targets: notes, registers, mapped files, build IDs in memory",
         seeds: is_core,
         run: core,
+    },
+    Target {
+        name: "macho-core",
+        about: "Mach-O core files as targets: thread states, exception states, notes, images",
+        seeds: is_macho,
+        run: macho_core,
     },
     Target {
         name: "etl",

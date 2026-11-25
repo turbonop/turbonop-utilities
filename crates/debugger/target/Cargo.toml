@@ -18,6 +18,7 @@ turbonop-abi.workspace = true
 turbonop-core.workspace = true
 turbonop-elf.workspace = true
 turbonop-image.workspace = true
+turbonop-macho.workspace = true
 turbonop-minidump.workspace = true
 turbonop-mmap.workspace = true
 turbonop-par.workspace = true

@@ -5,6 +5,7 @@ mod support;
 mod context;
 mod core_file;
 mod linux_maps;
+mod macho_core;
 mod minidump;
 mod registers;
 mod space;

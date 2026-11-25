@@ -466,6 +466,10 @@ impl Walker<'_, '_, '_> {
         if self.arch != Arch::Arm64 || self.is_code(address) {
             return address;
         }
+        // (The target's own width, where it says.)
+        if let Some(bits) = self.target.code_address_bits() {
+            return self.abi.strip_code_address(address, bits);
+        }
         for bits in [48, 47, 39, 36] {
             let a = self.abi.strip_code_address(address, bits);
             if self.is_code(a) {

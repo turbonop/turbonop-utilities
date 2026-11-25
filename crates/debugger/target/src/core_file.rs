@@ -161,6 +161,14 @@ impl Target for CoreTarget<'_> {
     fn memory(&self) -> &dyn Memory {
         &self.memory
     }
+
+    fn code_address_bits(&self) -> Option<u8> {
+        // (NT_ARM_PAC_MASK's code mask: the bits above the address.)
+        let (_, code) = self.core.pac_masks()?;
+        u8::try_from(code.trailing_zeros())
+            .ok()
+            .filter(|b| (1..64).contains(b))
+    }
 }
 
 fn thread(t: &CoreThread<'_>, endian: turbonop_core::Endian, memory: &CoreMemory<'_>) -> Thread {

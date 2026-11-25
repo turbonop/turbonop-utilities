@@ -1197,6 +1197,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-elf",
  "turbonop-image",
+ "turbonop-macho",
  "turbonop-minidump",
  "turbonop-mmap",
  "turbonop-par",

@@ -235,6 +235,12 @@ pub trait Target: Sync {
     /// Its memory.
     fn memory(&self) -> &dyn Memory;
 
+    /// How many bits of a code address are the address, where the target
+    /// says (ARM64's pointer authentication codes are above them).
+    fn code_address_bits(&self) -> Option<u8> {
+        None
+    }
+
     /// The module `address` is in.
     fn module_at(&self, address: u64) -> Option<&Module> {
         self.modules().iter().find(|m| m.contains(address))

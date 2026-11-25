@@ -24,6 +24,7 @@ pub mod core_file;
 mod image;
 pub mod linux_maps;
 pub mod load;
+pub mod macho_core;
 pub mod minidump;
 pub mod model;
 pub mod os;
@@ -32,6 +33,7 @@ mod space;
 
 pub use core_file::CoreTarget;
 pub use image::LoadedImage;
+pub use macho_core::MachCoreTarget;
 pub use minidump::MinidumpTarget;
 pub use model::{
     Capabilities, DebugId, Exception, ImageId, Memory, Module, ModuleSource, Provenance, Snapshot,

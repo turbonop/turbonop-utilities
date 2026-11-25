@@ -14,7 +14,7 @@ use std::sync::{Mutex, OnceLock};
 use turbonop_frames::{Modules, Stack};
 use turbonop_mmap::Mmap;
 use turbonop_target::load::{Hints, Loaded, load};
-use turbonop_target::{AddressSpace, CoreTarget, MinidumpTarget, Target};
+use turbonop_target::{AddressSpace, CoreTarget, MachCoreTarget, MinidumpTarget, Target};
 
 /// A dump, opened.
 pub struct Session {
@@ -64,6 +64,10 @@ pub fn open(path: &Path, hints: &Hints) -> Result<&'static Session, String> {
     } else if data.starts_with(b"\x7fELF") {
         Box::leak(Box::new(
             CoreTarget::new(data).map_err(|e| format!("{}: {e}", path.display()))?,
+        ))
+    } else if data.starts_with(&[0xCF, 0xFA, 0xED, 0xFE]) {
+        Box::leak(Box::new(
+            MachCoreTarget::new(data).map_err(|e| format!("{}: {e}", path.display()))?,
         ))
     } else {
         return Err(format!("{}: not a minidump or a core file", path.display()));

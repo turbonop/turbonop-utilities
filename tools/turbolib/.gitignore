@@ -1,0 +1,12 @@
+# Everything the spikes build and link; their sources and scripts are tracked.
+*.obj
+*.exe
+*.pdb
+*.ilk
+*.lib
+*.pch
+*.exp
+*.txt
+!/big/main.cpp
+/prune/*.cpp
+/prune/*.h

@@ -32,13 +32,14 @@ leave this list when they ship.
 - **Packages where they fit.** GitHub Packages holds container images and
   npm, NuGet, and Maven packages, not programs: a container image of
   hexcavator; the web version as an npm package.
-- **A new extension's first release.** For 0.0.10, the extension's first as
-  `turbonop.hexcavator-vscode`, the Marketplace served one of eight
-  platforms' VSIXs: the first, whose validation created the extension; the
-  rest were reported published and never served (published after it was
-  served, too). An extension that exists takes every platform's (as
-  `hexcavator.hexcavator` did). The job waits up to two hours now; a
-  release that fails so could publish the missing platforms again.
+- **winget's token.** Microsoft's enterprise, which owns
+  `microsoft/winget-pkgs`, refuses classic tokens that live more than 8
+  days, and a fine-grained token can't open a pull request on another
+  owner's repository: each release needs a fresh classic token
+  (`public_repo`, 7 days) in `WINGET_TOKEN`, or its winget job fails
+  (rerun it with `hexcavator-winget.yml` by hand). Find a way that doesn't
+  need a person each release: a GitHub App's token, if the enterprise
+  takes one.
 - **musl's speed.** With mimalloc in musl's allocator's place, the test
   suite still runs about four times as long under musl as under glibc
   (35 s against 9 s, in WSL): musl's `memcpy`, `memchr`, and string

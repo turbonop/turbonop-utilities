@@ -44,6 +44,12 @@ leave this list when they ship.
 
 ## Procupine
 
+- **The extension's server test on macOS.** On CI's macOS runner,
+  `editors/vscode/procupine/test/server.test.js` waited 20 s for a sample
+  event that never came, though `apps/procupine/tests/serve.rs` (the same
+  watch, kill and end, from Rust) passes there. The test says which wait
+  timed out, the last events, and procupine's stderr; its live part is
+  skipped on macOS until that's found and fixed.
 - **A release.** `procupine-release.yml` on `procupine-v*` tags, as
   hexcavator's: signed binaries for each platform, the extension packaged
   per platform with `bin/procupine`, its licenses test and third-party

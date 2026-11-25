@@ -592,7 +592,7 @@ async function findings(context, uri) {
       (out) => ({ recommendations: lib.parsed(out) }),
       (e) => ({ recommendationsError: e.message })
     );
-    const out = await paneRun(panel.webview, `Examining ${name}…`, ["size", "-findings", "-json", "-top", "0", file]);
+    const out = await paneRun(panel.webview, `Examining ${name}…`, ["size", "-findings", "-com", "-json", "-top", "0", file]);
     panel.webview.postMessage(Object.assign({ kind: "findings", file, findings: lib.parsed(out) }, await recs));
   } catch (e) {
     if (e.cancelled) {

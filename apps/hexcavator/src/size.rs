@@ -34,9 +34,13 @@ options:
                     input section came from, libraries as their archives
   -top <n>          how many libraries and compilands to list (default 20; 0: all)
   -sizebench        print SizeBench's view instead, one fact per line, sorted
-  -findings         what wastes space (duplicate data, template bloat), with
-                    advice; with -json, as JSON; with -- <base image>, what
-                    changed from the base (by item, largest change first)
+  -findings         what wastes space (duplicate data, template bloat,
+                    wasteful virtuals), with advice; with -json, as JSON; with
+                    -- <base image>, what changed from the base (by item,
+                    largest change first)
+  -com              with -findings: COM classes' wasteful virtuals too (left
+                    out otherwise: their virtual functions are interfaces
+                    that other code calls)
 
 bloaty-style reports (every byte of the file and of memory, labeled once):
   -d <sources>      data sources to report by, comma-separated, a level each
@@ -145,6 +149,8 @@ struct Options {
     format: Format,
     list_sources: bool,
     findings: bool,
+    /// `-com`: COM classes' wasteful virtuals too.
+    com: bool,
     disassemble: Option<String>,
     /// `-definition`: where a function's code starts, in its source.
     definition: Option<String>,
@@ -226,6 +232,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut format = Format::Pretty;
     let mut list_sources = false;
     let mut findings = false;
+    let mut com = false;
     let mut disassemble = None;
     let mut definition = None;
     let mut mangled = false;
@@ -336,6 +343,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             Some("budget") => budget = Some(PathBuf::from(value(&mut i, "budget")?)),
             Some("sizebench") => sizebench = true,
             Some("findings") => findings = true,
+            Some("com") => com = true,
             // bloaty's: how to demangle `symbols` (none, short, full).
             Some("C" | "demangle") => demangle = Some(value(&mut i, "demangle")?),
             // bloaty's wide output: labels are never cut short here.
@@ -450,6 +458,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         format,
         list_sources,
         findings,
+        com,
         disassemble,
         definition,
         mangled,
@@ -1940,7 +1949,7 @@ fn analyze(options: &Options) -> Result<(), String> {
             let base_syms = base.symbols()?;
             let new = turbonop_size::findings::find(&image, debug, syms);
             let old = turbonop_size::findings::find(base_image, base_debug, base_syms);
-            let (text, json) = turbonop_size::findings::compare(&new, &old, limit);
+            let (text, json) = turbonop_size::findings::compare(&new, &old, limit, options.com);
             let out = if options.format == Format::Json {
                 json
             } else {
@@ -1953,7 +1962,10 @@ fn analyze(options: &Options) -> Result<(), String> {
             debug,
             syms,
             &name,
-            turbonop_size::findings::ReportOptions { limit },
+            turbonop_size::findings::ReportOptions {
+                limit,
+                com: options.com,
+            },
         );
         let out = if options.format == Format::Json {
             json

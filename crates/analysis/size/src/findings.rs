@@ -156,6 +156,22 @@ pub struct WastefulVirtual {
     /// Virtual functions no derived class overrides: they needn't be
     /// virtual.
     pub unoverridden: Vec<String>,
+    /// A COM interface, or derived from one (see [`is_com_name`]): its
+    /// virtual functions are an ABI others call through, which the
+    /// analysis can't see, so its "wasted" slots usually aren't. Reports
+    /// leave them out unless asked, as SizeBench does.
+    pub com: bool,
+}
+
+/// Whether `name` is a class that makes the classes derived from it COM
+/// types (SizeBench's heuristic): `IUnknown`, C++/WinRT's `IUnknown` (its
+/// ABI type), and C++/WinRT's `producer<>` and `root_implements<>`, which
+/// implement COM vtables by hand.
+pub fn is_com_name(name: &str) -> bool {
+    name == "IUnknown"
+        || name == "winrt::impl::abi<winrt::Windows::Foundation::IUnknown,void>::type"
+        || name.starts_with("winrt::impl::producer<")
+        || name.starts_with("winrt::impl::root_implements<")
 }
 
 impl WastefulVirtual {
@@ -248,6 +264,26 @@ pub fn wasteful_virtuals(
         }
         false
     };
+    // Whether class `i` is a COM type: it or a base (at any depth) has a
+    // COM name; each class is visited once.
+    let com = |i: usize| -> bool {
+        if is_com_name(&classes[i].name) {
+            return true;
+        }
+        let mut visited = turbonop_hash::Set::default();
+        let mut stack: Vec<turbonop_debuginfo::TypeRef> = classes[i].bases.clone();
+        while let Some(b) = stack.pop() {
+            let Some(&j) = index.get(&b) else { continue };
+            if !visited.insert(j) {
+                continue;
+            }
+            if is_com_name(&classes[j].name) {
+                return true;
+            }
+            stack.extend(classes[j].bases.iter().copied());
+        }
+        false
+    };
     let mut out = Vec::new();
     for (i, c) in classes.iter().enumerate() {
         if derived[i].is_empty() {
@@ -258,6 +294,7 @@ pub fn wasteful_virtuals(
             per_slot: (derived[i].len() as u64 + 1) * word,
             pure_with_one_override: Vec::new(),
             unoverridden: Vec::new(),
+            com: false,
         };
         for (signature, is_virtual, is_pure) in &methods[i] {
             if !is_virtual || signature.contains('~') {
@@ -282,6 +319,7 @@ pub fn wasteful_virtuals(
             }
         }
         if item.wasted() > 0 {
+            item.com = com(i);
             item.pure_with_one_override.sort();
             item.unoverridden.sort();
             out.push(item);
@@ -564,8 +602,8 @@ fn changes(base: Vec<(String, u64, usize)>, new: Vec<(String, u64, usize)>) -> V
 /// finding, its total in each, and the items that changed (wasted bytes of
 /// duplicated variables and of virtual function slots; template families'
 /// bytes), largest change first, at most `limit` (0: all) each. As text
-/// and as JSON.
-pub fn compare(new: &Findings, base: &Findings, limit: usize) -> (String, String) {
+/// and as JSON. COM classes' wasteful virtuals are left out unless `com`.
+pub fn compare(new: &Findings, base: &Findings, limit: usize, com: bool) -> (String, String) {
     use std::fmt::Write as _;
     let limit = if limit == 0 { usize::MAX } else { limit };
     let dups = |f: &Findings| -> Vec<(String, u64, usize)> {
@@ -583,6 +621,7 @@ pub fn compare(new: &Findings, base: &Findings, limit: usize) -> (String, String
     let virtuals = |f: &Findings| -> Vec<(String, u64, usize)> {
         f.virtuals
             .iter()
+            .filter(|v| com || !v.com)
             .map(|v| {
                 (
                     v.class.clone(),
@@ -810,6 +849,53 @@ mod tests {
     }
 
     #[test]
+    fn com_classes_are_marked() {
+        use turbonop_debuginfo::{Class, Method, MethodKind, TypeRef};
+        let class = |n: &str, ty: u32, bases: &[u32], methods: &[&str]| Class {
+            name: n.into(),
+            ty: TypeRef(u64::from(ty)),
+            bases: bases.iter().map(|b| TypeRef(u64::from(*b))).collect(),
+            methods: methods
+                .iter()
+                .map(|m| Method {
+                    name: (*m).into(),
+                    ty: TypeRef(0),
+                    kind: MethodKind::IntroVirtual,
+                })
+                .collect(),
+        };
+        // IWidget derives from IUnknown (and Widget from it); Shape isn't
+        // COM; a C++/WinRT producer<> is.
+        let classes = vec![
+            class("IUnknown", 1, &[], &["QueryInterface"]),
+            class("IWidget", 2, &[1], &["Paint"]),
+            class("Widget", 3, &[2], &[]),
+            class("Shape", 4, &[], &["Area"]),
+            class("Square", 5, &[4], &[]),
+            class("winrt::impl::producer<A,B>", 6, &[], &["Get"]),
+            class("A", 7, &[6], &[]),
+        ];
+        let pdb = std::fs::read(format!(
+            "{}/../../../testdata/sizebench/bin/PEParser.Tests.Dllx64.pdb",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        let debug = turbonop_debuginfo::DebugInfo::parse(&pdb).unwrap();
+        let mut namer = crate::names::Namer::new(&debug);
+        let found = wasteful_virtuals(&classes, &mut namer, 8);
+        let com: BTreeMap<&str, bool> = found.iter().map(|w| (w.class.as_str(), w.com)).collect();
+        assert_eq!(com.get("IUnknown"), Some(&true));
+        assert_eq!(com.get("IWidget"), Some(&true));
+        assert_eq!(com.get("Shape"), Some(&false));
+        assert_eq!(com.get("winrt::impl::producer<A,B>"), Some(&true));
+        assert!(is_com_name(
+            "winrt::impl::abi<winrt::Windows::Foundation::IUnknown,void>::type"
+        ));
+        assert!(is_com_name("winrt::impl::root_implements<D,I>"));
+        assert!(!is_com_name("IUnknownish"));
+    }
+
+    #[test]
     fn byte_similarity() {
         assert_eq!(similarity(b"abcd", b"abcd"), 1.0);
         assert_eq!(similarity(b"abcd", b"abxd"), 0.75);
@@ -824,6 +910,9 @@ mod tests {
 pub struct ReportOptions {
     /// Items per finding (0: all).
     pub limit: usize,
+    /// Wasteful virtuals of COM classes too (see [`WastefulVirtual::com`]);
+    /// the JSON marks each class's.
+    pub com: bool,
 }
 
 /// The findings as JSON: each kind's count, totals, and first items.
@@ -856,6 +945,9 @@ struct SizeTotal {
 #[derive(serde::Serialize)]
 struct WastedTotal {
     wasted: u64,
+    /// The COM classes' (counted in `wasted`, and listed, only with `-com`).
+    com_count: usize,
+    com_wasted: u64,
 }
 
 #[derive(serde::Serialize)]
@@ -893,6 +985,7 @@ struct VirtualJson<'a> {
     per_slot: u64,
     pure_with_one_override: &'a [String],
     never_overridden: &'a [String],
+    com: bool,
 }
 /// Every finding of an image, as text and as JSON (`{"duplicate_data":
 /// {...}, "template_families": {...}}`). `compiland_name` names a symbol's
@@ -928,7 +1021,15 @@ pub fn report(
         },
         virtuals,
     );
-    let wasted_slots: u64 = virtuals.iter().map(WastefulVirtual::wasted).sum();
+    // COM classes' slots are interfaces others call through: shown only
+    // when asked for.
+    let (com_count, com_wasted) = virtuals
+        .iter()
+        .filter(|v| v.com)
+        .fold((0, 0), |(n, w), v| (n + 1, w + v.wasted()));
+    let virtuals: Vec<&WastefulVirtual> =
+        virtuals.iter().filter(|v| options.com || !v.com).collect();
+    let wasted_slots: u64 = virtuals.iter().map(|v| v.wasted()).sum();
     let wasted = dups.iter().fold(Size::default(), |a, d| a + d.wasted());
     let mut text = String::new();
     let _ = writeln!(
@@ -1001,6 +1102,12 @@ pub fn report(
         virtuals.len(),
         wasted_slots
     );
+    if com_count > 0 && !options.com {
+        let _ = writeln!(
+            text,
+            "({com_count} COM classes, {com_wasted} bytes, are left out: their virtual functions are interfaces that other code calls. -com includes them.)"
+        );
+    }
     if !virtuals.is_empty() {
         let _ = writeln!(
             text,
@@ -1085,6 +1192,8 @@ pub fn report(
             count: virtuals.len(),
             totals: WastedTotal {
                 wasted: wasted_slots,
+                com_count,
+                com_wasted,
             },
             items: virtuals
                 .iter()
@@ -1095,6 +1204,7 @@ pub fn report(
                     per_slot: v.per_slot,
                     pure_with_one_override: &v.pure_with_one_override,
                     never_overridden: &v.unoverridden,
+                    com: v.com,
                 })
                 .collect(),
         },

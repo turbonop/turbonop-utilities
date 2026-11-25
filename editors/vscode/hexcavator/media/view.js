@@ -1290,7 +1290,17 @@
     if (recs) {
       recs.saving = recs.recommendations.reduce((n, r) => n + (r.saving || 0), 0);
     }
-    const wasted = f.duplicate_data.wasted_file + f.wasteful_virtuals.wasted + ((recs && recs.saving) || 0);
+    // Wasteful virtuals: COM classes' (their virtual functions are
+    // interfaces others call) only when asked for; the findings come with
+    // them (-com), each marked.
+    const v = f.wasteful_virtuals;
+    const com = !!state.includeCom;
+    const virtuals = {
+      items: v.items.filter((i) => com || !i.com),
+      count: com ? v.count : v.count - (v.com_count || 0),
+      wasted: com ? v.wasted : v.wasted - (v.com_wasted || 0),
+    };
+    const wasted = f.duplicate_data.wasted_file + virtuals.wasted + ((recs && recs.saving) || 0);
     $("header").replaceChildren(
       el("div", { class: "title" }, el("span", { class: "name" }, file.split(/[\\/]/).pop()), el("span", { class: "path", title: file }, file)),
       el("div", { class: "chips" }, el("span", { class: "chip" + (wasted ? " grows" : "") }, el("b", {}, "Recoverable "), formatSize(wasted)))
@@ -1306,13 +1316,13 @@
     // Each kind of finding: a card, closed at first, with a sortable table.
     const size = (n) => ({ text: formatSize(n), sort: n });
     // (The first `numeric` columns are numbers: all but the last, unless said.)
-    const section = (title, summary, wasted, head, rows, numeric = head.length - 1) => {
+    const section = (title, summary, wasted, head, rows, numeric = head.length - 1, open = false) => {
       const columns = head.map((h, i) => ({ label: h, numeric: i < numeric }));
       const table = rows.length ? sortableTable(columns, rows, { sort: { col: 0, desc: true } }) : el("p", { class: "none" }, "None found.");
       details.append(
         el(
           "details",
-          { class: "card" + (rows.length ? "" : " empty") },
+          { class: "card" + (rows.length ? "" : " empty"), open },
           el("summary", {}, el("h2", {}, title), el("span", { class: "chip" }, wasted)),
           el("p", {}, summary),
           table
@@ -1354,18 +1364,36 @@
       ["Wasted", "Size", "Copies", "Variable"],
       d.items.map((i) => [size(Math.max(i.wasted_file, i.wasted_vm)), size(Math.max(i.file_size, i.vm_size)), i.copies, i.name])
     );
-    const v = f.wasteful_virtuals;
+    const comToggle = v.com_count
+      ? el(
+          "label",
+          { class: "toggle" },
+          el("input", {
+            type: "checkbox",
+            checked: com,
+            onchange: (e) => {
+              state.includeCom = e.target.checked;
+              state.virtualsOpen = true;
+              renderFindings();
+            },
+          }),
+          ` Include ${v.com_count} COM classes (${formatSize(v.com_wasted)}): their virtual functions are interfaces that other code calls`
+        )
+      : null;
     section(
       "Wasteful virtuals",
-      `${v.count} classes with virtual functions that needn't be virtual: each costs a vtable slot in every class that derives from it.`,
-      `${formatSize(v.wasted)} of vtable slots`,
+      [`${virtuals.count} classes with virtual functions that needn't be virtual: each costs a vtable slot in every class that derives from it. `, comToggle],
+      `${formatSize(virtuals.wasted)} of vtable slots`,
       ["Wasted", "Per slot", "Class and functions"],
-      v.items.map((i) => [
+      virtuals.items.map((i) => [
         size(i.wasted),
         size(i.per_slot),
-        `${i.class}: ${[...i.pure_with_one_override.map((n) => n + " (pure, one override)"), ...i.never_overridden.map((n) => n + " (never overridden)")].join("; ")}`,
-      ])
+        `${i.class}${i.com ? " (COM)" : ""}: ${[...i.pure_with_one_override.map((n) => n + " (pure, one override)"), ...i.never_overridden.map((n) => n + " (never overridden)")].join("; ")}`,
+      ]),
+      2,
+      !!state.virtualsOpen
     );
+    state.virtualsOpen = false;
     // Exception handling (hexcavator recommend's): what it costs each function,
     // and the cleanups nothing a function calls can throw through.
     const eh = all && all.exceptions;

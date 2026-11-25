@@ -604,7 +604,10 @@ impl Server {
             debug,
             syms,
             &name,
-            turbonop_size::findings::ReportOptions { limit },
+            turbonop_size::findings::ReportOptions {
+                limit,
+                com: args.get("com").and_then(Value::as_bool).unwrap_or(false),
+            },
         );
         let structured = serde_json::from_str::<Value>(&json).map_err(|e| e.to_string())?;
         Ok((text, structured))
@@ -1031,7 +1034,7 @@ fn tools() -> Value {
             ),
             tool(
                 "findings",
-                "What wastes space in an image, with advice: variables duplicated across compilands (file-scope statics and non-extern consts in headers), and template families (instantiations of one template) by total size.",
+                "What wastes space in an image, with advice: variables duplicated across compilands (file-scope statics and non-extern consts in headers), template families (instantiations of one template) by total size, and wasteful virtuals (virtual functions no derived class overrides; COM classes' left out unless `com`).",
                 schema(
                     vec![
                         ("path", path.clone()),
@@ -1039,6 +1042,13 @@ fn tools() -> Value {
                         (
                             "limit",
                             prop("integer", "Items per finding (default 20; 0 for all)."),
+                        ),
+                        (
+                            "com",
+                            prop(
+                                "boolean",
+                                "Include COM classes' wasteful virtuals (their virtual functions are interfaces other code calls).",
+                            ),
                         ),
                     ],
                     &["path"],

@@ -182,6 +182,84 @@ candidate, in order.
    symbol servers must allow CORS (msdl does not; this needs a proxy or the
    user's own cache).
 
+### Measured (2026-11-25)
+
+Measured with `crates/analysis/program/examples/fetch_bench.rs`, from this
+PC to `msdl.microsoft.com`. The raw results are in the private repository.
+The link carries about 20 MB/s: Cloudflare's speed test gave 16.5 MB/s on
+one stream and 20.6 MB/s on eight.
+
+- **Each file takes two requests to two hosts.** msdl answers with a 302
+  to one of many Azure Blob shards (`vsblobprod…`), and the shard serves the
+  bytes.
+  - msdl speaks HTTP/2, but the shards speak only HTTP/1.1.
+  - A shard's URL is signed for about a day and accepts range requests
+    (206).
+  - Nothing is compressed: there's no gzip and no `.pd_`.
+- **One file at a time**, as the PDB path works today:
+  - 0.63 s per file at the median, or 1.7 MB/s.
+  - The first byte takes 0.30 s: DNS 0.05 s, TCP 0.06 s, and TLS 0.08 s,
+    to each host, plus the redirect.
+  - A cold 300-module dump takes about 4 minutes.
+- **In parallel**, with one `curl --parallel`, 200 PDBs (265 MB):
+
+  | At once | Wall time | Notes |
+  |---|---|---|
+  | 16 | 16.8 s | |
+  | 64 | 12.5 s | 21 MB/s, which is the link's limit |
+  | 128 | 15.6 s | |
+  | 256 | 21.3 s | |
+
+  - Above 64, new connections pile up: the median first byte is 0.76 s at
+    64 and 2.7 s at 256.
+  - Windows' `curl` (Schannel) has no HTTP/2, so every transfer opens its
+    own connections: 215 of them for 200 files.
+- **What the PDBs hold:** 390 of System32's public PDBs (477 MB).
+
+  | Streams | Share |
+  |---|---|
+  | Symbol records | 38% |
+  | Types | 15% |
+  | Module symbols and lines | 14% |
+  | DBI | 12% |
+  | Publics hash | 3% |
+  | Other | 13% |
+
+  A stack needs a few records from each module: kilobytes, not megabytes.
+
+So bulk downloads in parallel already fill the link. What decides the time
+to a dump's first stack is how many bytes are fetched and how many round
+trips each one takes, not how many fetches run at once.
+
+### The plan, from the measurements
+
+1. **One batch, at once.** Request every module's PDB and image as soon as
+   the module list is read. Today the PDB path fetches one file at a time.
+   A dump's CodeView records name its PDBs, so no image has to arrive
+   first.
+2. **Stacks first.** Fetch first for the modules that hold a thread's
+   frames, starting with the faulting thread's. The rest follow in the
+   background.
+3. **Read PDBs by range, lazily.**
+   - First the MSF superblock and directory, which are a few pages.
+   - Then only the pages of the streams a question needs: the publics'
+     address map and the records it points to, the frame data, and a
+     module's stream for its lines.
+   - That's about four round trips per PDB whatever its size, with all
+     PDBs at once. The whole file follows in the background, for the
+     cache.
+   - Keep the redirect's signed URL (it lasts a day), so later range
+     requests skip msdl.
+4. **Our own HTTP client:** hyper, through reqwest, with rustls.
+   - Pooled keep-alive connections to each shard.
+   - HTTP/2 to msdl, so every redirect shares one connection.
+   - DNS and TLS to msdl started before the module list is read.
+   - About 64 connections at most.
+5. **Remember misses.** Cache each 404 with its time, so the next open
+   doesn't ask again.
+6. **Measure each step** on the corpus dumps, cold: the time to the first
+   stack, and to every module.
+
 ## Phases
 
 The phases run in this order. Phases 5 and 6 depend on nothing in 0

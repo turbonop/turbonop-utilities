@@ -67,12 +67,18 @@ when they're ready. What's left:
 - **Release.** `dump-analyzer-release.yml` on `dump-analyzer-v*` tags (its
   builds, signing, and VSIX packaging, as hexcavator's), and the
   Marketplace's listing for `turbonop.dump-analyzer`.
+- **Symbol fetching, hyper-fast.** Measured (`docs/dump-analyzer.md`,
+  "Measured"): today's PDB path fetches one file at a time (0.63 s each:
+  4 minutes for a cold 300-module dump), while 64 at once fill this link
+  (21 MB/s). The plan there, in order: one batch at once, named by the
+  dump's CodeView records; stacks' modules first; PDBs read by range,
+  lazily (about four round trips each, whatever the size); our own HTTP
+  client (hyper and rustls: pooled connections, HTTP/2 to msdl); misses
+  remembered; each step measured cold on the corpus.
 - **Checked against the corpus.** Stacks and locals on every Windows and
-  Linux dump in `hexcavator-private`, against DbgEng, minidump-stackwalk,
-  and gdb. Fetching measured there: cold, the first open of the test
-  dumps took 43 s (x64) and 168 s (x86) once, warm 0.4 s and 2 s; find
-  where the cold time goes (first reads of big system PDBs?) and make it
-  fast.
+  Linux dump in `turbonop-utilities-private`, against DbgEng,
+  minidump-stackwalk, and gdb. Cold, the first open of the test dumps
+  took 43 s (x64) and 168 s (x86) once, warm 0.4 s and 2 s.
 - **Frames.** Windows ARM64 dumps (no fixture yet: cl can build one, but
   only an ARM64 machine runs it); macOS's `_sigtramp`; x86 frames by
   FrameData programs that read `$T0` from a register the walk doesn't

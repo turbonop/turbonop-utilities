@@ -155,6 +155,8 @@ impl<'data> Object<'data> {
     }
 
     /// The symbol whose primary record is at `index` in the symbol table.
+    /// (This computes every symbol's index; for many lookups, search
+    /// [`symbol_table_indices`](Self::symbol_table_indices) instead.)
     pub fn symbol_at_table_index(&self, index: u32) -> Option<SymbolId> {
         let indices = self.symbol_table_indices();
         indices

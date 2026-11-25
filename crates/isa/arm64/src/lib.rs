@@ -13,10 +13,12 @@
 
 extern crate alloc;
 
+mod access;
 mod alias;
 mod format;
 mod tables;
 
+pub use access::{Effects, Element, Reg, RegSet};
 pub use format::{Symbols, format, format_into, format_with};
 
 use tables::{BUCKETS, Encoding, NONE, encoding, ms};

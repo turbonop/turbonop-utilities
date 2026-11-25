@@ -861,6 +861,7 @@ fn main() {
 
     let mut code = String::new();
     let mut warnings = Vec::new();
+    let (enc_records, _record_ops) = access_tables(&encs, &mut code);
 
     // Symbols, numbered globally.
     let mut sym_out = String::new();
@@ -1019,7 +1020,7 @@ fn main() {
     let mut fns = String::new();
     let mut enc_out = String::new();
     let mut n_fns = 0;
-    for e in &encs {
+    for (ei, e) in encs.iter().enumerate() {
         // Constraints.
         let mut ne = Vec::new();
         for c in &e.not_equal {
@@ -1146,7 +1147,7 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         let post_index = e.name.contains("_asisdlsop_") || e.name.contains("_asisdlsep_");
         let _ = writeln!(
             enc_out,
-            "    Encoding {{ name: {:?}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne: &[{}], undef: {undef_fn}, unpred: {unpred_fn}, alias_of: {alias_of}, prefer: {prefer}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule} }},",
+            "    Encoding {{ name: {:?}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne: &[{}], undef: {undef_fn}, unpred: {unpred_fn}, alias_of: {alias_of}, prefer: {prefer}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule}, record: {} }},",
             e.name,
             index_of(&mut classes, &e.class),
             index_of(&mut features, &e.feature),
@@ -1154,7 +1155,8 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
             e.value,
             e.should_mask,
             e.should_value,
-            ne.join(",")
+            ne.join(","),
+            enc_records[ei].0
         );
     }
 
@@ -1703,4 +1705,225 @@ fn index_of(list: &mut Vec<String>, s: &str) -> usize {
         list.push(s.to_string());
         list.len() - 1
     })
+}
+
+// ---------------------------------------------------------------------------
+// Access data: `tables/a64-access.txt` (generated from LLVM by
+// `tools/arm64/access.py`), compiled to src/tables.rs's `RegClass`,
+// `LlvmOperand`, and `Record`.
+
+/// src/access.rs's register numbers (`RegSet` bits) of an implicit
+/// register the access table names.
+fn implicit_bit(name: &str) -> u32 {
+    let numbered = |prefix: &str| {
+        name.strip_prefix(prefix)
+            .and_then(|n| n.parse::<u32>().ok())
+    };
+    if let Some(n) = numbered("X").filter(|&n| n <= 30) {
+        return n;
+    }
+    if let Some(n) = numbered("W").filter(|&n| n <= 30) {
+        return n;
+    }
+    if let Some(n) = numbered("Z").filter(|&n| n < 32) {
+        return 32 + n;
+    }
+    if let Some(n) = numbered("P").filter(|&n| n < 16) {
+        return 64 + n;
+    }
+    match name {
+        "LR" => 30,
+        "FP" => 29,
+        "SP" | "WSP" => 31,
+        "FFR" => 80,
+        "ZA" => 81,
+        "ZT0" => 82,
+        "NZCV" => 83,
+        "FPCR" => 84,
+        "FPSR" => 85,
+        "FPMR" => 86,
+        "VG" => 87,
+        "SVCR" => 88,
+        "PSTATE" => 89,
+        "SYSREGS" => 90,
+        _ => panic!("tables/a64-access.txt: an implicit register build.rs doesn't know: {name}"),
+    }
+}
+
+/// The access flags (src/tables.rs's `flag` constants), in their order.
+const ACCESS_FLAGS: [&str; 14] = [
+    "load",
+    "store",
+    "call",
+    "branch",
+    "indirect",
+    "return",
+    "barrier",
+    "side",
+    "fpexc",
+    "trap",
+    "exception",
+    "msr",
+    "mrs",
+    "msrimm",
+];
+
+/// Register files, as src/tables.rs's `file` constants.
+const FILES: [&str; 16] = [
+    "X", "XSP", "W", "WSP", "B", "H", "S", "D", "Q", "V64", "V128", "Z", "P", "PN", "ZA", "ZT0",
+];
+
+/// Each record's operands by name: their access (1 read, 2 write) and
+/// register class.
+type RecordOperands = HashMap<String, HashMap<String, (u8, usize)>>;
+
+/// Compiles the access table into `code`. Returns each encoding's record
+/// (by index, in tables/a64.txt's order) and the records' operands by
+/// name (for the symbols' access), by record name.
+fn access_tables(encs: &[Enc], code: &mut String) -> (Vec<(usize, String)>, RecordOperands) {
+    let path = Path::new("tables/a64-access.txt");
+    println!("cargo:rerun-if-changed={}", path.display());
+    let src = std::fs::read_to_string(path).unwrap();
+    let mut classes: Vec<String> = Vec::new();
+    let mut class_index: HashMap<String, usize> = HashMap::new();
+    let mut records: Vec<String> = Vec::new();
+    let mut record_index: HashMap<String, usize> = HashMap::new();
+    let mut record_ops: RecordOperands = HashMap::new();
+    let mut enc_records = Vec::new();
+    // The record being read: name, flags, operands, defs, uses.
+    type Current = Option<(String, u32, Vec<String>, u128, u128)>;
+    let mut cur: Current = None;
+    let flush = |cur: &mut Current,
+                 records: &mut Vec<String>,
+                 record_index: &mut HashMap<String, usize>| {
+        if let Some((name, flags, ops, defs, uses)) = cur.take() {
+            record_index.insert(name.clone(), records.len());
+            records.push(format!(
+                "    Record {{ name: {name:?}, flags: {flags:#x}, ops: &[{}], defs: {defs:#x}, uses: {uses:#x} }},",
+                ops.join(", ")
+            ));
+        }
+    };
+    for line in src.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("class ") {
+            let p: Vec<&str> = rest.split_whitespace().collect();
+            let file = FILES
+                .iter()
+                .position(|f| *f == p[1])
+                .unwrap_or_else(|| panic!("a register file build.rs doesn't know: {}", p[1]));
+            let element = match p[2] {
+                "b" => 1,
+                "h" => 2,
+                "s" => 3,
+                "d" => 4,
+                "q" => 5,
+                _ => 0,
+            };
+            let firsts: Vec<String> = p[5]
+                .split(',')
+                .map(|f| {
+                    if f == "-" {
+                        "255".into()
+                    } else {
+                        f.to_string()
+                    }
+                })
+                .collect();
+            class_index.insert(p[0].to_string(), classes.len());
+            classes.push(format!(
+                "    RegClass {{ name: {:?}, file: {file}, element: {element}, count: {}, stride: {}, firsts: &[{}] }},",
+                p[0],
+                p[3],
+                p[4],
+                firsts.join(",")
+            ));
+        } else if let Some(rest) = line.strip_prefix("inst ") {
+            flush(&mut cur, &mut records, &mut record_index);
+            let p: Vec<&str> = rest.split_whitespace().collect();
+            let mut flags = 0u32;
+            for f in p[1].split(',').filter(|f| *f != "-") {
+                let i = ACCESS_FLAGS
+                    .iter()
+                    .position(|a| *a == f)
+                    .unwrap_or_else(|| panic!("an access flag build.rs doesn't know: {f}"));
+                flags |= 1 << i;
+            }
+            record_ops.entry(p[0].to_string()).or_default();
+            cur = Some((p[0].to_string(), flags, Vec::new(), 0, 0));
+        } else if let Some(rest) = line.strip_prefix("  op ") {
+            let (name, _, ops, _, _) = cur.as_mut().expect("an op line before any inst line");
+            let p: Vec<&str> = rest.split_whitespace().collect();
+            let access = match p[1] {
+                "r" => 1u8,
+                "w" => 2,
+                "rw" => 3,
+                a => panic!("an access build.rs doesn't know: {a}"),
+            };
+            let class = class_index[p[2]];
+            let bits: Vec<Piece> = if p[3] == "-" {
+                Vec::new()
+            } else {
+                p[3].split(',')
+                    .map(|b| match b.split_once(':') {
+                        Some((h, l)) => Piece::Bits(h.parse().unwrap(), l.parse().unwrap()),
+                        None => {
+                            let b: u32 = b.parse().unwrap();
+                            Piece::Bits(b, b)
+                        }
+                    })
+                    .collect()
+            };
+            let by_name = record_ops.get_mut(name.as_str()).unwrap();
+            for n in p[0].split('/') {
+                by_name.insert(n.to_string(), (access, class));
+            }
+            ops.push(format!(
+                "LlvmOperand {{ access: {access}, class: {class}, bits: {} }}",
+                pieces_code(&bits)
+            ));
+        } else if let Some(rest) = line.strip_prefix("  def ") {
+            let (_, _, _, defs, _) = cur.as_mut().expect("a def line before any inst line");
+            for r in rest.split_whitespace() {
+                *defs |= 1u128 << implicit_bit(r);
+            }
+        } else if let Some(rest) = line.strip_prefix("  use ") {
+            let (_, _, _, _, uses) = cur.as_mut().expect("a use line before any inst line");
+            for r in rest.split_whitespace() {
+                *uses |= 1u128 << implicit_bit(r);
+            }
+        } else if let Some(rest) = line.strip_prefix("enc ") {
+            flush(&mut cur, &mut records, &mut record_index);
+            let (e, r) = rest.split_once(' ').unwrap();
+            enc_records.push((e.to_string(), r.to_string()));
+        } else {
+            panic!("tables/a64-access.txt: a line build.rs doesn't know: {line}");
+        }
+    }
+    flush(&mut cur, &mut records, &mut record_index);
+    // One record for each encoding, in the same order.
+    let stale = "tables/a64-access.txt is not for this tables/a64.txt: run tools/arm64/access.py";
+    assert_eq!(enc_records.len(), encs.len(), "{stale}");
+    let mut out = Vec::new();
+    for (e, (name, record)) in encs.iter().zip(&enc_records) {
+        assert_eq!(&e.name, name, "{stale}");
+        out.push((record_index[record], record.clone()));
+    }
+    assert!(records.len() < usize::from(u16::MAX) && classes.len() < 255);
+    let _ = writeln!(
+        code,
+        "pub(crate) static REG_CLASSES: [RegClass; {}] = [\n{}\n];",
+        classes.len(),
+        classes.join("\n")
+    );
+    chunked(
+        code,
+        "RECORDS",
+        "Record",
+        &(records.join("\n") + "\n"),
+        records.len(),
+    );
+    (out, record_ops)
 }

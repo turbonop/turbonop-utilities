@@ -16,6 +16,9 @@ attributes say where they came from: `src=mrs` (the grammar) or
 `src=llvm:<operand class>`.
 
 Usage: python extract.py <mrs.tar.gz or Instructions.json> <llvm aarch64.json> > a64.txt
+
+Then run access.py (what each encoding reads and writes, a64-access.txt):
+it follows a64.txt's encodings, and build.rs checks that it does.
 """
 
 import contextlib

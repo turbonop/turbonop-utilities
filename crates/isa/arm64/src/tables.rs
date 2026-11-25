@@ -67,6 +67,83 @@ pub(crate) struct Encoding {
     pub post_index: bool,
     /// Which of Microsoft's formatting rules applies (a [`rule`] constant).
     pub rule: u8,
+    /// What it reads and writes: its LLVM record (an index into `RECORDS`).
+    pub record: u16,
+}
+
+/// How a register class's field decodes (LLVM's decoder for the class;
+/// see tools/arm64/access.py): the first register for each field value
+/// (255 where the value is invalid), and how many registers there are,
+/// this far apart.
+pub(crate) struct RegClass {
+    #[allow(dead_code, reason = "for tools and debugging")]
+    pub name: &'static str,
+    /// A [`file`] constant.
+    pub file: u8,
+    /// The element size: 0 none, then 1 to 5 for B, H, S, D, Q.
+    #[allow(dead_code, reason = "for tools and debugging")]
+    pub element: u8,
+    pub count: u8,
+    pub stride: u8,
+    pub firsts: &'static [u8],
+}
+
+/// Register files (build.rs's `FILES`, in the same order).
+pub(crate) mod file {
+    /// General-purpose, 64-bit (31 is the zero register).
+    pub const X: u8 = 0;
+    /// General-purpose, 64-bit (31 is the stack pointer).
+    pub const XSP: u8 = 1;
+    pub const W: u8 = 2;
+    pub const WSP: u8 = 3;
+    /// Scalar SIMD&FP registers: B, H, S, D, Q (4 to 8); then vectors of
+    /// 64 and 128 bits (9, 10).
+    pub const B: u8 = 4;
+    pub const Z: u8 = 11;
+    pub const P: u8 = 12;
+    pub const PN: u8 = 13;
+    /// The ZA array, or a tile of it (numbered); then ZT0 (15).
+    pub const ZA: u8 = 14;
+}
+
+/// An operand of an LLVM record: whether it is read (1) and written (2),
+/// its register class (an index into `REG_CLASSES`), and its bits.
+pub(crate) struct LlvmOperand {
+    pub access: u8,
+    pub class: u8,
+    pub bits: &'static [Piece],
+}
+
+/// What an LLVM record reads and writes: its register operands, its
+/// implicit registers (`RegSet` bits), and [`flag`]s.
+pub(crate) struct Record {
+    #[allow(dead_code, reason = "for tools and debugging")]
+    pub name: &'static str,
+    pub flags: u32,
+    pub ops: &'static [LlvmOperand],
+    pub defs: u128,
+    pub uses: u128,
+}
+
+/// Record flags (build.rs's `ACCESS_FLAGS`, in the same order).
+pub(crate) mod flag {
+    pub const LOAD: u32 = 1 << 0;
+    pub const STORE: u32 = 1 << 1;
+    pub const CALL: u32 = 1 << 2;
+    pub const BRANCH: u32 = 1 << 3;
+    pub const INDIRECT: u32 = 1 << 4;
+    pub const RETURN: u32 = 1 << 5;
+    pub const BARRIER: u32 = 1 << 6;
+    pub const SIDE: u32 = 1 << 7;
+    pub const FPEXC: u32 = 1 << 8;
+    pub const TRAP: u32 = 1 << 9;
+    pub const EXCEPTION: u32 = 1 << 10;
+    /// MSR (register): the system register is in the word.
+    pub const MSR: u32 = 1 << 11;
+    /// MRS: the system register is in the word.
+    pub const MRS: u32 = 1 << 12;
+    /// MSR (immediate): the PSTATE field is in the word.
+    pub const MSRIMM: u32 = 1 << 13;
 }
 
 /// Microsoft's formatting rules for particular encodings (build.rs's
@@ -278,6 +355,12 @@ pub(crate) fn encoding(i: usize) -> &'static Encoding {
     &ENCODINGS[i / ENCODINGS_CHUNK][i % ENCODINGS_CHUNK]
 }
 
+/// The LLVM record at `i`.
+#[inline]
+pub(crate) fn record(i: usize) -> &'static Record {
+    &RECORDS[i / RECORDS_CHUNK][i % RECORDS_CHUNK]
+}
+
 /// The symbol at `i`.
 #[inline]
 pub(crate) fn symbol(i: usize) -> &'static Symbol {
@@ -293,6 +376,12 @@ pub(crate) fn encodings() -> impl Iterator<Item = &'static Encoding> {
 #[allow(dead_code, reason = "for tests and tools")]
 pub(crate) const fn encoding_count() -> usize {
     ENCODINGS_LEN
+}
+
+/// How many LLVM records there are.
+#[allow(dead_code, reason = "for tests and tools")]
+pub(crate) const fn record_count() -> usize {
+    RECORDS_LEN
 }
 
 /// How many symbols there are.

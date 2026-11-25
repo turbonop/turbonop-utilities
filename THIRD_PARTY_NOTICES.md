@@ -30,7 +30,11 @@ which `hexcavator licenses` prints; a test keeps it current.
   target (its TableGen records, dumped with `llvm-tblgen --dump-json`) and
   decoding rules from its disassembler, printer, and assembler checks
   (`AArch64Disassembler.cpp`, `AArch64InstPrinter.cpp`,
-  `AArch64AsmParser.cpp`, `AArch64BaseInfo.h`). The compact unwind
+  `AArch64AsmParser.cpp`, `AArch64BaseInfo.h`). What each ARM64
+  encoding reads and writes (`crates/isa/arm64/tables/a64-access.txt`) is
+  generated from the same records, MCInstrDesc's flags
+  (`AArch64GenInstrInfo.inc`), and the register classes' decoders
+  (`AArch64Disassembler.cpp`) by `tools/arm64/access.py`. The compact unwind
   encodings' meaning (`crates/debug/unwind/src/apple_compact.rs`) follows libunwind's
   `CompactUnwinder.hpp` and `compact_unwind_encoding.h`. The DWARF constants
   names (`crates/symbols/dwarf/src/spelling.rs`) are generated from LLVM's
@@ -48,6 +52,9 @@ which `hexcavator licenses` prints; a test keeps it current.
 - Test data: `crates/symbols/demangle/tests/data/itanium-cases.inc` is libc++abi's
   `DemangleTestCases.inc`, unmodified. `crates/symbols/demangle/tests/data/rust-v0.txt`
   pairs Rust symbol names with `llvm-cxxfilt`'s demanglings of them.
+  `crates/isa/arm64/tests/data/access.txt` is `llvm-mc`'s disassembly of
+  sample words, with each one's registers read and written
+  (`tools/arm64/access_golden.py`).
 - LLVM tools (`llvm-readobj`, `llvm-objdump`, `llvm-dwarfdump`, `llvm-nm`,
   `llvm-cxxfilt`, `dsymutil`, `llvm-lipo`, `clang`, `lld`) build test inputs
   and produce the expected outputs in `testdata`; none of their code is

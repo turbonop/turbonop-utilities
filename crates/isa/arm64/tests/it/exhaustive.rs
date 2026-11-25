@@ -2,6 +2,7 @@
 //! explained, in parallel. No oracle: invariants that hold for any word.
 //!
 //! - decoding never panics, and gives the same answer twice;
+//! - every decoded instruction has access data (reading it never panics);
 //! - a decoded instruction keeps its word and address, names its encoding
 //!   and class, and formats to text that starts with a mnemonic;
 //! - explaining a word never panics.
@@ -62,6 +63,13 @@ fn check(word: u32, decoded: &AtomicU64, failures: &std::sync::Mutex<Vec<String>
         if again.map(|i| turbonop_arm64::format(&i)) != Some(text) {
             fail("formats differently twice".into());
         }
+        let _ = (
+            inst.written_registers(),
+            inst.read_registers(),
+            inst.effects(),
+            inst.reads_memory(),
+            inst.writes_memory(),
+        );
     }
     if word.is_multiple_of(EXPLAIN_EVERY) {
         let _ = turbonop_arm64::explain(word);

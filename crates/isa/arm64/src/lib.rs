@@ -16,10 +16,15 @@ extern crate alloc;
 mod access;
 mod alias;
 mod format;
+mod operand;
 mod tables;
 
 pub use access::{Effects, Element, Reg, RegSet};
 pub use format::{Symbols, format, format_into, format_with};
+pub use operand::{
+    Access, AddrMode, Arrangement, Cond, MAX_OPERANDS, Mem, Operand, OperandKind, Operands,
+    Predication, RegList, RegOperand, ShiftKind, SysReg, ZaSlice,
+};
 
 use tables::{BUCKETS, Encoding, NONE, encoding, ms};
 

@@ -36,6 +36,30 @@ impl Element {
     pub fn bits(self) -> u32 {
         8 << self as u32
     }
+
+    /// The element by src/tables.rs's code (1 to 5 for B to Q).
+    pub(crate) fn from_code(c: u8) -> Option<Element> {
+        Some(match c {
+            1 => Element::B,
+            2 => Element::H,
+            3 => Element::S,
+            4 => Element::D,
+            5 => Element::Q,
+            _ => return None,
+        })
+    }
+
+    /// The element by its letter.
+    pub(crate) fn from_letter(c: u8) -> Option<Element> {
+        Some(match c.to_ascii_uppercase() {
+            b'B' => Element::B,
+            b'H' => Element::H,
+            b'S' => Element::S,
+            b'D' => Element::D,
+            b'Q' => Element::Q,
+            _ => return None,
+        })
+    }
 }
 
 /// A register, as an operand names it: its file, number, and width.

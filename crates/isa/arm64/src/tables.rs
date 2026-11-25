@@ -69,6 +69,60 @@ pub(crate) struct Encoding {
     pub rule: u8,
     /// What it reads and writes: its LLVM record (an index into `RECORDS`).
     pub record: u16,
+    /// Its operands, as src/operand.rs evaluates them.
+    pub operands: &'static [OpSpec],
+}
+
+/// An operand of an encoding (build.rs's `operand_specs`): its kind (an
+/// [`opk`] constant), its access (1 read, 2 write; for memory, 1 load, 2
+/// store), and its parts: each a [`role`], a symbol (or `NONE`), and
+/// literal text.
+pub(crate) struct OpSpec {
+    pub kind: u8,
+    pub access: u8,
+    pub parts: &'static [(u8, u16, &'static str)],
+}
+
+/// Operand kinds (build.rs's `opk`).
+#[allow(dead_code, reason = "the full set build.rs uses")]
+pub(crate) mod opk {
+    pub const REG: u8 = 0;
+    pub const LIST: u8 = 1;
+    pub const IMM: u8 = 2;
+    pub const FPIMM: u8 = 3;
+    pub const LABEL: u8 = 4;
+    pub const COND: u8 = 5;
+    pub const SHIFT: u8 = 6;
+    pub const MUL: u8 = 7;
+    pub const MEM: u8 = 8;
+    pub const ZA: u8 = 9;
+    pub const SYSREG: u8 = 10;
+    pub const NAME: u8 = 11;
+}
+
+/// The roles of an operand's parts (build.rs's `role`).
+#[allow(dead_code, reason = "the full set build.rs uses")]
+pub(crate) mod role {
+    pub const REG: u8 = 0;
+    pub const PREFIX: u8 = 1;
+    pub const ARR: u8 = 2;
+    pub const LANE: u8 = 3;
+    pub const PRED: u8 = 4;
+    pub const WB: u8 = 5;
+    pub const RANGE: u8 = 6;
+    pub const VALUE: u8 = 7;
+    pub const SHIFT: u8 = 8;
+    pub const INDEX: u8 = 9;
+    pub const OFFSET: u8 = 10;
+    pub const MULVL: u8 = 11;
+    pub const POST: u8 = 12;
+    pub const TILE: u8 = 13;
+    pub const HV: u8 = 14;
+    pub const ZAINDEX: u8 = 15;
+    pub const ZAOFF: u8 = 16;
+    pub const ZALAST: u8 = 17;
+    pub const VGX: u8 = 18;
+    pub const AMOUNT: u8 = 19;
 }
 
 /// How a register class's field decodes (LLVM's decoder for the class;
@@ -273,6 +327,9 @@ pub(crate) struct Symbol {
     pub flags: u32,
     /// How it shows, where it has no table and is not special.
     pub kind: Kind,
+    /// Its LLVM operand's register class (an index into `REG_CLASSES`),
+    /// or 255.
+    pub class: u8,
 }
 
 /// How a symbol without a table shows (worked out from its display name by

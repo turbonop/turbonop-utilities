@@ -34,6 +34,9 @@ struct Enc {
 
 #[derive(Default, Clone)]
 struct Sym {
+    /// Its LLVM operand (`src=llvm:<record>.<operand>:<type>`): the
+    /// operand's name and type.
+    llvm: Option<(String, String)>,
     link: String,
     display: String,
     encoded_in: String,
@@ -154,6 +157,15 @@ fn parse(src: &str) -> (Vec<Enc>, Vec<File>) {
             && let Some(s) = files.last_mut().and_then(|f| f.syms.last_mut())
         {
             // (`src=` says where the attributes came from.)
+            if let Some(src) = rest
+                .split_whitespace()
+                .find_map(|a| a.strip_prefix("src=llvm:"))
+                && let Some((rec_op, t)) = src.rsplit_once(':')
+                && let Some((_, op)) = rec_op.split_once('.')
+                && s.llvm.is_none()
+            {
+                s.llvm = Some((op.to_string(), t.to_string()));
+            }
             s.attrs.extend(
                 rest.split_whitespace()
                     .filter(|a| !a.starts_with("src="))
@@ -819,7 +831,47 @@ fn attr_value(sym: &Sym, fields: &[(String, u32, u32)]) -> Option<Value> {
             }
         }
     }
+    // Aligned lists or registers from a base: `regadd=16` (Z16-Z30).
+    v.add += num("regadd").unwrap_or(0);
+    class_value(sym, &mut v);
     Some(v)
+}
+
+/// What a symbol's LLVM register class says of its value that the
+/// attributes of tables/a64.txt may not (extract.py's `attrs` before it
+/// knew the decoders `DecodeMulMinMaxRegisterClass`, `DecodeZK`, and
+/// `DecodeZPR2Mul2RegisterClass<16, 31>`): SME_MOP4's Z0-Z14 and
+/// Z16-Z30 (even, encoded halved), and ZK's Z20-Z23 and Z28-Z31.
+fn class_value(sym: &Sym, v: &mut Value) {
+    let Some((_, t)) = &sym.llvm else {
+        return;
+    };
+    let has = |k: &str| sym.attrs.iter().any(|a| a.split('=').next() == Some(k));
+    let single = t.starts_with("ZPR") && (t.ends_with("Mul2_Lo") || t.ends_with("Mul2_Hi"));
+    if single && !has("regmul") && v.mul == 1 {
+        v.mul = 2;
+    }
+    let hi = t.ends_with("Mul2_Hi") || t.ends_with("_mul_r_Hi");
+    if hi && !has("regadd") {
+        v.add += 16;
+    }
+    // ZK: K:Zk (3 bits) names Z20-Z23 and Z28-Z31, `'1':K:'1':Zk`.
+    if (t == "ZK" || t == "ZK_b") && !has("source") && width(&v.pieces) == 3 {
+        let mut bits = Vec::new();
+        for p in &v.pieces {
+            match *p {
+                Piece::Bits(h, l) => bits.extend((l..=h).rev().map(|b| Piece::Bits(b, b))),
+                Piece::Lit(x, n) => bits.extend((0..n).rev().map(|i| Piece::Lit((x >> i) & 1, 1))),
+            }
+        }
+        v.pieces = vec![
+            Piece::Lit(1, 1),
+            bits[0].clone(),
+            Piece::Lit(1, 1),
+            bits[1].clone(),
+            bits[2].clone(),
+        ];
+    }
 }
 
 /// Entries per chunk of a large table (see [`chunked`]).
@@ -861,7 +913,8 @@ fn main() {
 
     let mut code = String::new();
     let mut warnings = Vec::new();
-    let (enc_records, _record_ops) = access_tables(&encs, &mut code);
+    let access = access_tables(&encs, &mut code);
+    let mut sym_infos: Vec<SymInfo> = Vec::new();
 
     // Symbols, numbered globally.
     let mut sym_out = String::new();
@@ -978,8 +1031,16 @@ fn main() {
                     Some(format!("Some(({}, {value}))", pieces_code(&p)))
                 })
                 .unwrap_or_else(|| "None".to_string());
+            // Its LLVM operand's register class (src/tables.rs's
+            // `REG_CLASSES`), if it has one; the operand's name is for the
+            // operand compiler (and keeps symbols of different operands
+            // apart).
+            let class = s
+                .llvm
+                .as_ref()
+                .and_then(|(_, t)| access.classes.get(t).copied());
             let line = format!(
-                "    Symbol {{ display: {:?}, encoded: {}, table: {table}, value: {value}, when: {when}, attrs: {:?}, flags: {:#x}, kind: {kind} }},",
+                "    Symbol {{ display: {:?}, encoded: {}, table: {table}, value: {value}, when: {when}, attrs: {:?}, flags: {:#x}, kind: {kind}, class: {} }}, // {}",
                 s.display,
                 pieces_code(&encoded),
                 s.attrs.join(" "),
@@ -988,7 +1049,9 @@ fn main() {
                         1 << ATTR_FLAGS.len()
                     } else {
                         0
-                    }
+                    },
+                class.map_or(255, |c| c.0),
+                s.llvm.as_ref().map_or("", |l| l.0.as_str())
             );
             // One symbol for each that is the same (most are: the same
             // operand in many encodings).
@@ -997,6 +1060,17 @@ fn main() {
                 sym_out.push('\n');
                 displays.push(s.display.clone());
                 may_fail.push(fails);
+                sym_infos.push(SymInfo {
+                    display: s.display.clone(),
+                    kind: kind.clone(),
+                    results: s
+                        .table
+                        .as_ref()
+                        .map(|(_, rows)| rows.iter().map(|(_, r)| r.clone()).collect()),
+
+                    llvm: s.llvm.as_ref().map(|l| l.0.clone()),
+                    file: class.map(|c| c.1),
+                });
                 n_syms += 1;
                 n_syms - 1
             });
@@ -1129,6 +1203,40 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         // prints them literally.
         let asm = mark_list_braces(&asm);
         let (mnem, ops, cond) = template_code(&asm, &displays);
+        // The operands (with the condition Microsoft folds into the
+        // mnemonic, last).
+        let record = &access.enc_records[ei].1;
+        let record_ops = &access.record_ops[record];
+        let flags = access.record_flags[record];
+        let file_access = |f: u8| {
+            record_ops
+                .values()
+                .filter(|(_, c)| {
+                    access
+                        .classes
+                        .values()
+                        .any(|&(i, file)| i == *c && file == f)
+                })
+                .fold(0, |a, (x, _)| a | x)
+        };
+        let mut op_text = asm.split_once(' ').map_or("", |(_, o)| o).to_string();
+        let cond_sym = cond.parse::<usize>().ok();
+        if cond_sym.is_some()
+            && let Some(i) = op_text.rfind(", %")
+        {
+            op_text.truncate(i);
+        }
+        let operands = operand_specs(
+            &e.name,
+            &op_text,
+            cond_sym,
+            &sym_infos,
+            record_ops,
+            file_access(14),
+            file_access(15),
+            u8::from(flags & 1 != 0) | u8::from(flags & 2 != 0) << 1,
+            record == "CHKFEAT",
+        );
         // Whether a word can fail to render: whether any of the template's
         // symbols can.
         let checked = asm
@@ -1147,7 +1255,7 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         let post_index = e.name.contains("_asisdlsop_") || e.name.contains("_asisdlsep_");
         let _ = writeln!(
             enc_out,
-            "    Encoding {{ name: {:?}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne: &[{}], undef: {undef_fn}, unpred: {unpred_fn}, alias_of: {alias_of}, prefer: {prefer}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule}, record: {} }},",
+            "    Encoding {{ name: {:?}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne: &[{}], undef: {undef_fn}, unpred: {unpred_fn}, alias_of: {alias_of}, prefer: {prefer}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule}, record: {}, operands: {operands} }},",
             e.name,
             index_of(&mut classes, &e.class),
             index_of(&mut features, &e.feature),
@@ -1156,7 +1264,7 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
             e.should_mask,
             e.should_value,
             ne.join(","),
-            enc_records[ei].0
+            access.enc_records[ei].0
         );
     }
 
@@ -1780,7 +1888,18 @@ type RecordOperands = HashMap<String, HashMap<String, (u8, usize)>>;
 /// Compiles the access table into `code`. Returns each encoding's record
 /// (by index, in tables/a64.txt's order) and the records' operands by
 /// name (for the symbols' access), by record name.
-fn access_tables(encs: &[Enc], code: &mut String) -> (Vec<(usize, String)>, RecordOperands) {
+/// What the access table says, for the operand compiler.
+struct AccessData {
+    /// Each encoding's record: index and name.
+    enc_records: Vec<(usize, String)>,
+    record_ops: RecordOperands,
+    /// Each record's flags (`ACCESS_FLAGS` bits), by name.
+    record_flags: HashMap<String, u32>,
+    /// Each register class's index and file, by name.
+    classes: HashMap<String, (usize, u8)>,
+}
+
+fn access_tables(encs: &[Enc], code: &mut String) -> AccessData {
     let path = Path::new("tables/a64-access.txt");
     println!("cargo:rerun-if-changed={}", path.display());
     let src = std::fs::read_to_string(path).unwrap();
@@ -1789,6 +1908,8 @@ fn access_tables(encs: &[Enc], code: &mut String) -> (Vec<(usize, String)>, Reco
     let mut records: Vec<String> = Vec::new();
     let mut record_index: HashMap<String, usize> = HashMap::new();
     let mut record_ops: RecordOperands = HashMap::new();
+    let mut record_flags: HashMap<String, u32> = HashMap::new();
+    let mut class_files: HashMap<String, (usize, u8)> = HashMap::new();
     let mut enc_records = Vec::new();
     // The record being read: name, flags, operands, defs, uses.
     type Current = Option<(String, u32, Vec<String>, u128, u128)>;
@@ -1833,6 +1954,7 @@ fn access_tables(encs: &[Enc], code: &mut String) -> (Vec<(usize, String)>, Reco
                 })
                 .collect();
             class_index.insert(p[0].to_string(), classes.len());
+            class_files.insert(p[0].to_string(), (classes.len(), file as u8));
             classes.push(format!(
                 "    RegClass {{ name: {:?}, file: {file}, element: {element}, count: {}, stride: {}, firsts: &[{}] }},",
                 p[0],
@@ -1852,6 +1974,7 @@ fn access_tables(encs: &[Enc], code: &mut String) -> (Vec<(usize, String)>, Reco
                 flags |= 1 << i;
             }
             record_ops.entry(p[0].to_string()).or_default();
+            record_flags.insert(p[0].to_string(), flags);
             cur = Some((p[0].to_string(), flags, Vec::new(), 0, 0));
         } else if let Some(rest) = line.strip_prefix("  op ") {
             let (name, _, ops, _, _) = cur.as_mut().expect("an op line before any inst line");
@@ -1925,5 +2048,732 @@ fn access_tables(encs: &[Enc], code: &mut String) -> (Vec<(usize, String)>, Reco
         &(records.join("\n") + "\n"),
         records.len(),
     );
-    (out, record_ops)
+    AccessData {
+        enc_records: out,
+        record_ops,
+        record_flags,
+        classes: class_files,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Operands: each encoding's template, split into its operands (at the
+// top-level commas) and each classified by its shape, compiled to
+// src/tables.rs's `OpSpec`s (what src/operand.rs evaluates).
+
+/// What the operand compiler knows of a symbol.
+#[derive(Clone)]
+struct SymInfo {
+    display: String,
+    /// build.rs's `symbol_kind` code (`Kind::Gpr(true)`, ...).
+    kind: String,
+    /// Its table's results, if it has a table.
+    results: Option<Vec<String>>,
+    /// Its LLVM operand's name, and register file (src/tables.rs's
+    /// `file`), if any.
+    llvm: Option<String>,
+    file: Option<u8>,
+}
+
+/// Operand kinds (src/tables.rs's `opk`), parts' roles (`role`).
+mod opk {
+    pub const REG: u8 = 0;
+    pub const LIST: u8 = 1;
+    pub const IMM: u8 = 2;
+    pub const FPIMM: u8 = 3;
+
+    pub const COND: u8 = 5;
+    pub const SHIFT: u8 = 6;
+    pub const MUL: u8 = 7;
+    pub const MEM: u8 = 8;
+    pub const ZA: u8 = 9;
+    pub const SYSREG: u8 = 10;
+    pub const NAME: u8 = 11;
+}
+
+mod role {
+    /// A register (its number); in a list, each register in order.
+    pub const REG: u8 = 0;
+    /// A register's prefix: `<V>` or `<R>`, or a literal `V`, `D`, ...
+    pub const PREFIX: u8 = 1;
+    /// An arrangement or element size: `<T>`, or a literal `16B`, `D`.
+    pub const ARR: u8 = 2;
+    /// A lane index.
+    pub const LANE: u8 = 3;
+    /// Predication: `M` or `Z`, or `<ZM>`.
+    pub const PRED: u8 = 4;
+    /// Writeback (`!`): pre-indexed, or a register updated in place.
+    pub const WB: u8 = 5;
+    /// The last register of a range (`{ z0.d-z3.d }`).
+    pub const RANGE: u8 = 6;
+    /// A value: an immediate, label, condition, name, or a shift amount.
+    pub const VALUE: u8 = 7;
+    /// A shift's or extend's name (`LSL`, `<shift>`, `<extend>`).
+    pub const SHIFT: u8 = 8;
+    /// A memory operand's index register.
+    pub const INDEX: u8 = 9;
+    /// A memory operand's offset.
+    pub const OFFSET: u8 = 10;
+    /// `MUL VL`.
+    pub const MULVL: u8 = 11;
+    /// Post-indexing: by an immediate (`VALUE` follows) or a register.
+    pub const POST: u8 = 12;
+    /// ZA: a tile (number), `H` or `V`, the slice index register, offset,
+    /// last offset, vector group (`VGx2`).
+    pub const TILE: u8 = 13;
+    pub const HV: u8 = 14;
+    pub const ZAINDEX: u8 = 15;
+    pub const ZAOFF: u8 = 16;
+    pub const ZALAST: u8 = 17;
+    pub const VGX: u8 = 18;
+    /// The amount of a shift or extend.
+    pub const AMOUNT: u8 = 19;
+}
+
+/// A template token: a symbol or a literal character (spaces dropped).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Tk {
+    S(usize),
+    C(char),
+}
+
+/// A part of a compiled operand: (role, symbol or NONE, literal).
+type Part = (u8, Option<usize>, String);
+
+fn tokens_of(text: &str) -> Vec<Tk> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(c) = rest.chars().next() {
+        if c == '%'
+            && let Some(end) = rest[1..].find('%')
+            && let Ok(n) = rest[1..=end].parse::<usize>()
+        {
+            out.push(Tk::S(n));
+            rest = &rest[end + 2..];
+            continue;
+        }
+        if c != ' ' {
+            out.push(Tk::C(c));
+        }
+        rest = &rest[c.len_utf8()..];
+    }
+    out
+}
+
+/// The template's operands, split at top-level commas: optional groups
+/// (`{, <shift> #<amount>}`) are flattened (their commas split too); list
+/// braces (marked `\u{1}` and `\u{2}`) and brackets nest.
+fn split_operands(ops: &str) -> Vec<Vec<Tk>> {
+    let flat: String = ops.chars().filter(|&c| c != '{' && c != '}').collect();
+    let mut items = Vec::new();
+    let mut cur = String::new();
+    let mut depth = 0i32;
+    for c in flat.chars() {
+        match c {
+            '[' | '\u{1}' => depth += 1,
+            ']' | '\u{2}' => depth -= 1,
+            _ => {}
+        }
+        if c == ',' && depth == 0 {
+            items.push(std::mem::take(&mut cur));
+        } else {
+            cur.push(c);
+        }
+    }
+    if !cur.trim().is_empty() {
+        items.push(cur);
+    }
+    items
+        .iter()
+        .map(|i| tokens_of(i))
+        .filter(|t| !t.is_empty())
+        .collect()
+}
+
+/// A cursor over an operand's tokens.
+struct Cur<'a> {
+    t: &'a [Tk],
+    i: usize,
+}
+
+impl Cur<'_> {
+    fn done(&self) -> bool {
+        self.i >= self.t.len()
+    }
+    fn peek(&self) -> Option<Tk> {
+        self.t.get(self.i).copied()
+    }
+    fn char(&mut self, c: char) -> bool {
+        if self.peek() == Some(Tk::C(c)) {
+            self.i += 1;
+            true
+        } else {
+            false
+        }
+    }
+    fn word(&mut self, w: &str) -> bool {
+        let n = w.chars().count();
+        let ok = self.t.len() >= self.i + n
+            && w.chars()
+                .zip(&self.t[self.i..])
+                .all(|(c, t)| *t == Tk::C(c));
+        if ok {
+            self.i += n;
+        }
+        ok
+    }
+    fn sym(&mut self) -> Option<usize> {
+        if let Some(Tk::S(n)) = self.peek() {
+            self.i += 1;
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Literal characters up to (not including) any of `stop` or a symbol.
+    fn text(&mut self, stop: &[char]) -> String {
+        let mut s = String::new();
+        while let Some(Tk::C(c)) = self.peek() {
+            if stop.contains(&c) {
+                break;
+            }
+            s.push(c);
+            self.i += 1;
+        }
+        s
+    }
+}
+
+/// Whether symbol `n` is a register (by its kind or its LLVM class).
+fn is_register(syms: &[SymInfo], n: usize) -> bool {
+    let s = &syms[n];
+    s.file.is_some()
+        || s.kind.starts_with("Kind::Gpr")
+        || s.kind.starts_with("Kind::GprSp")
+        || s.kind.starts_with("Kind::Pair")
+        || s.kind == "Kind::Pn"
+        || s.kind == "Kind::Num"
+        || (s.kind.starts_with("Kind::Reg(")
+            && !matches!(s.kind.as_str(), "Kind::Reg(\"\")" | "Kind::Reg(\"C\")"))
+}
+
+/// Whether symbol `n` is a shift or extend name (a table of them).
+fn is_shift_name(syms: &[SymInfo], n: usize) -> bool {
+    const NAMES: [&str; 14] = [
+        "LSL", "LSR", "ASR", "ROR", "MSL", "UXTB", "UXTH", "UXTW", "UXTX", "SXTB", "SXTH", "SXTW",
+        "SXTX", "LSL|UXTW",
+    ];
+    let s = &syms[n];
+    matches!(s.display.as_str(), "<shift>" | "<extend>" | "<mod>")
+        && s.results.as_ref().is_some_and(|r| {
+            r.iter().any(|x| {
+                NAMES.contains(&x.as_str())
+                    || NAMES.iter().any(|n| x.starts_with(&format!("{n} ")))
+                    || x.contains('|')
+            })
+        })
+}
+
+/// A register and what follows it: `.<T>`, `[<index>]`, `/M`, `!`.
+fn register_parts(c: &mut Cur, syms: &[SymInfo], parts: &mut Vec<Part>, reg_role: u8) -> bool {
+    let start = c.i;
+    // A prefix: `<V><d>`, `<R><n>`, or a literal letter (`V<m>`, `D<d>`).
+    let mut prefix: Option<Part> = None;
+    if let Some(Tk::S(p)) = c.peek()
+        && matches!(c.t.get(c.i + 1), Some(Tk::S(r)) if is_register(syms, *r))
+        && matches!(syms[p].display.as_str(), "<V>" | "<R>" | "<Va>" | "<Vb>")
+    {
+        c.i += 1;
+        prefix = Some((role::PREFIX, Some(p), String::new()));
+    } else if let Some(Tk::C(l)) = c.peek()
+        && "VDHSBQZWXP".contains(l)
+        && matches!(c.t.get(c.i + 1), Some(Tk::S(r)) if is_register(syms, *r))
+    {
+        c.i += 1;
+        prefix = Some((role::PREFIX, None, l.to_string()));
+    }
+    let Some(r) = c.sym().filter(|&r| is_register(syms, r)) else {
+        c.i = start;
+        return false;
+    };
+    parts.extend(prefix);
+    parts.push((reg_role, Some(r), String::new()));
+    if c.char('.') {
+        match c.sym() {
+            Some(a) => parts.push((role::ARR, Some(a), String::new())),
+            None => {
+                let t = c.text(&['[', ']', '/', '!', '-', ',', '\u{2}']);
+                parts.push((role::ARR, None, t));
+            }
+        }
+    }
+    lane_parts(c, parts);
+    if c.char('/') {
+        match c.sym() {
+            Some(p) => parts.push((role::PRED, Some(p), String::new())),
+            None => {
+                let t = c.text(&[]);
+                parts.push((role::PRED, None, t));
+            }
+        }
+    }
+    if c.char('!') {
+        parts.push((role::WB, None, String::new()));
+    }
+    true
+}
+
+/// `[<index>]` or `[1]`.
+fn lane_parts(c: &mut Cur, parts: &mut Vec<Part>) {
+    let start = c.i;
+    if !c.char('[') {
+        return;
+    }
+    let part = match c.sym() {
+        Some(i) => (role::LANE, Some(i), String::new()),
+        None => (role::LANE, None, c.text(&[']'])),
+    };
+    if c.char(']') {
+        parts.push(part);
+    } else {
+        c.i = start;
+    }
+}
+
+/// A value after an optional `#`: a symbol, or literal digits (`#16`,
+/// `#0.0`, `#-8`).
+fn value_part(c: &mut Cur, role: u8) -> Option<Part> {
+    let start = c.i;
+    c.char('#');
+    if let Some(s) = c.sym() {
+        return Some((role, Some(s), String::new()));
+    }
+    let t = c.text(&[',', ']', '!']);
+    if !t.is_empty()
+        && t.chars()
+            .all(|ch| ch.is_ascii_digit() || ch == '.' || ch == '-')
+    {
+        return Some((role, None, t));
+    }
+    c.i = start;
+    None
+}
+
+/// The classified operand: (kind, parts).
+type Spec = (u8, Vec<Part>);
+
+fn classify(t: &[Tk], syms: &[SymInfo]) -> Option<Spec> {
+    let mut c = Cur { t, i: 0 };
+    let mut parts = Vec::new();
+    // Memory: `[base{, offset|index{, extend amount}}{, MUL VL}]{!}`.
+    if c.char('[') {
+        if !register_parts(&mut c, syms, &mut parts, role::REG) {
+            return None;
+        }
+        while c.char(',') {
+            if c.word("MULVL") {
+                parts.push((role::MULVL, None, String::new()));
+            } else if c.peek() == Some(Tk::C('#')) {
+                parts.push(value_part(&mut c, role::OFFSET)?);
+            } else if register_parts(&mut c, syms, &mut parts, role::INDEX)
+                || shift_parts(&mut c, syms, &mut parts).is_some()
+            {
+            } else {
+                parts.push(value_part(&mut c, role::OFFSET)?);
+            }
+        }
+        if !c.char(']') {
+            return None;
+        }
+        if c.char('!') {
+            parts.push((role::WB, None, String::new()));
+        }
+        return c.done().then_some((opk::MEM, parts));
+    }
+    // Register lists: `{ <Zt1>.<T>-<Zt4>.<T> }{[<index>]}`.
+    if c.char('\u{1}') {
+        // (ZERO { <mask> }, { ZT0 }, LD1B { ZA0<HV>.B[<Ws>, <offs>] }: not
+        // lists of registers.)
+        if let Some(Tk::S(m)) = c.peek()
+            && syms[m].display == "<mask>"
+        {
+            c.i += 1;
+            return c
+                .char('\u{2}')
+                .then(|| (opk::NAME, vec![(role::VALUE, Some(m), String::new())]));
+        }
+        if c.word("ZT0") && c.char('\u{2}') {
+            return Some((opk::REG, vec![(role::REG, None, "ZT0".into())]));
+        }
+        let inner_start = c.i;
+        if za_parts(&mut c, syms, &mut parts) && c.char('\u{2}') {
+            return c.done().then_some((opk::ZA, parts));
+        }
+        c.i = inner_start;
+        parts.clear();
+        loop {
+            if !register_parts(&mut c, syms, &mut parts, role::REG) {
+                return None;
+            }
+            if c.char('-') && !register_parts(&mut c, syms, &mut parts, role::RANGE) {
+                return None;
+            }
+            if c.char('\u{2}') {
+                break;
+            }
+            if !c.char(',') {
+                return None;
+            }
+        }
+        lane_parts(&mut c, &mut parts);
+        return c.done().then_some((opk::LIST, parts));
+    }
+    // SME: ZA, its tiles and slices; ZT0.
+    let start = c.i;
+    if za_parts(&mut c, syms, &mut parts) && c.done() {
+        return Some((opk::ZA, parts));
+    }
+    c.i = start;
+    parts.clear();
+    if c.word("ZT0") {
+        parts.push((role::REG, None, "ZT0".into()));
+        if c.char('[') {
+            let off = value_part(&mut c, role::LANE)?;
+            parts.push(off);
+            if c.char(',') && !c.word("MULVL") {
+                return None;
+            }
+            if !c.char(']') {
+                return None;
+            }
+        }
+        return c.done().then_some((opk::REG, parts));
+    }
+    // A system register by number: S<op0>_<op1>_<Cn>_<Cm>_<op2>.
+    if c.char('S')
+        && let Some(op0) = c.sym()
+        && c.peek() == Some(Tk::C('_'))
+    {
+        parts.push((role::VALUE, Some(op0), String::new()));
+        while c.char('_') {
+            c.char('C');
+            parts.push((role::VALUE, Some(c.sym()?), String::new()));
+        }
+        return c.done().then_some((opk::SYSREG, parts));
+    }
+    c.i = start;
+    parts.clear();
+    // Registers.
+    if register_parts(&mut c, syms, &mut parts, role::REG) {
+        // (`<Pm>.<T>[<Wv>, <imm>]`: PSEL's predicate, indexed by a
+        // register and an immediate.)
+        if c.char('[') {
+            parts.push((role::ZAINDEX, Some(c.sym()?), String::new()));
+            if !c.char(',') {
+                return None;
+            }
+            parts.push(value_part(&mut c, role::ZAOFF)?);
+            if !c.char(']') {
+                return None;
+            }
+        }
+        return c.done().then_some((opk::REG, parts));
+    }
+    // A fixed register (`CHKFEAT X16`).
+    if c.word("X16") && c.done() {
+        return Some((opk::REG, vec![(role::REG, None, "X16".into())]));
+    }
+    // MUL #<imm>.
+    if c.word("MUL#") {
+        parts.push((role::VALUE, Some(c.sym()?), String::new()));
+        return c.done().then_some((opk::MUL, parts));
+    }
+    // Shifts and extends.
+    let s = c.i;
+    if shift_parts(&mut c, syms, &mut parts).is_some() && c.done() {
+        return Some((opk::SHIFT, parts));
+    }
+    c.i = s;
+    parts.clear();
+    // Immediates, labels, conditions, names.
+    if let Some(p) = value_part(&mut c, role::VALUE) {
+        if !c.done() {
+            // (`<option>nXS`: a barrier option, then the literal.)
+            let rest = c.text(&[]);
+            if rest == "nXS" && c.done() {
+                return Some((opk::NAME, vec![p]));
+            }
+            return None;
+        }
+        // (Which of an immediate, a label, a condition, or a name: src/
+        // operand.rs works it out from the symbol and its value.)
+        let kind = if p.1.is_none() && p.2.contains('.') {
+            opk::FPIMM
+        } else {
+            opk::IMM
+        };
+        return Some((kind, vec![p]));
+    }
+    // Literal names: CSYNC, DSYNC, RCTX, PH, STSHSTRM, ...
+    let text = c.text(&[]);
+    if c.done() && !text.is_empty() && text.chars().all(|ch| ch.is_ascii_alphanumeric()) {
+        return Some((opk::NAME, vec![(role::VALUE, None, text)]));
+    }
+    None
+}
+
+/// A shift or extend: `LSL #<amount>`, `<shift> #<amount>`, `<extend>{
+/// <amount>}`, `<mod> #3`, `LSL #3`, `SXTW`, `<shift>` (a table of
+/// `LSL #8`), or ZA's `VGx2` (which `za_parts` takes).
+fn shift_parts(c: &mut Cur, syms: &[SymInfo], parts: &mut Vec<Part>) -> Option<()> {
+    let start = c.i;
+    if let Some(n) = c.sym() {
+        if !is_shift_name(syms, n) {
+            c.i = start;
+            return None;
+        }
+        parts.push((role::SHIFT, Some(n), String::new()));
+    } else {
+        let name = c.text(&['#', ',', ']']);
+        const NAMES: [&str; 13] = [
+            "LSL", "LSR", "ASR", "ROR", "MSL", "UXTB", "UXTH", "UXTW", "UXTX", "SXTB", "SXTH",
+            "SXTW", "SXTX",
+        ];
+        // (`LSL<amount>`: a literal LSL and the amount symbol.)
+        if !NAMES.contains(&name.as_str()) {
+            c.i = start;
+            return None;
+        }
+        parts.push((role::SHIFT, None, name));
+    }
+    if matches!(c.peek(), Some(Tk::S(_) | Tk::C('#'))) {
+        let p = value_part(c, role::AMOUNT)?;
+        parts.push(p);
+    }
+    Some(())
+}
+
+/// SME's ZA operands: `ZA`, `ZA.<T>[<Wv>, <offs>{, VGx2}]`,
+/// `ZA[<Wv>, <offs>]`, a tile `<ZAda>.S`, a slice
+/// `ZA0<HV>.B[<Ws>, <offs>]` or `<ZAd><HV>.H[<Ws>, <offs1>:<offs2>]`.
+fn za_parts(c: &mut Cur, syms: &[SymInfo], parts: &mut Vec<Part>) -> bool {
+    let start = c.i;
+    let tile = match c.peek() {
+        Some(Tk::S(n)) if syms[n].display.starts_with("<ZA") => {
+            c.i += 1;
+            Some((role::TILE, Some(n), String::new()))
+        }
+        Some(Tk::C('Z')) if c.word("ZA") => {
+            let digits = c.text(&['.', '[', '<', ',', '\u{2}']);
+            if digits.is_empty() {
+                None
+            } else if digits.chars().all(|d| d.is_ascii_digit()) {
+                Some((role::TILE, None, digits))
+            } else {
+                c.i = start;
+                return false;
+            }
+        }
+        _ => return false,
+    };
+    parts.extend(tile);
+    if let Some(Tk::S(n)) = c.peek()
+        && syms[n].display == "<HV>"
+    {
+        c.i += 1;
+        parts.push((role::HV, Some(n), String::new()));
+    }
+    if c.char('.') {
+        match c.sym() {
+            Some(a) => parts.push((role::ARR, Some(a), String::new())),
+            None => {
+                let t = c.text(&['[', ',', '\u{2}']);
+                parts.push((role::ARR, None, t));
+            }
+        }
+    }
+    if c.char('[') {
+        let Some(index) = c.sym() else {
+            c.i = start;
+            return false;
+        };
+        parts.push((role::ZAINDEX, Some(index), String::new()));
+        if c.char(',') {
+            match value_part(c, role::ZAOFF) {
+                Some(p) => parts.push(p),
+                None => {
+                    c.i = start;
+                    return false;
+                }
+            }
+            if c.char(':') {
+                match value_part(c, role::ZALAST) {
+                    Some(p) => parts.push(p),
+                    None => {
+                        c.i = start;
+                        return false;
+                    }
+                }
+            }
+            if c.char(',') {
+                let vg = c.text(&[']']);
+                parts.push((role::VGX, None, vg));
+            }
+        }
+        if !c.char(']') {
+            c.i = start;
+            return false;
+        }
+    }
+    true
+}
+
+/// Each operand of an encoding, as code for src/tables.rs's `OpSpec`s.
+/// `access`: the LLVM record's operands' access by name; `za_access` and
+/// `zt_access` the access of its ZA and ZT0 operands (which have no
+/// symbol); `mem`: its memory access (1 load, 2 store).
+#[allow(clippy::too_many_arguments)]
+fn operand_specs(
+    name: &str,
+    ops: &str,
+    cond: Option<usize>,
+    syms: &[SymInfo],
+    access: &HashMap<String, (u8, usize)>,
+    za_access: u8,
+    zt_access: u8,
+    mem: u8,
+    implicit_x16: bool,
+) -> String {
+    let items = split_operands(ops);
+    let mut specs: Vec<Spec> = Vec::new();
+    for t in &items {
+        let Some(spec) = classify(t, syms) else {
+            let shape: String = t
+                .iter()
+                .map(|x| match x {
+                    Tk::S(n) => syms[*n].display.clone(),
+                    Tk::C(c) => c.to_string(),
+                })
+                .collect();
+            panic!("{name}: an operand build.rs can't classify: {shape:?}");
+        };
+        specs.push(spec);
+    }
+    if let Some(c) = cond {
+        specs.push((opk::COND, vec![(role::VALUE, Some(c), String::new())]));
+    }
+    // Post-indexing: a memory operand without `!` whose base is written
+    // back takes the operand after it as its offset.
+    let base_access = |parts: &[Part]| {
+        parts
+            .iter()
+            .find(|p| p.0 == role::REG)
+            .and_then(|p| p.1)
+            .and_then(|n| syms[n].llvm.as_ref())
+            .and_then(|op| access.get(op))
+            .map_or(1, |a| a.0)
+    };
+    let mut out: Vec<Spec> = Vec::new();
+    let mut i = 0;
+    while i < specs.len() {
+        let (kind, mut parts) = specs[i].clone();
+        if kind == opk::MEM
+            && !parts.iter().any(|p| p.0 == role::WB)
+            && base_access(&parts) & 2 != 0
+            && let Some((next_kind, next)) = specs.get(i + 1)
+            && matches!(*next_kind, opk::IMM | opk::REG)
+        {
+            parts.push((role::POST, None, String::new()));
+            for p in next {
+                // (A post-index register is an index; an immediate, the
+                // offset.)
+                let r = if *next_kind == opk::REG {
+                    role::INDEX
+                } else {
+                    role::OFFSET
+                };
+                parts.push((
+                    if p.0 == role::REG || p.0 == role::VALUE {
+                        r
+                    } else {
+                        p.0
+                    },
+                    p.1,
+                    p.2.clone(),
+                ));
+            }
+            out.push((kind, parts));
+            i += 2;
+            continue;
+        }
+        out.push((kind, parts));
+        i += 1;
+    }
+    // Each operand's access: a register's, its LLVM operand's (the first
+    // of several mentions of a register written and read is the write,
+    // the others the reads); memory's, the record's.
+    let mut seen: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut code = Vec::new();
+    for (kind, parts) in &out {
+        let first_reg = parts
+            .iter()
+            .find(|p| p.0 == role::REG || p.0 == role::TILE)
+            .and_then(|p| p.1);
+        let a = match *kind {
+            opk::MEM => mem,
+            opk::ZA => {
+                match first_reg
+                    .and_then(|n| syms[n].llvm.as_ref())
+                    .and_then(|op| access.get(op))
+                {
+                    Some(a) => a.0,
+                    None => za_access,
+                }
+            }
+            opk::REG | opk::LIST => match first_reg {
+                Some(n) => match syms[n]
+                    .llvm
+                    .as_ref()
+                    .and_then(|op| access.get(op))
+                    .map(|a| a.0)
+                {
+                    Some(3) => {
+                        if seen.insert(n) {
+                            // (Written, and read again later: ADD Zdn,
+                            // Pg/M, Zdn, Zm. Written and read here if not.)
+                            let mentions = out
+                                .iter()
+                                .flat_map(|(_, p)| p.iter())
+                                .filter(|p| p.0 == role::REG && p.1 == Some(n))
+                                .count();
+                            if mentions > 1 { 2 } else { 3 }
+                        } else {
+                            1
+                        }
+                    }
+                    Some(a) => a,
+                    // (No LLVM operand: read.)
+                    None => 1,
+                },
+                None if parts.iter().any(|p| p.2 == "ZT0") => zt_access,
+                None if implicit_x16 => 3,
+                None => 1,
+            },
+            _ => 0,
+        };
+        let parts_code: Vec<String> = parts
+            .iter()
+            .map(|(r, s, l)| {
+                format!(
+                    "({r}, {}, {l:?})",
+                    s.map_or("NONE".to_string(), |n| n.to_string())
+                )
+            })
+            .collect();
+        code.push(format!(
+            "OpSpec {{ kind: {kind}, access: {a}, parts: &[{}] }}",
+            parts_code.join(", ")
+        ));
+    }
+    format!("&[{}]", code.join(", "))
 }

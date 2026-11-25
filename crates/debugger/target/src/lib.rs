@@ -23,6 +23,7 @@ pub mod context;
 pub mod core_file;
 mod image;
 pub mod linux_maps;
+pub mod load;
 pub mod minidump;
 pub mod model;
 pub mod os;

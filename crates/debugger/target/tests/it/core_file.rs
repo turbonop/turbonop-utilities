@@ -120,6 +120,47 @@ fn modules_from_mapped_files() {
 }
 
 #[test]
+fn loading_modules_files() {
+    use turbonop_target::load::{Hints, load};
+    let data = testdata("coredump/crash-x86_64.core");
+    let t = CoreTarget::new(&data).unwrap();
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/coredump");
+    // (No servers: nothing is asked of one in a test.)
+    turbonop_program::server::set_servers(turbonop_program::server::Servers::default());
+    let loaded = load(
+        &t,
+        &Hints {
+            dirs: vec![dir.clone()],
+            sysroots: Vec::new(),
+        },
+    );
+    assert_eq!(loaded.modules.len(), 3);
+    // The program: found beside the core (by name, checked by build ID),
+    // with its DWARF.
+    let exe = &loaded.modules[0];
+    let found = exe.image.as_ref().unwrap();
+    assert_eq!(found.path, dir.join("crash-x86_64"));
+    assert!(matches!(exe.program, Some(Ok(_))));
+    // The system's libraries aren't here: where they were looked for.
+    let libc = &loaded.modules[1];
+    let nf = libc.image.as_ref().unwrap_err();
+    assert!(
+        nf.tried.iter().any(|t| t.contains("libc.so.6")),
+        "{:?}",
+        nf.tried
+    );
+    assert!(libc.program.is_none());
+    assert_eq!(loaded.counts(), (1, 1));
+    // The address space: the program's code from its image.
+    let space = loaded.address_space(&t);
+    let mut code = [0u8; 4];
+    assert_eq!(
+        space.read(0x5f30_1fdf_0200, &mut code),
+        Some(Provenance::Image)
+    );
+}
+
+#[test]
 fn code_from_the_image() {
     let data = testdata("coredump/crash-x86_64.core");
     let t = CoreTarget::new(&data).unwrap();

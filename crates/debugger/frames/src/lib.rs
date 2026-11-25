@@ -24,6 +24,7 @@
 //! by its image's own symbols. Threads are walked on every core.
 
 mod calls;
+pub mod reconstruct;
 mod registers;
 mod signal;
 mod symbols;
@@ -233,18 +234,18 @@ pub fn walk(
     }
 }
 
-struct Walker<'w, 's, 'm> {
-    target: &'w dyn Target,
-    space: &'w AddressSpace<'s>,
-    modules: &'w Modules<'m>,
-    abi: Abi,
-    arch: Arch,
-    pc_reg: u16,
-    sp_reg: u16,
+pub(crate) struct Walker<'w, 's, 'm> {
+    pub(crate) target: &'w dyn Target,
+    pub(crate) space: &'w AddressSpace<'s>,
+    pub(crate) modules: &'w Modules<'m>,
+    pub(crate) abi: Abi,
+    pub(crate) arch: Arch,
+    pub(crate) pc_reg: u16,
+    pub(crate) sp_reg: u16,
 }
 
 impl Walker<'_, '_, '_> {
-    fn frame(
+    pub(crate) fn frame(
         &self,
         pc: u64,
         sp: u64,
@@ -298,7 +299,7 @@ impl Walker<'_, '_, '_> {
         self.by_scan(callee, innermost).map(Some)
     }
 
-    fn by_unwind_data(&self, callee: &Frame) -> Option<Option<Frame>> {
+    pub(crate) fn by_unwind_data(&self, callee: &Frame) -> Option<Option<Frame>> {
         let m = callee.module?;
         let (image, bias) = self.modules.image(m)?;
         let mut regs = callee.registers.to_unwind();
@@ -371,7 +372,7 @@ impl Walker<'_, '_, '_> {
 
     /// A caller with only what a heuristic gives: its PC and stack
     /// pointer (and frame pointer), and the registers that never change.
-    fn heuristic_registers(
+    pub(crate) fn heuristic_registers(
         &self,
         pc: u64,
         sp: u64,
@@ -389,7 +390,7 @@ impl Walker<'_, '_, '_> {
         r
     }
 
-    fn word(&self, at: u64) -> Option<u64> {
+    pub(crate) fn word(&self, at: u64) -> Option<u64> {
         let size = self.arch.pointer_size()?;
         let mut b = [0u8; 8];
         let n = usize::from(size);
@@ -455,13 +456,13 @@ impl Walker<'_, '_, '_> {
     }
 
     /// Whether `address` is in a module (code, as far as can be told).
-    fn is_code(&self, address: u64) -> bool {
+    pub(crate) fn is_code(&self, address: u64) -> bool {
         self.target.module_at(address).is_some()
     }
 
     /// A return address stripped of a pointer authentication code (ARM64),
     /// by the narrowest address width that puts it in a module.
-    fn strip(&self, address: u64) -> u64 {
+    pub(crate) fn strip(&self, address: u64) -> u64 {
         if self.arch != Arch::Arm64 || self.is_code(address) {
             return address;
         }

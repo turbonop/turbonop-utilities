@@ -171,3 +171,75 @@ fn linux_crash() {
     assert_eq!(found_main.confidence, Confidence::Likely);
     assert_ne!(main.end, End::NoRegisters);
 }
+
+#[test]
+fn windows_reconstructed() {
+    use turbonop_frames::reconstruct::{LinkKind, reconstruct};
+    let data = std::fs::read(testdata("minidump/crash-x64.dmp")).unwrap();
+    let t = MinidumpTarget::new(&data).unwrap();
+    let loaded = load(&t, &hermetic("minidump"));
+    let space = loaded.address_space(&t);
+    let bases: Vec<u64> = t.modules().iter().map(|m| m.base).collect();
+    let modules = Modules::new(&loaded, &space, &bases);
+    // The crashing thread's stack, from the exception's stack pointer up,
+    // as if its walk had failed at once: middle, outer, worker, then
+    // kernel32, each linked by its callee's unwind data.
+    let e = t.exception().unwrap();
+    let sp = e.registers.as_ref().unwrap().get64(RSP).unwrap();
+    let thread = t.threads().iter().find(|th| th.id == e.thread).unwrap();
+    let end = thread.stack.clone().unwrap().end;
+    let r = reconstruct(&t, &space, &modules, sp..end);
+    let best = &r.chains[0];
+    let pcs: Vec<u64> = best.frames.iter().map(|f| f.frame.pc).collect();
+    assert_eq!(
+        &pcs[..4],
+        [
+            0x7ff7_eed9_1053,
+            0x7ff7_eed9_108e,
+            0x7ff7_eed9_115e,
+            0x7ffa_ca64_dda7
+        ],
+        "{:#x?}",
+        r.chains
+            .iter()
+            .map(|c| c.frames.iter().map(|f| f.frame.pc).collect::<Vec<_>>())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(best.frames[0].slot, 0x84_8757_f6d8);
+    assert_eq!(best.frames[0].link, None);
+    assert!(
+        best.frames[1..4]
+            .iter()
+            .all(|f| f.link == Some(LinkKind::UnwindData))
+    );
+    assert_eq!(function(&best.frames[0].frame), "middle");
+    // Without kernel32 and ntdll here, nothing reaches the thread's entry.
+    assert!(!best.reaches_entry);
+    assert_eq!(
+        best.confidence,
+        turbonop_frames::reconstruct::ChainConfidence::Likely
+    );
+    // Its slots: the return addresses after calls, and (kernel32's,
+    // whose code isn't here) unknown.
+    let s = r.slots.iter().find(|s| s.at == 0x84_8757_f6d8).unwrap();
+    assert_eq!(s.after_call, Some(true));
+    assert!(s.call_target.is_some());
+    let k32 = r
+        .slots
+        .iter()
+        .find(|s| s.value == 0x7ffa_ca64_dda7)
+        .unwrap();
+    assert_eq!(k32.after_call, None);
+    // The main thread: wmain, then __scrt_common_main_seh, by unwind data.
+    let main = &t.threads()[0];
+    let stack = main.stack.clone().unwrap();
+    let r = reconstruct(&t, &space, &modules, stack);
+    let found = r.chains.iter().any(|c| {
+        c.frames.windows(2).any(|w| {
+            w[0].frame.pc == 0x7ff7_eed9_1142
+                && w[1].frame.pc == 0x7ff7_eed9_142f
+                && w[1].link == Some(LinkKind::UnwindData)
+        })
+    });
+    assert!(found);
+}

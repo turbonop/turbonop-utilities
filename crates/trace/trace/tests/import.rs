@@ -571,3 +571,44 @@ fn processes_known_only_from_their_ends_keep_their_threads() {
     assert_eq!((gone.pid, gone.exit_status), (500, Some(0)));
     assert_eq!(trace.processes.len(), 3);
 }
+
+#[test]
+fn an_image_known_only_from_the_end_keeps_its_identity() {
+    // No rundown at the start (a trace recorded to memory): the kernel
+    // image is known only from the rundown at the end, and the merge logs
+    // its identity just before it.
+    let base = 0xffff_f800_1000_0000u64;
+    let mut t = T::new();
+    t.kernel(0, guids::PERF_INFO, 46, 2, 10, sample(base + 0x40, 0));
+    t.control(
+        90,
+        36,
+        P::default()
+            .u64(base)
+            .u32(0)
+            .bytes(&[9; 16])
+            .u32(1)
+            .ansiz("ntkrnlmp.pdb")
+            .0,
+    );
+    t.kernel(
+        0,
+        guids::IMAGE,
+        4,
+        3,
+        90,
+        image(0, base, r"\SystemRoot\system32\ntoskrnl.exe"),
+    );
+    let data = t.0.finish();
+    let (trace, _) = etw::import(&Etl::parse(&data).unwrap()).unwrap();
+    let kernel = trace
+        .images
+        .iter()
+        .find(|i| i.file_name() == "ntoskrnl.exe")
+        .unwrap();
+    let id = kernel.debug_id.as_ref().expect("its identity");
+    assert_eq!(
+        (id.guid, id.age, id.pdb_path.as_str()),
+        ([9; 16], 1, "ntkrnlmp.pdb")
+    );
+}

@@ -23,8 +23,9 @@ pub const MAGIC: &[u8; 8] = b"HXTRACE\0";
 /// The format's version; any change to the layout, or to what an import
 /// makes of a trace, bumps it (so that indexes are made again). 6: threads
 /// of processes known only from their ends. 7: a thread ID reused after
-/// its thread ended names a new thread.
-pub const VERSION: u32 = 7;
+/// its thread ended names a new thread. 8: images known only from the
+/// rundown at the end keep their identities.
+pub const VERSION: u32 = 8;
 
 /// What an index was built from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -1281,6 +1281,11 @@ struct Tables {
     /// named only when it ends, or by the rundown at the end), by that
     /// process's ID: they join it when it is.
     orphans: FxHashMap<u32, Vec<ThreadIx>>,
+    /// Identities (PDB, and timestamp) of images not yet known, by process
+    /// ID and base: a merged trace logs an image's identity just before
+    /// the image's event, so an image known only from the rundown at the
+    /// end (a trace with none at its start) gets its identity first.
+    pending_ids: FxHashMap<(u32, u64), (Option<DebugId>, u32)>,
 }
 
 impl Tables {
@@ -1291,6 +1296,7 @@ impl Tables {
             live_threads: FxHashMap::default(),
             live_images: FxHashMap::default(),
             orphans: FxHashMap::default(),
+            pending_ids: FxHashMap::default(),
         }
     }
 
@@ -1320,15 +1326,23 @@ impl Tables {
                     if image.time_date_stamp == 0 {
                         image.time_date_stamp = *time_date_stamp;
                     }
+                } else {
+                    self.pending_ids.entry((*process_id, *base)).or_default().1 = *time_date_stamp;
                 }
             }
             Item::DbgId(d) => {
+                let id = DebugId {
+                    guid: d.guid,
+                    age: d.age,
+                    pdb_path: d.pdb.clone(),
+                };
                 if let Some(&ix) = self.live_images.get(&(d.process_id, d.base)) {
-                    self.trace.images[ix.index()].debug_id = Some(DebugId {
-                        guid: d.guid,
-                        age: d.age,
-                        pdb_path: d.pdb.clone(),
-                    });
+                    self.trace.images[ix.index()].debug_id = Some(id);
+                } else {
+                    self.pending_ids
+                        .entry((d.process_id, d.base))
+                        .or_default()
+                        .0 = Some(id);
                 }
             }
             Item::Sample(_) | Item::Switch(_) | Item::Ready(_) | Item::Stack { .. } => {}
@@ -1533,14 +1547,19 @@ impl Tables {
             Lifetime::RundownStart if self.live_images.contains_key(&key) => {}
             _ => {
                 let ix = ImageIx(row(self.trace.images.len()));
+                let (debug_id, stamp) = self.pending_ids.remove(&key).unwrap_or_default();
                 self.trace.images.push(Image {
                     process,
                     base: im.base,
                     size: im.size,
                     path: im.path.clone(),
-                    time_date_stamp: im.time_date_stamp,
+                    time_date_stamp: if im.time_date_stamp == 0 {
+                        stamp
+                    } else {
+                        im.time_date_stamp
+                    },
                     checksum: im.checksum,
-                    debug_id: None,
+                    debug_id,
                     load: (im.lifetime == Lifetime::Start).then_some(t),
                     unload: None,
                 });

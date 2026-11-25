@@ -136,7 +136,13 @@ pub fn table(trace: &Trace, path: &Path) -> Result<FileTable, String> {
             });
         }
     })?;
-    Ok(assemble(trace, all))
+    let mut table = assemble(trace, all);
+    // (Paths as DOS paths, as WPA shows them.)
+    let volumes = crate::reading::Volumes::of(trace, path);
+    for f in &mut table.files {
+        *f = volumes.dos(f);
+    }
+    Ok(table)
 }
 
 fn time_of(r: &Read) -> i64 {

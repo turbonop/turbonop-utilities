@@ -90,6 +90,14 @@ pub const STACK_WALK: Guid = g(
     0x4b80,
     [0xbd, 0x94, 0xf5, 0x7f, 0xe2, 0x0d, 0x0c, 0xe3],
 );
+/// `SystemConfigEx`: what WPR adds of the system's configuration, as its
+/// volumes' NT and DOS paths.
+pub const SYSTEM_CONFIG_EX: Guid = g(
+    0x9b79ee91,
+    0xb5fd,
+    0x41c0,
+    [0xa2, 0x43, 0x42, 0x48, 0xe2, 0x66, 0xe9, 0xd0],
+);
 /// `SystemConfig`.
 pub const SYSTEM_CONFIG: Guid = g(
     0x01853a65,

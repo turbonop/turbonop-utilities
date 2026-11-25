@@ -1256,7 +1256,15 @@ fn disk_usage_by_process_file_disk_and_type() {
     kernel(guids::DISK_IO, 11, 3, 35_000, io(0, 8192, 4096, 1, 30_000));
     kernel(guids::FILE_IO, 0, 2, 40_000, name(1, r"C:\b.txt"));
     // Disk 1: a read of object 1 (now b.txt), and a flush, and an I/O of
-    // object 2.
+    // object 2. The read's init (its IRP's, after the IRP's last
+    // completion) makes its I/O time 1.1 ms, not its response time's 1 ms;
+    // the write's IRP completed the flush since that init, so the write
+    // keeps its response time.
+    kernel(guids::DISK_IO, 12, 3, 49_000, {
+        let mut p = 0x9999u64.to_le_bytes().to_vec();
+        p.extend_from_slice(&77u32.to_le_bytes());
+        p
+    });
     kernel(guids::DISK_IO, 10, 3, 60_000, io(1, 512, 0, 1, 10_000));
     kernel(guids::DISK_IO, 14, 3, 70_000, {
         let mut p = Vec::new();
@@ -1305,9 +1313,10 @@ fn disk_usage_by_process_file_disk_and_type() {
     let types = by(2);
     assert_eq!(result(&a, 2)["count"], 5);
     assert_eq!(result(&a, 2)["bytes"], 4096 + 8192 + 512 + 1024);
-    // I/O times: 2 ms + 1 ms reads; service times: the read 2 ms (nothing
-    // before it), disk 1's read 1 ms.
-    assert_eq!(types["Read"], (2, 4608, 3_000_000, 3_000_000));
+    // I/O times: 2 ms + 1.1 ms reads (from its init); service times: the
+    // read 2 ms (nothing before it), disk 1's read 1 ms (by its response
+    // time, as WPA has it).
+    assert_eq!(types["Read"], (2, 4608, 3_100_000, 3_000_000));
     // The write: 3 ms I/O, 0.5 ms service (from the read's completion);
     // disk 1's write: 0.1 ms (it started after the flush completed).
     assert_eq!(types["Write"], (2, 9216, 3_100_000, 600_000));

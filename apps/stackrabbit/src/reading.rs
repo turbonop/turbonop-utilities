@@ -215,6 +215,61 @@ impl Interner {
     }
 }
 
+/// The trace's volumes' NT paths and their DOS paths (`SystemConfigEx`
+/// `VolumeMapping` events), so that paths read as WPA shows them:
+/// `\Device\HarddiskVolume3\x` as `C:\x`.
+#[derive(Clone, Debug, Default)]
+pub struct Volumes {
+    /// (NT prefix, DOS prefix), longest NT prefix first.
+    maps: Vec<(String, String)>,
+}
+
+impl Volumes {
+    /// The volume mapping of `trace` (read from `path`); none if the trace
+    /// has none.
+    pub fn of(trace: &Trace, path: &Path) -> Self {
+        let wanted = |provider: &Guid, op: u8| {
+            *provider == turbonop_etw::guids::SYSTEM_CONFIG_EX && op == 35
+        };
+        let read = events(trace, path, wanted, |_, e, mine| {
+            let Some(Ok(p)) = turbonop_etw::schema::Properties::of(e) else {
+                return;
+            };
+            let text = |n: &str| {
+                p.get(n).map_or_else(String::new, |v| {
+                    turbonop_etw::values::format(v, turbonop_etw::schema::pointer_size(e))
+                })
+            };
+            let nt = text("NtPath");
+            if !nt.is_empty() {
+                mine.push((nt, text("DosPath")));
+            }
+        });
+        read.map_or_else(|_| Self::default(), |(maps, _)| Self::from_maps(maps))
+    }
+
+    /// A mapping of these (NT prefix, DOS prefix) pairs.
+    pub fn from_maps(mut maps: Vec<(String, String)>) -> Self {
+        maps.sort_by(|a, b| b.0.len().cmp(&a.0.len()).then_with(|| a.cmp(b)));
+        maps.dedup();
+        Self { maps }
+    }
+
+    /// `path` as a DOS path, if a volume's NT prefix starts it (ignoring
+    /// case); else as it is.
+    pub fn dos(&self, path: &str) -> String {
+        for (nt, dos) in &self.maps {
+            if path.len() >= nt.len()
+                && path.is_char_boundary(nt.len())
+                && path[..nt.len()].eq_ignore_ascii_case(nt)
+            {
+                return format!("{dos}{}", &path[nt.len()..]);
+            }
+        }
+        path.to_string()
+    }
+}
+
 /// What a summary is asked: of which rows, and how much of it to answer.
 #[derive(Clone, Debug, Default)]
 pub struct Ask {
@@ -295,4 +350,29 @@ pub fn thread_cell(trace: &Trace, t: ThreadIx, column: &str) -> Option<Option<Ce
         "thread name" => th.and_then(|t| t.name.as_deref()).and_then(text),
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Volumes;
+
+    #[test]
+    fn nt_paths_read_as_dos_paths() {
+        let b = |s: &str| s.replace('/', "\\");
+        let v = Volumes::from_maps(vec![
+            (b("/Device/HarddiskVolume3/"), b("C:/")),
+            (b("/Device/HarddiskVolume30/"), b("H:/")),
+            (b("/??/"), String::new()),
+            (b("/Device/Mup/"), b("//")),
+        ]);
+        let dos = |p: &str| v.dos(&b(p)).replace('\\', "/");
+        assert_eq!(dos("/Device/HarddiskVolume3/a/b.txt"), "C:/a/b.txt");
+        // (The longest prefix first: Volume30 isn't Volume3's.)
+        assert_eq!(dos("/Device/HarddiskVolume30/x"), "H:/x");
+        assert_eq!(dos("/device/harddiskvolume3/case"), "C:/case");
+        assert_eq!(dos("/??/C:/x"), "C:/x");
+        assert_eq!(dos("/Device/Mup/server/share"), "//server/share");
+        assert_eq!(dos("/Device/Other/x"), "/Device/Other/x");
+        assert_eq!(Volumes::default().dos("anything"), "anything");
+    }
 }

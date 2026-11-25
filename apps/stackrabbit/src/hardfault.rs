@@ -110,7 +110,13 @@ pub fn table(trace: &Trace, path: &Path) -> Result<FaultTable, String> {
             size: u32::try_from(int(p.get("ByteCount"))).unwrap_or(u32::MAX),
         });
     })?;
-    Ok(assemble(trace, all))
+    let mut table = assemble(trace, all);
+    // (Paths as DOS paths, as WPA shows them.)
+    let volumes = crate::reading::Volumes::of(trace, path);
+    for f in &mut table.files {
+        *f = volumes.dos(f);
+    }
+    Ok(table)
 }
 
 /// The faults, in start order, with their files, threads and processes.

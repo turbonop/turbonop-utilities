@@ -5,12 +5,15 @@
 //! from the trace file and kept; then totals grouped as asked, and the
 //! heaviest I/Os.
 //!
-//! - I/O time: the partition manager's response time, from the I/O's
-//!   initiation to its completion (`HighResResponseTime`, in the
-//!   performance counter's ticks).
+//! - I/O time: from the I/O's initiation (its `ReadInit`, `WriteInit` or
+//!   `FlushInit` event, paired by its IRP) to its completion, as WPA
+//!   gives it; without its init event (a trace without DiskIo's init
+//!   events), the partition manager's response time
+//!   (`HighResResponseTime`, in the performance counter's ticks), which
+//!   starts a little later.
 //! - Disk service time: the time the disk spent on the I/O alone: from
-//!   the later of its initiation and the disk's previous completion, to
-//!   its completion (as WPA computes it).
+//!   the later of its initiation by the response time and the disk's
+//!   previous completion, to its completion (as WPA computes it).
 
 use std::path::Path;
 
@@ -58,6 +61,8 @@ pub struct DiskIo {
     pub complete: i64,
     /// Its I/O time, in nanoseconds.
     pub io_ns: u64,
+    /// The partition manager's response time, in nanoseconds.
+    pub response_ns: u64,
     /// Its disk service time, in nanoseconds.
     pub service_ns: u64,
     /// The thread that issued it.
@@ -87,7 +92,12 @@ enum Read {
         size: u32,
         response: u64,
         file_object: u64,
+        irp: u64,
         thread_id: u32,
+    },
+    Init {
+        time: i64,
+        irp: u64,
     },
     Name {
         time: i64,
@@ -100,7 +110,7 @@ enum Read {
 /// events, from the buffers holding them, on every core.
 pub fn table(trace: &Trace, path: &Path) -> Result<DiskTable, String> {
     let wanted = |provider: &turbonop_etl::Guid, opcode: u8| {
-        (*provider == guids::DISK_IO && matches!(opcode, 10 | 11 | 14))
+        (*provider == guids::DISK_IO && matches!(opcode, 10..=15))
             || (*provider == guids::FILE_IO && matches!(opcode, 0 | 32 | 35 | 36 | 64))
     };
     let (all, info) = crate::reading::events(trace, path, wanted, |_, e, mine| {
@@ -127,6 +137,13 @@ pub fn table(trace: &Trace, path: &Path) -> Result<DiskTable, String> {
             });
             return;
         }
+        if matches!(op, 12 | 13 | 15) {
+            mine.push(Read::Init {
+                time: e.timestamp,
+                irp: int(p.get("Irp")),
+            });
+            return;
+        }
         let kind = match op {
             10 => IoKind::Read,
             11 => IoKind::Write,
@@ -140,11 +157,18 @@ pub fn table(trace: &Trace, path: &Path) -> Result<DiskTable, String> {
             size: u32::try_from(int(p.get("TransferSize"))).unwrap_or(u32::MAX),
             response: int(p.get("HighResResponseTime")),
             file_object: int(p.get("FileObject")),
+            irp: int(p.get("Irp")),
             thread_id: u32::try_from(int(p.get("IssuingThreadId"))).unwrap_or(u32::MAX),
         });
     })?;
     let perf_freq = info.perf_freq;
-    Ok(assemble(trace, all, perf_freq))
+    let mut table = assemble(trace, all, perf_freq);
+    // (Paths as DOS paths, as WPA shows them.)
+    let volumes = crate::reading::Volumes::of(trace, path);
+    for f in &mut table.files {
+        *f = volumes.dos(f);
+    }
+    Ok(table)
 }
 
 /// The I/Os, in completion order, with their files, threads and times.
@@ -152,8 +176,11 @@ fn assemble(trace: &Trace, all: Vec<Read>, perf_freq: u64) -> DiskTable {
     // Each file object's names over time.
     let mut names = crate::reading::Names::default();
     let mut ios = Vec::new();
+    // Each IRP's inits, by time (IRPs are reused).
+    let mut inits: Vec<(u64, i64)> = Vec::new();
     for r in all {
         match r {
+            Read::Init { time, irp } => inits.push((irp, time)),
             Read::Name {
                 time,
                 file_object,
@@ -167,6 +194,34 @@ fn assemble(trace: &Trace, all: Vec<Read>, perf_freq: u64) -> DiskTable {
         }
     }
     names.finish();
+    inits.sort_unstable();
+    // Each IRP's completions, by time.
+    let mut dones: Vec<(u64, i64)> = ios
+        .iter()
+        .filter_map(|r| match r {
+            Read::Io { irp, complete, .. } => Some((*irp, *complete)),
+            _ => None,
+        })
+        .collect();
+    dones.sort_unstable();
+    // The I/O's init: its IRP's last at or before its completion, and
+    // after the IRP's previous completion (else the I/O's own init isn't
+    // in the trace, and that one was an earlier I/O's).
+    let last_before = |v: &[(u64, i64)], irp: u64, t: i64, inclusive: bool| {
+        let i =
+            v.partition_point(|&(r, x)| r < irp || (r == irp && (x < t || (inclusive && x == t))));
+        i.checked_sub(1)
+            .map(|i| v[i])
+            .filter(|&(r, _)| r == irp)
+            .map(|(_, x)| x)
+    };
+    let init_of = |irp: u64, complete: i64| {
+        let init = last_before(&inits, irp, complete, true)?;
+        match last_before(&dones, irp, complete, false) {
+            Some(previous) if previous >= init => None,
+            _ => Some(init),
+        }
+    };
     let mut files = crate::reading::Interner::default();
     let threads = crate::reading::Threads::new(trace);
     let mut out: Vec<DiskIo> = ios
@@ -180,13 +235,18 @@ fn assemble(trace: &Trace, all: Vec<Read>, perf_freq: u64) -> DiskTable {
                 size,
                 response,
                 file_object,
+                irp,
                 thread_id,
             } = r
             else {
                 return None;
             };
-            let io_ns = u64::try_from(u128::from(response) * 1_000_000_000 / u128::from(perf_freq))
-                .unwrap_or(u64::MAX);
+            let response_ns =
+                u64::try_from(u128::from(response) * 1_000_000_000 / u128::from(perf_freq))
+                    .unwrap_or(u64::MAX);
+            let io_ns = init_of(irp, complete).map_or(response_ns, |init| {
+                u64::try_from(trace.clock.nanos(complete) - trace.clock.nanos(init)).unwrap_or(0)
+            });
             // The file: its object's latest name by then, else its first
             // after (rundowns come at the end).
             let file = names.at(file_object, complete).map(|n| files.intern(n));
@@ -198,6 +258,7 @@ fn assemble(trace: &Trace, all: Vec<Read>, perf_freq: u64) -> DiskTable {
                 size,
                 complete,
                 io_ns,
+                response_ns,
                 service_ns: 0,
                 thread,
                 process: trace.thread_process(thread),
@@ -212,7 +273,7 @@ fn assemble(trace: &Trace, all: Vec<Read>, perf_freq: u64) -> DiskTable {
     let mut last_done: FxHashMap<u32, i64> = FxHashMap::default();
     for io in &mut out {
         let done_ns = tick_ns(io.complete - trace.clock.origin);
-        let init_ns = done_ns.saturating_sub(i64::try_from(io.io_ns).unwrap_or(i64::MAX));
+        let init_ns = done_ns.saturating_sub(i64::try_from(io.response_ns).unwrap_or(i64::MAX));
         let from = last_done
             .get(&io.disk)
             .map_or(init_ns, |&prev| init_ns.max(prev));

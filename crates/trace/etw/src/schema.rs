@@ -389,6 +389,11 @@ const DISK_IO: &[(&str, Field)] = &[
 
 const DISK_IO_INIT: &[(&str, Field)] = &[("Irp", Ptr), ("IssuingThreadId", U32)];
 
+/// `SystemConfigEx`'s volume mapping (TDH has no description of it; read
+/// from the corpus): an NT path's prefix, and what it is as a DOS path
+/// (`\Device\HarddiskVolume3\` is `C:\`; `\??\` is nothing).
+const VOLUME_MAPPING: &[(&str, Field)] = &[("NtPath", Utf16z), ("DosPath", Utf16z)];
+
 const DISK_FLUSH: &[(&str, Field)] = &[
     ("DiskNumber", U32),
     ("IrpFlags", U32),
@@ -985,6 +990,14 @@ pub static SCHEMAS: &[Schema] = &[
         ],
     ),
     // DiskIo.
+    s(
+        guids::SYSTEM_CONFIG_EX,
+        35,
+        0,
+        "SysConfigEx",
+        "VolumeMapping",
+        VOLUME_MAPPING,
+    ),
     s(guids::DISK_IO, 10, 3, "DiskIo", "Read", DISK_IO),
     s(guids::DISK_IO, 11, 3, "DiskIo", "Write", DISK_IO),
     s(guids::DISK_IO, 12, 3, "DiskIo", "ReadInit", DISK_IO_INIT),

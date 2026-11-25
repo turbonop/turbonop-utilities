@@ -197,7 +197,13 @@ pub fn table(trace: &Trace, path: &Path) -> Result<FilterTable, String> {
             }
         }
     })?;
-    Ok(assemble(trace, all))
+    let mut table = assemble(trace, all);
+    // (Paths as DOS paths, as WPA shows them.)
+    let volumes = crate::reading::Volumes::of(trace, path);
+    for f in &mut table.files {
+        *f = volumes.dos(f);
+    }
+    Ok(table)
 }
 
 /// The callbacks, in start order, each failure paired with its call,

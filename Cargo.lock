@@ -856,6 +856,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-coff"
+version = "0.0.7"
+dependencies = [
+ "turbonop-archive",
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-mmap",
+ "turbonop-par",
+ "turbonop-pe",
+]
+
+[[package]]
 name = "turbonop-core"
 version = "0.0.7"
 dependencies = [

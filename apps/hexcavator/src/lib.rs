@@ -197,8 +197,20 @@ fn global_options(args: &[String]) -> Result<(Vec<String>, Global), String> {
 
 /// Runs the command `args` names (without the program's name), with
 /// hexcavator's own options (`--cache`, `--arch`, the symbol servers') anywhere
-/// among them.
+/// among them. The process is taken to end after it: what the command is
+/// done with (a program's symbols, its files' mappings) is left for the
+/// exit to reclaim.
 pub fn run(args: &[String]) -> ExitCode {
+    run_as(args, true)
+}
+
+/// [`run`], for a process that runs many commands (the fuzzer): what each
+/// command is done with is freed, its files closed, before the next.
+pub fn run_in_process(args: &[String]) -> ExitCode {
+    run_as(args, false)
+}
+
+fn run_as(args: &[String], one_shot: bool) -> ExitCode {
     let (args, global) = match global_options(args) {
         Ok(x) => x,
         Err(e) => {
@@ -220,7 +232,9 @@ pub fn run(args: &[String]) -> ExitCode {
         Some("mcp") => mcp::run(&args[1..]),
         Some("serve") => serve::run(&args[1..]),
         _ => {
-            out::one_shot();
+            if one_shot {
+                out::one_shot();
+            }
             command(&args)
         }
     }

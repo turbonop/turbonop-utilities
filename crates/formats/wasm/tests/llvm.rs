@@ -138,8 +138,3 @@ fn functions_match_llvm_objdump() {
     let last = segs.last().unwrap();
     assert_eq!(last.offset + last.size, ds.offset + ds.size);
 }
-
-// (Tests allocate with mimalloc, as the programs do.)
-#[cfg(not(target_family = "wasm"))]
-#[global_allocator]
-static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

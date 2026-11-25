@@ -11,7 +11,3 @@ build = "build.rs"
 
 [lints]
 workspace = true
-
-# (Tests allocate with mimalloc, as the programs do.)
-[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
-mimalloc.workspace = true

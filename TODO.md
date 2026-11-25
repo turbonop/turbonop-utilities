@@ -21,6 +21,13 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
+- **mimalloc everywhere.** Every native program and test binary should
+  allocate with mimalloc (version 2: 3 crashes on Windows and macOS
+  reallocating across threads), on every platform. Done on the
+  `mimalloc-everywhere` branch (the `turbonop-global-alloc` crate); once
+  it's on main, Stackrabbit (its program and tests) links it too. On a
+  busy machine, Stackrabbit's import of s06 and l01 was about 14% faster
+  with mimalloc, and l01's first tree 0.21 -> 0.17 s.
 
 ## Stackrabbit
 

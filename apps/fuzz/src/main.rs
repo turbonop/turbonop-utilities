@@ -21,7 +21,7 @@
     reason = "random bytes and indexes, truncated on purpose"
 )]
 
-use std::alloc::{GlobalAlloc, Layout};
+use std::alloc::{GlobalAlloc, Layout, System};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -32,7 +32,7 @@ use turbonop_fuzz::{Scratch, TARGETS, Target, target};
 
 // ------------------------------------------------------------ allocation
 
-/// mimalloc, counting live bytes; past the cap it aborts the
+/// The system allocator, counting live bytes; past the cap it aborts the
 /// process (a finding: an input that makes a parser ask for too much).
 struct Counting;
 
@@ -50,13 +50,13 @@ unsafe impl GlobalAlloc for Counting {
             over_cap(live);
         }
         // SAFETY: the caller's contract is the system allocator's.
-        unsafe { mimalloc::MiMalloc.alloc(layout) }
+        unsafe { System.alloc(layout) }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
         // SAFETY: as above.
-        unsafe { mimalloc::MiMalloc.dealloc(ptr, layout) }
+        unsafe { System.dealloc(ptr, layout) }
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new: usize) -> *mut u8 {
@@ -69,7 +69,7 @@ unsafe impl GlobalAlloc for Counting {
             LIVE.fetch_sub(layout.size() - new, Ordering::Relaxed);
         }
         // SAFETY: as above.
-        unsafe { mimalloc::MiMalloc.realloc(ptr, layout, new) }
+        unsafe { System.realloc(ptr, layout, new) }
     }
 }
 

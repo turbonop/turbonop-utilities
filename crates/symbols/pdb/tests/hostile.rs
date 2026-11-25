@@ -180,8 +180,3 @@ fn a_pdb_read_by_range_is_the_same() {
     assert!(read.types().unwrap().iter().count() > 0);
     assert_eq!(mapped.symbol_records(), read.symbol_records());
 }
-
-// (Tests allocate with mimalloc, as the programs do.)
-#[cfg(not(target_family = "wasm"))]
-#[global_allocator]
-static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

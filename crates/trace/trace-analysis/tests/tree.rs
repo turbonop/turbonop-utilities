@@ -584,8 +584,3 @@ fn totals_by_bin_count_recursion_once() {
     let bins: Vec<u32> = (0..50).collect();
     assert_eq!(big.totals(&bins, 50), want);
 }
-
-// (Tests allocate with mimalloc, as the programs do.)
-#[cfg(not(target_family = "wasm"))]
-#[global_allocator]
-static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

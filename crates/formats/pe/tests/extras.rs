@@ -125,8 +125,3 @@ fn damaged_headers_do_not_panic() {
         }
     }
 }
-
-// (Tests allocate with mimalloc, as the programs do.)
-#[cfg(not(target_family = "wasm"))]
-#[global_allocator]
-static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

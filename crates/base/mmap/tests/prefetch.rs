@@ -58,8 +58,3 @@ fn eviction_leaves_the_file_as_it_was() {
     assert_eq!(std::fs::read(&path).unwrap(), data);
     assert!(evict_from_cache(&path.with_extension("missing")).is_err());
 }
-
-// (Tests allocate with mimalloc, as the programs do.)
-#[cfg(not(target_family = "wasm"))]
-#[global_allocator]
-static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

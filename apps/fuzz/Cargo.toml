@@ -20,7 +20,6 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
-mimalloc.workspace = true
 hexcavator = { path = "../hexcavator" }
 turbonop-arm64.workspace = true
 turbonop-arm32.workspace = true
@@ -57,4 +56,3 @@ coverage = []
 
 [lints]
 workspace = true
-

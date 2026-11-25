@@ -136,8 +136,3 @@ fn other_documents_are_errors() {
     .unwrap();
     assert_eq!(p.views[0].graphs[0].preset.keys().len(), 1);
 }
-
-// (Tests allocate with mimalloc, as the programs do.)
-#[cfg(not(target_family = "wasm"))]
-#[global_allocator]
-static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

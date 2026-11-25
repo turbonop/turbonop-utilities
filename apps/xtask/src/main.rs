@@ -9,10 +9,6 @@
 //!
 //! With no `-p`/`--package`, it is the whole workspace.
 
-// (Every program allocates with mimalloc.)
-#[global_allocator]
-static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};

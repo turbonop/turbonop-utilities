@@ -32,8 +32,3 @@ pub use error::{Error, ErrorKind, Result};
 pub use pod::{Pod, as_bytes, from_bytes, slice_from_bytes};
 pub use reader::{Reader, bytes_at, cstr_at, find_nul, read_at, read_slice_at, to_usize};
 pub use source::Source;
-
-// (Tests allocate with mimalloc, as the programs do.)
-#[cfg(all(test, not(target_family = "wasm")))]
-#[global_allocator]
-static TEST_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

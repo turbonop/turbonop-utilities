@@ -127,7 +127,7 @@ fn lock_shard(shard: &Mutex<Shard>) -> std::sync::MutexGuard<'_, Shard> {
 
 /// How many of a stack's outermost frames choose its trie (with its
 /// thread).
-const SHARD_FRAMES: usize = 3;
+const SHARD_FRAMES: usize = 10;
 
 /// Reads `etl` into a [`Trace`], on all of the machine's cores.
 pub fn import(etl: &Etl<'_>) -> Result<(Trace, ImportStats)> {

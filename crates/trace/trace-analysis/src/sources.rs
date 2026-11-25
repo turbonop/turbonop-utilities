@@ -253,14 +253,15 @@ fn chunk_instances(
     let folding = framer.has_folds();
     let by_module = framer.mode() == FrameMode::Module;
     // The previous stack's nodes, outermost first, and what each one's
-    // frame made: (a return address, folded, key, its inlined calls'
-    // range in `memo_inlined`). Buckets are sorted by thread, then stack,
-    // and stacks are numbered in their trie's order, so a stack mostly
-    // shares its callers with the one before: those nodes aren't walked
-    // again, and their keys are taken from here.
+    // frame made: (its address, a return address, folded, key, its inlined
+    // calls' range in `memo_inlined`). Buckets are sorted by thread, then
+    // stack, and stacks are numbered in their trie's order, so a stack
+    // mostly shares its callers with the one before: those nodes aren't
+    // walked again (if in the same trie), and their keys are taken from
+    // here (if the same frames).
     let mut path: Vec<StackId> = Vec::new();
     let mut fresh: Vec<StackId> = Vec::new();
-    let mut memo: Vec<(bool, bool, KeyId, (u32, u32))> = Vec::new();
+    let mut memo: Vec<(u64, bool, bool, KeyId, (u32, u32))> = Vec::new();
     let mut memo_inlined: Vec<KeyId> = Vec::new();
     let mut memo_process = ProcessIx::NONE;
     for &((thread, cpu, stack, ip), (weight, count)) in buckets {
@@ -294,10 +295,6 @@ fn chunk_instances(
             };
             path.truncate(common);
             path.extend(fresh.iter().rev());
-            if memo.len() > common {
-                memo_inlined.truncate(memo[common].3.0 as usize);
-                memo.truncate(common);
-            }
         }
         // The frames, outermost first: the stack's, or for a sample
         // without one, its instruction pointer.
@@ -335,13 +332,14 @@ fn chunk_instances(
         }
         for p in 0..n {
             let ret = p + 1 < n;
-            // (The previous stack's innermost frame is a caller now.)
-            if memo.get(p).is_some_and(|m| m.0 != ret) {
-                memo_inlined.truncate(memo[p].3.0 as usize);
+            let f = frame_at(p);
+            // (A frame the previous stack didn't have here; or had, but
+            // innermost, and it's a caller now.)
+            if memo.get(p).is_some_and(|m| m.0 != f || m.1 != ret) {
+                memo_inlined.truncate(memo[p].4.0 as usize);
                 memo.truncate(p);
             }
             if memo.len() == p {
-                let f = frame_at(p);
                 let fold = if folding {
                     framer.classify(process, f, ret).1
                 } else {
@@ -359,9 +357,9 @@ fn chunk_instances(
                     memo_inlined.push(keys.intern(inline));
                 }
                 let to = u32::try_from(memo_inlined.len()).expect("few inlined calls");
-                memo.push((ret, fold.is_some(), k, (from, to)));
+                memo.push((f, ret, fold.is_some(), k, (from, to)));
             }
-            let (_, folded, k, (from, to)) = memo[p];
+            let (_, _, folded, k, (from, to)) = memo[p];
             // A run of frames in one folded group, or (by image) in one
             // image, is one node.
             let collapses = folded || by_module;

@@ -26,6 +26,7 @@ pub mod layout;
 pub mod lines;
 pub mod registers;
 pub mod symbols;
+pub mod type_refs;
 pub mod types;
 
 pub use symbols::{Symbol, SymbolIter, SymbolRecord};

@@ -317,7 +317,8 @@ impl fmt::Debug for Mmap {
 
 /// Drops `path`'s pages from the system's file cache, if this host can,
 /// so that the next read of it comes from the disk (for measuring reads).
-/// Returns whether it could. On Windows, opening a file unbuffered purges
+/// Returns whether it could (a file that isn't there is an error,
+/// everywhere). On Windows, opening a file unbuffered purges
 /// its cached pages (when no other process has it mapped).
 pub fn evict_from_cache(path: &Path) -> io::Result<bool> {
     #[cfg(windows)]
@@ -333,7 +334,9 @@ pub fn evict_from_cache(path: &Path) -> io::Result<bool> {
     }
     #[cfg(not(windows))]
     {
-        let _ = path;
+        // (Nothing to drop it with here; but a file that isn't there is
+        // an error, as on Windows.)
+        std::fs::metadata(path)?;
         Ok(false)
     }
 }

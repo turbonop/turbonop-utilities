@@ -84,6 +84,9 @@ pub fn table(trace: &Trace, path: &Path) -> Result<IdleTable, String> {
     Ok(IdleTable { periods })
 }
 
+/// A processor's time idle, periods, and time by state.
+type Idled = (u64, u64, FxHashMap<u32, u64>);
+
 /// The upper bounds (nanoseconds) of the duration histogram's buckets;
 /// the last is unbounded.
 const BUCKETS: [u64; 6] = [
@@ -105,7 +108,7 @@ pub fn summary(trace: &Trace, table: &IdleTable, time: Option<(i64, i64)>) -> Va
         |a: i64, b: i64| u64::try_from(trace.clock.nanos(b) - trace.clock.nanos(a)).unwrap_or(0);
     // Per processor: idle time, periods, and time by state; per state:
     // periods, time, longest; and the histogram by state.
-    let mut per: FxHashMap<u16, (u64, u64, FxHashMap<u32, u64>)> = FxHashMap::default();
+    let mut per: FxHashMap<u16, Idled> = FxHashMap::default();
     let mut states: FxHashMap<u32, (u64, u64, u64)> = FxHashMap::default();
     let mut histogram: FxHashMap<u32, [u64; BUCKETS.len()]> = FxHashMap::default();
     // (Periods start in order, and none is longer than the longest.)
@@ -137,7 +140,7 @@ pub fn summary(trace: &Trace, table: &IdleTable, time: Option<(i64, i64)>) -> Va
     let first = table.periods.first().map_or(0, |p| p.start);
     let last = table.periods.iter().map(|p| p.end).max().unwrap_or(0);
     let span = ns(start.max(first), end.min(last)).max(1);
-    let mut groups: Vec<(u16, (u64, u64, FxHashMap<u32, u64>))> = per.into_iter().collect();
+    let mut groups: Vec<(u16, Idled)> = per.into_iter().collect();
     groups.sort_by_key(|g| g.0);
     let mut states: Vec<(u32, (u64, u64, u64))> = states.into_iter().collect();
     states.sort_by_key(|s| s.0);

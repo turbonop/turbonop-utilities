@@ -125,12 +125,15 @@ fn loading_modules_files() {
     let data = testdata("coredump/crash-x86_64.core");
     let t = CoreTarget::new(&data).unwrap();
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/coredump");
-    // (No servers: nothing is asked of one in a test.)
-    turbonop_program::server::set_servers(turbonop_program::server::Servers::default());
+    // Only the fixtures' directory: not where the core says modules were
+    // (on the machine that made it, /tmp/da is), nor the environment's
+    // symbol directories or servers.
     let loaded = load(
         &t,
         &Hints {
             dirs: vec![dir.clone()],
+            skip_recorded_paths: true,
+            symbols: Some((Vec::new(), turbonop_program::server::Servers::default())),
             ..Hints::default()
         },
     );

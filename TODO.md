@@ -85,6 +85,20 @@ Every command should be as fast as the hardware allows (on clang.exe,
   every core) and resolved (0.45 s); what is left is a few sequential
   steps of 50 ms each.
 
+## Size
+
+hexcavator itself has grown: 12.2 MB to 15.5 MB on Windows x64 from
+0.0.7 to 0.0.9, and 17.1 MB (glibc, dynamic) to 22.9 MB (musl, static)
+on Linux x64 (and the release now ships the bare programs, not ~4 MB
+archives). What's left:
+
+- **Where it went.** `hexcavator size` and `recommend` on hexcavator,
+  with its symbols: by crate, by symbol, and against 0.0.7. The likely
+  parts: the TableGen decoders (RISC-V, LoongArch, PowerPC, MIPS,
+  microMIPS) and their tables, 32-bit ARM, monomorphized generics,
+  formatting, and what the static C library and mimalloc add on Linux.
+  Then make it smaller, as hexcavator advises others to.
+
 ## Waiting
 
 - **GCC, GNU ld, gold, and mold.** `hexcavator recommend` judges what an ELF

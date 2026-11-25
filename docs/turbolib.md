@@ -22,7 +22,7 @@ items leave TODO.md as they ship.
 | Phase | State |
 |---|---|
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, `.retplne`, sanitizers. |
-| 1 Writers, round trips, and `lib.exe` without folding | Not yet. |
+| 1 Writers, round trips, and `lib.exe` without folding | 1.2 done (the archive writer, import objects, `.def` files), but the import descriptor objects. |
 | 2 Identical folding (COFF) | Not yet. |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
@@ -193,7 +193,20 @@ both orders. When A is loaded without B, A's calls go to X's copy.
 b.obj first, so the index sends a symbol both define to b.obj.
 `llvm-lib` does the same. When compacting a library, turbolib keeps the
 definer that the original index names. When acting as `lib`, it uses
-`lib.exe`'s order.
+`lib.exe`'s order. Measured since, in phase 1 (see
+`turbonop_archive::write` and `symbols`):
+
+- `lib.exe` lets a later member supersede a common symbol (undefined,
+  with a size), common or not, so of commons only the last wins.
+  `llvm-lib` keeps the first.
+- Libraries on `lib.exe`'s command line keep their order, each one's
+  members reversed: `lib one.lib two.lib` writes one.lib's members last
+  first, then two.lib's.
+- `lib /DEF` lists an import library's members in the `.def` file's order
+  in both linker members, while the archive holds them sorted by symbol.
+- `lib.exe` writes `/<ECSYMBOLS>/` after `//`, and indexes ARM64EC and
+  x64 members' symbols there; in a `/DEF` import library, the descriptor
+  objects' symbols in both tables.
 
 **Neither linker checks `.chks64` in a full link.** `.chks64` is the
 compiler's table of per-section checksums. In the test:
@@ -216,6 +229,15 @@ library over 4 GiB:
 - `link.exe` rejects that library (`LNK4003: invalid library format`).
 - `lld-link` links against it correctly, including a member at an
   offset above 4 GiB.
+
+Measured in phase 1: `llvm-lib` writes `/SYM64/` (big-endian 64-bit
+count and offsets, then the names, in member order, and no second linker
+member) only when a member's offset is past 32 bits. A 4.3 GiB library of
+four members whose offsets all fit keeps the Microsoft linker members:
+`link.exe` rejects it too (LNK1127, "library is corrupt"), and `lld-link`
+links against it. `lib.exe` also refuses more than 65,535 members
+(LNK1189), whose numbers are 16-bit in the second linker member; `llvm-lib`
+writes 65,536 with only the first linker member.
 
 So turbolib can bring a library back under the limit, but it can't make
 one that `link.exe` accepts above it.
@@ -244,7 +266,11 @@ one that `link.exe` accepts above it.
 **Existing pieces (readers):**
 
 - `turbonop-archive` reads all three archive dialects, thin archives, and
-  import members.
+  import members. It writes the Microsoft dialect as `lib.exe` (with and
+  without `/Brepro`) and `llvm-lib` do (`write`), and computes the symbols
+  each indexes (`symbols`) (phase 1.2).
+- `turbonop-moduledef` reads `.def` files as `lib.exe` does, and plans
+  the import library `lib /DEF` makes of one (phase 1.2).
 - `turbonop-pe` reads COFF objects and import objects. Its `ltcg.rs` can
   recognize `/GL` objects, which are passed through untouched.
 - `turbonop-codeview` reads type and symbol records, line tables, and
@@ -262,9 +288,9 @@ one that `link.exe` accepts above it.
 - **A COFF object model that round-trips.** Read an object into an editable
   form and write it back. Sections, symbols with every auxiliary record
   kind, relocations, string table, and big-obj headers in both directions.
-- **An archive writer** for the Microsoft dialect: both linker members,
-  `/<ECSYMBOLS>/`, the long-names member, and deterministic headers. GNU
-  and BSD dialects come in phase 6.
+- **The GNU and BSD archive writers** (phase 6), and the import
+  descriptor objects of `/DEF` import libraries (their layout is in
+  `turbonop_moduledef::imports`; they wait for the COFF writer).
 - **A complete CodeView writer and type-index visitor.** For every type
   record, symbol record, and C13 subsection, this means knowing every field
   that holds a type index or an id index, and every field that holds a
@@ -688,7 +714,19 @@ units. This is documented, and `/EXTRACT` can also re-inline them
 
 - **1.1** The COFF object model and writer, including big-obj.
 - **1.2** The Microsoft archive writer, and import-library writing from
-  `/DEF`.
+  `/DEF`. Done but the descriptor objects (which need 1.1): the writer,
+  short import objects, the `.def` reader, and lib /DEF's plan. Every
+  library tried writes back byte for byte: all 582 of the corpus (570 by
+  `lib.exe`, 12 import libraries by `link.exe /Brepro`), 490 rebuilt from
+  its objects by `lib /Brepro` and `llvm-lib`, and 1,851 of the Windows
+  SDK's and MSVC's (with their own conventions: NUL padding, dates
+  `4294967295`, holes in the member list). The index computed from the
+  members is the library's for all 1,072 of the corpus and its rebuilds,
+  and for 1,748 of the SDK's and MSVC's. Of the other 103, made by
+  Microsoft's own tools: 43 index `__auximpcopy_` symbols, 33 are merged
+  import libraries that keep every `__NULL_IMPORT_DESCRIPTOR`, and in 22
+  (ARM64 CRT and SDK libraries) the EC symbols differ and in 5 (UCRT) the
+  member a name goes to, not investigated.
 - **1.3** CodeView: every record kind written, the exhaustive index-field
   visitor, and the C13 subsections (symbols, lines, inlinee lines, file
   checksums, string table, frame data, cross-scope imports and exports).

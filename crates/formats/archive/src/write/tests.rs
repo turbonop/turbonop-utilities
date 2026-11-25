@@ -539,6 +539,15 @@ fn writing_in_parts() {
         layout.write_member(i, m[i].data, span);
     }
     assert_eq!(out, whole);
+    // Or the data copied in pieces, in any order.
+    let mut out = vec![0xEE; layout.size() as usize];
+    let mut copies = layout.prepare_mut(&mut out, |i| m[i].data, 3);
+    assert_eq!(copies.len(), 5); // 3 bytes, then 3 and 1, then 1, then 2
+    for (to, from) in copies.iter_mut().rev() {
+        to.copy_from_slice(from);
+    }
+    drop(copies);
+    assert_eq!(out, whole);
     for i in 0..4 {
         let at = layout.offset(i) as usize;
         assert_eq!(&whole[at..at + 60], layout.header(i));

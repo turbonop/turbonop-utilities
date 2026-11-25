@@ -6,11 +6,12 @@
 //! symbols is the index the library has, and that every import object
 //! writes back as it was.
 //!
-//!     cargo run --release -p turbonop-archive --example roundtrip -- [-v] <dir or .lib>...
+//!     cargo run --release -p turbonop-archive --example roundtrip -- [-v | -write] <dir or .lib>...
 //!
 //! Directories are searched for `.lib` files. Libraries are checked in
 //! parallel, the largest first (`TURBONOP_THREADS` sets how many at
-//! once). `-v` lists every library, not only those that differ.
+//! once). `-v` lists every library, not only those that differ. `-write`
+//! instead times writing each one again (its members copied in parallel).
 
 // Offsets and counts fit in 32 bits here: the libraries' offsets are
 // 32-bit, and they are read on 64-bit hosts.
@@ -283,12 +284,58 @@ fn check_data(data: &[u8]) -> Report {
     r
 }
 
+/// `-write`: times writing each library again, one at a time, its members
+/// copied in parallel into their places in one buffer (the reading and
+/// the comparing not counted).
+fn time_writes(paths: &[PathBuf]) {
+    let (mut bytes, mut seconds) = (0u64, 0f64);
+    for p in paths {
+        let map = turbonop_mmap::Mmap::open(p).unwrap();
+        let data = map.as_slice();
+        let ar = Archive::parse(data).unwrap();
+        let contents = Contents::read(&ar).unwrap();
+        let mut out = vec![0u8; data.len()];
+        let start = Instant::now();
+        let layout = contents.layout(SizeLimit::FourGiB).unwrap();
+        let laid = start.elapsed();
+        // The data in pieces of at most 4 MiB, so that the threads' shares
+        // are even when the members aren't.
+        let mut pieces = layout.prepare_mut(&mut out, |i| contents.members[i].data, 4 << 20);
+        turbonop_par::for_each_chunk_mut(&mut pieces, 1, |part| {
+            for (d, s) in part {
+                d.copy_from_slice(s);
+            }
+        });
+        let took = start.elapsed().as_secs_f64();
+        assert!(out == data, "{}", p.display());
+        bytes += data.len() as u64;
+        seconds += took;
+        println!(
+            "{}: {:.0} MiB in {:.3} s (layout {:.3} s), {:.2} GiB/s",
+            p.display(),
+            data.len() as f64 / f64::from(1u32 << 20),
+            took,
+            laid.as_secs_f64(),
+            data.len() as f64 / f64::from(1u32 << 30) / took
+        );
+    }
+    println!(
+        "{:.2} GiB written in {seconds:.2} s: {:.2} GiB/s",
+        bytes as f64 / f64::from(1u32 << 30),
+        bytes as f64 / f64::from(1u32 << 30) / seconds
+    );
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let verbose = args.iter().any(|a| a == "-v");
     let mut paths = Vec::new();
-    for a in args.iter().filter(|a| *a != "-v") {
+    for a in args.iter().filter(|a| !a.starts_with('-')) {
         find(Path::new(a), &mut paths);
+    }
+    if args.iter().any(|a| a == "-write") {
+        time_writes(&paths);
+        return;
     }
     // The largest first, so no thread is left with one at the end.
     let mut sized: Vec<(u64, PathBuf)> = paths

@@ -1,0 +1,835 @@
+# turbolib: plan
+
+turbolib (working name) is a static-library archiver that removes the
+duplication C++ puts in static libraries. Each object that uses an inline
+function, a template instantiation, a string literal, a vftable, or a
+`selectany` variable carries its own copy (a COMDAT). Under `/Z7`, each
+object also carries its own copy of every type it uses. A library of 1,000
+objects can hold 1,000 copies of each. The linker throws all but one away,
+but only after every copy has been written, copied around a distributed
+build, read, and merged.
+
+turbolib keeps one copy. It is a drop-in replacement for `lib.exe` (and
+later `ar`, `llvm-ar`, and `libtool`). Its output links exactly as the
+original does, or, in the less conservative modes the user chooses, as the
+linker is allowed to link it.
+
+This is a plan, not a specification. Each phase becomes TODO.md items, and
+items leave TODO.md as they ship.
+
+## Status (2026-11-25)
+
+| Phase | State |
+|---|---|
+| 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, `.retplne`, sanitizers. |
+| 1 Writers, round trips, and `lib.exe` without folding | Not yet. |
+| 2 Identical folding (COFF) | Not yet. |
+| 3 Shared types: a synthesized precompiled-types object | Not yet. |
+| 4 Less conservative folding | Not yet. |
+| 5 Speed | Not yet (but every phase is built to be parallel from the start). |
+| 6 ELF, with split DWARF | Not yet. |
+| 7 Mach-O | Not yet. |
+
+### Picking this up elsewhere
+
+Everything needed is in the repository:
+
+- **This plan**, and the `## turbolib` section of [TODO.md](../TODO.md),
+  which tracks what's next.
+- **The analyzer.** It is `apps/turbolib` (`turbolib analyze`), built on
+  `crates/link/fold` (`turbonop-fold`) and
+  `turbonop_codeview::type_refs`. It is run like this:
+
+      cargo run --release -p turbonop-turbolib -- analyze --stats --top 20 <dir or .lib>...
+
+  `--json` gives machine-readable results. `--diagnose` lists the members
+  it couldn't read, and why. `-j N` sets the number of threads.
+- **The corpus.** It is rebuilt with
+  [tools/turbolib/corpus](../tools/turbolib/corpus). Set `LLVM_SRC` to an
+  llvm-project checkout (the default is `C:\jm\dev\llvm-project`). Check
+  out `c74b358f44c3` for the same numbers. Then run `configure-z7.cmd` and
+  `build-z7.cmd`, and their `-nopch` versions. On this laptop (Core Ultra 5
+  335), the PCH build took about 40 minutes and the other about an hour. The analyzer is then run on `build-z7\lib` and
+  `build-z7-nopch\lib`.
+- **The spikes.** They are in [tools/turbolib](../tools/turbolib/README.md).
+- **The tools measured.** These were Visual Studio 18 Enterprise (MSVC
+  14.52.37025; the scripts call its `vcvars64.bat`), and LLD 24.0.0 at
+  `c74b358f44c3`, a Release build in `build-release`. `LLVM_BIN` overrides
+  the default path to it.
+
+The next step is phase 1, the writers.
+
+## Phase 0 results
+
+### What folding would save
+
+The corpus is `c:\jm\dev\llvm-project\build-z7`: LLVM, clang (with
+ClangIR, which brings MLIR), and lld libraries. It is a Debug build
+(`/Od /Ob0 /RTC1 /MDd`) with `/Z7`, for the X86 and AArch64 targets, at
+LLVM's `c74b358f44c3`.
+
+LLVM's CMake uses precompiled headers by default: 3,604 of the 3,771
+objects use one of 121 PCH objects. So types are already partly shared
+in this build. A second build without PCH
+(`-DCMAKE_DISABLE_PRECOMPILE_HEADERS=ON`, in `build-z7-nopch`) gives the
+other case, below.
+
+The corpus is 250 libraries, 13.7 GiB, of which:
+
+| What | Size | Share |
+|---|---|---|
+| `.debug$T` | 4.9 GiB | 35.6% |
+| Symbols and names | 3.8 GiB | 27.6% |
+| `.debug$S` | 2.5 GiB | 18.5% |
+| Code | 830 MiB | 5.9% |
+| Unwind | 619 MiB | 4.4% |
+| Data | 322 MiB | 2.3% |
+
+What each mode would save:
+
+| Mode | Saves | Of the libraries |
+|---|---|---|
+| COMDATs, `identical` | 2.8 GiB | 20.7% |
+| COMDATs, `identical, pull=preserve` | 2.7 GiB | 19.8% |
+| COMDATs, `identical, locals=copy` | 2.8 GiB | 20.7% |
+| COMDATs, `select-any, locals=copy` | 2.9 GiB | 20.9% |
+| Types, `precomp=library` | 3.1 GiB | 22.7% |
+| **The conservative default (`identical, pull=preserve` plus types)** | **5.8 GiB** | **42.5%** |
+
+Single libraries save more: clangSema 66%, clangParse 77%,
+clangStaticAnalyzerCheckers 70%.
+
+**Without PCH** (`build-z7-nopch`, the same sources and flags), the 250
+libraries are 21.8 GiB. `.debug$T` is 12.0 GiB of it (55%): 227 million
+records, of which 29 million are distinct.
+
+| Mode | Saves | Of the libraries |
+|---|---|---|
+| COMDATs, `identical, pull=preserve` | 2.8 GiB | 12.7% |
+| Types, `precomp=library` | 10.2 GiB | 47.1% |
+| **The conservative default** | **13.0 GiB** | **59.7%** |
+
+The largest libraries save the most:
+
+| Library | Size | Saves |
+|---|---|---|
+| clangCodeGen | 1.5 GiB | 76% |
+| clangSema | 1.5 GiB | 73% |
+| clangStaticAnalyzerCheckers | 1.3 GiB | 79% |
+| clangCIR | 1.3 GiB | 74% |
+| LLVMCodeGen | 1.1 GiB | 67% |
+
+The precompiled-types member would hold 816 MiB. Every link that loads
+any member of the library merges all of it into its PDB, which is the
+cost `--precomp=clustered` exists to bound. (Neither linker prunes types
+that no symbol refers to, as measured under the shared types'
+trade-off.) The analyzer read all 21.8 GiB in 22.5 s (989 MiB/s).
+
+Other findings:
+
+- Of 2.49 million COMDAT names, 634,000 are in more than one member.
+- Only 3,732 names have copies that differ within one environment.
+  Identity is strict, and the conservative mode loses almost nothing to
+  `select-any`.
+- The types would be shared through precompiled-types members holding
+  407 MiB.
+
+**Speed.** The analyzer reads the whole corpus in 14.7 s (955 MiB/s) on 8
+threads. On four large libraries (2.1 GiB) it scales from 590 MiB/s on 1
+thread to 1.9 GiB/s on 8. That is 3.2× on this Core Ultra 5 335, which
+has fewer than 8 full-speed cores. Its grouping passes have each shard
+scan every unit, which phase 5 removes.
+
+### Linker spikes
+
+The scripts and sources for every spike are in
+[tools/turbolib](../tools/turbolib/README.md), with how to run each.
+
+**A synthesized PCH object works with both linkers, with one rule.** A
+COFF object written by our own script, with no compiler behind it, had:
+
+- `.debug$S` holding only `S_OBJNAME`;
+- a 4-byte `.bss` defining `__@@_PchSym_<name>`, as `/Yc` objects do;
+- a `.debug$P` of shared records followed by `LF_ENDPRECOMP`.
+
+Its users were rewritten to begin their `.debug$T` with `LF_PRECOMP` and
+to add `-INCLUDE:` of the PCH symbol. With both `link.exe` and
+`lld-link`, linked from the command line or through a library, the
+programs ran, and the PDBs held the same types, functions, and
+signatures as the baseline. The only difference was one more public, the
+PCH symbol. lld's `/DEBUG:GHASH` works too.
+
+The rule: **`LF_FUNC_ID` and `LF_MFUNC_ID` must not be in the shared
+records.** With them in the PCH, `link.exe` silently drops the
+signatures of the functions they name: the PDB shows `use_a` rather than
+`int __cdecl use_a(int v)`. `LF_STRING_ID`, `LF_UDT_SRC_LINE`, and the
+types are fine, and real `/Yc` PCHs hold the same kinds. lld takes all
+of them. Since no type record refers to an id, the shared set stays
+closed without function ids, and each member keeps its own. In LLVM,
+that keeps 75 MiB of duplicated function ids.
+
+A real `/Yc` object's `.debug$P` is laid out as: the shared records (as
+many as the users' `LF_PRECOMP` count), then `LF_ENDPRECOMP` with the
+signature, then the PCH source's own records. Its `S_OBJNAME` has
+signature 0. The signature is only in `LF_ENDPRECOMP` and the users'
+`LF_PRECOMP`.
+
+**`NOLIBRARY` weak externals make `--pull=preserve` exact on COFF.** The
+setup:
+
+- Member A has a static initializer, so loading it has a side effect.
+- B is the member the archive index names for the inline function F.
+- In A, F became a weak external with
+  `IMAGE_WEAK_EXTERN_SEARCH_NOLIBRARY`, whose alternate is a copy in a
+  new member X.
+
+Across six programs, A was loaded exactly when the original library
+loaded it, with `link.exe` (`/OPT:REF` and `/OPT:NOREF`) and `lld-link`.
+These included programs that reference only B, only A, or F directly, in
+both orders. When A is loaded without B, A's calls go to X's copy.
+
+**The archive index names the first definer in archive order, and
+`lib.exe` reverses the command line.** `lib /OUT:x.lib a.obj b.obj` writes
+b.obj first, so the index sends a symbol both define to b.obj.
+`llvm-lib` does the same. When compacting a library, turbolib keeps the
+definer that the original index names. When acting as `lib`, it uses
+`lib.exe`'s order.
+
+**Neither linker checks `.chks64` in a full link.** `.chks64` is the
+compiler's table of per-section checksums. In the test:
+
+- An object whose code was changed without updating `.chks64` linked
+  without complaint, with both linkers, and the changed code ran.
+- One whose `.chks64` was zeroed linked, and its program ran correctly.
+
+Incremental linking (`/INCREMENTAL`) may use the table to find changed
+sections, and that is still to test. Until then, turbolib drops
+`.chks64` from every member it changes, rather than leave it stale.
+
+**The size limit is 4 GiB for anything `link.exe` must read.** For a
+library over 4 GiB:
+
+- `lib.exe` stops with `LNK1248: image size (1130003C2) exceeds maximum
+  allowable size (FFFFFFFF)`.
+- `llvm-lib` writes it anyway, with a GNU `/SYM64/` index in place of
+  the Microsoft linker members.
+- `link.exe` rejects that library (`LNK4003: invalid library format`).
+- `lld-link` links against it correctly, including a member at an
+  offset above 4 GiB.
+
+So turbolib can bring a library back under the limit, but it can't make
+one that `link.exe` accepts above it.
+
+## Decisions
+
+| | Decision |
+|---|---|
+| Order | Visual C++ COFF first (x64, then ARM64 and x86; ARM64EC later). ELF next, Mach-O last. |
+| Form | One binary for every object and archive format. It is a drop-in replacement for `lib.exe` and `llvm-lib`, for `ar` and `llvm-ar`, and later for `libtool -static` (see [Commands](#commands)). There is also a `compact` command that rewrites an existing library. |
+| Correctness | By default, the output links identically (see [Conservativeness](#conservativeness)). Every less conservative mode is opt-in and named for what it gives up. |
+| LTO | Out of scope for now. `/GL` objects, LLVM bitcode, and GCC LTO objects pass through untouched. The builds this is for are not LTO builds. |
+| Unrecognized input | A member with anything turbolib doesn't recognize passes through untouched. `--diagnose` (`/TURBOLIB:DIAGNOSE`) says, for each such member, what it didn't recognize. |
+| Statistics | `--stats` (`/TURBOLIB:STATS`) prints, when the library is written, what was folded and shared, the bytes saved by category, what was passed through and why, and the time each stage took. |
+| Threads | `-j N` (`/TURBOLIB:THREADS=N`). `-j 1` is strictly single-threaded, like `lib.exe` and `ar`: no thread pool is created, and nothing is spawned. The default is one thread per logical core. The output is byte-identical for every `N`. |
+| Language | Safe Rust. No `unsafe` outside what `turbonop-mmap` already has. mimalloc, as everywhere. |
+| Speed | Every stage saturates the cores or the disk (see [Pipeline](#pipeline)). |
+| Determinism | The same inputs and options give byte-identical output on any machine and with any number of threads. Buck2's remote cache depends on this. |
+| Reporting | Counts and sizes by default. ODR findings are available (`--report odr`) but are never warnings by default: in real code they are everywhere, and noise teaches people to ignore the tool. |
+| Name | `turbolib` (app and command), part of the turbonop-utilities suite. On crates.io, `turbolib` is taken (an S3 library, last updated 2022), so the crate is `turbonop-turbolib`, which is free. |
+| Crates | Writers go into the format crates that already read these formats (`turbonop-archive`, `turbonop-pe` or a new `turbonop-coff`, and `turbonop-codeview`). The folding engine is a new layer, `crates/link` (`turbonop-fold`, `turbonop-precomp`), at rank 3, which `layers.rs` learns about. The app is `apps/turbolib`. |
+| Test data | Small fixtures are synthesized by our own writer or built by a script from sources we write. They are committed. The large corpus is built by a script from open-source C++ (LLVM, abseil, Boost, fmt) and is not committed. Libraries from work are measured at work, and their numbers stay there. |
+
+## What exists, and what's missing
+
+**Existing pieces (readers):**
+
+- `turbonop-archive` reads all three archive dialects, thin archives, and
+  import members.
+- `turbonop-pe` reads COFF objects and import objects. Its `ltcg.rs` can
+  recognize `/GL` objects, which are passed through untouched.
+- `turbonop-codeview` reads type and symbol records, line tables, and
+  inlinee annotations.
+- `turbonop-debuginfo`'s `coff_object.rs` already turns an object's
+  CodeView into a PDB view: relocations applied, `S_GPROC32_ID` resolved,
+  checksums and the string table read. That is most of what remapping
+  needs to understand.
+- `turbonop-elf`, `turbonop-macho`, and `turbonop-dwarf` read the other
+  formats, including split DWARF (`program/tests/it/split_dwarf.rs`) and
+  Darwin debug maps (`macho/src/debugmap.rs`).
+
+**Missing pieces (writers, and everything that decides what to write):**
+
+- **A COFF object model that round-trips.** Read an object into an editable
+  form and write it back. Sections, symbols with every auxiliary record
+  kind, relocations, string table, and big-obj headers in both directions.
+- **An archive writer** for the Microsoft dialect: both linker members,
+  `/<ECSYMBOLS>/`, the long-names member, and deterministic headers. GNU
+  and BSD dialects come in phase 6.
+- **A complete CodeView writer and type-index visitor.** For every type
+  record, symbol record, and C13 subsection, this means knowing every field
+  that holds a type index or an id index, and every field that holds a
+  checksum offset or a string-table offset. LLVM's `TypeIndexDiscovery` is
+  the model. It must be exhaustive, because a missed field quietly corrupts
+  the debug information.
+- **CodeView type hashing and merging.** Structural (Merkle) hashes of
+  records: a record's own bytes, with each index replaced by the hash of
+  the record it names. Then a merge that assigns new indices.
+- **The folding engine**, the precompiled-types synthesizer, the policy
+  layer, and the reports.
+
+## How it works (COFF)
+
+### Units of folding
+
+`NODUPLICATES` COMDATs are never fold units, in any mode. With `/Gy`,
+every function is a COMDAT, and ordinary functions with external linkage
+are `NODUPLICATES`: they are strong definitions, and two copies of one
+are a duplicate-symbol error that the linker must still report.
+
+A **fold unit** is a COMDAT leader plus everything that must move with it:
+
+- the leader's section;
+- its associative sections (`.pdata`, `.xdata`, `.debug$S`, `.CRT$XCU`,
+  sanitizer metadata), transitively;
+- the static (local) symbols defined in those sections: `$LN` labels, jump
+  tables, `$ip2state$`, `$cppxdata$`, `$stateUnwindMap$`;
+- its **outside references**: every relocation target that is not inside
+  the unit. These are external symbols, other COMDATs, and local symbols
+  defined in non-COMDAT sections of the member (see
+  [internal linkage](#internal-linkage-references)).
+
+The unit's **identity hash** covers:
+
+- the bytes of every non-debug section in the unit;
+- the characteristics and names of those sections (`.text$mn` and
+  `.rdata$r` order the image);
+- each relocation as (section, offset, type, target), where a target
+  outside the unit is named by its symbol name and a target inside it by
+  its position;
+- the selection type and the COMDAT checksum;
+- the member's **environment key** (below).
+
+Debug sections are not in the identity. They come along with whichever
+copy survives, which is exactly what the linker does with the copies it
+discards.
+
+### The environment key
+
+The environment key covers the facts about a member that a folded unit
+must not lose. Synthesized members are grouped by this key, and in
+select-any mode it bounds which copies may stand in for each other:
+
+- the machine type;
+- the `@feat.00` bits (SafeSEH, `/guard:cf`, `/guard:ehcont`, `/kernel`, and
+  any others found in phase 0);
+- `/FAILIFMISMATCH` values in `.drectve`, such as `_ITERATOR_DEBUG_LEVEL`
+  and `RuntimeLibrary`;
+- the compiler identity from `S_COMPILE3` (front end and back end
+  versions, language, flags);
+- for `/Zi` objects, the type server's signature;
+- the instrumentation in use: ASan, SanCov, `/JMC`, `/hotpatch`.
+
+### Rewriting a library
+
+1. **Read** every input in parallel. Inputs are objects and libraries, and
+   input libraries are taken apart into their members. Pass through
+   untouched: `/GL` objects, import members, objects of another machine,
+   and anything turbolib doesn't understand. (A member turbolib produced
+   is understood, so compacting a compacted library is idempotent.)
+2. **Find and hash** every member's fold units.
+3. **Group** units by identity hash. For each group, decide by policy
+   whether it folds, and choose its survivor deterministically: the first
+   copy in member order, regardless of thread timing.
+4. **Lay out the synthesized members.** Folded units are grouped by the
+   *set of members that held a copy* and by environment key. Each group
+   becomes one synthesized member. Groups are split when needed to stay
+   within section limits (big-obj above 65,279 sections) and a size cap.
+   Because a group is defined by its member set, a synthesized member is
+   wanted exactly when one of those members is.
+5. **Rewrite each original member**:
+   - Remove the folded units' sections.
+   - Make each removed leader (and each other external defined in the
+     unit) an undefined external.
+   - Add an undefined reference to the **anchor** symbol of each
+     synthesized member it gave units to. This keeps unreferenced COMDATs
+     alive under `/OPT:NOREF` (the default with `/DEBUG`) exactly when they
+     were alive before.
+   - Renumber sections and symbols, and rebuild the symbol table.
+   - Split the per-object side tables ([below](#side-tables)).
+   - Rewrite `.debug$S` and `.debug$T` (phase 3).
+6. **Write each synthesized member**:
+   - the units;
+   - a defined anchor symbol;
+   - a `.drectve` holding the environment's `/FAILIFMISMATCH` directives;
+   - `@feat.00`;
+   - its side-table entries;
+   - CodeView: `S_OBJNAME` naming it (`turbolib:<library>:<n>.obj`),
+     `S_COMPILE3` and `S_ENVBLOCK` copied from the environment, file
+     checksums and a string table built from what its units' lines use,
+     and the units' `.debug$S` with indices remapped into its own types
+     (or into the shared precompiled types, phase 3).
+7. **Write the archive**: members in a deterministic order (original
+   members in input order, then synthesized members, then the
+   precompiled-types member), both linker members, `/<ECSYMBOLS>/` when
+   needed, and the long names.
+
+### Side tables
+
+Some sections are per-object tables that are not associative to any one
+COMDAT. Each entry names its target through a relocation (or, for
+`.sxdata` and the `/guard` tables, a symbol index), so each can be split:
+an entry stays with the member whose code needs it, and is copied to the
+synthesized member that receives that code.
+
+| Section | Entry | Rule |
+|---|---|---|
+| `.gfids$y`, `.giats$y`, `.gljmp$y`, `.gehcont$y` | symbol index | Each member lists the targets its *own code* takes the address of, calls through the IAT for, or jumps or continues to. Synthesized members get the entries of the code they receive. A superset is harmless. A missing entry is a CFG failure at run time, so err toward more entries. |
+| `.sxdata` (x86) | symbol index | The handlers registered by the member's functions. They move with the functions. |
+| `.debug$F` (x86 FPO) | relocation | Each entry moves with its function. |
+| `.voltbl` | relocation | Each entry moves with its section. |
+| `.retplne` | to find out | Phase 0. |
+| `.chks64` | per section | Dropped from every member turbolib changes. Neither linker checks it in a full link (phase 0). Incremental linking is still to test. |
+| `.msvcjmc` | COMDAT already | Nothing to do. |
+| `.drectve` | directive | Stays in the original member. `/FAILIFMISMATCH` is also copied into synthesized members. `/EXPORT` of a folded symbol still resolves, through the synthesized member. |
+
+Any section turbolib doesn't recognize in a member makes that member pass
+through unfolded, with a report. turbolib never guesses about these.
+
+### Internal-linkage references
+
+A unit whose relocations reach a local symbol defined outside it is
+handled according to `--locals`:
+
+- a header's `const int k = 10;` has internal linkage, so each TU has its
+  own `k`;
+- `static` helpers;
+- anonymous namespaces.
+
+| Mode | Behavior |
+|---|---|
+| `keep` (default) | Such a unit doesn't fold. |
+| `copy` | The unit folds, and the locals it reaches are copied into the synthesized member as locals. Only the address identity of those locals is observable, and comparing it across TUs is already an ODR violation. |
+| `merge` | As `copy`, and identical copied locals within a synthesized member are merged. |
+
+## Conservativeness
+
+Each axis is its own option, so a team can say exactly what it gives up.
+The defaults are the conservative choice on every axis.
+
+### `--fold`: which copies count as the same
+
+| Mode | Folds |
+|---|---|
+| `none` | Nothing. turbolib is just `lib.exe` (phase 1). |
+| `identical` (default) | Units whose identity hashes are equal. |
+| `select-any` | Units that the linker could legally substitute for each other, by selection type. See the table below. |
+
+How `select-any` treats each selection type:
+
+| Selection | In `select-any` |
+|---|---|
+| `NODUPLICATES` | Never folded. |
+| `ANY` | Folded. The survivor is chosen by `--pick`: `first` in member order (the default, closest to what the linker picks), or `largest`. |
+| `SAME_SIZE` | Folded when the sizes agree. When they don't, both copies stay and the report lists them, because the linker would fail only if both copies reached one link. |
+| `EXACT_MATCH` | Folded when the checksums agree. Otherwise, as for `SAME_SIZE`. |
+| `LARGEST` | Folded, keeping the largest. The linker keeps the largest among the copies in a given link, so this can choose a copy from a member that link never loads. That is allowed by the semantics, but it is a different choice. |
+| `ASSOCIATIVE` | Always follows its leader. |
+
+In both `identical` and `select-any`, only units with the same
+environment key fold together.
+
+### `--pull`: which members a link loads
+
+A linker loads a member when it defines a symbol the link still needs.
+The archive index sends each symbol to the first member defining it. If a
+folded symbol F was the only reason some link loaded member A, that link
+no longer loads A, because the synthesized member defines F now. When A
+has side effects, they leave that link:
+
+- dynamic initializers;
+- self-registering factories;
+- TLS callbacks;
+- `.drectve` contents (`/DEFAULTLIB`, `/INCLUDE`, `/alternatename`).
+
+| Mode | Behavior |
+|---|---|
+| `preserve` (default) | On COFF, the weak-external technique below: the member the index names keeps its copy, and nothing about which members load changes. That costs one more copy, in the synthesized member, of each name whose definer has side effects. On ELF, those units are not folded. |
+| `relaxed` | Fold regardless, and report the members whose loading may change. |
+
+**The weak-external technique.** This is for COFF. Phase 0 proved it in
+both `link.exe` and `lld-link` (see [Phase 0 results](#phase-0-results)):
+
+- F stays defined in A, the member the archive index names for it.
+- In every other member, F becomes a weak external with
+  `IMAGE_WEAK_EXTERN_SEARCH_NOLIBRARY`, whose alternate is a renamed copy
+  in the synthesized member (`__turbolib$` and F's name, which can't
+  collide with a name a compiler makes).
+- The renamed copy shows up in the PDB's publics under its new name. The
+  debugger names the function from its `LF_FUNC_ID`, so this matters
+  only to tools that fall back to publics.
+
+Expected result: a reference to F still loads A. A link that loads B
+without A gets the copy. A link that has both uses A's F. Under
+`/OPT:REF`, the copy is discarded when it is unused. ELF has nothing
+equivalent, so in phase 6 `preserve` means skipping these units.
+
+What counts as a side effect: non-COMDAT dynamic initializers,
+terminators, and TLS callbacks (`.CRT$XC*`, `.CRT$XI*`, `.CRT$XL*`,
+`.CRT$XP*`, `.CRT$XT*`), and `/INCLUDE` directives, except a PCH user's
+`/INCLUDE` of its PCH symbol. Still to decide: `/DEFAULTLIB` directives
+that differ from the rest of the library's. A member loaded only for F
+could be the only one that adds some library to the link.
+
+The anchor references from step 5 are always added. They make the keep
+and discard behavior under `/OPT:NOREF` exact in every mode.
+
+### `--precomp`: shared types (phase 3)
+
+| Mode | Behavior |
+|---|---|
+| `none` | Each member keeps its own `.debug$T`. Synthesized members get merged types of their own. |
+| `library` (default once phase 3 ships) | One precompiled-types member for the whole library. |
+| `clustered=<n>` | Up to *n* precompiled-types members, with members clustered by the types they share. |
+
+## Shared types (phase 3)
+
+Under `/Z7`, the duplicated `.debug$T` is likely the largest single part
+of a large C++ library. The phase 0 analyzer measures this. CodeView
+already has a way to share types between objects: precompiled headers.
+An object built with `/Yu` begins its `.debug$T` with `LF_PRECOMP` (start
+index, count, signature, PCH object name). Its type indices from `0x1000`
+for `count` records then refer to the PCH object's `.debug$P`. That
+section ends in `LF_ENDPRECOMP` with the same signature, which the PCH
+object's `S_OBJNAME` also carries. The PCH object defines a
+`__@@_PchSym_` symbol, and each user references it, so linking a user
+brings in the PCH object.
+
+turbolib makes a PCH object that no compiler ever made:
+
+1. **Hash** every type and id record of every member structurally. Records
+   in an object's stream refer only to earlier records, so one pass in
+   stream order suffices. Phase 0 checks that this holds for every
+   compiler in the corpus. MASM is known to violate it, so a member that
+   breaks the rule doesn't share its types.
+2. **Choose the shared set**: the records used by at least `k` members
+   (default 2), closed under references. Some records stay in each
+   member:
+   - `LF_FUNC_ID` and `LF_MFUNC_ID`, which `link.exe` won't take from a PCH
+     (it drops the functions' signatures). No type refers to an id, so the
+     set stays closed without them.
+   - Records that are inherently local, such as `LF_BUILDINFO` and the
+     strings only it uses.
+3. **Write the precompiled-types member**: the shared set in topological
+   order as `.debug$P`, `LF_ENDPRECOMP`, `S_OBJNAME` with the signature, and
+   a defined `__@@_PchSym_turbolib_<hash>` symbol.
+4. **Rewrite each member's `.debug$T`** as `LF_PRECOMP(0x1000, |shared|,
+   signature)` followed by its local records, renumbered from `0x1000 +
+   |shared|`. Then remap every type and id index in its `.debug$S`
+   (symbols, inlinee lines, `S_BUILDINFO`) and add the undefined reference
+   to the PCH symbol.
+5. **Members already built with `/Yu`.** If their PCH object is in the
+   library, its types join the shared set and the old PCH object becomes
+   an ordinary member. If it isn't, those members keep their
+   `LF_PRECOMP`, because an object can name only one.
+
+**The trade-off.** A linker merges all of a precompiled-types object's
+records into the PDB, used or not. Neither linker prunes the types that no
+kept symbol refers to, measured with `/DEBUG:FULL`. With 200 structures,
+each used only by its own `/Gy` function:
+- An object whose 200 functions `/OPT:REF` discards still brings all 200
+  structures, and all 200 functions' `LF_FUNC_ID` records, into the PDB.
+  Its symbols for those functions are gone.
+- A `/Yc` object holding the 200 structures brings all 200, although its
+  one `/Yu` user refers to one.
+
+The same is true of link.exe and lld-link, with `/OPT:REF` and
+`/OPT:NOREF`. A link that loads three members of a
+library of 1,000 merges types for all 1,000. `clustered` bounds this by
+partitioning, and the analyzer reports the cost for each choice. Shared
+records are merged once per link instead of once per member, so for
+links that use much of the library we expect faster links and smaller
+peak memory. Phase 0 measures both.
+
+**Possibly later:** global `S_UDT` and `S_CONSTANT` records. They are
+duplicated in every module's `.debug$S`, and the linker deduplicates them
+into the globals stream anyway. Moving them into the precompiled-types
+member changes which module's stream holds them, so it is an opt-in mode,
+if measurements say it pays.
+
+## Pipeline
+
+- **Read:** files memory-mapped, and members parsed in parallel, one task
+  per member. Fold units are found and hashed in the same pass. Type
+  hashing is parallel per member, since each member's records refer only
+  to its own earlier records.
+- **Reduce:** a sharded concurrent hash table from identity hash to the
+  survivor, and from type hash to the shared index. Results are resolved
+  deterministically by member order after the parallel insert, so the
+  thread count cannot change the output.
+- **Plan:** the sizes of every output member are computed first, then the
+  archive's index and member offsets, all before any data is written.
+- **Write:** every output member is written in parallel, straight into its
+  offset in a preallocated output file. Any number of threads may write,
+  and the file is complete when they finish.
+- **Measured** with Stackrabbit (ETW): the goal is no idle core outside
+  I/O waits, and the disk at its bandwidth during reads and writes.
+
+## Commands
+
+One binary serves every format. It chooses its personality by the name it
+is run as:
+
+- `lib`, `llvm-lib`;
+- `ar`, `llvm-ar`, `*-ar` (for example `x86_64-linux-gnu-ar`);
+- `ranlib`, `llvm-ranlib`;
+- later, `libtool`;
+- under any other name, `turbolib <personality> ...` selects one
+  explicitly.
+
+Within a personality, the format of the output follows the inputs (or
+`--format`, as `llvm-ar` spells it).
+
+- **The `lib` personality.** `turbolib /OUT:x.lib a.obj b.lib ...` takes
+  `lib.exe`'s command line, including `@response` files and `/NOLOGO`,
+  `/MACHINE`, `/WX`, `/IGNORE`, `/LIST`, `/EXTRACT`, `/REMOVE`, `/NAME`,
+  `/DEF`, `/EXPORT`, `/LTCG`, and `/Brepro`. It also takes `llvm-lib`'s
+  additions (`/llvmlibthin`). Import libraries from `/DEF` are written
+  too, in full.
+- **The `ar` personality.** It takes `ar`'s and `llvm-ar`'s operations and
+  modifiers:
+  - `r`, `q`, `d`, `m`, `t`, `x`, `p`, and `s`;
+  - `c`, `u`, `D`, `U`, `T`, `S`, `a`, `b`, `i`, and `N`;
+  - `--thin`, `--format`, and `--rsp-quoting`;
+  - MRI scripts (`-M`);
+  - `@response` files.
+
+  `--plugin` is accepted and ignored, as LTO is out of scope.
+- **turbolib's own options.** These are `--fold`, `--pull`, `--locals`,
+  `--precomp`, `--diagnose`, `--stats`, and `-j`. A personality accepts
+  them in its own spelling (`/TURBOLIB:<option>` for `lib`) or from the
+  `TURBOLIB_OPTIONS` environment variable, so a build system that can't
+  add arguments can still set them.
+- `turbolib compact in.lib -o out.lib [options]`: rewrites an existing
+  library.
+- `turbolib analyze x.lib [--json]`: what each mode would save, by
+  category (code, unwind, `.debug$S`, `.debug$T`, other), the hazards each
+  mode would accept, and the projected PDB cost of each `--precomp`
+  choice. It writes nothing.
+- `turbolib verify original.lib compacted.lib`: static equivalence. Every
+  symbol the original defines is still defined, and each member's
+  undefined symbols are the original's plus the folded ones. Every folded
+  unit is present in exactly one synthesized member, and every side-table
+  entry is accounted for.
+- Later, `turbolib ar ...` and `turbolib libtool ...`.
+
+`/EXTRACT` on a compacted library gives an object without its folded
+units. This is documented, and `/EXTRACT` can also re-inline them
+(`/TURBOLIB:extract-whole`).
+
+## Verification
+
+- **Round trips (phase 1):** every object and library in the corpus is
+  read and written back byte-identically. Rewriting with `--fold=none` must
+  produce a library that links into byte-identical images and PDBs (up to
+  the timestamps and GUIDs that `/Brepro` removes).
+- **Link equivalence (phases 2 to 4):** a set of test programs is linked
+  against each library before and after compaction, with `link.exe` and
+  with `lld-link`, under `/OPT:REF` and `/OPT:NOREF`, with `/DEBUG:FULL`
+  and `/DEBUG:GHASH`. COMDAT order changes addresses, so images are
+  compared by:
+  - the set of functions and data, with their bytes compared modulo
+    relocations;
+  - imports, exports, and initializer order;
+  - the load config and the CFG tables;
+  - the unwind data.
+
+  PDBs are compared through `turbonop-pdb`: every public, procedure, line,
+  inlinee, local, and type, compared structurally by name. Under
+  `--pull=preserve`, the set of members each link loads must be identical
+  (read from `/VERBOSE` and the map file; hexcavator's linker-log reader
+  already parses those). Then the test programs run their own test
+  suites.
+- **Debuggers:** spot checks with the VS debugger and WinDbg on the
+  corpus. Our own PDB reader does the systematic checking.
+- **Fuzzing:** a turbolib target in `apps/fuzz`. A hostile library must
+  yield an error, never a panic and never an output that `verify` rejects.
+- **Known differences to document:** a folded function's PDB module is
+  the synthesized member rather than the original compiland. Tools that
+  map functions back to compilands may care: Live++, Edit and Continue,
+  per-module coverage. `analyze` reports how many functions move.
+
+## Phases
+
+### Phase 0: measurements and linker spikes
+
+- **0.1 `turbolib analyze`**, first version: it reads libraries and
+  reports duplicated bytes by category, with no writing at all. Run it on
+  the corpus here and, by the user, on libraries at work. This is the
+  go/no-go, and it orders the later phases.
+- **0.2 Spikes**, each a small library produced by a throwaway writer and
+  linked with both `link.exe` and `lld-link`:
+  - A synthesized precompiled-types object (`.debug$P`) with no compiler
+    behind it. Does each linker accept it? Is the PDB equivalent? Does
+    either linker require the PCH object to be linked before its users?
+    What does `/DEBUG:GHASH` do with it?
+  - The weak-external `NOLIBRARY` technique for `--pull=preserve`.
+  - A COMDAT moved to another member, with its `.pdata`, `.xdata`, and
+    `.debug$S`.
+  - The archive size limit. Members are addressed by 32-bit offsets in
+    both linker members, so we believe a COFF library can't exceed 4 GiB.
+    Confirm it, along with what `lib.exe` and the linkers do near it.
+  - `.chks64` and `.retplne`: who reads them.
+  - ASan and SanCov objects: which of their sections are per object.
+- **Done when:** the analyzer's numbers are in, and each spike has a
+  yes or no answer. Done except incremental linking's use of
+  `.chks64`, `.retplne`, and sanitizer objects.
+
+### Phase 1: writers, round trips, and `lib.exe` without folding
+
+- **1.1** The COFF object model and writer, including big-obj.
+- **1.2** The Microsoft archive writer, and import-library writing from
+  `/DEF`.
+- **1.3** CodeView: every record kind written, the exhaustive index-field
+  visitor, and the C13 subsections (symbols, lines, inlinee lines, file
+  checksums, string table, frame data, cross-scope imports and exports).
+- **1.4** `turbolib` with `--fold=none`: the full `lib.exe` command line.
+- **Done when:** every corpus object round-trips byte-identically, and
+  with `--fold=none`, builds of the corpus link identically.
+
+### Phase 2: identical folding (COFF)
+
+- **2.1** Fold units, identity hashes, and environment keys.
+- **2.2** Synthesized members: member-set grouping, anchors, splitting.
+- **2.3** Side tables.
+- **2.4** Debug information for synthesized members: types merged per
+  member (no precompiled types yet), checksums, the string table, and
+  compiland records.
+- **2.5** `--pull=preserve` and `relaxed`, and `--locals=keep`.
+- **2.6** `turbolib verify`, and the link-equivalence harness.
+- **Done when:** the corpus links equivalently with both linkers in every
+  configuration above, and the test programs' suites pass.
+
+### Phase 3: shared types
+
+- **3.1** Structural type hashing.
+- **3.2** The shared set and the precompiled-types member.
+- **3.3** Rewriting `.debug$T` and remapping `.debug$S`.
+- **3.4** Absorbing `/Yu` members.
+- **3.5** `--precomp=clustered`. Each member names one `LF_PRECOMP`, so
+  each is in exactly one group. A record shared across groups is copied
+  into each group's precompiled-types member, and a record only one
+  member uses stays in that member. More groups mean more copies in the
+  library, but fewer unused types merged by each link. Still to decide:
+  - How to form the groups: by the types members share, by directory, or
+    by which members links load together.
+  - How to choose *n*.
+  - How to score a split. The library's size is easy to compute. The cost
+    to a typical link depends on which members links load, which turbolib
+    can't see. The analyzer can measure the size side on the corpus
+    before any writer exists.
+  - Whether a member that shares few types should stay out of every group
+    and keep its own `.debug$T`.
+- **Done when:** PDBs are equivalent, and the analyzer's projected sizes
+  match what links actually produce.
+
+### Phase 4: less conservative folding
+
+- **4.1** `--fold=select-any` and `--pick`.
+- **4.2** `--locals=copy` and `merge`.
+- **4.3** `--report odr`.
+
+### Phase 5: speed
+
+- Profile on the largest libraries in the corpus with Stackrabbit, and
+  remove every idle core outside I/O waits. Also compare link times
+  before and after compaction, which is the second benefit to prove.
+
+### Phase 6: ELF, with split DWARF
+
+- **COMDAT groups**, in place of COFF's COMDAT sections. Inline functions
+  have `STB_WEAK` binding, and the archive index still lists them (GNU ld,
+  gold, lld, and mold load members for them).
+- **Debug information is per CU, not per function.** Moving a function
+  means building a CU in the synthesized member. That means copying:
+  - the subprogram's DIE subtree and the types it uses;
+  - a line-table sequence;
+  - range lists and location lists;
+  - `.debug_addr` entries.
+
+  In the original member, the orphaned DIE's addresses are tombstoned, as
+  lld does for discarded sections.
+- **Split DWARF.** The compiler writes the `.dwo` beside the `.o`; the
+  archiver and the linker never touch it, and `dwp` packs the `.dwo` files
+  later. turbolib's archive step therefore takes the `.dwo` files as inputs
+  too, paired with their objects by `dwo_id`.
+  - The original objects' `.dwo` files need no rewriting: a function's
+    addresses go through `.debug_addr` in the `.o`, so tombstoning there
+    is enough.
+  - Synthesized members either get `.dwo` files of their own (the build
+    rule must declare them as outputs) or carry their DWARF unsplit in the
+    `.o`, which a link may mix freely.
+  - Unsplit is simpler for Buck2 integration, so it is the first choice.
+- **Per-object properties:**
+  - `.note.GNU-stack`: a synthesized member without it makes the stack
+    executable;
+  - `.note.gnu.property`: CET is the AND of all inputs, so missing it
+    turns IBT and shadow stacks off for the whole program;
+  - `.ARM.attributes`, RISC-V attributes, and MIPS ABI flags;
+  - `.init_array` entries inside COMDAT groups.
+- **`--pull=preserve`** skips the units that are at risk, since ELF has
+  nothing like `NOLIBRARY`.
+- **GNU and BSD archive writers**, `/SYM64/`, thin archives, and `ar`'s
+  command line.
+
+### Phase 7: Mach-O
+
+- **No COMDATs.** There are weak definitions within sections that
+  `.subsections_via_symbols` divides into atoms. Folding cuts atoms out of
+  `__text` and rewrites relocations, including paired
+  `SUBTRACTOR`/`UNSIGNED` relocations, plus `__compact_unwind` and the
+  `__eh_frame` FDEs.
+- **DWARF is never linked.** The executable's debug map (N_OSO) names
+  `library.a(member.o)`, and dsymutil reads the DWARF from there later.
+  A moved function's DWARF must be in the synthesized member, and the
+  member's modification time must be what the debug map records.
+- **Per-object load commands:** `LC_BUILD_VERSION` and `LC_LINKER_OPTION`.
+- **The tool:** `libtool -static`'s command line, and the BSD archive
+  writer.
+
+## Build systems
+
+- **Buck2.** Its prelude's C++ rules build a static archive for a
+  `cxx_library` by default, with the toolchain's archiver (`lib.exe` or
+  `llvm-lib` on Windows). We believe a toolchain can instead link
+  libraries as lists of objects (a `supports_archives`-style setting in
+  the prelude's linker info) and can choose thin archives. Check this in
+  the toolchain at work: look for the archiver and these settings in the
+  `cxx_toolchain` definition. Libraries big enough to near the format's
+  size limit mean archives are in use somewhere.
+- **Integration.** Point the toolchain's archiver at `turbolib`. Its output
+  is deterministic and its outputs are the same files `lib.exe`'s are,
+  unless synthesized `.dwo` files are chosen (phase 6). Smaller libraries
+  also mean less traffic to and from the remote cache.
+- **CMake, MSBuild:** set `CMAKE_AR`, or `LibToolExe` and `LibToolPath`.
+
+## Risks
+
+- **The linkers' unwritten rules.** Everything here relies on behavior
+  that `link.exe` documents incompletely: synthesized PCH objects,
+  `NOLIBRARY` weak externals, big-obj synthesized members, and unknown
+  per-object sections. Phase 0 proves each one before anything relies on
+  it, and both linkers are checked at every phase.
+- **Exhaustive CodeView remapping.** A missed index field corrupts debug
+  information silently. Mitigations: a visitor generated from one table of
+  record layouts, PDB comparisons on a large corpus, and fuzzing.
+- **The cost of precompiled types in small links.** It is measured and
+  reported, and `clustered` bounds it. If it can't be bounded well enough,
+  `--precomp` stays opt-in.
+- **Unrecognized inputs.** Anything turbolib doesn't recognize passes
+  through unfolded, with a report. The cost is a smaller saving, never a
+  wrong link.
+- **The size limit is the format's.** turbolib can bring libraries back
+  under the 4 GiB limit, but it can't write a library above it that
+  `link.exe` accepts (phase 0 confirmed this). It could write a `/SYM64/`
+  archive past 4 GiB for lld-link alone, as `llvm-lib` does, as an
+  option.

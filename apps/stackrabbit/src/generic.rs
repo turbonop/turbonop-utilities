@@ -7,16 +7,16 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use hexcavator_etl::{Buffer, Etl, Event, Guid, merge::for_each_event};
-use hexcavator_etw::KernelEvent;
-use hexcavator_etw::event_info::{EventInfo, EventInfos};
-use hexcavator_etw::schema::{Properties, Property, pointer_size};
-use hexcavator_etw::values;
-use hexcavator_mmap::Mmap;
-use hexcavator_trace::{BufferSpan, ProcessIx, Trace};
-use hexcavator_trace_analysis::{Resolver, Symbolizer};
 use rustc_hash::FxHashMap;
 use serde_json::{Value, json};
+use turbonop_etl::{Buffer, Etl, Event, Guid, merge::for_each_event};
+use turbonop_etw::KernelEvent;
+use turbonop_etw::event_info::{EventInfo, EventInfos};
+use turbonop_etw::schema::{Properties, Property, pointer_size};
+use turbonop_etw::values;
+use turbonop_mmap::Mmap;
+use turbonop_trace::{BufferSpan, ProcessIx, Trace};
+use turbonop_trace_analysis::{Resolver, Symbolizer};
 
 /// A kind of event: provider, ID, version, opcode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,7 +189,7 @@ pub fn list(
 
 /// Occurrences of events by kind (provider, ID, version).
 pub type Occurrences =
-    FxHashMap<(Guid, u16, u8), Vec<hexcavator_trace_analysis::regions::Occurrence>>;
+    FxHashMap<(Guid, u16, u8), Vec<turbonop_trace_analysis::regions::Occurrence>>;
 
 /// Every occurrence of the kinds `wanted` names (provider, ID, version:
 /// any opcode), with its payload's fields as text: read from the buffers
@@ -252,7 +252,7 @@ pub fn occurrences(
                             }
                             let r = decode(e, &infos);
                             mine.entry(key).or_default().push(
-                                hexcavator_trace_analysis::regions::Occurrence {
+                                turbonop_trace_analysis::regions::Occurrence {
                                     time: r.timestamp,
                                     process_id: r.process_id,
                                     thread_id: r.thread_id,
@@ -306,7 +306,7 @@ fn stacks_of(
         .events
         .iter()
         .enumerate()
-        .filter(|(_, e)| e.provider == hexcavator_etw::guids::STACK_WALK)
+        .filter(|(_, e)| e.provider == turbonop_etw::guids::STACK_WALK)
         .filter_map(|(i, _)| u32::try_from(i).ok())
         .collect();
     let first = rows.iter().map(|r| r.timestamp).min().unwrap_or(0);
@@ -363,13 +363,13 @@ fn stacks_of(
                     }
                     for buffer in &buffers[from..(from + CHUNK).min(buffers.len())] {
                         let _ = for_each_event(buffer, max, &mut scratch, |e| {
-                            if e.provider != hexcavator_etw::guids::STACK_WALK
+                            if e.provider != turbonop_etw::guids::STACK_WALK
                                 || e.timestamp < first
                                 || e.timestamp > last
                             {
                                 return;
                             }
-                            let Some(Ok(KernelEvent::Stack(st))) = hexcavator_etw::decode(e) else {
+                            let Some(Ok(KernelEvent::Stack(st))) = turbonop_etw::decode(e) else {
                                 return;
                             };
                             let Some(candidates) = by_time.get(&st.event_timestamp) else {
@@ -534,7 +534,7 @@ fn decode(e: &Event<'_>, infos: &EventInfos) -> Row {
             .collect()
     };
     let (fields, missing, extra) =
-        if let Some(Ok(schema)) = hexcavator_etw::tracelogging::Schema::of(e) {
+        if let Some(Ok(schema)) = turbonop_etw::tracelogging::Schema::of(e) {
             let d = schema.decode(e);
             (show(&d.properties), d.missing, d.rest.len())
         } else if let Some(info) = infos.get(e) {
@@ -545,7 +545,7 @@ fn decode(e: &Event<'_>, infos: &EventInfos) -> Row {
         } else {
             let payload = Property {
                 name: "Payload".to_string(),
-                field: hexcavator_etw::schema::Field::Bytes(e.user_data.len()),
+                field: turbonop_etw::schema::Field::Bytes(e.user_data.len()),
                 data: e.user_data,
             };
             (show(&[payload]), 0, 0)

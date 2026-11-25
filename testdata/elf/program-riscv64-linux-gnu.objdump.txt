@@ -1,0 +1,72 @@
+
+program-riscv64-linux-gnu:	file format elf64-littleriscv
+
+Disassembly of section .text:
+
+00000000000112a4 <compute>:
+   112a4:      	blez	a0, 0x11310 <.Lpcrel_hi1+0x4c>
+   112a8:      	li	a1, 0x0
+   112aa:      	li	a3, 0x0
+
+00000000000112ac <.Lpcrel_hi0>:
+   112ac:      	auipc	a2, 0x3
+   112b0:      	lw	a2, 0xa0(a2)
+   112b4:      	addi	a0, a0, -0x1
+   112b6:      	slli	a0, a0, 0x20
+   112b8:      	lui	a4, 0x88889
+   112bc:      	srli	a5, a0, 0x20
+   112c0:      	addi	a4, a4, -0x777
+
+00000000000112c4 <.Lpcrel_hi1>:
+   112c4:      	auipc	a0, 0xfffff
+   112c8:      	slli	a6, a4, 0x20
+   112cc:      	addi	a0, a0, -0x30
+   112d0:      	add	a4, a4, a6
+   112d2:      	li	a6, 0x3
+   112d4:      	add	a7, a5, a0
+   112d8:      	sub	a5, a6, a2
+   112dc:      	addi	a6, a7, 0x1
+   112e0:      	mulhu	a7, a1, a4
+   112e4:      	srli	a7, a7, 0x3
+   112e8:      	slli	t0, a7, 0x4
+   112ec:      	add	a7, a7, a0
+   112ee:      	sub	a7, a7, t0
+   112f2:      	lbu	a7, 0x0(a7)
+   112f6:      	mv	t0, a3
+   112f8:      	addi	a1, a1, 0x1
+   112fa:      	add	a3, a3, a2
+   112fc:      	addi	a0, a0, 0x1
+   112fe:      	add	a3, a3, a7
+   11300:      	addi	a5, a5, -0x3
+   11302:      	addi	a2, a2, 0x3
+   11304:      	bne	a0, a6, 0x112e0 <.Lpcrel_hi1+0x1c>
+   11308:      	add	a0, t0, a7
+   1130c:      	subw	a0, a0, a5
+   1130e:      	ret
+   11310:      	li	a0, 0x0
+   11312:      	ret
+
+0000000000011314 <optional_hook>:
+   11314:      	li	a0, 0x0
+   11316:      	ret
+
+0000000000011318 <_start>:
+   11318:      	addi	sp, sp, -0x10
+   1131a:      	sd	ra, 0x8(sp)
+
+000000000001131c <.Lpcrel_hi2>:
+   1131c:      	auipc	a0, 0x2
+   11320:      	lw	a0, 0x2c(a0)
+   11324:      	jal	0x112a4 <compute>
+
+0000000000011328 <.Lpcrel_hi3>:
+   11328:      	auipc	a1, 0x2
+   1132c:      	sb	a0, 0x24(a1)
+   11330:      	jal	0x11314 <optional_hook>
+   11334:      	lw	a1, 0x0(tp)
+   11338:      	add	a0, a0, a1
+
+000000000001133a <.Lpcrel_hi4>:
+   1133a:      	auipc	a1, 0x3
+   1133e:      	sw	a0, 0x12(a1)
+   11342:      	j	0x11342 <.Lpcrel_hi4+0x8>

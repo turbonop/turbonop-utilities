@@ -1,7 +1,7 @@
 //! Properties' values as text.
 
-use hexcavator_etw::schema::{Field, Property};
-use hexcavator_etw::values::format;
+use turbonop_etw::schema::{Field, Property};
+use turbonop_etw::values::format;
 
 #[test]
 fn values() {

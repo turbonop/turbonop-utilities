@@ -1,6 +1,6 @@
 Hexcavator is licensed under the Apache License 2.0, below. Parts of it
 are derived from others' work and carry those works' licenses too, and
-the hexc program includes the third-party crates below; their notices
+the hexcavator program includes the third-party crates below; their notices
 follow.
 
 ============================================================================
@@ -213,9 +213,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ============================================================================
-hexcavator, hexcavator-arm64, hexcavator-demangle, hexcavator-dwarf,
-hexcavator-elf, hexcavator-x86: derived in part from the LLVM Project
-(Apache-2.0 WITH LLVM-exception)
+hexcavator, turbonop-arm64, turbonop-demangle, turbonop-dwarf, turbonop-elf,
+turbonop-loongarch, turbonop-mips, turbonop-powerpc, turbonop-riscv,
+turbonop-x86: derived in part from the LLVM Project (Apache-2.0 WITH
+LLVM-exception)
 ============================================================================
 
 ==============================================================================
@@ -531,7 +532,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ============================================================================
-hexcavator-arm32: derived in part from Arm's AARCHMRS (BSD-3-Clause)
+turbonop-arm32: derived in part from Arm's AARCHMRS (BSD-3-Clause)
 ============================================================================
 
 The A32 and T32 instruction tables (tables/aarch32.txt) are generated from
@@ -567,7 +568,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 ============================================================================
-hexcavator-arm64: derived in part from Arm's AARCHMRS (BSD-3-Clause)
+turbonop-arm64: derived in part from Arm's AARCHMRS (BSD-3-Clause)
 ============================================================================
 
 The A64 instruction tables (tables/a64.txt, with LLVM's AArch64 target; see
@@ -605,7 +606,7 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
 ============================================================================
-hexcavator-demangle: derived in part from the Swift Project (Apache-2.0 WITH
+turbonop-demangle: derived in part from the Swift Project (Apache-2.0 WITH
 Swift-exception)
 ============================================================================
 
@@ -827,7 +828,7 @@ Exception (copyright Apple Inc. and the Swift project authors):
     otherwise be required by Sections 4(a), 4(b) and 4(d) of the License.
 
 ============================================================================
-hexcavator-x86: derived in part from Intel XED (Apache-2.0)
+turbonop-x86: derived in part from Intel XED (Apache-2.0)
 ============================================================================
 
 The x86 instruction tables tables/07-avx512fp16.txt, tables/08-avx10.txt,
@@ -3346,6 +3347,59 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ============================================================================
+libmimalloc-sys 0.1.49 (MIT)
+============================================================================
+
+--- LICENSE.txt ---
+Copyright 2019 Octavian Oncescu
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+--- c_src/mimalloc/v2/LICENSE ---
+MIT License
+
+Copyright (c) 2018-2025 Microsoft Corporation, Daan Leijen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+============================================================================
 lzma-rust2 0.25.0 (Apache-2.0)
 ============================================================================
 
@@ -3627,6 +3681,12 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+============================================================================
+mimalloc 0.1.52 (MIT)
+============================================================================
+
+LICENSE.txt: as for libmimalloc-sys (LICENSE.txt)
 
 ============================================================================
 miniz_oxide 0.9.1 (MIT OR Zlib OR Apache-2.0)

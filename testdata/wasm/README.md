@@ -19,7 +19,7 @@
       llvm-objdump -d --mattr=+simd128,+relaxed-simd,+atomics,+bulk-memory,+exception-handling,+tail-call,+reference-types,+multimemory,+fp16,+gc,+wide-arithmetic,+nontrapping-fptoint,+sign-ext,+multivalue,+extended-const,+call-indirect-overlong ops.wasm
 
   `tools/wasm/build.cmd` makes all of these. `crates/isa/wasm/tests/objdump.rs`
-  checks hexc's decoder against these: each
+  checks hexcavator's decoder against these: each
   instruction's length and immediates. LLVM prints `<unknown>` for relaxed
   SIMD and half-precision instructions; those are checked against the
   specification by the unit tests instead.

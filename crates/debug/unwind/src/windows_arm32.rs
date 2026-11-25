@@ -105,7 +105,7 @@ impl RuntimeFunction {
 }
 
 fn word(image: &(impl Image + ?Sized), rva: u32) -> Option<u32> {
-    let b = image.bytes(rva, 4)?;
+    let b = crate::rva_bytes(image, rva, 4)?;
     Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
 }
 
@@ -591,9 +591,9 @@ fn describe_xdata(image: &(impl Image + ?Sized), rva: u32) -> Result<Description
     }
     let scopes_len = if e { 0 } else { epilog_count * 4 };
     let scopes_rva = rva.checked_add(header).ok_or(bad)?;
-    let scopes = image.bytes(scopes_rva, scopes_len).ok_or(bad)?;
+    let scopes = crate::rva_bytes(image, scopes_rva, scopes_len).ok_or(bad)?;
     let codes_rva = scopes_rva.checked_add(scopes_len).ok_or(bad)?;
-    let codes = image.bytes(codes_rva, code_words * 4).ok_or(bad)?;
+    let codes = crate::rva_bytes(image, codes_rva, code_words * 4).ok_or(bad)?;
     let handler = if x {
         let at = codes_rva.checked_add(code_words * 4).ok_or(bad)?;
         Some(Handler {

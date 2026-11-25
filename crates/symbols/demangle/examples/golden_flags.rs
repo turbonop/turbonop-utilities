@@ -1,11 +1,11 @@
-//! Writes `tests/data/golden-flags.txt`: names hexc undecorates as undname
+//! Writes `tests/data/golden-flags.txt`: names this crate undecorates as undname
 //! does under each of several flags, for the hermetic test.
 //!
 //!     golden_flags <per-flag> <names.txt> <undname-0.txt> <flags>=<undname-flags.txt>...
 //!
 //! For each flag it keeps up to `per-flag` names whose output the flag
 //! changes (evenly spread through the list), and names that use rarer parts
-//! of the grammar, wherever hexc and undname agree.
+//! of the grammar, wherever this crate and undname agree.
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -24,7 +24,7 @@ fn main() {
     let features = [
         "$$Y", "$M", "$H?", "$$A8", "AY0", "$$QEAP8", "??__F", "??__E",
     ];
-    let mut d = hexcavator_demangle::msvc::Demangler::new();
+    let mut d = turbonop_demangle::msvc::Demangler::new();
     println!("# flags<TAB>name<TAB>undname <flags> name; from examples/golden_flags");
     for spec in &args[4..] {
         let (flags, path) = spec.split_once('=').unwrap();

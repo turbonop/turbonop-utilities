@@ -18,10 +18,10 @@
 //! strings a unit's own name uses are charged to it (bloaty charges them
 //! to an empty name); and strings include their terminating NUL.
 
-use std::collections::HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{
     Abbrevs, Attr, Sections, StrSection, Unit, UnitSection, Value, aranges, contribution,
     line_program_len, name_sets,
 };
@@ -54,6 +54,10 @@ struct Charger<'m> {
     map: &'m mut DualMap,
     base: &'m DualMap,
     file_len: u64,
+    /// See [`DwarfInput::code_at`].
+    code_at: Option<u64>,
+    /// See [`DwarfInput::data_at`].
+    data_at: &'m [(u64, u64, u64)],
 }
 
 impl Charger<'_> {
@@ -71,8 +75,29 @@ impl Charger<'_> {
     }
 
     fn vm(&mut self, at: u64, len: u64, l: Label) {
-        if len > 0 {
-            self.map.add_vm(at, at.saturating_add(len), l, self.base);
+        if len == 0 {
+            return;
+        }
+        // (A WebAssembly module's code: in its file, at its code section.)
+        if let Some(code) = self.code_at {
+            self.file(Some(code), at, len, l);
+            return;
+        }
+        self.map.add_vm(at, at.saturating_add(len), l, self.base);
+    }
+
+    /// A variable's `len` bytes at `at` (a WebAssembly module's: in its
+    /// linear memory, in the file where its data segment is).
+    fn data(&mut self, at: u64, len: u64, l: Label) {
+        if self.code_at.is_none() {
+            return self.vm(at, len, l);
+        }
+        if let Some(&(addr, _, offset)) = self
+            .data_at
+            .iter()
+            .find(|&&(addr, size, _)| at >= addr && at - addr < size)
+        {
+            self.file(Some(offset), at - addr, len, l);
         }
     }
 }
@@ -80,15 +105,24 @@ impl Charger<'_> {
 /// A DWARF section: its name without the `.debug_`/`__debug_` prefix, its
 /// contents (decompressed if need be), and where those start in the input
 /// (`None` when they aren't the input's own bytes).
-pub type DwarfSection<'d> = hexcavator_debuginfo::decompress::DebugSection<'d>;
+pub type DwarfSection<'d> = turbonop_debuginfo::decompress::DebugSection<'d>;
 
 /// DWARF sections, each with where it starts in the input file (`None`
 /// when it comes from a separate debug file: its bytes are not the
 /// input's to charge).
 pub struct DwarfInput<'d> {
-    pub endian: hexcavator_core::Endian,
+    pub endian: turbonop_core::Endian,
     /// (name without its `.debug_`/`__debug_` prefix, bytes, offset).
     pub sections: Vec<DwarfSection<'d>>,
+    /// A WebAssembly module's: its DWARF's addresses are its code
+    /// section's offsets, and its code is in the file from here (it has no
+    /// memory addresses of code; its variables', in linear memory, aren't
+    /// the file's).
+    pub code_at: Option<u64>,
+    /// A WebAssembly module's active data segments: each one's address in
+    /// linear memory, its size, and where it is in the file (where its
+    /// variables' bytes are).
+    pub data_at: Vec<(u64, u64, u64)>,
 }
 
 /// Charges code, data, and the DWARF's own bytes to compile units in
@@ -135,6 +169,8 @@ pub fn compile_units(
         map,
         base,
         file_len,
+        code_at: input.code_at,
+        data_at: &input.data_at,
     };
     // Each abbreviation table, parsed once (a unit's is read for its name,
     // then for its DIEs).
@@ -149,7 +185,7 @@ pub fn compile_units(
             .insert(offset, std::rc::Rc::clone(&a));
         Some(a)
     };
-    let mut names: HashMap<u64, Label> = HashMap::new();
+    let mut names: HashMap<u64, Label> = HashMap::default();
     let mut unit_name = |labels: &mut Labels, info_offset: u64| -> Label {
         *names.entry(info_offset).or_insert_with(|| {
             let name = Unit::at(s, info_offset)
@@ -176,7 +212,7 @@ pub fn compile_units(
         c.file(off.aranges, set.offset, set.size, l);
     }
 
-    let mut stmt_names: HashMap<u64, String> = HashMap::new();
+    let mut stmt_names: HashMap<u64, String> = HashMap::default();
     let mut attrs: Vec<Attr<'_>> = Vec::new();
     for (section, section_off) in [
         (UnitSection::Info, off.info),
@@ -347,7 +383,7 @@ fn line_spans(
         else {
             continue;
         };
-        let Some(program) = hexcavator_dwarf::line_program(&s, sl, unit.address_size) else {
+        let Some(program) = turbonop_dwarf::line_program(&s, sl, unit.address_size) else {
             continue;
         };
         let mut start: Option<u64> = None;
@@ -369,7 +405,15 @@ fn line_spans(
                 Some(s) if row.end_sequence || (!last.is_empty() && name != last) => {
                     if row.address > s {
                         let l = labels.intern(&last);
-                        map.add_vm(s, row.address, l, base);
+                        // (A WebAssembly module's code: in its file.)
+                        match input.code_at {
+                            Some(code) => {
+                                map.add_file(code + s, code + row.address, l, base);
+                            }
+                            None => {
+                                map.add_vm(s, row.address, l, base);
+                            }
+                        }
                     }
                     start = (!row.end_sequence).then_some(row.address);
                 }
@@ -448,7 +492,7 @@ fn add_die(
     if let Some(loc) = get(DW_AT_LOCATION) {
         if let Some(addr) = unit.location_address(&loc.value) {
             if let Some(&size) = sizes.get(&addr) {
-                c.vm(addr, size, l);
+                c.data(addr, size, l);
             }
         } else if unit.version < 5
             && matches!(loc.form, DW_FORM_SEC_OFFSET | DW_FORM_DATA4 | DW_FORM_DATA8)

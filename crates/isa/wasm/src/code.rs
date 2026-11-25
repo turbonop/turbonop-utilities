@@ -10,7 +10,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 use crate::ops::{self, Kind, Op};
 

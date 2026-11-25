@@ -2,9 +2,9 @@
 
 use std::io::{self, Write};
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::exception::{PdataEntry, RuntimeFunction, X64UnwindCode, unwind_flags};
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::exception::{PdataEntry, RuntimeFunction, X64UnwindCode, unwind_flags};
 
 use crate::symbols::SymbolMap;
 
@@ -57,13 +57,17 @@ fn table(
             .iter()
             .any(|e| matches!(e.function, RuntimeFunction::Arm { .. }));
     let pdata_rva = file
-        .data_directory(hexcavator_pe::consts::directory::EXCEPTION)
+        .data_directory(turbonop_pe::consts::directory::EXCEPTION)
         .map_or(0, |d| d.virtual_address.get());
     if hybrid {
         writeln!(out, "\nFunction Table")?;
     } else {
         writeln!(out, "\nFunction Table ({})", entries.len())?;
     }
+    // (32-bit ARM's table names functions by address, and dumpbin shows
+    // no unwind codes for them.)
+    let armnt = file.machine() == turbonop_pe::consts::machine::ARMNT;
+    let base = file.optional_header().map_or(0, |h| h.image_base().get());
     let mut current: Option<bool> = None;
     for entry in &entries {
         let x64 = matches!(entry.function, RuntimeFunction::X64 { .. });
@@ -74,6 +78,9 @@ fn table(
                 "\n{}\n",
                 match (hybrid, x64) {
                     (false, true) => "           Begin    End      Info      Function Name",
+                    (false, false) if armnt => {
+                        "           Begin    Packed Fragment Fixup Function Name"
+                    }
                     (false, false) => "           Begin    Packed  Function Name",
                     (true, true) => "  (AMD64)  Begin    End      Info      Function Name",
                     (true, false) => "  (ARM64)  Begin    Packed Function Name",
@@ -107,6 +114,27 @@ fn table(
                 if unwind {
                     x64_unwind(out, file, info, symbols)?;
                     writeln!(out)?;
+                }
+            }
+            RuntimeFunction::Arm {
+                begin,
+                unwind: word,
+            } if armnt => {
+                // Packed (flags 1 and 2), and a fragment (2: no prolog).
+                // (dumpbin's Fixup column is N in every image it was
+                // compared with.)
+                let yn = |b: bool| if b { 'Y' } else { 'N' };
+                write!(
+                    out,
+                    "  {:08X} {:08X}    {}      {}       N",
+                    entry.offset,
+                    base.wrapping_add(u64::from(begin.get())),
+                    yn(matches!(word & 3, 1 | 2)),
+                    yn(word & 3 == 2),
+                )?;
+                match symbol_text(file, symbols, begin.get() & !1) {
+                    Some(name) => writeln!(out, "  {name}")?,
+                    None => writeln!(out)?,
                 }
             }
             RuntimeFunction::Arm {
@@ -236,7 +264,7 @@ fn x64_unwind(
 
 /// An object's `.pdata` section: raw entries, before relocation.
 pub fn object_pdata(out: &mut dyn Write, file: &PeFile<'_>, index: usize) -> io::Result<()> {
-    use hexcavator_pe::consts::machine;
+    use turbonop_pe::consts::machine;
     let section = &file.sections()[index];
     if !file.section_name(section).starts_with(b".pdata") {
         return Ok(());

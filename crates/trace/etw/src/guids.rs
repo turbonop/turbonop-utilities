@@ -1,6 +1,6 @@
 //! Provider (event class) GUIDs.
 
-use hexcavator_etl::Guid;
+use turbonop_etl::Guid;
 
 const fn g(data1: u32, data2: u16, data3: u16, data4: [u8; 8]) -> Guid {
     Guid::new(data1, data2, data3, data4)

@@ -4,8 +4,8 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
-use hexcavator_symbolize::SymbolPath;
-use hexcavator_trace_analysis::{NodeId, PdbSymbolizer, Resolver};
+use turbonop_symbolize::SymbolPath;
+use turbonop_trace_analysis::{NodeId, PdbSymbolizer, Resolver};
 
 use crate::Args;
 use crate::store;
@@ -127,7 +127,7 @@ fn print(o: &Options) -> Result<String, String> {
             std::fs::read_to_string(p)
                 .map_err(|e| format!("{p}: {e}"))
                 .and_then(|t| {
-                    hexcavator_trace_analysis::StackTags::from_xml(&t)
+                    turbonop_trace_analysis::StackTags::from_xml(&t)
                         .map_err(|e| format!("{p}: {e}"))
                 })?,
         ),
@@ -177,7 +177,7 @@ fn print(o: &Options) -> Result<String, String> {
 /// first.
 fn print_rows(
     view: &mut TreeView,
-    trace: &hexcavator_trace::Trace,
+    trace: &turbonop_trace::Trace,
     symbols: &PdbSymbolizer,
     node: NodeId,
     o: &Options,

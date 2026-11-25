@@ -17,7 +17,7 @@
 //! Mach-O objects lay their sections out in one.
 //!
 //! A universal (fat) Mach-O file holds several images: [`Image::parse`]
-//! reads the one `hexcavator_macho::preferred_slice` gives (the host's
+//! reads the one `turbonop_macho::preferred_slice` gives (the host's
 //! architecture, unless another was chosen), and its offsets are within
 //! that image.
 
@@ -28,6 +28,7 @@ extern crate alloc;
 
 mod arch;
 mod elf;
+mod imports;
 mod macho;
 mod pe;
 mod section;
@@ -36,17 +37,19 @@ mod wasm;
 
 use alloc::vec::Vec;
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_elf::ElfFile;
-use hexcavator_macho::MachO;
-use hexcavator_pe::PeFile;
-use hexcavator_wasm::Module;
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_elf::ElfFile;
+use turbonop_macho::MachO;
+use turbonop_pe::PeFile;
+use turbonop_wasm::Module;
 
 pub use arch::{Arch, Hybrid, coff_machine_name, is_known_coff_machine};
+pub use imports::{ImportSlot, Imported};
 /// A COFF section's characteristics, as [`SectionFlags`].
 pub use pe::flags as coff_section_flags;
 pub use section::{Section, SectionFlags};
 pub use symbols::{ImageSymbol, SymbolKind, SymbolSource};
+pub use wasm::MEMORY as WASM_MEMORY;
 
 /// The container format of a file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -165,13 +168,13 @@ impl<'data> Image<'data> {
         if ElfFile::is_elf(data) {
             return ElfFile::parse(data).map(Image::Elf);
         }
-        if hexcavator_macho::is_macho(data) {
+        if turbonop_macho::is_macho(data) {
             return MachO::parse(data).map(Image::MachO);
         }
-        if hexcavator_macho::is_fat(data) {
+        if turbonop_macho::is_fat(data) {
             // One of its images: the one chosen (see
-            // `hexcavator_macho::preferred_slice`).
-            let Some((_, slice)) = hexcavator_macho::preferred_slice(data) else {
+            // `turbonop_macho::preferred_slice`).
+            let Some((_, slice)) = turbonop_macho::preferred_slice(data) else {
                 return Err(Error::new(
                     ErrorKind::Unsupported,
                     0,
@@ -180,7 +183,7 @@ impl<'data> Image<'data> {
             };
             return MachO::parse(slice).map(Image::MachO);
         }
-        if hexcavator_wasm::is_wasm(data) {
+        if turbonop_wasm::is_wasm(data) {
             return Module::parse(data).map(Image::Wasm);
         }
         // A COFF object has no magic number, only a machine type. Accept
@@ -251,8 +254,9 @@ impl<'data> Image<'data> {
     pub fn kind(&self) -> Kind {
         match self {
             Image::Pe(pe) => match pe.kind() {
-                hexcavator_pe::FileKind::Image => Kind::Linked,
-                hexcavator_pe::FileKind::Object => Kind::Object,
+                turbonop_pe::FileKind::Image if pe::debug_only(pe) => Kind::Debug,
+                turbonop_pe::FileKind::Image => Kind::Linked,
+                turbonop_pe::FileKind::Object => Kind::Object,
             },
             Image::Elf(elf) => elf::kind(elf),
             Image::MachO(m) => macho::kind(m),
@@ -261,11 +265,11 @@ impl<'data> Image<'data> {
     }
 
     /// The byte order of its data.
-    pub fn endian(&self) -> hexcavator_core::Endian {
+    pub fn endian(&self) -> turbonop_core::Endian {
         match self {
             Image::Elf(elf) => elf.endian(),
             Image::MachO(m) => m.endian(),
-            Image::Pe(_) | Image::Wasm(_) => hexcavator_core::Endian::Little,
+            Image::Pe(_) | Image::Wasm(_) => turbonop_core::Endian::Little,
         }
     }
 
@@ -273,9 +277,9 @@ impl<'data> Image<'data> {
     /// code: see [`Image::hybrid`]).
     pub fn arch(&self) -> Arch {
         match self {
-            Image::Pe(pe) => hexcavator_pe::consts::machine::arch(pe.machine()),
-            Image::Elf(elf) => hexcavator_elf::arch(elf.header().machine, elf.class()),
-            Image::MachO(m) => hexcavator_macho::arch(m.header().cputype),
+            Image::Pe(pe) => turbonop_pe::consts::machine::arch(pe.machine()),
+            Image::Elf(elf) => turbonop_elf::arch(elf.header().machine, elf.class()),
+            Image::MachO(m) => turbonop_macho::arch(m.header().cputype),
             Image::Wasm(m) if m.is_memory64() => Arch::Wasm64,
             Image::Wasm(_) => Arch::Wasm32,
         }
@@ -298,6 +302,30 @@ impl<'data> Image<'data> {
         match self {
             Image::Pe(pe) => pe.optional_header().map_or(0, |h| h.image_base().get()),
             _ => 0,
+        }
+    }
+
+    /// An address of the image (see the crate's addresses) as the
+    /// format's own tools show it: a PE image's at its preferred base (a
+    /// virtual address); a WebAssembly module's data at its address in
+    /// linear memory (its code's offsets as they are); others' as they
+    /// are.
+    pub fn shown_address(&self, addr: u64) -> u64 {
+        match self {
+            Image::Wasm(_) if addr >= wasm::MEMORY => addr - wasm::MEMORY,
+            _ => addr.wrapping_add(self.image_base()),
+        }
+    }
+
+    /// What a pointer's value, as the program holds it, is less the
+    /// address in the image it points to (wrapping): a PE image's
+    /// preferred base; a WebAssembly module's pointers, addresses in its
+    /// linear memory, are less [`WASM_MEMORY`] (its functions' are table
+    /// indices, which point at no address); 0 elsewhere.
+    pub fn pointer_base(&self) -> u64 {
+        match self {
+            Image::Wasm(_) => wasm::MEMORY.wrapping_neg(),
+            _ => self.image_base(),
         }
     }
 
@@ -341,11 +369,12 @@ impl<'data> Image<'data> {
     }
 
     /// The words the loader writes addresses into, by address: PE's base
-    /// relocations; ELF's dynamic relocations that write an address
-    /// (relative, absolute, GOT and PLT entries, indirect functions) and
-    /// its packed relative relocations (RELR); Mach-O's rebases and binds
-    /// (chained fixups, or the older opcodes). Objects have none: their
-    /// relocations are the linker's.
+    /// relocations and import address tables; ELF's dynamic relocations
+    /// that write an address (relative, absolute, GOT and PLT entries,
+    /// indirect functions) and its packed relative relocations (RELR);
+    /// Mach-O's rebases and binds (chained fixups, or the older opcodes).
+    /// Objects have none: their relocations are the linker's. (Those that
+    /// hold another module's address, [`Image::import_slots`] names.)
     pub fn pointer_slots(&self) -> Vec<PointerSlot> {
         let mut out = match self {
             Image::Pe(pe) => pe::pointer_slots(pe),
@@ -353,9 +382,51 @@ impl<'data> Image<'data> {
             Image::MachO(m) => macho::pointer_slots(m),
             Image::Wasm(_) => Vec::new(),
         };
+        // (A PE image's imports are bound without relocations: its import
+        // address tables.)
+        if self.pe().is_some() {
+            out.extend(self.import_slots().into_iter().map(|s| PointerSlot {
+                addr: s.addr,
+                width: s.width,
+                target: None,
+            }));
+        }
         out.sort_unstable_by_key(|s| s.addr);
         out.dedup_by_key(|s| s.addr);
         out
+    }
+
+    /// Where it starts running, if it says (see the crate's addresses): a
+    /// PE image's `AddressOfEntryPoint` (a DLL's `DllMain` caller), an ELF
+    /// file's `e_entry`, a Mach-O executable's `LC_MAIN`, a WebAssembly
+    /// module's start function (or else its `_start` export, a WASI
+    /// command's). `None` for objects, and images that have none.
+    pub fn entry(&self) -> Option<u64> {
+        if self.kind() != Kind::Linked {
+            return None;
+        }
+        let at = match self {
+            Image::Pe(pe) => u64::from(pe.optional_header()?.address_of_entry_point()),
+            Image::Elf(elf) => elf.header().entry,
+            Image::MachO(m) => m.entry()?,
+            Image::Wasm(m) => {
+                let index = m.start_function().or_else(|| {
+                    m.exports()
+                        .into_iter()
+                        .find(|e| e.kind == 0 && e.name == b"_start")
+                        .map(|e| e.index)
+                })?;
+                return wasm::function_address(m, index);
+            }
+        };
+        // (0 is no entry point: a resource-only DLL's, a library's.)
+        let at = (at != 0).then_some(at)?;
+        // (A 32-bit ARM entry point's Thumb bit.)
+        Some(if self.arch() == Arch::Arm {
+            at & !1
+        } else {
+            at
+        })
     }
 
     /// `len` bytes of file data at `addr`. They must all be present in the

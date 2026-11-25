@@ -1,7 +1,7 @@
-"""Compares hexc size with bloaty, report by report, on the ELF, Mach-O, and
+"""Compares hexcavator size with bloaty, report by report, on the ELF, Mach-O, and
 WebAssembly fixtures in testdata.
 
-Usage: python compare.py <bloaty> <hexc> [--show]  (see README.md)
+Usage: python compare.py <bloaty> <hexcavator> [--show]  (see README.md)
 
 For each fixture and data source, both write CSV (every row, -n 0); rows
 are compared as sets. Prints, per (fixture, sources), "same", "differs"
@@ -14,7 +14,7 @@ import pathlib
 import subprocess
 import sys
 
-bloaty, hexc = sys.argv[1], sys.argv[2]
+bloaty, hexcavator = sys.argv[1], sys.argv[2]
 show = "--show" in sys.argv
 root = pathlib.Path(__file__).resolve().parents[2] / "testdata"
 
@@ -37,11 +37,11 @@ def run(cmd):
     return set(rows), None
 
 
-counts = {"same": 0, "differs": 0, "bloaty refuses": 0, "hexc fails": 0, "both fail": 0}
+counts = {"same": 0, "differs": 0, "bloaty refuses": 0, "hexcavator fails": 0, "both fail": 0}
 for f in FILES:
     for s in SOURCES:
         b, be = run([bloaty, str(f), "-d", s, "-n", "0", "--csv"])
-        r, re_ = run([hexc, "size", str(f), "-d", s, "-n", "0", "-csv"])
+        r, re_ = run([hexcavator, "size", str(f), "-d", s, "-n", "0", "-csv"])
         name = f"{f.parent.name}/{f.name} {s}"
         if be and re_:
             counts["both fail"] += 1
@@ -50,8 +50,8 @@ for f in FILES:
             counts["bloaty refuses"] += 1
             continue
         if re_:
-            counts["hexc fails"] += 1
-            print(f"{name}: hexc fails ({re_})")
+            counts["hexcavator fails"] += 1
+            print(f"{name}: hexcavator fails ({re_})")
             continue
         if b == r:
             counts["same"] += 1
@@ -62,5 +62,5 @@ for f in FILES:
             for row in sorted(b - r):
                 print(f"    bloaty: {row}")
             for row in sorted(r - b):
-                print(f"    hexc:   {row}")
+                print(f"    hexcavator:   {row}")
 print(counts)

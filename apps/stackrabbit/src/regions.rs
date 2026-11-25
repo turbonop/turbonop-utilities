@@ -4,9 +4,9 @@
 
 use std::path::Path;
 
-use hexcavator_trace::Trace;
-use hexcavator_trace_analysis::regions::{Regions, instances};
 use serde_json::{Value, json};
+use turbonop_trace::Trace;
+use turbonop_trace_analysis::regions::{Regions, instances};
 
 /// How many instances are listed.
 const MAX_INSTANCES: usize = 20_000;

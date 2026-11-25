@@ -1,12 +1,12 @@
 //! Hostile type records: each must give an answer (or none), never hang or
 //! overflow the stack. (Values and layouts' holes, which are read above
-//! this crate, have the same tests in hexcavator-debuginfo's
+//! this crate, have the same tests in turbonop-debuginfo's
 //! tests/hostile_pdb.rs.) (A PDB is read as found beside an image: anyone who
 //! can put a file there can write these.)
 
-use hexcavator_codeview::layout;
-use hexcavator_codeview::{TypeFormatter, TypeIndex};
-use hexcavator_pdb::{StreamData, TypeStream};
+use turbonop_codeview::layout;
+use turbonop_codeview::{TypeFormatter, TypeIndex};
+use turbonop_pdb::{StreamData, TypeStream};
 
 const LF_MODIFIER: u16 = 0x1001;
 const LF_POINTER: u16 = 0x1002;
@@ -137,7 +137,7 @@ fn a_procedure_whose_arguments_are_itself() {
     let started = std::time::Instant::now();
     let name = TypeFormatter { types: &types }.name(TypeIndex(0x1000));
     assert!(
-        name.len() <= hexcavator_codeview::types::MAX_NAME_LEN + 512,
+        name.len() <= turbonop_codeview::types::MAX_NAME_LEN + 512,
         "{} bytes",
         name.len()
     );
@@ -148,4 +148,35 @@ fn a_procedure_whose_arguments_are_itself() {
         started.elapsed()
     );
     read_all(&types);
+}
+
+/// A real PDB read by range (a source) reads as it does from its bytes:
+/// its streams, its modules' symbols, and its types.
+#[test]
+fn a_pdb_read_by_range_is_the_same() {
+    let data = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/data/test-x64.pdb"
+    ))
+    .unwrap();
+    let mapped = turbonop_pdb::Pdb::parse(&data).unwrap();
+    let source: &dyn turbonop_core::Source = &data;
+    let read = turbonop_pdb::Pdb::parse_source(source).unwrap();
+    assert_eq!(read.info().guid(), mapped.info().guid());
+    let (m, r) = (mapped.msf(), read.msf());
+    assert_eq!(m.stream_count(), r.stream_count());
+    for i in 0..u32::try_from(m.stream_count()).unwrap() {
+        assert_eq!(
+            m.stream_or_empty(i).unwrap(),
+            r.stream_or_empty(i).unwrap(),
+            "stream {i}"
+        );
+    }
+    assert_eq!(mapped.sections().unwrap(), read.sections().unwrap());
+    assert_eq!(
+        mapped.types().unwrap().iter().count(),
+        read.types().unwrap().iter().count()
+    );
+    assert!(read.types().unwrap().iter().count() > 0);
+    assert_eq!(mapped.symbol_records(), read.symbol_records());
 }

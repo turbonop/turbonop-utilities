@@ -1,0 +1,531 @@
+name: hexcavator release
+
+# hexcavator for each platform: Windows signed with Azure Artifact Signing,
+# macOS with an Apple Developer ID and notarized, Linux static (musl), so
+# that it runs on any distribution. Each is published as itself, named by
+# its target triple (hexcavator-x86_64-pc-windows-msvc.exe,
+# hexcavator-aarch64-apple-darwin, ...), at
+# releases/download/hexcavator-v<version>/<name>, with its symbols beside
+# it. (Not releases/latest: the repository's latest release may be
+# another tool's.) Also hexcavator for WASI
+# (hexcavator-wasm32-wasip1.wasm), the VS Code extension packaged for
+# each platform with its hexcavator inside, and the web version, on
+# GitHub Pages.
+#
+# - A tag hexcavator-v<version> (the version in apps/hexcavator/Cargo.toml
+#   and in the extension's package.json) builds, tests, signs, and packages, then makes a draft
+#   GitHub release; publishing the extension to the Marketplace waits for
+#   approval (the marketplace environment). Publishing the draft sends
+#   hexcavator to winget (hexcavator-winget.yml).
+# - Run by hand (Actions > hexcavator release > Run workflow), it builds, tests, and
+#   packages, unsigned, as workflow artifacts only: a dry run.
+#
+# Signing happens only in the release environment (protect it: tags only,
+# with a required reviewer). Windows signs through OIDC (no secrets);
+# Apple has no OIDC, so macOS signing reads secrets kept on the release
+# environment. See the variables and secrets each job reads. (Signing is
+# every tool's: .github/actions/sign-windows and sign-macos.)
+
+on:
+  push:
+    tags: ["hexcavator-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hexcavator-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # (4.0.0 brought `publish --oidc`; 4.1.0 matched the Marketplace's
+  # token exchange.)
+  VSCE: "@vscode/vsce@4.1.0"
+
+jobs:
+  # A tag must name the version being built: hexcavator's and the extension's.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: v
+        shell: bash
+        run: |
+          extension=$(node -p "require('./editors/vscode/hexcavator/package.json').version")
+          cargo=$(sed -n 's/^version = "\(.*\)"$/\1/p' apps/hexcavator/Cargo.toml | head -n 1)
+          echo "extension $extension, hexcavator $cargo"
+          if [[ "$GITHUB_REF" == refs/tags/hexcavator-v* ]]; then
+            tag=${GITHUB_REF_NAME#hexcavator-v}
+            if [[ "$tag" != "$extension" || "$tag" != "$cargo" ]]; then
+              echo "::error::tag $GITHUB_REF_NAME, but package.json says $extension and apps/hexcavator/Cargo.toml $cargo"
+              exit 1
+            fi
+          fi
+          echo "version=$extension" >> "$GITHUB_OUTPUT"
+
+  # Each platform built natively, its tests run there first, built for
+  # the release's own target (CI doesn't run them on Linux arm64, nor
+  # with musl), and its debug information kept apart from the program.
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc, vscode: win32-x64, os: windows-latest, exe: .exe }
+          - { target: aarch64-pc-windows-msvc, vscode: win32-arm64, os: windows-11-arm, exe: .exe }
+          - { target: aarch64-apple-darwin, vscode: darwin-arm64, os: macos-15, exe: "" }
+          - { target: x86_64-apple-darwin, vscode: darwin-x64, os: macos-15-intel, exe: "" }
+          - { target: x86_64-unknown-linux-musl, vscode: linux-x64, os: ubuntu-24.04, exe: "" }
+          - { target: aarch64-unknown-linux-musl, vscode: linux-arm64, os: ubuntu-24.04-arm, exe: "" }
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+      # mimalloc (musl's allocator in hexcavator's place: see
+      # apps/hexcavator/src/main.rs), compiled for musl.
+      CC_x86_64_unknown_linux_musl: musl-gcc
+      CC_aarch64_unknown_linux_musl: musl-gcc
+      # (The tests' own binaries allocate with musl's allocator, many times
+      # slower than glibc's: only the hexcavator program has mimalloc. The
+      # timed tests bound blow-ups, not speed; CI's musl job allows the same.)
+      TURBONOP_TEST_SLOWDOWN: ${{ contains(matrix.target, 'musl') && '4' || '1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust
+        shell: bash
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup target add ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      # Every platform's dependencies: the licenses test lists them all.
+      - run: cargo fetch
+      - run: cargo xtask test --target ${{ matrix.target }}
+      - name: Build
+        shell: bash
+        run: |
+          # Windows: the C runtime linked in, so that hexcavator needs no
+          # Visual C++ redistributable.
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            export RUSTFLAGS="-C target-feature=+crt-static"
+          fi
+          # macOS: the debug information in a dSYM beside the program.
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            export CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO=packed
+          fi
+          cargo build --release --locked -p hexcavator --target ${{ matrix.target }}
+      - name: Stage
+        shell: bash
+        run: |
+          mkdir -p out/bin out/symbols
+          built=target/${{ matrix.target }}/release
+          cp "$built/hexcavator${{ matrix.exe }}" out/bin/
+          case "$RUNNER_OS" in
+            Windows) cp "$built/hexcavator.pdb" out/symbols/ ;;
+            # (-L: cargo's hexcavator.dSYM is a symlink into deps/, which
+            # copied as itself would point nowhere.)
+            macOS) cp -RL "$built/hexcavator.dSYM" out/symbols/ ;;
+            Linux)
+              objcopy --only-keep-debug out/bin/hexcavator out/symbols/hexcavator.debug
+              objcopy --strip-debug --add-gnu-debuglink=out/symbols/hexcavator.debug out/bin/hexcavator
+              ;;
+          esac
+          # The symbols are there, as files, not links.
+          case "$RUNNER_OS" in
+            Windows) symbols=out/symbols/hexcavator.pdb ;;
+            macOS) symbols=out/symbols/hexcavator.dSYM/Contents/Resources/DWARF/hexcavator ;;
+            Linux) symbols=out/symbols/hexcavator.debug ;;
+          esac
+          if [[ ! -f "$symbols" || -L "$symbols" ]]; then
+            echo "::error::no symbols at $symbols"
+            exit 1
+          fi
+          "out/bin/hexcavator${{ matrix.exe }}" version
+          # Linux: static, needing nothing of the system: no loader to
+          # run it (PT_INTERP) and no shared libraries (DT_NEEDED). (Not
+          # file(1)'s words: x86-64's is a static PIE, "static-pie
+          # linked".)
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            file out/bin/hexcavator
+            if readelf -lW out/bin/hexcavator | grep -q INTERP ||
+               readelf -dW out/bin/hexcavator | grep -q NEEDED; then
+              echo "::error::hexcavator isn't statically linked"
+              readelf -lW out/bin/hexcavator | grep -A1 INTERP
+              readelf -dW out/bin/hexcavator | grep NEEDED
+              exit 1
+            fi
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hexcavator-${{ matrix.vscode }}
+          path: out/
+          if-no-files-found: error
+
+  # hexcavator for WASI (wasmtime, wasmer, ...; one thread), tried on the
+  # test data under wasmtime; and for the browser (wasi-threads: every
+  # core), the web version's (see editors/web).
+  wasm:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      # No debug information: it would be most of the module.
+      CARGO_PROFILE_RELEASE_DEBUG: "0"
+      CARGO_PROFILE_RELEASE_STRIP: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install stable --profile minimal
+      - run: rustup target add wasm32-wasip1 wasm32-wasip1-threads
+      - run: cargo build --release --locked -p hexcavator --target wasm32-wasip1
+      # (A shared memory may grow to 4 GiB: wasm32's whole address space.)
+      - run: cargo build --release --locked -p hexcavator --target wasm32-wasip1-threads
+        env:
+          RUSTFLAGS: -C link-arg=--max-memory=4294967296
+      - name: Try it
+        run: |
+          curl -sSfL https://wasmtime.dev/install.sh | bash -s -- --version v50.0.0
+          wasmtime=$HOME/.wasmtime/bin/wasmtime
+          wasm=target/wasm32-wasip1/release/hexcavator.wasm
+          "$wasmtime" run "$wasm" version
+          "$wasmtime" run --dir testdata::/testdata "$wasm" info /testdata/xref/xref-x64.exe
+          "$wasmtime" run --dir testdata::/testdata "$wasm" size /testdata/xref/xref-x64.exe
+      - run: |
+          mkdir -p out
+          cp target/wasm32-wasip1/release/hexcavator.wasm out/hexcavator-wasm32-wasip1.wasm
+          cp target/wasm32-wasip1-threads/release/hexcavator.wasm out/hexcavator-wasm32-wasip1-threads.wasm
+          ls -l out
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: turbonop-wasm
+          path: out/
+          if-no-files-found: error
+
+  # Both Windows programs, signed on x64 (the signing action doesn't run
+  # on ARM64 runners; it signs ARM64 programs all the same). Variables:
+  # AZURE_CLIENT_ID and AZURE_TENANT_ID (an app registration with a
+  # federated credential for this repository's release environment and
+  # the Artifact Signing Certificate Profile Signer role on the account;
+  # it needs no access to the subscription itself), and
+  # ARTIFACT_SIGNING_ENDPOINT, ARTIFACT_SIGNING_ACCOUNT,
+  # ARTIFACT_SIGNING_PROFILE.
+  sign-windows:
+    if: startsWith(github.ref, 'refs/tags/hexcavator-v')
+    needs: build
+    runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hexcavator-win32-x64
+          path: x64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hexcavator-win32-arm64
+          path: arm64
+      - uses: ./.github/actions/sign-windows
+        with:
+          files: |
+            ${{ github.workspace }}\x64\bin\hexcavator.exe
+            ${{ github.workspace }}\arm64\bin\hexcavator.exe
+          description: Hexcavator
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          account: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          profile: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+      # hexcavator checks its own signatures (and fails unless both verify).
+      - run: x64\bin\hexcavator.exe signature x64\bin\hexcavator.exe arm64\bin\hexcavator.exe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hexcavator-win32-x64
+          path: x64/
+          overwrite: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hexcavator-win32-arm64
+          path: arm64/
+          overwrite: true
+
+  # Each macOS program signed with the Developer ID certificate (hardened
+  # runtime, secure timestamp) and notarized by Apple. Secrets (on the
+  # release environment): APPLE_DEVELOPER_ID_P12 (the certificate and its
+  # private key, with Apple's Developer ID G2 intermediate, as a PKCS#12
+  # file in base64) and APPLE_DEVELOPER_ID_P12_PASSWORD; APPLE_API_KEY (an
+  # App Store Connect API key's .p8 file, as text), APPLE_API_KEY_ID, and
+  # APPLE_API_ISSUER_ID, for notarytool. (A bare program can't have its
+  # notarization ticket stapled to it; Gatekeeper looks the ticket up.)
+  sign-macos:
+    if: startsWith(github.ref, 'refs/tags/hexcavator-v')
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        vscode: [darwin-arm64, darwin-x64]
+    runs-on: macos-15
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hexcavator-${{ matrix.vscode }}
+          path: mac
+      - uses: ./.github/actions/sign-macos
+        with:
+          program: mac/bin/hexcavator
+          p12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          api-key: ${{ secrets.APPLE_API_KEY }}
+          api-key-id: ${{ secrets.APPLE_API_KEY_ID }}
+          api-issuer-id: ${{ secrets.APPLE_API_ISSUER_ID }}
+      - name: Check
+        run: |
+          # Gatekeeper's verdict, asked about the ticket Apple now holds.
+          spctl --assess --type open --context context:primary-signature --verbose=2 mac/bin/hexcavator
+          # And hexcavator's own (read on this Mac whatever the program's
+          # architecture): trusted to Apple's root, not ad hoc, with a team
+          # and the hardened runtime. (The x64 program runs here under
+          # Rosetta.)
+          mac/bin/hexcavator signature mac/bin/hexcavator
+          mac/bin/hexcavator signature -json mac/bin/hexcavator > "$RUNNER_TEMP/signature.json"
+          jq -e '.status == "pass" and (.apple | length > 0)
+            and all(.apple[]; .adhoc == false and .team != null and .runtime != null)' \
+            "$RUNNER_TEMP/signature.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hexcavator-${{ matrix.vscode }}
+          path: mac/
+          overwrite: true
+
+  # For each platform: hexcavator itself, named by its target triple; its
+  # symbols; and the VSIX (the extension with that hexcavator). Alpine's
+  # VSIXs carry the same static Linux programs.
+  package:
+    needs: [version, build, sign-windows, sign-macos]
+    # (After signing on a tag; on a dry run, the signing jobs are skipped.)
+    if: ${{ !cancelled() && !failure() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-pc-windows-msvc, vscode: win32-x64, from: win32-x64, exe: .exe }
+          - { target: aarch64-pc-windows-msvc, vscode: win32-arm64, from: win32-arm64, exe: .exe }
+          - { target: aarch64-apple-darwin, vscode: darwin-arm64, from: darwin-arm64, exe: "" }
+          - { target: x86_64-apple-darwin, vscode: darwin-x64, from: darwin-x64, exe: "" }
+          - { target: x86_64-unknown-linux-musl, vscode: linux-x64, from: linux-x64, exe: "" }
+          - { target: aarch64-unknown-linux-musl, vscode: linux-arm64, from: linux-arm64, exe: "" }
+          - { target: "", vscode: alpine-x64, from: linux-x64, exe: "" }
+          - { target: "", vscode: alpine-arm64, from: linux-arm64, exe: "" }
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hexcavator-${{ matrix.from }}
+          path: built
+      - name: VSIX
+        run: |
+          chmod +x built/bin/*
+          ext=editors/vscode/hexcavator
+          mkdir -p "$ext/bin" dist
+          cp built/bin/* "$ext/bin/"
+          cp LICENSE NOTICE apps/hexcavator/THIRD_PARTY_NOTICES.txt "$ext/"
+          # The repository the Marketplace links to: this one.
+          node -e '
+            const fs = require("fs");
+            const file = process.argv[1];
+            const p = JSON.parse(fs.readFileSync(file, "utf8"));
+            p.repository = { type: "git", url: process.argv[2] };
+            fs.writeFileSync(file, JSON.stringify(p, null, 2) + "\n");
+          ' "$ext/package.json" "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          (cd "$ext" && npx --yes "$VSCE" package --no-dependencies --target ${{ matrix.vscode }} \
+            --out "$GITHUB_WORKSPACE/dist/hexcavator-$VERSION-${{ matrix.vscode }}.vsix")
+      # (hexcavator prints its license and its notices: `hexcavator
+      # licenses`.)
+      - name: hexcavator and its symbols
+        if: matrix.target != ''
+        run: |
+          base="hexcavator-${{ matrix.target }}"
+          cp "built/bin/hexcavator${{ matrix.exe }}" "dist/$base${{ matrix.exe }}"
+          mkdir -p "$base-symbols"
+          cp -R built/symbols/. "$base-symbols/"
+          if [[ "${{ matrix.exe }}" == .exe ]]; then
+            zip -qr "dist/$base-symbols.zip" "$base-symbols"
+          else
+            tar -czf "dist/$base-symbols.tar.gz" "$base-symbols"
+          fi
+          ls -l dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-${{ matrix.vscode }}
+          path: dist/
+          if-no-files-found: error
+
+  # A draft release with everything, its checksums, and (once the
+  # repository is public) build provenance attestations.
+  #
+  # (Its `if` names package's result: the implied success() would skip
+  # this job whenever any job before it was skipped, as a signing job is
+  # when its platform isn't released.)
+  release:
+    if: ${{ !cancelled() && needs.package.result == 'success' && needs.wasm.result == 'success' && startsWith(github.ref, 'refs/tags/hexcavator-v') }}
+    needs: [package, wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: turbonop-wasm
+          path: wasm
+      # (The browser's module is the web version's, on GitHub Pages.)
+      - run: cp wasm/hexcavator-wasm32-wasip1.wasm dist/
+      - run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      # (Attestations need a public repository, or GitHub Enterprise Cloud.)
+      - if: github.event.repository.visibility == 'public'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "Hexcavator ${GITHUB_REF_NAME#hexcavator-}" --generate-notes
+
+  # The web version (editors/web: the extension's own views, with
+  # hexcavator for wasi-threads, in the browser), assembled and tried in
+  # a headless browser; then, on a tag, deployed to GitHub Pages once the
+  # release is made. (Set Pages' source to GitHub Actions; the
+  # github-pages environment is GitHub's own.)
+  web:
+    needs: wasm
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: turbonop-wasm
+          path: wasm
+      # VS Code's icons (@vscode/codicons: CC BY 4.0, its code MIT).
+      - name: Codicons
+        shell: bash
+        run: |
+          npm pack @vscode/codicons@0.0.36
+          mkdir codicons && tar -xzf vscode-codicons-0.0.36.tgz -C codicons
+      - name: Tests
+        run: python editors/web/test/run.py --wasm wasm/hexcavator-wasm32-wasip1-threads.wasm --codicons codicons/package/dist
+      - run: python editors/web/site.py --wasm wasm/hexcavator-wasm32-wasip1-threads.wasm --codicons codicons/package --out site/hexcavator
+      # (The repository's site has a directory for each tool's web version;
+      # its root, for now, sends visitors to hexcavator's.)
+      - shell: bash
+        run: >-
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>TurboNOP Utilities</title><meta http-equiv="refresh" content="0; url=hexcavator/"><a href="hexcavator/">Hexcavator</a>'
+          > site/index.html
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  pages:
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.web.result == 'success' && startsWith(github.ref, 'refs/tags/hexcavator-v') }}
+    needs: [release, web]
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  # The VSIXs to the Visual Studio Marketplace, through the Marketplace's
+  # trusted publishing (OIDC; no token kept here). Set up a trusted
+  # publishing policy for this repository and workflow on the publisher
+  # first, and give the marketplace environment a required reviewer.
+  publish-marketplace:
+    # (Names release's result, for the reason release names package's.)
+    if: ${{ !cancelled() && needs.release.result == 'success' && startsWith(github.ref, 'refs/tags/hexcavator-v') }}
+    needs: release
+    runs-on: ubuntu-latest
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      # One VSIX, then (once the Marketplace has the extension) the rest,
+      # then wait until it serves this version for every platform. vsce
+      # creates the extension when the Marketplace doesn't have it yet, as
+      # for a new extension's first release until the first VSIX passes
+      # validation: published together, every VSIX after the first was
+      # another create, reported as published, and never served.
+      - name: Publish
+        run: |
+          vsixes=(dist/*.vsix)
+          # The extension's ID and version, and the platforms, from the VSIXs.
+          id=$(unzip -p "${vsixes[0]}" extension/package.json | jq -r '.publisher + "." + .name')
+          version=$(unzip -p "${vsixes[0]}" extension/package.json | jq -r .version)
+          want=$(for v in "${vsixes[@]}"; do
+            unzip -p "$v" extension.vsixmanifest | sed -n 's/.*TargetPlatform="\([^"]*\)".*/\1/p'
+          done | sort | tr '\n' ' ')
+          echo "$id $version for: $want"
+          query() {
+            curl -fsS https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery \
+              -H 'Content-Type: application/json' -H 'Accept: application/json;api-version=7.2-preview.1' \
+              -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$id\"}]}],\"flags\":1}"
+          }
+          exists() { query | jq -e '.results[0].extensions | length > 0' >/dev/null; }
+          served() {
+            query | jq -r --arg v "$version" \
+              '.results[0].extensions[0].versions[]? | select(.version == $v) | .targetPlatform' \
+              | sort -u | tr '\n' ' '
+          }
+          publish() { npx --yes "$VSCE" publish --oidc --skip-duplicate --packagePath "$1"; }
+          publish "${vsixes[0]}"
+          for _ in $(seq 60); do exists && break; sleep 30; done
+          if ! exists; then
+            echo "::error::$id isn't on the Marketplace 30 minutes after its first VSIX"
+            exit 1
+          fi
+          for v in "${vsixes[@]:1}"; do publish "$v"; done
+          for _ in $(seq 60); do [[ "$(served)" == "$want" ]] && break; sleep 30; done
+          if [[ "$(served)" != "$want" ]]; then
+            echo "::error::the Marketplace serves $id $version for: $(served) (published: $want)"
+            exit 1
+          fi
+          echo "served for: $(served)"

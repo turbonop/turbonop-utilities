@@ -7,8 +7,8 @@
 //! compilands, and its symbols (and kept, see [`cache`]).
 //!
 //! ```no_run
-//! # fn f(path: &std::path::Path) -> Result<(), hexcavator_program::Error> {
-//! let opened = hexcavator_program::Opened::open(path, None)?;
+//! # fn f(path: &std::path::Path) -> Result<(), turbonop_program::Error> {
+//! let opened = turbonop_program::Opened::open(path, None)?;
 //! let program = opened.program()?;
 //! let symbols = program.symbols()?;
 //! # Ok(())
@@ -30,33 +30,125 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 pub use error::Error;
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_mmap::Mmap;
-use hexcavator_size::symbols::{self, Symbol};
-use hexcavator_size::{Model, model};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_mmap::Mmap;
+use turbonop_size::symbols::{self, Symbol};
+use turbonop_size::{Model, model};
 
 /// The debug information for the image at `image_path`: `given`, if one
 /// is; else the image itself, if it has DWARF of its own; else the first
 /// file of those the image's debug identities name, beside it or in the
-/// symbol directories (see `hexcavator_debuginfo::candidate_paths_in` and
+/// symbol directories (see `turbonop_debuginfo::candidate_paths_in` and
 /// `symbol_dirs`), that matches it; and its path.
 pub fn find_debug(
     image_path: &Path,
     image: &Image<'_>,
     given: Option<&Path>,
 ) -> Result<(PathBuf, Mmap), Error> {
+    let (path, file) = find_debug_file(image_path, image, given)?;
+    let map = file.into_mmap().map_err(Error::io(&path))?;
+    Ok((path, map))
+}
+
+/// A debug information file: its bytes, mapped (or, where nothing can be
+/// mapped, read whole); or, where nothing can be mapped, a PDB read by
+/// range, its streams read as they are asked for (WebAssembly's memory,
+/// 4 GiB, need not hold a big program's PDB whole beside what is built
+/// from it).
+pub enum DebugFile {
+    /// Its bytes.
+    Mapped(Mmap),
+    /// A PDB, read by range.
+    Read(turbonop_mmap::ReadFile),
+}
+
+impl DebugFile {
+    /// Opens the file at `path` (`named`: a path a file named, checked as
+    /// [`Mmap::open_named`] checks it).
+    pub fn open(path: &Path, named: bool) -> std::io::Result<Self> {
+        #[cfg(not(any(windows, unix)))]
+        {
+            let file = if named {
+                turbonop_mmap::ReadFile::open_named(path)?
+            } else {
+                turbonop_mmap::ReadFile::open(path)?
+            };
+            use turbonop_mmap::Source;
+            let mut head = [0u8; 32];
+            let n = usize::try_from(file.len()).map_or(head.len(), |l| l.min(head.len()));
+            if file.fill(0, &mut head[..n]) && turbonop_pdb::check(&head[..n]).is_ok() {
+                return Ok(Self::Read(file));
+            }
+            file.read_all().map(Self::Mapped)
+        }
+        #[cfg(any(windows, unix))]
+        {
+            if named {
+                Mmap::open_named(path)
+            } else {
+                Mmap::open(path)
+            }
+            .map(Self::Mapped)
+        }
+    }
+
+    /// Its debug information, parsed.
+    pub fn parse(&self) -> turbonop_core::Result<DebugInfo<'_>> {
+        match self {
+            Self::Mapped(m) => DebugInfo::parse(m),
+            Self::Read(r) => DebugInfo::parse_source(r),
+        }
+    }
+
+    /// Its bytes, if it is held whole.
+    pub fn bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::Mapped(m) => Some(m),
+            Self::Read(_) => None,
+        }
+    }
+
+    /// Its bytes, read whole if they aren't.
+    pub fn into_mmap(self) -> std::io::Result<Mmap> {
+        match self {
+            Self::Mapped(m) => Ok(m),
+            Self::Read(r) => r.read_all(),
+        }
+    }
+}
+
+/// [`find_debug`]'s file, as a [`DebugFile`]: a PDB read by range where
+/// nothing can be mapped.
+///
+/// # Errors
+///
+/// As [`find_debug`].
+pub fn find_debug_file(
+    image_path: &Path,
+    image: &Image<'_>,
+    given: Option<&Path>,
+) -> Result<(PathBuf, DebugFile), Error> {
     if let Some(p) = given {
-        let map = Mmap::open(p).map_err(Error::io(p))?;
+        let map = DebugFile::open(p, false).map_err(Error::io(p))?;
         return Ok((p.to_path_buf(), map));
     }
-    if image.pe().is_none() && DebugInfo::parse(image.data()).is_ok() {
+    // (An image with its own DWARF: ELF's, Mach-O's, WebAssembly's, and
+    // a PE image MinGW built. A PE image's own isn't a PDB.)
+    if DebugInfo::parse(image.data()).is_ok() {
         let map = Mmap::open(image_path).map_err(Error::io(image_path))?;
-        return Ok((image_path.to_path_buf(), map));
+        return Ok((image_path.to_path_buf(), DebugFile::Mapped(map)));
+    }
+    // (A COFF object's CodeView: read as the PDB a linker would write of
+    // it, with its type server's types, if it names one that is found.)
+    let server = type_server(image_path, image.data());
+    if let Some(pdb) = turbonop_debuginfo::coff_object::pdb_of_with(image.data(), server.as_deref())
+    {
+        return Ok((image_path.to_path_buf(), DebugFile::Mapped(Mmap::from(pdb))));
     }
     let ids = image.debug_ids();
     let servers = server::servers();
-    let mut dirs = hexcavator_debuginfo::symbol_dirs();
+    let mut dirs = turbonop_debuginfo::symbol_dirs();
     // (What was fetched before is in the symbol cache.)
     if let Some(c) = &servers.cache
         && !dirs.contains(c)
@@ -65,14 +157,19 @@ pub fn find_debug(
     }
     let mut tried = Vec::new();
     for id in &ids {
-        for candidate in hexcavator_debuginfo::candidate_paths_in(image_path, id, &dirs) {
-            let Ok(map) = Mmap::open_named(&candidate) else {
+        for candidate in turbonop_debuginfo::candidate_paths_in(image_path, id, &dirs) {
+            let Ok(map) = DebugFile::open(&candidate, true) else {
                 tried.push(format!("{} (not found)", candidate.display()));
                 continue;
             };
-            match DebugInfo::parse(&map) {
-                Ok(d) if d.matches(id) => return Ok((candidate, map)),
-                Ok(_) => tried.push(format!("{} (does not match)", candidate.display())),
+            let matched = match map.parse() {
+                Ok(d) if d.matches(id) => Ok(true),
+                Ok(_) => Ok(false),
+                Err(e) => Err(e),
+            };
+            match matched {
+                Ok(true) => return Ok((candidate, map)),
+                Ok(false) => tried.push(format!("{} (does not match)", candidate.display())),
                 Err(e) => tried.push(format!("{} ({e})", candidate.display())),
             }
         }
@@ -86,7 +183,7 @@ pub fn find_debug(
             };
             let found = cached.unwrap_or_else(|| PathBuf::from(&url));
             match DebugInfo::parse(&map) {
-                Ok(d) if d.matches(id) => return Ok((found, map)),
+                Ok(d) if d.matches(id) => return Ok((found, DebugFile::Mapped(map))),
                 Ok(_) => tried.push(format!("{url} (does not match)")),
                 Err(e) => tried.push(format!("{url} ({e})")),
             }
@@ -123,17 +220,46 @@ pub fn find_debug(
     })
 }
 
+/// The type server of the object `data` at `object_path` (the PDB a `/Zi`
+/// object's types are in), opened: where the object says it is, else by
+/// its name beside the object; the one whose GUID is the one the object
+/// records (or any, if that is unset, as `/Brepro` leaves it).
+fn type_server(object_path: &Path, data: &[u8]) -> Option<Mmap> {
+    let (guid, _, name) = turbonop_debuginfo::coff_object::type_server(data)?;
+    let recorded = path_of_bytes(name);
+    let mut candidates = vec![recorded];
+    if let Some(file) = name
+        .rsplit(|&b| b == b'\\' || b == b'/')
+        .next()
+        .filter(|n| !n.is_empty())
+    {
+        candidates.push(
+            object_path
+                .parent()
+                .unwrap_or(Path::new(""))
+                .join(path_of_bytes(file)),
+        );
+    }
+    candidates.into_iter().find_map(|p| {
+        let map = Mmap::open_named(&p).ok()?;
+        let pdb = turbonop_pdb::Pdb::parse(&map).ok()?;
+        (guid == [0xFF; 16] || pdb.info().guid() == guid).then_some(())?;
+        drop(pdb);
+        Some(map)
+    })
+}
+
 /// The split DWARF files the debug information at `debug_path` (of the
 /// image at `image_path`) names, opened: its `.dwp` package if there is
 /// one, else each `.dwo` file found (see
-/// [`hexcavator_debuginfo::dwarf_backend::split_paths`]). Those not found are left
+/// [`turbonop_debuginfo::dwarf_backend::split_paths`]). Those not found are left
 /// out: their compilands are then their skeletons alone.
 pub fn open_splits(
     image_path: &Path,
     debug_path: &Path,
     debug: &DebugInfo<'_>,
 ) -> Vec<(PathBuf, Mmap)> {
-    use hexcavator_debuginfo::dwarf_backend as dwarf;
+    use turbonop_debuginfo::dwarf_backend as dwarf;
     let Some(d) = debug.dwarf() else {
         return Vec::new();
     };
@@ -177,7 +303,8 @@ struct MapObject {
     path: PathBuf,
     map: Mmap,
     /// The member's place in the archive (start, end), the archive's
-    /// path, and the member's name, for a member of one.
+    /// path (as the debug map names it), and the member's name, for a
+    /// member of one.
     member: Option<(usize, usize, String, String)>,
     /// Its entry of the debug map.
     entry: usize,
@@ -261,7 +388,13 @@ fn open_debug_map(image_path: &Path, image: &Image<'_>) -> Vec<MapObject> {
                     let Some(place) = member_place(&map, name) else {
                         continue;
                     };
-                    Some((place.0, place.1, p.display().to_string(), name.clone()))
+                    // (The archive as the debug map names it, wherever
+                    // it was found.)
+                    let archive = o.path.iter().rposition(|&b| b == b'(').map_or_else(
+                        || p.display().to_string(),
+                        |i| String::from_utf8_lossy(&o.path[..i]).into_owned(),
+                    );
+                    Some((place.0, place.1, archive, name.clone()))
                 }
             };
             out.push(MapObject {
@@ -278,7 +411,7 @@ fn open_debug_map(image_path: &Path, image: &Image<'_>) -> Vec<MapObject> {
 
 /// Where the archive `data`'s member `name` is in it (start, end).
 fn member_place(data: &[u8], name: &str) -> Option<(usize, usize)> {
-    let archive = hexcavator_archive::Archive::parse(data).ok()?;
+    let archive = turbonop_archive::Archive::parse(data).ok()?;
     let m = archive.files().find(|m| &*m.name == name.as_bytes())?;
     let start = usize::try_from(m.data_offset).ok()?;
     Some((start, start.checked_add(m.data.len())?))
@@ -289,7 +422,7 @@ pub struct Opened {
     path: PathBuf,
     data: Mmap,
     debug_path: PathBuf,
-    debug: Mmap,
+    debug: DebugFile,
     /// Split DWARF files.
     splits: Vec<(PathBuf, Mmap)>,
     /// The object files of a Mach-O image's debug map, when its DWARF is
@@ -309,7 +442,7 @@ impl Opened {
         let data = Mmap::open(path).map_err(Error::io(path))?;
         let image = Image::parse(&data).map_err(Error::format(path))?;
         let given = debug.is_some();
-        let (debug_path, debug) = match find_debug(path, &image, debug) {
+        let (debug_path, debug) = match find_debug_file(path, &image, debug) {
             Ok(found) => found,
             // A Mach-O image without a dSYM: the DWARF of the objects its
             // debug map names, if any are found.
@@ -323,14 +456,15 @@ impl Opened {
                     path: path.to_path_buf(),
                     data,
                     debug_path: path.to_path_buf(),
-                    debug: again,
+                    debug: DebugFile::Mapped(again),
                     splits: Vec::new(),
                     objects,
                 });
             }
             Err(e) => return Err(e),
         };
-        let splits = DebugInfo::parse(&debug)
+        let splits = debug
+            .parse()
             .map(|d| open_splits(path, &debug_path, &d))
             .unwrap_or_default();
         Ok(Self {
@@ -346,23 +480,27 @@ impl Opened {
     /// The debug information read from the objects of the image's debug
     /// map (see [`Opened::open`]).
     fn debug_map_info(&self, image: &Image<'_>) -> Result<DebugInfo<'_>, Error> {
-        use hexcavator_debuginfo::dwarf_backend::DwarfInfo;
-        let image_data = match hexcavator_macho::preferred_slice(&self.debug) {
+        use turbonop_debuginfo::dwarf_backend::DwarfInfo;
+        // (The debug map's image: always mapped, as the image itself.)
+        let debug = self.debug.bytes().unwrap_or_default();
+        let image_data = match turbonop_macho::preferred_slice(debug) {
             Some((_, slice)) => slice,
-            None => &self.debug[..],
+            None => debug,
         };
         let mut d = DwarfInfo::from_debug_map(image_data).map_err(Error::format(&self.path))?;
         let map = image
             .macho()
-            .map(hexcavator_macho::MachO::debug_map)
+            .map(turbonop_macho::MachO::debug_map)
             .unwrap_or_default();
         for o in &self.objects {
             let Some(entry) = map.get(o.entry) else {
                 continue;
             };
             let library = o.member.as_ref().map_or("", |m| m.2.as_str());
+            let path = o.path.display().to_string();
+            let object = o.member.as_ref().map_or(path.as_str(), |m| m.3.as_str());
             // (An object without DWARF, or not one: left out.)
-            let _ = d.add_object(o.data(), &entry.symbols, library);
+            let _ = d.add_object(o.data(), &entry.symbols, library, object);
         }
         Ok(DebugInfo::Dwarf(Box::new(d)))
     }
@@ -405,7 +543,9 @@ impl Opened {
 
     fn debug_info_of(&self, image: &Image<'_>) -> Result<DebugInfo<'_>, Error> {
         let mut debug = if self.objects.is_empty() {
-            DebugInfo::parse(&self.debug).map_err(Error::format(&self.debug_path))?
+            self.debug
+                .parse()
+                .map_err(Error::format(&self.debug_path))?
         } else {
             self.debug_map_info(image)?
         };
@@ -482,6 +622,26 @@ pub struct Program<'a> {
     symbols: OnceCell<Arc<Vec<Symbol>>>,
 }
 
+/// Whether a program dropped leaves what it built for the process's exit
+/// to reclaim (see [`leave_to_exit`]).
+static LEAVE_TO_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// In a process that runs one command and exits: a program dropped leaves
+/// its symbols and model (millions of allocations, which take a good part
+/// of a second to free) for the exit to reclaim.
+pub fn leave_to_exit(on: bool) {
+    LEAVE_TO_EXIT.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+impl Drop for Program<'_> {
+    fn drop(&mut self) {
+        if LEAVE_TO_EXIT.load(std::sync::atomic::Ordering::Relaxed) {
+            std::mem::forget(self.symbols.take());
+            std::mem::forget(self.model.take());
+        }
+    }
+}
+
 impl Program<'_> {
     /// Its debug files' paths.
     fn debug_files(&self) -> Vec<&Path> {
@@ -541,11 +701,11 @@ impl Program<'_> {
     /// # Errors
     ///
     /// If the debug information is damaged.
-    pub fn into_built(self) -> Result<(Arc<Model>, Arc<Vec<Symbol>>), Error> {
+    pub fn into_built(mut self) -> Result<(Arc<Model>, Arc<Vec<Symbol>>), Error> {
         self.symbols()?;
         // (Both are built now.)
-        let model = self.model.into_inner().unwrap_or_default();
-        let symbols = self.symbols.into_inner().unwrap_or_default();
+        let model = self.model.take().unwrap_or_default();
+        let symbols = self.symbols.take().unwrap_or_default();
         Ok((model, symbols))
     }
 }

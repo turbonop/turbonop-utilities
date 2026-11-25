@@ -1,14 +1,14 @@
 //! Fingerprints of a PE image's functions and data (see
-//! `hexcavator_fingerprint`), over its cross-reference graph's nodes.
+//! `turbonop_fingerprint`), over its cross-reference graph's nodes.
 //!
 //! Code is hashed from its instructions; data from its bytes with its
 //! pointers (the base relocations in it) masked; imports by name. The
 //! classes compare across images: two builds' functions with the same
 //! class do the same thing and refer to things that are the same.
 
-use hexcavator_fingerprint::{Item, Resolve, code, data, named, refine};
-use hexcavator_image::Image;
-use hexcavator_xref::Arch;
+use turbonop_fingerprint::{Item, Resolve, code, data, named, refine};
+use turbonop_image::Image;
+use turbonop_xref::Arch;
 
 use crate::Model;
 use crate::symbols::SymbolKind;
@@ -18,7 +18,7 @@ use crate::xref::Xref;
 /// do; a chain of references this long is far past what images have).
 const ROUNDS: usize = 64;
 
-struct Nodes<'a>(&'a hexcavator_xref::Graph);
+struct Nodes<'a>(&'a turbonop_xref::Graph);
 
 impl Resolve for Nodes<'_> {
     fn node_at(&self, address: u64) -> Option<u32> {
@@ -36,8 +36,13 @@ pub enum Mode {
     /// They do the same thing (for matching across builds): code and
     /// read-only data by contents, variables by name.
     Same,
-    /// The linker could fold them into one (`/OPT:ICF`): COMDAT code and
-    /// read-only COMDAT data by contents; everything else is only itself.
+    /// The linker could fold them into one (`/OPT:ICF`, `--icf=all`):
+    /// COMDAT code and read-only COMDAT data by contents; everything else
+    /// is only itself. On ELF, as lld's `--icf=all` folds: never a
+    /// function with an LSDA (its exception table, which the linker
+    /// doesn't compare), one in `.init` or `.fini` or a section named as a
+    /// C identifier (which `__start_`/`__stop_` symbols enumerate), nor
+    /// two in different output sections.
     Foldable,
 }
 
@@ -51,64 +56,41 @@ pub struct Fingerprints {
 }
 
 /// Each slot that holds an import's address, and the import, by slot
-/// address: PE's import address tables' (`dll!function`, or
-/// `dll!#ordinal`), ELF's GOT and PLT entries for symbols it doesn't
-/// define (`function`).
+/// address, of any format (see [`Image::import_slots`]): `dll!function`
+/// (or `dll!#ordinal`) for PE's, `dylib!symbol` for Mach-O's binds, and
+/// `function` for ELF's GOT and PLT entries.
 fn imports(image: &Image<'_>) -> rustc_hash::FxHashMap<u64, String> {
-    use hexcavator_pe::imports::ImportName;
-    let mut out = rustc_hash::FxHashMap::default();
-    if let Some(elf) = image.elf() {
-        use hexcavator_elf::consts::{SHN_UNDEF, SHT_REL, SHT_RELA};
-        let sections: Vec<_> = elf.sections().collect();
-        let machine = elf.header().machine;
-        for s in sections
-            .iter()
-            .filter(|s| s.is_alloc() && (s.kind == SHT_REL || s.kind == SHT_RELA))
-        {
-            let symbols = sections
-                .get(s.link as usize)
-                .map(|t| elf.symbols(t))
-                .unwrap_or_default();
-            for r in elf.relocations(s) {
-                if hexcavator_elf::address_relocation(machine, r.kind)
-                    != Some(hexcavator_elf::AddressRelocation::Symbol)
-                {
-                    continue;
-                }
-                if let Some(sym) = symbols
-                    .get(r.symbol as usize)
-                    .filter(|sym| sym.shndx == u32::from(SHN_UNDEF) && !sym.name.is_empty())
-                {
-                    out.insert(r.offset, String::from_utf8_lossy(sym.name).into_owned());
-                }
-            }
-        }
-        return out;
+    image
+        .import_slots()
+        .into_iter()
+        .map(|s| (s.addr, s.qualified_name()))
+        .collect()
+}
+
+/// The functions an ELF image's `.eh_frame` gives an LSDA (a language's
+/// exception table: catch clauses, cleanups), by address.
+fn lsda_functions(image: &Image<'_>) -> rustc_hash::FxHashSet<u64> {
+    if image.elf().is_none() {
+        return rustc_hash::FxHashSet::default();
     }
-    let Some(file) = image.pe() else {
-        return out;
-    };
-    let name = |dll: &[u8], import: ImportName<'_>| match import {
-        ImportName::Name { name, .. } => {
-            format!(
-                "{}!{}",
-                String::from_utf8_lossy(dll),
-                String::from_utf8_lossy(name)
-            )
-        }
-        ImportName::Ordinal(o) => format!("{}!#{o}", String::from_utf8_lossy(dll)),
-    };
-    for dll in file.imports() {
-        for t in dll.thunks() {
-            out.insert(u64::from(t.iat_rva.0), name(dll.name, t.import));
-        }
-    }
-    for dll in file.delay_imports() {
-        for t in dll.thunks() {
-            out.insert(u64::from(t.iat_rva.0), name(dll.name, t.import));
-        }
-    }
-    out
+    crate::frames::frames(image)
+        .into_iter()
+        .filter(|f| f.lsda.is_some())
+        .map(|f| f.function)
+        .collect()
+}
+
+/// Whether ELF's linkers fold nothing in an output section named `name`:
+/// `.init` and `.fini` (instructions run in order), and a name that is a C
+/// identifier (its sections enumerated by `__start_` and `__stop_`).
+fn elf_unfoldable(name: &str) -> bool {
+    name == ".init"
+        || name == ".fini"
+        || name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// The fingerprints of `x`'s nodes (of `image`, of any format), as `mode`
@@ -147,6 +129,19 @@ pub fn build(image: &Image<'_>, model: &Model, x: &Xref, mode: Mode) -> Fingerpr
         &pointers[i..j]
     };
     let slots = imports(image);
+    // (ELF, as lld folds: see [`Mode::Foldable`].)
+    let elf = image.elf().is_some() && mode == Mode::Foldable;
+    let lsda = if elf {
+        lsda_functions(image)
+    } else {
+        Default::default()
+    };
+    let section_of = |at: u64| {
+        model
+            .sections
+            .iter()
+            .position(|s| at >= s.addr && at < s.addr + s.size.vm.max(s.size.file))
+    };
     let identities: Vec<String> = x
         .ids()
         .map(|n| match slots.get(&graph.nodes()[n as usize].start) {
@@ -154,77 +149,216 @@ pub fn build(image: &Image<'_>, model: &Model, x: &Xref, mode: Mode) -> Fingerpr
             None => x.names[n as usize].clone(),
         })
         .collect();
-    let items: Vec<Item> = x
-        .ids()
-        .map(|n| {
-            let node = graph.nodes()[n as usize];
-            // An import address table slot is the function it imports.
-            if let Some(import) = slots.get(&node.start) {
-                return named(import);
-            }
-            if matches!(
-                x.kinds[n as usize],
-                Some(SymbolKind::ImportThunk | SymbolKind::ImportByName | SymbolKind::ImportString)
-            ) {
-                return named(&x.names[n as usize]);
-            }
-            // Writable data is a variable: two are never the same, however
-            // alike their starting values (code that uses one isn't code
-            // that uses the other). So it is known by its name; read-only
-            // data, which a linker may fold, by its contents.
-            // (Data with no symbol has no name to be known by.)
-            if !node.code && writable(node.start) && x.kinds[n as usize].is_some() {
-                return named(&format!(
+    // (Each node's fingerprint is its own: on every core.)
+    let ids: Vec<u32> = x.ids().collect();
+    let items: Vec<Item> = turbonop_par::map(&ids, 256, |&n| {
+        let node = graph.nodes()[n as usize];
+        // An import address table slot is the function it imports.
+        if let Some(import) = slots.get(&node.start) {
+            return named(import);
+        }
+        if matches!(
+            x.kinds[n as usize],
+            Some(SymbolKind::ImportThunk | SymbolKind::ImportByName | SymbolKind::ImportString)
+        ) {
+            return named(&x.names[n as usize]);
+        }
+        // Writable data is a variable: two are never the same, however
+        // alike their starting values (code that uses one isn't code
+        // that uses the other). So it is known by its name; read-only
+        // data, which a linker may fold, by its contents.
+        // (Data with no symbol has no name to be known by.)
+        // (Within one image, two variables of one name, a file-scope
+        // `static` in each of several objects, are two: code that uses
+        // one doesn't do what code that uses the other does.)
+        if !node.code && writable(node.start) && x.kinds[n as usize].is_some() {
+            return match mode {
+                Mode::Same => named(&format!(
                     "{}\0{}",
                     x.names[n as usize],
                     node.end - node.start
-                ));
+                )),
+                Mode::Foldable => named(&format!("{}\0{:#x}", x.names[n as usize], node.start)),
+            };
+        }
+        // What the linker can't fold is only itself.
+        let section = section_of(node.start);
+        if mode == Mode::Foldable
+            && (!matches!(x.contribution[n as usize], Some((_, true)))
+                || elf
+                    && (node.code && lsda.contains(&node.start)
+                        || section.is_none_or(|i| elf_unfoldable(&model.sections[i].name))))
+        {
+            return named(&format!("{}\0{:#x}", x.names[n as usize], node.start));
+        }
+        let here = in_range(node.start, node.end);
+        // (Nor across output sections.)
+        let apart = |mut item: Item| {
+            if elf && let Some(i) = section {
+                item.local ^= (i as u64 + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15);
             }
-            // What the linker can't fold is only itself.
-            if mode == Mode::Foldable && !matches!(x.contribution[n as usize], Some((_, true))) {
-                return named(&format!("{}\0{:#x}", x.names[n as usize], node.start));
-            }
-            let here = in_range(node.start, node.end);
-            if node.code {
-                let absolute: Vec<(u64, u64)> = if x.arch == Arch::X86 {
-                    here.iter().map(|&(s, _, t)| (s, t)).collect()
-                } else {
-                    Vec::new()
-                };
-                let image_base = (x.arch == Arch::X64).then_some(0);
-                code(
-                    x.arch,
-                    bytes(node.start, node.end),
-                    node.start,
-                    image_base,
-                    &absolute,
-                    &resolve,
-                )
+            item
+        };
+        if node.code {
+            let absolute: Vec<(u64, u64)> = if x.arch == Arch::X86 {
+                here.iter().map(|&(s, _, t)| (s, t)).collect()
             } else {
-                let ptrs: Vec<(u64, u32, Option<u32>)> = here
+                Vec::new()
+            };
+            let image_base = (x.arch == Arch::X64).then_some(0);
+            apart(code(
+                x.arch,
+                x.mode,
+                bytes(node.start, node.end),
+                node.start,
+                image_base,
+                &absolute,
+                &resolve,
+            ))
+        } else {
+            let ptrs: Vec<(u64, u32, Option<u32>)> = here
+                .iter()
+                .map(|&(s, w, t)| (s - node.start, w, graph.node_at(t)))
+                .collect();
+            let mut item = data(bytes(node.start, node.end), node.end - node.start, &ptrs);
+            // What belongs to it is part of it (a vtable's RTTI slot,
+            // which the linker keeps in the vtable's COMDAT).
+            item.refs.extend(
+                graph
+                    .references(n)
                     .iter()
-                    .map(|&(s, w, t)| (s - node.start, w, graph.node_at(t)))
-                    .collect();
-                let mut item = data(bytes(node.start, node.end), node.end - node.start, &ptrs);
-                // What belongs to it is part of it (a vtable's RTTI slot,
-                // which the linker keeps in the vtable's COMDAT).
-                item.refs.extend(
-                    graph
-                        .references(n)
-                        .iter()
-                        .filter(|r| r.1 == hexcavator_xref::Edge::Attached)
-                        .map(|r| r.0),
-                );
-                item
-            }
-        })
-        .collect();
+                    .filter(|r| r.1 == turbonop_xref::Edge::Attached)
+                    .map(|r| r.0),
+            );
+            apart(item)
+        }
+    });
     let classes = refine(&items, ROUNDS);
     Fingerprints {
         items,
         classes,
         identities,
     }
+}
+
+/// A family of near-identical functions: instantiations of one template
+/// (one name, its template arguments aside) whose code has one shape
+/// ([`turbonop_fingerprint::shape`]) but isn't identical: they differ
+/// only in constants, the sizes of what they work on, or what they call,
+/// which a shared, non-template core could take as arguments.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NearFamily {
+    /// The template's name, its arguments elided: `Vector<>::grow()`.
+    pub family: String,
+    /// Its functions, largest first.
+    pub members: Vec<u32>,
+    /// How many of them differ (by [`Mode::Foldable`] class): copies
+    /// identical to another are ICF's to fold.
+    pub versions: usize,
+    /// What one copy of their code would save, at most: each version's
+    /// size, less the largest's (the shared core's; the wrappers left, and
+    /// the arguments passed, cost some of it back).
+    pub saving: u64,
+}
+
+/// The smallest function counted in a [`NearFamily`]: below it, unrelated
+/// code shares shapes, and sharing saves little.
+pub const NEAR_MIN_SIZE: u64 = 32;
+
+/// The families of near-identical functions of an image's graph `x`
+/// (`classes`: [`Mode::Foldable`]'s), largest saving first; shapes are
+/// computed in parallel.
+pub fn near_identical(
+    image: &Image<'_>,
+    model: &Model,
+    x: &Xref,
+    classes: &[u64],
+) -> Vec<NearFamily> {
+    let candidates: Vec<(u32, String)> = x
+        .ids()
+        .filter(|&n| {
+            x.graph.nodes()[n as usize].code
+                && x.kinds[n as usize].is_some()
+                && x.size(n) >= NEAR_MIN_SIZE
+        })
+        .filter_map(|n| Some((n, crate::findings::template_family(&x.names[n as usize])?)))
+        .collect();
+    let bytes = |start: u64, end: u64| -> &[u8] {
+        let Some(sec) = model
+            .sections
+            .iter()
+            .find(|s| start >= s.addr && start < s.addr + s.size.vm.max(s.size.file))
+        else {
+            return &[];
+        };
+        let available = (sec.addr + sec.size.file).saturating_sub(start);
+        image
+            .bytes_at(start, (end - start).min(available))
+            .unwrap_or(&[])
+    };
+    let threads = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZero::get)
+        .min(candidates.len().max(1));
+    let chunk = candidates.len().div_ceil(threads).max(1);
+    let shapes: Vec<Option<u64>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = candidates
+            .chunks(chunk)
+            .map(|part| {
+                let bytes = &bytes;
+                scope.spawn(move || {
+                    part.iter()
+                        .map(|&(n, _)| {
+                            let node = x.graph.nodes()[n as usize];
+                            let code = bytes(node.start, node.end);
+                            // (Code not all in the file: no shape.)
+                            if code.len() as u64 != node.end - node.start {
+                                return None;
+                            }
+                            turbonop_fingerprint::shape(x.arch, x.mode, code, node.start)
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().unwrap_or_default())
+            .collect()
+    });
+    let mut groups: rustc_hash::FxHashMap<(&str, u64), Vec<u32>> = rustc_hash::FxHashMap::default();
+    for ((n, family), shape) in candidates.iter().zip(shapes) {
+        if let Some(shape) = shape {
+            groups.entry((family.as_str(), shape)).or_default().push(*n);
+        }
+    }
+    let mut out: Vec<NearFamily> = groups
+        .into_iter()
+        .filter_map(|((family, _), mut members)| {
+            // Each version's size, once.
+            let mut sizes: rustc_hash::FxHashMap<u64, u64> = rustc_hash::FxHashMap::default();
+            for &n in &members {
+                sizes.entry(classes[n as usize]).or_insert(x.size(n));
+            }
+            if sizes.len() < 2 {
+                return None;
+            }
+            let total: u64 = sizes.values().sum();
+            let largest = sizes.values().copied().max().unwrap_or(0);
+            members.sort_by_key(|&n| (std::cmp::Reverse(x.size(n)), n));
+            Some(NearFamily {
+                family: family.to_string(),
+                members,
+                versions: sizes.len(),
+                saving: total - largest,
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        b.saving
+            .cmp(&a.saving)
+            .then_with(|| a.family.cmp(&b.family))
+    });
+    out
 }
 
 /// Groups of code nodes with the same class (of [`Mode::Foldable`]: code

@@ -9,8 +9,8 @@
 
 use std::collections::BTreeSet;
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::objc::{Method, Objc};
+use turbonop_macho::MachO;
+use turbonop_macho::objc::{Method, Objc};
 
 fn testdata(name: &str) -> Vec<u8> {
     let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -393,4 +393,43 @@ fn huge_counts_end_at_the_data() {
             .collect::<Vec<_>>(),
         ["drawAt:y:", "size", "sides", "setSides:", "scale"]
     );
+}
+
+/// arm64e (pointer authentication: the method lists' and class lists'
+/// pointers signed): the metadata of arm64's build of the same source,
+/// each method at its own code (by the symbol table); only addresses
+/// differ.
+#[test]
+fn arm64e_reads_as_arm64() {
+    let without_addresses = |mut o: Objc| {
+        let clear = |ms: &mut Vec<Method>| ms.iter_mut().for_each(|m| m.imp = 0);
+        for c in &mut o.classes {
+            c.addr = 0;
+            clear(&mut c.methods);
+            clear(&mut c.class_methods);
+        }
+        for c in &mut o.categories {
+            c.addr = 0;
+            clear(&mut c.methods);
+            clear(&mut c.class_methods);
+        }
+        for p in &mut o.protocols {
+            p.addr = 0;
+        }
+        o
+    };
+    let (e, plain) = (testdata("objc-arm64e.dylib"), testdata("objc-arm64.dylib"));
+    let (me, mp) = (MachO::parse(&e).unwrap(), MachO::parse(&plain).unwrap());
+    let (oe, op) = (me.objc(), mp.objc());
+    assert!(!oe.truncated);
+    check_imps(&me, &oe);
+    // (Its image info says its class_ro_t pointers are signed:
+    // OBJC_IMAGE_SIGNED_CLASS_RO, 1 << 4.)
+    let (Some((_, fe)), Some((_, fp))) = (oe.image_info, op.image_info) else {
+        panic!("no image info")
+    };
+    assert_eq!((fe & 0x10, fp & 0x10), (0x10, 0));
+    let mut oe = without_addresses(oe);
+    oe.image_info = op.image_info;
+    assert_eq!(oe, without_addresses(op));
 }

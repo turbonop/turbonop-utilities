@@ -5,9 +5,9 @@
 //! (Pointer slots are the image's: PE's base relocations, ELF's dynamic
 //! and packed relocations; Mach-O's, not yet.)
 
-use hexcavator_debuginfo::TypeRef;
-use hexcavator_debuginfo::value::{self, Limits, Value};
-use hexcavator_size::symbols::{Symbol, SymbolKind};
+use turbonop_debuginfo::TypeRef;
+use turbonop_debuginfo::value::{self, Limits, Value};
+use turbonop_size::symbols::{Symbol, SymbolKind};
 
 use crate::Program;
 
@@ -15,7 +15,9 @@ use crate::Program;
 /// (`name+0x10`).
 #[derive(Clone, Debug, Default)]
 pub struct AddressNames {
-    /// The image's base: the names are of virtual addresses.
+    /// What a pointer's value is less its address in the image (see
+    /// `turbonop_image::Image::pointer_base`): the names are of
+    /// pointers' values.
     base: u64,
     /// (rva, size, name), by address.
     symbols: Vec<(u64, u64, String)>,
@@ -36,9 +38,11 @@ impl AddressNames {
         }
     }
 
-    /// The symbol virtual address `va` is in, and the offset into it.
+    /// The symbol a pointer's value `va` (a virtual address) is in, and
+    /// the offset into it.
     pub fn name(&self, va: u64) -> Option<String> {
-        let rva = va.checked_sub(self.base)?;
+        // (Below the base: past every symbol, as it wraps.)
+        let rva = va.wrapping_sub(self.base);
         let i = self
             .symbols
             .partition_point(|s| s.0 <= rva)
@@ -111,7 +115,10 @@ impl Program<'_> {
     ///
     /// If the debug information is damaged.
     pub fn address_names(&self) -> Result<AddressNames, crate::Error> {
-        Ok(AddressNames::new(self.image.image_base(), self.symbols()?))
+        Ok(AddressNames::new(
+            self.image.pointer_base(),
+            self.symbols()?,
+        ))
     }
 
     /// The datum named `name` (else the one whose name is it with
@@ -136,7 +143,7 @@ impl Program<'_> {
                         name: name.to_string(),
                     });
                 }
-                let mut alone = hexcavator_size::disasm::ByNameAlone::new(name);
+                let mut alone = turbonop_size::disasm::ByNameAlone::new(name);
                 for s in &candidates {
                     alone.offer(s.addr, &s.name, || *s);
                 }
@@ -161,7 +168,7 @@ impl Program<'_> {
         };
         // (`max` bounds it: the caller's choice of how much to hold.)
         bytes.resize(usize::try_from(read).unwrap_or(usize::MAX), 0);
-        let base = self.image.image_base();
+        let base = self.image.pointer_base();
         let section = self
             .model()?
             .sections
@@ -180,7 +187,7 @@ impl Program<'_> {
             .min_by_key(|d| {
                 (
                     d.name != target.name,
-                    d.kind != hexcavator_debuginfo::SymbolKind::Data,
+                    d.kind != turbonop_debuginfo::SymbolKind::Data,
                 )
             })
             .map(|d| TypeRef(d.type_index));
@@ -220,7 +227,7 @@ impl Program<'_> {
             name: target.name.clone(),
             kind: target.kind,
             rva,
-            address: base + rva,
+            address: self.image.shown_address(rva),
             section,
             size,
             file_size: target.size.file,
@@ -234,7 +241,7 @@ impl Program<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hexcavator_size::Size;
+    use turbonop_size::Size;
 
     fn sym(addr: u64, size: u64, name: &str, folded: bool) -> Symbol {
         Symbol {

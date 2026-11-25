@@ -1,6 +1,6 @@
 //! What the hermetic tests share: a synthetic stack.
 
-use hexcavator_unwind::Memory;
+use turbonop_unwind::Memory;
 
 /// Where the synthetic stack lives.
 pub const STACK: u64 = 0x10_0000;

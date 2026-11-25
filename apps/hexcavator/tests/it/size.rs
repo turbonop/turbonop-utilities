@@ -1,4 +1,4 @@
-//! `hexc size` end to end, over SizeBench's test binaries.
+//! `hexcavator size` end to end, over SizeBench's test binaries.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9,8 +9,8 @@ fn bin(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn hexc(args: &[&std::ffi::OsStr]) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&std::ffi::OsStr]) -> (bool, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("size")
         .args(args)
         .output()
@@ -25,7 +25,7 @@ fn hexc(args: &[&std::ffi::OsStr]) -> (bool, String, String) {
 #[test]
 fn sizebench_mode_matches_the_oracle() {
     let image = bin("SizeBenchV2.AnalysisEngine.Tests.CppDll.dll");
-    let (ok, stdout, stderr) = hexc(&[image.as_os_str(), "-sizebench".as_ref()]);
+    let (ok, stdout, stderr) = hexcavator(&[image.as_os_str(), "-sizebench".as_ref()]);
     assert!(ok, "{stderr}");
     let oracle = std::fs::read_to_string(
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -43,7 +43,7 @@ fn sizebench_mode_matches_the_oracle() {
 #[test]
 fn table_mode() {
     let image = bin("PEParser.Tests.Dllx64.dll");
-    let (ok, stdout, stderr) = hexc(&[image.as_os_str(), "-top".as_ref(), "3".as_ref()]);
+    let (ok, stdout, stderr) = hexcavator(&[image.as_os_str(), "-top".as_ref(), "3".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(stdout.contains("(x64)"));
     assert!(stdout.contains("PEParser.Tests.Dllx64.pdb"));
@@ -77,7 +77,7 @@ fn table_mode() {
 fn explicit_pdb() {
     let image = bin("PEParser.Tests.Dllx64.dll");
     let pdb = bin("PEParser.Tests.Dllx64.pdb");
-    let (ok, stdout, stderr) = hexc(&[image.as_os_str(), "-pdb".as_ref(), pdb.as_os_str()]);
+    let (ok, stdout, stderr) = hexcavator(&[image.as_os_str(), "-pdb".as_ref(), pdb.as_os_str()]);
     assert!(ok, "{stderr}");
     assert!(stdout.contains("PEParser.Tests.Dllx64.pdb"));
 }
@@ -87,37 +87,40 @@ fn errors() {
     // Another binary's PDB.
     let image = bin("PEParser.Tests.Dllx64.dll");
     let other = bin("PEParser.Tests.Dllx86.pdb");
-    let (ok, _, stderr) = hexc(&[image.as_os_str(), "-pdb".as_ref(), other.as_os_str()]);
+    let (ok, _, stderr) = hexcavator(&[image.as_os_str(), "-pdb".as_ref(), other.as_os_str()]);
     assert!(!ok);
     assert!(stderr.contains("does not match"), "{stderr}");
 
     // Managed code, and a /DEBUG:FASTLINK PDB.
     let (ok, _, stderr) =
-        hexc(&[bin("SizeBenchV2.AnalysisEngine.Tests.Dllx64Managed.dll").as_os_str()]);
+        hexcavator(&[bin("SizeBenchV2.AnalysisEngine.Tests.Dllx64Managed.dll").as_os_str()]);
     assert!(!ok);
     assert!(stderr.contains("managed code"), "{stderr}");
     let (ok, _, stderr) =
-        hexc(&[bin("SizeBenchV2.AnalysisEngine.Tests.Dllx64MinimalPDB.dll").as_os_str()]);
+        hexcavator(&[bin("SizeBenchV2.AnalysisEngine.Tests.Dllx64MinimalPDB.dll").as_os_str()]);
     assert!(!ok);
     assert!(stderr.contains("FASTLINK"), "{stderr}");
 
     // No PDB beside the image.
-    let dir = std::env::temp_dir().join(format!("hexcavator-size-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-size-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let lonely = dir.join("PEParser.Tests.Dllx64.dll");
     std::fs::copy(&image, &lonely).unwrap();
-    let (ok, _, stderr) = hexc(&[lonely.as_os_str()]);
+    // (Reported by its sections, as any image without debug information
+    // is, with a note saying why.)
+    let (ok, stdout, stderr) = hexcavator(&[lonely.as_os_str()]);
     std::fs::remove_dir_all(&dir).ok();
-    assert!(!ok);
+    assert!(ok, "{stderr}");
+    assert!(stdout.contains("FILE SIZE"), "{stdout}");
     assert!(stderr.contains("no matching PDB found"), "{stderr}");
 
     // Not an image; no such file; bad usage.
     let pdb = bin("PEParser.Tests.Dllx64.pdb");
-    let (ok, _, stderr) = hexc(&[pdb.as_os_str()]);
+    let (ok, _, stderr) = hexcavator(&[pdb.as_os_str()]);
     assert!(!ok && !stderr.is_empty());
-    let (ok, _, _) = hexc(&["no-such-file.dll".as_ref()]);
+    let (ok, _, _) = hexcavator(&["no-such-file.dll".as_ref()]);
     assert!(!ok);
-    let (ok, _, stderr) = hexc(&[]);
+    let (ok, _, stderr) = hexcavator(&[]);
     assert!(!ok && stderr.contains("usage"));
 }
 
@@ -139,7 +142,7 @@ fn bloaty_mode_labels_every_byte() {
         "compileunits",
         "libraries,groups",
     ] {
-        let (ok, stdout, stderr) = hexc(&[
+        let (ok, stdout, stderr) = hexcavator(&[
             image.as_os_str(),
             "-d".as_ref(),
             sources.as_ref(),
@@ -152,14 +155,14 @@ fn bloaty_mode_labels_every_byte() {
         assert_eq!(header, format!("{sources},vmsize,filesize"));
         assert_eq!(csv_file_total(&stdout), len, "{sources}");
     }
-    let (ok, stdout, stderr) = hexc(&[image.as_os_str(), "-d".as_ref(), "sections".as_ref()]);
+    let (ok, stdout, stderr) = hexcavator(&[image.as_os_str(), "-d".as_ref(), "sections".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(stdout.starts_with("    FILE SIZE        VM SIZE    \n"));
     assert!(stdout.contains("    .rsrc\n"));
     assert!(stdout.contains("    [PE Headers]\n"));
     assert!(stdout.trim_end().ends_with("TOTAL"));
     // JSON.
-    let (ok, stdout, _) = hexc(&[
+    let (ok, stdout, _) = hexcavator(&[
         image.as_os_str(),
         "-d".as_ref(),
         "sections".as_ref(),
@@ -179,14 +182,14 @@ fn bloaty_diffs() {
     let a = bin("PEParser.Tests.Dllx64.dll");
     let b = bin("PEParser.Tests.Dllx86.dll");
     // An image against itself: nothing but the total.
-    let (ok, stdout, stderr) = hexc(&[a.as_os_str(), "--".as_ref(), a.as_os_str()]);
+    let (ok, stdout, stderr) = hexcavator(&[a.as_os_str(), "--".as_ref(), a.as_os_str()]);
     assert!(ok, "{stderr}");
     let rows: Vec<&str> = stdout.lines().skip(2).collect();
     assert_eq!(rows.len(), 1, "{stdout}");
     assert!(rows[0].ends_with("TOTAL"));
     // Against another: the sizes are the differences.
     let (ok, stdout, stderr) =
-        hexc(&[a.as_os_str(), "-csv".as_ref(), "--".as_ref(), b.as_os_str()]);
+        hexcavator(&[a.as_os_str(), "-csv".as_ref(), "--".as_ref(), b.as_os_str()]);
     assert!(ok, "{stderr}");
     let la = std::fs::metadata(&a).unwrap().len() as i64;
     let lb = std::fs::metadata(&b).unwrap().len() as i64;
@@ -201,10 +204,10 @@ fn bloaty_diffs() {
 #[test]
 fn bloaty_mode_errors() {
     let image = bin("PEParser.Tests.Dllx64.dll");
-    let (ok, _, stderr) = hexc(&[image.as_os_str(), "-d".as_ref(), "nope".as_ref()]);
+    let (ok, _, stderr) = hexcavator(&[image.as_os_str(), "-d".as_ref(), "nope".as_ref()]);
     assert!(!ok);
     assert!(stderr.contains("unknown data source 'nope'"), "{stderr}");
-    let (ok, stdout, _) = hexc(&["-list-sources".as_ref()]);
+    let (ok, stdout, _) = hexcavator(&["-list-sources".as_ref()]);
     assert!(ok);
     assert!(stdout.contains("compileunits"));
 }
@@ -226,7 +229,7 @@ fn objects_and_libraries() {
         let path = coff(name);
         let len = std::fs::metadata(&path).unwrap().len() as i64;
         // The default report is by sections.
-        let (ok, stdout, stderr) = hexc(&[path.as_os_str()]);
+        let (ok, stdout, stderr) = hexcavator(&[path.as_os_str()]);
         assert!(ok, "{name}: {stderr}");
         assert!(stdout.trim_end().ends_with("TOTAL"), "{name}: {stdout}");
         for sources in [
@@ -236,7 +239,7 @@ fn objects_and_libraries() {
             "armembers",
             "libraries,inputfiles",
         ] {
-            let (ok, stdout, stderr) = hexc(&[
+            let (ok, stdout, stderr) = hexcavator(&[
                 path.as_os_str(),
                 "-d".as_ref(),
                 sources.as_ref(),
@@ -248,7 +251,7 @@ fn objects_and_libraries() {
             assert_eq!(csv_file_total(&stdout), len, "{name} {sources}");
         }
     }
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         coff("objects.obj").as_os_str(),
         "-d".as_ref(),
         "symbols".as_ref(),
@@ -262,7 +265,7 @@ fn objects_and_libraries() {
             || stdout.contains("exported"),
         "{stdout}"
     );
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         coff("objects.lib").as_os_str(),
         "-d".as_ref(),
         "armembers".as_ref(),
@@ -272,7 +275,7 @@ fn objects_and_libraries() {
         "{stdout}"
     );
     assert!(stdout.contains("[AR Symbol Table]"), "{stdout}");
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         coff("imports.lib").as_os_str(),
         "-d".as_ref(),
         "symbols".as_ref(),
@@ -282,7 +285,7 @@ fn objects_and_libraries() {
     assert!(stdout.contains("[import] ByName (example.dll)"), "{stdout}");
     // A library diffed against itself is empty.
     let lib = coff("objects.lib");
-    let (ok, stdout, stderr) = hexc(&[lib.as_os_str(), "--".as_ref(), lib.as_os_str()]);
+    let (ok, stdout, stderr) = hexcavator(&[lib.as_os_str(), "--".as_ref(), lib.as_os_str()]);
     assert!(ok, "{stderr}");
     assert_eq!(stdout.lines().count(), 3, "{stdout}");
 }
@@ -302,7 +305,7 @@ fn bloaty_options() {
         elf("program-x86_64-linux-gnu.o"),
         elf("program-aarch64-linux-gnu.o"),
     );
-    let (ok, out, err) = hexc(&[
+    let (ok, out, err) = hexcavator(&[
         "-d".as_ref(),
         "inputfiles".as_ref(),
         "-csv".as_ref(),
@@ -319,7 +322,7 @@ fn bloaty_options() {
     let size = |p: &Path| std::fs::metadata(p).unwrap().len() as i64;
     assert_eq!(total, size(&a) + size(&b));
     // Several against several.
-    let (ok, out, err) = hexc(&[
+    let (ok, out, err) = hexcavator(&[
         "-d".as_ref(),
         "inputfiles".as_ref(),
         a.as_os_str(),
@@ -332,7 +335,7 @@ fn bloaty_options() {
     assert!(out.contains("TOTAL"), "{out}");
     // Demangling: none gives the mangled names, full the parameters.
     let names = elf("names.o");
-    let (_, raw, _) = hexc(&[
+    let (_, raw, _) = hexcavator(&[
         "-d".as_ref(),
         "symbols".as_ref(),
         "-C".as_ref(),
@@ -342,7 +345,7 @@ fn bloaty_options() {
         names.as_os_str(),
     ]);
     assert!(raw.contains("_Z"), "{raw}");
-    let (_, full, _) = hexc(&[
+    let (_, full, _) = hexcavator(&[
         "-d".as_ref(),
         "symbols".as_ref(),
         "--demangle=full".as_ref(),
@@ -351,17 +354,17 @@ fn bloaty_options() {
         names.as_os_str(),
     ]);
     assert!(full.contains("use_points(int)"), "{full}");
-    let (ok, _, err) = hexc(&["-C".as_ref(), "sideways".as_ref(), names.as_os_str()]);
+    let (ok, _, err) = hexcavator(&["-C".as_ref(), "sideways".as_ref(), names.as_os_str()]);
     assert!(!ok && err.contains("none, short, or full"), "{err}");
     // -w changes nothing (labels are never cut).
-    let (_, wide, _) = hexc(&["-w".as_ref(), a.as_os_str()]);
-    let (_, plain, _) = hexc(&[a.as_os_str()]);
+    let (_, wide, _) = hexcavator(&["-w".as_ref(), a.as_os_str()]);
+    let (_, plain, _) = hexcavator(&[a.as_os_str()]);
     assert_eq!(wide, plain);
-    let (ok, out, _) = hexc(&["--version".as_ref()]);
-    assert!(ok && out.starts_with("hexc "), "{out}");
+    let (ok, out, _) = hexcavator(&["--version".as_ref()]);
+    assert!(ok && out.starts_with("hexcavator "), "{out}");
     // What each source says about an address, and the maps.
     let exe = elf("program-x86_64-linux-gnu");
-    let (ok, out, err) = hexc(&[
+    let (ok, out, err) = hexcavator(&[
         "-d".as_ref(),
         "sections".as_ref(),
         "--debug-fileoff=0".as_ref(),
@@ -370,10 +373,10 @@ fn bloaty_options() {
     assert!(ok, "{err}");
     assert!(out.starts_with("file offset 0x0:\n  [base]  "), "{out}");
     assert!(out.contains("\n  sections       [0x0, "), "{out}");
-    let (ok, out, _) = hexc(&["--raw-map".as_ref(), exe.as_os_str()]);
+    let (ok, out, _) = hexcavator(&["--raw-map".as_ref(), exe.as_os_str()]);
     assert!(ok && out.starts_with("[base] VM map:\n"), "{out}");
     assert!(out.contains("sections file map:\n"), "{out}");
-    let (ok, _, err) = hexc(&["--debug-vmaddr=zz".as_ref(), exe.as_os_str()]);
+    let (ok, _, err) = hexcavator(&["--debug-vmaddr=zz".as_ref(), exe.as_os_str()]);
     assert!(!ok && err.contains("not an address: zz"), "{err}");
 }
 
@@ -388,10 +391,16 @@ fn elf_files() {
     ] {
         let path = elf(name);
         let len = std::fs::metadata(&path).unwrap().len() as i64;
-        // The default report is by sections, as for objects.
-        let (ok, stdout, stderr) = hexc(&[path.as_os_str()]);
+        // The default report: an object's or archive's by sections; a
+        // linked image's by sections, libraries, and compilands, as a PE
+        // image's is.
+        let (ok, stdout, stderr) = hexcavator(&[path.as_os_str()]);
         assert!(ok, "{name}: {stderr}");
-        assert!(stdout.contains("    .text\n"), "{name}: {stdout}");
+        if name.ends_with(".o") || name.ends_with(".a") {
+            assert!(stdout.contains("    .text\n"), "{name}: {stdout}");
+        } else {
+            assert!(stdout.contains("\n.text "), "{name}: {stdout}");
+        }
         for sources in [
             "sections",
             "segments",
@@ -399,7 +408,7 @@ fn elf_files() {
             "armembers,sections",
             "inputfiles",
         ] {
-            let (ok, stdout, stderr) = hexc(&[
+            let (ok, stdout, stderr) = hexcavator(&[
                 path.as_os_str(),
                 "-d".as_ref(),
                 sources.as_ref(),
@@ -411,19 +420,19 @@ fn elf_files() {
             assert_eq!(csv_file_total(&stdout), len, "{name} {sources}");
         }
     }
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         elf("program-x86_64-linux-gnu").as_os_str(),
         "-d".as_ref(),
         "segments".as_ref(),
     ]);
     assert!(stdout.contains("    LOAD #2 [RX]\n"), "{stdout}");
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         elf("program-x86_64-linux-gnu.o").as_os_str(),
         "-d".as_ref(),
         "segments".as_ref(),
     ]);
     assert!(stdout.contains("    Section [AX]\n"), "{stdout}");
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         elf("program.a").as_os_str(),
         "-d".as_ref(),
         "armembers".as_ref(),
@@ -433,7 +442,7 @@ fn elf_files() {
         "{stdout}"
     );
     assert!(stdout.contains("    [AR Symbol Table]\n"), "{stdout}");
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         elf("unwind-x86_64-linux-gnu").as_os_str(),
         "-d".as_ref(),
         "symbols".as_ref(),
@@ -445,7 +454,7 @@ fn elf_files() {
         "{stdout}"
     );
     // Diffs: one target against another.
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         elf("program-x86_64-linux-gnu").as_os_str(),
         "-csv".as_ref(),
         "--".as_ref(),
@@ -484,7 +493,7 @@ fn macho_files() {
     ] {
         let path = macho(name);
         let len = std::fs::metadata(&path).unwrap().len() as i64;
-        let (ok, stdout, stderr) = hexc(&[path.as_os_str()]);
+        let (ok, stdout, stderr) = hexcavator(&[path.as_os_str()]);
         assert!(ok, "{name}: {stderr}");
         assert!(stdout.contains("__TEXT,__text"), "{name}: {stdout}");
         for sources in [
@@ -495,7 +504,7 @@ fn macho_files() {
             "fullsymbols",
             "armembers,sections",
         ] {
-            let (ok, stdout, stderr) = hexc(&[
+            let (ok, stdout, stderr) = hexcavator(&[
                 path.as_os_str(),
                 "-d".as_ref(),
                 sources.as_ref(),
@@ -508,7 +517,7 @@ fn macho_files() {
         }
     }
     // A static library's members.
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         macho("libprogram-arm64.a").as_os_str(),
         "-d".as_ref(),
         "armembers".as_ref(),
@@ -527,7 +536,7 @@ fn macho_files() {
             "{row}: {stdout}"
         );
     }
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         macho("program-universal").as_os_str(),
         "-d".as_ref(),
         "archs".as_ref(),
@@ -536,7 +545,7 @@ fn macho_files() {
         stdout.contains("    arm64\n") && stdout.contains("    x86_64\n"),
         "{stdout}"
     );
-    let (_, stdout, _) = hexc(&[
+    let (_, stdout, _) = hexcavator(&[
         macho("program-arm64").as_os_str(),
         "-d".as_ref(),
         "symbols".as_ref(),
@@ -552,7 +561,7 @@ fn macho_files() {
 #[test]
 fn findings() {
     let image = bin("CppTestCases_BasicDiffObjectsAfter.dll");
-    let (ok, stdout, stderr) = hexc(&[image.as_os_str(), "-findings".as_ref()]);
+    let (ok, stdout, stderr) = hexcavator(&[image.as_os_str(), "-findings".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(
         stdout.starts_with("Duplicate data: 2 variables"),
@@ -564,7 +573,8 @@ fn findings() {
         stdout.contains("std::exception: what() const (never overridden)"),
         "{stdout}"
     );
-    let (ok, stdout, stderr) = hexc(&[image.as_os_str(), "-findings".as_ref(), "-json".as_ref()]);
+    let (ok, stdout, stderr) =
+        hexcavator(&[image.as_os_str(), "-findings".as_ref(), "-json".as_ref()]);
     assert!(ok, "{stderr}");
     let v = serde_json::from_str::<serde_json::Value>(&stdout).unwrap();
     let dups = v.get("duplicate_data").unwrap();
@@ -588,7 +598,7 @@ fn findings() {
 fn linker_logs() {
     let log = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkerlog/verbose.txt");
     let run = |args: &[&str]| {
-        let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("linkerlog")
             .arg(&log)
             .args(args)
@@ -620,7 +630,7 @@ fn maps_instead_of_pdbs() {
     let image = dir.join("main.exe");
     let map = dir.join("main.map");
     let len = std::fs::metadata(&image).unwrap().len() as i64;
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         image.as_os_str(),
         "-map".as_ref(),
         map.as_os_str(),
@@ -630,7 +640,7 @@ fn maps_instead_of_pdbs() {
     assert!(ok, "{stderr}");
     assert!(stdout.contains("Map: "), "{stdout}");
     assert!(stdout.contains("libucrt.lib"), "{stdout}");
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         image.as_os_str(),
         "-map".as_ref(),
         map.as_os_str(),
@@ -643,26 +653,27 @@ fn maps_instead_of_pdbs() {
     assert!(ok, "{stderr}");
     assert_eq!(csv_file_total(&stdout), len);
     assert!(stdout.contains("libucrt.lib,"), "{stdout}");
-    let (ok, _, stderr) = hexc(&[
+    let (ok, _, stderr) = hexcavator(&[
         image.as_os_str(),
         "-map".as_ref(),
         map.as_os_str(),
         "-findings".as_ref(),
     ]);
     assert!(!ok && stderr.contains("needs the image's PDB"), "{stderr}");
-    let (ok, _, stderr) = hexc(&[image.as_os_str(), "-map".as_ref(), image.as_os_str()]);
+    let (ok, _, stderr) = hexcavator(&[image.as_os_str(), "-map".as_ref(), image.as_os_str()]);
     assert!(!ok && stderr.contains("not a linker map"), "{stderr}");
 }
 
 #[test]
 fn debug_files() {
     // A dSYM bundle next to the image is found.
-    let dir = std::env::temp_dir().join(format!("hexc-dsym-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-dsym-{}", std::process::id()));
     let dwarf_dir = dir.join("program-arm64.dSYM/Contents/Resources/DWARF");
     std::fs::create_dir_all(&dwarf_dir).unwrap();
     let image = dir.join("program-arm64");
     std::fs::copy(macho("program-arm64"), &image).unwrap();
-    let (ok, stdout, stderr) = hexc(&[image.as_os_str(), "-d".as_ref(), "compileunits".as_ref()]);
+    let (ok, stdout, stderr) =
+        hexcavator(&[image.as_os_str(), "-d".as_ref(), "compileunits".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(!stdout.contains("program.c"), "{stdout}");
     std::fs::copy(
@@ -670,12 +681,13 @@ fn debug_files() {
         dwarf_dir.join("program-arm64"),
     )
     .unwrap();
-    let (ok, stdout, stderr) = hexc(&[image.as_os_str(), "-d".as_ref(), "compileunits".as_ref()]);
+    let (ok, stdout, stderr) =
+        hexcavator(&[image.as_os_str(), "-d".as_ref(), "compileunits".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(stdout.contains("    program.c\n"), "{stdout}");
     std::fs::remove_dir_all(&dir).unwrap();
     // Or given.
-    let (ok, stdout, _) = hexc(&[
+    let (ok, stdout, _) = hexcavator(&[
         macho("program-x86_64").as_os_str(),
         "-d".as_ref(),
         "compileunits".as_ref(),
@@ -684,7 +696,7 @@ fn debug_files() {
     ]);
     assert!(ok && stdout.contains("    program.c\n"), "{stdout}");
     // ELF: a stripped image and its debug file.
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         elf("program-split").as_os_str(),
         "-d".as_ref(),
         "compileunits".as_ref(),
@@ -694,7 +706,7 @@ fn debug_files() {
     assert!(ok, "{stderr}");
     assert!(stdout.contains("    program.c\n"), "{stdout}");
     // One for another build is refused.
-    let (ok, _, stderr) = hexc(&[
+    let (ok, _, stderr) = hexcavator(&[
         elf("program-split").as_os_str(),
         "-d".as_ref(),
         "compileunits".as_ref(),
@@ -709,7 +721,7 @@ fn wasm_modules() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/module.wasm");
     let len = std::fs::metadata(&path).unwrap().len() as i64;
     for sources in ["sections", "symbols", "archs", "fullsymbols,sections"] {
-        let (ok, stdout, stderr) = hexc(&[
+        let (ok, stdout, stderr) = hexcavator(&[
             path.as_os_str(),
             "-d".as_ref(),
             sources.as_ref(),
@@ -720,7 +732,7 @@ fn wasm_modules() {
         assert!(ok, "{sources}: {stderr}");
         assert_eq!(csv_file_total(&stdout), len, "{sources}");
     }
-    let (ok, stdout, _) = hexc(&[
+    let (ok, stdout, _) = hexcavator(&[
         path.as_os_str(),
         "-d".as_ref(),
         "symbols".as_ref(),
@@ -732,7 +744,7 @@ fn wasm_modules() {
         "{stdout}"
     );
     for sources in ["compileunits", "inlines", "compileunits,symbols"] {
-        let (ok, stdout, stderr) = hexc(&[
+        let (ok, stdout, stderr) = hexcavator(&[
             path.as_os_str(),
             "-d".as_ref(),
             sources.as_ref(),
@@ -754,7 +766,7 @@ fn wasm_source_maps() {
     let run = |extra: &[&std::ffi::OsStr]| {
         let mut args = vec![module.as_os_str(), "-d".as_ref(), "compileunits".as_ref()];
         args.extend_from_slice(extra);
-        hexc(&args)
+        hexcavator(&args)
     };
     let (ok, stdout, stderr) = run(&[]);
     assert!(ok, "{stderr}");
@@ -764,7 +776,7 @@ fn wasm_source_maps() {
     );
 
     // A copy elsewhere, with another file name, so only the options find it.
-    let tmp = std::env::temp_dir().join(format!("hexc-sourcemap-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("hexcavator-sourcemap-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     let copy = tmp.join("module.wasm");
     std::fs::copy(&module, &copy).unwrap();
@@ -774,7 +786,7 @@ fn wasm_source_maps() {
     let by = |args: &[&std::ffi::OsStr]| {
         let mut all = vec![copy.as_os_str(), "-d".as_ref(), "compileunits".as_ref()];
         all.extend_from_slice(args);
-        hexc(&all)
+        hexcavator(&all)
     };
     let (ok, stdout, _) = by(&[]);
     assert!(ok && !stdout.contains(".c\n"), "{stdout}");
@@ -812,7 +824,7 @@ fn wasm_source_maps() {
     std::fs::write(&climbing, &bytes).unwrap();
     std::fs::write(tmp.join("aaaaaaaa.map"), text).unwrap();
     let (ok, stdout, stderr) =
-        hexc(&[climbing.as_os_str(), "-d".as_ref(), "compileunits".as_ref()]);
+        hexcavator(&[climbing.as_os_str(), "-d".as_ref(), "compileunits".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(
         !stdout.contains(
@@ -827,7 +839,7 @@ fn wasm_source_maps() {
 #[test]
 fn source_filters_and_custom_sources() {
     let path = elf("dwarf5-x86_64-linux-gnu");
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         path.as_os_str(),
         "-d".as_ref(),
         "symbols".as_ref(),
@@ -846,7 +858,7 @@ fn source_filters_and_custom_sources() {
         stdout.contains("Filtering enabled (source_filter); omitted file ="),
         "{stdout}"
     );
-    let (ok, _, stderr) = hexc(&[
+    let (ok, _, stderr) = hexcavator(&[
         path.as_os_str(),
         "-d".as_ref(),
         "symbols".as_ref(),
@@ -855,7 +867,7 @@ fn source_filters_and_custom_sources() {
     ]);
     assert!(!ok && stderr.contains("-source-filter"), "{stderr}");
     // A custom source from a config file.
-    let dir = std::env::temp_dir().join(format!("hexc-config-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-config-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let config = dir.join("x.bloaty");
     std::fs::write(
@@ -864,7 +876,7 @@ fn source_filters_and_custom_sources() {
     )
     .unwrap();
     let len = std::fs::metadata(&path).unwrap().len() as i64;
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         "-c".as_ref(),
         config.as_os_str(),
         path.as_os_str(),
@@ -879,7 +891,7 @@ fn source_filters_and_custom_sources() {
         "{stdout}"
     );
     assert_eq!(csv_file_total(&stdout), len);
-    let (ok, _, stderr) = hexc(&[
+    let (ok, _, stderr) = hexcavator(&[
         "-c".as_ref(),
         config.as_os_str(),
         path.as_os_str(),
@@ -905,7 +917,7 @@ fn disassemble() {
         (elf("program-i386-linux-gnu"), "compute", "compute:"),
     ] {
         let (ok, stdout, stderr) =
-            hexc(&[file.as_os_str(), "-disassemble".as_ref(), name.as_ref()]);
+            hexcavator(&[file.as_os_str(), "-disassemble".as_ref(), name.as_ref()]);
         assert!(ok, "{name}: {stderr}");
         assert!(stdout.starts_with(&format!("{header}\n")), "{stdout}");
         assert!(stdout.contains(">0"), "{stdout}");
@@ -915,14 +927,14 @@ fn disassemble() {
     }
     // A C++ function by its name without its parameters, though a lambda
     // inside it begins the same way.
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         elf("names.o").as_os_str(),
         "-disassemble".as_ref(),
         "use_points".as_ref(),
     ]);
     assert!(ok, "{stderr}");
     assert!(stdout.starts_with("use_points():\n"), "{stdout}");
-    let (ok, _, stderr) = hexc(&[
+    let (ok, _, stderr) = hexcavator(&[
         elf("refs-x86_64-linux-gnu").as_os_str(),
         "-disassemble".as_ref(),
         "nope".as_ref(),
@@ -931,7 +943,7 @@ fn disassemble() {
         !ok && stderr.contains("no function named 'nope'"),
         "{stderr}"
     );
-    let (ok, _, stderr) = hexc(&[
+    let (ok, _, stderr) = hexcavator(&[
         elf("program-armeb-linux-gnueabi").as_os_str(),
         "-disassemble".as_ref(),
         "compute".as_ref(),
@@ -958,7 +970,7 @@ fn disassemble() {
         }
         for name in ["compute", "_start"] {
             let (ok, stdout, stderr) =
-                hexc(&[file.as_os_str(), "-disassemble".as_ref(), name.as_ref()]);
+                hexcavator(&[file.as_os_str(), "-disassemble".as_ref(), name.as_ref()]);
             assert!(ok, "{mode} {name}: {stderr}");
             let mut lines = 0;
             for line in stdout.lines().skip(1) {
@@ -988,13 +1000,90 @@ fn disassemble() {
             );
         }
     }
+    // RISC-V, RV64GC and RV32IMAC (compressed instructions as their full
+    // forms), LoongArch, LA64 and LA32, PowerPC, 64-bit little- and
+    // big-endian and 32-bit, and MIPS, 32-bit big- and little-endian and
+    // 64-bit little-endian: as llvm-objdump writes each line (but a
+    // branch's or call's target, which reads as a label or a name).
+    for xlen in [
+        "riscv64",
+        "riscv32",
+        "loongarch64",
+        "loongarch32",
+        "powerpc64le",
+        "powerpc64",
+        "powerpc",
+        "mips",
+        "mipsel",
+        "mips64el",
+        // (16- and 32-bit instructions.)
+        "mips-micromips",
+        "mipsel-micromips",
+    ] {
+        let file = elf(&format!("program-{xlen}-linux-gnu"));
+        let objdump = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
+            "../../testdata/elf/program-{xlen}-linux-gnu.objdump.txt"
+        )))
+        .unwrap();
+        let mut theirs = std::collections::HashMap::new();
+        for line in objdump.lines() {
+            let Some((at, text)) = line.trim_start().split_once(':') else {
+                continue;
+            };
+            let Ok(at) = u64::from_str_radix(at, 16) else {
+                continue;
+            };
+            theirs.insert(at, text.split_whitespace().collect::<Vec<_>>().join(" "));
+        }
+        for name in ["compute", "_start"] {
+            let (ok, stdout, stderr) =
+                hexcavator(&[file.as_os_str(), "-disassemble".as_ref(), name.as_ref()]);
+            assert!(ok, "{xlen} {name}: {stderr}");
+            let mut lines = 0;
+            // (PowerPC's zeros after a function's return, in its symbol:
+            // not instructions, which llvm-objdump shows as `...`.)
+            for line in stdout
+                .lines()
+                .skip(1)
+                .filter(|l| !l.contains("(not instructions)"))
+            {
+                let mut it = line.split_whitespace();
+                let Some(at) = it.next().and_then(|a| u64::from_str_radix(a, 16).ok()) else {
+                    continue;
+                };
+                let rest: Vec<&str> = it.filter(|w| !w.ends_with(':')).collect();
+                let ours = rest.join(" ");
+                let want = &theirs[&at];
+                let branch = [
+                    "j", "jal", "beqz", "bnez", "blez", "bgez", "bltz", "bgtz", "beq", "bne",
+                    "blt", "bge", "bltu", "bgeu", "bgt", "ble", "bgtu", "bleu", "b", "bl", "bceqz",
+                    "bcnez", "bt", "bf", "bdnz", "bdz", "bc", "bcl", "bal", "jal", "jals", "jalx",
+                    "b16", "bc16", "beqz16", "bnez16", "beqzc", "bnezc", "beqzc16", "bnezc16",
+                    "balc", "bgezals", "bltzals",
+                ]
+                .contains(&rest[0]);
+                if branch {
+                    assert_eq!(rest[0], want.split(' ').next().unwrap(), "{xlen} {at:x}");
+                } else {
+                    assert_eq!(&ours, want, "{xlen} {at:x}");
+                }
+                lines += 1;
+            }
+            assert!(
+                lines > 5,
+                "{xlen} {name}:
+{stdout}"
+            );
+        }
+    }
     // A module without -d: its sections.
     let wasm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/module.wasm");
-    let (ok, stdout, stderr) = hexc(&[wasm.as_os_str()]);
+    let (ok, stdout, stderr) = hexcavator(&[wasm.as_os_str()]);
     assert!(ok && stdout.contains("    Code\n"), "{stdout}{stderr}");
     // A module's function: offsets in the file (as llvm-objdump's), calls
     // named; one without a name is func[i], with its locals.
-    let (ok, stdout, stderr) = hexc(&[wasm.as_os_str(), "-disassemble".as_ref(), "main".as_ref()]);
+    let (ok, stdout, stderr) =
+        hexcavator(&[wasm.as_os_str(), "-disassemble".as_ref(), "main".as_ref()]);
     assert!(ok, "{stderr}");
     assert_eq!(
         stdout,
@@ -1006,7 +1095,7 @@ fn disassemble() {
          \x20              8e  call 0 <log>\n\
          \x20              90  end\n"
     );
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         wasm.as_os_str(),
         "-disassemble".as_ref(),
         "func[3]".as_ref(),
@@ -1021,17 +1110,17 @@ fn disassemble() {
     let dll = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata/sizebench/bin/CppTestCases_BasicDiffObjectsAfter.dll");
     let (ok, stdout, stderr) =
-        hexc(&[dll.as_os_str(), "-disassemble".as_ref(), "DllMain".as_ref()]);
+        hexcavator(&[dll.as_os_str(), "-disassemble".as_ref(), "DllMain".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(stdout.starts_with("DllMain("), "{stdout}");
     assert!(stdout.lines().count() > 3, "{stdout}");
     assert!(stdout.contains("ret"), "{stdout}");
-    let (ok, _, stderr) = hexc(&[dll.as_os_str(), "-disassemble".as_ref(), "nope".as_ref()]);
+    let (ok, _, stderr) = hexcavator(&[dll.as_os_str(), "-disassemble".as_ref(), "nope".as_ref()]);
     assert!(
         !ok && stderr.contains("no function named 'nope'"),
         "{stderr}"
     );
-    let (ok, _, stderr) = hexc(&[wasm.as_os_str(), "-disassemble".as_ref(), "nope".as_ref()]);
+    let (ok, _, stderr) = hexcavator(&[wasm.as_os_str(), "-disassemble".as_ref(), "nope".as_ref()]);
     assert!(
         !ok && stderr.contains("no function named 'nope'"),
         "{stderr}"
@@ -1045,7 +1134,7 @@ fn disassemble_blocks_and_json() {
     let exe = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/xref/xref-x64.exe");
     let name = "__scrt_common_main_seh()";
     let run = |extra: &str| {
-        let (ok, stdout, stderr) = hexc(&[
+        let (ok, stdout, stderr) = hexcavator(&[
             exe.as_os_str(),
             "-disassemble".as_ref(),
             name.as_ref(),
@@ -1140,7 +1229,7 @@ fn disassemble_blocks_and_json() {
 #[test]
 fn disassemble_variables() {
     let exe = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/types/types.exe");
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         exe.as_os_str(),
         "-disassemble".as_ref(),
         "use(Padded*, Bits*, Derived*, WithEmpty*, Diamond*, Either*, Grows*)".as_ref(),
@@ -1181,7 +1270,7 @@ fn disassemble_variables() {
     assert_eq!(field(&vars[2], "vfptr").unwrap()["offset"], 0);
     // No variables for code without debug information about them.
     let wasm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/module.wasm");
-    let (ok, stdout, _) = hexc(&[
+    let (ok, stdout, _) = hexcavator(&[
         wasm.as_os_str(),
         "-disassemble".as_ref(),
         "main".as_ref(),
@@ -1198,7 +1287,7 @@ fn disassemble_variables() {
 /// file.
 #[test]
 fn symbol_index() {
-    let dir = std::env::temp_dir().join(format!("hexc-index-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("turbonop-index-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let image = dir.join("CppTestCases_BasicDiffObjectsAfter.dll");
@@ -1212,13 +1301,13 @@ fn symbol_index() {
         let mut all: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().path())
-            .filter(|p| p.to_string_lossy().ends_with(".hexc-index"))
+            .filter(|p| p.to_string_lossy().ends_with(".turbonop-index"))
             .collect();
         all.sort();
         all
     };
     let run = |cache: Option<&std::path::Path>| {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_hexc"));
+        let mut c = Command::new(env!("CARGO_BIN_EXE_hexcavator"));
         if let Some(p) = cache {
             c.arg("--cache").arg(p);
         }
@@ -1275,7 +1364,7 @@ fn symbol_index() {
 /// --cache without a path is an error, as a usage.
 #[test]
 fn cache_option_needs_a_path() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["version", "--cache"])
         .output()
         .unwrap();
@@ -1287,7 +1376,7 @@ fn cache_option_needs_a_path() {
 /// what exceeds them, when anything does.
 #[test]
 fn size_budgets() {
-    let dir = std::env::temp_dir().join(format!("hexc-budget-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-budget-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let image = elf("program-x86_64-linux-gnu");
     let base = elf("program-i386-linux-gnu");
@@ -1297,7 +1386,7 @@ fn size_budgets() {
         std::fs::write(&path, rules).unwrap();
         let mut args = vec![image.as_os_str(), "-budget".as_ref(), path.as_os_str()];
         args.extend_from_slice(extra);
-        hexc(&args)
+        hexcavator(&args)
     };
     let (ok, stdout, stderr) = check(&format!(r#"{{"rules": [{{"max_file": {len}}}]}}"#), &[]);
     assert!(ok, "{stderr}");
@@ -1373,16 +1462,18 @@ fn testdata(path: &str) -> PathBuf {
 #[test]
 fn sizebench_and_findings_on_every_format() {
     let elf = testdata("elf/dwarf5-x86_64-linux-gnu");
-    let (ok, stdout, stderr) = hexc(&[elf.as_os_str(), "-sizebench".as_ref()]);
+    let (ok, stdout, stderr) = hexcavator(&[elf.as_os_str(), "-sizebench".as_ref()]);
     assert!(ok, "{stderr}");
     assert!(
-        stdout.contains("COMPILAND ...no name found... | program.c size=165"),
+        // (Its code and its data: 165 bytes of .text, 20 of .data and
+        // .rodata, and 4,100 of .bss.)
+        stdout.contains("COMPILAND ...no name found... | program.c size=185 vsize=4285"),
         "{stdout}"
     );
     assert!(!stdout.contains("FILE SIZE"), "{stdout}");
     let macho = testdata("macho/program-arm64");
     let dwarf = testdata("macho/program-arm64.dwarf");
-    let (ok, stdout, stderr) = hexc(&[
+    let (ok, stdout, stderr) = hexcavator(&[
         macho.as_os_str(),
         "-findings".as_ref(),
         "-debug-file".as_ref(),
@@ -1390,12 +1481,14 @@ fn sizebench_and_findings_on_every_format() {
     ]);
     assert!(ok, "{stderr}");
     assert!(stdout.starts_with("Duplicate data:"), "{stdout}");
-    // Without them, ELF's default report is still bloaty's.
-    let (ok, stdout, _) = hexc(&[elf.as_os_str()]);
-    assert!(ok && stdout.contains("FILE SIZE"), "{stdout}");
+    // Without them, ELF's default report is a PE image's: sections,
+    // libraries, and compilands.
+    let (ok, stdout, _) = hexcavator(&[elf.as_os_str()]);
+    assert!(ok && stdout.contains("Compilands: 2"), "{stdout}");
+    assert!(stdout.contains("bytes in sections"), "{stdout}");
     // Objects have no debug information to read that way.
     let obj = coff("objects-big.obj");
-    let (ok, _, stderr) = hexc(&[obj.as_os_str(), "-sizebench".as_ref()]);
+    let (ok, _, stderr) = hexcavator(&[obj.as_os_str(), "-sizebench".as_ref()]);
     assert!(!ok);
     assert!(
         stderr.contains("read linked images, not objects or libraries"),
@@ -1403,11 +1496,11 @@ fn sizebench_and_findings_on_every_format() {
     );
 }
 
-/// size -table: summed by any source, the rollup hexc would give.
+/// size -table: summed by any source, the rollup hexcavator would give.
 #[test]
 fn a_table_sums_to_every_rollup() {
     let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/xref/xref-x64.exe");
-    let (ok, out, err) = hexc(&[image.as_os_str(), "-table".as_ref()]);
+    let (ok, out, err) = hexcavator(&[image.as_os_str(), "-table".as_ref()]);
     assert!(ok, "{err}");
     let t: serde_json::Value = serde_json::from_str(&out).unwrap();
     let columns: Vec<&str> = t["columns"]
@@ -1423,7 +1516,7 @@ fn a_table_sums_to_every_rollup() {
         .map(|c| c.as_str().unwrap())
         .collect();
     for source in ["sections", "groups", "compileunits", "libraries"] {
-        let (ok, out, err) = hexc(&[
+        let (ok, out, err) = hexcavator(&[
             image.as_os_str(),
             "-d".as_ref(),
             format!("{source},symbols").as_ref(),
@@ -1461,10 +1554,10 @@ fn a_table_sums_to_every_rollup() {
 
 #[test]
 fn source_files_and_definitions() {
-    // sourcefiles: code by the file its line tables name, as `hexc
+    // sourcefiles: code by the file its line tables name, as `hexcavator
     // sourcefiles` counts it.
     let image = testdata("xref/xref-x64.exe").into_os_string();
-    let (ok, out, err) = hexc(&[
+    let (ok, out, err) = hexcavator(&[
         "-d".as_ref(),
         "sourcefiles".as_ref(),
         "-n".as_ref(),
@@ -1477,7 +1570,7 @@ fn source_files_and_definitions() {
         .lines()
         .find(|l| l.contains("main.cpp"))
         .unwrap_or_else(|| panic!("{out}"));
-    let files = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let files = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args([
             "sourcefiles".as_ref(),
             "-json".as_ref(),
@@ -1498,7 +1591,7 @@ fn source_files_and_definitions() {
         .unwrap();
     assert!(main.contains(&format!(",{want},")), "{main} vs {want}");
     // As a table, with symbols: what the Symbols page groups by Source.
-    let (ok, out, err) = hexc(&[
+    let (ok, out, err) = hexcavator(&[
         "-table".as_ref(),
         "-d".as_ref(),
         "sourcefiles,symbols".as_ref(),
@@ -1516,7 +1609,7 @@ fn source_files_and_definitions() {
         ("types/types-x86_64-linux-gnu", "main", "types.cpp:106"),
         ("macho/oso/oso-arm64", "_compute", "program.c:17"),
     ] {
-        let (ok, out, err) = hexc(&[
+        let (ok, out, err) = hexcavator(&[
             "-definition".as_ref(),
             name.as_ref(),
             testdata(image).as_os_str(),
@@ -1526,7 +1619,7 @@ fn source_files_and_definitions() {
             "{image} {name}: {out}{err}"
         );
     }
-    let (ok, _, err) = hexc(&["-definition".as_ref(), "no_such_function".as_ref(), &image]);
+    let (ok, _, err) = hexcavator(&["-definition".as_ref(), "no_such_function".as_ref(), &image]);
     assert!(!ok && err.contains("no function"), "{err}");
 }
 
@@ -1534,7 +1627,7 @@ fn source_files_and_definitions() {
 fn diff_of_two_builds() {
     // testdata/diff (tools/diff): a function and a datum added, removed,
     // and changed between v1 and v2; the rest the same.
-    let (ok, out, err) = hexc(&[
+    let (ok, out, err) = hexcavator(&[
         "-d".as_ref(),
         "symbols".as_ref(),
         "-n".as_ref(),
@@ -1566,7 +1659,7 @@ fn diff_of_two_builds() {
     );
     // By fingerprint: one changed (and main, which calls another), one
     // added, one removed.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args([
             "xref".as_ref(),
             testdata("diff/diff-v2.exe").as_os_str(),
@@ -1584,9 +1677,9 @@ fn diff_of_two_builds() {
 
 #[test]
 fn a_diffs_table_sums_to_its_report() {
-    // hexc size -table new -- old: each row's change and base sizes, every
+    // hexcavator size -table new -- old: each row's change and base sizes, every
     // set of labels either build has; summed by symbol, the diff report's.
-    let (ok, out, err) = hexc(&[
+    let (ok, out, err) = hexcavator(&[
         "-table".as_ref(),
         testdata("diff/diff-v2.exe").as_os_str(),
         "--".as_ref(),
@@ -1617,7 +1710,7 @@ fn a_diffs_table_sums_to_its_report() {
         e.0 += r[n - 4].as_i64().unwrap();
         e.1 += r[n - 2].as_i64().unwrap();
     }
-    let (ok, out, err) = hexc(&[
+    let (ok, out, err) = hexcavator(&[
         "-d".as_ref(),
         "symbols".as_ref(),
         "-n".as_ref(),
@@ -1646,7 +1739,7 @@ fn a_diffs_table_sums_to_its_report() {
 fn findings_of_elf_and_mach_o() {
     // (Their headers once read as COFF objects', which findings refused.)
     for image in ["types/types-x86_64-linux-gnu", "macho/oso/oso-arm64"] {
-        let (ok, out, err) = hexc(&[
+        let (ok, out, err) = hexcavator(&[
             "-findings".as_ref(),
             "-json".as_ref(),
             testdata(image).as_os_str(),
@@ -1654,5 +1747,291 @@ fn findings_of_elf_and_mach_o() {
         assert!(ok, "{image}: {err}");
         let v: serde_json::Value = serde_json::from_str(&out).unwrap();
         assert!(v["duplicate_data"].is_object(), "{image}: {v}");
+    }
+}
+
+/// A one-source report's rows, by label: (memory size, file size).
+fn rows_of(args: &[&std::ffi::OsStr]) -> std::collections::BTreeMap<String, (i64, i64)> {
+    let mut all = args.to_vec();
+    all.extend::<[&std::ffi::OsStr; 3]>(["-n".as_ref(), "0".as_ref(), "-csv".as_ref()]);
+    let (ok, stdout, stderr) = hexcavator(&all);
+    assert!(ok, "{stderr}");
+    stdout
+        .lines()
+        .skip(1)
+        .map(|l| {
+            let mut f = l.rsplitn(3, ',');
+            let file = f.next().unwrap().parse().unwrap();
+            let vm = f.next().unwrap().parse().unwrap();
+            (f.next().unwrap().trim_matches('"').to_string(), (vm, file))
+        })
+        .collect()
+}
+
+/// -stripped: the file as if stripped, its debug information and symbol
+/// tables uncounted but still naming the rest; nothing else changes.
+#[test]
+fn stripped() {
+    let s = |p: &PathBuf, d: &str, stripped: bool| {
+        let mut args = vec![p.as_os_str(), "-d".as_ref(), d.as_ref()];
+        if stripped {
+            args.push("-stripped".as_ref());
+        }
+        rows_of(&args)
+    };
+    // ELF: the debug sections, .symtab and .strtab go, and their headers.
+    let image = elf("program-x86_64-linux-gnu");
+    let (whole, stripped) = (s(&image, "sections", false), s(&image, "sections", true));
+    assert!(whole.contains_key(".debug_info") && whole.contains_key(".symtab"));
+    for (name, size) in &whole {
+        let gone = name.starts_with(".debug") || name == ".symtab" || name == ".strtab";
+        match stripped.get(name) {
+            None => assert!(gone, "{name} went"),
+            Some(after)
+                if name == "[ELF Section Headers]"
+                    || name == ".shstrtab"
+                    || name == "[Unmapped]" =>
+            {
+                assert!(after.1 < size.1, "{name}: {after:?} of {size:?}");
+            }
+            Some(after) => assert_eq!(after, size, "{name}"),
+        }
+    }
+    // As GNU strip leaves it, within its rewritten .comment and padding.
+    let total = |r: &std::collections::BTreeMap<String, (i64, i64)>| {
+        r.values().fold((0, 0), |a, v| (a.0 + v.0, a.1 + v.1))
+    };
+    let real = total(&s(&elf("program-stripped"), "sections", false));
+    let sim = total(&stripped);
+    assert_eq!(sim.0, real.0);
+    assert!((sim.1 - real.1).abs() <= 32, "{sim:?} vs {real:?}");
+    // An image already stripped is as it was.
+    let already = elf("program-stripped");
+    assert_eq!(
+        s(&already, "sections", true),
+        s(&already, "sections", false)
+    );
+    // Symbols keep their names and memory; their symbol table entries
+    // and DWARF no longer count.
+    let (whole, stripped) = (s(&image, "symbols", false), s(&image, "symbols", true));
+    let (w, t) = (whole["compute"], stripped["compute"]);
+    assert!(t.0 == w.0 && t.1 < w.1, "{w:?} {t:?}");
+    assert!(!stripped.contains_key("[section .debug_info]"));
+    // An object keeps its symbol table (as strip --strip-debug does).
+    let object = s(&elf("program-x86_64-linux-gnu.o"), "sections", true);
+    assert!(
+        object.contains_key(".symtab") && !object.keys().any(|k| k.contains("debug")),
+        "{object:?}"
+    );
+
+    // Mach-O: the debug map and local symbols, in memory too (__LINKEDIT).
+    let image = macho("program-arm64");
+    let (whole, stripped) = (s(&image, "sections", false), s(&image, "sections", true));
+    let (w, t) = (whole["Symbol Table"], stripped["Symbol Table"]);
+    assert!(t.1 < w.1 && t.0 == t.1, "{w:?} {t:?}");
+    assert!(stripped["String Table"].1 < whole["String Table"].1);
+    assert_eq!(stripped["__TEXT,__text"], whole["__TEXT,__text"]);
+    // An object's DWARF, its section headers too.
+    let object = s(&macho("program-arm64.o"), "sections", true);
+    assert!(!object.keys().any(|k| k.contains("__DWARF")), "{object:?}");
+
+    // WebAssembly: the DWARF and the name section; the names still name.
+    let module =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/sample-dwarf.wasm");
+    let (whole, stripped) = (s(&module, "sections", false), s(&module, "sections", true));
+    assert!(whole.contains_key("name") && whole.keys().any(|k| k.starts_with(".debug_")));
+    assert!(
+        !stripped.contains_key("name") && !stripped.keys().any(|k| k.starts_with(".debug_")),
+        "{stripped:?}"
+    );
+    assert_eq!(stripped.get("Code"), whole.get("Code"));
+    assert!(
+        s(&module, "symbols", true)
+            .keys()
+            .any(|k| !k.starts_with('[') && !k.starts_with("func["))
+    );
+
+    // PE with a PDB: nothing to strip.
+    let pe = bin("PEParser.Tests.Dllx64.dll");
+    assert_eq!(s(&pe, "sections", true), s(&pe, "sections", false));
+    // PE with DWARF (MinGW's): its DWARF, and the COFF symbol and string
+    // tables (as strip --strip-all leaves it).
+    let mingw = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/mingw/program.exe");
+    let (whole, stripped) = (s(&mingw, "sections", false), s(&mingw, "sections", true));
+    assert!(whole.contains_key(".debug_info") && whole.contains_key("[COFF Symbol Table]"));
+    assert!(
+        !stripped
+            .keys()
+            .any(|k| k.starts_with(".debug_") || k.starts_with("[COFF ")),
+        "{stripped:?}"
+    );
+    assert_eq!(stripped[".text"], whole[".text"]);
+
+    // A diff of two stripped builds, and the -table.
+    let (ok, stdout, stderr) = hexcavator(&[
+        image.as_os_str(),
+        "-stripped".as_ref(),
+        "--".as_ref(),
+        macho("program-arm64").as_os_str(),
+    ]);
+    assert!(ok && stdout.contains("TOTAL"), "{stderr}");
+    let (ok, stdout, stderr) = hexcavator(&[
+        elf("program-x86_64-linux-gnu").as_os_str(),
+        "-stripped".as_ref(),
+        "-table".as_ref(),
+    ]);
+    assert!(ok, "{stderr}");
+    let t: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(t["file"].as_i64().unwrap(), sim.1, "{t}");
+}
+
+/// -d crates: each symbol by its Rust crate (testdata/elf/rust-v0.o: core,
+/// the corpus's own, alloc, std), or C++'s top-level namespace.
+#[test]
+fn crates_source() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
+    let run = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .arg("size")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let rust = root.join("elf/rust-v0.o");
+    let out = run(&["-d", "crates", "-n", "0", rust.to_str().unwrap()]);
+    for c in ["core", "corpus", "alloc"] {
+        assert!(
+            out.lines()
+                .any(|l| l.trim_end().ends_with(&format!("  {c}"))),
+            "{c}: {out}"
+        );
+    }
+    // No symbol's full name is left as a label.
+    assert!(!out.contains("::"), "{out}");
+    // A C++ image's (with its PDB): its namespaces, and the global one.
+    let exe = root.join("xref/xref-x64.exe");
+    let out = run(&["-d", "crates", "-n", "0", exe.to_str().unwrap()]);
+    assert!(out.contains("[global]") && out.contains("  std"), "{out}");
+    // Listed, and named so by -list-sources.
+    assert!(run(&["-list-sources"]).contains("crates"));
+}
+
+/// -disassemble -json on ELF and Mach-O: each instruction's source line,
+/// and the function's parameters and locals, from its DWARF, as a PE
+/// image's are from its PDB.
+#[test]
+fn disassembly_with_debug_information_of_every_format() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts");
+    for image in ["funcs-plain", "macho-plain"] {
+        let (ok, stdout, stderr) = hexcavator(&[
+            dir.join(image).as_os_str(),
+            "-disassemble".as_ref(),
+            "add_a".as_ref(),
+            "-json".as_ref(),
+        ]);
+        assert!(ok, "{image}: {stderr}");
+        let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        assert!(
+            v["files"][0].as_str().unwrap().ends_with("funcs.c"),
+            "{image}: {v}"
+        );
+        assert!(v["lines"][0]["source"].is_array(), "{image}: {v}");
+        let vars: Vec<&str> = v["variables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x["name"].as_str().unwrap())
+            .collect();
+        assert!(
+            vars.contains(&"x") && vars.contains(&"y"),
+            "{image}: {vars:?}"
+        );
+    }
+}
+
+/// A WebAssembly module's compileunits, sourcefiles, and inlines from its
+/// own DWARF, without a source map (its DWARF's addresses are its code
+/// section's offsets).
+#[test]
+fn wasm_compile_units_from_dwarf() {
+    let module = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/startup.wasm");
+    for (source, label) in [
+        ("compileunits", "startup.c"),
+        ("sourcefiles", "startup.c"),
+        ("inlines", "startup.c:13"),
+    ] {
+        let (ok, stdout, stderr) = hexcavator(&[
+            module.as_os_str(),
+            "-d".as_ref(),
+            source.as_ref(),
+            "-n".as_ref(),
+            "0".as_ref(),
+        ]);
+        assert!(ok, "{source}: {stderr}");
+        assert!(
+            stdout.lines().any(|l| l.trim_end().ends_with(label)),
+            "{source}: {stdout}"
+        );
+    }
+}
+
+fn wasm_data_module() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm/data.wasm")
+}
+
+/// A WebAssembly module's data (tools/wasm/data.c): its segments are
+/// sections of the report, and its variables its compile unit's, as its
+/// DWARF says; by wasm-ld's map, its object's.
+#[test]
+fn wasm_data() {
+    let image = wasm_data_module();
+    let (ok, out, err) = hexcavator(&[image.as_os_str()]);
+    assert!(ok, "{err}");
+    for section in ["Code", ".rodata", ".data"] {
+        assert!(
+            out.lines().any(|l| l.starts_with(section)),
+            "{section}: {out}"
+        );
+    }
+    assert!(
+        out.contains("Attributed to compilands: 294 of 296 bytes"),
+        "{out}"
+    );
+    let (ok, out, err) = hexcavator(&[image.as_os_str(), "-d".as_ref(), "compileunits".as_ref()]);
+    assert!(ok, "{err}");
+    assert!(!out.contains("[section Data]"), "{out}");
+    let map = image.with_extension("wasm.map");
+    let (ok, out, err) = hexcavator(&[
+        image.as_os_str(),
+        "-map".as_ref(),
+        map.as_os_str(),
+        "-d".as_ref(),
+        "compileunits".as_ref(),
+    ]);
+    assert!(ok, "{err}");
+    // (Its code, 0x6a bytes, and data, 0xa4.)
+    assert!(
+        out.lines()
+            .any(|l| l.ends_with(" data.o") && l.contains(" 270 ")),
+        "{out}"
+    );
+    assert!(out.lines().any(|l| l.ends_with(" [linker]")), "{out}");
+}
+
+/// A Mach-O image is named by its CPU subtype too: arm64e, not arm64.
+#[test]
+fn arm64e_named_so() {
+    let macho = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/macho");
+    for (name, arch) in [("program-arm64e", "(arm64e)"), ("program-arm64", "(arm64)")] {
+        let p = macho.join(name);
+        let (ok, out, err) = hexcavator(&[p.as_os_str()]);
+        assert!(ok, "{err}");
+        assert!(out.lines().next().unwrap().ends_with(arch), "{out}");
     }
 }

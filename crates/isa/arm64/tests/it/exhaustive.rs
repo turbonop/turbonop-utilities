@@ -8,7 +8,7 @@
 //!
 //! It takes minutes on a many-core machine (in release):
 //!
-//!     cargo test --release -p hexcavator-arm64 --test it -- --ignored --nocapture exhaustive::
+//!     cargo test --release -p turbonop-arm64 --test it -- --ignored --nocapture exhaustive::
 
 #![allow(
     clippy::cast_possible_truncation,
@@ -23,15 +23,15 @@ const EXPLAIN_EVERY: u32 = 1 << 12;
 
 fn check(word: u32, decoded: &AtomicU64, failures: &std::sync::Mutex<Vec<String>>) {
     let address = u64::from(word) << 2;
-    let first = hexcavator_arm64::decode(word, address);
-    let again = hexcavator_arm64::decode(word, address);
+    let first = turbonop_arm64::decode(word, address);
+    let again = turbonop_arm64::decode(word, address);
     let fail = |why: String| {
         let mut f = failures.lock().unwrap();
         if f.len() < 100 {
             f.push(format!("{word:08x}: {why}"));
         }
     };
-    if let Some(e) = hexcavator_arm64::validity_disagrees(word) {
+    if let Some(e) = turbonop_arm64::validity_disagrees(word) {
         fail(format!(
             "{e}: the quick validity check disagrees with formatting"
         ));
@@ -48,7 +48,7 @@ fn check(word: u32, decoded: &AtomicU64, failures: &std::sync::Mutex<Vec<String>
         if inst.encoding_name().is_empty() || inst.class().is_empty() {
             fail("no encoding or class name".into());
         }
-        let text = hexcavator_arm64::format(&inst);
+        let text = turbonop_arm64::format(&inst);
         // (A leading `?` marks a CONSTRAINED UNPREDICTABLE encoding.)
         if !text
             .trim_start_matches('?')
@@ -59,12 +59,12 @@ fn check(word: u32, decoded: &AtomicU64, failures: &std::sync::Mutex<Vec<String>
         {
             fail(format!("formats as {text:?}"));
         }
-        if again.map(|i| hexcavator_arm64::format(&i)) != Some(text) {
+        if again.map(|i| turbonop_arm64::format(&i)) != Some(text) {
             fail("formats differently twice".into());
         }
     }
     if word.is_multiple_of(EXPLAIN_EVERY) {
-        let _ = hexcavator_arm64::explain(word);
+        let _ = turbonop_arm64::explain(word);
     }
 }
 

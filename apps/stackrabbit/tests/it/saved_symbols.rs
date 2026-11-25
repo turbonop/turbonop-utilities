@@ -6,15 +6,15 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use hexcavator_symbolize::{FunctionTable, SymbolPath};
-use hexcavator_trace::index;
-use hexcavator_trace_analysis::{NodeId, PdbSymbolizer, Resolver};
 use serde_json::{Value, json};
 use stackrabbit::protocol::{Frame, read_frame, write_frame};
 use stackrabbit::serve::{Output, serve};
 use stackrabbit::store;
 use stackrabbit::symbols;
 use stackrabbit::views::{TreeSpec, TreeView};
+use turbonop_symbolize::{FunctionTable, SymbolPath};
+use turbonop_trace::index;
+use turbonop_trace_analysis::{NodeId, PdbSymbolizer, Resolver};
 
 use crate::common::{scratch, small};
 
@@ -57,9 +57,9 @@ fn result(answers: &HashMap<u64, Value>, id: u64) -> &Value {
 /// `lines.pdb` (its GUID put in the trace's), and a symbol cache holding
 /// it: the executable's file name and the cache.
 fn trace_with_a_real_pdb(dir: &Path) -> (PathBuf, String, PathBuf) {
-    let mut s = hexcavator_trace_synth::generate(&small());
+    let mut s = turbonop_trace_synth::generate(&small());
     let pdb = std::fs::read(lines_pdb()).unwrap();
-    let parsed = hexcavator_pdb::Pdb::parse(&pdb).unwrap();
+    let parsed = turbonop_pdb::Pdb::parse(&pdb).unwrap();
     let info = parsed.info();
     assert!(info.age() >= 1, "the synthetic PDBs are age 1");
     // The first process's executable: sampled in every trace.
@@ -226,7 +226,9 @@ fn saved_symbols_are_only_for_their_trace_and_undamaged() {
     let key = ([7u8; 16], 3);
     let frames = symbols::Frames {
         wanted: Vec::new(),
-        addresses: [(key, vec![main])].into_iter().collect(),
+        addresses: [(key, vec![u32::try_from(main).unwrap()])]
+            .into_iter()
+            .collect(),
         ..symbols::Frames::default()
     };
     let source = index::Source {
@@ -306,14 +308,14 @@ fn a_pdb_missing_at_first_is_found_when_it_comes() {
         .images
         .iter()
         .position(|i| i.file_name() == exe)
-        .map(|i| hexcavator_trace::ImageIx(u32::try_from(i).unwrap()))
+        .map(|i| turbonop_trace::ImageIx(u32::try_from(i).unwrap()))
         .unwrap();
     let id = trace.images[image.index()].debug_id.clone().unwrap();
     let pdb = std::fs::read(lines_pdb()).unwrap();
     let table = Arc::new(FunctionTable::from_pdb(&pdb).unwrap());
-    let main = u64::from(table.iter().find(|f| f.2 == "main").unwrap().0);
+    let main = table.iter().find(|f| f.2 == "main").unwrap().0;
     let named = |s: &PdbSymbolizer| s.function_start(trace, image, main);
-    use hexcavator_trace_analysis::Symbolizer;
+    use turbonop_trace_analysis::Symbolizer;
 
     // Not waiting: missing until it is seeded (asked about many times, so
     // that "missing" is remembered).
@@ -363,8 +365,8 @@ fn the_symbols_report_says_what_became_of_each_pdb() {
     let dir = scratch("saved-symbols-report");
     let (path, _, cache) = trace_with_a_real_pdb(&dir);
     let pdb = std::fs::read(lines_pdb()).unwrap();
-    let parsed = hexcavator_pdb::Pdb::parse(&pdb).unwrap();
-    let lines = hexcavator_symbolize::symbol_store_key(&parsed.info().guid(), 1);
+    let parsed = turbonop_pdb::Pdb::parse(&pdb).unwrap();
+    let lines = turbonop_symbolize::symbol_store_key(&parsed.info().guid(), 1);
     let report = |requests: &[Value]| {
         let (a, _) = session(requests);
         result(&a, requests.len() as u64).clone()

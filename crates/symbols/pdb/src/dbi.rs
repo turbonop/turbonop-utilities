@@ -2,7 +2,7 @@
 //! map, source files, and the indexes of other streams.
 
 use crate::msf::SN_NIL;
-use hexcavator_core::{
+use turbonop_core::{
     Error, ErrorKind, I32Le, Reader, Result, U16Le, U32Le, pod, read_at, read_slice_at,
 };
 
@@ -335,7 +335,7 @@ impl<'s> DbiStream<'s> {
         };
         let mut out = Vec::new();
         for off in offsets.iter().skip(start).take(usize::from(count.get())) {
-            out.push(hexcavator_core::cstr_at(names, u64::from(off.get()))?);
+            out.push(turbonop_core::cstr_at(names, u64::from(off.get()))?);
         }
         Ok(out)
     }

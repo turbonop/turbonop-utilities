@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-codeview"
+name = "turbonop-codeview"
 description = "CodeView debug records: symbols, types, line numbers and inline annotations, as PDBs and COFF objects hold them"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
+turbonop-hash.workspace = true
+turbonop-par.workspace = true
 
 [lints]
 workspace = true

@@ -2,8 +2,8 @@
 
 use std::io::{self, Write};
 
-use hexcavator_pe::consts::{machine, magic, section_characteristics as scn, subsystem};
-use hexcavator_pe::{FileKind, OptionalHeader, PeFile};
+use turbonop_pe::consts::{machine, magic, section_characteristics as scn, subsystem};
+use turbonop_pe::{FileKind, OptionalHeader, PeFile};
 
 use super::{Options, Summary};
 use crate::time::asctime_utc;
@@ -37,7 +37,7 @@ pub fn dump(
 
     // Like dumpbin, list each directory after the section that holds it,
     // in a fixed order within the section.
-    use hexcavator_pe::consts::directory as dir;
+    use turbonop_pe::consts::directory as dir;
     // Symbols from the PDB, for naming functions and addresses.
     let wants_symbols = options.disasm || options.pdata || options.unwindinfo;
     let symbols = (wants_symbols && !options.nopdb && file.kind() == FileKind::Image)
@@ -115,10 +115,13 @@ pub fn dump(
             part(out, file)?;
         }
     }
+    if options.symbols {
+        super::coff_symbols::dump(out, file)?;
+    }
 
     let alignment = file
         .optional_header()
-        .map_or(0, hexcavator_pe::OptionalHeader::section_alignment);
+        .map_or(0, turbonop_pe::OptionalHeader::section_alignment);
     for section in file.sections() {
         let size = match file.kind() {
             FileKind::Object => section.size_of_raw_data.get(),
@@ -134,7 +137,7 @@ pub fn dump(
         let key = (name.to_vec(), flags);
         if !summary.contains_key(&key) && summary.keys().any(|(n, _)| n == name) {
             ereport!(
-                "hexc: warning: multiple '{}' sections found with different attributes ({flags:08X})",
+                "hexcavator: warning: multiple '{}' sections found with different attributes ({flags:08X})",
                 String::from_utf8_lossy(name)
             );
         }

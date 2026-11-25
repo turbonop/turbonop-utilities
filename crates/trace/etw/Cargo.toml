@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-etw"
+name = "turbonop-etw"
 description = "Decoders for Windows kernel and trace-control events in ETL files"
 version.workspace = true
 edition.workspace = true
@@ -8,19 +8,19 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
-# (No unit tests: their build of the crate would be wasted. The hexcavator
+# (No unit tests: their build of the crate would be wasted. The workspace's
 # tests check that a target marked so has none.)
 [lib]
 test = false
 
 [dependencies]
-hexcavator-core.workspace = true
-hexcavator-etl.workspace = true
-hexcavator-pe.workspace = true
+turbonop-core.workspace = true
+turbonop-etl.workspace = true
+turbonop-pe.workspace = true
 rustc-hash.workspace = true
 
 [dev-dependencies]
-hexcavator-mmap.workspace = true
+turbonop-mmap.workspace = true
 
 [lints]
 workspace = true

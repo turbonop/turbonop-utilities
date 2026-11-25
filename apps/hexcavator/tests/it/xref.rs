@@ -1,4 +1,4 @@
-//! `hexc xref` end to end, over the cross-reference test program
+//! `hexcavator xref` end to end, over the cross-reference test program
 //! (tools/xref: virtual functions reached through their classes'
 //! constructors, a static initializer, a table of function pointers, an
 //! export, and code the linker kept that nothing reaches), built for x64
@@ -13,8 +13,8 @@ fn fixture(arch: &str) -> PathBuf {
         .join(format!("xref-{arch}.exe"))
 }
 
-fn hexc(args: &[&str], image: &Path) -> (bool, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str], image: &Path) -> (bool, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("xref")
         .args(args)
         .arg(image)
@@ -28,7 +28,7 @@ fn hexc(args: &[&str], image: &Path) -> (bool, String, String) {
 }
 
 fn ok(args: &[&str], image: &Path) -> String {
-    let (ok, stdout, stderr) = hexc(args, image);
+    let (ok, stdout, stderr) = hexcavator(args, image);
     assert!(ok, "{args:?}: {stderr}");
     stdout
 }
@@ -266,19 +266,19 @@ fn summary_and_errors() {
     );
     assert!(lines[9].starts_with("  (16 more"), "{out}");
 
-    let (good, _, stderr) = hexc(&["-why", "nope"], &image);
+    let (good, _, stderr) = hexcavator(&["-why", "nope"], &image);
     assert!(!good && stderr.contains("nothing named 'nope'"), "{stderr}");
-    let (good, _, stderr) = hexc(&["-bogus"], &image);
+    let (good, _, stderr) = hexcavator(&["-bogus"], &image);
     assert!(
         !good && stderr.contains("unknown option 'bogus'"),
         "{stderr}"
     );
-    let (good, _, stderr) = hexc(&["-n", "x"], &image);
+    let (good, _, stderr) = hexcavator(&["-n", "x"], &image);
     assert!(!good && stderr.contains("-n needs a number"), "{stderr}");
     // -why takes the image as its name, leaving none.
-    let (good, _, stderr) = hexc(&["-why"], &image);
+    let (good, _, stderr) = hexcavator(&["-why"], &image);
     assert!(!good && stderr.contains("no image given"), "{stderr}");
-    let (good, _, stderr) = hexc(&["a.exe"], &image);
+    let (good, _, stderr) = hexcavator(&["a.exe"], &image);
     assert!(!good && stderr.contains("unexpected argument"), "{stderr}");
 }
 
@@ -343,7 +343,7 @@ fn identical() {
 #[test]
 fn compare_builds() {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/xref");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args([
             "xref".as_ref(),
             dir.join("xref-x64-renamed.exe").as_os_str(),
@@ -369,7 +369,7 @@ fn compare_builds() {
     );
     // A build against itself: all unchanged.
     let image = fixture("arm64");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args([
             "xref".as_ref(),
             "-json".as_ref(),
@@ -388,7 +388,7 @@ fn compare_builds() {
     // with the same code (renamed), DllMain grew, and the C++ stream code
     // came in.
     let bin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/sizebench/bin");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["xref", "-n", "0"])
         .arg(bin.join("CppTestCases_BasicDiffObjectsAfter.dll"))
         .arg("--")
@@ -409,7 +409,7 @@ fn compare_builds() {
     );
     assert!(!text.contains("Removed,"), "{text}");
     // Options go before the base image.
-    let (good, _, stderr) = hexc(&["--", "a.exe", "-n"], &image);
+    let (good, _, stderr) = hexcavator(&["--", "a.exe", "-n"], &image);
     assert!(!good && stderr.contains("unexpected argument"), "{stderr}");
 }
 
@@ -445,7 +445,7 @@ fn unlabeled_vtables() {
 /// /OPT:ICF, and the CRT's objects can't be rebuilt.
 #[test]
 fn recommend() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("recommend")
         .arg(fixture("x64"))
         .output()
@@ -464,7 +464,7 @@ fn recommend() {
     );
     assert!(lines[3].ends_with("308  compile dead.obj with /Gy: its functions nothing reaches are kept with the sections they share with ones that are used"), "{text}");
     assert!(lines[4].ends_with("66    dead_entry(int)"), "{text}");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(fixture("arm64"))
         .output()
@@ -493,7 +493,7 @@ fn elf(name: &str) -> PathBuf {
 /// a shared object whose exports are its roots.
 #[test]
 fn elf_images() {
-    let (ok, out, err) = hexc(&["-json"], &elf("dwarf5-x86_64-linux-gnu"));
+    let (ok, out, err) = hexcavator(&["-json"], &elf("dwarf5-x86_64-linux-gnu"));
     assert!(ok, "{err}");
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     let unreached: Vec<&str> = v["unreachable"]
@@ -507,49 +507,110 @@ fn elf_images() {
         ["second_table", "second_sum(int)", "second_len()"]
     );
     // Each in its compile unit, in ELF's terms.
-    let (ok, out, _) = hexc(&[], &elf("dwarf5-x86_64-linux-gnu"));
+    let (ok, out, _) = hexcavator(&[], &elf("dwarf5-x86_64-linux-gnu"));
     assert!(ok);
     assert!(out.contains("[maybe its own section, second.c]"), "{out}");
     assert!(!out.contains("COMDAT"), "{out}");
-    let (ok, out, _) = hexc(&["-why", "second_sum"], &elf("dwarf5-x86_64-linux-gnu"));
+    let (ok, out, _) = hexcavator(&["-why", "second_sum"], &elf("dwarf5-x86_64-linux-gnu"));
     assert!(ok);
     assert!(out.contains("--gc-sections"), "{out}");
     // A shared object: every function is exported, so reached.
-    let (ok, out, err) = hexc(&[], &elf("program.so"));
+    let (ok, out, err) = hexcavator(&[], &elf("program.so"));
     assert!(ok, "{err}");
     assert!(out.contains("0 unreachable"), "{out}");
-    let (ok, out, _) = hexc(&["-why", "compute"], &elf("program.so"));
+    let (ok, out, _) = hexcavator(&["-why", "compute"], &elf("program.so"));
     assert!(ok);
     assert!(out.contains("exported as compute"), "{out}");
 }
 
-/// Mach-O: an executable (its DWARF given) whose entry point and exports
-/// (an executable's external symbols) are its roots.
+/// Mach-O: an executable (its DWARF given) whose entry point is its root,
+/// and not its exports (an executable's external symbols), which
+/// -dead_strip drops unless they're reached (or it's linked with
+/// -export_dynamic). (A dylib's exports are roots.)
 #[test]
 fn macho_images() {
     let macho = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/macho");
     let dwarf = macho.join("program-arm64.dwarf");
     let image = macho.join("program-arm64");
-    let (ok, out, err) = hexc(&["-pdb", dwarf.to_str().unwrap()], &image);
+    let (ok, out, err) = hexcavator(&["-pdb", dwarf.to_str().unwrap()], &image);
     assert!(ok, "{err}");
-    assert!(out.contains("0 unreachable"), "{out}");
-    let (ok, out, _) = hexc(&["-pdb", dwarf.to_str().unwrap(), "-why", "start"], &image);
+    // second_sum, exported but uncalled; and the program's stand-in for
+    // dyld's __tlv_bootstrap, which its thread-local variable's descriptor
+    // names in a way not seen here (a real program imports it).
+    assert!(out.contains("2 unreachable"), "{out}");
+    assert!(out.contains("second_sum(int)"), "{out}");
+    let (ok, out, _) = hexcavator(&["-pdb", dwarf.to_str().unwrap(), "-why", "start"], &image);
     assert!(ok);
     assert!(out.contains("the entry point"), "{out}");
-    let (ok, out, _) = hexc(
+    let (ok, out, _) = hexcavator(
         &["-pdb", dwarf.to_str().unwrap(), "-why", "compute"],
         &image,
     );
     assert!(ok);
-    assert!(out.contains("exported as _compute"), "{out}");
+    assert!(out.contains("start()  (the entry point)"), "{out}");
 }
 
 /// ELF images get advice in GCC's and Clang's terms, judged from the image
 /// (nothing records the link's options): `second.c`'s functions and data
 /// nothing reaches were kept, so nothing collected them.
 #[test]
+fn recommend_without_debug_information() {
+    // Nothing to find for it: what the image's structure shows.
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .arg("recommend")
+        .arg(elf("relr-rela.so"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(
+        lines[0],
+        "No debug information: only what the image's structure shows (give it with -debug for the rest).",
+        "{text}"
+    );
+    assert_eq!(
+        lines[1], "1 recommendation, saving 192 bytes in all:",
+        "{text}"
+    );
+    assert!(lines[3].contains("pack-relative-relocs"), "{text}");
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(["recommend", "-json"])
+        .arg(elf("relr-rela.so"))
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["debug"], false);
+    assert!(v["judged"].is_null() && v["link"].is_null(), "{v}");
+    assert_eq!(v["recommendations"][0]["kind"], "relr", "{v}");
+    // Already packed: nothing.
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .arg("recommend")
+        .arg(elf("relr.so"))
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert!(
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .contains("No recommendations")
+    );
+    // Debug information given, but not found: still an error.
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(["recommend", "-debug", "no-such-file"])
+        .arg(elf("relr-rela.so"))
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+}
+
+#[test]
 fn recommend_elf() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("recommend")
         .arg(elf("dwarf5-x86_64-linux-gnu"))
         .output()
@@ -563,7 +624,7 @@ fn recommend_elf() {
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(
         lines[0],
-        "The link's options aren't recorded: what it dropped and folded is judged from the image.",
+        "The link's options aren't recorded: as the image shows it, the link didn't collect unreferenced functions (--gc-sections) and didn't fold identical ones (ICF).",
         "{text}"
     );
     assert_eq!(
@@ -572,7 +633,7 @@ fn recommend_elf() {
     );
     assert!(lines[3].ends_with("209  link with -Wl,--gc-sections (compiling with -ffunction-sections -fdata-sections): functions and data nothing reaches are kept"), "{text}");
     assert!(!text.contains("/OPT") && !text.contains("PDB"), "{text}");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["recommend", "-json"])
         .arg(elf("dwarf5-x86_64-linux-gnu"))
         .output()
@@ -581,4 +642,982 @@ fn recommend_elf() {
     assert_eq!(v["toolchain"], "gnu");
     assert!(v["link"].is_null());
     assert_eq!(v["saving"], 209);
+}
+
+/// What a link without recorded options did, judged from what it left
+/// (tools/linkopts: one program linked with and without --gc-sections and
+/// --icf=all), and the recommendations that follow: none for what it did.
+#[test]
+fn recommend_judges_the_link() {
+    let linkopts = |name: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/linkopts")
+            .join(name)
+    };
+    let recommend = |name: &str| -> serde_json::Value {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .args(["recommend", "-json"])
+            .arg(linkopts(name))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let kinds = |v: &serde_json::Value| -> Vec<String> {
+        let mut k: Vec<String> = v["recommendations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["kind"].as_str().unwrap().to_string())
+            .collect();
+        k.sort();
+        k
+    };
+    // (name, collected, folded, what's recommended)
+    let cases: [(&str, bool, bool, &[&str]); 7] = [
+        ("funcs-plain", false, false, &["gc", "icf"]),
+        ("funcs-gc", true, false, &["icf"]),
+        ("funcs-icf", false, true, &["gc"]),
+        ("funcs-gc-icf", true, true, &[]),
+        // (Nothing unreferenced to collect. Folded across compile units:
+        // the DWARF of both at one address; and work<N>, with an LSDA,
+        // which lld's ICF never folds.)
+        // (work<1> and work<2>, which ICF doesn't fold, differ only in a
+        // constant: near-identical.)
+        ("eh-icf", false, true, &["near-identical"]),
+        // (Without ICF, only plain<N>: work<N> has an LSDA, and use<N>
+        // calls different work<N>.)
+        ("eh", false, false, &["icf", "near-identical"]),
+        // (Only data folded: nothing says the link folded functions,
+        // and there are none to fold.)
+        ("dup-icf", false, false, &[]),
+    ];
+    for (name, collected, folded, want) in cases {
+        let v = recommend(name);
+        assert!(v["link"].is_null(), "{name}");
+        assert_eq!(v["judged"]["optRef"], collected, "{name}: {v}");
+        assert_eq!(v["judged"]["optIcf"], folded, "{name}: {v}");
+        assert_eq!(kinds(&v), want, "{name}: {v}");
+    }
+    let v = recommend("funcs-plain");
+    let icf = &v["recommendations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "icf")
+        .unwrap()["examples"];
+    assert_eq!(icf[0]["name"], "add_a(int, int) (3 copies)", "{v}");
+    let v = recommend("eh");
+    let icf = v["recommendations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "icf")
+        .unwrap();
+    assert_eq!(icf["examples"].as_array().unwrap().len(), 1, "{v}");
+    assert!(
+        icf["examples"][0]["name"]
+            .as_str()
+            .unwrap()
+            .starts_with("plain<"),
+        "{v}"
+    );
+    // Duplicated variables: constants copied from one definition (the
+    // header's lut, dup.c's tag, three times each), not variables, nor
+    // other.c's tag, alike but defined apart.
+    let v = recommend("dup");
+    assert_eq!(kinds(&v), ["duplicates"], "{v}");
+    let examples: Vec<&str> = v["recommendations"][0]["examples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(examples, ["lut (3 copies)", "tag (3 copies)"], "{v}");
+    // (Compiled without -ffunction-sections, the link's --gc-sections and
+    // --icf=all have nothing to drop or fold, and leave no evidence: the
+    // advice says to compile so.)
+    let v = recommend("funcs-nosections-gc-icf");
+    for r in v["recommendations"].as_array().unwrap() {
+        assert!(
+            r["advice"]
+                .as_str()
+                .unwrap()
+                .contains("compiling with -ffunction-sections"),
+            "{v}"
+        );
+    }
+    // Its options recorded (in DW_AT_producer), with -ffunction-sections
+    // and -fdata-sections: the advice needn't say to compile so.
+    let v = recommend("funcs-rec");
+    assert_eq!(kinds(&v), ["gc", "icf"], "{v}");
+    let advice: Vec<&str> = v["recommendations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["advice"].as_str().unwrap())
+        .collect();
+    assert!(advice.iter().all(|a| !a.contains("compiling with")), "{v}");
+    // Recorded (in .GCC.command.line) without them: the link can't be
+    // judged, nothing is foldable, and what nothing reaches is kept with
+    // funcs.c's sections, its functions' and its data's.
+    let v = recommend("funcs-rec-nosections-gc-icf");
+    assert!(v["judged"].is_null() && v["debug"] == true, "{v}");
+    assert_eq!(kinds(&v), ["data-sections", "function-sections"], "{v}");
+    for r in v["recommendations"].as_array().unwrap() {
+        let a = r["advice"].as_str().unwrap();
+        assert!(
+            a.starts_with("compile funcs.c with -f")
+                && a.contains("(and link with -Wl,--gc-sections)"),
+            "{v}"
+        );
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .arg("recommend")
+        .arg(linkopts("funcs-rec-nosections-gc-icf"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        text.starts_with("The link's options aren't recorded, and its objects were compiled without -ffunction-sections"),
+        "{text}"
+    );
+}
+
+/// What a Mach-O link did, judged from the image (testdata/linkopts's
+/// macho-*: ld64.lld's links of one object, and two marked as Apple's
+/// ld's), and the advice in Apple's terms.
+#[test]
+fn recommend_judges_a_macho_link() {
+    let run = |args: &[&str], name: &str| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .arg("recommend")
+            .args(args)
+            .arg(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../testdata/linkopts")
+                    .join(name),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let recommend =
+        |name: &str| -> serde_json::Value { serde_json::from_str(&run(&["-json"], name)).unwrap() };
+    let advice = |v: &serde_json::Value, kind: &str| -> Option<String> {
+        v["recommendations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == kind)
+            .map(|r| r["advice"].as_str().unwrap().to_string())
+    };
+    // (name, collected, folded, gc recommended, ICF recommended)
+    let cases = [
+        ("macho-plain", false, false, true, true),
+        // (ld64.lld's ICF keeps the folded functions' symbols, at the
+        // kept one's address.)
+        ("macho-icf", false, true, true, false),
+        // (-dead_strip drops even an executable's exports: their DWARF is
+        // in the debug map's object, their symbols aren't in the image.)
+        ("macho-dead", true, false, false, true),
+        ("macho-dead-icf", true, true, false, false),
+        // Apple's ld folds unless given -no_deduplicate, which clang
+        // gives it at -O0 and -O1: -O2 recorded, it's taken to have.
+        ("macho-ld", false, true, true, false),
+        ("macho-ld-O1", false, false, true, true),
+    ];
+    for (name, collected, folded, gc, icf) in cases {
+        let v = recommend(name);
+        assert_eq!(v["toolchain"], "apple", "{name}");
+        assert_eq!(v["judged"]["optRef"], collected, "{name}: {v}");
+        assert_eq!(v["judged"]["optIcf"], folded, "{name}: {v}");
+        assert_eq!(advice(&v, "gc").is_some(), gc, "{name}: {v}");
+        assert_eq!(advice(&v, "icf").is_some(), icf, "{name}: {v}");
+    }
+    let v = recommend("macho-plain");
+    assert!(
+        advice(&v, "gc")
+            .unwrap()
+            .starts_with("link with -Wl,-dead_strip"),
+        "{v}"
+    );
+    assert!(
+        advice(&v, "icf").unwrap().starts_with(
+            "link with -Wl,--icf=all (ld64.lld; Apple's ld folds them unless given -no_deduplicate)"
+        ),
+        "{v}"
+    );
+    let v = recommend("macho-ld-O1");
+    assert!(
+        advice(&v, "icf")
+            .unwrap()
+            .starts_with("link without -no_deduplicate"),
+        "{v}"
+    );
+    let text = run(&[], "macho-ld");
+    assert!(
+        text.lines()
+            .nth(1)
+            .unwrap()
+            .starts_with("(Apple's ld linked it:"),
+        "{text}"
+    );
+    assert!(!run(&[], "macho-plain").contains("Apple's ld linked it"));
+}
+
+/// What an ELF shared object's exports cost, and what hiding them would
+/// save (testdata/linkopts's libexp*.so, without debug information, and
+/// exp-main, which imports exp_used).
+#[test]
+fn recommend_exports() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts");
+    let recommend = |args: &[&str], name: &str| -> serde_json::Value {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .arg("recommend")
+            .arg("-json")
+            .args(args)
+            .arg(dir.join(name))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let rec = |v: &serde_json::Value, kind: &str| -> Option<serde_json::Value> {
+        v["recommendations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == kind)
+            .cloned()
+    };
+    let names = |r: &serde_json::Value| -> Vec<String> {
+        let mut v: Vec<String> = r["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["name"].as_str().unwrap().to_string())
+            .collect();
+        v.sort();
+        v
+    };
+    // Template instantiations (Box<T>::get, ::twice), exported, and called
+    // through the PLT; and its calls to its own exports.
+    let v = recommend(&[], "libexp.so");
+    assert_eq!(v["debug"], false);
+    assert!(v["importers"].is_null());
+    let vague = rec(&v, "vague-linkage").unwrap();
+    assert!(
+        vague["advice"]
+            .as_str()
+            .unwrap()
+            .contains("it exports 8 template instantiations and inline functions"),
+        "{v}"
+    );
+    assert!(
+        names(&vague).iter().all(|n| n.starts_with("Box<")),
+        "{vague}"
+    );
+    let calls = rec(&v, "bsymbolic").unwrap();
+    assert_eq!(
+        names(&calls),
+        ["exp_helper(int)", "exp_internal_a(int)", "exp_used(int)"],
+        "{calls}"
+    );
+    // (Without importers, which exports are its API isn't known.)
+    assert!(rec(&v, "visibility").is_none(), "{v}");
+    // Its importer imports exp_used: the rest of its own exports aren't.
+    for importers in [&["-importers", "exp-main"][..], &["-importers", "."]] {
+        let args: Vec<String> = importers
+            .iter()
+            .map(|a| {
+                if *a == "-importers" {
+                    a.to_string()
+                } else {
+                    dir.join(a).to_string_lossy().into_owned()
+                }
+            })
+            .collect();
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let v = recommend(&args, "libexp.so");
+        // (Of the directory's files, only exp-main loads it.)
+        assert_eq!(v["importers"], 1, "{v}");
+        let hide = rec(&v, "visibility").unwrap();
+        assert_eq!(
+            names(&hide),
+            [
+                "exp_helper(int)",
+                "exp_internal_a(int)",
+                "exp_internal_b(int)",
+                "exp_unused(int)"
+            ],
+            "{hide}"
+        );
+        assert!(
+            hide["advice"]
+                .as_str()
+                .unwrap()
+                .ends_with("4 exported symbols aren't imported by the importer given"),
+            "{hide}"
+        );
+    }
+    // An importer that doesn't load it: none of its exports are imported.
+    let funcs = dir.join("funcs-plain").to_string_lossy().into_owned();
+    let v = recommend(&["-importers", &funcs], "libexp.so");
+    assert_eq!(v["importers"], 0, "{v}");
+    assert!(
+        rec(&v, "visibility").unwrap()["advice"]
+            .as_str()
+            .unwrap()
+            .contains("5 exported symbols aren't imported by any importer"),
+        "{v}"
+    );
+    // -Bsymbolic-functions: no calls through the PLT; its template
+    // instantiations cost only their entries.
+    let v = recommend(&[], "libexp-bsymbolic.so");
+    assert!(rec(&v, "bsymbolic").is_none(), "{v}");
+    assert!(
+        rec(&v, "vague-linkage").unwrap()["saving"].as_u64()
+            < rec(&recommend(&[], "libexp.so"), "vague-linkage").unwrap()["saving"].as_u64(),
+        "{v}"
+    );
+    // -fvisibility=hidden: only its API is exported, two of which call
+    // each other through the PLT.
+    let v = recommend(&[], "libexp-hidden.so");
+    assert!(rec(&v, "vague-linkage").is_none(), "{v}");
+    assert_eq!(
+        names(&rec(&v, "bsymbolic").unwrap()),
+        ["exp_helper(int)", "exp_used(int)"],
+        "{v}"
+    );
+}
+
+/// Near-identical functions: templates' instantiations alike but for the
+/// sizes of what they work on, or what they call (testdata/linkopts/near:
+/// total<T>, apply<F>), and not those that differ (pick<T>).
+#[test]
+fn recommend_near_identical() {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(["recommend", "-json"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/near"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let near = v["recommendations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "near-identical")
+        .unwrap_or_else(|| panic!("{v}"));
+    let examples: Vec<&str> = near["examples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["name"].as_str().unwrap())
+        .collect();
+    assert!(examples.iter().any(|e| e.starts_with("total<>")), "{v}");
+    assert!(examples.contains(&"apply<> (2 versions)"), "{v}");
+    assert!(!examples.iter().any(|e| e.starts_with("pick<>")), "{v}");
+    // At most all but the largest version of each.
+    let saving = near["saving"].as_u64().unwrap();
+    let sum: u64 = near["examples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["size"].as_u64().unwrap())
+        .sum();
+    assert_eq!(saving, sum, "{v}");
+}
+
+/// Inlining weighed: testdata/linkopts/inline's mix, inlined into 12
+/// functions, would cost less called (each call estimated by its two
+/// parameters); nothing else is worth it.
+#[test]
+fn recommend_inlining() {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(["recommend", "-json"])
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/inline"))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let r = v["recommendations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["kind"] == "inlining")
+        .unwrap_or_else(|| panic!("{v}"));
+    assert!(
+        r["advice"]
+            .as_str()
+            .unwrap()
+            .starts_with("mark a function __attribute__((noinline))"),
+        "{r}"
+    );
+    let e = &r["examples"][0];
+    let name = e["name"].as_str().unwrap();
+    assert!(name.starts_with("mix (12 copies, "), "{r}");
+    // As calls: 12 × (5 + 2 × 5 + 8), and a copy of the largest with a
+    // return.
+    let inlined: u64 = name
+        .trim_start_matches("mix (12 copies, ")
+        .split(' ')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let as_calls: u64 = name
+        .split("; ")
+        .nth(1)
+        .unwrap()
+        .split(' ')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(as_calls > 12 * 23, "{r}");
+    assert_eq!(e["size"].as_u64().unwrap(), inlined - as_calls, "{r}");
+    assert_eq!(r["examples"].as_array().unwrap().len(), 1, "{r}");
+}
+
+/// What an image's strings recommend: the build's paths (testdata/
+/// linkopts/strings: four __FILE__s under /home/user/project, as #line
+/// sets them), and string literals with copies (msvc-strs-nogf.exe, /GF-:
+/// two, in each of two objects; msvc-strs-gf.exe, /GF: pooled, none), but
+/// not named arrays alike (strings' banner_a and banner_b).
+#[test]
+fn recommend_strings() {
+    let recommend = |name: &str| -> serde_json::Value {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .args(["recommend", "-json"])
+            .arg(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../testdata/linkopts")
+                    .join(name),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let rec = |v: &serde_json::Value, kind: &str| {
+        v["recommendations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == kind)
+            .cloned()
+    };
+    let v = recommend("strings");
+    let paths = rec(&v, "build-paths").unwrap_or_else(|| panic!("{v}"));
+    assert!(
+        paths["advice"]
+            .as_str()
+            .unwrap()
+            .starts_with("compile with -fmacro-prefix-map=/home/user/project=. "),
+        "{paths}"
+    );
+    // ("/home/user/project" less the "." it becomes: 17 bytes a path.)
+    assert_eq!(paths["saving"], 4 * 17, "{paths}");
+    assert_eq!(paths["examples"][0]["name"], "/home/user/project (4 paths)");
+    assert!(rec(&v, "duplicate-strings").is_none(), "{v}");
+    let v = recommend("msvc-strs-nogf.exe");
+    let dups = rec(&v, "duplicate-strings").unwrap_or_else(|| panic!("{v}"));
+    assert!(
+        dups["advice"]
+            .as_str()
+            .unwrap()
+            .starts_with("compile with /GF"),
+        "{dups}"
+    );
+    assert_eq!(dups["saving"], 47 + 46, "{dups}");
+    assert_eq!(
+        dups["examples"][0]["name"],
+        "\"the same literal in two objects, pooled or not\" (2 copies)"
+    );
+    let v = recommend("msvc-strs-gf.exe");
+    assert!(rec(&v, "duplicate-strings").is_none(), "{v}");
+}
+
+/// What exception handling costs each function, and the cleanups nothing a
+/// function calls can throw through (testdata/linkopts/noexc: needless()
+/// calls only helper(), which can't throw; needed() calls thrower(),
+/// which throws); none in a C++ image built without them (eh's work<N>
+/// call what isn't resolved: it may throw).
+#[test]
+fn recommend_exceptions() {
+    let recommend = |name: &str| -> serde_json::Value {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .args(["recommend", "-json"])
+            .arg(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../testdata/linkopts")
+                    .join(name),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice(&out.stdout).unwrap()
+    };
+    let v = recommend("noexc");
+    let e = &v["exceptions"];
+    let f = |name: &str| {
+        e["functions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["name"] == name)
+            .cloned()
+            .unwrap_or_else(|| panic!("{name}: {e}"))
+    };
+    // Each with an FDE; the two with cleanups with an LSDA each.
+    for name in [
+        "needless(int)",
+        "needed(int)",
+        "thrower(int)",
+        "helper(int)",
+    ] {
+        assert!(f(name)["unwind"].as_u64().unwrap() > 0, "{name}: {e}");
+    }
+    assert!(f("needless(int)")["handlers"].as_u64().unwrap() > 0, "{e}");
+    assert_eq!(f("needless(int)")["needless"], true, "{e}");
+    assert_eq!(f("needed(int)")["needless"], false, "{e}");
+    assert_eq!(f("helper(int)")["handlers"], 0, "{e}");
+    let total: u64 = e["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["handlers"].as_u64().unwrap())
+        .sum();
+    assert_eq!(e["handlers"].as_u64().unwrap(), total, "{e}");
+    let v = recommend("eh");
+    assert!(
+        v["exceptions"]["functions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["needless"] == false),
+        "{v}"
+    );
+}
+
+/// What the linker keeps whatever reaches it is reached (testdata/linkopts's
+/// keep-*, from keep.c): a Mach-O section marked no_dead_strip, and the
+/// classes the Objective-C runtime registers from its list; an ELF section
+/// that __start_ and __stop_ symbols enumerate.
+#[test]
+fn kept_whatever_reaches_it() {
+    let linkopts = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts");
+    for (image, name, why) in [
+        ("keep-macho", "kept", "S_ATTR_NO_DEAD_STRIP"),
+        ("keep-macho", "class_method", "Objective-C class"),
+        ("keep-elf", "hooked", "__start_my_hooks"),
+    ] {
+        let (ok, out, err) = hexcavator(&["-why", name], &linkopts.join(image));
+        assert!(ok, "{image} {name}: {err}");
+        assert!(!out.contains("no root reaches it"), "{image} {name}: {out}");
+        assert!(out.contains(why), "{image} {name}: {out}");
+    }
+}
+
+/// Each image's toolchain, with or without debug information: MSVC's for
+/// a PE image with a PDB, GCC's and Clang's for one MinGW built (its DWARF
+/// sections say so), wasm-ld's for a WebAssembly module (whose identical
+/// functions wasm-opt folds, not the linker).
+#[test]
+fn toolchains_of_every_format() {
+    let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
+    for (image, toolchain) in [
+        ("types/types.exe", "msvc"),
+        ("mingw/program.exe", "gnu"),
+        ("wasm/sample-dwarf.wasm", "wasm"),
+        ("linkopts/funcs-plain", "gnu"),
+        ("linkopts/macho-plain", "apple"),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .args(["recommend", "-json"])
+            .arg(testdata.join(image))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{image}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(v["toolchain"], toolchain, "{image}");
+    }
+}
+
+/// 32-bit ARM (Thumb-2) code's references, on Linux (ELF, armhf, with
+/// DWARF; its data reached position-independently, a literal offset added
+/// to the PC) and Windows on ARM (PE with a PDB; its data by MOVW and
+/// MOVT, at the image's preferred base): the same graph (testdata/arm32).
+#[test]
+fn arm32_references() {
+    let arm32 = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/arm32");
+    for image in ["program-linux", "program.exe"] {
+        let path = arm32.join(image);
+        for (name, via) in [
+            ("square", "square(int)"),
+            ("twice", "calls apply(int)"),
+            ("counter", "refers to counter"),
+            ("greeting", "refers to greeting"),
+        ] {
+            let out = ok(&["-why", name], &path);
+            assert!(!out.contains("no root reaches it"), "{image} {name}: {out}");
+            assert!(out.contains(via), "{image} {name}: {out}");
+        }
+        let out = ok(&["-unreachable"], &path);
+        assert!(out.contains("unused(int)"), "{image}: {out}");
+        assert!(
+            !out.contains("greeting") && !out.contains("counter"),
+            "{image}: {out}"
+        );
+        // Its fingerprints: two functions of identical code.
+        let out = ok(&["-identical"], &path);
+        assert!(
+            out.starts_with("1 groups")
+                && out.contains("same_a(int)")
+                && out.contains("same_b(int)"),
+            "{image}: {out}"
+        );
+    }
+}
+
+/// 32-bit ARM's exception tables (EHABI): each function's .ARM.exidx
+/// entry, and a function with a cleanup's .ARM.extab entry, its opcodes
+/// (unwind information) and its LSDA (handlers' data), which it needs (it
+/// calls what may throw).
+#[test]
+fn arm32_exception_tables() {
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/arm32/eh-linux");
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(["recommend", "-json"])
+        .arg(&image)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let e = &v["exceptions"];
+    let f = e["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["name"] == "with_cleanup(int)")
+        .unwrap_or_else(|| panic!("{e}"));
+    // (Its index entry, and its table entry's personality and opcode words.)
+    assert_eq!(f["unwind"], 16, "{e}");
+    assert!(f["handlers"].as_u64().unwrap() > 0, "{e}");
+    assert_eq!(f["needless"], false, "{e}");
+    assert!(
+        e["functions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["unwind"].as_u64().unwrap() >= 8)
+    );
+}
+
+/// A PE image linked /FIXED (no base relocations to say where pointers
+/// are): its data's words that are its addresses are its pointers, as a
+/// static ELF executable's are (testdata/pe-exports/fixed.exe).
+#[test]
+fn pointers_without_relocations() {
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/pe-exports/fixed.exe");
+    let out = ok(&["-why", "two"], &image);
+    assert!(
+        out.contains("points to table") && out.contains("points to two(int)"),
+        "{out}"
+    );
+    let out = ok(&["-unreachable"], &image);
+    assert!(
+        !out.contains("two(int)") && !out.contains("one(int)"),
+        "{out}"
+    );
+}
+
+/// An ELF image's exception data reached from its functions, as its
+/// .eh_frame says: the personality routine's pointer each CIE names
+/// (DW.ref.__gxx_personality_v0), and each function's LSDA.
+#[test]
+fn exception_data_attached() {
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/eh");
+    let out = ok(&["-unreachable"], &image);
+    assert!(!out.contains("DW.ref.__gxx_personality_v0"), "{out}");
+}
+
+/// A Mach-O image's exception handling (testdata/linkopts/macho-noexc.dylib):
+/// each function's share of its compact unwind, and its LSDA, as the
+/// compact unwind's index names it; and the function whose cleanups
+/// nothing it calls can throw through.
+#[test]
+fn macho_exception_handling() {
+    let image =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/linkopts/macho-noexc.dylib");
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(["recommend", "-json"])
+        .arg(&image)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let functions = v["exceptions"]["functions"].as_array().unwrap();
+    let f = |name: &str| {
+        functions
+            .iter()
+            .find(|f| f["name"] == name)
+            .unwrap_or_else(|| panic!("{v}"))
+    };
+    assert!(f("needless(int)")["handlers"].as_u64().unwrap() > 0);
+    assert_eq!(f("needless(int)")["needless"], true);
+    assert_eq!(f("needed(int)")["needless"], false);
+    assert_eq!(f("helper(int)")["handlers"], 0);
+    assert!(functions.iter().all(|f| f["unwind"].as_u64().unwrap() > 0));
+}
+
+/// Libraries an image is linked with that nothing of it uses (tools/
+/// linkopts: needed and macho-needed, each linked with a library it calls
+/// and one it doesn't, which its run path finds beside it): to link with
+/// --as-needed (ELF: its DT_NEEDED entry and name) or -dead_strip_dylibs
+/// (Mach-O: its load command).
+#[test]
+fn unused_libraries() {
+    let linkopts = |name: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/linkopts")
+            .join(name)
+    };
+    for (image, option, unused, saving) in [
+        ("needed", "-Wl,--as-needed", "libneeded-unused.so", 16 + 20),
+        (
+            "macho-needed",
+            "-Wl,-dead_strip_dylibs",
+            "@rpath/libneeded-unused.dylib",
+            56,
+        ),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .args(["recommend", "-json"])
+            .arg(linkopts(image))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let rec = v["recommendations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == "unused-libraries")
+            .unwrap_or_else(|| panic!("{image}: {v}"));
+        assert!(rec["advice"].as_str().unwrap().contains(option), "{rec}");
+        assert_eq!(rec["saving"], saving, "{image}: {rec}");
+        let examples: Vec<&str> = rec["examples"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["name"].as_str().unwrap())
+            .collect();
+        // (Not the library it calls.)
+        assert_eq!(examples, [unused], "{image}");
+    }
+}
+
+/// A Mach-O image's rebase and bind opcodes where chained fixups would be
+/// smaller (testdata/macho's table-*-opcodes.dylib, a sparse pointer
+/// table: 264 bytes of opcodes, 80 of chained fixups as ld64.lld writes
+/// them); and none where they wouldn't (pointers-*-opcodes.dylib, whose
+/// few fixups' opcodes are smaller), or are already chained.
+#[test]
+fn chained_fixups() {
+    let advice = |name: &str| -> Option<serde_json::Value> {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .args(["recommend", "-json"])
+            .arg(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../testdata/macho")
+                    .join(name),
+            )
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        v["recommendations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["kind"] == "chained-fixups")
+            .cloned()
+    };
+    for arch in ["arm64", "x86_64"] {
+        let rec = advice(&format!("table-{arch}-opcodes.dylib")).unwrap();
+        assert_eq!(rec["saving"], 264 - 80, "{rec}");
+        assert!(
+            rec["advice"].as_str().unwrap().contains("-fixup_chains"),
+            "{rec}"
+        );
+        assert!(advice(&format!("pointers-{arch}-opcodes.dylib")).is_none());
+        assert!(advice(&format!("table-{arch}.dylib")).is_none());
+    }
+}
+
+/// RISC-V (RV64GC and RV32IMAC, compressed code) and LoongArch (LA64,
+/// LA32): the same program's graph as on x86-64, from its calls, and its
+/// PC-relative loads and address computations (AUIPC's; PCALAU12I's and
+/// PCADDI's) (tools/elf's program.c).
+#[test]
+fn riscv_and_loongarch_graph_is_x86_64s() {
+    let elf = |t: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/elf")
+            .join(format!("program-{t}-linux-gnu"))
+    };
+    let graph = |t: &str| {
+        let mut lines: Vec<String> = ["compute", "_start"]
+            .iter()
+            .flat_map(|f| {
+                ok(&["-refs", f], &elf(t))
+                    .lines()
+                    .skip(1)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        lines.push(ok(&[], &elf(t)).lines().next().unwrap().to_string());
+        lines
+    };
+    let want = graph("x86_64");
+    assert!(
+        want.iter().any(|l| l.contains("refers to hidden_state")),
+        "{want:?}"
+    );
+    for t in [
+        "riscv64",
+        "riscv32",
+        "loongarch64",
+        "loongarch32",
+        "powerpc64le",
+        "powerpc64",
+        "powerpc",
+        "mips",
+        "mipsel",
+        "mips64el",
+        // (Its small data, $gp-relative; and PIC code, through the GOT.)
+        "mipsel-sdata",
+        "mipsel-pic",
+        // (32-bit PowerPC's PIC code: its GOT pointer computed.)
+        "powerpc-pic",
+        // (microMIPS: 16- and 32-bit instructions, its addresses' ISA
+        // bit.)
+        "mips-micromips",
+        "mipsel-micromips",
+    ] {
+        assert_eq!(graph(t), want, "{t}");
+    }
+}
+
+/// RISC-V's and LoongArch's fingerprints (compressed instructions by
+/// their full forms, PC-relative addresses masked): the identical
+/// functions of funcs.c (tools/linkopts, linked plain) as x86-64's.
+#[test]
+fn riscv_and_loongarch_identical_functions() {
+    let linkopts = |name: &str| {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata/linkopts")
+            .join(name)
+    };
+    let groups = |name: &str| -> Vec<String> {
+        ok(&["-identical"], &linkopts(name))
+            .lines()
+            .filter(|l| l.starts_with("              "))
+            .map(|l| l.trim().to_string())
+            .collect()
+    };
+    let want = groups("funcs-plain");
+    assert_eq!(
+        want,
+        ["add_a(int, int)", "add_b(int, int)", "add_c(int, int)"]
+    );
+    for t in [
+        "riscv64",
+        "riscv32",
+        "loongarch64",
+        "loongarch32",
+        "powerpc64le",
+        "powerpc64",
+        "powerpc",
+        "mips",
+        "mipsel",
+        "mips64el",
+    ] {
+        assert_eq!(groups(&format!("funcs-plain-{t}")), want, "{t}");
+    }
+}
+
+/// arm64e (tools/macho/build-arm64e.cmd): code that signs its return
+/// addresses (pacibsp, retab); the same program's graph as arm64's build
+/// (start() a word longer, for its pacibsp).
+#[test]
+fn arm64e_graph_is_arm64s() {
+    let macho = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/macho");
+    let graph = |arch: &str| -> Vec<String> {
+        ["compute", "start"]
+            .iter()
+            .map(|f| ok(&["-refs", f], &macho.join(format!("program-{arch}"))))
+            .collect()
+    };
+    let (e, plain) = (graph("arm64e"), graph("arm64"));
+    assert!(e[0].contains("start() calls it"), "{}", e[0]);
+    assert!(e[1].contains("calls compute(int)"), "{}", e[1]);
+    assert_eq!(e[0], plain[0]);
+    assert_eq!(
+        e[1],
+        plain[1].replacen("start() (80 bytes)", "start() (84 bytes)", 1)
+    );
 }

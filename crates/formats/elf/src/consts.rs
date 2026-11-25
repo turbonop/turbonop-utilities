@@ -193,6 +193,12 @@ pub const STB_LOCAL: u8 = 0;
 pub const STB_GLOBAL: u8 = 1;
 pub const STB_WEAK: u8 = 2;
 
+// Symbol visibility (`st_other & 3`).
+pub const STV_DEFAULT: u8 = 0;
+pub const STV_INTERNAL: u8 = 1;
+pub const STV_HIDDEN: u8 = 2;
+pub const STV_PROTECTED: u8 = 3;
+
 pub const STT_NOTYPE: u8 = 0;
 pub const STT_OBJECT: u8 = 1;
 pub const STT_FUNC: u8 = 2;
@@ -240,6 +246,18 @@ pub const DT_PREINIT_ARRAYSZ: u64 = 33;
 pub const DT_SYMTAB_SHNDX: u64 = 34;
 pub const DT_RELRSZ: u64 = 35;
 pub const DT_RELR: u64 = 36;
+/// MIPS's GOT: how many local entries it starts with (the reserved ones
+/// counted), which the loader relocates by the load address.
+pub const DT_MIPS_LOCAL_GOTNO: u64 = 0x7000_000A;
+/// MIPS's dynamic symbols: how many.
+pub const DT_MIPS_SYMTABNO: u64 = 0x7000_0011;
+/// MIPS's first dynamic symbol with a (global) GOT entry: those from it
+/// on have one each, in order, after the local entries.
+pub const DT_MIPS_GOTSYM: u64 = 0x7000_0013;
+/// MIPS's relative or symbol relocation of a word (`S + A`, or the load
+/// address plus `A` without a symbol); MIPS64's dynamic ones are packed
+/// with `R_MIPS_64` as their second type.
+pub const R_MIPS_REL32: u32 = 3;
 pub const DT_RELRENT: u64 = 37;
 pub const DT_GNU_HASH: u64 = 0x6FFF_FEF5;
 pub const DT_VERSYM: u64 = 0x6FFF_FFF0;
@@ -292,6 +310,21 @@ pub const R_RISCV_64: u32 = 2;
 pub const R_RISCV_RELATIVE: u32 = 3;
 pub const R_RISCV_JUMP_SLOT: u32 = 5;
 pub const R_RISCV_IRELATIVE: u32 = 58;
+pub const R_PPC_ADDR32: u32 = 1;
+pub const R_PPC_GLOB_DAT: u32 = 20;
+pub const R_PPC_JMP_SLOT: u32 = 21;
+pub const R_PPC_RELATIVE: u32 = 22;
+pub const R_PPC_IRELATIVE: u32 = 248;
+pub const R_PPC64_GLOB_DAT: u32 = 20;
+pub const R_PPC64_JMP_SLOT: u32 = 21;
+pub const R_PPC64_RELATIVE: u32 = 22;
+pub const R_PPC64_ADDR64: u32 = 38;
+pub const R_PPC64_IRELATIVE: u32 = 248;
+pub const R_LARCH_32: u32 = 1;
+pub const R_LARCH_64: u32 = 2;
+pub const R_LARCH_RELATIVE: u32 = 3;
+pub const R_LARCH_JUMP_SLOT: u32 = 5;
+pub const R_LARCH_IRELATIVE: u32 = 12;
 
 pub const ELFCOMPRESS_ZLIB: u32 = 1;
 pub const ELFCOMPRESS_ZSTD: u32 = 2;

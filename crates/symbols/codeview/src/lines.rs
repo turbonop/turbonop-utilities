@@ -2,7 +2,7 @@
 //! checksums. A PDB's module streams hold them after the symbols; a COFF
 //! object holds them in `.debug$S` after the `CV_SIGNATURE_C13` signature.
 
-use hexcavator_core::{Reader, Result, U16Le, U32Le, pod};
+use turbonop_core::{Reader, Result, U16Le, U32Le, pod};
 
 /// Subsection kinds (`DEBUG_S_SUBSECTION_TYPE`).
 pub mod subsection {

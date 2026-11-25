@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use hexcavator_program::Opened;
+use turbonop_program::Opened;
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -15,7 +15,7 @@ fn testdata(name: &str) -> PathBuf {
 /// A directory of its own for a test, emptied.
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir()
-        .join("hexcavator-program-tests")
+        .join("turbonop-program-tests")
         .join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -23,7 +23,7 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 /// What a program's symbols and compilands are, by name and address.
-fn account(o: &Opened) -> Vec<String> {
+fn summary(o: &Opened) -> Vec<String> {
     let p = o.program().unwrap();
     let mut out: Vec<String> = p
         .debug
@@ -48,13 +48,13 @@ fn names(o: &Opened) -> Vec<String> {
 fn split_files_are_found() {
     for v in [4, 5] {
         let plain = Opened::open(&testdata(&format!("split-dwarf{v}-plain")), None).unwrap();
-        let want = account(&plain);
+        let want = summary(&plain);
         assert!(want.iter().any(|l| l == "compiland program.c"), "{want:?}");
 
         // Beside the image: its package.
         let o = Opened::open(&testdata(&format!("split-dwarf{v}")), None).unwrap();
         assert_eq!(names(&o), [format!("split-dwarf{v}.dwp")]);
-        assert_eq!(account(&o), want);
+        assert_eq!(summary(&o), want);
 
         // Without one: the .dwo files, by the compilation directory (.)
         // relative to the image's.
@@ -70,7 +70,7 @@ fn split_files_are_found() {
             names(&o),
             [format!("sd{v}-program.dwo"), format!("sd{v}-second.dwo")]
         );
-        assert_eq!(account(&o), want);
+        assert_eq!(summary(&o), want);
 
         // One missing: its compiland is its skeleton (named by its file).
         // (Mapped files can't be removed, on Windows.)
@@ -78,7 +78,7 @@ fn split_files_are_found() {
         std::fs::remove_file(dir.join(format!("sd{v}-second.dwo"))).unwrap();
         let o = Opened::open(&image, None).unwrap();
         assert_eq!(names(&o), [format!("sd{v}-program.dwo")]);
-        let got = account(&o);
+        let got = summary(&o);
         assert!(
             got.contains(&format!("compiland sd{v}-second.dwo")),
             "{got:?}"
@@ -93,7 +93,7 @@ fn split_files_are_found() {
         .unwrap();
         let o = Opened::open(&image, None).unwrap();
         assert_eq!(names(&o), ["app.dwp"]);
-        assert_eq!(account(&o), want);
+        assert_eq!(summary(&o), want);
         drop(o);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -101,7 +101,7 @@ fn split_files_are_found() {
 
 #[test]
 fn where_split_files_are_looked_for() {
-    use hexcavator_debuginfo::dwarf_backend::{SplitFile, package_paths, split_paths};
+    use turbonop_debuginfo::dwarf_backend::{SplitFile, package_paths, split_paths};
     let f = |name: &str, comp_dir: &str| SplitFile {
         name: name.into(),
         comp_dir: comp_dir.into(),

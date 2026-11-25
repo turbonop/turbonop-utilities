@@ -7,7 +7,7 @@ information, debug information, symbols, types, source files, data, and
 disassembly. You can ask why any function or datum is there and what
 refers to it, compare two builds, and see where the bytes go as an
 interactive treemap, sunburst, or tree, with measured ways to make it
-smaller. It runs `hexc`, and each view can show its command line.
+smaller. It runs `hexcavator`, and each view can show its command line.
 
 ## The sidebar
 
@@ -15,19 +15,19 @@ The Hexcavator icon in the activity bar opens a list of the binaries and
 diffs you've opened (**Hexcavator: Open Binary…** and **Hexcavator: Diff
 Binaries…** in the Command Palette and the pane's title bar, **Open in
 Hexcavator** in the Explorer's context menu, or any report opened
-elsewhere). The pane's **…** menu also has **Close All**, **Show hexc's
-Log**, and **Restart hexc**. Under each
-binary, as `hexc info -json` says it supports them (by its format and
+elsewhere). The pane's **…** menu also has **Close All**, **Show hexcavator's
+Log**, and **Restart hexcavator**. Under each
+binary, as `hexcavator info -json` says it supports them (by its format and
 whether its debug information was found, not by its name: an ELF or
 Mach-O file with DWARF gets what a PE image with its PDB does):
 
-- **Headers** and **File Format**: `hexc`'s output, as text.
+- **Headers** and **File Format**: `hexcavator`'s output, as text.
 - **Dependencies**: the Dependencies page (below).
 - **Resources**: the Resources page (below).
 - **Build Information**: the Build Information page (below).
 - **Debug Information** (its PDB's summary, or its DWARF's units, lines,
   and frames; a Mach-O image without a dSYM, each object's of its debug
-  map): `hexc`'s output, as text.
+  map): `hexcavator`'s output, as text.
 - **Initialization**: the Initialization page (below).
 - **Symbols**: the Symbols page (below).
 - **Types**: the Types page (below).
@@ -39,16 +39,16 @@ Mach-O file with DWARF gets what a PE image with its PDB does):
 - **Compare With Another Build…**: adds a diff of it.
 - **Miscellaneous Queries**: the rest: unreachable code and data,
   unreferenced vtables, identical functions, and inlined functions.
-  (`hexc annotations` lists the strings MSVC's `__annotation` attaches to
+  (`hexcavator annotations` lists the strings MSVC's `__annotation` attaches to
   code, as drivers' WPP tracing does; few binaries have any.) (Disassembly, **Why Is This Here?**,
   **References**, queries, a type's layout, and **View Definition** are on
   the Symbols and Types pages' context menus; types by padding on the Types
   page; code by source file on the Sources page.)
-  Hover one for its `hexc` command line; right-click to copy it or run it
+  Hover one for its `hexcavator` command line; right-click to copy it or run it
   in a terminal. Each opens as tables (from `-json`): its numbers as a
   summary, each list sortable by any column, filterable, and copyable as
   CSV, with names that open their symbols (right-click for more) and
-  source paths that open their files; **Open as Text** shows `hexc`'s own
+  source paths that open their files; **Open as Text** shows `hexcavator`'s own
   output.
 - The answers asked for (why a symbol is there, what refers to it) follow,
   each reference opening into its own, until closed.
@@ -72,7 +72,7 @@ same way.
 
 ## The Dependencies page
 
-What the binary loads (`hexc deps -json`): each library it names, where
+What the binary loads (`hexcavator deps -json`): each library it names, where
 its platform's loader would find it (a known DLL, the application's
 directory, `System32`, an API set's host, a side-by-side assembly in
 `WinSxS`; rpath, runpath, `ld.so.conf`; `@rpath`, `@loader_path`), what
@@ -84,25 +84,25 @@ one to see what's imported from it, the missing marked. **System
 libraries' own** reads what system libraries load too (by default they're
 leaves). **Explore it** adds a library to the sidebar, to look inside it.
 On Windows, the system searched is this machine's; for other platforms'
-binaries, give `hexc deps -sysroot` a copy of their system (or their
+binaries, give `hexcavator deps -sysroot` a copy of their system (or their
 system libraries are listed as not searched).
 
 ## The Initialization page
 
 What runs when the binary is loaded, before its `main` (or, a library,
-when it's loaded): `hexc init -json`. The phases in the order they run
+when it's loaded): `hexcavator init -json`. The phases in the order they run
 (TLS callbacks, the entry point, the CRT's lists of C initializers and
 global objects' constructors; `.preinit_array`, `DT_INIT`, `.ctors`,
 `.init_array`; `__mod_init_func`), each with its functions in order, and
 then the program's own code (`main`, `WinMain`, `DllMain`). Each function
 opens to what it calls (in the order its code calls them), and those to
-what they call, asked of `hexc` as you open them. Double-click a function
+what they call, asked of `hexcavator` as you open them. Double-click a function
 to open its source; its context menu disassembles it, says why it's there,
 and what refers to it.
 
 ## The Resources page
 
-What the binary holds besides its code, and what it says of itself: `hexc
+What the binary holds besides its code, and what it says of itself: `hexcavator
 resources -json`. On the left, each resource (a PE image's, by type, name,
 and language), or a Mach-O image's Info.plist, entitlements, and versions,
 or an ELF image's notes, or a WebAssembly module's custom sections, grouped,
@@ -116,7 +116,7 @@ as a `.bmp` file); **Copy** copies its text.
 
 ## The Build Information page
 
-How the binary was built, from its headers and debug information (`hexc
+How the binary was built, from its headers and debug information (`hexcavator
 checksec -audit -json`):
 
 - **Security Options**: each exploit mitigation (ASLR, DEP, CFG, CET,
@@ -124,8 +124,8 @@ checksec -audit -json`):
   or partial, with what says so.
 - **Signature**: what the file says it is (a PE image's version resource:
   company, description, product, versions, copyright, original name; a
-  Mach-O image's versions and Info.plist), then its signatures (`hexc
-  signature -json`), verified by hexc the same on any platform: Authenticode's (and those nested in it), or
+  Mach-O image's versions and Info.plist), then its signatures (`hexcavator
+  signature -json`), verified by hexcavator the same on any platform: Authenticode's (and those nested in it), or
   each architecture's Apple code signature. The verdict; the signer, when
   it was timestamped, the program, the algorithms, and the signed hash;
   each check (the file's hash, the signature, the chain, validity, usage,
@@ -169,10 +169,10 @@ sizes:
   from, by the line tables: a header's inlined code is the header's; data
   stays in its section). Click one to group by it, or not; drag the ones on
   (or Alt+Left and Alt+Right) to order them, outermost first. With none,
-  the symbols are a list. The grouping is remembered. (`hexc` sends every
-  symbol's labels once, `hexc size -table`; the page regroups them itself,
+  the symbols are a list. The grouping is remembered. (`hexcavator` sends every
+  symbol's labels once, `hexcavator size -table`; the page regroups them itself,
   at once. The source files' are sent apart, when **Source** is on, being
-  costlier: `hexc size -table -d sourcefiles,...`.)
+  costlier: `hexcavator size -table -d sourcefiles,...`.)
 - **Filter** (`/`): as you type, the symbols whose name or mangled name has
   the text, and what they are in (opened), their sizes summed again; `.*`
   makes it a regular expression (one that doesn't compile is marked, and
@@ -182,9 +182,14 @@ sizes:
 - **Right-click a symbol**: **Disassemble**, **View Data**, **Why Is This
   Here?** (the chain of references from a root, as a page), **References**
   (what refers to it and what it refers to, as a page), **View
-  Definition** (a function's source file, at its line: `hexc size
+  Definition** (a function's source file, at its line: `hexcavator size
   -definition`), **Copy Name**. The button in the first column (or `D`) opens its code or
   its data.
+- **Stripped** (in the header, for ELF, Mach-O, and WebAssembly files): this
+  page's sizes as if the file were stripped (`hexcavator size -stripped`). The
+  file isn't changed, and its debug information and symbol tables still
+  name everything, but their own bytes aren't counted. Each page has its
+  own box, unchecked when it opens.
 - **Compare** (⇄ in the header): the difference from a base build, growth
   in red and shrinkage in green, stronger for larger changes. In the tree,
   each row is marked: **+** added, **−** removed, **↗** grew, **↘** shrank
@@ -192,13 +197,13 @@ sizes:
   change (growth first; again, shrinkage first), or **Name**; the order is
   remembered. **Show** chips (**Added**, **Removed**, **Grew**, **Shrank**)
   keep only those symbols (with the filter), their groups summed again. The
-  grouping chips regroup a diff at once too (`hexc size -table new -- old`:
+  grouping chips regroup a diff at once too (`hexcavator size -table new -- old`:
   each set of labels either build has, with its change and its base's
   sizes). Right-click a function in both builds: **Compare Disassembly**
   opens its code in each side by side (VS Code's diff editor), without
   addresses (which move between builds: branches are labeled, calls and
   data named), so that only what changed differs. **Refresh**
-  (⟳) runs hexc again; **Export** (⤓) saves the report as CSV, TSV, or
+  (⟳) runs hexcavator again; **Export** (⤓) saves the report as CSV, TSV, or
   JSON.
 
 **Open With… → Hexcavator Size** on a binary opens it too. The status bar shows the
@@ -210,7 +215,7 @@ Every class, structure, and union of a binary (from its PDB or DWARF), with
 its size and the bytes its padding wastes: by name at first, or sorted by
 any column; filtered as you type (name or mangled name; `.*` for a regular
 expression); with an optional **Mangled names** column (a PDB's unique
-names; for DWARF, the Itanium name where it can be made exactly). `hexc`
+names; for DWARF, the Itanium name where it can be made exactly). `hexcavator`
 keeps the types in memory and sends the rows in view, so a program with
 hundreds of thousands scrolls, sorts, and filters at once (the first page
 waits for its debug information to be read). Double-click a type, or
@@ -218,7 +223,7 @@ right-click **View Layout**, for its layout; right-click **References** for
 the types it is a base or member of, and the variables and functions whose
 types name it; right-click **View Definition** for its source file, at the
 line that defines it (where the debug information records it: a PDB's
-`LF_UDT_SRC_LINE`, DWARF's declaration; `hexc types -definition`).
+`LF_UDT_SRC_LINE`, DWARF's declaration; `hexcavator types -definition`).
 
 Source paths recorded on another machine are found here as lenses' are
 (`hexcavator.sourcePathMap`, else by their last directories).
@@ -226,7 +231,7 @@ Source paths recorded on another machine are found here as lenses' are
 ## The Size Reduction Opportunities page
 
 What could make the binary smaller, each kind a section, its total in its
-heading: **Build changes** (`hexc recommend`: changes to how it's built,
+heading: **Build changes** (`hexcavator recommend`: changes to how it's built,
 such as compiling an object with `/Gy` or linking with `/OPT:REF`, each
 measured on this build: its saving is the bytes it would no longer hold;
 its duplicated variables are left to the next section), **Duplicate
@@ -251,13 +256,13 @@ pointer named by the symbol it points into and a link to it. Point at a
 member to light its bytes, or at a byte to see its member. Pointer slots
 the loader fixes up (base relocations, dynamic relocations, Mach-O
 fixups) are marked in the bytes and listed.
-`hexc data <image> <name>` prints the same.
+`hexcavator data <image> <name>` prints the same.
 
 ## Disassembly
 
 **Disassemble** (⟨/⟩ on a symbol's row, `D`, the sidebar, or a source
-file's size code lens) shows a function's code, for PE images (with
-their PDBs), ELF and Mach-O files (x86, x86-64, ARM64), and WebAssembly
+file's size code lens) shows a function's code, for PE images, ELF and
+Mach-O files (x86, x86-64, ARM64, 32-bit ARM, RISC-V), and WebAssembly
 modules, four ways:
 
 - **Raw**: a line per instruction, with its address and label.
@@ -283,9 +288,9 @@ shows each instruction's encoding. **Open as Text** opens the listing as a
 document. `hexcavator.disassemblyView` picks the first view; after that,
 the last one picked is used.
 
-It runs `hexc`: `hexcavator.path` if set, else the build in the repository
-it is in (`target/release`, then `target/debug`), else `hexc` on `PATH`. Images need their
-debug information for most tools, found as `hexc` finds it: beside the
+It runs `hexcavator`: `hexcavator.path` if set, else the build in the repository
+it is in (`target/release`, then `target/debug`), else `hexcavator` on `PATH`. Images need their
+debug information for most tools, found as `hexcavator` finds it: beside the
 image, in the symbol directories (`hexcavator.symbolPath`, and
 `_NT_SYMBOL_PATH`'s), or on the symbol servers `hexcavator.symbolServers` and
 `hexcavator.debuginfod` name (nothing is asked of a server unless one is
@@ -297,17 +302,17 @@ the image of universal Mach-O files. `hexcavator.rows` limits the rows per level
 
 The extension is plain JavaScript with no dependencies and no build
 step. To try it, press F5 in VS Code with the repository open (it builds
-hexc in release, then opens a window with the extension loaded, on the
+hexcavator in release, then opens a window with the extension loaded, on the
 repository's test binaries), or run VS Code with
 `code --extensionDevelopmentPath=<this folder>`. The helpers' tests
 run under any Node, or VS Code's own; the sidebar's reads the test
-binaries with the hexc given:
+binaries with the hexcavator given:
 
     set ELECTRON_RUN_AS_NODE=1
     "%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe" test\treemap.test.js
     "%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe" test\disasm.test.js
     "%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe" test\graph.test.js
-    "%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe" test\sidebar.test.js <hexc.exe>
+    "%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe" test\sidebar.test.js <hexcavator.exe>
 
 `test/harness.py` renders the views in headless Edge with real reports (a
 treemap, a zoom, a search, the disassembly actions, a sunburst, the tree,
@@ -315,9 +320,9 @@ a diff, the findings, and each disassembly view) and checks what they
 drew; with a directory as a fourth argument, it also saves a screenshot
 of each there:
 
-    python test\harness.py <hexc.exe> <image> <base image> [shots]
+    python test\harness.py <hexcavator.exe> <image> <base image> [shots]
 
-`test/integration/run.ps1 <hexc.exe>` runs a smoke test in a separate VS
+`test/integration/run.ps1 <hexcavator.exe>` runs a smoke test in a separate VS
 Code (its own settings and extensions): the extension activates, its
 commands exist, and the sidebar, a report, a tool's output, and a
 why-chain open.

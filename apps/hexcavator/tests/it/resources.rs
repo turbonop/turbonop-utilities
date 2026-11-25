@@ -1,4 +1,4 @@
-//! `hexc resources` end to end, over the resource test images
+//! `hexcavator resources` end to end, over the resource test images
 //! (tools/resources): a PE program with one of each kind of resource rc
 //! makes (some in two languages), an ELF program's notes, a Mach-O
 //! program's Info.plist and entitlements, a WebAssembly module's producers,
@@ -15,8 +15,8 @@ fn testdata(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-fn hexc(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("resources")
         .args(args)
         .output()
@@ -29,7 +29,7 @@ fn hexc(args: &[&str]) -> (i32, String, String) {
 }
 
 fn ok(args: &[&str]) -> String {
-    let (code, out, err) = hexc(args);
+    let (code, out, err) = hexcavator(args);
     assert_eq!(code, 0, "{args:?}: {err}");
     out
 }
@@ -209,7 +209,7 @@ fn pe_images() {
     let at = u32::from_le_bytes(file[6 + 16 + 12..6 + 16 + 16].try_into().unwrap()) as usize;
     assert_eq!(&file[at..at + 4], b"\x89PNG");
     assert_eq!(group["images"][0]["width"], 16);
-    let dir = std::env::temp_dir().join(format!("hexc-resources-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-resources-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let saved = dir.join("icon.ico");
     let out = ok(&[
@@ -343,8 +343,17 @@ fn macho() {
             .map(|p| p[1].clone())
     };
     assert_eq!(get("Platform").unwrap(), "macOS");
-    assert_eq!(get("Minimum OS").unwrap(), "12.0.0");
-    assert_eq!(get("SDK").unwrap(), "14.0.0");
+    assert_eq!(get("Minimum OS").unwrap(), "12.0");
+    assert_eq!(get("SDK").unwrap(), "14.0");
+    // (Linked by ld64.lld, which names itself.)
+    assert!(
+        get("Built with")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .starts_with("lld 24."),
+        "{pairs}"
+    );
     assert_eq!(
         get("Bundle identifier").unwrap(),
         "dev.hexcavator.resources"
@@ -365,7 +374,7 @@ fn wasm_and_ne() {
             .starts_with("language: Rust; processed-by: rustc ")
     );
     assert!(items.iter().any(|i| i["id"] == "target_features"));
-    // (Debug information isn't listed: hexc dwarf shows it.)
+    // (Debug information isn't listed: hexcavator dwarf shows it.)
     assert!(
         !items
             .iter()
@@ -386,7 +395,7 @@ fn wasm_and_ne() {
 fn nothing_and_bad_arguments() {
     // An image with none.
     let path = testdata("elf/names.o");
-    let (code, out, _) = hexc(&[path.to_str().unwrap()]);
+    let (code, out, _) = hexcavator(&[path.to_str().unwrap()]);
     assert_eq!(code, 0);
     assert!(out.starts_with("names.o: "), "{out}");
     for args in [
@@ -396,20 +405,20 @@ fn nothing_and_bad_arguments() {
         &["-save", "x"],
         &["a", "b"],
     ] {
-        let (code, _, err) = hexc(args);
+        let (code, _, err) = hexcavator(args);
         assert_eq!(code, 2, "{args:?}: {err}");
-        assert!(err.contains("usage: hexc resources"), "{err}");
+        assert!(err.contains("usage: hexcavator resources"), "{err}");
     }
-    let (code, _, err) = hexc(&["-show", "NOPE/#1/1033", &exe()]);
+    let (code, _, err) = hexcavator(&["-show", "NOPE/#1/1033", &exe()]);
     assert_eq!(code, 1);
     assert!(
         err.contains("resources.exe has no resource 'NOPE/#1/1033'"),
         "{err}"
     );
-    let (code, _, _) = hexc(&["no-such-file.exe"]);
+    let (code, _, _) = hexcavator(&["no-such-file.exe"]);
     assert_eq!(code, 1);
     let readme = testdata("resources/../../README.md");
-    let (code, _, err) = hexc(&[readme.to_str().unwrap()]);
+    let (code, _, err) = hexcavator(&[readme.to_str().unwrap()]);
     assert_eq!(code, 1);
     assert!(
         err.contains("not a PE, Mach-O, ELF, WebAssembly, or NE image"),

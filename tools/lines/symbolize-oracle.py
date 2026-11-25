@@ -1,5 +1,5 @@
 """What a reference symbolizer says is at each byte of an image's code, as
-golden data for `hexc symbolize`'s test (apps/hexcavator/tests/it/symbolize.rs).
+golden data for `hexcavator symbolize`'s test (apps/hexcavator/tests/it/symbolize.rs).
 
 usage: symbolize-oracle.py <llvm-symbolizer or diasymbolize> <image>
 

@@ -9,9 +9,9 @@
 
 use std::process::ExitCode;
 
-use hexcavator_trace_analysis::wpa_profile::{Column, Graph, Preset, Profile};
-use hexcavator_trace_analysis::wpa_query::Query;
 use serde_json::{Map, Value, json};
+use turbonop_trace_analysis::wpa_profile::{Column, Graph, Preset, Profile};
+use turbonop_trace_analysis::wpa_query::Query;
 
 /// What Stackrabbit shows a table as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

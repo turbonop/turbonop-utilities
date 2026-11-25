@@ -15,7 +15,7 @@
 
 use alloc::string::String;
 
-use hexcavator_core::stack::SmallStack;
+use turbonop_core::stack::SmallStack;
 
 use crate::msvc::flags;
 

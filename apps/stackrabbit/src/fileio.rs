@@ -7,10 +7,10 @@
 
 use std::path::Path;
 
-use hexcavator_etw::guids;
-use hexcavator_etw::schema::{Properties, pointer_size};
-use hexcavator_trace::{ProcessIx, ThreadIx, Trace};
 use rustc_hash::FxHashMap;
+use turbonop_etw::guids;
+use turbonop_etw::schema::{Properties, pointer_size};
+use turbonop_trace::{ProcessIx, ThreadIx, Trace};
 
 use crate::reading::int;
 use serde_json::{Value, json};
@@ -95,7 +95,7 @@ enum Read {
 /// The file operations of `trace` (read from `path`): its FileIo events,
 /// from the buffers holding them, on every core.
 pub fn table(trace: &Trace, path: &Path) -> Result<FileTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, op: u8| {
+    let wanted = |provider: &turbonop_etl::Guid, op: u8| {
         *provider == guids::FILE_IO
             && (op == END || NAMES.contains(&op) || OPERATIONS.iter().any(|(o, _)| *o == op))
     };
@@ -106,7 +106,7 @@ pub fn table(trace: &Trace, path: &Path) -> Result<FileTable, String> {
         };
         let text = |name: &str| {
             p.get(name)
-                .map(|n| hexcavator_etw::values::format(n, pointer_size(e)))
+                .map(|n| turbonop_etw::values::format(n, pointer_size(e)))
                 .filter(|s| !s.is_empty())
         };
         if op == END {

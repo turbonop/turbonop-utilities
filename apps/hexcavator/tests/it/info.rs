@@ -1,4 +1,4 @@
-//! `hexc info`: each format's one-line description and details.
+//! `hexcavator info`: each format's one-line description and details.
 
 use std::path::Path;
 use std::process::Command;
@@ -7,7 +7,7 @@ fn info(path: &str) -> String {
     let p = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata")
         .join(path);
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("info")
         .arg(&p)
         .output()
@@ -46,4 +46,15 @@ fn elf() {
     );
     assert!(info("elf/names.o").contains("\n  relocatable object\n"));
     assert!(info("elf/dwarf5-x86_64-linux-gnu").contains("\n  executable, entry 0x201290\n"));
+}
+
+#[test]
+fn coff_objects() {
+    assert_eq!(
+        info("coff/objects.obj"),
+        "COFF object, x64, 13231 bytes\n  \
+         48 sections, 139 symbols\n  \
+         debug information: CodeView (.debug$S, .debug$T)\n"
+    );
+    assert!(info("coff/objects-big.obj").starts_with("COFF object (bigobj), x64, "));
 }

@@ -1,10 +1,10 @@
 //! Architectures: the instruction set (shared by every crate, from
-//! `hexcavator-core`), and how an image mixes code of several (Windows'
+//! `turbonop-core`), and how an image mixes code of several (Windows'
 //! hybrid images).
 
-use hexcavator_pe::consts::machine;
+use turbonop_pe::consts::machine;
 
-pub use hexcavator_core::Arch;
+pub use turbonop_core::Arch;
 
 /// How an image mixes code: Windows' hybrid images.
 #[non_exhaustive]

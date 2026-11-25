@@ -24,10 +24,10 @@
 
 use std::collections::BTreeSet;
 
-use hexcavator_etl::Guid;
-use hexcavator_etl::write::{Writer, WriterOptions};
-use hexcavator_etw::encode::{Context, encode, record};
-use hexcavator_etw::kernel::{
+use turbonop_etl::Guid;
+use turbonop_etl::write::{Writer, WriterOptions};
+use turbonop_etw::encode::{Context, encode, record};
+use turbonop_etw::kernel::{
     ContextSwitch, DbgId, Frames, ImageEvent, ImageId, KernelEvent, Lifetime, ProcessEvent,
     ReadyThread, Sample, StackWalk, ThreadEvent, ThreadName, Utf16,
 };

@@ -2,7 +2,7 @@
 //! testdata's images (SizeBench's test binaries, MSVC- and lld-linked, and
 //! a managed DLL; the CLR header's values are dumpbin /clrheader's).
 
-use hexcavator_pe::PeFile;
+use turbonop_pe::PeFile;
 
 fn images() -> Vec<(String, Vec<u8>)> {
     let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -57,7 +57,7 @@ fn a_managed_images_clr_header() {
         (2, 5)
     );
     assert_eq!(clr.metadata, (0x2050, 0x5D8));
-    assert_eq!(clr.flags, hexcavator_pe::extras::COMIMAGE_FLAGS_ILONLY);
+    assert_eq!(clr.flags, turbonop_pe::extras::COMIMAGE_FLAGS_ILONLY);
     assert_eq!(clr.entry_point, 0);
     assert_eq!(clr.resources, (0, 0));
     let version = String::from_utf8_lossy(clr.version.unwrap()).into_owned();

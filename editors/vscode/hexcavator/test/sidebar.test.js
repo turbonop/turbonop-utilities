@@ -1,42 +1,81 @@
-// Tests for lib/hexc.js, and for the sidebar's tree (sidebar.js) against a
-// stand-in for the `vscode` module: `node test/sidebar.test.js [hexc.exe]`.
-// With hexc, the tree is read from the repository's test binaries.
+// Tests for lib/hexcavator.js, and for the sidebar's tree (sidebar.js) against a
+// stand-in for the `vscode` module: `node test/sidebar.test.js [hexcavator.exe]`.
+// With hexcavator, the tree is read from the repository's test binaries.
 "use strict";
 
 const assert = require("assert");
 const path = require("path");
 const Module = require("module");
 const { execFile } = require("child_process");
-const h = require(path.join(__dirname, "..", "lib", "hexc.js"));
+const h = require(path.join(__dirname, "..", "lib", "hexcavator.js"));
 
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
 
-test("which hexc runs", () => {
-  const exe = process.platform === "win32" ? "hexc.exe" : "hexc";
+test("which hexcavator runs", () => {
+  const exe = process.platform === "win32" ? "hexcavator.exe" : "hexcavator";
   const repo = path.join(__dirname, "..", "..", "..", "..", "target");
   const release = path.join(repo, "release", exe);
   const debug = path.join(repo, "debug", exe);
-  assert.strictEqual(h.hexcPath("C:/tools/hexc.exe", () => true), "C:/tools/hexc.exe");
+  assert.strictEqual(h.hexcPath("C:/tools/hexcavator.exe", () => true), "C:/tools/hexcavator.exe");
   assert.strictEqual(h.hexcPath("", (p) => p === release || p === debug), release);
   assert.strictEqual(h.hexcPath(undefined, (p) => p === debug), debug);
-  assert.strictEqual(h.hexcPath("", () => false), "hexc");
-  // A release VSIX's own hexc comes before any build in a repository.
+  assert.strictEqual(h.hexcPath("", () => false), "hexcavator");
+  // A release VSIX's own hexcavator comes before any build in a repository.
   const bundled = path.join(__dirname, "..", "bin", exe);
   assert.strictEqual(h.hexcPath("", (p) => p === bundled || p === release), bundled);
-  assert.strictEqual(h.hexcPath("C:/tools/hexc.exe", (p) => p === bundled), "C:/tools/hexc.exe");
+  assert.strictEqual(h.hexcPath("C:/tools/hexcavator.exe", (p) => p === bundled), "C:/tools/hexcavator.exe");
 });
 
-test("kinds of files", () => {
-  assert.strictEqual(h.kindOf("C:\\a\\b.DLL"), "pe");
-  assert.strictEqual(h.kindOf("/x/y.lib"), "coff");
-  assert.strictEqual(h.kindOf("libz.so"), "other");
-  assert.strictEqual(h.kindOf("noext"), "other");
+test("what a link did, in its toolchain's terms", () => {
+  assert.strictEqual(h.linkSummary({ toolchain: "msvc", link: { optRef: true, optIcf: false }, judged: { optRef: true, optIcf: false } }), "/OPT:REF on, /OPT:ICF off");
+  assert.strictEqual(
+    h.linkSummary({ toolchain: "gnu", link: null, judged: { optRef: true, optIcf: true } }),
+    "--gc-sections on, --icf on (as the image shows it)"
+  );
+  assert.strictEqual(h.linkSummary({ toolchain: "apple", judged: { optRef: false, optIcf: false } }), "-dead_strip off, ICF off (as the image shows it)");
+  // (An older hexcavator's report: neither.)
+  assert.strictEqual(h.linkSummary({ toolchain: "gnu", link: null }), "");
+  // (Without debug information: neither, judged null.)
+  assert.strictEqual(h.linkSummary({ toolchain: "gnu", link: null, judged: null, debug: false }), "");
+});
+
+test("file names", () => {
   assert.strictEqual(h.baseName("C:\\a/b\\c.exe"), "c.exe");
 });
 
+test("the binary in an Apple bundle", () => {
+  const files = new Set([
+    "/b/Foo.app.dSYM/Contents/Resources/DWARF/Foo",
+    "/b/Bar.dSYM/Contents/Resources/DWARF/libbar.dylib",
+    "/b/Foo.app/Contents/MacOS/Foo",
+    "/b/Phone.app/Phone",
+    "/b/Kit.framework/Versions/Current/Kit",
+    "/b/Flat.framework/Flat",
+    "C:\\b\\Drv.kext\\Contents\\MacOS\\Drv",
+  ]);
+  const isFile = (p) => files.has(p);
+  const list = (dir) => [...files].filter((f) => f.startsWith(dir + "/")).map((f) => f.slice(dir.length + 1)).filter((f) => !f.includes("/"));
+  assert.strictEqual(h.bundleBinary("/b/Foo.app.dSYM", isFile, list), "/b/Foo.app.dSYM/Contents/Resources/DWARF/Foo");
+  // (A dSYM whose DWARF file is named for its image's file: the one there.)
+  assert.strictEqual(h.bundleBinary("/b/Bar.dSYM/", isFile, list), "/b/Bar.dSYM/Contents/Resources/DWARF/libbar.dylib");
+  assert.strictEqual(h.bundleBinary("/b/Foo.app", isFile, list), "/b/Foo.app/Contents/MacOS/Foo");
+  assert.strictEqual(h.bundleBinary("/b/Phone.app", isFile, list), "/b/Phone.app/Phone");
+  assert.strictEqual(h.bundleBinary("/b/Kit.framework", isFile, list), "/b/Kit.framework/Versions/Current/Kit");
+  assert.strictEqual(h.bundleBinary("/b/Flat.framework", isFile, list), "/b/Flat.framework/Flat");
+  assert.strictEqual(h.bundleBinary("C:\\b\\Drv.kext", isFile, list), "C:\\b\\Drv.kext\\Contents\\MacOS\\Drv");
+  assert.strictEqual(h.bundleBinary("/b/Empty.app", isFile, list), null);
+  assert.strictEqual(h.bundleBinary("/b/src", isFile, list), null);
+});
+
+/** What hexcavator says an image with debug information supports (of any format). */
+const IMAGE = {
+  format: "pe",
+  tools: ["report", "compare", "info", "dump", "deps", "resources", "relocations", "disassemble", "init", "findings", "recommend", "why", "refs", "xref", "unreachable", "vtables", "identical", "query", "types", "layout", "inlines", "sourcefiles", "annotations", "data", "functionsDiff", "findingsDiff", "typesDiff", "lenses"],
+};
+
 test("command lines quote what a shell would split", () => {
-  assert.strictEqual(h.commandLine("hexc", ["xref", "-why", "main(int, char**)", "C:\\a b\\x.exe"]), 'hexc xref -why "main(int, char**)" "C:\\a b\\x.exe"');
+  assert.strictEqual(h.commandLine("hexcavator", ["xref", "-why", "main(int, char**)", "C:\\a b\\x.exe"]), 'hexcavator xref -why "main(int, char**)" "C:\\a b\\x.exe"');
   assert.strictEqual(h.quote('say "hi"'), '"say \\"hi\\""');
   assert.strictEqual(h.quote("C:\\dir with space\\"), '"C:\\dir with space\\\\"');
   assert.strictEqual(h.quote(""), '""');
@@ -70,18 +109,20 @@ test("rows roll up: children counted, diffs signed", () => {
   assert.deepStrictEqual(kids.map((k) => k.name), ["b", "c", "a"]);
 });
 
-test("tools: every one for a PE image, fewer for others, comparisons for a diff", () => {
-  const ids = (entry) => h.toolsFor(entry).flatMap((g) => g.tools.map((t) => t.id));
-  const pe = ids({ file: "a.exe" });
+test("tools: every one for an image with debug information, the same few for any file hexcavator can't say of, comparisons for a diff", () => {
+  const ids = (entry, caps, base) => h.toolsFor(entry, caps, base).flatMap((g) => g.tools.map((t) => t.id));
+  const image = ids({ file: "a.exe" }, IMAGE);
   for (const id of ["report", "compare", "findings", "why", "refs", "xref", "unreachable", "vtables", "identical", "query", "types", "layout", "inlines", "sourcefiles", "annotations", "disassemble", "dump"]) {
-    assert.ok(pe.includes(id), id);
+    assert.ok(image.includes(id), id);
   }
-  assert.deepStrictEqual(ids({ file: "a.o" }), ["report", "compare", "disassemble", "info"]);
-  assert.deepStrictEqual(ids({ file: "a.lib" }), ["report", "compare", "dump", "info"]);
-  assert.deepStrictEqual(ids({ file: "a.exe", base: "b.exe" }), ["sizeDiff", "sectionsDiff", "functionsDiff", "findingsDiff", "typesDiff"]);
+  // (Whatever its name says.)
+  for (const file of ["a.o", "a.lib", "a.exe", "libz.so.1", "noext"]) {
+    assert.deepStrictEqual(ids({ file }), ["report", "compare", "info"], file);
+  }
+  assert.deepStrictEqual(ids({ file: "a.exe", base: "b.exe" }, IMAGE, IMAGE), ["sizeDiff", "sectionsDiff", "functionsDiff", "findingsDiff", "typesDiff"]);
   assert.deepStrictEqual(ids({ file: "a.so", base: "b.so" }), ["sizeDiff", "sectionsDiff"]);
   // Every tool runs something: arguments, or a question first.
-  for (const g of h.toolsFor({ file: "a.exe" })) {
+  for (const g of h.toolsFor({ file: "a.exe" }, IMAGE)) {
     for (const t of g.tools) {
       assert.ok(["panel", "pick-base", "disassemble", "tree", "text"].includes(t.run), t.id);
       if (t.run === "text") {
@@ -91,9 +132,9 @@ test("tools: every one for a PE image, fewer for others, comparisons for a diff"
   }
 });
 
-test("tools: as hexc says the file supports them, whatever its name", () => {
+test("tools: as hexcavator says the file supports them, whatever its name", () => {
   const ids = (entry, caps, base) => h.toolsFor(entry, caps, base).flatMap((g) => g.tools.map((t) => t.id));
-  // An ELF image with DWARF (no extension): every tool hexc lists.
+  // An ELF image with DWARF (no extension): every tool hexcavator lists.
   const elf = { format: "elf", tools: ["report", "compare", "info", "disassemble", "findings", "why", "refs", "xref", "query", "types", "sourcefiles", "functionsDiff"] };
   const got = ids({ file: "/bin/app" }, elf);
   for (const id of elf.tools.filter((t) => t !== "functionsDiff")) {
@@ -109,7 +150,7 @@ test("tools: as hexc says the file supports them, whatever its name", () => {
 });
 
 test("tools that ask", () => {
-  const tools = h.toolsFor({ file: "a.exe" }).flatMap((g) => g.tools);
+  const tools = h.toolsFor({ file: "a.exe" }, IMAGE).flatMap((g) => g.tools);
   const tool = (id) => tools.find((t) => t.id === id);
   assert.deepStrictEqual(h.argsWith(tool("query"), { file: "a.exe" }, "group by library"), ["query", "a.exe", "group by library"]);
   assert.deepStrictEqual(h.argsWith(tool("layout"), { file: "a.exe" }, "Diamond"), ["types", "-layout", "Diamond", "a.exe"]);
@@ -118,7 +159,7 @@ test("tools that ask", () => {
 });
 
 test("tools shown as tables, with -json", () => {
-  const tools = h.toolsFor({ file: "a.exe" }).flatMap((g) => g.tools);
+  const tools = h.toolsFor({ file: "a.exe" }, IMAGE).flatMap((g) => g.tools);
   const tool = (id) => tools.find((t) => t.id === id);
   for (const id of ["unreachable", "vtables", "identical", "types", "inlines", "sourcefiles", "annotations", "query", "layout"]) {
     assert.ok(h.isTable(tool(id)), id);
@@ -162,7 +203,7 @@ test("functions by the source line they start at", () => {
   ]);
 });
 
-test("hexc serve's options from the settings", () => {
+test("hexcavator serve's options from the settings", () => {
   const none = h.serveLaunch(() => undefined);
   assert.deepStrictEqual(none, { args: ["serve"], env: {} });
   const set = {
@@ -184,7 +225,7 @@ test("hexc serve's options from the settings", () => {
     "C:\\symcache",
     "serve",
   ]);
-  assert.deepStrictEqual(l.env, { HEXC_SYMBOL_PATH: "C:\\syms;D:\\more" });
+  assert.deepStrictEqual(l.env, { TURBONOP_SYMBOL_PATH: "C:\\syms;D:\\more" });
 });
 
 test("source paths from another machine", () => {
@@ -358,32 +399,35 @@ async function treeTests(exe) {
 
   // A binary: what it is, its pages, Compare; then the other queries.
   const top = await kids(roots[0]);
-  assert.deepStrictEqual(top.map((n) => n.type), ["tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "group"]);
+  assert.deepStrictEqual(top.map((n) => n.type), ["tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "tool", "group"]);
   assert.deepStrictEqual(
     await Promise.all(top.map(async (n) => (await item(n)).label)),
-    ["Headers", "File Format", "Dependencies", "Resources", "Build Information", "Debug Information", "Initialization", "Symbols", "Types", "Sources", "Size Reduction Opportunities", "Compare With Another Build…", "Miscellaneous Queries"]
+    ["Headers", "File Format", "Dependencies", "Resources", "Relocations", "Build Information", "Debug Information", "Initialization", "Symbols", "Types", "Sources", "Size Reduction Opportunities", "Compare With Another Build…", "Miscellaneous Queries"]
   );
   // Dependencies: a page of its own.
   assert.strictEqual(top[2].tool.run, "deps");
   // Resources: a page of its own.
   assert.strictEqual(top[3].tool.run, "resources");
   assert.ok(sidebar.commandFor(top[3]).includes(`resources ${image}`));
-  assert.strictEqual(top[10].tool.id, "findings");
+  // Relocations: a page of its own.
+  assert.strictEqual(top[4].tool.run, "relocations");
+  assert.ok(sidebar.commandFor(top[4]).includes(`relocations ${image}`));
+  assert.strictEqual(top[11].tool.id, "findings");
   // Build Information: a page of its own.
-  assert.strictEqual(top[4].tool.run, "buildinfo");
-  assert.ok(sidebar.commandFor(top[4]).includes(`checksec -audit ${image}`));
-  // Debug Information: the PDB hexc found.
-  const debugTool = top[5].tool;
+  assert.strictEqual(top[5].tool.run, "buildinfo");
+  assert.ok(sidebar.commandFor(top[5]).includes(`checksec -audit ${image}`));
+  // Debug Information: the PDB hexcavator found.
+  const debugTool = top[6].tool;
   assert.deepStrictEqual(debugTool.args.slice(0, 2), ["pdb", "-summary"]);
   assert.ok(debugTool.args[2].endsWith("xref-x64.pdb"), debugTool.args[2]);
   // Initialization: a page of its own.
-  assert.strictEqual(top[6].tool.run, "init");
-  assert.strictEqual(top[7].tool.run, "panel");
-  assert.strictEqual(top[8].tool.run, "types");
+  assert.strictEqual(top[7].tool.run, "init");
+  assert.strictEqual(top[8].tool.run, "panel");
+  assert.strictEqual(top[9].tool.run, "types");
   // Sources: the Symbols page, grouped by source file.
-  assert.strictEqual(top[9].tool.run, "sources");
-  assert.ok(sidebar.commandFor(top[9]).includes(`size -d "sourcefiles,symbols" -n 0 ${image}`));
-  const misc = top[12];
+  assert.strictEqual(top[10].tool.run, "sources");
+  assert.ok(sidebar.commandFor(top[10]).includes(`size -d "sourcefiles,symbols" -n 0 ${image}`));
+  const misc = top[13];
   assert.strictEqual((await item(misc)).collapsibleState, 1, "collapsed");
   const miscKids = await kids(misc);
   // (Findings is a page of its own now; Recommendations is in it.)
@@ -400,7 +444,7 @@ async function treeTests(exe) {
   for (const id of ["disassemble", "why", "refs", "query", "layout", "checksec", "audit", "types", "sourcefiles", "recommend", "findings", "annotations"]) {
     assert.ok(!tools.some((t) => t.tool.id === id), id);
   }
-  const whyTool = { tool: h.toolsFor({ file: image }, h.capsFallback(image)).flatMap((g) => g.tools).find((t) => t.id === "why"), entry: roots[0].entry };
+  const whyTool = { tool: h.toolsFor({ file: image }, IMAGE).flatMap((g) => g.tools).find((t) => t.id === "why"), entry: roots[0].entry };
   assert.ok(sidebar.commandFor(whyTool).includes(`xref -why "<symbol>"`));
   assert.ok(sidebar.commandFor(whyTool, "main").endsWith(`xref -why main ${image}`));
 
@@ -424,10 +468,10 @@ async function treeTests(exe) {
   const results = async () => (await kids(roots[0])).filter((n) => n.type === "result");
   const dead = await kids((await results())[0]);
   assert.strictEqual(dead[0].label, "Nothing reaches it");
-  // A name hexc doesn't know is a failure shown in the tree.
+  // A name hexcavator doesn't know is a failure shown in the tree.
   sidebar.addResult(roots[0].entry, { kind: "why", name: "no such thing" });
   const none = await kids((await results())[0]);
-  assert.strictEqual(none[0].label, "hexc failed");
+  assert.strictEqual(none[0].label, "hexcavator failed");
   assert.match(none[0].description, /nothing named/);
 
   // The source of a function, from the PDB.
@@ -490,7 +534,7 @@ async function treeTests(exe) {
       console.log(`FAIL the tree\n${e.stack}`);
     }
   } else {
-    console.log("(skipped the tree: give hexc's path to read the test binaries)");
+    console.log("(skipped the tree: give hexcavator's path to read the test binaries)");
   }
   process.exit(failed ? 1 : 0);
 })();

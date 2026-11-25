@@ -187,15 +187,15 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
-use hexcavator_trace_analysis::{NodeId, PdbSymbolizer, Resolver, StackTags};
 use rustc_hash::FxHashSet;
 use serde_json::{Value, json};
+use turbonop_trace_analysis::{NodeId, PdbSymbolizer, Resolver, StackTags};
 
 use crate::protocol::{Frame, read_frame, write_frame};
 use crate::store::{self, Loaded, Opened};
 use crate::symbols::{self, Symbols};
 use crate::views::{TreeSpec, TreeView, Unit, summary};
-use hexcavator_symbolize::server::Fetched;
+use turbonop_symbolize::server::Fetched;
 
 const USAGE: &str = "\
 usage: stackrabbit serve
@@ -366,7 +366,7 @@ fn count(params: &Value, name: &str, default: usize) -> Result<usize, String> {
 
 /// A time range in nanoseconds from the trace's start, in its clock's
 /// ticks.
-fn ticks(trace: &hexcavator_trace::Trace, time: Option<(i64, i64)>) -> Option<(i64, i64)> {
+fn ticks(trace: &turbonop_trace::Trace, time: Option<(i64, i64)>) -> Option<(i64, i64)> {
     time.map(|(s, e)| {
         let tps = i128::from(trace.clock.ticks_per_second.max(1));
         let t = |ns: i64| {
@@ -444,7 +444,7 @@ type LinesKey = (crate::views::Source, Option<(i64, i64)>, usize);
 
 /// Line totals, their unit, and the total weight.
 type LinesValue = (
-    hexcavator_trace_analysis::lines::LineTotals,
+    turbonop_trace_analysis::lines::LineTotals,
     crate::views::Unit,
     u64,
 );
@@ -655,6 +655,8 @@ fn symbols_task(
             // meanwhile.
             scope.spawn(|| {
                 symbols::preload(&symbolizer, ids);
+                // (Then, for images whose PDB isn't here, their own.)
+                symbols::preload_files(&symbolizer, &loaded.trace, frames);
                 loaded_note();
                 save();
             });
@@ -740,7 +742,7 @@ impl State {
                 json!({
                     "pdb": id.name.rsplit(['\\', '/']).next().unwrap_or(&id.name),
                     "path": id.name,
-                    "identity": hexcavator_symbolize::symbol_store_key(&id.guid, id.age),
+                    "identity": turbonop_symbolize::symbol_store_key(&id.guid, id.age),
                     "frames": frames.frames.get(&key).copied().unwrap_or(0),
                     "status": status,
                     "download": download,
@@ -776,7 +778,7 @@ impl State {
                 let guid = params
                     .get("guid")
                     .and_then(Value::as_str)
-                    .and_then(hexcavator_etl::Guid::parse)
+                    .and_then(turbonop_etl::Guid::parse)
                     .ok_or("guid: expected a provider's GUID")?;
                 let small = |name: &str, max: u64| -> Result<u64, String> {
                     match params.get(name) {
@@ -809,7 +811,7 @@ impl State {
                     limit,
                     stacks.then_some((
                         &self.resolver,
-                        &*self.symbols as &dyn hexcavator_trace_analysis::Symbolizer,
+                        &*self.symbols as &dyn turbonop_trace_analysis::Symbolizer,
                     )),
                 )
             }

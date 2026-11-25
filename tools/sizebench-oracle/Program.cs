@@ -1,7 +1,7 @@
 // sizebench-oracle <binary> <pdb>
 //
 // Prints SizeBench's view of a binary as sorted text lines, for comparison
-// with hexc. Numbers are decimal except RVAs (hex). Line kinds:
+// with hexcavator. Numbers are decimal except RVAs (hex). Line kinds:
 //   SECTION <name> rva=<hex> size=<n> vsize=<n> vsizepad=<n> chars=<hex>
 //   COFFGROUP <section> <name> rva=<hex> size=<n> vsize=<n> vsizepad=<n> chars=<hex>
 //   LIB <name> size=<n> vsize=<n>

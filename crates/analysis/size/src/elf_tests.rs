@@ -1,9 +1,9 @@
 //! The ELF sources on the clang/lld fixtures in testdata/elf: every source
 //! labels every byte the base map does, and the charges are what the
-//! file's own structures (read through hexcavator-elf) say they should be.
+//! file's own structures (read through turbonop-elf) say they should be.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
+use turbonop_hash::Map as HashMap;
 
 use super::*;
 use crate::rangemap::sweep;
@@ -54,7 +54,7 @@ const SOURCES: &[Source] = &[
 /// Bytes per label of source `k` (VM, file), over what the base labels.
 fn totals(maps: &Maps, k: usize) -> (HashMap<String, u64>, HashMap<String, u64>) {
     let map = &maps.sources[k].1;
-    let mut out = (HashMap::new(), HashMap::new());
+    let mut out = (HashMap::default(), HashMap::default());
     for (domain, base, m) in [
         (&mut out.0, &maps.base.vm, &map.vm),
         (&mut out.1, &maps.base.file, &map.file),
@@ -177,8 +177,8 @@ fn object_segments_are_section_flags() {
     let elf = ElfFile::parse(&data).unwrap();
     let maps = maps(&data, "x.o", &[Source::Segments, Source::Sections]).unwrap();
     let (vm, file) = totals(&maps, 0);
-    let mut want_vm: HashMap<String, u64> = HashMap::new();
-    let mut want_file: HashMap<String, u64> = HashMap::new();
+    let mut want_vm: HashMap<String, u64> = HashMap::default();
+    let mut want_file: HashMap<String, u64> = HashMap::default();
     for s in elf.sections().skip(1) {
         *want_file.entry(flags_label(s.flags)).or_default() += s.file_size();
         if s.is_alloc() {
@@ -207,7 +207,7 @@ fn object_segments_are_section_flags() {
 fn table_charges(elf: &ElfFile<'_>, name: &[u8]) -> (u64, u64) {
     let syms = elf.all_symbols();
     let sym = syms.iter().find(|s| s.name == name).unwrap();
-    let entry = if elf.class() == hexcavator_elf::Class::Elf64 {
+    let entry = if elf.class() == turbonop_elf::Class::Elf64 {
         24
     } else {
         16
@@ -359,7 +359,7 @@ fn archives() {
                 let elf = ElfFile::parse(m.data).unwrap();
                 let alloc: u64 = elf
                     .sections()
-                    .filter(hexcavator_elf::Section::is_alloc)
+                    .filter(turbonop_elf::Section::is_alloc)
                     .map(|s| s.size)
                     .sum();
                 assert_eq!(get(&vm, &name), alloc, "{name}");
@@ -428,9 +428,8 @@ fn symbol_names_by_source() {
         &[Source::FullSymbols, Source::Symbols, Source::RawSymbols],
     )
     .unwrap();
-    let names = |k: usize| -> std::collections::HashSet<String> {
-        totals(&maps, k).1.into_keys().collect()
-    };
+    let names =
+        |k: usize| -> turbonop_hash::Set<String> { totals(&maps, k).1.into_keys().collect() };
     let (full, short, raw) = (names(0), names(1), names(2));
     let nm = |file: &str| -> Vec<String> {
         let text = String::from_utf8(fixture(file)).unwrap();
@@ -611,7 +610,7 @@ fn inlines_from_line_tables() {
         let bss = elf.sections().find(|s| s.name == b".bss").unwrap();
         let owner = map.vm.get(bss.addr).map(|e| maps.labels.name(e.label));
         assert!(owner.is_some_and(|o| o.contains(".c:")), "{f}: {owner:?}");
-        let mut s = hexcavator_dwarf::Sections::new(elf.endian());
+        let mut s = turbonop_dwarf::Sections::new(elf.endian());
         for sec in elf.sections() {
             if let Some(n) = sec.name.strip_prefix(b".debug_") {
                 s.set(n, elf.section_data(&sec));
@@ -619,7 +618,7 @@ fn inlines_from_line_tables() {
         }
         let mut expected = 0;
         let mut offset = 0;
-        while let Some(p) = hexcavator_dwarf::line_program(&s, offset, 8) {
+        while let Some(p) = turbonop_dwarf::line_program(&s, offset, 8) {
             let mut start = None;
             for r in &p.rows {
                 if start.is_none() {
@@ -629,7 +628,7 @@ fn inlines_from_line_tables() {
                     expected += r.address - start.take().unwrap();
                 }
             }
-            offset += hexcavator_dwarf::line_program_len(s.line, offset, s.endian).unwrap();
+            offset += turbonop_dwarf::line_program_len(s.line, offset, s.endian).unwrap();
         }
         assert!(expected > 200, "{f}");
         assert_eq!(lines, expected, "{f}");
@@ -791,9 +790,9 @@ fn structural_recommendations() {
     let packed = ElfFile::parse(&relr).unwrap();
     let table = packed
         .sections()
-        .find(|s| s.kind == hexcavator_elf::consts::SHT_RELR)
+        .find(|s| s.kind == turbonop_elf::consts::SHT_RELR)
         .unwrap();
-    let image = hexcavator_image::Image::parse(&rela).unwrap();
+    let image = turbonop_image::Image::parse(&rela).unwrap();
     let recs = structural(&image);
     let r = recs
         .iter()
@@ -803,7 +802,7 @@ fn structural_recommendations() {
     let elf = ElfFile::parse(&rela).unwrap();
     let mut offsets: Vec<u64> = elf
         .sections()
-        .filter(|s| s.kind == hexcavator_elf::consts::SHT_RELA)
+        .filter(|s| s.kind == turbonop_elf::consts::SHT_RELA)
         .flat_map(|s| elf.relocations(&s))
         .filter(|r| r.kind == 8)
         .map(|r| r.offset)
@@ -811,7 +810,7 @@ fn structural_recommendations() {
     offsets.sort_unstable();
     assert_eq!(relr_size(&offsets, 8), table.size, "{r:?} {offsets:x?}");
     // Already packed: nothing to recommend.
-    let image = hexcavator_image::Image::parse(&relr).unwrap();
+    let image = turbonop_image::Image::parse(&relr).unwrap();
     assert!(
         !structural(&image)
             .iter()
@@ -828,11 +827,11 @@ fn structural_recommendations() {
     assert_eq!(relr_size(&[0x1000, 0x9000], 8), 16);
     // Both hash tables.
     let both = fixture("libversions.so");
-    let image = hexcavator_image::Image::parse(&both).unwrap();
+    let image = turbonop_image::Image::parse(&both).unwrap();
     let hash = ElfFile::parse(&both)
         .unwrap()
         .sections()
-        .find(|s| s.kind == hexcavator_elf::consts::SHT_HASH)
+        .find(|s| s.kind == turbonop_elf::consts::SHT_HASH)
         .unwrap();
     let recs = structural(&image);
     let h = recs.iter().find(|r| r.advice.contains("--hash-style=gnu"));

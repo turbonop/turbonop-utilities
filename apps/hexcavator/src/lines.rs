@@ -1,4 +1,4 @@
-//! `hexc inlines` and `hexc sourcefiles`: an image's code by the
+//! `hexcavator inlines` and `hexcavator sourcefiles`: an image's code by the
 //! functions inlined into it, and by the source files (and lines) it came
 //! from, from its debug information (a PDB, or DWARF).
 
@@ -7,12 +7,12 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::{DebugInfo, InlineSite, SourceLines, exclusive_sizes};
-use hexcavator_size::symbols::{Symbol, SymbolKind};
 use serde_json::{Value, json};
+use turbonop_debuginfo::{DebugInfo, InlineSite, SourceLines, exclusive_sizes_by_index};
+use turbonop_size::symbols::{Symbol, SymbolKind};
 
 pub const INLINES_USAGE: &str = "\
-usage: hexc inlines [options] <image>
+usage: hexcavator inlines [options] <image>
 
 The functions inlined into an image's code (from its PDB or DWARF), by the bytes
 their inlined copies take: each with how many copies there are and how
@@ -21,7 +21,7 @@ functions inlined into it, and a function folded with others (identical
 code folding) counts once.
 
 options:
-  -pdb <path>       its debug information: a PDB, or a file with its DWARF
+  -debug <path>     its debug information: a PDB, or a file with its DWARF
                     (or -debug; default: its own, or the one it names)
   -inlinee <name>   one inlined function's copies, by the function each is in
                     (its name, or a regular expression that matches just one)
@@ -29,14 +29,14 @@ options:
   -json             as JSON";
 
 pub const SOURCEFILES_USAGE: &str = "\
-usage: hexc sourcefiles [options] <image>
+usage: hexcavator sourcefiles [options] <image>
 
 An image's code by the source files it came from (from its debug
 information's line tables: a PDB's, or DWARF's): headers too, for the functions defined in them that weren't
 inlined (inlined code counts where it was inlined).
 
 options:
-  -pdb <path>     its debug information: a PDB, or a file with its DWARF
+  -debug <path>   its debug information: a PDB, or a file with its DWARF
                   (or -debug; default: its own, or the one it names)
   -file <name>    one file's code, by line (its path, or a regular expression
                   that matches just one)
@@ -101,14 +101,14 @@ fn run(
     let o = match parse(args, one) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc {command}: {e}\n\n{usage}");
+            ereport!("hexcavator {command}: {e}\n\n{usage}");
             return ExitCode::from(2);
         }
     };
     match f(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc {command}: {e}");
+            ereport!("hexcavator {command}: {e}");
             ExitCode::FAILURE
         }
     }
@@ -130,7 +130,7 @@ fn with_debug<R>(
     with_symbols: bool,
     f: impl FnOnce(&DebugInfo<'_>, &[Symbol]) -> Result<R, String>,
 ) -> Result<R, String> {
-    let opened = hexcavator_program::Opened::open(path, pdb)?;
+    let opened = turbonop_program::Opened::open(path, pdb)?;
     let program = opened.program()?;
     let syms = if with_symbols {
         program.symbols()?
@@ -181,27 +181,45 @@ struct Inlinee<'a> {
     functions: usize,
 }
 
-fn by_inlinee<'a>(sites: &[(InlineSite, u64)], names: &'a [String]) -> Vec<Inlinee<'a>> {
-    let mut map: HashMap<&str, (u64, usize, Vec<u64>)> = HashMap::new();
-    for (s, own) in sites {
-        let e = map.entry(names[s.inlinee as usize].as_str()).or_default();
-        e.0 += own;
-        e.1 += 1;
-        e.2.push(s.function);
-    }
-    let mut out: Vec<Inlinee<'_>> = map
-        .into_iter()
-        .map(|(name, (bytes, sites, mut fns))| {
-            fns.sort_unstable();
-            fns.dedup();
-            Inlinee {
-                name,
-                bytes,
-                sites,
-                functions: fns.len(),
-            }
+fn by_inlinee<'a>(sites: &[(&InlineSite, u64)], names: &'a [String]) -> Vec<Inlinee<'a>> {
+    // Inlinees by name (DWARF's are by their origins, several to a name:
+    // one's from each compile unit): each index as its name's first.
+    let mut first: HashMap<&str, u32> = HashMap::new();
+    let canonical: Vec<u32> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            *first
+                .entry(n.as_str())
+                .or_insert(u32::try_from(i).unwrap_or(u32::MAX))
         })
         .collect();
+    let canon = |i: u32| canonical.get(i as usize).copied().unwrap_or(i);
+    // The sites by inlinee and function, sorted on every core, then
+    // counted.
+    let mut keyed: Vec<(u32, u64, u64)> = sites
+        .iter()
+        .map(|(s, own)| (canon(s.inlinee), s.function, *own))
+        .collect();
+    turbonop_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
+    let mut out: Vec<Inlinee<'_>> = Vec::new();
+    for (k, &(inlinee, function, own)) in keyed.iter().enumerate() {
+        let new_function = k == 0 || keyed[k - 1].0 != inlinee || keyed[k - 1].1 != function;
+        let same = k > 0 && keyed[k - 1].0 == inlinee;
+        if !same {
+            out.push(Inlinee {
+                name: names.get(inlinee as usize).map_or("", String::as_str),
+                bytes: 0,
+                sites: 0,
+                functions: 0,
+            });
+        }
+        if let Some(e) = out.last_mut() {
+            e.bytes += own;
+            e.sites += 1;
+            e.functions += usize::from(new_function);
+        }
+    }
     out.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.name.cmp(b.name)));
     out
 }
@@ -226,7 +244,13 @@ fn inlines(o: &Options) -> Result<String, String> {
         |debug, syms| {
             let found = debug.inline_sites().map_err(|e| e.to_string())?;
             let names = found.inlinees;
-            let sites = exclusive_sizes(found.sites);
+            let own = exclusive_sizes_by_index(&found.sites);
+            let sites: Vec<(&InlineSite, u64)> = found
+                .sites
+                .iter()
+                .zip(own)
+                .filter_map(|(s, own)| Some((s, own?)))
+                .collect();
             let all = by_inlinee(&sites, &names);
             let take = |len: usize| if o.rows == 0 { len } else { o.rows.min(len) };
             if let Some(name) = &o.one {
@@ -432,7 +456,7 @@ fn sourcefiles(o: &Options) -> Result<String, String> {
 }
 
 pub const ANNOTATIONS_USAGE: &str = "\
-usage: hexc annotations [options] <image>
+usage: hexcavator annotations [options] <image>
 
 The annotations in a PE image's PDB: strings its code attached to an
 address (MSVC's __annotation intrinsic), with the source file and line
@@ -440,7 +464,7 @@ there, and whether they are in an inlined copy of a function (or annotate
 a call to one). They take no space in the image.
 
 options:
-  -pdb <path>   its debug information: a PDB, or a file with its DWARF
+  -debug <path> its debug information: a PDB, or a file with its DWARF
                 (or -debug; default: its own, or the one it names)
   -json         as JSON";
 

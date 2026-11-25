@@ -1,0 +1,135 @@
+name: hexcavator winget
+
+# hexcavator to the Windows Package Manager: when a release is published
+# (the draft hexcavator-release.yml made; other tools' releases are
+# left alone), its manifests (a portable
+# package: the two signed programs as they are, x64 and ARM64, run as
+# `hexcavator`) are written from the release's assets and sent to
+# microsoft/winget-pkgs as a pull request, which winget's maintainers'
+# checks then validate and merge. Run by hand, it writes the manifests of
+# the tag given and validates them, sending nothing unless asked.
+#
+# Secret: WINGET_TOKEN, a GitHub token of the account that opens the pull
+# request (a classic token with public_repo; wingetcreate forks
+# winget-pkgs to that account the first time).
+
+on:
+  release:
+    types: [released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release's tag (hexcavator-v0.0.8, say)
+        required: true
+      submit:
+        description: Send the pull request
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  ID: TurboNOP.Hexcavator
+
+jobs:
+  winget:
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'hexcavator-v')
+    runs-on: windows-latest
+    steps:
+      - name: Manifests
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          version=${TAG#hexcavator-v}
+          url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS
+          sha() { awk -v f="$1" '$2 == f || $2 == "*" f {print toupper($1)}' SHA256SUMS; }
+          x64=$(sha hexcavator-x86_64-pc-windows-msvc.exe)
+          arm64=$(sha hexcavator-aarch64-pc-windows-msvc.exe)
+          if [[ -z "$x64" || -z "$arm64" ]]; then
+            echo "::error::$TAG's SHA256SUMS has no Windows programs"
+            exit 1
+          fi
+          date=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt -q '.publishedAt[0:10]')
+          dir="manifests/$version"
+          mkdir -p "$dir"
+          cat > "$dir/$ID.yaml" <<EOF
+          PackageIdentifier: $ID
+          PackageVersion: $version
+          DefaultLocale: en-US
+          ManifestType: version
+          ManifestVersion: 1.10.0
+          EOF
+          cat > "$dir/$ID.installer.yaml" <<EOF
+          PackageIdentifier: $ID
+          PackageVersion: $version
+          InstallerType: portable
+          Commands:
+            - hexcavator
+          ReleaseDate: $date
+          Installers:
+            - Architecture: x64
+              InstallerUrl: $url/hexcavator-x86_64-pc-windows-msvc.exe
+              InstallerSha256: $x64
+            - Architecture: arm64
+              InstallerUrl: $url/hexcavator-aarch64-pc-windows-msvc.exe
+              InstallerSha256: $arm64
+          ManifestType: installer
+          ManifestVersion: 1.10.0
+          EOF
+          cat > "$dir/$ID.locale.en-US.yaml" <<EOF
+          PackageIdentifier: $ID
+          PackageVersion: $version
+          PackageLocale: en-US
+          Publisher: TurboNOP Systems
+          PublisherUrl: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY
+          PackageName: Hexcavator
+          PackageUrl: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY
+          License: Apache-2.0
+          LicenseUrl: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$TAG/LICENSE
+          ShortDescription: Explore executables, objects, and libraries and their debug information (PE, ELF, Mach-O, WebAssembly; PDB, DWARF).
+          Description: >-
+            hexcavator reads any executable, object, or library (PE, ELF, Mach-O,
+            WebAssembly) with its debug information (PDB, DWARF): its headers,
+            symbols, types, sources, data, and disassembly; why each function
+            and datum is there and what refers to it; and where its bytes go, with
+            measured recommendations to make it smaller. It also serves all of
+            this to editors and AI agents.
+          Moniker: hexcavator
+          Tags:
+            - binary
+            - disassembler
+            - pdb
+            - dwarf
+            - pe
+            - elf
+            - mach-o
+            - webassembly
+            - binary-size
+          ReleaseNotesUrl: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG
+          ManifestType: defaultLocale
+          ManifestVersion: 1.10.0
+          EOF
+          cat "$dir"/*.yaml
+          echo "DIR=$dir" >> "$GITHUB_ENV"
+      - name: Validate
+        # (wingetcreate validates them too, before it submits; winget
+        # itself isn't on every runner image.)
+        run: |
+          if (Get-Command winget -ErrorAction SilentlyContinue) {
+            winget validate --manifest "$env:DIR"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            Write-Output "::warning::no winget here to validate with"
+          }
+      - name: Submit
+        if: github.event_name == 'release' || inputs.submit
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe submit --token $env:WINGET_TOKEN --prtitle "New version: $env:ID $(Split-Path $env:DIR -Leaf)" $env:DIR
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

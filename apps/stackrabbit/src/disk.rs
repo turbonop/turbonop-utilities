@@ -14,10 +14,10 @@
 
 use std::path::Path;
 
-use hexcavator_etw::guids;
-use hexcavator_etw::schema::Properties;
-use hexcavator_trace::{ProcessIx, ThreadIx, Trace};
 use rustc_hash::FxHashMap;
+use turbonop_etw::guids;
+use turbonop_etw::schema::Properties;
+use turbonop_trace::{ProcessIx, ThreadIx, Trace};
 
 use crate::reading::int;
 use serde_json::{Value, json};
@@ -99,7 +99,7 @@ enum Read {
 /// The disk I/Os of `trace` (read from `path`): its DiskIo and FileIo name
 /// events, from the buffers holding them, on every core.
 pub fn table(trace: &Trace, path: &Path) -> Result<DiskTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, opcode: u8| {
+    let wanted = |provider: &turbonop_etl::Guid, opcode: u8| {
         (*provider == guids::DISK_IO && matches!(opcode, 10 | 11 | 14))
             || (*provider == guids::FILE_IO && matches!(opcode, 0 | 32 | 35 | 36 | 64))
     };
@@ -118,7 +118,7 @@ pub fn table(trace: &Trace, path: &Path) -> Result<DiskTable, String> {
                 .get("FileName")
                 .or_else(|| p.get("OpenPath"))
                 .map_or_else(String::new, |n| {
-                    hexcavator_etw::values::format(n, hexcavator_etw::schema::pointer_size(e))
+                    turbonop_etw::values::format(n, turbonop_etw::schema::pointer_size(e))
                 });
             mine.push(Read::Name {
                 time: e.timestamp,

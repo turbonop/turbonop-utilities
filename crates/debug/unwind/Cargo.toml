@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-unwind"
+name = "turbonop-unwind"
 description = "Virtual stack unwinders: recover a caller's registers from a frame's registers, its stack, and the image's unwind data"
 version.workspace = true
 edition.workspace = true
@@ -8,23 +8,25 @@ license = "Apache-2.0 AND Apache-2.0 WITH LLVM-exception"
 authors.workspace = true
 repository.workspace = true
 
-# (No unit tests: their build of the crate would be wasted. The hexcavator
+# (No unit tests: their build of the crate would be wasted. The workspace's
 # tests check that a target marked so has none.)
 [lib]
 test = false
 
 [dependencies]
-hexcavator-core.workspace = true
-hexcavator-dwarf.workspace = true
-hexcavator-pe.workspace = true
+turbonop-core.workspace = true
+turbonop-dwarf.workspace = true
+turbonop-elf.workspace = true
+turbonop-image.workspace = true
+turbonop-macho.workspace = true
+turbonop-pe.workspace = true
 
 [lints]
 workspace = true
 
 [dev-dependencies]
-hexcavator-codeview.workspace = true
-hexcavator-x86.workspace = true
-hexcavator-arm64.workspace = true
-hexcavator-arm32.workspace = true
-hexcavator-pdb.workspace = true
-hexcavator-elf.workspace = true
+turbonop-codeview.workspace = true
+turbonop-x86.workspace = true
+turbonop-arm64.workspace = true
+turbonop-arm32.workspace = true
+turbonop-pdb.workspace = true

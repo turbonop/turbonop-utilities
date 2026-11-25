@@ -7,13 +7,13 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use hexcavator_etl::event::Event;
-use hexcavator_etl::{Buffer, Etl, Guid, merge::for_each_event};
-use hexcavator_etw::schema::Property;
-use hexcavator_mmap::Mmap;
-use hexcavator_trace::{ProcessIx, ThreadIx, Trace};
-pub use hexcavator_trace_analysis::wpa_query::{Cell, Query};
 use rustc_hash::FxHashMap;
+use turbonop_etl::event::Event;
+use turbonop_etl::{Buffer, Etl, Guid, merge::for_each_event};
+use turbonop_etw::schema::Property;
+use turbonop_mmap::Mmap;
+use turbonop_trace::{ProcessIx, ThreadIx, Trace};
+pub use turbonop_trace_analysis::wpa_query::{Cell, Query};
 
 /// Buffers a worker reads at a time.
 const CHUNK: usize = 32;

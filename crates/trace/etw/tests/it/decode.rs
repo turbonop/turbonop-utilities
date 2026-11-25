@@ -1,14 +1,14 @@
 //! Hermetic tests of the decoders, the schemas and the stack matcher, on
-//! events built with `hexcavator_etl::write`.
+//! events built with `turbonop_etl::write`.
 
 #![allow(clippy::cast_possible_truncation, clippy::type_complexity)]
 
-use hexcavator_etl::write::{self, Classic, Kernel, Writer, WriterOptions};
-use hexcavator_etl::{Etl, Guid, classic};
-use hexcavator_etw::guids;
-use hexcavator_etw::kernel::{KernelEvent, Lifetime, decode};
-use hexcavator_etw::schema::{Field, Properties, lookup};
-use hexcavator_etw::stacks::StackMatcher;
+use turbonop_etl::write::{self, Classic, Kernel, Writer, WriterOptions};
+use turbonop_etl::{Etl, Guid, classic};
+use turbonop_etw::guids;
+use turbonop_etw::kernel::{KernelEvent, Lifetime, decode};
+use turbonop_etw::schema::{Field, Properties, lookup};
+use turbonop_etw::stacks::StackMatcher;
 
 /// Payload builder.
 #[derive(Default)]

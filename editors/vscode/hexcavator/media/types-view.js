@@ -1,8 +1,8 @@
 // The Types page: every class, structure, and union of a binary (from its
 // PDB or DWARF), with its size; sorted by name at first (or by any column),
 // filtered as you type (a substring of the name or mangled name, or a
-// regular expression). hexc keeps the types; the page asks it for the rows
-// in view (hexc types -json -from -n, with the filter and the order), so a
+// regular expression). hexcavator keeps the types; the page asks it for the rows
+// in view (hexcavator types -json -from -n, with the filter and the order), so a
 // program with hundreds of thousands of types scrolls and filters at once.
 // A row's context menu (or a double click) shows its layout or what refers
 // to it.
@@ -23,7 +23,7 @@
     regex: false,
     showMangled: false,
     sort: { key: "name", desc: false },
-    // What hexc said: how many types, and how many the filter leaves.
+    // What hexcavator said: how many types, and how many the filter leaves.
     types: 0,
     waste: 0,
     matched: null,
@@ -85,7 +85,7 @@
     renderTable();
   }
 
-  /** Asks hexc for the page holding row `at`, unless it has. */
+  /** Asks hexcavator for the page holding row `at`, unless it has. */
   function ask(at) {
     const from = Math.floor(at / PAGE) * PAGE;
     if (state.asked.has(from)) {
@@ -143,7 +143,7 @@
         el("span", { class: "chip" }, el("b", {}, "Types "), state.types.toLocaleString()),
         el("span", { class: "chip", title: "Bytes their padding wastes, per instance" }, el("b", {}, "Padding "), formatSize(state.waste))
       ),
-      el("div", { class: "actions" }, vscode ? el("button", { class: "icon", title: "Run hexc again", onclick: () => post({ command: "refresh" }) }, "⟳") : null)
+      el("div", { class: "actions" }, vscode ? el("button", { class: "icon", title: "Run hexcavator again", onclick: () => post({ command: "refresh" }) }, "⟳") : null)
     );
   }
 
@@ -250,7 +250,7 @@
     paint();
   }
 
-  /** Draws the rows in view (those hexc has sent; asks for the others). */
+  /** Draws the rows in view (those hexcavator has sent; asks for the others). */
   function paint() {
     const wrap = $("main").querySelector(".treewrap");
     const tbody = wrap && wrap.querySelector("tbody");
@@ -327,12 +327,12 @@
     }
     if (m.kind === "failed") {
       if (m.generation === undefined || m.generation === state.generation) {
-        state.error = m.message || "hexc failed";
+        state.error = m.message || "hexcavator failed";
         state.matched = state.matched ?? 0;
         if (state.file) {
           renderTable();
         } else {
-          $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexc failed")), el("div", { class: "path" }, m.message || ""));
+          $("header").replaceChildren(el("div", { class: "title" }, el("span", { class: "name" }, "hexcavator failed")), el("div", { class: "path" }, m.message || ""));
         }
       }
       return;

@@ -1,16 +1,16 @@
-//! `hexc xref`: what refers to what in an image, and why each function and
+//! `hexcavator xref`: what refers to what in an image, and why each function and
 //! datum is in it.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_size::fingerprint::Fingerprints;
-use hexcavator_size::xref::{Kept, Xref};
 use serde_json::{Value, json};
+use turbonop_size::fingerprint::Fingerprints;
+use turbonop_size::xref::{Kept, Xref};
 
 pub const USAGE: &str = "\
-usage: hexc xref [options] <image> [-- <base image>]
+usage: hexcavator xref [options] <image> [-- <base image>]
 
 What each function and datum of an image (PE, ELF, Mach-O, WebAssembly)
 refers to (calls, branches, addresses its code uses, pointers in data,
@@ -21,7 +21,7 @@ initializer). Without -why, -refs, -unreachable, -vtables, -identical, or
 a base image: a summary.
 
 options:
-  -pdb <path>      its debug information: a PDB, or a file with its DWARF
+  -debug <path>    its debug information: a PDB, or a file with its DWARF
                    (or -debug; default: its own, or the one it names)
   -why <name>      the chain from a root to the function or datum, or that
                    none reaches it
@@ -35,7 +35,7 @@ options:
   -- <base image>  the functions compared with a base build's: by name the
                    same or changed, then by fingerprint renamed (the same
                    code, another name), and the rest added or removed
-  -base-pdb <path> the base image's PDB
+  -base-debug <path>  the base image's debug information (or -base-pdb)
   -n <n>           rows to list (default 20; 0: all)
   -json            as JSON
 names are as the PDB gives them (`Square::area() const`), or without the
@@ -91,7 +91,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             Some("unreachable") => o.unreachable = true,
             Some("vtables") => o.vtables = true,
             Some("identical") => o.identical = true,
-            Some("base-pdb") => o.base_pdb = Some(value("base-pdb")?.into()),
+            Some("base-pdb" | "base-debug") => o.base_pdb = Some(value("base-debug")?.into()),
             Some("n") => {
                 o.rows = value("n")?
                     .parse()
@@ -117,14 +117,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc xref: {e}\n\n{USAGE}");
+            ereport!("hexcavator xref: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match report(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc xref: {e}");
+            ereport!("hexcavator xref: {e}");
             ExitCode::FAILURE
         }
     }
@@ -135,18 +135,18 @@ pub fn run(args: &[String]) -> ExitCode {
 fn build(
     path: &Path,
     pdb: Option<&Path>,
-    mode: Option<hexcavator_size::fingerprint::Mode>,
+    mode: Option<turbonop_size::fingerprint::Mode>,
 ) -> Result<(Xref, Fingerprints), String> {
     let show = |p: &Path| p.display().to_string();
-    let opened = hexcavator_program::Opened::open(path, pdb)?;
+    let opened = turbonop_program::Opened::open(path, pdb)?;
     let program = opened.program()?;
     let (image, debug) = (&program.image, &program.debug);
     let model = program.model()?;
     let syms = program.symbols()?;
-    let x = hexcavator_size::xref::build(image, debug, model, syms)
+    let x = turbonop_size::xref::build(image, debug, model, syms)
         .map_err(|e| format!("{}: {e}", show(path)))?;
     let classes = match mode {
-        Some(mode) => hexcavator_size::fingerprint::build(image, model, &x, mode),
+        Some(mode) => turbonop_size::fingerprint::build(image, model, &x, mode),
         None => Fingerprints {
             items: Vec::new(),
             classes: Vec::new(),
@@ -163,7 +163,7 @@ pub(crate) fn lookup(x: &Xref, name: &str) -> Result<u32, String> {
     if let Some(&n) = found.first() {
         return Ok(n);
     }
-    let mut alone = hexcavator_size::disasm::ByNameAlone::new(name);
+    let mut alone = turbonop_size::disasm::ByNameAlone::new(name);
     for i in x.ids() {
         alone.offer(
             x.graph.nodes()[i as usize].start,
@@ -177,7 +177,7 @@ pub(crate) fn lookup(x: &Xref, name: &str) -> Result<u32, String> {
 }
 
 fn report(o: &Options) -> Result<String, String> {
-    use hexcavator_size::fingerprint::Mode;
+    use turbonop_size::fingerprint::Mode;
     let mode = if o.base.is_some() {
         Some(Mode::Same)
     } else if o.identical {
@@ -257,7 +257,7 @@ fn report(o: &Options) -> Result<String, String> {
 
 /// Groups of identical functions the linker didn't fold.
 fn identical(x: &Xref, classes: &[u64], rows: usize, json: bool) -> String {
-    let groups = hexcavator_size::fingerprint::identical(x, classes);
+    let groups = turbonop_size::fingerprint::identical(x, classes);
     let saving: u64 = groups.iter().map(|g| g.1).sum();
     let shown = if rows == 0 {
         groups.len()
@@ -305,7 +305,7 @@ fn compare(
     rows: usize,
     json: bool,
 ) -> String {
-    let d = hexcavator_size::fingerprint::compare(old, old_fp, new, new_fp);
+    let d = turbonop_size::fingerprint::compare(old, old_fp, new, new_fp);
     let (same, changed, renamed, added, removed) =
         (d.unchanged, d.changed, d.renamed, d.added, d.removed);
     let take = |len: usize| if rows == 0 { len } else { rows.min(len) };
@@ -465,8 +465,8 @@ fn object_name(x: &Xref, n: u32) -> Option<&str> {
 
 /// Why the linker kept `n`, briefly: what its section was, and its object.
 fn kept_short(x: &Xref, n: u32) -> String {
-    let elf = x.linker == hexcavator_size::xref::Linker::Elf;
-    let macho = x.linker == hexcavator_size::xref::Linker::MachO;
+    let elf = x.linker == turbonop_size::xref::Linker::Elf;
+    let macho = x.linker == turbonop_size::xref::Linker::MachO;
     let what = match x.kept(n) {
         Kept::Comdat if macho => "maybe its own atom".to_string(),
         Kept::WithSection { .. } if elf => "not alone in its section".to_string(),
@@ -485,7 +485,7 @@ fn kept_short(x: &Xref, n: u32) -> String {
 /// Why the linker kept `n`, in a sentence.
 fn kept_long(x: &Xref, n: u32) -> String {
     let obj = object_name(x, n).map_or_else(String::new, |o| format!(" of {o}"));
-    if x.linker == hexcavator_size::xref::Linker::MachO {
+    if x.linker == turbonop_size::xref::Linker::MachO {
         return match x.kept(n) {
             Kept::ReferencedBy(by) => format!(
                 "the linker kept it because {} refers to it (directly or not), which the linker kept",
@@ -497,7 +497,7 @@ fn kept_long(x: &Xref, n: u32) -> String {
             ),
         };
     }
-    if x.linker == hexcavator_size::xref::Linker::Elf {
+    if x.linker == turbonop_size::xref::Linker::Elf {
         return match x.kept(n) {
             Kept::WithSection { code } => format!(
                 "the linker kept it with its section{obj}, which has something used in it (compile with {} to let --gc-sections drop it alone)",
@@ -569,14 +569,14 @@ fn summary_text(x: &Xref, unreached: &[u32]) -> String {
         total,
     );
     let k = kept_totals(x, unreached);
-    let (code, data, comdat, unknown) = if x.linker == hexcavator_size::xref::Linker::MachO {
+    let (code, data, comdat, unknown) = if x.linker == turbonop_size::xref::Linker::MachO {
         (
             "code kept with other code",
             "data kept with other data",
             "maybe unreferenced atoms (no -dead_strip, exports, or references not seen)",
             "in no compile unit",
         )
-    } else if x.linker == hexcavator_size::xref::Linker::Elf {
+    } else if x.linker == turbonop_size::xref::Linker::Elf {
         (
             "code in sections with other code (compile with -ffunction-sections)",
             "data in sections with other data (compile with -fdata-sections)",
@@ -742,7 +742,7 @@ fn refs_text(x: &Xref, n: u32) -> String {
 fn refs_json(x: &Xref, n: u32) -> Value {
     let mut v = node_json(x, n);
     v["reached"] = Value::from(x.reach.is_reached(n));
-    let list = |edges: &[(u32, hexcavator_xref::Edge)]| -> Value {
+    let list = |edges: &[(u32, turbonop_xref::Edge)]| -> Value {
         edges
             .iter()
             .map(|&(m, e)| json!({"edge": e.verb(), "name": x.names[m as usize]}))

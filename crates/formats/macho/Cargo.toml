@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-macho"
+name = "turbonop-macho"
 description = "Mach-O files (thin and universal; 32- and 64-bit, either byte order): load commands, segments, sections, symbols, link-edit tables"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
 
 [lints]
 workspace = true

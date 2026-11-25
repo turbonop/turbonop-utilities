@@ -3,7 +3,7 @@
 //! descriptions) or by the kernel schemas' field types. An array's values
 //! are listed in brackets.
 
-use hexcavator_etl::Guid;
+use turbonop_etl::Guid;
 
 use crate::schema::{Field, Property};
 

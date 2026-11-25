@@ -1,0 +1,74 @@
+
+program-mips-micromips-linux-gnu:	file format elf32-mips
+
+Disassembly of section .text:
+
+00020200 <compute>:
+   20200:      	blez	$4, 0x20262 <.L0 +0x54>
+   20204:      	li16	$2, 0x0
+   20206:      	j	0x2020e <.L0 >
+   2020a:      	nop
+
+0002020e <.L0 >:
+   2020e:      	addiu	$sp, $sp, -0x8
+   20212:      	swp	$16, 0x0($sp)
+   20216:      	lui	$1, 0x4
+   2021a:      	lw	$2, 0x12d0($1)
+   2021e:      	li16	$3, 0x3
+   20220:      	subu16	$3, $3, $2
+   20222:      	lui	$1, 0x1
+   20226:      	addiu	$7, $1, 0x1ec
+   2022a:      	li16	$5, 0x0
+   2022c:      	lui	$1, 0x8888
+   20230:      	ori	$8, $1, 0x8889
+   20234:      	li16	$16, 0x0
+   20236:      	move	$17, $7
+   20238:      	multu	$5, $8
+   2023c:      	mfhi16	$7
+   2023e:      	srl16	$7, $7, 0x3
+   20240:      	sll16	$6, $7, 0x4
+   20242:      	subu16	$6, $7, $6
+   20244:      	addius5	$3, -0x3
+   20246:      	addiur2	$7, $17, 0x1
+   20248:      	addiur2	$5, $5, 0x1
+   2024a:      	addu16	$6, $17, $6
+   2024c:      	lb	$6, 0x0($6)
+   20250:      	addu16	$17, $16, $6
+   20252:      	addu16	$16, $2, $17
+   20254:      	bne	$5, $4, 0x20236 <.L0 +0x28>
+   20258:      	addius5	$2, 0x3
+   2025a:      	subu16	$2, $17, $3
+   2025c:      	lwp	$16, 0x0($sp)
+   20260:      	addiusp	0x8
+   20262:      	jrc	$ra
+
+00020264 <optional_hook>:
+   20264:      	li16	$2, 0x0
+   20266:      	jrc	$ra
+
+00020268 <_start>:
+   20268:      	addiusp	-0x18
+   2026a:      	sw	$ra, 0x14($sp)
+   2026c:      	sw	$16, 0x10($sp)
+   2026e:      	lui	$1, 0x4
+   20272:      	jal	0x20200 <compute>
+   20276:      	lw	$4, 0x2b0($1)
+
+0002027a <.L0 >:
+   2027a:      	lui	$1, 0x4
+   2027e:      	sb	$2, 0x2d0($1)
+   20282:      	lui	$1, 0x0
+   20286:      	addiu	$2, $1, -0x7000
+   2028a:      	rdhwr	$3, $29, 0x0
+   2028e:      	jals	0x20264 <optional_hook>
+   20292:      	addu16	$16, $3, $2
+
+00020294 <.L0 >:
+   20294:      	lui	$1, 0x4
+   20298:      	lw16	$3, 0x0($16)
+   2029a:      	addu16	$2, $3, $2
+   2029c:      	sw	$2, 0x12d0($1)
+
+000202a0 <.L0 >:
+   202a0:      	j	0x202a0 <.L0 >
+   202a4:      	nop

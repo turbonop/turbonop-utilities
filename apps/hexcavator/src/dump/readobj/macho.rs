@@ -1,10 +1,11 @@
 //! A Mach-O file, as llvm-readobj shows it (`--file-headers`,
 //! `--sections`, `--relocations`, `--symbols`, `--macho-segment`,
 //! `--macho-version-min`, `--macho-dysymtab`, `--needed-libs`), following
-//! LLVM's MachODumper.
+//! LLVM's MachODumper; and its fixups as llvm-objdump lists them
+//! (`--dyld-info`).
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::consts::*;
+use turbonop_macho::MachO;
+use turbonop_macho::consts::*;
 
 use super::{Parts, Printer};
 
@@ -77,6 +78,131 @@ fn one(out: &mut String, file_name: &str, m: &MachO<'_>, parts: &Parts) {
     if parts.macho_dysymtab {
         dysymtab(&mut p, m);
     }
+    if parts.dyld_info {
+        dyld_info(&mut p, m);
+    }
+}
+
+/// The fixups (rebases and binds), as llvm-objdump's `--macho
+/// --dyld-info` lists them, column for column: each pointer as the file
+/// holds it, and what it becomes; on arm64e, how each authenticated
+/// pointer is signed (its diversity, whether its address is blended in,
+/// and its key). (llvm-objdump lists only chained fixups; the older
+/// opcodes' are listed so too.)
+fn dyld_info(p: &mut Printer<'_>, m: &MachO<'_>) {
+    use turbonop_macho::FixupKind;
+    use turbonop_macho::fixups::{DYLD_CHAINED_PTR_ARM64E, DYLD_CHAINED_PTR_ARM64E_USERLAND24};
+    let fixups = m.fixups();
+    let segments = m.segments();
+    let sections = m.sections();
+    let dylibs = m.dylibs();
+    let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    // (LLVM's HexLength: digits of the floor of the logarithm, rounded
+    // up; 1 has none.)
+    let hex_length = |n: u64| {
+        if n == 0 {
+            1
+        } else {
+            (63 - n.leading_zeros() as usize).div_ceil(4)
+        }
+    };
+    let places = |addr: u64| {
+        let segment = segments
+            .iter()
+            .find(|s| addr >= s.vmaddr && addr - s.vmaddr < s.vmsize)
+            .map_or_else(String::new, |s| text(s.name));
+        let section = sections
+            .iter()
+            .find(|s| addr >= s.addr && addr - s.addr < s.size)
+            .map_or_else(String::new, |s| text(s.sectname));
+        (segment, section)
+    };
+    let ordinal = |o: i32| -> String {
+        match o {
+            0 => "this-image".into(),
+            -1 => "main-executable".into(),
+            -2 => "flat-namespace".into(),
+            -3 => "weak".into(),
+            o if o > 0 => dylibs.get(o as usize - 1).map_or_else(
+                || "<<bad library ordinal>>".into(),
+                |d| text(d.short_name()),
+            ),
+            _ => "<<unknown special ordinal>>".into(),
+        }
+    };
+    let rows: Vec<_> = fixups.iter().map(|f| (f, places(f.addr))).collect();
+    let (mut seg_w, mut sect_w, mut addr_w, mut addend_w, mut dylib_w) = (7, 7, 7, 6, 5);
+    let mut auth_columns = false;
+    for (f, (segment, section)) in &rows {
+        seg_w = seg_w.max(segment.len());
+        sect_w = sect_w.max(section.len());
+        addr_w = addr_w.max(hex_length(f.addr) + 2);
+        if let FixupKind::Bind { symbol, addend, .. } = f.kind {
+            addend_w = addend_w.max(hex_length(addend as u64) + 2);
+            // (As llvm-objdump does: the symbol's length, not the
+            // library's.)
+            dylib_w = dylib_w.max(symbol.len());
+        }
+        auth_columns |= matches!(
+            f.format,
+            DYLD_CHAINED_PTR_ARM64E | DYLD_CHAINED_PTR_ARM64E_USERLAND24
+        );
+    }
+    let pointer_w = if m.header().is64 { 18 } else { 10 };
+    p.raw("dyld information:");
+    p.raw(format!(
+        "{:seg_w$} {:sect_w$} {:addr_w$} {:pointer_w$} type   {}{:addend_w$} {:dylib_w$} symbol/vm address",
+        "segment",
+        "section",
+        "address",
+        "pointer",
+        if auth_columns { "div    addr  key " } else { "" },
+        "addend",
+        "dylib",
+    ));
+    for (f, (segment, section)) in &rows {
+        let mut line = format!(
+            "{segment:seg_w$} {section:sect_w$} 0x{:aw$} 0x{:0pw$X} ",
+            format!("{:X}", f.addr),
+            f.value,
+            aw = addr_w - 2,
+            pw = pointer_w - 2,
+        );
+        let bind = matches!(f.kind, FixupKind::Bind { .. });
+        line.push_str(if bind { "bind   " } else { "rebase " });
+        match f.auth {
+            Some(a) if auth_columns => line.push_str(&format!(
+                "0x{:04X} {:5} {:3} ",
+                a.diversity,
+                if a.address { "true" } else { "false" },
+                a.key.name()
+            )),
+            _ if auth_columns => line.push_str(&" ".repeat(17)),
+            _ => {}
+        }
+        match f.kind {
+            FixupKind::Bind {
+                symbol,
+                library,
+                addend,
+                weak,
+            } => {
+                line.push_str(&format!(
+                    "0x{:ad$} {:dylib_w$} {}{}",
+                    format!("{:X}", addend as u64),
+                    ordinal(library),
+                    text(symbol),
+                    if weak { " (weak import)" } else { "" },
+                    ad = addend_w - 2,
+                ));
+            }
+            FixupKind::Rebase { target } => {
+                line.push_str(&" ".repeat(addend_w + dylib_w + 1));
+                line.push_str(&format!("0x{target:X}"));
+            }
+        }
+        p.raw(line);
+    }
 }
 
 fn header(p: &mut Printer<'_>, m: &MachO<'_>) {
@@ -94,7 +220,7 @@ fn header(p: &mut Printer<'_>, m: &MachO<'_>) {
     };
     p.open("MachHeader {");
     // (llvm-readobj shows the magic as the host reads it: little-endian.)
-    let shown = if h.endian == hexcavator_core::Endian::Big {
+    let shown = if h.endian == turbonop_core::Endian::Big {
         magic.swap_bytes()
     } else {
         magic
@@ -303,16 +429,6 @@ fn sections(p: &mut Printer<'_>, m: &MachO<'_>) {
 fn relocations(p: &mut Printer<'_>, m: &MachO<'_>) {
     let syms = m.symbols();
     let sections = m.sections();
-    let data = m.data();
-    let big = m.header().endian == hexcavator_core::Endian::Big;
-    let word = |at: usize| -> Option<u32> {
-        let b: [u8; 4] = data.get(at..at + 4)?.try_into().ok()?;
-        Some(if big {
-            u32::from_be_bytes(b)
-        } else {
-            u32::from_le_bytes(b)
-        })
-    };
     p.open("Relocations [");
     for s in &sections {
         if s.nreloc == 0 {
@@ -322,42 +438,33 @@ fn relocations(p: &mut Printer<'_>, m: &MachO<'_>) {
             "Section {} {{",
             String::from_utf8_lossy(s.sectname)
         ));
-        for i in 0..s.nreloc.min(1 << 20) as usize {
-            let at = s.reloff as usize + i * 8;
-            let (Some(a), Some(b)) = (word(at), word(at + 4)) else {
-                break;
-            };
-            if a & 0x8000_0000 != 0 {
-                // Scattered.
-                let pcrel = (a >> 30) & 1;
-                let len = (a >> 28) & 3;
-                let kind = (a >> 24) & 0xF;
-                let offset = a & 0x00FF_FFFF;
+        for r in m.relocations(s) {
+            let kind = reloc_type(m.header().cputype, u32::from(r.kind));
+            let (pcrel, len) = (u8::from(r.pcrel), r.length);
+            if let Some(value) = r.value {
                 p.raw(format_args!(
-                    "0x{offset:X} {pcrel} {len} n/a {} 1 0x{b:X}",
-                    reloc_type(m.header().cputype, kind)
+                    "0x{:X} {pcrel} {len} n/a {kind} 1 0x{value:X}",
+                    r.address
                 ));
                 continue;
             }
-            let symnum = b & 0x00FF_FFFF;
-            let pcrel = (b >> 24) & 1;
-            let len = (b >> 25) & 3;
-            let ext = (b >> 27) & 1;
-            let kind = b >> 28;
-            let target = if ext == 1 {
-                syms.get(symnum as usize).map_or_else(
+            let target = if r.external {
+                syms.get(r.symbolnum as usize).map_or_else(
                     || "-".to_string(),
                     |s| String::from_utf8_lossy(s.name).into_owned(),
                 )
             } else {
-                sections.get((symnum as usize).wrapping_sub(1)).map_or_else(
-                    || "-".to_string(),
-                    |s| String::from_utf8_lossy(s.sectname).into_owned(),
-                )
+                sections
+                    .get((r.symbolnum as usize).wrapping_sub(1))
+                    .map_or_else(
+                        || "-".to_string(),
+                        |s| String::from_utf8_lossy(s.sectname).into_owned(),
+                    )
             };
             p.raw(format_args!(
-                "0x{a:X} {pcrel} {len} {ext} {} 0 {target}",
-                reloc_type(m.header().cputype, kind)
+                "0x{:X} {pcrel} {len} {} {kind} 0 {target}",
+                r.address,
+                u8::from(r.external)
             ));
         }
         p.close("}");
@@ -481,7 +588,7 @@ fn symbols(p: &mut Printer<'_>, m: &MachO<'_>) {
 
 fn needed(p: &mut Printer<'_>, m: &MachO<'_>) {
     let mut libs: Vec<String> = Vec::new();
-    let big = m.header().endian == hexcavator_core::Endian::Big;
+    let big = m.header().endian == turbonop_core::Endian::Big;
     for lc in m.load_commands() {
         if !matches!(
             lc.cmd,
@@ -499,7 +606,7 @@ fn needed(p: &mut Printer<'_>, m: &MachO<'_>) {
             u32::from_le_bytes(b)
         } as usize;
         if let Some(rest) = lc.data.get(off..) {
-            let end = rest.iter().position(|&c| c == 0).unwrap_or(rest.len());
+            let end = turbonop_core::find_nul(rest).unwrap_or(rest.len());
             libs.push(String::from_utf8_lossy(&rest[..end]).into_owned());
         }
     }
@@ -558,25 +665,11 @@ fn version(v: u32) -> String {
 }
 
 fn platform(v: u32) -> String {
-    match v {
-        1 => "macos".into(),
-        2 => "ios".into(),
-        3 => "tvos".into(),
-        4 => "watchos".into(),
-        5 => "bridgeos".into(),
-        6 => "macCatalyst".into(),
-        7 => "iossim".into(),
-        8 => "tvossim".into(),
-        9 => "watchossim".into(),
-        10 => "driverkit".into(),
-        11 => "xros".into(),
-        12 => "xrsimulator".into(),
-        _ => format!("unknown({v})"),
-    }
+    turbonop_macho::platform_name(v)
 }
 
 fn version_min(p: &mut Printer<'_>, m: &MachO<'_>) {
-    let big = m.header().endian == hexcavator_core::Endian::Big;
+    let big = m.header().endian == turbonop_core::Endian::Big;
     let word = |d: &[u8], at: usize| -> u32 {
         let b: [u8; 4] = d
             .get(at..at + 4)

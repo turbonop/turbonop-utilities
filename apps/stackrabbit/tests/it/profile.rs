@@ -1,8 +1,8 @@
 //! WPA profiles, mapped to Stackrabbit's tabs and parameters.
 
-use hexcavator_trace_analysis::wpa_profile::{Column, Graph, Preset};
 use serde_json::json;
 use stackrabbit::profile::map;
+use turbonop_trace_analysis::wpa_profile::{Column, Graph, Preset};
 
 fn graph(table: Option<&str>, item: Option<&str>, keys: &[&str], others: &[&str]) -> Graph {
     let column = |n: &&str| Column {

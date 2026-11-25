@@ -13,9 +13,10 @@
 
 extern crate alloc;
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
-use hexcavator_core::{Endian, Error, ErrorKind, Result};
+use turbonop_core::{Endian, Error, ErrorKind, Result};
 
 pub mod consts;
 pub mod debugmap;
@@ -24,7 +25,7 @@ pub mod info;
 pub mod objc;
 pub mod unwind_info;
 
-pub use fixups::{Export, Fixup, FixupKind};
+pub use fixups::{Export, Fixup, FixupKind, PtrAuth, PtrAuthKey};
 
 use consts::*;
 
@@ -216,8 +217,8 @@ pub fn fat_header_size(data: &[u8]) -> u64 {
 }
 
 /// The instruction set of a CPU type.
-pub const fn arch(cputype: u32) -> hexcavator_core::Arch {
-    use hexcavator_core::Arch;
+pub const fn arch(cputype: u32) -> turbonop_core::Arch {
+    use turbonop_core::Arch;
     match cputype {
         CPU_TYPE_X86 => Arch::X86,
         CPU_TYPE_X86_64 => Arch::X64,
@@ -295,6 +296,104 @@ pub struct Dylib<'d> {
     pub name: &'d [u8],
     pub current_version: u32,
     pub compatibility_version: u32,
+    /// The command's size (`cmdsize`).
+    pub size: u32,
+}
+
+impl<'d> Dylib<'d> {
+    /// The library's short name, as LLVM's tools give it (llvm-objdump
+    /// names a bind's library so): a framework's name (`Foundation` of
+    /// `.../Foundation.framework/Versions/C/Foundation`), or a library's
+    /// without its directory, version letter, and extension (`libSystem`
+    /// of `/usr/lib/libSystem.B.dylib`); else the whole install name.
+    pub fn short_name(&self) -> &'d [u8] {
+        match library_short_name(self.name) {
+            Some(short) if !short.is_empty() => short,
+            _ => self.name,
+        }
+    }
+}
+
+/// LLVM's `guessLibraryShortName`, step for step (its quirks too): a
+/// framework's name, a `.dylib`'s or `.qtx`'s short name (without a
+/// `_debug` or `_profile` suffix), or `None` if the install name is
+/// neither.
+pub fn library_short_name(name: &[u8]) -> Option<&[u8]> {
+    let n = name.len();
+    // (StringRef's rfind: the last at an index below `from`.)
+    let rfind = |c: u8, from: usize| name[..from.min(n)].iter().rposition(|&x| x == c);
+    let substr = |start: usize, len: usize| {
+        let s = start.min(n);
+        &name[s..s.saturating_add(len).min(n)]
+    };
+    let slice = |start: usize, end: usize| {
+        let s = start.min(n);
+        &name[s..end.min(n).max(s)]
+    };
+    const FRAMEWORK: &[u8] = b".framework/";
+    'framework: {
+        let Some(a) = rfind(b'/', n).filter(|&a| a != 0) else {
+            break 'framework;
+        };
+        let mut last = &name[a + 1..];
+        if let Some(i) = last.iter().rposition(|&x| x == b'_')
+            && last.len() >= 2
+            && matches!(&last[i..], b"_debug" | b"_profile")
+        {
+            last = &last[..i];
+        }
+        // Foo.framework/Foo
+        let b = rfind(b'/', a);
+        let at = b.map_or(0, |b| b + 1);
+        if substr(at, last.len()) == last && substr(at + last.len(), FRAMEWORK.len()) == FRAMEWORK {
+            return Some(last);
+        }
+        // Foo.framework/Versions/A/Foo
+        let Some(b) = b else {
+            break 'framework;
+        };
+        let Some(c) = rfind(b'/', b).filter(|&c| c != 0) else {
+            break 'framework;
+        };
+        if !name[c + 1..].starts_with(b"Versions/") {
+            break 'framework;
+        }
+        let at = rfind(b'/', c).map_or(0, |d| d + 1);
+        if substr(at, last.len()) == last && substr(at + last.len(), FRAMEWORK.len()) == FRAMEWORK {
+            return Some(last);
+        }
+    }
+    let a = rfind(b'.', n).filter(|&a| a != 0)?;
+    // (A version letter's ".A" before the extension, taken off.)
+    let unversioned = |lib: &'_ [u8]| -> usize {
+        if lib.len() >= 3 && lib[lib.len() - 2] == b'.' {
+            lib.len() - 2
+        } else {
+            lib.len()
+        }
+    };
+    match &name[a..] {
+        b".dylib" => {
+            let mut a = a;
+            if a >= 3 && name[a - 2] == b'.' {
+                a -= 2;
+            }
+            let b = rfind(b'/', a).map_or(0, |b| b + 1);
+            let lib = match rfind(b'_', n) {
+                Some(i) if i != b && matches!(slice(i, a), b"_debug" | b"_profile") => slice(b, i),
+                _ => slice(b, a),
+            };
+            Some(&lib[..unversioned(lib)])
+        }
+        b".qtx" => {
+            let lib = match rfind(b'/', a) {
+                None => slice(0, a),
+                Some(b) => slice(b + 1, a),
+            };
+            Some(&lib[..unversioned(lib)])
+        }
+        _ => None,
+    }
 }
 
 /// A section, normalized.
@@ -419,6 +518,124 @@ impl Nlist<'_> {
     }
 }
 
+/// A section's relocation entry: a plain one (`relocation_info`), or a
+/// scattered one (`scattered_relocation_info`, 32-bit targets' only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Relocation {
+    /// The offset in its section of what it relocates (`r_address`).
+    pub address: u32,
+    /// A plain entry's symbol (its index in the symbol table) if
+    /// `external`, else its section's number (from 1; `R_ABS`, 0, for
+    /// none): `r_symbolnum`. A scattered entry's is 0.
+    pub symbolnum: u32,
+    /// A scattered entry's value (`r_value`): the address it refers to.
+    pub value: Option<u32>,
+    /// Whether it is relative to the PC (`r_pcrel`).
+    pub pcrel: bool,
+    /// Its length, as a power of two: 0 a byte, 1 two, 2 four, 3 eight
+    /// (`r_length`).
+    pub length: u8,
+    /// Whether `symbolnum` is a symbol's (`r_extern`).
+    pub external: bool,
+    /// Its type (`r_type`): `GENERIC_RELOC_*`, `X86_64_RELOC_*`,
+    /// `ARM64_RELOC_*`, `ARM_RELOC_*`, `PPC_RELOC_*`.
+    pub kind: u8,
+}
+
+impl Relocation {
+    /// Whether it is a scattered entry.
+    pub fn is_scattered(&self) -> bool {
+        self.value.is_some()
+    }
+}
+
+/// A relocation field (masked: it fits).
+fn bits(v: u32) -> u8 {
+    u8::try_from(v).unwrap_or(u8::MAX)
+}
+
+/// An `LC_BUILD_VERSION` command.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BuildVersion {
+    /// `PLATFORM_MACOS` (1), `PLATFORM_IOS` (2), ...
+    pub platform: u32,
+    /// The minimum OS version, as `xxxx.yy.zz` in nibbles (see
+    /// [`version_string`]).
+    pub minos: u32,
+    /// The SDK's version (0: none).
+    pub sdk: u32,
+    /// The tools that built it.
+    pub tools: Vec<BuildTool>,
+}
+
+/// A tool that built an image (`build_tool_version`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BuildTool {
+    /// `TOOL_CLANG`, `TOOL_SWIFT`, `TOOL_LD`, `TOOL_LLD`, ...
+    pub tool: u32,
+    /// Its version, encoded as [`BuildVersion::minos`] is.
+    pub version: u32,
+}
+
+impl BuildVersion {
+    /// The platform's name (see [`platform_name`]).
+    pub fn platform_name(&self) -> alloc::string::String {
+        platform_name(self.platform)
+    }
+}
+
+/// A platform's name (`LC_BUILD_VERSION`'s `PLATFORM_*`), as
+/// `ld -platform_version` spells it: `macos`, `ios`, `iossim`,
+/// `macCatalyst`, `xros`, ...
+pub fn platform_name(platform: u32) -> alloc::string::String {
+    alloc::string::String::from(match platform {
+        1 => "macos",
+        2 => "ios",
+        3 => "tvos",
+        4 => "watchos",
+        5 => "bridgeos",
+        6 => "macCatalyst",
+        7 => "iossim",
+        8 => "tvossim",
+        9 => "watchossim",
+        10 => "driverkit",
+        11 => "xros",
+        12 => "xrsimulator",
+        v => return alloc::format!("unknown({v})"),
+    })
+}
+
+impl BuildTool {
+    /// The tool's name: `clang`, `swift`, `ld`, `lld`, ...
+    pub fn name(&self) -> Option<&'static str> {
+        Some(match self.tool {
+            TOOL_CLANG => "clang",
+            TOOL_SWIFT => "swift",
+            TOOL_LD => "ld",
+            TOOL_LLD => "lld",
+            TOOL_METAL => "metal",
+            TOOL_AIRLLD => "airlld",
+            TOOL_AIRNT => "airnt",
+            TOOL_AIRNT_PLUGIN => "airnt-plugin",
+            TOOL_AIRPACK => "airpack",
+            TOOL_GPUARCHIVER => "gpuarchiver",
+            TOOL_METAL_FRAMEWORK => "metal-framework",
+            _ => return None,
+        })
+    }
+}
+
+/// A version as Mach-O encodes it (`xxxx.yy.zz`, a nibble pair each for
+/// the minor and patch): `13.0`, `1053.12`, `19.1.7`.
+pub fn version_string(v: u32) -> String {
+    let (major, minor, patch) = (v >> 16, (v >> 8) & 0xFF, v & 0xFF);
+    if patch == 0 {
+        alloc::format!("{major}.{minor}")
+    } else {
+        alloc::format!("{major}.{minor}.{patch}")
+    }
+}
+
 /// One Mach-O image.
 #[derive(Clone, Copy, Debug)]
 pub struct MachO<'d> {
@@ -508,7 +725,7 @@ impl<'d> MachO<'d> {
             Endian::Little => u32::from_le_bytes(b),
         };
         let rest = lc.data.get(usize::try_from(off).ok()?..)?;
-        let end = rest.iter().position(|&c| c == 0).unwrap_or(rest.len());
+        let end = turbonop_core::find_nul(rest).unwrap_or(rest.len());
         Some(&rest[..end])
     }
 
@@ -533,6 +750,7 @@ impl<'d> MachO<'d> {
                 name: self.lc_str(lc, 8).unwrap_or_default(),
                 current_version: self.u32(lc.offset + 16).unwrap_or(0),
                 compatibility_version: self.u32(lc.offset + 20).unwrap_or(0),
+                size: lc.size,
             })
             .collect()
     }
@@ -738,6 +956,106 @@ impl<'d> MachO<'d> {
     pub fn linkedit_data(&self, lc: &LoadCommand<'_>) -> Option<(u32, u32)> {
         let [off, size] = self.fields(lc)?;
         Some((off, size))
+    }
+
+    /// `LC_BUILD_VERSION`: the platform, the OS versions, and the tools
+    /// that built the image (each command's; an image normally has one).
+    pub fn build_versions(&self) -> Vec<BuildVersion> {
+        let mut out = Vec::new();
+        for lc in self.load_commands() {
+            if lc.cmd != LC_BUILD_VERSION {
+                continue;
+            }
+            let at = lc.offset;
+            let (Some(platform), Some(minos), Some(sdk), Some(ntools)) = (
+                self.u32(at + 8),
+                self.u32(at + 12),
+                self.u32(at + 16),
+                self.u32(at + 20),
+            ) else {
+                continue;
+            };
+            // (The tools are within the command.)
+            let room = u64::from(lc.size).saturating_sub(24) / 8;
+            let tools = (0..u64::from(ntools).min(room))
+                .map_while(|i| {
+                    let t = at + 24 + 8 * i;
+                    Some(BuildTool {
+                        tool: self.u32(t)?,
+                        version: self.u32(t + 4)?,
+                    })
+                })
+                .collect();
+            out.push(BuildVersion {
+                platform,
+                minos,
+                sdk,
+                tools,
+            });
+        }
+        out
+    }
+
+    /// The linker that built the image, as `LC_BUILD_VERSION` names it
+    /// (`TOOL_LD`, Apple's ld64 or its successor, or `TOOL_LLD`), if it
+    /// names one.
+    pub fn linker(&self) -> Option<BuildTool> {
+        self.build_versions()
+            .into_iter()
+            .flat_map(|b| b.tools)
+            .find(|t| matches!(t.tool, TOOL_LD | TOOL_LLD))
+    }
+
+    /// The relocation entries of `section` (an object's, normally), as
+    /// LLVM reads them: an entry whose address has its high bit set is
+    /// scattered, except on x86-64 and ARM64, which have none; a plain
+    /// entry's fields are packed from the low bits of its second word on
+    /// a little-endian target, from the high bits on a big-endian one. At
+    /// most the entries the file has.
+    pub fn relocations(&self, section: &Section<'_>) -> Vec<Relocation> {
+        let mut out = Vec::new();
+        let cpu = self.header.cputype;
+        let scatters = cpu != CPU_TYPE_X86_64 && cpu != CPU_TYPE_ARM64;
+        let big = self.header.endian == Endian::Big;
+        for i in 0..u64::from(section.nreloc) {
+            let at = u64::from(section.reloff) + i * 8;
+            let (Some(a), Some(b)) = (self.u32(at), self.u32(at + 4)) else {
+                break;
+            };
+            if scatters && a & 0x8000_0000 != 0 {
+                out.push(Relocation {
+                    address: a & 0x00FF_FFFF,
+                    symbolnum: 0,
+                    value: Some(b),
+                    pcrel: (a >> 30) & 1 != 0,
+                    length: bits(a >> 28 & 3),
+                    external: false,
+                    kind: bits(a >> 24 & 0xF),
+                });
+                continue;
+            }
+            let (symbolnum, pcrel, length, external, kind) = if big {
+                (b >> 8, (b >> 7) & 1, (b >> 5) & 3, (b >> 4) & 1, b & 0xF)
+            } else {
+                (
+                    b & 0x00FF_FFFF,
+                    (b >> 24) & 1,
+                    (b >> 25) & 3,
+                    (b >> 27) & 1,
+                    b >> 28,
+                )
+            };
+            out.push(Relocation {
+                address: a,
+                symbolnum,
+                value: None,
+                pcrel: pcrel != 0,
+                length: bits(length),
+                external: external != 0,
+                kind: bits(kind),
+            });
+        }
+        out
     }
 
     /// `LC_UUID`.

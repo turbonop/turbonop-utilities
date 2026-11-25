@@ -164,3 +164,84 @@ fn memory64_defined_or_imported() {
     let damaged = module(&[(SECTION_IMPORT, &[5, 1, b'e'])]);
     assert!(!Module::parse(&damaged).unwrap().is_memory64());
 }
+
+/// A dynamically linked module's `dylink.0`: its needed libraries (the
+/// `WASM_DYLINK_NEEDED` subsection), past the others (its memory info).
+#[test]
+fn needed_libraries() {
+    let mut m = b"\0asm\x01\0\0\0".to_vec();
+    let mut body = vec![8];
+    body.extend_from_slice(b"dylink.0");
+    // WASM_DYLINK_MEM_INFO (1): four zeros.
+    body.extend_from_slice(&[1, 4, 0, 0, 0, 0]);
+    // WASM_DYLINK_NEEDED (2): libfoo.so, libbar.so.
+    let mut needed = vec![2];
+    for lib in [&b"libfoo.so"[..], b"libbar.so"] {
+        uleb(lib.len() as u64, &mut needed);
+        needed.extend_from_slice(lib);
+    }
+    body.push(2);
+    uleb(needed.len() as u64, &mut body);
+    body.extend_from_slice(&needed);
+    section(SECTION_CUSTOM, &body, &mut m);
+    let module = Module::parse(&m).unwrap();
+    assert_eq!(module.needed(), [&b"libfoo.so"[..], b"libbar.so"]);
+    // (None without the section.)
+    assert!(Module::parse(&sample()).unwrap().needed().is_empty());
+}
+
+/// Globals: their index after the imported ones, types (a reference
+/// type's heap type read past), mutability, and initializers; and every
+/// kind of import counted.
+#[test]
+fn globals_and_imports() {
+    let mut m = b"\0asm\x01\0\0\0".to_vec();
+    let mut imports = vec![4];
+    for (kind, rest) in [
+        // A function (type 0), a table (a nullable reference to type 0,
+        // limits 1..), a memory (limits 1), and a global (i32, const).
+        (0u8, vec![0u8]),
+        (1, vec![0x63, 0x00, 0, 1]),
+        (2, vec![0, 1]),
+        (3, vec![0x7F, 0]),
+    ] {
+        imports.extend_from_slice(&[1, b'm', 1, b'x', kind]);
+        imports.extend_from_slice(&rest);
+    }
+    section(SECTION_IMPORT, &imports, &mut m);
+    let mut globals = vec![5];
+    // i32 const 1024 (mutable), i64 const -1, global.get 0, f32 const,
+    // v128 const.
+    globals.extend_from_slice(&[0x7F, 1, 0x41, 0x80, 0x08, 0x0B]);
+    globals.extend_from_slice(&[0x7E, 0, 0x42, 0x7F, 0x0B]);
+    globals.extend_from_slice(&[0x7F, 0, 0x23, 0, 0x0B]);
+    globals.extend_from_slice(&[0x7D, 0, 0x43, 0, 0, 0x80, 0x3F, 0x0B]);
+    globals.extend_from_slice(&[0x7B, 0, 0xFD, 12]);
+    globals.extend_from_slice(&[0; 16]);
+    globals.push(0x0B);
+    section(SECTION_GLOBAL, &globals, &mut m);
+    let module = Module::parse(&m).unwrap();
+    assert_eq!(module.imported_functions(), 1);
+    assert_eq!(module.imported_globals(), 1);
+    let g = module.globals();
+    let got: Vec<(u32, u8, bool, Init)> = g
+        .iter()
+        .map(|g| (g.index, g.value_type, g.mutable, g.init))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (1, 0x7F, true, Init::I32(1024)),
+            (2, 0x7E, false, Init::I64(-1)),
+            (3, 0x7F, false, Init::Global(0)),
+            (4, 0x7D, false, Init::Other),
+            (5, 0x7B, false, Init::Other),
+        ]
+    );
+    // Damaged: whatever was read before the damage.
+    for n in 0..m.len() {
+        if let Ok(module) = Module::parse(&m[..n]) {
+            let _ = module.globals();
+        }
+    }
+}

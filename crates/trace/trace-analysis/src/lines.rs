@@ -4,7 +4,7 @@
 
 use rustc_hash::FxHashMap;
 
-use hexcavator_trace::{ProcessIx, Trace};
+use turbonop_trace::{ProcessIx, Trace};
 
 use crate::keys::{Resolver, Symbolizer};
 use crate::sources::Run;

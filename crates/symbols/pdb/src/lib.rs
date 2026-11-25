@@ -26,10 +26,10 @@ pub mod msf;
 pub mod names;
 pub mod tpi;
 
-use std::cell::OnceCell;
+use std::sync::OnceLock as OnceCell;
 
-use hexcavator_codeview::symbols::SymbolRecord;
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_codeview::symbols::SymbolRecord;
+use turbonop_core::{Error, ErrorKind, Result};
 
 pub use dbi::{DbiStream, Module};
 pub use gsi::{PublicsStream, SymbolHash};
@@ -63,7 +63,22 @@ pub struct Pdb<'data> {
 
 impl<'data> Pdb<'data> {
     pub fn parse(data: &'data [u8]) -> Result<Self> {
-        let msf = Msf::parse(data)?;
+        Self::of(Msf::parse(data)?)
+    }
+
+    /// The PDB a source reads (by range: a file not mapped), its streams
+    /// read as they are asked for.
+    pub fn parse_source(source: &'data dyn turbonop_core::Source) -> Result<Self> {
+        let mut head = [0u8; 64];
+        let n = (source.len() as usize).min(head.len());
+        if !source.fill(0, &mut head[..n]) {
+            return Err(Error::new(ErrorKind::Truncated, 0, "PDB"));
+        }
+        check(&head[..n])?;
+        Self::of(Msf::parse_source(source)?)
+    }
+
+    fn of(msf: Msf<'data>) -> Result<Self> {
         let info = msf.stream(stream::INFO)?;
         InfoStream::parse(&info)?;
         let dbi_data = msf.stream_or_empty(stream::DBI)?;
@@ -123,6 +138,22 @@ impl<'data> Pdb<'data> {
     }
 
     fn type_stream(&self, index: u32) -> Result<TypeStream<'data>> {
+        // The header read first, then the records alone gathered (not the
+        // whole stream, then moved down over its header).
+        if index != u32::from(msf::SN_NIL) && self.msf.stream_size(index).is_some() {
+            let size = std::mem::size_of::<tpi::TpiHeader>();
+            let head = self.msf.read(index, 0, size as u64)?;
+            if let Ok(&header) = turbonop_core::read_at::<tpi::TpiHeader>(&head, 0) {
+                let hash = match header.hash_stream_index.get() {
+                    msf::SN_NIL => StreamData::Borrowed(&[]),
+                    h => self.msf.stream_or_empty(u32::from(h))?,
+                };
+                let start = header.header_size.get() as usize;
+                let end = start.saturating_add(header.type_record_bytes.get() as usize);
+                let records = self.msf.stream_range(index, start, end)?;
+                return TypeStream::from_records(header, records, hash);
+            }
+        }
         let data = self.msf.stream_or_empty(index)?;
         let hash = match tpi::hash_stream_of(&data) {
             Some(h) => self.msf.stream_or_empty(h)?,

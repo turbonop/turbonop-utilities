@@ -1,9 +1,9 @@
 //! The size model from an image and its linker map
 //! (`testdata/linkerlog`, built by `tools/linkerlog/build.cmd`).
 
-use hexcavator_image::Image;
-use hexcavator_size::sources::{self, Inputs, Source};
-use hexcavator_size::{map, rollup::Rollup};
+use turbonop_image::Image;
+use turbonop_size::sources::{self, Inputs, Source};
+use turbonop_size::{map, rollup::Rollup};
 
 fn testdata(name: &str) -> Vec<u8> {
     let p = format!(
@@ -18,7 +18,7 @@ fn model_from_a_map() {
     let image_data = testdata("main.exe");
     let image = Image::parse(&image_data).unwrap();
     let text = String::from_utf8(testdata("main.map")).unwrap();
-    let linkmap = hexcavator_linkmap::parse(&text);
+    let linkmap = turbonop_linkmap::parse(&text);
     let (model, symbols) = map::model(&image, &linkmap).unwrap();
     // Sections are the image's; groups are the map's (those with bytes).
     assert_eq!(model.sections.len(), image.sections().len());
@@ -28,7 +28,7 @@ fn model_from_a_map() {
     }
     // Every piece lies in its group.
     for p in &model.pieces {
-        if p.group != hexcavator_size::NO_GROUP {
+        if p.group != turbonop_size::NO_GROUP {
             let g = &model.groups[p.group as usize];
             assert!(
                 p.range.addr >= g.addr && p.range.end() <= g.addr + g.extent(),
@@ -43,7 +43,7 @@ fn model_from_a_map() {
     assert!(model.compilands.iter().any(|c| c.name == "main.obj"));
     // Symbols: functions and data, sized to the next, within their groups.
     let main = symbols.iter().find(|s| s.name == "main").unwrap();
-    assert_eq!(main.kind, hexcavator_size::symbols::SymbolKind::Function);
+    assert_eq!(main.kind, turbonop_size::symbols::SymbolKind::Function);
     assert!(main.size.file > 0);
     assert!(symbols.windows(2).all(|w| w[0].addr < w[1].addr));
     assert!(
@@ -81,9 +81,50 @@ fn damaged_maps_do_not_panic() {
     // Truncations, and section numbers past the image's.
     for len in (0..text.len()).step_by(text.len() / 50) {
         let cut = &text[..text.floor_char_boundary(len)];
-        let _ = map::model(&image, &hexcavator_linkmap::parse(cut));
+        let _ = map::model(&image, &turbonop_linkmap::parse(cut));
     }
     let shifted = text.replace(" 0001:", " 0099:");
-    let (model, _) = map::model(&image, &hexcavator_linkmap::parse(&shifted)).unwrap();
+    let (model, _) = map::model(&image, &turbonop_linkmap::parse(&shifted)).unwrap();
     assert!(model.groups.iter().all(|g| !g.name.starts_with(".text")));
+}
+
+/// The crate (or C++'s top-level namespace) a symbol's name is in.
+#[test]
+fn crates_of_names() {
+    use turbonop_size::sources::crate_of;
+    let c = |n: &str| crate_of(n);
+    assert_eq!(c("core::fmt::write"), Some("core".into()));
+    assert_eq!(
+        c("std::rt::lang_start_internal::h0123456789abcdef"),
+        Some("std".into())
+    );
+    // An impl: its type's crate; a generic's or a primitive's: its trait's.
+    assert_eq!(
+        c("<alloc::vec::Vec<T> as core::ops::drop::Drop>::drop"),
+        Some("alloc".into())
+    );
+    assert_eq!(c("<&T as core::fmt::Debug>::fmt"), Some("core".into()));
+    assert_eq!(
+        c("<corpus::Square<u8> as corpus::Shape>::area"),
+        Some("corpus".into())
+    );
+    assert_eq!(c("<[u8]>::len"), Some("[global]".into()));
+    // C++: the top-level namespace, the anonymous one, or none.
+    assert_eq!(
+        c("std::vector<int, std::allocator<int> >::push_back(int const&)"),
+        Some("std".into())
+    );
+    assert_eq!(
+        c("llvm::DenseMap<int, int>::grow(unsigned int)"),
+        Some("llvm".into())
+    );
+    assert_eq!(
+        c("(anonymous namespace)::Helper::run()"),
+        Some("(anonymous namespace)".into())
+    );
+    assert_eq!(c("main"), Some("[global]".into()));
+    assert_eq!(c("take(std::string)"), Some("[global]".into()));
+    // Not a symbol's name.
+    assert_eq!(c("[section .rodata]"), None);
+    assert_eq!(c(""), None);
 }

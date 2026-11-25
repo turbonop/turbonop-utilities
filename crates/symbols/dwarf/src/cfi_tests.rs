@@ -7,7 +7,7 @@ extern crate std;
 use alloc::vec;
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 use crate::cfi::{self, CfaRule, Cfi, CfiKind, Entry, RegisterRule};
 

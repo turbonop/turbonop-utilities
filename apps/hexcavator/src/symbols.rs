@@ -5,10 +5,10 @@
 
 use std::path::Path;
 
-use hexcavator_codeview::symbols::Symbol;
-use hexcavator_mmap::Mmap;
-use hexcavator_pdb::Pdb;
-use hexcavator_pe::{CodeView, PeFile};
+use turbonop_codeview::symbols::Symbol;
+use turbonop_mmap::Mmap;
+use turbonop_pdb::Pdb;
+use turbonop_pe::{CodeView, PeFile};
 
 /// Symbols by address (VA).
 #[derive(Default)]
@@ -32,13 +32,13 @@ impl SymbolMap {
             return None;
         };
         // The recorded path may use either separator, whatever the host's.
-        let id = hexcavator_image::DebugId::Pdb {
+        let id = turbonop_image::DebugId::Pdb {
             guid,
             age,
             path: pdb_path,
         };
-        let dirs = hexcavator_debuginfo::symbol_dirs();
-        for candidate in hexcavator_debuginfo::candidate_paths_in(path, &id, &dirs) {
+        let dirs = turbonop_debuginfo::symbol_dirs();
+        for candidate in turbonop_debuginfo::candidate_paths_in(path, &id, &dirs) {
             let Ok(map) = Mmap::open_named(&candidate) else {
                 continue;
             };
@@ -54,6 +54,20 @@ impl SymbolMap {
     }
 
     fn from_pdb(pdb: &Pdb<'_>, file: &PeFile<'_>) -> Self {
+        use turbonop_codeview::symbols::kind::{
+            S_GPROC32, S_GPROC32_ID, S_LPROC32, S_LPROC32_DPC, S_LPROC32_DPC_ID, S_LPROC32_ID,
+        };
+        let is_procedure = |k: u16| {
+            matches!(
+                k,
+                S_GPROC32
+                    | S_LPROC32
+                    | S_GPROC32_ID
+                    | S_LPROC32_ID
+                    | S_LPROC32_DPC
+                    | S_LPROC32_DPC_ID
+            )
+        };
         let base = file.optional_header().map_or(0, |h| h.image_base().get());
         let Ok(sections) = pdb.sections() else {
             return Self::default();
@@ -73,7 +87,7 @@ impl SymbolMap {
                     segment,
                     name,
                     ..
-                })) = hexcavator_pdb::gsi::symbol_at(records, off.get()).map(|r| r.parse())
+                })) = turbonop_pdb::gsi::symbol_at(records, off.get()).map(|r| r.parse())
                     && let Some(a) = va(segment, offset)
                 {
                     entries.push((a, String::from_utf8_lossy(name).into_owned()));
@@ -86,7 +100,7 @@ impl SymbolMap {
             for c in dbi
                 .section_contribs()
                 .iter()
-                .flat_map(hexcavator_pdb::dbi::SectionContribs::iter)
+                .flat_map(turbonop_pdb::dbi::SectionContribs::iter)
             {
                 let size = u64::try_from(c.size.get()).unwrap_or(0);
                 let offset = u32::try_from(c.offset.get()).unwrap_or(0);
@@ -95,11 +109,17 @@ impl SymbolMap {
                 }
             }
             contributions.sort_unstable();
-            for m in dbi.modules() {
+            // Each module's procedures, on whichever thread is free (in
+            // module order); only procedure records parsed.
+            let per_module = turbonop_par::map_balanced(dbi.modules(), 4, |m| {
+                let mut out = Vec::new();
                 let Ok(Some(stream)) = pdb.module_stream(m) else {
-                    continue;
+                    return out;
                 };
                 for rec in stream.symbols() {
+                    if !is_procedure(rec.kind) {
+                        continue;
+                    }
                     if let Ok(Symbol::Procedure {
                         offset,
                         segment,
@@ -108,10 +128,12 @@ impl SymbolMap {
                     }) = rec.parse()
                         && let Some(a) = va(segment, offset)
                     {
-                        entries.push((a, String::from_utf8_lossy(name).into_owned()));
+                        out.push((a, String::from_utf8_lossy(name).into_owned()));
                     }
                 }
-            }
+                out
+            });
+            entries.extend(per_module.into_iter().flatten());
         }
         // Keep the first name for each address, preferring publics.
         let mut keyed: Vec<(u64, usize, String)> = entries
@@ -119,7 +141,7 @@ impl SymbolMap {
             .enumerate()
             .map(|(i, (a, n))| (a, usize::from(i >= publics), n))
             .collect();
-        keyed.sort_by_key(|e| (e.0, e.1));
+        turbonop_par::sort_by(&mut keyed, |a, b| (a.0, a.1).cmp(&(b.0, b.1)));
         keyed.dedup_by_key(|e| e.0);
         Self {
             entries: keyed
@@ -159,7 +181,7 @@ impl SymbolMap {
     }
 }
 
-impl hexcavator_x86::format::Symbols for SymbolMap {
+impl turbonop_x86::format::Symbols for SymbolMap {
     fn name_at(&self, address: u64) -> Option<&str> {
         self.public_at(address)
     }

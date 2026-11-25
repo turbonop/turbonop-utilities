@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-wasm"
+name = "turbonop-wasm"
 description = "WebAssembly modules: sections, the name section, imports, function bodies, data segments"
 version.workspace = true
 edition.workspace = true
@@ -9,7 +9,11 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
+turbonop-core.workspace = true
+
+[features]
+# The module's cache of what its readers derive (Module::derived).
+std = []
 
 [lints]
 workspace = true

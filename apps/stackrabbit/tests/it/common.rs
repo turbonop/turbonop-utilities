@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use hexcavator_trace_synth::{Config, Synthetic, generate};
+use turbonop_trace_synth::{Config, Synthetic, generate};
 
 /// A directory for one test's files, emptied first.
 pub fn scratch(name: &str) -> PathBuf {

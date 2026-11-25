@@ -52,7 +52,7 @@ fn manifest(path: &Path) -> (String, Vec<String>) {
             || (section.starts_with("[target.") && section.ends_with(".dependencies]"));
         if normal {
             let dep = line.split(['=', '.', ' ']).next().unwrap_or("");
-            if dep.starts_with("hexcavator") {
+            if dep.starts_with("turbonop") {
                 deps.push(dep.to_string());
             }
         }
@@ -91,8 +91,8 @@ fn crates_depend_only_on_earlier_layers() {
     }
     // The manifests were read: known edges are there.
     let deps_of = |c: &str| &crates.get(c).unwrap_or_else(|| panic!("{c}")).2;
-    assert!(deps_of("hexcavator-unwind").contains(&"hexcavator-pe".to_string()));
-    assert!(deps_of("hexcavator").contains(&"hexcavator-size".to_string()));
+    assert!(deps_of("turbonop-unwind").contains(&"turbonop-pe".to_string()));
+    assert!(deps_of("hexcavator").contains(&"turbonop-size".to_string()));
     let mut violations = Vec::new();
     for (name, (layer, rank, deps)) in &crates {
         for dep in deps {

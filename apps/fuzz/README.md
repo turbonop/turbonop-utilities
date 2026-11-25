@@ -1,14 +1,14 @@
-# hexcavator-fuzz
+# turbonop-fuzz
 
-Hexcavator's fuzzer: every parser and every `hexc` command, on mutated
+Hexcavator's fuzzer: every parser and every `hexcavator` command, on mutated
 inputs, looking for denial of service: panics, stack overflows, hangs, and
 runaway allocation. (Rust rules out memory unsafety; these it doesn't.)
 It is in-house and runs on stable Rust, with no dependencies.
 
-    cargo run --release -p hexcavator-fuzz -- list
-    cargo run --release -p hexcavator-fuzz -- selftest
-    cargo run --release -p hexcavator-fuzz -- run all -seconds 600
-    cargo run --release -p hexcavator-fuzz -- replay pdb fuzz-findings/pdb-0123456789abcdef.bin
+    cargo run --release -p turbonop-fuzz -- list
+    cargo run --release -p turbonop-fuzz -- selftest
+    cargo run --release -p turbonop-fuzz -- run all -seconds 600
+    cargo run --release -p turbonop-fuzz -- replay pdb fuzz-findings/pdb-0123456789abcdef.bin
 
 Run it from the repository: its seeds are the files under `testdata`, each
 seeding the targets that read its kind (PE images, COFF objects, archives,
@@ -31,7 +31,7 @@ input:
 Each finding is saved as `fuzz-findings/<target>-<hash>.bin`, with a
 `.txt` that says what happened. `replay` runs it again in a supervised
 child (capped, and timed out after a minute); `replay-here` runs it in
-this process, still under the cap, to debug. **Never run `hexc` itself on
+this process, still under the cap, to debug. **Never run `hexcavator` itself on
 a finding**: one, run unguarded, once grew to 71 GB.
 
 `selftest` checks the supervisor catches each kind of failure, with a
@@ -46,8 +46,8 @@ counter value it hasn't seen (by AFL's buckets) in its pool and in
 `fuzz-corpus/<target>/`, which later runs start from.
 
     set RUSTFLAGS=-C instrument-coverage
-    cargo build --release -p hexcavator-fuzz --features coverage --target-dir target/fuzz-cov
-    target\fuzz-cov\release\hexcavator-fuzz run all -seconds 3600
+    cargo build --release -p turbonop-fuzz --features coverage --target-dir target/fuzz-cov
+    target\fuzz-cov\release\turbonop-fuzz run all -seconds 3600
 
 Without it, mutation is blind (but much faster per input).
 
@@ -55,7 +55,7 @@ Without it, mutation is blind (but much faster per input).
 
 | Target | What runs |
 |---|---|
-| `pe` | `hexc dump /all /nopdb`, `size` by sections, `info`, `batch` |
+| `pe` | `hexcavator dump /all /nopdb`, `size` by sections, `info`, `batch` |
 | `coff`, `archive` | `dump /all`, `size` by sections, symbols, members |
 | `elf`, `macho`, `wasm` | `size` by every data source, `-disassemble` (text and JSON) |
 | `pdb` | `pdb -all`, `types`, and every `DebugInfo` query: symbols, lines, inline sites, annotations, classes, variables, layouts, values |

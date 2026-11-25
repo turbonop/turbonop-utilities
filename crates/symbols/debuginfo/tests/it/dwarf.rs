@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 
-use hexcavator_debuginfo::{DebugInfo, Place, SymbolKind, TypeRef, TypeShape};
+use turbonop_debuginfo::{DebugInfo, Place, SymbolKind, TypeRef, TypeShape};
 
 fn testdata(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -316,7 +316,7 @@ fn compressed_sections_read_the_same() {
 
 #[test]
 fn a_separate_debug_file_matches_its_image() {
-    use hexcavator_image::Image;
+    use turbonop_image::Image;
     let image = std::fs::read(testdata("program-linked")).unwrap();
     let debug = std::fs::read(testdata("program-split.debug")).unwrap();
     let image = Image::parse(&image).unwrap();
@@ -358,7 +358,7 @@ fn damaged_dwarf_does_not_panic() {
             }
         };
         // Every byte of the DWARF sections, flipped (a sample: every 3rd).
-        let image = hexcavator_image::Image::parse(&clean).unwrap();
+        let image = turbonop_image::Image::parse(&clean).unwrap();
         let debug: Vec<(usize, usize)> = image
             .sections()
             .iter()
@@ -498,7 +498,7 @@ fn pdb_and_dwarf_agree_on_classes() {
         // (MSVC's ABI adds a virtual vector deleting destructor that the
         // Itanium ABI has no counterpart of: the compiler's, not the
         // source's.)
-        let virt = |ms: &[hexcavator_debuginfo::Method]| -> BTreeSet<String> {
+        let virt = |ms: &[turbonop_debuginfo::Method]| -> BTreeSet<String> {
             ms.iter()
                 .filter(|m| m.kind.is_virtual() && m.name != "__vecDelDtor")
                 .map(|m| m.name.clone())
@@ -510,9 +510,9 @@ fn pdb_and_dwarf_agree_on_classes() {
 
 #[test]
 fn where_separate_debug_files_are_looked_for() {
-    use hexcavator_debuginfo::candidate_paths;
-    use hexcavator_image::DebugId;
     use std::path::{Path, PathBuf};
+    use turbonop_debuginfo::candidate_paths;
+    use turbonop_image::DebugId;
     let image = Path::new("/opt/app/bin/app");
     let link = DebugId::DebugLink {
         path: b"app.debug",
@@ -533,6 +533,25 @@ fn where_separate_debug_files_are_looked_for() {
             crc: None,
         };
         assert!(candidate_paths(image, &id).is_empty());
+    }
+    // A WebAssembly module's external_debug_info (no CRC): a URL, followed
+    // beside the module or below it, not above or elsewhere.
+    let module = Path::new("/srv/www/app.wasm");
+    let ext = |p: &'static [u8]| DebugId::DebugLink { path: p, crc: None };
+    assert_eq!(
+        candidate_paths(module, &ext(b"debug/app.debug.wasm")),
+        [PathBuf::from("/srv/www/debug/app.debug.wasm")]
+    );
+    assert_eq!(
+        candidate_paths(module, &ext(b"./app.debug.wasm"))[0],
+        PathBuf::from("/srv/www/app.debug.wasm")
+    );
+    for bad in [
+        &b"../secret/x.wasm"[..],
+        b"/etc/x.wasm",
+        b"https://cdn/x.wasm",
+    ] {
+        assert!(candidate_paths(module, &ext(bad)).is_empty(), "{bad:?}");
     }
     let id = DebugId::BuildId(&[0xAB, 0xCD, 0xEF, 0x01]);
     assert_eq!(
@@ -556,6 +575,26 @@ fn where_separate_debug_files_are_looked_for() {
             PathBuf::from("/Users/me/app.dwarf"),
         ]
     );
+    // An image in a bundle: its own dSYM, then the bundle's beside it.
+    let dwarf = |at: &str, name: &str| {
+        Path::new(at)
+            .join("Contents")
+            .join("Resources")
+            .join("DWARF")
+            .join(name)
+    };
+    let in_app = Path::new("/b/Foo.app/Contents/MacOS/Foo");
+    let found = candidate_paths(in_app, &DebugId::Uuid([0; 16]));
+    assert_eq!(
+        found[..2],
+        [
+            dwarf("/b/Foo.app/Contents/MacOS/Foo.dSYM", "Foo"),
+            dwarf("/b/Foo.app.dSYM", "Foo")
+        ]
+    );
+    let in_framework = Path::new("/b/Kit.framework/Versions/A/Kit");
+    let found = candidate_paths(in_framework, &DebugId::Uuid([0; 16]));
+    assert_eq!(found[1], dwarf("/b/Kit.framework.dSYM", "Kit"));
     let alt = DebugId::AltLink {
         path: b"/usr/lib/debug/.dwz/app.debug",
         build_id: &[1, 2],
@@ -571,9 +610,9 @@ fn where_separate_debug_files_are_looked_for() {
 
 #[test]
 fn where_symbol_directories_are_looked_in() {
-    use hexcavator_debuginfo::{candidate_paths, candidate_paths_in};
-    use hexcavator_image::DebugId;
     use std::path::{Path, PathBuf};
+    use turbonop_debuginfo::{candidate_paths, candidate_paths_in};
+    use turbonop_image::DebugId;
     let image = Path::new("/opt/app/bin/libapp.so");
     let dirs = [PathBuf::from("/syms")];
     let id = DebugId::BuildId(&[0xAB, 0xCD, 0xEF, 0x01]);
@@ -654,8 +693,8 @@ fn where_symbol_directories_are_looked_in() {
 
 #[test]
 fn symbol_directories_from_the_environment() {
-    use hexcavator_debuginfo::symbol_dirs_from;
     use std::path::PathBuf;
+    use turbonop_debuginfo::symbol_dirs_from;
     let nt = r"srv*C:\symcache*https://msdl.microsoft.com/download/symbols;D:\mine;cache*E:\c;symsrv*symsrv.dll*F:\s*https://x;";
     assert_eq!(
         symbol_dirs_from(
@@ -685,7 +724,7 @@ fn symbol_directories_from_the_environment() {
 /// they don't, each as its ABI does.
 #[test]
 fn pdb_and_dwarf_layouts() {
-    use hexcavator_debuginfo::layout::PartKind;
+    use turbonop_debuginfo::layout::PartKind;
     let dwarf = std::fs::read(types_file("types-x86_64-linux-gnu")).unwrap();
     let pdb = std::fs::read(types_file("types.pdb")).unwrap();
     let (dw, pd) = (
@@ -704,7 +743,7 @@ fn pdb_and_dwarf_layouts() {
     };
     /// (offset, size, bits, kind, name, type's name).
     type Parts = Vec<(u64, u64, Option<(u8, u8)>, PartKind, String, String)>;
-    let parts = |l: &hexcavator_debuginfo::layout::Layout| -> Parts {
+    let parts = |l: &turbonop_debuginfo::layout::Layout| -> Parts {
         l.parts
             .iter()
             .map(|p| {
@@ -813,7 +852,7 @@ fn dwarf_layouts_match_llvm_dwarfdump() {
 /// hash; each entry's DIE has its tag.
 #[test]
 fn name_index_matches_llvm_dwarfdump() {
-    use hexcavator_dwarf::names::{name_indexes, names_hash};
+    use turbonop_dwarf::names::{name_indexes, names_hash};
     let data = std::fs::read(types_file("types-x86_64-linux-gnu-names")).unwrap();
     let text =
         std::fs::read_to_string(types_file("types-x86_64-linux-gnu-names.names.txt")).unwrap();
@@ -853,24 +892,24 @@ fn name_index_matches_llvm_dwarfdump() {
             // The DIE there has the entry's tag.
             let shape_ok = matches!(
                 e.tag,
-                hexcavator_dwarf::consts::DW_TAG_SUBPROGRAM
-                    | hexcavator_dwarf::consts::DW_TAG_VARIABLE
-                    | hexcavator_dwarf::consts::DW_TAG_BASE_TYPE
-                    | hexcavator_dwarf::consts::DW_TAG_STRUCTURE_TYPE
-                    | hexcavator_dwarf::consts::DW_TAG_UNION_TYPE
-                    | hexcavator_dwarf::consts::DW_TAG_ENUMERATION_TYPE
-                    | hexcavator_dwarf::consts::DW_TAG_POINTER_TYPE
-                    | hexcavator_dwarf::consts::DW_TAG_INLINED_SUBROUTINE
-                    | hexcavator_dwarf::consts::DW_TAG_TYPEDEF
-                    | hexcavator_dwarf::consts::DW_TAG_NAMESPACE
-                    | hexcavator_dwarf::consts::DW_TAG_CLASS_TYPE
+                turbonop_dwarf::consts::DW_TAG_SUBPROGRAM
+                    | turbonop_dwarf::consts::DW_TAG_VARIABLE
+                    | turbonop_dwarf::consts::DW_TAG_BASE_TYPE
+                    | turbonop_dwarf::consts::DW_TAG_STRUCTURE_TYPE
+                    | turbonop_dwarf::consts::DW_TAG_UNION_TYPE
+                    | turbonop_dwarf::consts::DW_TAG_ENUMERATION_TYPE
+                    | turbonop_dwarf::consts::DW_TAG_POINTER_TYPE
+                    | turbonop_dwarf::consts::DW_TAG_INLINED_SUBROUTINE
+                    | turbonop_dwarf::consts::DW_TAG_TYPEDEF
+                    | turbonop_dwarf::consts::DW_TAG_NAMESPACE
+                    | turbonop_dwarf::consts::DW_TAG_CLASS_TYPE
             );
             assert!(shape_ok, "{:#x}", e.tag);
         }
     }
     assert_eq!(have, want);
     // Damaged: no panics.
-    let image = hexcavator_image::Image::parse(&data).unwrap();
+    let image = turbonop_image::Image::parse(&data).unwrap();
     let names = image
         .sections()
         .into_iter()

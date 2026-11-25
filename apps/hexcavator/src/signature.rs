@@ -1,4 +1,4 @@
-//! `hexc signature`: a binary's code signatures (Authenticode, Apple code
+//! `hexcavator signature`: a binary's code signatures (Authenticode, Apple code
 //! signing), read and verified here, whatever the platform: who signed it,
 //! when, with what, and whether it's unchanged and trusted.
 
@@ -6,14 +6,14 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
-use hexcavator_signature::{
+use serde_json::{Value as Json, json};
+use turbonop_mmap::Mmap;
+use turbonop_signature::{
     CertInfo, Check, CodeSignature, Report, Signature, Signer, Status, Timestamp,
 };
-use serde_json::{Value as Json, json};
 
 const USAGE: &str = "\
-usage: hexc signature [-json] [-root <cert>]... <image>...
+usage: hexcavator signature [-json] [-root <cert>]... <image>...
 
 Reads and verifies a PE image's Authenticode signatures (and those nested in
 them) or a Mach-O image's code signature (each architecture's), on any
@@ -21,7 +21,7 @@ platform: the file's hash, the signer's signature, the certificate chain,
 the timestamps, and (for Mach-O) each page of code, the entitlements, and
 the requirements.
 
-Trust is hexc's own list of roots (Microsoft's, Apple's, and the public code
+Trust is hexcavator's own list of roots (Microsoft's, Apple's, and the public code
 signing authorities), not the machine's; -root adds one (DER or PEM).
 Revocation isn't checked, nor signatures kept outside the file (a Windows
 catalog's, a notarization ticket).
@@ -38,21 +38,21 @@ pub fn run(args: &[String]) -> ExitCode {
             Some("root") => match it.next() {
                 Some(p) => match std::fs::read(p)
                     .map_err(|e| e.to_string())
-                    .and_then(|d| hexcavator_signature::roots::add(&d))
+                    .and_then(|d| turbonop_signature::roots::add(&d))
                 {
                     Ok(_) => {}
                     Err(e) => {
-                        ereport!("hexc signature: -root {p}: {e}");
+                        ereport!("hexcavator signature: -root {p}: {e}");
                         return ExitCode::from(2);
                     }
                 },
                 None => {
-                    ereport!("hexc signature: -root: expected a certificate's path");
+                    ereport!("hexcavator signature: -root: expected a certificate's path");
                     return ExitCode::from(2);
                 }
             },
             Some(x) if !x.is_empty() && !Path::new(a).exists() => {
-                ereport!("hexc signature: unknown option '{a}'\n\n{USAGE}");
+                ereport!("hexcavator signature: unknown option '{a}'\n\n{USAGE}");
                 return ExitCode::from(2);
             }
             _ => files.push(a.clone()),
@@ -68,7 +68,7 @@ pub fn run(args: &[String]) -> ExitCode {
     for f in &files {
         let report = Mmap::open(f)
             .map_err(|e| format!("{f}: {e}"))
-            .and_then(|m| hexcavator_signature::of_file(&m).map_err(|e| format!("{f}: {e}")));
+            .and_then(|m| turbonop_signature::of_file(&m).map_err(|e| format!("{f}: {e}")));
         match report {
             Ok(r) => {
                 if !verified(&r) {
@@ -81,7 +81,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 }
             }
             Err(e) => {
-                ereport!("hexc signature: {e}");
+                ereport!("hexcavator signature: {e}");
                 status = ExitCode::FAILURE;
             }
         }
@@ -131,7 +131,7 @@ pub fn to_json(path: &str, r: &Report) -> Json {
         "info": r.info.iter().map(|(k, v)| json!({ "name": k, "value": v })).collect::<Vec<_>>(),
         "authenticode": r.authenticode.iter().map(signature_json).collect::<Vec<_>>(),
         "apple": r.apple.iter().map(apple_json).collect::<Vec<_>>(),
-        "roots": hexcavator_signature::roots::bundled_names().count(),
+        "roots": turbonop_signature::roots::bundled_names().count(),
     })
 }
 

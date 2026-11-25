@@ -1,11 +1,11 @@
 //! Tests of the decoded representation (operands, sizes, decorations, and
 //! control flow), independent of text formatting.
 
-use hexcavator_x86::{
+use turbonop_x86::{
     Encoding, Flow, MemSize, Mnemonic, Mode, Operand, RegClass, Register, Rounding, decode, prefix,
 };
 
-fn dec(bytes: &[u8]) -> hexcavator_x86::Instruction {
+fn dec(bytes: &[u8]) -> turbonop_x86::Instruction {
     decode(bytes, Mode::Bits64, 0x1000).unwrap()
 }
 
@@ -56,7 +56,7 @@ fn immediates_are_extended_to_operand_size() {
     let i = dec(&[0xB8, 0x78, 0x56, 0x34, 0x12]);
     assert_eq!(
         i.operands()[1],
-        Operand::Imm(hexcavator_x86::Immediate {
+        Operand::Imm(turbonop_x86::Immediate {
             value: 0x1234_5678,
             size: 4
         })
@@ -66,7 +66,7 @@ fn immediates_are_extended_to_operand_size() {
     assert_eq!(i.len(), 10);
     assert_eq!(
         i.operands()[1],
-        Operand::Imm(hexcavator_x86::Immediate {
+        Operand::Imm(turbonop_x86::Immediate {
             value: 0x0807_0605_0403_0201,
             size: 8
         })
@@ -168,15 +168,15 @@ fn vex_and_evex() {
 fn invalid_and_truncated() {
     assert_eq!(
         decode(&[0x0F, 0xFF], Mode::Bits64, 0),
-        Err(hexcavator_x86::DecodeError::Invalid)
+        Err(turbonop_x86::DecodeError::Invalid)
     );
     assert_eq!(
         decode(&[0x48, 0x8B], Mode::Bits64, 0),
-        Err(hexcavator_x86::DecodeError::Truncated)
+        Err(turbonop_x86::DecodeError::Truncated)
     );
     assert_eq!(
         decode(&[], Mode::Bits64, 0),
-        Err(hexcavator_x86::DecodeError::Truncated)
+        Err(turbonop_x86::DecodeError::Truncated)
     );
     // 15 bytes of prefixes cannot form an instruction.
     assert!(decode(&[0x66; 16], Mode::Bits64, 0).is_err());
@@ -193,7 +193,7 @@ fn invalid_and_truncated() {
         for mode in [Mode::Bits16, Mode::Bits32, Mode::Bits64] {
             if let Ok(i) = decode(&bytes, mode, 0) {
                 assert!(i.len() <= 15);
-                let _ = hexcavator_x86::format::to_string(&i);
+                let _ = turbonop_x86::format::to_string(&i);
             }
         }
     }

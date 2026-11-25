@@ -16,11 +16,14 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use hexcavator_core::{Endian, Error, ErrorKind, Result, bytes_at, cstr_at};
+use turbonop_core::{Endian, Error, ErrorKind, Result, bytes_at, cstr_at};
 
 pub mod arm;
+pub mod arm_exidx;
 pub mod consts;
 pub mod eh_frame;
+pub mod mips;
+pub mod riscv;
 #[allow(missing_docs, reason = "generated: each names a constant")]
 pub mod spelling;
 pub mod versions;
@@ -36,8 +39,8 @@ pub enum Class {
 
 /// The instruction set of a machine (`e_machine`) in a file of `class`
 /// (some machines name an architecture of either width).
-pub const fn arch(machine: u16, class: Class) -> hexcavator_core::Arch {
-    use hexcavator_core::Arch;
+pub const fn arch(machine: u16, class: Class) -> turbonop_core::Arch {
+    use turbonop_core::Arch;
     let wide = matches!(class, Class::Elf64);
     match machine {
         EM_386 | EM_IAMCU => Arch::X86,
@@ -210,6 +213,23 @@ pub enum AddressRelocation {
     IndirectFunction,
 }
 
+/// The name of relocation type `kind` on `machine`, as llvm-readobj
+/// spells it: MIPS64's three packed types (see [`Relocation::kind`]) each
+/// named, the first first (`R_MIPS_REL32/R_MIPS_64/R_MIPS_NONE`).
+pub fn relocation_name(machine: u16, kind: u32) -> Option<alloc::string::String> {
+    if machine == consts::EM_MIPS && kind > 0xFF {
+        let mut out = alloc::string::String::new();
+        for (i, shift) in [0, 8, 16].into_iter().enumerate() {
+            if i > 0 {
+                out.push('/');
+            }
+            out.push_str(spelling::relocation(machine, (kind >> shift) & 0xFF)?);
+        }
+        return Some(out);
+    }
+    spelling::relocation(machine, kind).map(alloc::string::String::from)
+}
+
 /// Whether a relocation of `kind` for `machine` writes an address word, and
 /// how. (Relocations of code, and of words that hold offsets, don't.)
 pub const fn address_relocation(machine: u16, kind: u32) -> Option<AddressRelocation> {
@@ -219,17 +239,26 @@ pub const fn address_relocation(machine: u16, kind: u32) -> Option<AddressReloca
         | (EM_386, R_386_RELATIVE)
         | (EM_AARCH64, R_AARCH64_RELATIVE)
         | (EM_ARM, R_ARM_RELATIVE)
-        | (EM_RISCV, R_RISCV_RELATIVE) => Relative,
+        | (EM_RISCV, R_RISCV_RELATIVE)
+        | (EM_LOONGARCH, R_LARCH_RELATIVE)
+        | (EM_PPC, R_PPC_RELATIVE)
+        | (EM_PPC64, R_PPC64_RELATIVE) => Relative,
         (EM_X86_64, R_X86_64_64 | R_X86_64_GLOB_DAT | R_X86_64_JUMP_SLOT)
         | (EM_386, R_386_32 | R_386_GLOB_DAT | R_386_JMP_SLOT)
         | (EM_AARCH64, R_AARCH64_ABS64 | R_AARCH64_GLOB_DAT | R_AARCH64_JUMP_SLOT)
         | (EM_ARM, R_ARM_ABS32 | R_ARM_GLOB_DAT | R_ARM_JUMP_SLOT)
-        | (EM_RISCV, R_RISCV_32 | R_RISCV_64 | R_RISCV_JUMP_SLOT) => Symbol,
+        | (EM_RISCV, R_RISCV_32 | R_RISCV_64 | R_RISCV_JUMP_SLOT)
+        | (EM_LOONGARCH, R_LARCH_32 | R_LARCH_64 | R_LARCH_JUMP_SLOT)
+        | (EM_PPC, R_PPC_ADDR32 | R_PPC_GLOB_DAT | R_PPC_JMP_SLOT)
+        | (EM_PPC64, R_PPC64_ADDR64 | R_PPC64_GLOB_DAT | R_PPC64_JMP_SLOT) => Symbol,
         (EM_X86_64, R_X86_64_IRELATIVE)
         | (EM_386, R_386_IRELATIVE)
         | (EM_AARCH64, R_AARCH64_IRELATIVE)
         | (EM_ARM, R_ARM_IRELATIVE)
-        | (EM_RISCV, R_RISCV_IRELATIVE) => IndirectFunction,
+        | (EM_RISCV, R_RISCV_IRELATIVE)
+        | (EM_LOONGARCH, R_LARCH_IRELATIVE)
+        | (EM_PPC, R_PPC_IRELATIVE)
+        | (EM_PPC64, R_PPC64_IRELATIVE) => IndirectFunction,
         _ => return None,
     })
 }
@@ -324,6 +353,11 @@ fn read_word(data: &[u8], offset: u64, class: Class, endian: Endian) -> Option<u
         Class::Elf64 => read_u64(data, offset, endian),
     }
 }
+
+/// Where an object's first allocated section is laid out (see
+/// [`ElfFile::section_addresses`]): a page in, as a linker would put code,
+/// so that no symbol is at 0, which tools take for none.
+pub const OBJECT_BASE: u64 = 0x1000;
 
 impl<'data> ElfFile<'data> {
     /// Whether `data` starts with the ELF magic.
@@ -451,6 +485,49 @@ impl<'data> ElfFile<'data> {
     /// Whether this is a relocatable object (`ET_REL`).
     pub fn is_object(&self) -> bool {
         self.header.kind == ET_REL
+    }
+
+    /// Each section's address, by its index: a linked file's, as its
+    /// headers say; an object's, as a linker would lay its allocated
+    /// sections out (in order, from [`OBJECT_BASE`], each at its
+    /// alignment), its others at 0 (an object's sections all say 0, and
+    /// its symbols' values and DWARF's addresses are offsets in their
+    /// sections).
+    pub fn section_addresses(&self) -> Vec<u64> {
+        let object = self.is_object();
+        let mut next = OBJECT_BASE;
+        self.sections()
+            .map(|s| {
+                if !object {
+                    return s.addr;
+                }
+                if !s.is_alloc() || s.kind == SHT_NULL {
+                    return 0;
+                }
+                let align = s.addralign.clamp(1, 1 << 32);
+                let at = next.checked_next_multiple_of(align).unwrap_or(next);
+                next = at.saturating_add(s.size);
+                at
+            })
+            .collect()
+    }
+
+    /// A symbol's address, its section's addresses (see
+    /// [`ElfFile::section_addresses`]) given: an object's, its value in its
+    /// section, from where its section is laid out; a linked file's, its
+    /// value.
+    pub fn symbol_address(&self, sym: &Symbol<'_>, sections: &[u64]) -> u64 {
+        if !self.is_object() {
+            return sym.value;
+        }
+        // (A special index, SHN_ABS or SHN_COMMON, is no section's, as
+        // where the file has fewer sections than they are.)
+        let special = sym.shndx >= u32::from(SHN_LORESERVE)
+            && u64::from(self.header.shnum) <= u64::from(SHN_LORESERVE);
+        match sections.get(sym.shndx as usize) {
+            Some(&base) if sym.shndx != 0 && !special => base.wrapping_add(sym.value),
+            _ => sym.value,
+        }
     }
 
     /// The file range of the file header.

@@ -9,7 +9,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use hexcavator_trace::{ProcessIx, StackId, ThreadIx, Trace};
+use turbonop_trace::{ProcessIx, StackId, ThreadIx, Trace};
 
 use crate::keys::{FrameMode, Framer, Key, KeyId, Keys};
 use crate::tree::Instances;
@@ -430,8 +430,8 @@ pub fn switch_buckets(
 #[cfg(test)]
 mod tests {
     use super::{Bucket, ROWS, aggregate};
-    use hexcavator_trace::{StackId, ThreadIx};
     use rustc_hash::FxHashMap;
+    use turbonop_trace::{StackId, ThreadIx};
 
     /// Aggregating in chunks on every core, and merging, is aggregating
     /// all at once: many chunks, buckets in several of them, events left

@@ -14,7 +14,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-pub use hexcavator_core::Arch;
+pub use turbonop_core::Arch;
 
 /// How control leaves an instruction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -65,24 +65,72 @@ impl Insn {
     }
 }
 
+/// How code of an architecture is read, beyond its instruction set: its
+/// words' byte order (big-endian: PowerPC's, but for `ppc64le`'s; MIPS's,
+/// but for `mipsel`'s; an instruction set whose words are little-endian
+/// whatever the image's byte order, as ARM64's, ignores it), and, for
+/// MIPS, its ELF image's `e_flags` (its ISA level and ASEs) and the value
+/// of `$gp` its code assumes, if known.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Mode {
+    /// Whether its words are big-endian.
+    pub big: bool,
+    /// MIPS's ELF `e_flags`, if known.
+    pub mips_flags: Option<u32>,
+    /// MIPS's `$gp`, if known (its small data's and GOT's base).
+    pub mips_gp: Option<u64>,
+}
+
+impl Mode {
+    /// Big-endian code (`big`), or little-endian.
+    pub fn endian(big: bool) -> Mode {
+        Mode {
+            big,
+            mips_flags: None,
+            mips_gp: None,
+        }
+    }
+}
+
 /// Which architectures [`decode`] reads.
 pub fn decodes(arch: Arch) -> bool {
-    matches!(arch, Arch::X86 | Arch::X64 | Arch::Arm64 | Arch::Arm)
+    matches!(
+        arch,
+        Arch::X86
+            | Arch::X64
+            | Arch::Arm64
+            | Arch::Arm
+            | Arch::RiscV32
+            | Arch::RiscV64
+            | Arch::LoongArch32
+            | Arch::LoongArch64
+            | Arch::PowerPc
+            | Arch::PowerPc64
+            | Arch::Mips
+            | Arch::Mips64
+    )
 }
 
 /// The instruction at the start of `bytes`, which is at `address`, or
-/// `None` if it doesn't decode (or no decoder reads `arch`). For 32-bit
-/// ARM, an odd `address` means T32 code (at the even one), as ELF
-/// symbols say; see [`decode_arm32`].
+/// `None` if it doesn't decode (or no decoder reads `arch`), its words
+/// little-endian (as most code's are). For 32-bit ARM, an odd `address`
+/// means T32 code (at the even one), as ELF symbols say; see
+/// [`decode_arm32`]. See [`decode_in`] for big-endian code.
 pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
+    decode_in(arch, Mode::default(), bytes, address)
+}
+
+/// [`decode`], its code read as `mode` says.
+pub fn decode_in(arch: Arch, mode: Mode, bytes: &[u8], address: u64) -> Option<Insn> {
+    let big = mode.big;
     match arch {
         Arch::X86 | Arch::X64 => {
             let mode = if arch == Arch::X86 {
-                hexcavator_x86::Mode::Bits32
+                turbonop_x86::Mode::Bits32
             } else {
-                hexcavator_x86::Mode::Bits64
+                turbonop_x86::Mode::Bits64
             };
-            let i = hexcavator_x86::decode(bytes, mode, address).ok()?;
+            let i = turbonop_x86::decode(bytes, mode, address).ok()?;
             Some(Insn {
                 address,
                 len: u8::try_from(i.len()).ok()?,
@@ -92,7 +140,7 @@ pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
         }
         Arch::Arm64 => {
             let word = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-            let i = hexcavator_arm64::decode(word, address)?;
+            let i = turbonop_arm64::decode(word, address)?;
             let flow = arm64_flow(i.encoding_name());
             let target = match flow {
                 Flow::Call | Flow::Jump | Flow::Branch => arm64_target(word, address),
@@ -109,7 +157,354 @@ pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
             let thumb = address & 1 == 1;
             decode_arm32(bytes, address & !1, thumb)
         }
+        Arch::RiscV32 | Arch::RiscV64 => {
+            let features = turbonop_riscv::Features::standard(arch == Arch::RiscV64);
+            decode_riscv(bytes, address, &features)
+        }
+        Arch::LoongArch32 | Arch::LoongArch64 => {
+            let features = if arch == Arch::LoongArch64 {
+                turbonop_loongarch::Features::la64()
+            } else {
+                turbonop_loongarch::Features::la32()
+            };
+            decode_loongarch(bytes, address, &features)
+        }
+        Arch::PowerPc | Arch::PowerPc64 => {
+            let features = turbonop_powerpc::Features::standard(arch == Arch::PowerPc64);
+            decode_powerpc(bytes, big, address, &features)
+        }
+        Arch::Mips | Arch::Mips64 => {
+            let features = mips_features_in(arch, mode);
+            decode_mips(bytes, big, address, &features).map(|(i, _)| i)
+        }
         _ => None,
+    }
+}
+
+/// The RISC-V instruction at the start of `bytes`, which is at `address`,
+/// with `features` on, or `None` if it doesn't decode. ([`decode`] takes
+/// every standard extension to be on; an image's attributes may say
+/// which.)
+pub fn decode_riscv(
+    bytes: &[u8],
+    address: u64,
+    features: &turbonop_riscv::Features,
+) -> Option<Insn> {
+    let i = turbonop_riscv::decode(bytes, features)?;
+    let (flow, target) = riscv_flow(&i, address, features);
+    Some(Insn {
+        address,
+        len: i.size,
+        flow,
+        target,
+    })
+}
+
+/// How control leaves a RISC-V instruction (a compressed one by its full
+/// form), and a direct jump's, call's, or branch's target: `jal` to
+/// `zero` jumps, to another register calls; `jalr` to `zero` through
+/// `ra` or `t0` with no offset returns (as the return address stack's
+/// hints have it), else jumps, and to another register calls; the
+/// conditional branches branch; `ebreak` and `unimp` stop, as the trap
+/// returns (`mret`, `sret`, `dret`) leave.
+pub fn riscv_flow(
+    i: &turbonop_riscv::Instruction,
+    address: u64,
+    features: &turbonop_riscv::Features,
+) -> (Flow, Option<u64>) {
+    let full = turbonop_riscv::uncompress(i, features);
+    let i = full.as_ref().unwrap_or(i);
+    let reg = |n: &str| i.operand(n).and_then(turbonop_riscv::gpr_of);
+    let imm = |n: &str| i.operand(n).and_then(turbonop_riscv::Operand::imm);
+    let target = |n: &str| imm(n).map(|v| address.wrapping_add_signed(v));
+    match i.name() {
+        "JAL" => {
+            let flow = if reg("rd") == Some(0) {
+                Flow::Jump
+            } else {
+                Flow::Call
+            };
+            (flow, target("imm20"))
+        }
+        "JALR" => {
+            let rd = reg("rd");
+            let rs1 = reg("rs1");
+            if rd == Some(0) {
+                if matches!(rs1, Some(1 | 5)) && imm("imm12") == Some(0) {
+                    (Flow::Return, None)
+                } else {
+                    (Flow::Jump, None)
+                }
+            } else {
+                (Flow::Call, None)
+            }
+        }
+        "BEQ" | "BNE" | "BLT" | "BGE" | "BLTU" | "BGEU" => (Flow::Branch, target("imm12")),
+        "EBREAK" | "C_EBREAK" | "UNIMP" | "C_UNIMP" => (Flow::Stop, None),
+        "MRET" | "SRET" | "DRET" | "MNRET" => (Flow::Return, None),
+        _ => (Flow::Next, None),
+    }
+}
+
+/// The LoongArch instruction at the start of `bytes`, which is at
+/// `address`, with `features` on (LA32's or LA64's), or `None` if it
+/// doesn't decode.
+pub fn decode_loongarch(
+    bytes: &[u8],
+    address: u64,
+    features: &turbonop_loongarch::Features,
+) -> Option<Insn> {
+    let i = turbonop_loongarch::decode(bytes, features)?;
+    let (flow, target) = loongarch_flow(&i, address);
+    Some(Insn {
+        address,
+        len: 4,
+        flow,
+        target,
+    })
+}
+
+/// How control leaves a LoongArch instruction, and a direct jump's,
+/// call's, or branch's target: `b` jumps, `bl` calls; `jirl` to `$zero`
+/// through `$ra` with no offset returns (`ret`), else jumps (`jr`, a
+/// `call36` tail call), and to another register calls; the conditional
+/// branches (on registers, or on a condition flag) branch; `break`,
+/// `dbcl` and `ud` stop, as `ertn` (the exception return) leaves.
+pub fn loongarch_flow(i: &turbonop_loongarch::Instruction, address: u64) -> (Flow, Option<u64>) {
+    let reg = |n: &str| i.operand(n).and_then(turbonop_loongarch::gpr_of);
+    let imm = |n: &str| i.operand(n).and_then(turbonop_loongarch::Operand::imm);
+    let target = turbonop_loongarch::branch_target(i, address);
+    match i.name() {
+        "B" => (Flow::Jump, target),
+        "BL" => (Flow::Call, target),
+        "JIRL" => {
+            if reg("rd") != Some(0) {
+                (Flow::Call, None)
+            } else if reg("rj") == Some(1) && imm("imm16") == Some(0) {
+                (Flow::Return, None)
+            } else {
+                (Flow::Jump, None)
+            }
+        }
+        "BEQ" | "BNE" | "BLT" | "BGE" | "BLTU" | "BGEU" | "BEQZ" | "BNEZ" | "BCEQZ" | "BCNEZ" => {
+            (Flow::Branch, target)
+        }
+        "BREAK" | "DBCL" | "UD" => (Flow::Stop, None),
+        "ERTN" => (Flow::Return, None),
+        _ => (Flow::Next, None),
+    }
+}
+
+/// The PowerPC instruction at the start of `bytes`, which is at
+/// `address`, its words big-endian (`big`) or little-endian, with
+/// `features` on, or `None` if it doesn't decode.
+pub fn decode_powerpc(
+    bytes: &[u8],
+    big: bool,
+    address: u64,
+    features: &turbonop_powerpc::Features,
+) -> Option<Insn> {
+    let i = turbonop_powerpc::decode(bytes, big, features)?;
+    let (flow, target) = powerpc_flow(&i, address, features);
+    Some(Insn {
+        address,
+        len: i.size,
+        flow,
+        target,
+    })
+}
+
+/// How control leaves a PowerPC instruction, and a direct jump's, call's,
+/// or branch's target: `b` jumps, `bl` calls (and `bcl`, which `bcl 20,
+/// 31` uses to read the PC, calls the next instruction); a conditional
+/// branch (`bc`, `bdnz`) branches, unless its BO field says always (its
+/// bits 0x14), when it jumps; `blr` returns, `bctr` jumps through the
+/// count register, and their linking forms call; conditional ones of
+/// those branch (to no known target); `trap`, `attn`, and `stop` stop, as
+/// the interrupt returns (`rfid`, `hrfid`, ...) leave.
+pub fn powerpc_flow(
+    i: &turbonop_powerpc::Instruction,
+    address: u64,
+    features: &turbonop_powerpc::Features,
+) -> (Flow, Option<u64>) {
+    let target = turbonop_powerpc::branch_target(i, address, features);
+    let always = || {
+        i.operand("BO")
+            .and_then(turbonop_powerpc::Operand::imm)
+            .is_some_and(|bo| bo & 0x14 == 0x14)
+    };
+    let name = i.name();
+    // (The `-` and `+` hint forms: as the instruction.)
+    let base = name.trim_end_matches(['m', 'p']);
+    match base {
+        "B" | "BA" => (Flow::Jump, target),
+        "BL" | "BLA" | "gBCL" | "gBCLA" => (Flow::Call, target),
+        "gBC" | "gBCA" if always() => (Flow::Jump, target),
+        "gBC" | "gBCA" => (Flow::Branch, target),
+        "BLR" => (Flow::Return, None),
+        "BCTR" => (Flow::Jump, None),
+        "BLRL" | "BCTRL" | "gBCLRL" | "gBCCTRL" => (Flow::Call, None),
+        "gBCLR" if always() => (Flow::Return, None),
+        "gBCCTR" if always() => (Flow::Jump, None),
+        "gBCLR" | "gBCCTR" => (Flow::Branch, None),
+        "TRAP" | "ATTN" | "STOP" => (Flow::Stop, None),
+        "RFI" | "RFID" | "HRFID" | "RFCI" | "RFDI" | "RFMCI" | "RFEBB" => (Flow::Return, None),
+        // `bdnz` and `bdz` (on the count register): conditional; their
+        // linking forms call; their returns (`bdnzlr`) branch.
+        _ if base.starts_with("BDNZ") || base.starts_with("BDZ") => {
+            let rest = base.trim_start_matches("BDNZ").trim_start_matches("BDZ");
+            match rest {
+                "" | "A" => (Flow::Branch, target),
+                "L" | "LA" => (Flow::Call, target),
+                "LR" => (Flow::Branch, None),
+                _ => (Flow::Call, None),
+            }
+        }
+        _ => (Flow::Next, None),
+    }
+}
+
+/// The MIPS features code read as `mode` has: as llvm-objdump takes them
+/// from its image's flags; not knowing them, Release 2's (MIPS32R2's, or
+/// MIPS64R2's), the commonest, and a superset of the earlier levels'
+/// (Release 6's encodings differ).
+pub fn mips_features_in(arch: Arch, mode: Mode) -> turbonop_mips::Features {
+    // (EF_MIPS_ARCH_32R2, EF_MIPS_ARCH_64R2.)
+    let flags = mode.mips_flags.unwrap_or(if arch == Arch::Mips64 {
+        0x8000_0000
+    } else {
+        0x7000_0000
+    });
+    turbonop_mips::Features::from_elf(flags, arch == Arch::Mips64)
+}
+
+/// [`mips_features_in`], not knowing the image's flags.
+pub fn mips_features(arch: Arch) -> turbonop_mips::Features {
+    mips_features_in(arch, Mode::default())
+}
+
+/// The MIPS instruction at the start of `bytes`, which is at `address`,
+/// its word big-endian (`big`) or little-endian, with `features` on, and
+/// whether it has a delay slot; `None` if it doesn't decode. (Its flow is
+/// its own: see [`delay_slots`].)
+pub fn decode_mips(
+    bytes: &[u8],
+    big: bool,
+    address: u64,
+    features: &turbonop_mips::Features,
+) -> Option<(Insn, bool)> {
+    let i = turbonop_mips::decode(bytes, big, features)?;
+    let (flow, target) = mips_flow(&i, address);
+    Some((
+        Insn {
+            address,
+            len: u8::try_from(turbonop_mips::size(&i)).unwrap_or(4),
+            flow,
+            target,
+        },
+        turbonop_mips::has_delay_slot(&i),
+    ))
+}
+
+/// How control leaves a MIPS instruction, and a direct jump's, call's, or
+/// branch's target: `j` jumps, `jal` and `bal` call (as the branches and
+/// links do, `bgezal`, Release 6's `balc` and `beqzalc`); `jr $ra`
+/// returns (and `jic $ra, 0`), `jr` to another register jumps, `jalr`
+/// calls; `beq $zero, $zero` (`b`) jumps, the other branches branch;
+/// `break` and `sdbbp` stop, as `eret` and `deret` leave. microMIPS's
+/// are as their standard forms (`jrc $ra` returns, `jalrs16` calls, `b16`
+/// jumps), and `jraddiusp` returns.
+pub fn mips_flow(i: &turbonop_mips::Instruction, address: u64) -> (Flow, Option<u64>) {
+    let target = turbonop_mips::branch_target(i, address);
+    let reg = |k: usize| i.operands().get(k).and_then(|o| turbonop_mips::gpr_of(*o));
+    let name = match i.name() {
+        "J_MM" => "J",
+        "JAL_MM" | "JALS_MM" | "JALX_MM" => "JAL",
+        "B16_MM" | "BC16_MMR6" | "BC_MMR6" => "BC",
+        "BALC_MMR6" => "BALC",
+        "BEQ_MM" => "BEQ",
+        "BGEZAL_MM" | "BGEZALS_MM" => "BGEZAL",
+        "BLTZAL_MM" | "BLTZALS_MM" => "BLTZAL",
+        "BEQZALC_MMR6" => "BEQZALC",
+        "BNEZALC_MMR6" => "BNEZALC",
+        "BLEZALC_MMR6" => "BLEZALC",
+        "BGEZALC_MMR6" => "BGEZALC",
+        "BGTZALC_MMR6" => "BGTZALC",
+        "BLTZALC_MMR6" => "BLTZALC",
+        "JR_MM" | "JR16_MM" | "JRC16_MM" | "JRC16_MMR6" | "JR_HB_MM" => "JR",
+        "JALR_MM" | "JALRS_MM" | "JALRC_MMR6" | "JALR_HB_MM" | "JALRC_HB_MMR6" => "JALR",
+        "JIC_MMR6" => "JIC",
+        "JIALC_MMR6" => "JIALC",
+        "BREAK_MM" | "BREAK16_MM" | "BREAK16_MMR6" | "BREAK_MMR6" => "BREAK",
+        "SDBBP_MM" | "SDBBP16_MM" | "SDBBP16_MMR6" | "SDBBP_MMR6" => "SDBBP",
+        "ERET_MM" | "ERET_MMR6" | "ERETNC_MMR6" => "ERET",
+        "DERET_MM" | "DERET_MMR6" => "DERET",
+        // (16-bit calls through a register, linking $ra; returns that pop
+        // the stack.)
+        "JALR16_MM" | "JALRS16_MM" | "JALRC16_MMR6" => return (Flow::Call, None),
+        "JRADDIUSP" | "JRCADDIUSP_MMR6" => return (Flow::Return, None),
+        other => other,
+    };
+    match name {
+        "J" => (Flow::Jump, target),
+        "JAL" | "JALX" | "BAL" | "BALC" => (Flow::Call, target),
+        "BC" => (Flow::Jump, target),
+        "BEQ" | "BEQ64" if reg(0) == Some(0) && reg(1) == Some(0) => (Flow::Jump, target),
+        "BGEZAL" if reg(0) == Some(0) => (Flow::Call, target),
+        "BGEZAL" | "BLTZAL" | "BGEZALL" | "BLTZALL" | "BEQZALC" | "BNEZALC" | "BLEZALC"
+        | "BGEZALC" | "BGTZALC" | "BLTZALC" => (Flow::Call, target),
+        "JR" | "JR64" | "JR_HB" | "JR_HB64" | "JR_HB_R6" | "JR_HB64_R6" => (
+            if reg(0) == Some(31) {
+                Flow::Return
+            } else {
+                Flow::Jump
+            },
+            None,
+        ),
+        "JALR" | "JALR64" | "JALR_HB" | "JALR_HB64" => {
+            if reg(0) == Some(0) {
+                (
+                    if reg(1) == Some(31) {
+                        Flow::Return
+                    } else {
+                        Flow::Jump
+                    },
+                    None,
+                )
+            } else {
+                (Flow::Call, None)
+            }
+        }
+        "JIC" | "JIC64" => {
+            let off = i.operands().get(1).and_then(|o| o.imm());
+            (
+                if reg(0) == Some(31) && off == Some(0) {
+                    Flow::Return
+                } else {
+                    Flow::Jump
+                },
+                None,
+            )
+        }
+        "JIALC" | "JIALC64" => (Flow::Call, None),
+        "BREAK" | "SDBBP" | "SDBBP_R6" => (Flow::Stop, None),
+        "ERET" | "ERETNC" | "DERET" => (Flow::Return, None),
+        _ if target.is_some() => (Flow::Branch, target),
+        _ => (Flow::Next, None),
+    }
+}
+
+/// Moves each delayed branch's flow to its delay slot (`delayed[k]`: the
+/// instruction `k` has one), where it takes effect: so a block ends after
+/// the slot, which runs on either way.
+pub fn delay_slots(insns: &mut [Insn], delayed: &[bool]) {
+    for k in 0..insns.len().saturating_sub(1) {
+        if delayed.get(k) == Some(&true) && insns[k].flow != Flow::Next {
+            insns[k + 1].flow = insns[k].flow;
+            insns[k + 1].target = insns[k].target;
+            insns[k].flow = Flow::Next;
+            insns[k].target = None;
+        }
     }
 }
 
@@ -119,19 +514,19 @@ pub fn decode(arch: Arch, bytes: &[u8], address: u64) -> Option<Insn> {
 pub fn decode_arm32(bytes: &[u8], address: u64, thumb: bool) -> Option<Insn> {
     let i = if thumb {
         let first = u16::from_le_bytes(bytes.get(..2)?.try_into().ok()?);
-        let second = if hexcavator_arm32::is_t32_wide(first) {
+        let second = if turbonop_arm32::is_t32_wide(first) {
             Some(u16::from_le_bytes(bytes.get(2..4)?.try_into().ok()?))
         } else {
             None
         };
-        hexcavator_arm32::decode_t32(first, second)?
+        turbonop_arm32::decode_t32(first, second)?
     } else {
-        hexcavator_arm32::decode_a32(u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?))?
+        turbonop_arm32::decode_a32(u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?))?
     };
     let flow = arm32_flow(&i);
     let target = match flow {
         Flow::Call | Flow::Jump | Flow::Branch => {
-            hexcavator_arm32::format::branch_target(&i, address)
+            turbonop_arm32::format::branch_target(&i, address)
         }
         _ => None,
     };
@@ -147,7 +542,7 @@ pub fn decode_arm32(bytes: &[u8], address: u64, thumb: bool) -> Option<Insn> {
 /// instruction that writes the PC is a branch; T32's conditions come from
 /// IT blocks, which aren't followed: such an instruction is taken as
 /// unconditional.)
-pub fn arm32_flow(i: &hexcavator_arm32::Instruction) -> Flow {
+pub fn arm32_flow(i: &turbonop_arm32::Instruction) -> Flow {
     let n = i.encoding.name;
     let w = i.word;
     let field = |name: &str| {
@@ -222,8 +617,8 @@ pub fn arm32_flow(i: &hexcavator_arm32::Instruction) -> Flow {
     Flow::Next
 }
 
-fn x86_flow(f: hexcavator_x86::Flow) -> Flow {
-    use hexcavator_x86::Flow as X;
+fn x86_flow(f: turbonop_x86::Flow) -> Flow {
+    use turbonop_x86::Flow as X;
     match f {
         X::Next | X::Interrupt => Flow::Next,
         X::Call => Flow::Call,
@@ -272,13 +667,40 @@ fn arm64_target(word: u32, pc: u64) -> Option<u64> {
 }
 
 /// The instructions of `code` (at `address`), in order, up to the first
-/// that doesn't decode; and where that is (`None` if all did).
+/// that doesn't decode; and where that is (`None` if all did). Its words
+/// are little-endian; see [`sweep_in`].
 pub fn sweep(arch: Arch, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) {
+    sweep_in(arch, Mode::default(), code, address)
+}
+
+/// [`sweep`], its code read as `mode` says (as [`decode_in`]); MIPS's
+/// delayed branches' flow at their delay slots (see [`delay_slots`]).
+pub fn sweep_in(arch: Arch, mode: Mode, code: &[u8], address: u64) -> (Vec<Insn>, Option<u64>) {
+    let big = mode.big;
+    if matches!(arch, Arch::Mips | Arch::Mips64) {
+        let features = mips_features_in(arch, mode);
+        let mut out = Vec::new();
+        let mut delayed = Vec::new();
+        let mut at = 0usize;
+        let mut stop = None;
+        while at < code.len() {
+            let pc = address.wrapping_add(at as u64);
+            let Some((i, d)) = decode_mips(&code[at..], big, pc, &features) else {
+                stop = Some(pc);
+                break;
+            };
+            at += usize::from(i.len.max(1));
+            out.push(i);
+            delayed.push(d);
+        }
+        delay_slots(&mut out, &delayed);
+        return (out, stop);
+    }
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
-        let Some(i) = decode(arch, &code[at..], pc) else {
+        let Some(i) = decode_in(arch, mode, &code[at..], pc) else {
             return (out, Some(pc));
         };
         at += usize::from(i.len.max(1));

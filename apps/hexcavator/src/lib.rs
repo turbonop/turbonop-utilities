@@ -1,5 +1,5 @@
-//! The `hexc` command-line driver, as a library: [`run`] runs one command
-//! (`hexc size ...` is `run(&["size", ...])`). The binary is a thin
+//! The `hexcavator` command-line driver, as a library: [`run`] runs one command
+//! (`hexcavator size ...` is `run(&["size", ...])`). The binary is a thin
 //! `main` around it; the fuzzer drives every command through it.
 
 #[macro_use]
@@ -14,10 +14,12 @@ mod dwarfdump;
 mod init;
 mod lines;
 mod linkerlog;
+mod ltcg;
 mod mcp;
 mod pdbdump;
 mod query;
 mod recommend;
+mod relocations;
 mod resources;
 mod serve;
 mod signature;
@@ -31,13 +33,13 @@ mod xref;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
+use turbonop_mmap::Mmap;
 
 const USAGE: &str = "\
-hexc (Hexcavator): explore executables, objects, and libraries, and their
+Hexcavator: explore executables, objects, and libraries, and their
 debug information.
 
-usage: hexc [--cache <path>] [--arch <name>] [symbol servers] <command> [args]
+usage: hexcavator [--cache <path>] [--arch <name>] [symbol servers] <command> [args]
 
 commands:
   annotations <image>        the strings code attached to addresses (__annotation)
@@ -45,17 +47,19 @@ commands:
   checksec [-audit] <image>  its exploit mitigations; -audit: its objects' compilers and options
   data [options] <image> <name>  a datum's bytes, and its value read as its type
   deps [options] <image>     what it loads (as its loader finds it), and what's missing
-  dump [options] <file>...   dumpbin-style dump (see `hexc dump` for options)
-  dwarf [options] <file>     dump a file's DWARF, as llvm-dwarfdump does (see `hexc dwarf`)
+  dump [options] <file>...   dumpbin-style dump (see `hexcavator dump` for options)
+  dwarf [options] <file>     dump a file's DWARF, as llvm-dwarfdump does (see `hexcavator dwarf`)
   info <file>...             identify the format of each file
   init [options] <image>     what runs before main (or when a library loads), and what it calls
   inlines [options] <image>  the functions inlined into its code, by their copies' bytes
   licenses                   the licenses of Hexcavator and of the code it includes
   linkerlog [options] <log>  the linker's /VERBOSE output: why each library member was linked
+  ltcg [options] <file>...   dump Visual C++ LTCG (/GL) objects, and libraries of them
   mcp                        serve size, symbol, and reference tools to AI agents (MCP, stdio)
-  pdb [options] <file.pdb>   dump a PDB (see `hexc pdb` for options)
+  pdb [options] <file>       dump a PDB, or an image's (see `hexcavator pdb` for options)
   query <image> <query>      the image's symbols, filtered, grouped, and sorted
   recommend <image>          build changes that would make the image smaller, measured
+  relocations <image>        what the loader patches, by type, section, data, and target
   resources [options] <image>  its resources and metadata (version, manifest, icons, dialogs, Info.plist, notes)
   serve                      run commands for an editor, keeping what they read in memory
   signature [-json] <image>  its code signatures (Authenticode, Apple), verified on any platform
@@ -72,29 +76,32 @@ options:
   --cache <path>             keep an index of each image's symbols, so that the
                              next command on it needn't build them: in <path>
                              if it is a file, or in the directory <path> (as
-                             app.exe.<hash>.hexc-index); '--cache .' keeps them
+                             app.exe.<hash>.turbonop-index); '--cache .' keeps them
                              in the current directory
   --arch <name>              the image of universal (fat) Mach-O files to read
                              (arm64, x86_64, ...; default: this machine's, else
                              the first)
 
-Debug information is looked for beside the image, then in the symbol
-directories (HEXC_SYMBOL_PATH; _NT_SYMBOL_PATH's local directories and
+Every command reads any format (PE, ELF, Mach-O, WebAssembly) with its
+debug information (a PDB, or DWARF: in the image, a separate debug file, a
+dSYM), which -debug <path> gives (-pdb is another name for it). Debug
+information is otherwise looked for beside the image, then in the symbol
+directories (TURBONOP_SYMBOL_PATH; _NT_SYMBOL_PATH's local directories and
 caches; debuginfod's cache), then on symbol servers, if given (nothing is
 asked of a server otherwise; files are fetched with curl):
   --symbol-server <url>      a server with Microsoft's layout (SSQP), such as
                              https://msdl.microsoft.com/download/symbols
-                             (HEXC_SYMBOL_SERVER: URLs separated by ';')
-  --debuginfod <url>         a debuginfod server (HEXC_DEBUGINFOD: URLs
+                             (TURBONOP_SYMBOL_SERVER: URLs separated by ';')
+  --debuginfod <url>         a debuginfod server (TURBONOP_DEBUGINFOD: URLs
                              separated by spaces)
-  --symbol-cache <dir>       where to keep what is fetched (HEXC_SYMBOL_CACHE;
+  --symbol-cache <dir>       where to keep what is fetched (TURBONOP_SYMBOL_CACHE;
                              else it is kept in memory only)
 
 A Mach-O image with no dSYM found has its DWARF read from the object files
 its debug map names (as the linker left them: relative to the image, or
 where the linker ran; archive members too).";
 
-/// hexc's own options, wherever they are among a command's.
+/// hexcavator's own options, wherever they are among a command's.
 #[derive(Default)]
 struct Global {
     /// `--cache <path>`: the last given.
@@ -102,7 +109,7 @@ struct Global {
     /// `--arch <name>`: the last given.
     arch: Option<String>,
     /// `--symbol-server`, `--debuginfod`, `--symbol-cache`.
-    servers: hexcavator_program::server::Servers,
+    servers: turbonop_program::server::Servers,
 }
 
 /// A symbol-server option at `a` (`--symbol-server <url>` or
@@ -130,7 +137,7 @@ fn server_option<'a>(
     Ok(None)
 }
 
-/// `args` without hexc's own options (any before a `--`), and those
+/// `args` without hexcavator's own options (any before a `--`), and those
 /// options.
 fn global_options(args: &[String]) -> Result<(Vec<String>, Global), String> {
     let mut rest = Vec::with_capacity(args.len());
@@ -171,9 +178,9 @@ fn global_options(args: &[String]) -> Result<(Vec<String>, Global), String> {
         return Err("--cache: expected a file or directory".into());
     }
     if let Some(name) = &global.arch
-        && !hexcavator_macho::set_preferred_arch(Some(name))
+        && !turbonop_macho::set_preferred_arch(Some(name))
     {
-        let known: Vec<String> = hexcavator_macho::arch_names().collect();
+        let known: Vec<String> = turbonop_macho::arch_names().collect();
         return Err(format!(
             "--arch: no architecture named '{name}' (the names are {})",
             known.join(", ")
@@ -183,30 +190,33 @@ fn global_options(args: &[String]) -> Result<(Vec<String>, Global), String> {
 }
 
 /// Runs the command `args` names (without the program's name), with
-/// hexc's own options (`--cache`, `--arch`, the symbol servers') anywhere
+/// hexcavator's own options (`--cache`, `--arch`, the symbol servers') anywhere
 /// among them.
 pub fn run(args: &[String]) -> ExitCode {
     let (args, global) = match global_options(args) {
         Ok(x) => x,
         Err(e) => {
-            ereport!("hexc: {e}");
+            ereport!("hexcavator: {e}");
             return ExitCode::from(2);
         }
     };
-    hexcavator_program::cache::set_file(global.cache);
+    turbonop_program::cache::set_file(global.cache);
     // Servers given here; else the environment's (if any).
     let mut servers = global.servers;
     if servers.is_empty() {
-        let env = hexcavator_program::server::Servers::from_env();
+        let env = turbonop_program::server::Servers::from_env();
         servers.symbol_servers = env.symbol_servers;
         servers.debuginfod = env.debuginfod;
         servers.cache = servers.cache.or(env.cache);
     }
-    hexcavator_program::server::set_servers(servers);
+    turbonop_program::server::set_servers(servers);
     match args.first().map(String::as_str) {
         Some("mcp") => mcp::run(&args[1..]),
         Some("serve") => serve::run(&args[1..]),
-        _ => command(&args),
+        _ => {
+            out::one_shot();
+            command(&args)
+        }
     }
 }
 
@@ -223,6 +233,7 @@ fn command(args: &[String]) -> ExitCode {
         "dump" => dump::run(rest),
         "pdb" => pdbdump::run(rest),
         "dwarf" => dwarfdump::run(rest),
+        "ltcg" => ltcg::run(rest),
         "checksec" => checksec::run(rest),
         "signature" => signature::run(rest),
         "size" => size::run(rest),
@@ -230,6 +241,7 @@ fn command(args: &[String]) -> ExitCode {
         "xref" => xref::run(rest),
         "query" => query::run(rest),
         "recommend" => recommend::run(rest),
+        "relocations" | "relocs" => relocations::run(rest),
         "resources" => resources::run(rest),
         "types" => types::run(rest),
         "inlines" => lines::run_inlines(rest),
@@ -246,19 +258,64 @@ fn command(args: &[String]) -> ExitCode {
         }
         "help" | "-h" | "--help" => out::print(format!("{USAGE}\n").as_bytes()),
         "version" | "-V" | "--version" => {
-            out::print(format!("hexc {}\n", env!("CARGO_PKG_VERSION")).as_bytes())
+            out::print(format!("hexcavator {}\n", env!("CARGO_PKG_VERSION")).as_bytes())
         }
         other => {
-            ereport!("hexc: unknown command '{other}'\n\n{USAGE}");
+            ereport!("hexcavator: unknown command '{other}'\n\n{USAGE}");
             ExitCode::from(2)
         }
     }
 }
 
-/// What `hexc info` adds for a PE image: whether it is managed, the tools
+/// What `hexcavator info` adds for a PE image: whether it is managed, the tools
 /// its Rich header names, its certificates, overlay, and bound imports.
-fn pe_details(pe: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
-    use hexcavator_pe::extras::{
+/// A COFF object's: its sections and symbols, and whether it has DWARF
+/// (clang's, or MinGW's) or CodeView.
+fn coff_details(o: &turbonop_pe::PeFile<'_>) -> Vec<String> {
+    let names: Vec<&[u8]> = o.sections().iter().map(|s| o.section_name(s)).collect();
+    let symbols = o.symbols().ok().flatten().map_or(0, |t| t.len());
+    let mut out = vec![format!("{} sections, {symbols} symbols", names.len())];
+    let debug: Vec<&str> = [
+        (
+            names.iter().any(|n| n.starts_with(b".debug$")),
+            "CodeView (.debug$S, .debug$T)",
+        ),
+        (names.iter().any(|n| n.starts_with(b".debug_")), "DWARF"),
+    ]
+    .into_iter()
+    .filter_map(|(has, what)| has.then_some(what))
+    .collect();
+    if !debug.is_empty() {
+        out.push(format!("debug information: {}", debug.join(", ")));
+    }
+    out
+}
+
+/// What `hexcavator info` adds for an LTCG object: what its IL holds (`hexcavator
+/// ltcg` dumps it).
+fn ltcg_details(o: &turbonop_pe::ltcg::LtcgObject<'_>) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(g) = o.globals() {
+        let defined = g
+            .symbols
+            .iter()
+            .filter(|s| s.storage().is_public_definition())
+            .count();
+        out.push(format!(
+            "{} symbols ({defined} public definitions), {} source files",
+            g.symbols.len(),
+            g.source_files.len()
+        ));
+    }
+    if let Some(c) = o.compiler() {
+        out.push(format!("back end: {}", String::from_utf8_lossy(c)));
+    }
+    out.push("dump it with `hexcavator ltcg`".into());
+    out
+}
+
+fn pe_details(pe: &turbonop_pe::PeFile<'_>) -> Vec<String> {
+    use turbonop_pe::extras::{
         COMIMAGE_FLAGS_32BITREQUIRED, COMIMAGE_FLAGS_ILONLY, COMIMAGE_FLAGS_STRONGNAMESIGNED,
     };
     let mut out = Vec::new();
@@ -314,9 +371,9 @@ fn pe_details(pe: &hexcavator_pe::PeFile<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for a Mach-O image: its Objective-C metadata,
+/// What `hexcavator info` adds for a Mach-O image: its Objective-C metadata,
 /// function starts, compact unwind, and code signature.
-fn macho_details(m: &hexcavator_macho::MachO<'_>) -> Vec<String> {
+fn macho_details(m: &turbonop_macho::MachO<'_>) -> Vec<String> {
     let mut out = Vec::new();
     let objc = m.objc();
     if !objc.classes.is_empty() || !objc.categories.is_empty() || !objc.protocols.is_empty() {
@@ -376,10 +433,10 @@ fn macho_details(m: &hexcavator_macho::MachO<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for an ELF file: its kind, interpreter, the
+/// What `hexcavator info` adds for an ELF file: its kind, interpreter, the
 /// libraries it needs and its own name, search paths, and debug links.
-fn elf_details(e: &hexcavator_elf::ElfFile<'_>) -> Vec<String> {
-    use hexcavator_elf::consts::*;
+fn elf_details(e: &turbonop_elf::ElfFile<'_>) -> Vec<String> {
+    use turbonop_elf::consts::*;
     let mut out = Vec::new();
     let kind = match e.header().kind {
         ET_REL => "relocatable object",
@@ -450,9 +507,9 @@ fn elf_details(e: &hexcavator_elf::ElfFile<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for a WebAssembly module: its functions, data,
+/// What `hexcavator info` adds for a WebAssembly module: its functions, data,
 /// custom sections, and debug links.
-fn wasm_details(m: &hexcavator_wasm::Module<'_>) -> Vec<String> {
+fn wasm_details(m: &turbonop_wasm::Module<'_>) -> Vec<String> {
     let mut out = Vec::new();
     let defined = m.functions().len();
     out.push(format!(
@@ -485,18 +542,18 @@ fn wasm_details(m: &hexcavator_wasm::Module<'_>) -> Vec<String> {
     out
 }
 
-/// What `hexc info` adds for a 16-bit NE or a linear (LE/LX) executable:
+/// What `hexcavator info` adds for a 16-bit NE or a linear (LE/LX) executable:
 /// its name, description, and tables' sizes.
 fn legacy_details(data: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
     let quote = |s: Option<String>| s.map_or_else(String::new, |s| format!(" {s:?}"));
-    if let Ok(ne) = hexcavator_ne::NeFile::parse(data) {
+    if let Ok(ne) = turbonop_ne::NeFile::parse(data) {
         let h = ne.header();
         let os = match h.target_os {
-            hexcavator_ne::NE_OS_OS2 => "OS/2",
-            hexcavator_ne::NE_OS_WINDOWS => "Windows",
-            hexcavator_ne::NE_OS_DOS4 => "DOS 4",
-            hexcavator_ne::NE_OS_WIN386 => "Windows/386",
+            turbonop_ne::NE_OS_OS2 => "OS/2",
+            turbonop_ne::NE_OS_WINDOWS => "Windows",
+            turbonop_ne::NE_OS_DOS4 => "DOS 4",
+            turbonop_ne::NE_OS_WIN386 => "Windows/386",
             _ => "an unknown system",
         };
         out.push(format!(
@@ -523,11 +580,11 @@ fn legacy_details(data: &[u8]) -> Vec<String> {
                 m => m.join(", "),
             }
         ));
-    } else if let Ok(lx) = hexcavator_lx::LxFile::parse(data) {
+    } else if let Ok(lx) = turbonop_lx::LxFile::parse(data) {
         let h = lx.header();
         let what = if lx.is_vxd() {
             format!("virtual device driver (ID {:#06x})", h.device_id)
-        } else if h.flags & hexcavator_lx::MOD_LIBRARY != 0 {
+        } else if h.flags & turbonop_lx::MOD_LIBRARY != 0 {
             "library".to_string()
         } else {
             "program".to_string()
@@ -554,8 +611,8 @@ fn legacy_details(data: &[u8]) -> Vec<String> {
     out
 }
 
-/// What a file is and what hexc does with it, for editors: its format
-/// (`pe`, `coff`, `elf`, `macho`, `wasm`, `archive`, `other`), its kind
+/// What a file is and what hexcavator does with it, for editors: its format
+/// (`pe`, `elf`, `macho`, `wasm`, `archive`, `other`), its kind
 /// (`linked`, `object`, `dump`, `debug`), its architectures, the debug
 /// information found for it (or why none was), and the tools that apply
 /// (see [`tools_for`]).
@@ -567,53 +624,53 @@ fn info_json(path: &str) -> serde_json::Value {
     };
     let data: &[u8] = &map;
     let description = detect::describe(data);
-    let archive = hexcavator_archive::Archive::is_archive(data);
-    let fat = hexcavator_macho::fat_archs(data);
-    let image = hexcavator_image::Image::parse(data).ok();
+    let archive = turbonop_archive::Archive::is_archive(data);
+    let fat = turbonop_macho::fat_archs(data);
+    let image = turbonop_image::Image::parse(data).ok();
+    // (A COFF object is a PE file of kind object, as an ELF or Mach-O
+    // object is of its format.)
+    let coff = image.is_none() && size::is_object_input(data);
     let format = match &image {
         _ if archive => "archive",
-        Some(hexcavator_image::Image::Pe(pe)) if pe.kind() == hexcavator_pe::FileKind::Object => {
-            "coff"
-        }
-        Some(hexcavator_image::Image::Pe(_)) => "pe",
-        Some(hexcavator_image::Image::Elf(_)) => "elf",
-        Some(hexcavator_image::Image::MachO(_)) => "macho",
-        Some(hexcavator_image::Image::Wasm(_)) => "wasm",
+        Some(turbonop_image::Image::Pe(_)) => "pe",
+        Some(turbonop_image::Image::Elf(_)) => "elf",
+        Some(turbonop_image::Image::MachO(_)) => "macho",
+        Some(turbonop_image::Image::Wasm(_)) => "wasm",
         Some(_) => "other",
-        None if size::is_object_input(data) => "coff",
+        None if coff => "pe",
         None => "other",
     };
-    let kind = match image.as_ref().map(hexcavator_image::Image::kind) {
+    let kind = match image.as_ref().map(turbonop_image::Image::kind) {
         _ if archive => "object",
-        Some(hexcavator_image::Kind::Linked) => "linked",
-        Some(hexcavator_image::Kind::Object) => "object",
-        Some(hexcavator_image::Kind::Dump) => "dump",
-        Some(hexcavator_image::Kind::Debug) => "debug",
+        Some(turbonop_image::Kind::Linked) => "linked",
+        Some(turbonop_image::Kind::Object) => "object",
+        Some(turbonop_image::Kind::Dump) => "dump",
+        Some(turbonop_image::Kind::Debug) => "debug",
         Some(_) => "other",
-        None if format == "coff" => "object",
+        None if coff => "object",
         None => "other",
     };
     let archs: Vec<String> = match (&fat, &image) {
         (Some(archs), _) => archs
             .iter()
-            .map(|a| hexcavator_macho::arch_name(a.cputype, a.cpusubtype))
+            .map(|a| turbonop_macho::arch_name(a.cputype, a.cpusubtype))
             .collect(),
         (None, Some(i)) => vec![i.arch().name().to_string()],
         (None, None) => Vec::new(),
     };
     let arch = image.as_ref().map(|i| match i {
-        hexcavator_image::Image::MachO(m) => {
-            hexcavator_macho::arch_name(m.header().cputype, m.header().cpusubtype)
+        turbonop_image::Image::MachO(m) => {
+            turbonop_macho::arch_name(m.header().cputype, m.header().cpusubtype)
         }
         other => other.arch().name().to_string(),
     });
     // Debug information: linked images only (objects' needs relocating).
     let (debug, debug_error) = match &image {
         Some(i) if kind == "linked" => {
-            match hexcavator_program::find_debug(Path::new(path), i, None) {
+            match turbonop_program::find_debug(Path::new(path), i, None) {
                 Ok((p, m)) => {
-                    let what = match hexcavator_debuginfo::DebugInfo::parse(&m) {
-                        Ok(hexcavator_debuginfo::DebugInfo::Pdb(_)) => "pdb",
+                    let what = match turbonop_debuginfo::DebugInfo::parse(&m) {
+                        Ok(turbonop_debuginfo::DebugInfo::Pdb(_)) => "pdb",
                         Ok(_) => "dwarf",
                         Err(_) => "unreadable",
                     };
@@ -623,7 +680,7 @@ fn info_json(path: &str) -> serde_json::Value {
                         None,
                     )
                 }
-                Err(e) => match hexcavator_program::Opened::open(Path::new(path), None) {
+                Err(e) => match turbonop_program::Opened::open(Path::new(path), None) {
                     // A Mach-O image's debug map: its objects' DWARF.
                     Ok(o) if o.is_debug_map() => (
                         Some(json!({
@@ -645,8 +702,7 @@ fn info_json(path: &str) -> serde_json::Value {
     let has_dwarf = debug
         .as_ref()
         .is_some_and(|d| d["kind"] == "dwarf" || d["kind"] == "debugmap")
-        || (kind != "linked"
-            && hexcavator_debuginfo::dwarf_backend::DwarfInfo::parse(data).is_ok());
+        || (kind != "linked" && turbonop_debuginfo::dwarf_backend::DwarfInfo::parse(data).is_ok());
     json!({
         "path": path,
         "description": description,
@@ -657,15 +713,39 @@ fn info_json(path: &str) -> serde_json::Value {
         "arch": arch,
         "debug": debug,
         "debugError": debug_error,
-        "tools": tools_for(format, kind, has_debug, has_dwarf),
+        "tools": tools_for(
+            format,
+            kind,
+            has_debug,
+            has_dwarf,
+            strippable(data),
+            debug.as_ref().is_some_and(|d| d["kind"] == "pdb"),
+        ),
     })
 }
 
+/// Whether stripping the file would take something from it (its debug
+/// information or symbols: see `turbonop_size::strip`).
+fn strippable(data: &[u8]) -> bool {
+    !turbonop_size::strip::ranges(data).is_empty()
+}
+
 /// The tools that apply to a file of `format` and `kind` (with debug
-/// information or not), by the editor's names for them.
-fn tools_for(format: &str, kind: &str, debug: bool, dwarf: bool) -> Vec<&'static str> {
+/// information or not, a PDB or not), by the editor's names for them:
+/// `stripped` if a strip would take something from it.
+fn tools_for(
+    format: &str,
+    kind: &str,
+    debug: bool,
+    dwarf: bool,
+    stripped: bool,
+    pdb: bool,
+) -> Vec<&'static str> {
     let mut t = vec!["report", "compare", "info"];
-    let dumps = ["pe", "coff", "archive", "elf", "macho", "wasm"].contains(&format);
+    if stripped {
+        t.push("stripped");
+    }
+    let dumps = ["pe", "archive", "elf", "macho", "wasm"].contains(&format);
     if dumps {
         t.push("dump");
     }
@@ -675,14 +755,18 @@ fn tools_for(format: &str, kind: &str, debug: bool, dwarf: bool) -> Vec<&'static
     if kind == "linked" && ["pe", "elf", "macho", "wasm"].contains(&format) {
         t.push("resources");
     }
-    if kind == "linked" && ["pe", "elf", "macho"].contains(&format) {
+    if kind == "linked" && ["pe", "elf", "macho", "wasm"].contains(&format) {
         t.push("deps");
         t.push("checksec");
         if debug {
             t.push("audit");
         }
     }
-    if kind == "linked" && debug && ["pe", "elf", "macho"].contains(&format) {
+    // (A WebAssembly module's references are by index: it has none.)
+    if kind == "linked" && ["pe", "elf", "macho"].contains(&format) {
+        t.push("relocations");
+    }
+    if kind == "linked" && debug && ["pe", "elf", "macho", "wasm"].contains(&format) {
         t.push("init");
     }
     if kind == "linked" && debug {
@@ -706,9 +790,14 @@ fn tools_for(format: &str, kind: &str, debug: bool, dwarf: bool) -> Vec<&'static
             "typesDiff",
             "lenses",
         ]);
-        if format == "pe" {
+        // (MSVC's `__annotation`s: a PDB's.)
+        if pdb {
             t.push("annotations");
         }
+    }
+    // Its debug information's dump: a PDB's, or DWARF's.
+    if pdb {
+        t.push("pdb");
     }
     if dwarf {
         t.push("dwarf");
@@ -723,7 +812,7 @@ fn info(args: &[String]) -> ExitCode {
         .filter(|a| *a != "-json" && *a != "/json")
         .collect();
     if paths.is_empty() {
-        ereport!("usage: hexc info [-json] <file>...");
+        ereport!("usage: hexcavator info [-json] <file>...");
         return ExitCode::from(2);
     }
     if json {
@@ -742,20 +831,28 @@ fn info(args: &[String]) -> ExitCode {
                     detect::describe(&map),
                     map.len()
                 );
-                if let Ok(pe) = hexcavator_pe::PeFile::parse_image(&map) {
+                if let Ok(pe) = turbonop_pe::PeFile::parse_image(&map) {
                     for line in pe_details(&pe) {
                         let _ = writeln!(out, "  {line}");
                     }
-                } else if let Ok(m) = hexcavator_macho::MachO::parse(&map) {
+                } else if let Ok(m) = turbonop_macho::MachO::parse(&map) {
                     for line in macho_details(&m) {
                         let _ = writeln!(out, "  {line}");
                     }
-                } else if let Ok(e) = hexcavator_elf::ElfFile::parse(&map) {
+                } else if let Ok(e) = turbonop_elf::ElfFile::parse(&map) {
                     for line in elf_details(&e) {
                         let _ = writeln!(out, "  {line}");
                     }
-                } else if let Ok(m) = hexcavator_wasm::Module::parse(&map) {
+                } else if let Ok(m) = turbonop_wasm::Module::parse(&map) {
                     for line in wasm_details(&m) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                } else if let Ok(o) = turbonop_pe::ltcg::LtcgObject::parse(&map) {
+                    for line in ltcg_details(&o) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                } else if let Ok(o) = turbonop_pe::PeFile::parse_object(&map) {
+                    for line in coff_details(&o) {
                         let _ = writeln!(out, "  {line}");
                     }
                 } else {
@@ -768,7 +865,7 @@ fn info(args: &[String]) -> ExitCode {
                 }
             }
             Err(err) => {
-                ereport!("hexc: {path}: {err}");
+                ereport!("hexcavator: {path}: {err}");
                 status = ExitCode::FAILURE;
             }
         }

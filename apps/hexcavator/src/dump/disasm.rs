@@ -6,11 +6,11 @@
 
 use std::io::{self, Write};
 
-use hexcavator_core::Rva;
-use hexcavator_pe::consts::{machine, section_characteristics as scn};
-use hexcavator_pe::raw::SectionHeader;
-use hexcavator_pe::{CodeKind, FileKind, PeFile};
-use hexcavator_x86::{Mode, decode, format};
+use turbonop_core::Rva;
+use turbonop_pe::consts::{machine, section_characteristics as scn};
+use turbonop_pe::raw::SectionHeader;
+use turbonop_pe::{CodeKind, FileKind, PeFile};
+use turbonop_x86::{Mode, decode, format};
 
 use crate::symbols::SymbolMap;
 
@@ -124,25 +124,23 @@ pub fn listing(
     bytes: &[u8],
     symbols: Option<&SymbolMap>,
 ) -> io::Result<()> {
-    let none = hexcavator_x86::format::NoSymbols;
-    let names: &dyn hexcavator_x86::format::Symbols = match symbols {
-        Some(s) => s,
-        None => &none,
-    };
+    let none = turbonop_x86::format::NoSymbols;
     let width = if mode == Mode::Bits64 { 16 } else { 8 };
-    let mut offset = 0usize;
-    while offset < bytes.len() {
+    in_parts(out, bytes.len(), |offset, out| {
+        let names: &dyn turbonop_x86::format::Symbols = match symbols {
+            Some(s) => s,
+            None => &none,
+        };
         let here = address + offset as u64;
         if let Some(label) = symbols.and_then(|s| s.at(here)) {
-            writeln!(out, "{label}:")?;
+            let _ = writeln!(out, "{label}:");
         }
         // Bytes no object contributed are shown as data.
         if let Some(end) = symbols.and_then(|s| s.gap_end(here)) {
             let room = usize::try_from(end - here).unwrap_or(usize::MAX);
             let n = room.min(16).min(bytes.len() - offset);
-            data_line(out, width, here, &bytes[offset..offset + n])?;
-            offset += n;
-            continue;
+            let _ = data_line(out, width, here, &bytes[offset..offset + n]);
+            return Some(offset + n);
         }
         let (len, inst) = match decode(&bytes[offset..], mode, here) {
             Ok(inst) => (inst.len(), Some(inst)),
@@ -155,13 +153,98 @@ pub fn listing(
             inst.as_ref(),
             names,
         );
-        out.write_all(text.as_bytes())?;
-        offset += len;
+        out.extend_from_slice(text.as_bytes());
+        Some(offset + len)
+    })
+}
+
+/// Writes the listing of `len` bytes that `line` makes a line at a time
+/// (each line's text, given its offset, to the buffer; the next line's
+/// offset, or `None` at the end), on every core.
+///
+/// The bytes are listed in parts, each on its own core, then joined where
+/// the sweep of the part before ended. What a line shows depends only on
+/// its offset, and a linear sweep falls back into step within a few
+/// instructions of any start: each part is taken from the line at that
+/// offset, or listed again from it if it has none. The output is the one
+/// sweep's, part for part.
+fn in_parts(
+    out: &mut dyn Write,
+    len: usize,
+    line: impl Fn(usize, &mut Vec<u8>) -> Option<usize> + Sync,
+) -> io::Result<()> {
+    const PART: usize = 256 * 1024;
+    let threads = turbonop_par::threads();
+    if threads < 2 || len < 2 * PART {
+        let mut buf = Vec::new();
+        sweep(&mut buf, 0, len, len, &line, None);
+        return out.write_all(&buf);
+    }
+    let starts: Vec<usize> = (0..len).step_by(PART).collect();
+    // (A window of parts at a time: their text, held until written, is
+    // some 20 times the code.)
+    let mut at = 0usize;
+    for window in starts.chunks(threads * 2) {
+        let parts = turbonop_par::map(window, 1, |&from| {
+            let to = (from + PART).min(len);
+            let mut buf = Vec::new();
+            let mut lines = Vec::new();
+            let end = sweep(&mut buf, from, to, len, &line, Some(&mut lines));
+            (from, to, buf, lines, end)
+        });
+        for (from, to, buf, lines, end) in parts {
+            if at >= to {
+                continue;
+            }
+            if at == from {
+                out.write_all(&buf)?;
+                at = end;
+                continue;
+            }
+            match lines.binary_search_by_key(&at, |l: &(usize, usize)| l.0) {
+                Ok(k) => {
+                    out.write_all(&buf[lines[k].1..])?;
+                    at = end;
+                }
+                Err(_) => {
+                    let mut again = Vec::new();
+                    at = sweep(&mut again, at, to, len, &line, None);
+                    out.write_all(&again)?;
+                }
+            }
+        }
     }
     Ok(())
 }
 
-impl hexcavator_arm64::Symbols for SymbolMap {
+/// Lists from offset `from` until a line starts at or after `to` (or
+/// there are no more, at `len`); returns where it stopped. `lines` gets
+/// each line's offset and where its text starts in `out`.
+fn sweep(
+    out: &mut Vec<u8>,
+    from: usize,
+    to: usize,
+    len: usize,
+    line: &impl Fn(usize, &mut Vec<u8>) -> Option<usize>,
+    mut lines: Option<&mut Vec<(usize, usize)>>,
+) -> usize {
+    let mut offset = from;
+    while offset < to {
+        let mark = out.len();
+        match line(offset, out) {
+            Some(next) => {
+                if let Some(lines) = lines.as_deref_mut() {
+                    lines.push((offset, mark));
+                }
+                offset = next;
+            }
+            None => return len,
+        }
+    }
+    offset
+}
+
+impl turbonop_arm64::Symbols for SymbolMap {
     fn name_at(&self, address: u64) -> Option<&str> {
         self.public_at(address)
     }
@@ -174,30 +257,30 @@ fn arm64_listing(
     bytes: &[u8],
     symbols: Option<&SymbolMap>,
 ) -> io::Result<()> {
-    let mut offset = 0usize;
-    while offset + 4 <= bytes.len() {
+    in_parts(out, bytes.len(), |offset, out| {
+        if offset + 4 > bytes.len() {
+            return None;
+        }
         let here = address + offset as u64;
         if let Some(label) = symbols.and_then(|s| s.at(here)) {
-            writeln!(out, "{label}:")?;
+            let _ = writeln!(out, "{label}:");
         }
         if let Some(end) = symbols.and_then(|s| s.gap_end(here)) {
             let room = usize::try_from(end - here).unwrap_or(usize::MAX);
             let n = room.min(16).min(bytes.len() - offset);
-            data_line(out, 16, here, &bytes[offset..offset + n])?;
-            offset += n;
-            continue;
+            let _ = data_line(out, 16, here, &bytes[offset..offset + n]);
+            return Some(offset + n);
         }
-        let word = u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+        let word = u32::from_le_bytes(bytes[offset..offset + 4].try_into().ok()?);
         let text =
-            hexcavator_arm64::decode(word, here).map_or_else(String::new, |inst| match symbols {
-                Some(s) => hexcavator_arm64::format_with(&inst, s),
-                None => hexcavator_arm64::format(&inst),
+            turbonop_arm64::decode(word, here).map_or_else(String::new, |inst| match symbols {
+                Some(s) => turbonop_arm64::format_with(&inst, s),
+                None => turbonop_arm64::format(&inst),
             });
         let line = format!("  {here:016X}: {word:08X}  {text}");
-        writeln!(out, "{}", line.trim_end())?;
-        offset += 4;
-    }
-    Ok(())
+        let _ = writeln!(out, "{}", line.trim_end());
+        Some(offset + 4)
+    })
 }
 
 /// A line of raw bytes: hex, then the bytes as text.
@@ -215,7 +298,7 @@ fn data_line(out: &mut dyn Write, width: usize, address: u64, bytes: &[u8]) -> i
 /// How dumpbin shows a byte as text. It reads the byte as Windows-1252 and
 /// writes the console's code page (437): printable ASCII as itself;
 /// characters code page 437 has as themselves (dumpbin writes their 437
-/// bytes; hexc writes the characters); others as Windows' "best fit" ASCII
+/// bytes; hexcavator writes the characters); others as Windows' "best fit" ASCII
 /// (`Ì` as `I`, `‘` as a backquote); anything else as a dot.
 fn shown_char(b: u8) -> char {
     const IN_CP437: &str = "ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥ƒáíóúñÑªº¿¬½¼¡«»ßµ±÷°·²§¶•¤";

@@ -1,6 +1,6 @@
 [package]
-name = "hexcavator-core"
-description = "Zero-copy, host-independent byte-level primitives for Hexcavator"
+name = "turbonop-core"
+description = "Zero-copy, host-independent byte-level primitives"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,3 +10,6 @@ repository.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+memchr.workspace = true

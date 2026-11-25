@@ -23,6 +23,62 @@ for %%m in (arm thumb) do (
   "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%m-linux-gnueabihf.o -o program-%%m-linux-gnueabihf || exit /b 1
   "%LLVM_BIN%\llvm-objdump.exe" -d --no-print-imm-hex --no-show-raw-insn program-%%m-linux-gnueabihf > program-%%m-linux-gnueabihf.objdump.txt || exit /b 1
 )
+rem RISC-V: RV64GC and RV32IMAC (compressed code), and llvm-objdump's listing
+rem of each (no bytes) for the disassembler's test.
+for %%t in (riscv64 riscv32) do (
+  set MARCH=-march=rv64gc
+  if %%t==riscv32 set MARCH=-march=rv32imac
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu !MARCH! %CFLAGS% -c "%~dp0program.c" -o program-%%t-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
+)
+rem PowerPC: 64-bit little- and big-endian (ELFv2, which lld links), and
+rem 32-bit (not PIC, as the others aren't), and llvm-objdump's listing of each (no bytes) for the
+rem disassembler's test.
+for %%t in (powerpc64le powerpc64 powerpc) do (
+  set ABI=
+  if %%t==powerpc64 set ABI=-mabi=elfv2
+  if %%t==powerpc set ABI=-fno-pic
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu !ABI! %CFLAGS% -c "%~dp0program.c" -o program-%%t-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
+)
+rem MIPS: 32-bit big- and little-endian, 64-bit little-endian (not PIC, as
+rem the others aren't, and no small data, $gp-relative), and llvm-objdump's
+rem listing of each (no bytes) for the disassembler's test.
+for %%t in (mips mipsel mips64el) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -fno-pic -mno-abicalls -G0 %CFLAGS% -c "%~dp0program.c" -o program-%%t-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
+)
+rem 32-bit PowerPC as clang compiles it by default: PIC (its GOT pointer
+rem from `bcl 20, 31` and `mflr`, and a literal; its data through .got2).
+"%LLVM_BIN%\clang.exe" --target=powerpc-linux-gnu -fPIC %CFLAGS% -c "%~dp0program.c" -o program-powerpc-pic-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-powerpc-pic-linux-gnu.o -o program-powerpc-pic-linux-gnu || exit /b 1
+del program-powerpc-pic-linux-gnu.o
+rem MIPS (32-bit little-endian) as most of it is: with small data
+rem ($gp-relative), and PIC (its data through the GOT; its TLS local-exec,
+rem to link static), for references through $gp.
+"%LLVM_BIN%\clang.exe" --target=mipsel-linux-gnu -fno-pic -mno-abicalls %CFLAGS% -c "%~dp0program.c" -o program-mipsel-sdata-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-mipsel-sdata-linux-gnu.o -o program-mipsel-sdata-linux-gnu || exit /b 1
+"%LLVM_BIN%\clang.exe" --target=mipsel-linux-gnu -fPIC -ftls-model=local-exec %CFLAGS% -c "%~dp0program.c" -o program-mipsel-pic-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-mipsel-pic-linux-gnu.o -o program-mipsel-pic-linux-gnu || exit /b 1
+del program-mipsel-sdata-linux-gnu.o program-mipsel-pic-linux-gnu.o
+rem microMIPS: 32-bit big- and little-endian (its 16- and 32-bit
+rem instructions), and llvm-objdump's listing of each.
+for %%t in (mips mipsel) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -mmicromips -fno-pic -mno-abicalls -G0 %CFLAGS% -c "%~dp0program.c" -o program-%%t-micromips-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-micromips-linux-gnu.o -o program-%%t-micromips-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-micromips-linux-gnu > program-%%t-micromips-linux-gnu.objdump.txt || exit /b 1
+  del program-%%t-micromips-linux-gnu.o
+)
+rem LoongArch: LA64 and LA32, and llvm-objdump's listing of each (no bytes)
+rem for the disassembler's test.
+for %%t in (loongarch64 loongarch32) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu %CFLAGS% -c "%~dp0program.c" -o program-%%t-linux-gnu.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -static --build-id=sha1 -e _start program-%%t-linux-gnu.o -o program-%%t-linux-gnu || exit /b 1
+  "%LLVM_BIN%\llvm-objdump.exe" -d --no-show-raw-insn program-%%t-linux-gnu > program-%%t-linux-gnu.objdump.txt || exit /b 1
+)
 "%LLVM_BIN%\clang.exe" --target=x86_64-linux-gnu %CFLAGS% -fPIC -c "%~dp0program.c" -o program-pic.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -shared --build-id=sha1 program-pic.o -o program.so || exit /b 1
 del program-pic.o
@@ -38,6 +94,18 @@ rem consumer.c linked against it, needing those versions.
 del consumer.o
 for %%f in (libversions.so consumer.so) do "%LLVM_BIN%\llvm-readobj.exe" --version-info --dyn-syms %%f > %%f.versions.txt || exit /b 1
 del relr.o
+rem MIPS's dynamic pointers: relr.c, consumer.c, and locals.c in one shared
+rem object, for mipsel and mips64el (its R_MIPS_REL32 relocations, and its
+rem GOT: local entries the loader relocates, global ones it sets to their
+rem symbols').
+for %%t in (mipsel mips64el) do (
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -O1 -ffreestanding -fno-stack-protector -fno-asynchronous-unwind-tables -fno-ident -fPIC -c "%~dp0relr.c" -o relr-%%t.o || exit /b 1
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -O1 -ffreestanding -fno-stack-protector -fno-asynchronous-unwind-tables -fno-ident -fPIC -c "%~dp0consumer.c" -o consumer-%%t.o || exit /b 1
+  "%LLVM_BIN%\clang.exe" --target=%%t-linux-gnu -O1 -ffreestanding -fno-stack-protector -fno-asynchronous-unwind-tables -fno-ident -fPIC -c "%~dp0locals.c" -o locals-%%t.o || exit /b 1
+  "%LLVM_BIN%\ld.lld.exe" -shared --build-id=sha1 relr-%%t.o consumer-%%t.o locals-%%t.o -o relr-%%t.so || exit /b 1
+  "%LLVM_BIN%\llvm-readobj.exe" --relocations --dynamic-table --arch-specific relr-%%t.so > relr-%%t.so.readobj.txt || exit /b 1
+  del relr-%%t.o consumer-%%t.o locals-%%t.o
+)
 rem Android's packed relocations (APS2), and the same unpacked.
 "%LLVM_BIN%\clang.exe" --target=aarch64-linux-android29 -O1 -ffreestanding -fno-stack-protector -fno-ident -fPIC -c "%~dp0relr.c" -o relr-android.o || exit /b 1
 "%LLVM_BIN%\ld.lld.exe" -shared --build-id=sha1 --pack-dyn-relocs=android relr-android.o -o relr-android.so || exit /b 1
@@ -96,6 +164,22 @@ for %%t in (x86_64-linux-gnu aarch64_be-linux-gnu i386-linux-gnu) do (
   "%LLVM_BIN%\llvm-readobj.exe" --unwind --relocs unwind-%%t > unwind-%%t.unwind.txt || exit /b 1
   "%LLVM_BIN%\llvm-readobj.exe" --relocs unwind-%%t.o > unwind-%%t.o.relocs.txt || exit /b 1
 )
+rem RISC-V (RV64GC) with call frame information, for the unwinder.
+"%LLVM_BIN%\clang.exe" --target=riscv64-linux-gnu -march=rv64gc %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-riscv64-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-riscv64-linux-gnu.o -o unwind-riscv64-linux-gnu || exit /b 1
+del unwind-riscv64-linux-gnu.o
+rem PowerPC (64-bit little-endian) likewise.
+"%LLVM_BIN%\clang.exe" --target=powerpc64le-linux-gnu %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-powerpc64le-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-powerpc64le-linux-gnu.o -o unwind-powerpc64le-linux-gnu || exit /b 1
+del unwind-powerpc64le-linux-gnu.o
+rem MIPS (32-bit little-endian) likewise.
+"%LLVM_BIN%\clang.exe" --target=mipsel-linux-gnu -fno-pic -mno-abicalls -G0 %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-mipsel-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-mipsel-linux-gnu.o -o unwind-mipsel-linux-gnu || exit /b 1
+del unwind-mipsel-linux-gnu.o
+rem LoongArch (LA64) likewise.
+"%LLVM_BIN%\clang.exe" --target=loongarch64-linux-gnu %CFLAGS:-fno-asynchronous-unwind-tables=% -funwind-tables -c "%~dp0program.c" -o unwind-loongarch64-linux-gnu.o || exit /b 1
+"%LLVM_BIN%\ld.lld.exe" -static --eh-frame-hdr -e _start unwind-loongarch64-linux-gnu.o -o unwind-loongarch64-linux-gnu || exit /b 1
+del unwind-loongarch64-linux-gnu.o
 rem Anonymous data only code refers to (-O2, for the lookup and jump
 rem tables), and llvm-objdump's disassembly, which names the targets.
 for %%t in (x86_64-linux-gnu aarch64-linux-gnu) do (

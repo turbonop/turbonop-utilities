@@ -10,11 +10,11 @@
 
 use std::path::Path;
 
-use hexcavator_etw::guids;
-use hexcavator_etw::schema::{Properties, pointer_size};
-use hexcavator_trace::{ProcessIx, ThreadIx, Trace};
 use rustc_hash::FxHashMap;
 use serde_json::{Value, json};
+use turbonop_etw::guids;
+use turbonop_etw::schema::{Properties, pointer_size};
+use turbonop_trace::{ProcessIx, ThreadIx, Trace};
 
 use crate::reading::int;
 
@@ -75,7 +75,7 @@ enum Read {
 /// The hard faults of `trace` (read from `path`): its HardFault and FileIo
 /// name events, from the buffers holding them, on every core.
 pub fn table(trace: &Trace, path: &Path) -> Result<FaultTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, op: u8| {
+    let wanted = |provider: &turbonop_etl::Guid, op: u8| {
         (*provider == guids::PAGE_FAULT && op == HARD_FAULT)
             || (*provider == guids::FILE_IO && NAMES.contains(&op))
     };
@@ -88,7 +88,7 @@ pub fn table(trace: &Trace, path: &Path) -> Result<FaultTable, String> {
                 .get("FileName")
                 .or_else(|| p.get("OpenPath"))
                 .map_or_else(String::new, |n| {
-                    hexcavator_etw::values::format(n, pointer_size(e))
+                    turbonop_etw::values::format(n, pointer_size(e))
                 });
             if !name.is_empty() {
                 mine.push(Read::Name {

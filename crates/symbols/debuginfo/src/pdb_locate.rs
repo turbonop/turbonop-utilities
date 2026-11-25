@@ -7,13 +7,13 @@
 //! line at an address of a site nested in it is where it calls the nested
 //! one, as is the procedure's at an address of its sites'.
 
-use std::collections::HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_codeview::TypeFormatter;
-use hexcavator_codeview::annotations;
-use hexcavator_codeview::lines::{self, subsection};
-use hexcavator_codeview::symbols::{Symbol, kind};
-use hexcavator_pdb::{LazyTypeStream, ModuleStream, StringTable};
+use turbonop_codeview::TypeFormatter;
+use turbonop_codeview::annotations;
+use turbonop_codeview::lines::{self, subsection};
+use turbonop_codeview::symbols::{Symbol, kind};
+use turbonop_pdb::{DbiStream, LazyTypeStream, ModuleStream, StringTable};
 
 use crate::locate::{Frame, MAX_FRAMES};
 use crate::pdb_backend::{
@@ -25,6 +25,8 @@ const MAX_KEPT: usize = 512;
 
 pub(crate) struct PdbLocator<'a, 'data> {
     info: &'a PdbInfo<'data>,
+    /// The DBI stream, parsed once (its module list is long).
+    dbi: Option<DbiStream<'a>>,
     /// Modules read, by index.
     modules: HashMap<u16, Option<ModuleTables<'data>>>,
     /// Inlinees' names, by id.
@@ -68,8 +70,9 @@ impl<'a, 'data> PdbLocator<'a, 'data> {
     pub(crate) fn new(info: &'a PdbInfo<'data>) -> Self {
         Self {
             info,
-            modules: HashMap::new(),
-            names: HashMap::new(),
+            dbi: info.pdb().dbi().ok(),
+            modules: HashMap::default(),
+            names: HashMap::default(),
             strings: info.pdb().names().ok(),
             lazy: info.pdb().lazy_ids().ok().zip(info.pdb().lazy_types().ok()),
         }
@@ -84,7 +87,7 @@ impl<'a, 'data> PdbLocator<'a, 'data> {
             return Vec::new();
         };
         let pdb = info.pdb();
-        let module = pdb.dbi().ok().and_then(|d| {
+        let module = self.dbi.as_ref().and_then(|d| {
             d.contribution_at(section, offset)
                 .map(|c| c.module_index.get())
         });
@@ -123,13 +126,12 @@ impl<'a, 'data> PdbLocator<'a, 'data> {
             .ok()
             .and_then(|rva| section_of(info.section_table(), rva))
             .and_then(|(s, o)| {
-                info.pdb()
-                    .dbi()
-                    .ok()?
+                self.dbi
+                    .as_ref()?
                     .contribution_at(s, o)
                     .map(|c| c.module_index.get())
             });
-        let Some(t) = m.and_then(|m| tables(&mut self.modules, info, m)) else {
+        let Some(t) = m.and_then(|m| tables(&mut self.modules, info, self.dbi.as_ref(), m)) else {
             return false;
         };
         let i = t.code.partition_point(|c| c.0 < start);
@@ -141,7 +143,7 @@ impl<'a, 'data> PdbLocator<'a, 'data> {
 
     /// The file and line of `addr` in module `m`'s line table.
     fn line(&mut self, m: u16, addr: u64) -> (Option<String>, u32) {
-        let Some(t) = tables(&mut self.modules, self.info, m) else {
+        let Some(t) = tables(&mut self.modules, self.info, self.dbi.as_ref(), m) else {
             return (None, 0);
         };
         let strings = self.strings.as_ref();
@@ -150,7 +152,7 @@ impl<'a, 'data> PdbLocator<'a, 'data> {
 
     fn module_frames(&mut self, m: u16, addr: u64) -> Vec<Frame> {
         let strings = self.strings.as_ref();
-        let Some(t) = tables(&mut self.modules, self.info, m) else {
+        let Some(t) = tables(&mut self.modules, self.info, self.dbi.as_ref(), m) else {
             return Vec::new();
         };
         let i = t.code.partition_point(|c| c.0 <= addr);
@@ -226,13 +228,14 @@ impl<'a, 'data> PdbLocator<'a, 'data> {
 fn tables<'m, 'data>(
     modules: &'m mut HashMap<u16, Option<ModuleTables<'data>>>,
     info: &PdbInfo<'data>,
+    dbi: Option<&DbiStream<'_>>,
     m: u16,
 ) -> Option<&'m ModuleTables<'data>> {
     if !modules.contains_key(&m) {
         if modules.len() >= MAX_KEPT {
             modules.clear();
         }
-        modules.insert(m, read_module(info, m));
+        modules.insert(m, dbi.and_then(|d| read_module(info, d, m)));
     }
     modules.get(&m)?.as_ref()
 }
@@ -268,10 +271,10 @@ fn lazy_inlinee(
     types: &LazyTypeStream<'_, '_>,
     id: u32,
 ) -> Option<String> {
-    use hexcavator_codeview::types::{TypeIndex, leaf};
+    use turbonop_codeview::types::{TypeIndex, leaf};
     let lossy = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
     let (kind, scope, name) = ids.with_record(TypeIndex(id), |rec| {
-        let mut r = hexcavator_core::Reader::new(rec.data);
+        let mut r = turbonop_core::Reader::new(rec.data);
         let scope = r.u32_le().ok()?;
         let _ty = r.u32_le().ok()?;
         Some((rec.kind, scope, lossy(r.cstr().ok()?)))
@@ -312,9 +315,12 @@ fn section_of(sections: &[(u32, u32)], rva: u32) -> Option<(u16, u32)> {
 }
 
 /// Module `m`'s tables (`None` if it has no symbol stream).
-fn read_module<'data>(info: &PdbInfo<'data>, m: u16) -> Option<ModuleTables<'data>> {
+fn read_module<'data>(
+    info: &PdbInfo<'data>,
+    dbi: &DbiStream<'_>,
+    m: u16,
+) -> Option<ModuleTables<'data>> {
     let pdb = info.pdb();
-    let dbi = pdb.dbi().ok()?;
     let module = dbi.modules().get(usize::from(m))?;
     let stream = pdb.module_stream(module).ok()??;
     let sections = info.section_table();
@@ -377,7 +383,7 @@ fn read_module<'data>(info: &PdbInfo<'data>, m: u16) -> Option<ModuleTables<'dat
         );
     }
     table.sort_unstable_by_key(|l| (l.0, l.1));
-    let mut inlinees = HashMap::new();
+    let mut inlinees = HashMap::default();
     for (k, body) in stream.subsections() {
         if k == subsection::DEBUG_S_INLINEELINES {
             for e in lines::inlinee_lines(body) {

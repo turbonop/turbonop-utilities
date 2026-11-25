@@ -1,4 +1,4 @@
-// The disassembly view: a function's code (hexc size -disassemble -json) as
+// The disassembly view: a function's code (hexcavator size -disassemble -json) as
 // a listing (raw), by basic block, with its source lines, or as a graph of
 // its blocks. Labels and calls are links; it talks to the extension through
 // messages (disassemble, openSource, openText, copy, mode).
@@ -226,7 +226,7 @@
       el(
         "details",
         { class: "varlist", open: state.varsOpen ? true : undefined, ontoggle: (e) => (state.varsOpen = e.target.open) },
-        el("summary", {}, `Variables (${vars.length}) — where each lives (from the PDB)`),
+        el("summary", {}, `Variables (${vars.length}) — where each lives (from the debug information)`),
         el("table", {}, rows)
       )
     );
@@ -317,7 +317,7 @@
     const of = blockOfLines();
     const code = el("div", { class: "code source" });
     if (!files.length) {
-      code.append(el("p", { class: "note" }, "No line information for this function (hexc reads it from a PE image's PDB)."));
+      code.append(el("p", { class: "note" }, "No line information for this function in its debug information."));
     }
     let last = null;
     l.lines.forEach((line, i) => {
@@ -516,7 +516,7 @@
         { class: "actions" },
         vscode ? el("button", { class: "icon", title: "Open this listing as a text document", onclick: () => post({ command: "openText", mode: state.mode }) }, "Open as Text") : null,
         vscode ? el("button", { class: "icon", title: "Copy the listing", onclick: () => post({ command: "copy", text: plainText() }) }, "Copy") : null,
-        vscode ? el("button", { class: "icon", title: "Run hexc again", onclick: () => post({ command: "refresh" }) }, "⟳") : null
+        vscode ? el("button", { class: "icon", title: "Run hexcavator again", onclick: () => post({ command: "refresh" }) }, "⟳") : null
       )
     );
   }
@@ -547,7 +547,7 @@
     const bytes = el("label", { class: "check" }, el("input", { type: "checkbox", checked: state.bytes ? true : undefined, onchange: (e) => { state.bytes = e.target.checked; save(); render(); } }), " Bytes");
     const hasVars = Array.isArray(listing().variables) && listing().variables.length > 0;
     const vars = hasVars
-      ? el("label", { class: "check", title: "Name the registers and stack slots that hold parameters and locals (from the PDB)" }, el("input", { type: "checkbox", checked: state.vars ? true : undefined, onchange: (e) => { state.vars = e.target.checked; save(); render(); } }), " Variables")
+      ? el("label", { class: "check", title: "Name the registers and stack slots that hold parameters and locals (from the debug information)" }, el("input", { type: "checkbox", checked: state.vars ? true : undefined, onchange: (e) => { state.vars = e.target.checked; save(); render(); } }), " Variables")
       : null;
     const zoom =
       state.mode === "graph"

@@ -27,6 +27,7 @@
 
 extern crate alloc;
 
+pub mod any;
 pub mod apple_compact;
 pub mod arm_ehabi;
 pub mod dwarf_cfi;
@@ -42,26 +43,41 @@ pub trait Memory {
     fn read(&self, address: u64, buf: &mut [u8]) -> bool;
 }
 
-/// An image's bytes, by RVA, as they are when it is loaded (code, unwind
-/// data).
+/// An image's bytes as they are when it is loaded (code, unwind data), by
+/// the image's own addresses: a PE image's RVAs; an ELF or Mach-O image's
+/// virtual addresses, as it was linked (see [`turbonop_image`]'s).
 pub trait Image {
-    /// `len` bytes at `rva`, or None if any of them is not in the image.
-    fn bytes(&self, rva: u32, len: u32) -> Option<&[u8]>;
+    /// `len` bytes at `address`, or None if any of them is not in the
+    /// image.
+    fn bytes(&self, address: u64, len: u64) -> Option<&[u8]>;
 }
 
-impl Image for hexcavator_pe::PeFile<'_> {
-    fn bytes(&self, rva: u32, len: u32) -> Option<&[u8]> {
-        self.bytes_at_rva(hexcavator_core::Rva(rva), len).ok()
+impl Image for turbonop_pe::PeFile<'_> {
+    fn bytes(&self, address: u64, len: u64) -> Option<&[u8]> {
+        let rva = u32::try_from(address).ok()?;
+        let len = u32::try_from(len).ok()?;
+        self.bytes_at_rva(turbonop_core::Rva(rva), len).ok()
     }
 }
 
-/// An image whose bytes are already laid out by RVA (mapped).
+impl Image for turbonop_image::Image<'_> {
+    fn bytes(&self, address: u64, len: u64) -> Option<&[u8]> {
+        self.bytes_at(address, len)
+    }
+}
+
+/// An image whose bytes are already laid out by address (mapped).
 impl Image for [u8] {
-    fn bytes(&self, rva: u32, len: u32) -> Option<&[u8]> {
-        let start = usize::try_from(rva).ok()?;
+    fn bytes(&self, address: u64, len: u64) -> Option<&[u8]> {
+        let start = usize::try_from(address).ok()?;
         let end = start.checked_add(usize::try_from(len).ok()?)?;
         self.get(start..end)
     }
+}
+
+/// `len` bytes at `rva` (a PE image's unwinders' addresses).
+fn rva_bytes(image: &(impl Image + ?Sized), rva: u32, len: u32) -> Option<&[u8]> {
+    image.bytes(u64::from(rva), u64::from(len))
 }
 
 /// Why a frame could not be unwound.

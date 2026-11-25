@@ -19,11 +19,11 @@
 
 use std::path::Path;
 
-use hexcavator_etw::guids;
-use hexcavator_etw::schema::pointer_size;
-use hexcavator_trace::{ProcessIx, Trace};
 use rustc_hash::FxHashMap;
 use serde_json::{Value, json};
+use turbonop_etw::guids;
+use turbonop_etw::schema::pointer_size;
+use turbonop_trace::{ProcessIx, Trace};
 
 /// `ProcessMemInfo`.
 const PROCESS_MEM_INFO: u8 = 125;
@@ -107,7 +107,7 @@ pub fn parse(data: &[u8], ptr: usize) -> Option<Vec<(u32, Usage)>> {
 /// The snapshots of `trace` (read from `path`), from the buffers holding
 /// them, on every core.
 pub fn table(trace: &Trace, path: &Path) -> Result<MemTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, op: u8| {
+    let wanted = |provider: &turbonop_etl::Guid, op: u8| {
         *provider == guids::PAGE_FAULT && op == PROCESS_MEM_INFO
     };
     let (mut all, _) = crate::reading::events(trace, path, wanted, |_, e, mine| {

@@ -7,9 +7,9 @@
 //! the debug information's, so the name is the recorded name plus the
 //! signature.
 
-use std::collections::HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_debuginfo::{BasicType, DebugInfo, PointerKind, Qualifiers, TypeRef, TypeShape};
+use turbonop_debuginfo::{BasicType, DebugInfo, PointerKind, Qualifiers, TypeRef, TypeShape};
 
 /// Bounds the nesting of type references followed (types are untrusted).
 const MAX_DEPTH: u32 = 64;
@@ -34,9 +34,15 @@ impl<'d, 'data> Namer<'d, 'data> {
     pub fn new(debug: &'d DebugInfo<'data>) -> Self {
         Self {
             debug,
-            cache: HashMap::new(),
-            signatures: HashMap::new(),
+            cache: HashMap::default(),
+            signatures: HashMap::default(),
         }
+    }
+
+    /// A namer of the same debug information, with caches of its own (for
+    /// another thread).
+    pub fn fork(&self) -> Namer<'d, 'data> {
+        Namer::new(self.debug)
     }
 
     /// `name` with the argument types and qualifiers of function type

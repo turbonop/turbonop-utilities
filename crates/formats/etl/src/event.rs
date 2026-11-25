@@ -19,7 +19,7 @@
 //! [`Event`] presents every kind the way `ProcessTrace` does in an
 //! `EVENT_RECORD`, so that consumers handle one shape.
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 use crate::buffer::BufferContext;
 use crate::bytes::{align8, guid_at, i64_at, u16_at, u32_at, u64_at};

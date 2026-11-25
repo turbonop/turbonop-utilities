@@ -146,7 +146,7 @@ fn an_index_is_saved_and_used_next_time() {
     let (_, other) = write_trace(
         &dir,
         "t.etl",
-        &hexcavator_trace_synth::Config { seed: 9, ..small() },
+        &turbonop_trace_synth::Config { seed: 9, ..small() },
     );
     let third = session(&[json!({"method": "open", "params": {"path": path}})]);
     let r = result(&third, 1);
@@ -684,7 +684,7 @@ fn the_summary_says_what_the_recording_lost() {
     assert_eq!(result(&a, 2)["buffersLost"], 0);
     // The same trace, its header saying 1234 events were lost: the logfile
     // header event's payload, at EventsLost (0x30).
-    let etl = hexcavator_etl::Etl::parse(&s.etl).unwrap();
+    let etl = turbonop_etl::Etl::parse(&s.etl).unwrap();
     assert_eq!(etl.header().events_lost, 0);
     let first = etl.buffers().next().unwrap().unwrap();
     let header = first.records().unwrap().next().unwrap().unwrap();
@@ -777,7 +777,7 @@ fn every_kind_of_event_over_the_protocol() {
     let total: u64 = counts.iter().sum();
     assert_eq!(total, result(&a, 1)["opened"]["events"].as_u64().unwrap());
     // The samples: named by the kernel's schema.
-    let perf_info = hexcavator_etw::guids::PERF_INFO.to_string();
+    let perf_info = turbonop_etw::guids::PERF_INFO.to_string();
     let samples = rows
         .iter()
         .find(|r| r["guid"] == perf_info.as_str() && r["opcode"] == 46)
@@ -792,8 +792,8 @@ fn every_kind_of_event_over_the_protocol() {
 
 #[test]
 fn events_are_named_by_the_descriptions_recorded_with_them() {
-    use hexcavator_etl::Guid;
-    use hexcavator_trace::{Clock, EventStats, Trace};
+    use turbonop_etl::Guid;
+    use turbonop_trace::{Clock, EventStats, Trace};
     let provider = Guid::new(0x1111, 2, 3, [4; 8]);
     // A TRACE_EVENT_INFO for (provider, ID 5, version 1, opcode 0): names
     // only (no properties).
@@ -875,7 +875,7 @@ fn one_kind_of_events_listed_and_decoded() {
         json!({"method": "open", "params": {"path": path, "useIndex": false}}),
         json!({"method": "events", "params": {"trace": 1}}),
     ]);
-    let thread = hexcavator_etw::guids::THREAD.to_string();
+    let thread = turbonop_etw::guids::THREAD.to_string();
     let cswitch = result(&a, 2)["rows"]
         .as_array()
         .unwrap()
@@ -970,7 +970,7 @@ fn listing_by_the_buffer_index_is_listing_every_buffer() {
     use stackrabbit::generic::{Kind, list};
     let dir = scratch("serve-events-index");
     // (Small buffers: many of them, each with few kinds.)
-    let config = hexcavator_trace_synth::Config {
+    let config = turbonop_trace_synth::Config {
         buffer_size: 4096,
         ..small()
     };
@@ -1015,8 +1015,8 @@ fn listing_by_the_buffer_index_is_listing_every_buffer() {
 fn listed_events_have_their_stacks() {
     let dir = scratch("serve-events-stacks");
     let (path, _) = write_trace(&dir, "t.etl", &small());
-    let perf_info = hexcavator_etw::guids::PERF_INFO.to_string();
-    let image = hexcavator_etw::guids::IMAGE.to_string();
+    let perf_info = turbonop_etw::guids::PERF_INFO.to_string();
+    let image = turbonop_etw::guids::IMAGE.to_string();
     let a = session(&[
         json!({"method": "open", "params": {"path": path, "useIndex": false}}),
         json!({"method": "events.list", "params": {"trace": 1, "guid": perf_info, "version": 2, "opcode": 46, "limit": 300, "stacks": true}}),
@@ -1032,7 +1032,7 @@ fn listed_events_have_their_stacks() {
     )
     .unwrap();
     let t = &loaded.trace;
-    let resolver = hexcavator_trace_analysis::Resolver::new(t);
+    let resolver = turbonop_trace_analysis::Resolver::new(t);
     // (No symbols: a frame is its module and offset, else its address.)
     let label = |process, address: u64, lookup: u64| match resolver.image(process, lookup) {
         Some(image) => format!(
@@ -1088,8 +1088,8 @@ fn listed_events_have_their_stacks() {
 
 #[test]
 fn regions_of_interest_over_a_trace() {
-    use hexcavator_etl::Guid;
-    use hexcavator_etl::write::{self, EventFields, Writer, WriterOptions};
+    use turbonop_etl::Guid;
+    use turbonop_etl::write::{self, EventFields, Writer, WriterOptions};
     let dir = scratch("serve-regions");
     let provider = Guid::new(0x1234_5678, 1, 2, [3; 8]);
     // TraceLogging events: Start (ID 1: Item, Key) and Stop (ID 2: Key).
@@ -1127,7 +1127,7 @@ fn regions_of_interest_over_a_trace() {
             &write::event(
                 &e,
                 true,
-                &[(hexcavator_etl::event::ext_type::EVENT_SCHEMA_TL, meta)],
+                &[(turbonop_etl::event::ext_type::EVENT_SCHEMA_TL, meta)],
                 &payload,
             ),
         );
@@ -1204,9 +1204,9 @@ fn regions_of_interest_over_a_trace() {
 
 #[test]
 fn disk_usage_by_process_file_disk_and_type() {
-    use hexcavator_etl::classic;
-    use hexcavator_etl::write::{self, Kernel, Writer, WriterOptions};
-    use hexcavator_etw::guids;
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
     let dir = scratch("serve-disk");
     // A counter at 10 MHz: 10,000 ticks a millisecond.
     let mut w = Writer::new(WriterOptions {
@@ -1335,9 +1335,9 @@ fn disk_usage_by_process_file_disk_and_type() {
 
 #[test]
 fn file_io_by_process_file_and_operation() {
-    use hexcavator_etl::classic;
-    use hexcavator_etl::write::{self, Kernel, Writer, WriterOptions};
-    use hexcavator_etw::guids;
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
     let dir = scratch("serve-fileio");
     // A counter at 10 MHz: 10,000 ticks a millisecond.
     let mut w = Writer::new(WriterOptions {
@@ -1520,9 +1520,9 @@ fn file_io_by_process_file_and_operation() {
 
 #[test]
 fn dpcs_and_isrs_by_module_function_processor_and_type() {
-    use hexcavator_etl::classic;
-    use hexcavator_etl::write::{self, Kernel, Writer, WriterOptions};
-    use hexcavator_etw::guids;
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
     let dir = scratch("serve-dpc");
     // A counter at 10 MHz: 10 ticks a microsecond.
     let mut w = Writer::new(WriterOptions {
@@ -1702,9 +1702,9 @@ fn dpcs_and_isrs_by_module_function_processor_and_type() {
 type RegEvent<'a> = (u8, i64, u64, u32, u64, &'a str, u32, u32);
 
 fn registry_trace(dir: &std::path::Path, events: &[RegEvent<'_>]) -> std::path::PathBuf {
-    use hexcavator_etl::classic;
-    use hexcavator_etl::write::{self, Kernel, Writer, WriterOptions};
-    use hexcavator_etw::guids;
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
     // A counter at 10 MHz: 100 ns a tick.
     let mut w = Writer::new(WriterOptions {
         processors: 1,
@@ -1930,15 +1930,15 @@ fn answers_too_large_to_send_are_errors() {
 
 /// A kernel event: `(provider, opcode, version, timestamp, payload,
 /// thread)`.
-type KernelRecord = (hexcavator_etl::Guid, u8, u16, i64, Vec<u8>, u32);
+type KernelRecord = (turbonop_etl::Guid, u8, u16, i64, Vec<u8>, u32);
 
 /// A trace (a counter at 10 MHz: 100 ns a tick) of process 100 (app.exe)
 /// and its thread 200 (run down at the start), then `events` (those of
 /// thread 200 are process 100's, by their headers).
 fn app_trace(dir: &std::path::Path, events: Vec<KernelRecord>) -> std::path::PathBuf {
-    use hexcavator_etl::classic;
-    use hexcavator_etl::write::{self, Kernel, Writer, WriterOptions};
-    use hexcavator_etw::guids;
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
     let mut w = Writer::new(WriterOptions {
         processors: 1,
         perf_freq: 10_000_000,
@@ -1995,7 +1995,7 @@ fn utf16z(s: &str) -> Vec<u8> {
 
 #[test]
 fn hard_faults_by_process_file_and_thread() {
-    use hexcavator_etw::guids;
+    use turbonop_etw::guids;
     let dir = scratch("serve-hardfaults");
     // FileIo names: object 1 by a name event, 2 by a create's path, 3 only
     // by the rundown at the end; 9 never.
@@ -2123,7 +2123,7 @@ fn hard_faults_by_process_file_and_thread() {
 
 #[test]
 fn virtual_memory_commit_lifetimes() {
-    use hexcavator_etw::guids;
+    use turbonop_etw::guids;
     let dir = scratch("serve-vmem");
     const COMMIT: u32 = 0x1000;
     const RESERVE: u32 = 0x2000;
@@ -2275,7 +2275,7 @@ fn block_groups(v: &Value) -> std::collections::BTreeMap<String, [u64; 6]> {
 
 #[test]
 fn heap_blocks_by_process_heap_and_thread() {
-    use hexcavator_etw::guids;
+    use turbonop_etw::guids;
     let dir = scratch("serve-heap");
     let ptrs = |v: &[u64]| v.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
     let with_source = |mut p: Vec<u8>| {
@@ -2393,7 +2393,7 @@ fn heap_blocks_by_process_heap_and_thread() {
 
 #[test]
 fn pool_blocks_by_tag_type_and_process() {
-    use hexcavator_etw::guids;
+    use turbonop_etw::guids;
     let dir = scratch("serve-pool");
     let tag = |t: &[u8; 4]| u32::from_le_bytes(*t);
     // Pool Alloc (32) and Free (34) v2: type, tag, size, address.
@@ -2452,7 +2452,7 @@ fn pool_blocks_by_tag_type_and_process() {
 
 #[test]
 fn memory_utilization_by_process_and_name() {
-    use hexcavator_etw::guids;
+    use turbonop_etw::guids;
     let dir = scratch("serve-memory");
     const P: u64 = 4096;
     // ProcessMemInfo (125) v4: a count, then per process its ID and eight
@@ -2635,7 +2635,7 @@ fn profiles_are_mapped_without_a_trace() {
 
 #[test]
 fn summaries_take_wpa_filters() {
-    use hexcavator_etw::guids;
+    use turbonop_etw::guids;
     // Registry: four operations, two of them opens.
     let dir = scratch("serve-filters");
     let path = registry_trace(

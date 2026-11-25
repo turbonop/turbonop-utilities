@@ -1,4 +1,4 @@
-//! `hexc signature`: Authenticode (RSA with a nested signature, ECDSA),
+//! `hexcavator signature`: Authenticode (RSA with a nested signature, ECDSA),
 //! verified against a test root given with -root; untrusted without it;
 //! a changed file fails; an unsigned one says so; and a Mach-O image the
 //! linker signed ad hoc has its pages checked.
@@ -11,7 +11,7 @@ fn root() -> PathBuf {
 }
 
 fn run(args: &[&str]) -> (serde_json::Value, bool) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("signature")
         .args(args)
         .output()
@@ -122,7 +122,7 @@ fn unsigned() {
     let (v, ok) = run(&["-json", &file("testdata/types/types.exe")]);
     assert!(!ok);
     assert_eq!(v["status"], "unsigned");
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["signature", &file("testdata/types/types.exe")])
         .output()
         .unwrap();
@@ -185,7 +185,7 @@ fn version_details() {
     );
     assert_eq!(get("Language"), Some("0x0409, code page 1200"));
     // And in the text, before the signature.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args([
             "signature",
             &file("testdata/sizebench/bin/SizeBenchV2.AnalysisEngine.Tests.CodePageWin32Rsrc.dll"),

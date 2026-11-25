@@ -10,9 +10,9 @@
 //! Frames become tree keys through [`keys::Framer`]: by function (with a
 //! [`Symbolizer`]), by image, or by address.
 
+pub mod debug;
 pub mod keys;
 pub mod lines;
-pub mod pdb;
 pub mod regions;
 pub mod shape;
 pub mod sources;
@@ -21,8 +21,8 @@ pub mod wpa_profile;
 pub mod wpa_query;
 pub mod xml;
 
+pub use debug::{DebugSymbolizer, PdbSymbolizer};
 pub use keys::{FrameMode, Framer, Key, KeyId, Keys, NoSymbols, Resolver, Symbolizer, label};
-pub use pdb::PdbSymbolizer;
 pub use shape::{Folds, Glob, StackTags};
 pub use sources::{Filter, GroupBy, Precise, SwitchWeight};
 pub use tree::{BinTotals, Instances, NO_BIN, NodeId, Tree};

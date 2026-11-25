@@ -1,0 +1,121 @@
+
+File: relr-mipsel.so
+Format: elf32-mips
+Arch: mipsel
+AddressSize: 32bit
+LoadName: <Not found>
+DynamicSection [ (16 entries)
+  Tag        Type              Name/Value
+  0x00000011 REL               0x300
+  0x00000012 RELSZ             72 (bytes)
+  0x00000013 RELENT            8 (bytes)
+  0x00000006 SYMTAB            0x1AC
+  0x0000000B SYMENT            16 (bytes)
+  0x00000005 STRTAB            0x2DC
+  0x0000000A STRSZ             33 (bytes)
+  0x00000004 HASH              0x21C
+  0x70000001 MIPS_RLD_VERSION  1
+  0x70000005 MIPS_FLAGS        NOTPOT 
+  0x70000006 MIPS_BASE_ADDRESS 0x0
+  0x70000011 MIPS_SYMTABNO     7
+  0x7000000A MIPS_LOCAL_GOTNO  6
+  0x70000013 MIPS_GOTSYM       0x5
+  0x00000003 PLTGOT            0x20520
+  0x00000000 NULL              0x0
+]
+Relocations [
+  Section (8) .rel.dyn {
+    0x203D0 R_MIPS_REL32 -
+    0x203D4 R_MIPS_REL32 -
+    0x203D8 R_MIPS_REL32 -
+    0x203DC R_MIPS_REL32 -
+    0x203E4 R_MIPS_REL32 -
+    0x203E8 R_MIPS_REL32 -
+    0x203EC R_MIPS_REL32 -
+    0x203F0 R_MIPS_REL32 -
+    0x2050C R_MIPS_REL32 -
+  }
+]
+MIPS ABI Flags {
+  Version: 0
+  ISA: MIPS32r2
+  ISA Extension: None (0x0)
+  ASEs [ (0x0)
+  ]
+  FP ABI: Hard float (32-bit CPU, Any FPU) (0x5)
+  GPR size: 32
+  CPR1 size: 32
+  CPR2 size: 0
+  Flags 1 [ (0x0)
+  ]
+  Flags 2: 0x0
+}
+There is no .MIPS.options section in the file.
+MIPS RegInfo {
+  GP: 0x28510
+  General Mask: 0x8200001F
+  Co-Proc Mask0: 0x0
+  Co-Proc Mask1: 0x0
+  Co-Proc Mask2: 0x0
+  Co-Proc Mask3: 0x0
+}
+Primary GOT {
+  Canonical gp value: 0x28510
+  Reserved entries [
+    Entry {
+      Address: 0x20520
+      Access: -32752
+      Initial: 0x0
+      Purpose: Lazy resolver
+    }
+    Entry {
+      Address: 0x20524
+      Access: -32748
+      Initial: 0x80000000
+      Purpose: Module pointer (GNU extension)
+    }
+  ]
+  Local entries [
+    Entry {
+      Address: 0x20528
+      Access: -32744
+      Initial: 0x20000
+    }
+    Entry {
+      Address: 0x2052C
+      Access: -32740
+      Initial: 0x30000
+    }
+    Entry {
+      Address: 0x20530
+      Access: -32736
+      Initial: 0x20000
+    }
+    Entry {
+      Address: 0x20534
+      Access: -32732
+      Initial: 0x30000
+    }
+  ]
+  Global entries [
+    Entry {
+      Address: 0x20538
+      Access: -32728
+      Initial: 0x203D0
+      Value: 0x203D0
+      Type: Object (0x1)
+      Section: .data (0xA)
+      Name: table (1)
+    }
+    Entry {
+      Address: 0x2053C
+      Access: -32724
+      Initial: 0x2050C
+      Value: 0x2050C
+      Type: Object (0x1)
+      Section: .data (0xA)
+      Name: far (20)
+    }
+  ]
+  Number of TLS and multi-GOT entries: 0
+}

@@ -274,10 +274,10 @@ pub struct Trace {
     pub events: Vec<EventStats>,
     /// Providers' names, where the trace gives them (TraceLogging's
     /// provider traits), by GUID.
-    pub provider_names: Vec<(hexcavator_etl::Guid, String)>,
+    pub provider_names: Vec<(turbonop_etl::Guid, String)>,
     /// The events' descriptions recorded with the trace (each an
     /// `EventMetadata` event's `TRACE_EVENT_INFO`, as it is; see
-    /// `hexcavator_etw::event_info`), distinct, sorted.
+    /// `turbonop_etw::event_info`), distinct, sorted.
     pub event_infos: Vec<Vec<u8>>,
     /// The trace file's buffers that hold events, in file order: where
     /// each is, its first and last timestamps, and which kinds of event it
@@ -304,7 +304,7 @@ pub struct BufferSpan {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EventStats {
     /// The provider (for classic kernel events, the event class).
-    pub provider: hexcavator_etl::Guid,
+    pub provider: turbonop_etl::Guid,
     /// The event ID (zero for classic events).
     pub id: u16,
     /// The event's version.

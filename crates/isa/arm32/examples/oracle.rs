@@ -7,8 +7,8 @@
 
 use std::io::{BufRead, Write};
 
-use hexcavator_arm32::format::{Targets, format};
-use hexcavator_arm32::{decode_a32, decode_t32};
+use turbonop_arm32::format::{Targets, format};
+use turbonop_arm32::{decode_a32, decode_t32};
 
 fn main() {
     let stdin = std::io::stdin();

@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-arm32"
+name = "turbonop-arm32"
 description = "AArch32 (A32 and T32) instruction decoder"
 version.workspace = true
 edition.workspace = true

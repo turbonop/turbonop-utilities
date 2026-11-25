@@ -1,9 +1,9 @@
-// Disassembly documents: what a `hexc-disasm:` URI names (a binary and a
+// Disassembly documents: what a `hexcavator-disasm:` URI names (a binary and a
 // function in it), and which report levels list functions. Plain
 // functions with no `vscode` dependency, so they are tested under Node.
 "use strict";
 
-const SCHEME = "hexc-disasm";
+const SCHEME = "hexcavator-disasm";
 
 /** Data sources whose rows are symbols (functions among them). */
 const SYMBOL_SOURCES = ["symbols", "fullsymbols", "rawsymbols"];
@@ -35,7 +35,7 @@ function withoutAddresses(text) {
   return String(text || "").replace(/^(\s*)[0-9a-fA-F]{4,16}(?= )/gm, "$1");
 }
 
-/** The binary and function a `hexc-disasm:` URI's query names (and its style), or null. */
+/** The binary and function a `hexcavator-disasm:` URI's query names (and its style), or null. */
 function parseDisasmQuery(query) {
   const q = new URLSearchParams(query || "");
   const file = q.get("file");
@@ -57,18 +57,8 @@ function isSymbolName(name) {
   return typeof name === "string" && name.length > 0 && !/^\[.*\]$/.test(name);
 }
 
-/**
- * Whether hexc can disassemble functions of the binary at `file`: PE
- * images (with their PDBs), ELF, Mach-O, and WebAssembly (not yet COFF
- * objects or libraries).
- */
-function canDisassembleFile(file) {
-  const m = /\.([A-Za-z0-9]+)$/.exec(String(file || "").replace(/^.*[\\/]/, ""));
-  return !m || !["obj", "lib", "pdb"].includes(m[1].toLowerCase());
-}
-
 if (typeof module !== "undefined") {
-  module.exports = { SCHEME, SYMBOL_SOURCES, disasmUri, parseDisasmQuery, withoutAddresses, isSymbolLevel, isSymbolName, canDisassembleFile };
+  module.exports = { SCHEME, SYMBOL_SOURCES, disasmUri, parseDisasmQuery, withoutAddresses, isSymbolLevel, isSymbolName };
 }
 
 /**
@@ -138,7 +128,7 @@ function fieldAt(fields, offset) {
 
 /**
  * What an instruction's registers and memory operands hold, at `address`
- * (a BigInt), by `variables` (hexc size -disassemble -json's): "rcx = p",
+ * (a BigInt), by `variables` (hexcavator size -disassemble -json's): "rcx = p",
  * "ecx = s.count" (a field in a register), "[rsp+40h] = buf.len" (a
  * variable in memory), "[rbp+4] = p->b" (through a pointer variable).
  */

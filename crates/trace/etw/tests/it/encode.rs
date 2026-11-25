@@ -2,14 +2,14 @@
 //! and 32-bit traces, and is laid out exactly as the event's TDH schema
 //! says (every field, none missing, nothing left over).
 
-use hexcavator_etl::write::{Writer, WriterOptions};
-use hexcavator_etl::{Etl, Guid};
-use hexcavator_etw::encode::{Context, encode, record};
-use hexcavator_etw::kernel::{
+use turbonop_etl::write::{Writer, WriterOptions};
+use turbonop_etl::{Etl, Guid};
+use turbonop_etw::encode::{Context, encode, record};
+use turbonop_etw::kernel::{
     ContextSwitch, DbgId, Frames, ImageEvent, ImageId, KernelEvent, Lifetime, ProcessEvent,
     ReadyThread, Sample, StackWalk, ThreadEvent, ThreadName, Utf16, decode,
 };
-use hexcavator_etw::schema::Properties;
+use turbonop_etw::schema::Properties;
 
 fn utf16(s: &str) -> Vec<u8> {
     s.encode_utf16().flat_map(u16::to_le_bytes).collect()

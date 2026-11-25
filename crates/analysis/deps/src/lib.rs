@@ -36,11 +36,12 @@ mod macho;
 mod manifest;
 mod pe;
 mod search;
+mod wasm;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
-use hexcavator_mmap::Mmap;
+use turbonop_mmap::Mmap;
 
 /// How far the analysis goes.
 #[derive(Clone, Debug)]
@@ -85,6 +86,7 @@ pub enum Format {
     Pe,
     Elf,
     MachO,
+    Wasm,
 }
 
 impl Format {
@@ -93,6 +95,7 @@ impl Format {
             Format::Pe => "PE",
             Format::Elf => "ELF",
             Format::MachO => "Mach-O",
+            Format::Wasm => "WebAssembly",
         }
     }
 }
@@ -190,6 +193,9 @@ pub enum Status {
     /// A side-by-side assembly a manifest names: its directory in
     /// `WinSxS`, if found.
     Assembly { dir: Option<PathBuf> },
+    /// A WebAssembly import's module that its host provides (its runtime,
+    /// or JavaScript: `env`, `wasi_snapshot_preview1`), not a file.
+    Host,
 }
 
 impl Status {
@@ -447,11 +453,16 @@ pub(crate) enum Resolved {
 ///
 /// # Errors
 ///
-/// If it can't be read, or isn't a PE, ELF, or Mach-O image.
+/// If it can't be read, or isn't a PE, ELF, Mach-O, or WebAssembly
+/// image.
 pub fn analyze(root: &Path, options: &Options) -> Result<Graph, String> {
     let map = Mmap::open(root).map_err(|e| format!("{}: {e}", root.display()))?;
-    let (format, range) = search::identify(&map, None)
-        .ok_or_else(|| format!("{}: not a PE, ELF, or Mach-O image", root.display()))?;
+    let (format, range) = search::identify(&map, None).ok_or_else(|| {
+        format!(
+            "{}: not a PE, ELF, Mach-O, or WebAssembly image",
+            root.display()
+        )
+    })?;
     let loaded = Loaded { map, range };
     let root_dir = root
         .parent()
@@ -515,6 +526,8 @@ pub fn analyze(root: &Path, options: &Options) -> Result<Graph, String> {
             Format::Pe => pe::check(&mut ctx),
             Format::Elf => elf::check(&mut ctx),
             Format::MachO => macho::check(&mut ctx),
+            // (What a host provides isn't a module to check.)
+            Format::Wasm => {}
         }
     }
     ctx.problems();
@@ -531,6 +544,7 @@ impl Ctx<'_> {
             Format::Pe => pe::wanted(self, m),
             Format::Elf => elf::wanted(self, m),
             Format::MachO => macho::wanted(self, m),
+            Format::Wasm => wasm::wanted(self, m),
         }
     }
 
@@ -541,6 +555,7 @@ impl Ctx<'_> {
             Format::Pe => pe::resolve(self, loader, name, kind),
             Format::Elf => elf::resolve(self, loader, name, kind),
             Format::MachO => macho::resolve(self, loader, name, kind),
+            Format::Wasm => wasm::resolve(self, loader, name, kind),
         };
         // The same file (or the same unfound name) is one module.
         let key = match &resolved {
@@ -642,7 +657,7 @@ impl Ctx<'_> {
             Status::Found { how, .. } => {
                 how.is_system() || (self.format == Format::MachO && macho::is_system(&name))
             }
-            Status::SharedCache => true,
+            Status::SharedCache | Status::Host => true,
             _ => false,
         };
         self.graph.modules.push(Module {

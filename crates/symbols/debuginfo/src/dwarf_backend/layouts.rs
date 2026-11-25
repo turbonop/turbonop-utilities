@@ -11,12 +11,12 @@
 //! its virtual bases, whose offsets are computed at run time and are
 //! placed here after the rest of the object, aligned, in order.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
+use turbonop_hash::Map as HashMap;
+use turbonop_hash::Set as HashSet;
 
-use hexcavator_core::Endian;
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Die, Unit, Value};
+use turbonop_core::Endian;
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Die, Unit, Value};
 
 use super::{DwarfInfo, VOID, Walk};
 use crate::TypeRef;
@@ -78,6 +78,20 @@ impl DwarfInfo<'_> {
                     out.push(' ');
                     self.write_name(target, out, depth + 1);
                 }
+            }
+            // A signed pointer (arm64e): `void *__ptrauth(2, 0, 77)`, as
+            // the source says it (its key, whether its address is blended
+            // in, and its discriminator).
+            DW_TAG_LLVM_PTRAUTH_TYPE => {
+                self.write_name(target, out, depth + 1);
+                let value =
+                    |attr| Self::uint(&u, &d, attr).unwrap_or_else(|| u64::from(d.flag(attr)));
+                out.push_str(&format!(
+                    "__ptrauth({}, {}, {})",
+                    value(DW_AT_LLVM_PTRAUTH_KEY),
+                    value(DW_AT_LLVM_PTRAUTH_ADDRESS_DISCRIMINATED),
+                    value(DW_AT_LLVM_PTRAUTH_EXTRA_DISCRIMINATOR),
+                ));
             }
             DW_TAG_RESTRICT_TYPE => {
                 self.write_name(target, out, depth + 1);
@@ -202,6 +216,7 @@ impl DwarfInfo<'_> {
                     | DW_TAG_REFERENCE_TYPE
                     | DW_TAG_RVALUE_REFERENCE_TYPE
                     | DW_TAG_PTR_TO_MEMBER_TYPE
+                    | DW_TAG_LLVM_PTRAUTH_TYPE
             )
         })
     }
@@ -211,7 +226,7 @@ impl DwarfInfo<'_> {
     fn member_offset(u: &Unit<'_>, d: &Die<'_>) -> Option<u64> {
         let a = d.attr(DW_AT_DATA_MEMBER_LOCATION)?;
         if let Value::Block(b) = a.value {
-            let mut r = hexcavator_dwarf::Reader::new(b, 1, u.sections().endian);
+            let mut r = turbonop_dwarf::Reader::new(b, 1, u.sections().endian);
             return match *b.first()? {
                 DW_OP_PLUS_UCONST => r.uleb().filter(|_| r.is_empty()),
                 DW_OP_CONSTU => r.uleb().filter(|_| r.is_empty()),
@@ -224,7 +239,7 @@ impl DwarfInfo<'_> {
     /// Whether a class has no data: no members, vtable pointer, or virtual
     /// bases, and only empty bases.
     fn is_empty_class(&self, ty: TypeRef) -> bool {
-        self.is_empty_class_in(ty, 0, &mut HashMap::new())
+        self.is_empty_class_in(ty, 0, &mut HashMap::default())
     }
 
     /// [`Self::is_empty_class`], each class's answer kept in `known`: a
@@ -409,7 +424,7 @@ impl DwarfInfo<'_> {
 
     /// Every defined class, structure, and union (one per key), with its
     /// layout.
-    pub fn layouts(&self) -> Result<Vec<Layout>, hexcavator_core::Error> {
+    pub fn layouts(&self) -> Result<Vec<Layout>, turbonop_core::Error> {
         let mut defs = Vec::new();
         self.walk(|w| {
             let d = w.die;
@@ -426,7 +441,7 @@ impl DwarfInfo<'_> {
             }
             Walk::Into
         });
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut out = Vec::new();
         for at in defs {
             if let Some(l) = self.layout(at)

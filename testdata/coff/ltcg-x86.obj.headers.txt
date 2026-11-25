@@ -1,0 +1,12 @@
+
+Dump of file ltcg-x86.obj
+
+File Type: ANONYMOUS OBJECT
+
+ANON OBJECT HEADER VALUES
+               1 version
+             14C machine (x86)
+        E5F8DAC3 time date stamp
+                 ClassID: {0CB3FE38-D9A5-4DAB-AC9B-D6B6222653C2}
+             935 size
+               0 flags

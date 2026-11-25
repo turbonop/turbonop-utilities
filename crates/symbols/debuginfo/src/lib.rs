@@ -11,25 +11,28 @@
 //! - [`Group`]s: named subdivisions of sections, such as COFF groups
 //!   (`.text$mn`, `.CRT$XCU`, ...), which the linker sorts input sections by.
 //!
-//! Addresses follow `hexcavator-image`'s convention: RVAs for PE images,
+//! Addresses follow `turbonop-image`'s convention: RVAs for PE images,
 //! virtual addresses for ELF and Mach-O, code section offsets for
 //! WebAssembly.
 
 #![warn(missing_docs)]
 
+pub mod coff_object;
 pub mod decompress;
 pub mod dwarf_backend;
 pub mod layout;
 mod locate;
+pub mod options;
+pub use options::CompileOptions;
 mod pdb_backend;
 mod pdb_locate;
 pub mod value;
 
-use hexcavator_core::Result;
-use hexcavator_image::DebugId;
+use turbonop_core::Result;
+use turbonop_image::DebugId;
 
 pub use locate::{Frame, Locator};
-pub use pdb_backend::{LINKER_MODULE, LinkerInfo};
+pub use pdb_backend::{LINKER_MODULE, LinkerInfo, build_info, codeview_language};
 
 /// A translation unit linked into an image.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -78,6 +81,9 @@ pub struct InlineSite {
 pub struct InlineSites {
     /// The inlined functions' qualified names.
     pub inlinees: Vec<String>,
+    /// How many parameters each inlined function takes (`this` among
+    /// them), by index as `inlinees`, where the debug information says.
+    pub params: Vec<Option<u32>>,
     /// The sites.
     pub sites: Vec<InlineSite>,
 }
@@ -93,37 +99,196 @@ impl InlineSite {
 /// folding leaves one record per module at the same address) removed, and
 /// each one's own bytes: every byte goes to the deepest site covering it
 /// (a nested site's code is its own, not its caller's), once.
-pub fn exclusive_sizes(mut sites: Vec<InlineSite>) -> Vec<(InlineSite, u64)> {
+pub fn exclusive_sizes(sites: Vec<InlineSite>) -> Vec<(InlineSite, u64)> {
+    let (kept, own) = exclusive_order(&sites);
+    let mut sites: Vec<Option<InlineSite>> = sites.into_iter().map(Some).collect();
+    kept.iter()
+        .zip(own)
+        .filter_map(|(&i, own)| Some((sites[i as usize].take()?, own)))
+        .collect()
+}
+
+/// [`exclusive_sizes`] by index: each site's own bytes, or `None` for a
+/// copy of another.
+pub fn exclusive_sizes_by_index(sites: &[InlineSite]) -> Vec<Option<u64>> {
+    let (kept, own) = exclusive_order(sites);
+    let mut out = vec![None; sites.len()];
+    for (&i, own) in kept.iter().zip(own) {
+        out[i as usize] = Some(own);
+    }
+    out
+}
+
+/// The sites [`exclusive_sizes`] keeps (indexes into `sites`), in its
+/// order, and their own bytes.
+fn exclusive_order(all: &[InlineSite]) -> (Vec<u32>, Vec<u64>) {
     let first = |s: &InlineSite| s.ranges.first().map_or(0, |r| r.0);
-    sites.sort_unstable_by_key(|s| (s.function, first(s), s.inlinee, s.ranges.len(), s.depth));
-    sites.dedup_by(|a, b| {
+    // The sites in a total order (what is left of copies, and the order
+    // sites claim their bytes in, depend on nothing else): by function and
+    // first address, sorted on every core as compact keys; then the rest.
+    let key = |s: &InlineSite| (s.inlinee, s.ranges.len(), s.depth);
+    let mut order: Vec<(u64, u64, u32)> = turbonop_par::map_range(all.len(), 64 * 1024, |i| {
+        let s = &all[i];
+        (s.function, first(s), u32::try_from(i).unwrap_or(u32::MAX))
+    });
+    turbonop_par::sort_by(&mut order, |a, b| {
+        (a.0, a.1).cmp(&(b.0, b.1)).then_with(|| {
+            let (x, y) = (&all[a.2 as usize], &all[b.2 as usize]);
+            // (Copies, alike but for their compilands, side by side.)
+            key(x)
+                .cmp(&key(y))
+                .then_with(|| x.ranges.cmp(&y.ranges))
+                .then(x.compiland.cmp(&y.compiland))
+                .then(a.2.cmp(&b.2))
+        })
+    });
+    let mut kept: Vec<u32> = order.into_iter().map(|o| o.2).collect();
+    kept.dedup_by(|a, b| {
+        let (a, b) = (&all[*a as usize], &all[*b as usize]);
         a.function == b.function && a.ranges == b.ranges && a.inlinee == b.inlinee
     });
-    let mut own = vec![0u64; sites.len()];
+    let sites: Vec<&InlineSite> = kept.iter().map(|&i| &all[i as usize]).collect();
+    let own = claimed_in_order(&sites);
+    (kept, own)
+}
+
+/// Each of `sites`' own bytes (sorted, without copies: see
+/// [`exclusive_order`]).
+fn claimed_in_order(sites: &[&InlineSite]) -> Vec<u64> {
+    let first = |s: &InlineSite| s.ranges.first().map_or(0, |r| r.0);
     // One function at a time, deepest first, then by address (a nested
     // site claims its bytes before the site it is in); every byte once,
     // across functions too (two procedure records can cover one piece of
-    // code).
-    let mut claimed: std::collections::BTreeMap<u64, u64> = std::collections::BTreeMap::new();
-    let mut touched: Vec<(u64, u64)> = Vec::new();
-    let mut order: Vec<usize> = Vec::new();
+    // code). Each function's sites are claimed on their own (on every
+    // core), keeping what each claimed; then, in order, a function whose
+    // code an earlier one's overlaps loses what that one claimed first.
+    let mut groups: Vec<(usize, usize)> = Vec::new();
     let mut start = 0;
     while start < sites.len() {
         let mut end = start + 1;
         while end < sites.len() && sites[end].function == sites[start].function {
             end += 1;
         }
-        order.clear();
-        order.extend(start..end);
-        order.sort_unstable_by_key(|&i| (std::cmp::Reverse(sites[i].depth), first(&sites[i])));
-        for &i in &order {
-            for &(at, size) in &sites[i].ranges {
-                own[i] += claim(&mut claimed, &mut touched, at, at.saturating_add(size));
-            }
-        }
+        groups.push((start, end));
         start = end;
     }
-    sites.into_iter().zip(own).collect()
+    struct Local {
+        /// Each site's index, and its pieces: `pieces[from..to]`.
+        sites: Vec<(usize, usize, usize)>,
+        /// The pieces the sites claimed.
+        pieces: Vec<(u64, u64)>,
+        /// What the function's sites cover, as disjoint intervals.
+        union: Vec<(u64, u64)>,
+    }
+    let local: Vec<Local> = turbonop_par::map(&groups, 64, |&(start, end)| {
+        let mut order: Vec<usize> = (start..end).collect();
+        order.sort_unstable_by_key(|&i| (std::cmp::Reverse(sites[i].depth), first(sites[i]), i));
+        let mut claimed = std::collections::BTreeMap::new();
+        let mut touched = Vec::new();
+        let mut pieces = Vec::new();
+        let mut mine = Vec::with_capacity(order.len());
+        for i in order {
+            let from = pieces.len();
+            for &(at, size) in &sites[i].ranges {
+                claim_pieces(
+                    &mut claimed,
+                    &mut touched,
+                    at,
+                    at.saturating_add(size),
+                    &mut pieces,
+                );
+            }
+            mine.push((i, from, pieces.len()));
+        }
+        Local {
+            sites: mine,
+            pieces,
+            union: claimed.into_iter().collect(),
+        }
+    });
+    let mut own = vec![0u64; sites.len()];
+    // What earlier functions claimed: while each function's code lies past
+    // all of theirs (as a linker lays functions out), in order in a list;
+    // else in a map.
+    let mut list: Vec<(u64, u64)> = Vec::new();
+    let mut map: Option<std::collections::BTreeMap<u64, u64>> = None;
+    let mut touched: Vec<(u64, u64)> = Vec::new();
+    for l in &local {
+        let past = map.is_none()
+            && l.union
+                .first()
+                .is_none_or(|f| list.last().is_none_or(|last| f.0 >= last.1));
+        if past {
+            for &(i, from, to) in &l.sites {
+                own[i] = l.pieces[from..to].iter().map(|&(s, e)| e - s).sum();
+            }
+            list.extend_from_slice(&l.union);
+            continue;
+        }
+        let earlier = map.get_or_insert_with(|| std::mem::take(&mut list).into_iter().collect());
+        let overlaps = l.union.iter().any(|&(s, e)| covered(earlier, s, e) > 0);
+        for &(i, from, to) in &l.sites {
+            own[i] = l.pieces[from..to]
+                .iter()
+                .map(|&(s, e)| (e - s) - if overlaps { covered(earlier, s, e) } else { 0 })
+                .sum();
+        }
+        for &(s, e) in &l.union {
+            claim(earlier, &mut touched, s, e);
+        }
+    }
+    own
+}
+
+/// How many of `[start, end)`'s bytes `claimed` (disjoint intervals)
+/// covers.
+fn covered(claimed: &std::collections::BTreeMap<u64, u64>, start: u64, end: u64) -> u64 {
+    if end <= start {
+        return 0;
+    }
+    let from = match claimed.range(..=start).next_back() {
+        Some((&s, &e)) if e > start => s,
+        _ => start,
+    };
+    claimed
+        .range(from..end)
+        .map(|(&s, &e)| e.min(end).saturating_sub(s.max(start)))
+        .sum()
+}
+
+/// [`claim`], adding the pieces of `[start, end)` it newly claims to
+/// `pieces`.
+fn claim_pieces(
+    claimed: &mut std::collections::BTreeMap<u64, u64>,
+    touched: &mut Vec<(u64, u64)>,
+    start: u64,
+    end: u64,
+    pieces: &mut Vec<(u64, u64)>,
+) {
+    if end <= start {
+        return;
+    }
+    let from = match claimed.range(..=start).next_back() {
+        Some((&s, &e)) if e >= start => s,
+        _ => start,
+    };
+    touched.clear();
+    touched.extend(claimed.range(from..=end).map(|(&s, &e)| (s, e)));
+    // The gaps between the intervals already claimed are new.
+    let mut at = start;
+    for &(s, e) in touched.iter() {
+        if s > at {
+            pieces.push((at, s.min(end)));
+        }
+        at = at.max(e);
+        if at >= end {
+            break;
+        }
+    }
+    if at < end {
+        pieces.push((at, end));
+    }
+    claim(claimed, touched, start, end);
 }
 
 /// Claims `[start, end)` in `claimed` (disjoint intervals, start to end),
@@ -335,6 +500,29 @@ pub struct Symbol {
     pub flags: u32,
 }
 
+/// What a linker did to functions, as a linked file's DWARF shows it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DiscardedFunctions {
+    /// The symbol names of functions whose code the linker discarded (the
+    /// DWARF's address of it is 0, or the tombstone) and that no function
+    /// kept has the qualified name of (a COMDAT's discarded copies have
+    /// the kept one's): collected (`--gc-sections`), or folded into
+    /// another (ICF; their symbols are then the other's).
+    pub dropped: Vec<String>,
+    /// Whether functions of different names, from different compilands,
+    /// are at one address: folded (ICF).
+    pub shared: bool,
+}
+
+/// A variable's definition, as the debug information records it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VariableDefinition {
+    /// Where it is declared: a path and a line.
+    pub declared: Option<(String, u32)>,
+    /// Whether its type is `const` (an array's, its elements').
+    pub constant: bool,
+}
+
 /// The function a variable is declared in: the innermost function whose
 /// code holds the declaration, an inlined function if it is in an inlined
 /// copy of one.
@@ -419,8 +607,8 @@ pub struct TypeRef(pub u64);
 
 impl TypeRef {
     /// As a PDB type index (one too wide for any is no type, 0).
-    pub fn pdb_index(self) -> hexcavator_codeview::TypeIndex {
-        hexcavator_codeview::TypeIndex(u32::try_from(self.0).unwrap_or(0))
+    pub fn pdb_index(self) -> turbonop_codeview::TypeIndex {
+        turbonop_codeview::TypeIndex(u32::try_from(self.0).unwrap_or(0))
     }
 }
 
@@ -676,15 +864,37 @@ pub fn candidate_paths_in(
                         .join("_.dwarf"),
                 );
                 if let Some(name) = image_path.file_name() {
-                    let mut bundle = name.to_owned();
-                    bundle.push(".dSYM");
-                    push(
-                        dir.join(bundle)
-                            .join("Contents")
-                            .join("Resources")
-                            .join("DWARF")
-                            .join(name),
-                    );
+                    // Its dSYM, or (an image in a bundle) its bundle's.
+                    let bundle_name = image_path
+                        .ancestors()
+                        .skip(1)
+                        .find(|a| {
+                            a.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                                [
+                                    "app",
+                                    "framework",
+                                    "bundle",
+                                    "appex",
+                                    "kext",
+                                    "xpc",
+                                    "plugin",
+                                ]
+                                .iter()
+                                .any(|b| e.eq_ignore_ascii_case(b))
+                            })
+                        })
+                        .and_then(std::path::Path::file_name);
+                    for of in std::iter::once(name).chain(bundle_name) {
+                        let mut bundle = of.to_owned();
+                        bundle.push(".dSYM");
+                        push(
+                            dir.join(bundle)
+                                .join("Contents")
+                                .join("Resources")
+                                .join("DWARF")
+                                .join(name),
+                        );
+                    }
                 }
             }
             DebugId::DebugLink { path, .. } => {
@@ -710,7 +920,7 @@ fn file_name_of(path: &[u8]) -> Option<String> {
 /// The directories to look for debug information in, besides the image's
 /// own, from the environment:
 ///
-/// - `HEXC_SYMBOL_PATH`: directories, separated as `PATH`'s are;
+/// - `TURBONOP_SYMBOL_PATH`: directories, separated as `PATH`'s are;
 /// - `_NT_SYMBOL_PATH`: its local directories and symbol-server caches
 ///   (`srv*C:\symbols*https://...` gives `C:\symbols`; servers on the
 ///   network aren't asked);
@@ -720,7 +930,7 @@ fn file_name_of(path: &[u8]) -> Option<String> {
 pub fn symbol_dirs() -> Vec<std::path::PathBuf> {
     let var = |name: &str| std::env::var_os(name).filter(|v| !v.is_empty());
     symbol_dirs_from(
-        var("HEXC_SYMBOL_PATH").as_deref(),
+        var("TURBONOP_SYMBOL_PATH").as_deref(),
         var("_NT_SYMBOL_PATH")
             .and_then(|v| v.into_string().ok())
             .as_deref(),
@@ -742,7 +952,7 @@ pub fn symbol_dirs() -> Vec<std::path::PathBuf> {
 
 /// [`symbol_dirs`] from the values given (for testing).
 pub fn symbol_dirs_from(
-    hexc: Option<&std::ffi::OsStr>,
+    turbonop: Option<&std::ffi::OsStr>,
     nt: Option<&str>,
     debuginfod: Option<std::path::PathBuf>,
 ) -> Vec<std::path::PathBuf> {
@@ -753,7 +963,7 @@ pub fn symbol_dirs_from(
             out.push(p);
         }
     };
-    if let Some(h) = hexc {
+    if let Some(h) = turbonop {
         std::env::split_paths(h).for_each(&mut push);
     }
     nt_symbol_dirs(nt.unwrap_or(""))
@@ -812,8 +1022,21 @@ fn beside(image_path: &std::path::Path, id: &DebugId<'_>) -> Vec<std::path::Path
         }
     };
     match *id {
-        DebugId::DebugLink { path, .. } => {
+        DebugId::DebugLink { path, crc } => {
             let name = String::from_utf8_lossy(path).into_owned();
+            // A WebAssembly module's external_debug_info (no CRC) is a URL,
+            // often relative: one beside the module or below it (no `..`,
+            // nothing absolute, no scheme) is followed.
+            if crc.is_none() && name.contains('/') && !name.contains("://") {
+                let rel = Path::new(name.trim_start_matches("./"));
+                if rel
+                    .components()
+                    .all(|c| matches!(c, std::path::Component::Normal(_)))
+                {
+                    push(dir.join(rel));
+                }
+                return out;
+            }
             if name.is_empty() || name.contains(['/', '\\']) {
                 // (A name, not a path: anything else isn't followed.)
                 return out;
@@ -843,15 +1066,36 @@ fn beside(image_path: &std::path::Path, id: &DebugId<'_>) -> Vec<std::path::Path
         }
         DebugId::Uuid(_) => {
             if let Some(name) = image_path.file_name() {
-                let mut bundle = image_path.as_os_str().to_owned();
-                bundle.push(".dSYM");
-                push(
+                let in_dsym = |at: &Path| {
+                    let mut bundle = at.as_os_str().to_owned();
+                    bundle.push(".dSYM");
                     PathBuf::from(bundle)
                         .join("Contents")
                         .join("Resources")
                         .join("DWARF")
-                        .join(name),
-                );
+                        .join(name)
+                };
+                push(in_dsym(image_path));
+                // An image in a bundle (`Foo.app/Contents/MacOS/Foo`,
+                // `Foo.framework/Versions/A/Foo`): the bundle's dSYM beside
+                // it, as Xcode puts it (`Foo.app.dSYM`).
+                if let Some(bundle) = image_path.ancestors().skip(1).find(|a| {
+                    a.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+                        [
+                            "app",
+                            "framework",
+                            "bundle",
+                            "appex",
+                            "kext",
+                            "xpc",
+                            "plugin",
+                        ]
+                        .iter()
+                        .any(|b| e.eq_ignore_ascii_case(b))
+                    })
+                }) {
+                    push(in_dsym(bundle));
+                }
             }
             return out;
         }
@@ -894,7 +1138,7 @@ pub enum DebugInfo<'data> {
 impl<'data> DebugInfo<'data> {
     /// Parses `data`, detecting its format.
     pub fn parse(data: &'data [u8]) -> Result<Self> {
-        if hexcavator_pdb::check(data).is_ok() {
+        if turbonop_pdb::check(data).is_ok() {
             return pdb_backend::PdbInfo::parse(data).map(|p| DebugInfo::Pdb(Box::new(p)));
         }
         match dwarf_backend::DwarfInfo::parse(data) {
@@ -904,12 +1148,19 @@ impl<'data> DebugInfo<'data> {
         }
     }
 
+    /// The debug information a source reads (by range: a file not mapped):
+    /// a PDB, whose streams are read as they are asked for. (DWARF is read
+    /// from a file's bytes: see [`DebugInfo::parse`].)
+    pub fn parse_source(source: &'data dyn turbonop_core::Source) -> Result<Self> {
+        pdb_backend::PdbInfo::parse_source(source).map(|p| DebugInfo::Pdb(Box::new(p)))
+    }
+
     /// The name of register `n` (by the format's numbering: see
     /// [`Place::Register`]) of `arch`.
-    pub fn register_name(&self, arch: hexcavator_core::Arch, n: u16) -> Option<String> {
+    pub fn register_name(&self, arch: turbonop_core::Arch, n: u16) -> Option<String> {
         match self {
-            DebugInfo::Pdb(_) => hexcavator_codeview::registers::name(arch, n),
-            DebugInfo::Dwarf(_) => hexcavator_dwarf::registers::name(arch, n),
+            DebugInfo::Pdb(_) => turbonop_codeview::registers::name(arch, n),
+            DebugInfo::Dwarf(_) => turbonop_dwarf::registers::name(arch, n),
         }
     }
 
@@ -942,6 +1193,16 @@ impl<'data> DebugInfo<'data> {
         match self {
             DebugInfo::Pdb(p) => p.compilands(),
             DebugInfo::Dwarf(d) => d.compilands(),
+        }
+    }
+
+    /// A PDB's public symbols whose raw names `keep` keeps: their
+    /// addresses and names (none for DWARF, whose linkage names are its
+    /// functions' own).
+    pub fn publics_matching(&self, keep: impl Fn(&[u8]) -> bool + Sync) -> Vec<(u64, &[u8])> {
+        match self {
+            DebugInfo::Pdb(p) => p.publics_matching(keep),
+            DebugInfo::Dwarf(_) => Vec::new(),
         }
     }
 
@@ -1017,6 +1278,75 @@ impl<'data> DebugInfo<'data> {
             DebugInfo::Pdb(p) => p.symbols(),
             DebugInfo::Dwarf(d) => d.symbols(),
         }
+    }
+
+    /// How each compiland was compiled (by index in
+    /// [`DebugInfo::compilands`]), as the debug information records it
+    /// (see [`options`]).
+    pub fn compile_options(&self) -> Result<Vec<CompileOptions>> {
+        match self {
+            DebugInfo::Pdb(p) => p.compile_options(),
+            DebugInfo::Dwarf(d) => d.compile_options(),
+        }
+    }
+
+    /// What the linker did to functions, where the debug information
+    /// shows it (DWARF's; a PDB's describes only what was kept).
+    pub fn discarded_functions(&self) -> Result<DiscardedFunctions> {
+        match self {
+            DebugInfo::Pdb(_) => Ok(DiscardedFunctions::default()),
+            DebugInfo::Dwarf(d) => d.discarded_functions(),
+        }
+    }
+
+    /// The definitions of the variables at `wanted`'s (address,
+    /// compiland) pairs: whether each is constant, and (DWARF's) where it
+    /// is declared. (A PDB records no declarations: its variables' types
+    /// say which are constant.)
+    pub fn variable_definitions(
+        &self,
+        wanted: &turbonop_hash::Set<(u64, u32)>,
+    ) -> Result<turbonop_hash::Map<(u64, u32), VariableDefinition>> {
+        match self {
+            DebugInfo::Pdb(_) => {
+                let mut out = turbonop_hash::Map::default();
+                for s in self.symbols()? {
+                    let Some(c) = s.compiland else { continue };
+                    if s.kind != SymbolKind::Data || !wanted.contains(&(s.addr, c)) {
+                        continue;
+                    }
+                    out.insert(
+                        (s.addr, c),
+                        VariableDefinition {
+                            declared: None,
+                            constant: self.is_const(TypeRef(s.type_index)),
+                        },
+                    );
+                }
+                Ok(out)
+            }
+            DebugInfo::Dwarf(d) => d.variable_definitions(wanted),
+        }
+    }
+
+    /// Whether type `ty` is `const` (an array's, if its elements are),
+    /// through qualifiers (a PDB has no typedefs in types).
+    fn is_const(&self, ty: TypeRef) -> bool {
+        let mut ty = ty;
+        // (A few levels: typedefs and arrays of arrays.)
+        for _ in 0..16 {
+            match self.type_shape(ty) {
+                TypeShape::Modified { qualifiers, base } => {
+                    if qualifiers.is_const {
+                        return true;
+                    }
+                    ty = base;
+                }
+                TypeShape::Array { element, .. } => ty = element,
+                _ => return false,
+            }
+        }
+        false
     }
 
     /// Every class definition, with its direct bases and its methods.
@@ -1097,7 +1427,7 @@ impl<'data> DebugInfo<'data> {
     }
 
     /// The underlying PDB reader, if this is a PDB.
-    pub fn pdb(&self) -> Option<&hexcavator_pdb::Pdb<'data>> {
+    pub fn pdb(&self) -> Option<&turbonop_pdb::Pdb<'data>> {
         match self {
             DebugInfo::Pdb(p) => Some(p.pdb()),
             DebugInfo::Dwarf(_) => None,
@@ -1181,6 +1511,59 @@ mod tests {
         ]);
         assert_eq!(got, [("big".into(), 100), ("in".into(), 0)]);
         assert!(exclusive_sizes(Vec::new()).is_empty());
+        // Against a serial claim of every site in order, on random sites
+        // (overlapping within and across functions).
+        let mut seed = 0x1234_5678u64;
+        let mut rand = |n: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % n
+        };
+        let mut sites = Vec::new();
+        for k in 0..3000u32 {
+            let function = rand(200) * 100;
+            let ranges: Vec<(u64, u64)> = (0..1 + rand(3))
+                .map(|_| (function + rand(150), 1 + rand(40)))
+                .collect();
+            let names = [
+                "outer", "inner", "a", "b", "f", "x", "y", "deep1", "deep2", "wide",
+            ];
+            sites.push(site(
+                names[k as usize % names.len()],
+                function,
+                &ranges,
+                u32::try_from(rand(4)).unwrap(),
+            ));
+        }
+        let got = exclusive_sizes(sites.clone());
+        // (The serial algorithm, as it was.)
+        let first = |s: &InlineSite| s.ranges.first().map_or(0, |r| r.0);
+        let mut want = sites;
+        want.sort_unstable_by_key(|s| (s.function, first(s), s.inlinee, s.ranges.len(), s.depth));
+        want.dedup_by(|a, b| {
+            a.function == b.function && a.ranges == b.ranges && a.inlinee == b.inlinee
+        });
+        let mut own = vec![0u64; want.len()];
+        let mut claimed = std::collections::BTreeMap::new();
+        let mut touched = Vec::new();
+        let mut start = 0;
+        while start < want.len() {
+            let mut end = start + 1;
+            while end < want.len() && want[end].function == want[start].function {
+                end += 1;
+            }
+            let mut order: Vec<usize> = (start..end).collect();
+            order.sort_unstable_by_key(|&i| (std::cmp::Reverse(want[i].depth), first(&want[i])));
+            for i in order {
+                for &(at, size) in &want[i].ranges {
+                    own[i] += claim(&mut claimed, &mut touched, at, at + size);
+                }
+            }
+            start = end;
+        }
+        let want: Vec<(InlineSite, u64)> = want.into_iter().zip(own).collect();
+        assert_eq!(got, want);
         // Hostile: a range running past the address space.
         let got = exclusive_sizes(vec![site("h", 0, &[(u64::MAX - 4, 100)], 0)]);
         assert_eq!(got[0].1, 4);

@@ -3,23 +3,23 @@
 //! `symstore` shares over HTTP, .NET's symbol servers) and debuginfod.
 //!
 //! Nothing is asked of a server unless servers are given
-//! ([`set_servers`]: hexc's `--symbol-server` and `--debuginfod`, or
-//! `HEXC_SYMBOL_SERVER` and `HEXC_DEBUGINFOD`). debuginfod's own
+//! ([`set_servers`]: the tools' `--symbol-server` and `--debuginfod`, or
+//! `TURBONOP_SYMBOL_SERVER` and `TURBONOP_DEBUGINFOD`). debuginfod's own
 //! `DEBUGINFOD_URLS` is not followed: distributions set it for every
 //! user, and asking a server tells it which builds are being looked at.
 //!
 //! Files are fetched with the system's `curl` (on Windows 10 and later,
 //! macOS, and Linux), limited in size and time, and kept in memory, or
 //! in the symbol cache if one is given (in the servers' layout, where the
-//! lookup finds them next time: see `hexcavator_debuginfo::candidate_paths_in`).
+//! lookup finds them next time: see `turbonop_debuginfo::candidate_paths_in`).
 //! What a server sends is hostile like any input, and is used only if it
 //! matches the image (`DebugInfo::matches`).
 
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-use hexcavator_image::DebugId;
-use hexcavator_mmap::Mmap;
+use turbonop_image::DebugId;
+use turbonop_mmap::Mmap;
 
 /// Where to ask for debug information, and where to keep what is found.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -38,13 +38,13 @@ impl Servers {
         self.symbol_servers.is_empty() && self.debuginfod.is_empty()
     }
 
-    /// The servers the environment names: `HEXC_SYMBOL_SERVER`
-    /// (separated by `;`), `HEXC_DEBUGINFOD` (by spaces, as
-    /// `DEBUGINFOD_URLS`), and `HEXC_SYMBOL_CACHE`.
+    /// The servers the environment names: `TURBONOP_SYMBOL_SERVER`
+    /// (separated by `;`), `TURBONOP_DEBUGINFOD` (by spaces, as
+    /// `DEBUGINFOD_URLS`), and `TURBONOP_SYMBOL_CACHE`.
     pub fn from_env() -> Self {
         let var = |n: &str| std::env::var(n).ok().filter(|v| !v.trim().is_empty());
         Servers {
-            symbol_servers: var("HEXC_SYMBOL_SERVER")
+            symbol_servers: var("TURBONOP_SYMBOL_SERVER")
                 .map(|v| {
                     v.split(';')
                         .map(str::trim)
@@ -53,10 +53,10 @@ impl Servers {
                         .collect()
                 })
                 .unwrap_or_default(),
-            debuginfod: var("HEXC_DEBUGINFOD")
+            debuginfod: var("TURBONOP_DEBUGINFOD")
                 .map(|v| v.split_whitespace().map(String::from).collect())
                 .unwrap_or_default(),
-            cache: var("HEXC_SYMBOL_CACHE").map(PathBuf::from),
+            cache: var("TURBONOP_SYMBOL_CACHE").map(PathBuf::from),
         }
     }
 }
@@ -99,7 +99,7 @@ pub fn ssqp_key(id: &DebugId<'_>) -> Option<String> {
             if !safe_name(&name) {
                 return None;
             }
-            let key = hexcavator_debuginfo::symbol_store_key(&guid, age);
+            let key = turbonop_debuginfo::symbol_store_key(&guid, age);
             Some(format!("{name}/{key}/{name}"))
         }
         DebugId::BuildId(b) | DebugId::AltLink { build_id: b, .. } if b.len() >= 2 => {
@@ -181,7 +181,7 @@ pub fn fetch(url: &str, cached: Option<&Path>) -> Option<Mmap> {
         "--max-filesize",
         &MAX_FILE.to_string(),
         "--user-agent",
-        concat!("hexc/", env!("CARGO_PKG_VERSION")),
+        concat!("turbonop/", env!("CARGO_PKG_VERSION")),
     ]);
     match cached {
         Some(path) => {

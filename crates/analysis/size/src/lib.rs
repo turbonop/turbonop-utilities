@@ -22,15 +22,21 @@
 pub mod budget;
 pub mod custom;
 /// (Moved to the debug information crate, which reads DWARF too.)
-pub use hexcavator_debuginfo::decompress;
+pub use turbonop_debuginfo::decompress;
+pub mod compiled;
 pub mod disasm;
 pub mod dwarf_units;
 pub mod eh;
 pub mod elf;
+pub mod exceptions;
+pub mod exports;
 pub mod findings;
 pub mod fingerprint;
+pub mod frames;
 pub mod index;
+pub mod inlining;
 pub mod lcid;
+pub mod loader_lists;
 pub mod macho;
 pub mod map;
 pub mod model;
@@ -41,12 +47,15 @@ pub mod pe_symbols;
 pub mod range;
 pub mod rangemap;
 pub mod recommend;
+pub mod relocations;
 pub mod report;
 pub mod rollup;
 pub mod rsrc;
 pub mod sourcemap;
 pub mod sources;
 pub mod startup;
+pub mod strings;
+pub mod strip;
 pub mod symbols;
 pub mod table;
 #[cfg(test)]
@@ -57,7 +66,7 @@ pub mod xref;
 
 use std::collections::BTreeMap;
 
-use hexcavator_image::Arch;
+use turbonop_image::Arch;
 
 pub use range::Range;
 
@@ -107,16 +116,16 @@ pub struct Section {
     /// The format's section flags (PE: `Characteristics`).
     pub characteristics: u32,
     /// What it holds and how it is mapped, whatever the format.
-    pub flags: hexcavator_image::SectionFlags,
+    pub flags: turbonop_image::SectionFlags,
 }
 
 impl Section {
     pub fn executable(&self) -> bool {
-        self.flags.contains(hexcavator_image::SectionFlags::EXECUTE)
+        self.flags.contains(turbonop_image::SectionFlags::EXECUTE)
     }
 
     pub fn writable(&self) -> bool {
-        self.flags.contains(hexcavator_image::SectionFlags::WRITE)
+        self.flags.contains(turbonop_image::SectionFlags::WRITE)
     }
 }
 

@@ -318,20 +318,20 @@ fn damage_does_not_panic() {
 }
 
 /// The sample, in testdata/legacy (for the fuzzer's seeds, and readers'
-/// reference): kept current; `HEXC_BLESS=1` rewrites it.
+/// reference): kept current; `TURBONOP_BLESS=1` rewrites it.
 fn check_sample(name: &str, bytes: &[u8]) {
     extern crate std;
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../../testdata/legacy")
         .join(name);
-    if std::env::var_os("HEXC_BLESS").is_some() {
+    if std::env::var_os("TURBONOP_BLESS").is_some() {
         std::fs::write(&path, bytes).unwrap();
     }
     let have = std::fs::read(&path)
-        .unwrap_or_else(|e| panic!("{}: {e} (HEXC_BLESS=1 writes it)", path.display()));
+        .unwrap_or_else(|e| panic!("{}: {e} (TURBONOP_BLESS=1 writes it)", path.display()));
     assert!(
         have == bytes,
-        "{} is stale (HEXC_BLESS=1 rewrites it)",
+        "{} is stale (TURBONOP_BLESS=1 rewrites it)",
         path.display()
     );
 }

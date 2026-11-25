@@ -35,11 +35,11 @@ fn synth_writes_a_trace_and_its_truth() {
         truth.to_str().unwrap(),
     ]);
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    let expected = hexcavator_trace_synth::generate(&hexcavator_trace_synth::Config {
+    let expected = turbonop_trace_synth::generate(&turbonop_trace_synth::Config {
         processors: 2,
         duration_ms: 100,
         processes: 3,
-        ..hexcavator_trace_synth::Config::default()
+        ..turbonop_trace_synth::Config::default()
     });
     assert_eq!(std::fs::read(&etl).unwrap(), expected.etl);
     let t: Value = serde_json::from_slice(&std::fs::read(&truth).unwrap()).unwrap();
@@ -130,7 +130,7 @@ fn bench_reports_counts_and_timings_as_json() {
     let (_, sb) = write_trace(
         &dir,
         "b.etl",
-        &hexcavator_trace_synth::Config {
+        &turbonop_trace_synth::Config {
             seed: 3,
             compress: true,
             ..small()

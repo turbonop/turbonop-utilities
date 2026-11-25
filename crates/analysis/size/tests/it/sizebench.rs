@@ -4,10 +4,10 @@
 
 use std::collections::BTreeSet;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::pe::{self, Unsupported};
-use hexcavator_size::report;
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::pe::{self, Unsupported};
+use turbonop_size::report;
 
 fn root() -> String {
     format!("{}/../../../testdata/sizebench", env!("CARGO_MANIFEST_DIR"))

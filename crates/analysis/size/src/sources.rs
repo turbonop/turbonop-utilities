@@ -9,9 +9,9 @@
 //! compilands, ...) and leaves the rest to its *fallback*: the base map's
 //! label, with section names written `[section .text]`, as bloaty does.
 
-use hexcavator_image::Image;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::consts::directory;
+use turbonop_image::Image;
+use turbonop_pe::PeFile;
+use turbonop_pe::consts::directory;
 
 use crate::Model;
 use crate::rangemap::{DualMap, Label, Labels};
@@ -53,6 +53,10 @@ pub enum Source {
     /// The architecture of each image (of a universal Mach-O file, one
     /// per slice).
     Archs,
+    /// Rust crates: each symbol by the crate its name is in (C++'s by
+    /// their top-level namespace); built as `fullsymbols`, relabeled
+    /// ([`label_crates`]).
+    Crates,
 }
 
 impl Source {
@@ -70,6 +74,7 @@ impl Source {
         Source::Inlines,
         Source::SourceFiles,
         Source::Archs,
+        Source::Crates,
     ];
 
     pub fn name(self) -> &'static str {
@@ -87,6 +92,7 @@ impl Source {
             Source::Archs => "archs",
             Source::Inlines => "inlines",
             Source::SourceFiles => "sourcefiles",
+            Source::Crates => "crates",
         }
     }
 
@@ -109,6 +115,9 @@ impl Source {
             Source::SourceFiles => {
                 "source files: code by the file its line tables name (PDB or DWARF)"
             }
+            Source::Crates => {
+                "Rust crates: symbols by the crate their names are in (C++: top-level namespaces)"
+            }
         }
     }
 
@@ -128,6 +137,7 @@ impl Source {
             "archs" => Source::Archs,
             "inlines" => Source::Inlines,
             "sourcefiles" | "sources" => Source::SourceFiles,
+            "crates" | "namespaces" => Source::Crates,
             _ => return None,
         })
     }
@@ -148,12 +158,119 @@ impl Source {
                 | Source::Symbols
                 | Source::RawSymbols
                 | Source::FullSymbols
+                | Source::Crates
                 | Source::CompileUnits
                 | Source::ArMembers
                 | Source::Libraries
                 | Source::SourceFiles
         )
     }
+}
+
+/// The sources to build for `sources`: `crates` as `fullsymbols` (see
+/// [`label_crates`]).
+pub fn built_as(sources: &[Source]) -> Vec<Source> {
+    sources
+        .iter()
+        .map(|&s| {
+            if s == Source::Crates {
+                Source::FullSymbols
+            } else {
+                s
+            }
+        })
+        .collect()
+}
+
+/// Maps built for [`built_as`]`(sources)`, with each `crates` source's map
+/// (built as `fullsymbols`) relabeled by [`crate_of`] its symbols' names.
+pub fn label_crates(maps: &mut Maps, sources: &[Source]) {
+    for (i, &want) in sources.iter().enumerate() {
+        if want != Source::Crates {
+            continue;
+        }
+        let Some((source, map)) = maps.sources.get_mut(i) else {
+            continue;
+        };
+        *source = Source::Crates;
+        let mut to: turbonop_hash::Map<Label, Label> = turbonop_hash::Map::default();
+        let labels = &mut maps.labels;
+        let mut relabel = |l: Label| -> Label {
+            if let Some(&t) = to.get(&l) {
+                return t;
+            }
+            let t = match crate_of(labels.name(l)) {
+                Some(c) => labels.intern(&c),
+                None => l,
+            };
+            to.insert(l, t);
+            t
+        };
+        map.vm.relabel(&mut relabel);
+        map.file.relabel(&mut relabel);
+    }
+}
+
+/// The crate a (demangled) symbol's name is in: a Rust path's first
+/// component (`core::fmt::write`: `core`), of an impl's type
+/// (`<alloc::vec::Vec<T> as core::ops::Drop>::drop`: `alloc`) or, its type
+/// a generic or a primitive's, of its trait (`<&T as core::fmt::Debug>::fmt`:
+/// `core`); a C++ name's top-level namespace (`std::vector<int>::size()`:
+/// `std`), or `[global]` for one in none. `None` for what isn't a symbol's
+/// name (a label in brackets: `[section .rodata]`).
+pub fn crate_of(name: &str) -> Option<String> {
+    if name.starts_with('[') || name.is_empty() {
+        return None;
+    }
+    let first = |path: &str| -> Option<String> {
+        let path = path
+            .trim_start_matches(['&', '*', ' ', '(', '['])
+            .trim_start_matches("mut ")
+            .trim_start_matches("const ");
+        let path = path.trim_start_matches(['&', '*', ' ']);
+        let end = path.find("::")?;
+        let head = &path[..end];
+        // (A generic's parameters, a lifetime: not a path's crate.)
+        (!head.is_empty() && !head.contains(['<', ' ', '\'', ','])).then(|| head.to_string())
+    };
+    if let Some(inner) = name.strip_prefix('<') {
+        // `<Type as Trait>::f`, or `<Type>::f`: the type's crate, else the
+        // trait's.
+        let mut depth = 0usize;
+        let mut split = None;
+        let mut close = None;
+        for (i, c) in inner.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' if depth == 0 => {
+                    close = Some(i);
+                    break;
+                }
+                '>' => depth -= 1,
+                ' ' if depth == 0 && inner[i..].starts_with(" as ") && split.is_none() => {
+                    split = Some(i);
+                }
+                _ => {}
+            }
+        }
+        let close = close.unwrap_or(inner.len());
+        let ty = &inner[..split.unwrap_or(close)];
+        if let Some(c) = first(ty) {
+            return Some(c);
+        }
+        if let Some(sp) = split
+            && let Some(c) = first(&inner[sp + 4..close])
+        {
+            return Some(c);
+        }
+        return Some("[global]".to_string());
+    }
+    if name.starts_with("(anonymous namespace)::") || name.starts_with("`anonymous namespace'::") {
+        return Some("(anonymous namespace)".to_string());
+    }
+    // (Before the parameters: `f(std::string)` is global.)
+    let head = name.split('(').next().unwrap_or(name);
+    Some(first(head).unwrap_or_else(|| "[global]".to_string()))
 }
 
 /// Labels of the base map for what isn't a section.
@@ -180,6 +297,51 @@ pub struct Maps {
     pub absorb_padding: bool,
 }
 
+impl Maps {
+    /// The maps as if the file's `ranges` (file offsets: what a strip
+    /// removes, see [`crate::strip`]) weren't there: every map forgets
+    /// them, and the memory they are loaded at, if they are (Mach-O's
+    /// `__LINKEDIT`). The rest keeps its offsets and labels.
+    pub fn strip(&mut self, ranges: &[(u64, u64)]) {
+        let len = self.file_size;
+        for &(start, end) in ranges {
+            let end = end.min(len);
+            if start >= end {
+                continue;
+            }
+            let gone = self.base.file.remove(start, end);
+            // The memory loaded from the bytes removed: where the base map
+            // has it from them (in a universal file, another slice may have
+            // the same addresses).
+            let mut loaded = Vec::new();
+            for g in &gone {
+                let Some(o) = g.other else { continue };
+                let (vs, ve) = (o, o.wrapping_add(g.end - g.start));
+                for b in self.base.vm.overlapping(vs, ve) {
+                    let (s, e) = (vs.max(b.start), ve.min(b.end));
+                    let Some(bo) = b.other.filter(|_| s < e) else {
+                        continue;
+                    };
+                    let from = bo.wrapping_add(s - b.start);
+                    let (fs, fe) = (from.max(start), from.wrapping_add(e - s).min(end));
+                    if fs < fe {
+                        loaded.push((s + (fs - from), s + (fe - from)));
+                    }
+                }
+            }
+            self.file_size -= gone.iter().map(|e| e.end - e.start).sum::<u64>();
+            for map in
+                std::iter::once(&mut self.base).chain(self.sources.iter_mut().map(|(_, m)| m))
+            {
+                map.file.remove(start, end);
+                for &(s, e) in &loaded {
+                    map.vm.remove(s, e);
+                }
+            }
+        }
+    }
+}
+
 /// What the sources other than the sections need.
 #[derive(Clone, Copy, Debug)]
 pub struct Inputs<'a> {
@@ -189,7 +351,7 @@ pub struct Inputs<'a> {
     /// The input file's name.
     pub file_name: &'a str,
     /// The line tables (for `sourcefiles`).
-    pub lines: Option<&'a hexcavator_debuginfo::SourceLines>,
+    pub lines: Option<&'a turbonop_debuginfo::SourceLines>,
 }
 
 /// The base map of a PE image.
@@ -309,8 +471,48 @@ fn fallback(labels: &mut Labels, label: Label) -> Label {
     }
 }
 
+/// Relabels `maps`' `libraries` source by `model`'s libraries (each of its
+/// compilands' pieces by the library the compiland is in; a compiland in
+/// none, `[no library]`), the rest of the image keeping the base's
+/// labels: an image's libraries its debug information names (a Mach-O
+/// debug map's archives), as a Unix linker's map names them
+/// ([`crate::unixmap`]).
+pub fn apply_libraries(maps: &mut Maps, model: &Model) {
+    for (source, map) in &mut maps.sources {
+        if *source != Source::Libraries {
+            continue;
+        }
+        let libs: Vec<Label> = model
+            .libraries
+            .iter()
+            .map(|l| {
+                maps.labels.intern(if l.name.is_empty() {
+                    "[no library]"
+                } else {
+                    &l.name
+                })
+            })
+            .collect();
+        let mut m = DualMap::default();
+        for p in &model.pieces {
+            let Some(&l) = model
+                .compilands
+                .get(p.compiland as usize)
+                .and_then(|c| libs.get(c.library as usize))
+            else {
+                continue;
+            };
+            m.add_vm(p.range.addr, p.range.end(), l, &maps.base);
+        }
+        m.fill_from(&maps.base, |l| l);
+        m.vm.compress();
+        m.file.compress();
+        *map = m;
+    }
+}
+
 fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
-    let mut cache = std::collections::HashMap::new();
+    let mut cache = turbonop_hash::Map::default();
     map.fill_from(base, |l| {
         *cache.entry(l).or_insert_with(|| fallback(labels, l))
     });
@@ -325,7 +527,7 @@ fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
 fn pe_references(pe: &PeFile<'_>, symbols: &[Symbol], map: &mut DualMap, base: &DualMap) {
     use crate::disasm::Arch;
     use crate::symbols::SymbolKind;
-    use hexcavator_pe::consts::machine;
+    use turbonop_pe::consts::machine;
     let arch = match pe.machine() {
         machine::AMD64 => Arch::X64,
         machine::ARM64 => Arch::Arm64,
@@ -352,10 +554,7 @@ fn pe_references(pe: &PeFile<'_>, symbols: &[Symbol], map: &mut DualMap, base: &
         .filter_map(|s| {
             let rva = u32::try_from(s.addr).ok()?;
             let size = u32::try_from(s.size.file).ok()?;
-            Some((
-                s.addr,
-                pe.bytes_at_rva(hexcavator_core::Rva(rva), size).ok()?,
-            ))
+            Some((s.addr, pe.bytes_at_rva(turbonop_core::Rva(rva), size).ok()?))
         })
         .collect();
     // The functions in parts, a thread each; their references in order
@@ -436,25 +635,30 @@ pub fn maps(image: &Image<'_>, inputs: Inputs<'_>, sources: &[Source]) -> Maps {
                 }
                 fill(&mut labels, &mut map, &base);
             }
-            Source::Symbols | Source::RawSymbols | Source::FullSymbols => {
+            Source::Symbols | Source::RawSymbols | Source::FullSymbols | Source::Crates => {
                 pe_header_symbols(pe, &mut labels, &mut map, &base);
                 if let Some(symbols) = inputs.symbols {
-                    for s in symbols.iter().filter(|s| !s.folded) {
+                    let kept: Vec<_> = symbols
+                        .iter()
+                        .filter(|s| !s.folded && s.size.vm.max(s.size.file) > 0)
+                        .collect();
+                    // A function's exception data (`[pdata] f`, `[unwind]
+                    // f`, its C++ EH tables) is charged to the function, as
+                    // ELF's unwind entries are; the sections source still
+                    // tells them apart.
+                    let names: Vec<&str> = kept
+                        .iter()
+                        .map(|s| {
+                            s.kind
+                                .prefix()
+                                .and_then(|p| s.name.strip_prefix(p))
+                                .and_then(|n| n.strip_prefix(' '))
+                                .unwrap_or(&s.name)
+                        })
+                        .collect();
+                    let ls = labels.intern_many(&names);
+                    for (s, l) in kept.iter().zip(ls) {
                         let size = s.size.vm.max(s.size.file);
-                        if size == 0 {
-                            continue;
-                        }
-                        // A function's exception data (`[pdata] f`,
-                        // `[unwind] f`, its C++ EH tables) is charged to
-                        // the function, as ELF's unwind entries are; the
-                        // sections source still tells them apart.
-                        let name = s
-                            .kind
-                            .prefix()
-                            .and_then(|p| s.name.strip_prefix(p))
-                            .and_then(|n| n.strip_prefix(' '))
-                            .unwrap_or(&s.name);
-                        let l = labels.intern(name);
                         map.add_vm(s.addr, s.addr.saturating_add(size), l, &base);
                     }
                     pe_references(pe, symbols, &mut map, &base);

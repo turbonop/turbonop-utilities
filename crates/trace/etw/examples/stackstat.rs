@@ -2,19 +2,19 @@
 //! of matched pieces, continuations and misses, by event kind. Prints
 //! aggregate counts only.
 //!
-//!     cargo run --release -p hexcavator-etw --example stackstat -- trace.etl
+//!     cargo run --release -p turbonop-etw --example stackstat -- trace.etl
 
 use std::collections::{BTreeMap, HashMap};
 
-use hexcavator_etl::Etl;
-use hexcavator_etw::stacks::StackMatcher;
-use hexcavator_etw::{KernelEvent, decode};
+use turbonop_etl::Etl;
+use turbonop_etw::stacks::StackMatcher;
+use turbonop_etw::{KernelEvent, decode};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args()
         .nth(1)
         .ok_or("usage: stackstat trace.etl")?;
-    let map = hexcavator_mmap::Mmap::open(path)?;
+    let map = turbonop_mmap::Mmap::open(path)?;
     let etl = Etl::parse(&map)?;
     let freq = etl.header().ticks_per_second().unwrap_or(10_000_000);
     let mut cursor = etl.events()?;

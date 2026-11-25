@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use hexcavator_macho::consts::*;
-use hexcavator_macho::{MachO, fat_archs};
+use turbonop_macho::consts::*;
+use turbonop_macho::{MachO, fat_archs};
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -233,6 +233,8 @@ fn matches_llvm_readobj() {
     for f in [
         "program-arm64",
         "program-x86_64",
+        // (arm64e: its CPU subtype, pointer authentication's ABI version.)
+        "program-arm64e",
         "program-arm64.o",
         "program-x86_64.o",
         "libsecond-arm64.dylib",
@@ -346,7 +348,7 @@ fn universal_headers_match_llvm_objdump() {
     );
     let names: Vec<String> = archs
         .iter()
-        .map(|a| hexcavator_macho::arch_name(a.cputype, a.cpusubtype))
+        .map(|a| turbonop_macho::arch_name(a.cputype, a.cpusubtype))
         .collect();
     assert_eq!(names, ["x86_64", "arm64"]);
     // Each slice is the thin file.

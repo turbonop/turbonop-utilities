@@ -10,7 +10,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 use crate::consts::*;
 use crate::{MachO, Segment};
@@ -57,6 +57,56 @@ pub struct Fixup<'d> {
     pub addr: u64,
     pub width: u8,
     pub kind: FixupKind<'d>,
+    /// How the pointer is signed (arm64e's authenticated pointers).
+    pub auth: Option<PtrAuth>,
+    /// The pointer as the file holds it (a chained fixup's encoding).
+    pub value: u64,
+    /// Its chained pointer format (`DYLD_CHAINED_PTR_*`; 0 for the rebase
+    /// and bind opcodes').
+    pub format: u16,
+}
+
+/// An authenticated pointer's signing (arm64e): the key, and the
+/// discriminator it is signed with (the 16-bit diversity, blended with
+/// the pointer's own address when `address`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PtrAuth {
+    pub key: PtrAuthKey,
+    pub diversity: u16,
+    pub address: bool,
+}
+
+/// A pointer authentication key: the instruction keys (IA, IB) sign code
+/// pointers; the data keys (DA, DB), data pointers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PtrAuthKey {
+    IA,
+    IB,
+    DA,
+    DB,
+}
+
+impl PtrAuthKey {
+    /// The key of a chained pointer's (or a `__ptrauth` qualifier's) two
+    /// key bits.
+    pub fn from_bits(bits: u64) -> Self {
+        match bits & 3 {
+            0 => Self::IA,
+            1 => Self::IB,
+            2 => Self::DA,
+            _ => Self::DB,
+        }
+    }
+
+    /// Its name: `IA`, `IB`, `DA`, `DB`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::IA => "IA",
+            Self::IB => "IB",
+            Self::DA => "DA",
+            Self::DB => "DB",
+        }
+    }
 }
 
 /// An exported symbol: its name, flags (`EXPORT_SYMBOL_FLAGS_*`), and
@@ -96,6 +146,9 @@ pub const DYLD_CHAINED_PTR_ARM64E_FIRMWARE: u16 = 10;
 pub const DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE: u16 = 11;
 pub const DYLD_CHAINED_PTR_ARM64E_USERLAND24: u16 = 12;
 pub const DYLD_CHAINED_PTR_ARM64E_SHARED_CACHE: u16 = 13;
+/// Firmware's: rebases only, each a segment's index and an offset in it
+/// (stride 4).
+pub const DYLD_CHAINED_PTR_ARM64E_SEGMENTED: u16 = 14;
 const DYLD_CHAINED_PTR_START_NONE: u16 = 0xFFFF;
 const DYLD_CHAINED_PTR_START_MULTI: u16 = 0x8000;
 const DYLD_CHAINED_PTR_START_LAST: u16 = 0x8000;
@@ -148,7 +201,7 @@ impl<'d> Cursor<'d> {
     }
     fn cstr(&mut self) -> Option<&'d [u8]> {
         let rest = self.data.get(self.pos..)?;
-        let n = rest.iter().position(|&b| b == 0)?;
+        let n = turbonop_core::find_nul(rest)?;
         self.pos += n + 1;
         Some(&rest[..n])
     }
@@ -424,6 +477,13 @@ impl<'d> MachO<'d> {
             else {
                 return;
             };
+            // (A signed pointer's diversity, address diversity, and key.)
+            let signed = |v: u64| PtrAuth {
+                diversity: u16::try_from(bits(v, 32, 16)).unwrap_or(0),
+                address: bits(v, 48, 1) == 1,
+                key: PtrAuthKey::from_bits(bits(v, 49, 2)),
+            };
+            let mut auth = None;
             let (kind, next) = match format {
                 DYLD_CHAINED_PTR_64 | DYLD_CHAINED_PTR_64_OFFSET => {
                     let next = bits(v, 51, 12);
@@ -436,6 +496,8 @@ impl<'d> MachO<'d> {
                         } else {
                             target
                         };
+                        // (Its top byte, a tag, as dyld writes it.)
+                        let target = target | bits(v, 36, 8) << 56;
                         (FixupKind::Rebase { target }, next)
                     }
                 }
@@ -446,10 +508,13 @@ impl<'d> MachO<'d> {
                 | DYLD_CHAINED_PTR_ARM64E_FIRMWARE
                 | DYLD_CHAINED_PTR_ARM64E_SHARED_CACHE => {
                     let next = bits(v, 51, 11);
-                    let (is_bind, auth) = (bits(v, 62, 1) == 1, bits(v, 63, 1) == 1);
+                    let (is_bind, is_auth) = (bits(v, 62, 1) == 1, bits(v, 63, 1) == 1);
                     let wide_ordinal = format == DYLD_CHAINED_PTR_ARM64E_USERLAND24;
                     let ordinal = bits(v, 0, if wide_ordinal { 24 } else { 16 });
-                    let kind = match (is_bind, auth) {
+                    if is_auth {
+                        auth = Some(signed(v));
+                    }
+                    let kind = match (is_bind, is_auth) {
                         (true, true) => bind(ordinal, 0),
                         (true, false) => bind(ordinal, sign(bits(v, 32, 19), 19)),
                         // An authenticated rebase: an offset from the base.
@@ -465,17 +530,34 @@ impl<'d> MachO<'d> {
                             } else {
                                 base.wrapping_add(target)
                             };
+                            // (Its top byte, a tag, as dyld writes it.)
+                            let target = target | bits(v, 43, 8) << 56;
                             FixupKind::Rebase { target }
                         }
                     };
                     (kind, next)
                 }
-                DYLD_CHAINED_PTR_64_KERNEL_CACHE | DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE => (
-                    FixupKind::Rebase {
-                        target: base.wrapping_add(bits(v, 0, 30)),
-                    },
-                    bits(v, 51, 12),
-                ),
+                DYLD_CHAINED_PTR_ARM64E_SEGMENTED => {
+                    if bits(v, 63, 1) == 1 {
+                        auth = Some(signed(v));
+                    }
+                    let target = segments
+                        .get(index(bits(v, 28, 4)))
+                        .map_or(0, |s| s.vmaddr)
+                        .wrapping_add(bits(v, 0, 28));
+                    (FixupKind::Rebase { target }, bits(v, 51, 12))
+                }
+                DYLD_CHAINED_PTR_64_KERNEL_CACHE | DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE => {
+                    if bits(v, 63, 1) == 1 {
+                        auth = Some(signed(v));
+                    }
+                    (
+                        FixupKind::Rebase {
+                            target: base.wrapping_add(bits(v, 0, 30)),
+                        },
+                        bits(v, 51, 12),
+                    )
+                }
                 DYLD_CHAINED_PTR_32 => {
                     let next = bits(v, 26, 5);
                     if bits(v, 31, 1) == 1 {
@@ -507,7 +589,14 @@ impl<'d> MachO<'d> {
                 ),
                 _ => return,
             };
-            out.push(Fixup { addr, width, kind });
+            out.push(Fixup {
+                addr,
+                width,
+                kind,
+                auth,
+                value: v,
+                format,
+            });
             if next == 0 || out.len() >= MAX_ENTRIES {
                 return;
             }
@@ -541,6 +630,9 @@ impl<'d> MachO<'d> {
                 addr,
                 width,
                 kind: FixupKind::Rebase { target },
+                auth: None,
+                value: target,
+                format: 0,
             });
             out.len() < limit
         };
@@ -622,6 +714,12 @@ impl<'d> MachO<'d> {
         let mut weak = false;
         let mut addend = 0i64;
         let (mut seg, mut offset) = (None::<usize>, 0u64);
+        // Threaded binds (arm64e's first ABI, before chained fixups): the
+        // binds after BIND_SUBOPCODE_THREADED_SET_BIND_ORDINAL_TABLE_SIZE
+        // fill a table of imports, and each APPLY walks a chain of
+        // DYLD_CHAINED_PTR_ARM64E pointers (rebases and binds of that
+        // table) from the current segment and offset.
+        let mut threaded: Option<Vec<Import<'d>>> = None;
         let bind = |seg: Option<usize>,
                     offset: u64,
                     symbol: &'d [u8],
@@ -632,15 +730,23 @@ impl<'d> MachO<'d> {
             let Some(s) = seg.and_then(|i| segments.get(i)) else {
                 return false;
             };
+            let addr = s.vmaddr.wrapping_add(offset);
+            let width = self.pointer_width();
+            let value = Self::file_offset(segments, addr)
+                .and_then(|o| self.read_at(o, width))
+                .unwrap_or(0);
             out.push(Fixup {
-                addr: s.vmaddr.wrapping_add(offset),
-                width: self.pointer_width(),
+                addr,
+                width,
                 kind: FixupKind::Bind {
                     symbol,
                     library,
                     addend,
                     weak,
                 },
+                auth: None,
+                value,
+                format: 0,
             });
             out.len() < limit
         };
@@ -682,6 +788,17 @@ impl<'d> MachO<'d> {
                     offset = offset.wrapping_add(o);
                 }
                 0x90 => {
+                    if let Some(table) = &mut threaded {
+                        if table.len() < MAX_ENTRIES {
+                            table.push(Import {
+                                symbol,
+                                library,
+                                addend,
+                                weak,
+                            });
+                        }
+                        continue;
+                    }
                     if !bind(seg, offset, symbol, library, addend, weak, out) {
                         return;
                     }
@@ -711,7 +828,38 @@ impl<'d> MachO<'d> {
                         offset = offset.wrapping_add(skip).wrapping_add(w);
                     }
                 }
-                // (Threaded binds, of arm64e's first ABI: not read.)
+                // BIND_OPCODE_THREADED.
+                0xD0 => match imm {
+                    // ..._SET_BIND_ORDINAL_TABLE_SIZE_ULEB
+                    0x00 => {
+                        let Some(n) = c.uleb() else { return };
+                        threaded = Some(Vec::with_capacity(index(n).min(MAX_ENTRIES)));
+                    }
+                    // ..._APPLY
+                    0x01 => {
+                        let (Some(table), Some(s)) = (&threaded, seg.and_then(|i| segments.get(i)))
+                        else {
+                            return;
+                        };
+                        let start = s.vmaddr.wrapping_add(offset);
+                        let base = Self::base_address(segments);
+                        self.chain(
+                            segments,
+                            table,
+                            DYLD_CHAINED_PTR_ARM64E,
+                            0,
+                            start,
+                            u64::MAX,
+                            0,
+                            base,
+                            out,
+                        );
+                        if out.len() >= limit {
+                            return;
+                        }
+                    }
+                    _ => return,
+                },
                 _ => return,
             }
         }
@@ -727,8 +875,9 @@ impl<'d> MachO<'d> {
         Some(Self::base_address(&self.segments()).wrapping_add(off))
     }
 
-    /// The exported symbols, from the exports trie.
-    pub fn exports(&self) -> Vec<Export> {
+    /// The exports trie's bytes (`LC_DYLD_EXPORTS_TRIE`'s, or else
+    /// `LC_DYLD_INFO`'s); empty if it has none.
+    pub fn export_trie(&self) -> &'d [u8] {
         let mut trie: &[u8] = &[];
         for lc in self.load_commands() {
             match lc.cmd {
@@ -745,6 +894,12 @@ impl<'d> MachO<'d> {
                 _ => {}
             }
         }
+        trie
+    }
+
+    /// The exported symbols, from the exports trie.
+    pub fn exports(&self) -> Vec<Export> {
+        let trie = self.export_trie();
         let base = Self::base_address(&self.segments());
         let mut out = Vec::new();
         let mut seen = alloc::collections::BTreeSet::new();

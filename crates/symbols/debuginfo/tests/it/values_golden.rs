@@ -3,13 +3,13 @@
 //! against testdata/golden/values (one file per image): the value tree as
 //! read when the format-independent reader replaced the PDB crate's own,
 //! which it matched value for value (but for qualified character arrays,
-//! now strings). `HEXC_BLESS=1` rewrites them.
+//! now strings). `TURBONOP_BLESS=1` rewrites them.
 
 use std::fmt::Write as _;
 
-use hexcavator_debuginfo::value::{self, Limits, Value};
-use hexcavator_debuginfo::{DebugInfo, SymbolKind, TypeRef};
-use hexcavator_image::Image;
+use turbonop_debuginfo::value::{self, Limits, Value};
+use turbonop_debuginfo::{DebugInfo, SymbolKind, TypeRef};
+use turbonop_image::Image;
 
 fn testdata(p: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -101,7 +101,7 @@ fn dump(image_path: &std::path::Path, pdb_path: &std::path::Path) -> String {
 
 #[test]
 fn values_match_golden() {
-    let bless = std::env::var_os("HEXC_BLESS").is_some();
+    let bless = std::env::var_os("TURBONOP_BLESS").is_some();
     let dir = testdata("golden/values");
     if bless {
         std::fs::create_dir_all(&dir).unwrap();
@@ -115,7 +115,7 @@ fn values_match_golden() {
             continue;
         }
         let want = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("{}: {e} (HEXC_BLESS=1 writes it)", path.display()))
+            .unwrap_or_else(|e| panic!("{}: {e} (TURBONOP_BLESS=1 writes it)", path.display()))
             .replace("\r\n", "\n");
         if got != want {
             let line = got

@@ -6,7 +6,7 @@
 //! images mix the two in one table, with the code range map deciding which
 //! kind each entry is.
 
-use hexcavator_core::{Reader, Rva};
+use turbonop_core::{Reader, Rva};
 
 use crate::PeFile;
 use crate::consts::{directory, machine};

@@ -1,0 +1,118 @@
+
+Dump of file PEParser.Tests.Dllarm32.dll
+
+File Type: DLL
+
+Function Table (99)
+
+           Begin    Packed Fragment Fixup Function Name
+
+  00000000 10001001    N      N       N  __security_push_cookie
+  00000008 10001019    N      N       N  __security_pop_cookie
+  00000010 10001035    N      N       N  __ppgsfailure
+  00000018 1000104D    N      N       N  __security_check_cookie
+  00000020 10001061    N      N       N  __gsfailure
+  00000028 1000108D    N      N       N  __rt_udiv
+  00000030 100011F5    N      N       N  __rt_sdiv
+  00000038 10001379    N      N       N  __rt_udiv64
+  00000040 10001419    N      N       N  __rt_sdiv64
+  00000048 100014E5    N      N       N  DllMain
+  00000050 10001521    N      N       N  ??0DllArm_BaseClass@@QAA@H@Z (public: __cdecl DllArm_BaseClass::DllArm_BaseClass(int))
+  00000058 1000154D    N      N       N  ??0DllArm_CppxdataUsage@@QAA@_N@Z (public: __cdecl DllArm_CppxdataUsage::DllArm_CppxdataUsage(bool))
+  00000060 10001571    N      N       N  ??0DllArm_DerivedClass@@QAA@HH@Z (public: __cdecl DllArm_DerivedClass::DllArm_DerivedClass(int,int))
+  00000068 100015A9    N      N       N  ?ASecondVirtualFunction@DllArm_BaseClass@@UAAHXZ (public: virtual int __cdecl DllArm_BaseClass::ASecondVirtualFunction(void))
+  00000070 100015CD    N      N       N  ?AVirtualFunction@DllArm_BaseClass@@UAAHXZ (public: virtual int __cdecl DllArm_BaseClass::AVirtualFunction(void))
+  00000078 100015ED    N      N       N  ?AVirtualFunction@DllArm_DerivedClass@@UAAHXZ (public: virtual int __cdecl DllArm_DerivedClass::AVirtualFunction(void))
+  00000080 10001619    N      N       N  ?MaybeThrow@DllArm_CppxdataUsage@@QAA_NXZ (public: bool __cdecl DllArm_CppxdataUsage::MaybeThrow(void))
+  00000088 10001675    N      N       N  ?MaybeThrowWithSEH@DllArm_CppxdataUsage@@QAA_NXZ (public: bool __cdecl DllArm_CppxdataUsage::MaybeThrowWithSEH(void))
+  00000090 100016C1    N      N       N  ??$_itoa_s@$00@@YAHHAAY00DH@Z (int __cdecl _itoa_s<1>(int,char (&)[1],int))
+  00000098 100016F1    N      N       N  ??0exception@std@@QAA@ABV01@@Z (public: __cdecl std::exception::exception(class std::exception const &))
+  000000A0 10001735    N      N       N  ??0exception@std@@QAA@QBD@Z (public: __cdecl std::exception::exception(char const * const))
+  000000A8 10001789    N      N       N  ??1exception@std@@UAA@XZ (public: virtual __cdecl std::exception::~exception(void))
+  000000B0 100017B1    N      N       N  ??_Eexception@std@@UAAPAXI@Z (public: virtual void * __cdecl std::exception::`vector deleting destructor'(unsigned int))
+  000000B8 100017E1    N      N       N  ?what@exception@std@@UBAPBDXZ (public: virtual char const * __cdecl std::exception::what(void)const )
+  000000C0 10001819    N      N       N  __GSHandlerCheck
+  000000C8 10001841    N      N       N  __GSHandlerCheckCommon
+  000000D0 10001889    N      N       N  ??1type_info@@UAA@XZ (public: virtual __cdecl type_info::~type_info(void))
+  000000D8 100018A5    N      N       N  ??_Etype_info@@UAAPAXI@Z (public: virtual void * __cdecl type_info::`vector deleting destructor'(unsigned int))
+  000000E0 100018D5    N      N       N  ??3@YAXPAXI@Z (void __cdecl operator delete(void *,unsigned int))
+  000000E8 100018ED    N      N       N  __GSHandlerCheck_EH
+  000000F0 10001929    N      N       N  __GSHandlerCheck_SEH
+  000000F8 10001991    N      N       N
+  00000100 10001A15    N      N       N
+  00000108 10001B39    N      N       N
+  00000110 10001BB9    N      N       N
+  00000118 10001CA9    N      N       N
+  00000120 10001CF5    N      N       N  _CRT_INIT
+  00000128 10001D1D    N      N       N  _DllMainCRTStartup
+  00000130 10001D4D    N      N       N  ??3@YAXPAX@Z (void __cdecl operator delete(void *))
+  00000138 10001D69    N      N       N  ??$__crt_fast_decode_pointer@PAP6AXXZ@@YAPAP6AXXZQAP6AXXZ@Z (void (__cdecl** __cdecl __crt_fast_decode_pointer<void (__cdecl**)(void)>(void (__cdecl** const)(void)))(void))
+  00000140 10001DA1    N      N       N  ??$__crt_fast_encode_pointer@PAP6AXXZ@@YAPAP6AXXZQAP6AXXZ@Z (void (__cdecl** __cdecl __crt_fast_encode_pointer<void (__cdecl**)(void)>(void (__cdecl** const)(void)))(void))
+  00000148 10001DDD    N      N       N  ?__crt_rotate_pointer_value@@YAIIH@Z (unsigned int __cdecl __crt_rotate_pointer_value(unsigned int,int))
+  00000150 10001DFD    N      N       N  ?configure_argv@__scrt_narrow_argv_policy@@SAHXZ (public: static int __cdecl __scrt_narrow_argv_policy::configure_argv(void))
+  00000158 10001E21    N      N       N
+  00000160 10001EB5    N      N       N
+  00000168 10001F39    N      N       N  NtCurrentTeb
+  00000170 10001F55    N      N       N  __scrt_acquire_startup_lock
+  00000178 10001FD1    N      N       N  __scrt_dllmain_after_initialize_c
+  00000180 10002015    N      N       N  __scrt_dllmain_before_initialize_c
+  00000188 10002049    N      N       N  __scrt_dllmain_crt_thread_attach
+  00000190 10002095    N      N       N  __scrt_dllmain_crt_thread_detach
+  00000198 100020B5    N      N       N  __scrt_dllmain_exception_filter
+  000001A0 10002109    N      N       N  __scrt_dllmain_uninitialize_c
+  000001A8 10002141    N      N       N  __scrt_dllmain_uninitialize_critical
+  000001B0 10002155    N      N       N  __scrt_initialize_crt
+  000001B8 100021BD    N      N       N  __scrt_initialize_onexit_tables
+  000001C0 1000227D    N      N       N  __scrt_is_nonwritable_in_current_image
+  000001C8 10002311    N      N       N  __scrt_release_startup_lock
+  000001D0 10002359    N      N       N  __scrt_uninitialize_crt
+  000001D8 100023A5    N      N       N  _onexit
+  000001E0 10002415    N      N       N  at_quick_exit
+  000001E8 10002469    N      N       N  atexit
+  000001F0 1000249D    N      N       N  __security_init_cookie
+  000001F8 10002559    N      N       N  ?__scrt_initialize_type_info@@YAXXZ (void __cdecl __scrt_initialize_type_info(void))
+  00000200 10002575    N      N       N  ?__scrt_uninitialize_type_info@@YAXXZ (void __cdecl __scrt_uninitialize_type_info(void))
+  00000208 10002589    N      N       N  __local_stdio_printf_options
+  00000210 100025A1    N      N       N  __local_stdio_scanf_options
+  00000218 100025B9    N      N       N  __scrt_initialize_default_local_stdio_options
+  00000220 10002605    N      N       N  __scrt_get_dyn_tls_init_callback
+  00000228 1000261D    N      N       N  __scrt_fastfail
+  00000230 10002629    N      N       N  __scrt_get_show_window_mode
+  00000238 1000266D    N      N       N  __scrt_initialize_winrt
+  00000240 10002681    N      N       N  __scrt_is_managed_app
+  00000248 1000272D    N      N       N  __scrt_set_unhandled_exception_filter
+  00000250 10002749    N      N       N  __scrt_unhandled_exception_filter
+  00000258 100027C5    Y      N       N  _RTC_Initialize
+  00000260 100027FD    Y      N       N  _RTC_Terminate
+  00000268 10002835    N      N       N  _guard_check_icall
+  00000270 1000284D    N      N       N  __report_gsfailure
+  00000278 10002859    N      N       N  __report_rangecheckfailure
+  00000280 10002869    N      N       N  __report_securityfailure
+  00000288 10002875    N      N       N  __report_securityfailureEx
+  00000290 10002881    N      N       N  __isa_available_init
+  00000298 100028AD    N      N       N  _get_startup_argv_mode
+  000002A0 100028C1    N      N       N  __scrt_is_ucrt_dll_in_use
+  000002A8 100028ED    N      N       N  _guard_check_icall_nop
+  000002B0 100028FD    N      N       N  _guard_icall_checks_enforced
+  000002B8 10002935    N      N       N  __fphelper_raise_exception
+  000002C0 10002D95    N      N       N  __helper_divide_by_0
+  000002C8 10002F31    N      N       N  __acrt_initialize
+  000002D0 10002F49    N      N       N  __acrt_thread_attach
+  000002D8 10002F61    N      N       N  __acrt_thread_detach
+  000002E0 10002F79    N      N       N  __acrt_uninitialize
+  000002E8 10002F99    N      N       N  __acrt_uninitialize_critical
+  000002F0 10002FB9    N      N       N  __scrt_stub_for_is_c_termination_complete
+  000002F8 10002FCD    N      N       N
+  00000300 1000301D    N      N       N
+  00000308 10003029    N      N       N
+  00000310 10003039    N      N       N
+
+  Summary
+
+        1000 .data
+        1000 .gfids
+        1000 .pdata
+        2000 .rdata
+        1000 .reloc
+        1000 .rsrc
+        3000 .text

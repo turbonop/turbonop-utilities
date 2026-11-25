@@ -16,11 +16,11 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use hexcavator_etw::guids;
-use hexcavator_etw::schema::Properties;
-use hexcavator_trace::{ProcessIx, ThreadIx, Trace};
 use rustc_hash::FxHashMap;
 use serde_json::{Value, json};
+use turbonop_etw::guids;
+use turbonop_etw::schema::Properties;
+use turbonop_trace::{ProcessIx, ThreadIx, Trace};
 
 use crate::reading::int;
 
@@ -74,7 +74,7 @@ struct Read {
 /// The commit lifetimes of `trace` (read from `path`): its VirtualAlloc
 /// and VirtualFree events, from the buffers holding them, on every core.
 pub fn table(trace: &Trace, path: &Path) -> Result<VmemTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, op: u8| {
+    let wanted = |provider: &turbonop_etl::Guid, op: u8| {
         *provider == guids::PAGE_FAULT && (op == ALLOC || op == FREE)
     };
     let (mut all, _) = crate::reading::events(trace, path, wanted, |_, e, mine| {

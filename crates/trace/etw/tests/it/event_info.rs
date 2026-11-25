@@ -1,9 +1,9 @@
 //! Event descriptions (`TRACE_EVENT_INFO`): read from bytes laid out as
 //! TDH lays them out, and payloads decoded by them.
 
-use hexcavator_etl::Guid;
-use hexcavator_etw::event_info::{EventInfo, EventInfos};
-use hexcavator_etw::manifest::{Size, decode, decode_partial};
+use turbonop_etl::Guid;
+use turbonop_etw::event_info::{EventInfo, EventInfos};
+use turbonop_etw::manifest::{Size, decode, decode_partial};
 
 /// One property to describe: name, flags, in and out types (or a struct's
 /// first member and member count), count and length.

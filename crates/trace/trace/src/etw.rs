@@ -10,7 +10,7 @@
 //!    thread and outermost frames, each behind a lock of its own (and each
 //!    worker remembers each thread's last stack, which mostly repeats).
 //! 2. **Order.** One thread walks the buffers' timestamps in the order
-//!    [`hexcavator_etl::EventCursor`] reads them (by timestamp, ties broken
+//!    [`turbonop_etl::EventCursor`] reads them (by timestamp, ties broken
 //!    as `ProcessTrace` breaks them: [`Order`]), as runs of events from one
 //!    buffer, while the workers decode. It touches only timestamps.
 //! 3. **Build, in parts, in parallel.** The ordered events are cut into
@@ -41,12 +41,12 @@ use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
 
-use hexcavator_core::Result;
-use hexcavator_etl::{Buffer, Etl, Event, Order, for_each_event, streams};
-use hexcavator_etw::kernel::{
+use turbonop_core::Result;
+use turbonop_etl::{Buffer, Etl, Event, Order, for_each_event, streams};
+use turbonop_etw::kernel::{
     ContextSwitch, KernelEvent, Lifetime, ReadyThread, Sample, ThreadEvent, decode,
 };
-use hexcavator_etw::stacks::{StackMatcher, Stitch};
+use turbonop_etw::stacks::{StackMatcher, Stitch};
 
 use crate::model::{
     BufferSpan, Clock, DebugId, EventStats, Image, ImageIx, Process, ProcessIx, ReadyIx, Thread,
@@ -257,15 +257,15 @@ pub fn import_parts(
 /// A worker's event counts and provider names.
 type Counted = (
     FxHashMap<EventKind, EventStats>,
-    FxHashMap<hexcavator_etl::Guid, String>,
+    FxHashMap<turbonop_etl::Guid, String>,
 );
 
 /// The workers' counts as one, sorted by kind; and the providers' names,
 /// sorted by GUID (a provider named differently by two workers: the
 /// first name, by name).
-fn merge_counts(counted: Vec<Counted>) -> (Vec<EventStats>, Vec<(hexcavator_etl::Guid, String)>) {
+fn merge_counts(counted: Vec<Counted>) -> (Vec<EventStats>, Vec<(turbonop_etl::Guid, String)>) {
     let mut all: FxHashMap<EventKind, EventStats> = FxHashMap::default();
-    let mut names: FxHashMap<hexcavator_etl::Guid, String> = FxHashMap::default();
+    let mut names: FxHashMap<turbonop_etl::Guid, String> = FxHashMap::default();
     for (counts, n) in counted {
         for (k, s) in counts {
             match all.entry(k) {
@@ -294,7 +294,7 @@ fn merge_counts(counted: Vec<Counted>) -> (Vec<EventStats>, Vec<(hexcavator_etl:
     }
     let mut events: Vec<EventStats> = all.into_values().collect();
     events.sort_by_key(|s| (s.provider, s.id, s.version, s.opcode, s.task));
-    let mut names: Vec<(hexcavator_etl::Guid, String)> = names.into_iter().collect();
+    let mut names: Vec<(turbonop_etl::Guid, String)> = names.into_iter().collect();
     names.sort();
     (events, names)
 }
@@ -638,7 +638,7 @@ struct Part<'a> {
     /// Processes, threads and images coming and going (and other events
     /// about them), with position and time.
     lifetimes: Vec<(u64, i64, &'a Item)>,
-    snapshot: hexcavator_etw::stacks::Snapshot,
+    snapshot: turbonop_etw::stacks::Snapshot,
     /// The part's first timestamp.
     start: i64,
     stacks: u64,
@@ -1527,13 +1527,13 @@ struct Local {
     /// Every kind of event seen, by (provider, ID, version, opcode, task).
     counts: FxHashMap<EventKind, EventStats>,
     /// Providers' names seen (TraceLogging's provider traits).
-    names: FxHashMap<hexcavator_etl::Guid, String>,
+    names: FxHashMap<turbonop_etl::Guid, String>,
     /// Event descriptions seen (`EventMetadata` events' payloads).
     infos: Vec<Vec<u8>>,
 }
 
 /// A kind of event: provider, ID, version, opcode, task.
-type EventKind = (hexcavator_etl::Guid, u16, u8, u8, u16);
+type EventKind = (turbonop_etl::Guid, u16, u8, u8, u16);
 
 impl Local {
     /// Counts `e` among its kind.
@@ -1556,8 +1556,8 @@ impl Local {
         s.bytes += e.user_data.len() as u64;
         s.first = s.first.min(e.timestamp);
         s.last = s.last.max(e.timestamp);
-        if e.provider == hexcavator_etw::guids::EVENT_METADATA
-            && e.descriptor.opcode == hexcavator_etw::event_info::EVENT_INFO_OPCODE
+        if e.provider == turbonop_etw::guids::EVENT_METADATA
+            && e.descriptor.opcode == turbonop_etw::event_info::EVENT_INFO_OPCODE
         {
             self.infos.push(e.user_data.to_vec());
         }
@@ -1565,7 +1565,7 @@ impl Local {
         // its total size, then its name (NUL-terminated UTF-8).
         if !e.extended.is_empty() && !self.names.contains_key(&e.provider) {
             for item in e.extended_data().flatten() {
-                if item.ext_type == hexcavator_etl::event::ext_type::PROV_TRAITS
+                if item.ext_type == turbonop_etl::event::ext_type::PROV_TRAITS
                     && let Some(rest) = item.data.get(2..)
                     && let Some(end) = rest.iter().position(|&b| b == 0)
                     && let Ok(name) = std::str::from_utf8(&rest[..end])
@@ -1712,8 +1712,8 @@ fn keep(
 ) -> Option<Item> {
     // The sampling interval: PerfInfo's CollectionStart for the profile
     // source (0), in 100 ns units.
-    if e.provider == hexcavator_etw::guids::PERF_INFO && e.descriptor.opcode == 73 {
-        let p = hexcavator_etw::Properties::of(e)?.ok()?;
+    if e.provider == turbonop_etw::guids::PERF_INFO && e.descriptor.opcode == 73 {
+        let p = turbonop_etw::Properties::of(e)?.ok()?;
         let field = |n: &str| {
             p.get(n)
                 .and_then(|f| f.data.get(..4))

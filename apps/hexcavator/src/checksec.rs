@@ -1,8 +1,9 @@
-//! `hexc checksec`: the exploit mitigations an image was built with (PE,
+//! `hexcavator checksec`: the exploit mitigations an image was built with (PE,
 //! ELF, Mach-O), each on, off, or not applicable, with why; and, with
 //! `-audit`, the compilers and options its objects were built with, from
 //! its debug information (a PDB's S_COMPILE3 and build information; DWARF
-//! units' DW_AT_producer), and the objects that differ from the rest.
+//! units' DW_AT_producer), the objects that differ from the rest, and the
+//! tools that linked it.
 //!
 //! Everything is read from the files; nothing is run. Every list read
 //! from them is bounded by them.
@@ -12,11 +13,11 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
 use serde_json::{Value as Json, json};
+use turbonop_mmap::Mmap;
 
 const USAGE: &str = "\
-usage: hexc checksec [options] <image>...
+usage: hexcavator checksec [options] <image>...
 
 The exploit mitigations each image was built with: for PE images ASLR,
 high-entropy ASLR, DEP, CFG, XFG, CET shadow stacks, EH continuation,
@@ -28,9 +29,12 @@ encryption. Each is on, off, or n/a, with what says so.
 
 options:
   -audit         also the compilers and options its objects were built with
-                 (from the PDB's records, or DWARF's DW_AT_producer), and the
-                 objects built differently from the rest
-  -pdb <path>    its debug information (for -audit; or -debug)
+                 (from the PDB's records, or DWARF's units), the objects
+                 built differently from the rest, and the tools that linked
+                 it (a PE image's linker version and its PDB's record of the
+                 link; ELF's .comment; Mach-O's LC_BUILD_VERSION;
+                 WebAssembly's producers)
+  -debug <path>  its debug information (for -audit; or -pdb)
   -json          as JSON";
 
 #[derive(Default)]
@@ -51,12 +55,12 @@ pub fn run(args: &[String]) -> ExitCode {
             Some("pdb" | "debug") => match it.next() {
                 Some(p) => o.pdb = Some(p.clone()),
                 None => {
-                    ereport!("hexc checksec: -pdb: expected a path");
+                    ereport!("hexcavator checksec: -pdb: expected a path");
                     return ExitCode::from(2);
                 }
             },
             Some(x) if !x.is_empty() && !Path::new(a).exists() => {
-                ereport!("hexc checksec: unknown option '{a}'\n\n{USAGE}");
+                ereport!("hexcavator checksec: unknown option '{a}'\n\n{USAGE}");
                 return ExitCode::from(2);
             }
             _ => o.files.push(a.clone()),
@@ -79,7 +83,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 }
             }
             Err(e) => {
-                ereport!("hexc checksec: {e}");
+                ereport!("hexcavator checksec: {e}");
                 status = ExitCode::FAILURE;
             }
         }
@@ -172,25 +176,34 @@ pub struct Report {
     pub format: &'static str,
     pub checks: Vec<Check>,
     pub builds: Option<Vec<Build>>,
-    /// The linker's record of the link (a PDB's `S_ENVBLOCK`: `cwd`,
-    /// `exe`, `pdb`, `cmd`).
+    /// The record of the link: the image's own (see [`image_record`]),
+    /// and a PDB's (`S_ENVBLOCK`: `cwd`, `exe`, `pdb`, `cmd`).
     pub linker: Vec<(String, String)>,
     pub audit_note: Option<String>,
 }
 
 fn check(path: &str, o: &Options) -> Result<Report, String> {
     let map = Mmap::open(path).map_err(|e| format!("{path}: {e}"))?;
-    let image = hexcavator_image::Image::parse(&map).map_err(|e| format!("{path}: {e}"))?;
+    let image = turbonop_image::Image::parse(&map).map_err(|e| format!("{path}: {e}"))?;
     let (format, checks) = match &image {
-        hexcavator_image::Image::Pe(pe) => ("pe", pe_checks(pe)),
-        hexcavator_image::Image::Elf(elf) => ("elf", elf_checks(elf)),
-        hexcavator_image::Image::MachO(m) => ("macho", macho_checks(m)),
-        _ => return Err(format!("{path}: checksec reads PE, ELF, and Mach-O images")),
+        turbonop_image::Image::Pe(pe) => ("pe", pe_checks(pe)),
+        turbonop_image::Image::Elf(elf) => ("elf", elf_checks(elf)),
+        turbonop_image::Image::MachO(m) => ("macho", macho_checks(m)),
+        turbonop_image::Image::Wasm(m) => ("wasm", wasm_checks(m)),
+        _ => {
+            return Err(format!(
+                "{path}: checksec reads PE, ELF, Mach-O, and WebAssembly images"
+            ));
+        }
     };
     let (builds, linker, audit_note) = if o.audit {
-        match audit(path, &image, o.pdb.as_deref()) {
-            Ok((b, l)) => (Some(b), l, None),
-            Err(e) => (None, Vec::new(), Some(e)),
+        let mut linker = image_record(&image);
+        match audit(path, o.pdb.as_deref()) {
+            Ok((b, l)) => {
+                linker.extend(l);
+                (Some(b), linker, None)
+            }
+            Err(e) => (None, linker, Some(e)),
         }
     } else {
         (None, Vec::new(), None)
@@ -203,6 +216,105 @@ fn check(path: &str, o: &Options) -> Result<Report, String> {
         linker,
         audit_note,
     })
+}
+
+// -------------------------------------------------------------- WebAssembly
+
+/// A WebAssembly module's: its runtime isolates it (its code can't be
+/// written or jumped into, its calls are checked by type), so what a
+/// native image's mitigations guard is the runtime's to; what's left is
+/// within its linear memory: stack canaries (its shadow stack is in
+/// memory), whether it gives its memory to its host, and the features it
+/// was built for.
+fn wasm_checks(m: &turbonop_wasm::Module<'_>) -> Vec<Check> {
+    let mut out = Vec::new();
+    out.push(c(
+        "Isolated code",
+        State::NotApplicable,
+        "the runtime's: a module's code isn't in its memory, and its indirect calls are checked by type",
+    ));
+    // Its names: the module's name section's, imports', and exports'.
+    let names: Vec<Vec<u8>> = m
+        .names(turbonop_wasm::NAME_FUNCTION)
+        .into_iter()
+        .map(|n| n.name.to_vec())
+        .chain(m.imports().into_iter().map(|i| i.field.to_vec()))
+        .collect();
+    let named = |n: &[u8]| names.iter().any(|x| x == n);
+    let canary = named(b"__stack_chk_fail") || named(b"__stack_chk_guard");
+    out.push(c(
+        "Stack canaries",
+        on_off(canary),
+        if canary {
+            "calls __stack_chk_fail (its stack is in linear memory)"
+        } else if names.is_empty() {
+            "no names to tell by (no name section)"
+        } else {
+            "no __stack_chk_fail (its stack is in linear memory)"
+        },
+    ));
+    // (Kind 2: a memory.)
+    let exported: Vec<String> = m
+        .exports()
+        .iter()
+        .filter(|e| e.kind == 2)
+        .map(|e| String::from_utf8_lossy(e.name).into_owned())
+        .collect();
+    out.push(c(
+        "Memory exported",
+        State::Info,
+        if exported.is_empty() {
+            "no: the host sees its memory only as its exports pass it".to_string()
+        } else {
+            format!(
+                "yes ({}): the host reads and writes all of it",
+                exported.join(", ")
+            )
+        },
+    ));
+    out.push(c(
+        "Memory",
+        State::Info,
+        if m.is_memory64() { "64-bit" } else { "32-bit" },
+    ));
+    // The features it was built for (wasm-ld's target_features section).
+    if let Some(features) = target_features(m) {
+        out.push(c("Features", State::Info, features.join(", ")));
+    }
+    out
+}
+
+/// A module's `target_features` section: each feature it uses (`+`) or
+/// mustn't (`-`), as wasm-ld records them.
+fn target_features(m: &turbonop_wasm::Module<'_>) -> Option<Vec<String>> {
+    let s = m.custom(b"target_features")?;
+    let start = usize::try_from(s.data_offset).ok()?;
+    let end = usize::try_from(s.contents_offset + s.contents_size).ok()?;
+    let data = m.data().get(start..end)?;
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    let uleb = |at: &mut usize| -> Option<u64> {
+        let mut v = 0u64;
+        for shift in (0..64).step_by(7) {
+            let b = *data.get(*at)?;
+            *at += 1;
+            v |= u64::from(b & 0x7F) << shift;
+            if b & 0x80 == 0 {
+                return Some(v);
+            }
+        }
+        None
+    };
+    let count = uleb(&mut at)?;
+    for _ in 0..count.min(256) {
+        let prefix = *data.get(at)? as char;
+        at += 1;
+        let len = usize::try_from(uleb(&mut at)?).ok()?;
+        let name = data.get(at..at.checked_add(len)?)?;
+        at += len;
+        out.push(format!("{prefix}{}", String::from_utf8_lossy(name)));
+    }
+    Some(out)
 }
 
 fn c(name: &'static str, state: State, detail: impl Into<String>) -> Check {
@@ -219,10 +331,10 @@ fn on_off(b: bool) -> State {
 
 // --------------------------------------------------------------------- PE
 
-fn pe_checks(pe: &hexcavator_pe::PeFile<'_>) -> Vec<Check> {
-    use hexcavator_pe::consts::dll_characteristics as dc;
-    use hexcavator_pe::consts::file_characteristics as fc;
-    use hexcavator_pe::load_config::{field, guard_flags as gf};
+fn pe_checks(pe: &turbonop_pe::PeFile<'_>) -> Vec<Check> {
+    use turbonop_pe::consts::dll_characteristics as dc;
+    use turbonop_pe::consts::file_characteristics as fc;
+    use turbonop_pe::load_config::{field, guard_flags as gf};
     let mut out = Vec::new();
     let Some(h) = pe.optional_header() else {
         out.push(c("image", State::Info, "an object, not an image"));
@@ -232,7 +344,7 @@ fn pe_checks(pe: &hexcavator_pe::PeFile<'_>) -> Vec<Check> {
     let file = pe.file_header().characteristics.get();
     let is64 = h.is_64();
     let machine = pe.machine();
-    let x86 = machine == hexcavator_pe::consts::machine::I386;
+    let x86 = machine == turbonop_pe::consts::machine::I386;
     let relocs = pe.data_directory(5).is_some_and(|d| d.size.get() != 0);
     let dynamic = dll & dc::DYNAMIC_BASE != 0;
     out.push(
@@ -271,7 +383,7 @@ fn pe_checks(pe: &hexcavator_pe::PeFile<'_>) -> Vec<Check> {
     let lc = pe.load_config();
     let flags = lc
         .as_ref()
-        .map_or(0, hexcavator_pe::load_config::LoadConfig::guard_flags);
+        .map_or(0, turbonop_pe::load_config::LoadConfig::guard_flags);
     let cfg = dll & dc::GUARD_CF != 0 && flags & gf::CF_INSTRUMENTED != 0;
     out.push(c(
         "Control Flow Guard",
@@ -429,8 +541,8 @@ fn pe_checks(pe: &hexcavator_pe::PeFile<'_>) -> Vec<Check> {
 
 // -------------------------------------------------------------------- ELF
 
-fn elf_checks(elf: &hexcavator_elf::ElfFile<'_>) -> Vec<Check> {
-    use hexcavator_elf::consts::*;
+fn elf_checks(elf: &turbonop_elf::ElfFile<'_>) -> Vec<Check> {
+    use turbonop_elf::consts::*;
     let mut out = Vec::new();
     if elf.is_object() {
         out.push(c("image", State::Info, "a relocatable object, not linked"));
@@ -713,14 +825,14 @@ fn elf_checks(elf: &hexcavator_elf::ElfFile<'_>) -> Vec<Check> {
 }
 
 /// The image's GNU properties: x86's and AArch64's feature bits.
-fn gnu_properties(elf: &hexcavator_elf::ElfFile<'_>) -> (u32, u32) {
+fn gnu_properties(elf: &turbonop_elf::ElfFile<'_>) -> (u32, u32) {
     let (mut x86, mut arm) = (0u32, 0u32);
-    let word = if elf.class() == hexcavator_elf::Class::Elf64 {
+    let word = if elf.class() == turbonop_elf::Class::Elf64 {
         8
     } else {
         4
     };
-    let big = elf.endian() == hexcavator_core::Endian::Big;
+    let big = elf.endian() == turbonop_core::Endian::Big;
     let u32_at = |d: &[u8], at: usize| -> Option<u32> {
         let b: [u8; 4] = d.get(at..at + 4)?.try_into().ok()?;
         Some(if big {
@@ -731,7 +843,7 @@ fn gnu_properties(elf: &hexcavator_elf::ElfFile<'_>) -> (u32, u32) {
     };
     for s in elf
         .sections()
-        .filter(|s| s.kind == hexcavator_elf::consts::SHT_NOTE)
+        .filter(|s| s.kind == turbonop_elf::consts::SHT_NOTE)
     {
         for n in elf.notes(elf.section_data(&s)) {
             if n.kind != 5 || n.name != b"GNU\0" && n.name != b"GNU" {
@@ -763,8 +875,8 @@ fn gnu_properties(elf: &hexcavator_elf::ElfFile<'_>) -> (u32, u32) {
 
 // ----------------------------------------------------------------- Mach-O
 
-fn macho_checks(m: &hexcavator_macho::MachO<'_>) -> Vec<Check> {
-    use hexcavator_macho::consts::*;
+fn macho_checks(m: &turbonop_macho::MachO<'_>) -> Vec<Check> {
+    use turbonop_macho::consts::*;
     let mut out = Vec::new();
     let h = m.header();
     let exec = h.filetype == MH_EXECUTE;
@@ -939,14 +1051,14 @@ fn macho_checks(m: &hexcavator_macho::MachO<'_>) -> Vec<Check> {
 }
 
 /// The entitlements in a Mach-O image's code signature, as text.
-fn entitlements(m: &hexcavator_macho::MachO<'_>) -> String {
+fn entitlements(m: &turbonop_macho::MachO<'_>) -> String {
     let Some(sig) = m.code_signature() else {
         return String::new();
     };
     let Some(lc) = m
         .load_commands()
         .into_iter()
-        .find(|l| l.cmd == hexcavator_macho::consts::LC_CODE_SIGNATURE)
+        .find(|l| l.cmd == turbonop_macho::consts::LC_CODE_SIGNATURE)
     else {
         return String::new();
     };
@@ -958,7 +1070,7 @@ fn entitlements(m: &hexcavator_macho::MachO<'_>) -> String {
         return String::new();
     };
     for b in &sig.blobs {
-        if b.magic == hexcavator_macho::info::CSMAGIC_EMBEDDED_ENTITLEMENTS {
+        if b.magic == turbonop_macho::info::CSMAGIC_EMBEDDED_ENTITLEMENTS {
             let s = b.offset as usize + 8;
             let e = (b.offset as usize)
                 .saturating_add(b.length as usize)
@@ -973,58 +1085,94 @@ fn entitlements(m: &hexcavator_macho::MachO<'_>) -> String {
 
 // ------------------------------------------------------------------ audit
 
-/// The objects' builds: a PDB's modules (S_COMPILE3, and the command line
-/// S_BUILDINFO names), or DWARF's units (DW_AT_producer).
-fn audit(
-    path: &str,
-    image: &hexcavator_image::Image<'_>,
-    pdb: Option<&str>,
-) -> Result<(Vec<Build>, Environment), String> {
-    let (_, map) = match hexcavator_program::find_debug(Path::new(path), image, pdb.map(Path::new))
-    {
-        Ok(found) => found,
-        Err(e) => {
-            // A Mach-O image's debug map: each object's units.
-            let opened = hexcavator_program::Opened::open(Path::new(path), None)
-                .map_err(|_| e.to_string())?;
-            if !opened.is_debug_map() {
-                return Err(e.to_string());
-            }
-            let mut out = Vec::new();
-            for (name, data) in opened.debug_map_files() {
-                if let Ok(builds) = dwarf_builds(data) {
-                    // (An archive's member: `lib.a(member.o)`.)
-                    let (library, object) =
-                        match name.strip_suffix(')').and_then(|n| n.split_once('(')) {
-                            Some((lib, member)) => (lib.to_string(), member.to_string()),
-                            None => (String::new(), name.clone()),
-                        };
-                    out.extend(builds.into_iter().map(|mut b| {
-                        b.library = library.clone();
-                        b.object = object.clone();
-                        b
-                    }));
-                }
-            }
-            return Ok((out, Vec::new()));
-        }
-    };
-    if let Ok(p) = hexcavator_pdb::Pdb::parse(&map) {
-        let linker = hexcavator_debuginfo::DebugInfo::parse(&map)
-            .ok()
-            .and_then(|d| d.linker_info().ok())
+/// The objects' builds, from the debug information every command finds
+/// (a PDB's modules: S_COMPILE3, and the command line S_BUILDINFO names;
+/// DWARF's units, a dSYM's or a debug map's objects', split units'
+/// too), and a PDB's record of the link (`S_ENVBLOCK`).
+fn audit(path: &str, debug: Option<&str>) -> Result<(Vec<Build>, Environment), String> {
+    let opened = turbonop_program::Opened::open(Path::new(path), debug.map(Path::new))
+        .map_err(|e| e.to_string())?;
+    let info = opened.debug_info().map_err(|e| e.to_string())?;
+    if let Some(p) = info.pdb() {
+        let linker = info
+            .linker_info()
             .map(|i| i.environment)
             .unwrap_or_default();
-        return Ok((pdb_builds(&p)?, linker));
+        return Ok((pdb_builds(p)?, linker));
     }
-    Ok((dwarf_builds(&map)?, Vec::new()))
+    Ok((dwarf_builds(&info)?, Vec::new()))
+}
+
+/// What the image itself records of the tools that built it: a PE
+/// image's linker version; an ELF image's `.comment` (each tool's); a
+/// Mach-O image's `LC_BUILD_VERSION` (its platform, minimum OS, and SDK,
+/// and each tool's version); a WebAssembly module's `producers`.
+fn image_record(image: &turbonop_image::Image<'_>) -> Environment {
+    use turbonop_image::Image;
+    let mut out = Vec::new();
+    match image {
+        Image::Pe(pe) => {
+            if let Some(h) = pe.optional_header() {
+                out.push((
+                    "linker version".into(),
+                    format!(
+                        "{}.{:02}",
+                        h.major_linker_version(),
+                        h.minor_linker_version()
+                    ),
+                ));
+            }
+        }
+        Image::Elf(e) => {
+            if let Some(s) = e.section_by_name(b".comment") {
+                let mut tools: Vec<String> = Vec::new();
+                for t in e.section_data(&s).split(|&b| b == 0).take(256) {
+                    let t = String::from_utf8_lossy(t).trim().to_string();
+                    if !t.is_empty() && !tools.contains(&t) {
+                        tools.push(t);
+                    }
+                }
+                if !tools.is_empty() {
+                    out.push(("comment".into(), tools.join("; ")));
+                }
+            }
+        }
+        Image::MachO(m) => {
+            use turbonop_macho::version_string;
+            for b in m.build_versions().into_iter().take(16) {
+                let mut platform = format!("{} {}", b.platform_name(), version_string(b.minos));
+                if b.sdk != 0 {
+                    let _ = write!(platform, " (SDK {})", version_string(b.sdk));
+                }
+                out.push(("platform".into(), platform));
+                for t in b.tools.iter().take(64) {
+                    let name = t
+                        .name()
+                        .map_or_else(|| format!("tool {}", t.tool), str::to_string);
+                    out.push((name, version_string(t.version)));
+                }
+            }
+        }
+        Image::Wasm(m) => {
+            if let Some(s) = m.custom(b"producers") {
+                let data = m.data();
+                let start = usize::try_from(s.data_offset).unwrap_or(usize::MAX);
+                let end = usize::try_from(s.contents_offset + s.contents_size).unwrap_or(0);
+                out.extend(crate::resources::producers(
+                    data.get(start..end).unwrap_or_default(),
+                ));
+            }
+        }
+        _ => {}
+    }
+    out
 }
 
 /// The most modules or units read.
 const MAX_OBJECTS: usize = 1 << 20;
 
-fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
-    use hexcavator_codeview::symbols::Symbol;
+fn pdb_builds(pdb: &turbonop_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
+    use turbonop_codeview::symbols::Symbol;
     let dbi = pdb.dbi().map_err(|e| e.to_string())?;
     let ids = pdb.ids().ok();
     let mut out = Vec::new();
@@ -1065,8 +1213,10 @@ fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
                         v[3]
                     );
                     let lang = flags & 0xFF;
-                    b.options
-                        .insert("language".into(), language_name(lang).into());
+                    b.options.insert(
+                        "language".into(),
+                        turbonop_debuginfo::codeview_language(lang).into(),
+                    );
                     // What the linker made (import libraries' objects,
                     // resources) and assemblers aren't compiled: they have
                     // no compiler's options.
@@ -1093,7 +1243,7 @@ fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
                 }
                 Ok(Symbol::BuildInfo { id }) => {
                     if let Some(ids) = &ids {
-                        let info = build_info(ids, id);
+                        let info = turbonop_debuginfo::build_info(ids, id);
                         let [cwd, tool, source, pdb, cmd] = info.map(Option::unwrap_or_default);
                         b.cwd = cwd;
                         b.tool = tool;
@@ -1124,100 +1274,6 @@ fn pdb_builds(pdb: &hexcavator_pdb::Pdb<'_>) -> Result<Vec<Build>, String> {
         out.push(b);
     }
     Ok(out)
-}
-
-fn language_name(l: u32) -> &'static str {
-    match l {
-        0 => "C",
-        1 => "C++",
-        2 => "Fortran",
-        3 => "MASM",
-        4 => "Pascal",
-        5 => "Basic",
-        6 => "COBOL",
-        7 => "LINK",
-        8 => "CVTRES",
-        9 => "CVTPGD",
-        10 => "C#",
-        11 => "Visual Basic",
-        12 => "ILASM",
-        13 => "Java",
-        14 => "JScript",
-        15 => "MSIL",
-        16 => "HLSL",
-        17 => "Objective-C",
-        18 => "Objective-C++",
-        19 => "Swift",
-        20 => "ALIASOBJ",
-        21 => "Rust",
-        22 => "Go",
-        _ => "other",
-    }
-}
-
-/// What an `LF_BUILDINFO` names: its current directory, build tool, source
-/// file, PDB, and command line (string IDs, perhaps continued in substring
-/// lists).
-fn build_info(
-    ids: &hexcavator_pdb::tpi::TypeStream<'_>,
-    id: hexcavator_codeview::TypeIndex,
-) -> [Option<String>; 5] {
-    let mut out = [None, None, None, None, None];
-    let Some(rec) = ids.record(id) else {
-        return out;
-    };
-    if rec.kind != hexcavator_codeview::types::leaf::LF_BUILDINFO {
-        return out;
-    }
-    let d = rec.data;
-    let Some(count) = d
-        .get(0..2)
-        .map(|c| usize::from(u16::from_le_bytes([c[0], c[1]])))
-    else {
-        return out;
-    };
-    for (k, slot) in out.iter_mut().enumerate().take(count) {
-        let Some(arg) = d.get(2 + 4 * k..6 + 4 * k) else {
-            break;
-        };
-        let arg = u32::from_le_bytes([arg[0], arg[1], arg[2], arg[3]]);
-        *slot = string_id(ids, arg, 0);
-    }
-    out
-}
-
-fn string_id(ids: &hexcavator_pdb::tpi::TypeStream<'_>, id: u32, depth: usize) -> Option<String> {
-    use hexcavator_codeview::types::leaf;
-    if depth > 4 || id == 0 {
-        return None;
-    }
-    let rec = ids.record(hexcavator_codeview::TypeIndex(id))?;
-    match rec.kind {
-        leaf::LF_STRING_ID => {
-            let d = rec.data;
-            let sub = u32::from_le_bytes(d.get(0..4)?.try_into().ok()?);
-            let text = d.get(4..)?;
-            let text = &text[..text.iter().position(|&b| b == 0).unwrap_or(text.len())];
-            let mut s = String::new();
-            if sub != 0 {
-                let list = ids.record(hexcavator_codeview::TypeIndex(sub))?;
-                if list.kind == leaf::LF_SUBSTR_LIST {
-                    let ld = list.data;
-                    let n = u32::from_le_bytes(ld.get(0..4)?.try_into().ok()?) as usize;
-                    for i in 0..n.min(256) {
-                        let part =
-                            u32::from_le_bytes(ld.get(4 + 4 * i..8 + 4 * i)?.try_into().ok()?);
-                        if let Some(p) = string_id(ids, part, depth + 1) {
-                            s.push_str(&p);
-                        }
-                    }
-                }
-            }
-            s.push_str(&String::from_utf8_lossy(text));
-            Some(s)
-        }
-        _ => None,
-    }
 }
 
 /// The options that matter of an MSVC command line, by name.
@@ -1269,86 +1325,41 @@ fn msvc_switches(cmd: &str) -> Vec<(String, String)> {
     out.into_iter().collect()
 }
 
-fn dwarf_builds(data: &[u8]) -> Result<Vec<Build>, String> {
-    use hexcavator_dwarf::consts::*;
-    let info =
-        hexcavator_debuginfo::dwarf_backend::DwarfInfo::parse(data).map_err(|e| e.to_string())?;
-    let s = info.sections();
+/// Each DWARF unit's build: its compiler, and the options it records
+/// (GCC's `-grecord-gcc-switches` and clang's `-grecord-command-line`, in
+/// `DW_AT_producer`; Apple's `DW_AT_APPLE_flags`; clang's
+/// `-frecord-command-line`; see [`turbonop_debuginfo::options`]).
+fn dwarf_builds(debug: &turbonop_debuginfo::DebugInfo<'_>) -> Result<Vec<Build>, String> {
+    let units = debug.compilands().map_err(|e| e.to_string())?;
+    let options = debug.compile_options().map_err(|e| e.to_string())?;
     let mut out = Vec::new();
-    for unit in
-        hexcavator_dwarf::Unit::iter(s, hexcavator_dwarf::UnitSection::Info, 0).take(MAX_OBJECTS)
-    {
-        let Some(abbrevs) =
-            hexcavator_dwarf::Abbrevs::parse(s.abbrev, unit.abbrev_offset, s.endian)
-        else {
-            continue;
-        };
-        let mut unit = unit;
-        let mut r = unit.dies();
-        let mut attrs = Vec::new();
-        let Some(a) = r.next(&abbrevs) else { continue };
-        if r.attrs(&unit, a, &mut attrs).is_none() {
-            continue;
-        }
-        unit.set_bases(&attrs);
-        let text = |n: u16| -> String {
-            attrs
-                .iter()
-                .find(|x| x.name == n)
-                .and_then(|x| unit.string(&x.value))
-                .map(|s| String::from_utf8_lossy(s.bytes).into_owned())
-                .unwrap_or_default()
-        };
-        let producer = text(DW_AT_PRODUCER);
+    for (c, o) in units.into_iter().zip(options).take(MAX_OBJECTS) {
+        let command: Vec<&str> = std::iter::once(o.compiler.as_str())
+            .chain(o.args.iter().flatten().map(String::as_str))
+            .filter(|w| !w.is_empty())
+            .collect();
         let mut b = Build {
-            object: text(DW_AT_NAME),
-            source: text(DW_AT_NAME),
-            cwd: text(DW_AT_COMP_DIR),
-            command: producer.clone(),
+            object: if o.object.is_empty() {
+                c.name
+            } else {
+                o.object.clone()
+            },
+            library: c.library,
+            command: command.join(" "),
+            compiler: o.compiler,
+            cwd: o.directory,
+            source: o.source,
             ..Build::default()
         };
-        if let Some(l) = attrs
-            .iter()
-            .find(|x| x.name == DW_AT_LANGUAGE)
-            .and_then(|x| unit.uint(&x.value))
-        {
-            b.options.insert(
-                "language".into(),
-                hexcavator_dwarf::spelling::language(l)
-                    .unwrap_or("?")
-                    .trim_start_matches("DW_LANG_")
-                    .to_string(),
-            );
+        if !o.language.is_empty() {
+            b.options.insert("language".into(), o.language);
         }
-        let (compiler, opts) = gnu_producer(&producer);
-        b.compiler = compiler;
-        for (k, v) in opts {
-            b.options.insert(k, v);
+        for w in o.args.iter().flatten().take(4096) {
+            option(&mut b.options, w);
         }
         out.push(b);
     }
     Ok(out)
-}
-
-/// A DW_AT_producer's compiler, and the options in it that matter (GCC
-/// with -grecord-gcc-switches and clang with -grecord-command-line record
-/// them).
-fn gnu_producer(p: &str) -> (String, Vec<(String, String)>) {
-    let mut words = p.split_whitespace();
-    let mut compiler = Vec::new();
-    let mut opts: BTreeMap<String, String> = BTreeMap::new();
-    for w in words.by_ref().take(4096) {
-        if w.starts_with('-') {
-            option(&mut opts, w);
-            break;
-        }
-        compiler.push(w);
-    }
-    for w in words.take(4096) {
-        option(&mut opts, w);
-    }
-    // (clang's recorded command line starts with the compiler's path.)
-    (compiler.join(" "), opts.into_iter().collect())
 }
 
 fn option(opts: &mut BTreeMap<String, String>, w: &str) {
@@ -1409,6 +1420,13 @@ impl Report {
         if let Some(builds) = &self.builds {
             audit_text(builds, out);
         }
+        if !self.linker.is_empty() {
+            let _ = writeln!(out, "\n  linked by:");
+            let w = self.linker.iter().map(|(k, _)| k.len()).max().unwrap_or(0);
+            for (k, x) in &self.linker {
+                let _ = writeln!(out, "    {k:<w$}  {x}");
+            }
+        }
         out.push('\n');
     }
 
@@ -1421,13 +1439,20 @@ impl Report {
         let mut v = json!({ "path": self.path, "format": self.format, "checks": checks });
         if let Some(b) = &self.builds {
             v["audit"] = audit_json(b);
-            if !self.linker.is_empty() {
-                let mut l = json!({});
-                for (k, x) in &self.linker {
-                    l[k.as_str()] = json!(x);
-                }
-                v["audit"]["linker"] = l;
+        }
+        if !self.linker.is_empty() {
+            let mut l = json!({});
+            for (k, x) in &self.linker {
+                // (A key twice, as Mach-O's tools of two commands: each.)
+                l[k.as_str()] = match l.get(k.as_str()).and_then(Json::as_str) {
+                    Some(was) if was != x => json!(format!("{was}; {x}")),
+                    _ => json!(x),
+                };
             }
+            if v.get("audit").is_none() {
+                v["audit"] = json!({});
+            }
+            v["audit"]["linker"] = l;
         }
         if let Some(n) = &self.audit_note {
             v["auditError"] = json!(n);

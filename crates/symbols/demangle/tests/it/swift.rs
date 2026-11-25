@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use hexcavator_demangle::swift::{Demangler, Options, demangle_symbol_as_string};
+use turbonop_demangle::swift::{Demangler, Options, demangle_symbol_as_string};
 
 /// What `swift-demangle` does with a name: one `_` of a leading `__` goes.
 fn tool(name: &str, options: Options) -> String {
@@ -95,11 +95,11 @@ fn api() {
     assert!(d.demangle_short_into("$s4main3fooyySiF", &mut out));
     assert_eq!(out, "foo(_:)");
     assert_eq!(
-        hexcavator_demangle::swift::demangle("$sSaySiGD").as_deref(),
+        turbonop_demangle::swift::demangle("$sSaySiGD").as_deref(),
         Some("[Swift.Int]")
     );
     // Through the Itanium demangler, as ELF and Mach-O symbols go.
-    let mut it = hexcavator_demangle::itanium::Demangler::new();
+    let mut it = turbonop_demangle::itanium::Demangler::new();
     assert_eq!(
         it.demangle("_$sSiN").as_deref(),
         Some("type metadata for Swift.Int")

@@ -25,7 +25,7 @@ pub mod lz77;
 pub mod merge;
 pub mod write;
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 pub use buffer::{Buffer, BufferContext, BufferHeader, BufferType};
 pub use event::{Event, EventDescriptor, ExtendedItem, ExtendedItems, HeaderKind, Records};

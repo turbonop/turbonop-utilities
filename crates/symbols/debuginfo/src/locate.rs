@@ -38,14 +38,14 @@ pub struct Locator<'a, 'data> {
 }
 
 enum Inner<'a, 'data> {
-    Pdb(pdb_locate::PdbLocator<'a, 'data>),
+    Pdb(Box<pdb_locate::PdbLocator<'a, 'data>>),
     Dwarf(dwarf_backend::frames::DwarfLocator<'a, 'data>),
 }
 
 impl<'a, 'data> Locator<'a, 'data> {
     pub(crate) fn new(debug: &'a DebugInfo<'data>) -> Self {
         let inner = match debug {
-            DebugInfo::Pdb(p) => Inner::Pdb(pdb_locate::PdbLocator::new(p)),
+            DebugInfo::Pdb(p) => Inner::Pdb(Box::new(pdb_locate::PdbLocator::new(p))),
             DebugInfo::Dwarf(d) => Inner::Dwarf(dwarf_backend::frames::DwarfLocator::new(d)),
         };
         Self { inner }

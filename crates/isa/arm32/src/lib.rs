@@ -116,6 +116,18 @@ impl Instruction {
     pub fn breaks_should_be(&self) -> bool {
         self.word & self.encoding.sb_mask != self.encoding.sb_value
     }
+
+    /// Its encoding's field `name` (`Rd`, `imm8`, ...), if it has one.
+    pub fn field(&self, name: &str) -> Option<u32> {
+        let &(_, hi, lo) = self.encoding.fields.iter().find(|f| f.0 == name)?;
+        let width = u32::from(hi - lo) + 1;
+        let v = self.word >> lo;
+        Some(if width >= 32 {
+            v
+        } else {
+            v & ((1 << width) - 1)
+        })
+    }
 }
 
 fn find(

@@ -4,6 +4,7 @@
 )]
 
 use super::*;
+use turbonop_code::Mode;
 
 /// Nodes as `[start, end)` ranges.
 struct Nodes(Vec<(u64, u64)>);
@@ -110,6 +111,7 @@ fn x86_64_code_is_position_independent() {
     ]);
     let a = code(
         Arch::X64,
+        Mode::default(),
         &make(0x1000, 0x5000, 0x6000),
         0x1000,
         None,
@@ -118,6 +120,7 @@ fn x86_64_code_is_position_independent() {
     );
     let b = code(
         Arch::X64,
+        Mode::default(),
         &make(0x2000, 0x5000, 0x6004),
         0x2000,
         None,
@@ -129,6 +132,7 @@ fn x86_64_code_is_position_independent() {
     // Calling another node: the same local hash, other references.
     let c = code(
         Arch::X64,
+        Mode::default(),
         &make(0x2000, 0x7000, 0x6000),
         0x2000,
         None,
@@ -141,15 +145,27 @@ fn x86_64_code_is_position_independent() {
     let mut d = make(0x2000, 0x5000, 0x6000);
     d[7] = 0x0D; // lea rcx
     assert_ne!(
-        code(Arch::X64, &d, 0x2000, None, &[], &nodes).local,
+        code(Arch::X64, Mode::default(), &d, 0x2000, None, &[], &nodes).local,
         a.local
     );
     // A different immediate (not an address): a different hash.
-    let imm = |v: u8| code(Arch::X64, &[0x83, 0xC0, v, 0xC3], 0x1000, None, &[], &nodes).local;
+    let imm = |v: u8| {
+        code(
+            Arch::X64,
+            Mode::default(),
+            &[0x83, 0xC0, v, 0xC3],
+            0x1000,
+            None,
+            &[],
+            &nodes,
+        )
+        .local
+    };
     assert_ne!(imm(1), imm(2));
     // A call to no node: hashed as such, no reference.
     let e = code(
         Arch::X64,
+        Mode::default(),
         &make(0x2000, 0x9000, 0x6000),
         0x2000,
         None,
@@ -178,6 +194,7 @@ fn x86_absolute_addresses() {
     ]);
     let a = code(
         Arch::X86,
+        Mode::default(),
         &make(0x40_3000),
         0x40_1000,
         None,
@@ -186,6 +203,7 @@ fn x86_absolute_addresses() {
     );
     let b = code(
         Arch::X86,
+        Mode::default(),
         &make(0x40_4000),
         0x40_1000,
         None,
@@ -195,7 +213,15 @@ fn x86_absolute_addresses() {
     assert_eq!(a.local, b.local);
     assert_eq!((a.refs.as_slice(), b.refs.as_slice()), (&[1][..], &[2][..]));
     // Without the relocation, the value is just a value.
-    let c = code(Arch::X86, &make(0x40_4000), 0x40_1000, None, &[], &nodes);
+    let c = code(
+        Arch::X86,
+        Mode::default(),
+        &make(0x40_4000),
+        0x40_1000,
+        None,
+        &[],
+        &nodes,
+    );
     assert_ne!(c.local, b.local);
     assert!(c.refs.is_empty());
 }
@@ -222,6 +248,7 @@ fn arm64_code_is_position_independent() {
     ]);
     let a = code(
         Arch::Arm64,
+        Mode::default(),
         &make(0x1000, 0x5000, 0x3_6010),
         0x1000,
         None,
@@ -230,6 +257,7 @@ fn arm64_code_is_position_independent() {
     );
     let b = code(
         Arch::Arm64,
+        Mode::default(),
         &make(0x8000, 0x5000, 0x3_6010),
         0x8000,
         None,
@@ -260,4 +288,37 @@ fn data_masks_pointers() {
     data(&[1, 2], 2, &[(5, 4, Some(1)), (u64::MAX, 8, None)]);
     assert_eq!(named("GetLastError"), named("GetLastError"));
     assert_ne!(named("GetLastError").local, named("SetLastError").local);
+}
+
+/// Shapes: alike for code that differs in constants, displacements, widths,
+/// and callees; unlike for other operations or registers.
+#[test]
+fn shapes() {
+    let x64 = |code: &[u8]| shape(Arch::X64, Mode::default(), code, 0x1000).unwrap();
+    // mov eax, [rdi+4]; add eax, 3; ret  vs  mov rax, [rdi+8]; add rax, 5; ret
+    let a = x64(&[0x8B, 0x47, 0x04, 0x83, 0xC0, 0x03, 0xC3]);
+    let b = x64(&[0x48, 0x8B, 0x47, 0x08, 0x48, 0x83, 0xC0, 0x05, 0xC3]);
+    assert_eq!(a, b);
+    // ... and the same calling different functions: call rel32; ret
+    let c1 = x64(&[0xE8, 0x10, 0x00, 0x00, 0x00, 0xC3]);
+    let c2 = x64(&[0xE8, 0x40, 0x02, 0x00, 0x00, 0xC3]);
+    assert_eq!(c1, c2);
+    // Another register (rsi), or another operation (sub): another shape.
+    assert_ne!(a, x64(&[0x8B, 0x46, 0x04, 0x83, 0xC0, 0x03, 0xC3]));
+    assert_ne!(a, x64(&[0x8B, 0x47, 0x04, 0x83, 0xE8, 0x03, 0xC3]));
+    // One instruction more: another shape.
+    assert_ne!(a, x64(&[0x8B, 0x47, 0x04, 0x83, 0xC0, 0x03, 0x90, 0xC3]));
+    // ARM64: ldr w0, [x0, #4]; add w0, w0, #3; ret  vs  the 64-bit forms,
+    // other offsets and constants.
+    let arm = |words: &[u32]| {
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+        shape(Arch::Arm64, Mode::default(), &bytes, 0x1000).unwrap()
+    };
+    let w = arm(&[0xB940_0400, 0x1100_0C00, 0xD65F_03C0]);
+    let x = arm(&[0xF940_0400, 0x9100_1400, 0xD65F_03C0]);
+    assert_eq!(w, x);
+    // (sub, not add)
+    assert_ne!(w, arm(&[0xB940_0400, 0x5100_0C00, 0xD65F_03C0]));
+    // No decoder: no shape.
+    assert_eq!(shape(Arch::Sparc, Mode::default(), &[0, 0, 0, 0], 0), None);
 }

@@ -8,11 +8,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use hexcavator_symbolize::server::{Fetched, MICROSOFT, PdbId, SymbolServers};
-use hexcavator_symbolize::{FunctionTable, SymbolPath};
-use hexcavator_trace::{ImageIx, ProcessIx, StackId, Trace, index};
-use hexcavator_trace_analysis::{PdbSymbolizer, Resolver};
 use rustc_hash::{FxHashMap, FxHashSet};
+use turbonop_symbolize::server::{Fetched, MICROSOFT, PdbId, SymbolServers};
+use turbonop_symbolize::{FunctionTable, SymbolPath};
+use turbonop_trace::{ImageIx, ProcessIx, StackId, Trace, index};
+use turbonop_trace_analysis::{PdbSymbolizer, Resolver};
 
 use crate::Args;
 use crate::store;
@@ -102,6 +102,9 @@ pub struct Frames {
     /// The modules frames are in that have no PDB identity (so no
     /// symbols): each one's file name and frames, most first.
     pub no_debug: Vec<(String, usize)>,
+    /// Every image frames are in, in order: those whose PDB isn't found
+    /// may have functions of their own (see [`preload_files`]).
+    pub images: Vec<ImageIx>,
 }
 
 /// Events a worker walks the stacks of at a time.
@@ -155,6 +158,7 @@ pub fn frames(trace: &Trace) -> Frames {
         // without a PDB: by name, their offsets.)
         let mut by_pdb: FxHashMap<DebugKey, (PdbId, Vec<u32>)> = FxHashMap::default();
         let mut no_debug: FxHashMap<String, Vec<u64>> = FxHashMap::default();
+        let images: Vec<ImageIx> = hits.keys().copied().collect();
         for (image, offsets) in hits {
             let Some(id) = &trace.images[image.index()].debug_id else {
                 no_debug
@@ -179,13 +183,15 @@ pub fn frames(trace: &Trace) -> Frames {
                 }
             }
         }
-        (by_pdb, no_debug)
+        (by_pdb, no_debug, images)
     });
     // The chunks' addresses together, then each PDB's sorted (on every
     // core: some have many).
     let mut by_pdb: FxHashMap<DebugKey, (PdbId, Vec<u32>)> = FxHashMap::default();
     let mut no_debug: FxHashMap<String, Vec<u64>> = FxHashMap::default();
-    for (chunk, none) in found {
+    let mut images: FxHashSet<ImageIx> = FxHashSet::default();
+    for (chunk, none, seen) in found {
+        images.extend(seen);
         for (name, offsets) in none {
             no_debug.entry(name).or_default().extend(offsets);
         }
@@ -236,6 +242,11 @@ pub fn frames(trace: &Trace) -> Frames {
         addresses,
         frames,
         no_debug,
+        images: {
+            let mut images: Vec<ImageIx> = images.into_iter().collect();
+            images.sort_unstable_by_key(|i| i.index());
+            images
+        },
     }
 }
 
@@ -244,6 +255,28 @@ pub fn preload(symbolizer: &PdbSymbolizer, ids: &[PdbId]) {
     on_every_core(ids, |id| {
         symbolizer.load(&id.name, &id.guid, id.age);
     });
+}
+
+/// Reads, on every core, the functions of their own of the images in
+/// `frames` whose PDB isn't found (or that have none): their DWARF, or
+/// their exports and symbol tables, from the image files, if still here.
+/// Returns how many had some.
+pub fn preload_files(symbolizer: &PdbSymbolizer, trace: &Trace, frames: &Frames) -> usize {
+    let without: Vec<ImageIx> = frames
+        .images
+        .iter()
+        .copied()
+        .filter(|i| {
+            trace.images[i.index()]
+                .debug_id
+                .as_ref()
+                .is_none_or(|id| symbolizer.status(&id.guid, id.age) != Some(true))
+        })
+        .collect();
+    on_every_core(&without, |&i| symbolizer.load_file(trace, i))
+        .into_iter()
+        .filter(|&found| found)
+        .count()
 }
 
 /// The saved symbols file's magic and version.
@@ -269,7 +302,11 @@ pub fn save(
         .iter()
         .filter_map(|(k, t)| Some((k, t, frames.addresses.get(k)?)))
         .collect();
-    let cut = on_every_core(&tables, |(_, table, rvas)| table.subset(rvas).to_bytes());
+    // (A PDB's addresses are RVAs, 32 bits; tables take any image's.)
+    let cut = on_every_core(&tables, |(_, table, rvas)| {
+        let addrs: Vec<u64> = rvas.iter().map(|&r| u64::from(r)).collect();
+        table.subset(&addrs).to_bytes()
+    });
     let mut out = Vec::new();
     out.extend_from_slice(SAVED_MAGIC);
     out.extend_from_slice(&SAVED_VERSION.to_le_bytes());
@@ -307,7 +344,7 @@ pub fn load_saved(path: &Path, source: index::Source) -> Vec<Table> {
 }
 
 fn parse_saved(data: &[u8], source: index::Source) -> Option<Vec<Table>> {
-    let mut r = hexcavator_core::Reader::new(data);
+    let mut r = turbonop_core::Reader::new(data);
     if r.bytes(8).ok()? != SAVED_MAGIC
         || r.u32_le().ok()? != SAVED_VERSION
         || r.u64_le().ok()? != source.size

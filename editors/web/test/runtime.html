@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Runtime test</title>
+<script src="../wasi/process.js"></script>
+<script>
+// The WebAssembly runtime alone: hexcavator serve answering requests on
+// a test binary, threads and all (size and xref split work across them).
+(async () => {
+  const report = (v) => fetch("/__report", { method: "POST", body: JSON.stringify(v) });
+  const log = (v) => fetch("/__log", { method: "POST", body: typeof v === "string" ? v : JSON.stringify(v) });
+  setTimeout(() => report({ timeout: true, out, err }), Number(new URLSearchParams(location.search).get("timeout") || 30) * 1000);
+  let out = "";
+  let err = "";
+  try {
+    if (!HexcavatorRuntime.supported()) {
+      return report({ error: "not cross-origin isolated" });
+    }
+    const q0 = new URLSearchParams(location.search);
+    const rt = new HexcavatorRuntime(q0.get("wasm") || "/hexcavator.wasm");
+    // (?exec=<args>: the module run with them, its output reported.)
+    if (q0.get("exec") !== null) {
+      const p = rt.spawn(q0.get("exec").split(" ").filter(Boolean), { TURBONOP_THREADS: q0.get("threads") || "8" });
+      let o = "";
+      p.stdout.on("data", (t) => (o += t));
+      p.stderr.on("data", (t) => (o += t));
+      p.on("exit", (c) => report({ code: c, out: o }));
+      return;
+    }
+    // (?files=<url>,<url>&run=<command>|<command>: others than these.)
+    const q = new URLSearchParams(location.search);
+    const urls = (q.get("files") || "/testdata/xref/xref-x64.exe,/testdata/xref/xref-x64.pdb").split(",");
+    for (const url of urls) {
+      const name = url.split("/").pop();
+      const blob = await (await fetch(url)).blob();
+      rt.add("/files/" + name, new File([blob], name));
+    }
+    const main = "/files/" + urls[0].split("/").pop();
+    if (q.get("run")) {
+      const results = [];
+      const p0 = rt.spawn(["serve"], { TURBONOP_THREADS: q.get("threads") || String(navigator.hardwareConcurrency || 4) });
+      let buf = "";
+      const waits = new Map();
+      p0.stdout.on("data", (t) => {
+        buf += t;
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          const v = JSON.parse(buf.slice(0, i));
+          buf = buf.slice(i + 1);
+          (waits.get(v.id) || (() => {}))(v);
+        }
+      });
+      let errs = "";
+      p0.stderr.on("data", (t) => (errs += t));
+      p0.on("exit", (c) => report({ exited: c, errs, results }));
+      let n = 0;
+      for (const cmd of q.get("run").split("|")) {
+        const args = cmd.split(" ").map((a) => (a === "FILE" ? main : a));
+        const t = performance.now();
+        const v = await new Promise((resolve) => {
+          const id = ++n;
+          waits.set(id, resolve);
+          p0.stdin.write(JSON.stringify({ id, args }) + "\n");
+        });
+        results.push({ cmd, mib: p0.memory ? p0.memory.buffer.byteLength >>> 20 : 0, ms: Math.round(performance.now() - t), code: v.code, out: (v.stdout || "").slice(0, 300), err: (v.stderr || "").slice(0, 300) });
+        log(JSON.stringify(results[results.length - 1]));
+      }
+      window.hexDone = true;
+      await report({ results, memoryMiB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null });
+      return;
+    }
+    const p = rt.spawn(["serve"], { TURBONOP_THREADS: String(navigator.hardwareConcurrency || 4) });
+    const answers = new Map();
+    let waiting = new Map();
+    p.stdout.on("data", (t) => {
+      out += t;
+      let i;
+      while ((i = out.indexOf("\n")) >= 0) {
+        const line = out.slice(0, i);
+        out = out.slice(i + 1);
+        const v = JSON.parse(line);
+        (waiting.get(v.id) || (() => {}))(v);
+      }
+    });
+    p.stderr.on("data", (t) => (err += t, log("stderr: " + t)));
+    p.on("error", (e) => log("error: " + e));
+    p.on("exit", (c) => report({ exited: c, err }));
+    let id = 0;
+    const ask = (args) =>
+      new Promise((resolve) => {
+        const n = ++id;
+        waiting.set(n, resolve);
+        log("ask " + JSON.stringify(args));
+        p.stdin.write(JSON.stringify({ id: n, args }) + "\n");
+      });
+    const t0 = performance.now();
+    const info = await ask(["info", "/files/xref-x64.exe"]);
+    const t1 = performance.now();
+    const [size, xref] = await Promise.all([
+      ask(["size", "/files/xref-x64.exe"]),
+      ask(["xref", "-why", "dead_helper", "/files/xref-x64.exe"]),
+    ]);
+    const t2 = performance.now();
+    await report({
+      info: info.stdout.slice(0, 300),
+      infoCode: info.code,
+      size: size.stdout.slice(0, 400),
+      sizeCode: size.code,
+      sizeErr: size.stderr,
+      xref: xref.stdout.slice(0, 400),
+      xrefCode: xref.code,
+      ms: [Math.round(t1 - t0), Math.round(t2 - t1)],
+      threads: navigator.hardwareConcurrency,
+      err,
+    });
+    p.kill();
+  } catch (e) {
+    report({ error: String(e.stack || e) });
+  }
+})();
+</script>

@@ -56,7 +56,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_pe::exception::{Arm64PackedUnwind, Arm64UnwindCode};
+use turbonop_pe::exception::{Arm64PackedUnwind, Arm64UnwindCode};
 
 use crate::{Error, Image, Memory, Result, read_u64, read_u128};
 
@@ -100,7 +100,7 @@ impl RuntimeFunction {
     pub fn length(&self, image: &(impl Image + ?Sized)) -> Option<u32> {
         match self.unwind & 3 {
             0 => {
-                let b = image.bytes(self.unwind, 4)?;
+                let b = crate::rva_bytes(image, self.unwind, 4)?;
                 Some((u32::from_le_bytes([b[0], b[1], b[2], b[3]]) & 0x3_FFFF) * 4)
             }
             1 | 2 => Some(((self.unwind >> 2) & 0x7FF) * 4),
@@ -119,7 +119,7 @@ pub fn lookup(
 ) -> Option<RuntimeFunction> {
     let count = table_size / 8;
     let entry = |i: u32| -> Option<RuntimeFunction> {
-        let b = image.bytes(table_rva.checked_add(i.checked_mul(8)?)?, 8)?;
+        let b = crate::rva_bytes(image, table_rva.checked_add(i.checked_mul(8)?)?, 8)?;
         Some(RuntimeFunction {
             begin: u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
             unwind: u32::from_le_bytes([b[4], b[5], b[6], b[7]]),
@@ -161,7 +161,7 @@ pub fn resolve(
             return Ok(f);
         }
         let at = f.unwind & !3;
-        let b = image.bytes(at, 8).ok_or(Error::UnwindData { rva: at })?;
+        let b = crate::rva_bytes(image, at, 8).ok_or(Error::UnwindData { rva: at })?;
         f = RuntimeFunction {
             begin: u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
             unwind: u32::from_le_bytes([b[4], b[5], b[6], b[7]]),
@@ -1074,7 +1074,7 @@ impl<'a> Xdata<'a> {
     fn read(image: &'a (impl Image + ?Sized), rva: u32) -> Result<Self> {
         let bad = Error::UnwindData { rva };
         let word = |at: u32| -> Result<u32> {
-            let b = image.bytes(at, 4).ok_or(bad)?;
+            let b = crate::rva_bytes(image, at, 4).ok_or(bad)?;
             Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         };
         let first = word(rva)?;
@@ -1091,9 +1091,9 @@ impl<'a> Xdata<'a> {
         let e = (first >> 21) & 1 != 0;
         let scopes_len = if e { 0 } else { epilog_count * 4 };
         let scopes_rva = rva.checked_add(header).ok_or(bad)?;
-        let scopes = image.bytes(scopes_rva, scopes_len).ok_or(bad)?;
+        let scopes = crate::rva_bytes(image, scopes_rva, scopes_len).ok_or(bad)?;
         let codes_rva = scopes_rva.checked_add(scopes_len).ok_or(bad)?;
-        let codes = image.bytes(codes_rva, code_words * 4).ok_or(bad)?;
+        let codes = crate::rva_bytes(image, codes_rva, code_words * 4).ok_or(bad)?;
         let handler = if x {
             let at = codes_rva.checked_add(code_words * 4).ok_or(bad)?;
             Some(Handler {

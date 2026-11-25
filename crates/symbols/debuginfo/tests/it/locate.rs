@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use hexcavator_debuginfo::{DebugInfo, Frame};
+use turbonop_debuginfo::{DebugInfo, Frame};
 
 fn testdata(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

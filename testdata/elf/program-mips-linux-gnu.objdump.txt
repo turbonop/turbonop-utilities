@@ -1,0 +1,66 @@
+
+program-mips-linux-gnu:	file format elf32-mips
+
+Disassembly of section .text:
+
+00020200 <compute>:
+   20200:      	blez	$4, 0x20278 <compute+0x78>
+   20204:      	nop
+   20208:      	lui	$1, 0x4
+   2020c:      	lw	$3, 0x1300($1)
+   20210:      	addiu	$1, $zero, 0x3
+   20214:      	subu	$2, $1, $3
+   20218:      	lui	$1, 0x1
+   2021c:      	addiu	$7, $1, 0x1ec
+   20220:      	addiu	$5, $zero, 0x0
+   20224:      	lui	$1, 0x8888
+   20228:      	ori	$6, $1, 0x8889
+   2022c:      	addiu	$8, $zero, 0x0
+   20230:      	multu	$5, $6
+   20234:      	mfhi	$1
+   20238:      	srl	$1, $1, 0x3
+   2023c:      	sll	$9, $1, 0x4
+   20240:      	subu	$1, $1, $9
+   20244:      	addiu	$10, $3, 0x3
+   20248:      	addiu	$2, $2, -0x3
+   2024c:      	addiu	$11, $7, 0x1
+   20250:      	addiu	$5, $5, 0x1
+   20254:      	addu	$1, $7, $1
+   20258:      	lb	$1, 0x0($1)
+   2025c:      	addu	$9, $8, $1
+   20260:      	addu	$8, $3, $9
+   20264:      	move	$3, $10
+   20268:      	bne	$5, $4, 0x20230 <compute+0x30>
+   2026c:      	move	$7, $11
+   20270:      	jr	$ra
+   20274:      	subu	$2, $9, $2
+   20278:      	jr	$ra
+   2027c:      	addiu	$2, $zero, 0x0
+
+00020280 <optional_hook>:
+   20280:      	jr	$ra
+   20284:      	addiu	$2, $zero, 0x0
+
+00020288 <_start>:
+   20288:      	addiu	$sp, $sp, -0x18
+   2028c:      	sw	$ra, 0x14($sp)
+   20290:      	sw	$16, 0x10($sp)
+   20294:      	lui	$1, 0x4
+   20298:      	jal	0x20200 <compute>
+   2029c:      	lw	$4, 0x2e0($1)
+   202a0:      	lui	$1, 0x4
+   202a4:      	sb	$2, 0x300($1)
+   202a8:      	lui	$1, 0x0
+   202ac:      	addiu	$1, $1, -0x7000
+   202b0:      	.set	push
+	.set	mips32r2
+	rdhwr	$3, $29
+	.set	pop
+   202b4:      	jal	0x20280 <optional_hook>
+   202b8:      	addu	$16, $3, $1
+   202bc:      	lui	$1, 0x4
+   202c0:      	lw	$3, 0x0($16)
+   202c4:      	addu	$2, $3, $2
+   202c8:      	sw	$2, 0x1300($1)
+   202cc:      	j	0x202cc <_start+0x44>
+   202d0:      	nop

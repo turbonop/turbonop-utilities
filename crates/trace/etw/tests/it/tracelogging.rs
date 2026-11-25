@@ -1,8 +1,8 @@
 //! TraceLogging schemas: read from bytes laid out as
 //! `TraceLoggingProvider.h` lays them out, and payloads decoded by them.
 
-use hexcavator_etw::manifest::{Size, decode};
-use hexcavator_etw::tracelogging::Schema;
+use turbonop_etw::manifest::{Size, decode};
+use turbonop_etw::tracelogging::Schema;
 
 /// A schema: its size, tags, name, then `fields` (already encoded).
 fn schema(tags: &[u8], name: &str, fields: &[Vec<u8>]) -> Vec<u8> {
@@ -164,7 +164,7 @@ fn custom_fields_and_damage_are_errors() {
             let mut x = s.clone();
             x[i] ^= flip;
             if let Ok(sc) = Schema::parse(&x) {
-                let _ = hexcavator_etw::manifest::decode_partial(
+                let _ = turbonop_etw::manifest::decode_partial(
                     &sc.template,
                     &[1, 0, 2, 0, 3, 0, 4, 0],
                     8,

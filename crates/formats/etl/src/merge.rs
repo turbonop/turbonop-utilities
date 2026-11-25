@@ -19,7 +19,7 @@ use std::cell::Cell;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 use crate::buffer::{BUFFER_HEADER_SIZE, Buffer, BufferContext, BufferType};
 use crate::event::{Event, Records};

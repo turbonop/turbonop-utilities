@@ -4,8 +4,8 @@
 //! without it (whose code is the same): compilands, code, lines, symbols,
 //! inline sites, and every function's variables, types by name.
 
-use hexcavator_debuginfo::dwarf_backend::SplitFile;
-use hexcavator_debuginfo::{DebugInfo, TypeRef};
+use turbonop_debuginfo::dwarf_backend::SplitFile;
+use turbonop_debuginfo::{DebugInfo, TypeRef};
 
 fn testdata(name: &str) -> Vec<u8> {
     let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -51,7 +51,7 @@ fn account(d: &DebugInfo<'_>) -> Vec<String> {
             f.ty = TypeRef(0);
             f.params.clear();
         }
-        if s.kind == hexcavator_debuginfo::SymbolKind::Function {
+        if s.kind == turbonop_debuginfo::SymbolKind::Function {
             functions.push((s.compiland, s.addr));
         }
         out.push(format!("symbol {s:?}: {ty}"));
@@ -157,10 +157,17 @@ fn skeletons_alone_are_compilands_named_by_their_files() {
             names,
             [format!("sd{v}-program.dwo"), format!("sd{v}-second.dwo")]
         );
-        // Their code and lines are the skeletons'.
+        // Their code and lines are the skeletons'. (Their data is the
+        // split files' variables: none without them.)
         let plain = testdata(&format!("split-dwarf{v}-plain"));
         let p = DebugInfo::parse(&plain).unwrap();
-        assert_eq!(d.contributions().unwrap(), p.contributions().unwrap());
+        let (skeletons, whole) = (d.contributions().unwrap(), p.contributions().unwrap());
+        assert_eq!(skeletons.len(), 2, "{skeletons:?}");
+        assert!(
+            skeletons.iter().all(|c| whole.contains(c)),
+            "{skeletons:?} {whole:?}"
+        );
+        assert!(whole.len() > skeletons.len());
         assert_eq!(d.source_lines().unwrap(), p.source_lines().unwrap());
         let ids = d.dwarf().unwrap().split_files();
         assert!(
@@ -261,7 +268,7 @@ fn split_type_units_read_as_unsplit_ones() {
             d.dwarf_mut().unwrap().add_split(&file).unwrap();
             assert_eq!(classes(&d), want_classes, "{split}");
             let layouts = d.layouts().unwrap();
-            let diff = hexcavator_debuginfo::layout::compare(&want_layouts, &layouts);
+            let diff = turbonop_debuginfo::layout::compare(&want_layouts, &layouts);
             assert!(
                 diff.changed.is_empty() && diff.added.is_empty() && diff.removed.is_empty(),
                 "{split}: {diff:?}"

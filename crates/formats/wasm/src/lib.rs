@@ -5,12 +5,14 @@
 //!
 //! Malformed modules give errors or fewer entries, never a panic.
 //!
-//! Decoding function bodies' instructions is `hexcavator-wasm-isa`'s job.
+//! Decoding function bodies' instructions is `turbonop-wasm-isa`'s job.
 
 #![no_std]
 #![warn(missing_docs)]
 
 extern crate alloc;
+#[cfg(feature = "std")]
+extern crate std;
 
 use alloc::vec::Vec;
 
@@ -21,7 +23,7 @@ pub use linking::{
     relocation_has_addend, relocation_name,
 };
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 /// The module's first four bytes.
 pub const MAGIC: &[u8; 4] = b"\0asm";
@@ -196,6 +198,34 @@ pub enum SegmentOffset {
     Passive,
 }
 
+/// A global's initializer (a constant expression).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Init {
+    /// `i32.const`.
+    I32(i32),
+    /// `i64.const`.
+    I64(i64),
+    /// `global.get` of an (imported) global.
+    Global(u32),
+    /// Another constant expression (a float, a reference, extended-const).
+    Other,
+}
+
+/// A global: its index, its value type (`0x7F` i32, `0x7E` i64, `0x7D`
+/// f32, `0x7C` f64, `0x7B` v128, a reference type's), whether it's
+/// mutable, and its initializer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Global {
+    /// Its index in the global index space.
+    pub index: u32,
+    /// Its value type's first byte.
+    pub value_type: u8,
+    /// Whether it can be set (`global.set`).
+    pub mutable: bool,
+    /// Its initial value.
+    pub init: Init,
+}
+
 /// A data segment's offset and contents' size.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DataSegment {
@@ -214,12 +244,29 @@ pub const NAME_FUNCTION: u8 = 1;
 pub const NAME_DATA_SEGMENT: u8 = 9;
 
 /// A WebAssembly module.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Module<'d> {
     data: &'d [u8],
     /// The binary format's version (1).
     pub version: u32,
     sections: Vec<Section<'d>>,
+    /// What a reader of the module derives from it, made once (see
+    /// [`Module::derived`]).
+    #[cfg(feature = "std")]
+    derived: std::sync::OnceLock<alloc::boxed::Box<dyn core::any::Any + Send + Sync>>,
+}
+
+impl Clone for Module<'_> {
+    fn clone(&self) -> Self {
+        Self {
+            data: self.data,
+            version: self.version,
+            sections: self.sections.clone(),
+            // (A clone derives its own.)
+            #[cfg(feature = "std")]
+            derived: std::sync::OnceLock::new(),
+        }
+    }
 }
 
 /// Whether `data` starts like a module.
@@ -275,7 +322,19 @@ impl<'d> Module<'d> {
             data,
             version,
             sections,
+            #[cfg(feature = "std")]
+            derived: std::sync::OnceLock::new(),
         })
+    }
+
+    /// What `make` derives from the module (its reader's tables, built
+    /// once and kept with it), or `None` if something of another type was
+    /// kept first.
+    #[cfg(feature = "std")]
+    pub fn derived<T: core::any::Any + Send + Sync>(&self, make: impl FnOnce() -> T) -> Option<&T> {
+        self.derived
+            .get_or_init(|| alloc::boxed::Box::new(make()))
+            .downcast_ref::<T>()
     }
 
     /// The module's bytes.
@@ -337,6 +396,38 @@ impl<'d> Module<'d> {
             n[usize::from(kind)] += 1;
         }
         n
+    }
+
+    /// The shared libraries a dynamically linked module (Emscripten's side
+    /// module, or a main module that loads them) needs: its `dylink.0`
+    /// section's `WASM_DYLINK_NEEDED` subsection.
+    pub fn needed(&self) -> Vec<&'d [u8]> {
+        /// `WASM_DYLINK_NEEDED`.
+        const NEEDED: u8 = 2;
+        let mut out = Vec::new();
+        let Some(s) = self.custom(b"dylink.0") else {
+            return out;
+        };
+        // (After the section's name.)
+        let mut r = self.contents(s);
+        r.pos = usize::try_from(s.data_offset).unwrap_or(r.data.len());
+        while let (Some(kind), Some(len)) = (r.u8(), r.u32()) {
+            let Some(body) = r.bytes(u64::from(len)) else {
+                break;
+            };
+            if kind != NEEDED {
+                continue;
+            }
+            let mut b = Reader { data: body, pos: 0 };
+            let Some(n) = b.u32() else { break };
+            for _ in 0..n {
+                match b.name() {
+                    Some(lib) => out.push(lib),
+                    None => break,
+                }
+            }
+        }
+        out
     }
 
     /// The export section's entries: name, kind (`EXTERNAL_*`: 0 a
@@ -454,26 +545,35 @@ impl<'d> Module<'d> {
     /// How many functions are imported (they come first in the function
     /// index space).
     pub fn imported_functions(&self) -> u32 {
+        self.import_counts()[0]
+    }
+
+    /// How many globals are imported (they come first in the global index
+    /// space).
+    pub fn imported_globals(&self) -> u32 {
+        self.import_counts()[3]
+    }
+
+    /// How many of each kind (function, table, memory, global, tag) are
+    /// imported.
+    fn import_counts(&self) -> [u32; 5] {
+        let mut n = [0u32; 5];
         let Some(s) = self.section(SECTION_IMPORT) else {
-            return 0;
+            return n;
         };
         let mut r = self.contents(s);
-        let mut n = 0;
-        let Some(count) = r.u32() else { return 0 };
+        let Some(count) = r.u32() else { return n };
         for _ in 0..count {
             let (Some(_), Some(_), Some(kind)) = (r.name(), r.name(), r.u8()) else {
                 break;
             };
             let ok = match kind {
-                0 => {
-                    n += 1;
-                    r.u32().is_some()
-                }
+                0 => r.u32().is_some(),
                 // A table: element type, then limits.
-                1 => r.u8().is_some() && limits(&mut r),
+                1 => ref_type(&mut r) && limits(&mut r),
                 2 => limits(&mut r),
                 // A global: value type and mutability.
-                3 => r.u8().is_some() && r.u8().is_some(),
+                3 => value_type(&mut r).is_some() && r.u8().is_some(),
                 // A tag: attribute and type index.
                 4 => r.u8().is_some() && r.u32().is_some(),
                 _ => false,
@@ -481,8 +581,36 @@ impl<'d> Module<'d> {
             if !ok {
                 break;
             }
+            n[usize::from(kind)] += 1;
         }
         n
+    }
+
+    /// The module's own globals (the global section's), by global index
+    /// (imported globals come first): each one's type, mutability, and
+    /// initializer.
+    pub fn globals(&self) -> Vec<Global> {
+        let mut out = Vec::new();
+        let Some(s) = self.section(SECTION_GLOBAL) else {
+            return out;
+        };
+        let base = self.imported_globals();
+        let mut r = self.contents(s);
+        let Some(count) = r.u32() else { return out };
+        for i in 0..count {
+            let Some(value_type) = value_type(&mut r) else {
+                break;
+            };
+            let Some(mutability) = r.u8() else { break };
+            let Some(init) = init_expr(&mut r) else { break };
+            out.push(Global {
+                index: base.saturating_add(i),
+                value_type,
+                mutable: mutability & 1 != 0,
+                init,
+            });
+        }
+        out
     }
 
     /// The code section's entries (function bodies, size field included),
@@ -701,6 +829,44 @@ fn offset_expr(r: &mut Reader<'_>) -> Option<SegmentOffset> {
     const_expr(r).then_some(SegmentOffset::Other)
 }
 
+/// A value type: its first byte (a reference type's heap type, which
+/// follows `0x63` or `0x64`, read past).
+fn value_type(r: &mut Reader<'_>) -> Option<u8> {
+    let t = r.u8()?;
+    if t == 0x63 || t == 0x64 {
+        sleb(r)?;
+    }
+    Some(t)
+}
+
+/// A reference type (a table's element type).
+fn ref_type(r: &mut Reader<'_>) -> bool {
+    value_type(r).is_some()
+}
+
+/// A global's initializer, read to its `end`.
+fn init_expr(r: &mut Reader<'_>) -> Option<Init> {
+    let start = r.pos;
+    let first = r.u8()?;
+    let value = match first {
+        0x41 | 0x42 => Some(sleb(r)?),
+        0x23 => Some(i64::from(r.u32()?)),
+        _ => None,
+    };
+    if let Some(v) = value
+        && r.data.get(r.pos) == Some(&0x0B)
+    {
+        r.pos += 1;
+        return Some(match first {
+            0x41 => Init::I32(i32::try_from(v).ok()?),
+            0x42 => Init::I64(v),
+            _ => Init::Global(u32::try_from(v).ok()?),
+        });
+    }
+    r.pos = start;
+    const_expr(r).then_some(Init::Other)
+}
+
 /// A signed LEB128 (at most ten bytes).
 fn sleb(r: &mut Reader<'_>) -> Option<i64> {
     let mut v: i64 = 0;
@@ -732,8 +898,10 @@ fn const_expr(r: &mut Reader<'_>) -> bool {
             0x23 | 0x41 | 0x42 | 0xD2 => r.uleb().is_some(),
             0x43 => r.bytes(4).is_some(),
             0x44 => r.bytes(8).is_some(),
-            // ref.null t
-            0xD0 => r.u8().is_some(),
+            // ref.null t (a heap type: a byte, or a type index)
+            0xD0 => sleb(r).is_some(),
+            // v128.const (SIMD's prefix, then sixteen bytes)
+            0xFD => r.uleb() == Some(12) && r.bytes(16).is_some(),
             // extended-const arithmetic
             0x6A | 0x6B | 0x6C | 0x7C | 0x7D | 0x7E => true,
             _ => false,

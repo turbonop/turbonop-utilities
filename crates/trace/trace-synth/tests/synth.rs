@@ -4,12 +4,12 @@
 
 use rustc_hash::FxHashMap;
 
-use hexcavator_etl::Etl;
-use hexcavator_trace::{ImageIx, Trace, etw};
-use hexcavator_trace_analysis::{
+use turbonop_etl::Etl;
+use turbonop_trace::{ImageIx, Trace, etw};
+use turbonop_trace_analysis::{
     Filter, FrameMode, Framer, GroupBy, Key, Keys, NodeId, Resolver, Symbolizer, Tree, sources,
 };
-use hexcavator_trace_synth::{Config, Synthetic, Truth, generate};
+use turbonop_trace_synth::{Config, Synthetic, Truth, generate};
 
 /// Finds functions in the truth's function table, as a PDB would.
 struct TruthSymbols<'a>(&'a Truth);
@@ -261,7 +261,7 @@ fn function_lookup_finds_what_the_table_holds() {
 
 #[test]
 fn the_import_is_the_same_on_any_number_of_threads() {
-    use hexcavator_trace::index;
+    use turbonop_trace::index;
     for config in [
         small(),
         Config {
@@ -290,7 +290,7 @@ fn the_import_is_the_same_on_any_number_of_threads() {
 
 #[test]
 fn the_import_is_the_same_in_any_number_of_parts() {
-    use hexcavator_trace::index;
+    use turbonop_trace::index;
     for config in [
         small(),
         Config {
@@ -323,7 +323,7 @@ fn the_import_is_the_same_in_any_number_of_parts() {
 
 #[test]
 fn every_kind_of_event_is_counted() {
-    use hexcavator_etw::guids;
+    use turbonop_etw::guids;
     let s = generate(&small());
     let etl = Etl::parse(&s.etl).unwrap();
     let (trace, stats) = etw::import(&etl).unwrap();
@@ -333,7 +333,7 @@ fn every_kind_of_event_is_counted() {
         trace.events.iter().map(|e| e.count).sum::<u64>(),
         stats.events
     );
-    let key = |e: &hexcavator_trace::EventStats| (e.provider, e.id, e.version, e.opcode, e.task);
+    let key = |e: &turbonop_trace::EventStats| (e.provider, e.id, e.version, e.opcode, e.task);
     assert!(trace.events.windows(2).all(|w| key(&w[0]) < key(&w[1])));
     let count = |provider, opcode| -> u64 {
         trace
@@ -364,12 +364,10 @@ fn every_kind_of_event_is_counted() {
     let (one, _) = etw::import_with(&etl, 1).unwrap();
     assert_eq!(one.events, trace.events);
     // Saved in the index, and read back.
-    let source = hexcavator_trace::index::Source::of(&s.etl);
-    let back = hexcavator_trace::index::read(
-        &hexcavator_trace::index::write(&trace, source),
-        Some(source),
-    )
-    .unwrap();
+    let source = turbonop_trace::index::Source::of(&s.etl);
+    let back =
+        turbonop_trace::index::read(&turbonop_trace::index::write(&trace, source), Some(source))
+            .unwrap();
     assert_eq!(back.events, trace.events);
     assert_eq!(back.provider_names, trace.provider_names);
     assert_eq!(back.buffers, trace.buffers);
@@ -389,7 +387,7 @@ fn every_kind_of_event_is_counted() {
             assert!(b.first <= b.last);
             let buffer = etl.buffer_at(b.offset, b.index).unwrap();
             let mut here = 0u64;
-            hexcavator_etl::merge::for_each_event(&buffer, max.max(1 << 16), &mut scratch, |e| {
+            turbonop_etl::merge::for_each_event(&buffer, max.max(1 << 16), &mut scratch, |e| {
                 let d = &e.descriptor;
                 if (e.provider, d.id, d.version, d.opcode, d.task)
                     == (kind.provider, kind.id, kind.version, kind.opcode, kind.task)

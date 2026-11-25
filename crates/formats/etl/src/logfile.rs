@@ -1,7 +1,7 @@
 //! The logfile header (`TRACE_LOGFILE_HEADER`): the payload of the first
 //! event of the first buffer.
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 use crate::bytes::{i64_at, u32_at};
 

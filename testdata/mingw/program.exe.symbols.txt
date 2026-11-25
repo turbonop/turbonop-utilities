@@ -1,0 +1,25 @@
+
+Dump of file program.exe
+
+File Type: EXECUTABLE IMAGE
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype ()    External     | used
+001 00000010 SECT1  notype ()    External     | unused
+002 00000020 SECT1  notype ()    External     | start
+003 00000000 SECT2  notype       External     | message
+004 00000000 SECT4  notype       External     | table
+
+String Table Size = 0x43 bytes
+
+  Summary
+
+        1000 .buildid
+        1000 .data
+        1000 .debug_abbrev
+        1000 .debug_info
+        1000 .debug_line
+        1000 .debug_ranges
+        1000 .debug_str
+        1000 .rdata
+        1000 .text

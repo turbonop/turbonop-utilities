@@ -1,6 +1,6 @@
 // diasymbolize: what the DIA SDK says is at each RVA of an image (its
 // function, the functions inlined there, and their source lines), as the
-// reference for `hexc symbolize`'s PDB lookups.
+// reference for `hexcavator symbolize`'s PDB lookups.
 //
 // Build with build.cmd (it puts msdia140.dll next to diasymbolize.exe).
 //

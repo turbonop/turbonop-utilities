@@ -10,6 +10,9 @@ on:
     - cron: "17 7 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -19,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # (Quoted: a plain YAML value can't end in a colon.)
-      - run: "cargo test --release -p hexcavator-arm64 --test it -- --ignored --nocapture exhaustive::"
+      - run: "cargo test --release -p turbonop-arm64 --test it -- --ignored --nocapture exhaustive::"
 
   # Every supported host is little-endian, so run the tests on a big-endian
   # target under QEMU to catch accidental native-endian reads.
@@ -29,12 +32,12 @@ jobs:
       CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_LINKER: s390x-linux-gnu-gcc
       CARGO_TARGET_S390X_UNKNOWN_LINUX_GNU_RUNNER: qemu-s390x
       # Where QEMU finds s390x's loader and libraries, for every s390x
-      # program: the tests, and the hexc they start (which the kernel hands
+      # program: the tests, and the hexcavator they start (which the kernel hands
       # to QEMU itself, without the runner's options).
       QEMU_LD_PREFIX: /usr/s390x-linux-gnu
       # How much slower QEMU runs them, for the tests with time limits
       # (about 18 times, measured).
-      HEXC_TEST_SLOWDOWN: 25
+      TURBONOP_TEST_SLOWDOWN: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y gcc-s390x-linux-gnu libc6-dev-s390x-cross qemu-user
@@ -54,11 +57,11 @@ jobs:
           path: fuzz-corpus
           key: fuzz-corpus-${{ github.run_id }}
           restore-keys: fuzz-corpus-
-      - run: cargo build --release -p hexcavator-fuzz --features coverage --target-dir target/fuzz-cov
+      - run: cargo build --release -p turbonop-fuzz --features coverage --target-dir target/fuzz-cov
         env:
           RUSTFLAGS: -C instrument-coverage
-      - run: target/fuzz-cov/release/hexcavator-fuzz.exe selftest
-      - run: target/fuzz-cov/release/hexcavator-fuzz.exe run all -seconds 3600 -batch 3000
+      - run: target/fuzz-cov/release/turbonop-fuzz.exe selftest
+      - run: target/fuzz-cov/release/turbonop-fuzz.exe run all -seconds 3600 -batch 3000
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

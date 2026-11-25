@@ -7,15 +7,13 @@
 //! hash stream also gives each record's hash bucket, so a lookup by name
 //! only has to look at records in the name's bucket.
 
-use std::cell::OnceCell;
+use std::sync::OnceLock as OnceCell;
 
-use hexcavator_core::{
-    Error, ErrorKind, Reader, Result, U16Le, U32Le, pod, read_at, read_slice_at,
-};
+use turbonop_core::{Error, ErrorKind, Reader, Result, U16Le, U32Le, pod, read_at, read_slice_at};
 
 use crate::hash::hash_v1;
 use crate::msf::{Msf, SN_NIL, StreamData};
-use hexcavator_codeview::types::{TypeIndex, TypeRecord, TypeSource, leaf};
+use turbonop_codeview::types::{TypeIndex, TypeRecord, TypeSource, leaf};
 
 pod! {
     #[derive(Debug)]
@@ -134,6 +132,24 @@ impl<'m, 'data> LazyTypeStream<'m, 'data> {
     }
 }
 
+/// The offsets of up to `count` records of `records` from offset `at`
+/// (one past a record that doesn't read: as far as a walk gets), where the
+/// walk ended, and whether every record read.
+fn walk(records: &[u8], at: usize, count: usize) -> (Vec<u32>, usize, bool) {
+    let rest = records.get(at..).unwrap_or(&[]);
+    // (Each record takes 4 bytes at least: the header's count of them is no
+    // bound on what to allocate.)
+    let mut out = Vec::with_capacity(count.min(rest.len() / 4));
+    let mut r = Reader::new(rest);
+    while !r.is_empty() && out.len() < count {
+        out.push((at + r.position()) as u32);
+        if TypeRecord::read(&mut r).is_err() {
+            return (out, at + r.position(), false);
+        }
+    }
+    (out, at + r.position(), true)
+}
+
 /// A TPI or IPI stream.
 pub struct TypeStream<'s> {
     header: TpiHeader,
@@ -144,7 +160,7 @@ pub struct TypeStream<'s> {
     offsets: OnceCell<Vec<u32>>,
     /// How many lookups have walked from the hash stream's index (after
     /// [`MAX_WALKS`] of them, every record's offset is found once).
-    walks: std::cell::Cell<u32>,
+    walks: std::sync::atomic::AtomicU32,
     /// Lazily built: records by hash bucket (CSR layout).
     buckets: OnceCell<(Vec<u32>, Vec<u32>)>,
 }
@@ -161,13 +177,13 @@ impl<'s> TypeStream<'s> {
     /// Parses a type stream, given its contents and its hash stream's.
     pub fn parse(stream: StreamData<'s>, hash: StreamData<'s>) -> Result<Self> {
         if stream.is_empty() {
-            let header = *hexcavator_core::from_bytes::<TpiHeader>(&[0u8; 56]).expect("56 bytes");
+            let header = *turbonop_core::from_bytes::<TpiHeader>(&[0u8; 56]).expect("56 bytes");
             return Ok(Self {
                 header,
                 records: StreamData::Borrowed(&[]),
                 hash,
                 offsets: OnceCell::new(),
-                walks: std::cell::Cell::new(0),
+                walks: std::sync::atomic::AtomicU32::new(0),
                 buckets: OnceCell::new(),
             });
         }
@@ -191,7 +207,27 @@ impl<'s> TypeStream<'s> {
             records,
             hash,
             offsets: OnceCell::new(),
-            walks: std::cell::Cell::new(0),
+            walks: std::sync::atomic::AtomicU32::new(0),
+            buckets: OnceCell::new(),
+        })
+    }
+
+    /// A stream of `header`'s records, read apart from it (`records`: the
+    /// `type_record_bytes` after its `header_size`).
+    pub fn from_records(
+        header: TpiHeader,
+        records: StreamData<'s>,
+        hash: StreamData<'s>,
+    ) -> Result<Self> {
+        if records.len() != header.type_record_bytes.get() as usize {
+            return Err(Error::new(ErrorKind::Truncated, 0, "type records"));
+        }
+        Ok(Self {
+            header,
+            records,
+            hash,
+            offsets: OnceCell::new(),
+            walks: std::sync::atomic::AtomicU32::new(0),
             buckets: OnceCell::new(),
         })
     }
@@ -257,8 +293,11 @@ impl<'s> TypeStream<'s> {
         // Far from the nearest index entry (a stream whose index is sparse,
         // or missing), or after many lookups (dumping every type): every
         // record's offset, found once, rather than a walk per lookup.
-        self.walks.set(self.walks.get().saturating_add(1));
-        if ti.0 - cur.min(ti.0) > MAX_WALK || self.walks.get() > MAX_WALKS {
+        let walks = self
+            .walks
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(1);
+        if ti.0 - cur.min(ti.0) > MAX_WALK || walks > MAX_WALKS {
             let off = *self.build_offsets().get((ti.0 - self.begin().0) as usize)?;
             return TypeRecord::read(&mut Reader::new(self.records.get(off as usize..)?)).ok();
         }
@@ -275,18 +314,62 @@ impl<'s> TypeStream<'s> {
     /// Builds (once) the offset of every record, for O(1) lookups.
     pub fn build_offsets(&self) -> &[u32] {
         self.offsets.get_or_init(|| {
-            // (Each record takes 4 bytes at least: the header's count of
-            // them is no bound on what to allocate.)
-            let mut out = Vec::with_capacity(self.len().min(self.records.len() / 4));
-            let mut r = Reader::new(&self.records);
-            while !r.is_empty() && out.len() < self.len() {
-                out.push(r.position() as u32);
-                if TypeRecord::read(&mut r).is_err() {
-                    break;
-                }
-            }
-            out
+            self.offsets_in_parallel()
+                .unwrap_or_else(|| self.walk_offsets())
         })
+    }
+
+    /// Every record's offset, walked from the first.
+    fn walk_offsets(&self) -> Vec<u32> {
+        walk(&self.records, 0, self.len()).0
+    }
+
+    /// Every record's offset, the stream walked in parts at once: split
+    /// where the hash stream's index gives a record's offset. `None` if
+    /// the stream is small, or its index disagrees with the records (each
+    /// part must end where the next begins).
+    fn offsets_in_parallel(&self) -> Option<Vec<u32>> {
+        const MIN_PART: usize = 4 << 20;
+        let threads = turbonop_par::threads();
+        if threads < 2 || self.records.len() < 2 * MIN_PART {
+            return None;
+        }
+        let (begin, len) = (self.begin().0, self.len());
+        let index = self.index_offsets();
+        let parts = (self.records.len() / MIN_PART).clamp(2, threads * 4);
+        let step = index.len().div_ceil(parts).max(1);
+        // Starts (records before it, offset): the first record, then index
+        // entries in order, within the stream.
+        let mut starts: Vec<(usize, usize)> = vec![(0, 0)];
+        for e in index.iter().skip(step).step_by(step) {
+            let (ti, off) = (e.type_index.get(), e.offset.get() as usize);
+            let &(n, at) = starts.last()?;
+            let k = ti.checked_sub(begin)? as usize;
+            if k <= n || k >= len || off <= at || off >= self.records.len() {
+                return None;
+            }
+            starts.push((k, off));
+        }
+        let bounds: Vec<(usize, usize, usize)> = starts
+            .iter()
+            .enumerate()
+            .map(|(i, &(n, at))| {
+                let count = starts.get(i + 1).map_or(len, |s| s.0) - n;
+                (at, count, starts.get(i + 1).map_or(usize::MAX, |s| s.1))
+            })
+            .collect();
+        let walked = turbonop_par::map(&bounds, 1, |&(at, count, next)| {
+            let (offsets, end, whole) = walk(&self.records, at, count);
+            (offsets, next == usize::MAX || (whole && end == next))
+        });
+        let mut out = Vec::with_capacity(len.min(self.records.len() / 4));
+        for (offsets, fits) in walked {
+            if !fits {
+                return None;
+            }
+            out.extend(offsets);
+        }
+        Some(out)
     }
 
     /// Each record's hash bucket, from the hash stream.
@@ -515,6 +598,59 @@ mod tests {
             .flat_map(|&(ti, off)| ti.to_le_bytes().into_iter().chain(off.to_le_bytes()))
             .collect();
         (header, hash)
+    }
+
+    /// Every record's offset, found in parts at once (a stream of more
+    /// than 8 MB), is what one walk finds: with the index right, wrong
+    /// (an offset off by 4, or a record's offset given to the next), out of
+    /// order, and with the stream cut short mid-record.
+    #[test]
+    fn offsets_in_parts_are_one_walks() {
+        let name = "N".repeat(90);
+        let records: Vec<Vec<u8>> = (0..100_000)
+            .map(|i| structure(&format!("{name}{i}"), "", 4, false))
+            .collect();
+        let mut index = Vec::new();
+        let mut at = 0u32;
+        for (i, r) in records.iter().enumerate() {
+            if i % 80 == 0 {
+                index.push((0x1000 + i as u32, at));
+            }
+            at += r.len() as u32;
+        }
+        assert!(at > 9 << 20);
+        let mut off_by_four = index.clone();
+        off_by_four[600].1 += 4;
+        let mut next_records = index.clone();
+        next_records[300].0 += 1;
+        let mut reversed = index.clone();
+        reversed.reverse();
+        for (case, index) in [
+            index.clone(),
+            off_by_four,
+            next_records,
+            reversed,
+            Vec::new(),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let (whole, hash) = indexed(&records, index);
+            for cut in [0, 7] {
+                let mut tpi = whole[..whole.len() - cut].to_vec();
+                // (The header's count of record bytes, cut too.)
+                let n = u32::try_from(tpi.len() - 56).unwrap();
+                tpi[16..20].copy_from_slice(&n.to_le_bytes());
+                let s = TypeStream::parse(StreamData::Borrowed(&tpi), StreamData::Borrowed(&hash))
+                    .unwrap();
+                let want = s.walk_offsets();
+                assert_eq!(want.len(), records.len(), "case {case}, cut {cut}");
+                assert_eq!(s.build_offsets(), &want[..], "case {case}, cut {cut}");
+                if case == 0 && cut == 0 && turbonop_par::threads() > 1 {
+                    assert!(s.offsets_in_parallel().is_some());
+                }
+            }
+        }
     }
 
     /// Records read lazily (a few KB of a stream at a time) are the

@@ -20,11 +20,11 @@
 //! files and in the DWARF `inlines` (bloaty prints the map's zero-based
 //! lines).
 
-use std::collections::HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_core::Result;
-use hexcavator_demangle::itanium::Demangler;
-use hexcavator_wasm::{Module, NAME_DATA_SEGMENT, NAME_FUNCTION};
+use turbonop_core::Result;
+use turbonop_demangle::itanium::Demangler;
+use turbonop_wasm::{Module, NAME_DATA_SEGMENT, NAME_FUNCTION};
 
 use crate::rangemap::{DualMap, Labels};
 use crate::sourcemap::SourceMap;
@@ -33,7 +33,7 @@ use crate::sources::{Maps, Source, UNMAPPED};
 pub const WASM_HEADER: &str = "[WASM Header]";
 
 pub fn is_wasm_input(data: &[u8]) -> bool {
-    hexcavator_wasm::is_wasm(data)
+    turbonop_wasm::is_wasm(data)
 }
 
 fn add(
@@ -57,6 +57,70 @@ fn add(
 }
 
 /// Builds the maps of a WebAssembly module for `sources`.
+/// A module's own DWARF (its `.debug_*` custom sections), its code's
+/// addresses its code section's offsets.
+fn dwarf_input<'d>(m: &Module<'d>) -> Option<crate::dwarf_units::DwarfInput<'d>> {
+    let code = m
+        .sections()
+        .iter()
+        .find(|s| s.id == turbonop_wasm::SECTION_CODE)?;
+    let data = m.data();
+    let sections: Vec<crate::dwarf_units::DwarfSection<'d>> = m
+        .sections()
+        .iter()
+        .filter_map(|s| {
+            let name = s.name.strip_prefix(b".debug_")?;
+            let start = usize::try_from(s.data_offset).ok()?;
+            let end = usize::try_from(s.contents_offset + s.contents_size).ok()?;
+            Some((name, data.get(start..end)?.into(), Some(s.data_offset)))
+        })
+        .collect();
+    sections
+        .iter()
+        .any(|(n, _, _)| *n == b"info")
+        .then_some(crate::dwarf_units::DwarfInput {
+            endian: turbonop_core::Endian::Little,
+            sections,
+            code_at: Some(code.contents_offset),
+            data_at: data_segments(m.data()),
+        })
+}
+
+/// The module's active data segments: (address in linear memory, size,
+/// file offset), as the image places them.
+fn data_segments(data: &[u8]) -> Vec<(u64, u64, u64)> {
+    let Ok(image) = turbonop_image::Image::parse(data) else {
+        return Vec::new();
+    };
+    image
+        .sections()
+        .iter()
+        .filter(|s| s.raw_flags == u32::from(turbonop_wasm::SECTION_DATA) && s.vm_size > 0)
+        .filter_map(|s| {
+            Some((
+                s.addr.checked_sub(turbonop_image::WASM_MEMORY)?,
+                s.vm_size,
+                s.file_offset,
+            ))
+        })
+        .collect()
+}
+
+/// Its variables' sizes, by address in linear memory (from their types,
+/// as its DWARF describes them).
+fn variable_sizes(data: &[u8]) -> HashMap<u64, u64> {
+    let Ok(debug) = turbonop_debuginfo::DebugInfo::parse(data) else {
+        return HashMap::default();
+    };
+    debug
+        .symbols()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| s.kind == turbonop_debuginfo::SymbolKind::Data && !s.thread_local)
+        .filter_map(|s| Some((s.addr.checked_sub(turbonop_image::WASM_MEMORY)?, s.size?)))
+        .collect()
+}
+
 pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
     maps_with_source_map(data, file_name, sources, None)
 }
@@ -101,14 +165,16 @@ pub fn maps_with_source_map(
             Source::Sections | Source::Segments => {
                 sections_into(&mut labels, &mut map, Some(&base));
             }
-            Source::Symbols | Source::RawSymbols | Source::FullSymbols => {
+            Source::Symbols | Source::RawSymbols | Source::FullSymbols | Source::Crates => {
                 let mut demangler = Demangler::new();
                 let mut show = |raw: &[u8]| -> String {
                     let raw = String::from_utf8_lossy(raw);
                     let mut buf = String::new();
                     let ok = match source {
                         Source::Symbols => demangler.demangle_short_into(&raw, &mut buf),
-                        Source::FullSymbols => demangler.demangle_into(&raw, &mut buf),
+                        Source::FullSymbols | Source::Crates => {
+                            demangler.demangle_into(&raw, &mut buf)
+                        }
                         _ => false,
                     };
                     if ok { buf } else { raw.into_owned() }
@@ -123,7 +189,7 @@ pub fn maps_with_source_map(
                 let base_index = m.imported_functions();
                 // (By index, the first of each: a lookup per function, not
                 // a search of every name.)
-                let (mut func_names, mut seg_names) = (HashMap::new(), HashMap::new());
+                let (mut func_names, mut seg_names) = (HashMap::default(), HashMap::default());
                 for n in &funcs {
                     func_names.entry(n.index).or_insert(n.name);
                 }
@@ -153,8 +219,31 @@ pub fn maps_with_source_map(
                 map.fill_from(&base, |_| l);
             }
             Source::Archs => {
-                let l = labels.intern("wasm32");
+                // (A module with a 64-bit memory: wasm64.)
+                let l = labels.intern(if m.is_memory64() { "wasm64" } else { "wasm32" });
                 map.fill_from(&base, |_| l);
+            }
+            Source::CompileUnits | Source::Inlines | Source::SourceFiles
+                if source_map.is_none() =>
+            {
+                // Its DWARF's, if it has any: its code's units and lines,
+                // and its DWARF's own bytes.
+                if let Some(input) = dwarf_input(&m) {
+                    match source {
+                        Source::CompileUnits => crate::dwarf_units::compile_units(
+                            &input,
+                            &variable_sizes(data),
+                            len,
+                            &mut labels,
+                            &mut map,
+                            &base,
+                        ),
+                        Source::Inlines => {
+                            crate::dwarf_units::inlines(&input, &mut labels, &mut map, &base);
+                        }
+                        _ => crate::dwarf_units::source_files(&input, &mut labels, &mut map, &base),
+                    }
+                }
             }
             Source::CompileUnits | Source::Inlines | Source::SourceFiles => {
                 if let Some(sm) = source_map {
@@ -216,8 +305,8 @@ pub fn maps_with_source_map(
 const MAX_INDENT: usize = 32;
 
 pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, String> {
-    use hexcavator_wasm_isa::code;
     use std::fmt::Write as _;
+    use turbonop_wasm_isa::code;
     let m = Module::parse(data).map_err(|e| e.to_string())?;
     let funcs = m.names(NAME_FUNCTION);
     let base = m.imported_functions();
@@ -245,7 +334,7 @@ pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, Strin
     // As the name section has it, demangled short or in full (as for ELF
     // symbols), or by its index; else the one function whose name is it
     // with parameters (as for PE images).
-    let mut raw_names = HashMap::new();
+    let mut raw_names = HashMap::default();
     for n in &funcs {
         raw_names.entry(n.index).or_insert(n.name);
     }
@@ -313,7 +402,7 @@ pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, Strin
         }
         let mut text = i.to_string();
         // Calls: the callee's name.
-        if let (hexcavator_wasm_isa::code::Imm::Index(f), "call" | "return_call" | "ref.func") =
+        if let (turbonop_wasm_isa::code::Imm::Index(f), "call" | "return_call" | "ref.func") =
             (&i.imm, i.op.name)
             && let Some(name) = name_of(*f)
         {
@@ -337,8 +426,8 @@ pub fn listing(data: &[u8], function: &str) -> std::result::Result<String, Strin
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::path::PathBuf;
+    use turbonop_hash::Map as HashMap;
 
     use super::*;
     use crate::rangemap::sweep;
@@ -351,7 +440,7 @@ mod tests {
     }
 
     fn file_totals(maps: &Maps, k: usize) -> HashMap<String, u64> {
-        let mut out = HashMap::new();
+        let mut out = HashMap::default();
         sweep(&[&maps.base.file, &maps.sources[k].1.file], |s, e, l| {
             *out.entry(l[1].map_or("<none>", |l| maps.labels.name(l)).to_string())
                 .or_default() += e - s;
@@ -403,6 +492,10 @@ mod tests {
         assert_eq!(symbols["log"], names[0].size);
         assert!(symbols.contains_key("[section Code]"));
         assert_eq!(file_totals(&maps, 2)["wasm32"], data.len() as u64);
+        // A module with a 64-bit memory (one page, the memory64 flag): wasm64.
+        let m64 = b"\0asm\x01\0\0\0\x05\x03\x01\x04\x01";
+        let maps64 = super::maps(m64, "m64.wasm", &[Source::Archs]).unwrap();
+        assert_eq!(file_totals(&maps64, 0)["wasm64"], m64.len() as u64);
         assert!(super::maps(b"\0asm", "x", &all).is_err());
     }
 

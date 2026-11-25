@@ -5,7 +5,7 @@
 
 #![allow(clippy::cast_possible_truncation, reason = "small test files")]
 
-use hexcavator_image::{Arch, Format, Image, Kind, SectionFlags};
+use turbonop_image::{Arch, Format, Image, Kind, SectionFlags};
 
 /// A section as `llvm-readobj` lists it.
 #[derive(Debug, Default)]
@@ -16,6 +16,7 @@ struct Listed {
     address: u64,
     size: u64,
     offset: u64,
+    align: u64,
     flags: Vec<String>,
 }
 
@@ -81,6 +82,7 @@ fn listing(text: &str) -> (String, Vec<Listed>) {
             "Address" => c.address = number(value),
             "Size" => c.size = number(value),
             "Offset" => c.offset = number(value),
+            "AddressAlignment" => c.align = number(value),
             _ => {}
         }
     }
@@ -141,11 +143,26 @@ fn elf_sections_are_readobjs() {
         // (`Image` leaves out the null section.)
         let listed: Vec<&Listed> = listed.iter().filter(|l| l.index != Some(0)).collect();
         assert_eq!(sections.len(), listed.len(), "{name}");
+        // An object's sections where a linker would lay them out: its
+        // allocated ones in order, from a page in, each at its alignment
+        // (its listing's addresses all 0); others at 0.
+        let mut next = turbonop_elf::OBJECT_BASE;
         for (s, l) in sections.iter().zip(&listed) {
+            let address = if !object {
+                l.address
+            } else if l.flags.iter().any(|f| f == "SHF_ALLOC") {
+                let at = next.next_multiple_of(l.align.max(1));
+                next = at + l.size;
+                at
+            } else {
+                0
+            };
             let what = format!("{name} {}", l.name);
-            assert_eq!(Some(s.index), l.index, "{what}");
+            // (Counted from 0 among `Image`'s sections: the header index
+            // less the null section.)
+            assert_eq!(Some(s.index + 1), l.index, "{what}");
             assert_eq!(String::from_utf8_lossy(s.name), l.name, "{what}");
-            assert_eq!(s.addr, l.address, "{what}");
+            assert_eq!(s.addr, address, "{what}");
             assert_eq!(s.file_offset, l.offset, "{what}");
             let nobits = l.kind.starts_with("SHT_NOBITS");
             assert_eq!(s.file_size, if nobits { 0 } else { l.size }, "{what}");
@@ -221,7 +238,7 @@ fn macho_sections_are_readobjs() {
         // Linked images name their dSYM by UUID.
         if !object {
             assert!(
-                matches!(image.debug_ids()[..], [hexcavator_image::DebugId::Uuid(_)]),
+                matches!(image.debug_ids()[..], [turbonop_image::DebugId::Uuid(_)]),
                 "{name}"
             );
         }
@@ -236,8 +253,15 @@ fn wasm_sections_are_readobjs() {
     assert_eq!(image.format(), Format::Wasm);
     assert_eq!(image.arch(), arch_of(&arch));
     assert_eq!(image.kind(), Kind::Linked);
-    let sections = image.sections();
-    assert_eq!(sections.len(), listed.len());
+    let all = image.sections();
+    // The file's sections, as readobj lists them; then its data segments,
+    // in linear memory (see `wasm_data_in_linear_memory`).
+    assert!(all.len() > listed.len());
+    let (sections, segments) = all.split_at(listed.len());
+    for s in segments {
+        assert!(s.addr >= turbonop_image::WASM_MEMORY, "{s:?}");
+        assert!(s.flags.contains(SectionFlags::DATA), "{s:?}");
+    }
     for (s, l) in sections.iter().zip(&listed) {
         assert_eq!(s.file_size, l.size, "{l:?}");
         if l.kind.starts_with("CUSTOM") {
@@ -270,7 +294,7 @@ fn elf_debug_identities() {
     let (data, _) = load("elf", "program-x86_64-linux-gnu");
     let image = Image::parse(&data).unwrap();
     let ids = image.debug_ids();
-    assert!(matches!(ids[..], [hexcavator_image::DebugId::BuildId(id)] if id.len() == 20));
+    assert!(matches!(ids[..], [turbonop_image::DebugId::BuildId(id)] if id.len() == 20));
     // A stripped program links its debug file by name and CRC (and keeps
     // its build ID).
     let read = |name: &str| {
@@ -283,9 +307,9 @@ fn elf_debug_identities() {
     let linked = read("program-linked");
     let image = Image::parse(&linked).unwrap();
     let ids = image.debug_ids();
-    assert!(matches!(ids[0], hexcavator_image::DebugId::BuildId(_)));
+    assert!(matches!(ids[0], turbonop_image::DebugId::BuildId(_)));
     let link = ids.iter().find_map(|id| match *id {
-        hexcavator_image::DebugId::DebugLink { path, crc } => Some((path, crc)),
+        turbonop_image::DebugId::DebugLink { path, crc } => Some((path, crc)),
         _ => None,
     });
     let (path, crc) = link.expect("a debug link");
@@ -310,7 +334,7 @@ fn crc32(data: &[u8]) -> u32 {
 }
 
 /// A universal file parses as the image of the architecture chosen
-/// (`hexcavator_macho::set_preferred_arch`), else the host's, else the
+/// (`turbonop_macho::set_preferred_arch`), else the host's, else the
 /// first; one without the architecture chosen is refused.
 #[test]
 fn universal_files_parse_as_the_image_chosen() {
@@ -321,7 +345,7 @@ fn universal_files_parse_as_the_image_chosen() {
     .unwrap();
     let arch_of = |i: &Image<'_>| {
         let h = i.macho().unwrap().header();
-        hexcavator_macho::arch_name(h.cputype, h.cpusubtype)
+        turbonop_macho::arch_name(h.cputype, h.cpusubtype)
     };
     // The default: the host's (both of the fixture's are x86_64 and arm64).
     let image = Image::parse(&data).unwrap();
@@ -332,16 +356,16 @@ fn universal_files_parse_as_the_image_chosen() {
     };
     assert_eq!(arch_of(&image), host);
     for want in ["arm64", "x86_64"] {
-        assert!(hexcavator_macho::set_preferred_arch(Some(want)));
+        assert!(turbonop_macho::set_preferred_arch(Some(want)));
         assert_eq!(arch_of(&Image::parse(&data).unwrap()), want);
     }
-    assert!(hexcavator_macho::set_preferred_arch(Some("i386")));
+    assert!(turbonop_macho::set_preferred_arch(Some("i386")));
     let e = Image::parse(&data).unwrap_err();
-    assert_eq!(e.kind, hexcavator_core::ErrorKind::Unsupported);
-    assert!(!hexcavator_macho::set_preferred_arch(Some("no-such-arch")));
-    assert!(hexcavator_macho::set_preferred_arch(None));
+    assert_eq!(e.kind, turbonop_core::ErrorKind::Unsupported);
+    assert!(!turbonop_macho::set_preferred_arch(Some("no-such-arch")));
+    assert!(turbonop_macho::set_preferred_arch(None));
     // Each of its images parses.
-    for a in hexcavator_macho::fat_archs(&data).unwrap() {
+    for a in turbonop_macho::fat_archs(&data).unwrap() {
         let at = a.offset as usize;
         let image = Image::parse(&data[at..at + a.size as usize]).unwrap();
         assert_eq!(image.format(), Format::MachO);
@@ -400,6 +424,98 @@ fn listed_relocations(text: &str) -> Vec<(u64, String)> {
     out
 }
 
+/// GOT entries: each (address, value).
+type Entries = Vec<(u64, u64)>;
+
+/// llvm-readobj's MIPS GOT (`--arch-specific`): each local entry's
+/// (address, initial value), and each global entry's (address, value).
+fn listed_mips_got(text: &str) -> (Entries, Entries) {
+    let (mut local, mut global) = (Vec::new(), Vec::new());
+    let mut block = "";
+    let mut address = 0;
+    for line in text.lines() {
+        let t = line.trim();
+        if let Some(name) = t.strip_suffix(" entries [") {
+            block = if name == "Local" || name == "Global" {
+                name
+            } else {
+                ""
+            };
+        } else if t == "]" {
+            block = "";
+        } else if let Some(a) = t.strip_prefix("Address: ") {
+            address = number(a);
+        } else if let Some(v) = t.strip_prefix("Initial: ")
+            && block == "Local"
+        {
+            local.push((address, number(v)));
+        } else if let Some(v) = t.strip_prefix("Value: ")
+            && block == "Global"
+        {
+            global.push((address, number(v)));
+        }
+    }
+    (local, global)
+}
+
+/// MIPS's dynamic pointers (tools/elf/relr.c, consumer.c, and locals.c in
+/// a shared object, 32- and 64-bit): each `R_MIPS_REL32`'s slot, holding
+/// one of relr.c's objects; the GOT's local entries (the reserved two
+/// left out), which the loader relocates; and its global ones, its
+/// symbols' addresses; as readobj lists them.
+#[test]
+fn mips_pointer_slots() {
+    for (name, width) in [("relr-mipsel.so", 4), ("relr-mips64el.so", 8)] {
+        let (data, text) = load("elf", name);
+        let image = Image::parse(&data).unwrap();
+        let slots = image.pointer_slots();
+        assert!(slots.iter().all(|s| s.width == width), "{name}");
+        let at = |addr: u64| slots.iter().find(|s| s.addr == addr);
+        let relocations = listed_relocations(&text);
+        assert_eq!(relocations.len(), 9, "{name}");
+        let elf = image.elf().unwrap();
+        let named = |n: &[u8]| {
+            elf.all_symbols()
+                .into_iter()
+                .find(|s| s.name == n)
+                .unwrap()
+                .value
+        };
+        let objects = [
+            named(b"a"),
+            named(b"b"),
+            named(b"c"),
+            named(b"f"),
+            named(b"far"),
+        ];
+        let pointed: Vec<usize> = relocations
+            .iter()
+            .map(|&(addr, _)| {
+                let target = at(addr)
+                    .unwrap_or_else(|| panic!("{name} {addr:#x}"))
+                    .target;
+                objects.iter().position(|&o| Some(o) == target).unwrap()
+            })
+            .collect();
+        // table (a b c a _ b c), handlers (f f), far (c). (consumer.c
+        // reaches `table` and `far` through the GOT's global entries.)
+        assert_eq!(pointed, [0, 1, 2, 0, 1, 2, 3, 3, 2], "{name}");
+        let (local, global) = listed_mips_got(&text);
+        assert_eq!(local.len(), 4, "{name}");
+        for (addr, value) in local.into_iter().chain(global.iter().copied()) {
+            let s = at(addr).unwrap_or_else(|| panic!("{name} {addr:#x}"));
+            assert_eq!(s.target, Some(value), "{name} {addr:#x}");
+        }
+        assert_eq!(
+            global.iter().map(|g| g.1).collect::<Vec<_>>(),
+            [named(b"table"), named(b"far")],
+            "{name}"
+        );
+        // (Nothing else: the reserved entries aren't slots.)
+        assert_eq!(slots.len(), 9 + 4 + 2, "{name}");
+    }
+}
+
 /// Pointer slots: RELR and RELA builds of the same object (tools/elf/relr.c)
 /// hold the same pointers, each to one of its objects; readobj lists
 /// them.
@@ -441,7 +557,7 @@ fn elf_pointer_slots() {
         let dynamic = elf.dynamic();
         let relr = dynamic
             .iter()
-            .any(|d| d.tag == hexcavator_elf::consts::DT_RELR);
+            .any(|d| d.tag == turbonop_elf::consts::DT_RELR);
         assert_eq!(relr, name == "relr.so");
     }
     // The same pointers, packed or not: table (a b c a _ b c), handlers
@@ -485,14 +601,68 @@ fn pointer_slots_of_other_files() {
     let end = image
         .sections()
         .iter()
-        .filter_map(hexcavator_image::Section::end)
+        .filter_map(turbonop_image::Section::end)
         .max()
         .unwrap();
+    // Its base relocations' slots hold its own addresses; its import
+    // address tables' hold other modules' (none known), each an import.
+    assert!(slots.iter().all(|s| s.width == 8));
+    let imports = image.import_slots();
+    assert!(!imports.is_empty());
+    for s in &slots {
+        let import = imports.iter().any(|i| i.addr == s.addr);
+        assert!(
+            if import {
+                s.target.is_none()
+            } else {
+                s.target.is_some_and(|t| t < end)
+            },
+            "{s:?}"
+        );
+    }
+}
+
+/// The slots each format's loader fills with other modules' addresses,
+/// named: PE's import address tables (by DLL), ELF's GOT and PLT entries
+/// (by symbol), Mach-O's binds (by dylib).
+#[test]
+fn import_slots_of_every_format() {
+    use turbonop_image::Imported;
+    let read = |p: &str| {
+        std::fs::read(format!(
+            "{}/../../../testdata/{p}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap()
+    };
+    let data = read("types/types.exe");
+    let pe = Image::parse(&data).unwrap().import_slots();
     assert!(
-        slots
-            .iter()
-            .all(|s| s.width == 8 && s.target.is_some_and(|t| t < end))
+        pe.iter().any(|s| s
+            .library
+            .is_some_and(|l| l.eq_ignore_ascii_case(b"KERNEL32.dll"))
+            && !s.delayed),
+        "{pe:?}"
     );
+    let data = read("elf/consumer.so");
+    let elf = Image::parse(&data).unwrap().import_slots();
+    assert!(
+        elf.iter()
+            .all(|s| s.library.is_none() && matches!(s.imported, Imported::Name(_))),
+        "{elf:?}"
+    );
+    assert!(!elf.is_empty());
+    // (Chained fixups, and the older bind opcodes, alike.)
+    for name in [
+        "macho/pointers-arm64.dylib",
+        "macho/pointers-arm64-opcodes.dylib",
+    ] {
+        let data = read(name);
+        let macho = Image::parse(&data).unwrap().import_slots();
+        assert_eq!(macho.len(), 1, "{name}: {macho:?}");
+        assert_eq!(macho[0].imported, Imported::Name(b"_imported"), "{name}");
+        assert!(macho[0].qualified_name().ends_with("_imported"), "{name}");
+    }
 }
 
 /// Android's packed relocations (APS2), and the same unpacked: the slots
@@ -522,10 +692,10 @@ fn android_packed_relocations() {
     }
     // Damaged: an APS2 stream cut anywhere, or overwritten.
     let (clean, _) = load("elf", "relr-android.so");
-    let elf = hexcavator_elf::ElfFile::parse(&clean).unwrap();
+    let elf = turbonop_elf::ElfFile::parse(&clean).unwrap();
     let s = elf
         .sections()
-        .find(|s| s.kind == hexcavator_elf::consts::SHT_ANDROID_RELA)
+        .find(|s| s.kind == turbonop_elf::consts::SHT_ANDROID_RELA)
         .unwrap();
     let mut d = clean.clone();
     for at in s.offset as usize..(s.offset + s.size) as usize {

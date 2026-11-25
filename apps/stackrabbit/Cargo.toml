@@ -19,19 +19,19 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
-hexcavator-core.workspace = true
-hexcavator-mmap.workspace = true
-hexcavator-etl.workspace = true
-hexcavator-etw.workspace = true
-hexcavator-trace.workspace = true
-hexcavator-trace-analysis.workspace = true
-hexcavator-trace-synth.workspace = true
-hexcavator-symbolize.workspace = true
+turbonop-core.workspace = true
+turbonop-mmap.workspace = true
+turbonop-etl.workspace = true
+turbonop-etw.workspace = true
+turbonop-trace.workspace = true
+turbonop-trace-analysis.workspace = true
+turbonop-trace-synth.workspace = true
+turbonop-symbolize.workspace = true
 rustc-hash.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-hexcavator-pdb.workspace = true
+turbonop-pdb.workspace = true
 
 [lints]
 workspace = true

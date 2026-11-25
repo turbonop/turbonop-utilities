@@ -1,7 +1,7 @@
 //! APX: hermetic checks of `tests/data/apx.txt` (decodings checked against
 //! LLVM by tests/llvm.rs), and of what an APX instruction reports.
 
-use hexcavator_x86::{Encoding, Flow, Mode, Operand, decode, format};
+use turbonop_x86::{Encoding, Flow, Mode, Operand, decode, format};
 
 fn bytes(hex: &str) -> Vec<u8> {
     hex.split_whitespace()
@@ -40,7 +40,7 @@ fn golden() {
     );
 }
 
-fn one(hex: &str) -> hexcavator_x86::Instruction {
+fn one(hex: &str) -> turbonop_x86::Instruction {
     decode(&bytes(hex), Mode::Bits64, 0x1000).unwrap()
 }
 

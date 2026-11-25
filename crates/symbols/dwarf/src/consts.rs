@@ -75,6 +75,10 @@ pub const DW_TAG_COARRAY_TYPE: u16 = 0x44;
 pub const DW_TAG_GENERIC_SUBRANGE: u16 = 0x45;
 pub const DW_TAG_DYNAMIC_TYPE: u16 = 0x46;
 pub const DW_TAG_ATOMIC_TYPE: u16 = 0x47;
+/// A pointer signed with pointer authentication (arm64e's `__ptrauth`
+/// qualifier): its key, discrimination, and options in the attributes
+/// below.
+pub const DW_TAG_LLVM_PTRAUTH_TYPE: u16 = 0x4300;
 pub const DW_TAG_CALL_SITE: u16 = 0x48;
 pub const DW_TAG_CALL_SITE_PARAMETER: u16 = 0x49;
 pub const DW_TAG_SKELETON_UNIT: u16 = 0x4A;
@@ -226,7 +230,17 @@ pub const DW_AT_GNU_PUBNAMES: u16 = 0x2134;
 pub const DW_AT_GNU_PUBTYPES: u16 = 0x2135;
 pub const DW_AT_GNU_DISCRIMINATOR: u16 = 0x2136;
 pub const DW_AT_APPLE_OPTIMIZED: u16 = 0x3FE1;
+/// The compiler's command line, where Apple targets record it (rather than in
+/// `DW_AT_producer`).
+pub const DW_AT_APPLE_FLAGS: u16 = 0x3FE2;
 pub const DW_AT_APPLE_OMIT_FRAME_PTR: u16 = 0x3FE7;
+// A `__ptrauth` pointer's signing (DW_TAG_LLVM_ptrauth_type's).
+pub const DW_AT_LLVM_PTRAUTH_KEY: u16 = 0x3E04;
+pub const DW_AT_LLVM_PTRAUTH_ADDRESS_DISCRIMINATED: u16 = 0x3E05;
+pub const DW_AT_LLVM_PTRAUTH_EXTRA_DISCRIMINATOR: u16 = 0x3E06;
+pub const DW_AT_LLVM_PTRAUTH_ISA_POINTER: u16 = 0x3E08;
+pub const DW_AT_LLVM_PTRAUTH_AUTHENTICATES_NULL_VALUES: u16 = 0x3E09;
+pub const DW_AT_LLVM_PTRAUTH_AUTHENTICATION_MODE: u16 = 0x3E0A;
 
 // Forms.
 pub const DW_FORM_ADDR: u16 = 0x01;

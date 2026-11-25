@@ -1,8 +1,10 @@
 //! The Unix linkers' maps: what each input contributed, and where.
 //!
 //! - lld (ELF `-Map`, and wasm-ld's): columns of addresses and sizes in
-//!   hex, then the output section, input section (`file:(section)`), or
-//!   symbol, each starting at its column (`Out`, `In`, `Symbol`).
+//!   hex (`VMA LMA Size Align`; older lld's, `Address Size Align`;
+//!   wasm-ld's, `Addr Off Size`), then the output section, input section
+//!   (`file:(section)`), or symbol, each starting at its column (`Out`,
+//!   `In`, `Symbol`).
 //! - GNU ld (`-Map`): its "Linker script and memory map": output sections
 //!   at the start of a line; input sections indented one space, with
 //!   their address, size, and file (a long name alone, the rest on the
@@ -35,8 +37,12 @@ pub struct OutputSection {
 /// symbol with its size (ld64, whose map lists no input sections).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Piece {
+    /// Its address (0 for wasm-ld's code, which has none: see `offset`).
     pub addr: u64,
     pub size: u64,
+    /// Where it is in the output file, where the map says (wasm-ld's
+    /// `Off`; 0 for what isn't in the file, as `.bss`).
+    pub offset: Option<u64>,
     /// The output section it is in.
     pub section: String,
     /// The input section (`.text.f`), or for ld64 the symbol.
@@ -157,6 +163,17 @@ fn parse_lld(text: &str) -> UnixMap {
     ) else {
         return map;
     };
+    // Which number is the size, by the header's names for them: lld's now
+    // (`VMA LMA Size Align`), its older (`Address Size Align`), wasm-ld's
+    // (`Addr Off Size`).
+    let columns: Vec<&str> = header
+        .get(..out_col)
+        .unwrap_or("")
+        .split_whitespace()
+        .collect();
+    let size_at = columns.iter().position(|&t| t == "Size").unwrap_or(2);
+    // (wasm-ld's file offsets; its code has no address, `-`.)
+    let offset_at = columns.iter().position(|&t| t == "Off");
     let mut section = String::new();
     let mut piece_file: Option<usize> = None;
     for line in lines {
@@ -168,21 +185,28 @@ fn parse_lld(text: &str) -> UnixMap {
             .map(|(i, _)| i);
         let Some(at) = text_at else { continue };
         let numbers: Vec<&str> = line.get(..at).unwrap_or("").split_whitespace().collect();
-        // (VMA, LMA or offset, size, and for ELF the alignment.)
-        let (Some(addr), Some(size)) = (
-            numbers.first().and_then(|n| hex(n)),
-            numbers.get(2).and_then(|n| hex(n)),
-        ) else {
+        // (The address first; the size where the header says.)
+        let offset = offset_at.and_then(|i| numbers.get(i)).and_then(|n| hex(n));
+        let addr = match numbers.first() {
+            Some(&"-") if offset.is_some() => Some(0),
+            n => n.and_then(|n| hex(n)),
+        };
+        let (Some(addr), Some(size)) = (addr, numbers.get(size_at).and_then(|n| hex(n))) else {
             continue;
         };
+        // (wasm-ld's code isn't at an address: only its pieces, by their
+        // offsets, are kept.)
+        let placed = !(numbers.first() == Some(&"-"));
         let what = line[at..].trim();
         if at < in_col {
             section = what.to_string();
-            map.sections.push(OutputSection {
-                name: section.clone(),
-                addr,
-                size,
-            });
+            if placed {
+                map.sections.push(OutputSection {
+                    name: section.clone(),
+                    addr,
+                    size,
+                });
+            }
             piece_file = None;
         } else if at < sym_col {
             // `file:(section)`; `<internal>:(.comment)`.
@@ -195,11 +219,12 @@ fn parse_lld(text: &str) -> UnixMap {
             map.pieces.push(Piece {
                 addr,
                 size,
+                offset,
                 section: section.clone(),
                 name: name.to_string(),
                 file: f,
             });
-        } else {
+        } else if placed {
             map.symbols.push(MapSymbol {
                 addr,
                 size: None,
@@ -299,6 +324,7 @@ fn parse_ld64(text: &str) -> UnixMap {
                     map.pieces.push(Piece {
                         addr,
                         size,
+                        offset: None,
                         section,
                         name: name.to_string(),
                         file,
@@ -405,6 +431,7 @@ fn parse_gnu(text: &str) -> UnixMap {
         map.pieces.push(Piece {
             addr,
             size,
+            offset: None,
             section: section.clone(),
             name,
             file: f,

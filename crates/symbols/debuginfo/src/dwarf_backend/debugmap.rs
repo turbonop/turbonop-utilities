@@ -1,12 +1,12 @@
 //! Moving an object file's addresses to an image's, by the image's debug
-//! map (see [`hexcavator_macho::debugmap`]): each of the object's
+//! map (see [`turbonop_macho::debugmap`]): each of the object's
 //! functions and variables the map names is where the map says, and the
 //! bytes after it (to the object's next symbol, or a function's end) with
 //! it. Bytes of nothing the map names (code the linker dropped) are
 //! nowhere.
 
-use hexcavator_macho::MachO;
-use hexcavator_macho::debugmap::DebugMapSymbol;
+use turbonop_macho::MachO;
+use turbonop_macho::debugmap::DebugMapSymbol;
 
 /// Where an object file's pieces are in the image.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -23,12 +23,12 @@ impl AddrMap {
         let mut defined: Vec<(u8, u64, &[u8])> = object
             .symbols()
             .into_iter()
-            .filter(hexcavator_macho::Nlist::is_section_defined)
+            .filter(turbonop_macho::Nlist::is_section_defined)
             .map(|s| (s.n_sect, s.n_value, s.name))
             .collect();
         defined.sort_unstable();
-        let mut by_name: std::collections::HashMap<&[u8], &DebugMapSymbol<'_>> =
-            std::collections::HashMap::with_capacity(symbols.len());
+        let mut by_name: turbonop_hash::Map<&[u8], &DebugMapSymbol<'_>> =
+            turbonop_hash::map_with_capacity(symbols.len());
         for s in symbols {
             by_name.entry(s.name).or_insert(s);
         }
@@ -94,6 +94,15 @@ impl AddrMap {
                 out.push((to.wrapping_add(lo - start), hi - lo));
             }
             i += 1;
+        }
+    }
+
+    /// Every address from `base` on, moved to `base`'s distance from it:
+    /// a PE image's DWARF (whose addresses are virtual) as the image's
+    /// relative ones.
+    pub fn rebased(base: u64) -> Self {
+        Self {
+            pieces: vec![(base, u64::MAX, 0)],
         }
     }
 

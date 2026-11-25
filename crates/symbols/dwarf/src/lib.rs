@@ -20,7 +20,7 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 pub mod cfi;
 pub mod consts;
@@ -198,7 +198,7 @@ impl<'d> Reader<'d> {
     /// A NUL-terminated string (without the NUL).
     pub fn cstr(&mut self) -> Option<&'d [u8]> {
         let rest = self.data.get(self.pos..)?;
-        let n = rest.iter().position(|&b| b == 0)?;
+        let n = turbonop_core::find_nul(rest)?;
         self.pos += n + 1;
         Some(&rest[..n])
     }

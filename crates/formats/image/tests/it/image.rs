@@ -1,8 +1,8 @@
 //! `Image` over real binaries (SizeBench's test binaries, in `testdata`) and
 //! over synthetic and malformed input.
 
-use hexcavator_core::ErrorKind;
-use hexcavator_image::{Arch, DebugId, Format, Image, Kind, SectionFlags};
+use turbonop_core::ErrorKind;
+use turbonop_image::{Arch, DebugId, Format, Image, Kind, SectionFlags};
 
 fn testdata(name: &str) -> Vec<u8> {
     let path = format!(
@@ -183,9 +183,11 @@ fn coff_object() {
     let sections = image.sections();
     assert_eq!(sections.len(), 2);
     assert_eq!(sections[0].name, b".text");
+    // (Laid out as a linker would: from a page in, each section at its
+    // alignment.)
     assert_eq!(
         (sections[0].addr, sections[0].vm_size, sections[0].file_size),
-        (0, 1, 1)
+        (0x1000, 1, 1)
     );
     assert_eq!(sections[0].file_offset, 100);
     assert!(
@@ -195,9 +197,12 @@ fn coff_object() {
     );
     assert_eq!(sections[1].name, b".bss");
     assert_eq!((sections[1].vm_size, sections[1].file_size), (64, 0));
+    assert!(sections[1].addr > 0x1000);
     assert!(sections[1].flags.contains(SectionFlags::ZERO_FILL));
-    // Objects have no address space.
+    // Its bytes where it is laid out; none before, nor in zero-fill.
+    assert_eq!(image.bytes_at(0x1000, 1), Some(&[0xC3][..]));
     assert_eq!(image.bytes_at(0, 1), None);
+    assert_eq!(image.bytes_at(sections[1].addr, 1), None);
 }
 
 #[test]
@@ -257,4 +262,128 @@ fn corrupted_images_do_not_panic() {
             copy[i] = original;
         }
     }
+}
+
+fn fixture(path: &str) -> Vec<u8> {
+    let path = format!("{}/../../../testdata/{path}", env!("CARGO_MANIFEST_DIR"));
+    std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+}
+
+/// Every format's own symbols alike: code or data by their sections where
+/// the format doesn't say, sized to the next symbol where it records no
+/// size, and WebAssembly's exports global.
+#[test]
+fn symbols_of_every_format() {
+    use turbonop_image::{SymbolKind, SymbolSource};
+    // Mach-O: no kinds or sizes of its own.
+    let data = fixture("linkopts/macho-plain");
+    let image = Image::parse(&data).unwrap();
+    let syms = image.symbols();
+    let by = |name: &[u8]| syms.iter().find(|s| s.name == name).unwrap();
+    let add = by(b"_add_a");
+    assert_eq!(add.kind, SymbolKind::Function);
+    assert!(!add.size_recorded);
+    assert_eq!(add.size, Some(by(b"_add_b").addr - add.addr));
+    assert_eq!(by(b"_table1").kind, SymbolKind::Data);
+    // PE: its exports, by their sections.
+    let data = fixture("xref/xref-x64.exe");
+    let image = Image::parse(&data).unwrap();
+    let syms = image.symbols();
+    let e = syms.iter().find(|s| s.name == b"exported_twice").unwrap();
+    assert_eq!(
+        (e.kind, e.source),
+        (SymbolKind::Function, SymbolSource::Exported)
+    );
+    assert!(e.size.is_some_and(|n| n > 0));
+    // ELF: as its symbol table records them.
+    let data = fixture("linkopts/funcs-plain");
+    let image = Image::parse(&data).unwrap();
+    let syms = image.symbols();
+    let add = syms.iter().find(|s| s.name == b"add_a").unwrap();
+    assert!(add.size_recorded && add.kind == SymbolKind::Function);
+    // WebAssembly: exported functions are global, by their export names
+    // too.
+    let data = fixture("wasm/module.wasm");
+    let image = Image::parse(&data).unwrap();
+    let syms = image.symbols();
+    assert!(
+        syms.iter().any(|s| s.global
+            && s.source == SymbolSource::Exported
+            && s.kind == SymbolKind::Function),
+        "{syms:?}"
+    );
+}
+
+/// Separate debug files (objcopy --only-keep-debug's) are debug files,
+/// as a dSYM's DWARF file is: an ELF image's, and a MinGW PE image's;
+/// their images are linked.
+#[test]
+fn debug_files() {
+    for (file, kind) in [
+        ("elf/program-split.debug", Kind::Debug),
+        ("mingw/program.debug", Kind::Debug),
+        ("mingw/program.exe", Kind::Linked),
+        ("mingw/program-stripped.exe", Kind::Linked),
+        ("linkopts/funcs-plain", Kind::Linked),
+    ] {
+        let data = fixture(file);
+        assert_eq!(Image::parse(&data).unwrap().kind(), kind, "{file}");
+    }
+}
+
+/// A WebAssembly module's data (testdata/wasm/data.wasm, from
+/// tools/wasm/data.c): each active segment a section in linear memory, at
+/// `WASM_MEMORY`, named as the `name` section names it (`.rodata`
+/// read-only), its bytes there; exported globals' addresses, data symbols;
+/// and addresses shown, and pointers' bases, as linear memory's.
+#[test]
+fn wasm_data_in_linear_memory() {
+    use turbonop_image::{SymbolKind, SymbolSource, WASM_MEMORY};
+    let data = fixture("wasm/data.wasm");
+    let image = Image::parse(&data).unwrap();
+    let sections = image.sections();
+    let segment = |name: &[u8]| {
+        sections
+            .iter()
+            .find(|s| s.name == name && s.addr >= WASM_MEMORY)
+            .unwrap_or_else(|| panic!("{}", String::from_utf8_lossy(name)))
+    };
+    let rodata = segment(b".rodata");
+    assert_eq!((rodata.addr, rodata.vm_size), (WASM_MEMORY + 0x10000, 0xb9));
+    assert!(!rodata.flags.contains(SectionFlags::WRITE));
+    assert!(rodata.flags.contains(SectionFlags::DATA));
+    let rw = segment(b".data");
+    assert_eq!((rw.addr, rw.vm_size), (WASM_MEMORY + 0x100bc, 4));
+    assert!(rw.flags.contains(SectionFlags::WRITE));
+    // (Code still at its section's offsets.)
+    assert!(
+        sections
+            .iter()
+            .any(|s| s.flags.contains(SectionFlags::CODE) && s.addr == 0)
+    );
+    // primes[0..2] = {2, 3}; counter = 42.
+    assert_eq!(
+        image.bytes_at(WASM_MEMORY + 0x10000, 8),
+        Some(&[2, 0, 0, 0, 3, 0, 0, 0][..])
+    );
+    assert_eq!(
+        image.bytes_at(WASM_MEMORY + 0x100bc, 4),
+        Some(&[42, 0, 0, 0][..])
+    );
+    // (Past a segment's end, or between segments: none.)
+    assert_eq!(image.bytes_at(WASM_MEMORY + 0x100bc, 5), None);
+    assert_eq!(image.bytes_at(WASM_MEMORY + 0x20000, 1), None);
+    let syms = image.symbols();
+    let counter = syms.iter().find(|s| s.name == b"counter").unwrap();
+    assert_eq!(
+        (counter.addr, counter.kind, counter.source),
+        (
+            WASM_MEMORY + 0x100bc,
+            SymbolKind::Data,
+            SymbolSource::Exported
+        )
+    );
+    assert_eq!(image.shown_address(WASM_MEMORY + 0x100bc), 0x100bc);
+    assert_eq!(image.shown_address(0x40), 0x40);
+    assert_eq!(0x100bc_u64.wrapping_sub(image.pointer_base()), counter.addr);
 }

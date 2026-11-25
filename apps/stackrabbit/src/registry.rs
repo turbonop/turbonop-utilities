@@ -13,11 +13,11 @@
 
 use std::path::Path;
 
-use hexcavator_etw::guids;
-use hexcavator_etw::schema::{Properties, pointer_size};
-use hexcavator_trace::{ProcessIx, ThreadIx, Trace};
 use rustc_hash::FxHashMap;
 use serde_json::{Value, json};
+use turbonop_etw::guids;
+use turbonop_etw::schema::{Properties, pointer_size};
+use turbonop_trace::{ProcessIx, ThreadIx, Trace};
 
 use crate::reading::int;
 
@@ -101,7 +101,7 @@ enum Read {
 /// The registry operations of `trace` (read from `path`): its Registry
 /// events, from the buffers holding them, on every core.
 pub fn table(trace: &Trace, path: &Path) -> Result<RegistryTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, op: u8| {
+    let wanted = |provider: &turbonop_etl::Guid, op: u8| {
         *provider == guids::REGISTRY
             && (KCBS.contains(&op) || OPERATIONS.iter().any(|(o, _)| *o == op))
     };
@@ -111,7 +111,7 @@ pub fn table(trace: &Trace, path: &Path) -> Result<RegistryTable, String> {
             return;
         };
         let name = p.get("KeyName").map_or_else(String::new, |n| {
-            hexcavator_etw::values::format(n, pointer_size(e))
+            turbonop_etw::values::format(n, pointer_size(e))
         });
         let kcb = int(p.get("KeyHandle"));
         if KCBS.contains(&op) {

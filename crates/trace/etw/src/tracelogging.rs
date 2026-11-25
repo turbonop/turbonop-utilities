@@ -21,9 +21,9 @@
 //! properties of their own (`<name>.Count`, `<name>.Length`), as TDH shows
 //! them, so the manifest decoder reads it.
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_etl::Event;
-use hexcavator_etl::event::ext_type;
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_etl::Event;
+use turbonop_etl::event::ext_type;
 
 use crate::manifest::{Decoded, Item, Size, Template, decode_partial};
 

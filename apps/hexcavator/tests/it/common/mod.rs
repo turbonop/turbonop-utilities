@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-/// Parts of dumpbin's output that hexc does not produce yet, or produces
+/// Parts of dumpbin's output that hexcavator does not produce yet, or produces
 /// differently on purpose. Each is removed from both outputs before comparing.
 pub fn normalize(text: &str) -> Vec<String> {
     let mut lines = Vec::new();
@@ -18,7 +18,7 @@ pub fn normalize(text: &str) -> Vec<String> {
             continue;
         }
         let mut line = line.to_string();
-        // Dates: dumpbin shows local time; hexc shows UTC.
+        // Dates: dumpbin shows local time; hexcavator shows UTC.
         if let Some(i) = line.find(" time date stamp") {
             line.truncate(i + " time date stamp".len());
         }
@@ -30,14 +30,14 @@ pub fn normalize(text: &str) -> Vec<String> {
         }
         strip_symbol(&mut line);
         undecoration_divergence(&mut line);
-        // dumpbin cannot disassemble `udf` (hexc follows the architecture).
+        // dumpbin cannot disassemble `udf` (hexcavator follows the architecture).
         if let Some(i) = line.find("; Actual=udf ") {
             line.truncate(i + "; Actual=".len());
         }
         lines.push(line);
     }
     // dumpbin orders same-named summary entries (sections with different
-    // attributes) arbitrarily; hexc orders them by attributes. Compare the
+    // attributes) arbitrarily; hexcavator orders them by attributes. Compare the
     // summary as a sorted list.
     if let Some(start) = lines.iter().position(|l| l == "  Summary") {
         lines[start..].sort();
@@ -77,15 +77,13 @@ fn undecoration_divergence(line: &mut String) {
 
 fn is_variable_template(decorated: &str) -> bool {
     let name = decorated.strip_prefix("__imp_").unwrap_or(decorated);
-    let mut d = hexcavator_demangle::msvc::Demangler::new();
+    let mut d = turbonop_demangle::msvc::Demangler::new();
     d.parse(name).is_some_and(|s| {
-        matches!(
-            s.kind,
-            hexcavator_demangle::msvc::SymbolKind::Variable { .. }
-        ) && matches!(
-            s.name.last(),
-            Some(hexcavator_demangle::msvc::Name::Template { .. })
-        )
+        matches!(s.kind, turbonop_demangle::msvc::SymbolKind::Variable { .. })
+            && matches!(
+                s.name.last(),
+                Some(turbonop_demangle::msvc::Name::Template { .. })
+            )
     })
 }
 

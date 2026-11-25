@@ -1,5 +1,5 @@
 """Renders media/view.js in headless Edge with real reports and checks the
-result: `python harness.py <hexc.exe> <image> <another image> [shots]` (the
+result: `python harness.py <hexcavator.exe> <image> <another image> [shots]` (the
 second image is the base of a diff; with a directory `shots`, it also saves
 screenshots of each view there, to look at).
 
@@ -55,6 +55,11 @@ window.acquireVsCodeApi = function () {
   };
 };
 """
+
+
+def without_scripts(dom):
+    """`dom` without its script elements (any case, any end tag's spacing)."""
+    return re.sub(r"<script\b.*?</script\b[^>]*>", "", dom, flags=re.S | re.I)
 
 
 def page(message, then="", vscode=False):
@@ -133,7 +138,28 @@ setTimeout(function () {{ {then} }}, 50);</script>
 </body></html>"""
 
 
+# hexcavator's path (main sets it), and each file's tools, as `hexcavator info -json`
+# says them (the extension gives every page its file's).
+EXE = None
+TOOLS = {}
+
+
+def tools_of(file):
+    """What hexcavator says `file` supports, or None (no such file, or no hexcavator)."""
+    if EXE is None or not os.path.exists(file):
+        return None
+    if file not in TOOLS:
+        info = subprocess.run([EXE, "info", "-json", file], capture_output=True, text=True)
+        TOOLS[file] = json.loads(info.stdout)[0].get("tools") if info.returncode == 0 else None
+    return TOOLS[file]
+
+
 def render(message, then="", shot=None, vscode=False, html_page=None):
+    # (A page's message has its file's tools, as the extension gives them.)
+    if isinstance(message, dict) and "tools" not in message and isinstance(message.get("file"), str):
+        tools = tools_of(message["file"])
+        if tools is not None:
+            message = dict(message, tools=tools)
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "page.html")
         with open(path, "w", encoding="utf-8") as f:
@@ -146,17 +172,19 @@ def render(message, then="", shot=None, vscode=False, html_page=None):
         return out.stdout
 
 
-def hexc(*args):
+def hexcavator(*args):
     return json.loads(subprocess.run(list(args), capture_output=True, text=True, check=True).stdout)
 
 
 def main():
-    # (A full path: Windows can't start `target/release/hexc.exe`, a relative
+    # (A full path: Windows can't start `target/release/hexcavator.exe`, a relative
     # path with forward slashes, as given in CI.)
     exe, image, other = os.path.abspath(sys.argv[1]), sys.argv[2], sys.argv[3]
+    global EXE
+    EXE = exe
     shots = sys.argv[4] if len(sys.argv) > 4 else None
     shot = (lambda name: os.path.join(shots, name + ".png")) if shots else (lambda name: None)
-    report = hexc(exe, "size", "-d", "sections,symbols", "-n", "20", "-json", image)
+    report = hexcavator(exe, "size", "-d", "sections,symbols", "-n", "20", "-json", image)
     # (The page opens as a tree: the map checks switch to the treemap.)
     to_map = "document.querySelectorAll('.segmented')[1].firstChild.click();"
     dom = render({"kind": "report", "file": image, "report": report}, to_map, shot=shot("treemap"))
@@ -211,7 +239,7 @@ def main():
         " code.click(); setTimeout(function () { var b = document.querySelector('td.acts .act'); if (b) b.click(); }, 600); }, 100);"
     )
     module = os.path.join(REPO, "testdata", "wasm", "module.wasm")
-    wasm = hexc(exe, "size", "-d", "sections,symbols", "-json", module)
+    wasm = hexcavator(exe, "size", "-d", "sections,symbols", "-json", module)
     dom = render({"kind": "report", "file": module, "report": wasm}, zoom_then_click, vscode=True)
     assert 'class="act"' in dom, "disassemble buttons"
     posted = re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S)
@@ -244,7 +272,7 @@ def main():
     assert dom.count('class="arc') >= len(top), "sunburst arcs"
     # The tree: a row per section, closed; open the first (by its twisty),
     # then the second by the keyboard (down, right).
-    tree_report = hexc(exe, "size", "-d", "sections,compileunits,symbols", "-n", "20", "-json", image)
+    tree_report = hexcavator(exe, "size", "-d", "sections,compileunits,symbols", "-n", "20", "-json", image)
     sections = tree_report["total"]["children"]
     to_tree = "document.querySelectorAll('.segmented')[1].lastChild.click();"
     dom = render({"kind": "report", "file": image, "report": tree_report})
@@ -283,25 +311,30 @@ def main():
         sel = re.search(r'<tr class="selected[^"]*"[^>]*data-key="([^"]*)"', dom)
         assert sel and html.unescape(sel.group(1)).split("\u0000") == sym_path, "goto in the tree selects the symbol"
     # A diff: growth and shrinkage are colored.
-    diff = hexc(exe, "size", "-d", "sections,symbols", "-n", "20", "-json", image, "--", other)
+    diff = hexcavator(exe, "size", "-d", "sections,symbols", "-n", "20", "-json", image, "--", other)
     dom = render({"kind": "report", "file": image, "base": other, "report": diff}, to_map, shot=shot("diff"))
     assert ("grows" in dom) or ("shrinks" in dom), "diff colors"
     assert "grew" in dom, "diff legend"
-    findings = hexc(exe, "size", "-findings", "-json", image)
+    findings = hexcavator(exe, "size", "-findings", "-json", image)
     dom = render({"kind": "findings", "file": image, "findings": findings}, shot=shot("findings"))
     for heading in ["Duplicate data", "Wasteful virtuals", "Template families"]:
         assert f"<h2>{heading}</h2>" in dom, heading
-    # The build changes (hexc recommend), first, each with its saving.
-    recs = hexc(exe, "recommend", "-json", image)
+    # The build changes (hexcavator recommend), first, each with its saving.
+    recs = hexcavator(exe, "recommend", "-json", image)
     # (Its duplicated variables are Duplicate data's: not listed twice, nor
     # counted twice.)
     dup = {"kind": "duplicates", "advice": "define 3 variables once", "saving": 1000000, "examples": []}
     with_dup = dict(recs, recommendations=recs["recommendations"] + [dup], saving=recs["saving"] + dup["saving"])
     rdom = render({"kind": "findings", "file": image, "findings": findings, "recommendations": with_dup}, "document.querySelector('details').open = true;", shot=shot("buildchanges"))
-    drawn = re.sub(r"<script.*?</script>", "", rdom, flags=re.S)
+    drawn = without_scripts(rdom)
     assert "define 3 variables once" not in drawn, "duplicates left to Duplicate data"
     assert "save 976 KiB" not in drawn and "Size Reduction Opportunities" in drawn
     assert "<h2>Build changes</h2>" in rdom and rdom.index("Build changes") < rdom.index("Duplicate data"), "build changes first"
+    # Exception handling: by function, from hexcavator recommend's report.
+    if recs.get("exceptions"):
+        assert "<h2>Exception handling</h2>" in rdom, "exception handling"
+        top = recs["exceptions"]["functions"][0]["name"]
+        assert html.escape(top) in rdom, f"exception handling's {top}"
     for r in recs["recommendations"]:
         assert html.escape(r["advice"]) in rdom, r["advice"]
     assert f"save " in rdom, "the saving"
@@ -326,13 +359,27 @@ def main():
         body = table.split("<tbody>", 1)[1]
         names = [html.unescape(re.findall(r"<td[^>]*>([^<]*)</td>", tr)[-1]) for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", body, re.S)]
         assert names and names == sorted(names, key=str.lower), f"sorted by name: {names[:5]}"
+    # The Stripped box: for a format a strip takes something from, as the
+    # setting is; unchecked, it asks for the whole file.
+    elf = os.path.join(os.path.dirname(HERE), "..", "..", "..", "testdata", "elf", "program-x86_64-linux-gnu")
+    stripped_table = hexcavator(exe, "size", "-stripped", "-table", elf)
+    msg = {"kind": "report", "file": elf, "table": stripped_table, "levels": [], "format": "elf", "tools": [], "stripped": True, "strippable": True}
+    dom = render(msg, "document.querySelector('label.stripped input').click();", vscode=True)
+    assert re.search(r'<label class="toggle stripped"[^>]*><input type="checkbox"', dom), "the Stripped box"
+    posted = html.unescape(re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S).group(1))
+    assert '"command":"stripped","on":false' in posted, "Stripped unchecked: " + posted
+    assert not any(x.startswith((".debug", "[section .debug", ".symtab")) for x in stripped_table["strings"]), "nothing stripped in the table"
+    dom = render(dict(msg, stripped=False), vscode=True)
+    assert re.search(r'label class="toggle stripped"', dom), "unchecked, still there"
+    dom = render(dict(msg, strippable=False), vscode=True)
+    assert "<label class=\"toggle stripped\"" not in dom, "no box for PE"
     # The pane's spinner: gone once the report is there; over it while
-    # hexc runs again (a refresh), saying what it does, with Cancel.
+    # hexcavator runs again (a refresh), saying what it does, with Cancel.
     dom = render({"kind": "report", "file": image, "report": report}, vscode=True)
     assert re.search(r'<div id="loading" role="status" aria-live="polite" hidden', dom), "hidden once loaded"
-    # From hexc's table (every label of every symbol at once): grouped here
-    # by the chips, without asking the extension to run hexc again.
-    table = hexc(exe, "size", "-table", image)
+    # From hexcavator's table (every label of every symbol at once): grouped here
+    # by the chips, without asking the extension to run hexcavator again.
+    table = hexcavator(exe, "size", "-table", image)
     dom = render(
         {"kind": "report", "file": image, "table": table, "levels": [], "format": "pe", "tools": []},
         "document.querySelector('.gchip[data-id=\"sections\"]').click();",
@@ -340,7 +387,7 @@ def main():
     )
     posted = html.unescape(re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S).group(1))
     assert '"local":true' in posted, "regrouped here"
-    want = hexc(exe, "size", "-d", "sections,symbols", "-n", "0", "-json", image)
+    want = hexcavator(exe, "size", "-d", "sections,symbols", "-n", "0", "-json", image)
     for c in want["total"]["children"]:
         assert html.escape(c["name"]) in dom, "a section row: " + c["name"]
     assert "by sections" in dom, "grouped by section"
@@ -354,14 +401,14 @@ def main():
     posted = html.unescape(re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S).group(1))
     assert '"sources":["sourcefiles","symbols"]' in posted and '"local":true' not in posted, "asked for the source files' table"
     # Given it: grouped by source file, then symbol.
-    sources_table = hexc(exe, "size", "-table", "-d", "sourcefiles,symbols", image)
+    sources_table = hexcavator(exe, "size", "-table", "-d", "sourcefiles,symbols", image)
     dom = render({"kind": "report", "file": image, "table": sources_table, "levels": ["sourcefiles"], "format": "pe", "tools": []}, vscode=True)
-    want = hexc(exe, "size", "-d", "sourcefiles", "-n", "0", "-json", image)
+    want = hexcavator(exe, "size", "-d", "sourcefiles", "-n", "0", "-json", image)
     files = [c["name"] for c in want["total"]["children"] if not c["name"].startswith("[")]
     assert files and all(html.escape(f) in dom for f in files[:5]), "source file rows"
     # Every symbol, ungrouped (the page's first view): only the rows in view
     # are drawn, the rest spacers.
-    flat = hexc(exe, "size", "-d", "symbols", "-n", "0", "-json", image)
+    flat = hexcavator(exe, "size", "-d", "symbols", "-n", "0", "-json", image)
     count = len(flat["total"]["children"])
     dom = render({"kind": "report", "file": image, "report": flat}, shot=shot("symbols"))
     drawn = dom.count('role="row"')
@@ -384,6 +431,7 @@ def main():
     deps_checks(exe, shot)
     init_checks(exe, shot)
     resources_checks(exe, shot)
+    relocations_checks(exe, shot)
     diff_checks(exe, shot)
     print(f"ok: {outer} sections in the treemap; zoom, search, disassembly actions, sunburst, tree, diff, and findings ({rows} rows) render; disassembly: {modes}")
 
@@ -391,7 +439,7 @@ def main():
 def types_page(message, then="", pages=None, script="types-view.js"):
     """A page of ours (the Types or Layout page), with a stand-in for the
     extension that answers its questions from `pages`: "page" requests (by
-    their filter) and "expand" requests (by type), as hexc would."""
+    their filter) and "expand" requests (by type), as hexcavator would."""
     def read(name):
         with open(os.path.join(MEDIA, name), encoding="utf-8") as f:
             return f.read()
@@ -416,21 +464,21 @@ window.__answers = {json.dumps(pages or {})};
 <header id="header"></header><div id="toolbar"></div><div id="main"></div><pre id="posted"></pre>
 <script>{VSCODE_STUB}{answers}</script>
 <script>{read("loading.js")}</script>
-<script>{read(script)}</script>
+{"".join(f"<script>{read(s)}</script>" for s in ([script] if isinstance(script, str) else script))}
 <script>window.postMessage({json.dumps(message)}, "*");
 setTimeout(function () {{ {then} }}, 100);</script>
 </body></html>"""
 
 
 def types_checks(exe, image, shot):
-    """The Types page: the rows in view asked of hexc a page at a time,
+    """The Types page: the rows in view asked of hexcavator a page at a time,
     sorted by name; filtered as typed (asked again); a double click asks
     for the layout. The Layout page: by offset, a member that is a
     structure opens to show its own."""
-    first = hexc(exe, "types", "-json", "-n", "200", "-from", "0", "-sort", "name", image)
+    first = hexcavator(exe, "types", "-json", "-n", "200", "-from", "0", "-sort", "name", image)
     names = [r[0] for r in first["list"]]
     assert names == sorted(names, key=lambda n: (n.lower(), n)), "by name"
-    filtered = hexc(exe, "types", "-json", "-n", "200", "-from", "0", "-sort", "name", "-filter", "except", image)
+    filtered = hexcavator(exe, "types", "-json", "-n", "200", "-from", "0", "-sort", "name", "-filter", "except", image)
     pages = {"page:": first, "page:except": filtered}
     message = {"kind": "types", "file": image}
     dom = render(None, shot=shot("types"), html_page=types_page(message, pages=pages))
@@ -460,12 +508,12 @@ def types_checks(exe, image, shot):
     )
     assert 'data-focus="search"' in focus, "the filter box keeps its focus"
     posted = html.unescape(re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S).group(1))
-    assert '"filter":"except"' in posted, "the filter asked of hexc"
+    assert '"filter":"except"' in posted, "the filter asked of hexcavator"
     assert '"command":"layout"' in posted, "layout asked for"
     # The layout: EHExceptionRecord's params (a structure) opens.
-    layout = hexc(exe, "types", "-layout", "EHExceptionRecord", "-json", image)
+    layout = hexcavator(exe, "types", "-layout", "EHExceptionRecord", "-json", image)
     member = next(p for p in layout["parts"] if p["name"] == "params")
-    inner = hexc(exe, "types", "-ty", str(member["expand"]), "-json", image)
+    inner = hexcavator(exe, "types", "-ty", str(member["expand"]), "-json", image)
     offsets = [p["offset"] for p in layout["parts"]]
     assert offsets == sorted(offsets), "by offset"
     dom = render(
@@ -490,7 +538,7 @@ def diff_checks(exe, shot):
     repo = REPO
     new = os.path.join(repo, "testdata", "diff", "diff-v2.exe")
     old = os.path.join(repo, "testdata", "diff", "diff-v1.exe")
-    report = hexc(exe, "size", "-d", "symbols", "-n", "0", "-json", new, "--", old)
+    report = hexcavator(exe, "size", "-d", "symbols", "-n", "0", "-json", new, "--", old)
     message = {"kind": "report", "file": new, "base": old, "report": report}
     dom = render(message, shot=shot("difftree"))
 
@@ -524,19 +572,19 @@ def diff_checks(exe, shot):
     assert shown(up)[0] == "g_removed_table" and shown(down)[0] == "g_added_table"
     assert shown(by_name) == sorted(shown(by_name), key=lambda n: n.lower()) or shown(by_name) == sorted(shown(by_name)), "by name"
 
-    # From hexc's diff table (what the extension sends): the same marks,
+    # From hexcavator's diff table (what the extension sends): the same marks,
     # grouped here by the chips, and filtered by what happened.
-    table = hexc(exe, "size", "-table", new, "--", old)
+    table = hexcavator(exe, "size", "-table", new, "--", old)
     tmessage = {"kind": "report", "file": new, "base": old, "table": table, "levels": [], "format": "pe", "tools": []}
     dom = render(tmessage, vscode=True)
     for name, want in [("added_fn(int)", "added"), ("removed_fn(int)", "removed"), ("transform(int)", "grew"), ("g_removed_table", "removed")]:
         assert mark(name) == want, f"table: {name}: {mark(name)}"
-    assert html.escape("kept_same(int)") not in re.sub(r"<script.*?</script>", "", dom, flags=re.S), "the unchanged left out"
+    assert html.escape("kept_same(int)") not in without_scripts(dom), "the unchanged left out"
     # Only what was added.
     dom = render(tmessage, "document.querySelector('.gchip.kind[data-kind=\"added\"]').click();", vscode=True)
-    drawn = [html.unescape(n) for n in order(re.sub(r"<script.*?</script>", "", dom, flags=re.S))]
+    drawn = [html.unescape(n) for n in order(without_scripts(dom))]
     assert sorted(drawn) == ["added_fn(int)", "g_added_table"], f"added only: {drawn}"
-    # By section, here (no hexc asked).
+    # By section, here (no hexcavator asked).
     dom = render(tmessage, "document.querySelector('.gchip[data-id=\"sections\"]').click();", vscode=True)
     posted = html.unescape(re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S).group(1))
     assert '"local":true' in posted, "a diff regrouped here"
@@ -566,7 +614,7 @@ def build_checks(exe, shot):
     and the objects, grouped by library and filtered as typed."""
     repo = REPO
     image = os.path.join(repo, "testdata", "types", "types.exe")
-    report = hexc(exe, "checksec", "-audit", "-json", image)
+    report = hexcavator(exe, "checksec", "-audit", "-json", image)
     builds = report["audit"]["builds"]
     unsigned = json.loads(subprocess.run([exe, "signature", "-json", image], capture_output=True, text=True).stdout)
     message = {"kind": "build", "file": image, "report": report, "signature": unsigned}
@@ -608,7 +656,7 @@ def build_checks(exe, shot):
     # details open), each signature (the nested one too).
     signed = os.path.join(repo, "testdata", "signature", "signed.exe")
     root = os.path.join(repo, "testdata", "signature", "test-root.cer")
-    sig = hexc(exe, "signature", "-json", "-root", root, signed)
+    sig = hexcavator(exe, "signature", "-json", "-root", root, signed)
     dom = render(
         None,
         shot=shot("signature"),
@@ -675,7 +723,7 @@ def deps_checks(exe, shot):
 
 def init_page(message, answers, then=""):
     """The Initialization page, with a stand-in for the extension that
-    answers its "callees" requests from `answers` (by node), as hexc
+    answers its "callees" requests from `answers` (by node), as hexcavator
     would."""
     def read(name):
         with open(os.path.join(MEDIA, name), encoding="utf-8") as f:
@@ -706,23 +754,23 @@ setTimeout(function () {{ {then} }}, 150);</script>
 
 def init_checks(exe, shot):
     """The Initialization page: the phases in order, closed, with what each
-    function calls given with them (hexc init -calls: nothing asked of hexc
-    to open one); a callee opened further (asked of hexc); the program's
+    function calls given with them (hexcavator init -calls: nothing asked of hexcavator
+    to open one); a callee opened further (asked of hexcavator); the program's
     own code last; and a long tree that keeps its scroll while callees
     arrive."""
     image = os.path.join(REPO, "testdata", "init", "init.exe")
-    data = hexc(exe, "init", "-json", "-calls", image)
-    # (What a click a level further opens, as hexc would answer.)
+    data = hexcavator(exe, "init", "-json", "-calls", image)
+    # (What a click a level further opens, as hexcavator would answer.)
     answers = {}
     for f in [e for p in data["phases"] for e in p["entries"]] + [data["main"]]:
         for c in f.get("calls") or []:
             if str(c["node"]) not in answers:
-                answers[str(c["node"])] = hexc(exe, "init", "-json", "-callees", str(c["node"]), image)
+                answers[str(c["node"])] = hexcavator(exe, "init", "-json", "-callees", str(c["node"]), image)
     message = {"kind": "init", "file": image, "data": data}
 
     def shown(dom):
         """The page's text (not its scripts': the message is in one)."""
-        return html.unescape(re.sub("<[^>]+>", " ", re.sub(r"<script>.*?</script>", "", dom, flags=re.S)))
+        return html.unescape(re.sub("<[^>]+>", " ", without_scripts(dom)))
 
     def posted(dom):
         return html.unescape(re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S).group(1))
@@ -737,13 +785,13 @@ def init_checks(exe, shot):
     assert "tls_callback" in text and "c_initializer" in text, "the phases' functions"
     assert "Widget::Widget()" not in text, "closed, to begin"
     assert text.rfind("Then the program's own code") > at[-1] and "main()" in text, "main last"
-    assert '"command":"callees"' not in posted(dom), "nothing asked of hexc to begin"
+    assert '"command":"callees"' not in posted(dom), "nothing asked of hexcavator to begin"
     # An initializer opened: its calls, as given (nothing asked).
     dom = render(None, html_page=init_page(message, answers, open_row.format("dynamic initializer for 'widget'")))
     text = shown(dom)
     assert "jumps to" in text and "Widget::Widget()" in text, "a constructor's callee, opened"
     assert '"command":"callees"' not in posted(dom), "given with the list"
-    # A callee opened further: Widget::Widget's own, asked of hexc.
+    # A callee opened further: Widget::Widget's own, asked of hexcavator.
     dom = render(
         None,
         html_page=init_page(
@@ -754,7 +802,7 @@ def init_checks(exe, shot):
     )
     text = shown(dom)
     assert "Widget::prepare()" in text, "a callee's callee"
-    assert '"command":"callees"' in posted(dom), "asked of hexc"
+    assert '"command":"callees"' in posted(dom), "asked of hexcavator"
     # Its context: the symbol menu's (Disassemble, Why, References, Go to Source).
     assert '&quot;webviewSection&quot;:&quot;symbol&quot;' in dom, "the row menu"
     # A long tree (as a large program's thousands of initializers): scrolled
@@ -786,20 +834,35 @@ def init_checks(exe, shot):
     assert widget["name"] not in shown(dom), "the long tree closed too"
 
 
+def relocations_checks(exe, shot):
+    """The Relocations page: libptrs.so's (testdata/linkopts), its tables and
+    breakdowns as cards, sortable; and the page of an image with none."""
+    image = os.path.join(REPO, "testdata", "linkopts", "libptrs.so")
+    report = hexcavator(exe, "relocations", "-json", "-n", "500", image)
+    message = {"kind": "relocations", "file": image, "report": report}
+    dom = render(None, shot=shot("relocations"), html_page=types_page(message, script=["table.js", "relocations-view.js"]))
+    for want in ["Relocations", "Tables", ".rela.dyn", "By type", "R_X86_64_RELATIVE", "By section", ".data.rel.ro", "By what each patches", "color_names", "vtable for Shape", "Pointer tables"]:
+        assert want in dom, f"the Relocations page lacks {want!r}"
+    assert dom.count("<details") >= 6, "the Relocations page's cards"
+    none = hexcavator(exe, "relocations", "-json", os.path.join(REPO, "testdata", "linkopts", "funcs-plain"))
+    dom = render(None, html_page=types_page({"kind": "relocations", "file": "funcs-plain", "report": none}, script=["table.js", "relocations-view.js"]))
+    assert "No relocations" in dom, "the Relocations page of an image with none"
+
+
 def resources_checks(exe, shot):
     """The Resources page: the list by group (the first selected, asked
     for), filtered as typed; a dialog drawn from its template; an icon
     group's images; version information as a table."""
     image = os.path.join(REPO, "testdata", "resources", "resources.exe")
-    listed = hexc(exe, "resources", "-json", image)
+    listed = hexcavator(exe, "resources", "-json", image)
     message = {"kind": "resources", "file": image, "list": listed}
 
     def page(id=None):
-        """The page, with `id` clicked and its decoding (as hexc gives it)
+        """The page, with `id` clicked and its decoding (as hexcavator gives it)
         delivered."""
         then = ""
         if id:
-            item = hexc(exe, "resources", "-json", "-show", id, image)
+            item = hexcavator(exe, "resources", "-json", "-show", id, image)
             then = (f"document.querySelector('tr.res[data-id=\"{id}\"]').click();"
                     f"window.postMessage({{kind: 'item', item: {json.dumps(item)}}}, '*');")
         return types_page(message, then, script="resources-view.js")
@@ -833,8 +896,8 @@ def resources_checks(exe, shot):
 def table_checks(exe, image, shot):
     """Tools' output as tables: the unreachable list (sizes sortable,
     names that open), and a query with its query to edit."""
-    unreachable = hexc(exe, "xref", "-json", "-unreachable", "-n", "0", image)
-    message = {"kind": "table", "title": "Unreachable Code and Data", "file": image, "pe": True, "command": "hexc xref -unreachable", "json": unreachable}
+    unreachable = hexcavator(exe, "xref", "-json", "-unreachable", "-n", "0", image)
+    message = {"kind": "table", "title": "Unreachable Code and Data", "file": image, "debug": True, "command": "hexcavator xref -unreachable", "json": unreachable}
     dom = render(None, shot=shot("table"), html_page=table_page(message))
     rows = len(unreachable["unreachable"])
     assert f"{rows} rows" in dom, "the row count"
@@ -854,8 +917,8 @@ def table_checks(exe, image, shot):
     posted = re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S)
     assert posted and '"command":"inspect"' in html.unescape(posted.group(1)), "inspect"
     # A query: its box, and Enter runs it.
-    query = hexc(exe, "query", "-json", image, "group by library")
-    qmessage = {"kind": "table", "title": "Query", "file": image, "pe": True, "query": "group by library", "command": "hexc query", "json": query}
+    query = hexcavator(exe, "query", "-json", image, "group by library")
+    qmessage = {"kind": "table", "title": "Query", "file": image, "debug": True, "query": "group by library", "command": "hexcavator query", "json": query}
     dom = render(None, shot=shot("query"), html_page=table_page(qmessage, "var q = document.getElementById('query'); q.value = 'kind=data'; q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));"))
     assert 'id="query"' in dom, "the query box"
     posted = re.search(r'<pre id="posted">(.*?)</pre>', dom, re.S)
@@ -867,7 +930,7 @@ def data_checks(exe, shot):
     and its bytes, linked."""
     repo = REPO
     image = os.path.join(repo, "testdata", "types", "types.exe")
-    data = hexc(exe, "data", "-json", image, "g_sample")
+    data = hexcavator(exe, "data", "-json", image, "g_sample")
     message = {"kind": "data", "file": image, "data": data}
     # Open everything: each member's row, and the bytes.
     dom = render(None, shot=shot("data"), html_page=data_page(message, "document.querySelector('.tablebar a').click();"))
@@ -896,7 +959,7 @@ def disasm_checks(exe, shot):
     repo = REPO
     image = os.path.join(repo, "testdata", "xref", "xref-x64.exe")
     name = "__scrt_common_main_seh()"
-    listing = hexc(exe, "size", "-disassemble", name, "-json", image)
+    listing = hexcavator(exe, "size", "-disassemble", name, "-json", image)
     sources = []
     for f in listing["files"]:
         try:
@@ -946,7 +1009,7 @@ def disasm_checks(exe, shot):
     # Variables (from the PDB): registers and memory named, through
     # pointers too (p->b), and their list.
     types_exe = os.path.join(repo, "testdata", "types", "types.exe")
-    use = hexc(exe, "size", "-disassemble", "use(Padded*, Bits*, Derived*, WithEmpty*, Diamond*, Either*, Grows*)", "-json", types_exe)
+    use = hexcavator(exe, "size", "-disassemble", "use(Padded*, Bits*, Derived*, WithEmpty*, Diamond*, Either*, Grows*)", "-json", types_exe)
     assert [v["name"] for v in use["variables"]] == ["p", "b", "d", "w", "m", "e", "g"], use["variables"]
     vmessage = {"kind": "disasm", "file": types_exe, "listing": use, "sources": []}
     dom = render(None, html_page=disasm_page(vmessage, vscode=True, state={"mode": "raw"}))
@@ -956,7 +1019,7 @@ def disasm_checks(exe, shot):
     dom = render(None, html_page=disasm_page(vmessage, vscode=True, state={"mode": "raw", "vars": False}))
     assert 'class="vars"' not in dom, "off"
     # A module's code is text only.
-    wasm = hexc(exe, "size", "-disassemble", "main", "-json", os.path.join(repo, "testdata", "wasm", "module.wasm"))
+    wasm = hexcavator(exe, "size", "-disassemble", "main", "-json", os.path.join(repo, "testdata", "wasm", "module.wasm"))
     dom = render(None, html_page=disasm_page({"kind": "disasm", "file": "module.wasm", "listing": wasm, "sources": []}, vscode=True, state={"mode": "graph"}))
     assert 'class="code text"' in dom and "i32.const" in dom, "text-only listing"
     return f"raw, blocks ({len(blocks)}), source, graph ({edges} edges), text"

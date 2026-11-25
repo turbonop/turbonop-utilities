@@ -3,16 +3,16 @@
 //! unwind from each (which must work, or refuse cleanly).
 //!
 //! `fixtures` uses testdata/cfi/ehabi-* (tools/cfi/build.py); the ignored
-//! `corpus` runs llvm-readobj live on the files `HEXC_EHABI_FILES` lists.
+//! `corpus` runs llvm-readobj live on the files `TURBONOP_EHABI_FILES` lists.
 
 #![allow(clippy::cast_possible_truncation)]
 
 use std::path::{Path, PathBuf};
 
-use hexcavator_elf::ElfFile;
-use hexcavator_unwind::Memory;
-use hexcavator_unwind::arm_ehabi::{self, Entry, Exidx, Model};
-use hexcavator_unwind::dwarf_cfi::Registers;
+use turbonop_elf::ElfFile;
+use turbonop_unwind::Memory;
+use turbonop_unwind::arm_ehabi::{self, Entry, Exidx, Model};
+use turbonop_unwind::dwarf_cfi::Registers;
 
 /// The image's bytes by virtual address.
 struct Image<'a>(&'a ElfFile<'a>);

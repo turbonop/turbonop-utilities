@@ -1,0 +1,59 @@
+name: Sign Windows programs
+description: >-
+  Signs Windows programs with Azure Artifact Signing, through OIDC (the
+  calling job needs id-token: write and the release environment). Any
+  TurboNOP tool's release uses it.
+
+inputs:
+  files:
+    description: The programs to sign, one full path per line.
+    required: true
+  description:
+    description: The signature's description (the tool's name).
+    required: true
+  client-id:
+    description: AZURE_CLIENT_ID (an app registration with a federated credential for the release environment and the Artifact Signing Certificate Profile Signer role).
+    required: true
+  tenant-id:
+    description: AZURE_TENANT_ID.
+    required: true
+  endpoint:
+    description: ARTIFACT_SIGNING_ENDPOINT.
+    required: true
+  account:
+    description: ARTIFACT_SIGNING_ACCOUNT.
+    required: true
+  profile:
+    description: ARTIFACT_SIGNING_PROFILE.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        allow-no-subscriptions: true
+    - uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+      with:
+        endpoint: ${{ inputs.endpoint }}
+        signing-account-name: ${{ inputs.account }}
+        certificate-profile-name: ${{ inputs.profile }}
+        files: ${{ inputs.files }}
+        file-digest: SHA256
+        timestamp-rfc3161: http://timestamp.acs.microsoft.com
+        timestamp-digest: SHA256
+        description: ${{ inputs.description }}
+        description-url: ${{ github.server_url }}/${{ github.repository }}
+        # (Only the login above: no time spent trying other kinds.)
+        exclude-environment-credential: true
+        exclude-workload-identity-credential: true
+        exclude-managed-identity-credential: true
+        exclude-shared-token-cache-credential: true
+        exclude-visual-studio-credential: true
+        exclude-visual-studio-code-credential: true
+        exclude-azure-cli-credential: false
+        exclude-azure-powershell-credential: true
+        exclude-azure-developer-cli-credential: true
+        exclude-interactive-browser-credential: true

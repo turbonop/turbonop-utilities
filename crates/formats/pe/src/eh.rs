@@ -11,7 +11,7 @@
 //! (`__CxxFrameHandler4` data is compressed; it is not decoded here yet.)
 //! All offsets are RVAs; this is the 64-bit (x64 and ARM64) layout.
 
-use hexcavator_core::{I32Le, Rva, U32Le, pod};
+use turbonop_core::{I32Le, Rva, U32Le, pod};
 
 use crate::PeFile;
 
@@ -104,14 +104,14 @@ impl FuncInfo {
 }
 
 impl<'data> PeFile<'data> {
-    fn table<T: hexcavator_core::Pod>(&self, rva: u32, count: u32) -> &'data [T] {
+    fn table<T: turbonop_core::Pod>(&self, rva: u32, count: u32) -> &'data [T] {
         let Ok(size) = u32::try_from(size_of::<T>()) else {
             return &[];
         };
         count
             .checked_mul(size)
             .and_then(|len| self.bytes_at_rva(Rva(rva), len).ok())
-            .and_then(|b| hexcavator_core::slice_from_bytes(b, count as usize))
+            .and_then(|b| turbonop_core::slice_from_bytes(b, count as usize))
             .unwrap_or(&[])
     }
 
@@ -119,7 +119,7 @@ impl<'data> PeFile<'data> {
     pub fn func_info(&self, rva: Rva) -> Option<&'data FuncInfo> {
         let size = u32::try_from(size_of::<FuncInfo>()).ok()?;
         let b = self.bytes_at_rva(rva, size).ok()?;
-        let info: &FuncInfo = hexcavator_core::from_bytes(b)?;
+        let info: &FuncInfo = turbonop_core::from_bytes(b)?;
         info.is_valid().then_some(info)
     }
 

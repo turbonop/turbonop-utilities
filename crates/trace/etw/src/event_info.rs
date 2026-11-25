@@ -16,8 +16,8 @@
 
 use std::collections::HashMap;
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_etl::{Event, Guid};
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_etl::{Event, Guid};
 
 use crate::manifest::{Decoded, Item, Size, Template, decode, decode_partial};
 use crate::schema::Property;

@@ -3,7 +3,7 @@
 
 use rustc_hash::FxHashMap;
 
-use hexcavator_trace::{ImageIx, ProcessIx, ThreadIx, Trace};
+use turbonop_trace::{ImageIx, ProcessIx, ThreadIx, Trace};
 
 use crate::shape::{Folds, StackTags};
 

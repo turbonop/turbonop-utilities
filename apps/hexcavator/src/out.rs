@@ -8,7 +8,7 @@
 //! escapes (`\u{1b}`) instead; anything else (a file, a pipe) gets the
 //! bytes as they are.
 //!
-//! A thread may instead [`capture`] what it writes to both (`hexc serve`
+//! A thread may instead [`capture`] what it writes to both (`hexcavator serve`
 //! runs each request so).
 
 use std::cell::RefCell;
@@ -20,6 +20,28 @@ use std::io::{self, IsTerminal, StdoutLock, Write};
 pub struct Captured {
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
+}
+
+/// Whether this process runs one command and exits (`hexcavator <command>`,
+/// not `hexcavator serve` or `hexcavator mcp`): then what a command is done with
+/// needn't be freed, as the process ends next.
+static ONE_SHOT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Marks this process as one that runs one command and exits.
+pub fn one_shot() {
+    ONE_SHOT.store(true, std::sync::atomic::Ordering::Relaxed);
+    turbonop_program::leave_to_exit(true);
+}
+
+/// Done with `value`: in a process that runs one command, it is left for
+/// the exit to reclaim (freeing a big program's symbols, types, and
+/// mappings takes a good part of a second); otherwise dropped.
+pub fn dispose<T>(value: T) {
+    if ONE_SHOT.load(std::sync::atomic::Ordering::Relaxed) {
+        std::mem::forget(value);
+    } else {
+        drop(value);
+    }
 }
 
 thread_local! {
@@ -63,7 +85,7 @@ fn captured(data: &[u8], stderr: bool) -> bool {
 }
 
 /// Whether this thread is capturing what it writes (it runs a request of
-/// `hexc serve`, whose standard input is its requests).
+/// `hexcavator serve`, whose standard input is its requests).
 pub fn capturing() -> bool {
     CAPTURE.with(|c| c.borrow().is_some())
 }
@@ -76,12 +98,14 @@ pub fn stdout() -> Out {
             inner: None,
             clean: false,
             carry: Vec::new(),
+            held: Vec::new(),
         };
     }
     Out {
         inner: Some(io::stdout().lock()),
         clean: io::stdout().is_terminal(),
         carry: Vec::new(),
+        held: Vec::new(),
     }
 }
 
@@ -95,7 +119,7 @@ pub fn printed(bytes: &[u8]) -> bool {
         Ok(()) => true,
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => true,
         Err(e) => {
-            stderr_line(&format!("hexc: writing the output: {e}"));
+            stderr_line(&format!("hexcavator: writing the output: {e}"));
             false
         }
     }
@@ -141,7 +165,14 @@ pub struct Out {
     clean: bool,
     /// The start of a UTF-8 sequence that the last write ended in.
     carry: Vec<u8>,
+    /// What is written to a file or a pipe, held until there is plenty
+    /// (standard output writes each line as it ends: a system call per
+    /// line). A terminal gets each line as it ends.
+    held: Vec<u8>,
 }
+
+/// How much [`Out`] holds before writing it to a file or a pipe.
+const HOLD: usize = 64 * 1024;
 
 impl Write for Out {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
@@ -150,7 +181,16 @@ impl Write for Out {
             return Ok(buf.len());
         };
         if !self.clean {
-            return inner.write(buf);
+            if self.held.len() + buf.len() > HOLD {
+                inner.write_all(&self.held)?;
+                self.held.clear();
+                if buf.len() >= HOLD {
+                    inner.write_all(buf)?;
+                    return Ok(buf.len());
+                }
+            }
+            self.held.extend_from_slice(buf);
+            return Ok(buf.len());
         }
         let mut data = std::mem::take(&mut self.carry);
         data.extend_from_slice(buf);
@@ -164,6 +204,10 @@ impl Write for Out {
         let Some(inner) = &mut self.inner else {
             return Ok(());
         };
+        if !self.held.is_empty() {
+            let held = std::mem::take(&mut self.held);
+            inner.write_all(&held)?;
+        }
         if !self.carry.is_empty() {
             let carry = std::mem::take(&mut self.carry);
             inner.write_all(&carry)?;

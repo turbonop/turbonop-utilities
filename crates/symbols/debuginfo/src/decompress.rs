@@ -9,8 +9,9 @@
 //! Also xz ([`xz`]), for ELF's MiniDebugInfo (`.gnu_debugdata`): the
 //! container is read here, its LZMA2 data by `lzma-rust2`.
 
-use hexcavator_elf::consts::{ELFCOMPRESS_ZLIB, ELFCOMPRESS_ZSTD, SHF_COMPRESSED};
-use hexcavator_elf::{ElfFile, Section};
+use turbonop_elf::consts::{ELFCOMPRESS_ZLIB, ELFCOMPRESS_ZSTD, SHF_COMPRESSED};
+use turbonop_elf::{ElfFile, Section};
+use turbonop_pe::PeFile;
 
 /// A debug section: its name without its prefix (`info` for
 /// `.debug_info`), its contents (decompressed if they were compressed),
@@ -303,19 +304,186 @@ pub fn elf_dwarf_sections<'d>(
             continue;
         };
         let data = elf.section_data(&sec);
-        if gnu {
-            if let Some(d) = gnu_zdebug(data) {
-                out.push((name, d.into(), None));
-            }
+        let mut section: DebugSection<'d> = if gnu {
+            let Some(d) = gnu_zdebug(data) else { continue };
+            (name, d.into(), None)
         } else if sec.flags & SHF_COMPRESSED != 0 {
-            if let Some(d) = elf_compressed(elf, &sec, data) {
-                out.push((name, d.into(), None));
-            }
+            let Some(d) = elf_compressed(elf, &sec, data) else {
+                continue;
+            };
+            (name, d.into(), None)
         } else {
-            out.push((name, data.into(), file_offset.map(|o| o + sec.offset)));
+            (name, data.into(), file_offset.map(|o| o + sec.offset))
+        };
+        // An object's: with its relocations applied, as a linker would
+        // (its string offsets and addresses are their addends, in RELA
+        // objects).
+        if elf.is_object()
+            && elf.sections().any(|r| {
+                matches!(
+                    r.kind,
+                    turbonop_elf::consts::SHT_REL | turbonop_elf::consts::SHT_RELA
+                ) && r.info as usize == sec.index
+            })
+            && relocate(elf, sec.index, section.1.to_mut())
+        {
+            section.2 = None;
         }
+        out.push(section);
     }
     out
+}
+
+/// Applies the relocations of an object's section `index` that write an
+/// absolute value (an address, an offset into another section: its
+/// symbol's value and the addend) to `data`, its contents. Whether any
+/// were.
+fn relocate(elf: &ElfFile<'_>, index: usize, data: &mut [u8]) -> bool {
+    use turbonop_elf::consts::{EM_386, EM_AARCH64, EM_ARM, EM_PPC64, EM_RISCV, EM_X86_64};
+    use turbonop_elf::consts::{SHT_REL, SHT_RELA};
+    let machine = elf.header().machine;
+    // The width an absolute relocation writes, by machine and type.
+    let width = |kind: u32| -> Option<usize> {
+        Some(match (machine, kind) {
+            // R_X86_64_64, _DTPOFF64; R_X86_64_32, _32S, _DTPOFF32.
+            (EM_X86_64, 1 | 17) => 8,
+            (EM_X86_64, 10 | 11 | 21) => 4,
+            // R_AARCH64_ABS64, _ABS32.
+            (EM_AARCH64, 257) => 8,
+            (EM_AARCH64, 258) => 4,
+            // R_386_32, R_386_TLS_LDO_32; R_ARM_ABS32, R_ARM_TLS_LDO32.
+            (EM_386, 1 | 32) | (EM_ARM, 2 | 106) => 4,
+            // R_RISCV_32, _64.
+            (EM_RISCV, 1) => 4,
+            (EM_RISCV, 2) => 8,
+            // R_PPC64_ADDR32, _ADDR64.
+            (EM_PPC64, 1) => 4,
+            (EM_PPC64, 38) => 8,
+            _ => return None,
+        })
+    };
+    let big = elf.endian() == turbonop_core::Endian::Big;
+    let sections: Vec<_> = elf.sections().collect();
+    // (Where a linker would lay the sections out: so the object's
+    // addresses don't overlap, as its image's sections don't.)
+    let addresses = elf.section_addresses();
+    let mut any = false;
+    for rel in sections
+        .iter()
+        .filter(|s| matches!(s.kind, SHT_REL | SHT_RELA) && s.info as usize == index)
+    {
+        let symbols = sections
+            .get(rel.link as usize)
+            .map(|t| elf.symbols(t))
+            .unwrap_or_default();
+        for r in elf.relocations(rel) {
+            let Some(w) = width(r.kind) else { continue };
+            let (Ok(at), Some(sym)) = (usize::try_from(r.offset), symbols.get(r.symbol as usize))
+            else {
+                continue;
+            };
+            let Some(place) = data.get_mut(at..at.saturating_add(w)) else {
+                continue;
+            };
+            let read = |b: &[u8]| -> u64 {
+                if big {
+                    b.iter().fold(0, |v, &x| (v << 8) | u64::from(x))
+                } else {
+                    b.iter().rev().fold(0, |v, &x| (v << 8) | u64::from(x))
+                }
+            };
+            // (REL: the addend is the bytes it patches.)
+            let addend = r.addend.map_or_else(|| read(place), i64::cast_unsigned);
+            let value = elf.symbol_address(sym, &addresses).wrapping_add(addend);
+            let bytes = if big {
+                value.to_be_bytes()
+            } else {
+                value.to_le_bytes()
+            };
+            // (The low `w` bytes, in the image's order.)
+            let low = if big { &bytes[8 - w..] } else { &bytes[..w] };
+            place.copy_from_slice(low);
+            any = true;
+        }
+    }
+    any
+}
+
+/// Applies the relocations of a COFF object's section `index` (0-based)
+/// that write an absolute value to `data`, its contents: an address
+/// (`ADDR64`, `ADDR32`, `ADDR32NB`: its symbol's, as the object's sections
+/// are laid out, see [`PeFile::section_addresses`]), an offset in a
+/// section (`SECREL`), or a section's number (`SECTION`); each address
+/// and offset plus the bytes it patches (COFF's addend). Whether any were.
+pub fn coff_relocate(pe: &PeFile<'_>, index: usize, data: &mut [u8]) -> bool {
+    use turbonop_pe::consts::machine as m;
+    #[derive(Clone, Copy)]
+    enum Write {
+        Address(usize),
+        SectionOffset,
+        Section,
+    }
+    let machine = pe.machine();
+    let write = |kind: u16| -> Option<Write> {
+        Some(match (machine, kind) {
+            (m::AMD64, 1) | (m::ARM64 | m::ARM64EC | m::ARM64X, 0x0E) => Write::Address(8),
+            (m::AMD64, 2 | 3)
+            | (m::I386, 6 | 7)
+            | (m::ARM64 | m::ARM64EC | m::ARM64X | m::ARM | m::ARMNT | m::THUMB, 1 | 2) => {
+                Write::Address(4)
+            }
+            (m::AMD64 | m::I386, 0x0B)
+            | (m::ARM64 | m::ARM64EC | m::ARM64X, 0x08)
+            | (m::ARM | m::ARMNT | m::THUMB, 0x0F) => Write::SectionOffset,
+            (m::AMD64 | m::I386, 0x0A)
+            | (m::ARM64 | m::ARM64EC | m::ARM64X, 0x0D)
+            | (m::ARM | m::ARMNT | m::THUMB, 0x0E) => Write::Section,
+            _ => return None,
+        })
+    };
+    let (Some(header), Ok(Some(symbols))) = (pe.sections().get(index), pe.symbols()) else {
+        return false;
+    };
+    let addresses = pe.section_addresses();
+    let mut any = false;
+    for r in pe.section_relocations(header) {
+        let Some(w) = write(r.kind.get()) else {
+            continue;
+        };
+        let (Ok(at), Some(sym)) = (
+            usize::try_from(r.virtual_address.get()),
+            symbols.get(r.symbol_table_index.get() as usize),
+        ) else {
+            continue;
+        };
+        let width = match w {
+            Write::Address(n) => n,
+            Write::SectionOffset => 4,
+            Write::Section => 2,
+        };
+        let Some(place) = data.get_mut(at..at.saturating_add(width)) else {
+            continue;
+        };
+        let mut addend = [0u8; 8];
+        addend[..width].copy_from_slice(place);
+        let addend = u64::from_le_bytes(addend);
+        let section = usize::try_from(sym.section)
+            .ok()
+            .and_then(|n| n.checked_sub(1));
+        let value = match w {
+            Write::Address(_) => section
+                .and_then(|n| addresses.get(n))
+                .copied()
+                .unwrap_or(0)
+                .wrapping_add(u64::from(sym.value))
+                .wrapping_add(addend),
+            Write::SectionOffset => u64::from(sym.value).wrapping_add(addend),
+            Write::Section => u64::try_from(sym.section).unwrap_or(0),
+        };
+        place.copy_from_slice(&value.to_le_bytes()[..width]);
+        any = true;
+    }
+    any
 }
 
 fn elf_compressed(elf: &ElfFile<'_>, sec: &Section<'_>, data: &[u8]) -> Option<Vec<u8>> {

@@ -4,10 +4,10 @@
 //! fields in registers and its bytes on the stack, and a pointer's target's
 //! members, for memory reached through it.
 
-use hexcavator_codeview::registers;
-use hexcavator_core::Arch;
-use hexcavator_debuginfo::layout::{self, FlatField};
-use hexcavator_debuginfo::{Place, TypeRef};
+use turbonop_codeview::registers;
+use turbonop_core::Arch;
+use turbonop_debuginfo::layout::{self, FlatField};
+use turbonop_debuginfo::{Place, TypeRef};
 
 use crate::Program;
 

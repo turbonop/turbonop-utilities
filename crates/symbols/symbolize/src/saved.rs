@@ -2,28 +2,30 @@
 //! saved: so that reopening the trace names its functions without its
 //! PDBs (which are large, and slow to read).
 
-use hexcavator_core::{Error, ErrorKind, Reader, Result};
+use turbonop_core::{Error, ErrorKind, Reader, Result};
 
 use crate::FunctionTable;
 
-/// The saved form's magic and version.
+/// The saved form's magic and version. (Version 1 saved 32-bit
+/// addresses, before tables had 64-bit ones: it's refused, and its trace's
+/// names are found again.)
 const MAGIC: &[u8; 4] = b"HXFT";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 
 impl FunctionTable {
-    /// The part of this table that answers for `rvas`: a lookup of any of
+    /// The part of this table that answers for `addrs`: a lookup of any of
     /// them ([`FunctionTable::function`], [`FunctionTable::inlines`],
     /// [`FunctionTable::line`]), or of the start of a function one of them
     /// is in, gives what this table gives. (Inline sites are numbered
     /// anew, in the same order, so [`FunctionTable::site_name`] answers
     /// for the sites the subset's lookups give.)
-    pub fn subset(&self, rvas: &[u32]) -> Self {
-        let mut rvas = rvas.to_vec();
+    pub fn subset(&self, addrs: &[u64]) -> Self {
+        let mut rvas = addrs.to_vec();
         rvas.sort_unstable();
         rvas.dedup();
         // A lookup reads the last entry starting at or before its address:
         // keeping that one for each address keeps every answer.
-        let last_at = |starts: &dyn Fn(usize) -> u32, len: usize, rva: u32| {
+        let last_at = |starts: &dyn Fn(usize) -> u64, len: usize, rva: u64| {
             let (mut lo, mut hi) = (0, len);
             while lo < hi {
                 let mid = lo + (hi - lo) / 2;
@@ -133,16 +135,17 @@ impl FunctionTable {
         };
         count(&mut out, self.entries.len());
         for (start, end, name) in &self.entries {
-            put(&mut out, *start);
-            put(&mut out, *end);
+            put64(&mut out, *start);
+            put64(&mut out, *end);
             string(&mut out, name);
         }
         for quads in [&self.inlines, &self.lines] {
             count(&mut out, quads.len());
             for &(a, b, c, d) in quads {
-                for v in [a, b, c, d] {
-                    put(&mut out, v);
-                }
+                put64(&mut out, a);
+                put64(&mut out, b);
+                put(&mut out, c);
+                put(&mut out, d);
             }
         }
         for strings in [&self.site_names, &self.files] {
@@ -190,18 +193,18 @@ impl FunctionTable {
                 .map(str::to_string)
                 .map_err(|_| Error::new(ErrorKind::Malformed, at, "saved function name"))
         };
-        let n = count(&mut r, 12)?;
+        let n = count(&mut r, 20)?;
         let mut entries = Vec::with_capacity(n);
         for _ in 0..n {
-            let (start, end) = (r.u32_le()?, r.u32_le()?);
+            let (start, end) = (r.u64_le()?, r.u64_le()?);
             entries.push((start, end, string(&mut r)?));
         }
         let mut quads = [Vec::new(), Vec::new()];
         for q in &mut quads {
-            let n = count(&mut r, 16)?;
+            let n = count(&mut r, 24)?;
             q.reserve(n);
             for _ in 0..n {
-                q.push((r.u32_le()?, r.u32_le()?, r.u32_le()?, r.u32_le()?));
+                q.push((r.u64_le()?, r.u64_le()?, r.u32_le()?, r.u32_le()?));
             }
         }
         let [inlines, lines] = quads;
@@ -236,5 +239,9 @@ impl FunctionTable {
 }
 
 fn put(out: &mut Vec<u8>, v: u32) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn put64(out: &mut Vec<u8>, v: u64) {
     out.extend_from_slice(&v.to_le_bytes());
 }

@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-image"
+name = "turbonop-image"
 description = "A format-independent view of executables and objects (PE/COFF, ELF, Mach-O, WebAssembly): sections, architecture, debug identity"
 version.workspace = true
 edition.workspace = true
@@ -9,14 +9,14 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-hexcavator-core.workspace = true
-hexcavator-pe.workspace = true
-hexcavator-elf.workspace = true
-hexcavator-macho.workspace = true
-hexcavator-wasm.workspace = true
+turbonop-core.workspace = true
+turbonop-pe.workspace = true
+turbonop-elf.workspace = true
+turbonop-macho.workspace = true
+turbonop-wasm = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
-hexcavator-macho.workspace = true
+turbonop-macho.workspace = true
 
 [lints]
 workspace = true

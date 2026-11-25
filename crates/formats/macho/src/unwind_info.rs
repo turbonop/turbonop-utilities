@@ -11,7 +11,7 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Endian;
+use turbonop_core::Endian;
 
 /// `UNWIND_IS_NOT_FUNCTION_START`, `UNWIND_HAS_LSDA`,
 /// `UNWIND_PERSONALITY_MASK`.

@@ -1,6 +1,6 @@
 //! WPA's filter queries: read, and held (or not) by rows.
 
-use hexcavator_trace_analysis::wpa_query::{Cell, Op, Query};
+use turbonop_trace_analysis::wpa_query::{Cell, Op, Query};
 
 /// Whether a row of `(column, cell)` holds `query`.
 fn holds(query: &str, row: &[(&str, Cell)]) -> bool {

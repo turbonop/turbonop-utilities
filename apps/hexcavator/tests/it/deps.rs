@@ -1,4 +1,4 @@
-//! `hexc deps` end to end, over the dependency test's images
+//! `hexcavator deps` end to end, over the dependency test's images
 //! (tools/deps): each with a system root of stand-ins, so the search is
 //! the loader's over known files.
 //!
@@ -25,8 +25,8 @@ fn testdata(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-fn hexc(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("deps")
         .args(args)
         .output()
@@ -45,7 +45,7 @@ fn graph(image: &str, sysroot: &str, more: &[&str]) -> Value {
     let mut args = vec!["-json", "-sysroot", sysroot.to_str().unwrap()];
     args.extend(more);
     args.push(image.to_str().unwrap());
-    let (_, out, err) = hexc(&args);
+    let (_, out, err) = hexcavator(&args);
     serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}{err}"))
 }
 
@@ -158,7 +158,7 @@ fn pe() {
 fn text() {
     let image = testdata("pe/app/app.exe");
     let sysroot = testdata("pe/windows");
-    let (code, out, _) = hexc(&[
+    let (code, out, _) = hexcavator(&[
         "-sysroot",
         sysroot.to_str().unwrap(),
         image.to_str().unwrap(),
@@ -181,7 +181,7 @@ fn text() {
         "{out}"
     );
     // -problems: only those; the 32-bit program has none (exit 0).
-    let (code, out, _) = hexc(&[
+    let (code, out, _) = hexcavator(&[
         "-problems",
         "-sysroot",
         sysroot.to_str().unwrap(),
@@ -302,7 +302,7 @@ fn macho() {
 #[test]
 fn no_system_root() {
     let image = testdata("macho/app/main");
-    let (code, out, _) = hexc(&[image.to_str().unwrap()]);
+    let (code, out, _) = hexcavator(&[image.to_str().unwrap()]);
     if cfg!(target_os = "macos") {
         return;
     }
@@ -327,16 +327,19 @@ fn bad_arguments() {
         &["-depth", "x", "y"],
         &["a", "b"],
     ] {
-        let (code, _, err) = hexc(args);
+        let (code, _, err) = hexcavator(args);
         assert_eq!(code, 2, "{args:?}: {err}");
-        assert!(err.contains("usage: hexc deps"), "{err}");
+        assert!(err.contains("usage: hexcavator deps"), "{err}");
     }
-    let (code, _, err) = hexc(&["no-such-file.exe"]);
+    let (code, _, err) = hexcavator(&["no-such-file.exe"]);
     assert_eq!(code, 1, "{err}");
     let readme = testdata("macho/sysroot/README");
-    let (code, _, err) = hexc(&[readme.to_str().unwrap()]);
+    let (code, _, err) = hexcavator(&[readme.to_str().unwrap()]);
     assert_eq!(code, 1);
-    assert!(err.contains("not a PE, ELF, or Mach-O image"), "{err}");
+    assert!(
+        err.contains("not a PE, ELF, Mach-O, or WebAssembly image"),
+        "{err}"
+    );
 }
 
 /// Names that are paths where a name belongs (a hostile image's): not
@@ -349,7 +352,7 @@ fn hostile_names() {
         .windows(10)
         .position(|w| w == b"helper.dll")
         .expect("the import's name");
-    let dir = std::env::temp_dir().join(format!("hexc-deps-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-deps-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for name in [
         &b"..\\x\\y.dll"[..],
@@ -362,7 +365,7 @@ fn hostile_names() {
         let path = dir.join("app.exe");
         std::fs::write(&path, &data).unwrap();
         let sysroot = testdata("pe/windows");
-        let (code, out, err) = hexc(&[
+        let (code, out, err) = hexcavator(&[
             "-json",
             "-sysroot",
             sysroot.to_str().unwrap(),
@@ -382,4 +385,33 @@ fn hostile_names() {
         }
     }
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A WebAssembly module's: the modules its imports are from, each with
+/// what it imports, the host's (`env`) unless a module of its name is
+/// beside it (then that module).
+#[test]
+fn wasm() {
+    let wasm = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/wasm");
+    let run = |image: &Path| -> Value {
+        let (code, out, err) = hexcavator(&["-json", image.to_str().unwrap()]);
+        assert_eq!(code, 0, "{err}");
+        serde_json::from_str(&out).unwrap()
+    };
+    let g = run(&wasm.join("module.wasm"));
+    assert_eq!(g["modules"][0]["format"], "WebAssembly");
+    let (d, m) = dep(&g, 0, "env");
+    assert_eq!(d["kind"], "import");
+    assert_eq!(m["status"], "host");
+    assert!(import(d, "log")["name"] == "log");
+    // A module of the import's name beside it: that module.
+    let dir = std::env::temp_dir().join(format!("turbonop-deps-wasm-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(wasm.join("module.wasm"), dir.join("module.wasm")).unwrap();
+    std::fs::copy(wasm.join("startup.wasm"), dir.join("env.wasm")).unwrap();
+    let g = run(&dir.join("module.wasm"));
+    std::fs::remove_dir_all(&dir).ok();
+    let (_, m) = dep(&g, 0, "env");
+    assert_eq!(m["status"], "found", "{m}");
+    assert!(m["path"].as_str().unwrap().ends_with("env.wasm"));
 }

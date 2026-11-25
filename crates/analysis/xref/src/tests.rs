@@ -109,7 +109,7 @@ fn x86_64_tables_by_image_offset() {
 
 fn refs_with_base(code: &[u8], at: u64, base: u64) -> Vec<(u64, u64, Via)> {
     let mut out = Vec::new();
-    scan_image(Arch::X64, code, at, Some(base), &mut out);
+    scan_image(Arch::X64, Mode::default(), code, at, Some(base), &mut out);
     out.iter().map(|r| (r.from, r.to, r.via)).collect()
 }
 
@@ -364,4 +364,104 @@ fn random_code() {
         b.code(1, arch, &bytes[..8]);
     }
     b.finish();
+}
+
+/// PowerPC (64-bit, ELFv2): the TOC pointer computed from r12 at the
+/// global entry, then TOC-relative loads and stores (`addis` and a
+/// displacement); calls to a function's local entry, and to another.
+#[test]
+fn powerpc_toc_relative() {
+    // tools/elf's program.c's _start, ppc64le.
+    let words: [u32; 21] = [
+        0x3c4c_0002, // addis 2, 12, 2
+        0x3842_8068, // addi 2, 2, -32664
+        0x7c08_02a6, // mflr 0
+        0xf821_ffe1, // stdu 1, -32(1)
+        0xf801_0030, // std 0, 48(1)
+        0x3c62_0001, // addis 3, 2, 1
+        0xe863_800a, // lwa 3, -32760(3): counter
+        0x4bff_ff1d, // bl compute+8
+        0x3c82_0001, // addis 4, 2, 1
+        0x9864_8010, // stb 3, -32752(4): buffer
+        0x4bff_ffb9, // bl optional_hook
+        0x6000_0000, // nop
+        0x3c8d_0000, // addis 4, 13, 0
+        0x8084_9000, // lwz 4, -28672(4): a TLS offset
+        0x7c64_1a14, // add 3, 4, 3
+        0x3c82_0001, // addis 4, 2, 1
+        0x9064_9010, // stw 3, -28656(4): hidden_state
+        0x6000_0000, // nop
+        0x6000_0000, // nop
+        0x6000_0000, // nop
+        0x4800_0000, // b .
+    ];
+    let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    let mut out = Vec::new();
+    scan_image(
+        Arch::PowerPc64,
+        Mode::default(),
+        &code,
+        0x1001_0340,
+        None,
+        &mut out,
+    );
+    let got: Vec<(u64, u64, Via)> = out.iter().map(|r| (r.from, r.to, r.via)).collect();
+    assert_eq!(
+        got,
+        [
+            (0x1001_0344, 0x1002_83a8, Via::AddressOf),
+            (0x1001_0358, 0x1003_03b0, Via::Address),
+            (0x1001_035c, 0x1001_0278, Via::Call),
+            (0x1001_0364, 0x1003_03b8, Via::Address),
+            (0x1001_0368, 0x1001_0320, Via::Call),
+            (0x1001_0380, 0x1003_13b8, Via::Address),
+            (0x1001_0390, 0x1001_0390, Via::Jump),
+        ]
+    );
+}
+
+/// MIPS64 (n64, little-endian): 64-bit addresses built in six
+/// instructions (`lui`, `daddiu`, `dsll`, `daddiu`, `dsll`, and their
+/// use), one computed (a pointer) and one loaded from.
+#[test]
+fn mips64_addresses() {
+    // tools/elf's program.c's compute, mips64el.
+    let words: [u32; 16] = [
+        0x1880_002e, // blez $4, ...
+        0x0000_0000, // nop
+        0x3c01_0000, // lui $1, 0x0
+        0x6421_0000, // daddiu $1, $1, 0x0
+        0x0001_0c38, // dsll $1, $1, 0x10
+        0x6421_0001, // daddiu $1, $1, 0x1
+        0x0001_0c38, // dsll $1, $1, 0x10
+        0x2482_ffff, // addiu $2, $4, -0x1
+        0x3c03_0000, // lui $3, 0x0
+        0x7c45_f803, // dext $5, $2, 0x0, 0x20
+        0x6424_030c, // daddiu $4, $1, 0x30c: message
+        0x6461_0000, // daddiu $1, $3, 0x0
+        0x0001_0c38, // dsll $1, $1, 0x10
+        0x6421_0004, // daddiu $1, $1, 0x4
+        0x0001_0c38, // dsll $1, $1, 0x10
+        0x8c23_14a0, // lw $3, 0x14a0($1): hidden_state
+    ];
+    let code: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    let mut out = Vec::new();
+    scan_image(
+        Arch::Mips64,
+        Mode::default(),
+        &code,
+        0x2_0320,
+        None,
+        &mut out,
+    );
+    let mut got: Vec<(u64, u64, Via)> = out.iter().map(|r| (r.from, r.to, r.via)).collect();
+    got.sort_unstable_by_key(|r| r.0);
+    assert_eq!(
+        got,
+        [
+            (0x2_0320, 0x2_03dc, Via::Jump),
+            (0x2_0348, 0x1_030c, Via::AddressOf),
+            (0x2_035c, 0x4_14a0, Via::Address),
+        ]
+    );
 }

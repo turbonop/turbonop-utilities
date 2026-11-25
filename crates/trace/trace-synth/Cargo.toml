@@ -1,5 +1,5 @@
 [package]
-name = "hexcavator-trace-synth"
+name = "turbonop-trace-synth"
 description = "Synthetic ETW traces of any size, with the exact answers each analysis should give"
 version.workspace = true
 edition.workspace = true
@@ -14,12 +14,12 @@ repository.workspace = true
 test = false
 
 [dependencies]
-hexcavator-etl.workspace = true
-hexcavator-etw.workspace = true
+turbonop-etl.workspace = true
+turbonop-etw.workspace = true
 
 [dev-dependencies]
-hexcavator-trace.workspace = true
-hexcavator-trace-analysis.workspace = true
+turbonop-trace.workspace = true
+turbonop-trace-analysis.workspace = true
 rustc-hash.workspace = true
 
 [lints]

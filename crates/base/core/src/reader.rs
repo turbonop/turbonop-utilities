@@ -51,6 +51,12 @@ pub fn read_slice_at<T: Pod>(data: &[u8], offset: u64, count: u64) -> Result<&[T
     })
 }
 
+/// Where the first NUL of `bytes` is (searched a vector at a time).
+#[inline]
+pub fn find_nul(bytes: &[u8]) -> Option<usize> {
+    memchr::memchr(0, bytes)
+}
+
 /// Returns the NUL-terminated byte string at `offset`, without the NUL.
 #[inline]
 pub fn cstr_at(data: &[u8], offset: u64) -> Result<&[u8]> {
@@ -59,10 +65,7 @@ pub fn cstr_at(data: &[u8], offset: u64) -> Result<&[u8]> {
     let tail = data
         .get(start..)
         .ok_or(Error::new(ErrorKind::Truncated, offset, what))?;
-    let len =
-        tail.iter()
-            .position(|&b| b == 0)
-            .ok_or(Error::new(ErrorKind::Truncated, offset, what))?;
+    let len = find_nul(tail).ok_or(Error::new(ErrorKind::Truncated, offset, what))?;
     Ok(&tail[..len])
 }
 
@@ -172,10 +175,7 @@ impl<'a> Reader<'a> {
     #[inline]
     pub fn cstr(&mut self) -> Result<&'a [u8]> {
         let rest = self.remaining();
-        let len = rest
-            .iter()
-            .position(|&b| b == 0)
-            .ok_or(self.error(ErrorKind::Truncated, "string"))?;
+        let len = find_nul(rest).ok_or_else(|| self.error(ErrorKind::Truncated, "string"))?;
         self.pos += len + 1;
         Ok(&rest[..len])
     }

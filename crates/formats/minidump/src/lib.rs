@@ -24,7 +24,7 @@ pub mod context;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 /// Stream types (`MINIDUMP_STREAM_TYPE`, and Breakpad's and Crashpad's).
 pub mod stream {

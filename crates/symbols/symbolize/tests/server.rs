@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use hexcavator_symbolize::server::{Fetched, MICROSOFT, PdbId, SymbolServers};
-use hexcavator_symbolize::symbol_store_key;
+use turbonop_symbolize::server::{Fetched, MICROSOFT, PdbId, SymbolServers};
+use turbonop_symbolize::symbol_store_key;
 
 fn testdata(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18,8 +18,8 @@ fn testdata(rel: &str) -> PathBuf {
 
 /// A PDB's identity, read from it.
 fn id_of(rel: &str) -> PdbId {
-    let map = hexcavator_mmap::Mmap::open(testdata(rel)).unwrap();
-    let pdb = hexcavator_pdb::Pdb::parse(&map).unwrap();
+    let map = turbonop_mmap::Mmap::open(testdata(rel)).unwrap();
+    let pdb = turbonop_pdb::Pdb::parse(&map).unwrap();
     let info = pdb.info();
     PdbId {
         name: format!(
@@ -193,7 +193,7 @@ fn many_at_once_in_order() {
     assert!(r[..3].iter().all(|f| matches!(f, Fetched::Downloaded(_))));
     assert_eq!(r[3], Fetched::Missing);
     // The symbol path finds them in the cache.
-    let path = hexcavator_symbolize::SymbolPath {
+    let path = turbonop_symbolize::SymbolPath {
         dirs: vec![s.cache.clone()],
     };
     for id in &ids[..3] {

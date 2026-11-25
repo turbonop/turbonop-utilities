@@ -1,4 +1,4 @@
-//! `hexc resources`: what a binary holds besides its code and data, and
+//! `hexcavator resources`: what a binary holds besides its code and data, and
 //! what it says of itself: a PE image's resources, decoded (version
 //! information, manifests, string and message tables, dialogs, menus,
 //! accelerators, icons, cursors, bitmaps); a Mach-O image's Info.plist,
@@ -10,13 +10,13 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
-use hexcavator_pe::resource_data::{self as rd, MenuItem, NameOrId};
-use hexcavator_pe::resources::{ResourceName, ResourceTarget};
 use serde_json::{Value, json};
+use turbonop_mmap::Mmap;
+use turbonop_pe::resource_data::{self as rd, MenuItem, NameOrId};
+use turbonop_pe::resources::{ResourceName, ResourceTarget};
 
 pub const USAGE: &str = "\
-usage: hexc resources [options] <image>
+usage: hexcavator resources [options] <image>
 
 What a binary holds besides its code, and what it says of itself:
 
@@ -81,7 +81,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc resources: {e}\n\n{USAGE}");
+            ereport!("hexcavator resources: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
@@ -89,14 +89,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let map = match Mmap::open(&path) {
         Ok(m) => m,
         Err(e) => {
-            ereport!("hexc resources: {path}: {e}");
+            ereport!("hexcavator resources: {path}: {e}");
             return ExitCode::FAILURE;
         }
     };
     let items = match items(&map) {
         Ok(i) => i,
         Err(e) => {
-            ereport!("hexc resources: {path}: {e}");
+            ereport!("hexcavator resources: {path}: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -109,20 +109,20 @@ pub fn run(args: &[String]) -> ExitCode {
             .find(|i| i.id == id)
             .or_else(|| items.iter().find(|i| i.id.eq_ignore_ascii_case(id)))
             .ok_or_else(|| {
-                format!("{file} has no resource '{id}' (hexc resources {path} lists them)")
+                format!("{file} has no resource '{id}' (hexcavator resources {path} lists them)")
             })
     };
     let text = if let Some((id, out)) = &o.save {
         let item = match found(id) {
             Ok(i) => i,
             Err(e) => {
-                ereport!("hexc resources: {e}");
+                ereport!("hexcavator resources: {e}");
                 return ExitCode::FAILURE;
             }
         };
         let bytes = saved(item, &items);
         if let Err(e) = std::fs::write(out, &bytes) {
-            ereport!("hexc resources: {}: {e}", out.display());
+            ereport!("hexcavator resources: {}: {e}", out.display());
             return ExitCode::FAILURE;
         }
         format!("{}: {} bytes to {}\n", item.id, bytes.len(), out.display())
@@ -130,7 +130,7 @@ pub fn run(args: &[String]) -> ExitCode {
         let item = match found(id) {
             Ok(i) => i,
             Err(e) => {
-                ereport!("hexc resources: {e}");
+                ereport!("hexcavator resources: {e}");
                 return ExitCode::FAILURE;
             }
         };
@@ -264,7 +264,7 @@ impl<'d> Item<'d> {
 const MAX_ITEMS: usize = 1 << 16;
 
 fn language(lcid: u16) -> String {
-    hexcavator_size::lcid::language_name(lcid).to_string()
+    turbonop_size::lcid::language_name(lcid).to_string()
 }
 
 /// A predefined resource type's name.
@@ -307,10 +307,10 @@ fn name_text(n: Option<ResourceName<'_>>) -> (String, Option<u16>) {
 
 /// What `data` holds.
 fn items(data: &[u8]) -> Result<Vec<Item<'_>>, String> {
-    if let Ok(pe) = hexcavator_pe::PeFile::parse_image(data) {
+    if let Ok(pe) = turbonop_pe::PeFile::parse_image(data) {
         return Ok(pe_items(&pe));
     }
-    if let Ok(image) = hexcavator_image::Image::parse(data) {
+    if let Ok(image) = turbonop_image::Image::parse(data) {
         if let Some(m) = image.macho() {
             return Ok(macho_items(m));
         }
@@ -321,13 +321,13 @@ fn items(data: &[u8]) -> Result<Vec<Item<'_>>, String> {
             return Ok(wasm_items(w));
         }
     }
-    if let Ok(ne) = hexcavator_ne::NeFile::parse(data) {
+    if let Ok(ne) = turbonop_ne::NeFile::parse(data) {
         return Ok(ne_items(&ne));
     }
     Err("not a PE, Mach-O, ELF, WebAssembly, or NE image".into())
 }
 
-fn pe_items<'d>(pe: &hexcavator_pe::PeFile<'d>) -> Vec<Item<'d>> {
+fn pe_items<'d>(pe: &turbonop_pe::PeFile<'d>) -> Vec<Item<'d>> {
     let mut out = Vec::new();
     let Some(root) = pe.resource_root() else {
         return out;
@@ -362,7 +362,7 @@ fn pe_items<'d>(pe: &hexcavator_pe::PeFile<'d>) -> Vec<Item<'d>> {
                 let data = pe
                     .resource_data_entry(entry)
                     .and_then(|e| {
-                        pe.bytes_at_rva(hexcavator_core::Rva(e.data.get()), e.size.get())
+                        pe.bytes_at_rva(turbonop_core::Rva(e.data.get()), e.size.get())
                             .ok()
                     })
                     .unwrap_or_default();
@@ -431,7 +431,7 @@ fn text_of(data: &[u8]) -> String {
     }
 }
 
-fn macho_items<'d>(m: &hexcavator_macho::MachO<'d>) -> Vec<Item<'d>> {
+fn macho_items<'d>(m: &turbonop_macho::MachO<'d>) -> Vec<Item<'d>> {
     let mut out = Vec::new();
     let data = m.data();
     if let Some(s) = m
@@ -455,7 +455,7 @@ fn macho_items<'d>(m: &hexcavator_macho::MachO<'d>) -> Vec<Item<'d>> {
         let (off, size) = m
             .load_commands()
             .into_iter()
-            .find(|c| c.cmd == hexcavator_macho::consts::LC_CODE_SIGNATURE)
+            .find(|c| c.cmd == turbonop_macho::consts::LC_CODE_SIGNATURE)
             .and_then(|lc| m.linkedit_data(&lc))
             .unwrap_or((0, 0));
         let blobs = data
@@ -476,30 +476,37 @@ fn macho_items<'d>(m: &hexcavator_macho::MachO<'d>) -> Vec<Item<'d>> {
         }
     }
     let mut pairs = Vec::new();
-    for lc in m.load_commands() {
-        if lc.cmd == hexcavator_macho::consts::LC_BUILD_VERSION && lc.data.len() >= 24 {
-            let w = |i: usize| {
-                u32::from_le_bytes([lc.data[i], lc.data[i + 1], lc.data[i + 2], lc.data[i + 3]])
-            };
-            let v = |x: u32| format!("{}.{}.{}", x >> 16, (x >> 8) & 0xFF, x & 0xFF);
-            let platform = match w(8) {
-                1 => "macOS",
-                2 => "iOS",
-                3 => "tvOS",
-                4 => "watchOS",
-                5 => "bridgeOS",
-                6 => "Mac Catalyst",
-                7 => "iOS Simulator",
-                8 => "tvOS Simulator",
-                9 => "watchOS Simulator",
-                10 => "DriverKit",
-                11 => "visionOS",
-                12 => "visionOS Simulator",
-                _ => "an unknown platform",
-            };
-            pairs.push(("Platform".into(), platform.into()));
-            pairs.push(("Minimum OS".into(), v(w(12))));
-            pairs.push(("SDK".into(), v(w(16))));
+    for b in m.build_versions() {
+        let platform = match b.platform {
+            1 => "macOS",
+            2 => "iOS",
+            3 => "tvOS",
+            4 => "watchOS",
+            5 => "bridgeOS",
+            6 => "Mac Catalyst",
+            7 => "iOS Simulator",
+            8 => "tvOS Simulator",
+            9 => "watchOS Simulator",
+            10 => "DriverKit",
+            11 => "visionOS",
+            12 => "visionOS Simulator",
+            _ => "an unknown platform",
+        };
+        let v = turbonop_macho::version_string;
+        pairs.push(("Platform".into(), platform.into()));
+        pairs.push(("Minimum OS".into(), v(b.minos)));
+        pairs.push(("SDK".into(), v(b.sdk)));
+        // (The tools that built it: its compiler and linker, by version.)
+        let tools: Vec<String> = b
+            .tools
+            .iter()
+            .map(|t| match t.name() {
+                Some(n) => format!("{n} {}", v(t.version)),
+                None => format!("tool {} {}", t.tool, v(t.version)),
+            })
+            .collect();
+        if !tools.is_empty() {
+            pairs.push(("Built with".into(), tools.join(", ")));
         }
     }
     if let Some(u) = m.uuid() {
@@ -514,7 +521,7 @@ fn macho_items<'d>(m: &hexcavator_macho::MachO<'d>) -> Vec<Item<'d>> {
         );
         pairs.push(("UUID".into(), dashed));
     }
-    pairs.extend(hexcavator_signature::info::macho(m));
+    pairs.extend(turbonop_signature::info::macho(m));
     if !pairs.is_empty() {
         let mut item = Item::new(
             "Versions".into(),
@@ -529,8 +536,8 @@ fn macho_items<'d>(m: &hexcavator_macho::MachO<'d>) -> Vec<Item<'d>> {
     out
 }
 
-fn elf_items<'d>(e: &hexcavator_elf::ElfFile<'d>) -> Vec<Item<'d>> {
-    use hexcavator_elf::consts::*;
+fn elf_items<'d>(e: &turbonop_elf::ElfFile<'d>) -> Vec<Item<'d>> {
+    use turbonop_elf::consts::*;
     let mut out = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for s in e.sections().filter(|s| s.kind == SHT_NOTE) {
@@ -596,8 +603,8 @@ fn note(
     owner: &str,
     kind: u32,
     desc: &[u8],
-    endian: hexcavator_core::Endian,
-    class: hexcavator_elf::Class,
+    endian: turbonop_core::Endian,
+    class: turbonop_elf::Class,
 ) -> (String, Vec<(String, String)>) {
     let w = |i: usize| word(desc, i, endian);
     match (owner, kind) {
@@ -655,11 +662,11 @@ fn note(
     }
 }
 
-fn word(data: &[u8], at: usize, endian: hexcavator_core::Endian) -> Option<u32> {
+fn word(data: &[u8], at: usize, endian: turbonop_core::Endian) -> Option<u32> {
     let b: [u8; 4] = data.get(at..at.checked_add(4)?)?.try_into().ok()?;
     Some(match endian {
-        hexcavator_core::Endian::Little => u32::from_le_bytes(b),
-        hexcavator_core::Endian::Big => u32::from_be_bytes(b),
+        turbonop_core::Endian::Little => u32::from_le_bytes(b),
+        turbonop_core::Endian::Big => u32::from_be_bytes(b),
     })
 }
 
@@ -667,10 +674,10 @@ fn word(data: &[u8], at: usize, endian: hexcavator_core::Endian) -> Option<u32> 
 /// aligned to the class's word): the ones a hardened build sets, named.
 fn properties(
     desc: &[u8],
-    endian: hexcavator_core::Endian,
-    class: hexcavator_elf::Class,
+    endian: turbonop_core::Endian,
+    class: turbonop_elf::Class,
 ) -> Vec<(String, String)> {
-    let align = if matches!(class, hexcavator_elf::Class::Elf64) {
+    let align = if matches!(class, turbonop_elf::Class::Elf64) {
         8
     } else {
         4
@@ -737,7 +744,7 @@ fn properties(
     out
 }
 
-fn wasm_items<'d>(m: &hexcavator_wasm::Module<'d>) -> Vec<Item<'d>> {
+fn wasm_items<'d>(m: &turbonop_wasm::Module<'d>) -> Vec<Item<'d>> {
     let mut out = Vec::new();
     let data = m.data();
     for s in m.sections().iter().filter(|s| s.id == 0) {
@@ -757,7 +764,7 @@ fn wasm_items<'d>(m: &hexcavator_wasm::Module<'d>) -> Vec<Item<'d>> {
             || name == "linking"
             || name.starts_with("reloc.")
         {
-            // (Shown elsewhere: hexc dwarf, hexc dump.)
+            // (Shown elsewhere: hexcavator dwarf, hexcavator dump.)
             continue;
         } else if looks_like_text(bytes) {
             item.view = View::Text;
@@ -790,7 +797,7 @@ fn wasm_name(data: &[u8], at: &mut usize) -> Option<String> {
 
 /// The `producers` section: fields (language, processed-by, sdk), each
 /// with names and versions.
-fn producers(data: &[u8]) -> Vec<(String, String)> {
+pub(crate) fn producers(data: &[u8]) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut at = 0;
     let Some(fields) = leb(data, &mut at) else {
@@ -845,10 +852,10 @@ fn target_features(data: &[u8]) -> Vec<(String, String)> {
     out
 }
 
-fn ne_items<'d>(ne: &hexcavator_ne::NeFile<'d>) -> Vec<Item<'d>> {
-    let id = |i: &hexcavator_ne::Id| match i {
-        hexcavator_ne::Id::Int(n) => (format!("#{n}"), Some(*n)),
-        hexcavator_ne::Id::Name(s) => (s.clone(), None),
+fn ne_items<'d>(ne: &turbonop_ne::NeFile<'d>) -> Vec<Item<'d>> {
+    let id = |i: &turbonop_ne::Id| match i {
+        turbonop_ne::Id::Int(n) => (format!("#{n}"), Some(*n)),
+        turbonop_ne::Id::Name(s) => (s.clone(), None),
     };
     ne.resources()
         .iter()
@@ -958,7 +965,7 @@ fn single_image(data: &[u8], cursor: bool) -> Vec<u8> {
 fn summary(item: &Item<'_>, items: &[Item<'_>]) -> String {
     let data = item.data;
     match item.view {
-        View::Version => match hexcavator_pe::version::VersionInfo::parse(data) {
+        View::Version => match turbonop_pe::version::VersionInfo::parse(data) {
             Some(v) => {
                 let mut s = Vec::new();
                 for key in ["ProductName", "FileDescription"] {
@@ -968,7 +975,7 @@ fn summary(item: &Item<'_>, items: &[Item<'_>]) -> String {
                     }
                 }
                 if let Some(f) = &v.fixed {
-                    s.push(hexcavator_pe::version::dotted(f.file_version));
+                    s.push(turbonop_pe::version::dotted(f.file_version));
                 }
                 if let Some(c) = v.get("CompanyName") {
                     s.push(format!("({c})"));
@@ -1271,11 +1278,11 @@ fn detail(item: &Item<'_>, items: &[Item<'_>]) -> Value {
     });
     match item.view {
         View::Version => {
-            if let Some(info) = hexcavator_pe::version::VersionInfo::parse(data) {
+            if let Some(info) = turbonop_pe::version::VersionInfo::parse(data) {
                 let fixed = info.fixed.as_ref().map(|f| {
                     json!({
-                        "fileVersion": hexcavator_pe::version::dotted(f.file_version),
-                        "productVersion": hexcavator_pe::version::dotted(f.product_version),
+                        "fileVersion": turbonop_pe::version::dotted(f.file_version),
+                        "productVersion": turbonop_pe::version::dotted(f.product_version),
                         "flags": f.flag_names(),
                         "type": f.type_name(),
                     })
@@ -1520,14 +1527,14 @@ fn detail_text(item: &Item<'_>, v: &Value) -> String {
             }
             let _ = writeln!(
                 out,
-                "\n(hexc resources -save {} <file.ico> writes it out)",
+                "\n(hexcavator resources -save {} <file.ico> writes it out)",
                 item.id
             );
         }
         View::Image { .. } | View::Bitmap => {
             let _ = writeln!(
                 out,
-                "{}\n(hexc resources -save {} <file> writes it out)",
+                "{}\n(hexcavator resources -save {} <file> writes it out)",
                 s(&v["summary"]),
                 item.id
             );
@@ -1655,8 +1662,8 @@ mod tests {
 
     #[test]
     fn notes_decoded() {
-        use hexcavator_core::Endian::{Big, Little};
-        use hexcavator_elf::Class::Elf64;
+        use turbonop_core::Endian::{Big, Little};
+        use turbonop_elf::Class::Elf64;
         let note = |o, k, d| super::note(o, k, d, Little, Elf64);
         let (name, pairs) = note("GNU", 1, &[0, 0, 0, 0, 3, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]);
         assert_eq!(name, "ABI tag");

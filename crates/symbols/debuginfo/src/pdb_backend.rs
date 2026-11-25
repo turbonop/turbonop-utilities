@@ -1,12 +1,12 @@
 //! The PDB backend.
 
-use std::collections::HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_codeview::symbols::{Symbol, SymbolIter, kind};
-use hexcavator_codeview::{TypeFormatter, TypeIndex};
-use hexcavator_core::{Error, ErrorKind, Reader, Result};
-use hexcavator_image::DebugId;
-use hexcavator_pdb::{Pdb, info};
+use turbonop_codeview::symbols::{Symbol, SymbolIter, kind};
+use turbonop_codeview::{TypeFormatter, TypeIndex};
+use turbonop_core::{Error, ErrorKind, Reader, Result};
+use turbonop_image::DebugId;
+use turbonop_pdb::{Pdb, info};
 
 use crate::{
     BasicType, Class, Compiland, Contribution, EnclosingFunction, Group, Method, MethodKind,
@@ -55,14 +55,42 @@ fn lossy(bytes: &[u8]) -> String {
 
 impl<'data> PdbInfo<'data> {
     pub fn parse(data: &'data [u8]) -> Result<Self> {
-        hexcavator_pdb::check(data)?;
-        let pdb = Pdb::parse(data)?;
+        turbonop_pdb::check(data)?;
+        Self::of(Pdb::parse(data)?)
+    }
+
+    fn of(pdb: Pdb<'data>) -> Result<Self> {
         let sections = pdb
             .sections()?
             .into_iter()
             .map(|(va, size, _)| (va, size))
             .collect();
         Ok(Self { pdb, sections })
+    }
+
+    /// The PDB a source reads (by range: a file not mapped).
+    pub fn parse_source(source: &'data dyn turbonop_core::Source) -> Result<Self> {
+        Self::of(Pdb::parse_source(source)?)
+    }
+
+    /// The public symbols whose (raw, mangled) names `keep` keeps: each
+    /// one's address (RVA) and name. (`keep` sees every public: a test of
+    /// its bytes, before anything is demangled.)
+    pub fn publics_matching(&self, keep: impl Fn(&[u8]) -> bool + Sync) -> Vec<(u64, &[u8])> {
+        let records: Vec<_> = SymbolIter::new(self.pdb.symbol_records(), 0).collect();
+        turbonop_par::map_chunks(&records, 8192, |part| {
+            part.iter()
+                .filter_map(|r| match r.parse().ok()? {
+                    Symbol::Public {
+                        offset,
+                        segment,
+                        name,
+                        ..
+                    } if keep(name) => Some((rva_in(&self.sections, segment, offset)?, name)),
+                    _ => None,
+                })
+                .collect()
+        })
     }
 
     pub fn pdb(&self) -> &Pdb<'data> {
@@ -179,58 +207,84 @@ impl<'data> PdbInfo<'data> {
     /// are decoded in parallel; each inlined function is named once.
     pub fn inline_sites(&self) -> Result<crate::InlineSites> {
         let dbi = self.pdb.dbi()?;
-        let mut streams = Vec::new();
-        for module in dbi.modules() {
-            if let Some(stream) = self.pdb.module_stream(module)? {
-                streams.push((u32::try_from(module.index).unwrap_or(u32::MAX), stream));
-            }
-        }
-        let threads = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZero::get)
-            .min(streams.len().max(1));
-        let chunk = streams.len().div_ceil(threads).max(1);
         let sections = &self.sections;
-        // Sites with their inlinees' id records for now.
-        let mut sites: Vec<crate::InlineSite> = std::thread::scope(|scope| {
-            let handles: Vec<_> = streams
-                .chunks(chunk)
-                .map(|part| {
-                    scope.spawn(move || {
-                        let mut out = Vec::new();
-                        for (compiland, stream) in part {
-                            module_inline_sites(sections, *compiland, stream.symbols(), &mut out);
-                        }
-                        out
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .flat_map(|h| h.join().unwrap_or_default())
-                .collect()
-        });
-        // Name each inlinee once.
-        let types = self.pdb.types()?;
-        types.build_offsets();
-        let ids = self.pdb.ids()?;
-        ids.build_offsets();
-        let formatter = TypeFormatter { types };
-        // (Id records of one name are one function: an index per name.)
-        let mut index: HashMap<u32, u32> = HashMap::new();
-        let mut by_name: HashMap<String, u32> = HashMap::new();
-        let mut inlinees: Vec<String> = Vec::new();
-        for s in &mut sites {
-            let id = s.inlinee;
-            s.inlinee = *index.entry(id).or_insert_with(|| {
-                let name = inlinee_name(ids, &formatter, id)
-                    .unwrap_or_else(|| format!("<inlinee {id:#x}>"));
-                *by_name.entry(name.clone()).or_insert_with(|| {
-                    inlinees.push(name);
-                    u32::try_from(inlinees.len() - 1).unwrap_or(u32::MAX)
-                })
+        // Sites with their inlinees' id records for now: each module read
+        // and decoded on whichever thread is free, while another reads and
+        // indexes the types and ids that name them.
+        let (indexed, sites) = turbonop_par::join(
+            || -> Result<_> {
+                let types = self.pdb.types()?;
+                let ids = self.pdb.ids()?;
+                turbonop_par::join(|| types.build_offsets(), || ids.build_offsets());
+                Ok((types, ids))
+            },
+            || -> Result<Vec<crate::InlineSite>> {
+                let per_module = turbonop_par::map_balanced(dbi.modules(), 4, |module| {
+                    let mut out = Vec::new();
+                    if let Some(stream) = self.pdb.module_stream(module)? {
+                        let compiland = u32::try_from(module.index).unwrap_or(u32::MAX);
+                        module_inline_sites(sections, compiland, stream.symbols(), &mut out);
+                    }
+                    Ok::<_, Error>(out)
+                });
+                let mut sites = Vec::new();
+                for m in per_module {
+                    sites.extend(m?);
+                }
+                Ok(sites)
+            },
+        );
+        let (types, ids) = indexed?;
+        let mut sites = sites?;
+        // Each inlinee named once, on every core: the distinct ids in the
+        // order first seen, then named.
+        let mut seen: HashMap<u32, u32> = HashMap::default();
+        let mut distinct: Vec<u32> = Vec::new();
+        for s in &sites {
+            seen.entry(s.inlinee).or_insert_with(|| {
+                distinct.push(s.inlinee);
+                u32::try_from(distinct.len() - 1).unwrap_or(u32::MAX)
             });
         }
-        Ok(crate::InlineSites { inlinees, sites })
+        let named: Vec<(String, Option<u32>)> = turbonop_par::map_chunks(&distinct, 256, |part| {
+            let formatter = TypeFormatter { types };
+            part.iter()
+                .map(|&id| {
+                    let found = inlinee(ids, &formatter, id);
+                    let count = found
+                        .as_ref()
+                        .and_then(|(_, ty)| parameter_count(types, self::index(*ty)));
+                    let name = found.map_or_else(|| format!("<inlinee {id:#x}>"), |(n, _)| n);
+                    (name, count)
+                })
+                .collect()
+        });
+        // (Id records of one name are one function: an index per name.)
+        let mut by_name: HashMap<&str, u32> = HashMap::default();
+        let mut inlinees: Vec<String> = Vec::new();
+        let mut params: Vec<Option<u32>> = Vec::new();
+        let slot: Vec<u32> = named
+            .iter()
+            .map(|(name, count)| {
+                *by_name.entry(name.as_str()).or_insert_with(|| {
+                    inlinees.push(name.clone());
+                    params.push(*count);
+                    u32::try_from(inlinees.len() - 1).unwrap_or(u32::MAX)
+                })
+            })
+            .collect();
+        for s in &mut sites {
+            s.inlinee = seen
+                .get(&s.inlinee)
+                .and_then(|&k| slot.get(k as usize))
+                .copied()
+                .unwrap_or(u32::MAX);
+        }
+        Ok(crate::InlineSites {
+            inlinees,
+            params,
+            sites,
+        })
     }
 
     /// Every module's annotations, by address.
@@ -335,7 +389,7 @@ impl<'data> PdbInfo<'data> {
         let dbi = self.pdb.dbi()?;
         let names = self.pdb.names()?;
         let mut files: Vec<String> = Vec::new();
-        let mut file_index: HashMap<String, u32> = HashMap::new();
+        let mut file_index: HashMap<String, u32> = HashMap::default();
         let mut spans = Vec::new();
         for module in dbi.modules() {
             let Some(stream) = self.pdb.module_stream(module)? else {
@@ -343,7 +397,7 @@ impl<'data> PdbInfo<'data> {
             };
             let compiland = u32::try_from(module.index).unwrap_or(u32::MAX);
             // A module's checksum offsets name its files: look each up once.
-            let mut by_offset: HashMap<u32, u32> = HashMap::new();
+            let mut by_offset: HashMap<u32, u32> = HashMap::default();
             let mut entries = Vec::new();
             for group in &function_line_blocks(&stream) {
                 let Some(block) = group.first() else { continue };
@@ -387,59 +441,65 @@ impl<'data> PdbInfo<'data> {
 
     pub fn symbols(&self) -> Result<Vec<DebugSymbol>> {
         let dbi = self.pdb.dbi()?;
-        // Read the module streams first (gathering any that are not
-        // contiguous), then decode them in parallel: they are independent.
-        let mut streams = Vec::new();
-        for module in dbi.modules() {
-            if let Some(stream) = self.pdb.module_stream(module)? {
-                // Module indexes come from a 16-bit field.
-                streams.push((u32::try_from(module.index).unwrap_or(u32::MAX), stream));
-            }
-        }
-        let threads = std::thread::available_parallelism()
-            .map_or(1, std::num::NonZero::get)
-            .min(streams.len().max(1));
-        let chunk = streams.len().div_ceil(threads).max(1);
         let sections = &self.sections;
-        let mut out: Vec<DebugSymbol> = std::thread::scope(|scope| {
-            let handles: Vec<_> = streams
-                .chunks(chunk)
-                .map(|part| {
-                    scope.spawn(move || {
-                        let mut out = Vec::new();
-                        for (index, stream) in part {
-                            module_symbols(sections, *index, stream.symbols(), &mut out);
-                        }
-                        out
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .flat_map(|h| h.join().unwrap_or_default())
-                .collect()
-        });
-
-        // Publics and global data, from the shared symbol record stream.
-        for record in SymbolIter::new(self.pdb.symbol_records(), 0) {
-            let Ok(symbol) = record.parse() else { continue };
-            if let Some(s) = shared_symbol(sections, symbol) {
-                out.push(s);
-            }
-        }
+        // The types and ids, read and indexed (for the many lookups that
+        // follow) while the symbols are.
+        let (indexed, out) = turbonop_par::join(
+            || {
+                let types = self.pdb.types().inspect(|t| {
+                    t.build_offsets();
+                });
+                if let Ok(ids) = self.pdb.ids() {
+                    ids.build_offsets();
+                }
+                types
+            },
+            || -> Result<Vec<DebugSymbol>> {
+                // Modules, each read (gathering a stream that is not
+                // contiguous) and decoded on whichever thread is free: their
+                // sizes differ by thousands of times.
+                let modules = dbi.modules();
+                let per_module = turbonop_par::map_balanced(modules, 4, |module| {
+                    let mut out = Vec::new();
+                    let stream = self.pdb.module_stream(module)?;
+                    if let Some(stream) = stream {
+                        // Module indexes come from a 16-bit field.
+                        let index = u32::try_from(module.index).unwrap_or(u32::MAX);
+                        module_symbols(sections, index, stream.symbols(), &mut out);
+                    }
+                    Ok::<_, Error>(out)
+                });
+                // Publics and global data, from the shared symbol record
+                // stream: its records found, then decoded on every core.
+                let records: Vec<_> = SymbolIter::new(self.pdb.symbol_records(), 0).collect();
+                let shared: Vec<DebugSymbol> = turbonop_par::map_chunks(&records, 8192, |part| {
+                    part.iter()
+                        .filter_map(|r| shared_symbol(sections, r.parse().ok()?))
+                        .collect()
+                });
+                let mut out = Vec::with_capacity(
+                    per_module
+                        .iter()
+                        .map(|m| m.as_ref().map_or(0, Vec::len))
+                        .sum::<usize>()
+                        + shared.len(),
+                );
+                for m in per_module {
+                    out.extend(m?);
+                }
+                out.extend(shared);
+                Ok(out)
+            },
+        );
+        let mut out = out?;
 
         // Data sizes from their types (looked up once per type).
-        let types = self.pdb.types()?;
-        // Many lookups follow: index every record once.
-        types.build_offsets();
+        let types = indexed?;
         let formatter = TypeFormatter { types };
         // Functions' statics in inlined copies: name the inlined function.
         if out.iter().any(|s| s.flags & INLINEE_PENDING != 0) {
             let ids = self.pdb.ids().ok();
-            if let Some(ids) = ids {
-                ids.build_offsets();
-            }
-            let mut names: HashMap<u64, Option<(String, TypeRef)>> = HashMap::new();
+            let mut names: HashMap<u64, Option<(String, TypeRef)>> = HashMap::default();
             for s in out.iter_mut().filter(|s| s.flags & INLINEE_PENDING != 0) {
                 s.flags &= !INLINEE_PENDING;
                 let Some(f) = s.function.as_mut() else {
@@ -458,7 +518,7 @@ impl<'data> PdbInfo<'data> {
                 }
             }
         }
-        let mut sizes: HashMap<u64, Option<u64>> = HashMap::new();
+        let mut sizes: HashMap<u64, Option<u64>> = HashMap::default();
         for s in out.iter_mut().filter(|s| s.kind == SymbolKind::Data) {
             s.size = *sizes
                 .entry(s.type_index)
@@ -466,8 +526,10 @@ impl<'data> PdbInfo<'data> {
         }
 
         // Copies without a compiland sort after those with one, so that
-        // `dedup_by` keeps the one with.
-        out.sort_by(|a, b| {
+        // `dedup_by` keeps the one with. (Small keys sorted, the rest of
+        // the order only where they tie; then each symbol moved once,
+        // rather than through every merge.)
+        let full = |a: &DebugSymbol, b: &DebugSymbol| {
             (
                 a.addr,
                 a.kind,
@@ -484,7 +546,22 @@ impl<'data> PdbInfo<'data> {
                     b.compiland.is_none(),
                     b.compiland,
                 ))
+        };
+        let mut keys: Vec<(u64, SymbolKind, u32)> = out
+            .iter()
+            .enumerate()
+            .map(|(i, s)| (s.addr, s.kind, u32::try_from(i).unwrap_or(u32::MAX)))
+            .collect();
+        turbonop_par::sort_by(&mut keys, |a, b| {
+            (a.0, a.1)
+                .cmp(&(b.0, b.1))
+                .then_with(|| full(&out[a.2 as usize], &out[b.2 as usize]))
         });
+        let mut slots: Vec<Option<DebugSymbol>> = out.into_iter().map(Some).collect();
+        let mut out: Vec<DebugSymbol> = keys
+            .iter()
+            .filter_map(|&(_, _, i)| slots[i as usize].take())
+            .collect();
         // The same symbol from two places: a module's static and its copy
         // in the global stream (which has no compiland), say. (Overloads
         // folded together in one module share an address and a name, but
@@ -501,17 +578,21 @@ impl<'data> PdbInfo<'data> {
     }
 
     pub fn classes(&self) -> Result<Vec<Class>> {
-        use hexcavator_codeview::types::{Field, leaf};
+        use turbonop_codeview::types::{Field, leaf};
         let types = self.pdb.types()?;
-        types.build_offsets();
-        let mut out = Vec::new();
-        for (ti, rec) in types.iter() {
+        // (Every record indexed, then read on every core.)
+        let count = u32::try_from(types.build_offsets().len()).unwrap_or(u32::MAX);
+        let first = types.begin().0;
+        let indexes: Vec<u32> = (first..first.saturating_add(count)).collect();
+        let classes: Vec<Option<Class>> = turbonop_par::map(&indexes, 4096, |&i| {
+            let ti = TypeIndex(i);
+            let rec = types.record(ti)?;
             if !leaf::is_class(rec.kind) {
-                continue;
+                return None;
             }
-            let Some(udt) = rec.udt() else { continue };
+            let udt = rec.udt()?;
             if udt.is_forward_ref() || udt.field_list.0 == 0 {
-                continue;
+                return None;
             }
             let mut class = Class {
                 name: lossy(udt.name),
@@ -563,9 +644,9 @@ impl<'data> PdbInfo<'data> {
                     _ => break,
                 }
             }
-            out.push(class);
-        }
-        Ok(out)
+            Some(class)
+        });
+        Ok(classes.into_iter().flatten().collect())
     }
 
     pub fn type_size(&self, ty: TypeRef) -> Option<u64> {
@@ -574,7 +655,7 @@ impl<'data> PdbInfo<'data> {
     }
 
     pub fn enumerators(&self, ty: TypeRef) -> Option<crate::Enumerators> {
-        use hexcavator_codeview::types::{Field, leaf};
+        use turbonop_codeview::types::{Field, leaf};
         let types = self.pdb.types().ok()?;
         let ti = types.resolve_forward(index(ty));
         let rec = types.record(ti)?;
@@ -610,15 +691,17 @@ impl<'data> PdbInfo<'data> {
 
     pub fn layout(&self, ty: TypeRef) -> Option<crate::layout::Layout> {
         let types = self.pdb.types().ok()?;
-        hexcavator_codeview::layout::layout(types, index(ty)).map(neutral_layout)
+        turbonop_codeview::layout::layout(types, index(ty)).map(neutral_layout)
     }
 
     pub fn layouts(&self) -> Result<Vec<crate::layout::Layout>> {
         let types = self.pdb.types()?;
-        Ok(hexcavator_codeview::layout::all(types)
-            .into_iter()
-            .map(neutral_layout)
-            .collect())
+        // (Each filled out on every core.)
+        Ok(turbonop_par::map_into(
+            turbonop_codeview::layout::all(types),
+            1024,
+            neutral_layout,
+        ))
     }
 
     pub fn type_shape(&self, ty: TypeRef) -> TypeShape {
@@ -640,7 +723,7 @@ impl<'data> PdbInfo<'data> {
     /// file a string ID) or `LF_UDT_MOD_SRC_LINE` (the file in the names
     /// stream) for it.
     pub fn type_definition(&self, ty: TypeRef) -> Option<(String, u32)> {
-        use hexcavator_codeview::types::leaf;
+        use turbonop_codeview::types::leaf;
         let ids = self.pdb.ids().ok()?;
         let mut wanted = vec![ty.pdb_index().0];
         if let Ok(types) = self.pdb.types() {
@@ -670,7 +753,7 @@ impl<'data> PdbInfo<'data> {
                 }
                 let text = s.data.get(4..)?;
                 String::from_utf8_lossy(
-                    &text[..text.iter().position(|&b| b == 0).unwrap_or(text.len())],
+                    &text[..turbonop_core::find_nul(text).unwrap_or(text.len())],
                 )
                 .into_owned()
             } else {
@@ -679,6 +762,56 @@ impl<'data> PdbInfo<'data> {
             return Some((file, line));
         }
         None
+    }
+
+    /// How each module was compiled: `S_COMPILE3`'s version, and the
+    /// arguments of the command line `S_BUILDINFO` names (none recorded for
+    /// what wasn't compiled, or when the PDB has no IDs stream).
+    pub fn compile_options(&self) -> Result<Vec<crate::CompileOptions>> {
+        let dbi = self.pdb.dbi()?;
+        let ids = self.pdb.ids().ok();
+        let mut out = Vec::new();
+        for m in dbi.modules() {
+            let mut o = crate::CompileOptions::default();
+            if let Ok(Some(stream)) = self.pdb.module_stream(m) {
+                // (Both come first, before the module's procedures.)
+                for rec in stream.symbols().take(64) {
+                    match rec.parse() {
+                        Ok(Symbol::Compile3 {
+                            flags,
+                            frontend,
+                            backend,
+                            version,
+                            ..
+                        }) => {
+                            // (Assemblers and tools leave the front end's
+                            // version 0.)
+                            let v = if frontend == [0; 4] {
+                                backend
+                            } else {
+                                frontend
+                            };
+                            o.compiler =
+                                format!("{} {}.{}.{}.{}", lossy(version), v[0], v[1], v[2], v[3]);
+                            o.language = codeview_language(flags & 0xFF).into();
+                        }
+                        Ok(Symbol::BuildInfo { id }) => {
+                            if let Some(ids) = ids {
+                                let [cwd, _, source, _, cmd] = build_info(ids, id);
+                                if let Some(cmd) = cmd {
+                                    o.args = Some(crate::options::parse_msvc_command_line(&cmd));
+                                }
+                                o.directory = cwd.unwrap_or_default();
+                                o.source = source.unwrap_or_default();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            out.push(o);
+        }
+        Ok(out)
     }
 
     pub fn linker_info(&self) -> Result<LinkerInfo> {
@@ -709,13 +842,105 @@ impl<'data> PdbInfo<'data> {
     }
 }
 
+/// The name of a CodeView source language (`S_COMPILE3`'s `CV_CFL_*`):
+/// `C`, `C++`, `MASM`, `LINK` (what the linker made), `Rust`, ...
+pub fn codeview_language(l: u32) -> &'static str {
+    match l {
+        0 => "C",
+        1 => "C++",
+        2 => "Fortran",
+        3 => "MASM",
+        4 => "Pascal",
+        5 => "Basic",
+        6 => "COBOL",
+        7 => "LINK",
+        8 => "CVTRES",
+        9 => "CVTPGD",
+        10 => "C#",
+        11 => "Visual Basic",
+        12 => "ILASM",
+        13 => "Java",
+        14 => "JScript",
+        15 => "MSIL",
+        16 => "HLSL",
+        17 => "Objective-C",
+        18 => "Objective-C++",
+        19 => "Swift",
+        20 => "ALIASOBJ",
+        21 => "Rust",
+        22 => "Go",
+        _ => "other",
+    }
+}
+
+/// The strings of an `LF_BUILDINFO` record in the IDs stream: the working
+/// directory, the tool, the source file, the PDB, and the command line's
+/// arguments (those it has).
+pub fn build_info(ids: &turbonop_pdb::tpi::TypeStream<'_>, id: TypeIndex) -> [Option<String>; 5] {
+    let mut out = [None, None, None, None, None];
+    let Some(rec) = ids.record(id) else {
+        return out;
+    };
+    if rec.kind != turbonop_codeview::types::leaf::LF_BUILDINFO {
+        return out;
+    }
+    let d = rec.data;
+    let Some(count) = d
+        .get(0..2)
+        .map(|c| usize::from(u16::from_le_bytes([c[0], c[1]])))
+    else {
+        return out;
+    };
+    for (k, slot) in out.iter_mut().enumerate().take(count) {
+        let Some(arg) = d.get(2 + 4 * k..6 + 4 * k) else {
+            break;
+        };
+        let arg = u32::from_le_bytes([arg[0], arg[1], arg[2], arg[3]]);
+        *slot = string_id(ids, arg, 0);
+    }
+    out
+}
+
+/// An `LF_STRING_ID`'s string: its substrings (`LF_SUBSTR_LIST`), then its
+/// own text.
+fn string_id(ids: &turbonop_pdb::tpi::TypeStream<'_>, id: u32, depth: usize) -> Option<String> {
+    use turbonop_codeview::types::leaf;
+    if depth > 4 || id == 0 {
+        return None;
+    }
+    let rec = ids.record(TypeIndex(id))?;
+    if rec.kind != leaf::LF_STRING_ID {
+        return None;
+    }
+    let d = rec.data;
+    let sub = u32::from_le_bytes(d.get(0..4)?.try_into().ok()?);
+    let text = d.get(4..)?;
+    let text = &text[..turbonop_core::find_nul(text).unwrap_or(text.len())];
+    let mut s = String::new();
+    if sub != 0 {
+        let list = ids.record(TypeIndex(sub))?;
+        if list.kind == leaf::LF_SUBSTR_LIST {
+            let ld = list.data;
+            let n = u32::from_le_bytes(ld.get(0..4)?.try_into().ok()?) as usize;
+            for i in 0..n.min(256) {
+                let part = u32::from_le_bytes(ld.get(4 + 4 * i..8 + 4 * i)?.try_into().ok()?);
+                if let Some(p) = string_id(ids, part, depth + 1) {
+                    s.push_str(&p);
+                }
+            }
+        }
+    }
+    s.push_str(&String::from_utf8_lossy(text));
+    Some(s)
+}
+
 /// The shape of a simple (built-in) type index: a basic type, or a pointer
 /// to one by the index's mode bits.
 /// A type index as a [`TypeRef`].
 /// A PDB type's parts, laid out with the holes between them.
-fn neutral_layout(l: hexcavator_codeview::layout::Layout) -> crate::layout::Layout {
+fn neutral_layout(l: turbonop_codeview::layout::Layout) -> crate::layout::Layout {
     use crate::layout::PartKind as K;
-    use hexcavator_codeview::layout::PartKind as P;
+    use turbonop_codeview::layout::PartKind as P;
     let kind = |k: P| match k {
         P::Base => K::Base,
         P::VirtualBase => K::VirtualBase,
@@ -754,7 +979,7 @@ fn index(r: TypeRef) -> TypeIndex {
 }
 
 fn simple_shape(ti: u32) -> TypeShape {
-    use hexcavator_codeview::types::simple::*;
+    use turbonop_codeview::types::simple::*;
     if !is_valid(ti) {
         return TypeShape::Unknown;
     }
@@ -812,12 +1037,8 @@ fn simple_shape(ti: u32) -> TypeShape {
 }
 
 /// The shape of a type record.
-fn record_shape(
-    types: &hexcavator_pdb::TypeStream<'_>,
-    kind: u16,
-    data: &[u8],
-) -> Option<TypeShape> {
-    use hexcavator_codeview::types::leaf;
+fn record_shape(types: &turbonop_pdb::TypeStream<'_>, kind: u16, data: &[u8]) -> Option<TypeShape> {
+    use turbonop_codeview::types::leaf;
     let mut r = Reader::new(data);
     let ti = |r: &mut Reader<'_>| r.u32_le().map(|t| TypeRef(u64::from(t))).ok();
     let qualifiers_of_modifier = |mods: u16| Qualifiers {
@@ -841,7 +1062,7 @@ fn record_shape(
         leaf::LF_POINTER => {
             let target = ti(&mut r)?;
             let attrs = r.u32_le().ok()?;
-            use hexcavator_codeview::types::pointer::*;
+            use turbonop_codeview::types::pointer::*;
             let kind = match (attrs >> PTRMODE_SHIFT) & PTRMODE_MASK {
                 CV_PTR_MODE_LVREF => PointerKind::LValueReference,
                 CV_PTR_MODE_PMEM | CV_PTR_MODE_PMFUNC => PointerKind::Member,
@@ -865,13 +1086,13 @@ fn record_shape(
             qualifiers: qualifiers_of_modifier(r.u16_le().ok()?),
         },
         k if leaf::is_class(k) || leaf::is_union(k) => {
-            let rec = hexcavator_codeview::TypeRecord { kind, data };
+            let rec = turbonop_codeview::TypeRecord { kind, data };
             TypeShape::Udt {
                 name: lossy(rec.udt()?.name),
             }
         }
         leaf::LF_ENUM => {
-            let rec = hexcavator_codeview::TypeRecord { kind, data };
+            let rec = turbonop_codeview::TypeRecord { kind, data };
             TypeShape::Enum {
                 name: lossy(rec.udt()?.name),
             }
@@ -879,7 +1100,7 @@ fn record_shape(
         leaf::LF_ARRAY => {
             let element = ti(&mut r)?;
             let _index = ti(&mut r)?;
-            let size = hexcavator_codeview::types::read_numeric(&mut r)
+            let size = turbonop_codeview::types::read_numeric(&mut r)
                 .ok()?
                 .as_u64();
             TypeShape::Array { element, size }
@@ -936,10 +1157,10 @@ fn record_shape(
 /// for the same code (functions folded into one), the first's (as DIA has
 /// it).
 pub(crate) fn function_line_blocks<'s>(
-    stream: &'s hexcavator_pdb::ModuleStream<'_>,
-) -> Vec<Vec<hexcavator_codeview::lines::LineBlock<'s>>> {
-    use hexcavator_codeview::lines::{parse_lines, subsection};
-    let mut seen = std::collections::HashSet::new();
+    stream: &'s turbonop_pdb::ModuleStream<'_>,
+) -> Vec<Vec<turbonop_codeview::lines::LineBlock<'s>>> {
+    use turbonop_codeview::lines::{parse_lines, subsection};
+    let mut seen = turbonop_hash::Set::default();
     let mut out = Vec::new();
     for (kind, body) in stream.subsections() {
         if kind != subsection::DEBUG_S_LINES {
@@ -1048,7 +1269,7 @@ fn module_inline_sites(
             }) => {
                 scopes.push((enclosing, depth + 1));
                 let Some(base) = enclosing else { continue };
-                let site = hexcavator_codeview::annotations::decode(annotations);
+                let site = turbonop_codeview::annotations::decode(annotations);
                 out.push(crate::InlineSite {
                     inlinee: inlinee.0,
                     function: base,
@@ -1241,7 +1462,7 @@ fn def_range(
             r.u16_le().ok()?;
             Place::Field {
                 register,
-                field: r.u32_le().ok()? & hexcavator_codeview::symbols::OFFSET_PARENT_MASK,
+                field: r.u32_le().ok()? & turbonop_codeview::symbols::OFFSET_PARENT_MASK,
             }
         }
         kind::S_DEFRANGE_FRAMEPOINTER_REL_FULL_SCOPE => {
@@ -1296,14 +1517,17 @@ fn module_symbols(
         out.push(s);
     };
     // Procedures by the offset of their record, which nested records name
-    // as their parent.
-    let mut procedures: HashMap<u32, (u64, &[u8], u32)> = HashMap::new();
-    let mut last_procedure: Option<(u64, &[u8], u32)> = None;
+    // as their parent (in order of offset: as read).
+    let mut procedures: Vec<(u32, ProcedureAt<'_>)> = Vec::new();
+    let mut last_procedure: Option<ProcedureAt<'_>> = None;
     // The procedures seen (address, name, type, parameters), and the open
     // scopes, each with the procedure it lies in, if any, and whether it is
     // that procedure's own scope (where its parameters are).
     let mut procs: Vec<Proc<'_>> = Vec::new();
     let mut scopes: Vec<(Option<usize>, bool)> = Vec::new();
+    // Procedures' parameters: (procedure, name, type), in order. (Only
+    // their statics need them: they are copied for those alone.)
+    let mut params: Vec<(usize, &[u8], TypeRef)> = Vec::new();
     // Data declared in procedures: (index in `out`, procedure).
     let mut statics: Vec<(usize, usize)> = Vec::new();
     for record in records {
@@ -1311,9 +1535,16 @@ fn module_symbols(
             scopes.pop();
         }
         let (enclosing, top) = scopes.last().copied().unwrap_or((None, false));
-        if kind::opens_scope(record.kind) {
-            let own = match record.parse() {
-                Ok(Symbol::Procedure {
+        let opens = kind::opens_scope(record.kind);
+        // (Each record parsed once, and only those of kinds read here.)
+        let parsed = if wanted_in_module(record.kind) {
+            record.parse().ok()
+        } else {
+            None
+        };
+        if opens {
+            let own = match parsed {
+                Some(Symbol::Procedure {
                     offset,
                     segment,
                     name,
@@ -1324,19 +1555,17 @@ fn module_symbols(
                         addr: rva_in(sections, segment, offset),
                         name,
                         ty: ty.0,
-                        params: Vec::new(),
                         inlinee: None,
                     });
                     Some(procs.len() - 1)
                 }
                 // An inlined copy of a function: its locals are that
                 // function's (named from its id, later).
-                Ok(Symbol::InlineSite { inlinee, .. }) => {
+                Some(Symbol::InlineSite { inlinee, .. }) => {
                     procs.push(Proc {
                         addr: enclosing.and_then(|p| procs[p].addr),
                         name: b"",
                         ty: 0,
-                        params: Vec::new(),
                         inlinee: Some(inlinee.0),
                     });
                     Some(procs.len() - 1)
@@ -1350,14 +1579,14 @@ fn module_symbols(
         // such (`this` is the object pointer, not a parameter).
         if top
             && let Some(p) = enclosing
-            && let Ok(Symbol::Local { ty, flags, name }) = record.parse()
+            && let Some(Symbol::Local { ty, flags, name }) = parsed
             && flags & 1 != 0
             && name != b"this"
         {
-            procs[p].params.push((lossy(name), to_ref(ty)));
+            params.push((p, name, to_ref(ty)));
             continue;
         }
-        let Ok(parsed) = record.parse() else { continue };
+        let Some(parsed) = parsed else { continue };
         match parsed {
             Symbol::Procedure {
                 global,
@@ -1372,7 +1601,7 @@ fn module_symbols(
                 let Some(addr) = rva_in(sections, segment, offset) else {
                     continue;
                 };
-                procedures.insert(record.offset, (addr, name, ty.0));
+                procedures.push((record.offset, (addr, name, ty.0)));
                 last_procedure = Some((addr, name, ty.0));
                 push(
                     out,
@@ -1402,7 +1631,10 @@ fn module_symbols(
                 // folded by ICF they give the address of the copy that was
                 // discarded.
                 let function = if parent != 0 {
-                    procedures.get(&parent).copied()
+                    procedures
+                        .binary_search_by_key(&parent, |p| p.0)
+                        .ok()
+                        .map(|i| procedures[i].1)
                 } else {
                     last_procedure
                 };
@@ -1501,12 +1733,21 @@ fn module_symbols(
             _ => {}
         }
     }
-    for (i, p) in statics {
-        let p = &procs[p];
+    // (Grouped by procedure, each's in order.)
+    if !statics.is_empty() {
+        params.sort_by_key(|q| q.0);
+    }
+    for (i, k) in statics {
+        let p = &procs[k];
+        let from = params.partition_point(|q| q.0 < k);
+        let to = params.partition_point(|q| q.0 <= k);
         out[i].function = Some(Box::new(EnclosingFunction {
             name: lossy(p.name),
             ty: TypeRef(u64::from(p.ty)),
-            params: p.params.clone(),
+            params: params[from..to]
+                .iter()
+                .map(|&(_, name, ty)| (lossy(name), ty))
+                .collect(),
         }));
         if let Some(id) = p.inlinee {
             // Resolved from the id stream once all modules are read.
@@ -1529,12 +1770,40 @@ fn method_kind(attributes: u16) -> MethodKind {
     }
 }
 
+/// A procedure's address, name, and type.
+type ProcedureAt<'a> = (u64, &'a [u8], u32);
+
+/// Whether `module_symbols` reads records of `kind` (others it passes
+/// over, but for the scopes they open and close).
+fn wanted_in_module(kind: u16) -> bool {
+    use kind::*;
+    matches!(
+        kind,
+        S_GPROC32
+            | S_LPROC32
+            | S_GPROC32_ID
+            | S_LPROC32_ID
+            | S_LPROC32_DPC
+            | S_LPROC32_DPC_ID
+            | S_INLINESITE
+            | S_INLINESITE2
+            | S_LOCAL
+            | S_SEPCODE
+            | S_BLOCK32
+            | S_THUNK32
+            | S_LABEL32
+            | S_GDATA32
+            | S_LDATA32
+            | S_GTHREAD32
+            | S_LTHREAD32
+    )
+}
+
 /// A procedure, or an inlined copy of one, that holds declarations.
 struct Proc<'a> {
     addr: Option<u64>,
     name: &'a [u8],
     ty: u32,
-    params: Vec<(String, TypeRef)>,
     /// For an inlined copy: the inlined function's id (IPI).
     inlinee: Option<u32>,
 }
@@ -1544,8 +1813,33 @@ struct Proc<'a> {
 const INLINEE_PENDING: u32 = 1 << 31;
 
 /// An inlined function's qualified name, from its id record.
+/// How many parameters a procedure type (`LF_PROCEDURE`, or
+/// `LF_MFUNCTION`, with its `this`) takes.
+fn parameter_count(types: &turbonop_pdb::TypeStream<'_>, ty: TypeIndex) -> Option<u32> {
+    use turbonop_codeview::types::leaf;
+    let rec = types.record(ty)?;
+    let mut r = Reader::new(rec.data);
+    match rec.kind {
+        leaf::LF_PROCEDURE => {
+            r.u32_le().ok()?; // return type
+            r.u8().ok()?; // calling convention
+            r.u8().ok()?; // attributes
+            Some(u32::from(r.u16_le().ok()?))
+        }
+        leaf::LF_MFUNCTION => {
+            r.u32_le().ok()?; // return type
+            r.u32_le().ok()?; // class
+            let this = r.u32_le().ok()?;
+            r.u8().ok()?;
+            r.u8().ok()?;
+            Some(u32::from(r.u16_le().ok()?) + u32::from(this != 0))
+        }
+        _ => None,
+    }
+}
+
 pub(crate) fn inlinee_name(
-    ids: &hexcavator_pdb::TypeStream<'_>,
+    ids: &turbonop_pdb::TypeStream<'_>,
     formatter: &TypeFormatter<'_>,
     id: u32,
 ) -> Option<String> {
@@ -1556,11 +1850,11 @@ pub(crate) fn inlinee_name(
 /// (`LF_FUNC_ID`: scope string, type, name; `LF_MFUNC_ID`: class, type,
 /// name).
 fn inlinee(
-    ids: &hexcavator_pdb::TypeStream<'_>,
+    ids: &turbonop_pdb::TypeStream<'_>,
     formatter: &TypeFormatter<'_>,
     id: u32,
 ) -> Option<(String, TypeRef)> {
-    use hexcavator_codeview::types::leaf;
+    use turbonop_codeview::types::leaf;
     let rec = ids.record(TypeIndex(id))?;
     let mut r = Reader::new(rec.data);
     let scope = r.u32_le().ok()?;

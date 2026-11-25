@@ -15,12 +15,12 @@
 //! - Guard tables are found whenever the load configuration's own size
 //!   holds their fields, not by the data directory's size.
 
-use std::collections::HashSet;
+use turbonop_hash::Set as HashSet;
 
-use hexcavator_core::{Rva, Va, cstr_at};
-use hexcavator_pe::PeFile;
-use hexcavator_pe::consts::directory;
-use hexcavator_pe::load_config::field;
+use turbonop_core::{Rva, Va, cstr_at};
+use turbonop_pe::PeFile;
+use turbonop_pe::consts::directory;
+use turbonop_pe::load_config::field;
 
 use crate::Size;
 use crate::symbols::{Symbol, SymbolKind};
@@ -226,7 +226,7 @@ impl Builder<'_, '_> {
                 } else {
                     self.pe
                         .va_to_rva(Va(u64::from(v)))
-                        .map(hexcavator_core::Rva::get)
+                        .map(turbonop_core::Rva::get)
                 }
             };
             let field = |i: u32| self.u32(at.checked_add(4 * i)?).and_then(to_rva);
@@ -380,7 +380,7 @@ pub fn symbols(pe: &PeFile<'_>) -> Vec<Symbol> {
     };
     let mut b = Builder {
         pe,
-        seen: HashSet::new(),
+        seen: HashSet::default(),
         out: Vec::new(),
         word,
     };

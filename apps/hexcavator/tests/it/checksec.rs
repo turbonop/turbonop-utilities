@@ -1,4 +1,4 @@
-//! `hexc checksec`: each mitigation on or off as the fixtures were built
+//! `hexcavator checksec`: each mitigation on or off as the fixtures were built
 //! (the hardened ELF images of tools/elf/hardened.c against the plain
 //! program; the xref PE image, built without /guard:cf but with CRT code
 //! that has it; a Mach-O image signed ad hoc), and `-audit` naming the
@@ -12,7 +12,7 @@ fn root() -> PathBuf {
 }
 
 fn checks(file: &str) -> serde_json::Value {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-json"])
         .arg(root().join(file))
         .output()
@@ -97,7 +97,7 @@ fn pe_and_macho() {
 
 #[test]
 fn audit_names_the_objects_built_differently() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-audit", "-json"])
         .arg(root().join("testdata/xref/xref-x64.exe"))
         .output()
@@ -168,7 +168,7 @@ fn audit_names_the_objects_built_differently() {
         "{linker}"
     );
     // Text: the same, readable.
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-audit"])
         .arg(root().join("testdata/xref/xref-x64.exe"))
         .output()
@@ -182,9 +182,10 @@ fn audit_names_the_objects_built_differently() {
 
 #[test]
 fn not_an_image() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    // (A PDB: debug information, no image.)
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec"])
-        .arg(root().join("testdata/wasm/module.wasm"))
+        .arg(root().join("testdata/types/types.pdb"))
         .output()
         .unwrap();
     assert!(!out.status.success());
@@ -192,7 +193,7 @@ fn not_an_image() {
 
 #[test]
 fn audit_of_a_debug_map_names_archives_members() {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(["checksec", "-audit", "-json"])
         .arg(root().join("testdata/macho/oso/oso-arm64"))
         .output()
@@ -217,4 +218,99 @@ fn audit_of_a_debug_map_names_archives_members() {
         .unwrap();
     assert_eq!(program["library"], "");
     assert_eq!(program["source"], "program.c");
+}
+
+/// A WebAssembly module's: what a native image's mitigations guard is its
+/// runtime's (not applicable); its stack canaries (its stack is in its
+/// memory), its exported memory, and the features it was built for.
+#[test]
+fn wasm() {
+    let v = checks("testdata/wasm/startup.wasm");
+    assert_eq!(v["format"], "wasm");
+    assert_eq!(state(&v, "Isolated code"), "n/a");
+    assert_eq!(state(&v, "Stack canaries"), "off");
+    let features = v["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "Features")
+        .unwrap();
+    assert!(
+        features["detail"]
+            .as_str()
+            .unwrap()
+            .contains("+bulk-memory"),
+        "{features}"
+    );
+}
+
+fn audit(file: &str) -> serde_json::Value {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(["checksec", "-audit", "-json"])
+        .arg(root().join(file))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+/// Split DWARF's units are audited as the same program's are without it
+/// (each split unit's name and language, over its skeleton's).
+#[test]
+fn audit_of_split_dwarf() {
+    let builds = |file: &str| -> Vec<(String, String)> {
+        let v = audit(file);
+        v["audit"]["builds"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{file}: {v}"))
+            .iter()
+            .map(|b| {
+                (
+                    b["object"].as_str().unwrap().to_string(),
+                    b["language"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect()
+    };
+    let split = builds("testdata/elf/split-dwarf5");
+    assert_eq!(split, builds("testdata/elf/split-dwarf5-plain"));
+    assert_eq!(
+        split,
+        [
+            ("program.c".to_string(), "C11".to_string()),
+            ("second.c".to_string(), "C11".to_string())
+        ]
+    );
+}
+
+/// Every format's record of the tools that linked it: an ELF image's
+/// `.comment`, a Mach-O image's `LC_BUILD_VERSION`, a WebAssembly module's
+/// `producers` (with its debug information found or not).
+#[test]
+fn audit_names_the_linker_of_every_format() {
+    let v = audit("testdata/linkmap/program-elf-g");
+    let comment = v["audit"]["linker"]["comment"].as_str().unwrap();
+    assert!(comment.starts_with("Linker: LLD "), "{v}");
+    // (No dSYM: the record still.)
+    let v = audit("testdata/linkmap/program-macho");
+    assert!(v["auditError"].is_string(), "{v}");
+    assert_eq!(v["audit"]["linker"]["platform"], "macos 13.0 (SDK 13.0)");
+    assert!(v["audit"]["linker"]["lld"].is_string(), "{v}");
+    let v = audit("testdata/wasm/sample-dwarf.wasm");
+    assert_eq!(v["audit"]["linker"]["language"], "Rust", "{v}");
+    assert!(
+        v["audit"]["linker"]["processed-by"]
+            .as_str()
+            .unwrap()
+            .starts_with("rustc "),
+        "{v}"
+    );
+    // A PE image's linker version, with its PDB's record.
+    let v = audit("testdata/xref/xref-x64.exe");
+    assert!(v["audit"]["linker"]["linker version"].is_string(), "{v}");
+    assert!(v["audit"]["linker"]["exe"].is_string(), "{v}");
 }

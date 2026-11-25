@@ -37,7 +37,7 @@ use std::collections::VecDeque;
 
 use rustc_hash::FxHashMap;
 
-use hexcavator_etl::Event;
+use turbonop_etl::Event;
 
 use crate::kernel::{KernelEvent, StackWalk};
 

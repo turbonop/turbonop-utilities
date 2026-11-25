@@ -109,7 +109,7 @@ fn arm64_branches() {
 #[test]
 fn arm64_targets_agree_with_the_formatter() {
     struct Record(core::cell::RefCell<Vec<u64>>);
-    impl hexcavator_arm64::Symbols for Record {
+    impl turbonop_arm64::Symbols for Record {
         fn name_at(&self, address: u64) -> Option<&str> {
             self.0.borrow_mut().push(address);
             None
@@ -122,14 +122,14 @@ fn arm64_targets_agree_with_the_formatter() {
         for low in (0..1u32 << 24).step_by(4093) {
             let word = top << 24 | low;
             let pc = 0x4000_0000;
-            let Some(i) = hexcavator_arm64::decode(word, pc) else {
+            let Some(i) = turbonop_arm64::decode(word, pc) else {
                 continue;
             };
             let Some(insn) = decode(Arch::Arm64, &word.to_le_bytes(), pc) else {
                 continue;
             };
             let r = Record(core::cell::RefCell::new(Vec::new()));
-            hexcavator_arm64::format_with(&i, &r);
+            turbonop_arm64::format_with(&i, &r);
             let named = r.0.into_inner().first().copied();
             if matches!(insn.flow, Flow::Call | Flow::Jump | Flow::Branch) {
                 assert_eq!(insn.target, named, "{word:08x}");
@@ -144,10 +144,123 @@ fn arm64_targets_agree_with_the_formatter() {
 fn nothing_to_decode() {
     assert_eq!(sweep(Arch::Arm64, &[1, 2], 0), (vec![], Some(0)));
     assert_eq!(
-        sweep(Arch::RiscV64, &[0x13, 0, 0, 0], 0x10),
+        sweep(Arch::Sparc64, &[0, 0, 0, 0], 0x10),
         (vec![], Some(0x10))
     );
     assert!(blocks(&[]).is_empty());
     assert!(!decodes(Arch::Wasm32));
     assert!(decodes(Arch::X86));
+}
+
+/// LoongArch's control flow: calls, returns, jumps, branches (to their
+/// targets), traps.
+#[test]
+fn loongarch_flow() {
+    let at = 0x1000;
+    let insn = |w: u32| decode(Arch::LoongArch64, &w.to_le_bytes(), at).unwrap();
+    let cases: [(u32, Flow, Option<u64>); 9] = [
+        (0x5400_0400, Flow::Call, Some(0x1004)),   // bl 4
+        (0x53ff_ffff, Flow::Jump, Some(0xffc)),    // b -4
+        (0x4c00_0020, Flow::Return, None),         // ret
+        (0x4c00_0280, Flow::Jump, None),           // jr $t8
+        (0x4c00_0281, Flow::Call, None),           // jirl $ra, $t8, 0
+        (0x5800_1085, Flow::Branch, Some(0x1010)), // beq $a0, $a1, 16
+        (0x4800_0400, Flow::Branch, Some(0x1004)), // bceqz $fcc0, 4
+        (0x002a_0000, Flow::Stop, None),           // break 0
+        (0x0010_8c85, Flow::Next, None),           // add.d $a1, $a0, $sp
+    ];
+    for (w, flow, target) in cases {
+        let i = insn(w);
+        assert_eq!((i.flow, i.target, i.len), (flow, target, 4), "{w:08x}");
+    }
+    assert!(decodes(Arch::LoongArch32));
+    // (LA64's own: not LA32's.)
+    assert!(decode(Arch::LoongArch32, &0x0010_8c85u32.to_le_bytes(), at).is_none());
+}
+
+/// PowerPC's control flow, big- and little-endian: calls, returns, jumps,
+/// conditional and unconditional `bc`, branches on the count register,
+/// traps; a prefixed instruction's 8 bytes.
+#[test]
+fn powerpc_flow() {
+    let at = 0x1000;
+    let cases: [(u32, Flow, Option<u64>); 11] = [
+        (0x4800_0011, Flow::Call, Some(0x1010)),   // bl .+16
+        (0x4bff_fff8, Flow::Jump, Some(0xff8)),    // b .-8
+        (0x4800_0102, Flow::Jump, Some(0x100)),    // ba 0x100
+        (0x4e80_0020, Flow::Return, None),         // blr
+        (0x4e80_0420, Flow::Jump, None),           // bctr
+        (0x4e80_0421, Flow::Call, None),           // bctrl
+        (0x4182_0008, Flow::Branch, Some(0x1008)), // beq .+8 (bt 2)
+        (0x4280_0008, Flow::Jump, Some(0x1008)),   // bc 20, 0, .+8
+        (0x4200_0008, Flow::Branch, Some(0x1008)), // bdnz .+8
+        (0x7fe0_0008, Flow::Stop, None),           // trap
+        (0x3863_0001, Flow::Next, None),           // addi 3, 3, 1
+    ];
+    for (w, flow, target) in cases {
+        for big in [true, false] {
+            let bytes = if big {
+                w.to_be_bytes()
+            } else {
+                w.to_le_bytes()
+            };
+            let i = decode_in(Arch::PowerPc64, Mode::endian(big), &bytes, at).unwrap();
+            assert_eq!(
+                (i.flow, i.target, i.len),
+                (flow, target, 4),
+                "{w:08x} {big}"
+            );
+        }
+    }
+    // pld 3, 8(4), 0: 8 bytes, the prefix first.
+    let mut pld = 0x0400_0000u32.to_be_bytes().to_vec();
+    pld.extend(0xe464_0008u32.to_be_bytes());
+    let i = decode_in(Arch::PowerPc64, Mode::endian(true), &pld, at).unwrap();
+    assert_eq!((i.len, i.flow), (8, Flow::Next));
+    assert!(decodes(Arch::PowerPc));
+}
+
+/// MIPS's control flow, big- and little-endian (each instruction's own);
+/// and a sweep's, a delayed branch's flow at its delay slot.
+#[test]
+fn mips_flow() {
+    let at = 0x1000;
+    let cases: [(u32, Flow, Option<u64>); 8] = [
+        (0x1085_0005, Flow::Branch, Some(0x1018)), // beq $4, $5, .+0x18
+        (0x1000_0003, Flow::Jump, Some(0x1010)),   // b .+0x10
+        (0x0c10_0040, Flow::Call, Some(0x40_0100)), // jal 0x400100
+        (0x03e0_0008, Flow::Return, None),         // jr $ra
+        (0x0320_f809, Flow::Call, None),           // jalr $25
+        (0x0411_fff7, Flow::Call, Some(0xfe0)),    // bal .-0x20
+        (0x0000_000d, Flow::Stop, None),           // break
+        (0x27bd_ffe0, Flow::Next, None),           // addiu $sp, $sp, -0x20
+    ];
+    for (w, flow, target) in cases {
+        for big in [true, false] {
+            let bytes = if big {
+                w.to_be_bytes()
+            } else {
+                w.to_le_bytes()
+            };
+            let i = decode_in(Arch::Mips, Mode::endian(big), &bytes, at).unwrap();
+            assert_eq!(
+                (i.flow, i.target, i.len),
+                (flow, target, 4),
+                "{w:08x} {big}"
+            );
+        }
+    }
+    // jr $ra; addiu $sp, $sp, 0x20 (its delay slot): the block ends at the
+    // slot.
+    let code: Vec<u8> = [0x03e0_0008u32, 0x27bd_0020]
+        .iter()
+        .flat_map(|w| w.to_be_bytes())
+        .collect();
+    let (insns, stop) = sweep_in(Arch::Mips, Mode::endian(true), &code, at);
+    assert_eq!(stop, None);
+    assert_eq!(
+        insns.iter().map(|i| i.flow).collect::<Vec<_>>(),
+        [Flow::Next, Flow::Return]
+    );
+    assert!(decodes(Arch::Mips64));
 }

@@ -5,13 +5,13 @@
 //! everything a table shows for a node: its label, weights and whether it
 //! has children.
 
-use hexcavator_trace::{ImageIx, ProcessIx, StackId, ThreadIx, Trace};
-use hexcavator_trace_analysis::{
+use rustc_hash::{FxHashMap, FxHashSet};
+use serde_json::{Value, json};
+use turbonop_trace::{ImageIx, ProcessIx, StackId, ThreadIx, Trace};
+use turbonop_trace_analysis::{
     BinTotals, Filter, FrameMode, Framer, GroupBy, Instances, Key, KeyId, Keys, NO_BIN, NodeId,
     Precise, Resolver, StackTags, SwitchWeight, Symbolizer, Tree, label, sources,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
-use serde_json::{Value, json};
 
 /// What a tree weighs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -434,13 +434,13 @@ pub fn functions(
 
 /// Each source line's weight, by what `spec` weighs and in its time range
 /// (its grouping and frames don't matter): see
-/// [`hexcavator_trace_analysis::lines::line_totals`].
+/// [`turbonop_trace_analysis::lines::line_totals`].
 pub fn line_totals(
     trace: &Trace,
     resolver: &Resolver,
     symbols: &dyn Symbolizer,
     spec: &TreeSpec,
-) -> (hexcavator_trace_analysis::lines::LineTotals, Unit, u64) {
+) -> (turbonop_trace_analysis::lines::LineTotals, Unit, u64) {
     let filter = Filter {
         time: spec.time.map(|(s, e)| (ticks(trace, s), ticks(trace, e))),
         threads: filter_threads(trace, spec.filter.as_ref()),
@@ -465,7 +465,7 @@ pub fn line_totals(
     };
     let total = buckets.iter().map(|(_, (w, _))| w).sum();
     (
-        hexcavator_trace_analysis::lines::line_totals(trace, resolver, symbols, &buckets),
+        turbonop_trace_analysis::lines::line_totals(trace, resolver, symbols, &buckets),
         unit,
         total,
     )
@@ -475,7 +475,7 @@ pub fn line_totals(
 /// `file`, the `limit` heaviest source files (by inclusive weight); with
 /// one (as the symbols name it), its lines, in order.
 pub fn lines(
-    totals: &hexcavator_trace_analysis::lines::LineTotals,
+    totals: &turbonop_trace_analysis::lines::LineTotals,
     unit: Unit,
     total: u64,
     ticks_per_second: u64,
@@ -1262,27 +1262,25 @@ pub fn filter_events(mut table: Value, filter: Option<&crate::reading::Query>) -
 /// (likewise), ID, version, opcode, task, count, payload bytes, and first
 /// and last times, most numerous first.
 pub fn events(trace: &Trace) -> Value {
-    let names: FxHashMap<hexcavator_etl::Guid, &str> = trace
+    let names: FxHashMap<turbonop_etl::Guid, &str> = trace
         .provider_names
         .iter()
         .map(|(g, n)| (*g, n.as_str()))
         .collect();
     // The descriptions recorded with the trace, by kind; and providers'
     // names from them.
-    let infos: FxHashMap<
-        (hexcavator_etl::Guid, u16, u8, u8),
-        hexcavator_etw::event_info::EventInfo,
-    > = trace
-        .event_infos
-        .iter()
-        .filter_map(|b| hexcavator_etw::event_info::EventInfo::parse(b).ok())
-        .map(|i| ((i.provider, i.id, i.version, i.opcode), i))
-        .collect();
-    let described_names: FxHashMap<hexcavator_etl::Guid, &str> = infos
+    let infos: FxHashMap<(turbonop_etl::Guid, u16, u8, u8), turbonop_etw::event_info::EventInfo> =
+        trace
+            .event_infos
+            .iter()
+            .filter_map(|b| turbonop_etw::event_info::EventInfo::parse(b).ok())
+            .map(|i| ((i.provider, i.id, i.version, i.opcode), i))
+            .collect();
+    let described_names: FxHashMap<turbonop_etl::Guid, &str> = infos
         .values()
         .filter_map(|i| Some((i.provider, i.provider_name.as_deref()?)))
         .collect();
-    let mut rows: Vec<&hexcavator_trace::EventStats> = trace.events.iter().collect();
+    let mut rows: Vec<&turbonop_trace::EventStats> = trace.events.iter().collect();
     rows.sort_by(|a, b| {
         b.count.cmp(&a.count).then_with(|| {
             (a.provider, a.id, a.version, a.opcode, a.task)
@@ -1293,7 +1291,7 @@ pub fn events(trace: &Trace) -> Value {
         .into_iter()
         .map(|e| {
             let schema =
-                hexcavator_etw::schema::lookup(&e.provider, e.opcode, e.version).map(|(s, _)| s);
+                turbonop_etw::schema::lookup(&e.provider, e.opcode, e.version).map(|(s, _)| s);
             let info = infos.get(&(e.provider, e.id, e.version, e.opcode));
             let provider = names
                 .get(&e.provider)

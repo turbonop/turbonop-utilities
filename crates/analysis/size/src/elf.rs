@@ -43,11 +43,11 @@
 //! labeled one is counted as its padding when rolling up (see
 //! [`crate::rangemap::RangeMap::with_padding_absorbed`]).
 
-use hexcavator_archive::{Archive, MemberKind};
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_demangle::itanium::Demangler;
-use hexcavator_elf::consts::*;
-use hexcavator_elf::{ElfFile, Section};
+use turbonop_archive::{Archive, MemberKind};
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_demangle::itanium::Demangler;
+use turbonop_elf::consts::*;
+use turbonop_elf::{ElfFile, Section};
 
 use crate::rangemap::{DualMap, Label, Labels};
 use crate::sources::{Maps, Source, UNMAPPED};
@@ -142,7 +142,7 @@ enum SectionsBy {
 
 /// A symbol's name as `source` shows it (demangled or not).
 fn symbol_name(
-    sym: &hexcavator_elf::Symbol<'_>,
+    sym: &turbonop_elf::Symbol<'_>,
     source: Source,
     demangler: &mut Demangler,
     buf: &mut String,
@@ -154,7 +154,7 @@ fn symbol_name(
     buf.clear();
     let ok = match source {
         Source::Symbols => demangler.demangle_short_into(&raw, buf),
-        Source::FullSymbols => demangler.demangle_into(&raw, buf),
+        Source::FullSymbols | Source::Crates => demangler.demangle_into(&raw, buf),
         _ => false,
     };
     if ok { buf.clone() } else { raw.into_owned() }
@@ -168,7 +168,7 @@ const MAX_MINI_DEBUG: u64 = 1 << 28;
 pub fn mini_debug_info(data: &[u8]) -> Option<Vec<u8>> {
     let elf = ElfFile::parse(data).ok()?;
     let sec = elf.sections().find(|s| s.name == b".gnu_debugdata")?;
-    hexcavator_debuginfo::decompress::xz(elf.section_data(&sec), MAX_MINI_DEBUG)
+    turbonop_debuginfo::decompress::xz(elf.section_data(&sec), MAX_MINI_DEBUG)
 }
 
 struct Builder<'d> {
@@ -269,7 +269,7 @@ impl Builder<'_> {
         for u in &self.units {
             // (x86's references are absolute addresses, which the
             // relocations say better.)
-            let arch = hexcavator_elf::arch(u.elf.header().machine, u.elf.class());
+            let arch = turbonop_elf::arch(u.elf.header().machine, u.elf.class());
             if !matches!(arch, crate::disasm::Arch::X64 | crate::disasm::Arch::Arm64) {
                 continue;
             }
@@ -389,7 +389,7 @@ impl Builder<'_> {
             for s in &sections {
                 match s.kind {
                     SHT_SYMTAB | SHT_DYNSYM => {
-                        let entry = if u.elf.class() == hexcavator_elf::Class::Elf64 {
+                        let entry = if u.elf.class() == turbonop_elf::Class::Elf64 {
                             24
                         } else {
                             16
@@ -466,9 +466,11 @@ fn elf_compile_units(
     let input = crate::dwarf_units::DwarfInput {
         endian: elf.endian(),
         sections: crate::decompress::elf_dwarf_sections(elf, in_input.then_some(file_offset)),
+        code_at: None,
+        data_at: Vec::new(),
     };
     // Symbol sizes, by start address, for variables' locations.
-    let mut sizes = std::collections::HashMap::new();
+    let mut sizes = turbonop_hash::Map::default();
     for table in elf.sections().filter(|t| t.kind == SHT_SYMTAB) {
         for sym in elf.symbols(&table) {
             if sym.kind != STT_SECTION && sym.shndx != u32::from(SHN_UNDEF) && sym.size > 0 {
@@ -490,6 +492,8 @@ fn elf_inlines(
     let input = crate::dwarf_units::DwarfInput {
         endian: elf.endian(),
         sections: crate::decompress::elf_dwarf_sections(elf, None),
+        code_at: None,
+        data_at: Vec::new(),
     };
     if with_line {
         crate::dwarf_units::inlines(&input, labels, map, base);
@@ -506,6 +510,10 @@ fn machine_name(machine: u16) -> String {
         EM_AARCH64 => "aarch64".into(),
         EM_ARM => "arm".into(),
         EM_RISCV => "riscv".into(),
+        EM_LOONGARCH => "loongarch".into(),
+        EM_MIPS => "mips".into(),
+        EM_PPC => "powerpc".into(),
+        EM_PPC64 => "powerpc64".into(),
         m => format!("machine_{m}"),
     }
 }
@@ -531,13 +539,13 @@ pub fn function<'d>(
         return Err("give one of the archive's objects to disassemble".into());
     }
     let elf = ElfFile::parse(data).map_err(|e| e.to_string())?;
-    let isa: Arch = hexcavator_elf::arch(elf.header().machine, elf.class());
+    let isa: Arch = turbonop_elf::arch(elf.header().machine, elf.class());
     // (Big-endian ARM code is little-endian only when linked BE8.)
     const EF_ARM_BE8: u32 = 0x0080_0000;
     let be32 = isa == Arch::Arm
-        && elf.endian() == hexcavator_core::Endian::Big
+        && elf.endian() == turbonop_core::Endian::Big
         && elf.header().flags & EF_ARM_BE8 == 0;
-    if !hexcavator_code::decodes(isa) || be32 {
+    if !turbonop_code::decodes(isa) || be32 {
         return Err(format!(
             "no disassembler for {}{}",
             machine_name(elf.header().machine),
@@ -627,6 +635,13 @@ pub fn function<'d>(
         address: sym.value & !u64::from(thumb),
         code,
         symbols: names,
+        riscv_arch: elf.riscv_arch().map(str::to_string),
+        big_endian: elf.endian() == turbonop_core::Endian::Big,
+        mips_flags: if elf.header().machine == EM_MIPS {
+            elf.header().flags
+        } else {
+            0
+        },
     })
 }
 
@@ -771,7 +786,7 @@ pub fn maps_with_debug(
                 }
                 b.catch_all(&mut map, &base, false);
             }
-            Source::Symbols | Source::RawSymbols | Source::FullSymbols => {
+            Source::Symbols | Source::RawSymbols | Source::FullSymbols | Source::Crates => {
                 b.symbols_into(&mut map, &base, source, debug.as_ref());
                 b.references_into(&mut map, &base);
                 b.tables_into(&mut map, &base);

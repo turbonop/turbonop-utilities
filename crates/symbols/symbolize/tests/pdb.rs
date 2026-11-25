@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use hexcavator_pdb::Pdb;
-use hexcavator_symbolize::{FunctionTable, SymbolPath, symbol_store_key};
+use turbonop_pdb::Pdb;
+use turbonop_symbolize::{FunctionTable, SymbolPath, symbol_store_key};
 
 fn testdata() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/lines")
@@ -14,7 +14,7 @@ fn reads_functions() {
     let data = std::fs::read(testdata().join("lines.pdb")).unwrap();
     let table = FunctionTable::from_pdb(&data).unwrap();
     assert!(table.len() > 10);
-    let functions: Vec<(u32, u32, &str)> = table.iter().collect();
+    let functions: Vec<(u64, u64, &str)> = table.iter().collect();
     assert!(
         functions.windows(2).all(|w| w[0].1 <= w[1].0),
         "sorted, not overlapping"
@@ -63,13 +63,13 @@ fn garbage_is_an_error() {
 /// Every lookup a subset is made for: function, its start, inlines (with
 /// their names) and line.
 type Answers = (
-    Option<(u32, String)>,
-    Option<(u32, String)>,
+    Option<(u64, String)>,
+    Option<(u64, String)>,
     Vec<String>,
     Option<(String, u32)>,
 );
 
-fn answers(t: &FunctionTable, rva: u32) -> Answers {
+fn answers(t: &FunctionTable, rva: u64) -> Answers {
     let f = t.function(rva).map(|(s, n)| (s, n.to_string()));
     let start = f
         .as_ref()
@@ -94,7 +94,7 @@ fn a_subset_answers_as_the_whole_table_does() {
     let last = table.iter().last().unwrap().0.saturating_add(4096);
     // Every few addresses, and every function's first and last bytes and
     // the byte after.
-    let mut rvas: Vec<u32> = (0..last).step_by(37).collect();
+    let mut rvas: Vec<u64> = (0..last).step_by(37).collect();
     for (s, e, _) in table.iter() {
         rvas.extend([s, e - 1, e.saturating_add(1) - 1]);
     }
@@ -102,7 +102,7 @@ fn a_subset_answers_as_the_whole_table_does() {
         rvas.clone(),
         rvas.iter().copied().step_by(5).collect(),
         vec![],
-        vec![u32::MAX],
+        vec![u64::MAX],
     ] {
         let sub = table.subset(&pick);
         assert!(sub.len() <= table.len());
@@ -141,7 +141,7 @@ fn a_damaged_saved_table_is_an_error() {
     let bytes = table.to_bytes();
     assert!(FunctionTable::from_bytes(&[]).is_err());
     assert!(
-        FunctionTable::from_bytes(b"HXFT\x02\0\0\0").is_err(),
+        FunctionTable::from_bytes(b"HXFT\x03\0\0\0").is_err(),
         "a later version"
     );
     let mut extra = bytes.clone();
@@ -164,4 +164,46 @@ fn a_damaged_saved_table_is_an_error() {
             }
         }
     }
+}
+
+fn mingw(name: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../testdata/mingw")
+        .join(name)
+}
+
+/// A PE image's DWARF (MinGW's): found in the image, or in the file its
+/// debug link names; its functions, with lines; and an image's own
+/// symbols alone.
+#[test]
+fn reads_dwarf_and_image_symbols() {
+    let path = SymbolPath::default();
+    for (name, debug) in [
+        ("program.exe", "program.exe"),
+        ("program-stripped.exe", "program.debug"),
+    ] {
+        let image_path = mingw(name);
+        let data = std::fs::read(&image_path).unwrap();
+        let image = turbonop_image::Image::parse(&data).unwrap();
+        let found = path.find_debug(&image_path, &image).unwrap();
+        assert_eq!(found, mingw(debug), "{name}");
+        let debug_data = std::fs::read(&found).unwrap();
+        let info = turbonop_debuginfo::DebugInfo::parse(&debug_data).unwrap();
+        let table = FunctionTable::from_debug(&info, Some(&image)).unwrap();
+        assert_eq!(table.function(0x1011), Some((0x1010, "unused")), "{name}");
+        assert!(table.line(0x1010).unwrap().0.ends_with("program.c"));
+    }
+    let data = std::fs::read(mingw("library.dll")).unwrap();
+    let image = turbonop_image::Image::parse(&data).unwrap();
+    assert_eq!(path.find_debug(&mingw("library.dll"), &image), None);
+    let table = FunctionTable::from_image(&image);
+    let names: Vec<(u64, &str)> = table.iter().map(|(s, _, n)| (s, n)).collect();
+    assert_eq!(
+        names,
+        [
+            (0x1000, "add"),
+            (0x1010, "triple"),
+            (0x1020, "DllMainCRTStartup")
+        ]
+    );
 }

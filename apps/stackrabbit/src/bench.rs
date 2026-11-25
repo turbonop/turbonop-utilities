@@ -9,14 +9,14 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use hexcavator_etl::Etl;
-use hexcavator_mmap::Mmap;
-use hexcavator_symbolize::SymbolPath;
-use hexcavator_trace::{Trace, etw, index};
-use hexcavator_trace_analysis::{
+use serde_json::json;
+use turbonop_etl::Etl;
+use turbonop_mmap::Mmap;
+use turbonop_symbolize::SymbolPath;
+use turbonop_trace::{Trace, etw, index};
+use turbonop_trace_analysis::{
     FrameMode, GroupBy, NoSymbols, NodeId, PdbSymbolizer, Resolver, Symbolizer,
 };
-use serde_json::json;
 
 use crate::Args;
 use crate::views::{Source, TreeSpec, TreeView};
@@ -283,7 +283,7 @@ impl Measured {
 fn measure(path: &Path, symbols: bool) -> Result<Measured, String> {
     // From the disk, as a trace is first opened (where the host can evict
     // it from the cache).
-    let _ = hexcavator_mmap::evict_from_cache(path);
+    let _ = turbonop_mmap::evict_from_cache(path);
     let map = Mmap::open(path).map_err(|e| e.to_string())?;
     let data = map.as_slice();
     let start = Instant::now();
@@ -478,7 +478,7 @@ fn phase_table(traces: &[PathBuf]) -> ExitCode {
             let mut cursor = etl.events().map_err(|e| e.to_string())?;
             while let Some(e) = cursor.next() {
                 if let Ok(e) = e
-                    && hexcavator_etw::decode(&e).is_some()
+                    && turbonop_etw::decode(&e).is_some()
                 {
                     decoded += 1;
                 }
@@ -528,7 +528,7 @@ fn read_table(traces: &[PathBuf]) -> ExitCode {
     println!("  (GB/s)");
     for path in traces {
         let result = (|| -> Result<String, String> {
-            let evicted = hexcavator_mmap::evict_from_cache(path).map_err(|e| e.to_string())?;
+            let evicted = turbonop_mmap::evict_from_cache(path).map_err(|e| e.to_string())?;
             let map = Mmap::open(path).map_err(|e| e.to_string())?;
             let len = map.len();
             let gbs = |d: Duration| {
@@ -553,11 +553,11 @@ fn read_table(traces: &[PathBuf]) -> ExitCode {
                 faults
             );
             for &(threads, chunk) in &configs {
-                hexcavator_mmap::evict_from_cache(path).map_err(|e| e.to_string())?;
+                turbonop_mmap::evict_from_cache(path).map_err(|e| e.to_string())?;
                 let map = Mmap::open(path).map_err(|e| e.to_string())?;
                 let start = Instant::now();
                 map.prefetch(threads, chunk)
-                    .and_then(hexcavator_mmap::Prefetch::wait)
+                    .and_then(turbonop_mmap::Prefetch::wait)
                     .map_err(|e| e.to_string())?;
                 line += &format!(" {:>7.2}", gbs(start.elapsed()));
             }
@@ -584,7 +584,7 @@ type EventKind = (String, u16, u8, u8);
 /// Prints, for each trace, how its events decode by the descriptions
 /// recorded with it.
 fn metadata_table(traces: &[PathBuf]) -> ExitCode {
-    use hexcavator_etw::event_info::EventInfos;
+    use turbonop_etw::event_info::EventInfos;
     let mut failed = false;
     for path in traces {
         let r: Result<(), String> = (|| {
@@ -601,8 +601,8 @@ fn metadata_table(traces: &[PathBuf]) -> ExitCode {
                 std::collections::BTreeMap::new();
             for buffer in etl.buffers() {
                 let Ok(buffer) = buffer else { continue };
-                let _ = hexcavator_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
-                    if e.provider == hexcavator_etw::guids::EVENT_METADATA {
+                let _ = turbonop_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
+                    if e.provider == turbonop_etw::guids::EVENT_METADATA {
                         meta += 1;
                         if let Err(err) = infos.add_metadata(e) {
                             bad_meta += 1;
@@ -640,8 +640,8 @@ fn metadata_table(traces: &[PathBuf]) -> ExitCode {
                 std::collections::BTreeMap::new();
             for buffer in etl.buffers() {
                 let Ok(buffer) = buffer else { continue };
-                let _ = hexcavator_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
-                    if let Some(schema) = hexcavator_etw::tracelogging::Schema::of(e) {
+                let _ = turbonop_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
+                    if let Some(schema) = turbonop_etw::tracelogging::Schema::of(e) {
                         match schema {
                             Ok(schema) => {
                                 let d = schema.decode(e);
@@ -659,13 +659,13 @@ fn metadata_table(traces: &[PathBuf]) -> ExitCode {
                         undescribed += 1;
                         // The kernel's schemas, then nothing.
                         let mut inexact_size = None;
-                        let how = match hexcavator_etw::schema::lookup(
+                        let how = match turbonop_etw::schema::lookup(
                             &e.provider,
                             e.descriptor.opcode,
                             e.descriptor.version,
                         ) {
                             // (Of their version: decoded, every byte used?)
-                            Some((_, true)) => match hexcavator_etw::schema::Properties::of(e) {
+                            Some((_, true)) => match turbonop_etw::schema::Properties::of(e) {
                                 Some(Ok(p)) if p.rest.is_empty() => 0,
                                 Some(Ok(p)) => {
                                     inexact_size = Some((e.user_data.len(), Some(p.rest.len())));
@@ -852,17 +852,17 @@ fn events_table(traces: &[PathBuf]) -> ExitCode {
                 std::collections::HashSet::new();
             for buffer in etl.buffers() {
                 let Ok(buffer) = buffer else { continue };
-                let _ = hexcavator_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
+                let _ = turbonop_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
                     let ptr = if e.is_64bit { 8 } else { 4 };
                     let u = e.user_data;
-                    if e.provider == hexcavator_etw::guids::PERF_INFO
+                    if e.provider == turbonop_etw::guids::PERF_INFO
                         && e.descriptor.opcode == 46
                         && u.len() >= ptr + 4
                     {
                         let tid = u32::from_le_bytes(u[ptr..ptr + 4].try_into().unwrap());
                         samples.push((e.timestamp, tid));
                     }
-                    if e.provider == hexcavator_etw::guids::STACK_WALK
+                    if e.provider == turbonop_etw::guids::STACK_WALK
                         && e.descriptor.opcode == 32
                         && u.len() >= 16
                     {
@@ -872,7 +872,7 @@ fn events_table(traces: &[PathBuf]) -> ExitCode {
                     }
                     if e.extended_data()
                         .flatten()
-                        .any(|x| x.ext_type == hexcavator_etl::event::ext_type::EVENT_SCHEMA_TL)
+                        .any(|x| x.ext_type == turbonop_etl::event::ext_type::EVENT_SCHEMA_TL)
                     {
                         *tl.entry(e.provider.to_string()).or_insert(0u64) += 1;
                     }
@@ -884,7 +884,7 @@ fn events_table(traces: &[PathBuf]) -> ExitCode {
                     c.2 = c.2.max(e.user_data.len());
                 });
             }
-            let stack_walk = hexcavator_etw::guids::STACK_WALK.to_string();
+            let stack_walk = turbonop_etw::guids::STACK_WALK.to_string();
             let mut rows: Vec<_> = counts.into_iter().collect();
             rows.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.cmp(&b.0)));
             println!("{}", path.display());
@@ -965,7 +965,7 @@ fn stacks_table(traces: &[PathBuf]) -> ExitCode {
         };
         let t = &loaded.trace;
         if let crate::store::Opened::Imported { stats, .. } = &loaded.opened {
-            let with = |stacks: &[hexcavator_trace::StackId]| {
+            let with = |stacks: &[turbonop_trace::StackId]| {
                 let n = stacks.iter().filter(|s| !s.is_empty()).count();
                 format!("{n} of {}", stacks.len())
             };
@@ -1089,14 +1089,14 @@ fn digest_table(traces: &[PathBuf]) -> ExitCode {
 fn digest(trace: &Trace) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = rustc_hash::FxHasher::default();
-    let tid = |t: hexcavator_trace::ThreadIx| {
+    let tid = |t: turbonop_trace::ThreadIx| {
         if t.is_some() {
             trace.threads[t.index()].tid
         } else {
             u32::MAX
         }
     };
-    let frames = |s: hexcavator_trace::StackId| trace.stacks.frames(s).collect::<Vec<u64>>();
+    let frames = |s: turbonop_trace::StackId| trace.stacks.frames(s).collect::<Vec<u64>>();
     let s = &trace.samples;
     for i in 0..s.len() {
         (s.time[i], s.cpu[i], tid(s.thread[i]), s.ip[i], s.weight[i]).hash(&mut h);

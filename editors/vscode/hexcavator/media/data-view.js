@@ -1,4 +1,4 @@
-// The data view: a datum's value read as its type (hexc data -json), as a
+// The data view: a datum's value read as its type (hexcavator data -json), as a
 // tree beside its bytes as a debugger shows memory (db/dw/dd/dq). The two
 // are linked: a member's bytes light up as it is pointed at, and a byte's
 // member. Pointers are links to what they point into.
@@ -105,7 +105,7 @@
   function renderTree(box) {
     const root = data().value;
     if (!root) {
-      box.append(el("p", { class: "note" }, "No type for this datum in the PDB (a public, a string, or a compiler's table): its bytes only."));
+      box.append(el("p", { class: "note" }, "No type for this datum in the debug information (a public, a string, or a compiler's table): its bytes only."));
       return;
     }
     const rows = flatten(root);
@@ -329,7 +329,7 @@
         "div",
         { class: "actions" },
         vscode ? el("button", { class: "icon", title: "Copy the bytes as hex", onclick: () => post({ command: "copy", text: d.bytes }) }, "Copy Bytes") : null,
-        vscode ? el("button", { class: "icon", title: "Run hexc again", onclick: () => post({ command: "refresh" }) }, "⟳") : null
+        vscode ? el("button", { class: "icon", title: "Run hexcavator again", onclick: () => post({ command: "refresh" }) }, "⟳") : null
       )
     );
     const seg = (options, value, onchange, title) =>

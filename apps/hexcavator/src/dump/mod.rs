@@ -1,10 +1,11 @@
-//! `hexc dump`: a dumpbin-compatible dumper.
+//! `hexcavator dump`: a dumpbin-compatible dumper.
 //!
 //! For PE images and COFF objects the output follows `dumpbin` closely, so
 //! that the two can be compared line by line. Formats dumpbin does not handle
 //! (DOS, NE, LE/LX) get output in the same style.
 
 mod arm64_unwind;
+mod coff_symbols;
 mod debug;
 mod disasm;
 mod dos;
@@ -19,16 +20,16 @@ use std::collections::BTreeMap;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use hexcavator_mmap::Mmap;
-use hexcavator_mz::{MzFile, NewHeaderKind};
-use hexcavator_pe::PeFile;
+use turbonop_mmap::Mmap;
+use turbonop_mz::{MzFile, NewHeaderKind};
+use turbonop_pe::PeFile;
 
 /// `name` undecorated as dumpbin shows it (without `__ptr64`), if it is a
 /// decorated C++ name (or the import thunk of one).
 pub fn undecorate(name: &str) -> Option<String> {
     use std::cell::RefCell;
     thread_local! {
-        static DEMANGLER: RefCell<hexcavator_demangle::msvc::Demangler> = RefCell::default();
+        static DEMANGLER: RefCell<turbonop_demangle::msvc::Demangler> = RefCell::default();
     }
     if let Some(imported) = name.strip_prefix("__imp_") {
         return undecorate(imported).map(|u| format!("__declspec(dllimport) {u}"));
@@ -38,13 +39,13 @@ pub fn undecorate(name: &str) -> Option<String> {
     }
     DEMANGLER.with(|d| {
         d.borrow_mut()
-            .demangle(name, hexcavator_demangle::msvc::flags::NO_PTR64)
+            .demangle(name, turbonop_demangle::msvc::flags::NO_PTR64)
             .filter(|s| s != name)
     })
 }
 
 pub const USAGE: &str = "\
-usage: hexc dump [options] <file>...
+usage: hexcavator dump [options] <file>...
 
 options (dumpbin-style; write as /name, -name, or --name):
   /all          everything below
@@ -57,6 +58,7 @@ options (dumpbin-style; write as /name, -name, or --name):
   /pdata        exception directory (function table)
   /relocations  base relocations
   /summary      section size totals (the default)
+  /symbols      COFF symbol table (an object's, or an image's that has one)
   /tls          thread-local storage directory
   /unwindinfo   function table with unwind information
 
@@ -65,9 +67,11 @@ llvm-readobj shows them, with its options' names: --file-headers,
 --sections, --program-headers, --dynamic-table, --relocations, --symbols,
 --dyn-symbols, --notes, --needed-libs, --macho-segment, --macho-dysymtab,
 --macho-version-min. /headers gives the file header, sections, and
-segments; /relocations, the relocations; /imports or /exports, the
+segments; /relocations, the relocations; /symbols, the symbols; /imports or /exports, the
 dynamic symbols and needed libraries; /all, everything; and nothing, the
-file header and sections.";
+file header and sections. A Mach-O file's fixups (rebases and binds, and
+arm64e's signed pointers' keys and discriminators) are listed as
+llvm-objdump's --macho --dyld-info lists them, with --dyld-info.";
 
 /// Options that may be written with a leading `/` as well as `-`/`--`.
 const OPTIONS: &[&str] = &[
@@ -81,6 +85,7 @@ const OPTIONS: &[&str] = &[
     "pdata",
     "relocations",
     "summary",
+    "symbols",
     "tls",
     "unwindinfo",
 ];
@@ -98,8 +103,42 @@ struct Options {
     pdata: bool,
     unwindinfo: bool,
     tls: bool,
+    /// The COFF symbol table (and, of other formats, their symbols).
+    symbols: bool,
     /// Do not look for the image's PDB.
     nopdb: bool,
+    /// `-all`: every part of each file (none of them out of place).
+    all: bool,
+}
+
+impl Options {
+    /// The dumpbin options given that a file of another format (ELF,
+    /// Mach-O, WebAssembly) has no part for, each with what shows it.
+    fn pe_only(&self) -> Vec<&'static str> {
+        if self.all {
+            return Vec::new();
+        }
+        [
+            (
+                self.disasm,
+                "/disasm (hexcavator size -disassemble <function> disassembles any format's)",
+            ),
+            (
+                self.pdata,
+                "/pdata (hexcavator dwarf -frames shows DWARF's call frames)",
+            ),
+            (
+                self.unwindinfo,
+                "/unwindinfo (hexcavator dwarf -frames shows DWARF's call frames)",
+            ),
+            (self.tls, "/tls"),
+            (self.loadconfig, "/loadconfig"),
+            (self.nopdb, "/nopdb"),
+        ]
+        .into_iter()
+        .filter_map(|(given, what)| given.then_some(what))
+        .collect()
+    }
 }
 
 /// Section sizes accumulated across all files, by name.
@@ -122,8 +161,10 @@ pub fn run(args: &[String]) -> ExitCode {
                 "pdata" => options.pdata = true,
                 "unwindinfo" => options.unwindinfo = true,
                 "tls" => options.tls = true,
+                "symbols" => options.symbols = true,
                 "nopdb" => options.nopdb = true,
                 "all" => {
+                    options.all = true;
                     options.headers = true;
                     options.loadconfig = true;
                     options.imports = true;
@@ -131,11 +172,12 @@ pub fn run(args: &[String]) -> ExitCode {
                     options.relocations = true;
                     options.unwindinfo = true;
                     options.tls = true;
+                    options.symbols = true;
                     options.disasm = true;
                 }
                 "summary" => {}
                 other if options.readobj.set(other) => {}
-                _ => ereport!("hexc: warning: unrecognized option '{arg}'; ignored"),
+                _ => ereport!("hexcavator: warning: unrecognized option '{arg}'; ignored"),
             },
             None => paths.push(arg.as_str()),
         }
@@ -152,7 +194,7 @@ pub fn run(args: &[String]) -> ExitCode {
         // A closed pipe (e.g. `| head`) is not an error.
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
         Err(e) => {
-            ereport!("hexc: {e}");
+            ereport!("hexcavator: {e}");
             ExitCode::FAILURE
         }
     }
@@ -178,20 +220,38 @@ fn option_name(arg: &str) -> Option<&str> {
 fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Result<bool> {
     let mut summary = Summary::new();
     let mut ok = true;
+    // (Each option out of place said once.)
+    let mut warned_pe_only = false;
+    let mut warned_readobj = false;
     for (i, path) in paths.iter().enumerate() {
         // ELF, Mach-O, and WebAssembly files: as llvm-readobj shows them.
         if let Ok(map) = Mmap::open(path)
             && let Some(result) = readobj_file(options, path, &map)
         {
+            let pe_only = options.pe_only();
+            if !pe_only.is_empty() && !warned_pe_only {
+                warned_pe_only = true;
+                ereport!(
+                    "hexcavator: warning: {path}: not a PE or COFF file, which these are of: {}",
+                    pe_only.join("; ")
+                );
+            }
             match result {
                 Ok(text) => out.write_all(text.as_bytes())?,
                 Err(message) => {
                     out.flush()?;
-                    ereport!("hexc: {path}: {message}");
+                    ereport!("hexcavator: {path}: {message}");
                     ok = false;
                 }
             }
             continue;
+        }
+        // (llvm-readobj's parts are ELF's, Mach-O's, and WebAssembly's.)
+        if options.readobj.any() && !options.all && !warned_readobj {
+            warned_readobj = true;
+            ereport!(
+                "hexcavator: warning: {path}: llvm-readobj's options are of ELF, Mach-O, and WebAssembly files; dumpbin's (/headers, /exports, /relocations, ...) are of this one"
+            );
         }
         // Like `dumpbin /nologo`: a blank line before the first file, and a
         // form feed between files.
@@ -203,15 +263,18 @@ fn dump_files(out: &mut dyn Write, options: &Options, paths: &[&str]) -> io::Res
         };
         if let Err(message) = result? {
             out.flush()?;
-            ereport!("hexc: {path}: {message}");
+            ereport!("hexcavator: {path}: {message}");
             ok = false;
         }
     }
     // (dumpbin's summary: of the PE and COFF files dumped, if any were.)
     if !summary.is_empty()
-        || paths
-            .iter()
-            .all(|p| Mmap::open(p).is_ok_and(|m| readobj_file(options, p, &m).is_none()))
+        || paths.iter().all(|p| {
+            Mmap::open(p).is_ok_and(|m| {
+                readobj_file(options, p, &m).is_none()
+                    && !turbonop_pe::ltcg::LtcgObject::is_ltcg(&m)
+            })
+        })
     {
         pe::summary(out, &summary)?;
     }
@@ -230,6 +293,9 @@ fn readobj_file(options: &Options, path: &str, data: &[u8]) -> Option<Result<Str
     }
     if options.relocations {
         parts.relocations = true;
+    }
+    if options.symbols {
+        parts.symbols = true;
     }
     if options.imports || options.exports {
         parts.dyn_symbols = true;
@@ -258,8 +324,8 @@ fn readobj_bytes(
     parts: &readobj::Parts,
     depth: u32,
 ) -> Option<Result<(), String>> {
-    if hexcavator_elf::ElfFile::is_elf(data) {
-        return Some(match hexcavator_elf::ElfFile::parse(data) {
+    if turbonop_elf::ElfFile::is_elf(data) {
+        return Some(match turbonop_elf::ElfFile::parse(data) {
             Ok(elf) => {
                 readobj::elf::dump(out, name, &elf, parts);
                 Ok(())
@@ -267,17 +333,17 @@ fn readobj_bytes(
             Err(e) => Err(e.to_string()),
         });
     }
-    if hexcavator_macho::is_macho(data) {
+    if turbonop_macho::is_macho(data) {
         return Some(readobj::macho::dump(out, name, data, parts));
     }
-    if hexcavator_wasm::is_wasm(data) {
+    if turbonop_wasm::is_wasm(data) {
         return Some(readobj::wasm::dump(out, name, data, parts));
     }
     // (A universal file of archives holds archives; nothing nests deeper.)
     if depth > 1 {
         return None;
     }
-    if let Some(archs) = hexcavator_macho::fat_archs(data) {
+    if let Some(archs) = turbonop_macho::fat_archs(data) {
         for a in archs.iter().take(64) {
             let (Ok(s), Ok(n)) = (usize::try_from(a.offset), usize::try_from(a.size)) else {
                 continue;
@@ -291,14 +357,14 @@ fn readobj_bytes(
         }
         return Some(Ok(()));
     }
-    if hexcavator_archive::Archive::is_archive(data) {
-        let ar = match hexcavator_archive::Archive::parse(data) {
+    if turbonop_archive::Archive::is_archive(data) {
+        let ar = match turbonop_archive::Archive::parse(data) {
             Ok(a) => a,
             Err(e) => return Some(Err(e.to_string())),
         };
         let mut any = false;
         for m in ar.members() {
-            if m.kind != hexcavator_archive::MemberKind::File {
+            if m.kind != turbonop_archive::MemberKind::File {
                 continue;
             }
             let member = format!("{name}({})", String::from_utf8_lossy(&m.name));
@@ -333,12 +399,65 @@ fn dump_file(
             _ => dos::dump(out, options, &mz).map(Ok),
         };
     }
+    if turbonop_pe::ltcg::LtcgObject::is_ltcg(data) {
+        return ltcg_header(out, options, data).map(Ok);
+    }
     match PeFile::parse_object(data) {
-        Ok(file) if hexcavator_pe::consts::machine::name(file.machine()).is_some() => {
+        Ok(file) if turbonop_pe::consts::machine::name(file.machine()).is_some() => {
             pe::dump(out, options, path, &file, summary).map(Ok)
         }
         Ok(_) | Err(_) => Ok(Err("unrecognized file format".to_string())),
     }
+}
+
+/// An LTCG (`/GL`) object, as dumpbin shows one: its anonymous object
+/// header (with /headers), and nothing more (its contents are the
+/// compiler's: `hexcavator ltcg` dumps them).
+fn ltcg_header(out: &mut dyn Write, options: &Options, data: &[u8]) -> io::Result<()> {
+    writeln!(out, "File Type: ANONYMOUS OBJECT")?;
+    if !options.headers {
+        return Ok(());
+    }
+    let u16_at = |o: usize| u16::from_le_bytes([data[o], data[o + 1]]);
+    let u32_at = |o: usize| u32::from_le_bytes([data[o], data[o + 1], data[o + 2], data[o + 3]]);
+    let machine = u16_at(6);
+    let stamp = u32_at(8);
+    let date = if stamp == 0 || stamp > 0x7FFF_FFFF {
+        String::new()
+    } else {
+        format!(" {} UTC", crate::time::asctime_utc(stamp.into()))
+    };
+    let c = &data[12..28];
+    writeln!(
+        out,
+        "
+ANON OBJECT HEADER VALUES"
+    )?;
+    writeln!(out, "{:16X} version", u16_at(4))?;
+    writeln!(
+        out,
+        "{machine:16X} machine ({})",
+        turbonop_pe::consts::machine::name(machine).unwrap_or("Unknown")
+    )?;
+    writeln!(out, "{stamp:16X} time date stamp{date}")?;
+    writeln!(
+        out,
+        "                 ClassID: {{{:08X}-{:04X}-{:04X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}}}",
+        u32::from_le_bytes([c[0], c[1], c[2], c[3]]),
+        u16::from_le_bytes([c[4], c[5]]),
+        u16::from_le_bytes([c[6], c[7]]),
+        c[8],
+        c[9],
+        c[10],
+        c[11],
+        c[12],
+        c[13],
+        c[14],
+        c[15]
+    )?;
+    writeln!(out, "{:16X} size", u32_at(28))?;
+    // (Version 1 has no flags; dumpbin shows 0.)
+    writeln!(out, "{:16X} flags", 0)
 }
 
 #[cfg(test)]

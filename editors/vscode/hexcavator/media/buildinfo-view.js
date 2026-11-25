@@ -1,5 +1,5 @@
 // The Build Information page: how a binary was built, from its debug
-// information (hexc checksec -audit -json). Its security options (the
+// information (hexcavator checksec -audit -json). Its security options (the
 // exploit mitigations the image has); the build options its objects
 // differ in, worst first (a value's objects shown in the table below at a
 // click); the toolchain (the linker's command line, the compilers and
@@ -155,7 +155,7 @@
     $("header").replaceChildren(
       el("div", { class: "title" }, el("span", { class: "name" }, base(state.file) || "Build Information"), el("span", { class: "path", title: state.file || "" }, state.file || "")),
       el("div", { class: "chips" }, chips),
-      el("div", { class: "actions" }, vscode ? el("button", { class: "icon", title: "Run hexc again", onclick: () => post({ command: "refresh" }) }, "⟳") : null)
+      el("div", { class: "actions" }, vscode ? el("button", { class: "icon", title: "Run hexcavator again", onclick: () => post({ command: "refresh" }) }, "⟳") : null)
     );
   }
 
@@ -206,7 +206,7 @@
   };
 
   /**
-   * The file's signatures (hexc signature -json), verified by hexc the
+   * The file's signatures (hexcavator signature -json), verified by hexcavator the
    * same on any platform: Authenticode's (and those nested in it), or
    * each architecture's Apple code signature.
    */
@@ -244,7 +244,7 @@
       el(
         "p",
         { class: "muted note" },
-        `Verified by hexc, the same on every platform. Trust is hexc's own list of ${sig.roots} roots (Microsoft's, Apple's, and the public code-signing authorities), not this machine's; revocation isn't checked.`
+        `Verified by hexcavator, the same on every platform. Trust is hexcavator's own list of ${sig.roots} roots (Microsoft's, Apple's, and the public code-signing authorities), not this machine's; revocation isn't checked.`
       )
     );
     return card("signature", "Signature", (VERDICT[sig.status] || [null, sig.status])[1], ...body);
@@ -990,7 +990,7 @@
       return;
     }
     if (m.kind === "failed") {
-      state.error = m.message || "hexc failed";
+      state.error = m.message || "hexcavator failed";
       render();
       return;
     }

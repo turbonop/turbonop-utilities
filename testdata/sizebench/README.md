@@ -9,14 +9,14 @@ distributed under SizeBench's MIT license, reproduced in [`LICENSE`](LICENSE).
 (from `src/TestPEProjects`) describes what each binary exercises.
 
 `oracle/` holds the output of `tools/sizebench-oracle` (SizeBench's analysis
-engine, run over each binary in `bin/`). hexc's size analysis is tested
+engine, run over each binary in `bin/`). hexcavator's size analysis is tested
 against it. Two binaries have no oracle output, because SizeBench rejects
 them by design: `Dllx64Managed` (managed code) and `Dllx64MinimalPDB`
 (`/DEBUG:FASTLINK` PDB).
 
 Not copied: SizeBench's `TestPEs/External` binaries (Microsoft.UI.Xaml,
 ReactNativeXaml; 317 MB). Tests that use them read them from a SizeBench
-checkout named by `HEXC_SIZEBENCH_DIR` and are skipped otherwise.
+checkout named by `HEXCAVATOR_SIZEBENCH_DIR` and are skipped otherwise.
 
 To regenerate `oracle/`, build `tools/sizebench-oracle` and run it over each
 image and PDB pair (see that tool's README).

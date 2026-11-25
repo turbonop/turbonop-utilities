@@ -1,4 +1,4 @@
-//! `hexc serve`: each request answered as the command line would answer
+//! `hexcavator serve`: each request answered as the command line would answer
 //! it, from what is kept in memory, until the binary changes.
 
 use std::io::{BufRead, BufReader, Write};
@@ -13,8 +13,8 @@ fn bin(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn hexc(args: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> String {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(args)
         .output()
         .unwrap();
@@ -26,7 +26,7 @@ fn hexc(args: &[&str]) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
-/// A `hexc serve`, asked one request at a time.
+/// A `hexcavator serve`, asked one request at a time.
 struct Server {
     child: std::process::Child,
     lines: std::io::Lines<BufReader<std::process::ChildStdout>>,
@@ -35,7 +35,7 @@ struct Server {
 
 impl Server {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .arg("serve")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -89,7 +89,7 @@ fn answers_as_the_command_line_does() {
             "-json",
         ],
     ] {
-        let want = hexc(args);
+        let want = hexcavator(args);
         // Built, then kept: the same both times.
         assert_eq!(s.stdout(args), want, "{args:?}");
         assert_eq!(s.stdout(args), want, "{args:?}");
@@ -107,7 +107,7 @@ fn answers_as_the_command_line_does() {
 /// A binary rebuilt (replaced) while the server runs is read again.
 #[test]
 fn a_changed_binary_is_read_again() {
-    let dir = std::env::temp_dir().join(format!("hexc-serve-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-serve-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let image = dir.join("app.dll");
@@ -133,10 +133,10 @@ fn a_changed_binary_is_read_again() {
     let mut s = Server::start();
     put("Before");
     let before = s.stdout(&args);
-    assert_eq!(before, hexc(&args));
+    assert_eq!(before, hexcavator(&args));
     put("After");
     let after = s.stdout(&args);
-    assert_eq!(after, hexc(&args));
+    assert_eq!(after, hexcavator(&args));
     assert_ne!(before, after);
     drop(s);
     std::fs::remove_dir_all(&dir).unwrap();
@@ -147,8 +147,8 @@ fn a_changed_binary_is_read_again() {
 fn requests_run_together() {
     let dll = bin("CppTestCases_BasicDiffObjectsAfter.dll");
     let dll = dll.to_str().unwrap();
-    let want = hexc(&["size", "-d", "symbols", "-n", "0", "-csv", dll]);
-    let mut child = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let want = hexcavator(&["size", "-d", "symbols", "-n", "0", "-csv", dll]);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("serve")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -176,4 +176,45 @@ fn requests_run_together() {
         .collect();
     ids.sort_unstable();
     assert_eq!(ids, (0..8).collect::<Vec<_>>());
+}
+
+/// `"json": true`: a command's JSON output as a value in the response (the
+/// same value as its `stdout` string's, parsed), once; output that isn't
+/// JSON (a failure, a text command) is a string, as without it.
+#[test]
+fn json_output_as_a_value() {
+    let mut s = Server::start();
+    let exe = bin("CppTestCases_BasicDiffObjectsAfter.dll");
+    let exe = exe.to_str().unwrap();
+    let mut ask_json = |args: &[&str]| -> Value {
+        let id = s.next;
+        s.next += 1;
+        let stdin = s.child.stdin.as_mut().unwrap();
+        writeln!(stdin, "{}", json!({ "id": id, "args": args, "json": true })).unwrap();
+        stdin.flush().unwrap();
+        let v: Value = serde_json::from_str(&s.lines.next().unwrap().unwrap()).unwrap();
+        assert_eq!(v["id"], id);
+        v
+    };
+    for args in [
+        &["info", "-json", exe][..],
+        &["size", "-d", "sections", "-json", exe][..],
+        &["types", "-json", "-n", "5", exe][..],
+    ] {
+        let v = ask_json(args);
+        assert_eq!(v["code"], 0, "{args:?}: {v}");
+        assert_eq!(v["stdout"], "", "{args:?}");
+        let theirs: Value = serde_json::from_str(&hexcavator(args)).unwrap();
+        assert_eq!(v["json"], theirs, "{args:?}");
+    }
+    // Text: a string.
+    let v = ask_json(&["info", exe]);
+    assert!(
+        v.get("json").is_none() && v["stdout"].as_str().unwrap().contains("PE32"),
+        "{v}"
+    );
+    // A failure: its output a string, as without.
+    let v = ask_json(&["size", "-json", "no-such-file.exe"]);
+    assert_ne!(v["code"], 0);
+    assert!(v.get("json").is_none(), "{v}");
 }

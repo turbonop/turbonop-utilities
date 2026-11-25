@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use hexcavator_mmap::Mmap;
+use turbonop_mmap::Mmap;
 
 use crate::{Format, Loaded};
 
@@ -33,12 +33,21 @@ enum Key {
     MachO {
         cputype: u32,
     },
+    /// WebAssembly: 64-bit memory or 32-bit.
+    Wasm {
+        memory64: bool,
+    },
 }
 
 const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
 const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
 
 impl Arch {
+    /// Whether it is a big-endian ELF image's.
+    pub(crate) fn big_endian(&self) -> bool {
+        matches!(self.key, Key::Elf { big: true, .. })
+    }
+
     /// Whether an image of `self` can be loaded by a process of `root`.
     fn loads_in(&self, root: &Arch) -> bool {
         match (self.key, root.key) {
@@ -85,46 +94,50 @@ impl Arch {
 /// The format of the image in `data`, and where it is (a universal Mach-O
 /// file's slice: for `cputype`, or the preferred one).
 pub(crate) fn identify(data: &[u8], cputype: Option<u32>) -> Option<(Format, Range<usize>)> {
-    if hexcavator_pe::PeFile::parse_image(data).is_ok() {
+    if turbonop_pe::PeFile::parse_image(data).is_ok() {
         return Some((Format::Pe, 0..data.len()));
     }
-    if hexcavator_elf::ElfFile::parse(data).is_ok() {
+    if turbonop_elf::ElfFile::parse(data).is_ok() {
         return Some((Format::Elf, 0..data.len()));
     }
-    if let Some(archs) = hexcavator_macho::fat_archs(data) {
+    if let Some(archs) = turbonop_macho::fat_archs(data) {
         let pick = match cputype {
             Some(c) => archs.into_iter().find(|a| a.cputype == c)?,
-            None => hexcavator_macho::preferred_slice(data)?.0,
+            None => turbonop_macho::preferred_slice(data)?.0,
         };
         let start = usize::try_from(pick.offset).ok()?;
         let end = start.checked_add(usize::try_from(pick.size).ok()?)?;
         data.get(start..end)?;
         return Some((Format::MachO, start..end));
     }
-    if hexcavator_macho::MachO::parse(data).is_ok() {
+    if turbonop_macho::MachO::parse(data).is_ok() {
         return Some((Format::MachO, 0..data.len()));
+    }
+    // (A module, not a relocatable object, which nothing loads.)
+    if turbonop_wasm::Module::parse(data).is_ok_and(|m| !m.is_object()) {
+        return Some((Format::Wasm, 0..data.len()));
     }
     None
 }
 
 /// The architecture of the `format` image in `data`.
 pub(crate) fn arch_of(format: Format, data: &[u8]) -> Option<Arch> {
-    let image = hexcavator_image::Image::parse(data).ok();
+    let image = turbonop_image::Image::parse(data).ok();
     match format {
         Format::Pe => {
-            let pe = hexcavator_pe::PeFile::parse_image(data).ok()?;
+            let pe = turbonop_pe::PeFile::parse_image(data).ok()?;
             let machine = pe.machine();
             let hybrid = image
                 .as_ref()
-                .and_then(hexcavator_image::Image::hybrid)
+                .and_then(turbonop_image::Image::hybrid)
                 .is_some();
             Some(Arch {
-                name: hexcavator_image::coff_machine_name(machine).to_string(),
+                name: turbonop_image::coff_machine_name(machine).to_string(),
                 key: Key::Pe { machine, hybrid },
             })
         }
         Format::Elf => {
-            let elf = hexcavator_elf::ElfFile::parse(data).ok()?;
+            let elf = turbonop_elf::ElfFile::parse(data).ok()?;
             let h = elf.header();
             Some(Arch {
                 name: image.map_or_else(
@@ -132,18 +145,26 @@ pub(crate) fn arch_of(format: Format, data: &[u8]) -> Option<Arch> {
                     |i| i.arch().name().to_string(),
                 ),
                 key: Key::Elf {
-                    wide: h.class == hexcavator_elf::Class::Elf64,
+                    wide: h.class == turbonop_elf::Class::Elf64,
                     machine: h.machine,
-                    big: h.endian == hexcavator_core::Endian::Big,
+                    big: h.endian == turbonop_core::Endian::Big,
                 },
             })
         }
         Format::MachO => {
-            let m = hexcavator_macho::MachO::parse(data).ok()?;
+            let m = turbonop_macho::MachO::parse(data).ok()?;
             let h = m.header();
             Some(Arch {
-                name: hexcavator_macho::arch_name(h.cputype, h.cpusubtype),
+                name: turbonop_macho::arch_name(h.cputype, h.cpusubtype),
                 key: Key::MachO { cputype: h.cputype },
+            })
+        }
+        Format::Wasm => {
+            let m = turbonop_wasm::Module::parse(data).ok()?;
+            let memory64 = m.is_memory64();
+            Some(Arch {
+                name: if memory64 { "wasm64" } else { "wasm32" }.to_string(),
+                key: Key::Wasm { memory64 },
             })
         }
     }
@@ -220,7 +241,7 @@ impl Search {
     /// The image at `path`, if the root could load it.
     pub fn open(&self, path: &Path) -> Result<Loaded, Reject> {
         let path = &normalize(path);
-        if !hexcavator_mmap::is_local_path(path) || !path.is_file() {
+        if !turbonop_mmap::is_local_path(path) || !path.is_file() {
             return Err(Reject::Absent);
         }
         let map = Mmap::open_named(path).map_err(|e| Reject::Unreadable(e.to_string()))?;
@@ -228,7 +249,7 @@ impl Search {
         let Some((format, range)) = identify(&map, cputype) else {
             // (A universal file without the root's slice: another
             // architecture's.)
-            if hexcavator_macho::fat_archs(&map).is_some() {
+            if turbonop_macho::fat_archs(&map).is_some() {
                 return Err(Reject::WrongArch("other architectures".into()));
             }
             return Err(Reject::Unreadable(format!(

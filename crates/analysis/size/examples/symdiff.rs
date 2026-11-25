@@ -1,23 +1,23 @@
 //! Compares the symbols the debug information has with SizeBench's
 //! `SYMBOL` lines, by address and size (not name).
 //!
-//!     cargo run --release -p hexcavator-size --example symdiff -- <image> <pdb> <oracle.txt> [kind...]
+//!     cargo run --release -p turbonop-size --example symdiff -- <image> <pdb> <oracle.txt> [kind...]
 
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::{pe, symbols};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::{pe, symbols};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let image_map = hexcavator_mmap::Mmap::open(std::path::Path::new(&args[0])).expect("image");
-    let pdb_map = hexcavator_mmap::Mmap::open(std::path::Path::new(&args[1])).expect("pdb");
+    let image_map = turbonop_mmap::Mmap::open(std::path::Path::new(&args[0])).expect("image");
+    let pdb_map = turbonop_mmap::Mmap::open(std::path::Path::new(&args[1])).expect("pdb");
     let image = Image::parse(&image_map).expect("parse image");
     let debug = DebugInfo::parse(&pdb_map).expect("parse pdb");
-    // HEXC_PROBE=<hex address>: show the debug symbols there.
-    if let Ok(probe) = std::env::var("HEXC_PROBE") {
+    // TURBONOP_PROBE=<hex address>: show the debug symbols there.
+    if let Ok(probe) = std::env::var("TURBONOP_PROBE") {
         let addr = u64::from_str_radix(&probe, 16).expect("hex address");
         let comps = debug.compilands().unwrap();
         let contribs = debug.contributions().unwrap();
@@ -33,10 +33,10 @@ fn main() {
     let model = pe::model(&image, &debug).expect("model");
     let syms = symbols::build(&image, &debug, &model).expect("symbols");
     eprintln!("{} symbols in {:?}", syms.len(), start.elapsed());
-    // HEXC_PROBE_OURS=<file>: write our names at the probed address there.
+    // TURBONOP_PROBE_OURS=<file>: write our names at the probed address there.
     if let (Ok(probe), Ok(out)) = (
-        std::env::var("HEXC_PROBE"),
-        std::env::var("HEXC_PROBE_OURS"),
+        std::env::var("TURBONOP_PROBE"),
+        std::env::var("TURBONOP_PROBE_OURS"),
     ) {
         let addr = u64::from_str_radix(&probe, 16).expect("hex address");
         let names: Vec<String> = syms
@@ -55,7 +55,7 @@ fn main() {
     }
 
     let filter: Vec<&str> = args[3..].iter().map(String::as_str).collect();
-    let names_too = std::env::var("HEXC_NAMES").is_ok();
+    let names_too = std::env::var("TURBONOP_NAMES").is_ok();
     let keep = |k: &str| filter.is_empty() || filter.contains(&k);
     // (kind, rva, size, vsize, folded) -> count
     let mut theirs: BTreeMap<(String, u64, u64, u64, bool), i64> = BTreeMap::new();

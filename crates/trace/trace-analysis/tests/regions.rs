@@ -1,8 +1,8 @@
 //! Regions of interest: WPA's region files read, and start and stop events
 //! paired into instances.
 
-use hexcavator_etl::Guid;
-use hexcavator_trace_analysis::regions::{Endpoint, Instance, Occurrence, Regions, instances};
+use turbonop_etl::Guid;
+use turbonop_trace_analysis::regions::{Endpoint, Instance, Occurrence, Regions, instances};
 
 const P: &str = "{11111111-2222-3333-4444-555555555555}";
 

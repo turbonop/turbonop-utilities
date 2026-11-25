@@ -1,4 +1,4 @@
-//! `hexc dump` of ELF, Mach-O, and WebAssembly files, as llvm-readobj
+//! `hexcavator dump` of ELF, Mach-O, and WebAssembly files, as llvm-readobj
 //! shows them (its LLVM style): file headers, sections, segments,
 //! symbols, relocations, the dynamic table, notes, and the like, in its
 //! layout and spelling, so that its output and ours can be compared line
@@ -29,6 +29,9 @@ pub struct Parts {
     pub macho_dysymtab: bool,
     pub macho_version_min: bool,
     pub needed_libs: bool,
+    /// A Mach-O file's fixups, as llvm-objdump's `--macho --dyld-info`
+    /// lists them (not llvm-readobj's: only when asked for by name).
+    pub dyld_info: bool,
 }
 
 impl Parts {
@@ -46,6 +49,7 @@ impl Parts {
             || self.macho_dysymtab
             || self.macho_version_min
             || self.needed_libs
+            || self.dyld_info
     }
 
     /// Everything.
@@ -63,6 +67,7 @@ impl Parts {
             macho_dysymtab: true,
             macho_version_min: true,
             needed_libs: true,
+            dyld_info: false,
         }
     }
 
@@ -81,6 +86,7 @@ impl Parts {
             "macho-dysymtab" => self.macho_dysymtab = true,
             "macho-version-min" => self.macho_version_min = true,
             "needed-libs" => self.needed_libs = true,
+            "dyld-info" => self.dyld_info = true,
             _ => return false,
         }
         true

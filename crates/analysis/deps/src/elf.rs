@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use hexcavator_elf::ElfFile;
-use hexcavator_elf::consts::*;
+use turbonop_elf::ElfFile;
+use turbonop_elf::consts::*;
 
 use crate::search::Reject;
 use crate::{Ctx, DepKind, Found, Import, ImportStatus, Resolved, Status, Wanted};
@@ -84,6 +84,13 @@ pub(crate) fn is_executable(ctx: &Ctx<'_>, m: usize) -> bool {
         }),
         crate::Format::MachO => crate::macho::is_executable(ctx, m),
         crate::Format::Pe => true,
+        // (A WASI command, by its _start.)
+        crate::Format::Wasm => ctx
+            .loaded
+            .get(m)
+            .and_then(Option::as_ref)
+            .and_then(|l| turbonop_wasm::Module::parse(l.data()).ok())
+            .is_some_and(|w| w.exports().iter().any(|e| e.name == b"_start")),
     }
 }
 
@@ -243,12 +250,25 @@ fn default_dirs(ctx: &Ctx<'_>) -> Vec<PathBuf> {
         }
         dirs.push(format!("/apex/com.android.runtime/{lib}/bionic"));
     } else {
+        let big = ctx
+            .search
+            .arch
+            .as_ref()
+            .is_some_and(super::search::Arch::big_endian);
         let triple = match ctx.search.arch.as_ref().map(|a| a.name.as_str()) {
             Some("x64" | "x86_64") => Some("x86_64-linux-gnu"),
             Some("x86" | "i386") => Some("i386-linux-gnu"),
             Some("arm64" | "aarch64") => Some("aarch64-linux-gnu"),
             Some("arm" | "thumb") => Some("arm-linux-gnueabihf"),
             Some("riscv64") => Some("riscv64-linux-gnu"),
+            Some("loongarch64") => Some("loongarch64-linux-gnu"),
+            Some("powerpc64") if big => Some("powerpc64-linux-gnu"),
+            Some("powerpc64") => Some("powerpc64le-linux-gnu"),
+            Some("powerpc") => Some("powerpc-linux-gnu"),
+            Some("mips") if big => Some("mips-linux-gnu"),
+            Some("mips") => Some("mipsel-linux-gnu"),
+            Some("mips64") if big => Some("mips64-linux-gnuabi64"),
+            Some("mips64") => Some("mips64el-linux-gnuabi64"),
             _ => None,
         };
         if let Some(t) = triple {
@@ -404,26 +424,63 @@ fn symbols(elf: &ElfFile<'_>) -> Symbols {
     s
 }
 
+/// Whether `s` defines `name` (in `version`, if it needs one): a
+/// version's definition or an unversioned one; unversioned, the default.
+fn defines(s: &Symbols, name: &str, version: Option<&str>) -> bool {
+    s.defined.get(name).is_some_and(|defs| match version {
+        Some(v) => defs
+            .iter()
+            .any(|(dv, _)| dv.as_deref() == Some(v) || dv.is_none()),
+        None => defs.iter().any(|(_, default)| *default),
+    })
+}
+
 /// Checks each object's undefined symbols against the objects loaded, in
 /// load order (the global scope: the program's, then its libraries',
-/// breadth first, the interpreter's too).
+/// breadth first, the interpreter's too). And each symbol is an import
+/// of the first of the object's own `DT_NEEDED` libraries that defines
+/// it (as the linker resolved it: a library that defines none of them is
+/// one `--as-needed` would have left out), whether every library was
+/// found or not.
 pub(crate) fn check(ctx: &mut Ctx<'_>) {
     let n = ctx.graph.modules.len();
+    let all: Vec<Option<Symbols>> = (0..n)
+        .map(|m| parsed(ctx, m).map(|e| symbols(&e)))
+        .collect();
+    for m in 0..n {
+        let Some(own) = &all[m] else { continue };
+        for (name, version, weak) in &own.undefined {
+            let deps = &mut ctx.graph.modules[m].deps;
+            let by = deps.iter_mut().find(|d| {
+                d.kind == DepKind::Needed
+                    && all
+                        .get(d.module)
+                        .and_then(Option::as_ref)
+                        .is_some_and(|s| defines(s, name, version.as_deref()))
+            });
+            if let Some(d) = by {
+                d.imports.push(Import {
+                    name: Some(name.clone()),
+                    ordinal: None,
+                    version: version.clone(),
+                    weak: *weak,
+                    status: ImportStatus::Found,
+                });
+            }
+        }
+    }
     // (With a library not found, what it would define isn't known.)
     if ctx.graph.modules.iter().any(|m| m.status.path().is_none()) {
         ctx.graph
             .notes
             .push("symbols weren't checked: not every library was found".into());
         for m in 0..n {
-            if let Some(s) = parsed(ctx, m).map(|e| symbols(&e)) {
+            if let Some(s) = &all[m] {
                 ctx.graph.modules[m].exports = s.defined.len();
             }
         }
         return;
     }
-    let all: Vec<Option<Symbols>> = (0..n)
-        .map(|m| parsed(ctx, m).map(|e| symbols(&e)))
-        .collect();
     for m in 0..n {
         let Some(own) = &all[m] else { continue };
         ctx.graph.modules[m].exports = own.defined.len();
@@ -434,14 +491,8 @@ pub(crate) fn check(ctx: &mut Ctx<'_>) {
             }
             let found = all.iter().enumerate().any(|(o, s)| {
                 o != m
-                    && s.as_ref().is_some_and(|s| {
-                        s.defined.get(name).is_some_and(|defs| match version {
-                            Some(v) => defs
-                                .iter()
-                                .any(|(dv, _)| dv.as_deref() == Some(v.as_str()) || dv.is_none()),
-                            None => defs.iter().any(|(_, default)| *default),
-                        })
-                    })
+                    && s.as_ref()
+                        .is_some_and(|s| defines(s, name, version.as_deref()))
             });
             if !found {
                 missing.push(Import {

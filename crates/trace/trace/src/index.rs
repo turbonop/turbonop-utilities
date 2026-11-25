@@ -10,7 +10,7 @@
 //! tampered with): every count, index and stack reference is checked, and
 //! a bad file is an error, never a panic.
 
-use hexcavator_core::{Error, ErrorKind, Result};
+use turbonop_core::{Error, ErrorKind, Result};
 
 use crate::model::{
     BufferSpan, Clock, ContextSwitches, DebugId, EventStats, Image, Process, ProcessIx, ReadyIx,
@@ -475,7 +475,7 @@ pub fn read(data: &[u8], source: Option<Source>) -> Result<Trace> {
     for _ in 0..n {
         let guid: [u8; 16] = r.bytes(16, "provider")?.try_into().expect("16 bytes");
         trace.events.push(EventStats {
-            provider: hexcavator_etl::Guid::from_bytes(&guid),
+            provider: turbonop_etl::Guid::from_bytes(&guid),
             id: r.u16()?,
             version: r.u8()?,
             opcode: r.u8()?,
@@ -491,7 +491,7 @@ pub fn read(data: &[u8], source: Option<Source>) -> Result<Trace> {
         let guid: [u8; 16] = r.bytes(16, "provider")?.try_into().expect("16 bytes");
         trace
             .provider_names
-            .push((hexcavator_etl::Guid::from_bytes(&guid), r.str()?));
+            .push((turbonop_etl::Guid::from_bytes(&guid), r.str()?));
     }
     let n = r.count(4, "event descriptions")?;
     for _ in 0..n {

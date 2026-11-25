@@ -4,8 +4,8 @@
 //! Typedefs are looked through (as PDB type references have no typedefs
 //! in them): a typedef's shape and size are its type's.
 
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Die, Unit};
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Die, Unit};
 
 use super::{DwarfInfo, MAX_CHAIN, VOID};
 use crate::{BasicType, Class, Method, MethodKind, PointerKind, Qualifiers, TypeRef, TypeShape};
@@ -24,7 +24,8 @@ impl DwarfInfo<'_> {
             };
             let q = qualifiers.as_deref_mut();
             match (d.tag, q) {
-                (DW_TAG_TYPEDEF, _) => at = self.type_of(&u, &d),
+                // (A `__ptrauth` pointer is laid out as the pointer is.)
+                (DW_TAG_TYPEDEF | DW_TAG_LLVM_PTRAUTH_TYPE, _) => at = self.type_of(&u, &d),
                 (DW_TAG_CONST_TYPE, Some(q)) => {
                     q.is_const = true;
                     at = self.type_of(&u, &d);
@@ -232,7 +233,7 @@ impl DwarfInfo<'_> {
     }
 
     /// The class definitions (see [`crate::DebugInfo::classes`]).
-    pub fn classes(&self) -> Result<Vec<Class>, hexcavator_core::Error> {
+    pub fn classes(&self) -> Result<Vec<Class>, turbonop_core::Error> {
         let mut out = Vec::new();
         self.walk(|w| {
             let d = w.die;

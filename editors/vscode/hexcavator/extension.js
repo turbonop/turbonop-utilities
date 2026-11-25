@@ -1,4 +1,4 @@
-// Hexcavator: runs `hexc` on binaries and shows what it reports. A sidebar
+// Hexcavator: runs `hexcavator` on binaries and shows what it reports. A sidebar
 // of binaries and builds compared (sidebar.js) opens their headers,
 // symbols, types, sources, data, and disassembly. Size reports show as
 // interactive treemaps or sunbursts, diffs, or findings, and there is an
@@ -12,18 +12,18 @@ const fs = require("fs");
 const crypto = require("crypto");
 const disasm = require("./media/disasm.js");
 const sidebarModule = require("./sidebar.js");
-const lib = require("./lib/hexc.js");
+const lib = require("./lib/hexcavator.js");
 
 /** The sidebar, once activated (reports opened elsewhere are added to it). */
 let sidebar = null;
 
-// Binaries hexc reads: PE images and COFF objects and libraries, ELF and
+// Binaries hexcavator reads: PE images and COFF objects and libraries, ELF and
 // Mach-O files and archives, and WebAssembly modules.
 const EXTENSIONS = ["exe", "dll", "sys", "efi", "obj", "lib", "so", "o", "a", "ko", "elf", "axf", "out", "dylib", "bundle", "wasm"];
 const BINARIES = { Binaries: EXTENSIONS, "All files": ["*"] };
 
 /**
- * One `hexc serve`, kept running: each command is a request to it, and
+ * One `hexcavator serve`, kept running: each command is a request to it, and
  * what it reads from a binary (its model, symbols, and maps) stays in its
  * memory for the next, until the binary changes.
  */
@@ -75,15 +75,15 @@ class HexcServer {
     });
     // (Its own messages, outside any request: a panic's, say.)
     child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (text) => log(`hexc serve: ${text.trimEnd()}`));
+    child.stderr.on("data", (text) => log(`hexcavator serve: ${text.trimEnd()}`));
     // (Writing to a server that has just exited: its exit answers.)
-    child.stdin.on("error", (e) => log(`hexc serve's input: ${e.message}`));
+    child.stdin.on("error", (e) => log(`hexcavator serve's input: ${e.message}`));
     const gone = (why) => {
       if (this.child !== child) {
         return;
       }
       this.child = null;
-      log(`hexc serve ended: ${why.message}`);
+      log(`hexcavator serve ended: ${why.message}`);
       for (const { reject } of this.pending.values()) {
         reject(why);
       }
@@ -91,9 +91,9 @@ class HexcServer {
       this.onChange();
     };
     child.on("error", (e) =>
-      gone(new Error(e.code === "ENOENT" ? `hexc was not found ("${this.exe}"); set hexcavator.path` : e.message))
+      gone(new Error(e.code === "ENOENT" ? `hexcavator was not found ("${this.exe}"); set hexcavator.path` : e.message))
     );
-    child.on("exit", (code) => gone(new Error(`hexc serve exited (${code})`)));
+    child.on("exit", (code) => gone(new Error(`hexcavator serve exited (${code})`)));
   }
 
   answer(line) {
@@ -115,21 +115,26 @@ class HexcServer {
     } else if (v.code !== 0) {
       // (Its output too: some commands answer and say no, as `signature`
       // does of a file that isn't signed.)
-      waiting.reject(Object.assign(new Error((v.stderr || "").trim() || `hexc exited with ${v.code}`), { code: v.code, stdout: v.stdout }));
+      waiting.reject(Object.assign(new Error((v.stderr || "").trim() || `hexcavator exited with ${v.code}`), { code: v.code, stdout: v.stdout }));
     } else {
-      waiting.resolve(v.stdout);
+      // (A `-json` command's output, as a value: see run.)
+      waiting.resolve(v.json !== undefined ? v.json : v.stdout);
     }
   }
 
-  /** Runs hexc with `args`; resolves with its standard output. */
-  run(args, cancel) {
+  /**
+   * Runs hexcavator with `args`; resolves with its standard output: for a
+   * `-json` command, its value (parsed once, with the response), unless
+   * `raw` (its text).
+   */
+  run(args, cancel, raw) {
     if (!this.child) {
       this.start();
     }
     const id = this.next++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject, args, started: Date.now() });
-      log(`#${id} hexc ${args.map(lib.quote).join(" ")}`);
+      log(`#${id} hexcavator ${args.map(lib.quote).join(" ")}`);
       this.onChange();
       if (cancel) {
         // The command runs on (what it builds is kept for the next); its
@@ -142,7 +147,8 @@ class HexcServer {
           }
         });
       }
-      this.child.stdin.write(JSON.stringify({ id, args }) + "\n");
+      const json = !raw && args.includes("-json");
+      this.child.stdin.write(JSON.stringify(json ? { id, args, json } : { id, args }) + "\n");
     });
   }
 
@@ -159,22 +165,22 @@ class HexcServer {
     if (!child) {
       return;
     }
-    const why = new Error("hexc was restarted");
+    const why = new Error("hexcavator was restarted");
     for (const { reject } of this.pending.values()) {
       reject(why);
     }
     this.pending.clear();
     this.child = null;
     child.kill();
-    log("hexc serve restarted");
+    log("hexcavator serve restarted");
     this.onChange();
   }
 }
 
-/** The server, for the configured hexc (restarted when that changes). */
+/** The server, for the configured hexcavator (restarted when that changes). */
 let server = null;
 
-/** The Hexcavator output channel: each hexc request, and how long it took. */
+/** The Hexcavator output channel: each hexcavator request, and how long it took. */
 let channel = null;
 function log(text) {
   if (channel) {
@@ -183,8 +189,8 @@ function log(text) {
 }
 
 /**
- * The status bar's note of hexc's requests that have run for a while
- * (click: the log; Restart hexc, in the Hexcavator pane's ... menu, ends
+ * The status bar's note of hexcavator's requests that have run for a while
+ * (click: the log; Restart hexcavator, in the Hexcavator pane's ... menu, ends
  * them).
  */
 let busy = null;
@@ -199,10 +205,10 @@ function showBusy() {
     busy.hide();
   } else {
     const oldest = Math.max(...slow.map(([, p]) => now - p.started));
-    busy.text = `$(sync~spin) hexc: ${slow.length} running (${Math.round(oldest / 1000)} s)`;
+    busy.text = `$(sync~spin) hexcavator: ${slow.length} running (${Math.round(oldest / 1000)} s)`;
     busy.tooltip = new vscode.MarkdownString(
-      slow.map(([id, p]) => `#${id} \`hexc ${p.args.map(lib.quote).join(" ").replace(/`/g, "'")}\` (${Math.round((now - p.started) / 1000)} s)`).join("\n\n") +
-        "\n\nClick for the log; **Restart hexc**, in the Hexcavator pane's **…** menu, ends them."
+      slow.map(([id, p]) => `#${id} \`hexcavator ${p.args.map(lib.quote).join(" ").replace(/`/g, "'")}\` (${Math.round((now - p.started) / 1000)} s)`).join("\n\n") +
+        "\n\nClick for the log; **Restart hexcavator**, in the Hexcavator pane's **…** menu, ends them."
     );
     busy.show();
   }
@@ -212,8 +218,11 @@ function showBusy() {
   }
 }
 
-/** Runs hexc with `args`; resolves with its standard output. */
-function runHexc(args, cancel) {
+/**
+ * Runs hexcavator with `args`; resolves with its standard output (a `-json`
+ * command's as its value, unless `raw`: see lib.parsed).
+ */
+function runHexc(args, cancel, raw) {
   const config = vscode.workspace.getConfiguration("hexcavator");
   const exe = lib.hexcPath(config.get("path"));
   const launch = lib.serveLaunch((name) => config.get(name));
@@ -225,7 +234,7 @@ function runHexc(args, cancel) {
     server = new HexcServer(exe, launch);
     server.onChange = showBusy;
   }
-  return server.run(args, cancel);
+  return server.run(args, cancel, raw);
 }
 
 async function pickBinary(title) {
@@ -234,7 +243,7 @@ async function pickBinary(title) {
 }
 
 /**
- * hexc size's arguments for a report on `file` (against `base`): by the
+ * hexcavator size's arguments for a report on `file` (against `base`): by the
  * view's grouping and Others threshold (`view`), or the settings'.
  */
 function sizeArgs(file, base, format, view) {
@@ -286,7 +295,7 @@ function pageHtml(webview, context, title) {
 }
 
 /**
- * Runs hexc with `args` for a pane: its spinner shows there meanwhile,
+ * Runs hexcavator with `args` for a pane: its spinner shows there meanwhile,
  * saying `text`, with Cancel (in place of a notification).
  */
 async function paneRun(webview, text, args) {
@@ -329,8 +338,8 @@ function showStatus(report) {
     }
     return (n < 0 ? "-" : report.diff && n > 0 ? "+" : "") + v.toFixed(u && v < 100 ? 1 : 0) + " " + units[u];
   };
-  status.text = `$(graph) ${f(t.file)} file · ${f(t.vm)} memory`;
-  status.tooltip = report.diff ? "Size change (Hexcavator)" : "Size (Hexcavator)";
+  status.text = `$(graph) ${f(t.file)} file · ${f(t.vm)} memory${report.stripped ? " (stripped)" : ""}`;
+  status.tooltip = (report.diff ? "Size change (Hexcavator)" : "Size (Hexcavator)") + (report.stripped ? ", as if stripped" : "");
   status.show();
 }
 
@@ -338,15 +347,16 @@ function showStatus(report) {
 const panels = new Map();
 
 /** Wires a webview (a panel's or a custom editor's) to a report. */
-/** The table of a binary's labels for `sources` (hexc size -table): every
+/** The table of a binary's labels for `sources` (hexcavator size -table): every
  * one but the source files' unless they're asked for, which are apart; with
- * `base`, a diff's (each row's change, and its base's sizes). */
-function tableArgs(file, sources, base) {
+ * `base`, a diff's (each row's change, and its base's sizes); as if
+ * stripped if `stripped`. */
+function tableArgs(file, sources, base, stripped) {
   const args = (sources || []).includes("sourcefiles") ? ["size", "-table", "-d", sources.join(","), file] : ["size", "-table", file];
   if (base) {
     args.push("--", base);
   }
-  return args;
+  return lib.withStripped(args, stripped);
 }
 
 function attach(context, webview, onDispose, file, base, at, kind) {
@@ -356,8 +366,9 @@ function attach(context, webview, onDispose, file, base, at, kind) {
   const first = kind === "sources" ? ["sourcefiles", "symbols"] : ["symbols"];
   const view = Object.assign({ sources: first, min: "", all: true }, context.globalState.get(viewKey) || {});
   view.all = true;
-  const state = { file, base, report: null, at, view, caps: null, names: false };
-  // What hexc says the file supports (its tools, its format), for the
+  // (As if stripped: this page's own choice, its Stripped box; unchecked at first.)
+  const state = { file, base, report: null, at, view, caps: null, names: false, stripped: false };
+  // What hexcavator says the file supports (its tools, its format), for the
   // page's menus and grouping chips.
   const capsOf = async () => {
     if (!state.caps && sidebar) {
@@ -378,7 +389,7 @@ function attach(context, webview, onDispose, file, base, at, kind) {
     state.names = true;
     try {
       const out = await runHexc(["size", "-mangled", state.file]);
-      webview.postMessage({ kind: "names", names: JSON.parse(out).names || [] });
+      webview.postMessage({ kind: "names", names: lib.parsed(out).names || [] });
     } catch {
       // (No names: the column stays empty.)
     }
@@ -391,11 +402,12 @@ function attach(context, webview, onDispose, file, base, at, kind) {
       const out = await paneRun(
         webview,
         state.base ? `Comparing ${name} with ${path.basename(state.base)}…` : `Reading ${name}…`,
-        tableArgs(state.file, state.view.sources, state.base)
+        tableArgs(state.file, state.view.sources, state.base, state.stripped)
       );
-      state.table = JSON.parse(out);
+      state.table = lib.parsed(out);
       const t = state.table;
-      state.report = { diff: !!t.diff, total: { name: "TOTAL", file: t.file, vm: t.vm, old_file: t.old_file, old_vm: t.old_vm } };
+      const stripped = state.stripped;
+      state.report = { diff: !!t.diff, stripped, total: { name: "TOTAL", file: t.file, vm: t.vm, old_file: t.old_file, old_vm: t.old_vm } };
       const caps = await capsOf();
       webview.postMessage({
         kind: "report",
@@ -409,6 +421,9 @@ function attach(context, webview, onDispose, file, base, at, kind) {
         min: state.view.min || "",
         tools: caps && Array.isArray(caps.tools) ? caps.tools : undefined,
         format: caps && caps.format,
+        // (The Stripped box: for files a strip takes something from.)
+        stripped,
+        strippable: lib.can(caps, "stripped"),
       });
       showStatus(state.report);
       names();
@@ -419,7 +434,7 @@ function attach(context, webview, onDispose, file, base, at, kind) {
         return;
       }
       if (!e.cancelled) {
-        vscode.window.showErrorMessage(`hexc: ${e.message}`);
+        vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
       }
       webview.postMessage({ kind: "failed", message: e.message });
     }
@@ -469,7 +484,12 @@ function attach(context, webview, onDispose, file, base, at, kind) {
         break;
       }
       case "export":
-        await exportReport(state.file, state.base, state.view);
+        await exportReport(state.file, state.base, state.view, state.stripped);
+        break;
+      case "stripped":
+        // (This page only: it reads its file again.)
+        state.stripped = !!m.on;
+        await load(true);
         break;
       case "copy":
         await vscode.env.clipboard.writeText(m.text || "");
@@ -523,12 +543,12 @@ function openReport(context, file, base, at, kind) {
   view.load(false);
 }
 
-async function exportReport(file, base, view) {
+async function exportReport(file, base, view, stripped) {
   const choice = await vscode.window.showQuickPick(
     [
-      { label: "CSV", description: "hexc size -csv", flag: "-csv", ext: "csv" },
-      { label: "TSV", description: "hexc size -tsv", flag: "-tsv", ext: "tsv" },
-      { label: "JSON", description: "hexc size -json", flag: "-json", ext: "json" },
+      { label: "CSV", description: "hexcavator size -csv", flag: "-csv", ext: "csv" },
+      { label: "TSV", description: "hexcavator size -tsv", flag: "-tsv", ext: "tsv" },
+      { label: "JSON", description: "hexcavator size -json", flag: "-json", ext: "json" },
     ],
     { title: "Export the report as" }
   );
@@ -543,11 +563,11 @@ async function exportReport(file, base, view) {
     return;
   }
   try {
-    const out = await withProgress(`hexc: exporting ${path.basename(file)}`, (cancel) => runHexc(sizeArgs(file, base, choice.flag, view), cancel));
+    const out = await withProgress(`hexcavator: exporting ${path.basename(file)}`, (cancel) => runHexc(lib.withStripped(sizeArgs(file, base, choice.flag, view), stripped), cancel, true));
     await vscode.workspace.fs.writeFile(target, Buffer.from(out, "utf8"));
     vscode.window.showInformationMessage(`Exported to ${target.fsPath}`);
   } catch (e) {
-    vscode.window.showErrorMessage(`hexc: ${e.message}`);
+    vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
   }
 }
 
@@ -567,25 +587,25 @@ async function findings(context, uri) {
   });
   panel.webview.html = pageHtml(panel.webview, context, `Size Reduction: ${name}`);
   try {
-    // The build changes that would save space (hexc recommend), alongside.
+    // The build changes that would save space (hexcavator recommend), alongside.
     const recs = runHexc(["recommend", "-json", file]).then(
-      (out) => ({ recommendations: JSON.parse(out) }),
+      (out) => ({ recommendations: lib.parsed(out) }),
       (e) => ({ recommendationsError: e.message })
     );
     const out = await paneRun(panel.webview, `Examining ${name}…`, ["size", "-findings", "-json", "-top", "0", file]);
-    panel.webview.postMessage(Object.assign({ kind: "findings", file, findings: JSON.parse(out) }, await recs));
+    panel.webview.postMessage(Object.assign({ kind: "findings", file, findings: lib.parsed(out) }, await recs));
   } catch (e) {
     if (e.cancelled) {
       panel.dispose();
     } else {
-      vscode.window.showErrorMessage(`hexc: ${e.message}`);
+      vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
       panel.webview.postMessage({ kind: "failed", message: e.message });
     }
   }
 }
 
 /**
- * Disassembly documents (`hexc-disasm:` URIs): `hexc size -disassemble`'s
+ * Disassembly documents (`hexcavator-disasm:` URIs): `hexcavator size -disassemble`'s
  * listing of one function, read-only, highlighted by the extension's
  * grammar. Opening one again shows it again (VS Code keeps the document).
  */
@@ -608,7 +628,7 @@ class DisassemblyProvider {
       const text = await runHexc(args, cancel);
       return target.style === "diff" ? disasm.withoutAddresses(text) : text;
     } catch (e) {
-      return `(hexc could not disassemble ${target.name}: ${e.message})
+      return `(hexcavator could not disassemble ${target.name}: ${e.message})
 `;
     }
   }
@@ -624,7 +644,7 @@ async function symbolKind(file, name, hint) {
   }
   try {
     const out = await runHexc(["query", file, `${lib.nameIs(name)} select name, kind limit 5`, "-json"]);
-    const kinds = (JSON.parse(out).rows || []).map((r) => r.kind);
+    const kinds = (lib.parsed(out).rows || []).map((r) => r.kind);
     if (kinds.some((k) => /function|thunk|block/.test(k))) {
       return "code";
     }
@@ -651,7 +671,7 @@ async function inspectSymbol(file, name, hint) {
 const tablePanels = new Map();
 
 /**
- * A tool's output (hexc `args` with -json) as tables. `options.file` is
+ * A tool's output (hexcavator `args` with -json) as tables. `options.file` is
  * the binary (for opening symbols); `options.query`, a query to edit.
  */
 async function openTable(title, args, options) {
@@ -697,13 +717,13 @@ async function openTable(title, args, options) {
   const exe = () => lib.hexcPath(vscode.workspace.getConfiguration("hexcavator").get("path"));
   let shown = false;
   const load = async () => {
-    // (`pe`: the rows' symbols open in the views that need debug
+    // (`debug`: the rows' symbols open in the views that need debug
     // information.)
-    const full = lib.can(await sidebarModule.capsOf(file, runHexc), "why");
-    const message = { kind: "table", title: current.title, file, pe: full, query: current.query, command: lib.commandLine(exe(), current.args) };
+    const debug = lib.can(await sidebarModule.capsOf(file, runHexc), "why");
+    const message = { kind: "table", title: current.title, file, debug, query: current.query, command: lib.commandLine(exe(), current.args) };
     try {
-      const out = await paneRun(panel.webview, `Running ${lib.commandLine("hexc", current.args)}…`, lib.jsonArgs(current.args));
-      panel.webview.postMessage({ ...message, json: JSON.parse(out) });
+      const out = await paneRun(panel.webview, `Running ${lib.commandLine("hexcavator", current.args)}…`, lib.jsonArgs(current.args));
+      panel.webview.postMessage({ ...message, json: lib.parsed(out) });
       shown = true;
     } catch (e) {
       if (e.cancelled) {
@@ -768,7 +788,7 @@ const dataPanels = new Map();
 async function openData(file, name) {
   const context = extension;
   if (!lib.can(await sidebarModule.capsOf(file, runHexc), "data")) {
-    vscode.window.showInformationMessage(`hexc reads data with its type from debug information; none was found for ${path.basename(file)}.`);
+    vscode.window.showInformationMessage(`hexcavator reads data with its type from debug information; none was found for ${path.basename(file)}.`);
     return;
   }
   const key = `${file}\u0000${name}`;
@@ -810,7 +830,7 @@ async function openData(file, name) {
   const load = async () => {
     try {
       const out = await paneRun(panel.webview, `Reading ${short}…`, ["data", "-json", file, name]);
-      panel.webview.postMessage({ kind: "data", file, data: JSON.parse(out) });
+      panel.webview.postMessage({ kind: "data", file, data: lib.parsed(out) });
       shown = true;
     } catch (e) {
       if (e.cancelled) {
@@ -821,7 +841,7 @@ async function openData(file, name) {
         }
         return;
       }
-      panel.webview.postMessage({ kind: "data", file, name, error: `hexc could not read ${name}: ${e.message}` });
+      panel.webview.postMessage({ kind: "data", file, name, error: `hexcavator could not read ${name}: ${e.message}` });
     }
   };
   panel.webview.onDidReceiveMessage(async (m) => {
@@ -847,8 +867,8 @@ async function openData(file, name) {
 async function openDisassemblyText(file, name, style) {
   const uri = vscode.Uri.from(disasm.disasmUri(file, name, style));
   const doc = await vscode.workspace.openTextDocument(uri);
-  if (doc.languageId !== "hexc-disasm") {
-    await vscode.languages.setTextDocumentLanguage(doc, "hexc-disasm");
+  if (doc.languageId !== "hexcavator-disasm") {
+    await vscode.languages.setTextDocumentLanguage(doc, "hexcavator-disasm");
   }
   await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preview: true });
 }
@@ -926,7 +946,7 @@ async function openDisassembly(file, name) {
   const load = async () => {
     try {
       const out = await paneRun(panel.webview, `Disassembling ${short}…`, ["size", "-disassemble", name, "-json", file]);
-      const listing = JSON.parse(out);
+      const listing = lib.parsed(out);
       const sources = await readSources(listing.files);
       panel.webview.postMessage({ kind: "disasm", file, listing, sources, mode: mode() });
       shown = true;
@@ -939,7 +959,7 @@ async function openDisassembly(file, name) {
         }
         return;
       }
-      panel.webview.postMessage({ kind: "disasm", file, name, error: `hexc could not disassemble ${name}: ${e.message}` });
+      panel.webview.postMessage({ kind: "disasm", file, name, error: `hexcavator could not disassemble ${name}: ${e.message}` });
     }
   };
   panel.webview.onDidReceiveMessage(async (m) => {
@@ -994,7 +1014,9 @@ class SizeEditor {
     panel.webview.html = pageHtml(panel.webview, this.context, `Size: ${path.basename(document.uri.fsPath)}`);
     const view = attach(this.context, panel.webview, null, document.uri.fsPath, null);
     panel.onDidChangeViewState((e) => showStatus(e.webviewPanel.active ? view.state.report : null));
-    panel.onDidDispose(() => showStatus(null));
+    panel.onDidDispose(() => {
+      showStatus(null);
+    });
     view.load(false);
   }
 }
@@ -1019,7 +1041,7 @@ function plainHtml(webview, context, title, script, images) {
 <div id="toolbar"></div>
 <div id="main"></div>
 <script nonce="${nonce}" src="${media("loading.js")}"></script>
-<script nonce="${nonce}" src="${media(script)}"></script>
+${[].concat(script).map((s) => `<script nonce="${nonce}" src="${media(s)}"></script>`).join("\n")}
 </body>
 </html>`;
 }
@@ -1041,7 +1063,7 @@ const typesPanels = new Map();
 
 /**
  * Opens (or shows) the Types page of the binary at `file`. The page asks
- * for the rows in view (a page at a time, filtered and sorted by hexc,
+ * for the rows in view (a page at a time, filtered and sorted by hexcavator,
  * which keeps the types in memory).
  */
 function openTypes(context, file) {
@@ -1073,7 +1095,7 @@ function openTypes(context, file) {
     reading++;
     try {
       const out = await runHexc(args);
-      panel.webview.postMessage(Object.assign({ kind: "page", generation: m.generation }, JSON.parse(out)));
+      panel.webview.postMessage(Object.assign({ kind: "page", generation: m.generation }, lib.parsed(out)));
     } catch (e) {
       panel.webview.postMessage({ kind: "failed", generation: m.generation, message: e.message });
     } finally {
@@ -1107,10 +1129,10 @@ function openLayout(context, file, typeName) {
   const load = async () => {
     try {
       const out = await paneRun(panel.webview, `Reading ${typeName}…`, ["types", "-layout", typeName, "-json", file]);
-      panel.webview.postMessage({ kind: "layout", file, layout: JSON.parse(out) });
+      panel.webview.postMessage({ kind: "layout", file, layout: lib.parsed(out) });
     } catch (e) {
       if (!e.cancelled) {
-        vscode.window.showErrorMessage(`hexc: ${e.message}`);
+        vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
       }
       panel.webview.postMessage({ kind: "failed", message: e.message });
     }
@@ -1119,7 +1141,7 @@ function openLayout(context, file, typeName) {
     if (m && m.command === "expand" && Number.isSafeInteger(m.ty)) {
       try {
         const out = await runHexc(["types", "-ty", String(m.ty), "-json", file]);
-        panel.webview.postMessage({ kind: "inner", ty: m.ty, layout: JSON.parse(out) });
+        panel.webview.postMessage({ kind: "inner", ty: m.ty, layout: lib.parsed(out) });
       } catch (e) {
         panel.webview.postMessage({ kind: "inner", ty: m.ty, layout: { parts: [] }, message: e.message });
       }
@@ -1134,7 +1156,7 @@ const buildPanels = new Map();
 /**
  * Opens (or shows) the Build Information page of the binary at `file`:
  * its security options, the build options its objects differ in, and each
- * object's command line (hexc checksec -audit -json).
+ * object's command line (hexcavator checksec -audit -json).
  */
 function openBuildInfo(context, file) {
   const existing = buildPanels.get(file);
@@ -1148,11 +1170,11 @@ function openBuildInfo(context, file) {
   panel.onDidDispose(() => buildPanels.delete(file));
   const load = async () => {
     try {
-      // How it was built, and its signatures (verified by hexc), at once.
+      // How it was built, and its signatures (verified by hexcavator), at once.
       const signature = runHexc(["signature", "-json", file]).then(
-        (out) => JSON.parse(out),
+        (out) => lib.parsed(out),
         (e) => {
-          // (Unsigned or not verified: hexc says so in its output, and
+          // (Unsigned or not verified: hexcavator says so in its output, and
           // exits 1.)
           if (e.stdout) {
             try {
@@ -1163,10 +1185,10 @@ function openBuildInfo(context, file) {
         }
       );
       const out = await paneRun(panel.webview, `Reading how ${name} was built…`, ["checksec", "-audit", "-json", file]);
-      panel.webview.postMessage({ kind: "build", file, report: JSON.parse(out), signature: await signature });
+      panel.webview.postMessage({ kind: "build", file, report: lib.parsed(out), signature: await signature });
     } catch (e) {
       if (!e.cancelled) {
-        vscode.window.showErrorMessage(`hexc: ${e.message}`);
+        vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
       }
       panel.webview.postMessage({ kind: "failed", message: e.message });
     }
@@ -1200,7 +1222,7 @@ const depsPanels = new Map();
 
 /**
  * Opens (or shows) the Dependencies page of the binary at `file`: what it
- * loads, where its loader finds each library, and what's missing (hexc
+ * loads, where its loader finds each library, and what's missing (hexcavator
  * deps -json; with -system, system libraries' own too).
  */
 function openDeps(context, file) {
@@ -1220,17 +1242,17 @@ function openDeps(context, file) {
       try {
         out = await paneRun(panel.webview, `Finding what ${name} loads…`, args);
       } catch (e) {
-        // (Something missing: hexc says so, and exits 1, with the graph.)
+        // (Something missing: hexcavator says so, and exits 1, with the graph.)
         if (e.code === 1 && e.stdout) {
           out = e.stdout;
         } else {
           throw e;
         }
       }
-      panel.webview.postMessage({ kind: "deps", file, graph: JSON.parse(out) });
+      panel.webview.postMessage({ kind: "deps", file, graph: lib.parsed(out) });
     } catch (e) {
       if (!e.cancelled) {
-        vscode.window.showErrorMessage(`hexc: ${e.message}`);
+        vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
       }
       panel.webview.postMessage({ kind: "failed", message: e.message });
     }
@@ -1256,8 +1278,8 @@ const initPanels = new Map();
 
 /**
  * Opens (or shows) the Initialization page of the binary at `file`: what
- * runs when it's loaded, before its main, in order (hexc init -json), each
- * function opening to what it calls (hexc init -callees, asked as opened).
+ * runs when it's loaded, before its main, in order (hexcavator init -json), each
+ * function opening to what it calls (hexcavator init -callees, asked as opened).
  */
 function openInit(context, file) {
   const existing = initPanels.get(file);
@@ -1272,10 +1294,10 @@ function openInit(context, file) {
   const load = async () => {
     try {
       const out = await paneRun(panel.webview, `Finding what runs before ${name}'s main…`, ["init", "-json", "-calls", file]);
-      panel.webview.postMessage({ kind: "init", file, data: JSON.parse(out) });
+      panel.webview.postMessage({ kind: "init", file, data: lib.parsed(out) });
     } catch (e) {
       if (!e.cancelled) {
-        vscode.window.showErrorMessage(`hexc: ${e.message}`);
+        vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
       }
       panel.webview.postMessage({ kind: "failed", message: e.message });
     }
@@ -1290,7 +1312,7 @@ function openInit(context, file) {
         if (Number.isSafeInteger(m.node)) {
           try {
             const out = await runHexc(["init", "-json", "-callees", String(m.node), file]);
-            panel.webview.postMessage(Object.assign({ kind: "callees" }, JSON.parse(out)));
+            panel.webview.postMessage(Object.assign({ kind: "callees" }, lib.parsed(out)));
           } catch (e) {
             panel.webview.postMessage({ kind: "callees", node: m.node, callees: [] });
           }
@@ -1308,6 +1330,44 @@ function openInit(context, file) {
   }, undefined, context.subscriptions);
 }
 
+/** Open Relocations pages, by file. */
+const relocationPanels = new Map();
+
+/**
+ * Opens (or shows) the Relocations page of the binary at `file`: what the
+ * loader patches when it loads it, by table, type, section, the data each
+ * patches and what each points to, and the tables of pointers offsets
+ * could replace (hexcavator relocations -json).
+ */
+function openRelocations(context, file) {
+  const existing = relocationPanels.get(file);
+  if (existing) {
+    existing.reveal();
+    return;
+  }
+  const name = path.basename(file);
+  // (Its tables are sortable: table.js before the page's own script.)
+  const panel = panelFor(context, "hexcRelocations", `Relocations: ${name}`, ["table.js", "relocations-view.js"]);
+  relocationPanels.set(file, panel);
+  panel.onDidDispose(() => relocationPanels.delete(file));
+  const load = async () => {
+    try {
+      const out = await paneRun(panel.webview, `Reading ${name}'s relocations…`, ["relocations", "-json", "-n", "500", file]);
+      panel.webview.postMessage({ kind: "relocations", file, report: lib.parsed(out) });
+    } catch (e) {
+      if (!e.cancelled) {
+        vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
+      }
+      panel.webview.postMessage({ kind: "failed", message: e.message });
+    }
+  };
+  panel.webview.onDidReceiveMessage(async (m) => {
+    if (m && (m.command === "ready" || m.command === "refresh")) {
+      await load();
+    }
+  }, undefined, context.subscriptions);
+}
+
 /** Open Resources pages, by file. */
 const resourcePanels = new Map();
 
@@ -1316,7 +1376,7 @@ const SAVED_AS = { group: null, image: null, bitmap: "bmp", text: "txt", table: 
 
 /**
  * Opens (or shows) the Resources page of the binary at `file`: what it holds
- * besides its code, and what it says of itself (hexc resources -json), each
+ * besides its code, and what it says of itself (hexcavator resources -json), each
  * decoded when it's selected (-show), saved (-save) or copied on request.
  */
 function openResources(context, file) {
@@ -1333,10 +1393,10 @@ function openResources(context, file) {
   const load = async () => {
     try {
       const out = await paneRun(panel.webview, `Reading ${name}'s resources…`, ["resources", "-json", file]);
-      panel.webview.postMessage({ kind: "resources", file, list: JSON.parse(out) });
+      panel.webview.postMessage({ kind: "resources", file, list: lib.parsed(out) });
     } catch (e) {
       if (!e.cancelled) {
-        vscode.window.showErrorMessage(`hexc: ${e.message}`);
+        vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
       }
       panel.webview.postMessage({ kind: "failed", message: e.message });
     }
@@ -1351,7 +1411,7 @@ function openResources(context, file) {
         if (typeof m.id === "string") {
           try {
             const out = await runHexc(["resources", "-json", "-show", m.id, file]);
-            panel.webview.postMessage({ kind: "item", item: JSON.parse(out) });
+            panel.webview.postMessage({ kind: "item", item: lib.parsed(out) });
           } catch (e) {
             panel.webview.postMessage({ kind: "itemFailed", id: m.id, message: e.message });
           }
@@ -1381,7 +1441,7 @@ function openResources(context, file) {
           await runHexc(["resources", "-save", m.id, target.fsPath, file]);
           vscode.window.setStatusBarMessage(`Saved ${m.id} to ${path.basename(target.fsPath)}`, 3000);
         } catch (e) {
-          vscode.window.showErrorMessage(`hexc: ${e.message}`);
+          vscode.window.showErrorMessage(`hexcavator: ${e.message}`);
         }
         break;
       }
@@ -1394,11 +1454,11 @@ function typeLayout(file, name) {
   return openLayout(extension, file, name);
 }
 
-/** Opens where a type is defined (hexc types -definition), at its line. */
+/** Opens where a type is defined (hexcavator types -definition), at its line. */
 async function typeDefinition(file, name) {
   let where = null;
   try {
-    const r = JSON.parse(await runHexc(["types", "-definition", name, "-json", file]));
+    const r = lib.parsed(await runHexc(["types", "-definition", name, "-json", file]));
     where = r && r.file ? { file: r.file, line: r.line || 1 } : null;
   } catch {
     // (Not recorded: said so below.)
@@ -1426,7 +1486,7 @@ function activate(context) {
       if (server) {
         server.kill();
       }
-      vscode.window.setStatusBarMessage("hexc restarted", 2000);
+      vscode.window.setStatusBarMessage("hexcavator restarted", 2000);
     }),
     vscode.workspace.registerTextDocumentContentProvider(disasm.SCHEME, new DisassemblyProvider()),
     vscode.window.registerCustomEditorProvider("hexcavator.sizeEditor", new SizeEditor(context), {
@@ -1483,6 +1543,7 @@ function activate(context) {
     openDeps: (file) => openDeps(context, file),
     openInit: (file) => openInit(context, file),
     openResources: (file) => openResources(context, file),
+    openRelocations: (file) => openRelocations(context, file),
     openDisassembly,
     openData,
     openTable,

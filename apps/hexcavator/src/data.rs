@@ -1,4 +1,4 @@
-//! `hexc data`: a datum of an image, its bytes and, from its debug information, its
+//! `hexcavator data`: a datum of an image, its bytes and, from its debug information, its
 //! value read as its type: each member, element, and pointer (named by
 //! the symbol it points into), and the slots the image's base relocations
 //! say hold addresses.
@@ -7,12 +7,12 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::value::{self, Value};
-use hexcavator_program::data::AddressNames;
 use serde_json::{Value as Json, json};
+use turbonop_debuginfo::value::{self, Value};
+use turbonop_program::data::AddressNames;
 
 pub const USAGE: &str = "\
-usage: hexc data [options] <image> <name>
+usage: hexcavator data [options] <image> <name>
 
 A datum of an image (a variable, a string, a table): its bytes, and its
 value read as its type (from its PDB or DWARF): each base, member
@@ -21,7 +21,7 @@ points into; and the slots the loader writes addresses into (base
 relocations, dynamic relocations, fixups).
 
 options:
-  -pdb <path>   its debug information: a PDB, or a file with its DWARF
+  -debug <path> its debug information: a PDB, or a file with its DWARF
                 (or -debug; default: its own, or the one it names)
   -max <bytes>  the most of it to read (default 1M)
   -json         as JSON";
@@ -50,8 +50,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
             }
             Some("max") => {
                 let v = it.next().ok_or("-max needs a size")?;
-                max = match hexcavator_size::rollup::Threshold::parse(v) {
-                    Some(hexcavator_size::rollup::Threshold::Bytes(b)) if b > 0 => b as u64,
+                max = match turbonop_size::rollup::Threshold::parse(v) {
+                    Some(turbonop_size::rollup::Threshold::Bytes(b)) if b > 0 => b as u64,
                     _ => return Err(format!("-max: a size (4096, 64k, 1M), not '{v}'")),
                 };
             }
@@ -78,7 +78,7 @@ pub fn run(args: &[String]) -> ExitCode {
         Ok(o) => o,
         Err(e) => {
             if !e.is_empty() {
-                ereport!("hexc data: {e}\n");
+                ereport!("hexcavator data: {e}\n");
             }
             ereport!("{USAGE}");
             return ExitCode::from(2);
@@ -87,14 +87,14 @@ pub fn run(args: &[String]) -> ExitCode {
     match report(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc data: {e}");
+            ereport!("hexcavator data: {e}");
             ExitCode::FAILURE
         }
     }
 }
 
 fn report(o: &Options) -> Result<String, String> {
-    let opened = hexcavator_program::Opened::open(&o.image, o.pdb.as_deref())?;
+    let opened = turbonop_program::Opened::open(&o.image, o.pdb.as_deref())?;
     let program = opened.program()?;
     let d = program.datum(&o.name, o.max)?;
     let names = program.address_names()?;

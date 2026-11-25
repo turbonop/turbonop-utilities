@@ -3,8 +3,8 @@
 
 use std::process::ExitCode;
 
-use hexcavator_trace_synth::{Config, Truth, generate};
 use serde_json::{Value, json};
+use turbonop_trace_synth::{Config, Truth, generate};
 
 use crate::Args;
 

@@ -4,10 +4,10 @@
 //! keyed by `hash_v1(name) % 4096`. The publics stream adds an address map:
 //! the public symbols sorted by section and offset.
 
-use hexcavator_core::{Error, ErrorKind, I32Le, Reader, Result, U32Le, pod, read_at};
+use turbonop_core::{Error, ErrorKind, I32Le, Reader, Result, U32Le, pod, read_at};
 
 use crate::hash::hash_v1;
-use hexcavator_codeview::symbols::{Symbol, SymbolRecord};
+use turbonop_codeview::symbols::{Symbol, SymbolRecord};
 
 const BUCKETS: usize = 4096;
 const GSI_SIGNATURE: u32 = 0xFFFF_FFFF;
@@ -35,8 +35,8 @@ pod! {
         pub addr_map_size: U32Le,
         pub num_thunks: U32Le,
         pub size_of_thunk: U32Le,
-        pub isect_thunk_table: hexcavator_core::U16Le,
-        pub padding: hexcavator_core::U16Le,
+        pub isect_thunk_table: turbonop_core::U16Le,
+        pub padding: turbonop_core::U16Le,
         pub off_thunk_table: U32Le,
         pub num_sections: U32Le,
     }
@@ -120,7 +120,7 @@ impl<'s> PublicsStream<'s> {
             0,
             "PSI",
         ))?)?;
-        let addr_map = hexcavator_core::read_slice_at(
+        let addr_map = turbonop_core::read_slice_at(
             data,
             hash_end as u64,
             u64::from(header.addr_map_size.get() / 4),
@@ -165,5 +165,5 @@ pub fn public_at<'r>(
 
 /// The symbol record at `offset` in a record stream.
 pub fn symbol_at(records: &[u8], offset: u32) -> Option<SymbolRecord<'_>> {
-    hexcavator_codeview::symbols::SymbolIter::new(records.get(offset as usize..)?, offset).next()
+    turbonop_codeview::symbols::SymbolIter::new(records.get(offset as usize..)?, offset).next()
 }

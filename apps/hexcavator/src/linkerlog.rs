@@ -1,18 +1,14 @@
-//! `hexc linkerlog`: what a link's `/VERBOSE` output says, and why each
+//! `hexcavator linkerlog`: what a link's `/VERBOSE` output says, and why each
 //! library member is in the image.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_linkerlog::{LinkerLog, parse};
-use hexcavator_mmap::Mmap;
-use hexcavator_size::pe;
+use turbonop_linkerlog::{LinkerLog, parse};
 
 pub const USAGE: &str = "\
-usage: hexc linkerlog [options] <log> [-- <base log>]
+usage: hexcavator linkerlog [options] <log> [-- <base log>]
 
 Reads what a linker says about a link: which library members were linked
 and why, what was discarded, and what was folded. The MSVC linker's
@@ -26,9 +22,10 @@ options:
   -why <member>   why a member (lib(member), or just member.obj) was linked:
                   the symbol it was loaded for, and who referenced it, back
                   to an input on the command line
-  -image <image>  rank the image's library members by size (using its PDB),
-                  each with why it was linked
-  -pdb <path>     the image's PDB (default: the one the image names)
+  -image <image>  rank the image's library members by size (using its debug
+                  information), each with why it was linked
+  -debug <path>   the image's debug information (default: the one found
+                  from the image); -pdb is another name for it
   -top <n>        how many to list (default 20; 0: all)
   -json           as JSON
   -- <base log>   what changed from a base build's log: the members linked
@@ -70,7 +67,7 @@ fn parse_args(args: &[String]) -> Result<Options, String> {
         match option {
             Some("why") => why = Some(value("why")?),
             Some("image") => image = Some(PathBuf::from(value("image")?)),
-            Some("pdb") => pdb = Some(PathBuf::from(value("pdb")?)),
+            Some("pdb" | "debug") => pdb = Some(PathBuf::from(value("debug")?)),
             Some("top") => {
                 let n = value("top")?;
                 top = n.parse().map_err(|_| format!("-top: not a number: {n}"))?;
@@ -97,14 +94,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let options = match parse_args(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc linkerlog: {e}\n\n{USAGE}");
+            ereport!("hexcavator linkerlog: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match report(&options) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc linkerlog: {e}");
+            ereport!("hexcavator linkerlog: {e}");
             ExitCode::FAILURE
         }
     }
@@ -409,6 +406,49 @@ fn file_name(path: &str) -> &str {
     path.rsplit(['\\', '/']).next().unwrap_or(path)
 }
 
+/// The library members a log names (`lib(member)`), by their members'
+/// stems (`foo` of `foo.o`, `foo.cpp.o`, `foo.obj`).
+struct Members<'a> {
+    by_stem: std::collections::HashMap<String, Vec<&'a str>>,
+}
+
+impl<'a> Members<'a> {
+    fn of(log: &'a LinkerLog) -> Self {
+        let mut by_stem: std::collections::HashMap<String, Vec<&'a str>> =
+            std::collections::HashMap::new();
+        let named = log
+            .linked
+            .iter()
+            .map(String::as_str)
+            .chain(log.loads.iter().filter_map(|l| l.loaded.as_deref()));
+        for m in named {
+            let Some(member) = m.strip_suffix(')').and_then(|m| m.split_once('(')) else {
+                continue;
+            };
+            let list = by_stem.entry(stem(member.1)).or_default();
+            if !list.contains(&m) {
+                list.push(m);
+            }
+        }
+        Self { by_stem }
+    }
+
+    /// The member compiled from the compile unit named `unit` (its source
+    /// file, as DWARF names it), if just one has its stem.
+    fn of_unit(&self, unit: &str) -> Option<&'a str> {
+        match self.by_stem.get(&stem(unit))?.as_slice() {
+            [one] => Some(one),
+            _ => None,
+        }
+    }
+}
+
+/// A file's name without its directory or any extension, lowercase.
+fn stem(path: &str) -> String {
+    let name = file_name(path);
+    name.split('.').next().unwrap_or(name).to_ascii_lowercase()
+}
+
 /// The image's library members by size, each with why it was linked.
 fn largest_members(
     log: &LinkerLog,
@@ -416,28 +456,34 @@ fn largest_members(
     pdb: Option<&Path>,
     options: &Options,
 ) -> Result<String, String> {
-    let show = |p: &Path| p.display().to_string();
-    let image_map = Mmap::open(image_path).map_err(|e| format!("{}: {e}", show(image_path)))?;
-    let image = Image::parse(&image_map).map_err(|e| format!("{}: {e}", show(image_path)))?;
-    let (pdb_path, pdb_map) = hexcavator_program::find_debug(image_path, &image, pdb)?;
-    let debug = DebugInfo::parse(&pdb_map).map_err(|e| format!("{}: {e}", show(&pdb_path)))?;
-    let model = pe::model(&image, &debug).map_err(|e| format!("{}: {e}", show(&pdb_path)))?;
+    // (Of any format, with its debug information, as every command opens
+    // one.)
+    let opened = turbonop_program::Opened::open(image_path, pdb)?;
+    let program = opened.program()?;
+    let model = program.model()?;
+    let members = Members::of(log);
     // Compilands as the linker names library members: `lib(member)`.
     let totals = model.totals(|p| Some(p.compiland));
-    let mut rows: Vec<(String, hexcavator_size::Size)> = totals
-        .iter()
-        .filter_map(|(&c, t)| {
-            let comp = &model.compilands[c as usize];
-            let lib = &model.libraries[comp.library as usize].name;
-            if lib.is_empty() || lib.eq_ignore_ascii_case(&comp.name) {
-                return None;
+    let mut sizes: std::collections::HashMap<String, turbonop_size::Size> =
+        std::collections::HashMap::new();
+    for (&c, t) in &totals {
+        let comp = &model.compilands[c as usize];
+        let lib = &model.libraries[comp.library as usize].name;
+        let member = if lib.is_empty() || lib.eq_ignore_ascii_case(&comp.name) {
+            // (DWARF doesn't say which archive a compile unit came from: the
+            // member the log names for it, if just one is named so.)
+            match members.of_unit(&comp.name) {
+                Some(m) => m.to_string(),
+                None => continue,
             }
-            Some((
-                format!("{}({})", file_name(lib), file_name(&comp.name)),
-                t.size,
-            ))
-        })
-        .collect();
+        } else {
+            format!("{}({})", file_name(lib), file_name(&comp.name))
+        };
+        let s = sizes.entry(member).or_default();
+        s.file += t.size.file;
+        s.vm += t.size.vm;
+    }
+    let mut rows: Vec<(String, turbonop_size::Size)> = sizes.into_iter().collect();
     rows.sort_by(|a, b| {
         b.1.file
             .max(b.1.vm)
@@ -474,7 +520,7 @@ fn largest_members(
     let _ = writeln!(
         out,
         "The largest library members of {}, and why each was linked:",
-        show(image_path)
+        image_path.display()
     );
     for (m, s) in rows.iter().take(options.top) {
         let _ = writeln!(out, "{:>10} {:>10}  {m}", s.file, s.vm);
@@ -515,10 +561,10 @@ mod tests {
 
     #[test]
     fn diffs() {
-        let old = hexcavator_linkerlog::parse(
+        let old = turbonop_linkerlog::parse(
             "Searching libraries\n    Searching a.lib:\n      Found x\n        Referenced in main.obj\n        Loaded a.lib(x.obj)\n      Found y\n        Referenced in main.obj\n        Loaded a.lib(y.obj)\n",
         );
-        let new = hexcavator_linkerlog::parse(
+        let new = turbonop_linkerlog::parse(
             "Searching libraries\n    Searching a.lib:\n      Found x\n        Referenced in main.obj\n        Loaded A.LIB(X.OBJ)\n      Found z\n        Referenced in main.obj\n        Loaded a.lib(z.obj)\n",
         );
         let (added, removed) = member_changes(&new, &old);

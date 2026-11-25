@@ -4,11 +4,11 @@
 use rustc_hash::FxHashMap;
 use serde_json::{Value, json};
 
-use hexcavator_trace::{ImageIx, Trace};
-use hexcavator_trace_analysis::{Resolver, Symbolizer};
-use hexcavator_trace_synth::Truth;
 use stackrabbit::store;
 use stackrabbit::views::{TreeSpec, functions};
+use turbonop_trace::{ImageIx, Trace};
+use turbonop_trace_analysis::{Resolver, Symbolizer};
+use turbonop_trace_synth::Truth;
 
 use crate::common::{scratch, small, write_trace};
 
@@ -381,8 +381,8 @@ fn time_by_source_line_is_every_samples_lines() {
 
 #[test]
 fn a_functions_callers_and_callees_weigh_what_it_does() {
-    use hexcavator_trace_analysis::NodeId;
     use stackrabbit::views::TreeView;
+    use turbonop_trace_analysis::NodeId;
     let dir = scratch("functions-focus");
     let (path, s) = write_trace(&dir, "t.etl", &small());
     let loaded = store::open(

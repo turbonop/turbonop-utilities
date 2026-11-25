@@ -1,4 +1,4 @@
-//! `hexc types`: the layouts of a program's classes, structures, and unions
+//! `hexcavator types`: the layouts of a program's classes, structures, and unions
 //! (from its debug information: a PDB, or DWARF), and the bytes their
 //! padding wastes.
 
@@ -6,14 +6,14 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_debuginfo::layout::{Layout, Part, PartKind};
-use hexcavator_image::Image;
-use hexcavator_mmap::Mmap;
 use serde_json::{Value, json};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_debuginfo::layout::{Layout, Part, PartKind};
+use turbonop_image::Image;
+use turbonop_mmap::Mmap;
 
 pub const USAGE: &str = "\
-usage: hexc types [options] <image or debug file> [-- <base image or debug file>]
+usage: hexcavator types [options] <image or debug file> [-- <base image or debug file>]
 
 The classes, structures, and unions of a program (from its PDB or DWARF),
 by the bytes their padding wastes; or one type's layout: each base, vfptr,
@@ -21,7 +21,7 @@ vbptr, member (bitfields by bit), and hole. With a base: the types whose
 layout changed, and those added or removed.
 
 options:
-  -pdb <path>      the image's debug information: its PDB, or a file with
+  -debug <path>    the image's debug information: its PDB, or a file with
                    its DWARF (default: the one it names, or its own)
   -layout <name>   one type's layout (its name, or a regular expression that
                    matches just one)
@@ -138,14 +138,14 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc types: {e}\n\n{USAGE}");
+            ereport!("hexcavator types: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match report(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc types: {e}");
+            ereport!("hexcavator types: {e}");
             ExitCode::FAILURE
         }
     }
@@ -163,10 +163,10 @@ pub(crate) fn with_layouts<R>(
     // An image (but a PDB, or a file of DWARF given as one): its debug
     // information, found.
     let image =
-        Image::parse(&data).is_ok() && (pdb.is_some() || hexcavator_pdb::check(&data).is_err());
+        Image::parse(&data).is_ok() && (pdb.is_some() || turbonop_pdb::check(&data).is_err());
     if image {
         drop(data);
-        let opened = hexcavator_program::Opened::open(path, pdb)?;
+        let opened = turbonop_program::Opened::open(path, pdb)?;
         let debug = opened.debug_info()?;
         let mut files = vec![opened.path(), opened.debug_path()];
         files.extend(opened.split_paths());
@@ -177,7 +177,7 @@ pub(crate) fn with_layouts<R>(
 }
 
 /// `with_layouts`, the debug information read (from `files`: the image
-/// first, then its debug files). The layouts are kept (`hexc serve` keeps
+/// first, then its debug files). The layouts are kept (`hexcavator serve` keeps
 /// them for the next command) until the files change.
 fn layouts_of<R>(
     debug: &DebugInfo<'_>,
@@ -185,14 +185,16 @@ fn layouts_of<R>(
     f: impl FnOnce(&DebugInfo<'_>, &Catalog) -> Result<R, String>,
 ) -> Result<R, String> {
     let show = |p: &Path| p.display().to_string();
-    let catalog = hexcavator_program::cache::remember(files, "type catalog", || {
+    let catalog = turbonop_program::cache::remember(files, "type catalog", || {
         let mut all = debug.layouts().map_err(|e| {
             format!(
                 "{}: {e}",
                 show(files.last().copied().unwrap_or(Path::new("")))
             )
         })?;
-        all.sort_by(|a, b| b.waste().cmp(&a.waste()).then_with(|| a.name.cmp(&b.name)));
+        turbonop_par::sort_by(&mut all, |a, b| {
+            b.waste().cmp(&a.waste()).then_with(|| a.name.cmp(&b.name))
+        });
         Ok::<_, String>(Catalog::new(all))
     })?;
     f(debug, &catalog)
@@ -212,10 +214,13 @@ pub(crate) struct Catalog {
 
 impl Catalog {
     fn new(all: Vec<Layout>) -> Self {
-        let mangled: Vec<Option<String>> = all.iter().map(mangled).collect();
-        let lower: Vec<String> = all.iter().map(|l| l.name.to_lowercase()).collect();
+        // (On every core.)
+        let (mangled, lower): (Vec<Option<String>>, Vec<String>) = turbonop_par::join(
+            || turbonop_par::map(&all, 1024, mangled),
+            || turbonop_par::map(&all, 1024, |l| l.name.to_lowercase()),
+        );
         let mut by_name: Vec<u32> = (0..u32::try_from(all.len()).unwrap_or(u32::MAX)).collect();
-        by_name.sort_by(|&a, &b| {
+        turbonop_par::sort_by(&mut by_name, |&a, &b| {
             let (a, b) = (a as usize, b as usize);
             lower[a]
                 .cmp(&lower[b])
@@ -269,7 +274,7 @@ fn report(o: &Options) -> Result<String, String> {
         let one = match (&o.layout, o.ty) {
             (_, Some(ty)) => Some(
                 debug
-                    .layout(hexcavator_debuginfo::TypeRef(ty))
+                    .layout(turbonop_debuginfo::TypeRef(ty))
                     .ok_or_else(|| format!("type {ty} has no layout here"))?,
             ),
             (Some(name), None) => {
@@ -602,7 +607,7 @@ fn refs(debug: &DebugInfo<'_>, all: &[Layout], target: &Layout, json_out: bool) 
     types.dedup();
     let mut symbols: Vec<(String, &'static str, String)> = Vec::new();
     if let Ok(list) = debug.symbols() {
-        use hexcavator_debuginfo::{SymbolKind, TypeRef};
+        use turbonop_debuginfo::{SymbolKind, TypeRef};
         let mut seen = std::collections::HashSet::new();
         for s in &list {
             let kind = match s.kind {
@@ -746,8 +751,8 @@ fn layout_text(l: &Layout) -> String {
 
 /// The class, structure, or union a part's type is (through cv-modifiers
 /// and arrays), to show its own layout below the part's.
-fn expandable(debug: &DebugInfo<'_>, ty: hexcavator_debuginfo::TypeRef) -> Option<u64> {
-    use hexcavator_debuginfo::TypeShape;
+fn expandable(debug: &DebugInfo<'_>, ty: turbonop_debuginfo::TypeRef) -> Option<u64> {
+    use turbonop_debuginfo::TypeShape;
     let mut at = ty;
     for _ in 0..32 {
         match debug.type_shape(at) {
@@ -788,7 +793,7 @@ fn layout_json(debug: &DebugInfo<'_>, l: &Layout) -> Value {
 /// The types whose layout changed between `old` and `new`, and those added
 /// or removed.
 fn diff(old: &[Layout], new: &[Layout], rows: usize, json_out: bool) -> String {
-    let d = hexcavator_debuginfo::layout::compare(old, new);
+    let d = turbonop_debuginfo::layout::compare(old, new);
     let (changed, added, removed) = (d.changed, d.added, d.removed);
     let take = |len: usize| if rows == 0 { len } else { rows.min(len) };
     if json_out {
@@ -866,7 +871,7 @@ mod tests {
             assert_eq!(got.as_deref(), want, "{name}");
             // As a typeinfo name, our demangler reads it back.
             if let Some(m) = got {
-                let back = hexcavator_demangle::itanium::demangle(&format!("_ZTS{m}")).unwrap();
+                let back = turbonop_demangle::itanium::demangle(&format!("_ZTS{m}")).unwrap();
                 assert_eq!(back, format!("typeinfo name for {name}"), "{m}");
             }
         }

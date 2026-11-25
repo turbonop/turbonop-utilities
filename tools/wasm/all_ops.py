@@ -1,6 +1,6 @@
 """Writes testdata/wasm/ops.wasm: a module with one function per WebAssembly
 instruction LLVM knows (from `llvm-tblgen --dump-json` of LLVM's
-WebAssembly target), each with sample immediates, for checking hexc's
+WebAssembly target), each with sample immediates, for checking hexcavator's
 disassembler against `llvm-objdump -d` (see testdata/wasm/README.md).
 
 Usage: python all_ops.py <llvm webassembly.json> <out.wasm>

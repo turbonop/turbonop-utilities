@@ -1,17 +1,17 @@
 //! Prints a trace's stack trees, by module, with timings:
 //! CPU usage (sampled) by process and stack, inverted, and waits.
 //!
-//!     cargo run --release -p hexcavator-trace-analysis --example stacktree -- trace.etl
+//!     cargo run --release -p turbonop-trace-analysis --example stacktree -- trace.etl
 //!
 //! The output names processes and modules, so it is for your own traces.
 
 use std::time::Instant;
 
-use hexcavator_etl::Etl;
-use hexcavator_symbolize::SymbolPath;
-use hexcavator_trace::{Trace, etw};
-use hexcavator_trace_analysis::{
-    Filter, FrameMode, Framer, GroupBy, Keys, NodeId, PdbSymbolizer, Precise, Resolver,
+use turbonop_etl::Etl;
+use turbonop_symbolize::SymbolPath;
+use turbonop_trace::{Trace, etw};
+use turbonop_trace_analysis::{
+    DebugSymbolizer, Filter, FrameMode, Framer, GroupBy, Keys, NodeId, Precise, Resolver,
     SwitchWeight, Symbolizer, Tree, label, sources,
 };
 
@@ -50,16 +50,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let path = std::env::args()
         .nth(1)
         .ok_or("usage: stacktree trace.etl")?;
-    let map = hexcavator_mmap::Mmap::open(path)?;
+    let map = turbonop_mmap::Mmap::open(path)?;
     let etl = Etl::parse(&map)?;
     let t = Instant::now();
     let (trace, _) = etw::import(&etl)?;
     println!("import {:.2} s", t.elapsed().as_secs_f64());
 
     let resolver = Resolver::new(&trace);
-    // Functions from the PDBs found on this machine; images without one
-    // show as whole modules.
-    let symbols = PdbSymbolizer::new(SymbolPath::from_env());
+    // Functions from the debug information found on this machine (PDBs,
+    // DWARF), or images' own symbols; images with none show as whole modules.
+    let symbols = DebugSymbolizer::new(SymbolPath::from_env());
     let mut framer = Framer::new(&trace, &resolver, &symbols, FrameMode::Function);
     let mut keys = Keys::default();
 

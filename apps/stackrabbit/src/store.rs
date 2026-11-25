@@ -5,10 +5,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use hexcavator_etl::Etl;
-use hexcavator_mmap::Mmap;
-use hexcavator_trace::etw::{self, ImportStats};
-use hexcavator_trace::{Trace, index};
+use turbonop_etl::Etl;
+use turbonop_mmap::Mmap;
+use turbonop_trace::etw::{self, ImportStats};
+use turbonop_trace::{Trace, index};
 
 /// Reading a trace ahead of its import: one thread, 16 MB at a time.
 /// (Measured on a 4 GB/s NVMe drive: this reads at its full speed; more

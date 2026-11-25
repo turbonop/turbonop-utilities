@@ -1,4 +1,4 @@
-//! `hexc symbolize`: the function, source line, and inlined functions at
+//! `hexcavator symbolize`: the function, source line, and inlined functions at
 //! addresses of images; or the same added to the addresses in text (a log,
 //! a stack trace).
 
@@ -7,26 +7,26 @@ use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-use hexcavator_debuginfo::{DebugInfo, Frame, Locator};
-use hexcavator_image::{Image, ImageSymbol};
-use hexcavator_mmap::Mmap;
 use serde_json::{Value, json};
+use turbonop_debuginfo::{DebugInfo, Frame, Locator};
+use turbonop_image::{Image, ImageSymbol};
+use turbonop_mmap::Mmap;
 
 pub const USAGE: &str = "\
-usage: hexc symbolize [options] <image>[@<base>]... [<address>...]
+usage: hexcavator symbolize [options] <image>[@<base>]... [<address>...]
 
 The function, source line, and inlined functions at each address, from the
 image's debug information (or, without any, its own symbols: exports and
 symbol tables):
 
-  hexc symbolize app.exe 0x140001043
-  hexc symbolize app.exe@0x7ff6a1b20000 0x7ff6a1b21043
-  hexc symbolize libfoo.so libfoo.so+0x1a2b
+  hexcavator symbolize app.exe 0x140001043
+  hexcavator symbolize app.exe@0x7ff6a1b20000 0x7ff6a1b21043
+  hexcavator symbolize libfoo.so libfoo.so+0x1a2b
 
 Without addresses, it reads text (a log, a stack trace) from standard input
 and writes it out with where each address in it is added after it:
 
-  hexc symbolize app.exe@0x7ff6a1b20000 helper.dll@0x7ffb10c40000 < crash.txt
+  hexcavator symbolize app.exe@0x7ff6a1b20000 helper.dll@0x7ffb10c40000 < crash.txt
 
 An address is hexadecimal (0x optional), as the image's tools show it (a PE
 image's with its preferred base added); with @<base>, as loaded at <base>.
@@ -41,7 +41,7 @@ options:
   -return          addresses are return addresses: where the call before
                    each is (the address less one, looked up)
   -input <file>    the text to read, instead of standard input
-  -pdb <path>      the (first) image's debug information: a PDB, or a file
+  -debug <path>    the (first) image's debug information: a PDB, or a file
                    with its DWARF (or -debug; default: its own, or the one
                    it names)
   -json            each address and its frames as JSON";
@@ -50,7 +50,7 @@ pub fn run(args: &[String]) -> ExitCode {
     match parse(args) {
         Ok(o) => symbolize(&o),
         Err(e) => {
-            ereport!("hexc symbolize: {e}\n\n{USAGE}");
+            ereport!("hexcavator symbolize: {e}\n\n{USAGE}");
             ExitCode::from(2)
         }
     }
@@ -141,7 +141,7 @@ fn is_address(s: &str) -> bool {
 
 /// An image opened: with its debug information, or without.
 enum Opened {
-    Debug(hexcavator_program::Opened),
+    Debug(turbonop_program::Opened),
     Plain(Mmap),
 }
 
@@ -223,12 +223,12 @@ fn symbolize(o: &Options) -> ExitCode {
             Some(path) => match std::fs::File::open(path) {
                 Ok(f) => filter(io::BufReader::new(f), &mut out, modules, o.ret, demangler),
                 Err(e) => {
-                    ereport!("hexc symbolize: {path}: {e}");
+                    ereport!("hexcavator symbolize: {path}: {e}");
                     return ExitCode::FAILURE;
                 }
             },
             None if crate::out::capturing() => {
-                ereport!("hexc symbolize: no addresses or -input given");
+                ereport!("hexcavator symbolize: no addresses or -input given");
                 return ExitCode::from(2);
             }
             None => filter(io::stdin().lock(), &mut out, modules, o.ret, demangler),
@@ -237,20 +237,20 @@ fn symbolize(o: &Options) -> ExitCode {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
             Err(e) => {
-                ereport!("hexc symbolize: {e}");
+                ereport!("hexcavator symbolize: {e}");
                 ExitCode::FAILURE
             }
         }
     });
     done.unwrap_or_else(|e| {
-        ereport!("hexc symbolize: {e}");
+        ereport!("hexcavator symbolize: {e}");
         ExitCode::FAILURE
     })
 }
 
 /// `text` (a log, a stack trace) with where each address in it is added
 /// after it, in the images `images` (paths, each `path@base` if loaded at
-/// a base): what `hexc symbolize` without addresses writes.
+/// a base): what `hexcavator symbolize` without addresses writes.
 pub(crate) fn annotate_text(images: &[String], text: &str) -> Result<String, String> {
     let o = Options {
         images: images
@@ -284,7 +284,7 @@ fn with_modules<R>(
     let mut opened = Vec::with_capacity(o.images.len());
     for (i, (path, _)) in o.images.iter().enumerate() {
         let pdb = o.pdb.as_deref().filter(|_| i == 0).map(Path::new);
-        match hexcavator_program::Opened::open(Path::new(path), pdb) {
+        match turbonop_program::Opened::open(Path::new(path), pdb) {
             Ok(x) => opened.push(Opened::Debug(x)),
             Err(e) if pdb.is_some() => return Err(e.to_string()),
             Err(_) => match Mmap::open(path) {
@@ -436,28 +436,14 @@ fn image_symbol(m: &mut Module<'_>, addr: u64) -> Option<Frame> {
 
 /// Names as linked, demangled.
 #[derive(Default)]
-struct Demangler {
-    msvc: hexcavator_demangle::msvc::Demangler,
-    itanium: hexcavator_demangle::itanium::Demangler,
-}
+struct Demangler(turbonop_demangle::Demangler);
 
 impl Demangler {
     /// `name` demangled: a Microsoft C++ name's qualified name, another's
     /// in full; a C name as is (a Mach-O one without its leading `_`).
     fn name(&mut self, name: &str, macho: bool) -> String {
-        if name.starts_with('?') {
-            let flags = hexcavator_demangle::msvc::flags::NAME_ONLY;
-            if let Some(n) = self.msvc.demangle(name, flags) {
-                return n;
-            }
-        }
-        if let Some(n) = self.itanium.demangle(name) {
-            return n;
-        }
-        match name.strip_prefix('_') {
-            Some(c) if macho => c.to_string(),
-            _ => name.to_string(),
-        }
+        self.0
+            .source_name(name, turbonop_demangle::msvc::flags::NAME_ONLY, macho)
     }
 }
 
@@ -474,7 +460,7 @@ fn addresses(o: &Options, modules: &mut [Module<'_>], demangler: &mut Demangler)
         match resolve(arg, modules, o.offset) {
             Ok((m, at)) => resolved.push((m, modules[m].address(at), at, i)),
             Err(e) => {
-                ereport!("hexc symbolize: {e}");
+                ereport!("hexcavator symbolize: {e}");
                 status = ExitCode::FAILURE;
             }
         }

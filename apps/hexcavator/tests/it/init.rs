@@ -1,4 +1,4 @@
-//! `hexc init` end to end, over the initialization test program
+//! `hexcavator init` end to end, over the initialization test program
 //! (tools/init): as a PE program and DLL (a TLS callback, a C initializer,
 //! a global object's constructor), an ELF program and library
 //! (.preinit_array, DT_INIT, .ctors, .init_array with a priority), and a
@@ -16,8 +16,8 @@ fn testdata(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-fn hexc(args: &[&str]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("init")
         .args(args)
         .output()
@@ -34,7 +34,7 @@ fn json(image: &str, more: &[&str]) -> Value {
     let mut args = vec!["-json"];
     args.extend(more);
     args.push(path.to_str().unwrap());
-    let (code, out, err) = hexc(&args);
+    let (code, out, err) = hexcavator(&args);
     assert_eq!(code, 0, "{err}");
     serde_json::from_str(&out).unwrap()
 }
@@ -238,7 +238,7 @@ fn macho() {
 #[test]
 fn text() {
     let image = testdata("init-x86_64-linux-gnu");
-    let (code, out, _) = hexc(&[image.to_str().unwrap()]);
+    let (code, out, _) = hexcavator(&[image.to_str().unwrap()]);
     assert_eq!(code, 0);
     assert!(
         out.starts_with("init-x86_64-linux-gnu: what runs before main\n"),
@@ -257,11 +257,11 @@ fn text() {
         "{out}"
     );
     // -depth 0: no callees.
-    let (_, out, _) = hexc(&["-depth", "0", image.to_str().unwrap()]);
+    let (_, out, _) = hexcavator(&["-depth", "0", image.to_str().unwrap()]);
     assert!(!out.contains("prepare()"), "{out}");
     // A library says what runs when it's loaded.
     let lib = testdata("initdll.dll");
-    let (_, out, _) = hexc(&[lib.to_str().unwrap()]);
+    let (_, out, _) = hexcavator(&[lib.to_str().unwrap()]);
     assert!(
         out.starts_with("initdll.dll: what runs when it is loaded\n"),
         "{out}"
@@ -282,15 +282,15 @@ fn bad_arguments() {
         &["-calls", "x"],
         &["a", "b"],
     ] {
-        let (code, _, err) = hexc(args);
+        let (code, _, err) = hexcavator(args);
         assert_eq!(code, 2, "{args:?}: {err}");
-        assert!(err.contains("usage: hexc init"), "{err}");
+        assert!(err.contains("usage: hexcavator init"), "{err}");
     }
     let image = testdata("init.exe");
-    let (code, _, err) = hexc(&["-json", "-callees", "999999", image.to_str().unwrap()]);
+    let (code, _, err) = hexcavator(&["-json", "-callees", "999999", image.to_str().unwrap()]);
     assert_eq!(code, 1);
     assert!(err.contains("no node 999999"), "{err}");
-    let (code, _, err) = hexc(&["no-such-file.exe"]);
+    let (code, _, err) = hexcavator(&["no-such-file.exe"]);
     assert_eq!(code, 1, "{err}");
 }
 
@@ -322,22 +322,30 @@ fn sections_larger_than_the_file() {
             }
         }
         assert!(damaged > 0, "{image}");
-        let dir = std::env::temp_dir().join(format!("hexc-init-damaged-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("hexcavator-init-damaged-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join(path.file_name().unwrap());
         std::fs::write(&file, &data).unwrap();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_hexc"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
             .args(["init", "-json", file.to_str().unwrap()])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
             .unwrap();
+        // (20 s natively. Under emulation, as CI's big-endian job runs it,
+        // the job says how much slower it is.)
+        let slowdown: u64 = std::env::var("TURBONOP_TEST_SLOWDOWN")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
+        let limit = 20 * slowdown;
         let started = std::time::Instant::now();
         let finished = loop {
             if child.try_wait().unwrap().is_some() {
                 break true;
             }
-            if started.elapsed() > std::time::Duration::from_secs(20) {
+            if started.elapsed() > std::time::Duration::from_secs(limit) {
                 let _ = child.kill();
                 let _ = child.wait();
                 break false;
@@ -345,6 +353,41 @@ fn sections_larger_than_the_file() {
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(finished, "{image}: hexc init still running after 20 s");
+        assert!(
+            finished,
+            "{image}: hexcavator init still running after {limit} s"
+        );
     }
+}
+
+/// A WebAssembly module's: wasm-ld's constructors (a function with no
+/// DWARF, named by the module's own names) and a WASI command's _start,
+/// then main; a reactor's _initialize, and no main (a library).
+#[test]
+fn wasm() {
+    let v = json("../wasm/startup.wasm", &[]);
+    assert_eq!(v["library"], false);
+    assert_eq!(
+        phases(&v),
+        [
+            (
+                "__wasm_call_ctors".to_string(),
+                vec!["__wasm_call_ctors".to_string()]
+            ),
+            ("the entry point".to_string(), vec!["_start()".to_string()]),
+        ]
+    );
+    let ctors = entry(&v, "__wasm_call_ctors", "__wasm_call_ctors");
+    assert_eq!(
+        callees("../wasm/startup.wasm", &ctors["node"]),
+        ["init_counter()"]
+    );
+    assert_eq!(v["main"]["name"], "main()");
+    let v = json("../wasm/startup-reactor.wasm", &[]);
+    assert_eq!(v["library"], true);
+    assert_eq!(
+        phases(&v),
+        [("_initialize".to_string(), vec!["_initialize()".to_string()])]
+    );
+    assert!(v["main"].is_null());
 }

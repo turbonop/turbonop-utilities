@@ -21,13 +21,13 @@
 //! [`extract`] reads the inputs from the files; [`build`] is a pure
 //! function of them.
 
-use std::collections::HashMap;
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_debuginfo::{Contribution, DebugInfo, Group as DebugGroup};
-use hexcavator_image::{Arch, Image};
-use hexcavator_pe::consts::{directory, section_characteristics as sc};
-use hexcavator_pe::load_config::field;
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_debuginfo::{Contribution, DebugInfo, Group as DebugGroup};
+use turbonop_image::{Arch, Image};
+use turbonop_pe::consts::{directory, section_characteristics as sc};
+use turbonop_pe::load_config::field;
 
 use crate::range::{self, Range};
 use crate::{
@@ -74,7 +74,7 @@ pub struct PeInputs {
     /// The exception directory.
     pub pdata: Option<(u64, u64)>,
     pub pdata_entries: Vec<PdataEntry>,
-    pub compilands: Vec<hexcavator_debuginfo::Compiland>,
+    pub compilands: Vec<turbonop_debuginfo::Compiland>,
     pub contributions: Vec<Contribution>,
 }
 
@@ -231,9 +231,9 @@ pub fn extract_image(image: &Image<'_>) -> Result<PeInputs> {
 /// The exception directory's entries: where each is, its size, and the
 /// code it describes (ARM32's Thumb bit cleared). Empty entries are left
 /// out.
-pub fn pdata_entries(pe: &hexcavator_pe::PeFile<'_>) -> Vec<PdataEntry> {
-    use hexcavator_pe::exception::RuntimeFunction;
-    let thumb = pe.machine() == hexcavator_pe::consts::machine::ARMNT;
+pub fn pdata_entries(pe: &turbonop_pe::PeFile<'_>) -> Vec<PdataEntry> {
+    use turbonop_pe::exception::RuntimeFunction;
+    let thumb = pe.machine() == turbonop_pe::consts::machine::ARMNT;
     pe.runtime_functions()
         .filter(|e| e.in_exception_directory)
         .filter_map(|e| {
@@ -256,7 +256,7 @@ pub fn pdata_entries(pe: &hexcavator_pe::PeFile<'_>) -> Vec<PdataEntry> {
 /// The delay-load thunks, names, and module handles, each merged into runs
 /// (ranges at most 7 bytes apart).
 fn delay_import_tables(
-    pe: &hexcavator_pe::PeFile<'_>,
+    pe: &turbonop_pe::PeFile<'_>,
     table: &mut impl FnMut(TableKind, (u64, u64)),
 ) {
     let pointer = match pe.optional_header() {
@@ -289,7 +289,7 @@ fn delay_import_tables(
         };
         let mut count = 0u64;
         for thunk in dll.thunks() {
-            if let hexcavator_pe::imports::ImportName::Name { name, .. } = thunk.import
+            if let turbonop_pe::imports::ImportName::Name { name, .. } = thunk.import
                 && let Ok(rva) = u32::try_from(thunk.name_thunk)
             {
                 names.push(Range::new(u64::from(rva), name.len() as u64 + 3, false));
@@ -367,7 +367,7 @@ fn sections(inputs: &PeInputs, groups: &[RawGroup]) -> Vec<Section> {
                 size: Size::new(raw, vm),
                 vm_padding,
                 characteristics,
-                flags: hexcavator_image::coff_section_flags(characteristics),
+                flags: turbonop_image::coff_section_flags(characteristics),
             }
         })
         .collect()
@@ -459,7 +459,7 @@ fn raw_groups(inputs: &PeInputs) -> Vec<RawGroup> {
         }
     }
 
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = turbonop_hash::Set::default();
     for g in &mut merged {
         if !seen.insert(g.name.clone()) {
             g.name = format!("{} ({:X})", g.name, g.characteristics);
@@ -539,9 +539,9 @@ pub fn build(inputs: &PeInputs) -> Model {
 
     // Libraries and compilands, keyed case-insensitively.
     let mut libraries: Vec<Library> = Vec::new();
-    let mut library_index: HashMap<String, u32> = HashMap::new();
+    let mut library_index: HashMap<String, u32> = HashMap::default();
     let mut compilands: Vec<Compiland> = Vec::new();
-    let mut compiland_index: HashMap<(u32, String), u32> = HashMap::new();
+    let mut compiland_index: HashMap<(u32, String), u32> = HashMap::default();
     let mut module_compiland: Vec<Option<u32>> = vec![None; inputs.compilands.len()];
     let mut compiland_for = |module: usize,
                              libraries: &mut Vec<Library>,
@@ -686,8 +686,8 @@ mod tests {
         }
     }
 
-    fn module(library: &str, name: &str) -> hexcavator_debuginfo::Compiland {
-        hexcavator_debuginfo::Compiland {
+    fn module(library: &str, name: &str) -> turbonop_debuginfo::Compiland {
+        turbonop_debuginfo::Compiland {
             name: name.into(),
             library: library.into(),
         }

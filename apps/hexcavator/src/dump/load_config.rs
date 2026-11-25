@@ -2,9 +2,9 @@
 
 use std::io::{self, Write};
 
-use hexcavator_pe::load_config::{arm64ec, chpe_x86, field, guard_entry, guard_flags as gf};
-use hexcavator_pe::reloc::{DynamicRelocationTable, FunctionOverrides, dynamic_symbol};
-use hexcavator_pe::{CodeKind, GuardTable, LoadConfig, PeFile};
+use turbonop_pe::load_config::{arm64ec, chpe_x86, field, guard_entry, guard_flags as gf};
+use turbonop_pe::reloc::{DynamicRelocationTable, FunctionOverrides, dynamic_symbol};
+use turbonop_pe::{CodeKind, GuardTable, LoadConfig, PeFile};
 
 /// `%016.<digits>X`: right-aligned in 16 columns, zero-padded to `digits`.
 fn fixed(value: u64, digits: usize) -> String {
@@ -21,7 +21,7 @@ struct Printer<'a, 'd> {
 impl Printer<'_, '_> {
     fn line(
         &mut self,
-        f: hexcavator_pe::load_config::Field,
+        f: turbonop_pe::load_config::Field,
         label: &str,
         style: Style,
     ) -> io::Result<()> {
@@ -782,7 +782,7 @@ fn hex_bytes(bytes: &[u8]) -> String {
 
 fn enclave_config(
     out: &mut dyn Write,
-    e: &hexcavator_pe::EnclaveConfig<'_>,
+    e: &turbonop_pe::EnclaveConfig<'_>,
     ptr: usize,
 ) -> io::Result<()> {
     writeln!(out, "\n    Enclave Configuration\n")?;
@@ -878,7 +878,7 @@ pub fn tls(out: &mut dyn Write, file: &PeFile<'_>) -> io::Result<()> {
     };
     let ptr = if file
         .optional_header()
-        .is_some_and(hexcavator_pe::OptionalHeader::is_64)
+        .is_some_and(turbonop_pe::OptionalHeader::is_64)
     {
         16
     } else {
@@ -899,8 +899,7 @@ pub fn tls(out: &mut dyn Write, file: &PeFile<'_>) -> io::Result<()> {
         "    {} Characteristics",
         fixed(t.characteristics.into(), 8)
     )?;
-    if let Some(align) =
-        hexcavator_pe::consts::section_characteristics::alignment(t.characteristics)
+    if let Some(align) = turbonop_pe::consts::section_characteristics::alignment(t.characteristics)
     {
         writeln!(out, "                       {align} byte align")?;
     }

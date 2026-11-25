@@ -1,0 +1,15 @@
+[package]
+name = "turbonop-par"
+description = "Data parallelism: work split across every core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+turbonop-alloc.workspace = true

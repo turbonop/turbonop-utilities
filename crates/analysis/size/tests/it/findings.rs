@@ -1,9 +1,9 @@
 //! Findings against SizeBench's analyses (`testdata/sizebench/findings`,
 //! from `tools/sizebench-oracle --findings`).
 
-use hexcavator_debuginfo::DebugInfo;
-use hexcavator_image::Image;
-use hexcavator_size::{findings, pe, symbols};
+use turbonop_debuginfo::DebugInfo;
+use turbonop_image::Image;
+use turbonop_size::{findings, pe, symbols};
 
 fn root() -> String {
     format!("{}/../../../testdata/sizebench", env!("CARGO_MANIFEST_DIR"))
@@ -42,7 +42,7 @@ fn duplicate_data_matches_sizebench() {
             .iter()
             .map(|c| c.compiland)
             .collect();
-        let mut ours: Vec<String> = findings::duplicate_data(&image, &syms)
+        let mut ours: Vec<String> = findings::duplicate_data(&image, &debug, &syms)
             .into_iter()
             .filter_map(|mut d| {
                 d.copies.retain(|c| contributing.contains(&c.1));
@@ -67,10 +67,40 @@ fn duplicate_data_matches_sizebench() {
             })
             .collect();
         ours.sort();
+        // SizeBench counts writable variables too, each compiland's own
+        // state (Just My Code's flags, a header's `static int`): another
+        // classified divergence. (Constant: `const`, or read-only.)
+        let writable: Vec<(u64, u64)> = image
+            .sections()
+            .iter()
+            .filter(|s| s.flags.contains(turbonop_image::SectionFlags::WRITE))
+            .filter_map(|s| Some((s.addr, s.end()?)))
+            .collect();
+        let wanted: turbonop_hash::Set<(u64, u32)> = syms
+            .iter()
+            .filter_map(|s| Some((s.addr, s.compiland?)))
+            .collect();
+        let defs = debug.variable_definitions(&wanted).unwrap();
+        let state: std::collections::HashSet<&str> = syms
+            .iter()
+            .filter(|s| s.file_static)
+            .filter(|s| {
+                let constant = s
+                    .compiland
+                    .and_then(|c| defs.get(&(s.addr, c)))
+                    .is_some_and(|d| d.constant);
+                !constant && writable.iter().any(|&(a, e)| s.addr >= a && s.addr < e)
+            })
+            .map(|s| s.name.as_str())
+            .collect();
         let theirs: Vec<String> = std::fs::read_to_string(&path)
             .unwrap()
             .lines()
             .filter(|l| l.starts_with("DUPDATA "))
+            .filter(|l| {
+                let name = l["DUPDATA ".len()..].split(" size=").next().unwrap_or("");
+                !state.contains(name)
+            })
             .map(str::to_string)
             .collect();
         checked += theirs.len();
@@ -81,7 +111,8 @@ fn duplicate_data_matches_sizebench() {
             failures.push(format!("{name}: extra {l}"));
         }
     }
-    assert!(checked > 50, "{checked}");
+    // (Most of what SizeBench lists is writable: Just My Code's flags.)
+    assert!(checked >= 10, "{checked}");
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
@@ -106,7 +137,7 @@ fn wasteful_virtuals_match_sizebench() {
         let debug = DebugInfo::parse(&pdb_data).unwrap();
         let word = u64::from(image.arch().pointer_size().unwrap_or(8));
         let classes = debug.classes().unwrap();
-        let mut namer = hexcavator_size::names::Namer::new(&debug);
+        let mut namer = turbonop_size::names::Namer::new(&debug);
         let mut ours: Vec<String> = findings::wasteful_virtuals(&classes, &mut namer, word)
             .iter()
             .map(|w| {

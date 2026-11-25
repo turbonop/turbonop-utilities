@@ -25,14 +25,15 @@ mod types;
 mod vars;
 
 use std::borrow::Cow;
-use std::cell::{Cell, OnceCell};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock as OnceCell;
+use std::sync::atomic::{AtomicU64, Ordering};
+use turbonop_hash::Map as HashMap;
 
-use hexcavator_core::{Arch, Endian, Error, ErrorKind, Result};
-use hexcavator_dwarf::consts::*;
-use hexcavator_dwarf::{Abbrevs, Attr, Die, Sections, Unit, UnitSection, Value, line_program};
-use hexcavator_image::{DebugId, Image, Kind};
+use turbonop_core::{Arch, Endian, Error, ErrorKind, Result};
+use turbonop_dwarf::consts::*;
+use turbonop_dwarf::{Abbrevs, Attr, Die, Sections, Unit, UnitSection, Value, line_program};
+use turbonop_image::{DebugId, Image, Kind};
 
 pub use debugmap::AddrMap;
 
@@ -114,9 +115,12 @@ pub struct DwarfInfo<'data> {
     functions: OnceCell<HashMap<u64, Vec<TypeRef>>>,
     /// The split files added (file 1 is the first).
     splits: Vec<Split<'data>>,
+    /// Where this file's own addresses are in the image, if they aren't
+    /// its (a PE image's: virtual, the image's relative).
+    rebase: Option<AddrMap>,
     /// How many more ranges [`DwarfInfo::ranges`] may give (see
     /// [`RANGES_PER_BYTE`]).
-    ranges_left: Cell<u64>,
+    ranges_left: AtomicU64,
 }
 
 /// The most ranges DIEs may have, all told: this many per byte of debug
@@ -147,6 +151,8 @@ struct Split<'data> {
     map: Option<AddrMap>,
     /// The library (archive) an object file is from, if any.
     library: String,
+    /// An object file's name (a member's, for one of an archive).
+    object: String,
 }
 
 /// A package's unit: its extent in `.debug_info` (or `.debug_types`), and
@@ -270,7 +276,7 @@ pub fn split_paths(image_path: &Path, debug_path: &Path, f: &SplitFile) -> Vec<P
 /// The units a `.dwp`'s `.debug_cu_index` or `.debug_tu_index` lists
 /// (versions 2, GNU's, and 5), or `None` if it is damaged.
 fn package_rows(d: &[u8], endian: Endian) -> Option<Vec<Row>> {
-    use hexcavator_dwarf::Reader;
+    use turbonop_dwarf::Reader;
     let version = if Reader::new(d, 0, endian).uint(2)? == 5 {
         5
     } else if Reader::new(d, 0, endian).uint(4)? == 2 {
@@ -340,25 +346,62 @@ fn debug_sections<'d>(image: &Image<'d>) -> Vec<(&'d [u8], Cow<'d, [u8]>)> {
         else {
             continue;
         };
-        let (Ok(at), Ok(len)) = (usize::try_from(s.file_offset), usize::try_from(s.file_size))
-        else {
+        // (A PE section's file size is padded to the file alignment: its
+        // contents are its memory size's.)
+        let size = if image.pe().is_some() && s.vm_size > 0 {
+            s.file_size.min(s.vm_size)
+        } else {
+            s.file_size
+        };
+        let (Ok(at), Ok(len)) = (usize::try_from(s.file_offset), usize::try_from(size)) else {
             continue;
         };
         let Some(bytes) = data.get(at..at.saturating_add(len)) else {
             continue;
         };
-        if gnu {
-            if let Some(d) = crate::decompress::gnu_zdebug(bytes) {
-                out.push((name, Cow::Owned(d)));
+        let mut data = if gnu {
+            match crate::decompress::gnu_zdebug(bytes) {
+                Some(d) => Cow::Owned(d),
+                None => continue,
             }
         } else {
-            out.push((name, Cow::Borrowed(bytes)));
+            Cow::Borrowed(bytes)
+        };
+        // A COFF object's (MinGW's): with its relocations applied, as a
+        // linker would.
+        if let Some(pe) = image.pe()
+            && image.kind() == Kind::Object
+            && pe
+                .sections()
+                .get(s.index)
+                .is_some_and(|h| h.number_of_relocations.get() > 0)
+        {
+            crate::decompress::coff_relocate(pe, s.index, data.to_mut());
         }
+        out.push((name, data));
     }
     out
 }
 
 impl<'data> DwarfInfo<'data> {
+    /// The line program at `offset` in `s`: its rows' addresses as the
+    /// code's (a microMIPS row's without the ISA bit LLVM writes in it:
+    /// MIPS code is at even addresses).
+    pub(crate) fn line_program<'s>(
+        &self,
+        s: &Sections<'s>,
+        offset: u64,
+        address_size: u8,
+    ) -> Option<turbonop_dwarf::LineProgram<'s>> {
+        let mut p = line_program(s, offset, address_size)?;
+        if matches!(self.arch, Arch::Mips | Arch::Mips64) {
+            for r in &mut p.rows {
+                r.address &= !1;
+            }
+        }
+        Some(p)
+    }
+
     /// Reads the DWARF of the ELF, Mach-O, or WebAssembly file `data`.
     pub fn parse(data: &'data [u8]) -> Result<Self> {
         let image = Image::parse(data)?;
@@ -366,23 +409,37 @@ impl<'data> DwarfInfo<'data> {
         if !sections.iter().any(|(n, _)| *n == b"info") {
             return Err(Error::new(ErrorKind::BadMagic, 0, "DWARF (no .debug_info)"));
         }
+        // (A PE image's, MinGW's: its CodeView record's GUID and age, which
+        // lld writes from its build ID, and which a separate debug file
+        // made from it keeps.)
         let ids = image
             .debug_ids()
             .into_iter()
-            .filter(|id| matches!(id, DebugId::BuildId(_) | DebugId::Uuid(_)))
+            .filter(|id| {
+                matches!(
+                    id,
+                    DebugId::BuildId(_) | DebugId::Uuid(_) | DebugId::Pdb { .. }
+                )
+            })
             .collect();
+        // A PE image's DWARF has virtual addresses; the image's are
+        // relative to its base.
+        let linked = !matches!(image.kind(), Kind::Object);
+        let rebase = (image.pe().is_some() && linked && image.image_base() != 0)
+            .then(|| AddrMap::rebased(image.image_base()));
         Ok(Self {
             data,
             endian: image.endian(),
             arch: image.arch(),
-            linked: !matches!(image.kind(), Kind::Object),
+            linked,
             ids,
-            ranges_left: Cell::new(ranges_budget(data.len(), &sections)),
+            ranges_left: AtomicU64::new(ranges_budget(data.len(), &sections)),
             sections,
             index: OnceCell::new(),
             parents: OnceCell::new(),
             functions: OnceCell::new(),
             splits: Vec::new(),
+            rebase,
         })
     }
 
@@ -469,13 +526,15 @@ impl<'data> DwarfInfo<'data> {
             ));
         }
         let more = ranges_budget(0, &sections);
+        let left = self.ranges_left.load(Ordering::Relaxed);
         self.ranges_left
-            .set(self.ranges_left.get().saturating_add(more));
+            .store(left.saturating_add(more), Ordering::Relaxed);
         self.splits.push(Split {
             sections,
             rows,
             map: None,
             library: String::new(),
+            object: String::new(),
         });
         self.index = OnceCell::new();
         self.parents = OnceCell::new();
@@ -506,18 +565,19 @@ impl<'data> DwarfInfo<'data> {
             arch: parsed.arch(),
             linked: true,
             ids,
-            ranges_left: Cell::new(ranges_budget(0, &[])),
+            ranges_left: AtomicU64::new(ranges_budget(0, &[])),
             sections: Vec::new(),
             index: OnceCell::new(),
             parents: OnceCell::new(),
             functions: OnceCell::new(),
             splits: Vec::new(),
+            rebase: None,
         })
     }
 
     /// Adds an object file of the image's debug map, whose functions and
     /// variables the image has at `symbols` (see
-    /// [`hexcavator_macho::MachO::debug_map`]), from the archive `library`
+    /// [`turbonop_macho::MachO::debug_map`]), from the archive `library`
     /// (empty if none): its units, their addresses moved to the image's.
     ///
     /// # Errors
@@ -527,8 +587,9 @@ impl<'data> DwarfInfo<'data> {
     pub fn add_object(
         &mut self,
         data: &'data [u8],
-        symbols: &[hexcavator_macho::debugmap::DebugMapSymbol<'_>],
+        symbols: &[turbonop_macho::debugmap::DebugMapSymbol<'_>],
         library: &str,
+        object_name: &str,
     ) -> Result<()> {
         let image = Image::parse(data)?;
         let Some(object) = image.macho() else {
@@ -551,13 +612,15 @@ impl<'data> DwarfInfo<'data> {
         }
         let map = AddrMap::new(object, symbols);
         let more = ranges_budget(data.len(), &sections);
+        let left = self.ranges_left.load(Ordering::Relaxed);
         self.ranges_left
-            .set(self.ranges_left.get().saturating_add(more));
+            .store(left.saturating_add(more), Ordering::Relaxed);
         self.splits.push(Split {
             sections,
             rows: None,
             map: Some(map),
             library: library.to_string(),
+            object: object_name.to_string(),
         });
         self.index = OnceCell::new();
         self.parents = OnceCell::new();
@@ -565,16 +628,19 @@ impl<'data> DwarfInfo<'data> {
         Ok(())
     }
 
-    /// Where file `file`'s addresses are in the image, if it is an object
-    /// file of a debug map.
+    /// Where file `file`'s addresses are in the image, if they aren't the
+    /// image's: an object file's of a debug map, or (file 0) a PE image's
+    /// own (virtual addresses, the image's relative to its base).
     fn object_map(&self, file: u32) -> Option<&AddrMap> {
-        let i = usize::try_from(file.checked_sub(1)?).ok()?;
-        self.splits.get(i)?.map.as_ref()
+        let Some(i) = file.checked_sub(1) else {
+            return self.rebase.as_ref();
+        };
+        self.splits.get(usize::try_from(i).ok()?)?.map.as_ref()
     }
 
     /// Whether file `file` is an object file of a debug map.
     fn is_object(&self, file: u32) -> bool {
-        self.object_map(file).is_some()
+        file != 0 && self.object_map(file).is_some()
     }
 
     /// File `file`'s address `addr`, as the image has it (`None` if it
@@ -584,6 +650,17 @@ impl<'data> DwarfInfo<'data> {
             Some(m) => m.addr(addr),
             None => Some(addr),
         }
+    }
+
+    /// File `file`'s address `addr` of data (a variable's), as the image
+    /// has it: a WebAssembly module's is in its linear memory, which the
+    /// image has at `turbonop_image::WASM_MEMORY` (its code's addresses
+    /// are its code section's offsets).
+    fn image_data_addr(&self, file: u32, addr: u64) -> Option<u64> {
+        if matches!(self.arch, Arch::Wasm32 | Arch::Wasm64) {
+            return Some(turbonop_image::WASM_MEMORY.wrapping_add(addr));
+        }
+        self.image_addr(file, addr)
     }
 
     /// File `file`'s location list entries, as the image has them.
@@ -669,6 +746,9 @@ impl<'data> DwarfInfo<'data> {
                 .ids
                 .iter()
                 .any(|i| matches!(i, DebugId::Uuid(have) if *have == want)),
+            DebugId::Pdb { guid, age, .. } => self.ids.iter().any(
+                |i| matches!(i, DebugId::Pdb { guid: g, age: a, .. } if *g == guid && *a == age),
+            ),
             DebugId::DebugLink { crc: Some(crc), .. } => crc32(self.data) == crc,
             // (WebAssembly's link names a file, and gives nothing to check.)
             DebugId::DebugLink { crc: None, .. } => true,
@@ -683,7 +763,7 @@ impl<'data> DwarfInfo<'data> {
     fn build_index(&self) -> Index {
         let mut index = Index::default();
         let mut compilands = 0u32;
-        let mut skeletons: HashMap<u64, Skeleton> = HashMap::new();
+        let mut skeletons: HashMap<u64, Skeleton> = HashMap::default();
         let mut attrs = Vec::new();
         for (file, split) in (0u32..).zip(std::iter::once(None).chain(self.splits.iter().map(Some)))
         {
@@ -843,7 +923,7 @@ impl<'data> DwarfInfo<'data> {
     /// address.
     fn functions(&self) -> &HashMap<u64, Vec<TypeRef>> {
         self.functions.get_or_init(|| {
-            let mut out: HashMap<u64, Vec<TypeRef>> = HashMap::new();
+            let mut out: HashMap<u64, Vec<TypeRef>> = HashMap::default();
             self.walk(|w| {
                 if w.die.tag == DW_TAG_SUBPROGRAM
                     && let Some(&(low, _)) = self.ranges(w.unit, w.die).first()
@@ -936,7 +1016,7 @@ impl<'data> DwarfInfo<'data> {
                 let root = u.entry(a, u.dies)?;
                 let offset = Self::uint(&u, &root, DW_AT_STMT_LIST)?;
                 let s = self.sections_of(u.source);
-                let program = line_program(&s, offset, u.address_size)?;
+                let program = self.line_program(&s, offset, u.address_size)?;
                 let comp_dir = Self::string(&u, &root, DW_AT_COMP_DIR).unwrap_or_default();
                 let path = program.path(file, comp_dir.as_bytes())?;
                 return Some((path, u32::try_from(line).unwrap_or(u32::MAX)));
@@ -977,7 +1057,7 @@ impl<'data> DwarfInfo<'data> {
     /// union, or enumeration.
     fn parents(&self) -> &HashMap<u64, u64> {
         self.parents.get_or_init(|| {
-            let mut out = HashMap::new();
+            let mut out = HashMap::default();
             self.walk(|w| {
                 if let Some(p) = w.stack.last()
                     && is_scope(p.tag)
@@ -1140,11 +1220,12 @@ impl<'data> DwarfInfo<'data> {
                 }),
             };
             if let Some((list, _)) = list {
-                let left = self.ranges_left.get();
+                let left = self.ranges_left.load(Ordering::Relaxed);
                 let n = list.len() as u64;
                 let take = usize::try_from(n.min(left.max(1))).unwrap_or(usize::MAX);
                 out.extend(list.into_iter().take(take));
-                self.ranges_left.set(left.saturating_sub(n));
+                self.ranges_left
+                    .store(left.saturating_sub(n), Ordering::Relaxed);
             }
         }
         let mut out = self.image_ranges(u.source, out);
@@ -1213,11 +1294,108 @@ impl<'data> DwarfInfo<'data> {
         Ok(out)
     }
 
+    /// How each compiland was compiled (see [`crate::DebugInfo::compile_options`]):
+    /// its unit's `DW_AT_producer` (a split unit's, over its skeleton's),
+    /// or its `DW_AT_APPLE_flags` (where Apple targets record the command
+    /// line), or, where neither records arguments, the command line in the
+    /// file's `.GCC.command.line` that names its source.
+    pub fn compile_options(&self) -> Result<Vec<crate::CompileOptions>> {
+        use crate::options;
+        let mut out: Vec<(crate::CompileOptions, String)> = Vec::new();
+        let attr = |m: &UnitMeta, n: u16| {
+            let (u, a) = self.unit(m)?;
+            let d = u.entry(a, u.dies)?;
+            Self::string(&u, &d, n)
+        };
+        let language = |m: &UnitMeta| {
+            let (u, a) = self.unit(m)?;
+            let d = u.entry(a, u.dies)?;
+            let l = Self::uint(&u, &d, DW_AT_LANGUAGE)?;
+            Some(turbonop_dwarf::spelling::language(l).map_or_else(
+                || format!("{l:#x}"),
+                |s| s.trim_start_matches("DW_LANG_").into(),
+            ))
+        };
+        for m in &self.index().units {
+            let Some(c) = m.compiland else { continue };
+            let producer = attr(m, DW_AT_PRODUCER);
+            let name = attr(m, DW_AT_NAME).unwrap_or_default();
+            let apple = attr(m, DW_AT_APPLE_FLAGS)
+                .map(|f| options::parse_command_line(&f))
+                .filter(|a| !a.is_empty());
+            if m.split {
+                if let Some(o) = usize::try_from(c).ok().and_then(|c| out.get_mut(c)) {
+                    if let Some(p) = producer {
+                        let parsed = options::parse_producer(&p);
+                        if parsed.args.is_some() || o.0.compiler.is_empty() {
+                            o.0.compiler = parsed.compiler;
+                            o.0.args = parsed.args;
+                        }
+                    }
+                    if let Some(l) = language(m) {
+                        o.0.language = l;
+                    }
+                    if !name.is_empty() {
+                        o.0.source.clone_from(&name);
+                        o.1 = name;
+                    }
+                }
+            } else {
+                let mut o = producer
+                    .map(|p| options::parse_producer(&p))
+                    .unwrap_or_default();
+                if o.args.is_none() {
+                    o.args = apple;
+                }
+                o.language = language(m).unwrap_or_default();
+                o.directory = attr(m, DW_AT_COMP_DIR).unwrap_or_default();
+                o.source.clone_from(&name);
+                if let Some(f) = m
+                    .file
+                    .checked_sub(1)
+                    .and_then(|i| self.splits.get(usize::try_from(i).ok()?))
+                {
+                    o.object.clone_from(&f.object);
+                }
+                out.push((o, name));
+            }
+        }
+        if out.iter().any(|o| o.0.args.is_none()) {
+            let lines = self.recorded_command_lines();
+            for (o, name) in &mut out {
+                if o.args.is_none()
+                    && let Some(l) = options::command_line_for(&lines, name)
+                {
+                    o.args = Some(l.to_vec());
+                }
+            }
+        }
+        Ok(out.into_iter().map(|o| o.0).collect())
+    }
+
+    /// The command lines in the file's `.GCC.command.line` (clang's
+    /// `-frecord-command-line`), each split; none if it's not ELF or has
+    /// none.
+    fn recorded_command_lines(&self) -> Vec<Vec<String>> {
+        let Ok(elf) = turbonop_elf::ElfFile::parse(self.data) else {
+            return Vec::new();
+        };
+        let Some(s) = elf.section_by_name(b".GCC.command.line") else {
+            return Vec::new();
+        };
+        elf.section_data(&s)
+            .split(|&b| b == 0)
+            .filter(|l| !l.is_empty())
+            .take(1 << 20)
+            .map(|l| crate::options::parse_command_line(&String::from_utf8_lossy(l)))
+            .collect()
+    }
+
     /// The compilands' code (see [`crate::DebugInfo::contributions`]).
     pub fn contributions(&self) -> Result<Vec<Contribution>> {
         let mut out: Vec<Contribution> = Vec::new();
         // The compilands with code so far.
-        let mut with_code = std::collections::HashSet::new();
+        let mut with_code = turbonop_hash::Set::default();
         for m in &self.index().units {
             let Some(compiland) = m.compiland else {
                 continue;
@@ -1251,7 +1429,7 @@ impl<'data> DwarfInfo<'data> {
                 .filter(|m| m.file == 0 && m.section == UnitSection::Info)
                 .filter_map(|m| Some((m.offset, m.compiland?)))
                 .collect();
-            for e in hexcavator_dwarf::aranges(s.aranges, s.endian) {
+            for e in turbonop_dwarf::aranges(s.aranges, s.endian) {
                 if let Some(&compiland) = by_offset.get(&e.info_offset)
                     && e.length > 0
                 {
@@ -1264,6 +1442,33 @@ impl<'data> DwarfInfo<'data> {
                 }
             }
         }
+        // Data: each unit's variables at fixed addresses (as a PDB's
+        // section contributions have its data too), where no code is,
+        // each address once (a variable many units define, an inline one,
+        // is the first's).
+        let mut code: Vec<(u64, u64)> = out.iter().map(|c| (c.addr, c.addr + c.size)).collect();
+        code.sort_unstable();
+        let in_code = |addr: u64| {
+            let i = code.partition_point(|&(s, _)| s <= addr);
+            i > 0 && addr < code[i - 1].1
+        };
+        let mut data: Vec<Contribution> = self
+            .symbols()?
+            .into_iter()
+            .filter(|s| s.kind == crate::SymbolKind::Data && !s.thread_local)
+            .filter_map(|s| {
+                let size = s.size.filter(|&n| n > 0)?;
+                (s.addr != 0 && !in_code(s.addr)).then_some(Contribution {
+                    addr: s.addr,
+                    size,
+                    compiland: s.compiland?,
+                    characteristics: 0,
+                })
+            })
+            .collect();
+        data.sort_unstable_by_key(|c| (c.addr, c.compiland));
+        data.dedup_by_key(|c| c.addr);
+        out.extend(data);
         out.sort_unstable_by_key(|c| (c.addr, c.size, c.compiland));
         Ok(out)
     }
@@ -1271,7 +1476,7 @@ impl<'data> DwarfInfo<'data> {
     /// The line tables (see [`crate::DebugInfo::source_lines`]).
     pub fn source_lines(&self) -> Result<SourceLines> {
         let mut files: Vec<String> = Vec::new();
-        let mut by_name: HashMap<String, u32> = HashMap::new();
+        let mut by_name: HashMap<String, u32> = HashMap::default();
         let mut spans = Vec::new();
         for m in &self.index().units {
             // (A split unit's lines are its skeleton's.)
@@ -1281,7 +1486,7 @@ impl<'data> DwarfInfo<'data> {
             let Some(lines) = self.unit_lines(m) else {
                 continue;
             };
-            let mut local: HashMap<u64, u32> = HashMap::new();
+            let mut local: HashMap<u64, u32> = HashMap::default();
             for &(addr, size, index, line) in &lines.rows {
                 let file = *local.entry(index).or_insert_with(|| {
                     let name = lines.path(index).unwrap_or_default();
@@ -1320,7 +1525,7 @@ impl<'data> DwarfInfo<'data> {
             None => Vec::new(),
         };
         code.sort_unstable();
-        let program = line_program(&s, offset, u.address_size)?;
+        let program = self.line_program(&s, offset, u.address_size)?;
         let comp_dir = Self::string(&u, &d, DW_AT_COMP_DIR).unwrap_or_default();
         let mut rows = Vec::new();
         for w in program.rows.windows(2) {
@@ -1446,13 +1651,28 @@ impl<'data> DwarfInfo<'data> {
                     let Some(loc) = d.attr(DW_AT_LOCATION) else {
                         return Walk::Into;
                     };
-                    let Some((addr, tls)) = static_address(u, &loc.value) else {
+                    let Some((addr, tls, based)) = static_address(u, &loc.value) else {
                         return Walk::Into;
                     };
-                    let Some(addr) = self.image_addr(u.source, addr) else {
+                    // (Thread-local data's is an offset in its block.)
+                    let raw = addr;
+                    let addr = if tls {
+                        self.image_addr(u.source, addr)
+                    } else {
+                        self.image_data_addr(u.source, addr)
+                    };
+                    let Some(addr) = addr else {
                         return Walk::Into;
                     };
-                    if self.linked && !tls && !u.is_valid_address(addr) {
+                    // (A discarded variable's address, as the linker left
+                    // it: in linear memory, before it is placed there.)
+                    let wasm = matches!(self.arch, Arch::Wasm32 | Arch::Wasm64);
+                    // (One from a module's memory base is valid at 0.)
+                    if self.linked
+                        && !tls
+                        && !based
+                        && !u.is_valid_address(if wasm { raw } else { addr })
+                    {
                         return Walk::Into;
                     }
                     let (decl, _) = self.origin(w.at);
@@ -1479,6 +1699,146 @@ impl<'data> DwarfInfo<'data> {
         out.sort_by(|a, b| (a.addr, a.kind, &a.name).cmp(&(b.addr, b.kind, &b.name)));
         out.dedup_by(|a, b| a.addr == b.addr && a.kind == b.kind && a.name == b.name);
         Ok(out)
+    }
+
+    /// The bytes of the file the debug information is in.
+    pub fn file_data(&self) -> &'data [u8] {
+        self.data
+    }
+
+    /// What the linker did to functions, as a linked file's subprograms
+    /// show it (see [`crate::DiscardedFunctions`]); nothing in an object.
+    pub fn discarded_functions(&self) -> Result<crate::DiscardedFunctions> {
+        let mut out = crate::DiscardedFunctions::default();
+        if !self.linked {
+            return Ok(out);
+        }
+        // Kept: each function's qualified name, and (address, compiland,
+        // name) of each; dropped: its qualified and its symbol's name.
+        let mut kept_names = turbonop_hash::Set::default();
+        let mut kept = Vec::new();
+        let mut dropped = Vec::new();
+        self.walk(|w| {
+            let d = w.die;
+            if d.tag != DW_TAG_SUBPROGRAM
+                || d.flag(DW_AT_DECLARATION)
+                || d.attr(DW_AT_LOW_PC).is_none() && d.attr(DW_AT_RANGES).is_none()
+            {
+                return Walk::Into;
+            }
+            let name = self.qualified_name(w.at);
+            match self.ranges(w.unit, d).first() {
+                Some(&(at, _)) => {
+                    kept.push((at, w.meta.compiland, name.clone()));
+                    kept_names.insert(name);
+                }
+                None => dropped.push((name, self.linkage_name(w.at))),
+            }
+            Walk::Into
+        });
+        dropped.retain(|(n, _)| !n.is_empty() && !kept_names.contains(n));
+        out.dropped = dropped.into_iter().filter_map(|(_, l)| l).collect();
+        out.dropped.sort_unstable();
+        out.dropped.dedup();
+        kept.sort_unstable();
+        out.shared = kept.chunk_by(|a, b| a.0 == b.0).any(|at| {
+            at.iter()
+                .any(|a| at.iter().any(|b| a.1 != b.1 && a.2 != b.2))
+        });
+        Ok(out)
+    }
+
+    /// The name of a function's symbol: its `DW_AT_linkage_name` (or
+    /// `DW_AT_MIPS_linkage_name`), else its name (C's), through its
+    /// specification or origin.
+    fn linkage_name(&self, r: TypeRef) -> Option<String> {
+        let mut at = r;
+        let mut name = None;
+        for _ in 0..MAX_CHAIN {
+            let (u, _, d) = self.die(at)?;
+            if let Some(l) = Self::string(&u, &d, DW_AT_LINKAGE_NAME)
+                .or_else(|| Self::string(&u, &d, DW_AT_MIPS_LINKAGE_NAME))
+            {
+                return Some(l);
+            }
+            if name.is_none() {
+                name = Self::string(&u, &d, DW_AT_NAME);
+            }
+            match d
+                .attr(DW_AT_SPECIFICATION)
+                .or_else(|| d.attr(DW_AT_ABSTRACT_ORIGIN))
+                .and_then(|a| self.reference(&u, a))
+            {
+                Some(n) if n != at => at = n,
+                _ => break,
+            }
+        }
+        name
+    }
+
+    /// The definitions of the variables at `wanted`'s (address,
+    /// compiland) pairs: where each is declared, and whether it is
+    /// constant.
+    pub fn variable_definitions(
+        &self,
+        wanted: &turbonop_hash::Set<(u64, u32)>,
+    ) -> Result<HashMap<(u64, u32), crate::VariableDefinition>> {
+        let mut out = HashMap::default();
+        if wanted.is_empty() {
+            return Ok(out);
+        }
+        self.walk(|w| {
+            let (u, d) = (w.unit, w.die);
+            let Some(compiland) = w.meta.compiland else {
+                return Walk::Into;
+            };
+            if d.tag != DW_TAG_VARIABLE {
+                return Walk::Into;
+            }
+            let Some(loc) = d.attr(DW_AT_LOCATION) else {
+                return Walk::Into;
+            };
+            let Some((addr, false, _)) = static_address(u, &loc.value) else {
+                return Walk::Into;
+            };
+            let Some(addr) = self.image_data_addr(u.source, addr) else {
+                return Walk::Into;
+            };
+            if wanted.contains(&(addr, compiland)) {
+                out.insert(
+                    (addr, compiland),
+                    crate::VariableDefinition {
+                        declared: self.type_definition(w.at),
+                        constant: self.constant(self.declared_type(w.at)),
+                    },
+                );
+            }
+            Walk::Into
+        });
+        Ok(out)
+    }
+
+    /// Whether `ty` is `const` (through typedefs and qualifiers; an array
+    /// by its elements).
+    fn constant(&self, ty: TypeRef) -> bool {
+        let mut at = ty;
+        for _ in 0..MAX_CHAIN {
+            let Some((u, _, d)) = self.die(at) else {
+                return false;
+            };
+            match d.tag {
+                DW_TAG_CONST_TYPE => return true,
+                DW_TAG_TYPEDEF
+                | DW_TAG_VOLATILE_TYPE
+                | DW_TAG_ATOMIC_TYPE
+                | DW_TAG_LLVM_PTRAUTH_TYPE
+                | DW_TAG_ARRAY_TYPE => {
+                    at = self.type_of(&u, &d);
+                }
+                _ => return false,
+            }
+        }
+        false
     }
 
     /// Whether the declaration `decl` has external linkage.
@@ -1534,7 +1894,8 @@ impl<'data> DwarfInfo<'data> {
     /// Every inline site (see [`crate::DebugInfo::inline_sites`]).
     pub fn inline_sites(&self) -> Result<InlineSites> {
         let mut inlinees: Vec<String> = Vec::new();
-        let mut by_origin: HashMap<u64, u32> = HashMap::new();
+        let mut params: Vec<Option<u32>> = Vec::new();
+        let mut by_origin: HashMap<u64, u32> = HashMap::default();
         let mut sites = Vec::new();
         self.walk(|w| {
             let d = w.die;
@@ -1555,6 +1916,7 @@ impl<'data> DwarfInfo<'data> {
                     let (origin, _) = self.origin(w.at);
                     let inlinee = *by_origin.entry(origin.0).or_insert_with(|| {
                         inlinees.push(self.qualified_name(origin));
+                        params.push(self.parameter_count(origin));
                         u32::try_from(inlinees.len() - 1).unwrap_or(u32::MAX)
                     });
                     let depth = w
@@ -1573,7 +1935,29 @@ impl<'data> DwarfInfo<'data> {
             }
             Walk::Into
         });
-        Ok(InlineSites { inlinees, sites })
+        Ok(InlineSites {
+            inlinees,
+            params,
+            sites,
+        })
+    }
+
+    /// How many parameters the function DIE `r` declares (an artificial
+    /// `this` among them); `None` if it doesn't describe the function
+    /// (line tables only, `-gmlt`: a name, and nothing of where it's
+    /// declared, what it returns, or what it takes).
+    fn parameter_count(&self, r: TypeRef) -> Option<u32> {
+        let (u, a, d) = self.die(r)?;
+        let children = u.children(a, &d);
+        if children.is_empty() && d.attr(DW_AT_DECL_FILE).is_none() && d.attr(DW_AT_TYPE).is_none()
+        {
+            return None;
+        }
+        let n = children
+            .iter()
+            .filter(|c| c.tag == DW_TAG_FORMAL_PARAMETER)
+            .count();
+        u32::try_from(n).ok()
     }
 }
 
@@ -1603,7 +1987,7 @@ fn clip(spans: &mut Vec<(u64, u64)>, code: &[(u64, u64)]) {
 /// and its file table.
 struct UnitLines<'a> {
     rows: Vec<(u64, u64, u64, u32)>,
-    program: hexcavator_dwarf::LineProgram<'a>,
+    program: turbonop_dwarf::LineProgram<'a>,
     comp_dir: String,
 }
 
@@ -1679,20 +2063,27 @@ fn is_scope(tag: u16) -> bool {
     )
 }
 
-/// The address of a variable at a fixed place (`DW_OP_addr`), or at an
-/// offset in the thread-local storage block (a constant, then
-/// `DW_OP_form_tls_address` or GNU's `DW_OP_GNU_push_tls_address`):
-/// (address, thread-local).
-fn static_address(u: &Unit<'_>, v: &Value<'_>) -> Option<(u64, bool)> {
+/// The address of a variable at a fixed place (`DW_OP_addr`), at one from
+/// a position-independent WebAssembly module's memory base (a global,
+/// `__memory_base`, taken as 0: `DW_OP_WASM_location`, then `DW_OP_addr`
+/// and `DW_OP_plus`), or at an offset in the thread-local storage block (a
+/// constant, then `DW_OP_form_tls_address` or GNU's
+/// `DW_OP_GNU_push_tls_address`): (address, thread-local, from a memory
+/// base).
+fn static_address(u: &Unit<'_>, v: &Value<'_>) -> Option<(u64, bool, bool)> {
     if let Some(a) = u.location_address(v) {
-        return Some((a, false));
+        return Some((a, false, false));
     }
     let Value::Block(b) = *v else { return None };
+    if let Some(a) = wasm_based_address(u, b) {
+        // (wasm-ld's tombstone for discarded data, from the base too.)
+        return (a != 0xFFFF_FFFF && a != u64::MAX).then_some((a, false, true));
+    }
     let (&last, rest) = b.split_last()?;
     if last != DW_OP_FORM_TLS_ADDRESS && last != DW_OP_GNU_PUSH_TLS_ADDRESS {
         return None;
     }
-    let mut r = hexcavator_dwarf::Reader::new(rest, 1, u.sections().endian);
+    let mut r = turbonop_dwarf::Reader::new(rest, 1, u.sections().endian);
     let at = match *rest.first()? {
         DW_OP_CONST4U => r.uint(4)?,
         DW_OP_CONST8U => r.uint(8)?,
@@ -1701,7 +2092,33 @@ fn static_address(u: &Unit<'_>, v: &Value<'_>) -> Option<(u64, bool)> {
         DW_OP_CONSTX | DW_OP_GNU_CONST_INDEX => u.indexed_address(r.uleb()?)?,
         _ => return None,
     };
-    r.is_empty().then_some((at, true))
+    r.is_empty().then_some((at, true, false))
+}
+
+/// A position-independent WebAssembly module's variable's address, less
+/// its memory base: `DW_OP_WASM_location` of a global (kind 1, its index
+/// a ULEB128; or 3, a 4-byte index), then `DW_OP_addr` (or `DW_OP_addrx`),
+/// then `DW_OP_plus`.
+fn wasm_based_address(u: &Unit<'_>, b: &[u8]) -> Option<u64> {
+    if *b.first()? != DW_OP_WASM_LOCATION {
+        return None;
+    }
+    let mut r = turbonop_dwarf::Reader::new(b, 1, u.sections().endian);
+    match r.uleb()? {
+        1 => {
+            r.uleb()?;
+        }
+        3 => {
+            r.uint(4)?;
+        }
+        _ => return None,
+    }
+    let a = match r.u8()? {
+        DW_OP_ADDR => r.uint(usize::from(u.address_size))?,
+        DW_OP_ADDRX | DW_OP_GNU_ADDR_INDEX => u.indexed_address(r.uleb()?)?,
+        _ => return None,
+    };
+    (r.u8()? == DW_OP_PLUS && r.is_empty()).then_some(a)
 }
 
 /// The CRC-32 `.gnu_debuglink` checks (ISO 3309, as zlib's).

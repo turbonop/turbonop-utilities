@@ -19,7 +19,9 @@
 
 mod scan;
 
-pub use scan::{Arch, CodeRef, Via, scan, scan_image};
+pub use scan::{
+    Arch, CodeRef, Memory, Mode, Via, X86Sweep, scan, scan_absolute, scan_image, scan_with,
+};
 
 /// One node: `[start, end)`, and whether it is code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,6 +81,12 @@ pub struct Builder {
     edges: Vec<(u32, u32, Edge)>,
     refs: Vec<CodeRef>,
     image_base: Option<u64>,
+    /// See [`Builder::absolute_bias`].
+    bias: u64,
+    /// See [`Builder::mode`].
+    mode: Mode,
+    /// See [`Builder::through`].
+    through: std::collections::BTreeMap<u64, u64>,
     /// Which nodes to split where they are referred to (empty: none).
     split: Vec<bool>,
     /// The edges to or from a node to split, by address.
@@ -113,6 +121,9 @@ impl Builder {
             edges: Vec::new(),
             refs: Vec::new(),
             image_base: None,
+            bias: 0,
+            mode: Mode::default(),
+            through: std::collections::BTreeMap::new(),
             split: Vec::new(),
             addressed: Vec::new(),
         }
@@ -149,6 +160,31 @@ impl Builder {
         self.image_base = Some(base);
     }
 
+    /// What absolute addresses code builds less the nodes' are (a PE
+    /// image's preferred base: see [`scan_absolute`]).
+    pub fn absolute_bias(&mut self, bias: u64) {
+        self.bias = bias;
+    }
+
+    /// How the code is read (its words' byte order, MIPS's image's flags:
+    /// see [`scan_image`]).
+    pub fn mode(&mut self, mode: Mode) {
+        self.mode = mode;
+    }
+
+    /// How the code is read, as set.
+    pub fn code_mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// The word at `slot` (a GOT's entry) holds `to`: code that loads it
+    /// refers to `to`, not to the GOT (as PIC code reaches its data and
+    /// functions, MIPS's and others' whose linker didn't relax the load).
+    /// Call it before scanning code.
+    pub fn through(&mut self, slot: u64, to: u64) {
+        self.through.insert(slot, to);
+    }
+
     /// The nodes, in the builder's order.
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
@@ -164,6 +200,16 @@ impl Builder {
     pub fn node_starting_at(&self, address: u64) -> Option<u32> {
         let i = self.nodes.partition_point(|n| n.start < address);
         (self.nodes.get(i)?.start == address).then_some(index(i))
+    }
+
+    /// The code node whose ELFv2 local entry point `address` may be: one
+    /// starting 4, 8, 16, 32, or 64 bytes before it.
+    fn local_entry_of(&self, address: u64) -> Option<u32> {
+        [4u64, 8, 16, 32, 64].into_iter().find_map(|off| {
+            let n = self.node_starting_at(address.checked_sub(off)?)?;
+            let node = self.nodes[n as usize];
+            (node.code && address < node.end).then_some(n)
+        })
     }
 
     /// The node starting at most [`NEAR`] bytes after `address`: the one
@@ -197,24 +243,116 @@ impl Builder {
     /// Scans the code of node `node` (`code`, its bytes) and adds the edges
     /// it makes. A call or branch counts only to the start of a node (to
     /// within one, it is the node's own control flow, or a decoding of data
-    /// as code); an address counts anywhere in a node, or in no node but
+    /// as code), or, on 64-bit PowerPC, to a function's local entry point
+    /// (ELFv2's: 4, 8, 16, 32, or 64 bytes in, past where its global entry
+    /// computes its TOC pointer); an address counts anywhere in a node, or in no node but
     /// just before one (see [`NEAR`]), and a computed one ([`Via::AddressOf`])
     /// just before a node counts for it too, even inside another (`table - 1`
     /// where tables are packed back to back).
     pub fn code(&mut self, node: u32, arch: Arch, code: &[u8]) {
+        self.code_with(node, arch, code, &|_| None);
+    }
+
+    /// [`Builder::code`], knowing the code's literals (`literal`: the word
+    /// at an address in code's sections), and the GOT's entries (see
+    /// [`Builder::through`]; [`scan_with`]).
+    pub fn code_with(
+        &mut self,
+        node: u32,
+        arch: Arch,
+        code: &[u8],
+        literal: &dyn Fn(u64) -> Option<u64>,
+    ) {
         let mut refs = std::mem::take(&mut self.refs);
         refs.clear();
-        scan_image(
+        self.scan_into(node, arch, code, literal, &mut refs);
+        self.apply(node, arch, &refs);
+        self.refs = refs;
+    }
+
+    /// [`Builder::code_with`] of each `(node, code)`: scanned on every
+    /// core, then added in order (the graph is as if each were added in
+    /// turn).
+    pub fn code_all(
+        &mut self,
+        arch: Arch,
+        code: &[(u32, &[u8])],
+        literal: &(dyn Fn(u64) -> Option<u64> + Sync),
+    ) {
+        // (Scanned and resolved to nodes on every core, then added.)
+        let this = &*self;
+        let resolved: Vec<Vec<Addition>> =
+            turbonop_par::map_balanced(code, 256, |&(node, bytes)| {
+                let mut refs = Vec::new();
+                this.scan_into(node, arch, bytes, literal, &mut refs);
+                let mut adds = Vec::with_capacity(refs.len());
+                this.resolve(node, arch, &refs, &mut adds);
+                adds
+            });
+        for adds in resolved {
+            for (f, fa, t, ta, k) in adds {
+                self.add(f, fa, t, ta, k);
+            }
+        }
+    }
+
+    /// The references `node`'s code makes, into `refs`.
+    fn scan_into(
+        &self,
+        node: u32,
+        arch: Arch,
+        code: &[u8],
+        literal: &dyn Fn(u64) -> Option<u64>,
+        refs: &mut Vec<CodeRef>,
+    ) {
+        let through = &self.through;
+        let got = |at: u64| through.get(&at).copied();
+        scan_with(
             arch,
+            self.mode,
             code,
             self.nodes[node as usize].start,
             self.image_base,
-            &mut refs,
+            self.bias,
+            &Memory { got: &got, literal },
+            refs,
         );
-        for r in &refs {
+    }
+
+    /// Adds the edges of `refs`, references from `node`'s code.
+    fn apply(&mut self, node: u32, arch: Arch, refs: &[CodeRef]) {
+        let mut adds = Vec::new();
+        self.resolve(node, arch, refs, &mut adds);
+        for (f, fa, t, ta, k) in adds {
+            self.add(f, fa, t, ta, k);
+        }
+    }
+
+    /// The edges `refs` (references from `node`'s code) make, to add in
+    /// order: (from, its address, to, its address, kind).
+    fn resolve(&self, node: u32, arch: Arch, refs: &[CodeRef], out: &mut Vec<Addition>) {
+        for r in refs {
+            // (A load of a GOT's entry: of what it points to.)
+            let through = (r.via == Via::Address)
+                .then(|| self.through.get(&r.to).copied())
+                .flatten();
+            let r = &CodeRef {
+                from: r.from,
+                to: through.unwrap_or(r.to),
+                via: if through.is_some() {
+                    Via::AddressOf
+                } else {
+                    r.via
+                },
+            };
             let (to, kind) = match r.via {
                 Via::Call | Via::Jump => {
-                    let Some(to) = self.node_starting_at(r.to) else {
+                    let local = || {
+                        (arch == Arch::PowerPc64)
+                            .then(|| self.local_entry_of(r.to))
+                            .flatten()
+                    };
+                    let Some(to) = self.node_starting_at(r.to).or_else(local) else {
                         continue;
                     };
                     (
@@ -238,7 +376,13 @@ impl Builder {
                         && a != n
                         && r.to != self.nodes[a as usize].start
                     {
-                        self.edge(node, n, Edge::Address);
+                        out.push((
+                            node,
+                            self.nodes[node as usize].start,
+                            n,
+                            self.nodes[n as usize].start,
+                            Edge::Address,
+                        ));
                     }
                     let Some(to) = at.or(next) else {
                         continue;
@@ -248,9 +392,8 @@ impl Builder {
             };
             // (An address just before a node is its start.)
             let at = r.to.max(self.nodes[to as usize].start);
-            self.add(node, r.from, to, at, kind);
+            out.push((node, r.from, to, at, kind));
         }
-        self.refs = refs;
     }
 
     /// The graph: edges deduplicated, keeping the first kind (in [`Edge`]'s
@@ -277,7 +420,8 @@ impl Builder {
                 }
             }
         }
-        edges.sort_unstable();
+        // (Whole edges: a total order, sorted on every core.)
+        turbonop_par::sort_by(&mut edges, Ord::cmp);
         edges.dedup_by_key(|e| (e.0, e.1));
         let n = nodes.len();
         let out = Csr::new(n, edges.iter().map(|&(f, t, k)| (f, t, k)));
@@ -353,6 +497,9 @@ impl Builder {
         (nodes, origin, pieces)
     }
 }
+
+/// An edge to add: (from, its address, to, its address, kind).
+type Addition = (u32, u64, u32, u64, Edge);
 
 fn node_at(nodes: &[Node], address: u64) -> Option<u32> {
     let i = nodes.partition_point(|n| n.start <= address);

@@ -1,6 +1,6 @@
 //! CodeView symbol records.
 
-use hexcavator_core::{Reader, Result};
+use turbonop_core::{Reader, Result};
 
 use crate::types::TypeIndex;
 
@@ -202,15 +202,18 @@ impl<'a> Iterator for SymbolIter<'a> {
     type Item = SymbolRecord<'a>;
 
     fn next(&mut self) -> Option<SymbolRecord<'a>> {
-        if self.r.remaining().len() < 4 {
+        let rest = self.r.remaining();
+        if rest.len() < 4 {
             return None;
         }
         let offset = self.base + self.r.position() as u32;
-        let len = usize::from(self.r.u16_le().ok()?);
-        if len < 2 {
+        let len = usize::from(u16::from_le_bytes([rest[0], rest[1]]));
+        let Some(body) = rest.get(2..2 + len).filter(|_| len >= 2) else {
+            // (Left past the length, as reading it would.)
+            self.r.skip(2).ok()?;
             return None;
-        }
-        let body = self.r.bytes(len).ok()?;
+        };
+        self.r.skip(2 + len).ok()?;
         Some(SymbolRecord {
             offset,
             kind: u16::from_le_bytes([body[0], body[1]]),

@@ -1,4 +1,4 @@
-// Written by tools/signature/roots.py: the roots hexc trusts for code
+// Written by tools/signature/roots.py: the roots trusted for code
 // signatures (name, SHA-256 thumbprint, certificate).
 
 pub(crate) static ROOTS: &[(&str, &str, &[u8])] = &[

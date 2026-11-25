@@ -15,11 +15,11 @@
 
 use std::path::Path;
 
-use hexcavator_etw::guids;
-use hexcavator_etw::schema::Properties;
-use hexcavator_trace::{ProcessIx, ThreadIx, Trace};
 use rustc_hash::FxHashMap;
 use serde_json::{Value, json};
+use turbonop_etw::guids;
+use turbonop_etw::schema::Properties;
+use turbonop_trace::{ProcessIx, ThreadIx, Trace};
 
 use crate::reading::int;
 
@@ -118,9 +118,8 @@ const POOL_OPS: [u8; 2] = [32, 34];
 /// The heap blocks of `trace` (read from `path`), from the buffers holding
 /// its Heap events, on every core.
 pub fn heap(trace: &Trace, path: &Path) -> Result<BlockTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, op: u8| {
-        *provider == guids::HEAP && HEAP_OPS.contains(&op)
-    };
+    let wanted =
+        |provider: &turbonop_etl::Guid, op: u8| *provider == guids::HEAP && HEAP_OPS.contains(&op);
     let (all, _) = crate::reading::events(trace, path, wanted, |_, e, mine| {
         let Some(Ok(p)) = Properties::of(e) else {
             return;
@@ -167,9 +166,8 @@ pub fn heap(trace: &Trace, path: &Path) -> Result<BlockTable, String> {
 /// The pool blocks of `trace` (read from `path`), from the buffers holding
 /// its Pool events, on every core.
 pub fn pool(trace: &Trace, path: &Path) -> Result<BlockTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, op: u8| {
-        *provider == guids::POOL && POOL_OPS.contains(&op)
-    };
+    let wanted =
+        |provider: &turbonop_etl::Guid, op: u8| *provider == guids::POOL && POOL_OPS.contains(&op);
     let (all, _) = crate::reading::events(trace, path, wanted, |_, e, mine| {
         let Some(Ok(p)) = Properties::of(e) else {
             return;

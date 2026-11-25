@@ -1,4 +1,4 @@
-//! `hexc annotations`, `hexc batch`, `hexc size -findings -- base`, and the
+//! `hexcavator annotations`, `hexcavator batch`, `hexcavator size -findings -- base`, and the
 //! query table's source columns, end to end.
 
 use std::path::{Path, PathBuf};
@@ -10,8 +10,8 @@ fn testdata(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-fn hexc(args: &[&std::ffi::OsStr]) -> (i32, String, String) {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+fn hexcavator(args: &[&std::ffi::OsStr]) -> (i32, String, String) {
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .args(args)
         .output()
         .unwrap();
@@ -29,7 +29,7 @@ fn hexc(args: &[&std::ffi::OsStr]) -> (i32, String, String) {
 #[test]
 fn annotations() {
     let exe = testdata("types/types.exe");
-    let (code, out, err) = hexc(&["annotations".as_ref(), exe.as_os_str()]);
+    let (code, out, err) = hexcavator(&["annotations".as_ref(), exe.as_os_str()]);
     assert_eq!(code, 0, "{err}");
     assert!(out.starts_with("2 annotations:\n"), "{out}");
     let lines: Vec<&str> = out.lines().skip(1).collect();
@@ -46,7 +46,7 @@ fn annotations() {
             .any(|l| l.contains("types.cpp:") && l.ends_with("Hexcavator | in an inlined copy")),
         "{out}"
     );
-    let (_, out, _) = hexc(&["annotations".as_ref(), "-json".as_ref(), exe.as_os_str()]);
+    let (_, out, _) = hexcavator(&["annotations".as_ref(), "-json".as_ref(), exe.as_os_str()]);
     let v: serde_json::Value = serde_json::from_str(&out).unwrap();
     let list = v["annotations"].as_array().unwrap();
     assert_eq!(list.len(), 2);
@@ -63,7 +63,7 @@ fn annotations() {
 #[test]
 fn batch() {
     let dir = testdata("types");
-    let (code, out, err) = hexc(&[
+    let (code, out, err) = hexcavator(&[
         "batch".as_ref(),
         "-top".as_ref(),
         "3".as_ref(),
@@ -74,11 +74,37 @@ fn batch() {
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
         .collect();
-    assert_eq!(lines.len(), 2, "{out}");
-    assert!(lines[0]["path"].as_str().unwrap().ends_with("types-v2.exe"));
-    assert!(lines[1]["path"].as_str().unwrap().ends_with("types.exe"));
+    // Every image in the directory, of any format, by what it is: the two
+    // PE images (with their PDBs) and the ELF images (with their DWARF),
+    // not the PDBs, the split DWARF files, or the text.
+    let path = |l: &serde_json::Value| {
+        Path::new(l["path"].as_str().unwrap())
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    };
+    let names: Vec<String> = lines.iter().map(path).collect();
+    assert_eq!(
+        names,
+        [
+            "types-split4",
+            "types-split4-plain",
+            "types-split5",
+            "types-split5-plain",
+            "types-v2.exe",
+            "types-x86_64-linux-gnu",
+            "types-x86_64-linux-gnu-names",
+            "types-x86_64-linux-gnu-v2",
+            "types.exe"
+        ],
+        "{out}"
+    );
     for l in &lines {
-        assert!(l["pdb"].as_str().unwrap().ends_with(".pdb"));
+        assert!(l.get("error").is_none(), "{l}");
+        let pe = path(l).ends_with(".exe");
+        let debug = l["debug"].as_str().unwrap();
+        assert_eq!(debug.ends_with(".pdb"), pe, "{l}");
         assert!(
             l["sections"]
                 .as_array()
@@ -86,7 +112,9 @@ fn batch() {
                 .iter()
                 .any(|s| s["name"] == ".text")
         );
-        assert_eq!(l["libraries"].as_array().unwrap().len(), 3);
+        if pe {
+            assert_eq!(l["libraries"].as_array().unwrap().len(), 3);
+        }
         assert!(l["compilands"].as_array().unwrap().len() <= 3);
         assert!(l.get("findings").is_none());
     }
@@ -95,7 +123,7 @@ fn batch() {
     // (A stripped image with no debug file to be found.)
     let bad = testdata("elf/program-stripped");
     let exe = testdata("types/types.exe");
-    let (code, out, _) = hexc(&[
+    let (code, out, _) = hexcavator(&[
         "batch".as_ref(),
         "-findings".as_ref(),
         exe.as_os_str(),
@@ -117,7 +145,7 @@ fn batch() {
     );
     let good = lines.iter().find(|l| l.get("error").is_none()).unwrap();
     assert!(good["findings"]["templateFamilies"].as_u64().is_some());
-    let (code, _, err) = hexc(&["batch".as_ref()]);
+    let (code, _, err) = hexcavator(&["batch".as_ref()]);
     assert_eq!(code, 2);
     assert!(err.contains("no files or directories given"), "{err}");
 }
@@ -129,7 +157,7 @@ fn findings_compared() {
     let bin = testdata("sizebench/bin");
     let new = bin.join("SizeBenchV2.AnalysisEngine.Tests.CppTestCasesAfter.dll");
     let old = bin.join("SizeBenchV2.AnalysisEngine.Tests.CppTestCasesBefore.dll");
-    let (code, out, err) = hexc(&[
+    let (code, out, err) = hexcavator(&[
         "size".as_ref(),
         "-findings".as_ref(),
         new.as_os_str(),
@@ -144,7 +172,7 @@ fn findings_compared() {
     ] {
         assert!(out.lines().any(|l| l.starts_with(title)), "{title}: {out}");
     }
-    let (_, out, _) = hexc(&[
+    let (_, out, _) = hexcavator(&[
         "size".as_ref(),
         "-findings".as_ref(),
         "-json".as_ref(),
@@ -173,7 +201,7 @@ fn findings_compared() {
         );
     }
     // A build against itself: nothing changed.
-    let (_, out, _) = hexc(&[
+    let (_, out, _) = hexcavator(&[
         "size".as_ref(),
         "-findings".as_ref(),
         new.as_os_str(),
@@ -187,7 +215,7 @@ fn findings_compared() {
 #[test]
 fn query_source_lines() {
     let exe = testdata("lines/lines.exe");
-    let (code, out, err) = hexc(&[
+    let (code, out, err) = hexcavator(&[
         "query".as_ref(),
         "-csv".as_ref(),
         exe.as_os_str(),
@@ -199,7 +227,7 @@ fn query_source_lines() {
         row.starts_with("first(int),") && row.ends_with(r"tools\lines\lines.cpp,7"),
         "{out}"
     );
-    let (_, out, _) = hexc(&[
+    let (_, out, _) = hexcavator(&[
         "query".as_ref(),
         exe.as_os_str(),
         "source~'lines\\.h$' group by source".as_ref(),

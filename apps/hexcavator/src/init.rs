@@ -1,18 +1,18 @@
-//! `hexc init`: what runs when an image is loaded, before its `main` (see
-//! `hexcavator_size::startup`), with what each function calls.
+//! `hexcavator init`: what runs when an image is loaded, before its `main` (see
+//! `turbonop_size::startup`), with what each function calls.
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_size::startup::{self, Startup};
-use hexcavator_size::xref::Xref;
-use hexcavator_xref::Edge;
 use serde_json::{Value, json};
+use turbonop_size::startup::{self, Startup};
+use turbonop_size::xref::Xref;
+use turbonop_xref::Edge;
 
 pub const USAGE: &str = "\
-usage: hexc init [options] <image>
+usage: hexcavator init [options] <image>
 
 What runs when an image is loaded, before its own code's main (of a
 library: when it's loaded), in the order it runs, with what each function
@@ -34,7 +34,7 @@ options:
                    (its \"calls\", as -callees gives them)
   -callees <node>  (with -json) what the function node <node> calls, for an
                    editor's tree
-  -pdb <path>      its debug information: a PDB, or a file with its DWARF";
+  -debug <path>    its debug information: a PDB, or a file with its DWARF";
 
 struct Options {
     image: Option<String>,
@@ -94,29 +94,29 @@ pub fn run(args: &[String]) -> ExitCode {
     let o = match parse(args) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc init: {e}\n\n{USAGE}");
+            ereport!("hexcavator init: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     match report(&o) {
         Ok(text) => crate::out::print(text.as_bytes()),
         Err(e) => {
-            ereport!("hexc init: {e}");
+            ereport!("hexcavator init: {e}");
             ExitCode::FAILURE
         }
     }
 }
 
 /// A function's name, place, and source line, as shown.
-struct Named<'x> {
-    image: &'x hexcavator_image::Image<'x>,
+struct Named<'x, 'data> {
+    image: &'x turbonop_image::Image<'data>,
     x: &'x Xref,
-    locator: hexcavator_debuginfo::Locator<'x, 'x>,
+    locator: turbonop_debuginfo::Locator<'x, 'data>,
     /// What the image's tools add to its addresses (a PE image's base).
     base: u64,
 }
 
-impl Named<'_> {
+impl Named<'_, '_> {
     fn name(&self, n: u32) -> &str {
         self.x.names.get(n as usize).map_or("?", String::as_str)
     }
@@ -140,13 +140,13 @@ impl Named<'_> {
 
 fn report(o: &Options) -> Result<String, String> {
     let path = Path::new(o.image.as_deref().unwrap_or_default());
-    let opened = hexcavator_program::Opened::open(path, o.pdb.as_deref())?;
+    let opened = turbonop_program::Opened::open(path, o.pdb.as_deref())?;
     let program = opened.program()?;
     let model = program.model()?;
     let syms = program.symbols()?;
     // (Kept, for an editor's next question: what a function calls.)
-    let x = hexcavator_program::cache::remember(&program.files(), "xref", || {
-        hexcavator_size::xref::build(&program.image, &program.debug, model, syms)
+    let x = turbonop_program::cache::remember(&program.files(), "xref", || {
+        turbonop_size::xref::build(&program.image, &program.debug, model, syms)
     })
     .map_err(|e| format!("{}: {e}", path.display()))?;
     let s = startup::startup(&program.image, &x, model);
@@ -177,14 +177,14 @@ fn report(o: &Options) -> Result<String, String> {
 }
 
 /// What `n` calls, each as `function_json` gives it.
-fn callees_json(named: &mut Named<'_>, n: u32) -> Vec<Value> {
+fn callees_json(named: &mut Named<'_, '_>, n: u32) -> Vec<Value> {
     startup::callees(named.image, named.x, n)
         .into_iter()
         .map(|(c, e)| function_json(named, c, Some(e)))
         .collect()
 }
 
-fn function_json(named: &mut Named<'_>, n: u32, edge: Option<Edge>) -> Value {
+fn function_json(named: &mut Named<'_, '_>, n: u32, edge: Option<Edge>) -> Value {
     let line = named.line(n);
     let start = named.x.graph.nodes().get(n as usize).map_or(0, |n| n.start);
     json!({
@@ -200,8 +200,8 @@ fn function_json(named: &mut Named<'_>, n: u32, edge: Option<Edge>) -> Value {
 
 /// The phases and main as JSON; with `calls`, each function with what it
 /// calls.
-fn as_json(s: &Startup, named: &mut Named<'_>, calls: bool) -> Value {
-    let listed = |named: &mut Named<'_>, n: u32| {
+fn as_json(s: &Startup, named: &mut Named<'_, '_>, calls: bool) -> Value {
+    let listed = |named: &mut Named<'_, '_>, n: u32| {
         let mut v = function_json(named, n, None);
         if calls {
             v["calls"] = callees_json(named, n).into();
@@ -239,7 +239,7 @@ fn as_json(s: &Startup, named: &mut Named<'_>, calls: bool) -> Value {
     })
 }
 
-fn as_text(s: &Startup, named: &mut Named<'_>, file: &str, depth: usize) -> String {
+fn as_text(s: &Startup, named: &mut Named<'_, '_>, file: &str, depth: usize) -> String {
     let mut out = String::new();
     let _ = writeln!(
         out,
@@ -302,7 +302,7 @@ fn as_text(s: &Startup, named: &mut Named<'_>, file: &str, depth: usize) -> Stri
 /// "(above)").
 fn callees(
     out: &mut String,
-    named: &mut Named<'_>,
+    named: &mut Named<'_, '_>,
     n: u32,
     pad: &str,
     depth: usize,

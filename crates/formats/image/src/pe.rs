@@ -2,9 +2,9 @@
 
 use alloc::vec::Vec;
 
-use hexcavator_core::Rva;
-use hexcavator_pe::consts::section_characteristics as sc;
-use hexcavator_pe::{CodeView, FileKind, PeFile};
+use turbonop_core::Rva;
+use turbonop_pe::consts::section_characteristics as sc;
+use turbonop_pe::{CodeView, FileKind, PeFile};
 
 use crate::{DebugId, Format, Section, SectionFlags};
 
@@ -43,6 +43,7 @@ pub fn flags(characteristics: u32) -> SectionFlags {
 
 pub(crate) fn sections<'data>(pe: &PeFile<'data>) -> Vec<Section<'data>> {
     let object = pe.kind() == FileKind::Object;
+    let addresses = pe.section_addresses();
     pe.sections()
         .iter()
         .enumerate()
@@ -56,7 +57,8 @@ pub(crate) fn sections<'data>(pe: &PeFile<'data>) -> Vec<Section<'data>> {
                 raw_size
             };
             let (addr, vm_size) = if object {
-                (0, raw_size)
+                // (Laid out as a linker would: `section_addresses`.)
+                (addresses.get(index).copied().unwrap_or(0), raw_size)
             } else {
                 // A virtual size of 0 means the raw size (old linkers).
                 let vsize = match h.virtual_size.get() {
@@ -80,7 +82,8 @@ pub(crate) fn sections<'data>(pe: &PeFile<'data>) -> Vec<Section<'data>> {
 }
 
 pub(crate) fn debug_ids<'data>(pe: &PeFile<'data>) -> Vec<DebugId<'data>> {
-    pe.debug_entries()
+    let mut out: Vec<DebugId<'data>> = pe
+        .debug_entries()
         .filter_map(|e| match e.codeview()? {
             CodeView::Rsds { guid, age, path } => Some(DebugId::Pdb { guid, age, path }),
             CodeView::Nb10 {
@@ -96,11 +99,58 @@ pub(crate) fn debug_ids<'data>(pe: &PeFile<'data>) -> Vec<DebugId<'data>> {
             // (Other forms, and forms yet to come, name no PDB.)
             _ => None,
         })
-        .collect()
+        .collect();
+    // A MinGW image's separate DWARF, as `objcopy --add-gnu-debuglink`
+    // names it: the file's name, NUL-padded to 4 bytes, and its CRC-32.
+    if let Some(link) = gnu_debuglink(pe) {
+        out.push(link);
+    }
+    out
+}
+
+/// A `.gnu_debuglink` section's file and CRC.
+fn gnu_debuglink<'data>(pe: &PeFile<'data>) -> Option<DebugId<'data>> {
+    let s = pe
+        .sections()
+        .iter()
+        .find(|s| pe.section_name(s) == b".gnu_debuglink")?;
+    let at = usize::try_from(s.pointer_to_raw_data.get()).ok()?;
+    let size = s.virtual_size.get().min(s.size_of_raw_data.get());
+    let bytes = pe
+        .data()
+        .get(at..at.checked_add(usize::try_from(size).ok()?)?)?;
+    let nul = bytes.iter().position(|&b| b == 0)?;
+    let crc_at = (nul + 1).next_multiple_of(4);
+    let crc = bytes.get(crc_at..crc_at + 4)?;
+    (nul > 0).then(|| DebugId::DebugLink {
+        path: &bytes[..nul],
+        crc: Some(u32::from_le_bytes([crc[0], crc[1], crc[2], crc[3]])),
+    })
+}
+
+/// Whether it is a separate debug file of a MinGW image (`objcopy
+/// --only-keep-debug`'s): its sections' contents gone but its DWARF's (and
+/// its build ID's).
+pub(crate) fn debug_only(pe: &PeFile<'_>) -> bool {
+    let mut emptied = false;
+    let mut dwarf = false;
+    for s in pe.sections() {
+        let name = pe.section_name(s);
+        if name.starts_with(b".debug_") {
+            dwarf = true;
+        } else if name == b".buildid" || name == b".gnu_debuglink" {
+        } else if s.virtual_size.get() > 0 {
+            if s.size_of_raw_data.get() != 0 {
+                return false;
+            }
+            emptied = true;
+        }
+    }
+    emptied && dwarf
 }
 
 pub(crate) fn pointer_slots(pe: &PeFile<'_>) -> Vec<crate::PointerSlot> {
-    use hexcavator_pe::reloc::base_reloc;
+    use turbonop_pe::reloc::base_reloc;
     if pe.kind() == FileKind::Object {
         return Vec::new();
     }
@@ -129,7 +179,20 @@ pub(crate) fn pointer_slots(pe: &PeFile<'_>) -> Vec<crate::PointerSlot> {
 
 pub(crate) fn bytes_at<'data>(pe: &PeFile<'data>, addr: u64, len: u64) -> Option<&'data [u8]> {
     if pe.kind() == FileKind::Object {
-        return None;
+        // (Where its sections are laid out: `section_addresses`.)
+        let addresses = pe.section_addresses();
+        let (h, base) = pe.sections().iter().zip(addresses).find(|(h, base)| {
+            let size = u64::from(h.size_of_raw_data.get());
+            *base != 0
+                && h.pointer_to_raw_data.get() != 0
+                && addr >= *base
+                && addr - base < size
+                && len <= size - (addr - base)
+        })?;
+        let at = usize::try_from(u64::from(h.pointer_to_raw_data.get()) + (addr - base)).ok()?;
+        return pe
+            .data()
+            .get(at..at.checked_add(usize::try_from(len).ok()?)?);
     }
     let rva = u32::try_from(addr).ok()?;
     let len = u32::try_from(len).ok()?;

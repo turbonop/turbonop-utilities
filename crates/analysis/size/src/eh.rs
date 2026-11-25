@@ -6,12 +6,12 @@
 //! shared by several functions (folded functions share their unwind data)
 //! is listed once, for the first function, in `.pdata` order.
 
-use std::collections::HashSet;
+use turbonop_hash::Set as HashSet;
 
-use hexcavator_core::Rva;
-use hexcavator_pe::PeFile;
-use hexcavator_pe::consts::machine;
-use hexcavator_pe::exception::{RuntimeFunction, arm_xdata_extent};
+use turbonop_core::Rva;
+use turbonop_pe::PeFile;
+use turbonop_pe::consts::machine;
+use turbonop_pe::exception::{RuntimeFunction, arm_xdata_extent};
 
 use crate::Size;
 use crate::symbols::{Symbol, SymbolKind};
@@ -67,18 +67,22 @@ pub trait Context {
     fn handler(&self, addr: u64) -> Handler;
 }
 
-struct Builder<'a, 'data, C: Context> {
+struct Builder<'a, 'data> {
     pe: &'a PeFile<'data>,
-    context: &'a C,
+    /// The handler whose code is at an address.
+    handler: &'a dyn Fn(u64) -> Handler,
     seen: HashSet<u64>,
     out: Vec<Symbol>,
+    /// Each of `out`'s symbols' target (they are named last, in
+    /// parallel).
+    targets: Vec<u64>,
     x64_gs_alignment: bool,
 }
 
-impl<C: Context> Builder<'_, '_, C> {
-    fn name(&self, kind: SymbolKind, target: u64) -> String {
+impl Builder<'_, '_> {
+    fn name(context: &impl Context, kind: SymbolKind, target: u64) -> String {
         let prefix = kind.prefix().unwrap_or("");
-        match self.context.target_name(target) {
+        match context.target_name(target) {
             Some(n) => format!("{prefix} {n}"),
             None => format!("{prefix} <unnamed code at 0x{target:X}>"),
         }
@@ -90,13 +94,13 @@ impl<C: Context> Builder<'_, '_, C> {
         if size == 0 || !self.seen.insert(addr) {
             return false;
         }
-        let name = self.name(kind, target);
+        self.targets.push(target);
         self.out.push(Symbol {
             addr,
             size: Size::new(size, size),
             kind,
             folded: false,
-            name,
+            name: String::new(),
             compiland: None,
             file_static: false,
         });
@@ -128,10 +132,10 @@ impl<C: Context> Builder<'_, '_, C> {
             }
             return;
         }
-        let data = info.handler_data().map(hexcavator_core::Rva::get);
+        let data = info.handler_data().map(turbonop_core::Rva::get);
         let extra = match (info.handler(), data) {
             (Some(handler), Some(data)) => {
-                let kind = self.context.handler(u64::from(handler.get()));
+                let kind = (self.handler)(u64::from(handler.get()));
                 self.handler_data(target, kind, data)
             }
             _ => 0,
@@ -150,7 +154,7 @@ impl<C: Context> Builder<'_, '_, C> {
         let extra = match handler {
             Some(h) => {
                 let h = if arm32 { h.get() & !1 } else { h.get() };
-                let kind = self.context.handler(u64::from(h));
+                let kind = (self.handler)(u64::from(h));
                 self.handler_data(target, kind, rva + size)
             }
             None => 0,
@@ -319,13 +323,26 @@ impl<C: Context> Builder<'_, '_, C> {
 }
 
 /// The exception-handling symbols of `pe`.
-pub fn symbols(pe: &PeFile<'_>, context: &impl Context) -> Vec<Symbol> {
+pub fn symbols(pe: &PeFile<'_>, context: &(impl Context + Sync)) -> Vec<Symbol> {
+    scan(pe, &|addr| context.handler(addr)).named(context)
+}
+
+/// The exception-handling symbols of `pe`, found (`handler`: the handler
+/// at an address), to be named (see [`Scanned::named`]).
+pub struct Scanned {
+    out: Vec<Symbol>,
+    targets: Vec<u64>,
+}
+
+/// [`symbols`], but for their names: what needs only the handlers.
+pub fn scan(pe: &PeFile<'_>, handler: &dyn Fn(u64) -> Handler) -> Scanned {
     let arm32 = pe.machine() == machine::ARMNT;
     let mut b = Builder {
         pe,
-        context,
-        seen: HashSet::new(),
+        handler,
+        seen: HashSet::default(),
         out: Vec::new(),
+        targets: Vec::new(),
         x64_gs_alignment: !matches!(pe.machine(), machine::ARMNT | machine::ARM64),
     };
     let entries: Vec<_> = pe
@@ -373,8 +390,30 @@ pub fn symbols(pe: &PeFile<'_>, context: &impl Context) -> Vec<Symbol> {
             RuntimeFunction::Arm { .. } => {}
         }
     }
-    b.out.sort_by_key(|s| s.addr);
-    b.out
+    Scanned {
+        out: b.out,
+        targets: b.targets,
+    }
+}
+
+impl Scanned {
+    /// The symbols, each named by what `context` says is at its target
+    /// (on every core), by address.
+    pub fn named(mut self, context: &(impl Context + Sync)) -> Vec<Symbol> {
+        let mut named: Vec<(&mut Symbol, u64)> = self
+            .out
+            .iter_mut()
+            .zip(self.targets.iter().copied())
+            .collect();
+        turbonop_par::for_each_chunk_mut(&mut named, 4096, |part| {
+            for (s, target) in part {
+                s.name = Builder::name(context, s.kind, *target);
+            }
+        });
+        drop(named);
+        self.out.sort_by_key(|s| s.addr);
+        self.out
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! WPA profiles: both formats, read to views, graphs and presets.
 
-use hexcavator_trace_analysis::wpa_profile::{Column, Profile};
+use turbonop_trace_analysis::wpa_profile::{Column, Profile};
 
 /// A profile in the XAML format: a view of a sampled CPU graph (a typed
 /// item) and a processes table (a generic item, by ClsID).

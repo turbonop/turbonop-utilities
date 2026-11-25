@@ -10,7 +10,7 @@
 //! - [`registers`]: register numbers (`CV_REG_*`, `CV_AMD64_*`, ...);
 //! - [`layout`]: where each part of a class or structure lies.
 //!
-//! The records live in containers: a PDB's streams (`hexcavator-pdb`), or a
+//! The records live in containers: a PDB's streams (`turbonop-pdb`), or a
 //! COFF object's `.debug$S` and `.debug$T` sections. Type records refer to
 //! each other by index; a container supplies them through [`TypeSource`].
 

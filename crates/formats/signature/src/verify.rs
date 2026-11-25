@@ -354,7 +354,7 @@ fn chain_checks(chain: &Chain, at: Time, at_what: &str, usage: &str, out: &mut V
             check(
                 "Trust",
                 Status::Warn,
-                format!("ends at {last}, not a root hexc trusts"),
+                format!("ends at {last}, not a trusted root"),
             )
         }
     });

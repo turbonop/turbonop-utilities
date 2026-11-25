@@ -5,12 +5,12 @@
 //! and payload, laid out as the kernel logs them (with the fields the
 //! decoder skips filled with what Windows writes: zeros, or the usual
 //! priorities); [`record`] wraps one in the record header the kernel
-//! uses for it, ready for [`hexcavator_etl::write::Writer`]. Tests and
+//! uses for it, ready for [`turbonop_etl::write::Writer`]. Tests and
 //! the synthetic trace generator build traces with them, and every event
 //! round-trips: decoding what is encoded gives back the same event.
 
-use hexcavator_etl::write::{self, Classic, Kernel};
-use hexcavator_etl::{Guid, classic};
+use turbonop_etl::write::{self, Classic, Kernel};
+use turbonop_etl::{Guid, classic};
 
 use crate::guids;
 use crate::kernel::{

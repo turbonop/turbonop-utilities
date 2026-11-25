@@ -1,25 +1,25 @@
-//! `hexc query`: an image's symbols, filtered, grouped, and sorted (see
-//! `hexcavator_query` for the language).
+//! `hexcavator query`: an image's symbols, filtered, grouped, and sorted (see
+//! `turbonop_query` for the language).
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use hexcavator_query::{Output, Value};
-use hexcavator_size::table::{COLUMNS, SymbolTable};
-use hexcavator_size::{Model, symbols};
 use serde_json::json;
+use turbonop_query::{Output, Value};
+use turbonop_size::table::{COLUMNS, SymbolTable};
+use turbonop_size::{Model, symbols};
 
 pub const USAGE: &str = "\
-usage: hexc query [options] <image> <query>
+usage: hexcavator query [options] <image> <query>
 
 An image's symbols (from its PDB or DWARF), as a table to filter, group,
 and sort:
 
-  hexc query app.exe \"kind=function file>4k sort by file desc limit 20\"
-  hexc query app.exe \"group by library\"
-  hexc query app.exe \"name~'^std::' group by compiland limit 10\"
-  hexc query app.exe \"section=.rdata static group by name sort by count desc\"
+  hexcavator query app.exe \"kind=function file>4k sort by file desc limit 20\"
+  hexcavator query app.exe \"group by library\"
+  hexcavator query app.exe \"name~'^std::' group by compiland limit 10\"
+  hexcavator query app.exe \"section=.rdata static group by name sort by count desc\"
 
 The query is a filter (column op value, joined by and, or, not, and
 parentheses; ops = != < <= > >= ~ !~, ~ a regular expression; numbers
@@ -27,7 +27,7 @@ take k, M, G), then any of: group by <columns> (with count and summed
 sizes), sort by <column> [desc], select <columns>, limit <n>.
 
 options:
-  -pdb <path>   its debug information: a PDB, or a file with its DWARF
+  -debug <path> its debug information: a PDB, or a file with its DWARF
                 (or -debug; default: its own, or the one it names)
   -csv, -json   output format (default: a table)
   -columns      list the columns and what they hold";
@@ -66,25 +66,25 @@ pub fn run(args: &[String]) -> ExitCode {
             "too many arguments (quote the query: \"kind=function ...\")"
         });
     };
-    let parsed = match hexcavator_query::parse(query, &COLUMNS) {
+    let parsed = match turbonop_query::parse(query, &COLUMNS) {
         Ok(q) => q,
         Err(e) => {
-            ereport!("hexc query: {e}\n  {query}\n  {}^", " ".repeat(e.at));
+            ereport!("hexcavator query: {e}\n  {query}\n  {}^", " ".repeat(e.at));
             return ExitCode::from(2);
         }
     };
     let (model, syms, modules, lines) = match load(Path::new(image), pdb.as_deref()) {
         Ok(x) => x,
         Err(e) => {
-            ereport!("hexc query: {e}");
+            ereport!("hexcavator query: {e}");
             return ExitCode::FAILURE;
         }
     };
     let table = SymbolTable::new(&model, &syms, &modules).with_lines(&lines);
-    let out = match hexcavator_query::run(&parsed, &table) {
+    let out = match turbonop_query::run(&parsed, &table) {
         Ok(o) => o,
         Err(e) => {
-            ereport!("hexc query: {}", e.message);
+            ereport!("hexcavator query: {}", e.message);
             return ExitCode::from(2);
         }
     };
@@ -93,11 +93,14 @@ pub fn run(args: &[String]) -> ExitCode {
         "json" => json_text(&out),
         _ => table_text(&out),
     };
-    crate::out::print(text.as_bytes())
+    let code = crate::out::print(text.as_bytes());
+    crate::out::dispose((out, table));
+    crate::out::dispose((model, syms, modules, lines));
+    code
 }
 
 fn usage(message: &str) -> ExitCode {
-    ereport!("hexc query: {message}\n\n{USAGE}");
+    ereport!("hexcavator query: {message}\n\n{USAGE}");
     ExitCode::from(2)
 }
 
@@ -105,24 +108,31 @@ fn usage(message: &str) -> ExitCode {
 type Loaded = (
     std::sync::Arc<Model>,
     std::sync::Arc<Vec<symbols::Symbol>>,
-    Vec<hexcavator_debuginfo::Compiland>,
-    hexcavator_debuginfo::SourceLines,
+    Vec<turbonop_debuginfo::Compiland>,
+    turbonop_debuginfo::SourceLines,
 );
 
 /// The model and symbols of the image at `path`.
 pub(crate) fn load(path: &Path, pdb: Option<&Path>) -> Result<Loaded, String> {
-    let opened = hexcavator_program::Opened::open(path, pdb)?;
+    let opened = turbonop_program::Opened::open(path, pdb)?;
     let program = opened.program()?;
     let show = opened.debug_path().display();
-    let modules = program
-        .debug
-        .compilands()
-        .map_err(|e| format!("{show}: {e}"))?;
-    let lines = program
-        .debug
-        .source_lines()
-        .map_err(|e| format!("{show}: {e}"))?;
+    // (The compilands and lines are read while the symbols are built.)
+    let (modules, lines, built) = std::thread::scope(|scope| {
+        let modules = scope.spawn(|| program.debug.compilands());
+        let lines = scope.spawn(|| program.debug.source_lines());
+        let built = program.symbols().map(|_| ());
+        (
+            modules.join().expect("compilands"),
+            lines.join().expect("source lines"),
+            built,
+        )
+    });
+    built?;
+    let modules = modules.map_err(|e| format!("{show}: {e}"))?;
+    let lines = lines.map_err(|e| format!("{show}: {e}"))?;
     let (model, syms) = program.into_built()?;
+    crate::out::dispose(opened);
     Ok((model, syms, modules, lines))
 }
 

@@ -1,4 +1,4 @@
-//! `hexc dump` of ELF, Mach-O, and WebAssembly files against
+//! `hexcavator dump` of ELF, Mach-O, and WebAssembly files against
 //! llvm-readobj's output beside the fixtures (testdata/elf, macho, wasm):
 //! the same, line for line, with the options each was made with. (On
 //! .NET's coreclr, libcoreclr.so's 15,412 lines with every ELF part and
@@ -13,9 +13,9 @@ fn testdata() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata")
 }
 
-/// hexc's dump of `name` in `dir` (named as llvm-readobj was given it).
+/// hexcavator's dump of `name` in `dir` (named as llvm-readobj was given it).
 fn dump(dir: &Path, name: &str, options: &[&str]) -> String {
-    let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
         .arg("dump")
         .args(options)
         .arg(name)
@@ -103,7 +103,32 @@ fn macho_is_llvm_readobjs() {
         ],
         &[],
     );
-    assert_eq!(n, 5);
+    // (program-arm64e's too: arm64e.)
+    assert_eq!(n, 6);
+    // Objects' relocations: plain ones (x86-64's and ARM64's have no
+    // scattered ones), by symbol and by section.
+    assert_eq!(each("macho", ".relocs.txt", &["--relocations"], &[]), 2);
+}
+
+/// `--dyld-info`: a Mach-O file's fixups as llvm-objdump's `--macho
+/// --dyld-info` lists them, line for line: chained fixups of arm64,
+/// x86-64, and arm64e (with its signed pointers' columns).
+#[test]
+fn macho_fixups_are_llvm_objdumps() {
+    let dir = testdata().join("macho");
+    for name in [
+        "pointers-arm64.dylib",
+        "pointers-x86_64.dylib",
+        "pointers-arm64e.dylib",
+    ] {
+        let ours = dump(&dir, name, &["--dyld-info"]);
+        let table = &ours[ours.find("dyld information:").expect("a table")..];
+        let theirs = std::fs::read_to_string(dir.join(format!("{name}.fixups.txt"))).unwrap();
+        // (Theirs starts with the file's name.)
+        let theirs: Vec<&str> = theirs.trim().lines().skip(1).map(str::trim_end).collect();
+        let table: Vec<&str> = table.trim().lines().map(str::trim_end).collect();
+        assert_eq!(table, theirs, "{name}");
+    }
 }
 
 #[test]
@@ -167,7 +192,7 @@ fn dumpbin_names_choose_parts() {
 
 #[test]
 fn damaged_inputs_end() {
-    let dir = std::env::temp_dir().join(format!("hexc-readobj-test-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("hexcavator-readobj-test-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     for (sub, name) in [
         ("elf", "program.so"),
@@ -189,7 +214,7 @@ fn damaged_inputs_end() {
         }
         for d in cases {
             std::fs::write(&path, &d).unwrap();
-            let out = Command::new(env!("CARGO_BIN_EXE_hexc"))
+            let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
                 .args(["dump", "-all"])
                 .arg(&path)
                 .output()
@@ -203,4 +228,60 @@ fn damaged_inputs_end() {
         }
     }
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An option of one personality given for the other's files is said to
+/// be out of place (with what shows that part instead), not ignored;
+/// `-all` takes every file's every part, so nothing is.
+#[test]
+fn options_out_of_place() {
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .arg("dump")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        String::from_utf8_lossy(&out.stderr).into_owned()
+    };
+    let elf = testdata().join("linkopts/funcs-plain");
+    let elf = elf.to_str().unwrap();
+    let err = run(&["/disasm", "/unwindinfo", elf]);
+    assert!(
+        err.contains("not a PE or COFF file") && err.contains("hexcavator size -disassemble"),
+        "{err}"
+    );
+    assert!(err.contains("hexcavator dwarf -frames"), "{err}");
+    let pe = testdata().join("types/types.exe");
+    let err = run(&["--notes", pe.to_str().unwrap()]);
+    assert!(
+        err.contains("llvm-readobj's options are of ELF, Mach-O, and WebAssembly files"),
+        "{err}"
+    );
+    assert!(run(&["/all", elf]).is_empty());
+}
+
+/// dumpbin's `/symbols` of another format's file: its symbols, as
+/// llvm-readobj's `--symbols` shows them.
+#[test]
+fn dumpbin_symbols_of_other_formats() {
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+            .arg("dump")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        assert!(
+            out.stderr.is_empty(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let elf = testdata().join("linkopts/funcs-plain");
+    let elf = elf.to_str().unwrap();
+    let symbols = run(&["/symbols", elf]);
+    assert_eq!(symbols, run(&["--symbols", elf]));
+    assert!(symbols.contains("Symbols ["), "{symbols}");
 }

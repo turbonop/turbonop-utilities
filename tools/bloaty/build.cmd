@@ -1,7 +1,7 @@
 @echo off
 rem Builds bloaty, an oracle only (not a dependency), from a clone at
 rem BLOATY_SRC (github.com/google/bloaty) into BLOATY_BUILD, with Visual
-rem Studio's CMake and Ninja. Then: python compare.py <bloaty.exe> <hexc.exe>.
+rem Studio's CMake and Ninja. Then: python compare.py <bloaty.exe> <hexcavator.exe>.
 setlocal
 if "%BLOATY_SRC%"=="" (echo set BLOATY_SRC to a clone of github.com/google/bloaty 1>&2 & exit /b 1)
 if "%BLOATY_BUILD%"=="" (echo set BLOATY_BUILD to a build directory 1>&2 & exit /b 1)

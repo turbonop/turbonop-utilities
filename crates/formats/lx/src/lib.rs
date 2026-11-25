@@ -1,7 +1,7 @@
 //! "Linear Executable" files: LE (Windows 3.x/9x virtual device drivers,
 //! VxDs; 386 DOS extenders) and LX (32-bit OS/2, and some DOS extenders).
 //!
-//! After the MZ header (see `hexcavator-mz`), the LE/LX header gives the
+//! After the MZ header (see `turbonop-mz`), the LE/LX header gives the
 //! module's objects (its segments: flat, page-granular), the page map
 //! (where each page's data is in the file), resources, entry points (by
 //! ordinal), names exported by name (resident and nonresident), the
@@ -21,8 +21,8 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use hexcavator_core::{Error, ErrorKind, Result};
-use hexcavator_mz::{MzFile, NewHeaderKind};
+use turbonop_core::{Error, ErrorKind, Result};
+use turbonop_mz::{MzFile, NewHeaderKind};
 
 /// An object's flags: readable.
 pub const OBJ_READ: u32 = 0x0001;

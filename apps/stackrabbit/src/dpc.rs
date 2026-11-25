@@ -11,12 +11,12 @@
 
 use std::path::Path;
 
-use hexcavator_etw::guids;
-use hexcavator_etw::schema::Properties;
-use hexcavator_trace::{ProcessIx, Trace};
-use hexcavator_trace_analysis::{Resolver, Symbolizer};
 use rustc_hash::FxHashMap;
 use serde_json::{Value, json};
+use turbonop_etw::guids;
+use turbonop_etw::schema::Properties;
+use turbonop_trace::{ProcessIx, Trace};
+use turbonop_trace_analysis::{Resolver, Symbolizer};
 
 use crate::reading::int;
 
@@ -79,7 +79,7 @@ pub struct DpcTable {
 /// The DPCs and ISRs of `trace` (read from `path`), from the buffers
 /// holding them, on every core.
 pub fn table(trace: &Trace, path: &Path) -> Result<DpcTable, String> {
-    let wanted = |provider: &hexcavator_etl::Guid, op: u8| {
+    let wanted = |provider: &turbonop_etl::Guid, op: u8| {
         *provider == guids::PERF_INFO && Type::of(op).is_some()
     };
     let (mut runs, _) = crate::reading::events(trace, path, wanted, |processor, e, mine| {

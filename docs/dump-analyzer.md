@@ -25,7 +25,7 @@ items leave TODO.md as they ship.
 | Architectures | x64 and ARM64 for everything. x86 and ARM32 get stacks and locals at first, and path analysis later. |
 | Front end | A DAP adapter written inline in the extension, over the tool's `serve` protocol, plus custom webviews. The web build gets the debug-UI shim it needs. |
 | Name | `dump-analyzer` (app, crate, and command), "Dump Analyzer" (the extension), released on its own `dump-analyzer-v*` tags, like each TurboNOP tool. |
-| Crates | A new `crates/debug/*` family: `abi`, `target`, `frames`, `eval`, `paths`. Plus `crates/analysis/ir`. |
+| Crates | `crates/debug/abi` beside the unwinders. The engine is a new layer, `crates/debugger` (`target`, `frames`, `eval`, `paths`), at rank 4, because it builds on `crates/analysis` (programs, code, the IR), which is `crates/debug`'s peer at rank 3. Apps move to rank 5. Plus `crates/analysis/ir`. |
 | Private data | Every dump, trace, and oracle result collected on this PC stays in `hexcavator-private`. Fixtures committed here are synthetic (dumps written by our own test programs or a dump writer), and their only PII is paths under `c:\jm`. |
 | Confidence | Every claim carries a confidence that we have actually proved: certain, one of *n*, or likely (see [Confidence](#confidence)). |
 | Symbol fetches | Parallel and saturating. A real HTTP crate is allowed if measurements call for one (see [Fetching](#fetching)). |
@@ -209,7 +209,7 @@ match its specification (golden tests).
 
 ### Phase 1: targets
 
-- **1.1 `turbonop-target`** (`crates/debug/target`). The model above
+- **1.1 `turbonop-target`** (`crates/debugger/target`). The model above
   (snapshots, capabilities, provenance), with these parts:
   - **Modules** from the minidump module list. On Linux, `/proc/<pid>/maps`
     from Breakpad's Linux streams finds modules the list misses.
@@ -252,7 +252,7 @@ the reason.
 
 ### Phase 2: frames
 
-- **2.1 `turbonop-frames`** (`crates/debug/frames`):
+- **2.1 `turbonop-frames`** (`crates/debugger/frames`):
 
   ```
   Frame {
@@ -274,6 +274,9 @@ the reason.
     thread, and from each thread's own context otherwise.
   - **Each step** unwinds with `any::unwind`, or on x86 with FrameData and
     FPO and a check that each candidate return address follows a call.
+    (`any::unwind`'s PE adapters take an unknown register as 0 and report
+    every register known afterward. They are fixed to keep unknown
+    registers unknown.)
   - **After each step:**
     - The ABI's volatile registers become `Clobbered`.
     - PAC bits are stripped.
@@ -287,7 +290,41 @@ the reason.
   - **The walk stops** at an SP that doesn't increase, an unknown PC, a loop,
     or a depth limit.
   - **Threads** are walked in parallel.
-- **2.3 Oracles,** in `hexcavator-private`, each driven by a tool under
+- **2.3 Reconstructing a corrupt stack.** When the walk fails (an
+  overwritten return address, a smashed frame, a PC in nothing), the stack
+  memory still holds the older frames' return addresses. The analyzer
+  rebuilds the probable stacks from them, which is slow and manual work in
+  WinDbg:
+  1. **Candidates.** Every pointer-sized word in the thread's stack (from
+     the SP up, and below it as far as the dump has memory, skipping the
+     red zone) that points into a module's code. Slots are scanned in
+     parallel.
+  2. **Return addresses.** A candidate is a return address only if the
+     instruction before it is a call. A direct call also names its
+     target, and the frame below it on the stack should be in that target
+     (or in a thunk or import stub that jumps there). Indirect calls are
+     kept, with less weight.
+  3. **Frame sizes.** For a return address R found at slot A, the function
+     containing R has unwind data (`.pdata`, CFI, compact unwind) or a
+     prolog that the decoder can read. Unwinding a virtual frame (PC = R,
+     SP just above A) says where the caller's return address must be. If
+     a candidate is there, the two are linked. On ARM64 and on x64 code
+     with frame pointers, frame records (a saved FP and LR pair) give a
+     second, independent kind of link.
+  4. **Chains.** The links form a graph. Its longest consistent chains are
+     the probable stacks, and each chain reaches the stack's base or a
+     thread entry point such as `RtlUserThreadStart`, `__libc_start_main`,
+     or `thread_start`. The part of the stack that walked correctly
+     anchors the chains that continue it.
+  5. **Report** with [confidence](#confidence). A chain whose every link
+     is proved by unwind data is certain from where it starts. Several
+     chains that fit the evidence are reported as one of *n*. Gaps
+     bridged by a scan are likely. The UI shows each chain beside the raw
+     stack slots, with the reason each slot was or wasn't taken as a
+     frame, and marks where the control flow probably went between them.
+     Phase 7's path analysis then runs on the reconstructed frames like
+     on any others.
+- **2.4 Oracles,** in `hexcavator-private`, each driven by a tool under
   `tools/`:
   - DbgEng's `k` for Windows dumps.
   - rust-minidump's `minidump-stackwalk` and Breakpad's `minidump_stackwalk`
@@ -311,7 +348,7 @@ corpus, and every disagreement is explained. All the threads of a dump with
     it's evidence for phase 7.
 - **3.2 PDB:** `S_DEFRANGE_REGISTER_REL_INDIR`, `S_DEFRANGE_SUBFIELD`, and plain
   `S_DEFRANGE`.
-- **3.3 `turbonop-eval`** (`crates/debug/eval`). It takes a frame, a
+- **3.3 `turbonop-eval`** (`crates/debugger/eval`). It takes a frame, a
   variable, and a PC, and gives either:
   - a `Value` (from `value::read`), with the provenance of its bytes, or
   - `Unavailable` with a reason, such as "rbx clobbered by the call at
@@ -416,7 +453,7 @@ unknown ones.**
 
 ### Phase 7: how did we get here
 
-- **7.1 `turbonop-paths`** (`crates/debug/paths`). It works on one frame,
+- **7.1 `turbonop-paths`** (`crates/debugger/paths`). It works on one frame,
   given its registers and their provenance, its function's CFG, the target,
   and the ABI:
   1. **Enumerate paths** backward from the PC (or, in an outer frame, its

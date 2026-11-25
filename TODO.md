@@ -40,6 +40,11 @@ In order:
   provenance (known, clobbered, unknown) and follows each platform's ABI,
   with signal frames and checked fallbacks, matching DbgEng,
   minidump-stackwalk, and gdb.
+- **Corrupt stacks rebuilt.** When the walk fails, the stack's code
+  pointers that follow a call become candidate return addresses, linked
+  by their functions' unwind data or prologs (each frame's size says where
+  its caller's return address must be) and by frame records. The longest
+  consistent chains are the probable stacks, each with its confidence.
 - **Values.** DWARF places read completely (entry values, pieces, implicit
   values), the PDB's missing def-ranges, and `turbonop-eval`.
 - **The app and the extension.** `apps/dump-analyzer` and "Dump Analyzer":

@@ -1388,9 +1388,13 @@ impl Tables {
             Lifetime::Start | Lifetime::RundownStart => {
                 if let Some(&ix) = self.live_threads.get(&th.thread_id) {
                     let existing = &mut self.trace.threads[ix.index()];
-                    // A rundown for a thread we only knew by its ID fills it in.
+                    // A rundown for a thread we only knew by its ID fills it
+                    // in; so does its start, if it hasn't ended (else the ID
+                    // is another thread's now).
                     if th.lifetime == Lifetime::RundownStart
-                        || (existing.process == ProcessIx::NONE && existing.start.is_none())
+                        || (existing.process == ProcessIx::NONE
+                            && existing.start.is_none()
+                            && existing.end.is_none())
                     {
                         let unjoined = existing.process == ProcessIx::NONE;
                         if unjoined {
@@ -1424,6 +1428,8 @@ impl Tables {
                 if thread.process == ProcessIx::NONE {
                     self.join(ix, th.process_id, process);
                 }
+                // (Its ID still names it, for the events logged as it goes,
+                // as its last switch out, until a thread with its ID starts.)
             }
             Lifetime::RundownEnd => {
                 let ix = self.thread(th.thread_id);

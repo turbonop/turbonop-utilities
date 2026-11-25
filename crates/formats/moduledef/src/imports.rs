@@ -1,0 +1,276 @@
+//! The import library `lib /DEF` makes of a module definition (with no
+//! objects on its command line), as measured with MSVC 14.52's `lib.exe`
+//! on x64, x86, ARM64, and ARM64EC.
+//!
+//! # Its members
+//!
+//! The archive holds three import descriptor objects, then one short
+//! import object for each export that isn't `PRIVATE` (each name once:
+//! the first entry's), sorted by their symbols' bytes. Every member is
+//! named for the DLL (`foo.dll`). The second linker member lists the
+//! members in another order, and its symbols name them by their places in
+//! it: the three descriptor objects, then the imports in the `.def`
+//! file's order. The first linker member lists the symbols in that order
+//! too, each member's sorted (see `turbonop_archive::write`).
+//!
+//! Each import ([`Import`]):
+//!
+//! - Its symbol is the export's name. On x86, `_` is put before a name
+//!   that doesn't start with `?` or `@` (`_Under` becomes `__Under`). On
+//!   ARM64EC, code's symbol is mangled (`#f`, or `$$h` after a C++ name's
+//!   qualified name: `?f@@$$hYAXXZ`).
+//! - It is code, data (`DATA`), or a constant (`CONSTANT`).
+//! - An export with an ordinal (`NONAME` or not) is imported by ordinal,
+//!   with the ordinal as its hint. Another is imported by name, its hint
+//!   its place among the exports that have names (all but `NONAME` ones,
+//!   `PRIVATE` ones included) sorted by the names they are exported as
+//!   (the `EXPORTAS` name, if any). On ARM64EC the hints of
+//!   imports by name are not that (values from 0 to 22639 were seen,
+//!   differing between runs of different files); they are not reproduced
+//!   here, and are 0.
+//! - The name type: by name; on x86 `NOPREFIX` when `_` was put before
+//!   it; `EXPORTAS` with the `EXPORTAS` name; on ARM64EC, code by name is
+//!   `EXPORTAS` with the plain name, and code by ordinal is by ordinal
+//!   but still carries the plain name.
+//! - Its time stamp: the time `lib.exe` ran; with `/Brepro`, a value that
+//!   differs per object (some hash: not reproduced).
+//!
+//! (`lib /DEF` given objects too, or `link /DEF`, finds each export's
+//! symbol in them: an x86 `Func` defined as `_Func@8` is imported as
+//! `_Func@8`, `UNDECORATE`; `Ren=Func` as `_Ren@8`, `UNDECORATE`;
+//! `Ren2=_Func@8` as `Ren2`, by name; `@Fa@4` (fastcall) `UNDECORATE`;
+//! `Cd` (cdecl) as `_Cd`, `NOPREFIX`. That is not done here.)
+//!
+//! # The import descriptor objects
+//!
+//! `lib.exe` writes three COFF objects, for the DLL `<dll>` with `<stem>`
+//! its name without its last extension (`foo.bar.baz` gives `foo.bar`):
+//!
+//! **1. The import descriptor** defines `__IMPORT_DESCRIPTOR_<stem>`.
+//! Sections:
+//!
+//! | # | Name | Size | Characteristics | Contents |
+//! |---|---|---|---|---|
+//! | 1 | `.debug$S` | 54 and the DLL name's length | `0x42100040` (initialized data, 1-byte aligned, discardable, read) | the CodeView records below |
+//! | 2 | `.idata$2` | 20 | `0xC0300040` (initialized data, 4-byte aligned, read, write) | zeros: the `IMAGE_IMPORT_DESCRIPTOR` |
+//! | 3 | `.idata$6` | the name, a NUL, and another to an even size | `0xC0200040` (2-byte aligned) | the DLL's name |
+//!
+//! `.idata$2`'s three relocations, in this order: at 0x0C to symbol 3
+//! (`.idata$6`: the name), at 0x00 to symbol 4 (`.idata$4`: the lookup
+//! table), at 0x10 to symbol 5 (`.idata$5`: the address table); each
+//! `IMAGE_REL_AMD64_ADDR32NB` (3) on x64, `IMAGE_REL_I386_DIR32NB` (7) on
+//! x86, and `IMAGE_REL_ARM64_ADDR32NB` (2) on ARM64 and ARM64EC.
+//!
+//! Symbols (none with auxiliary records):
+//!
+//! | # | Name | Value | Section | Class |
+//! |---|---|---|---|---|
+//! | 0 | `@comp.id` | `0x010190A5` (the linker's id: product 0x0101, build 37029) | -1 | static |
+//! | 1 | `__IMPORT_DESCRIPTOR_<stem>` | 0 | 2 | external |
+//! | 2 | `.idata$2` | `0xC0000040` | 2 | section (104) |
+//! | 3 | `.idata$6` | 0 | 3 | static |
+//! | 4 | `.idata$4` | `0xC0000040` | 0 | section |
+//! | 5 | `.idata$5` | `0xC0000040` | 0 | section |
+//! | 6 | `__NULL_IMPORT_DESCRIPTOR` | 0 | 0 | external |
+//! | 7 | `\x7f<stem>_NULL_THUNK_DATA` | 0 | 0 | external |
+//!
+//! **2. The null import descriptor** defines `__NULL_IMPORT_DESCRIPTOR`:
+//! `.debug$S` as above, then `.idata$3`, 20 zero bytes, `0xC0300040`.
+//! Symbols: `@comp.id` as above; `__NULL_IMPORT_DESCRIPTOR`, 0, section 2,
+//! external.
+//!
+//! **3. The null thunk** defines `\x7f<stem>_NULL_THUNK_DATA`: `.debug$S`
+//! as above, then `.idata$5` and `.idata$4`, each a zero pointer (8 bytes,
+//! `0xC0400040`, 8-byte aligned, on x64, ARM64, and ARM64EC; 4 bytes,
+//! `0xC0300040`, on x86). Symbols: `@comp.id`; the thunk's symbol, 0,
+//! section 2 (`.idata$5`), external.
+//!
+//! **In every one**:
+//!
+//! - The file header: the machine (x64 `0x8664`, x86 `0x14C`, ARM64
+//!   `0xAA64`; ARM64EC's are ARM64's), the section count, the time stamp
+//!   (as the import objects'), the symbol table's offset, the symbol
+//!   count, no optional header, and characteristics 0 (x86:
+//!   `IMAGE_FILE_32BIT_MACHINE`, 0x100).
+//! - The section headers have 0 for their virtual size and address and
+//!   line numbers. The data follow the headers, each section's at once
+//!   after the one before (no alignment), a section's relocations at once
+//!   after its data; then the symbol table, then the string table (every
+//!   name over 8 bytes, in symbol order). A section without relocations
+//!   has 0 for their offset, but for the descriptor's `.idata$6`, which
+//!   has `.idata$2`'s (0xE7 for a name of 17 bytes, 0xDC for 6), with a
+//!   count of 0.
+//! - `.debug$S` holds signature 2 (C13), then `S_OBJNAME_ST` (0x0009:
+//!   signature 0, the DLL's name as a length-prefixed string), then
+//!   `S_COMPILE2_ST` (0x1013: flags 7 (language "link"), the machine
+//!   (`CV_CFL_AMD64` 0xD0, `CV_CFL_80386` 0x03, `CV_CFL_ARM64` 0xF6, and
+//!   0xF8 for ARM64EC), front-end version 0.0.0, back-end version
+//!   14.52.37029, and the length-prefixed string `Microsoft (R) LINK`),
+//!   neither record padded.
+//!
+//! `llvm-lib` writes the same sections and relocations without the
+//! `.debug$S` and `@comp.id`, with time stamp 0, section symbols' values
+//! 0, and `.idata$6`'s relocation offset 0.
+
+use alloc::borrow::Cow;
+use alloc::vec::Vec;
+
+use turbonop_archive::symbols::{ec_demangle, ec_mangle};
+use turbonop_pe::consts::machine;
+use turbonop_pe::import_object::{ImportNameType, ImportObject, ImportType};
+
+use crate::{ExportKind, ModuleDefinition};
+
+/// One import object of the library.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Import<'a> {
+    /// Its symbol (`__imp_` and it are what it defines).
+    pub symbol: Cow<'a, [u8]>,
+    /// Code, data, or a constant.
+    pub kind: ImportType,
+    /// How the DLL's export is found.
+    pub name_type: ImportNameType,
+    /// The ordinal, or the hint.
+    pub ordinal_or_hint: u16,
+    /// The name after the DLL's (`EXPORTAS`, and ARM64EC's plain names).
+    pub export_name: Option<Cow<'a, [u8]>>,
+}
+
+impl Import<'_> {
+    /// The short import object, for `machine`, of `dll`, with `time_date_stamp`.
+    pub fn object<'s>(
+        &'s self,
+        machine: u16,
+        dll: &'s [u8],
+        time_date_stamp: u32,
+    ) -> ImportObject<'s> {
+        let mut o = ImportObject::new(
+            machine,
+            self.kind,
+            self.name_type,
+            self.ordinal_or_hint,
+            &self.symbol,
+            dll,
+            self.export_name.as_deref(),
+        );
+        o.time_date_stamp = time_date_stamp;
+        o
+    }
+}
+
+/// What `lib /DEF` puts in an import library.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportLibrary<'a> {
+    /// The machine.
+    pub machine: u16,
+    /// The DLL's file name.
+    pub dll: Vec<u8>,
+    /// The imports, in the `.def` file's order (the second linker
+    /// member's, after the descriptor objects).
+    pub imports: Vec<Import<'a>>,
+}
+
+impl<'a> ImportLibrary<'a> {
+    /// The import library `lib /DEF:<def_stem>.def /MACHINE:<machine>`
+    /// makes of `def` (the DLL is named for the `.def` file when `def`
+    /// names none).
+    pub fn lib_exe(def: &ModuleDefinition<'a>, machine: u16, def_stem: &[u8]) -> Self {
+        let exports = def.exports();
+        // Hints: places among the named exports, sorted by the names they
+        // are exported as.
+        let exported = |e: &crate::Export<'a>| e.export_as.unwrap_or(e.name);
+        let mut named: Vec<&[u8]> = exports.iter().filter(|e| !e.noname).map(exported).collect();
+        named.sort_unstable();
+        let x86 = machine == machine::I386;
+        let ec = machine == machine::ARM64EC;
+        let mut imports = Vec::new();
+        for e in exports.iter().filter(|e| !e.private) {
+            let kind = match e.kind {
+                ExportKind::Code => ImportType::Code,
+                ExportKind::Data => ImportType::Data,
+                ExportKind::Constant => ImportType::Const,
+            };
+            let hint = if ec {
+                0
+            } else {
+                let at = named.binary_search(&exported(e)).unwrap_or(0);
+                u16::try_from(at).unwrap_or(u16::MAX)
+            };
+            let ordinal_or_hint = e.ordinal.unwrap_or(hint);
+            let (symbol, by_name, export_name) = if ec && kind == ImportType::Code {
+                let symbol = ec_mangle(e.name).unwrap_or(Cow::Borrowed(e.name));
+                let plain = e
+                    .export_as
+                    .map_or_else(|| ec_demangle(e.name), Cow::Borrowed);
+                (symbol, ImportNameType::ExportAs, Some(plain))
+            } else if x86 && !matches!(e.name.first(), Some(b'?' | b'@')) {
+                let mut s = Vec::with_capacity(e.name.len() + 1);
+                s.push(b'_');
+                s.extend_from_slice(e.name);
+                let by_name = if e.export_as.is_some() {
+                    ImportNameType::ExportAs
+                } else {
+                    ImportNameType::NoPrefix
+                };
+                (Cow::Owned(s), by_name, e.export_as.map(Cow::Borrowed))
+            } else {
+                let by_name = if e.export_as.is_some() {
+                    ImportNameType::ExportAs
+                } else {
+                    ImportNameType::Name
+                };
+                (
+                    Cow::Borrowed(e.name),
+                    by_name,
+                    e.export_as.map(Cow::Borrowed),
+                )
+            };
+            let name_type = if e.ordinal.is_some() {
+                ImportNameType::Ordinal
+            } else {
+                by_name
+            };
+            imports.push(Import {
+                symbol,
+                kind,
+                name_type,
+                ordinal_or_hint,
+                export_name,
+            });
+        }
+        Self {
+            machine,
+            dll: def.file_name(def_stem),
+            imports,
+        }
+    }
+
+    /// The DLL's name without its last extension: what the descriptor
+    /// objects' symbols are named for.
+    pub fn stem(&self) -> &[u8] {
+        let dot = self.dll.iter().rposition(|&b| b == b'.');
+        &self.dll[..dot.unwrap_or(self.dll.len())]
+    }
+
+    /// The descriptor objects' symbols: `__IMPORT_DESCRIPTOR_<stem>`,
+    /// `__NULL_IMPORT_DESCRIPTOR`, and `\x7f<stem>_NULL_THUNK_DATA`.
+    pub fn descriptor_symbols(&self) -> [Vec<u8>; 3] {
+        let mut descriptor = b"__IMPORT_DESCRIPTOR_".to_vec();
+        descriptor.extend_from_slice(self.stem());
+        let mut thunk = b"\x7f".to_vec();
+        thunk.extend_from_slice(self.stem());
+        thunk.extend_from_slice(b"_NULL_THUNK_DATA");
+        [descriptor, b"__NULL_IMPORT_DESCRIPTOR".to_vec(), thunk]
+    }
+
+    /// The imports' places in the archive: sorted by symbol (after the
+    /// three descriptor objects).
+    pub fn archive_order(&self) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..self.imports.len()).collect();
+        order.sort_by(|&a, &b| self.imports[a].symbol.cmp(&self.imports[b].symbol));
+        order
+    }
+}
+
+#[cfg(test)]
+mod tests;

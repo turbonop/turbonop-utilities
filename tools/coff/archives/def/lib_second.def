@@ -1,0 +1,7 @@
+; a second NAME or LIBRARY is ignored (LNK4275)
+NAME first
+LIBRARY second
+EXPORTS
+  A
+  LIBRARY third
+  B

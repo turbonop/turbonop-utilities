@@ -812,6 +812,8 @@ version = "0.0.7"
 dependencies = [
  "turbonop-core",
  "turbonop-global-alloc",
+ "turbonop-mmap",
+ "turbonop-par",
  "turbonop-pe",
 ]
 
@@ -1153,6 +1155,15 @@ dependencies = [
  "memmap2",
  "turbonop-core",
  "turbonop-global-alloc",
+]
+
+[[package]]
+name = "turbonop-moduledef"
+version = "0.0.7"
+dependencies = [
+ "turbonop-archive",
+ "turbonop-global-alloc",
+ "turbonop-pe",
 ]
 
 [[package]]

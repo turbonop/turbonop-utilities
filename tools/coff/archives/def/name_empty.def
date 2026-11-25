@@ -1,0 +1,4 @@
+; NAME without a name: the output's, and .dll
+NAME
+EXPORTS
+  A

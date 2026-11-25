@@ -299,8 +299,6 @@ x64. Where the 3.5 MB went:
   - Whether `/DEFAULTLIB` directives that differ from the rest of a
     library's count as side effects for `--pull=preserve`.
 - **Phase 1: the writers.**
-  - The Microsoft archive writer, with `lib.exe`'s member order (the
-    reverse of its command line).
   - CodeView: done (`symbol_refs`, `c13`, `write`, `remap`; checked on
     both corpora by `turbonop-codeview`'s `corpus` example). Still open:
     rewriting a record whose binary annotations' file offsets change
@@ -308,6 +306,17 @@ x64. Where the 3.5 MB went:
     bytes), and the kinds whose layouts nobody documents (S_FRAMEREG,
     S_FASTLINK, S_GPROC32EX and the rest `symbol_refs` lists as unknown)
     if a compiler is found writing them.
+  - `lib /DEF`'s import descriptor objects, once there is a COFF writer
+    (their layout, for x64, x86, ARM64, and ARM64EC, is in
+    `turbonop_moduledef::imports`); then whole import libraries, for
+    ARM64X too (`/DEFARM64NATIVE`), and from objects (`UNDECORATE`).
+  - What `lib.exe` and link.exe do with `.def` values the import library
+    doesn't show: `BASE`, `HEAPSIZE`, and `STACKSIZE` past 32 bits or
+    negative (read as `strtoul` reads them; untested what the image
+    gets).
+  - The SDK's and MSVC's libraries whose index isn't computed from their
+    members (103 of 1,851; see the plan's 1.2): the ARM64 CRT's EC
+    symbols, and UCRT's members that win a name.
   - `turbolib` as `lib` with `--fold=none`.
 - **A structural PDB comparison.** `link.exe`'s PDBs differ between two
   links of the same inputs, so `relink.py` compares images only. Compare

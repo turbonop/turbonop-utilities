@@ -1,0 +1,12 @@
+LIBRARY a_longer_name_for_testing.dll
+EXPORTS
+  Plain
+  Ordinal @5
+  OrdNoName @6 NONAME
+  _Decorated@8
+  ?Cpp@@YAXXZ
+  DataItem DATA
+  ConstItem CONSTANT
+  PrivItem PRIVATE
+  Renamed=Internal
+  Fwd=other.Func

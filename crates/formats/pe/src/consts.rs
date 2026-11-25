@@ -268,4 +268,5 @@ pub mod storage_class {
     pub const EXTERNAL: u8 = 2;
     pub const STATIC: u8 = 3;
     pub const SECTION: u8 = 104;
+    pub const WEAK_EXTERNAL: u8 = 105;
 }

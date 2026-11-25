@@ -1,0 +1,4 @@
+; the first word is the name, whatever it is
+LIBRARY BASE=0x1000
+EXPORTS
+  A

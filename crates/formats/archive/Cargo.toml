@@ -10,10 +10,12 @@ repository.workspace = true
 
 [dependencies]
 turbonop-core.workspace = true
+turbonop-pe.workspace = true
 
 [dev-dependencies]
 turbonop-global-alloc.workspace = true
-turbonop-pe.workspace = true
+turbonop-mmap.workspace = true
+turbonop-par.workspace = true
 
 [lints]
 workspace = true

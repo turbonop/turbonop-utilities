@@ -134,8 +134,17 @@ def dpc(trace: Path, wpa: list[dict]) -> list[str]:
             differ += 1
         if r["Module"] != x["module"]:
             modules[(r["Module"], x["module"])] += 1
-    notes = [f"  DPC/ISR: {len(runs)} runs in WPA; {missing} not in Stackrabbit, {len(ours)} only in it; "
-             f"{differ} durations differ; {sum(modules.values())} modules differ"]
+    # (WPA leaves out each processor's first run; and gives KMDF drivers'
+    # runs, whose routine is Wdf01000.sys's dispatcher, to the driver.)
+    firsts = {}
+    for x in us["runs"]:
+        c = x["processor"]
+        firsts[c] = min(firsts.get(c, x["startNs"]), x["startNs"])
+    first = sum(1 for (c, t), x in ours.items() if x["startNs"] == firsts.get(c))
+    kmdf = sum(n for (a, b), n in modules.items() if b == "Wdf01000.sys")
+    notes = [f"  DPC/ISR: {len(runs)} runs in WPA; {missing} not in Stackrabbit, {len(ours)} only in it "
+             f"({first} a processor's first, as WPA leaves out); "
+             f"{differ} durations differ; {sum(modules.values())} modules differ ({kmdf} KMDF dispatcher's)"]
     notes += [f"    WPA {a}, Stackrabbit {b}: {n}" for (a, b), n in modules.most_common(4)]
     return notes
 

@@ -119,6 +119,14 @@
 //!   first; the first `groupLimit` (10,000) of `groupsTotal`) and the
 //!   `limit` (1000) longest, each `{op, startNs, durationNs, status, process, tid, key,
 //!   value}`. (Read from the trace file the first time, then kept.)
+//! - `frequency` `{trace, time?}` → `{changes, averageMhz, groupsTotal,
+//!   groups, levels}`: the processors' frequencies in `time` (all of
+//!   the trace if none), from the processor power provider's frequency
+//!   changes: each processor's `{label, cpu, timeNs, averageMhz, minMhz,
+//!   maxMhz, changes}` (the average by time), and the time at each
+//!   frequency (`levels`),
+//!   `{mhz, timeNs, share}`, most first. (Read from the trace file the
+//!   first time, then kept.)
 //! - `marks` `{trace}` → `{rows}`: the marks in the trace (text a
 //!   recorder put in it: WPR marks the start of its rundown, its
 //!   profiles and the recording's name), in time order, each `{timeNs,
@@ -445,6 +453,8 @@ struct State {
     dpcs: Option<Arc<crate::dpc::DpcTable>>,
     /// The trace's minifilter callbacks, once read.
     minifilters: Option<Arc<crate::minifilter::FilterTable>>,
+    /// The trace's frequency changes, once read.
+    frequencies: Option<Arc<crate::frequency::FrequencyTable>>,
     /// The last line totals worked out: for which (source, time), with
     /// what symbols (how many PDBs were loaded).
     lines: Option<(LinesKey, Arc<LinesValue>)>,
@@ -560,6 +570,7 @@ fn worker(
         files: None,
         dpcs: None,
         minifilters: None,
+        frequencies: None,
         registry: None,
         faults: None,
         vmem: None,
@@ -1253,6 +1264,22 @@ impl State {
                 ))
             }
             "marks" => crate::marks::marks(trace, &self.loaded.path),
+            "frequency" => {
+                let spec = TreeSpec::from_json(params)?;
+                let table = match &self.frequencies {
+                    Some(t) => Arc::clone(t),
+                    None => {
+                        let t = Arc::new(crate::frequency::table(trace, &self.loaded.path)?);
+                        self.frequencies = Some(Arc::clone(&t));
+                        t
+                    }
+                };
+                Ok(crate::frequency::summary(
+                    trace,
+                    &table,
+                    ticks(trace, spec.time),
+                ))
+            }
             "regions" => {
                 let file = params
                     .get("file")

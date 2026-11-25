@@ -829,6 +829,35 @@
       ),
   });
 
+  // CPU frequency: each processor's average (by time), lowest and highest,
+  // and the time spent at each frequency.
+  const mhz = (v) => v.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  summaryTab({
+    name: "frequency",
+    method: "frequency",
+    reading: "Reading the trace's frequency changes…",
+    groups: [
+      { key: "label", title: "Processor" },
+      { key: "averageMhz", title: "Average (MHz)", num: true, text: mhz },
+      { key: "minMhz", title: "Lowest (MHz)", num: true, text: number(0) },
+      { key: "maxMhz", title: "Highest (MHz)", num: true, text: number(0) },
+      { key: "changes", title: "Changes", num: true, text: number(0) },
+      { key: "timeNs", title: "Time (ms)", num: true, text: ms },
+    ],
+    groupSort: { key: "label", down: false },
+    items: "levels",
+    itemColumns: [
+      { key: "mhz", title: "Frequency (MHz)", num: true, text: number(0) },
+      { key: "timeNs", title: "Time (ms)", num: true, text: ms },
+      { key: "share", title: "Share", num: true, text: (v) => `${(100 * v).toFixed(1)}%` },
+    ],
+    itemSort: { key: "timeNs", down: true },
+    title: (d, when) =>
+      d.groups.length
+        ? `${d.groups.length} processors, ${mhz(d.averageMhz)} MHz on average, ${count(d.changes)} changes${when}`
+        : `No frequency changes${when} (they're recorded with WPR's Power profile)`,
+  });
+
   // Registry operations, by duration.
   summaryTab({
     name: "registry",
@@ -997,7 +1026,7 @@
     if (name === "regions") {
       loadRegions();
     }
-    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
+    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
       $(`tab-${t}`).classList.toggle("active", name === t);
       $(`${t}-pane`).classList.toggle("hidden", name !== t);
     }
@@ -1022,6 +1051,7 @@
   $("tab-fileio").addEventListener("click", () => showTab("fileio"));
   $("tab-minifilter").addEventListener("click", () => showTab("minifilter"));
   $("tab-dpc").addEventListener("click", () => showTab("dpc"));
+  $("tab-frequency").addEventListener("click", () => showTab("frequency"));
   $("tab-registry").addEventListener("click", () => showTab("registry"));
   $("tab-hardfaults").addEventListener("click", () => showTab("hardfaults"));
   $("tab-vmem").addEventListener("click", () => showTab("vmem"));
@@ -1266,7 +1296,7 @@
     if (s.lit && typeof s.lit.fn === "string") {
       lit = { fn: s.lit.fn, label: String(s.lit.label || s.lit.fn) };
     }
-    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
+    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
       showTab(s.tab);
     }
   }

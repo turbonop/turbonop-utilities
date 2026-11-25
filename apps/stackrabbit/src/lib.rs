@@ -18,6 +18,7 @@ pub mod bench;
 pub mod disk;
 pub mod dpc;
 pub mod fileio;
+pub mod frequency;
 pub mod generic;
 pub mod hardfault;
 pub mod marks;

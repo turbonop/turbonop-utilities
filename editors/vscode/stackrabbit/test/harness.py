@@ -157,6 +157,7 @@ window.acquireVsCodeApi = function () {
     else if (m.method === "memory" && A.memory) r.result = A.memory;
     else if (m.method === "regions") r.error = "regions: file: expected a regions file";
     else if (m.method === "marks") r.result = A.marks || {rows: []};
+    else if (m.method === "frequency" && A.frequency) r.result = A.frequency;
     else if (m.method === "events.list" && A.sampleKind && m.params.opcode === A.sampleKind.opcode && m.params.guid === A.sampleKind.guid) r.result = A.sampleList;
     else if (m.method === "events.list") r.result = A.eventList;
     else if (m.method === "symbols") r.result = A.symbols;
@@ -861,6 +862,21 @@ def main():
     assert cells == [["Post-operation", "0", "0", "1", "0", "0", "0"], ["Pre-operation", "0", "0", "0", "1", "1", "0"]], cells
     rest = html.unescape(dom[dom.index('id="minifilter-calls"'):])
     assert "WdFilter.sys!Scan" in rest and "IRP_MJ_CREATE" in rest and "C:\\big.bin" in rest
+    # The Frequency tab: each processor's average, lowest and highest, and
+    # the time at each frequency.
+    fd = json.loads(json.dumps(data))
+    fd["frequency"] = {
+        "changes": 12, "averageMhz": 1875.5, "groupsTotal": 2,
+        "groups": [{"label": "CPU 0", "cpu": 0, "timeNs": 2000000, "averageMhz": 2150.5, "minMhz": 1833, "maxMhz": 2200, "changes": 10},
+                   {"label": "CPU 4", "cpu": 4, "timeNs": 2000000, "averageMhz": 1600.0, "minMhz": 1600, "maxMhz": 1600, "changes": 2}],
+        "levels": [{"mhz": 1600, "timeNs": 2000000, "share": 0.5}, {"mhz": 2200, "timeNs": 1800000, "share": 0.45}],
+    }
+    dom = render(fd, "document.getElementById('tab-frequency').click();", shot=shot("frequency"))
+    assert "2 processors, 1,875.5 MHz on average, 12 changes." in dom, "the Frequency title"
+    table = html.unescape(dom[dom.index('id="frequency-groups"'):dom.index('id="frequency-levels"')])
+    assert "CPU 0" in table and "2,150.5" in table and "CPU 4" in table
+    levels = html.unescape(dom[dom.index('id="frequency-levels"'):])
+    assert "1,600" in levels and "50.0%" in levels
     # The registry tab: totals by the grouping chosen (and how many of all
     # the groups), and the longest; changing the grouping asks again.
     regd = json.loads(json.dumps(data))

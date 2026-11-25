@@ -3102,3 +3102,111 @@ fn nt_paths_read_as_dos_paths() {
         "anything"
     );
 }
+
+#[test]
+fn frequencies_by_processor() {
+    use turbonop_etl::write::{self, Writer, WriterOptions};
+    use turbonop_etw::guids;
+    let dir = scratch("serve-frequency");
+    // A counter at 10 MHz: 10 ticks a microsecond.
+    let mut w = Writer::new(WriterOptions {
+        processors: 2,
+        perf_freq: 10_000_000,
+        ..WriterOptions::default()
+    });
+    let power = stackrabbit::frequency::PROCESSOR_POWER;
+    // The description of ProcessorPerfStateChange (event 10, version 5), as
+    // WPR records it: Group and Number (uint16), Speed and Performance
+    // (uint32).
+    let props: [(&str, u16); 4] = [
+        ("Group", 6),
+        ("Number", 6),
+        ("Speed", 8),
+        ("Performance", 8),
+    ];
+    let mut info = vec![0u8; 112 + 24 * props.len()];
+    info[0..16].copy_from_slice(&power.to_bytes());
+    info[32..34].copy_from_slice(&10u16.to_le_bytes());
+    info[34] = 5;
+    let name = |b: &mut Vec<u8>, at: usize, s: &str| {
+        let off = u32::try_from(b.len()).unwrap();
+        b[at..at + 4].copy_from_slice(&off.to_le_bytes());
+        for u in s.encode_utf16().chain([0]) {
+            b.extend_from_slice(&u.to_le_bytes());
+        }
+    };
+    name(&mut info, 52, "Microsoft-Windows-Kernel-Processor-Power");
+    name(&mut info, 92, "ProcessorPerfStateChange");
+    info[100..104].copy_from_slice(&4u32.to_le_bytes());
+    info[104..108].copy_from_slice(&4u32.to_le_bytes());
+    for (i, (n, t)) in props.iter().enumerate() {
+        let at = 112 + 24 * i;
+        name(&mut info, at + 4, n);
+        info[at + 8..at + 10].copy_from_slice(&t.to_le_bytes());
+        info[at + 16..at + 18].copy_from_slice(&1u16.to_le_bytes());
+    }
+    let meta = write::EventFields {
+        provider: guids::EVENT_METADATA,
+        opcode: turbonop_etw::event_info::EVENT_INFO_OPCODE,
+        timestamp: 1,
+        ..write::EventFields::default()
+    };
+    w.record(0, &write::event(&meta, true, &[], &info));
+    let mut change = |cpu: u16, ts: i64, mhz: u32, percent: u32| {
+        let e = write::EventFields {
+            provider: power,
+            id: 10,
+            version: 5,
+            timestamp: ts,
+            ..write::EventFields::default()
+        };
+        let mut p = Vec::new();
+        p.extend_from_slice(&0u16.to_le_bytes());
+        p.extend_from_slice(&cpu.to_le_bytes());
+        p.extend_from_slice(&mhz.to_le_bytes());
+        p.extend_from_slice(&percent.to_le_bytes());
+        w.record(cpu, &write::event(&e, true, &[], &p));
+    };
+    // Processor 0: 2000 MHz from 100 us, 1000 MHz from 300 us, then 2000
+    // again at 500 us, the trace's end. Processor 1: 1500 MHz from 200 us.
+    change(0, 1_000, 2_000, 90);
+    change(1, 2_000, 1_500, 70);
+    change(0, 3_000, 1_000, 45);
+    change(0, 5_000, 2_000, 90);
+    let path = dir.join("t.etl");
+    std::fs::write(&path, w.finish()).unwrap();
+    let a = session(&[
+        json!({"method": "open", "params": {"path": path, "useIndex": true}}),
+        json!({"method": "frequency", "params": {"trace": 1}}),
+        json!({"method": "frequency", "params": {"trace": 1, "time": [0, 250_000]}}),
+    ]);
+    let r = result(&a, 2);
+    assert_eq!(r["changes"], 4);
+    // (2000 x 200 us + 1000 x 200 us + 1500 x 300 us) / 700 us.
+    assert_eq!(r["averageMhz"], 1500.0);
+    assert_eq!(r["groupsTotal"], 2);
+    assert_eq!(
+        r["groups"],
+        json!([
+            {"label": "CPU 0", "cpu": 0, "timeNs": 400_000, "averageMhz": 1500.0, "minMhz": 1000, "maxMhz": 2000, "changes": 3},
+            {"label": "CPU 1", "cpu": 1, "timeNs": 300_000, "averageMhz": 1500.0, "minMhz": 1500, "maxMhz": 1500, "changes": 1},
+        ])
+    );
+    assert_eq!(
+        r["levels"],
+        json!([
+            {"mhz": 1500, "timeNs": 300_000, "share": 0.4286},
+            {"mhz": 1000, "timeNs": 200_000, "share": 0.2857},
+            {"mhz": 2000, "timeNs": 200_000, "share": 0.2857},
+        ])
+    );
+    // To 250 us: processor 0 at 2000 MHz for 150 us, 1 at 1500 for 50.
+    let r = result(&a, 3);
+    assert_eq!(
+        r["groups"],
+        json!([
+            {"label": "CPU 0", "cpu": 0, "timeNs": 150_000, "averageMhz": 2000.0, "minMhz": 2000, "maxMhz": 2000, "changes": 1},
+            {"label": "CPU 1", "cpu": 1, "timeNs": 50_000, "averageMhz": 1500.0, "minMhz": 1500, "maxMhz": 1500, "changes": 1},
+        ])
+    );
+}

@@ -74,6 +74,14 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   universal program with arm64) once it is tier 2, or sooner if it
   proves sound.
 
+## ARM64
+
+- **SMSTART and SMSTOP don't decode.** `D503417F` to `D503477F` (and so
+  MSR SVCRSM, SVCRZA, SVCRSMZA) are None: MSR (immediate)'s
+  `<pstatefield>` has no SVCR rows, and the SMSTART alias's `<option>`
+  doesn't render. LLVM decodes them. (Their access data, zeroing the
+  vector state, is in place for when they do.)
+
 ## The web version
 
 - **Faster reading by range.** A PDB is read by its streams in the

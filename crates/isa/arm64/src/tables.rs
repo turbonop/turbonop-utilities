@@ -69,6 +69,142 @@ pub(crate) struct Encoding {
     pub rule: u8,
 }
 
+/// What an encoding reads and writes, and its operands (apart from
+/// [`Encoding`], which decoding scans).
+pub(crate) struct Semantics {
+    /// Its LLVM record (an index into `RECORDS`).
+    pub record: u16,
+    /// Its operands, as src/operand.rs evaluates them.
+    pub operands: &'static [OpSpec],
+}
+
+/// An operand of an encoding (build.rs's `operand_specs`): its kind (an
+/// [`opk`] constant), its access (1 read, 2 write; for memory, 1 load, 2
+/// store), and its parts: each a [`role`], a symbol (or `NONE`), and
+/// literal text.
+pub(crate) struct OpSpec {
+    pub kind: u8,
+    pub access: u8,
+    pub parts: &'static [(u8, u16, &'static str)],
+}
+
+/// Operand kinds (build.rs's `opk`).
+#[allow(dead_code, reason = "the full set build.rs uses")]
+pub(crate) mod opk {
+    pub const REG: u8 = 0;
+    pub const LIST: u8 = 1;
+    pub const IMM: u8 = 2;
+    pub const FPIMM: u8 = 3;
+    pub const LABEL: u8 = 4;
+    pub const COND: u8 = 5;
+    pub const SHIFT: u8 = 6;
+    pub const MUL: u8 = 7;
+    pub const MEM: u8 = 8;
+    pub const ZA: u8 = 9;
+    pub const SYSREG: u8 = 10;
+    pub const NAME: u8 = 11;
+}
+
+/// The roles of an operand's parts (build.rs's `role`).
+#[allow(dead_code, reason = "the full set build.rs uses")]
+pub(crate) mod role {
+    pub const REG: u8 = 0;
+    pub const PREFIX: u8 = 1;
+    pub const ARR: u8 = 2;
+    pub const LANE: u8 = 3;
+    pub const PRED: u8 = 4;
+    pub const WB: u8 = 5;
+    pub const RANGE: u8 = 6;
+    pub const VALUE: u8 = 7;
+    pub const SHIFT: u8 = 8;
+    pub const INDEX: u8 = 9;
+    pub const OFFSET: u8 = 10;
+    pub const MULVL: u8 = 11;
+    pub const POST: u8 = 12;
+    pub const TILE: u8 = 13;
+    pub const HV: u8 = 14;
+    pub const ZAINDEX: u8 = 15;
+    pub const ZAOFF: u8 = 16;
+    pub const ZALAST: u8 = 17;
+    pub const VGX: u8 = 18;
+    pub const AMOUNT: u8 = 19;
+}
+
+/// How a register class's field decodes (LLVM's decoder for the class;
+/// see tools/arm64/access.py): the first register for each field value
+/// (255 where the value is invalid), and how many registers there are,
+/// this far apart.
+pub(crate) struct RegClass {
+    #[allow(dead_code, reason = "for tools and debugging")]
+    pub name: &'static str,
+    /// A [`file`] constant.
+    pub file: u8,
+    /// The element size: 0 none, then 1 to 5 for B, H, S, D, Q.
+    #[allow(dead_code, reason = "for tools and debugging")]
+    pub element: u8,
+    pub count: u8,
+    pub stride: u8,
+    pub firsts: &'static [u8],
+}
+
+/// Register files (build.rs's `FILES`, in the same order).
+pub(crate) mod file {
+    /// General-purpose, 64-bit (31 is the zero register).
+    pub const X: u8 = 0;
+    /// General-purpose, 64-bit (31 is the stack pointer).
+    pub const XSP: u8 = 1;
+    pub const W: u8 = 2;
+    pub const WSP: u8 = 3;
+    /// Scalar SIMD&FP registers: B, H, S, D, Q (4 to 8); then vectors of
+    /// 64 and 128 bits (9, 10).
+    pub const B: u8 = 4;
+    pub const Z: u8 = 11;
+    pub const P: u8 = 12;
+    pub const PN: u8 = 13;
+    /// The ZA array, or a tile of it (numbered); then ZT0 (15).
+    pub const ZA: u8 = 14;
+}
+
+/// An operand of an LLVM record: whether it is read (1) and written (2),
+/// its register class (an index into `REG_CLASSES`), and its bits.
+pub(crate) struct LlvmOperand {
+    pub access: u8,
+    pub class: u8,
+    pub bits: &'static [Piece],
+}
+
+/// What an LLVM record reads and writes: its register operands, its
+/// implicit registers (`RegSet` bits), and [`flag`]s.
+pub(crate) struct Record {
+    #[allow(dead_code, reason = "for tools and debugging")]
+    pub name: &'static str,
+    pub flags: u32,
+    pub ops: &'static [LlvmOperand],
+    pub defs: u128,
+    pub uses: u128,
+}
+
+/// Record flags (build.rs's `ACCESS_FLAGS`, in the same order).
+pub(crate) mod flag {
+    pub const LOAD: u32 = 1 << 0;
+    pub const STORE: u32 = 1 << 1;
+    pub const CALL: u32 = 1 << 2;
+    pub const BRANCH: u32 = 1 << 3;
+    pub const INDIRECT: u32 = 1 << 4;
+    pub const RETURN: u32 = 1 << 5;
+    pub const BARRIER: u32 = 1 << 6;
+    pub const SIDE: u32 = 1 << 7;
+    pub const FPEXC: u32 = 1 << 8;
+    pub const TRAP: u32 = 1 << 9;
+    pub const EXCEPTION: u32 = 1 << 10;
+    /// MSR (register): the system register is in the word.
+    pub const MSR: u32 = 1 << 11;
+    /// MRS: the system register is in the word.
+    pub const MRS: u32 = 1 << 12;
+    /// MSR (immediate): the PSTATE field is in the word.
+    pub const MSRIMM: u32 = 1 << 13;
+}
+
 /// Microsoft's formatting rules for particular encodings (build.rs's
 /// `ms_rule`; see format.rs's `render_parts`).
 pub(crate) mod rule {
@@ -196,6 +332,9 @@ pub(crate) struct Symbol {
     pub flags: u32,
     /// How it shows, where it has no table and is not special.
     pub kind: Kind,
+    /// Its LLVM operand's register class (an index into `REG_CLASSES`),
+    /// or 255.
+    pub class: u8,
 }
 
 /// How a symbol without a table shows (worked out from its display name by
@@ -278,6 +417,21 @@ pub(crate) fn encoding(i: usize) -> &'static Encoding {
     &ENCODINGS[i / ENCODINGS_CHUNK][i % ENCODINGS_CHUNK]
 }
 
+// (One `Semantics` for each encoding.)
+const _: () = assert!(SEMANTICS_LEN == ENCODINGS_LEN);
+
+/// The semantics of the encoding at `i`.
+#[inline]
+pub(crate) fn semantics(i: usize) -> &'static Semantics {
+    &SEMANTICS[i / SEMANTICS_CHUNK][i % SEMANTICS_CHUNK]
+}
+
+/// The LLVM record at `i`.
+#[inline]
+pub(crate) fn record(i: usize) -> &'static Record {
+    &RECORDS[i / RECORDS_CHUNK][i % RECORDS_CHUNK]
+}
+
 /// The symbol at `i`.
 #[inline]
 pub(crate) fn symbol(i: usize) -> &'static Symbol {
@@ -293,6 +447,12 @@ pub(crate) fn encodings() -> impl Iterator<Item = &'static Encoding> {
 #[allow(dead_code, reason = "for tests and tools")]
 pub(crate) const fn encoding_count() -> usize {
     ENCODINGS_LEN
+}
+
+/// How many LLVM records there are.
+#[allow(dead_code, reason = "for tests and tools")]
+pub(crate) const fn record_count() -> usize {
+    RECORDS_LEN
 }
 
 /// How many symbols there are.

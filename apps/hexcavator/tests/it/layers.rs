@@ -6,7 +6,7 @@
 //! | 0 | `crates/base` |
 //! | 1 | `crates/formats`, `crates/system` |
 //! | 2 | `crates/symbols`, `crates/isa` |
-//! | 3 | `crates/debug`, `crates/analysis`, `crates/trace` |
+//! | 3 | `crates/debug`, `crates/analysis`, `crates/trace`, `crates/link` |
 //! | 4 | `apps` |
 //!
 //! Layers of the same rank are peers and don't depend on each other.
@@ -24,6 +24,7 @@ const LAYERS: &[(&str, u32)] = &[
     ("crates/debug", 3),
     ("crates/analysis", 3),
     ("crates/trace", 3),
+    ("crates/link", 3),
     ("apps", 4),
 ];
 

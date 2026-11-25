@@ -2,6 +2,8 @@
 //!
 //! - [`symbols`]: symbol records (`S_*`): procedures, data, frames, inline
 //!   sites, ...;
+//! - [`type_refs`] and [`symbol_refs`]: where each type and symbol record
+//!   holds indices, addresses, and string-table and checksum offsets;
 //! - [`types`]: type records (leaves, `LF_*`), type indexes and the
 //!   built-in (simple) types, and a formatter that prints C++-style names;
 //! - [`lines`]: C13 subsections (`DEBUG_S_*`): line numbers and file
@@ -22,12 +24,16 @@
 use turbonop_global_alloc as _;
 
 pub mod annotations;
+pub mod c13;
 pub mod layout;
 pub mod lines;
 pub mod registers;
+pub mod remap;
+pub mod symbol_refs;
 pub mod symbols;
 pub mod type_refs;
 pub mod types;
+pub mod write;
 
 pub use symbols::{Symbol, SymbolIter, SymbolRecord};
 pub use types::{TypeFormatter, TypeIndex, TypeRecord, TypeSource};

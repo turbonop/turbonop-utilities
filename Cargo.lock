@@ -848,11 +848,14 @@ dependencies = [
 name = "turbonop-codeview"
 version = "0.0.7"
 dependencies = [
+ "turbonop-archive",
  "turbonop-core",
  "turbonop-dwarf",
  "turbonop-global-alloc",
  "turbonop-hash",
+ "turbonop-mmap",
  "turbonop-par",
+ "turbonop-pe",
 ]
 
 [[package]]

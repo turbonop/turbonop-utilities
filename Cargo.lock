@@ -1054,6 +1054,7 @@ dependencies = [
  "turbonop-image",
  "turbonop-macho",
  "turbonop-mmap",
+ "turbonop-par",
  "turbonop-pdb",
  "turbonop-pe",
  "turbonop-size",

@@ -3,4 +3,5 @@
 
 mod cache;
 mod debug_map_paths;
+mod locate;
 mod split_dwarf;

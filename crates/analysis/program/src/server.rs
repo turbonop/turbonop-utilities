@@ -102,12 +102,133 @@ pub fn ssqp_key(id: &DebugId<'_>) -> Option<String> {
             let key = turbonop_debuginfo::symbol_store_key(&guid, age);
             Some(format!("{name}/{key}/{name}"))
         }
+        DebugId::Pdb20 {
+            signature,
+            age,
+            path,
+        } => {
+            let path = String::from_utf8_lossy(path);
+            let name = path.rsplit(['/', '\\']).next()?.to_ascii_lowercase();
+            if !safe_name(&name) {
+                return None;
+            }
+            Some(format!("{name}/{signature:08X}{age:x}/{name}"))
+        }
         DebugId::BuildId(b) | DebugId::AltLink { build_id: b, .. } if b.len() >= 2 => {
             Some(format!("_.debug/elf-buildid-sym-{}/_.debug", hex(b)))
         }
         DebugId::Uuid(u) => Some(format!("_.dwarf/mach-uuid-sym-{}/_.dwarf", hex(&u))),
         _ => None,
     }
+}
+
+/// What identifies an image file (not its debug information) on a
+/// symbol server: what a crash dump records of a module.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ImageKey {
+    /// A PE image: its file name, `TimeDateStamp`, and `SizeOfImage`.
+    Pe {
+        /// Its file name (or path).
+        name: String,
+        /// Its file header's `TimeDateStamp`.
+        time_date_stamp: u32,
+        /// Its optional header's `SizeOfImage`.
+        size_of_image: u32,
+    },
+    /// An ELF image: its file name and build ID.
+    BuildId {
+        /// Its file name (or path).
+        name: String,
+        /// Its `NT_GNU_BUILD_ID` (or the prefix of it older Breakpad
+        /// recorded).
+        build_id: Vec<u8>,
+    },
+    /// A Mach-O image: its file name and UUID.
+    Uuid {
+        /// Its file name (or path).
+        name: String,
+        /// Its `LC_UUID`.
+        uuid: [u8; 16],
+    },
+}
+
+impl ImageKey {
+    /// The image's file name (as the dump recorded it, its directories
+    /// dropped).
+    pub fn name(&self) -> &str {
+        let (ImageKey::Pe { name, .. }
+        | ImageKey::BuildId { name, .. }
+        | ImageKey::Uuid { name, .. }) = self;
+        name.rsplit(['/', '\\']).next().unwrap_or(name)
+    }
+
+    /// The key's index directory, the part between the names
+    /// (`<TIMESTAMP><size>`, `elf-buildid-<id>`, `mach-uuid-<uuid>`).
+    pub fn index(&self) -> String {
+        let hex = |b: &[u8]| b.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        match self {
+            ImageKey::Pe {
+                time_date_stamp,
+                size_of_image,
+                ..
+            } => format!("{time_date_stamp:08X}{size_of_image:x}"),
+            ImageKey::BuildId { build_id, .. } => format!("elf-buildid-{}", hex(build_id)),
+            ImageKey::Uuid { uuid, .. } => format!("mach-uuid-{}", hex(uuid)),
+        }
+    }
+}
+
+/// The key a server with Microsoft's layout keeps an image under:
+/// `app.exe/<TIMESTAMP><size>/app.exe`, `libc.so.6/elf-buildid-<id>/libc.so.6`,
+/// `App/mach-uuid-<uuid>/App` (names lowercase, as SSQP's keys are).
+pub fn image_ssqp_key(key: &ImageKey) -> Option<String> {
+    let name = key.name().to_ascii_lowercase();
+    if !safe_name(&name) {
+        return None;
+    }
+    if let ImageKey::BuildId { build_id, .. } = key
+        && build_id.len() < 2
+    {
+        return None;
+    }
+    Some(format!("{name}/{}/{name}", key.index()))
+}
+
+/// The path a debuginfod server serves an image at, if it can (ELF only:
+/// `buildid/<id>/executable`).
+pub fn image_debuginfod_path(key: &ImageKey) -> Option<String> {
+    match key {
+        ImageKey::BuildId { build_id, .. } if build_id.len() >= 2 => {
+            let hex: String = build_id.iter().map(|b| format!("{b:02x}")).collect();
+            Some(format!("buildid/{hex}/executable"))
+        }
+        _ => None,
+    }
+}
+
+/// Where the servers have an image: (URL, where the cache keeps it).
+pub fn image_locations(servers: &Servers, key: &ImageKey) -> Vec<(String, Option<PathBuf>)> {
+    let mut out = Vec::new();
+    if let Some(k) = image_ssqp_key(key) {
+        for s in &servers.symbol_servers {
+            let cached = servers
+                .cache
+                .as_ref()
+                .map(|c| k.split('/').fold(c.clone(), |p, part| p.join(part)));
+            out.push((format!("{}/{k}", s.trim_end_matches('/')), cached));
+        }
+    }
+    if let Some(path) = image_debuginfod_path(key) {
+        for s in &servers.debuginfod {
+            let cached = servers.cache.as_ref().map(|c| {
+                path.trim_start_matches("buildid/")
+                    .split('/')
+                    .fold(c.clone(), |p, part| p.join(part))
+            });
+            out.push((format!("{}/{path}", s.trim_end_matches('/')), cached));
+        }
+    }
+    out
 }
 
 /// The path a debuginfod server serves `id`'s debug file at, if it can.
@@ -223,9 +344,312 @@ pub fn fetch(url: &str, cached: Option<&Path>) -> Option<Mmap> {
     }
 }
 
+/// The most transfers one batch runs at once.
+const PARALLEL: usize = 64;
+
+/// A file to fetch: its URL, and where the cache keeps it (else it's
+/// kept in memory).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Request {
+    /// Where to fetch it from.
+    pub url: String,
+    /// Where to keep it (else in memory).
+    pub cached: Option<PathBuf>,
+}
+
+/// Fetches every request at once: what each got, in order (as [`fetch`]
+/// would have, one by one).
+///
+/// One `curl` runs them all (`--parallel`), so transfers to a server share
+/// its connections (HTTP/2 multiplexes them), and none waits for another.
+/// A `curl` too old for that (before 7.66) has them fetched by separate
+/// processes, many at once.
+pub fn fetch_batch(requests: &[Request]) -> Vec<Option<Mmap>> {
+    match requests.len() {
+        0 => return Vec::new(),
+        1 => return vec![fetch(&requests[0].url, requests[0].cached.as_deref())],
+        _ => {}
+    }
+    if let Some(out) = fetch_parallel(requests) {
+        return out;
+    }
+    fetch_each(requests)
+}
+
+/// [`fetch_batch`] by separate `curl` processes, [`PARALLEL`] at once.
+fn fetch_each(requests: &[Request]) -> Vec<Option<Mmap>> {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let next = AtomicUsize::new(0);
+    let out: Vec<Mutex<Option<Mmap>>> = requests.iter().map(|_| Mutex::new(None)).collect();
+    std::thread::scope(|s| {
+        for _ in 0..PARALLEL.min(requests.len()) {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(r) = requests.get(i) else { break };
+                    let got = fetch(&r.url, r.cached.as_deref());
+                    *out[i]
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = got;
+                }
+            });
+        }
+    });
+    out.into_iter()
+        .map(|m| {
+            m.into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        })
+        .collect()
+}
+
+/// A string as a `curl` config file quotes it.
+fn config_quoted(s: &str) -> String {
+    let mut q = String::with_capacity(s.len() + 2);
+    q.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => q.push_str("\\\""),
+            '\\' => q.push_str("\\\\"),
+            '\n' | '\r' | '\t' => q.push(' '),
+            c => q.push(c),
+        }
+    }
+    q.push('"');
+    q
+}
+
+/// [`fetch_batch`] by one `curl --parallel`, if this `curl` can.
+fn fetch_parallel(requests: &[Request]) -> Option<Vec<Option<Mmap>>> {
+    use std::fmt::Write as _;
+    static BATCH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = BATCH.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let scratch = std::env::temp_dir().join(format!("turbonop-fetch-{}-{n}", std::process::id()));
+    std::fs::create_dir_all(&scratch).ok()?;
+    let _cleanup = RemoveOnDrop(scratch.clone());
+    // Each transfer's output: beside its cache path (then renamed, so a
+    // half-fetched file is never found), or in the scratch directory.
+    let outputs: Vec<PathBuf> = requests
+        .iter()
+        .enumerate()
+        .map(|(i, r)| match &r.cached {
+            Some(p) => {
+                let mut tmp = p.as_os_str().to_owned();
+                tmp.push(format!(".{}.{n}.part", std::process::id()));
+                PathBuf::from(tmp)
+            }
+            None => scratch.join(format!("{i}.part")),
+        })
+        .collect();
+    let mut config = String::new();
+    let mut sent = Vec::new();
+    for (i, r) in requests.iter().enumerate() {
+        let ok = r.url.starts_with("https://") || r.url.starts_with("http://");
+        let dir_ok = outputs[i]
+            .parent()
+            .is_some_and(|d| std::fs::create_dir_all(d).is_ok());
+        if !ok || !dir_ok {
+            continue;
+        }
+        let _ = writeln!(config, "url = {}", config_quoted(&r.url));
+        let _ = writeln!(
+            config,
+            "output = {}",
+            config_quoted(&outputs[i].to_string_lossy())
+        );
+        sent.push(i);
+    }
+    if sent.is_empty() {
+        return Some(requests.iter().map(|_| None).collect());
+    }
+    let config_path = scratch.join("config");
+    std::fs::write(&config_path, config).ok()?;
+    let out = std::process::Command::new("curl")
+        .args([
+            "--parallel",
+            "--parallel-max",
+            &PARALLEL.to_string(),
+            "--fail",
+            "--silent",
+            "--location",
+            "--proto",
+            "=https,http",
+            "--proto-redir",
+            "=https,http",
+            "--max-redirs",
+            "5",
+            "--max-time",
+            &MAX_SECONDS.to_string(),
+            "--max-filesize",
+            &MAX_FILE.to_string(),
+            "--user-agent",
+            concat!("turbonop/", env!("CARGO_PKG_VERSION")),
+            "--write-out",
+            "%{urlnum} %{http_code} %{exitcode}\\n",
+            "--config",
+        ])
+        .arg(&config_path)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    // (curl's "unknown option": too old for --parallel or %{exitcode}.)
+    if out.status.code() == Some(2) || (out.stdout.is_empty() && !sent.is_empty()) {
+        for o in &outputs {
+            let _ = std::fs::remove_file(o);
+        }
+        return None;
+    }
+    let mut got: Vec<Option<Mmap>> = requests.iter().map(|_| None).collect();
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        let mut f = line.split_whitespace();
+        let (Some(num), Some(code), Some(exit)) = (f.next(), f.next(), f.next()) else {
+            continue;
+        };
+        let (Ok(num), Ok(code)) = (num.parse::<usize>(), code.parse::<u32>()) else {
+            continue;
+        };
+        let Some(&i) = sent.get(num) else { continue };
+        let output = &outputs[i];
+        if exit != "0" || !(200..300).contains(&code) {
+            let _ = std::fs::remove_file(output);
+            continue;
+        }
+        got[i] = match &requests[i].cached {
+            Some(path) => {
+                if std::fs::rename(output, path).is_err() {
+                    let _ = std::fs::remove_file(output);
+                    continue;
+                }
+                Mmap::open_named(path).ok()
+            }
+            None => std::fs::read(output)
+                .ok()
+                .filter(|d| !d.is_empty())
+                .map(Mmap::from),
+        };
+    }
+    // (Outputs of transfers curl didn't report.)
+    for (i, o) in outputs.iter().enumerate() {
+        if got[i].is_none() {
+            let _ = std::fs::remove_file(o);
+        }
+    }
+    Some(got)
+}
+
+/// Removes a directory, and what's in it, when dropped.
+struct RemoveOnDrop(PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_keys() {
+        let pe = ImageKey::Pe {
+            name: r"C:\Windows\System32\NTDLL.dll".into(),
+            time_date_stamp: 0x0A1B_2C3D,
+            size_of_image: 0x1F_8000,
+        };
+        assert_eq!(pe.name(), "NTDLL.dll");
+        assert_eq!(
+            image_ssqp_key(&pe).as_deref(),
+            Some("ntdll.dll/0A1B2C3D1f8000/ntdll.dll")
+        );
+        assert_eq!(image_debuginfod_path(&pe), None);
+        let elf = ImageKey::BuildId {
+            name: "/usr/lib/libc.so.6".into(),
+            build_id: vec![0xab, 0xcd, 0xef],
+        };
+        assert_eq!(
+            image_ssqp_key(&elf).as_deref(),
+            Some("libc.so.6/elf-buildid-abcdef/libc.so.6")
+        );
+        assert_eq!(
+            image_debuginfod_path(&elf).as_deref(),
+            Some("buildid/abcdef/executable")
+        );
+        let mach = ImageKey::Uuid {
+            name: "/System/Library/Frameworks/Foundation.framework/Foundation".into(),
+            uuid: [0x0f; 16],
+        };
+        assert_eq!(
+            image_ssqp_key(&mach).as_deref(),
+            Some("foundation/mach-uuid-0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f/foundation")
+        );
+        // Names that would leave the key's directory.
+        let bad = ImageKey::Pe {
+            name: "a b.dll".into(),
+            time_date_stamp: 1,
+            size_of_image: 1,
+        };
+        assert_eq!(image_ssqp_key(&bad), None);
+        let servers = Servers {
+            symbol_servers: vec!["https://msdl.microsoft.com/download/symbols".into()],
+            debuginfod: vec!["https://debuginfod.example/".into()],
+            cache: Some(PathBuf::from("/c")),
+        };
+        let l = image_locations(&servers, &elf);
+        assert_eq!(l.len(), 2);
+        assert_eq!(
+            l[0].0,
+            "https://msdl.microsoft.com/download/symbols/libc.so.6/elf-buildid-abcdef/libc.so.6"
+        );
+        assert_eq!(
+            l[0].1,
+            Some(
+                Path::new("/c")
+                    .join("libc.so.6")
+                    .join("elf-buildid-abcdef")
+                    .join("libc.so.6")
+            )
+        );
+        assert_eq!(
+            l[1].0,
+            "https://debuginfod.example/buildid/abcdef/executable"
+        );
+        assert_eq!(
+            l[1].1,
+            Some(Path::new("/c").join("abcdef").join("executable"))
+        );
+        assert_eq!(image_locations(&servers, &pe).len(), 1);
+        // NB10 PDBs.
+        let nb10 = DebugId::Pdb20 {
+            signature: 0x3A2B_1C0D,
+            age: 2,
+            path: br"c:\old\App.pdb",
+        };
+        assert_eq!(
+            ssqp_key(&nb10).as_deref(),
+            Some("app.pdb/3A2B1C0D2/app.pdb")
+        );
+    }
+
+    #[test]
+    fn batches_refuse_what_fetch_refuses() {
+        assert!(fetch_batch(&[]).is_empty());
+        let got = fetch_batch(&[
+            Request {
+                url: "file:///etc/passwd".into(),
+                cached: None,
+            },
+            Request {
+                url: "-o/tmp/x".into(),
+                cached: None,
+            },
+        ]);
+        assert_eq!(got.len(), 2);
+        assert!(got.iter().all(Option::is_none));
+        assert_eq!(config_quoted(r#"a"b\c"#), r#""a\"b\\c""#);
+    }
 
     #[test]
     fn keys() {

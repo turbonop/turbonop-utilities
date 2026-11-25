@@ -7,6 +7,7 @@ use turbonop_global_alloc as _;
 
 #[macro_use]
 mod out;
+mod about;
 mod batch;
 mod checksec;
 mod data;
@@ -45,6 +46,8 @@ debug information.
 usage: hexcavator [--cache <path>] [--arch <name>] [symbol servers] <command> [args]
 
 commands:
+  about <image> <name>       everything known about one function or datum, or
+                             why the image doesn't have it
   annotations <image>        the strings code attached to addresses (__annotation)
   batch <files or dirs>...   a JSON line summarizing each image (sections, libraries, ...)
   checksec [-audit] <image>  its exploit mitigations; -audit: its objects' compilers and options
@@ -231,6 +234,7 @@ fn command(args: &[String]) -> ExitCode {
         return ExitCode::from(2);
     };
     match command.as_str() {
+        "about" => about::run(rest),
         "data" => data::run(rest),
         "deps" => deps::run(rest),
         "dump" => dump::run(rest),

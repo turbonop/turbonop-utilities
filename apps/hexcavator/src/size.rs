@@ -34,9 +34,13 @@ options:
                     input section came from, libraries as their archives
   -top <n>          how many libraries and compilands to list (default 20; 0: all)
   -sizebench        print SizeBench's view instead, one fact per line, sorted
-  -findings         what wastes space (duplicate data, template bloat), with
-                    advice; with -json, as JSON; with -- <base image>, what
-                    changed from the base (by item, largest change first)
+  -findings         what wastes space (duplicate data, template bloat,
+                    wasteful virtuals), with advice; with -json, as JSON; with
+                    -- <base image>, what changed from the base (by item,
+                    largest change first)
+  -com              with -findings: COM classes' wasteful virtuals too (left
+                    out otherwise: their virtual functions are interfaces
+                    that other code calls)
 
 bloaty-style reports (every byte of the file and of memory, labeled once):
   -d <sources>      data sources to report by, comma-separated, a level each
@@ -78,6 +82,10 @@ bloaty-style reports (every byte of the file and of memory, labeled once):
                     -disassemble names it); with -json, its name, file, line
   -blocks           with -disassemble: by basic block, each set apart and
                     labeled L1, L2, ... on the line before it
+  -compare <function>  with -disassemble: the two functions' code compared,
+                    line by line, without their addresses (what tells two
+                    instances of a template apart, and how alike they are);
+                    with -json, the lines and the similarity
   -json             with -disassemble: the instructions (bytes, text, label,
                     how control leaves each, its target), the basic blocks
                     and the edges between them, and (from a PDB) each
@@ -145,7 +153,11 @@ struct Options {
     format: Format,
     list_sources: bool,
     findings: bool,
+    /// `-com`: COM classes' wasteful virtuals too.
+    com: bool,
     disassemble: Option<String>,
+    /// `-compare`: with `-disassemble`, the function to compare it with.
+    compare: Option<String>,
     /// `-definition`: where a function's code starts, in its source.
     definition: Option<String>,
     /// `-mangled`: each symbol's shown name and its mangled one.
@@ -226,7 +238,9 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut format = Format::Pretty;
     let mut list_sources = false;
     let mut findings = false;
+    let mut com = false;
     let mut disassemble = None;
+    let mut compare = None;
     let mut definition = None;
     let mut mangled = false;
     let mut stripped = false;
@@ -333,9 +347,11 @@ fn parse(args: &[String]) -> Result<Options, String> {
             Some("stripped") => stripped = true,
             Some("table") => table = true,
             Some("blocks") => blocks = true,
+            Some("compare") => compare = Some(value(&mut i, "compare")?),
             Some("budget") => budget = Some(PathBuf::from(value(&mut i, "budget")?)),
             Some("sizebench") => sizebench = true,
             Some("findings") => findings = true,
+            Some("com") => com = true,
             // bloaty's: how to demangle `symbols` (none, short, full).
             Some("C" | "demangle") => demangle = Some(value(&mut i, "demangle")?),
             // bloaty's wide output: labels are never cut short here.
@@ -450,7 +466,9 @@ fn parse(args: &[String]) -> Result<Options, String> {
         format,
         list_sources,
         findings,
+        com,
         disassemble,
+        compare,
         definition,
         mangled,
         stripped,
@@ -913,6 +931,84 @@ fn definition(options: &Options, name: &str) -> Result<String, String> {
 }
 
 /// `-disassemble`: one function's code.
+/// `-disassemble <a> -compare <b>`: the two functions' code, line by line,
+/// without their addresses: what is the same and what differs, and the
+/// share of lines alike.
+fn compare_functions(options: &Options, a: &str, b: &str) -> Result<String, String> {
+    let pdb = options.pdb.as_deref();
+    let (one, two) = (
+        disassemble(&options.image, a, pdb, Style::Bloaty)?,
+        disassemble(&options.image, b, pdb, Style::Bloaty)?,
+    );
+    // The name (the listing's first line), and the instructions without
+    // their addresses (their labels kept: branches name them, not
+    // addresses).
+    let split = |text: &str| -> (String, Vec<String>) {
+        let mut lines = text.lines();
+        let name = lines.next().unwrap_or("").trim_end_matches(':').to_string();
+        let body = lines
+            .map(|l| {
+                let t = l.trim_start();
+                match t.split_once(' ') {
+                    Some((addr, rest))
+                        if addr.len() >= 4 && addr.bytes().all(|c| c.is_ascii_hexdigit()) =>
+                    {
+                        rest.trim_start_matches(' ').to_string()
+                    }
+                    _ => t.to_string(),
+                }
+            })
+            .collect();
+        (name, body)
+    };
+    let ((name_a, lines_a), (name_b, lines_b)) = (split(&one), split(&two));
+    let ra: Vec<&str> = lines_a.iter().map(String::as_str).collect();
+    let rb: Vec<&str> = lines_b.iter().map(String::as_str).collect();
+    let d = turbonop_size::linediff::diff(&ra, &rb);
+    let similarity = turbonop_size::linediff::similarity(&d);
+    use turbonop_size::linediff::Line;
+    if options.format == Format::Json {
+        let lines: Vec<serde_json::Value> = d
+            .iter()
+            .map(|l| match l {
+                Line::Same(t) => serde_json::json!([" ", t]),
+                Line::Removed(t) => serde_json::json!(["-", t]),
+                Line::Added(t) => serde_json::json!(["+", t]),
+            })
+            .collect();
+        let mut s = serde_json::to_string_pretty(&serde_json::json!({
+            "a": name_a,
+            "b": name_b,
+            "a_lines": ra.len(),
+            "b_lines": rb.len(),
+            // Three decimals are all that mean anything.
+            "similarity": (similarity * 1000.0).round() / 1000.0,
+            "lines": lines,
+        }))
+        .unwrap_or_default();
+        s.push('\n');
+        return Ok(s);
+    }
+    let mut out = format!(
+        "- {name_a} ({} instructions)\n+ {name_b} ({} instructions)\n{:.0}% of their lines alike\n\n",
+        ra.len(),
+        rb.len(),
+        similarity * 100.0
+    );
+    for l in &d {
+        let (mark, t) = match l {
+            Line::Same(t) => (' ', t),
+            Line::Removed(t) => ('-', t),
+            Line::Added(t) => ('+', t),
+        };
+        out.push(mark);
+        out.push(' ');
+        out.push_str(t);
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 fn disassemble(
     path: &Path,
     function: &str,
@@ -1632,6 +1728,13 @@ pub(crate) fn is_object_input(data: &[u8]) -> bool {
         || (!other && !data.starts_with(b"MZ") && turbonop_pe::PeFile::parse_object(data).is_ok())
 }
 
+/// The format of the image at `path` (none for an archive, a universal
+/// Mach-O file, or what isn't an image).
+fn image_format(path: &Path) -> Option<turbonop_image::Format> {
+    let data = Mmap::open(path).ok()?;
+    Image::parse(&data).ok().map(|i| i.format())
+}
+
 fn bloaty(options: &Options, out: &mut impl Write) -> Result<(), String> {
     let debug_file = options
         .debug_file
@@ -1690,7 +1793,19 @@ fn bloaty(options: &Options, out: &mut impl Write) -> Result<(), String> {
         sort_by: options.sort_by,
         domain: options.domain,
     };
-    let report = Report::new(&names, &rollup, base.as_ref(), &report_options);
+    let mut report = Report::new(&names, &rollup, base.as_ref(), &report_options);
+    // What its sections hold, if its images (and base images) are of one
+    // format.
+    let formats: Vec<Option<turbonop_image::Format>> = std::iter::once(&options.image)
+        .chain(&options.more)
+        .chain(&options.base)
+        .map(|p| image_format(p))
+        .collect();
+    report.format = formats
+        .first()
+        .copied()
+        .flatten()
+        .filter(|f| formats.iter().all(|g| *g == Some(*f)));
     let text = match options.format {
         Format::Pretty => report.pretty(&report_options),
         Format::Csv => report.csv(false),
@@ -1823,6 +1938,10 @@ fn analyze(options: &Options) -> Result<(), String> {
         let text = definition(options, name)?;
         return finish(crate::out::stdout().write_all(text.as_bytes()));
     }
+    if let (Some(function), Some(other)) = (&options.disassemble, &options.compare) {
+        let text = compare_functions(options, function, other)?;
+        return finish(crate::out::stdout().write_all(text.as_bytes()));
+    }
     if let Some(function) = &options.disassemble {
         let style = if options.format == Format::Json {
             Style::Json
@@ -1884,6 +2003,7 @@ fn analyze(options: &Options) -> Result<(), String> {
             write_tables(
                 &mut out,
                 &model,
+                image.format(),
                 &arch_label(&image, &model),
                 path,
                 &format!("Map: {}", map_path.display()),
@@ -1920,7 +2040,7 @@ fn analyze(options: &Options) -> Result<(), String> {
             let base_syms = base.symbols()?;
             let new = turbonop_size::findings::find(&image, debug, syms);
             let old = turbonop_size::findings::find(base_image, base_debug, base_syms);
-            let (text, json) = turbonop_size::findings::compare(&new, &old, limit);
+            let (text, json) = turbonop_size::findings::compare(&new, &old, limit, options.com);
             let out = if options.format == Format::Json {
                 json
             } else {
@@ -1933,7 +2053,10 @@ fn analyze(options: &Options) -> Result<(), String> {
             debug,
             syms,
             &name,
-            turbonop_size::findings::ReportOptions { limit },
+            turbonop_size::findings::ReportOptions {
+                limit,
+                com: options.com,
+            },
         );
         let out = if options.format == Format::Json {
             json
@@ -1952,6 +2075,7 @@ fn analyze(options: &Options) -> Result<(), String> {
         write_tables(
             &mut out,
             model,
+            image.format(),
             &arch_label(&image, model),
             path,
             &format!(
@@ -2051,6 +2175,7 @@ fn arch_label(image: &Image<'_>, model: &Model) -> String {
 fn write_tables(
     out: &mut impl Write,
     model: &Model,
+    format: turbonop_image::Format,
     arch: &str,
     image: &Path,
     source: &str,
@@ -2068,7 +2193,7 @@ fn write_tables(
     let grouped = !model.groups.is_empty();
     writeln!(
         out,
-        "{:<32} {:>14} {:>14} {:>12}",
+        "{:<32} {:>14} {:>14} {:>12}  What it holds",
         if grouped {
             "Section / COFF group"
         } else {
@@ -2078,23 +2203,32 @@ fn write_tables(
         "Memory size",
         "Padding"
     )?;
+    // (What each holds, where its name says: turbonop_size::describe.)
+    let line = |out: &mut dyn Write, name: String, size: Size, padding: u64, what: Option<&str>| {
+        let row = format!(
+            "{name} {:>14} {:>14} {:>12}  {}",
+            num(size.file),
+            num(size.vm),
+            num(padding),
+            what.unwrap_or("")
+        );
+        writeln!(out, "{}", row.trim_end())
+    };
     for (si, s) in model.sections.iter().enumerate() {
-        writeln!(
+        line(
             out,
-            "{:<32} {:>14} {:>14} {:>12}",
-            s.name,
-            num(s.size.file),
-            num(s.size.vm),
-            num(s.vm_padding)
+            format!("{:<32}", s.name),
+            s.size,
+            s.vm_padding,
+            turbonop_size::describe::section(format, &s.name),
         )?;
         for g in model.groups.iter().filter(|g| g.section as usize == si) {
-            writeln!(
+            line(
                 out,
-                "  {:<30} {:>14} {:>14} {:>12}",
-                g.name,
-                num(g.size.file),
-                num(g.size.vm),
-                num(g.padding.vm.min(u64::from(u32::MAX)))
+                format!("  {:<30}", g.name),
+                g.size,
+                g.padding.vm.min(u64::from(u32::MAX)),
+                turbonop_size::describe::group(&g.name),
             )?;
         }
     }

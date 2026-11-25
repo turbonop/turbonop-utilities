@@ -972,6 +972,12 @@ function register(context, deps) {
         reveal(entry);
       }
     }),
+    cmd("hexcavator.symbol.about", (node) => {
+      const s = symbolOf(node);
+      if (s) {
+        vscode.commands.executeCommand("hexcavator.row.about", { file: s.entry.file, name: s.name });
+      }
+    }),
     cmd("hexcavator.symbol.refs", (node) => {
       const s = symbolOf(node);
       if (s) {

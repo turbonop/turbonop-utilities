@@ -148,6 +148,8 @@ impl DwarfInfo<'_> {
             end,
             frame: (0, 0),
             variables: Vec::new(),
+            // (DWARF has no PGO records.)
+            ..FunctionVariables::default()
         };
         self.collect(&u, a, &d, &ranges, frame, false, 0, &mut out.variables);
         Ok(Some(out))

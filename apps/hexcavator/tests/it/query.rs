@@ -583,7 +583,8 @@ fn wasm_bss_from_debug_information() {
     let text = run_on("size", "wasm/data.wasm", &[]);
     assert!(
         text.lines()
-            .any(|l| l.split_whitespace().collect::<Vec<_>>() == [".bss", "0", "64", "0"]),
+            // (Its sizes: after them, what the section holds.)
+            .any(|l| l.split_whitespace().take(4).collect::<Vec<_>>() == [".bss", "0", "64", "0"]),
         "{text}"
     );
 }

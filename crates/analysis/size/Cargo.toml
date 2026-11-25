@@ -4,7 +4,7 @@ description = "Size attribution for executables: which sections, groups, librari
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
+license = "Apache-2.0 AND MIT"
 authors.workspace = true
 repository.workspace = true
 

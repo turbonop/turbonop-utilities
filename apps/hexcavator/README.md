@@ -57,7 +57,14 @@ The Windows programs are signed; the macOS ones are signed and
 notarized. Each program's symbols are beside it
 (`<name>-symbols.zip` or `.tar.gz`), and `SHA256SUMS` has every file's
 hash. On Windows, winget installs it too: `winget install
-TurboNOP.Hexcavator`.
+TurboNOP.Hexcavator`. With Rust, cargo-binstall installs the release's
+program for your platform (Linux's static one for any Linux):
+
+```
+cargo binstall --git https://github.com/turbonop/turbonop-utilities hexcavator
+```
+
+On macOS and Linux, a program downloaded by hand needs `chmod +x`.
 
 Or use it in a browser, nothing to install: the web version
 (https://turbonop.com/turbonop-utilities/hexcavator/) is the VS Code extension's

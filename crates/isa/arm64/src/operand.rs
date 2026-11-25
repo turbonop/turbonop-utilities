@@ -702,7 +702,7 @@ impl Instruction {
             ops: [blank; MAX_OPERANDS],
             len: 0,
         };
-        for spec in self.encoding().operands {
+        for spec in crate::tables::semantics(usize::from(self.encoding)).operands {
             if usize::from(out.len) == MAX_OPERANDS {
                 break;
             }
@@ -722,7 +722,9 @@ impl Instruction {
     /// them).
     #[doc(hidden)]
     pub fn template_operand_count(&self) -> usize {
-        self.encoding().operands.len()
+        crate::tables::semantics(usize::from(self.encoding))
+            .operands
+            .len()
     }
 
     fn operand(&self, spec: &OpSpec) -> Option<OperandKind> {

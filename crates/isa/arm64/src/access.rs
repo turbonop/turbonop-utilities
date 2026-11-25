@@ -459,7 +459,9 @@ fn sysreg(key: u32) -> RegSet {
 
 impl Instruction {
     fn record(&self) -> &'static crate::tables::Record {
-        record(usize::from(self.encoding().record))
+        record(usize::from(
+            crate::tables::semantics(usize::from(self.encoding)).record,
+        ))
     }
 
     /// The registers the instruction may write: its destination operands,

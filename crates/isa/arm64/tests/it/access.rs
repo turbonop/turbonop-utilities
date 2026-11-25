@@ -125,6 +125,30 @@ fn agrees_with_llvm() {
             e.0 += 1;
         }
     }
+    // How many encodings the oracle's words cover (those no word of which
+    // LLVM decodes, it can't).
+    let all: std::collections::BTreeSet<&str> = turbonop_arm64::encodings().map(|e| e.0).collect();
+    let covered: std::collections::BTreeSet<&str> = text
+        .lines()
+        .filter(|l| !l.starts_with('#'))
+        .filter_map(|l| u32::from_str_radix(l.split(' ').next()?, 16).ok())
+        .filter_map(|w| turbonop_arm64::decode(w, 0x1000))
+        .map(|i| i.encoding_name())
+        .collect();
+    let uncovered: Vec<&&str> = all.difference(&covered).collect();
+    println!(
+        "{} of {} encodings covered; not: {:?}",
+        covered.len(),
+        all.len(),
+        uncovered
+    );
+    // (Counted by the encodings the words decode as: a base encoding whose
+    // words all decode as its preferred alias, LSLV's as LSL's, MOVZ's as
+    // MOV's, counts as uncovered. 96.7% when written.)
+    assert!(
+        covered.len() * 1000 >= all.len() * 965,
+        "the oracle covers too few encodings"
+    );
     let mut report = String::new();
     for (k, (n, example)) in &extra {
         report.push_str(&format!("  {k}: {n} (e.g. {example})\n"));

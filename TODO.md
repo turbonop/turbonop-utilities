@@ -51,8 +51,9 @@ In order:
   an inline DAP adapter over `serve`, a disassembly view with the dump's
   values, the web host's debug-UI shim, MCP tools, and a release workflow.
 - **Instruction access data.** Read and written operands, implicit
-  operands, and flags for x86 and ARM64 (ARM64 first gets an operand API),
-  matching XED and LLVM.
+  operands, and flags for x86, matching XED. (ARM64's operands and write
+  sets are done, matching llvm-mc on four words of every encoding; its
+  memory accesses still have no size.)
 - **The IR and its lifters.** `turbonop-ir`, and x64 and ARM64 lifters for
   the instructions compilers emit, tested on real CPUs.
 - **How did we get here.** `turbonop-paths`: the branches each frame took.
@@ -82,6 +83,14 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   fully ABI-compatible with Apple's arm64e; build and ship one (a
   universal program with arm64) once it is tier 2, or sooner if it
   proves sound.
+
+## ARM64
+
+- **SMSTART and SMSTOP don't decode.** `D503417F` to `D503477F` (and so
+  MSR SVCRSM, SVCRZA, SVCRSMZA) are None: MSR (immediate)'s
+  `<pstatefield>` has no SVCR rows, and the SMSTART alias's `<option>`
+  doesn't render. LLVM decodes them. (Their access data, zeroing the
+  vector state, is in place for when they do.)
 
 ## The web version
 

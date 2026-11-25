@@ -1093,6 +1093,7 @@ fn main() {
     }
     let mut fns = String::new();
     let mut enc_out = String::new();
+    let mut semantics_out = String::new();
     let mut n_fns = 0;
     for (ei, e) in encs.iter().enumerate() {
         // Constraints.
@@ -1255,7 +1256,7 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         let post_index = e.name.contains("_asisdlsop_") || e.name.contains("_asisdlsep_");
         let _ = writeln!(
             enc_out,
-            "    Encoding {{ name: {:?}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne: &[{}], undef: {undef_fn}, unpred: {unpred_fn}, alias_of: {alias_of}, prefer: {prefer}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule}, record: {}, operands: {operands} }},",
+            "    Encoding {{ name: {:?}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne: &[{}], undef: {undef_fn}, unpred: {unpred_fn}, alias_of: {alias_of}, prefer: {prefer}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule} }},",
             e.name,
             index_of(&mut classes, &e.class),
             index_of(&mut features, &e.feature),
@@ -1263,7 +1264,13 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
             e.value,
             e.should_mask,
             e.should_value,
-            ne.join(","),
+            ne.join(",")
+        );
+        // (Apart from the encodings, which decoding scans: what it reads
+        // and writes, and its operands.)
+        let _ = writeln!(
+            semantics_out,
+            "    Semantics {{ record: {}, operands: {operands} }},",
             access.enc_records[ei].0
         );
     }
@@ -1288,6 +1295,13 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
 
     let _ = writeln!(code, "pub(crate) const NONE: u16 = u16::MAX;");
     chunked(&mut code, "ENCODINGS", "Encoding", &enc_out, encs.len());
+    chunked(
+        &mut code,
+        "SEMANTICS",
+        "Semantics",
+        &semantics_out,
+        encs.len(),
+    );
     assert!(classes.len() <= 256 && features.len() <= 256);
     for (name, list) in [("CLASSES", &classes), ("FEATURES", &features)] {
         let _ = writeln!(

@@ -67,7 +67,12 @@ pub(crate) struct Encoding {
     pub post_index: bool,
     /// Which of Microsoft's formatting rules applies (a [`rule`] constant).
     pub rule: u8,
-    /// What it reads and writes: its LLVM record (an index into `RECORDS`).
+}
+
+/// What an encoding reads and writes, and its operands (apart from
+/// [`Encoding`], which decoding scans).
+pub(crate) struct Semantics {
+    /// Its LLVM record (an index into `RECORDS`).
     pub record: u16,
     /// Its operands, as src/operand.rs evaluates them.
     pub operands: &'static [OpSpec],
@@ -410,6 +415,15 @@ include!(concat!(env!("OUT_DIR"), "/tables.rs"));
 #[inline]
 pub(crate) fn encoding(i: usize) -> &'static Encoding {
     &ENCODINGS[i / ENCODINGS_CHUNK][i % ENCODINGS_CHUNK]
+}
+
+// (One `Semantics` for each encoding.)
+const _: () = assert!(SEMANTICS_LEN == ENCODINGS_LEN);
+
+/// The semantics of the encoding at `i`.
+#[inline]
+pub(crate) fn semantics(i: usize) -> &'static Semantics {
+    &SEMANTICS[i / SEMANTICS_CHUNK][i % SEMANTICS_CHUNK]
 }
 
 /// The LLVM record at `i`.

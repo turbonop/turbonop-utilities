@@ -6,6 +6,13 @@
 //! fixed bits, constraints, UNDEFINED conditions, alias preferences, and
 //! assembler template. Output follows the Microsoft
 //! disassembler's syntax (`dumpbin /disasm`).
+//!
+//! Each instruction also has its operands, typed
+//! ([`Instruction::operands`]), and what it reads and writes
+//! ([`Instruction::written_registers`], [`Instruction::read_registers`],
+//! [`Instruction::effects`]): LLVM's records for each encoding
+//! (`tables/a64-access.txt`, from `tools/arm64/access.py`), checked
+//! against llvm-mc.
 
 #![no_std]
 #![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]

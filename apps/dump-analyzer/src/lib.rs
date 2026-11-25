@@ -42,6 +42,8 @@ commands:
   disasm <dump> -address a [-count n]
                                     code from an address
   modules <dump>                    every module, and where its files were found
+  paths <dump> -thread id -frame n  how the frame's function got to its PC: which way
+                                    each branch went, and how sure that is
   reconstruct <dump> -thread id     probable stacks, rebuilt from what's in the
                                     thread's stack memory
   serve                             commands for an editor, as JSON lines
@@ -186,6 +188,13 @@ pub fn command(args: &[String], hints: &Hints) -> Result<Json, String> {
             Ok(disasm(s, frame, count))
         }
         "modules" => Ok(modules(s)),
+        "paths" => {
+            let t = thread(s)?;
+            let f = usize::try_from(number("-frame")?.unwrap_or(0)).map_err(|e| e.to_string())?;
+            let st = s.stack(t).ok_or_else(|| format!("no thread {t}"))?;
+            let frame = st.frames.get(f).ok_or_else(|| format!("no frame {f}"))?;
+            paths(s, frame)
+        }
         "reconstruct" => {
             let t = thread(s)?;
             Ok(reconstructed(s, t))
@@ -578,6 +587,46 @@ fn modules(s: &Session) -> Json {
             })
             .collect(),
     )
+}
+
+/// How the frame's function got to its PC: its branches' ways, its
+/// blocks, and the ways left.
+fn paths(s: &Session, f: &Frame) -> Result<Json, String> {
+    let sym = f.symbol.as_ref().ok_or("the frame has no function")?;
+    let at = f.lookup();
+    let start = at.wrapping_sub(sym.offset);
+    // (The function's extent, from its debug information; else 64 KiB.)
+    let len = f
+        .module
+        .and_then(|m| s.modules.debug(m))
+        .and_then(|(d, bias)| d.variables(None, start.wrapping_sub(bias)).ok().flatten())
+        .map_or(64 * 1024, |v| v.end.saturating_sub(v.start).max(1));
+    let abi = s
+        .target
+        .abi()
+        .ok_or("no calling convention for this target")?;
+    let r = turbonop_paths::analyze(&s.space, s.target.arch(), abi, start, len, at, &f.registers)
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(json!({
+        "function": sym.function,
+        "start": hex(r.function),
+        "pc": hex(r.pc),
+        "paths": match r.paths {
+            turbonop_paths::Paths::One => "certain: one way".to_string(),
+            turbonop_paths::Paths::OneOf(n) => format!("one of {n} ways"),
+            turbonop_paths::Paths::Unbounded => "one of an open number of ways (a loop)".to_string(),
+        },
+        "branches": r.branches.iter().map(|b| json!({
+            "address": hex(b.address),
+            "way": match b.way { turbonop_paths::Way::Taken => "taken", turbonop_paths::Way::NotTaken => "not taken", turbonop_paths::Way::Unknown => "unknown" },
+            "why": b.why,
+            "in_loop": b.in_loop,
+        })).collect::<Vec<_>>(),
+        "blocks": r.blocks.iter().map(|b| json!({
+            "start": hex(b.start), "end": hex(b.end),
+            "ran": match b.ran { turbonop_paths::Ran::Yes => "yes", turbonop_paths::Ran::No => "no", turbonop_paths::Ran::Maybe => "maybe" },
+        })).collect::<Vec<_>>(),
+    }))
 }
 
 fn hexbytes(b: &[u8]) -> String {

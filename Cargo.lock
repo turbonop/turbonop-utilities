@@ -179,6 +179,7 @@ dependencies = [
  "turbonop-eval",
  "turbonop-frames",
  "turbonop-mmap",
+ "turbonop-paths",
  "turbonop-program",
  "turbonop-target",
  "turbonop-x86",
@@ -1063,6 +1064,19 @@ name = "turbonop-par"
 version = "0.0.7"
 dependencies = [
  "turbonop-alloc",
+]
+
+[[package]]
+name = "turbonop-paths"
+version = "0.0.7"
+dependencies = [
+ "turbonop-abi",
+ "turbonop-code",
+ "turbonop-core",
+ "turbonop-frames",
+ "turbonop-program",
+ "turbonop-target",
+ "turbonop-x86",
 ]
 
 [[package]]

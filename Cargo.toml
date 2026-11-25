@@ -87,6 +87,7 @@ turbonop-minidump = { path = "crates/formats/minidump" }
 turbonop-target = { path = "crates/debugger/target" }
 turbonop-frames = { path = "crates/debugger/frames" }
 turbonop-eval = { path = "crates/debugger/eval" }
+turbonop-paths = { path = "crates/debugger/paths" }
 
 [workspace.lints.rust]
 # `unsafe` is confined to a few audited spots (Pod casts, mmap FFI) that opt in

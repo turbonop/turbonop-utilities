@@ -305,6 +305,10 @@ x64. Where the 3.5 MB went:
   - CodeView symbol records' index fields: types have them, in
     `turbonop_codeview::type_refs`.
   - `turbolib` as `lib` with `--fold=none`.
+- **A structural PDB comparison.** `link.exe`'s PDBs differ between two
+  links of the same inputs, so `relink.py` compares images only. Compare
+  PDBs by content (publics, procedures, lines, inlinees, locals, types by
+  structure), for phase 1's check and phases 2 to 4.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

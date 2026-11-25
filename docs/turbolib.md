@@ -629,9 +629,18 @@ units. This is documented, and `/EXTRACT` can also re-inline them
 ## Verification
 
 - **Round trips (phase 1):** every object and library in the corpus is
-  read and written back byte-identically. Rewriting with `--fold=none` must
-  produce a library that links into byte-identical images and PDBs (up to
-  the timestamps and GUIDs that `/Brepro` removes).
+  read and written back byte-identically. With `--fold=none`, turbolib
+  must make each of the build's libraries byte for byte as `lib.exe` made
+  it, apart from header dates (`tools/turbolib/corpus/relib.py`, which
+  reruns the build's own archiver commands). Programs linked against those
+  libraries must be byte-identical images
+  (`tools/turbolib/corpus/relink.py`, with `/Brepro`).
+
+  PDBs can't be compared byte for byte: `link.exe` 14.52's PDBs differ
+  between two links of the same inputs, even with `/Brepro` and
+  `/THREADS:1`. Their module streams come in another order, the IPI
+  stream has another size, and among same-named records it picks
+  differently. So PDBs are compared as in phases 2 to 4, structurally.
 - **Link equivalence (phases 2 to 4):** a set of test programs is linked
   against each library before and after compaction, with `link.exe` and
   with `lld-link`, under `/OPT:REF` and `/OPT:NOREF`, with `/DEBUG:FULL`

@@ -271,8 +271,16 @@ mod tests {
             symbol("vtable for ns::C", SymbolKind::Data, 24),
             symbol("typeinfo for ns::C", SymbolKind::Data, 16),
             symbol("typeinfo name for ns::C", SymbolKind::Data, 6),
-            symbol("construction vtable for ns::C-in-ns::V<int, ns::C>", SymbolKind::Data, 8),
-            symbol("non-virtual thunk to ns::C::f(int)", SymbolKind::Function, 5),
+            symbol(
+                "construction vtable for ns::C-in-ns::V<int, ns::C>",
+                SymbolKind::Data,
+                8,
+            ),
+            symbol(
+                "non-virtual thunk to ns::C::f(int)",
+                SymbolKind::Function,
+                5,
+            ),
         ];
         let types = ["ns::C", "ns::V<int,ns::C>", "ns::Unused"];
         let owned = by_type(&symbols, &types);

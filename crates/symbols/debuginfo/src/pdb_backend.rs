@@ -1335,6 +1335,20 @@ fn function_variables(
                 _ if kind::opens_scope(record.kind) => scopes.push((scope, false)),
                 Symbol::FrameProc { flags, .. } => {
                     f.frame = (((flags >> 14) & 3) as u8, ((flags >> 16) & 3) as u8);
+                    f.frame_flags = flags;
+                }
+                Symbol::PogoData {
+                    invocations,
+                    dynamic_instructions,
+                    instructions,
+                    live_instructions,
+                } if f.pgo.is_none() => {
+                    f.pgo = Some(crate::PgoCounts {
+                        invocations,
+                        dynamic_instructions,
+                        instructions,
+                        live_instructions,
+                    });
                 }
                 Symbol::Local { ty, flags, name } => f.variables.push(Variable {
                     name: String::from_utf8_lossy(name).into_owned(),

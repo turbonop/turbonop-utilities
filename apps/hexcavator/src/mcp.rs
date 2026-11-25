@@ -584,6 +584,13 @@ impl Server {
         ))
     }
 
+    fn about(&mut self, args: &Value) -> ToolResult {
+        let path = arg_path(args, "path").ok_or("about: no path")?;
+        let name = arg_str(args, "name").ok_or("about: no name")?;
+        let pdb = arg_path(args, "debug").or_else(|| arg_path(args, "pdb"));
+        crate::about::report(&path, pdb.as_deref(), name)
+    }
+
     fn findings(&mut self, args: &Value) -> ToolResult {
         let loaded = self.loaded_from(args)?;
         let program = loaded.program().map_err(|e| format!("findings: {e}"))?;
@@ -638,6 +645,7 @@ impl Server {
         Some(match name {
             "linker_log" => self.linker_log(args),
             "findings" => self.findings(args),
+            "about" => self.about(args),
             "size_report" => self.size_report(args),
             "symbols" => self.symbols(args),
             "lookup" => self.lookup(args),
@@ -1052,6 +1060,24 @@ fn tools() -> Value {
                         ),
                     ],
                     &["path"],
+                ),
+            ),
+            tool(
+                "about",
+                "Everything known about one function or datum of an image: where it is (section, COFF group and what it holds, compiland, library, source line), its size, the names identical code folding merged with it (or the one it was merged into), the functions inlined into it, what its class says of it (virtual, pure, static), and what PGO's training counted of it. A name the image doesn't have is explained: inlined wherever it is called (its copies, and where), or declared but never kept.",
+                schema(
+                    vec![
+                        ("path", path.clone()),
+                        ("debug", pdb.clone()),
+                        (
+                            "name",
+                            prop(
+                                "string",
+                                "The function or datum: its name as the symbols give it, or without its parameters if just one has that.",
+                            ),
+                        ),
+                    ],
+                    &["path", "name"],
                 ),
             ),
             tool(

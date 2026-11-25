@@ -418,6 +418,43 @@ pub struct FunctionVariables {
     pub frame: (u8, u8),
     /// Its parameters and locals.
     pub variables: Vec<Variable>,
+    /// S_FRAMEPROC's flags, all of them (PDB; 0 otherwise): see
+    /// [`FunctionVariables::pgo_optimized`] and
+    /// [`FunctionVariables::optimized_for_speed`].
+    pub frame_flags: u32,
+    /// What PGO's training counted of it (PDB: S_POGODATA), if it did.
+    pub pgo: Option<PgoCounts>,
+}
+
+impl FunctionVariables {
+    /// Whether PGO optimized it (S_FRAMEPROC's `fPogoOn`).
+    pub fn pgo_optimized(&self) -> bool {
+        self.frame_flags & (1 << 18) != 0
+    }
+
+    /// Whether PGO's counts for it were valid (`fValidCounts`).
+    pub fn pgo_counts_valid(&self) -> bool {
+        self.frame_flags & (1 << 19) != 0
+    }
+
+    /// Whether it was optimized for speed rather than size (`fOptSpeed`:
+    /// with PGO, where training found it hot).
+    pub fn optimized_for_speed(&self) -> bool {
+        self.frame_flags & (1 << 20) != 0
+    }
+}
+
+/// What PGO's training counted of a function.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PgoCounts {
+    /// How many times it was called.
+    pub invocations: u32,
+    /// How many of its instructions ran, in all.
+    pub dynamic_instructions: u64,
+    /// How many instructions it has.
+    pub instructions: u32,
+    /// How many of them ran at all.
+    pub live_instructions: u32,
 }
 
 /// An annotation: strings the code attached to an address (MSVC's

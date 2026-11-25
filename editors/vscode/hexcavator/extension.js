@@ -1522,6 +1522,9 @@ function activate(context) {
     // (Why it is there, and what refers to it and what it refers to: a
     // page each.)
     vscode.commands.registerCommand("hexcavator.row.why", row((ctx) => openTable(`Why is ${ctx.name} here?`, ["xref", "-why", ctx.name, ctx.file], { file: ctx.file }))),
+    // Everything known about one symbol (hexcavator about), or why it isn't
+    // there. (The sidebar's symbols ask with their file and name too.)
+    vscode.commands.registerCommand("hexcavator.row.about", row((ctx) => openTable(`About ${ctx.name}`, ["about", ctx.file, ctx.name], { file: ctx.file }))),
     vscode.commands.registerCommand("hexcavator.row.refs", row((ctx) => openTable(`References: ${ctx.name}`, ["xref", "-refs", ctx.name, ctx.file], { file: ctx.file }))),
     vscode.commands.registerCommand("hexcavator.type.layout", row((ctx) => typeLayout(ctx.file, ctx.name))),
     vscode.commands.registerCommand("hexcavator.type.refs", row((ctx) => typeReferences(ctx.file, ctx.name))),

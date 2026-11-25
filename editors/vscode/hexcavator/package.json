@@ -107,6 +107,12 @@
         "icon": "$(debug-step-into)"
       },
       {
+        "command": "hexcavator.symbol.about",
+        "title": "About This Symbol",
+        "category": "Hexcavator",
+        "icon": "$(info)"
+      },
+      {
         "command": "hexcavator.symbol.refs",
         "title": "References",
         "category": "Hexcavator",
@@ -158,6 +164,12 @@
         "title": "Why Is This Here?",
         "category": "Hexcavator",
         "icon": "$(debug-step-into)"
+      },
+      {
+        "command": "hexcavator.row.about",
+        "title": "About This Symbol",
+        "category": "Hexcavator",
+        "icon": "$(info)"
       },
       {
         "command": "hexcavator.row.refs",
@@ -315,6 +327,11 @@
           "group": "2@1"
         },
         {
+          "command": "hexcavator.symbol.about",
+          "when": "view == hexcavator.binaries && viewItem =~ /symbol\\.pe/",
+          "group": "2@0"
+        },
+        {
           "command": "hexcavator.symbol.refs",
           "when": "view == hexcavator.binaries && viewItem =~ /symbol\\.pe/",
           "group": "2@2"
@@ -404,6 +421,10 @@
           "when": "false"
         },
         {
+          "command": "hexcavator.symbol.about",
+          "when": "false"
+        },
+        {
           "command": "hexcavator.symbol.refs",
           "when": "false"
         },
@@ -433,6 +454,10 @@
         },
         {
           "command": "hexcavator.row.why",
+          "when": "false"
+        },
+        {
+          "command": "hexcavator.row.about",
           "when": "false"
         },
         {
@@ -512,6 +537,11 @@
           "command": "hexcavator.row.why",
           "when": "(webviewId == 'hexcSize' || webviewId == 'hexcavator.sizeEditor' || webviewId == 'hexcTable' || webviewId == 'hexcInit') && webviewSection == 'symbol' && canQuery",
           "group": "2@1"
+        },
+        {
+          "command": "hexcavator.row.about",
+          "when": "(webviewId == 'hexcSize' || webviewId == 'hexcavator.sizeEditor' || webviewId == 'hexcTable' || webviewId == 'hexcInit') && webviewSection == 'symbol' && canQuery",
+          "group": "2@0"
         },
         {
           "command": "hexcavator.row.refs",

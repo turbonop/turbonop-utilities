@@ -3,6 +3,7 @@
 
 mod common;
 
+mod about;
 mod batch;
 mod checksec;
 mod data;

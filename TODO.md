@@ -110,17 +110,26 @@ Every command should be as fast as the hardware allows (on clang.exe,
 
 ## Size
 
-hexcavator itself has grown: 12.2 MB to 15.5 MB on Windows x64 from
-0.0.7 to 0.0.9, and 17.1 MB (glibc, dynamic) to 22.9 MB (musl, static)
-on Linux x64 (and the release now ships the bare programs, not ~4 MB
-archives). What's left:
+hexcavator itself has grown: 12.8 MB to 16.3 MB on Windows x64 from
+0.0.7 to 0.0.10 (`hexcavator size -d crates,symbols` on each, with its
+PDB), and 17.1 MB (glibc, dynamic) to 22.9 MB (musl, static) on Linux
+x64. Where the 3.5 MB went:
 
-- **Where it went.** `hexcavator size` and `recommend` on hexcavator,
-  with its symbols: by crate, by symbol, and against 0.0.7. The likely
-  parts: the TableGen decoders (RISC-V, LoongArch, PowerPC, MIPS,
-  microMIPS) and their tables, 32-bit ARM, monomorphized generics,
-  formatting, and what the static C library and mimalloc add on Linux.
-  Then make it smaller, as hexcavator advises others to.
+- **The new decoders, about 1.1 MB.** PowerPC's code (365 KB) and
+  LoongArch's (265 KB); MIPS's tables (about 275 KB: three of 64 KB and
+  more) and RISC-V's (106 KB), anonymous read-only data (`anon.*`, by
+  their objects). Tables of exactly 64 KB are likely indexed by 16 bits
+  and mostly empty: a denser form (by ranges, or a second level) could
+  take a fraction.
+- **Generic code, about 1.15 MB**, counted to `core` (+668 KB), `std`
+  (+306 KB), and `alloc` (+180 KB): our generics instantiated for each
+  type, much of it likely `turbonop_par`'s (+111 KB itself, new)
+  closures and sorts, a copy per caller. Which, by symbol; then fewer
+  copies (a non-generic core taking `&dyn Fn`, as `map_range` could).
+- **Features, about 0.5 MB**: the app (+178 KB), `turbonop_size`
+  (+205 KB), `turbonop_debuginfo` (+85 KB), and the rest.
+- **Base relocations, +88 KB**: more pointers in data (vtables, tables
+  of strings).
 
 ## Ideas
 

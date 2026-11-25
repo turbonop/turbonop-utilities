@@ -50,6 +50,11 @@ leave this list when they ship.
   watch, kill and end, from Rust) passes there. The test says which wait
   timed out, the last events, and procupine's stderr; its live part is
   skipped on macOS until that's found and fixed.
+- **The system's CPU on macOS.** In `turbonop-process`'s live
+  `cpu_usage` test on CI's macOS runner, the system's CPU share over a
+  300 ms busy loop was once 0 (this process's own share was right): the
+  `host_statistics` load ticks, unchanged or misread. That check is
+  skipped on macOS (`crates/system/process/tests/live.rs`) until fixed.
 - **A release.** `procupine-release.yml` on `procupine-v*` tags, as
   hexcavator's: signed binaries for each platform, the extension packaged
   per platform with `bin/procupine`, its licenses test and third-party

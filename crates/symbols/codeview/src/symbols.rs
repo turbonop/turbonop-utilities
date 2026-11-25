@@ -280,7 +280,7 @@ pub mod kind {
 
 /// A symbol record: kind, the bytes after the kind, and its offset in its
 /// stream (which other records use to refer to it).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SymbolRecord<'a> {
     pub offset: u32,
     pub kind: u16,

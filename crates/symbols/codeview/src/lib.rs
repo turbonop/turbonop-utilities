@@ -24,13 +24,16 @@
 use turbonop_global_alloc as _;
 
 pub mod annotations;
+pub mod c13;
 pub mod layout;
 pub mod lines;
 pub mod registers;
+pub mod remap;
 pub mod symbol_refs;
 pub mod symbols;
 pub mod type_refs;
 pub mod types;
+pub mod write;
 
 pub use symbols::{Symbol, SymbolIter, SymbolRecord};
 pub use types::{TypeFormatter, TypeIndex, TypeRecord, TypeSource};

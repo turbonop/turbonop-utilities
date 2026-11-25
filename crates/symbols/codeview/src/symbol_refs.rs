@@ -56,6 +56,9 @@ pub enum Field {
     /// A 4-byte metadata token (managed code): neither an index nor an
     /// offset.
     Token(u32),
+    /// A 4-byte image-relative address, which an object relocates
+    /// (`ADDR32NB`): only frame data's base ([`c13::fields`](crate::c13::fields)).
+    Rva(u32),
 }
 
 impl Field {
@@ -68,7 +71,8 @@ impl Field {
             | Field::Checksum(o)
             | Field::Annotations(o)
             | Field::Link(o)
-            | Field::Token(o) => o,
+            | Field::Token(o)
+            | Field::Rva(o) => o,
             Field::Address { offset, .. } => offset,
         }
     }
@@ -85,6 +89,7 @@ impl Field {
             Field::Annotations(o) => Field::Annotations(o + by),
             Field::Link(o) => Field::Link(o + by),
             Field::Token(o) => Field::Token(o + by),
+            Field::Rva(o) => Field::Rva(o + by),
             Field::Address { offset, section } => Field::Address {
                 offset: offset + by,
                 section: section + by,

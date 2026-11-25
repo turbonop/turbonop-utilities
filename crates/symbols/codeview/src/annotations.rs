@@ -228,9 +228,9 @@ fn operands(code: u32) -> Option<usize> {
 
 /// Walks `annotations` to their end (or to `BA_OP_Invalid`, after which
 /// only padding follows), calling `each(opcode, operands, bytes)` with each
-/// annotation's bytes; the position where they stop, or `None` if one
-/// doesn't decode.
-fn walk(annotations: &[u8], mut each: impl FnMut(u32, &[u32], &[u8])) -> Option<usize> {
+/// annotation's position and bytes; the position where they stop, or
+/// `None` if one doesn't decode.
+fn walk(annotations: &[u8], mut each: impl FnMut(u32, &[u32], usize, &[u8])) -> Option<usize> {
     let mut r = Reader::new(annotations);
     while !r.is_empty() {
         let start = r.position();
@@ -243,7 +243,7 @@ fn walk(annotations: &[u8], mut each: impl FnMut(u32, &[u32], &[u8])) -> Option<
         for v in values.iter_mut().take(n) {
             *v = uncompress(&mut r)?;
         }
-        each(code, &values[..n], &annotations[start..r.position()]);
+        each(code, &values[..n], start, &annotations[start..r.position()]);
     }
     Some(r.position())
 }
@@ -252,9 +252,23 @@ fn walk(annotations: &[u8], mut each: impl FnMut(u32, &[u32], &[u8])) -> Option<
 /// operands), in order; `None` if an annotation doesn't decode.
 pub fn files(annotations: &[u8]) -> Option<Vec<u32>> {
     let mut out = Vec::new();
-    walk(annotations, |code, v, _| {
+    walk(annotations, |code, v, _, _| {
         if code == op::BA_OP_CHANGE_FILE {
             out.push(v[0]);
+        }
+    })?;
+    Some(out)
+}
+
+/// Each `BA_OP_ChangeFile`'s operand in `annotations`: where it starts,
+/// how many bytes it takes, and its value (a file checksum offset); `None`
+/// if an annotation doesn't decode.
+pub fn file_operands(annotations: &[u8]) -> Option<Vec<(usize, usize, u32)>> {
+    let mut out = Vec::new();
+    walk(annotations, |code, v, start, bytes| {
+        if code == op::BA_OP_CHANGE_FILE {
+            // (The opcode is one byte: it is below 0x80.)
+            out.push((start + 1, bytes.len() - 1, v[0]));
         }
     })?;
     Some(out)
@@ -272,7 +286,7 @@ pub fn rewrite_files(
     mut map: impl FnMut(u32) -> u32,
 ) -> Option<()> {
     let mut fits = true;
-    let end = walk(annotations, |code, v, bytes| {
+    let end = walk(annotations, |code, v, _, bytes| {
         if code == op::BA_OP_CHANGE_FILE {
             out.push(bytes[0]);
             fits &= compress(map(v[0]), out).is_some();
@@ -333,6 +347,7 @@ mod tests {
             0,
         ];
         assert_eq!(files(&a), Some(vec![0x18, 0x90]));
+        assert_eq!(file_operands(&a), Some(vec![(1, 1, 0x18), (6, 2, 0x90)]));
         // The same offsets: the same bytes.
         let mut same = Vec::new();
         rewrite_files(&a, &mut same, |f| f).unwrap();

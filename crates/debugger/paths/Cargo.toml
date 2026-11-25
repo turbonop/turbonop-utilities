@@ -1,0 +1,29 @@
+[package]
+name = "turbonop-paths"
+description = "How did we get here: which branches a crashed function's frame took, by its control flow and the values that survive in the dump, each decision with its proof"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# (No unit tests: their build of the crate would be wasted. The workspace's
+# tests check that a target marked so has none.)
+[lib]
+test = false
+
+[dependencies]
+turbonop-abi.workspace = true
+turbonop-code.workspace = true
+turbonop-core.workspace = true
+turbonop-frames.workspace = true
+turbonop-target.workspace = true
+turbonop-x86.workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true
+turbonop-program.workspace = true
+
+[lints]
+workspace = true

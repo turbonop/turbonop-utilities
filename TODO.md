@@ -46,6 +46,67 @@ leave this list when they ship.
   functions are simple loops. Measure where the time goes; what's fast
   enough to ship in the static Linux build matters more than the tests.
 
+## Dump Analyzer
+
+A post-mortem debugger for Windows, Linux, and macOS crash dumps
+(minidumps and core files) that replaces WinDbg for dumps: `apps/dump-analyzer`
+(the command line, `serve`, `mcp`), `editors/vscode/dump-analyzer` (the
+"Dump Analyzer" extension), and `crates/debugger/*`. The plan, its
+decisions, and its status table are in `docs/dump-analyzer.md`. Neither
+the app nor the extension is released: publishing is a step of its own,
+when they're ready. What's left:
+
+- **Where to pick up.** Everything through the first "how did we get
+  here" (x86-64) is merged; the next big step is the IR and its
+  lifters, then the corpus run below. Fixtures are rebuilt by
+  `tools/minidump/make.cmd x64|x86` (Windows, in the repository's
+  `target` directory so no other path lands in them) and
+  `tools/coredump/make.sh` (Linux, in WSL); their oracles' output
+  (`cdb.txt`, `dv.txt`, `gdb.txt`) sits beside them. Not yet run: the
+  nightly exhaustive ARM64 access test on the merged code.
+- **Release.** `dump-analyzer-release.yml` on `dump-analyzer-v*` tags (its
+  builds, signing, and VSIX packaging, as hexcavator's), and the
+  Marketplace's listing for `turbonop.dump-analyzer`.
+- **Checked against the corpus.** Stacks and locals on every Windows and
+  Linux dump in `hexcavator-private`, against DbgEng, minidump-stackwalk,
+  and gdb. Fetching measured there: cold, the first open of the test
+  dumps took 43 s (x64) and 168 s (x86) once, warm 0.4 s and 2 s; find
+  where the cold time goes (first reads of big system PDBs?) and make it
+  fast.
+- **Frames.** Windows ARM64 dumps (no fixture yet: cl can build one, but
+  only an ARM64 machine runs it); macOS's `_sigtramp`; x86 frames by
+  FrameData programs that read `$T0` from a register the walk doesn't
+  know. x86 symbols show decorated (`@BaseThreadInitThunk@12`).
+- **Values.** x86's virtual frame (`$T0`: the unwinder computes it, and
+  doesn't say), TLS, implicit pointers, DWARF's typed operations, NatVis,
+  and a value whose pieces are partly available (all or nothing now).
+- **Sessions.** `dump-analyzer serve` keeps every dump it opens for its
+  life (a session's parts borrow from one another): free them, without
+  `unsafe` (owning the parts differently).
+- **The extension.** The web host's debug-UI shim (its panes, for the web
+  version); a disassembly view with the dump's values beside the code
+  (shared with hexcavator's); `paths` and `reconstruct` in the UI, not
+  only the debug console.
+- **The IR and its lifters.** `turbonop-ir`, and x64 and ARM64 lifters for
+  the instructions compilers emit, tested on real CPUs (the access data,
+  done for both, gives their write sets).
+- **How did we get here.** Now: branches decided by control flow, or by
+  the flags' operands where their values survive to the PC, on x86-64.
+  Left: values computed from others (the IR's symbolic execution and a
+  solver), memory operands past stores that can't alias, the dead
+  stack's evidence below the stack pointer, outer frames' stale return
+  addresses, ARM64, likely (heuristic) claims beside certain ones, and
+  ground truth from TTD and single-step traces.
+- **macOS and iOS.** The dyld shared cache; real Mach-O core files and
+  Crashpad dumps on a rented Mac VM, with lldb as the oracle (and which
+  byte order Crashpad's and Breakpad's Mach-O UUIDs are in: Crashpad's
+  is assumed).
+- **Instruction access data's questions.** Should `syscall`-like
+  instructions write every register (now), or only what each OS's ABI
+  lets the kernel? Should `rep` string instructions' memory be their
+  whole range (rCX elements)? ARM64's memory accesses have no size yet,
+  and MSR SVCR and SMSTART's operands don't decode.
+- **SLEIGH, then the decompiler.** Ghidra's, ported.
 ## Procupine
 
 - **The extension's server test on macOS.** On CI's macOS runner,
@@ -107,6 +168,14 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   fully ABI-compatible with Apple's arm64e; build and ship one (a
   universal program with arm64) once it is tier 2, or sooner if it
   proves sound.
+
+## ARM64
+
+- **SMSTART and SMSTOP don't decode.** `D503417F` to `D503477F` (and so
+  MSR SVCRSM, SVCRZA, SVCRSMZA) are None: MSR (immediate)'s
+  `<pstatefield>` has no SVCR rows, and the SMSTART alias's `<option>`
+  doesn't render. LLVM decodes them. (Their access data, zeroing the
+  vector state, is in place for when they do.)
 
 ## The web version
 

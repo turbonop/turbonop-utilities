@@ -25,6 +25,7 @@ use turbonop_global_alloc as _;
 pub mod cache;
 pub mod data;
 mod error;
+pub mod locate;
 pub mod server;
 pub mod variables;
 
@@ -139,7 +140,8 @@ pub fn find_debug_file(
     // (An image with its own DWARF: ELF's, Mach-O's, WebAssembly's, and
     // a PE image MinGW built. A PE image's own isn't a PDB.)
     if DebugInfo::parse(image.data()).is_ok() {
-        let map = Mmap::open(image_path).map_err(Error::io(image_path))?;
+        // (An image fetched into memory has no file to map again.)
+        let map = Mmap::open(image_path).unwrap_or_else(|_| Mmap::from(image.data().to_vec()));
         return Ok((image_path.to_path_buf(), DebugFile::Mapped(map)));
     }
     // (A COFF object's CodeView: read as the PDB a linker would write of
@@ -443,6 +445,17 @@ impl Opened {
     /// information for it is found.
     pub fn open(path: &Path, debug: Option<&Path>) -> Result<Self, Error> {
         let data = Mmap::open(path).map_err(Error::io(path))?;
+        Self::open_mapped(path, data, debug)
+    }
+
+    /// [`Opened::open`], of an image already read: `data`, from `path` (a
+    /// file's path, or where it was fetched from; debug information is
+    /// looked for beside it, and in the symbol directories and servers).
+    ///
+    /// # Errors
+    ///
+    /// As [`Opened::open`].
+    pub fn open_mapped(path: &Path, data: Mmap, debug: Option<&Path>) -> Result<Self, Error> {
         let image = Image::parse(&data).map_err(Error::format(path))?;
         let given = debug.is_some();
         let (debug_path, debug) = match find_debug_file(path, &image, debug) {
@@ -454,7 +467,8 @@ impl Opened {
                 if objects.is_empty() {
                     return Err(e);
                 }
-                let again = Mmap::open(path).map_err(Error::io(path))?;
+                // (An image fetched into memory has no file to map again.)
+                let again = Mmap::open(path).unwrap_or_else(|_| Mmap::from(data.to_vec()));
                 return Ok(Self {
                     path: path.to_path_buf(),
                     data,

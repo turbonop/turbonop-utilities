@@ -43,6 +43,41 @@ pub enum RegClass {
     Ip,
     /// 386/486 test registers `tr0`..`tr7`.
     Test,
+    /// Processor state that no operand names, which instructions read and
+    /// write implicitly: [`Register::MXCSR`] and the constants after it.
+    System,
+}
+
+impl RegClass {
+    /// The class numbered `n` in declaration order (`Gpr64` if none is).
+    pub(crate) const fn from_u8(n: u8) -> Self {
+        const ALL: [RegClass; 19] = [
+            RegClass::Gpr8,
+            RegClass::Gpr8High,
+            RegClass::Gpr16,
+            RegClass::Gpr32,
+            RegClass::Gpr64,
+            RegClass::Segment,
+            RegClass::Control,
+            RegClass::Debug,
+            RegClass::St,
+            RegClass::Mmx,
+            RegClass::Xmm,
+            RegClass::Ymm,
+            RegClass::Zmm,
+            RegClass::Mask,
+            RegClass::Bound,
+            RegClass::Tmm,
+            RegClass::Ip,
+            RegClass::Test,
+            RegClass::System,
+        ];
+        if (n as usize) < ALL.len() {
+            ALL[n as usize]
+        } else {
+            RegClass::Gpr64
+        }
+    }
 }
 
 /// A register: a class and an index within it.
@@ -101,7 +136,7 @@ impl Register {
             RegClass::Gpr16 | RegClass::Segment => 2,
             RegClass::Gpr32 => 4,
             RegClass::Gpr64 | RegClass::Mmx | RegClass::Mask => 8,
-            RegClass::Control | RegClass::Debug | RegClass::Test => 8,
+            RegClass::Control | RegClass::Debug | RegClass::Test | RegClass::System => 8,
             RegClass::St => 10,
             RegClass::Xmm | RegClass::Bound => 16,
             RegClass::Ymm => 32,
@@ -139,6 +174,36 @@ impl Register {
     pub const RIP: Self = Self::new(RegClass::Ip, 0);
     /// `st`: the top of the x87 stack.
     pub const ST: Self = Self::new(RegClass::St, 8);
+
+    /// The SSE control and status register.
+    pub const MXCSR: Self = Self::new(RegClass::System, 0);
+    /// The x87 status word, with the condition codes and the top of stack.
+    pub const FPSW: Self = Self::new(RegClass::System, 1);
+    /// The x87 control word.
+    pub const FPCW: Self = Self::new(RegClass::System, 2);
+    /// The x87 tag word.
+    pub const FPTW: Self = Self::new(RegClass::System, 3);
+    /// The extended control registers (`XCR0`).
+    pub const XCR0: Self = Self::new(RegClass::System, 4);
+    /// The model-specific registers (all of them, the time-stamp counter
+    /// and `IA32_KERNEL_GS_BASE` among them).
+    pub const MSR: Self = Self::new(RegClass::System, 5);
+    /// The protection-key rights register.
+    pub const PKRU: Self = Self::new(RegClass::System, 6);
+    /// The shadow stack pointer.
+    pub const SSP: Self = Self::new(RegClass::System, 7);
+    /// The global descriptor table register.
+    pub const GDTR: Self = Self::new(RegClass::System, 8);
+    /// The interrupt descriptor table register.
+    pub const IDTR: Self = Self::new(RegClass::System, 9);
+    /// The local descriptor table register.
+    pub const LDTR: Self = Self::new(RegClass::System, 10);
+    /// The task register.
+    pub const TR: Self = Self::new(RegClass::System, 11);
+    /// The AMX tile configuration.
+    pub const TILECFG: Self = Self::new(RegClass::System, 12);
+    /// The user interrupt flag.
+    pub const UIF: Self = Self::new(RegClass::System, 13);
 
     /// The register's name, in lowercase Intel syntax.
     pub fn name(self) -> &'static str {
@@ -201,6 +266,10 @@ impl Register {
         ];
         const IP: [&str; 3] = ["rip", "eip", "ip"];
         const TR: [&str; 8] = ["tr0", "tr1", "tr2", "tr3", "tr4", "tr5", "tr6", "tr7"];
+        const SYSTEM: [&str; 14] = [
+            "mxcsr", "fpsw", "fpcw", "fptw", "xcr0", "msr", "pkru", "ssp", "gdtr", "idtr", "ldtr",
+            "tr", "tilecfg", "uif",
+        ];
 
         let i = usize::from(self.index);
         let table: &[&str] = match self.class {
@@ -222,6 +291,7 @@ impl Register {
             RegClass::Tmm => &TMM,
             RegClass::Ip => &IP,
             RegClass::Test => &TR,
+            RegClass::System => &SYSTEM,
         };
         table.get(i).copied().unwrap_or("?reg")
     }

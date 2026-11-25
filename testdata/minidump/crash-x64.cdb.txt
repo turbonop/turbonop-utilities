@@ -1,0 +1,161 @@
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+OK                                             c:\jm\dev\hexcavator-dump-analyzer-plan\tools\minidump\..\..\target\minidump-fixture
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+OK                                             c:\jm\dev\hexcavator-dump-analyzer-plan\tools\minidump\..\..\target\minidump-fixture
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.015 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 46
+
+Microsoft (R) Windows Debugger Version 10.0.29680.1004 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [c:\jm\dev\hexcavator-dump-analyzer-plan\target\minidump-fixture\crash-x64.dmp]
+User Mini Dump File: Only registers, stack and portions of memory are available
+
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+OK                                             c:\jm\dev\hexcavator-dump-analyzer-plan\tools\minidump\..\..\target\minidump-fixture
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+OK                                             c:\jm\dev\hexcavator-dump-analyzer-plan\tools\minidump\..\..\target\minidump-fixture
+Deferred                                       srv*c:\jm\symbols*https://msdl.microsoft.com/download/symbols
+Symbol search path is: c:\jm\dev\hexcavator-dump-analyzer-plan\tools\minidump\..\..\target\minidump-fixture;srv*c:\jm\symbols*https://msdl.microsoft.com/download/symbols
+Executable search path is: c:\jm\dev\hexcavator-dump-analyzer-plan\tools\minidump\..\..\target\minidump-fixture
+Windows 10 Version 26300 MP (8 procs) Free x64
+Product: WinNt, suite: SingleUserTS
+Edition build lab: 26100.1.amd64fre.ge_release.240331-1435
+Debug session time: Tue Nov 24 19:03:34.000 2026 (UTC - 8:00)
+System Uptime: 0 days 3:10:38.587
+Process Uptime: not available
+..................
+This dump file has an exception of interest stored in it.
+The stored exception information can be accessed via .ecxr
+(1ac8.234c): Access violation - code c0000005 (first/second chance not available)
+
++------------------------------------------------------------------------+
+| This target supports Hardware-enforced Stack Protection. A HW based    |
+| "Shadow Stack" may be available to assist in debugging and analysis.   |
+| See aka.ms/userhsp for more info.                                      |
+|                                                                        |
+| dps @ssp                                                               |
+|                                                                        |
++------------------------------------------------------------------------+
+
+For analysis of this file, run !analyze -v
+ntdll!NtGetContextThread+0x14:
+00007ffa`cbc58334 c3              ret
+0:004> cdb: Reading initial command '.symopt+0x40;~*k;.ecxr;r;kn;q'
+Symbol options are 0xB0367:
+  0x00000001 - SYMOPT_CASE_INSENSITIVE
+  0x00000002 - SYMOPT_UNDNAME
+  0x00000004 - SYMOPT_DEFERRED_LOADS
+  0x00000020 - SYMOPT_OMAP_FIND_NEAREST
+  0x00000040 - SYMOPT_LOAD_ANYTHING
+  0x00000100 - SYMOPT_NO_UNQUALIFIED_LOADS
+  0x00000200 - SYMOPT_FAIL_CRITICAL_ERRORS
+  0x00010000 - SYMOPT_AUTO_PUBLICS
+  0x00020000 - SYMOPT_NO_IMAGE_SEARCH
+  0x00080000 - SYMOPT_NO_PROMPTS
+
+   0  Id: 1ac8.1dc0 Suspend: 0 Teb: 00000084`8775c000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000084`878ff7a8 00007ffa`c8e3427f     ntdll!NtWaitForSingleObject+0x14
+*** WARNING: Unable to verify checksum for crash-x64.exe
+00000084`878ff7b0 00007ff7`eed91142     KERNELBASE!WaitForSingleObjectEx+0xaf
+00000084`878ff850 00007ff7`eed9142f     crash_x64!wmain+0x5a
+(Inline Function) --------`--------     crash_x64!invoke_main+0x22
+00000084`878ff890 00007ffa`ca64dda7     crash_x64!__scrt_common_main_seh+0x10f
+00000084`878ff8d0 00007ffa`cbbb9c5c     kernel32!BaseThreadInitThunk+0x17
+00000084`878ff900 00000000`00000000     ntdll!RtlUserThreadStart+0x2c
+
+   1  Id: 1ac8.2608 Suspend: 0 Teb: 00000084`8775e000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000084`879ff848 00007ffa`cbb14d0e     ntdll!NtWaitForWorkViaWorkerFactory+0x14
+00000084`879ff850 00007ffa`ca64dda7     ntdll!TppWorkerThread+0x37e
+00000084`879ffbb0 00007ffa`cbbb9c5c     kernel32!BaseThreadInitThunk+0x17
+00000084`879ffbe0 00000000`00000000     ntdll!RtlUserThreadStart+0x2c
+
+   2  Id: 1ac8.4d4c Suspend: 0 Teb: 00000084`87760000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000084`87aff918 00007ffa`cbb14d0e     ntdll!NtWaitForWorkViaWorkerFactory+0x14
+00000084`87aff920 00007ffa`ca64dda7     ntdll!TppWorkerThread+0x37e
+00000084`87affc80 00007ffa`cbbb9c5c     kernel32!BaseThreadInitThunk+0x17
+00000084`87affcb0 00000000`00000000     ntdll!RtlUserThreadStart+0x2c
+
+   3  Id: 1ac8.2088 Suspend: 0 Teb: 00000084`87762000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000084`87bffb78 00007ffa`cbb14d0e     ntdll!NtWaitForWorkViaWorkerFactory+0x14
+00000084`87bffb80 00007ffa`ca64dda7     ntdll!TppWorkerThread+0x37e
+00000084`87bffee0 00007ffa`cbbb9c5c     kernel32!BaseThreadInitThunk+0x17
+00000084`87bfff10 00000000`00000000     ntdll!RtlUserThreadStart+0x2c
+
+#  4  Id: 1ac8.234c Suspend: 0 Teb: 00000084`87764000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000084`8757ca08 00007ffa`cbb10cad     ntdll!NtGetContextThread+0x14
+00000084`8757ca10 00007ffa`c8e6f61e     ntdll!LdrpFindLoadedDllByName+0x48d
+00000084`8757cf40 00000000`00000000     KERNELBASE!BaseRegQueryValueInternal+0x20e
+rax=0000000000000064 rbx=000000848757f770 rcx=0000000000000000
+rdx=0000000000000003 rsi=0000000000000000 rdi=0000000000000002
+rip=00007ff7eed9101b rsp=000000848757f6d8 rbp=0000000000000000
+ r8=0000000000000001  r9=0000000000000020 r10=00007ffa9ea90000
+r11=00007ffa9eaad984 r12=0000000000000000 r13=0000000000000000
+r14=0000000000000000 r15=0000000000000000
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00010202
+crash_x64!leaf+0x13:
+00007ff7`eed9101b 034108          add     eax,dword ptr [rcx+8] ds:00000000`00000008=????????
+Last set context:
+rax=0000000000000064 rbx=000000848757f770 rcx=0000000000000000
+rdx=0000000000000003 rsi=0000000000000000 rdi=0000000000000002
+rip=00007ff7eed9101b rsp=000000848757f6d8 rbp=0000000000000000
+ r8=0000000000000001  r9=0000000000000020 r10=00007ffa9ea90000
+r11=00007ffa9eaad984 r12=0000000000000000 r13=0000000000000000
+r14=0000000000000000 r15=0000000000000000
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00010202
+crash_x64!leaf+0x13:
+00007ff7`eed9101b 034108          add     eax,dword ptr [rcx+8] ds:00000000`00000008=????????
+  *** Stack trace for last set context - .thread/.cxr resets it
+ # Child-SP          RetAddr               Call Site
+00 00000084`8757f6d8 00007ff7`eed91053     crash_x64!leaf+0x13
+01 00000084`8757f6e0 00007ff7`eed9108e     crash_x64!middle+0x33
+02 00000084`8757f750 00007ff7`eed9115e     crash_x64!outer+0x22
+03 00000084`8757f790 00007ffa`ca64dda7     crash_x64!worker+0xe
+04 00000084`8757f7c0 00007ffa`cbbb9c5c     kernel32!BaseThreadInitThunk+0x17
+05 00000084`8757f7f0 00000000`00000000     ntdll!RtlUserThreadStart+0x2c
+quit:
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files\WindowsApps\Microsoft.WinDbg_1.2611.4001.0_x64__8wekyb3d8bbwe\amd64\Visualizers\winrt.natvis'

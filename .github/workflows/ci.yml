@@ -121,6 +121,12 @@ jobs:
           for t in test/*.test.js; do node "$t" "$exe" || exit 1; done
       - if: runner.os == 'Windows'
         run: python editors/vscode/hexcavator/test/harness.py target/release/hexcavator.exe testdata/xref/xref-x64.exe testdata/xref/xref-x64-renamed.exe
+      # Dump Analyzer's debug adapter session: with canned answers, and with
+      # dump-analyzer serve on the repository's dumps.
+      - run: cargo build --release -p dump-analyzer
+      - shell: bash
+        working-directory: editors/vscode/dump-analyzer
+        run: node --test test/*.test.js
 
   # Procupine's VS Code extension: its model's and server client's tests
   # (with procupine, on each platform), and, on Windows, the view rendered

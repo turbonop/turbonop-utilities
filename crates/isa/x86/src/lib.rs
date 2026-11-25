@@ -11,6 +11,12 @@
 //!
 //! [`format`] renders instructions in the MASM-style syntax of Microsoft's
 //! `dumpbin /disasm`.
+//!
+//! [`Instruction::accesses`] says what an instruction reads and writes: each
+//! operand's [`Rw`], its implicit operands (`rdx` for `mul`, the stack for
+//! `push`), and its [`Flags`]; [`Instruction::written_registers`] is the
+//! complete set of registers it may write, as a [`RegSet`]. The data comes
+//! from `tables/access.rules` and is checked against Intel XED.
 
 #![no_std]
 #![warn(missing_docs)]
@@ -20,6 +26,7 @@ use turbonop_global_alloc as _;
 
 extern crate alloc;
 
+mod access;
 mod decode;
 pub mod format;
 mod instruction;
@@ -30,7 +37,7 @@ mod spec;
 
 #[allow(clippy::all)]
 mod tables {
-    use crate::spec::{Entry, Loc, OpSpec, Size, Tuple, attr};
+    use crate::spec::{AccessSpec, Entry, Imp, ImpKind, Loc, OpSpec, Size, Tuple, attr};
     include!(concat!(env!("OUT_DIR"), "/tables.rs"));
 
     impl Mnemonic {
@@ -41,8 +48,22 @@ mod tables {
     }
 }
 
+pub use access::{Access, Accesses, FlagAccess, Flags, RegSet, Rw};
 pub use decode::{DecodeError, MAX_LENGTH, Mode, decode};
 pub use instruction::{Encoding, Flow, Instruction, Rounding, prefix};
 pub use operand::{Immediate, MemSize, Memory, Operand};
 pub use register::{RegClass, Register};
 pub use tables::Mnemonic;
+
+/// The number of opcode table forms (for tests and table tools).
+#[doc(hidden)]
+pub fn form_count() -> usize {
+    tables::ORIGINS.len()
+}
+
+/// Where opcode table form `form` came from: `file:line mnemonic operands`
+/// (for tests and table tools).
+#[doc(hidden)]
+pub fn form_origin(form: u16) -> Option<&'static str> {
+    tables::ORIGINS.get(usize::from(form)).copied()
+}

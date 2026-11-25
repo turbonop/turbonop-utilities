@@ -167,6 +167,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "dump-analyzer"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "turbonop-abi",
+ "turbonop-arm64",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-dwarf",
+ "turbonop-eval",
+ "turbonop-frames",
+ "turbonop-global-alloc",
+ "turbonop-mmap",
+ "turbonop-paths",
+ "turbonop-program",
+ "turbonop-target",
+ "turbonop-x86",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -749,6 +769,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-abi"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-dwarf",
+ "turbonop-global-alloc",
+]
+
+[[package]]
 name = "turbonop-alloc"
 version = "0.0.7"
 dependencies = [
@@ -798,6 +827,7 @@ name = "turbonop-codeview"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-dwarf",
  "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-par",
@@ -894,6 +924,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-eval"
+version = "0.0.7"
+dependencies = [
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-dwarf",
+ "turbonop-frames",
+ "turbonop-global-alloc",
+ "turbonop-program",
+ "turbonop-target",
+]
+
+[[package]]
 name = "turbonop-fingerprint"
 version = "0.0.7"
 dependencies = [
@@ -927,6 +971,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-frames"
+version = "0.0.7"
+dependencies = [
+ "turbonop-abi",
+ "turbonop-code",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-global-alloc",
+ "turbonop-image",
+ "turbonop-mmap",
+ "turbonop-par",
+ "turbonop-pdb",
+ "turbonop-program",
+ "turbonop-symbolize",
+ "turbonop-target",
+ "turbonop-unwind",
+]
+
+[[package]]
 name = "turbonop-fuzz"
 version = "0.0.7"
 dependencies = [
@@ -937,6 +1000,7 @@ dependencies = [
  "turbonop-code",
  "turbonop-debuginfo",
  "turbonop-demangle",
+ "turbonop-elf",
  "turbonop-etl",
  "turbonop-etw",
  "turbonop-image",
@@ -955,6 +1019,7 @@ dependencies = [
  "turbonop-riscv",
  "turbonop-signature",
  "turbonop-size",
+ "turbonop-target",
  "turbonop-trace",
  "turbonop-trace-analysis",
  "turbonop-wasm",
@@ -1078,6 +1143,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-paths"
+version = "0.0.7"
+dependencies = [
+ "turbonop-abi",
+ "turbonop-code",
+ "turbonop-core",
+ "turbonop-frames",
+ "turbonop-global-alloc",
+ "turbonop-program",
+ "turbonop-target",
+ "turbonop-x86",
+]
+
+[[package]]
 name = "turbonop-pdb"
 version = "0.0.7"
 dependencies = [
@@ -1127,6 +1206,7 @@ dependencies = [
  "turbonop-image",
  "turbonop-macho",
  "turbonop-mmap",
+ "turbonop-par",
  "turbonop-pdb",
  "turbonop-pe",
  "turbonop-size",
@@ -1220,6 +1300,23 @@ name = "turbonop-tablegen"
 version = "0.0.7"
 dependencies = [
  "turbonop-global-alloc",
+]
+
+[[package]]
+name = "turbonop-target"
+version = "0.0.7"
+dependencies = [
+ "turbonop-abi",
+ "turbonop-core",
+ "turbonop-elf",
+ "turbonop-global-alloc",
+ "turbonop-image",
+ "turbonop-macho",
+ "turbonop-minidump",
+ "turbonop-mmap",
+ "turbonop-par",
+ "turbonop-program",
+ "turbonop-unwind",
 ]
 
 [[package]]

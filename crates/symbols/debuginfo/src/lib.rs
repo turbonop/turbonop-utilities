@@ -549,8 +549,13 @@ pub struct DiscardedFunctions {
     /// the kept one's): collected (`--gc-sections`), or folded into
     /// another (ICF; their symbols are then the other's).
     pub dropped: Vec<String>,
-    /// Whether functions of different names, from different compilands,
-    /// are at one address: folded (ICF).
+    /// Of `dropped`, those that kept code calls (its call sites say):
+    /// folded into another, not collected, whatever their symbols (mold
+    /// keeps none of either).
+    pub called: Vec<String>,
+    /// Whether functions of different names have code at one address:
+    /// folded (ICF; gold points a folded function's DWARF at the kept
+    /// one's code, of one compiland or not).
     pub shared: bool,
 }
 

@@ -28,7 +28,11 @@
 //!   instruction writes the register.
 //!
 //! 32-bit x86 code holds absolute addresses, which the image's relocations
-//! (not disassembly) find. Decoding is a linear sweep that stops at the
+//! (not disassembly) find. x86-64 code that isn't position-independent (a
+//! static executable's, linked below 2 GiB) does too, which nothing
+//! relocates: a memory operand's absolute displacement (`[table]`,
+//! `[rdi*4 + table]`, `[rax + table]`) and an address moved into a
+//! register (`mov esi, table`). Decoding is a linear sweep that stops at the
 //! first invalid instruction (data in a function's range, such as a
 //! literal pool or jump table, can follow its code).
 
@@ -156,8 +160,15 @@ pub fn scan_with(
 ) {
     let got = memory.got;
     match arch {
-        Arch::X86 => x86(code, address, turbonop_x86::Mode::Bits32, None, out),
-        Arch::X64 => x86(code, address, turbonop_x86::Mode::Bits64, image_base, out),
+        Arch::X86 => x86(code, address, turbonop_x86::Mode::Bits32, None, 0, out),
+        Arch::X64 => x86(
+            code,
+            address,
+            turbonop_x86::Mode::Bits64,
+            image_base,
+            bias,
+            out,
+        ),
         Arch::Arm64 => arm64(code, address, out),
         Arch::Arm => thumb(code, address & !1, bias, out),
         Arch::RiscV32 | Arch::RiscV64 => riscv(code, address, arch == Arch::RiscV64, out),
@@ -185,9 +196,13 @@ fn x86(
     address: u64,
     mode: turbonop_x86::Mode,
     image_base: Option<u64>,
+    bias: u64,
     out: &mut Vec<CodeRef>,
 ) {
     let mut sweep = X86Sweep::new(image_base);
+    if mode == turbonop_x86::Mode::Bits64 {
+        sweep = sweep.absolute(bias);
+    }
     let mut at = 0usize;
     while at < code.len() {
         let pc = address.wrapping_add(at as u64);
@@ -212,6 +227,9 @@ pub struct X86Sweep {
     /// Those that held it anywhere so far.
     ever: u32,
     ahead: Vec<(u64, u32)>,
+    /// x86-64's absolute addresses are references (see the module's
+    /// documentation), less this, into the nodes' address space.
+    absolute: Option<u64>,
 }
 
 impl X86Sweep {
@@ -222,7 +240,17 @@ impl X86Sweep {
             based: 0,
             ever: 0,
             ahead: Vec::new(),
+            absolute: None,
         }
+    }
+
+    /// The sweep, with x86-64's absolute addresses (a memory operand's
+    /// displacement with no base register, an address moved into a
+    /// register) as references, less `bias`: non-PIE code's. (Below
+    /// 64 KiB, they are taken for offsets and constants.)
+    pub fn absolute(mut self, bias: u64) -> Self {
+        self.absolute = Some(bias);
+        self
     }
 
     /// The references of `inst`, at `pc`, pushed to `out`.
@@ -337,6 +365,38 @@ impl X86Sweep {
                             from: pc,
                             to,
                             via: access,
+                        });
+                    }
+                }
+                // Non-PIE code's absolute addresses, a table's indexed by
+                // registers too (`[rax + table]`: not a segment's offsets,
+                // `fs:[...]` being thread-local storage; nor an image's
+                // offsets from a register holding its address, below its
+                // base).
+                Operand::Mem(m)
+                    if !m.is_rip_relative()
+                        && m.segment.is_none()
+                        && m.disp >= 0x1_0000
+                        && self.absolute.is_some_and(|b| m.disp as u64 >= b) =>
+                {
+                    if let Some(bias) = self.absolute {
+                        out.push(CodeRef {
+                            from: pc,
+                            to: (m.disp as u64).wrapping_sub(bias),
+                            via: access,
+                        });
+                    }
+                }
+                Operand::Imm(i)
+                    if inst.mnemonic() == Mnemonic::Mov
+                        && matches!(ops.first(), Some(Operand::Reg(r)) if gpr(*r).is_some())
+                        && i.value >= 0x1_0000 =>
+                {
+                    if let Some(bias) = self.absolute {
+                        out.push(CodeRef {
+                            from: pc,
+                            to: i.value.wrapping_sub(bias),
+                            via: Via::AddressOf,
                         });
                     }
                 }

@@ -1,0 +1,514 @@
+
+Merging object attributes
+
+
+Merging program properties
+
+
+Discarded input sections
+
+ .group         0x0000000000000000       0x10 eh1.o
+ .group         0x0000000000000000        0xc eh1.o
+ .text          0x0000000000000000        0x0 eh1.o
+ .data          0x0000000000000000        0x0 eh1.o
+ .bss           0x0000000000000000        0x0 eh1.o
+ .group         0x0000000000000000       0x10 eh2.o
+ .group         0x0000000000000000        0xc eh2.o
+ .text          0x0000000000000000        0x0 eh2.o
+ .data          0x0000000000000000        0x0 eh2.o
+ .bss           0x0000000000000000        0x0 eh2.o
+ .note.gnu.property
+                0x0000000000000000       0x20 eh2.o
+ .text          0x0000000000000000        0x0 eh-main.o
+ .data          0x0000000000000000        0x0 eh-main.o
+ .bss           0x0000000000000000        0x0 eh-main.o
+ .note.gnu.property
+                0x0000000000000000       0x20 eh-main.o
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD eh1.o
+LOAD eh2.o
+LOAD eh-main.o
+                [!provide]                        PROVIDE (__executable_start = SEGMENT_START ("text-segment", 0x400000))
+                0x0000000000400200                . = (SEGMENT_START ("text-segment", 0x400000) + SIZEOF_HEADERS)
+
+.note.gnu.build-id
+                0x0000000000400200       0x24
+ *(.note.gnu.build-id)
+ .note.gnu.build-id
+                0x0000000000400200       0x24 eh1.o
+
+.interp
+ *(.interp)
+
+.hash
+ *(.hash)
+
+.gnu.hash
+ *(.gnu.hash)
+
+.dynsym
+ *(.dynsym)
+
+.dynstr
+ *(.dynstr)
+
+.gnu.version
+ *(.gnu.version)
+
+.gnu.version_d
+ *(.gnu.version_d)
+
+.gnu.version_r
+ *(.gnu.version_r)
+
+.rela.dyn       0x0000000000400228        0x0
+ *(.rela.init)
+ *(.rela.text .rela.text.* .rela.gnu.linkonce.t.*)
+ *(.rela.fini)
+ *(.rela.rodata .rela.rodata.* .rela.gnu.linkonce.r.*)
+ *(.rela.data .rela.data.* .rela.gnu.linkonce.d.*)
+ *(.rela.tdata .rela.tdata.* .rela.gnu.linkonce.td.*)
+ *(.rela.tbss .rela.tbss.* .rela.gnu.linkonce.tb.*)
+ *(.rela.ctors)
+ *(.rela.dtors)
+ *(.rela.got)
+ .rela.got      0x0000000000400228        0x0 eh1.o
+ *(.rela.tls)
+ *(.rela.bss .rela.bss.* .rela.gnu.linkonce.b.*)
+ *(.rela.ldata .rela.ldata.* .rela.gnu.linkonce.l.*)
+ *(.rela.lbss .rela.lbss.* .rela.gnu.linkonce.lb.*)
+ *(.rela.lrodata .rela.lrodata.* .rela.gnu.linkonce.lr.*)
+ *(.rela.ifunc)
+ .rela.eh_frame
+                0x0000000000400228        0x0 eh1.o
+
+.rela.plt       0x0000000000400228        0x0
+ *(.rela.plt)
+                [!provide]                        PROVIDE (__rela_iplt_start = .)
+ *(.rela.iplt)
+ .rela.iplt     0x0000000000400228        0x0 eh1.o
+                [!provide]                        PROVIDE (__rela_iplt_end = .)
+
+.relr.dyn
+ *(.relr.dyn)
+                0x0000000000401000                . = ALIGN (CONSTANT (MAXPAGESIZE))
+
+.init
+ *(SORT_NONE(.init))
+
+.plt            0x0000000000401000        0x0
+ *(.plt)
+ *(.iplt)
+ .iplt          0x0000000000401000        0x0 eh1.o
+
+.plt.got
+ *(.plt.got)
+
+.plt.sec
+ *(.plt.sec)
+
+.text           0x0000000000401000      0x247
+ *(.text.unlikely .text.*_unlikely .text.unlikely.*)
+ *(.text.exit .text.exit.*)
+ *(.text.startup .text.startup.*)
+ *(.text.hot .text.hot.*)
+ *(SORT_BY_NAME(.text.sorted.*))
+ *(.text .stub .text.* .gnu.linkonce.t.*)
+ .text._Z4workILi1EEii
+                0x0000000000401000       0x6d eh1.o
+                0x0000000000401000                int work<1>(int)
+ *fill*         0x000000000040106d       0x13 
+ .text._Z5plainILi1EEii
+                0x0000000000401080       0x43 eh1.o
+                0x0000000000401080                int plain<1>(int)
+ *fill*         0x00000000004010c3        0xd 
+ .text._Z4use1i
+                0x00000000004010d0       0x25 eh1.o
+                0x00000000004010d0                use1(int)
+ *fill*         0x00000000004010f5        0xb 
+ .text._Z4workILi2EEii
+                0x0000000000401100       0x6d eh2.o
+                0x0000000000401100                int work<2>(int)
+ *fill*         0x000000000040116d       0x13 
+ .text._Z5plainILi2EEii
+                0x0000000000401180       0x43 eh2.o
+                0x0000000000401180                int plain<2>(int)
+ *fill*         0x00000000004011c3        0xd 
+ .text._Z4use2i
+                0x00000000004011d0       0x25 eh2.o
+                0x00000000004011d0                use2(int)
+ *fill*         0x00000000004011f5        0xb 
+ .text._ZN5GuardD2Ev
+                0x0000000000401200        0xf eh-main.o
+                0x0000000000401200                Guard::~Guard()
+                0x0000000000401200                Guard::~Guard()
+ *fill*         0x000000000040120f        0x1 
+ .text._Z9may_throwi
+                0x0000000000401210        0x5 eh-main.o
+                0x0000000000401210                may_throw(int)
+ *fill*         0x0000000000401215        0xb 
+ .text._start   0x0000000000401220       0x27 eh-main.o
+                0x0000000000401220                _start
+ *(.gnu.warning)
+
+.fini
+ *(SORT_NONE(.fini))
+                [!provide]                        PROVIDE (__etext = .)
+                [!provide]                        PROVIDE (_etext = .)
+                [!provide]                        PROVIDE (etext = .)
+                0x0000000000402000                . = ALIGN (CONSTANT (MAXPAGESIZE))
+                0x0000000000402000                . = SEGMENT_START ("rodata-segment", (ALIGN (CONSTANT (MAXPAGESIZE)) + (. & (CONSTANT (MAXPAGESIZE) - 0x1))))
+
+.rodata
+ *(.rodata .rodata.* .gnu.linkonce.r.*)
+
+.rodata1
+ *(.rodata1)
+
+.eh_frame_hdr
+ *(.eh_frame_hdr)
+ *(.eh_frame_entry .eh_frame_entry.*)
+
+.eh_frame       0x0000000000402000      0x158
+ *(.eh_frame)
+ .eh_frame      0x0000000000402000       0xa8 eh1.o
+ .eh_frame      0x00000000004020a8       0x70 eh2.o
+                                         0xa8 (size before relaxing)
+ .eh_frame      0x0000000000402118       0x40 eh-main.o
+                                         0x58 (size before relaxing)
+ *(.eh_frame.*)
+
+.sframe
+ *(.sframe)
+ *(.sframe.*)
+
+.gcc_except_table
+                0x0000000000402158       0x18
+ *(.gcc_except_table .gcc_except_table.*)
+ .gcc_except_table._Z4workILi1EEii
+                0x0000000000402158        0xc eh1.o
+ .gcc_except_table._Z4workILi2EEii
+                0x0000000000402164        0xc eh2.o
+
+.gnu_extab
+ *(.gnu_extab*)
+
+.exception_ranges
+ *(.exception_ranges*)
+
+.note.build-id
+ *(.note.build-id)
+
+.note.GNU-stack
+                0x0000000000402170        0x0
+ *(.note.GNU-stack)
+ .note.GNU-stack
+                0x0000000000402170        0x0 eh1.o
+ .note.GNU-stack
+                0x0000000000402170        0x0 eh2.o
+ .note.GNU-stack
+                0x0000000000402170        0x0 eh-main.o
+
+.note.gnu.property
+                0x0000000000402170       0x20
+ *(.note.gnu.property)
+ .note.gnu.property
+                0x0000000000402170       0x20 eh1.o
+
+.note.ABI-tag
+ *(.note.ABI-tag)
+
+.note.package
+ *(.note.package)
+
+.note.dlopen
+ *(.note.dlopen)
+
+.note.netbsd.ident
+ *(.note.netbsd.ident)
+
+.note.openbsd.ident
+ *(.note.openbsd.ident)
+                0x0000000000403000                . = DATA_SEGMENT_ALIGN (CONSTANT (MAXPAGESIZE), CONSTANT (COMMONPAGESIZE))
+
+.eh_frame
+ *(.eh_frame)
+ *(.eh_frame.*)
+
+.sframe
+ *(.sframe)
+ *(.sframe.*)
+
+.gnu_extab
+ *(.gnu_extab)
+
+.gcc_except_table
+ *(.gcc_except_table .gcc_except_table.*)
+
+.exception_ranges
+ *(.exception_ranges*)
+
+.tdata          0x0000000000403000        0x0
+                [!provide]                        PROVIDE (__tdata_start = .)
+ *(.tdata .tdata.* .gnu.linkonce.td.*)
+
+.tbss
+ *(.tbss .tbss.* .gnu.linkonce.tb.*)
+ *(.tcommon)
+
+.preinit_array  0x0000000000403000        0x0
+                [!provide]                        PROVIDE (__preinit_array_start = .)
+ *(.preinit_array)
+                [!provide]                        PROVIDE (__preinit_array_end = .)
+
+.init_array     0x0000000000403000        0x0
+                [!provide]                        PROVIDE (__init_array_start = .)
+ *(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*))
+ *(.init_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .ctors)
+                [!provide]                        PROVIDE (__init_array_end = .)
+
+.fini_array     0x0000000000403000        0x0
+                [!provide]                        PROVIDE (__fini_array_start = .)
+ *(SORT_BY_INIT_PRIORITY(.fini_array.*) SORT_BY_INIT_PRIORITY(.dtors.*))
+ *(.fini_array EXCLUDE_FILE(*crtend?.o *crtend.o *crtbegin?.o *crtbegin.o) .dtors)
+                [!provide]                        PROVIDE (__fini_array_end = .)
+
+.ctors
+ *crtbegin.o(.ctors)
+ *crtbegin?.o(.ctors)
+ *(EXCLUDE_FILE(*crtend?.o *crtend.o) .ctors)
+ *(SORT_BY_NAME(.ctors.*))
+ *(.ctors)
+
+.dtors
+ *crtbegin.o(.dtors)
+ *crtbegin?.o(.dtors)
+ *(EXCLUDE_FILE(*crtend?.o *crtend.o) .dtors)
+ *(SORT_BY_NAME(.dtors.*))
+ *(.dtors)
+
+.jcr
+ *(.jcr)
+
+.data.rel.ro
+ *(.data.rel.ro.local* .gnu.linkonce.d.rel.ro.local.*)
+ *(.data.rel.ro .data.rel.ro.* .gnu.linkonce.d.rel.ro.*)
+
+.dynamic
+ *(.dynamic)
+
+.got            0x0000000000403000        0x0
+ *(.got)
+ .got           0x0000000000403000        0x0 eh1.o
+ *(.igot)
+                0x0000000000403000                . = DATA_SEGMENT_RELRO_END (., (SIZEOF (.got.plt) >= 0x18)?0x18:0x0)
+
+.got.plt        0x0000000000403000        0x0
+ *(.got.plt)
+ .got.plt       0x0000000000403000        0x0 eh1.o
+ *(.igot.plt)
+ .igot.plt      0x0000000000403000        0x0 eh1.o
+
+.data
+ *(.data .data.* .gnu.linkonce.d.*)
+
+.data1
+ *(.data1)
+                0x0000000000403000                _edata = .
+                [!provide]                        PROVIDE (edata = .)
+                0x0000000000403000                . = ALIGN (ALIGNOF (NEXT_SECTION))
+                0x0000000000403000                __bss_start = .
+
+.bss            0x0000000000403000        0x8
+ *(.dynbss)
+ *(.bss .bss.* .gnu.linkonce.b.*)
+ .bss.sink      0x0000000000403000        0x4 eh-main.o
+                0x0000000000403000                sink
+ *(COMMON)
+                0x0000000000403008                . = ALIGN ((. != 0x0)?0x8:0x1)
+ *fill*         0x0000000000403004        0x4 
+
+.lbss
+ *(.dynlbss)
+ *(.lbss .lbss.* .gnu.linkonce.lb.*)
+ *(LARGE_COMMON)
+                0x0000000000403008                . = ALIGN (0x8)
+                0x0000000000403008                . = SEGMENT_START ("ldata-segment", .)
+
+.lrodata
+ *(.lrodata .lrodata.* .gnu.linkonce.lr.*)
+
+.ldata          0x0000000000405008        0x0
+ *(.ldata .ldata.* .gnu.linkonce.l.*)
+                0x0000000000405008                . = ALIGN ((. != 0x0)?0x8:0x1)
+                0x0000000000405008                . = ALIGN (0x8)
+                0x0000000000403008                _end = .
+                [!provide]                        PROVIDE (end = .)
+                0x0000000000405008                . = DATA_SEGMENT_END (.)
+
+.stab
+ *(.stab)
+
+.stabstr
+ *(.stabstr)
+
+.stab.excl
+ *(.stab.excl)
+
+.stab.exclstr
+ *(.stab.exclstr)
+
+.stab.index
+ *(.stab.index)
+
+.stab.indexstr
+ *(.stab.indexstr)
+
+.comment
+ *(.comment)
+
+.gnu.build.attributes
+ *(.gnu.build.attributes .gnu.build.attributes.*)
+
+.debug
+ *(.debug)
+
+.line
+ *(.line)
+
+.debug_srcinfo
+ *(.debug_srcinfo)
+
+.debug_sfnames
+ *(.debug_sfnames)
+
+.debug_aranges  0x0000000000000000       0xf0
+ *(.debug_aranges)
+ .debug_aranges
+                0x0000000000000000       0x50 eh1.o
+ .debug_aranges
+                0x0000000000000050       0x50 eh2.o
+ .debug_aranges
+                0x00000000000000a0       0x50 eh-main.o
+
+.debug_pubnames
+ *(.debug_pubnames)
+
+.debug_info     0x0000000000000000      0x634
+ *(.debug_info .gnu.linkonce.wi.*)
+ .debug_info    0x0000000000000000      0x258 eh1.o
+ .debug_info    0x0000000000000258      0x258 eh2.o
+ .debug_info    0x00000000000004b0      0x184 eh-main.o
+
+.debug_abbrev   0x0000000000000000      0x430
+ *(.debug_abbrev)
+ .debug_abbrev  0x0000000000000000      0x176 eh1.o
+ .debug_abbrev  0x0000000000000176      0x176 eh2.o
+ .debug_abbrev  0x00000000000002ec      0x144 eh-main.o
+
+.debug_line     0x0000000000000000      0x302
+ *(.debug_line .debug_line.* .debug_line_end)
+ .debug_line    0x0000000000000000      0x12c eh1.o
+ .debug_line    0x000000000000012c      0x12c eh2.o
+ .debug_line    0x0000000000000258       0xaa eh-main.o
+
+.debug_frame
+ *(.debug_frame)
+
+.debug_str      0x0000000000000000      0x216
+ *(.debug_str)
+ .debug_str     0x0000000000000000      0x216 eh1.o
+                                        0x1c7 (size before relaxing)
+ .debug_str     0x0000000000000216        0x0 eh2.o
+                                        0x1c7 (size before relaxing)
+ .debug_str     0x0000000000000216        0x0 eh-main.o
+                                        0x183 (size before relaxing)
+
+.debug_loc
+ *(.debug_loc)
+
+.debug_macinfo
+ *(.debug_macinfo)
+
+.debug_weaknames
+ *(.debug_weaknames)
+
+.debug_funcnames
+ *(.debug_funcnames)
+
+.debug_typenames
+ *(.debug_typenames)
+
+.debug_varnames
+ *(.debug_varnames)
+
+.debug_pubtypes
+ *(.debug_pubtypes)
+
+.debug_ranges
+ *(.debug_ranges)
+
+.debug_addr
+ *(.debug_addr)
+
+.debug_line_str
+                0x0000000000000000       0x42
+ *(.debug_line_str)
+ .debug_line_str
+                0x0000000000000000       0x42 eh1.o
+                                         0x37 (size before relaxing)
+ .debug_line_str
+                0x0000000000000042        0x0 eh2.o
+                                         0x37 (size before relaxing)
+ .debug_line_str
+                0x0000000000000042        0x0 eh-main.o
+                                         0x46 (size before relaxing)
+
+.debug_loclists
+                0x0000000000000000      0x213
+ *(.debug_loclists)
+ .debug_loclists
+                0x0000000000000000       0xf0 eh1.o
+ .debug_loclists
+                0x00000000000000f0       0xf0 eh2.o
+ .debug_loclists
+                0x00000000000001e0       0x33 eh-main.o
+
+.debug_macro
+ *(.debug_macro)
+
+.debug_names
+ *(.debug_names)
+
+.debug_rnglists
+                0x0000000000000000       0xc1
+ *(.debug_rnglists)
+ .debug_rnglists
+                0x0000000000000000       0x4b eh1.o
+ .debug_rnglists
+                0x000000000000004b       0x4b eh2.o
+ .debug_rnglists
+                0x0000000000000096       0x2b eh-main.o
+
+.debug_str_offsets
+ *(.debug_str_offsets)
+
+.debug_sup
+ *(.debug_sup)
+
+.gnu.attributes
+ *(.gnu.attributes)
+
+/DISCARD/
+ *(.note.GNU-stack)
+ *(.gnu_debuglink)
+ *(.gnu.lto_*)
+ *(.gnu_object_only)
+OUTPUT(gnu-bfd-eh elf64-x86-64)

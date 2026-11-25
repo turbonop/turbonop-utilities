@@ -248,9 +248,11 @@ impl Link {
     ) -> Link {
         let mut link = Link::judged();
         if let Ok(d) = debug.discarded_functions() {
-            link.opt_icf = d.shared;
+            // (A dropped function kept code calls was folded: mold keeps no
+            // symbol of it, as it keeps none of what it collects.)
+            link.opt_icf = d.shared || !d.called.is_empty();
             if let Some(defined) = defined_functions(image, debug) {
-                for name in &d.dropped {
+                for name in d.dropped.iter().filter(|n| !d.called.contains(n)) {
                     if defined.contains(name.as_bytes()) {
                         link.opt_icf = true;
                     } else {

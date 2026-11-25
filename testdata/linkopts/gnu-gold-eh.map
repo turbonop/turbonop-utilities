@@ -1,0 +1,160 @@
+
+Discarded input sections
+
+ .group         0x0000000000000000       0x10 eh1.o
+ .group         0x0000000000000000        0xc eh1.o
+ .text          0x0000000000000000        0x0 eh1.o
+ .data          0x0000000000000000        0x0 eh1.o
+ .bss           0x0000000000000000        0x0 eh1.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 eh1.o
+ .group         0x0000000000000000       0x10 eh2.o
+ .group         0x0000000000000000        0xc eh2.o
+ .text          0x0000000000000000        0x0 eh2.o
+ .data          0x0000000000000000        0x0 eh2.o
+ .bss           0x0000000000000000        0x0 eh2.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 eh2.o
+ .text          0x0000000000000000        0x0 eh-main.o
+ .data          0x0000000000000000        0x0 eh-main.o
+ .bss           0x0000000000000000        0x0 eh-main.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 eh-main.o
+
+Memory map
+
+ ** file header
+                0x0000000000400000       0x40
+ ** segment headers
+                0x0000000000400040      0x118
+
+.note.gnu.property
+                0x0000000000400158       0x20
+ ** note header
+                0x0000000000400158       0x10
+ ** fill        0x0000000000400168       0x10
+
+.note.gnu.build-id
+                0x0000000000400178       0x24
+ ** note header
+                0x0000000000400178       0x10
+ ** zero fill   0x0000000000400188       0x14
+
+.text           0x00000000004001a0      0x247
+ .text._Z4workILi1EEii
+                0x00000000004001a0       0x6d eh1.o
+                0x00000000004001a0                int work<1>(int)
+ ** fill        0x000000000040020d       0x13
+ .text._Z5plainILi1EEii
+                0x0000000000400220       0x43 eh1.o
+                0x0000000000400220                int plain<1>(int)
+ ** fill        0x0000000000400263        0xd
+ .text._Z4use1i
+                0x0000000000400270       0x25 eh1.o
+                0x0000000000400270                use1(int)
+ ** fill        0x0000000000400295        0xb
+ .text._Z4workILi2EEii
+                0x00000000004002a0       0x6d eh2.o
+                0x00000000004002a0                int work<2>(int)
+ ** fill        0x000000000040030d       0x13
+ .text._Z5plainILi2EEii
+                0x0000000000400320       0x43 eh2.o
+                0x0000000000400320                int plain<2>(int)
+ ** fill        0x0000000000400363        0xd
+ .text._Z4use2i
+                0x0000000000400370       0x25 eh2.o
+                0x0000000000400370                use2(int)
+ ** fill        0x0000000000400395        0xb
+ .text._ZN5GuardD2Ev
+                0x00000000004003a0        0xf eh-main.o
+                0x00000000004003a0                Guard::~Guard()
+                0x00000000004003a0                Guard::~Guard()
+ ** fill        0x00000000004003af        0x1
+ .text._Z9may_throwi
+                0x00000000004003b0        0x5 eh-main.o
+                0x00000000004003b0                may_throw(int)
+ ** fill        0x00000000004003b5        0xb
+ .text._start   0x00000000004003c0       0x27 eh-main.o
+                0x00000000004003c0                _start
+
+.gcc_except_table
+                0x00000000004003e7       0x18
+ .gcc_except_table._Z4workILi1EEii
+                0x00000000004003e7        0xc eh1.o
+ .gcc_except_table._Z4workILi2EEii
+                0x00000000004003f3        0xc eh2.o
+
+.eh_frame       0x0000000000400400      0x170
+ ** eh_frame    0x0000000000400400      0x170
+
+.bss            0x0000000000401570        0x4
+ .bss.sink      0x0000000000401570        0x4 eh-main.o
+                0x0000000000401570                sink
+
+.debug_info     0x0000000000000000      0x634
+ .debug_info    0x0000000000000000      0x258 eh1.o
+ .debug_info    0x0000000000000258      0x258 eh2.o
+ .debug_info    0x00000000000004b0      0x184 eh-main.o
+
+.debug_abbrev   0x0000000000000000      0x430
+ .debug_abbrev  0x0000000000000000      0x176 eh1.o
+ .debug_abbrev  0x0000000000000176      0x176 eh2.o
+ .debug_abbrev  0x00000000000002ec      0x144 eh-main.o
+
+.debug_loclists
+                0x0000000000000000      0x213
+ .debug_loclists
+                0x0000000000000000       0xf0 eh1.o
+ .debug_loclists
+                0x00000000000000f0       0xf0 eh2.o
+ .debug_loclists
+                0x00000000000001e0       0x33 eh-main.o
+
+.debug_aranges  0x0000000000000000       0xf0
+ .debug_aranges
+                0x0000000000000000       0x50 eh1.o
+ .debug_aranges
+                0x0000000000000050       0x50 eh2.o
+ .debug_aranges
+                0x00000000000000a0       0x50 eh-main.o
+
+.debug_rnglists
+                0x0000000000000000       0xc1
+ .debug_rnglists
+                0x0000000000000000       0x4b eh1.o
+ .debug_rnglists
+                0x000000000000004b       0x4b eh2.o
+ .debug_rnglists
+                0x0000000000000096       0x2b eh-main.o
+
+.debug_line     0x0000000000000000      0x302
+ .debug_line    0x0000000000000000      0x12c eh1.o
+ .debug_line    0x000000000000012c      0x12c eh2.o
+ .debug_line    0x0000000000000258       0xaa eh-main.o
+
+.debug_str      0x0000000000000000      0x21c
+ ** merge strings
+                0x0000000000000000      0x21c
+
+.debug_line_str
+                0x0000000000000000       0x55
+ ** merge strings
+                0x0000000000000000       0x55
+
+.note.gnu.gold-version
+                0x0000000000000000       0x1c
+ ** note header
+                0x0000000000000000       0x10
+ ** fill        0x0000000000000010        0x9
+ ** zero fill   0x0000000000000019        0x3
+
+.symtab         0x0000000000000000      0x1e0
+ ** symtab      0x0000000000000000      0x1e0
+
+.strtab         0x0000000000000000       0xda
+ ** string table
+                0x0000000000000000       0xda
+
+.shstrtab       0x0000000000000000       0xef
+ ** string table
+                0x0000000000000000       0xef

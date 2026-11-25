@@ -1,0 +1,67 @@
+               VMA       Size Align Out     In      Symbol
+          0x200000         64     8 EHDR
+          0x200040        560     8 PHDR
+          0x200270         32     8 .note.gnu.property
+          0x200290         36     4 .note.gnu.build-id
+          0x2002b8        348     8 .eh_frame
+          0x200414         84     4 .eh_frame_hdr
+          0x200468         24     1 .gcc_except_table
+          0x200468         12     1         eh1.o:(.gcc_except_table._Z4workILi1EEii)
+          0x200474         12     1         eh2.o:(.gcc_except_table._Z4workILi2EEii)
+          0x201480        583    32 .text
+          0x201480        109    16         eh1.o:(.text._Z4workILi1EEii)
+          0x201480          0     0                 int work<1>(int)
+          0x201500         67    32         eh1.o:(.text._Z5plainILi1EEii)
+          0x201500          0     0                 int plain<1>(int)
+          0x201550         37    16         eh1.o:(.text._Z4use1i)
+          0x201550          0     0                 use1(int)
+          0x201580        109    16         eh2.o:(.text._Z4workILi2EEii)
+          0x201580          0     0                 int work<2>(int)
+          0x201600         67    32         eh2.o:(.text._Z5plainILi2EEii)
+          0x201600          0     0                 int plain<2>(int)
+          0x201650         37    16         eh2.o:(.text._Z4use2i)
+          0x201650          0     0                 use2(int)
+          0x201680         15    16         eh-main.o:(.text._ZN5GuardD2Ev)
+          0x201680          0     0                 Guard::~Guard()
+          0x201680          0     0                 Guard::~Guard()
+          0x201690          5    16         eh-main.o:(.text._Z9may_throwi)
+          0x201690          0     0                 may_throw(int)
+          0x2016a0         39    16         eh-main.o:(.text._start)
+          0x2016a0          0     0                 _start
+          0x2026c8          8     8 .got
+          0x2026d0       2352     1 .relro_padding
+          0x2036d0         24     8 .got.plt
+          0x2036e8          4     4 .bss
+          0x2036e8          4     4         eh-main.o:(.bss.sink)
+          0x2036e8          0     0                 sink
+                 0         37     1 .comment
+                 0       1072     1 .debug_abbrev
+                 0        374     1         eh1.o:(.debug_abbrev)
+                 0        374     1         eh2.o:(.debug_abbrev)
+                 0        324     1         eh-main.o:(.debug_abbrev)
+                 0        240     1 .debug_aranges
+                 0         80     1         eh1.o:(.debug_aranges)
+                 0         80     1         eh2.o:(.debug_aranges)
+                 0         80     1         eh-main.o:(.debug_aranges)
+                 0       1588     1 .debug_info
+                 0        600     1         eh1.o:(.debug_info)
+                 0        600     1         eh2.o:(.debug_info)
+                 0        388     1         eh-main.o:(.debug_info)
+                 0        770     1 .debug_line
+                 0        300     1         eh1.o:(.debug_line)
+                 0        300     1         eh2.o:(.debug_line)
+                 0        170     1         eh-main.o:(.debug_line)
+                 0         85     1 .debug_line_str
+                 0        531     1 .debug_loclists
+                 0        240     1         eh1.o:(.debug_loclists)
+                 0        240     1         eh2.o:(.debug_loclists)
+                 0         51     1         eh-main.o:(.debug_loclists)
+                 0        193     1 .debug_rnglists
+                 0         75     1         eh1.o:(.debug_rnglists)
+                 0         75     1         eh2.o:(.debug_rnglists)
+                 0         43     1         eh-main.o:(.debug_rnglists)
+                 0        540     1 .debug_str
+                 0        268     1 .shstrtab
+                 0        585     1 .strtab
+                 0       1584     8 .symtab
+                 0       1472     8 SHDR

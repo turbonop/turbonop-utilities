@@ -22,6 +22,41 @@ leave this list when they ship.
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
 
+## Dump Analyzer
+
+A post-mortem debugger for Windows, Linux, and macOS crash dumps
+(minidumps and core files) that replaces WinDbg for dumps. The plan, its
+decisions, and each phase's test of done are in `docs/dump-analyzer.md`.
+In order:
+
+- **Groundwork.** One register numbering (DWARF's), `turbonop-abi`
+  (volatile registers, red zones, home space, and PAC for each platform),
+  and minidump contexts converted for the unwinders.
+- **Targets.** `turbonop-target`: snapshots, capabilities, and an address
+  space of dump memory over module images, with every byte's provenance;
+  ELF core files; programs opened from a module's identity; executables
+  fetched from symbol servers; every fetch in parallel.
+- **Frames.** `turbonop-frames`: a stack walk that tracks each register's
+  provenance (known, clobbered, unknown) and follows each platform's ABI,
+  with signal frames and checked fallbacks, matching DbgEng,
+  minidump-stackwalk, and gdb.
+- **Values.** DWARF places read completely (entry values, pieces, implicit
+  values), the PDB's missing def-ranges, and `turbonop-eval`.
+- **The app and the extension.** `apps/dump-analyzer` and "Dump Analyzer":
+  an inline DAP adapter over `serve`, a disassembly view with the dump's
+  values, the web host's debug-UI shim, MCP tools, and a release workflow.
+- **Instruction access data.** Read and written operands, implicit
+  operands, and flags for x86 and ARM64 (ARM64 first gets an operand API),
+  matching XED and LLVM.
+- **The IR and its lifters.** `turbonop-ir`, and x64 and ARM64 lifters for
+  the instructions compilers emit, tested on real CPUs.
+- **How did we get here.** `turbonop-paths`: the branches each frame took.
+  Each claim is certain, one of *n*, or likely, and never more than what's
+  proved, and the claims are checked against TTD and single-step traces.
+- **macOS and iOS.** The dyld shared cache and Mach-O core files, best
+  effort at first, then finished on a rented Mac VM.
+- **SLEIGH, then the decompiler.** Ghidra's, ported.
+
 ## Every format alike
 
 Every command and analysis should work the same, and as well, on PE,

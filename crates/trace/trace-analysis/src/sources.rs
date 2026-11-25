@@ -77,10 +77,15 @@ pub type Bucket = (ThreadIx, u16, StackId, u64);
 /// Buckets, each with its weight and count, sorted by bucket.
 pub type Run = Vec<(Bucket, (u64, u64))>;
 
-/// How many buckets a thread turns into instances at a time. (Fixed, not
-/// by the number of threads, so that keys are numbered the same on any
-/// machine.)
-const CHUNK: usize = 4096;
+/// How many buckets a thread turns into instances at a time: about
+/// `CHUNKS` chunks' worth, at least `MIN_CHUNK` and at most `MAX_CHUNK`.
+/// (By the buckets, not the number of threads, so that keys are numbered
+/// the same on any machine. Few large chunks make fewer keys to number
+/// across chunks, which is done on one thread; but enough of them keep
+/// every core busy.)
+const CHUNKS: usize = 16;
+const MIN_CHUNK: usize = 4096;
+const MAX_CHUNK: usize = 1 << 16;
 
 /// Events a worker aggregates at a time.
 const ROWS: usize = 1 << 16;
@@ -192,10 +197,11 @@ fn instances(
     groups: &[GroupBy],
     buckets: &[(Bucket, (u64, u64))],
 ) -> Instances {
-    if buckets.len() <= CHUNK {
+    let chunk = buckets.len().div_ceil(CHUNKS).clamp(MIN_CHUNK, MAX_CHUNK);
+    if buckets.len() <= chunk {
         return chunk_instances(trace, framer, keys, groups, buckets);
     }
-    let chunks: Vec<&[(Bucket, (u64, u64))]> = buckets.chunks(CHUNK).collect();
+    let chunks: Vec<&[(Bucket, (u64, u64))]> = buckets.chunks(chunk).collect();
     let threads = std::thread::available_parallelism()
         .map_or(4, std::num::NonZero::get)
         .min(chunks.len());
@@ -243,28 +249,77 @@ fn chunk_instances(
 ) -> Instances {
     let mut out = Instances::new(groups.len());
     let mut seq: Vec<KeyId> = Vec::new();
-    let mut frames: Vec<u64> = Vec::new();
     let by_tag = groups.contains(&GroupBy::StackTag) && framer.has_tags();
     let folding = framer.has_folds();
     let by_module = framer.mode() == FrameMode::Module;
+    // The previous stack's nodes, outermost first, and what each one's
+    // frame made: (a return address, folded, key, its inlined calls'
+    // range in `memo_inlined`). Buckets are sorted by thread, then stack,
+    // and stacks are numbered in their trie's order, so a stack mostly
+    // shares its callers with the one before: those nodes aren't walked
+    // again, and their keys are taken from here.
+    let mut path: Vec<StackId> = Vec::new();
+    let mut fresh: Vec<StackId> = Vec::new();
+    let mut memo: Vec<(bool, bool, KeyId, (u32, u32))> = Vec::new();
+    let mut memo_inlined: Vec<KeyId> = Vec::new();
+    let mut memo_process = ProcessIx::NONE;
     for &((thread, cpu, stack, ip), (weight, count)) in buckets {
         let process = trace.thread_process(thread);
-        frames.clear();
-        if stack.is_empty() {
-            if ip != 0 {
-                frames.push(ip);
-            }
-        } else {
-            frames.extend(trace.stacks.frames(stack));
+        let ip_only = stack.is_empty();
+        if process != memo_process || ip_only {
+            path.clear();
+            memo.clear();
+            memo_inlined.clear();
+            memo_process = process;
         }
+        if !ip_only {
+            // The stack's nodes: those it shares with the previous stack
+            // (its callers), then its own, found by walking up from its
+            // leaf only to the first node on the previous path (which a
+            // node is on if the path has it at the node's depth).
+            fresh.clear();
+            let mut cur = stack;
+            while !cur.is_empty() {
+                let depth = trace.stacks.depth(cur) as usize;
+                if path.get(depth - 1) == Some(&cur) {
+                    break;
+                }
+                fresh.push(cur);
+                cur = trace.stacks.parent(cur);
+            }
+            let common = if cur.is_empty() {
+                0
+            } else {
+                trace.stacks.depth(cur) as usize
+            };
+            path.truncate(common);
+            path.extend(fresh.iter().rev());
+            if memo.len() > common {
+                memo_inlined.truncate(memo[common].3.0 as usize);
+                memo.truncate(common);
+            }
+        }
+        // The frames, outermost first: the stack's, or for a sample
+        // without one, its instruction pointer.
+        let n = if ip_only {
+            usize::from(ip != 0)
+        } else {
+            path.len()
+        };
+        let frame_at = |p: usize| {
+            if ip_only {
+                ip
+            } else {
+                trace.stacks.frame(path[p])
+            }
+        };
         // The stack's tag: that of its deepest tagged frame. (Every frame
         // but the innermost is a return address: the instruction after a
         // call, which may be past its function.)
         let tag = if by_tag {
-            frames
-                .iter()
-                .enumerate()
-                .find_map(|(i, &f)| framer.classify(process, f, i > 0).0)
+            (0..n)
+                .rev()
+                .find_map(|p| framer.classify(process, frame_at(p), p + 1 < n).0)
                 .unwrap_or(Key::NO_TAG)
         } else {
             Key::NO_TAG
@@ -278,29 +333,43 @@ fn chunk_instances(
                 GroupBy::StackTag => Key::Tag(tag),
             }));
         }
-        for (i, &f) in frames.iter().enumerate().rev() {
-            let fold = if folding {
-                framer.classify(process, f, i > 0).1
-            } else {
-                None
-            };
-            // The frame's key, and the calls inlined at it (its callees in
-            // the tree).
-            let (key, inlined) = match fold {
-                Some(rule) => (Key::Fold(rule), &[][..]),
-                None => framer.frame(process, f, i > 0),
-            };
-            let k = keys.intern(key);
+        for p in 0..n {
+            let ret = p + 1 < n;
+            // (The previous stack's innermost frame is a caller now.)
+            if memo.get(p).is_some_and(|m| m.0 != ret) {
+                memo_inlined.truncate(memo[p].3.0 as usize);
+                memo.truncate(p);
+            }
+            if memo.len() == p {
+                let f = frame_at(p);
+                let fold = if folding {
+                    framer.classify(process, f, ret).1
+                } else {
+                    None
+                };
+                // The frame's key, and the calls inlined at it (its
+                // callees in the tree).
+                let (key, inlined) = match fold {
+                    Some(rule) => (Key::Fold(rule), &[][..]),
+                    None => framer.frame(process, f, ret),
+                };
+                let k = keys.intern(key);
+                let from = u32::try_from(memo_inlined.len()).expect("few inlined calls");
+                for &inline in inlined {
+                    memo_inlined.push(keys.intern(inline));
+                }
+                let to = u32::try_from(memo_inlined.len()).expect("few inlined calls");
+                memo.push((ret, fold.is_some(), k, (from, to)));
+            }
+            let (_, folded, k, (from, to)) = memo[p];
             // A run of frames in one folded group, or (by image) in one
             // image, is one node.
-            let collapses = fold.is_some() || by_module;
+            let collapses = folded || by_module;
             if collapses && seq.len() > groups.len() && seq.last() == Some(&k) {
                 continue;
             }
             seq.push(k);
-            for &inline in inlined {
-                seq.push(keys.intern(inline));
-            }
+            seq.extend_from_slice(&memo_inlined[from as usize..to as usize]);
         }
         out.push_counted(&seq, weight, count);
     }

@@ -1,0 +1,24 @@
+[package]
+name = "procupine"
+description = "procupine: the processes running on this machine, as a process explorer shows them (Windows, Linux, macOS), from the command line, or served to an editor"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "procupine"
+path = "src/main.rs"
+
+[dependencies]
+turbonop-global-alloc.workspace = true
+turbonop-process.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

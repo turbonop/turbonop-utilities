@@ -27,41 +27,32 @@ leave this list when they ship.
 A post-mortem debugger for Windows, Linux, and macOS crash dumps
 (minidumps and core files) that replaces WinDbg for dumps. The plan, its
 decisions, and each phase's test of done are in `docs/dump-analyzer.md`.
-In order:
+What's left, in order (the plan's status table says what's done):
 
-- **Groundwork.** One register numbering (DWARF's), `turbonop-abi`
-  (volatile registers, red zones, home space, and PAC for each platform),
-  and minidump contexts converted for the unwinders.
-- **Targets.** `turbonop-target`: snapshots, capabilities, and an address
-  space of dump memory over module images, with every byte's provenance;
-  ELF core files; programs opened from a module's identity; executables
-  fetched from symbol servers; every fetch in parallel.
-- **Frames.** `turbonop-frames`: a stack walk that tracks each register's
-  provenance (known, clobbered, unknown) and follows each platform's ABI,
-  with signal frames and checked fallbacks, matching DbgEng,
-  minidump-stackwalk, and gdb.
-- **Corrupt stacks rebuilt.** When the walk fails, the stack's code
-  pointers that follow a call become candidate return addresses, linked
-  by their functions' unwind data or prologs (each frame's size says where
-  its caller's return address must be) and by frame records. The longest
-  consistent chains are the probable stacks, each with its confidence.
-- **Values.** DWARF places read completely (entry values, pieces, implicit
-  values), the PDB's missing def-ranges, and `turbonop-eval`.
-- **The app and the extension.** `apps/dump-analyzer` and "Dump Analyzer":
-  an inline DAP adapter over `serve`, a disassembly view with the dump's
-  values, the web host's debug-UI shim, MCP tools, and a release workflow.
+- **Checked against the corpus.** Stacks and locals on every Windows and
+  Linux dump in `hexcavator-private`, against DbgEng, minidump-stackwalk,
+  and gdb; and fetching measured there (cold, the first open of the test
+  dump took 43 s once; warm, 0.4 s).
+- **Frames: what's left.** x86's PDB frame data (FrameData, FPO) in the
+  walk; Windows ARM64 dumps; macOS's `_sigtramp`.
+- **Values: what's left.** x86's virtual frame (``), TLS, implicit
+  pointers, DWARF's typed operations, NatVis.
+- **The extension: what's left.** The web host's debug-UI shim (its panes,
+  for the web version), a disassembly view with the dump's values beside
+  the code (shared with hexcavator's), and a release workflow
+  (`dump-analyzer-release.yml`, its signing and packaging).
 - **Instruction access data.** Read and written operands, implicit
   operands, and flags for x86 and ARM64 (ARM64 first gets an operand API),
-  matching XED and LLVM.
+  matching XED and LLVM; then `turbonop-paths`'s own x86-64 write sets
+  replaced by them.
 - **The IR and its lifters.** `turbonop-ir`, and x64 and ARM64 lifters for
-  the instructions compilers emit, tested on real CPUs.
-- **How did we get here.** `turbonop-paths`: the branches each frame took.
-  Each claim is certain, one of *n*, or likely, and never more than what's
-  proved, and the claims are checked against TTD and single-step traces.
-- **macOS and iOS.** The dyld shared cache and Mach-O core files, best
-  effort at first, then finished on a rented Mac VM.
+  the instructions compilers emit, tested on real CPUs; then the paths
+  analysis's symbolic execution and solver (values computed from others,
+  not only those that survive), the dead stack's evidence, ARM64, and
+  TTD and single-step ground truth.
+- **macOS and iOS.** The dyld shared cache; real Mach-O core files and
+  Crashpad dumps on a rented Mac VM, with lldb as the oracle.
 - **SLEIGH, then the decompiler.** Ghidra's, ported.
-
 ## Every format alike
 
 Every command and analysis should work the same, and as well, on PE,

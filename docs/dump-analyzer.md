@@ -14,6 +14,21 @@ oracles, in `hexcavator-private`.
 This is a plan, not a specification. Each phase becomes TODO.md items, and
 items leave TODO.md as they ship.
 
+## Status (2026-11-25)
+
+| Phase | State |
+|---|---|
+| 0 Groundwork | Done: `turbonop-abi`, DWARF register numbers everywhere, CodeView registers mapped to them, minidump contexts read by their flags. |
+| 1 Targets | Done: the target model (snapshots, capabilities, provenance), minidumps, Linux core files, the address space (images relocated as the loader would have), images found by identity locally or from servers, batched parallel fetches, all modules loaded at once. Not yet: the corpus run against oracles in `hexcavator-private`; measuring fetches. |
+| 2 Frames | Done: the walk with each register's provenance, ABI clobbers, PAC stripping (by the target's address width where it says), Linux signal frames, frame-pointer and scan fallbacks checked for calls, symbols with inlined calls; corrupt stacks rebuilt. Checked against DbgEng and gdb on real dumps. Not yet: x86's PDB frame data in the walk (its unwinder exists), macOS `_sigtramp`, Windows ARM64 dumps. |
+| 3 Values | Done: locals by PDB def-ranges (as DbgEng reads them) and DWARF location expressions (a complete evaluator, entry values through call sites). Checked against DbgEng's `dv` and gdb. Not yet: x86's virtual frame (`$T0`), TLS, implicit pointers, typed DWARF operations, NatVis. |
+| 4 App and extension | Done: `dump-analyzer` (commands, `serve`, `mcp`), the VS Code extension (an inline DAP adapter: threads, stacks, locals and members, registers, disassembly, memory, the debug console). Not yet: the web host's debug-UI shim, the release workflow, a shared disassembly view with the dump's values. |
+| 5 Access data | In progress (on branches `access-x86` and `access-arm64`). |
+| 6 IR and lifters | Not yet. Phase 7 uses x86-64 write sets of its own meanwhile (an instruction not described writes everything: sound, imprecise). |
+| 7 How did we get here | First version: branches decided by control flow and by flag operands whose values survive to the PC; blocks that ran; the ways left. Not yet: values computed from others (the IR's symbolic execution and solver), the dead stack's evidence, outer frames' stale returns, ARM64, TTD ground truth. |
+| 8 macOS and iOS | Begun: Mach-O core files (threads, exception states, notes, images), tested on cores made in tests. Not yet: the dyld shared cache, `_sigtramp`, real cores (the Mac VM). |
+| 9, 10 SLEIGH, decompiler | Not yet. |
+
 ## Decisions
 
 | | Decision |

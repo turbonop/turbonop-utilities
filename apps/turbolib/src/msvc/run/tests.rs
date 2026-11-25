@@ -22,6 +22,7 @@ fn env_in(cwd: &Path) -> Env {
     Env {
         lib_options: None,
         lib_path: None,
+        turbolib_options: None,
         cwd: cwd.to_path_buf(),
     }
 }
@@ -191,4 +192,32 @@ fn llvm_lib_diagnostics_on_stderr() {
     assert_eq!(o.stderr, "nothere.obj: no such file or directory\n");
     assert_eq!(o.exit, 1);
     assert!(o.stdout.is_empty());
+}
+
+#[test]
+fn turbolib_options() {
+    let dir = scratch("turbolib-options");
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/TURBOLIB:fold=some", "a.obj"]),
+        &env_in(&dir),
+    );
+    assert_eq!(o.exit, 1117);
+    assert!(
+        o.stdout
+            .starts_with("LINK : fatal error LNK1117: syntax error in option 'TURBOLIB:fold=some'")
+    );
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/TURBOLIB:fold=identical", "a.obj"]),
+        &env_in(&dir),
+    );
+    assert!(
+        o.stdout.contains("only fold=none is written so far"),
+        "{o:?}"
+    );
+    let mut env = env_in(&dir);
+    env.turbolib_options = Some("stats".into());
+    let o = run(Flavor::LlvmLib, &w(&["a.obj"]), &env);
+    assert_eq!(o.stderr, "TURBOLIB_OPTIONS: stats: options start with --\n");
 }

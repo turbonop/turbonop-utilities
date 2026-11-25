@@ -9,6 +9,7 @@
 use turbonop_global_alloc as _;
 
 mod msvc;
+mod settings;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;

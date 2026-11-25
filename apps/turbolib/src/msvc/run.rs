@@ -11,6 +11,7 @@ use super::diag::{Diag, Kind, Reporter};
 use super::inputs::{self, InputKind, MachineCheck};
 use super::options::{self, Options};
 use super::order::{self, Input};
+use crate::settings::Settings;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
@@ -21,6 +22,9 @@ pub struct Env {
     pub lib_options: Option<String>,
     /// `LIB`: directories searched for inputs, separated by `;`.
     pub lib_path: Option<String>,
+    /// `TURBOLIB_OPTIONS`: turbolib's own options, read before
+    /// `/TURBOLIB:`'s.
+    pub turbolib_options: Option<String>,
     /// The current directory, against which relative paths are read.
     pub cwd: PathBuf,
 }
@@ -31,9 +35,31 @@ impl Env {
         Env {
             lib_options: std::env::var("_LIB_").ok(),
             lib_path: std::env::var("LIB").ok(),
+            turbolib_options: std::env::var("TURBOLIB_OPTIONS").ok(),
             cwd: std::env::current_dir().unwrap_or_default(),
         }
     }
+}
+
+/// turbolib's options: `TURBOLIB_OPTIONS`, then each `/TURBOLIB:`. A bad one
+/// is fatal, worded as `lib.exe` words a bad option (LNK1117).
+fn settings(flavor: Flavor, opts: &Options, env: &Env) -> Result<Settings, Diag> {
+    let fail = |text: String| match flavor {
+        Flavor::Lib => Diag::fatal(1117, text),
+        Flavor::LlvmLib => Diag::llvm(Kind::Fatal, text),
+    };
+    let mut s = Settings::default();
+    if let Some(text) = &env.turbolib_options {
+        s.apply_env(text)
+            .map_err(|e| fail(format!("TURBOLIB_OPTIONS: {e}")))?;
+    }
+    for o in &opts.turbolib {
+        s.apply(o)
+            .map_err(|e| fail(format!("syntax error in option 'TURBOLIB:{o}' ({e})")))?;
+    }
+    s.check_supported()
+        .map_err(|e| fail(format!("turbolib: {e}")))?;
+    Ok(s)
 }
 
 /// What a run printed and returned.
@@ -132,6 +158,16 @@ fn run_inner(flavor: Flavor, args: &[String], env: &Env, out: &mut Out) -> i32 {
         if r.report(d).is_err() {
             return finish(out, r);
         }
+    }
+    let settings = match settings(flavor, &opts, env) {
+        Ok(s) => s,
+        Err(d) => {
+            let _ = r.report(d);
+            return finish(out, r);
+        }
+    };
+    if let Some(n) = settings.threads {
+        turbonop_par::set_threads(n);
     }
     let _ = run_mode(flavor, &opts, env, out, &mut r);
     finish(out, r)

@@ -2,6 +2,8 @@
 //!
 //! - [`symbols`]: symbol records (`S_*`): procedures, data, frames, inline
 //!   sites, ...;
+//! - [`type_refs`] and [`symbol_refs`]: where each type and symbol record
+//!   holds indices, addresses, and string-table and checksum offsets;
 //! - [`types`]: type records (leaves, `LF_*`), type indexes and the
 //!   built-in (simple) types, and a formatter that prints C++-style names;
 //! - [`lines`]: C13 subsections (`DEBUG_S_*`): line numbers and file
@@ -25,6 +27,7 @@ pub mod annotations;
 pub mod layout;
 pub mod lines;
 pub mod registers;
+pub mod symbol_refs;
 pub mod symbols;
 pub mod type_refs;
 pub mod types;

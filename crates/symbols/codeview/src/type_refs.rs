@@ -33,6 +33,10 @@ pub enum RefError {
     /// The record is shorter than its kind's fields, or a field list's
     /// member is.
     Malformed(u16),
+    /// A kind (or member kind) from before 32-bit type indices (`*_16t`),
+    /// whose indices are 16 bits wide. Known, but not supported: no
+    /// compiler since Visual C++ 6 writes them.
+    Legacy(u16),
 }
 
 impl core::fmt::Display for RefError {
@@ -40,6 +44,7 @@ impl core::fmt::Display for RefError {
         match self {
             RefError::Unknown(k) => write!(f, "unknown type record kind {k:#06x}"),
             RefError::Malformed(k) => write!(f, "malformed type record (kind {k:#06x})"),
+            RefError::Legacy(k) => write!(f, "16-bit type record kind {k:#06x}"),
         }
     }
 }
@@ -100,13 +105,20 @@ pub fn refs(kind: u16, body: &[u8], refs: &mut Vec<Ref>) -> Result<(), RefError>
     };
     match kind {
         // Records without references.
+        // (LF_SKIP's index is the next record's: a number, not a
+        // reference.)
         leaf::LF_VTSHAPE
         | leaf::LF_LABEL
         | leaf::LF_ENDPRECOMP
         | leaf::LF_PRECOMP
+        | LF_PRECOMP_ST
         | leaf::LF_TYPESERVER2
         | LF_TYPESERVER
-        | LF_SKIP => Ok(()),
+        | LF_TYPESERVER_ST
+        | LF_SKIP
+        | LF_NULL
+        | LF_NOTTRAN
+        | LF_COBOL1 => Ok(()),
 
         // type(4) attributes(2)
         leaf::LF_MODIFIER => out.at(0, 1, false),
@@ -155,19 +167,58 @@ pub fn refs(kind: u16, body: &[u8], refs: &mut Vec<Ref>) -> Result<(), RefError>
             Ok(())
         }
         // element(4) index(4) size name
-        leaf::LF_ARRAY | LF_STRIDED_ARRAY => out.at(0, 2, false),
+        leaf::LF_ARRAY | LF_ARRAY_ST | LF_STRIDED_ARRAY => out.at(0, 2, false),
         // count(2) properties(2) fields(4) derived(4) vshape(4) size name [unique]
-        leaf::LF_CLASS | leaf::LF_STRUCTURE | leaf::LF_INTERFACE => out.at(4, 3, false),
+        leaf::LF_CLASS
+        | leaf::LF_STRUCTURE
+        | leaf::LF_INTERFACE
+        | LF_CLASS_ST
+        | LF_STRUCTURE_ST => out.at(4, 3, false),
         // properties(4) fields(4) derived(4) vshape(4) count(2) size name [unique]
         leaf::LF_CLASS2 | leaf::LF_STRUCTURE2 | leaf::LF_INTERFACE2 => out.at(4, 3, false),
         // count(2) properties(2) fields(4) size name [unique]
-        leaf::LF_UNION => out.at(4, 1, false),
+        leaf::LF_UNION | LF_UNION_ST => out.at(4, 1, false),
         // properties(4) fields(4) count(2) size name [unique]
         leaf::LF_UNION2 => out.at(4, 1, false),
         // count(2) properties(2) underlying(4) fields(4) name [unique]
-        leaf::LF_ENUM => out.at(4, 2, false),
+        leaf::LF_ENUM | LF_ENUM_ST => out.at(4, 2, false),
         // underlying(4) name
-        LF_ALIAS => out.at(0, 1, false),
+        LF_ALIAS | LF_ALIAS_ST => out.at(0, 1, false),
+        // underlying(4) dimensions(4) name
+        LF_DIMARRAY | LF_DIMARRAY_ST => out.at(0, 2, false),
+        // count(4) bases(4 × count), from the root
+        // count(4) derived classes(4 × count)
+        LF_VFTPATH | LF_DERIVED => {
+            let n = u32_at(body, 0, kind)? as usize;
+            out.at(4, n, false)
+        }
+        // type(4) expression
+        LF_DEFARG | LF_DEFARG_ST => out.at(0, 1, false),
+        // index type(4) rank(2) bounds
+        LF_DIMCONU | LF_DIMCONLU => out.at(0, 1, false),
+        // rank(4) index type(4) bounds(4 × rank, or 4 × 2 × rank with lower
+        // bounds): each an LF_REFSYM or T_VOID
+        LF_DIMVARU | LF_DIMVARLU => {
+            let rank = u32_at(body, 0, kind)? as usize;
+            let n = if kind == LF_DIMVARLU {
+                rank.checked_mul(2).ok_or(RefError::Malformed(kind))?
+            } else {
+                rank
+            };
+            out.at(4, 1, false)?;
+            out.at(8, n, false)
+        }
+        // underlying(4)
+        LF_BARRAY => out.at(0, 1, false),
+        // parent(4) data
+        LF_COBOL0 => out.at(0, 1, false),
+        // GUID(16) count(4) types(4 × count) data
+        LF_OEM2 => {
+            let n = u32_at(body, 16, kind)? as usize;
+            out.at(20, n, false)
+        }
+        // A symbol record, whole (its length first): its indices.
+        LF_REFSYM => ref_sym(body, &mut out),
         // complete class(4) overridden vftable(4) offset(4) names length(4) names
         leaf::LF_VFTABLE => out.at(0, 2, false),
         // OEM id(2) record id(2) count(4) types(4 × count)
@@ -213,13 +264,62 @@ pub fn refs(kind: u16, body: &[u8], refs: &mut Vec<Ref>) -> Result<(), RefError>
         // type(4) source file (a /names offset, not an index)(4) line(4) module(2)
         leaf::LF_UDT_MOD_SRC_LINE => out.at(0, 1, false),
 
+        // Before 32-bit type indices.
+        0x0001..=0x0009 | 0x000B | 0x000D | 0x0011..=0x0013 | 0x0015 | 0x0200..=0x020B => {
+            Err(RefError::Legacy(kind))
+        }
+
         _ => Err(RefError::Unknown(kind)),
     }
+}
+
+/// `LF_REFSYM`'s symbol: its type and id indices, at their offsets in the
+/// type record's body.
+fn ref_sym(body: &[u8], out: &mut Out<'_>) -> Result<(), RefError> {
+    let kind = out.kind;
+    let len = usize::from(u16_at(body, 0, kind)?);
+    let record = body
+        .get(2..2 + len)
+        .filter(|r| r.len() >= 2)
+        .ok_or(RefError::Malformed(kind))?;
+    let symbol = u16_at(record, 0, kind)?;
+    let mut inner = Vec::new();
+    crate::symbol_refs::refs(symbol, &record[2..], &mut inner)
+        .map_err(|_| RefError::Malformed(kind))?;
+    for r in inner {
+        out.at(4 + r.offset as usize, 1, r.id)?;
+    }
+    Ok(())
 }
 
 // Kinds the `leaf` module doesn't name (cvinfo.h's values).
 const LF_SKIP: u16 = 0x1200;
 const LF_TYPESERVER: u16 = 0x1501;
+const LF_TYPESERVER_ST: u16 = 0x0016;
+const LF_NULL: u16 = 0x000F;
+const LF_NOTTRAN: u16 = 0x0010;
+const LF_COBOL1: u16 = 0x000C;
+const LF_REFSYM: u16 = 0x020C;
+const LF_ARRAY_ST: u16 = 0x1003;
+const LF_CLASS_ST: u16 = 0x1004;
+const LF_STRUCTURE_ST: u16 = 0x1005;
+const LF_UNION_ST: u16 = 0x1006;
+const LF_ENUM_ST: u16 = 0x1007;
+const LF_COBOL0: u16 = 0x100A;
+const LF_BARRAY: u16 = 0x100B;
+const LF_DIMARRAY_ST: u16 = 0x100C;
+const LF_VFTPATH: u16 = 0x100D;
+const LF_PRECOMP_ST: u16 = 0x100E;
+const LF_ALIAS_ST: u16 = 0x1010;
+const LF_OEM2: u16 = 0x1011;
+const LF_DEFARG_ST: u16 = 0x1202;
+const LF_DERIVED: u16 = 0x1204;
+const LF_DIMCONU: u16 = 0x1207;
+const LF_DIMCONLU: u16 = 0x1208;
+const LF_DIMVARU: u16 = 0x1209;
+const LF_DIMVARLU: u16 = 0x120A;
+const LF_DIMARRAY: u16 = 0x1508;
+const LF_DEFARG: u16 = 0x150B;
 const LF_ALIAS: u16 = 0x150A;
 const LF_OEM: u16 = 0x100F;
 const LF_STRIDED_ARRAY: u16 = 0x1516;
@@ -228,13 +328,49 @@ const LF_MODIFIER_EX: u16 = 0x1518;
 const LF_VECTOR: u16 = 0x151B;
 const LF_MATRIX: u16 = 0x151C;
 
-// Field-list members.
-const LF_FRIENDCLS: u16 = 0x140B;
+// Field-list members. (LF_FRIENDCLS is 0x140A, as cvinfo.h and LLVM have
+// it; 0x140B is LF_ONEMETHOD_ST.)
+const LF_FRIENDCLS: u16 = 0x140A;
 const LF_VFUNCOFF: u16 = 0x140C;
 const LF_FRIENDFCN: u16 = 0x150C;
 const LF_NESTTYPEEX: u16 = 0x1512;
 const LF_MEMBERMODIFY: u16 = 0x1513;
 const LF_MANAGED: u16 = 0x1514;
+// The same members with length-prefixed names (`*_ST`).
+const LF_ENUMERATE_ST: u16 = 0x0403;
+const LF_FRIENDFCN_ST: u16 = 0x1403;
+const LF_MEMBER_ST: u16 = 0x1405;
+const LF_STMEMBER_ST: u16 = 0x1406;
+const LF_METHOD_ST: u16 = 0x1407;
+const LF_NESTTYPE_ST: u16 = 0x1408;
+const LF_ONEMETHOD_ST: u16 = 0x140B;
+const LF_NESTTYPEEX_ST: u16 = 0x140D;
+const LF_MEMBERMODIFY_ST: u16 = 0x140E;
+const LF_MANAGED_ST: u16 = 0x140F;
+
+/// Skips a member's name: length-prefixed for the `*_ST` members, else
+/// zero-terminated.
+fn skip_name(r: &mut Reader<'_>, member: u16) -> turbonop_core::Result<()> {
+    let st = matches!(
+        member,
+        LF_ENUMERATE_ST
+            | LF_FRIENDFCN_ST
+            | LF_MEMBER_ST
+            | LF_STMEMBER_ST
+            | LF_METHOD_ST
+            | LF_NESTTYPE_ST
+            | LF_ONEMETHOD_ST
+            | LF_NESTTYPEEX_ST
+            | LF_MEMBERMODIFY_ST
+            | LF_MANAGED_ST
+    );
+    if st {
+        let n = usize::from(r.u8()?);
+        r.skip(n)
+    } else {
+        r.cstr().map(|_| ())
+    }
+}
 
 /// A field list: members, each padded to 4 bytes with `LF_PAD*` bytes.
 fn field_list(body: &[u8], out: &mut Out<'_>) -> Result<(), RefError> {
@@ -283,51 +419,58 @@ fn field_list(body: &[u8], out: &mut Out<'_>) -> Result<(), RefError> {
                 r.skip(8).map_err(m)?;
             }
             // attributes(2) value(numeric) name
-            leaf::LF_ENUMERATE => {
+            leaf::LF_ENUMERATE | LF_ENUMERATE_ST => {
                 r.skip(2).map_err(m)?;
                 read_numeric(&mut r).map_err(m)?;
-                r.cstr().map_err(m)?;
+                skip_name(&mut r, member).map_err(m)?;
             }
             // attributes(2) type(4) offset(numeric) name
-            leaf::LF_MEMBER => {
+            leaf::LF_MEMBER | LF_MEMBER_ST => {
                 r.skip(2).map_err(m)?;
                 out.at(at(&r), 1, false)?;
                 r.skip(4).map_err(m)?;
                 read_numeric(&mut r).map_err(m)?;
-                r.cstr().map_err(m)?;
+                skip_name(&mut r, member).map_err(m)?;
             }
             // attributes(2) type(4) name (pad(2) for friends and nested types)
             leaf::LF_STMEMBER
+            | LF_STMEMBER_ST
             | leaf::LF_NESTTYPE
+            | LF_NESTTYPE_ST
             | LF_NESTTYPEEX
+            | LF_NESTTYPEEX_ST
             | LF_FRIENDFCN
-            | LF_MEMBERMODIFY => {
+            | LF_FRIENDFCN_ST
+            | LF_MEMBERMODIFY
+            | LF_MEMBERMODIFY_ST => {
                 r.skip(2).map_err(m)?;
                 out.at(at(&r), 1, false)?;
                 r.skip(4).map_err(m)?;
-                r.cstr().map_err(m)?;
+                skip_name(&mut r, member).map_err(m)?;
             }
             // count(2) method list(4) name
-            leaf::LF_METHOD => {
+            leaf::LF_METHOD | LF_METHOD_ST => {
                 r.skip(2).map_err(m)?;
                 out.at(at(&r), 1, false)?;
                 r.skip(4).map_err(m)?;
-                r.cstr().map_err(m)?;
+                skip_name(&mut r, member).map_err(m)?;
             }
             // attributes(2) type(4) [vbaseoff(4)] name
-            leaf::LF_ONEMETHOD => {
+            leaf::LF_ONEMETHOD | LF_ONEMETHOD_ST => {
                 let attributes = r.u16_le().map_err(m)?;
                 out.at(at(&r), 1, false)?;
                 r.skip(4).map_err(m)?;
                 if introduces_virtual(attributes) {
                     r.skip(4).map_err(m)?;
                 }
-                r.cstr().map_err(m)?;
+                skip_name(&mut r, member).map_err(m)?;
             }
             // name
-            LF_MANAGED => {
-                r.cstr().map_err(m)?;
+            LF_MANAGED | LF_MANAGED_ST => {
+                skip_name(&mut r, member).map_err(m)?;
             }
+            // Members before 32-bit type indices.
+            0x0400..=0x0402 | 0x0404..=0x040D => return Err(RefError::Legacy(member)),
             _ => return Err(RefError::Unknown(member)),
         }
         debug_assert!(r.position() > start);

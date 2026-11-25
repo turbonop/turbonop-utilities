@@ -302,8 +302,13 @@ x64. Where the 3.5 MB went:
   - A COFF object model that round-trips byte-identically.
   - The Microsoft archive writer, with `lib.exe`'s member order (the
     reverse of its command line).
-  - CodeView symbol records' index fields: types have them, in
-    `turbonop_codeview::type_refs`.
+  - CodeView: done (`symbol_refs`, `c13`, `write`, `remap`; checked on
+    both corpora by `turbonop-codeview`'s `corpus` example). Still open:
+    rewriting a record whose binary annotations' file offsets change
+    length (`remap` reports it; `annotations::rewrite_files` does the
+    bytes), and the kinds whose layouts nobody documents (S_FRAMEREG,
+    S_FASTLINK, S_GPROC32EX and the rest `symbol_refs` lists as unknown)
+    if a compiler is found writing them.
   - `turbolib` as `lib` with `--fold=none`.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only

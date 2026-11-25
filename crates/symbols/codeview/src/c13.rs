@@ -5,6 +5,9 @@
 //! subsections, each a kind, a length, the contents, and zeros to the next
 //! multiple of 4 ([`subsections`], [`push_subsection`]). A PDB module
 //! stream's C13 part is the same subsections without the signature.
+//! Before C13, a `.debug$S` held symbol records directly after its
+//! signature ([`CV_SIGNATURE_C7`], [`CV_SIGNATURE_C11`]); `link.exe` still
+//! writes import libraries' descriptor objects so ([`read_debug_s`]).
 //!
 //! [`Contents`] reads every kind cvinfo.h defines: symbols, lines, the
 //! string table, file checksums, frame data, inlinee lines (both
@@ -23,6 +26,10 @@ use turbonop_core::Reader;
 
 /// What `.debug$S` and `.debug$T` start with: C13 CodeView.
 pub const CV_SIGNATURE_C13: u32 = 4;
+/// A `.debug$S` of symbol records, without subsections (C7).
+pub const CV_SIGNATURE_C7: u32 = 1;
+/// A `.debug$S` of symbol records, without subsections (C11).
+pub const CV_SIGNATURE_C11: u32 = 2;
 
 /// Why subsections could not be read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -131,6 +138,54 @@ pub fn section_subsections(section: &[u8]) -> Result<Vec<Subsection<'_>>, Error>
         return Err(malformed);
     }
     subsections(&section[4..])
+}
+
+/// A `.debug$S` section's contents.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DebugS<'a> {
+    /// C13: subsections.
+    C13(Vec<Subsection<'a>>),
+    /// C7 or C11 (its signature): symbol records, directly.
+    Symbols(u32, Vec<SymbolRecord<'a>>),
+}
+
+/// Reads a `.debug$S` section: C13 subsections, or the symbol records of
+/// an older signature.
+pub fn read_debug_s(section: &[u8]) -> Result<DebugS<'_>, Error> {
+    let signature = section
+        .get(..4)
+        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .ok_or(Error::Truncated {
+            kind: FRAMING,
+            at: 0,
+        })?;
+    match signature {
+        CV_SIGNATURE_C13 => subsections(&section[4..]).map(DebugS::C13),
+        CV_SIGNATURE_C7 | CV_SIGNATURE_C11 => {
+            symbol_records(&section[4..]).map(|r| DebugS::Symbols(signature, r))
+        }
+        _ => Err(Error::Malformed {
+            kind: FRAMING,
+            at: 0,
+        }),
+    }
+}
+
+/// Appends a `.debug$S` section: its signature, then its subsections or
+/// records.
+pub fn write_debug_s(d: &DebugS<'_>, out: &mut Vec<u8>) {
+    match d {
+        DebugS::C13(subs) => {
+            out.extend_from_slice(&CV_SIGNATURE_C13.to_le_bytes());
+            for s in subs {
+                push_subsection(out, s.kind, s.data);
+            }
+        }
+        DebugS::Symbols(signature, records) => {
+            out.extend_from_slice(&signature.to_le_bytes());
+            Contents::Symbols(records.clone()).write(out);
+        }
+    }
 }
 
 /// Appends a subsection: its kind, length, contents, and zeros to 4 bytes

@@ -425,3 +425,32 @@ fn errors_say_where() {
         "symbol at 0x4: unknown symbol record kind 0x1199"
     );
 }
+
+#[test]
+fn sections_before_c13_are_records() {
+    // link.exe's import descriptor: C11, S_OBJNAME_ST and S_COMPILE2_ST.
+    let mut s = CV_SIGNATURE_C11.to_le_bytes().to_vec();
+    s.extend_from_slice(&[9, 0, 0x09, 0, 0, 0, 0, 0, 2, b'a', b'b']);
+    s.extend_from_slice(&[4, 0, 0x13, 0x10, 7, 0]);
+    let d = read_debug_s(&s).unwrap();
+    match &d {
+        DebugS::Symbols(CV_SIGNATURE_C11, r) => {
+            assert_eq!(r.len(), 2);
+            assert_eq!(r[1].kind, 0x1013);
+        }
+        other => panic!("{other:?}"),
+    }
+    let mut out = Vec::new();
+    write_debug_s(&d, &mut out);
+    assert_eq!(out, s);
+    // And C13.
+    let mut c = CV_SIGNATURE_C13.to_le_bytes().to_vec();
+    push_subsection(&mut c, kind::DEBUG_S_STRINGTABLE, b" ");
+    let d = read_debug_s(&c).unwrap();
+    assert!(matches!(&d, DebugS::C13(v) if v.len() == 1));
+    let mut out = Vec::new();
+    write_debug_s(&d, &mut out);
+    assert_eq!(out, c);
+    assert!(read_debug_s(&[3, 0, 0, 0]).is_err());
+    assert!(read_debug_s(&[1, 0]).is_err());
+}

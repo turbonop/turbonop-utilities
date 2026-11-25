@@ -526,6 +526,15 @@ pub fn fields(kind: u16, body: &[u8], visit: impl FnMut(Field)) -> Result<(), Fi
         S_HOTPATCHFUNC => o.id(0),
         // kind(2) off(4) seg(2) (LLVM's layout)
         S_ASSOCIATION => o.address(2, 6),
+        // off(4) offParent(4) seg(2) segParent(2): a function's static (as
+        // the S_LDATA32 before it) and the function. Neither cvinfo.h nor
+        // LLVM has its layout: this is MSVC's (14.52, /O1), read from its
+        // relocations, SECREL and SECTION against the static's symbol at 0
+        // and 8, and the function's at 4 and 10. The meaning is likely.
+        S_STATICLOCAL => {
+            o.address(0, 8)?;
+            o.address(4, 10)
+        }
 
         // Before 32-bit type indices.
         S_REGISTER_16T | S_CONSTANT_16T | S_UDT_16T | S_COBOLUDT_16T | S_MANYREG_16T
@@ -553,7 +562,6 @@ pub fn fields(kind: u16, body: &[u8], visit: impl FnMut(Field)) -> Result<(), Fi
         | S_LPROC32EX
         | S_GPROC32EX_ID
         | S_LPROC32EX_ID
-        | S_STATICLOCAL
         | S_BPREL32_ENCTMP
         | S_REGREL32_ENCTMP
         | S_BPREL32_INDIR_ENCTMP

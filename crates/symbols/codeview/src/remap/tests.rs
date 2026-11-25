@@ -235,3 +235,13 @@ fn single_records() {
         "no new number for Id 0x1000 (at 0x8)"
     );
 }
+
+#[test]
+fn c11_sections_are_records() {
+    let mut s = c13::CV_SIGNATURE_C11.to_le_bytes().to_vec();
+    let mut u = RecordBuilder::new(S_UDT);
+    u.u32(0x1000).name(b"t");
+    u.write_symbol(&mut s, 1).unwrap();
+    debug_s(&mut s, &mut Shift).unwrap();
+    assert_eq!(le32(&s, 8), 0x1100);
+}

@@ -236,6 +236,7 @@ fn fixed_layouts() {
             vec![addr(0, 4), addr(8, 16), addr(12, 18)],
         ),
         (&[S_ASSOCIATION], vec![addr(2, 6)]),
+        (&[S_STATICLOCAL], vec![addr(0, 8), addr(4, 10)]),
     ];
     for (kinds, want) in &table {
         for &k in *kinds {
@@ -297,7 +298,6 @@ fn every_named_kind_is_decided() {
         S_LPROC32EX,
         S_GPROC32EX_ID,
         S_LPROC32EX_ID,
-        S_STATICLOCAL,
         S_BPREL32_ENCTMP,
         S_REGREL32_ENCTMP,
         S_BPREL32_INDIR_ENCTMP,

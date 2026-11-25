@@ -399,8 +399,15 @@ fn symbols(data: &mut [u8], fields: &mut Vec<Field>, remap: &mut impl Remap) -> 
     Ok(())
 }
 
-/// Renumbers a `.debug$S` section (its signature first).
+/// Renumbers a `.debug$S` section (its signature first): C13 subsections,
+/// or the symbol records of a C7 or C11 one.
 pub fn debug_s(section: &mut [u8], remap: &mut impl Remap) -> Result<(), Error> {
+    let old = [c13::CV_SIGNATURE_C7, c13::CV_SIGNATURE_C11].map(u32::to_le_bytes);
+    if let Some(s) = section.get(..4)
+        && old.iter().any(|o| o[..] == *s)
+    {
+        return symbols(&mut section[4..], &mut Vec::new(), remap).map_err(|e| shift(e, 4));
+    }
     check_signature(section)?;
     subsections(&mut section[4..], remap).map_err(|e| shift(e, 4))
 }

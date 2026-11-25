@@ -158,6 +158,75 @@ fn region(data: &[u8], at: usize) -> String {
     "between parts".into()
 }
 
+/// The parts of an object read without error: (start, end) of the
+/// headers, each section's data, relocations, and line numbers, and the
+/// symbol and string tables.
+fn parts(data: &[u8]) -> Vec<(usize, usize)> {
+    let big = data[..4] == [0, 0, 0xFF, 0xFF];
+    let (header, sections, symbols, count, stride) = if big {
+        (
+            56,
+            u32_at(data, 44) as usize,
+            u32_at(data, 48),
+            u32_at(data, 52),
+            20,
+        )
+    } else {
+        let table = 20 + usize::from(u16_at(data, 16));
+        (
+            table,
+            usize::from(u16_at(data, 2)),
+            u32_at(data, 8),
+            u32_at(data, 12),
+            18,
+        )
+    };
+    let mut parts = vec![(0, header + sections * 40)];
+    for i in 0..sections {
+        let h = &data[header + i * 40..header + i * 40 + 40];
+        let (size, ptr, rptr, lptr) = (u32_at(h, 16), u32_at(h, 20), u32_at(h, 24), u32_at(h, 28));
+        let extended = u32_at(h, 36) & scn::LNK_NRELOC_OVFL != 0 && u16_at(h, 32) == 0xFFFF;
+        let relocations = if extended {
+            u32_at(data, rptr as usize) as usize
+        } else {
+            usize::from(u16_at(h, 32))
+        };
+        if ptr != 0 && size != 0 {
+            parts.push((ptr as usize, ptr as usize + size as usize));
+        }
+        if relocations != 0 {
+            parts.push((rptr as usize, rptr as usize + relocations * 10));
+        }
+        let lines = usize::from(u16_at(h, 34));
+        if lines != 0 {
+            parts.push((lptr as usize, lptr as usize + lines * 6));
+        }
+    }
+    let strings = symbols as usize + count as usize * stride;
+    if symbols != 0 {
+        parts.push((symbols as usize, strings));
+        let table = data
+            .get(strings..strings + 4)
+            .map_or(0, |s| (u32_at(s, 0) as usize).max(4));
+        parts.push((strings, strings + table));
+    }
+    parts.sort_unstable();
+    parts
+}
+
+/// Whether the object's tool padded between its parts (as the
+/// assemblers do, to align them), which a fresh layout doesn't.
+fn pads(data: &[u8]) -> bool {
+    let mut at = 0;
+    for (start, end) in parts(data) {
+        if start > at {
+            return true;
+        }
+        at = at.max(end);
+    }
+    false
+}
+
 /// Where `out` first differs from `data`.
 fn difference(data: &[u8], out: &[u8]) -> String {
     match out.iter().zip(data).position(|(a, b)| a != b) {
@@ -227,7 +296,7 @@ fn check(data: &[u8], name: &str, t: &mut Tally) {
                 t.add(format!("aux: weak external, search {}", w.search), name);
                 continue;
             }
-            Aux::File(_) => "file",
+            Aux::File { .. } => "file",
             Aux::Section(_) => "section definition",
             Aux::ClrToken(_) => "CLR token",
             Aux::Raw(_) => {
@@ -258,12 +327,13 @@ fn check(data: &[u8], name: &str, t: &mut Tally) {
             t.add(format!("fresh {:?} layout: identical", object.style), name);
         }
         Ok(out) => {
+            let why = if pads(data) {
+                "the original pads between parts".into()
+            } else {
+                difference(data, out)
+            };
             t.add(
-                format!(
-                    "fresh {:?} layout differs: {}",
-                    object.style,
-                    difference(data, out)
-                ),
+                format!("fresh {:?} layout differs: {why}", object.style),
                 name,
             );
             match Object::parse(out) {
@@ -288,14 +358,14 @@ fn check(data: &[u8], name: &str, t: &mut Tally) {
     };
     if convertible {
         let mut converted = object.clone();
-        converted.format = other;
-        converted.forget_layout();
-        let back = converted.write().and_then(|bytes| {
-            let mut back = Object::parse(&bytes)?.into_owned();
-            back.format = object.format;
-            back.forget_layout();
-            back.write()
-        });
+        let back = converted
+            .set_format(other)
+            .and_then(|()| converted.write())
+            .and_then(|bytes| {
+                let mut back = Object::parse(&bytes)?.into_owned();
+                back.set_format(object.format)?;
+                back.write()
+            });
         match (back, &fresh_bytes) {
             (Ok(a), Ok(b)) if a == *b => t.add(format!("to {other:?} and back: unchanged"), name),
             (Ok(_), Ok(_)) => t.add(format!("TO {other:?} AND BACK: CHANGED"), name),
@@ -418,9 +488,13 @@ fn main() {
     let tally = tally.into_inner().unwrap();
     for (k, c) in &tally.counts {
         println!("{c:>10}  {k}");
-        let notable = k.chars().filter(char::is_ascii_uppercase).count() > 4
+        // Failures are in capitals; differences and unknowns get examples.
+        let notable = k
+            .split(' ')
+            .next()
+            .is_some_and(|w| w.len() > 1 && w.bytes().all(|b| b.is_ascii_uppercase()))
             || k.contains("differs")
-            || k.contains("else");
+            || k.contains("something else");
         if notable {
             for e in &tally.examples[k] {
                 println!("              e.g. {e}");

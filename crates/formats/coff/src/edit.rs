@@ -361,7 +361,7 @@ impl<'data> Object<'data> {
                 Aux::WeakExternal(w) => ([Some(w.tag), None], None),
                 Aux::Section(d) => ([None, None], d.number),
                 Aux::ClrToken(c) => ([Some(c.symbol), None], None),
-                Aux::None | Aux::File(_) | Aux::Raw(_) => ([None, None], None),
+                Aux::None | Aux::File { .. } | Aux::Raw(_) => ([None, None], None),
             };
             for target in targets.into_iter().flatten() {
                 if !kept_symbol(target) {
@@ -432,7 +432,7 @@ impl<'data> Object<'data> {
                     }
                 }
                 Aux::ClrToken(c) => sym(&mut c.symbol),
-                Aux::None | Aux::File(_) | Aux::Raw(_) => {}
+                Aux::None | Aux::File { .. } | Aux::Raw(_) => {}
             }
         }
     }

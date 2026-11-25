@@ -431,7 +431,7 @@ impl Object<'_> {
                 }
                 Aux::BeginEnd(b) => b.next.map_or(Ok(()), symbol)?,
                 Aux::WeakExternal(w) => symbol(w.tag)?,
-                Aux::File(name) => {
+                Aux::File { name, .. } => {
                     if name.contains(&0) {
                         return Err(invalid("a file name with a NUL"));
                     }

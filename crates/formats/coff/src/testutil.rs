@@ -113,6 +113,7 @@ fn definition(section: &Section<'_>, selection: u8, number: Option<u32>) -> Aux<
         checksum: crate::checksum(section.bytes()),
         number: number.map(SectionId),
         selection,
+        unused: [0; 3],
     })
 }
 
@@ -228,9 +229,7 @@ pub(crate) fn sample(format: Format) -> Object<'static> {
     ));
 
     let mut file = sym(b".file", 0, SectionNumber::Debug, 0, sc::FILE);
-    file.aux = Aux::File(Cow::Borrowed(
-        b"C:\\a\\path\\long\\enough\\for\\three\\recs.cpp",
-    ));
+    file.aux = Aux::file(&b"C:\\a\\path\\long\\enough\\for\\three\\recs.cpp"[..]);
     o.symbols.push(file);
     o.symbols.push(sym(
         b"@comp.id",

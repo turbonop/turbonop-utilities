@@ -5,7 +5,7 @@ use super::*;
 use crate::object::{comdat_select, weak_search};
 
 /// Table indices are ids times 2 (each symbol has one auxiliary record);
-/// sections 1..=0x2_0000 exist; line numbers are at 1000 + 6 × index in
+/// sections 1..=0x1000 and 0x1_0001 exist; line numbers are at 1000 + 6 × index in
 /// section 1.
 struct Fixed;
 
@@ -14,9 +14,7 @@ impl Resolve for Fixed {
         (index.is_multiple_of(2) && index < 200).then_some(SymbolId(index / 2))
     }
     fn section(&self, number: u32) -> Option<SectionId> {
-        (1..=0x2_0000)
-            .contains(&number)
-            .then(|| SectionId(number - 1))
+        (number != 0 && (number <= 0x1000 || number == 0x1_0001)).then(|| SectionId(number - 1))
     }
     fn line_number(&self, offset: u32) -> Option<LineNumberRef> {
         let delta = offset.checked_sub(1000)?;
@@ -114,6 +112,9 @@ fn function_definitions() {
         ] {
             assert!(matches!(decoded(&p, &r, f), Aux::Raw(_)), "{r:?}");
         }
+        // A label of function type (as armasm64 writes some).
+        let label = primary(storage_class::LABEL, IN_SECTION, 0x20, 0);
+        assert!(matches!(decoded(&label, &r, f), Aux::Function(_)));
         // Not a function: an undefined one, a static one, a data symbol.
         let r = record(f, &[(4, &7u32.to_le_bytes())]);
         for p in [
@@ -186,37 +187,37 @@ fn weak_externals() {
 #[test]
 fn file_names() {
     let p = primary(storage_class::FILE, SectionNumber::Debug, 0, 0);
+    let file = |name: &[u8], extra_records| Aux::File {
+        name: name.to_vec().into(),
+        extra_records,
+    };
     // 18 bytes exactly (no NUL), then 19 (two records).
     let name = b"exactly-18-bytes.c";
-    assert_eq!(
-        decoded(&p, name, Format::Regular),
-        Aux::File(name[..].into())
-    );
+    assert_eq!(decoded(&p, name, Format::Regular), file(name, 0));
     let mut two = b"nineteen-bytes-.cpp".to_vec();
     two.resize(36, 0);
-    assert_eq!(
-        decoded(&p, &two, Format::Regular),
-        Aux::File(two[..19].to_vec().into())
-    );
+    assert_eq!(decoded(&p, &two, Format::Regular), file(&two[..19], 0));
     let mut big = name.to_vec();
     big.resize(20, 0);
-    assert_eq!(
-        decoded(&p, &big, Format::BigObj),
-        Aux::File(name[..].into())
-    );
-    // An empty name, a record more than the name needs, and bytes after
-    // the NUL: kept raw.
+    assert_eq!(decoded(&p, &big, Format::BigObj), file(name, 0));
+    // A record more than the name needs (ARM32 armasm's terminating NUL),
+    // and two.
     let mut extra = name.to_vec();
     extra.resize(36, 0);
+    assert_eq!(decoded(&p, &extra, Format::Regular), file(name, 1));
+    extra.resize(54, 0);
+    assert_eq!(decoded(&p, &extra, Format::Regular), file(name, 2));
+    // An empty name, and bytes after the NUL: kept raw.
     let mut junk = b"a.c".to_vec();
     junk.resize(18, 0);
     junk[10] = b'x';
-    for r in [vec![0u8; 18], extra, junk] {
+    for r in [vec![0u8; 18], junk] {
         assert!(
             matches!(decoded(&p, &r, Format::Regular), Aux::Raw(_)),
             "{r:?}"
         );
     }
+    assert_eq!(Aux::file(&b"a.c"[..]), file(b"a.c", 0));
 }
 
 #[test]
@@ -243,21 +244,23 @@ fn section_definitions() {
                 checksum: 0xDEAD_BEEF,
                 number: Some(SectionId(6)),
                 selection: comdat_select::ASSOCIATIVE,
+                unused: [0; 3],
             })
         );
-        // `bReserved`, and a section that doesn't exist: raw.
-        for r in [
-            record(f, &[(15, &[1])]),
-            record(
-                f,
-                &[
-                    (12, &0xFFFFu16.to_le_bytes()),
-                    (16, &0xFFFFu16.to_le_bytes()),
-                ],
-            ),
-        ] {
-            assert!(matches!(decoded(&p, &r, f), Aux::Raw(_)));
-        }
+        // A section that doesn't exist: raw.
+        let r = record(
+            f,
+            &[
+                (12, &0xFFFFu16.to_le_bytes()),
+                (16, &0xFFFFu16.to_le_bytes()),
+            ],
+        );
+        assert!(matches!(decoded(&p, &r, f), Aux::Raw(_)));
+        // `bReserved` is kept.
+        let Aux::Section(d) = decoded(&p, &record(f, &[(15, &[9])]), f) else {
+            panic!()
+        };
+        assert_eq!(d.unused, [9, 0, 0]);
         // C++/CLI's appdomain globals: absolute externals.
         let p = primary(storage_class::EXTERNAL, SectionNumber::Absolute, 0, 0);
         assert!(matches!(decoded(&p, &record(f, &[]), f), Aux::Section(_)));
@@ -275,18 +278,29 @@ fn section_definitions() {
         panic!()
     };
     assert_eq!(d.number, Some(SectionId(0x1_0000)));
-    // A regular object has no high number: bytes 16 and 17 are unused.
+    // A regular object has no high number: its bytes are unused, and what
+    // armasm64 leaves there (a symbol's class and count) is kept.
     let r = record(
         Format::Regular,
         &[
-            (12, &0x0001u16.to_le_bytes()),
-            (16, &0x0001u16.to_le_bytes()),
+            (12, &0x0005u16.to_le_bytes()),
+            (14, &[comdat_select::ANY]),
+            (16, &[3, 1]),
         ],
     );
-    assert!(matches!(decoded(&p, &r, Format::Regular), Aux::Raw(_)));
+    let Aux::Section(d) = decoded(&p, &r, Format::Regular) else {
+        panic!()
+    };
+    assert_eq!((d.number, d.unused), (Some(SectionId(4)), [0, 3, 1]));
     // Bytes 18 and 19 of a big-obj record are unused.
-    let r = record(Format::BigObj, &[(18, &[1])]);
-    assert!(matches!(decoded(&p, &r, Format::BigObj), Aux::Raw(_)));
+    let Aux::Section(d) = decoded(
+        &p,
+        &record(Format::BigObj, &[(18, &[1, 2])]),
+        Format::BigObj,
+    ) else {
+        panic!()
+    };
+    assert_eq!(d.unused, [0, 1, 2]);
 }
 
 #[test]

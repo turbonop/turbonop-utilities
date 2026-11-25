@@ -192,6 +192,52 @@ impl<'data> Object<'data> {
         self.layout = None;
     }
 
+    /// Converts the object to `format`, and forgets its layout.
+    ///
+    /// Raw auxiliary records are converted too: each of a regular object's
+    /// gets 2 zero bytes at its end (as every known record's big-obj form
+    /// has), and each of a big-obj object's loses its last 2, which must be
+    /// zero. Fails, changing nothing, if one isn't, or if the object has a
+    /// header field the format lacks (a big-obj header has no
+    /// characteristics or optional header).
+    pub fn set_format(&mut self, format: Format) -> turbonop_core::Result<()> {
+        use turbonop_core::{Error, ErrorKind};
+        if format == self.format {
+            return Ok(());
+        }
+        let unsupported = |what| Err(Error::new(ErrorKind::Unsupported, 0, what));
+        if format == Format::BigObj
+            && (self.characteristics != 0 || !self.optional_header.is_empty())
+        {
+            return unsupported("a big-obj header has no characteristics or optional header");
+        }
+        let from = self.format.record_size();
+        let to = format.record_size();
+        let lossy = self.symbols.iter().any(|s| match &s.aux {
+            Aux::Raw(bytes) => {
+                to < from && bytes.chunks(from).any(|r| r[to..].iter().any(|&b| b != 0))
+            }
+            _ => false,
+        });
+        if lossy {
+            return unsupported("a raw auxiliary record's last 2 bytes aren't zero");
+        }
+        for s in &mut self.symbols {
+            if let Aux::Raw(bytes) = &mut s.aux {
+                let mut converted = alloc::vec::Vec::with_capacity(bytes.len() / from * to);
+                for record in bytes.chunks(from) {
+                    let keep = record.len().min(to);
+                    converted.extend_from_slice(&record[..keep]);
+                    converted.resize(converted.len() + to - keep, 0);
+                }
+                *bytes = Cow::Owned(converted);
+            }
+        }
+        self.format = format;
+        self.forget_layout();
+        Ok(())
+    }
+
     /// The object with everything it borrows copied.
     pub fn into_owned(self) -> Object<'static> {
         Object {
@@ -685,7 +731,14 @@ pub enum Aux<'data> {
     WeakExternal(WeakExternal),
     /// A `.file` symbol's file name (storage class `FILE`), in as many
     /// records as it needs, padded with NULs.
-    File(Cow<'data, [u8]>),
+    File {
+        /// The name (without a NUL).
+        name: Cow<'data, [u8]>,
+        /// The records past those the name needs, all NULs: ARM32's
+        /// `armasm` ends every name with a NUL, so a name that fills its
+        /// records gets one more.
+        extra_records: u8,
+    },
     /// A section definition (a static symbol: the section's own symbol).
     Section(SectionDefinition),
     /// A CLR token's record (storage class `CLR_TOKEN`).
@@ -695,13 +748,25 @@ pub enum Aux<'data> {
     Raw(Cow<'data, [u8]>),
 }
 
-impl Aux<'_> {
+impl<'data> Aux<'data> {
+    /// A `.file` symbol's records for `name`, in as many records as it
+    /// needs.
+    pub fn file(name: impl Into<Cow<'data, [u8]>>) -> Self {
+        Aux::File {
+            name: name.into(),
+            extra_records: 0,
+        }
+    }
+
     /// The number of auxiliary records, for records of `record_size`
     /// bytes.
     pub fn count(&self, record_size: usize) -> usize {
         match self {
             Aux::None => 0,
-            Aux::File(name) => name.len().div_ceil(record_size),
+            Aux::File {
+                name,
+                extra_records,
+            } => name.len().div_ceil(record_size) + usize::from(*extra_records),
             Aux::Raw(bytes) => bytes.len() / record_size,
             _ => 1,
         }
@@ -714,7 +779,13 @@ impl Aux<'_> {
             Aux::Function(f) => Aux::Function(f),
             Aux::BeginEnd(b) => Aux::BeginEnd(b),
             Aux::WeakExternal(w) => Aux::WeakExternal(w),
-            Aux::File(name) => Aux::File(Cow::Owned(name.into_owned())),
+            Aux::File {
+                name,
+                extra_records,
+            } => Aux::File {
+                name: Cow::Owned(name.into_owned()),
+                extra_records,
+            },
             Aux::Section(s) => Aux::Section(s),
             Aux::ClrToken(c) => Aux::ClrToken(c),
             Aux::Raw(bytes) => Aux::Raw(Cow::Owned(bytes.into_owned())),
@@ -785,6 +856,11 @@ pub struct SectionDefinition {
     /// `Selection` (see [`comdat_select`]): for a COMDAT, how the linker
     /// chooses among copies.
     pub selection: u8,
+    /// The record's unused bytes, as read: `bReserved`, and the 2 bytes
+    /// after `HighNumber` in big-obj or in its place in a regular object.
+    /// MSVC and LLVM write zeros; `armasm64` has been seen to leave other
+    /// bytes in a regular object's `HighNumber`.
+    pub unused: [u8; 3],
 }
 
 /// A CLR token's auxiliary record.

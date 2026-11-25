@@ -207,20 +207,41 @@ fn an_extended_count_is_kept_even_when_it_needn_t_be() {
 
 #[test]
 fn converting_between_formats() {
-    // Raw records are as long as the format's records: drop them.
-    let mut regular = sample(Format::Regular);
-    regular.symbols[ids::RAW.index()].aux = Aux::None;
+    let regular = sample(Format::Regular);
     let mut big = regular.clone();
-    big.format = Format::BigObj;
+    big.set_format(Format::BigObj).unwrap();
+    // A raw record gets two zero bytes at its end.
+    let Aux::Raw(raw) = &big.symbols[ids::RAW.index()].aux else {
+        panic!()
+    };
+    assert_eq!(raw.len(), 40);
+    assert_eq!(&raw[18..20], &[0, 0]);
+    assert_eq!(&raw[38..40], &[0, 0]);
     let b = round_trip(&big);
     let mut back = Object::parse(&b).unwrap();
-    back.format = Format::Regular;
+    back.set_format(Format::Regular).unwrap();
+    assert!(!back.has_recorded_layout());
     assert!(same_content(&back, &regular));
-    back.forget_layout();
     assert_eq!(back.write().unwrap(), regular.write().unwrap());
+    // Not when a raw record's last bytes hold something.
+    let mut lossy = sample(Format::BigObj);
+    let before = lossy.clone();
+    assert_eq!(
+        lossy.set_format(Format::Regular).unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
+    assert_eq!(lossy, before);
+    // Setting the format an object has changes nothing.
+    let mut same = Object::parse(&b).unwrap();
+    same.set_format(Format::BigObj).unwrap();
+    assert!(same.has_recorded_layout());
     // A big-obj header has no characteristics or optional header.
     let mut with = regular.clone();
     with.characteristics = 0x100;
+    assert_eq!(
+        with.clone().set_format(Format::BigObj).unwrap_err().kind,
+        ErrorKind::Unsupported
+    );
     with.format = Format::BigObj;
     assert_eq!(with.write().unwrap_err().kind, ErrorKind::Unsupported);
     let mut with = regular;
@@ -311,7 +332,7 @@ fn what_cannot_be_written() {
     o.symbols[ids::RAW.index()].aux = Aux::Raw(Cow::Owned(vec![0; 17]));
     assert_eq!(kind(&o), ErrorKind::Malformed);
     let mut o = base.clone();
-    o.symbols[ids::FILE.index()].aux = Aux::File(Cow::Borrowed(b"a\0b"));
+    o.symbols[ids::FILE.index()].aux = Aux::file(&b"a\0b"[..]);
     assert_eq!(kind(&o), ErrorKind::Malformed);
     let mut o = base.clone();
     o.symbols[ids::FILE.index()].aux = Aux::Raw(Cow::Owned(vec![0; 18 * 256]));

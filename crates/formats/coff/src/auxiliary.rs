@@ -10,6 +10,9 @@
 //! | Weak external | `TagIndex` 0, `Characteristics` 4 |
 //! | File | the name, across all the records |
 //! | Section definition | `Length` 0, `NumberOfRelocations` 4, `NumberOfLinenumbers` 6, `CheckSum` 8, `Number` 12, `Selection` 14, `HighNumber` 16 (big-obj only) |
+//!
+//! (A section definition keeps its unused bytes, which a tool has been seen
+//! to fill: see [`SectionDefinition::unused`].)
 //! | CLR token | `bAuxType` 0, `SymbolTableIndex` 2 |
 //!
 //! Every other byte is unused, and a record is read in its typed form only
@@ -80,8 +83,11 @@ fn decode_typed<'data>(
     if p.storage_class == sc::FILE {
         let len = aux.iter().position(|&b| b == 0).unwrap_or(aux.len());
         let name = &aux[..len];
-        return (len > 0 && len.div_ceil(stride) == count && zero(&aux[len..]))
-            .then_some(Aux::File(Cow::Borrowed(name)));
+        let extra_records = u8::try_from(count - len.div_ceil(stride)).ok()?;
+        return (len > 0 && zero(&aux[len..])).then_some(Aux::File {
+            name: Cow::Borrowed(name),
+            extra_records,
+        });
     }
     if count != 1 {
         return None;
@@ -129,15 +135,10 @@ fn decode_typed<'data>(
             }))
         }
         _ if is_section_definition(p) => {
-            let high = match format {
-                Format::Regular => 0,
-                Format::BigObj => u32::from(u16_at(a, 16)),
+            let (high, unused) = match format {
+                Format::Regular => (0, [a[15], a[16], a[17]]),
+                Format::BigObj => (u32::from(u16_at(a, 16)), [a[15], a[18], a[19]]),
             };
-            let reserved = match format {
-                Format::Regular => &a[15..18],
-                Format::BigObj => &a[18..20],
-            };
-            (a[15] == 0 && zero(reserved)).then_some(())?;
             let number = match u32::from(u16_at(a, 12)) | (high << 16) {
                 0 => None,
                 n => Some(resolve.section(n)?),
@@ -149,6 +150,7 @@ fn decode_typed<'data>(
                 checksum: u32_at(a, 8),
                 number,
                 selection: a[14],
+                unused,
             }))
         }
         _ => None,
@@ -165,10 +167,13 @@ fn is_weak_external(p: &Primary) -> bool {
             && p.value == 0)
 }
 
-/// A function definition: an external function defined in a section.
+/// A function definition: a function defined in a section, external (as
+/// the PE specification has it) or a label (as `armasm64` writes for some).
 fn is_function_definition(p: &Primary) -> bool {
-    p.storage_class == storage_class::EXTERNAL
-        && p.kind & symbol_type::COMPLEX_MASK == symbol_type::FUNCTION
+    matches!(
+        p.storage_class,
+        storage_class::EXTERNAL | storage_class::LABEL
+    ) && p.kind & symbol_type::COMPLEX_MASK == symbol_type::FUNCTION
         && matches!(p.section, SectionNumber::Section(_))
 }
 
@@ -208,7 +213,7 @@ pub(crate) fn encode(aux: &Aux<'_>, format: Format, place: &impl Place, out: &mu
             put32(out, 0, place.symbol(w.tag));
             put32(out, 4, w.search);
         }
-        Aux::File(name) => out[..name.len()].copy_from_slice(name),
+        Aux::File { name, .. } => out[..name.len()].copy_from_slice(name),
         Aux::Section(s) => {
             let number = s.number.map_or(0, SectionId::number);
             put32(out, 0, s.length);
@@ -218,8 +223,13 @@ pub(crate) fn encode(aux: &Aux<'_>, format: Format, place: &impl Place, out: &mu
             // The writer has checked that the number fits the format.
             put16(out, 12, (number & 0xFFFF) as u16);
             out[14] = s.selection;
-            if format == Format::BigObj {
-                put16(out, 16, (number >> 16) as u16);
+            out[15] = s.unused[0];
+            match format {
+                Format::Regular => out[16..18].copy_from_slice(&s.unused[1..]),
+                Format::BigObj => {
+                    put16(out, 16, (number >> 16) as u16);
+                    out[18..20].copy_from_slice(&s.unused[1..]);
+                }
             }
         }
         Aux::ClrToken(c) => {

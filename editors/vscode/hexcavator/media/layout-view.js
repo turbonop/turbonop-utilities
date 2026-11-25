@@ -94,7 +94,11 @@
         "div",
         { class: "chips" },
         el("span", { class: "chip" }, el("b", {}, "Size "), `${l.size.toLocaleString()} B`),
-        el("span", { class: "chip" + (l.waste ? " grows" : "") }, el("b", {}, "Padding "), l.incomplete ? "unknown" : `${l.waste.toLocaleString()} B`)
+        el("span", { class: "chip" + (l.waste ? " grows" : "") }, el("b", {}, "Padding "), l.incomplete ? "unknown" : `${l.waste.toLocaleString()} B`),
+        // What it owns in the binary (an image's types): its functions'
+        // code, and its static members, vtables, and RTTI.
+        l.owns ? el("span", { class: "chip", title: `${l.owns.functions} functions` }, el("b", {}, "Code "), `${l.owns.code.toLocaleString()} B`) : null,
+        l.owns ? el("span", { class: "chip", title: "static members, vtables, RTTI" }, el("b", {}, "Data "), `${l.owns.data.toLocaleString()} B`) : null
       )
     );
     $("toolbar").replaceChildren(
@@ -167,8 +171,37 @@
       main.replaceChildren(wrap);
     }
     const top = wrap.scrollTop;
-    wrap.replaceChildren(table);
+    wrap.replaceChildren(table, owns());
     wrap.scrollTop = top;
+  }
+
+  /** What the type owns in the binary: its symbols, largest first, and the
+   * methods it declares that have no code there. */
+  function owns() {
+    const o = state.layout.owns;
+    if (!o) {
+      return null;
+    }
+    const rows = o.symbols.map((s) =>
+      el(
+        "tr",
+        { class: s.folded ? "muted" : "" },
+        el("td", { class: "n", title: `${s.file.toLocaleString()} bytes in the file, ${s.vm.toLocaleString()} in memory` }, Math.max(s.file, s.vm).toLocaleString()),
+        el("td", { class: "mono" }, s.rva),
+        el("td", { class: "label", title: s.folded ? "folded into another function's identical code: no bytes of its own" : s.kind }, s.name)
+      )
+    );
+    return el(
+      "section",
+      { class: "owns" },
+      el("h3", {}, `In the binary: ${o.functions} functions (${o.code.toLocaleString()} B of code), ${o.data.toLocaleString()} B of data`),
+      rows.length
+        ? el("table", { class: "rows" }, el("thead", {}, el("tr", {}, el("th", { class: "n" }, "Size"), el("th", {}, "RVA"), el("th", {}, "Symbol"))), el("tbody", {}, rows))
+        : el("p", { class: "muted" }, "None of its code or data is in the binary."),
+      o.absent.length
+        ? el("p", { class: "muted" }, `Declared, with no code in the binary (inlined wherever called, or never called and removed): ${o.absent.join(", ")}`)
+        : null
+    );
   }
 
   function indent(depth) {

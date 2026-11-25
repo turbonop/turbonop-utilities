@@ -3,6 +3,8 @@
 //!
 //!     bench_itanium <names.txt>
 
+use turbonop_global_alloc as _;
+
 use std::time::Instant;
 
 fn main() {

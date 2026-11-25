@@ -2,6 +2,8 @@
 //! llvm-readobj's sections and llvm-objdump's symbol table: every section's
 //! id, name, contents offset and size, and every named function's body.
 
+use turbonop_global_alloc as _;
+
 use std::path::PathBuf;
 
 use turbonop_wasm::{Module, NAME_DATA_SEGMENT, NAME_FUNCTION};

@@ -12,4 +12,4 @@ repository.workspace = true
 workspace = true
 
 [dev-dependencies]
-turbonop-alloc.workspace = true
+turbonop-global-alloc.workspace = true

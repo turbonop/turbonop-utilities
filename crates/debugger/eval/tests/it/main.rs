@@ -4,6 +4,8 @@
 //! against DbgEng's `dv /t /v` (testdata/minidump/crash-x64.dv.txt); and
 //! the expression evaluator, on expressions made here.
 
+use turbonop_global_alloc as _;
+
 mod expr;
 
 use std::path::{Path, PathBuf};

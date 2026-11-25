@@ -2,6 +2,9 @@
 //! with scoped threads (no pool, no dependencies). Below a size where
 //! threads cost more than they save, the work runs on the caller's thread.
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 use std::num::NonZero;
 use std::sync::OnceLock;
 

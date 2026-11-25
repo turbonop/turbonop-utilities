@@ -15,6 +15,9 @@
 //! what Windows' own `ProcessTrace` reports for the same files (see
 //! `tools/etwdump`).
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod buffer;
 mod bytes;
 pub mod classic;

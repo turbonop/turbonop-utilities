@@ -1,5 +1,7 @@
 //! Importing synthetic ETL traces (built with `turbonop_etl::write`).
 
+use turbonop_global_alloc as _;
+
 use turbonop_etl::write::{self, Classic, Kernel, Writer, WriterOptions};
 use turbonop_etl::{Etl, Guid, classic};
 use turbonop_etw::guids;

@@ -21,6 +21,29 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
+- **Release notes.** A release's notes are GitHub's list of the pull
+  requests since the last release; write them from the changes instead
+  (what a user would notice, by command).
+- **hexcavator on crates.io.** `cargo binstall hexcavator` finds the crate
+  on crates.io (its metadata names the release's programs); until it is
+  published there (and with it every `turbonop-*` crate it depends on),
+  `cargo binstall --git https://github.com/turbonop/turbonop-utilities
+  hexcavator` reads it from the repository.
+- **Packages where they fit.** GitHub Packages holds container images and
+  npm, NuGet, and Maven packages, not programs: a container image of
+  hexcavator; the web version as an npm package.
+- **A new extension's first release.** For 0.0.10, the extension's first as
+  `turbonop.hexcavator-vscode`, the Marketplace served one of eight
+  platforms' VSIXs: the first, whose validation created the extension; the
+  rest were reported published and never served (published after it was
+  served, too). An extension that exists takes every platform's (as
+  `hexcavator.hexcavator` did). The job waits up to two hours now; a
+  release that fails so could publish the missing platforms again.
+- **musl's speed.** With mimalloc in musl's allocator's place, the test
+  suite still runs about four times as long under musl as under glibc
+  (35 s against 9 s, in WSL): musl's `memcpy`, `memchr`, and string
+  functions are simple loops. Measure where the time goes; what's fast
+  enough to ship in the static Linux build matters more than the tests.
 
 ## Dump Analyzer
 
@@ -159,17 +182,6 @@ archives). What's left:
   microMIPS) and their tables, 32-bit ARM, monomorphized generics,
   formatting, and what the static C library and mimalloc add on Linux.
   Then make it smaller, as hexcavator advises others to.
-
-## Waiting
-
-- **GCC, GNU ld, gold, and mold.** `hexcavator recommend` judges what an ELF
-  link did (`--gc-sections`, ICF) from what lld leaves in the image, and
-  is tested only with lld; and GNU ld's maps (and its map's archive
-  members and discarded sections, for `hexcavator linkerlog`) are read, but
-  tested only on text written for the tests; gold's and mold's maps not
-  at all. Check them against each linker's, with test binaries and maps
-  from each in `testdata`. Waiting on a Linux environment (WSL) to build
-  them.
 
 ## Ideas
 

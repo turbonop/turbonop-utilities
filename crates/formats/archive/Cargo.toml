@@ -12,6 +12,7 @@ repository.workspace = true
 turbonop-core.workspace = true
 
 [dev-dependencies]
+turbonop-global-alloc.workspace = true
 turbonop-pe.workspace = true
 
 [lints]

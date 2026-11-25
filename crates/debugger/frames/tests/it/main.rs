@@ -7,6 +7,8 @@
 //! are found (not the system's libraries), so frames past them come from
 //! the fallbacks.
 
+use turbonop_global_alloc as _;
+
 mod synthetic;
 
 use std::path::{Path, PathBuf};

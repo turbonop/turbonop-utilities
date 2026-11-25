@@ -2,6 +2,8 @@
 //! functions assembled here (whose ways are known), and the Windows dump's
 //! frames.
 
+use turbonop_global_alloc as _;
+
 use std::path::{Path, PathBuf};
 
 use turbonop_abi::{Abi, Os, regs::x64::*};

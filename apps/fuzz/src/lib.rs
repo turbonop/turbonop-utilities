@@ -39,10 +39,12 @@ impl Scratch {
 }
 
 /// Runs `hexcavator` with `args`, as the command line would (its output goes
-/// to the child's standard output, which the supervisor discards).
+/// to the child's standard output, which the supervisor discards), but
+/// freeing what it is done with: a command left for the exit would keep
+/// the scratch file mapped, and the next input couldn't be written to it.
 fn hexcavator(args: &[&str]) {
     let args: Vec<String> = args.iter().map(|s| (*s).to_string()).collect();
-    let _ = hexcavator::run(&args);
+    let _ = hexcavator::run_in_process(&args);
 }
 
 fn starts(data: &[u8], magic: &[u8]) -> bool {

@@ -7,6 +7,8 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+# (Not published yet: releasing is a step of its own. See TODO.md.)
+publish = false
 
 [lib]
 path = "src/lib.rs"
@@ -23,6 +25,7 @@ turbonop-debuginfo.workspace = true
 turbonop-dwarf.workspace = true
 turbonop-eval.workspace = true
 turbonop-frames.workspace = true
+turbonop-global-alloc.workspace = true
 turbonop-mmap.workspace = true
 turbonop-paths.workspace = true
 turbonop-program.workspace = true

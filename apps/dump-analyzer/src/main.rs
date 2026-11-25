@@ -1,3 +1,5 @@
+use turbonop_global_alloc as _;
+
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

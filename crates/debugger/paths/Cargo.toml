@@ -22,6 +22,7 @@ turbonop-target.workspace = true
 turbonop-x86.workspace = true
 
 [dev-dependencies]
+turbonop-global-alloc.workspace = true
 turbonop-program.workspace = true
 
 [lints]

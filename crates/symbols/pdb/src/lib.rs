@@ -17,6 +17,9 @@
 // within a stream fit in u32.
 #![allow(clippy::cast_possible_truncation)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod dbi;
 pub mod gsi;
 pub mod hash;

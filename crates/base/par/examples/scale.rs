@@ -2,12 +2,9 @@
 //! small allocations, and large ones, each timed. (For the web version:
 //! WebAssembly's threads, against native ones.)
 
-use std::time::Instant;
+use turbonop_global_alloc as _;
 
-#[cfg(target_family = "wasm")]
-#[global_allocator]
-static A: turbonop_alloc::Cached<std::alloc::System> =
-    turbonop_alloc::Cached::new(std::alloc::System);
+use std::time::Instant;
 
 fn main() {
     for round in 0..3 {

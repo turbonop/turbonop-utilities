@@ -2,6 +2,8 @@
 //! the commands on the real dumps in testdata, hermetically (only the
 //! dumps' own directories are searched).
 
+use turbonop_global_alloc as _;
+
 use std::path::{Path, PathBuf};
 
 use dump_analyzer::command;

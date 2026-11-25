@@ -1,5 +1,7 @@
 //! The integration tests, as one binary (one link, not one per file).
 
+use turbonop_global_alloc as _;
+
 use turbonop_abi::{Abi, Convention, Os, Preserved, ReturnAddress, X86Call, regs};
 use turbonop_core::Arch;
 

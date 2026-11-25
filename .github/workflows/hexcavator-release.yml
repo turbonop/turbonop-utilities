@@ -13,10 +13,10 @@ name: hexcavator release
 # GitHub Pages.
 #
 # - A tag hexcavator-v<version> (the version in apps/hexcavator/Cargo.toml
-#   and in the extension's package.json) builds, tests, signs, and packages, then makes a draft
-#   GitHub release; publishing the extension to the Marketplace waits for
-#   approval (the marketplace environment). Publishing the draft sends
-#   hexcavator to winget (hexcavator-winget.yml).
+#   and in the extension's package.json) builds, tests, signs, and
+#   packages, then publishes the GitHub release, and sends hexcavator to
+#   winget (hexcavator-winget.yml); publishing the extension to the
+#   Marketplace waits for approval (the marketplace environment).
 # - Run by hand (Actions > hexcavator release > Run workflow), it builds, tests, and
 #   packages, unsigned, as workflow artifacts only: a dry run.
 #
@@ -85,14 +85,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
-      # mimalloc (musl's allocator in hexcavator's place: see
-      # apps/hexcavator/src/main.rs), compiled for musl.
+      # mimalloc (every program's allocator: see turbonop-global-alloc),
+      # compiled for musl.
       CC_x86_64_unknown_linux_musl: musl-gcc
       CC_aarch64_unknown_linux_musl: musl-gcc
-      # (The tests' own binaries allocate with musl's allocator, many times
-      # slower than glibc's: only the hexcavator program has mimalloc. The
-      # timed tests bound blow-ups, not speed; CI's musl job allows the same.)
-      TURBONOP_TEST_SLOWDOWN: ${{ contains(matrix.target, 'musl') && '4' || '1' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Rust
@@ -378,7 +374,7 @@ jobs:
           path: dist/
           if-no-files-found: error
 
-  # A draft release with everything, its checksums, and (once the
+  # The release, published, with everything, its checksums, and (once the
   # repository is public) build provenance attestations.
   #
   # (Its `if` names package's result: the implied success() would skip
@@ -413,7 +409,24 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag --title "Hexcavator ${GITHUB_REF_NAME#hexcavator-}" --generate-notes
+        # Published at once (its programs signed and notarized, its checksums
+        # and attestations made), so that they can be downloaded: by
+        # releases/download/<tag>/<name>, cargo binstall, and winget.
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Hexcavator ${GITHUB_REF_NAME#hexcavator-}" --generate-notes
+
+  # hexcavator to the Windows Package Manager, from the release just
+  # published (see hexcavator-winget.yml).
+  winget:
+    if: ${{ !cancelled() && needs.release.result == 'success' && startsWith(github.ref, 'refs/tags/hexcavator-v') }}
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/hexcavator-winget.yml
+    with:
+      tag: ${{ github.ref_name }}
+      submit: true
+    secrets:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
 
   # The web version (editors/web: the extension's own views, with
   # hexcavator for wasi-threads, in the browser), assembled and tried in
@@ -517,13 +530,14 @@ jobs:
           }
           publish() { npx --yes "$VSCE" publish --oidc --skip-duplicate --packagePath "$1"; }
           publish "${vsixes[0]}"
-          for _ in $(seq 60); do exists && break; sleep 30; done
+          # (Validation can take hours: two each, at most.)
+          for _ in $(seq 240); do exists && break; sleep 30; done
           if ! exists; then
-            echo "::error::$id isn't on the Marketplace 30 minutes after its first VSIX"
+            echo "::error::$id isn't on the Marketplace 2 hours after its first VSIX"
             exit 1
           fi
           for v in "${vsixes[@]:1}"; do publish "$v"; done
-          for _ in $(seq 60); do [[ "$(served)" == "$want" ]] && break; sleep 30; done
+          for _ in $(seq 240); do [[ "$(served)" == "$want" ]] && break; sleep 30; done
           if [[ "$(served)" != "$want" ]]; then
             echo "::error::the Marketplace serves $id $version for: $(served) (published: $want)"
             exit 1

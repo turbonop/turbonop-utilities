@@ -13,3 +13,6 @@ turbonop-tablegen.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true

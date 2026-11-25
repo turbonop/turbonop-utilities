@@ -1,6 +1,8 @@
 //! Prints what the DWARF backend reads of a file (for checking against
 //! llvm-dwarfdump by eye).
 
+use turbonop_global_alloc as _;
+
 fn main() {
     let path = std::env::args().nth(1).expect("a file");
     let data = std::fs::read(&path).unwrap();

@@ -3,6 +3,8 @@
 //!
 //!     cargo run -p turbonop-etw --example manifestdump -- provider.dll [event-id ...]
 
+use turbonop_global_alloc as _;
+
 use turbonop_etw::manifest::{Item, Manifest, wevt_template};
 
 fn print(items: &[Item], depth: usize) {

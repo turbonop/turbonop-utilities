@@ -147,4 +147,6 @@ which `hexcavator licenses` prints; a test keeps it current.
 - What is used: test binaries in `testdata/sizebench/bin`, copied unmodified;
   analysis results produced by SizeBench's engine in `testdata/sizebench/oracle`.
   `tools/sizebench-oracle` builds against a separate SizeBench checkout and
-  contains none of SizeBench's code.
+  contains none of SizeBench's code. The descriptions of COFF groups in
+  `crates/analysis/size/src/describe.rs` began from SizeBench's (corrected
+  and extended): `crates/analysis/size/LICENSE-SIZEBENCH`.

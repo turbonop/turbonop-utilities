@@ -20,4 +20,5 @@ turbonop-core.workspace = true
 workspace = true
 
 [dev-dependencies]
+turbonop-global-alloc.workspace = true
 turbonop-dwarf.workspace = true

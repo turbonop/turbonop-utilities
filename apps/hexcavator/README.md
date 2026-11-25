@@ -57,7 +57,14 @@ The Windows programs are signed; the macOS ones are signed and
 notarized. Each program's symbols are beside it
 (`<name>-symbols.zip` or `.tar.gz`), and `SHA256SUMS` has every file's
 hash. On Windows, winget installs it too: `winget install
-TurboNOP.Hexcavator`.
+TurboNOP.Hexcavator`. With Rust, cargo-binstall installs the release's
+program for your platform (Linux's static one for any Linux):
+
+```
+cargo binstall --git https://github.com/turbonop/turbonop-utilities hexcavator
+```
+
+On macOS and Linux, a program downloaded by hand needs `chmod +x`.
 
 Or use it in a browser, nothing to install: the web version
 (https://turbonop.com/turbonop-utilities/hexcavator/) is the VS Code extension's
@@ -87,13 +94,15 @@ hexcavator size -d segments,symbols app.elf      # ELF executables, shared objec
 hexcavator size -d archs,segments App.app/App    # Mach-O and universal files too
 hexcavator size -d symbols app.wasm              # and WebAssembly modules
 hexcavator size -disassemble main app.wasm      # one function's code (PE, ELF, Mach-O, WebAssembly), calls named
+hexcavator size -disassemble "v<int>::push" -compare "v<char>::push" app.exe  # two functions' code, line by line: what tells them apart
 hexcavator size -d compileunits -debug-file app.debug app  # DWARF in a separate file (a dSYM next to a Mach-O image is found)
 hexcavator size -d compileunits,symbols app.elf  # ELF compile units from DWARF; symbols demangled (fullsymbols, rawsymbols)
 hexcavator size -d symbols -source-filter '^std::' app  # only labels a regular expression matches
 hexcavator size -stripped -d symbols app.elf     # as if stripped: DWARF and .symtab name things but aren't counted
 hexcavator size -c project.bloaty app             # bloaty config files: custom sources rewriting labels
 hexcavator size -list-sources                    # sections, segments, groups, symbols, compileunits, ...
-hexcavator size -findings app.exe                # what wastes space (duplicate data, template bloat), with advice
+hexcavator size -findings app.exe                # what wastes space (duplicate data, template bloat, wasteful virtuals), with advice
+hexcavator about app.exe "Widget::paint"         # everything about one function or datum, or why it isn't there
 hexcavator size -map app.map app.exe             # no PDB? the linker's map attributes symbols to objects and libraries
 hexcavator linkerlog link.log -image app.exe     # the largest library members, and why each was linked
 hexcavator linkerlog link.log -why gshandler.obj # why one was (from `link ... /VERBOSE > link.log`, or lld's --why-extract)
@@ -101,6 +110,21 @@ hexcavator linkerlog new.log -- old.log          # members linked now and not be
 ```
 
 Reports print as bloaty prints them, or with `-csv`, `-tsv`, or `-json`.
+The default report says what each section and COFF group holds
+(`.text$mn` is ordinary code; `.CRT$XCU` the C++ dynamic initializers'
+pointers; `.text$zz` whole functions PGO's training never ran), as the
+JSON's rows do. A diff pairs objects and libraries a build has under
+another directory (another checkout or build machine) by file name.
+`-findings` leaves out COM classes' wasteful virtuals (interfaces other
+code calls through), unless `-com`.
+
+`hexcavator about` tells everything known about one function or datum:
+its section, COFF group, compiland, library, and source line; the names
+identical code folding merged with it; the functions inlined into it;
+what its class says of it (virtual, pure, static); and what PGO's training
+counted of it (whether PGO optimized it, for speed or size, how often it
+ran). A name the image doesn't have is explained: inlined wherever it is
+called (its copies, and where), or declared but never kept.
 
 ### Queries
 
@@ -194,6 +218,9 @@ image's resources. `tools/resources` builds the test's images.
 hexcavator types app.exe                         # classes, structures, and unions by the bytes their padding wastes
 hexcavator types -layout Widget app.exe          # one type: bases, vfptr, vbptr, members (bitfields by bit), holes
 hexcavator types new.exe -- old.exe              # the types whose layout changed between builds
+hexcavator types -code app.exe                   # types by the code and data they own: member functions, statics, vtables, RTTI
+hexcavator types -code -templates app.exe        # a template's instantiations together
+hexcavator types -code -layout Widget app.exe    # one type's functions and data, and what it declares that has no code here
 ```
 
 Layouts come from the PDB's type records (an image's, or a PDB given
@@ -345,7 +372,7 @@ relocations (MSVC's tables by image offset, scaled and with the base added
 after, and across forward jumps) are in `crates/analysis/xref/src/scan.rs`.
 
 `hexcavator mcp` serves the same analysis to LLM agents over the Model Context
-Protocol (stdio), with tools `size_report`, `symbols`, `findings`, `why`, `recommend`,
+Protocol (stdio), with tools `size_report`, `symbols`, `findings`, `about`, `why`, `recommend`,
 `linker_log`, `query`, and `lookup`; the
 first question about an image reads its PDB, and later ones reuse it. For
 example, for Claude Code:

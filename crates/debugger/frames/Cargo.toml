@@ -30,4 +30,5 @@ turbonop-unwind.workspace = true
 workspace = true
 
 [dev-dependencies]
+turbonop-global-alloc.workspace = true
 turbonop-program.workspace = true

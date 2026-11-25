@@ -3,6 +3,8 @@
 //! configurations) decoded and written the same, or not decoded where
 //! LLVM decodes nothing.
 
+use turbonop_global_alloc as _;
+
 use turbonop_mips::format::format;
 use turbonop_mips::{Features, decode};
 

@@ -24,6 +24,9 @@
 #![no_std]
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 extern crate alloc;
 
 mod arch;

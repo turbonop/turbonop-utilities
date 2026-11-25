@@ -15,6 +15,9 @@
 
 #![no_std]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 extern crate alloc;
 
 use alloc::collections::BTreeMap;

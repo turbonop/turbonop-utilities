@@ -25,5 +25,8 @@ turbonop-par.workspace = true
 turbonop-program.workspace = true
 turbonop-unwind.workspace = true
 
+[dev-dependencies]
+turbonop-global-alloc.workspace = true
+
 [lints]
 workspace = true

@@ -1426,6 +1426,7 @@ mod tests {
                 "size_report",
                 "symbols",
                 "findings",
+                "about",
                 "linker_log",
                 "query",
                 "why",

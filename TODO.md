@@ -299,7 +299,6 @@ x64. Where the 3.5 MB went:
   - Whether `/DEFAULTLIB` directives that differ from the rest of a
     library's count as side effects for `--pull=preserve`.
 - **Phase 1: the writers.**
-  - A COFF object model that round-trips byte-identically.
   - The Microsoft archive writer, with `lib.exe`'s member order (the
     reverse of its command line).
   - CodeView symbol records' index fields: types have them, in

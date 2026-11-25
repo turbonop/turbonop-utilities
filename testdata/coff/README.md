@@ -21,3 +21,9 @@ Built by `tools/coff/build.cmd` with MSVC (x64, `/Brepro`) from
   (`ltcg.directives.txt`).
 - `*.symbols.txt`: dumpbin's `/symbols` of each object, which
   `hexcavator dump -symbols` matches.
+
+`model/` holds turbonop-coff's test objects, built by `tools/coff/model.cmd`
+from the sources in `tools/coff/model`: what each tool writes (cl for x64,
+x86, ARM64EC, and /clr; clang-cl, with CodeView and with DWARF; llvm-mc;
+ml64; armasm64 -g; cvtres), for the layouts, string tables, and auxiliary
+records each one has. The script's comments list what each object is for.

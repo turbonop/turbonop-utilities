@@ -22,7 +22,7 @@ items leave TODO.md as they ship.
 | Phase | State |
 |---|---|
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, `.retplne`, sanitizers. |
-| 1 Writers, round trips, and `lib.exe` without folding | Not yet. |
+| 1 Writers, round trips, and `lib.exe` without folding | 1.1 done (see [Phase 1 results](#phase-1-results)): `turbonop-coff`, which every corpus object round-trips through byte-identically. |
 | 2 Identical folding (COFF) | Not yet. |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
@@ -219,6 +219,67 @@ library over 4 GiB:
 
 So turbolib can bring a library back under the limit, but it can't make
 one that `link.exe` accepts above it.
+
+## Phase 1 results
+
+### The COFF object model (1.1)
+
+`turbonop-coff` reads an object into values (headers, sections with
+their data, relocations, and line numbers, and symbols with every
+auxiliary record typed) and writes it back. Its `examples/roundtrip`
+checks every object and library member under the paths it's given, on
+every core:
+
+| Corpus | COFF objects | Identical | Passed through |
+|---|---|---|---|
+| `build-z7` and `build-z7-nopch`, objects and libraries, with `testdata/coff` | 18,723 (18,565 big-obj) | 18,723 | 3,509 import objects, 3 `/GL` objects |
+| Every `.obj` and `.lib` under MSVC 14.44's and 14.52's `VC\Tools\MSVC`, and under the Windows SDK's `Lib` (every architecture) | 142,930 (3,480 big-obj) | 142,930 | 581,441 import objects |
+
+Objects of every tool the corpora hold round-trip, among them `cl` (x64,
+x86, ARM64, ARM64EC, ARM32, `/clr`), clang, ml64, armasm, armasm64,
+cvtres, and `lib.exe`'s import descriptors. So do the objects
+`tools/coff/model.cmd` builds, and 70,000 sections or relocations of our
+own writer's.
+
+The tools lay objects out differently, so the reader records the layout,
+and the writer follows it while every part keeps its size:
+
+- `cl` and `lib.exe`: the headers, then each section's data and its
+  relocations, in number order, packed; then the symbol table and the
+  string table. The string table has an entry for each *use* of a long
+  name: symbols' names in order, then sections' (MSVC's `.wowthk$aa`
+  is there 19 times in one object, and two labels named `$again$10` get
+  two entries).
+- LLVM: data in the order it made the sections, which isn't their
+  number order (it numbers associative sections last), a data pointer
+  for every empty section that isn't uninitialized, each section's own
+  number in its definition's `Number`, and a string table sorted by
+  reversed bytes with names that end others stored inside them.
+- The assemblers pad: ml64 starts relocations at even offsets, armasm
+  and armasm64 align data. armasm64 shares one string between a section
+  and its symbol, leaves bytes in a regular object's `HighNumber`, and
+  gives labels function definitions; ARM32 armasm adds a record to a
+  `.file` name that fills its records.
+- `lib.exe`'s import descriptors give a section without relocations the
+  previous section's relocation pointer. cvtres's string table says its
+  size is 0.
+- MSVC and LLVM both switch to the extended relocation count at 0xFFFF
+  relocations, and the count includes its own record.
+
+An object that is edited structurally is laid out afresh, as MSVC or LLVM
+would (the style the reader detects). A fresh layout is the file the tool
+wrote for 18,686 of the LLVM corpora's 18,723 objects, and for 91,535 of
+the libraries' 142,930; every other one pads, shares strings, is an
+import descriptor, or is LLVM's, as above (and reads back the same).
+
+COMDAT checksums are JamCRC from 0 of the section's data
+(`turbonop_coff::checksum`): all but 697 of the 62.7 million nonzero ones
+in the LLVM corpora, and 3,514,639 of the libraries' 3,604,814. The rest
+(mostly COMDATs with relocations) are computed some other way.
+
+Not modeled: the CodeView in `.debug$S` and `.debug$T` (1.3), and the
+section data that holds symbol indices (`.sxdata`, the `/guard` tables),
+whose entries edits don't renumber; `Renumbering::table_index` maps them.
 
 ## Decisions
 
@@ -686,7 +747,8 @@ units. This is documented, and `/EXTRACT` can also re-inline them
 
 ### Phase 1: writers, round trips, and `lib.exe` without folding
 
-- **1.1** The COFF object model and writer, including big-obj.
+- **1.1** The COFF object model and writer, including big-obj. Done:
+  `turbonop-coff` (`crates/formats/coff`).
 - **1.2** The Microsoft archive writer, and import-library writing from
   `/DEF`.
 - **1.3** CodeView: every record kind written, the exhaustive index-field

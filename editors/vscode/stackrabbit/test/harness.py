@@ -159,6 +159,7 @@ window.acquireVsCodeApi = function () {
     else if (m.method === "marks") r.result = A.marks || {rows: []};
     else if (m.method === "frequency" && A.frequency) r.result = A.frequency;
     else if (m.method === "idle" && A.idle) r.result = A.idle;
+    else if (m.method === "gpu" && A.gpu) r.result = A.gpu;
     else if (m.method === "events.list" && A.sampleKind && m.params.opcode === A.sampleKind.opcode && m.params.guid === A.sampleKind.guid) r.result = A.sampleList;
     else if (m.method === "events.list") r.result = A.eventList;
     else if (m.method === "symbols") r.result = A.symbols;
@@ -898,6 +899,25 @@ def main():
     assert "CPU 0" in table and "30.5%" in table and "State 2: 0.3" in table, table[:600]
     states = html.unescape(dom[dom.index('id="idle-states"'):])
     assert "State 2" in states and "650" in states
+    # The GPU tab: packets by the grouping chosen, presents, the longest;
+    # changing the grouping asks again.
+    gd = json.loads(json.dumps(data))
+    gd["gpu"] = {
+        "packets": 3, "busyNs": 210000, "presents": 1, "vsyncHz": 120.0, "groupsTotal": 2,
+        "groups": [{"label": "Code.exe (23344)", "count": 2, "preempted": 1, "busyNs": 200000, "maxNs": 200000},
+                   {"label": "dwm.exe (1780)", "count": 1, "preempted": 0, "busyNs": 10000, "maxNs": 10000}],
+        "presenters": [{"label": "Code.exe (23344)", "count": 1}],
+        "longest": [{"kind": "Command", "process": "Code.exe (23344)", "engine": "Engine 0", "startNs": 100000, "durationNs": 200000, "preempted": False}],
+    }
+    change = ("document.getElementById('tab-gpu').click();"
+              "setTimeout(function () { var b = document.getElementById('gpu-by'); b.value = 'engine'; b.dispatchEvent(new Event('change')); }, 100);")
+    dom = render(gd, change, shot=shot("gpu"))
+    assert "3 GPU packets, 0.21 ms with work on the GPU, 1 presents, vsync at 120.0 Hz." in dom, "the GPU title"
+    posted = json.loads(html.unescape(re.search(r'<pre id="posted"[^>]*>(.*?)</pre>', dom, re.S).group(1)))
+    asked = [m["params"]["by"] for m in posted if m.get("method") == "gpu"]
+    assert asked == ["process", "engine"], asked
+    assert "Engine 0" in html.unescape(dom[dom.index('id="gpu-longest"'):])
+    assert "Code.exe (23344)" in html.unescape(dom[dom.index('id="gpu-presenters"'):dom.index('id="gpu-longest"')])
     # The registry tab: totals by the grouping chosen (and how many of all
     # the groups), and the longest; changing the grouping asks again.
     regd = json.loads(json.dumps(data))

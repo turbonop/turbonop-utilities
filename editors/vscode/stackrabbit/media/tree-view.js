@@ -906,6 +906,46 @@
     },
   });
 
+  // GPU work: queue packets by process, engine, context or kind, how long
+  // each had work on the GPU; the presents; and the longest packets.
+  const presentersTable = new SortedTable(
+    $("gpu-presenters"),
+    [
+      { key: "label", title: "Process" },
+      { key: "count", title: "Presents", num: true, text: number(0) },
+    ],
+    { key: "count", down: true }
+  );
+  summaryTab({
+    name: "gpu",
+    method: "gpu",
+    reading: "Reading the trace's GPU work…",
+    groups: [
+      { key: "label", title: "Group", cls: "cmd" },
+      { key: "count", title: "Packets", num: true, text: number(0) },
+      { key: "preempted", title: "Preempted", num: true, text: number(0) },
+      { key: "busyNs", title: "With work on the GPU (ms)", num: true, text: ms },
+      { key: "maxNs", title: "Longest (ms)", num: true, text: ms },
+    ],
+    groupSort: { key: "busyNs", down: true },
+    items: "longest",
+    itemColumns: [
+      { key: "kind", title: "Kind" },
+      { key: "process", title: "Process" },
+      { key: "engine", title: "Engine" },
+      { key: "startNs", title: "Queued", num: true, text: at("") },
+      { key: "durationNs", title: "To completed (ms)", num: true, text: ms },
+    ],
+    itemSort: { key: "durationNs", down: true },
+    title: (d, when) =>
+      d.packets
+        ? `${count(d.packets)} GPU packets, ${ms(d.busyNs)} ms with work on the GPU, ${count(d.presents)} presents` +
+          `${d.vsyncHz ? `, vsync at ${d.vsyncHz.toFixed(1)} Hz` : ""}${when}`
+        : `No GPU work${when} (it's recorded with WPR's GPU profile)`,
+    tables: [presentersTable],
+    also: (d) => presentersTable.set(d.presenters),
+  });
+
   // Registry operations, by duration.
   summaryTab({
     name: "registry",
@@ -1074,7 +1114,7 @@
     if (name === "regions") {
       loadRegions();
     }
-    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
+    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
       $(`tab-${t}`).classList.toggle("active", name === t);
       $(`${t}-pane`).classList.toggle("hidden", name !== t);
     }
@@ -1101,6 +1141,7 @@
   $("tab-dpc").addEventListener("click", () => showTab("dpc"));
   $("tab-frequency").addEventListener("click", () => showTab("frequency"));
   $("tab-idle").addEventListener("click", () => showTab("idle"));
+  $("tab-gpu").addEventListener("click", () => showTab("gpu"));
   $("tab-registry").addEventListener("click", () => showTab("registry"));
   $("tab-hardfaults").addEventListener("click", () => showTab("hardfaults"));
   $("tab-vmem").addEventListener("click", () => showTab("vmem"));
@@ -1345,7 +1386,7 @@
     if (s.lit && typeof s.lit.fn === "string") {
       lit = { fn: s.lit.fn, label: String(s.lit.label || s.lit.fn) };
     }
-    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
+    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
       showTab(s.tab);
     }
   }

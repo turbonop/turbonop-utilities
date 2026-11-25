@@ -3293,3 +3293,188 @@ fn idle_periods_by_processor_and_state() {
     assert_eq!(r["groups"][0]["idleNs"], 200_000);
     assert_eq!(r["groups"][1]["idleNs"], 150_000);
 }
+
+/// A `TRACE_EVENT_INFO` for event `id` (version `version`, opcode
+/// `opcode`) of `provider`: its properties, each a name and TDH in-type.
+fn described(
+    provider: turbonop_etl::Guid,
+    id: u16,
+    version: u8,
+    opcode: u8,
+    props: &[(&str, u16)],
+) -> Vec<u8> {
+    let mut b = vec![0u8; 112 + 24 * props.len()];
+    b[0..16].copy_from_slice(&provider.to_bytes());
+    b[32..34].copy_from_slice(&id.to_le_bytes());
+    b[34] = version;
+    b[37] = opcode;
+    let name = |b: &mut Vec<u8>, at: usize, s: &str| {
+        let off = u32::try_from(b.len()).unwrap();
+        b[at..at + 4].copy_from_slice(&off.to_le_bytes());
+        for u in s.encode_utf16().chain([0]) {
+            b.extend_from_slice(&u.to_le_bytes());
+        }
+    };
+    name(&mut b, 52, "Test-Provider");
+    let n = u32::try_from(props.len()).unwrap();
+    b[100..104].copy_from_slice(&n.to_le_bytes());
+    b[104..108].copy_from_slice(&n.to_le_bytes());
+    for (i, (p, t)) in props.iter().enumerate() {
+        let at = 112 + 24 * i;
+        name(&mut b, at + 4, p);
+        b[at + 8..at + 10].copy_from_slice(&t.to_le_bytes());
+        b[at + 16..at + 18].copy_from_slice(&1u16.to_le_bytes());
+    }
+    b
+}
+
+#[test]
+fn gpu_packets_by_process_engine_and_kind() {
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
+    let dir = scratch("serve-gpu");
+    // A counter at 10 MHz: 10 ticks a microsecond.
+    let mut w = Writer::new(WriterOptions {
+        processors: 1,
+        perf_freq: 10_000_000,
+        ..WriterOptions::default()
+    });
+    let dxg = stackrabbit::gpu::DXGKRNL;
+    // Process 100 (app.exe).
+    let hook = classic::guid_group(&guids::PROCESS).unwrap() << 8 | 3;
+    let k = Kernel {
+        hook,
+        version: 4,
+        thread_id: u32::MAX,
+        process_id: u32::MAX,
+        timestamp: 1,
+        ..Kernel::default()
+    };
+    let mut p = Vec::new();
+    p.extend_from_slice(&0xaaaau64.to_le_bytes());
+    for v in [100u32, 4, 1, 0] {
+        p.extend_from_slice(&v.to_le_bytes());
+    }
+    p.extend_from_slice(&0u64.to_le_bytes());
+    p.extend_from_slice(&[0; 8]);
+    p.extend_from_slice(b"app.exe\0");
+    for s in ["app.exe", "", ""] {
+        for u in s.encode_utf16().chain([0]) {
+            p.extend_from_slice(&u.to_le_bytes());
+        }
+    }
+    w.record(0, &write::system(&k, true, &p));
+    // (Pointers: TDH's in-type 16; uint32: 8; Boolean: 13.)
+    let infos = [
+        described(dxg, 32, 0, 3, &[("hContext", 16), ("NodeOrdinal", 8)]),
+        described(
+            dxg,
+            424,
+            0,
+            3,
+            &[("hContext", 16), ("ParentDxgHwQueue", 16)],
+        ),
+        described(dxg, 178, 1, 1, &[("hContext", 16), ("pQueuePacket", 16)]),
+        described(dxg, 244, 2, 1, &[("hContext", 16), ("pQueuePacket", 16)]),
+        described(dxg, 180, 1, 2, &[("pQueuePacket", 16), ("bPreempted", 13)]),
+        described(dxg, 184, 1, 0, &[("hContext", 16)]),
+        described(dxg, 181, 0, 0, &[("hContext", 16)]),
+    ];
+    for (i, info) in infos.iter().enumerate() {
+        let meta = write::EventFields {
+            provider: guids::EVENT_METADATA,
+            opcode: turbonop_etw::event_info::EVENT_INFO_OPCODE,
+            timestamp: 2 + i as i64,
+            ..write::EventFields::default()
+        };
+        w.record(0, &write::event(&meta, true, &[], info));
+    }
+    let mut event = |id: u16, version: u8, opcode: u8, ts: i64, pid: u32, fields: &[u64]| {
+        let e = write::EventFields {
+            provider: dxg,
+            id,
+            version,
+            opcode,
+            timestamp: ts,
+            process_id: pid,
+            ..write::EventFields::default()
+        };
+        let mut p = Vec::new();
+        for (i, f) in fields.iter().enumerate() {
+            // (The Boolean, 4 bytes, is only ever last.)
+            if id == 180 && i == 1 || id == 32 && i == 1 {
+                p.extend_from_slice(&u32::try_from(*f).unwrap().to_le_bytes());
+            } else {
+                p.extend_from_slice(&f.to_le_bytes());
+            }
+        }
+        w.record(0, &write::event(&e, true, &[], &p));
+    };
+    // Context 0xc1 on engine 3, behind hardware queue 0xa1. app.exe queues
+    // a command at 100 us (done at 300 us) and a wait at 200 us (done at
+    // 250 us, preempted): its work runs 100 to 300 us, 200 us. Process 999
+    // (unknown) queues a command on context 0xc9 (no known engine) from
+    // 400 to 410 us. A present by app.exe; vsyncs at 1000, 2000, 3000 us
+    // (1000 Hz).
+    event(32, 0, 3, 10, 4, &[0xc1, 3]);
+    event(424, 0, 3, 11, 4, &[0xc1, 0xa1]);
+    event(178, 1, 1, 1_000, 100, &[0xa1, 0x11]);
+    event(244, 2, 1, 2_000, 100, &[0xa1, 0x12]);
+    event(180, 1, 2, 2_500, 0, &[0x12, 1]);
+    event(180, 1, 2, 3_000, 0, &[0x11, 0]);
+    event(178, 1, 1, 4_000, 999, &[0xc9, 0x13]);
+    event(180, 1, 2, 4_100, 0, &[0x13, 0]);
+    event(184, 1, 0, 4_500, 100, &[0xa1]);
+    for t in [10_000, 20_000, 30_000] {
+        event(181, 0, 0, t, 0, &[0]);
+    }
+    let path = dir.join("t.etl");
+    std::fs::write(&path, w.finish()).unwrap();
+    let req = |by: &str| json!({"method": "gpu", "params": {"trace": 1, "by": by}});
+    let a = session(&[
+        json!({"method": "open", "params": {"path": path, "useIndex": true}}),
+        req("process"),
+        req("engine"),
+        req("kind"),
+        json!({"method": "gpu", "params": {"trace": 1, "time": [0, 150_000], "limit": 1}}),
+        req("nonsense"),
+    ]);
+    let by = |id: u64| -> std::collections::BTreeMap<String, (u64, u64, u64, u64)> {
+        result(&a, id)["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| {
+                let n = |k: &str| g[k].as_u64().unwrap();
+                (
+                    g["label"].as_str().unwrap().to_string(),
+                    (n("count"), n("preempted"), n("busyNs"), n("maxNs")),
+                )
+            })
+            .collect()
+    };
+    let r = result(&a, 2);
+    assert_eq!((&r["packets"], &r["busyNs"]), (&json!(3), &json!(210_000)));
+    assert_eq!((&r["presents"], &r["vsyncHz"]), (&json!(1), &json!(1000.0)));
+    let processes = by(2);
+    assert_eq!(processes["app.exe (100)"], (2, 1, 200_000, 200_000));
+    assert_eq!(processes["Unknown process"], (1, 0, 10_000, 10_000));
+    assert_eq!(
+        r["presenters"],
+        json!([{"label": "app.exe (100)", "count": 1}])
+    );
+    let engines = by(3);
+    assert_eq!(engines["Engine 3"], (2, 1, 200_000, 200_000));
+    assert_eq!(engines["Unknown engine"], (1, 0, 10_000, 10_000));
+    let kinds = by(4);
+    assert_eq!(kinds["Command"], (2, 0, 210_000, 200_000));
+    assert_eq!(kinds["Wait"], (1, 1, 50_000, 50_000));
+    // The longest: the command; to 150 us, only it started.
+    assert_eq!(r["longest"][0]["kind"], "Command");
+    assert_eq!(r["longest"][0]["engine"], "Engine 3");
+    let r = result(&a, 5);
+    assert_eq!(r["packets"], 1);
+    assert_eq!(r["longest"].as_array().unwrap().len(), 1);
+    assert!(error(&a, 6).contains("by"), "{}", error(&a, 6));
+}

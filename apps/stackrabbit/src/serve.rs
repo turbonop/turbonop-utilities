@@ -119,6 +119,13 @@
 //!   first; the first `groupLimit` (10,000) of `groupsTotal`) and the
 //!   `limit` (1000) longest, each `{op, startNs, durationNs, status, process, tid, key,
 //!   value}`. (Read from the trace file the first time, then kept.)
+//! - `gpu` `{trace, by?, time?, limit?}` → `{packets, busyNs, presents,
+//!   vsyncHz, groupsTotal, groups, presenters, longest}`: the GPU queue
+//!   packets started in `time`, by `by` (process, engine, context or
+//!   kind): each group's `{label, count, preempted, busyNs (work queued
+//!   or running, overlaps once), maxNs}`; the presents by process; the
+//!   vsync rate; and the `limit` (1000) longest packets. (Read from the
+//!   trace file the first time, then kept.)
 //! - `idle` `{trace, time?}` → `{periods, idleNs, spanNs, groupsTotal,
 //!   groups, states, bucketsNs, histogram}`: the processors' idle periods
 //!   in `time` (all of the trace if none), clipped to it: each
@@ -464,6 +471,8 @@ struct State {
     frequencies: Option<Arc<crate::frequency::FrequencyTable>>,
     /// The trace's idle periods, once read.
     idles: Option<Arc<crate::idle::IdleTable>>,
+    /// The trace's GPU work, once read.
+    gpu: Option<Arc<crate::gpu::GpuTable>>,
     /// The last line totals worked out: for which (source, time), with
     /// what symbols (how many PDBs were loaded).
     lines: Option<(LinesKey, Arc<LinesValue>)>,
@@ -581,6 +590,7 @@ fn worker(
         minifilters: None,
         frequencies: None,
         idles: None,
+        gpu: None,
         registry: None,
         faults: None,
         vmem: None,
@@ -1274,6 +1284,34 @@ impl State {
                 ))
             }
             "marks" => crate::marks::marks(trace, &self.loaded.path),
+            "gpu" => {
+                let spec = TreeSpec::from_json(params)?;
+                let group = match params.get("by").and_then(Value::as_str) {
+                    None | Some("process") => crate::gpu::GroupBy::Process,
+                    Some("engine") => crate::gpu::GroupBy::Engine,
+                    Some("context") => crate::gpu::GroupBy::Context,
+                    Some("kind") => crate::gpu::GroupBy::Kind,
+                    Some(other) => {
+                        return Err(format!("by: process, engine, context or kind, not {other}"));
+                    }
+                };
+                let limit = count(params, "limit", 1000)?;
+                let table = match &self.gpu {
+                    Some(t) => Arc::clone(t),
+                    None => {
+                        let t = Arc::new(crate::gpu::table(trace, &self.loaded.path)?);
+                        self.gpu = Some(Arc::clone(&t));
+                        t
+                    }
+                };
+                Ok(crate::gpu::summary(
+                    trace,
+                    &table,
+                    group,
+                    ticks(trace, spec.time),
+                    limit,
+                ))
+            }
             "idle" => {
                 let spec = TreeSpec::from_json(params)?;
                 let table = match &self.idles {

@@ -20,6 +20,7 @@ pub mod dpc;
 pub mod fileio;
 pub mod frequency;
 pub mod generic;
+pub mod gpu;
 pub mod hardfault;
 pub mod idle;
 pub mod marks;

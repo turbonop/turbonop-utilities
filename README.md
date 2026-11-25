@@ -77,6 +77,7 @@ Each tool is released on its own, with tags named for it
 | `crates/trace/etw` (`turbonop-etw`) | Decoders for Windows kernel and trace-control events in ETL files |
 | `crates/trace/trace` (`turbonop-trace`) | A platform-neutral model of performance traces, and importers that build it |
 | `crates/trace/trace-analysis` (`turbonop-trace-analysis`) | Queries over traces: stack trees, callers and callees, CPU and wait analysis |
+| `crates/debugger/target` (`turbonop-target`) | Debugging targets: a crash dump's threads and their registers (by DWARF number, with what the dump didn't record left unknown), modules, and memory |
 | `apps/hexcavator` | `hexcavator`: the command line, the MCP server for agents, and the server the VS Code extension runs |
 | `apps/fuzz` | The fuzzer: every parser and command, on mutated inputs, for crashes, hangs, and blowups |
 | `apps/xtask` | Development tasks: `cargo xtask test` builds every test and runs them all at once |

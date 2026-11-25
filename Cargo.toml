@@ -82,6 +82,9 @@ turbonop-trace = { path = "crates/trace/trace" }
 turbonop-trace-analysis = { path = "crates/trace/trace-analysis" }
 turbonop-symbolize = { path = "crates/symbols/symbolize" }
 turbonop-abi = { path = "crates/debug/abi" }
+turbonop-unwind = { path = "crates/debug/unwind" }
+turbonop-minidump = { path = "crates/formats/minidump" }
+turbonop-target = { path = "crates/debugger/target" }
 
 [workspace.lints.rust]
 # `unsafe` is confined to a few audited spots (Pod casts, mmap FFI) that opt in

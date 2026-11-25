@@ -1,0 +1,23 @@
+[package]
+name = "turbonop-target"
+description = "Debugging targets: a crash dump's threads, registers, modules, and memory, with where each byte came from"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# (No unit tests: their build of the crate would be wasted. The workspace's
+# tests check that a target marked so has none.)
+[lib]
+test = false
+
+[dependencies]
+turbonop-abi.workspace = true
+turbonop-core.workspace = true
+turbonop-minidump.workspace = true
+turbonop-unwind.workspace = true
+
+[lints]
+workspace = true

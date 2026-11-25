@@ -787,6 +787,7 @@ name = "turbonop-codeview"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-dwarf",
  "turbonop-hash",
  "turbonop-par",
 ]
@@ -1137,6 +1138,16 @@ dependencies = [
 [[package]]
 name = "turbonop-tablegen"
 version = "0.0.7"
+
+[[package]]
+name = "turbonop-target"
+version = "0.0.7"
+dependencies = [
+ "turbonop-abi",
+ "turbonop-core",
+ "turbonop-minidump",
+ "turbonop-unwind",
+]
 
 [[package]]
 name = "turbonop-trace"

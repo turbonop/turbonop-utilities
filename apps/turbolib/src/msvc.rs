@@ -5,6 +5,7 @@
 mod args;
 mod diag;
 mod inputs;
+mod library;
 mod options;
 mod order;
 mod run;

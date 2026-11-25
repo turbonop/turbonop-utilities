@@ -4,6 +4,9 @@ and compares each with the library the build made.
     python relib.py <build dir> <tool> [--flavor lib|llvm-lib] [--jobs N]
                     [--keep DIR] [--only NAME...]
 
+With --against <other tool>, both are run and their libraries must be the
+same byte for byte (for llvm-lib, or lib.exe given /Brepro).
+
 <tool> is run as the build ran its archiver: the same arguments (the rule's
 command after the archiver's path, with $LINK_FLAGS, /out:, and $in or the
 response file), in the build directory, with /out: pointing at a scratch
@@ -158,26 +161,48 @@ def same(a, b):
     return False, f"first difference at 0x{first:X}"
 
 
-def run_one(build_dir, tool, lib, rules, scratch):
-    name = lib["out"]
-    out_path = os.path.join(scratch, name.replace("\\", "_").replace("/", "_"))
+def run_tool(build_dir, tool, lib, rules, out_path):
+    """Runs `tool` as the build ran its archiver for `lib`, writing `out_path`.
+    Returns an error message, or None."""
     rsp_path = out_path + ".rsp"
     args, rsp = archiver_args(lib, rules, out_path, rsp_path)
     if rsp is not None:
         with open(rsp_path, "w", encoding="utf-8") as f:
             f.write(rsp)
     p = subprocess.run([tool] + args, cwd=build_dir, capture_output=True)
+    if rsp is not None:
+        os.remove(rsp_path)
     if p.returncode != 0:
-        return name, False, f"exit {p.returncode}: {p.stdout.decode(errors='replace').strip()}"
-    with open(os.path.join(build_dir, name), "rb") as f:
+        out = (p.stdout + p.stderr).decode(errors="replace").strip()
+        return f"{os.path.basename(tool)} exit {p.returncode}: {out}"
+    return None
+
+
+def run_one(build_dir, tool, lib, rules, scratch, against):
+    name = lib["out"]
+    stem = os.path.join(scratch, name.replace("\\", "_").replace("/", "_"))
+    out_path = stem
+    err = run_tool(build_dir, tool, lib, rules, out_path)
+    if err:
+        return name, False, err
+    if against:
+        original_path = stem + ".against.lib"
+        err = run_tool(build_dir, against, lib, rules, original_path)
+        if err:
+            return name, False, err
+    else:
+        original_path = os.path.join(build_dir, name)
+    with open(original_path, "rb") as f:
         original = f.read()
     with open(out_path, "rb") as f:
         made = f.read()
-    ok, why = same(original, made)
+    # Against another tool, nothing is masked: both are run now, and
+    # llvm-lib (and lib /Brepro) write no dates.
+    ok, why = (original == made, "bytes differ") if against else same(original, made)
     if ok:
         os.remove(out_path)
-        if rsp is not None:
-            os.remove(rsp_path)
+        if against:
+            os.remove(original_path)
     return name, ok, why
 
 
@@ -188,6 +213,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
     ap.add_argument("--keep", help="where to leave results that differ")
     ap.add_argument("--only", nargs="*", help="library paths to run (as build.ninja names them)")
+    ap.add_argument("--against", help="compare with this tool's output (byte for byte) instead "
+                    "of the build's library")
     a = ap.parse_args()
     rules = read_rules(os.path.join(a.build_dir, "CMakeFiles", "rules.ninja"))
     libs = read_libraries(a.build_dir, rules)
@@ -200,7 +227,7 @@ def main():
     scratch = a.keep or tempfile.mkdtemp(prefix="relib-")
     os.makedirs(scratch, exist_ok=True)
     with ThreadPoolExecutor(a.jobs) as pool:
-        results = list(pool.map(lambda l: run_one(a.build_dir, a.tool, l, rules, scratch), libs))
+        results = list(pool.map(lambda l: run_one(a.build_dir, a.tool, l, rules, scratch, a.against), libs))
     bad = [(n, why) for n, ok, why in results if not ok]
     for n, why in bad:
         print(f"DIFFERS {n}: {why}")

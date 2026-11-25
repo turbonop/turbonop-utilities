@@ -22,7 +22,7 @@ items leave TODO.md as they ship.
 | Phase | State |
 |---|---|
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, `.retplne`, sanitizers. |
-| 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4's command line. Not yet: writing libraries with the `lib` personality, and the import descriptor objects (so `/DEF`). |
+| 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. Not yet: the import descriptor objects (so `/DEF`), and thin libraries. |
 | 2 Identical folding (COFF) | Not yet. |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
@@ -419,6 +419,32 @@ measured with `lib.exe` 14.52 or read in LLVM's `LibDriver.cpp`
   response file can't name another; quotes toggle anywhere in a word.
   The exit code is the number of the error that stopped it, and under
   `/WX`, the warning's.
+- **Members and their headers.** A member copied from an input library
+  keeps its header's date and mode (under `/Brepro`, its date is `-1`).
+  LNK4006 is for a name defined again outside a COMDAT or in a
+  `NODUPLICATES` COMDAT, not for other COMDATs or commons, each member's
+  names in sorted order.
+- **`/GL` members' index entries** come from the IL's global symbols: an
+  inline function is listed only if something listed refers to it,
+  transitively, with inline virtual members (which vftables refer to)
+  and data no inline function refers to as roots. That matches both
+  fixtures (x64 and x86, `__fastcall` names included); it is likely
+  incomplete for objects of other shapes.
+
+**The phase's check.** `tools/turbolib/corpus/relib.py` reran each corpus
+build's archiver commands with turbolib in `lib.exe`'s place, and with it
+in `llvm-lib`'s:
+
+| | Libraries | The same as the tool's |
+|---|---|---|
+| As `lib.exe`, `build-z7` | 245 | 245, apart from header dates (29 s) |
+| As `lib.exe`, `build-z7-nopch` | 245 | 245, apart from header dates (45 s) |
+| As `llvm-lib`, `build-z7`, against `llvm-lib`'s | 245 | 245, byte for byte (27 s) |
+
+The libraries are the same bytes but for dates, which a linker doesn't
+read, so the programs linked against them are those `lib.exe`'s give
+(`relink.py` showed two links of the same libraries give identical
+images).
 
 ## Decisions
 

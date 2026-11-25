@@ -298,7 +298,7 @@ x64. Where the 3.5 MB went:
   - Which sections of ASan and SanCov objects are per object.
   - Whether `/DEFAULTLIB` directives that differ from the rest of a
     library's count as side effects for `--pull=preserve`.
-- **Phase 1: the writers.**
+- **Phase 1: what is left of the writers.**
   - CodeView: done (`symbol_refs`, `c13`, `write`, `remap`; checked on
     both corpora by `turbonop-codeview`'s `corpus` example). Still open:
     rewriting a record whose binary annotations' file offsets change
@@ -317,7 +317,6 @@ x64. Where the 3.5 MB went:
   - The SDK's and MSVC's libraries whose index isn't computed from their
     members (103 of 1,851; see the plan's 1.2): the ARM64 CRT's EC
     symbols, and UCRT's members that win a name.
-  - `turbolib` as `lib` with `--fold=none`.
 - **A structural PDB comparison.** `link.exe`'s PDBs differ between two
   links of the same inputs, so `relink.py` compares images only. Compare
   PDBs by content (publics, procedures, lines, inlinees, locals, types by

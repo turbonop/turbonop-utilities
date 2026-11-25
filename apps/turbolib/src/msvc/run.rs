@@ -9,11 +9,13 @@
 use super::args::{self, Flavor};
 use super::diag::{Diag, Kind, Reporter};
 use super::inputs::{self, InputKind, MachineCheck};
+use super::library;
 use super::options::{self, Options};
 use super::order::{self, Input};
 use crate::settings::Settings;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use turbonop_archive::write::{Fields, NewMember, SizeLimit, Style, WriteError};
 
 /// The environment a run sees.
 #[derive(Clone, Debug, Default)]
@@ -225,6 +227,7 @@ fn find_input(opts: &Options, env: &Env, name: &str) -> Option<PathBuf> {
 /// An input read into memory.
 struct Read {
     name: String,
+    path: PathBuf,
     data: turbonop_mmap::Mmap,
 }
 
@@ -237,6 +240,7 @@ fn read_input(opts: &Options, env: &Env, name: &str, flavor: Flavor) -> Result<R
     let data = turbonop_mmap::Mmap::open(&path).map_err(|_| missing())?;
     Ok(Read {
         name: name.to_string(),
+        path,
         data,
     })
 }
@@ -448,10 +452,181 @@ fn build(flavor: Flavor, opts: &Options, env: &Env, r: &mut Reporter) -> Result<
     for w in ordered.warnings {
         r.report(w)?;
     }
-    r.report(Diag::fatal(
-        1104,
-        "turbolib can't write libraries yet (the archive writer is still to come)",
-    ))
+    if opts.thin {
+        return r.report(Diag::llvm(
+            Kind::Fatal,
+            "turbolib can't write thin libraries (/llvmlibthin) yet",
+        ));
+    }
+
+    // Each member's name, header fields, bytes, and name in messages.
+    let style = match flavor {
+        Flavor::Lib if opts.brepro => Style::LibExeBrepro,
+        Flavor::Lib => Style::LibExe { time: now() },
+        Flavor::LlvmLib => Style::LlvmLib,
+    };
+    let archives: Vec<Option<turbonop_archive::Archive<'_>>> = read
+        .iter()
+        .zip(&kinds)
+        .map(|(i, k)| {
+            (*k == InputKind::Library)
+                .then(|| turbonop_archive::Archive::parse(&i.data).ok())
+                .flatten()
+        })
+        .collect();
+    let members_of: Vec<Vec<turbonop_archive::Member<'_>>> = archives
+        .iter()
+        .map(|a| a.map(|a| a.files().collect()).unwrap_or_default())
+        .collect();
+    let mut members: Vec<Placed<'_>> = Vec::with_capacity(ordered.members.len());
+    for &source in &ordered.members {
+        members.push(match source {
+            order::Source::Object(i) => {
+                let input = &read[i];
+                let name = match flavor {
+                    Flavor::Lib => order::lib_member_name(&input.name),
+                    Flavor::LlvmLib => input.name.clone(),
+                };
+                let (mtime, read_only) = file_time(&input.path);
+                Placed {
+                    name: name.into_bytes(),
+                    fields: style.object_fields(mtime, read_only),
+                    data: &input.data,
+                    place: input.name.clone(),
+                }
+            }
+            order::Source::Member(i, m) => {
+                let member = &members_of[i][m];
+                let fields = match style {
+                    Style::LibExe { .. } => Fields::of(member),
+                    Style::LibExeBrepro => Fields::new(b"-1", b"", b"", trim(member.mode)),
+                    Style::LlvmLib => None,
+                }
+                .unwrap_or_else(|| style.object_fields(0, false));
+                Placed {
+                    name: member.name.to_vec(),
+                    fields,
+                    data: member.data,
+                    place: format!("{}({})", read[i].name, text(&member.name)),
+                }
+            }
+        });
+    }
+
+    // The index, and lib.exe's warnings about names defined twice.
+    let ec = matches!(check.machine, Some(inputs::ARM64EC | inputs::ARM64X));
+    let symbols = turbonop_par::map(&members, 16, |m| {
+        library::member_symbols(flavor, &m.place, m.data, ec)
+    });
+    let mut member_symbols = Vec::with_capacity(symbols.len());
+    for s in symbols {
+        match s {
+            Ok(s) => member_symbols.push(s),
+            Err(d) => return r.report(d),
+        }
+    }
+    if flavor == Flavor::Lib {
+        let strong = turbonop_par::map(&members, 16, |m| library::strong_definitions(m.data));
+        let places: Vec<String> = members.iter().map(|m| m.place.clone()).collect();
+        for w in library::duplicate_warnings(&strong, &places) {
+            r.report(w)?;
+        }
+    }
+    let index = library::index(flavor, member_symbols, ec);
+    let new: Vec<NewMember<'_>> = members
+        .iter()
+        .map(|m| NewMember {
+            name: &m.name,
+            fields: m.fields,
+            data: m.data,
+        })
+        .collect();
+    let bytes = match turbonop_archive::write::write(&new, &index, style, SizeLimit::FourGiB) {
+        Ok(b) => b,
+        Err(e) => return r.report(write_error(flavor, &e)),
+    };
+    if !r.write_output {
+        return Ok(());
+    }
+    let out = output_path(opts, &read);
+    // The inputs are mapped, and the output may be one of them (`lib
+    // x.lib a.obj` updates x.lib): let them go first.
+    drop(index);
+    drop(new);
+    drop(members);
+    drop(members_of);
+    drop(archives);
+    drop(read);
+    if write_file(&resolve(&env.cwd, &out), &bytes).is_err() {
+        return r.report(match flavor {
+            Flavor::Lib => Diag::fatal(1104, format!("cannot open file '{out}'")),
+            Flavor::LlvmLib => Diag::llvm(Kind::Fatal, "cannot write the output").on(out),
+        });
+    }
+    Ok(())
+}
+
+/// One output member, before writing.
+struct Placed<'d> {
+    name: Vec<u8>,
+    fields: Fields,
+    data: &'d [u8],
+    /// How messages name it: `a.obj`, or `x.lib(a.obj)`.
+    place: String,
+}
+
+fn trim(field: &[u8]) -> &[u8] {
+    let end = field.iter().rposition(|&b| b != b' ').map_or(0, |p| p + 1);
+    &field[..end]
+}
+
+/// Seconds since 1970, now.
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// A file's last-written time (seconds since 1970) and whether it is
+/// read-only.
+fn file_time(path: &Path) -> (u64, bool) {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return (0, false);
+    };
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
+    (mtime, meta.permissions().readonly())
+}
+
+/// `/OUT`, or the first input's name with `.lib` for its extension (as
+/// both tools name it).
+fn output_path(opts: &Options, read: &[Read]) -> String {
+    if let Some(o) = &opts.out {
+        return o.clone();
+    }
+    let first = &read[0].name;
+    let base = first.rfind(['\\', '/']).map_or(0, |i| i + 1);
+    match first[base..].rfind('.') {
+        Some(dot) => format!("{}.lib", &first[..base + dot]),
+        None => format!("{first}.lib"),
+    }
+}
+
+fn write_error(flavor: Flavor, e: &WriteError) -> Diag {
+    match (flavor, e) {
+        (Flavor::Lib, WriteError::TooLarge { size }) => Diag::fatal(
+            1248,
+            format!("image size ({size:X}) exceeds maximum allowable size (FFFFFFFF)"),
+        ),
+        (Flavor::Lib, WriteError::TooManyMembers { .. }) => {
+            Diag::fatal(1189, "library limit of 65535 objects exceeded")
+        }
+        (Flavor::Lib, e) => Diag::fatal(1104, format!("cannot write the library: {e}")),
+        (Flavor::LlvmLib, e) => Diag::llvm(Kind::Fatal, e.to_string()),
+    }
 }
 
 fn help(flavor: Flavor) -> String {

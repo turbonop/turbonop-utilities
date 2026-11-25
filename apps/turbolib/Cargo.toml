@@ -15,6 +15,8 @@ path = "src/main.rs"
 [dependencies]
 turbonop-global-alloc.workspace = true
 turbonop-archive.workspace = true
+turbonop-coff.workspace = true
+turbonop-demangle.workspace = true
 turbonop-fold.workspace = true
 turbonop-mmap.workspace = true
 turbonop-par.workspace = true

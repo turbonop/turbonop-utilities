@@ -1413,6 +1413,8 @@ dependencies = [
  "serde",
  "serde_json",
  "turbonop-archive",
+ "turbonop-coff",
+ "turbonop-demangle",
  "turbonop-fold",
  "turbonop-global-alloc",
  "turbonop-mmap",

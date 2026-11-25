@@ -37,6 +37,7 @@ pub mod frames;
 pub mod index;
 pub mod inlining;
 pub mod lcid;
+pub mod linediff;
 pub mod loader_lists;
 pub mod macho;
 pub mod map;

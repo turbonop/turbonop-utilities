@@ -348,6 +348,9 @@ pub struct TemplateFamily {
     /// candidates for a type-independent base or helper. `None` without
     /// two functions in one piece to compare.
     pub similarity: Option<f32>,
+    /// Its functions (in one piece, with code): their names and sizes,
+    /// largest first, to compare two of.
+    pub functions: Vec<(String, u64)>,
 }
 
 /// The share of bytes of `a` and `b` that are equal at equal offsets, of
@@ -469,7 +472,8 @@ pub fn template_families(image: Option<&Image<'_>>, symbols: &[Symbol]) -> Vec<T
         let Some(family) = template_family(name) else {
             continue;
         };
-        if s.kind == SymbolKind::Function && s.size.file > 0 {
+        let one_piece = s.kind == SymbolKind::Function && s.size.file > 0;
+        if one_piece {
             code.entry(family.clone())
                 .or_default()
                 .push((s.addr, s.size.file));
@@ -482,7 +486,11 @@ pub fn template_families(image: Option<&Image<'_>>, symbols: &[Symbol]) -> Vec<T
                 size: Size::default(),
                 largest: (String::new(), Size::default()),
                 similarity: None,
+                functions: Vec::new(),
             });
+        if one_piece {
+            f.functions.push((s.name.clone(), s.size.file));
+        }
         // Blocks of one function are one instance.
         if s.kind != SymbolKind::SeparatedBlock {
             f.instances += 1;
@@ -493,6 +501,10 @@ pub fn template_families(image: Option<&Image<'_>>, symbols: &[Symbol]) -> Vec<T
         }
     }
     let mut out: Vec<TemplateFamily> = families.into_values().filter(|f| f.instances > 1).collect();
+    for f in &mut out {
+        f.functions
+            .sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    }
     if let Some(image) = image {
         for f in &mut out {
             let Some(list) = code.get(&f.family) else {
@@ -976,6 +988,8 @@ struct FamilyJson<'a> {
     largest: &'a str,
     largest_size: u64,
     similarity: Option<f64>,
+    /// Its functions' names, largest first (at most 50), to compare.
+    functions: Vec<&'a str>,
 }
 
 #[derive(serde::Serialize)]
@@ -1185,6 +1199,12 @@ pub fn report(
                     similarity: f
                         .similarity
                         .map(|s| (f64::from(s) * 1000.0).round() / 1000.0),
+                    functions: f
+                        .functions
+                        .iter()
+                        .take(50)
+                        .map(|(n, _)| n.as_str())
+                        .collect(),
                 })
                 .collect(),
         },

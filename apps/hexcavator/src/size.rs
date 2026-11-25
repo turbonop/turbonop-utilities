@@ -82,6 +82,10 @@ bloaty-style reports (every byte of the file and of memory, labeled once):
                     -disassemble names it); with -json, its name, file, line
   -blocks           with -disassemble: by basic block, each set apart and
                     labeled L1, L2, ... on the line before it
+  -compare <function>  with -disassemble: the two functions' code compared,
+                    line by line, without their addresses (what tells two
+                    instances of a template apart, and how alike they are);
+                    with -json, the lines and the similarity
   -json             with -disassemble: the instructions (bytes, text, label,
                     how control leaves each, its target), the basic blocks
                     and the edges between them, and (from a PDB) each
@@ -152,6 +156,8 @@ struct Options {
     /// `-com`: COM classes' wasteful virtuals too.
     com: bool,
     disassemble: Option<String>,
+    /// `-compare`: with `-disassemble`, the function to compare it with.
+    compare: Option<String>,
     /// `-definition`: where a function's code starts, in its source.
     definition: Option<String>,
     /// `-mangled`: each symbol's shown name and its mangled one.
@@ -234,6 +240,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut findings = false;
     let mut com = false;
     let mut disassemble = None;
+    let mut compare = None;
     let mut definition = None;
     let mut mangled = false;
     let mut stripped = false;
@@ -340,6 +347,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             Some("stripped") => stripped = true,
             Some("table") => table = true,
             Some("blocks") => blocks = true,
+            Some("compare") => compare = Some(value(&mut i, "compare")?),
             Some("budget") => budget = Some(PathBuf::from(value(&mut i, "budget")?)),
             Some("sizebench") => sizebench = true,
             Some("findings") => findings = true,
@@ -460,6 +468,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         findings,
         com,
         disassemble,
+        compare,
         definition,
         mangled,
         stripped,
@@ -922,6 +931,84 @@ fn definition(options: &Options, name: &str) -> Result<String, String> {
 }
 
 /// `-disassemble`: one function's code.
+/// `-disassemble <a> -compare <b>`: the two functions' code, line by line,
+/// without their addresses: what is the same and what differs, and the
+/// share of lines alike.
+fn compare_functions(options: &Options, a: &str, b: &str) -> Result<String, String> {
+    let pdb = options.pdb.as_deref();
+    let (one, two) = (
+        disassemble(&options.image, a, pdb, Style::Bloaty)?,
+        disassemble(&options.image, b, pdb, Style::Bloaty)?,
+    );
+    // The name (the listing's first line), and the instructions without
+    // their addresses (their labels kept: branches name them, not
+    // addresses).
+    let split = |text: &str| -> (String, Vec<String>) {
+        let mut lines = text.lines();
+        let name = lines.next().unwrap_or("").trim_end_matches(':').to_string();
+        let body = lines
+            .map(|l| {
+                let t = l.trim_start();
+                match t.split_once(' ') {
+                    Some((addr, rest))
+                        if addr.len() >= 4 && addr.bytes().all(|c| c.is_ascii_hexdigit()) =>
+                    {
+                        rest.trim_start_matches(' ').to_string()
+                    }
+                    _ => t.to_string(),
+                }
+            })
+            .collect();
+        (name, body)
+    };
+    let ((name_a, lines_a), (name_b, lines_b)) = (split(&one), split(&two));
+    let ra: Vec<&str> = lines_a.iter().map(String::as_str).collect();
+    let rb: Vec<&str> = lines_b.iter().map(String::as_str).collect();
+    let d = turbonop_size::linediff::diff(&ra, &rb);
+    let similarity = turbonop_size::linediff::similarity(&d);
+    use turbonop_size::linediff::Line;
+    if options.format == Format::Json {
+        let lines: Vec<serde_json::Value> = d
+            .iter()
+            .map(|l| match l {
+                Line::Same(t) => serde_json::json!([" ", t]),
+                Line::Removed(t) => serde_json::json!(["-", t]),
+                Line::Added(t) => serde_json::json!(["+", t]),
+            })
+            .collect();
+        let mut s = serde_json::to_string_pretty(&serde_json::json!({
+            "a": name_a,
+            "b": name_b,
+            "a_lines": ra.len(),
+            "b_lines": rb.len(),
+            // Three decimals are all that mean anything.
+            "similarity": (similarity * 1000.0).round() / 1000.0,
+            "lines": lines,
+        }))
+        .unwrap_or_default();
+        s.push('\n');
+        return Ok(s);
+    }
+    let mut out = format!(
+        "- {name_a} ({} instructions)\n+ {name_b} ({} instructions)\n{:.0}% of their lines alike\n\n",
+        ra.len(),
+        rb.len(),
+        similarity * 100.0
+    );
+    for l in &d {
+        let (mark, t) = match l {
+            Line::Same(t) => (' ', t),
+            Line::Removed(t) => ('-', t),
+            Line::Added(t) => ('+', t),
+        };
+        out.push(mark);
+        out.push(' ');
+        out.push_str(t);
+        out.push('\n');
+    }
+    Ok(out)
+}
+
 fn disassemble(
     path: &Path,
     function: &str,
@@ -1849,6 +1936,10 @@ fn analyze(options: &Options) -> Result<(), String> {
     }
     if let Some(name) = &options.definition {
         let text = definition(options, name)?;
+        return finish(crate::out::stdout().write_all(text.as_bytes()));
+    }
+    if let (Some(function), Some(other)) = (&options.disassemble, &options.compare) {
+        let text = compare_functions(options, function, other)?;
         return finish(crate::out::stdout().write_all(text.as_bytes()));
     }
     if let Some(function) = &options.disassemble {

@@ -500,6 +500,9 @@ function attach(context, webview, onDispose, file, base, at, kind) {
           await openDisassembly(state.file, m.name);
         }
         break;
+      case "compareInstances":
+        await compareInstances(state.file, m.names);
+        break;
     }
   }, undefined, context.subscriptions);
   return { load, state, onDispose };
@@ -592,6 +595,11 @@ async function findings(context, uri) {
       (out) => ({ recommendations: lib.parsed(out) }),
       (e) => ({ recommendationsError: e.message })
     );
+    panel.webview.onDidReceiveMessage(
+      (m) => m && m.command === "compareInstances" && compareInstances(file, m.names),
+      undefined,
+      context.subscriptions
+    );
     const out = await paneRun(panel.webview, `Examining ${name}…`, ["size", "-findings", "-com", "-json", "-top", "0", file]);
     panel.webview.postMessage(Object.assign({ kind: "findings", file, findings: lib.parsed(out) }, await recs));
   } catch (e) {
@@ -602,6 +610,78 @@ async function findings(context, uri) {
       panel.webview.postMessage({ kind: "failed", message: e.message });
     }
   }
+}
+
+/**
+ * `name` as a template family: its template arguments emptied and its
+ * parameters dropped (`std::vector<>::push_back`), or null if it has none.
+ */
+function familyOf(name) {
+  let out = "";
+  let depth = 0;
+  for (let i = 0; i < name.length; i++) {
+    const c = name[i];
+    const operator = name.slice(Math.max(0, i - 8), i) === "operator";
+    if (c === "(" && depth === 0 && !operator) {
+      break;
+    }
+    if (c === "<" && !operator) {
+      if (depth === 0) {
+        out += "<>";
+      }
+      depth++;
+    } else if (c === ">" && depth > 0 && !operator) {
+      depth--;
+    } else if (depth === 0) {
+      out += c;
+    }
+  }
+  return out.includes("<>") ? out : null;
+}
+
+/** Two functions of one binary, side by side (VS Code's diff editor), without their addresses. */
+function compareFunctions(file, a, b) {
+  const side = (name) => vscode.Uri.from(disasm.disasmUri(file, name, "diff"));
+  return vscode.commands.executeCommand("vscode.diff", side(a), side(b), `${a} ↔ ${b}`, { preview: false });
+}
+
+/**
+ * Another function of `file` to compare `name` with, picked: the same
+ * template's instances first (what SizeBench's template foldability
+ * compares), then the rest, largest first.
+ */
+async function pickFunctionToCompare(file, name) {
+  const out = await runHexc(["query", "-json", file, "kind=function select name, file sort by file desc limit 50000"]);
+  const rows = (lib.parsed(out).rows || []).filter((r) => r.name !== name);
+  const family = familyOf(name);
+  const item = (r) => ({ label: r.name, description: `${Number(r.file).toLocaleString()} B` });
+  const same = family ? rows.filter((r) => familyOf(r.name) === family) : [];
+  const rest = family ? rows.filter((r) => familyOf(r.name) !== family) : rows;
+  const items = [
+    ...(same.length ? [{ label: `Instances of ${family}`, kind: vscode.QuickPickItemKind.Separator }, ...same.map(item)] : []),
+    ...(rest.length ? [{ label: "Other functions", kind: vscode.QuickPickItemKind.Separator }, ...rest.map(item)] : []),
+  ];
+  const picked = await vscode.window.showQuickPick(items, { placeHolder: `Compare ${name} with…`, matchOnDescription: false });
+  return picked && picked.label;
+}
+
+/** Two of a template family's instances, picked, compared. */
+async function compareInstances(file, names) {
+  if (!Array.isArray(names) || names.length < 2) {
+    return;
+  }
+  const picked = await vscode.window.showQuickPick(
+    names.map((n, i) => ({ label: n, picked: i < 2 })),
+    { canPickMany: true, placeHolder: "Pick two instances to compare (the two largest are picked)" }
+  );
+  if (!picked) {
+    return;
+  }
+  if (picked.length !== 2) {
+    vscode.window.showWarningMessage("Pick two instances to compare.");
+    return;
+  }
+  await compareFunctions(file, picked[0].label, picked[1].label);
 }
 
 /**
@@ -1516,6 +1596,15 @@ function activate(context) {
           `${ctx.name}: ${path.basename(ctx.base)} \u2194 ${path.basename(ctx.file)}`,
           { preview: false }
         );
+      })
+    ),
+    // A function and another of its binary (another instance of its
+    // template, say), side by side.
+    vscode.commands.registerCommand(
+      "hexcavator.row.compareWith",
+      row(async (ctx) => {
+        const other = await pickFunctionToCompare(ctx.file, ctx.name);
+        return other && compareFunctions(ctx.file, ctx.name, other);
       })
     ),
     vscode.commands.registerCommand("hexcavator.row.viewData", row((ctx) => openData(ctx.file, ctx.name))),

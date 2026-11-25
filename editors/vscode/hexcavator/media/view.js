@@ -1421,7 +1421,24 @@
       `${t.count} templates instantiated several times. Nearly identical instances can share a type-independent base or helper.`,
       `${formatSize(t.size)} in all`,
       ["Size", "Instances", "Similar", "Template"],
-      t.items.map((i) => [size(Math.max(i.file_size, i.vm_size)), i.instances, i.similarity == null ? { text: "-", sort: "" } : { text: Math.round(i.similarity * 100) + "%", sort: i.similarity }, i.family])
+      t.items.map((i) => [
+        size(Math.max(i.file_size, i.vm_size)),
+        i.instances,
+        i.similarity == null ? { text: "-", sort: "" } : { text: Math.round(i.similarity * 100) + "%", sort: i.similarity },
+        // Two instances' code side by side: what tells them apart.
+        (i.functions || []).length >= 2
+          ? {
+              text: i.family,
+              node: el(
+                "span",
+                {},
+                i.family,
+                " ",
+                el("a", { href: "#", title: "Compare two instances' code, side by side", onclick: (e) => { e.preventDefault(); post({ command: "compareInstances", names: i.functions }); } }, "compare…")
+              ),
+            }
+          : i.family,
+      ])
     );
   }
 

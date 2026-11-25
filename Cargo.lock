@@ -741,6 +741,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-abi"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-dwarf",
+]
+
+[[package]]
 name = "turbonop-alloc"
 version = "0.0.7"
 

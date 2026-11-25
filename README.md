@@ -65,6 +65,7 @@ Each tool is released on its own, with tags named for it
 | `crates/isa/arm64` (`turbonop-arm64`) | AArch64 decoder (base, FP, AdvSIMD, SVE/SVE2, SME/SME2, ...) generated from Arm's AARCHMRS and LLVM's AArch64 target, with a dumpbin-style formatter |
 | `crates/isa/wasm` (`turbonop-wasm-isa`) | The WebAssembly instruction decoder (the whole instruction set, through GC, threads, and relaxed SIMD) with text output |
 | `crates/isa/x86` (`turbonop-x86`) | x86/x86-64 decoder (legacy, x87, SSE, AVX, AVX-512, AMX, ...) and dumpbin-style formatter |
+| `crates/debug/abi` (`turbonop-abi`) | Calling conventions for each platform: which registers a call preserves, argument, result, and return-address registers, red zones, home space, and DWARF register numbers |
 | `crates/debug/unwind` (`turbonop-unwind`) | Virtual stack unwinders: recover a caller's registers from a frame's registers, its stack, and the image's unwind data (Windows' `.pdata`, DWARF CFI, Apple's compact unwind, ARM EHABI), picked for an image of any format |
 | `crates/analysis/code` (`turbonop-code`) | Code independent of the instruction set: instructions' control flow, and functions' basic blocks |
 | `crates/analysis/fingerprint` (`turbonop-fingerprint`) | Fingerprints of functions and data that don't depend on where they are: instructions with addresses masked, then what they refer to, refined until stable (as linkers fold identical code), so builds compare and unfolded duplicates show |

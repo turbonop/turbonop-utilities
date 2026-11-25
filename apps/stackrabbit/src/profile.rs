@@ -188,6 +188,12 @@ const TABLES: &[(&str, &str, &str, Shown)] = &[
         Shown::Tab("regions"),
     ),
     (
+        "ec60ccb2-4409-444e-98fa-792c5b3c36da",
+        "",
+        "Marks",
+        Shown::Tab("regions"),
+    ),
+    (
         "04f69f98-176e-4d1c-b44e-97f734996ab8",
         "GenericEventsGraphTreeItem",
         "Generic Events",

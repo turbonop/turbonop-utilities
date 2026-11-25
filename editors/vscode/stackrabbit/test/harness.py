@@ -156,6 +156,7 @@ window.acquireVsCodeApi = function () {
     else if (m.method === "pool" && A.pool) r.result = A.pool;
     else if (m.method === "memory" && A.memory) r.result = A.memory;
     else if (m.method === "regions") r.error = "regions: file: expected a regions file";
+    else if (m.method === "marks") r.result = A.marks || {rows: []};
     else if (m.method === "events.list" && A.sampleKind && m.params.opcode === A.sampleKind.opcode && m.params.guid === A.sampleKind.guid) r.result = A.sampleList;
     else if (m.method === "events.list") r.result = A.eventList;
     else if (m.method === "symbols") r.result = A.symbols;
@@ -733,6 +734,21 @@ def main():
     trees = [m["params"] for m in posted if m.get("method") == "tree.create"]
     assert trees[-1].get("time") == [100000000, 200000000], trees[-1]
     assert "Selected 0.100 s to 0.200 s" in dom
+    # Marks: listed in the Regions tab; clicking one selects from it to the
+    # next (the last, nothing).
+    marked = json.loads(json.dumps(data))
+    marked["marks"] = {"rows": [{"timeNs": 50000000, "cpu": 2, "mark": "Wpr_Initiated_Rundown"},
+                                {"timeNs": 250000000, "cpu": 6, "mark": "Stackrabbit corpus: t"}]}
+    click = ("document.getElementById('tab-regions').click();"
+             "setTimeout(function () { document.querySelector('#marks tbody tr[data-i=\"0\"]').click(); }, 100);")
+    dom = render(marked, click, shot=shot("marks"))
+    assert "2 marks: click one" in dom, "the marks' title"
+    listed = html.unescape(dom[dom.index('id="marks"'):dom.index('id="regions-title"')])
+    assert "Wpr_Initiated_Rundown" in listed and "Stackrabbit corpus: t" in listed
+    posted = json.loads(html.unescape(re.search(r'<pre id="posted"[^>]*>(.*?)</pre>', dom, re.S).group(1)))
+    assert any(m.get("method") == "marks" for m in posted), "asked for the marks when the trace opened"
+    trees = [m["params"] for m in posted if m.get("method") == "tree.create"]
+    assert trees[-1].get("time") == [50000000, 250000000], trees[-1]
     # The disk tab: totals by the grouping chosen, and the heaviest I/Os;
     # changing the grouping asks again.
     disked = json.loads(json.dumps(data))

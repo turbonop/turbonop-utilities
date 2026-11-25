@@ -10,7 +10,7 @@ const { Session } = require("./lib/protocol");
 const { LineHeat } = require("./lib/line-heat");
 
 /** The requests a view may make of the engine about its trace. */
-const VIEW_METHODS = new Set(["summary", "graph", "processes", "threads", "functions", "symbols", "events", "events.list", "regions", "disk", "fileio", "minifilter", "dpc", "registry", "hardfaults", "vmem", "heap", "pool", "memory", "tree.create", "tree.children", "tree.hotPath", "tree.close"]);
+const VIEW_METHODS = new Set(["summary", "graph", "processes", "threads", "functions", "symbols", "events", "events.list", "regions", "marks", "disk", "fileio", "minifilter", "dpc", "registry", "hardfaults", "vmem", "heap", "pool", "memory", "tree.create", "tree.children", "tree.hotPath", "tree.close"]);
 
 let channel;
 
@@ -319,7 +319,7 @@ function html(webview, media) {
     <option value="process">Process</option><option value="name">Name</option>
   </select></label></div><table id="memory-groups" class="processes"></table>
 <div class="threads-title">Each snapshot's totals</div><table id="memory-series" class="processes"></table></div>
-<div id="regions-pane" class="pane hidden"><div id="regions-title" class="threads-title"></div><table id="regions" class="processes"></table>
+<div id="regions-pane" class="pane hidden"><div id="marks-title" class="threads-title"></div><table id="marks" class="processes"></table><div id="regions-title" class="threads-title"></div><table id="regions" class="processes"></table>
 <div id="region-instances-title" class="threads-title"></div><table id="region-instances" class="processes"></table></div>
 <div id="events-pane" class="pane hidden"><div id="events-title" class="threads-title"></div><table id="events" class="processes"></table>
 <div id="event-list-title" class="threads-title">Click a kind of event for its events.</div><div id="event-list-holder"></div><div id="event-stack" class="event-stack"></div></div>

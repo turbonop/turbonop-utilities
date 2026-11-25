@@ -92,6 +92,7 @@
       createTree();
       loadGraph();
       loadProcesses();
+      loadMarks();
     } else if (m.type === "notification" && m.method === "symbols") {
       symbolsNote(m.params);
     } else if (m.type === "failed") {
@@ -570,6 +571,43 @@
       selectTime([row.startNs, Math.max(row.stopNs, row.startNs + 1)]);
     }
   );
+  // Marks (text the recorder put in the trace): on the graph, and listed
+  // in the Regions tab; clicking one selects from it to the next.
+  const marksTable = new SortedTable(
+    $("marks"),
+    [
+      { key: "timeNs", title: "Time", num: true, text: at("") },
+      { key: "cpu", title: "CPU", num: true },
+      { key: "mark", title: "Mark", cls: "cmd" },
+    ],
+    { key: "timeNs", down: false },
+    (row) => {
+      marksTable.picked = row.pick;
+      marksTable.draw();
+      if (row.untilNs !== null) {
+        selectTime([row.timeNs, row.untilNs]);
+      }
+    }
+  );
+  async function loadMarks() {
+    try {
+      const r = await request("marks", {});
+      const rows = r.rows.map((m, i) => ({
+        ...m,
+        pick: i,
+        untilNs: i + 1 < r.rows.length && r.rows[i + 1].timeNs > m.timeNs ? r.rows[i + 1].timeNs : null,
+      }));
+      marksTable.set(rows);
+      graph.setMarks(r.rows);
+      const n = r.rows.length;
+      $("marks-title").textContent = n
+        ? `${n.toLocaleString("en-US")} mark${n === 1 ? "" : "s"}: click one to select from it to the next`
+        : "No marks";
+    } catch (e) {
+      $("marks-title").textContent = e.message;
+    }
+  }
+
   let regionsLoaded = false;
   async function loadRegions() {
     if (regionsLoaded) {
@@ -1009,7 +1047,7 @@
     if (summaryTabs[tab]) {
       tables(summaryTabs[tab].tables, `the ${$(`tab-${tab}`).textContent} tables`);
     } else if (tab === "regions") {
-      tables([regionsTable, instancesTable], "the regions");
+      tables([marksTable, regionsTable, instancesTable], "the marks and regions");
     } else if (!$("stacks-pane").classList.contains("hidden")) {
       if (!model) {
         return;

@@ -6,6 +6,7 @@
   const COLORS = ["#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1", "#ff9da7", "#9c755f"];
   const OTHER = "#8c8c8c";
   const LIT = "#ffd400"; // The highlighted function's line.
+  const MARK = "#c586c0"; // Marks' lines.
   const AXIS = 40; // Left margin for the axis labels, in CSS pixels.
 
   class Graph {
@@ -21,6 +22,7 @@
       this.data = null;
       this.selection = null; // [startNs, endNs]
       this.drag = null;
+      this.marks = []; // [{timeNs, mark}]
       canvas.addEventListener("mousedown", (e) => {
         const t = this.timeAt(e.offsetX);
         if (t !== null) {
@@ -68,6 +70,14 @@
       this.draw();
     }
 
+    /** Draws `marks` (the engine's: {timeNs, mark}) as lines. */
+    setMarks(marks) {
+      this.marks = marks || [];
+      if (this.data) {
+        this.draw();
+      }
+    }
+
     /** The plot's width in CSS pixels: as many buckets as it has pixels. */
     plotWidth() {
       return Math.max(10, Math.floor(this.canvas.clientWidth - AXIS));
@@ -102,7 +112,10 @@
         .filter((r) => r.share > 0)
         .sort((x, y) => y.share - x.share);
       const lit = d.highlight ? { label: this.litLabel, share: d.highlight.values[b] } : null;
-      return { from, to, rows, lit };
+      // (A bucket either side: a mark's line is thin.)
+      const width = to - from;
+      const marks = this.marks.filter((m) => m.timeNs >= from - width && m.timeNs < to + width);
+      return { from, to, rows, lit, marks };
     }
 
     /** The bucket under x (CSS pixels), or -1. */
@@ -131,6 +144,9 @@
       }
       if (what.lit) {
         lines.push(`<div class="lit">${escape(what.lit.label)} <b>${pct(what.lit.share)}</b></div>`);
+      }
+      for (const m of what.marks.slice(0, 3).reverse()) {
+        lines.unshift(`<div class="mark">Mark: ${escape(m.mark)}</div>`);
       }
       const total = what.rows.reduce((a, r) => a + r.share, 0);
       this.tip.innerHTML =
@@ -241,6 +257,19 @@
         }
         g.lineWidth = 1;
       }
+      // Marks: dashed lines.
+      g.strokeStyle = MARK;
+      g.setLineDash([3, 3]);
+      for (const m of this.marks) {
+        if (m.timeNs >= d.startNs && m.timeNs <= d.endNs) {
+          const x = Math.round(this.xOf(m.timeNs)) + 0.5;
+          g.beginPath();
+          g.moveTo(x, top);
+          g.lineTo(x, top + h);
+          g.stroke();
+        }
+      }
+      g.setLineDash([]);
       // The selection, or the range being dragged.
       const range = this.drag || this.selection;
       if (range) {

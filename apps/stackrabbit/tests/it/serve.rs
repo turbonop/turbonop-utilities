@@ -3033,3 +3033,49 @@ fn minifilter_callbacks_by_filter_major_function_process_and_file() {
     assert_eq!(result(&a, 7)["count"], 2);
     assert!(error(&a, 8).contains("by"), "{}", error(&a, 8));
 }
+
+#[test]
+fn marks_in_time_order() {
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
+    let dir = scratch("serve-marks");
+    // A counter at 10 MHz: 10 ticks a microsecond.
+    let mut w = Writer::new(WriterOptions {
+        processors: 2,
+        perf_freq: 10_000_000,
+        ..WriterOptions::default()
+    });
+    let mut mark = |cpu: u16, ts: i64, text: &str| {
+        let hook = classic::guid_group(&guids::PERF_INFO).unwrap() << 8 | 34;
+        let k = Kernel {
+            hook,
+            version: 0,
+            thread_id: u32::MAX,
+            process_id: u32::MAX,
+            timestamp: ts,
+            ..Kernel::default()
+        };
+        let mut p = text.as_bytes().to_vec();
+        p.push(0);
+        w.record(cpu, &write::system(&k, true, &p));
+    };
+    // Written out of order across processors; listed by time.
+    mark(1, 3_000, "Stackrabbit corpus: t");
+    mark(0, 1_000, "Wpr_Initiated_Rundown");
+    mark(0, 2_000, "");
+    let path = dir.join("t.etl");
+    std::fs::write(&path, w.finish()).unwrap();
+    let a = session(&[
+        json!({"method": "open", "params": {"path": path, "useIndex": true}}),
+        json!({"method": "marks", "params": {"trace": 1}}),
+    ]);
+    assert_eq!(
+        result(&a, 2)["rows"],
+        json!([
+            {"timeNs": 100_000, "cpu": 0, "mark": "Wpr_Initiated_Rundown"},
+            {"timeNs": 200_000, "cpu": 0, "mark": ""},
+            {"timeNs": 300_000, "cpu": 1, "mark": "Stackrabbit corpus: t"},
+        ])
+    );
+}

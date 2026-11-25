@@ -119,6 +119,10 @@
 //!   first; the first `groupLimit` (10,000) of `groupsTotal`) and the
 //!   `limit` (1000) longest, each `{op, startNs, durationNs, status, process, tid, key,
 //!   value}`. (Read from the trace file the first time, then kept.)
+//! - `marks` `{trace}` → `{rows}`: the marks in the trace (text a
+//!   recorder put in it: WPR marks the start of its rundown, its
+//!   profiles and the recording's name), in time order, each `{timeNs,
+//!   cpu, mark}`.
 //! - `regions` `{trace, file}` → `{regions, instances, truncated}`: the
 //!   regions of interest a WPA regions file defines, and their instances
 //!   in the trace: each region `{name, displayName, parent, unsupported,
@@ -1248,6 +1252,7 @@ impl State {
                     },
                 ))
             }
+            "marks" => crate::marks::marks(trace, &self.loaded.path),
             "regions" => {
                 let file = params
                     .get("file")

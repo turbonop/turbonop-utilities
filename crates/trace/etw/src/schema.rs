@@ -626,6 +626,10 @@ const DPC: &[(&str, Field)] = &[("InitialTime", U64), ("Routine", Ptr)];
 
 const ROUTINE: &[(&str, Field)] = &[("Routine", Ptr)];
 
+/// A mark: text a recorder (WPR, `xperf -m`) put in the trace, as WPA's
+/// Marks table lists them.
+const MARK: &[(&str, Field)] = &[("Message", Ansiz), ("Padding", Padding(8))];
+
 const COLLECTION: &[(&str, Field)] = &[
     ("Source", U32),
     ("NewInterval", U32),
@@ -812,6 +816,7 @@ pub static SCHEMAS: &[Schema] = &[
         "ISR-MSI",
         INTERRUPT_MSI,
     ),
+    s(guids::PERF_INFO, 34, 0, "PerfInfo", "Mark", MARK),
     s(guids::PERF_INFO, 67, 2, "PerfInfo", "ISR", INTERRUPT),
     s(guids::PERF_INFO, 68, 2, "PerfInfo", "DPC", DPC),
     s(guids::PERF_INFO, 69, 2, "PerfInfo", "TimerDPC", DPC),

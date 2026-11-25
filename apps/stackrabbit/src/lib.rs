@@ -20,6 +20,7 @@ pub mod dpc;
 pub mod fileio;
 pub mod generic;
 pub mod hardfault;
+pub mod marks;
 pub mod mcp;
 pub mod memutil;
 pub mod minifilter;

@@ -116,45 +116,63 @@ impl<'a> Modules<'a> {
     pub fn symbol(&self, m: usize, address: u64) -> Option<Symbol> {
         let module = self.modules.get(m)?;
         let at = address.wrapping_sub(module.bias);
-        let functions = module
-            .functions
-            .get_or_init(|| match (&module.debug, &module.image) {
-                (Some(d), i) => FunctionTable::from_debug(d, i.as_ref())
-                    .ok()
-                    .or_else(|| i.as_ref().map(FunctionTable::from_image)),
-                (None, Some(i)) => Some(FunctionTable::from_image(i)),
-                (None, None) => None,
-            });
-        let (start, name) = functions.as_ref()?.function(at)?;
+        // The debug information's frames at the address (the function, and
+        // the calls inlined there), if it has the function: no table of
+        // every function to build.
+        let mut frames = match &module.debug {
+            Some(debug) => {
+                let _guard = module
+                    .lock
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                debug.locator().frames(at)
+            }
+            None => Vec::new(),
+        };
+        let outer = frames
+            .last()
+            .filter(|f| !f.function.is_empty() && f.start.is_some());
+        let (function, start) = match outer {
+            Some(f) => (f.function.clone(), f.start.unwrap_or(at)),
+            None => {
+                // Else the image's own symbols, or the debug information's
+                // publics, as a table (built once).
+                let functions =
+                    module
+                        .functions
+                        .get_or_init(|| match (&module.debug, &module.image) {
+                            (Some(d), i) => FunctionTable::from_debug(d, i.as_ref())
+                                .ok()
+                                .or_else(|| i.as_ref().map(FunctionTable::from_image)),
+                            (None, Some(i)) => Some(FunctionTable::from_image(i)),
+                            (None, None) => None,
+                        });
+                let (start, name) = functions.as_ref()?.function(at)?;
+                (name.to_string(), start)
+            }
+        };
         let mut symbol = Symbol {
-            function: name.to_string(),
+            function,
             offset: at.wrapping_sub(start),
             inlines: Vec::new(),
             file: None,
             line: 0,
         };
-        if let Some(debug) = &module.debug {
-            let _guard = module
-                .lock
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut frames = debug.locator().frames(at);
-            if let Some(innermost) = frames.first() {
-                symbol.file.clone_from(&innermost.file);
-                symbol.line = innermost.line;
-            }
-            // (The last is the function itself.)
-            if frames.len() > 1 {
-                frames.pop();
-                symbol.inlines = frames
-                    .into_iter()
-                    .map(|f| Inline {
-                        function: f.function,
-                        file: f.file,
-                        line: f.line,
-                    })
-                    .collect();
-            }
+        if let Some(innermost) = frames.first() {
+            symbol.file.clone_from(&innermost.file);
+            symbol.line = innermost.line;
+        }
+        // (The last is the function itself.)
+        if frames.len() > 1 {
+            frames.pop();
+            symbol.inlines = frames
+                .into_iter()
+                .map(|f| Inline {
+                    function: f.function,
+                    file: f.file,
+                    line: f.line,
+                })
+                .collect();
         }
         Some(symbol)
     }

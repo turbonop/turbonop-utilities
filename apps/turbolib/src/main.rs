@@ -2,9 +2,13 @@
 //! objects duplicate (see `docs/turbolib.md`).
 //!
 //! So far: `turbolib analyze`, which says what folding would save in
-//! libraries, without writing anything.
+//! libraries, without writing anything; and the `lib` personality (run as
+//! `lib` or `llvm-lib`, or as `turbolib lib ...`), which takes `lib.exe`'s
+//! and `llvm-lib`'s command lines.
 
 use turbonop_global_alloc as _;
+
+mod msvc;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -14,6 +18,7 @@ use turbonop_fold::member::Category;
 
 const USAGE: &str = "\
 usage: turbolib analyze [options] <library or directory>...
+       turbolib lib|llvm-lib <lib.exe's or llvm-lib's arguments>
 
 Says what folding would save in each static library (.lib, .a; a directory
 is searched for them), under each of turbolib's modes. Writes nothing.
@@ -338,16 +343,52 @@ fn run(o: &Options) -> Result<(), String> {
     Ok(())
 }
 
+/// The personality the program's name selects: `lib` and `llvm-lib` (any
+/// case, with or without `.exe`), or turbolib's own commands otherwise.
+fn personality(argv0: &str) -> Option<msvc::Flavor> {
+    // Either separator, whatever the platform: a Windows path can reach a
+    // Linux build through Wine or a build system.
+    let file = argv0.rsplit(['\\', '/']).next()?.to_ascii_lowercase();
+    let stem = file.strip_suffix(".exe").unwrap_or(&file);
+    match stem {
+        "lib" => Some(msvc::Flavor::Lib),
+        "llvm-lib" => Some(msvc::Flavor::LlvmLib),
+        _ => None,
+    }
+}
+
+/// Runs a `lib` personality and exits with its code, which for `lib.exe`
+/// is the number of the error that stopped it (up to 4 digits), so it
+/// can't be an `ExitCode`.
+fn run_msvc(flavor: msvc::Flavor, args: &[String]) -> ! {
+    use std::io::Write;
+    let outcome = msvc::run(flavor, args, &msvc::Env::from_process());
+    let _ = std::io::stdout().write_all(outcome.stdout.as_bytes());
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().write_all(outcome.stderr.as_bytes());
+    std::process::exit(outcome.exit)
+}
+
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut argv = std::env::args();
+    let argv0 = argv.next().unwrap_or_default();
+    let args: Vec<String> = argv.collect();
+    if let Some(flavor) = personality(&argv0) {
+        run_msvc(flavor, &args);
+    }
     let Some((command, rest)) = args.split_first() else {
         eprint!("{USAGE}");
         return ExitCode::from(2);
     };
-    if command != "analyze" {
-        eprintln!("turbolib: {command}: unknown command (so far: analyze)");
-        eprint!("{USAGE}");
-        return ExitCode::from(2);
+    match command.as_str() {
+        "lib" => run_msvc(msvc::Flavor::Lib, rest),
+        "llvm-lib" => run_msvc(msvc::Flavor::LlvmLib, rest),
+        "analyze" => {}
+        _ => {
+            eprintln!("turbolib: {command}: unknown command (so far: analyze, lib, llvm-lib)");
+            eprint!("{USAGE}");
+            return ExitCode::from(2);
+        }
     }
     let o = match parse(rest) {
         Ok(o) => o,
@@ -363,5 +404,22 @@ fn main() -> ExitCode {
             eprintln!("turbolib: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn personalities() {
+        assert_eq!(personality("lib"), Some(msvc::Flavor::Lib));
+        assert_eq!(personality(r"C:\tools\LIB.EXE"), Some(msvc::Flavor::Lib));
+        assert_eq!(
+            personality("/usr/bin/llvm-lib"),
+            Some(msvc::Flavor::LlvmLib)
+        );
+        assert_eq!(personality("turbolib.exe"), None);
+        assert_eq!(personality("libtool"), None);
     }
 }

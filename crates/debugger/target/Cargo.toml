@@ -16,6 +16,8 @@ test = false
 [dependencies]
 turbonop-abi.workspace = true
 turbonop-core.workspace = true
+turbonop-elf.workspace = true
+turbonop-image.workspace = true
 turbonop-minidump.workspace = true
 turbonop-unwind.workspace = true
 

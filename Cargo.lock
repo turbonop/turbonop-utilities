@@ -1145,6 +1145,8 @@ version = "0.0.7"
 dependencies = [
  "turbonop-abi",
  "turbonop-core",
+ "turbonop-elf",
+ "turbonop-image",
  "turbonop-minidump",
  "turbonop-unwind",
 ]

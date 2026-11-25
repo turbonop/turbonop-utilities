@@ -55,6 +55,16 @@
 //!   any longer), and the `limit` (1000) longest, each `{type, processor,
 //!   startNs, durationNs, module, function, vector}`. (Read from the
 //!   trace file the first time, then kept.)
+//! - `minifilter` `{trace, by?, time?, limit?, groupLimit?}` → `{count,
+//!   failed, durationNs, groupsTotal, groups, bucketsNs, histogram,
+//!   calls}`: the file system minifilters' callbacks started in `time`,
+//!   totals by `by` (filter, function, major, process or file: count,
+//!   failures, total and longest duration, the most time first; the first
+//!   `groupLimit` (10,000) of `groupsTotal`), how many pre- and
+//!   post-operation callbacks took how long, and the `limit` (1000)
+//!   longest, each `{callback, filter, function, major, process, tid,
+//!   file, startNs, durationNs, status}`. (Read from the trace file the
+//!   first time, then kept.)
 //! - `fileio` `{trace, by?, time?, limit?, groupLimit?}` → `{count,
 //!   unended, bytes, groupsTotal, groups, ops}`: the file operations
 //!   requested in `time`, totals by `by` (process, file or operation:
@@ -429,6 +439,8 @@ struct State {
     registry: Option<Arc<crate::registry::RegistryTable>>,
     /// The trace's DPCs and ISRs, once read.
     dpcs: Option<Arc<crate::dpc::DpcTable>>,
+    /// The trace's minifilter callbacks, once read.
+    minifilters: Option<Arc<crate::minifilter::FilterTable>>,
     /// The last line totals worked out: for which (source, time), with
     /// what symbols (how many PDBs were loaded).
     lines: Option<(LinesKey, Arc<LinesValue>)>,
@@ -543,6 +555,7 @@ fn worker(
         disk: None,
         files: None,
         dpcs: None,
+        minifilters: None,
         registry: None,
         faults: None,
         vmem: None,
@@ -981,6 +994,44 @@ impl State {
                         items: limit,
                         groups: count(params, "groupLimit", 10_000)?,
                         filter: crate::reading::filter(params, crate::dpc::COLUMNS)?,
+                    },
+                ))
+            }
+            "minifilter" => {
+                let spec = TreeSpec::from_json(params)?;
+                let group = match params.get("by").and_then(Value::as_str) {
+                    None | Some("filter") => crate::minifilter::GroupBy::Filter,
+                    Some("function") => crate::minifilter::GroupBy::Function,
+                    Some("major") => crate::minifilter::GroupBy::Major,
+                    Some("process") => crate::minifilter::GroupBy::Process,
+                    Some("file") => crate::minifilter::GroupBy::File,
+                    Some(other) => {
+                        return Err(format!(
+                            "by: filter, function, major, process or file, not {other}"
+                        ));
+                    }
+                };
+                let limit = count(params, "limit", 1000)?;
+                let table = match &self.minifilters {
+                    Some(t) => Arc::clone(t),
+                    None => {
+                        let t = Arc::new(crate::minifilter::table(trace, &self.loaded.path)?);
+                        self.minifilters = Some(Arc::clone(&t));
+                        t
+                    }
+                };
+                let time = ticks(trace, spec.time);
+                Ok(crate::minifilter::summary(
+                    trace,
+                    &table,
+                    &self.resolver,
+                    &*self.symbols,
+                    group,
+                    time,
+                    &crate::reading::Ask {
+                        items: limit,
+                        groups: count(params, "groupLimit", 10_000)?,
+                        filter: crate::reading::filter(params, crate::minifilter::COLUMNS)?,
                     },
                 ))
             }

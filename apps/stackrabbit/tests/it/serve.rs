@@ -2784,3 +2784,243 @@ fn trees_take_wpa_filters_on_threads_and_processes() {
     assert!(e.contains("[IO Type]") && e.contains("Thread Name"), "{e}");
     assert!(error(&a, 7).contains("filter"));
 }
+
+#[test]
+fn minifilter_callbacks_by_filter_major_function_process_and_file() {
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
+    let dir = scratch("serve-minifilter");
+    // A counter at 10 MHz: 10 ticks a microsecond.
+    let mut w = Writer::new(WriterOptions {
+        processors: 1,
+        perf_freq: 10_000_000,
+        ..WriterOptions::default()
+    });
+    let mut kernel = |provider, op: u8, version: u16, ts: i64, tid: u32, payload: Vec<u8>| {
+        let hook = classic::guid_group(&provider).unwrap() << 8 | u16::from(op);
+        let k = Kernel {
+            hook,
+            version,
+            thread_id: tid,
+            process_id: u32::MAX,
+            timestamp: ts,
+            ..Kernel::default()
+        };
+        w.record(0, &write::system(&k, true, &payload));
+    };
+    let u32s =
+        |p: &mut Vec<u8>, v: &[u32]| v.iter().for_each(|v| p.extend_from_slice(&v.to_le_bytes()));
+    let u64s =
+        |p: &mut Vec<u8>, v: &[u64]| v.iter().for_each(|v| p.extend_from_slice(&v.to_le_bytes()));
+    let utf16z = |p: &mut Vec<u8>, s: &str| {
+        for u in s.encode_utf16().chain([0]) {
+            p.extend_from_slice(&u.to_le_bytes());
+        }
+    };
+    let none = u32::MAX;
+    let base = 0xffff_f800_0000_0000u64;
+    // A filter driver (an image of no process: the kernel's).
+    kernel(guids::IMAGE, 3, 3, 1, none, {
+        let mut p = Vec::new();
+        u64s(&mut p, &[base, 0x1_0000]);
+        u32s(&mut p, &[0, 0, 0x5000, 0]);
+        u64s(&mut p, &[base]);
+        p.extend_from_slice(&[0; 16]);
+        utf16z(&mut p, r"\SystemRoot\flt.sys");
+        p
+    });
+    // Process 100 (app.exe), thread 200.
+    kernel(guids::PROCESS, 3, 4, 2, none, {
+        let mut p = Vec::new();
+        u64s(&mut p, &[0xaaaa]);
+        u32s(&mut p, &[100, 4, 1, 0]);
+        u64s(&mut p, &[0]);
+        u32s(&mut p, &[0, 0]);
+        p.extend_from_slice(b"app.exe\0");
+        utf16z(&mut p, "app.exe");
+        utf16z(&mut p, "");
+        utf16z(&mut p, "");
+        p
+    });
+    kernel(guids::THREAD, 3, 3, 3, none, {
+        let mut p = Vec::new();
+        u32s(&mut p, &[100, 200]);
+        u64s(&mut p, &[0, 0, 0, 0, 0, 0x1234, 0]);
+        u32s(&mut p, &[0]);
+        p.extend_from_slice(&[8, 5, 2, 0]);
+        p
+    });
+    // (Routine, file object, file context, IRP, callback data, major.)
+    let call = |routine: u64, context: u64, data: u64, major: u32| {
+        let mut p = Vec::new();
+        u64s(&mut p, &[routine, 1, context, 0xa1, data]);
+        u32s(&mut p, &[major]);
+        p
+    };
+    let done = |start: u64, routine: u64, context: u64, data: u64, major: u32| {
+        let mut p = start.to_le_bytes().to_vec();
+        p.extend_from_slice(&call(routine, context, data, major));
+        p
+    };
+    // Thread 200: the pre-create callback of flt.sys, called (its init
+    // names the thread) and returning 50 us later; then a pre-callback
+    // that fails after 10 us (paired with its init), for the section
+    // synchronization of the filter manager (-1). A post-read callback of
+    // 100 us with no init (no thread). A fast write callback of 1 us in no
+    // known module, on no named file. The file: context 0x77, named by the
+    // rundown at the end.
+    kernel(
+        guids::FILE_IO,
+        96,
+        3,
+        1_000,
+        200,
+        call(base + 0x100, 0x77, 0xd1, 0),
+    );
+    kernel(
+        guids::FILE_IO,
+        98,
+        3,
+        1_500,
+        none,
+        done(1_000, base + 0x100, 0x77, 0xd1, 0),
+    );
+    kernel(
+        guids::FILE_IO,
+        99,
+        3,
+        3_000,
+        none,
+        done(2_000, base + 0x200, 0x77, 0xd2, 3),
+    );
+    kernel(
+        guids::FILE_IO,
+        96,
+        3,
+        4_000,
+        200,
+        call(base + 0x100, 0x77, 0xd3, 0xff),
+    );
+    kernel(guids::FILE_IO, 100, 3, 4_100, none, {
+        let mut p = call(base + 0x100, 0x77, 0xd3, 0xff);
+        u32s(&mut p, &[0xc000_0022]);
+        p
+    });
+    kernel(
+        guids::FILE_IO,
+        98,
+        3,
+        5_000,
+        none,
+        done(4_990, 0x1234, 0, 0xd4, 4),
+    );
+    kernel(guids::FILE_IO, 36, 3, 9_000, none, {
+        let mut p = Vec::new();
+        u64s(&mut p, &[0x77]);
+        utf16z(&mut p, r"C:\f.txt");
+        p
+    });
+    let path = dir.join("t.etl");
+    std::fs::write(&path, w.finish()).unwrap();
+
+    let req = |by: &str, extra: Value| {
+        let mut p = json!({"trace": 1, "by": by});
+        for (k, v) in extra.as_object().unwrap() {
+            p[k] = v.clone();
+        }
+        json!({"method": "minifilter", "params": p})
+    };
+    let a = session(&[
+        json!({"method": "open", "params": {"path": path, "useIndex": true}}),
+        req("filter", json!({})),
+        req("major", json!({})),
+        req("process", json!({})),
+        req("file", json!({"limit": 1})),
+        req(
+            "function",
+            json!({"filter": "[Major Function]:=IRP_MJ_READ"}),
+        ),
+        req("filter", json!({"time": [0, 250_000]})),
+        req("nonsense", json!({})),
+    ]);
+    let by = |id: u64| -> std::collections::BTreeMap<String, (u64, u64, u64, u64)> {
+        result(&a, id)["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|g| {
+                let n = |k: &str| g[k].as_u64().unwrap();
+                (
+                    g["label"].as_str().unwrap().to_string(),
+                    (n("count"), n("failed"), n("durationNs"), n("maxNs")),
+                )
+            })
+            .collect()
+    };
+    let r = result(&a, 2);
+    assert_eq!((&r["count"], &r["failed"]), (&json!(4), &json!(1)));
+    assert_eq!(r["durationNs"], 161_000);
+    let filters = by(2);
+    assert_eq!(filters["flt.sys"], (3, 1, 160_000, 100_000));
+    assert_eq!(filters["Unknown module"], (1, 0, 1_000, 1_000));
+    let majors = by(3);
+    assert_eq!(majors["IRP_MJ_CREATE"], (1, 0, 50_000, 50_000));
+    assert_eq!(majors["IRP_MJ_READ"], (1, 0, 100_000, 100_000));
+    assert_eq!(majors["IRP_MJ_WRITE"], (1, 0, 1_000, 1_000));
+    assert_eq!(
+        majors["IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION"],
+        (1, 1, 10_000, 10_000)
+    );
+    let processes = by(4);
+    assert_eq!(processes["app.exe (100)"], (2, 1, 60_000, 50_000));
+    assert_eq!(processes["Unknown process"], (2, 0, 101_000, 100_000));
+    let files = by(5);
+    assert_eq!(files[r"C:\f.txt"], (3, 1, 160_000, 100_000));
+    assert_eq!(files["Unknown file"], (1, 0, 1_000, 1_000));
+    // How long they took, by callback.
+    let histogram: Vec<(String, Value)> = r["histogram"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| (h["type"].as_str().unwrap().to_string(), h["counts"].clone()))
+        .collect();
+    assert_eq!(
+        histogram,
+        [
+            ("Pre-operation".to_string(), json!([0, 1, 2, 0, 0, 0])),
+            ("Post-operation".to_string(), json!([0, 0, 0, 1, 0, 0])),
+        ]
+    );
+    // The longest: the post-read, then the pre-create (on the thread of
+    // app.exe, its file named).
+    let calls = r["calls"].as_array().unwrap();
+    assert_eq!(calls.len(), 4);
+    assert_eq!(
+        (
+            &calls[0]["callback"],
+            &calls[0]["function"],
+            &calls[0]["major"]
+        ),
+        (
+            &json!("Post-operation"),
+            &json!("flt.sys+0x200"),
+            &json!("IRP_MJ_READ")
+        )
+    );
+    assert_eq!(calls[0]["tid"], Value::Null);
+    assert_eq!(
+        (&calls[1]["process"], &calls[1]["tid"], &calls[1]["file"]),
+        (&json!("app.exe"), &json!(200), &json!(r"C:\f.txt"))
+    );
+    assert_eq!(calls[1]["startNs"], 100_000);
+    let failed = calls.iter().find(|c| !c["status"].is_null()).unwrap();
+    assert_eq!(failed["status"], "0xc0000022");
+    assert_eq!(failed["durationNs"], 10_000);
+    assert_eq!(result(&a, 5)["calls"].as_array().unwrap().len(), 1);
+    // A filter keeps the read; a time range, what started by 250 us.
+    assert_eq!(by(6).len(), 1);
+    assert_eq!(result(&a, 6)["count"], 1);
+    assert_eq!(result(&a, 7)["count"], 2);
+    assert!(error(&a, 8).contains("by"), "{}", error(&a, 8));
+}

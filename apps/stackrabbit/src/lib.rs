@@ -22,6 +22,7 @@ pub mod generic;
 pub mod hardfault;
 pub mod mcp;
 pub mod memutil;
+pub mod minifilter;
 pub mod profile;
 pub mod protocol;
 pub mod query;

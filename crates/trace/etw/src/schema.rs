@@ -460,6 +460,42 @@ const FILE_NAME: &[(&str, Field)] = &[("FileObject", Ptr), ("FileName", Utf16z)]
 
 const FILE_OP_END: &[(&str, Field)] = &[("IrpPtr", Ptr), ("ExtraInfo", Ptr), ("NtStatus", U32)];
 
+/// A file system minifilter's callback (`FileIo_V3_FltIo...`): its routine,
+/// the file (object and context), the I/O (its IRP and callback data), and
+/// its major function. A pre- or post-operation callback is logged when
+/// it's called (`PreOpInit`, `PostOpInit`) and when it returns, with
+/// `InitialTime` when it was called (`PreOpCompletion`,
+/// `PostOpCompletion`), or when it fails, with its status (`PreOpFailure`,
+/// `PostOpFailure`). Fast I/O's callbacks are logged as completions only.
+const FLT_IO: &[(&str, Field)] = &[
+    ("RoutineAddr", Ptr),
+    ("FileObject", Ptr),
+    ("FileContext", Ptr),
+    ("IrpPtr", Ptr),
+    ("CallbackDataPtr", Ptr),
+    ("MajorFunction", U32),
+];
+
+const FLT_IO_COMPLETION: &[(&str, Field)] = &[
+    ("InitialTime", U64),
+    ("RoutineAddr", Ptr),
+    ("FileObject", Ptr),
+    ("FileContext", Ptr),
+    ("IrpPtr", Ptr),
+    ("CallbackDataPtr", Ptr),
+    ("MajorFunction", U32),
+];
+
+const FLT_IO_FAILURE: &[(&str, Field)] = &[
+    ("RoutineAddr", Ptr),
+    ("FileObject", Ptr),
+    ("FileContext", Ptr),
+    ("IrpPtr", Ptr),
+    ("CallbackDataPtr", Ptr),
+    ("MajorFunction", U32),
+    ("Status", U32),
+];
+
 /// `Registry_TypeGroup1`: an operation on a key (logged when it ends:
 /// `InitialTime` is when it began), and the kernel's key control blocks
 /// (`KeyHandle`) as they are created, deleted and run down. `KeyName` is
@@ -982,6 +1018,43 @@ pub static SCHEMAS: &[Schema] = &[
         "FileIo",
         "RenamePath",
         FILE_INFO_PATH,
+    ),
+    // Minifilters' callbacks (xperf's FLT_IO_INIT, FLT_IO, FLT_FASTIO and
+    // FLT_IO_FAILURE). (No corpus trace has a PostOpFailure, 101; its
+    // layout is taken to be PreOpFailure's.)
+    s(guids::FILE_IO, 96, 3, "FileIo", "PreOpInit", FLT_IO),
+    s(guids::FILE_IO, 97, 3, "FileIo", "PostOpInit", FLT_IO),
+    s(
+        guids::FILE_IO,
+        98,
+        3,
+        "FileIo",
+        "PreOpCompletion",
+        FLT_IO_COMPLETION,
+    ),
+    s(
+        guids::FILE_IO,
+        99,
+        3,
+        "FileIo",
+        "PostOpCompletion",
+        FLT_IO_COMPLETION,
+    ),
+    s(
+        guids::FILE_IO,
+        100,
+        3,
+        "FileIo",
+        "PreOpFailure",
+        FLT_IO_FAILURE,
+    ),
+    s(
+        guids::FILE_IO,
+        101,
+        3,
+        "FileIo",
+        "PostOpFailure",
+        FLT_IO_FAILURE,
     ),
     // PageFault. (The faults of opcodes 10 to 15 aren't in the corpus.)
     s(

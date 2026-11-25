@@ -52,6 +52,17 @@ const DISK_BY: &[(&str, &str)] = &[
     ("Disk", "disk"),
     ("IO Type", "type"),
 ];
+const MINIFILTER_BY: &[(&str, &str)] = &[
+    ("Process", "process"),
+    ("Process Name", "process"),
+    ("Minifilter", "filter"),
+    ("Mini-Filter", "filter"),
+    ("Module", "filter"),
+    ("Function", "function"),
+    ("Major Function", "major"),
+    ("File Name", "file"),
+    ("Path Tree", "file"),
+];
 const FAULTS_BY: &[(&str, &str)] = &[
     ("Process", "process"),
     ("Process Name", "process"),
@@ -139,6 +150,12 @@ const TABLES: &[(&str, &str, &str, Shown)] = &[
         "",
         "Disk Usage",
         Shown::Summary("disk", DISK_BY),
+    ),
+    (
+        "1fe3bbaa-6738-41b9-941e-7a6825821b35",
+        "",
+        "Mini-Filter Delays",
+        Shown::Summary("minifilter", MINIFILTER_BY),
     ),
     (
         "7c60aeff-a47f-4ba8-942c-d2b154087ab9",
@@ -461,6 +478,7 @@ fn filter_columns(tab: &str) -> Option<Vec<&'static str>> {
         "disk" => crate::disk::COLUMNS.to_vec(),
         "fileio" => crate::fileio::COLUMNS.to_vec(),
         "dpc" => crate::dpc::COLUMNS.to_vec(),
+        "minifilter" => crate::minifilter::COLUMNS.to_vec(),
         "registry" => crate::registry::COLUMNS.to_vec(),
         "hardfaults" => crate::hardfault::COLUMNS.to_vec(),
         "vmem" => crate::vmem::COLUMNS.to_vec(),

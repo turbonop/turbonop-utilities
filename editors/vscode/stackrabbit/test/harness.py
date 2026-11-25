@@ -148,6 +148,7 @@ window.acquireVsCodeApi = function () {
     else if (m.method === "disk" && A.disk) r.result = A.disk;
     else if (m.method === "fileio" && A.fileio) r.result = A.fileio;
     else if (m.method === "dpc" && A.dpc) r.result = A.dpc;
+    else if (m.method === "minifilter" && A.minifilter) r.result = A.minifilter;
     else if (m.method === "registry" && A.registry) r.result = A.registry;
     else if (m.method === "hardfaults" && A.hardfaults) r.result = A.hardfaults;
     else if (m.method === "vmem" && A.vmem) r.result = A.vmem;
@@ -813,6 +814,37 @@ def main():
     cells = [re.findall(r'<td[^>]*>([^<]*)</td>', r) for r in hist_rows]
     assert cells == [["DPC", "0", "0", "0", "1", "1", "0"], ["ISR", "0", "1", "0", "0", "0", "0"]], cells
     assert "drv.sys!Work" in html.unescape(dom[dom.index('id="dpc-runs"'):])
+    # The Mini-Filters tab: totals by the grouping chosen (with failures),
+    # the histogram by callback, and the longest; changing the grouping
+    # asks again.
+    mfd = json.loads(json.dumps(data))
+    mfd["minifilter"] = {
+        "count": 3, "failed": 1, "durationNs": 2500000, "groupsTotal": 2,
+        "groups": [{"label": "WdFilter.sys", "count": 2, "failed": 1, "durationNs": 2000000, "maxNs": 1500000},
+                   {"label": "luafv.sys", "count": 1, "failed": 0, "durationNs": 500000, "maxNs": 500000}],
+        "bucketsNs": [1000, 10000, 100000, 1000000, 10000000],
+        "histogram": [{"type": "Pre-operation", "counts": [0, 0, 0, 1, 1, 0]},
+                      {"type": "Post-operation", "counts": [0, 0, 1, 0, 0, 0]}],
+        "calls": [{"callback": "Post-operation", "filter": "WdFilter.sys", "function": "WdFilter.sys!Scan",
+                   "major": "IRP_MJ_CREATE", "process": "app.exe", "tid": 200, "file": "C:\\big.bin",
+                   "startNs": 1000000, "durationNs": 1500000, "status": None}],
+    }
+    change = ("document.getElementById('tab-minifilter').click();"
+              "setTimeout(function () { var b = document.getElementById('minifilter-by'); b.value = 'major'; b.dispatchEvent(new Event('change')); }, 100);")
+    dom = render(mfd, change, shot=shot("minifilter"))
+    assert "3 minifilter callbacks, 2.5 ms (1 failed)." in dom, "the Mini-Filters title"
+    posted = json.loads(html.unescape(re.search(r'<pre id="posted"[^>]*>(.*?)</pre>', dom, re.S).group(1)))
+    asked = [m["params"]["by"] for m in posted if m.get("method") == "minifilter"]
+    assert asked == ["filter", "major"], asked
+    table = dom[dom.index('id="minifilter-groups"'):dom.index('id="minifilter-histogram"')]
+    labels = [html.unescape(x) for x in re.findall(r'<tr data-i="\d+"><td class="cmd">([^<]*)</td>', table)]
+    assert labels == ["WdFilter.sys", "luafv.sys"], labels
+    hist = html.unescape(dom[dom.index('id="minifilter-histogram"'):dom.index('id="minifilter-calls"')])
+    hist_rows = re.findall(r'<tr data-i="\d+">(.*?)</tr>', hist, re.S)
+    cells = [re.findall(r'<td[^>]*>([^<]*)</td>', r) for r in hist_rows]
+    assert cells == [["Post-operation", "0", "0", "1", "0", "0", "0"], ["Pre-operation", "0", "0", "0", "1", "1", "0"]], cells
+    rest = html.unescape(dom[dom.index('id="minifilter-calls"'):])
+    assert "WdFilter.sys!Scan" in rest and "IRP_MJ_CREATE" in rest and "C:\\big.bin" in rest
     # The registry tab: totals by the grouping chosen (and how many of all
     # the groups), and the longest; changing the grouping asks again.
     regd = json.loads(json.dumps(data))

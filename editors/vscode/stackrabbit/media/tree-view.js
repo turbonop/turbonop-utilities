@@ -748,6 +748,49 @@
       ),
   });
 
+  // File system minifilters' callbacks, with how long they took.
+  const minifilterHistogram = new SortedTable(
+    $("minifilter-histogram"),
+    [{ key: "type", title: "Callback" }].concat(
+      BUCKET_TITLES.map((title, i) => ({ key: `b${i}`, title, num: true, text: number(0) }))
+    ),
+    { key: "type", down: false }
+  );
+  summaryTab({
+    name: "minifilter",
+    method: "minifilter",
+    reading: "Reading the trace's minifilter callbacks…",
+    groups: [
+      { key: "label", title: "Group", cls: "cmd" },
+      { key: "count", title: "Callbacks", num: true, text: number(0) },
+      { key: "failed", title: "Failed", num: true, text: number(0) },
+      { key: "durationNs", title: "Duration (ms)", num: true, text: ms },
+      { key: "maxNs", title: "Longest (µs)", num: true, text: us },
+    ],
+    groupSort: { key: "durationNs", down: true },
+    items: "calls",
+    itemColumns: [
+      { key: "callback", title: "Callback" },
+      { key: "function", title: "Function", cls: "cmd" },
+      { key: "major", title: "Major function" },
+      { key: "process", title: "Process" },
+      { key: "tid", title: "TID", num: true },
+      { key: "file", title: "File", cls: "cmd" },
+      { key: "startNs", title: "Started", num: true, text: at("") },
+      { key: "durationNs", title: "Duration (µs)", num: true, text: us },
+      { key: "status", title: "Status" },
+    ],
+    itemSort: { key: "durationNs", down: true },
+    title: (d, when) =>
+      `${count(d.count)} minifilter callbacks, ${ms(d.durationNs)} ms${when}` +
+      `${d.failed ? ` (${count(d.failed)} failed)` : ""}`,
+    tables: [minifilterHistogram],
+    also: (d) =>
+      minifilterHistogram.set(
+        d.histogram.map((h) => Object.fromEntries([["type", h.type]].concat(h.counts.map((n, i) => [`b${i}`, n]))))
+      ),
+  });
+
   // Registry operations, by duration.
   summaryTab({
     name: "registry",
@@ -916,7 +959,7 @@
     if (name === "regions") {
       loadRegions();
     }
-    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "dpc", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
+    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
       $(`tab-${t}`).classList.toggle("active", name === t);
       $(`${t}-pane`).classList.toggle("hidden", name !== t);
     }
@@ -939,6 +982,7 @@
   $("tab-regions").addEventListener("click", () => showTab("regions"));
   $("tab-disk").addEventListener("click", () => showTab("disk"));
   $("tab-fileio").addEventListener("click", () => showTab("fileio"));
+  $("tab-minifilter").addEventListener("click", () => showTab("minifilter"));
   $("tab-dpc").addEventListener("click", () => showTab("dpc"));
   $("tab-registry").addEventListener("click", () => showTab("registry"));
   $("tab-hardfaults").addEventListener("click", () => showTab("hardfaults"));
@@ -1184,7 +1228,7 @@
     if (s.lit && typeof s.lit.fn === "string") {
       lit = { fn: s.lit.fn, label: String(s.lit.label || s.lit.fn) };
     }
-    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "dpc", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
+    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
       showTab(s.tab);
     }
   }

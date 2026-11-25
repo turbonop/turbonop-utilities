@@ -387,6 +387,11 @@ impl Symbolizer for DebugSymbolizer {
         self.with_table(trace, image, |t| t.site_name(site).map(str::to_string))?
     }
 
+    fn inline_sites_named(&self, trace: &Trace, image: ImageIx, name: &str) -> Vec<u32> {
+        self.with_table(trace, image, |t| t.sites_named(name))
+            .unwrap_or_default()
+    }
+
     fn line(&self, trace: &Trace, image: ImageIx, offset: u64) -> Option<(String, u32)> {
         self.with_table(trace, image, |t| {
             t.line(offset).map(|(file, line)| (file.to_string(), line))

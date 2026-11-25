@@ -277,6 +277,14 @@ impl FunctionTable {
         self.site_names.get(site as usize).map(String::as_str)
     }
 
+    /// The sites where the function `name` was inlined.
+    pub fn sites_named(&self, name: &str) -> Vec<u32> {
+        (0..self.site_names.len())
+            .filter(|&i| self.site_names[i] == name)
+            .filter_map(|i| u32::try_from(i).ok())
+            .collect()
+    }
+
     /// The source file and line of `addr`.
     pub fn line(&self, addr: u64) -> Option<(&str, u32)> {
         let i = self.lines.partition_point(|l| l.0 <= addr);

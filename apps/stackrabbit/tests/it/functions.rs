@@ -428,3 +428,143 @@ fn a_functions_callers_and_callees_weigh_what_it_does() {
     assert_eq!(view.row(trace, &symbols, NodeId::ROOT).inclusive, 0);
     assert!(TreeSpec::from_json(&json!({"focus": 5})).is_err());
 }
+
+/// Like `TruthSymbols`, with each function a site of an inlined call
+/// covering all of it: `even` inlined in the even-numbered functions,
+/// `odd` in the others.
+struct TruthInlines<'a>(TruthSymbols<'a>, FxHashMap<(usize, u32), u32>);
+
+impl<'a> TruthInlines<'a> {
+    fn new(truth: &'a Truth) -> Self {
+        let index = truth
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(i, f)| ((f.module, f.rva), u32::try_from(i).unwrap()))
+            .collect();
+        Self(TruthSymbols(truth), index)
+    }
+}
+
+fn parity(site: u32) -> &'static str {
+    if site.is_multiple_of(2) {
+        "even"
+    } else {
+        "odd"
+    }
+}
+
+impl Symbolizer for TruthInlines<'_> {
+    fn function(&self, trace: &Trace, image: ImageIx, offset: u64) -> Option<(u64, String)> {
+        self.0.function(trace, image, offset)
+    }
+
+    fn inlines(&self, trace: &Trace, image: ImageIx, offset: u64) -> Vec<(u32, String)> {
+        let img = &trace.images[image.index()];
+        let pid = if img.process.is_some() {
+            trace.processes[img.process.index()].pid
+        } else {
+            0
+        };
+        let Some(module) = self.0.0.module_named(pid, img.file_name()) else {
+            return Vec::new();
+        };
+        let Some(f) = self.0.0.function_at(module, offset) else {
+            return Vec::new();
+        };
+        let site = self.1[&(module, f.rva)];
+        vec![(site, parity(site).to_string())]
+    }
+
+    fn inline_name(&self, _: &Trace, _: ImageIx, site: u32) -> Option<String> {
+        Some(parity(site).to_string())
+    }
+
+    fn inline_sites_named(&self, _: &Trace, _: ImageIx, name: &str) -> Vec<u32> {
+        (0..u32::try_from(self.0.0.functions.len()).unwrap())
+            .filter(|&s| parity(s) == name)
+            .collect()
+    }
+}
+
+#[test]
+fn an_inlined_function_is_one_row_for_all_its_sites() {
+    use stackrabbit::views::{GraphSeries, Highlight, Source, cpu_graph};
+    let dir = scratch("functions-inlined");
+    let (path, s) = write_trace(&dir, "t.etl", &small());
+    let truth = &s.truth;
+    let loaded = store::open(
+        &path,
+        &store::Options {
+            use_index: false,
+            cache_dir: None,
+        },
+    )
+    .unwrap();
+    let trace = &loaded.trace;
+    let resolver = Resolver::new(trace);
+    let symbols = TruthInlines::new(truth);
+    let f = functions(trace, &resolver, &symbols, &TreeSpec::default(), usize::MAX);
+    // Each module's inlined calls: the innermost frames of its functions'
+    // samples, by parity.
+    let mut want: FxHashMap<String, (u64, u32)> = FxHashMap::default();
+    for (i, func) in truth.functions.iter().enumerate() {
+        let mut e = truth.exclusive[i];
+        if func.name == "KiIdleLoop" {
+            e += truth.idle_samples;
+        }
+        if truth.inclusive[i] + e > 0 {
+            let label = format!(
+                "{}!{} (inlined)",
+                truth.modules[func.module].name,
+                parity(u32::try_from(i).unwrap())
+            );
+            let w = want.entry(label).or_default();
+            w.0 += e;
+            w.1 += 1;
+        }
+    }
+    let mut checked = 0;
+    for row in f["functions"].as_array().unwrap() {
+        let label = row["label"].as_str().unwrap();
+        if !label.ends_with("(inlined)") {
+            continue;
+        }
+        let (exclusive, sites) = want[label];
+        assert_eq!(row["exclusive"], exclusive, "{label}");
+        assert_eq!(
+            row["sites"].as_u64().unwrap_or(1),
+            u64::from(sites),
+            "{label}"
+        );
+        // Highlighting it lights every site's samples.
+        let id = row["fn"].as_str().unwrap();
+        let h = Highlight::new(trace, &resolver, &symbols, id).unwrap();
+        let g = cpu_graph(
+            trace,
+            Source::Samples,
+            50,
+            None,
+            8,
+            Some(&h),
+            GraphSeries::default(),
+        );
+        let lit = g["highlight"]["samples"].as_u64().unwrap();
+        let idle = if label.starts_with("ntoskrnl.exe!") {
+            truth.idle_samples
+        } else {
+            0
+        };
+        let inclusive = row["inclusive"].as_u64().unwrap();
+        assert!(
+            lit <= inclusive && lit + idle >= inclusive,
+            "{label}: {lit} of {inclusive}"
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, want.len());
+    assert!(
+        want.values().any(|w| w.1 > 1),
+        "a function inlined at several sites"
+    );
+}

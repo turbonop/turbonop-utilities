@@ -324,8 +324,13 @@ pub fn functions(
     let total = instances.total();
     let key_of = |k: usize| keys.get(KeyId(u32::try_from(k).expect("a key")));
     // Functions: by module file name and place in it (a DLL is an image
-    // in each process it is in: its functions are one row each), and
-    // modules by file name; addresses in no image are one of each.
+    // in each process it is in: its functions are one row each), an
+    // inlined function by its name (all the sites it was inlined at: one
+    // row), and modules by file name; addresses in no image are one of
+    // each.
+    let mut inlinee_ids: FxHashMap<String, u64> = FxHashMap::default();
+    let mut sites: Vec<u32> = Vec::new();
+    let mut site_seen: FxHashSet<(u32, u32)> = FxHashSet::default();
     let mut function_ids: FxHashMap<(&str, u8, u64), u32> = FxHashMap::default();
     let mut function_key: Vec<usize> = Vec::new();
     let mut module_ids: FxHashMap<&str, u32> = FxHashMap::default();
@@ -336,18 +341,34 @@ pub fn functions(
         let (module, kind, place) = match key_of(k) {
             Key::Frame { image, offset } => (trace.images[image.index()].file_name(), 0, offset),
             Key::Inline { image, site } => {
-                (trace.images[image.index()].file_name(), 1, u64::from(site))
+                let place = match symbols.inline_name(trace, image, site) {
+                    Some(name) => {
+                        let next = inlinee_ids.len() as u64;
+                        *inlinee_ids.entry(name).or_insert(next)
+                    }
+                    // (Unnamed: by site.)
+                    None => (1 << 32) | u64::from(site),
+                };
+                (trace.images[image.index()].file_name(), 1, place)
             }
             Key::Unknown(a) => ("?", 2, a),
             _ => continue,
         };
         let next = u32::try_from(function_key.len()).expect("fewer than 4G functions");
-        function_bins[k] = *function_ids
+        let f = *function_ids
             .entry((module, kind, place))
             .or_insert_with(|| {
                 function_key.push(k);
+                sites.push(0);
                 next
             });
+        function_bins[k] = f;
+        // (A DLL's site, in each process it is in: once.)
+        if let Key::Inline { site, .. } = key_of(k)
+            && site_seen.insert((f, site))
+        {
+            sites[f as usize] += 1;
+        }
         let next = u32::try_from(module_names.len()).expect("fewer than 4G modules");
         module_bins[k] = *module_ids.entry(module).or_insert_with(|| {
             module_names.push(module);
@@ -395,6 +416,9 @@ pub fn functions(
             let key = key_of(function_key[f]);
             let mut r = row(label(trace, key, symbols), &by_function[f]);
             r["fn"] = json!(function_id(trace, key, spec.frames));
+            if sites[f] > 1 {
+                r["sites"] = json!(sites[f]);
+            }
             r["module"] = match key {
                 Key::Frame { image, .. } | Key::Inline { image, .. } => {
                     json!(trace.images[image.index()].file_name())
@@ -899,6 +923,9 @@ pub struct Highlight<'a> {
     /// The images of its module (one in each process it is in).
     images: FxHashSet<ImageIx>,
     target: Target,
+    /// For an inlined function: the sites it was inlined at, in each of
+    /// the images.
+    sites: FxHashSet<(ImageIx, u32)>,
 }
 
 /// What a [`Highlight`] looks for in its module's images.
@@ -908,14 +935,14 @@ enum Target {
     Module,
     /// A frame in the function starting at this offset.
     Function(u64),
-    /// A call inlined at this site.
+    /// A call of the function inlined at this site (at any of its sites).
     Inline(u32),
 }
 
 /// A function's or module's ID, as rows and [`Highlight`]s name it (the
 /// same in every process): `module|m` for a module, `module|<offset>`
-/// (hex) for a function, `module|i<site>` for an inlined call. Frames by
-/// address have none.
+/// (hex) for a function, `module|i<site>` for an inlined function (one of
+/// its sites: the ID means them all). Frames by address have none.
 pub fn function_id(trace: &Trace, key: Key, mode: FrameMode) -> Option<String> {
     let file = |image: ImageIx| trace.images[image.index()].file_name().to_string();
     match key {
@@ -945,10 +972,27 @@ impl<'a> Highlight<'a> {
         } else {
             Target::Function(u64::from_str_radix(what, 16).map_err(|_| bad())?)
         };
-        let images = (0..trace.images.len())
+        let images: FxHashSet<ImageIx> = (0..trace.images.len())
             .filter(|&i| trace.images[i].file_name() == module)
             .map(|i| ImageIx(u32::try_from(i).expect("fewer than 4G images")))
             .collect();
+        let mut sites = FxHashSet::default();
+        if let Target::Inline(site) = target {
+            let name = images
+                .iter()
+                .find_map(|&i| symbols.inline_name(trace, i, site));
+            for &i in &images {
+                sites.insert((i, site));
+                if let Some(name) = &name {
+                    sites.extend(
+                        symbols
+                            .inline_sites_named(trace, i, name)
+                            .into_iter()
+                            .map(|s| (i, s)),
+                    );
+                }
+            }
+        }
         Ok(Self {
             trace,
             resolver,
@@ -956,6 +1000,7 @@ impl<'a> Highlight<'a> {
             id: id.to_string(),
             images,
             target,
+            sites,
         })
     }
 
@@ -973,8 +1018,8 @@ impl<'a> Highlight<'a> {
             (Target::Function(f), Key::Frame { image, offset }) => {
                 offset == f && self.images.contains(&image)
             }
-            (Target::Inline(s), _) => inlined.iter().any(|k| {
-                matches!(*k, Key::Inline { image, site } if site == s && self.images.contains(&image))
+            (Target::Inline(_), _) => inlined.iter().any(|k| {
+                matches!(*k, Key::Inline { image, site } if self.sites.contains(&(image, site)))
             }),
             _ => false,
         }

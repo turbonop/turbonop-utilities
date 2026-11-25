@@ -291,3 +291,9 @@ table.processes tr.selected td {
 .assembly td.label {
   color: var(--vscode-descriptionForeground);
 }
+
+/* A call's targets, as sampled. */
+.assembly .targets {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}

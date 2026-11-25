@@ -3720,8 +3720,16 @@ fn assembly_says_why_it_cant_show_a_function() {
         json!({"method": "assembly", "params": {"trace": 1, "fn": "nowhere.dll|10"}}),
         json!({"method": "assembly", "params": {"trace": 1, "fn": format!("{exe}|10")}}),
     ]);
-    assert!(error(&a, 2).contains("not a function's ID"), "{}", error(&a, 2));
-    assert!(error(&a, 3).contains("no module nowhere.dll"), "{}", error(&a, 3));
+    assert!(
+        error(&a, 2).contains("not a function's ID"),
+        "{}",
+        error(&a, 2)
+    );
+    assert!(
+        error(&a, 3).contains("no module nowhere.dll"),
+        "{}",
+        error(&a, 3)
+    );
     // (Its PDB isn't anywhere: no extent.)
     assert!(error(&a, 4).contains("no symbols"), "{}", error(&a, 4));
 }

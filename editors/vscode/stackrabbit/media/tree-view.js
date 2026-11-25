@@ -383,7 +383,15 @@
         }));
       const shown = f.functions.length < f.functionCount ? ` (the heaviest ${f.functions.length.toLocaleString("en-US")})` : "";
       $("functions-title").textContent = `${f.functionCount.toLocaleString("en-US")} functions${shown}`;
-      functionsTable.set(share(f.functions).map((r) => ({ ...r, pick: r.fn })));
+      // (An inlined function is one row for all the sites it was inlined
+      // at: how many, if several.)
+      functionsTable.set(
+        share(f.functions).map((r) => ({
+          ...r,
+          label: r.sites > 1 ? `${r.label}, at ${r.sites.toLocaleString("en-US")} sites` : r.label,
+          pick: r.fn,
+        }))
+      );
       modulesTable.set(share(f.modules));
     } catch (e) {
       statusEl.textContent = e.message;
@@ -1453,9 +1461,13 @@
       const rows = d.lines.map((l, i) => {
         const heat = Math.round((100 * l.own) / most);
         const label = l.label ? `${esc(l.label)}:${loopHeads.has(i) ? " ↺" : ""}` : "";
+        // A call's targets, as sampled (an indirect call's especially).
+        const targets = (l.targets || []).slice(0, 3).map((t) => `${esc(t.function)} (${n(t.samples)})`);
+        const more = (l.targets || []).length > 3 ? `, ${n(l.targets.length - 3)} more` : "";
+        const called = targets.length ? `<div class="targets">→ ${targets.join(", ")}${more}</div>` : "";
         return (
           `<tr data-i="${i}" class="${hot.has(i) ? "hot" : ""}"><td class="label">${label}</td>` +
-          `<td class="num">${esc(l.address)}</td><td class="cmd">${esc(l.text)}</td>` +
+          `<td class="num">${esc(l.address)}</td><td class="cmd">${esc(l.text)}${called}</td>` +
           `<td class="num"><span class="heat" style="width:${heat}%"></span>${l.own ? n(l.own) : ""}</td>` +
           `<td class="num">${l.callees ? n(l.callees) : ""}</td></tr>`
         );

@@ -3,7 +3,8 @@
 //! there and is the image the trace saw) with Hexcavator's decoders, and
 //! the trace's CPU samples counted by instruction: the samples whose
 //! instruction pointer is at it (its own time), and, at a call, the samples
-//! in what it called (by the return addresses on their stacks). Then its
+//! in what it called (by the return addresses on their stacks), and which
+//! functions those were (an indirect call's targets, as sampled). Then its
 //! basic blocks, each with its time, and the loops among them (a branch to
 //! an earlier block).
 
@@ -14,7 +15,7 @@ use serde_json::{Value, json};
 use turbonop_image::Image;
 use turbonop_mmap::Mmap;
 use turbonop_trace::{ImageIx, Trace};
-use turbonop_trace_analysis::{PdbSymbolizer, Resolver};
+use turbonop_trace_analysis::{PdbSymbolizer, Resolver, Symbolizer};
 
 /// The function `id` names (`module|<offset>`, as the Functions tab gives
 /// it) annotated with the samples in `time` (clock ticks; all, if none).
@@ -118,7 +119,12 @@ pub fn assembly(
         },
         turbonop_size::disasm::Labels::Blocks,
     );
-    let (own, callees, total) = count(trace, resolver, &images, start, end, time);
+    let Counted {
+        own,
+        under: callees,
+        targets,
+        total,
+    } = count(trace, resolver, symbols, &images, start, end, time);
     let at = |offset: u64| {
         listing
             .lines
@@ -137,6 +143,31 @@ pub fn assembly(
         if let Some(i) = at(offset.saturating_sub(1)) {
             line_callees[i] += n;
         }
+    }
+    // Each call's targets, as sampled: the functions under it, heaviest
+    // first.
+    let mut line_targets: Vec<Vec<(u64, String)>> = vec![Vec::new(); listing.lines.len()];
+    for (&(offset, callee, callee_start), &n) in &targets {
+        if let Some(i) = at(offset.saturating_sub(1)) {
+            let label = match callee {
+                None => "? (code in no module: JIT-compiled, say)".to_string(),
+                Some(callee) => {
+                    let file = trace.images[callee.index()].file_name();
+                    match symbols.function(trace, callee, callee_start) {
+                        _ if callee_start == NO_FUNCTION => format!("{file} (no symbols)"),
+                        Some((s, f)) if s == callee_start => format!("{file}!{f}"),
+                        _ => format!("{file}+{callee_start:#x}"),
+                    }
+                }
+            };
+            match line_targets[i].iter_mut().find(|t| t.1 == label) {
+                Some(t) => t.0 += n,
+                None => line_targets[i].push((n, label)),
+            }
+        }
+    }
+    for t in &mut line_targets {
+        t.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     }
     let block_of: Vec<usize> = {
         let mut b = vec![0; listing.lines.len()];
@@ -172,6 +203,7 @@ pub fn assembly(
             "block": block_of[i],
             "own": line_own[i],
             "callees": line_callees[i],
+            "targets": line_targets[i].iter().map(|(n, f)| json!({"function": f, "samples": n})).collect::<Vec<_>>(),
         })).collect::<Vec<_>>(),
         "blocks": listing.blocks.iter().enumerate().map(|(k, b)| {
             let own: u64 = line_own[b.first..b.first + b.count].iter().sum();
@@ -207,18 +239,53 @@ fn system_root(path: &str) -> String {
 /// Events a worker counts at a time.
 const CHUNK: usize = 1 << 16;
 
+/// A call target in an image without symbols.
+const NO_FUNCTION: u64 = u64::MAX;
+
+/// A function's samples: see [`count`].
+#[derive(Default)]
+struct Counted {
+    /// By offset, the samples at it.
+    own: FxHashMap<u64, u64>,
+    /// By return address (an offset), the samples under its call.
+    under: FxHashMap<u64, u64>,
+    /// By return address and the function called (its image, if any, and
+    /// start, or [`NO_FUNCTION`]), the samples under the call that were in
+    /// it.
+    targets: FxHashMap<(u64, Option<ImageIx>, u64), u64>,
+    /// The samples with it on their stacks at all.
+    total: u64,
+}
+
+impl Counted {
+    fn add(&mut self, other: Self) {
+        for (k, v) in other.own {
+            *self.own.entry(k).or_default() += v;
+        }
+        for (k, v) in other.under {
+            *self.under.entry(k).or_default() += v;
+        }
+        for (k, v) in other.targets {
+            *self.targets.entry(k).or_default() += v;
+        }
+        self.total += other.total;
+    }
+}
+
 /// The samples in `time` in the function `[start, end)` of `images`: by
 /// offset, those at it (instruction pointers) and those under it (return
-/// addresses on their stacks, once a sample each); and how many samples
-/// had it on their stacks at all. On every core.
+/// addresses on their stacks, once a sample each), and what each call
+/// called; and how many samples had it on their stacks at all. On every
+/// core.
 fn count(
     trace: &Trace,
     resolver: &Resolver,
+    symbols: &PdbSymbolizer,
     images: &[ImageIx],
     start: u64,
     end: u64,
     time: Option<(i64, i64)>,
-) -> (FxHashMap<u64, u64>, FxHashMap<u64, u64>, u64) {
+) -> Counted {
     let s = &trace.samples;
     let (from, to) = match time {
         Some((a, b)) => (
@@ -226,6 +293,25 @@ fn count(
             s.time.partition_point(|&t| t < b),
         ),
         None => (0, s.len()),
+    };
+    // Where it is, in each of its images (a DLL is often at one address in
+    // every process): most frames are nowhere near it, and need no lookup.
+    let mut ranges: Vec<(u64, u64)> = images
+        .iter()
+        .map(|i| {
+            let base = trace.images[i.index()].base;
+            (base.saturating_add(start), base.saturating_add(end))
+        })
+        .collect();
+    ranges.sort_unstable();
+    ranges.dedup();
+    let near = |address: u64| {
+        let i = ranges.partition_point(|r| r.0 <= address);
+        // (They're one function's extent at each base. Only those starting
+        // at or before it can hold it, and of those only the last few:
+        // extents at different bases overlap only where two processes'
+        // images of the module, at nearby bases, are different builds.)
+        ranges[..i].iter().rev().take(4).any(|r| address < r.1)
     };
     let images: FxHashSet<ImageIx> = images.iter().copied().collect();
     // Kernel-mode addresses: the top half of the address space (a 32-bit
@@ -239,15 +325,16 @@ fn count(
         }
     };
     let chunks = (to - from).div_ceil(CHUNK);
-    let parts = turbonop_par::map_range(chunks, 1, |c| {
-        let mut own: FxHashMap<u64, u64> = FxHashMap::default();
-        let mut under: FxHashMap<u64, u64> = FxHashMap::default();
-        let mut total = 0u64;
+    let parts = turbonop_par::map_range(chunks, 1, |chunk| {
+        let mut c = Counted::default();
         let mut seen: Vec<u64> = Vec::new();
-        for i in from + c * CHUNK..(from + (c + 1) * CHUNK).min(to) {
+        for i in from + chunk * CHUNK..(from + (chunk + 1) * CHUNK).min(to) {
             let process = trace.thread_process(s.thread[i]);
             let weight = u64::from(s.weight[i]);
             let inside = |address: u64| {
+                if !near(address) {
+                    return None;
+                }
                 resolver.image(process, address).and_then(|img| {
                     let offset = address - trace.images[img.index()].base;
                     (images.contains(&img) && offset >= start && offset < end).then_some(offset)
@@ -255,7 +342,7 @@ fn count(
             };
             let mut on_stack = false;
             if let Some(o) = inside(s.ip[i]) {
-                *own.entry(o).or_default() += weight;
+                *c.own.entry(o).or_default() += weight;
                 on_stack = true;
             }
             // Its callers' return addresses: the stack's frames but the
@@ -263,7 +350,15 @@ fn count(
             seen.clear();
             let mut frames = trace.stacks.frames(s.stack[i]);
             let mut inner = frames.next().unwrap_or(0);
+            let mut innermost = true;
             for f in frames {
+                // What the frame's call called: the next frame in.
+                let callee = if innermost {
+                    inner
+                } else {
+                    inner.wrapping_sub(1)
+                };
+                innermost = false;
                 // A return address is past its call: inside if the call is.
                 // But the first user-mode frame outside kernel-mode ones is
                 // where the code was interrupted (a system call's or an
@@ -275,26 +370,29 @@ fn count(
                     let o = o + 1;
                     if !seen.contains(&o) {
                         seen.push(o);
-                        *under.entry(o).or_default() += weight;
+                        *c.under.entry(o).or_default() += weight;
+                        let target = match resolver.image(process, callee) {
+                            Some(img) => {
+                                let off = callee - trace.images[img.index()].base;
+                                let f = symbols.function_start(trace, img, off);
+                                (Some(img), f.unwrap_or(NO_FUNCTION))
+                            }
+                            None => (None, 0),
+                        };
+                        *c.targets.entry((o, target.0, target.1)).or_default() += weight;
                     }
                     on_stack = true;
                 }
             }
-            total += u64::from(on_stack) * weight;
+            c.total += u64::from(on_stack) * weight;
         }
-        (own, under, total)
+        c
     });
-    let (mut own, mut under, mut total) = (FxHashMap::default(), FxHashMap::default(), 0);
-    for (o, u, t) in parts {
-        for (k, v) in o {
-            *own.entry(k).or_default() += v;
-        }
-        for (k, v) in u {
-            *under.entry(k).or_default() += v;
-        }
-        total += t;
+    let mut all = Counted::default();
+    for c in parts {
+        all.add(c);
     }
-    (own, under, total)
+    all
 }
 
 #[cfg(test)]

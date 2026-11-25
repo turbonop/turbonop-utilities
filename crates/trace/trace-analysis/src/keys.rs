@@ -136,6 +136,11 @@ pub trait Symbolizer: Sync {
         None
     }
 
+    /// The sites in `image` where the function `name` was inlined.
+    fn inline_sites_named(&self, _trace: &Trace, _image: ImageIx, _name: &str) -> Vec<u32> {
+        Vec::new()
+    }
+
     /// The source file and line of `offset` in `image`.
     fn line(&self, _trace: &Trace, _image: ImageIx, _offset: u64) -> Option<(String, u32)> {
         None

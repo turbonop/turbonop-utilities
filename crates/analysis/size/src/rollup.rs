@@ -587,6 +587,9 @@ fn create_rows(
     sort_and_aggregate(row, children, base.is_some(), options, top);
 }
 
+/// A label and its path's parts (lowercase).
+type PathLabel<'a> = (&'a Arc<str>, Vec<String>);
+
 /// The labels of `rollup` that are paths the base has under another
 /// directory: each (unmatched) new label with the unmatched base label of
 /// the same file name, the one whose path agrees with it longest from the
@@ -603,7 +606,7 @@ fn moved_paths<'a>(rollup: &'a Rollup, base: &'a Rollup) -> FxHashMap<&'a Arc<st
             .collect()
     };
     // The base's unmatched paths, by file name.
-    let mut by_file: FxHashMap<String, Vec<(&Arc<str>, Vec<String>)>> = FxHashMap::default();
+    let mut by_file: FxHashMap<String, Vec<PathLabel<'_>>> = FxHashMap::default();
     for k in base.children.keys() {
         if is_path(k) && !rollup.children.contains_key(k) {
             let p = parts(k);

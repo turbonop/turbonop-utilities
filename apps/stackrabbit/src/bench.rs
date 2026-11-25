@@ -489,6 +489,27 @@ fn phase_table(traces: &[PathBuf]) -> ExitCode {
             let (trace, _) = etw::import(&etl).map_err(|e| e.to_string())?;
             let import = start.elapsed();
             std::hint::black_box(&trace);
+            // Where the import's decoding went: each worker's busy time
+            // (fewest to most), and the waits.
+            if let Some(t) = etw::last_decode_timing() {
+                let ms = |ns: u64| ns as f64 / 1e6;
+                let total: u64 = t.busy_ns.iter().sum();
+                eprintln!(
+                    "  decoding: {:.0} ms on {} workers, busy {:.0} ms ({:.0}% of their time), each {}; trie locks waited {:.0} ms; ordering waited {:.0} ms",
+                    ms(t.wall_ns),
+                    t.busy_ns.len(),
+                    ms(total),
+                    100.0 * total as f64 / (t.wall_ns as f64 * t.busy_ns.len().max(1) as f64),
+                    t.busy_ns
+                        .iter()
+                        .zip(&t.buffers)
+                        .map(|(b, n)| format!("{:.0} ms/{n}", ms(*b)))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    ms(t.shard_wait_ns),
+                    ms(t.order_wait_ns),
+                );
+            }
             #[allow(clippy::cast_precision_loss)]
             let per = import.as_nanos() as f64 / events.max(1) as f64;
             Ok(format!(

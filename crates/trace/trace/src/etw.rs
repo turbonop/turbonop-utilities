@@ -36,7 +36,7 @@
 //! any number of threads and parts.
 
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 
 use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
@@ -80,6 +80,50 @@ const ROW: u64 = (1 << 56) - 1;
 
 /// How many tries stacks are interned into while decoding.
 pub const SHARDS: usize = 64;
+
+/// Where an import's decoding time went (the last import's in this
+/// process; for `stackrabbit bench -phases`): how long each worker was
+/// busy decoding, how long workers waited for a stack trie's lock, and
+/// how long the ordering thread waited for a buffer to be decoded.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DecodeTiming {
+    /// From the first worker's start to the last's end.
+    pub wall_ns: u64,
+    /// Each worker's time decoding buffers.
+    pub busy_ns: Vec<u64>,
+    /// Each worker's buffers.
+    pub buffers: Vec<u64>,
+    /// The workers' time waiting for a trie's lock, all told.
+    pub shard_wait_ns: u64,
+    /// The ordering thread's time waiting for buffers.
+    pub order_wait_ns: u64,
+}
+
+static LAST_TIMING: Mutex<Option<DecodeTiming>> = Mutex::new(None);
+static SHARD_WAIT_NS: AtomicU64 = AtomicU64::new(0);
+static ORDER_WAIT_NS: AtomicU64 = AtomicU64::new(0);
+
+/// The last import's [`DecodeTiming`], if one has run.
+pub fn last_decode_timing() -> Option<DecodeTiming> {
+    LAST_TIMING
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+/// A trie's lock, counting the time spent waiting for it.
+fn lock_shard(shard: &Mutex<Shard>) -> std::sync::MutexGuard<'_, Shard> {
+    if let Ok(held) = shard.try_lock() {
+        return held;
+    }
+    let start = std::time::Instant::now();
+    let held = shard.lock().unwrap_or_else(PoisonError::into_inner);
+    SHARD_WAIT_NS.fetch_add(
+        u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        Ordering::Relaxed,
+    );
+    held
+}
 
 /// How many of a stack's outermost frames choose its trie (with its
 /// thread).
@@ -135,6 +179,11 @@ pub fn import_parts(
     let next = AtomicUsize::new(0);
     // Each worker's event counts and provider names, when it is done.
     let counted: Mutex<Vec<Counted>> = Mutex::default();
+    // Each worker's time busy decoding, and buffers.
+    let busy: Mutex<Vec<(u64, u64)>> = Mutex::default();
+    SHARD_WAIT_NS.store(0, Ordering::Relaxed);
+    ORDER_WAIT_NS.store(0, Ordering::Relaxed);
+    let decode_start = std::time::Instant::now();
     // And the event descriptions they saw.
     let infos: Mutex<Vec<Vec<u8>>> = Mutex::default();
     let runs = std::thread::scope(|scope| {
@@ -142,9 +191,13 @@ pub fn import_parts(
             scope.spawn(|| {
                 let mut scratch = Vec::new();
                 let mut local = Local::default();
+                let (mut busy_ns, mut done) = (0u64, 0u64);
                 loop {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some((buffer, _)) = buffers.get(i) else {
+                        busy.lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .push((busy_ns, done));
                         counted
                             .lock()
                             .unwrap_or_else(PoisonError::into_inner)
@@ -158,13 +211,25 @@ pub fn import_parts(
                             .append(&mut local.infos);
                         return;
                     };
+                    let started = std::time::Instant::now();
                     let decoded =
                         decode_buffer(buffer, max_buffer, &mut scratch, &mut local, &shards);
+                    busy_ns += u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX);
+                    done += 1;
                     slots.put(i, decoded);
                 }
             });
         }
         order(&stream_buffers, &slots)
+    });
+    let mut busy = busy.into_inner().unwrap_or_else(PoisonError::into_inner);
+    busy.sort_unstable();
+    *LAST_TIMING.lock().unwrap_or_else(PoisonError::into_inner) = Some(DecodeTiming {
+        wall_ns: u64::try_from(decode_start.elapsed().as_nanos()).unwrap_or(u64::MAX),
+        busy_ns: busy.iter().map(|b| b.0).collect(),
+        buffers: busy.iter().map(|b| b.1).collect(),
+        shard_wait_ns: SHARD_WAIT_NS.load(Ordering::Relaxed),
+        order_wait_ns: ORDER_WAIT_NS.load(Ordering::Relaxed),
     });
     let decoded = slots.into_inner();
     // Each buffer's place, times and kinds (kinds numbered once all are
@@ -359,9 +424,14 @@ impl Slots {
         if let Some(d) = self.slots[i].get() {
             return d;
         }
+        let start = std::time::Instant::now();
         let mut held = self.lock.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
             if let Some(d) = self.slots[i].get() {
+                ORDER_WAIT_NS.fetch_add(
+                    u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX),
+                    Ordering::Relaxed,
+                );
                 return d;
             }
             held = self
@@ -1516,7 +1586,7 @@ fn intern(shards: &[Mutex<Shard>], thread: u32, frames: &[u64]) -> Piece {
         return piece(0, StackId::EMPTY);
     }
     let s = shard_of(thread, frames);
-    let mut shard = shards[s].lock().unwrap_or_else(PoisonError::into_inner);
+    let mut shard = lock_shard(&shards[s]);
     let Shard { store, caches } = &mut *shard;
     let id = store.intern_outermost_first(frames, caches.entry(thread).or_default());
     piece(s, id)

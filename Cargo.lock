@@ -1167,6 +1167,7 @@ dependencies = [
  "turbonop-etl",
  "turbonop-image",
  "turbonop-mmap",
+ "turbonop-par",
  "turbonop-symbolize",
  "turbonop-trace",
 ]

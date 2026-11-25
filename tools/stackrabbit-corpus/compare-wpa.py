@@ -208,10 +208,27 @@ def compare(trace: Path) -> list[str]:
     )
     for k, a, b in sorted(count_diff, key=lambda d: -abs(d[1] - d[2]))[:8]:
         notes.append(f"    {k[0]} ({k[1]}): WPA {a}, Stackrabbit {b}")
-    ws = sum(v[1] for v in w.values())
-    os_ = sum(v[1] for v in o.values())
-    if ws:
-        notes.append(f"  sampled weight: WPA {ws:,.1f} ms, Stackrabbit {os_:,.1f} ms ({(os_ / ws - 1) * 100:+.3f}%)")
+    # Weights, but the idle process's: WPA counts time no sample covers as
+    # idle (see turbonop_trace_analysis::weights).
+    idle = lambda k: k[1] == 0
+    weight_diff = [
+        (k, w.get(k, [0, 0.0])[1], o.get(k, [0, 0.0])[1])
+        for k in keys
+        if not idle(k)
+    ]
+    # (WPA prints weights to 0.1 us.)
+    weight_diff = [d for d in weight_diff if abs(d[1] - d[2]) > 0.0005]
+    ws = sum(v[1] for k, v in w.items() if not idle(k))
+    os_ = sum(v[1] for k, v in o.items() if not idle(k))
+    notes.append(
+        f"  sampled weight, but Idle: WPA {ws:,.4f} ms, Stackrabbit {os_:,.4f} ms; "
+        f"{len(weight_diff)} processes differ"
+    )
+    for k, a, b in sorted(weight_diff, key=lambda d: -abs(d[1] - d[2]))[:8]:
+        notes.append(f"    {k[0]} ({k[1]}): WPA {a:,.4f} ms, Stackrabbit {b:,.4f} ms")
+    wi = sum(v[1] for k, v in w.items() if idle(k))
+    oi = sum(v[1] for k, v in o.items() if idle(k))
+    notes.append(f"  Idle's weight: WPA {wi:,.1f} ms, Stackrabbit {oi:,.1f} ms (only what samples cover)")
     w, o = wpa["precise"], us["precise"]
     if w:
         keys = sorted(set(w) | {k for k, v in o.items() if v})

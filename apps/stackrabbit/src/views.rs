@@ -1144,6 +1144,13 @@ pub fn threads(
         |i| thread_of(s.thread[from + i]),
         |i| u64::from(s.weight[from + i]),
     );
+    let weights = turbonop_trace_analysis::weights::sample_weights_ns(trace);
+    let weight = count_on_every_core(
+        n,
+        to - from,
+        |i| thread_of(s.thread[from + i]),
+        |i| weights[from + i],
+    );
     // Switches in, and running time, clipped to the range.
     let w = &trace.switches;
     let precise = Precise::new(trace);
@@ -1168,7 +1175,6 @@ pub fn threads(
             u64::try_from(z - a).unwrap_or(0)
         },
     );
-    let interval = trace.sample_interval_ns();
     let tick_ns = 1e9 / trace.clock.ticks_per_second.max(1) as f64;
     let mut rows: Vec<(usize, Value)> = trace
         .threads
@@ -1206,7 +1212,7 @@ pub fn threads(
                     "startNs": t.start.map(|t| trace.clock.nanos(t)),
                     "endNs": t.end.map(|t| trace.clock.nanos(t)),
                     "samples": samples[i],
-                    "cpuMs": (samples[i] * interval) as f64 / 1e6,
+                    "cpuMs": weight[i] as f64 / 1e6,
                     "switches": switches[i],
                     "runningMs": ((running[i] as f64 * tick_ns) / 1e3).round() / 1e3,
                 }),
@@ -1364,13 +1370,23 @@ pub fn processes(trace: &Trace, time: Option<(i64, i64)>) -> Value {
         },
         |i| u64::from(s.weight[from + i]),
     );
+    // (The time the samples stand for, as WPA weighs them.)
+    let weights = turbonop_trace_analysis::weights::sample_weights_ns(trace);
+    let weight = count_on_every_core(
+        trace.processes.len(),
+        to - from,
+        |i| {
+            let p = trace.thread_process(s.thread[from + i]);
+            p.is_some().then(|| p.index())
+        },
+        |i| weights[from + i],
+    );
     let mut threads = vec![0u32; trace.processes.len()];
     for t in &trace.threads {
         if t.process.is_some() {
             threads[t.process.index()] += 1;
         }
     }
-    let interval = trace.sample_interval_ns();
     let mut rows: Vec<(usize, Value)> = trace
         .processes
         .iter()
@@ -1389,7 +1405,7 @@ pub fn processes(trace: &Trace, time: Option<(i64, i64)>) -> Value {
                     "exitStatus": p.exit_status,
                     "threads": threads[i],
                     "samples": samples[i],
-                    "cpuMs": (samples[i] * interval) as f64 / 1e6,
+                    "cpuMs": weight[i] as f64 / 1e6,
                 }),
             )
         })

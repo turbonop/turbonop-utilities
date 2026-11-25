@@ -17,6 +17,7 @@ pub mod regions;
 pub mod shape;
 pub mod sources;
 pub mod tree;
+pub mod weights;
 pub mod wpa_profile;
 pub mod wpa_query;
 pub mod xml;

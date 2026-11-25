@@ -15,6 +15,7 @@ turbonop-image.workspace = true
 turbonop-symbolize.workspace = true
 turbonop-trace.workspace = true
 turbonop-mmap.workspace = true
+turbonop-par.workspace = true
 rustc-hash.workspace = true
 
 [dev-dependencies]

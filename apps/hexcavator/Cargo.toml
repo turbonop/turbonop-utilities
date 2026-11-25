@@ -15,6 +15,21 @@ path = "src/lib.rs"
 name = "hexcavator"
 path = "src/main.rs"
 
+# cargo-binstall: the release's program for the target, as it is (see
+# .github/workflows/hexcavator-release.yml): `cargo binstall hexcavator`,
+# or `cargo binstall --git https://github.com/turbonop/turbonop-utilities
+# hexcavator`. Linux's are static (musl): any distribution's, glibc's too.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/hexcavator-v{ version }/hexcavator-{ target }{ binary-ext }"
+pkg-fmt = "bin"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/hexcavator-v{ version }/hexcavator-x86_64-unknown-linux-musl"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/hexcavator-v{ version }/hexcavator-aarch64-unknown-linux-musl"
+
+
 [dependencies]
 turbonop-global-alloc.workspace = true
 turbonop-codeview.workspace = true

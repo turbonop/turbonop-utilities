@@ -13,15 +13,19 @@
 use turbonop_core::{Error, ErrorKind, Result};
 
 use crate::model::{
-    Clock, ContextSwitches, DebugId, Image, Process, ProcessIx, ReadyIx, ReadyThreads, Samples,
-    Thread, ThreadIx, Trace,
+    BufferSpan, Clock, ContextSwitches, DebugId, EventStats, Image, Process, ProcessIx, ReadyIx,
+    ReadyThreads, Samples, Thread, ThreadIx, Trace,
 };
 use crate::stacks::{StackId, StackStore};
 
 /// The file's magic.
 pub const MAGIC: &[u8; 8] = b"HXTRACE\0";
-/// The format's version; any change to the layout bumps it.
-pub const VERSION: u32 = 2;
+/// The format's version; any change to the layout, or to what an import
+/// makes of a trace, bumps it (so that indexes are made again). 6: threads
+/// of processes known only from their ends. 7: a thread ID reused after
+/// its thread ended names a new thread. 8: images known only from the
+/// rundown at the end keep their identities.
+pub const VERSION: u32 = 8;
 
 /// What an index was built from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -187,6 +191,41 @@ pub fn write(trace: &Trace, source: Source) -> Vec<u8> {
         let id = StackId(u32::try_from(i).expect("fewer than 4G nodes"));
         w.u32(trace.stacks.parent(id).0);
         w.u64(trace.stacks.frame(id));
+    }
+
+    // Every kind of event, and the providers' names.
+    w.len(trace.events.len());
+    for e in &trace.events {
+        w.out.extend_from_slice(&e.provider.to_bytes());
+        w.u16(e.id);
+        w.u8(e.version);
+        w.u8(e.opcode);
+        w.u16(e.task);
+        w.u64(e.count);
+        w.u64(e.bytes);
+        w.i64(e.first);
+        w.i64(e.last);
+    }
+    w.len(trace.provider_names.len());
+    for (g, name) in &trace.provider_names {
+        w.out.extend_from_slice(&g.to_bytes());
+        w.str(name);
+    }
+    w.len(trace.event_infos.len());
+    for info in &trace.event_infos {
+        w.len(info.len());
+        w.out.extend_from_slice(info);
+    }
+    w.len(trace.buffers.len());
+    for b in &trace.buffers {
+        w.u64(b.offset);
+        w.u32(b.index);
+        w.i64(b.first);
+        w.i64(b.last);
+        w.len(b.kinds.len());
+        for &k in &b.kinds {
+            w.u32(k);
+        }
     }
     w.out
 }
@@ -417,25 +456,76 @@ pub fn read(data: &[u8], source: Option<Source>) -> Result<Trace> {
         stack: r.column(4, stack)?,
     };
 
+    // The trie's nodes after the empty stack, each with its parent before
+    // it: loaded as they are (a stack may be at more than one node; see
+    // `StackStore::from_nodes`).
     let n = r.count(12, "stack nodes")?;
-    let mut stacks = StackStore::new();
+    let mut parents = Vec::with_capacity(n + 1);
+    let mut frames = Vec::with_capacity(n + 1);
+    parents.push(StackId::EMPTY);
+    frames.push(0);
     for i in 0..n {
         let parent = StackId(r.u32()?);
         let frame = r.u64()?;
-        // Parents come before children, so a trie read in order is the
-        // trie that was written.
         if parent.0 as usize > i {
             return Err(r.err(ErrorKind::Malformed, "stack parent"));
         }
-        let id = stacks.push(parent, frame);
-        if id.0 as usize != i + 1 {
-            return Err(r.err(ErrorKind::Malformed, "duplicate stack node"));
+        parents.push(parent);
+        frames.push(frame);
+    }
+    let n = r.count(54, "event kinds")?;
+    for _ in 0..n {
+        let guid: [u8; 16] = r.bytes(16, "provider")?.try_into().expect("16 bytes");
+        trace.events.push(EventStats {
+            provider: turbonop_etl::Guid::from_bytes(&guid),
+            id: r.u16()?,
+            version: r.u8()?,
+            opcode: r.u8()?,
+            task: r.u16()?,
+            count: r.u64()?,
+            bytes: r.u64()?,
+            first: r.i64()?,
+            last: r.i64()?,
+        });
+    }
+    let n = r.count(20, "provider names")?;
+    for _ in 0..n {
+        let guid: [u8; 16] = r.bytes(16, "provider")?.try_into().expect("16 bytes");
+        trace
+            .provider_names
+            .push((turbonop_etl::Guid::from_bytes(&guid), r.str()?));
+    }
+    let n = r.count(4, "event descriptions")?;
+    for _ in 0..n {
+        let len = r.count(1, "event description")?;
+        trace
+            .event_infos
+            .push(r.bytes(len, "event description")?.to_vec());
+    }
+    let n = r.count(36, "buffers")?;
+    for _ in 0..n {
+        let mut b = BufferSpan {
+            offset: r.u64()?,
+            index: r.u32()?,
+            first: r.i64()?,
+            last: r.i64()?,
+            kinds: Vec::new(),
+        };
+        let kinds = r.count(4, "buffer kinds")?;
+        for _ in 0..kinds {
+            let k = r.u32()?;
+            if k as usize >= trace.events.len() {
+                return Err(r.err(ErrorKind::Malformed, "buffer kind"));
+            }
+            b.kinds.push(k);
         }
+        trace.buffers.push(b);
     }
     if r.pos != data.len() {
         return Err(r.err(ErrorKind::Malformed, "trailing data"));
     }
-    trace.stacks = stacks;
+    trace.stacks = StackStore::from_nodes(parents, frames)
+        .ok_or_else(|| Error::new(ErrorKind::Malformed, 0, "stack nodes"))?;
     check(&trace).map_err(|what| Error::new(ErrorKind::Malformed, 0, what))?;
     Ok(trace)
 }

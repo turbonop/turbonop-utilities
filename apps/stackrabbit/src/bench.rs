@@ -1,0 +1,1198 @@
+//! `stackrabbit bench`: times opening and querying traces.
+//!
+//! For each trace: importing it, writing and reading its index, and
+//! building and expanding the stack trees the first views show. It prints
+//! timings and counts only (file names and numbers), never what a trace
+//! holds, so its output can be shared about private traces.
+
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::time::{Duration, Instant};
+
+use serde_json::json;
+use turbonop_etl::Etl;
+use turbonop_mmap::Mmap;
+use turbonop_symbolize::SymbolPath;
+use turbonop_trace::{Trace, etw, index};
+use turbonop_trace_analysis::{
+    FrameMode, GroupBy, NoSymbols, NodeId, PdbSymbolizer, Resolver, Symbolizer,
+};
+
+use crate::Args;
+use crate::views::{Source, TreeSpec, TreeView};
+
+const USAGE: &str = "\
+usage: stackrabbit bench <trace or directory>... [options]
+
+Times, for each trace (a directory's *.etl files, by name): importing it (from the disk: it is
+evicted from the system's cache first, where the host allows); writing and reading
+its index; and building the first stack trees (CPU samples by process, inverted, and waits),
+expanding the top level and the hot path. Prints timings and counts only.
+
+Options:
+  -symbols   Name functions with the PDBs _NT_SYMBOL_PATH finds (default: by module); then
+             also time saving their names for the trace, and its first tree from those.
+  -json      One JSON object per trace instead of a table.
+  -phases    Instead, time the import's phases: reading the events in time order
+             (buffers merged, decompressed), then decoding them too, then the import.
+  -digest    Instead, print a digest of each trace's import: a hash of what it holds (rows,
+             their stacks' frames, processes, threads, images), not of how it is stored;
+             two imports that agree have the same digest.
+  -read      Instead, time reading each file from the disk (evicted from the cache
+             first, where the host allows): page faults through a mapping, one thread;
+             then reads of 1, 4 and 16 MB on 1, 2, 4 and 8 threads.
+  -stacks    Instead, count each trace's samples by what their stacks hold: kernel and user
+             frames (joined), kernel only, user only, or no stack; and how often the
+             innermost frame is the sample's instruction pointer.
+  -events    Instead, count each trace's events by provider and opcode (the 40 most
+             numerous, and every StackWalk opcode), with their payloads' smallest and
+             largest sizes.
+  -metadata  Instead, check decoding by the descriptions recorded with each trace
+             (EventMetadata): how many there are, and how many of the events they
+             describe decode exactly (every payload byte a property's).";
+
+/// Payload sizes and the bytes left over from them (none: too few).
+type Sizes = std::collections::BTreeSet<(usize, Option<usize>)>;
+
+/// Runs `stackrabbit bench`.
+pub fn run(args: &[String]) -> ExitCode {
+    let mut a = Args::new(args);
+    let mut paths = Vec::new();
+    let mut symbols = false;
+    let mut as_json = false;
+    let mut phases = false;
+    let mut read = false;
+    let mut digest = false;
+    let mut stacks = false;
+    let mut events = false;
+    let mut metadata = false;
+    while let Some(arg) = a.next() {
+        match arg {
+            "-h" | "-help" | "--help" => {
+                println!("{USAGE}");
+                return ExitCode::SUCCESS;
+            }
+            "-symbols" => symbols = true,
+            "-json" => as_json = true,
+            "-phases" => phases = true,
+            "-read" => read = true,
+            "-digest" => digest = true,
+            "-stacks" => stacks = true,
+            "-events" => events = true,
+            "-metadata" => metadata = true,
+            o if o.starts_with('-') => {
+                eprintln!("stackrabbit bench: unknown option '{o}'\n\n{USAGE}");
+                return ExitCode::from(2);
+            }
+            p => paths.push(PathBuf::from(p)),
+        }
+    }
+    if paths.is_empty() {
+        eprintln!("{USAGE}");
+        return ExitCode::from(2);
+    }
+    let traces = match expand(&paths) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("stackrabbit bench: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if phases {
+        return phase_table(&traces);
+    }
+    if read {
+        return read_table(&traces);
+    }
+    if digest {
+        return digest_table(&traces);
+    }
+    if stacks {
+        return stacks_table(&traces);
+    }
+    if events {
+        return events_table(&traces);
+    }
+    if metadata {
+        return metadata_table(&traces);
+    }
+    if !as_json {
+        println!(
+            "{:<28} {:>9} {:>8} {:>9} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8} {:>8}",
+            "trace",
+            "MB",
+            "dur s",
+            "Mevents",
+            "import",
+            "MB/s",
+            "idx MB",
+            "idx wr",
+            "idx rd",
+            "tree",
+            "expand",
+            "waits"
+        );
+    }
+    let mut failed = false;
+    for path in &traces {
+        match measure(path, symbols) {
+            Ok(m) => {
+                if as_json {
+                    println!("{}", m.to_json(path));
+                } else {
+                    println!("{}", m.line(path));
+                    if let Some(n) = &m.saved {
+                        println!(
+                            "    names saved: {} PDBs, {:.1} KB, in {:.3} s; first tree from them {:.3} s",
+                            n.pdbs,
+                            mb(n.bytes) * 1e3,
+                            n.save.as_secs_f64(),
+                            n.tree.as_secs_f64()
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                failed = true;
+                eprintln!("stackrabbit bench: {}: {e}", path.display());
+            }
+        }
+    }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// The traces `paths` name: files as given, and directories' `*.etl`
+/// files, by name.
+fn expand(paths: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
+    let mut out = Vec::new();
+    for p in paths {
+        if p.is_dir() {
+            let mut found: Vec<PathBuf> = std::fs::read_dir(p)
+                .map_err(|e| format!("{}: {e}", p.display()))?
+                .flatten()
+                .map(|e| e.path())
+                .filter(|f| {
+                    f.is_file() && f.extension().is_some_and(|x| x.eq_ignore_ascii_case("etl"))
+                })
+                .collect();
+            found.sort();
+            out.extend(found);
+        } else {
+            out.push(p.clone());
+        }
+    }
+    Ok(out)
+}
+
+/// What one trace measured.
+struct Measured {
+    size: u64,
+    duration_ns: i64,
+    events: u64,
+    samples: usize,
+    switches: usize,
+    import: Duration,
+    index_size: usize,
+    index_write: Duration,
+    index_read: Duration,
+    tree: Duration,
+    expand: Duration,
+    waits: Duration,
+    stacks_unmatched: u64,
+    /// With symbols: the names saved for the trace.
+    saved: Option<SavedNames>,
+}
+
+/// Saving a trace's function names, and its first tree from them.
+struct SavedNames {
+    /// PDBs found.
+    pdbs: usize,
+    /// The saved file's size.
+    bytes: u64,
+    /// Finding the frames' addresses, cutting the tables down and writing them.
+    save: Duration,
+    /// Reading them back and the first tree (as a reopened trace does).
+    tree: Duration,
+}
+
+fn mb(n: u64) -> f64 {
+    #[allow(clippy::cast_precision_loss)]
+    let x = n as f64 / 1e6;
+    x
+}
+
+impl Measured {
+    fn line(&self, path: &Path) -> String {
+        let name = path
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let secs = |d: Duration| format!("{:.3}", d.as_secs_f64());
+        let throughput = mb(self.size) / self.import.as_secs_f64().max(1e-9);
+        #[allow(clippy::cast_precision_loss)]
+        let dur = self.duration_ns as f64 / 1e9;
+        format!(
+            "{:<28} {:>9.1} {:>8.2} {:>9.2} {:>8} {:>8.0} {:>8.1} {:>8} {:>8} {:>8} {:>8} {:>8}",
+            name,
+            mb(self.size),
+            dur,
+            mb(self.events),
+            secs(self.import),
+            throughput,
+            mb(self.index_size as u64),
+            secs(self.index_write),
+            secs(self.index_read),
+            secs(self.tree),
+            secs(self.expand),
+            secs(self.waits),
+        )
+    }
+
+    fn to_json(&self, path: &Path) -> serde_json::Value {
+        let name = path
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        json!({
+            "trace": name,
+            "bytes": self.size,
+            "durationNs": self.duration_ns,
+            "events": self.events,
+            "samples": self.samples,
+            "switches": self.switches,
+            "stacksUnmatched": self.stacks_unmatched,
+            "importSeconds": self.import.as_secs_f64(),
+            "indexBytes": self.index_size,
+            "indexWriteSeconds": self.index_write.as_secs_f64(),
+            "indexReadSeconds": self.index_read.as_secs_f64(),
+            "treeSeconds": self.tree.as_secs_f64(),
+            "expandSeconds": self.expand.as_secs_f64(),
+            "waitsSeconds": self.waits.as_secs_f64(),
+            "savedNames": self.saved.as_ref().map(|n| json!({
+                "pdbs": n.pdbs,
+                "bytes": n.bytes,
+                "saveSeconds": n.save.as_secs_f64(),
+                "treeSeconds": n.tree.as_secs_f64(),
+            })),
+        })
+    }
+}
+
+fn measure(path: &Path, symbols: bool) -> Result<Measured, String> {
+    // From the disk, as a trace is first opened (where the host can evict
+    // it from the cache).
+    let _ = turbonop_mmap::evict_from_cache(path);
+    let map = Mmap::open(path).map_err(|e| e.to_string())?;
+    let data = map.as_slice();
+    let start = Instant::now();
+    let prefetch = map.prefetch(crate::store::PREFETCH_THREADS, crate::store::PREFETCH_CHUNK);
+    let etl = Etl::parse(data).map_err(|e| e.to_string())?;
+    let (trace, stats) = etw::import(&etl).map_err(|e| e.to_string())?;
+    let import = start.elapsed();
+    drop(prefetch);
+
+    let start = Instant::now();
+    let saved = index::write(&trace, index::Source::of(data));
+    let index_write = start.elapsed();
+    let start = Instant::now();
+    let reread = index::read(&saved, None).map_err(|e| format!("reading its index: {e}"))?;
+    let index_read = start.elapsed();
+    drop(reread);
+
+    let pdbs = PdbSymbolizer::new(SymbolPath::from_env());
+    let symbolizer: &dyn Symbolizer = if symbols { &pdbs } else { &NoSymbols };
+    let resolver = Resolver::new(&trace);
+    let frames = if symbols {
+        FrameMode::Function
+    } else {
+        FrameMode::Module
+    };
+    let start = Instant::now();
+    let mut by_process = TreeView::build(
+        &trace,
+        &resolver,
+        symbolizer,
+        None,
+        TreeSpec {
+            source: Source::Samples,
+            groups: vec![GroupBy::Process],
+            frames,
+            invert: false,
+            time: None,
+            focus: None,
+            filter: None,
+        },
+    );
+    let top = by_process.children(&trace, symbolizer, NodeId::ROOT);
+    let tree = start.elapsed();
+    let start = Instant::now();
+    if let Some(first) = top.first() {
+        by_process.hot_path(&trace, symbolizer, NodeId(first.id), 0.01);
+    }
+    let mut inverted = TreeView::build(
+        &trace,
+        &resolver,
+        symbolizer,
+        None,
+        TreeSpec {
+            invert: true,
+            groups: vec![],
+            frames,
+            ..TreeSpec::default()
+        },
+    );
+    inverted.children(&trace, symbolizer, NodeId::ROOT);
+    let expand = start.elapsed();
+    let start = Instant::now();
+    let mut waits = TreeView::build(
+        &trace,
+        &resolver,
+        symbolizer,
+        None,
+        TreeSpec {
+            source: Source::Waits,
+            groups: vec![GroupBy::Process],
+            frames,
+            ..TreeSpec::default()
+        },
+    );
+    waits.children(&trace, symbolizer, NodeId::ROOT);
+    let waits = start.elapsed();
+    let names = if symbols {
+        Some(save_names(&trace, index::Source::of(data), &pdbs)?)
+    } else {
+        None
+    };
+
+    Ok(Measured {
+        size: data.len() as u64,
+        duration_ns: span_ns(&trace),
+        events: stats.events,
+        samples: trace.samples.len(),
+        switches: trace.switches.len(),
+        import,
+        index_size: saved.len(),
+        index_write,
+        index_read,
+        tree,
+        expand,
+        waits,
+        stacks_unmatched: stats.stacks_unmatched,
+        saved: names,
+    })
+}
+
+/// Saves `trace`'s function names from `pdbs` (into the temporary
+/// directory, removed after), and builds its first tree from them.
+fn save_names(
+    trace: &Trace,
+    source: index::Source,
+    pdbs: &PdbSymbolizer,
+) -> Result<SavedNames, String> {
+    let path =
+        std::env::temp_dir().join(format!("stackrabbit-bench-{}.hxsyms", std::process::id()));
+    let start = Instant::now();
+    let frames = crate::symbols::frames(trace);
+    let tables: Vec<crate::symbols::Table> = pdbs
+        .found()
+        .into_iter()
+        .map(|(guid, age, t)| ((guid, age), t))
+        .collect();
+    crate::symbols::save(&path, source, &frames, &tables).map_err(|e| e.to_string())?;
+    let save = start.elapsed();
+    let bytes = std::fs::metadata(&path).map_or(0, |m| m.len());
+    let start = Instant::now();
+    let seeded = PdbSymbolizer::new(SymbolPath::default());
+    seeded.set_waiting(false);
+    for ((guid, age), t) in crate::symbols::load_saved(&path, source) {
+        seeded.seed(&guid, age, t);
+    }
+    let resolver = Resolver::new(trace);
+    let mut view = TreeView::build(
+        trace,
+        &resolver,
+        &seeded,
+        None,
+        TreeSpec {
+            source: Source::Samples,
+            groups: vec![GroupBy::Process],
+            frames: FrameMode::Function,
+            invert: false,
+            time: None,
+            focus: None,
+            filter: None,
+        },
+    );
+    view.children(trace, &seeded, NodeId::ROOT);
+    let tree = start.elapsed();
+    let _ = std::fs::remove_file(&path);
+    Ok(SavedNames {
+        pdbs: tables.len(),
+        bytes,
+        save,
+        tree,
+    })
+}
+
+/// The time from the first sample, switch or ready event to the last.
+fn span_ns(trace: &Trace) -> i64 {
+    let times = trace
+        .samples
+        .time
+        .iter()
+        .chain(&trace.switches.time)
+        .chain(&trace.readies.time);
+    let (first, last) = times.fold((i64::MAX, i64::MIN), |(a, b), &t| (a.min(t), b.max(t)));
+    if first <= last {
+        trace.clock.nanos(last) - trace.clock.nanos(first)
+    } else {
+        0
+    }
+}
+
+/// Prints the import's phases for each trace: reading the events in time
+/// order, reading and decoding them, and the whole import.
+fn phase_table(traces: &[PathBuf]) -> ExitCode {
+    println!(
+        "{:<28} {:>9} {:>9} {:>8} {:>8} {:>8} {:>8}",
+        "trace", "MB", "Mevents", "read", "decode", "import", "ns/evt"
+    );
+    for path in traces {
+        let result = (|| -> Result<String, String> {
+            let map = Mmap::open(path).map_err(|e| e.to_string())?;
+            let data = map.as_slice();
+            let etl = Etl::parse(data).map_err(|e| e.to_string())?;
+            let start = Instant::now();
+            let mut events = 0u64;
+            let mut cursor = etl.events().map_err(|e| e.to_string())?;
+            while let Some(e) = cursor.next() {
+                if e.is_ok() {
+                    events += 1;
+                }
+            }
+            let read = start.elapsed();
+            let start = Instant::now();
+            let mut decoded = 0u64;
+            let mut cursor = etl.events().map_err(|e| e.to_string())?;
+            while let Some(e) = cursor.next() {
+                if let Ok(e) = e
+                    && turbonop_etw::decode(&e).is_some()
+                {
+                    decoded += 1;
+                }
+            }
+            let decode = start.elapsed();
+            std::hint::black_box(decoded);
+            let start = Instant::now();
+            let (trace, _) = etw::import(&etl).map_err(|e| e.to_string())?;
+            let import = start.elapsed();
+            std::hint::black_box(&trace);
+            // Where the import's decoding went: each worker's busy time
+            // (fewest to most), and the waits.
+            if let Some(t) = etw::last_decode_timing() {
+                let ms = |ns: u64| ns as f64 / 1e6;
+                let total: u64 = t.busy_ns.iter().sum();
+                eprintln!(
+                    "  decoding: {:.0} ms on {} workers, busy {:.0} ms ({:.0}% of their time), each {}; trie locks waited {:.0} ms; ordering waited {:.0} ms",
+                    ms(t.wall_ns),
+                    t.busy_ns.len(),
+                    ms(total),
+                    100.0 * total as f64 / (t.wall_ns as f64 * t.busy_ns.len().max(1) as f64),
+                    t.busy_ns
+                        .iter()
+                        .zip(&t.buffers)
+                        .map(|(b, n)| format!("{:.0} ms/{n}", ms(*b)))
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    ms(t.shard_wait_ns),
+                    ms(t.order_wait_ns),
+                );
+            }
+            #[allow(clippy::cast_precision_loss)]
+            let per = import.as_nanos() as f64 / events.max(1) as f64;
+            Ok(format!(
+                "{:<28} {:>9.1} {:>9.2} {:>8.3} {:>8.3} {:>8.3} {:>8.0}",
+                path.file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                mb(data.len() as u64),
+                mb(events),
+                read.as_secs_f64(),
+                decode.as_secs_f64(),
+                import.as_secs_f64(),
+                per
+            ))
+        })();
+        match result {
+            Ok(line) => println!("{line}"),
+            Err(e) => {
+                eprintln!("stackrabbit bench: {}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// Prints, for each file, how fast it reads from the disk: by page faults
+/// through a mapping, and by reads of several sizes on several threads.
+fn read_table(traces: &[PathBuf]) -> ExitCode {
+    let configs: Vec<(usize, usize)> = [1usize, 2, 4, 8]
+        .iter()
+        .flat_map(|&t| [1usize, 4, 16].map(|mb| (t, mb << 20)))
+        .collect();
+    print!("{:<28} {:>9} {:>9}", "trace", "MB", "faults");
+    for (t, c) in &configs {
+        print!(" {:>7}", format!("{t}x{}M", c >> 20));
+    }
+    println!("  (GB/s)");
+    for path in traces {
+        let result = (|| -> Result<String, String> {
+            let evicted = turbonop_mmap::evict_from_cache(path).map_err(|e| e.to_string())?;
+            let map = Mmap::open(path).map_err(|e| e.to_string())?;
+            let len = map.len();
+            let gbs = |d: Duration| {
+                #[allow(clippy::cast_precision_loss)]
+                let g = len as f64 / 1e9 / d.as_secs_f64().max(1e-9);
+                g
+            };
+            // Page faults: touching each page in order.
+            let start = Instant::now();
+            let mut sum = 0u64;
+            for page in map.chunks(4096) {
+                sum = sum.wrapping_add(u64::from(page[0]));
+            }
+            std::hint::black_box(sum);
+            let faults = gbs(start.elapsed());
+            drop(map);
+            let mut line = format!(
+                "{:<28} {:>9.1} {:>9.2}",
+                path.file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                mb(len as u64),
+                faults
+            );
+            for &(threads, chunk) in &configs {
+                turbonop_mmap::evict_from_cache(path).map_err(|e| e.to_string())?;
+                let map = Mmap::open(path).map_err(|e| e.to_string())?;
+                let start = Instant::now();
+                map.prefetch(threads, chunk)
+                    .and_then(turbonop_mmap::Prefetch::wait)
+                    .map_err(|e| e.to_string())?;
+                line += &format!(" {:>7.2}", gbs(start.elapsed()));
+            }
+            if !evicted {
+                line += "  (not evicted: cached reads)";
+            }
+            Ok(line)
+        })();
+        match result {
+            Ok(line) => println!("{line}"),
+            Err(e) => {
+                eprintln!("stackrabbit bench: {}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// A kind of event, as `-metadata` reports it: provider, ID, version,
+/// opcode.
+type EventKind = (String, u16, u8, u8);
+
+/// Prints, for each trace, how its events decode by the descriptions
+/// recorded with it.
+fn metadata_table(traces: &[PathBuf]) -> ExitCode {
+    use turbonop_etw::event_info::EventInfos;
+    let mut failed = false;
+    for path in traces {
+        let r: Result<(), String> = (|| {
+            let map = Mmap::open(path).map_err(|e| e.to_string())?;
+            let etl = Etl::parse(map.as_slice()).map_err(|e| e.to_string())?;
+            let max = usize::try_from(etl.header().buffer_size)
+                .unwrap_or(1 << 20)
+                .max(1 << 16);
+            let mut scratch = Vec::new();
+            // First the descriptions (the merge writes them at the end).
+            let mut infos = EventInfos::default();
+            let (mut meta, mut bad_meta) = (0u64, 0u64);
+            let mut bad_why: std::collections::BTreeMap<String, u64> =
+                std::collections::BTreeMap::new();
+            for buffer in etl.buffers() {
+                let Ok(buffer) = buffer else { continue };
+                let _ = turbonop_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
+                    if e.provider == turbonop_etw::guids::EVENT_METADATA {
+                        meta += 1;
+                        if let Err(err) = infos.add_metadata(e) {
+                            bad_meta += 1;
+                            *bad_why
+                                .entry(format!("{:?} {}", err.kind, err.what))
+                                .or_default() += 1;
+                        }
+                    }
+                });
+            }
+            let mut by_source: std::collections::BTreeMap<u32, u64> =
+                std::collections::BTreeMap::new();
+            for i in infos.iter() {
+                *by_source.entry(i.decoding_source).or_default() += 1;
+            }
+            // Then every event they describe.
+            let (mut exact, mut left, mut errors, mut undescribed) = (0u64, 0u64, 0u64, 0u64);
+            // Undescribed events by provider: by a kernel schema of their
+            // version, of an older version, or none.
+            let mut by_provider: std::collections::BTreeMap<String, [u64; 4]> =
+                std::collections::BTreeMap::new();
+            // TraceLogging events, by their own schemas.
+            let (mut tl_exact, mut tl_inexact, mut tl_unreadable) = (0u64, 0u64, 0u64);
+            let mut why: std::collections::BTreeMap<String, u64> =
+                std::collections::BTreeMap::new();
+            // (Each kind's payload sizes and bytes left over, a few.)
+            let mut kernel_inexact_kinds: std::collections::BTreeMap<(String, u8, u8), Sizes> =
+                std::collections::BTreeMap::new();
+            let mut left_kinds: std::collections::BTreeSet<(String, u16, u8, u8)> =
+                std::collections::BTreeSet::new();
+            let mut error_kinds: std::collections::BTreeSet<(String, u16, u8, u8)> =
+                std::collections::BTreeSet::new();
+            // (Each kind with bytes left over: some (used, payload) sizes.)
+            let mut sizes: std::collections::BTreeMap<EventKind, Vec<(usize, usize)>> =
+                std::collections::BTreeMap::new();
+            for buffer in etl.buffers() {
+                let Ok(buffer) = buffer else { continue };
+                let _ = turbonop_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
+                    if let Some(schema) = turbonop_etw::tracelogging::Schema::of(e) {
+                        match schema {
+                            Ok(schema) => {
+                                let d = schema.decode(e);
+                                if d.missing == 0 && d.rest.is_empty() {
+                                    tl_exact += 1;
+                                } else {
+                                    tl_inexact += 1;
+                                }
+                            }
+                            Err(_) => tl_unreadable += 1,
+                        }
+                        return;
+                    }
+                    let Some(info) = infos.get(e) else {
+                        undescribed += 1;
+                        // The kernel's schemas, then nothing.
+                        let mut inexact_size = None;
+                        let how = match turbonop_etw::schema::lookup(
+                            &e.provider,
+                            e.descriptor.opcode,
+                            e.descriptor.version,
+                        ) {
+                            // (Of their version: decoded, every byte used?)
+                            Some((_, true)) => match turbonop_etw::schema::Properties::of(e) {
+                                Some(Ok(p)) if p.rest.is_empty() => 0,
+                                Some(Ok(p)) => {
+                                    inexact_size = Some((e.user_data.len(), Some(p.rest.len())));
+                                    3
+                                }
+                                _ => {
+                                    inexact_size = Some((e.user_data.len(), None));
+                                    3
+                                }
+                            },
+                            Some((_, false)) => 1,
+                            None => 2,
+                        };
+                        let c = by_provider
+                            .entry(e.provider.to_string())
+                            .or_insert([0u64; 4]);
+                        c[how] += 1;
+                        if let Some(size) = inexact_size {
+                            let sizes = kernel_inexact_kinds
+                                .entry((
+                                    e.provider.to_string(),
+                                    e.descriptor.opcode,
+                                    e.descriptor.version,
+                                ))
+                                .or_default();
+                            if sizes.len() < 6 {
+                                sizes.insert(size);
+                            }
+                        }
+                        return;
+                    };
+                    match info.decode(e) {
+                        Ok(props) => {
+                            let used: usize = props.iter().map(|p| p.data.len()).sum();
+                            if used == e.user_data.len() {
+                                exact += 1;
+                            } else {
+                                left += 1;
+                                let k = (
+                                    e.provider.to_string(),
+                                    e.descriptor.id,
+                                    e.descriptor.version,
+                                    e.descriptor.opcode,
+                                );
+                                let z = sizes.entry(k.clone()).or_default();
+                                if z.len() < 6 && !z.contains(&(used, e.user_data.len())) {
+                                    z.push((used, e.user_data.len()));
+                                }
+                                left_kinds.insert(k);
+                            }
+                        }
+                        Err(err) => {
+                            errors += 1;
+                            error_kinds.insert((
+                                e.provider.to_string(),
+                                e.descriptor.id,
+                                e.descriptor.version,
+                                e.descriptor.opcode,
+                            ));
+                            *why.entry(format!("{:?} {}", err.kind, err.what))
+                                .or_default() += 1;
+                        }
+                    }
+                });
+            }
+            println!("{}", path.display());
+            println!(
+                "  metadata events {meta} ({bad_meta} unreadable); {} descriptions by source {by_source:?}",
+                infos.len()
+            );
+            if !bad_why.is_empty() {
+                println!("    unreadable: {bad_why:?}");
+            }
+            let described = exact + left + errors;
+            println!(
+                "  events described {described}: {exact} exact, {left} with bytes left over ({} kinds), {errors} errors; {undescribed} undescribed",
+                left_kinds.len()
+            );
+            if !why.is_empty() {
+                println!("    errors: {why:?}");
+            }
+            let kernel_exact: u64 = by_provider.values().map(|c| c[0]).sum();
+            let kernel_inexact: u64 = by_provider.values().map(|c| c[3]).sum();
+            let kernel_older: u64 = by_provider.values().map(|c| c[1]).sum();
+            let none: u64 = by_provider.values().map(|c| c[2]).sum();
+            println!(
+                "  undescribed: {} by a kernel schema of their version ({kernel_exact} exactly, {kernel_inexact} not: bytes left over or too few), {kernel_older} of an older one, {none} by nothing",
+                kernel_exact + kernel_inexact
+            );
+            let mut worst: Vec<(&String, &[u64; 4])> = by_provider
+                .iter()
+                .filter(|(_, c)| c[1] + c[2] + c[3] > 0)
+                .collect();
+            worst.sort_by(|a, b| (b.1[1] + b.1[2] + b.1[3]).cmp(&(a.1[1] + a.1[2] + a.1[3])));
+            for (g, c) in worst.iter().take(12) {
+                println!(
+                    "    {g}: {} older-version, {} nothing, {} not exactly",
+                    c[1], c[2], c[3]
+                );
+            }
+            for ((g, op, v), sizes) in &kernel_inexact_kinds {
+                // (Payload size, and bytes left over: none if too few.)
+                println!("    not exactly by its kernel schema: {g} op {op} v{v}: {sizes:?}");
+            }
+            if tl_exact + tl_inexact + tl_unreadable > 0 {
+                println!(
+                    "  TraceLogging events: {tl_exact} exact, {tl_inexact} not, {tl_unreadable} with unreadable schemas"
+                );
+            }
+            if std::env::var_os("SR_META_DETAIL").is_some() {
+                for (g, id, v, op) in &left_kinds {
+                    println!("    left over: {g} id {id} v{v} op {op}");
+                }
+                for (g, id, v, op) in &error_kinds {
+                    println!("    error: {g} id {id} v{v} op {op}");
+                }
+                for (g, id, v, op) in left_kinds.iter().chain(&error_kinds) {
+                    if let Some(i) = infos.iter().find(|i| {
+                        i.provider.to_string() == *g
+                            && i.id == *id
+                            && i.version == *v
+                            && i.opcode == *op
+                    }) {
+                        let items: Vec<String> = i
+                            .template
+                            .items
+                            .iter()
+                            .map(|it| {
+                                format!(
+                                    "{}:{}/{:?}/{:?}/{}",
+                                    it.name,
+                                    it.in_type,
+                                    it.count,
+                                    it.length,
+                                    it.members.len()
+                                )
+                            })
+                            .collect();
+                        println!(
+                            "      {:?} {:?}: {}",
+                            i.provider_name,
+                            i.task_name,
+                            items.join(", ")
+                        );
+                    }
+                }
+                for (k, sizes) in &sizes {
+                    println!("    payload sizes {k:?}: {sizes:?}");
+                }
+            }
+            Ok(())
+        })();
+        if let Err(e) = r {
+            failed = true;
+            eprintln!("stackrabbit bench: {}: {e}", path.display());
+        }
+    }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Prints, for each trace, its events by provider and opcode.
+fn events_table(traces: &[PathBuf]) -> ExitCode {
+    let mut failed = false;
+    for path in traces {
+        let r: Result<(), String> = (|| {
+            let map = Mmap::open(path).map_err(|e| e.to_string())?;
+            let etl = Etl::parse(map.as_slice()).map_err(|e| e.to_string())?;
+            let max = usize::try_from(etl.header().buffer_size)
+                .unwrap_or(1 << 20)
+                .max(1 << 16);
+            // (provider, opcode) -> (count, smallest, largest payload).
+            let mut counts: std::collections::BTreeMap<(String, u8), (u64, usize, usize)> =
+                std::collections::BTreeMap::new();
+            let mut scratch = Vec::new();
+            // Events with TraceLogging schemas, by provider.
+            let mut tl: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+            // Each sample's (timestamp, thread), and each stack's.
+            let mut samples: Vec<(i64, u32)> = Vec::new();
+            let mut stacks: std::collections::HashSet<(i64, u32)> =
+                std::collections::HashSet::new();
+            for buffer in etl.buffers() {
+                let Ok(buffer) = buffer else { continue };
+                let _ = turbonop_etl::merge::for_each_event(&buffer, max, &mut scratch, |e| {
+                    let ptr = if e.is_64bit { 8 } else { 4 };
+                    let u = e.user_data;
+                    if e.provider == turbonop_etw::guids::PERF_INFO
+                        && e.descriptor.opcode == 46
+                        && u.len() >= ptr + 4
+                    {
+                        let tid = u32::from_le_bytes(u[ptr..ptr + 4].try_into().unwrap());
+                        samples.push((e.timestamp, tid));
+                    }
+                    if e.provider == turbonop_etw::guids::STACK_WALK
+                        && e.descriptor.opcode == 32
+                        && u.len() >= 16
+                    {
+                        let ts = i64::from_le_bytes(u[0..8].try_into().unwrap());
+                        let tid = u32::from_le_bytes(u[12..16].try_into().unwrap());
+                        stacks.insert((ts, tid));
+                    }
+                    if e.extended_data()
+                        .flatten()
+                        .any(|x| x.ext_type == turbonop_etl::event::ext_type::EVENT_SCHEMA_TL)
+                    {
+                        *tl.entry(e.provider.to_string()).or_insert(0u64) += 1;
+                    }
+                    let c = counts
+                        .entry((e.provider.to_string(), e.descriptor.opcode))
+                        .or_insert((0, usize::MAX, 0));
+                    c.0 += 1;
+                    c.1 = c.1.min(e.user_data.len());
+                    c.2 = c.2.max(e.user_data.len());
+                });
+            }
+            let stack_walk = turbonop_etw::guids::STACK_WALK.to_string();
+            let mut rows: Vec<_> = counts.into_iter().collect();
+            rows.sort_by(|a, b| b.1.0.cmp(&a.1.0).then_with(|| a.0.cmp(&b.0)));
+            println!("{}", path.display());
+            let named = samples.iter().filter(|k| stacks.contains(k)).count();
+            let named_any = {
+                let times: std::collections::HashSet<i64> = stacks.iter().map(|k| k.0).collect();
+                samples.iter().filter(|k| times.contains(&k.0)).count()
+            };
+            let idle = samples.iter().filter(|k| k.1 == 0).count();
+            println!(
+                "  samples {}: a stack names {} (timestamp and thread), {} (timestamp only); {} on thread 0",
+                samples.len(),
+                named,
+                named_any,
+                idle
+            );
+            println!(
+                "  TraceLogging: {} events from {} providers",
+                tl.values().sum::<u64>(),
+                tl.len()
+            );
+            println!(
+                "  {:<40} {:>6} {:>12} {:>8} {:>8}",
+                "provider", "opcode", "events", "min", "max"
+            );
+            for (i, ((provider, opcode), (n, lo, hi))) in rows.iter().enumerate() {
+                if i < 40 || *provider == stack_walk {
+                    let name = if *provider == stack_walk {
+                        "StackWalk".to_string()
+                    } else {
+                        provider.clone()
+                    };
+                    println!("  {name:<40} {opcode:>6} {n:>12} {lo:>8} {hi:>8}");
+                }
+            }
+            Ok(())
+        })();
+        if let Err(e) = r {
+            failed = true;
+            eprintln!("stackrabbit bench: {}: {e}", path.display());
+        }
+    }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Prints, for each trace, its samples by what their stacks hold.
+fn stacks_table(traces: &[PathBuf]) -> ExitCode {
+    println!(
+        "{:<28} {:>10} {:>9} {:>9} {:>9} {:>9} {:>11} {:>9} {:>11} {:>8}",
+        "trace",
+        "samples",
+        "joined %",
+        "kernel %",
+        "user %",
+        "none %",
+        "none,busy %",
+        "ip=leaf %",
+        "lost events",
+        "lost buf"
+    );
+    let mut failed = false;
+    for path in traces {
+        let options = crate::store::Options {
+            use_index: false,
+            cache_dir: None,
+        };
+        let loaded = match crate::store::open(path, &options) {
+            Ok(l) => l,
+            Err(e) => {
+                failed = true;
+                eprintln!("stackrabbit bench: {}: {e}", path.display());
+                continue;
+            }
+        };
+        let t = &loaded.trace;
+        if let crate::store::Opened::Imported { stats, .. } = &loaded.opened {
+            let with = |stacks: &[turbonop_trace::StackId]| {
+                let n = stacks.iter().filter(|s| !s.is_empty()).count();
+                format!("{n} of {}", stacks.len())
+            };
+            eprintln!(
+                "  stacks: {} paired, {} continuations, {} unmatched; switches with stacks {}, readies {}",
+                stats.stacks,
+                stats.stack_continuations,
+                stats.stacks_unmatched,
+                with(&t.switches.stack),
+                with(&t.readies.stack)
+            );
+        }
+        // Kernel addresses: the top half of the address space (a 32-bit
+        // trace's images are all below 4 GB).
+        let narrow = t.images.iter().all(|i| i.base < 1 << 32);
+        let kernel = |a: u64| {
+            if narrow {
+                a >= 0x8000_0000
+            } else {
+                a >= 0xffff_8000_0000_0000
+            }
+        };
+        let s = &t.samples;
+        let (mut joined, mut kernel_only, mut user_only, mut none, mut ip_leaf) =
+            (0u64, 0u64, 0u64, 0u64, 0u64);
+        // (Samples without stacks outside the idle process.)
+        let mut none_busy = 0u64;
+        // Each process's samples, and those without stacks; and where the
+        // stackless samples' instruction pointers were (kernel, user).
+        let mut by_process: rustc_hash::FxHashMap<usize, (u64, u64)> = Default::default();
+        let (mut none_in_kernel, mut none_in_user) = (0u64, 0u64);
+        for i in 0..s.len() {
+            let stack = s.stack[i];
+            let p = t.thread_process(s.thread[i]);
+            let entry = by_process
+                .entry(if p.is_some() { p.index() } else { usize::MAX })
+                .or_default();
+            entry.0 += 1;
+            if stack.is_empty() {
+                none += 1;
+                entry.1 += 1;
+                if kernel(s.ip[i]) {
+                    none_in_kernel += 1;
+                } else {
+                    none_in_user += 1;
+                }
+                let thread = s.thread[i];
+                let idle = (p.is_some() && t.processes[p.index()].pid == 0)
+                    || (thread.is_some() && t.threads[thread.index()].tid == 0);
+                if !idle {
+                    none_busy += 1;
+                }
+                continue;
+            }
+            let (mut k, mut u) = (false, false);
+            for f in t.stacks.frames(stack) {
+                if kernel(f) {
+                    k = true;
+                } else {
+                    u = true;
+                }
+            }
+            match (k, u) {
+                (true, true) => joined += 1,
+                (true, false) => kernel_only += 1,
+                _ => user_only += 1,
+            }
+            if t.stacks.frame(stack) == s.ip[i] {
+                ip_leaf += 1;
+            }
+        }
+        let mut worst: Vec<(usize, (u64, u64))> = by_process.into_iter().collect();
+        worst.sort_by(|a, b| b.1.1.cmp(&a.1.1).then(a.0.cmp(&b.0)));
+        eprintln!(
+            "  without stacks: {none_in_kernel} in kernel code, {none_in_user} in user code; most: {}",
+            worst
+                .iter()
+                .take(6)
+                .map(|(p, (all, none))| {
+                    let name = if *p == usize::MAX {
+                        "(no process)".to_string()
+                    } else {
+                        format!("{} ({})", t.processes[*p].name, t.processes[*p].pid)
+                    };
+                    format!("{name} {none} of {all}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let n = s.len().max(1) as f64;
+        let pct = |x: u64| 100.0 * x as f64 / n;
+        let name = path
+            .file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        println!(
+            "{:<28} {:>10} {:>9.1} {:>9.1} {:>9.1} {:>9.1} {:>11.1} {:>9.1} {:>11} {:>8}",
+            name,
+            s.len(),
+            pct(joined),
+            pct(kernel_only),
+            pct(user_only),
+            pct(none),
+            pct(none_busy),
+            pct(ip_leaf),
+            loaded.lost.events,
+            loaded.lost.buffers
+        );
+    }
+    if failed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Prints, for each trace, a digest of its import (see `-digest`).
+fn digest_table(traces: &[PathBuf]) -> ExitCode {
+    for path in traces {
+        let result = (|| -> Result<String, String> {
+            let map = Mmap::open(path).map_err(|e| e.to_string())?;
+            let etl = Etl::parse(map.as_slice()).map_err(|e| e.to_string())?;
+            let start = Instant::now();
+            let (trace, stats) = etw::import(&etl).map_err(|e| e.to_string())?;
+            let secs = start.elapsed().as_secs_f64();
+            Ok(format!(
+                "{:<28} {:016x} samples {} switches {} readies {} stacks {}+{} unmatched {} errors {}/{} ({secs:.3} s)",
+                path.file_name()
+                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                digest(&trace),
+                trace.samples.len(),
+                trace.switches.len(),
+                trace.readies.len(),
+                stats.stacks,
+                stats.stack_continuations,
+                stats.stacks_unmatched,
+                stats.read_errors,
+                stats.decode_errors,
+            ))
+        })();
+        match result {
+            Ok(line) => println!("{line}"),
+            Err(e) => {
+                eprintln!("stackrabbit bench: {}: {e}", path.display());
+                return ExitCode::FAILURE;
+            }
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// A hash of what `trace` holds, independent of how its stacks are
+/// numbered.
+fn digest(trace: &Trace) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = rustc_hash::FxHasher::default();
+    let tid = |t: turbonop_trace::ThreadIx| {
+        if t.is_some() {
+            trace.threads[t.index()].tid
+        } else {
+            u32::MAX
+        }
+    };
+    let frames = |s: turbonop_trace::StackId| trace.stacks.frames(s).collect::<Vec<u64>>();
+    let s = &trace.samples;
+    for i in 0..s.len() {
+        (s.time[i], s.cpu[i], tid(s.thread[i]), s.ip[i], s.weight[i]).hash(&mut h);
+        frames(s.stack[i]).hash(&mut h);
+    }
+    let w = &trace.switches;
+    for i in 0..w.len() {
+        (
+            w.time[i],
+            w.cpu[i],
+            tid(w.new_thread[i]),
+            tid(w.old_thread[i]),
+        )
+            .hash(&mut h);
+        (w.wait_reason[i], w.old_state[i], w.ready[i].0).hash(&mut h);
+        frames(w.stack[i]).hash(&mut h);
+    }
+    let r = &trace.readies;
+    for i in 0..r.len() {
+        (r.time[i], r.cpu[i], tid(r.thread[i]), tid(r.readier[i])).hash(&mut h);
+        frames(r.stack[i]).hash(&mut h);
+    }
+    for p in &trace.processes {
+        (
+            p.pid,
+            &p.name,
+            &p.command_line,
+            p.start,
+            p.end,
+            p.exit_status,
+        )
+            .hash(&mut h);
+    }
+    for t in &trace.threads {
+        (t.tid, t.process.0, &t.name, t.start, t.end).hash(&mut h);
+    }
+    for im in &trace.images {
+        (im.process.0, im.base, im.size, &im.path, im.load, im.unload).hash(&mut h);
+        im.debug_id
+            .as_ref()
+            .map(|d| (d.guid, d.age, &d.pdb_path))
+            .hash(&mut h);
+    }
+    (trace.clock.origin, trace.sample_interval).hash(&mut h);
+    h.finish()
+}

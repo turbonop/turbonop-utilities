@@ -199,7 +199,7 @@ jobs:
           ls -l out
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: hexcavator-wasm
+          name: turbonop-wasm
           path: out/
           if-no-files-found: error
 
@@ -396,7 +396,7 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: hexcavator-wasm
+          name: turbonop-wasm
           path: wasm
       # (The browser's module is the web version's, on GitHub Pages.)
       - run: cp wasm/hexcavator-wasm32-wasip1.wasm dist/
@@ -443,7 +443,7 @@ jobs:
           node-version: 22
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: hexcavator-wasm
+          name: turbonop-wasm
           path: wasm
       # VS Code's icons (@vscode/codicons: CC BY 4.0, its code MIT).
       - name: Codicons

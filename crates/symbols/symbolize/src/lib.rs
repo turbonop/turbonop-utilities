@@ -5,9 +5,10 @@
 //! names, at the path the image recorded or in directories laid out like a
 //! symbol store or a flat folder; or, for an image of any format, its own
 //! DWARF, or the file its debug link or build ID names (see
-//! [`SymbolPath::find_debug`]). It never downloads anything; a symbol
-//! server's local cache works if `_NT_SYMBOL_PATH` names it. What's found
-//! is checked against the identity before it is used.
+//! [`SymbolPath::find_debug`]). It never downloads anything: [`server`]
+//! does that, when asked, into a symbol server's local cache, which works
+//! if `_NT_SYMBOL_PATH` names it. What's found is checked against the
+//! identity before it is used.
 //!
 //! [`FunctionTable`] is an image's functions sorted by address, from its
 //! debug information (a PDB or DWARF) and its own symbols, with
@@ -18,6 +19,9 @@
 use turbonop_global_alloc as _;
 
 use std::path::{Path, PathBuf};
+
+mod saved;
+pub mod server;
 
 use turbonop_core::Result;
 use turbonop_debuginfo::DebugInfo;
@@ -111,7 +115,7 @@ fn matches(path: &Path, guid: &[u8; 16], age: u32) -> bool {
 /// public symbols for code no procedure covers), and the image's own
 /// symbols (exports, a COFF or ELF symbol table) for code the debug
 /// information doesn't describe (each running to the next function).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FunctionTable {
     /// (start, end, name), sorted by start, not overlapping.
     entries: Vec<(u64, u64, String)>,
@@ -274,6 +278,14 @@ impl FunctionTable {
     /// The name of an inline site's inlined function.
     pub fn site_name(&self, site: u32) -> Option<&str> {
         self.site_names.get(site as usize).map(String::as_str)
+    }
+
+    /// The sites where the function `name` was inlined.
+    pub fn sites_named(&self, name: &str) -> Vec<u32> {
+        (0..self.site_names.len())
+            .filter(|&i| self.site_names[i] == name)
+            .filter_map(|i| u32::try_from(i).ok())
+            .collect()
     }
 
     /// The source file and line of `addr`.

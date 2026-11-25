@@ -39,6 +39,10 @@ pub enum Field {
     Sid,
     /// A fixed number of bytes (fixed-size character arrays, padding).
     Bytes(usize),
+    /// Padding at the end of a payload: up to this many bytes, if there
+    /// are any (a struct's size rounded up to its alignment on some
+    /// systems, not on others).
+    Padding(usize),
     /// Pointers to the end of the payload, named `<name>1`, `<name>2`, ...
     Pointers,
     /// A manifest property, by its TDH input and output types (decoded by
@@ -197,6 +201,7 @@ fn field_len(field: Field, data: &[u8], ptr: usize) -> Option<usize> {
         Field::Ptr => fixed(ptr),
         Field::Guid => fixed(16),
         Field::Bytes(n) => fixed(n),
+        Field::Padding(n) => Some(n.min(data.len())),
         Field::Utf16z => {
             let mut i = 0;
             while i + 2 <= data.len() {
@@ -298,22 +303,10 @@ const PROCESS_PERFCTR: &[(&str, Field)] = &[
     ("PrivatePageCount", Ptr),
 ];
 
-const THREAD_V3: &[(&str, Field)] = &[
-    ("ProcessId", U32),
-    ("TThreadId", U32),
-    ("StackBase", Ptr),
-    ("StackLimit", Ptr),
-    ("UserStackBase", Ptr),
-    ("UserStackLimit", Ptr),
-    ("Affinity", Ptr),
-    ("Win32StartAddr", Ptr),
-    ("TebBase", Ptr),
-    ("SubProcessTag", U32),
-    ("BasePriority", U8),
-    ("PagePriority", U8),
-    ("IoPriority", U8),
-    ("ThreadFlags", U8),
-];
+/// Version 3 is version 4's layout: current systems log the thread's
+/// name after it at version 3 too (in Start, End and DCEnd: seen in the
+/// corpus), older ones end before it (an empty name; DCStart).
+const THREAD_V3: &[(&str, Field)] = THREAD_V4;
 
 const THREAD_V4: &[(&str, Field)] = &[
     ("ProcessId", U32),
@@ -341,7 +334,12 @@ const THREAD_PRIORITY: &[(&str, Field)] = &[
 ];
 
 /// `CSwitch`, as documented. Versions after 2 append fields we don't
-/// name; they are left in `rest`.
+/// name; they are left in `rest`. (Version 5, 28 bytes, adds 4: on the
+/// corpus only the first byte is ever set, to 0 to 15, as if 4 flags; bit
+/// 3 is set on most switches to the idle thread and bit 1 on most from
+/// it. It isn't any of WPA's columns of the switch: not the threads'
+/// ranks, nor Direct Switch Attempt, compared switch by switch on l03.
+/// Nothing on the machine describes it, so it isn't named.)
 const CSWITCH_V2: &[(&str, Field)] = &[
     ("NewThreadId", U32),
     ("OldThreadId", U32),
@@ -396,6 +394,11 @@ const DISK_IO: &[(&str, Field)] = &[
 
 const DISK_IO_INIT: &[(&str, Field)] = &[("Irp", Ptr), ("IssuingThreadId", U32)];
 
+/// `SystemConfigEx`'s volume mapping (TDH has no description of it; read
+/// from the corpus): an NT path's prefix, and what it is as a DOS path
+/// (`\Device\HarddiskVolume3\` is `C:\`; `\??\` is nothing).
+const VOLUME_MAPPING: &[(&str, Field)] = &[("NtPath", Utf16z), ("DosPath", Utf16z)];
+
 const DISK_FLUSH: &[(&str, Field)] = &[
     ("DiskNumber", U32),
     ("IrpFlags", U32),
@@ -404,6 +407,7 @@ const DISK_FLUSH: &[(&str, Field)] = &[
     ("IssuingThreadId", U32),
 ];
 
+/// (Padded to 8 bytes on 64-bit systems: always zero in the corpus.)
 const FILE_RW: &[(&str, Field)] = &[
     ("Offset", U64),
     ("IrpPtr", Ptr),
@@ -412,6 +416,7 @@ const FILE_RW: &[(&str, Field)] = &[
     ("TTID", U32),
     ("IoSize", U32),
     ("IoFlags", U32),
+    ("Padding", Padding(4)),
 ];
 
 const FILE_SIMPLE: &[(&str, Field)] = &[
@@ -465,6 +470,132 @@ const FILE_NAME: &[(&str, Field)] = &[("FileObject", Ptr), ("FileName", Utf16z)]
 
 const FILE_OP_END: &[(&str, Field)] = &[("IrpPtr", Ptr), ("ExtraInfo", Ptr), ("NtStatus", U32)];
 
+/// A file system minifilter's callback (`FileIo_V3_FltIo...`): its routine,
+/// the file (object and context), the I/O (its IRP and callback data), and
+/// its major function. A pre- or post-operation callback is logged when
+/// it's called (`PreOpInit`, `PostOpInit`) and when it returns, with
+/// `InitialTime` when it was called (`PreOpCompletion`,
+/// `PostOpCompletion`), or when it fails, with its status (`PreOpFailure`,
+/// `PostOpFailure`). Fast I/O's callbacks are logged as completions only.
+const FLT_IO: &[(&str, Field)] = &[
+    ("RoutineAddr", Ptr),
+    ("FileObject", Ptr),
+    ("FileContext", Ptr),
+    ("IrpPtr", Ptr),
+    ("CallbackDataPtr", Ptr),
+    ("MajorFunction", U32),
+];
+
+const FLT_IO_COMPLETION: &[(&str, Field)] = &[
+    ("InitialTime", U64),
+    ("RoutineAddr", Ptr),
+    ("FileObject", Ptr),
+    ("FileContext", Ptr),
+    ("IrpPtr", Ptr),
+    ("CallbackDataPtr", Ptr),
+    ("MajorFunction", U32),
+];
+
+const FLT_IO_FAILURE: &[(&str, Field)] = &[
+    ("RoutineAddr", Ptr),
+    ("FileObject", Ptr),
+    ("FileContext", Ptr),
+    ("IrpPtr", Ptr),
+    ("CallbackDataPtr", Ptr),
+    ("MajorFunction", U32),
+    ("Status", U32),
+];
+
+/// `Registry_TypeGroup1`: an operation on a key (logged when it ends:
+/// `InitialTime` is when it began), and the kernel's key control blocks
+/// (`KeyHandle`) as they are created, deleted and run down. `KeyName` is
+/// relative to the key `KeyHandle` names, if any.
+const REGISTRY_KEY: &[(&str, Field)] = &[
+    ("InitialTime", U64),
+    ("Status", U32),
+    ("Index", U32),
+    ("KeyHandle", Ptr),
+    ("KeyName", Utf16z),
+];
+
+/// `Registry_Counters`.
+const REGISTRY_COUNTERS: &[(&str, Field)] = &[
+    ("Counter1", U64),
+    ("Counter2", U64),
+    ("Counter3", U64),
+    ("Counter4", U64),
+    ("Counter5", U64),
+    ("Counter6", U64),
+    ("Counter7", U64),
+    ("Counter8", U64),
+    ("Counter9", U64),
+    ("Counter10", U64),
+    ("Counter11", U64),
+];
+
+/// `Heap_Create`.
+const HEAP_CREATE: &[(&str, Field)] = &[
+    ("HeapHandle", Ptr),
+    ("HeapFlags", U32),
+    ("ReserveSize", Ptr),
+    ("CommitSize", Ptr),
+    ("AllocatedSize", Ptr),
+];
+
+/// `Heap_Alloc`.
+const HEAP_ALLOC: &[(&str, Field)] = &[
+    ("HeapHandle", Ptr),
+    ("AllocSize", Ptr),
+    ("AllocAddress", Ptr),
+    ("SourceId", U32),
+];
+
+/// `Heap_ReAlloc`.
+const HEAP_REALLOC: &[(&str, Field)] = &[
+    ("HeapHandle", Ptr),
+    ("NewAllocAddress", Ptr),
+    ("OldAllocAddress", Ptr),
+    ("NewAllocSize", Ptr),
+    ("OldAllocSize", Ptr),
+    ("SourceId", U32),
+];
+
+/// `Heap_Free`.
+const HEAP_FREE: &[(&str, Field)] = &[("HeapHandle", Ptr), ("FreeAddress", Ptr), ("SourceId", U32)];
+
+/// `Heap_Expand`.
+const HEAP_EXPAND: &[(&str, Field)] = &[
+    ("HeapHandle", Ptr),
+    ("ExtendedSize", Ptr),
+    ("Address", Ptr),
+    ("Size", Ptr),
+    ("CommittedSize", Ptr),
+    ("ReserveSize", Ptr),
+    ("NoOfUCRs", U32),
+    ("AllocatedSize", Ptr),
+];
+
+/// `PoolAlloc` and `PoolFree`: a block of the kernel's pool, its type
+/// (`POOL_TYPE`) and tag.
+const POOL_BLOCK: &[(&str, Field)] = &[
+    ("Type", U32),
+    ("Tag", U32),
+    ("NumberOfBytes", Ptr),
+    ("Entry", Ptr),
+];
+
+/// `PageFault_TypeGroup1`: a fault's address, and the instruction's.
+const PAGE_FAULT: &[(&str, Field)] = &[("VirtualAddress", Ptr), ("ProgramCounter", Ptr)];
+
+/// `PageFault_VirtualAlloc`: a range of a process's address space
+/// allocated or freed, and how (`MEM_*`).
+const VIRTUAL_ALLOC: &[(&str, Field)] = &[
+    ("BaseAddress", Ptr),
+    ("RegionSize", Ptr),
+    ("ProcessId", U32),
+    ("Flags", U32),
+];
+
 const HARD_FAULT: &[(&str, Field)] = &[
     ("InitialTime", U64),
     ("ReadOffset", U64),
@@ -494,6 +625,10 @@ const INTERRUPT_MSI: &[(&str, Field)] = &[
 const DPC: &[(&str, Field)] = &[("InitialTime", U64), ("Routine", Ptr)];
 
 const ROUTINE: &[(&str, Field)] = &[("Routine", Ptr)];
+
+/// A mark: text a recorder (WPR, `xperf -m`) put in the trace, as WPA's
+/// Marks table lists them.
+const MARK: &[(&str, Field)] = &[("Message", Ansiz), ("Padding", Padding(8))];
 
 const COLLECTION: &[(&str, Field)] = &[
     ("Source", U32),
@@ -681,6 +816,7 @@ pub static SCHEMAS: &[Schema] = &[
         "ISR-MSI",
         INTERRUPT_MSI,
     ),
+    s(guids::PERF_INFO, 34, 0, "PerfInfo", "Mark", MARK),
     s(guids::PERF_INFO, 67, 2, "PerfInfo", "ISR", INTERRUPT),
     s(guids::PERF_INFO, 68, 2, "PerfInfo", "DPC", DPC),
     s(guids::PERF_INFO, 69, 2, "PerfInfo", "TimerDPC", DPC),
@@ -702,6 +838,153 @@ pub static SCHEMAS: &[Schema] = &[
     ),
     s(guids::PERF_INFO, 96, 2, "PerfInfo", "WdfISR", ROUTINE),
     s(guids::PERF_INFO, 98, 2, "PerfInfo", "WdfDPC", ROUTINE),
+    // Registry.
+    s(guids::REGISTRY, 10, 2, "Registry", "Create", REGISTRY_KEY),
+    s(guids::REGISTRY, 11, 2, "Registry", "Open", REGISTRY_KEY),
+    s(guids::REGISTRY, 12, 2, "Registry", "Delete", REGISTRY_KEY),
+    s(guids::REGISTRY, 13, 2, "Registry", "Query", REGISTRY_KEY),
+    s(guids::REGISTRY, 14, 2, "Registry", "SetValue", REGISTRY_KEY),
+    s(
+        guids::REGISTRY,
+        15,
+        2,
+        "Registry",
+        "DeleteValue",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        16,
+        2,
+        "Registry",
+        "QueryValue",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        17,
+        2,
+        "Registry",
+        "EnumerateKey",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        18,
+        2,
+        "Registry",
+        "EnumerateValueKey",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        19,
+        2,
+        "Registry",
+        "QueryMultipleValue",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        20,
+        2,
+        "Registry",
+        "SetInformation",
+        REGISTRY_KEY,
+    ),
+    s(guids::REGISTRY, 21, 2, "Registry", "Flush", REGISTRY_KEY),
+    s(
+        guids::REGISTRY,
+        22,
+        2,
+        "Registry",
+        "KCBCreate",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        23,
+        2,
+        "Registry",
+        "KCBDelete",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        24,
+        2,
+        "Registry",
+        "KCBRundownBegin",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        25,
+        2,
+        "Registry",
+        "KCBRundownEnd",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        26,
+        2,
+        "Registry",
+        "Virtualize",
+        REGISTRY_KEY,
+    ),
+    s(guids::REGISTRY, 27, 2, "Registry", "Close", REGISTRY_KEY),
+    s(
+        guids::REGISTRY,
+        28,
+        2,
+        "Registry",
+        "SetSecurity",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        29,
+        2,
+        "Registry",
+        "QuerySecurity",
+        REGISTRY_KEY,
+    ),
+    s(
+        guids::REGISTRY,
+        34,
+        2,
+        "Registry",
+        "Counters",
+        REGISTRY_COUNTERS,
+    ),
+    s(
+        guids::REGISTRY,
+        35,
+        2,
+        "Registry",
+        "Config",
+        &[("CurrentControlSet", U32)],
+    ),
+    // Heap.
+    s(guids::HEAP, 32, 3, "Heap", "Create", HEAP_CREATE),
+    s(guids::HEAP, 33, 2, "Heap", "Alloc", HEAP_ALLOC),
+    s(guids::HEAP, 34, 2, "Heap", "ReAlloc", HEAP_REALLOC),
+    s(
+        guids::HEAP,
+        35,
+        2,
+        "Heap",
+        "Destroy",
+        &[("HeapHandle", Ptr)],
+    ),
+    s(guids::HEAP, 36, 2, "Heap", "Free", HEAP_FREE),
+    s(guids::HEAP, 37, 3, "Heap", "Expand", HEAP_EXPAND),
+    s(guids::HEAP, 43, 2, "Heap", "Lock", &[("HeapHandle", Ptr)]),
+    s(guids::HEAP, 44, 2, "Heap", "Unlock", &[("HeapHandle", Ptr)]),
+    // Pool.
+    s(guids::POOL, 32, 2, "Pool", "Alloc", POOL_BLOCK),
+    s(guids::POOL, 34, 2, "Pool", "Free", POOL_BLOCK),
     // StackWalk.
     s(
         guids::STACK_WALK,
@@ -717,13 +1000,22 @@ pub static SCHEMAS: &[Schema] = &[
         ],
     ),
     // DiskIo.
+    s(
+        guids::SYSTEM_CONFIG_EX,
+        35,
+        0,
+        "SysConfigEx",
+        "VolumeMapping",
+        VOLUME_MAPPING,
+    ),
     s(guids::DISK_IO, 10, 3, "DiskIo", "Read", DISK_IO),
     s(guids::DISK_IO, 11, 3, "DiskIo", "Write", DISK_IO),
     s(guids::DISK_IO, 12, 3, "DiskIo", "ReadInit", DISK_IO_INIT),
     s(guids::DISK_IO, 13, 3, "DiskIo", "WriteInit", DISK_IO_INIT),
     s(guids::DISK_IO, 14, 3, "DiskIo", "FlushBuffers", DISK_FLUSH),
     s(guids::DISK_IO, 15, 3, "DiskIo", "FlushInit", DISK_IO_INIT),
-    // FileIo.
+    // FileIo. (The FileIo_Name class: opcodes 0, 32, 35 and 36.)
+    s(guids::FILE_IO, 0, 2, "FileIo", "Name", FILE_NAME),
     s(guids::FILE_IO, 32, 2, "FileIo", "FileCreate", FILE_NAME),
     s(guids::FILE_IO, 35, 2, "FileIo", "FileDelete", FILE_NAME),
     s(guids::FILE_IO, 36, 2, "FileIo", "FileRundown", FILE_NAME),
@@ -750,7 +1042,92 @@ pub static SCHEMAS: &[Schema] = &[
         "RenamePath",
         FILE_INFO_PATH,
     ),
-    // PageFault.
+    // Minifilters' callbacks (xperf's FLT_IO_INIT, FLT_IO, FLT_FASTIO and
+    // FLT_IO_FAILURE). (No corpus trace has a PostOpFailure, 101; its
+    // layout is taken to be PreOpFailure's.)
+    s(guids::FILE_IO, 96, 3, "FileIo", "PreOpInit", FLT_IO),
+    s(guids::FILE_IO, 97, 3, "FileIo", "PostOpInit", FLT_IO),
+    s(
+        guids::FILE_IO,
+        98,
+        3,
+        "FileIo",
+        "PreOpCompletion",
+        FLT_IO_COMPLETION,
+    ),
+    s(
+        guids::FILE_IO,
+        99,
+        3,
+        "FileIo",
+        "PostOpCompletion",
+        FLT_IO_COMPLETION,
+    ),
+    s(
+        guids::FILE_IO,
+        100,
+        3,
+        "FileIo",
+        "PreOpFailure",
+        FLT_IO_FAILURE,
+    ),
+    s(
+        guids::FILE_IO,
+        101,
+        3,
+        "FileIo",
+        "PostOpFailure",
+        FLT_IO_FAILURE,
+    ),
+    // PageFault. (The faults of opcodes 10 to 15 aren't in the corpus.)
+    s(
+        guids::PAGE_FAULT,
+        10,
+        2,
+        "PageFault",
+        "TransitionFault",
+        PAGE_FAULT,
+    ),
+    s(
+        guids::PAGE_FAULT,
+        11,
+        2,
+        "PageFault",
+        "DemandZeroFault",
+        PAGE_FAULT,
+    ),
+    s(
+        guids::PAGE_FAULT,
+        12,
+        2,
+        "PageFault",
+        "CopyOnWrite",
+        PAGE_FAULT,
+    ),
+    s(
+        guids::PAGE_FAULT,
+        13,
+        2,
+        "PageFault",
+        "GuardPageFault",
+        PAGE_FAULT,
+    ),
+    s(
+        guids::PAGE_FAULT,
+        14,
+        2,
+        "PageFault",
+        "HardPageFault",
+        PAGE_FAULT,
+    ),
+    s(
+        guids::PAGE_FAULT,
+        15,
+        2,
+        "PageFault",
+        "AccessViolation",
+        PAGE_FAULT,
+    ),
     s(
         guids::PAGE_FAULT,
         32,
@@ -758,6 +1135,45 @@ pub static SCHEMAS: &[Schema] = &[
         "PageFault",
         "HardFault",
         HARD_FAULT,
+    ),
+    s(
+        guids::PAGE_FAULT,
+        98,
+        2,
+        "PageFault",
+        "VirtualAlloc",
+        VIRTUAL_ALLOC,
+    ),
+    s(
+        guids::PAGE_FAULT,
+        99,
+        2,
+        "PageFault",
+        "VirtualFree",
+        VIRTUAL_ALLOC,
+    ),
+    // (As TDH describes them.)
+    s(
+        guids::PAGE_FAULT,
+        129,
+        2,
+        "PageFault",
+        "VirtualAllocDCEnd",
+        &[
+            ("BaseAddress", Ptr),
+            ("RegionSize", Ptr),
+            ("ProcessId", U32),
+            ("Flags", U32),
+            ("CommitSizeInBytes", Ptr),
+        ],
+    ),
+    s(
+        guids::PAGE_FAULT,
+        134,
+        2,
+        "PageFault",
+        "MemResetInfo",
+        &[("BaseAddress", Ptr), ("SizeInBytes", Ptr), ("Flags", U32)],
     ),
     // SystemConfig.
     s(

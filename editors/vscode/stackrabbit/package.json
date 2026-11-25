@@ -1,0 +1,102 @@
+{
+  "name": "stackrabbit",
+  "displayName": "Stackrabbit",
+  "description": "A fast performance trace viewer: open ETW traces (.etl) and explore CPU usage, waits and stacks, with every click answered at once.",
+  "version": "0.0.1",
+  "publisher": "turbonop",
+  "license": "Apache-2.0",
+  "preview": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "etw",
+    "etl",
+    "performance",
+    "profiler",
+    "trace",
+    "wpa",
+    "cpu",
+    "stacks"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "stackrabbit.trace",
+        "displayName": "Stackrabbit Trace",
+        "selector": [
+          {
+            "filenamePattern": "*.etl"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "commands": [
+      {
+        "command": "stackrabbit.openTrace",
+        "title": "Open Trace…",
+        "category": "Stackrabbit"
+      },
+      {
+        "command": "stackrabbit.showLog",
+        "title": "Show Log",
+        "category": "Stackrabbit"
+      }
+    ],
+    "configuration": {
+      "title": "Stackrabbit",
+      "properties": {
+        "stackrabbit.path": {
+          "type": "string",
+          "default": "",
+          "description": "The stackrabbit engine to run. Empty: the one that comes with the extension."
+        },
+        "stackrabbit.downloadSymbols": {
+          "type": "boolean",
+          "default": true,
+          "description": "Download the PDBs a trace's stacks need from the symbol servers, in the background, when it opens."
+        },
+        "stackrabbit.symbolCache": {
+          "type": "string",
+          "default": "",
+          "description": "Where downloaded PDBs go, laid out as WinDbg's cache is (so the two can share it). Empty: _NT_SYMBOL_PATH's cache, else WinDbg's default (C:\\ProgramData\\Dbg\\sym)."
+        },
+        "stackrabbit.stackTags": {
+          "type": "string",
+          "default": "",
+          "description": "A file of stack tags, in WPA's format, for grouping stacks by what they are doing (Group by: Stack tag)."
+        },
+        "stackrabbit.regionsFile": {
+          "type": "string",
+          "default": "",
+          "description": "A regions-of-interest file, in WPA's format, for the Regions tab: intervals between start and stop events, paired and named by their fields."
+        },
+        "stackrabbit.lineHeat": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show time by source line in source files' editors: each line's share of the open trace's CPU samples (here or in what it calls), its own share, and a background by how hot it is. Files are matched to the paths the trace's symbols name by their names and as much of their paths as agree."
+        },
+        "stackrabbit.loopLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show time by loop in source files' editors: above each loop's first line, its share of the open trace's CPU samples (in it or in what it calls) and in its own instructions. Loops are found in the disassembled code of the file's most sampled functions, whose image files must be on this machine and be the ones the trace saw."
+        },
+        "stackrabbit.symbolServers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Symbol servers, asked in order. Empty: _NT_SYMBOL_PATH's, else Microsoft's (https://msdl.microsoft.com/download/symbols)."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+[package]
+name = "turbonop-trace-synth"
+description = "Synthetic ETW traces of any size, with the exact answers each analysis should give"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# (No unit tests: their build of the crate would be wasted. The hexcavator
+# tests check that a target marked so has none.)
+[lib]
+test = false
+
+[dependencies]
+turbonop-etl.workspace = true
+turbonop-etw.workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true
+turbonop-trace.workspace = true
+turbonop-trace-analysis.workspace = true
+rustc-hash.workspace = true
+
+[lints]
+workspace = true

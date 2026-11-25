@@ -128,6 +128,29 @@ jobs:
         working-directory: editors/vscode/dump-analyzer
         run: node --test test/*.test.js
 
+  # The Stackrabbit extension: its framing and tree model, and a session
+  # with the engine on a synthetic trace.
+  vscode-stackrabbit:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: cargo build --release -p stackrabbit
+      - shell: bash
+        working-directory: editors/vscode/stackrabbit
+        run: |
+          exe=$PWD/../../../target/release/stackrabbit
+          if [ -f "$exe.exe" ]; then exe=$exe.exe; fi
+          for t in test/*.test.js; do node "$t" "$exe" || exit 1; done
+      - if: runner.os == 'Windows'
+        run: python editors/vscode/stackrabbit/test/harness.py target/release/stackrabbit.exe
+
   # Procupine's VS Code extension: its model's and server client's tests
   # (with procupine, on each platform), and, on Windows, the view rendered
   # in headless Edge with real samples.

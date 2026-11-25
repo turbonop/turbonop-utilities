@@ -1,0 +1,313 @@
+// A graph of CPU usage over time, stacked by series, drawn on a canvas;
+// dragging across it selects a time range, and double-clicking clears it.
+"use strict";
+(function (exports) {
+  // Colors for series, then Other (gray). Distinguishable in light and dark.
+  const COLORS = ["#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1", "#ff9da7", "#9c755f"];
+  const OTHER = "#8c8c8c";
+  const LIT = "#ffd400"; // The highlighted function's line.
+  const MARK = "#c586c0"; // Marks' lines.
+  const AXIS = 40; // Left margin for the axis labels, in CSS pixels.
+
+  class Graph {
+    /**
+     * A graph on `canvas`; `onSelect(range)` hears of selections, as
+     * [startNs, endNs], or null when cleared.
+     */
+    constructor(canvas, legend, onSelect, tip) {
+      this.canvas = canvas;
+      this.legend = legend;
+      this.tip = tip || null;
+      this.onSelect = onSelect;
+      this.data = null;
+      this.selection = null; // [startNs, endNs]
+      this.drag = null;
+      this.marks = []; // [{timeNs, mark}]
+      canvas.addEventListener("mousedown", (e) => {
+        const t = this.timeAt(e.offsetX);
+        if (t !== null) {
+          this.drag = [t, t];
+          this.draw();
+        }
+      });
+      canvas.addEventListener("mousemove", (e) => {
+        if (this.drag) {
+          const t = this.timeAt(e.offsetX);
+          if (t !== null) {
+            this.drag[1] = t;
+            this.draw();
+          }
+        }
+        this.hover(e.offsetX, e.offsetY);
+      });
+      canvas.addEventListener("mouseleave", () => this.hover(null));
+      const finish = () => {
+        if (!this.drag) {
+          return;
+        }
+        const [a, b] = this.drag;
+        this.drag = null;
+        if (Math.abs(b - a) > 0) {
+          this.selection = [Math.min(a, b), Math.max(a, b)];
+          this.onSelect(this.selection);
+        }
+        this.draw();
+      };
+      canvas.addEventListener("mouseup", finish);
+      canvas.addEventListener("mouseleave", finish);
+      canvas.addEventListener("dblclick", () => {
+        this.clear();
+      });
+    }
+
+    /** Clears the selection. */
+    clear() {
+      this.drag = null;
+      if (this.selection) {
+        this.selection = null;
+        this.onSelect(null);
+      }
+      this.draw();
+    }
+
+    /** Draws `marks` (the engine's: {timeNs, mark}) as lines. */
+    setMarks(marks) {
+      this.marks = marks || [];
+      if (this.data) {
+        this.draw();
+      }
+    }
+
+    /** The plot's width in CSS pixels: as many buckets as it has pixels. */
+    plotWidth() {
+      return Math.max(10, Math.floor(this.canvas.clientWidth - AXIS));
+    }
+
+    /**
+     * Shows `data` (the engine's graph); its highlight, if any, is named
+     * `litLabel` in the legend.
+     */
+    set(data, litLabel) {
+      this.data = data;
+      this.litLabel = litLabel || "";
+      this.draw();
+      this.drawLegend();
+    }
+
+    /**
+     * What the graph shows at bucket `b`: its time range, and each
+     * series's share there (busiest first, none that is idle), then the
+     * highlighted function's. Null outside the graph.
+     */
+    at(b) {
+      const d = this.data;
+      if (!d || b < 0 || b >= d.buckets) {
+        return null;
+      }
+      const span = d.endNs - d.startNs;
+      const from = d.startNs + (b / d.buckets) * span;
+      const to = d.startNs + ((b + 1) / d.buckets) * span;
+      const rows = d.series
+        .map((s) => ({ label: s.label, share: s.values[b] }))
+        .filter((r) => r.share > 0)
+        .sort((x, y) => y.share - x.share);
+      const lit = d.highlight ? { label: this.litLabel, share: d.highlight.values[b] } : null;
+      // (A bucket either side: a mark's line is thin.)
+      const width = to - from;
+      const marks = this.marks.filter((m) => m.timeNs >= from - width && m.timeNs < to + width);
+      return { from, to, rows, lit, marks };
+    }
+
+    /** The bucket under x (CSS pixels), or -1. */
+    bucketAt(x) {
+      const d = this.data;
+      if (!d || x < AXIS) {
+        return -1;
+      }
+      return Math.floor(((x - AXIS) / this.plotWidth()) * d.buckets);
+    }
+
+    /** Shows what is under (x, y) in the tip (or hides it: null). */
+    hover(x, y) {
+      if (!this.tip) {
+        return;
+      }
+      const what = x === null ? null : this.at(this.bucketAt(x));
+      if (!what) {
+        this.tip.classList.add("hidden");
+        return;
+      }
+      const pct = (v) => (100 * v).toFixed(1) + "%";
+      const lines = what.rows.slice(0, 6).map((r) => `<div>${escape(r.label)} <b>${pct(r.share)}</b></div>`);
+      if (what.rows.length > 6) {
+        lines.push(`<div class="more">and ${what.rows.length - 6} more</div>`);
+      }
+      if (what.lit) {
+        lines.push(`<div class="lit">${escape(what.lit.label)} <b>${pct(what.lit.share)}</b></div>`);
+      }
+      for (const m of what.marks.slice(0, 3).reverse()) {
+        lines.unshift(`<div class="mark">Mark: ${escape(m.mark)}</div>`);
+      }
+      const total = what.rows.reduce((a, r) => a + r.share, 0);
+      this.tip.innerHTML =
+        `<div class="when">${(what.from / 1e9).toFixed(3)} to ${(what.to / 1e9).toFixed(3)} s: ${pct(total)} busy</div>` +
+        lines.join("");
+      this.tip.classList.remove("hidden");
+      // Beside the cursor, kept inside the window.
+      const left = Math.min(x + 14, Math.max(0, this.canvas.clientWidth - this.tip.offsetWidth - 4));
+      this.tip.style.left = `${left}px`;
+      this.tip.style.top = `${y + 14}px`;
+    }
+
+    /** The time at x (CSS pixels), within the graph, or null. */
+    timeAt(x) {
+      if (!this.data) {
+        return null;
+      }
+      const w = this.plotWidth();
+      const f = Math.min(1, Math.max(0, (x - AXIS) / w));
+      return Math.round(this.data.startNs + f * (this.data.endNs - this.data.startNs));
+    }
+
+    xOf(ns) {
+      const d = this.data;
+      return AXIS + ((ns - d.startNs) / Math.max(1, d.endNs - d.startNs)) * this.plotWidth();
+    }
+
+    draw() {
+      const c = this.canvas;
+      const ratio = window.devicePixelRatio || 1;
+      const cw = c.clientWidth;
+      const ch = c.clientHeight;
+      c.width = Math.round(cw * ratio);
+      c.height = Math.round(ch * ratio);
+      const g = c.getContext("2d");
+      g.setTransform(ratio, 0, 0, ratio, 0, 0);
+      g.clearRect(0, 0, cw, ch);
+      const style = getComputedStyle(document.body);
+      const fg = style.getPropertyValue("--vscode-descriptionForeground") || "#888";
+      const grid = style.getPropertyValue("--vscode-panel-border") || "#444";
+      const top = 6;
+      const bottom = ch - 16;
+      const h = bottom - top;
+      // The axes: 0, 50 and 100% of the processors; seconds below.
+      g.font = "10px sans-serif";
+      g.fillStyle = fg;
+      g.strokeStyle = grid;
+      for (const p of [0, 0.5, 1]) {
+        const y = bottom - p * h;
+        g.beginPath();
+        g.moveTo(AXIS, y + 0.5);
+        g.lineTo(cw, y + 0.5);
+        g.stroke();
+        g.fillText(`${p * 100}%`, 4, y + 3);
+      }
+      const d = this.data;
+      if (!d) {
+        return;
+      }
+      const span = (d.endNs - d.startNs) / 1e9;
+      const ticks = 6;
+      for (let i = 0; i <= ticks; i++) {
+        const x = AXIS + (i / ticks) * this.plotWidth();
+        const s = (d.startNs / 1e9 + (i / ticks) * span).toFixed(span < 1 ? 3 : 1);
+        g.fillText(`${s} s`, Math.min(x, cw - 40), ch - 3);
+      }
+      // The series, stacked: each bucket a column, each series a band.
+      const n = d.buckets;
+      const step = this.plotWidth() / n;
+      const base = new Float64Array(n);
+      d.series.forEach((s, i) => {
+        g.fillStyle = s.label === "Other" ? OTHER : COLORS[i % COLORS.length];
+        g.beginPath();
+        g.moveTo(AXIS, bottom);
+        for (let b = 0; b < n; b++) {
+          const y = bottom - Math.min(1, base[b] + s.values[b]) * h;
+          g.lineTo(AXIS + b * step, y);
+          g.lineTo(AXIS + (b + 1) * step, y);
+        }
+        for (let b = n - 1; b >= 0; b--) {
+          g.lineTo(AXIS + (b + 1) * step, bottom - Math.min(1, base[b]) * h);
+          g.lineTo(AXIS + b * step, bottom - Math.min(1, base[b]) * h);
+        }
+        g.closePath();
+        g.fill();
+        for (let b = 0; b < n; b++) {
+          base[b] += s.values[b];
+        }
+      });
+      // The highlighted function: a line over the bands, outlined so it
+      // shows on any of them.
+      if (d.highlight) {
+        g.lineJoin = "round";
+        for (const [color, width] of [["rgba(0, 0, 0, 0.6)", 4], [LIT, 2]]) {
+          g.strokeStyle = color;
+          g.lineWidth = width;
+          g.beginPath();
+          d.highlight.values.forEach((v, b) => {
+            const y = bottom - Math.min(1, v) * h;
+            if (b === 0) {
+              g.moveTo(AXIS, y);
+            } else {
+              g.lineTo(AXIS + b * step, y);
+            }
+            g.lineTo(AXIS + (b + 1) * step, y);
+          });
+          g.stroke();
+        }
+        g.lineWidth = 1;
+      }
+      // Marks: dashed lines.
+      g.strokeStyle = MARK;
+      g.setLineDash([3, 3]);
+      for (const m of this.marks) {
+        if (m.timeNs >= d.startNs && m.timeNs <= d.endNs) {
+          const x = Math.round(this.xOf(m.timeNs)) + 0.5;
+          g.beginPath();
+          g.moveTo(x, top);
+          g.lineTo(x, top + h);
+          g.stroke();
+        }
+      }
+      g.setLineDash([]);
+      // The selection, or the range being dragged.
+      const range = this.drag || this.selection;
+      if (range) {
+        const x0 = this.xOf(Math.min(range[0], range[1]));
+        const x1 = this.xOf(Math.max(range[0], range[1]));
+        g.fillStyle = "rgba(128, 160, 255, 0.25)";
+        g.fillRect(x0, top, Math.max(1, x1 - x0), h);
+        g.strokeStyle = "rgba(128, 160, 255, 0.9)";
+        g.strokeRect(x0 + 0.5, top + 0.5, Math.max(1, x1 - x0), h);
+      }
+    }
+
+    drawLegend() {
+      const d = this.data;
+      if (!this.legend || !d) {
+        return;
+      }
+      // (Sampled series weigh samples; precise ones, nanoseconds.)
+      const weight = (s) => (s.samples !== undefined ? s.samples : s.ns);
+      const total = d.series.reduce((a, s) => a + weight(s), 0) || 1;
+      const keys = d.series.map((s, i) => {
+        const color = s.label === "Other" ? OTHER : COLORS[i % COLORS.length];
+        const share = ((100 * weight(s)) / total).toFixed(1);
+        return `<span class="key"><span class="swatch" style="background:${color}"></span>${escape(s.label)} ${share}%</span>`;
+      });
+      if (d.highlight) {
+        const share = ((100 * weight(d.highlight)) / total).toFixed(1);
+        keys.push(
+          `<span class="key lit"><span class="swatch" style="background:${LIT}"></span>${escape(this.litLabel)} ${share}%</span>`
+        );
+      }
+      this.legend.innerHTML = keys.join("");
+    }
+  }
+
+  function escape(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  }
+
+  exports.Graph = Graph;
+})(typeof module !== "undefined" && module.exports ? module.exports : (globalThis.StackrabbitGraph = {}));

@@ -269,6 +269,58 @@ pub struct Trace {
     pub readies: ReadyThreads,
     /// Every stack.
     pub stacks: StackStore,
+    /// Every kind of event the trace has (whether or not the import keeps
+    /// them), by provider, ID, version, opcode and task.
+    pub events: Vec<EventStats>,
+    /// Providers' names, where the trace gives them (TraceLogging's
+    /// provider traits), by GUID.
+    pub provider_names: Vec<(turbonop_etl::Guid, String)>,
+    /// The events' descriptions recorded with the trace (each an
+    /// `EventMetadata` event's `TRACE_EVENT_INFO`, as it is; see
+    /// `turbonop_etw::event_info`), distinct, sorted.
+    pub event_infos: Vec<Vec<u8>>,
+    /// The trace file's buffers that hold events, in file order: where
+    /// each is, its first and last timestamps, and which kinds of event it
+    /// holds (so that a reader of one kind reads only its buffers).
+    pub buffers: Vec<BufferSpan>,
+}
+
+/// Where a trace file's buffer is and what it holds.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BufferSpan {
+    /// Its offset in the file.
+    pub offset: u64,
+    /// Its number among the file's buffers.
+    pub index: u32,
+    /// Its earliest event's timestamp.
+    pub first: i64,
+    /// Its latest's.
+    pub last: i64,
+    /// The kinds of event in it, as indexes of [`Trace::events`], sorted.
+    pub kinds: Vec<u32>,
+}
+
+/// How many of one kind of event a trace has.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EventStats {
+    /// The provider (for classic kernel events, the event class).
+    pub provider: turbonop_etl::Guid,
+    /// The event ID (zero for classic events).
+    pub id: u16,
+    /// The event's version.
+    pub version: u8,
+    /// The opcode.
+    pub opcode: u8,
+    /// The task.
+    pub task: u16,
+    /// How many.
+    pub count: u64,
+    /// Their payloads' bytes.
+    pub bytes: u64,
+    /// The first's timestamp.
+    pub first: i64,
+    /// The last's.
+    pub last: i64,
 }
 
 impl Trace {
@@ -285,6 +337,10 @@ impl Trace {
             switches: ContextSwitches::default(),
             readies: ReadyThreads::default(),
             stacks: StackStore::new(),
+            events: Vec::new(),
+            provider_names: Vec::new(),
+            event_infos: Vec::new(),
+            buffers: Vec::new(),
         }
     }
 

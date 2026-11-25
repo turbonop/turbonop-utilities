@@ -1,0 +1,305 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+.summary {
+  padding: 6px 10px;
+  color: var(--vscode-descriptionForeground);
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+.controls select,
+.controls button {
+  font: inherit;
+  color: var(--vscode-dropdown-foreground);
+  background: var(--vscode-dropdown-background);
+  border: 1px solid var(--vscode-dropdown-border);
+  padding: 1px 4px;
+}
+.controls button {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border: none;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.event-stack {
+  margin: 8px 10px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  white-space: pre;
+}
+.event-stack:empty {
+  display: none;
+}
+.focus-bar {
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+.focus-bar.hidden {
+  display: none;
+}
+#functions-pane {
+  position: relative;
+}
+.card {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  max-width: 70%;
+  padding: 6px 10px;
+  background: var(--vscode-editorHoverWidget-background, #252526);
+  color: var(--vscode-editorHoverWidget-foreground, inherit);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+  font-size: 12px;
+}
+.card.hidden {
+  display: none;
+}
+.card .title {
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 2px;
+}
+.card .step {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lost {
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  padding: 0 10px;
+}
+.lost:empty {
+  display: none;
+}
+.symbols {
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+}
+.status.error {
+  color: var(--vscode-errorForeground);
+}
+.graph {
+  padding: 4px 10px 0;
+  position: relative;
+}
+.graph-tip {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  padding: 4px 8px;
+  background: var(--vscode-editorHoverWidget-background, #252526);
+  color: var(--vscode-editorHoverWidget-foreground, inherit);
+  border: 1px solid var(--vscode-editorHoverWidget-border, #454545);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.graph-tip.hidden {
+  display: none;
+}
+.graph-tip .when,
+.graph-tip .more {
+  color: var(--vscode-descriptionForeground);
+}
+.graph-tip .lit {
+  color: #ffd400;
+}
+.graph-tip .mark {
+  color: #c586c0;
+}
+.graph canvas {
+  width: 100%;
+  height: 120px;
+  display: block;
+  cursor: crosshair;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 2px 0 4px 40px;
+  color: var(--vscode-descriptionForeground);
+}
+.legend .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  vertical-align: -1px;
+}
+.selection {
+  padding: 2px 10px 6px 50px;
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 10px 0;
+  border-bottom: 1px solid var(--vscode-panel-border);
+}
+.tab {
+  font: inherit;
+  color: var(--vscode-descriptionForeground);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.tab.active {
+  color: var(--vscode-foreground);
+  border-bottom-color: var(--vscode-focusBorder, #0078d4);
+}
+.pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.pane.hidden {
+  display: none;
+}
+table.processes {
+  border-collapse: collapse;
+  width: 100%;
+}
+table.processes th {
+  position: sticky;
+  top: 0;
+  background: var(--vscode-editor-background);
+  text-align: left;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  cursor: pointer;
+  white-space: nowrap;
+}
+table.processes td {
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+table.processes td.num,
+table.processes th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+table.processes td.cmd {
+  color: var(--vscode-descriptionForeground);
+  max-width: 600px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+table.processes tr:hover td {
+  background: var(--vscode-list-hoverBackground);
+}
+table.processes tbody tr {
+  cursor: default;
+}
+table.processes tr.selected td {
+  background: var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.25));
+}
+.threads-title {
+  margin: 12px 10px 4px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+}
+.header,
+.row {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  white-space: nowrap;
+}
+.header {
+  font-weight: 600;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  padding-right: 14px;
+}
+.name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.num {
+  width: 110px;
+  text-align: right;
+  padding-right: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.viewport {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  outline: none;
+}
+#rows {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+.row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  cursor: default;
+}
+.row:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+.row.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.twisty {
+  display: inline-block;
+  width: 14px;
+  cursor: pointer;
+}
+
+/* Annotated assembly: the hottest instructions, and a heat bar for each. */
+.assembly td.num {
+  position: relative;
+}
+.assembly .heat {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  background: rgba(255, 99, 71, 0.35);
+  pointer-events: none;
+}
+.assembly tr.hot td {
+  color: #ff6347;
+  font-weight: bold;
+}
+.assembly td.label {
+  color: var(--vscode-descriptionForeground);
+}
+
+/* A call's targets, as sampled. */
+.assembly .targets {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.9em;
+}
+
+/* A source line, over its instructions. */
+.assembly tr.source td {
+  color: var(--vscode-textLink-foreground);
+  padding-top: 0.4em;
+}

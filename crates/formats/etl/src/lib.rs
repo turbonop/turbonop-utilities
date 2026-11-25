@@ -25,7 +25,7 @@ pub mod event;
 mod guid;
 pub mod logfile;
 pub mod lz77;
-mod merge;
+pub mod merge;
 pub mod write;
 
 use turbonop_core::{Error, ErrorKind, Result};
@@ -34,7 +34,7 @@ pub use buffer::{Buffer, BufferContext, BufferHeader, BufferType};
 pub use event::{Event, EventDescriptor, ExtendedItem, ExtendedItems, HeaderKind, Records};
 pub use guid::Guid;
 pub use logfile::{ClockType, LogfileHeader};
-pub use merge::EventCursor;
+pub use merge::{EventCursor, Order, decompress, for_each_event, streams};
 
 use buffer::BUFFER_HEADER_SIZE;
 use bytes::u32_at;
@@ -83,6 +83,22 @@ impl<'a> Etl<'a> {
     /// The buffers, in file order.
     pub fn buffers(&self) -> Buffers<'a> {
         Buffers::new(self.data)
+    }
+
+    /// The buffer at `file_offset`, numbered `index` (as [`Etl::buffers`]
+    /// numbers it): for a reader that remembers where buffers are.
+    pub fn buffer_at(&self, file_offset: u64, index: u32) -> Result<Buffer<'a>> {
+        let pos = usize::try_from(file_offset)
+            .ok()
+            .filter(|&p| p < self.data.len())
+            .ok_or(Error::new(ErrorKind::Truncated, file_offset, "buffer"))?;
+        let mut b = Buffers {
+            data: self.data,
+            pos,
+            index,
+        };
+        b.next_buffer()?
+            .ok_or(Error::new(ErrorKind::Truncated, file_offset, "buffer"))
     }
 
     /// Every event, in timestamp order, as `ProcessTrace` delivers them.

@@ -752,6 +752,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "stackrabbit"
+version = "0.0.7"
+dependencies = [
+ "rustc-hash",
+ "serde_json",
+ "turbonop-code",
+ "turbonop-core",
+ "turbonop-etl",
+ "turbonop-etw",
+ "turbonop-global-alloc",
+ "turbonop-image",
+ "turbonop-mmap",
+ "turbonop-par",
+ "turbonop-pdb",
+ "turbonop-size",
+ "turbonop-symbolize",
+ "turbonop-trace",
+ "turbonop-trace-analysis",
+ "turbonop-trace-synth",
+]
+
+[[package]]
 name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1341,8 +1363,21 @@ dependencies = [
  "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-mmap",
+ "turbonop-par",
  "turbonop-symbolize",
  "turbonop-trace",
+]
+
+[[package]]
+name = "turbonop-trace-synth"
+version = "0.0.7"
+dependencies = [
+ "rustc-hash",
+ "turbonop-etl",
+ "turbonop-etw",
+ "turbonop-global-alloc",
+ "turbonop-trace",
+ "turbonop-trace-analysis",
 ]
 
 [[package]]

@@ -4,4 +4,8 @@
 use turbonop_global_alloc as _;
 
 mod decode;
+mod encode;
+mod event_info;
 mod manifest;
+mod tracelogging;
+mod values;

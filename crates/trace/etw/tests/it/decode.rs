@@ -492,6 +492,17 @@ fn garbage_payloads_never_panic() {
 
 /// Events for the matcher: (cpu, provider, opcode, timestamp, payload).
 fn match_all(records: &[(u16, Guid, u8, i64, Vec<u8>)], window: i64) -> Vec<Option<(u64, bool)>> {
+    match_threads(records, window)
+        .into_iter()
+        .map(|m| m.map(|(id, continuation, _)| (id, continuation)))
+        .collect()
+}
+
+/// [`match_all`], with the thread a match took from its stack.
+fn match_threads(
+    records: &[(u16, Guid, u8, i64, Vec<u8>)],
+    window: i64,
+) -> Vec<Option<(u64, bool, Option<u32>)>> {
     let data = trace(
         &records
             .iter()
@@ -511,7 +522,7 @@ fn match_all(records: &[(u16, Guid, u8, i64, Vec<u8>)], window: i64) -> Vec<Opti
                 out.push(
                     matcher
                         .stack(e.context.processor, e.timestamp, &s)
-                        .map(|m| (m.id, m.continuation)),
+                        .map(|m| (m.id, m.continuation, m.thread)),
                 );
             }
             d => matcher.event(id, &e, d.as_ref()),
@@ -563,4 +574,279 @@ fn forgets_old_stacks() {
         100,
     );
     assert_eq!(r, [Some((2, false)), Some((2, false))]);
+}
+
+#[test]
+fn a_ready_before_the_first_switch_takes_its_stacks_thread() {
+    const K: u64 = 0xffff_f800_0000_1000;
+    const U: u64 = 0x7ff0_0000_1000;
+    let r = match_threads(
+        &[
+            // Event 2: on cpu 0, before any switch, thread 9 is readied by
+            // a thread the matcher doesn't know.
+            (0, guids::THREAD, 50, 10, ready_payload(9)),
+            // Event 3: a sample of thread 7 with the same timestamp.
+            (0, guids::PERF_INFO, 46, 10, sample_payload(K, 7)),
+            // The sample's stack goes to the sample, not the ready event.
+            (0, guids::STACK_WALK, 32, 11, stack_payload(10, 1, 7, &[K])),
+            // The ready event's stack names thread 5: the readier.
+            (0, guids::STACK_WALK, 32, 12, stack_payload(10, 1, 5, &[K])),
+            // Its user part, later: a continuation, with the same thread.
+            (1, guids::STACK_WALK, 32, 13, stack_payload(10, 1, 5, &[U])),
+        ],
+        1000,
+    );
+    assert_eq!(
+        r,
+        [
+            Some((3, false, None)),
+            Some((2, false, Some(5))),
+            Some((2, true, Some(5))),
+        ]
+    );
+}
+
+/// Decodes one kernel event's payload by its schema.
+fn properties_of(
+    provider: Guid,
+    op: u8,
+    version: u16,
+    payload: Vec<u8>,
+) -> (String, Vec<(String, Vec<u8>)>, Vec<u8>) {
+    let data = trace(&[(0, provider, op, version, 1, 0, payload)]);
+    let etl = Etl::parse(&data).unwrap();
+    let b = etl.buffers().nth(1).unwrap().unwrap();
+    let e = b.records().unwrap().next().unwrap().unwrap();
+    let p = Properties::of(&e).unwrap().unwrap();
+    assert!(p.exact);
+    (
+        p.schema.name.to_string(),
+        p.properties
+            .iter()
+            .map(|p| (p.name.clone(), p.data.to_vec()))
+            .collect(),
+        p.rest.to_vec(),
+    )
+}
+
+#[test]
+fn registry_operations_and_key_control_blocks() {
+    let key = |op: u8, name: &str| {
+        let payload = P::default()
+            .u64(1_000)
+            .u32(0xc000_0034)
+            .u32(2)
+            .u64(0xffff_8000_1234_0000)
+            .utf16z(name)
+            .0;
+        properties_of(guids::REGISTRY, op, 2, payload)
+    };
+    let (name, props, rest) = key(16, "Value");
+    assert_eq!(name, "QueryValue");
+    let names: Vec<&str> = props.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(
+        names,
+        ["InitialTime", "Status", "Index", "KeyHandle", "KeyName"]
+    );
+    assert_eq!(props[1].1, 0xc000_0034u32.to_le_bytes());
+    assert_eq!(props[4].1, b"V\0a\0l\0u\0e\0\0\0");
+    assert!(rest.is_empty());
+    // Every operation, and the key control blocks, by that layout.
+    let ops = [
+        (10, "Create"),
+        (11, "Open"),
+        (12, "Delete"),
+        (13, "Query"),
+        (14, "SetValue"),
+        (15, "DeleteValue"),
+        (17, "EnumerateKey"),
+        (18, "EnumerateValueKey"),
+        (19, "QueryMultipleValue"),
+        (20, "SetInformation"),
+        (21, "Flush"),
+        (22, "KCBCreate"),
+        (23, "KCBDelete"),
+        (24, "KCBRundownBegin"),
+        (25, "KCBRundownEnd"),
+        (26, "Virtualize"),
+        (27, "Close"),
+        (28, "SetSecurity"),
+        (29, "QuerySecurity"),
+    ];
+    for (op, want) in ops {
+        let (name, _, rest) = key(op, r"\REGISTRY\MACHINE");
+        assert_eq!((name.as_str(), rest.len()), (want, 0), "{op}");
+    }
+    // An unnamed key (an empty string).
+    assert_eq!(key(27, "").1[4].1, [0, 0]);
+    // The counters and the configuration.
+    let mut counters = P::default();
+    for i in 0..11u64 {
+        counters = counters.u64(i);
+    }
+    let (name, props, rest) = properties_of(guids::REGISTRY, 34, 2, counters.0);
+    assert_eq!(
+        (name.as_str(), props.len(), rest.len()),
+        ("Counters", 11, 0)
+    );
+    assert_eq!(
+        props[10],
+        ("Counter11".to_string(), 10u64.to_le_bytes().to_vec())
+    );
+    let (name, props, _) = properties_of(guids::REGISTRY, 35, 2, 1u32.to_le_bytes().to_vec());
+    assert_eq!(
+        (name.as_str(), props[0].0.as_str()),
+        ("Config", "CurrentControlSet")
+    );
+}
+
+#[test]
+fn thread_version_3_names_may_follow() {
+    // Older systems end version 3 at the flags; current ones add the name.
+    for op in [1u8, 2, 3, 4] {
+        let (_, props, rest) = properties_of(guids::THREAD, op, 3, thread_payload(1, 2));
+        assert_eq!(
+            props.last().unwrap(),
+            &("ThreadName".to_string(), Vec::new())
+        );
+        assert!(rest.is_empty());
+        let mut named = thread_payload(1, 2);
+        named.extend_from_slice(b"w\0\0\0");
+        let (_, props, rest) = properties_of(guids::THREAD, op, 3, named);
+        assert_eq!(props.last().unwrap().1, b"w\0\0\0");
+        assert!(rest.is_empty());
+    }
+}
+
+#[test]
+fn file_reads_and_writes_may_be_padded() {
+    let rw = P::default()
+        .u64(4096)
+        .u64(0xa1)
+        .u64(0xb1)
+        .u64(0xc1)
+        .u32(7)
+        .u32(512)
+        .u32(0x20)
+        .0;
+    for op in [67u8, 68] {
+        // As some systems log them, and padded to 8 bytes as others do.
+        let (_, props, rest) = properties_of(guids::FILE_IO, op, 3, rw.clone());
+        assert_eq!(props.last().unwrap(), &("Padding".to_string(), Vec::new()));
+        assert!(rest.is_empty());
+        let mut padded = rw.clone();
+        padded.extend_from_slice(&[0; 4]);
+        let (_, props, rest) = properties_of(guids::FILE_IO, op, 3, padded);
+        assert_eq!(props.last().unwrap().1, [0; 4]);
+        assert_eq!(
+            props[5],
+            ("IoSize".to_string(), 512u32.to_le_bytes().to_vec())
+        );
+        assert!(rest.is_empty());
+        // More than that is left over.
+        let mut more = rw.clone();
+        more.extend_from_slice(&[0; 6]);
+        assert_eq!(properties_of(guids::FILE_IO, op, 3, more).2, [0, 0]);
+    }
+}
+
+#[test]
+fn page_faults_and_virtual_allocations() {
+    let fault = P::default().u64(0x7ff0_0000_1000).u64(0x7ff0_0000_2000).0;
+    let kinds = [
+        (10, "TransitionFault"),
+        (11, "DemandZeroFault"),
+        (12, "CopyOnWrite"),
+        (13, "GuardPageFault"),
+        (14, "HardPageFault"),
+        (15, "AccessViolation"),
+    ];
+    for (op, want) in kinds {
+        let (name, props, rest) = properties_of(guids::PAGE_FAULT, op, 2, fault.clone());
+        assert_eq!((name.as_str(), rest.len()), (want, 0));
+        assert_eq!(props[0].0, "VirtualAddress");
+        assert_eq!(
+            props[1],
+            (
+                "ProgramCounter".to_string(),
+                0x7ff0_0000_2000u64.to_le_bytes().to_vec()
+            )
+        );
+    }
+    let alloc = P::default().u64(0x10000).u64(0x2000).u32(100).u32(0x3000).0;
+    for (op, want) in [(98, "VirtualAlloc"), (99, "VirtualFree")] {
+        let (name, props, rest) = properties_of(guids::PAGE_FAULT, op, 2, alloc.clone());
+        assert_eq!((name.as_str(), rest.len()), (want, 0));
+        let names: Vec<&str> = props.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["BaseAddress", "RegionSize", "ProcessId", "Flags"]);
+        assert_eq!(props[3].1, 0x3000u32.to_le_bytes());
+    }
+}
+
+#[test]
+fn heap_and_pool_events() {
+    let names = |op: u8, version: u16, provider: Guid, payload: Vec<u8>| {
+        let (name, props, rest) = properties_of(provider, op, version, payload);
+        assert!(rest.is_empty(), "{name}");
+        (name, props.into_iter().map(|(n, _)| n).collect::<Vec<_>>())
+    };
+    let heap = |op, version, payload| names(op, version, guids::HEAP, payload);
+    assert_eq!(
+        heap(32, 3, P::default().u64(1).u32(2).u64(3).u64(4).u64(5).0),
+        (
+            "Create".to_string(),
+            [
+                "HeapHandle",
+                "HeapFlags",
+                "ReserveSize",
+                "CommitSize",
+                "AllocatedSize"
+            ]
+            .map(String::from)
+            .to_vec()
+        )
+    );
+    assert_eq!(
+        heap(33, 2, P::default().u64(1).u64(2).u64(3).u32(4).0).1[1],
+        "AllocSize"
+    );
+    let realloc = heap(
+        34,
+        2,
+        P::default().u64(1).u64(2).u64(3).u64(4).u64(5).u32(6).0,
+    );
+    assert_eq!(realloc.0, "ReAlloc");
+    assert_eq!(realloc.1[1..3], ["NewAllocAddress", "OldAllocAddress"]);
+    assert_eq!(heap(35, 2, P::default().u64(1).0).0, "Destroy");
+    assert_eq!(
+        heap(36, 2, P::default().u64(1).u64(2).u32(3).0).1[1],
+        "FreeAddress"
+    );
+    let expand = heap(
+        37,
+        3,
+        P::default()
+            .u64(1)
+            .u64(2)
+            .u64(3)
+            .u64(4)
+            .u64(5)
+            .u64(6)
+            .u32(7)
+            .u64(8)
+            .0,
+    );
+    assert_eq!((expand.0.as_str(), expand.1.len()), ("Expand", 8));
+    assert_eq!(heap(43, 2, P::default().u64(1).0).0, "Lock");
+    assert_eq!(heap(44, 2, P::default().u64(1).0).0, "Unlock");
+    for (op, want) in [(32, "Alloc"), (34, "Free")] {
+        let (name, props) = names(
+            op,
+            2,
+            guids::POOL,
+            P::default().u32(0).u32(0x6463_6241).u64(64).u64(0xb1).0,
+        );
+        assert_eq!(name, want);
+        assert_eq!(props, ["Type", "Tag", "NumberOfBytes", "Entry"]);
+    }
 }

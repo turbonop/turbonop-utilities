@@ -148,6 +148,54 @@ when they're ready. What's left:
   platform, and CI runs its live tests on macOS; it hasn't been used by a
   person on a Mac.
 
+## Stackrabbit
+
+The trace viewer (`apps/stackrabbit`, `editors/vscode/stackrabbit`). The
+plan, the decisions behind it, and where the work stands are in
+[docs/stackrabbit](docs/stackrabbit/README.md). Nothing is published
+until the extension is mostly done. What's left, roughly in order:
+
+- **Trees in 50 ms** on the big build traces (0.29 s on l01, measured on
+  a busy machine): build them from the stack trie, not each stack's
+  frames. `loops` (time by loop) costs a whole `functions` pass, 0.35 s
+  on l01, and gets faster with it.
+- **Import and reopen** budgets on s04 (6.9 GB): 14 s to import now.
+- **Saved names for every image**: images named from their own files
+  (DWARF, exports) are not saved in `.hxsyms` yet, only PDBs' tables.
+- **One set of parallel helpers**: Stackrabbit's `on_every_core` and
+  friends against `turbonop-par`.
+- **WPA filters and regions left**: the sampled CPU table's DPC/ISR
+  column, Disk's Init Time, filters on Regions; regions by Duration,
+  endpoints, Parent, SelfNest and Filter.
+- **Differences from WPA still open**: Idle's sample weight (WPA counts
+  time no sample covers as Idle); DPC/ISR runs of KMDF drivers (WPA
+  credits the client driver, Stackrabbit names the framework); WPA leaves
+  out each processor's first DPC/ISR run; WPA's CPU Frequency shows
+  nominal speeds (Power event 51). GPU and Frequency have no comparison:
+  no built-in profile has the columns. Context switch version 5's last 4
+  bytes are still unnamed (8c9fa26 says what they are not).
+- **Re-record l03 and l04**: neither contains a build (cargo failed at
+  once), which is why they have almost no stacks. Delete both, then run
+  `record-corpus.cmd large` as administrator.
+- **M5 tables left**: hardware counters (PMC samples); then TCP/IP, UI
+  delays, boot phases, working sets, battery and energy. Each needs a new
+  recording. Done: CPU idle states, frequency, GPU, .NET.
+- **M6, the Profile Explorer ideas, left**: source servers and
+  SourceLink; annotations by call path or thread; time per branch arm
+  (needs LBR or branch counters: samples alone can't say which way a
+  branch went). Done: annotated assembly with time per instruction,
+  blocks and loops, time by inlinee, sampled call targets, source lines
+  over the instructions, and a CodeLens per loop. Gap: no end-to-end
+  engine test of `assembly` (it needs a trace naming an image file that
+  is here: patch a synthetic trace's image path, size and timestamp to
+  testdata's lines.exe).
+- **Robustness**: fuzz the ETL reader, the index, saved names and WPA
+  profiles; peak memory on the largest traces; 32-bit, ARM64 and
+  unmerged traces end to end; the Edge harness on corpus traces, not only
+  synthetic ones.
+- **Release (M7)**: a `stackrabbit-release.yml` and VSIX packaging. The
+  Marketplace publisher is `turbonop`; the name isn't final.
+
 ## Every format alike
 
 Every command and analysis should work the same, and as well, on PE,

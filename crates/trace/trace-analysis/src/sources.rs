@@ -39,6 +39,17 @@ pub struct Filter {
 }
 
 impl Filter {
+    /// The rows of a time-ordered column (`times`) that can be in range: by
+    /// binary search, so a short range costs little in a long trace.
+    fn rows(&self, times: &[i64]) -> std::ops::Range<usize> {
+        match self.time {
+            Some((start, end)) => {
+                times.partition_point(|&t| t < start)..times.partition_point(|&t| t < end)
+            }
+            None => 0..times.len(),
+        }
+    }
+
     fn keeps(&self, trace: &Trace, time: i64, thread: ThreadIx) -> bool {
         if let Some((start, end)) = self.time
             && (time < start || time >= end)
@@ -61,42 +72,256 @@ impl Filter {
 
 /// A distinct thing to weigh: a thread, a processor (when grouping by it),
 /// a stack, and for a sample without a stack, its instruction pointer.
-type Bucket = (ThreadIx, u16, StackId, u64);
+pub type Bucket = (ThreadIx, u16, StackId, u64);
 
-/// Turns aggregated buckets into instances.
+/// Buckets, each with its weight and count, sorted by bucket.
+pub type Run = Vec<(Bucket, (u64, u64))>;
+
+/// How many buckets a thread turns into instances at a time: about
+/// `CHUNKS` chunks' worth, at least `MIN_CHUNK` and at most `MAX_CHUNK`.
+/// (By the buckets, not the number of threads, so that keys are numbered
+/// the same on any machine. Few large chunks make fewer keys to number
+/// across chunks, which is done on one thread; but enough of them keep
+/// every core busy.)
+const CHUNKS: usize = 16;
+const MIN_CHUNK: usize = 4096;
+const MAX_CHUNK: usize = 1 << 16;
+
+/// Events a worker aggregates at a time.
+const ROWS: usize = 1 << 16;
+
+/// The events `rows` (each one's bucket and weight, by `event`; or none,
+/// for an event left out), aggregated: each bucket's weight and count,
+/// sorted by bucket. On every core: each chunk of rows aggregated and
+/// sorted on its own, then the chunks merged.
+fn aggregate(
+    rows: std::ops::Range<usize>,
+    event: impl Fn(usize) -> Option<(Bucket, u64)> + Sync,
+) -> Run {
+    let chunks: Vec<std::ops::Range<usize>> = rows
+        .clone()
+        .step_by(ROWS)
+        .map(|from| from..(from + ROWS).min(rows.end))
+        .collect();
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done: Vec<std::sync::Mutex<Run>> =
+        chunks.iter().map(|_| std::sync::Mutex::default()).collect();
+    let threads = std::thread::available_parallelism()
+        .map_or(4, std::num::NonZero::get)
+        .min(chunks.len());
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                let mut map: FxHashMap<Bucket, (u64, u64)> = FxHashMap::default();
+                loop {
+                    let c = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(range) = chunks.get(c) else { return };
+                    for i in range.clone() {
+                        if let Some((bucket, weight)) = event(i) {
+                            let e = map.entry(bucket).or_default();
+                            e.0 += weight;
+                            e.1 += 1;
+                        }
+                    }
+                    let mut sorted: Run = map.drain().collect();
+                    sorted.sort_unstable_by_key(|&(b, _)| b);
+                    *done[c]
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = sorted;
+                }
+            });
+        }
+    });
+    let mut runs: Vec<Run> = done
+        .into_iter()
+        .map(|m| {
+            m.into_inner()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+        })
+        .collect();
+    // Merged in pairs (each pass's pairs on every core), adding up the
+    // buckets in more than one.
+    while runs.len() > 1 {
+        let mut pairs = Vec::with_capacity(runs.len().div_ceil(2));
+        let mut it = runs.into_iter();
+        while let Some(a) = it.next() {
+            pairs.push((a, it.next().unwrap_or_default()));
+        }
+        runs = std::thread::scope(|scope| {
+            let merging: Vec<_> = pairs
+                .into_iter()
+                .map(|(a, b)| scope.spawn(move || merge_runs(a, b)))
+                .collect();
+            merging
+                .into_iter()
+                .map(|m| m.join().expect("a merge"))
+                .collect()
+        });
+    }
+    runs.pop().unwrap_or_default()
+}
+
+/// Two sorted runs of buckets as one, a bucket in both added up.
+fn merge_runs(a: Run, b: Run) -> Run {
+    if b.is_empty() {
+        return a;
+    }
+    let mut out = Vec::with_capacity(a.len() + b.len());
+    let (mut a, mut b) = (a.into_iter().peekable(), b.into_iter().peekable());
+    loop {
+        match (a.peek(), b.peek()) {
+            (Some(x), Some(y)) => match x.0.cmp(&y.0) {
+                std::cmp::Ordering::Less => out.extend(a.next()),
+                std::cmp::Ordering::Greater => out.extend(b.next()),
+                std::cmp::Ordering::Equal => {
+                    let (k, (w1, c1)) = a.next().expect("peeked");
+                    let (_, (w2, c2)) = b.next().expect("peeked");
+                    out.push((k, (w1 + w2, c1 + c2)));
+                }
+            },
+            (Some(_), None) => out.extend(a.by_ref()),
+            (None, Some(_)) => out.extend(b.by_ref()),
+            (None, None) => return out,
+        }
+    }
+}
+
+/// Turns aggregated buckets (sorted, for a deterministic order) into
+/// instances: in chunks, on every core, each with a framer and keys of its
+/// own; the chunks' keys are then numbered in chunk order, so the result
+/// is the same on any number of threads.
 fn instances(
     trace: &Trace,
     framer: &mut Framer<'_>,
     keys: &mut Keys,
     groups: &[GroupBy],
-    buckets: FxHashMap<Bucket, (u64, u64)>,
+    buckets: &[(Bucket, (u64, u64))],
+) -> Instances {
+    let chunk = buckets.len().div_ceil(CHUNKS).clamp(MIN_CHUNK, MAX_CHUNK);
+    if buckets.len() <= chunk {
+        return chunk_instances(trace, framer, keys, groups, buckets);
+    }
+    let chunks: Vec<&[(Bucket, (u64, u64))]> = buckets.chunks(chunk).collect();
+    let threads = std::thread::available_parallelism()
+        .map_or(4, std::num::NonZero::get)
+        .min(chunks.len());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let done: Vec<std::sync::Mutex<Option<(Instances, Keys)>>> =
+        chunks.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    let template = &*framer;
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                let mut framer = template.fork();
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(chunk) = chunks.get(i) else { return };
+                    let mut local = Keys::default();
+                    let inst = chunk_instances(trace, &mut framer, &mut local, groups, chunk);
+                    *done[i]
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((inst, local));
+                }
+            });
+        }
+    });
+    let mut out = Instances::new(groups.len());
+    for slot in done {
+        let (inst, local) = slot
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .expect("every chunk is done");
+        let rename: Vec<KeyId> = (0..local.len())
+            .map(|k| keys.intern(local.get(KeyId(u32::try_from(k).expect("a key")))))
+            .collect();
+        out.append_renamed(&inst, &rename);
+    }
+    out
+}
+
+/// What a stack's frame at a depth made, for the next stack: its
+/// address, whether a return address, whether folded, its key, and its
+/// inlined calls' range in the memo's keys.
+type Memo = (u64, bool, bool, KeyId, (u32, u32));
+
+/// Turns buckets into instances.
+fn chunk_instances(
+    trace: &Trace,
+    framer: &mut Framer<'_>,
+    keys: &mut Keys,
+    groups: &[GroupBy],
+    buckets: &[(Bucket, (u64, u64))],
 ) -> Instances {
     let mut out = Instances::new(groups.len());
     let mut seq: Vec<KeyId> = Vec::new();
-    let mut frames: Vec<u64> = Vec::new();
-    // Deterministic order: by bucket.
-    let mut buckets: Vec<(Bucket, (u64, u64))> = buckets.into_iter().collect();
-    buckets.sort_unstable_by_key(|&(b, _)| b);
     let by_tag = groups.contains(&GroupBy::StackTag) && framer.has_tags();
     let folding = framer.has_folds();
-    for ((thread, cpu, stack, ip), (weight, count)) in buckets {
+    let by_module = framer.mode() == FrameMode::Module;
+    // The previous stack's nodes, outermost first, and what each one's
+    // frame made: (its address, a return address, folded, key, its inlined
+    // calls' range in `memo_inlined`). Buckets are sorted by thread, then
+    // stack, and stacks are numbered in their trie's order, so a stack
+    // mostly shares its callers with the one before: those nodes aren't
+    // walked again (if in the same trie), and their keys are taken from
+    // here (if the same frames).
+    let mut path: Vec<StackId> = Vec::new();
+    let mut fresh: Vec<StackId> = Vec::new();
+    let mut memo: Vec<Memo> = Vec::new();
+    let mut memo_inlined: Vec<KeyId> = Vec::new();
+    let mut memo_process = ProcessIx::NONE;
+    for &((thread, cpu, stack, ip), (weight, count)) in buckets {
         let process = trace.thread_process(thread);
-        frames.clear();
-        if stack.is_empty() {
-            if ip != 0 {
-                frames.push(ip);
-            }
-        } else {
-            frames.extend(trace.stacks.frames(stack));
+        let ip_only = stack.is_empty();
+        if process != memo_process || ip_only {
+            path.clear();
+            memo.clear();
+            memo_inlined.clear();
+            memo_process = process;
         }
+        if !ip_only {
+            // The stack's nodes: those it shares with the previous stack
+            // (its callers), then its own, found by walking up from its
+            // leaf only to the first node on the previous path (which a
+            // node is on if the path has it at the node's depth).
+            fresh.clear();
+            let mut cur = stack;
+            while !cur.is_empty() {
+                let depth = trace.stacks.depth(cur) as usize;
+                if path.get(depth - 1) == Some(&cur) {
+                    break;
+                }
+                fresh.push(cur);
+                cur = trace.stacks.parent(cur);
+            }
+            let common = if cur.is_empty() {
+                0
+            } else {
+                trace.stacks.depth(cur) as usize
+            };
+            path.truncate(common);
+            path.extend(fresh.iter().rev());
+        }
+        // The frames, outermost first: the stack's, or for a sample
+        // without one, its instruction pointer.
+        let n = if ip_only {
+            usize::from(ip != 0)
+        } else {
+            path.len()
+        };
+        let frame_at = |p: usize| {
+            if ip_only {
+                ip
+            } else {
+                trace.stacks.frame(path[p])
+            }
+        };
         // The stack's tag: that of its deepest tagged frame. (Every frame
         // but the innermost is a return address: the instruction after a
         // call, which may be past its function.)
         let tag = if by_tag {
-            frames
-                .iter()
-                .enumerate()
-                .find_map(|(i, &f)| framer.classify(process, f, i > 0).0)
+            (0..n)
+                .rev()
+                .find_map(|p| framer.classify(process, frame_at(p), p + 1 < n).0)
                 .unwrap_or(Key::NO_TAG)
         } else {
             Key::NO_TAG
@@ -110,30 +335,44 @@ fn instances(
                 GroupBy::StackTag => Key::Tag(tag),
             }));
         }
-        for (i, &f) in frames.iter().enumerate().rev() {
-            let fold = if folding {
-                framer.classify(process, f, i > 0).1
-            } else {
-                None
-            };
-            let key = match fold {
-                Some(rule) => Key::Fold(rule),
-                None => framer.key(process, f, i > 0),
-            };
-            let k = keys.intern(key);
+        for p in 0..n {
+            let ret = p + 1 < n;
+            let f = frame_at(p);
+            // (A frame the previous stack didn't have here; or had, but
+            // innermost, and it's a caller now.)
+            if memo.get(p).is_some_and(|m| m.0 != f || m.1 != ret) {
+                memo_inlined.truncate(memo[p].4.0 as usize);
+                memo.truncate(p);
+            }
+            if memo.len() == p {
+                let fold = if folding {
+                    framer.classify(process, f, ret).1
+                } else {
+                    None
+                };
+                // The frame's key, and the calls inlined at it (its
+                // callees in the tree).
+                let (key, inlined) = match fold {
+                    Some(rule) => (Key::Fold(rule), &[][..]),
+                    None => framer.frame(process, f, ret),
+                };
+                let k = keys.intern(key);
+                let from = u32::try_from(memo_inlined.len()).expect("few inlined calls");
+                for &inline in inlined {
+                    memo_inlined.push(keys.intern(inline));
+                }
+                let to = u32::try_from(memo_inlined.len()).expect("few inlined calls");
+                memo.push((f, ret, fold.is_some(), k, (from, to)));
+            }
+            let (_, _, folded, k, (from, to)) = memo[p];
             // A run of frames in one folded group, or (by image) in one
             // image, is one node.
-            let collapses = fold.is_some() || framer.mode() == FrameMode::Module;
+            let collapses = folded || by_module;
             if collapses && seq.len() > groups.len() && seq.last() == Some(&k) {
                 continue;
             }
             seq.push(k);
-            // The calls inlined at this frame are its callees in the tree.
-            if fold.is_none() {
-                for &inline in framer.inline_keys(process, f, i > 0) {
-                    seq.push(keys.intern(inline));
-                }
-            }
+            seq.extend_from_slice(&memo_inlined[from as usize..to as usize]);
         }
         out.push_counted(&seq, weight, count);
     }
@@ -148,21 +387,24 @@ pub fn samples(
     groups: &[GroupBy],
     filter: &Filter,
 ) -> Instances {
-    let by_cpu = groups.contains(&GroupBy::Cpu);
+    let buckets = sample_buckets(trace, filter, groups.contains(&GroupBy::Cpu));
+    instances(trace, framer, keys, groups, &buckets)
+}
+
+/// CPU samples, aggregated: each distinct (thread, processor if
+/// `by_cpu`, stack, and instruction pointer for a sample without a stack)
+/// with its samples' weight and count, sorted. On every core.
+pub fn sample_buckets(trace: &Trace, filter: &Filter, by_cpu: bool) -> Run {
     let s = &trace.samples;
-    let mut buckets: FxHashMap<Bucket, (u64, u64)> = FxHashMap::default();
-    for i in 0..s.len() {
+    aggregate(filter.rows(&s.time), |i| {
         if !filter.keeps(trace, s.time[i], s.thread[i]) {
-            continue;
+            return None;
         }
         let stack = s.stack[i];
         let ip = if stack.is_empty() { s.ip[i] } else { 0 };
         let cpu = if by_cpu { s.cpu[i] } else { 0 };
-        let e = buckets.entry((s.thread[i], cpu, stack, ip)).or_default();
-        e.0 += u64::from(s.weight[i]);
-        e.1 += 1;
-    }
-    instances(trace, framer, keys, groups, buckets)
+        Some(((s.thread[i], cpu, stack, ip), u64::from(s.weight[i])))
+    })
 }
 
 /// Each context switch's derived times, in clock ticks.
@@ -220,25 +462,80 @@ pub fn switches(
     filter: &Filter,
     weight: SwitchWeight,
 ) -> Instances {
-    let by_cpu = groups.contains(&GroupBy::Cpu);
+    let buckets = switch_buckets(
+        trace,
+        precise,
+        filter,
+        groups.contains(&GroupBy::Cpu),
+        weight,
+    );
+    instances(trace, framer, keys, groups, &buckets)
+}
+
+/// Context switches, aggregated as [`sample_buckets`] aggregates samples,
+/// weighted by `weight` (switches that weigh nothing left out).
+pub fn switch_buckets(
+    trace: &Trace,
+    precise: &Precise,
+    filter: &Filter,
+    by_cpu: bool,
+    weight: SwitchWeight,
+) -> Run {
     let sw = &trace.switches;
-    let mut buckets: FxHashMap<Bucket, (u64, u64)> = FxHashMap::default();
-    for i in 0..sw.len() {
+    aggregate(filter.rows(&sw.time), |i| {
         let thread = sw.new_thread[i];
         if !filter.keeps(trace, sw.time[i], thread) {
-            continue;
+            return None;
         }
         let w = match weight {
             SwitchWeight::Running => precise.running[i],
             SwitchWeight::Waited => precise.waited[i],
         };
         if w == 0 {
-            continue;
+            return None;
         }
         let cpu = if by_cpu { sw.cpu[i] } else { 0 };
-        let e = buckets.entry((thread, cpu, sw.stack[i], 0)).or_default();
-        e.0 += w;
-        e.1 += 1;
+        Some(((thread, cpu, sw.stack[i], 0), w))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Bucket, ROWS, aggregate};
+    use rustc_hash::FxHashMap;
+    use turbonop_trace::{StackId, ThreadIx};
+
+    /// Aggregating in chunks on every core, and merging, is aggregating
+    /// all at once: many chunks, buckets in several of them, events left
+    /// out, and a range not starting at 0.
+    #[test]
+    fn aggregates_in_chunks_as_all_at_once() {
+        let n = ROWS * 9 + 1234;
+        let event = |i: usize| -> Option<(Bucket, u64)> {
+            let x = (i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 40;
+            if x.is_multiple_of(7) {
+                return None;
+            }
+            let bucket = (
+                ThreadIx(u32::try_from(x % 13).unwrap()),
+                u16::try_from(x % 3).unwrap(),
+                StackId(u32::try_from(x % 5000).unwrap()),
+                x % 2,
+            );
+            Some((bucket, x % 100 + 1))
+        };
+        for range in [0..n, 17..n - 3, 5..5, 100..200] {
+            let mut want: FxHashMap<Bucket, (u64, u64)> = FxHashMap::default();
+            for i in range.clone() {
+                if let Some((b, w)) = event(i) {
+                    let e = want.entry(b).or_default();
+                    e.0 += w;
+                    e.1 += 1;
+                }
+            }
+            let mut want: Vec<_> = want.into_iter().collect();
+            want.sort_unstable_by_key(|&(b, _)| b);
+            assert_eq!(aggregate(range.clone(), event), want, "{range:?}");
+        }
     }
-    instances(trace, framer, keys, groups, buckets)
 }

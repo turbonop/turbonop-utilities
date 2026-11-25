@@ -15,13 +15,18 @@ use turbonop_global_alloc as _;
 
 pub mod debug;
 pub mod keys;
+pub mod lines;
+pub mod regions;
 pub mod shape;
 pub mod sources;
 pub mod tree;
+pub mod weights;
+pub mod wpa_profile;
+pub mod wpa_query;
 pub mod xml;
 
 pub use debug::{DebugSymbolizer, PdbSymbolizer};
 pub use keys::{FrameMode, Framer, Key, KeyId, Keys, NoSymbols, Resolver, Symbolizer, label};
 pub use shape::{Folds, Glob, StackTags};
 pub use sources::{Filter, GroupBy, Precise, SwitchWeight};
-pub use tree::{Instances, NodeId, Tree};
+pub use tree::{BinTotals, Instances, NO_BIN, NodeId, Tree};

@@ -85,6 +85,7 @@ turbonop-etw = { path = "crates/trace/etw" }
 turbonop-trace = { path = "crates/trace/trace" }
 turbonop-trace-analysis = { path = "crates/trace/trace-analysis" }
 turbonop-symbolize = { path = "crates/symbols/symbolize" }
+turbonop-trace-synth = { path = "crates/trace/trace-synth" }
 turbonop-abi = { path = "crates/debug/abi" }
 turbonop-unwind = { path = "crates/debug/unwind" }
 turbonop-minidump = { path = "crates/formats/minidump" }

@@ -125,6 +125,9 @@ impl Mmap {
     /// The reads stop when the returned [`Prefetch`] is dropped. For data
     /// held in memory, there is nothing to read.
     pub fn prefetch(&self, threads: usize, chunk: usize) -> io::Result<Prefetch> {
+        // (Where nothing is mapped, as on WebAssembly, nothing is read.)
+        #[cfg(not(any(windows, unix)))]
+        let _ = (threads, chunk);
         match &self.inner {
             Inner::Owned(_) => Ok(Prefetch::done(self.len() as u64)),
             #[cfg(any(windows, unix))]
@@ -145,6 +148,7 @@ pub struct Prefetch {
 struct PrefetchState {
     len: u64,
     /// The next chunk's offset to claim.
+    #[cfg_attr(not(any(windows, unix)), allow(dead_code))]
     next: std::sync::atomic::AtomicU64,
     /// Bytes read so far.
     read: std::sync::atomic::AtomicU64,

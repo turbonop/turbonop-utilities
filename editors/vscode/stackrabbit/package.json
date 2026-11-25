@@ -3,7 +3,7 @@
   "displayName": "Stackrabbit",
   "description": "A fast performance trace viewer: open ETW traces (.etl) and explore CPU usage, waits and stacks, with every click answered at once.",
   "version": "0.0.1",
-  "publisher": "stackrabbit",
+  "publisher": "turbonop",
   "license": "Apache-2.0",
   "preview": true,
   "engines": {

@@ -135,3 +135,34 @@ fn linux_locals() {
         Some(&Unavailable::EntryValue)
     );
 }
+
+#[test]
+fn windows_x86_locals() {
+    // DbgEng's dv in middle: n = 0x0117fb1c (its stack argument: ecx, its
+    // def-range's register, was clobbered by the call), depth = 2.
+    let data = std::fs::read(testdata("minidump/crash-x86.dmp")).unwrap();
+    let t = MinidumpTarget::new(&data).unwrap();
+    let hints = Hints {
+        dirs: vec![testdata("minidump")],
+        skip_recorded_paths: true,
+        symbols: Some((Vec::new(), Servers::default())),
+        ..Hints::default()
+    };
+    let loaded = load(&t, &hints);
+    let space = loaded.address_space(&t);
+    let bases: Vec<u64> = t.modules().iter().map(|m| m.base).collect();
+    let modules = Modules::new(&loaded, &space, &bases);
+    let stacks = walk_all(&t, &space, &modules);
+    let e = t.exception().unwrap();
+    let s = stacks.iter().find(|s| s.thread == e.thread).unwrap();
+    let l = locals(s, 1, &modules, &space, t.arch()).unwrap();
+    assert_eq!(value(find(&l, "n")).pointer, Some(0x0117_fb1c));
+    assert_eq!(value(find(&l, "depth")).text, "2");
+    assert!(value(find(&l, "buffer")).text.contains(&"m".repeat(64)));
+    // leaf's are relative to x86's virtual frame (): not yet.
+    let l = locals(s, 0, &modules, &space, t.arch()).unwrap();
+    assert_eq!(
+        find(&l, "depth").value.as_ref().err(),
+        Some(&Unavailable::VirtualFrame)
+    );
+}

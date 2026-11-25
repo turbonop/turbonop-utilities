@@ -18,6 +18,8 @@ pub enum Source {
     FrameRecord(u64),
     /// A stack slot a scan found, at this address.
     Scanned(u64),
+    /// Restored by the module's frame data (x86's FrameData program).
+    FrameData,
 }
 
 /// What's known of a register in a frame.

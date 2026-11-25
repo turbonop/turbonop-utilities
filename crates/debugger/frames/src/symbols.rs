@@ -2,7 +2,7 @@
 //! information (parsed once), and the function and inlined calls at an
 //! address.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use turbonop_debuginfo::DebugInfo;
 use turbonop_image::Image;
@@ -42,10 +42,12 @@ struct Module<'a> {
     debug: Option<DebugInfo<'a>>,
     /// The image's own functions (exports, symbols), where there's no
     /// debug information.
-    functions: Option<FunctionTable>,
+    functions: OnceLock<Option<FunctionTable>>,
     /// (A locator per module, behind a lock: walks on every core share
     /// them.)
     lock: Mutex<()>,
+    /// 32-bit x86's frame records, from its PDB.
+    x86: Option<crate::x86::X86Frames>,
 }
 
 /// Every module's files, parsed, for walking and symbolizing.
@@ -70,12 +72,14 @@ impl<'a> Modules<'a> {
                 Some(Ok(opened)) => opened.debug_info().ok(),
                 _ => None,
             };
-            let functions = match (&debug, &image) {
-                (Some(d), i) => FunctionTable::from_debug(d, i.as_ref())
-                    .ok()
-                    .or_else(|| i.as_ref().map(FunctionTable::from_image)),
-                (None, Some(i)) => Some(FunctionTable::from_image(i)),
-                (None, None) => None,
+            // (Each module's functions, sorted, built when first asked for:
+            // most modules have no frame to symbolize.)
+            let functions = OnceLock::new();
+            let x86 = match (&image, &files.program) {
+                (Some(i), Some(Ok(opened))) if i.arch() == turbonop_core::Arch::X86 => {
+                    crate::x86::X86Frames::load(opened.debug_path())
+                }
+                _ => None,
             };
             Module {
                 image,
@@ -83,6 +87,7 @@ impl<'a> Modules<'a> {
                 debug,
                 functions,
                 lock: Mutex::new(()),
+                x86,
             }
         });
         Modules { modules }
@@ -92,6 +97,12 @@ impl<'a> Modules<'a> {
     pub fn image(&self, m: usize) -> Option<(&Image<'a>, u64)> {
         let module = self.modules.get(m)?;
         Some((module.image.as_ref()?, module.bias))
+    }
+
+    /// Module `m`'s x86 frame records, and its bias.
+    pub fn x86(&self, m: usize) -> Option<(&crate::x86::X86Frames, u64)> {
+        let module = self.modules.get(m)?;
+        Some((module.x86.as_ref()?, module.bias))
     }
 
     /// Module `m`'s debug information and its bias (what a load address
@@ -105,7 +116,16 @@ impl<'a> Modules<'a> {
     pub fn symbol(&self, m: usize, address: u64) -> Option<Symbol> {
         let module = self.modules.get(m)?;
         let at = address.wrapping_sub(module.bias);
-        let (start, name) = module.functions.as_ref()?.function(at)?;
+        let functions = module
+            .functions
+            .get_or_init(|| match (&module.debug, &module.image) {
+                (Some(d), i) => FunctionTable::from_debug(d, i.as_ref())
+                    .ok()
+                    .or_else(|| i.as_ref().map(FunctionTable::from_image)),
+                (None, Some(i)) => Some(FunctionTable::from_image(i)),
+                (None, None) => None,
+            });
+        let (start, name) = functions.as_ref()?.function(at)?;
         let mut symbol = Symbol {
             function: name.to_string(),
             offset: at.wrapping_sub(start),

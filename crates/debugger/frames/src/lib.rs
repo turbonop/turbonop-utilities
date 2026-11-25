@@ -28,6 +28,7 @@ pub mod reconstruct;
 mod registers;
 mod signal;
 mod symbols;
+mod x86;
 
 pub use calls::follows_call;
 pub use registers::{FrameRegisters, RegState, Source};
@@ -91,6 +92,9 @@ pub struct Frame {
     pub module: Option<usize>,
     /// Its function, and the calls inlined at its PC.
     pub symbol: Option<Symbol>,
+    /// The bytes of arguments its callee's function takes, where known
+    /// (x86's frame data says: a `stdcall` callee pops them).
+    pub callee_arguments: u32,
 }
 
 impl Frame {
@@ -263,6 +267,7 @@ impl Walker<'_, '_, '_> {
             registers,
             module: None,
             symbol: None,
+            callee_arguments: 0,
         };
         f.module = self
             .target
@@ -288,6 +293,9 @@ impl Walker<'_, '_, '_> {
                 Confidence::Certain,
                 r,
             )));
+        }
+        if self.arch == Arch::X86 {
+            return self.by_x86(callee).map(Some);
         }
         if let Some(found) = self.by_unwind_data(callee) {
             return Some(found);
@@ -351,6 +359,92 @@ impl Walker<'_, '_, '_> {
             Confidence::Certain,
             caller,
         )))
+    }
+
+    /// An x86 frame: by its module's PDB frame data (FrameData programs, FPO
+    /// records) if there are any, else by the EBP chain (likely), as
+    /// dbghelp's `StackWalk64` unwinds.
+    fn by_x86(&self, callee: &Frame) -> Option<Frame> {
+        use turbonop_abi::regs::x86::*;
+        use turbonop_unwind::windows_x86 as w;
+        let get = |n: u16| {
+            callee
+                .registers
+                .value(n)
+                .and_then(|v| u32::try_from(v).ok())
+        };
+        let mut ctx = w::Context {
+            eip: get(EIP)?,
+            esp: get(ESP)?,
+            ebp: get(EBP).unwrap_or(0),
+            eax: get(EAX).unwrap_or(0),
+            ebx: get(EBX).unwrap_or(0),
+            ecx: get(ECX).unwrap_or(0),
+            edx: get(EDX).unwrap_or(0),
+            esi: get(ESI).unwrap_or(0),
+            edi: get(EDI).unwrap_or(0),
+        };
+        let before = ctx;
+        let tables = callee.module.and_then(|m| self.modules.x86(m));
+        let rva = tables.map_or(0, |(_, bias)| callee.lookup().wrapping_sub(bias));
+        let rva = u32::try_from(rva).unwrap_or(0);
+        let (record, program) = tables.map_or((None, None), |(t, _)| t.find(rva));
+        let space = self.space;
+        // (A return address in a module whose code isn't here can't be
+        // checked: a search for one takes it, as dbghelp would.)
+        let target = self.target;
+        let is_return = |ra: u32| {
+            let ra = u64::from(ra);
+            let mut b = [0u8; 1];
+            target.module_at(ra).is_some()
+                && (space.read(ra.wrapping_sub(1), &mut b).is_none()
+                    || follows_call(space, Arch::X86, ra))
+        };
+        let env = w::Env {
+            memory: self.space,
+            is_return_address: &is_return,
+            callee_params: callee.callee_arguments,
+            rva,
+        };
+        let f = w::unwind(&mut ctx, record, program, &env).ok()?;
+        let pc = u64::from(ctx.eip);
+        if pc == 0 {
+            return None;
+        }
+        let (method, confidence) = match f.method {
+            w::Method::FramePointer => (Method::FramePointer, Confidence::Likely),
+            _ => (Method::Pdata, Confidence::Certain),
+        };
+        let mut r = FrameRegisters::new();
+        r.set(
+            EIP,
+            Some(RegState::known(u128::from(ctx.eip), Source::ReturnAddress)),
+        );
+        r.set(ESP, Some(RegState::known(u128::from(ctx.esp), Source::Cfa)));
+        for (n, was, now) in [
+            (EBP, before.ebp, ctx.ebp),
+            (EBX, before.ebx, ctx.ebx),
+            (ESI, before.esi, ctx.esi),
+            (EDI, before.edi, ctx.edi),
+        ] {
+            let state = if was == now {
+                callee.registers.get(n)
+            } else {
+                Some(RegState::known(u128::from(now), Source::FrameData))
+            };
+            r.set(n, state);
+        }
+        for n in [EAX, ECX, EDX] {
+            r.set(n, Some(RegState::Clobbered));
+        }
+        for &n in self.abi.registers() {
+            if self.abi.preserved(n) == Preserved::Constant {
+                r.set(n, callee.registers.get(n));
+            }
+        }
+        let mut caller = self.frame(pc, u64::from(ctx.esp), true, method, confidence, r);
+        caller.callee_arguments = f.params;
+        Some(caller)
     }
 
     /// What the caller knows of register `n`, which the callee didn't save:

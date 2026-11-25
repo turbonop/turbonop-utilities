@@ -243,3 +243,43 @@ fn windows_reconstructed() {
     });
     assert!(found);
 }
+
+#[test]
+fn windows_x86_crash() {
+    // DbgEng's kn: leaf+0x14, middle+0x2a, outer+0x21, worker+0x7 (built
+    // with /Oy: frame pointers omitted, so by the PDB's frame data), then
+    // kernel32 by worker's.
+    let data = std::fs::read(testdata("minidump/crash-x86.dmp")).unwrap();
+    let t = MinidumpTarget::new(&data).unwrap();
+    let loaded = load(&t, &hermetic("minidump"));
+    let all = stacks(&t, &loaded);
+    let e = t.exception().unwrap();
+    let f = &all.iter().find(|s| s.thread == e.thread).unwrap().frames;
+    let expect = [
+        (0x33_103e, "leaf", 34),
+        (0x33_106c, "middle", 41),
+        (0x33_109d, "outer", 48),
+        (0x33_1119, "worker", 53),
+    ];
+    for (i, (pc, name, line_)) in expect.iter().enumerate() {
+        assert_eq!(f[i].pc, *pc, "frame {i}");
+        assert_eq!(function(&f[i]), *name, "frame {i}");
+        assert_eq!(line(&f[i]), *line_, "frame {i}");
+        assert_eq!(f[i].confidence, Confidence::Certain, "frame {i}");
+    }
+    assert_eq!(f[4].pc, 0x771a_5d49);
+    assert_eq!(f[4].confidence, Confidence::Certain);
+    // EAX, ECX, EDX are clobbered in a caller; ESP is the CFA.
+    let r = &f[1].registers;
+    assert_eq!(
+        r.get(turbonop_abi::regs::x86::EAX),
+        Some(RegState::Clobbered)
+    );
+    assert!(matches!(
+        r.get(turbonop_abi::regs::x86::ESP),
+        Some(RegState::Known {
+            from: Source::Cfa,
+            ..
+        })
+    ));
+}

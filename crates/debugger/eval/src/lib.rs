@@ -180,16 +180,28 @@ pub fn locals(
             // narrowest, then a register's (the def-range's) over memory
             // (the home slot, which may be stale). Pieces are all kept.
             let pieces = live.iter().any(|r| matches!(r.place, Place::Field { .. }));
-            let live: Vec<&VarRange> = if pieces || live.len() < 2 {
-                live
+            // (Tried in that order: the first that reads is where it is; a
+            // register clobbered since leaves the next, such as x86's
+            // stack argument.)
+            let mut candidates: Vec<Vec<&VarRange>> = if pieces || live.len() < 2 {
+                vec![live]
             } else {
                 let in_register = |r: &VarRange| matches!(r.place, Place::Register(_));
-                live.iter()
-                    .min_by_key(|r| (r.end - r.start, !in_register(r)))
-                    .map(|r| vec![*r])
-                    .unwrap_or_default()
+                let mut one = live.clone();
+                one.sort_by_key(|r| (r.end - r.start, !in_register(r)));
+                one.into_iter().map(|r| vec![r]).collect()
             };
-            let (location, value, provenance) = match ctx.read(debug, ty, &live) {
+            let first = candidates.remove(0);
+            let mut read = ctx.read(debug, ty, &first);
+            for c in candidates {
+                if read.is_ok() {
+                    break;
+                }
+                if let Ok(r) = ctx.read(debug, ty, &c) {
+                    read = Ok(r);
+                }
+            }
+            let (location, value, provenance) = match read {
                 Ok((loc, bytes, p)) => (
                     loc,
                     Ok(value::read(debug, ty, &bytes, Limits::default())),

@@ -398,6 +398,7 @@ fn source(src: Source) -> String {
         Source::SignalContext(a) => format!("signal context at {a:#x}"),
         Source::FrameRecord(a) => format!("frame record at {a:#x}"),
         Source::Scanned(a) => format!("stack slot at {a:#x}"),
+        Source::FrameData => "frame data".into(),
     }
 }
 
@@ -530,6 +531,7 @@ fn disasm_at(s: &Session, at: u64, count: u64) -> Json {
         registers: turbonop_frames::FrameRegisters::new(),
         module: None,
         symbol: None,
+        callee_arguments: 0,
     };
     // (From the address itself: no function's start to begin at.)
     let mut v = disasm(s, &frame, count);

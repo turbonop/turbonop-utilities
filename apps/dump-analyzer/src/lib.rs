@@ -38,6 +38,8 @@ commands:
   memory <dump> <address> <length>  memory, and where each byte came from
   disasm <dump> -thread id -frame n [-count n]
                                     a frame's code around its PC
+  disasm <dump> -address a [-count n]
+                                    code from an address
   modules <dump>                    every module, and where its files were found
   reconstruct <dump> -thread id     probable stacks, rebuilt from what's in the
                                     thread's stack memory
@@ -166,6 +168,11 @@ pub fn command(args: &[String], hints: &Hints) -> Result<Json, String> {
             let at = parse_number(args.get(2).ok_or("memory: no address")?)?;
             let len = parse_number(args.get(3).map_or("64", String::as_str))?.min(1 << 20);
             Ok(memory(s, at, len))
+        }
+        "disasm" if opt("-address").is_some() => {
+            let at = parse_number(opt("-address").unwrap_or("0"))?;
+            let count = number("-count")?.unwrap_or(64).min(4096);
+            Ok(disasm_at(s, at, count))
         }
         "disasm" => {
             let t = thread(s)?;
@@ -498,6 +505,27 @@ fn disasm(s: &Session, f: &Frame, count: u64) -> Json {
         pc += len;
     }
     Json::Array(out)
+}
+
+/// `count` instructions from `at` (an address, not a frame's).
+fn disasm_at(s: &Session, at: u64, count: u64) -> Json {
+    let frame = Frame {
+        pc: at,
+        sp: 0,
+        return_address: false,
+        method: Method::Context,
+        confidence: Confidence::Likely,
+        registers: turbonop_frames::FrameRegisters::new(),
+        module: None,
+        symbol: None,
+    };
+    // (From the address itself: no function's start to begin at.)
+    let mut v = disasm(s, &frame, count);
+    if let Json::Array(a) = &mut v {
+        a.retain(|i| parse_number(i["address"].as_str().unwrap_or("0")).is_ok_and(|x| x >= at));
+        a.truncate(usize::try_from(count).unwrap_or(64));
+    }
+    v
 }
 
 fn modules(s: &Session) -> Json {

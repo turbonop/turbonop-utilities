@@ -374,6 +374,29 @@ pub enum Place {
         /// The offset from the CFA.
         offset: i32,
     },
+    /// A DWARF location expression that names no simple place: it computes
+    /// an address (`DW_OP_deref`, arithmetic), or the value itself
+    /// (`DW_OP_stack_value`, `DW_OP_implicit_value`), or is made of pieces
+    /// of those, or needs the caller (`DW_OP_entry_value`). A debugger
+    /// evaluates it with the frame's registers and memory.
+    Expression {
+        /// The expression's bytes.
+        expr: Vec<u8>,
+        /// The function's frame base expression (`DW_AT_frame_base`), for
+        /// `DW_OP_fbreg`.
+        frame_base: Option<Vec<u8>>,
+    },
+}
+
+/// A value a call passed in a register (DWARF's
+/// `DW_TAG_call_site_parameter`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CallSiteValue {
+    /// The register (by DWARF number).
+    pub register: u16,
+    /// Its value at the call, as a DWARF expression in the caller's frame
+    /// (`DW_AT_call_value`).
+    pub value: Vec<u8>,
 }
 
 /// A variable's place over the code from `start` to `end` (addresses),
@@ -1248,6 +1271,27 @@ impl<'data> DebugInfo<'data> {
         match self {
             DebugInfo::Pdb(p) => p.variables(compiland, addr),
             DebugInfo::Dwarf(d) => d.variables(compiland, addr),
+        }
+    }
+
+    /// The frame base of the function at `function`, as a DWARF expression
+    /// (`DW_AT_frame_base`; a PDB has none).
+    pub fn frame_base(&self, function: u64) -> Option<Vec<u8>> {
+        match self {
+            DebugInfo::Pdb(_) => None,
+            DebugInfo::Dwarf(d) => d.frame_base_expr(function),
+        }
+    }
+
+    /// What the call in the function at `function` that returns to
+    /// `return_address` passed in registers, where the debug information
+    /// says (DWARF's call sites; a PDB has none): each register's value as
+    /// an expression in the caller's frame. A debugger evaluates these for
+    /// `DW_OP_entry_value` in the callee.
+    pub fn call_site_values(&self, function: u64, return_address: u64) -> Vec<CallSiteValue> {
+        match self {
+            DebugInfo::Pdb(_) => Vec::new(),
+            DebugInfo::Dwarf(d) => d.call_site_values(function, return_address),
         }
     }
 

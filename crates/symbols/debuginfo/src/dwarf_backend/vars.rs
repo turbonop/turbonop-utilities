@@ -1,10 +1,11 @@
 //! A function's parameters and locals, and where each lives: DWARF
 //! location expressions (and lists of them) read as places.
 //!
-//! Only expressions that name a place are read: a register, memory at an
+//! Expressions that name a place are read as one: a register, memory at an
 //! offset from a register or from the frame base, and pieces of those.
-//! Computed values (`DW_OP_stack_value`, implicit values and pointers,
-//! entry values) aren't places, and are left out.
+//! Any other (computed addresses and values: `DW_OP_deref`, arithmetic,
+//! `DW_OP_stack_value`, implicit values, entry values) is kept as it is,
+//! a [`Place::Expression`], for a debugger to evaluate.
 
 use turbonop_dwarf::consts::*;
 use turbonop_dwarf::{Abbrevs, Die, Reader, Unit, Value};
@@ -143,13 +144,26 @@ impl DwarfInfo<'_> {
             .unwrap_or(addr);
         // The frame base is the definition's (or its abstract origin's).
         let frame = frame_base(&u, d.attr(DW_AT_FRAME_BASE).map(|a| &a.value));
+        let frame_expr = match d.attr(DW_AT_FRAME_BASE).map(|a| a.value) {
+            Some(Value::Block(b)) => Some(b),
+            _ => None,
+        };
         let mut out = FunctionVariables {
             start: addr,
             end,
             frame: (0, 0),
             variables: Vec::new(),
         };
-        self.collect(&u, a, &d, &ranges, frame, false, 0, &mut out.variables);
+        self.collect(
+            &u,
+            a,
+            &d,
+            &ranges,
+            (frame, frame_expr),
+            false,
+            0,
+            &mut out.variables,
+        );
         Ok(Some(out))
     }
 
@@ -164,7 +178,7 @@ impl DwarfInfo<'_> {
         a: &Abbrevs,
         parent: &Die<'_>,
         code: &[(u64, u64)],
-        frame: FrameBase,
+        frame: (FrameBase, Option<&[u8]>),
         inlined: bool,
         depth: i64,
         out: &mut Vec<Variable>,
@@ -199,12 +213,98 @@ impl DwarfInfo<'_> {
         }
     }
 
+    /// The frame base expression (`DW_AT_frame_base`) of the function at
+    /// `function`.
+    pub fn frame_base_expr(&self, function: u64) -> Option<Vec<u8>> {
+        let &at = self.functions().get(&function)?.first()?;
+        let (_, _, d) = self.die(at)?;
+        match d.attr(DW_AT_FRAME_BASE)?.value {
+            Value::Block(b) => Some(b.to_vec()),
+            _ => None,
+        }
+    }
+
+    /// The values a call in the function at `function` passed, at the call
+    /// that returns to `return_pc`: each parameter register's
+    /// (`DW_TAG_call_site_parameter`'s location) value, as an expression
+    /// in the caller's frame (`DW_AT_call_value`). GNU's DWARF 4
+    /// extensions too.
+    pub fn call_site_values(&self, function: u64, return_pc: u64) -> Vec<crate::CallSiteValue> {
+        let mut out = Vec::new();
+        let Some(&at) = self.functions().get(&function).and_then(|c| c.first()) else {
+            return out;
+        };
+        let Some((u, a, d)) = self.die(at) else {
+            return out;
+        };
+        let mut stack = vec![u.children(a, &d).into_iter()];
+        while let Some(children) = stack.last_mut() {
+            let Some(c) = children.next() else {
+                stack.pop();
+                continue;
+            };
+            match c.tag {
+                DW_TAG_CALL_SITE | DW_TAG_GNU_CALL_SITE => {
+                    let pc = c
+                        .attr(DW_AT_CALL_RETURN_PC)
+                        .or_else(|| c.attr(DW_AT_LOW_PC))
+                        .and_then(|a| u.uint(&a.value))
+                        .and_then(|p| self.image_addr(u.source, p));
+                    if pc != Some(return_pc) {
+                        continue;
+                    }
+                    for p in u.children(a, &c) {
+                        if !matches!(
+                            p.tag,
+                            DW_TAG_CALL_SITE_PARAMETER | DW_TAG_GNU_CALL_SITE_PARAMETER
+                        ) {
+                            continue;
+                        }
+                        let block = |attr| match p.attr(attr).map(|a| a.value) {
+                            Some(Value::Block(b)) => Some(b),
+                            _ => None,
+                        };
+                        let register = match block(DW_AT_LOCATION) {
+                            Some([op]) if (DW_OP_REG0..=DW_OP_REG31).contains(op) => {
+                                u16::from(op - DW_OP_REG0)
+                            }
+                            Some([DW_OP_REGX, rest @ ..]) => {
+                                let mut r = Reader::new(rest, 0, u.sections().endian);
+                                match r.uleb().and_then(|n| u16::try_from(n).ok()) {
+                                    Some(n) => n,
+                                    None => continue,
+                                }
+                            }
+                            _ => continue,
+                        };
+                        if let Some(value) =
+                            block(DW_AT_CALL_VALUE).or_else(|| block(DW_AT_GNU_CALL_SITE_VALUE))
+                        {
+                            out.push(crate::CallSiteValue {
+                                register,
+                                value: value.to_vec(),
+                            });
+                        }
+                    }
+                    return out;
+                }
+                DW_TAG_LEXICAL_BLOCK | DW_TAG_INLINED_SUBROUTINE
+                    if stack.len() < usize::try_from(MAX_DEPTH).unwrap_or(64) =>
+                {
+                    stack.push(u.children(a, &c).into_iter());
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+
     fn variable(
         &self,
         u: &Unit<'_>,
         d: &Die<'_>,
         code: &[(u64, u64)],
-        frame: FrameBase,
+        (frame, frame_expr): (FrameBase, Option<&[u8]>),
         inlined: bool,
     ) -> Option<Variable> {
         let loc = d.attr(DW_AT_LOCATION)?;
@@ -227,6 +327,18 @@ impl DwarfInfo<'_> {
         let mut ranges = Vec::new();
         for (start, end, expr) in list {
             let Some(places) = places(u, expr, frame) else {
+                // (Not a place: kept to be evaluated.)
+                if !expr.is_empty() {
+                    ranges.push(VarRange {
+                        start,
+                        end,
+                        gaps: Vec::new(),
+                        place: Place::Expression {
+                            expr: expr.to_vec(),
+                            frame_base: frame_expr.map(<[u8]>::to_vec),
+                        },
+                    });
+                }
                 continue;
             };
             for (_, place) in places {

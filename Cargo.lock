@@ -875,6 +875,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-eval"
+version = "0.0.7"
+dependencies = [
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-dwarf",
+ "turbonop-frames",
+ "turbonop-program",
+ "turbonop-target",
+]
+
+[[package]]
 name = "turbonop-fingerprint"
 version = "0.0.7"
 dependencies = [

@@ -94,6 +94,13 @@ impl<'a> Modules<'a> {
         Some((module.image.as_ref()?, module.bias))
     }
 
+    /// Module `m`'s debug information and its bias (what a load address
+    /// less this is the debug information's address), if it was found.
+    pub fn debug(&self, m: usize) -> Option<(&DebugInfo<'a>, u64)> {
+        let module = self.modules.get(m)?;
+        Some((module.debug.as_ref()?, module.bias))
+    }
+
     /// The symbol at load address `address` in module `m`.
     pub fn symbol(&self, m: usize, address: u64) -> Option<Symbol> {
         let module = self.modules.get(m)?;

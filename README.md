@@ -78,6 +78,7 @@ Each tool is released on its own, with tags named for it
 | `crates/trace/trace` (`turbonop-trace`) | A platform-neutral model of performance traces, and importers that build it |
 | `crates/trace/trace-analysis` (`turbonop-trace-analysis`) | Queries over traces: stack trees, callers and callees, CPU and wait analysis |
 | `crates/debugger/target` (`turbonop-target`) | Debugging targets: minidumps and Linux core files as one model (threads and their registers by DWARF number, modules and their identities, the exception, memory), the address space over a target's memory and its modules' images with each byte's provenance, and its modules' images and debug information found by identity, locally or from symbol servers, all at once |
+| `crates/debugger/eval` (`turbonop-eval`) | A frame's variables, evaluated: PDB def-ranges and DWARF location expressions (including entry values, through the caller's call sites) read with the frame's registers and the target's memory, or the reason they can't be |
 | `crates/debugger/frames` (`turbonop-frames`) | Stack walking: every thread's frames, with each register's provenance in each frame by the platform's ABI, signal frames, and frame-pointer and stack-scan fallbacks that check for calls, each frame symbolized with its inlined calls |
 | `apps/hexcavator` | `hexcavator`: the command line, the MCP server for agents, and the server the VS Code extension runs |
 | `apps/fuzz` | The fuzzer: every parser and command, on mutated inputs, for crashes, hangs, and blowups |

@@ -18,7 +18,8 @@
 //! - `OrdinalOrHint`: for an import by ordinal, the ordinal. `lib.exe`
 //!   imports by ordinal every export given one (`@n`), and gives each
 //!   other its position among the named exports (all but `NONAME` ones,
-//!   `PRIVATE` ones included) sorted by name. `llvm-lib` imports by name
+//!   `PRIVATE` ones included) sorted by the names they're exported as
+//!   (see `turbonop-moduledef`'s `imports`). `llvm-lib` imports by name
 //!   an export given an ordinal without `NONAME`, with the ordinal as its
 //!   hint, and gives the others hint 0.
 //! - The name type: by name, except on x86, where the symbol is the name

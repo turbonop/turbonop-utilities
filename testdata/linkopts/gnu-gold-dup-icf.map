@@ -1,0 +1,180 @@
+
+Discarded input sections
+
+ .text          0x0000000000000000        0x0 use_a.o
+ .data          0x0000000000000000        0x0 use_a.o
+ .bss           0x0000000000000000        0x0 use_a.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 use_a.o
+ .text          0x0000000000000000        0x0 use_b.o
+ .data          0x0000000000000000        0x0 use_b.o
+ .bss           0x0000000000000000        0x0 use_b.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 use_b.o
+ .text          0x0000000000000000        0x0 use_c.o
+ .data          0x0000000000000000        0x0 use_c.o
+ .bss           0x0000000000000000        0x0 use_c.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 use_c.o
+ .text          0x0000000000000000        0x0 other.o
+ .data          0x0000000000000000        0x0 other.o
+ .bss           0x0000000000000000        0x0 other.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 other.o
+ .text          0x0000000000000000        0x0 dup-main.o
+ .data          0x0000000000000000        0x0 dup-main.o
+ .bss           0x0000000000000000        0x0 dup-main.o
+ .note.GNU-stack
+                0x0000000000000000        0x0 dup-main.o
+
+Memory map
+
+ ** file header
+                0x0000000000400000       0x40
+ ** segment headers
+                0x0000000000400040      0x118
+
+.note.gnu.property
+                0x0000000000400158       0x20
+ ** note header
+                0x0000000000400158       0x10
+ ** fill        0x0000000000400168       0x10
+
+.note.gnu.build-id
+                0x0000000000400178       0x24
+ ** note header
+                0x0000000000400178       0x10
+ ** zero fill   0x0000000000400188       0x14
+
+.text           0x00000000004001a0      0x15d
+ .text.use_a    0x00000000004001a0       0x4a use_a.o
+                0x00000000004001a0                use_a
+ ** fill        0x00000000004001ea        0x6
+ .text.use_b    0x00000000004001f0       0x4a use_b.o
+                0x00000000004001f0                use_b
+ ** fill        0x000000000040023a        0x6
+ .text.use_c    0x0000000000400240       0x4a use_c.o
+                0x0000000000400240                use_c
+ ** fill        0x000000000040028a        0x6
+ .text.use_other
+                0x0000000000400290       0x1f other.o
+                0x0000000000400290                use_other
+ ** fill        0x00000000004002af        0x1
+ .text._start   0x00000000004002b0       0x4d dup-main.o
+                0x00000000004002b0                _start
+
+.rodata         0x0000000000400300      0x1f8
+ .rodata.tag    0x0000000000400300       0x18 use_a.o
+ .rodata.lut    0x0000000000400320       0x80 use_a.o
+ .rodata.tag    0x00000000004003a0       0x18 use_b.o
+ .rodata.lut    0x00000000004003c0       0x80 use_b.o
+ .rodata.tag    0x0000000000400440       0x18 use_c.o
+ .rodata.lut    0x0000000000400460       0x80 use_c.o
+ .rodata.tag    0x00000000004004e0       0x18 other.o
+
+.bss            0x0000000000401500      0x110
+ .bss.zeros     0x0000000000401500       0x40 use_a.o
+ .bss.state     0x0000000000401540        0x4 use_a.o
+ .bss.hcounter  0x0000000000401544        0x4 use_a.o
+ .bss.zeros     0x0000000000401560       0x40 use_b.o
+ .bss.state     0x00000000004015a0        0x4 use_b.o
+ .bss.hcounter  0x00000000004015a4        0x4 use_b.o
+ .bss.zeros     0x00000000004015c0       0x40 use_c.o
+ .bss.state     0x0000000000401600        0x4 use_c.o
+ .bss.hcounter  0x0000000000401604        0x4 use_c.o
+ .bss.state     0x0000000000401608        0x4 other.o
+ .bss.sink      0x000000000040160c        0x4 dup-main.o
+                0x000000000040160c                sink
+
+.debug_info     0x0000000000000000      0x55c
+ .debug_info    0x0000000000000000      0x125 use_a.o
+ .debug_info    0x0000000000000125      0x125 use_b.o
+ .debug_info    0x000000000000024a      0x125 use_c.o
+ .debug_info    0x000000000000036f       0xbc other.o
+ .debug_info    0x000000000000042b      0x131 dup-main.o
+
+.debug_abbrev   0x0000000000000000      0x302
+ .debug_abbrev  0x0000000000000000       0x9b use_a.o
+ .debug_abbrev  0x000000000000009b       0x9b use_b.o
+ .debug_abbrev  0x0000000000000136       0x9b use_c.o
+ .debug_abbrev  0x00000000000001d1       0x9a other.o
+ .debug_abbrev  0x000000000000026b       0x97 dup-main.o
+
+.debug_loclists
+                0x0000000000000000      0x108
+ .debug_loclists
+                0x0000000000000000       0x27 use_a.o
+ .debug_loclists
+                0x0000000000000027       0x27 use_b.o
+ .debug_loclists
+                0x000000000000004e       0x27 use_c.o
+ .debug_loclists
+                0x0000000000000075       0x27 other.o
+ .debug_loclists
+                0x000000000000009c       0x6c dup-main.o
+
+.debug_aranges  0x0000000000000000       0xf0
+ .debug_aranges
+                0x0000000000000000       0x30 use_a.o
+ .debug_aranges
+                0x0000000000000030       0x30 use_b.o
+ .debug_aranges
+                0x0000000000000060       0x30 use_c.o
+ .debug_aranges
+                0x0000000000000090       0x30 other.o
+ .debug_aranges
+                0x00000000000000c0       0x30 dup-main.o
+
+.debug_rnglists
+                0x0000000000000000       0x73
+ .debug_rnglists
+                0x0000000000000000       0x17 use_a.o
+ .debug_rnglists
+                0x0000000000000017       0x17 use_b.o
+ .debug_rnglists
+                0x000000000000002e       0x17 use_c.o
+ .debug_rnglists
+                0x0000000000000045       0x17 other.o
+ .debug_rnglists
+                0x000000000000005c       0x17 dup-main.o
+
+.debug_line     0x0000000000000000      0x2b9
+ .debug_line    0x0000000000000000       0x94 use_a.o
+ .debug_line    0x0000000000000094       0x94 use_b.o
+ .debug_line    0x0000000000000128       0x94 use_c.o
+ .debug_line    0x00000000000001bc       0x69 other.o
+ .debug_line    0x0000000000000225       0x94 dup-main.o
+
+.debug_str      0x0000000000000000      0x16a
+ ** merge strings
+                0x0000000000000000      0x16a
+
+.debug_line_str
+                0x0000000000000000       0x76
+ ** merge strings
+                0x0000000000000000       0x76
+
+.debug_frame    0x0000000000000000      0x100
+ .debug_frame   0x0000000000000000       0x30 use_a.o
+ .debug_frame   0x0000000000000030       0x30 use_b.o
+ .debug_frame   0x0000000000000060       0x30 use_c.o
+ .debug_frame   0x0000000000000090       0x30 other.o
+ .debug_frame   0x00000000000000c0       0x40 dup-main.o
+
+.note.gnu.gold-version
+                0x0000000000000000       0x1c
+ ** note header
+                0x0000000000000000       0x10
+ ** fill        0x0000000000000010        0x9
+ ** zero fill   0x0000000000000019        0x3
+
+.symtab         0x0000000000000000      0x300
+ ** symtab      0x0000000000000000      0x300
+
+.strtab         0x0000000000000000       0x77
+ ** string table
+                0x0000000000000000       0x77
+
+.shstrtab       0x0000000000000000       0xe8
+ ** string table
+                0x0000000000000000       0xe8

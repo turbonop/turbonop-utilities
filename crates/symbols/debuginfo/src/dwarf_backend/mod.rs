@@ -1718,8 +1718,27 @@ impl<'data> DwarfInfo<'data> {
         let mut kept_names = turbonop_hash::Set::default();
         let mut kept = Vec::new();
         let mut dropped = Vec::new();
+        // What kept code calls (its call sites' origins).
+        let mut called = Vec::new();
         self.walk(|w| {
             let d = w.die;
+            if matches!(d.tag, DW_TAG_CALL_SITE | DW_TAG_GNU_CALL_SITE) {
+                let in_kept = w
+                    .stack
+                    .iter()
+                    .rev()
+                    .find(|f| f.tag == DW_TAG_SUBPROGRAM)
+                    .is_some_and(|f| f.low_pc.is_some());
+                if in_kept
+                    && let Some(r) = d
+                        .attr(DW_AT_CALL_ORIGIN)
+                        .or_else(|| d.attr(DW_AT_ABSTRACT_ORIGIN))
+                        .and_then(|a| self.reference(w.unit, a))
+                {
+                    called.push(r);
+                }
+                return Walk::Over;
+            }
             if d.tag != DW_TAG_SUBPROGRAM
                 || d.flag(DW_AT_DECLARATION)
                 || d.attr(DW_AT_LOW_PC).is_none() && d.attr(DW_AT_RANGES).is_none()
@@ -1737,14 +1756,29 @@ impl<'data> DwarfInfo<'data> {
             Walk::Into
         });
         dropped.retain(|(n, _)| !n.is_empty() && !kept_names.contains(n));
+        // A dropped function kept code calls wasn't collected (nothing
+        // refers to what is): it was folded into another, whose code its
+        // calls reach (mold, which keeps no symbol of it).
+        let called: turbonop_hash::Set<String> =
+            called.into_iter().map(|r| self.qualified_name(r)).collect();
+        out.called = dropped
+            .iter()
+            .filter(|(n, _)| called.contains(n))
+            .filter_map(|(_, l)| l.clone())
+            .collect();
+        out.called.sort_unstable();
+        out.called.dedup();
         out.dropped = dropped.into_iter().filter_map(|(_, l)| l).collect();
         out.dropped.sort_unstable();
         out.dropped.dedup();
         kept.sort_unstable();
-        out.shared = kept.chunk_by(|a, b| a.0 == b.0).any(|at| {
-            at.iter()
-                .any(|a| at.iter().any(|b| a.1 != b.1 && a.2 != b.2))
-        });
+        // Functions of different names with code at one address: folded.
+        // (A compiler's aliases have no definitions of their own; gold
+        // points a folded function's at the kept one's code, in its
+        // compiland too.)
+        out.shared = kept
+            .chunk_by(|a, b| a.0 == b.0)
+            .any(|at| at.iter().any(|a| at.iter().any(|b| a.2 != b.2)));
         Ok(out)
     }
 

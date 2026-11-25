@@ -465,3 +465,26 @@ fn mips64_addresses() {
         ]
     );
 }
+
+#[test]
+fn x64_non_pie_code_s_absolute_addresses() {
+    // A static executable's code below 2 GiB (GCC, -fno-pie): tables by
+    // their absolute addresses, indexed or not, and an address moved into a
+    // register; small displacements are offsets, not addresses.
+    let code = [
+        0x03, 0x04, 0xBD, 0x20, 0x20, 0x40, 0x00, // add eax, [rdi*4 + 402020h]
+        0x0F, 0xBE, 0x80, 0x00, 0x20, 0x40, 0x00, // movsx eax, byte [rax + 402000h]
+        0xBE, 0x40, 0x20, 0x40, 0x00, // mov esi, 402040h
+        0x8B, 0x04, 0xBD, 0x10, 0x00, 0x00, 0x00, // mov eax, [rdi*4 + 10h]
+        0xB8, 0x07, 0x00, 0x00, 0x00, // mov eax, 7
+        0x64, 0x8B, 0x04, 0x25, 0x00, 0x00, 0x01, 0x00, // mov eax, fs:[10000h]
+    ];
+    assert_eq!(
+        refs(Arch::X64, &code, 0x401000),
+        [
+            (0x401000, 0x402020, Via::Address),
+            (0x401007, 0x402000, Via::Address),
+            (0x40100E, 0x402040, Via::AddressOf),
+        ]
+    );
+}

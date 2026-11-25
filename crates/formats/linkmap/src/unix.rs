@@ -9,6 +9,9 @@
 //!   at the start of a line; input sections indented one space, with
 //!   their address, size, and file (a long name alone, the rest on the
 //!   next line); symbols indented, with their address alone.
+//! - gold (`-Map`): its "Memory map", laid out as GNU ld's, with what the
+//!   linker made (`** fill`, `** file header`, `** merge strings`) where
+//!   an input section would be, and no symbols.
 //! - ld64 and lld's Mach-O port (`-map`): the object files by number,
 //!   the sections, the symbols with their sizes and files, and what was
 //!   dead-stripped.
@@ -22,6 +25,7 @@
 pub enum Linker {
     Lld,
     Gnu,
+    Gold,
     Ld64,
 }
 
@@ -127,12 +131,13 @@ pub fn parse(text: &str) -> Option<UnixMap> {
     if first.starts_with("# Path: ") {
         return Some(parse_ld64(text));
     }
-    if text
-        .lines()
-        .take(100_000)
-        .any(|l| l.starts_with("Linker script and memory map"))
-    {
-        return Some(parse_gnu(text));
+    for l in text.lines().take(100_000) {
+        if l.starts_with("Linker script and memory map") {
+            return Some(parse_gnu(text, Linker::Gnu));
+        }
+        if l.trim_end() == "Memory map" {
+            return Some(parse_gnu(text, Linker::Gold));
+        }
     }
     None
 }
@@ -344,8 +349,9 @@ fn file_ref(s: &str) -> Option<(u64, &str)> {
     Some((n.trim().parse().ok()?, rest.trim()))
 }
 
-fn parse_gnu(text: &str) -> UnixMap {
-    let mut map = UnixMap::new(Linker::Gnu);
+/// GNU ld's map, or gold's (`linker`), laid out alike.
+fn parse_gnu(text: &str, linker: Linker) -> UnixMap {
+    let mut map = UnixMap::new(linker);
     let mut index = std::collections::HashMap::new();
     let mut in_memory_map = false;
     let mut section = String::new();
@@ -358,7 +364,7 @@ fn parse_gnu(text: &str) -> UnixMap {
         .take(MAX_LINES)
         .map(|l| l.trim_end_matches('\r'))
     {
-        if line.starts_with("Linker script and memory map") {
+        if line.starts_with("Linker script and memory map") || line.trim_end() == "Memory map" {
             in_memory_map = true;
             continue;
         }
@@ -386,8 +392,17 @@ fn parse_gnu(text: &str) -> UnixMap {
             }
             continue;
         }
-        // Linker script patterns (` *(.text .text.*)`), fill, assignments.
+        // Linker script patterns (` *(.text .text.*)`), fill, assignments;
+        // gold's own parts (` ** fill`, ` ** file header`: its address and
+        // size, if not on this line, on the next).
         let first = fields.first().copied().unwrap_or("");
+        if first == "**" {
+            // (Its address on the next line, if not on this one.)
+            if !fields.iter().any(|f| f.starts_with("0x")) {
+                pending = Some(String::new());
+            }
+            continue;
+        }
         if first.starts_with('*')
             || line.contains(" = ")
             || first == "PROVIDE"
@@ -400,6 +415,10 @@ fn parse_gnu(text: &str) -> UnixMap {
             continue;
         }
         let (name, rest) = if let Some(p) = pending.take() {
+            if p.is_empty() {
+                // (The address and size of gold's own part: no input's.)
+                continue;
+            }
             (p, &fields[..])
         } else if line.starts_with(' ') && !line.starts_with("  ") {
             (first.to_string(), &fields[1..])

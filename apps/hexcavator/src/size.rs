@@ -29,7 +29,7 @@ options:
                     (or -debug; default: its own, or the one it names)
   -map <path>       use the linker's map instead of debug information: MSVC's
                     (link /MAP): groups, and symbols attributed to their
-                    objects and libraries; lld's, GNU ld's, or ld64's (ELF,
+                    objects and libraries; lld's, GNU ld's, gold's, mold's, or ld64's (ELF,
                     Mach-O, WebAssembly): compileunits as the objects each
                     input section came from, libraries as their archives
   -top <n>          how many libraries and compilands to list (default 20; 0: all)
@@ -1691,14 +1691,15 @@ fn debug_map(path: Option<&Path>) -> Result<Option<Mmap>, String> {
         .transpose()
 }
 
-/// With a Unix linker's map (`-map`: lld's, GNU ld's, ld64's), `maps`'
+/// With a Unix linker's map (`-map`: lld's, GNU ld's, gold's, mold's,
+/// ld64's), `maps`'
 /// `compileunits` and `libraries` from it (see `turbonop_size::unixmap`).
 fn unix_map(maps: &mut turbonop_size::sources::Maps, map: Option<&Path>) -> Result<(), String> {
     let Some(path) = map else { return Ok(()) };
     let text = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let link = turbonop_linkmap::unix::parse(&String::from_utf8_lossy(&text)).ok_or_else(|| {
         format!(
-            "{}: not a linker map (lld's, GNU ld's, or ld64's)",
+            "{}: not a linker map (lld's, GNU ld's, gold's, mold's, or ld64's)",
             path.display()
         )
     })?;

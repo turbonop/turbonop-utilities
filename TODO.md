@@ -122,17 +122,6 @@ archives). What's left:
   formatting, and what the static C library and mimalloc add on Linux.
   Then make it smaller, as hexcavator advises others to.
 
-## Waiting
-
-- **GCC, GNU ld, gold, and mold.** `hexcavator recommend` judges what an ELF
-  link did (`--gc-sections`, ICF) from what lld leaves in the image, and
-  is tested only with lld; and GNU ld's maps (and its map's archive
-  members and discarded sections, for `hexcavator linkerlog`) are read, but
-  tested only on text written for the tests; gold's and mold's maps not
-  at all. Check them against each linker's, with test binaries and maps
-  from each in `testdata`. Waiting on a Linux environment (WSL) to build
-  them.
-
 ## Ideas
 
 - **A size check for pull requests.** A GitHub Action that comments on a

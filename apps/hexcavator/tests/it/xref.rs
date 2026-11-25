@@ -678,7 +678,7 @@ fn recommend_judges_the_link() {
         k
     };
     // (name, collected, folded, what's recommended)
-    let cases: [(&str, bool, bool, &[&str]); 7] = [
+    let cases: [(&str, bool, bool, &[&str]); 27] = [
         ("funcs-plain", false, false, &["gc", "icf"]),
         ("funcs-gc", true, false, &["icf"]),
         ("funcs-icf", false, true, &["gc"]),
@@ -695,6 +695,35 @@ fn recommend_judges_the_link() {
         // (Only data folded: nothing says the link folded functions,
         // and there are none to fold.)
         ("dup-icf", false, false, &[]),
+        // GCC's (non-PIE: its code refers to tables by their absolute
+        // addresses), linked by GNU ld (which has no ICF), gold (which
+        // points a folded function's DWARF at the kept one's code, keeping
+        // its symbol), and mold (which keeps neither of a folded function,
+        // as of a collected one: its callers tell them apart).
+        ("gnu-bfd-funcs-plain", false, false, &["gc", "icf"]),
+        ("gnu-bfd-funcs-gc", true, false, &["icf"]),
+        ("gnu-gold-funcs-plain", false, false, &["gc", "icf"]),
+        ("gnu-gold-funcs-gc", true, false, &["icf"]),
+        ("gnu-gold-funcs-icf", false, true, &["gc"]),
+        ("gnu-gold-funcs-gc-icf", true, true, &[]),
+        ("gnu-mold-funcs-plain", false, false, &["gc", "icf"]),
+        ("gnu-mold-funcs-gc", true, false, &["icf"]),
+        ("gnu-mold-funcs-icf", false, true, &["gc"]),
+        ("gnu-mold-funcs-gc-icf", true, true, &[]),
+        // (GCC's work<1> and work<2> are alike: gold folds them, with
+        // their LSDAs; mold doesn't.)
+        ("gnu-bfd-eh", false, false, &["icf", "near-identical"]),
+        ("gnu-gold-eh", false, false, &["icf", "near-identical"]),
+        ("gnu-gold-eh-icf", false, true, &[]),
+        ("gnu-mold-eh", false, false, &["icf", "near-identical"]),
+        ("gnu-mold-eh-icf", false, true, &["near-identical"]),
+        // (Neither gold's nor mold's ICF folds data: the constants stay
+        // copied.)
+        ("gnu-bfd-dup", false, false, &["duplicates"]),
+        ("gnu-gold-dup", false, false, &["duplicates"]),
+        ("gnu-gold-dup-icf", false, false, &["duplicates"]),
+        ("gnu-mold-dup", false, false, &["duplicates"]),
+        ("gnu-mold-dup-icf", false, false, &["duplicates"]),
     ];
     for (name, collected, folded, want) in cases {
         let v = recommend(name);

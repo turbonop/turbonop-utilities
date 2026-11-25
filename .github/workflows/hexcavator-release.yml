@@ -85,14 +85,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
-      # mimalloc (musl's allocator in hexcavator's place: see
-      # apps/hexcavator/src/main.rs), compiled for musl.
+      # mimalloc (every program's allocator: see turbonop-global-alloc),
+      # compiled for musl.
       CC_x86_64_unknown_linux_musl: musl-gcc
       CC_aarch64_unknown_linux_musl: musl-gcc
-      # (The tests' own binaries allocate with musl's allocator, many times
-      # slower than glibc's: only the hexcavator program has mimalloc. The
-      # timed tests bound blow-ups, not speed; CI's musl job allows the same.)
-      TURBONOP_TEST_SLOWDOWN: ${{ contains(matrix.target, 'musl') && '4' || '1' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Rust

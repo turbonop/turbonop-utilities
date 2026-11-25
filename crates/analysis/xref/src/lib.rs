@@ -17,6 +17,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 mod scan;
 
 pub use scan::{

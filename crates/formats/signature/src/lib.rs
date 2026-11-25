@@ -10,6 +10,9 @@
 //! (it needs the network), nor are signatures kept outside the file (a
 //! Windows catalog's, an app bundle's notarization ticket).
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod apple;
 pub mod authenticode;
 pub mod cms;

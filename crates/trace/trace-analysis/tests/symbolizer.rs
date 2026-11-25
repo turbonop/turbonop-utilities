@@ -3,6 +3,8 @@
 //! DWARF in the file its debug link names, and a DLL by its own symbols;
 //! and an image file that isn't the one the trace saw.
 
+use turbonop_global_alloc as _;
+
 use std::path::{Path, PathBuf};
 
 use turbonop_symbolize::SymbolPath;

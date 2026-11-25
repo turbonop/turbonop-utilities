@@ -1,5 +1,7 @@
 //! Function tables and PDB discovery, on a PDB in testdata.
 
+use turbonop_global_alloc as _;
+
 use std::path::Path;
 
 use turbonop_pdb::Pdb;

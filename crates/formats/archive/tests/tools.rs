@@ -4,6 +4,8 @@
 //! with the member that defines it (`dumpbin /linkermember:2`). Import
 //! objects name their DLL.
 
+use turbonop_global_alloc as _;
+
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

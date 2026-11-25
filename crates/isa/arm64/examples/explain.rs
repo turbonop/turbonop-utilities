@@ -2,6 +2,8 @@
 //! renders them, operand by operand.
 //! `cargo run -p turbonop-arm64 --example explain -- 3C72F89F 7F7EE7AB`
 
+use turbonop_global_alloc as _;
+
 fn main() {
     for arg in std::env::args().skip(1) {
         let word = u32::from_str_radix(arg.trim_start_matches("0x"), 16).expect("a hex word");

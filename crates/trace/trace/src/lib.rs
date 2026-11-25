@@ -6,6 +6,9 @@
 //! it from each recording format: [`etw::import`] from Windows ETL files.
 //! [`index`] saves one, so reopening a trace skips the import.
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod etw;
 pub mod index;
 pub mod model;

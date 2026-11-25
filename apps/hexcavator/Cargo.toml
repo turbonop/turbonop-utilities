@@ -16,6 +16,7 @@ name = "hexcavator"
 path = "src/main.rs"
 
 [dependencies]
+turbonop-global-alloc.workspace = true
 turbonop-codeview.workspace = true
 regex.workspace = true
 turbonop-core.workspace = true
@@ -48,14 +49,6 @@ turbonop-query.workspace = true
 turbonop-program.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-# (Linux releases are static, with musl: see src/main.rs.)
-[target.'cfg(target_env = "musl")'.dependencies]
-mimalloc.workspace = true
-
-# (WebAssembly's threads: see src/main.rs.)
-[target.'cfg(target_family = "wasm")'.dependencies]
-turbonop-alloc.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

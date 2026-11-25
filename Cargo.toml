@@ -35,10 +35,10 @@ bumpalo = "3.20"
 rustc-hash = "2.1"
 # A NUL or byte found with SIMD (already in the build: regex's).
 memchr = { version = "2.8", default-features = false }
-# The allocator of the static (musl) Linux build: musl's own serializes
-# every thread's allocations.
+# The allocator of every native program and test (turbonop-global-alloc).
 mimalloc = { version = "0.1", default-features = false }
 turbonop-alloc = { path = "crates/base/alloc" }
+turbonop-global-alloc = { path = "crates/base/global-alloc" }
 turbonop-core = { path = "crates/base/core" }
 turbonop-mmap = { path = "crates/base/mmap" }
 turbonop-par = { path = "crates/base/par" }

@@ -5,6 +5,8 @@
 //!
 //! The output names processes and modules, so it is for your own traces.
 
+use turbonop_global_alloc as _;
+
 use std::time::Instant;
 
 use turbonop_etl::Etl;

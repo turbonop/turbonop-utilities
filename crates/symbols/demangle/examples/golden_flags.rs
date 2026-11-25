@@ -7,6 +7,8 @@
 //! changes (evenly spread through the list), and names that use rarer parts
 //! of the grammar, wherever this crate and undname agree.
 
+use turbonop_global_alloc as _;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let per_flag: usize = args[1].parse().unwrap();

@@ -1,6 +1,8 @@
 //! Lists the debug symbols whose names contain a string, with their
 //! modules: `symfind <pdb> <text>`.
 
+use turbonop_global_alloc as _;
+
 use turbonop_debuginfo::DebugInfo;
 
 fn main() {

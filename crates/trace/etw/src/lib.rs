@@ -13,6 +13,9 @@
 //! The layouts are those TDH reports for the kernel's MOF classes, and the
 //! tests check them against TDH on real traces (see `tools/etwdump`).
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 pub mod guids;
 pub mod kernel;
 pub mod manifest;

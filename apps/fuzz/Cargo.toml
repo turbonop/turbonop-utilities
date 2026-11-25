@@ -54,5 +54,10 @@ turbonop-mips.workspace = true
 # too (see README.md); the child reads LLVM's profiling counters.
 coverage = []
 
+# (Its own allocator, counting, over mimalloc: not turbonop-global-alloc's,
+# since a program has one.)
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+mimalloc.workspace = true
+
 [lints]
 workspace = true

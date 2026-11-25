@@ -5,6 +5,8 @@
 //!
 //! With a second argument, also writes the index there and times reading it.
 
+use turbonop_global_alloc as _;
+
 use turbonop_etl::Etl;
 use turbonop_trace::{ThreadIx, etw};
 

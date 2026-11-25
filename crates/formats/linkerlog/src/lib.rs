@@ -21,6 +21,9 @@
 
 #![warn(missing_docs)]
 
+#[cfg(test)]
+use turbonop_global_alloc as _;
+
 use std::collections::{HashMap, HashSet};
 
 pub mod unix;

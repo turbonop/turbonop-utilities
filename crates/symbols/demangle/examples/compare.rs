@@ -4,6 +4,8 @@
 //!
 //! (`undname <flags> names.txt > output.txt` makes the second file.)
 
+use turbonop_global_alloc as _;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let names = std::fs::read_to_string(&args[1]).unwrap();

@@ -1128,7 +1128,7 @@ function openLayout(context, file, typeName) {
   const panel = panelFor(context, "hexcLayout", `Layout: ${typeName}`, "layout-view.js");
   const load = async () => {
     try {
-      const out = await paneRun(panel.webview, `Reading ${typeName}…`, ["types", "-layout", typeName, "-json", file]);
+      const out = await paneRun(panel.webview, `Reading ${typeName}…`, ["types", "-layout", typeName, "-code", "-json", file]);
       panel.webview.postMessage({ kind: "layout", file, layout: lib.parsed(out) });
     } catch (e) {
       if (!e.cancelled) {

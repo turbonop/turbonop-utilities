@@ -1551,3 +1551,15 @@ label.toggle {
   margin: 2px 0 4px;
   max-width: 36em;
 }
+
+/* A type's layout: what it owns in the binary, under its parts. */
+section.owns {
+  margin: 16px 8px 8px;
+}
+section.owns h3 {
+  font-size: 1em;
+  margin: 0 0 6px;
+}
+section.owns p {
+  margin: 6px 0;
+}

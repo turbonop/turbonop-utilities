@@ -40,6 +40,7 @@ pub mod lcid;
 pub mod loader_lists;
 pub mod macho;
 pub mod map;
+pub mod members;
 pub mod model;
 pub mod names;
 pub mod objects;

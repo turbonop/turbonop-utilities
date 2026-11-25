@@ -756,7 +756,11 @@ fn selftest() -> ExitCode {
             "selftest".to_string(),
             path.to_string_lossy().into_owned(),
         ];
-        let got = match supervise(&exe, &args, Duration::from_secs(2)) {
+        // (Only the loop is timed: the others are told apart by how they
+        // end, and a crash can take seconds to end on a CI runner, as its
+        // core is dumped; they once overran 2 s, as nothing here does.)
+        let timeout = Duration::from_secs(if input == "L" { 2 } else { 60 });
+        let got = match supervise(&exe, &args, timeout) {
             Outcome::Done(_) => String::new(),
             Outcome::Finding(why) => why,
         };

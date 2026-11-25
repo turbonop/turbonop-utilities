@@ -45,6 +45,47 @@ leave this list when they ship.
   functions are simple loops. Measure where the time goes; what's fast
   enough to ship in the static Linux build matters more than the tests.
 
+## Procupine
+
+- **The extension's server test on macOS.** On CI's macOS runner,
+  `editors/vscode/procupine/test/server.test.js` waited 20 s for a sample
+  event that never came, though `apps/procupine/tests/serve.rs` (the same
+  watch, kill and end, from Rust) passes there. The test says which wait
+  timed out, the last events, and procupine's stderr; its live part is
+  skipped on macOS until that's found and fixed.
+- **The system's CPU on macOS.** In `turbonop-process`'s live
+  `cpu_usage` test on CI's macOS runner, the system's CPU share over a
+  300 ms busy loop was once 0 (this process's own share was right): the
+  `host_statistics` load ticks, unchanged or misread. That check is
+  skipped on macOS (`crates/system/process/tests/live.rs`) until fixed.
+- **A release.** `procupine-release.yml` on `procupine-v*` tags, as
+  hexcavator's: signed binaries for each platform, the extension packaged
+  per platform with `bin/procupine`, its licenses test and third-party
+  notices (serde_json, mimalloc, libc, rustc-hash).
+- **An elevated helper.** Without administrator rights (root), other
+  users' processes show less and can't be acted on. A second `procupine
+  serve`, started elevated on request (UAC on Windows, `pkexec` on Linux,
+  an authorization prompt on macOS), that the extension talks to over a
+  pipe only it may open.
+- **Details on demand.** For the selected process: its modules (DLLs,
+  shared libraries), threads (with stacks, symbolized by
+  `turbonop-symbolize`), handles and open files, environment, memory
+  regions, and network connections. On Windows, its image's version
+  information (description, company) from `turbonop-pe`, as Process
+  Explorer's Description and Company columns.
+- **Finding a handle or module** across every process (Process
+  Explorer's Find), on every core.
+- **Lifetimes.** Processes too short-lived for a sample, from the
+  system's own events (ETW's kernel process provider, Linux's process
+  connector, macOS's `kqueue`): a timeline of every process that started
+  and exited.
+- **More counters:** GPU use (D3DKMT on Windows), per-process network
+  bytes, Linux's cgroups and namespaces (which container), Windows' job
+  objects, services' names for svchost.
+- **macOS, run.** The collector is built and its parsing tested on every
+  platform, and CI runs its live tests on macOS; it hasn't been used by a
+  person on a Mac.
+
 ## Every format alike
 
 Every command and analysis should work the same, and as well, on PE,

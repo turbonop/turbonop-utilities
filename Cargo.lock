@@ -511,6 +511,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "procupine"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "turbonop-global-alloc",
+ "turbonop-process",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1079,6 +1088,16 @@ version = "0.0.7"
 dependencies = [
  "turbonop-global-alloc",
  "turbonop-tablegen",
+]
+
+[[package]]
+name = "turbonop-process"
+version = "0.0.7"
+dependencies = [
+ "libc",
+ "rustc-hash",
+ "turbonop-global-alloc",
+ "turbonop-par",
 ]
 
 [[package]]

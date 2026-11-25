@@ -21,6 +21,58 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
+- **mimalloc everywhere.** Every native program and test binary should
+  allocate with mimalloc, on every platform. Today only hexcavator's
+  static Linux (musl) build does; hexcavator on Windows and macOS,
+  stackrabbit, fuzz, xtask, and the test binaries use the system
+  allocator. (WebAssembly keeps `turbonop-alloc`.) Measure before and
+  after on the parallel work (hexcavator on clang.exe, Stackrabbit's
+  import of s04).
+
+## Stackrabbit
+
+The trace viewer (`apps/stackrabbit`, `editors/vscode/stackrabbit`; plan
+and status in the Stackrabbit docs). In order, roughly:
+
+- **Compared with WPA's numbers.** `wpaexporter` with WPA's built-in
+  profiles exports its CPU (sampled and precise) by process without
+  admin rights; compare every corpus trace's per-process counts with
+  Stackrabbit's, then every other table the built-in profiles export
+  (Disk, File I/O, Registry, DPC/ISR, Hard Faults, memory), and explain
+  or fix each difference.
+- **Mini-filters.** The last M3 table, from `s14-minifilter.etl`.
+- **Samples without stacks** in l03 and l04: why (compression, the 8 kHz
+  rate), and whether the recording script should change.
+- **Context switch version 5's last 4 bytes**: name them, from WPA's
+  columns.
+- **Trees in 50 ms** on the big build traces (0.17 s now): build them from
+  the stack trie, not each stack's frames.
+- **Decode on every core**: it stops scaling at about 4 threads. Measure
+  per worker (busy, waiting, P- and E-cores); a WPR profile of the import
+  on a quiet machine (WSL idle) will help.
+- **Import and reopen** budgets on s04 (6.9 GB): 19–26 s to import now.
+- **Saved names for every image**: images named from their own files
+  (DWARF, exports) are not saved in `.hxsyms` yet, only PDBs' tables.
+- **One set of parallel helpers**: Stackrabbit's `on_every_core` and
+  friends against main's `turbonop-par`.
+- **WPA filters and regions left**: the sampled CPU table's DPC/ISR
+  column, Disk's Init Time, filters on Regions; regions by Duration,
+  endpoints, Parent, SelfNest and Filter.
+- **Marks** (M2), tested on synthetic traces until a real one has them.
+- **M5 tables**, corpus first: CPU idle states and frequency (s09), GPU
+  (s10), .NET GC, JIT and exceptions (s07), hardware counters; then
+  TCP/IP, UI delays, boot phases, working sets, battery and energy.
+- **M6, the Profile Explorer ideas**: time per instruction in annotated
+  assembly (our disassemblers), basic blocks and loops with their time,
+  time by inlinee, call targets from samples, assembly under source
+  lines, time per loop and branch (CodeLens), source servers and
+  SourceLink, and annotations by call path or thread.
+- **Robustness**: fuzz the ETL reader, the index, saved names and WPA
+  profiles; peak memory on the largest traces; 32-bit, ARM64 and
+  unmerged traces end to end; the Edge harness on corpus traces, not only
+  synthetic ones.
+- **Release (M7)**: a `stackrabbit-release.yml` and VSIX packaging.
+  Waiting on the name and the Marketplace publisher.
 
 ## Every format alike
 

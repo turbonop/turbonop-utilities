@@ -85,6 +85,7 @@ turbonop-abi = { path = "crates/debug/abi" }
 turbonop-unwind = { path = "crates/debug/unwind" }
 turbonop-minidump = { path = "crates/formats/minidump" }
 turbonop-target = { path = "crates/debugger/target" }
+turbonop-frames = { path = "crates/debugger/frames" }
 
 [workspace.lints.rust]
 # `unsafe` is confined to a few audited spots (Pod casts, mmap FFI) that opt in

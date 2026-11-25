@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use turbonop_image::Image;
 use turbonop_mmap::Mmap;
 use turbonop_program::Opened;
-use turbonop_program::locate::{FoundImage, ImageKey, NotFound, find_images};
+use turbonop_program::locate::{FoundImage, ImageKey, NotFound, find_images, find_images_in};
 
 use crate::model::{ImageId, Module, Target};
 use crate::{AddressSpace, LoadedImage};
@@ -29,6 +29,12 @@ pub struct Hints {
     /// under them (a Linux system's files from Windows: `\\wsl$\Ubuntu`; a
     /// device's copied system).
     pub sysroots: Vec<PathBuf>,
+    /// Whether to look where the target says each module was loaded from
+    /// (on this machine: right for a dump written here).
+    pub skip_recorded_paths: bool,
+    /// The symbol directories and servers to use, if not the
+    /// environment's (`_NT_SYMBOL_PATH`, `TURBONOP_SYMBOL_SERVER`, ...).
+    pub symbols: Option<(Vec<PathBuf>, turbonop_program::server::Servers)>,
 }
 
 /// A module's files.
@@ -68,7 +74,10 @@ pub fn image_key(module: &Module) -> Option<ImageKey> {
 
 /// The places to look for a module first.
 fn hinted(module: &Module, hints: &Hints) -> Vec<PathBuf> {
-    let mut out = vec![PathBuf::from(&module.path)];
+    let mut out = Vec::new();
+    if !hints.skip_recorded_paths {
+        out.push(PathBuf::from(&module.path));
+    }
     // (Its path as the target had it, under each root.)
     let relative = module.path.trim_start_matches(['/', '\\']);
     let relative = relative
@@ -92,7 +101,11 @@ pub fn load(target: &dyn Target, hints: &Hints) -> Loaded {
         .zip(&keys)
         .filter_map(|(m, k)| Some((k.clone()?, hinted(m, hints))))
         .collect();
-    let mut found = find_images(&wanted).into_iter();
+    let found = match &hints.symbols {
+        Some((dirs, servers)) => find_images_in(&wanted, dirs, servers),
+        None => find_images(&wanted),
+    };
+    let mut found = found.into_iter();
     let images: Vec<Result<FoundImage, NotFound>> = keys
         .iter()
         .map(|k| match k {

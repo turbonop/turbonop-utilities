@@ -893,6 +893,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-frames"
+version = "0.0.7"
+dependencies = [
+ "turbonop-abi",
+ "turbonop-code",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-image",
+ "turbonop-par",
+ "turbonop-program",
+ "turbonop-symbolize",
+ "turbonop-target",
+ "turbonop-unwind",
+]
+
+[[package]]
 name = "turbonop-fuzz"
 version = "0.0.7"
 dependencies = [

@@ -1,0 +1,31 @@
+[package]
+name = "turbonop-frames"
+description = "Stack walking for a debugger: each frame's registers with where each came from, by each platform's ABI, with signal frames and checked fallbacks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# (No unit tests: their build of the crate would be wasted. The workspace's
+# tests check that a target marked so has none.)
+[lib]
+test = false
+
+[dependencies]
+turbonop-abi.workspace = true
+turbonop-code.workspace = true
+turbonop-core.workspace = true
+turbonop-debuginfo.workspace = true
+turbonop-image.workspace = true
+turbonop-par.workspace = true
+turbonop-symbolize.workspace = true
+turbonop-target.workspace = true
+turbonop-unwind.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+turbonop-program.workspace = true

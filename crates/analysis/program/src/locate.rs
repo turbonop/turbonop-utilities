@@ -153,6 +153,17 @@ fn find_local_in(
 pub fn find_images(wanted: &[(ImageKey, Vec<PathBuf>)]) -> Vec<Result<FoundImage, NotFound>> {
     let servers = server::servers();
     let dirs = symbol_dirs(&servers);
+    find_images_in(wanted, &dirs, &servers)
+}
+
+/// [`find_images`], in the symbol directories `dirs` and from `servers`
+/// (not the environment's).
+pub fn find_images_in(
+    wanted: &[(ImageKey, Vec<PathBuf>)],
+    dirs: &[PathBuf],
+    servers: &Servers,
+) -> Vec<Result<FoundImage, NotFound>> {
+    let dirs = dirs.to_vec();
     // On this machine, on every core.
     let mut out: Vec<Result<FoundImage, NotFound>> =
         turbonop_par::map(wanted, 1, |(key, hints)| find_local_in(key, hints, &dirs));
@@ -160,7 +171,7 @@ pub fn find_images(wanted: &[(ImageKey, Vec<PathBuf>)]) -> Vec<Result<FoundImage
     // next location, all of a round at once.
     let locations: Vec<Vec<(String, Option<PathBuf>)>> = wanted
         .iter()
-        .map(|(key, _)| server::image_locations(&servers, key))
+        .map(|(key, _)| server::image_locations(servers, key))
         .collect();
     let mut round = 0;
     loop {

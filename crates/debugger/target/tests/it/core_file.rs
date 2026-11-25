@@ -131,7 +131,7 @@ fn loading_modules_files() {
         &t,
         &Hints {
             dirs: vec![dir.clone()],
-            sysroots: Vec::new(),
+            ..Hints::default()
         },
     );
     assert_eq!(loaded.modules.len(), 3);

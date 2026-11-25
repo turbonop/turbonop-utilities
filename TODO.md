@@ -51,8 +51,8 @@ In order:
   an inline DAP adapter over `serve`, a disassembly view with the dump's
   values, the web host's debug-UI shim, MCP tools, and a release workflow.
 - **Instruction access data.** Read and written operands, implicit
-  operands, and flags for x86 and ARM64 (ARM64 first gets an operand API),
-  matching XED and LLVM.
+  operands, and flags: x86 is done (checked against XED); ARM64 is left
+  (it first gets an operand API), matching LLVM.
 - **The IR and its lifters.** `turbonop-ir`, and x64 and ARM64 lifters for
   the instructions compilers emit, tested on real CPUs.
 - **How did we get here.** `turbonop-paths`: the branches each frame took.

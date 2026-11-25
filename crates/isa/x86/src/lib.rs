@@ -11,6 +11,12 @@
 //!
 //! [`format`] renders instructions in the MASM-style syntax of Microsoft's
 //! `dumpbin /disasm`.
+//!
+//! [`Instruction::accesses`] says what an instruction reads and writes: each
+//! operand's [`Rw`], its implicit operands (`rdx` for `mul`, the stack for
+//! `push`), and its [`Flags`]; [`Instruction::written_registers`] is the
+//! complete set of registers it may write, as a [`RegSet`]. The data comes
+//! from `tables/access.rules` and is checked against Intel XED.
 
 #![no_std]
 #![warn(missing_docs)]

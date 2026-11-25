@@ -16,32 +16,33 @@
 //! Operand accesses are comma-separated, in operand order: `r`, `w`, `rw`,
 //! `cw` (a conditional write: `cmov`), `rcw`, and `n` (neither: an
 //! address-only memory operand, as for `lea`). Operands past the list are
-//! read. `-` takes the default (below).
+//! read.
 //!
 //! Implicit operands are `<register>:<access>`, with `?rep` after the access
 //! when only a `rep` prefix makes it (`aCX:rw?rep`). Registers are named as
 //! in the opcode tables (`al`, `ax`, `edx`, `xmm0`, `ds`, `st`), or sized
 //! like an operand: `rAX`..`rDI` (operand size), `aAX`..`aDI` (address
-//! size), `sSP`/`sBP` (stack size); or are `r8`..`r31`, `st0`..`st7`, `cr0`, `cr8`,
-//! `mm0`, the system state `mxcsr` `fpsw` `fpcw` `fptw` `xcr0` `msr` `pkru`
-//! `ssp` `gdtr` `idtr` `ldtr` `tr` `tilecfg` `uif`, or a group: `gpr*` (all
-//! general-purpose registers), `st*`, `mm*`, `zmm*`, `vec16` (the vector
-//! registers VEX can reach), `vec8` (`zmm0`..`zmm7`), `k*`, `tmm*`, `bnd*`. `pair0` is the other
-//! register of operand 0's even/odd pair (`vp2intersectd` writes both), and `kmask` the EVEX
-//! opmask (otherwise implicitly read).
+//! size), `sSP`/`sBP` (stack size); or are `r8`..`r31`, `st0`..`st7`,
+//! `cr0`, `cr8`, `mm0`, the system state `mxcsr` `fpsw` `fpcw` `fptw`
+//! `xcr0` `msr` `pkru` `ssp` `gdtr` `idtr` `ldtr` `tr` `tilecfg` `uif`, or a
+//! group: `gpr*` (all general-purpose registers), `st*`, `mm*`, `zmm*`,
+//! `vec16` (the vector registers VEX can reach), `vec8` (`zmm0`..`zmm7`),
+//! `k*`, `tmm*`, `bnd*`. `pair0` is the other register of operand 0's
+//! even/odd pair (`vp2intersectd` writes both), and `kmask` the EVEX opmask
+//! (otherwise implicitly read).
 //!
 //! Memory: `push`, `push*N` (N stack slots of the operand size, and `sSP`
 //! read and written; `push*0`, a size not known in advance), `pop`, `pop*N`,
 //! `pop@bp` (`leave`'s pop, at the frame pointer), and
 //! `mem@<reg>:<access>/<bytes>` (memory at a register, `mem@aDI:w/16`, or
 //! at the address in an operand's register, `mem@op0:w/64`; no size:
-//! unknown). Macros: `x87` (`fpsw:w`), `x87push` and `x87pop`
-//! (`st*`, `fpsw`, and `fptw` written), `x87pop2`.
+//! unknown). Macros: `x87` (`fpsw` read and written), and `x87push` and
+//! `x87pop` (also `st*` written and `fptw` read and written).
 //!
 //! Flags are letters, `o s z a p c d i t`, or comma-separated words, `ac`
-//! `nt` `rf` `vm` `vif` `vip` `id` `iopl` `all`; `cc` reads the condition
-//! the mnemonic ends with (`cmovbe`: CF and ZF). Undefined flags count as
-//! written.
+//! `nt` `rf` `vm` `vif` `vip` `id` `iopl` `all` (so CF and AF are `ca`:
+//! `ac` is the AC flag); `cc` reads the condition the mnemonic ends with
+//! (`cmovbe`: CF and ZF). Undefined flags count as written.
 //!
 //! # Defaults
 //!
@@ -234,7 +235,7 @@ fn implicit(tok: &str) -> Result<Vec<Imp>, String> {
     };
     match tok {
         "x87" => return Ok(x87(&[])),
-        "x87push" | "x87pop" | "x87pop2" => {
+        "x87push" | "x87pop" => {
             return Ok(x87(&[
                 register("st*", RW_W).unwrap(),
                 register("fptw", RW_RW).unwrap(),
@@ -421,9 +422,6 @@ fn parse(text: &str) -> Result<Rules, Vec<String>> {
         };
         let mut ok = true;
         for (i, tok) in rhs.split_whitespace().enumerate() {
-            if i == 0 && tok == "-" {
-                continue;
-            }
             if i == 0 && tok.split(',').all(|a| rw_code(a).is_some()) {
                 rule.ops = Some(tok.split(',').map(|a| rw_code(a).unwrap()).collect());
                 continue;

@@ -12,10 +12,17 @@
 //!
 //! What it doesn't track: the instruction pointer (every instruction
 //! writes it; see [`Instruction::flow`]), the x87 instruction and data
-//! pointers and opcode, MXCSR's sticky exception flags, and the hidden
-//! parts of segment registers apart from the segment registers themselves.
-//! A system call's results are modeled as writes of every general-purpose
-//! register, since the kernel's convention isn't the instruction's.
+//! pointers and opcode, MXCSR's sticky exception flags, the hidden parts
+//! of segment registers apart from the segment registers themselves (a
+//! write of the FS base is a write of `fs`), and the CET shadow stack's
+//! memory (SSP itself is tracked). A system call's results are modeled as
+//! writes of every general-purpose register, since the kernel's convention
+//! isn't the instruction's.
+//!
+//! Memory operands say where an access starts and, where it is known, its
+//! size: a `rep` string instruction's operand is one element of the range
+//! it covers, and `enter`'s pushes (as many as its nesting level asks for)
+//! have no size.
 
 use crate::instruction::Instruction;
 use crate::spec::{AccessSpec, Imp, ImpKind};
@@ -37,11 +44,11 @@ pub(crate) mod rw {
 /// How an operand is accessed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Rw {
-    /// Neither read nor written: an immediate's absence, or a memory
-    /// operand whose address is all that is used (`lea`, `prefetch`). Its
-    /// address registers are still read.
+    /// Neither read nor written: a memory operand whose address is all
+    /// that is used (`lea`; its address registers are still read), a
+    /// multi-byte NOP's operand, or an operand past the last.
     None,
-    /// Read.
+    /// Read (immediates and branch targets too).
     Read,
     /// Written.
     Write,
@@ -384,13 +391,16 @@ impl Instruction {
         }
         let code = u8::try_from(self.access_spec().ops >> (3 * index) & 7).unwrap_or(0);
         let rw = Rw::from_code(code);
-        // EVEX merge-masking keeps the masked-off elements: the destination
-        // register is read too.
+        // EVEX merge-masking keeps the masked-off elements: a vector
+        // destination is read too. (A mask destination's masked-off bits
+        // are zeroed.)
+        let vector =
+            |r: Register| matches!(r.class(), RegClass::Xmm | RegClass::Ymm | RegClass::Zmm);
         if index == 0
             && rw == Rw::Write
             && self.mask != 0
             && !self.zeroing
-            && matches!(self.ops[0], Operand::Reg(_))
+            && matches!(self.ops[0], Operand::Reg(r) if vector(r))
         {
             return Rw::ReadWrite;
         }
@@ -556,8 +566,11 @@ impl Accesses<'_> {
                 Operand::Reg(Register::new(RegClass::Mask, inst.mask))
             }
             ImpKind::Push => {
-                let bytes = u16::from(imp.a) * u16::from(inst.operand_size());
-                self.memory(stack, -i64::from(bytes.max(1)), bytes, None)
+                // (An unknown number of slots: from the first one down, of
+                // no known size.)
+                let slot = u16::from(inst.operand_size());
+                let bytes = u16::from(imp.a) * slot;
+                self.memory(stack, -i64::from(bytes.max(slot)), bytes, None)
             }
             ImpKind::Pop => {
                 let bytes = u16::from(imp.a) * u16::from(inst.operand_size());

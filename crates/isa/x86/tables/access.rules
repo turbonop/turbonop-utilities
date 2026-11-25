@@ -186,9 +186,12 @@ rdtscp : eax:w edx:w ecx:w msr:r
 rdpmc : ecx:r eax:w edx:w msr:r
 rdmsr/0 : ecx:r eax:w edx:w msr:r
 rdmsr/2 urdmsr : w,r msr:r
-wrmsr/0 wrmsrns/0 : ecx:r eax:r edx:r msr:w
-wrmsrns/2 uwrmsr : r,r msr:w
-rdmsrlist wrmsrlist : rsi:rw rdi:rw rcx:rw msr:rw
+# (The FS and GS bases are MSRs too.)
+wrmsr/0 wrmsrns/0 : ecx:r eax:r edx:r msr:w fs:w gs:w
+wrmsrns/2 : r,r msr:w fs:w gs:w
+uwrmsr : r,r msr:w
+rdmsrlist : rsi:rw rdi:rw rcx:rw msr:r
+wrmsrlist : rsi:rw rdi:rw rcx:rw msr:w fs:w gs:w
 rdpru : ecx:r eax:w edx:w f=/oszapc/
 rdpid : w msr:r
 rdrand rdseed : w f=/oszapc/

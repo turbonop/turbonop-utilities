@@ -568,6 +568,7 @@
     const parent = rowAt(total(), path.slice(0, -1)) || total();
     tip.replaceChildren(
       el("div", { class: "tname" }, row.name),
+      row.description ? el("div", { class: "tdesc" }, row.description) : null,
       state.mangled.get(row.name) ? el("div", { class: "tpath mono" }, state.mangled.get(row.name)) : null,
       el("div", { class: "tpath" }, path.slice(0, -1).join(" › ") || "TOTAL"),
       el(
@@ -1119,7 +1120,7 @@
         onmouseleave: hideCard,
       },
       el("td", { class: "acts" }, act),
-      el("td", { class: "tname" }, el("span", { class: "indent" }, guides, elbow), twisty, swatch, el("span", { class: "label", title: mangled ? `${c.name}\n${mangled}` : c.name }, c.name)),
+      el("td", { class: "tname" }, el("span", { class: "indent" }, guides, elbow), twisty, swatch, el("span", { class: "label", title: mangled ? `${c.name}\n${mangled}` : c.name }, c.name), c.description ? el("span", { class: "desc", title: c.description }, c.description) : null),
       state.showMangled ? el("td", { class: "mangled mono", title: mangled || "" }, mangled || "") : null,
       el("td", { class: "n" + (isDiff() ? diffClass(c.file) : "") }, shown(c.file)),
       el("td", { class: "n" + (isDiff() ? diffClass(c.vm) : "") }, shown(c.vm)),
@@ -1236,7 +1237,7 @@
           ondblclick: () => c.children && go([...state.path, c.name]),
         },
         el("td", { class: "acts" }, act),
-        el("td", { class: "name" }, name),
+        el("td", { class: "name" }, name, c.description ? el("span", { class: "desc", title: c.description }, c.description) : null),
         el("td", { class: "n" + (isDiff() ? diffClass(c.file) : "") }, shown(c.file)),
         el("td", { class: "n" + (isDiff() ? diffClass(c.vm) : "") }, shown(c.vm)),
         el("td", { class: "share" }, isDiff() ? "" : bar(share), isDiff() ? "" : el("span", { class: "pct" }, percent(value(c), whole)))

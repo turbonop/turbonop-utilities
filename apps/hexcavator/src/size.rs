@@ -1632,6 +1632,13 @@ pub(crate) fn is_object_input(data: &[u8]) -> bool {
         || (!other && !data.starts_with(b"MZ") && turbonop_pe::PeFile::parse_object(data).is_ok())
 }
 
+/// The format of the image at `path` (none for an archive, a universal
+/// Mach-O file, or what isn't an image).
+fn image_format(path: &Path) -> Option<turbonop_image::Format> {
+    let data = Mmap::open(path).ok()?;
+    Image::parse(&data).ok().map(|i| i.format())
+}
+
 fn bloaty(options: &Options, out: &mut impl Write) -> Result<(), String> {
     let debug_file = options
         .debug_file
@@ -1690,7 +1697,19 @@ fn bloaty(options: &Options, out: &mut impl Write) -> Result<(), String> {
         sort_by: options.sort_by,
         domain: options.domain,
     };
-    let report = Report::new(&names, &rollup, base.as_ref(), &report_options);
+    let mut report = Report::new(&names, &rollup, base.as_ref(), &report_options);
+    // What its sections hold, if its images (and base images) are of one
+    // format.
+    let formats: Vec<Option<turbonop_image::Format>> = std::iter::once(&options.image)
+        .chain(&options.more)
+        .chain(&options.base)
+        .map(|p| image_format(p))
+        .collect();
+    report.format = formats
+        .first()
+        .copied()
+        .flatten()
+        .filter(|f| formats.iter().all(|g| *g == Some(*f)));
     let text = match options.format {
         Format::Pretty => report.pretty(&report_options),
         Format::Csv => report.csv(false),
@@ -1884,6 +1903,7 @@ fn analyze(options: &Options) -> Result<(), String> {
             write_tables(
                 &mut out,
                 &model,
+                image.format(),
                 &arch_label(&image, &model),
                 path,
                 &format!("Map: {}", map_path.display()),
@@ -1952,6 +1972,7 @@ fn analyze(options: &Options) -> Result<(), String> {
         write_tables(
             &mut out,
             model,
+            image.format(),
             &arch_label(&image, model),
             path,
             &format!(
@@ -2051,6 +2072,7 @@ fn arch_label(image: &Image<'_>, model: &Model) -> String {
 fn write_tables(
     out: &mut impl Write,
     model: &Model,
+    format: turbonop_image::Format,
     arch: &str,
     image: &Path,
     source: &str,
@@ -2068,7 +2090,7 @@ fn write_tables(
     let grouped = !model.groups.is_empty();
     writeln!(
         out,
-        "{:<32} {:>14} {:>14} {:>12}",
+        "{:<32} {:>14} {:>14} {:>12}  What it holds",
         if grouped {
             "Section / COFF group"
         } else {
@@ -2078,23 +2100,32 @@ fn write_tables(
         "Memory size",
         "Padding"
     )?;
+    // (What each holds, where its name says: turbonop_size::describe.)
+    let line = |out: &mut dyn Write, name: String, size: Size, padding: u64, what: Option<&str>| {
+        let row = format!(
+            "{name} {:>14} {:>14} {:>12}  {}",
+            num(size.file),
+            num(size.vm),
+            num(padding),
+            what.unwrap_or("")
+        );
+        writeln!(out, "{}", row.trim_end())
+    };
     for (si, s) in model.sections.iter().enumerate() {
-        writeln!(
+        line(
             out,
-            "{:<32} {:>14} {:>14} {:>12}",
-            s.name,
-            num(s.size.file),
-            num(s.size.vm),
-            num(s.vm_padding)
+            format!("{:<32}", s.name),
+            s.size,
+            s.vm_padding,
+            turbonop_size::describe::section(format, &s.name),
         )?;
         for g in model.groups.iter().filter(|g| g.section as usize == si) {
-            writeln!(
+            line(
                 out,
-                "  {:<30} {:>14} {:>14} {:>12}",
-                g.name,
-                num(g.size.file),
-                num(g.size.vm),
-                num(g.padding.vm.min(u64::from(u32::MAX)))
+                format!("  {:<30}", g.name),
+                g.size,
+                g.padding.vm.min(u64::from(u32::MAX)),
+                turbonop_size::describe::group(&g.name),
             )?;
         }
     }

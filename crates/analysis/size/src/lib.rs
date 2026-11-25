@@ -21,6 +21,7 @@
 
 pub mod budget;
 pub mod custom;
+pub mod describe;
 /// (Moved to the debug information crate, which reads DWARF too.)
 pub use turbonop_debuginfo::decompress;
 pub mod compiled;

@@ -53,6 +53,8 @@ struct Loaded {
     object: bool,
     /// A PE image (whose COFF groups are a source).
     pe: bool,
+    /// Its format, if it is an image (for what its sections hold).
+    format: Option<turbonop_image::Format>,
     /// The debug information given (`pdb`, or `debug`), if any.
     debug_arg: Option<PathBuf>,
     /// The image and its debug information, opened when first needed.
@@ -73,11 +75,13 @@ impl Loaded {
             .as_ref()
             .is_none_or(|i| i.kind() != turbonop_image::Kind::Linked);
         let pe = image.as_ref().is_some_and(|i| i.pe().is_some());
+        let format = image.as_ref().map(Image::format);
         Ok(Self {
             path: path.to_path_buf(),
             map,
             object,
             pe,
+            format,
             debug_arg: debug.map(Path::to_path_buf),
             opened: OnceCell::new(),
             built: OnceCell::new(),
@@ -257,16 +261,20 @@ impl Server {
             .map(|f| regex::Regex::new(f).map_err(|e| format!("source_filter: {e}")))
             .transpose()?;
         let rollup = Rollup::filtered(&*loaded.maps(&list)?, filter.as_ref());
+        let mut format = loaded.format;
         let base = match arg_path(args, "base") {
             Some(b) => {
                 let base_pdb = arg_path(args, "base_debug").or_else(|| arg_path(args, "base_pdb"));
                 let l = self.load(&b, base_pdb.as_deref())?;
+                // (Described only if both are of one format.)
+                format = format.filter(|f| l.format == Some(*f));
                 Some(Rollup::filtered(&*l.maps(&list)?, filter.as_ref()))
             }
             None => None,
         };
         let names: Vec<&str> = list.iter().map(|s| s.name()).collect();
-        let report = Report::new(&names, &rollup, base.as_ref(), &options);
+        let mut report = Report::new(&names, &rollup, base.as_ref(), &options);
+        report.format = format;
         let structured =
             serde_json::from_str::<Value>(&report.json()).map_err(|e| e.to_string())?;
         Ok((report.pretty(&options), structured))

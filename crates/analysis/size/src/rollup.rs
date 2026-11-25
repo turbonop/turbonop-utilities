@@ -242,6 +242,9 @@ pub struct Report {
     pub diff: bool,
     /// Bytes a source filter left out (file, VM).
     pub filtered: (i64, i64),
+    /// The format of the image (or images, all of one format), for what
+    /// its sections and COFF groups hold (`description` in the JSON).
+    pub format: Option<turbonop_image::Format>,
 }
 
 fn percent(part: i64, whole: i64) -> f64 {
@@ -288,6 +291,7 @@ impl Report {
             total,
             diff: base.is_some(),
             filtered: (rollup.filtered_file, rollup.filtered_vm),
+            format: None,
         }
     }
 
@@ -429,7 +433,7 @@ impl Report {
         let report = JsonReport {
             sources: &self.sources,
             diff: self.diff,
-            total: self.json_row(&self.total),
+            total: self.json_row(&self.total, 0),
             filtered: (self.filtered != (0, 0)).then_some(Filtered {
                 vm: self.filtered.1,
                 file: self.filtered.0,
@@ -440,15 +444,27 @@ impl Report {
         out
     }
 
-    fn json_row<'r>(&self, row: &'r Row) -> JsonRow<'r> {
+    fn json_row<'r>(&self, row: &'r Row, depth: usize) -> JsonRow<'r> {
+        // (A row's level is the source before its depth: TOTAL is 0.)
+        let source = depth.checked_sub(1).and_then(|d| self.sources.get(d));
+        let description = match (source.map(String::as_str), self.format) {
+            (Some("sections" | "segments"), Some(f)) => crate::describe::section(f, &row.name),
+            (Some("groups"), _) => crate::describe::group(&row.name),
+            _ => None,
+        };
         JsonRow {
             name: &row.name,
+            description,
             vm: row.vm,
             file: row.file,
             old_vm: self.diff.then_some(row.old_vm),
             old_file: self.diff.then_some(row.old_file),
             other_count: (row.other_count > 0).then_some(row.other_count),
-            children: row.children.iter().map(|c| self.json_row(c)).collect(),
+            children: row
+                .children
+                .iter()
+                .map(|c| self.json_row(c, depth + 1))
+                .collect(),
         }
     }
 }
@@ -475,6 +491,10 @@ struct Filtered {
 #[derive(serde::Serialize)]
 struct JsonRow<'r> {
     name: &'r str,
+    /// What a section, segment, or COFF group holds (see
+    /// [`crate::describe`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'static str>,
     vm: i64,
     file: i64,
     #[serde(skip_serializing_if = "Option::is_none")]

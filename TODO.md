@@ -21,6 +21,26 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
+- **Releases that reach GitHub by themselves.** A release tag ends in a
+  draft GitHub release that waits for someone to publish it by hand (and
+  every release so far, 0.0.3 to 0.0.10, is still a draft: none was ever
+  public). Publish it from the workflow once the last approval is given,
+  with notes written from the changes since the last published release
+  rather than GitHub's list of pull requests; and delete the drafts of
+  tags that were never released (0.0.8, 0.0.9). Packages too, where they
+  fit: GitHub Packages holds container images and npm, NuGet, and Maven
+  packages, not programs (a container image of hexcavator; the web
+  version as an npm package).
+- **The Marketplace's wait.** The release's Marketplace job waits 30
+  minutes for the Marketplace to serve every platform's VSIX; for 0.0.10,
+  the extension's first release as `turbonop.hexcavator-vscode`, it served
+  one of eight after that (the rest still being validated, or rejected).
+  Find which, and wait as long as a first release takes.
+- **musl's speed.** With mimalloc in musl's allocator's place, the test
+  suite still runs about four times as long under musl as under glibc
+  (35 s against 9 s, in WSL): musl's `memcpy`, `memchr`, and string
+  functions are simple loops. Measure where the time goes; what's fast
+  enough to ship in the static Linux build matters more than the tests.
 
 ## Every format alike
 

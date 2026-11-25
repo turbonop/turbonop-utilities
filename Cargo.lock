@@ -167,6 +167,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dump-analyzer"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+ "turbonop-abi",
+ "turbonop-arm64",
+ "turbonop-core",
+ "turbonop-debuginfo",
+ "turbonop-dwarf",
+ "turbonop-eval",
+ "turbonop-frames",
+ "turbonop-mmap",
+ "turbonop-program",
+ "turbonop-target",
+ "turbonop-x86",
+]
+
+[[package]]
 name = "ecdsa"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

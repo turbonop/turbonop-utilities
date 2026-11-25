@@ -1458,7 +1458,18 @@
       const hot = new Set(d.hottest);
       const loopHeads = new Set(d.blocks.filter((b) => b.loop).map((b) => b.first));
       const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+      // Each source line's instructions under it (where the symbols say).
+      const files = d.files || [];
+      let source = null;
       const rows = d.lines.map((l, i) => {
+        let header = "";
+        const here = l.line ? `${l.file}:${l.line}` : null;
+        if (here && here !== source) {
+          const path = files[l.file] || "";
+          const name = path.split(/[\/]/).pop();
+          header = `<tr class="source"><td></td><td colspan="4" title="${esc(path)}">${esc(name)}, line ${n(l.line)}</td></tr>`;
+        }
+        source = here || source;
         const heat = Math.round((100 * l.own) / most);
         const label = l.label ? `${esc(l.label)}:${loopHeads.has(i) ? " ↺" : ""}` : "";
         // A call's targets, as sampled (an indirect call's especially).
@@ -1466,6 +1477,7 @@
         const more = (l.targets || []).length > 3 ? `, ${n(l.targets.length - 3)} more` : "";
         const called = targets.length ? `<div class="targets">→ ${targets.join(", ")}${more}</div>` : "";
         return (
+          header +
           `<tr data-i="${i}" class="${hot.has(i) ? "hot" : ""}"><td class="label">${label}</td>` +
           `<td class="num">${esc(l.address)}</td><td class="cmd">${esc(l.text)}${called}</td>` +
           `<td class="num"><span class="heat" style="width:${heat}%"></span>${l.own ? n(l.own) : ""}</td>` +

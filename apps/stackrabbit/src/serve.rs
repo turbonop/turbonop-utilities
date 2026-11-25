@@ -152,13 +152,23 @@
 //!   `{mhz, timeNs, share}`, most first. (Read from the trace file the
 //!   first time, then kept.)
 //! - `assembly` `{trace, fn, time?}` → `{name, module, offset, size,
-//!   samples, own, hottest, lines, blocks, undecoded}`: the function `fn`
-//!   names (a Functions row's ID), disassembled from its image file (if
-//!   it's here and the image the trace saw), with the CPU samples in
-//!   `time` by instruction: `lines` `{address, offset, bytes, text,
-//!   label, block, own, callees}` (`own`, samples at it; `callees`, at a
-//!   call, samples in what it called), its basic blocks `{index, first,
-//!   count, own, successors, loop}`, and the 3 hottest lines.
+//!   samples, own, hottest, lines, blocks, loops, files, undecoded}`: the
+//!   function `fn` names (a Functions row's ID), disassembled from its
+//!   image file (if it's here and the image the trace saw), with the CPU
+//!   samples in `time` by instruction: `lines` `{address, offset, bytes,
+//!   text, label, block, own, callees, targets, file, line}` (`own`,
+//!   samples at it; `callees`, at a call, samples in what it called;
+//!   `targets`, what that was, `{function, samples}`, most first; `file`,
+//!   an index into `files`, and `line`, its source line), its basic
+//!   blocks `{index, first, count, own, successors, loop}`, its loops
+//!   `{head, last, first, end, own, samples, file, line}` (blocks `head`
+//!   to `last`, lines `first` to `end`), and the 3 hottest lines.
+//! - `loops` `{trace, file, limit?, time?}` → `{file, total,
+//!   ticksPerSecond, loops, unread}`: the loops in the source file `file`
+//!   (as `lines` names it) of its `limit` (50) most sampled functions,
+//!   each `{fn, function, line, own, samples, instructions, loops}` (the
+//!   one with the most samples of the `loops` starting at a line), and the
+//!   functions whose code couldn't be read, `{fn, function, error}`.
 //! - `marks` `{trace}` → `{rows}`: the marks in the trace (text a
 //!   recorder put in it: WPR marks the start of its rundown, its
 //!   profiles and the recording's name), in time order, each `{timeNs,
@@ -1319,6 +1329,26 @@ impl State {
                     id,
                     ticks(trace, spec.time),
                 )
+            }
+            "loops" => {
+                let spec = TreeSpec::from_json(params)?;
+                let file = params
+                    .get("file")
+                    .and_then(Value::as_str)
+                    .ok_or("file: expected a source file's path, as the trace names it")?;
+                let limit = params
+                    .get("limit")
+                    .and_then(Value::as_u64)
+                    .map_or(50, |n| usize::try_from(n).unwrap_or(usize::MAX));
+                Ok(crate::assembly::file_loops(
+                    trace,
+                    &self.loaded.path,
+                    &self.resolver,
+                    &self.symbols,
+                    file,
+                    limit,
+                    &spec,
+                ))
             }
             "dotnet" => {
                 let spec = TreeSpec::from_json(params)?;

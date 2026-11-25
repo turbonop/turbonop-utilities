@@ -8,6 +8,7 @@ const path = require("path");
 const { spawn } = require("child_process");
 const { Session } = require("./lib/protocol");
 const { LineHeat } = require("./lib/line-heat");
+const { LoopLens } = require("./lib/loop-lens");
 
 /** The requests a view may make of the engine about its trace. */
 const VIEW_METHODS = new Set(["summary", "graph", "processes", "threads", "functions", "symbols", "events", "events.list", "regions", "marks", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "assembly", "registry", "hardfaults", "vmem", "heap", "pool", "memory", "tree.create", "tree.children", "tree.hotPath", "tree.close"]);
@@ -357,14 +358,22 @@ function activate(context) {
   channel = vscode.window.createOutputChannel("Stackrabbit");
   const engine = new Engine(context);
   const heat = new LineHeat(vscode, engine, (line) => channel.appendLine(line));
+  const loops = new LoopLens(vscode, engine, heat, (line) => channel.appendLine(line));
+  // (A trace shown, closed or with new symbols: its loops again.)
+  heat.onChange = () => loops.refresh();
   context.subscriptions.push(
     channel,
     { dispose: () => engine.dispose() },
     heat,
+    loops,
+    vscode.languages.registerCodeLensProvider({ scheme: "file" }, loops),
     vscode.window.onDidChangeVisibleTextEditors(() => heat.refresh()),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("stackrabbit.lineHeat")) {
         heat.refresh();
+      }
+      if (e.affectsConfiguration("stackrabbit.loopLens")) {
+        loops.refresh();
       }
     }),
     vscode.window.registerCustomEditorProvider("stackrabbit.trace", new TraceEditorProvider(context, engine, heat), {

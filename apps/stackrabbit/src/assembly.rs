@@ -6,7 +6,9 @@
 //! in what it called (by the return addresses on their stacks), and which
 //! functions those were (an indirect call's targets, as sampled). Then its
 //! basic blocks, each with its time, and the loops among them (a branch to
-//! an earlier block).
+//! an earlier block), each with its time and source line; and each
+//! instruction's source line. And a source file's loops: those of its
+//! sampled functions.
 
 use std::path::Path;
 
@@ -37,16 +39,36 @@ pub fn assembly(
     if images.is_empty() {
         return Err(format!("fn: no module {module} in the trace"));
     }
-    // Its extent and name, from the first of its images with symbols.
-    let table = images
+    // Its extent and name, from the first of its images whose symbols
+    // have a function there (a trace can have several builds of a module,
+    // in different processes).
+    let mut any_symbols = false;
+    let (table_image, table, end, name) = images
         .iter()
-        .find_map(|&i| symbols.table(trace, i))
-        .ok_or_else(|| format!("{module}: no symbols, so no function's extent"))?;
-    let (end, name) = table
+        .find_map(|&i| {
+            let t = symbols.table(trace, i)?;
+            any_symbols = true;
+            let k = t.iter().position(|f| f.0 == start)?;
+            let (_, end, name) = t.iter().nth(k)?;
+            let name = name.to_string();
+            Some((i, t, end, name))
+        })
+        .ok_or_else(|| {
+            if any_symbols {
+                format!("{module}: no function at {start:#x}")
+            } else {
+                format!("{module}: no symbols, so no function's extent")
+            }
+        })?;
+    // (It's an image of that build whose file is needed.)
+    let images: Vec<ImageIx> = images
         .iter()
-        .find(|f| f.0 == start)
-        .map(|(_, e, n)| (e, n.to_string()))
-        .ok_or_else(|| format!("{module}: no function at {start:#x}"))?;
+        .copied()
+        .filter(|&i| {
+            let (a, b) = (&trace.images[i.index()], &trace.images[table_image.index()]);
+            a.size == b.size && a.time_date_stamp == b.time_date_stamp
+        })
+        .collect();
     // Its bytes, from an image file that is the image the trace saw (at
     // the path the trace names, as a DOS path).
     let volumes = crate::reading::Volumes::of(trace, trace_path);
@@ -186,6 +208,24 @@ pub fn assembly(
     hot.truncate(3);
     let shown = |offset: u64| image.shown_address(offset);
     let own_total: u64 = line_own.iter().sum();
+    // Each instruction's source line (by file, in `files`).
+    let mut files: Vec<String> = Vec::new();
+    let sources: Vec<Option<(usize, u32)>> = listing
+        .lines
+        .iter()
+        .map(|l| {
+            let (file, line) = symbols.line(trace, table_image, l.address)?;
+            let f = match files.iter().position(|f| *f == file) {
+                Some(f) => f,
+                None => {
+                    files.push(file);
+                    files.len() - 1
+                }
+            };
+            Some((f, line))
+        })
+        .collect();
+    let loops = loops(&listing, &line_own, &line_callees, &sources);
     Ok(json!({
         "name": name,
         "module": module,
@@ -204,7 +244,11 @@ pub fn assembly(
             "own": line_own[i],
             "callees": line_callees[i],
             "targets": line_targets[i].iter().map(|(n, f)| json!({"function": f, "samples": n})).collect::<Vec<_>>(),
+            "file": sources[i].map(|s| s.0),
+            "line": sources[i].map(|s| s.1),
         })).collect::<Vec<_>>(),
+        "files": files,
+        "loops": loops,
         "blocks": listing.blocks.iter().enumerate().map(|(k, b)| {
             let own: u64 = line_own[b.first..b.first + b.count].iter().sum();
             json!({
@@ -220,6 +264,161 @@ pub fn assembly(
         }).collect::<Vec<_>>(),
         "undecoded": listing.rest.as_ref().map(|r| r.0),
     }))
+}
+
+/// A listing's loops: a block branched to from it or a later block is a
+/// loop's head, and the loop runs to the last block branching back to it
+/// (as laid out: a loop the compiler laid out elsewhere is longer here).
+/// Each loop's time: its instructions' own samples (`own`, by line), and
+/// with what they call (`under`); and the source line (`sources`, by
+/// line) of its first instruction that has one.
+fn loops(
+    listing: &turbonop_size::disasm::Listing,
+    own: &[u64],
+    under: &[u64],
+    sources: &[Option<(usize, u32)>],
+) -> Vec<Value> {
+    let blocks = &listing.blocks;
+    (0..blocks.len())
+        .filter_map(|k| {
+            let last = (k..blocks.len())
+                .filter(|&j| blocks[j].successors.iter().any(|(s, _)| *s == k))
+                .max()?;
+            let first = blocks[k].first;
+            let end = blocks[last].first + blocks[last].count;
+            let mine: u64 = own[first..end].iter().sum();
+            let called: u64 = under[first..end].iter().sum();
+            let source = sources[first..end].iter().flatten().next();
+            Some(json!({
+                "head": k,
+                "last": last,
+                "first": first,
+                "end": end,
+                "own": mine,
+                "samples": mine + called,
+                "file": source.map(|s| s.0),
+                "line": source.map(|s| s.1),
+            }))
+        })
+        .collect()
+}
+
+/// The loops in the source file `file` (as the trace's symbols name it):
+/// those of the `limit` functions with the most samples whose first
+/// instruction is in it (whose image files are here), each with its
+/// function, time and line, in `spec`'s time range. And the functions
+/// that couldn't be read, with why.
+pub fn file_loops(
+    trace: &Trace,
+    trace_path: &Path,
+    resolver: &Resolver,
+    symbols: &PdbSymbolizer,
+    file: &str,
+    limit: usize,
+    spec: &crate::views::TreeSpec,
+) -> Value {
+    let time = spec
+        .time
+        .map(|(a, b)| (crate::views::ticks(trace, a), crate::views::ticks(trace, b)));
+    let spec = crate::views::TreeSpec {
+        time: spec.time,
+        ..crate::views::TreeSpec::default()
+    };
+    let f = crate::views::functions(trace, resolver, symbols, &spec, usize::MAX);
+    let total = f["total"].as_u64().unwrap_or(0);
+    // Each module's first image with symbols (a DLL is an image in each
+    // process: their symbols are the same).
+    let mut with_symbols: FxHashMap<&str, Option<ImageIx>> = FxHashMap::default();
+    let mut candidates: Vec<(String, String, u64)> = Vec::new();
+    for row in f["functions"].as_array().into_iter().flatten() {
+        let Some(id) = row["fn"].as_str() else {
+            continue;
+        };
+        let Some((module, what)) = id.rsplit_once('|') else {
+            continue;
+        };
+        let Ok(start) = u64::from_str_radix(what, 16) else {
+            continue;
+        };
+        let image = *with_symbols.entry(module).or_insert_with(|| {
+            (0..trace.images.len())
+                .filter(|&i| trace.images[i].file_name() == module)
+                .map(|i| ImageIx(u32::try_from(i).expect("fewer than 4G images")))
+                .find(|&i| symbols.table(trace, i).is_some())
+        });
+        let in_file = image
+            .and_then(|i| symbols.line(trace, i, start))
+            .is_some_and(|(f, _)| f == file);
+        if in_file {
+            candidates.push((
+                id.to_string(),
+                row["label"].as_str().unwrap_or("").to_string(),
+                row["inclusive"].as_u64().unwrap_or(0),
+            ));
+        }
+    }
+    candidates.sort_by(|a, b| b.2.cmp(&a.2).then(a.0.cmp(&b.0)));
+    candidates.truncate(limit);
+    let annotated = turbonop_par::map_range(candidates.len(), 1, |i| {
+        assembly(trace, trace_path, resolver, symbols, &candidates[i].0, time)
+    });
+    let mut loops = Vec::new();
+    let mut unread = Vec::new();
+    for ((id, label, _), a) in candidates.iter().zip(annotated) {
+        let a = match a {
+            Ok(a) => a,
+            Err(e) => {
+                unread.push(json!({"fn": id, "function": label, "error": e}));
+                continue;
+            }
+        };
+        let files = a["files"].as_array().cloned().unwrap_or_default();
+        for l in a["loops"].as_array().into_iter().flatten() {
+            let Some(f) = l["file"].as_u64() else {
+                continue;
+            };
+            if usize::try_from(f)
+                .ok()
+                .and_then(|f| files.get(f))
+                .and_then(Value::as_str)
+                != Some(file)
+            {
+                continue;
+            }
+            let instructions = l["end"].as_u64().unwrap_or(0) - l["first"].as_u64().unwrap_or(0);
+            let samples = l["samples"].as_u64().unwrap_or(0);
+            // Loops starting at one line (nested, or one the compiler
+            // split): one, the one with the most time, and how many.
+            if let Some(same) = loops
+                .iter_mut()
+                .find(|o: &&mut Value| o["fn"] == id.as_str() && o["line"] == l["line"])
+            {
+                same["loops"] = json!(same["loops"].as_u64().unwrap_or(1) + 1);
+                if samples > same["samples"].as_u64().unwrap_or(0) {
+                    same["own"] = l["own"].clone();
+                    same["samples"] = json!(samples);
+                    same["instructions"] = json!(instructions);
+                }
+                continue;
+            }
+            loops.push(json!({
+                "fn": id,
+                "function": label,
+                "line": l["line"],
+                "own": l["own"],
+                "samples": samples,
+                "instructions": instructions,
+                "loops": 1,
+            }));
+        }
+    }
+    json!({
+        "file": file,
+        "total": total,
+        "ticksPerSecond": trace.clock.ticks_per_second,
+        "loops": loops,
+        "unread": unread,
+    })
 }
 
 /// `path` with `\SystemRoot\` (as the kernel's images are named) as the
@@ -397,7 +596,42 @@ fn count(
 
 #[cfg(test)]
 mod tests {
-    use super::system_root;
+    use super::{loops, system_root};
+    use serde_json::json;
+    use turbonop_size::disasm::{Function, Labels, decode};
+
+    #[test]
+    fn a_loop_is_its_blocks_from_its_head_to_the_branch_back() {
+        // xor eax,eax / L: inc eax / cmp eax,10 / jl L / ret
+        let code = [0x31, 0xc0, 0xff, 0xc0, 0x83, 0xf8, 0x0a, 0x7c, 0xf9, 0xc3];
+        let listing = decode(
+            &Function {
+                name: "f".to_string(),
+                isa: turbonop_image::Arch::X64,
+                thumb: false,
+                data: None,
+                address: 0x1000,
+                code: &code,
+                symbols: Vec::new(),
+                riscv_arch: None,
+                big_endian: false,
+                mips_flags: 0,
+            },
+            Labels::Blocks,
+        );
+        assert_eq!(listing.lines.len(), 5);
+        // Samples: 1 at the xor, 5 at the inc, 3 at the cmp, 2 at the jl;
+        // the loop's lines are all at line 7 but the head, at line 6.
+        let own = [1, 5, 3, 2, 0];
+        let under = [0, 0, 4, 0, 0];
+        let sources = [Some((0, 5)), Some((0, 6)), Some((0, 7)), Some((0, 7)), None];
+        let found = loops(&listing, &own, &under, &sources);
+        assert_eq!(found.len(), 1, "{found:?}");
+        let l = &found[0];
+        assert_eq!((&l["first"], &l["end"]), (&json!(1), &json!(4)));
+        assert_eq!((&l["own"], &l["samples"]), (&json!(10), &json!(14)));
+        assert_eq!((&l["file"], &l["line"]), (&json!(0), &json!(6)));
+    }
 
     #[test]
     fn the_kernels_images_are_in_the_windows_directory() {

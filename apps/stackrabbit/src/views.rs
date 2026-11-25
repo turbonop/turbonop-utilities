@@ -562,7 +562,7 @@ pub fn lines(
 }
 
 /// Clock ticks of `ns` nanoseconds from the trace's start.
-fn ticks(trace: &Trace, ns: i64) -> i64 {
+pub(crate) fn ticks(trace: &Trace, ns: i64) -> i64 {
     let tps = i128::from(trace.clock.ticks_per_second.max(1));
     let t = i128::from(trace.clock.origin) + i128::from(ns) * tps / 1_000_000_000;
     i64::try_from(t).unwrap_or(if t < 0 { i64::MIN } else { i64::MAX })

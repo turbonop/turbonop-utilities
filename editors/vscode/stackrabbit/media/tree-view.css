@@ -297,3 +297,9 @@ table.processes tr.selected td {
   color: var(--vscode-descriptionForeground);
   font-size: 0.9em;
 }
+
+/* A source line, over its instructions. */
+.assembly tr.source td {
+  color: var(--vscode-textLink-foreground);
+  padding-top: 0.4em;
+}

@@ -62,11 +62,16 @@ and status in the Stackrabbit docs). In order, roughly:
 - **M5 tables**, corpus first: CPU idle states and frequency (s09), GPU
   (s10), .NET GC, JIT and exceptions (s07), hardware counters; then
   TCP/IP, UI delays, boot phases, working sets, battery and energy.
-- **M6, the Profile Explorer ideas**: time per instruction in annotated
-  assembly (our disassemblers), basic blocks and loops with their time,
-  time by inlinee, call targets from samples, assembly under source
-  lines, time per loop and branch (CodeLens), source servers and
-  SourceLink, and annotations by call path or thread.
+- **M6, the Profile Explorer ideas, left**: source servers and
+  SourceLink; annotations by call path or thread; time per branch arm
+  (needs LBR or branch counters: samples alone can't say which way a
+  branch went). Done: annotated assembly with time per instruction,
+  blocks and loops, time by inlinee, sampled call targets, source lines
+  over the instructions, and a CodeLens per loop. Gaps: no end-to-end
+  engine test of `assembly` (it needs a trace naming an image file that
+  is here: patch a synthetic trace's image path, size and timestamp to
+  testdata's lines.exe); `loops` costs a whole `functions` pass (0.35 s
+  on l01), to cache or to drop with the tree work.
 - **Robustness**: fuzz the ETL reader, the index, saved names and WPA
   profiles; peak memory on the largest traces; 32-bit, ARM64 and
   unmerged traces end to end; the Edge harness on corpus traces, not only

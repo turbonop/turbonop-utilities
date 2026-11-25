@@ -141,3 +141,18 @@ assert.ok(t.hover.includes("1.5 ms"), t.hover);
   console.error(e);
   process.exit(1);
 });
+
+// A loop's lens.
+{
+  const { loopText, shortName } = require("../lib/loop-lens");
+  assert.strictEqual(shortName("app.exe!Work::Run"), "Work::Run");
+  assert.strictEqual(shortName("?"), "?");
+  assert.strictEqual(
+    loopText({ function: "app.exe!Work::Run", samples: 250, own: 50, loops: 1 }, 1000),
+    "↺ Loop: 25.0% of the samples (250), 5.0% in its own instructions, in Work::Run"
+  );
+  assert.strictEqual(
+    loopText({ function: "app.exe!f", samples: 1200, own: 0, loops: 3 }, 10000),
+    "↺ Loop: 12.0% of the samples (1,200), in f; 3 loops start here"
+  );
+}

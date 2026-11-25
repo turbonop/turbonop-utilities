@@ -97,6 +97,8 @@ class LineHeat {
     this.trace = null; // {id, name}
     this.files = null; // its source files, heaviest first
     this.generation = 0;
+    // Called when the trace shown, or its symbols, change.
+    this.onChange = () => {};
     const heat = (alpha) =>
       vscode.window.createTextEditorDecorationType({
         isWholeLine: true,
@@ -117,6 +119,7 @@ class LineHeat {
     }
     this.trace = { id, name };
     this.files = null;
+    this.onChange();
     this.refresh();
   }
 
@@ -125,6 +128,7 @@ class LineHeat {
     if (this.trace && this.trace.id === id) {
       this.trace = null;
       this.files = null;
+      this.onChange();
       this.refresh();
     }
   }
@@ -133,6 +137,7 @@ class LineHeat {
   changed(id) {
     if (this.trace && this.trace.id === id) {
       this.files = null;
+      this.onChange();
       this.refresh();
     }
   }

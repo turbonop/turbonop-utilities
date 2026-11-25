@@ -83,6 +83,11 @@
           "default": true,
           "description": "Show time by source line in source files' editors: each line's share of the open trace's CPU samples (here or in what it calls), its own share, and a background by how hot it is. Files are matched to the paths the trace's symbols name by their names and as much of their paths as agree."
         },
+        "stackrabbit.loopLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show time by loop in source files' editors: above each loop's first line, its share of the open trace's CPU samples (in it or in what it calls) and in its own instructions. Loops are found in the disassembled code of the file's most sampled functions, whose image files must be on this machine and be the ones the trace saw."
+        },
         "stackrabbit.symbolServers": {
           "type": "array",
           "items": {

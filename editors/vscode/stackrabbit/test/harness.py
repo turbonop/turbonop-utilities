@@ -947,9 +947,10 @@ def main():
     ad = json.loads(json.dumps(data))
     ad["assembly"] = {
         "name": "memset", "module": "vcruntime.dll", "offset": 6560, "size": 12, "samples": 9, "own": 8, "hottest": [1],
-        "lines": [{"address": "1800019a0", "offset": 6560, "bytes": "48 8b c1", "text": "mov rax,rcx", "label": None, "block": 0, "own": 1, "callees": 0},
+        "lines": [{"address": "1800019a0", "offset": 6560, "bytes": "48 8b c1", "text": "mov rax,rcx", "label": None, "block": 0, "own": 1, "callees": 0, "file": 0, "line": 12},
                   {"address": "1800019a3", "offset": 6563, "bytes": "c3", "text": "rep stosb", "label": "L1", "block": 1, "own": 7, "callees": 1,
-                   "targets": [{"function": "ntdll.dll!RtlFillMemory", "samples": 1}]}],
+                   "targets": [{"function": "ntdll.dll!RtlFillMemory", "samples": 1}], "file": 0, "line": 13}],
+        "files": ["d:/src/memset.cpp"],
         "blocks": [{"index": 0, "first": 0, "count": 1, "own": 1, "successors": [1], "loop": False},
                    {"index": 1, "first": 1, "count": 1, "own": 7, "successors": [1], "loop": True}],
         "undecoded": None,
@@ -965,6 +966,7 @@ def main():
     listing = html.unescape(dom[dom.index('id="assembly"'):])
     assert "rep stosb" in listing and 'class="hot"' in listing and "↺" in listing
     assert "→ ntdll.dll!RtlFillMemory (1)" in listing, "a call's targets"
+    assert "memset.cpp, line 12" in listing and "memset.cpp, line 13" in listing, "source lines over their instructions"
     # The registry tab: totals by the grouping chosen (and how many of all
     # the groups), and the longest; changing the grouping asks again.
     regd = json.loads(json.dumps(data))

@@ -22,7 +22,7 @@ items leave TODO.md as they ship.
 | Phase | State |
 |---|---|
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, `.retplne`, sanitizers. |
-| 1 Writers, round trips, and `lib.exe` without folding | 1.1 done (see [Phase 1 results](#phase-1-results)): `turbonop-coff`, which every corpus object round-trips through byte-identically. |
+| 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4's command line. Not yet: 1.2, the archive writer, and writing libraries with it. |
 | 2 Identical folding (COFF) | Not yet. |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
@@ -280,6 +280,71 @@ in the LLVM corpora, and 3,514,639 of the libraries' 3,604,814. The rest
 Not modeled: the CodeView in `.debug$S` and `.debug$T` (1.3), and the
 section data that holds symbol indices (`.sxdata`, the `/guard` tables),
 whose entries edits don't renumber; `Renumbering::table_index` maps them.
+
+### CodeView (1.3)
+
+`turbonop-codeview` now knows every field of every type and symbol record
+that holds a type index, an id index, a relocated address, a string-table
+offset, or a file-checksum offset (`type_refs`, `symbol_refs`), reads and
+writes every C13 subsection (`c13`), and renumbers sections in place
+(`remap`). Every such field is 4 bytes, so a renumbered record keeps its
+length: renumbering copies and patches at the offsets one layout table
+gives, with no second encoder to disagree with it. The exception is a
+checksum offset in compressed binary annotations, whose new value can
+need more bytes; `remap` reports it, and `annotations::rewrite_files`
+rebuilds the record.
+
+Its `examples/corpus` checks every object and library member: every
+record and subsection read and written back byte-identically, and every
+index in range (with `LF_PRECOMP` users checked against their PCH's
+records, matched by signature):
+
+| Corpus | COFF objects | Type records | Symbol records | Failures |
+|---|---|---|---|---|
+| `build-z7` | 9,428 | 177 million | 71 million | 0 |
+| `build-z7-nopch` | 9,287 | 460 million | 91 million | 0 |
+
+Renumbering 13.65 GiB of `.debug$T` and `.debug$S` takes 1.12 s on 8
+threads, with the files cached. On 600 sampled objects, every symbol's
+indices agree with `llvm-pdbutil`'s, where it didn't crash (it did on 56).
+
+Where cvinfo.h and LLVM disagree, or say nothing:
+
+- LLVM's index discovery misses `S_INLINESITE2`, `S_HOTPATCHFUNC` (an
+  id), `S_DEFRANGE`, `S_DEFRANGE_SUBFIELD`, and the managed kinds, so
+  lld likely leaves their indices as they were.
+- The managed records' field is a metadata token, not a type index: their
+  relocations are `IMAGE_REL_AMD64_TOKEN` (proven for `S_GMANPROC`,
+  `S_GMANDATA`, `S_MANSLOT`).
+- `S_CALLEES`, `S_CALLERS`, and `S_INLINEES` hold ids, not types.
+- `S_STATICLOCAL` (0x1176, from `cl /O1`) is documented nowhere; its
+  layout comes from its relocations, so its fields' meaning is likely,
+  not proven.
+- Still only likely: `S_DEFRANGE`'s `program` is a string-table offset,
+  and `S_LPROC32_DPC` names a type (no object has either).
+- Kinds with no documented layout are errors, as are 16-bit kinds. None is
+  in the corpora or the fixtures.
+
+### The `lib` command line (1.4)
+
+Run as `lib` or `llvm-lib` (or `turbolib lib ...`), turbolib takes each
+tool's options, response files, and environment, orders members, checks
+machines, and words its messages and exit codes as each does, all
+measured with `lib.exe` 14.52 or read in LLVM's `LibDriver.cpp`
+(`apps/turbolib/src/msvc`). The rules worth knowing:
+
+- **Member order.** `lib.exe` writes the input libraries' members first
+  (the libraries in command-line order, each one's members reversed),
+  then the objects in reverse command-line order. An object replaces
+  every library member with its name, and `/REMOVE` removes only library
+  members. `llvm-lib` expands every input in order and reverses the
+  whole list, replacing nothing.
+- **Machines.** `lib.exe` checks only the objects on the command line,
+  never library members, and never infers ARM64EC.
+- **Options.** `_LIB_` is read after the command line, so it wins; a
+  response file can't name another; quotes toggle anywhere in a word.
+  The exit code is the number of the error that stopped it, and under
+  `/WX`, the warning's.
 
 ## Decisions
 

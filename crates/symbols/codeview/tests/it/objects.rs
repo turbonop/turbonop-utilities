@@ -26,6 +26,7 @@ fn checked(dirs: &[&str]) -> Stats {
         let mut paths: Vec<_> = std::fs::read_dir(testdata(dir))
             .unwrap()
             .map(|e| e.unwrap().path())
+            .filter(|p| p.is_file())
             .collect();
         paths.sort();
         for p in paths {
@@ -63,7 +64,7 @@ fn checked(dirs: &[&str]) -> Stats {
 
 #[test]
 fn fixtures_check_clean() {
-    let st = checked(&["codeview", "coff"]);
+    let st = checked(&["codeview", "coff", "coff/model"]);
     let failures: Vec<_> = st
         .failures
         .iter()

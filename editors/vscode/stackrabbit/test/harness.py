@@ -160,6 +160,7 @@ window.acquireVsCodeApi = function () {
     else if (m.method === "frequency" && A.frequency) r.result = A.frequency;
     else if (m.method === "idle" && A.idle) r.result = A.idle;
     else if (m.method === "gpu" && A.gpu) r.result = A.gpu;
+    else if (m.method === "dotnet" && A.dotnet) r.result = A.dotnet;
     else if (m.method === "events.list" && A.sampleKind && m.params.opcode === A.sampleKind.opcode && m.params.guid === A.sampleKind.guid) r.result = A.sampleList;
     else if (m.method === "events.list") r.result = A.eventList;
     else if (m.method === "symbols") r.result = A.symbols;
@@ -918,6 +919,26 @@ def main():
     assert asked == ["process", "engine"], asked
     assert "Engine 0" in html.unescape(dom[dom.index('id="gpu-longest"'):])
     assert "Code.exe (23344)" in html.unescape(dom[dom.index('id="gpu-presenters"'):dom.index('id="gpu-longest"')])
+    # The .NET tab: each process's totals, the collections, exceptions,
+    # compilations and allocations.
+    nd = json.loads(json.dumps(data))
+    nd["dotnet"] = {
+        "gcs": 2, "pauseNs": 170000, "allocated": 153600, "exceptions": 2, "jits": 1, "groupsTotal": 1,
+        "groups": [{"label": "pwsh.exe (100)", "gcs": 2, "gen0": 1, "gen1": 0, "gen2": 1, "gcNs": 200000, "pauseNs": 170000,
+                    "maxPauseNs": 170000, "allocated": 153600, "exceptions": 2, "jits": 1, "jitNs": 400000,
+                    "contentions": 1, "contentionNs": 30000}],
+        "collections": [{"process": "pwsh.exe (100)", "number": 1, "generation": 0, "reason": "AllocSmall", "kind": "Blocking",
+                         "startNs": 200000, "durationNs": 100000, "pauseNs": 170000},
+                        {"process": "pwsh.exe (100)", "number": 2, "generation": 2, "reason": "Induced", "kind": "Blocking",
+                         "startNs": 500000, "durationNs": 100000, "pauseNs": None}],
+        "exceptionTypes": [{"type": "System.IO.FileNotFoundException", "count": 2, "processes": "pwsh.exe (100)"}],
+        "compilations": [{"method": "App.Main", "process": "pwsh.exe (100)", "startNs": 1000000, "durationNs": 400000}],
+        "allocationTypes": [{"type": "System.String", "bytes": 102400}],
+    }
+    dom = render(nd, "document.getElementById('tab-dotnet').click();", shot=shot("dotnet"))
+    assert "2 garbage collections pausing 0.17 ms, 150 KB allocated, 2 exceptions, 1 methods compiled." in html.unescape(dom), "the .NET title"
+    rest = html.unescape(dom[dom.index('id="dotnet-collections"'):])
+    assert "AllocSmall" in rest and "Induced" in rest and "FileNotFoundException" in rest and "App.Main" in rest and "System.String" in rest
     # The registry tab: totals by the grouping chosen (and how many of all
     # the groups), and the longest; changing the grouping asks again.
     regd = json.loads(json.dumps(data))

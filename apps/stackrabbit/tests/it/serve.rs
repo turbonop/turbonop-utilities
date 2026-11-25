@@ -3478,3 +3478,226 @@ fn gpu_packets_by_process_engine_and_kind() {
     assert_eq!(r["longest"].as_array().unwrap().len(), 1);
     assert!(error(&a, 6).contains("by"), "{}", error(&a, 6));
 }
+
+#[test]
+fn dotnet_collections_allocations_exceptions_and_compilations() {
+    use turbonop_etl::write::{self, Writer, WriterOptions};
+    use turbonop_etw::guids;
+    let dir = scratch("serve-dotnet");
+    // A counter at 10 MHz: 10 ticks a microsecond.
+    let mut w = Writer::new(WriterOptions {
+        processors: 1,
+        perf_freq: 10_000_000,
+        ..WriterOptions::default()
+    });
+    let clr = stackrabbit::dotnet::DOTNET_RUNTIME;
+    // (uint16: 6; uint32: 8; uint64: 10; a UTF-16 string: 1.)
+    let infos = [
+        described(
+            clr,
+            9,
+            1,
+            10,
+            &[("Reason", 8), ("Count", 8), ("ClrInstanceID", 6)],
+        ),
+        described(
+            clr,
+            1,
+            2,
+            1,
+            &[
+                ("Count", 8),
+                ("Depth", 8),
+                ("Reason", 8),
+                ("Type", 8),
+                ("ClrInstanceID", 6),
+            ],
+        ),
+        described(
+            clr,
+            2,
+            1,
+            2,
+            &[("Count", 8), ("Depth", 8), ("ClrInstanceID", 6)],
+        ),
+        described(clr, 3, 1, 132, &[("ClrInstanceID", 6)]),
+        described(
+            clr,
+            10,
+            3,
+            11,
+            &[
+                ("AllocationAmount64", 10),
+                ("TypeName", 1),
+                ("ClrInstanceID", 6),
+            ],
+        ),
+        described(clr, 80, 1, 1, &[("ExceptionType", 1), ("ClrInstanceID", 6)]),
+        described(
+            clr,
+            145,
+            1,
+            42,
+            &[
+                ("MethodID", 10),
+                ("MethodNamespace", 1),
+                ("MethodName", 1),
+                ("ClrInstanceID", 6),
+            ],
+        ),
+        described(clr, 143, 1, 37, &[("MethodID", 10), ("ClrInstanceID", 6)]),
+        described(clr, 81, 1, 1, &[("ClrInstanceID", 6)]),
+        described(clr, 91, 0, 2, &[("ClrInstanceID", 6)]),
+    ];
+    for (i, info) in infos.iter().enumerate() {
+        let meta = write::EventFields {
+            provider: guids::EVENT_METADATA,
+            opcode: turbonop_etw::event_info::EVENT_INFO_OPCODE,
+            timestamp: 1 + i as i64,
+            ..write::EventFields::default()
+        };
+        w.record(0, &write::event(&meta, true, &[], info));
+    }
+    enum F<'a> {
+        U16(u16),
+        U32(u32),
+        U64(u64),
+        S(&'a str),
+    }
+    let mut event = |id: u16, version: u8, opcode: u8, ts: i64, tid: u32, fields: &[F<'_>]| {
+        let e = write::EventFields {
+            provider: clr,
+            id,
+            version,
+            opcode,
+            timestamp: ts,
+            process_id: 100,
+            thread_id: tid,
+            ..write::EventFields::default()
+        };
+        let mut p = Vec::new();
+        for f in fields {
+            match f {
+                F::U16(v) => p.extend_from_slice(&v.to_le_bytes()),
+                F::U32(v) => p.extend_from_slice(&v.to_le_bytes()),
+                F::U64(v) => p.extend_from_slice(&v.to_le_bytes()),
+                F::S(s) => {
+                    for u in s.encode_utf16().chain([0]) {
+                        p.extend_from_slice(&u.to_le_bytes());
+                    }
+                }
+            }
+        }
+        w.record(0, &write::event(&e, true, &[], &p));
+    };
+    use F::{S, U16, U32, U64};
+    // Process 100 (no process event: Unknown process): a gen 0 GC (1)
+    // from 200 to 300 us, its runtime suspended at 150 and restarted at
+    // 320 us (170 us of pause); a gen 2 GC (2) from 500 to 600 us,
+    // induced, with no suspension. Allocations: 100 KB of strings, then
+    // 50 KB of Widgets. Two exceptions of one type. A method compiled
+    // from 1000 to 1400 us. A contention of 30 us.
+    event(9, 1, 10, 1_500, 1, &[U32(1), U32(0), U16(8)]);
+    event(1, 2, 1, 2_000, 1, &[U32(1), U32(0), U32(0), U32(0), U16(8)]);
+    event(2, 1, 2, 3_000, 1, &[U32(1), U32(0), U16(8)]);
+    event(3, 1, 132, 3_200, 1, &[U16(8)]);
+    event(1, 2, 1, 5_000, 1, &[U32(2), U32(2), U32(1), U32(0), U16(8)]);
+    event(2, 1, 2, 6_000, 1, &[U32(2), U32(2), U16(8)]);
+    event(
+        10,
+        3,
+        11,
+        7_000,
+        1,
+        &[U64(100_000), S("System.String"), U16(8)],
+    );
+    event(10, 3, 11, 7_100, 1, &[U64(50_000), S("Widget"), U16(8)]);
+    event(
+        80,
+        1,
+        1,
+        8_000,
+        1,
+        &[S("System.IO.FileNotFoundException"), U16(8)],
+    );
+    event(
+        80,
+        1,
+        1,
+        8_100,
+        2,
+        &[S("System.IO.FileNotFoundException"), U16(8)],
+    );
+    event(
+        145,
+        1,
+        42,
+        10_000,
+        1,
+        &[U64(77), S("App"), S("Main"), U16(8)],
+    );
+    event(143, 1, 37, 14_000, 1, &[U64(77), U16(8)]);
+    event(81, 1, 1, 15_000, 3, &[U16(8)]);
+    event(91, 0, 2, 15_300, 3, &[U16(8)]);
+    let path = dir.join("t.etl");
+    std::fs::write(&path, w.finish()).unwrap();
+    let a = session(&[
+        json!({"method": "open", "params": {"path": path, "useIndex": true}}),
+        json!({"method": "dotnet", "params": {"trace": 1}}),
+        json!({"method": "dotnet", "params": {"trace": 1, "time": [0, 400_000]}}),
+    ]);
+    let r = result(&a, 2);
+    assert_eq!(
+        (
+            &r["gcs"],
+            &r["pauseNs"],
+            &r["allocated"],
+            &r["exceptions"],
+            &r["jits"]
+        ),
+        (
+            &json!(2),
+            &json!(170_000),
+            &json!(150_000),
+            &json!(2),
+            &json!(1)
+        )
+    );
+    let g = &r["groups"][0];
+    assert_eq!(g["label"], "Unknown process");
+    assert_eq!(
+        (&g["gen0"], &g["gen1"], &g["gen2"]),
+        (&json!(1), &json!(0), &json!(1))
+    );
+    assert_eq!(
+        (&g["gcNs"], &g["maxPauseNs"]),
+        (&json!(200_000), &json!(170_000))
+    );
+    assert_eq!(
+        (&g["jitNs"], &g["contentions"], &g["contentionNs"]),
+        (&json!(400_000), &json!(1), &json!(30_000))
+    );
+    assert_eq!(
+        r["collections"],
+        json!([
+            {"process": "Unknown process", "number": 1, "generation": 0, "reason": "AllocSmall", "kind": "Blocking",
+             "startNs": 200_000, "durationNs": 100_000, "pauseNs": 170_000},
+            {"process": "Unknown process", "number": 2, "generation": 2, "reason": "Induced", "kind": "Blocking",
+             "startNs": 500_000, "durationNs": 100_000, "pauseNs": null},
+        ])
+    );
+    assert_eq!(
+        r["exceptionTypes"],
+        json!([{"type": "System.IO.FileNotFoundException", "count": 2, "processes": "Unknown process"}])
+    );
+    assert_eq!(
+        r["compilations"],
+        json!([{"method": "App.Main", "process": "Unknown process", "startNs": 1_000_000, "durationNs": 400_000}])
+    );
+    assert_eq!(
+        r["allocationTypes"],
+        json!([{"type": "System.String", "bytes": 100_000}, {"type": "Widget", "bytes": 50_000}])
+    );
+    // To 400 us: the first GC only.
+    assert_eq!(result(&a, 3)["gcs"], 1);
+}

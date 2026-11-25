@@ -946,6 +946,80 @@
     also: (d) => presentersTable.set(d.presenters),
   });
 
+  // .NET: each process's garbage collections, pauses, allocations,
+  // exceptions, JIT and contention; then the collections, exceptions,
+  // compilations and allocations.
+  const dotnetExceptions = new SortedTable(
+    $("dotnet-exceptions"),
+    [
+      { key: "type", title: "Exception", cls: "cmd" },
+      { key: "count", title: "Thrown", num: true, text: number(0) },
+      { key: "processes", title: "By", cls: "cmd" },
+    ],
+    { key: "count", down: true }
+  );
+  const dotnetCompilations = new SortedTable(
+    $("dotnet-compilations"),
+    [
+      { key: "method", title: "Method", cls: "cmd" },
+      { key: "process", title: "Process" },
+      { key: "startNs", title: "Started", num: true, text: at("") },
+      { key: "durationNs", title: "Duration (ms)", num: true, text: ms },
+    ],
+    { key: "durationNs", down: true }
+  );
+  const dotnetAllocations = new SortedTable(
+    $("dotnet-allocations"),
+    [
+      { key: "type", title: "Type", cls: "cmd" },
+      { key: "bytes", title: "KB", num: true, text: kb },
+    ],
+    { key: "bytes", down: true }
+  );
+  summaryTab({
+    name: "dotnet",
+    method: "dotnet",
+    reading: "Reading the trace's .NET events…",
+    groups: [
+      { key: "label", title: "Process" },
+      { key: "gcs", title: "GCs", num: true, text: number(0) },
+      { key: "gen0", title: "Gen 0", num: true, text: number(0) },
+      { key: "gen1", title: "Gen 1", num: true, text: number(0) },
+      { key: "gen2", title: "Gen 2", num: true, text: number(0) },
+      { key: "pauseNs", title: "Paused (ms)", num: true, text: ms },
+      { key: "maxPauseNs", title: "Longest pause (ms)", num: true, text: ms },
+      { key: "allocated", title: "Allocated (KB)", num: true, text: kb },
+      { key: "exceptions", title: "Exceptions", num: true, text: number(0) },
+      { key: "jits", title: "Compiled", num: true, text: number(0) },
+      { key: "jitNs", title: "JIT (ms)", num: true, text: ms },
+      { key: "contentionNs", title: "Contention (ms)", num: true, text: ms },
+    ],
+    groupSort: { key: "pauseNs", down: true },
+    items: "collections",
+    itemColumns: [
+      { key: "process", title: "Process" },
+      { key: "number", title: "GC", num: true },
+      { key: "generation", title: "Gen", num: true },
+      { key: "reason", title: "Reason" },
+      { key: "kind", title: "Type" },
+      { key: "startNs", title: "Started", num: true, text: at("") },
+      { key: "durationNs", title: "Duration (ms)", num: true, text: ms },
+      { key: "pauseNs", title: "Pause (ms)", num: true, text: (v) => (v === null || v === undefined ? "" : ms(v)) },
+    ],
+    itemSort: { key: "pauseNs", down: true },
+    title: (d, when) =>
+      d.groups.length
+        ? `${count(d.gcs)} garbage collections pausing ${ms(d.pauseNs)} ms, ${kb(d.allocated)} KB allocated, ` +
+          `${count(d.exceptions)} exceptions, ${count(d.jits)} methods compiled${when}`
+        : `No .NET events${when} (they're recorded with WPR's DotNET profile)`,
+    tables: [dotnetExceptions, dotnetCompilations, dotnetAllocations],
+    also: (d) => {
+      dotnetExceptions.set(d.exceptionTypes);
+      dotnetCompilations.set(d.compilations);
+      dotnetAllocations.set(d.allocationTypes);
+    },
+  });
+
   // Registry operations, by duration.
   summaryTab({
     name: "registry",
@@ -1114,7 +1188,7 @@
     if (name === "regions") {
       loadRegions();
     }
-    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
+    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
       $(`tab-${t}`).classList.toggle("active", name === t);
       $(`${t}-pane`).classList.toggle("hidden", name !== t);
     }
@@ -1142,6 +1216,7 @@
   $("tab-frequency").addEventListener("click", () => showTab("frequency"));
   $("tab-idle").addEventListener("click", () => showTab("idle"));
   $("tab-gpu").addEventListener("click", () => showTab("gpu"));
+  $("tab-dotnet").addEventListener("click", () => showTab("dotnet"));
   $("tab-registry").addEventListener("click", () => showTab("registry"));
   $("tab-hardfaults").addEventListener("click", () => showTab("hardfaults"));
   $("tab-vmem").addEventListener("click", () => showTab("vmem"));
@@ -1386,7 +1461,7 @@
     if (s.lit && typeof s.lit.fn === "string") {
       lit = { fn: s.lit.fn, label: String(s.lit.label || s.lit.fn) };
     }
-    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
+    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "gpu", "dotnet", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
       showTab(s.tab);
     }
   }

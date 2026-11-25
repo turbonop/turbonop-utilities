@@ -119,6 +119,16 @@
 //!   first; the first `groupLimit` (10,000) of `groupsTotal`) and the
 //!   `limit` (1000) longest, each `{op, startNs, durationNs, status, process, tid, key,
 //!   value}`. (Read from the trace file the first time, then kept.)
+//! - `dotnet` `{trace, time?, limit?}` → `{gcs, pauseNs, allocated,
+//!   exceptions, jits, groupsTotal, groups, collections, exceptionTypes,
+//!   compilations, allocationTypes}`: the .NET runtime's events in
+//!   `time`: each process's garbage collections (by generation), their
+//!   time and pauses, bytes allocated (by the runtime's samples),
+//!   exceptions, JIT compilations and lock contentions; the `limit`
+//!   (1000) collections with the longest pauses (`{process, number,
+//!   generation, reason, kind, startNs, durationNs, pauseNs}`);
+//!   exceptions by type; the longest compilations; and allocations by
+//!   type. (Read from the trace file the first time, then kept.)
 //! - `gpu` `{trace, by?, time?, limit?}` → `{packets, busyNs, presents,
 //!   vsyncHz, groupsTotal, groups, presenters, longest}`: the GPU queue
 //!   packets started in `time`, by `by` (process, engine, context or
@@ -473,6 +483,8 @@ struct State {
     idles: Option<Arc<crate::idle::IdleTable>>,
     /// The trace's GPU work, once read.
     gpu: Option<Arc<crate::gpu::GpuTable>>,
+    /// The trace's .NET events, once read.
+    dotnet: Option<Arc<crate::dotnet::DotnetTable>>,
     /// The last line totals worked out: for which (source, time), with
     /// what symbols (how many PDBs were loaded).
     lines: Option<(LinesKey, Arc<LinesValue>)>,
@@ -591,6 +603,7 @@ fn worker(
         frequencies: None,
         idles: None,
         gpu: None,
+        dotnet: None,
         registry: None,
         faults: None,
         vmem: None,
@@ -1284,6 +1297,24 @@ impl State {
                 ))
             }
             "marks" => crate::marks::marks(trace, &self.loaded.path),
+            "dotnet" => {
+                let spec = TreeSpec::from_json(params)?;
+                let limit = count(params, "limit", 1000)?;
+                let table = match &self.dotnet {
+                    Some(t) => Arc::clone(t),
+                    None => {
+                        let t = Arc::new(crate::dotnet::table(trace, &self.loaded.path)?);
+                        self.dotnet = Some(Arc::clone(&t));
+                        t
+                    }
+                };
+                Ok(crate::dotnet::summary(
+                    trace,
+                    &table,
+                    ticks(trace, spec.time),
+                    limit,
+                ))
+            }
             "gpu" => {
                 let spec = TreeSpec::from_json(params)?;
                 let group = match params.get("by").and_then(Value::as_str) {

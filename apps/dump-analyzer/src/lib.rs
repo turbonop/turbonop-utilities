@@ -8,6 +8,7 @@
 //! directories, and from the symbol servers given), and answers from
 //! there. With `-json`, a command's answer is JSON (what `serve` gives).
 
+pub mod mcp;
 mod serve;
 pub mod session;
 
@@ -44,6 +45,7 @@ commands:
   reconstruct <dump> -thread id     probable stacks, rebuilt from what's in the
                                     thread's stack memory
   serve                             commands for an editor, as JSON lines
+  mcp                               a Model Context Protocol server, for agents
 
 options:
   -json                 answer as JSON
@@ -86,6 +88,7 @@ pub fn main(args: &[String]) -> ExitCode {
     servers::set_servers(servers_given);
     match rest.first().map(String::as_str) {
         Some("serve") => serve::run(&hints),
+        Some("mcp") => mcp::run(&hints),
         Some("-h" | "-help" | "--help" | "help") | None => {
             println!("{USAGE}");
             ExitCode::SUCCESS

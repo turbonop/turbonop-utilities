@@ -186,3 +186,44 @@ fn errors() {
     let exe = testdata("minidump/crash-x64.exe");
     assert!(command(&args(&["summary", &exe]), &hints()).is_err());
 }
+
+#[test]
+fn mcp_tools() {
+    use dump_analyzer::mcp::handle;
+    use serde_json::json;
+    let init = handle(&json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26"}}), &hints()).unwrap();
+    assert_eq!(init["result"]["protocolVersion"], "2025-03-26");
+    assert!(
+        handle(
+            &json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+            &hints()
+        )
+        .is_none()
+    );
+    let list = handle(
+        &json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+        &hints(),
+    )
+    .unwrap();
+    let names: Vec<&str> = list["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"crash_summary") && names.contains(&"locals"),
+        "{names:?}"
+    );
+    let dump = testdata("minidump/crash-x64.dmp");
+    let call = handle(&json!({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "stack", "arguments": {"dump": dump}}}), &hints()).unwrap();
+    assert_eq!(call["result"]["isError"], false);
+    assert_eq!(
+        call["result"]["structuredContent"]["frames"][0]["function"],
+        "leaf"
+    );
+    let bad = handle(&json!({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "nope", "arguments": {}}}), &hints()).unwrap();
+    assert_eq!(bad["error"]["code"], -32602);
+    let missing = handle(&json!({"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "stack", "arguments": {"dump": "no-such.dmp"}}}), &hints()).unwrap();
+    assert_eq!(missing["result"]["isError"], true);
+}

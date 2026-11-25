@@ -9,6 +9,7 @@ use turbonop_core::{Arch, Result};
 use turbonop_minidump::context::Context;
 use turbonop_minidump::{CodeView, MemoryMap, Minidump, cpu, stream};
 
+use crate::build_id::{ElfInMemory, elf_in_memory};
 use crate::model::{
     Capabilities, DebugId, Exception, ImageId, Memory, Module, ModuleSource, Provenance, Snapshot,
     Target, Thread,
@@ -109,15 +110,22 @@ impl<'d> MinidumpTarget<'d> {
                 }
             })
             .collect();
+        let memory = DumpMemory(dump.memory()?);
         if let Some(maps) = dump.stream(stream::LINUX_MAPS) {
             for found in linux_maps::modules(maps.data) {
                 if !modules.iter().any(|m| m.contains(found.base)) {
+                    // Its build ID, if the dump has its headers.
+                    let build_id = match elf_in_memory(&memory, found.base) {
+                        ElfInMemory::Elf { build_id } => build_id,
+                        ElfInMemory::NotElf => continue,
+                        ElfInMemory::Unknown => None,
+                    };
                     modules.push(Module {
                         path: found.path,
                         base: found.base,
                         size: found.size,
-                        image_id: None,
-                        debug_id: None,
+                        image_id: build_id.clone().map(ImageId::BuildId),
+                        debug_id: build_id.map(DebugId::BuildId),
                         source: ModuleSource::MemoryMap,
                     });
                 }
@@ -130,7 +138,7 @@ impl<'d> MinidumpTarget<'d> {
             threads,
             modules,
             exception,
-            memory: DumpMemory(dump.memory()?),
+            memory,
             dump,
         })
     }

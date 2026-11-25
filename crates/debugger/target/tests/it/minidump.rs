@@ -225,3 +225,60 @@ fn not_a_minidump() {
     assert!(MinidumpTarget::new(b"MDMQ").is_err());
     assert!(MinidumpTarget::new(&[]).is_err());
 }
+
+/// Writes the synthetic minidumps in testdata/minidump (the fuzzer's seeds,
+/// and examples): `cargo test -p turbonop-target -- --ignored write_fixtures`.
+#[test]
+#[ignore]
+fn write_fixtures() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/minidump");
+    std::fs::create_dir_all(&dir).unwrap();
+    // Windows x64: a thread with a stack, a module, an exception.
+    let mut w = Writer::new();
+    w.system_info(cpu::AMD64, platform::WIN32_NT);
+    let ctx = amd64_context(0x7FF6_0000_1010, 0x1000);
+    let stack: Vec<u8> = (0..=255).collect();
+    w.threads(&[ThreadSpec {
+        id: 100,
+        teb: 0x7000,
+        stack_start: 0x1000,
+        stack: &stack,
+        context: &ctx,
+    }]);
+    w.thread_names(&[(100, "main")]);
+    let cv = rsds(GUID, 3, r"c:\build\app.pdb");
+    w.modules(&[ModuleSpec {
+        base: 0x7FF6_0000_0000,
+        size: 0x5000,
+        time_date_stamp: 0x6543_2100,
+        name: r"C:\app\app.exe",
+        cv: &cv,
+    }]);
+    w.memory(&[(0x1000, &stack)]);
+    w.exception(100, 0xC000_0005, 0x7FF6_0000_1010, &ctx);
+    std::fs::write(dir.join("synthetic-windows-x64.dmp"), w.finish()).unwrap();
+    // Linux ARM64: Breakpad's build ID, and the process maps.
+    let mut w = Writer::new();
+    w.system_info(cpu::ARM64, platform::LINUX);
+    let ctx = arm64_context(0x5555_0000_1000, 0x7FFF_0000);
+    w.threads(&[ThreadSpec {
+        id: 7,
+        teb: 0,
+        stack_start: 0x7FFF_0000,
+        stack: &stack,
+        context: &ctx,
+    }]);
+    let mut bpel = b"LEpB".to_vec();
+    bpel.extend(1..=20u8);
+    w.modules(&[ModuleSpec {
+        base: 0x5555_0000_0000,
+        size: 0x4000,
+        time_date_stamp: 0,
+        name: "/usr/bin/app",
+        cv: &bpel,
+    }]);
+    w.memory(&[(0x7FFF_0000, &stack)]);
+    w.stream(0x4767_0009, b"555500000000-555500004000 r-xp 00000000 08:01 11 /usr/bin/app\n7f1000000000-7f1000028000 r-xp 00000000 08:01 22 /usr/lib/libc.so.6\n");
+    w.exception(7, 11, 0x5555_0000_1000, &ctx);
+    std::fs::write(dir.join("synthetic-linux-arm64.dmp"), w.finish()).unwrap();
+}

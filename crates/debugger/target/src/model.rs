@@ -192,6 +192,22 @@ pub trait Memory: Sync {
     fn provenance(&self) -> Provenance;
 }
 
+/// Fills `buf` from `address` in `memory`, if all of it is available.
+pub fn read_exact(memory: &dyn Memory, address: u64, buf: &mut [u8]) -> bool {
+    let mut done = 0;
+    while done < buf.len() {
+        let Some(a) = address.checked_add(done as u64) else {
+            return false;
+        };
+        let n = memory.read_at(a, &mut buf[done..]);
+        if n == 0 {
+            return false;
+        }
+        done += n;
+    }
+    true
+}
+
 /// A debugging target.
 pub trait Target: Sync {
     fn arch(&self) -> Arch;

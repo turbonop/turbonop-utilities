@@ -75,6 +75,13 @@ fn is_macho(_: &Path, d: &[u8]) -> bool {
     .iter()
     .any(|m| starts(d, *m))
 }
+fn is_minidump(_: &Path, d: &[u8]) -> bool {
+    starts(d, b"MDMP")
+}
+fn is_core(_: &Path, d: &[u8]) -> bool {
+    // ET_CORE, either byte order.
+    starts(d, b"\x7fELF") && (d.get(16..18) == Some(&[4, 0]) || d.get(16..18) == Some(&[0, 4]))
+}
 fn is_wasm(_: &Path, d: &[u8]) -> bool {
     starts(d, b"\0asm")
 }
@@ -447,6 +454,53 @@ fn text(data: &[u8], s: &Scratch) {
     hexcavator(&["linkerlog", &f]);
 }
 
+/// Everything a target says, and its whole address space read.
+fn examine(t: &dyn turbonop_target::Target) {
+    let _ = (t.arch(), t.os(), t.abi(), t.snapshot(), t.capabilities());
+    for th in t.threads() {
+        let _ = th.registers.to_unwind();
+    }
+    let _ = t.exception();
+    let mut images = Vec::new();
+    for m in t.modules() {
+        let _ = (m.file_name(), t.module_at(m.base));
+        images.push(m.base);
+    }
+    let space = turbonop_target::AddressSpace::new(t.memory(), Vec::new());
+    for th in t.threads() {
+        if let Some(stack) = &th.stack {
+            let _ = space.runs(stack.start, (stack.end - stack.start).min(1 << 20));
+        }
+    }
+    for base in images {
+        let _ = turbonop_target::build_id::elf_in_memory(t.memory(), base);
+        let _ = space.runs(base, 1 << 16);
+    }
+}
+
+fn minidump(data: &[u8], _: &Scratch) {
+    if let Ok(t) = turbonop_target::MinidumpTarget::new(data) {
+        examine(&t);
+    }
+}
+
+fn core(data: &[u8], _: &Scratch) {
+    if let Ok(t) = turbonop_target::CoreTarget::new(data) {
+        examine(&t);
+        let c = t.core();
+        let _ = (
+            c.process_info(),
+            c.siginfo(),
+            c.auxv(),
+            c.files(),
+            c.pac_masks(),
+        );
+        for th in c.threads() {
+            let _ = th.note(turbonop_elf::coredump::NT_PRFPREG);
+        }
+    }
+}
+
 fn etl(data: &[u8], _: &Scratch) {
     let Ok(etl) = turbonop_etl::Etl::parse(data) else {
         return;
@@ -745,6 +799,18 @@ pub const TARGETS: &[Target] = &[
         about: "PDBs: the whole dump, types, and every debug-information query",
         seeds: is_pdb,
         run: pdb,
+    },
+    Target {
+        name: "minidump",
+        about: "minidumps as targets: threads, contexts, modules and identities, maps, memory",
+        seeds: is_minidump,
+        run: minidump,
+    },
+    Target {
+        name: "core",
+        about: "ELF core files as targets: notes, registers, mapped files, build IDs in memory",
+        seeds: is_core,
+        run: core,
     },
     Target {
         name: "etl",

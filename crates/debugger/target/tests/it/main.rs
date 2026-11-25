@@ -3,6 +3,7 @@
 mod support;
 
 mod context;
+mod core_file;
 mod linux_maps;
 mod minidump;
 mod registers;

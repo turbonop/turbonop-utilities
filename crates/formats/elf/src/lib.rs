@@ -21,6 +21,7 @@ use turbonop_core::{Endian, Error, ErrorKind, Result, bytes_at, cstr_at};
 pub mod arm;
 pub mod arm_exidx;
 pub mod consts;
+pub mod coredump;
 pub mod eh_frame;
 pub mod mips;
 pub mod riscv;

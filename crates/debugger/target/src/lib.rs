@@ -18,7 +18,9 @@
 
 extern crate alloc;
 
+pub mod build_id;
 pub mod context;
+pub mod core_file;
 mod image;
 pub mod linux_maps;
 pub mod minidump;
@@ -27,11 +29,12 @@ pub mod os;
 mod registers;
 mod space;
 
+pub use core_file::CoreTarget;
 pub use image::LoadedImage;
 pub use minidump::MinidumpTarget;
 pub use model::{
     Capabilities, DebugId, Exception, ImageId, Memory, Module, ModuleSource, Provenance, Snapshot,
-    Target, Thread,
+    Target, Thread, read_exact,
 };
 pub use registers::Registers;
 pub use space::{AddressSpace, Run};

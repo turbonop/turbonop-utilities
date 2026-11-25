@@ -8,11 +8,20 @@ use turbonop_global_alloc as _;
 use std::num::NonZero;
 use std::sync::OnceLock;
 
-/// How many threads work is split across: the machine's parallelism
-/// (`TURBONOP_THREADS` overrides it; 1 runs everything on the caller's
-/// thread).
+static THREADS: OnceLock<usize> = OnceLock::new();
+
+/// Sets how many threads work is split across (a program's `-j`), before
+/// anything has asked; 1 runs everything on the caller's thread, with no
+/// thread created. Returns whether it was set (false once [`threads`] has
+/// been read or this already called).
+pub fn set_threads(n: usize) -> bool {
+    THREADS.set(n.max(1)).is_ok()
+}
+
+/// How many threads work is split across: what [`set_threads`] set, or the
+/// machine's parallelism (`TURBONOP_THREADS` overrides it; 1 runs
+/// everything on the caller's thread).
 pub fn threads() -> usize {
-    static THREADS: OnceLock<usize> = OnceLock::new();
     *THREADS.get_or_init(|| {
         std::env::var("TURBONOP_THREADS")
             .ok()

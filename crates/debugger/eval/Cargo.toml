@@ -1,0 +1,29 @@
+[package]
+name = "turbonop-eval"
+description = "A frame's variables, evaluated: their places (registers, memory, DWARF location expressions) read with the frame's registers and the target's memory, or why they can't be"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+# (No unit tests: their build of the crate would be wasted. The workspace's
+# tests check that a target marked so has none.)
+[lib]
+test = false
+
+[dependencies]
+turbonop-codeview.workspace = true
+turbonop-core.workspace = true
+turbonop-debuginfo.workspace = true
+turbonop-dwarf.workspace = true
+turbonop-frames.workspace = true
+turbonop-target.workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true
+turbonop-program.workspace = true
+
+[lints]
+workspace = true

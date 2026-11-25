@@ -52,11 +52,11 @@ fn gpr_name(n: u64, wide: bool, sp: bool) -> Option<&'static str> {
 }
 
 /// The symbol's raw number (before its attributes' scaling).
-fn raw(sym: &Symbol, w: u32) -> u64 {
+pub(crate) fn raw(sym: &Symbol, w: u32) -> u64 {
     value(sym.encoded, w)
 }
 
-fn number(sym: &Symbol, w: u32) -> i64 {
+pub(crate) fn number(sym: &Symbol, w: u32) -> i64 {
     match &sym.value {
         Some(v) => v.eval(w),
         None => raw(sym, w) as i64,
@@ -319,39 +319,7 @@ fn render_symbol(
             return Some(false);
         }
         Kind::Bitmask => {
-            // The fields' positions depend on the class: general forms
-            // have N in bit 22, immr in 21:16, and imms in 15:10; SVE
-            // forms have N:immr:imms in bits 17:5.
-            let general = inst.class() == "general";
-            let (n_bit, immr, imms) = if general {
-                (
-                    u64::from(w >> 22) & 1,
-                    u64::from(w >> 16) & 0x3F,
-                    u64::from(w >> 10) & 0x3F,
-                )
-            } else {
-                (
-                    u64::from(w >> 17) & 1,
-                    u64::from(w >> 11) & 0x3F,
-                    u64::from(w >> 5) & 0x3F,
-                )
-            };
-            let datasize = if general && w >> 31 == 0 { 32 } else { 64 };
-            let (mask, _) = crate::alias::decode_bit_masks(n_bit, imms, immr, true, datasize)?;
-            // General 64-bit masks are shown signed; SVE masks at their
-            // element size.
-            let esize = if general {
-                datasize
-            } else {
-                // (The arrangement is at least bytes.)
-                let combined = (n_bit << 6) | (!imms & 0x3F);
-                (1u32 << (63 - combined.leading_zeros())).max(8)
-            };
-            if esize >= 64 {
-                push_imm(out, mask as i64);
-            } else {
-                push_imm(out, (mask & ((1u64 << esize) - 1)) as i64);
-            }
+            push_imm(out, bitmask(inst)?);
             return Some(false);
         }
         Kind::SysReg => {
@@ -768,15 +736,63 @@ pub fn format_into(inst: &Instruction, symbols: &dyn Symbols, out: &mut String) 
 /// and returns whether it is a default, or returns `None` (nothing
 /// written) for other operands.
 fn special(inst: &Instruction, sym: &Symbol, out: &mut String) -> Option<bool> {
+    Some(match special_value(inst, sym)? {
+        Special::Num(v, default) => {
+            push_imm(out, v);
+            default
+        }
+        Special::Hash(v) => {
+            out.push('#');
+            push_imm(out, v);
+            false
+        }
+        Special::Decimal(v) => {
+            push_decimal(out, v);
+            false
+        }
+        Special::Text(t) => {
+            out.push_str(t);
+            false
+        }
+        Special::Lower(t) => {
+            push_lower(out, t);
+            false
+        }
+        Special::ZaMask(m) => {
+            out.push_str(&za_mask(m));
+            false
+        }
+        Special::Absent => true,
+    })
+}
+
+/// What [`special`] shows (and whether it is a default).
+#[derive(Clone, Copy)]
+pub(crate) enum Special {
+    /// A number, Microsoft's way; whether it is the default.
+    Num(i64, bool),
+    /// `#` and a number.
+    Hash(i64),
+    /// A number in decimal.
+    Decimal(i64),
+    /// Text as it is.
+    Text(&'static str),
+    /// Text in lower case.
+    Lower(&'static str),
+    /// ZA tiles (ZERO's mask).
+    ZaMask(u64),
+    /// Nothing: an optional operand left out.
+    Absent,
+}
+
+/// The value of the operands [`special`] shows, or `None` for others.
+pub(crate) fn special_value(inst: &Instruction, sym: &Symbol) -> Option<Special> {
     let w = inst.word;
     let name = inst.encoding_name();
     let size: i64 = if w >> 31 == 1 { 64 } else { 32 };
     let immr = i64::from((w >> 16) & 0x3F);
     let imms = i64::from((w >> 10) & 0x3F);
-    fn num(out: &mut String, v: i64) -> Option<bool> {
-        push_imm(out, v);
-        Some(v == 0)
-    }
+    let num = |v: i64| Some(Special::Num(v, v == 0));
     // A register offset's amount (LLVM's printMemExtend): with S set, the
     // log2 of the access size in bytes (#0 for bytes); without, none.
     if sym.has(attr::MEMEXT)
@@ -785,19 +801,18 @@ fn special(inst: &Instruction, sym: &Symbol, out: &mut String) -> Option<bool> {
     {
         let width: u32 = width.parse().unwrap_or(8);
         if raw(sym, w) == 1 {
-            out.push('#');
-            push_imm(out, i64::from((width / 8).trailing_zeros()));
-            return Some(false);
+            return Some(Special::Hash(i64::from((width / 8).trailing_zeros())));
         }
-        return Some(true);
+        return Some(Special::Absent);
     }
     // "it must be #0, encoded in "S" as 0 if omitted, or as 1 if present".
     if sym.has(attr::PRESENT01) {
         let present = raw_value(sym, w) == 1;
-        if present {
-            out.push_str("#0");
-        }
-        return Some(!present);
+        return Some(if present {
+            Special::Hash(0)
+        } else {
+            Special::Absent
+        });
     }
     // SVE shifts by immediate: tsz gives the element size, and the
     // amount is tsz:imm3 minus the element size (left shifts) or twice
@@ -821,24 +836,21 @@ fn special(inst: &Instruction, sym: &Symbol, out: &mut String) -> Option<bool> {
             ]
             .contains(&mnemonic);
             let amount = if left { raw - esize } else { 2 * esize - raw };
-            return num(out, amount);
+            return num(amount);
         }
     }
     // ZERO { <mask> }.
     if sym.display == "<mask>" && name.starts_with("zero_za_i") {
-        out.push_str(&za_mask(raw(sym, w)));
-        return Some(false);
+        return Some(Special::ZaMask(raw(sym, w)));
     }
     // Symbols with no encoding: "is the destination width specifier, H."
     // and "is the second slice index offset, with implicit value 1."
     if sym.encoded.is_empty() && sym.value.is_none() {
         if let Some(n) = sym.attr("implicit") {
-            out.push_str(n);
-            return Some(false);
+            return Some(Special::Text(n));
         }
         if let Some(s) = sym.attr("spec") {
-            push_lower(out, s);
-            return Some(false);
+            return Some(Special::Lower(s));
         }
     }
     // AdvSIMD MOVI with 64-bit elements: each bit of a:b:c:d:e:f:g:h is a
@@ -851,15 +863,13 @@ fn special(inst: &Instruction, sym: &Symbol, out: &mut String) -> Option<bool> {
                 mask |= 0xFF << (8 * i);
             }
         }
-        push_imm(out, mask as i64);
-        return Some(false);
+        return Some(Special::Num(mask as i64, false));
     }
     // SVE multipliers: "in the range 1 to 16, defaulting to 1, encoded in
     // the imm4 field" (as the value minus one).
     if sym.has(attr::MULT16) {
         let v = raw_value(sym, w) as i64 + 1;
-        push_imm(out, v);
-        return Some(v == 1);
+        return Some(Special::Num(v, v == 1));
     }
     // SVE DUP (indexed): the index is above the lowest set bit of tsz.
     if sym.display == "<imm>"
@@ -869,17 +879,16 @@ fn special(inst: &Instruction, sym: &Symbol, out: &mut String) -> Option<bool> {
         let v = raw_value(sym, w);
         let tsz = v & 0x1F;
         if tsz != 0 {
-            push_decimal(out, (v >> (tsz.trailing_zeros() + 1)) as i64);
-            return Some(false);
+            return Some(Special::Decimal((v >> (tsz.trailing_zeros() + 1)) as i64));
         }
     }
     let prefix = name.split('_').next().unwrap_or("");
     match (prefix, sym.display) {
-        ("UBFX" | "SBFX" | "BFXIL", "<lsb>") => num(out, immr),
-        ("UBFX" | "SBFX" | "BFXIL", "<width>") => num(out, imms + 1 - immr),
-        ("UBFIZ" | "SBFIZ" | "BFI" | "BFC", "<lsb>") => num(out, (-immr).rem_euclid(size)),
-        ("UBFIZ" | "SBFIZ" | "BFI" | "BFC", "<width>") => num(out, imms + 1),
-        ("LSL", "<shift>") if name.contains("UBFM") => num(out, (-immr).rem_euclid(size)),
+        ("UBFX" | "SBFX" | "BFXIL", "<lsb>") => num(immr),
+        ("UBFX" | "SBFX" | "BFXIL", "<width>") => num(imms + 1 - immr),
+        ("UBFIZ" | "SBFIZ" | "BFI" | "BFC", "<lsb>") => num((-immr).rem_euclid(size)),
+        ("UBFIZ" | "SBFIZ" | "BFI" | "BFC", "<width>") => num(imms + 1),
+        ("LSL", "<shift>") if name.contains("UBFM") => num((-immr).rem_euclid(size)),
         ("MOV", "<imm>") if name.contains("MOVZ") || name.contains("MOVN") => {
             let imm16 = u64::from((w >> 5) & 0xFFFF);
             let hw = (w >> 21) & 3;
@@ -891,7 +900,7 @@ fn special(inst: &Instruction, sym: &Symbol, out: &mut String) -> Option<bool> {
             } else {
                 v as i64
             };
-            num(out, v)
+            num(v)
         }
         _ => None,
     }
@@ -1021,7 +1030,7 @@ fn ms_registers(s: &str, out: &mut String) -> bool {
 }
 
 /// The value of a symbol's precise encoding (its `source=`), unscaled.
-fn raw_value(sym: &Symbol, w: u32) -> u64 {
+pub(crate) fn raw_value(sym: &Symbol, w: u32) -> u64 {
     match &sym.value {
         Some(v) => value(v.pieces, w),
         None => raw(sym, w),
@@ -1029,19 +1038,62 @@ fn raw_value(sym: &Symbol, w: u32) -> u64 {
 }
 
 /// Whether `sym` is an 8-bit floating-point immediate.
-fn is_fp_imm8(sym: &Symbol) -> bool {
+pub(crate) fn is_fp_imm8(sym: &Symbol) -> bool {
     sym.has(attr::FP8) && sym.value.as_ref().is_some_and(|v| v.width == 8)
 }
 
-/// `VFPExpandImm`: an 8-bit floating-point immediate, as Microsoft shows
-/// it (the shortest decimal).
+/// An 8-bit floating-point immediate, as Microsoft shows it (the shortest
+/// decimal).
 fn push_fp_imm8(out: &mut String, imm8: u64) {
+    let _ = write!(out, "{}", fp_imm8(imm8));
+}
+
+/// `VFPExpandImm`: an 8-bit floating-point immediate's value.
+pub(crate) fn fp_imm8(imm8: u64) -> f64 {
     let sign = if imm8 & 0x80 != 0 { -1.0 } else { 1.0 };
     let exp = (((imm8 >> 4) & 7) ^ 4) as i32 - 3;
     let mantissa = (16 + (imm8 & 0xF)) as f64 / 16.0;
     // 2^exp, exactly (exp is -3..=4), without libm's powi.
     let scale = f64::from_bits(((1023 + exp) as u64) << 52);
-    let _ = write!(out, "{}", sign * mantissa * scale);
+    sign * mantissa * scale
+}
+
+/// A logical immediate's value, as Microsoft shows it (general 64-bit
+/// masks signed; SVE masks at their element size), or `None` if its bits
+/// are not a valid mask.
+pub(crate) fn bitmask(inst: &Instruction) -> Option<i64> {
+    let w = inst.word;
+    // The fields' positions depend on the class: general forms have N in
+    // bit 22, immr in 21:16, and imms in 15:10; SVE forms have
+    // N:immr:imms in bits 17:5.
+    let general = inst.class() == "general";
+    let (n_bit, immr, imms) = if general {
+        (
+            u64::from(w >> 22) & 1,
+            u64::from(w >> 16) & 0x3F,
+            u64::from(w >> 10) & 0x3F,
+        )
+    } else {
+        (
+            u64::from(w >> 17) & 1,
+            u64::from(w >> 11) & 0x3F,
+            u64::from(w >> 5) & 0x3F,
+        )
+    };
+    let datasize = if general && w >> 31 == 0 { 32 } else { 64 };
+    let (mask, _) = crate::alias::decode_bit_masks(n_bit, imms, immr, true, datasize)?;
+    let esize = if general {
+        datasize
+    } else {
+        // (The arrangement is at least bytes.)
+        let combined = (n_bit << 6) | (!imms & 0x3F);
+        (1u32 << (63 - combined.leading_zeros())).max(8)
+    };
+    Some(if esize >= 64 {
+        mask as i64
+    } else {
+        (mask & ((1u64 << esize) - 1)) as i64
+    })
 }
 
 /// Microsoft always shows the amount of an extend other than LSL:

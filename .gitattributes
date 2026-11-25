@@ -3,3 +3,5 @@
 *.bat text eol=crlf
 # Compared byte for byte (the xz streams hold text.txt as it is).
 testdata/xz/* -text
+# Run by Linux shells (WSL), which misread CR line ends.
+*.sh text eol=lf

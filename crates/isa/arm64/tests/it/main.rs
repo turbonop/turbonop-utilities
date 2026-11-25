@@ -3,5 +3,8 @@
 
 use turbonop_global_alloc as _;
 
+mod access;
+mod access_cases;
 mod exhaustive;
 mod golden;
+mod operands;

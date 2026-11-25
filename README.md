@@ -63,9 +63,10 @@ Each tool is released on its own, with tags named for it
 | `crates/isa/powerpc` (`turbonop-powerpc`) | PowerPC instruction decoder (32- and 64-bit, big- and little-endian; Altivec, VSX, ISA 3.1's prefixed instructions, MMA), from LLVM's TableGen records, written as llvm-objdump writes it |
 | `crates/isa/mips` (`turbonop-mips`) | MIPS instruction decoder (MIPS I to MIPS64 Release 6, big- and little-endian; MSA, DSP, Octeon; microMIPS, its 16- and 32-bit instructions and Release 6's), from LLVM's TableGen records, written as llvm-objdump writes it |
 | `crates/isa/tablegen` (`turbonop-tablegen`) | Instruction decoding by tables generated from LLVM's TableGen records (`tools/tablegen`): the decoder, aliases, complex operands, and compressed instructions' full forms that the RISC-V, LoongArch, PowerPC, and MIPS crates share |
-| `crates/isa/arm64` (`turbonop-arm64`) | AArch64 decoder (base, FP, AdvSIMD, SVE/SVE2, SME/SME2, ...) generated from Arm's AARCHMRS and LLVM's AArch64 target, with a dumpbin-style formatter |
+| `crates/isa/arm64` (`turbonop-arm64`) | AArch64 decoder (base, FP, AdvSIMD, SVE/SVE2, SME/SME2, ...) generated from Arm's AARCHMRS and LLVM's AArch64 target, with a dumpbin-style formatter, typed operands, and each instruction's reads and writes |
 | `crates/isa/wasm` (`turbonop-wasm-isa`) | The WebAssembly instruction decoder (the whole instruction set, through GC, threads, and relaxed SIMD) with text output |
-| `crates/isa/x86` (`turbonop-x86`) | x86/x86-64 decoder (legacy, x87, SSE, AVX, AVX-512, AMX, ...) and dumpbin-style formatter |
+| `crates/isa/x86` (`turbonop-x86`) | x86/x86-64 decoder (legacy, x87, SSE, AVX, AVX-512, AMX, ...), what each instruction reads and writes, and dumpbin-style formatter |
+| `crates/debug/abi` (`turbonop-abi`) | Calling conventions for each platform: which registers a call preserves, argument, result, and return-address registers, red zones, home space, and DWARF register numbers |
 | `crates/debug/unwind` (`turbonop-unwind`) | Virtual stack unwinders: recover a caller's registers from a frame's registers, its stack, and the image's unwind data (Windows' `.pdata`, DWARF CFI, Apple's compact unwind, ARM EHABI), picked for an image of any format |
 | `crates/analysis/code` (`turbonop-code`) | Code independent of the instruction set: instructions' control flow, and functions' basic blocks |
 | `crates/analysis/fingerprint` (`turbonop-fingerprint`) | Fingerprints of functions and data that don't depend on where they are: instructions with addresses masked, then what they refer to, refined until stable (as linkers fold identical code), so builds compare and unfolded duplicates show |
@@ -77,8 +78,13 @@ Each tool is released on its own, with tags named for it
 | `crates/trace/etw` (`turbonop-etw`) | Decoders for Windows kernel and trace-control events in ETL files |
 | `crates/trace/trace` (`turbonop-trace`) | A platform-neutral model of performance traces, and importers that build it |
 | `crates/trace/trace-analysis` (`turbonop-trace-analysis`) | Queries over traces: stack trees, callers and callees, CPU and wait analysis |
-| `crates/system/process` (`turbonop-process`) | This machine's processes: snapshots of each (counters and details) on Windows (`NtQuerySystemInformation`), Linux (`/proc`), and macOS (`libproc`); rates between them; kill, suspend, and resume by a key that a reused ID can't reach |
+| `crates/debugger/target` (`turbonop-target`) | Debugging targets: minidumps and Linux core files as one model (threads and their registers by DWARF number, modules and their identities, the exception, memory), the address space over a target's memory and its modules' images with each byte's provenance, and its modules' images and debug information found by identity, locally or from symbol servers, all at once |
+| `crates/debugger/eval` (`turbonop-eval`) | A frame's variables, evaluated: PDB def-ranges and DWARF location expressions (including entry values, through the caller's call sites) read with the frame's registers and the target's memory, or the reason they can't be |
+| `crates/debugger/frames` (`turbonop-frames`) | Stack walking: every thread's frames, with each register's provenance in each frame by the platform's ABI, signal frames, and frame-pointer and stack-scan fallbacks that check for calls, each frame symbolized with its inlined calls |
+| `crates/debugger/paths` (`turbonop-paths`) | How did we get here: which way each branch of a crashed frame's function went, by its control flow and by the values that survive in the dump, each decision with its proof |
 | `apps/hexcavator` | `hexcavator`: the command line, the MCP server for agents, and the server the VS Code extension runs |
+| `apps/dump-analyzer` | `dump-analyzer`: post-mortem debugging of crash dumps (minidumps; Linux and Mach-O core files) from the command line, the server the "Dump Analyzer" VS Code extension runs, and an MCP server for agents |
+| `crates/system/process` (`turbonop-process`) | This machine's processes: snapshots of each (counters and details) on Windows (`NtQuerySystemInformation`), Linux (`/proc`), and macOS (`libproc`); rates between them; kill, suspend, and resume by a key that a reused ID can't reach |
 | `apps/procupine` | `procupine`: the command line, and the server its VS Code extension runs |
 | `apps/fuzz` | The fuzzer: every parser and command, on mutated inputs, for crashes, hangs, and blowups |
 | `apps/xtask` | Development tasks: `cargo xtask test` builds every test and runs them all at once |
@@ -140,6 +146,12 @@ copying dumpbin. A sample of the agreed results is kept in
 every host. Not yet supported: AVX512-FP16, most of AVX10.2, APX (REX2 is
 decoded; EVEX promotions are not), AMX-AVX512, and Xeon Phi extensions.
 
+What each instruction reads and writes (`crates/isa/x86/tables/access.rules`)
+is checked against Intel XED: `tools/x86access` builds XED and runs it over an
+encoding of every opcode table form, into
+`crates/isa/x86/tests/data/access.txt`. Nothing XED reads or writes may be
+missing, and every write XED doesn't have is listed with its reason.
+
 ### turbonop-arm64 testing
 
 `turbonop-arm64`'s tables (`crates/isa/arm64/tables/a64.txt`) are generated by
@@ -155,6 +167,16 @@ dumpbin does not decode (listed in `crates/isa/arm64/tests/support/mod.rs`),
 encodings ARM reserves that dumpbin decodes anyway, and dumpbin's bugs (in
 `crates/isa/arm64/tests/dumpbin.rs`). `crates/isa/arm64/tests/data/golden.txt` keeps up
 to four agreed words of every encoding for the hermetic test.
+
+What each instruction reads and writes (`crates/isa/arm64/tables/a64-access.txt`)
+is generated by `tools/arm64/access.py` from LLVM's records: each encoding's
+operands, written or read (tied ones, writeback bases, both), implicit
+registers, and MCInstrDesc's flags, with explicit rules for what LLVM leaves
+out (FPSR, MSR's system registers, SMSTART's zeroing) or gets wrong (MRS
+writing NZCV). `crates/isa/arm64/tests/data/access.txt` is llvm-mc's view of
+four words of every encoding (`tools/arm64/access_golden.py`): every register
+it says a word writes or reads, turbonop-arm64 does. The operands are checked
+against the formatted text and the access data on the same words.
 
 ### turbonop-demangle testing
 

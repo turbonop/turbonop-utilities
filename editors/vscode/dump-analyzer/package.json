@@ -1,0 +1,131 @@
+{
+  "name": "dump-analyzer",
+  "displayName": "Dump Analyzer",
+  "description": "Post-mortem debugging of crash dumps in VS Code: Windows, Linux, and macOS minidumps and Linux core files, with every thread's stack, each frame's locals and registers (and where each value came from), memory, and disassembly. No debugger to install.",
+  "version": "0.0.1",
+  "publisher": "turbonop",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers"
+  ],
+  "keywords": [
+    "crash dump",
+    "minidump",
+    "core dump",
+    "post-mortem",
+    "windbg",
+    "breakpad",
+    "crashpad"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onDebugResolve:dump-analyzer",
+    "onDebugDynamicConfigurations:dump-analyzer",
+    "onCommand:dumpAnalyzer.openDump"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "dumpAnalyzer.openDump",
+        "title": "Open Crash Dump",
+        "category": "Dump Analyzer"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "dumpAnalyzer.openDump",
+          "when": "resourceExtname == .dmp || resourceExtname == .mdmp || resourceExtname == .core || resourceFilename =~ /^core(\\.[0-9]+)?$/",
+          "group": "navigation"
+        }
+      ]
+    },
+    "debuggers": [
+      {
+        "type": "dump-analyzer",
+        "label": "Dump Analyzer",
+        "languages": [],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "dump"
+            ],
+            "properties": {
+              "dump": {
+                "type": "string",
+                "description": "The dump to open: a minidump (.dmp) or a core file."
+              },
+              "symbols": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Directories to look in for the dump's modules' images and debug information, besides the dump's own."
+              },
+              "sysroot": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Directories that stand for the dump's root, its modules' paths under them (a Linux system's files from Windows: \\\\wsl$\\Ubuntu)."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "dump-analyzer",
+            "request": "launch",
+            "name": "Open a crash dump",
+            "dump": "${file}"
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Dump Analyzer: open a crash dump",
+            "body": {
+              "type": "dump-analyzer",
+              "request": "launch",
+              "name": "Open a crash dump",
+              "dump": "^\"\\${file}\""
+            }
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "Dump Analyzer",
+      "properties": {
+        "dumpAnalyzer.path": {
+          "type": "string",
+          "default": "",
+          "description": "The dump-analyzer program to run (else the one the extension ships with, or dump-analyzer on the PATH)."
+        },
+        "dumpAnalyzer.symbolServers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Symbol servers with Microsoft's layout to fetch modules' images and debug information from (e.g. https://msdl.microsoft.com/download/symbols). Asking one tells it which builds the dump has."
+        },
+        "dumpAnalyzer.debuginfod": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "debuginfod servers to fetch ELF modules' files from."
+        },
+        "dumpAnalyzer.symbolCache": {
+          "type": "string",
+          "default": "",
+          "description": "Where to keep what the servers send."
+        }
+      }
+    }
+  }
+}

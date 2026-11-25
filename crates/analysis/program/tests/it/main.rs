@@ -5,4 +5,5 @@ use turbonop_global_alloc as _;
 
 mod cache;
 mod debug_map_paths;
+mod locate;
 mod split_dwarf;

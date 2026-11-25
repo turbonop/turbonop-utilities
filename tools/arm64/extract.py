@@ -16,6 +16,9 @@ attributes say where they came from: `src=mrs` (the grammar) or
 `src=llvm:<operand class>`.
 
 Usage: python extract.py <mrs.tar.gz or Instructions.json> <llvm aarch64.json> > a64.txt
+
+Then run access.py (what each encoding reads and writes, a64-access.txt):
+it follows a64.txt's encodings, and build.rs checks that it does.
 """
 
 import contextlib
@@ -510,6 +513,18 @@ class Llvm:
         mul2 = re.match(r"Decode[ZP]PR(\d)Mul(\d)RegisterClass", decode)
         if mul2:
             out += [f"regmul={mul2.group(2)}", "aligned"]
+        # From a base: {z16.h-z17.h} to {z30.h-z31.h}
+        # (`DecodeZPR2Mul2RegisterClass<16, 31>`).
+        base = re.match(r"DecodeZPR2Mul2RegisterClass<(\d+),", decode)
+        if base and base.group(1) != "0":
+            out.append(f"regadd={base.group(1)}")
+        # Single registers by a multiple, from a base: Z0-Z14 and Z16-Z30
+        # even (`DecodeMulMinMaxRegisterClass<..., 2, 16, 30>`).
+        minmax = re.match(r"DecodeMulMinMaxRegisterClass<\w+::\w+, ?(\d+), ?(\d+), ?\d+>", decode)
+        if minmax and minmax.group(1) != "1":
+            out.append(f"regmul={minmax.group(1)}")
+        if minmax and minmax.group(2) != "0":
+            out.append(f"regadd={minmax.group(2)}")
         # General registers where 31 is the zero register (not SP).
         if re.search(r"(?:^| )GPR(?:32|64)(?:z|common|arg)?(?: |$)", type_name):
             out.append("zr31")

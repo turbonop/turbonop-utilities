@@ -22,6 +22,7 @@ use alloc::vec::Vec;
 use turbonop_core::{Endian, Error, ErrorKind, Result};
 
 pub mod consts;
+pub mod coredump;
 pub mod debugmap;
 pub mod fixups;
 pub mod info;

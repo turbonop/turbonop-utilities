@@ -106,6 +106,13 @@ pub struct Instruction {
     pub(crate) apx: u8,
     /// APX CCMP/CTEST: the default flags value.
     pub(crate) dfv: u8,
+    /// The opcode table form it was decoded from: the index of its access
+    /// data.
+    pub(crate) form: u16,
+    /// The operand size in bytes (2, 4, or 8) in the low four bits, and
+    /// the address size in the high four (one byte, to keep the
+    /// instruction small).
+    pub(crate) sizes: u8,
 }
 
 /// APX decorations.
@@ -222,6 +229,26 @@ impl Instruction {
     #[inline]
     pub fn vector_length(&self) -> u8 {
         self.vector_length
+    }
+
+    /// The opcode table form it was decoded from (for tests and table
+    /// tools; see [`crate::form_origin`]).
+    #[doc(hidden)]
+    #[inline]
+    pub fn form(&self) -> u16 {
+        self.form
+    }
+
+    /// The operand size in bytes (2, 4, or 8).
+    #[inline]
+    pub(crate) fn operand_size(&self) -> u8 {
+        self.sizes & 0x0F
+    }
+
+    /// The address size in bytes (2, 4, or 8).
+    #[inline]
+    pub(crate) fn address_size(&self) -> u8 {
+        self.sizes >> 4
     }
 
     #[inline]

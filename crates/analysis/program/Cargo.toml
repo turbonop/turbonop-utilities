@@ -19,6 +19,7 @@ turbonop-size.workspace = true
 turbonop-core.workspace = true
 turbonop-pdb.workspace = true
 turbonop-pe.workspace = true
+turbonop-par.workspace = true
 rustc-hash.workspace = true
 
 [lints]

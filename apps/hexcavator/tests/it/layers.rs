@@ -6,8 +6,9 @@
 //! | 0 | `crates/base` |
 //! | 1 | `crates/formats`, `crates/system` |
 //! | 2 | `crates/symbols`, `crates/isa` |
-//! | 3 | `crates/debug`, `crates/analysis`, `crates/trace` |
-//! | 4 | `apps` |
+//! | 3 | `crates/debug`, `crates/analysis`, `crates/trace`, `crates/link` |
+//! | 4 | `crates/debugger` |
+//! | 5 | `apps` |
 //!
 //! Layers of the same rank are peers and don't depend on each other.
 //! Dev-dependencies (tests and examples) may use anything.
@@ -24,7 +25,9 @@ const LAYERS: &[(&str, u32)] = &[
     ("crates/debug", 3),
     ("crates/analysis", 3),
     ("crates/trace", 3),
-    ("apps", 4),
+    ("crates/link", 3),
+    ("crates/debugger", 4),
+    ("apps", 5),
 ];
 
 fn root() -> PathBuf {

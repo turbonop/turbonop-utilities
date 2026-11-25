@@ -21,3 +21,20 @@ Built by `tools/coff/build.cmd` with MSVC (x64, `/Brepro`) from
   (`ltcg.directives.txt`).
 - `*.symbols.txt`: dumpbin's `/symbols` of each object, which
   `hexcavator dump -symbols` matches.
+
+`archives/` is built by `tools/coff/archives.cmd` (lib.exe of MSVC 14.52,
+with and without `/Brepro`, and llvm-lib of LLVM 24), for the archive
+writer's and the `.def` reader's tests, which write each library again
+and compare:
+
+- `<name>.lib`, `<name>-brepro.lib`, `<name>-llvm.lib`: libraries of the
+  objects `tools/coff/archives/symbols.py` writes (every kind of symbol;
+  the same names defined, common, and weak in several members; names that
+  sort; member names of 13 to 17 bytes, and paths), by lib.exe without
+  and with `/Brepro`, and by llvm-lib.
+- `ec-*.lib`, `x-*.lib`, `mix-*.lib`: ARM64EC and ARM64X libraries of
+  ARM64EC, ARM64, and x64 objects of `tools/coff/archives/*.c`.
+- `def-<name>[-<machine>].lib`: lib /DEF's import libraries of
+  `tools/coff/archives/def/<name>.def` (x64 unless named), one of them
+  given an x86 object too (`-objects`), one without `/Brepro` (`-dated`),
+  and llvm-lib's (`-llvm`).

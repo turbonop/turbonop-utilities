@@ -1,0 +1,10 @@
+; Exports the x86 objects of decorated.c define decorated: lib.exe
+; imports them UNDECORATE (built with the object, for x86).
+LIBRARY decorated
+EXPORTS
+  Func
+  Cd
+  Fa
+  Data1 DATA
+  Ren=Func
+  Ren2=_Func@8

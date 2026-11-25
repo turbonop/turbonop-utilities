@@ -1,0 +1,3 @@
+LIBRARY driver.sys
+EXPORTS
+  A

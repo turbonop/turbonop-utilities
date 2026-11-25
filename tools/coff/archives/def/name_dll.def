@@ -1,0 +1,4 @@
+; NAME with an extension keeps it, with BASE= and WINDOWAPI
+NAME prog.dll BASE=0x400000 WINDOWAPI
+EXPORTS
+  A

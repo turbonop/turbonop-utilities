@@ -1,0 +1,8 @@
+LIBRARY ec2.dll
+EXPORTS
+  ?Cpp@@YAXXZ
+  ?CppData@@3HA DATA
+  ?CppConst@@3HA CONSTANT
+  #Hashed
+  Renamed=Internal
+  NoNameOrd @3 NONAME

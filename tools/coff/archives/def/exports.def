@@ -1,0 +1,52 @@
+; Every form of export lib.exe takes, in one file (built for x64, x86,
+; ARM64, and ARM64EC).
+LIBRARY exports
+EXPORTS Plain
+  Ordinal @5
+  OrdNoName @6 NONAME
+  _Decorated@8
+  ?Cpp@@YAXXZ
+  ?Var@@3HA DATA
+  DataItem DATA
+  ConstItem CONSTANT
+  PrivItem PRIVATE
+  Renamed=Internal
+  Fwd=other.Func
+  FwdOrd=other.#3
+  FwdDll=other.dll.Func
+  EqEq==B
+  "Quoted"
+  'Single'
+  OrdData @9 DATA
+  Spaced = Internal2 @11
+	Tabbed	=	X	@	12
+  Glued @13NONAME
+  Lower @14 noname
+  LowerData data
+  Priv2 @15 PRIVATE
+  PrivData DATA PRIVATE
+  NoNameData @16 NONAME DATA
+  ConstOrd @17 CONSTANT
+  As EXPORTAS AsName
+  AsOrd @18 EXPORTAS AsOrdName
+  AsData DATA EXPORTAS AsDataName
+  Dup
+  Dup DATA
+  Dup
+  "a;b" ; the rest is a comment
+  At@5
+  Comma,Name
+  =EmptyName
+  EmptyInternal=
+  $dollar
+  a$b
+  @Fast@8
+  _Under
+  DATA
+  NONAME
+  DESCRIPTION
+  STUB
+
+; a blank line, and EXPORTS again
+EXPORTS
+  Last

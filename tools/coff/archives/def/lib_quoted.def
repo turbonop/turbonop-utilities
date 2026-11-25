@@ -1,0 +1,4 @@
+; quotes allow spaces; BASE in any case
+LIBRARY "with space.dll" base=010
+EXPORTS
+  A

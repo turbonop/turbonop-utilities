@@ -1,0 +1,3 @@
+LIBRARY trailing.
+EXPORTS
+  A

@@ -116,6 +116,7 @@ set "STOPARGS=-skipPdbGen"
 if /i "%~4"=="compress" set "STOPARGS=-skipPdbGen -compress"
 if /i "%~4"=="pdbs" set "STOPARGS="
 echo %~1: recording, workload: %~3
+set "WL_FAILED="
 wpr %~2 -recordtempto "%TMPREC%"
 if errorlevel 1 (
     echo %~1: wpr could not start the recording; skipped 1>&2
@@ -128,6 +129,13 @@ if errorlevel 1 (
     echo %~1: wpr could not stop the recording; discarded 1>&2
     wpr -cancel >nul 2>&1
     if exist "%OUTFILE%" del "%OUTFILE%"
+    goto :eof
+)
+rem (A trace of a workload that failed, as a build that stopped at once,
+rem isn't what its name says: it's discarded.)
+if defined WL_FAILED (
+    echo %~1: the workload failed, so the trace is discarded: %WL_FAILED% 1>&2
+    del "%OUTFILE%"
     goto :eof
 )
 for %%f in ("%OUTFILE%") do echo %~1: %%~zf bytes
@@ -250,11 +258,13 @@ rem processes, every core, and plenty of file I/O.
 :wl_build
 pushd "%REPO%"
 set "CARGO_TARGET_DIR=%WORK%\target"
-cargo build --workspace --locked --offline
+cargo build --workspace --locked --offline > "%WORK%\build.log" 2>&1
+if errorlevel 1 set "WL_FAILED=cargo build failed: see %WORK%\build.log"
 set "CARGO_TARGET_DIR="
 popd
 goto :eof
 
 :clean_build
 if exist "%WORK%\target" rmdir /s /q "%WORK%\target"
+if exist "%WORK%\target" echo clean_build: %WORK%\target could not be removed entirely 1>&2
 goto :eof

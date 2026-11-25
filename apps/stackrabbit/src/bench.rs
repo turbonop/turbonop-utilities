@@ -993,12 +993,26 @@ fn stacks_table(traces: &[PathBuf]) -> ExitCode {
             (0u64, 0u64, 0u64, 0u64, 0u64);
         // (Samples without stacks outside the idle process.)
         let mut none_busy = 0u64;
+        // Each process's samples, and those without stacks; and where the
+        // stackless samples' instruction pointers were (kernel, user).
+        let mut by_process: rustc_hash::FxHashMap<usize, (u64, u64)> = Default::default();
+        let (mut none_in_kernel, mut none_in_user) = (0u64, 0u64);
         for i in 0..s.len() {
             let stack = s.stack[i];
+            let p = t.thread_process(s.thread[i]);
+            let entry = by_process
+                .entry(if p.is_some() { p.index() } else { usize::MAX })
+                .or_default();
+            entry.0 += 1;
             if stack.is_empty() {
                 none += 1;
+                entry.1 += 1;
+                if kernel(s.ip[i]) {
+                    none_in_kernel += 1;
+                } else {
+                    none_in_user += 1;
+                }
                 let thread = s.thread[i];
-                let p = t.thread_process(thread);
                 let idle = (p.is_some() && t.processes[p.index()].pid == 0)
                     || (thread.is_some() && t.threads[thread.index()].tid == 0);
                 if !idle {
@@ -1023,6 +1037,24 @@ fn stacks_table(traces: &[PathBuf]) -> ExitCode {
                 ip_leaf += 1;
             }
         }
+        let mut worst: Vec<(usize, (u64, u64))> = by_process.into_iter().collect();
+        worst.sort_by(|a, b| b.1.1.cmp(&a.1.1).then(a.0.cmp(&b.0)));
+        eprintln!(
+            "  without stacks: {none_in_kernel} in kernel code, {none_in_user} in user code; most: {}",
+            worst
+                .iter()
+                .take(6)
+                .map(|(p, (all, none))| {
+                    let name = if *p == usize::MAX {
+                        "(no process)".to_string()
+                    } else {
+                        format!("{} ({})", t.processes[*p].name, t.processes[*p].pid)
+                    };
+                    format!("{name} {none} of {all}")
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         let n = s.len().max(1) as f64;
         let pct = |x: u64| 100.0 * x as f64 / n;
         let name = path

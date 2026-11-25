@@ -16,6 +16,11 @@ leave this list when they ship.
   `<tool>-v*` tags, signing through the shared actions
   (`.github/actions/sign-windows`, `sign-macos`), with the release
   environment's tag rule allowing its tags.
+- **macOS Intel until its runner goes.** `x86_64-apple-darwin` is built on
+  `macos-15-intel`, GitHub's last Intel macOS image (said to go around
+  August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
+  made the target Tier 2 in 1.90. When the runner goes, drop the build
+  (or cross-compile it from Apple silicon, untested).
 
 ## Every format alike
 

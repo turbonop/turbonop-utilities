@@ -222,7 +222,17 @@ def render(data, then="", shot=None, wait=500):
 
     got = {}
     done = threading.Event()
-    text = page(data, then + " setTimeout(function () { fetch('/dom', {method: 'POST', body: document.documentElement.outerHTML}); }, " + str(wait) + ");")
+    # (After `wait` ms, once the DOM has stopped changing: unchanged for
+    # 200 ms, or after 10 s. A slow machine's answers and redraws take
+    # longer than a fixed delay allows.)
+    settle = (
+        "setTimeout(function () { var last = null, same = 0, t0 = Date.now();"
+        " (function tick() { var h = document.documentElement.outerHTML;"
+        " same = h === last ? same + 1 : 0; last = h;"
+        " if (same >= 4 || Date.now() - t0 > 10000) { fetch('/dom', {method: 'POST', body: h}); }"
+        " else { setTimeout(tick, 50); } })(); }, " + str(wait) + ");"
+    )
+    text = page(data, then + " " + settle)
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):

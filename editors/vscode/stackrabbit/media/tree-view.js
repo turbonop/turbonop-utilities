@@ -858,6 +858,54 @@
         : `No frequency changes${when} (they're recorded with WPR's Power profile)`,
   });
 
+  // CPU idle states: each processor's time idle, and each state's periods.
+  const IDLE_BUCKETS = ["< 10 µs", "10–100 µs", "0.1–1 ms", "1–10 ms", "10–100 ms", "≥ 100 ms"];
+  const idleHistogram = new SortedTable(
+    $("idle-histogram"),
+    [{ key: "type", title: "State" }].concat(
+      IDLE_BUCKETS.map((title, i) => ({ key: `b${i}`, title, num: true, text: number(0) }))
+    ),
+    { key: "type", down: false }
+  );
+  const pct = (v) => `${(100 * v).toFixed(1)}%`;
+  summaryTab({
+    name: "idle",
+    method: "idle",
+    reading: "Reading the trace's idle states…",
+    groups: [
+      { key: "label", title: "Processor" },
+      { key: "share", title: "Idle", num: true, text: pct },
+      { key: "idleNs", title: "Idle (ms)", num: true, text: ms },
+      { key: "periods", title: "Periods", num: true, text: number(0) },
+      {
+        key: "byState",
+        title: "By state (ms)",
+        cls: "cmd",
+        text: (v) => (v || []).map((x) => `${x.state}: ${ms(x.ns)}`).join(", "),
+      },
+    ],
+    groupSort: { key: "label", down: false },
+    items: "states",
+    itemColumns: [
+      { key: "state", title: "State" },
+      { key: "periods", title: "Periods", num: true, text: number(0) },
+      { key: "ns", title: "Time (ms)", num: true, text: ms },
+      { key: "averageNs", title: "Average (µs)", num: true, text: us },
+      { key: "maxNs", title: "Longest (ms)", num: true, text: ms },
+    ],
+    itemSort: { key: "state", down: false },
+    title: (d, when) =>
+      d.groups.length
+        ? `${count(d.periods)} idle periods, ${pct(d.idleNs / Math.max(1, d.spanNs * d.groups.length))} of the processors' time${when}`
+        : `No idle states${when} (they're recorded with WPR's Power profile)`,
+    tables: [idleHistogram],
+    also: (d) => {
+      idleHistogram.set(
+        d.histogram.map((h) => Object.fromEntries([["type", h.type]].concat(h.counts.map((n, i) => [`b${i}`, n]))))
+      );
+    },
+  });
+
   // Registry operations, by duration.
   summaryTab({
     name: "registry",
@@ -1026,7 +1074,7 @@
     if (name === "regions") {
       loadRegions();
     }
-    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
+    for (const t of ["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "registry", "hardfaults", "vmem", "heap", "pool", "memory"]) {
       $(`tab-${t}`).classList.toggle("active", name === t);
       $(`${t}-pane`).classList.toggle("hidden", name !== t);
     }
@@ -1052,6 +1100,7 @@
   $("tab-minifilter").addEventListener("click", () => showTab("minifilter"));
   $("tab-dpc").addEventListener("click", () => showTab("dpc"));
   $("tab-frequency").addEventListener("click", () => showTab("frequency"));
+  $("tab-idle").addEventListener("click", () => showTab("idle"));
   $("tab-registry").addEventListener("click", () => showTab("registry"));
   $("tab-hardfaults").addEventListener("click", () => showTab("hardfaults"));
   $("tab-vmem").addEventListener("click", () => showTab("vmem"));
@@ -1296,7 +1345,7 @@
     if (s.lit && typeof s.lit.fn === "string") {
       lit = { fn: s.lit.fn, label: String(s.lit.label || s.lit.fn) };
     }
-    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
+    if (["stacks", "processes", "functions", "symbols", "events", "regions", "disk", "fileio", "minifilter", "dpc", "frequency", "idle", "registry", "hardfaults", "vmem", "heap", "pool", "memory"].includes(s.tab)) {
       showTab(s.tab);
     }
   }

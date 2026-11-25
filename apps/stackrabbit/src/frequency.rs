@@ -6,6 +6,12 @@
 //! (the last until the trace ends). Then, in a time range, each processor's
 //! average (by time), lowest and highest frequency, and the time spent at
 //! each frequency.
+//!
+//! (WPA's CPU Frequency table reads other events: the kernel Power
+//! provider's event 51, a processor mask and its nominal frequency, logged
+//! a few times in a trace. On s09 it shows the P-cores at 2200 MHz and the
+//! E-cores at 1600 throughout, where these changes have the P-cores move
+//! between 1833 and 2200.)
 
 use std::path::Path;
 

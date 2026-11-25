@@ -158,6 +158,7 @@ window.acquireVsCodeApi = function () {
     else if (m.method === "regions") r.error = "regions: file: expected a regions file";
     else if (m.method === "marks") r.result = A.marks || {rows: []};
     else if (m.method === "frequency" && A.frequency) r.result = A.frequency;
+    else if (m.method === "idle" && A.idle) r.result = A.idle;
     else if (m.method === "events.list" && A.sampleKind && m.params.opcode === A.sampleKind.opcode && m.params.guid === A.sampleKind.guid) r.result = A.sampleList;
     else if (m.method === "events.list") r.result = A.eventList;
     else if (m.method === "symbols") r.result = A.symbols;
@@ -877,6 +878,26 @@ def main():
     assert "CPU 0" in table and "2,150.5" in table and "CPU 4" in table
     levels = html.unescape(dom[dom.index('id="frequency-levels"'):])
     assert "1,600" in levels and "50.0%" in levels
+    # The Idle States tab: each processor's time idle and by state, the
+    # histogram, and each state.
+    idled = json.loads(json.dumps(data))
+    idled["idle"] = {
+        "periods": 3, "idleNs": 1320000, "spanNs": 1050000, "groupsTotal": 2,
+        "groups": [{"label": "CPU 0", "cpu": 0, "idleNs": 320000, "periods": 2, "share": 0.3048,
+                    "byState": [{"state": "State 0", "ns": 20000}, {"state": "State 2", "ns": 300000}]},
+                   {"label": "CPU 1", "cpu": 1, "idleNs": 1000000, "periods": 1, "share": 0.9524,
+                    "byState": [{"state": "State 2", "ns": 1000000}]}],
+        "states": [{"state": "State 0", "periods": 1, "ns": 20000, "averageNs": 20000, "maxNs": 20000},
+                   {"state": "State 2", "periods": 2, "ns": 1300000, "averageNs": 650000, "maxNs": 1000000}],
+        "bucketsNs": [10000, 100000, 1000000, 10000000, 100000000],
+        "histogram": [{"type": "State 0", "counts": [0, 1, 0, 0, 0, 0]}, {"type": "State 2", "counts": [0, 0, 1, 1, 0, 0]}],
+    }
+    dom = render(idled, "document.getElementById('tab-idle').click();", shot=shot("idle"))
+    assert "3 idle periods, 62.9% of the processors' time." in dom, "the Idle States title"
+    table = html.unescape(dom[dom.index('id="idle-groups"'):dom.index('id="idle-histogram"')])
+    assert "CPU 0" in table and "30.5%" in table and "State 2: 0.3" in table, table[:600]
+    states = html.unescape(dom[dom.index('id="idle-states"'):])
+    assert "State 2" in states and "650" in states
     # The registry tab: totals by the grouping chosen (and how many of all
     # the groups), and the longest; changing the grouping asks again.
     regd = json.loads(json.dumps(data))

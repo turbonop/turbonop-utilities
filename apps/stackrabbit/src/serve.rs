@@ -119,6 +119,13 @@
 //!   first; the first `groupLimit` (10,000) of `groupsTotal`) and the
 //!   `limit` (1000) longest, each `{op, startNs, durationNs, status, process, tid, key,
 //!   value}`. (Read from the trace file the first time, then kept.)
+//! - `idle` `{trace, time?}` → `{periods, idleNs, spanNs, groupsTotal,
+//!   groups, states, bucketsNs, histogram}`: the processors' idle periods
+//!   in `time` (all of the trace if none), clipped to it: each
+//!   processor's `{label, cpu, idleNs, periods, share, byState}`, each
+//!   idle state's `{state, periods, ns, averageNs, maxNs}`, and how many
+//!   of each took how long. (Read from the trace file the first time, then
+//!   kept.)
 //! - `frequency` `{trace, time?}` → `{changes, averageMhz, groupsTotal,
 //!   groups, levels}`: the processors' frequencies in `time` (all of
 //!   the trace if none), from the processor power provider's frequency
@@ -455,6 +462,8 @@ struct State {
     minifilters: Option<Arc<crate::minifilter::FilterTable>>,
     /// The trace's frequency changes, once read.
     frequencies: Option<Arc<crate::frequency::FrequencyTable>>,
+    /// The trace's idle periods, once read.
+    idles: Option<Arc<crate::idle::IdleTable>>,
     /// The last line totals worked out: for which (source, time), with
     /// what symbols (how many PDBs were loaded).
     lines: Option<(LinesKey, Arc<LinesValue>)>,
@@ -571,6 +580,7 @@ fn worker(
         dpcs: None,
         minifilters: None,
         frequencies: None,
+        idles: None,
         registry: None,
         faults: None,
         vmem: None,
@@ -1264,6 +1274,18 @@ impl State {
                 ))
             }
             "marks" => crate::marks::marks(trace, &self.loaded.path),
+            "idle" => {
+                let spec = TreeSpec::from_json(params)?;
+                let table = match &self.idles {
+                    Some(t) => Arc::clone(t),
+                    None => {
+                        let t = Arc::new(crate::idle::table(trace, &self.loaded.path)?);
+                        self.idles = Some(Arc::clone(&t));
+                        t
+                    }
+                };
+                Ok(crate::idle::summary(trace, &table, ticks(trace, spec.time)))
+            }
             "frequency" => {
                 let spec = TreeSpec::from_json(params)?;
                 let table = match &self.frequencies {

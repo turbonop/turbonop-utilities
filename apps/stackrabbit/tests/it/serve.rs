@@ -3210,3 +3210,86 @@ fn frequencies_by_processor() {
         ])
     );
 }
+
+#[test]
+fn idle_periods_by_processor_and_state() {
+    use turbonop_etl::classic;
+    use turbonop_etl::write::{self, Kernel, Writer, WriterOptions};
+    use turbonop_etw::guids;
+    let dir = scratch("serve-idle");
+    // A counter at 10 MHz: 10 ticks a microsecond.
+    let mut w = Writer::new(WriterOptions {
+        processors: 2,
+        perf_freq: 10_000_000,
+        ..WriterOptions::default()
+    });
+    let mut power = |cpu: u16, op: u8, ts: i64, state: u32| {
+        let hook = classic::guid_group(&guids::POWER).unwrap() << 8 | u16::from(op);
+        let k = Kernel {
+            hook,
+            version: 2,
+            thread_id: u32::MAX,
+            process_id: u32::MAX,
+            timestamp: ts,
+            ..Kernel::default()
+        };
+        let mut p = state.to_le_bytes().to_vec();
+        p.extend_from_slice(&0u32.to_le_bytes());
+        if op == 57 {
+            p.extend_from_slice(&u64::MAX.to_le_bytes());
+        }
+        w.record(cpu, &write::system(&k, true, &p));
+    };
+    // Processor 0: state 2 from 100 to 400 us, state 0 from 500 to 520 us.
+    // Processor 1: state 2 from 150 to 1150 us (1 ms); then an entry never
+    // left in the trace, which isn't a period.
+    power(0, 57, 1_000, 2);
+    power(1, 57, 1_500, 2);
+    power(0, 58, 4_000, 2);
+    power(0, 57, 5_000, 0);
+    power(0, 58, 5_200, 0);
+    power(1, 58, 11_500, 2);
+    power(1, 57, 12_000, 1);
+    let path = dir.join("t.etl");
+    std::fs::write(&path, w.finish()).unwrap();
+    let a = session(&[
+        json!({"method": "open", "params": {"path": path, "useIndex": true}}),
+        json!({"method": "idle", "params": {"trace": 1}}),
+        json!({"method": "idle", "params": {"trace": 1, "time": [0, 300_000]}}),
+    ]);
+    let r = result(&a, 2);
+    assert_eq!(
+        (&r["periods"], &r["idleNs"]),
+        (&json!(3), &json!(1_320_000))
+    );
+    // From the first period's start to the last's end: 100 to 1150 us.
+    assert_eq!(r["spanNs"], 1_050_000);
+    assert_eq!(
+        r["groups"],
+        json!([
+            {"label": "CPU 0", "cpu": 0, "idleNs": 320_000, "periods": 2, "share": 0.3048,
+             "byState": [{"state": "State 0", "ns": 20_000}, {"state": "State 2", "ns": 300_000}]},
+            {"label": "CPU 1", "cpu": 1, "idleNs": 1_000_000, "periods": 1, "share": 0.9524,
+             "byState": [{"state": "State 2", "ns": 1_000_000}]},
+        ])
+    );
+    assert_eq!(
+        r["states"],
+        json!([
+            {"state": "State 0", "periods": 1, "ns": 20_000, "averageNs": 20_000, "maxNs": 20_000},
+            {"state": "State 2", "periods": 2, "ns": 1_300_000, "averageNs": 650_000, "maxNs": 1_000_000},
+        ])
+    );
+    assert_eq!(
+        r["histogram"],
+        json!([
+            {"type": "State 0", "counts": [0, 1, 0, 0, 0, 0]},
+            {"type": "State 2", "counts": [0, 0, 1, 1, 0, 0]},
+        ])
+    );
+    // To 300 us, clipped: processor 0 idle 200 us, 1 idle 150 us.
+    let r = result(&a, 3);
+    assert_eq!(r["idleNs"], 350_000);
+    assert_eq!(r["groups"][0]["idleNs"], 200_000);
+    assert_eq!(r["groups"][1]["idleNs"], 150_000);
+}

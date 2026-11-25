@@ -21,6 +21,7 @@ pub mod fileio;
 pub mod frequency;
 pub mod generic;
 pub mod hardfault;
+pub mod idle;
 pub mod marks;
 pub mod mcp;
 pub mod memutil;

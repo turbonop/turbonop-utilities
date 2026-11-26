@@ -202,7 +202,11 @@ def main():
     os.makedirs(real_bin)
     os.makedirs(ours_bin)
     for n in ("llvm-ar", "llvm-ranlib"):
-        os.symlink(os.path.join(args.llvm_bin, n), os.path.join(real_bin, n))
+        # (llvm-ranlib is llvm-ar by another name, if the build has none yet.)
+        source = os.path.join(args.llvm_bin, n)
+        if not os.path.exists(source):
+            source = os.path.join(args.llvm_bin, "llvm-ar")
+        os.symlink(source, os.path.join(real_bin, n))
     for n in ("ar", "ranlib", "llvm-ar", "llvm-ranlib"):
         os.symlink(os.path.abspath(args.turbolib), os.path.join(ours_bin, n))
     failed = 0

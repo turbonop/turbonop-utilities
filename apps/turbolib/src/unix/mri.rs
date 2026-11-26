@@ -9,8 +9,8 @@
 //! | `CREATE a` | a new archive | the same |
 //! | `CREATETHIN a` | - | a new thin archive |
 //! | `OPEN a` | an existing archive, its members kept | - |
-//! | `ADDMOD f, ...` | each file, put first (so in reverse order) | the file (one), last |
-//! | `ADDLIB l [(m, ...)]` | the library's members (or those named), each put first | its members, last |
+//! | `ADDMOD f, ...` | the files, in order, before the members already there | the file (one), last |
+//! | `ADDLIB l [(m, ...)]` | the library's members each put first (so backwards), or those named, in order, first | its members, last |
 //! | `DELETE m, ...` | every member of each name | every member of the name |
 //! | `REPLACE f, ...` | each member of the name, or the file put first | - |
 //! | `CLEAR` | no members | - |
@@ -114,13 +114,16 @@ pub fn run(r: &mut Run<'_>, c: &Command) -> Result<(), Fatal> {
                 } else {
                     words.clone()
                 };
+                // GNU: the files, in order, before the members already there
+                // (its parser lists them backwards, then puts each first).
+                let mut added = Vec::with_capacity(files.len());
                 for f in files {
-                    let item = new_item(r, &a, &f, thin, false, false, deterministic)?;
-                    if llvm {
-                        members.push(item);
-                    } else {
-                        members.insert(0, item);
-                    }
+                    added.push(new_item(r, &a, &f, thin, false, false, deterministic)?);
+                }
+                if llvm {
+                    members.extend(added);
+                } else {
+                    members.splice(0..0, added);
                 }
             }
             "addlib" => {
@@ -143,10 +146,23 @@ pub fn run(r: &mut Run<'_>, c: &Command) -> Result<(), Fatal> {
                     .skip(1)
                     .filter(|w| *w != "(" && *w != ")")
                     .collect();
-                for mut m in old.members {
-                    if !wanted.is_empty() && !wanted.iter().any(|w| **w == m.name) {
-                        continue;
+                // GNU: each member put first (so the library's backwards), or
+                // the modules listed, in the list's order, first.
+                let mut picked: Vec<Item> = Vec::new();
+                if wanted.is_empty() {
+                    picked = old.members;
+                    if !llvm {
+                        picked.reverse();
                     }
+                } else {
+                    for w in &wanted {
+                        if let Some(m) = old.members.iter().find(|m| m.name == **w) {
+                            picked.push(m.clone());
+                        }
+                    }
+                }
+                let mut block = Vec::with_capacity(picked.len());
+                for mut m in picked {
                     if llvm && deterministic {
                         m.fields = turbonop_archive::write::Fields::new(b"0", b"0", b"0", b"644")
                             .unwrap_or(m.fields);
@@ -159,11 +175,12 @@ pub fn run(r: &mut Run<'_>, c: &Command) -> Result<(), Fatal> {
                         m.name =
                             super::run::relative_to_archive(&r.env.cwd, &a, &dir.to_string_lossy());
                     }
-                    if llvm {
-                        members.push(m);
-                    } else {
-                        members.insert(0, m);
-                    }
+                    block.push(m);
+                }
+                if llvm {
+                    members.extend(block);
+                } else {
+                    members.splice(0..0, block);
                 }
             }
             "delete" => {
@@ -215,7 +232,7 @@ pub fn run(r: &mut Run<'_>, c: &Command) -> Result<(), Fatal> {
                         symtab: true,
                         deterministic,
                     };
-                    write_plan(r, &a, &plan)?;
+                    write_plan(r, &a, plan)?;
                     archive = None;
                 }
             }
@@ -243,7 +260,7 @@ pub fn run(r: &mut Run<'_>, c: &Command) -> Result<(), Fatal> {
             symtab: true,
             deterministic,
         };
-        write_plan(r, &a, &plan)?;
+        write_plan(r, &a, plan)?;
     }
     Ok(())
 }

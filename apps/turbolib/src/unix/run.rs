@@ -44,6 +44,8 @@ pub struct Env {
     pub now: u64,
     /// Standard input, for `-M`.
     pub stdin: Option<Vec<u8>>,
+    /// `TZ`, for the dates `t v` prints in local time.
+    pub tz: Option<String>,
 }
 
 impl Env {
@@ -63,6 +65,7 @@ impl Env {
                 let _ = io::Read::read_to_end(&mut io::stdin(), &mut v);
                 v
             }),
+            tz: std::env::var("TZ").ok(),
         }
     }
 }
@@ -832,7 +835,10 @@ fn llvm_dialect(
 }
 
 /// Writes `plan` to `archive`.
-pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<(), Fatal> {
+/// Writes `plan` to `archive`. The plan's members are the last holders of
+/// their files' mappings (the caller drops its own): they are let go
+/// before the new archive takes the old one's place, which Windows needs.
+pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fatal> {
     if plan.members.iter().any(|m| m.bytes.is_none()) && !plan.thin {
         return Err(run.fatal(format!("{archive}: a member's data is missing")));
     }
@@ -876,11 +882,13 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<(), F
         options.sym64_threshold = t;
     }
     // Darwin, deterministically: each name's copies dated 1, 2, ...
-    let mut members = plan.members.clone();
-    if plan.dialect == Dialect::Darwin && plan.deterministic && archiver == Archiver::LlvmAr {
-        let mut count: std::collections::BTreeMap<&str, u32> = std::collections::BTreeMap::new();
-        for m in &plan.members {
-            *count.entry(&m.name).or_default() += 1;
+    let thin = plan.thin;
+    let darwin = plan.dialect == Dialect::Darwin && plan.deterministic;
+    let mut members = plan.members;
+    if darwin && archiver == Archiver::LlvmAr {
+        let mut count: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
+        for m in &members {
+            *count.entry(m.name.clone()).or_default() += 1;
         }
         let mut next: std::collections::BTreeMap<String, u32> = std::collections::BTreeMap::new();
         for m in &mut members {
@@ -912,7 +920,7 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<(), F
     let datas: Vec<output::Bytes<'_>> = members
         .iter()
         .map(|m| output::Bytes {
-            data: if plan.thin { &[] } else { m.data() },
+            data: if thin { &[] } else { m.data() },
             holes: &[],
         })
         .collect();
@@ -927,7 +935,7 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<(), F
 }
 
 /// The `t` operation's line for a member.
-fn table_line(c: &Command, archive: &str, old: &Old, i: usize) -> String {
+fn table_line(env: &Env, c: &Command, archive: &str, old: &Old, i: usize) -> String {
     let m = &old.members[i];
     let mut s = String::new();
     if c.verbose {
@@ -954,7 +962,7 @@ fn table_line(c: &Command, archive: &str, old: &Old, i: usize) -> String {
             num(uid),
             num(gid),
             m.size,
-            calendar(date)
+            calendar(date + super::localtime::offset_at(date, env.tz.as_deref()))
         ));
     }
     let shown = if old.thin && !Path::new(&m.name).is_absolute() {
@@ -976,8 +984,8 @@ fn table_line(c: &Command, archive: &str, old: &Old, i: usize) -> String {
     s
 }
 
-/// `Mmm dd hh:mm yyyy` (UTC) for a time in seconds since 1970, as `ctime`
-/// shows it in POSIX's `ar t` form.
+/// `Mmm dd hh:mm yyyy` for a time in seconds since 1970 (local: with the
+/// zone's offset added), as `ctime` shows it in POSIX's `ar t` form.
 fn calendar(t: i64) -> String {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -1054,7 +1062,7 @@ fn read_op(run: &mut Run<'_>, c: &Command, archive: &str, old: &Old) -> Result<(
     for i in chosen {
         match op {
             Op::Table => {
-                let line = table_line(c, archive, old, i);
+                let line = table_line(run.env, c, archive, old, i);
                 run.print(&line);
             }
             Op::Print => {
@@ -1165,25 +1173,26 @@ fn symbol_table(run: &mut Run<'_>, c: &Command, archive: &str) -> Result<(), Fat
         return Ok(());
     }
     let deterministic = c.deterministic.unwrap_or(true);
-    let mut members = old.members.clone();
+    let dialect = if run.flavor.is_llvm() {
+        llvm_dialect(run, c, Some(&old), &old.members, old.thin)?
+    } else {
+        Dialect::Gnu
+    };
+    let thin = old.thin;
+    let mut members = old.members;
     if run.flavor.is_llvm() && deterministic {
         for m in &mut members {
             m.fields = Fields::new(b"0", b"0", b"0", b"644").unwrap_or(Fields::BLANK);
         }
     }
-    let dialect = if run.flavor.is_llvm() {
-        llvm_dialect(run, c, Some(&old), &members, old.thin)?
-    } else {
-        Dialect::Gnu
-    };
     let plan = Plan {
         members,
-        thin: old.thin,
+        thin,
         dialect,
         symtab: true,
         deterministic,
     };
-    write_plan(run, archive, &plan)
+    write_plan(run, archive, plan)
 }
 
 fn write_op(run: &mut Run<'_>, c: &Command, archive: &str) -> Result<(), Fatal> {
@@ -1242,6 +1251,8 @@ fn write_op(run: &mut Run<'_>, c: &Command, archive: &str) -> Result<(), Fatal> 
     } else {
         Dialect::Gnu
     };
+    // (The members hold what they need of the old archive.)
+    drop(old);
     let mut members = members;
     if let Some(deps) = &c.libdeps
         && !run.flavor.is_llvm()
@@ -1271,7 +1282,7 @@ fn write_op(run: &mut Run<'_>, c: &Command, archive: &str) -> Result<(), Fatal> 
         symtab: c.symtab != Some(false),
         deterministic,
     };
-    write_plan(run, archive, &plan)
+    write_plan(run, archive, plan)
 }
 
 /// Runs the personality on `args` (the words after the program's name).

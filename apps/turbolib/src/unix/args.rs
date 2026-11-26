@@ -370,11 +370,12 @@ fn llvm_ar(mut words: Vec<String>) -> Result<Command, String> {
             break;
         }
         if !w.starts_with('-') {
-            if have_letters {
-                positional.push(w);
-            } else {
+            // The first word without `-`, if no `-` word gave letters yet.
+            if letters.is_empty() && !have_letters {
                 letters.push_str(&w);
                 have_letters = true;
+            } else {
+                positional.push(w);
             }
             continue;
         }

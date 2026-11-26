@@ -116,6 +116,13 @@ struct Atom {
     desc: Vec<String>,
 }
 
+/// A debug section: its name, its bytes with relocations' places zeroed,
+/// and its relocations (place, canonical form, the key of the atom reached).
+type Debug = (Vec<u8>, Vec<u8>, Vec<(u32, u128, Option<Vec<u8>>)>);
+
+/// An atom a rewritten member lost: its key and hash.
+type Lost = (Vec<u8>, u128);
+
 /// A member, read.
 struct Member<'a> {
     name: Vec<u8>,
@@ -125,7 +132,7 @@ struct Member<'a> {
     atoms: Vec<Atom>,
     /// Debug sections: name, bytes with relocations' places zeroed, and
     /// the relocations (place, canonical form, the key of the atom reached).
-    debug: Vec<(Vec<u8>, Vec<u8>, Vec<(u32, u128, Option<Vec<u8>>)>)>,
+    debug: Vec<Debug>,
     anchor: Option<Vec<u8>>,
     side_effects: bool,
 }
@@ -443,7 +450,8 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
             relocs.push((r.address, h.finish(), key));
         }
         relocs.sort();
-        m.debug.push(([s.segment_name(), b",", s.name()].concat(), bytes, relocs));
+        m.debug
+            .push(([s.segment_name(), b",", s.name()].concat(), bytes, relocs));
     }
     m.obj = Some(o);
     m
@@ -469,11 +477,7 @@ fn read_library<'a>(data: &'a [u8], what: &str) -> Result<Library<'a>, String> {
 
 /// Compares a rewritten member with its original: the keys of the atoms it
 /// lost (units, with their hashes), and what it anchors.
-fn compare_member(
-    o: &Member<'_>,
-    n: &Member<'_>,
-    rep: &mut Report,
-) -> (Vec<(Vec<u8>, u128)>, Vec<Vec<u8>>) {
+fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<Lost>, Vec<Vec<u8>>) {
     let (Some(oo), Some(no)) = (&o.obj, &n.obj) else {
         rep.fail("rewritten members that don't read", || show(&n.name));
         return (Vec::new(), Vec::new());
@@ -514,7 +518,12 @@ fn compare_member(
                         d.get(lo..(k + 3).min(d.len()))
                     )
                 });
-                format!("{}: {}{}", show(&n.name), show(&a.key), d.unwrap_or_default())
+                format!(
+                    "{}: {}{}",
+                    show(&n.name),
+                    show(&a.key),
+                    d.unwrap_or_default()
+                )
             }),
             None if a.unit => {
                 lost.push((a.key.clone(), a.hash));

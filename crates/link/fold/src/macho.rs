@@ -389,12 +389,9 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         defs: Vec::new(),
         unwind_section: None,
     };
-    let o = match Object::parse(input.data) {
-        Ok(o) => o,
-        Err(_) => {
-            p.why_not = Some("not a Mach-O object turbolib reads".into());
-            return p;
-        }
+    let Ok(o) = Object::parse(input.data) else {
+        p.why_not = Some("not a Mach-O object turbolib reads".into());
+        return p;
     };
     if o.header.filetype != MH_OBJECT {
         p.why_not = Some("not an object (MH_OBJECT)".into());
@@ -549,7 +546,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                         (Some(k), _) => block(&mut units, k, "reaches a local symbol outside it"),
                         (None, Some(t)) if debug => units[t].debug = true,
                         (None, Some(t)) => {
-                            block(&mut units, t, "a local symbol of it named from outside")
+                            block(&mut units, t, "a local symbol of it named from outside");
                         }
                         (None, None) => {}
                     }
@@ -648,7 +645,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 continue;
             }
             let bytes = s.bytes().unwrap_or(&[]);
-            let at = ptr.offset as usize;
+            let at = ptr.offset;
             let raw = match ptr.size {
                 4 => bytes
                     .get(at..at + 4)
@@ -926,12 +923,8 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
             break;
         }
     }
-    for (m, p) in parsed.iter().enumerate() {
-        for k in 0..p.units.len() {
-            if let Some(w) = why[m][k] {
-                *report.kept.entry(w).or_default() += 1;
-            }
-        }
+    for w in why.iter().flatten().flatten() {
+        *report.kept.entry(w).or_default() += 1;
     }
 
     // Synthesized members: by givers and environment.
@@ -1020,17 +1013,16 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     let built: Vec<Result<Vec<u8>, String>> = turbonop_par::map_range(synth.len(), 1, |i| {
         build_synth(&parsed, &synth, i, &name_to)
     });
-    let rewritten: Vec<Option<Result<(Vec<u8>, usize, u64), String>>> =
-        turbonop_par::map_range(parsed.len(), 1, |m| {
-            let gone: Vec<usize> = (0..parsed[m].units.len())
-                .filter(|&k| folds[m][k])
-                .collect();
-            if gone.is_empty() {
-                return None;
-            }
-            let anchors: BTreeSet<usize> = gone.iter().map(|&k| moved_to[&(m, k)]).collect();
-            Some(rewrite_giver(&parsed[m], &gone, &anchors, &synth))
-        });
+    let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_range(parsed.len(), 1, |m| {
+        let gone: Vec<usize> = (0..parsed[m].units.len())
+            .filter(|&k| folds[m][k])
+            .collect();
+        if gone.is_empty() {
+            return None;
+        }
+        let anchors: BTreeSet<usize> = gone.iter().map(|&k| moved_to[&(m, k)]).collect();
+        Some(rewrite_giver(&parsed[m], &gone, &anchors, &synth))
+    });
     let mut out = Vec::with_capacity(inputs.len() + synth.len());
     let mut failed_synth = false;
     for (i, b) in built.into_iter().enumerate() {
@@ -1087,6 +1079,14 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     (out, report)
 }
 
+/// A rewritten giver: its bytes, the debug relocations removed, and the
+/// bytes of units removed; or why it couldn't be rewritten.
+type Rewritten = Result<(Vec<u8>, usize, u64), String>;
+
+/// An unwind entry of a synthesized member: its function's offset in its
+/// section, that section, the entry's bytes, and its personality's name.
+type UnwindEntry = (u64, usize, Vec<u8>, Option<Vec<u8>>);
+
 fn put_u64(b: &mut [u8], at: usize, v: u64) {
     b[at..at + 8].copy_from_slice(&v.to_le_bytes());
 }
@@ -1113,12 +1113,7 @@ fn build_synth(
     let mut by_name: BTreeMap<Vec<u8>, u32> = BTreeMap::new();
     let mut anchors_needed: BTreeSet<usize> = BTreeSet::new();
     // (Relocations per section, with old symbol references to remap.)
-    let mut unwind: Vec<(
-        u64,   /*text addr placeholder*/
-        usize, /*section*/
-        Vec<u8>,
-        Option<Vec<u8>>,
-    )> = Vec::new();
+    let mut unwind: Vec<UnwindEntry> = Vec::new();
     let undefined = |symbols: &mut Vec<Symbol<'static>>,
                      by_name: &mut BTreeMap<Vec<u8>, u32>,
                      n: &[u8]|

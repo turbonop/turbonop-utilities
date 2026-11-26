@@ -1273,7 +1273,10 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         let ne_at = ne_pool.len();
         let ne_len = ne.len();
         ne_pool.extend(ne);
-        assert!(ne_at + ne_len <= 0xFFFF && ne_len <= 255, "too many `ne` pairs");
+        assert!(
+            ne_at + ne_len <= 0xFFFF && ne_len <= 255,
+            "too many `ne` pairs"
+        );
         let mut list = |toks: String| -> usize {
             *tok_index.entry(toks.clone()).or_insert_with(|| {
                 tok_lists.push(toks);

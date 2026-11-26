@@ -425,9 +425,7 @@ impl Encoding {
     #[inline]
     pub fn name(&self) -> &'static str {
         let at = self.name_at as usize;
-        NAMES
-            .get(at..at + usize::from(self.name_len))
-            .unwrap_or("")
+        NAMES.get(at..at + usize::from(self.name_len)).unwrap_or("")
     }
 
     /// The `(mask, value)` pairs the word must not match.
@@ -458,7 +456,10 @@ impl Encoding {
     /// The template's mnemonic.
     #[inline]
     pub fn mnem(&self) -> &'static [Tok] {
-        TOK_LISTS.get(usize::from(self.mnem)).copied().unwrap_or(&[])
+        TOK_LISTS
+            .get(usize::from(self.mnem))
+            .copied()
+            .unwrap_or(&[])
     }
 
     /// The template's operands.

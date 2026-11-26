@@ -82,8 +82,7 @@ impl Instruction {
     /// So are words whose should-be bits (Arm's `(0)` and `(1)`) differ.
     pub fn is_unpredictable(&self) -> bool {
         let e = self.encoding();
-        let unpredictable =
-            |e: &Encoding| e.unpred(self.word) || !should_hold(e, self.word);
+        let unpredictable = |e: &Encoding| e.unpred(self.word) || !should_hold(e, self.word);
         unpredictable(e) || (e.alias_of != NONE && unpredictable(encoding(usize::from(e.alias_of))))
     }
 

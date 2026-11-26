@@ -704,7 +704,11 @@ pub fn explain_encoding(inst: &Instruction) -> alloc::string::String {
     let _ = writeln!(
         out,
         "  {} {:08x}/{:08x} template {:?} {:?}",
-        e.name(), e.mask, e.value, e.mnem(), e.ops()
+        e.name(),
+        e.mask,
+        e.value,
+        e.mnem(),
+        e.ops()
     );
     symbols_of(inst, e.mnem(), &mut out);
     if e.cond != NONE {

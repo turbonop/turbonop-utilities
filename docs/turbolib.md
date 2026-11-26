@@ -961,11 +961,14 @@ Synthesized members are indexed for their anchors alone (under
 
 What it doesn't keep: **the order** in which link.exe loads the same
 members. On `llvm-nm`, both links load the same 637 original members, but
-in another order (link.exe's handling of its undefined symbols depends on
-the whole symbol set, which the anchors change; not proven), and the
-order of C++ initializers across members follows it: two of `llvm-nm`'s
-55 moved. C++ leaves that order unspecified, but programs can depend on
-it. lld-link's order didn't change.
+in another order, and the order of C++ initializers across members
+follows it: two of `llvm-nm`'s 55 moved. C++ leaves that order
+unspecified, but programs can depend on it. lld-link's order didn't
+change. With `/VERBOSE`, the folded link ends a library's sweep after
+loading anchored synthesized members where the original went on loading
+members already referenced; it isn't the members' order (synthesized
+members last, as `preserve` now puts them, changed nothing). Still open
+(TODO.md).
 
 ### `--precomp`: shared types (phase 3)
 

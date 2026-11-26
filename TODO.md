@@ -326,10 +326,16 @@ x64. Where the 3.5 MB went:
 - **link.exe's load order** against folded libraries (the plan's "The
   alias technique"): the same members, in another order, so C++
   initializers across members run in another order (2 of `llvm-nm`'s 55).
-  Find what link.exe's order of resolving undefined symbols depends on,
-  and whether anchors can leave it alone (anchor references first in the
-  symbol table? anchors named to sort or hash like the names they stand
-  for?). Until then, `preserve` keeps which members load but not when.
+  Measured with `/VERBOSE`: both links search `LLVMObject.lib` alike until
+  `XCOFFObjectFile.cpp.obj` loads; then the folded link finds anchors, loads
+  their synthesized members, and ends that library's sweep, while the
+  original goes on to `SymbolicFile`'s constructor (referenced by members
+  already loaded) and 13 more members. Not member order: putting
+  synthesized members last (done, under `preserve`) changed nothing. Next:
+  whether the aliases or the anchors end the sweep (a library with anchors
+  and no aliases, and the reverse), and whether anchors can be dropped for
+  references the moved names' plain records already make. Until then,
+  `preserve` keeps which members load but not when, with link.exe.
 - **Link equivalence (phase 2.6).** `turbolib verify` and
   `turbolib compare-images` are done (`turbonop-verify`; see the plan's
   "The tools"), and `relink.py` runs compare-images over link.exe and

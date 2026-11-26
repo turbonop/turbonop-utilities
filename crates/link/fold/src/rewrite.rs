@@ -163,6 +163,13 @@ pub enum Unfoldable {
     SideTables,
     /// The unit has COFF line numbers.
     LineNumbers,
+    /// The unit holds an initializer, terminator, or TLS callback entry
+    /// (`.CRT$X*`: an inline variable's or a template's static member's
+    /// dynamic initializer). Moved into a synthesized member, it would run
+    /// at that member's place in the order, not its own object's, and
+    /// inline variables' initialization is ordered within each translation
+    /// unit.
+    Initializer,
     /// A relocation names no symbol.
     BadRelocation,
     /// The unit refers to a weak external.
@@ -222,6 +229,7 @@ impl Unfoldable {
             Unfoldable::UnknownSection => "a section of an unknown kind",
             Unfoldable::SideTables => "a side table turbolib can't read",
             Unfoldable::LineNumbers => "COFF line numbers",
+            Unfoldable::Initializer => "an initializer, terminator, or TLS callback (.CRT$X*)",
             Unfoldable::BadRelocation => "a relocation naming no symbol",
             Unfoldable::WeakExternalReference => "refers to a weak external",
             Unfoldable::LocalReference => "refers to a local symbol outside it",

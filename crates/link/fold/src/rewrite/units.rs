@@ -508,6 +508,11 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
         {
             reasons.hard_plain(u, Unfoldable::LineNumbers);
         }
+        if let Some(u) = here
+            && sec.name.as_bytes().starts_with(b".CRT$X")
+        {
+            reasons.hard_plain(u, Unfoldable::Initializer);
+        }
         if tables.splits_relocations(SectionId(i as u32)) {
             continue;
         }

@@ -287,3 +287,41 @@ fn side_effects_and_directives() {
     });
     assert!(!find(&object(&data)).unwrap().side_effects);
 }
+
+#[test]
+fn a_unit_with_an_initializer_entry_stays() {
+    // An inline variable's dynamic initializer: a COMDAT .CRT$XCU section
+    // associative to the variable's section, pointing at the initializer.
+    let data = with_comdat(|o, text, f| {
+        let crt = o.push_section(Section::new(
+            Name::new(b".CRT$XCU".to_vec()),
+            0x4030_0040 | COMDAT,
+            SectionData::Bytes(Cow::Owned(vec![0; 8])),
+        ));
+        let mut ss = Symbol::new(
+            Name::new(b".CRT$XCU".to_vec()),
+            0,
+            SectionNumber::Section(crt),
+            0,
+            storage_class::STATIC,
+        );
+        ss.aux = Aux::Section(turbonop_coff::SectionDefinition {
+            selection: comdat_select::ASSOCIATIVE,
+            number: Some(text),
+            ..Default::default()
+        });
+        o.push_symbol(ss);
+        o.sections[crt.index()]
+            .relocations
+            .push(turbonop_coff::Relocation {
+                offset: 0,
+                symbol: f,
+                kind: 1,
+            });
+    });
+    let f = find(&object(&data)).unwrap();
+    assert!(!f.side_effects, "a COMDAT .CRT$XCU isn't the member's own");
+    assert_eq!(f.units.len(), 1);
+    assert_eq!(f.units[0].sections.len(), 2, "the entry is the unit's");
+    assert_eq!(f.units[0].unfoldable, Some(Unfoldable::Initializer));
+}

@@ -24,6 +24,31 @@
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+/// mimalloc 2's `mi_option_purge_delay` (its `mi_option_e`'s 16th entry;
+/// the bindings name 14 and 16 but not this one). A test checks it by its
+/// default, 10 ms.
+#[cfg(not(target_family = "wasm"))]
+const MI_OPTION_PURGE_DELAY: libmimalloc_sys::mi_option_t = 15;
+
+/// Tunes the allocator for a batch program (one that reads its inputs,
+/// works, writes, and exits), at the start of `main`: freed memory is kept
+/// for reuse rather than returned to the operating system after mimalloc's
+/// purge delay (10 ms). A program that frees and allocates large amounts
+/// again and again otherwise spends much of its time returning pages and
+/// faulting them back in (turbolib's ELF folding: about two fifths of its
+/// CPU time was system time, and `MIMALLOC_PURGE_DELAY=-1` cut that about
+/// fourfold). Not for long-running programs, whose memory would then only
+/// grow to its peak and stay there.
+pub fn for_batch_work() {
+    #[cfg(not(target_family = "wasm"))]
+    // SAFETY: `mi_option_set` sets one of mimalloc's option values, which
+    // it reads with relaxed atomics; any thread may call it at any time.
+    #[allow(unsafe_code)]
+    unsafe {
+        libmimalloc_sys::mi_option_set(MI_OPTION_PURGE_DELAY, -1);
+    }
+}
+
 #[cfg(target_family = "wasm")]
 #[global_allocator]
 static ALLOCATOR: turbonop_alloc::Cached<std::alloc::System> =
@@ -31,6 +56,24 @@ static ALLOCATOR: turbonop_alloc::Cached<std::alloc::System> =
 
 #[cfg(test)]
 mod tests {
+    /// Option 15 is the purge delay (its default is 10 ms), tuning for
+    /// batch work sets it to -1, and allocation still works after it.
+    #[test]
+    #[cfg(not(target_family = "wasm"))]
+    fn batch_tuning() {
+        // SAFETY: reading an option value, as any thread may.
+        #[allow(unsafe_code)]
+        let get = || unsafe { libmimalloc_sys::mi_option_get(super::MI_OPTION_PURGE_DELAY) };
+        let before = get();
+        assert!(before == 10 || before == -1, "{before}");
+        super::for_batch_work();
+        assert_eq!(get(), -1);
+        let v = vec![7u8; 1 << 20];
+        drop(v);
+        let w = vec![9u8; 1 << 20];
+        assert_eq!(w[12_345], 9);
+    }
+
     /// Allocations go through it: many threads allocating and freeing at
     /// once, of every size class's neighborhood.
     #[test]

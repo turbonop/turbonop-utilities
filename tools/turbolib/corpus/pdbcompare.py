@@ -12,7 +12,9 @@ and id indices replaced by the names llvm-pdbutil prints beside them,
 stream offsets (parent, end, next) dropped, code addresses made relative
 to the procedure's start, and data addresses dropped; its line tables
 (file, line, and offset from the procedure's start); and, for each inline
-site, its inlinee's source line and file from the module's inlinee lines.
+site, its inlinee's source line and file from the module's inlinee lines
+(but not the files its annotations change to, which llvm-pdbutil doesn't
+name).
 Records outside procedures (S_GDATA32, S_UDT, S_CONSTANT, ...) are compared
 the same way, apart from S_OBJNAME, S_COMPILE3, and S_BUILDINFO, which name
 the module.
@@ -54,10 +56,12 @@ LINKS = re.compile(r"\b(parent|end|next) = \d+(, )?")
 ANNOTATION = re.compile(r"^[0-9A-F]{2,}\s{2,}(?=\S)")
 # S_UDT's type is printed without a name; S_FILESTATIC's file name with its
 # offset in /names.
-# llvm-pdbutil names an inline site's file change from a file checksum
-# offset, and in some modules of link.exe's PDBs reads the name from the
-# wrong place (a name cut short, or none); such names aren't compared.
-SETFILE = re.compile(r"setfile (?![A-Za-z]:\\|/)\S*(?= 0x)")
+# An inline site's file change names a file by its offset in the module's
+# file checksums, which differ between modules, and llvm-pdbutil doesn't
+# resolve the name (it prints none, or a piece of another string). The
+# file isn't compared here; turbonop-fold's tests compare it (by name and
+# checksum) in the objects.
+SETFILE = re.compile(r"setfile .*? 0x[0-9A-F]+(?= \||$)")
 BARE = re.compile(r"(original type = )0x[0-9A-F]+|(file name = )\d+ (?=\()")
 
 
@@ -188,7 +192,7 @@ def normalize(text, proc):
         t = INDEX.sub("(", t)
         t = LINKS.sub("", t)
         t = BARE.sub(lambda m: m.group(1) or m.group(2), t)
-        t = SETFILE.sub("setfile <unresolved>", t)
+        t = SETFILE.sub("setfile", t)
 
         def addr(m):
             sec, off = int(m.group(1)), int(m.group(2))
@@ -232,6 +236,7 @@ def main():
     a = ap.parse_args()
     synth = re.compile(a.modules)
     results = []
+    wheres = []
     for pdb in (a.original, a.candidate):
         path = dump(a.pdbutil, pdb)
         try:
@@ -243,6 +248,11 @@ def main():
                                     if k not in MODULE_KINDS | LAYOUT_KINDS)
         moved = sum(1 for p in procs if synth.search(p.module))
         lines = sum(len(p.lines) for p in procs)
+        # Which modules each other record is in, for reports.
+        where = collections.defaultdict(collections.Counter)
+        for m, k, t in others:
+            where[f"{k} {normalize(t, None)}"][os.path.basename(m)] += 1
+        wheres.append(where)
         results.append((keys, other, moved, len(procs), lines, orphans))
         print(f"{pdb}: {len(procs)} procedures ({moved} in synthesized members), "
               f"{lines} line blocks ({orphans} outside procedures), "
@@ -258,6 +268,16 @@ def main():
             for label, c in (("original", missing), ("candidate", extra)):
                 for k in list(c)[:a.show]:
                     print(f"--- only in the {label}:\n{k[:3000]}")
+            if what == "other records":
+                # The modules whose counts of them differ.
+                mods = collections.Counter()
+                for k in list(missing) + list(extra):
+                    d = wheres[0][k].copy()
+                    d.subtract(wheres[1][k])
+                    for m, n in d.items():
+                        if n:
+                            mods[m] += abs(n)
+                print("in modules: " + ", ".join(f"{m} ({n})" for m, n in mods.most_common(20)))
         else:
             print(f"{what}: the same ({sum(x.values())})")
     sys.exit(1 if bad else 0)

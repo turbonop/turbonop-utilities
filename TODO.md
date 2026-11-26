@@ -364,6 +364,15 @@ x64. Where the 3.5 MB went:
   their own units and records. Measure again, and profile with
   Stackrabbit.
 
+## rtti-strip
+
+- **Phase 0 of [the plan](docs/rtti-strip.md).** A corpus with RTTI
+  (LTCG release builds); the bytes at stake; descriptor alignment; where
+  `.data$r` lands; the FIXUP stream's coverage under LTCG; FH4's
+  encoding.
+- **Phase 1: pad mode**, its checker, and the test program.
+- **The FIXUP stream's parser** in `crates/symbols/pdb`.
+
 ## Ideas
 
 - **A size check for pull requests.** A GitHub Action that comments on a

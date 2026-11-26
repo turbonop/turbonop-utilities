@@ -257,7 +257,7 @@ fn canonical(
 /// The COMDAT `.debug$S` sections of `o`, by the name of the external
 /// symbol in the section their association chain ends at.
 fn unit_sections<'o>(o: &'o Object<'o>) -> Vec<(Vec<u8>, &'o Section<'o>)> {
-    let mut assoc: HashMap<u32, u32> = HashMap::new();
+    let mut assoc: HashMap<u32, u32> = HashMap::default();
     for s in &o.symbols {
         if let (SectionNumber::Section(id), Aux::Section(d)) = (s.section, &s.aux)
             && let Some(n) = d.number
@@ -374,7 +374,7 @@ fn well_formed(o: &Object<'_>, name: &[u8]) {
     );
 
     if let Some(t) = o.sections.iter().find(|s| s.name.as_bytes() == b".debug$T") {
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut refs = Vec::new();
         let mut index = FIRST;
         for (i, r) in remap::type_records(&t.bytes()[4..]).enumerate() {
@@ -431,7 +431,7 @@ fn inlinees_carried(
 ) {
     let s = stream(o, pch);
     let t = tables(o);
-    let mut known = HashSet::new();
+    let mut known = HashSet::default();
     for (k, x) in objects.iter().enumerate() {
         for e in entries(x) {
             known.insert((

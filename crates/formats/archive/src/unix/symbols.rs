@@ -39,6 +39,9 @@ use turbonop_elf::consts::{SHT_SYMTAB, STB_GLOBAL, STB_LOCAL, STB_WEAK};
 
 use super::Archiver;
 
+#[cfg(test)]
+mod tests;
+
 /// What a member is to the index.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct MemberSymbols<'a> {

@@ -53,6 +53,7 @@ turbonop-archive = { path = "crates/formats/archive" }
 turbonop-linkerlog = { path = "crates/formats/linkerlog" }
 turbonop-linkmap = { path = "crates/formats/linkmap" }
 turbonop-elf = { path = "crates/formats/elf" }
+turbonop-elf-object = { path = "crates/formats/elf-object" }
 turbonop-dwarf = { path = "crates/symbols/dwarf" }
 turbonop-macho = { path = "crates/formats/macho" }
 turbonop-wasm = { path = "crates/formats/wasm" }

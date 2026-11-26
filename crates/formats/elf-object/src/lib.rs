@@ -334,6 +334,17 @@ impl fmt::Display for WriteError {
 impl core::error::Error for WriteError {}
 
 impl<'a> Object<'a> {
+    /// An object of `sections` (section 0 included), laid out afresh when
+    /// written; `shstrndx` is to be set.
+    pub fn new(header: Header, sections: Vec<Section<'a>>) -> Self {
+        Self {
+            header,
+            sections,
+            shstrndx: 0,
+            original: None,
+        }
+    }
+
     /// Reads an object (any ELF file without program headers).
     pub fn parse(data: &'a [u8]) -> Result<Self, ReadError> {
         read::parse(data)

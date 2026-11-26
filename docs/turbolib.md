@@ -27,7 +27,7 @@ items leave TODO.md as they ship.
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links). Not yet: 3.5, `clustered`. |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
-| 6 ELF, with split DWARF | Not yet. |
+| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, a first `--fold=identical` for ELF, without debug information for folded functions (dropped and counted). Not yet: moving DWARF, split DWARF, `select-any` and `--locals` for ELF, ELF `verify` and `compare-images`. |
 | 7 Mach-O | Not yet. |
 
 ### Picking this up elsewhere
@@ -935,6 +935,111 @@ Finding what units reach costs about 15% of reading (`clangSema.lib` of
 `build-z7-nopch`: 0.39 s against 0.34 s); a first version that read every
 relocation again and searched every symbol for each piece took 1.34 s.
 
+## Phase 6 results
+
+### The ELF corpus
+
+`tools/turbolib/elf-corpus` builds it in WSL (Ubuntu 26.04: gcc 15.2,
+clang 21.1, GNU binutils 2.46, mold, lld 21): `setup.sh` fetches cmake,
+ninja, and llvm-project at `c74b358f44c3` without root; `configure.sh
+gcc|clang|gcc-split|clang-split` configures a Debug (`-g`,
+`-ffunction-sections -fdata-sections`) build of LLVM, clang, and lld
+(X86 and AArch64) as static libraries; `build.sh` builds it at low
+priority. The gcc build archives with GNU `ar qc` and `ranlib` (CMake's
+rules); the clang build with the gcc build's `llvm-ar` and `llvm-ranlib`.
+Its libraries hold DWARF 5 (7.5 GiB of `.debug_*` and 3.4 GiB of their
+relocations in 13.5 GiB, measured on 170 of the libraries); the COMDAT
+groups' code is 215 MiB, with 161 MiB of relocations.
+
+### Archives and the `ar` personality (6.1)
+
+`turbonop_archive::unix` writes the GNU dialect (the `/` and `/SYM64/`
+symbol tables, `//`, thin archives, GNU `ar`'s `/<offset>:<origin>`
+members of nested archives) and `llvm-ar`'s BSD and Darwin dialects,
+each as GNU `ar` 2.46 and `llvm-ar` 24 write them; `unix::symbols` gives
+the symbols each indexes for an ELF member (they differ on mapping
+symbols, `STT_FILE`, other bindings than local, global, weak, and unique,
+and local commons). Where the writers differ (read in `bfd/archive.c` and
+`ArchiveWriter.cpp`, and measured): GNU `ar` writes a long name once per
+member that has it, `llvm-ar` once (and a name with `/` long);
+`llvm-ar` gives an empty symbol table three NULs; `/SYM64/` comes when a
+member with symbols passes 32 bits (GNU, padded to 8) or the last member's
+header reaches 2^32 (`llvm-ar`, padded to 2; `SYM64_THRESHOLD`).
+
+| Check | Result |
+|---|---|
+| `roundtrip_unix` on 170 libraries of the gcc build (13.96 GiB, 2,640 members) | all written back byte for byte (by both writers), every index computed from the members as the archive has it, 11.3 s |
+| the same on 26 archives each tool made from crafted members (long names twice, thin, nested, BSD, Darwin, no objects, commons, absolutes) | all 26 |
+| `arcompare.py`: 60 command lines run with GNU `ar`/`ranlib` and `llvm-ar`/`llvm-ranlib`, and with turbolib in their place | 60 of 60 the same: every file left, standard output, standard error, and exit status |
+
+The scenarios cover `r` (replacing, positions `a`/`b`, `P`, `u`), `q`,
+`d` (with `N`), `m`, `t` (`v`, `O`, thin), `p`, `x`, `s`, `S`, `T` and
+`--thin` (nested archives, the same file twice), `U` (dates compared as
+"a number"), `--record-libdeps`, `-M` scripts, `L`, `--format=bsd` and
+`darwin`, `SYM64_THRESHOLD`, a missing file, and creating messages. GNU
+`ar`'s `-M` puts each `ADDMOD`'s files first and an `ADDLIB`'s members
+one by one (backwards), as `arsup.c` does. `ar tv` prints dates in local
+time (`TZ`, else `/etc/localtime`, read as TZif with its footer's POSIX
+rule).
+
+### The ELF object model (6.2)
+
+`turbonop-elf-object` reads an ELF relocatable object (either class and
+byte order) into sections with typed contents where folding edits them
+(symbols, `REL`/`RELA` relocations with MIPS64's `r_info`, groups,
+`SHT_SYMTAB_SHNDX` kept in step) and writes it back: into the layout read
+while every part keeps its size, else afresh; string tables are kept
+while every name is at its offset (so GNU `as`'s and LLVM's suffix-shared
+and shared `.strtab` survive), else rebuilt. All 2,640 objects of those
+170 libraries (13.5 GiB, ten of them with extended numbering) write back
+byte for byte, and laid out afresh read back to the same model, in 7.0 s.
+
+### Folding (6.3, first version)
+
+`turbonop_fold::elf` (run by the `ar` personality with `--fold=identical`,
+`--pull=preserve|relaxed`; `--locals=keep` only) folds identical COMDAT
+groups. See the module's documentation for the units, their identity,
+the environment key, what stops a unit folding, and the rewriting. In
+short: the first copy survives into a synthesized member per set of
+givers and environment, which keeps its group, FDEs and CIEs, and notes;
+givers lose the sections and FDEs, their definitions become weak
+undefined references, and they refer (strongly) to the synthesized
+member's anchor (a hidden weak absolute symbol named for its contents),
+placed first among their globals.
+
+**Debug information isn't moved** (yet): a giver's `.debug_*`
+relocations to the copy's local symbols are removed and their places
+tombstoned (lld's values), as a link of the original would treat every
+copy but the one it kept; a folded function has no DWARF in the folded
+library's links. `--stats` counts them.
+
+What was found on the way:
+
+- **The OS ABI** isn't part of the environment: GNU `as` marks objects
+  with `STB_GNU_UNIQUE` or `STT_GNU_IFUNC` symbols `ELFOSABI_GNU`, which
+  split identical copies (on `libLLVMSupport.a`, 845 groups folded with
+  it, 3,483 without). A synthesized member is `ELFOSABI_GNU` when its own
+  symbols need it.
+- **TLS references** must stay `STT_TLS` when a definition becomes a
+  reference (GNU ld and gold refuse a TLS definition for a non-TLS
+  reference).
+- **Without COFF's alias technique, a strong reference to a moved name
+  lets lld and mold take it from the first library on the command line
+  that has any copy of it**: a giver's definition, become a strong
+  undefined reference, made lld load 41 other members of earlier
+  libraries (`libLLVMBinaryFormat.a`'s, holding their own copies) for
+  `llvm-nm`, with their static initializers; mold, as many. mold ranks a
+  lazy definition by its file's place on the command line; lld extracts a
+  lazy member the moment a loaded object's undefined symbol meets it, and
+  a member extracted while its own archive is being read meets the
+  reference before the synthesized members (at the archive's end) are
+  known (`--trace-symbol` shows the anchor's reference with no lazy
+  definition yet). So a giver's moved names are **weak** references, which
+  no linker loads anything for, and its strong reference to the anchor is
+  what loads the synthesized member that defines them (the anchors first
+  among its globals); a synthesized member refers to names moved into
+  another the same way, with that one's anchor.
+
 ## Decisions
 
 | | Decision |
@@ -981,9 +1086,9 @@ relocation again and searched every symbol for each piece took 1.34 s.
 - **A COFF object model that round-trips.** Read an object into an editable
   form and write it back. Sections, symbols with every auxiliary record
   kind, relocations, string table, and big-obj headers in both directions.
-- **The GNU and BSD archive writers** (phase 6), and the import
-  descriptor objects of `/DEF` import libraries (their layout is in
-  `turbonop_moduledef::imports`; they wait for the COFF writer).
+- (Written since: the import descriptor objects of `/DEF` import
+  libraries, phase 1.2; the GNU and BSD archive writers and an ELF object
+  model, phase 6: `turbonop_archive::unix`, `turbonop-elf-object`.)
 - **A complete CodeView writer and type-index visitor.** For every type
   record, symbol record, and C13 subsection, this means knowing every field
   that holds a type index or an id index, and every field that holds a
@@ -1498,7 +1603,11 @@ Within a personality, the format of the output follows the inputs (or
   - MRI scripts (`-M`);
   - `@response` files.
 
-  `--plugin` is accepted and ignored, as LTO is out of scope.
+  `--plugin` is accepted and ignored, as LTO is out of scope. Written in
+  phase 6 (`apps/turbolib/src/unix`), with `--output`, `--target`,
+  `--record-libdeps`, `L`, `O`, `P`, `o`, `v`, `f`, and the `ranlib`s'
+  `-D`, `-U`, and `-t`; turbolib's own options are `--<option>` words and
+  `-j N` there.
 - **turbolib's own options.** These are `--fold`, `--pick`, `--pull`,
   `--locals`, `--precomp`, `--report odr`, `--diagnose`, `--stats`, and
   `-j`. A personality accepts
@@ -1902,7 +2011,7 @@ finding units 25% slower); reading members largest first (no change: reading is 
 - **`--pull=preserve`** skips the units that are at risk, since ELF has
   nothing like `NOLIBRARY`.
 - **GNU and BSD archive writers**, `/SYM64/`, thin archives, and `ar`'s
-  command line.
+  command line (done: see [Phase 6 results](#phase-6-results)).
 
 ### Phase 7: Mach-O
 

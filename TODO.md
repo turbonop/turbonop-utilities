@@ -421,6 +421,37 @@ x64. Where the 3.5 MB went:
   - lld-link's `.tls` is 8 bytes larger against folded libraries in
     `llvm-nm` (`/OPT:NOREF`, `build-z7`), with `--fold=identical` as with
     phase 4's modes: not explained yet.
+- **Phase 6: ELF** (see the plan's "Phase 6 results"). Done: the GNU and
+  BSD archive writers and the `ar`, `llvm-ar`, and `ranlib` personalities
+  (6.1), the ELF object model (6.2), and a first `--fold=identical` for
+  ELF (6.3). Still open:
+  - **Debug information for folded functions**: move each moved
+    function's DWARF (its subprogram's DIEs and the types they use, a
+    line-table sequence, range and location lists) into a CU of the
+    synthesized member, as the plan's phase 6 describes; until then a
+    folded function has none (tombstoned in the givers, `--stats` counts
+    them). Then split DWARF (`.dwo` pairing by `dwo_id`).
+  - `--pull=preserve` keeps the units whose first definer has side
+    effects: on the gcc corpus, about 316,000 copies, mostly LLVM's
+    `cl::opt` initializers (`.init_array`). Find what an ELF link could
+    keep loading them instead (there is no `NOLIBRARY`).
+  - `--locals=copy` and `merge` for ELF: references into `SHF_MERGE`
+    sections (string literals) are content references the linker merges
+    anyway, so copying the pieces is semantics-preserving; the main reason
+    units stay ("reaches a local symbol outside it").
+  - `.note.gnu.property` is in the environment key as bytes: merge it
+    instead (AND-type properties by OR over a unit's copies, OR-type by
+    AND), so objects with different `ISA_1_USED` notes fold together.
+  - `--fold=select-any` for ELF; the ELF side of `turbolib verify`; an ELF
+    `compare-images` (functions' bytes modulo PC-relative operands; today
+    `relink.py` compares programs' outputs, members loaded, and the
+    images' symbol names, types, and sizes).
+  - Untested: REL machines (i386, ARM) and big-endian objects in a fold;
+    AArch64, RISC-V, MIPS objects at all; GCC LTO objects and LLVM
+    bitcode members (the `ar` personality refuses to index them); BSD
+    archives from GNU `ar` (this binutils can't write them); thin archives
+    and `--fold` (refused); `ar` on Windows hosts beyond the unit tests.
+  - GNU `ar -M`'s `DIRECTORY`, `EXTRACT`, `LIST`, `VERBOSE`, and `FULLDIR`.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

@@ -812,6 +812,7 @@ version = "0.0.7"
 dependencies = [
  "turbonop-core",
  "turbonop-elf",
+ "turbonop-elf-object",
  "turbonop-global-alloc",
  "turbonop-mmap",
  "turbonop-par",
@@ -1017,6 +1018,8 @@ dependencies = [
  "turbonop-codeview",
  "turbonop-coff",
  "turbonop-core",
+ "turbonop-elf",
+ "turbonop-elf-object",
  "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-par",

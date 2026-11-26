@@ -19,7 +19,7 @@
 
 use super::args::{self, Command, Flavor, Op, Position};
 use crate::output;
-use crate::settings::{Fold, Settings};
+use crate::settings::{Fold, Locals, Precomp, Pull, Settings};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -834,7 +834,90 @@ fn llvm_dialect(
     })
 }
 
-/// Writes `plan` to `archive`.
+/// The members `plan` holds, folded (`--fold`): each original member
+/// (rewritten, if it gave units up), then the synthesized members.
+fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>, Fatal> {
+    let s = &run.settings;
+    if s.fold == Fold::SelectAny {
+        return Err(run.fatal("--fold=select-any isn't written for ELF yet"));
+    }
+    if s.locals != Locals::Keep {
+        return Err(run.fatal("--locals=copy and merge aren't written for ELF yet"));
+    }
+    if s.precomp != Precomp::None {
+        return Err(run.fatal("--precomp is CodeView's (COFF) only"));
+    }
+    if plan.thin {
+        return Err(run.fatal("a thin archive's members are files of their own: not folded"));
+    }
+    let options = turbonop_fold::elf::Options {
+        pull: match s.pull {
+            Pull::Preserve => turbonop_fold::elf::Pull::Preserve,
+            Pull::Relaxed => turbonop_fold::elf::Pull::Relaxed,
+        },
+    };
+    let inputs: Vec<turbonop_fold::elf::Input<'_>> = plan
+        .members
+        .iter()
+        .map(|m| turbonop_fold::elf::Input {
+            name: m.name.as_bytes(),
+            data: m.data(),
+        })
+        .collect();
+    let (outputs, report) = turbonop_fold::elf::fold(&inputs, &options);
+    if run.settings.stats {
+        let mut text = format!(
+            "turbolib: {archive}: {} members, {} COMDAT units; {} with copies in more than one member, \
+             {} folded ({} copies) into {} synthesized members; {} bytes of units removed, {} written; \
+             {} debug relocations tombstoned, {} folded units' debug information dropped\n",
+            report.members,
+            report.units,
+            report.duplicated,
+            report.folded,
+            report.copies,
+            report.synthesized,
+            report.removed_bytes,
+            report.synthesized_bytes,
+            report.tombstoned,
+            report.debug_dropped
+        );
+        for (why, n) in &report.kept {
+            text.push_str(&format!("turbolib:   {n} copies stayed: {why}\n"));
+        }
+        for (why, n) in &report.passed {
+            text.push_str(&format!("turbolib:   {n} members passed through: {why}\n"));
+        }
+        run.stderr.push_str(&text);
+    }
+    let synthesized = if plan.deterministic {
+        Fields::new(b"0", b"0", b"0", b"644").unwrap_or(Fields::BLANK)
+    } else {
+        let now = run.env.now.to_string();
+        Fields::new(now.as_bytes(), b"0", b"0", b"644").unwrap_or(Fields::BLANK)
+    };
+    Ok(outputs
+        .into_iter()
+        .map(|o| match (o.input, o.data) {
+            (Some(i), None) => plan.members[i].clone(),
+            (input, Some(data)) => {
+                let from = input.map(|i| &plan.members[i]);
+                Item {
+                    name: from.map_or_else(
+                        || String::from_utf8_lossy(&o.name).into_owned(),
+                        |f| f.name.clone(),
+                    ),
+                    origin: None,
+                    fields: from.map_or(synthesized, |f| f.fields),
+                    size: data.len() as u64,
+                    bytes: Some(Bytes::whole(Arc::new(Mmap::from(data)))),
+                    old: from.is_some_and(|f| f.old),
+                }
+            }
+            (None, None) => unreachable!("a synthesized member has its bytes"),
+        })
+        .collect())
+}
+
 /// Writes `plan` to `archive`. The plan's members are the last holders of
 /// their files' mappings (the caller drops its own): they are let go
 /// before the new archive takes the old one's place, which Windows needs.
@@ -842,8 +925,10 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fa
     if plan.members.iter().any(|m| m.bytes.is_none()) && !plan.thin {
         return Err(run.fatal(format!("{archive}: a member's data is missing")));
     }
+    let mut plan = plan;
     if run.settings.fold != Fold::None {
-        return Err(run.fatal("folding ELF archives isn't written yet (phase 6.3)"));
+        let members = fold_members(run, archive, &plan)?;
+        plan.members = members;
     }
     let archiver = run.archiver();
     // Each member's symbols, on every core.

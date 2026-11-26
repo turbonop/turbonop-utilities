@@ -69,9 +69,9 @@ def retarget(cmds, lib, newlib, tools):
     return res
 
 
-def run(cmds, cwd):
+def run(cmds, cwd, env=None):
     for argv in cmds:
-        p = subprocess.run(argv, cwd=cwd, capture_output=True)
+        p = subprocess.run(argv, cwd=cwd, capture_output=True, env=env)
         if p.returncode != 0:
             return f"{argv[0]} exited {p.returncode}: {p.stderr.decode(errors='replace')[:300]}"
     return None
@@ -85,8 +85,11 @@ def main():
     ap.add_argument("-j", type=int, default=os.cpu_count())
     ap.add_argument("--time", action="store_true")
     ap.add_argument("--top", type=int, default=20)
+    ap.add_argument("--options", default="", help="TURBOLIB_OPTIONS for turbolib's runs (e.g. --fold=identical)")
     ap.add_argument("-v", action="store_true")
     args = ap.parse_args()
+    env = dict(os.environ)
+    env["TURBOLIB_OPTIONS"] = args.options
     build = os.path.abspath(args.build)
     out = os.path.abspath(args.out or os.path.join(build, "relib"))
     os.makedirs(out, exist_ok=True)
@@ -110,7 +113,7 @@ def main():
                     if os.path.exists(target):
                         os.remove(target)
                     start = time.perf_counter()
-                    err = run(retarget(libs[lib], lib, target, t), build)
+                    err = run(retarget(libs[lib], lib, target, t), build, env if t else None)
                     took = time.perf_counter() - start
                     if err:
                         sys.exit(f"{lib}: {who}: {err}")
@@ -124,12 +127,15 @@ def main():
         return
 
     def one(lib):
-        target = os.path.join(out, lib.replace("/", "_"))
+        target = os.path.join(out, os.path.basename(lib))
         if os.path.exists(target):
             os.remove(target)
-        err = run(retarget(libs[lib], lib, target, tools), build)
+        err = run(retarget(libs[lib], lib, target, tools), build, env)
         if err:
             return lib, err
+        if args.options:
+            # Folded: not the same bytes; kept for relink.py.
+            return lib, None
         with open(os.path.join(build, lib), "rb") as f:
             want = f.read()
         with open(target, "rb") as f:

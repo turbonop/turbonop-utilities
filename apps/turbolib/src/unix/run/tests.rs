@@ -255,11 +255,25 @@ fn ranlib_and_tables() {
 }
 
 #[test]
-fn folding_is_refused_for_now() {
+fn folding_options() {
     let dir = fixture("fold");
-    let o = ar(Flavor::GnuAr, &dir, "rcs --fold=identical x.a f.o");
+    let o = ar(Flavor::GnuAr, &dir, "rcs --fold=select-any x.a f.o");
     assert_eq!(o.exit, 1);
-    assert!(o.stderr.contains("isn't written yet"), "{}", o.stderr);
+    assert!(
+        o.stderr.contains("isn't written for ELF yet"),
+        "{}",
+        o.stderr
+    );
+    // Nothing to fold in one member: the archive as without folding.
+    assert_eq!(
+        ar(Flavor::GnuAr, &dir, "rcs --fold=identical y.a f.o").exit,
+        0
+    );
+    assert_eq!(ar(Flavor::GnuAr, &dir, "rcs z.a f.o").exit, 0);
+    assert_eq!(
+        std::fs::read(dir.join("y.a")).unwrap(),
+        std::fs::read(dir.join("z.a")).unwrap()
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

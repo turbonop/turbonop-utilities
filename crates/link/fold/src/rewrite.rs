@@ -1486,18 +1486,22 @@ fn strip<'a>(
     // The anchors come before every external and weak external record (see
     // `anchors_first`).
     let first = anchors_first(&object);
-    for (k, a) in anchors.iter().enumerate() {
-        object.insert_symbol(
-            SymbolId((first + k) as u32),
+    // All at once: inserting each renumbers every reference in the object
+    // (on clangSema.lib, with hundreds of anchors in a member, rewriting
+    // took 11 to 15 s instead of 0.15 s).
+    let new: Vec<Symbol<'_>> = anchors
+        .iter()
+        .map(|a| {
             Symbol::new(
                 Name::new(a.to_vec()),
                 0,
                 SectionNumber::Undefined,
                 0,
                 storage_class::EXTERNAL,
-            ),
-        );
-    }
+            )
+        })
+        .collect();
+    object.insert_symbols(SymbolId(first as u32), new);
     let now = object.symbol_table_indices();
     tables::renumber(&mut object, &fields, &renumbering, &|i| {
         let id = before

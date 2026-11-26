@@ -238,6 +238,25 @@ impl<'data> Object<'data> {
         SymbolId(at)
     }
 
+    /// Inserts `symbols` at `at` (at most the number of symbols), in their
+    /// order, renumbering the symbols after them and every reference to
+    /// them once (inserting them one at a time renumbers every reference
+    /// for each). The new symbols' own references are taken as they are,
+    /// in the new numbering. Returns the first new symbol's id.
+    pub fn insert_symbols(&mut self, at: SymbolId, symbols: Vec<Symbol<'data>>) -> SymbolId {
+        let at = at.0.min(self.symbols.len() as u32);
+        let n = symbols.len() as u32;
+        if n == 0 {
+            return SymbolId(at);
+        }
+        self.remap(Some, |s| {
+            Some(if s.0 >= at { SymbolId(s.0 + n) } else { s })
+        });
+        self.symbols.splice(at as usize..at as usize, symbols);
+        self.forget_layout();
+        SymbolId(at)
+    }
+
     /// Removes the sections for which `keep_section` is false and the
     /// symbols for which `keep_symbol` is false, renumbering the rest and
     /// every reference to them.

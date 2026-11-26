@@ -2783,6 +2783,12 @@ warm cache, 8 threads, 2026-11-25):
 | `lib.exe` 14.52 | 11.76 s | 1.00× |
 | turbolib, `--fold=none` | 5.84 s | 0.50× |
 | turbolib, `--fold=identical` (with 2.4's debug information) | 11.37 s | 0.97× |
+
+Again on 2026-11-26, after phases 3, 4, 6 and 7 and the order and
+initializer fixes (two-record aliases, anchors first, `.chks64` kept,
+initializer units held back), and after fixing a quadratic anchor insert
+(863ae3d6): `lib.exe` 10.94 s, turbolib without folding 5.49 s (0.50×),
+with `--fold=identical` 11.21 s (1.03×).
 | Again, with phase 3 (same day): `lib.exe` | 11.02 s | 1.00× |
 | `--fold=identical` | 11.03 s | 1.00× |
 | `--fold=identical --precomp=library` | 11.73 s | 1.06× |

@@ -433,16 +433,13 @@ x64. Where the 3.5 MB went:
     another unit (`--stats` counts each). `.dwp` packages and type units
     (`-fdebug-types-section`, in COMDAT groups of their own, which stay)
     are untested. A synthesized member's DIEs are always the first
-    member's copy; `compare-images` reports 7 to 22 per program as
-    differing where a link of the original kept another unit's copy.
-    Prove them by matching against the original image's discarded
-    copies, which are still there, tombstoned. The images' DWARF grows
+    member's copy; `witness.py` proves each description `compare-images`
+    finds differing to be another unit's copy (the plan's 6.6). The images' DWARF grows
     about 2.4% (the givers' DIEs stay, and each synthesized member adds
     declarations and a line header): share line headers or declarations
     between a library's synthesized members (one unit per survivor
     member?), and measure what lld and mold then write. Untested: lldb
-    (not installed), a clang-built corpus fold with DWARF, AArch64
-    objects.
+    (not installed), AArch64 objects.
   - `--pull=preserve` keeps the units whose first definer has side
     effects: on the gcc corpus, 344,949 copies, mostly LLVM's `cl::opt`
     initializers (`.init_array`), and with them (a unit naming what stays
@@ -466,8 +463,10 @@ x64. Where the 3.5 MB went:
     doesn't compare bytes outside sized symbols (string and constant
     pools, jump tables, `.gcc_except_table`: name them by content or by
     the references into them) and has decoded no ARM64 ELF image;
-    `verify` leaves synthesized members' DWARF to `compare-images`. Run
-    both on the clang corpus.
+    `verify` leaves synthesized members' DWARF to `compare-images`.
+    Content naming should stop at a constant's end (`SHF_MERGE` entry
+    sizes are lost in the image; the reference's access size isn't
+    known).
   - Untested: REL machines (i386, ARM) and big-endian objects in a fold;
     AArch64, RISC-V, MIPS objects at all; GCC LTO objects and LLVM
     bitcode members (the `ar` personality refuses to index them); BSD
@@ -485,10 +484,12 @@ x64. Where the 3.5 MB went:
     as bytes until something edits them, tombstone in place, and write
     rewritten members straight into the archive. `ranlib` after `ar qc`
     folds again (finding nothing new): skip it when no member changed.
-  - The clang corpus (`configure.sh clang`, archived by `llvm-ar`): build
-    it, then `relib.py` (as `llvm-ar qc` and `llvm-ranlib` made each
-    library), `roundtrip_unix -llvm`, the object round trip (LLVM's
-    `.strtab`, `.llvm_addrsig`, `.crel`), and the fold and relink matrix.
+  - The clang corpus is done (the plan's 6.6) but for CREL objects
+    (`-Wa,--crel`: the corpus has none; the engine passes such members
+    through) and what `compare-images` doesn't read there yet: a
+    constant named by contents that run past it (2 functions of
+    `llvm-nm`), one jump table not recognized, and mold's TLS relaxation
+    (`sub $tls_size` then `lea off(%reg)`: 21 functions of `llvm-readobj`).
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

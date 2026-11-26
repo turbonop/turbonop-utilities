@@ -1,6 +1,7 @@
 //! Writing an object: in the layout it was read with, if it still fits,
 //! and otherwise afresh.
 
+use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use turbonop_core::{Error, ErrorKind, Result};
@@ -40,12 +41,37 @@ struct Plan {
     len: usize,
 }
 
-impl Object<'_> {
+/// Where each hole is, and its bytes.
+type Holes<'data> = Vec<(usize, &'data [u8])>;
+
+/// An object written but for its larger borrowed section data: the file's
+/// bytes with zeros where that data goes, and where each piece goes. Write
+/// [`bytes`](Self::bytes) with each [`holes`](Self::holes) piece over it,
+/// and it is the file [`Object::write`] makes, without a copy of the data
+/// the object borrows.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Skeleton<'data> {
+    /// The file, with zeros in the holes.
+    pub bytes: Vec<u8>,
+    /// Each hole's offset in the file, and the bytes that fill it.
+    pub holes: Vec<(usize, &'data [u8])>,
+}
+
+impl<'data> Object<'data> {
     /// The object as a file.
     pub fn write(&self) -> Result<Vec<u8>> {
         let mut out = Vec::new();
         self.write_to(&mut out)?;
         Ok(out)
+    }
+
+    /// The object as a file but for section data it borrows of at least
+    /// `min` bytes, which is left to fill in (see [`Skeleton`]).
+    pub fn write_skeleton(&self, min: usize) -> Result<Skeleton<'data>> {
+        let mut out = Vec::new();
+        let mut holes = Vec::new();
+        self.write_impl(&mut out, Some((min, &mut holes)))?;
+        Ok(Skeleton { bytes: out, holes })
     }
 
     /// Appends the object, as a file, to `out`.
@@ -57,6 +83,14 @@ impl Object<'_> {
     /// don't exist, a name with a NUL, more sections than the format
     /// allows, a header field the format lacks, or a file past 4 GiB.
     pub fn write_to(&self, out: &mut Vec<u8>) -> Result<()> {
+        self.write_impl(out, None)
+    }
+
+    fn write_impl(
+        &self,
+        out: &mut Vec<u8>,
+        mut holes: Option<(usize, &mut Holes<'data>)>,
+    ) -> Result<()> {
         self.check()?;
         let format = self.format;
         let stride = format.record_size();
@@ -106,7 +140,13 @@ impl Object<'_> {
         };
 
         let start = out.len();
-        out.resize(start + plan.len, 0);
+        if start == 0 {
+            // Zeroed memory from the allocator: what isn't written (holes
+            // left to fill) costs nothing.
+            *out = alloc::vec![0; plan.len];
+        } else {
+            out.resize(start + plan.len, 0);
+        }
         let file = &mut out[start..];
         self.write_header(file, &plan, records);
         let put16 = |b: &mut [u8], o: usize, v: u16| b[o..o + 2].copy_from_slice(&v.to_le_bytes());
@@ -152,10 +192,16 @@ impl Object<'_> {
             }
             put32(h, 36, characteristics);
 
-            if let SectionData::Bytes(bytes) = &s.data
-                && !bytes.is_empty()
-            {
-                file[p.data as usize..][..bytes.len()].copy_from_slice(bytes);
+            match (&s.data, &mut holes) {
+                (SectionData::Bytes(Cow::Borrowed(bytes)), Some((min, holes)))
+                    if bytes.len() >= *min && !bytes.is_empty() =>
+                {
+                    holes.push((start + p.data as usize, *bytes));
+                }
+                (SectionData::Bytes(bytes), _) if !bytes.is_empty() => {
+                    file[p.data as usize..][..bytes.len()].copy_from_slice(bytes);
+                }
+                _ => {}
             }
             let mut at = p.relocations as usize;
             if let Some((symbol, kind)) = p.extended {

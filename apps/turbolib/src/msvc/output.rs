@@ -1,7 +1,7 @@
 //! Writing the library file: straight from the members' bytes (mapped
-//! inputs, or the members folding made) into the file, at the offsets the
-//! layout gives, on every thread at once, with no copy of the whole library
-//! in memory.
+//! inputs, or the members folding made, whose larger section data is still
+//! the inputs') into the file, at the offsets the layout gives, on every
+//! thread at once, with no copy of the whole library in memory.
 //!
 //! The library is written to a file beside the output and renamed over it
 //! once it is complete, so the output is never half-written, and an input
@@ -31,28 +31,56 @@ fn write_at(file: &File, mut offset: u64, mut data: &[u8]) -> io::Result<()> {
 
 /// Members smaller than this are written with their header in one write.
 const SMALL: usize = 1 << 16;
-/// Members larger than this are written in pieces of it, so that one large
-/// member's copy is shared out among the threads.
+/// Larger pieces are written in pieces of this, so that one large member's
+/// copy is shared out among the threads.
 const PIECE: usize = 1 << 24;
 
-/// One write: where, and what (a member's header and the start of its data,
-/// or a piece of its data).
+/// A member to write: its bytes, and the pieces those leave out (each one's
+/// offset in the member, and its bytes; see `turbonop_coff::Skeleton`).
+#[derive(Clone, Copy, Debug)]
+pub struct Bytes<'a> {
+    pub data: &'a [u8],
+    pub holes: &'a [(usize, &'a [u8])],
+}
+
+/// One write.
 enum Write<'a> {
-    /// The header, the data, and the padding byte if any, together.
+    /// A small member whole: its header, its bytes with the holes filled,
+    /// and the padding byte if any.
     Whole(usize),
-    /// The header alone.
+    /// A member's header (and its padding byte, if any).
     Header(usize),
-    /// `data[from..to]` of member `i`.
-    Piece(usize, usize, usize, &'a [u8]),
+    /// Bytes at an offset in the file.
+    At(u64, &'a [u8]),
+}
+
+/// The member's bytes as pieces in order: the stretches of `data` between
+/// holes, and the holes' bytes.
+fn segments<'a>(b: Bytes<'a>) -> Vec<(usize, &'a [u8])> {
+    let mut holes: Vec<(usize, &[u8])> = b.holes.to_vec();
+    holes.sort_unstable_by_key(|h| h.0);
+    let mut out = Vec::with_capacity(holes.len() * 2 + 1);
+    let mut at = 0;
+    for (start, piece) in holes {
+        if start > at {
+            out.push((at, &b.data[at..start]));
+        }
+        out.push((start, piece));
+        at = start + piece.len();
+    }
+    if at < b.data.len() {
+        out.push((at, &b.data[at..]));
+    }
+    out
 }
 
 /// Writes the library `layout` describes, with each member's bytes from
-/// `data`, to a new file beside `path`, and returns that file's path.
+/// `members`, to a new file beside `path`, and returns that file's path.
 /// `padding` is the byte after an odd-sized member.
 pub fn write_beside(
     path: &Path,
     layout: &Layout<'_>,
-    data: &[&[u8]],
+    members: &[Bytes<'_>],
     padding: u8,
 ) -> io::Result<PathBuf> {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
@@ -62,42 +90,46 @@ pub fn write_beside(
     let result = (|| {
         file.set_len(layout.size())?;
         write_at(&file, 0, layout.head())?;
-        let mut writes: Vec<Write<'_>> = Vec::with_capacity(data.len());
-        for (i, d) in data.iter().enumerate() {
-            if d.len() < SMALL {
+        let mut writes: Vec<Write<'_>> = Vec::with_capacity(members.len());
+        for (i, m) in members.iter().enumerate() {
+            if m.data.len() < SMALL {
                 writes.push(Write::Whole(i));
-            } else {
-                writes.push(Write::Header(i));
-                let mut at = 0;
-                while at < d.len() {
-                    let to = (at + PIECE).min(d.len());
-                    writes.push(Write::Piece(i, at, to, d));
-                    at = to;
+                continue;
+            }
+            writes.push(Write::Header(i));
+            let base = layout.offset(i) + 60;
+            for (at, piece) in segments(*m) {
+                let mut from = 0;
+                while from < piece.len() {
+                    let to = (from + PIECE).min(piece.len());
+                    writes.push(Write::At(base + (at + from) as u64, &piece[from..to]));
+                    from = to;
                 }
             }
         }
         let results = turbonop_par::map_balanced(&writes, 8, |w| match *w {
             Write::Whole(i) => {
-                let mut buf = Vec::with_capacity(60 + data[i].len() + 1);
+                let m = members[i];
+                let mut buf = Vec::with_capacity(60 + m.data.len() + 1);
                 buf.extend_from_slice(&layout.header(i));
-                buf.extend_from_slice(data[i]);
-                if data[i].len() & 1 == 1 {
+                buf.extend_from_slice(m.data);
+                for (at, piece) in m.holes {
+                    buf[60 + at..60 + at + piece.len()].copy_from_slice(piece);
+                }
+                if m.data.len() & 1 == 1 {
                     buf.push(padding);
                 }
                 write_at(&file, layout.offset(i), &buf)
             }
             Write::Header(i) => {
                 write_at(&file, layout.offset(i), &layout.header(i))?;
-                if data[i].len() & 1 == 1 {
+                if members[i].data.len() & 1 == 1 {
                     let end = layout.offset(i) + layout.span(i) - 1;
                     write_at(&file, end, &[padding])?;
                 }
                 Ok(())
             }
-            Write::Piece(i, from, to, d) => {
-                let at = layout.offset(i) + 60 + from as u64;
-                write_at(&file, at, &d[from..to])
-            }
+            Write::At(at, bytes) => write_at(&file, at, bytes),
         });
         results.into_iter().collect::<io::Result<()>>()
     })();

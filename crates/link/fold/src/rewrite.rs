@@ -39,8 +39,8 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use turbonop_coff::{
     Aux, File, Format, Name, Object, Relocation, Section, SectionData, SectionDefinition,
-    SectionId, SectionNumber, Symbol, SymbolId, WeakExternal, comdat_select, storage_class,
-    weak_search,
+    SectionId, SectionNumber, Skeleton, Symbol, SymbolId, WeakExternal, comdat_select,
+    storage_class, weak_search,
 };
 use units::{Facts, is_debug};
 
@@ -149,11 +149,22 @@ impl Unfoldable {
     }
 }
 
+/// Section data at least this large isn't copied into a rewritten or
+/// synthesized member's bytes: it is left as a hole, filled from the input
+/// when the library is written.
+const HOLE: usize = 4096;
+
 /// One output member.
 #[derive(Clone, Debug)]
 pub struct OutputMember<'a> {
     pub name: Cow<'a, [u8]>,
+    /// Its bytes, with zeros in the holes.
     pub data: Cow<'a, [u8]>,
+    /// The pieces of the member that `data` leaves out (see
+    /// [`turbonop_coff::Skeleton`]): each offset in it, and the bytes to put
+    /// there. Everything but section contents is in `data`, so it can be
+    /// read for its headers and symbols as it is.
+    pub holes: Vec<(usize, &'a [u8])>,
     /// Made by turbolib.
     pub synthesized: bool,
 }
@@ -439,31 +450,48 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
 
     lap(2);
     // Rewritten members, then synthesized members, each in parallel.
-    let members: Vec<OutputMember<'a>> = turbonop_par::map_range(parsed.len(), 1, |m| {
+    // Largest first, so the threads finish together.
+    let mut order: Vec<usize> = (0..parsed.len()).collect();
+    order.sort_by_key(|&m| std::cmp::Reverse(inputs[m].data.len()));
+    let mut members: Vec<(usize, OutputMember<'a>)> = turbonop_par::map_balanced(&order, 1, |&m| {
         let input = &inputs[m];
         if removals[m].is_empty() {
-            return OutputMember {
-                name: Cow::Borrowed(input.name),
-                data: Cow::Borrowed(input.data),
-                synthesized: false,
-            };
+            return (
+                m,
+                OutputMember {
+                    name: Cow::Borrowed(input.name),
+                    data: Cow::Borrowed(input.data),
+                    holes: Vec::new(),
+                    synthesized: false,
+                },
+            );
         }
         let anchors: Vec<&[u8]> = anchors_of[m]
             .iter()
             .map(|&n| anchors[n].as_slice())
             .collect();
-        let data = strip(&parsed[m], &removals[m], &anchors);
-        OutputMember {
-            name: Cow::Borrowed(input.name),
-            data: Cow::Owned(data),
-            synthesized: false,
-        }
+        let skeleton = strip(&parsed[m], &removals[m], &anchors);
+        (
+            m,
+            OutputMember {
+                name: Cow::Borrowed(input.name),
+                data: Cow::Owned(skeleton.bytes),
+                holes: skeleton.holes,
+                synthesized: false,
+            },
+        )
     });
+    members.sort_unstable_by_key(|(m, _)| *m);
+    let members: Vec<OutputMember<'a>> = members.into_iter().map(|(_, o)| o).collect();
     lap(3);
-    let made: Vec<OutputMember<'a>> = turbonop_par::map_range(synths.len(), 1, |n| OutputMember {
-        name: Cow::Owned(format!("turbolib{n}.obj").into_bytes()),
-        data: Cow::Owned(synthesize(&synths[n], &parsed, &anchors[n])),
-        synthesized: true,
+    let made: Vec<OutputMember<'a>> = turbonop_par::map_range(synths.len(), 1, |n| {
+        let skeleton = synthesize(&synths[n], &parsed, &anchors[n]);
+        OutputMember {
+            name: Cow::Owned(format!("turbolib{n}.obj").into_bytes()),
+            data: Cow::Owned(skeleton.bytes),
+            holes: skeleton.holes,
+            synthesized: true,
+        }
     });
     lap(4);
     report.times = times;
@@ -504,7 +532,11 @@ fn anchor_name(n: usize, s: &Synth, inputs: &[Input<'_>], parsed: &[Parsed<'_>])
 }
 
 /// A member with the copies it gives up removed.
-fn strip(parsed: &Parsed<'_>, removals: &[(usize, Removal)], anchors: &[&[u8]]) -> Vec<u8> {
+fn strip<'a>(
+    parsed: &Parsed<'a>,
+    removals: &[(usize, Removal)],
+    anchors: &[&[u8]],
+) -> Skeleton<'a> {
     let mut object = parsed
         .object
         .clone()
@@ -565,7 +597,9 @@ fn strip(parsed: &Parsed<'_>, removals: &[(usize, Removal)], anchors: &[&[u8]]) 
             storage_class::EXTERNAL,
         ));
     }
-    object.write().expect("a rewritten member fits its format")
+    object
+        .write_skeleton(HOLE)
+        .expect("a rewritten member fits its format")
 }
 
 const IMAGE_SCN_LNK_INFO: u32 = 0x0000_0200;
@@ -575,7 +609,7 @@ const IMAGE_SCN_ALIGN_1BYTES: u32 = 0x0010_0000;
 const MAX_REGULAR_SECTIONS: usize = 65_279;
 
 /// A synthesized member.
-fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
+fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8]) -> Skeleton<'a> {
     let (m0, _, _) = s.units[0];
     let first = parsed[m0].object.as_ref().expect("units come from objects");
     let facts0 = &parsed[m0].facts;
@@ -770,7 +804,8 @@ fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
             .expect("a new object converts to big-obj");
     }
     o.sync_section_definitions();
-    o.write().expect("a synthesized member fits its format")
+    o.write_skeleton(HOLE)
+        .expect("a synthesized member fits its format")
 }
 
 fn section_symbol(name: &[u8], id: SectionId, def: SectionDefinition) -> Symbol<'static> {

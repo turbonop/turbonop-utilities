@@ -557,6 +557,7 @@ fn build(
                 name: &m.name,
                 fields: m.fields,
                 data: m.data,
+                holes: &[],
                 place: Cow::Borrowed(&m.place),
             })
             .collect(),
@@ -580,6 +581,7 @@ fn build(
                         members[i - first].fields
                     },
                     data: &m.data,
+                    holes: &m.holes,
                     place: if m.synthesized {
                         Cow::Owned(text(&m.name))
                     } else {
@@ -642,7 +644,13 @@ fn build(
         Flavor::Lib => Diag::fatal(1104, format!("cannot open file '{out}'")),
         Flavor::LlvmLib => Diag::llvm(Kind::Fatal, "cannot write the output").on(out),
     };
-    let datas: Vec<&[u8]> = new.iter().map(|m| m.data).collect();
+    let datas: Vec<output::Bytes<'_>> = finals
+        .iter()
+        .map(|m| output::Bytes {
+            data: m.data,
+            holes: m.holes,
+        })
+        .collect();
     let Ok(temp) = output::write_beside(&path, &layout, &datas, style.conventions().padding) else {
         return r.report(cannot(out));
     };
@@ -708,6 +716,7 @@ struct Final<'d> {
     name: &'d [u8],
     fields: Fields,
     data: &'d [u8],
+    holes: &'d [(usize, &'d [u8])],
     place: Cow<'d, str>,
 }
 

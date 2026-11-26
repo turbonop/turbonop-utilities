@@ -520,3 +520,40 @@ fn objects_that_own_their_bytes() {
     assert_eq!(&out[..3], &[1, 2, 3]);
     assert_eq!(&out[3..], data);
 }
+
+#[test]
+fn a_skeleton_filled_is_the_file() {
+    use crate::{File, Object};
+    for name in [
+        "objects.obj",
+        "objects-big.obj",
+        "model/clang-x64.obj",
+        "model/msvc-x86.obj",
+    ] {
+        let data = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../testdata/coff")
+                .join(name),
+        )
+        .unwrap();
+        let File::Object(o) = File::parse(&data).unwrap() else {
+            panic!("{name}: not a COFF object")
+        };
+        let mut edited: Object<'_> = o.clone();
+        // A structural edit, so the object is laid out afresh too.
+        edited.forget_layout();
+        for object in [&o, &edited] {
+            let whole = object.write().unwrap();
+            for min in [0, 1, 64, 1 << 20] {
+                let s = object.write_skeleton(min).unwrap();
+                assert_eq!(s.bytes.len(), whole.len());
+                let mut filled = s.bytes.clone();
+                for (at, piece) in &s.holes {
+                    assert!(piece.len() >= min.max(1));
+                    filled[*at..*at + piece.len()].copy_from_slice(piece);
+                }
+                assert_eq!(filled, whole, "{name}, min {min}");
+            }
+        }
+    }
+}

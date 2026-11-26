@@ -43,9 +43,30 @@ fn the_same_bytes_as_the_in_memory_writer() {
         })
         .collect();
     let layout = Layout::new(&headers, &index, style, SizeLimit::FourGiB).unwrap();
-    let slices: Vec<&[u8]> = datas.iter().map(Vec::as_slice).collect();
+    // Each member as bytes with holes: every third byte range of 1000 cut
+    // out and given back as a piece.
+    type Holes<'a> = Vec<(usize, &'a [u8])>;
+    let skeletons: Vec<(Vec<u8>, Holes<'_>)> = datas
+        .iter()
+        .map(|d| {
+            let mut bytes = d.clone();
+            let mut holes = Vec::new();
+            let mut at = 7;
+            while at + 1000 <= d.len() {
+                bytes[at..at + 1000].fill(0);
+                holes.push((at, &d[at..at + 1000]));
+                at += 3000;
+            }
+            holes.reverse();
+            (bytes, holes)
+        })
+        .collect();
+    let members: Vec<Bytes<'_>> = skeletons
+        .iter()
+        .map(|(b, h)| Bytes { data: b, holes: h })
+        .collect();
     let out = dir.join("x.lib");
-    let temp = write_beside(&out, &layout, &slices, style.conventions().padding).unwrap();
+    let temp = write_beside(&out, &layout, &members, style.conventions().padding).unwrap();
     replace(&temp, &out).unwrap();
     assert_eq!(std::fs::read(&out).unwrap(), expected);
     assert!(!temp.exists());

@@ -152,6 +152,8 @@ pub struct Report {
     pub debug_roots: usize,
     pub debug_tombstoned: usize,
     pub debug_bytes: u64,
+    /// How long each phase took, in order (for `--stats`).
+    pub phases: Vec<(&'static str, std::time::Duration)>,
 }
 
 /// The machines whose debug relocations can be tombstoned: the size of
@@ -1611,7 +1613,14 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         members: inputs.len(),
         ..Report::default()
     };
+    let mut clock = std::time::Instant::now();
+    let mut lap = |report: &mut Report, what: &'static str| {
+        let now = std::time::Instant::now();
+        report.phases.push((what, now - clock));
+        clock = now;
+    };
     let parsed: Vec<Parsed<'_>> = turbonop_par::map(inputs, 1, parse);
+    lap(&mut report, "reading");
     for p in &parsed {
         if let Some(w) = &p.why_not {
             *report.passed.entry(w.clone()).or_default() += 1;
@@ -1749,6 +1758,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         }
         synth.push((survivors, anchor));
     }
+    lap(&mut report, "choosing");
     // Rewrite the members and make the synthesized ones, on every core.
     let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_range(parsed.len(), 1, |m| {
         if moved[m].is_empty() {
@@ -1757,6 +1767,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         let mut r = Report::default();
         Some(rewrite(&parsed[m], &moved[m], &member_anchors[m], &mut r).map(|b| (b, r)))
     });
+    lap(&mut report, "rewriting");
     // Each moved name's synthesized member.
     let mut moved_into: BTreeMap<&[u8], usize> = BTreeMap::new();
     for (k, (units, _)) in synth.iter().enumerate() {
@@ -1780,6 +1791,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             Some(obj) => dwarf::Source::new(obj, &parsed[m].owner, dwo),
             None => Err("unread"),
         });
+    lap(&mut report, "reading DWARF");
     let source_of: BTreeMap<usize, &Result<dwarf::Source<'_>, &'static str>> =
         debug_members.iter().copied().zip(sources.iter()).collect();
     let made: Vec<Result<(Vec<u8>, Debugged), String>> =
@@ -1795,6 +1807,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             };
             synthesize(&parsed, &synth[k].0, k, &moved_into, &anchors, src)
         });
+    lap(&mut report, "synthesizing");
     let mut out = Vec::with_capacity(inputs.len() + made.len());
     for (m, r) in rewritten.into_iter().enumerate() {
         match r {

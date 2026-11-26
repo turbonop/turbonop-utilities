@@ -696,7 +696,15 @@ pub(super) fn strip(
 }
 
 /// Renumbers the tables [`strip`] kept, after the edit.
-pub(super) fn renumber(object: &mut Object<'_>, fields: &Fields, renumbering: &Renumbering) {
+/// `after` maps a symbol table index just after the edit to the object's
+/// final one (the member's edits after `renumbering`'s can move indices,
+/// as giving a symbol an auxiliary record does).
+pub(super) fn renumber(
+    object: &mut Object<'_>,
+    fields: &Fields,
+    renumbering: &Renumbering,
+    after: &dyn Fn(u32) -> u32,
+) {
     fields.write(
         object,
         |s| {
@@ -705,9 +713,11 @@ pub(super) fn renumber(object: &mut Object<'_>, fields: &Fields, renumbering: &R
                 .expect("a kept table's section stays")
         },
         |v| match v {
-            Value::OldIndex(i) => renumbering
-                .table_index(i)
-                .expect("a kept entry names a symbol that stays"),
+            Value::OldIndex(i) => after(
+                renumbering
+                    .table_index(i)
+                    .expect("a kept entry names a symbol that stays"),
+            ),
             Value::OldSection(s) => renumbering
                 .section(s)
                 .expect("a kept entry names a section that stays")

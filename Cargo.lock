@@ -1162,7 +1162,9 @@ dependencies = [
 name = "turbonop-moduledef"
 version = "0.0.7"
 dependencies = [
+ "sha2",
  "turbonop-archive",
+ "turbonop-coff",
  "turbonop-global-alloc",
  "turbonop-pe",
 ]
@@ -1419,6 +1421,7 @@ dependencies = [
  "turbonop-fold",
  "turbonop-global-alloc",
  "turbonop-mmap",
+ "turbonop-moduledef",
  "turbonop-par",
  "turbonop-pe",
  "turbonop-verify",

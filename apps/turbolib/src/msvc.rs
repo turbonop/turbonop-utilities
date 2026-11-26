@@ -3,6 +3,7 @@
 //! LLVM's `LibDriver.cpp`), so turbolib can stand in for either.
 
 mod args;
+mod def;
 mod diag;
 mod inputs;
 mod library;

@@ -172,6 +172,11 @@ pub struct OutputMember<'a> {
     pub holes: Vec<(usize, &'a [u8])>,
     /// Made by turbolib.
     pub synthesized: bool,
+    /// The names the archive index lists for this member, if not the ones
+    /// it defines: under [`Pull::Preserve`], a synthesized member is listed
+    /// for its anchor alone, so that each folded name stays listed for the
+    /// member it was listed for (see [`Pull::Preserve`]).
+    pub index_only: Option<Vec<Vec<u8>>>,
 }
 
 /// What a rewrite did.
@@ -366,6 +371,10 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     let mut removals: Vec<Vec<(usize, Removal)>> = vec![Vec::new(); parsed.len()];
+    // Under Preserve, each folded name the archive index named a member for
+    // stays defined there as an alias weak external whose default is the
+    // synthesized member's anchor: (member, name, synthesized member).
+    let mut aliases: Vec<Vec<(Vec<u8>, usize)>> = vec![Vec::new(); parsed.len()];
     let mut synth_of: HashMap<(u128, Vec<usize>), usize> = HashMap::new();
     let mut synths: Vec<Synth> = Vec::new();
     for c in &copies {
@@ -453,6 +462,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         for &(m, u) in removed {
             removals[m].push((u, how));
         }
+
         report.copies_removed += removed.len() as u64;
         report.removed_bytes += removed.iter().map(|x| unit(x).size).sum::<u64>();
         let mut givers: Vec<usize> = removed.iter().map(|&(m, _)| m).collect();
@@ -467,6 +477,15 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             synths.len() - 1
         });
         synths[s].units.push((first.0, first.1, keep_first));
+        if options.pull == Pull::Preserve {
+            for n in &unit(first).externals {
+                if let Some(&owner) = first_definer.get(n.as_slice())
+                    && removed.iter().any(|&(m, _)| m == owner)
+                {
+                    aliases[owner].push((n.clone(), s));
+                }
+            }
+        }
     }
     for s in &mut synths {
         s.units.sort_unstable();
@@ -500,14 +519,19 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
                     data: Cow::Borrowed(input.data),
                     holes: Vec::new(),
                     synthesized: false,
+                    index_only: None,
                 },
             );
         }
-        let anchors: Vec<&[u8]> = anchors_of[m]
+        let refers: Vec<&[u8]> = anchors_of[m]
             .iter()
             .map(|&n| anchors[n].as_slice())
             .collect();
-        let skeleton = strip(&parsed[m], &removals[m], &anchors);
+        let named: Vec<(&[u8], &[u8])> = aliases[m]
+            .iter()
+            .map(|(n, s)| (n.as_slice(), anchors[*s].as_slice()))
+            .collect();
+        let skeleton = strip(&parsed[m], &removals[m], &refers, &named);
         (
             m,
             OutputMember {
@@ -515,6 +539,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
                 data: Cow::Owned(skeleton.bytes),
                 holes: skeleton.holes,
                 synthesized: false,
+                index_only: None,
             },
         )
     });
@@ -528,6 +553,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             data: Cow::Owned(skeleton.bytes),
             holes: skeleton.holes,
             synthesized: true,
+            index_only: (options.pull == Pull::Preserve).then(|| vec![anchors[n].clone()]),
         }
     });
     lap(4);
@@ -573,6 +599,7 @@ fn strip<'a>(
     parsed: &Parsed<'a>,
     removals: &[(usize, Removal)],
     anchors: &[&[u8]],
+    aliases: &[(&[u8], &[u8])],
 ) -> Skeleton<'a> {
     let mut object = parsed
         .object
@@ -580,6 +607,10 @@ fn strip<'a>(
         .expect("a member that gives up copies is an object");
     let facts = &parsed.facts;
     let mut removed = vec![false; object.sections.len()];
+    // The symbols that become weak externals, and their defaults' names
+    // and search: made after the edit, since an auxiliary record moves the
+    // symbol table indices the side tables hold.
+    let mut weak: Vec<(SymbolId, Vec<u8>, u32)> = Vec::new();
     for &(u, how) in removals {
         let unit = &facts.units[u];
         for s in &unit.sections {
@@ -589,31 +620,19 @@ fn strip<'a>(
             if !object.symbols[id.index()].is_external() {
                 continue;
             }
-            let default = match how {
-                Removal::Undefined => None,
-                Removal::Weak => {
-                    let name = renamed(object.symbols[id.index()].name.as_bytes());
-                    let kind = object.symbols[id.index()].kind;
-                    Some(object.push_symbol(Symbol::new(
-                        Name::new(name),
-                        0,
-                        SectionNumber::Undefined,
-                        kind,
-                        storage_class::EXTERNAL,
-                    )))
-                }
-            };
+            let name = object.symbols[id.index()].name.as_bytes();
+            // A name the index named this member for stays defined here,
+            // as an alias whose default is the anchor of the synthesized
+            // member that defines it (which, loaded with this member, wins).
+            if let Some(&(_, anchor)) = aliases.iter().find(|(n, _)| *n == name) {
+                weak.push((id, anchor.to_vec(), weak_search::ALIAS));
+            } else if how == Removal::Weak {
+                weak.push((id, renamed(name), weak_search::NOLIBRARY));
+            }
             let s = &mut object.symbols[id.index()];
             s.section = SectionNumber::Undefined;
             s.value = 0;
             s.aux = Aux::None;
-            if let Some(tag) = default {
-                s.storage_class = storage_class::WEAK_EXTERNAL;
-                s.aux = Aux::WeakExternal(WeakExternal {
-                    tag,
-                    search: weak_search::NOLIBRARY,
-                });
-            }
         }
     }
     // A changed object's checksums would be stale.
@@ -627,15 +646,47 @@ fn strip<'a>(
     let renumbering = object
         .remove_sections(|id, _| removed[id.index()])
         .expect("a foldable unit is referred to only by external symbols");
-    tables::renumber(&mut object, &fields, &renumbering);
+    let before = object.symbol_table_indices();
+    let mut defaults: HashMap<Vec<u8>, SymbolId> = HashMap::new();
+    for (id, default, search) in weak {
+        let id = renumbering
+            .symbol(id)
+            .expect("a unit's external symbols stay, undefined");
+        let kind = if search == weak_search::ALIAS {
+            0
+        } else {
+            object.symbols[id.index()].kind
+        };
+        let tag = *defaults.entry(default.clone()).or_insert_with(|| {
+            object.push_symbol(Symbol::new(
+                Name::new(default),
+                0,
+                SectionNumber::Undefined,
+                kind,
+                storage_class::EXTERNAL,
+            ))
+        });
+        let s = &mut object.symbols[id.index()];
+        s.storage_class = storage_class::WEAK_EXTERNAL;
+        s.aux = Aux::WeakExternal(WeakExternal { tag, search });
+    }
+    let now = object.symbol_table_indices();
+    tables::renumber(&mut object, &fields, &renumbering, &|i| {
+        let id = before
+            .binary_search(&i)
+            .expect("a table's entry names a symbol's primary record");
+        now[id]
+    });
     for a in anchors {
-        object.push_symbol(Symbol::new(
-            Name::new(a.to_vec()),
-            0,
-            SectionNumber::Undefined,
-            0,
-            storage_class::EXTERNAL,
-        ));
+        if !defaults.contains_key(*a) {
+            object.push_symbol(Symbol::new(
+                Name::new(a.to_vec()),
+                0,
+                SectionNumber::Undefined,
+                0,
+                storage_class::EXTERNAL,
+            ));
+        }
     }
     object
         .write_skeleton(HOLE)

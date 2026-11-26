@@ -311,10 +311,11 @@ x64. Where the 3.5 MB went:
     bytes), and the kinds whose layouts nobody documents (S_FRAMEREG,
     S_FASTLINK, S_GPROC32EX and the rest `symbol_refs` lists as unknown)
     if a compiler is found writing them.
-  - `lib /DEF`'s import descriptor objects, once there is a COFF writer
-    (their layout, for x64, x86, ARM64, and ARM64EC, is in
-    `turbonop_moduledef::imports`); then whole import libraries, for
-    ARM64X too (`/DEFARM64NATIVE`), and from objects (`UNDECORATE`).
+  - `/DEF`: done (plan 1.2). Left: `lib.exe`'s ARM64EC hints (memory it
+    didn't set: not reproducible); LLVM's demangler's `$$h` place for
+    template and special C++ names; `/DEF` with `/GL` objects, and
+    ARM64EC objects' exports (untested); and the `Hint on symbols that
+    could potentially match` lines after LNK2001.
   - What `lib.exe` and link.exe do with `.def` values the import library
     doesn't show: `BASE`, `HEAPSIZE`, and `STACKSIZE` past 32 bits or
     negative (read as `strtoul` reads them; untested what the image

@@ -22,8 +22,8 @@ items leave TODO.md as they ship.
 | Phase | State |
 |---|---|
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, sanitizers. |
-| 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. Not yet: the import descriptor objects (so `/DEF`), and thin libraries. |
-| 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). Not yet: folded units' debug information (2.4), and the link-equivalence checks (2.6). |
+| 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. 1.2's `/DEF` too: import libraries and export files as `lib.exe` and `llvm-lib` write them. Not yet: thin libraries. |
+| 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). Not yet: folded units' debug information (2.4). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
 | 5 Speed | Not yet (but every phase is built to be parallel from the start). |
@@ -352,8 +352,55 @@ writes `0 0 0 0` for tables and `0 0 0 644` for members. Above 4 GiB,
 by case on about 200 files: statement keywords only in capitals, quotes
 literal in `EXPORTS`, numbers as `strtoul` reads them, among others), and
 plans the import objects `lib /DEF` makes, for x64, x86, ARM64, and
-ARM64EC. The import descriptor objects it also makes are documented in
-`turbonop_moduledef::imports`, to be built with `turbonop-coff`.
+ARM64EC.
+
+**Import libraries from `/DEF`** (`turbonop_moduledef`, run by
+`apps/turbolib/src/msvc/def.rs`). turbolib now writes what `lib /DEF`
+writes, the import library and the export file (`x.exp`, and for ARM64EC
+and ARM64X `x.a64n.exp`), from the `.def` file, `/EXPORT`, `/NAME`, and
+objects (their definitions, and their `.drectve` `/EXPORT:` directives),
+for x64, x86, ARM64, ARM64EC, and ARM64X (`/DEFARM64NATIVE`); and what
+`llvm-lib /def:` writes, with LLVM's own `.def` grammar and writer
+(`turbonop_moduledef::llvm`: `==` imports and their weak externals). What
+was measured on the way:
+
+- **`/Brepro`'s time stamps** are the first four bytes of the SHA-256 of
+  the member with its stamp set to `0xFFFFFFFF`, with the top two bits set
+  (every member of every fixture). The export file's are `0xFFFFFFFF`.
+- **The export file** is `.edata` (the export directory and tables, the
+  exports sorted by import symbol for their ordinals), `.debug$S`
+  (`S_OBJNAME`, `S_COMPILE3`, `S_ENVBLOCK` with the directory and the
+  linker's path, an `S_EXPORT` for each export, and the `.def` file's
+  SHA-256 and full path), and a `.drectve` of the `.def` file's
+  statements (`/DLL /OUT: /BASE: /HEAP: /STACK: /VERSION: /SECTION:`);
+  ARM64EC's adds x64 entry thunks (`.hexpthk`, `.gfids$y`, and their
+  `S_THUNK32`s). Its layout is in `turbonop_moduledef::exp`. turbolib
+  records its own path where `lib.exe` records `link.exe`'s.
+- **Objects**: a `.def` export is found among their definitions as
+  `link.exe` finds it (`_f`, `_f@8`, `@f@4`, a unique `?f@...`; LNK2001
+  and LNK1120, LNK4022 and LNK4002 if not), and decorated it is imported
+  `UNDECORATE`. Directives are taken as symbols. Objects aren't members.
+- **What isn't reproduced**: `lib.exe`'s ARM64EC hints of imports by
+  name are memory it didn't set (the same file gave 26982 in one run and
+  0 in another); turbolib writes 0. `llvm-lib`'s `$$h` place in a C++
+  name comes from LLVM's demangler; turbolib puts it after the first `@@`
+  that a capital follows (likely the same for every ordinary name,
+  untested for templates and special names).
+
+Checked against the tools (each case run by both, everything written and
+printed compared):
+
+| | Cases | The same |
+|---|---|---|
+| `lib /DEF /Brepro` of 88 `.def` files (the fixtures', and measurement files) for each of x64, x86, ARM64, ARM64EC, and 3 ARM64X pairs | 355 | 355 libraries but ARM64EC hints; every export file (the S_ENVBLOCK's linker path aside) |
+| `lib /DEF` command lines: names, `/EXPORT` forms, errors and warnings, x64 and x86 objects | 81 | 80 (the banner differs by design) |
+| `llvm-lib /def:` of 38 `.def` files for 4 machines, errors, ARM64X | 157 | 157 (but `llvm-lib`'s missing newline after a parse error) |
+| `testdata/coff/archives/def-*.lib`, written again by `turbonop_moduledef` | 41 | 41 |
+| The corpus's `link.exe` import libraries with a `.def` (`LLVM-C`, `LTO`, `Remarks`: 1,321 imports) | 3 | 3, dates and stamps masked; `lib /DEF` gives the same bytes |
+
+`tools/coff/imports.cmd` builds `testdata/coff/imports` (four `.def`
+files of every feature, x86 objects, 16 command lines), which turbolib's
+tests run again: 29 files the same.
 
 ### CodeView (1.3)
 
@@ -1182,8 +1229,9 @@ What compare-images reports for the folded libraries (link.exe,
 - **1.1** The COFF object model and writer, including big-obj. Done:
   `turbonop-coff` (`crates/formats/coff`).
 - **1.2** The Microsoft archive writer, and import-library writing from
-  `/DEF`. Done but the descriptor objects (which need 1.1): the writer,
-  short import objects, the `.def` reader, and lib /DEF's plan. Every
+  `/DEF`. Done: the writer, short import objects, the `.def` readers
+  (`lib.exe`'s and LLVM's), the descriptor objects, whole import
+  libraries and export files from `/DEF` (see 1.2's results). Every
   library tried writes back byte for byte: all 582 of the corpus (570 by
   `lib.exe`, 12 import libraries by `link.exe /Brepro`), 490 rebuilt from
   its objects by `lib /Brepro` and `llvm-lib`, and 1,851 of the Windows

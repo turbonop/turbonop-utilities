@@ -151,3 +151,81 @@ fn dll_names() {
     assert_eq!(plan("", machine::AMD64), p("out.dll", "out"));
     assert_eq!(plan("LIBRARY .dll\n", machine::AMD64), p(".dll", ""));
 }
+
+/// lib.exe's ARM64EC hints of imports by name aren't reproduced (they are
+/// 0, or bytes of memory lib.exe didn't set: the same `.def` file gave 0
+/// and 26982 in two runs), so each is taken from the library.
+fn take_ec_hints(plan: &mut [turbonop_moduledef::imports::Import<'_>], lib: &[ImportObject<'_>]) {
+    use turbonop_pe::import_object::ImportNameType;
+    for i in plan.iter_mut() {
+        if i.name_type != ImportNameType::Ordinal
+            && let Some(g) = lib.iter().find(|g| g.symbol == &*i.symbol)
+        {
+            i.ordinal_or_hint = g.ordinal_or_hint;
+        }
+    }
+}
+
+/// Every fixture lib.exe made of a `.def` file alone, written again whole,
+/// byte for byte: the archive, the descriptor objects, and the import
+/// objects with their /Brepro stamps (or, for the dated one, its time).
+#[test]
+fn whole_libraries_as_lib_exe_writes_them() {
+    use turbonop_archive::write::{Style, Tool};
+    use turbonop_moduledef::descriptors::Stamp;
+    let dir = root().join("testdata/coff/archives");
+    let def = |name: &str| {
+        std::fs::read(root().join(format!("tools/coff/archives/def/{name}.def"))).unwrap()
+    };
+    let mut libs: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    libs.sort();
+    let mut checked = 0;
+    for lib in libs {
+        let file = lib.file_name().unwrap().to_string_lossy().into_owned();
+        let data = std::fs::read(&lib).unwrap();
+        let (text, native) = match case(&file) {
+            Some((name, m)) => ((def(&name), name, m), None),
+            None if file == "def-ec-arm64x.lib" => (
+                (def("ec"), "ec".to_owned(), machine::ARM64X),
+                Some(def("native")),
+            ),
+            None => continue,
+        };
+        let (text, name, m) = text;
+        let parsed = turbonop_moduledef::parse(&text).unwrap();
+        let native_parsed = native
+            .as_ref()
+            .map(|n| turbonop_moduledef::parse(n).unwrap());
+        let mut plan = match &native_parsed {
+            Some(n) => ImportLibrary::lib_exe_arm64x(&parsed, n, name.as_bytes()),
+            None => ImportLibrary::lib_exe(&parsed, m, name.as_bytes()),
+        };
+        let ar = Archive::parse(&data).unwrap();
+        let objects: Vec<ImportObject<'_>> = ar
+            .files()
+            .filter(|f| ImportObject::is_import_object(f.data))
+            .map(|f| ImportObject::parse(f.data).unwrap())
+            .collect();
+        let ec: Vec<ImportObject<'_>> = objects
+            .iter()
+            .filter(|o| o.machine == machine::ARM64EC)
+            .copied()
+            .collect();
+        take_ec_hints(&mut plan.imports, &ec);
+        let dated = file.contains("-dated");
+        let (stamp, style) = if dated {
+            let t = objects[0].time_date_stamp;
+            (Stamp::Time(t), Style::LibExe { time: u64::from(t) })
+        } else {
+            (Stamp::Brepro, Style::LibExeBrepro)
+        };
+        let mine = plan.members(stamp).write(style, Tool::LibExe).unwrap();
+        assert!(mine == data, "{file}: the library differs");
+        checked += 1;
+    }
+    assert!(checked >= 35, "{checked} libraries");
+}

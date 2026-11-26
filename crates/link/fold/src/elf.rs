@@ -198,6 +198,8 @@ struct Unit<'a> {
     sections: Vec<usize>,
     /// The global names it defines.
     names: Vec<Cow<'a, [u8]>>,
+    /// The symbols defined in its sections (indexes, in order).
+    symbols: Vec<usize>,
     hash: u128,
     stays: Option<&'static str>,
     /// Its FDEs (indexes into the member's records).
@@ -431,6 +433,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 group: i,
                 sections: members,
                 names: Vec::new(),
+                symbols: Vec::new(),
                 hash: 0,
                 stays: (!ok).then_some("its group's members are malformed"),
                 fdes: Vec::new(),
@@ -603,6 +606,13 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             }
         }
     }
+    // Each unit's symbols, in order (looked up once: a member can hold
+    // tens of thousands of units and of symbols).
+    for (i, s) in symbols.iter().enumerate().skip(1) {
+        if let Some(u) = sym_owner(s) {
+            units[u].symbols.push(i);
+        }
+    }
     // Hashes.
     for (ui, u) in units.iter_mut().enumerate() {
         let group = u.group;
@@ -661,15 +671,14 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 }
             }
         }
-        for s in symbols.iter().skip(1) {
-            if sym_owner(s) == Some(ui) {
-                h.bytes(&s.name);
-                h.u64(u64::from(s.info));
-                h.u64(u64::from(s.other));
-                h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
-                h.u64(s.value);
-                h.u64(s.size);
-            }
+        let unit_symbols = u.symbols.clone();
+        for s in unit_symbols.iter().map(|&i| &symbols[i]) {
+            h.bytes(&s.name);
+            h.u64(u64::from(s.info));
+            h.u64(u64::from(s.other));
+            h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
+            h.u64(s.value);
+            h.u64(s.size);
         }
         if let Some(eh) = &p.eh {
             let data = section_bytes(&obj.sections[eh.section]);
@@ -1275,17 +1284,11 @@ fn synthesize<'a>(
     let mut section_symbol: BTreeMap<usize, usize> = BTreeMap::new();
     for &(m, u) in units {
         let obj = parsed[m].obj.as_ref().ok_or("unread")?;
-        for (i, s) in obj.symbols().iter().enumerate().skip(1) {
-            let Some(owner) = (if s.in_section() {
-                parsed[m].owner.get(s.shndx as usize).copied().flatten()
-            } else {
-                None
-            }) else {
-                continue;
-            };
-            if owner != u {
-                continue;
-            }
+        let all = obj.symbols();
+        // (The unit's own, found once by `parse`: a scan of every symbol
+        // for each unit was quadratic in a large member.)
+        for &i in &parsed[m].units[u].symbols {
+            let s = &all[i];
             let new_sec = placed[&(m, s.shndx as usize)] as u32;
             let mut c = s.clone();
             c.set_section(new_sec);

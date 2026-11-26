@@ -1113,6 +1113,37 @@ What was found on the way:
   defines folds too, to a fixpoint: the largest reason copies stay
   (466,557), as the units with side-effect definers keep their callees.
 
+**Initializer entries in groups** (ELF's counterpart of COFF's
+`.CRT$X*` rule). How the compilers write C++17 inline variables' and
+templates' static data members' dynamic initialization (gcc 15.2, clang
+21.1, `-ffunction-sections -fdata-sections`):
+
+- **clang** puts each variable's in the variable's COMDAT group: the
+  variable, its guard (`_ZGV...`), its `__cxx_global_var_init` in
+  `.text.startup`, that function's `.gcc_except_table`, and its
+  `.init_array` entry (`.init_array.NNNNN` with `init_priority`; `.ctors`
+  with `-fno-use-init-array`). Moved into a synthesized member, the entry
+  would run at that member's place in the order, not among its object's
+  initializers.
+- **GCC** puts the variable and its guard in groups of their own (data
+  only) and the guarded initialization in the object's own
+  `_GLOBAL__sub_I_` function, registered by an `.init_array` outside any
+  group. Those units fold safely; the member has side effects.
+
+So a unit holding an `.init_array`, `.fini_array`, `.preinit_array`,
+`.ctors`, or `.dtors` section (by type or by name, with a priority or
+not), or a `.gnu.warning` section, stays, and such an entry gives its
+member side effects (`--pull=preserve`: loading it runs the
+initializer). Before this rule the engine folded them (they were only
+looked for outside groups). Checks:
+
+| Check | Result |
+|---|---|
+| `tools/turbolib/elf-init/run.sh` (inline variables, a variable template, a template's static member, `init_priority`, a destructor, `thread_local`; gcc and clang at `-O0` and `-O2`, clang also with `-fno-use-init-array`; both `--pull` modes; GNU ld, gold, lld, mold) | all pass: no synthesized member holds an entry, the programs print the same initialization order, `verify` and `compare-images` pass. Without the rule, clang under `--pull=relaxed` moved 4 grouped entries: the printed order changed with every linker (with `.ctors`, every one but lld), and `compare-images` failed every link |
+| size cost on the gcc corpus (all 265 libraries, `foldall.sh`) | none: 23,508,957,816 bytes with and without the rule, every archive the same bytes (GCC writes no grouped entries) |
+
+The clang corpus's cost is in its results below.
+
 ### Verification (6.4): `verify` and `compare-images` for ELF
 
 Both are in `turbonop_verify::elf`; `turbolib verify` takes GNU and BSD

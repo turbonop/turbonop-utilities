@@ -60,6 +60,7 @@ turbonop-wasm-isa = { path = "crates/isa/wasm" }
 turbonop-pe = { path = "crates/formats/pe" }
 turbonop-coff = { path = "crates/formats/coff" }
 turbonop-fold = { path = "crates/link/fold" }
+turbonop-verify = { path = "crates/link/verify" }
 turbonop-signature = { path = "crates/formats/signature" }
 turbonop-image = { path = "crates/formats/image" }
 turbonop-debuginfo = { path = "crates/symbols/debuginfo" }

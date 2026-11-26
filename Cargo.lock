@@ -1407,6 +1407,7 @@ dependencies = [
  "turbonop-mmap",
  "turbonop-par",
  "turbonop-pe",
+ "turbonop-verify",
 ]
 
 [[package]]
@@ -1422,6 +1423,23 @@ dependencies = [
  "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-macho",
+ "turbonop-pdb",
+ "turbonop-pe",
+ "turbonop-x86",
+]
+
+[[package]]
+name = "turbonop-verify"
+version = "0.0.7"
+dependencies = [
+ "turbonop-archive",
+ "turbonop-arm64",
+ "turbonop-codeview",
+ "turbonop-coff",
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-hash",
+ "turbonop-par",
  "turbonop-pdb",
  "turbonop-pe",
  "turbonop-x86",

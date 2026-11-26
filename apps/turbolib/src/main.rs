@@ -10,6 +10,7 @@ use turbonop_global_alloc as _;
 
 mod msvc;
 mod settings;
+mod verify;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -385,6 +386,8 @@ fn main() -> ExitCode {
         "lib" => run_msvc(msvc::Flavor::Lib, rest),
         "llvm-lib" => run_msvc(msvc::Flavor::LlvmLib, rest),
         "analyze" => {}
+        "verify" => return verify::verify(rest),
+        "compare-images" => return verify::compare_images(rest),
         _ => {
             eprintln!("turbolib: {command}: unknown command (so far: analyze, lib, llvm-lib)");
             eprint!("{USAGE}");

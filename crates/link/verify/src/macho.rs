@@ -253,10 +253,12 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
                 .collect(),
         );
     }
+    // (An address at a section's end, as a range list's end has, reaches no
+    // atom: the last atom may be cut while the address stays the end.)
     let atom_at = |si: usize, off: u64| -> Option<usize> {
         let l = atoms.get(si)?;
         let k = l.partition_point(|(r, _)| r.start <= off).checked_sub(1)?;
-        (off < l[k].0.end || (off == l[k].0.end && k + 1 == l.len())).then_some(k)
+        (off < l[k].0.end).then_some(k)
     };
     // An address's atom: in section `hint` (a symbol's, or the section a
     // local relocation names) if known, else the section holding it (one

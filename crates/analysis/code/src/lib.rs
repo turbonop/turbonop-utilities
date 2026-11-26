@@ -546,11 +546,11 @@ pub fn decode_arm32(bytes: &[u8], address: u64, thumb: bool) -> Option<Insn> {
 /// IT blocks, which aren't followed: such an instruction is taken as
 /// unconditional.)
 pub fn arm32_flow(i: &turbonop_arm32::Instruction) -> Flow {
-    let n = i.encoding.name;
+    let n = i.encoding.name();
     let w = i.word;
     let field = |name: &str| {
         i.encoding
-            .fields
+            .fields()
             .iter()
             .find(|f| f.0 == name)
             .map(|f| (w >> f.2) & ((1u32 << (f.1 - f.2 + 1)) - 1))
@@ -562,7 +562,7 @@ pub fn arm32_flow(i: &turbonop_arm32::Instruction) -> Flow {
         let list = field("register_list").unwrap_or(0);
         let width = i
             .encoding
-            .fields
+            .fields()
             .iter()
             .find(|f| f.0 == "register_list")
             .map_or(0, |f| f.1 - f.2 + 1);

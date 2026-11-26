@@ -294,6 +294,20 @@ fn main() {
     let (encs, mut rules) = parse(&src);
     let mut out = String::new();
     let mut conds: Vec<String> = Vec::new();
+    // What the encodings refer to by index, each once (see src/lib.rs's
+    // `Encoding`): their names and templates in one string, and their
+    // features, aliases, operands, and fields in tables of their own.
+    let mut text = String::new();
+    let mut features: Vec<String> = Vec::new();
+    let mut alias_lists: Vec<String> = Vec::new();
+    let mut operand_lists: Vec<String> = Vec::new();
+    let mut field_lists: Vec<String> = Vec::new();
+    fn intern(list: &mut Vec<String>, item: String) -> usize {
+        list.iter().position(|x| *x == item).unwrap_or_else(|| {
+            list.push(item);
+            list.len() - 1
+        })
+    }
     for (table, keep) in [
         ("A32", (|e: &Enc| e.iset == "A32") as fn(&Enc) -> bool),
         ("T16", |e: &Enc| e.iset == "T32" && e.width == 16),
@@ -323,9 +337,9 @@ fn main() {
                             conds.len() - 1
                         }
                     };
-                    format!("Some(cond_{n})")
+                    n.to_string()
                 }
-                None => "None".into(),
+                None => "NONE".into(),
             };
             let aliases: Vec<String> = e.aliases.iter().map(|a| format!("{a:?}")).collect();
             // Operands: their fields' bits (hi, lo), most significant
@@ -351,15 +365,22 @@ fn main() {
                 .iter()
                 .map(|(n, (h, l))| format!("({n:?}, {h}, {l})"))
                 .collect();
+            let name_at = text.len();
+            text.push_str(&e.name);
+            let asm_at = text.len();
+            text.push_str(&e.asm);
+            assert!(
+                e.name.len() <= 255 && e.asm.len() <= 0xFFFF && text.len() <= u32::MAX as usize
+            );
+            let feature = intern(&mut features, format!("{:?}", e.feat));
+            let aliases = intern(&mut alias_lists, format!("&[{}]", aliases.join(", ")));
+            let operands = intern(&mut operand_lists, format!("&[{}]", operands.join(", ")));
+            let fields = intern(&mut field_lists, format!("&[{}]", fields.join(", ")));
             writeln!(
                 out,
-                "    Encoding {{ name: {:?}, mask: {m:#x}, value: {v:#x}, sb_mask: {sm:#x}, sb_value: {sv:#x}, cond: {cond}, feature: {:?}, asm: {:?}, aliases: &[{}], operands: &[{}], fields: &[{}] }},",
-                e.name,
-                e.feat,
-                e.asm,
-                aliases.join(", "),
-                operands.join(", "),
-                fields.join(", ")
+                "    Encoding {{ name_at: {name_at}, name_len: {}, mask: {m:#x}, value: {v:#x}, sb_mask: {sm:#x}, sb_value: {sv:#x}, cond: {cond}, feature: {feature}, asm_at: {asm_at}, asm_len: {}, aliases: {aliases}, operands: {operands}, fields: {fields} }},",
+                e.name.len(),
+                e.asm.len(),
             )
             .unwrap();
         }
@@ -384,11 +405,26 @@ fn main() {
             ids.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
             buckets.push(ids.into_iter().map(|(_, i)| i as u16).collect());
         }
-        writeln!(out, "pub(crate) static {table}_BUCKETS: [&[u16]; {n}] = [").unwrap();
+        // All the buckets in one array, and where each starts (the last,
+        // the end).
+        let mut starts = vec![0usize];
         for b in &buckets {
-            writeln!(out, "    &{b:?},").unwrap();
+            starts.push(starts.last().unwrap() + b.len());
         }
-        writeln!(out, "];").unwrap();
+        assert!(*starts.last().unwrap() <= 0xFFFF);
+        let flat: Vec<u16> = buckets.concat();
+        writeln!(
+            out,
+            "pub(crate) static {table}_BUCKETS: [u16; {}] = {flat:?};",
+            flat.len()
+        )
+        .unwrap();
+        writeln!(
+            out,
+            "pub(crate) static {table}_STARTS: [u16; {}] = {starts:?};",
+            starts.len()
+        )
+        .unwrap();
         writeln!(
             out,
             "pub(crate) const {table}_KEY: (u32, u32) = ({lo}, {:#x});",
@@ -396,6 +432,31 @@ fn main() {
         )
         .unwrap();
     }
+    writeln!(out, "pub(crate) static TEXT: &str = {text:?};").unwrap();
+    for (name, ty, list) in [
+        ("FEATURES", "&str", &features),
+        ("ALIASES", "&[&str]", &alias_lists),
+        ("OPERANDS", "&[(&str, &[(u8, u8)])]", &operand_lists),
+        ("FIELDS", "&[(&str, u8, u8)]", &field_lists),
+    ] {
+        assert!(list.len() < 0xFFFF);
+        writeln!(
+            out,
+            "pub(crate) static {name}: [{ty}; {}] = [{}];",
+            list.len(),
+            list.join(", ")
+        )
+        .unwrap();
+    }
+    assert!(conds.len() < 0xFFFF);
+    let names: Vec<String> = (0..conds.len()).map(|n| format!("cond_{n}")).collect();
+    writeln!(
+        out,
+        "pub(crate) static CONDS: [fn(u32) -> bool; {}] = [{}];",
+        conds.len(),
+        names.join(", ")
+    )
+    .unwrap();
     for (n, code) in conds.iter().enumerate() {
         writeln!(out, "#[allow(unused_parens, clippy::nonminimal_bool, clippy::precedence)]\nfn cond_{n}(w: u32) -> bool {{ {code} }}").unwrap();
     }

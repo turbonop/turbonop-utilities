@@ -400,10 +400,10 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                     (Some(k), Flow::Jump | Flow::Return) if k < 14 => Flow::Branch,
                     (_, flow) => flow,
                 };
-                if i.encoding.name == "IT_T1" {
+                if i.encoding.name() == "IT_T1" {
                     let field = |name: &str| {
                         i.encoding
-                            .fields
+                            .fields()
                             .iter()
                             .find(|x| x.0 == name)
                             .map_or(0, |x| (i.word >> x.2) & ((1 << (x.1 - x.2 + 1)) - 1))

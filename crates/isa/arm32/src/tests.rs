@@ -14,7 +14,7 @@ fn known_a32() {
         (0xE8BD_8010, "LDM_A1"),          // pop {r4, pc} (ldm sp!, ...)
     ] {
         let i = decode_a32(word).unwrap_or_else(|| panic!("{word:#x}"));
-        assert_eq!(i.encoding.name, name, "{word:#x}");
+        assert_eq!(i.encoding.name(), name, "{word:#x}");
         assert_eq!(i.size, 4);
     }
     assert!(decode_a32(0xFFFF_FFFF).is_none());
@@ -29,7 +29,7 @@ fn known_t32() {
         (0x4770, None, "BX_T1"), // bx lr
     ] {
         let i = decode_t32(first, second).unwrap_or_else(|| panic!("{first:#x}"));
-        assert_eq!(i.encoding.name, name, "{first:#x}");
+        assert_eq!(i.encoding.name(), name, "{first:#x}");
         assert_eq!(usize::from(i.size), if second.is_some() { 4 } else { 2 });
     }
     // A 32-bit instruction without its second halfword.

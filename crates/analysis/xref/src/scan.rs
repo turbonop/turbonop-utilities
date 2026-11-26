@@ -445,7 +445,7 @@ fn thumb(code: &[u8], address: u64, bias: u64, out: &mut Vec<CodeRef>) {
         };
         let pc = address.wrapping_add(at as u64);
         at += usize::from(i.size);
-        let n = i.encoding.name;
+        let n = i.encoding.name();
         let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
         if let Some(to) = branch_target(&i, pc) {
             push(

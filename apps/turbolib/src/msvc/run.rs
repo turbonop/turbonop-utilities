@@ -569,8 +569,10 @@ fn build(
                         odr: settings.report_odr,
                         precomp: match settings.precomp {
                             Precomp::Library => rewrite::Precomp::Library { min: 2 },
-                            // (check_supported refuses the others.)
-                            Precomp::None | Precomp::Clustered(_) => rewrite::Precomp::None,
+                            Precomp::Clustered(max) => {
+                                rewrite::Precomp::Clustered { min: 2, max }
+                            }
+                            Precomp::None => rewrite::Precomp::None,
                         },
                     },
                 )
@@ -860,6 +862,28 @@ fn stats_lines(r: &rewrite::Report, members: &[Placed<'_>]) -> Vec<String> {
         ));
         if let Some(w) = &ty.first_unreadable {
             out.push(format!("turbolib: types: the first unreadable: {w}"));
+        }
+        for c in &ty.clusters {
+            let model = |x: &turbonop_fold::rewrite::precomp::cluster::Cost| {
+                format!("{:.1} MiB, {:.1} MiB per link", mb(x.library), mb(x.per_link()))
+            };
+            let tried: Vec<String> = c
+                .tried
+                .iter()
+                .map(|(t, x)| format!("{t}: {}", model(x)))
+                .collect();
+            out.push(format!(
+                "turbolib: types: clustered (machine {:#06x}): {} group(s) of {} members, {} out; \
+                 the model's shared-type bytes and reads: {} (one group: {}; none: {}); tried {}",
+                c.machine,
+                c.groups,
+                c.members,
+                c.out,
+                model(&c.cost),
+                model(&c.library),
+                model(&c.none),
+                tried.join("; ")
+            ));
         }
     }
     if r.differing_groups > 0 || !r.mismatches.is_empty() {

@@ -56,6 +56,8 @@ use turbonop_coff::{
 };
 use turbonop_hash::Map as HashMap;
 
+pub mod cluster;
+
 /// The start of the PCH symbol's name (then the PCH's hash, in hex).
 pub const PCH_SYMBOL_PREFIX: &[u8] = b"__@@_PchSym_turbolib_";
 
@@ -100,14 +102,25 @@ pub(super) struct Member {
     /// compacted again): every record of it counts for each of its users,
     /// as each was shared, so that the same records are shared again.
     ours: bool,
+    /// A sharer's group (an index into [`Plan::groups`]), or `None` if it
+    /// is out of every group (`--precomp=clustered`) and keeps its types.
+    pub group: Option<u32>,
 }
 
 /// The library's shared types.
 pub(super) struct Plan {
     pub members: Vec<Member>,
     lookup: Lookup,
-    /// One precompiled-types member for each machine that shares records.
+    /// One precompiled-types member for each group whose members share
+    /// records: one group for each machine, or under `--precomp=clustered`
+    /// the groups [`cluster::choose`] chose.
     pub pchs: Vec<Pch>,
+    /// Each group's precompiled-types member (an index into `pchs`), if
+    /// its members share records.
+    pub groups: Vec<Option<usize>>,
+    /// Under `--precomp=clustered`, each machine's choice.
+    pub clusters: Vec<Clusters>,
+    pub clustered: bool,
     /// Members that could share but whose debug information couldn't be
     /// read through, and why (the first).
     pub unreadable: u64,
@@ -118,6 +131,7 @@ pub(super) struct Plan {
 #[derive(Clone, Debug)]
 pub(super) struct Pch {
     pub machine: u16,
+    pub group: u32,
     /// Its records (from index `FIRST`).
     pub count: u32,
     pub records: Vec<u8>,
@@ -132,10 +146,11 @@ pub(super) struct Pch {
     pub feat00: Option<u32>,
 }
 
-/// A record's structural hash to its index in its machine's PCH, sharded.
+/// A record's group and structural hash to its index in the group's PCH,
+/// sharded.
 #[derive(Default)]
 struct Lookup {
-    maps: Vec<HashMap<u128, u32>>,
+    maps: Vec<HashMap<(u32, u128), u32>>,
 }
 
 const LOOKUP_SHARDS: usize = 64;
@@ -145,13 +160,13 @@ fn shard(h: u128) -> usize {
 }
 
 impl Lookup {
-    fn new(pairs: &[(u128, u32)]) -> Lookup {
+    fn new(pairs: &[((u32, u128), u32)]) -> Lookup {
         // Each chunk's pairs by shard, then each shard's map from them.
-        let chunks: Vec<Vec<Vec<(u128, u32)>>> =
+        let chunks: Vec<Vec<Vec<((u32, u128), u32)>>> =
             turbonop_par::map_chunks(pairs, 1 << 16, |chunk| {
-                let mut by: Vec<Vec<(u128, u32)>> = vec![Vec::new(); LOOKUP_SHARDS];
-                for &(h, i) in chunk {
-                    by[shard(h)].push((h, i));
+                let mut by: Vec<Vec<((u32, u128), u32)>> = vec![Vec::new(); LOOKUP_SHARDS];
+                for &(k, i) in chunk {
+                    by[shard(k.1)].push((k, i));
                 }
                 vec![by]
             });
@@ -166,8 +181,8 @@ impl Lookup {
         Lookup { maps }
     }
 
-    fn get(&self, h: u128) -> Option<u32> {
-        self.maps.get(shard(h))?.get(&h).copied()
+    fn get(&self, group: u32, h: u128) -> Option<u32> {
+        self.maps.get(shard(h))?.get(&(group, h)).copied()
     }
 }
 
@@ -460,19 +475,49 @@ fn hash_of(parsed: &[Parsed<'_>], members: &[Member], m: usize, v: u32) -> Optio
 type Held = (u128, u32, u32);
 
 /// A record that may be shared: one of its holders' copies (the first, by
-/// member and position), its depth, and how many members hold it.
+/// member and position), its group and depth.
 #[derive(Clone, Copy, Debug)]
 struct Candidate {
     hash: u128,
-    machine: u16,
+    group: u32,
     depth: u32,
     member: u32,
     position: u32,
 }
 
+/// How to group the members (`--precomp=clustered`): the numbers of groups
+/// to try, and each member's external definitions (as the archive index
+/// lists them), for what links load.
+pub(super) struct Clustering<'d> {
+    pub tries: Vec<u32>,
+    pub definitions: &'d [Vec<Cow<'d, [u8]>>],
+}
+
+/// One machine's grouping, for reports.
+#[derive(Clone, Debug)]
+pub struct Clusters {
+    pub machine: u16,
+    /// Its sharers, the groups chosen, and the members out of every group.
+    pub members: u64,
+    pub groups: u32,
+    pub out: u64,
+    /// The cost model's figures for the choice, for one group (`library`),
+    /// and for every member out (`none`), and each number of groups tried.
+    pub cost: cluster::Cost,
+    pub library: cluster::Cost,
+    pub none: cluster::Cost,
+    pub tried: Vec<(u32, cluster::Cost)>,
+}
+
+/// The shards records are counted in.
+fn shards() -> u64 {
+    (turbonop_par::threads() * 4).max(1) as u64
+}
+
 /// Finds the shared types of `parsed` (a library's members): the records
-/// at least `min` members hold.
-pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
+/// at least `min` members of a group hold. With `clustering`, the groups
+/// are chosen ([`cluster`]); without, there is one for each machine.
+pub(super) fn plan(parsed: &[Parsed<'_>], min: u32, clustering: Option<&Clustering<'_>>) -> Plan {
     let roles: Vec<Role> = parsed.iter().map(role).collect();
     // PCH objects first: their users hash through them.
     let mut members: Vec<Member> = vec![Member::default(); parsed.len()];
@@ -511,7 +556,7 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
     }
     // Each sharer's distinct shareable records, by shard, so that each
     // shard counts only its own.
-    let n = (turbonop_par::threads() * 4).max(1) as u64;
+    let n = shards();
     let shard_of = |h: u128| (h as u64) % n;
     let sharers: Vec<usize> = (0..parsed.len())
         .filter(|&m| members[m].role == Role::Sharer)
@@ -550,16 +595,61 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
         }
         (out, bounds)
     });
+
+    // Each sharer's group: its machine's, or the one chosen for it.
+    let machine_of = |m: usize| parsed[m].object.as_ref().map_or(0, |o| o.machine);
+    let mut machines: Vec<u16> = sharers.iter().map(|&m| machine_of(m)).collect();
+    machines.sort_unstable();
+    machines.dedup();
+    let mut clusters = Vec::new();
+    let mut group_machine: Vec<u16> = Vec::new();
+    let group_of: Vec<Option<u32>> = match clustering {
+        None => {
+            group_machine = machines.clone();
+            sharers
+                .iter()
+                .map(|&m| machines.binary_search(&machine_of(m)).ok().map(|g| g as u32))
+                .collect()
+        }
+        Some(c) => {
+            let chosen = choose_groups(parsed, &sharers, &lists, min, c);
+            let mut group_of = vec![None; sharers.len()];
+            for (machine, positions, choice) in chosen {
+                let first = group_machine.len() as u32;
+                group_machine.extend(std::iter::repeat_n(machine, choice.groups as usize));
+                for (&k, g) in positions.iter().zip(&choice.group) {
+                    group_of[k] = g.map(|g| first + g);
+                }
+                clusters.push(Clusters {
+                    machine,
+                    members: positions.len() as u64,
+                    groups: choice.groups,
+                    out: choice.group.iter().filter(|g| g.is_none()).count() as u64,
+                    cost: choice.cost,
+                    library: choice.library,
+                    none: choice.none,
+                    tried: choice.tried,
+                });
+            }
+            group_of
+        }
+    };
+    for (k, &m) in sharers.iter().enumerate() {
+        members[m].group = group_of[k];
+    }
+
     let shards: Vec<u64> = (0..n).collect();
     let parts: Vec<Vec<Candidate>> = turbonop_par::map_balanced(&shards, 1, |&s| {
         let s = s as usize;
-        // Each record: how many members hold it (each counted once: the
-        // last member that counted it), and its first copy.
-        let mut counts: HashMap<u128, (u32, u32, u32, u32)> = HashMap::default();
+        // Each record in each group: how many of the group's members hold
+        // it (each counted once: the last member that counted it), and its
+        // first copy.
+        let mut counts: HashMap<(u128, u32), (u32, u32, u32, u32)> = HashMap::default();
         for (k, (list, bounds)) in lists.iter().enumerate() {
+            let Some(g) = group_of[k] else { continue };
             let k = k as u32;
             for &(h, a, b) in &list[bounds[s] as usize..bounds[s + 1] as usize] {
-                let e = counts.entry(h).or_insert((0, a, b, u32::MAX));
+                let e = counts.entry((h, g)).or_insert((0, a, b, u32::MAX));
                 if e.3 != k {
                     e.0 += 1;
                     e.3 = k;
@@ -572,9 +662,9 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
         counts
             .into_iter()
             .filter(|&(_, (c, _, _, _))| c >= min)
-            .map(|(hash, (_, a, b, _))| Candidate {
+            .map(|((hash, group), (_, a, b, _))| Candidate {
                 hash,
-                machine: parsed[a as usize].object.as_ref().map_or(0, |o| o.machine),
+                group,
                 depth: members[a as usize].depth[b as usize],
                 member: a,
                 position: b,
@@ -584,27 +674,27 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
     drop(lists);
     let mut candidates: Vec<Candidate> = parts.into_iter().flatten().collect();
 
-    // Each machine's PCH: by depth, so that each record names only earlier
+    // Each group's PCH: by depth, so that each record names only earlier
     // ones; then by hash. A record naming one that can't be shared isn't
     // shared either (none is known to: no type refers to a function id).
     loop {
         turbonop_par::sort_by(&mut candidates, |a, b| {
-            (a.machine, a.depth, a.hash).cmp(&(b.machine, b.depth, b.hash))
+            (a.group, a.depth, a.hash).cmp(&(b.group, b.depth, b.hash))
         });
-        let mut pairs: Vec<(u128, u32)> = Vec::with_capacity(candidates.len());
-        let mut groups: Vec<(u16, usize, usize)> = Vec::new();
+        let mut pairs: Vec<((u32, u128), u32)> = Vec::with_capacity(candidates.len());
+        let mut runs: Vec<(u32, usize, usize)> = Vec::new();
         for (i, c) in candidates.iter().enumerate() {
-            match groups.last_mut() {
-                Some(g) if g.0 == c.machine => g.2 = i + 1,
-                _ => groups.push((c.machine, i, i + 1)),
+            match runs.last_mut() {
+                Some(g) if g.0 == c.group => g.2 = i + 1,
+                _ => runs.push((c.group, i, i + 1)),
             }
-            let start = groups.last().map_or(0, |g| g.1);
-            pairs.push((c.hash, FIRST + (i - start) as u32));
+            let start = runs.last().map_or(0, |g| g.1);
+            pairs.push(((c.group, c.hash), FIRST + (i - start) as u32));
         }
         let lookup = Lookup::new(&pairs);
         drop(pairs);
         // Each record's bytes, its indices renumbered into the PCH.
-        let built: Vec<(Vec<u8>, Vec<u128>)> =
+        let built: Vec<(Vec<u8>, Vec<(u32, u128)>)> =
             turbonop_par::map_chunks(&candidates, 1 << 12, |chunk| {
                 let mut bytes = Vec::new();
                 let mut bad = Vec::new();
@@ -625,11 +715,11 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
                             continue;
                         }
                         match hash_of(parsed, &members, c.member as usize, v)
-                            .and_then(|h| lookup.get(h))
+                            .and_then(|h| lookup.get(c.group, h))
                         {
                             Some(new) => bytes[at..at + 4].copy_from_slice(&new.to_le_bytes()),
                             None => {
-                                bad.push(c.hash);
+                                bad.push((c.group, c.hash));
                                 break;
                             }
                         }
@@ -637,20 +727,21 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
                 }
                 vec![(bytes, bad)]
             });
-        let bad: turbonop_hash::Set<u128> =
+        let bad: turbonop_hash::Set<(u32, u128)> =
             built.iter().flat_map(|(_, b)| b.iter().copied()).collect();
         if !bad.is_empty() {
-            candidates.retain(|c| !bad.contains(&c.hash));
+            candidates.retain(|c| !bad.contains(&(c.group, c.hash)));
             continue;
         }
-        // The chunks' bytes in order, split by machine.
+        // The chunks' bytes in order, split by group.
         let mut all = Vec::with_capacity(built.iter().map(|(b, _)| b.len()).sum());
         for (b, _) in built {
             all.extend_from_slice(&b);
         }
         let mut pchs = Vec::new();
+        let mut groups = vec![None; group_machine.len()];
         let mut at = 0;
-        for &(machine, start, end) in &groups {
+        for &(group, start, end) in &runs {
             let len: usize = candidates[start..end]
                 .iter()
                 .map(|c| {
@@ -659,10 +750,12 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
                 .sum();
             let records = all[at..at + len].to_vec();
             at += len;
+            groups[group as usize] = Some(pchs.len());
             pchs.push(pch(
                 parsed,
                 &members,
-                machine,
+                group_machine[group as usize],
+                group,
                 (end - start) as u32,
                 records,
             ));
@@ -671,12 +764,174 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
             members,
             lookup,
             pchs,
+            groups,
+            clusters,
+            clustered: clustering.is_some(),
             unreadable,
             first_unreadable,
         };
     }
 }
 
+/// The groups of each machine's sharers (`sharers`, with their records by
+/// shard in `lists`): for each machine, its sharers (positions in
+/// `sharers`) and the choice.
+fn choose_groups(
+    parsed: &[Parsed<'_>],
+    sharers: &[usize],
+    lists: &[(Vec<Held>, Vec<u32>)],
+    min: u32,
+    clustering: &Clustering<'_>,
+) -> Vec<(u16, Vec<usize>, cluster::Choice)> {
+    let machine_of = |m: usize| parsed[m].object.as_ref().map_or(0, |o| o.machine);
+    // Each machine's sharers, and each sharer's machine and position.
+    let mut machines: Vec<u16> = sharers.iter().map(|&m| machine_of(m)).collect();
+    machines.sort_unstable();
+    machines.dedup();
+    let mut positions: Vec<Vec<usize>> = vec![Vec::new(); machines.len()];
+    let mut where_: Vec<(usize, u32)> = Vec::with_capacity(sharers.len());
+    for (k, &m) in sharers.iter().enumerate() {
+        let i = machines.binary_search(&machine_of(m)).expect("a machine");
+        where_.push((i, positions[i].len() as u32));
+        positions[i].push(k);
+    }
+    // The classes: each shard's records by holders, then all shards'.
+    let n = lists.first().map_or(0, |l| l.1.len().saturating_sub(1));
+    let shards: Vec<usize> = (0..n).collect();
+    let parts: Vec<HashMap<u128, (usize, cluster::Class)>> = turbonop_par::map_balanced(&shards, 1, |&s| {
+        let mut v: Vec<(u128, u32, u32, u32)> = Vec::new();
+        for (k, (list, bounds)) in lists.iter().enumerate() {
+            for &(h, a, b) in &list[bounds[s] as usize..bounds[s + 1] as usize] {
+                v.push((h, k as u32, a, b));
+            }
+        }
+        v.sort_unstable_by(|x, y| (x.0, x.1).cmp(&(y.0, y.1)));
+        let mut classes: HashMap<u128, (usize, cluster::Class)> = HashMap::default();
+        let mut holders: Vec<u32> = Vec::new();
+        let mut i = 0;
+        while i < v.len() {
+            let mut j = i;
+            holders.clear();
+            while j < v.len() && v[j].0 == v[i].0 {
+                let p = where_[v[j].1 as usize].1;
+                if holders.last() != Some(&p) {
+                    holders.push(p);
+                }
+                j += 1;
+            }
+            if holders.len() >= 2 {
+                let (_, k, a, b) = v[i];
+                let c = Candidate {
+                    hash: 0,
+                    group: 0,
+                    depth: 0,
+                    member: a,
+                    position: b,
+                };
+                let bytes = debug::record(parsed, a as usize, base_of(parsed, &c) + b).len() as u64;
+                let mut h = H128::new();
+                h.u64(where_[k as usize].0 as u64);
+                for &p in &holders {
+                    h.u64(u64::from(p));
+                }
+                classes
+                    .entry(h.finish())
+                    .or_insert_with(|| {
+                        (
+                            where_[k as usize].0,
+                            cluster::Class {
+                                bytes: 0,
+                                holders: holders.clone(),
+                            },
+                        )
+                    })
+                    .1
+                    .bytes += bytes;
+            }
+            i = j;
+        }
+        classes
+    });
+    let mut all: HashMap<u128, (usize, cluster::Class)> = HashMap::default();
+    for part in parts {
+        for (key, c) in part {
+            all.entry(key)
+                .and_modify(|e| e.1.bytes += c.1.bytes)
+                .or_insert(c);
+        }
+    }
+    // By machine (each class's holders are one machine's), in key order.
+    let mut keyed: Vec<(u128, (usize, cluster::Class))> = all.into_iter().collect();
+    keyed.sort_unstable_by_key(|x| x.0);
+    let mut by_machine: Vec<Vec<cluster::Class>> = vec![Vec::new(); machines.len()];
+    for (_, (i, c)) in keyed {
+        by_machine[i].push(c);
+    }
+
+    // What each member loads: the first definer of each name it refers to
+    // and doesn't define.
+    let mut first: HashMap<&[u8], u32> = HashMap::default();
+    for (m, d) in clustering.definitions.iter().enumerate() {
+        for name in d {
+            first.entry(name.as_ref()).or_insert(m as u32);
+        }
+    }
+    let edges: Vec<Vec<u32>> = turbonop_par::map_range(parsed.len(), 16, |m| {
+        let Some(o) = &parsed[m].object else {
+            return Vec::new();
+        };
+        let mut e: Vec<u32> = o
+            .symbols
+            .iter()
+            .filter(|s| s.is_external() && s.section == SectionNumber::Undefined && s.value == 0)
+            .filter_map(|s| first.get(s.name.as_bytes()).copied())
+            .filter(|&d| d != m as u32)
+            .collect();
+        e.sort_unstable();
+        e.dedup();
+        e
+    });
+    // Each sharer's closure, as positions among its machine's sharers.
+    let mut position_of: Vec<Option<(usize, u32)>> = vec![None; parsed.len()];
+    for (k, &m) in sharers.iter().enumerate() {
+        position_of[m] = Some(where_[k]);
+    }
+    let closures: Vec<Vec<u32>> = turbonop_par::map_range(sharers.len(), 1, |k| {
+        let (s, machine) = (sharers[k], where_[k].0);
+        let mut seen = vec![false; parsed.len()];
+        let mut stack = vec![s];
+        seen[s] = true;
+        let mut out = Vec::new();
+        while let Some(x) = stack.pop() {
+            if let Some((i, p)) = position_of[x]
+                && i == machine
+            {
+                out.push(p);
+            }
+            for &y in &edges[x] {
+                if !seen[y as usize] {
+                    seen[y as usize] = true;
+                    stack.push(y as usize);
+                }
+            }
+        }
+        out.sort_unstable();
+        out
+    });
+    let mut chosen = Vec::new();
+    for (i, &machine) in machines.iter().enumerate() {
+        let seeds: Vec<Vec<u32>> = positions[i].iter().map(|&k| closures[k].clone()).collect();
+        let choice = cluster::choose(
+            positions[i].len(),
+            &by_machine[i],
+            &seeds,
+            min,
+            &clustering.tries,
+        );
+        chosen.push((machine, positions[i].clone(), choice));
+    }
+    chosen
+}
 /// The first index of a candidate's member's own records.
 fn base_of(parsed: &[Parsed<'_>], c: &Candidate) -> u32 {
     records(&parsed[c.member as usize]).map_or(FIRST, |r| r.1)
@@ -687,6 +942,7 @@ fn pch(
     parsed: &[Parsed<'_>],
     members: &[Member],
     machine: u16,
+    group: u32,
     count: u32,
     records: Vec<u8>,
 ) -> Pch {
@@ -710,8 +966,7 @@ fn pch(
     let precomp = precomp[2..].to_vec();
     let mut feat00: Option<u32> = None;
     for (m, mem) in members.iter().enumerate() {
-        if mem.role != Role::Sharer || parsed[m].object.as_ref().map(|o| o.machine) != Some(machine)
-        {
+        if mem.role != Role::Sharer || mem.group != Some(group) {
             continue;
         }
         if let Some(f) = parsed[m].facts.feat00 {
@@ -720,6 +975,7 @@ fn pch(
     }
     Pch {
         machine,
+        group,
         count,
         records,
         signature,
@@ -746,16 +1002,42 @@ pub(super) struct Edit {
 const DEBUG_CHARACTERISTICS: u32 = 0x4210_0040;
 
 impl Plan {
-    /// The precompiled-types member for `machine`, if its members share
+    /// The precompiled-types member of `group`, if its members share
     /// records.
-    pub(super) fn pch_for(&self, machine: u16) -> Option<&Pch> {
-        self.pchs.iter().find(|p| p.machine == machine)
+    pub(super) fn pch(&self, group: u32) -> Option<&Pch> {
+        Some(&self.pchs[(*self.groups.get(group as usize)?)?])
     }
 
-    /// The PCH index of member `m`'s record `v` (from `FIRST`), if it is
-    /// shared.
-    pub(super) fn shared(&self, parsed: &[Parsed<'_>], m: usize, v: u32) -> Option<u32> {
-        self.lookup.get(hash_of(parsed, &self.members, m, v)?)
+    /// The precompiled-types member a synthesized member holding units of
+    /// `members` (one for each unit) names: the one most of their members
+    /// name (the first group of those). With one group for each machine,
+    /// its machine's, whether or not they share.
+    pub(super) fn pch_for_units(
+        &self,
+        machine: u16,
+        members: impl Iterator<Item = usize>,
+    ) -> Option<&Pch> {
+        if !self.clustered {
+            return self.pchs.iter().find(|p| p.machine == machine);
+        }
+        let mut votes: Vec<u64> = vec![0; self.groups.len()];
+        for m in members {
+            if let Some(g) = self.members.get(m).and_then(|x| x.group)
+                && self.pch(g).is_some_and(|p| p.machine == machine)
+            {
+                votes[g as usize] += 1;
+            }
+        }
+        let best = votes.iter().copied().max().filter(|&v| v > 0)?;
+        let g = votes.iter().position(|&v| v == best)?;
+        self.pch(g as u32)
+    }
+
+    /// The index in `pch` of member `m`'s record `v` (from `FIRST`), if it
+    /// is shared there.
+    pub(super) fn shared(&self, pch: &Pch, parsed: &[Parsed<'_>], m: usize, v: u32) -> Option<u32> {
+        self.lookup
+            .get(pch.group, hash_of(parsed, &self.members, m, v)?)
     }
 
     /// The sharing of member `m` (not its sections `removed`, by number):
@@ -767,7 +1049,7 @@ impl Plan {
         }
         let p = &parsed[m];
         let object = p.object.as_ref()?;
-        let pch = self.pch_for(object.machine)?;
+        let pch = self.pch(mem.group?)?;
         let (data, base, offsets) = records(p)?;
         let Types::Records { section, .. } = p.debug.types else {
             return None;
@@ -793,7 +1075,7 @@ impl Plan {
         if let Some((s, sm)) = source {
             for &j in &mem.reached {
                 let shared = (sm.flags[j as usize] & SHAREABLE != 0)
-                    .then(|| self.lookup.get(sm.hashes[j as usize]))
+                    .then(|| self.lookup.get(pch.group, sm.hashes[j as usize]))
                     .flatten();
                 pch_new[j as usize] = match shared {
                     Some(n) => {
@@ -813,7 +1095,7 @@ impl Plan {
         for (i, &at) in offsets.iter().enumerate() {
             let f = mem.flags[i];
             let shared = (f & SHAREABLE != 0 && f & BUILD == 0)
-                .then(|| self.lookup.get(mem.hashes[i]))
+                .then(|| self.lookup.get(pch.group, mem.hashes[i]))
                 .flatten();
             own_new[i] = match shared {
                 Some(n) => {

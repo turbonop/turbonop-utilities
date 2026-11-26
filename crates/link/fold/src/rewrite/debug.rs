@@ -663,7 +663,8 @@ pub(super) struct Builder<'p, 'a> {
     /// The library's shared types (`--precomp=library`), and whether this
     /// member uses them: its units' members name no other PCH.
     plan: Option<&'p precomp::Plan>,
-    sharing: bool,
+    /// The precompiled-types member it names, if it uses the shared types.
+    sharing: Option<&'p precomp::Pch>,
     /// Its type records, from `FIRST`, and where each starts.
     types: Vec<u8>,
     starts: Vec<u32>,
@@ -747,7 +748,7 @@ impl<'p, 'a> Builder<'p, 'a> {
         Self {
             parsed,
             plan,
-            sharing: false,
+            sharing: None,
             types: Vec::new(),
             starts: Vec::new(),
             by_hash: HashMap::default(),
@@ -791,15 +792,17 @@ impl<'p, 'a> Builder<'p, 'a> {
         {
             self.base = p.start + p.count;
             self.precomp = Some((record.clone(), symbol.clone()));
-        } else if let Some(pch) = self
-            .plan
-            .and_then(|plan| plan.pch_for(parsed[m0].object.as_ref().expect("an object").machine))
-        {
+        } else if let Some(pch) = self.plan.and_then(|plan| {
+            plan.pch_for_units(
+                parsed[m0].object.as_ref().expect("an object").machine,
+                units.iter().map(|&(m, _, _)| m),
+            )
+        }) {
             // The library's shared types: its records that are shared are
             // the precompiled-types member's.
             self.base = FIRST + pch.count;
             self.precomp = Some((pch.precomp.clone(), pch.symbol.clone()));
-            self.sharing = true;
+            self.sharing = Some(pch);
         }
         let characteristics = parsed[m0]
             .debug
@@ -835,10 +838,7 @@ impl<'p, 'a> Builder<'p, 'a> {
     /// The shared types' index of member `m`'s index `v`, if this member
     /// uses them and that record is shared.
     fn shared(&self, m: usize, v: u32) -> Option<u32> {
-        if !self.sharing {
-            return None;
-        }
-        self.plan?.shared(self.parsed, m, v)
+        self.plan?.shared(self.sharing?, self.parsed, m, v)
     }
 
     /// Merges member `m`'s record `v` and what it reaches, depth first: a

@@ -212,10 +212,7 @@ fn turbolib_options() {
         &w(&["/nologo", "/TURBOLIB:precomp=clustered=4", "a.obj"]),
         &env_in(&dir),
     );
-    assert!(
-        o.stdout.contains("precomp=clustered isn't written yet"),
-        "{o:?}"
-    );
+    assert_eq!(o.exit, 0, "{o:?}");
     let mut env = env_in(&dir);
     env.turbolib_options = Some("stats".into());
     let o = run(Flavor::LlvmLib, &w(&["a.obj"]), &env);

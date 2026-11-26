@@ -91,6 +91,22 @@ pub enum Precomp {
     /// One precompiled-types member for the library, holding the records
     /// at least `min` members hold.
     Library { min: u32 },
+    /// Up to `max` precompiled-types members (by default, as many as the
+    /// cost model chooses, up to 16), each for a group of members, holding
+    /// the records at least `min` members of the group hold
+    /// ([`precomp::cluster`]).
+    Clustered { min: u32, max: Option<u32> },
+}
+
+impl Precomp {
+    /// The numbers of groups `Clustered` tries: the powers of two below
+    /// its `max`, and `max`.
+    pub fn tries(max: Option<u32>) -> Vec<u32> {
+        let max = max.unwrap_or(16).max(1);
+        let mut v: Vec<u32> = (0..32).map(|i| 1u32 << i).take_while(|&t| t < max).collect();
+        v.push(max);
+        v
+    }
 }
 
 /// Which copies count as the same (`--fold`).
@@ -396,6 +412,8 @@ pub struct TypesReport {
     pub types_after: u64,
     /// How long finding the shared types took.
     pub time: std::time::Duration,
+    /// Under `--precomp=clustered`, each machine's grouping.
+    pub clusters: Vec<precomp::Clusters>,
 }
 
 /// How a member gives up one copy.
@@ -579,7 +597,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     let mut parsed: Vec<Parsed<'a>> =
         turbonop_par::map_balanced(inputs, 4, |i: &Input<'a>| parse(i, mode));
     // PCH users' PCH objects (their units' types are there).
-    let library = matches!(options.precomp, Precomp::Library { .. });
+    let library = !matches!(options.precomp, Precomp::None);
     debug::resolve(&mut parsed, library);
     if mode.copy_locals {
         // A unit that reaches a local unit whose debug information can't be
@@ -611,7 +629,14 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     let (plan, (first_definer, one_code, one_key)) = turbonop_par::join(
         || match options.precomp {
             Precomp::Library { min } => {
-                Some((precomp::plan(&parsed, min.max(1)), types_clock.elapsed()))
+                Some((precomp::plan(&parsed, min.max(1), None), types_clock.elapsed()))
+            }
+            Precomp::Clustered { min, max } => {
+                let c = precomp::Clustering {
+                    tries: Precomp::tries(max),
+                    definitions: &defs,
+                };
+                Some((precomp::plan(&parsed, min.max(2), Some(&c)), types_clock.elapsed()))
             }
             Precomp::None => None,
         },
@@ -632,6 +657,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         t.first_unreadable = plan.first_unreadable.clone();
         t.absorbed = parsed.iter().filter(|p| p.debug.absorbed).count() as u64;
         t.time = time;
+        t.clusters = plan.clusters.clone();
         plan
     });
 

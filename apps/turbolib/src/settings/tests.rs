@@ -24,7 +24,7 @@ fn options_in_any_case() {
             pick: Pick::Largest,
             pull: Pull::Relaxed,
             locals: Locals::Merge,
-            precomp: Precomp::Clustered(8),
+            precomp: Precomp::Clustered(Some(8)),
             threads: Some(3),
             diagnose: true,
             stats: true,
@@ -79,12 +79,15 @@ fn what_is_written_so_far() {
     assert!(s.check_supported().is_ok());
     s.apply("locals=merge").unwrap();
     assert!(s.check_supported().is_ok());
-    // Shared types: one precompiled-types member, not yet clusters; none
-    // is still the default.
+    // Shared types: one precompiled-types member, or clusters; none is
+    // still the default.
     let mut s = Settings::default();
     assert_eq!(s.precomp, Precomp::None);
     s.apply("precomp=library").unwrap();
     assert!(s.check_supported().is_ok());
     s.apply("precomp=clustered=4").unwrap();
-    assert!(s.check_supported().is_err());
+    assert!(s.check_supported().is_ok());
+    assert_eq!(s.precomp, Precomp::Clustered(Some(4)));
+    s.apply("precomp=clustered").unwrap();
+    assert_eq!(s.precomp, Precomp::Clustered(None));
 }

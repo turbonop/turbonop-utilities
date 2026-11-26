@@ -12,7 +12,7 @@
 //! | `pick` | `first`, `largest` (with `select-any`) |
 //! | `pull` | `preserve`, `relaxed` |
 //! | `locals` | `keep`, `copy`, `merge` |
-//! | `precomp` | `none`, `library`, `clustered=<n>` |
+//! | `precomp` | `none`, `library`, `clustered`, `clustered=<n>` |
 //! | `report` | `odr`: list the names whose definitions differ |
 //! | `threads` (or `j`) | a number of threads, at least 1 |
 //! | `diagnose` | say what was passed through, and why |
@@ -21,9 +21,7 @@
 //!
 //! The default folding is still `none` (`identical` is the plan's default,
 //! once the build systems using turbolib choose it). `pick` matters only
-//! with `select-any`, and `locals` only when something folds. Asking for a
-//! mode that isn't written yet (`precomp=clustered`) is an error, not a
-//! silent `none`.
+//! with `select-any`, and `locals` only when something folds.
 
 /// `fold`: which copies count as the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,7 +58,9 @@ pub enum Locals {
 pub enum Precomp {
     None,
     Library,
-    Clustered(u32),
+    /// Up to `n` precompiled-types members (`None`: as many as the cost
+    /// model chooses, up to 16).
+    Clustered(Option<u32>),
 }
 
 /// turbolib's options.
@@ -118,13 +118,14 @@ impl Settings {
             ("locals", Some("merge")) => self.locals = Locals::Merge,
             ("precomp", Some("none")) => self.precomp = Precomp::None,
             ("precomp", Some("library")) => self.precomp = Precomp::Library,
+            ("precomp", Some("clustered")) => self.precomp = Precomp::Clustered(None),
             ("precomp", Some(v)) if v.starts_with("clustered=") => {
                 let n: u32 = v["clustered=".len()..]
                     .parse()
                     .ok()
                     .filter(|&n| n > 0)
                     .ok_or_else(bad)?;
-                self.precomp = Precomp::Clustered(n);
+                self.precomp = Precomp::Clustered(Some(n));
             }
             ("threads" | "j", Some(v)) => {
                 let n: usize = v.parse().ok().filter(|&n| n > 0).ok_or_else(bad)?;
@@ -158,11 +159,9 @@ impl Settings {
         Ok(())
     }
 
-    /// The modes asked for that turbolib can't do yet, as an error.
+    /// The modes asked for that turbolib can't do yet, as an error (none,
+    /// now).
     pub fn check_supported(&self) -> Result<(), String> {
-        if let Precomp::Clustered(_) = self.precomp {
-            return Err("precomp=clustered isn't written yet (phase 3.5)".into());
-        }
         Ok(())
     }
 }

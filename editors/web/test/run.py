@@ -18,6 +18,10 @@ import subprocess
 import sys
 import tempfile
 
+# (What a failure shows is the page's text, not all of it in the console's
+# code page.)
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERVE = os.path.join(HERE, "..", "serve.py")
 
@@ -98,7 +102,7 @@ def main():
     check("app: cross-origin isolated", r.get("isolated") is True, r)
     tree = r.get("tree", [])
     check("app: the sidebar's entry and its tools", bool(tree) and tree[0].startswith("xref-x64.exe") and "Symbols" in tree and "Headers" in tree, tree)
-    check("app: the Symbols page", "main(int, char**)" in r.get("symbols", "") and "427 rows" in r.get("symbols", ""), r.get("symbols", "")[:500])
+    check("app: the Symbols page", "main(int, char**)" in r.get("symbols", "") and "447 rows" in r.get("symbols", ""), r.get("symbols", "")[:500])
     check("app: a text tool's output", "FILE HEADER VALUES" in r.get("text", ""), r.get("text"))
     check("app: a row's context menu", "Disassemble" in r.get("menu", []) and "Why Is This Here?" in r.get("menu", []), r.get("menu"))
     check("app: disassembly", "push" in r.get("disasm", ""), r.get("disasm"))

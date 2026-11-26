@@ -38,12 +38,14 @@ use turbonop_global_alloc as _;
 extern crate alloc;
 
 mod read;
+mod relocs;
 mod write;
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt;
 
+pub use relocs::{Form as RelocationForm, Iter as RelocationIter, Relocations};
 pub use turbonop_core::Endian;
 pub use turbonop_elf::Class;
 
@@ -227,7 +229,7 @@ pub enum Data<'a> {
     /// `SHT_SYMTAB` (or `SHT_DYNSYM`): the symbols, index 0 included.
     Symbols(Vec<Symbol<'a>>),
     /// `SHT_REL` or `SHT_RELA`.
-    Relocations(Vec<Relocation>),
+    Relocations(Relocations<'a>),
     /// `SHT_GROUP`.
     Group(Group),
     /// `SHT_SYMTAB_SHNDX`: written from the symbol table it names
@@ -366,8 +368,9 @@ impl<'a> Object<'a> {
         self.header.machine == 8 && self.class() == Class::Elf64
     }
 
-    /// A relocation's symbol index.
-    pub fn reloc_symbol(&self, r: &Relocation) -> u32 {
+    /// A relocation's symbol index (of a relocation or a reference to one).
+    pub fn reloc_symbol(&self, r: impl core::borrow::Borrow<Relocation>) -> u32 {
+        let r = r.borrow();
         match (self.class(), self.mips64(), self.endian()) {
             (Class::Elf32, ..) => (r.info >> 8) as u32 & 0x00FF_FFFF,
             (Class::Elf64, true, Endian::Little) => (r.info & 0xFFFF_FFFF) as u32,
@@ -377,7 +380,8 @@ impl<'a> Object<'a> {
 
     /// A relocation's type (MIPS64's three, packed as `r_info`'s low 32
     /// bits hold them: the first in the low byte).
-    pub fn reloc_type(&self, r: &Relocation) -> u32 {
+    pub fn reloc_type(&self, r: impl core::borrow::Borrow<Relocation>) -> u32 {
+        let r = r.borrow();
         match (self.class(), self.mips64(), self.endian()) {
             (Class::Elf32, ..) => (r.info & 0xFF) as u32,
             (Class::Elf64, true, Endian::Little) => {
@@ -402,6 +406,15 @@ impl<'a> Object<'a> {
                 r.info = (r.info & 0xFFFF_FFFF_0000_0000) | u64::from(symbol);
             }
             (Class::Elf64, ..) => r.info = (r.info & 0xFFFF_FFFF) | (u64::from(symbol) << 32),
+        }
+    }
+
+    /// How this object encodes `SHT_RELA` (`rela`) or `SHT_REL` entries.
+    pub fn relocation_form(&self, rela: bool) -> RelocationForm {
+        RelocationForm {
+            class: self.class(),
+            endian: self.endian(),
+            rela,
         }
     }
 
@@ -550,12 +563,16 @@ impl<'a> Object<'a> {
                 continue;
             }
             match &mut s.data {
-                Data::Relocations(rs) => {
-                    for r in rs.iter_mut() {
-                        let sym = probe.reloc_symbol(r);
-                        probe.set_reloc_symbol(r, renumber(sym));
-                    }
-                }
+                Data::Relocations(rs) => rs.map_info(|info| {
+                    let mut r = Relocation {
+                        offset: 0,
+                        info,
+                        addend: 0,
+                    };
+                    let sym = probe.reloc_symbol(&r);
+                    probe.set_reloc_symbol(&mut r, renumber(sym));
+                    r.info
+                }),
                 Data::Group(_) => s.info = renumber(s.info),
                 _ => {}
             }

@@ -79,7 +79,7 @@ fn object(class: Class, endian: Endian, machine: u16) -> Object<'static> {
             b".rela.text._Z1fv",
             sht::RELA,
             shf::INFO_LINK | shf::GROUP,
-            Data::Relocations(vec![]),
+            Data::Relocations(vec![].into()),
         ),
         section(
             b".data",
@@ -147,7 +147,7 @@ fn object(class: Class, endian: Endian, machine: u16) -> Object<'static> {
         addend: -4,
     };
     o.set_reloc_symbol(&mut r, 6);
-    o.sections[4].data = Data::Relocations(vec![r]);
+    o.sections[4].data = Data::Relocations(vec![r].into());
     o
 }
 
@@ -203,8 +203,8 @@ fn every_class_and_byte_order() {
         let Data::Relocations(rs) = &back.sections[4].data else {
             panic!("relocations");
         };
-        assert_eq!(back.reloc_symbol(&rs[0]), 6);
-        assert_eq!(rs[0].addend, -4);
+        assert_eq!(back.reloc_symbol(&rs.get(0).unwrap()), 6);
+        assert_eq!(rs.get(0).unwrap().addend, -4);
     }
 }
 
@@ -416,4 +416,101 @@ fn rebuilt_tables_share_tails() {
     let mut shuffled = names;
     shuffled.reverse();
     assert_eq!(crate::write::build(shuffled.iter().copied()).0, table);
+}
+
+/// Names compared backwards eight bytes at a time order as byte by byte.
+#[test]
+fn backwards_order_is_bytewise() {
+    let mut names: Vec<Vec<u8>> = Vec::new();
+    let mut x = 0x2545_F491_4F6C_DD1Du64;
+    for len in 0..40usize {
+        for _ in 0..6 {
+            let v: Vec<u8> = (0..len)
+                .map(|_| {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    b"ab\0\xFF"[(x % 4) as usize]
+                })
+                .collect();
+            names.push(v);
+        }
+    }
+    for a in &names {
+        for b in &names {
+            assert_eq!(
+                crate::write::backwards(a, b),
+                a.iter().rev().cmp(b.iter().rev()),
+                "{a:?} {b:?}"
+            );
+        }
+    }
+}
+
+/// Relocations kept as the file's bytes read, edit, and write back as
+/// the values would: in both classes and byte orders, `REL` and `RELA`.
+#[test]
+fn encoded_relocations_behave_as_values() {
+    for class in [Class::Elf32, Class::Elf64] {
+        for endian in [Endian::Little, Endian::Big] {
+            for rela in [false, true] {
+                let form = RelocationForm {
+                    class,
+                    endian,
+                    rela,
+                };
+                let w = if class == Class::Elf32 { 4 } else { 8 };
+                let mut bytes = Vec::new();
+                let mut want = Vec::new();
+                for k in 0..5u64 {
+                    let (offset, info, addend) = (k * 8, (k << 8) | 2, -(k as i64) - 1);
+                    let put = |b: &mut Vec<u8>, v: u64| {
+                        let v = match endian {
+                            Endian::Little => v.to_le_bytes(),
+                            Endian::Big => v.to_be_bytes(),
+                        };
+                        match (w, endian) {
+                            (4, Endian::Little) => b.extend_from_slice(&v[..4]),
+                            (4, Endian::Big) => b.extend_from_slice(&v[4..]),
+                            _ => b.extend_from_slice(&v),
+                        }
+                    };
+                    put(&mut bytes, offset);
+                    put(&mut bytes, info);
+                    if rela {
+                        put(&mut bytes, addend as u64);
+                    }
+                    want.push(Relocation {
+                        offset,
+                        info,
+                        addend: if rela { addend } else { 0 },
+                    });
+                }
+                let mut rs = Relocations::encoded(Cow::Borrowed(&bytes[..]), form).unwrap();
+                assert!(Relocations::encoded(Cow::Borrowed(&bytes[1..]), form).is_none());
+                assert_eq!(rs.len(), 5);
+                assert_eq!(rs.to_vec(), want);
+                assert_eq!(rs.iter().rev().collect::<Vec<_>>(), {
+                    let mut r = want.clone();
+                    r.reverse();
+                    r
+                });
+                assert_eq!(rs, Relocations::from(want.clone()));
+                rs.map_info(|i| i + 0x100);
+                rs.retain(|r| r.offset != 16);
+                let mut v = want.clone();
+                for r in &mut v {
+                    r.info += 0x100;
+                }
+                v.retain(|r| r.offset != 16);
+                assert_eq!(rs.to_vec(), v);
+                assert_eq!(rs.get(2), Some(v[2]));
+                assert_eq!(rs.get(4), None);
+                assert!(rs.bytes_as(form).is_some());
+                rs.values_mut().push(want[0]);
+                assert!(rs.bytes_as(form).is_none());
+                assert_eq!(rs.len(), 5);
+            }
+        }
+    }
 }

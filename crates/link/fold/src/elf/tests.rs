@@ -93,7 +93,7 @@ fn member(own: &'static [u8], other: bool, side_effects: bool) -> Vec<u8> {
             b".rela.text",
             sht::RELA,
             shf::INFO_LINK,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ),
         sec(
             b".group",
@@ -114,7 +114,7 @@ fn member(own: &'static [u8], other: bool, side_effects: bool) -> Vec<u8> {
             b".rela.text._Z1fv",
             sht::RELA,
             shf::INFO_LINK | shf::GROUP,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ),
         sec(
             b".eh_frame",
@@ -126,7 +126,7 @@ fn member(own: &'static [u8], other: bool, side_effects: bool) -> Vec<u8> {
             b".rela.eh_frame",
             sht::RELA,
             shf::INFO_LINK,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ),
         sec(
             b".debug_info",
@@ -138,7 +138,7 @@ fn member(own: &'static [u8], other: bool, side_effects: bool) -> Vec<u8> {
             b".rela.debug_info",
             sht::RELA,
             shf::INFO_LINK,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ),
         sec(
             b".note.GNU-stack",
@@ -216,10 +216,10 @@ fn member(own: &'static [u8], other: bool, side_effects: bool) -> Vec<u8> {
     let d1 = reloc(&o, 0, 1, 1, 0);
     let d2 = reloc(&o, 8, 1, 2, 0);
     let d3 = reloc(&o, 16, 1, 4, 0);
-    o.sections[2].data = Data::Relocations(vec![to_f]);
-    o.sections[5].data = Data::Relocations(vec![to_ext]);
-    o.sections[7].data = Data::Relocations(vec![fde1, fde2]);
-    o.sections[9].data = Data::Relocations(vec![d1, d2, d3]);
+    o.sections[2].data = Data::Relocations(vec![to_f].into());
+    o.sections[5].data = Data::Relocations(vec![to_ext].into());
+    o.sections[7].data = Data::Relocations(vec![fde1, fde2].into());
+    o.sections[9].data = Data::Relocations(vec![d1, d2, d3].into());
     o.write().unwrap()
 }
 
@@ -235,14 +235,14 @@ fn fold_all(members: &[Vec<u8>], pull: Pull) -> (Vec<Output>, Report) {
     fold(&inputs, &Options { pull })
 }
 
-fn relocations_for<'o>(o: &'o Object<'_>, section: usize) -> &'o [Relocation] {
+fn relocations_for(o: &Object<'_>, section: usize) -> Vec<Relocation> {
     let rela = o
         .sections
         .iter()
         .find(|s| s.is_relocations() && s.info as usize == section)
         .unwrap();
     match &rela.data {
-        Data::Relocations(rs) => rs,
+        Data::Relocations(rs) => rs.to_vec(),
         _ => panic!("relocations"),
     }
 }
@@ -494,7 +494,7 @@ fn member_fg(with_f: bool, g: &'static [u8]) -> Vec<u8> {
             b".rela.text._Z1fv",
             sht::RELA,
             shf::INFO_LINK | shf::GROUP,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ));
     }
     sections.push(sec(
@@ -539,7 +539,7 @@ fn member_fg(with_f: bool, g: &'static [u8]) -> Vec<u8> {
     o.shstrndx = o.sections.len() as u32 - 1;
     if with_f {
         let call = reloc(&o, 1, 4, 1, -4);
-        o.sections[5].data = Data::Relocations(vec![call]);
+        o.sections[5].data = Data::Relocations(vec![call].into());
     }
     o.write().unwrap()
 }

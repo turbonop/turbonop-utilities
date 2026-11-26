@@ -288,11 +288,14 @@ fn relocation_sections(obj: &Object<'_>) -> Vec<(usize, usize)> {
         .collect()
 }
 
-fn relocations<'o>(s: &'o Section<'_>) -> &'o [Relocation] {
+/// A section's relocations (none, if it holds none).
+fn relocations<'o>(s: &'o Section<'_>) -> impl Iterator<Item = Relocation> + Clone + 'o {
     match &s.data {
-        Data::Relocations(r) => r,
-        _ => &[],
+        Data::Relocations(r) => Some(r.iter()),
+        _ => None,
     }
+    .into_iter()
+    .flatten()
 }
 
 fn section_bytes<'o>(s: &'o Section<'_>) -> &'o [u8] {
@@ -506,6 +509,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         let debug = is_debug(target_name) && obj.sections[target].flags & shf::ALLOC == 0;
         let eh = target_name == b".eh_frame";
         for rel in relocations(&obj.sections[r]) {
+            let rel = &rel;
             let si = obj.reloc_symbol(rel) as usize;
             let Some(sym) = symbols.get(si) else {
                 if let Some(u) = from {
@@ -554,7 +558,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 let mut rels: Vec<Relocation> = relocation_sections(&obj)
                     .into_iter()
                     .filter(|&(_, t)| t == eh)
-                    .flat_map(|(r, _)| relocations(&obj.sections[r]).iter().copied())
+                    .flat_map(|(r, _)| relocations(&obj.sections[r]))
                     .collect();
                 rels.sort_by_key(|r| r.offset);
                 let ranges: Vec<std::ops::Range<usize>> = records
@@ -658,6 +662,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 Data::Relocations(rs) => {
                     h.u64(place(s.info as usize).map_or(u64::MAX, |x| x as u64));
                     for r in rs {
+                        let r = &r;
                         h.u64(r.offset);
                         h.u64(u64::from(obj.reloc_type(r)));
                         key(&mut h, obj.reloc_symbol(r));
@@ -822,11 +827,14 @@ fn rewrite(
                 if t != eh.section {
                     continue;
                 }
-                obj.sections[r].data = Data::Relocations(if first {
-                    std::mem::take(&mut out)
-                } else {
-                    Vec::new()
-                });
+                obj.sections[r].data = Data::Relocations(
+                    if first {
+                        std::mem::take(&mut out)
+                    } else {
+                        Vec::new()
+                    }
+                    .into(),
+                );
                 first = false;
             }
             obj.sections[eh.section].data = Data::Bytes(Cow::Owned(bytes));
@@ -849,7 +857,7 @@ fn rewrite(
         };
         // (Most debug sections name nothing moved: nothing is copied for
         // those.)
-        if !relocations(&obj.sections[r]).iter().any(hit) {
+        if !relocations(&obj.sections[r]).any(|r| hit(&r)) {
             continue;
         }
         let Data::Relocations(mut rels) =
@@ -965,7 +973,6 @@ fn rewrite(
             s.data = Data::Bytes(Cow::Owned(out));
         }
     }
-    obj.write().map_err(|e| e.to_string())
 }
 
 fn uleb(b: &[u8]) -> Option<(u64, usize)> {
@@ -1127,7 +1134,7 @@ fn synthesize<'a>(
     let rela_eh = match (eh_index, eh_rel_template) {
         (Some(eh), Some(mut s)) => {
             s.info = eh as u32;
-            s.data = Data::Relocations(Vec::new());
+            s.data = Data::Relocations(Vec::new().into());
             sections.push(s);
             Some(sections.len() - 1)
         }
@@ -1143,7 +1150,7 @@ fn synthesize<'a>(
                 addralign: 8,
                 entsize: relasize,
                 nobits_size: 0,
-                data: Data::Relocations(Vec::new()),
+                data: Data::Relocations(Vec::new().into()),
             });
             Some(sections.len() - 1)
         }
@@ -1219,7 +1226,7 @@ fn synthesize<'a>(
                 addralign: 8,
                 entsize: relasize,
                 nobits_size: 0,
-                data: Data::Relocations(Vec::new()),
+                data: Data::Relocations(Vec::new().into()),
             });
             debug_rela.push(Some(sections.len() - 1));
         }
@@ -1386,8 +1393,8 @@ fn synthesize<'a>(
             if let Data::Relocations(rs) = &sec.data {
                 let mut out = Vec::with_capacity(rs.len());
                 for r in rs {
-                    let t = target(&mut locals, &mut globals, m, obj.reloc_symbol(r) as usize)?;
-                    out.push((*r, m, t));
+                    let t = target(&mut locals, &mut globals, m, obj.reloc_symbol(&r) as usize)?;
+                    out.push((r, m, t));
                 }
                 fix_ups.push((placed[&(m, s)], m, out));
             }
@@ -1580,7 +1587,7 @@ fn synthesize<'a>(
             obj.set_reloc_symbol(&mut r, index(t));
             out.push(r);
         }
-        obj.sections[sec].data = Data::Relocations(out);
+        obj.sections[sec].data = Data::Relocations(out.into());
         obj.sections[sec].link = symtab as u32;
     }
     // Relocation sections' targets.
@@ -1603,7 +1610,7 @@ fn synthesize<'a>(
             obj.set_reloc_symbol(&mut rel, index(t));
             out.push(rel);
         }
-        obj.sections[r].data = Data::Relocations(out);
+        obj.sections[r].data = Data::Relocations(out.into());
         obj.sections[r].link = symtab as u32;
     }
     let mut all = locals;
@@ -1639,7 +1646,10 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         report.phases.push((what, now - clock));
         clock = now;
     };
-    let parsed: Vec<Parsed<'_>> = turbonop_par::map(inputs, 1, parse);
+    // (Members' sizes differ a thousandfold: the largest are taken first.)
+    let size = |m: usize| inputs[m].data.len() as u64;
+    let parsed: Vec<Parsed<'_>> =
+        turbonop_par::map_costed(inputs.len(), size, |m| parse(&inputs[m]));
     lap(&mut report, "reading");
     for p in &parsed {
         if let Some(w) = &p.why_not {
@@ -1716,21 +1726,61 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
     // refer to a name each giver resolved within itself, and a linker could
     // take it from another member (mold ranks lazy definitions by their
     // files' order, and made `libLLVMCore.a`'s `Core.cpp.o` live for an
-    // inline function its givers each defined). Until nothing changes.
-    loop {
-        let names: std::collections::HashSet<&[u8], turbonop_hash::State> = folded
-            .iter()
-            .flat_map(|(_, list)| list.iter())
-            .flat_map(|&(m, u)| parsed[m].units[u].names.iter().map(|n| &**n))
-            .collect();
-        let before = folded.len();
+    // inline function its givers each defined). The largest set of them
+    // closed under that: each name of a folding unit belongs to that unit
+    // alone (every definition of it is a copy), so a unit stays when a name
+    // it needs belongs to none, and then so does every unit needing one of
+    // its names, and so on.
+    {
+        let mut owner_of: Map<&[u8], usize> = Map::default();
+        for (k, (_, list)) in folded.iter().enumerate() {
+            let (m, u) = list[0];
+            for n in &parsed[m].units[u].names {
+                owner_of.insert(&**n, k);
+            }
+        }
+        // Each one's units needed (`None`: one needed stays).
+        let needs: Vec<Option<Vec<usize>>> = turbonop_par::map_range(folded.len(), 256, |k| {
+            let mut v = Vec::new();
+            for &(m, u) in &folded[k].1 {
+                for n in &parsed[m].units[u].comdat_refs {
+                    v.push(*owner_of.get(&**n)?);
+                }
+            }
+            v.sort_unstable();
+            v.dedup();
+            Some(v)
+        });
+        let mut needed_by: Vec<Vec<usize>> = vec![Vec::new(); folded.len()];
+        let mut stays: Vec<usize> = Vec::new();
+        let mut gone = vec![false; folded.len()];
+        for (k, n) in needs.iter().enumerate() {
+            match n {
+                Some(js) => {
+                    for &j in js {
+                        if j != k {
+                            needed_by[j].push(k);
+                        }
+                    }
+                }
+                None => {
+                    gone[k] = true;
+                    stays.push(k);
+                }
+            }
+        }
+        while let Some(j) = stays.pop() {
+            for &k in &needed_by[j] {
+                if !gone[k] {
+                    gone[k] = true;
+                    stays.push(k);
+                }
+            }
+        }
+        let mut k = 0;
         folded.retain(|(_, list)| {
-            let keep = list.iter().all(|&(m, u)| {
-                parsed[m].units[u]
-                    .comdat_refs
-                    .iter()
-                    .all(|n| names.contains(&**n))
-            });
+            let keep = !gone[k];
+            k += 1;
             if !keep {
                 *report
                     .kept
@@ -1739,9 +1789,6 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             }
             keep
         });
-        if folded.len() == before {
-            break;
-        }
     }
     // Synthesized members: by the members that held copies, and the
     // environment.
@@ -1782,13 +1829,17 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
     }
     lap(&mut report, "choosing");
     // Rewrite the members and make the synthesized ones, on every core.
-    let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_range(parsed.len(), 1, |m| {
-        if moved[m].is_empty() {
-            return None;
-        }
-        let mut r = Report::default();
-        Some(rewrite(&parsed[m], &moved[m], &member_anchors[m], &mut r).map(|b| (b, r)))
-    });
+    let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_costed(
+        parsed.len(),
+        |m| if moved[m].is_empty() { 0 } else { size(m) },
+        |m| {
+            if moved[m].is_empty() {
+                return None;
+            }
+            let mut r = Report::default();
+            Some(rewrite(&parsed[m], &moved[m], &member_anchors[m], &mut r).map(|b| (b, r)))
+        },
+    );
     lap(&mut report, "rewriting");
     // Each moved name's synthesized member.
     let mut moved_into: Map<&[u8], usize> = Map::default();
@@ -1808,16 +1859,30 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         .collect::<BTreeSet<usize>>()
         .into_iter()
         .collect();
-    let sources: Vec<Result<dwarf::Source<'_>, &'static str>> =
-        turbonop_par::map(&debug_members, 1, |&m| match parsed[m].obj.as_ref() {
-            Some(obj) => dwarf::Source::new(obj, &parsed[m].owner, dwo),
-            None => Err("unread"),
-        });
+    let sources: Vec<Result<dwarf::Source<'_>, &'static str>> = turbonop_par::map_costed(
+        debug_members.len(),
+        |k| size(debug_members[k]),
+        |k| {
+            let m = debug_members[k];
+            match parsed[m].obj.as_ref() {
+                Some(obj) => dwarf::Source::new(obj, &parsed[m].owner, dwo),
+                None => Err("unread"),
+            }
+        },
+    );
     lap(&mut report, "reading DWARF");
     let source_of: BTreeMap<usize, &Result<dwarf::Source<'_>, &'static str>> =
         debug_members.iter().copied().zip(sources.iter()).collect();
-    let made: Vec<Result<(Vec<u8>, Debugged), String>> =
-        turbonop_par::map_range(synth.len(), 1, |k| {
+    let made: Vec<Result<(Vec<u8>, Debugged), String>> = turbonop_par::map_costed(
+        synth.len(),
+        |k| {
+            synth[k]
+                .0
+                .iter()
+                .map(|&(m, u)| parsed[m].units[u].bytes)
+                .sum()
+        },
+        |k| {
             let has_debug = synth[k].0.iter().any(|&(m, u)| parsed[m].units[u].debug);
             let src = if has_debug {
                 synth[k]
@@ -1828,7 +1893,8 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
                 None
             };
             synthesize(&parsed, &synth[k].0, k, &moved_into, &anchors, src)
-        });
+        },
+    );
     lap(&mut report, "synthesizing");
     let mut out = Vec::with_capacity(inputs.len() + made.len());
     for (m, r) in rewritten.into_iter().enumerate() {

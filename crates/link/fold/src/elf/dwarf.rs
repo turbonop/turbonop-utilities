@@ -359,8 +359,8 @@ impl<'p> Source<'p> {
             for r in rs {
                 e.push(Rel {
                     offset: r.offset,
-                    rtype: obj.reloc_type(r),
-                    sym: obj.reloc_symbol(r),
+                    rtype: obj.reloc_type(&r),
+                    sym: obj.reloc_symbol(&r),
                     addend: r.addend,
                 });
             }

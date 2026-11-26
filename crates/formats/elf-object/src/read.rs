@@ -4,8 +4,8 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
 use crate::{
-    Class, Data, Endian, Group, Header, Object, Original, ReadError, Relocation, SHN_XINDEX,
-    Section, Symbol, sht,
+    Class, Data, Endian, Group, Header, Object, Original, ReadError, RelocationForm, Relocations,
+    SHN_XINDEX, Section, Symbol, sht,
 };
 
 /// A cursor over the file's fields in its class and byte order.
@@ -310,34 +310,17 @@ pub(crate) fn parse(data: &[u8]) -> Result<Object<'_>, ReadError> {
             sht::REL | sht::RELA => {
                 let rela = r.kind == sht::RELA;
                 let entry = if rela { relasize } else { relsize };
-                if r.entsize != entry || r.size % entry != 0 {
-                    Data::Bytes(Cow::Borrowed(bytes))
-                } else {
-                    let mut out = Vec::with_capacity((r.size / entry) as usize);
-                    for k in 0..r.size / entry {
-                        let at = r.offset + k * entry;
-                        let w = match class {
-                            Class::Elf32 => 4,
-                            Class::Elf64 => 8,
-                        };
-                        let offset = f.word(at).ok_or(bad("relocations"))?;
-                        let info = f.word(at + w).ok_or(bad("relocations"))?;
-                        let addend = if rela {
-                            let a = f.word(at + 2 * w).ok_or(bad("relocations"))?;
-                            match class {
-                                Class::Elf32 => i64::from(a as u32 as i32),
-                                Class::Elf64 => a as i64,
-                            }
-                        } else {
-                            0
-                        };
-                        out.push(Relocation {
-                            offset,
-                            info,
-                            addend,
-                        });
+                let form = RelocationForm {
+                    class,
+                    endian: f.endian,
+                    rela,
+                };
+                // (Kept as the file's bytes: decoded entry by entry as read.)
+                match Relocations::encoded(Cow::Borrowed(bytes), form) {
+                    Some(rs) if r.entsize == entry && form.entry() as u64 == entry => {
+                        Data::Relocations(rs)
                     }
-                    Data::Relocations(out)
+                    _ => Data::Bytes(Cow::Borrowed(bytes)),
                 }
             }
             sht::GROUP if r.size >= 4 && r.size % 4 == 0 => {

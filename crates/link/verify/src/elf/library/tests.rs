@@ -82,7 +82,7 @@ fn member(own: &'static [u8]) -> Vec<u8> {
             b".rela.text",
             sht::RELA,
             shf::INFO_LINK,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ),
         sec(
             b".group",
@@ -103,7 +103,7 @@ fn member(own: &'static [u8]) -> Vec<u8> {
             b".rela.text._Z1fv",
             sht::RELA,
             shf::INFO_LINK | shf::GROUP,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ),
         sec(
             b".eh_frame",
@@ -115,7 +115,7 @@ fn member(own: &'static [u8]) -> Vec<u8> {
             b".rela.eh_frame",
             sht::RELA,
             shf::INFO_LINK,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ),
         sec(
             b".debug_info",
@@ -127,7 +127,7 @@ fn member(own: &'static [u8]) -> Vec<u8> {
             b".rela.debug_info",
             sht::RELA,
             shf::INFO_LINK,
-            Data::Relocations(Vec::new()),
+            Data::Relocations(Vec::new().into()),
         ),
         sec(
             b".note.GNU-stack",
@@ -201,7 +201,7 @@ fn member(own: &'static [u8]) -> Vec<u8> {
         ),
     ];
     for (s, r) in rels {
-        o.sections[s].data = Data::Relocations(r);
+        o.sections[s].data = Data::Relocations(r.into());
     }
     o.write().unwrap()
 }

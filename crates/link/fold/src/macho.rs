@@ -1476,7 +1476,13 @@ fn rewrite_giver(
             )
         })
         .collect();
-    let in_gone = |a: u64| ranges.iter().any(|(_, _, r)| r.contains(&a));
+    // (In the section the relocation names: an address at a section's end,
+    // as a range list's end has, isn't the next section's first atom.)
+    let in_gone = |section: usize, a: u64| {
+        ranges
+            .iter()
+            .any(|(si, _, r)| *si == section && r.contains(&a))
+    };
     let gone_syms: BTreeSet<u32> = gone
         .iter()
         .flat_map(|&k| p.units[k].symbols.iter().copied())
@@ -1494,7 +1500,8 @@ fn rewrite_giver(
             let hit = if r.external {
                 gone_syms.contains(&r.symbolnum) && !o.symbols[r.symbolnum as usize].is_external()
             } else if reloc::names_section(cputype, r) {
-                reloc::local_address(cputype, endian, s, ri).is_some_and(in_gone)
+                reloc::local_address(cputype, endian, s, ri)
+                    .is_some_and(|a| in_gone(r.symbolnum as usize - 1, a))
             } else {
                 false
             };

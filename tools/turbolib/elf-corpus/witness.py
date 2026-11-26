@@ -101,6 +101,10 @@ def main():
                     continue
                 exe = os.path.join(relink, f"{program}-{linker}-witness")
                 argv = for_linker(base, linker, exe, None, False)
+                # (One of the program's own objects moves to the front.)
+                rel = os.path.relpath(obj, build)
+                argv = [a for a in argv if os.path.normpath(os.path.join(build, a)) != os.path.normpath(obj)
+                        and a != rel]
                 first = next(i for i, a in enumerate(argv) if a.endswith(".o"))
                 argv.insert(first, obj)
                 p = subprocess.run(argv, cwd=build, capture_output=True, text=True)

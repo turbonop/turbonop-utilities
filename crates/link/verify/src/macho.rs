@@ -123,9 +123,9 @@ struct Member<'a> {
     header_offset: u64,
     obj: Option<Object<'a>>,
     atoms: Vec<Atom>,
-    /// Debug sections: name, bytes, and the places of relocations into
-    /// each atom (by key).
-    debug: Vec<(Vec<u8>, Vec<u8>, Vec<(u32, u8, Vec<u8>)>)>,
+    /// Debug sections: name, bytes with relocations' places zeroed, and
+    /// the relocations (place, canonical form, the key of the atom reached).
+    debug: Vec<(Vec<u8>, Vec<u8>, Vec<(u32, u128, Option<Vec<u8>>)>)>,
     anchor: Option<Vec<u8>>,
     side_effects: bool,
 }
@@ -413,34 +413,37 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
         }
     }
     for s in sections.iter().filter(|s| s.segment_name() == b"__DWARF") {
-        let places = s
-            .relocations
-            .iter()
-            .enumerate()
-            .filter_map(|(ri, r)| {
-                let (addr, hint) = if r.external {
-                    let y = o.symbols.get(r.symbolnum as usize)?;
-                    if y.n_type & N_EXT != 0 {
-                        return None;
-                    }
-                    (y.n_value, usize::from(y.n_sect).checked_sub(1))
-                } else if reloc::names_section(cputype, r) {
-                    (
-                        reloc::local_address(cputype, endian, s, ri)?,
-                        (r.symbolnum as usize).checked_sub(1),
-                    )
-                } else {
-                    return None;
-                };
-                let (si, k, _) = locate(addr, hint)?;
-                Some((r.address, r.length, keys[si][k].clone()))
-            })
-            .collect();
-        m.debug.push((
-            [s.segment_name(), b",", s.name()].concat(),
-            s.bytes().unwrap_or(&[]).to_vec(),
-            places,
-        ));
+        // The bytes with every relocation's place zeroed, and each
+        // relocation canonical, with the key of the atom it reaches (if it
+        // reaches one through a local symbol or a local relocation).
+        let mut bytes = s.bytes().unwrap_or(&[]).to_vec();
+        let mut relocs = Vec::with_capacity(s.relocations.len());
+        for (ri, r) in s.relocations.iter().enumerate() {
+            let n = 1usize << r.length.min(3);
+            if let Some(x) = bytes.get_mut(r.address as usize..r.address as usize + n) {
+                x.fill(0);
+            }
+            let reached = if r.external {
+                o.symbols
+                    .get(r.symbolnum as usize)
+                    .filter(|y| y.n_type & N_EXT == 0 && y.in_section())
+                    .map(|y| (y.n_value, usize::from(y.n_sect).checked_sub(1)))
+            } else if reloc::names_section(cputype, r) {
+                reloc::local_address(cputype, endian, s, ri)
+                    .map(|a| (a, (r.symbolnum as usize).checked_sub(1)))
+            } else {
+                None
+            };
+            let key = reached
+                .and_then(|(a, hint)| locate(a, hint))
+                .map(|(si, k, _)| keys[si][k].clone());
+            let mut h = Canon::new();
+            h.u64(u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16);
+            target(s, ri, &mut h);
+            relocs.push((r.address, h.finish(), key));
+        }
+        relocs.sort();
+        m.debug.push(([s.segment_name(), b",", s.name()].concat(), bytes, relocs));
     }
     m.obj = Some(o);
     m
@@ -572,30 +575,27 @@ fn compare_member(
     }
     // Debug sections.
     let lost_keys: BTreeSet<&[u8]> = lost.iter().map(|(k, _)| k.as_slice()).collect();
-    for (name, bytes, places) in &o.debug {
-        let Some((_, nb, _)) = n.debug.iter().find(|d| &d.0 == name) else {
+    for (name, bytes, relocs) in &o.debug {
+        let Some((_, nb, nr)) = n.debug.iter().find(|d| &d.0 == name) else {
             rep.fail("debug sections lost", || {
                 format!("{}: {}", show(&n.name), show(name))
             });
             continue;
         };
-        let mut expect = bytes.clone();
-        let mut zeroed = 0;
-        for (at, len, key) in places {
-            if lost_keys.contains(key.as_slice()) {
-                let k = 1usize << (*len).min(3);
-                if let Some(x) = expect.get_mut(*at as usize..*at as usize + k) {
-                    x.fill(0);
-                    zeroed += 1;
-                }
-            }
+        let expect: Vec<&(u32, u128, Option<Vec<u8>>)> = relocs
+            .iter()
+            .filter(|r| !r.2.as_deref().is_some_and(|k| lost_keys.contains(k)))
+            .collect();
+        let removed = relocs.len() - expect.len();
+        let same_relocs = expect.len() == nr.len()
+            && expect.iter().zip(nr).all(|(a, b)| a.0 == b.0 && a.1 == b.1);
+        if bytes != nb || !same_relocs {
+            rep.fail(
+                "debug sections changed but at relocations into lost units (removed, zeroed)",
+                || format!("{}: {}", show(&n.name), show(name)),
+            );
         }
-        if &expect != nb {
-            rep.fail("debug sections changed but at lost units' places", || {
-                format!("{}: {}", show(&n.name), show(name))
-            });
-        }
-        rep.checked("debug places zeroed", zeroed);
+        rep.checked("debug relocations into lost units removed", removed as u64);
     }
     (lost, anchors)
 }

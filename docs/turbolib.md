@@ -526,10 +526,22 @@ GiB (13.9%), in 59 s. The analyzer projects 2.7 GiB for
 (Here folded units' `.debug$S` was dropped, which counted as saved; see 2.4 for the sizes with it.)
 
 `llvm-nm` and `llvm-readobj` link against the folded libraries
-(`relink.py`), and on 22 inputs (`LLVMDemangle`'s objects and library,
-and `testdata/coff`'s objects) print what the originals print, with `nm`
-and with `readobj --all`. The images aren't byte-identical (COMDATs
-move), so link equivalence waits for 2.6's comparison.
+(`relink.py`), and on 27 inputs (`LLVMDemangle`'s objects and library,
+`LLVMBinaryFormat`, `testdata/coff`'s objects and libraries, and
+`llvm-nm.exe`) print what the originals print, with `nm` and with
+`readobj --all`, in all six configurations (link.exe and lld-link,
+`/OPT:REF` and `NOREF`, and lld-link's `/DEBUG:GHASH`): 324 runs, none
+different.
+
+**Link equivalence** (2.6's `compare-images`, with [the alias
+technique](#the-alias-technique)): in every configuration, both programs'
+`.text` and `.pdata` are the originals' to the byte in size, and `.rdata`
+within 0.003%; lld-link loads the same members, and link.exe the same
+members in another order (two C++ initializers move). What still differs:
+which copy of identical code a link keeps (so names, line blocks, and
+procedures' symbols of a few dozen implicit functions: each translation
+unit's copy has its own lines), and in link.exe's PDBs about 0.3% fewer
+type and id records (lld-link's keep them all; not explained yet).
 
 ### Side tables (2.3)
 

@@ -102,8 +102,10 @@ fn check_pch(data: &[u8], name: &[u8]) -> (Vec<u8>, u32, usize) {
     let r = &c13::symbol_records(x.data).unwrap()[0];
     assert_eq!(r.kind, sym::S_OBJNAME);
     assert_eq!(le32(r.data, 0), signature);
-    let mut want = b"turbolib:".to_vec();
-    want.extend_from_slice(name);
+    // Exactly the name the users' LF_PRECOMP gives (link.exe pairs them by
+    // it), ended by its NUL.
+    let mut want = name.to_vec();
+    want.push(0);
     assert_eq!(&r.data[4..4 + want.len()], &want[..]);
     let symbol = o
         .symbols

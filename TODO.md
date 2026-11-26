@@ -317,9 +317,10 @@ x64. Where the 3.5 MB went:
   smaller the same way: names and templates in one string, features,
   aliases, operands, fields, and conditions by 16-bit index, and the
   buckets flat with 16-bit starts. What's left, the same way:
-  - **arm64's other 1.56 MB**: its 1,346 symbols of 168 bytes (221 KB),
-    the templates' tokens (24 bytes each, a `&str` or a slice), and its
-    semantics and operand specs.
+  - **arm64's other ~1 MB** (its symbols are 24 bytes now, not 168, and
+    its templates' tokens 4, not 24: 597 KB): `SYSREGS` (44 KB), the
+    32 KB `BUCKETS` (`&[u16]`s), `TOK_LISTS`' slices (16 bytes each),
+    and its semantics and operand specs.
   - **arm32's rules** (`RULES`: `&str`s and slices of pairs of them, and
     their texts' and alternatives' `%{rule}` references, as templates'
     were before they became a character each) and its operand and field

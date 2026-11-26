@@ -67,6 +67,12 @@ pub fn rule(id: &str) -> Option<&'static Rule> {
     None
 }
 
+/// The rule at `index` (by ID), which a template's reference names.
+#[inline]
+pub(crate) fn rule_at(index: usize) -> Option<&'static Rule> {
+    tables::RULES.get(index)
+}
+
 /// The hash rule IDs are indexed by (FNV-1a; build.rs's `rule_hash`).
 fn rule_hash(id: &str) -> u32 {
     id.bytes().fold(0x811c_9dc5u32, |h, b| {
@@ -89,10 +95,28 @@ impl Encoding {
         text(self.name_at, usize::from(self.name_len))
     }
 
-    /// Its assembler template (Arm's syntax, operands as `%{rule}`).
+    /// Its assembler template (Arm's syntax), each operand a reference to
+    /// its rule: one character, U+0100 + the rule's index ([`template`]
+    /// writes them as `%{rule}`).
     #[inline]
     pub fn asm(&self) -> &'static str {
         text(self.asm_at, usize::from(self.asm_len))
+    }
+
+    /// Its assembler template as Arm writes it, operands as `%{rule}`.
+    pub fn template(&self) -> alloc::string::String {
+        let mut out = alloc::string::String::new();
+        for c in self.asm().chars() {
+            match u32::from(c).checked_sub(0x100) {
+                Some(i) => {
+                    out.push_str("%{");
+                    out.push_str(rule_at(i as usize).map_or("", |r| r.id));
+                    out.push('}');
+                }
+                None => out.push(c),
+            }
+        }
+        out
     }
 
     /// The architecture features it needs (`FEAT_FP16`), if any.

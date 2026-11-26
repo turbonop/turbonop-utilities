@@ -297,6 +297,36 @@ fn main() {
     // What the encodings refer to by index, each once (see src/lib.rs's
     // `Encoding`): their names and templates in one string, and their
     // features, aliases, operands, and fields in tables of their own.
+    // The rules, by ID; a template's references to them (`%{Rd__4}`) are
+    // a character each, U+0100 + the rule's index (see src/format.rs).
+    rules.sort_by(|a, b| a.id.cmp(&b.id));
+    rules.dedup_by(|a, b| a.id == b.id);
+    let rule_index: std::collections::HashMap<&str, usize> = rules
+        .iter()
+        .enumerate()
+        .map(|(i, r)| (r.id.as_str(), i))
+        .collect();
+    assert!(rules.len() < 0x700, "rule references are U+0100..=U+07FF");
+    let encode = |template: &str| -> String {
+        assert!(template.is_ascii(), "{template}");
+        let mut out = String::with_capacity(template.len());
+        let mut rest = template;
+        while let Some(at) = rest.find("%{") {
+            out.push_str(&rest[..at]);
+            let end = rest[at..].find('}').map_or(rest.len(), |e| at + e);
+            let id = &rest[at + 2..end];
+            // (An ID no rule has: an index past them, which formats as
+            // nothing, as the ID did.)
+            let i = rule_index.get(id).copied().unwrap_or(rules.len());
+            out.push(char::from_u32(0x100 + i as u32).unwrap());
+            rest = &rest[(end + 1).min(rest.len())..];
+        }
+        out.push_str(rest);
+        out
+    };
+    // Templates once each.
+    let mut templates: std::collections::HashMap<String, (usize, usize)> =
+        std::collections::HashMap::new();
     let mut text = String::new();
     let mut features: Vec<String> = Vec::new();
     let mut alias_lists: Vec<String> = Vec::new();
@@ -367,11 +397,13 @@ fn main() {
                 .collect();
             let name_at = text.len();
             text.push_str(&e.name);
-            let asm_at = text.len();
-            text.push_str(&e.asm);
-            assert!(
-                e.name.len() <= 255 && e.asm.len() <= 0xFFFF && text.len() <= u32::MAX as usize
-            );
+            let asm = encode(&e.asm);
+            let (asm_at, asm_len) = *templates.entry(asm).or_insert_with_key(|asm| {
+                let at = text.len();
+                text.push_str(asm);
+                (at, asm.len())
+            });
+            assert!(e.name.len() <= 255 && asm_len <= 0xFFFF && text.len() <= u32::MAX as usize);
             let feature = intern(&mut features, format!("{:?}", e.feat));
             let aliases = intern(&mut alias_lists, format!("&[{}]", aliases.join(", ")));
             let operands = intern(&mut operand_lists, format!("&[{}]", operands.join(", ")));
@@ -380,7 +412,7 @@ fn main() {
                 out,
                 "    Encoding {{ name_at: {name_at}, name_len: {}, mask: {m:#x}, value: {v:#x}, sb_mask: {sm:#x}, sb_value: {sv:#x}, cond: {cond}, feature: {feature}, asm_at: {asm_at}, asm_len: {}, aliases: {aliases}, operands: {operands}, fields: {fields} }},",
                 e.name.len(),
-                e.asm.len(),
+                asm_len,
             )
             .unwrap();
         }
@@ -460,9 +492,6 @@ fn main() {
     for (n, code) in conds.iter().enumerate() {
         writeln!(out, "#[allow(unused_parens, clippy::nonminimal_bool, clippy::precedence)]\nfn cond_{n}(w: u32) -> bool {{ {code} }}").unwrap();
     }
-    // The rules, by ID.
-    rules.sort_by(|a, b| a.id.cmp(&b.id));
-    rules.dedup_by(|a, b| a.id == b.id);
     // An index of the rules by a hash of their IDs (open addressing,
     // twice as many slots as rules): `rule` finds one in a step or two
     // rather than a binary search of string comparisons.

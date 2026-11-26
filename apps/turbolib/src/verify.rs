@@ -126,6 +126,9 @@ pub fn verify(args: &[String]) -> ExitCode {
         if turbonop_verify::elf::library::is_elf_archive(&a) {
             return turbonop_verify::elf::library::verify(&a, &b, &c.options);
         }
+        if turbonop_verify::macho::is_macho_archive(&a) {
+            return turbonop_verify::macho::verify(&a, &b, &c.options);
+        }
         library::verify(&a, &b, &c.options)
     };
     finish(run(), c.stats, start)

@@ -863,6 +863,9 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
     if plan.thin {
         return Err(run.fatal("a thin archive's members are files of their own: not folded"));
     }
+    if plan.members.iter().any(|m| turbonop_macho::is_macho(m.data())) {
+        return fold_macho(run, archive, plan);
+    }
     let options = turbonop_fold::elf::Options {
         pull: match s.pull {
             Pull::Preserve => turbonop_fold::elf::Pull::Preserve,
@@ -920,6 +923,86 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
         }
         for (why, n) in &report.passed {
             text.push_str(&format!("turbolib:   {n} members passed through: {why}\n"));
+        }
+        run.stderr.push_str(&text);
+    }
+    let synthesized = if plan.deterministic {
+        Fields::new(b"0", b"0", b"0", b"644").unwrap_or(Fields::BLANK)
+    } else {
+        let now = run.env.now.to_string();
+        Fields::new(now.as_bytes(), b"0", b"0", b"644").unwrap_or(Fields::BLANK)
+    };
+    Ok(outputs
+        .into_iter()
+        .map(|o| match (o.input, o.data) {
+            (Some(i), None) => plan.members[i].clone(),
+            (input, Some(data)) => {
+                let from = input.map(|i| &plan.members[i]);
+                Item {
+                    name: from.map_or_else(
+                        || String::from_utf8_lossy(&o.name).into_owned(),
+                        |f| f.name.clone(),
+                    ),
+                    origin: None,
+                    fields: from.map_or(synthesized, |f| f.fields),
+                    size: data.len() as u64,
+                    bytes: Some(Bytes::whole(Arc::new(Mmap::from(data)))),
+                    old: from.is_some_and(|f| f.old),
+                }
+            }
+            (None, None) => unreachable!("a synthesized member has its bytes"),
+        })
+        .collect())
+}
+
+/// [`fold_members`] for Mach-O members.
+fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>, Fatal> {
+    let salt = Path::new(archive)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let options = turbonop_fold::macho::Options {
+        pull: match run.settings.pull {
+            Pull::Preserve => turbonop_fold::macho::Pull::Preserve,
+            Pull::Relaxed => turbonop_fold::macho::Pull::Relaxed,
+        },
+        salt: salt.as_bytes(),
+    };
+    let inputs: Vec<turbonop_fold::macho::Input<'_>> = plan
+        .members
+        .iter()
+        .map(|m| turbonop_fold::macho::Input {
+            name: m.name.as_bytes(),
+            data: m.data(),
+        })
+        .collect();
+    let (outputs, report) = turbonop_fold::macho::fold(&inputs, &options);
+    if run.settings.stats {
+        let mut text = format!(
+            "turbolib: {archive}: {} members, {} weak-definition units; {} with copies in more than one member,              {} folded ({} copies) into {} synthesized members; {} bytes of units removed, {} written;              {} debug relocations removed; {} folded units' debug information dropped (not moved for Mach-O yet)
+",
+            report.members,
+            report.units,
+            report.duplicated,
+            report.folded,
+            report.copies,
+            report.synthesized,
+            report.removed_bytes,
+            report.synthesized_bytes,
+            report.tombstoned,
+            report.debug_dropped,
+        );
+        for (why, n) in &report.kept {
+            text.push_str(&format!("turbolib:   {n} copies stayed: {why}
+"));
+        }
+        for (why, n) in &report.passed {
+            text.push_str(&format!("turbolib:   {n} members passed through: {why}
+"));
+        }
+        for (why, n) in &report.kept_whole {
+            text.push_str(&format!("turbolib:   {n} members kept whole: {why}
+"));
         }
         run.stderr.push_str(&text);
     }

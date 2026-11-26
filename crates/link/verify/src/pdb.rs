@@ -668,6 +668,14 @@ fn module(
         layout: Vec::new(),
         udts: Vec::new(),
     };
+    // A synthesized member: its S_OBJNAME says so (`turbolib:...`), or,
+    // until its debug information is written (2.4), its name is the
+    // engine's (`turbolib<n>.obj`).
+    out.synthesized = m
+        .name
+        .strip_prefix(b"turbolib")
+        .and_then(|r| r.strip_suffix(b".obj"))
+        .is_some_and(|n| !n.is_empty() && n.iter().all(u8::is_ascii_digit));
     let Ok(Some(stream)) = p.pdb.module_stream(m) else {
         return out;
     };

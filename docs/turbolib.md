@@ -741,11 +741,14 @@ Within a personality, the format of the output follows the inputs (or
   category (code, unwind, `.debug$S`, `.debug$T`, other), the hazards each
   mode would accept, and the projected PDB cost of each `--precomp`
   choice. It writes nothing.
-- `turbolib verify original.lib compacted.lib`: static equivalence. Every
-  symbol the original defines is still defined, and each member's
-  undefined symbols are the original's plus the folded ones. Every folded
-  unit is present in exactly one synthesized member, and every side-table
-  entry is accounted for.
+- `turbolib verify [--pull=preserve|relaxed] original.lib compacted.lib`:
+  static equivalence. Every symbol the original defines is still defined,
+  and each member's undefined symbols are the original's plus the folded
+  ones. Every folded unit is present in exactly one synthesized member, and
+  every side-table entry is accounted for. See
+  [the tools](#the-tools-verify-and-compare-images-26).
+- `turbolib compare-images a.exe a.pdb b.exe b.pdb`: link equivalence of
+  two programs, by content (see the same section).
 - Later, `turbolib ar ...` and `turbolib libtool ...`.
 
 `/EXTRACT` on a compacted library gives an object without its folded
@@ -786,6 +789,163 @@ units. This is documented, and `/EXTRACT` can also re-inline them
   suites.
 - **Debuggers:** spot checks with the VS debugger and WinDbg on the
   corpus. Our own PDB reader does the systematic checking.
+
+### The tools: `verify` and `compare-images` (2.6)
+
+Both are in `turbonop-verify` (`crates/link/verify`), run on every core,
+and print what fails by category, with counts and examples; they exit 1
+on any failure. "Expected" differences (a folded function's module, a
+PDB's GUID) and what wasn't checked are listed too, apart.
+
+**`turbolib verify`** reads the two libraries alone. Each COMDAT unit (a
+leader with its associative sections) is reduced to a 128-bit hash of a
+canonical form: selection, each non-debug section's name, characteristics,
+and bytes (`/guard` tables' symbol indices as the symbols they name), each
+relocation with its target by name outside the unit or by position inside
+it, and the symbols it defines; sections in an order of their contents,
+names without turbolib's `__turbolib$` prefix. It checks:
+
+- members: every original one present, by name, in order; every added one
+  synthesized (it defines an anchor: a `__turbolib$` name that is no
+  original symbol), wherever it is placed; import objects, `/GL` objects,
+  and anything unreadable byte-identical;
+- definitions: every name the original defines still defined, with each of
+  its kinds (code, data, uninitialized, absolute, common; COMDAT
+  selection); no new names but anchors and renamed copies;
+- each original member against itself: its directives, environment, and
+  sections outside COMDATs unchanged (but debug sections, side tables, and
+  `.chks64`); every unit it keeps unchanged; every unit it lost foldable
+  (not `NODUPLICATES`) and held, in the member's environment, by a
+  synthesized member it anchors; each lost definition now undefined (and
+  defined elsewhere) or a `NOLIBRARY` weak external whose default is the
+  renamed copy; its undefined symbols the original's plus the moved ones,
+  anchors, and renamed copies' names; its side-table entries (`/guard`
+  tables, `.sxdata`, `.voltbl`) still its own or those of a synthesized
+  member it anchors;
+- synthesized members: each unit matches a copy some original member held
+  in the same environment; no unit is in two synthesized members; every
+  name they refer to is one the original defines or refers to;
+- both archive indexes: every definition indexed, each name sent to its
+  first definer in archive order, the two linker members the same set.
+  This model of `lib.exe`'s index matched every one of the LLVM corpus's
+  250 libraries (each verified against itself: 37.8 s for 13.7 GiB, read
+  twice).
+- `--pull=preserve` (the default): every symbol of the original's index
+  still sends to the same member, or to a synthesized member when the
+  original definer has no side effects (non-COMDAT `.CRT$X*`, `/INCLUDE`).
+  `--pull=relaxed` lists the symbols sent elsewhere, as expected.
+
+What `verify` can't prove: anything about debug information (that is
+`compare-images`'s); that a definer without side effects of its own loads
+nothing that has some (it doesn't follow references); that hashes equal
+mean bytes equal (a collision of two 128-bit keyed hashes, about 2^-128 a
+pair, would pass); and anything a linker does other than load members by
+the index and choose among COMDAT copies, which the phase 0 spikes
+measured. ARM64EC's `/<ECSYMBOLS>/` is not checked (reported).
+
+**`turbolib compare-images`** compares two programs through their PDBs.
+Every address in either image is named by the nearest label at or below
+it, and the distance from it: publics, then procedures and data of the
+modules (a name used at two addresses qualified by its module), then
+section contributions (each named by its module, characteristics, size,
+CRCs, and an ordinal), then sections. Then:
+
+- **functions and data:** every section contribution (a COFF section of
+  one object) is paired with its counterpart by the label at its start
+  (or its own label; those left over, by their content with addresses as
+  names, reported as expected), and their bytes compared: base-relocated
+  addresses (`HIGHLOW`, `DIR64`) by what they name; in code, PC-relative
+  operands found by decoding (x86-64: relative branches and calls,
+  RIP-relative operands; ARM64: `B`, `BL`, `B.cond`, `CBZ`, `TBZ`, `ADR`,
+  literal loads, `ADRP` with the `ADD` or load or store that completes it)
+  by what their targets name; any other differing 4-byte word read as an
+  RVA in both, and accepted if both name the same thing. Contributions
+  holding the linker's tables (export and debug directories, debug data,
+  delay-import descriptors, `/guard` tables) are compared as tables.
+- **tables:** imports and delay imports, by DLL and name (in order;
+  another order is expected); exports (ordinal, name, what it names); the
+  C runtime's `__xc_a`..`__xc_z`, `__xi_*`, `__xp_*`, `__xt_*` tables and
+  the TLS callbacks, in order; the load configuration, field by field
+  (pointers by what they name); the CFG, IAT, long-jump, EH-continuation,
+  and SafeSEH tables as sets; and the unwind data function by function
+  (`.pdata` matched by what its function's start names, with its extent
+  and its `UNWIND_INFO` or `.xdata`).
+- **headers:** machine, characteristics, subsystem, DLL characteristics,
+  image base, entry point, and the sections' names and characteristics in
+  order; other sizes are expected.
+- **PDBs, by content:** every type and id by structural hash (each index
+  replaced by the hash of what it names); every symbol record with its
+  indices as those hashes, its addresses as names, its string and file
+  offsets as strings, and scope links left out; then publics, globals,
+  procedures by name (each its records from `S_*PROC32` to its end, in
+  order; another module is expected), modules by name (a synthesized one,
+  `S_OBJNAME` `turbolib:...`, only in the second, expected), line blocks
+  by what their start names, inlinees' lines, and contributions. The
+  linker's sections and COFF groups are compared by name (their sizes
+  follow the layout).
+
+What `link.exe` changes between two links of the same inputs, and so what
+isn't compared as it is: S_UDT and S_CONSTANT are compared as one set over
+the globals and every module (it keeps one of each name in the globals,
+which one following the order it reads modules in);
+`LF_UDT_MOD_SRC_LINE` is compared by the UDT's name, file, and line, only
+for the UDTs both PDBs have one for (it writes them for some UDTs in some
+links, gives them to one of the same-named type records, and numbers
+their modules in its own order).
+
+What `compare-images` can prove: that the two images hold the same
+contributions, each with the same bytes once every address field it
+found is replaced by what it names, and the same tables; and that the PDBs
+hold the same records under the same reductions. What it can't:
+
+- A data word holding an RVA that nothing relocates, if equal in both
+  images, isn't checked (it can't be told from an integer); a differing
+  word accepted as two RVAs naming the same thing is so by inference.
+- Outside a procedure's code (as the PDB gives it), equal bytes that
+  decode as PC-relative instructions are accepted (they may be data).
+- Bytes outside every contribution (headers, most of the linker's own
+  tables) aren't compared; their count is reported.
+- x86 (32-bit) code isn't decoded, so x86 images are compared by base
+  relocations and inference only; a relative call between functions that
+  moved would show as a difference. ARM64 decoding is tested on
+  synthesized instructions only: no ARM64 image has been compared.
+- Symbol records whose kinds' fields aren't known are compared as bytes,
+  and C13 subsections other than lines, inlinees' lines, and file
+  checksums aren't compared; both are counted.
+- Nothing is run. Equivalence of the bytes and tables is not a proof that
+  the programs behave alike under anything that reads addresses as
+  numbers (hashing pointers, say).
+
+**Results** (on this laptop, the LLVM corpus `build-z7`):
+
+| Check | Result |
+|---|---|
+| `verify` of each of the 250 libraries against itself | all pass, 37.8 s |
+| `compare-images` of two `link.exe` links of llvm-nm from the same libraries, before handling link.exe's differences | 44,239 differences: `LF_UDT_MOD_SRC_LINE` (22,103 and 22,114), S_UDT and S_CONSTANT picks (8), modules' S_UDTs (14) |
+| the same, after | equivalent; 77,798 contributions (33.6 MB), 850,894 PC-relative operands and 64,107 base relocations matched, 666,550 types, 196,328 ids, 147,113 procedures, 139,515 line blocks; 2.5 to 13 s |
+| relink.py's matrix with the same libraries: link.exe and lld-link, `/OPT:REF` and `NOREF`, `/DEBUG:FULL` and (lld) `GHASH` | all 6 equivalent |
+| llvm-nm against an LLVMSupport.lib with one byte of one function changed (breaklib.py), link.exe and lld-link | caught: that function's bytes differ (1 failure; lld's contribution CRCs too) |
+| the fixtures (`testdata/turbolib`): two link.exe links; `/ORDER` (other addresses) with each linker; lld's GHASH | equivalent, but for the linker's command line |
+| `verify` of the engine's folds (`/TURBOLIB:fold=identical`, at e8121b2) of llvm-nm's 32 libraries, against the build's | all pass (`--pull=preserve`): LLVMSupport, for one, 912 synthesized members, 31,273 COMDATs moved, 4,177 held |
+| `compare-images` of llvm-nm linked against those folded libraries | not equivalent, in every configuration: see below |
+
+What compare-images reports for the folded libraries (link.exe,
+`/OPT:REF`; NOREF has fewer of the second kind), as of e8121b2:
+
+- Folded functions have no debug information yet (2.4): about 19,000
+  procedures, 20,000 line blocks, 18,000 ids, and 12,000 types are only in
+  the original's PDB, with the publics and globals that go with them.
+- Under `/OPT:REF`, the folded link keeps about 15,000 functions the
+  original's discards (with their unwind entries), and code refers to
+  them; under NOREF these differences mostly go. With lld-link the folded
+  link also loads 43 more original members (more initializers and
+  imports). Both look like real changes in what a link keeps and loads;
+  not yet explained.
+- Some of the rest are likely compare-images's own: contributions whose
+  CRC link.exe wrote in one link and not the other get other labels
+  (labels name unlabeled contributions by their CRCs; without them,
+  contributions alike in size pair wrongly), and show as functions and
+  operands that name other things.
 - **Fuzzing:** a turbolib target in `apps/fuzz`. A hostile library must
   yield an error, never a panic and never an output that `verify` rejects.
 - **Known differences to document:** a folded function's PDB module is

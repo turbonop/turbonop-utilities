@@ -309,10 +309,19 @@ x64. Where the 3.5 MB went:
     S_FASTLINK, S_GPROC32EX and the rest `symbol_refs` lists as unknown)
     if a compiler is found writing them.
   - `turbolib` as `lib` with `--fold=none`.
-- **A structural PDB comparison.** `link.exe`'s PDBs differ between two
-  links of the same inputs, so `relink.py` compares images only. Compare
-  PDBs by content (publics, procedures, lines, inlinees, locals, types by
-  structure), for phase 1's check and phases 2 to 4.
+- **Link equivalence (phase 2.6).** `turbolib verify` and
+  `turbolib compare-images` are done (`turbonop-verify`; see the plan's
+  "The tools"), and `relink.py` runs compare-images over link.exe and
+  lld-link, /OPT:REF and NOREF, /DEBUG:FULL and GHASH. Still open:
+  - compare-images on x86 (32-bit) images: decode x86 code, so relative
+    calls between moved functions don't show as differences; and on an
+    ARM64 image (only synthesized instructions are tested);
+  - the members each link loads, from `/VERBOSE` (the PDB's module list is
+    compared now, which shows the same for loaded members);
+  - the test programs' own test suites, linked against folded libraries;
+  - `/<ECSYMBOLS>/` in verify; C13 subsections other than lines and
+    inlinees (frame data, cross-scope imports and exports) in
+    compare-images.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

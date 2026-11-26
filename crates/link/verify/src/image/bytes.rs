@@ -39,6 +39,37 @@ pub(crate) trait Names {
     fn image_base(&self) -> u64;
     /// The base relocations in `[rva, rva + len)`: (RVA, size).
     fn relocations_in(&self, rva: u32, len: u32) -> &[(u32, u8)];
+    /// Every symbol's name at the address `rva`'s label starts at: more
+    /// than one where the linker folded identical functions (`/OPT:ICF`)
+    /// or a symbol has aliases.
+    fn aliases(&self, rva: u32) -> &[Box<[u8]>] {
+        let _ = rva;
+        &[]
+    }
+}
+
+/// Whether two addresses (RVAs, if in the images) name the same thing: the
+/// same label and offset, or the same offset from addresses that share a
+/// name (identical functions folded together hold several, and which one
+/// labels the address follows which functions a link keeps).
+pub(crate) fn same<A: Names + ?Sized, B: Names + ?Sized>(
+    a: &A,
+    ra: Option<u32>,
+    b: &B,
+    rb: Option<u32>,
+) -> bool {
+    let na = ra.and_then(|r| a.name(r));
+    let nb = rb.and_then(|r| b.name(r));
+    if na == nb {
+        return true;
+    }
+    match (na, nb, ra, rb) {
+        (Some((_, oa)), Some((_, ob)), Some(ra), Some(rb)) if oa == ob => {
+            let (xa, xb) = (a.aliases(ra), b.aliases(rb));
+            xa.iter().any(|x| xb.contains(x))
+        }
+        _ => false,
+    }
 }
 
 /// One side of a comparison: an image, a region's address, and its bytes.
@@ -120,13 +151,15 @@ pub(crate) fn compare<A: Names + ?Sized, B: Names + ?Sized>(
             }
             let va = word(a.bytes, at, size);
             let vb = word(b.bytes, at, size);
-            let na = va
+            let ra = va
                 .checked_sub(a.image.image_base())
-                .and_then(|r| a.image.name(u32::try_from(r).ok()?));
-            let nb = vb
+                .and_then(|r| u32::try_from(r).ok());
+            let rb = vb
                 .checked_sub(b.image.image_base())
-                .and_then(|r| b.image.name(u32::try_from(r).ok()?));
-            if na != nb {
+                .and_then(|r| u32::try_from(r).ok());
+            let na = ra.and_then(|r| a.image.name(r));
+            let nb = rb.and_then(|r| b.image.name(r));
+            if !same(a.image, ra, b.image, rb) {
                 fail(
                     rep,
                     "absolute addresses naming other functions or data",
@@ -170,7 +203,7 @@ pub(crate) fn compare<A: Names + ?Sized, B: Names + ?Sized>(
             let wa = word(a.bytes, start, 4) as u32;
             let wb = word(b.bytes, start, 4) as u32;
             let (na, nb) = (a.image.name(wa), b.image.name(wb));
-            if na.is_some() && na == nb {
+            if na.is_some() && nb.is_some() && same(a.image, Some(wa), b.image, Some(wb)) {
                 fields.inferred += 1;
                 masked[start..start + 4].fill(true);
                 at = start + 4;
@@ -268,7 +301,14 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
             );
             if ea == eb && !checked {
                 // Equal bytes outside a procedure: perhaps data.
-            } else if na != nb {
+            } else if !same(
+                a.image,
+                ta.checked_sub(a.image.image_base())
+                    .and_then(|r| u32::try_from(r).ok()),
+                b.image,
+                tb.checked_sub(b.image.image_base())
+                    .and_then(|r| u32::try_from(r).ok()),
+            ) {
                 if ea != eb || checked {
                     fail(
                         "code whose operands name other functions or data",
@@ -338,11 +378,17 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             .and_then(|r| b.image.name(r))
             .map(|(n, o)| (n.to_vec(), o))
     };
-    let mut check = |at: usize, ta: u64, tb: u64, mask: u32, same: bool, checked: bool| {
+    let mut check = |at: usize, ta: u64, tb: u64, mask: u32, equal: bool, checked: bool| {
         let (na, nb) = (name_a(ta), name_b(tb));
-        if na == nb {
+        let rva = |t: u64, base: u64| t.checked_sub(base).and_then(|r| u32::try_from(r).ok());
+        if same(
+            a.image,
+            rva(ta, a.image.image_base()),
+            b.image,
+            rva(tb, b.image.image_base()),
+        ) {
             fields.relative += 1;
-        } else if !same || checked {
+        } else if !equal || checked {
             fail(
                 "code whose operands name other functions or data",
                 format!(

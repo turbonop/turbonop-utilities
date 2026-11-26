@@ -88,6 +88,9 @@ pub(crate) struct Linked<'a> {
     pub pdb_sections: Vec<(u32, u32, [u8; 8])>,
     /// Labels, sorted by address, the best first at each.
     pub labels: Vec<Label>,
+    /// Every symbol name (public, procedure, datum) at each address that
+    /// has more than one, sorted.
+    pub aliases: Map<u32, Vec<Box<[u8]>>>,
     pub contributions: Vec<Contribution>,
     /// Each module's name, and its object (or library) name.
     pub modules: Vec<(Vec<u8>, Vec<u8>)>,
@@ -153,6 +156,7 @@ impl<'a> Linked<'a> {
             sections,
             pdb_sections,
             labels: Vec::new(),
+            aliases: Map::default(),
             contributions: Vec::new(),
             modules,
             code: Vec::new(),
@@ -306,6 +310,10 @@ impl<'a> Linked<'a> {
     fn read_labels(&mut self) -> Result<(), String> {
         let mut labels: Vec<Label> = Vec::new();
         let push = |labels: &mut Vec<Label>, rva: u32, priority: u8, name: &[u8]| {
+            // (Some data symbols have no name.)
+            if name.is_empty() {
+                return;
+            }
             labels.push(Label {
                 rva,
                 priority,
@@ -390,6 +398,9 @@ impl<'a> Linked<'a> {
         let mut code = Vec::new();
         for (m, list) in found.iter().enumerate() {
             for (rva, p, name, _, len) in list {
+                if name.is_empty() {
+                    continue;
+                }
                 if let Some(len) = len {
                     code.push(Code {
                         rva: *rva,
@@ -459,6 +470,20 @@ impl<'a> Linked<'a> {
             push(&mut labels, s.rva, priority::SECTION, &s.name);
         }
         labels.sort_unstable();
+        let mut aliases: Map<u32, Vec<Box<[u8]>>> = Map::default();
+        for w in labels.chunk_by(|x, y| x.rva == y.rva) {
+            let mut names: Vec<Box<[u8]>> = w
+                .iter()
+                .filter(|l| l.priority < priority::CONTRIBUTION)
+                .map(|l| l.name.clone())
+                .collect();
+            names.sort_unstable();
+            names.dedup();
+            if names.len() > 1 {
+                aliases.insert(w[0].rva, names);
+            }
+        }
+        self.aliases = aliases;
         labels.dedup_by(|b, a| a.rva == b.rva);
         self.labels = labels;
         self.contributions = contributions;
@@ -482,5 +507,12 @@ impl super::bytes::Names for Linked<'_> {
 
     fn relocations_in(&self, rva: u32, len: u32) -> &[(u32, u8)] {
         Linked::relocations_in(self, rva, len)
+    }
+
+    fn aliases(&self, rva: u32) -> &[Box<[u8]>] {
+        let i = self.labels.partition_point(|l| l.rva <= rva);
+        i.checked_sub(1)
+            .and_then(|i| self.aliases.get(&self.labels[i].rva))
+            .map_or(&[], Vec::as_slice)
     }
 }

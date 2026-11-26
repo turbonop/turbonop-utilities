@@ -426,16 +426,16 @@ enum Val {
 /// where it shows nothing, or can't).
 fn sym_value(inst: &Instruction, sym: &Symbol) -> Option<Val> {
     let w = inst.word;
-    if let Some((p, v)) = sym.when
+    if let Some((p, v)) = sym.when()
         && value(p, w) != v
     {
         return None;
     }
-    if let Some(t) = sym.table {
+    if let Some(t) = sym.table() {
         let key = value(t.key, w);
         let Some(&(_, _, result, expr, mul, add, _)) = t.rows.iter().find(|r| key & r.0 == r.1)
         else {
-            if matches!(sym.display, "<cond>" | "<invcond>") {
+            if matches!(sym.display(), "<cond>" | "<invcond>") {
                 return Some(Val::Text("AL"));
             }
             return sym.has(attr::ORIMM).then(|| Val::Num(raw(sym, w) as i64));
@@ -450,7 +450,7 @@ fn sym_value(inst: &Instruction, sym: &Symbol) -> Option<Val> {
                 Some(Val::Num(raw(sym, w) as i64))
             }
             // (A condition's "CS|HS": either name.)
-            _ if matches!(sym.display, "<cond>" | "<invcond>") => Some(Val::Text(result)),
+            _ if matches!(sym.display(), "<cond>" | "<invcond>") => Some(Val::Text(result)),
             // An extended register's UXTW or UXTX is LSL where Rd or Rn is
             // SP (as format.rs's render_symbol says).
             _ if result.contains('|') => {
@@ -818,7 +818,7 @@ impl Instruction {
                 let (s, l) = find(role::VALUE)?;
                 if s != NONE {
                     let sym = symbol(usize::from(s));
-                    if matches!(sym.display, "<cond>" | "<invcond>") {
+                    if matches!(sym.display(), "<cond>" | "<invcond>") {
                         return Some(OperandKind::Cond(Cond::parse(part_text(self, s, l)?)?));
                     }
                     if matches!(sym.kind, Kind::Label) {
@@ -961,7 +961,7 @@ impl Instruction {
             }
             _ => {
                 let (s, l) = find(role::VALUE)?;
-                if s != NONE && symbol(usize::from(s)).display == "<mask>" {
+                if s != NONE && symbol(usize::from(s)).display() == "<mask>" {
                     return Some(OperandKind::ZaTiles(part_num(self, s, l)? as u8));
                 }
                 match part_value(self, s, l)? {

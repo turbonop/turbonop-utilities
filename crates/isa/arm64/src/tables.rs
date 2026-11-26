@@ -263,15 +263,29 @@ pub(crate) mod ms {
 }
 
 /// A piece of a compiled template.
-#[derive(Debug)]
+/// (Four bytes: its text and its group's tokens by index.)
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum Tok {
-    /// Text, as shown.
-    Lit(&'static str),
+    /// Text, as shown: an index into `LITS` (see [`lit`]).
+    Lit(u16),
     /// A symbol, by index.
     Sym(u16),
-    /// `{...}`: left out when every symbol in it is a default (and it has
-    /// symbols, or is `, #0`: `optional`).
-    Group(&'static [Tok], bool),
+    /// `{...}`, its tokens an index into `TOK_LISTS` (see [`toks`]): left
+    /// out when every symbol in it is a default (and it has symbols, or is
+    /// `, #0`: `optional`).
+    Group(u16, bool),
+}
+
+/// The literal text `i`.
+#[inline]
+pub(crate) fn lit(i: u16) -> &'static str {
+    LITS.get(usize::from(i)).copied().unwrap_or("")
+}
+
+/// The token list `i`.
+#[inline]
+pub(crate) fn toks(i: u16) -> &'static [Tok] {
+    TOK_LISTS.get(usize::from(i)).copied().unwrap_or(&[])
 }
 
 /// A table row: the mask and value it matches over the table's key, the
@@ -327,19 +341,17 @@ impl Value {
     }
 }
 
+/// (Compact: its display, bits, table, value, condition, and attributes
+/// are indexes into tables of them (`DISPLAYS`, `PIECE_LISTS`, `TABLES`,
+/// `VALUES`, `ATTRS`; `NONE` for none), read by its methods.)
 pub(crate) struct Symbol {
-    /// `<Wd|WSP>`, `<T>`, `<imm>`, ...
-    pub display: &'static str,
-    /// The bits the symbol is encoded in.
-    pub encoded: &'static [Piece],
-    pub table: Option<&'static Table>,
-    pub value: Option<Value>,
-    /// The symbol applies only when these bits have this value.
-    pub when: Option<(&'static [Piece], u64)>,
-    /// What the operand is, beyond its display name and value: `fp8`,
-    /// `bitmask`, `page`, `implicit=1`, ... (space-separated; see
-    /// tools/arm64/extract.py, which takes them from LLVM's operand types).
-    pub attrs: &'static str,
+    display: u16,
+    encoded: u16,
+    table: u16,
+    value: u16,
+    when: u16,
+    attrs: u16,
+    when_value: u32,
     /// The attributes in [`attr`], as flags.
     pub flags: u32,
     /// How it shows, where it has no table and is not special.
@@ -381,6 +393,49 @@ pub(crate) enum Kind {
 }
 
 impl Symbol {
+    /// `<Wd|WSP>`, `<T>`, `<imm>`, ...
+    #[inline]
+    pub fn display(&self) -> &'static str {
+        DISPLAYS
+            .get(usize::from(self.display))
+            .copied()
+            .unwrap_or("")
+    }
+
+    /// The bits the symbol is encoded in.
+    #[inline]
+    pub fn encoded(&self) -> &'static [Piece] {
+        PIECE_LISTS
+            .get(usize::from(self.encoded))
+            .copied()
+            .unwrap_or(&[])
+    }
+
+    #[inline]
+    pub fn table(&self) -> Option<&'static Table> {
+        TABLES.get(usize::from(self.table))
+    }
+
+    #[inline]
+    pub fn value(&self) -> Option<&'static Value> {
+        VALUES.get(usize::from(self.value))
+    }
+
+    /// The symbol applies only when these bits have this value.
+    #[inline]
+    pub fn when(&self) -> Option<(&'static [Piece], u64)> {
+        let p = PIECE_LISTS.get(usize::from(self.when))?;
+        Some((p, u64::from(self.when_value)))
+    }
+
+    /// What the operand is, beyond its display name and value: `fp8`,
+    /// `bitmask`, `page`, `implicit=1`, ... (space-separated; see
+    /// tools/arm64/extract.py, which takes them from LLVM's operand types).
+    #[inline]
+    pub fn attrs(&self) -> &'static str {
+        ATTRS.get(usize::from(self.attrs)).copied().unwrap_or("")
+    }
+
     /// Whether the symbol has attribute `a` (an [`attr`] flag).
     #[inline]
     pub fn has(&self, a: u32) -> bool {
@@ -389,7 +444,7 @@ impl Symbol {
 
     /// The value of attribute `key=value`.
     pub fn attr(&self, key: &str) -> Option<&'static str> {
-        self.attrs
+        self.attrs()
             .split(' ')
             .find_map(|x| x.strip_prefix(key)?.strip_prefix('='))
     }

@@ -71,9 +71,9 @@ fn identical_copies_fold_into_one_synthesized_member() {
     assert_eq!(r.synthesized, 1, "one member set: both members");
     assert!(r.bytes_out < r.bytes_in);
     assert_eq!(out.members.len(), 3);
-    assert_eq!(&*out.members[0].name, b"a.obj");
-    assert_eq!(&*out.members[1].name, b"b.obj");
-    assert!(out.members[2].synthesized);
+    assert!(out.members[0].synthesized, "synthesized members first");
+    assert_eq!(&*out.members[1].name, b"a.obj");
+    assert_eq!(&*out.members[2].name, b"b.obj");
 
     // Every name defined before is defined after, and a folded one only in
     // the synthesized member.
@@ -88,24 +88,24 @@ fn identical_copies_fold_into_one_synthesized_member() {
         );
     }
     for (name, members) in &after {
-        if members.contains(&2) {
+        if members.contains(&0) {
             assert_eq!(
                 members,
-                &[2],
+                &[0],
                 "{} folded once",
                 String::from_utf8_lossy(name)
             );
         }
     }
     // Each rewritten member refers to the synthesized member's anchor.
-    let synth = object(&out.members[2].data);
+    let synth = object(&out.members[0].data);
     let anchor: Vec<u8> = synth
         .symbols
         .iter()
         .find(|s| s.name.as_bytes().starts_with(b"__turbolib$anchor$"))
         .map(|s| s.name.as_bytes().to_vec())
         .expect("an anchor");
-    for m in &out.members[..2] {
+    for m in &out.members[1..] {
         assert!(undefined(&m.data).contains(&anchor));
     }
     for m in &out.members {
@@ -182,8 +182,13 @@ fn preserve_holds_back_names_defined_differently_elsewhere() {
         bytes.to_mut()[0] ^= 0xFF;
     }
     let c = o.write().unwrap();
-    let three = inputs(&[(b"a.obj", &a), (b"b.obj", &b), (b"c.obj", &c)]);
-    let preserve = rewrite(&three, PRESERVE);
+    // After the identical copies, the different one changes nothing: the
+    // index named a.obj, whose copy survives.
+    let after = inputs(&[(b"a.obj", &a), (b"b.obj", &b), (b"c.obj", &c)]);
+    assert_eq!(rewrite(&after, PRESERVE).report.groups, two);
+    // Before them, the index named c.obj's different copy: that group stays.
+    let before = inputs(&[(b"c.obj", &c), (b"a.obj", &a), (b"b.obj", &b)]);
+    let preserve = rewrite(&before, PRESERVE);
     assert!(
         preserve
             .report
@@ -192,7 +197,7 @@ fn preserve_holds_back_names_defined_differently_elsewhere() {
     );
     assert!(preserve.report.groups < two);
     // Relaxed folds the identical copies anyway.
-    assert!(rewrite(&three, RELAXED).report.groups > preserve.report.groups);
+    assert!(rewrite(&before, RELAXED).report.groups > preserve.report.groups);
 }
 
 #[test]
@@ -216,7 +221,8 @@ fn passed_through_members_are_unchanged() {
     );
     assert_eq!(out.report.passed_through[&Unfoldable::Import], 1);
     assert_eq!(out.report.passed_through[&Unfoldable::Ltcg], 1);
-    assert_eq!(&*out.members[0].data, import.data);
-    assert_eq!(&*out.members[2].data, &ltcg[..]);
+    let n = out.report.synthesized as usize;
+    assert_eq!(&*out.members[n].data, import.data);
+    assert_eq!(&*out.members[n + 2].data, &ltcg[..]);
     assert!(out.report.groups > 0);
 }

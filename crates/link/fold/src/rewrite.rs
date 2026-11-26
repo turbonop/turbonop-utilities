@@ -9,9 +9,9 @@
 //!    fold units ([`units`]). Import objects, `/GL` objects, and members
 //!    with sections turbolib doesn't know are passed through.
 //! 2. **Group** units by identity, and decide for each group whether it
-//!    folds: every copy foldable, at least two, and under
-//!    [`Pull::Preserve`] nothing about which member the archive index names
-//!    for each of its symbols may change.
+//!    folds: its first copy and at least one other foldable, and under
+//!    [`Pull::Preserve`] its first copy in the member the archive index
+//!    names for each of its symbols, and that member without side effects.
 //! 3. **Lay out** the synthesized members: one for each set of members that
 //!    gave up copies (and environment), so that a synthesized member is
 //!    wanted exactly when one of those members is.
@@ -21,7 +21,8 @@
 //!    refers to each synthesized member's anchor.
 //! 5. **Write** each synthesized member: the surviving copies, their
 //!    outside references as undefined externals, an anchor, `@feat.00`,
-//!    and the environment's `/FAILIFMISMATCH` directives.
+//!    and the environment's `/FAILIFMISMATCH` directives. Synthesized
+//!    members come first in the archive.
 //!
 //! Every step's result is independent of the number of threads: groups are
 //! decided in member order, and the survivor is the first copy.
@@ -53,11 +54,11 @@ pub struct Input<'a> {
 /// Whether which members a link loads may change (`--pull`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pull {
-    /// Nothing about which members load changes: a group is folded only if
-    /// all of a symbol's definitions in the library are in it (so the
-    /// member the index names doesn't change), and if the first copy's
-    /// member has side effects it keeps its copy, while the others get a
-    /// weak external whose default is a renamed copy.
+    /// A link gets the same copy of each name as before, and no member with
+    /// side effects loads or stops loading: a group is folded only if its
+    /// first copy is in the member the index named for its symbols (the
+    /// synthesized members, first in the archive, are named now), and that
+    /// member has no side effects.
     Preserve,
     /// Fold regardless.
     Relaxed,
@@ -107,8 +108,8 @@ pub enum Unfoldable {
     Single,
     /// Another copy can't be folded.
     CopyUnfoldable,
-    /// A symbol it defines is also defined elsewhere in the library, not
-    /// identically (`--pull=preserve`).
+    /// The member the archive index names for a symbol it defines holds
+    /// another copy, not this group's (`--pull=preserve`).
     OtherDefinitions,
     /// Its first copy's member has side effects and keeps it, and there
     /// are too few other copies to save anything (`--pull=preserve`).
@@ -137,7 +138,9 @@ impl Unfoldable {
             Unfoldable::RawAuxiliary => "an auxiliary record turbolib can't read",
             Unfoldable::Single => "only one copy",
             Unfoldable::CopyUnfoldable => "another copy can't be folded",
-            Unfoldable::OtherDefinitions => "its symbols are defined elsewhere, differently",
+            Unfoldable::OtherDefinitions => {
+                "an earlier member defines its symbols differently (--pull=preserve)"
+            }
             Unfoldable::SideEffects => "its first definer has side effects (--pull=preserve)",
             Unfoldable::SideEffectsTooFewCopies => {
                 "kept by a member with side effects, too few other copies"
@@ -164,6 +167,11 @@ pub struct Report {
     /// Fold units found, and those that didn't fold (with why).
     pub units: u64,
     pub not_folded: BTreeMap<Unfoldable, u64>,
+    /// The bytes a group's copies but one would save, for the groups not
+    /// folded (with why): what each reason costs.
+    pub not_folded_bytes: BTreeMap<Unfoldable, u64>,
+    /// The bytes the removed copies held (their sections, as stored).
+    pub removed_bytes: u64,
     /// Groups of copies folded, and copies removed from members.
     pub groups: u64,
     pub copies_removed: u64,
@@ -263,8 +271,8 @@ struct Synth {
 }
 
 /// Rewrites `inputs` (a library's members, in archive order). The output is
-/// the members in the same order, rewritten where they gave up copies, then
-/// the synthesized members.
+/// the synthesized members, then the members in the same order, rewritten
+/// where they gave up copies.
 pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     let parsed: Vec<Parsed<'a>> = turbonop_par::map_balanced(inputs, 4, parse);
     let mut report = Report {
@@ -279,16 +287,16 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         report.units += p.facts.units.len() as u64;
     }
 
-    // How many times each name is defined in the library.
-    let mut definers: HashMap<&[u8], u32> = HashMap::new();
+    // The member the archive index names for each name: its first definer.
+    let mut first_definer: HashMap<&[u8], usize> = HashMap::new();
     let defs: Vec<Vec<Cow<'_, [u8]>>> = inputs
         .iter()
         .zip(&parsed)
         .map(|(i, p)| definitions(i, p))
         .collect();
-    for d in &defs {
+    for (m, d) in defs.iter().enumerate() {
         for name in d {
-            *definers.entry(name.as_ref()).or_default() += 1;
+            first_definer.entry(name.as_ref()).or_insert(m);
         }
     }
 
@@ -311,21 +319,42 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     for c in &copies {
         let unit = |&(m, u): &(usize, usize)| &parsed[m].facts.units[u];
         let first = &c[0];
+        // The copies that can move. The first must be one of them: it is
+        // the survivor, the copy a link that refers to its names got before.
+        // A later copy that can't stays where it is, as it was.
+        let movable: Vec<(usize, usize)> = c
+            .iter()
+            .copied()
+            .filter(|x| unit(x).unfoldable.is_none())
+            .collect();
+        for x in c.iter().filter(|x| unit(x).unfoldable.is_some()) {
+            if x != first {
+                let w = unit(x).unfoldable.unwrap_or(Unfoldable::CopyUnfoldable);
+                *report.not_folded.entry(w).or_default() += 1;
+            }
+        }
         let mut why = None;
-        if c.len() < 2 {
-            why = Some(unit(first).unfoldable.unwrap_or(Unfoldable::Single));
-        } else if let Some(w) = c.iter().find_map(|x| unit(x).unfoldable) {
+        if let Some(w) = unit(first).unfoldable {
             why = Some(w);
-        } else if c.iter().any(|x| unit(x).unfoldable.is_some()) {
-            why = Some(Unfoldable::CopyUnfoldable);
+        } else if movable.len() < 2 {
+            why = Some(if c.len() < 2 {
+                Unfoldable::Single
+            } else {
+                Unfoldable::CopyUnfoldable
+            });
         } else if options.pull == Pull::Preserve
+            // Synthesized members come first in the archive, so the index
+            // names them for what they define. That keeps what a link gets
+            // for each name only if the member the index named was the
+            // survivor's.
             && unit(first)
                 .externals
                 .iter()
-                .any(|n| definers.get(n.as_slice()).copied().unwrap_or(0) != c.len() as u32)
+                .any(|n| first_definer.get(n.as_slice()) != Some(&first.0))
         {
             why = Some(Unfoldable::OtherDefinitions);
         }
+        let c = &movable;
         // Under Preserve, a group whose first copy's member has side effects
         // isn't folded: the weak-external technique (that member keeps its
         // copy, the others get NOLIBRARY weak externals whose default is a
@@ -342,7 +371,11 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             why = Some(Unfoldable::SideEffectsTooFewCopies);
         }
         if let Some(w) = why {
-            *report.not_folded.entry(w).or_default() += c.len() as u64;
+            *report.not_folded.entry(w).or_default() += c.len().max(1) as u64;
+            if c.len() > 1 {
+                *report.not_folded_bytes.entry(w).or_default() +=
+                    unit(first).size * (c.len() as u64 - 1);
+            }
             continue;
         }
         report.groups += 1;
@@ -361,6 +394,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             removals[m].push((u, how));
         }
         report.copies_removed += removed.len() as u64;
+        report.removed_bytes += removed.iter().map(|x| unit(x).size).sum::<u64>();
         let mut givers: Vec<usize> = removed.iter().map(|&(m, _)| m).collect();
         givers.dedup();
         let key = (parsed[first.0].facts.environment, givers.clone());
@@ -419,8 +453,10 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     });
     report.rewritten = removals.iter().filter(|r| !r.is_empty()).count() as u64;
     report.synthesized = made.len() as u64;
-    let mut out = members;
-    out.extend(made);
+    // Synthesized members first, so that the index names them for what they
+    // define (see the Preserve rule above).
+    let mut out = made;
+    out.extend(members);
     report.bytes_out = out.iter().map(|m| m.data.len() as u64).sum();
     Output {
         members: out,

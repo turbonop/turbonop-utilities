@@ -23,8 +23,9 @@
 //! content: a unit (its own fingerprint's form, with the symbol's position
 //! in it) or a piece of a section outside units (the bytes from the
 //! symbol to the next symbol of the section, without the zeros at their
-//! end, and their relocations), each with what it reaches in turn,
-//! numbered in the order a breadth-first walk finds them. So a unit that
+//! end, and their relocations), each with what it reaches in turn, by
+//! contents (so a reference to either of two equal locals is the same,
+//! as `--locals=merge` makes them one). So a unit that
 //! names its own translation unit's `$SG12345` matches a copy that names
 //! the synthesized member's copy of the same bytes.
 //!
@@ -674,11 +675,20 @@ fn coff(o: &Object<'_>, structural: bool) -> Coff {
             piece_forms.push(h.finish());
             piece_edges.push(std::mem::take(&mut cell.borrow_mut().edges));
         }
+        let graph = Graph {
+            forms: &forms,
+            unit_edges: &unit_edges,
+            piece_forms: &piece_forms,
+            piece_edges: &piece_edges,
+        };
+        let mut memo = Map::default();
         for (u, at) in listed.iter().enumerate() {
             if let Some(k) = *at
                 && !unit_edges[u].is_empty()
             {
-                c.units[k].fingerprint = walk(u, &forms, &unit_edges, &piece_forms, &piece_edges);
+                c.units[k].fingerprint = graph
+                    .contents(Local::Unit(u as u32), &mut Vec::new(), &mut memo)
+                    .0;
             }
         }
     }
@@ -788,59 +798,81 @@ impl Locals<'_> {
                 (Local::Piece(p), 0)
             }
         };
-        let k = match self.edges.iter().position(|e| *e == (node, at)) {
-            Some(k) => k,
-            None => {
-                self.edges.push((node, at));
-                self.edges.len() - 1
-            }
-        };
-        k as u64
+        // One edge for each reference, not for each thing referred to:
+        // references to two equal locals and to one (as `merge` leaves
+        // them) are then the same.
+        self.edges.push((node, at));
+        (self.edges.len() - 1) as u64
     }
 }
 
-/// Unit `u`'s fingerprint under `structural`: its form, then everything it
-/// reaches, breadth first, each node's form and its edges with their
-/// targets numbered in the order found.
-fn walk(
-    u: usize,
-    forms: &[u128],
-    unit_edges: &[Vec<(Local, u64)>],
-    piece_forms: &[u128],
-    piece_edges: &[Vec<(Local, u64)>],
-) -> u128 {
-    let root = Local::Unit(u as u32);
-    let mut nodes = vec![root];
-    let mut number: Map<Local, u64> = Map::default();
-    number.insert(root, 0);
-    let none: Vec<(Local, u64)> = Vec::new();
-    let mut h = H128::new();
-    let mut i = 0;
-    while i < nodes.len() {
-        let (form, edges) = match nodes[i] {
+/// The forms and edges of a member's units and pieces, under
+/// `structural`.
+struct Graph<'g> {
+    forms: &'g [u128],
+    unit_edges: &'g [Vec<(Local, u64)>],
+    piece_forms: &'g [u128],
+    piece_edges: &'g [Vec<(Local, u64)>],
+}
+
+impl Graph<'_> {
+    fn node(&self, n: Local) -> (u128, &[(Local, u64)]) {
+        match n {
             Local::Unit(v) => (
-                forms.get(v as usize).copied().unwrap_or(0),
-                unit_edges.get(v as usize).unwrap_or(&none),
+                self.forms.get(v as usize).copied().unwrap_or(0),
+                self.unit_edges
+                    .get(v as usize)
+                    .map_or(&[][..], Vec::as_slice),
             ),
             Local::Piece(p) => (
-                piece_forms.get(p as usize).copied().unwrap_or(0),
-                piece_edges.get(p as usize).unwrap_or(&none),
+                self.piece_forms.get(p as usize).copied().unwrap_or(0),
+                self.piece_edges
+                    .get(p as usize)
+                    .map_or(&[][..], Vec::as_slice),
             ),
-        };
-        h.u64(u64::from(matches!(nodes[i], Local::Piece(_))));
+        }
+    }
+
+    /// Node `n`'s contents: its form, and each edge's target's contents,
+    /// depth first, a reference back to a node being hashed by its depth.
+    /// By contents rather than by which node, so that copies of equal
+    /// locals `--locals=merge` made one are the same as the originals.
+    /// The result, and the shallowest depth it refers back to.
+    fn contents(
+        &self,
+        n: Local,
+        stack: &mut Vec<Local>,
+        memo: &mut Map<Local, u128>,
+    ) -> (u128, usize) {
+        if let Some(d) = stack.iter().position(|&x| x == n) {
+            let mut h = H128::new();
+            h.u64(u64::MAX);
+            h.u64(d as u64);
+            return (h.finish(), d);
+        }
+        if let Some(&h) = memo.get(&n) {
+            return (h, usize::MAX);
+        }
+        let (form, edges) = self.node(n);
+        stack.push(n);
+        let mut h = H128::new();
+        h.u64(u64::from(matches!(n, Local::Piece(_))));
         h.u128(form);
         h.u64(edges.len() as u64);
-        for &(node, at) in edges {
-            let j = *number.entry(node).or_insert_with(|| {
-                nodes.push(node);
-                (nodes.len() - 1) as u64
-            });
-            h.u64(j);
+        let mut back = usize::MAX;
+        for &(t, at) in edges {
+            let (c, d) = self.contents(t, stack, memo);
+            h.u128(c);
             h.u64(at);
+            back = back.min(d);
         }
-        i += 1;
+        stack.pop();
+        let out = h.finish();
+        if back >= stack.len() {
+            memo.insert(n, out);
+        }
+        (out, back)
     }
-    h.finish()
 }
 
 /// A side-table entry's name for symbol `s`: an external's name, or a

@@ -392,6 +392,35 @@ x64. Where the 3.5 MB went:
   - The PCH symbol's signature is 32 bits: two different libraries'
     PCHs in one link could share one by chance (about 2^-32 a pair), and
     a linker would then likely confuse them. Not handled.
+- **Phase 4: less conservative folding.** `--fold=select-any`, `--pick`,
+  `--locals=copy` and `merge`, and `--report odr` are done (see the plan's
+  "Phase 4 results"). Still open:
+  - Synthesized members that name a compiler PCH object's symbol for a
+    member that didn't (a PCH user's copy of a unit non-users gave up too;
+    phase 2.4's key is the survivor's): under `preserve`, a link loading
+    such a member alone now loads the PCH object. `verify` reports it as
+    expected (2 libraries of `build-z7`). Fix: key synthesized members by
+    every giver's PCH, or keep a PCH user's copy out of non-users' groups.
+  - `--locals=copy` folds no unit that reaches code outside COMDATs: LLVM's
+    Debug build has no `/Gy`, so its `static` functions are there, and
+    clang-cl puts each `static` function in a section of its own that
+    isn't a COMDAT. Copying such a section whole (with its `.pdata` and
+    `.xdata` entries) when it holds one function is the next step.
+  - Local units that code which stays reaches are copied, not shared:
+    giving them an external name in the synthesized member would let the
+    members share one (and fold local units nothing that moves reaches).
+  - Pieces are copied only for x64 and x86 relocations (their addends are
+    read in place); ARM64's (PAGEBASE_REL21 with PAGEOFFSET_12A, and the
+    rest) aren't read, so those units stay. Untested on x86 and ARM64
+    objects of any compiler.
+  - Under `preserve`, select-any requires every copy to refer to the same
+    names; a survivor whose references are a subset of every copy's would
+    be enough.
+  - `--report odr` prints lines; a `--json` form, and an option to list
+    only findings within one environment, if users want them.
+  - lld-link's `.tls` is 8 bytes larger against folded libraries in
+    `llvm-nm` (`/OPT:NOREF`, `build-z7`), with `--fold=identical` as with
+    phase 4's modes: not explained yet.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

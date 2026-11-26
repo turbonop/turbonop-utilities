@@ -1360,8 +1360,9 @@ Within a personality, the format of the output follows the inputs (or
   - `@response` files.
 
   `--plugin` is accepted and ignored, as LTO is out of scope.
-- **turbolib's own options.** These are `--fold`, `--pull`, `--locals`,
-  `--precomp`, `--diagnose`, `--stats`, and `-j`. A personality accepts
+- **turbolib's own options.** These are `--fold`, `--pick`, `--pull`,
+  `--locals`, `--precomp`, `--report odr`, `--diagnose`, `--stats`, and
+  `-j`. A personality accepts
   them in its own spelling (`/TURBOLIB:<option>` for `lib`) or from the
   `TURBOLIB_OPTIONS` environment variable, so a build system that can't
   add arguments can still set them.
@@ -1371,7 +1372,8 @@ Within a personality, the format of the output follows the inputs (or
   category (code, unwind, `.debug$S`, `.debug$T`, other), the hazards each
   mode would accept, and the projected PDB cost of each `--precomp`
   choice. It writes nothing.
-- `turbolib verify [--pull=preserve|relaxed] original.lib compacted.lib`:
+- `turbolib verify [--pull=preserve|relaxed] [--fold=identical|select-any]
+  [--locals=keep|copy|merge] original.lib compacted.lib`:
   static equivalence. Every symbol the original defines is still defined,
   and each member's undefined symbols are the original's plus the folded
   ones. Every folded unit is present in exactly one synthesized member, and
@@ -1463,7 +1465,22 @@ names without turbolib's `__turbolib$` prefix. It checks:
 - `--pull=preserve` (the default): every symbol of the original's index
   still sends to the same member, or to a synthesized member when the
   original definer has no side effects (non-COMDAT `.CRT$X*`, `/INCLUDE`).
-  `--pull=relaxed` lists the symbols sent elsewhere, as expected.
+  `--pull=relaxed` lists the symbols sent elsewhere, as expected. Under
+  `preserve` too (phase 4): each synthesized member a member anchors
+  refers to no name that member didn't refer to or define, so loading it
+  loads nothing new; a compiler PCH object's symbol is the known exception,
+  reported apart (see Phase 4 results).
+- `--fold=select-any` (phase 4): a moved COMDAT may instead be held, by a
+  synthesized member its member anchors, as another copy of its name in
+  its environment with the same selection, as that selection allows
+  (`SAME_SIZE`: the same size; `EXACT_MATCH`: the same size and checksum;
+  `LARGEST`: one no smaller); reported as expected.
+- `--locals=copy` or `merge` (phase 4): units are fingerprinted with the
+  static symbols they reach outside them by content (the unit or the piece
+  of a section that holds each, transitively, as the engine copies them,
+  computed independently of it), a local unit's key leaves its name out,
+  local units may be held by any number of synthesized members, and static
+  side-table entries are compared without their names.
 
 What `verify` can't prove: anything about debug information (that is
 `compare-images`'s); that a definer without side effects of its own loads

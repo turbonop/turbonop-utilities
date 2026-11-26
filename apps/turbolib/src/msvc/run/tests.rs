@@ -295,6 +295,28 @@ fn less_conservative_modes_verify() {
         (o, std::fs::read(dir.join(out)).unwrap())
     };
     let (_, original) = lib("original.lib", "--fold=none");
+    // Folded without preserve's conditions, refers() (which calls ext_one
+    // in a and ext_two in b and c) moves, and verify under preserve finds
+    // a synthesized member that refers to a name a member anchoring it
+    // didn't.
+    let (_, relaxed) = lib("relaxed.lib", "--fold=select-any --pull=relaxed");
+    let report = library::verify(
+        &original,
+        &relaxed,
+        &library::Options {
+            pull: VPull::Preserve,
+            fold: VFold::SelectAny,
+            locals: false,
+        },
+    )
+    .unwrap();
+    assert!(
+        report
+            .text()
+            .contains("names a synthesized member refers to that a member anchoring it didn't"),
+        "{}",
+        report.text()
+    );
     // --report odr alone changes nothing.
     let (o, same) = lib("odr.lib", "--fold=none --report=odr");
     assert!(o.stdout.contains("turbolib: odr: ?variant@@YAHXZ"), "{o:?}");

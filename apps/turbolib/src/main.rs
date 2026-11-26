@@ -9,7 +9,9 @@
 use turbonop_global_alloc as _;
 
 mod msvc;
+mod output;
 mod settings;
+mod unix;
 mod verify;
 
 use std::path::{Path, PathBuf};
@@ -21,6 +23,7 @@ use turbonop_fold::member::Category;
 const USAGE: &str = "\
 usage: turbolib analyze [options] <library or directory>...
        turbolib lib|llvm-lib <lib.exe's or llvm-lib's arguments>
+       turbolib ar|llvm-ar|ranlib|llvm-ranlib <their arguments>
 
 Says what folding would save in each static library (.lib, .a; a directory
 is searched for them), under each of turbolib's modes. Writes nothing.
@@ -371,12 +374,26 @@ fn run_msvc(flavor: msvc::Flavor, args: &[String]) -> ! {
     std::process::exit(outcome.exit)
 }
 
+/// Runs an `ar` personality and exits with its code.
+fn run_unix(flavor: unix::Flavor, argv0: &str, args: &[String]) -> ! {
+    use std::io::Write;
+    let env = unix::Env::from_process(args.iter().any(|a| a == "-M"));
+    let outcome = unix::run(flavor, argv0, args, &env);
+    let _ = std::io::stdout().write_all(&outcome.stdout);
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().write_all(outcome.stderr.as_bytes());
+    std::process::exit(outcome.exit)
+}
+
 fn main() -> ExitCode {
     let mut argv = std::env::args();
     let argv0 = argv.next().unwrap_or_default();
     let args: Vec<String> = argv.collect();
     if let Some(flavor) = personality(&argv0) {
         run_msvc(flavor, &args);
+    }
+    if let Some(flavor) = unix::flavor(&argv0) {
+        run_unix(flavor, &argv0, &args);
     }
     let Some((command, rest)) = args.split_first() else {
         eprint!("{USAGE}");
@@ -385,11 +402,17 @@ fn main() -> ExitCode {
     match command.as_str() {
         "lib" => run_msvc(msvc::Flavor::Lib, rest),
         "llvm-lib" => run_msvc(msvc::Flavor::LlvmLib, rest),
+        "ar" | "llvm-ar" | "ranlib" | "llvm-ranlib" => {
+            let flavor = unix::flavor(command).expect("a Unix personality");
+            run_unix(flavor, command, rest)
+        }
         "analyze" => {}
         "verify" => return verify::verify(rest),
         "compare-images" => return verify::compare_images(rest),
         _ => {
-            eprintln!("turbolib: {command}: unknown command (so far: analyze, lib, llvm-lib)");
+            eprintln!(
+                "turbolib: {command}: unknown command (so far: analyze, lib, llvm-lib, ar, llvm-ar, ranlib, llvm-ranlib, verify, compare-images)"
+            );
             eprint!("{USAGE}");
             return ExitCode::from(2);
         }

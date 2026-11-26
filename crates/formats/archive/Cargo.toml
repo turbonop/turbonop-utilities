@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 turbonop-core.workspace = true
+turbonop-elf.workspace = true
 turbonop-pe.workspace = true
 
 [dev-dependencies]

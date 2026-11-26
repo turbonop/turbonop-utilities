@@ -12,7 +12,7 @@ use super::inputs::{self, InputKind, MachineCheck};
 use super::library;
 use super::options::{self, Options};
 use super::order::{self, Input};
-use super::output;
+use crate::output;
 use crate::settings::{Fold, Locals, Pick, Precomp, Pull, Settings};
 use std::borrow::Cow;
 use std::io::{self, Write};

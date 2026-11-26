@@ -811,6 +811,7 @@ name = "turbonop-archive"
 version = "0.0.7"
 dependencies = [
  "turbonop-core",
+ "turbonop-elf",
  "turbonop-global-alloc",
  "turbonop-mmap",
  "turbonop-par",
@@ -939,6 +940,18 @@ version = "0.0.7"
 dependencies = [
  "turbonop-core",
  "turbonop-global-alloc",
+]
+
+[[package]]
+name = "turbonop-elf-object"
+version = "0.0.7"
+dependencies = [
+ "turbonop-archive",
+ "turbonop-core",
+ "turbonop-elf",
+ "turbonop-global-alloc",
+ "turbonop-mmap",
+ "turbonop-par",
 ]
 
 [[package]]
@@ -1418,6 +1431,7 @@ dependencies = [
  "turbonop-archive",
  "turbonop-coff",
  "turbonop-demangle",
+ "turbonop-elf",
  "turbonop-fold",
  "turbonop-global-alloc",
  "turbonop-mmap",

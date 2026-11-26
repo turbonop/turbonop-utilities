@@ -81,10 +81,6 @@ pub fn write_beside(
     members: &[Bytes<'_>],
     padding: u8,
 ) -> io::Result<PathBuf> {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(format!(".turbolib-{}.tmp", std::process::id()));
-    let temp = path.with_file_name(name);
-    let file = File::create(&temp)?;
     let headers: Vec<[u8; 60]> = (0..members.len()).map(|i| layout.header(i)).collect();
     let pad = [padding];
     let mut pieces: Vec<&[u8]> = vec![layout.head()];
@@ -101,11 +97,56 @@ pub fn write_beside(
         }
         at += layout.span(i);
     }
-    let result = (|| {
-        if misplaced || at != layout.size() {
+    if misplaced || at != layout.size() {
+        return Err(io::Error::other("members not where the layout puts them"));
+    }
+    write_pieces_beside(path, &pieces)
+}
+
+/// Writes the GNU or BSD archive `layout` describes, with each member's
+/// bytes from `members` (empty for a thin archive's), to a new file beside
+/// `path`, and returns that file's path.
+pub fn write_unix_beside(
+    path: &Path,
+    layout: &turbonop_archive::unix::Layout,
+    members: &[Bytes<'_>],
+) -> io::Result<PathBuf> {
+    const NEWLINES: [u8; 8] = [b'\n'; 8];
+    let mut pieces: Vec<&[u8]> = vec![layout.head()];
+    let mut at = layout.head().len() as u64;
+    for (i, m) in members.iter().enumerate() {
+        if at != layout.offset(i) {
             return Err(io::Error::other("members not where the layout puts them"));
         }
-        let chunks = chunks(&pieces);
+        let header = layout.header(i);
+        pieces.push(header);
+        let data = layout.data_size(i);
+        if data > 0 {
+            if data != m.data.len() as u64 {
+                return Err(io::Error::other("a member isn't the size laid out"));
+            }
+            pieces.extend(segments(*m));
+        }
+        // (The padding is at most 7 bytes.)
+        let pad = usize::try_from(layout.span(i) - header.len() as u64 - data).unwrap_or(8);
+        pieces.push(&NEWLINES[..pad.min(8)]);
+        at += layout.span(i);
+    }
+    if at != layout.size() {
+        return Err(io::Error::other("members not where the layout puts them"));
+    }
+    write_pieces_beside(path, &pieces)
+}
+
+/// Writes `pieces`, in order, to a new file beside `path`, and returns
+/// that file's path.
+pub fn write_pieces_beside(path: &Path, pieces: &[&[u8]]) -> io::Result<PathBuf> {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".turbolib-{}.tmp", std::process::id()));
+    let temp = path.with_file_name(name);
+    let file = File::create(&temp)?;
+    let result = {
+        let chunks = chunks(pieces);
         // A batch of chunks at a time is copied on every thread while one
         // thread writes the batch before it.
         let batch = turbonop_par::threads().max(1) * 2;
@@ -134,7 +175,7 @@ pub fn write_beside(
             drop(send);
             writer.join().expect("the writer doesn't panic")
         })
-    })();
+    };
     drop(file);
     match result {
         Ok(()) => Ok(temp),

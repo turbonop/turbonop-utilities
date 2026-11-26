@@ -33,6 +33,7 @@ use turbonop_global_alloc as _;
 extern crate alloc;
 
 pub mod symbols;
+pub mod unix;
 pub mod write;
 
 use alloc::borrow::Cow;
@@ -91,6 +92,10 @@ pub struct Member<'data> {
     pub gid: &'data [u8],
     /// The mode (octal) field.
     pub mode: &'data [u8],
+    /// In a GNU thin archive, for a member of another (regular) archive:
+    /// the offset of its header in that archive, which [`name`](Self::name)
+    /// names (the header's name field is `/<long name offset>:<offset>`).
+    pub origin: Option<u64>,
 }
 
 impl Member<'_> {
@@ -219,6 +224,7 @@ impl<'data> Archive<'data> {
         let size = decimal(&header[48..58])?;
         let body_offset = offset + HEADER_SIZE;
         let name_field = trim(raw_name);
+        let mut origin = None;
         let (kind, name, name_len) = match name_field {
             b"/" | b"/SYM64/" => (MemberKind::SymbolTable, Cow::Borrowed(name_field), 0),
             b"//" => (MemberKind::LongNames, Cow::Borrowed(name_field), 0),
@@ -254,6 +260,29 @@ impl<'data> Archive<'data> {
                 let n = n.strip_suffix(b"/").unwrap_or(n);
                 (MemberKind::File, Cow::Borrowed(n), 0)
             }
+            [b'/', rest @ ..]
+                if self.thin
+                    && let Some(colon) = rest.iter().position(|&b| b == b':')
+                    && colon > 0
+                    && let (Some(at), Some(o)) =
+                        (decimal(&rest[..colon]), decimal(&rest[colon + 1..])) =>
+            {
+                // GNU thin: a member of the regular archive the long name
+                // names, its header at offset `o` in it.
+                let at = usize::try_from(at).ok()?;
+                let rest = long_names.get(at..).unwrap_or(&[]);
+                let end = rest
+                    .iter()
+                    .position(|&b| b == b'\n' || b == 0)
+                    .unwrap_or(rest.len());
+                let n = &rest[..end];
+                origin = Some(o);
+                (
+                    MemberKind::File,
+                    Cow::Borrowed(n.strip_suffix(b"/").unwrap_or(n)),
+                    0,
+                )
+            }
             _ => {
                 let n = name_field.strip_suffix(b"/").unwrap_or(name_field);
                 (MemberKind::File, Cow::Borrowed(n), 0)
@@ -281,6 +310,7 @@ impl<'data> Archive<'data> {
             uid,
             gid,
             mode,
+            origin,
         })
     }
 

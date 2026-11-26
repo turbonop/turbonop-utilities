@@ -558,6 +558,9 @@ fn build(
                 r.lines.extend(stats_lines(&folded.report));
             }
             let synthesized = style.object_fields(now(), false);
+            // The synthesized members come first; then the members, in
+            // their order.
+            let first = folded.report.synthesized as usize;
             folded
                 .members
                 .iter()
@@ -567,13 +570,13 @@ fn build(
                     fields: if m.synthesized {
                         synthesized
                     } else {
-                        members[i].fields
+                        members[i - first].fields
                     },
                     data: &m.data,
                     place: if m.synthesized {
                         Cow::Owned(text(&m.name))
                     } else {
-                        Cow::Borrowed(&members[i].place)
+                        Cow::Borrowed(&members[i - first].place)
                     },
                 })
                 .collect()

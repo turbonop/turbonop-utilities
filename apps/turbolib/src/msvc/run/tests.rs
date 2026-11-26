@@ -209,15 +209,47 @@ fn turbolib_options() {
     );
     let o = run(
         Flavor::Lib,
-        &w(&["/nologo", "/TURBOLIB:fold=identical", "a.obj"]),
+        &w(&["/nologo", "/TURBOLIB:fold=select-any", "a.obj"]),
         &env_in(&dir),
     );
     assert!(
-        o.stdout.contains("only fold=none is written so far"),
+        o.stdout.contains("fold=select-any isn't written yet"),
         "{o:?}"
     );
     let mut env = env_in(&dir);
     env.turbolib_options = Some("stats".into());
     let o = run(Flavor::LlvmLib, &w(&["a.obj"]), &env);
     assert_eq!(o.stderr, "TURBOLIB_OPTIONS: stats: options start with --\n");
+}
+
+#[test]
+fn folding_writes_a_library_with_synthesized_members_first() {
+    let dir = scratch("fold");
+    std::fs::copy(testdata("coff/objects.obj"), dir.join("a.obj")).unwrap();
+    std::fs::copy(testdata("coff/objects-big.obj"), dir.join("b.obj")).unwrap();
+    let o = run(
+        Flavor::Lib,
+        &w(&[
+            "/nologo",
+            "/TURBOLIB:fold=identical",
+            "/TURBOLIB:stats",
+            "/OUT:f.lib",
+            "a.obj",
+            "b.obj",
+        ]),
+        &env_in(&dir),
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    assert!(o.stdout.contains("groups folded"), "{o:?}");
+    let data = std::fs::read(dir.join("f.lib")).unwrap();
+    let archive = turbonop_archive::Archive::parse(&data).unwrap();
+    let names: Vec<String> = archive.files().map(|m| text(&m.name)).collect();
+    // lib.exe's order is b.obj, a.obj; the synthesized member comes first.
+    assert_eq!(names.len(), 3, "{names:?}");
+    assert!(names[0].starts_with("turbolib"), "{names:?}");
+    assert_eq!(&names[1..], ["b.obj", "a.obj"]);
+    // The index names the synthesized member for what it folded.
+    let first = archive.files().next().unwrap().header_offset;
+    let symbols = archive.symbols();
+    assert!(symbols.iter().any(|s| s.member == first));
 }

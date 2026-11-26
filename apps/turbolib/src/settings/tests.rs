@@ -61,11 +61,16 @@ fn environment() {
 }
 
 #[test]
-fn only_fold_none_so_far() {
+fn what_is_written_so_far() {
     let s = Settings::default();
     assert_eq!(s.fold, Fold::None);
     assert!(s.check_supported().is_ok());
     let mut s = Settings::default();
     s.apply("fold=identical").unwrap();
+    assert!(s.check_supported().is_ok());
+    s.apply("fold=select-any").unwrap();
+    assert!(s.check_supported().is_err());
+    let mut s = Settings::default();
+    s.apply("locals=copy").unwrap();
     assert!(s.check_supported().is_err());
 }

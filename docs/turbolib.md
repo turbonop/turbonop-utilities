@@ -21,9 +21,9 @@ items leave TODO.md as they ship.
 
 | Phase | State |
 |---|---|
-| 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, `.retplne`, sanitizers. |
+| 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, sanitizers. |
 | 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. Not yet: the import descriptor objects (so `/DEF`), and thin libraries. |
-| 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). Not yet: folded units' debug information (2.4), the side tables (2.3), and the link-equivalence checks (2.6). |
+| 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). Not yet: folded units' debug information (2.4), and the link-equivalence checks (2.6). |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
 | 5 Speed | Not yet (but every phase is built to be parallel from the start). |
@@ -484,6 +484,47 @@ and `testdata/coff`'s objects) print what the originals print, with `nm`
 and with `readobj --all`. The images aren't byte-identical (COMDATs
 move), so link equivalence waits for 2.6's comparison.
 
+### Side tables (2.3)
+
+Measured with cl 14.52 and clang-cl 24 (x64, x86, ARM64), and split as
+"Side tables" above says ([`rewrite::tables`](../crates/link/fold/src/rewrite/tables.rs)).
+Only a table turbolib can't read now keeps a member from folding.
+
+- **`@feat.00`** bits: SafeSEH `0x1` (cl x86 always, clang-cl x86), `/GS`
+  `0x100`, `/sdl` `0x200`, `/guard:cf` `0x800`, `/guard:ehcont` `0x4000`,
+  `/kernel` `0x40000000`. cl 14.52 also always sets `0x10`, `0x80`,
+  `0x10000`, and `0x80000000`; no option tried changed them. The bits are
+  in the environment key, so a synthesized member has its givers'.
+- **Entries naming undefined externals**: a `.gfids$y` entry naming an
+  undefined external puts its definition (in another object) in the
+  image's `GuardCFFunctionTable` with both linkers; without the entry, the
+  CFG-checked call fails fast (`0xC0000409`). An `.sxdata` index naming an
+  undefined external registers its definition with both linkers; without
+  it, the handler isn't called and the fault kills the program.
+- **With `@feat.00`'s `0x800` and no `.gfids$y`**, both linkers take the
+  object to take no addresses (the call above fails).
+- **`tools/turbolib/tables/run.py`** links a test program against a
+  library of three objects and its folded copy, with link.exe and lld-link,
+  `/OPT:NOREF` and `/OPT:REF`, for ten configurations (cl x64 `/Gy` and
+  `/Gy-` with `/guard:cf /guard:ehcont /CETCOMPAT`, `/volatileMetadata`,
+  `/d2guardretpoline`; cl x86 `/Gy` and `/Gy-` with `/guard:cf /SAFESEH`;
+  cl ARM64; clang-cl x64 and x86). Every table compared is the same by
+  name (function and offset) with both libraries: CFG functions, IAT
+  entries, longjmp targets, EH continuations, SafeSEH handlers, volatile
+  accesses, retpoline dynamic relocations, and the PDB's FPO records. The
+  x64 and x86 programs (a CFG-checked call through an inline function's
+  address, longjmp, throw, SEH, a call through an import's address) run
+  and print the same; ARM64's weren't run.
+- **link.exe and clang-cl's per-object tables**: under `/OPT:NOREF`,
+  link.exe gives the entries naming the labels of COMDAT copies it
+  discards addresses before the first section. With the original library
+  the x64 program crashes (`0xC0000005`) and the x86 image doesn't load
+  (likely because of those entries; not proven). The folded library has
+  one copy, so it has no such entries, and its programs run. lld-link's
+  programs run with both.
+- lld-link 24 wrote no longjmp table for the x64 and ARM64 programs, with
+  either library (it did for x86).
+
 ## Decisions
 
 | | Decision |
@@ -651,11 +692,12 @@ synthesized member that receives that code.
 
 | Section | Entry | Rule |
 |---|---|---|
-| `.gfids$y`, `.giats$y`, `.gljmp$y`, `.gehcont$y` | symbol index | Each member lists the targets its *own code* takes the address of, calls through the IAT for, or jumps or continues to. Synthesized members get the entries of the code they receive. A superset is harmless. A missing entry is a CFG failure at run time, so err toward more entries. |
-| `.sxdata` (x86) | symbol index | The handlers registered by the member's functions. They move with the functions. |
-| `.debug$F` (x86 FPO) | relocation | Each entry moves with its function. |
-| `.voltbl` | relocation | Each entry moves with its section. |
-| `.retplne` | to find out | Phase 0. |
+| `.gfids$y`, `.giats$y`, `.gljmp$y`, `.gehcont$y` | symbol index | The functions whose address is taken (and a vftable's functions), the `__imp_` symbols whose IAT entry's address is taken, the labels after `setjmp` calls, and the labels a catch continues at. cl `/Gy` writes each function's in a COMDAT associated with it; `/Gy-` code and clang-cl, one table per object. Entries naming an external stay (now undefined, which both linkers resolve: measured) and are copied to the synthesized member for the code that refers to them; entries naming a moved unit's labels go with it. A superset is harmless. A missing entry is a CFG failure at run time, so err toward more entries. |
+| `.sxdata` (x86) | symbol index | The handlers the member's functions register (`__ehhandler$...` in the function's `.text$x`, `__except_handler4`); one table per object. Split as the `/guard` tables are; an index naming an undefined external resolves (measured, both linkers). |
+| `.debug$F` (x86 FPO) | relocation | 16-byte `FPO_DATA`, a `DIR32NB` relocation at each record's start naming the function: in a COMDAT associated with it (`/Gy`), or one table (`/Gy-`). Each record moves with its function. Without `/Z7` cl writes one for every function; with it, only for SEH functions. |
+| `.voltbl` | bytes, or symbol index | x64 `/volatileMetadata` (off by default in 14.52; ARM64 and ARM64EC write none): in a COMDAT associated with a function, its volatile accesses' offsets as bytes; outside COMDATs (`/Gy-`), records of `0xFFFFFFFF`, a symbol index, and offsets. Records move with their function. link.exe reads them only from objects with `@vol.md`, which synthesized members copy. lld-link writes no volatile metadata. |
+| `.retplne` | section number | cl `/d2guardretpoline` (`/guard:retpoline` includes the WDK's `guardcfw.h`, and with an empty one cl 14.52 rejects it, C1049; the `/Qspectre` options make none): `RetpolineV1\0`, then records of a size, a section number, and (kind, offset) pairs for the section's indirect calls, import jumps, and switch jumps. One table per object. Records move with their section. `link /guard:retpoline` makes dynamic relocations of them; lld-link has no `/guard:retpoline`. |
+| `.llvm_addrsig` (clang-cl) | ULEB128 symbol index | The address-significant symbols, for lld-link's ICF. Split as the `/guard` tables are. |
 | `.chks64` | per section | Dropped from every member turbolib changes. Neither linker checks it in a full link (phase 0). Incremental linking is still to test. |
 | `.msvcjmc` | COMDAT already | Nothing to do. |
 | `.drectve` | directive | Stays in the original member. `/FAILIFMISMATCH` is also copied into synthesized members. `/EXPORT` of a folded symbol still resolves, through the synthesized member. |
@@ -968,11 +1010,12 @@ units. This is documented, and `/EXTRACT` can also re-inline them
   - The archive size limit. Members are addressed by 32-bit offsets in
     both linker members, so we believe a COFF library can't exceed 4 GiB.
     Confirm it, along with what `lib.exe` and the linkers do near it.
-  - `.chks64` and `.retplne`: who reads them.
+  - `.chks64` and `.retplne`: who reads them. (`.retplne`: link.exe's
+    `/guard:retpoline`; see 2.3.)
   - ASan and SanCov objects: which of their sections are per object.
 - **Done when:** the analyzer's numbers are in, and each spike has a
   yes or no answer. Done except incremental linking's use of
-  `.chks64`, `.retplne`, and sanitizer objects.
+  `.chks64`, and sanitizer objects.
 
 ### Phase 1: writers, round trips, and `lib.exe` without folding
 

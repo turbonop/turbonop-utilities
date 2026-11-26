@@ -294,10 +294,15 @@ x64. Where the 3.5 MB went:
 
 - **The rest of phase 0 of [the plan](docs/turbolib.md).**
   - Whether incremental linking uses `.chks64`: neither linker checks it
-    in a full link. And `.retplne`.
+    in a full link.
   - Which sections of ASan and SanCov objects are per object.
   - Whether `/DEFAULTLIB` directives that differ from the rest of a
     library's count as side effects for `--pull=preserve`.
+- **Side tables (2.3): what is untested.** A large `/guard:cf` library
+  (the corpus is built without it); whether the EH continuation checks
+  were enforced when `tools/turbolib/tables` ran (CET shadow stacks); the
+  ARM64 programs, linked but not run; `.voltbl` and `.retplne` from
+  compilers other than cl 14.52.
 - **Phase 1: what is left of the writers.**
   - CodeView: done (`symbol_refs`, `c13`, `write`, `remap`; checked on
     both corpora by `turbonop-codeview`'s `corpus` example). Still open:

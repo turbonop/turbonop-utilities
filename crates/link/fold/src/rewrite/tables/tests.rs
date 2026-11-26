@@ -133,12 +133,15 @@ fn volatile_bytes(data: &[u8]) -> Vec<(String, Vec<u8>)> {
     out
 }
 
-fn feat00(data: &[u8]) -> Option<u32> {
+/// The absolute symbols named `@...` (`@feat.00`, `@comp.id`, `@vol.md`),
+/// with their values.
+fn feat00(data: &[u8]) -> Vec<(Vec<u8>, u32)> {
     object(data)
         .symbols
         .iter()
-        .find(|s| s.name.as_bytes() == b"@feat.00" && s.section == SectionNumber::Absolute)
-        .map(|s| s.value)
+        .filter(|s| s.name.as_bytes().starts_with(b"@") && s.section == SectionNumber::Absolute)
+        .map(|s| (s.name.as_bytes().to_vec(), s.value))
+        .collect()
 }
 
 #[test]
@@ -189,8 +192,8 @@ fn every_fixture_s_tables_read() {
 /// Folds a configuration's pair, and checks what every fold must keep:
 /// every table still reads; every entry there was is still somewhere, and
 /// none is made up; a set's entry for an external stays in its member;
-/// each member keeps its `@feat.00`, and a synthesized member has the
-/// same. Gives the output members: the two rewritten ones, then the
+/// each member keeps its `@feat.00` (and `@comp.id` and `@vol.md`), and a
+/// synthesized member has the same. Gives the output members: the two rewritten ones, then the
 /// synthesized ones.
 fn check_folded(config: &str, options: Options) -> Vec<Vec<u8>> {
     let (a, b) = pair(config);

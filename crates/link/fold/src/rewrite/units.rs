@@ -60,6 +60,11 @@ pub struct Facts {
     pub feat00: Option<u32>,
     /// `@comp.id`'s value, if the member has one.
     pub comp_id: Option<u32>,
+    /// The other absolute symbols whose names start with `@`, which tell
+    /// the linker about the object as `@feat.00` does: `@vol.md`, without
+    /// which link.exe ignores the object's `.voltbl` (measured). As
+    /// (name, value), in symbol order.
+    pub markers: Vec<(Vec<u8>, u32)>,
     /// The `/FAILIFMISMATCH` directives, as written, in order.
     pub mismatches: Vec<Vec<u8>>,
     /// External symbols the member defines outside its units, by name.
@@ -223,6 +228,9 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
             match s.name.as_bytes() {
                 b"@feat.00" => facts.feat00 = Some(s.value),
                 b"@comp.id" => facts.comp_id = Some(s.value),
+                name if name.starts_with(b"@") && s.storage_class == storage_class::STATIC => {
+                    facts.markers.push((name.to_vec(), s.value));
+                }
                 _ => {}
             }
         }
@@ -230,6 +238,11 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
     let mut env = H128::new();
     env.u64(u64::from(object.machine));
     env.u64(facts.feat00.map_or(u64::MAX, u64::from));
+    for (name, value) in &facts.markers {
+        env.u64(name.len() as u64);
+        env.bytes(name);
+        env.u64(u64::from(*value));
+    }
     let mut sorted = facts.mismatches.clone();
     sorted.sort_unstable();
     for m in &sorted {

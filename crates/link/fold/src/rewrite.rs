@@ -572,6 +572,15 @@ fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
             storage_class::STATIC,
         ));
     }
+    for (name, v) in &facts0.markers {
+        o.push_symbol(Symbol::new(
+            Name::new(name.clone()),
+            *v,
+            SectionNumber::Absolute,
+            0,
+            storage_class::STATIC,
+        ));
+    }
 
     // The units: their sections and symbols, with names renamed where the
     // copy is a renamed one. Relocations are filled in after, once every

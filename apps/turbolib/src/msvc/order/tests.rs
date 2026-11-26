@@ -210,16 +210,16 @@ fn a_library_alone_keeps_its_order() {
     assert_eq!(order(&[l1()], &[]), ["b.obj", "a.obj"]);
     assert_eq!(
         order(&[names()], &[]),
-        [r".\c.obj", B, r"sub.obj", "a.obj"]
+        [r".\c.obj", B, r"sub\a.obj", "a.obj"]
     );
     // With anything else, reversed: lib /OUT:x3.lib names.lib c.obj, and
-    // /OUT:x4.lib l1.lib l2.lib.
+    // /OUT:x4.lib l1.lib l2.lib, and with /REMOVE (see `remove`).
     assert_eq!(
         order(&[names(), obj("c.obj")], &[]),
-        ["a.obj", r"sub.obj", B, r".\c.obj", "c.obj"]
+        ["a.obj", r"sub\a.obj", B, r".\c.obj", "c.obj"]
     );
     assert_eq!(
         order(&[l1(), l2()], &[]),
-        ["a.obj", "b.obj", "c.obj", r"sub.obj"]
+        ["a.obj", "b.obj", "c.obj", r"sub\a.obj"]
     );
 }

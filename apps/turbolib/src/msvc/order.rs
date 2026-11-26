@@ -107,10 +107,11 @@ pub fn lib_order(inputs: &[Input], remove: &[String], verbose: bool) -> Result<O
     }
 
     // Library members, minus those an object replaces. Measured: a library
-    // that is the command line's only input keeps its order (`lib
-    // /OUT:x.lib y.lib` copies y.lib); otherwise each library's members
-    // are reversed (even for `y.lib y.lib`).
-    let only = inputs.len() == 1;
+    // that is the command line's only input, with nothing removed, keeps
+    // its order (`lib /OUT:x.lib y.lib` copies y.lib); otherwise each
+    // library's members are reversed (even for `y.lib y.lib`, and for `lib
+    // /REMOVE:a.obj y.lib`).
+    let only = inputs.len() == 1 && remove.is_empty();
     let mut kept: Vec<(usize, usize, String)> = Vec::new();
     let mut replaced = vec![false; objects.len()];
     for &i in &libraries {

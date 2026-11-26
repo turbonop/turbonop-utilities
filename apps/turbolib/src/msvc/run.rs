@@ -560,7 +560,7 @@ fn build(
             let synthesized = style.object_fields(now(), false);
             // The synthesized members come first; then the members, in
             // their order.
-            let first = folded.report.synthesized as usize;
+            let first = folded.members.iter().take_while(|m| m.synthesized).count();
             folded
                 .members
                 .iter()

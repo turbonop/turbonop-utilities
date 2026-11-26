@@ -320,8 +320,10 @@ x64. Where the 3.5 MB went:
   - **arm64's other 1.56 MB**: its 1,346 symbols of 168 bytes (221 KB),
     the templates' tokens (24 bytes each, a `&str` or a slice), and its
     semantics and operand specs.
-  - **arm32's rules** (`RULES`: `&str`s and slices of pairs of them) and
-    its operand and field lists' `&str` names.
+  - **arm32's rules** (`RULES`: `&str`s and slices of pairs of them, and
+    their texts' and alternatives' `%{rule}` references, as templates'
+    were before they became a character each) and its operand and field
+    lists' `&str` names.
   - **x86's, 270 KB** (`ENTRIES`, 186 KB).
   - The TableGen decoders' instructions are still 56 bytes: an index
     into a string table, and into a table of operand lists, would make

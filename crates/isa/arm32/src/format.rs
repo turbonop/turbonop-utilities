@@ -117,12 +117,9 @@ pub fn format_in_it(
     if wide {
         // The condition (if any), `.w`, then the rest.
         let rest = &template[end..];
-        let close = if rest.starts_with("{%{") {
-            rest.find('}').map(|p| p + 2)
-        } else if rest.starts_with("%{") {
-            rest.find('}').map(|p| p + 1)
-        } else {
-            None
+        let close = match rest.strip_prefix('{') {
+            Some(inner) if reference_at(inner).is_some() => rest.find('}').map(|p| p + 1),
+            _ => reference_at(rest).map(|(len, _)| len),
         };
         if let Some(n) = close {
             let mut p = 0;
@@ -141,6 +138,16 @@ pub fn format_in_it(
     if i.encoding.name().starts_with("VCMP") && out[before..].ends_with("#0.0") {
         out.truncate(out.len() - 2);
     }
+}
+
+/// The rule a template refers to at the start of `t` (build.rs writes
+/// `%{Rd__4}` as one character, U+0100 + the rule's index), and the
+/// reference's length: `None` if `t` doesn't start with one; a rule of
+/// `None` if no rule has its index.
+fn reference_at(t: &str) -> Option<(usize, Option<&'static Rule>)> {
+    let c = t.chars().next()?;
+    let i = u32::from(c).checked_sub(0x100)?;
+    (i < 0x700).then(|| (c.len_utf8(), crate::rule_at(i as usize)))
 }
 
 /// Whether a T16 encoding has an S form, preferred outside an IT block.
@@ -812,6 +819,7 @@ impl Ctx<'_> {
         while *pos < t.len() {
             match t[*pos] {
                 b'}' => return shown,
+                // (A rule's text refers to another by its ID.)
                 b'%' if t.get(*pos + 1) == Some(&b'{') => {
                     let start = *pos + 2;
                     let end = t[start..]
@@ -821,7 +829,19 @@ impl Ctx<'_> {
                     // (Its braces are ASCII: char boundaries.)
                     let id = text.get(start..end).unwrap_or("");
                     *pos = (end + 1).min(t.len());
-                    shown |= self.reference(id, out);
+                    if let Some(r) = rule(id) {
+                        shown |= self.reference(r, out);
+                    }
+                }
+                0x80.. => {
+                    // (Not ASCII: a template's reference to a rule, a
+                    // character.)
+                    let rest = text.get(*pos..).unwrap_or("");
+                    let (len, r) = reference_at(rest).unwrap_or((rest.len().max(1), None));
+                    *pos += len;
+                    if let Some(r) = r {
+                        shown |= self.reference(r, out);
+                    }
                 }
                 b'{' if depth < 8 && self.repeated_operand(t, *pos) => {
                     // (Skipped: T16's two-operand form.)
@@ -845,7 +865,8 @@ impl Ctx<'_> {
                     *pos += 1;
                     // (Written in place, and taken back if not shown.)
                     let start = out.len();
-                    let has_ref = t[*pos..].starts_with(b"%{");
+                    let has_ref =
+                        t.get(*pos).is_some_and(|&b| b >= 0x80) || t[*pos..].starts_with(b"%{");
                     let inner_shown = self.seq(text, pos, out, depth + 1);
                     if *pos < t.len() {
                         *pos += 1;
@@ -885,7 +906,10 @@ impl Ctx<'_> {
             return false;
         };
         let inner = &rest[..close];
-        if inner.contains(&b'{') && !inner.starts_with(b"%{") {
+        if inner.contains(&b'{')
+            && inner.first().is_none_or(|&b| b < 0x80)
+            && !inner.starts_with(b"%{")
+        {
             return false;
         }
         rest[close + 3..].starts_with(inner)
@@ -910,12 +934,9 @@ impl Ctx<'_> {
         }
     }
 
-    /// Operand rule `id`, into `out`; whether it is other than its
+    /// Operand rule `r`, into `out`; whether it is other than its
     /// default.
-    fn reference(&self, id: &str, out: &mut String) -> bool {
-        let Some(r) = rule(id) else {
-            return false;
-        };
+    fn reference(&self, r: &Rule, out: &mut String) -> bool {
         if let Some(shown) = self.simd_choice(r.display, out) {
             return shown;
         }

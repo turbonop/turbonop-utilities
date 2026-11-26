@@ -85,7 +85,7 @@ use turbonop_elf_object::{
 use crate::hash::H128;
 
 mod dwarf;
-mod eh_frame;
+pub(crate) mod eh_frame;
 
 /// A map only looked up (its order is never seen).
 type Map<K, V> = std::collections::HashMap<K, V, turbonop_hash::State>;

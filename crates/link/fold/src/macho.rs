@@ -272,27 +272,68 @@ fn side_effects(o: &Object<'_>) -> Option<&'static str> {
     None
 }
 
-/// A unit: an atom and what goes with it.
+/// An atom that moves with a unit: the unit's own (the first), or an LSDA
+/// of it (an atom of `__gcc_except_tab` only its unwind information names).
 #[derive(Clone, Debug)]
-struct Unit {
+struct Atom {
     section: usize,
     /// Offsets in the section.
     range: Range<u64>,
     /// Its symbols (indexes), external and local.
     symbols: Vec<u32>,
-    /// Its external names.
-    names: Vec<Vec<u8>>,
     /// Its relocations (indexes into the section's).
     relocations: Vec<usize>,
-    /// Its unwind entries: offsets in `__compact_unwind`.
-    unwind: Vec<u64>,
-    /// External names its relocations (and unwind entries) name.
+}
+
+/// A pointer field of an FDE: its offset in the record, its size and
+/// encoding (`DW_EH_PE_pcrel`, no relocation), and what it points to: an
+/// atom of the unit (its index) and the offset in it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct EhPointer {
+    at: u64,
+    size: u8,
+    encoding: u8,
+    atom: usize,
+    offset: u64,
+}
+
+/// An `__eh_frame` FDE of a unit's function.
+#[derive(Clone, Debug)]
+struct Fde {
+    /// Its record (offsets in `__eh_frame`), and its CIE's.
+    record: Range<u64>,
+    cie: Range<u64>,
+    /// The offset of its CIE pointer in the record.
+    id_at: u64,
+    pc: EhPointer,
+    lsda: Option<EhPointer>,
+}
+
+/// A unit: an atom and what goes with it.
+#[derive(Clone, Debug)]
+struct Unit {
+    /// Its atoms: its own first, then its LSDAs.
+    atoms: Vec<Atom>,
+    /// Its external names.
+    names: Vec<Vec<u8>>,
+    /// Its unwind entries: offsets in `__compact_unwind`, and the LSDA each
+    /// names (an atom of the unit, and the offset in it).
+    unwind: Vec<(u64, Option<(usize, u64)>)>,
+    /// Its FDEs.
+    fdes: Vec<Fde>,
+    /// External names its relocations (and unwind information) name.
     refs: BTreeSet<Vec<u8>>,
     hash: u128,
     /// Why it can't fold, if it can't.
     blocked: Option<&'static str>,
     /// Whether debug sections refer to it.
     debug: bool,
+}
+
+impl Unit {
+    fn main(&self) -> &Atom {
+        &self.atoms[0]
+    }
 }
 
 /// A member read.
@@ -304,8 +345,11 @@ struct Parsed<'a> {
     units: Vec<Unit>,
     /// Each external definition: its name and unit (`None`: not a unit's).
     defs: Vec<(Vec<u8>, Option<usize>)>,
-    /// `__compact_unwind`'s index, if any.
+    /// `__compact_unwind`'s index, `__eh_frame`'s, and
+    /// `__gcc_except_tab`'s, if any.
     unwind_section: Option<usize>,
+    eh_section: Option<usize>,
+    lsda_section: Option<usize>,
 }
 
 /// The size of a compact unwind entry (64-bit).
@@ -352,7 +396,7 @@ fn section_label(y: &Symbol<'_>) -> bool {
 }
 
 /// The atoms of section `si` (ordinal `si + 1`): each range of offsets
-/// and the symbols in it.
+/// and the symbols in it, in order.
 fn atoms(o: &Object<'_>, si: usize, s: &Section<'_>) -> Vec<(Range<u64>, Vec<u32>)> {
     let ordinal = si + 1;
     let mut syms: Vec<(u64, u32)> = o
@@ -391,6 +435,68 @@ fn atoms(o: &Object<'_>, si: usize, s: &Section<'_>) -> Vec<(Range<u64>, Vec<u32
     out
 }
 
+/// The index of the atom of `atoms` (in order) holding offset `off`.
+fn atom_at(atoms: &[(Range<u64>, Vec<u32>)], off: u64) -> Option<usize> {
+    let k = atoms
+        .partition_point(|(r, _)| r.start <= off)
+        .checked_sub(1)?;
+    (off < atoms[k].0.end).then_some(k)
+}
+
+fn le(bytes: &[u8], at: u64, n: u8) -> Option<u64> {
+    let b = bytes.get(at as usize..at as usize + usize::from(n))?;
+    let mut v = [0u8; 8];
+    v[..b.len()].copy_from_slice(b);
+    Some(u64::from_le_bytes(v))
+}
+
+/// A pointer's value as its encoding's format reads it (sign-extended for
+/// the signed formats).
+fn eh_value(bytes: &[u8], at: u64, size: u8, encoding: u8) -> Option<i64> {
+    let v = le(bytes, at, size)?;
+    let bits = 8 * u32::from(size);
+    Some(if encoding & 0x08 != 0 && bits < 64 {
+        ((v << (64 - bits)) as i64) >> (64 - bits)
+    } else {
+        v as i64
+    })
+}
+
+/// The length of atom `a` that is what it is: a function's padding (the
+/// bytes after its end, by its one unwind entry, up to the next atom: the
+/// next function's alignment, which x86-64's code has and copies at a
+/// section's end don't) isn't, when nothing (a relocation, a symbol) is
+/// in it. Its whole length otherwise.
+fn function_length(
+    o: &Object<'_>,
+    s: &Section<'_>,
+    a: &Atom,
+    unwind: &[(u64, Option<(usize, u64)>)],
+    unwind_bytes: &[u8],
+) -> u64 {
+    use turbonop_macho_object::consts::{S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
+    let full = a.range.end - a.range.start;
+    if s.flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) == 0 {
+        return full;
+    }
+    let [(e, _)] = unwind else { return full };
+    let (Some(start), Some(len)) = (le(unwind_bytes, *e, 8), le(unwind_bytes, *e + 8, 4)) else {
+        return full;
+    };
+    if start.wrapping_sub(s.addr) != a.range.start || len == 0 || len >= full {
+        return full;
+    }
+    let end = a.range.start + len;
+    let in_tail = a
+        .relocations
+        .iter()
+        .any(|&i| u64::from(s.relocations[i].address) >= end)
+        || a.symbols
+            .iter()
+            .any(|&i| o.symbols[i as usize].n_value.wrapping_sub(s.addr) >= end);
+    if in_tail { full } else { len }
+}
+
 /// Reads a member.
 fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     let mut p = Parsed {
@@ -401,6 +507,8 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         units: Vec::new(),
         defs: Vec::new(),
         unwind_section: None,
+        eh_section: None,
+        lsda_section: None,
     };
     let Ok(o) = Object::parse(input.data) else {
         p.why_not = Some("not a Mach-O object turbolib reads".into());
@@ -446,56 +554,95 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     p.side_effects = side_effects(&o);
     let endian = o.endian();
     let sections: Vec<&Section<'_>> = o.sections().collect();
-    p.unwind_section = sections
-        .iter()
-        .position(|s| s.segment_name() == b"__LD" && s.name() == b"__compact_unwind");
+    let find = |seg: &[u8], name: &[u8]| {
+        sections
+            .iter()
+            .position(|s| s.segment_name() == seg && s.name() == name)
+    };
+    p.unwind_section = find(b"__LD", b"__compact_unwind");
+    p.eh_section = find(b"__TEXT", b"__eh_frame");
+    p.lsda_section = find(b"__TEXT", b"__gcc_except_tab");
+    let ls = p.lsda_section;
 
-    // Units, by section and offset.
+    // Atoms of the unit sections and of `__gcc_except_tab`; units.
+    let mut atom_list: Vec<Vec<(Range<u64>, Vec<u32>)>> = vec![Vec::new(); sections.len()];
+    let mut atom_unit: Vec<Vec<Option<usize>>> = vec![Vec::new(); sections.len()];
     let mut units: Vec<Unit> = Vec::new();
     for (si, s) in sections.iter().enumerate() {
-        if !unit_section(s) {
+        let lsda = Some(si) == ls;
+        if !unit_section(s) && !lsda {
             continue;
         }
-        for (range, syms) in atoms(&o, si, s) {
-            let ext: Vec<u32> = syms
-                .iter()
-                .copied()
-                .filter(|&i| o.symbols[i as usize].is_external())
-                .collect();
-            if ext.is_empty()
-                || !ext
+        let list = atoms(&o, si, s);
+        let mut owners = vec![None; list.len()];
+        if !lsda {
+            for (k, (range, syms)) in list.iter().enumerate() {
+                let ext: Vec<u32> = syms
                     .iter()
-                    .all(|&i| o.symbols[i as usize].n_desc & N_WEAK_DEF != 0)
-            {
-                continue;
+                    .copied()
+                    .filter(|&i| o.symbols[i as usize].is_external())
+                    .collect();
+                if ext.is_empty()
+                    || !ext
+                        .iter()
+                        .all(|&i| o.symbols[i as usize].n_desc & N_WEAK_DEF != 0)
+                {
+                    continue;
+                }
+                owners[k] = Some(units.len());
+                units.push(Unit {
+                    atoms: vec![Atom {
+                        section: si,
+                        range: range.clone(),
+                        symbols: syms.clone(),
+                        relocations: Vec::new(),
+                    }],
+                    names: ext
+                        .iter()
+                        .map(|&i| o.symbols[i as usize].name.to_vec())
+                        .collect(),
+                    unwind: Vec::new(),
+                    fdes: Vec::new(),
+                    refs: BTreeSet::new(),
+                    hash: 0,
+                    blocked: None,
+                    debug: false,
+                });
             }
-            units.push(Unit {
-                section: si,
-                range,
-                names: ext
-                    .iter()
-                    .map(|&i| o.symbols[i as usize].name.to_vec())
-                    .collect(),
-                symbols: syms,
-                relocations: Vec::new(),
-                unwind: Vec::new(),
-                refs: BTreeSet::new(),
-                hash: 0,
-                blocked: None,
-                debug: false,
-            });
         }
+        atom_list[si] = list;
+        atom_unit[si] = owners;
     }
-    let unit_at = |units: &[Unit], si: usize, off: u64| -> Option<usize> {
-        units
-            .iter()
-            .position(|u| u.section == si && u.range.start <= off && off < u.range.end)
+    let unit_at = |si: usize, off: u64| -> Option<usize> {
+        atom_unit
+            .get(si)?
+            .get(atom_at(atom_list.get(si)?, off)?)
+            .copied()
+            .flatten()
     };
-    // The unit each symbol is in.
+    // The LSDA atom an offset of `__gcc_except_tab` is in.
+    let lsda_at = |off: u64| -> Option<usize> { atom_at(&atom_list[ls?], off) };
+    let n_lsda = ls.map_or(0, |l| atom_list[l].len());
+    // Each LSDA atom's relocations, the names they name, and whether
+    // anything but a unit's unwind information reaches it (or it reaches
+    // a local symbol): then it can't move.
+    let mut lsda_relocs: Vec<Vec<usize>> = vec![Vec::new(); n_lsda];
+    let mut lsda_refs: Vec<BTreeSet<Vec<u8>>> = vec![BTreeSet::new(); n_lsda];
+    let mut lsda_bad = vec![false; n_lsda];
+    let mut lsda_users: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); n_lsda];
+    // The unit (or LSDA atom) each symbol is in.
     let mut sym_unit: Vec<Option<usize>> = vec![None; o.symbols.len()];
     for (k, u) in units.iter().enumerate() {
-        for &i in &u.symbols {
+        for &i in &u.main().symbols {
             sym_unit[i as usize] = Some(k);
+        }
+    }
+    let mut sym_lsda: Vec<Option<usize>> = vec![None; o.symbols.len()];
+    if let Some(l) = ls {
+        for (k, (_, syms)) in atom_list[l].iter().enumerate() {
+            for &i in syms {
+                sym_lsda[i as usize] = Some(k);
+            }
         }
     }
     let section_of_addr = |a: u64| -> Option<(usize, u64)> {
@@ -512,20 +659,27 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     // Sections a relocation reaches without a decoded address.
     let mut opaque: BTreeSet<usize> = BTreeSet::new();
 
-    // Every relocation: which unit its place is in, and what it reaches.
+    // Every relocation: which unit (or LSDA) its place is in, and what it
+    // reaches. (An unwind entry's personality and LSDA fields are read
+    // below, with the entry.)
     for (si, s) in sections.iter().enumerate() {
         let is_unwind = Some(si) == p.unwind_section;
+        let is_lsda = Some(si) == ls;
         let debug = s.segment_name() == b"__DWARF";
+        let units_here = unit_section(s);
         for fx in reloc::fixups(cputype, &s.relocations) {
             let first = s.relocations[fx.start];
             let place = u64::from(first.address);
-            let owner = if unit_section(s) {
-                unit_at(&units, si, place)
-            } else {
-                None
-            };
+            if is_unwind && place % UNWIND_ENTRY >= 16 {
+                continue;
+            }
+            let owner = if units_here { unit_at(si, place) } else { None };
+            let lsda_owner = if is_lsda { lsda_at(place) } else { None };
             if let Some(k) = owner {
-                units[k].relocations.extend(fx.clone());
+                units[k].atoms[0].relocations.extend(fx.clone());
+            }
+            if let Some(l) = lsda_owner {
+                lsda_relocs[l].extend(fx.clone());
             }
             for ri in fx.clone() {
                 let r = s.relocations[ri];
@@ -533,6 +687,9 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                     // Scattered: 32-bit targets only; not read here.
                     if let Some(k) = owner {
                         block(&mut units, k, "a scattered relocation");
+                    }
+                    if let Some(l) = lsda_owner {
+                        lsda_bad[l] = true;
                     }
                     continue;
                 }
@@ -544,16 +701,29 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                         if let Some(k) = owner {
                             block(&mut units, k, "a relocation naming no symbol");
                         }
+                        if let Some(l) = lsda_owner {
+                            lsda_bad[l] = true;
+                        }
                         continue;
                     };
-                    let target = sym_unit[r.symbolnum as usize];
                     if y.is_external() {
                         if let Some(k) = owner {
                             units[k].refs.insert(y.name.to_vec());
                         }
+                        if let Some(l) = lsda_owner {
+                            lsda_refs[l].insert(y.name.to_vec());
+                        }
                         continue;
                     }
                     // A local symbol.
+                    if let Some(l) = sym_lsda[r.symbolnum as usize] {
+                        if !debug && lsda_owner != Some(l) {
+                            lsda_bad[l] = true;
+                        }
+                    } else if lsda_owner.is_some() {
+                        lsda_bad[lsda_owner.unwrap_or(0)] = true;
+                    }
+                    let target = sym_unit[r.symbolnum as usize];
                     match (owner, target) {
                         (Some(k), Some(t)) if k == t => {}
                         (Some(k), _) => block(&mut units, k, "reaches a local symbol outside it"),
@@ -568,6 +738,9 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 // A local relocation.
                 if let Some(k) = owner {
                     block(&mut units, k, "a section-relative relocation");
+                }
+                if let Some(l) = lsda_owner {
+                    lsda_bad[l] = true;
                 }
                 if !reloc::names_section(cputype, &r) {
                     continue;
@@ -584,14 +757,20 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 let Some(toff) = sections.get(ts).and_then(|x| addr.checked_sub(x.addr)) else {
                     continue;
                 };
-                let Some(t) = unit_at(&units, ts, toff) else {
+                if Some(ts) == ls {
+                    if let Some(l) = lsda_at(toff)
+                        && !debug
+                    {
+                        lsda_bad[l] = true;
+                    }
+                    continue;
+                }
+                let Some(t) = unit_at(ts, toff) else {
                     continue;
                 };
                 if is_unwind && place % UNWIND_ENTRY == 0 && fx.len() == 1 {
                     // An unwind entry's function: the unit's own.
-                    if toff == units[t].range.start || units[t].range.contains(&toff) {
-                        units[t].unwind.push(place);
-                    }
+                    units[t].unwind.push((place, None));
                 } else if debug {
                     units[t].debug = true;
                 } else if owner != Some(t) {
@@ -600,106 +779,279 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             }
         }
     }
-    for k in 0..units.len() {
-        if opaque.contains(&units[k].section) {
-            block(&mut units, k, "a relocation into its section isn't decoded");
+    for u in &mut units {
+        if opaque.contains(&u.main().section) && u.blocked.is_none() {
+            u.blocked = Some("a relocation into its section isn't decoded");
         }
     }
-    // Unwind entries: no LSDA, personality by name.
+    if ls.is_some_and(|x| opaque.contains(&x)) {
+        lsda_bad.fill(true);
+    }
+    // Unwind entries: the personality by name, the LSDA in an atom of
+    // `__gcc_except_tab`; the entry's function must start in the unit and
+    // its length stay in it.
     if let Some(ui) = p.unwind_section {
         let s = sections[ui];
+        let at: BTreeMap<u64, usize> = s
+            .relocations
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (u64::from(r.address), i))
+            .collect();
+        let bytes = s.bytes().unwrap_or(&[]);
         for k in 0..units.len() {
-            let entries = units[k].unwind.clone();
-            for e in entries {
-                for r in &s.relocations {
-                    let a = u64::from(r.address);
-                    if a == e + 24 {
-                        block(&mut units, k, "an LSDA");
-                    } else if a == e + 16 {
-                        match o.symbols.get(r.symbolnum as usize) {
-                            Some(y) if r.external && y.is_external() => {
-                                units[k].refs.insert(y.name.to_vec());
-                            }
-                            _ => block(&mut units, k, "a personality that isn't named"),
+            let mut entries = std::mem::take(&mut units[k].unwind);
+            for (e, lsda) in &mut entries {
+                if let Some(&ri) = at.get(&(*e + 16)) {
+                    let r = s.relocations[ri];
+                    match o.symbols.get(r.symbolnum as usize) {
+                        Some(y) if r.external && y.is_external() => {
+                            units[k].refs.insert(y.name.to_vec());
                         }
+                        _ => block(&mut units, k, "a personality that isn't named"),
                     }
                 }
-                // The entry's function must start the unit, and its length
-                // stay in it.
-                let bytes = s.bytes().unwrap_or(&[]);
-                let len = bytes
-                    .get(e as usize + 8..e as usize + 12)
-                    .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
-                let start = bytes
-                    .get(e as usize..e as usize + 8)
-                    .map_or(0, |b| u64::from_le_bytes(b.try_into().unwrap_or([0; 8])));
-                let off = start.wrapping_sub(sections[units[k].section].addr);
-                if off < units[k].range.start || off + u64::from(len) > units[k].range.end {
+                if let Some(&ri) = at.get(&(*e + 24)) {
+                    let r = s.relocations[ri];
+                    let target = if r.external {
+                        o.symbols.get(r.symbolnum as usize).and_then(|y| {
+                            let l = sym_lsda.get(r.symbolnum as usize).copied().flatten()?;
+                            let base = sections[ls?].addr + atom_list[ls?][l].0.start;
+                            let addend = le(bytes, *e + 24, 8)?;
+                            Some((l, y.n_value.wrapping_sub(base).wrapping_add(addend)))
+                        })
+                    } else {
+                        turbonop_macho_object::reloc::local_address(cputype, endian, s, ri)
+                            .and_then(|a| {
+                                let lsec = ls?;
+                                if r.symbolnum as usize != lsec + 1 {
+                                    return None;
+                                }
+                                let off = a.checked_sub(sections[lsec].addr)?;
+                                let l = lsda_at(off)?;
+                                Some((l, off - atom_list[lsec][l].0.start))
+                            })
+                    };
+                    match target {
+                        Some((l, off)) => {
+                            lsda_users[l].insert(k);
+                            *lsda = Some((l, off));
+                        }
+                        None => block(&mut units, k, "an LSDA outside __gcc_except_tab"),
+                    }
+                }
+                let len = le(bytes, *e + 8, 4).unwrap_or(0);
+                let start = le(bytes, *e, 8).unwrap_or(0);
+                let u = units[k].main();
+                let off = start.wrapping_sub(sections[u.section].addr);
+                if off < u.range.start || off + len > u.range.end {
                     block(&mut units, k, "an unwind entry reaching outside it");
                 }
             }
+            units[k].unwind = entries;
         }
     }
-    // FDEs, data in code, and optimization hints in a unit.
-    for (si, s) in sections.iter().enumerate() {
-        if !(s.segment_name() == b"__TEXT" && s.name() == b"__eh_frame") {
-            continue;
-        }
-        let Some(ptrs) =
-            turbonop_macho_object::ehframe::pointers(s.bytes().unwrap_or(&[]), true, endian)
-        else {
-            for k in 0..units.len() {
-                block(&mut units, k, "an __eh_frame that doesn't decode");
-            }
-            continue;
-        };
-        for ptr in ptrs {
-            if ptr.kind != turbonop_macho_object::ehframe::PointerKind::PcBegin {
-                continue;
-            }
-            let bytes = s.bytes().unwrap_or(&[]);
-            let at = ptr.offset;
-            let raw = match ptr.size {
-                4 => bytes
-                    .get(at..at + 4)
-                    .map(|b| i64::from(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))),
-                8 => bytes
-                    .get(at..at + 8)
-                    .map(|b| i64::from_le_bytes(b.try_into().unwrap_or([0; 8]))),
-                _ => None,
-            };
-            let covered = s
-                .relocations
-                .iter()
-                .any(|r| u64::from(r.address) == ptr.offset as u64);
-            if covered {
-                // A relocated pc_begin: its target by its relocation.
-                for r in s
-                    .relocations
-                    .iter()
-                    .filter(|r| u64::from(r.address) == ptr.offset as u64)
-                {
-                    if r.external
-                        && let Some(Some(t)) = sym_unit.get(r.symbolnum as usize)
-                    {
-                        block(&mut units, *t, "an FDE");
-                    }
+    // FDEs: each unit's, with its LSDA; the CIE's personality by name.
+    if let Some(ei) = p.eh_section {
+        let s = sections[ei];
+        let bytes = s.bytes().unwrap_or(&[]);
+        let records = crate::elf::eh_frame::records(bytes, false);
+        let ptrs = turbonop_macho_object::ehframe::pointers(bytes, true, endian);
+        match (records, ptrs) {
+            (Some(records), Some(ptrs)) => {
+                // Relocations by record.
+                let mut rels_of: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+                for (ri, r) in s.relocations.iter().enumerate() {
+                    let a = u64::from(r.address) as usize;
+                    let k = records.partition_point(|x| x.start <= a).saturating_sub(1);
+                    rels_of.entry(k).or_default().push(ri);
                 }
-                continue;
+                let mut by_record: BTreeMap<usize, Vec<&turbonop_macho_object::ehframe::Pointer>> =
+                    BTreeMap::new();
+                for ptr in &ptrs {
+                    by_record.entry(ptr.record.0).or_default().push(ptr);
+                }
+                for (k, rec) in records.iter().enumerate() {
+                    let Some(cie_start) = rec.cie else { continue };
+                    let fields = by_record.get(&rec.start).cloned().unwrap_or_default();
+                    let Some(pc) = fields
+                        .iter()
+                        .find(|f| f.kind == turbonop_macho_object::ehframe::PointerKind::PcBegin)
+                    else {
+                        continue;
+                    };
+                    if rels_of.contains_key(&k) {
+                        // A relocated FDE (not what LLVM writes for x86-64):
+                        // its function's unit, if a relocation names it,
+                        // stays; any other unit might be its, so all do.
+                        for &ri in &rels_of[&k] {
+                            let r = s.relocations[ri];
+                            match sym_unit.get(r.symbolnum as usize) {
+                                Some(Some(t)) if r.external => {
+                                    block(&mut units, *t, "an FDE with relocations");
+                                }
+                                _ => {
+                                    for t in 0..units.len() {
+                                        block(&mut units, t, "an FDE with relocations");
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    let at = pc.offset as u64;
+                    let Some(v) = eh_value(bytes, at, pc.size, pc.encoding) else {
+                        continue;
+                    };
+                    let target = match pc.encoding & 0x70 {
+                        turbonop_macho_object::ehframe::DW_EH_PE_PCREL => {
+                            s.addr.wrapping_add(at).wrapping_add(v as u64)
+                        }
+                        0 => v as u64,
+                        _ => {
+                            for t in 0..units.len() {
+                                block(&mut units, t, "an FDE pointer of an encoding not known");
+                            }
+                            continue;
+                        }
+                    };
+                    let Some((ts, toff)) = section_of_addr(target) else {
+                        continue;
+                    };
+                    let Some(t) = unit_at(ts, toff) else { continue };
+                    let len = le(bytes, at + u64::from(pc.size), pc.size).unwrap_or(u64::MAX);
+                    let u = units[t].main();
+                    if pc.encoding & 0x70 != turbonop_macho_object::ehframe::DW_EH_PE_PCREL
+                        || pc.encoding & 0x80 != 0
+                        || toff.checked_add(len).is_none_or(|e| e > u.range.end)
+                    {
+                        block(&mut units, t, "an FDE reaching outside it");
+                        continue;
+                    }
+                    let pcp = EhPointer {
+                        at: at - rec.start as u64,
+                        size: pc.size,
+                        encoding: pc.encoding,
+                        atom: 0,
+                        offset: toff - u.range.start,
+                    };
+                    // Its LSDA.
+                    let mut lsda = None;
+                    if let Some(lp) = fields
+                        .iter()
+                        .find(|f| f.kind == turbonop_macho_object::ehframe::PointerKind::Lsda)
+                    {
+                        let at = lp.offset as u64;
+                        let v = eh_value(bytes, at, lp.size, lp.encoding).unwrap_or(0);
+                        let target = s.addr.wrapping_add(at).wrapping_add(v as u64);
+                        let found = ls.and_then(|l| {
+                            let off = target.checked_sub(sections[l].addr)?;
+                            let a = lsda_at(off)?;
+                            Some((a, off - atom_list[l][a].0.start))
+                        });
+                        match found {
+                            Some((a, off))
+                                if lp.encoding & 0x70
+                                    == turbonop_macho_object::ehframe::DW_EH_PE_PCREL
+                                    && lp.encoding & 0x80 == 0 =>
+                            {
+                                lsda_users[a].insert(t);
+                                lsda = Some(EhPointer {
+                                    at: at - rec.start as u64,
+                                    size: lp.size,
+                                    encoding: lp.encoding,
+                                    atom: a,
+                                    offset: off,
+                                });
+                            }
+                            _ if v == 0 => {}
+                            _ => block(&mut units, t, "an FDE's LSDA outside __gcc_except_tab"),
+                        }
+                    }
+                    // Its CIE: its relocations (the personality) by name.
+                    let Some(ci) = crate::elf::eh_frame::index_of(&records, cie_start) else {
+                        block(&mut units, t, "an FDE whose CIE doesn't read");
+                        continue;
+                    };
+                    for &ri in rels_of.get(&ci).map_or(&[][..], Vec::as_slice) {
+                        let r = s.relocations[ri];
+                        match o.symbols.get(r.symbolnum as usize) {
+                            Some(y) if r.external && y.is_external() => {
+                                units[t].refs.insert(y.name.to_vec());
+                            }
+                            _ => block(&mut units, t, "a CIE's relocation that isn't named"),
+                        }
+                    }
+                    let c = &records[ci];
+                    units[t].fdes.push(Fde {
+                        record: rec.start as u64..rec.end() as u64,
+                        cie: c.start as u64..c.end() as u64,
+                        id_at: rec.id_at as u64,
+                        pc: pcp,
+                        lsda,
+                    });
+                }
             }
-            let Some(raw) = raw else { continue };
-            let target = s
-                .addr
-                .wrapping_add(ptr.offset as u64)
-                .wrapping_add(raw as u64);
-            if let Some((ts, toff)) = section_of_addr(target)
-                && let Some(t) = unit_at(&units, ts, toff)
-            {
-                block(&mut units, t, "an FDE");
+            _ if !bytes.is_empty() => {
+                for k in 0..units.len() {
+                    block(&mut units, k, "an __eh_frame that doesn't decode");
+                }
             }
-            let _ = si;
+            _ => {}
         }
     }
+    // Each unit's LSDAs become atoms of it, when nothing else reaches them.
+    let mut lsda_atom: BTreeMap<(usize, usize), usize> = BTreeMap::new();
+    if let Some(l) = ls {
+        let mut wanted: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+        for (a, users) in lsda_users.iter().enumerate() {
+            for &k in users {
+                wanted.entry(k).or_default().insert(a);
+            }
+        }
+        for (k, set) in wanted {
+            for a in set {
+                if lsda_bad[a] || lsda_users[a].len() > 1 {
+                    block(&mut units, k, "an LSDA reached from outside its unit");
+                    continue;
+                }
+                let (range, syms) = atom_list[l][a].clone();
+                let idx = units[k].atoms.len();
+                units[k].atoms.push(Atom {
+                    section: l,
+                    range,
+                    symbols: syms,
+                    relocations: lsda_relocs[a].clone(),
+                });
+                let refs = lsda_refs[a].clone();
+                units[k].refs.extend(refs);
+                lsda_atom.insert((k, a), idx);
+            }
+        }
+    }
+    for k in 0..units.len() {
+        let mut ok = true;
+        for (_, lsda) in &mut units[k].unwind {
+            if let Some((a, off)) = *lsda {
+                match lsda_atom.get(&(k, a)) {
+                    Some(&i) => *lsda = Some((i, off)),
+                    None => ok = false,
+                }
+            }
+        }
+        for f in &mut units[k].fdes {
+            if let Some(lp) = &mut f.lsda {
+                match lsda_atom.get(&(k, lp.atom)) {
+                    Some(&i) => lp.atom = i,
+                    None => ok = false,
+                }
+            }
+        }
+        if !ok {
+            block(&mut units, k, "an LSDA reached from outside its unit");
+        }
+    }
+    // Data in code and optimization hints in a unit.
     for c in &o.commands {
         if let Command::LinkeditData { cmd, data } = c {
             let addrs: Vec<u64> = match *cmd {
@@ -717,7 +1069,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             };
             for a in addrs {
                 if let Some((ts, toff)) = section_of_addr(a)
-                    && let Some(t) = unit_at(&units, ts, toff)
+                    && let Some(t) = unit_at(ts, toff)
                 {
                     block(&mut units, t, "data in code or an optimization hint");
                 }
@@ -726,75 +1078,132 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     }
 
     // Identity hashes.
+    let unwind_rel: BTreeMap<u64, usize> = p
+        .unwind_section
+        .map(|ui| {
+            sections[ui]
+                .relocations
+                .iter()
+                .enumerate()
+                .map(|(i, r)| (u64::from(r.address), i))
+                .collect()
+        })
+        .unwrap_or_default();
+    let unwind_bytes = p
+        .unwind_section
+        .and_then(|ui| sections[ui].bytes())
+        .unwrap_or(&[]);
     for u in &mut units {
-        let s = sections[u.section];
         let mut h = H128::new();
         h.u128(env);
-        h.bytes(s.segment_name());
-        h.bytes(s.name());
-        h.u64(u64::from(s.flags));
-        h.u64(u64::from(s.align));
-        h.u64(u.range.end - u.range.start);
-        if let Some(b) = s.bytes() {
-            h.bytes(&b[u.range.start as usize..u.range.end as usize]);
-        }
-        let mut rels: Vec<usize> = u.relocations.clone();
-        rels.sort_by_key(|&i| (s.relocations[i].address, i));
-        for &i in &rels {
-            let r = s.relocations[i];
-            h.u64(u64::from(r.address) - u.range.start);
-            h.u64(
-                u64::from(r.kind)
-                    | u64::from(r.length) << 8
-                    | u64::from(r.pcrel) << 16
-                    | u64::from(r.external) << 17,
-            );
-            if r.external {
-                match o.symbols.get(r.symbolnum as usize) {
-                    Some(y) if y.is_external() => h.bytes(&y.name),
-                    Some(y) => {
-                        h.u64(1);
-                        h.u64(y.n_value.wrapping_sub(s.addr) - u.range.start);
-                    }
-                    None => h.u64(2),
-                }
+        for (ai, a) in u.atoms.iter().enumerate() {
+            let s = sections[a.section];
+            h.u64(ai as u64);
+            h.bytes(s.segment_name());
+            h.bytes(s.name());
+            h.u64(u64::from(s.flags));
+            h.u64(u64::from(s.align));
+            let len = if ai == 0 {
+                function_length(&o, s, a, &u.unwind, unwind_bytes)
             } else {
-                h.u64(u64::from(r.symbolnum));
+                a.range.end - a.range.start
+            };
+            h.u64(len);
+            if let Some(b) = s.bytes() {
+                h.bytes(&b[a.range.start as usize..(a.range.start + len) as usize]);
+            }
+            let mut rels: Vec<usize> = a.relocations.clone();
+            rels.sort_by_key(|&i| (s.relocations[i].address, i));
+            for &i in &rels {
+                let r = s.relocations[i];
+                h.u64(u64::from(r.address) - a.range.start);
+                h.u64(
+                    u64::from(r.kind)
+                        | u64::from(r.length) << 8
+                        | u64::from(r.pcrel) << 16
+                        | u64::from(r.external) << 17,
+                );
+                if r.external {
+                    match o.symbols.get(r.symbolnum as usize) {
+                        Some(y) if y.is_external() => h.bytes(&y.name),
+                        Some(y) => {
+                            h.u64(1);
+                            h.u64(y.n_value.wrapping_sub(s.addr) - a.range.start);
+                        }
+                        None => h.u64(2),
+                    }
+                } else {
+                    h.u64(u64::from(r.symbolnum));
+                }
+            }
+            for &i in &a.symbols {
+                let y = &o.symbols[i as usize];
+                h.bytes(&y.name);
+                h.u64(u64::from(y.n_type) | u64::from(y.n_desc) << 8);
+                h.u64(y.n_value.wrapping_sub(s.addr) - a.range.start);
             }
         }
-        for &i in &u.symbols {
-            let y = &o.symbols[i as usize];
-            h.bytes(&y.name);
-            h.u64(u64::from(y.n_type) | u64::from(y.n_desc) << 8);
-            h.u64(y.n_value.wrapping_sub(s.addr) - u.range.start);
-        }
+        let main = u.main();
+        let s = sections[main.section];
         if let Some(ui) = p.unwind_section {
             let us = sections[ui];
             let b = us.bytes().unwrap_or(&[]);
-            for &e in &u.unwind {
+            for &(e, lsda) in &u.unwind {
                 let e = e as usize;
                 if let Some(entry) = b.get(e..e + 32) {
                     let start = u64::from_le_bytes(entry[..8].try_into().unwrap_or([0; 8]));
-                    h.u64(start.wrapping_sub(s.addr).wrapping_sub(u.range.start));
+                    h.u64(start.wrapping_sub(s.addr).wrapping_sub(main.range.start));
                     h.bytes(&entry[8..16]);
                 }
-                for r in us
-                    .relocations
-                    .iter()
-                    .filter(|r| u64::from(r.address) == e as u64 + 16)
+                if let Some(&ri) = unwind_rel.get(&(e as u64 + 16))
+                    && let Some(y) = o.symbols.get(us.relocations[ri].symbolnum as usize)
                 {
-                    if let Some(y) = o.symbols.get(r.symbolnum as usize) {
-                        h.bytes(&y.name);
+                    h.bytes(&y.name);
+                }
+                if let Some((a, off)) = lsda {
+                    h.u64(3);
+                    h.u64(a as u64);
+                    h.u64(off);
+                }
+            }
+        }
+        if let Some(ei) = p.eh_section {
+            let es = sections[ei];
+            let b = es.bytes().unwrap_or(&[]);
+            for f in &u.fdes {
+                let mut rec = b[f.record.start as usize..f.record.end as usize].to_vec();
+                rec[f.id_at as usize..f.id_at as usize + 4].fill(0);
+                for q in std::iter::once(&f.pc).chain(&f.lsda) {
+                    rec[q.at as usize..q.at as usize + usize::from(q.size)].fill(0);
+                    h.u64(q.atom as u64);
+                    h.u64(q.offset);
+                }
+                h.bytes(&rec);
+                h.bytes(&b[f.cie.start as usize..f.cie.end as usize]);
+                for r in &es.relocations {
+                    let a = u64::from(r.address);
+                    if f.cie.contains(&a) {
+                        h.u64(a - f.cie.start);
+                        h.u64(u64::from(r.kind) | u64::from(r.length) << 8);
+                        if let Some(y) = o.symbols.get(r.symbolnum as usize) {
+                            h.bytes(&y.name);
+                        }
                     }
                 }
             }
         }
         u.hash = h128(&h);
     }
+    let unit_of_name: BTreeMap<&[u8], usize> = units
+        .iter()
+        .enumerate()
+        .flat_map(|(k, u)| u.names.iter().map(move |n| (n.as_slice(), k)))
+        .collect();
     let mut defs = defs_of(&o);
     for (name, unit) in &mut defs {
-        *unit = units.iter().position(|u| u.names.iter().any(|n| n == name));
+        *unit = unit_of_name.get(name.as_slice()).copied();
     }
+    drop(unit_of_name);
     p.defs = defs;
     p.units = units;
     p.obj = Some(o);
@@ -934,6 +1343,20 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
         }
         if !changed {
             break;
+        }
+    }
+    if std::env::var_os("TURBOLIB_MACHO_WHY").is_some() {
+        // (A diagnostic: each copy that stays, and why.)
+        for (m, p) in parsed.iter().enumerate() {
+            for (k, u) in p.units.iter().enumerate() {
+                if let Some(w) = why[m][k] {
+                    eprintln!(
+                        "{}: {}: {w}",
+                        String::from_utf8_lossy(inputs[m].name),
+                        String::from_utf8_lossy(&u.names[0])
+                    );
+                }
+            }
         }
     }
     for w in why.iter().flatten().flatten() {
@@ -1096,12 +1519,41 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
 /// bytes of units removed; or why it couldn't be rewritten.
 type Rewritten = Result<(Vec<u8>, usize, u64), String>;
 
-/// An unwind entry of a synthesized member: its function's offset in its
-/// section, that section, the entry's bytes, and its personality's name.
-type UnwindEntry = (u64, usize, Vec<u8>, Option<Vec<u8>>);
+/// An unwind entry of a synthesized member: its function's place (an atom
+/// placed, and the offset in it), the entry's bytes, its personality's
+/// name, and its LSDA's place.
+struct UnwindOut {
+    func: (usize, u64),
+    entry: Vec<u8>,
+    personality: Option<Vec<u8>>,
+    lsda: Option<(usize, u64)>,
+}
+
+/// A CIE of a synthesized member: its bytes and relocations (each its
+/// offset in the record, the relocation, and its symbol's name).
+type CieOut = (Vec<u8>, Vec<(u64, Relocation, Vec<u8>)>);
+
+/// An FDE of a synthesized member: its bytes, its CIE (an index into the
+/// CIEs), the offset of its CIE pointer, and its pointers (each to an atom
+/// placed).
+struct FdeOut {
+    bytes: Vec<u8>,
+    cie: usize,
+    id_at: u64,
+    pointers: Vec<EhPointer>,
+}
 
 fn put_u64(b: &mut [u8], at: usize, v: u64) {
     b[at..at + 8].copy_from_slice(&v.to_le_bytes());
+}
+
+/// An atom placed in a synthesized member: whose, where.
+struct Placed {
+    member: usize,
+    unit: usize,
+    atom: usize,
+    section: usize,
+    offset: u64,
 }
 
 /// The bytes of synthesized member `i`.
@@ -1125,8 +1577,6 @@ fn build_synth(
     let mut symbols: Vec<Symbol<'static>> = Vec::new();
     let mut by_name: BTreeMap<Vec<u8>, u32> = BTreeMap::new();
     let mut anchors_needed: BTreeSet<usize> = BTreeSet::new();
-    // (Relocations per section, with old symbol references to remap.)
-    let mut unwind: Vec<UnwindEntry> = Vec::new();
     let undefined = |symbols: &mut Vec<Symbol<'static>>,
                      by_name: &mut BTreeMap<Vec<u8>, u32>,
                      n: &[u8],
@@ -1154,96 +1604,97 @@ fn build_synth(
         by_name.insert(n.to_vec(), k);
         k
     };
-    // First: every unit's own symbols defined, so references resolve to them.
-    struct Placed {
-        member: usize,
-        unit: usize,
-        section: usize,
-        offset: u64,
-        /// Old symbol index -> new.
-        syms: BTreeMap<u32, u32>,
-    }
+    // Every unit's atoms placed (each unit's own, then its LSDAs).
     let mut placed: Vec<Placed> = Vec::new();
+    let mut unit_placed: Vec<Vec<usize>> = Vec::with_capacity(s.units.len());
     let mut pads: Vec<(usize, u64)> = Vec::new();
     for &(m, k) in &s.units {
         let o = parsed[m].obj.as_ref().ok_or("no object")?;
         let u = &parsed[m].units[k];
-        let src = o.section(u.section).ok_or("no section")?;
-        let key = (src.segname, src.sectname, src.flags);
-        let si = match key_of.iter().position(|k| *k == key) {
-            Some(i) => i,
-            None => {
-                key_of.push(key);
-                sections.push(Section {
-                    sectname: src.sectname,
-                    segname: src.segname,
-                    addr: 0,
-                    align: src.align,
-                    flags: src.flags,
-                    reserved1: 0,
-                    reserved2: 0,
-                    reserved3: 0,
-                    contents: if src.bytes().is_some() {
-                        Contents::Bytes(Cow::Owned(Vec::new()))
-                    } else {
-                        Contents::Zerofill(0)
-                    },
-                    relocations: Vec::new(),
-                });
-                sections.len() - 1
+        let mut here = Vec::with_capacity(u.atoms.len());
+        for (ai, atom) in u.atoms.iter().enumerate() {
+            let src = o.section(atom.section).ok_or("no section")?;
+            let key = (src.segname, src.sectname, src.flags);
+            let si = match key_of.iter().position(|k| *k == key) {
+                Some(i) => i,
+                None => {
+                    key_of.push(key);
+                    sections.push(Section {
+                        sectname: src.sectname,
+                        segname: src.segname,
+                        addr: 0,
+                        align: src.align,
+                        flags: src.flags,
+                        reserved1: 0,
+                        reserved2: 0,
+                        reserved3: 0,
+                        contents: if src.bytes().is_some() {
+                            Contents::Bytes(Cow::Owned(Vec::new()))
+                        } else {
+                            Contents::Zerofill(0)
+                        },
+                        relocations: Vec::new(),
+                    });
+                    sections.len() - 1
+                }
+            };
+            let sec = &mut sections[si];
+            sec.align = sec.align.max(src.align);
+            let a = 1u64 << src.align.min(15);
+            let end = sec.size();
+            let at = end.div_ceil(a) * a;
+            let len = atom.range.end - atom.range.start;
+            if at > end && end > 0 {
+                // The alignment gap is an atom of its own (a local label), so
+                // that the unit before it keeps its size.
+                pads.push((si, end));
             }
-        };
-        let sec = &mut sections[si];
-        sec.align = sec.align.max(src.align);
-        let a = 1u64 << src.align.min(15);
-        let end = sec.size();
-        let at = end.div_ceil(a) * a;
-        let len = u.range.end - u.range.start;
-        if at > end && end > 0 {
-            // The alignment gap is an atom of its own (a local label), so
-            // that the unit before it keeps its size.
-            pads.push((si, end));
-        }
-        match (&mut sec.contents, src.bytes()) {
-            (Contents::Bytes(b), Some(sb)) => {
-                let b = b.to_mut();
-                b.resize(at as usize, 0);
-                b.extend_from_slice(&sb[u.range.start as usize..u.range.end as usize]);
+            match (&mut sec.contents, src.bytes()) {
+                (Contents::Bytes(b), Some(sb)) => {
+                    let b = b.to_mut();
+                    b.resize(at as usize, 0);
+                    b.extend_from_slice(&sb[atom.range.start as usize..atom.range.end as usize]);
+                }
+                (Contents::Zerofill(n), None) => *n = at + len,
+                _ => return Err("a unit's section kind differs".into()),
             }
-            (Contents::Zerofill(n), None) => *n = at + len,
-            _ => return Err("a unit's section kind differs".into()),
-        }
-        placed.push(Placed {
-            member: m,
-            unit: k,
-            section: si,
-            offset: at,
-            syms: BTreeMap::new(),
-        });
-    }
-    // Section addresses: LLVM's (laid out below); symbols take offsets now
-    // and addresses once the sections are placed.
-    for p in &mut placed {
-        let o = parsed[p.member].obj.as_ref().ok_or("no object")?;
-        let u = &parsed[p.member].units[p.unit];
-        let src = o.section(u.section).ok_or("no section")?;
-        for &yi in &u.symbols {
-            let y = &o.symbols[yi as usize];
-            let off = y.n_value.wrapping_sub(src.addr) - u.range.start + p.offset;
-            symbols.push(Symbol {
-                name: Cow::Owned(y.name.to_vec()),
-                name_offset: 0,
-                n_type: y.n_type,
-                n_sect: (p.section + 1) as u8,
-                n_desc: y.n_desc,
-                // (An offset until the section's address is known.)
-                n_value: off,
-                indirect: None,
+            here.push(placed.len());
+            placed.push(Placed {
+                member: m,
+                unit: k,
+                atom: ai,
+                section: si,
+                offset: at,
             });
-            let ni = (symbols.len() - 1) as u32;
-            p.syms.insert(yi, ni);
-            if y.is_external() {
-                by_name.insert(y.name.to_vec(), ni);
+        }
+        unit_placed.push(here);
+    }
+    // Symbols take offsets now and addresses once the sections are placed.
+    let mut unit_syms: Vec<BTreeMap<u32, u32>> = vec![BTreeMap::new(); s.units.len()];
+    for (ui, here) in unit_placed.iter().enumerate() {
+        for &pi in here {
+            let p = &placed[pi];
+            let o = parsed[p.member].obj.as_ref().ok_or("no object")?;
+            let atom = &parsed[p.member].units[p.unit].atoms[p.atom];
+            let src = o.section(atom.section).ok_or("no section")?;
+            for &yi in &atom.symbols {
+                let y = &o.symbols[yi as usize];
+                let off = y.n_value.wrapping_sub(src.addr) - atom.range.start + p.offset;
+                symbols.push(Symbol {
+                    name: Cow::Owned(y.name.to_vec()),
+                    name_offset: 0,
+                    n_type: y.n_type,
+                    n_sect: (p.section + 1) as u8,
+                    n_desc: y.n_desc,
+                    // (An offset until the section's address is known.)
+                    n_value: off,
+                    indirect: None,
+                });
+                let ni = (symbols.len() - 1) as u32;
+                unit_syms[ui].insert(yi, ni);
+                if y.is_external() {
+                    by_name.insert(y.name.to_vec(), ni);
+                }
             }
         }
     }
@@ -1258,56 +1709,116 @@ fn build_synth(
             indirect: None,
         });
     }
-    // Relocations, and unwind entries.
+    // Relocations, unwind entries, and FDEs.
     let mut relocs: Vec<Vec<Relocation>> = vec![Vec::new(); sections.len()];
-    for p in &placed {
-        let o = parsed[p.member].obj.as_ref().ok_or("no object")?;
-        let u = &parsed[p.member].units[p.unit];
-        let src = o.section(u.section).ok_or("no section")?;
-        for &ri in &u.relocations {
-            let mut r = src.relocations[ri];
-            r.address = u32::try_from(u64::from(r.address) - u.range.start + p.offset)
-                .map_err(|_| "a section too large")?;
-            if r.external {
-                let y = &o.symbols[r.symbolnum as usize];
-                r.symbolnum = if y.is_external() {
-                    if let Some(&t) = name_to.get(y.name.as_ref())
-                        && t != i
-                    {
-                        anchors_needed.insert(t);
-                    }
-                    undefined(
-                        &mut symbols,
-                        &mut by_name,
-                        &y.name,
-                        y.is_undefined() && y.n_desc & N_WEAK_REF != 0,
-                    )
-                } else {
-                    *p.syms
-                        .get(&r.symbolnum)
-                        .ok_or("a local symbol outside the unit")?
-                };
+    let mut unwind: Vec<UnwindOut> = Vec::new();
+    let mut cies: Vec<CieOut> = Vec::new();
+    let mut fdes: Vec<FdeOut> = Vec::new();
+    let mut eh_template: Option<(u32, u32)> = None;
+    for (ui, &(m, k)) in s.units.iter().enumerate() {
+        let o = parsed[m].obj.as_ref().ok_or("no object")?;
+        let u = &parsed[m].units[k];
+        for &pi in &unit_placed[ui] {
+            let p = &placed[pi];
+            let atom = &u.atoms[p.atom];
+            let src = o.section(atom.section).ok_or("no section")?;
+            for &ri in &atom.relocations {
+                let mut r = src.relocations[ri];
+                r.address = u32::try_from(u64::from(r.address) - atom.range.start + p.offset)
+                    .map_err(|_| "a section too large")?;
+                if r.external {
+                    let y = &o.symbols[r.symbolnum as usize];
+                    r.symbolnum = if y.is_external() {
+                        if let Some(&t) = name_to.get(y.name.as_ref())
+                            && t != i
+                        {
+                            anchors_needed.insert(t);
+                        }
+                        undefined(
+                            &mut symbols,
+                            &mut by_name,
+                            &y.name,
+                            y.is_undefined() && y.n_desc & N_WEAK_REF != 0,
+                        )
+                    } else {
+                        *unit_syms[ui]
+                            .get(&r.symbolnum)
+                            .ok_or("a local symbol outside the unit")?
+                    };
+                }
+                relocs[p.section].push(r);
             }
-            relocs[p.section].push(r);
         }
-        if let Some(ui) = parsed[p.member].unwind_section {
-            let us = o.section(ui).ok_or("no unwind section")?;
+        let main = u.main();
+        let src = o.section(main.section).ok_or("no section")?;
+        if let Some(ui_sec) = parsed[m].unwind_section {
+            let us = o.section(ui_sec).ok_or("no unwind section")?;
             let b = us.bytes().unwrap_or(&[]);
-            for &e in &u.unwind {
+            for &(e, lsda) in &u.unwind {
                 let e = e as usize;
-                let mut entry = b
+                let entry = b
                     .get(e..e + 32)
                     .ok_or("an unwind entry past its section")?
                     .to_vec();
                 let start = u64::from_le_bytes(entry[..8].try_into().unwrap_or([0; 8]));
-                let off = start.wrapping_sub(src.addr) - u.range.start + p.offset;
-                put_u64(&mut entry, 0, off);
+                let off = start.wrapping_sub(src.addr) - main.range.start;
                 let personality = us
                     .relocations
                     .iter()
                     .find(|r| u64::from(r.address) == e as u64 + 16)
                     .map(|r| o.symbols[r.symbolnum as usize].name.to_vec());
-                unwind.push((off, p.section, entry, personality));
+                unwind.push(UnwindOut {
+                    func: (unit_placed[ui][0], off),
+                    entry,
+                    personality,
+                    lsda: lsda.map(|(a, off)| (unit_placed[ui][a], off)),
+                });
+            }
+        }
+        if let Some(ei) = parsed[m].eh_section
+            && !u.fdes.is_empty()
+        {
+            let es = o.section(ei).ok_or("no __eh_frame")?;
+            eh_template.get_or_insert((es.align, es.flags));
+            let b = es.bytes().unwrap_or(&[]);
+            for f in &u.fdes {
+                let cie_bytes = b[f.cie.start as usize..f.cie.end as usize].to_vec();
+                let cie_rels: Vec<(u64, Relocation, Vec<u8>)> = es
+                    .relocations
+                    .iter()
+                    .filter(|r| f.cie.contains(&u64::from(r.address)))
+                    .map(|r| {
+                        (
+                            u64::from(r.address) - f.cie.start,
+                            *r,
+                            o.symbols[r.symbolnum as usize].name.to_vec(),
+                        )
+                    })
+                    .collect();
+                let key = (cie_bytes, cie_rels);
+                let cie = match cies.iter().position(|c| *c == key) {
+                    Some(c) => c,
+                    None => {
+                        cies.push(key);
+                        cies.len() - 1
+                    }
+                };
+                let mut pointers = vec![EhPointer {
+                    atom: unit_placed[ui][f.pc.atom],
+                    ..f.pc
+                }];
+                if let Some(l) = f.lsda {
+                    pointers.push(EhPointer {
+                        atom: unit_placed[ui][l.atom],
+                        ..l
+                    });
+                }
+                fdes.push(FdeOut {
+                    bytes: b[f.record.start as usize..f.record.end as usize].to_vec(),
+                    cie,
+                    id_at: f.id_at,
+                    pointers,
+                });
             }
         }
     }
@@ -1358,6 +1869,52 @@ fn build_synth(
         relocs.push(Vec::new());
         Some(sections.len() - 1)
     };
+    // `__eh_frame`: the CIEs, then the FDEs (their pointers set once the
+    // sections are placed); the CIEs' relocations (personalities) by name.
+    let mut eh_patches: Vec<(u64, EhPointer)> = Vec::new();
+    let eh_si = match eh_template {
+        Some((align, flags)) if !fdes.is_empty() => {
+            let mut pieces: Vec<(&[u8], Option<usize>, usize)> = Vec::new();
+            for (b, _) in &cies {
+                pieces.push((b, None, 4));
+            }
+            for f in &fdes {
+                pieces.push((&f.bytes, Some(f.cie), f.id_at as usize));
+            }
+            let (bytes, starts) = crate::elf::eh_frame::build(&pieces, false);
+            let mut rs = Vec::new();
+            for (c, (_, rels)) in cies.iter().enumerate() {
+                for (off, r, name) in rels {
+                    let mut r = *r;
+                    r.address = u32::try_from(starts[c] as u64 + off)
+                        .map_err(|_| "an __eh_frame too large")?;
+                    r.symbolnum = undefined(&mut symbols, &mut by_name, name, false);
+                    rs.push(r);
+                }
+            }
+            for (j, f) in fdes.iter().enumerate() {
+                let start = starts[cies.len() + j] as u64;
+                for q in &f.pointers {
+                    eh_patches.push((start, *q));
+                }
+            }
+            sections.push(Section {
+                sectname: name_field(b"__eh_frame"),
+                segname: name_field(b"__TEXT"),
+                addr: 0,
+                align,
+                flags,
+                reserved1: 0,
+                reserved2: 0,
+                reserved3: 0,
+                contents: Contents::Bytes(Cow::Owned(bytes)),
+                relocations: Vec::new(),
+            });
+            relocs.push(rs);
+            Some(sections.len() - 1)
+        }
+        _ => None,
+    };
     // Zero-fill sections last, as LLVM orders them (renumbering symbols).
     let mut order: Vec<usize> = (0..sections.len()).collect();
     order.sort_by_key(|&k| (sections[k].bytes().is_none(), k));
@@ -1370,6 +1927,9 @@ fn build_synth(
             y.n_sect = (new_of[usize::from(y.n_sect) - 1] + 1) as u8;
         }
     }
+    for p in &mut placed {
+        p.section = new_of[p.section];
+    }
     let mut slots: Vec<Option<(Section<'static>, Vec<Relocation>)>> =
         sections.into_iter().zip(relocs).map(Some).collect();
     let mut sections: Vec<Section<'static>> = Vec::with_capacity(slots.len());
@@ -1380,9 +1940,7 @@ fn build_synth(
         relocs.push(r);
     }
     let unwind_si = unwind_si.map(|k| new_of[k]);
-    for (_, sec, _, _) in &mut unwind {
-        *sec = new_of[*sec];
-    }
+    let eh_si = eh_si.map(|k| new_of[k]);
     // Addresses, as LLVM lays them out.
     let mut addr = 0u64;
     for s in sections.iter_mut().filter(|s| s.bytes().is_some()) {
@@ -1402,29 +1960,64 @@ fn build_synth(
             y.n_value += sections[usize::from(y.n_sect) - 1].addr;
         }
     }
+    let address_of = |sections: &[Section<'_>], (pi, off): (usize, u64)| -> (usize, u64) {
+        let p = &placed[pi];
+        (p.section, sections[p.section].addr + p.offset + off)
+    };
     // Unwind entries: the function's address, a local relocation to its
-    // section; the personality by name.
+    // section; the personality by name; the LSDA's address, a local
+    // relocation to its section.
     if let Some(ui) = unwind_si {
-        unwind.sort_by_key(|e| (e.1, e.0));
-        let mut bytes = Vec::with_capacity(unwind.len() * 32);
+        let mut entries: Vec<(usize, u64, UnwindOut)> = unwind
+            .into_iter()
+            .map(|e| {
+                let (sec, a) = address_of(&sections, e.func);
+                (sec, a, e)
+            })
+            .collect();
+        entries.sort_by_key(|e| (e.0, e.1));
+        let mut bytes = Vec::with_capacity(entries.len() * 32);
         let mut rs = Vec::new();
-        for (off, sec, mut entry, personality) in unwind {
+        for (sec, a, e) in entries {
             let at = bytes.len() as u32;
-            put_u64(&mut entry, 0, sections[sec].addr + off);
-            if personality.is_some() {
+            let mut entry = e.entry;
+            put_u64(&mut entry, 0, a);
+            if e.personality.is_some() {
                 put_u64(&mut entry, 16, 0);
             }
-            bytes.extend_from_slice(&entry);
             rs.push(Relocation::plain(at, (sec + 1) as u32, false, 0, 3));
-            if let Some(p) = personality {
+            if let Some(p) = e.personality {
                 let k = undefined(&mut symbols, &mut by_name, &p, false);
                 rs.push(Relocation::plain(at + 16, k, true, 0, 3));
             }
+            if let Some(l) = e.lsda {
+                let (lsec, la) = address_of(&sections, l);
+                put_u64(&mut entry, 24, la);
+                rs.push(Relocation::plain(at + 24, (lsec + 1) as u32, false, 0, 3));
+            }
+            bytes.extend_from_slice(&entry);
         }
         // (LLVM writes a section's relocations last to first.)
         rs.reverse();
         relocs[ui] = rs;
         sections[ui].contents = Contents::Bytes(Cow::Owned(bytes));
+    }
+    // FDEs' pointers: PC-relative, to the atoms placed.
+    if let Some(ei) = eh_si {
+        let eh_addr = sections[ei].addr;
+        let mut writes = Vec::with_capacity(eh_patches.len());
+        for (start, q) in eh_patches {
+            let field = start + q.at;
+            let (_, target) = address_of(&sections, (q.atom, q.offset));
+            let v = target.wrapping_sub(eh_addr + field);
+            writes.push((field as usize, usize::from(q.size), v));
+        }
+        if let Contents::Bytes(b) = &mut sections[ei].contents {
+            let b = b.to_mut();
+            for (at, n, v) in writes {
+                b[at..at + n].copy_from_slice(&v.to_le_bytes()[..n]);
+            }
+        }
     }
     // Local relocations inside the units' bytes encode addresses: none here
     // (a unit with one doesn't fold).
@@ -1495,8 +2088,8 @@ fn rewrite_giver(
     // The address ranges going.
     let ranges: Vec<(usize, Range<u64>, Range<u64>)> = gone
         .iter()
-        .map(|&k| {
-            let u = &p.units[k];
+        .flat_map(|&k| p.units[k].atoms.iter())
+        .map(|u| {
             let a = o.section(u.section).map_or(0, |s| s.addr);
             (
                 u.section,
@@ -1514,7 +2107,12 @@ fn rewrite_giver(
     };
     let gone_syms: BTreeSet<u32> = gone
         .iter()
-        .flat_map(|&k| p.units[k].symbols.iter().copied())
+        .flat_map(|&k| {
+            p.units[k]
+                .atoms
+                .iter()
+                .flat_map(|a| a.symbols.iter().copied())
+        })
         .collect();
     // 1. Debug sections' relocations to what goes: removed, places zeroed.
     let mut tomb = 0;
@@ -1579,8 +2177,15 @@ fn rewrite_giver(
     }
     if let Some(ui) = p.unwind_section {
         for &k in gone {
-            for &e in &p.units[k].unwind {
+            for &(e, _) in &p.units[k].unwind {
                 cuts.entry(ui).or_default().push(e..e + UNWIND_ENTRY);
+            }
+        }
+    }
+    if let Some(ei) = p.eh_section {
+        for &k in gone {
+            for f in &p.units[k].fdes {
+                cuts.entry(ei).or_default().push(f.record.clone());
             }
         }
     }

@@ -274,12 +274,29 @@ hexcavator itself has grown: 12.8 MB to 16.3 MB on Windows x64 from
 PDB), and 17.1 MB (glibc, dynamic) to 22.9 MB (musl, static) on Linux
 x64. Where the 3.5 MB went:
 
-- **The new decoders, about 1.1 MB.** PowerPC's code (365 KB) and
-  LoongArch's (265 KB); MIPS's tables (about 275 KB: three of 64 KB and
-  more) and RISC-V's (106 KB), anonymous read-only data (`anon.*`, by
-  their objects). Tables of exactly 64 KB are likely indexed by 16 bits
-  and mostly empty: a denser form (by ranges, or a second level) could
-  take a fraction.
+- **The decoders' tables.** Their read-only data was 4.3 MB of the
+  6.7 MB `.rdata` (16.8 MB in all, on 2026-11-25). The four TableGen
+  decoders' (MIPS, PowerPC, RISC-V, LoongArch: 1.3 MB) are 315 KB
+  smaller: buckets in one array with 16-bit starts (16 bytes a bucket
+  before, and PowerPC's 4,096 64-bit ones held 105 entries), and an
+  instruction's name and syntax one string (72 bytes an instruction
+  before, 56 now). What's left, the same way:
+  - **arm64's, 2.0 MB**: about 7,400 encodings of about 128 bytes (three
+    `Option<fn>`, four slices, a `&str`), and its symbols (5 × 42 KB).
+  - **arm32's, 690 KB**: `A32`, `T32`, and a 64 KB `T32_BUCKETS` (the
+    same `&[&[u16]]`).
+  - **x86's, 270 KB** (`ENTRIES`, 186 KB).
+  - The TableGen decoders' instructions are still 56 bytes: an index
+    into a string table, and into a table of operand lists, would make
+    them about 24.
+- **`THIRD_PARTY_NOTICES.txt`, 247 KB**, embedded for `hexcavator
+  licenses`, with each crate's copy of the same MIT and Apache texts:
+  each text once (and the crates under it), or compressed.
+- **`hexcavator size` misattributes data with no symbol** to the symbol
+  before it, even another object's: `load_config::dump` was charged
+  135 KB of `turbonop_powerpc`'s data, and LoongArch's `reg_name` (a few
+  lines) 64 KB. A section contribution with no symbol of its own should
+  be its object's, not its neighbor's.
 - **Generic code, about 1.15 MB**, counted to `core` (+668 KB), `std`
   (+306 KB), and `alloc` (+180 KB): our generics instantiated for each
   type, much of it likely `turbonop_par`'s (+111 KB itself, new)

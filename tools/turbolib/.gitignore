@@ -11,3 +11,4 @@
 /prune/*.cpp
 /prune/*.h
 !/verify/order.txt
+/tables/out/

@@ -88,3 +88,21 @@ reached each PDB.
 
 Neither linker pruned anything: all 200 structures and all 200 function
 ids arrived every time.
+
+## `tables`: side tables through a fold (phase 2.3)
+
+`run.py [config...]` compiles `tools/coff/tables/one.cpp` and `two.cpp`
+and `three.cpp` here (which share `shared.h`'s inline functions), for each
+configuration: cl for x64 (`/guard:cf /guard:ehcont`, with and without
+`/Gy`; `/volatileMetadata`; `/d2guardretpoline`), x86 (`/guard:cf`, with
+SafeSEH and FPO), and ARM64, and clang-cl for x64 and x86. It makes
+`orig.lib` with lib.exe and `fold.lib` with turbolib
+(`TURBOLIB_OPTIONS=--fold=identical`), links `main.cpp` against each with
+link.exe and lld-link, under `/OPT:NOREF` and `/OPT:REF`, and compares the
+images' tables by name (from the map file): the load config's CFG,
+longjmp, EH continuation, and SafeSEH tables, the volatile metadata, the
+dynamic relocations (retpoline), and the PDB's FPO data. Then it runs the
+x64 and x86 programs, which take an inline function's address and call it
+through CFG, longjmp, throw, fault, and call through an import's address.
+`TURBOLIB` names turbolib.exe (the default is `target\release`'s). The
+outputs land in `out\`.

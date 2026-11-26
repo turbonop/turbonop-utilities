@@ -93,6 +93,7 @@ def read(path):
     part, module, cur, depth = None, None, None, 0
     line_blocks = []  # (module, section, start, file, entries)
     file_name = None
+    index, streamless = None, set()
     pending = None  # (kind, text lines)
 
     def finish():
@@ -136,7 +137,13 @@ def read(path):
             if m:
                 finish()
                 module = m.group(2)
+                index = int(m.group(1))
                 depth, cur = 0, None
+                continue
+            if part == "Modules" and s.startswith("debug stream: 65535"):
+                # No debug stream: llvm-pdbutil prints the previous
+                # module's lines again under this one.
+                streamless.add(index)
                 continue
             if part == "Symbols" and module is not None:
                 m = RECORD.match(line)
@@ -145,7 +152,7 @@ def read(path):
                     pending = (m.group(2), [m.group(3)])
                 elif pending is not None and s:
                     pending[1].append(line)
-            elif part == "Lines" and module is not None and s:
+            elif part == "Lines" and module is not None and s and index not in streamless:
                 m = BLOCK.match(line)
                 if m:
                     line_blocks.append([module, int(m.group(1), 16), int(m.group(2), 16),

@@ -299,16 +299,18 @@ fn inputs<'a>(names: &'a [&str], datas: &'a [Vec<u8>]) -> Vec<Input<'a>> {
 
 /// Folds `names` and checks every synthesized member's CodeView against
 /// the copies it came from; the number of unit sections checked. `pch`
-/// names the PCH object among them, if any.
+/// names the users' PCH object, if any (among them or not).
 fn check(names: &[&str], pch: Option<&str>) -> usize {
     let datas: Vec<Vec<u8>> = names.iter().map(|n| fixture(n)).collect();
-    let out = rewrite(&inputs(names, &datas), RELAXED);
+    check_datas(names, &datas, pch)
+}
+
+fn check_datas(names: &[&str], datas: &[Vec<u8>], pch: Option<&str>) -> usize {
+    let out = rewrite(&inputs(names, datas), RELAXED);
     assert!(out.report.synthesized > 0, "{:?}", out.report);
     let objects: Vec<Object<'_>> = datas.iter().map(|d| object(d)).collect();
-    let pch_stream = pch.map(|p| {
-        let i = names.iter().position(|n| *n == p).unwrap();
-        stream(&objects[i], None)
-    });
+    let pch_data = pch.map(fixture);
+    let pch_stream = pch_data.as_ref().map(|d| stream(&object(d), None));
     let streams: Vec<Stream> = objects
         .iter()
         .map(|o| stream(o, pch_stream.as_ref()))
@@ -318,7 +320,7 @@ fn check(names: &[&str], pch: Option<&str>) -> usize {
     for m in out.members.iter().filter(|m| m.synthesized) {
         let o = object(&m.data);
         well_formed(&o, &m.name);
-        let s = stream(&o, None);
+        let s = stream(&o, pch_stream.as_ref());
         let t = tables(&o);
         for (name, sec) in unit_sections(&o) {
             // The copy that survived: the first member's.
@@ -339,7 +341,7 @@ fn check(names: &[&str], pch: Option<&str>) -> usize {
                 pch_stream.as_ref(),
                 &tabs[k],
             );
-            let got = canonical(&o, sec, &s, None, &t);
+            let got = canonical(&o, sec, &s, pch_stream.as_ref(), &t);
             assert_eq!(got, want, "{}", String::from_utf8_lossy(&name));
             checked += 1;
         }
@@ -374,12 +376,17 @@ fn well_formed(o: &Object<'_>, name: &[u8]) {
     if let Some(t) = o.sections.iter().find(|s| s.name.as_bytes() == b".debug$T") {
         let mut seen = HashSet::new();
         let mut refs = Vec::new();
+        let mut index = FIRST;
         for (i, r) in remap::type_records(&t.bytes()[4..]).enumerate() {
             let (at, r) = r.unwrap();
             if r.kind == leaf::LF_TYPESERVER2 {
                 continue;
             }
-            let index = FIRST + i as u32;
+            if i == 0 && r.kind == leaf::LF_PRECOMP {
+                // A PCH's records come first.
+                index = le32(r.data, 0) + le32(r.data, 4);
+                continue;
+            }
             refs.clear();
             type_refs::refs(r.kind, r.data, &mut refs).unwrap();
             for x in &refs {
@@ -391,6 +398,7 @@ fn well_formed(o: &Object<'_>, name: &[u8]) {
                 seen.insert(t.bytes()[4 + at..4 + at + len].to_vec()),
                 "a duplicate"
             );
+            index += 1;
         }
     }
 }
@@ -421,7 +429,7 @@ fn inlinees_carried(
     tabs: &[Tables],
     pch: Option<&Stream>,
 ) {
-    let s = stream(o, None);
+    let s = stream(o, pch);
     let t = tables(o);
     let mut known = HashSet::new();
     for (k, x) in objects.iter().enumerate() {
@@ -436,7 +444,7 @@ fn inlinees_carried(
     let mine = entries(o);
     let have: HashSet<u32> = mine.iter().map(|e| e.inlinee).collect();
     for e in &mine {
-        assert!(known.contains(&(index_hash(&s, None, e.inlinee), file(&t, e.file), e.line)));
+        assert!(known.contains(&(index_hash(&s, pch, e.inlinee), file(&t, e.file), e.line)));
     }
     let mut sites = 0;
     for (_, sec) in unit_sections(o) {
@@ -491,13 +499,88 @@ fn pch_users_types_come_from_their_pch() {
     assert!(n >= 5, "{n}");
 }
 
+/// `u1` and `u2` with their PCH object's `/INCLUDE` removed.
+fn users_without_include() -> Vec<Vec<u8>> {
+    ["msvc-u1.obj", "msvc-u2.obj"]
+        .iter()
+        .map(|n| {
+            let data = fixture(n);
+            let mut o = object(&data);
+            for s in &mut o.sections {
+                if s.name.as_bytes() == b".drectve" {
+                    let text: Vec<&[u8]> = units::directives(s.bytes())
+                        .into_iter()
+                        .filter(|w| !w.to_ascii_lowercase()[1..].starts_with(b"include:"))
+                        .collect();
+                    s.data = SectionData::Bytes(Cow::Owned(text.join(&b' ')));
+                }
+            }
+            o.write().unwrap()
+        })
+        .collect()
+}
+
 #[test]
-fn pch_users_without_their_pch_dont_fold_units_with_debug_information() {
+fn pch_users_name_their_pch_wherever_its_object_is() {
+    // Without the PCH object in the library: the synthesized member names
+    // the same PCH, and refers to its object's symbol.
     let names = ["msvc-u1.obj", "msvc-u2.obj"];
+    let n = check(&names, Some("msvc-pch.obj"));
+    assert!(n >= 5, "{n}");
     let datas: Vec<Vec<u8>> = names.iter().map(|n| fixture(n)).collect();
     let out = rewrite(&inputs(&names, &datas), RELAXED);
-    // What folds has no debug information: the synthesized members have
-    // none.
+    let first = |o: &Object<'_>| {
+        let t = o
+            .sections
+            .iter()
+            .find(|s| s.name.as_bytes() == b".debug$T")
+            .unwrap();
+        let (_, r) = remap::type_records(&t.bytes()[4..])
+            .next()
+            .unwrap()
+            .unwrap();
+        (r.kind, r.data.to_vec())
+    };
+    let want = first(&object(&datas[0]));
+    assert_eq!(want.0, leaf::LF_PRECOMP);
+    for m in out.members.iter().filter(|m| m.synthesized) {
+        let o = object(&m.data);
+        if !o.sections.iter().any(|s| s.name.as_bytes() == b".debug$T") {
+            continue;
+        }
+        assert_eq!(first(&o), want);
+        assert!(
+            o.symbols
+                .iter()
+                .any(|s| s.section == SectionNumber::Undefined
+                    && s.name.as_bytes().starts_with(b"__@@_PchSym_"))
+        );
+    }
+}
+
+#[test]
+fn pch_users_that_dont_name_their_pch_copy_its_types_or_dont_fold() {
+    let users = users_without_include();
+    // With the PCH object in the library, its records are copied.
+    let mut datas = users.clone();
+    datas.push(fixture("msvc-pch.obj"));
+    let names = ["u1.obj", "u2.obj", "pch.obj"];
+    let n = check_datas(&names, &datas, Some("msvc-pch.obj"));
+    assert!(n >= 5, "{n}");
+    let out = rewrite(&inputs(&names, &datas), RELAXED);
+    for m in out.members.iter().filter(|m| m.synthesized) {
+        let o = object(&m.data);
+        if let Some(t) = o.sections.iter().find(|s| s.name.as_bytes() == b".debug$T") {
+            let (_, r) = remap::type_records(&t.bytes()[4..])
+                .next()
+                .unwrap()
+                .unwrap();
+            assert_ne!(r.kind, leaf::LF_PRECOMP);
+        }
+    }
+    // Without it, their units with debug information don't fold, and
+    // what folds has none.
+    let out = rewrite(&inputs(&names[..2], &users), RELAXED);
     for m in out.members.iter().filter(|m| m.synthesized) {
         let o = object(&m.data);
         assert!(

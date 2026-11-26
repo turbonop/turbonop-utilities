@@ -120,8 +120,9 @@ pub enum Unfoldable {
     /// Its debug information can't be carried into a synthesized member
     /// (see [`debug`]).
     DebugInfo,
-    /// Its object uses a PCH whose object isn't in the library, so its
-    /// types aren't either.
+    /// Its object uses a PCH, but names neither the PCH object's symbol
+    /// (so a synthesized member can't name the PCH) nor is the PCH object
+    /// in the library (so its types can't be copied).
     PrecompMissing,
 }
 
@@ -150,7 +151,7 @@ impl Unfoldable {
                 "kept by a member with side effects, too few other copies"
             }
             Unfoldable::DebugInfo => "debug information turbolib can't carry",
-            Unfoldable::PrecompMissing => "its PCH object isn't in the library",
+            Unfoldable::PrecompMissing => "its PCH is neither named nor in the library",
         }
     }
 }
@@ -324,7 +325,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     let mut removals: Vec<Vec<(usize, Removal)>> = vec![Vec::new(); parsed.len()];
-    let mut synth_of: HashMap<(u128, Vec<usize>), usize> = HashMap::new();
+    let mut synth_of: HashMap<(u128, u64, Vec<usize>), usize> = HashMap::new();
     let mut synths: Vec<Synth> = Vec::new();
     for c in &copies {
         let unit = |&(m, u): &(usize, usize)| &parsed[m].facts.units[u];
@@ -381,7 +382,12 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         report.copies_removed += removed.len() as u64;
         let mut givers: Vec<usize> = removed.iter().map(|&(m, _)| m).collect();
         givers.dedup();
-        let key = (parsed[first.0].facts.environment, givers.clone());
+        // (And the PCH its CodeView names, if any: see debug::key.)
+        let key = (
+            parsed[first.0].facts.environment,
+            debug::key(&parsed[first.0]),
+            givers.clone(),
+        );
         let s = *synth_of.entry(key).or_insert_with(|| {
             synths.push(Synth {
                 environment: parsed[first.0].facts.environment,

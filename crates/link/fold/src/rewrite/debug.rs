@@ -28,13 +28,23 @@
 //!   relocations moved with the records they are in.
 //! - a `.debug$T` holding the type and id records its units reach,
 //!   transitively, each once (records equal once renumbered are one
-//!   record), in an order in which each refers only to earlier ones. A
-//!   PCH user's indices below its `LF_PRECOMP` count are its PCH object's
-//!   records (the library member whose `LF_ENDPRECOMP` has the same
-//!   signature), copied like any other: the synthesized member names no
-//!   PCH. A `/Zi` member's indices are in its type server, which the
+//!   record), in an order in which each refers only to earlier ones.
+//!   A `/Zi` member's indices are in its type server, which the
 //!   environment key makes common to the units; the synthesized member
 //!   names the same type server, and keeps the indices.
+//! - for units of PCH users (`/Yu`), the same PCH: the users' indices
+//!   below their `LF_PRECOMP` count are the PCH object's, so the
+//!   synthesized member begins its `.debug$T` with the same `LF_PRECOMP`,
+//!   keeps those indices, numbers its own records after them, and refers
+//!   to the PCH object's `__@@_PchSym_` symbol (which the users'
+//!   `/INCLUDE` names), so that a link that has it has the PCH's types. The
+//!   PCH object is often in another library (LLVM's libraries reuse each
+//!   other's PCHs). Units of members that name different PCHs, or none,
+//!   go to different synthesized members ([`key`]). A user that doesn't
+//!   name its PCH's symbol gets the PCH object's records copied, when that
+//!   object is in the library (found by `LF_PRECOMP`'s signature and its
+//!   `LF_ENDPRECOMP`); otherwise its units with debug information don't
+//!   fold ([`Unfoldable::PrecompMissing`]).
 //! - a per-object `.debug$S`: `S_OBJNAME` (`turbolib:<member name>`),
 //!   `S_COMPILE3` copied from the first unit's member (the environment key
 //!   holds it, so the units' members all have the same), the inlinee lines
@@ -53,8 +63,7 @@
 //! Before folding, [`read`] checks that every unit's debug information can
 //! be carried (every index, offset, and record understood), so that
 //! [`Builder`] can't fail. A unit whose debug information can't be carried
-//! doesn't fold ([`Unfoldable::DebugInfo`]), nor does a PCH user's whose
-//! PCH object isn't in the library ([`Unfoldable::PrecompMissing`]).
+//! doesn't fold ([`Unfoldable::DebugInfo`]).
 
 use super::{Parsed, Unfoldable, units};
 use crate::hash::h64;
@@ -134,6 +143,44 @@ pub(super) struct Facts {
     compile3: Option<Vec<u8>>,
     /// The per-object `.debug$S`'s characteristics.
     characteristics: Option<u32>,
+    /// A PCH user's `LF_PRECOMP` record (kind and body), and the PCH
+    /// object's symbol its `/INCLUDE` names (which brings the PCH object
+    /// into a link).
+    precomp_record: Option<Vec<u8>>,
+    pch_symbol: Option<Vec<u8>>,
+}
+
+impl Facts {
+    /// A PCH user whose PCH object's symbol it names: a synthesized
+    /// member can name the same PCH, wherever its object is.
+    fn named(&self) -> Option<Precomp> {
+        match self.types {
+            Types::Records {
+                precomp: Some(p), ..
+            } if self.pch_symbol.is_some() => Some(p),
+            _ => None,
+        }
+    }
+}
+
+/// Which synthesized members a member's units can share: units of PCH
+/// users that name their PCH go to members that name the same one (the
+/// key is its `LF_PRECOMP`), the others to members that name none (0).
+pub(super) fn key(p: &Parsed<'_>) -> u64 {
+    match &p.debug.precomp_record {
+        Some(r) if p.debug.named().is_some() => h64(r) | 1,
+        _ => 0,
+    }
+}
+
+/// Whether member `m`'s index `v` is kept as it is: a built-in type, or
+/// a PCH user's index into its PCH that the synthesized member names too.
+fn kept(parsed: &[Parsed<'_>], m: usize, v: u32) -> bool {
+    v < FIRST
+        || parsed[m]
+            .debug
+            .named()
+            .is_some_and(|p| v >= p.start && v - p.start < p.count)
 }
 
 fn le32(b: &[u8], at: usize) -> u32 {
@@ -297,6 +344,35 @@ pub(super) fn read(object: &Object<'_>, facts: &mut units::Facts) -> Facts {
         bad.get_or_insert_with(|| "more than one file checksums or string table".into());
     }
 
+    // A PCH user's LF_PRECOMP, and its PCH object's symbol.
+    if let (
+        Types::Records {
+            precomp: Some(_), ..
+        },
+        Some(t),
+    ) = (&d.types, types)
+    {
+        let data = object.sections[t].bytes();
+        if let Some(Ok((_, r))) = remap::type_records(&data[4..]).next() {
+            let mut v = r.kind.to_le_bytes().to_vec();
+            v.extend_from_slice(r.data);
+            d.precomp_record = Some(v);
+        }
+        for s in &object.sections {
+            if s.name.as_bytes() != b".drectve" {
+                continue;
+            }
+            for w in units::directives(s.bytes()) {
+                let lower = w.to_ascii_lowercase();
+                if (lower.starts_with(b"/include:") || lower.starts_with(b"-include:"))
+                    && lower[9..].starts_with(b"__@@_pchsym_")
+                {
+                    d.pch_symbol = Some(w[9..].to_vec());
+                }
+            }
+        }
+    }
+
     // Each unit's debug sections.
     for u in &mut facts.units {
         if u.unfoldable.is_some() {
@@ -439,11 +515,13 @@ fn string(table: &[u8], offset: u32) -> Option<&[u8]> {
     Some(&rest[..end])
 }
 
-/// Finds each PCH user's PCH object among the members, by the signature
-/// of its `LF_PRECOMP` and the PCH's `LF_ENDPRECOMP` (and that the user's
-/// count ends where the PCH's records do). A user whose PCH isn't there
-/// (or whose types are unusable) can't fold a unit with debug sections
-/// ([`Unfoldable::PrecompMissing`]): its types aren't in the library.
+/// Finds the PCH object of each PCH user that doesn't name its PCH's
+/// symbol (so a synthesized member can't name it either) among the
+/// members, by the signature of its `LF_PRECOMP` and the PCH's
+/// `LF_ENDPRECOMP` (and that the user's count ends where the PCH's records
+/// do): its units' types are copied from there. If it isn't there (or its
+/// types are unusable), the user can't fold a unit with debug sections
+/// ([`Unfoldable::PrecompMissing`]).
 pub(super) fn resolve(parsed: &mut [Parsed<'_>]) {
     // PCH objects by signature; a signature two different PCHs have is
     // no one's.
@@ -473,6 +551,9 @@ pub(super) fn resolve(parsed: &mut [Parsed<'_>]) {
         else {
             continue;
         };
+        if parsed[m].debug.named().is_some() {
+            continue;
+        }
         let found = pchs.get(&p.signature).copied().flatten().filter(|&pch| {
             matches!(parsed[pch].debug.types,
                 Types::Records { end_precomp: Some((_, end)), .. } if end == p.start + p.count)
@@ -575,6 +656,10 @@ pub(super) struct Builder<'p, 'a> {
     moved: HashMap<(usize, u32), Vec<Moved>>,
     /// The per-object `.debug$S`, if any unit has debug information.
     main: Option<SectionId>,
+    /// The first new index: after the PCH's, for a member that names one.
+    base: u32,
+    /// The `LF_PRECOMP` and PCH symbol it names, if it does.
+    precomp: Option<(Vec<u8>, Vec<u8>)>,
 }
 
 /// Renumbering for one member's records into a [`Builder`].
@@ -598,7 +683,7 @@ impl Remap for Renumber<'_, '_, '_> {
 }
 
 /// A member's index `v` where its record is: in its PCH object, for a PCH
-/// user's index below its count.
+/// user's index below its count whose types are copied (see [`resolve`]).
 fn canonical(parsed: &[Parsed<'_>], m: usize, v: u32) -> (usize, u32) {
     if let Types::Records {
         precomp: Some(p), ..
@@ -646,6 +731,8 @@ impl<'p, 'a> Builder<'p, 'a> {
             inlined: HashSet::new(),
             moved: HashMap::new(),
             main: None,
+            base: FIRST,
+            precomp: None,
         }
     }
 
@@ -666,6 +753,14 @@ impl<'p, 'a> Builder<'p, 'a> {
             }
         }
         let Some(m0) = m0 else { return };
+        // The units' members share a key (see [`key`]): all name the same
+        // PCH, or none does.
+        let d = &parsed[m0].debug;
+        if let (Some(p), Some(record), Some(symbol)) = (d.named(), &d.precomp_record, &d.pch_symbol)
+        {
+            self.base = p.start + p.count;
+            self.precomp = Some((record.clone(), symbol.clone()));
+        }
         let characteristics = parsed[m0]
             .debug
             .characteristics
@@ -676,7 +771,7 @@ impl<'p, 'a> Builder<'p, 'a> {
     /// The new index of member `m`'s index `v`, merging the record and
     /// everything it reaches.
     fn index(&mut self, m: usize, v: u32) -> u32 {
-        if v < FIRST {
+        if kept(self.parsed, m, v) {
             return v;
         }
         if let Types::Server(record) = &self.parsed[m].debug.types {
@@ -727,7 +822,7 @@ impl<'p, 'a> Builder<'p, 'a> {
             while top.next < top.refs.end {
                 let r = refs[top.next];
                 let value = le32(top.record, 4 + r.offset as usize);
-                if value >= FIRST {
+                if !kept(parsed, top.m, value) {
                     let c = canonical(parsed, top.m, value);
                     if !self.merged.contains_key(&(c.0 as u32, c.1)) {
                         child = Some(c);
@@ -746,7 +841,7 @@ impl<'p, 'a> Builder<'p, 'a> {
             for r in &refs[f.refs.clone()] {
                 let at = 4 + r.offset as usize;
                 let value = le32(&bytes, at);
-                if value >= FIRST {
+                if !kept(parsed, f.m, value) {
                     let c = canonical(parsed, f.m, value);
                     let n = self.merged[&(c.0 as u32, c.1)];
                     bytes[at..at + 4].copy_from_slice(&n.to_le_bytes());
@@ -764,7 +859,7 @@ impl<'p, 'a> Builder<'p, 'a> {
     fn intern(&mut self, bytes: &[u8]) -> u32 {
         let h = h64(bytes);
         if let Some(&n) = self.by_hash.get(&h) {
-            let i = (n - FIRST) as usize;
+            let i = (n - self.base) as usize;
             let start = self.starts[i] as usize;
             let end = self
                 .starts
@@ -786,7 +881,7 @@ impl<'p, 'a> Builder<'p, 'a> {
     }
 
     fn push_record(&mut self, bytes: &[u8]) -> u32 {
-        let n = FIRST + self.starts.len() as u32;
+        let n = self.base + self.starts.len() as u32;
         self.starts.push(self.types.len() as u32);
         self.types.extend_from_slice(bytes);
         n
@@ -1042,8 +1137,21 @@ impl<'p, 'a> Builder<'p, 'a> {
                 t.extend_from_slice(&record);
                 Some(t)
             }
-            None if !self.types.is_empty() => {
+            None if !self.types.is_empty() || self.precomp.is_some() => {
                 let mut t = CV_SIGNATURE_C13.to_le_bytes().to_vec();
+                if let Some((record, symbol)) = self.precomp.take() {
+                    // Its PCH, and a reference to the PCH object's symbol,
+                    // as /Yu objects have, so that a link has its types.
+                    t.extend_from_slice(&(record.len() as u16).to_le_bytes());
+                    t.extend_from_slice(&record);
+                    o.push_symbol(Symbol::new(
+                        Name::new(symbol),
+                        0,
+                        SectionNumber::Undefined,
+                        0,
+                        storage_class::EXTERNAL,
+                    ));
+                }
                 t.append(&mut self.types);
                 Some(t)
             }

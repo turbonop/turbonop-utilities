@@ -6,7 +6,8 @@ each program, and compares the PDBs with ..\\corpus\\pdbcompare.py.
     python check.py <turbolib.exe> [--work DIR]
 
 The libraries: MSVC's objects (/Od, /O2 with inline sites, and a PCH with
-its users), and clang-cl's (/Od, and /O2 with inline sites). Both
+its users), clang-cl's (/Od, and /O2 with inline sites), and the PCH users
+alone (their PCH object linked beside the library). Both
 programs' output must be the same, and the PDBs the same apart from the
 modules that hold the folded functions. The original is linked twice, as
 a control: link.exe's PDBs differ between two links of the same inputs (in
@@ -26,9 +27,13 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 FIXTURES = os.path.join(ROOT, "testdata", "coff", "fold")
 VS = r"C:\Program Files\Microsoft Visual Studio\18\Enterprise"
 LLVM_BIN = os.environ.get("LLVM_BIN", r"C:\jm\dev\llvm-project\build-release\bin")
+# Each: the library's objects, main.cpp's defines, and objects linked
+# beside the library.
 SETS = {
-    "msvc": (["msvc-a", "msvc-b", "msvc-c", "msvc-d", "msvc-pch", "msvc-u1", "msvc-u2"], []),
-    "clang": (["clang-a", "clang-b", "clang-c", "clang-d"], ["/DNO_PCH"]),
+    "msvc": (["msvc-a", "msvc-b", "msvc-c", "msvc-d", "msvc-pch", "msvc-u1", "msvc-u2"], [], []),
+    "clang": (["clang-a", "clang-b", "clang-c", "clang-d"], ["/DNO_PCH"], []),
+    # PCH users whose PCH object is not in their library.
+    "users": (["msvc-u1", "msvc-u2"], ["/DONLY_PCH"], ["msvc-pch"]),
 }
 
 
@@ -70,8 +75,9 @@ def main():
     turbolib = os.path.join(work, "lib.exe")
     shutil.copyfile(a.turbolib, turbolib)
     bad = 0
-    for name, (objects, defines) in SETS.items():
+    for name, (objects, defines, beside) in SETS.items():
         objs = [os.path.join(FIXTURES, o + ".obj") for o in objects]
+        beside = [os.path.join(FIXTURES, o + ".obj") for o in beside]
         main_obj = os.path.join(work, f"main-{name}.obj")
         run([cl, "/nologo", "/c", "/Od", "/Z7", "/GS-", *defines,
              os.path.join(HERE, "main.cpp"), f"/Fo:{main_obj}"], work, env, log)
@@ -85,7 +91,7 @@ def main():
                 out = f"{name}-{linker}-{which}"
                 lib = f"{name}-{'folded' if which == 'folded' else 'original'}.lib"
                 run([exe, "/nologo", "/DEBUG", "/INCREMENTAL:NO", f"/OUT:{out}.exe",
-                     f"/PDB:{out}.pdb", main_obj, lib], work, env, log)
+                     f"/PDB:{out}.pdb", main_obj, *beside, lib], work, env, log)
                 p = subprocess.run([os.path.join(work, out + ".exe")], capture_output=True,
                                    text=True)
                 outputs[which] = (p.returncode, p.stdout)

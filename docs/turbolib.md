@@ -1318,8 +1318,17 @@ held a copy, and the new unit is built from that member's:
   plan's first choice: no new outputs for the build rule to declare, and
   a link may mix split and unsplit units. The givers' `.dwo` files aren't
   touched: their addresses go through `.debug_addr`, which is
-  tombstoned. GNU's split DWARF 4 (`DW_AT_GNU_dwo_id`) isn't read; its
-  folded functions get no DWARF, and `--stats` says why.
+  tombstoned. GNU's split DWARF 4 (`-gsplit-dwarf -gdwarf-4`, gcc's and
+  clang's) is read too: a DWARF 4 skeleton with `DW_AT_GNU_dwo_id` names
+  its `.dwo` by `DW_AT_GNU_dwo_name`; the split unit's strings are
+  `DW_FORM_GNU_str_index` into `.debug_str_offsets.dwo` (no header), its
+  location lists `.debug_loc.dwo`'s GNU entry kinds (DWARF 5's first
+  four, with a 4-byte length and 2-byte expression lengths, view pairs
+  apart), its range lists the member's `.debug_ranges` from
+  `DW_AT_GNU_ranges_base`. `compare-images` reads them the same way. In
+  `elf-debug`'s fixture (gcc and clang, `-O0` and `-O2`), all 68 checks
+  pass, gdb sessions included; with the other 12 configurations, 272 of
+  272.
 - **Not handled** (the synthesized member gets no DWARF, and `--stats`
   says why): 64-bit DWARF, REL machines (only x86-64 and AArch64 are
   rewritten), compressed debug sections, units that refer outside

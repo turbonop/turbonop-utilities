@@ -427,9 +427,8 @@ x64. Where the 3.5 MB went:
   (6.1), the ELF object model (6.2), a first `--fold=identical` for ELF
   (6.3), ELF `verify` and `compare-images` (6.4), and folded functions'
   DWARF in synthesized members, split DWARF 5 included (6.5). Still open:
-  - **DWARF (6.5)**: GNU's split DWARF 4 (`-gsplit-dwarf -gdwarf-4`:
-    `DW_AT_GNU_dwo_id`, `.debug_loc.dwo`'s entry kinds) isn't read, so its
-    folded functions have none; nor 64-bit DWARF, REL machines (i386,
+  - **DWARF (6.5)**: not read (the folded functions get none): 64-bit
+    DWARF, REL machines (i386,
     ARM), compressed debug sections (`-gz`), or `DW_FORM_ref_addr` to
     another unit (`--stats` counts each). `.dwp` packages and type units
     (`-fdebug-types-section`, in COMDAT groups of their own, which stay)

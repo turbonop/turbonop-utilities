@@ -46,6 +46,10 @@ pub struct Members {
     pub data: Vec<Vec<u8>>,
     /// The members' positions in the archive, in the index's order.
     pub listed: Vec<u32>,
+    /// Places in that list (counting these) that `lib.exe` leaves empty
+    /// (offset 0): one for each export that resolved to a symbol an
+    /// earlier one has (measured).
+    pub holes: Vec<usize>,
     /// The library's machine (ARM64EC and ARM64X libraries have a
     /// `/<ECSYMBOLS>/`).
     pub machine: u16,
@@ -69,7 +73,14 @@ impl Members {
             }
             symbols.push((at, s));
         }
-        let index = Index::build(symbols, tool, ec);
+        let mut index = Index::build(symbols, tool, ec);
+        if !self.holes.is_empty() {
+            let mut list: Vec<Option<u32>> = self.listed.iter().copied().map(Some).collect();
+            for &h in &self.holes {
+                list.insert(h.min(list.len()), None);
+            }
+            index.member_list = Some(list);
+        }
         let fields = style.import_fields();
         let members: Vec<NewMember<'_>> = self
             .data

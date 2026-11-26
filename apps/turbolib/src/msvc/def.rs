@@ -33,7 +33,7 @@ use turbonop_archive::write::{Style, Tool};
 use turbonop_moduledef::descriptors::Stamp;
 use turbonop_moduledef::exp::{DefFile, ExportFile, directives, greatest_given};
 use turbonop_moduledef::exports::{
-    Definitions, Origin, Resolved, Unresolved, resolve as resolve_exports,
+    Definitions, Origin, Resolved, Unresolved, resolve as resolve_exports, resolve_with_holes,
 };
 use turbonop_moduledef::imports::ImportLibrary;
 use turbonop_moduledef::option::{OptionError, drectve_exports, parse_export_option};
@@ -456,12 +456,6 @@ fn lib(opts: &Options, env: &Env, r: &mut Reporter) -> Result<(), ()> {
             }
         }
     }
-    if objects.is_empty() && libraries > 0 {
-        r.report(Diag::warning(
-            4001,
-            "no object files specified; libraries used",
-        ))?;
-    }
     let machine = match check.machine {
         Some(m) => m,
         None => {
@@ -472,6 +466,13 @@ fn lib(opts: &Options, env: &Env, r: &mut Reporter) -> Result<(), ()> {
             inputs::X64
         }
     };
+    // (Measured: LNK4068 comes first.)
+    if objects.is_empty() && libraries > 0 {
+        r.report(Diag::warning(
+            4001,
+            "no object files specified; libraries used",
+        ))?;
+    }
     let directive_specs: Vec<&Vec<u8>> = objects.iter().flat_map(|o| &o.directives).collect();
     for spec in &directive_specs {
         match parse_export_option(spec) {
@@ -522,7 +523,7 @@ fn lib(opts: &Options, env: &Env, r: &mut Reporter) -> Result<(), ()> {
         .flat_map(|o| o.defined.iter().map(Vec::as_slice))
         .collect();
     let definitions = Definitions::new(defined);
-    let resolved = match resolve_exports(
+    let (resolved, holes) = match resolve_with_holes(
         &kept,
         ec_machine,
         (!objects.is_empty()).then_some(&definitions),
@@ -554,6 +555,7 @@ fn lib(opts: &Options, env: &Env, r: &mut Reporter) -> Result<(), ()> {
         dll: dll.clone(),
         imports: ImportLibrary::imports_of(&resolved, ec_machine),
         native: ImportLibrary::imports_of(&native_resolved, inputs::ARM64),
+        holes,
     };
     if machine != inputs::ARM64X {
         plan.native.clear();
@@ -690,3 +692,6 @@ fn unresolved(
 fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
+
+#[cfg(test)]
+mod tests;

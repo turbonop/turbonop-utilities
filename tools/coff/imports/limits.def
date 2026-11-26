@@ -1,0 +1,6 @@
+; Ordinals at the top of the range: the base moves down.
+LIBRARY limits
+EXPORTS
+  Top @65534
+  A
+  B

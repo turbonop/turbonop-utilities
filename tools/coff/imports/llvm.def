@@ -1,0 +1,17 @@
+; llvm-lib's grammar: == imports, quoted names, @ n, keywords anywhere.
+LIBRARY llvm.dll BASE = 0x10000
+EXPORTS
+  real
+  alias == real
+  dataalias == real DATA
+  other == missing
+  same == same
+  "q u"
+  num @ 4
+  fwd = mod.fn
+  as EXPORTAS asname
+  hid @5 NONAME
+  priv PRIVATE
+  cst CONSTANT
+HEAPSIZE 0x1000, 0x100
+VERSION 1.2

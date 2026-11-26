@@ -683,10 +683,11 @@ impl ExportFile<'_> {
     }
 }
 
-/// `lib.exe` stores a thunk's name (`EXP+...`) in the string table even
-/// when it fits the symbol's 8 bytes (measured: `EXP+#Ren`), which the
-/// writer stores in place: the string table is made again, each symbol's
-/// long name in order.
+/// `lib.exe`'s string table: each long name once, in the order of the
+/// symbols that first have it (measured: two symbols `?Hidden@@YAHH@Z`
+/// share one string), and a thunk's name (`EXP+...`) there even when it
+/// fits the symbol's 8 bytes (measured: `EXP+#Ren`). The writer stores
+/// each use, and short names in place, so the table is made again.
 fn thunk_names_in_table(mut b: Vec<u8>) -> Vec<u8> {
     let get = |b: &[u8], at: usize| u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]);
     let (table, n) = (get(&b, 8) as usize, get(&b, 12) as usize);
@@ -695,22 +696,16 @@ fn thunk_names_in_table(mut b: Vec<u8>) -> Vec<u8> {
         return b;
     }
     let forced = |name: &[u8; 8]| name.starts_with(b"EXP+") && !name.contains(&0);
-    let mut any = false;
-    let mut i = 0;
-    while i < n {
-        let at = table + 18 * i;
-        any |= forced(&b[at..at + 8].try_into().unwrap_or_default());
-        i += 1 + usize::from(b[at + 17]);
-    }
-    if !any {
-        return b;
-    }
     let mut new = Vec::new();
+    let mut offsets: alloc::collections::BTreeMap<Vec<u8>, u32> =
+        alloc::collections::BTreeMap::new();
     let mut i = 0;
     while i < n {
         let at = table + 18 * i;
         let field: [u8; 8] = b[at..at + 8].try_into().unwrap_or_default();
-        let name: Option<Vec<u8>> = if field[..4] == [0; 4] {
+        let name: Option<Vec<u8>> = if field == [0; 8] {
+            None
+        } else if field[..4] == [0; 4] {
             let off = strings + get(&b, at + 4) as usize;
             let end = b[off..]
                 .iter()
@@ -722,12 +717,18 @@ fn thunk_names_in_table(mut b: Vec<u8>) -> Vec<u8> {
         } else {
             None
         };
-        if let Some(name) = name {
-            let offset = 4 + count(new.len());
+        if name.as_ref().is_some_and(Vec::is_empty) {
+            // An empty name is all zeros, in place.
+            b[at..at + 8].copy_from_slice(&[0; 8]);
+        } else if let Some(name) = name {
+            let offset = *offsets.entry(name.clone()).or_insert_with(|| {
+                let o = 4 + count(new.len());
+                new.extend_from_slice(&name);
+                new.push(0);
+                o
+            });
             b[at..at + 4].copy_from_slice(&[0; 4]);
             b[at + 4..at + 8].copy_from_slice(&offset.to_le_bytes());
-            new.extend_from_slice(&name);
-            new.push(0);
         }
         i += 1 + usize::from(b[at + 17]);
     }

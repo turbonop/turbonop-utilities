@@ -710,6 +710,7 @@ pub fn members(
         dll,
         data,
         listed,
+        holes: Vec::new(),
         machine: if ec { lib_machine } else { native_machine },
     })
 }

@@ -176,6 +176,9 @@ pub struct ImportLibrary<'a> {
     /// `.def` file's order: after the ARM64EC ones (`imports`) in both
     /// orders.
     pub native: Vec<Import<'a>>,
+    /// Empty places in the index's list of `imports` (see
+    /// [`Members::holes`]), counting from the first import.
+    pub holes: Vec<usize>,
 }
 
 impl<'a> ImportLibrary<'a> {
@@ -188,6 +191,7 @@ impl<'a> ImportLibrary<'a> {
             dll: def.file_name(def_stem),
             imports: Self::lib_exe_imports(&def.exports(), machine),
             native: Vec::new(),
+            holes: Vec::new(),
         }
     }
 
@@ -205,6 +209,7 @@ impl<'a> ImportLibrary<'a> {
             dll: def.file_name(def_stem),
             imports: Self::lib_exe_imports(&def.exports(), machine::ARM64EC),
             native: Self::lib_exe_imports(&native.exports(), machine::ARM64),
+            holes: Vec::new(),
         }
     }
 
@@ -302,6 +307,7 @@ impl<'a> ImportLibrary<'a> {
             dll: self.dll.clone(),
             data,
             listed,
+            holes: self.holes.iter().map(|h| h + 3).collect(),
             machine: self.machine,
         }
     }

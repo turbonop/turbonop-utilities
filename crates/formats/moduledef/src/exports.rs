@@ -25,8 +25,12 @@
 //!   before it, `_a`, `NOPREFIX`; found decorated, `a` decorated as `b` is
 //!   (`_a@8`), `UNDECORATE`. One not found is LNK2001, and a forwarder is
 //!   reported as its export (`x.y` as `y`).
-//! - Two exports with one symbol are one: the first (the `.def` file's,
-//!   then the command line's, then the objects' directives, in order).
+//! - Two exports with one name, or one symbol, are one: the first (the
+//!   `.def` file's, then the command line's, then the objects'
+//!   directives, in order). For one symbol, the index's list of members
+//!   has an empty place where the second would be.
+//! - On x86 a name holding `@`, found with `_` before it, is imported as
+//!   written, by name, and the address table refers to it as written.
 //!
 //! The hint of an import by name is its export's place among the exported
 //! names, sorted by their bytes (ARM64EC: 0, see [`crate::imports`]).
@@ -219,6 +223,19 @@ pub fn resolve<'a>(
     machine: u16,
     objects: Option<&Definitions<'a>>,
 ) -> Result<Vec<Resolved<'a>>, Vec<Unresolved<'a>>> {
+    resolve_with_holes(exports, machine, objects).map(|(r, _)| r)
+}
+
+/// [`resolve`], and where `lib.exe`'s index lists an empty place for an
+/// export whose symbol an earlier one has (as places among the imports,
+/// `PRIVATE` exports not counted, the empty places counted).
+pub fn resolve_with_holes<'a>(
+    exports: &[(Export<'a>, Origin)],
+    machine: u16,
+    objects: Option<&Definitions<'a>>,
+) -> Result<(Vec<Resolved<'a>>, Vec<usize>), Vec<Unresolved<'a>>> {
+    let mut holes = Vec::new();
+    let mut listed = 0;
     let x86 = machine == machine::I386;
     let ec = machine == machine::ARM64EC;
     let mut out: Vec<Resolved<'a>> = Vec::with_capacity(exports.len());
@@ -226,7 +243,7 @@ pub fn resolve<'a>(
     let mut seen_names: alloc::collections::BTreeSet<&[u8]> = alloc::collections::BTreeSet::new();
     let mut seen: alloc::collections::BTreeSet<Vec<u8>> = alloc::collections::BTreeSet::new();
     for &(e, origin) in exports {
-        if origin != Origin::Directive && !seen_names.insert(e.name) {
+        if !seen_names.insert(e.name) {
             continue;
         }
         // An empty internal name: the `.def` file's is none (`a=` exports
@@ -258,14 +275,18 @@ pub fn resolve<'a>(
                     }
                 }
                 if seen.insert(r.symbol.to_vec()) {
+                    listed += usize::from(!r.private);
                     out.push(r);
+                } else if !r.private {
+                    holes.push(listed);
+                    listed += 1;
                 }
             }
             Err(u) => errors.push(u),
         }
     }
     if errors.is_empty() {
-        Ok(out)
+        Ok((out, holes))
     } else {
         Err(errors)
     }
@@ -349,6 +370,11 @@ fn found<'a>(
         }
     };
     match find(target, x86, defs)? {
+        // A name holding `@`, found with `_` before it, is imported as
+        // written, by name (measured: `Func@8` for `_Func@8`).
+        Found::Prefixed(_) if e.name.contains(&b'@') && !renamed => {
+            r.name_type = by_name(ImportNameType::Name);
+        }
         Found::Prefixed(p) => {
             r.symbol = if renamed {
                 x86_prefixed(e.name).map_or(Cow::Borrowed(e.name), Cow::Owned)

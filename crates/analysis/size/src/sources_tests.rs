@@ -222,3 +222,114 @@ fn data_the_code_refers_to_is_the_functions() {
     assert_eq!(label_at(0x1020), Some("f"), "{vm:?}");
     assert_eq!(label_at(0x1030), Some("f"), "{vm:?}");
 }
+
+/// What a function's code refers to is the function's only within its own
+/// object's contribution: never past that contribution's end, nor in
+/// another object's (a constant folded with one of its, a table it
+/// exports). What no symbol labels of a contribution is its object's.
+#[test]
+fn referenced_data_stays_in_its_objects_contribution() {
+    let mut contents = vec![0u8; 0x40];
+    // 0x1000: lea rax, [rip + 0x19] (0x1020).
+    contents[0..7].copy_from_slice(&[0x48, 0x8D, 0x05, 0x19, 0, 0, 0]);
+    // 0x1007: lea rax, [rip + 0x29] (0x1037).
+    contents[7..14].copy_from_slice(&[0x48, 0x8D, 0x05, 0x29, 0, 0, 0]);
+    // 0x100E: ret.
+    contents[14] = 0xC3;
+    let data = image(true, &contents, &[]);
+    let image = Image::parse(&data).unwrap();
+    let at = u64::from(SECTION_RVA);
+    let symbols = [Symbol {
+        addr: at,
+        size: crate::Size::new(0x10, 0x10),
+        kind: crate::symbols::SymbolKind::Function,
+        folded: false,
+        name: "f".into(),
+        compiland: None,
+        file_static: false,
+    }];
+    let piece = |start: u64, end: u64, compiland: u32| crate::Piece {
+        range: crate::Range {
+            addr: at + start,
+            len: end - start,
+            zero_fill: false,
+        },
+        compiland,
+        section: 0,
+        group: crate::NO_GROUP,
+    };
+    let model = Model {
+        sections: vec![crate::Section {
+            name: ".data".into(),
+            addr: at,
+            size: crate::Size::new(0x200, 0x200),
+            vm_padding: 0,
+            characteristics: 0,
+            flags: turbonop_image::SectionFlags(
+                turbonop_image::SectionFlags::READ | turbonop_image::SectionFlags::DATA,
+            ),
+        }],
+        libraries: vec![crate::Library {
+            name: String::new(),
+        }],
+        compilands: vec![
+            crate::Compiland {
+                name: r"C:\o\a.obj".into(),
+                library: 0,
+            },
+            crate::Compiland {
+                name: "/t/b-0123.b.4567-cgu.0.rcgu.o".into(),
+                library: 0,
+            },
+        ],
+        // f and its data (0x1020..0x1028), then b's (0x1028..0x1040).
+        pieces: vec![
+            piece(0, 0x10, 0),
+            piece(0x20, 0x28, 0),
+            piece(0x28, 0x40, 1),
+        ],
+        ..Model::default()
+    };
+    let inputs = Inputs {
+        model: Some(&model),
+        symbols: Some(&symbols),
+        file_name: "a.dll",
+        lines: None,
+    };
+    let maps = maps(&image, inputs, &[Source::Symbols]);
+    let vm = entries(&maps.sources[0].1.vm, &maps.labels);
+    let label_at = |a: u64| vm.iter().find(|e| e.0 <= a && a < e.1).map(|e| e.2);
+    assert_eq!(label_at(0x1000), Some("f"));
+    assert_eq!(label_at(0x1010), Some("[section .data]"), "{vm:?}");
+    assert_eq!(label_at(0x1020), Some("f"), "{vm:?}");
+    assert_eq!(label_at(0x1027), Some("f"), "{vm:?}");
+    // Not f's: b's, though f refers to it, and up to its end.
+    assert_eq!(label_at(0x1028), Some("[.data of b]"), "{vm:?}");
+    assert_eq!(label_at(0x1037), Some("[.data of b]"), "{vm:?}");
+    assert_eq!(label_at(0x103F), Some("[.data of b]"), "{vm:?}");
+    assert_eq!(label_at(0x1040), Some("[section .data]"), "{vm:?}");
+    // In the file (the section's bytes at 0x200), alike.
+    let file = entries(&maps.sources[0].1.file, &maps.labels);
+    let file_at = |a: u64| file.iter().find(|e| e.0 <= a && a < e.1).map(|e| e.2);
+    assert_eq!(file_at(0x220), Some("f"), "{file:?}");
+    assert_eq!(file_at(0x228), Some("[.data of b]"), "{file:?}");
+    assert_eq!(file_at(0x23F), Some("[.data of b]"), "{file:?}");
+    assert_eq!(file_at(0x240), Some("[section .data]"), "{file:?}");
+    assert_eq!(file_at(0), Some("[DOS Header]"), "{file:?}");
+}
+
+#[test]
+fn objects_and_their_crates() {
+    assert_eq!(
+        object_name(r"C:\t\turbonop_powerpc-932f.turbonop_powerpc.3598-cgu.0.rcgu.o"),
+        "turbonop_powerpc"
+    );
+    assert_eq!(object_name("lib/foo.obj"), "foo.obj");
+    assert_eq!(object_name("bar.o"), "bar.o");
+    assert_eq!(
+        crate_of("[.rdata of turbonop_powerpc]").as_deref(),
+        Some("turbonop_powerpc")
+    );
+    assert_eq!(crate_of("[.rdata of foo.obj]"), None);
+    assert_eq!(crate_of("[section .rdata]"), None);
+}

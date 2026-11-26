@@ -22,7 +22,18 @@ use crate::rangemap::{DualMap, Label};
 /// address, the next labeled range, or the end of the `loaded` range
 /// (`[start, end)`, a section) it is in, whichever is first. Addresses in
 /// no loaded range are skipped.
-pub fn charge(map: &mut DualMap, base: &DualMap, refs: &[Reference], loaded: &[(u64, u64)]) {
+///
+/// `pieces` (sorted by start, `[start, end)`; may be empty) are what the
+/// debug information says each object contributed: a reference never
+/// charges past the end of the piece it is in, nor into the next piece
+/// (another object's data is not its referrer's, nor its neighbor's).
+pub fn charge(
+    map: &mut DualMap,
+    base: &DualMap,
+    refs: &[Reference],
+    loaded: &[(u64, u64)],
+    pieces: &[(u64, u64)],
+) {
     let mut wanted: Vec<(u64, Label)> = refs
         .iter()
         .filter(|r| map.vm.get(r.to).is_none())
@@ -37,6 +48,16 @@ pub fn charge(map: &mut DualMap, base: &DualMap, refs: &[Reference], loaded: &[(
         };
         if let Some(next) = wanted.get(i + 1) {
             end = end.min(next.0);
+        }
+        // The piece it is in ends it, or else the next piece's start.
+        let p = pieces.partition_point(|&(s, _)| s <= to);
+        if let Some(&(_, e)) = p.checked_sub(1).and_then(|p| pieces.get(p))
+            && to < e
+        {
+            end = end.min(e);
+        }
+        if let Some(&(s, _)) = pieces.get(p) {
+            end = end.min(s);
         }
         if let Some(e) = map.vm.overlapping(to, end).next() {
             end = end.min(e.start);

@@ -108,7 +108,7 @@ def functions(image):
         # dyld_stub_binder, which says nothing about the target.)
         targets = [t for t in targets if not t.startswith("~turbolib.anchor.") and t != "dyld_stub_binder"]
         ins = re.sub(r"<[^>]+>", "", ins)
-        body.append((BASE.sub(r"[, N]", ADDR.sub("N", ins)).strip(), tuple(t.split("+")[0] for t in targets)))
+        body.append((BASE.sub(r"[\1, N]", ADDR.sub("N", ins)).strip(), tuple(t.split("+")[0] for t in targets)))
     if name is not None:
         funcs[name] = body
     # Targets that are functions of the image (a stub, or an address past

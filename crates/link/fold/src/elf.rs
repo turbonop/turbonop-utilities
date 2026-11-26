@@ -174,6 +174,9 @@ struct Unit {
     fdes: Vec<usize>,
     /// Whether debug sections refer to it.
     debug: bool,
+    /// The names its relocations name that other units of its member
+    /// define.
+    comdat_refs: Vec<Vec<u8>>,
     bytes: u64,
 }
 
@@ -364,6 +367,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 stays: (!ok).then_some("its group's members are malformed"),
                 fdes: Vec::new(),
                 debug: false,
+                comdat_refs: Vec::new(),
                 bytes: 0,
             });
             owner[i] = Some(u);
@@ -434,7 +438,17 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 }
                 continue;
             };
-            if sym.bind() != 0 || si == 0 {
+            if si == 0 {
+                continue;
+            }
+            if sym.bind() != 0 {
+                // A name another unit of this member defines: it must move
+                // too, or this unit stays (see `fold`).
+                if let (Some(a), Some(b)) = (from, sym_owner(sym))
+                    && a != b
+                {
+                    units[a].comdat_refs.push(sym.name.to_vec());
+                }
                 continue;
             }
             let to = sym_owner(sym);
@@ -1440,6 +1454,38 @@ pub fn fold(inputs: &[Input<'_>], options: &Options) -> (Vec<Output>, Report) {
             continue;
         }
         folded.push((h, list.clone()));
+    }
+    // A unit whose code names what another unit of its member defines folds
+    // only if that one folds too. Otherwise the synthesized member would
+    // refer to a name each giver resolved within itself, and a linker could
+    // take it from another member (mold ranks lazy definitions by their
+    // files' order, and made `libLLVMCore.a`'s `Core.cpp.o` live for an
+    // inline function its givers each defined). Until nothing changes.
+    loop {
+        let names: std::collections::BTreeSet<&[u8]> = folded
+            .iter()
+            .flat_map(|(_, list)| list.iter())
+            .flat_map(|&(m, u)| parsed[m].units[u].names.iter().map(Vec::as_slice))
+            .collect();
+        let before = folded.len();
+        folded.retain(|(_, list)| {
+            let keep = list.iter().all(|&(m, u)| {
+                parsed[m].units[u]
+                    .comdat_refs
+                    .iter()
+                    .all(|n| names.contains(n.as_slice()))
+            });
+            if !keep {
+                *report
+                    .kept
+                    .entry("it calls a name of its member that stays")
+                    .or_default() += list.len();
+            }
+            keep
+        });
+        if folded.len() == before {
+            break;
+        }
     }
     // Synthesized members: by the members that held copies, and the
     // environment.

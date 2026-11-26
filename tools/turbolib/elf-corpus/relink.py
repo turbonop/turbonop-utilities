@@ -76,7 +76,12 @@ def loaded(trace_text):
     """The archive members a link loaded, as --trace lists them."""
     members = set()
     for line in trace_text.splitlines():
+        # lld, gold, mold: lib.a(member.o); GNU ld: (lib.a)member.o.
         m = re.search(r"([^\s()]+\.a)\(([^)]+)\)", line)
+        if m:
+            members.add((os.path.basename(m.group(1)), m.group(2)))
+            continue
+        m = re.search(r"\(([^\s()]+\.a)\)(\S+)", line)
         if m:
             members.add((os.path.basename(m.group(1)), m.group(2)))
     return members

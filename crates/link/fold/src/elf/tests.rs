@@ -440,7 +440,7 @@ fn helpers() {
 
 /// A member with the inline function `_Z1gv` and, if `with_f`, `_Z1fv`,
 /// which calls it; neither with FDEs or debug information.
-fn member_fg(with_f: bool) -> Vec<u8> {
+fn member_fg(with_f: bool, g: &'static [u8]) -> Vec<u8> {
     let mut ident = [0u8; 16];
     ident[..4].copy_from_slice(b"\x7fELF");
     ident[4] = 2;
@@ -470,7 +470,7 @@ fn member_fg(with_f: bool) -> Vec<u8> {
             b".text._Z1gv",
             sht::PROGBITS,
             text,
-            Data::Bytes(Cow::Borrowed(b"\xc3")),
+            Data::Bytes(Cow::Borrowed(g)),
         ),
     ];
     if with_f {
@@ -547,7 +547,11 @@ fn member_fg(with_f: bool) -> Vec<u8> {
 fn synthesized_members_refer_to_each_other_through_anchors() {
     // f's copies are in m0 and m1; g's in all three: two synthesized
     // members, and f's refers to g weakly, with g's member's anchor.
-    let members = vec![member_fg(true), member_fg(true), member_fg(false)];
+    let members = vec![
+        member_fg(true, b"\xc3"),
+        member_fg(true, b"\xc3"),
+        member_fg(false, b"\xc3"),
+    ];
     let (out, r) = fold_all(&members, Pull::Preserve);
     assert_eq!((r.folded, r.synthesized), (2, 2));
     let s: Vec<Object<'_>> = out[3..]
@@ -582,4 +586,22 @@ fn synthesized_members_refer_to_each_other_through_anchors() {
             .count()
     };
     assert_eq!((anchors(&out[0]), anchors(&out[2])), (2, 1));
+}
+
+#[test]
+fn a_unit_calling_what_stays_stays() {
+    // g's copies differ (m2's), so g stays everywhere; f calls g, which
+    // f's givers define themselves: f stays too.
+    let members = vec![
+        member_fg(true, b"\xc3"),
+        member_fg(true, b"\xc3"),
+        member_fg(false, b"\x90\xc3"),
+    ];
+    let (out, r) = fold_all(&members, Pull::Preserve);
+    assert_eq!(r.folded, 0);
+    assert_eq!(
+        r.kept.get("it calls a name of its member that stays"),
+        Some(&2)
+    );
+    assert!(out.iter().all(|o| o.data.is_none()));
 }

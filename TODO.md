@@ -372,10 +372,10 @@ x64. Where the 3.5 MB went:
     library is compacted again; and its 0.1 to 0.25 s a library, mostly
     finding the first definers and closures again (reuse the engine's
     definers).
-  - Folding is slower on `turbolib-writers` than phase 5 measured:
-    `--fold=identical` 2.47× `lib.exe` on `build-z7`'s 20 largest
-    libraries (10.0 s for `clangSema`, against 2.1 s), not from shared
-    types. Find what regressed.
+  - (Found: folding's 2.47× `lib.exe` on `build-z7` came from inserting a
+    member's anchors one at a time, each renumbering the whole object;
+    fixed in 863ae3d6, `clangSema`'s rewriting 11 to 15 s back to 0.3 s.
+    Measure the 20 largest libraries again on a quiet machine.)
   - Make `library` the default once it is proven in more links: the
     test programs' own suites, clang-cl's PCHs, `/Zi` neighbors, ARM64
     and x86 objects (all untested), and incremental linking with the

@@ -814,7 +814,8 @@ fn module(
         if s.kind == kind::S_OBJNAME
             && let Ok(Symbol::ObjName { name, .. }) = s.parse()
         {
-            out.synthesized |= name.starts_with(b"turbolib:");
+            out.synthesized |=
+                name.starts_with(b"turbolib:") || m.name.starts_with(b"turbolib-types-");
         }
         let mut h = H128::new();
         // The linker's sections and COFF groups: their sizes and places

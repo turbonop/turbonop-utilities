@@ -878,9 +878,14 @@ impl Plan {
             ));
         }
         let mut symbols = Vec::new();
-        let mut objname = b"turbolib:".to_vec();
-        objname.extend_from_slice(&pch.name);
-        write::obj_name(pch.signature, &objname)
+        // S_OBJNAME names exactly what the users' LF_PRECOMP names:
+        // link.exe pairs a user with a PCH object whose S_OBJNAME path, or
+        // the name it is linked under (its member's), equals the user's
+        // path, ignoring case, and whose signature is the user's (measured
+        // with link.exe 14.52). With `turbolib:` before it, only the member
+        // name matched, so a library re-archived under other member names
+        // (lib.exe keeps the paths it is given) lost every user's types.
+        write::obj_name(pch.signature, &pch.name)
             .write_symbol(&mut symbols, 4)
             .expect("a short record");
         let mut s = CV_SIGNATURE_C13.to_le_bytes().to_vec();

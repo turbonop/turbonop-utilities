@@ -62,6 +62,7 @@
 
 pub mod index;
 pub mod member;
+pub mod pch;
 
 /// The default of the alias weak externals that keep moved symbols defined
 /// in their original members; each synthesized member defines it, and the
@@ -626,6 +627,7 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
     report.merge(a);
     report.merge(b);
     check_pull(o, r, &p, options, &mut report);
+    check_pch(r, &mut report);
     report
 }
 
@@ -1192,6 +1194,53 @@ fn check_pull(o: &Library<'_>, r: &Library<'_>, p: &Pairing, options: &Options, 
             Pull::Relaxed => rep.expect(
                 "symbols the index sends to another member (--pull=relaxed allows it)",
                 || example,
+            ),
+        }
+    }
+}
+
+/// Each user of a turbolib precompiled-types member names one of the
+/// library's as link.exe pairs them (see [`pch`]).
+fn check_pch(r: &Library<'_>, rep: &mut Report) {
+    let pchs: Vec<(usize, pch::Pch)> = r
+        .members
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| pch::names_turbolib_pch(&m.name))
+        .filter_map(|(j, m)| pch::pch_of(m.data).map(|p| (j, p)))
+        .collect();
+    let uses = turbonop_par::map_balanced(&r.members, 16, |m| {
+        pch::use_of(m.data).filter(|u| pch::names_turbolib_pch(&u.path))
+    });
+    for (j, u) in uses.iter().enumerate() {
+        let Some(u) = u else { continue };
+        rep.checked("users of turbolib's precompiled-types members", 1);
+        let named: Vec<&(usize, pch::Pch)> = pchs
+            .iter()
+            .filter(|(k, p)| pch::names(u, p, &r.members[*k].name))
+            .collect();
+        match named.as_slice() {
+            [] => rep.fail(
+                "users naming a precompiled-types member the library doesn't have (by its S_OBJNAME path)",
+                || format!("{}: {}", r.name(j), show(&u.path)),
+            ),
+            [(k, p)] => {
+                if !u.path.eq_ignore_ascii_case(&p.path) {
+                    rep.fail(
+                        "precompiled-types members whose S_OBJNAME isn't the path their users name (only the member's name matches, which re-archiving changes)",
+                        || format!("{}: {} names {}", r.name(*k), show(&p.path), show(&u.path)),
+                    );
+                }
+                if let Some(why) = pch::mismatch(u, p) {
+                    rep.fail(
+                        "users whose LF_PRECOMP doesn't match their precompiled-types member",
+                        || format!("{}: {} ({why})", r.name(j), r.name(*k)),
+                    );
+                }
+            }
+            _ => rep.fail(
+                "users naming a path more than one precompiled-types member has",
+                || format!("{}: {}", r.name(j), show(&u.path)),
             ),
         }
     }

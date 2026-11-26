@@ -386,7 +386,7 @@ impl Builder<'_> {
                 .iter()
                 .map(|s| (s.addr, s.addr.saturating_add(s.size)))
                 .collect();
-            crate::disasm::charge(map, base, &refs, &loaded);
+            crate::disasm::charge(map, base, &refs, &loaded, &[]);
         }
     }
 

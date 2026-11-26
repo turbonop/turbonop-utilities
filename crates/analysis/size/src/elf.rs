@@ -304,7 +304,7 @@ impl Builder<'_> {
                     crate::disasm::references(arch, code, sym.value, &mut refs);
                 }
             }
-            crate::disasm::charge(map, base, &refs, &loaded);
+            crate::disasm::charge(map, base, &refs, &loaded, &[]);
         }
     }
 

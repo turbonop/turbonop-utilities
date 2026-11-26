@@ -329,11 +329,6 @@ x64. Where the 3.5 MB went:
 - **`THIRD_PARTY_NOTICES.txt`, 247 KB**, embedded for `hexcavator
   licenses`, with each crate's copy of the same MIT and Apache texts:
   each text once (and the crates under it), or compressed.
-- **`hexcavator size` misattributes data with no symbol** to the symbol
-  before it, even another object's: `load_config::dump` was charged
-  135 KB of `turbonop_powerpc`'s data, and LoongArch's `reg_name` (a few
-  lines) 64 KB. A section contribution with no symbol of its own should
-  be its object's, not its neighbor's.
 - **Generic code, about 1.15 MB**, counted to `core` (+668 KB), `std`
   (+306 KB), and `alloc` (+180 KB): our generics instantiated for each
   type, much of it likely `turbonop_par`'s (+111 KB itself, new)

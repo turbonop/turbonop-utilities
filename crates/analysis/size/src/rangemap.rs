@@ -163,6 +163,11 @@ impl RangeMap {
     /// (thousands of gaps between a map's symbols, each inserted alone,
     /// was most of filling).
     pub fn fill_from(&mut self, base: &RangeMap, mut f: impl FnMut(Label) -> Label) {
+        // (Many ranges, among many: one walk through both, in order,
+        // rather than a search of this map for each.)
+        if base.map.len() >= 64 && self.map.len() >= 64 {
+            return self.fill_from_merging(base, f);
+        }
         let mut fresh: Vec<(u64, Value)> = Vec::new();
         let mut gaps = std::mem::take(&mut self.scratch);
         for e in base.iter() {
@@ -187,6 +192,74 @@ impl RangeMap {
                 all.sort_by_key(|&(s, _)| s);
                 self.map = all.into_iter().collect();
             }
+        }
+    }
+
+    /// [`RangeMap::fill_from`] by one walk through this map's entries and
+    /// `base`'s together (both disjoint and in order), the map rebuilt
+    /// from both at once.
+    fn fill_from_merging(&mut self, base: &RangeMap, f: impl FnMut(Label) -> Label) {
+        self.fill_from_entries(base.iter(), base.map.len(), f);
+    }
+
+    /// Labels what is unlabeled of each of `entries` (disjoint, in order;
+    /// about `n` of them) with the label `f` gives its: one walk through
+    /// them and this map's entries together, the map rebuilt at once.
+    pub fn fill_from_entries(
+        &mut self,
+        entries: impl IntoIterator<Item = Entry>,
+        n: usize,
+        mut f: impl FnMut(Label) -> Label,
+    ) {
+        let old = std::mem::take(&mut self.map);
+        let mut all: Vec<(u64, Value)> = Vec::with_capacity(old.len() + n);
+        let mut mine = old.iter().map(|(&s, &v)| (s, v)).peekable();
+        // How far this map's entries so far reach.
+        let mut covered = 0u64;
+        let mut last: Option<(Label, Label)> = None;
+        for b in entries {
+            let mut cur = b.start.max(covered);
+            while cur < b.end {
+                // This map's entries from before `cur`, kept as they are.
+                while let Some((s, v)) = mine.next_if(|(s, _)| *s <= cur) {
+                    covered = covered.max(v.end);
+                    cur = cur.max(v.end);
+                    all.push((s, v));
+                }
+                if cur >= b.end {
+                    break;
+                }
+                // Unlabeled from `cur` to this map's next entry (or `b`'s end).
+                let next = mine.peek().map_or(b.end, |(s, _)| (*s).min(b.end));
+                if next > cur {
+                    let label = match last {
+                        Some((from, to)) if from == b.label => to,
+                        _ => {
+                            let to = f(b.label);
+                            last = Some((b.label, to));
+                            to
+                        }
+                    };
+                    let other = b.other.map(|o| o.wrapping_add(cur - b.start));
+                    all.push((
+                        cur,
+                        Value {
+                            end: next,
+                            label,
+                            other,
+                        },
+                    ));
+                }
+                cur = next;
+            }
+        }
+        all.extend(mine);
+        // (In order already: each fill ends where the next entry starts.)
+        debug_assert!(all.windows(2).all(|w| w[0].1.end <= w[1].0));
+        self.map = all.into_iter().collect();
+        // (Freed on another thread: a big map's nodes take a while.)
+        if old.len() > 64 * 1024 {
+            std::thread::spawn(move || drop(old));
         }
     }
 
@@ -514,6 +587,16 @@ impl DualMap {
         self.vm.fill_from(&base.vm, &mut fallback);
         self.file.fill_from(&base.file, &mut fallback);
     }
+
+    /// Labels what this map doesn't of `vm` and `file` (each disjoint and
+    /// in order) with their labels: memory and the file at once.
+    pub fn fill_from_entries(&mut self, vm: &[Entry], file: &[Entry]) {
+        let DualMap { vm: v, file: f } = self;
+        std::thread::scope(|s| {
+            s.spawn(|| v.fill_from_entries(vm.iter().copied(), vm.len(), |l| l));
+            f.fill_from_entries(file.iter().copied(), file.len(), |l| l);
+        });
+    }
 }
 
 /// Calls `f(start, end, labels)` for each run of bytes that `maps` label
@@ -665,6 +748,53 @@ mod tests {
         assert_eq!(d.vm.get(0x1075).unwrap().label, 5);
         // Outside the base: nothing.
         assert_eq!(d.add_vm(0x5000, 0x6000, 7, &base), 0);
+    }
+
+    /// Disjoint ranges in order, of random lengths and gaps, labeled
+    /// `label0 +` their index, from `seed`.
+    fn random_ranges(seed: &mut u64, n: usize, label0: Label, other: bool) -> Vec<Entry> {
+        let mut next = || {
+            *seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            *seed >> 33
+        };
+        let mut at = next() % 8;
+        (0..n)
+            .map(|i| {
+                let start = at + next() % 6;
+                let end = start + 1 + next() % 12;
+                at = end;
+                Entry {
+                    start,
+                    end,
+                    label: label0 + i as Label,
+                    other: other.then(|| 1000 + start * 2),
+                }
+            })
+            .collect()
+    }
+
+    /// Filling by one walk (many ranges among many: entries that cross
+    /// the base's ranges, start within them, or lie between them) labels
+    /// as adding each of the base's ranges alone does.
+    #[test]
+    fn fill_by_merging_is_fill_by_adding() {
+        let mut seed = 7u64;
+        for round in 0..300 {
+            let mine = random_ranges(&mut seed, 1 + round % 90, 0, round % 2 == 0);
+            let base = random_ranges(&mut seed, 1 + (round * 7) % 110, 500, true);
+            let mut merged = RangeMap::new();
+            let mut added = RangeMap::new();
+            for e in &mine {
+                merged.add_dual(e.start, e.end, e.other, e.label);
+                added.add_dual(e.start, e.end, e.other, e.label);
+            }
+            let f = |l: Label| l + 10_000;
+            merged.fill_from_entries(base.iter().copied(), base.len(), f);
+            for b in &base {
+                added.add_dual(b.start, b.end, b.other, f(b.label));
+            }
+            assert_eq!(entries(&merged), entries(&added), "round {round}");
+        }
     }
 
     #[test]

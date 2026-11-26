@@ -14,7 +14,7 @@ use turbonop_pe::PeFile;
 use turbonop_pe::consts::directory;
 
 use crate::Model;
-use crate::rangemap::{DualMap, Label, Labels};
+use crate::rangemap::{DualMap, Entry, Label, Labels, RangeMap};
 use crate::symbols::Symbol;
 
 /// A data source.
@@ -219,6 +219,17 @@ pub fn label_crates(maps: &mut Maps, sources: &[Source]) {
 /// `std`), or `[global]` for one in none. `None` for what isn't a symbol's
 /// name (a label in brackets: `[section .rodata]`).
 pub fn crate_of(name: &str) -> Option<String> {
+    // An object's unnamed data (`[.rdata of turbonop_powerpc]`): a Rust
+    // object's is its crate's (another object's name has a dot).
+    if let Some((_, object)) = name
+        .strip_prefix('[')
+        .and_then(|n| n.strip_suffix(']'))
+        .and_then(|n| n.rsplit_once(" of "))
+        && !object.is_empty()
+        && !object.contains(['.', ' ', '[', ']'])
+    {
+        return Some(object.to_string());
+    }
     if name.starts_with('[') || name.is_empty() {
         return None;
     }
@@ -524,7 +535,13 @@ fn fill(labels: &mut Labels, map: &mut DualMap, base: &DualMap) {
 /// refers to it. x64 (RIP-relative operands) and ARM64 (ADRP pairs, ADR,
 /// literal loads) code; x86's references are absolute addresses, which
 /// the base relocations say better (as ELF's x86 is left).
-fn pe_references(pe: &PeFile<'_>, symbols: &[Symbol], map: &mut DualMap, base: &DualMap) {
+fn pe_references(
+    pe: &PeFile<'_>,
+    symbols: &[Symbol],
+    model: Option<&Model>,
+    map: &mut DualMap,
+    base: &DualMap,
+) {
     use crate::disasm::Arch;
     use crate::symbols::SymbolKind;
     use turbonop_pe::consts::machine;
@@ -563,6 +580,16 @@ fn pe_references(pe: &PeFile<'_>, symbols: &[Symbol], map: &mut DualMap, base: &
         .map_or(1, std::num::NonZero::get)
         .min(functions.len().max(1));
     let chunk = functions.len().div_ceil(threads).max(1);
+    // The objects' contributions (sorted by start: the model's are).
+    let pieces: Vec<&crate::Piece> = model
+        .map(|m| m.pieces.iter().filter(|p| p.range.len > 0).collect())
+        .unwrap_or_default();
+    let compiland = |at: u64| {
+        let i = pieces.partition_point(|p| p.range.addr <= at);
+        let p = pieces.get(i.checked_sub(1)?)?;
+        (at < p.range.end()).then_some(p.compiland)
+    };
+    let labeled = &map.vm;
     let refs: Vec<crate::disasm::Reference> = std::thread::scope(|scope| {
         let handles: Vec<_> = functions
             .chunks(chunk)
@@ -573,6 +600,14 @@ fn pe_references(pe: &PeFile<'_>, symbols: &[Symbol], map: &mut DualMap, base: &
                         // (Addresses are RVAs: the image starts at 0.)
                         crate::disasm::references_in_image(arch, code, at, Some(0), &mut out);
                     }
+                    // What a symbol labels isn't charged (most references);
+                    // nor another object's data, which is that object's,
+                    // not a referrer's (an identical constant folded into
+                    // it, say, or a table it exports).
+                    out.retain(|r| {
+                        labeled.get(r.to).is_none()
+                            && compiland(r.to).is_none_or(|to| compiland(r.from) == Some(to))
+                    });
                     out
                 })
             })
@@ -582,7 +617,142 @@ fn pe_references(pe: &PeFile<'_>, symbols: &[Symbol], map: &mut DualMap, base: &
             .flat_map(|h| h.join().unwrap_or_default())
             .collect()
     });
-    crate::disasm::charge(map, base, &refs, &loaded);
+    let bounds: Vec<(u64, u64)> = pieces
+        .iter()
+        .map(|p| (p.range.addr, p.range.end()))
+        .collect();
+    crate::disasm::charge(map, base, &refs, &loaded, &bounds);
+}
+
+/// The base's ranges as [`fill`] labels them, but for the objects'
+/// pieces, which are the objects': `[.rdata of turbonop_powerpc]` (a Rust
+/// object's crate), `[.data of foo.obj]` (another's file name), not the
+/// section's; in memory and in the file (each disjoint, in order), for
+/// [`DualMap::fill_from_entries`] (what no symbol nor reference has).
+fn object_overlay(model: &Model, labels: &mut Labels, base: &DualMap) -> (Vec<Entry>, Vec<Entry>) {
+    let mut cache: turbonop_hash::Map<(u32, u32), Label> = turbonop_hash::Map::default();
+    let mut pieces: Vec<Entry> = Vec::with_capacity(model.pieces.len());
+    let mut done = 0u64;
+    for p in &model.pieces {
+        let (Some(section), Some(compiland)) = (
+            model.sections.get(p.section as usize),
+            model.compilands.get(p.compiland as usize),
+        ) else {
+            continue;
+        };
+        let (start, end) = (p.range.addr.max(done), p.range.end());
+        if start >= end || compiland.name.is_empty() {
+            continue;
+        }
+        done = end;
+        let label = *cache.entry((p.section, p.compiland)).or_insert_with(|| {
+            let name = format!("[{} of {}]", section.name, object_name(&compiland.name));
+            labels.intern(&name)
+        });
+        pieces.push(Entry {
+            start,
+            end,
+            label,
+            other: None,
+        });
+    }
+    let mut fallbacks = turbonop_hash::Map::default();
+    let mut fallback_of = |l: Label| *fallbacks.entry(l).or_insert_with(|| fallback(labels, l));
+    // In memory: the pieces where the base has the image, translated to
+    // the file where it is there; the rest, the base's fallbacks.
+    let (vm, placed) = overlay(&base.vm, &pieces, true, &mut fallback_of);
+    // In the file: the same pieces, where they are there.
+    let mut in_file: Vec<Entry> = placed
+        .iter()
+        .filter_map(|e| {
+            let o = e.other?;
+            Some(Entry {
+                start: o,
+                end: o.wrapping_add(e.end - e.start),
+                label: e.label,
+                other: Some(e.start),
+            })
+        })
+        .collect();
+    in_file.sort_by_key(|e| e.start);
+    let mut reach = 0;
+    in_file.retain(|e| {
+        let keep = e.start >= reach;
+        reach = reach.max(e.end);
+        keep
+    });
+    let (file, _) = overlay(&base.file, &in_file, false, &mut fallback_of);
+    (vm, file)
+}
+
+/// `base`'s ranges, with `pieces` (disjoint, in order) where they lie in
+/// them, and `fallback` of `base`'s labels elsewhere: disjoint, in order.
+/// `translate`: a piece's place in the other domain is the base's there.
+/// Also the parts of the pieces placed (with their places there).
+fn overlay(
+    base: &RangeMap,
+    pieces: &[Entry],
+    translate: bool,
+    fallback: &mut impl FnMut(Label) -> Label,
+) -> (Vec<Entry>, Vec<Entry>) {
+    let mut out = Vec::with_capacity(pieces.len() * 2 + base.len());
+    let mut placed = Vec::with_capacity(pieces.len());
+    let mut i = 0usize;
+    for b in base.iter() {
+        let other_at = |at: u64| b.other.map(|o| o.wrapping_add(at - b.start));
+        let mut cur = b.start;
+        let mut label = None;
+        let mut gap = |out: &mut Vec<Entry>, from: u64, to: u64| {
+            if from < to {
+                let l = *label.get_or_insert_with(|| fallback(b.label));
+                out.push(Entry {
+                    start: from,
+                    end: to,
+                    label: l,
+                    other: other_at(from),
+                });
+            }
+        };
+        while i < pieces.len() && pieces[i].end <= cur {
+            i += 1;
+        }
+        while let Some(p) = pieces.get(i).filter(|p| p.start < b.end) {
+            let start = p.start.max(cur);
+            let end = p.end.min(b.end);
+            gap(&mut out, cur, start);
+            let other = if translate {
+                other_at(start)
+            } else {
+                p.other.map(|o| o.wrapping_add(start - p.start))
+            };
+            let e = Entry {
+                start,
+                end,
+                label: p.label,
+                other,
+            };
+            out.push(e);
+            placed.push(e);
+            cur = end;
+            if p.end > b.end {
+                break;
+            }
+            i += 1;
+        }
+        gap(&mut out, cur, b.end);
+    }
+    (out, placed)
+}
+
+/// A compiland's object, shortly: a Rust object's crate
+/// (`turbonop_powerpc-0123.turbonop_powerpc.4567-cgu.0.rcgu.o`:
+/// `turbonop_powerpc`), another's file name.
+pub fn object_name(path: &str) -> &str {
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    match file.strip_suffix(".rcgu.o") {
+        Some(_) => file.split(['-', '.']).next().unwrap_or(file),
+        None => file,
+    }
 }
 
 /// Builds the maps of `image` for `sources`. Sources that need debug
@@ -637,33 +807,46 @@ pub fn maps(image: &Image<'_>, inputs: Inputs<'_>, sources: &[Source]) -> Maps {
             }
             Source::Symbols | Source::RawSymbols | Source::FullSymbols | Source::Crates => {
                 pe_header_symbols(pe, &mut labels, &mut map, &base);
-                if let Some(symbols) = inputs.symbols {
-                    let kept: Vec<_> = symbols
-                        .iter()
-                        .filter(|s| !s.folded && s.size.vm.max(s.size.file) > 0)
-                        .collect();
-                    // A function's exception data (`[pdata] f`, `[unwind]
-                    // f`, its C++ EH tables) is charged to the function, as
-                    // ELF's unwind entries are; the sections source still
-                    // tells them apart.
-                    let names: Vec<&str> = kept
-                        .iter()
-                        .map(|s| {
-                            s.kind
-                                .prefix()
-                                .and_then(|p| s.name.strip_prefix(p))
-                                .and_then(|n| n.strip_prefix(' '))
-                                .unwrap_or(&s.name)
-                        })
-                        .collect();
-                    let ls = labels.intern_many(&names);
+                let kept: Vec<_> = inputs
+                    .symbols
+                    .unwrap_or_default()
+                    .iter()
+                    .filter(|s| !s.folded && s.size.vm.max(s.size.file) > 0)
+                    .collect();
+                // A function's exception data (`[pdata] f`, `[unwind]
+                // f`, its C++ EH tables) is charged to the function, as
+                // ELF's unwind entries are; the sections source still
+                // tells them apart.
+                let names: Vec<&str> = kept
+                    .iter()
+                    .map(|s| {
+                        s.kind
+                            .prefix()
+                            .and_then(|p| s.name.strip_prefix(p))
+                            .and_then(|n| n.strip_prefix(' '))
+                            .unwrap_or(&s.name)
+                    })
+                    .collect();
+                let ls = labels.intern_many(&names);
+                // The objects' pieces, laid out while the code is read for
+                // references (which they don't depend on).
+                let objects = std::thread::scope(|scope| {
+                    let objects = inputs
+                        .model
+                        .map(|m| scope.spawn(|| object_overlay(m, &mut labels, &base)));
                     for (s, l) in kept.iter().zip(ls) {
                         let size = s.size.vm.max(s.size.file);
                         map.add_vm(s.addr, s.addr.saturating_add(size), l, &base);
                     }
-                    pe_references(pe, symbols, &mut map, &base);
+                    if let Some(symbols) = inputs.symbols {
+                        pe_references(pe, symbols, inputs.model, &mut map, &base);
+                    }
+                    objects.map(|h| h.join().unwrap_or_default())
+                });
+                match objects {
+                    Some((vm, file)) => map.fill_from_entries(&vm, &file),
+                    None => fill(&mut labels, &mut map, &base),
                 }
-                fill(&mut labels, &mut map, &base);
             }
             Source::CompileUnits | Source::ArMembers | Source::Libraries => {
                 if let Some(model) = inputs.model {

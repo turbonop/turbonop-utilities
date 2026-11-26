@@ -46,6 +46,12 @@ pub(crate) trait Names {
         let _ = rva;
         &[]
     }
+    /// The name of a thread-pointer offset (an ELF program's TLS
+    /// variable, as local-exec code addresses it), if it is one.
+    fn tls(&self, tpoff: i64) -> Option<(&[u8], u32)> {
+        let _ = tpoff;
+        None
+    }
 }
 
 /// Whether two addresses (RVAs, if in the images) name the same thing: the
@@ -94,6 +100,9 @@ pub(crate) struct Fields {
     pub absolute: u64,
     pub relative: u64,
     pub inferred: u64,
+    /// Thread-pointer offsets (x86-64 local-exec TLS) naming the same
+    /// variable.
+    pub tls: u64,
 }
 
 fn word(b: &[u8], at: usize, size: usize) -> u64 {
@@ -323,6 +332,51 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
                 fields.relative += 1;
             }
             masked[at + p..at + p + size].fill(true);
+        }
+        // Thread-pointer offsets: displacements and immediates that name
+        // the same TLS variable (another TLS layout moves them all).
+        if ea != eb {
+            for (oa, ob) in ia.operands().iter().zip(ib.operands()) {
+                let (va, vb, size) = match (oa, ob) {
+                    (Operand::Mem(ma), Operand::Mem(mb))
+                        if !ma.is_rip_relative()
+                            && matches!(ma.disp_size, 1 | 4)
+                            && ma.disp_size == mb.disp_size =>
+                    {
+                        (ma.disp, mb.disp, usize::from(ma.disp_size))
+                    }
+                    (Operand::Imm(xa), Operand::Imm(xb)) if xa.size == 4 && xb.size == 4 => (
+                        i64::from(xa.value as u32 as i32),
+                        i64::from(xb.value as u32 as i32),
+                        4,
+                    ),
+                    // (An imm32 sign-extended to 64 bits.)
+                    (Operand::Imm(xa), Operand::Imm(xb)) if xa.size == 8 && xb.size == 8 => {
+                        (xa.value as i64, xb.value as i64, 4)
+                    }
+                    (Operand::Imm(xa), Operand::Imm(xb)) if xa.size == 1 && xb.size == 1 => (
+                        i64::from(xa.value as u8 as i8),
+                        i64::from(xb.value as u8 as i8),
+                        1,
+                    ),
+                    _ => continue,
+                };
+                if va == vb {
+                    continue;
+                }
+                let (Some(na), Some(nb)) = (a.image.tls(va), b.image.tls(vb)) else {
+                    continue;
+                };
+                if na != nb {
+                    continue;
+                }
+                if let Some(p) = field(ea, eb, 1, size, va, vb)
+                    && !masked[at + p..at + p + size].contains(&true)
+                {
+                    masked[at + p..at + p + size].fill(true);
+                    fields.tls += 1;
+                }
+            }
         }
         at += n;
     }

@@ -10,6 +10,9 @@ use turbonop_verify::library::{self, Fold, Pull};
 const VERIFY_USAGE: &str = "\
 usage: turbolib verify [options] <original library> <rewritten library>
 
+(COFF libraries, or GNU and BSD archives of ELF objects; for ELF, only
+--fold=identical and --locals=keep, the engine's modes, are checked.)
+
 Checks that the rewritten library is equivalent to the original: every
 symbol still defined, with its kind; every original member there, in order,
 its sections and references changed only as folding changes them; every
@@ -37,6 +40,7 @@ options:
 
 const COMPARE_USAGE: &str = "\
 usage: turbolib compare-images [options] <a.exe> <a.pdb> <b.exe> <b.pdb>
+       turbolib compare-images [options] <a> <b>        (ELF programs)
 
 Checks that two programs, linked from the same inputs except for
 turbolib's rewriting of libraries, are equivalent: the same functions and
@@ -44,8 +48,13 @@ data, with the same bytes once every address in them is mapped through
 each program's symbols; the same imports, exports, initializers, TLS
 callbacks, load configuration, CFG tables, and unwind data; and PDBs with
 the same publics, globals, procedures, lines, inlinees, locals, and types,
-compared by content. Prints what differs, by category, with counts and
-examples, and exits with 1 if anything fails.
+compared by content. ELF programs are compared through their symbols,
+dynamic relocations, and DWARF: functions and data by their bytes with
+addresses mapped through each program's labels; the headers, dynamic
+section, dynamic symbols and relocations, initializer arrays, notes, and
+.eh_frame; and every live subprogram's DWARF, line rows, variables, and
+type definitions, by content. Prints what differs, by category, with
+counts and examples, and exits with 1 if anything fails.
 
 options:
   -j N             use N threads (1: no threads but this one)
@@ -114,6 +123,9 @@ pub fn verify(args: &[String]) -> ExitCode {
     let run = || -> Result<turbonop_verify::report::Report, String> {
         let a = map(&c.paths[0])?;
         let b = map(&c.paths[1])?;
+        if turbonop_verify::elf::library::is_elf_archive(&a) {
+            return turbonop_verify::elf::library::verify(&a, &b, &c.options);
+        }
         library::verify(&a, &b, &c.options)
     };
     finish(run(), c.stats, start)
@@ -122,7 +134,7 @@ pub fn verify(args: &[String]) -> ExitCode {
 /// `turbolib compare-images`.
 pub fn compare_images(args: &[String]) -> ExitCode {
     let c = match parse(args, false) {
-        Ok(c) if c.paths.len() == 4 => c,
+        Ok(c) if c.paths.len() == 4 || c.paths.len() == 2 => c,
         Ok(_) => {
             eprint!("{COMPARE_USAGE}");
             return ExitCode::from(2);
@@ -137,6 +149,12 @@ pub fn compare_images(args: &[String]) -> ExitCode {
     let run = || -> Result<turbonop_verify::report::Report, String> {
         let files: Vec<turbonop_mmap::Mmap> =
             c.paths.iter().map(|p| map(p)).collect::<Result<_, _>>()?;
+        if files.len() == 2 {
+            if !files.iter().all(|f| turbonop_verify::elf::is_elf(f)) {
+                return Err("two files are compared as ELF programs: these aren't".into());
+            }
+            return turbonop_verify::elf::compare(&files[0], &files[1]);
+        }
         turbonop_verify::image::compare(
             turbonop_verify::image::Program {
                 image: &files[0],

@@ -5,6 +5,7 @@ archive members each link loads.
 
     relink.py --build ~/tlcorpus/build-gcc --folded DIR [--out DIR]
               [--linkers bfd,gold,lld,mold] [--programs llvm-nm,...]
+              [--compare-images TURBOLIB]
 
 DIR holds the folded libraries under the build's names (lib/libX.a ->
 DIR/libX.a); a library not there is linked as the build made it. Each
@@ -14,6 +15,15 @@ build's libraries and once with the folded ones, with -Wl,--trace, which
 lists the archive members each link loads. Then each pair of programs is
 run on the same inputs (the program's own test commands, below), and
 their standard output and exit status compared.
+
+With --compare-images (the path of a turbolib binary), each pair is also
+compared with `turbolib compare-images` (functions' and data's bytes with
+addresses mapped through symbols, the dynamic tables, .eh_frame, and the
+DWARF of every live subprogram, by content), and the original is linked a
+second time and compared with the first link, which must be equivalent.
+Each comparison's report is written next to the programs
+(<program>-<linker>-compare.txt, -compare-self.txt), and its failing
+categories printed.
 
 Members loaded: under --pull=preserve, a folded link may load fewer of
 the original members (a member that gave a name up is no longer loaded
@@ -97,6 +107,7 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--linkers", default="bfd,gold,lld,mold")
     ap.add_argument("--programs", default="llvm-nm,llvm-readobj")
+    ap.add_argument("--compare-images", metavar="TURBOLIB")
     args = ap.parse_args()
     build = os.path.abspath(args.build)
     out = os.path.abspath(args.out or os.path.join(build, "relink"))
@@ -162,6 +173,30 @@ def main():
             print(("ok   " if same else "FAIL ") + line)
             if not same:
                 failures += 1
+            if args.compare_images:
+                # A second link of the original: two links of the same inputs
+                # must compare equivalent.
+                again = os.path.join(out, f"{program}-{linker}-orig2")
+                p = subprocess.run(for_linker(base, linker, again, None, False), cwd=build,
+                                   capture_output=True, text=True)
+                pairs = [("compare-self", oexe, again), ("compare", oexe, fexe)]
+                if p.returncode != 0:
+                    print(f"FAIL {program} {linker}: the second link exited {p.returncode}")
+                    failures += 1
+                    pairs = pairs[1:]
+                for what, a, b in pairs:
+                    r = subprocess.run([args.compare_images, "compare-images", a, b],
+                                       capture_output=True, text=True)
+                    report = os.path.join(out, f"{program}-{linker}-{what}.txt")
+                    with open(report, "w") as f:
+                        f.write(r.stdout + r.stderr)
+                    failed = [l for l in r.stdout.splitlines() if l.startswith("FAILED")]
+                    verdict = "equivalent" if r.returncode == 0 else f"NOT equivalent (exit {r.returncode})"
+                    print(f"{'ok  ' if r.returncode == 0 else 'FAIL'} {program} {linker} {what}: {verdict}")
+                    for l in failed:
+                        print(f"       {l}")
+                    if r.returncode != 0:
+                        failures += 1
     sys.exit(1 if failures else 0)
 
 

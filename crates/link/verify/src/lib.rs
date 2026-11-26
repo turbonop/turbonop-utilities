@@ -8,6 +8,7 @@
 //!   addresses.
 //! - [`pdb`]: the structural comparison of two PDBs that `compare-images`
 //!   makes, by content rather than by index.
+//! - [`elf`]: both, for ELF programs and GNU and BSD archives.
 //! - [`report`]: what each found, by category, in plain words.
 //!
 //! See `docs/turbolib.md` ("Verification") for what each can and can't
@@ -19,6 +20,7 @@
 #[cfg(test)]
 use turbonop_global_alloc as _;
 
+pub mod elf;
 mod hash;
 pub mod image;
 pub mod library;

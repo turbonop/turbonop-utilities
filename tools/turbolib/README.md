@@ -116,4 +116,7 @@ them, made by lib.exe and folded by turbolib, with link.exe and lld-link,
 runs both programs, and compares the PDBs with
 `corpus\pdbcompare.py`, which compares procedures (signatures, locals,
 inline sites, lines) and other module symbols structurally, from
-llvm-pdbutil's dumps.
+llvm-pdbutil's dumps. `--options=...` sets turbolib's options (the
+default is `--fold=identical`; phase 3's checks used
+`--options=--precomp=library` and `--options="--fold=identical
+--precomp=library"`).

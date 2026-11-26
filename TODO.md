@@ -357,6 +357,35 @@ x64. Where the 3.5 MB went:
     there), `/Zi` objects in a link, and clang-cl's PCHs.
   - PDBs in `relink.py`'s matrix: `corpus/pdbcompare.py` compares them
     structurally (2.4's check); run it there too.
+- **Phase 3: shared types.** 3.1 to 3.4 are done (`--precomp=library`;
+  see the plan's "Phase 3 results"). Still open:
+  - **3.5, `--precomp=clustered=<n>`**: grouping members by the types they
+    share, so a link that loads few members merges fewer unused types.
+    Decide how to form the groups and choose and score *n* (the plan's
+    3.5), measure with the analyzer, then write it.
+  - Make `library` the default once it is proven in more links: the
+    test programs' own suites, clang-cl's PCHs, `/Zi` neighbors, ARM64
+    and x86 objects (all untested), and incremental linking with the
+    kept `.chks64` (0 for changed sections; untested).
+  - The analyzer's projection for PCH builds: it counts users of a PCH in
+    another library as sharing (3.1 GiB projected on `build-z7`, 1.16
+    GiB made). Project what the engine does: through in-library PCH
+    objects' records, and not for users of other libraries' PCHs.
+  - Users of a PCH in another library keep their types (most of what
+    `build-z7` doesn't save). A precompiled-types member that itself
+    names their PCH might let them share; likely not readable by
+    lld-link (it reads `.debug$P` as plain records). Spike it with both
+    linkers before writing anything.
+  - An option for the threshold (`min`, 2 now), and the PDB cost per
+    link that the plan's trade-off names (lld-link: 14,064 more types in
+    `llvm-nm`; link.exe: none measured), measured with the analyzer for
+    each choice.
+  - Speed: finding the shared types is about 0.35 s of
+    `clangCodeGen.lib`'s 1.6 s; rewritten members' `.debug$S` is copied
+    twice (renumbered, then into the skeleton).
+  - The PCH symbol's signature is 32 bits: two different libraries'
+    PCHs in one link could share one by chance (about 2^-32 a pair), and
+    a linker would then likely confuse them. Not handled.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

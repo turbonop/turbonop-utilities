@@ -160,7 +160,7 @@ fn turbolib_option(word: &str) -> Option<&str> {
 
 /// Takes turbolib's options (`--<option>`, `-j N`, `-jN`) out of `words`,
 /// before `--`.
-fn take_turbolib(words: &mut Vec<String>) -> Result<Vec<String>, String> {
+pub(super) fn take_turbolib(words: &mut Vec<String>) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < words.len() {

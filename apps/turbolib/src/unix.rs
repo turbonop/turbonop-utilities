@@ -4,6 +4,7 @@
 //! so turbolib can stand in for either.
 
 mod args;
+pub mod libtool;
 mod localtime;
 mod mri;
 mod run;

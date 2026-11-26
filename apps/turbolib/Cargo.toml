@@ -18,6 +18,7 @@ turbonop-archive.workspace = true
 turbonop-coff.workspace = true
 turbonop-demangle.workspace = true
 turbonop-elf.workspace = true
+turbonop-macho.workspace = true
 turbonop-fold.workspace = true
 turbonop-mmap.workspace = true
 turbonop-moduledef.workspace = true

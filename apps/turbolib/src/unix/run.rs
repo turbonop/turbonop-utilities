@@ -96,7 +96,20 @@ pub struct Run<'e> {
     status: i32,
 }
 
-impl Run<'_> {
+impl<'e> Run<'e> {
+    /// A run of `flavor`, named `argv0`, in `env`.
+    pub fn new(flavor: Flavor, argv0: &str, env: &'e Env) -> Self {
+        Run {
+            flavor,
+            argv0: argv0.to_string(),
+            env,
+            stdout: Vec::new(),
+            stderr: String::new(),
+            settings: Settings::default(),
+            status: 0,
+        }
+    }
+
     /// A warning or message on standard error, worded as the tool words
     /// it.
     pub fn warn(&mut self, text: &str) {
@@ -943,6 +956,37 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
 /// their files' mappings (the caller drops its own): they are let go
 /// before the new archive takes the old one's place, which Windows needs.
 pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fatal> {
+    let thin = plan.thin;
+    let (layout, members) = lay_out(run, archive, plan)?;
+    let datas: Vec<output::Bytes<'_>> = members
+        .iter()
+        .map(|m| output::Bytes {
+            data: if thin { &[] } else { m.data() },
+            holes: &[],
+        })
+        .collect();
+    let path = run.resolve(archive);
+    let temp = output::write_unix_beside(&path, &layout, &datas)
+        .map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
+    drop(datas);
+    drop(members);
+    output::replace(&temp, &path).map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
+    Ok(())
+}
+
+/// The archive `plan` makes, in memory (for a universal file's slices).
+pub fn plan_bytes(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<Vec<u8>, Fatal> {
+    let thin = plan.thin;
+    let (layout, members) = lay_out(run, archive, plan)?;
+    let size = usize::try_from(layout.size()).map_err(|_| run.fatal(format!("{archive}: too large")))?;
+    let mut out = vec![0u8; size];
+    layout.write_into(&mut out, |i| if thin { &[] } else { members[i].data() });
+    Ok(out)
+}
+
+/// Folds `plan`'s members if asked, and lays the archive out: the layout,
+/// and the members in it.
+fn lay_out(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(Layout, Vec<Item>), Fatal> {
     if plan.members.iter().any(|m| m.bytes.is_none()) && !plan.thin {
         return Err(run.fatal(format!("{archive}: a member's data is missing")));
     }
@@ -988,7 +1032,6 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fa
         options.sym64_threshold = t;
     }
     // Darwin, deterministically: each name's copies dated 1, 2, ...
-    let thin = plan.thin;
     let darwin = plan.dialect == Dialect::Darwin && plan.deterministic;
     let mut members = plan.members;
     if darwin && archiver == Archiver::LlvmAr {
@@ -1023,21 +1066,8 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fa
         .collect();
     let layout = Layout::new(&entries, table.then_some(index.as_slice()), &options)
         .map_err(|e| run.fatal(format!("{archive}: {e}")))?;
-    let datas: Vec<output::Bytes<'_>> = members
-        .iter()
-        .map(|m| output::Bytes {
-            data: if thin { &[] } else { m.data() },
-            holes: &[],
-        })
-        .collect();
-    let path = run.resolve(archive);
-    let temp = output::write_unix_beside(&path, &layout, &datas)
-        .map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
-    drop(datas);
     drop(entries);
-    drop(members);
-    output::replace(&temp, &path).map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
-    Ok(())
+    Ok((layout, members))
 }
 
 /// The `t` operation's line for a member.
@@ -1393,15 +1423,7 @@ fn write_op(run: &mut Run<'_>, c: &Command, archive: &str) -> Result<(), Fatal> 
 
 /// Runs the personality on `args` (the words after the program's name).
 pub fn run(flavor: Flavor, argv0: &str, args: &[String], env: &Env) -> Outcome {
-    let mut r = Run {
-        flavor,
-        argv0: argv0.to_string(),
-        env,
-        stdout: Vec::new(),
-        stderr: String::new(),
-        settings: Settings::default(),
-        status: 0,
-    };
+    let mut r = Run::new(flavor, argv0, env);
     let exit = match run_inner(&mut r, args) {
         Ok(()) => r.status,
         Err(Fatal(text)) => {

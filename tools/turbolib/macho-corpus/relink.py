@@ -17,7 +17,8 @@ DIR holds lib/<kind>/<arch>/lib*.a (relib.py's --out, run with
   expected only in the folded image;
 - **code**: each function's disassembly (`llvm-objdump -d`), with addresses
   and immediates of address computations taken out and branch targets by
-  name, the same per function name;
+  name, the same per function name (arm64's `adrp`/`add` pairs aren't
+  followed to what they address: only their shapes are compared);
 - **initializers**: the names `__mod_init_func`'s entries point to, in
   order (`llvm-objdump --macho --section=__DATA,__mod_init_func` symbolized
   through the image's symbols);
@@ -94,7 +95,9 @@ def functions(image):
         if name is None or not l.strip() or l.startswith("Disassembly"):
             continue
         ins = l.strip()
-        targets = re.findall(r"<([^>]+)>", ins)
+        # (adrp's target is a page: objdump names it by whatever symbol
+        # precedes the page's start, which the layout decides.)
+        targets = [] if ins.startswith("adrp") else re.findall(r"<([^>]+)>", ins)
         ins = re.sub(r"<[^>]+>", "", ins)
         body.append((ADDR.sub("N", ins).strip(), tuple(t.split("+")[0] for t in targets)))
     if name is not None:

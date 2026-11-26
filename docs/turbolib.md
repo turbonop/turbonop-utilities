@@ -17,7 +17,7 @@ linker is allowed to link it.
 This is a plan, not a specification. Each phase becomes TODO.md items, and
 items leave TODO.md as they ship.
 
-## Status (2026-11-25)
+## Status (2026-11-26)
 
 | Phase | State |
 |---|---|
@@ -25,7 +25,7 @@ items leave TODO.md as they ship.
 | 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. 1.2's `/DEF` too: import libraries and export files as `lib.exe` and `llvm-lib` write them. Not yet: thin libraries. |
 | 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links). Not yet: 3.5, `clustered`. |
-| 4 Less conservative folding | Not yet. |
+| 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
 | 6 ELF, with split DWARF | Not yet. |
 | 7 Mach-O | Not yet. |
@@ -795,6 +795,145 @@ print in 324 of 324 runs; link.exe under `/OPT:REF` has 8,950 and 8,315
 failures (against 34,490 and 30,484 with folding alone before `.chks64`
 was kept), and the C++ initializers' order still differs with link.exe
 (the open item in TODO.md).
+
+## Phase 4 results
+
+`--fold=select-any` with `--pick`, `--locals=copy` and `merge`, and
+`--report odr` (`/TURBOLIB:fold=select-any`, `pick=largest`,
+`locals=copy`, `report=odr`, or in `TURBOLIB_OPTIONS`), in
+`turbonop_fold::rewrite` and `rewrite::locals`; what each folds, refuses,
+and gives up is in [Conservativeness](#conservativeness). The defaults
+are unchanged (`identical`, `locals=keep`; and the `lib` personality's
+default is still `--fold=none`). Choices and deviations from the plan:
+
+- **Copies of one name** under select-any are units with the same
+  external names, selection, and environment key. Copies with internal
+  linkage are never select-any's (their names mean nothing across
+  objects); they fold only when identical.
+- **`SAME_SIZE` and `EXACT_MATCH`** compare the COMDAT section's size (and
+  checksum); when copies disagree, the identical ones among them still fold
+  (rather than "both copies stay"), and the name and its copies are listed
+  by `--stats`. Neither MSVC nor clang-cl was seen writing these
+  selections (nor `LARGEST`); they are tested on objects made in the
+  tests.
+- **Under `--pull=preserve`**, select-any's extra conditions (every
+  definition of the names a copy of the same kind; all copies referring to
+  the same names) keep which members a link loads the same, as shown
+  statically by `verify`, and in the links below (no module of an
+  original member only in one of the two PDBs, in any of the 84 links):
+  what changes is which copy's code a link gets.
+- **`--locals=copy` copies, never shares.** A local COMDAT that code which
+  stays reaches stays, and the synthesized member gets its own copy; one
+  that only moved units reach leaves its member ("absorbed"). The plan's
+  "folding a COMDAT whose own symbol is local is `--locals=copy`" is only
+  this: such a COMDAT never folds by itself (giving it an external name
+  would let members share it: TODO.md).
+- **The ODR report** compares code as `--locals=copy` does (locals by
+  content), so the `$SG` string each translation unit names doesn't make a
+  finding; and it says when a finding's definitions only come from members
+  of different environments.
+- `turbolib verify` takes `--fold=select-any` and `--locals=copy|merge`,
+  and, under `preserve` in every mode, checks what a synthesized member
+  refers to (see [the tools](#the-tools-verify-and-compare-images-26)).
+  That check found a gap older than phase 4: a synthesized member holding a
+  PCH user's copy of a unit that non-users gave up too names the PCH
+  object's symbol, so a link loading such a member alone now loads the PCH
+  object (2 libraries of `build-z7`: LLVMAnalysis and clangCIR; none of
+  `build-z7-nopch`). Reported as expected, and in TODO.md.
+
+**The fixtures** (`tools/turbolib/loose`, built by its `build.cmd` into
+`testdata/coff/loose`: cl `/Od /Gy`, `/Od`, `/O2 /Gy`, clang-cl `/Od /Gy`;
+three objects whose inline functions reach `static inline` and
+anonymous-namespace functions, a constant table, a writable counter, and
+differ between objects in `variant()`, `selected`, and `refers()`):
+`check.py` links `main.cpp` against lib.exe's library and the folded one
+in six combinations of the modes, with link.exe and lld-link under
+`/OPT:REF` and `NOREF`: 96 pairs of programs, all printing the same (with
+select-any, each copy-choice value one some choice of copies gives), and
+`verify` passes all 24 libraries in their modes. Without `/Gy`, and with
+clang-cl, `static` functions are code outside COMDATs, so what calls them
+stays (as measured: only `lookup()`, which reaches the table, moves).
+
+**On the corpus** (`relib.py`, the build's own archiver commands; saved,
+of all 250 libraries):
+
+| Mode | `build-z7` (13.68 GiB) | `build-z7-nopch` (21.77 GiB) |
+|---|---|---|
+| `--fold=identical` | 1.511 GiB (11.0%) | 1.487 GiB (6.8%) |
+| `--fold=select-any` | 1.527 GiB (11.2%) | 1.505 GiB (6.9%) |
+| `--fold=identical --locals=copy` | 1.516 GiB (11.1%) | 1.491 GiB (6.8%) |
+| `--fold=select-any --locals=merge` | 1.532 GiB (11.2%) | |
+| the same, `--pull=relaxed` | 1.838 GiB (13.4%) | |
+| the same, `--precomp=library` (preserve) | | 11.813 GiB (54.3%; phase 3's `identical` with types: 11.79) |
+
+So phase 4's modes save little more on LLVM: 21 MiB of `build-z7` (0.15%)
+under `preserve`, about what the analyzer projected (Phase 0: 20.7% for
+`identical`, 20.9% for `select-any, locals=copy`, 0.2 points apart), and
+0.33 GiB with `--pull=relaxed` as well (`relaxed` alone wasn't measured
+here). Why so little: copies with other code are rare (on `build-z7`,
+with `--locals=copy` too, 2,334 groups
+folded whose copies differ, summed over libraries; 65 copies left for
+referring to other names; no `SAME_SIZE` or `EXACT_MATCH`), and LLVM's
+Debug build has no `/Gy`, so its `static` functions are code outside
+COMDATs, which isn't copied: `--locals=copy` copied 3,252 pieces (string
+literals, constant tables) and no local unit. `--report odr` lists 2,786
+names over `build-z7`'s libraries (summed; 2,758 with two definitions in
+one environment). Every folded library passes `turbolib verify` in its
+mode: 1,605 libraries over the nine runs.
+
+**Links** (`relink.py`'s matrix for `llvm-nm` and `llvm-readobj`: link.exe
+and lld-link, `/OPT:REF` and `NOREF`, `/DEBUG:FULL` and lld's `GHASH`, 12
+links each): the programs print what the originals print, with `nm` and
+`readobj --all`, on 27 inputs (`LLVMDemangle`'s objects and library,
+`LLVMBinaryFormat.lib`, `testdata/coff`'s objects and libraries, and
+`llvm-nm.exe`): 324 runs for each of the seven libraries sets relinked
+(the four modes on `build-z7`, three on `build-z7-nopch`), none
+different. `compare-images` failures, with `identical` as the baseline
+(the same binary; the categories are folding's known ones, see 2.6 and
+phase 3):
+
+| | link REF | link NOREF | lld REF | lld NOREF |
+|---|---|---|---|---|
+| `build-z7`, `llvm-nm`: `identical` | 9,155 | 10,886 | 44,150 | 140,853 |
+| `select-any` | 9,522 | 11,235 | 44,437 | 141,392 |
+| `identical, locals=copy` | 9,526 | 11,306 | 44,593 | 141,379 |
+| `select-any, locals=merge` | 9,679 | 11,475 | 44,678 | 141,682 |
+| `build-z7`, `llvm-readobj`: `identical` | 8,426 | 8,542 | 35,962 | 105,282 |
+| `select-any, locals=merge` | 8,941 | 9,029 | 36,409 | 105,982 |
+| `build-z7-nopch`, `llvm-nm`: `identical` | 16,057 | 29,374 | 44,922 | 141,964 |
+| `select-any` | 16,506 | 29,927 | 45,292 | 142,552 |
+| `select-any, locals=merge, precomp=library` | 16,249 | 29,710 | 45,008 | 142,393 |
+
+(GHASH gives lld's FULL numbers in every run.) The extra failures are
+what the modes change: functions whose bytes differ (another copy kept),
+operands naming another copy, the copied locals as contributions of
+synthesized members. `.text` and `.pdata` keep `identical`'s sizes but in
+`llvm-nm` under `/OPT:REF` with `select-any, locals=merge`: 4,320 bytes
+and two unwind entries less, the two `getSectionContentsAsArray<Elf_Sym>`
+instantiations, which the folded program doesn't have and the original
+does; likely ICF folding them now that they name one merged string copy
+(not shown).
+
+**Determinism**: `clangCodeGen.lib` (`build-z7-nopch`, `/Brepro`) is the
+same bytes on 1 thread and on 8, and from two processes, with
+`select-any, locals=merge, precomp=library`, `identical, locals=copy`, and
+`select-any, pick=largest, pull=relaxed`.
+
+**Speed** (`timelib.py`, the 20 largest libraries, best of 2, warm cache,
+8 threads):
+
+| | `build-z7` (7.26 GiB) | `build-z7-nopch` (13.17 GiB) |
+|---|---|---|
+| `lib.exe` 14.52 | 11.00 s, 1.00× | 17.57 s, 1.00× |
+| `--fold=identical` | 11.37 s, 1.03× | 14.92 s, 0.85× |
+| `--fold=select-any` | 11.60 s, 1.05× | 15.19 s, 0.86× |
+| `--fold=identical --locals=copy` | 11.76 s, 1.07× | 15.37 s, 0.87× |
+| `--fold=select-any --locals=merge` | 11.90 s, 1.08× | 15.50 s, 0.88× |
+| `--fold=identical --report=odr` | 12.10 s, 1.10× | 15.78 s, 0.90× |
+
+Finding what units reach costs about 15% of reading (`clangSema.lib` of
+`build-z7-nopch`: 0.39 s against 0.34 s); a first version that read every
+relocation again and searched every symbol for each piece took 1.34 s.
 
 ## Decisions
 
@@ -1691,6 +1830,8 @@ What compare-images reports for the folded libraries (link.exe,
   match what links actually produce.
 
 ### Phase 4: less conservative folding
+
+Done: see [Phase 4 results](#phase-4-results); what is left is in TODO.md.
 
 - **4.1** `--fold=select-any` and `--pick`.
 - **4.2** `--locals=copy` and `merge`.

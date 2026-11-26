@@ -95,6 +95,14 @@ struct Reduced {
     udts: Vec<(u128, String)>,
     /// It has a module of a precompiled-types member turbolib made.
     pch: bool,
+    /// The hashes of the types and ids something in the PDB reaches (see
+    /// [`types::live`]), sorted, each once.
+    live_types: Vec<u128>,
+    live_ids: Vec<u128>,
+    /// Each record's hash blind to translation units' tags (see
+    /// [`types::hash`]), by index.
+    tagless_types: Vec<u128>,
+    tagless_ids: Vec<u128>,
 }
 
 /// Compares the PDBs of two programs (see the module's documentation).
@@ -152,12 +160,80 @@ fn compare_types(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep
             sy.dedup();
             (sx, sy)
         };
+        let (live_a, live_b) = if ids {
+            (&ra.live_ids, &rb.live_ids)
+        } else {
+            (&ra.live_types, &rb.live_types)
+        };
+        let (tagless_a, tagless_b) = if ids {
+            (&ra.tagless_ids, &rb.tagless_ids)
+        } else {
+            (&ra.tagless_types, &rb.tagless_types)
+        };
+        // A record's tag-blind hash, by its hash; and each PDB's tag-blind
+        // hashes.
+        let blind = |hashes: &Hashes, tagless: &[u128]| -> (Map<u128, u128>, Vec<u128>) {
+            let map: Map<u128, u128> = hashes
+                .hashes
+                .iter()
+                .zip(tagless)
+                .map(|(h, t)| (*h, *t))
+                .collect();
+            let mut set = tagless.to_vec();
+            set.sort_unstable();
+            set.dedup();
+            (map, set)
+        };
+        let (blind_a, set_a) = blind(x, tagless_a);
+        let (blind_b, set_b) = blind(y, tagless_b);
+        let other_copy = |h: u128, map: &Map<u128, u128>, set: &[u128]| {
+            map.get(&h).is_some_and(|t| set.binary_search(t).is_ok())
+        };
         for h in difference(&sx, &sy) {
+            if live_a.binary_search(&h).is_err() {
+                // Nothing in the first PDB reaches it: link.exe merges the
+                // records an object's symbols reach, those of the COMDAT
+                // copies it discards included, so a record only a removed
+                // copy reached (as each translation unit's own lambda
+                // types) is in the first PDB alone.
+                rep.expect(
+                    &format!(
+                        "{what} only in the first PDB, which nothing in it reaches (records of copies the link discarded)"
+                    ),
+                    || describe(a, ids, x, h),
+                );
+                continue;
+            }
+            if other_copy(h, &blind_a, &set_b) {
+                rep.expect(
+                    &format!(
+                        "{what} only in the first PDB, the same but for translation units' tags in unique names (another translation unit's copy kept)"
+                    ),
+                    || describe(a, ids, x, h),
+                );
+                continue;
+            }
             rep.fail(&format!("{what} only in the first PDB"), || {
                 describe(a, ids, x, h)
             });
         }
         for h in difference(&sy, &sx) {
+            if live_b.binary_search(&h).is_err() && !(rb.pch && !ra.pch) {
+                rep.expect(
+                    &format!("{what} only in the second PDB, which nothing in it reaches"),
+                    || describe(b, ids, y, h),
+                );
+                continue;
+            }
+            if other_copy(h, &blind_b, &set_a) {
+                rep.expect(
+                    &format!(
+                        "{what} only in the second PDB, the same but for translation units' tags in unique names (another translation unit's copy kept)"
+                    ),
+                    || describe(b, ids, y, h),
+                );
+                continue;
+            }
             if rb.pch && !ra.pch {
                 // A linker merges every record of a precompiled-types
                 // member it loads, used or not (lld-link: measured), so
@@ -663,6 +739,27 @@ struct ModuleFacts {
     layout: Vec<(Vec<u8>, u32)>,
     /// Its top-level `S_UDT` and `S_CONSTANT` records: (hash, description).
     udts: Vec<(u128, String)>,
+    /// The type and id indices its symbols and inlinee lines name.
+    root_types: Vec<u32>,
+    root_ids: Vec<u32>,
+}
+
+/// The type and id indices a symbol record names.
+fn roots_of(kind: u16, body: &[u8], types: &mut Vec<u32>, ids: &mut Vec<u32>) {
+    let Ok(fields) = symbol_refs::fields_of(kind, body) else {
+        return;
+    };
+    let u32_at = |o: usize| {
+        body.get(o..o + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    for f in fields {
+        match f {
+            Field::Type(o) => types.extend(u32_at(o as usize)),
+            Field::Id(o) => ids.extend(u32_at(o as usize)),
+            _ => {}
+        }
+    }
 }
 
 fn module(
@@ -683,6 +780,8 @@ fn module(
         unknown_subsections: Map::default(),
         layout: Vec::new(),
         udts: Vec::new(),
+        root_types: Vec::new(),
+        root_ids: Vec::new(),
     };
     // A synthesized member: its S_OBJNAME says so (`turbolib:...`), or,
     // until its debug information is written (2.4), its name is the
@@ -711,6 +810,7 @@ fn module(
     let mut depth = 0usize;
     let mut scope: Option<(Vec<u8>, H128, bool)> = None;
     for s in stream.symbols() {
+        roots_of(s.kind, s.data, &mut out.root_types, &mut out.root_ids);
         if s.kind == kind::S_OBJNAME
             && let Ok(Symbol::ObjName { name, .. }) = s.parse()
         {
@@ -813,6 +913,7 @@ fn module(
             }
             subsection::DEBUG_S_INLINEELINES => {
                 for l in lines::inlinee_lines(body) {
+                    out.root_ids.push(l.inlinee);
                     let mut h = H128::new();
                     h.u128(cx.ids.of(l.inlinee));
                     h.bytes(cx.file(l.file).unwrap_or(b"\xFF"));
@@ -834,9 +935,24 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
     let ipi = p.pdb.ids().map_err(|e| format!("the IPI: {e}"))?;
     let names = p.pdb.names().ok();
     let type_records = types::records(tpi);
-    r.types = types::hash(&type_records, None, names.as_ref());
+    r.types = types::hash(&type_records, None, names.as_ref(), false);
     let records = types::records(ipi);
-    r.ids = types::hash(&records, Some((&r.types, &type_records)), names.as_ref());
+    r.ids = types::hash(
+        &records,
+        Some((&r.types, &type_records)),
+        names.as_ref(),
+        false,
+    );
+    // The same, blind to translation units' tags in unique names.
+    let tagless_types = types::hash(&type_records, None, names.as_ref(), true);
+    let tagless_ids = types::hash(
+        &records,
+        Some((&tagless_types, &type_records)),
+        names.as_ref(),
+        true,
+    );
+    r.tagless_types = tagless_types.hashes;
+    r.tagless_ids = tagless_ids.hashes;
     for (i, rec) in records.iter().enumerate() {
         if rec.kind == types::LF_UDT_MOD_SRC_LINE && rec.data.len() >= 12 {
             let u = |o: usize| {
@@ -902,6 +1018,7 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
     let mut globals = Vec::new();
     let mut udts = Vec::new();
     let mut references = Vec::new();
+    let (mut root_types, mut root_ids) = (Vec::new(), Vec::new());
     if let Ok(gsi) = p.pdb.globals() {
         for g in gsi.records() {
             let Some(s) =
@@ -909,6 +1026,7 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
             else {
                 continue;
             };
+            roots_of(s.kind, s.data, &mut root_types, &mut root_ids);
             let mut h = H128::new();
             let description = describe(&s);
             match s.parse() {
@@ -950,6 +1068,8 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
             .extend(m.procedures.into_iter().map(|(n, h)| (n, h, i)));
         r.lines.extend(m.lines);
         r.inlinees.extend(m.inlinees);
+        root_types.extend(m.root_types);
+        root_ids.extend(m.root_ids);
         for (k, n) in m.unknown_records {
             *r.unknown_records.entry(k).or_insert(0) += n;
         }
@@ -964,6 +1084,22 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
     for (k, n) in unknown {
         *r.unknown_records.entry(k).or_insert(0) += n;
     }
+    // What the symbols reach.
+    let id_records = types::records(ipi);
+    let (lt, li) = types::live(&type_records, &id_records, &root_types, &root_ids);
+    let pick = |flags: &[bool], hashes: &Hashes| -> Vec<u128> {
+        let mut v: Vec<u128> = flags
+            .iter()
+            .zip(&hashes.hashes)
+            .filter(|(l, _)| **l)
+            .map(|(_, h)| *h)
+            .collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    r.live_types = pick(&lt, &r.types);
+    r.live_ids = pick(&li, &r.ids);
     // Contributions, but not those of turbolib's renamed copies.
     for c in &p.contributions {
         if p.label_at(c.rva).is_some_and(|l| l.renamed) {

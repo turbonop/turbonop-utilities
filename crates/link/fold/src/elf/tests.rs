@@ -606,3 +606,104 @@ fn a_unit_calling_what_stays_stays() {
     );
     assert!(out.iter().all(|o| o.data.is_none()));
 }
+
+/// `member`, with an initializer entry in `_Z1fv`'s group (as clang writes
+/// an inline variable's): an `.init_array` section `name` of `kind`.
+fn member_with_grouped_initializer(own: &'static [u8], name: &'static [u8], kind: u32) -> Vec<u8> {
+    let bytes = member(own, false, false);
+    let mut o = Object::parse(&bytes).unwrap();
+    let at = o.sections.len() as u32;
+    o.sections.push(Section {
+        addralign: 8,
+        ..sec(
+            name,
+            kind,
+            shf::ALLOC | shf::WRITE | shf::GROUP,
+            Data::Bytes(Cow::Borrowed(&[0; 8])),
+        )
+    });
+    let group = o
+        .sections
+        .iter()
+        .position(|s| s.kind == sht::GROUP)
+        .unwrap();
+    if let Data::Group(g) = &mut o.sections[group].data {
+        g.members.push(at);
+    }
+    o.write().unwrap()
+}
+
+#[test]
+fn initializer_entries_in_a_group_stay() {
+    for (name, kind) in [
+        (&b".init_array"[..], sht::INIT_ARRAY),
+        (b".init_array.00200", sht::INIT_ARRAY),
+        (b".fini_array", sht::FINI_ARRAY),
+        (b".preinit_array", sht::PREINIT_ARRAY),
+        (b".ctors", sht::PROGBITS),
+        (b".dtors.65435", sht::PROGBITS),
+        // By type alone.
+        (b".data.rel.ro.x", sht::INIT_ARRAY),
+    ] {
+        let members = [
+            member_with_grouped_initializer(b"a", name, kind),
+            member_with_grouped_initializer(b"b", name, kind),
+        ];
+        for pull in [Pull::Preserve, Pull::Relaxed] {
+            let (out, r) = fold_all(&members, pull);
+            assert_eq!((r.duplicated, r.folded), (1, 0), "{name:?}");
+            assert_eq!(
+                r.kept
+                    .get("it holds initializer, terminator, or warning sections"),
+                Some(&2)
+            );
+            assert!(out.iter().all(|o| o.data.is_none()));
+        }
+    }
+}
+
+#[test]
+fn an_initializer_entry_in_a_group_is_a_side_effect() {
+    // m0 is _Z1fv's first definer and holds a grouped initializer in
+    // another unit (`_Z1gv`'s): under preserve, `_Z1fv` stays, since a link
+    // that loaded m0 for it ran that initializer.
+    let bytes = member(b"a", false, false);
+    let mut o = Object::parse(&bytes).unwrap();
+    let n = o.sections.len() as u32;
+    let group = Section {
+        link: o.symtab().unwrap() as u32,
+        info: 6, // the signature: `ext`, never mind.
+        entsize: 4,
+        addralign: 4,
+        ..sec(
+            b".group",
+            sht::GROUP,
+            0,
+            Data::Group(Group {
+                flags: 1,
+                members: vec![n + 1],
+            }),
+        )
+    };
+    o.sections.push(group);
+    o.sections.push(Section {
+        addralign: 8,
+        ..sec(
+            b".init_array",
+            sht::INIT_ARRAY,
+            shf::ALLOC | shf::WRITE | shf::GROUP,
+            Data::Bytes(Cow::Borrowed(&[0; 8])),
+        )
+    });
+    let m0 = o.write().unwrap();
+    let members = [m0, member(b"b", false, false)];
+    let (_, r) = fold_all(&members, Pull::Preserve);
+    assert_eq!(r.folded, 0);
+    assert_eq!(
+        r.kept
+            .get("the member the index sends its names to has side effects"),
+        Some(&2)
+    );
+    let (_, r) = fold_all(&members, Pull::Relaxed);
+    assert_eq!(r.folded, 1);
+}

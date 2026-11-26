@@ -23,14 +23,24 @@
 //! a local symbol outside it (a string literal in `.rodata.str1.1`, a
 //! `static` function); a local symbol of it named from outside but by
 //! `.eh_frame` and the debug sections; a section outside it whose
-//! `SHF_LINK_ORDER` names one of it; an FDE whose LSDA is outside it.
+//! `SHF_LINK_ORDER` names one of it; an FDE whose LSDA is outside it; an
+//! initializer or terminator entry in it (`.init_array`, `.fini_array`,
+//! `.preinit_array`, `.ctors`, `.dtors`, with or without a priority, or a
+//! `.gnu.warning` section). Clang puts an inline variable's or a template
+//! static data member's dynamic initialization in the variable's group,
+//! with its `.init_array` entry; moved into a synthesized member, it would
+//! run at that member's place in the order rather than among its object's
+//! initializers, whose relative order a link keeps. (GCC puts the guard
+//! variable in a group of its own and the guarded initialization in the
+//! object's `_GLOBAL__sub_I_` function, outside any group: those units are
+//! data and fold.) Such an entry also gives its member side effects.
 //!
 //! **What folds.** The copies of a unit fold when every definition of
 //! each of their names in the library is such a copy (so whichever copy a
 //! link keeps is the same), and, under `--pull=preserve`, the member the
 //! index sends each name to (its first definer) has no side effects of its
 //! own: `.init_array`, `.fini_array`, `.preinit_array`, `.ctors`, or
-//! `.dtors` outside a group, a section named like a C identifier (which
+//! `.dtors` (in a group or not), a section named like a C identifier (which
 //! `__start_`/`__stop_` symbols collect), `.gnu.warning` sections, or
 //! `SHF_GNU_RETAIN`. ELF has nothing like COFF's `NOLIBRARY` weak
 //! externals, so a link that needed a folded name and nothing else of its
@@ -240,6 +250,23 @@ fn is_c_identifier(name: &[u8]) -> bool {
         && name.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
+/// A section whose contents a link runs or acts on for being there:
+/// initializer and terminator arrays (`.init_array`, `.fini_array`,
+/// `.preinit_array`, with priorities, by type or by name), `.ctors` and
+/// `.dtors`, and `.gnu.warning` (a warning for any reference to a name).
+fn is_registration(s: &Section<'_>) -> bool {
+    let name = &*s.name;
+    matches!(
+        s.kind,
+        sht::INIT_ARRAY | sht::FINI_ARRAY | sht::PREINIT_ARRAY
+    ) || name.starts_with(b".init_array")
+        || name.starts_with(b".fini_array")
+        || name.starts_with(b".preinit_array")
+        || name.starts_with(b".ctors")
+        || name.starts_with(b".dtors")
+        || name.starts_with(b".gnu.warning")
+}
+
 fn is_debug(name: &[u8]) -> bool {
     name.starts_with(b".debug_")
 }
@@ -418,22 +445,26 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             units[u].sections.push(r);
         }
     }
-    // Side effects outside any group.
+    // Side effects, and initializer entries in groups.
+    let mut registers = vec![false; units.len()];
     for (i, s) in obj.sections.iter().enumerate() {
-        if owner[i].is_some() {
+        if let Some(u) = owner[i] {
+            // An initializer or terminator entry in a group (clang's for an
+            // inline variable or a template's static data member: the
+            // variable's group holds its guard, its `__cxx_global_var_init`,
+            // and its `.init_array` entry). Moved, it would run at the
+            // synthesized member's place in the order, not its object's:
+            // the initializers of one object keep their order. And loading
+            // the member runs it, so the member has side effects.
+            // (The reason is given after the others, so that it wins.)
+            if is_registration(s) {
+                registers[u] = true;
+                p.side_effects = true;
+            }
             continue;
         }
         let name = &*s.name;
-        let registration = matches!(
-            s.kind,
-            sht::INIT_ARRAY | sht::FINI_ARRAY | sht::PREINIT_ARRAY
-        ) || name.starts_with(b".init_array")
-            || name.starts_with(b".fini_array")
-            || name.starts_with(b".preinit_array")
-            || name.starts_with(b".ctors")
-            || name.starts_with(b".dtors")
-            || name.starts_with(b".gnu.warning");
-        if registration || is_c_identifier(name) || s.flags & shf::GNU_RETAIN != 0 {
+        if is_registration(s) || is_c_identifier(name) || s.flags & shf::GNU_RETAIN != 0 {
             p.side_effects = true;
         }
         if s.flags & shf::LINK_ORDER != 0
@@ -656,7 +687,11 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 }
             }
         }
-        u.stays = stays;
+        u.stays = if registers[ui] {
+            Some("it holds initializer, terminator, or warning sections")
+        } else {
+            stays
+        };
         u.bytes = bytes + 4 * (unit_sections.len() as u64 + 1);
         u.hash = h.finish();
     }

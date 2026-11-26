@@ -1376,6 +1376,78 @@ list entry not placed (it may be at a section's end); `DW_OP_addrx` and
 their `.dwo` files; and which debug sections each program has compared
 apart from the rest (a folded split program has unsplit ones too).
 
+### Load order, the clang corpus, and the differing descriptions (6.6)
+
+**Load order.** `relink.py` now compares the order in which each link
+loads the original members (as `--trace` lists them: the load order for
+GNU ld, gold, and lld; mold's file order, by command-line place and
+member index), not only the set. Against the folded libraries of both
+corpora, `llvm-nm` and `llvm-readobj` load the same original members in
+the same order with all four linkers (16 of 16 links; 409 to 1,019
+members each), and `compare-images` finds the initializer arrays
+(`.init_array`, `.fini_array`, `.preinit_array`, `.ctors`, `.dtors`) the
+same, entry by entry, in order. Nothing needed fixing: unlike link.exe,
+these linkers don't end a sweep early, and a giver keeps every
+undefined name its moved units used (so it pulls in the same members
+when it loads); its strong reference to the anchor brings the
+synthesized member, whose only new references are other synthesized
+members' anchors. A five-member fixture (an inline function in two
+members calling a third, the giver calling a fourth first) loads the
+same order with each linker too.
+
+**The clang corpus** (`build-clang`: clang 21.1, archived by the gcc
+build's `llvm-ar`, 265 libraries, 7.44 GiB):
+
+| Check | Result |
+|---|---|
+| `relib.py`: every library remade by its own commands (`llvm-ar Dqc`, `llvm-ranlib -D`) with turbolib as `llvm-ar` and `llvm-ranlib` | 265 of 265 byte for byte |
+| `roundtrip_unix -llvm` | 265 of 265 written back (264 by either writer, 1 by `llvm-ar`'s only), 265 indexes computed from the members, 8.1 s |
+| object round trip (`turbonop-elf-object`'s `roundtrip -relayout`): 5,885 objects in 2,373 files, 9.73 GiB, LLVM's shared `.strtab`, `.llvm_addrsig` in 180 of 184 of `libLLVMSupport.a`'s members; no CREL | all byte-identical, and laid out afresh read back the same, 17.6 s |
+| `foldall.sh` (all 265) | 7,984,391,814 to 7,790,815,022 bytes (2.4% smaller); 289,024 distinct units folded (1,480,953 copies) into 36,978 synthesized members; DWARF moved for all 287,076 that had some |
+| ... why copies stayed | 688,277 first definer with side effects; 582,766 calling a name of their member that stays; 16,981 names with other definitions; 13,101 reaching a local outside them |
+| `verify` of the 265 | 265 pass (586 s, one after another, beside other work) |
+| `relink.py` (`llvm-nm`, `llvm-readobj`; GNU ld, gold, lld, mold) | the same members in the same order, the same symbols (`nm -S`), the same program outputs in all 8 |
+| `compare-images`, original against folded | `llvm-readobj` with GNU ld, gold, lld: equivalent. 2 descriptions by another unit's copy, both proven (below). Left: 1 or 2 `llvm-nm` functions whose operand names a constant by contents that run past it (16 bytes of `identify_magic`'s, 8 of `expf`'s, then what follows them, which the layout moves), and one jump table not recognized (`VPIntrinsic::getVectorLengthParamPos`); and with mold, 21 functions of `llvm-readobj` whose `lea off(%reg)` after mold's `sub $tls_size` relaxation names a TLS variable by its offset in the TLS block (`PrettyStackTraceHead`; folding moves TLS variables, so the offsets change): not yet read as TLS offsets |
+
+What the clang corpus found:
+
+- **Rebuilt string tables lost LLVM's tail sharing.** LLVM's `.strtab`
+  holds the section names and symbol names, and `.rela.text.f`,
+  `.text.f`, and `f` share one string. Rebuilt name by name, a rewritten
+  member's `.strtab` tripled (`CIRGenStmtOpenMP.cpp.o`: 85 MB to 255 MB),
+  and the first fold of the clang corpus came out 9.1% *larger*
+  (8,708,710,254 bytes). `turbonop-elf-object` now builds tables
+  tail-merged (each name sharing the end of a longer one), in an order
+  that depends only on the set of names. On the gcc corpus it saves
+  another 21 MB (23,508,957,816 to 23,488,090,872 bytes, 1.05% smaller
+  than the build's).
+- **Jump tables** (clang puts x86-64 jump tables in `.rodata`, unlabeled,
+  with entries relative to the table) were named by their bytes, which
+  follow the layout: 23 to 148 functions per program failed.
+  `compare-images` now compares an unlabeled table of 32-bit
+  table-relative entries landing in one function by its targets.
+- **An address one past a section's end** (a tail call's
+  `DW_AT_call_return_pc` in the last function of `.text`) was "dead" in
+  one program and named in the other; it is named from the byte before
+  it.
+- **`compare-images`' DWARF verdicts varied from run to run**: a
+  subprogram's descriptions were sorted by their hashes, which are keyed
+  per process, and classified against the first. Now each description
+  of the second program that the first lacks is classified against the
+  first's closest one (the same DIEs and rows from another unit: expected;
+  rows differ; DIEs differ), the worst deciding, and examples are chosen
+  by place.
+
+**The differing descriptions** (the plan's 7 to 22 per program). A
+folded function is described by the first member's copy; the link of the
+original keeps the first loaded one's, and the first member may not even
+be loaded. `witness.py` proves each one: for the unit `compare-images`
+names as the folded program's, it links the original program again with
+that unit's object first on the command line (every linker then keeps
+its copies, and GNU ld and gold describe the others' too) and compares
+that witness with the folded program; a subprogram is proven when the
+witness describes it as the folded program does.
+
 ## Decisions
 
 | | Decision |

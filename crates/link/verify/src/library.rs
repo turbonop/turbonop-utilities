@@ -12,8 +12,8 @@
 //! - **Members.** Every original member is still there, under its name,
 //!   in the same relative order. Every added member is a synthesized one:
 //!   a COFF object that defines an anchor (a symbol whose name starts with
-//!   [`member::RENAMED`] and that names no original symbol), wherever it
-//!   is placed.
+//!   [`member::RENAMED`], or a precompiled-types member's [`PCH_SYMBOL`],
+//!   and that names no original symbol), wherever it is placed.
 //! - **Passed-through members** (import objects, `/GL` objects, anything
 //!   unrecognized) are byte-identical.
 //! - **Definitions.** Every external the original defines is still
@@ -68,6 +68,10 @@ pub mod member;
 /// index never lists it.
 pub const ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
 
+/// The start of a precompiled-types member's symbol (`--precomp=library`),
+/// which the members that share its types refer to as they do to anchors.
+pub const PCH_SYMBOL: &[u8] = b"__@@_PchSym_turbolib_";
+
 use std::borrow::Cow;
 
 use turbonop_archive::Archive;
@@ -77,7 +81,7 @@ use crate::hash::H128;
 use crate::report::{Report, show};
 use crate::shard::Sharded;
 use index::Index;
-use member::{Body, Class, Coff, Kind, RENAMED, canonical};
+use member::{Body, Class, Coff, Kind, RENAMED, canonical, starts_with_ignore_case};
 
 /// What `--pull` promised about which members a link loads.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -346,8 +350,12 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
             }
         }
     }
+    // (A precompiled-types member's symbol, under --precomp=library, is
+    // one too: each member that shares its types refers to it.)
     let is_anchor = |name: &[u8]| {
-        name.starts_with(RENAMED) && name != ALIAS_DEFAULT && !o_defs.contains(&canonical(name))
+        (name.starts_with(RENAMED) || name.starts_with(PCH_SYMBOL))
+            && name != ALIAS_DEFAULT
+            && !o_defs.contains(&canonical(name))
     };
     let mut synthesized = Vec::new();
     for &j in &added {
@@ -397,7 +405,8 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
     let found = turbonop_par::map_balanced(r_defs.shards(), 1, |shard| {
         let mut f = Findings::new();
         for (name, now) in shard {
-            if o_defs.contains(name) {
+            // (A precompiled-types member's symbol is new, as anchors are.)
+            if o_defs.contains(name) || name.starts_with(PCH_SYMBOL) {
                 continue;
             }
             if !name.starts_with(RENAMED) {
@@ -447,6 +456,18 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                     if let Some(c) = m.body.coff() {
                         out.extend(c.undefined.iter().map(|n| (&**n, ())));
                         out.extend(c.weak.iter().map(|w| (&*w.name, ())));
+                        // `/INCLUDE` names it refers to too: a PCH user's
+                        // PCH object's symbol, which synthesized members
+                        // holding its units refer to.
+                        out.extend(
+                            c.directives
+                                .iter()
+                                .filter(|d| {
+                                    starts_with_ignore_case(d, b"/include:")
+                                        || starts_with_ignore_case(d, b"-include:")
+                                })
+                                .map(|d| (&d[9..], ())),
+                        );
                     }
                     out.extend(oi[i].iter().map(|(n, _)| (&**n, ())));
                 },

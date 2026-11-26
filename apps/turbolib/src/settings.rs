@@ -159,10 +159,8 @@ impl Settings {
         if self.locals != Locals::Keep {
             return Err("only locals=keep is written so far (phase 4)".into());
         }
-        if self.precomp != Precomp::None {
-            return Err(
-                "only precomp=none is written so far (shared types come in phase 3)".into(),
-            );
+        if let Precomp::Clustered(_) = self.precomp {
+            return Err("precomp=clustered isn't written yet (phase 3.5)".into());
         }
         Ok(())
     }

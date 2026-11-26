@@ -73,4 +73,12 @@ fn what_is_written_so_far() {
     let mut s = Settings::default();
     s.apply("locals=copy").unwrap();
     assert!(s.check_supported().is_err());
+    // Shared types: one precompiled-types member, not yet clusters; none
+    // is still the default.
+    let mut s = Settings::default();
+    assert_eq!(s.precomp, Precomp::None);
+    s.apply("precomp=library").unwrap();
+    assert!(s.check_supported().is_ok());
+    s.apply("precomp=clustered=4").unwrap();
+    assert!(s.check_supported().is_err());
 }

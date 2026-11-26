@@ -21,10 +21,14 @@ const CONFIGURATIONS: &[&str] = &[
 const RELAXED: Options = Options {
     pull: Pull::Relaxed,
     weak_externals: false,
+    fold: true,
+    precomp: crate::rewrite::Precomp::None,
 };
 const PRESERVE: Options = Options {
     pull: Pull::Preserve,
     weak_externals: false,
+    fold: true,
+    precomp: crate::rewrite::Precomp::None,
 };
 
 fn fixture(name: &str) -> Vec<u8> {

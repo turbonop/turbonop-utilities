@@ -15,7 +15,7 @@ use super::*;
 use crate::hash::H128;
 use turbonop_coff::File;
 
-fn fixture(name: &str) -> Vec<u8> {
+pub(crate) fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../../testdata/coff/fold")
@@ -24,28 +24,32 @@ fn fixture(name: &str) -> Vec<u8> {
     .unwrap()
 }
 
-fn object(data: &[u8]) -> Object<'_> {
+pub(crate) fn object(data: &[u8]) -> Object<'_> {
     match File::parse(data).unwrap() {
         File::Object(o) => o,
         File::Opaque { .. } => panic!("not a COFF object"),
     }
 }
 
-const RELAXED: Options = Options {
+pub(crate) const RELAXED: Options = Options {
     pull: Pull::Relaxed,
     weak_externals: false,
+    fold: true,
+    precomp: crate::rewrite::Precomp::None,
 };
 
 /// An object's type stream, hashed structurally.
-struct Stream {
-    base: u32,
-    precomp: Option<(u32, u32)>,
-    hashes: Vec<u128>,
+pub(crate) struct Stream {
+    pub(crate) base: u32,
+    pub(crate) precomp: Option<(u32, u32)>,
+    /// Its `LF_PRECOMP`'s signature, or a PCH object's `LF_ENDPRECOMP`'s.
+    pub(crate) signature: Option<u32>,
+    pub(crate) hashes: Vec<u128>,
     /// A type server's: indices stand for themselves.
-    server: bool,
+    pub(crate) server: bool,
 }
 
-fn index_hash(s: &Stream, pch: Option<&Stream>, v: u32) -> u128 {
+pub(crate) fn index_hash(s: &Stream, pch: Option<&Stream>, v: u32) -> u128 {
     if v < FIRST || s.server {
         return u128::from(v);
     }
@@ -59,10 +63,11 @@ fn index_hash(s: &Stream, pch: Option<&Stream>, v: u32) -> u128 {
 }
 
 /// The structural hashes of a `.debug$T`'s (or `.debug$P`'s) records.
-fn stream_of(data: &[u8], pch: Option<&Stream>) -> Stream {
+pub(crate) fn stream_of(data: &[u8], pch: Option<&Stream>) -> Stream {
     let mut s = Stream {
         base: FIRST,
         precomp: None,
+        signature: None,
         hashes: Vec::new(),
         server: false,
     };
@@ -77,9 +82,13 @@ fn stream_of(data: &[u8], pch: Option<&Stream>) -> Stream {
             if r.kind == leaf::LF_PRECOMP {
                 let (start, count) = (le32(r.data, 0), le32(r.data, 4));
                 s.precomp = Some((start, count));
+                s.signature = Some(le32(r.data, 8));
                 s.base = start + count;
                 continue;
             }
+        }
+        if r.kind == leaf::LF_ENDPRECOMP && s.signature.is_none() {
+            s.signature = Some(le32(r.data, 0));
         }
         refs.clear();
         type_refs::refs(r.kind, r.data, &mut refs).unwrap();
@@ -98,7 +107,7 @@ fn stream_of(data: &[u8], pch: Option<&Stream>) -> Stream {
     s
 }
 
-fn stream(o: &Object<'_>, pch: Option<&Stream>) -> Stream {
+pub(crate) fn stream(o: &Object<'_>, pch: Option<&Stream>) -> Stream {
     match o
         .sections
         .iter()
@@ -110,12 +119,12 @@ fn stream(o: &Object<'_>, pch: Option<&Stream>) -> Stream {
 }
 
 /// An object's per-object checksums and strings.
-struct Tables {
+pub(crate) struct Tables {
     checksums: Vec<u8>,
     strings: Vec<u8>,
 }
 
-fn tables(o: &Object<'_>) -> Tables {
+pub(crate) fn tables(o: &Object<'_>) -> Tables {
     let mut t = Tables {
         checksums: Vec::new(),
         strings: Vec::new(),
@@ -136,7 +145,7 @@ fn tables(o: &Object<'_>) -> Tables {
 }
 
 /// The file at checksum offset `v`: its name and checksum.
-fn file(t: &Tables, v: u32) -> Vec<u8> {
+pub(crate) fn file(t: &Tables, v: u32) -> Vec<u8> {
     let at = v as usize;
     let name = le32(&t.checksums, at);
     let len = usize::from(t.checksums[at + 4]);
@@ -181,7 +190,7 @@ fn canonical_field(
 /// A unit's `.debug$S` section, canonically: each record (or other
 /// subsection's contents) as its bytes outside fields, then its fields'
 /// values, then its relocations (place in it, kind, target's name).
-fn canonical(
+pub(crate) fn canonical(
     o: &Object<'_>,
     sec: &Section<'_>,
     s: &Stream,
@@ -256,7 +265,7 @@ fn canonical(
 
 /// The COMDAT `.debug$S` sections of `o`, by the name of the external
 /// symbol in the section their association chain ends at.
-fn unit_sections<'o>(o: &'o Object<'o>) -> Vec<(Vec<u8>, &'o Section<'o>)> {
+pub(crate) fn unit_sections<'o>(o: &'o Object<'o>) -> Vec<(Vec<u8>, &'o Section<'o>)> {
     let mut assoc: HashMap<u32, u32> = HashMap::default();
     for s in &o.symbols {
         if let (SectionNumber::Section(id), Aux::Section(d)) = (s.section, &s.aux)
@@ -286,7 +295,7 @@ fn unit_sections<'o>(o: &'o Object<'o>) -> Vec<(Vec<u8>, &'o Section<'o>)> {
     out
 }
 
-fn inputs<'a>(names: &'a [&str], datas: &'a [Vec<u8>]) -> Vec<Input<'a>> {
+pub(crate) fn inputs<'a>(names: &'a [&str], datas: &'a [Vec<u8>]) -> Vec<Input<'a>> {
     names
         .iter()
         .zip(datas)
@@ -297,30 +306,86 @@ fn inputs<'a>(names: &'a [&str], datas: &'a [Vec<u8>]) -> Vec<Input<'a>> {
         .collect()
 }
 
+/// `RELAXED` with the library's types shared (`--precomp=library`).
+pub(crate) const RELAXED_LIBRARY: Options = Options {
+    precomp: crate::rewrite::Precomp::Library { min: 2 },
+    ..RELAXED
+};
+
 /// Folds `names` and checks every synthesized member's CodeView against
 /// the copies it came from; the number of unit sections checked. `pch`
-/// names the users' PCH object, if any (among them or not).
+/// names the users' PCH object, if any (among them or not). Done with
+/// each member's own types, and with the library's shared: the same units
+/// are checked.
 fn check(names: &[&str], pch: Option<&str>) -> usize {
     let datas: Vec<Vec<u8>> = names.iter().map(|n| fixture(n)).collect();
     check_datas(names, &datas, pch)
 }
 
 fn check_datas(names: &[&str], datas: &[Vec<u8>], pch: Option<&str>) -> usize {
-    let out = rewrite(&inputs(names, datas), RELAXED);
+    let n = check_with(names, datas, pch, RELAXED);
+    assert_eq!(check_with(names, datas, pch, RELAXED_LIBRARY), n);
+    n
+}
+
+/// The PCH among `pchs` that `o`'s `LF_PRECOMP` names, by signature.
+pub(crate) fn pch_of<'s>(o: &Object<'_>, pchs: &'s [Stream]) -> Option<&'s Stream> {
+    let t = o
+        .sections
+        .iter()
+        .find(|s| s.name.as_bytes() == b".debug$T")?;
+    let (_, r) = remap::type_records(&t.bytes()[4..]).next()?.ok()?;
+    let sig = (r.kind == leaf::LF_PRECOMP).then(|| le32(r.data, 8))?;
+    pchs.iter()
+        .find(|p| p.precomp.is_none() && p.signature == Some(sig))
+}
+
+/// The PCH objects' streams among `pch` and `members`.
+pub(crate) fn pch_streams(pch: Option<&[u8]>, members: &[&[u8]]) -> Vec<Stream> {
+    pch.into_iter()
+        .chain(members.iter().copied())
+        .filter_map(|d| {
+            let o = object(d);
+            o.sections
+                .iter()
+                .any(|s| s.name.as_bytes() == b".debug$P")
+                .then(|| stream(&o, None))
+        })
+        .collect()
+}
+
+pub(crate) fn check_with(
+    names: &[&str],
+    datas: &[Vec<u8>],
+    pch: Option<&str>,
+    options: Options,
+) -> usize {
+    let out = rewrite(&inputs(names, datas), options);
     assert!(out.report.synthesized > 0, "{:?}", out.report);
     let objects: Vec<Object<'_>> = datas.iter().map(|d| object(d)).collect();
     let pch_data = pch.map(fixture);
-    let pch_stream = pch_data.as_ref().map(|d| stream(&object(d), None));
+    let made: Vec<&[u8]> = out
+        .members
+        .iter()
+        .filter(|m| m.synthesized)
+        .map(|m| &m.data[..])
+        .collect();
+    let pchs = pch_streams(pch_data.as_deref(), &made);
     let streams: Vec<Stream> = objects
         .iter()
-        .map(|o| stream(o, pch_stream.as_ref()))
+        .map(|o| stream(o, pch_of(o, &pchs)))
         .collect();
     let tabs: Vec<Tables> = objects.iter().map(tables).collect();
     let mut checked = 0;
     for m in out.members.iter().filter(|m| m.synthesized) {
         let o = object(&m.data);
+        if o.sections.iter().any(|s| s.name.as_bytes() == b".debug$P") {
+            // The precompiled-types member (see precomp's tests).
+            continue;
+        }
         well_formed(&o, &m.name);
-        let s = stream(&o, pch_stream.as_ref());
+        let pch_stream = pch_of(&o, &pchs);
+        let s = stream(&o, pch_stream);
         let t = tables(&o);
         for (name, sec) in unit_sections(&o) {
             // The copy that survived: the first member's.
@@ -338,14 +403,14 @@ fn check_datas(names: &[&str], datas: &[Vec<u8>], pch: Option<&str>) -> usize {
                 &objects[k],
                 original,
                 &streams[k],
-                pch_stream.as_ref(),
+                pch_of(&objects[k], &pchs),
                 &tabs[k],
             );
-            let got = canonical(&o, sec, &s, pch_stream.as_ref(), &t);
+            let got = canonical(&o, sec, &s, pch_stream, &t);
             assert_eq!(got, want, "{}", String::from_utf8_lossy(&name));
             checked += 1;
         }
-        inlinees_carried(&o, &objects, &streams, &tabs, pch_stream.as_ref());
+        inlinees_carried(&o, &objects, &streams, &tabs, &pchs);
     }
     checked
 }
@@ -353,7 +418,7 @@ fn check_datas(names: &[&str], datas: &[Vec<u8>], pch: Option<&str>) -> usize {
 /// A synthesized member's own CodeView: `S_OBJNAME` naming it and the
 /// compiler first, and type records each naming only earlier ones, no two
 /// the same.
-fn well_formed(o: &Object<'_>, name: &[u8]) {
+pub(crate) fn well_formed(o: &Object<'_>, name: &[u8]) {
     let first = o
         .sections
         .iter()
@@ -427,15 +492,16 @@ fn inlinees_carried(
     objects: &[Object<'_>],
     streams: &[Stream],
     tabs: &[Tables],
-    pch: Option<&Stream>,
+    pchs: &[Stream],
 ) {
+    let pch = pch_of(o, pchs);
     let s = stream(o, pch);
     let t = tables(o);
     let mut known = HashSet::default();
     for (k, x) in objects.iter().enumerate() {
         for e in entries(x) {
             known.insert((
-                index_hash(&streams[k], pch, e.inlinee),
+                index_hash(&streams[k], pch_of(x, pchs), e.inlinee),
                 file(&tabs[k], e.file),
                 e.line,
             ));
@@ -668,7 +734,7 @@ fn annotations_that_change_length_rebuild_the_section() {
                 if sec.name.as_bytes() != b".debug$S" {
                     continue;
                 }
-                let mut b = Builder::new(&parsed);
+                let mut b = Builder::new(&parsed, None);
                 b.checksums.resize(0x4000, 0);
                 let mut copy = b.section(k, 0, id, sec);
                 copy.relocations = sec

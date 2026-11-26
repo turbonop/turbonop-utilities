@@ -27,6 +27,8 @@ fn main() {
             Options {
                 pull,
                 weak_externals: false,
+                fold: true,
+                precomp: turbonop_fold::rewrite::Precomp::None,
             },
         )
         .report;

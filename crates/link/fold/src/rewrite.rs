@@ -35,8 +35,13 @@
 //!
 //! Each synthesized member carries its units' CodeView, renumbered into
 //! types, checksums, and strings of its own ([`debug`]).
+//!
+//! Under [`Precomp::Library`], the records members share go into one
+//! precompiled-types member, which every member holding some of them (and
+//! every synthesized member) names ([`precomp`]).
 
 pub mod debug;
+pub mod precomp;
 pub mod tables;
 pub mod units;
 
@@ -72,6 +77,16 @@ pub enum Pull {
     Relaxed,
 }
 
+/// Shared types (`--precomp`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Precomp {
+    /// Each member keeps its own types.
+    None,
+    /// One precompiled-types member for the library, holding the records
+    /// at least `min` members hold.
+    Library { min: u32 },
+}
+
 /// Options for [`rewrite`].
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
@@ -80,6 +95,10 @@ pub struct Options {
     /// side effects with the weak-external technique. Off: it isn't safe in
     /// link.exe (see [`rewrite`]'s notes in the code).
     pub weak_externals: bool,
+    /// Fold identical COMDATs (`--fold=identical`); off, only types are
+    /// shared (if `precomp` says so).
+    pub fold: bool,
+    pub precomp: Precomp,
 }
 
 /// Why a unit (or a whole member) isn't folded.
@@ -219,6 +238,33 @@ pub struct Report {
     /// How long each step took: read and find units, definers, group and
     /// decide, rewrite members, synthesize members.
     pub times: [std::time::Duration; 5],
+    /// Shared types (`--precomp=library`).
+    pub types: TypesReport,
+}
+
+/// What sharing types did.
+#[derive(Clone, Debug, Default)]
+pub struct TypesReport {
+    /// Precompiled-types members made, the records they hold, and their
+    /// bytes (their `.debug$P`).
+    pub pchs: u64,
+    pub shared_records: u64,
+    pub shared_bytes: u64,
+    /// Members whose types could be shared; of those, the members that
+    /// share (rewritten), that hold no shared record, and whose debug
+    /// information couldn't be read through (with the first reason).
+    pub candidates: u64,
+    pub sharing: u64,
+    pub nothing_shared: u64,
+    pub unreadable: u64,
+    pub first_unreadable: Option<String>,
+    /// PCH users whose PCH object is in the library, absorbed.
+    pub absorbed: u64,
+    /// The sharing members' `.debug$T` bytes, before and after.
+    pub types_before: u64,
+    pub types_after: u64,
+    /// How long finding the shared types took.
+    pub time: std::time::Duration,
 }
 
 /// How a member gives up one copy.
@@ -326,7 +372,8 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     };
     let mut parsed: Vec<Parsed<'a>> = turbonop_par::map_balanced(inputs, 4, parse);
     // PCH users' PCH objects (their units' types are there).
-    debug::resolve(&mut parsed);
+    let library = matches!(options.precomp, Precomp::Library { .. });
+    debug::resolve(&mut parsed, library);
     let mut report = Report {
         members: inputs.len() as u64,
         bytes_in: inputs.iter().map(|i| i.data.len() as u64).sum(),
@@ -340,6 +387,28 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     lap(0);
+    // The shared types.
+    let types_clock = std::time::Instant::now();
+    let plan = match options.precomp {
+        Precomp::Library { min } => Some(precomp::plan(&parsed, min.max(1))),
+        Precomp::None => None,
+    };
+    if let Some(plan) = &plan {
+        let t = &mut report.types;
+        t.pchs = plan.pchs.len() as u64;
+        t.shared_records = plan.pchs.iter().map(|p| u64::from(p.count)).sum();
+        t.shared_bytes = plan.pchs.iter().map(|p| p.records.len() as u64).sum();
+        t.candidates = plan
+            .members
+            .iter()
+            .filter(|m| m.role == precomp::Role::Sharer)
+            .count() as u64
+            + plan.unreadable;
+        t.unreadable = plan.unreadable;
+        t.first_unreadable = plan.first_unreadable.clone();
+        t.absorbed = parsed.iter().filter(|p| p.debug.absorbed).count() as u64;
+        t.time = types_clock.elapsed();
+    }
     // The member the archive index names for each name: its first definer.
     let mut first_definer: HashMap<&[u8], usize> = HashMap::default();
     let defs: Vec<Vec<Cow<'_, [u8]>>> = inputs
@@ -381,7 +450,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     // Groups of copies, in order of first appearance.
     let mut groups: HashMap<u128, usize> = HashMap::default();
     let mut copies: Vec<Vec<(usize, usize)>> = Vec::new();
-    for (m, p) in parsed.iter().enumerate() {
+    for (m, p) in parsed.iter().enumerate().filter(|_| options.fold) {
         for (u, unit) in p.facts.units.iter().enumerate() {
             let g = *groups.entry(unit.identity).or_insert_with(|| {
                 copies.push(Vec::new());
@@ -522,9 +591,21 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     // Largest first, so the threads finish together.
     let mut order: Vec<usize> = (0..parsed.len()).collect();
     order.sort_by_key(|&m| std::cmp::Reverse(inputs[m].data.len()));
-    let mut members: Vec<(usize, OutputMember<'a>)> = turbonop_par::map_balanced(&order, 1, |&m| {
+    let mut members: Vec<Rewritten<'a>> = turbonop_par::map_balanced(&order, 1, |&m| {
         let input = &inputs[m];
-        if removals[m].is_empty() {
+        // Its shared types, if any (not of the sections it gives up).
+        let edit = plan.as_ref().and_then(|plan| {
+            let mut removed =
+                vec![false; parsed[m].object.as_ref().map_or(0, |o| o.sections.len())];
+            for &(u, _) in &removals[m] {
+                for s in &parsed[m].facts.units[u].sections {
+                    removed[s.index()] = true;
+                }
+            }
+            plan.edit(&parsed, m, &removed)
+        });
+        let sizes = edit.as_ref().map(|e| (e.before, e.after));
+        if removals[m].is_empty() && edit.is_none() {
             return (
                 m,
                 OutputMember {
@@ -534,13 +615,14 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
                     synthesized: false,
                     index_only: None,
                 },
+                None,
             );
         }
         let refers: Vec<&[u8]> = anchors_of[m]
             .iter()
             .map(|&n| anchors[n].as_slice())
             .collect();
-        let skeleton = strip(&parsed[m], &removals[m], &refers);
+        let skeleton = strip(&parsed[m], &removals[m], &refers, edit.as_ref());
         (
             m,
             OutputMember {
@@ -550,14 +632,26 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
                 synthesized: false,
                 index_only: None,
             },
+            sizes,
         )
     });
-    members.sort_unstable_by_key(|(m, _)| *m);
-    let members: Vec<OutputMember<'a>> = members.into_iter().map(|(_, o)| o).collect();
+    members.sort_unstable_by_key(|(m, _, _)| *m);
+    let mut rewritten = 0;
+    for (m, _, sizes) in &members {
+        if let Some((before, after)) = sizes {
+            report.types.sharing += 1;
+            report.types.types_before += before;
+            report.types.types_after += after;
+        }
+        rewritten += u64::from(!removals[*m].is_empty() || sizes.is_some());
+    }
+    report.types.nothing_shared =
+        report.types.candidates - report.types.unreadable - report.types.sharing;
+    let members: Vec<OutputMember<'a>> = members.into_iter().map(|(_, o, _)| o).collect();
     lap(3);
     let made: Vec<OutputMember<'a>> = turbonop_par::map_range(synths.len(), 1, |n| {
         let name = format!("turbolib{n}.obj").into_bytes();
-        let skeleton = synthesize(&synths[n], &parsed, &anchors[n], &name);
+        let skeleton = synthesize(&synths[n], &parsed, plan.as_ref(), &anchors[n], &name);
         OutputMember {
             name: Cow::Owned(name),
             data: Cow::Owned(skeleton.bytes),
@@ -566,13 +660,30 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             index_only: (options.pull == Pull::Preserve).then(|| vec![anchors[n].clone()]),
         }
     });
+    // The precompiled-types members, after them.
+    let pchs: Vec<OutputMember<'a>> = plan
+        .as_ref()
+        .map(|plan| {
+            plan.pchs
+                .iter()
+                .map(|pch| OutputMember {
+                    name: Cow::Owned(pch.name.clone()),
+                    data: Cow::Owned(precomp::Plan::member(pch).bytes),
+                    holes: Vec::new(),
+                    synthesized: true,
+                    index_only: Some(vec![pch.symbol.clone()]),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     lap(4);
     report.times = times;
-    report.rewritten = removals.iter().filter(|r| !r.is_empty()).count() as u64;
-    report.synthesized = made.len() as u64;
+    report.rewritten = rewritten;
+    report.synthesized = (made.len() + pchs.len()) as u64;
     // Synthesized members first, so that the index names them for what they
     // define (see the Preserve rule above).
     let mut out = made;
+    out.extend(pchs);
     out.extend(members);
     report.bytes_out = out.iter().map(|m| m.data.len() as u64).sum();
     Output {
@@ -580,6 +691,10 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         report,
     }
 }
+
+/// A member as rewritten: its position, the member, and its `.debug$T`'s
+/// bytes before and after sharing types (if it shares).
+type Rewritten<'a> = (usize, OutputMember<'a>, Option<(u64, u64)>);
 
 /// The output of [`rewrite`].
 #[derive(Clone, Debug)]
@@ -627,6 +742,7 @@ fn strip<'a>(
     parsed: &Parsed<'a>,
     removals: &[(usize, Removal)],
     anchors: &[&[u8]],
+    edit: Option<&precomp::Edit>,
 ) -> Skeleton<'a> {
     let mut object = parsed
         .object
@@ -661,9 +777,11 @@ fn strip<'a>(
             s.aux = Aux::None;
         }
     }
-    // A changed object's checksums would be stale.
+    // A changed object's checksums would be stale, and with its types
+    // shared, so would its precomputed type hashes (lld's .debug$H).
     for (i, s) in object.sections.iter().enumerate() {
-        if s.name.as_bytes() == b".chks64" {
+        let name = s.name.as_bytes();
+        if name == b".chks64" || (edit.is_some() && name == b".debug$H") {
             removed[i] = true;
         }
     }
@@ -749,6 +867,33 @@ fn strip<'a>(
             ));
         }
     }
+    if let Some(edit) = edit {
+        // Its types and symbols, renumbered into the shared types, and a
+        // reference to the precompiled-types member, as a /Yu object's.
+        let mut changed = vec![None; object.sections.len()];
+        for (id, data) in &edit.sections {
+            let id = renumbering
+                .section(*id)
+                .expect("a shared member's debug sections stay");
+            object.sections[id.index()].data = SectionData::Bytes(Cow::Owned(data.clone()));
+            changed[id.index()] = Some(object.sections[id.index()].size());
+        }
+        for s in &mut object.symbols {
+            if let (SectionNumber::Section(id), Aux::Section(d)) = (s.section, &mut s.aux)
+                && let Some(Some(size)) = changed.get(id.index())
+            {
+                d.length = *size;
+            }
+        }
+        object.forget_layout();
+        object.push_symbol(Symbol::new(
+            Name::new(edit.symbol.clone()),
+            0,
+            SectionNumber::Undefined,
+            0,
+            storage_class::EXTERNAL,
+        ));
+    }
     object
         .write_skeleton(HOLE)
         .expect("a rewritten member fits its format")
@@ -761,7 +906,13 @@ const IMAGE_SCN_ALIGN_1BYTES: u32 = 0x0010_0000;
 const MAX_REGULAR_SECTIONS: usize = 65_279;
 
 /// A synthesized member, named `name`.
-fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8], name: &[u8]) -> Skeleton<'a> {
+fn synthesize<'a>(
+    s: &Synth,
+    parsed: &[Parsed<'a>],
+    plan: Option<&precomp::Plan>,
+    anchor: &[u8],
+    name: &[u8],
+) -> Skeleton<'a> {
     let (m0, _, _) = s.units[0];
     let first = parsed[m0].object.as_ref().expect("units come from objects");
     let facts0 = &parsed[m0].facts;
@@ -815,7 +966,7 @@ fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8], name: &[u8]) 
 
     // The units' CodeView, renumbered into the member's own (phase 2.4);
     // its per-object .debug$S first, as compilers write it.
-    let mut debug = debug::Builder::new(parsed);
+    let mut debug = debug::Builder::new(parsed, plan);
     debug.begin(&mut o, &s.units);
 
     // The units: their sections and symbols, with names renamed where the

@@ -24,6 +24,7 @@ const USAGE: &str = "\
 usage: turbolib analyze [options] <library or directory>...
        turbolib lib|llvm-lib <lib.exe's or llvm-lib's arguments>
        turbolib ar|llvm-ar|ranlib|llvm-ranlib <their arguments>
+       turbolib libtool|llvm-libtool-darwin -static <its arguments>
 
 Says what folding would save in each static library (.lib, .a; a directory
 is searched for them), under each of turbolib's modes. Writes nothing.
@@ -385,12 +386,38 @@ fn run_unix(flavor: unix::Flavor, argv0: &str, args: &[String]) -> ! {
     std::process::exit(outcome.exit)
 }
 
+/// Whether the program's name selects the `libtool -static` personality:
+/// `llvm-libtool-darwin`, or `libtool` (Apple's name; with a prefix like
+/// `x86_64-apple-darwin-libtool` too).
+fn is_libtool(argv0: &str) -> bool {
+    let Some(file) = argv0.rsplit(['\\', '/']).next() else {
+        return false;
+    };
+    let file = file.to_ascii_lowercase();
+    let stem = file.strip_suffix(".exe").unwrap_or(&file);
+    stem.contains("libtool-darwin") || stem == "libtool" || stem.ends_with("-libtool")
+}
+
+/// Runs the `libtool -static` personality and exits with its code.
+fn run_libtool(argv0: &str, args: &[String]) -> ! {
+    use std::io::Write;
+    let env = unix::Env::from_process(false);
+    let outcome = unix::libtool::run(argv0, args, &env);
+    let _ = std::io::stdout().write_all(&outcome.stdout);
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().write_all(outcome.stderr.as_bytes());
+    std::process::exit(outcome.exit)
+}
+
 fn main() -> ExitCode {
     let mut argv = std::env::args();
     let argv0 = argv.next().unwrap_or_default();
     let args: Vec<String> = argv.collect();
     if let Some(flavor) = personality(&argv0) {
         run_msvc(flavor, &args);
+    }
+    if is_libtool(&argv0) {
+        run_libtool(&argv0, &args);
     }
     if let Some(flavor) = unix::flavor(&argv0) {
         run_unix(flavor, &argv0, &args);
@@ -406,12 +433,13 @@ fn main() -> ExitCode {
             let flavor = unix::flavor(command).expect("a Unix personality");
             run_unix(flavor, command, rest)
         }
+        "libtool" | "llvm-libtool-darwin" => run_libtool(command, rest),
         "analyze" => {}
         "verify" => return verify::verify(rest),
         "compare-images" => return verify::compare_images(rest),
         _ => {
             eprintln!(
-                "turbolib: {command}: unknown command (so far: analyze, lib, llvm-lib, ar, llvm-ar, ranlib, llvm-ranlib, verify, compare-images)"
+                "turbolib: {command}: unknown command (so far: analyze, lib, llvm-lib, ar, llvm-ar, ranlib, llvm-ranlib, libtool, llvm-libtool-darwin, verify, compare-images)"
             );
             eprint!("{USAGE}");
             return ExitCode::from(2);

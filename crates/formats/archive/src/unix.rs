@@ -104,6 +104,10 @@ pub struct Options {
     /// For `llvm-ar`: the offset at which a 64-bit symbol table is used,
     /// 2^32 unless its `SYM64_THRESHOLD` says otherwise.
     pub sym64_threshold: u64,
+    /// For `llvm-ar`: whether a symbol table without symbols holds three
+    /// NULs (it does when a member is an object; a Darwin archive's table,
+    /// written whatever the members, is empty otherwise).
+    pub filler: bool,
 }
 
 impl Options {
@@ -115,6 +119,7 @@ impl Options {
             thin: false,
             table_date: 0,
             sym64_threshold: 1 << 32,
+            filler: true,
         }
     }
 }
@@ -285,7 +290,7 @@ impl Layout {
             }
         }
         // llvm-ar's three NULs, for a table without symbols.
-        let filler = llvm && symbols.is_some_and(<[_]>::is_empty);
+        let filler = llvm && options.filler && symbols.is_some_and(<[_]>::is_empty);
         if filler {
             names_len = 3;
         }
@@ -867,6 +872,13 @@ impl<'a> Contents<'a> {
             });
         }
         let mut options = Options::new(Archiver::GnuAr, dialect);
+        if let (Some(t), Some(symbols)) = (symtab, &symbols)
+            && bsd
+            && symbols.is_empty()
+        {
+            // The string table's size, after the empty ranlib array.
+            options.filler = t.data.get(4..8).is_some_and(|b| b != [0, 0, 0, 0]);
+        }
         options.thin = archive.is_thin();
         options.table_date = table_date;
         Ok(Self {

@@ -113,6 +113,69 @@ fn check(path: &Path, only: Option<Archiver>) -> Report {
         }
     };
     let data = map.as_slice();
+    if turbonop_macho::is_fat(data) {
+        return check_universal(data, only);
+    }
+    check_bytes(data, path.parent().unwrap_or(Path::new(".")), only)
+}
+
+/// A universal file of archives: each slice checked as an archive, and the
+/// file's header and gaps as LLVM writes them.
+fn check_universal(data: &[u8], only: Option<Archiver>) -> Report {
+    let mut r = Report {
+        bytes: data.len() as u64,
+        writers: "both",
+        ..Report::default()
+    };
+    let Some(archs) = turbonop_macho::fat_archs(data) else {
+        r.failure = Some("a universal file whose header doesn't read".into());
+        return r;
+    };
+    let shape: Vec<(u32, u32, u64, u32)> = archs
+        .iter()
+        .map(|a| (a.cputype, a.cpusubtype, a.size, a.align))
+        .collect();
+    let mut rebuilt = Vec::new();
+    if let Some((head, offsets)) = turbonop_macho::fat_layout(&shape) {
+        rebuilt.extend_from_slice(&head);
+        for (a, &o) in archs.iter().zip(&offsets) {
+            let o = usize::try_from(o).unwrap_or(usize::MAX);
+            let s = usize::try_from(a.offset).unwrap_or(usize::MAX);
+            let e = s.saturating_add(usize::try_from(a.size).unwrap_or(usize::MAX));
+            rebuilt.resize(o, 0);
+            rebuilt.extend_from_slice(data.get(s..e).unwrap_or(&[]));
+        }
+    }
+    if rebuilt != data {
+        r.failure = Some(format!(
+            "the universal file's layout differs at {:?}",
+            first_difference(data, &rebuilt)
+        ));
+        return r;
+    }
+    for a in &archs {
+        let s = usize::try_from(a.offset).unwrap_or(usize::MAX);
+        let e = s.saturating_add(usize::try_from(a.size).unwrap_or(usize::MAX));
+        let slice = check_bytes(data.get(s..e).unwrap_or(&[]), Path::new("."), only);
+        r.members += slice.members;
+        for (k, v) in slice.not_computed {
+            *r.not_computed.entry(k).or_default() += v;
+        }
+        if slice.writers != "both" {
+            r.writers = slice.writers;
+        }
+        if let Some(f) = slice.failure {
+            r.failure = Some(format!("slice {}: {f}", a.cputype));
+        }
+        if let Some(i) = slice.index {
+            r.index = Some(format!("slice {}: {i}", a.cputype));
+        }
+    }
+    r
+}
+
+/// An archive's bytes.
+fn check_bytes(data: &[u8], dir: &Path, only: Option<Archiver>) -> Report {
     let mut r = Report {
         bytes: data.len() as u64,
         ..Report::default()
@@ -151,7 +214,6 @@ fn check(path: &Path, only: Option<Archiver>) -> Report {
         return r;
     }
     // Thin members' data, from their files.
-    let dir = path.parent().unwrap_or(Path::new("."));
     let datas: Vec<Vec<u8>> = if contents.options.thin {
         contents
             .members

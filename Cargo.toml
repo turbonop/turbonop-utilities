@@ -56,6 +56,7 @@ turbonop-elf = { path = "crates/formats/elf" }
 turbonop-elf-object = { path = "crates/formats/elf-object" }
 turbonop-dwarf = { path = "crates/symbols/dwarf" }
 turbonop-macho = { path = "crates/formats/macho" }
+turbonop-macho-object = { path = "crates/formats/macho-object" }
 turbonop-wasm = { path = "crates/formats/wasm" }
 turbonop-wasm-isa = { path = "crates/isa/wasm" }
 turbonop-pe = { path = "crates/formats/pe" }

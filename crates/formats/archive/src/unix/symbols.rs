@@ -27,7 +27,17 @@
 //! Intel hex, Tektronix hex, and Verilog hex as objects without symbols:
 //! not recognized here.)
 //!
-//! **Not computed**: COFF, Mach-O, wasm, and XCOFF objects, LLVM bitcode,
+//! **A Mach-O file** (thin, any file type, either width and byte order),
+//! for `llvm-ar`: the entries of its `LC_SYMTAB`, in order, that are
+//! external (`N_EXT`, private externs included), not debugger entries
+//! (`N_STAB`), and not undefined (`N_UNDF` with a value of 0; a common
+//! symbol, `N_UNDF` with a size, is listed), as LLVM 24's
+//! `MachOObjectFile::getSymbolFlags` and `isArchiveSymbol` decide. A
+//! universal file isn't an object to it (no symbols, not counted). A name
+//! past the string table is an error (`llvm-ar` refuses it). GNU `ar`'s
+//! Mach-O index isn't modeled.
+//!
+//! **Not computed**: COFF, wasm, and XCOFF objects, Mach-O for GNU `ar`, LLVM bitcode,
 //! and GCC's LTO objects (`.gnu.lto_` sections), whose symbols GNU `ar`
 //! takes from its LTO plugin. Their indexes aren't modeled here.
 
@@ -130,6 +140,9 @@ fn other_format(data: &[u8]) -> Option<&'static str> {
 /// The symbols `archiver` indexes for the member `data`.
 pub fn member_symbols(data: &[u8], archiver: Archiver) -> Result<MemberSymbols<'_>, SymbolsError> {
     if !ElfFile::is_elf(data) {
+        if archiver == Archiver::LlvmAr && turbonop_macho::is_macho(data) {
+            return macho_symbols(data);
+        }
         if let Some(what) = other_format(data) {
             return Err(SymbolsError::Unsupported(what));
         }
@@ -198,6 +211,29 @@ pub fn member_symbols(data: &[u8], archiver: Archiver) -> Result<MemberSymbols<'
             }
         };
         if listed {
+            out.symbols.push(s.name);
+        }
+    }
+    Ok(out)
+}
+
+/// `llvm-ar`'s symbols for a thin Mach-O file.
+fn macho_symbols(data: &[u8]) -> Result<MemberSymbols<'_>, SymbolsError> {
+    use turbonop_macho::consts::{N_EXT, N_STAB, N_TYPE, N_UNDF};
+    let file = turbonop_macho::MachO::parse(data).map_err(|_| SymbolsError::Malformed)?;
+    let mut out = MemberSymbols {
+        object: true,
+        symbols: Vec::new(),
+    };
+    let strsize = file.symtab().map_or(0, |s| s.strsize);
+    for s in file.symbols() {
+        let listed = s.n_type & N_STAB == 0
+            && s.n_type & N_EXT != 0
+            && !(s.n_type & N_TYPE == N_UNDF && s.n_value == 0);
+        if listed {
+            if s.strx >= strsize {
+                return Err(SymbolsError::Malformed);
+            }
             out.symbols.push(s.name);
         }
     }

@@ -673,6 +673,8 @@ fn strip<'a>(
         .expect("a foldable unit is referred to only by external symbols");
     let before = object.symbol_table_indices();
     let mut defaults: HashMap<Vec<u8>, SymbolId> = HashMap::new();
+    // (Alias record, the plain record the relocations now name.)
+    let mut retarget: Vec<(SymbolId, SymbolId)> = Vec::new();
     for (id, default, search) in weak {
         let id = renumbering
             .symbol(id)
@@ -692,27 +694,40 @@ fn strip<'a>(
             ))
         });
         if search == weak_search::ALIAS {
-            // A second record of the name, the alias; the relocations keep
-            // naming the first, a plain undefined external. link.exe's ICF
+            // Two records of the name: the alias first, then a plain
+            // undefined external, which the relocations name. link.exe's ICF
             // takes a reference through a weak external for another target
-            // than one to the name, so code calling a moved function stopped
-            // folding with identical code elsewhere (measured: 4,870 more
-            // functions in llvm-nm under /OPT:REF), and with the two records
-            // it folds as before.
-            let name = object.symbols[id.index()].name.clone();
-            let mut alias = Symbol::new(
-                name,
+            // than one to the name, so with the alias alone, code calling a
+            // moved function stopped folding with identical code elsewhere
+            // (measured: 4,870 more functions in llvm-nm under /OPT:REF).
+            // And lld-link reads the records in order: a plain undefined
+            // name first loads the member the index names for it (95 more
+            // in llvm-nm), while after the alias it loads nothing.
+            let s = &object.symbols[id.index()];
+            let plain = Symbol::new(
+                s.name.clone(),
                 0,
                 SectionNumber::Undefined,
-                0,
-                storage_class::WEAK_EXTERNAL,
+                s.kind,
+                storage_class::EXTERNAL,
             );
-            alias.aux = Aux::WeakExternal(WeakExternal { tag, search });
-            object.push_symbol(alias);
-        } else {
-            let s = &mut object.symbols[id.index()];
-            s.storage_class = storage_class::WEAK_EXTERNAL;
-            s.aux = Aux::WeakExternal(WeakExternal { tag, search });
+            retarget.push((id, object.push_symbol(plain)));
+        }
+        let s = &mut object.symbols[id.index()];
+        s.storage_class = storage_class::WEAK_EXTERNAL;
+        s.aux = Aux::WeakExternal(WeakExternal { tag, search });
+    }
+    if !retarget.is_empty() {
+        let mut to: Vec<Option<SymbolId>> = vec![None; object.symbols.len()];
+        for &(from, plain) in &retarget {
+            to[from.index()] = Some(plain);
+        }
+        for sec in &mut object.sections {
+            for r in &mut sec.relocations {
+                if let Some(p) = to.get(r.symbol.index()).copied().flatten() {
+                    r.symbol = p;
+                }
+            }
         }
     }
     let now = object.symbol_table_indices();

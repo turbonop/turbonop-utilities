@@ -752,7 +752,9 @@ select-any mode it bounds which copies may stand in for each other:
 5. **Rewrite each original member**:
    - Remove the folded units' sections.
    - Make each removed leader (and each other external defined in the
-     unit) an undefined external.
+     unit) an undefined external, and give the name a second symbol
+     record, an alias weak external whose default is `__turbolib$alias`
+     ([the alias technique](#the-alias-technique)).
    - Add an undefined reference to the **anchor** symbol of each
      synthesized member it gave units to. This keeps unreferenced COMDATs
      alive under `/OPT:NOREF` (the default with `/DEBUG`) exactly when they
@@ -857,7 +859,7 @@ has side effects, they leave that link:
 
 | Mode | Behavior |
 |---|---|
-| `preserve` (default) | Nothing about which members load changes. A group is folded only if every definition of its names in the library is a copy in it (so the member the index names keeps being named for them, by a synthesized member), and not if its first copy's member has side effects. The weak-external technique below was meant for those, but it fails in `link.exe` (phase 2's results), so they aren't folded. |
+| `preserve` (default) | Nothing about which members load changes ([the alias technique](#the-alias-technique)). A group is folded only if every definition of its names in the library is a copy with the same code (so whichever copy a link keeps is the same), and not if the member the index names for them has side effects. The weak-external technique below was meant for those, but it fails in `link.exe` (phase 2's results), so they aren't folded. |
 | `relaxed` | Fold regardless, and report the members whose loading may change. |
 
 **The weak-external technique.** This is for COFF. Phase 0 proved it in
@@ -899,6 +901,59 @@ could be the only one that adds some library to the link.
 
 The anchor references from step 5 are always added. They make the keep
 and discard behavior under `/OPT:NOREF` exact in every mode.
+
+#### The alias technique
+
+What `preserve` does for the units it folds. Each member that gave up a
+copy keeps each of the copy's names defined, as an alias weak external
+(`IMAGE_WEAK_EXTERN_SEARCH_ALIAS`) whose default is `__turbolib$alias`,
+and refers to the anchor of the synthesized member holding the copy.
+Synthesized members are indexed for their anchors alone (under
+`preserve`), and never for `__turbolib$alias`. So:
+
+- **The index is the original's.** `lib.exe` indexes aliases, so each
+  name still sends a link to the member it sent it to.
+- **A loaded member never sends the linker to the library for a name it
+  gave up.** An alias counts as defined, and the anchor brings the
+  synthesized member, whose strong definition overrides the alias. With
+  the name merely undefined, link.exe sometimes reached it before the
+  anchor and loaded the first definer through the index: members the
+  original link never loaded (on `llvm-nm`, 652 original members against
+  637, not all the same), and with them references no library could
+  resolve.
+- **One default everywhere.** link.exe refuses two weak externals for one
+  name with different defaults (LNK1227), which two libraries that fold
+  the same inline function would otherwise give it (each its own anchor,
+  as a first version did). Both linkers require the default resolved, even
+  when a strong definition wins, so every synthesized member defines
+  `__turbolib$alias` as the absolute 0; both linkers accept the equal
+  absolutes. The default is never used: a strong definition always comes
+  with the alias.
+- **Two records of the name, the alias first.** The alias takes the
+  name's original record; a plain undefined external of the name comes
+  after it, and the member's relocations name that one. link.exe's ICF
+  takes a reference through a weak external for another target than a
+  reference to the name, so with the alias as the only record, code calling
+  a moved function stopped folding with identical code elsewhere (4,870
+  more functions, 408 KB more code, in `llvm-nm` under `/OPT:REF`; none
+  under `/OPT:REF,NOICF`). With two records, it folds as before. The order
+  is lld-link's: it reads the records in order, and a plain undefined name
+  first loads the member the index names for it (95 more members in
+  `llvm-nm`, the plain record first), while after the alias it loads
+  nothing.
+- **A direct index entry for the synthesized member** isn't an option:
+  link.exe refuses an entry for a member that doesn't define the name
+  (LNK1377, "symbol not found in object; the containing library is
+  corrupt"), and an entry naming the synthesized member would change which
+  members load.
+
+What it doesn't keep: **the order** in which link.exe loads the same
+members. On `llvm-nm`, both links load the same 637 original members, but
+in another order (link.exe's handling of its undefined symbols depends on
+the whole symbol set, which the anchors change; not proven), and the
+order of C++ initializers across members follows it: two of `llvm-nm`'s
+55 moved. C++ leaves that order unspecified, but programs can depend on
+it. lld-link's order didn't change.
 
 ### `--precomp`: shared types (phase 3)
 

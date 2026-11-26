@@ -323,6 +323,13 @@ x64. Where the 3.5 MB went:
   - The SDK's and MSVC's libraries whose index isn't computed from their
     members (103 of 1,851; see the plan's 1.2): the ARM64 CRT's EC
     symbols, and UCRT's members that win a name.
+- **link.exe's load order** against folded libraries (the plan's "The
+  alias technique"): the same members, in another order, so C++
+  initializers across members run in another order (2 of `llvm-nm`'s 55).
+  Find what link.exe's order of resolving undefined symbols depends on,
+  and whether anchors can leave it alone (anchor references first in the
+  symbol table? anchors named to sort or hash like the names they stand
+  for?). Until then, `preserve` keeps which members load but not when.
 - **Link equivalence (phase 2.6).** `turbolib verify` and
   `turbolib compare-images` are done (`turbonop-verify`; see the plan's
   "The tools"), and `relink.py` runs compare-images over link.exe and
@@ -338,10 +345,11 @@ x64. Where the 3.5 MB went:
     compare-images.
 - **Phase 2.4's open ends** (folded units' CodeView, done for x64 MSVC
   and clang-cl).
-  - Images linked by lld-link against folded libraries are larger
-    (`llvm-nm`: 2.8 MiB more code, 12,756 more procedures): lld loads
-    members link.exe doesn't. Phase 2.2's engine does the same, so not
-    2.4; find out why.
+  - (Done: lld-link loaded members link.exe didn't, 2.8 MiB more code in
+    `llvm-nm`, because a member that gave up a copy had the name
+    undefined. With [the alias technique](docs/turbolib.md#the-alias-technique),
+    lld-link's images against folded libraries have the original's
+    sections to the byte in size.)
   - clang-cl objects pass through whole: `.llvm_addrsig` (symbol indices)
     is a side table (2.3). The fixtures use `-fno-addrsig`.
   - Untested: x86 frame data and cross-scope imports and exports in a

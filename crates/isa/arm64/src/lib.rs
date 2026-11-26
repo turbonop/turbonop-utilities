@@ -60,7 +60,7 @@ impl Instruction {
     /// `ADD_64_addsub_imm`.
     #[inline]
     pub fn encoding_name(&self) -> &'static str {
-        self.encoding().name
+        self.encoding().name()
     }
 
     /// The instruction class: `general`, `float`, `advsimd`, `sve`, ...
@@ -83,7 +83,7 @@ impl Instruction {
     pub fn is_unpredictable(&self) -> bool {
         let e = self.encoding();
         let unpredictable =
-            |e: &Encoding| e.unpred.is_some_and(|f| f(self.word)) || !should_hold(e, self.word);
+            |e: &Encoding| e.unpred(self.word) || !should_hold(e, self.word);
         unpredictable(e) || (e.alias_of != NONE && unpredictable(encoding(usize::from(e.alias_of))))
     }
 
@@ -107,7 +107,7 @@ fn should_hold(e: &Encoding, w: u32) -> bool {
 }
 
 fn matches(e: &Encoding, w: u32) -> bool {
-    w & e.mask == e.value && e.ne.iter().all(|&(m, v)| w & m != v) && !e.undef.is_some_and(|f| f(w))
+    w & e.mask == e.value && e.ne().iter().all(|&(m, v)| w & m != v) && !e.undef(w)
 }
 
 /// Decodes the instruction `word` at `address`, or `None` if it is not a
@@ -159,7 +159,7 @@ pub fn decode(word: u32, address: u64) -> Option<Instruction> {
         };
         let preferred = match ms_prefers {
             Some(p) => p && word & e.mask == e.value,
-            None => w_matches_alias(e, word) && e.prefer.is_some_and(|f| f(word)),
+            None => w_matches_alias(e, word) && e.prefer(word),
         };
         if preferred {
             chosen = i;
@@ -186,7 +186,7 @@ pub fn decode(word: u32, address: u64) -> Option<Instruction> {
 }
 
 fn w_matches_alias(e: &Encoding, w: u32) -> bool {
-    w & e.mask == e.value && e.ne.iter().all(|&(m, v)| w & m != v)
+    w & e.mask == e.value && e.ne().iter().all(|&(m, v)| w & m != v)
 }
 
 /// For tools: every encoding whose fixed bits match `word`, whether its
@@ -232,7 +232,7 @@ pub fn validity_disagrees(word: u32) -> Option<&'static str> {
             encoding: i,
         };
         if format::is_valid(&inst) != format::renders_fully(&inst) {
-            return Some(e.name);
+            return Some(e.name());
         }
     }
     None
@@ -241,5 +241,5 @@ pub fn validity_disagrees(word: u32) -> Option<&'static str> {
 /// Every encoding in the tables: its name and fixed bits (`word & mask ==
 /// value`). For generating test cases.
 pub fn encodings() -> impl Iterator<Item = (&'static str, u32, u32)> {
-    tables::encodings().map(|e| (e.name, e.mask, e.value))
+    tables::encodings().map(|e| (e.name(), e.mask, e.value))
 }

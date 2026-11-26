@@ -1095,6 +1095,19 @@ fn main() {
     let mut enc_out = String::new();
     let mut semantics_out = String::new();
     let mut n_fns = 0;
+    // What the encodings refer to by index, each once (see src/tables.rs's
+    // `Encoding`): their names in one string, their `ne` pairs in one
+    // array, and their templates' token lists.
+    let mut names = String::new();
+    let mut ne_pool: Vec<String> = Vec::new();
+    let mut tok_lists: Vec<String> = Vec::new();
+    let mut tok_index: HashMap<String, usize> = HashMap::new();
+    // `Some(cond_N)` as N, `None` as `NONE`.
+    let cond_index = |f: &str| -> String {
+        f.strip_prefix("Some(cond_")
+            .and_then(|s| s.strip_suffix(')'))
+            .map_or_else(|| "NONE".to_string(), str::to_string)
+    };
     for (ei, e) in encs.iter().enumerate() {
         // Constraints.
         let mut ne = Vec::new();
@@ -1254,17 +1267,34 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         // Microsoft keeps a space before the register of a post-indexed
         // structure load or store: "[x2], x0".
         let post_index = e.name.contains("_asisdlsop_") || e.name.contains("_asisdlsep_");
+        let name_at = names.len();
+        names.push_str(&e.name);
+        assert!(e.name.len() <= 255, "{}: a name too long", e.name);
+        let ne_at = ne_pool.len();
+        let ne_len = ne.len();
+        ne_pool.extend(ne);
+        assert!(ne_at + ne_len <= 0xFFFF && ne_len <= 255, "too many `ne` pairs");
+        let mut list = |toks: String| -> usize {
+            *tok_index.entry(toks.clone()).or_insert_with(|| {
+                tok_lists.push(toks);
+                tok_lists.len() - 1
+            })
+        };
+        let mnem = list(mnem);
+        let ops = list(ops);
         let _ = writeln!(
             enc_out,
-            "    Encoding {{ name: {:?}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne: &[{}], undef: {undef_fn}, unpred: {unpred_fn}, alias_of: {alias_of}, prefer: {prefer}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule} }},",
-            e.name,
+            "    Encoding {{ name_at: {name_at}, name_len: {}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne_at: {ne_at}, ne_len: {ne_len}, undef: {}, unpred: {}, alias_of: {alias_of}, prefer: {}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule} }},",
+            e.name.len(),
             index_of(&mut classes, &e.class),
             index_of(&mut features, &e.feature),
             e.mask,
             e.value,
             e.should_mask,
             e.should_value,
-            ne.join(",")
+            cond_index(&undef_fn),
+            cond_index(&unpred_fn),
+            cond_index(&prefer),
         );
         // (Apart from the encodings, which decoding scans: what it reads
         // and writes, and its operands.)
@@ -1295,6 +1325,27 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
 
     let _ = writeln!(code, "pub(crate) const NONE: u16 = u16::MAX;");
     chunked(&mut code, "ENCODINGS", "Encoding", &enc_out, encs.len());
+    assert!(names.len() <= u32::MAX as usize);
+    let _ = writeln!(code, "pub(crate) static NAMES: &str = {names:?};");
+    let _ = writeln!(
+        code,
+        "pub(crate) static NE: [(u32, u32); {}] = [{}];",
+        ne_pool.len(),
+        ne_pool.join(",")
+    );
+    assert!(tok_lists.len() < 0xFFFF && n_fns < 0xFFFF);
+    let _ = writeln!(
+        code,
+        "pub(crate) static TOK_LISTS: [&[Tok]; {}] = [\n{}\n];",
+        tok_lists.len(),
+        tok_lists.join(",\n")
+    );
+    let conds: Vec<String> = (0..n_fns).map(|n| format!("cond_{n}")).collect();
+    let _ = writeln!(
+        code,
+        "static CONDS: [fn(u32) -> bool; {n_fns}] = [{}];",
+        conds.join(", ")
+    );
     chunked(
         &mut code,
         "SEMANTICS",

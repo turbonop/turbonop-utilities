@@ -216,6 +216,8 @@ struct Cu {
     /// `.debug_ranges` (`DW_AT_GNU_ranges_base`); its location lists are in
     /// the `.dwo`'s `.debug_loc.dwo`, with GNU's entry kinds.
     gnu_split: Option<u64>,
+    /// Each DIE's [`declarable`].
+    declarable: Vec<bool>,
     /// Its line table: where it starts, its program starts, and it ends.
     line: Option<(u64, u64, u64)>,
     header: LineHeader,
@@ -580,6 +582,7 @@ impl<'p> Source<'p> {
             rnglists_base: unit.rnglists_base,
             loclists_base: unit.loclists_base,
             gnu_split: None,
+            declarable: Vec::new(),
             line: None,
             header: LineHeader::default(),
             seqs: Vec::new(),
@@ -723,6 +726,7 @@ impl<'p> Source<'p> {
                 rnglists_base: u.rnglists_base,
                 loclists_base: u.loclists_base,
                 gnu_split: None,
+                declarable: Vec::new(),
                 line: None,
                 header: LineHeader::default(),
                 seqs: Vec::new(),
@@ -766,6 +770,7 @@ impl<'p> Source<'p> {
                 return Err("split DWARF");
             }
             cu.dies = walk(&unit, &cu.abbrevs)?;
+            cu.declarable = declarable(&cu.dies);
             cus.push((
                 cu,
                 unit,
@@ -1520,41 +1525,55 @@ struct Builder<'s, 'p> {
 
 /// The DIEs of one unit to keep: 2 whole, 1 as a skeleton (the DIE and its
 /// kept children), 3 as a declaration (its name, and its kept children).
-struct Keep {
-    mark: Vec<u8>,
+struct Keep<'c> {
+    /// The marks of the DIEs kept (a map: a synthesized member keeps a few
+    /// DIEs of a unit that may have millions, and a member's unit gives
+    /// DIEs to many synthesized members).
+    mark: HashMap<usize, u8>,
     work: Vec<usize>,
     /// Whether each DIE is a named class, structure, or union a debugger
-    /// can find the definition of by its name (in named scopes only).
-    declarable: Vec<bool>,
+    /// can find the definition of by its name (in named scopes only): the
+    /// unit's, worked out once.
+    declarable: &'c [bool],
 }
 
 const SKELETON: u8 = 1;
 const WHOLE: u8 = 2;
 const DECLARATION: u8 = 3;
 
-impl Keep {
-    fn new(dies: &[Die]) -> Self {
-        // Whether names inside each DIE can be looked up from anywhere.
-        let mut open = vec![false; dies.len()];
-        let mut declarable = vec![false; dies.len()];
-        for (i, d) in dies.iter().enumerate() {
-            let parent_open = d.parent == u32::MAX || open[d.parent as usize];
-            let aggregate = matches!(
-                d.tag,
-                DW_TAG_CLASS_TYPE | DW_TAG_STRUCTURE_TYPE | DW_TAG_UNION_TYPE
-            );
-            declarable[i] = aggregate && d.named && d.parent != u32::MAX && parent_open;
-            open[i] = match d.tag {
-                DW_TAG_COMPILE_UNIT | DW_TAG_PARTIAL_UNIT => true,
-                DW_TAG_NAMESPACE => d.named && parent_open,
-                _ => declarable[i],
-            };
-        }
+/// Whether each DIE is a named class, structure, or union a debugger can
+/// find the definition of by its name (in named scopes only).
+fn declarable(dies: &[Die]) -> Vec<bool> {
+    // Whether names inside each DIE can be looked up from anywhere.
+    let mut open = vec![false; dies.len()];
+    let mut declarable = vec![false; dies.len()];
+    for (i, d) in dies.iter().enumerate() {
+        let parent_open = d.parent == u32::MAX || open[d.parent as usize];
+        let aggregate = matches!(
+            d.tag,
+            DW_TAG_CLASS_TYPE | DW_TAG_STRUCTURE_TYPE | DW_TAG_UNION_TYPE
+        );
+        declarable[i] = aggregate && d.named && d.parent != u32::MAX && parent_open;
+        open[i] = match d.tag {
+            DW_TAG_COMPILE_UNIT | DW_TAG_PARTIAL_UNIT => true,
+            DW_TAG_NAMESPACE => d.named && parent_open,
+            _ => declarable[i],
+        };
+    }
+    declarable
+}
+
+impl<'c> Keep<'c> {
+    fn new(declarable: &'c [bool]) -> Self {
         Keep {
-            mark: vec![0; dies.len()],
+            mark: HashMap::new(),
             work: Vec::new(),
             declarable,
         }
+    }
+
+    fn mark(&self, i: usize) -> u8 {
+        self.mark.get(&i).copied().unwrap_or(0)
     }
 
     /// Keeps the ancestors of a kept DIE (from `i`, its parent): scopes
@@ -1565,18 +1584,18 @@ impl Keep {
     fn skeleton(&mut self, dies: &[Die], i: usize) {
         let mut at = i;
         loop {
-            if self.mark[at] != 0 {
+            if self.mark(at) != 0 {
                 return;
             }
             if self.declarable[at] {
-                self.mark[at] = DECLARATION;
+                self.mark.insert(at, DECLARATION);
             } else if is_scope(dies[at].tag)
                 || matches!(
                     dies[at].tag,
                     DW_TAG_SUBPROGRAM | DW_TAG_LEXICAL_BLOCK | DW_TAG_INLINED_SUBROUTINE
                 )
             {
-                self.mark[at] = SKELETON;
+                self.mark.insert(at, SKELETON);
                 self.work.push(at);
             } else {
                 self.whole(dies, at);
@@ -1591,17 +1610,18 @@ impl Keep {
     }
 
     fn whole(&mut self, dies: &[Die], i: usize) {
-        if self.mark[i] == WHOLE {
+        if self.mark(i) == WHOLE {
             return;
         }
         let end = dies[i].end;
         let mut j = i;
         while j < dies.len() && (j == i || dies[j].offset < end) {
-            if self.mark[j] != WHOLE {
-                if self.mark[j] != SKELETON {
+            let m = self.mark(j);
+            if m != WHOLE {
+                if m != SKELETON {
                     self.work.push(j);
                 }
-                self.mark[j] = WHOLE;
+                self.mark.insert(j, WHOLE);
             }
             j += 1;
         }
@@ -1619,8 +1639,8 @@ impl Keep {
         if is_scope(dies[i].tag) {
             self.skeleton(dies, i);
         } else if self.declarable[i] {
-            if self.mark[i] == 0 {
-                self.mark[i] = DECLARATION;
+            if self.mark(i) == 0 {
+                self.mark.insert(i, DECLARATION);
                 let p = dies[i].parent;
                 if p != u32::MAX {
                     self.skeleton(dies, p as usize);
@@ -2323,7 +2343,7 @@ impl<'s, 'p> Builder<'s, 'p> {
         let unit = src.unit(cu)?;
         let dies = &cu.dies;
         // What to keep.
-        let mut keep = Keep::new(dies);
+        let mut keep = Keep::new(&cu.declarable);
         for &r in roots {
             keep.whole(dies, r);
         }
@@ -2370,6 +2390,9 @@ impl<'s, 'p> Builder<'s, 'p> {
                 keep.refer(dies, t);
             }
         }
+        // The kept DIEs, in order.
+        let mut kept: Vec<usize> = keep.mark.keys().copied().collect();
+        kept.sort_unstable();
         // The line table's files the kept DIEs and the moved sequences
         // name (the unit's primary file too), renumbered in order.
         let mut used: BTreeSet<u64> = BTreeSet::new();
@@ -2382,11 +2405,11 @@ impl<'s, 'p> Builder<'s, 'p> {
                     src.files_set(&cu.header, s, &mut used)?;
                 }
             }
-            for (i, d) in dies.iter().enumerate() {
-                if !matches!(keep.mark[i], SKELETON | WHOLE) {
+            for &i in &kept {
+                if !matches!(keep.mark(i), SKELETON | WHOLE) {
                     continue;
                 }
-                let (_, attrs) = read_die(&unit, &cu.abbrevs, d.offset)?;
+                let (_, attrs) = read_die(&unit, &cu.abbrevs, dies[i].offset)?;
                 for a in &attrs {
                     if is_file(a.name) {
                         used.insert(file_value(&unit, a)?);
@@ -2401,12 +2424,15 @@ impl<'s, 'p> Builder<'s, 'p> {
             }
         }
         // Each kept DIE's kept children.
-        let mut children: Vec<Vec<usize>> = vec![Vec::new(); dies.len()];
-        for (i, d) in dies.iter().enumerate() {
-            if keep.mark[i] != 0 && d.parent != u32::MAX {
-                children[d.parent as usize].push(i);
+        let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
+        for &i in &kept {
+            let d = &dies[i];
+            if d.parent != u32::MAX {
+                children.entry(d.parent as usize).or_default().push(i);
             }
         }
+        let none: Vec<usize> = Vec::new();
+        let children_of = |d: usize| children.get(&d).unwrap_or(&none);
         // The unit.
         let e = self.endian();
         let start = self.info.bytes.len();
@@ -2423,26 +2449,26 @@ impl<'s, 'p> Builder<'s, 'p> {
             p.put(0, 4, e);
             p.bytes.push(cu.address_size);
         }
-        let mut offsets: Vec<u64> = vec![u64::MAX; dies.len()];
-        offsets[0] = p.bytes.len() as u64;
-        let q = self.top_die(cu, &unit, !children[0].is_empty())?;
+        let mut offsets: HashMap<usize, u64> = HashMap::new();
+        offsets.insert(0, p.bytes.len() as u64);
+        let q = self.top_die(cu, &unit, !children_of(0).is_empty())?;
         p.append(q);
         // Pre-order: (DIE, next child to write).
         let mut stack: Vec<(usize, usize)> = vec![(0, 0)];
         while let Some(top) = stack.last_mut() {
             let (d, next) = *top;
-            if next < children[d].len() {
-                let c = children[d][next];
+            if next < children_of(d).len() {
+                let c = children_of(d)[next];
                 top.1 += 1;
-                offsets[c] = p.bytes.len() as u64;
-                let decl = keep.mark[c] == DECLARATION;
-                let q = self.die(cu, &unit, c, !children[c].is_empty(), decl)?;
+                offsets.insert(c, p.bytes.len() as u64);
+                let decl = keep.mark(c) == DECLARATION;
+                let q = self.die(cu, &unit, c, !children_of(c).is_empty(), decl)?;
                 p.append(q);
-                if !children[c].is_empty() {
+                if !children_of(c).is_empty() {
                     stack.push((c, 0));
                 }
             } else {
-                if !children[d].is_empty() {
+                if !children_of(d).is_empty() {
                     p.bytes.push(0);
                 }
                 stack.pop();
@@ -2457,7 +2483,7 @@ impl<'s, 'p> Builder<'s, 'p> {
         // References.
         let fixes = std::mem::take(&mut p.fixes);
         for (pos, d, fix) in fixes {
-            let o = offsets[d];
+            let o = offsets.get(&d).copied().unwrap_or(u64::MAX);
             if o == u64::MAX {
                 return Err("a reference to a DIE not kept");
             }
@@ -2465,7 +2491,7 @@ impl<'s, 'p> Builder<'s, 'p> {
         }
         let fixes = std::mem::take(&mut self.loc.fixes);
         for (pos, d, fix) in fixes {
-            let o = offsets[d];
+            let o = offsets.get(&d).copied().unwrap_or(u64::MAX);
             if o == u64::MAX {
                 return Err("a reference to a DIE not kept");
             }

@@ -711,13 +711,9 @@ fn check_member(
             );
             continue;
         }
-        if r_undefined.contains(&*d.name) {
-            if !facts.defined.contains(&&*d.name) {
-                rep.fail("moved symbols that no member defines", || {
-                    format!("{}: {}", name(), show(&d.name))
-                });
-            }
-        } else if let Some(w) = r_weak.get(&*d.name)
+        // An alias first (whether or not the name also has a plain
+        // undefined record, as the engine writes it), then undefined.
+        if let Some(w) = r_weak.get(&*d.name)
             && w.search == turbonop_coff::weak_search::ALIAS
         {
             if *w.alternate != *ALIAS_DEFAULT {
@@ -734,6 +730,12 @@ fn check_member(
                     "aliases of moved symbols that no anchored synthesized member defines",
                     || format!("{}: {}", name(), show(&d.name)),
                 );
+            }
+        } else if r_undefined.contains(&*d.name) {
+            if !facts.defined.contains(&&*d.name) {
+                rep.fail("moved symbols that no member defines", || {
+                    format!("{}: {}", name(), show(&d.name))
+                });
             }
         } else if let Some(w) = r_weak.get(&*d.name) {
             let renamed = [RENAMED, &d.name].concat();

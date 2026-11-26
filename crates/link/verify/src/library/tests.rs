@@ -698,8 +698,9 @@ fn not_archives_are_errors() {
 }
 
 /// `data` without the units of `leaders`, each leader left an alias weak
-/// external whose default is `default`, and with an undefined reference to
-/// `anchor`: the engine's rewriting.
+/// external whose default is `default` (and a plain undefined record after
+/// it), and with an undefined reference to `anchor`: the engine's
+/// rewriting.
 fn aliased(data: &[u8], leaders: &[&[u8]], default: &[u8], anchor: &[u8]) -> Vec<u8> {
     let mut o = Object::parse(&without(data, leaders, false, Some(anchor)))
         .unwrap()
@@ -719,6 +720,14 @@ fn aliased(data: &[u8], leaders: &[&[u8]], default: &[u8], anchor: &[u8]) -> Vec
             tag,
             search: weak_search::ALIAS,
         });
+        // And a plain undefined record after it, as the engine writes.
+        o.push_symbol(Symbol::new(
+            l.to_vec(),
+            0,
+            SectionNumber::Undefined,
+            0x20,
+            storage_class::EXTERNAL,
+        ));
     }
     renumber_tables(&mut o, &before, None);
     o.write().unwrap()

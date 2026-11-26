@@ -66,6 +66,7 @@ use turbonop_global_alloc as _;
 
 extern crate alloc;
 
+mod cut;
 pub mod ehframe;
 pub mod linkedit;
 mod read;
@@ -76,6 +77,7 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt;
 
+pub use cut::{Cut, CutError};
 pub use turbonop_core::Endian;
 pub use turbonop_macho::consts;
 pub use write::llvm_string_table;
@@ -815,7 +817,7 @@ impl<'a> Object<'a> {
     /// optimization hints hold; `None` drops the entry (or the hint). Data
     /// that doesn't decode is left as it is. Returns whether anything
     /// changed.
-    fn edit_linkedit(&mut self, f: impl Fn(u64) -> Option<u64>) -> bool {
+    pub(crate) fn edit_linkedit(&mut self, f: impl Fn(u64) -> Option<u64>) -> bool {
         let endian = self.endian();
         let wide = self.is_64();
         let mut changed = false;
@@ -892,193 +894,42 @@ impl<'a> Object<'a> {
     /// with `old`'s size, which locate the addresses the bytes and
     /// link-edit data hold), as [`Self::assign_addresses`] does.
     pub fn move_sections(&mut self, new: &[u64], old: &[(u64, u64)]) -> Vec<Unadjusted> {
-        let delta: Vec<i64> = old
-            .iter()
-            .zip(new)
-            .map(|(&(o, _), &n)| n.wrapping_sub(o) as i64)
-            .collect();
-        if delta.iter().all(|&d| d == 0) {
-            return Vec::new();
-        }
-        // The section an old address is in (an end address counts as its
-        // section's, for labels at the end).
-        let section_of = |a: u64| -> Option<usize> {
-            old.iter()
-                .position(|&(lo, size)| a >= lo && a - lo < size)
-                .or_else(|| old.iter().position(|&(lo, size)| a >= lo && a - lo == size))
-        };
-        let shift =
-            |a: u64| -> u64 { section_of(a).map_or(a, |i| a.wrapping_add(delta[i] as u64)) };
-        let cputype = self.header.cputype;
-        let endian = self.endian();
-        let wide = self.is_64();
-        let mut unadjusted = Vec::new();
-        for (i, s) in self.sections_mut().enumerate() {
-            s.addr = new[i];
-            let self_delta = delta[i];
-            let moved_at = |v: u32| section_of(u64::from(v)).map_or(0, |t| delta[t]);
-            for k in 0..s.relocations.len() {
-                let r = s.relocations[k];
-                let rule = reloc::address_rule(cputype, &r);
-                let d = match rule {
-                    reloc::AddressRule::None => 0,
-                    reloc::AddressRule::Target { sign, pcrel } => {
-                        let target = r
-                            .symbolnum
-                            .checked_sub(1)
-                            .and_then(|t| delta.get(t as usize))
-                            .copied()
-                            .unwrap_or(0);
-                        sign.wrapping_mul(target)
-                            .wrapping_sub(if pcrel { self_delta } else { 0 })
-                    }
-                    reloc::AddressRule::Pc => self_delta.wrapping_neg(),
-                    reloc::AddressRule::Value => moved_at(r.value.unwrap_or(0)),
-                    reloc::AddressRule::Difference => {
-                        match s.relocations.get(k + 1).and_then(|p| p.value) {
-                            Some(b) => moved_at(r.value.unwrap_or(0)).wrapping_sub(moved_at(b)),
-                            None => {
-                                unadjusted.push(Unadjusted {
-                                    section: i,
-                                    relocation: Some(k),
-                                });
-                                0
-                            }
-                        }
-                    }
-                    reloc::AddressRule::Unknown => {
-                        let target_moved = match r.value {
-                            Some(v) => section_of(u64::from(v)).is_some_and(|t| delta[t] != 0),
-                            None => {
-                                !r.external
-                                    && r.symbolnum
-                                        .checked_sub(1)
-                                        .and_then(|t| delta.get(t as usize))
-                                        .is_some_and(|&d| d != 0)
-                            }
-                        };
-                        if self_delta != 0 || target_moved {
-                            unadjusted.push(Unadjusted {
-                                section: i,
-                                relocation: Some(k),
-                            });
-                        }
-                        0
-                    }
-                };
-                if d != 0 {
-                    let ok = match &mut s.contents {
-                        Contents::Bytes(b) => {
-                            reloc::add_at(b.to_mut(), r.address, r.length, d, endian)
-                        }
-                        Contents::Zerofill(_) => false,
-                    };
-                    if !ok {
-                        unadjusted.push(Unadjusted {
-                            section: i,
-                            relocation: Some(k),
-                        });
-                    }
-                }
-            }
-            for r in &mut s.relocations {
-                if let Some(v) = r.value {
-                    r.value = Some(shift(u64::from(v)) as u32);
-                }
-            }
-            if s.segment_name() == b"__TEXT"
-                && s.name() == b"__eh_frame"
-                && !move_eh_frame(s, old[i].0, self_delta, wide, endian, &section_of, &delta)
-            {
-                unadjusted.push(Unadjusted {
-                    section: i,
-                    relocation: None,
-                });
-            }
-        }
-        for sym in &mut self.symbols {
-            if sym.n_sect != NO_SECT
-                && (sym.in_section() || sym.is_stab())
-                && let Some(&d) = delta.get(usize::from(sym.n_sect) - 1)
-            {
-                sym.n_value = sym.n_value.wrapping_add(d as u64);
-            }
-        }
-        self.edit_linkedit(|a| Some(shift(a)));
-        self.original = None;
-        unadjusted
+        let n = old.len().min(new.len());
+        let cuts = alloc::vec![Vec::new(); n];
+        cut::remap(self, &old[..n], &new[..n], &cuts).unadjusted
     }
-}
 
-/// Moves the pointers in an `__eh_frame` section's records that no
-/// relocation covers (PC-relative ones by their targets' sections' moves
-/// less the section's own, absolute ones by their targets'), the section
-/// having been at `old`. Whether every pointer that needed it moved.
-fn move_eh_frame(
-    s: &mut Section<'_>,
-    old: u64,
-    self_delta: i64,
-    wide: bool,
-    endian: Endian,
-    section_of: &dyn Fn(u64) -> Option<usize>,
-    delta: &[i64],
-) -> bool {
-    let Contents::Bytes(bytes) = &s.contents else {
-        return true;
-    };
-    let Some(pointers) = ehframe::pointers(bytes, wide, endian) else {
-        return delta.iter().all(|&d| d == 0);
-    };
-    let covered: alloc::collections::BTreeSet<u32> =
-        s.relocations.iter().map(|r| r.address).collect();
-    let mut edits = Vec::new();
-    let mut ok = true;
-    for p in pointers {
-        let Ok(at) = u32::try_from(p.offset) else {
-            ok = false;
-            continue;
-        };
-        if covered.contains(&at) {
-            continue;
-        }
-        let length = p.size.trailing_zeros() as u8;
-        let Some(v) = reloc::value_at(bytes, at, length, endian) else {
-            ok = false;
-            continue;
-        };
-        let bits = 8 * u32::from(p.size);
-        let signed = if bits == 64 {
-            v as i64
-        } else {
-            ((v << (64 - bits)) as i64) >> (64 - bits)
-        };
-        let d = match p.encoding & 0x70 {
-            0 => section_of(v).map_or(0, |t| delta[t]),
-            ehframe::DW_EH_PE_PCREL => {
-                let target = old.wrapping_add(u64::from(at)).wrapping_add(signed as u64);
-                section_of(target)
-                    .map_or(0, |t| delta[t])
-                    .wrapping_sub(self_delta)
-            }
-            _ => {
-                ok = false;
-                0
-            }
-        };
-        if d != 0 {
-            edits.push((at, length, d));
-        }
+    /// Removes byte ranges from inside sections (as folding removes atoms):
+    /// `cuts` gives each section (by index) offset ranges in it, disjoint
+    /// and within it. A section's bytes (or zero-fill size) lose the
+    /// ranges; its relocations whose place is in one go, a pair as a
+    /// whole; then every section gets LLVM's address for its new size
+    /// ([`Self::assign_addresses`]), and everything that holds an address
+    /// moves by one map of old addresses to new ones: an address in a
+    /// removed range has none, an address after one moves back by the
+    /// bytes removed before it in its section, and every address moves
+    /// with its section. That is relocations' places (`r_address`) and the
+    /// addresses they encode (local relocations' targets, from
+    /// [`reloc`]'s encodings: for a PC-relative one, the move of the
+    /// target less that of the place), scattered relocations' `r_value`s,
+    /// symbols' values, `__eh_frame`'s pointers no relocation covers,
+    /// data-in-code entries and optimization hints (dropped if in a
+    /// removed range). Returns what it left for the caller: the symbols
+    /// and relocations whose addresses were removed, and the relocations
+    /// whose encoding it doesn't know. Nothing changes if the ranges are
+    /// bad.
+    ///
+    /// A `SUBTRACTOR` pair whose halves are both local holds only their
+    /// difference: when a section either names is cut (not just moved),
+    /// it is unadjusted. A local `SUBTRACTOR` whose `UNSIGNED` is external
+    /// is taken to hold the subtrahend's address negated (the minuend at
+    /// its symbol, no addend), as LLVM writes it.
+    pub fn cut(&mut self, cuts: &[(usize, Vec<core::ops::Range<u64>>)]) -> Result<Cut, CutError> {
+        let per = cut::gather(self, cuts)?;
+        let old: Vec<(u64, u64)> = self.sections().map(|s| (s.addr, s.size())).collect();
+        let new = cut::new_addresses(self, &per);
+        Ok(cut::remap(self, &old, &new, &per))
     }
-    if !edits.is_empty() {
-        let b = match &mut s.contents {
-            Contents::Bytes(b) => b.to_mut(),
-            Contents::Zerofill(_) => return ok,
-        };
-        for (at, length, d) in edits {
-            ok &= reloc::add_at(b, at, length, d, endian);
-        }
-    }
-    ok
 }
 
 #[cfg(test)]

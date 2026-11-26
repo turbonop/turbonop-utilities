@@ -104,7 +104,13 @@ fn split(o: &Object<'_>) -> Vec<Vec<(core::ops::Range<u64>, Vec<usize>)>> {
             .symbols
             .iter()
             .enumerate()
-            .filter(|(_, y)| y.in_section() && usize::from(y.n_sect) == si + 1)
+            .filter(|(_, y)| {
+                y.in_section()
+                    && usize::from(y.n_sect) == si + 1
+                    && !(y.n_type & N_EXT == 0
+                        && y.name.starts_with(b"ltmp")
+                        && y.name[4..].iter().all(u8::is_ascii_digit))
+            })
             .map(|(i, y)| (y.n_value.wrapping_sub(s.addr), i))
             .collect();
         syms.sort_unstable();
@@ -114,14 +120,24 @@ fn split(o: &Object<'_>) -> Vec<Vec<(core::ops::Range<u64>, Vec<usize>)>> {
             .map(|&(a, _)| a)
             .collect();
         starts.insert(0);
-        let starts: Vec<u64> = starts.into_iter().filter(|&a| a < s.size().max(1)).collect();
+        let starts: Vec<u64> = starts
+            .into_iter()
+            .filter(|&a| a < s.size().max(1))
+            .collect();
         let mut atoms: Vec<(core::ops::Range<u64>, Vec<usize>)> = starts
             .iter()
             .enumerate()
-            .map(|(k, &a)| (a..starts.get(k + 1).copied().unwrap_or(s.size()), Vec::new()))
+            .map(|(k, &a)| {
+                (
+                    a..starts.get(k + 1).copied().unwrap_or(s.size()),
+                    Vec::new(),
+                )
+            })
             .collect();
         for (a, i) in syms {
-            let k = atoms.partition_point(|(r, _)| r.start <= a).saturating_sub(1);
+            let k = atoms
+                .partition_point(|(r, _)| r.start <= a)
+                .saturating_sub(1);
             if let Some(x) = atoms.get_mut(k) {
                 x.1.push(i);
             }
@@ -162,9 +178,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
     m.anchor = o
         .symbols
         .iter()
-        .find(|y| {
-            y.name.starts_with(ANCHOR) && y.n_type & N_TYPE == N_ABS && y.n_type & N_EXT != 0
-        })
+        .find(|y| y.name.starts_with(ANCHOR) && y.n_type & N_TYPE == N_ABS && y.n_type & N_EXT != 0)
         .map(|y| y.name.to_vec());
     let cputype = o.header.cputype;
     let endian = o.endian();
@@ -249,12 +263,18 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
     if let Some(ui) = unwind {
         let s = sections[ui];
         let b = s.bytes().unwrap_or(&[]);
-        let rel_at = |at: u64| s.relocations.iter().position(|r| u64::from(r.address) == at);
+        let rel_at = |at: u64| {
+            s.relocations
+                .iter()
+                .position(|r| u64::from(r.address) == at)
+        };
         for e in (0..b.len() as u64 / 32).map(|i| i * 32) {
             let func = rel_at(e).and_then(|ri| {
                 let r = s.relocations[ri];
                 if r.external {
-                    o.symbols.get(r.symbolnum as usize).and_then(|y| locate(y.n_value))
+                    o.symbols
+                        .get(r.symbolnum as usize)
+                        .and_then(|y| locate(y.n_value))
                 } else {
                     reloc::local_address(cputype, endian, s, ri).and_then(locate)
                 }
@@ -274,7 +294,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
     }
     for (si, list) in atoms.iter().enumerate() {
         let s = sections[si];
-        if s.is_debug() || Some(si) == unwind {
+        if s.segment_name() == b"__DWARF" || Some(si) == unwind {
             continue;
         }
         for (k, (range, syms)) in list.iter().enumerate() {
@@ -335,7 +355,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
             });
         }
     }
-    for s in sections.iter().filter(|s| s.is_debug()) {
+    for s in sections.iter().filter(|s| s.segment_name() == b"__DWARF") {
         let places = s
             .relocations
             .iter()
@@ -369,9 +389,8 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
 fn read_library<'a>(data: &'a [u8], what: &str) -> Result<Library<'a>, String> {
     let a = Archive::parse(data).map_err(|e| format!("{what}: {e}"))?;
     let files: Vec<_> = a.files().collect();
-    let members = turbonop_par::map_balanced(&files, 1, |f| {
-        read_member(&f.name, f.data, f.header_offset)
-    });
+    let members =
+        turbonop_par::map_balanced(&files, 1, |f| read_member(&f.name, f.data, f.header_offset));
     let by_offset: BTreeMap<u64, usize> = members
         .iter()
         .enumerate()
@@ -387,7 +406,11 @@ fn read_library<'a>(data: &'a [u8], what: &str) -> Result<Library<'a>, String> {
 
 /// Compares a rewritten member with its original: the keys of the atoms it
 /// lost (units, with their hashes), and what it anchors.
-fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<(Vec<u8>, u128)>, Vec<Vec<u8>>) {
+fn compare_member(
+    o: &Member<'_>,
+    n: &Member<'_>,
+    rep: &mut Report,
+) -> (Vec<(Vec<u8>, u128)>, Vec<Vec<u8>>) {
     let (Some(oo), Some(no)) = (&o.obj, &n.obj) else {
         rep.fail("rewritten members that don't read", || show(&n.name));
         return (Vec::new(), Vec::new());
@@ -468,16 +491,22 @@ fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<(Vec
             anchors.push(u.clone());
             continue;
         }
-        rep.fail("new undefined names", || format!("{}: {}", show(&n.name), show(u)));
+        rep.fail("new undefined names", || {
+            format!("{}: {}", show(&n.name), show(u))
+        });
     }
     if !lost.is_empty() && anchors.is_empty() {
-        rep.fail("members that lost units and anchor nothing", || show(&n.name));
+        rep.fail("members that lost units and anchor nothing", || {
+            show(&n.name)
+        });
     }
     // Debug sections.
     let lost_keys: BTreeSet<&[u8]> = lost.iter().map(|(k, _)| k.as_slice()).collect();
     for (name, bytes, places) in &o.debug {
         let Some((_, nb, _)) = n.debug.iter().find(|d| &d.0 == name) else {
-            rep.fail("debug sections lost", || format!("{}: {}", show(&n.name), show(name)));
+            rep.fail("debug sections lost", || {
+                format!("{}: {}", show(&n.name), show(name))
+            });
             continue;
         };
         let mut expect = bytes.clone();
@@ -543,7 +572,9 @@ pub fn verify(a: &[u8], b: &[u8], options: &Options) -> Result<Report, String> {
             return (r, Vec::new(), Vec::new());
         }
         if o.obj.is_none() {
-            r.fail("members not read as Mach-O objects that changed", || show(&o.name));
+            r.fail("members not read as Mach-O objects that changed", || {
+                show(&o.name)
+            });
             return (r, Vec::new(), Vec::new());
         }
         let (lost, anchors) = compare_member(o, n, &mut r);
@@ -595,7 +626,9 @@ pub fn verify(a: &[u8], b: &[u8], options: &Options) -> Result<Report, String> {
             }
         }
         if computed != lib.index {
-            rep.fail("indexes not computed from their members", || what.to_string());
+            rep.fail("indexes not computed from their members", || {
+                what.to_string()
+            });
         }
     }
     // --pull=preserve.
@@ -621,7 +654,9 @@ pub fn verify(a: &[u8], b: &[u8], options: &Options) -> Result<Report, String> {
             if ok {
                 sent += 1;
             } else {
-                rep.fail("names the index sends elsewhere (--pull=preserve)", || show(name));
+                rep.fail("names the index sends elsewhere (--pull=preserve)", || {
+                    show(name)
+                });
             }
         }
         rep.checked("names of the index sent where --pull=preserve allows", sent);

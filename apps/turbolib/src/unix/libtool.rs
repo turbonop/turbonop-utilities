@@ -322,10 +322,15 @@ impl Reader<'_, '_> {
 
     /// An archive's members (`getOldMember`): their own fields unless
     /// deterministic (then `0`, `0`, `0`, `644`).
-    fn add_archive(&mut self, map: &Arc<Mmap>, start: usize, len: usize, file: &str) -> Result<(), Fatal> {
+    fn add_archive(
+        &mut self,
+        map: &Arc<Mmap>,
+        start: usize,
+        len: usize,
+        file: &str,
+    ) -> Result<(), Fatal> {
         let data = &map.as_slice()[start..start + len];
-        let archive =
-            Archive::parse(data).map_err(|e| self.error(format!("'{file}': {e}")))?;
+        let archive = Archive::parse(data).map_err(|e| self.error(format!("'{file}': {e}")))?;
         let base = data.as_ptr() as usize;
         for m in archive.members() {
             if m.kind != MemberKind::File {
@@ -384,7 +389,8 @@ impl Reader<'_, '_> {
             && turbonop_macho::is_fat(data)
         {
             for a in archs {
-                let (Ok(start), Ok(len)) = (usize::try_from(a.offset), usize::try_from(a.size)) else {
+                let (Ok(start), Ok(len)) = (usize::try_from(a.offset), usize::try_from(a.size))
+                else {
                     return Err(self.error(format!("'{file}': truncated universal file")));
                 };
                 let Some(slice) = data.get(start..start.saturating_add(len)) else {
@@ -471,11 +477,11 @@ fn run_inner(r: &mut Run<'_>, args: &[String]) -> Result<(), Fatal> {
             format!("lib{base}.a")
         };
         let mut found = None;
-        for dir in c
-            .search_dirs
-            .iter()
-            .map(String::as_str)
-            .chain(["/lib", "/usr/lib", "/usr/local/lib"])
+        for dir in
+            c.search_dirs
+                .iter()
+                .map(String::as_str)
+                .chain(["/lib", "/usr/lib", "/usr/local/lib"])
         {
             let p = append(dir, &name);
             if r.env.cwd.join(&p).exists() {
@@ -651,7 +657,11 @@ fn print_version(r: &mut Run<'_>) {
 fn write_universal(r: &mut Run<'_>, output: &str, plans: Vec<Plan>) -> Result<(), Fatal> {
     let mut slices = Vec::with_capacity(plans.len());
     for plan in plans {
-        let first = plan.members.first().map(|m| m.data().to_vec()).unwrap_or_default();
+        let first = plan
+            .members
+            .first()
+            .map(|m| m.data().to_vec())
+            .unwrap_or_default();
         let (cputype, cpusubtype, is64) = match turbonop_macho::MachO::parse(&first) {
             Ok(o) => (o.header().cputype, o.header().cpusubtype, o.header().is64),
             Err(_) => (0, 0, false),
@@ -705,21 +715,34 @@ mod tests {
     #[test]
     fn options() {
         let w = |s: &[&str]| s.iter().map(|x| (*x).to_string()).collect::<Vec<_>>();
-        let c = parse(w(&["--static", "-o", "x.a", "-lfoo", "-L", "d", "-Ld2", "a.o", "-D"])).unwrap();
+        let c = parse(w(&[
+            "--static", "-o", "x.a", "-lfoo", "-L", "d", "-Ld2", "a.o", "-D",
+        ]))
+        .unwrap();
         assert!(c.static_ && c.deterministic);
         assert_eq!(c.output.as_deref(), Some("x.a"));
         assert_eq!(c.libraries, ["foo"]);
         assert_eq!(c.search_dirs, ["d", "d2"]);
         assert_eq!(c.inputs, ["a.o"]);
-        assert_eq!(parse(w(&["-static", "-bogus"])).unwrap_err(), "unknown argument '-bogus'");
-        assert_eq!(parse(w(&["-static", "-o"])).unwrap_err(), "-o: missing argument");
+        assert_eq!(
+            parse(w(&["-static", "-bogus"])).unwrap_err(),
+            "unknown argument '-bogus'"
+        );
+        assert_eq!(
+            parse(w(&["-static", "-o"])).unwrap_err(),
+            "-o: missing argument"
+        );
         let c = parse(w(&["-static", "--fold=identical", "-j", "3", "a.o"])).unwrap();
         assert_eq!(c.turbolib, ["fold=identical", "threads=3"]);
     }
 
     #[test]
     fn universal_header() {
-        let (head, offsets) = turbonop_macho::fat_layout(&[(7 | 0x0100_0000, 3, 0x310, 3), (0x0100_000C, 0, 0x2A0, 3)]).unwrap();
+        let (head, offsets) = turbonop_macho::fat_layout(&[
+            (7 | 0x0100_0000, 3, 0x310, 3),
+            (0x0100_000C, 0, 0x2A0, 3),
+        ])
+        .unwrap();
         assert_eq!(offsets, [0x30, 0x340]);
         assert_eq!(&head[..8], &[0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 2]);
         assert_eq!(head.len(), 48);

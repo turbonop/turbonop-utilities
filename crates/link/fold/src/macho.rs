@@ -331,6 +331,13 @@ fn environment(o: &Object<'_>) -> (u128, Vec<Command<'static>>) {
     (h128(&h), keep)
 }
 
+/// Whether `y` is one of LLVM's section-start labels (`ltmp0` and on,
+/// arm64's local symbols at each section's start): not an atom's, it stays
+/// at its section's start when atoms are cut.
+fn section_label(y: &Symbol<'_>) -> bool {
+    !y.is_external() && y.name.starts_with(b"ltmp") && y.name[4..].iter().all(u8::is_ascii_digit)
+}
+
 /// The atoms of section `si` (ordinal `si + 1`): each range of offsets
 /// and the symbols in it.
 fn atoms(o: &Object<'_>, si: usize, s: &Section<'_>) -> Vec<(Range<u64>, Vec<u32>)> {
@@ -339,7 +346,7 @@ fn atoms(o: &Object<'_>, si: usize, s: &Section<'_>) -> Vec<(Range<u64>, Vec<u32
         .symbols
         .iter()
         .enumerate()
-        .filter(|(_, y)| y.in_section() && usize::from(y.n_sect) == ordinal)
+        .filter(|(_, y)| y.in_section() && usize::from(y.n_sect) == ordinal && !section_label(y))
         .map(|(i, y)| (y.n_value.wrapping_sub(s.addr), i as u32))
         .collect();
     syms.sort_unstable();
@@ -401,7 +408,11 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     let defs_of = |o: &Object<'_>| -> Vec<(Vec<u8>, Option<usize>)> {
         o.symbols
             .iter()
-            .filter(|y| y.is_external() && !y.is_undefined() && y.n_type & N_TYPE != turbonop_macho_object::N_INDR)
+            .filter(|y| {
+                y.is_external()
+                    && !y.is_undefined()
+                    && y.n_type & N_TYPE != turbonop_macho_object::N_INDR
+            })
             .map(|y| (y.name.to_vec(), None))
             .chain(
                 o.symbols
@@ -483,7 +494,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             .position(|s| a >= s.addr && a - s.addr < s.size().max(1))
             .map(|i| (i, a - sections[i].addr))
     };
-    let mut block = |units: &mut Vec<Unit>, k: usize, why: &'static str| {
+    let block = |units: &mut Vec<Unit>, k: usize, why: &'static str| {
         if units[k].blocked.is_none() {
             units[k].blocked = Some(why);
         }
@@ -494,7 +505,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     // Every relocation: which unit its place is in, and what it reaches.
     for (si, s) in sections.iter().enumerate() {
         let is_unwind = Some(si) == p.unwind_section;
-        let debug = s.is_debug();
+        let debug = s.segment_name() == b"__DWARF";
         for fx in reloc::fixups(cputype, &s.relocations) {
             let first = s.relocations[fx.start];
             let place = u64::from(first.address);
@@ -551,7 +562,8 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 if !reloc::names_section(cputype, &r) {
                     continue;
                 }
-                let Some(addr) = turbonop_macho_object::reloc::local_address(cputype, endian, s, ri)
+                let Some(addr) =
+                    turbonop_macho_object::reloc::local_address(cputype, endian, s, ri)
                 else {
                     opaque.insert(r.symbolnum as usize - 1);
                     continue;
@@ -562,13 +574,13 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 let Some(t) = unit_at(&units, ts, toff) else {
                     continue;
                 };
-                if debug {
-                    units[t].debug = true;
-                } else if is_unwind && place % UNWIND_ENTRY == 0 && fx.len() == 1 {
+                if is_unwind && place % UNWIND_ENTRY == 0 && fx.len() == 1 {
                     // An unwind entry's function: the unit's own.
                     if toff == units[t].range.start || units[t].range.contains(&toff) {
                         units[t].unwind.push(place);
                     }
+                } else if debug {
+                    units[t].debug = true;
                 } else if owner != Some(t) {
                     block(&mut units, t, "reached from outside by a local relocation");
                 }
@@ -620,7 +632,8 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         if !(s.segment_name() == b"__TEXT" && s.name() == b"__eh_frame") {
             continue;
         }
-        let Some(ptrs) = turbonop_macho_object::ehframe::pointers(s.bytes().unwrap_or(&[]), true, endian)
+        let Some(ptrs) =
+            turbonop_macho_object::ehframe::pointers(s.bytes().unwrap_or(&[]), true, endian)
         else {
             for k in 0..units.len() {
                 block(&mut units, k, "an __eh_frame that doesn't decode");
@@ -642,10 +655,17 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                     .map(|b| i64::from_le_bytes(b.try_into().unwrap_or([0; 8]))),
                 _ => None,
             };
-            let covered = s.relocations.iter().any(|r| u64::from(r.address) == ptr.offset);
+            let covered = s
+                .relocations
+                .iter()
+                .any(|r| u64::from(r.address) == ptr.offset as u64);
             if covered {
                 // A relocated pc_begin: its target by its relocation.
-                for r in s.relocations.iter().filter(|r| u64::from(r.address) == ptr.offset) {
+                for r in s
+                    .relocations
+                    .iter()
+                    .filter(|r| u64::from(r.address) == ptr.offset as u64)
+                {
                     if r.external
                         && let Some(Some(t)) = sym_unit.get(r.symbolnum as usize)
                     {
@@ -657,7 +677,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             let Some(raw) = raw else { continue };
             let target = s
                 .addr
-                .wrapping_add(ptr.offset)
+                .wrapping_add(ptr.offset as u64)
                 .wrapping_add(raw as u64);
             if let Some((ts, toff)) = section_of_addr(target)
                 && let Some(t) = unit_at(&units, ts, toff)
@@ -710,7 +730,12 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         for &i in &rels {
             let r = s.relocations[i];
             h.u64(u64::from(r.address) - u.range.start);
-            h.u64(u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16 | u64::from(r.external) << 17);
+            h.u64(
+                u64::from(r.kind)
+                    | u64::from(r.length) << 8
+                    | u64::from(r.pcrel) << 16
+                    | u64::from(r.external) << 17,
+            );
             if r.external {
                 match o.symbols.get(r.symbolnum as usize) {
                     Some(y) if y.is_external() => h.bytes(&y.name),
@@ -740,7 +765,11 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                     h.u64(start.wrapping_sub(s.addr).wrapping_sub(u.range.start));
                     h.bytes(&entry[8..16]);
                 }
-                for r in us.relocations.iter().filter(|r| u64::from(r.address) == e as u64 + 16) {
+                for r in us
+                    .relocations
+                    .iter()
+                    .filter(|r| u64::from(r.address) == e as u64 + 16)
+                {
                     if let Some(y) = o.symbols.get(r.symbolnum as usize) {
                         h.bytes(&y.name);
                     }
@@ -910,11 +939,20 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     // Where each moved name went.
     let mut name_to: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
     for copies in by_hash.values() {
-        let live: Vec<(usize, usize)> = copies.iter().copied().filter(|&(m, k)| folds[m][k]).collect();
+        let live: Vec<(usize, usize)> = copies
+            .iter()
+            .copied()
+            .filter(|&(m, k)| folds[m][k])
+            .collect();
         if live.len() < 2 {
             continue;
         }
-        let givers: Vec<usize> = live.iter().map(|c| c.0).collect::<BTreeSet<_>>().into_iter().collect();
+        let givers: Vec<usize> = live
+            .iter()
+            .map(|c| c.0)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
         let env = parsed[live[0].0].env;
         let s = *synth_of.entry((givers.clone(), env)).or_insert_with(|| {
             synth.push(Synth {
@@ -952,7 +990,10 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     }
     let mut synth: Vec<Synth> = {
         let mut slots: Vec<Option<Synth>> = synth.into_iter().map(Some).collect();
-        order.iter().map(|&o| slots[o].take().expect("each once")).collect()
+        order
+            .iter()
+            .map(|&o| slots[o].take().expect("each once"))
+            .collect()
     };
     for v in moved_to.values_mut() {
         *v = renum[*v];
@@ -978,7 +1019,9 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     });
     let rewritten: Vec<Option<Result<(Vec<u8>, usize, u64), String>>> =
         turbonop_par::map_range(parsed.len(), 1, |m| {
-            let gone: Vec<usize> = (0..parsed[m].units.len()).filter(|&k| folds[m][k]).collect();
+            let gone: Vec<usize> = (0..parsed[m].units.len())
+                .filter(|&k| folds[m][k])
+                .collect();
             if gone.is_empty() {
                 return None;
             }
@@ -998,7 +1041,10 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                 });
             }
             Err(e) => {
-                *report.kept_whole.entry(format!("a synthesized member: {e}")).or_default() += 1;
+                *report
+                    .kept_whole
+                    .entry(format!("a synthesized member: {e}"))
+                    .or_default() += 1;
                 failed_synth = true;
             }
         }
@@ -1064,9 +1110,16 @@ fn build_synth(
     let mut by_name: BTreeMap<Vec<u8>, u32> = BTreeMap::new();
     let mut anchors_needed: BTreeSet<usize> = BTreeSet::new();
     // (Relocations per section, with old symbol references to remap.)
-    let mut unwind: Vec<(u64 /*text addr placeholder*/, usize /*section*/, Vec<u8>, Option<Vec<u8>>)> =
-        Vec::new();
-    let mut undefined = |symbols: &mut Vec<Symbol<'static>>, by_name: &mut BTreeMap<Vec<u8>, u32>, n: &[u8]| -> u32 {
+    let mut unwind: Vec<(
+        u64,   /*text addr placeholder*/
+        usize, /*section*/
+        Vec<u8>,
+        Option<Vec<u8>>,
+    )> = Vec::new();
+    let undefined = |symbols: &mut Vec<Symbol<'static>>,
+                     by_name: &mut BTreeMap<Vec<u8>, u32>,
+                     n: &[u8]|
+     -> u32 {
         if let Some(&i) = by_name.get(n) {
             return i;
         }
@@ -1189,7 +1242,9 @@ fn build_synth(
                     }
                     undefined(&mut symbols, &mut by_name, &y.name)
                 } else {
-                    *p.syms.get(&r.symbolnum).ok_or("a local symbol outside the unit")?
+                    *p.syms
+                        .get(&r.symbolnum)
+                        .ok_or("a local symbol outside the unit")?
                 };
             }
             relocs[p.section].push(r);
@@ -1199,7 +1254,10 @@ fn build_synth(
             let b = us.bytes().unwrap_or(&[]);
             for &e in &u.unwind {
                 let e = e as usize;
-                let mut entry = b.get(e..e + 32).ok_or("an unwind entry past its section")?.to_vec();
+                let mut entry = b
+                    .get(e..e + 32)
+                    .ok_or("an unwind entry past its section")?
+                    .to_vec();
                 let start = u64::from_le_bytes(entry[..8].try_into().unwrap_or([0; 8]));
                 let off = start.wrapping_sub(src.addr) - u.range.start + p.offset;
                 put_u64(&mut entry, 0, off);
@@ -1212,7 +1270,10 @@ fn build_synth(
             }
         }
     }
-    let anchor_names: Vec<Vec<u8>> = anchors_needed.iter().map(|&t| synth[t].anchor.clone()).collect();
+    let anchor_names: Vec<Vec<u8>> = anchors_needed
+        .iter()
+        .map(|&t| synth[t].anchor.clone())
+        .collect();
     for a in &anchor_names {
         undefined(&mut symbols, &mut by_name, a);
     }
@@ -1235,7 +1296,9 @@ fn build_synth(
             .and_then(|ui| base.section(ui))
             .or_else(|| {
                 s.units.iter().find_map(|&(m, _)| {
-                    parsed[m].unwind_section.and_then(|ui| parsed[m].obj.as_ref()?.section(ui))
+                    parsed[m]
+                        .unwind_section
+                        .and_then(|ui| parsed[m].obj.as_ref()?.section(ui))
                 })
             })
             .ok_or("no unwind section to copy")?;
@@ -1368,24 +1431,30 @@ fn rewrite_giver(
         .map(|&k| {
             let u = &p.units[k];
             let a = o.section(u.section).map_or(0, |s| s.addr);
-            (u.section, u.range.clone(), a + u.range.start..a + u.range.end)
+            (
+                u.section,
+                u.range.clone(),
+                a + u.range.start..a + u.range.end,
+            )
         })
         .collect();
     let in_gone = |a: u64| ranges.iter().any(|(_, _, r)| r.contains(&a));
-    let gone_syms: BTreeSet<u32> = gone.iter().flat_map(|&k| p.units[k].symbols.iter().copied()).collect();
+    let gone_syms: BTreeSet<u32> = gone
+        .iter()
+        .flat_map(|&k| p.units[k].symbols.iter().copied())
+        .collect();
     // 1. Debug sections' relocations to what goes: removed, places zeroed.
     let mut tomb = 0;
     let nsec = o.section_count();
     for si in 0..nsec {
         let Some(s) = o.section(si) else { continue };
-        if !s.is_debug() {
+        if s.segment_name() != b"__DWARF" {
             continue;
         }
         let mut drop = BTreeSet::new();
         for (ri, r) in s.relocations.iter().enumerate() {
             let hit = if r.external {
-                gone_syms.contains(&r.symbolnum)
-                    && !o.symbols[r.symbolnum as usize].is_external()
+                gone_syms.contains(&r.symbolnum) && !o.symbols[r.symbolnum as usize].is_external()
             } else if reloc::names_section(cputype, r) {
                 reloc::local_address(cputype, endian, s, ri).is_some_and(in_gone)
             } else {
@@ -1407,7 +1476,10 @@ fn rewrite_giver(
             }
         }
         let s = o.sections_mut().nth(si).ok_or("no section")?;
-        let places: Vec<(u32, u8)> = all.iter().map(|&i| (s.relocations[i].address, s.relocations[i].length)).collect();
+        let places: Vec<(u32, u8)> = all
+            .iter()
+            .map(|&i| (s.relocations[i].address, s.relocations[i].length))
+            .collect();
         if let Contents::Bytes(b) = &mut s.contents {
             let b = b.to_mut();
             for (at, len) in places {
@@ -1445,7 +1517,7 @@ fn rewrite_giver(
             (s, v)
         })
         .collect();
-    let cut = o.cut(&cuts);
+    let cut = o.cut(&cuts).map_err(|e| e.to_string())?;
     if !cut.dangling.is_empty() {
         return Err("a relocation still reaches what was cut".into());
     }
@@ -1455,8 +1527,12 @@ fn rewrite_giver(
     // 3. Symbols: moved names become weak references, locals of the units
     // go; the anchors are added.
     let mut keep = vec![true; o.symbols.len()];
-    for &i in &cut.orphaned_symbols {
+    for &(i, now) in &cut.orphaned_symbols {
         let y = &mut o.symbols[i as usize];
+        if section_label(y) {
+            y.n_value = now;
+            continue;
+        }
         if !gone_syms.contains(&i) {
             return Err("a symbol in a cut range outside the units".into());
         }

@@ -1,6 +1,8 @@
 use super::*;
-use turbonop_macho_object::consts::{CPU_TYPE_ARM64, MH_MAGIC_64, S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS};
 use turbonop_macho_object::Endian;
+use turbonop_macho_object::consts::{
+    CPU_TYPE_ARM64, MH_MAGIC_64, S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS,
+};
 
 const RET: [u8; 4] = [0xC0, 0x03, 0x5F, 0xD6];
 const BL: [u8; 4] = [0x00, 0x00, 0x00, 0x94];
@@ -88,7 +90,11 @@ fn object(strong: &str, inl: &[u8]) -> Vec<u8> {
     };
     let mut o = Object::new(
         header,
-        vec![Command::Segment(seg), Command::Symtab, Command::Dysymtab(Default::default())],
+        vec![
+            Command::Segment(seg),
+            Command::Symtab,
+            Command::Dysymtab(Default::default()),
+        ],
     );
     o.symbols = vec![
         sym(strong, N_SECT | N_EXT, 1, 0, 0),
@@ -105,8 +111,14 @@ fn folds_identical_weak_definitions() {
     let a = object("_a", &inl);
     let b = object("_b", &inl);
     let inputs = [
-        Input { name: b"a.o", data: &a },
-        Input { name: b"b.o", data: &b },
+        Input {
+            name: b"a.o",
+            data: &a,
+        },
+        Input {
+            name: b"b.o",
+            data: &b,
+        },
     ];
     let (out, report) = fold(
         &inputs,
@@ -124,11 +136,18 @@ fn folds_identical_weak_definitions() {
     let s = Object::parse(out[0].data.as_deref().unwrap()).unwrap();
     let def = s.symbols.iter().find(|y| &*y.name == b"_inl").unwrap();
     assert!(def.in_section() && def.n_desc & N_WEAK_DEF != 0);
-    let anchor = s.symbols.iter().find(|y| y.name.starts_with(ANCHOR_PREFIX)).unwrap();
+    let anchor = s
+        .symbols
+        .iter()
+        .find(|y| y.name.starts_with(ANCHOR_PREFIX))
+        .unwrap();
     assert_eq!(anchor.n_type, N_ABS | N_EXT | N_PEXT);
     assert_eq!(s.section(0).unwrap().size(), 8);
     // Its unwind entry, at its function.
-    let cu = s.sections().find(|x| x.name() == b"__compact_unwind").unwrap();
+    let cu = s
+        .sections()
+        .find(|x| x.name() == b"__compact_unwind")
+        .unwrap();
     assert_eq!(cu.size(), 32);
     // Each giver: `_inl` a weak reference, the anchor its first undefined
     // name, and 8 bytes of code and one unwind entry fewer.
@@ -139,7 +158,10 @@ fn folds_identical_weak_definitions() {
         let inl = undef.iter().find(|y| &*y.name == b"_inl").unwrap();
         assert_eq!(inl.n_desc, N_WEAK_REF);
         assert_eq!(g.section(0).unwrap().size(), 8);
-        let cu = g.sections().find(|x| x.name() == b"__compact_unwind").unwrap();
+        let cu = g
+            .sections()
+            .find(|x| x.name() == b"__compact_unwind")
+            .unwrap();
         assert_eq!(cu.size(), 32);
         // The call still names `_inl`.
         let r = g.section(0).unwrap().relocations[0];
@@ -162,8 +184,14 @@ fn different_copies_stay() {
     let a = object("_a", &[RET, RET].concat());
     let b = object("_b", &[RET, RET, RET].concat());
     let inputs = [
-        Input { name: b"a.o", data: &a },
-        Input { name: b"b.o", data: &b },
+        Input {
+            name: b"a.o",
+            data: &a,
+        },
+        Input {
+            name: b"b.o",
+            data: &b,
+        },
     ];
     let (out, report) = fold(
         &inputs,
@@ -174,5 +202,9 @@ fn different_copies_stay() {
     );
     assert_eq!(report.folded, 0);
     assert!(out.iter().all(|o| o.data.is_none()));
-    assert_eq!(report.kept.get("its names have other definitions"), Some(&2));
+    assert_eq!(
+        report.kept.get("no copy in another member"),
+        Some(&2),
+        "{report:?}"
+    );
 }

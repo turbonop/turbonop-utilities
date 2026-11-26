@@ -863,7 +863,11 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
     if plan.thin {
         return Err(run.fatal("a thin archive's members are files of their own: not folded"));
     }
-    if plan.members.iter().any(|m| turbonop_macho::is_macho(m.data())) {
+    if plan
+        .members
+        .iter()
+        .any(|m| turbonop_macho::is_macho(m.data()))
+    {
         return fold_macho(run, archive, plan);
     }
     let options = turbonop_fold::elf::Options {
@@ -993,16 +997,22 @@ fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>
             report.debug_dropped,
         );
         for (why, n) in &report.kept {
-            text.push_str(&format!("turbolib:   {n} copies stayed: {why}
-"));
+            text.push_str(&format!(
+                "turbolib:   {n} copies stayed: {why}
+"
+            ));
         }
         for (why, n) in &report.passed {
-            text.push_str(&format!("turbolib:   {n} members passed through: {why}
-"));
+            text.push_str(&format!(
+                "turbolib:   {n} members passed through: {why}
+"
+            ));
         }
         for (why, n) in &report.kept_whole {
-            text.push_str(&format!("turbolib:   {n} members kept whole: {why}
-"));
+            text.push_str(&format!(
+                "turbolib:   {n} members kept whole: {why}
+"
+            ));
         }
         run.stderr.push_str(&text);
     }
@@ -1061,7 +1071,8 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fa
 pub fn plan_bytes(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<Vec<u8>, Fatal> {
     let thin = plan.thin;
     let (layout, members) = lay_out(run, archive, plan)?;
-    let size = usize::try_from(layout.size()).map_err(|_| run.fatal(format!("{archive}: too large")))?;
+    let size =
+        usize::try_from(layout.size()).map_err(|_| run.fatal(format!("{archive}: too large")))?;
     let mut out = vec![0u8; size];
     layout.write_into(&mut out, |i| if thin { &[] } else { members[i].data() });
     Ok(out)

@@ -1024,6 +1024,7 @@ dependencies = [
  "turbonop-elf-object",
  "turbonop-global-alloc",
  "turbonop-hash",
+ "turbonop-macho-object",
  "turbonop-par",
  "turbonop-pe",
 ]
@@ -1492,6 +1493,8 @@ dependencies = [
  "turbonop-fold",
  "turbonop-global-alloc",
  "turbonop-hash",
+ "turbonop-macho",
+ "turbonop-macho-object",
  "turbonop-par",
  "turbonop-pdb",
  "turbonop-pe",

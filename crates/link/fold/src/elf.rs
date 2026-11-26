@@ -1558,8 +1558,20 @@ fn synthesize<'a>(
         .map_err(|e| e.to_string())
 }
 
-/// Folds the library `inputs`.
+/// Finds a split unit's `.dwo` file: given the skeleton unit's
+/// `DW_AT_comp_dir` and `DW_AT_dwo_name`, its bytes.
+pub type Dwo<'r> = &'r (dyn Fn(&[u8], &[u8]) -> Option<Vec<u8>> + Sync);
+
+/// Folds the library `inputs` (split units' `.dwo` files not read: their
+/// folded functions' synthesized members have no debug information).
 pub fn fold(inputs: &[Input<'_>], options: &Options) -> (Vec<Output>, Report) {
+    fold_with(inputs, options, &|_, _| None)
+}
+
+/// Folds the library `inputs`, reading split units' `.dwo` files with
+/// `dwo`, so that synthesized members describe folded functions of split
+/// units too (unsplit).
+pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<Output>, Report) {
     let mut report = Report {
         members: inputs.len(),
         ..Report::default()
@@ -1730,7 +1742,7 @@ pub fn fold(inputs: &[Input<'_>], options: &Options) -> (Vec<Output>, Report) {
         .collect();
     let sources: Vec<Result<dwarf::Source<'_>, &'static str>> =
         turbonop_par::map(&debug_members, 1, |&m| match parsed[m].obj.as_ref() {
-            Some(obj) => dwarf::Source::new(obj, &parsed[m].owner),
+            Some(obj) => dwarf::Source::new(obj, &parsed[m].owner, dwo),
             None => Err("unread"),
         });
     let source_of: BTreeMap<usize, &Result<dwarf::Source<'_>, &'static str>> =

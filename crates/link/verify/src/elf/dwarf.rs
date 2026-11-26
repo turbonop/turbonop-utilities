@@ -122,6 +122,18 @@ const IN_PROGRESS: u128 = u128::MAX;
 
 impl<'p, 'd> Cu<'p, 'd> {
     fn read(p: &'p Program<'d>, s: Sections<'d>, offset: u64) -> Option<Self> {
+        Self::read_split(p, s, offset, None)
+    }
+
+    /// Reads a unit; a split one (of a `.dwo`, whose sections `s` holds
+    /// with the program's `.debug_addr` and `.debug_line`) with what its
+    /// skeleton gives it.
+    fn read_split(
+        p: &'p Program<'d>,
+        s: Sections<'d>,
+        offset: u64,
+        skeleton: Option<Skeleton<'d>>,
+    ) -> Option<Self> {
         let mut unit = Unit::at(s, offset)?;
         let abbrevs = Abbrevs::parse(s.abbrev, unit.abbrev_offset, s.endian)?;
         let mut r = unit.dies();
@@ -169,12 +181,27 @@ impl<'p, 'd> Cu<'p, 'd> {
         }
         let top = dies.first()?;
         let get = |name| top.attrs.iter().find(|a| a.name == name);
-        let comp_dir = get(DW_AT_COMP_DIR)
+        let mut comp_dir = get(DW_AT_COMP_DIR)
             .and_then(|a| unit.string(&a.value))
             .map_or(&b""[..], |s| s.bytes);
-        let line = get(DW_AT_STMT_LIST)
-            .and_then(|a| unit.uint(&a.value))
-            .and_then(|o| turbonop_dwarf::line_program(&s, o, unit.address_size));
+        let mut stmt = get(DW_AT_STMT_LIST).and_then(|a| unit.uint(&a.value));
+        if let Some(sk) = skeleton {
+            // Its addresses are the skeleton's, its lists' offsets after
+            // the `.dwo` sections' headers, its lines the skeleton's.
+            unit.addr_base = sk.addr_base;
+            unit.low_pc = sk.low_pc;
+            if unit.loclists_base == 0 {
+                unit.loclists_base = 12;
+            }
+            if unit.rnglists_base == 0 {
+                unit.rnglists_base = 12;
+            }
+            if comp_dir.is_empty() {
+                comp_dir = sk.comp_dir;
+            }
+            stmt = sk.stmt;
+        }
+        let line = stmt.and_then(|o| turbonop_dwarf::line_program(&s, o, unit.address_size));
         Some(Cu {
             p,
             unit,
@@ -916,9 +943,100 @@ fn subtree(cu: &mut Cu<'_, '_>, code: &[bool], i: usize, out: &mut dyn Sink) {
     }
 }
 
+/// What a split unit takes from its skeleton (in the program).
+#[derive(Clone, Copy, Debug)]
+struct Skeleton<'d> {
+    addr_base: u64,
+    low_pc: u64,
+    stmt: Option<u64>,
+    comp_dir: &'d [u8],
+}
+
+/// The skeleton unit at `offset`, if it is one: what its split unit
+/// takes, its ID, and where its `.dwo` file is (`DW_AT_dwo_name` in
+/// `DW_AT_comp_dir`).
+fn skeleton<'a>(
+    p: &Program<'a>,
+    s: Sections<'a>,
+    offset: u64,
+) -> Option<(Skeleton<'a>, u64, std::path::PathBuf)> {
+    if Unit::at(s, offset)?.unit_type != DW_UT_SKELETON {
+        return None;
+    }
+    let cu = Cu::read(p, s, offset)?;
+    if cu.unit.unit_type != DW_UT_SKELETON {
+        return None;
+    }
+    let name = cu.string(0, DW_AT_DWO_NAME)?;
+    let stmt = cu
+        .attr(0, DW_AT_STMT_LIST)
+        .and_then(|a| cu.unit.uint(&a.value));
+    let name = std::path::PathBuf::from(String::from_utf8_lossy(name).into_owned());
+    let path = if name.is_absolute() {
+        name
+    } else {
+        std::path::Path::new(&*String::from_utf8_lossy(cu.comp_dir)).join(name)
+    };
+    Some((
+        Skeleton {
+            addr_base: cu.unit.addr_base,
+            low_pc: cu.unit.low_pc,
+            stmt,
+            comp_dir: cu.comp_dir,
+        },
+        cu.unit.dwo_id?,
+        path,
+    ))
+}
+
+/// The split unit of the skeleton at `offset`, from its `.dwo` file
+/// (`dwo`), read with the program's addresses and lines.
+fn read_split_unit(p: &Program<'_>, s: Sections<'_>, offset: u64, dwo: &[u8]) -> UnitOut {
+    let unread = UnitOut {
+        unread: 1,
+        ..UnitOut::default()
+    };
+    let Some((sk, id, _)) = skeleton(p, s, offset) else {
+        return unread;
+    };
+    let Ok(file) = turbonop_elf::ElfFile::parse(dwo) else {
+        return unread;
+    };
+    let mut d = Sections::new(s.endian);
+    d.addr = s.addr;
+    d.line = s.line;
+    d.line_str = s.line_str;
+    for sec in file.sections() {
+        let Some(name) = sec
+            .name
+            .strip_suffix(b".dwo")
+            .and_then(|n| n.strip_prefix(b".debug_"))
+        else {
+            continue;
+        };
+        if !matches!(name, b"line" | b"addr" | b"line_str") {
+            d.set(name, file.section_data(&sec));
+        }
+    }
+    let Some(u) = Unit::iter(d, UnitSection::Info, 0)
+        .find(|u| u.unit_type == DW_UT_SPLIT_COMPILE && u.dwo_id == Some(id))
+    else {
+        return unread;
+    };
+    read_unit_with(p, d, u.offset, Some(sk))
+}
 fn read_unit(p: &Program<'_>, s: Sections<'_>, offset: u64) -> UnitOut {
+    read_unit_with(p, s, offset, None)
+}
+
+fn read_unit_with(
+    p: &Program<'_>,
+    s: Sections<'_>,
+    offset: u64,
+    skeleton: Option<Skeleton<'_>>,
+) -> UnitOut {
     let mut out = UnitOut::default();
-    let Some(mut cu) = Cu::read(p, s, offset) else {
+    let Some(mut cu) = Cu::read_split(p, s, offset, skeleton) else {
         out.unread = 1;
         return out;
     };
@@ -1029,7 +1147,17 @@ fn gather<'a>(p: &Program<'a>, s: Sections<'a>) -> All {
         })
         .map(|u| u.offset)
         .collect();
-    let outs = turbonop_par::map_balanced(&offsets, 4, |&o| read_unit(p, s, o));
+    // Split units' `.dwo` files, read once (where they are as the
+    // skeletons say; a missing one leaves its unit unread).
+    let dwos: Vec<Option<Vec<u8>>> = offsets
+        .iter()
+        .map(|&o| skeleton(p, s, o).and_then(|(_, _, path)| std::fs::read(path).ok()))
+        .collect();
+    let at: Vec<usize> = (0..offsets.len()).collect();
+    let outs = turbonop_par::map_balanced(&at, 4, |&k| match &dwos[k] {
+        Some(d) => read_split_unit(p, s, offsets[k], d),
+        None => read_unit(p, s, offsets[k]),
+    });
     let mut all = All {
         units: offsets.len() as u64,
         ..All::default()

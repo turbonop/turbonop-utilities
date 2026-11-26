@@ -95,14 +95,34 @@ pub(crate) fn headers(a: &Program<'_>, b: &Program<'_>, rep: &mut Report) {
     if sizes(a) != sizes(b) {
         rep.expect("segments of other sizes", String::new);
     }
+    // Debug sections apart: their contents are compared as DWARF, and a
+    // folded program has some the original keeps in `.dwo` files (the
+    // synthesized members' DWARF is unsplit).
+    let debug =
+        |s: &&turbonop_elf::Section<'_>| s.name.starts_with(b".debug_") && s.flags & SHF_ALLOC == 0;
     let sections = |p: &Program<'_>| -> Vec<String> {
         p.sections
             .iter()
             .skip(1)
+            .filter(|s| !debug(s))
             .map(|s| format!("{} type {:#x} flags {:#x}", show(s.name), s.kind, s.flags))
             .collect()
     };
     lists(&sections(a), &sections(b), "sections", rep);
+    let debug_names = |p: &Program<'_>| -> std::collections::BTreeSet<String> {
+        p.sections
+            .iter()
+            .filter(debug)
+            .map(|s| show(s.name))
+            .collect()
+    };
+    let (da, db) = (debug_names(a), debug_names(b));
+    for n in da.difference(&db) {
+        rep.expect("debug sections only in the first program", || n.clone());
+    }
+    for n in db.difference(&da) {
+        rep.expect("debug sections only in the second program", || n.clone());
+    }
     for (x, y) in a.sections.iter().zip(&b.sections) {
         if x.name == y.name && x.size != y.size {
             rep.expect("sections of another size", || {

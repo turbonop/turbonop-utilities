@@ -58,6 +58,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use super::Dwo;
+
 use turbonop_dwarf::consts::*;
 use turbonop_dwarf::ops::{self, Operand};
 use turbonop_dwarf::{Abbrev, Abbrevs, Attr, Reader, Sections, Unit, Value};
@@ -227,9 +229,27 @@ pub(crate) struct Source<'p> {
     secs: Vec<Option<Sec>>,
     /// Each symbol's debug section, if it is one's (a section symbol).
     sym_kind: Vec<Option<Kind>>,
+    /// A split unit's: the member's own `.debug_str` (which its relocations
+    /// name), and its skeleton.
+    obj_str: Option<Vec<u8>>,
+    skeleton: Option<Skeleton>,
     cus: Vec<Cu>,
     /// The root DIEs of each section: (unit, DIE).
     roots: BTreeMap<usize, Vec<(usize, usize)>>,
+}
+
+/// A split unit's skeleton, in the member: what its split unit (in the
+/// `.dwo`) takes from it.
+#[derive(Clone, Debug)]
+struct Skeleton {
+    dwo_id: u64,
+    addr_base: u64,
+    low_pc: Addr,
+    /// Its line table (`DW_AT_stmt_list`).
+    stmt: Option<u64>,
+    /// Its name, directory, and producer, which the split unit may not
+    /// repeat.
+    strings: Vec<(u16, Vec<u8>)>,
 }
 
 /// A DIE's attribute as read: where its value lies in `.debug_info`.
@@ -271,7 +291,7 @@ fn core_endian(e: Endian) -> turbonop_core::Endian {
 impl<'p> Source<'p> {
     /// Reads `obj`'s DWARF. `owner` gives each section's unit, so that only
     /// sections of units get roots.
-    pub(crate) fn new(obj: &'p Object<'p>, owner: &[Option<usize>]) -> R<Self> {
+    pub(crate) fn new(obj: &'p Object<'p>, owner: &[Option<usize>], dwo: Dwo<'_>) -> R<Self> {
         let machine = obj.header.machine;
         let (abs32, abs64) = match machine {
             62 => (10, 1),
@@ -379,18 +399,30 @@ impl<'p> Source<'p> {
             abs64,
             secs,
             sym_kind,
+            obj_str: None,
+            skeleton: None,
             cus: Vec::new(),
             roots: BTreeMap::new(),
         };
         if src.secs[Kind::Info as usize].is_none() {
             return Ok(src);
         }
+        src.split(dwo)?;
         src.read_units(owner)?;
         Ok(src)
     }
 
     fn sec(&self, k: Kind) -> &[u8] {
         self.secs[k as usize].as_ref().map_or(&[], |s| &s.bytes)
+    }
+
+    /// The section a relocation to a string section of kind `k` reads:
+    /// the member's own (a split unit's strings are the `.dwo`'s).
+    fn reloc_str(&self, k: Kind) -> &[u8] {
+        match (&self.obj_str, k) {
+            (Some(s), Kind::Str) => s,
+            _ => self.sec(k),
+        }
     }
 
     fn rels(&self, k: Kind) -> &[Rel] {
@@ -478,6 +510,135 @@ impl<'p> Source<'p> {
         Ok(u)
     }
 
+    /// A split unit (DWARF 5's `-gsplit-dwarf`): reads its skeleton, finds
+    /// its `.dwo` file with `dwo`, and puts the `.dwo`'s sections in place
+    /// of the member's, but for `.debug_addr` and `.debug_line`, which the
+    /// skeleton's unit keeps in the member.
+    fn split(&mut self, dwo: Dwo<'_>) -> R<()> {
+        let dwarf = self.dwarf();
+        let Some(u) = Unit::iter(dwarf, turbonop_dwarf::UnitSection::Info, 0)
+            .find(|u| u.unit_type == DW_UT_SKELETON)
+        else {
+            if Unit::iter(dwarf, turbonop_dwarf::UnitSection::Info, 0).any(|u| {
+                Abbrevs::parse(dwarf.abbrev, u.abbrev_offset, dwarf.endian)
+                    .and_then(|a| read_die(&u, &a, u.dies).ok().map(|(_, t)| t))
+                    .is_some_and(|t| t.iter().any(|a| a.name == DW_AT_GNU_DWO_ID))
+            }) {
+                return Err("GNU's split DWARF 4");
+            }
+            return Ok(());
+        };
+        let abbrevs = Abbrevs::parse(dwarf.abbrev, u.abbrev_offset, dwarf.endian)
+            .ok_or("an abbreviation table that doesn't read")?;
+        let (_, top) = read_die(&u, &abbrevs, u.dies)?;
+        let attrs: Vec<Attr<'_>> = top
+            .iter()
+            .map(|a| Attr {
+                name: a.name,
+                form: a.form,
+                value: a.value,
+            })
+            .collect();
+        let mut unit = u;
+        unit.set_bases(&attrs);
+        let string = |name: u16| {
+            top.iter()
+                .find(|a| a.name == name)
+                .and_then(|a| unit.string(&a.value))
+                .map(|s| s.bytes.to_vec())
+        };
+        let dwo_name = string(DW_AT_DWO_NAME).ok_or("a skeleton without DW_AT_dwo_name")?;
+        let comp_dir = string(DW_AT_COMP_DIR).unwrap_or_default();
+        let mut strings = Vec::new();
+        for n in [DW_AT_NAME, DW_AT_COMP_DIR, DW_AT_PRODUCER] {
+            if let Some(s) = string(n) {
+                strings.push((n, s));
+            }
+        }
+        let probe = Cu {
+            offset: u.offset,
+            version: u.version,
+            address_size: u.address_size,
+            abbrevs: abbrevs.clone(),
+            dies: Vec::new(),
+            low_pc: Addr::Const(0),
+            addr_base: unit.addr_base,
+            str_offsets_base: unit.str_offsets_base,
+            rnglists_base: unit.rnglists_base,
+            loclists_base: unit.loclists_base,
+            line: None,
+            header: LineHeader::default(),
+            seqs: Vec::new(),
+        };
+        let low_pc = match top.iter().find(|a| a.name == DW_AT_LOW_PC) {
+            Some(a) => self.attr_addr(&probe, a)?,
+            None => Addr::Const(0),
+        };
+        let stmt = top
+            .iter()
+            .find(|a| a.name == DW_AT_STMT_LIST)
+            .and_then(|a| unit.uint(&a.value));
+        let skeleton = Skeleton {
+            dwo_id: u.dwo_id.ok_or("a skeleton without its ID")?,
+            addr_base: unit.addr_base,
+            low_pc,
+            stmt,
+            strings,
+        };
+        let bytes = dwo(&comp_dir, &dwo_name).ok_or("its .dwo file isn't found")?;
+        let file = Object::parse(&bytes).map_err(|_| "its .dwo file doesn't read")?;
+        let mut found = [false; KINDS];
+        let mut taken: Vec<(Kind, Vec<u8>)> = Vec::new();
+        for s in &file.sections {
+            let Some(base) = s.name.strip_suffix(b".dwo") else {
+                continue;
+            };
+            let Some(k) = Kind::of(base) else { continue };
+            if !matches!(
+                k,
+                Kind::Info
+                    | Kind::Abbrev
+                    | Kind::Str
+                    | Kind::StrOffsets
+                    | Kind::Loclists
+                    | Kind::Rnglists
+            ) {
+                continue;
+            }
+            if s.flags & shf::COMPRESSED != 0 {
+                return Err("compressed debug sections");
+            }
+            if found[k as usize] {
+                return Err("two debug sections of one kind");
+            }
+            found[k as usize] = true;
+            if let Data::Bytes(b) = &s.data {
+                taken.push((k, b.to_vec()));
+            }
+        }
+        if !found[Kind::Info as usize] {
+            return Err("a .dwo file without .debug_info.dwo");
+        }
+        self.obj_str = Some(self.sec(Kind::Str).to_vec());
+        for k in [
+            Kind::Info,
+            Kind::Abbrev,
+            Kind::Str,
+            Kind::StrOffsets,
+            Kind::Loclists,
+            Kind::Rnglists,
+        ] {
+            self.secs[k as usize] = None;
+        }
+        for (k, b) in taken {
+            self.secs[k as usize] = Some(Sec {
+                bytes: b,
+                rels: Vec::new(),
+            });
+        }
+        self.skeleton = Some(skeleton);
+        Ok(())
+    }
     fn read_units(&mut self, owner: &[Option<usize>]) -> R<()> {
         let dwarf = self.dwarf();
         let units: Vec<Unit<'_>> =
@@ -487,11 +648,22 @@ impl<'p> Source<'p> {
             if u.dwarf64 {
                 return Err("64-bit DWARF");
             }
-            if u.unit_type != DW_UT_COMPILE && u.unit_type != DW_UT_PARTIAL {
-                if u.unit_type == DW_UT_SKELETON || u.unit_type == DW_UT_SPLIT_COMPILE {
-                    return Err("split DWARF");
+            let skeleton = self.skeleton.as_ref();
+            match skeleton {
+                // A split unit: the one the skeleton names.
+                Some(sk) => {
+                    if u.unit_type != DW_UT_SPLIT_COMPILE || u.dwo_id != Some(sk.dwo_id) {
+                        continue;
+                    }
                 }
-                continue;
+                None => {
+                    if u.unit_type != DW_UT_COMPILE && u.unit_type != DW_UT_PARTIAL {
+                        if u.unit_type == DW_UT_SKELETON || u.unit_type == DW_UT_SPLIT_COMPILE {
+                            return Err("split DWARF");
+                        }
+                        continue;
+                    }
+                }
             }
             let abbrevs = Abbrevs::parse(dwarf.abbrev, u.abbrev_offset, dwarf.endian)
                 .ok_or("an abbreviation table that doesn't read")?;
@@ -526,7 +698,20 @@ impl<'p> Source<'p> {
             cu.str_offsets_base = unit.str_offsets_base;
             cu.rnglists_base = unit.rnglists_base;
             cu.loclists_base = unit.loclists_base;
-            if top
+            if let Some(sk) = skeleton {
+                // A split unit's addresses are the skeleton's, its lists'
+                // offsets after the `.dwo` sections' headers.
+                cu.addr_base = sk.addr_base;
+                unit.addr_base = sk.addr_base;
+                if cu.loclists_base == 0 {
+                    cu.loclists_base = 12;
+                    unit.loclists_base = 12;
+                }
+                if cu.rnglists_base == 0 {
+                    cu.rnglists_base = 12;
+                    unit.rnglists_base = 12;
+                }
+            } else if top
                 .iter()
                 .any(|a| a.name == DW_AT_GNU_DWO_ID || a.name == DW_AT_DWO_NAME)
             {
@@ -542,11 +727,15 @@ impl<'p> Source<'p> {
         }
         let mut out = Vec::new();
         for (mut cu, unit, low, stmt) in cus {
+            let mut line = stmt.and_then(|a| unit.uint(&a.value));
             if let Some(a) = low {
                 cu.low_pc = self.attr_addr(&cu, &a)?;
             }
-            if let Some(a) = stmt {
-                let off = unit.uint(&a.value).ok_or("a bad DW_AT_stmt_list")?;
+            if let Some(sk) = &self.skeleton {
+                cu.low_pc = sk.low_pc;
+                line = sk.stmt;
+            }
+            if let Some(off) = line {
                 let (line, header, seqs) = self.sequences(off, cu.address_size)?;
                 cu.line = Some(line);
                 cu.header = header;
@@ -1518,7 +1707,7 @@ impl<'s, 'p> Builder<'s, 'p> {
                     let off = src.symbols[r.sym as usize]
                         .value
                         .wrapping_add(r.addend as u64);
-                    let s = Reader::new(src.sec(sk), off as usize, core_endian(src.endian))
+                    let s = Reader::new(src.reloc_str(sk), off as usize, core_endian(src.endian))
                         .cstr()
                         .ok_or("a string past its section")?;
                     let (table, o) = if sk == Kind::Str {
@@ -2260,9 +2449,23 @@ impl<'s, 'p> Builder<'s, 'p> {
                 | DW_AT_MACRO_INFO
                 | DW_AT_SIBLING
                 | DW_AT_GNU_PUBNAMES
-                | DW_AT_GNU_PUBTYPES => {}
+                | DW_AT_GNU_PUBTYPES
+                | DW_AT_DWO_NAME
+                | DW_AT_GNU_DWO_NAME
+                | DW_AT_GNU_DWO_ID => {}
                 DW_AT_STMT_LIST => stmt = true,
                 _ => self.attribute(cu, unit, 0, a, &attrs, &mut shape, &mut body)?,
+            }
+        }
+        // A split unit's: what its skeleton says that it doesn't.
+        if let Some(sk) = &self.src.skeleton {
+            stmt |= sk.stmt.is_some();
+            for (name, s) in &sk.strings {
+                if !attrs.iter().any(|a| a.name == *name) {
+                    shape.attrs.push((*name, DW_FORM_STRING, 0));
+                    body.bytes.extend_from_slice(s);
+                    body.bytes.push(0);
+                }
             }
         }
         // The new unit's code.

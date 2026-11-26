@@ -26,6 +26,7 @@ configs=("$@")
 if [ ${#configs[@]} -eq 0 ]; then
   configs=()
   for c in gcc clang; do for v in 4 5; do for o in O0 O2; do configs+=("$c-$v-$o"); done; done; done
+  configs+=(gcc-5-O0-split gcc-5-O2-split clang-5-O0-split clang-5-O2-split)
 fi
 linkers=${LINKERS:-"bfd gold lld mold"}
 failed=0
@@ -82,7 +83,8 @@ for config in "${configs[@]}"; do
       check "$config $l: gdb" 0
     elif cmp -s <(grep -v '^File ' "$d/gdb-lib-$l.txt" | sort -u) \
       <(grep -v '^File ' "$d/gdb-folded-$l.txt" | sort -u); then
-      # GNU ld gives a discarded copy's DWARF the kept copy's addresses, so
+      # GNU ld gives a discarded copy's DWARF the kept copy's addresses, and
+      # a split unit's .dwo keeps a discarded copy's DIEs whatever the linker, so
       # the original program describes such a function once per copy
       # (`info functions` lists it under each file); the folded one once.
       echo "ok    $config $l: gdb (but for $(grep -c '^<' "$d/gdb-$l.diff") lines of descriptions of discarded copies)"

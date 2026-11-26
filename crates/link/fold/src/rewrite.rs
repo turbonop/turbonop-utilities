@@ -1435,24 +1435,28 @@ fn strip<'a>(
             }
         }
     }
-    let now = object.symbol_table_indices();
-    tables::renumber(&mut object, &fields, &renumbering, &|i| {
-        let id = before
-            .binary_search(&i)
-            .expect("a table's entry names a symbol's primary record");
-        now[id]
-    });
-    for a in anchors {
-        if !defaults.contains_key(*a) {
-            object.push_symbol(Symbol::new(
+    // The anchors come before every external and weak external record (see
+    // `anchors_first`).
+    let first = anchors_first(&object);
+    for (k, a) in anchors.iter().enumerate() {
+        object.insert_symbol(
+            SymbolId((first + k) as u32),
+            Symbol::new(
                 Name::new(a.to_vec()),
                 0,
                 SectionNumber::Undefined,
                 0,
                 storage_class::EXTERNAL,
-            ));
-        }
+            ),
+        );
     }
+    let now = object.symbol_table_indices();
+    tables::renumber(&mut object, &fields, &renumbering, &|i| {
+        let id = before
+            .binary_search(&i)
+            .expect("a table's entry names a symbol's primary record");
+        now[if id >= first { id + anchors.len() } else { id }]
+    });
     if let Some(edit) = edit {
         // Its types and symbols, renumbered into the shared types, and a
         // reference to the precompiled-types member, as a /Yu object's.
@@ -1484,6 +1488,33 @@ fn strip<'a>(
     object
         .write_skeleton(HOLE)
         .expect("a rewritten member fits its format")
+}
+
+/// Where a member that gave up copies gets its references to the anchors:
+/// before its first external or weak external record, so after only the
+/// static records (`.file`, `@comp.id`, `@feat.00`, section symbols) that
+/// precede it.
+///
+/// This keeps link.exe's load order. A library sweep goes through the
+/// undefined names in the order they became undefined, a loaded member's
+/// in the order of its records (measured: a member's anchors were found in
+/// its symbol table's order, and then the names of the members loaded after
+/// it). With the anchors last, a sweep reached a member's moved names (still
+/// undefined, the synthesized members not yet loaded) before its anchors,
+/// and some sweeps ended early once an anchored member loaded: the members
+/// they would have gone on to load came in a later pass, in another order,
+/// and two of `llvm-nm`'s 55 C++ initializers moved. (Reproduced with five
+/// of `LLVMObject.lib`'s members and one synthesized member; which records
+/// end the sweep, and why, isn't known: hand-made objects of the same
+/// shape didn't.) With the anchors first, the synthesized members load
+/// before the sweep reaches the moved names, and `llvm-nm` loads its 637
+/// members in the original order.
+fn anchors_first(object: &Object<'_>) -> usize {
+    object
+        .symbols
+        .iter()
+        .position(|s| s.is_external() || s.storage_class == storage_class::WEAK_EXTERNAL)
+        .unwrap_or(object.symbols.len())
 }
 
 /// Rewrites a changed member's `.chks64` (one 8-byte checksum for each

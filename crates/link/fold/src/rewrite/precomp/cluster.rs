@@ -38,7 +38,8 @@
 //! computation, until no move lowers it (or a bound on sweeps). The
 //! lowest-scoring result wins, fewer groups on a tie. Everything is in
 //! integers and in member order, so the result is the same for any number
-//! of threads.
+//! of threads. Then whole groups are merged, the best merge each time,
+//! while that lowers the score (and members move again).
 
 /// The records a set of members holds alike: their bytes, and the members
 /// (positions among the machine's sharers, ascending, at least two).
@@ -527,6 +528,33 @@ pub(super) fn choose(
         }
         let mut st = State::new(classes, closures, min, weight, t, start(n, closures, t));
         st.descend();
+        // Whole groups merged while that lowers the score (a member's move
+        // can't do it), each time the best merge.
+        loop {
+            let score = st.cost().score();
+            let mut best: Option<(u128, Vec<u32>)> = None;
+            for a in 0..t as u32 {
+                for b in a + 1..t as u32 {
+                    if !st.group.contains(&b) || !st.group.contains(&a) {
+                        continue;
+                    }
+                    let merged: Vec<u32> = st
+                        .group
+                        .iter()
+                        .map(|&g| if g == b { a } else { g })
+                        .collect();
+                    let c = State::new(classes, closures, min, weight, t, merged.clone())
+                        .cost()
+                        .score();
+                    if c < score && best.as_ref().is_none_or(|x| c < x.0) {
+                        best = Some((c, merged));
+                    }
+                }
+            }
+            let Some((_, merged)) = best else { break };
+            st = State::new(classes, closures, min, weight, t, merged);
+            st.descend();
+        }
         let cost = st.cost();
         tried.push((t as u32, cost));
         if chosen

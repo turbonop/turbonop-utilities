@@ -121,35 +121,65 @@ fn check_pch(data: &[u8], name: &[u8]) -> (Vec<u8>, u32, usize) {
 /// it is name the same records everywhere. The number of members that
 /// share.
 fn check_members(names: &[&str], datas: &[Vec<u8>], pch: Option<&str>, options: Options) -> usize {
+    check_members_in(names, datas, pch, options, 1)
+}
+
+/// As [`check_members`], with `pchs` precompiled-types members made.
+fn check_members_in(
+    names: &[&str],
+    datas: &[Vec<u8>],
+    pch: Option<&str>,
+    options: Options,
+    want: usize,
+) -> usize {
     let out = run(names, datas, options);
     let made = pchs(&out);
-    assert_eq!(made.len(), 1, "{:?}", out.report.types);
-    let pch_name = out
+    assert_eq!(made.len(), want, "{:?}", out.report.types);
+    // Each one's name, symbol, signature, and records.
+    let facts: Vec<(Vec<u8>, Vec<u8>, u32, usize)> = out
         .members
         .iter()
-        .find(|m| m.name.starts_with(b"turbolib-types-"))
-        .unwrap()
-        .name
-        .to_vec();
-    let (symbol, signature, count) = check_pch(made[0], &pch_name);
+        .filter(|m| m.synthesized && m.name.starts_with(b"turbolib-types-"))
+        .map(|m| {
+            let (symbol, signature, count) = check_pch(&m.data, &m.name);
+            (m.name.to_vec(), symbol, signature, count)
+        })
+        .collect();
+    let mut signatures: Vec<u32> = facts.iter().map(|f| f.2).collect();
+    signatures.sort_unstable();
+    signatures.dedup();
+    assert_eq!(
+        signatures.len(),
+        facts.len(),
+        "distinct PCHs, distinct signatures"
+    );
     let pch_data = pch.map(fixture);
     let olds = pch_streams(pch_data.as_deref(), &[]);
     let news = pch_streams(None, &made);
-    let shared: HashSet<u128> = news[0].hashes.iter().copied().collect();
     let mut sharing = 0;
     for (k, m) in originals(&out).iter().enumerate() {
         assert_eq!(m.name.as_ref(), names[k].as_bytes());
         let before = object(&datas[k]);
         let after = object(&m.data);
-        let shares = first_record(&after)
-            .is_some_and(|(kind, body)| kind == leaf::LF_PRECOMP && le32(&body, 8) == signature);
-        if !shares {
+        let named = first_record(&after).and_then(|(kind, body)| {
+            (kind == leaf::LF_PRECOMP)
+                .then(|| facts.iter().position(|f| f.2 == le32(&body, 8)))
+                .flatten()
+        });
+        let Some(which) = named else {
             // Too little shared to pay for naming the PCH: as it was.
             if options.fold == crate::rewrite::Fold::None {
                 assert_eq!(m.data.as_ref(), &datas[k][..], "{}", names[k]);
             }
             continue;
-        }
+        };
+        let (pch_name, symbol, _, count) = facts[which].clone();
+        let shared: HashSet<u128> = pch_of(&after, &news)
+            .expect("its PCH")
+            .hashes
+            .iter()
+            .copied()
+            .collect();
         sharing += 1;
         let (_, body) = first_record(&after).unwrap();
         assert_eq!((le32(&body, 0), le32(&body, 4)), (FIRST, count as u32));
@@ -599,5 +629,94 @@ fn section_checksums_stay_for_the_sections_that_do() {
             }
             assert!(kept > 0);
         }
+    }
+}
+
+fn clustered(max: u32, weight: u64) -> Options {
+    Options {
+        precomp: Precomp::Clustered {
+            min: 2,
+            max: Some(max),
+            weight,
+        },
+        ..LIBRARY
+    }
+}
+
+/// Under `--precomp=clustered`, each member that shares names one of the
+/// precompiled-types members (each with its own signature) and reads the
+/// same through it; with reads weighed heavily, the fixtures (no member
+/// loads another) are split into more than one group.
+#[test]
+fn clustered_members_read_the_same_through_their_groups_types() {
+    let names = [
+        "msvc-a.obj",
+        "msvc-b.obj",
+        "msvc-c.obj",
+        "msvc-d.obj",
+        "msvc-pch.obj",
+        "msvc-u1.obj",
+        "msvc-u2.obj",
+        "clang-a.obj",
+        "clang-b.obj",
+        "clang-c.obj",
+        "clang-d.obj",
+    ];
+    let d = datas(&names);
+    let mut most = 0;
+    for weight in [1, 16, 1000] {
+        for fold in [crate::rewrite::Fold::None, crate::rewrite::Fold::Identical] {
+            let options = Options {
+                fold,
+                ..clustered(4, weight)
+            };
+            let out = run(&names, &d, options);
+            let made = out.report.types.pchs as usize;
+            assert_eq!(out.report.types.clusters.len(), 1);
+            let c = &out.report.types.clusters[0];
+            assert!(c.groups as usize >= made && c.groups <= 4, "{c:?}");
+            assert!(c.cost.score() <= c.library.score(), "{c:?}");
+            let n = check_members_in(&names, &d, Some("msvc-pch.obj"), options, made);
+            assert_eq!(n as u64, out.report.types.sharing);
+            most = most.max(made);
+        }
+    }
+    assert!(most > 1, "the fixtures never split");
+    // One group is --precomp=library's output.
+    let one = run(&names, &d, clustered(1, 1));
+    let library = run(&names, &d, LIBRARY);
+    if one.report.types.clusters[0].out == 0 {
+        assert_eq!(one.members.len(), library.members.len());
+        for (x, y) in one.members.iter().zip(&library.members) {
+            assert_eq!(x.data, y.data);
+        }
+    }
+}
+
+/// The groups, and so the output, are the same every time (across thread
+/// counts: checked on the corpus, as the thread count is the process's).
+#[test]
+fn clustered_output_is_the_same_every_time() {
+    let names = [
+        "msvc-a.obj",
+        "msvc-b.obj",
+        "msvc-c.obj",
+        "msvc-d.obj",
+        "clang-a.obj",
+        "clang-b.obj",
+        "clang-c.obj",
+        "clang-d.obj",
+    ];
+    let d = datas(&names);
+    let options = Options {
+        fold: crate::rewrite::Fold::Identical,
+        ..clustered(4, 1000)
+    };
+    let a = run(&names, &d, options);
+    let b = run(&names, &d, options);
+    assert_eq!(a.members.len(), b.members.len());
+    for (x, y) in a.members.iter().zip(&b.members) {
+        assert_eq!(x.name, y.name);
+        assert_eq!(x.data, y.data);
     }
 }

@@ -658,9 +658,13 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     );
     let plan = plan.map(|(plan, time)| {
         let t = &mut report.types;
-        t.pchs = plan.pchs.len() as u64;
-        t.shared_records = plan.pchs.iter().map(|p| u64::from(p.count)).sum();
-        t.shared_bytes = plan.pchs.iter().map(|p| p.records.len() as u64).sum();
+        // (Two groups with the same shared records have one member.)
+        let mut seen: turbonop_hash::Set<&[u8]> = turbonop_hash::Set::default();
+        for p in plan.pchs.iter().filter(|p| seen.insert(&p.name)) {
+            t.pchs += 1;
+            t.shared_records += u64::from(p.count);
+            t.shared_bytes += p.records.len() as u64;
+        }
         t.candidates = plan
             .members
             .iter()
@@ -856,8 +860,12 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     let pchs: Vec<OutputMember<'a>> = plan
         .as_ref()
         .map(|plan| {
+            let mut seen: turbonop_hash::Set<&[u8]> = turbonop_hash::Set::default();
             plan.pchs
                 .iter()
+                // Two groups whose shared records are the same have the same
+                // member (name, signature, and symbol): written once.
+                .filter(|pch| seen.insert(pch.name.as_slice()))
                 .map(|pch| (pch, precomp::Plan::member(pch).bytes))
                 // One the library already has (compacted again): it stays
                 // where it is.

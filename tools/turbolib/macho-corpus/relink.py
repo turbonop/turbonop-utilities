@@ -101,6 +101,10 @@ def functions(image):
         # is named by whatever symbol precedes it, which the layout decides.)
         branch = re.match(r"(call[a-z]*|j[a-z]+|bl?|b\.[a-z]+|cbn?z|tbn?z)\s", ins)
         targets = re.findall(r"<([^>]+)>", ins) if branch else []
+        # (A branch to a stub has no name of its own: objdump names it by
+        # the closest symbol below, an absolute one such as an anchor or
+        # dyld_stub_binder, which says nothing about the target.)
+        targets = [t for t in targets if not t.startswith("~turbolib.anchor.") and t != "dyld_stub_binder"]
         ins = re.sub(r"<[^>]+>", "", ins)
         body.append((ADDR.sub("N", ins).strip(), tuple(t.split("+")[0] for t in targets)))
     if name is not None:

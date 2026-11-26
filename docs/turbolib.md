@@ -27,7 +27,7 @@ items leave TODO.md as they ship.
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links). Not yet: 3.5, `clustered`. |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
-| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; 4.24× GNU `ar`'s time on the 20 largest libraries (a noisy measurement). Not yet: GNU's split DWARF 4, `select-any` and `--locals` for ELF, the clang corpus. |
+| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; GNU's split DWARF 4 too; initializer entries in groups kept from folding; the original members loaded in the original order by all four linkers; the clang corpus (relib byte for byte, folded 2.4% smaller, verified, relinked; see 6.6); every differing description proven another unit's copy; 0.80× GNU `ar`'s time folding the 20 largest libraries (a noisy measurement). Not yet: `select-any` and `--locals` for ELF. |
 | 7 Mach-O | Not yet. |
 
 ### Picking this up elsewhere
@@ -1462,6 +1462,44 @@ has a `DW_AT_type` in one unit and not the other. A witness links more
 than the original (that unit's object and what it pulls in) and keeps
 that unit's copies of other functions too; only the subprograms it was
 made for are looked at.
+
+**Folding's speed.** `--stats` now gives each phase's time (reading,
+choosing, rewriting, reading DWARF, synthesizing). On the gcc build's
+libraries they showed two places where the work grew with the square of
+a member's size, both in huge members (`libclangSema.a`'s): each unit's
+symbols were found by scanning every symbol of its member, once while
+hashing and again in each synthesized member it went to; and each
+synthesized member's compile unit walked every DIE of its source unit
+(marks, files, children, offsets, which classes are declarable), where a
+large member gives DIEs to many synthesized members. Each unit's symbols
+are now listed once, and a unit's DIEs are walked once; a synthesized
+member's work follows the DIEs it keeps. Smaller changes: hash maps for
+choosing's lookups, names borrowed rather than copied, and debug
+relocations tombstoned in place (and copied only where one names a
+moved unit). The output is the same bytes (`libclangSema.a`,
+`libLLVMCodeGen.a`, `libLLVMSupport.a` against the corpus fold before
+the changes; `-j 1`, `3`, and `8` the same).
+
+| `ar s --fold=identical` (8 threads, beside another session's builds) | before | after |
+|---|---|---|
+| `libclangSema.a` | 89.2 s (reading 47.1, choosing 3.5, rewriting 2.8, DWARF 3.7, synthesizing 28.7) | 15.5 s (1.1, 2.8, 2.0, 2.6, 4.6) |
+| `libLLVMCodeGen.a` | 11.6 s | 4.4 s |
+| `libLLVMSupport.a` | 0.78 s | 0.41 s |
+
+`relib.py --time --options=--fold=identical` (the 20 largest libraries,
+13.79 GiB, each library's CMake commands, best of 2): GNU `ar` 95.70 s,
+turbolib 76.70 s, **0.80×** (it was 2.66× before 6.5 and 4.24× after).
+Not a quiet measurement: another session's builds ran throughout (load
+average 4 to 7), and GNU `ar`'s own time ranged from 38 s to 163 s
+across this phase's runs, so the ratio is the run's, not a constant.
+What is left, by phase: choosing runs on one thread (2.8 s of
+`libclangSema.a`'s); a huge member is rewritten and its DWARF read on
+one thread each; and system time is a third of the total (21 s of
+`libclangSema.a`'s 51 s of CPU), most of it mimalloc returning and
+refaulting memory: with `MIMALLOC_PURGE_DELAY=-1`, 68 s of system time
+became 16 s before the changes above. Setting the option takes an
+unsafe call into mimalloc, so it isn't done. `ranlib` after `ar qc`
+still folds again (finding nothing new).
 
 ## Decisions
 

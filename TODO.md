@@ -473,17 +473,16 @@ x64. Where the 3.5 MB went:
     archives from GNU `ar` (this binutils can't write them); thin archives
     and `--fold` (refused); `ar` on Windows hosts beyond the unit tests.
   - GNU `ar -M`'s `DIRECTORY`, `EXTRACT`, `LIST`, `VERBOSE`, and `FULLDIR`.
-  - **Folding's speed**: 2.66× GNU `ar`'s time on the gcc build's 20
-    largest libraries before 6.5 (without folding, 0.27×); 4.24× with DWARF
-    moved, in a noisy run: measure again on a quiet machine, and profile
-    the DWARF reading (each survivor member's `.debug_info` is walked
-    whole, and every DIE's attributes read twice). `turbonop-elf-object`
-    decodes every relocation section (the `.debug_*` sections' 3.4 GiB of
-    them too) and re-encodes them, and a rewritten member is copied twice
-    (`Object::write`, then the archive writer): keep relocation sections
-    as bytes until something edits them, tombstone in place, and write
-    rewritten members straight into the archive. `ranlib` after `ar qc`
-    folds again (finding nothing new): skip it when no member changed.
+  - **Folding's speed**: 0.80× GNU `ar`'s time on the gcc build's 20
+    largest libraries (the plan's 6.6, a noisy run). Left: choosing runs on
+    one thread (2.8 s of `libclangSema.a`'s 15.5 s); a huge member is
+    rewritten and its DWARF read on one thread each; mimalloc's purging
+    costs a third of the CPU time as system time (`MIMALLOC_PURGE_DELAY=-1`
+    cut it 4×; setting it takes an unsafe call); `turbonop-elf-object`
+    decodes and re-encodes every relocation section and a rewritten member
+    is copied twice (`Object::write`, then the archive writer); `ranlib`
+    after `ar qc` folds again (finding nothing new). Measure again on a
+    quiet machine.
   - The clang corpus is done (the plan's 6.6) but for CREL objects
     (`-Wa,--crel`: the corpus has none; the engine passes such members
     through) and what `compare-images` doesn't read there yet: a

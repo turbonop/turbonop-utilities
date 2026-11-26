@@ -115,7 +115,7 @@ def main():
                 same_members = strip(traces[0]) == strip(traces[1])
                 synth = sum(1 for t in traces[1] if "__turbolib." in t)
                 ya, yb = relink.symbols(imgs[0]), relink.symbols(imgs[1])
-                only_a, only_b = ya - yb, {y for y in yb - ya if "!turbolib.anchor." not in y}
+                only_a, only_b = ya - yb, {y for y in yb - ya if "~turbolib.anchor." not in y}
                 fa, fb = relink.functions(imgs[0]), relink.functions(imgs[1])
                 differ = [f for f in fa if fa[f] != fb.get(f)]
                 ia, ib = relink.init_order(imgs[0]), relink.init_order(imgs[1])

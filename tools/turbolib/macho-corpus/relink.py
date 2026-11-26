@@ -13,7 +13,7 @@ DIR holds lib/<kind>/<arch>/lib*.a (relib.py's --out, run with
 - **members loaded**: `-t`'s list of archive members, in order, without the
   synthesized ones (`__turbolib.N.o`), which are counted;
 - **symbols**: `llvm-nm -m` of each image (type, external or not, section,
-  name; no addresses), as sets: the anchors (`!turbolib.anchor.`) are
+  name; no addresses), as sets: the anchors (`~turbolib.anchor.`) are
   expected only in the folded image;
 - **code**: each function's disassembly (`llvm-objdump -d`), with addresses
   and immediates of address computations taken out and branch targets by
@@ -166,8 +166,8 @@ def compare(tool, arch, kind, folded, tmp):
         lines.append(f"    first difference at {k}: {sa[k] if k < len(sa) else None} vs {sb[k] if k < len(sb) else None}")
     ya, yb = symbols(a), symbols(b)
     only_a = ya - yb
-    only_b = {y for y in yb - ya if "!turbolib.anchor." not in y}
-    anchors = sum(1 for y in yb if "!turbolib.anchor." in y)
+    only_b = {y for y in yb - ya if "~turbolib.anchor." not in y}
+    anchors = sum(1 for y in yb if "~turbolib.anchor." in y)
     ok &= not only_a and not only_b
     lines.append(f"  symbols: {len(ya)} vs {len(yb)}; only in original {len(only_a)}, only in folded {len(only_b)} "
                  f"(+{anchors} anchors, expected)")

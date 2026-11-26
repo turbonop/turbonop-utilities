@@ -154,7 +154,10 @@ fn folds_identical_weak_definitions() {
     for o in &out[1..] {
         let g = Object::parse(o.data.as_deref().unwrap()).unwrap();
         let undef: Vec<&Symbol<'_>> = g.symbols.iter().filter(|y| y.is_undefined()).collect();
+        // The anchor, then the moved name.
+        assert_eq!(undef.len(), 2);
         assert_eq!(&*undef[0].name, &*anchor.name);
+        assert_eq!(&*undef[1].name, b"_inl");
         let inl = undef.iter().find(|y| &*y.name == b"_inl").unwrap();
         assert_eq!(inl.n_desc, N_WEAK_REF);
         assert_eq!(g.section(0).unwrap().size(), 8);

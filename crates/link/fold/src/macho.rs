@@ -60,17 +60,23 @@
 //! definitions become weak undefined references, and it gains a strong
 //! undefined reference to the synthesized member's anchor (a private
 //! external absolute symbol named for the synthesized member's contents
-//! and the library, so that two libraries' never collide), which the
-//! symbol table's order (LLVM's: undefined names sorted) puts before every
-//! other undefined name. ld64.lld resolves an object's undefined names in
-//! that order as it loads the object, loading archive members at once,
-//! and a weak reference loads a member as a strong one does: with the
-//! anchor first, the synthesized member is loaded, and the moved names
-//! defined, before the moved names are looked up, so they aren't taken
-//! from another library's copy. Synthesized members come first in the
-//! archive, so their names are in the linker's table before a member of
-//! the same archive loaded while the archive is read looks for them. A
-//! synthesized member refers to names moved into another the same way.
+//! and the library, so that two libraries' never collide).
+//!
+//! **The order of the undefined names** decides what ld64.lld loads, and
+//! when: it resolves an object's undefined names in symbol-table order as
+//! it loads the object, loading an archive member the moment a name meets
+//! one of the archive's symbols (recursively), and a weak reference loads
+//! a member as a strong one does. So a giver's undefined names are its
+//! original ones first, in LLVM's order (sorted), which load what they
+//! loaded, in the same order; then the anchors (`~` sorts after the names
+//! compilers make), which load the synthesized members, whose own
+//! undefined names were all the givers' too and are resolved by then; and
+//! last the moved names (out of LLVM's order), defined by then, so they
+//! aren't taken from another library's copy. Synthesized members come
+//! first in the archive, so their names are in the linker's table before a
+//! member of the same archive loaded while the archive is read looks for
+//! them. A synthesized member refers to names moved into another the same
+//! way.
 //!
 //! **Debug information.** A member that gave a copy up loses each debug
 //! section's local relocation to it (and its place is zeroed), so
@@ -103,10 +109,10 @@ pub const N_WEAK_REF: u16 = 0x40;
 pub const N_WEAK_DEF: u16 = 0x80;
 /// `N_ALT_ENTRY`: a symbol that doesn't start an atom.
 pub const N_ALT_ENTRY: u16 = 0x200;
-/// The prefix of anchors' names: `!` sorts before the names compilers
-/// make (`_`, letters, `l`, `L`), so an anchor is the first undefined name
-/// of a member that refers to it.
-pub const ANCHOR_PREFIX: &[u8] = b"!turbolib.anchor.";
+/// The prefix of anchors' names: `~` sorts after the names compilers make
+/// (`_`, letters, `l`, `L`), so a member's anchors come after its other
+/// undefined names in LLVM's order.
+pub const ANCHOR_PREFIX: &[u8] = b"~turbolib.anchor.";
 
 /// The local label of an alignment gap between a synthesized member's
 /// units (an atom of its own).
@@ -1590,6 +1596,27 @@ fn rewrite_giver(
         });
     }
     o.sort_symbols();
+    // The moved names last, after the anchors (the undefined names are
+    // otherwise in LLVM's order): see the module's documentation.
+    let moved: BTreeSet<Vec<u8>> = gone
+        .iter()
+        .flat_map(|&k| p.units[k].names.iter().cloned())
+        .collect();
+    let late = |y: &Symbol<'_>| y.is_undefined() && moved.contains(y.name.as_ref());
+    let mut order: Vec<usize> = (0..o.symbols.len()).collect();
+    order.sort_by_key(|&i| (late(&o.symbols[i]), i));
+    if order.iter().enumerate().any(|(n, &i)| n != i) {
+        let mut map = vec![None; order.len()];
+        for (new, &old) in order.iter().enumerate() {
+            map[old] = Some(new as u32);
+        }
+        let mut slots: Vec<Option<Symbol<'_>>> = core::mem::take(&mut o.symbols)
+            .into_iter()
+            .map(Some)
+            .collect();
+        o.symbols = order.iter().filter_map(|&i| slots[i].take()).collect();
+        o.renumber_symbols(&map);
+    }
     o.update_dysymtab();
     o.relayout();
     let data = o.write().map_err(|e| e.to_string())?;

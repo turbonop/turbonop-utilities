@@ -17,7 +17,7 @@
 //!
 //! Checked: every original member present, in order, and every added one
 //! synthesized (it defines an anchor, a private external absolute
-//! `!turbolib.anchor.` symbol); in each rewritten member, the header and
+//! `~turbolib.anchor.` symbol); in each rewritten member, the header and
 //! load commands but the symbol table's and segments' sizes unchanged,
 //! every atom of the original present with the same canonical form, or
 //! lost, and then a weak-definition unit held identically by a
@@ -91,7 +91,7 @@ use crate::report::{Report, show};
 const N_WEAK_REF: u16 = 0x40;
 const N_WEAK_DEF: u16 = 0x80;
 const N_ALT_ENTRY: u16 = 0x200;
-const ANCHOR: &[u8] = b"!turbolib.anchor.";
+const ANCHOR: &[u8] = b"~turbolib.anchor.";
 
 /// Whether `data` is an archive whose first object is Mach-O.
 pub fn is_macho_archive(data: &[u8]) -> bool {

@@ -389,9 +389,15 @@ x64. Where the 3.5 MB went:
   - Speed: finding the shared types is about 0.35 s of
     `clangCodeGen.lib`'s 1.6 s; rewritten members' `.debug$S` is copied
     twice (renumbered, then into the skeleton).
-  - The PCH symbol's signature is 32 bits: two different libraries'
-    PCHs in one link could share one by chance (about 2^-32 a pair), and
-    a linker would then likely confuse them. Not handled.
+  - The PCH signature is 32 bits (the CodeView field's width): two
+    different libraries' PCH members in one link could share one by
+    chance (about n²/2³³ for n libraries). lld-link (read in
+    `lld/COFF/DebugTypes.cpp`) matches a user to its PCH by signature
+    alone, by name only when no PCH has the signature, and refuses two PCH
+    objects with one signature ("a PCH object with the same signature has
+    already been provided"): a collision fails the link. Still to measure:
+    what link.exe does (it is said to match on name and signature), with a
+    deliberate collision. Not handled.
 - **Phase 4: less conservative folding.** `--fold=select-any`, `--pick`,
   `--locals=copy` and `merge`, and `--report odr` are done (see the plan's
   "Phase 4 results"). Still open:

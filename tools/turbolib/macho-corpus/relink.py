@@ -78,7 +78,9 @@ def symbols(image):
     return out
 
 
-ADDR = re.compile(r"0x[0-9a-f]+|#-?\d+|\b\d+\b")
+ADDR = re.compile(r"#?-?0x[0-9a-f]+|#-?\d+|\b\d+\b")
+# (arm64's `[xN]` is `[xN, #0]`.)
+BASE = re.compile(r"\[(\w+)\]")
 
 
 def functions(image):
@@ -106,12 +108,14 @@ def functions(image):
         # dyld_stub_binder, which says nothing about the target.)
         targets = [t for t in targets if not t.startswith("~turbolib.anchor.") and t != "dyld_stub_binder"]
         ins = re.sub(r"<[^>]+>", "", ins)
-        body.append((ADDR.sub("N", ins).strip(), tuple(t.split("+")[0] for t in targets)))
+        body.append((BASE.sub(r"[, N]", ADDR.sub("N", ins)).strip(), tuple(t.split("+")[0] for t in targets)))
     if name is not None:
         funcs[name] = body
     # Targets that are functions of the image (a stub, or an address past
     # every function, is named by whatever symbol precedes it).
     names = set(funcs)
+    # (The linker's own lazy-binding helper holds offsets into its tables.)
+    funcs.pop("__stub_helper", None)
     return {f: [(i, tuple(t for t in ts if t in names)) for i, ts in body] for f, body in funcs.items()}
 
 

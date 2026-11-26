@@ -19,6 +19,7 @@ turbonop-coff.workspace = true
 turbonop-demangle.workspace = true
 turbonop-fold.workspace = true
 turbonop-mmap.workspace = true
+turbonop-moduledef.workspace = true
 turbonop-par.workspace = true
 turbonop-pe.workspace = true
 serde_json.workspace = true

@@ -1420,6 +1420,7 @@ dependencies = [
  "turbonop-fold",
  "turbonop-global-alloc",
  "turbonop-mmap",
+ "turbonop-moduledef",
  "turbonop-par",
  "turbonop-pe",
 ]

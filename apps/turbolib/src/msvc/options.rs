@@ -178,6 +178,7 @@ fn lib_option(
         // Measured: /LIBPATH with no value is accepted and does nothing.
         "LIBPATH" => o.libpath.extend(optional(value)),
         "DEF" => o.def = Some(optional(value)),
+        "DEFARM64NATIVE" => o.def_arm64_native = Some(need(value)?),
         "LIST" => o.list = Some(optional(value)),
         "NODEFAULTLIB" => o.nodefaultlib.push(optional(value)),
         // Measured: /LTCG:anything is accepted.

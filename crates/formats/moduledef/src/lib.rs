@@ -91,8 +91,12 @@ use turbonop_global_alloc as _;
 extern crate alloc;
 
 pub mod descriptors;
+pub mod exp;
+pub mod exports;
 pub mod imports;
 pub mod library;
+pub mod llvm;
+pub mod option;
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
@@ -121,8 +125,41 @@ pub struct Module<'a> {
     pub windowapi: bool,
     /// `WINDOWCOMPAT`.
     pub windowcompat: bool,
+    /// Whether the name was in quotes (closed ones).
+    pub quoted: bool,
+    /// `BASE=`, `WINDOWAPI`, and `WINDOWCOMPAT`, in order (each is a
+    /// directive of the export file's: see [`ModuleDefinition::directives`]).
+    pub options: Vec<ModuleOption>,
     /// Its line (from 1).
     pub line: usize,
+}
+
+/// An option of `NAME` or `LIBRARY`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ModuleOption {
+    /// `BASE=address`.
+    Base(u64),
+    /// `WINDOWAPI`.
+    WindowApi,
+    /// `WINDOWCOMPAT`.
+    WindowCompat,
+}
+
+/// A statement that gives the export file a linker directive, in the
+/// order of the file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Statement {
+    /// The first `NAME` or `LIBRARY` ([`ModuleDefinition::module`]).
+    Module,
+    /// `HEAPSIZE`.
+    Heap(Sizes),
+    /// `STACKSIZE`.
+    Stack(Sizes),
+    /// `VERSION`.
+    Version(Version),
+    /// An entry of `SECTIONS`, by its place in
+    /// [`ModuleDefinition::sections`].
+    Section(usize),
 }
 
 impl Module<'_> {
@@ -395,6 +432,8 @@ pub struct ModuleDefinition<'a> {
     pub stack: Option<Sizes>,
     /// The last `VERSION`.
     pub version: Option<Version>,
+    /// The statements that give the export file directives, in order.
+    pub statements: Vec<Statement>,
     /// What `lib.exe` warns of.
     pub warnings: Vec<Warning<'a>>,
 }
@@ -507,7 +546,11 @@ pub fn parse(text: &[u8]) -> Result<ModuleDefinition<'_>, ParseError<'_>> {
         if !STATEMENTS.contains(&first) {
             match mode {
                 Mode::Exports => def.entries.push(export(content, line, &mut def.warnings)?),
-                Mode::Sections => def.sections.push(section(content, line)?),
+                Mode::Sections => {
+                    def.sections.push(section(content, line)?);
+                    def.statements
+                        .push(Statement::Section(def.sections.len() - 1));
+                }
                 Mode::Top => def.warnings.push(Warning::Ignored {
                     line,
                     statement: first,
@@ -530,6 +573,7 @@ pub fn parse(text: &[u8]) -> Result<ModuleDefinition<'_>, ParseError<'_>> {
                         ModuleKind::Library
                     };
                     def.module = Some(module(kind, first, rest, line, &mut def.warnings)?);
+                    def.statements.push(Statement::Module);
                 }
             }
             b"EXPORTS" => {
@@ -542,17 +586,29 @@ pub fn parse(text: &[u8]) -> Result<ModuleDefinition<'_>, ParseError<'_>> {
                 mode = Mode::Sections;
                 if words(rest).next().is_some() {
                     def.sections.push(section(rest, line)?);
+                    def.statements
+                        .push(Statement::Section(def.sections.len() - 1));
                 }
             }
-            b"HEAPSIZE" => def.heap = Some(sizes(first, rest, line)?),
-            b"STACKSIZE" => def.stack = Some(sizes(first, rest, line)?),
+            b"HEAPSIZE" => {
+                let v = sizes(first, rest, line)?;
+                def.heap = Some(v);
+                def.statements.push(Statement::Heap(v));
+            }
+            b"STACKSIZE" => {
+                let v = sizes(first, rest, line)?;
+                def.stack = Some(v);
+                def.statements.push(Statement::Stack(v));
+            }
             _ => {
                 // VERSION: the raw line, its comment and spaces included.
                 let raw_rest = skip_space(&raw[start..]);
-                def.version = Some(version(raw_rest).ok_or(ParseError::Syntax {
+                let v = version(raw_rest).ok_or(ParseError::Syntax {
                     line,
                     word: b"VERSION",
-                })?);
+                })?;
+                def.version = Some(v);
+                def.statements.push(Statement::Version(v));
             }
         }
     }
@@ -594,6 +650,8 @@ fn module<'a>(
 ) -> Result<Module<'a>, ParseError<'a>> {
     let s = skip_space(rest);
     // The name: a quoted part, then up to a space or tab.
+    // (An unclosed quote quotes nothing, for the export file: measured.)
+    let quoted = s.first() == Some(&b'"') && s[1..].contains(&b'"');
     let (name, after): (Option<Cow<'a, [u8]>>, &'a [u8]) = if let Some(q) = s.strip_prefix(b"\"") {
         let close = q.iter().position(|&b| b == b'"');
         let quoted = &q[..close.unwrap_or(q.len())];
@@ -629,16 +687,22 @@ fn module<'a>(
         base: None,
         windowapi: false,
         windowcompat: false,
+        quoted,
+        options: Vec::new(),
         line,
     };
     let error = ParseError::Syntax { line, word };
     for w in words(after) {
         if w.len() >= 5 && w[..5].eq_ignore_ascii_case(b"BASE=") {
-            m.base = Some(number(&w[5..]).ok_or(error)?);
+            let base = number(&w[5..]).ok_or(error)?;
+            m.base = Some(base);
+            m.options.push(ModuleOption::Base(base));
         } else if w.eq_ignore_ascii_case(b"WINDOWAPI") {
             m.windowapi = true;
+            m.options.push(ModuleOption::WindowApi);
         } else if w.eq_ignore_ascii_case(b"WINDOWCOMPAT") {
             m.windowcompat = true;
+            m.options.push(ModuleOption::WindowCompat);
         } else {
             return Err(error);
         }

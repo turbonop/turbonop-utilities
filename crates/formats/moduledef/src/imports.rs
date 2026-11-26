@@ -24,16 +24,16 @@
 //!   with the ordinal as its hint. Another is imported by name, its hint
 //!   its place among the exports that have names (all but `NONAME` ones,
 //!   `PRIVATE` ones included) sorted by the names they are exported as
-//!   (the `EXPORTAS` name, if any). On ARM64EC the hints of
-//!   imports by name are not that (values from 0 to 22639 were seen,
-//!   differing between runs of different files); they are not reproduced
-//!   here, and are 0.
+//!   (the `EXPORTAS` name, if any). On ARM64EC the hints of imports by
+//!   name are not that: they are 0, or bytes of memory `lib.exe` didn't
+//!   set (values up to 22639 were seen, and one `.def` file gave 26982
+//!   for an import in one run and 0 in another). They are 0 here.
 //! - The name type: by name; on x86 `NOPREFIX` when `_` was put before
 //!   it; `EXPORTAS` with the `EXPORTAS` name; on ARM64EC, code by name is
 //!   `EXPORTAS` with the plain name, and code by ordinal is by ordinal
 //!   but still carries the plain name.
-//! - Its time stamp: the time `lib.exe` ran; with `/Brepro`, a value that
-//!   differs per object (some hash: not reproduced).
+//! - Its time stamp: the time `lib.exe` ran; with `/Brepro`, a hash of the
+//!   object ([`crate::descriptors::brepro_stamp`]).
 //!
 //! (`lib /DEF` given objects too, or `link /DEF`, finds each export's
 //! symbol in them: an x86 `Func` defined as `_Func@8` is imported as
@@ -115,15 +115,15 @@
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
 
-use turbonop_archive::symbols::{ec_demangle, ec_mangle};
 use turbonop_pe::consts::machine;
 use turbonop_pe::import_object::{ImportNameType, ImportObject, ImportType};
 
 use turbonop_archive::write::Tool;
 
+use crate::ModuleDefinition;
 use crate::descriptors::{Descriptors, Stamp, set_stamp};
+use crate::exports::{Origin, Resolved, hints, resolve};
 use crate::library::Members;
-use crate::{ExportKind, ModuleDefinition};
 
 /// One import object of the library.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -211,69 +211,33 @@ impl<'a> ImportLibrary<'a> {
     /// `lib.exe`'s import of each of `exports` but the `PRIVATE` ones, for
     /// `machine`.
     pub fn lib_exe_imports(exports: &[crate::Export<'a>], machine: u16) -> Vec<Import<'a>> {
-        // Hints: places among the named exports, sorted by the names they
-        // are exported as.
-        let exported = |e: &crate::Export<'a>| e.export_as.unwrap_or(e.name);
-        let mut named: Vec<&[u8]> = exports.iter().filter(|e| !e.noname).map(exported).collect();
-        named.sort_unstable();
-        let x86 = machine == machine::I386;
+        let given: Vec<_> = exports.iter().map(|&e| (e, Origin::Definition)).collect();
+        // Without objects, every export resolves.
+        let resolved = resolve(&given, machine, None).unwrap_or_default();
+        Self::imports_of(&resolved, machine)
+    }
+
+    /// The import of each of `resolved` but the `PRIVATE` ones, for
+    /// `machine`.
+    pub fn imports_of(resolved: &[Resolved<'a>], machine: u16) -> Vec<Import<'a>> {
+        let hints = hints(resolved);
         let ec = machine == machine::ARM64EC;
-        let mut imports = Vec::new();
-        for e in exports.iter().filter(|e| !e.private) {
-            let kind = match e.kind {
-                ExportKind::Code => ImportType::Code,
-                ExportKind::Data => ImportType::Data,
-                ExportKind::Constant => ImportType::Const,
-            };
-            let hint = if ec {
-                0
-            } else {
-                let at = named.binary_search(&exported(e)).unwrap_or(0);
-                u16::try_from(at).unwrap_or(u16::MAX)
-            };
-            let ordinal_or_hint = e.ordinal.unwrap_or(hint);
-            let (symbol, by_name, export_name) = if ec && kind == ImportType::Code {
-                let symbol = ec_mangle(e.name).unwrap_or(Cow::Borrowed(e.name));
-                let plain = e
-                    .export_as
-                    .map_or_else(|| ec_demangle(e.name), Cow::Borrowed);
-                (symbol, ImportNameType::ExportAs, Some(plain))
-            } else if x86 && !matches!(e.name.first(), Some(b'?' | b'@')) {
-                let mut s = Vec::with_capacity(e.name.len() + 1);
-                s.push(b'_');
-                s.extend_from_slice(e.name);
-                let by_name = if e.export_as.is_some() {
-                    ImportNameType::ExportAs
+        resolved
+            .iter()
+            .zip(hints)
+            .filter(|(r, _)| !r.private)
+            .map(|(r, hint)| Import {
+                symbol: r.symbol.clone(),
+                kind: r.import_type(),
+                name_type: if r.ordinal.is_some() {
+                    ImportNameType::Ordinal
                 } else {
-                    ImportNameType::NoPrefix
-                };
-                (Cow::Owned(s), by_name, e.export_as.map(Cow::Borrowed))
-            } else {
-                let by_name = if e.export_as.is_some() {
-                    ImportNameType::ExportAs
-                } else {
-                    ImportNameType::Name
-                };
-                (
-                    Cow::Borrowed(e.name),
-                    by_name,
-                    e.export_as.map(Cow::Borrowed),
-                )
-            };
-            let name_type = if e.ordinal.is_some() {
-                ImportNameType::Ordinal
-            } else {
-                by_name
-            };
-            imports.push(Import {
-                symbol,
-                kind,
-                name_type,
-                ordinal_or_hint,
-                export_name,
-            });
-        }
-        imports
+                    r.name_type
+                },
+                ordinal_or_hint: r.ordinal.unwrap_or(if ec { 0 } else { hint }),
+                export_name: r.import_name.clone(),
+            })
+            .collect()
     }
 
     /// The DLL's name without its last extension: what the descriptor

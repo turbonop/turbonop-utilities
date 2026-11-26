@@ -190,7 +190,7 @@ fn finish(out: &mut Out, r: Reporter) -> i32 {
 }
 
 /// `p` against the current directory.
-fn resolve(cwd: &Path, p: &str) -> PathBuf {
+pub(super) fn resolve(cwd: &Path, p: &str) -> PathBuf {
     let path = Path::new(p);
     if path.is_absolute() {
         path.to_path_buf()
@@ -225,13 +225,18 @@ fn find_input(opts: &Options, env: &Env, name: &str) -> Option<PathBuf> {
 }
 
 /// An input read into memory.
-struct Read {
-    name: String,
-    path: PathBuf,
-    data: turbonop_mmap::Mmap,
+pub(super) struct Read {
+    pub(super) name: String,
+    pub(super) path: PathBuf,
+    pub(super) data: turbonop_mmap::Mmap,
 }
 
-fn read_input(opts: &Options, env: &Env, name: &str, flavor: Flavor) -> Result<Read, Diag> {
+pub(super) fn read_input(
+    opts: &Options,
+    env: &Env,
+    name: &str,
+    flavor: Flavor,
+) -> Result<Read, Diag> {
     let missing = || match flavor {
         Flavor::Lib => Diag::fatal(1181, format!("cannot open input file '{name}'")),
         Flavor::LlvmLib => Diag::llvm(Kind::Fatal, "no such file or directory").on(name),
@@ -259,10 +264,7 @@ fn run_mode(
     r: &mut Reporter,
 ) -> Result<(), ()> {
     if opts.def.is_some() {
-        return r.report(Diag::fatal(
-            1104,
-            "turbolib can't write import libraries from /DEF yet",
-        ));
+        return super::def::run(flavor, opts, env, r);
     }
     if let Some(list_to) = &opts.list {
         return list(flavor, opts, env, out, r, list_to.as_deref());
@@ -354,7 +356,7 @@ fn extract(flavor: Flavor, opts: &Options, env: &Env, r: &mut Reporter) -> Resul
     Ok(())
 }
 
-fn write_file(path: &Path, data: &[u8]) -> io::Result<()> {
+pub(super) fn write_file(path: &Path, data: &[u8]) -> io::Result<()> {
     let mut f = std::fs::File::create(path)?;
     f.write_all(data)
 }
@@ -581,7 +583,7 @@ fn trim(field: &[u8]) -> &[u8] {
 }
 
 /// Seconds since 1970, now.
-fn now() -> u64 {
+pub(super) fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs())

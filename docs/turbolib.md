@@ -26,7 +26,7 @@ items leave TODO.md as they ship.
 | 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
-| 5 Speed | Not yet (but every phase is built to be parallel from the start). |
+| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.49× `lib.exe`'s time without folding and 0.99× with it. |
 | 6 ELF, with split DWARF | Not yet. |
 | 7 Mach-O | Not yet. |
 
@@ -1411,6 +1411,27 @@ What compare-images reports for the folded libraries (link.exe,
 - Profile on the largest libraries in the corpus with Stackrabbit, and
   remove every idle core outside I/O waits. Also compare link times
   before and after compaction, which is the second benefit to prove.
+
+**Measured** (`tools/turbolib/corpus/timelib.py`, `build-z7`'s 20 largest
+libraries, 7.26 GiB, each archiver on the build's own command, best of 2,
+warm cache, 8 threads, 2026-11-25):
+
+| | Total | Against `lib.exe` |
+|---|---|---|
+| `lib.exe` 14.52 | 11.86 s | 1.00× |
+| turbolib, `--fold=none` | 5.83 s | 0.49× |
+| turbolib, `--fold=identical` (with 2.4's debug information) | 11.77 s | 0.99× |
+
+What made the difference: writing the library in order. Setting the
+file's length first and writing at offsets on every thread made NTFS
+zero-fill ahead of each write (1 GiB in 1.2 to 1.4 s, against 0.3 s in
+order); now every thread copies 4 MiB chunks into buffers while one writes
+the batch before. On `clangSema.lib` (984 MiB), with folding: reading and
+finding units 0.31 s, the rest of folding 0.5 s, the index 0.25 s,
+writing 0.35 s, and freeing the inputs' mappings and renaming 0.13 to
+0.2 s. Tried and dropped: a buffered streaming hash with four chains
+(faster on large inputs, but the many small values units hash made
+finding units 25% slower).
 
 ### Phase 6: ELF, with split DWARF
 

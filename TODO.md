@@ -22,8 +22,11 @@ leave this list when they ship.
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
 - **Release notes.** A release's notes are GitHub's list of the pull
-  requests since the last release; write them from the changes instead
-  (what a user would notice, by command).
+  requests since the last release (0.0.11's listed every one since the
+  first, its predecessors' drafts deleted); 0.0.11's were rewritten by
+  hand from the changes (what a user would notice, by command). The
+  release workflow should draft them so: from the pull requests' titles
+  and descriptions since the last tag, for editing before it publishes.
 - **hexcavator on crates.io.** `cargo binstall hexcavator` finds the crate
   on crates.io (its metadata names the release's programs); until it is
   published there (and with it every `turbonop-*` crate it depends on),
@@ -115,6 +118,10 @@ when they're ready. What's left:
   watch, kill and end, from Rust) passes there. The test says which wait
   timed out, the last events, and procupine's stderr; its live part is
   skipped on macOS until that's found and fixed.
+- **"ancestors dimmed" on Windows.** The extension's test of that name
+  failed once on CI's Windows runner (in #54, which touched no
+  Procupine code) and passed on its rerun: a race, likely the view's
+  update and the test's read of it.
 - **The system's CPU on macOS.** In `turbonop-process`'s live
   `cpu_usage` test on CI's macOS runner, the system's CPU share over a
   300 ms busy loop was once 0 (this process's own share was right): the

@@ -1,0 +1,27 @@
+[package]
+name = "turbonop-verify"
+description = "Proving a rewritten static library equivalent to the original, and programs linked from each equivalent (turbolib verify and compare-images)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+turbonop-archive.workspace = true
+turbonop-arm64.workspace = true
+turbonop-codeview.workspace = true
+turbonop-coff.workspace = true
+turbonop-core.workspace = true
+turbonop-hash.workspace = true
+turbonop-par.workspace = true
+turbonop-pdb.workspace = true
+turbonop-pe.workspace = true
+turbonop-x86.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true

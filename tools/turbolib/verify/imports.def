@@ -1,0 +1,4 @@
+LIBRARY fixture
+EXPORTS
+    fixture_function
+    fixture_data DATA

@@ -10,3 +10,4 @@
 !/big/main.cpp
 /prune/*.cpp
 /prune/*.h
+!/verify/order.txt

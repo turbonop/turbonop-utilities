@@ -326,9 +326,6 @@ x64. Where the 3.5 MB went:
   - The TableGen decoders' instructions are still 56 bytes: an index
     into a string table, and into a table of operand lists, would make
     them about 24.
-- **`THIRD_PARTY_NOTICES.txt`, 247 KB**, embedded for `hexcavator
-  licenses`, with each crate's copy of the same MIT and Apache texts:
-  each text once (and the crates under it), or compressed.
 - **Generic code, about 1.15 MB**, counted to `core` (+668 KB), `std`
   (+306 KB), and `alloc` (+180 KB): our generics instantiated for each
   type, much of it likely `turbonop_par`'s (+111 KB itself, new)
@@ -358,6 +355,15 @@ x64. Where the 3.5 MB went:
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with
   Stackrabbit.
+
+## rtti-strip
+
+- **Phase 0 of [the plan](docs/rtti-strip.md).** A corpus with RTTI
+  (LTCG release builds); the bytes at stake; descriptor alignment; where
+  `.data$r` lands; the FIXUP stream's coverage under LTCG; FH4's
+  encoding.
+- **Phase 1: pad mode**, its checker, and the test program.
+- **The FIXUP stream's parser** in `crates/symbols/pdb`.
 
 ## Ideas
 

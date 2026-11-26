@@ -596,83 +596,21 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32, clustering: Option<&Clusteri
         (out, bounds)
     });
 
-    // Each sharer's group: its machine's, or the one chosen for it.
-    let machine_of = |m: usize| parsed[m].object.as_ref().map_or(0, |o| o.machine);
-    let mut machines: Vec<u16> = sharers.iter().map(|&m| machine_of(m)).collect();
-    machines.sort_unstable();
-    machines.dedup();
-    let mut clusters = Vec::new();
-    let mut group_machine: Vec<u16> = Vec::new();
-    let group_of: Vec<Option<u32>> = match clustering {
-        None => {
-            group_machine = machines.clone();
-            sharers
-                .iter()
-                .map(|&m| machines.binary_search(&machine_of(m)).ok().map(|g| g as u32))
-                .collect()
-        }
-        Some(c) => {
-            let chosen = choose_groups(parsed, &sharers, &lists, min, c);
-            let mut group_of = vec![None; sharers.len()];
-            for (machine, positions, choice) in chosen {
-                let first = group_machine.len() as u32;
-                group_machine.extend(std::iter::repeat_n(machine, choice.groups as usize));
-                for (&k, g) in positions.iter().zip(&choice.group) {
-                    group_of[k] = g.map(|g| first + g);
-                }
-                clusters.push(Clusters {
-                    machine,
-                    members: positions.len() as u64,
-                    groups: choice.groups,
-                    out: choice.group.iter().filter(|g| g.is_none()).count() as u64,
-                    cost: choice.cost,
-                    library: choice.library,
-                    none: choice.none,
-                    tried: choice.tried,
-                });
-            }
-            group_of
-        }
+    // Each sharer's group, and each group's candidates: one group for each
+    // machine, or the ones chosen.
+    let Grouped {
+        group_of,
+        group_machine,
+        clusters,
+        mut candidates,
+    } = match clustering {
+        None => by_machine(parsed, &members, &sharers, &lists, min),
+        Some(c) => clustered(parsed, &members, &sharers, &lists, min, c),
     };
+    drop(lists);
     for (k, &m) in sharers.iter().enumerate() {
         members[m].group = group_of[k];
     }
-
-    let shards: Vec<u64> = (0..n).collect();
-    let parts: Vec<Vec<Candidate>> = turbonop_par::map_balanced(&shards, 1, |&s| {
-        let s = s as usize;
-        // Each record in each group: how many of the group's members hold
-        // it (each counted once: the last member that counted it), and its
-        // first copy.
-        let mut counts: HashMap<(u128, u32), (u32, u32, u32, u32)> = HashMap::default();
-        for (k, (list, bounds)) in lists.iter().enumerate() {
-            let Some(g) = group_of[k] else { continue };
-            let k = k as u32;
-            for &(h, a, b) in &list[bounds[s] as usize..bounds[s + 1] as usize] {
-                let e = counts.entry((h, g)).or_insert((0, a, b, u32::MAX));
-                if e.3 != k {
-                    e.0 += 1;
-                    e.3 = k;
-                }
-                if (a, b) < (e.1, e.2) {
-                    (e.1, e.2) = (a, b);
-                }
-            }
-        }
-        counts
-            .into_iter()
-            .filter(|&(_, (c, _, _, _))| c >= min)
-            .map(|((hash, group), (_, a, b, _))| Candidate {
-                hash,
-                group,
-                depth: members[a as usize].depth[b as usize],
-                member: a,
-                position: b,
-            })
-            .collect()
-    });
-    drop(lists);
-    let mut candidates: Vec<Candidate> = parts.into_iter().flatten().collect();
 
     // Each group's PCH: by depth, so that each record names only earlier
     // ones; then by hash. A record naming one that can't be shared isn't
@@ -773,99 +711,201 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32, clustering: Option<&Clusteri
     }
 }
 
-/// The groups of each machine's sharers (`sharers`, with their records by
-/// shard in `lists`): for each machine, its sharers (positions in
-/// `sharers`) and the choice.
-fn choose_groups(
+/// Each sharer's group (by position in `sharers`), each group's machine,
+/// the choices made (for reports), and each group's candidates: the
+/// records at least `min` of its members hold.
+struct Grouped {
+    group_of: Vec<Option<u32>>,
+    group_machine: Vec<u16>,
+    clusters: Vec<Clusters>,
+    candidates: Vec<Candidate>,
+}
+
+fn machine_of(parsed: &[Parsed<'_>], m: usize) -> u16 {
+    parsed[m].object.as_ref().map_or(0, |o| o.machine)
+}
+
+/// One group for each machine (`--precomp=library`).
+fn by_machine(
     parsed: &[Parsed<'_>],
+    members: &[Member],
+    sharers: &[usize],
+    lists: &[(Vec<Held>, Vec<u32>)],
+    min: u32,
+) -> Grouped {
+    let mut machines: Vec<u16> = sharers.iter().map(|&m| machine_of(parsed, m)).collect();
+    machines.sort_unstable();
+    machines.dedup();
+    let group_of: Vec<Option<u32>> = sharers
+        .iter()
+        .map(|&m| {
+            machines
+                .binary_search(&machine_of(parsed, m))
+                .ok()
+                .map(|g| g as u32)
+        })
+        .collect();
+    let n = lists.first().map_or(0, |l| l.1.len().saturating_sub(1));
+    let shards: Vec<usize> = (0..n).collect();
+    let parts: Vec<Vec<Candidate>> = turbonop_par::map_balanced(&shards, 1, |&s| {
+        // Each record in each group: how many of the group's members hold
+        // it (each counted once: the last member that counted it), and its
+        // first copy.
+        let mut counts: HashMap<(u128, u32), (u32, u32, u32, u32)> = HashMap::default();
+        for (k, (list, bounds)) in lists.iter().enumerate() {
+            let Some(g) = group_of[k] else { continue };
+            let k = k as u32;
+            for &(h, a, b) in &list[bounds[s] as usize..bounds[s + 1] as usize] {
+                let e = counts.entry((h, g)).or_insert((0, a, b, u32::MAX));
+                if e.3 != k {
+                    e.0 += 1;
+                    e.3 = k;
+                }
+                if (a, b) < (e.1, e.2) {
+                    (e.1, e.2) = (a, b);
+                }
+            }
+        }
+        counts
+            .into_iter()
+            .filter(|&(_, (c, _, _, _))| c >= min)
+            .map(|((hash, group), (_, a, b, _))| Candidate {
+                hash,
+                group,
+                depth: members[a as usize].depth[b as usize],
+                member: a,
+                position: b,
+            })
+            .collect()
+    });
+    Grouped {
+        group_of,
+        group_machine: machines,
+        clusters: Vec::new(),
+        candidates: parts.into_iter().flatten().collect(),
+    }
+}
+
+/// A step of the holder-set hashes (splitmix64's finalizer).
+fn mix(x: u64) -> u64 {
+    let x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    let x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^ (x >> 31)
+}
+
+/// A record two or more sharers hold: its hash, a hash of its holders (in
+/// order), its first copy, and its bytes.
+type Shared = (u128, u128, u32, u32, u32);
+
+/// The groups chosen for each machine's sharers ([`cluster::choose`]).
+fn clustered(
+    parsed: &[Parsed<'_>],
+    members: &[Member],
     sharers: &[usize],
     lists: &[(Vec<Held>, Vec<u32>)],
     min: u32,
     clustering: &Clustering<'_>,
-) -> Vec<(u16, Vec<usize>, cluster::Choice)> {
-    let machine_of = |m: usize| parsed[m].object.as_ref().map_or(0, |o| o.machine);
+) -> Grouped {
     // Each machine's sharers, and each sharer's machine and position.
-    let mut machines: Vec<u16> = sharers.iter().map(|&m| machine_of(m)).collect();
+    let mut machines: Vec<u16> = sharers.iter().map(|&m| machine_of(parsed, m)).collect();
     machines.sort_unstable();
     machines.dedup();
     let mut positions: Vec<Vec<usize>> = vec![Vec::new(); machines.len()];
     let mut where_: Vec<(usize, u32)> = Vec::with_capacity(sharers.len());
     for (k, &m) in sharers.iter().enumerate() {
-        let i = machines.binary_search(&machine_of(m)).expect("a machine");
+        let i = machines
+            .binary_search(&machine_of(parsed, m))
+            .expect("a machine");
         where_.push((i, positions[i].len() as u32));
         positions[i].push(k);
     }
-    // The classes: each shard's records by holders, then all shards'.
     let n = lists.first().map_or(0, |l| l.1.len().saturating_sub(1));
     let shards: Vec<usize> = (0..n).collect();
-    let parts: Vec<HashMap<u128, (usize, cluster::Class)>> = turbonop_par::map_balanced(&shards, 1, |&s| {
-        let mut v: Vec<(u128, u32, u32, u32)> = Vec::new();
+    // The records two or more sharers hold, with a hash of their holders
+    // (each sharer counted once: the last one that counted it).
+    let parts: Vec<Vec<Shared>> = turbonop_par::map_balanced(&shards, 1, |&s| {
+        let mut held: HashMap<u128, (u32, u32, u64, u64, u32, u32)> = HashMap::default();
         for (k, (list, bounds)) in lists.iter().enumerate() {
+            let k = k as u32;
             for &(h, a, b) in &list[bounds[s] as usize..bounds[s + 1] as usize] {
-                v.push((h, k as u32, a, b));
+                let e = held
+                    .entry(h)
+                    .or_insert((0, u32::MAX, 0x5EED, 0x0DDB_A11, a, b));
+                if e.1 != k {
+                    e.0 += 1;
+                    e.1 = k;
+                    e.2 = mix(e.2 ^ u64::from(k));
+                    e.3 = mix(e.3.wrapping_add(u64::from(k) + 1));
+                }
+                if (a, b) < (e.4, e.5) {
+                    (e.4, e.5) = (a, b);
+                }
             }
         }
-        v.sort_unstable_by(|x, y| (x.0, x.1).cmp(&(y.0, y.1)));
-        let mut classes: HashMap<u128, (usize, cluster::Class)> = HashMap::default();
-        let mut holders: Vec<u32> = Vec::new();
-        let mut i = 0;
-        while i < v.len() {
-            let mut j = i;
-            holders.clear();
-            while j < v.len() && v[j].0 == v[i].0 {
-                let p = where_[v[j].1 as usize].1;
-                if holders.last() != Some(&p) {
-                    holders.push(p);
-                }
-                j += 1;
-            }
-            if holders.len() >= 2 {
-                let (_, k, a, b) = v[i];
+        held.into_iter()
+            .filter(|&(_, e)| e.0 >= 2)
+            .map(|(h, (_, _, x, y, a, b))| {
                 let c = Candidate {
-                    hash: 0,
+                    hash: h,
                     group: 0,
                     depth: 0,
                     member: a,
                     position: b,
                 };
-                let bytes = debug::record(parsed, a as usize, base_of(parsed, &c) + b).len() as u64;
-                let mut h = H128::new();
-                h.u64(where_[k as usize].0 as u64);
-                for &p in &holders {
-                    h.u64(u64::from(p));
-                }
-                classes
-                    .entry(h.finish())
-                    .or_insert_with(|| {
-                        (
-                            where_[k as usize].0,
-                            cluster::Class {
-                                bytes: 0,
-                                holders: holders.clone(),
-                            },
-                        )
-                    })
-                    .1
-                    .bytes += bytes;
-            }
-            i = j;
-        }
-        classes
+                let len = debug::record(parsed, a as usize, base_of(parsed, &c) + b).len();
+                (h, (u128::from(x) << 64) | u128::from(y), a, b, len as u32)
+            })
+            .collect()
     });
-    let mut all: HashMap<u128, (usize, cluster::Class)> = HashMap::default();
-    for part in parts {
-        for (key, c) in part {
-            all.entry(key)
-                .and_modify(|e| e.1.bytes += c.1.bytes)
-                .or_insert(c);
+    // The classes: records by holders, each with its bytes and the record
+    // of least hash, whose holders it has.
+    let mut by_set: HashMap<u128, (u64, u128)> = HashMap::default();
+    for part in &parts {
+        for &(h, set, _, _, len) in part {
+            let e = by_set.entry(set).or_insert((0, h));
+            e.0 += u64::from(len);
+            e.1 = e.1.min(h);
         }
     }
-    // By machine (each class's holders are one machine's), in key order.
-    let mut keyed: Vec<(u128, (usize, cluster::Class))> = all.into_iter().collect();
-    keyed.sort_unstable_by_key(|x| x.0);
+    let mut sets: Vec<(u128, u64, u128)> = by_set.into_iter().map(|(k, (b, r))| (k, b, r)).collect();
+    sets.sort_unstable_by_key(|x| x.0);
+    let class_of: HashMap<u128, u32> = sets
+        .iter()
+        .enumerate()
+        .map(|(i, x)| (x.0, i as u32))
+        .collect();
+    let reps: HashMap<u128, u32> = sets
+        .iter()
+        .enumerate()
+        .map(|(i, x)| (x.2, i as u32))
+        .collect();
+    // Each class's holders: the sharers holding its record of least hash.
+    let found: Vec<Vec<(u32, u32)>> = turbonop_par::map_balanced(&shards, 1, |&s| {
+        let mut v = Vec::new();
+        for (k, (list, bounds)) in lists.iter().enumerate() {
+            for &(h, _, _) in &list[bounds[s] as usize..bounds[s + 1] as usize] {
+                if let Some(&c) = reps.get(&h) {
+                    v.push((c, k as u32));
+                }
+            }
+        }
+        v
+    });
+    let mut pairs: Vec<(u32, u32)> = found.into_iter().flatten().collect();
+    pairs.sort_unstable();
+    pairs.dedup();
+    let mut holders: Vec<Vec<u32>> = vec![Vec::new(); sets.len()];
+    for (c, k) in pairs {
+        holders[c as usize].push(k);
+    }
+    // By machine (each class's holders are one machine's), as positions.
     let mut by_machine: Vec<Vec<cluster::Class>> = vec![Vec::new(); machines.len()];
-    for (_, (i, c)) in keyed {
-        by_machine[i].push(c);
+    for (c, ks) in holders.iter().enumerate() {
+        let i = ks.first().map_or(0, |&k| where_[k as usize].0);
+        by_machine[i].push(cluster::Class {
+            bytes: sets[c].1,
+            holders: ks.iter().map(|&k| where_[k as usize].1).collect(),
+        });
     }
 
     // What each member loads: the first definer of each name it refers to
@@ -918,7 +958,12 @@ fn choose_groups(
         out.sort_unstable();
         out
     });
-    let mut chosen = Vec::new();
+
+    // Each machine's choice, its groups numbered after the earlier
+    // machines'.
+    let mut group_of = vec![None; sharers.len()];
+    let mut group_machine: Vec<u16> = Vec::new();
+    let mut clusters = Vec::new();
     for (i, &machine) in machines.iter().enumerate() {
         let seeds: Vec<Vec<u32>> = positions[i].iter().map(|&k| closures[k].clone()).collect();
         let choice = cluster::choose(
@@ -928,10 +973,62 @@ fn choose_groups(
             min,
             &clustering.tries,
         );
-        chosen.push((machine, positions[i].clone(), choice));
+        let first = group_machine.len() as u32;
+        group_machine.extend(std::iter::repeat_n(machine, choice.groups as usize));
+        for (&k, g) in positions[i].iter().zip(&choice.group) {
+            group_of[k] = g.map(|g| first + g);
+        }
+        clusters.push(Clusters {
+            machine,
+            members: positions[i].len() as u64,
+            groups: choice.groups,
+            out: choice.group.iter().filter(|g| g.is_none()).count() as u64,
+            cost: choice.cost,
+            library: choice.library,
+            none: choice.none,
+            tried: choice.tried,
+        });
     }
-    chosen
+    // Each class's groups: those holding at least `min` of its members.
+    let class_groups: Vec<Vec<u32>> = holders
+        .iter()
+        .map(|ks| {
+            let mut gs: Vec<u32> = ks.iter().filter_map(|&k| group_of[k as usize]).collect();
+            gs.sort_unstable();
+            let mut out = Vec::new();
+            let mut i = 0;
+            while i < gs.len() {
+                let j = gs[i..].iter().take_while(|&&g| g == gs[i]).count();
+                if j as u32 >= min {
+                    out.push(gs[i]);
+                }
+                i += j;
+            }
+            out
+        })
+        .collect();
+    let candidates: Vec<Candidate> = parts
+        .iter()
+        .flatten()
+        .flat_map(|&(hash, set, a, b, _)| {
+            let c = class_of[&set] as usize;
+            class_groups[c].iter().map(move |&group| Candidate {
+                hash,
+                group,
+                depth: members[a as usize].depth[b as usize],
+                member: a,
+                position: b,
+            })
+        })
+        .collect();
+    Grouped {
+        group_of,
+        group_machine,
+        clusters,
+        candidates,
+    }
 }
+
 /// The first index of a candidate's member's own records.
 fn base_of(parsed: &[Parsed<'_>], c: &Candidate) -> u32 {
     records(&parsed[c.member as usize]).map_or(FIRST, |r| r.1)

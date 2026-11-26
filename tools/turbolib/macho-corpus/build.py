@@ -142,6 +142,37 @@ def ninja_libs():
     return libs, tools
 
 
+
+def archive_jobs(wanted, libs, bin_dir, out_lib):
+    """Each archive's commands: (kind, path, commands). llvm-ar qc then
+    llvm-ranlib (CMake's rules with CMAKE_AR=llvm-ar), llvm-libtool-darwin
+    -static, and llvm-libtool-darwin of both archs (a universal file)."""
+    jobs = []
+    for w in wanted:
+        name = Path(w).name
+        per_arch = {}
+        for arch in ARCHS:
+            present = [str(OUT / "obj" / arch / o) for o in libs[w] if (OUT / "obj" / arch / o).exists()]
+            per_arch[arch] = present
+            if not present:
+                continue
+            for d in ("llvm-ar", "libtool"):
+                (out_lib / d / arch).mkdir(parents=True, exist_ok=True)
+            ar = out_lib / "llvm-ar" / arch / name
+            lt = out_lib / "libtool" / arch / name
+            jobs.append((f"llvm-ar/{arch}", ar, [["rm", "-f", str(ar)], [str(bin_dir / "llvm-ar"), "qc", str(ar), *present],
+                                                 [str(bin_dir / "llvm-ranlib"), str(ar)]]))
+            jobs.append((f"libtool/{arch}", lt, [["rm", "-f", str(lt)], [str(bin_dir / "llvm-libtool-darwin"), "-static",
+                                                                         "-no_warning_for_no_symbols", "-o", str(lt), *present]]))
+        if per_arch["arm64"] and per_arch["x86_64"]:
+            (out_lib / "libtool" / "universal").mkdir(parents=True, exist_ok=True)
+            u = out_lib / "libtool" / "universal" / name
+            jobs.append(("libtool/universal", u, [["rm", "-f", str(u)], [str(bin_dir / "llvm-libtool-darwin"), "-static",
+                                                                          "-no_warning_for_no_symbols", "-o", str(u),
+                                                                          *per_arch["arm64"], *per_arch["x86_64"]]]))
+    return jobs
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--jobs", type=int, default=os.cpu_count())
@@ -186,32 +217,10 @@ def main():
     (OUT / "failed.txt").write_text("".join(f + "\n" for f in failed))
     print(f"{len(jobs)} compiles, {len(failed)} failed", flush=True)
 
-    # Archive each library: llvm-ar qc + llvm-ranlib, and llvm-libtool-darwin.
     (OUT / "members").mkdir(parents=True, exist_ok=True)
-    arjobs = []
     for w in wanted:
-        name = Path(w).name
-        (OUT / "members" / (name + ".txt")).write_text("".join(o + "\n" for o in libs[w]))
-        per_arch = {}
-        for arch in ARCHS:
-            present = [str(OUT / "obj" / arch / o) for o in libs[w] if (OUT / "obj" / arch / o).exists()]
-            per_arch[arch] = present
-            if not present:
-                continue
-            for d in ("llvm-ar", "libtool"):
-                (OUT / "lib" / d / arch).mkdir(parents=True, exist_ok=True)
-            ar = OUT / "lib" / "llvm-ar" / arch / name
-            lt = OUT / "lib" / "libtool" / arch / name
-            arjobs.append([["rm", "-f", str(ar)], [str(LLVM_BIN / "llvm-ar"), "qc", str(ar), *present],
-                           [str(LLVM_BIN / "llvm-ranlib"), str(ar)]])
-            arjobs.append([["rm", "-f", str(lt)], [str(LLVM_BIN / "llvm-libtool-darwin"), "-static",
-                                                    "-no_warning_for_no_symbols", "-o", str(lt), *present]])
-        both = per_arch["arm64"] + per_arch["x86_64"]
-        if per_arch["arm64"] and per_arch["x86_64"]:
-            (OUT / "lib" / "libtool" / "universal").mkdir(parents=True, exist_ok=True)
-            u = OUT / "lib" / "libtool" / "universal" / name
-            arjobs.append([["rm", "-f", str(u)], [str(LLVM_BIN / "llvm-libtool-darwin"), "-static",
-                                                   "-no_warning_for_no_symbols", "-o", str(u), *both]])
+        (OUT / "members" / (Path(w).name + ".txt")).write_text("".join(o + "\n" for o in libs[w]))
+    arjobs = [cmds for _, _, cmds in archive_jobs(wanted, libs, LLVM_BIN, OUT / "lib")]
 
     def archive(cmds):
         for c in cmds:

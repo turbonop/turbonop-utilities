@@ -418,29 +418,6 @@ impl Reader<'_, '_> {
     }
 }
 
-/// The universal file's header for `slices` (each: CPU type, subtype,
-/// size, and alignment as a power of 2), in their order, and where each
-/// slice goes (`writeUniversalBinaryToStream`, `FAT_MAGIC`).
-pub fn fat_layout(slices: &[(u32, u32, u64, u32)]) -> Option<(Vec<u8>, Vec<u64>)> {
-    let mut head = Vec::new();
-    head.extend_from_slice(&0xCAFE_BABE_u32.to_be_bytes());
-    head.extend_from_slice(&u32::try_from(slices.len()).ok()?.to_be_bytes());
-    let mut at = 8 + 20 * slices.len() as u64;
-    let mut offsets = Vec::with_capacity(slices.len());
-    for &(cputype, cpusubtype, size, align) in slices {
-        let a = 1u64 << align;
-        at = at.div_ceil(a) * a;
-        offsets.push(at);
-        head.extend_from_slice(&cputype.to_be_bytes());
-        head.extend_from_slice(&cpusubtype.to_be_bytes());
-        head.extend_from_slice(&u32::try_from(at).ok()?.to_be_bytes());
-        head.extend_from_slice(&u32::try_from(size).ok()?.to_be_bytes());
-        head.extend_from_slice(&align.to_be_bytes());
-        at += size;
-    }
-    Some((head, offsets))
-}
-
 /// Runs `llvm-libtool-darwin`'s command line.
 pub fn run(argv0: &str, args: &[String], env: &Env) -> Outcome {
     let mut r = Run::new(super::Flavor::LlvmAr, argv0, env);
@@ -699,7 +676,7 @@ fn write_universal(r: &mut Run<'_>, output: &str, plans: Vec<Plan>) -> Result<()
         .iter()
         .map(|s| (s.0, s.1, s.3.len() as u64, s.2))
         .collect();
-    let (head, offsets) = fat_layout(&shape)
+    let (head, offsets) = turbonop_macho::fat_layout(&shape)
         .ok_or_else(|| Fatal("error: fat file too large to be created".into()))?;
     let zeros = vec![0u8; 1 << 3];
     let mut pieces: Vec<&[u8]> = vec![&head];
@@ -742,7 +719,7 @@ mod tests {
 
     #[test]
     fn universal_header() {
-        let (head, offsets) = fat_layout(&[(7 | 0x0100_0000, 3, 0x310, 3), (0x0100_000C, 0, 0x2A0, 3)]).unwrap();
+        let (head, offsets) = turbonop_macho::fat_layout(&[(7 | 0x0100_0000, 3, 0x310, 3), (0x0100_000C, 0, 0x2A0, 3)]).unwrap();
         assert_eq!(offsets, [0x30, 0x340]);
         assert_eq!(&head[..8], &[0xCA, 0xFE, 0xBA, 0xBE, 0, 0, 0, 2]);
         assert_eq!(head.len(), 48);

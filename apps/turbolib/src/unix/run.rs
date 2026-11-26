@@ -1025,6 +1025,7 @@ fn lay_out(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(Layout, Vec<
     let table = plan.symtab && (objects || plan.dialect == Dialect::Darwin);
     let mut options = Options::new(archiver, plan.dialect);
     options.thin = plan.thin;
+    options.filler = objects;
     if !plan.deterministic {
         options.table_date = run.env.now;
     }

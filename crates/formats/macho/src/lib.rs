@@ -647,6 +647,30 @@ pub struct MachO<'d> {
     header: Header,
 }
 
+/// The universal file's header for `slices` (each: CPU type, subtype,
+/// size, and alignment as a power of 2), in their order, and where each
+/// slice goes, as LLVM's `writeUniversalBinaryToStream` writes it
+/// (`FAT_MAGIC`, 32-bit fields; the gaps are zeros).
+pub fn fat_layout(slices: &[(u32, u32, u64, u32)]) -> Option<(Vec<u8>, Vec<u64>)> {
+    let mut head = Vec::new();
+    head.extend_from_slice(&0xCAFE_BABE_u32.to_be_bytes());
+    head.extend_from_slice(&u32::try_from(slices.len()).ok()?.to_be_bytes());
+    let mut at = 8 + 20 * slices.len() as u64;
+    let mut offsets = Vec::with_capacity(slices.len());
+    for &(cputype, cpusubtype, size, align) in slices {
+        let a = 1u64 << align;
+        at = at.div_ceil(a) * a;
+        offsets.push(at);
+        head.extend_from_slice(&cputype.to_be_bytes());
+        head.extend_from_slice(&cpusubtype.to_be_bytes());
+        head.extend_from_slice(&u32::try_from(at).ok()?.to_be_bytes());
+        head.extend_from_slice(&u32::try_from(size).ok()?.to_be_bytes());
+        head.extend_from_slice(&align.to_be_bytes());
+        at += size;
+    }
+    Some((head, offsets))
+}
+
 /// Whether `data` starts with a (thin) Mach-O magic, of either byte order.
 pub fn is_macho(data: &[u8]) -> bool {
     matches!(

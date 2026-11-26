@@ -56,11 +56,14 @@ pub struct Cost {
     /// What the seeds' links read of them, in all.
     pub reads: u64,
     pub seeds: u64,
+    /// What a byte a link reads weighs against a byte of the library.
+    pub weight: u64,
 }
 
 impl Cost {
     pub fn score(&self) -> u128 {
-        u128::from(self.seeds) * u128::from(self.library) + u128::from(self.reads)
+        u128::from(self.seeds) * u128::from(self.library)
+            + u128::from(self.weight) * u128::from(self.reads)
     }
 
     /// What an average one-member link reads.
@@ -83,6 +86,15 @@ pub(super) struct Choice {
     /// Each number of groups tried, with its cost.
     pub tried: Vec<(u32, Cost)>,
 }
+
+/// What a byte an average one-member link reads weighs against a byte of
+/// the library, by default. On LLVM (`build-z7-nopch`, the 27 libraries
+/// `llvm-nm`, `llvm-readobj`, `mlir-src-sharder`, `llvm-min-tblgen`, and
+/// `llvm-tblgen` use), 1 left lld-link's PDBs with almost all of the
+/// records `--precomp=library` adds (0 to 4% fewer), 4 with 16 to 77%,
+/// 16 with 34 to 64% (the libraries 2.3% larger than `library`'s), and 64
+/// and 256 little better than 16, with larger libraries.
+pub const WEIGHT: u64 = 16;
 
 /// The search's bound on sweeps over the members.
 const SWEEPS: u32 = 32;
@@ -111,6 +123,7 @@ struct State<'x> {
     /// By seed and group: the members of the group its closure holds.
     loaded: Vec<u32>,
     seeds: u64,
+    weight: u64,
 }
 
 fn csr(n: usize, pairs: impl Iterator<Item = (u32, u32)> + Clone) -> (Vec<u32>, Vec<u32>) {
@@ -135,15 +148,17 @@ impl<'x> State<'x> {
         classes: &'x [Class],
         closures: &[Vec<u32>],
         min: u32,
+        weight: u64,
         t: usize,
         group: Vec<u32>,
     ) -> State<'x> {
         let n = group.len();
         let (cls_start, cls) = csr(
             n,
-            classes.iter().enumerate().flat_map(|(c, k)| {
-                k.holders.iter().map(move |&p| (p, c as u32))
-            }),
+            classes
+                .iter()
+                .enumerate()
+                .flat_map(|(c, k)| k.holders.iter().map(move |&p| (p, c as u32))),
         );
         let (ld_start, ld) = csr(
             n,
@@ -167,6 +182,7 @@ impl<'x> State<'x> {
             touch: vec![0; t],
             loaded: vec![0; closures.len() * t],
             seeds: closures.len() as u64,
+            weight,
         };
         for (c, k) in classes.iter().enumerate() {
             for &p in &k.holders {
@@ -249,6 +265,7 @@ impl<'x> State<'x> {
             library,
             reads,
             seeds: self.seeds,
+            weight: self.weight,
         }
     }
 
@@ -277,10 +294,8 @@ impl<'x> State<'x> {
                 let i = c * t + a as usize;
                 let (n, sl) = (self.cnt[i], self.sld[i]);
                 d_lib_a += b * (self.copies(n - 1) as i128 - self.copies(n) as i128);
-                d_kept_a +=
-                    b * (self.kept(n - 1, sl - ld) as i128 - self.kept(n, sl) as i128);
-                d_pch_a += b
-                    * (i128::from(n > self.min) - i128::from(n >= self.min));
+                d_kept_a += b * (self.kept(n - 1, sl - ld) as i128 - self.kept(n, sl) as i128);
+                d_pch_a += b * (i128::from(n > self.min) - i128::from(n >= self.min));
             }
             for z in 0..t {
                 if z as u32 == a {
@@ -289,8 +304,7 @@ impl<'x> State<'x> {
                 let i = c * t + z;
                 let (n, sl) = (self.cnt[i], self.sld[i]);
                 d_lib[z] += b * (self.copies(n + 1) as i128 - self.copies(n) as i128);
-                d_kept[z] +=
-                    b * (self.kept(n + 1, sl + ld) as i128 - self.kept(n, sl) as i128);
+                d_kept[z] += b * (self.kept(n + 1, sl + ld) as i128 - self.kept(n, sl) as i128);
                 d_pch[z] += b * (i128::from(n + 1 >= self.min) - i128::from(n >= self.min));
             }
             d_lib[t] += b;
@@ -314,13 +328,14 @@ impl<'x> State<'x> {
             let (p0, t0) = (i128::from(self.pch[g]), i128::from(self.touch[g]));
             (p0 + dp) * (t0 + dt) - p0 * t0
         };
+        let w = i128::from(self.weight);
         let leave = seeds * d_lib_a
-            + d_kept_a
-            + if a == OUT {
-                0
-            } else {
-                group_reads(a as usize, d_pch_a, d_touch_a)
-            };
+            + w * (d_kept_a
+                + if a == OUT {
+                    0
+                } else {
+                    group_reads(a as usize, d_pch_a, d_touch_a)
+                });
         out.clear();
         for z in 0..=t {
             if z as u32 == a || (z == t && a == OUT) {
@@ -328,12 +343,12 @@ impl<'x> State<'x> {
                 continue;
             }
             let join = seeds * d_lib[z]
-                + d_kept[z]
-                + if z == t {
-                    0
-                } else {
-                    group_reads(z, d_pch[z], d_touch[z])
-                };
+                + w * (d_kept[z]
+                    + if z == t {
+                        0
+                    } else {
+                        group_reads(z, d_pch[z], d_touch[z])
+                    });
             out.push(leave + join);
         }
     }
@@ -447,7 +462,11 @@ fn start(n: usize, closures: &[Vec<u32>], t: usize) -> Vec<u32> {
     let (bits, w) = loader_sets(n, closures);
     let set = |p: usize| &bits[p * w..p * w + w];
     let size = |p: usize| set(p).iter().map(|x| x.count_ones()).sum::<u32>();
-    let mut heads = vec![(0..n).max_by_key(|&p| (size(p), std::cmp::Reverse(p))).unwrap_or(0)];
+    let mut heads = vec![
+        (0..n)
+            .max_by_key(|&p| (size(p), std::cmp::Reverse(p)))
+            .unwrap_or(0),
+    ];
     // Each member's best similarity to a head so far (intersection, union).
     let mut best: Vec<(u32, u32)> = (0..n).map(|p| overlap(set(p), set(heads[0]))).collect();
     let mut group = vec![0u32; n];
@@ -493,11 +512,12 @@ pub(super) fn choose(
     classes: &[Class],
     closures: &[Vec<u32>],
     min: u32,
+    weight: u64,
     tries: &[u32],
 ) -> Choice {
     let min = min.max(2);
-    let library = State::new(classes, closures, min, 1, vec![0; n]).cost();
-    let none = State::new(classes, closures, min, 1, vec![OUT; n]).cost();
+    let library = State::new(classes, closures, min, weight, 1, vec![0; n]).cost();
+    let none = State::new(classes, closures, min, weight, 1, vec![OUT; n]).cost();
     let mut tried = Vec::new();
     let mut chosen: Option<(Cost, Vec<u32>, u32)> = None;
     for &t in tries {
@@ -505,7 +525,7 @@ pub(super) fn choose(
         if tried.iter().any(|&(x, _)| x == t as u32) {
             continue;
         }
-        let mut st = State::new(classes, closures, min, t, start(n, closures, t));
+        let mut st = State::new(classes, closures, min, weight, t, start(n, closures, t));
         st.descend();
         let cost = st.cost();
         tried.push((t as u32, cost));
@@ -518,7 +538,14 @@ pub(super) fn choose(
     }
     let (cost, raw, _) = chosen.unwrap_or((library, vec![0; n], 1));
     // Groups renumbered by their first member, empty ones dropped.
-    let mut renumber: Vec<Option<u32>> = vec![None; raw.iter().filter(|&&g| g != OUT).map(|&g| g as usize + 1).max().unwrap_or(0)];
+    let mut renumber: Vec<Option<u32>> = vec![
+        None;
+        raw.iter()
+            .filter(|&&g| g != OUT)
+            .map(|&g| g as usize + 1)
+            .max()
+            .unwrap_or(0)
+    ];
     let mut next = 0;
     let group: Vec<Option<u32>> = raw
         .iter()

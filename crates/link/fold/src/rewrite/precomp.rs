@@ -490,6 +490,9 @@ struct Candidate {
 /// lists them), for what links load.
 pub(super) struct Clustering<'d> {
     pub tries: Vec<u32>,
+    /// What a byte an average link reads weighs against a byte of the
+    /// library ([`cluster`]).
+    pub weight: u64,
     pub definitions: &'d [Vec<Cow<'d, [u8]>>],
 }
 
@@ -867,7 +870,8 @@ fn clustered(
             e.1 = e.1.min(h);
         }
     }
-    let mut sets: Vec<(u128, u64, u128)> = by_set.into_iter().map(|(k, (b, r))| (k, b, r)).collect();
+    let mut sets: Vec<(u128, u64, u128)> =
+        by_set.into_iter().map(|(k, (b, r))| (k, b, r)).collect();
     sets.sort_unstable_by_key(|x| x.0);
     let class_of: HashMap<u128, u32> = sets
         .iter()
@@ -971,6 +975,7 @@ fn clustered(
             &by_machine[i],
             &seeds,
             min,
+            clustering.weight,
             &clustering.tries,
         );
         let first = group_machine.len() as u32;

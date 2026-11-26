@@ -71,7 +71,7 @@ fn deltas_are_exact() {
                 x => x as u32,
             })
             .collect();
-        let mut st = State::new(&classes, &closures, min, t, group);
+        let mut st = State::new(&classes, &closures, min, 1 + case as u64 % 5, t, group);
         let mut d = Vec::new();
         for _ in 0..30 {
             let p = r.below(n as u64) as usize;
@@ -81,8 +81,20 @@ fn deltas_are_exact() {
             let target = if z == t { OUT } else { z as u32 };
             st.apply(p, target);
             let after = st.cost();
-            assert_eq!(after.score() as i128 - before, d[z], "case {case}: move {p} to {z}");
-            let fresh = State::new(&classes, &closures, min, t, st.group.clone()).cost();
+            assert_eq!(
+                after.score() as i128 - before,
+                d[z],
+                "case {case}: move {p} to {z}"
+            );
+            let fresh = State::new(
+                &classes,
+                &closures,
+                min,
+                1 + case as u64 % 5,
+                t,
+                st.group.clone(),
+            )
+            .cost();
             assert_eq!(after, fresh, "case {case}");
         }
     }
@@ -104,7 +116,7 @@ fn library_and_none() {
     ];
     // 0 loads 1; 1 and 2 load only themselves.
     let closures = vec![vec![0, 1], vec![1], vec![2]];
-    let c = choose(3, &classes, &closures, 2, &[1]);
+    let c = choose(3, &classes, &closures, 2, 1, &[1]);
     assert_eq!(c.library.library, 110);
     assert_eq!(c.none.library, 230);
     // One group: every seed reads 110.
@@ -144,10 +156,14 @@ fn separate_parts_get_separate_groups() {
             _ => vec![8],
         })
         .collect();
-    let c = choose(9, &classes, &closures, 2, &[1, 2, 4]);
+    let c = choose(9, &classes, &closures, 2, 1, &[1, 2, 4]);
     assert_eq!(c.groups, 2, "{c:?}");
     assert!(c.group[..4].iter().all(|&g| g == c.group[0] && g.is_some()));
-    assert!(c.group[4..8].iter().all(|&g| g == c.group[4] && g.is_some()));
+    assert!(
+        c.group[4..8]
+            .iter()
+            .all(|&g| g == c.group[4] && g.is_some())
+    );
     assert_ne!(c.group[0], c.group[4]);
     assert!(c.cost.score() < c.library.score());
 }
@@ -171,7 +187,7 @@ fn loaded_together_stay_together() {
     ];
     let all: Vec<u32> = (0..4).collect();
     let closures = vec![all.clone(); 4];
-    let c = choose(4, &classes, &closures, 2, &[1, 2, 4]);
+    let c = choose(4, &classes, &closures, 2, 1, &[1, 2, 4]);
     assert_eq!(c.groups, 1, "{c:?}");
     assert_eq!(c.cost, c.library);
 }
@@ -181,8 +197,8 @@ fn loaded_together_stay_together() {
 fn deterministic() {
     let mut r = Rng(42);
     let (classes, closures) = instance(&mut r, 12);
-    let a = choose(12, &classes, &closures, 2, &[1, 2, 4, 8]);
-    let b = choose(12, &classes, &closures, 2, &[1, 2, 4, 8]);
+    let a = choose(12, &classes, &closures, 2, 1, &[1, 2, 4, 8]);
+    let b = choose(12, &classes, &closures, 2, 1, &[1, 2, 4, 8]);
     assert_eq!(a.group, b.group);
     assert_eq!(a.cost, b.cost);
     assert!(a.cost.score() <= a.library.score());

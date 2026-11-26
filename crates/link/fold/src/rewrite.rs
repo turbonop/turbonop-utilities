@@ -94,8 +94,14 @@ pub enum Precomp {
     /// Up to `max` precompiled-types members (by default, as many as the
     /// cost model chooses, up to 16), each for a group of members, holding
     /// the records at least `min` members of the group hold
-    /// ([`precomp::cluster`]).
-    Clustered { min: u32, max: Option<u32> },
+    /// ([`precomp::cluster`]); `weight` is what a byte an average link
+    /// reads weighs against a byte of the library
+    /// ([`precomp::cluster::WEIGHT`] by default).
+    Clustered {
+        min: u32,
+        max: Option<u32>,
+        weight: u64,
+    },
 }
 
 impl Precomp {
@@ -103,7 +109,10 @@ impl Precomp {
     /// its `max`, and `max`.
     pub fn tries(max: Option<u32>) -> Vec<u32> {
         let max = max.unwrap_or(16).max(1);
-        let mut v: Vec<u32> = (0..32).map(|i| 1u32 << i).take_while(|&t| t < max).collect();
+        let mut v: Vec<u32> = (0..32)
+            .map(|i| 1u32 << i)
+            .take_while(|&t| t < max)
+            .collect();
         v.push(max);
         v
     }
@@ -628,15 +637,20 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     let types_clock = std::time::Instant::now();
     let (plan, (first_definer, one_code, one_key)) = turbonop_par::join(
         || match options.precomp {
-            Precomp::Library { min } => {
-                Some((precomp::plan(&parsed, min.max(1), None), types_clock.elapsed()))
-            }
-            Precomp::Clustered { min, max } => {
+            Precomp::Library { min } => Some((
+                precomp::plan(&parsed, min.max(1), None),
+                types_clock.elapsed(),
+            )),
+            Precomp::Clustered { min, max, weight } => {
                 let c = precomp::Clustering {
                     tries: Precomp::tries(max),
+                    weight,
                     definitions: &defs,
                 };
-                Some((precomp::plan(&parsed, min.max(2), Some(&c)), types_clock.elapsed()))
+                Some((
+                    precomp::plan(&parsed, min.max(2), Some(&c)),
+                    types_clock.elapsed(),
+                ))
             }
             Precomp::None => None,
         },

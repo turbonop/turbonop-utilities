@@ -569,9 +569,11 @@ fn build(
                         odr: settings.report_odr,
                         precomp: match settings.precomp {
                             Precomp::Library => rewrite::Precomp::Library { min: 2 },
-                            Precomp::Clustered(max) => {
-                                rewrite::Precomp::Clustered { min: 2, max }
-                            }
+                            Precomp::Clustered(max) => rewrite::Precomp::Clustered {
+                                min: 2,
+                                max,
+                                weight: turbonop_fold::rewrite::precomp::cluster::WEIGHT,
+                            },
                             Precomp::None => rewrite::Precomp::None,
                         },
                     },
@@ -865,7 +867,11 @@ fn stats_lines(r: &rewrite::Report, members: &[Placed<'_>]) -> Vec<String> {
         }
         for c in &ty.clusters {
             let model = |x: &turbonop_fold::rewrite::precomp::cluster::Cost| {
-                format!("{:.1} MiB, {:.1} MiB per link", mb(x.library), mb(x.per_link()))
+                format!(
+                    "{:.1} MiB, {:.1} MiB per link",
+                    mb(x.library),
+                    mb(x.per_link())
+                )
             };
             let tried: Vec<String> = c
                 .tried

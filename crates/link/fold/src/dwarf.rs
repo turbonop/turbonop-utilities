@@ -282,6 +282,15 @@ pub(crate) struct Source<'p> {
     atoms: Option<Vec<Vec<(u64, u64, usize)>>>,
     /// Mach-O: each atom's real section, start, and end.
     extents: Vec<Option<(usize, u64, u64)>>,
+    /// Mach-O: classes the moved code names (from its own DIEs: its
+    /// variables', parameters', and specifications' types) and the classes
+    /// it is a member of are kept whole, not as declarations: dsymutil
+    /// keeps only what the linked code's DIEs reach, so a definition only
+    /// the moved code named would be in no unit of the dSYM. (What those
+    /// definitions name are declarations again: keeping every class whole
+    /// would make the corpus's synthesized members' DWARF 6.07 GB, not
+    /// 14.9 MB.)
+    complete: bool,
     _p: core::marker::PhantomData<&'p ()>,
     endian: Endian,
     abs32: u32,
@@ -469,6 +478,7 @@ impl<'p> Source<'p> {
                 .collect(),
             atoms: None,
             extents: Vec::new(),
+            complete: false,
             _p: core::marker::PhantomData,
             endian,
             abs32,
@@ -1370,6 +1380,7 @@ impl<'p> Source<'p> {
             sections,
             atoms: Some(atoms),
             extents,
+            complete: true,
             _p: core::marker::PhantomData,
             endian: Endian::Little,
             abs32,
@@ -1385,11 +1396,6 @@ impl<'p> Source<'p> {
             return Ok(src);
         }
         src.read_units(owner)?;
-        if std::env::var_os("TURBOLIB_MACHO_WHOLE_TYPES").is_some() {
-            for cu in &mut src.cus {
-                cu.declarable.iter_mut().for_each(|d| *d = false);
-            }
-        }
         Ok(src)
     }
 
@@ -1762,6 +1768,13 @@ struct Keep<'c> {
     /// can find the definition of by its name (in named scopes only): the
     /// unit's, worked out once.
     declarable: &'c [bool],
+    /// Mach-O: classes the moved code names, and those it is a member of,
+    /// whole (see [`Source::complete`]).
+    complete: bool,
+    /// The type DIEs (pointers, references, qualifiers, typedefs, arrays,
+    /// function types) kept for the moved code: what they name, the code
+    /// names too.
+    via_code: std::collections::HashSet<usize>,
 }
 
 const SKELETON: u8 = 1;
@@ -1796,6 +1809,8 @@ impl<'c> Keep<'c> {
             mark: HashMap::new(),
             work: Vec::new(),
             declarable,
+            complete: false,
+            via_code: std::collections::HashSet::new(),
         }
     }
 
@@ -1814,7 +1829,10 @@ impl<'c> Keep<'c> {
             if self.mark(at) != 0 {
                 return;
             }
-            if self.declarable[at] {
+            if self.declarable[at] && self.complete {
+                self.whole(dies, at);
+                return;
+            } else if self.declarable[at] {
                 self.mark.insert(at, DECLARATION);
             } else if is_scope(dies[at].tag)
                 || matches!(
@@ -1862,10 +1880,10 @@ impl<'c> Keep<'c> {
     /// debugger finds by name as a declaration (its definition is in the
     /// givers' units, which a link that loads this member loads), the rest
     /// whole.
-    fn refer(&mut self, dies: &[Die], i: usize) {
+    fn refer(&mut self, dies: &[Die], i: usize, from_code: bool) {
         if is_scope(dies[i].tag) {
             self.skeleton(dies, i);
-        } else if self.declarable[i] {
+        } else if self.declarable[i] && !(self.complete && from_code) {
             if self.mark(i) == 0 {
                 self.mark.insert(i, DECLARATION);
                 let p = dies[i].parent;
@@ -1874,6 +1892,25 @@ impl<'c> Keep<'c> {
                 }
             }
         } else {
+            if self.complete
+                && from_code
+                && matches!(
+                    dies[i].tag,
+                    DW_TAG_POINTER_TYPE
+                        | DW_TAG_REFERENCE_TYPE
+                        | DW_TAG_RVALUE_REFERENCE_TYPE
+                        | DW_TAG_CONST_TYPE
+                        | DW_TAG_VOLATILE_TYPE
+                        | DW_TAG_RESTRICT_TYPE
+                        | DW_TAG_TYPEDEF
+                        | DW_TAG_ARRAY_TYPE
+                        | DW_TAG_SUBROUTINE_TYPE
+                        | DW_TAG_PTR_TO_MEMBER_TYPE
+                )
+                && self.mark(i) != WHOLE
+            {
+                self.via_code.insert(i);
+            }
             self.whole(dies, i);
         }
     }
@@ -2572,9 +2609,20 @@ impl<'s, 'p> Builder<'s, 'p> {
         let dies = &cu.dies;
         // What to keep.
         let mut keep = Keep::new(&cu.declarable);
+        keep.complete = src.complete;
         for &r in roots {
             keep.whole(dies, r);
         }
+        // The moved code's DIEs: the roots' subtrees (offsets).
+        let mut code: Vec<(u64, u64)> = roots
+            .iter()
+            .map(|&r| (dies[r].offset, dies[r].end))
+            .collect();
+        code.sort_unstable();
+        let in_code = |off: u64| {
+            let k = code.partition_point(|c| c.0 <= off);
+            k.checked_sub(1).is_some_and(|k| off < code[k].1)
+        };
         keep.skeleton(dies, 0);
         let mut refs = Vec::new();
         while let Some(i) = keep.work.pop() {
@@ -2614,8 +2662,9 @@ impl<'s, 'p> Builder<'s, 'p> {
                     _ => {}
                 }
             }
+            let from_code = in_code(dies[i].offset) || keep.via_code.contains(&i);
             for &t in &refs {
-                keep.refer(dies, t);
+                keep.refer(dies, t, from_code);
             }
         }
         // The kept DIEs, in order.

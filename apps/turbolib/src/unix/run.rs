@@ -1033,6 +1033,14 @@ fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>
 "
             ));
         }
+        if !report.phases.is_empty() {
+            let phases: Vec<String> = report
+                .phases
+                .iter()
+                .map(|(what, d)| format!("{what} {:.3} s", d.as_secs_f64()))
+                .collect();
+            text.push_str(&format!("turbolib:   time: {}\n", phases.join(", ")));
+        }
         run.stderr.push_str(&text);
     }
     let synthesized = if plan.deterministic {

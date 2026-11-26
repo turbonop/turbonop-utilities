@@ -465,8 +465,14 @@ impl<'a> Image<'a> {
         let i = *self.primary.get(k.checked_sub(1)?)?;
         let l = &self.labels[i];
         let s = self.section_at(addr)?;
-        // (A label of another section is no name.)
-        if l.addr < s.addr || (l.rank == 3 && addr != l.addr) {
+        // (A label of another section is no name. And a symbol has no size:
+        // past a local one's start, in data, may be data no symbol names,
+        // a literal or a table, whose neighbor follows the layout: named
+        // by its contents.)
+        if l.addr < s.addr
+            || (l.rank == 3 && addr != l.addr)
+            || (l.rank == 1 && addr != l.addr && !s.code())
+        {
             return self.content_name(s, addr);
         }
         let off = u32::try_from(addr - l.addr).ok()?;
@@ -652,6 +658,18 @@ fn region(
     };
     let (ba, bb) = if ra.3 {
         (&ba[..unpadded(ba, isa)], &bb[..unpadded(bb, isa)])
+    } else {
+        (ba, bb)
+    };
+    // (A datum's extent runs to the next symbol, which follows the layout:
+    // what lies between, data no symbol names, may differ. Both extents
+    // hold the whole datum, so the shorter is compared.)
+    let (ba, bb) = if !ra.3 && ba.len() != bb.len() {
+        rep.expect("data whose extents (to the next symbol) differ", || {
+            format!("{}: {:#x} and {:#x}", show(key), ba.len(), bb.len())
+        });
+        let n = ba.len().min(bb.len());
+        (&ba[..n], &bb[..n])
     } else {
         (ba, bb)
     };

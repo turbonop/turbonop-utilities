@@ -57,19 +57,40 @@ impl core::error::Error for CutError {}
 /// A section offset after the section's cuts (`None`: in a removed
 /// range). Offsets before the section or past its end move as its start
 /// and its end do.
-fn map_offset(ranges: &[Range<u64>], off: i128) -> Option<i128> {
-    let mut removed = 0i128;
-    for r in ranges {
-        let (start, end) = (i128::from(r.start), i128::from(r.end));
-        if off >= end {
-            removed += end - start;
-        } else if off >= start {
-            return None;
-        } else {
-            break;
-        }
+fn map_offset(ranges: &Cuts<'_>, off: i128) -> Option<i128> {
+    // (The ranges before `off`, by binary search: a section may have
+    // thousands of cuts and many more relocations.)
+    let k = ranges.ranges.partition_point(|r| i128::from(r.end) <= off);
+    if ranges
+        .ranges
+        .get(k)
+        .is_some_and(|r| off >= i128::from(r.start))
+    {
+        return None;
     }
-    Some(off - removed)
+    let removed = k.checked_sub(1).map_or(0, |k| ranges.removed[k]);
+    Some(off - i128::from(removed))
+}
+
+/// A section's cut ranges (sorted, disjoint), and the bytes removed up to
+/// each one's end.
+struct Cuts<'r> {
+    ranges: &'r [Range<u64>],
+    removed: Vec<u64>,
+}
+
+impl<'r> Cuts<'r> {
+    fn new(ranges: &'r [Range<u64>]) -> Self {
+        let mut sum = 0;
+        let removed = ranges
+            .iter()
+            .map(|r| {
+                sum += r.end - r.start;
+                sum
+            })
+            .collect();
+        Cuts { ranges, removed }
+    }
 }
 
 /// Each old address's new one.
@@ -78,6 +99,7 @@ struct Map<'m> {
     old: &'m [(u64, u64)],
     new: &'m [u64],
     cuts: &'m [Vec<Range<u64>>],
+    sums: &'m [Cuts<'m>],
 }
 
 impl Map<'_> {
@@ -94,7 +116,7 @@ impl Map<'_> {
     fn in_section(&self, t: usize, a: u64) -> Option<u64> {
         let (lo, _) = *self.old.get(t)?;
         let off = i128::from(a) - i128::from(lo);
-        let n = map_offset(&self.cuts[t], off)?;
+        let n = map_offset(&self.sums[t], off)?;
         Some((i128::from(self.new[t]) + n) as u64)
     }
 
@@ -165,7 +187,13 @@ pub(crate) fn remap(
     new: &[u64],
     cuts: &[Vec<Range<u64>>],
 ) -> Cut {
-    let map = Map { old, new, cuts };
+    let sums: Vec<Cuts<'_>> = cuts.iter().map(|c| Cuts::new(c)).collect();
+    let map = Map {
+        old,
+        new,
+        cuts,
+        sums: &sums,
+    };
     let n = old.len();
     let mut out = Cut::default();
     if (0..n).all(|t| !map.changed(t)) {
@@ -179,6 +207,7 @@ pub(crate) fn remap(
             break;
         }
         let ranges = &cuts[i];
+        let sum = &sums[i];
         let old_addr = old[i].0;
         let alignment = 1u64 << s.align.min(32);
         let mut removed_before = 0u64;
@@ -196,7 +225,7 @@ pub(crate) fn remap(
         for g in reloc::fixups(cputype, &s.relocations) {
             let group = &s.relocations[g];
             let first = group[0];
-            let Some(new_off) = map_offset(ranges, i128::from(first.address)) else {
+            let Some(new_off) = map_offset(sum, i128::from(first.address)) else {
                 continue;
             };
             let old_place = old_addr.wrapping_add(u64::from(first.address));
@@ -358,7 +387,7 @@ pub(crate) fn remap(
             let last = group[group.len() - 1];
             for r in &mut group {
                 if has_place(cputype, r)
-                    && let Some(off) = map_offset(ranges, i128::from(r.address))
+                    && let Some(off) = map_offset(sum, i128::from(r.address))
                 {
                     r.address = off as u32;
                 }
@@ -390,7 +419,7 @@ pub(crate) fn remap(
                             ok = false;
                             continue;
                         };
-                        let Some(new_off) = map_offset(ranges, i128::from(at)) else {
+                        let Some(new_off) = map_offset(sum, i128::from(at)) else {
                             continue;
                         };
                         if covered.contains(&at) {
@@ -425,10 +454,10 @@ pub(crate) fn remap(
                     }
                     // Each FDE's distance back to its CIE.
                     for (field, cie) in ehframe::cie_links(b, endian).unwrap_or_default() {
-                        let Some(nf) = map_offset(ranges, field as i128) else {
+                        let Some(nf) = map_offset(sum, field as i128) else {
                             continue;
                         };
-                        let Some(nc) = map_offset(ranges, cie as i128) else {
+                        let Some(nc) = map_offset(sum, cie as i128) else {
                             ok = false;
                             continue;
                         };

@@ -173,6 +173,12 @@ fn rows(o: &Object<'_>, d: &Dwarf<'_>, loc: &Locator) -> Option<Vec<(Place, Stri
     let mut out = Vec::with_capacity(p.rows.len());
     let mut hint = secs.pop().flatten();
     for r in &p.rows {
+        // (A sequence's end says nothing but where it is.)
+        if r.end_sequence {
+            out.push((loc.place(r.address, hint), "end".to_string()));
+            hint = secs.pop().flatten();
+            continue;
+        }
         out.push((
             loc.place(r.address, hint),
             format!(

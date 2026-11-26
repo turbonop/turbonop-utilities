@@ -212,6 +212,8 @@ pub struct Report {
     pub debug_roots: usize,
     pub debug_tombstoned: usize,
     pub debug_bytes: u64,
+    /// How long each phase took, in order (for `--stats`).
+    pub phases: Vec<(&'static str, std::time::Duration)>,
     /// Members whose rewriting failed, kept whole (their copies are still
     /// held by synthesized members too, which is allowed: the copies are
     /// identical weak definitions).
@@ -1259,7 +1261,15 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
         members: inputs.len(),
         ..Report::default()
     };
-    let parsed: Vec<Parsed<'_>> = turbonop_par::map(inputs, 1, parse);
+    let mut clock = std::time::Instant::now();
+    let mut lap = |report: &mut Report, what: &'static str| {
+        let now = std::time::Instant::now();
+        report.phases.push((what, now - clock));
+        clock = now;
+    };
+    // (Members' costs differ widely: threads take them as they finish.)
+    let parsed: Vec<Parsed<'_>> = turbonop_par::map_balanced(inputs, 1, parse);
+    lap(&mut report, "reading");
     for p in &parsed {
         if let Some(w) = &p.why_not {
             *report.passed.entry(w.clone()).or_default() += 1;
@@ -1338,6 +1348,17 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     }
     // A unit naming a name its member keeps must stay; a unit with fewer
     // than two folding copies stays. To a fixpoint.
+    // (Each member's definitions by name: the unit, if a unit's.)
+    let defs_by_name: Vec<BTreeMap<&[u8], Vec<Option<usize>>>> = parsed
+        .iter()
+        .map(|p| {
+            let mut m: BTreeMap<&[u8], Vec<Option<usize>>> = BTreeMap::new();
+            for (n, u) in &p.defs {
+                m.entry(n.as_slice()).or_default().push(*u);
+            }
+            m
+        })
+        .collect();
     loop {
         let mut changed = false;
         for (m, p) in parsed.iter().enumerate() {
@@ -1346,9 +1367,9 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                     continue;
                 }
                 let stays = u.refs.iter().any(|r| {
-                    p.defs
-                        .iter()
-                        .any(|(n, du)| n == r && du.is_none_or(|du| !folds[m][du]))
+                    defs_by_name[m]
+                        .get(r.as_slice())
+                        .is_some_and(|ds| ds.iter().any(|du| du.is_none_or(|du| !folds[m][du])))
                 });
                 if stays {
                     folds[m][k] = false;
@@ -1474,6 +1495,7 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
         s.name = format!("__turbolib.{i}.o").into_bytes();
     }
 
+    lap(&mut report, "choosing");
     // The survivors' members' DWARF, read once each, on every core.
     let debug_members: Vec<usize> = synth
         .iter()
@@ -1482,29 +1504,55 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
         .collect::<BTreeSet<usize>>()
         .into_iter()
         .collect();
-    let sources: Vec<Result<debug::Debug<'_>, &'static str>> =
-        turbonop_par::map_balanced(&debug_members, 1, |&m| debug::read(&parsed[m]));
+    // Then the givers rewritten and that DWARF read, together, on every
+    // core (threads take jobs as they finish: their costs differ widely).
+    enum Job {
+        Source(usize),
+        Giver(usize),
+    }
+    enum Done<'p> {
+        Source(Result<debug::Debug<'p>, &'static str>),
+        Giver(Option<Rewritten>),
+    }
+    let jobs: Vec<Job> = debug_members
+        .iter()
+        .map(|&m| Job::Source(m))
+        .chain((0..parsed.len()).map(Job::Giver))
+        .collect();
+    let done: Vec<Done<'_>> = turbonop_par::map_balanced(&jobs, 1, |j| match *j {
+        Job::Source(m) => Done::Source(debug::read(&parsed[m])),
+        Job::Giver(m) => {
+            let gone: Vec<usize> = (0..parsed[m].units.len())
+                .filter(|&k| folds[m][k])
+                .collect();
+            if gone.is_empty() {
+                return Done::Giver(None);
+            }
+            let anchors: BTreeSet<usize> = gone.iter().map(|&k| moved_to[&(m, k)]).collect();
+            Done::Giver(Some(rewrite_giver(&parsed[m], &gone, &anchors, &synth)))
+        }
+    });
+    let mut sources = Vec::with_capacity(debug_members.len());
+    let mut rewritten: Vec<Option<Rewritten>> = Vec::with_capacity(parsed.len());
+    for d in done {
+        match d {
+            Done::Source(s) => sources.push(s),
+            Done::Giver(g) => rewritten.push(g),
+        }
+    }
+    lap(&mut report, "rewriting and reading DWARF");
     let source_of: BTreeMap<usize, &Result<debug::Debug<'_>, &'static str>> =
         debug_members.iter().copied().zip(sources.iter()).collect();
-    // Write the synthesized members and rewrite the givers, on every core.
+    // The synthesized members, on every core.
     let built: Vec<Result<(Vec<u8>, SynthDebug), String>> =
-        turbonop_par::map_range(synth.len(), 1, |i| {
+        turbonop_par::map_balanced(&(0..synth.len()).collect::<Vec<usize>>(), 1, |&i| {
             let src = synth[i]
                 .units
                 .first()
                 .and_then(|&(m, _)| source_of.get(&m).copied());
             build_synth(&parsed, &synth, i, &name_to, src)
         });
-    let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_range(parsed.len(), 1, |m| {
-        let gone: Vec<usize> = (0..parsed[m].units.len())
-            .filter(|&k| folds[m][k])
-            .collect();
-        if gone.is_empty() {
-            return None;
-        }
-        let anchors: BTreeSet<usize> = gone.iter().map(|&k| moved_to[&(m, k)]).collect();
-        Some(rewrite_giver(&parsed[m], &gone, &anchors, &synth))
-    });
+    lap(&mut report, "synthesizing");
     let mut out = Vec::with_capacity(inputs.len() + synth.len());
     let mut failed_synth = false;
     for (i, b) in built.into_iter().enumerate() {
@@ -2256,10 +2304,18 @@ fn rewrite_giver(
         .collect();
     // (In the section the relocation names: an address at a section's end,
     // as a range list's end has, isn't the next section's first atom.)
+    let mut by_section: BTreeMap<usize, Vec<Range<u64>>> = BTreeMap::new();
+    for (si, _, r) in &ranges {
+        by_section.entry(*si).or_default().push(r.clone());
+    }
+    for v in by_section.values_mut() {
+        v.sort_by_key(|r| r.start);
+    }
     let in_gone = |section: usize, a: u64| {
-        ranges
-            .iter()
-            .any(|(si, _, r)| *si == section && r.contains(&a))
+        by_section.get(&section).is_some_and(|v| {
+            let k = v.partition_point(|r| r.start <= a);
+            k.checked_sub(1).is_some_and(|k| v[k].contains(&a))
+        })
     };
     let gone_syms: BTreeSet<u32> = gone
         .iter()

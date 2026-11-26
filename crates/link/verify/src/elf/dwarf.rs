@@ -982,6 +982,32 @@ fn is_type(tag: u16) -> bool {
     )
 }
 
+/// A type definition's contents: its DIE, then its members (each member's
+/// subtree) as a set: their order says nothing (a member's offset is an
+/// attribute), and dsymutil, merging a declaration's members into the
+/// definition it keeps, writes them in another.
+fn type_subtree(cu: &mut Cu<'_, '_>, code: &[bool], i: usize, out: &mut dyn Sink) {
+    cu.canon(i, out);
+    let end = cu.dies[i].end.max(i + 1);
+    let depth = cu.dies[i].depth;
+    let mut members: Vec<u128> = Vec::new();
+    let mut j = i + 1;
+    while j < end {
+        if cu.dies[j].depth == depth + 1 {
+            let mut h = H128::new();
+            subtree(cu, code, j, &mut h);
+            members.push(h.finish());
+        }
+        j += 1;
+    }
+    members.sort_unstable();
+    out.sep("members");
+    for m in members {
+        out.num(m as u64);
+        out.num((m >> 64) as u64);
+    }
+}
+
 /// The contents of DIE `i`'s subtree, with each nested subprogram that
 /// has code of its own (compared apart) as its identity alone.
 fn subtree(cu: &mut Cu<'_, '_>, code: &[bool], i: usize, out: &mut dyn Sink) {
@@ -1208,7 +1234,7 @@ fn read_unit_with(
             cu.qualified(i, &mut k);
             k.text(cu.string(i, DW_AT_NAME).unwrap_or(b""));
             let mut h = H128::new();
-            subtree(&mut cu, &code, i, &mut h);
+            type_subtree(&mut cu, &code, i, &mut h);
             out.types.push((k.finish(), h.finish(), (offset, i)));
         }
         i += 1;

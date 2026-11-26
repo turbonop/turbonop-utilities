@@ -423,14 +423,26 @@ x64. Where the 3.5 MB went:
     phase 4's modes: not explained yet.
 - **Phase 6: ELF** (see the plan's "Phase 6 results"). Done: the GNU and
   BSD archive writers and the `ar`, `llvm-ar`, and `ranlib` personalities
-  (6.1), the ELF object model (6.2), and a first `--fold=identical` for
-  ELF (6.3). Still open:
-  - **Debug information for folded functions**: move each moved
-    function's DWARF (its subprogram's DIEs and the types they use, a
-    line-table sequence, range and location lists) into a CU of the
-    synthesized member, as the plan's phase 6 describes; until then a
-    folded function has none (tombstoned in the givers, `--stats` counts
-    them). Then split DWARF (`.dwo` pairing by `dwo_id`).
+  (6.1), the ELF object model (6.2), a first `--fold=identical` for ELF
+  (6.3), ELF `verify` and `compare-images` (6.4), and folded functions'
+  DWARF in synthesized members, split DWARF 5 included (6.5). Still open:
+  - **DWARF (6.5)**: GNU's split DWARF 4 (`-gsplit-dwarf -gdwarf-4`:
+    `DW_AT_GNU_dwo_id`, `.debug_loc.dwo`'s entry kinds) isn't read, so its
+    folded functions have none; nor 64-bit DWARF, REL machines (i386,
+    ARM), compressed debug sections (`-gz`), or `DW_FORM_ref_addr` to
+    another unit (`--stats` counts each). `.dwp` packages and type units
+    (`-fdebug-types-section`, in COMDAT groups of their own, which stay)
+    are untested. A synthesized member's DIEs are always the first
+    member's copy; `compare-images` reports 7 to 22 per program as
+    differing where a link of the original kept another unit's copy.
+    Prove them by matching against the original image's discarded
+    copies, which are still there, tombstoned. The images' DWARF grows
+    about 2.4% (the givers' DIEs stay, and each synthesized member adds
+    declarations and a line header): share line headers or declarations
+    between a library's synthesized members (one unit per survivor
+    member?), and measure what lld and mold then write. Untested: lldb
+    (not installed), a clang-built corpus fold with DWARF, AArch64
+    objects.
   - `--pull=preserve` keeps the units whose first definer has side
     effects: on the gcc corpus, 344,949 copies, mostly LLVM's `cl::opt`
     initializers (`.init_array`), and with them (a unit naming what stays
@@ -447,10 +459,10 @@ x64. Where the 3.5 MB went:
     AND), so objects with different `ISA_1_USED` notes fold together.
   - `--fold=select-any` for ELF.
   - ELF `verify` and `compare-images` are done (the plan's 6.4). Open:
-    the folded index of 4 libraries of the gcc corpus lists 1 or 2 empty
-    names for a rewritten member with extended section numbering
-    (`SLPVectorizer.cpp.o` of `libLLVMVectorize.a`), so `verify` fails
-    them: find where `ar s --fold` takes them from. `compare-images`
+    the older folded index of 4 libraries of the gcc corpus listed 1 or 2
+    empty names for a rewritten member with extended section numbering
+    (`SLPVectorizer.cpp.o` of `libLLVMVectorize.a`); this build's output of
+    all 265 verifies, but why the older one didn't isn't known. `compare-images`
     doesn't compare bytes outside sized symbols (string and constant
     pools, jump tables, `.gcc_except_table`: name them by content or by
     the references into them) and has decoded no ARM64 ELF image;
@@ -463,7 +475,10 @@ x64. Where the 3.5 MB went:
     and `--fold` (refused); `ar` on Windows hosts beyond the unit tests.
   - GNU `ar -M`'s `DIRECTORY`, `EXTRACT`, `LIST`, `VERBOSE`, and `FULLDIR`.
   - **Folding's speed**: 2.66× GNU `ar`'s time on the gcc build's 20
-    largest libraries (without folding, 0.27×). `turbonop-elf-object`
+    largest libraries before 6.5 (without folding, 0.27×); 4.24× with DWARF
+    moved, in a noisy run: measure again on a quiet machine, and profile
+    the DWARF reading (each survivor member's `.debug_info` is walked
+    whole, and every DIE's attributes read twice). `turbonop-elf-object`
     decodes every relocation section (the `.debug_*` sections' 3.4 GiB of
     them too) and re-encodes them, and a rewritten member is copied twice
     (`Object::write`, then the archive writer): keep relocation sections

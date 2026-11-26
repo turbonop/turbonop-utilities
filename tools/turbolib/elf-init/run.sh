@@ -52,7 +52,7 @@ for config in "${configs[@]}"; do
     for n in a b c main; do
       "$cxx" "${flags[@]}" -c "$SRC/$n.cpp" -o "$n.o" || exit 1
     done
-    ar qc lib.a a.o b.o c.o && ranlib lib.a
+    ar qc lib.a c.o a.o b.o && ranlib lib.a
   ) || { check "$config: build" 1; continue; }
   # How many groups hold initializer entries (clang's inline variables).
   grouped=$(for o in a b c; do readelf -gW "$d/$o.o"; done |

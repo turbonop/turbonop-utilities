@@ -155,21 +155,23 @@ struct Lookup {
 
 const LOOKUP_SHARDS: usize = 64;
 
+/// A record's group and hash, with its index in the group's PCH.
+type Keyed = ((u32, u128), u32);
+
 fn shard(h: u128) -> usize {
     (h >> 64) as usize % LOOKUP_SHARDS
 }
 
 impl Lookup {
-    fn new(pairs: &[((u32, u128), u32)]) -> Lookup {
+    fn new(pairs: &[Keyed]) -> Lookup {
         // Each chunk's pairs by shard, then each shard's map from them.
-        let chunks: Vec<Vec<Vec<((u32, u128), u32)>>> =
-            turbonop_par::map_chunks(pairs, 1 << 16, |chunk| {
-                let mut by: Vec<Vec<((u32, u128), u32)>> = vec![Vec::new(); LOOKUP_SHARDS];
-                for &(k, i) in chunk {
-                    by[shard(k.1)].push((k, i));
-                }
-                vec![by]
-            });
+        let chunks: Vec<Vec<Vec<Keyed>>> = turbonop_par::map_chunks(pairs, 1 << 16, |chunk| {
+            let mut by: Vec<Vec<Keyed>> = vec![Vec::new(); LOOKUP_SHARDS];
+            for &(k, i) in chunk {
+                by[shard(k.1)].push((k, i));
+            }
+            vec![by]
+        });
         let maps = turbonop_par::map_range(LOOKUP_SHARDS, 1, |s| {
             let n = chunks.iter().map(|c| c[s].len()).sum();
             let mut m = HashMap::with_capacity_and_hasher(n, Default::default());
@@ -622,7 +624,7 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32, clustering: Option<&Clusteri
         turbonop_par::sort_by(&mut candidates, |a, b| {
             (a.group, a.depth, a.hash).cmp(&(b.group, b.depth, b.hash))
         });
-        let mut pairs: Vec<((u32, u128), u32)> = Vec::with_capacity(candidates.len());
+        let mut pairs: Vec<Keyed> = Vec::with_capacity(candidates.len());
         let mut runs: Vec<(u32, usize, usize)> = Vec::new();
         for (i, c) in candidates.iter().enumerate() {
             match runs.last_mut() {
@@ -635,39 +637,37 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32, clustering: Option<&Clusteri
         let lookup = Lookup::new(&pairs);
         drop(pairs);
         // Each record's bytes, its indices renumbered into the PCH.
-        let built: Vec<(Vec<u8>, Vec<(u32, u128)>)> =
-            turbonop_par::map_chunks(&candidates, 1 << 12, |chunk| {
-                let mut bytes = Vec::new();
-                let mut bad = Vec::new();
-                let mut refs = Vec::new();
-                for c in chunk {
-                    let record =
-                        debug::record(parsed, c.member as usize, base_of(parsed, c) + c.position);
-                    let start = bytes.len();
-                    bytes.extend_from_slice(record);
-                    let kind = u16::from_le_bytes([record[2], record[3]]);
-                    refs.clear();
-                    type_refs::refs(kind, &record[4..], &mut refs)
-                        .expect("records checked when read");
-                    for r in &refs {
-                        let at = start + 4 + r.offset as usize;
-                        let v = le32(&bytes, at);
-                        if v < FIRST {
-                            continue;
-                        }
-                        match hash_of(parsed, &members, c.member as usize, v)
-                            .and_then(|h| lookup.get(c.group, h))
-                        {
-                            Some(new) => bytes[at..at + 4].copy_from_slice(&new.to_le_bytes()),
-                            None => {
-                                bad.push((c.group, c.hash));
-                                break;
-                            }
+        let built: Vec<Built> = turbonop_par::map_chunks(&candidates, 1 << 12, |chunk| {
+            let mut bytes = Vec::new();
+            let mut bad = Vec::new();
+            let mut refs = Vec::new();
+            for c in chunk {
+                let record =
+                    debug::record(parsed, c.member as usize, base_of(parsed, c) + c.position);
+                let start = bytes.len();
+                bytes.extend_from_slice(record);
+                let kind = u16::from_le_bytes([record[2], record[3]]);
+                refs.clear();
+                type_refs::refs(kind, &record[4..], &mut refs).expect("records checked when read");
+                for r in &refs {
+                    let at = start + 4 + r.offset as usize;
+                    let v = le32(&bytes, at);
+                    if v < FIRST {
+                        continue;
+                    }
+                    match hash_of(parsed, &members, c.member as usize, v)
+                        .and_then(|h| lookup.get(c.group, h))
+                    {
+                        Some(new) => bytes[at..at + 4].copy_from_slice(&new.to_le_bytes()),
+                        None => {
+                            bad.push((c.group, c.hash));
+                            break;
                         }
                     }
                 }
-                vec![(bytes, bad)]
-            });
+            }
+            vec![(bytes, bad)]
+        });
         let bad: turbonop_hash::Set<(u32, u128)> =
             built.iter().flat_map(|(_, b)| b.iter().copied()).collect();
         if !bad.is_empty() {
@@ -833,7 +833,7 @@ fn clustered(
             for &(h, a, b) in &list[bounds[s] as usize..bounds[s + 1] as usize] {
                 let e = held
                     .entry(h)
-                    .or_insert((0, u32::MAX, 0x5EED, 0x0DDB_A11, a, b));
+                    .or_insert((0, u32::MAX, 0x5EED, 0x00DD_BA11, a, b));
                 if e.1 != k {
                     e.0 += 1;
                     e.1 = k;
@@ -1033,6 +1033,10 @@ fn clustered(
         candidates,
     }
 }
+
+/// A chunk of the PCH's records, renumbered, and the (group, hash) of
+/// those naming a record that isn't shared.
+type Built = (Vec<u8>, Vec<(u32, u128)>);
 
 /// The first index of a candidate's member's own records.
 fn base_of(parsed: &[Parsed<'_>], c: &Candidate) -> u32 {

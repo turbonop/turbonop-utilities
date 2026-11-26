@@ -64,7 +64,7 @@ fn deltas_are_exact() {
         let n = 2 + case % 9;
         let (classes, closures) = instance(&mut r, n);
         let t = 1 + case % 4;
-        let min = 2 + (case % 3 == 0) as u32;
+        let min = 2 + u32::from(case % 3 == 0);
         let group: Vec<u32> = (0..n)
             .map(|_| match r.below(t as u64 + 1) {
                 x if x == t as u64 => OUT,

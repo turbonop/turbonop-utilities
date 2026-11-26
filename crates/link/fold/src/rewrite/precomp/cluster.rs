@@ -294,8 +294,9 @@ impl<'x> State<'x> {
             } else {
                 let i = c * t + a as usize;
                 let (n, sl) = (self.cnt[i], self.sld[i]);
-                d_lib_a += b * (self.copies(n - 1) as i128 - self.copies(n) as i128);
-                d_kept_a += b * (self.kept(n - 1, sl - ld) as i128 - self.kept(n, sl) as i128);
+                d_lib_a += b * (i128::from(self.copies(n - 1)) - i128::from(self.copies(n)));
+                d_kept_a +=
+                    b * (i128::from(self.kept(n - 1, sl - ld)) - i128::from(self.kept(n, sl)));
                 d_pch_a += b * (i128::from(n > self.min) - i128::from(n >= self.min));
             }
             for z in 0..t {
@@ -304,8 +305,9 @@ impl<'x> State<'x> {
                 }
                 let i = c * t + z;
                 let (n, sl) = (self.cnt[i], self.sld[i]);
-                d_lib[z] += b * (self.copies(n + 1) as i128 - self.copies(n) as i128);
-                d_kept[z] += b * (self.kept(n + 1, sl + ld) as i128 - self.kept(n, sl) as i128);
+                d_lib[z] += b * (i128::from(self.copies(n + 1)) - i128::from(self.copies(n)));
+                d_kept[z] +=
+                    b * (i128::from(self.kept(n + 1, sl + ld)) - i128::from(self.kept(n, sl)));
                 d_pch[z] += b * (i128::from(n + 1 >= self.min) - i128::from(n >= self.min));
             }
             d_lib[t] += b;

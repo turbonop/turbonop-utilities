@@ -212,7 +212,9 @@ fn turbolib_options() {
         &w(&["/nologo", "/TURBOLIB:precomp=clustered=4", "a.obj"]),
         &env_in(&dir),
     );
-    assert_eq!(o.exit, 0, "{o:?}");
+    // Accepted: what fails is the missing input.
+    assert_eq!(o.exit, 1181, "{o:?}");
+    assert!(!o.stdout.contains("TURBOLIB"), "{o:?}");
     let mut env = env_in(&dir);
     env.turbolib_options = Some("stats".into());
     let o = run(Flavor::LlvmLib, &w(&["a.obj"]), &env);

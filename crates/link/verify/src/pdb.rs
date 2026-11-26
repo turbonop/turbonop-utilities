@@ -43,6 +43,7 @@
 
 pub(crate) mod types;
 
+use turbonop_codeview::TypeRecord;
 use turbonop_codeview::lines::{self, subsection};
 use turbonop_codeview::symbol_refs::{self, Field};
 use turbonop_codeview::symbols::Symbol;
@@ -64,6 +65,10 @@ type ContributionKey = (Vec<u8>, u32, u32, u32, u32);
 struct Reduced {
     types: Hashes,
     ids: Hashes,
+    /// The ids' hashes but `LF_UDT_MOD_SRC_LINE`'s, sorted, each once.
+    id_set: Vec<u128>,
+    /// Each `LF_UDT_MOD_SRC_LINE`: its UDT's name, its file, and its line.
+    udt_lines: Vec<(Vec<u8>, Vec<u8>, u32)>,
     /// (hash, description, renamed).
     publics: Vec<(u128, String, bool)>,
     globals: Vec<(u128, String)>,
@@ -84,6 +89,9 @@ struct Reduced {
     contributions: Vec<ContributionKey>,
     /// The sizes of the linker's sections and COFF groups.
     layout: Vec<(Vec<u8>, u32)>,
+    /// `S_UDT` and `S_CONSTANT` records, of the globals and of every
+    /// module: (hash, description).
+    udts: Vec<(u128, String)>,
 }
 
 /// Compares the PDBs of two programs (see the module's documentation).
@@ -100,6 +108,7 @@ pub(crate) fn compare(a: &Linked<'_>, b: &Linked<'_>) -> Report {
         }
     };
     compare_types(a, b, &ra, &rb, &mut rep);
+    compare_udt_lines(&ra, &rb, &mut rep);
     compare_symbols(a, b, &ra, &rb, &mut rep);
     compare_rest(&ra, &rb, &mut rep);
     rep
@@ -129,12 +138,17 @@ fn compare_types(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep
         ("ids (IPI)", &ra.ids, &rb.ids, true),
     ] {
         rep.checked(&format!("{what} records"), x.hashes.len() as u64);
-        let mut sx = x.hashes.clone();
-        let mut sy = y.hashes.clone();
-        sx.sort_unstable();
-        sx.dedup();
-        sy.sort_unstable();
-        sy.dedup();
+        let (sx, sy) = if ids {
+            (ra.id_set.clone(), rb.id_set.clone())
+        } else {
+            let mut sx = x.hashes.clone();
+            let mut sy = y.hashes.clone();
+            sx.sort_unstable();
+            sx.dedup();
+            sy.sort_unstable();
+            sy.dedup();
+            (sx, sy)
+        };
         for h in difference(&sx, &sy) {
             rep.fail(&format!("{what} only in the first PDB"), || {
                 describe(a, ids, x, h)
@@ -158,6 +172,51 @@ fn compare_types(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep
                     || format!("{which}: {}", r.forward),
                 );
             }
+        }
+    }
+}
+
+/// UDTs' source lines (`LF_UDT_MOD_SRC_LINE`), by the UDT's name:
+/// link.exe writes one for a UDT in some links and not in others, and
+/// gives it to one of the type records of that name, so only the files
+/// and lines of the names both PDBs have lines for are compared.
+fn compare_udt_lines(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
+    let by_name = |r: &Reduced| -> Map<Vec<u8>, Vec<(Vec<u8>, u32)>> {
+        let mut m: Map<Vec<u8>, Vec<(Vec<u8>, u32)>> = Map::default();
+        for (n, f, l) in &r.udt_lines {
+            m.entry(n.clone()).or_default().push((f.clone(), *l));
+        }
+        for v in m.values_mut() {
+            v.sort();
+            v.dedup();
+        }
+        m
+    };
+    let (a, b) = (by_name(ra), by_name(rb));
+    rep.checked("UDTs' source lines (LF_UDT_MOD_SRC_LINE)", a.len() as u64);
+    let mut names: Vec<&Vec<u8>> = a.keys().chain(b.keys()).collect();
+    names.sort();
+    names.dedup();
+    for n in names {
+        match (a.get(n), b.get(n)) {
+            (Some(x), Some(y)) if x != y => {
+                rep.fail("UDTs whose source lines differ", || {
+                    let line = |v: &Vec<(Vec<u8>, u32)>| {
+                        v.iter()
+                            .map(|(f, l)| format!("{}({l})", show(f)))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    };
+                    format!("{}: {} and {}", show(n), line(x), line(y))
+                });
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                rep.expect(
+                    "UDTs with a source line in one PDB only (link.exe writes them for some links)",
+                    || show(n),
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -187,6 +246,25 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
         ra.globals.iter().map(|(h, d)| (*h, d.clone())),
         rb.globals.iter().map(|(h, d)| (*h, d.clone())),
         "globals",
+        rep,
+    );
+    // UDTs and constants: the linker keeps one record of each name in the
+    // globals, and leaves the other records of that name (another type, or
+    // another value) in their modules; which one it keeps follows the
+    // order it reads modules in, which differs between links. So the
+    // globals' and every module's are compared as one set.
+    let set = |r: &Reduced| -> Vec<(u128, String)> {
+        let mut v = r.udts.clone();
+        v.sort();
+        v.dedup_by(|x, y| x.0 == y.0);
+        v
+    };
+    let (ua, ub) = (set(ra), set(rb));
+    rep.checked("UDTs and constants (S_UDT, S_CONSTANT)", ua.len() as u64);
+    multisets(
+        ua.into_iter(),
+        ub.into_iter(),
+        "UDTs and constants (S_UDT, S_CONSTANT)",
         rep,
     );
     let modules_of = |r: &Reduced| -> Map<String, Vec<Vec<u8>>> {
@@ -386,6 +464,15 @@ fn compare_rest(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     }
 }
 
+/// A record's kind and name, as text.
+fn describe(s: &turbonop_codeview::SymbolRecord<'_>) -> String {
+    format!(
+        "{} {}",
+        kind::name(s.kind),
+        s.name().map_or_else(String::new, show)
+    )
+}
+
 /// The items of sorted `a` that sorted `b` lacks.
 fn difference<'v, T: Ord + Copy>(a: &'v [T], b: &'v [T]) -> impl Iterator<Item = T> + 'v {
     a.iter().copied().filter(|x| b.binary_search(x).is_err())
@@ -558,6 +645,8 @@ struct ModuleFacts {
     /// The sizes of the linker's sections and COFF groups (`S_SECTION`,
     /// `S_COFFGROUP`), by name.
     layout: Vec<(Vec<u8>, u32)>,
+    /// Its top-level `S_UDT` and `S_CONSTANT` records: (hash, description).
+    udts: Vec<(u128, String)>,
 }
 
 fn module(
@@ -577,6 +666,7 @@ fn module(
         unknown_records: Map::default(),
         unknown_subsections: Map::default(),
         layout: Vec::new(),
+        udts: Vec::new(),
     };
     let Ok(Some(stream)) = p.pdb.module_stream(m) else {
         return out;
@@ -718,11 +808,34 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
     let mut r = Reduced::default();
     let tpi = p.pdb.types().map_err(|e| format!("the TPI: {e}"))?;
     let ipi = p.pdb.ids().map_err(|e| format!("the IPI: {e}"))?;
-    let records = types::records(tpi);
-    r.types = types::hash(&records, None);
-    let records = types::records(ipi);
-    r.ids = types::hash(&records, Some(&r.types));
     let names = p.pdb.names().ok();
+    let type_records = types::records(tpi);
+    r.types = types::hash(&type_records, None, names.as_ref());
+    let records = types::records(ipi);
+    r.ids = types::hash(&records, Some((&r.types, &type_records)), names.as_ref());
+    for (i, rec) in records.iter().enumerate() {
+        if rec.kind == types::LF_UDT_MOD_SRC_LINE && rec.data.len() >= 12 {
+            let u = |o: usize| {
+                u32::from_le_bytes([
+                    rec.data[o],
+                    rec.data[o + 1],
+                    rec.data[o + 2],
+                    rec.data[o + 3],
+                ])
+            };
+            let name = u(0)
+                .checked_sub(types::FIRST)
+                .and_then(|k| type_records.get(k as usize))
+                .and_then(TypeRecord::name)
+                .unwrap_or_default();
+            let file = names.as_ref().and_then(|n| n.get(u(4))).unwrap_or_default();
+            r.udt_lines.push((name.to_vec(), file.to_vec(), u(8)));
+        } else {
+            r.id_set.push(r.ids.hashes[i]);
+        }
+    }
+    r.id_set.sort_unstable();
+    r.id_set.dedup();
     let dbi = p.pdb.dbi().map_err(|e| e.to_string())?;
     let modules: Vec<turbonop_pdb::Module<'_>> = dbi.modules().to_vec();
 
@@ -759,6 +872,7 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
         }
     }
     let mut globals = Vec::new();
+    let mut udts = Vec::new();
     let mut references = Vec::new();
     if let Ok(gsi) = p.pdb.globals() {
         for g in gsi.records() {
@@ -768,11 +882,7 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
                 continue;
             };
             let mut h = H128::new();
-            let description = format!(
-                "{} {}",
-                kind::name(s.kind),
-                s.name().map_or_else(String::new, show)
-            );
+            let description = describe(&s);
             match s.parse() {
                 Ok(Symbol::Reference {
                     kind, module, name, ..
@@ -791,11 +901,16 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
                     }
                 }
             }
+            if matches!(s.kind, kind::S_UDT | kind::S_CONSTANT) {
+                udts.push((h.finish(), description));
+                continue;
+            }
             globals.push((h.finish(), description));
         }
     }
     r.publics = publics;
     r.globals = globals;
+    r.udts = udts;
     r.references = references;
 
     // Modules, in parallel.
@@ -814,6 +929,7 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
             *r.unknown_subsections.entry(k).or_insert(0) += n;
         }
         r.layout.extend(m.layout);
+        r.udts.extend(m.udts);
         r.modules.push((m.name, m.synthesized, m.others));
     }
     for (k, n) in unknown {

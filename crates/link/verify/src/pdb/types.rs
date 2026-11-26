@@ -18,7 +18,7 @@ use turbonop_pdb::TypeStream;
 use crate::hash::H128;
 
 /// `LF_UDT_MOD_SRC_LINE`: a UDT's source file, line, and module.
-const LF_UDT_MOD_SRC_LINE: u16 = 0x1607;
+pub(crate) const LF_UDT_MOD_SRC_LINE: u16 = 0x1607;
 
 /// The first index of a stream's records (lower ones are built-in types).
 pub(crate) const FIRST: u32 = 0x1000;
@@ -56,7 +56,16 @@ pub(crate) fn records<'s>(stream: &'s TypeStream<'_>) -> Vec<TypeRecord<'s>> {
 /// (or, marked as ids, of the stream `ids_of`'s hashes are for: an IPI
 /// record's types are TPI records). For the TPI, `other` is `None`; for
 /// the IPI, it is the TPI's hashes.
-pub(crate) fn hash(records: &[TypeRecord<'_>], other: Option<&Hashes>) -> Hashes {
+///
+/// `names` is the PDB's string table: an IPI's `LF_UDT_MOD_SRC_LINE`
+/// names its file by an offset in it (an object's `LF_UDT_SRC_LINE` names
+/// an `LF_STRING_ID` instead).
+pub(crate) fn hash(
+    records: &[TypeRecord<'_>],
+    other: Option<(&Hashes, &[TypeRecord<'_>])>,
+    names: Option<&turbonop_pdb::StringTable<'_>>,
+) -> Hashes {
+    let other_hashes = other.map(|o| o.0);
     // Each record's index fields, in parallel.
     let refs: Vec<Result<Vec<type_refs::Ref>, u16>> = turbonop_par::map(records, 4096, |r| {
         let mut v = Vec::new();
@@ -132,18 +141,29 @@ pub(crate) fn hash(records: &[TypeRecord<'_>], other: Option<&Hashes>) -> Hashes
                             } else {
                                 h.u128(done.of(v));
                             }
+                        } else if r.kind == LF_UDT_MOD_SRC_LINE {
+                            // The UDT by its name: link.exe gives the line
+                            // to one of the records of that name, and which
+                            // one differs between links.
+                            let name = other
+                                .and_then(|o| o.1.get(v.checked_sub(FIRST)? as usize))
+                                .and_then(TypeRecord::name);
+                            h.bytes(name.unwrap_or(b"\xFF"));
                         } else {
-                            h.u128(other.map_or(u128::from(v), |t| t.of(v)));
+                            h.u128(other_hashes.map_or(u128::from(v), |t| t.of(v)));
                         }
                         from = o + 4;
                     }
-                    // LF_UDT_MOD_SRC_LINE's last field (after the type,
-                    // the file, and the line) is the number of the module
-                    // the linker saw the type in first: an index into the
+                    // LF_UDT_MOD_SRC_LINE: after the type, the file is a
+                    // string-table offset, which stands for its string;
+                    // then the line; then the number of the module the
+                    // linker saw the type in first, an index into the
                     // module list, whose order differs between links (and
                     // which folding may change), so it is left out.
-                    if r.kind == LF_UDT_MOD_SRC_LINE && from <= 12 && r.data.len() >= 14 {
-                        h.bytes(&r.data[from..12]);
+                    if r.kind == LF_UDT_MOD_SRC_LINE && from == 4 && r.data.len() >= 14 {
+                        let file = u32::from_le_bytes([r.data[4], r.data[5], r.data[6], r.data[7]]);
+                        h.bytes(names.and_then(|n| n.get(file)).unwrap_or(b"\xFF"));
+                        h.bytes(&r.data[8..12]);
                         h.bytes(&r.data[14..]);
                     } else {
                         h.bytes(&r.data[from..]);

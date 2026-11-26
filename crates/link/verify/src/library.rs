@@ -4,10 +4,10 @@
 //! The rewritten library may differ from the original only as turbolib's
 //! folding does (see `docs/turbolib.md`, "How it works"): COMDAT units move
 //! out of original members into synthesized members, the symbols they
-//! defined become undefined (or, under `--pull=preserve`, weak externals
-//! whose default is a renamed copy), and each member that gave units away
-//! refers to the anchor of each synthesized member holding them. What is
-//! checked:
+//! defined become alias weak externals whose default is [`ALIAS_DEFAULT`]
+//! (or undefined, or `NOLIBRARY` weak externals whose default is a renamed
+//! copy), and each member that gave units away refers to the anchor of each
+//! synthesized member holding them. What is checked:
 //!
 //! - **Members.** Every original member is still there, under its name,
 //!   in the same relative order. Every added member is a synthesized one:
@@ -27,9 +27,11 @@
 //!   `.chks64`), and its environment are unchanged; each COMDAT it keeps is
 //!   unchanged; each it lost was foldable (not `NODUPLICATES`) and is held,
 //!   in its environment, by a synthesized member whose anchor the member
-//!   refers to. Each symbol it defined is still defined, or (moved) now
-//!   undefined and defined elsewhere, or a `NOLIBRARY` weak external whose
-//!   default is the renamed copy. Its undefined symbols are the original's
+//!   refers to. Each symbol it defined is still defined, or (moved) now an
+//!   alias weak external whose default is [`ALIAS_DEFAULT`] and that a
+//!   synthesized member it anchors defines, or undefined and defined
+//!   elsewhere, or a `NOLIBRARY` weak external whose default is the
+//!   renamed copy. Its undefined symbols are the original's
 //!   plus the moved ones and anchors; its weak externals the original's
 //!   plus the moved ones. Its side-table entries (`/guard` tables,
 //!   `.sxdata`, `.voltbl`) are each still its own or a synthesized
@@ -40,8 +42,11 @@
 //!   Each symbol a synthesized member refers to is one the original
 //!   library defines or refers to.
 //! - **The archive index**, of both libraries: it names every external
-//!   definition, each name sending to the first member in archive order
-//!   that defines it, and the two linker members agree. Under
+//!   definition and alias weak external (as `lib.exe` indexes them), each
+//!   name sending to the first member in archive order that has it, and the
+//!   two linker members agree. A synthesized member's names other than its
+//!   anchors may go unlisted (as under `--pull=preserve`, so the index
+//!   names the original definers), and [`ALIAS_DEFAULT`] is never listed. Under
 //!   `--pull=preserve`, every symbol of the original's index sends to the
 //!   same member as in the original, or (reported as expected) to a
 //!   synthesized member when the original definer has no side effects of
@@ -57,6 +62,11 @@
 
 pub mod index;
 pub mod member;
+
+/// The default of the alias weak externals that keep moved symbols defined
+/// in their original members; each synthesized member defines it, and the
+/// index never lists it.
+pub const ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
 
 use std::borrow::Cow;
 
@@ -215,6 +225,7 @@ fn indexed<'s>(
             Body::Coff(c) => c
                 .definitions
                 .iter()
+                .filter(|d| *d.name != *ALIAS_DEFAULT)
                 .map(|d| (Cow::Borrowed(&*d.name), d.kind))
                 .collect(),
             Body::Import(names) => names
@@ -335,7 +346,9 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
             }
         }
     }
-    let is_anchor = |name: &[u8]| name.starts_with(RENAMED) && !o_defs.contains(&canonical(name));
+    let is_anchor = |name: &[u8]| {
+        name.starts_with(RENAMED) && name != ALIAS_DEFAULT && !o_defs.contains(&canonical(name))
+    };
     let mut synthesized = Vec::new();
     for &j in &added {
         let anchored = r.members[j]
@@ -511,15 +524,40 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         });
     }
 
-    // The archive indexes.
+    // The archive indexes: what each member puts in it.
+    let (o_names, r_names) = turbonop_par::join(|| index_names(o, &oi), || index_names(r, &ri));
+    let (o_index, r_index) = turbonop_par::join(|| definitions(&o_names), || definitions(&r_names));
+    let is_synthesized = |j: usize| synthesized.binary_search(&j).is_ok();
     let (a, b) = turbonop_par::join(
-        || check_index(o, &o_defs, "original"),
-        || check_index(r, &r_defs, "rewritten"),
+        || check_index(o, &o_index, &|_| false, "original"),
+        || check_index(r, &r_index, &is_synthesized, "rewritten"),
     );
     report.merge(a);
     report.merge(b);
     check_pull(o, r, &p, options, &mut report);
     report
+}
+
+/// The names each member puts in the archive index: its [`indexed`] names
+/// and its alias weak externals.
+fn index_names<'s>(lib: &'s Library<'_>, indexed: &'s [Indexed<'s>]) -> Vec<Indexed<'s>> {
+    turbonop_par::map_range(lib.members.len(), 64, |i| {
+        let alias = Kind {
+            class: Class::Indexed,
+            selection: 0,
+        };
+        let Some(c) = lib.members[i].body.coff() else {
+            return indexed[i].clone();
+        };
+        let mut out = indexed[i].clone();
+        out.extend(
+            c.weak
+                .iter()
+                .filter(|w| w.search == turbonop_coff::weak_search::ALIAS)
+                .map(|w| (Cow::Borrowed(&*w.name), alias)),
+        );
+        out
+    })
 }
 
 /// The synthesized members a member refers to by anchor.
@@ -679,6 +717,24 @@ fn check_member(
                     format!("{}: {}", name(), show(&d.name))
                 });
             }
+        } else if let Some(w) = r_weak.get(&*d.name)
+            && w.search == turbonop_coff::weak_search::ALIAS
+        {
+            if *w.alternate != *ALIAS_DEFAULT {
+                rep.fail(
+                    "alias weak externals whose default isn't __turbolib$alias",
+                    || format!("{}: {}", name(), show(&d.name)),
+                );
+            } else if !facts
+                .synthesized_definitions
+                .get(&*d.name)
+                .is_some_and(|s| s.iter().any(|s| synthesized.binary_search(s).is_ok()))
+            {
+                rep.fail(
+                    "aliases of moved symbols that no anchored synthesized member defines",
+                    || format!("{}: {}", name(), show(&d.name)),
+                );
+            }
         } else if let Some(w) = r_weak.get(&*d.name) {
             let renamed = [RENAMED, &d.name].concat();
             if w.search != turbonop_coff::weak_search::NOLIBRARY || *w.alternate != *renamed {
@@ -808,8 +864,16 @@ fn check_synthesized(r: &Library<'_>, j: usize, facts: &Facts<'_>, rep: &mut Rep
     }
 }
 
-/// Checks `lib`'s index against its members' definitions.
-fn check_index(lib: &Library<'_>, defs: &Definitions<'_>, which: &str) -> Report {
+/// Checks `lib`'s index against its members' index names (`defs`). The
+/// names of members `optional` says may go unlisted, so an entry may send
+/// past them to the next definer, and a name only they have may be missing
+/// (but not their anchors).
+fn check_index(
+    lib: &Library<'_>,
+    defs: &Definitions<'_>,
+    optional: &(dyn Fn(usize) -> bool + Sync),
+    which: &str,
+) -> Report {
     let mut rep = Report::new();
     let entries = lib.index.entries();
     rep.checked(&format!("{which} index entries"), entries.len() as u64);
@@ -824,12 +888,20 @@ fn check_index(lib: &Library<'_>, defs: &Definitions<'_>, which: &str) -> Report
     let found = turbonop_par::map_range(entries.len().div_ceil(chunk), 1, |c| {
         let mut f: Vec<(usize, bool, String)> = Vec::new();
         for &(name, offset) in &entries[c * chunk..entries.len().min((c + 1) * chunk)] {
-            let Some(want) = defs.get(&name).and_then(|d| d.first()).map(|d| d.0) else {
+            let Some(d) = defs.get(&name).filter(|d| !d.is_empty()) else {
                 f.push((0, false, show(name)));
                 continue;
             };
+            let want = d[0].0;
+            // The definers an entry may name: the first, and each after
+            // optional ones only.
+            let allowed = |at: usize| {
+                d.iter()
+                    .take_while(|&&(m, _)| m == at || optional(m))
+                    .any(|&(m, _)| m == at)
+            };
             match lib.by_offset.get(&offset) {
-                Some(&at) if at == want => {}
+                Some(&at) if allowed(at) => {}
                 at => f.push((
                     0,
                     true,
@@ -856,8 +928,9 @@ fn check_index(lib: &Library<'_>, defs: &Definitions<'_>, which: &str) -> Report
     );
     let found = turbonop_par::map_balanced(defs.shards(), 1, |shard| {
         let mut f = Findings::new();
-        for name in shard.keys() {
-            if !indexed.contains(name) {
+        for (name, d) in shard {
+            let only_optional = d.iter().all(|&(m, _)| optional(m));
+            if !indexed.contains(name) && !(only_optional && !name.starts_with(RENAMED)) {
                 f.push((name.to_vec(), "", show(name)));
             }
         }

@@ -696,3 +696,144 @@ fn a_weak_external_of_the_wrong_form_is_caught() {
 fn not_archives_are_errors() {
     assert!(super::verify(b"nope", b"nope", &Options::default()).is_err());
 }
+
+/// `data` without the units of `leaders`, each leader left an alias weak
+/// external whose default is `default`, and with an undefined reference to
+/// `anchor`: the engine's rewriting.
+fn aliased(data: &[u8], leaders: &[&[u8]], default: &[u8], anchor: &[u8]) -> Vec<u8> {
+    let mut o = Object::parse(&without(data, leaders, false, Some(anchor)))
+        .unwrap()
+        .into_owned();
+    let before = o.symbol_table_indices();
+    let tag = o.push_symbol(Symbol::new(
+        default.to_vec(),
+        0,
+        SectionNumber::Undefined,
+        0,
+        storage_class::EXTERNAL,
+    ));
+    for l in leaders {
+        let s = o.symbols.iter_mut().find(|s| s.name == *l).unwrap();
+        s.storage_class = storage_class::WEAK_EXTERNAL;
+        s.aux = Aux::WeakExternal(turbonop_coff::WeakExternal {
+            tag,
+            search: weak_search::ALIAS,
+        });
+    }
+    renumber_tables(&mut o, &before, None);
+    o.write().unwrap()
+}
+
+/// `data` with `__turbolib$alias` defined, as every synthesized member has.
+fn with_alias_default(data: &[u8]) -> Vec<u8> {
+    let mut o = Object::parse(data).unwrap().into_owned();
+    o.push_symbol(Symbol::new(
+        ALIAS_DEFAULT.to_vec(),
+        0,
+        SectionNumber::Absolute,
+        0,
+        storage_class::EXTERNAL,
+    ));
+    o.write().unwrap()
+}
+
+/// The index the engine writes under `--pull=preserve`: each name sent to
+/// the first member that defines it or has it as an alias, a synthesized
+/// member (named `turbolib-*`) listed for its anchors alone.
+fn engine_index(members: &[(Vec<u8>, Vec<u8>)]) -> Vec<(Vec<u8>, usize)> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for (i, (name, data)) in members.iter().enumerate() {
+        let names: Vec<Vec<u8>> = match member::read(data) {
+            Body::Coff(c) => c
+                .definitions
+                .iter()
+                .map(|d| d.name.to_vec())
+                .filter(|n| !name.starts_with(b"turbolib-") || n.starts_with(b"__turbolib$anchor$"))
+                .chain(
+                    c.weak
+                        .iter()
+                        .filter(|w| w.search == weak_search::ALIAS)
+                        .map(|w| w.name.to_vec()),
+                )
+                .collect(),
+            Body::Import(n) => n.iter().map(|n| n.to_vec()).collect(),
+            _ => Vec::new(),
+        };
+        for n in names {
+            if seen.insert(n.clone()) {
+                out.push((n, i));
+            }
+        }
+    }
+    if let Some(gl) = members.iter().position(|(n, _)| n == b"gl.obj") {
+        out.push((b"?gl_value@@YAHH@Z".to_vec(), gl));
+    }
+    out
+}
+
+/// The engine's fold: `shared_add` and `twice<int>` out of a.obj, b.obj,
+/// and c.obj into one synthesized member, first in the archive, each
+/// leader left an alias of `default`.
+fn folded_with_aliases(default: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+    let mut m = members();
+    let b = find(&m, b"b.obj");
+    let c = find(&m, b"c.obj");
+    let s = with_alias_default(&synthesized(&m[b].1, &[SHARED_ADD, TWICE], false, ANCHOR));
+    for name in [&b"a.obj"[..], b"b.obj"] {
+        let i = find(&m, name);
+        m[i].1 = aliased(&m[i].1, &[SHARED_ADD, TWICE], default, ANCHOR);
+    }
+    m[c].1 = aliased(&m[c].1, &[SHARED_ADD], default, ANCHOR);
+    m.insert(0, (b"turbolib-0.obj".to_vec(), s));
+    m
+}
+
+#[test]
+fn the_engines_alias_fold_passes_preserve_exactly() {
+    let lib = fixture("verify.lib");
+    let m = folded_with_aliases(ALIAS_DEFAULT);
+    let r = verify_with(&lib, &archive(&m, Some(engine_index(&m))), Pull::Preserve);
+    fails(&r, &[]);
+    assert_eq!(r.checked_count("COMDATs moved out of original members"), 5);
+    // The index sends every name where the original's did.
+    assert!(
+        r.findings()
+            .all(|(s, _, _)| s != crate::report::Severity::Expected),
+        "{}",
+        r.text()
+    );
+}
+
+#[test]
+fn an_alias_with_another_default_is_caught() {
+    let lib = fixture("verify.lib");
+    let m = folded_with_aliases(b"__turbolib$other");
+    let r = verify_with(&lib, &archive(&m, Some(engine_index(&m))), Pull::Preserve);
+    fails(
+        &r,
+        &["alias weak externals whose default isn't __turbolib$alias"],
+    );
+}
+
+#[test]
+fn an_alias_no_anchored_member_defines_is_caught() {
+    let lib = fixture("verify.lib");
+    let mut m = folded_with_aliases(ALIAS_DEFAULT);
+    // a.obj keeps its aliases but anchors no member that defines them.
+    let a = find(&m, b"a.obj");
+    let orig = members();
+    let a0 = find(&orig, b"a.obj");
+    m[a].1 = aliased(
+        &orig[a0].1,
+        &[SHARED_ADD, TWICE],
+        ALIAS_DEFAULT,
+        b"__turbolib$anchor$9",
+    );
+    let r = verify_with(&lib, &archive(&m, Some(engine_index(&m))), Pull::Preserve);
+    assert!(
+        r.failed("aliases of moved symbols that no anchored synthesized member defines"),
+        "{}",
+        r.text()
+    );
+}

@@ -613,6 +613,11 @@ fn build(
                         .iter()
                         .map(|n| MemberSymbol::defined(n.as_slice()))
                         .collect();
+                } else if m.synthesized {
+                    // Never indexed, so it loads no member of its own (see
+                    // ALIAS_DEFAULT).
+                    s.symbols
+                        .retain(|x| *x.name != *turbonop_fold::rewrite::ALIAS_DEFAULT);
                 }
                 member_symbols.push(s);
             }

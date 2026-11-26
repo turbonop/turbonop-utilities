@@ -691,9 +691,29 @@ fn strip<'a>(
                 storage_class::EXTERNAL,
             ))
         });
-        let s = &mut object.symbols[id.index()];
-        s.storage_class = storage_class::WEAK_EXTERNAL;
-        s.aux = Aux::WeakExternal(WeakExternal { tag, search });
+        if search == weak_search::ALIAS {
+            // A second record of the name, the alias; the relocations keep
+            // naming the first, a plain undefined external. link.exe's ICF
+            // takes a reference through a weak external for another target
+            // than one to the name, so code calling a moved function stopped
+            // folding with identical code elsewhere (measured: 4,870 more
+            // functions in llvm-nm under /OPT:REF), and with the two records
+            // it folds as before.
+            let name = object.symbols[id.index()].name.clone();
+            let mut alias = Symbol::new(
+                name,
+                0,
+                SectionNumber::Undefined,
+                0,
+                storage_class::WEAK_EXTERNAL,
+            );
+            alias.aux = Aux::WeakExternal(WeakExternal { tag, search });
+            object.push_symbol(alias);
+        } else {
+            let s = &mut object.symbols[id.index()];
+            s.storage_class = storage_class::WEAK_EXTERNAL;
+            s.aux = Aux::WeakExternal(WeakExternal { tag, search });
+        }
     }
     let now = object.symbol_table_indices();
     tables::renumber(&mut object, &fields, &renumbering, &|i| {

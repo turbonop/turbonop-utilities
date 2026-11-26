@@ -1448,6 +1448,21 @@ its copies, and GNU ld and gold describe the others' too) and compares
 that witness with the folded program; a subprogram is proven when the
 witness describes it as the folded program does.
 
+| Corpus | Differing descriptions (`llvm-nm`, `llvm-readobj`; GNU ld, gold, lld, mold) | Proven another unit's copy |
+|---|---|---|
+| gcc (`fold-gcc`, this build's output) | 5, 12, 20, 9; 5, 6, 15, 7 (79) | 79 of 79 |
+| clang | 0, 1, 1, 0; 0, 0, 0, 0 (2) | 2 of 2 |
+
+(The counts differ from 6.5's 7 to 22 for the classification fix above:
+each run had reported its own mix of "DIEs differ" and "another unit's
+copy".) For example, `SmallString<0>::~SmallString` has
+`DW_AT_decl_file` `MD5.h` in `ELFObjectFile.cpp`'s copy and `XCOFF.h`
+in `ArchiveWriter.cpp`'s; `RTTIExtends<FileSystem, RTTIRoot>::classID()`
+has a `DW_AT_type` in one unit and not the other. What the witness
+doesn't show is that the witness's other changes (more members, other
+copies kept) leave the subprogram's own description alone; it compares
+only that subprogram.
+
 ## Decisions
 
 | | Decision |

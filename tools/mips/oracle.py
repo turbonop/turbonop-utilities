@@ -169,7 +169,7 @@ def encodings(crate):
     """Each instruction's (mask, value), from tables.rs."""
     src = open(os.path.join(crate, "src", "tables.rs"), encoding="utf-8").read()
     out = []
-    for m in re.finditer(r"Inst \{ name: \"(\w+)\", size: 4, space: \d+, mask: (0x[0-9a-f]+), value: (0x[0-9a-f]+), ", src):
+    for m in re.finditer(r"(?:Inst|inst!) \{ name: \"(\w+)\", size: 4, space: \d+, mask: (0x[0-9a-f]+), value: (0x[0-9a-f]+), ", src):
         out.append((int(m[2], 16), int(m[3], 16)))
     return out
 
@@ -233,7 +233,7 @@ def mm_items(crate, rng):
     then random ones."""
     src = open(os.path.join(crate, "src", "micromips.rs"), encoding="utf-8").read()
     out = []
-    for m in re.finditer(r"Inst \{ name: \"(\w+)\", size: (\d), space: \d+, mask: (0x[0-9a-f]+), value: (0x[0-9a-f]+), ", src):
+    for m in re.finditer(r"(?:Inst|inst!) \{ name: \"(\w+)\", size: (\d), space: \d+, mask: (0x[0-9a-f]+), value: (0x[0-9a-f]+), ", src):
         size, mask, value = int(m[2]), int(m[3], 16), int(m[4], 16)
         bits = 8 * size
         for _ in range(PER_INSTRUCTION):

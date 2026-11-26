@@ -59,7 +59,7 @@ def encodings(crate):
     """Each instruction's (mask, value), from tables.rs."""
     src = open(os.path.join(crate, "src", "tables.rs"), encoding="utf-8").read()
     out = []
-    for m in re.finditer(r"Inst \{ name: \"(\w+)\", size: 4, space: \d+, mask: (0x[0-9a-f]+), value: (0x[0-9a-f]+), ", src):
+    for m in re.finditer(r"(?:Inst|inst!) \{ name: \"(\w+)\", size: 4, space: \d+, mask: (0x[0-9a-f]+), value: (0x[0-9a-f]+), ", src):
         out.append((int(m[2], 16), int(m[3], 16)))
     return out
 

@@ -52,6 +52,13 @@ pub(crate) trait Names {
         let _ = tpoff;
         None
     }
+    /// The targets of a jump table at `rva`, if it is one that no label
+    /// names (entries relative to the table, as GCC and clang write them
+    /// for x86-64): its bytes follow the layout, its targets don't.
+    fn jump_table(&self, rva: u32) -> Option<Vec<u32>> {
+        let _ = rva;
+        None
+    }
 }
 
 /// Whether two addresses (RVAs, if in the images) name the same thing: the
@@ -72,7 +79,23 @@ pub(crate) fn same<A: Names + ?Sized, B: Names + ?Sized>(
     match (na, nb, ra, rb) {
         (Some((_, oa)), Some((_, ob)), Some(ra), Some(rb)) if oa == ob => {
             let (xa, xb) = (a.aliases(ra), b.aliases(rb));
-            xa.iter().any(|x| xb.contains(x))
+            xa.iter().any(|x| xb.contains(x)) || same_jump_table(a, ra, b, rb)
+        }
+        (_, _, Some(ra), Some(rb)) => same_jump_table(a, ra, b, rb),
+        _ => false,
+    }
+}
+
+/// Whether `ra` and `rb` are jump tables whose entries name the same
+/// targets.
+fn same_jump_table<A: Names + ?Sized, B: Names + ?Sized>(a: &A, ra: u32, b: &B, rb: u32) -> bool {
+    match (a.jump_table(ra), b.jump_table(rb)) {
+        (Some(ta), Some(tb)) => {
+            ta.len() == tb.len()
+                && ta
+                    .iter()
+                    .zip(&tb)
+                    .all(|(&x, &y)| a.name(x).is_some() && a.name(x) == b.name(y))
         }
         _ => false,
     }

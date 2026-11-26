@@ -12,7 +12,8 @@ DIR/libX.a); a library not there is linked as the build made it. Each
 program's link command comes from `ninja -t commands`; it is rerun with
 -fuse-ld=<linker> (options a linker doesn't take dropped), once with the
 build's libraries and once with the folded ones, with -Wl,--trace, which
-lists the archive members each link loads. Then each pair of programs is
+lists the archive members each link loads, in order (the original
+members must load in the original order). Then each pair of programs is
 run on the same inputs (the program's own test commands, below), and
 their standard output and exit status compared.
 
@@ -86,18 +87,29 @@ def for_linker(argv, linker, out, folded, trace):
 
 
 def loaded(trace_text):
-    """The archive members a link loaded, as --trace lists them."""
-    members = set()
+    """The archive members a link loaded, in the order --trace lists them
+    (each once): the order GNU ld, gold, and lld load them in, and mold's
+    order of its files (the command line's, each archive's in its order)."""
+    members = []
+    seen = set()
     for line in trace_text.splitlines():
         # lld, gold, mold: lib.a(member.o); GNU ld: (lib.a)member.o.
-        m = re.search(r"([^\s()]+\.a)\(([^)]+)\)", line)
+        m = re.search(r"([^\s()]+\.a)\(([^)]+)\)", line) or re.search(
+            r"\(([^\s()]+\.a)\)(\S+)", line)
         if m:
-            members.add((os.path.basename(m.group(1)), m.group(2)))
-            continue
-        m = re.search(r"\(([^\s()]+\.a)\)(\S+)", line)
-        if m:
-            members.add((os.path.basename(m.group(1)), m.group(2)))
+            k = (os.path.basename(m.group(1)), m.group(2))
+            if k not in seen:
+                seen.add(k)
+                members.append(k)
     return members
+
+
+def first_difference(a, b):
+    """Where two lists first differ, as text."""
+    for i, (x, y) in enumerate(zip(a, b)):
+        if x != y:
+            return f"at {i}: {x} vs {y}"
+    return f"at {min(len(a), len(b))}: one list ends"
 
 
 def main():
@@ -130,7 +142,8 @@ def main():
                 results[kind] = (exe, loaded(p.stdout + p.stderr), os.path.getsize(exe))
             if not results.get("orig") or not results.get("folded"):
                 continue
-            (oexe, omem, osize), (fexe, fmem, fsize) = results["orig"], results["folded"]
+            (oexe, oorder, osize), (fexe, forder, fsize) = results["orig"], results["folded"]
+            omem, fmem = set(oorder), set(forder)
             synthesized = {m for m in fmem if m[1].startswith("__turbolib.")}
             extra = fmem - omem - synthesized
             missing = omem - fmem
@@ -141,6 +154,17 @@ def main():
                 line += f"; {len(extra)} OTHER members loaded: {sorted(extra)[:5]}"
             if missing:
                 line += f"; {len(missing)} not loaded: {sorted(missing)[:5]}"
+            # The original members in the order each link loaded them (the
+            # order of their initializers in the image), but for those only
+            # one loaded.
+            both = omem & fmem
+            o_in = [m for m in oorder if m in both]
+            f_in = [m for m in forder if m in both]
+            if o_in == f_in:
+                line += f"; load order the same ({len(o_in)})"
+            else:
+                same = False
+                line += f"; LOAD ORDER differs {first_difference(o_in, f_in)}"
             # The images' symbols: every function and object, by name, type,
             # and size (addresses move), but the synthesized members' own.
             def symbols(exe):
@@ -185,7 +209,7 @@ def main():
                     failures += 1
                     pairs = pairs[1:]
                 for what, a, b in pairs:
-                    r = subprocess.run([args.compare_images, "compare-images", a, b],
+                    r = subprocess.run([args.compare_images, "compare-images", "--examples=0", a, b],
                                        capture_output=True, text=True)
                     report = os.path.join(out, f"{program}-{linker}-{what}.txt")
                     with open(report, "w") as f:

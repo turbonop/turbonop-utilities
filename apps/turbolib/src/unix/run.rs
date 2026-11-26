@@ -905,6 +905,14 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
         for (why, n) in &report.kept {
             text.push_str(&format!("turbolib:   {n} copies stayed: {why}\n"));
         }
+        if !report.phases.is_empty() {
+            let phases: Vec<String> = report
+                .phases
+                .iter()
+                .map(|(what, d)| format!("{what} {:.3} s", d.as_secs_f64()))
+                .collect();
+            text.push_str(&format!("turbolib:   time: {}\n", phases.join(", ")));
+        }
         for (why, n) in &report.passed {
             text.push_str(&format!("turbolib:   {n} members passed through: {why}\n"));
         }

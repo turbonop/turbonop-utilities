@@ -27,7 +27,7 @@ items leave TODO.md as they ship.
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links); 3.5 done, as `--precomp=clustered[=<n>]` (opt-in; see [Phase 3.5 results](#phase-35-results-clustered)). |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
-| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; 4.24× GNU `ar`'s time on the 20 largest libraries (a noisy measurement). Not yet: GNU's split DWARF 4, `select-any` and `--locals` for ELF, the clang corpus. |
+| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; GNU's split DWARF 4 too; initializer entries in groups kept from folding; the original members loaded in the original order by all four linkers; the clang corpus (relib byte for byte, folded 2.4% smaller, verified, relinked; see 6.6); every differing description proven another unit's copy; 0.80× GNU `ar`'s time folding the 20 largest libraries (a noisy measurement). Not yet: `select-any` and `--locals` for ELF. |
 | 7 Mach-O | Not yet. |
 
 ### Picking this up elsewhere
@@ -1250,6 +1250,37 @@ What was found on the way:
   defines folds too, to a fixpoint: the largest reason copies stay
   (466,557), as the units with side-effect definers keep their callees.
 
+**Initializer entries in groups** (ELF's counterpart of COFF's
+`.CRT$X*` rule). How the compilers write C++17 inline variables' and
+templates' static data members' dynamic initialization (gcc 15.2, clang
+21.1, `-ffunction-sections -fdata-sections`):
+
+- **clang** puts each variable's in the variable's COMDAT group: the
+  variable, its guard (`_ZGV...`), its `__cxx_global_var_init` in
+  `.text.startup`, that function's `.gcc_except_table`, and its
+  `.init_array` entry (`.init_array.NNNNN` with `init_priority`; `.ctors`
+  with `-fno-use-init-array`). Moved into a synthesized member, the entry
+  would run at that member's place in the order, not among its object's
+  initializers.
+- **GCC** puts the variable and its guard in groups of their own (data
+  only) and the guarded initialization in the object's own
+  `_GLOBAL__sub_I_` function, registered by an `.init_array` outside any
+  group. Those units fold safely; the member has side effects.
+
+So a unit holding an `.init_array`, `.fini_array`, `.preinit_array`,
+`.ctors`, or `.dtors` section (by type or by name, with a priority or
+not), or a `.gnu.warning` section, stays, and such an entry gives its
+member side effects (`--pull=preserve`: loading it runs the
+initializer). Before this rule the engine folded them (they were only
+looked for outside groups). Checks:
+
+| Check | Result |
+|---|---|
+| `tools/turbolib/elf-init/run.sh` (inline variables, a variable template, a template's static member, `init_priority`, a destructor, `thread_local`; gcc and clang at `-O0` and `-O2`, clang also with `-fno-use-init-array`; both `--pull` modes; GNU ld, gold, lld, mold) | all pass: no synthesized member holds an entry, the programs print the same initialization order, `verify` and `compare-images` pass. Without the rule, clang under `--pull=relaxed` moved 4 grouped entries: the printed order changed with every linker (with `.ctors`, every one but lld), and `compare-images` failed every link |
+| size cost on the gcc corpus (all 265 libraries, `foldall.sh`) | none: 23,508,957,816 bytes with and without the rule, every archive the same bytes (GCC writes no grouped entries) |
+
+The clang corpus's cost is in its results below.
+
 ### Verification (6.4): `verify` and `compare-images` for ELF
 
 Both are in `turbonop_verify::elf`; `turbolib verify` takes GNU and BSD
@@ -1424,8 +1455,17 @@ held a copy, and the new unit is built from that member's:
   plan's first choice: no new outputs for the build rule to declare, and
   a link may mix split and unsplit units. The givers' `.dwo` files aren't
   touched: their addresses go through `.debug_addr`, which is
-  tombstoned. GNU's split DWARF 4 (`DW_AT_GNU_dwo_id`) isn't read; its
-  folded functions get no DWARF, and `--stats` says why.
+  tombstoned. GNU's split DWARF 4 (`-gsplit-dwarf -gdwarf-4`, gcc's and
+  clang's) is read too: a DWARF 4 skeleton with `DW_AT_GNU_dwo_id` names
+  its `.dwo` by `DW_AT_GNU_dwo_name`; the split unit's strings are
+  `DW_FORM_GNU_str_index` into `.debug_str_offsets.dwo` (no header), its
+  location lists `.debug_loc.dwo`'s GNU entry kinds (DWARF 5's first
+  four, with a 4-byte length and 2-byte expression lengths, view pairs
+  apart), its range lists the member's `.debug_ranges` from
+  `DW_AT_GNU_ranges_base`. `compare-images` reads them the same way. In
+  `elf-debug`'s fixture (gcc and clang, `-O0` and `-O2`), all 68 checks
+  pass, gdb sessions included; with the other 12 configurations, 272 of
+  272.
 - **Not handled** (the synthesized member gets no DWARF, and `--stats`
   says why): 64-bit DWARF, REL machines (only x86-64 and AArch64 are
   rewritten), compressed debug sections, units that refer outside
@@ -1472,6 +1512,132 @@ list entry not placed (it may be at a section's end); `DW_OP_addrx` and
 `DW_OP_constx` compared as the plain operations; split units read from
 their `.dwo` files; and which debug sections each program has compared
 apart from the rest (a folded split program has unsplit ones too).
+
+### Load order, the clang corpus, and the differing descriptions (6.6)
+
+**Load order.** `relink.py` now compares the order in which each link
+loads the original members (as `--trace` lists them: the load order for
+GNU ld, gold, and lld; mold's file order, by command-line place and
+member index), not only the set. Against the folded libraries of both
+corpora, `llvm-nm` and `llvm-readobj` load the same original members in
+the same order with all four linkers (16 of 16 links; 409 to 1,019
+members each), and `compare-images` finds the initializer arrays
+(`.init_array`, `.fini_array`, `.preinit_array`, `.ctors`, `.dtors`) the
+same, entry by entry, in order. Nothing needed fixing: unlike link.exe,
+these linkers don't end a sweep early, and a giver keeps every
+undefined name its moved units used (so it pulls in the same members
+when it loads); its strong reference to the anchor brings the
+synthesized member, whose only new references are other synthesized
+members' anchors. A five-member fixture (an inline function in two
+members calling a third, the giver calling a fourth first) loads the
+same order with each linker too.
+
+**The clang corpus** (`build-clang`: clang 21.1, archived by the gcc
+build's `llvm-ar`, 265 libraries, 7.44 GiB):
+
+| Check | Result |
+|---|---|
+| `relib.py`: every library remade by its own commands (`llvm-ar Dqc`, `llvm-ranlib -D`) with turbolib as `llvm-ar` and `llvm-ranlib` | 265 of 265 byte for byte |
+| `roundtrip_unix -llvm` | 265 of 265 written back (264 by either writer, 1 by `llvm-ar`'s only), 265 indexes computed from the members, 8.1 s |
+| object round trip (`turbonop-elf-object`'s `roundtrip -relayout`): 5,885 objects in 2,373 files, 9.73 GiB, LLVM's shared `.strtab`, `.llvm_addrsig` in 180 of 184 of `libLLVMSupport.a`'s members; no CREL | all byte-identical, and laid out afresh read back the same, 17.6 s |
+| `foldall.sh` (all 265) | 7,984,391,814 to 7,790,815,022 bytes (2.4% smaller); 289,024 distinct units folded (1,480,953 copies) into 36,978 synthesized members; DWARF moved for all 287,076 that had some |
+| ... why copies stayed | 688,277 first definer with side effects; 582,766 calling a name of their member that stays; 16,981 names with other definitions; 13,101 reaching a local outside them |
+| the initializer rule's cost | 2 grouped `.init_array` sections in the whole corpus (a template's static member, in `MachineUniformityAnalysis.cpp.o` and `UniformityAnalysis.cpp.o`, one copy each), whose members had no other initializer: with the rule they have side effects, and `libLLVMAnalysis.a` folds 4 units (8 copies) fewer and comes out 4,360 bytes *smaller* (a synthesized member costs more than the copies saved); `libLLVMCodeGen.a` the same size |
+| `verify` of the 265 | 265 pass (586 s, one after another, beside other work) |
+| `relink.py` (`llvm-nm`, `llvm-readobj`; GNU ld, gold, lld, mold) | the same members in the same order, the same symbols (`nm -S`), the same program outputs in all 8 |
+| `compare-images`, original against folded | `llvm-readobj` with GNU ld, gold, lld: equivalent. 2 descriptions by another unit's copy, both proven (below). Left: 1 or 2 `llvm-nm` functions whose operand names a constant by contents that run past it (16 bytes of `identify_magic`'s, 8 of `expf`'s, then what follows them, which the layout moves), and one jump table not recognized (`VPIntrinsic::getVectorLengthParamPos`); and with mold, 21 functions of `llvm-readobj` whose `lea off(%reg)` after mold's `sub $tls_size` relaxation names a TLS variable by its offset in the TLS block (`PrettyStackTraceHead`; folding moves TLS variables, so the offsets change): not yet read as TLS offsets |
+
+What the clang corpus found:
+
+- **Rebuilt string tables lost LLVM's tail sharing.** LLVM's `.strtab`
+  holds the section names and symbol names, and `.rela.text.f`,
+  `.text.f`, and `f` share one string. Rebuilt name by name, a rewritten
+  member's `.strtab` tripled (`CIRGenStmtOpenMP.cpp.o`: 85 MB to 255 MB),
+  and the first fold of the clang corpus came out 9.1% *larger*
+  (8,708,710,254 bytes). `turbonop-elf-object` now builds tables
+  tail-merged (each name sharing the end of a longer one), in an order
+  that depends only on the set of names. On the gcc corpus it saves
+  another 21 MB (23,508,957,816 to 23,488,090,872 bytes, 1.05% smaller
+  than the build's).
+- **Jump tables** (clang puts x86-64 jump tables in `.rodata`, unlabeled,
+  with entries relative to the table) were named by their bytes, which
+  follow the layout: 23 to 148 functions per program failed.
+  `compare-images` now compares an unlabeled table of 32-bit
+  table-relative entries landing in one function by its targets.
+- **An address one past a section's end** (a tail call's
+  `DW_AT_call_return_pc` in the last function of `.text`) was "dead" in
+  one program and named in the other; it is named from the byte before
+  it.
+- **`compare-images`' DWARF verdicts varied from run to run**: a
+  subprogram's descriptions were sorted by their hashes, which are keyed
+  per process, and classified against the first. Now each description
+  of the second program that the first lacks is classified against the
+  first's closest one (the same DIEs and rows from another unit: expected;
+  rows differ; DIEs differ), the worst deciding, and examples are chosen
+  by place.
+
+**The differing descriptions** (the plan's 7 to 22 per program). A
+folded function is described by the first member's copy; the link of the
+original keeps the first loaded one's, and the first member may not even
+be loaded. `witness.py` proves each one: for the unit `compare-images`
+names as the folded program's, it links the original program again with
+that unit's object first on the command line (every linker then keeps
+its copies, and GNU ld and gold describe the others' too) and compares
+that witness with the folded program; a subprogram is proven when the
+witness describes it as the folded program does.
+
+| Corpus | Differing descriptions (`llvm-nm`, `llvm-readobj`; GNU ld, gold, lld, mold) | Proven another unit's copy |
+|---|---|---|
+| gcc (`fold-gcc`, this build's output) | 5, 12, 20, 9; 5, 6, 15, 7 (79) | 79 of 79 |
+| clang | 0, 1, 1, 0; 0, 0, 0, 0 (2) | 2 of 2 |
+
+(The counts differ from 6.5's 7 to 22 for the classification fix above:
+each run had reported its own mix of "DIEs differ" and "another unit's
+copy".) For example, `SmallString<0>::~SmallString` has
+`DW_AT_decl_file` `MD5.h` in `ELFObjectFile.cpp`'s copy and `XCOFF.h`
+in `ArchiveWriter.cpp`'s; `RTTIExtends<FileSystem, RTTIRoot>::classID()`
+has a `DW_AT_type` in one unit and not the other. A witness links more
+than the original (that unit's object and what it pulls in) and keeps
+that unit's copies of other functions too; only the subprograms it was
+made for are looked at.
+
+**Folding's speed.** `--stats` now gives each phase's time (reading,
+choosing, rewriting, reading DWARF, synthesizing). On the gcc build's
+libraries they showed two places where the work grew with the square of
+a member's size, both in huge members (`libclangSema.a`'s): each unit's
+symbols were found by scanning every symbol of its member, once while
+hashing and again in each synthesized member it went to; and each
+synthesized member's compile unit walked every DIE of its source unit
+(marks, files, children, offsets, which classes are declarable), where a
+large member gives DIEs to many synthesized members. Each unit's symbols
+are now listed once, and a unit's DIEs are walked once; a synthesized
+member's work follows the DIEs it keeps. Smaller changes: hash maps for
+choosing's lookups, names borrowed rather than copied, and debug
+relocations tombstoned in place (and copied only where one names a
+moved unit). The output is the same bytes (`libclangSema.a`,
+`libLLVMCodeGen.a`, `libLLVMSupport.a` against the corpus fold before
+the changes; `-j 1`, `3`, and `8` the same).
+
+| `ar s --fold=identical` (8 threads, beside another session's builds) | before | after |
+|---|---|---|
+| `libclangSema.a` | 89.2 s (reading 47.1, choosing 3.5, rewriting 2.8, DWARF 3.7, synthesizing 28.7) | 15.5 s (1.1, 2.8, 2.0, 2.6, 4.6) |
+| `libLLVMCodeGen.a` | 11.6 s | 4.4 s |
+| `libLLVMSupport.a` | 0.78 s | 0.41 s |
+
+`relib.py --time --options=--fold=identical` (the 20 largest libraries,
+13.79 GiB, each library's CMake commands, best of 2): GNU `ar` 95.70 s,
+turbolib 76.70 s, **0.80×** (it was 2.66× before 6.5 and 4.24× after).
+Not a quiet measurement: another session's builds ran throughout (load
+average 4 to 7), and GNU `ar`'s own time ranged from 38 s to 163 s
+across this phase's runs, so the ratio is the run's, not a constant.
+What is left, by phase: choosing runs on one thread (2.8 s of
+`libclangSema.a`'s); a huge member is rewritten and its DWARF read on
+one thread each; and system time is about two fifths of the total (21 s of
+`libclangSema.a`'s 51 s of CPU), most of it mimalloc returning and
+refaulting memory: with `MIMALLOC_PURGE_DELAY=-1`, 68 s of system time
+became 16 s before the changes above. Setting the option takes an
+unsafe call into mimalloc, so it isn't done. `ranlib` after `ar qc`
+still folds again (finding nothing new).
 
 ## Decisions
 

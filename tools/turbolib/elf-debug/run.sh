@@ -27,6 +27,7 @@ if [ ${#configs[@]} -eq 0 ]; then
   configs=()
   for c in gcc clang; do for v in 4 5; do for o in O0 O2; do configs+=("$c-$v-$o"); done; done; done
   configs+=(gcc-5-O0-split gcc-5-O2-split clang-5-O0-split clang-5-O2-split)
+  configs+=(gcc-4-O0-split gcc-4-O2-split clang-4-O0-split clang-4-O2-split)
 fi
 linkers=${LINKERS:-"bfd gold lld mold"}
 failed=0

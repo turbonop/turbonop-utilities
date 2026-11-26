@@ -212,6 +212,12 @@ struct Cu {
     str_offsets_base: u64,
     rnglists_base: u64,
     loclists_base: u64,
+    /// GNU's split DWARF 4: its range lists' base in the member's
+    /// `.debug_ranges` (`DW_AT_GNU_ranges_base`); its location lists are in
+    /// the `.dwo`'s `.debug_loc.dwo`, with GNU's entry kinds.
+    gnu_split: Option<u64>,
+    /// Each DIE's [`declarable`].
+    declarable: Vec<bool>,
     /// Its line table: where it starts, its program starts, and it ends.
     line: Option<(u64, u64, u64)>,
     header: LineHeader,
@@ -243,6 +249,8 @@ pub(crate) struct Source<'p> {
 #[derive(Clone, Debug)]
 struct Skeleton {
     dwo_id: u64,
+    /// GNU's split DWARF 4 (`DW_AT_GNU_dwo_id`): `DW_AT_GNU_ranges_base`.
+    gnu: Option<u64>,
     addr_base: u64,
     low_pc: Addr,
     /// Its line table (`DW_AT_stmt_list`).
@@ -516,18 +524,23 @@ impl<'p> Source<'p> {
     /// skeleton's unit keeps in the member.
     fn split(&mut self, dwo: Dwo<'_>) -> R<()> {
         let dwarf = self.dwarf();
-        let Some(u) = Unit::iter(dwarf, turbonop_dwarf::UnitSection::Info, 0)
-            .find(|u| u.unit_type == DW_UT_SKELETON)
-        else {
-            if Unit::iter(dwarf, turbonop_dwarf::UnitSection::Info, 0).any(|u| {
-                Abbrevs::parse(dwarf.abbrev, u.abbrev_offset, dwarf.endian)
-                    .and_then(|a| read_die(&u, &a, u.dies).ok().map(|(_, t)| t))
-                    .is_some_and(|t| t.iter().any(|a| a.name == DW_AT_GNU_DWO_ID))
-            }) {
-                return Err("GNU's split DWARF 4");
+        // DWARF 5's skeleton unit, or GNU's DWARF 4 one: a compile unit
+        // with `DW_AT_GNU_dwo_id`.
+        let gnu_id = |u: &Unit<'_>| -> Option<u64> {
+            if u.version >= 5 {
+                return None;
             }
+            let a = Abbrevs::parse(dwarf.abbrev, u.abbrev_offset, dwarf.endian)?;
+            let (_, top) = read_die(u, &a, u.dies).ok()?;
+            let id = top.iter().find(|x| x.name == DW_AT_GNU_DWO_ID)?;
+            u.uint(&id.value)
+        };
+        let Some(u) = Unit::iter(dwarf, turbonop_dwarf::UnitSection::Info, 0)
+            .find(|u| u.unit_type == DW_UT_SKELETON || gnu_id(u).is_some())
+        else {
             return Ok(());
         };
+        let gnu_dwo_id = gnu_id(&u);
         let abbrevs = Abbrevs::parse(dwarf.abbrev, u.abbrev_offset, dwarf.endian)
             .ok_or("an abbreviation table that doesn't read")?;
         let (_, top) = read_die(&u, &abbrevs, u.dies)?;
@@ -547,7 +560,9 @@ impl<'p> Source<'p> {
                 .and_then(|a| unit.string(&a.value))
                 .map(|s| s.bytes.to_vec())
         };
-        let dwo_name = string(DW_AT_DWO_NAME).ok_or("a skeleton without DW_AT_dwo_name")?;
+        let dwo_name = string(DW_AT_DWO_NAME)
+            .or_else(|| string(DW_AT_GNU_DWO_NAME))
+            .ok_or("a skeleton without DW_AT_dwo_name")?;
         let comp_dir = string(DW_AT_COMP_DIR).unwrap_or_default();
         let mut strings = Vec::new();
         for n in [DW_AT_NAME, DW_AT_COMP_DIR, DW_AT_PRODUCER] {
@@ -566,6 +581,8 @@ impl<'p> Source<'p> {
             str_offsets_base: unit.str_offsets_base,
             rnglists_base: unit.rnglists_base,
             loclists_base: unit.loclists_base,
+            gnu_split: None,
+            declarable: Vec::new(),
             line: None,
             header: LineHeader::default(),
             seqs: Vec::new(),
@@ -578,8 +595,15 @@ impl<'p> Source<'p> {
             .iter()
             .find(|a| a.name == DW_AT_STMT_LIST)
             .and_then(|a| unit.uint(&a.value));
+        let gnu = gnu_dwo_id.map(|_| {
+            top.iter()
+                .find(|a| a.name == DW_AT_GNU_RANGES_BASE)
+                .and_then(|a| unit.uint(&a.value))
+                .unwrap_or(0)
+        });
         let skeleton = Skeleton {
-            dwo_id: u.dwo_id.ok_or("a skeleton without its ID")?,
+            dwo_id: u.dwo_id.or(gnu_dwo_id).ok_or("a skeleton without its ID")?,
+            gnu,
             addr_base: unit.addr_base,
             low_pc,
             stmt,
@@ -594,15 +618,15 @@ impl<'p> Source<'p> {
                 continue;
             };
             let Some(k) = Kind::of(base) else { continue };
-            if !matches!(
-                k,
-                Kind::Info
-                    | Kind::Abbrev
-                    | Kind::Str
-                    | Kind::StrOffsets
-                    | Kind::Loclists
-                    | Kind::Rnglists
-            ) {
+            // (DWARF 4's range lists stay in the member's `.debug_ranges`;
+            // `.debug_line.dwo` is type units'.)
+            let wanted = match k {
+                Kind::Info | Kind::Abbrev | Kind::Str | Kind::StrOffsets => true,
+                Kind::Loclists | Kind::Rnglists => gnu.is_none(),
+                Kind::Loc => gnu.is_some(),
+                _ => false,
+            };
+            if !wanted {
                 continue;
             }
             if s.flags & shf::COMPRESSED != 0 {
@@ -620,14 +644,25 @@ impl<'p> Source<'p> {
             return Err("a .dwo file without .debug_info.dwo");
         }
         self.obj_str = Some(self.sec(Kind::Str).to_vec());
-        for k in [
-            Kind::Info,
-            Kind::Abbrev,
-            Kind::Str,
-            Kind::StrOffsets,
-            Kind::Loclists,
-            Kind::Rnglists,
-        ] {
+        let replaced: &[Kind] = if gnu.is_some() {
+            &[
+                Kind::Info,
+                Kind::Abbrev,
+                Kind::Str,
+                Kind::StrOffsets,
+                Kind::Loc,
+            ]
+        } else {
+            &[
+                Kind::Info,
+                Kind::Abbrev,
+                Kind::Str,
+                Kind::StrOffsets,
+                Kind::Loclists,
+                Kind::Rnglists,
+            ]
+        };
+        for &k in replaced {
             self.secs[k as usize] = None;
         }
         for (k, b) in taken {
@@ -651,6 +686,18 @@ impl<'p> Source<'p> {
             let skeleton = self.skeleton.as_ref();
             match skeleton {
                 // A split unit: the one the skeleton names.
+                Some(sk) if sk.gnu.is_some() => {
+                    // GNU's: a DWARF 4 compile unit with the skeleton's ID.
+                    let id = Abbrevs::parse(dwarf.abbrev, u.abbrev_offset, dwarf.endian)
+                        .and_then(|a| read_die(u, &a, u.dies).ok().map(|(_, t)| t))
+                        .and_then(|t| {
+                            let a = t.iter().find(|a| a.name == DW_AT_GNU_DWO_ID)?;
+                            u.uint(&a.value)
+                        });
+                    if u.version >= 5 || u.unit_type != DW_UT_COMPILE || id != Some(sk.dwo_id) {
+                        continue;
+                    }
+                }
                 Some(sk) => {
                     if u.unit_type != DW_UT_SPLIT_COMPILE || u.dwo_id != Some(sk.dwo_id) {
                         continue;
@@ -678,6 +725,8 @@ impl<'p> Source<'p> {
                 str_offsets_base: u.str_offsets_base,
                 rnglists_base: u.rnglists_base,
                 loclists_base: u.loclists_base,
+                gnu_split: None,
+                declarable: Vec::new(),
                 line: None,
                 header: LineHeader::default(),
                 seqs: Vec::new(),
@@ -703,7 +752,10 @@ impl<'p> Source<'p> {
                 // offsets after the `.dwo` sections' headers.
                 cu.addr_base = sk.addr_base;
                 unit.addr_base = sk.addr_base;
-                if cu.loclists_base == 0 {
+                cu.gnu_split = sk.gnu;
+                if sk.gnu.is_some() {
+                    // (DWARF 4: no list bases.)
+                } else if cu.loclists_base == 0 {
                     cu.loclists_base = 12;
                     unit.loclists_base = 12;
                 }
@@ -718,6 +770,7 @@ impl<'p> Source<'p> {
                 return Err("split DWARF");
             }
             cu.dies = walk(&unit, &cu.abbrevs)?;
+            cu.declarable = declarable(&cu.dies);
             cus.push((
                 cu,
                 unit,
@@ -860,11 +913,12 @@ impl<'p> Source<'p> {
             (DW_FORM_LOCLISTX, Value::ListIndex(i)) => {
                 unit.loclist_offset(i).ok_or("a bad location list index")
             }
-            (_, Value::Uint(v)) => {
-                // DWARF 5 section offsets; GNU's split DWARF 4 isn't read.
-                let _ = (cu, ranges);
-                Ok(v)
-            }
+            (_, Value::Uint(v)) => match cu.gnu_split {
+                // GNU's split DWARF 4: a range list's offset is from the
+                // skeleton's `DW_AT_GNU_ranges_base`.
+                Some(base) if ranges => v.checked_add(base).ok_or("a bad range list offset"),
+                _ => Ok(v),
+            },
             _ => Err("a list of a form not known"),
         }
     }
@@ -1471,41 +1525,55 @@ struct Builder<'s, 'p> {
 
 /// The DIEs of one unit to keep: 2 whole, 1 as a skeleton (the DIE and its
 /// kept children), 3 as a declaration (its name, and its kept children).
-struct Keep {
-    mark: Vec<u8>,
+struct Keep<'c> {
+    /// The marks of the DIEs kept (a map: a synthesized member keeps a few
+    /// DIEs of a unit that may have millions, and a member's unit gives
+    /// DIEs to many synthesized members).
+    mark: HashMap<usize, u8>,
     work: Vec<usize>,
     /// Whether each DIE is a named class, structure, or union a debugger
-    /// can find the definition of by its name (in named scopes only).
-    declarable: Vec<bool>,
+    /// can find the definition of by its name (in named scopes only): the
+    /// unit's, worked out once.
+    declarable: &'c [bool],
 }
 
 const SKELETON: u8 = 1;
 const WHOLE: u8 = 2;
 const DECLARATION: u8 = 3;
 
-impl Keep {
-    fn new(dies: &[Die]) -> Self {
-        // Whether names inside each DIE can be looked up from anywhere.
-        let mut open = vec![false; dies.len()];
-        let mut declarable = vec![false; dies.len()];
-        for (i, d) in dies.iter().enumerate() {
-            let parent_open = d.parent == u32::MAX || open[d.parent as usize];
-            let aggregate = matches!(
-                d.tag,
-                DW_TAG_CLASS_TYPE | DW_TAG_STRUCTURE_TYPE | DW_TAG_UNION_TYPE
-            );
-            declarable[i] = aggregate && d.named && d.parent != u32::MAX && parent_open;
-            open[i] = match d.tag {
-                DW_TAG_COMPILE_UNIT | DW_TAG_PARTIAL_UNIT => true,
-                DW_TAG_NAMESPACE => d.named && parent_open,
-                _ => declarable[i],
-            };
-        }
+/// Whether each DIE is a named class, structure, or union a debugger can
+/// find the definition of by its name (in named scopes only).
+fn declarable(dies: &[Die]) -> Vec<bool> {
+    // Whether names inside each DIE can be looked up from anywhere.
+    let mut open = vec![false; dies.len()];
+    let mut declarable = vec![false; dies.len()];
+    for (i, d) in dies.iter().enumerate() {
+        let parent_open = d.parent == u32::MAX || open[d.parent as usize];
+        let aggregate = matches!(
+            d.tag,
+            DW_TAG_CLASS_TYPE | DW_TAG_STRUCTURE_TYPE | DW_TAG_UNION_TYPE
+        );
+        declarable[i] = aggregate && d.named && d.parent != u32::MAX && parent_open;
+        open[i] = match d.tag {
+            DW_TAG_COMPILE_UNIT | DW_TAG_PARTIAL_UNIT => true,
+            DW_TAG_NAMESPACE => d.named && parent_open,
+            _ => declarable[i],
+        };
+    }
+    declarable
+}
+
+impl<'c> Keep<'c> {
+    fn new(declarable: &'c [bool]) -> Self {
         Keep {
-            mark: vec![0; dies.len()],
+            mark: HashMap::new(),
             work: Vec::new(),
             declarable,
         }
+    }
+
+    fn mark(&self, i: usize) -> u8 {
+        self.mark.get(&i).copied().unwrap_or(0)
     }
 
     /// Keeps the ancestors of a kept DIE (from `i`, its parent): scopes
@@ -1516,18 +1584,18 @@ impl Keep {
     fn skeleton(&mut self, dies: &[Die], i: usize) {
         let mut at = i;
         loop {
-            if self.mark[at] != 0 {
+            if self.mark(at) != 0 {
                 return;
             }
             if self.declarable[at] {
-                self.mark[at] = DECLARATION;
+                self.mark.insert(at, DECLARATION);
             } else if is_scope(dies[at].tag)
                 || matches!(
                     dies[at].tag,
                     DW_TAG_SUBPROGRAM | DW_TAG_LEXICAL_BLOCK | DW_TAG_INLINED_SUBROUTINE
                 )
             {
-                self.mark[at] = SKELETON;
+                self.mark.insert(at, SKELETON);
                 self.work.push(at);
             } else {
                 self.whole(dies, at);
@@ -1542,17 +1610,18 @@ impl Keep {
     }
 
     fn whole(&mut self, dies: &[Die], i: usize) {
-        if self.mark[i] == WHOLE {
+        if self.mark(i) == WHOLE {
             return;
         }
         let end = dies[i].end;
         let mut j = i;
         while j < dies.len() && (j == i || dies[j].offset < end) {
-            if self.mark[j] != WHOLE {
-                if self.mark[j] != SKELETON {
+            let m = self.mark(j);
+            if m != WHOLE {
+                if m != SKELETON {
                     self.work.push(j);
                 }
-                self.mark[j] = WHOLE;
+                self.mark.insert(j, WHOLE);
             }
             j += 1;
         }
@@ -1570,8 +1639,8 @@ impl Keep {
         if is_scope(dies[i].tag) {
             self.skeleton(dies, i);
         } else if self.declarable[i] {
-            if self.mark[i] == 0 {
-                self.mark[i] = DECLARATION;
+            if self.mark(i) == 0 {
+                self.mark.insert(i, DECLARATION);
                 let p = dies[i].parent;
                 if p != u32::MAX {
                     self.skeleton(dies, p as usize);
@@ -2010,6 +2079,53 @@ impl<'s, 'p> Builder<'s, 'p> {
                     _ => return Err(bad),
                 }
             }
+        } else if cu.gnu_split.is_some() {
+            // `.debug_loc.dwo`: GNU's entry kinds (DWARF 5's first four,
+            // but with a 4-byte length and 2-byte expression lengths).
+            let data = src.sec(Kind::Loc);
+            let mut r = Reader::new(data, off as usize, core_endian(src.endian));
+            let expr = |r: &mut Reader<'s>| -> R<(&'s [u8], u64)> {
+                let len = r.uint(2).ok_or(bad)?;
+                let at = r.pos as u64;
+                Ok((r.bytes(len).ok_or(bad)?, at))
+            };
+            loop {
+                match r.u8().ok_or(bad)? {
+                    DW_LLE_END_OF_LIST => break,
+                    DW_LLE_BASE_ADDRESSX => {
+                        // (No entry kind is relative to it.)
+                        src.indexed(cu, r.uleb().ok_or(bad)?)?;
+                    }
+                    DW_LLE_STARTX_ENDX => {
+                        let s = src.indexed(cu, r.uleb().ok_or(bad)?)?;
+                        let e = src.indexed(cu, r.uleb().ok_or(bad)?)?;
+                        let (x, at) = expr(&mut r)?;
+                        out.push(LocEntry::Bounded {
+                            start: s,
+                            len: s.distance(e).ok_or(bad)?,
+                            expr: x,
+                            at,
+                        });
+                    }
+                    DW_LLE_STARTX_LENGTH => {
+                        let s = src.indexed(cu, r.uleb().ok_or(bad)?)?;
+                        let len = r.uint(4).ok_or(bad)?;
+                        let (x, at) = expr(&mut r)?;
+                        out.push(LocEntry::Bounded {
+                            start: s,
+                            len,
+                            expr: x,
+                            at,
+                        });
+                    }
+                    DW_LLE_GNU_VIEW_PAIR => {
+                        let a = r.uleb().ok_or(bad)?;
+                        let b = r.uleb().ok_or(bad)?;
+                        out.push(LocEntry::View(a, b));
+                    }
+                    _ => return Err(bad),
+                }
+            }
         } else {
             let k = Kind::Loc;
             let data = src.sec(k);
@@ -2227,7 +2343,7 @@ impl<'s, 'p> Builder<'s, 'p> {
         let unit = src.unit(cu)?;
         let dies = &cu.dies;
         // What to keep.
-        let mut keep = Keep::new(dies);
+        let mut keep = Keep::new(&cu.declarable);
         for &r in roots {
             keep.whole(dies, r);
         }
@@ -2274,6 +2390,9 @@ impl<'s, 'p> Builder<'s, 'p> {
                 keep.refer(dies, t);
             }
         }
+        // The kept DIEs, in order.
+        let mut kept: Vec<usize> = keep.mark.keys().copied().collect();
+        kept.sort_unstable();
         // The line table's files the kept DIEs and the moved sequences
         // name (the unit's primary file too), renumbered in order.
         let mut used: BTreeSet<u64> = BTreeSet::new();
@@ -2286,11 +2405,11 @@ impl<'s, 'p> Builder<'s, 'p> {
                     src.files_set(&cu.header, s, &mut used)?;
                 }
             }
-            for (i, d) in dies.iter().enumerate() {
-                if !matches!(keep.mark[i], SKELETON | WHOLE) {
+            for &i in &kept {
+                if !matches!(keep.mark(i), SKELETON | WHOLE) {
                     continue;
                 }
-                let (_, attrs) = read_die(&unit, &cu.abbrevs, d.offset)?;
+                let (_, attrs) = read_die(&unit, &cu.abbrevs, dies[i].offset)?;
                 for a in &attrs {
                     if is_file(a.name) {
                         used.insert(file_value(&unit, a)?);
@@ -2305,12 +2424,15 @@ impl<'s, 'p> Builder<'s, 'p> {
             }
         }
         // Each kept DIE's kept children.
-        let mut children: Vec<Vec<usize>> = vec![Vec::new(); dies.len()];
-        for (i, d) in dies.iter().enumerate() {
-            if keep.mark[i] != 0 && d.parent != u32::MAX {
-                children[d.parent as usize].push(i);
+        let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
+        for &i in &kept {
+            let d = &dies[i];
+            if d.parent != u32::MAX {
+                children.entry(d.parent as usize).or_default().push(i);
             }
         }
+        let none: Vec<usize> = Vec::new();
+        let children_of = |d: usize| children.get(&d).unwrap_or(&none);
         // The unit.
         let e = self.endian();
         let start = self.info.bytes.len();
@@ -2327,26 +2449,26 @@ impl<'s, 'p> Builder<'s, 'p> {
             p.put(0, 4, e);
             p.bytes.push(cu.address_size);
         }
-        let mut offsets: Vec<u64> = vec![u64::MAX; dies.len()];
-        offsets[0] = p.bytes.len() as u64;
-        let q = self.top_die(cu, &unit, !children[0].is_empty())?;
+        let mut offsets: HashMap<usize, u64> = HashMap::new();
+        offsets.insert(0, p.bytes.len() as u64);
+        let q = self.top_die(cu, &unit, !children_of(0).is_empty())?;
         p.append(q);
         // Pre-order: (DIE, next child to write).
         let mut stack: Vec<(usize, usize)> = vec![(0, 0)];
         while let Some(top) = stack.last_mut() {
             let (d, next) = *top;
-            if next < children[d].len() {
-                let c = children[d][next];
+            if next < children_of(d).len() {
+                let c = children_of(d)[next];
                 top.1 += 1;
-                offsets[c] = p.bytes.len() as u64;
-                let decl = keep.mark[c] == DECLARATION;
-                let q = self.die(cu, &unit, c, !children[c].is_empty(), decl)?;
+                offsets.insert(c, p.bytes.len() as u64);
+                let decl = keep.mark(c) == DECLARATION;
+                let q = self.die(cu, &unit, c, !children_of(c).is_empty(), decl)?;
                 p.append(q);
-                if !children[c].is_empty() {
+                if !children_of(c).is_empty() {
                     stack.push((c, 0));
                 }
             } else {
-                if !children[d].is_empty() {
+                if !children_of(d).is_empty() {
                     p.bytes.push(0);
                 }
                 stack.pop();
@@ -2361,7 +2483,7 @@ impl<'s, 'p> Builder<'s, 'p> {
         // References.
         let fixes = std::mem::take(&mut p.fixes);
         for (pos, d, fix) in fixes {
-            let o = offsets[d];
+            let o = offsets.get(&d).copied().unwrap_or(u64::MAX);
             if o == u64::MAX {
                 return Err("a reference to a DIE not kept");
             }
@@ -2369,7 +2491,7 @@ impl<'s, 'p> Builder<'s, 'p> {
         }
         let fixes = std::mem::take(&mut self.loc.fixes);
         for (pos, d, fix) in fixes {
-            let o = offsets[d];
+            let o = offsets.get(&d).copied().unwrap_or(u64::MAX);
             if o == u64::MAX {
                 return Err("a reference to a DIE not kept");
             }

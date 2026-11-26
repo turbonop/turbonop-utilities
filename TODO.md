@@ -323,11 +323,6 @@ x64. Where the 3.5 MB went:
   - The SDK's and MSVC's libraries whose index isn't computed from their
     members (103 of 1,851; see the plan's 1.2): the ARM64 CRT's EC
     symbols, and UCRT's members that win a name.
-- **ELF: initializer entries in COMDAT groups** (`.init_array`,
-  `.ctors`, `.preinit_array`, `.fini_array` inside a group) should keep
-  their unit from folding, as `.CRT$X*` does for COFF (layer 1 of the
-  initialization-order guarantee: initializers of one object in their
-  order). Check what the ELF engine does now.
 - **Why link.exe ended library sweeps early** with the anchors last (fixed
   by putting them first; see the plan's "The alias technique"): it
   reproduces with `LLVMObject.lib`'s `Error`, `Binary`, `ObjectFactory`,
@@ -441,23 +436,19 @@ x64. Where the 3.5 MB went:
   (6.1), the ELF object model (6.2), a first `--fold=identical` for ELF
   (6.3), ELF `verify` and `compare-images` (6.4), and folded functions'
   DWARF in synthesized members, split DWARF 5 included (6.5). Still open:
-  - **DWARF (6.5)**: GNU's split DWARF 4 (`-gsplit-dwarf -gdwarf-4`:
-    `DW_AT_GNU_dwo_id`, `.debug_loc.dwo`'s entry kinds) isn't read, so its
-    folded functions have none; nor 64-bit DWARF, REL machines (i386,
+  - **DWARF (6.5)**: not read (the folded functions get none): 64-bit
+    DWARF, REL machines (i386,
     ARM), compressed debug sections (`-gz`), or `DW_FORM_ref_addr` to
     another unit (`--stats` counts each). `.dwp` packages and type units
     (`-fdebug-types-section`, in COMDAT groups of their own, which stay)
     are untested. A synthesized member's DIEs are always the first
-    member's copy; `compare-images` reports 7 to 22 per program as
-    differing where a link of the original kept another unit's copy.
-    Prove them by matching against the original image's discarded
-    copies, which are still there, tombstoned. The images' DWARF grows
+    member's copy; `witness.py` proves each description `compare-images`
+    finds differing to be another unit's copy (the plan's 6.6). The images' DWARF grows
     about 2.4% (the givers' DIEs stay, and each synthesized member adds
     declarations and a line header): share line headers or declarations
     between a library's synthesized members (one unit per survivor
     member?), and measure what lld and mold then write. Untested: lldb
-    (not installed), a clang-built corpus fold with DWARF, AArch64
-    objects.
+    (not installed), AArch64 objects.
   - `--pull=preserve` keeps the units whose first definer has side
     effects: on the gcc corpus, 344,949 copies, mostly LLVM's `cl::opt`
     initializers (`.init_array`), and with them (a unit naming what stays
@@ -481,29 +472,32 @@ x64. Where the 3.5 MB went:
     doesn't compare bytes outside sized symbols (string and constant
     pools, jump tables, `.gcc_except_table`: name them by content or by
     the references into them) and has decoded no ARM64 ELF image;
-    `verify` leaves synthesized members' DWARF to `compare-images`. Run
-    both on the clang corpus.
+    `verify` leaves synthesized members' DWARF to `compare-images`.
+    Content naming should stop at a constant's end (`SHF_MERGE` entry
+    sizes are lost in the image; the reference's access size isn't
+    known).
   - Untested: REL machines (i386, ARM) and big-endian objects in a fold;
     AArch64, RISC-V, MIPS objects at all; GCC LTO objects and LLVM
     bitcode members (the `ar` personality refuses to index them); BSD
     archives from GNU `ar` (this binutils can't write them); thin archives
     and `--fold` (refused); `ar` on Windows hosts beyond the unit tests.
   - GNU `ar -M`'s `DIRECTORY`, `EXTRACT`, `LIST`, `VERBOSE`, and `FULLDIR`.
-  - **Folding's speed**: 2.66× GNU `ar`'s time on the gcc build's 20
-    largest libraries before 6.5 (without folding, 0.27×); 4.24× with DWARF
-    moved, in a noisy run: measure again on a quiet machine, and profile
-    the DWARF reading (each survivor member's `.debug_info` is walked
-    whole, and every DIE's attributes read twice). `turbonop-elf-object`
-    decodes every relocation section (the `.debug_*` sections' 3.4 GiB of
-    them too) and re-encodes them, and a rewritten member is copied twice
-    (`Object::write`, then the archive writer): keep relocation sections
-    as bytes until something edits them, tombstone in place, and write
-    rewritten members straight into the archive. `ranlib` after `ar qc`
-    folds again (finding nothing new): skip it when no member changed.
-  - The clang corpus (`configure.sh clang`, archived by `llvm-ar`): build
-    it, then `relib.py` (as `llvm-ar qc` and `llvm-ranlib` made each
-    library), `roundtrip_unix -llvm`, the object round trip (LLVM's
-    `.strtab`, `.llvm_addrsig`, `.crel`), and the fold and relink matrix.
+  - **Folding's speed**: 0.80× GNU `ar`'s time on the gcc build's 20
+    largest libraries (the plan's 6.6, a noisy run). Left: choosing runs on
+    one thread (2.8 s of `libclangSema.a`'s 15.5 s); a huge member is
+    rewritten and its DWARF read on one thread each; mimalloc's purging
+    costs about two fifths of the CPU time as system time (`MIMALLOC_PURGE_DELAY=-1`
+    cut it 4×; setting it takes an unsafe call); `turbonop-elf-object`
+    decodes and re-encodes every relocation section and a rewritten member
+    is copied twice (`Object::write`, then the archive writer); `ranlib`
+    after `ar qc` folds again (finding nothing new). Measure again on a
+    quiet machine.
+  - The clang corpus is done (the plan's 6.6) but for CREL objects
+    (`-Wa,--crel`: the corpus has none; the engine passes such members
+    through) and what `compare-images` doesn't read there yet: a
+    constant named by contents that run past it (2 functions of
+    `llvm-nm`), one jump table not recognized, and mold's TLS relaxation
+    (`sub $tls_size` then `lea off(%reg)`: 21 functions of `llvm-readobj`).
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

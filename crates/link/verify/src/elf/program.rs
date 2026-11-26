@@ -573,6 +573,57 @@ impl<'a> Program<'a> {
         Some((&rest[..n], CONTENT))
     }
 
+    /// The targets of the jump table at `addr`, if one is there: an
+    /// address that only its contents name, in a section that isn't code,
+    /// holding 32-bit entries relative to it that land in code (x86-64's,
+    /// as GCC and clang write them), two or more, up to the first that
+    /// doesn't, lands in another function, or is at the next label.
+    pub fn jump_table(&self, addr: u64) -> Option<Vec<u64>> {
+        if self.machine() != 62 || !matches!(self.name(addr), Some((_, CONTENT))) {
+            return None;
+        }
+        let s = self.section_at(addr)?;
+        let data = self.file.section_data(s);
+        let mut at = usize::try_from(addr - s.addr).ok()?;
+        let next = self.label_after(addr);
+        let mut out = Vec::new();
+        let mut function: Option<&[u8]> = None;
+        while let Some(w) = data.get(at..at + 4) {
+            let here = s.addr + at as u64;
+            if out.len() >= 1 << 16 || next.is_some_and(|n| here >= n) {
+                break;
+            }
+            let e = i32::from_le_bytes([w[0], w[1], w[2], w[3]]);
+            let t = addr.wrapping_add(i64::from(e) as u64);
+            if !self
+                .section_at(t)
+                .is_some_and(|x| x.flags & SHF_EXECINSTR != 0)
+            {
+                break;
+            }
+            // Every entry lands in one function: the table ends where
+            // another function's (an adjacent table's) begins.
+            let Some((name, _)) = self.name(t) else {
+                break;
+            };
+            if function.is_some_and(|f| f != name) {
+                break;
+            }
+            function = Some(name);
+            out.push(t);
+            at += 4;
+        }
+        (out.len() >= 2).then_some(out)
+    }
+
+    /// The address of the first label after `addr`.
+    fn label_after(&self, addr: u64) -> Option<u64> {
+        let k = self
+            .primary
+            .partition_point(|&i| self.labels[i].addr <= addr);
+        self.primary.get(k).map(|&i| self.labels[i].addr)
+    }
+
     /// `addr`'s name as text.
     pub fn render(&self, addr: u64) -> String {
         match self.name(addr) {
@@ -715,6 +766,13 @@ impl super::super::image::bytes::Names for Program<'_> {
     fn relocations_in(&self, _rva: u32, _len: u32) -> &[(u32, u8)] {
         // (Dynamic relocations are compared, and masked, before.)
         &[]
+    }
+
+    fn jump_table(&self, rva: u32) -> Option<Vec<u32>> {
+        Program::jump_table(self, u64::from(rva))?
+            .into_iter()
+            .map(|t| u32::try_from(t).ok())
+            .collect()
     }
 
     fn tls(&self, tpoff: i64) -> Option<(&[u8], u32)> {

@@ -43,7 +43,7 @@ use std::fmt::Write as _;
 use turbonop_dwarf::consts::*;
 use turbonop_dwarf::{Abbrevs, Attr, LineProgram, Reader, Sections, Unit, UnitSection, Value};
 
-use super::program::Program;
+use super::program::{CONTENT, Program};
 use crate::hash::H128;
 use crate::report::{Report, show};
 
@@ -116,6 +116,9 @@ struct Cu<'p, 'd> {
     line: Option<LineProgram<'d>>,
     comp_dir: &'d [u8],
     ids: Vec<u128>,
+    /// GNU's split DWARF 4: the skeleton's `DW_AT_GNU_ranges_base`, which
+    /// the split unit's range list offsets are from.
+    ranges_base: u64,
 }
 
 const IN_PROGRESS: u128 = u128::MAX;
@@ -185,16 +188,25 @@ impl<'p, 'd> Cu<'p, 'd> {
             .and_then(|a| unit.string(&a.value))
             .map_or(&b""[..], |s| s.bytes);
         let mut stmt = get(DW_AT_STMT_LIST).and_then(|a| unit.uint(&a.value));
+        let mut ranges_base = 0;
         if let Some(sk) = skeleton {
             // Its addresses are the skeleton's, its lists' offsets after
-            // the `.dwo` sections' headers, its lines the skeleton's.
+            // the `.dwo` sections' headers (GNU's DWARF 4: its location
+            // lists of the split form, its range lists in the program's
+            // `.debug_ranges` from the skeleton's base), its lines the
+            // skeleton's.
             unit.addr_base = sk.addr_base;
             unit.low_pc = sk.low_pc;
-            if unit.loclists_base == 0 {
-                unit.loclists_base = 12;
-            }
-            if unit.rnglists_base == 0 {
-                unit.rnglists_base = 12;
+            if let Some(base) = sk.gnu {
+                unit.split = true;
+                ranges_base = base;
+            } else {
+                if unit.loclists_base == 0 {
+                    unit.loclists_base = 12;
+                }
+                if unit.rnglists_base == 0 {
+                    unit.rnglists_base = 12;
+                }
             }
             if comp_dir.is_empty() {
                 comp_dir = sk.comp_dir;
@@ -209,6 +221,7 @@ impl<'p, 'd> Cu<'p, 'd> {
             dies,
             line,
             comp_dir,
+            ranges_base,
         })
     }
 
@@ -244,10 +257,30 @@ impl<'p, 'd> Cu<'p, 'd> {
             .is_some_and(|s| !code || s.flags & turbonop_elf::consts::SHF_EXECINSTR != 0)
     }
 
+    /// `addr` as one past the end of what holds the byte before it, if
+    /// that byte is in a section and `addr` is in none.
+    fn end_of_section(&self, addr: u64) -> Option<String> {
+        if !self.unit.is_valid_address(addr) || self.p.section_at(addr).is_some() {
+            return None;
+        }
+        let before = addr.checked_sub(1)?;
+        self.p.section_at(before)?;
+        match self.p.name(before)? {
+            (_, CONTENT) => None,
+            (n, o) => Some(format!("{}+{:#x}", show(n), u64::from(o) + 1)),
+        }
+    }
+
     fn address(&self, out: &mut dyn Sink, addr: u64) {
         if self.unit.is_valid_address(addr) && self.p.section_at(addr).is_some() {
             out.sep("@");
             out.text(self.p.render(addr).as_bytes());
+        } else if let Some(end) = self.end_of_section(addr) {
+            // One past a section's last byte (a tail call's
+            // `DW_AT_call_return_pc` in the last function of `.text`): named
+            // from the byte before it, as it is wherever something follows.
+            out.sep("@");
+            out.text(end.as_bytes());
         } else {
             out.sep("dead");
         }
@@ -570,7 +603,7 @@ impl<'p, 'd> Cu<'p, 'd> {
     }
 
     fn ranges(&self, a: &Attr<'d>) -> Option<Vec<(u64, u64)>> {
-        let off = self.list_offset(a)?;
+        let off = self.list_offset(a)?.checked_add(self.ranges_base)?;
         if self.unit.version >= 5 {
             self.unit.rnglist(off).map(|(v, _)| v)
         } else {
@@ -946,6 +979,8 @@ fn subtree(cu: &mut Cu<'_, '_>, code: &[bool], i: usize, out: &mut dyn Sink) {
 /// What a split unit takes from its skeleton (in the program).
 #[derive(Clone, Copy, Debug)]
 struct Skeleton<'d> {
+    /// GNU's split DWARF 4 (`DW_AT_GNU_dwo_id`): `DW_AT_GNU_ranges_base`.
+    gnu: Option<u64>,
     addr_base: u64,
     low_pc: u64,
     stmt: Option<u64>,
@@ -960,14 +995,24 @@ fn skeleton<'a>(
     s: Sections<'a>,
     offset: u64,
 ) -> Option<(Skeleton<'a>, u64, std::path::PathBuf)> {
-    if Unit::at(s, offset)?.unit_type != DW_UT_SKELETON {
+    let u = Unit::at(s, offset)?;
+    let gnu_id = if u.version < 5 {
+        gnu_dwo_id(s, &u)
+    } else {
+        None
+    };
+    if u.unit_type != DW_UT_SKELETON && gnu_id.is_none() {
         return None;
     }
     let cu = Cu::read(p, s, offset)?;
-    if cu.unit.unit_type != DW_UT_SKELETON {
-        return None;
-    }
-    let name = cu.string(0, DW_AT_DWO_NAME)?;
+    let name = cu
+        .string(0, DW_AT_DWO_NAME)
+        .or_else(|| cu.string(0, DW_AT_GNU_DWO_NAME))?;
+    let gnu = gnu_id.map(|_| {
+        cu.attr(0, DW_AT_GNU_RANGES_BASE)
+            .and_then(|a| cu.unit.uint(&a.value))
+            .unwrap_or(0)
+    });
     let stmt = cu
         .attr(0, DW_AT_STMT_LIST)
         .and_then(|a| cu.unit.uint(&a.value));
@@ -979,14 +1024,27 @@ fn skeleton<'a>(
     };
     Some((
         Skeleton {
+            gnu,
             addr_base: cu.unit.addr_base,
             low_pc: cu.unit.low_pc,
             stmt,
             comp_dir: cu.comp_dir,
         },
-        cu.unit.dwo_id?,
+        cu.unit.dwo_id.or(gnu_id)?,
         path,
     ))
+}
+
+/// A DWARF 4 unit's `DW_AT_GNU_dwo_id` (GNU's split DWARF: a skeleton's,
+/// or its split unit's in the `.dwo`), read from its first DIE alone.
+fn gnu_dwo_id(s: Sections<'_>, u: &Unit<'_>) -> Option<u64> {
+    let abbrevs = Abbrevs::parse(s.abbrev, u.abbrev_offset, s.endian)?;
+    let mut r = u.dies();
+    let a = r.next(&abbrevs)?;
+    let mut attrs = Vec::new();
+    r.attrs(u, a, &mut attrs)?;
+    let id = attrs.iter().find(|x| x.name == DW_AT_GNU_DWO_ID)?;
+    u.uint(&id.value)
 }
 
 /// The split unit of the skeleton at `offset`, from its `.dwo` file
@@ -1006,6 +1064,10 @@ fn read_split_unit(p: &Program<'_>, s: Sections<'_>, offset: u64, dwo: &[u8]) ->
     d.addr = s.addr;
     d.line = s.line;
     d.line_str = s.line_str;
+    if sk.gnu.is_some() {
+        // GNU's DWARF 4: range lists in the program.
+        d.ranges = s.ranges;
+    }
     for sec in file.sections() {
         let Some(name) = sec
             .name
@@ -1018,9 +1080,10 @@ fn read_split_unit(p: &Program<'_>, s: Sections<'_>, offset: u64, dwo: &[u8]) ->
             d.set(name, file.section_data(&sec));
         }
     }
-    let Some(u) = Unit::iter(d, UnitSection::Info, 0)
-        .find(|u| u.unit_type == DW_UT_SPLIT_COMPILE && u.dwo_id == Some(id))
-    else {
+    let Some(u) = Unit::iter(d, UnitSection::Info, 0).find(|u| match sk.gnu {
+        Some(_) => u.version < 5 && gnu_dwo_id(d, u) == Some(id),
+        None => u.unit_type == DW_UT_SPLIT_COMPILE && u.dwo_id == Some(id),
+    }) else {
         return unread;
     };
     read_unit_with(p, d, u.offset, Some(sk))
@@ -1176,8 +1239,10 @@ fn gather<'a>(p: &Program<'a>, s: Sections<'a>) -> All {
         }
         all.unread += o.unread;
     }
+    // By place (the contents' hashes are keyed per process, so ordering
+    // by them would give each run its own examples).
     for v in all.subs.values_mut() {
-        v.sort();
+        v.sort_by_key(|s| s.at);
     }
     all
 }
@@ -1338,29 +1403,42 @@ pub(crate) fn compare(a: &Program<'_>, b: &Program<'_>) -> Report {
             );
             continue;
         }
-        for s in &va {
-            match vb.iter().find(|x| x.same(s)) {
-                Some(_) => {}
-                None => {
-                    // (Compared with the second's first, for the example.)
-                    let other = &vb[0];
-                    let cat = if s.dies == other.dies && s.lines == other.lines {
-                        // The same DIEs and rows, from another unit: a link
-                        // keeps the first loaded copy's, turbolib the first
-                        // member's.
-                        rep.expect(
-                            "subprograms described by another unit's copy (the same DIEs and line rows)",
-                            || format!("{k}: {}", explain(a, sa, s, b, sb, other)),
-                        );
-                        break;
-                    } else if s.dies != other.dies {
-                        "subprograms whose DIEs differ"
-                    } else {
-                        "subprograms whose line rows differ"
+        // The second's descriptions that the first doesn't have, each
+        // classified against the first's closest one; the worst decides.
+        let mut worst: Option<(u8, &Sub, &Sub)> = None;
+        for x in vb.iter().filter(|x| !va.iter().any(|y| y.same(x))) {
+            let Some((rank, y)) = va
+                .iter()
+                .map(|y| {
+                    let rank = match (y.dies == x.dies, y.lines == x.lines) {
+                        (true, true) => 0,
+                        (true, false) => 1,
+                        _ => 2,
                     };
-                    rep.fail(cat, || format!("{k}: {}", explain(a, sa, s, b, sb, other)));
-                    break;
-                }
+                    (rank, y)
+                })
+                .min_by_key(|&(rank, y)| (rank, y.at))
+            else {
+                continue;
+            };
+            if worst.is_none_or(|(w, ..)| rank > w) {
+                worst = Some((rank, y, x));
+            }
+        }
+        if let Some((rank, s, other)) = worst {
+            match rank {
+                // The same DIEs and rows, from another unit: a link keeps the
+                // first loaded copy's, turbolib the first member's.
+                0 => rep.expect(
+                    "subprograms described by another unit's copy (the same DIEs and line rows)",
+                    || format!("{k}: {}", explain(a, sa, s, b, sb, other)),
+                ),
+                1 => rep.fail("subprograms whose line rows differ", || {
+                    format!("{k}: {}", explain(a, sa, s, b, sb, other))
+                }),
+                _ => rep.fail("subprograms whose DIEs differ", || {
+                    format!("{k}: {}", explain(a, sa, s, b, sb, other))
+                }),
             }
         }
     }

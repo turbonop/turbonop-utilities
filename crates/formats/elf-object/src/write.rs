@@ -62,24 +62,40 @@ fn found<'n>(table: &[u8], mut names: impl Iterator<Item = (&'n [u8], u32)>) -> 
     })
 }
 
-/// A string table of `names`, each once, in order, after a NUL; and each
-/// name's offset.
-fn build<'n>(names: impl Iterator<Item = &'n [u8]>) -> (Vec<u8>, Vec<u32>) {
+/// A string table of `names` after a NUL, each once, a name that ends
+/// another sharing its tail (as LLVM's tables share `.rela.text.f`,
+/// `.text.f`, and `f`, and GNU `as`'s a symbol's tail with another's);
+/// and each name's offset. Laid out in the order of the names read
+/// backwards, longest first within a shared tail, so the bytes depend
+/// only on the set of names.
+pub(crate) fn build<'n>(names: impl Iterator<Item = &'n [u8]>) -> (Vec<u8>, Vec<u32>) {
+    let names: Vec<&[u8]> = names.collect();
+    let mut order: Vec<usize> = (0..names.len()).filter(|&i| !names[i].is_empty()).collect();
+    order.sort_unstable_by(|&a, &b| {
+        names[b]
+            .iter()
+            .rev()
+            .cmp(names[a].iter().rev())
+            .then(a.cmp(&b))
+    });
     let mut table = vec![0u8];
-    let mut seen: BTreeMap<&[u8], u32> = BTreeMap::new();
-    let mut offsets = Vec::new();
-    for n in names {
-        if n.is_empty() {
-            offsets.push(0);
-            continue;
-        }
-        let at = *seen.entry(n).or_insert_with(|| {
-            let at = table.len() as u32;
-            table.extend_from_slice(n);
-            table.push(0);
-            at
-        });
-        offsets.push(at);
+    let mut offsets = vec![0u32; names.len()];
+    // The last name written whole: every name after it in this order that
+    // is a tail of anything before it is a tail of this one.
+    let mut last: Option<(&[u8], usize)> = None;
+    for i in order {
+        let n = names[i];
+        let place = match last {
+            Some((l, off)) if l.ends_with(n) => off + l.len() - n.len(),
+            _ => {
+                let off = table.len();
+                table.extend_from_slice(n);
+                table.push(0);
+                last = Some((n, off));
+                off
+            }
+        };
+        offsets[i] = place as u32;
     }
     (table, offsets)
 }

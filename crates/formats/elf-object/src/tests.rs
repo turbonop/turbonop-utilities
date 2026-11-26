@@ -391,3 +391,29 @@ fn not_objects() {
     bytes.truncate(n - 64 * 10 + 64 * 5);
     assert!(Object::parse(&bytes).is_err());
 }
+
+#[test]
+fn rebuilt_tables_share_tails() {
+    let names: [&[u8]; 6] = [
+        b".text._Z1fv",
+        b"_Z1fv",
+        b".rela.text._Z1fv",
+        b"",
+        b"other",
+        b"_Z1fv",
+    ];
+    let (table, offsets) = crate::write::build(names.iter().copied());
+    // Each name once, the shorter ones inside `.rela.text._Z1fv`.
+    assert_eq!(table, b"\0.rela.text._Z1fv\0other\0");
+    for (n, &at) in names.iter().zip(&offsets) {
+        let at = at as usize;
+        assert_eq!(&table[at..at + n.len()], *n);
+        assert_eq!(table[at + n.len()], 0);
+    }
+    assert_eq!(offsets[3], 0);
+    assert_eq!(offsets[1], offsets[5]);
+    // The same set in another order: the same bytes.
+    let mut shuffled = names;
+    shuffled.reverse();
+    assert_eq!(crate::write::build(shuffled.iter().copied()).0, table);
+}

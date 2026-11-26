@@ -23,14 +23,24 @@
 //! a local symbol outside it (a string literal in `.rodata.str1.1`, a
 //! `static` function); a local symbol of it named from outside but by
 //! `.eh_frame` and the debug sections; a section outside it whose
-//! `SHF_LINK_ORDER` names one of it; an FDE whose LSDA is outside it.
+//! `SHF_LINK_ORDER` names one of it; an FDE whose LSDA is outside it; an
+//! initializer or terminator entry in it (`.init_array`, `.fini_array`,
+//! `.preinit_array`, `.ctors`, `.dtors`, with or without a priority, or a
+//! `.gnu.warning` section). Clang puts an inline variable's or a template
+//! static data member's dynamic initialization in the variable's group,
+//! with its `.init_array` entry; moved into a synthesized member, it would
+//! run at that member's place in the order rather than among its object's
+//! initializers, whose relative order a link keeps. (GCC puts the guard
+//! variable in a group of its own and the guarded initialization in the
+//! object's `_GLOBAL__sub_I_` function, outside any group: those units are
+//! data and fold.) Such an entry also gives its member side effects.
 //!
 //! **What folds.** The copies of a unit fold when every definition of
 //! each of their names in the library is such a copy (so whichever copy a
 //! link keeps is the same), and, under `--pull=preserve`, the member the
 //! index sends each name to (its first definer) has no side effects of its
 //! own: `.init_array`, `.fini_array`, `.preinit_array`, `.ctors`, or
-//! `.dtors` outside a group, a section named like a C identifier (which
+//! `.dtors` (in a group or not), a section named like a C identifier (which
 //! `__start_`/`__stop_` symbols collect), `.gnu.warning` sections, or
 //! `SHF_GNU_RETAIN`. ELF has nothing like COFF's `NOLIBRARY` weak
 //! externals, so a link that needed a folded name and nothing else of its
@@ -76,6 +86,9 @@ use crate::hash::H128;
 
 mod dwarf;
 mod eh_frame;
+
+/// A map only looked up (its order is never seen).
+type Map<K, V> = std::collections::HashMap<K, V, turbonop_hash::State>;
 
 /// `--pull`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -142,6 +155,8 @@ pub struct Report {
     pub debug_roots: usize,
     pub debug_tombstoned: usize,
     pub debug_bytes: u64,
+    /// How long each phase took, in order (for `--stats`).
+    pub phases: Vec<(&'static str, std::time::Duration)>,
 }
 
 /// The machines whose debug relocations can be tombstoned: the size of
@@ -175,14 +190,16 @@ const GRP_COMDAT: u32 = 1;
 
 /// A unit of one member.
 #[derive(Clone, Debug)]
-struct Unit {
+struct Unit<'a> {
     /// The group section.
     group: usize,
     /// Its member sections (the group's list, then relocation sections for
     /// them the list leaves out).
     sections: Vec<usize>,
     /// The global names it defines.
-    names: Vec<Vec<u8>>,
+    names: Vec<Cow<'a, [u8]>>,
+    /// The symbols defined in its sections (indexes, in order).
+    symbols: Vec<usize>,
     hash: u128,
     stays: Option<&'static str>,
     /// Its FDEs (indexes into the member's records).
@@ -191,7 +208,7 @@ struct Unit {
     debug: bool,
     /// The names its relocations name that other units of its member
     /// define.
-    comdat_refs: Vec<Vec<u8>>,
+    comdat_refs: Vec<Cow<'a, [u8]>>,
     bytes: u64,
 }
 
@@ -222,10 +239,10 @@ struct Parsed<'a> {
     why_not: Option<String>,
     env: u128,
     side_effects: bool,
-    units: Vec<Unit>,
+    units: Vec<Unit<'a>>,
     /// Every global the member defines, with its unit (`None`: outside
     /// any).
-    defs: Vec<(Vec<u8>, Option<usize>)>,
+    defs: Vec<(Cow<'a, [u8]>, Option<usize>)>,
     /// `.eh_frame`, if any.
     eh: Option<Eh>,
     /// Each section's unit.
@@ -238,6 +255,23 @@ fn is_c_identifier(name: &[u8]) -> bool {
     !name.is_empty()
         && !name[0].is_ascii_digit()
         && name.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+/// A section whose contents a link runs or acts on for being there:
+/// initializer and terminator arrays (`.init_array`, `.fini_array`,
+/// `.preinit_array`, with priorities, by type or by name), `.ctors` and
+/// `.dtors`, and `.gnu.warning` (a warning for any reference to a name).
+fn is_registration(s: &Section<'_>) -> bool {
+    let name = &*s.name;
+    matches!(
+        s.kind,
+        sht::INIT_ARRAY | sht::FINI_ARRAY | sht::PREINIT_ARRAY
+    ) || name.starts_with(b".init_array")
+        || name.starts_with(b".fini_array")
+        || name.starts_with(b".preinit_array")
+        || name.starts_with(b".ctors")
+        || name.starts_with(b".dtors")
+        || name.starts_with(b".gnu.warning")
 }
 
 fn is_debug(name: &[u8]) -> bool {
@@ -342,7 +376,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 Ok(f) => {
                     for s in f.all_symbols().iter().skip(1) {
                         if s.bind != 0 && s.shndx != 0 {
-                            p.defs.push((s.name.to_vec(), None));
+                            p.defs.push((Cow::Owned(s.name.to_vec()), None));
                         }
                     }
                 }
@@ -377,7 +411,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
 
     // Each section's unit.
     let mut owner: Vec<Option<usize>> = vec![None; n];
-    let mut units: Vec<Unit> = Vec::new();
+    let mut units: Vec<Unit<'a>> = Vec::new();
     for (i, s) in obj.sections.iter().enumerate() {
         if let Data::Group(g) = &s.data
             && g.flags & GRP_COMDAT != 0
@@ -399,6 +433,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 group: i,
                 sections: members,
                 names: Vec::new(),
+                symbols: Vec::new(),
                 hash: 0,
                 stays: (!ok).then_some("its group's members are malformed"),
                 fdes: Vec::new(),
@@ -418,22 +453,26 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             units[u].sections.push(r);
         }
     }
-    // Side effects outside any group.
+    // Side effects, and initializer entries in groups.
+    let mut registers = vec![false; units.len()];
     for (i, s) in obj.sections.iter().enumerate() {
-        if owner[i].is_some() {
+        if let Some(u) = owner[i] {
+            // An initializer or terminator entry in a group (clang's for an
+            // inline variable or a template's static data member: the
+            // variable's group holds its guard, its `__cxx_global_var_init`,
+            // and its `.init_array` entry). Moved, it would run at the
+            // synthesized member's place in the order, not its object's:
+            // the initializers of one object keep their order. And loading
+            // the member runs it, so the member has side effects.
+            // (The reason is given after the others, so that it wins.)
+            if is_registration(s) {
+                registers[u] = true;
+                p.side_effects = true;
+            }
             continue;
         }
         let name = &*s.name;
-        let registration = matches!(
-            s.kind,
-            sht::INIT_ARRAY | sht::FINI_ARRAY | sht::PREINIT_ARRAY
-        ) || name.starts_with(b".init_array")
-            || name.starts_with(b".fini_array")
-            || name.starts_with(b".preinit_array")
-            || name.starts_with(b".ctors")
-            || name.starts_with(b".dtors")
-            || name.starts_with(b".gnu.warning");
-        if registration || is_c_identifier(name) || s.flags & shf::GNU_RETAIN != 0 {
+        if is_registration(s) || is_c_identifier(name) || s.flags & shf::GNU_RETAIN != 0 {
             p.side_effects = true;
         }
         if s.flags & shf::LINK_ORDER != 0
@@ -453,9 +492,9 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     for s in symbols.iter().skip(1) {
         if s.bind() != 0 && s.shndx != SHN_UNDEF {
             let u = sym_owner(s);
-            p.defs.push((s.name.to_vec(), u));
+            p.defs.push((s.name.clone(), u));
             if let Some(u) = u {
-                units[u].names.push(s.name.to_vec());
+                units[u].names.push(s.name.clone());
             }
         }
     }
@@ -483,7 +522,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 if let (Some(a), Some(b)) = (from, sym_owner(sym))
                     && a != b
                 {
-                    units[a].comdat_refs.push(sym.name.to_vec());
+                    units[a].comdat_refs.push(sym.name.clone());
                 }
                 continue;
             }
@@ -567,6 +606,13 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             }
         }
     }
+    // Each unit's symbols, in order (looked up once: a member can hold
+    // tens of thousands of units and of symbols).
+    for (i, s) in symbols.iter().enumerate().skip(1) {
+        if let Some(u) = sym_owner(s) {
+            units[u].symbols.push(i);
+        }
+    }
     // Hashes.
     for (ui, u) in units.iter_mut().enumerate() {
         let group = u.group;
@@ -625,15 +671,14 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 }
             }
         }
-        for s in symbols.iter().skip(1) {
-            if sym_owner(s) == Some(ui) {
-                h.bytes(&s.name);
-                h.u64(u64::from(s.info));
-                h.u64(u64::from(s.other));
-                h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
-                h.u64(s.value);
-                h.u64(s.size);
-            }
+        let unit_symbols = u.symbols.clone();
+        for s in unit_symbols.iter().map(|&i| &symbols[i]) {
+            h.bytes(&s.name);
+            h.u64(u64::from(s.info));
+            h.u64(u64::from(s.other));
+            h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
+            h.u64(s.value);
+            h.u64(s.size);
         }
         if let Some(eh) = &p.eh {
             let data = section_bytes(&obj.sections[eh.section]);
@@ -656,7 +701,11 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 }
             }
         }
-        u.stays = stays;
+        u.stays = if registers[ui] {
+            Some("it holds initializer, terminator, or warning sections")
+        } else {
+            stays
+        };
         u.bytes = bytes + 4 * (unit_sections.len() as u64 + 1);
         u.hash = h.finish();
     }
@@ -792,28 +841,42 @@ fn rewrite(
             continue;
         }
         let value = tombstone(&target.name);
-        let rels = relocations(&obj.sections[r]).to_vec();
-        let mut keep = Vec::with_capacity(rels.len());
-        let mut bytes: Option<Vec<u8>> = None;
-        for rel in rels {
-            let si = obj.reloc_symbol(&rel) as usize;
-            let hit = symbols
+        let hit = |rel: &Relocation| {
+            let si = obj0.reloc_symbol(rel) as usize;
+            symbols
                 .get(si)
-                .is_some_and(|s| s.bind() == 0 && si != 0 && in_removed(s));
-            if !hit {
-                keep.push(rel);
-                continue;
+                .is_some_and(|s| s.bind() == 0 && si != 0 && in_removed(s))
+        };
+        // (Most debug sections name nothing moved: nothing is copied for
+        // those.)
+        if !relocations(&obj.sections[r]).iter().any(hit) {
+            continue;
+        }
+        let Data::Relocations(mut rels) =
+            std::mem::replace(&mut obj.sections[r].data, Data::NoBits)
+        else {
+            continue;
+        };
+        let mut bytes = section_bytes(&obj.sections[t]).to_vec();
+        let mut bad = false;
+        rels.retain(|rel| {
+            if !hit(rel) {
+                return true;
             }
-            let size = debug_reloc_size(machine, obj.reloc_type(&rel))
-                .ok_or("a debug relocation not tombstoned")?;
-            let b = bytes.get_or_insert_with(|| section_bytes(&obj.sections[t]).to_vec());
-            put(b, rel.offset as usize, size, value, endian);
-            report.tombstoned += 1;
+            match debug_reloc_size(machine, obj0.reloc_type(rel)) {
+                Some(size) => {
+                    put(&mut bytes, rel.offset as usize, size, value, endian);
+                    report.tombstoned += 1;
+                }
+                None => bad = true,
+            }
+            false
+        });
+        if bad {
+            return Err("a debug relocation not tombstoned".into());
         }
-        if let Some(b) = bytes {
-            obj.sections[t].data = Data::Bytes(Cow::Owned(b));
-            obj.sections[r].data = Data::Relocations(keep);
-        }
+        obj.sections[t].data = Data::Bytes(Cow::Owned(bytes));
+        obj.sections[r].data = Data::Relocations(rels);
     }
     // The symbols: moved definitions undefined, the moved locals gone.
     let mut keep_symbols = vec![true; symbols.len()];
@@ -946,7 +1009,7 @@ fn synthesize<'a>(
     parsed: &[Parsed<'a>],
     units: &[(usize, usize)],
     me: usize,
-    moved_into: &BTreeMap<&[u8], usize>,
+    moved_into: &Map<&[u8], usize>,
     anchors: &[Vec<u8>],
     debug: Option<&Result<dwarf::Source<'_>, &'static str>>,
 ) -> Result<(Vec<u8>, Debugged), String> {
@@ -1221,17 +1284,11 @@ fn synthesize<'a>(
     let mut section_symbol: BTreeMap<usize, usize> = BTreeMap::new();
     for &(m, u) in units {
         let obj = parsed[m].obj.as_ref().ok_or("unread")?;
-        for (i, s) in obj.symbols().iter().enumerate().skip(1) {
-            let Some(owner) = (if s.in_section() {
-                parsed[m].owner.get(s.shndx as usize).copied().flatten()
-            } else {
-                None
-            }) else {
-                continue;
-            };
-            if owner != u {
-                continue;
-            }
+        let all = obj.symbols();
+        // (The unit's own, found once by `parse`: a scan of every symbol
+        // for each unit was quadratic in a large member.)
+        for &i in &parsed[m].units[u].symbols {
+            let s = &all[i];
             let new_sec = placed[&(m, s.shndx as usize)] as u32;
             let mut c = s.clone();
             c.set_section(new_sec);
@@ -1576,7 +1633,14 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         members: inputs.len(),
         ..Report::default()
     };
+    let mut clock = std::time::Instant::now();
+    let mut lap = |report: &mut Report, what: &'static str| {
+        let now = std::time::Instant::now();
+        report.phases.push((what, now - clock));
+        clock = now;
+    };
     let parsed: Vec<Parsed<'_>> = turbonop_par::map(inputs, 1, parse);
+    lap(&mut report, "reading");
     for p in &parsed {
         if let Some(w) = &p.why_not {
             *report.passed.entry(w.clone()).or_default() += 1;
@@ -1591,14 +1655,16 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         return abandon(inputs, report);
     }
     // Every definition of each name, in member order.
-    let mut definers: BTreeMap<&[u8], Vec<(usize, Option<usize>)>> = BTreeMap::new();
+    // (Hash maps: looked up only, never walked, so their order is no
+    // part of the output.)
+    let mut definers: Map<&[u8], Vec<(usize, Option<usize>)>> = Map::default();
     for (m, p) in parsed.iter().enumerate() {
         for (name, u) in &p.defs {
-            definers.entry(name.as_slice()).or_default().push((m, *u));
+            definers.entry(&**name).or_default().push((m, *u));
         }
     }
     // The copies of each unit, by hash, in member order.
-    let mut copies: BTreeMap<u128, Vec<(usize, usize)>> = BTreeMap::new();
+    let mut copies: Map<u128, Vec<(usize, usize)>> = Map::default();
     let mut order: Vec<u128> = Vec::new();
     for (m, p) in parsed.iter().enumerate() {
         for (u, unit) in p.units.iter().enumerate() {
@@ -1626,7 +1692,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             .find_map(|&(m, u)| parsed[m].units[u].stays)
             .or_else(|| {
                 unit.names.iter().find_map(|n| {
-                    let defs = definers.get(n.as_slice())?;
+                    let defs = definers.get(&**n)?;
                     if defs
                         .iter()
                         .any(|&(m, u)| u.is_none_or(|u| parsed[m].units[u].hash != h))
@@ -1652,10 +1718,10 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
     // files' order, and made `libLLVMCore.a`'s `Core.cpp.o` live for an
     // inline function its givers each defined). Until nothing changes.
     loop {
-        let names: std::collections::BTreeSet<&[u8]> = folded
+        let names: std::collections::HashSet<&[u8], turbonop_hash::State> = folded
             .iter()
             .flat_map(|(_, list)| list.iter())
-            .flat_map(|&(m, u)| parsed[m].units[u].names.iter().map(Vec::as_slice))
+            .flat_map(|&(m, u)| parsed[m].units[u].names.iter().map(|n| &**n))
             .collect();
         let before = folded.len();
         folded.retain(|(_, list)| {
@@ -1663,7 +1729,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
                 parsed[m].units[u]
                     .comdat_refs
                     .iter()
-                    .all(|n| names.contains(n.as_slice()))
+                    .all(|n| names.contains(&**n))
             });
             if !keep {
                 *report
@@ -1714,6 +1780,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         }
         synth.push((survivors, anchor));
     }
+    lap(&mut report, "choosing");
     // Rewrite the members and make the synthesized ones, on every core.
     let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_range(parsed.len(), 1, |m| {
         if moved[m].is_empty() {
@@ -1722,12 +1789,13 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         let mut r = Report::default();
         Some(rewrite(&parsed[m], &moved[m], &member_anchors[m], &mut r).map(|b| (b, r)))
     });
+    lap(&mut report, "rewriting");
     // Each moved name's synthesized member.
-    let mut moved_into: BTreeMap<&[u8], usize> = BTreeMap::new();
+    let mut moved_into: Map<&[u8], usize> = Map::default();
     for (k, (units, _)) in synth.iter().enumerate() {
         for &(m, u) in units {
             for n in &parsed[m].units[u].names {
-                moved_into.insert(n.as_slice(), k);
+                moved_into.insert(&**n, k);
             }
         }
     }
@@ -1745,6 +1813,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             Some(obj) => dwarf::Source::new(obj, &parsed[m].owner, dwo),
             None => Err("unread"),
         });
+    lap(&mut report, "reading DWARF");
     let source_of: BTreeMap<usize, &Result<dwarf::Source<'_>, &'static str>> =
         debug_members.iter().copied().zip(sources.iter()).collect();
     let made: Vec<Result<(Vec<u8>, Debugged), String>> =
@@ -1760,6 +1829,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             };
             synthesize(&parsed, &synth[k].0, k, &moved_into, &anchors, src)
         });
+    lap(&mut report, "synthesizing");
     let mut out = Vec::with_capacity(inputs.len() + made.len());
     for (m, r) in rewritten.into_iter().enumerate() {
         match r {

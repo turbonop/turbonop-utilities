@@ -1,0 +1,22 @@
+[package]
+name = "turbonop-elf-object"
+description = "An editable ELF relocatable-object model that reads objects and writes them back byte-identically, of either class and byte order"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+turbonop-core.workspace = true
+turbonop-elf.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true
+turbonop-archive.workspace = true
+turbonop-mmap.workspace = true
+turbonop-par.workspace = true

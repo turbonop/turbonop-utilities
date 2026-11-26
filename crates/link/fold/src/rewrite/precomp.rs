@@ -96,6 +96,10 @@ pub(super) struct Member {
     reached: Vec<u32>,
     /// Why a member that could share doesn't, for reports.
     why_not: Option<String>,
+    /// A precompiled-types member turbolib made (the library is being
+    /// compacted again): every record of it counts for each of its users,
+    /// as each was shared, so that the same records are shared again.
+    ours: bool,
 }
 
 /// The library's shared types.
@@ -314,6 +318,13 @@ fn hash_member(parsed: &[Parsed<'_>], m: usize, role: Role, pch: Option<&Member>
         }
     }
     if role != Role::Sharer {
+        out.ours = p.object.as_ref().is_some_and(|o| {
+            o.symbols.iter().any(|s| {
+                s.is_external()
+                    && s.section != SectionNumber::Undefined
+                    && s.name.as_bytes().starts_with(PCH_SYMBOL_PREFIX)
+            })
+        });
         return out;
     }
     build_only(data, base, offsets, &builds, &mut referrers, &mut out.flags);
@@ -349,6 +360,11 @@ fn hash_member(parsed: &[Parsed<'_>], m: usize, role: Role, pch: Option<&Member>
             out.why_not = Some(w);
             return out;
         }
+    }
+    if let Some(pch) = pch
+        && pch.ours
+    {
+        reach.fill(true);
     }
     if let Some(pch) = pch
         && !reach.is_empty()

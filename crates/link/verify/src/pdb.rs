@@ -53,6 +53,7 @@ use turbonop_pdb::StringTable;
 
 use crate::hash::H128;
 use crate::image::program::Linked;
+use crate::library::PCH_SYMBOL;
 use crate::library::member::{RENAMED, canonical};
 use crate::report::{Report, show};
 use types::Hashes;
@@ -92,6 +93,8 @@ struct Reduced {
     /// `S_UDT` and `S_CONSTANT` records, of the globals and of every
     /// module: (hash, description).
     udts: Vec<(u128, String)>,
+    /// It has a module of a precompiled-types member turbolib made.
+    pch: bool,
 }
 
 /// Compares the PDBs of two programs (see the module's documentation).
@@ -155,9 +158,21 @@ fn compare_types(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep
             });
         }
         for h in difference(&sy, &sx) {
-            rep.fail(&format!("{what} only in the second PDB"), || {
-                describe(b, ids, y, h)
-            });
+            if rb.pch && !ra.pch {
+                // A linker merges every record of a precompiled-types
+                // member it loads, used or not (lld-link: measured), so
+                // the second has the first's and more.
+                rep.expect(
+                    &format!(
+                        "{what} only in the second PDB, which has turbolib's                          precompiled-types members (each brings all its records)"
+                    ),
+                    || describe(b, ids, y, h),
+                );
+            } else {
+                rep.fail(&format!("{what} only in the second PDB"), || {
+                    describe(b, ids, y, h)
+                });
+            }
         }
         for (r, which) in [(x, "first"), (y, "second")] {
             for k in &r.unknown {
@@ -235,9 +250,10 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
     );
     for (_, d, renamed) in &rb.publics {
         if *renamed {
-            rep.expect("publics of turbolib's renamed copies and anchors", || {
-                d.clone()
-            });
+            rep.expect(
+                "publics of turbolib's renamed copies, anchors, and PCH symbols",
+                || d.clone(),
+            );
         }
     }
     // Globals.
@@ -876,7 +892,11 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
             h.bytes(canonical(name));
             h.u64(u64::from(flags));
             context.address(p.rva_of(segment, offset), &mut h);
-            publics.push((h.finish(), show(name), name.starts_with(RENAMED)));
+            publics.push((
+                h.finish(),
+                show(name),
+                name.starts_with(RENAMED) || name.starts_with(PCH_SYMBOL),
+            ));
         }
     }
     let mut globals = Vec::new();
@@ -938,6 +958,7 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
         }
         r.layout.extend(m.layout);
         r.udts.extend(m.udts);
+        r.pch |= m.synthesized && m.name.starts_with(b"turbolib-types-");
         r.modules.push((m.name, m.synthesized, m.others));
     }
     for (k, n) in unknown {

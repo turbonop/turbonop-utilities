@@ -49,9 +49,9 @@ use crate::hash::H128;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use turbonop_coff::{
-    Aux, File, Format, Name, Object, Relocation, Section, SectionData, SectionDefinition,
-    SectionId, SectionNumber, Skeleton, Symbol, SymbolId, WeakExternal, comdat_select,
-    storage_class, weak_search,
+    Aux, File, Format, Name, Object, Relocation, Renumbering, Section, SectionData,
+    SectionDefinition, SectionId, SectionNumber, Skeleton, Symbol, SymbolId, WeakExternal,
+    comdat_select, storage_class, weak_search,
 };
 use turbonop_hash::Map as HashMap;
 use units::{Facts, is_debug};
@@ -666,9 +666,17 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         .map(|plan| {
             plan.pchs
                 .iter()
-                .map(|pch| OutputMember {
+                .map(|pch| (pch, precomp::Plan::member(pch).bytes))
+                // One the library already has (compacted again): it stays
+                // where it is.
+                .filter(|(pch, data)| {
+                    !inputs
+                        .iter()
+                        .any(|i| i.name == pch.name.as_slice() && i.data == data.as_slice())
+                })
+                .map(|(pch, data)| OutputMember {
                     name: Cow::Owned(pch.name.clone()),
-                    data: Cow::Owned(precomp::Plan::member(pch).bytes),
+                    data: Cow::Owned(data),
                     holes: Vec::new(),
                     synthesized: true,
                     index_only: Some(vec![pch.symbol.clone()]),
@@ -777,11 +785,16 @@ fn strip<'a>(
             s.aux = Aux::None;
         }
     }
-    // A changed object's checksums would be stale, and with its types
-    // shared, so would its precomputed type hashes (lld's .debug$H).
+    // With its types shared, its precomputed type hashes (lld's .debug$H)
+    // would be stale. Its section checksums (.chks64) are kept for the
+    // sections that stay as they were (see `checksums`), or, in a form
+    // not known, dropped.
+    let sections = object.sections.len();
     for (i, s) in object.sections.iter().enumerate() {
         let name = s.name.as_bytes();
-        if name == b".chks64" || (edit.is_some() && name == b".debug$H") {
+        if (name == b".chks64" && s.size() as usize != 8 * sections)
+            || (edit.is_some() && name == b".debug$H")
+        {
             removed[i] = true;
         }
     }
@@ -894,9 +907,61 @@ fn strip<'a>(
             storage_class::EXTERNAL,
         ));
     }
+    checksums(original, &mut object, &renumbering);
     object
         .write_skeleton(HOLE)
         .expect("a rewritten member fits its format")
+}
+
+/// Rewrites a changed member's `.chks64` (one 8-byte checksum for each
+/// section, in section order, as cl writes it): the checksums of the
+/// sections that stay as they were (the same bytes as in `original`), and
+/// 0 (as cl gives `.bss`) for those that changed. link.exe takes the
+/// contributions' CRCs in its PDB from them (likely: without them, every
+/// contribution of a changed member had none), and neither linker checks
+/// them in a full link (phase 0).
+fn checksums(original: &Object<'_>, object: &mut Object<'_>, renumbering: &Renumbering) {
+    let Some(c) = object
+        .sections
+        .iter()
+        .position(|s| s.name.as_bytes() == b".chks64")
+    else {
+        return;
+    };
+    let Some(old_c) = original
+        .sections
+        .iter()
+        .position(|s| s.name.as_bytes() == b".chks64")
+    else {
+        return;
+    };
+    let old = original.sections[old_c].bytes();
+    let mut of_new = vec![None; object.sections.len()];
+    for i in 0..original.sections.len() {
+        if let Some(n) = renumbering.section(SectionId(i as u32)) {
+            of_new[n.index()] = Some(i);
+        }
+    }
+    let mut data = Vec::with_capacity(8 * object.sections.len());
+    for (j, s) in object.sections.iter().enumerate() {
+        let entry = match of_new[j] {
+            Some(i) if j != c && std::ptr::eq(s.bytes(), original.sections[i].bytes()) => {
+                &old[8 * i..8 * i + 8]
+            }
+            _ => &[0; 8][..],
+        };
+        data.extend_from_slice(entry);
+    }
+    let size = data.len() as u32;
+    object.sections[c].data = SectionData::Bytes(Cow::Owned(data));
+    for s in &mut object.symbols {
+        if s.section == SectionNumber::Section(SectionId(c as u32))
+            && let Aux::Section(d) = &mut s.aux
+        {
+            d.length = size;
+        }
+    }
+    object.forget_layout();
 }
 
 const IMAGE_SCN_LNK_INFO: u32 = 0x0000_0200;

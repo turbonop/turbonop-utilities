@@ -502,3 +502,96 @@ fn nothing_shared_changes_nothing() {
     assert_eq!(originals(&out)[0].data.as_ref(), &d[0][..]);
     assert_eq!(out.report.types.nothing_shared, 1);
 }
+
+#[test]
+fn sharing_again_changes_nothing() {
+    for names in [
+        &[
+            "msvc-a.obj",
+            "msvc-b.obj",
+            "msvc-pch.obj",
+            "msvc-u1.obj",
+            "msvc-u2.obj",
+        ][..],
+        &["clang-a.obj", "clang-b.obj", "clang-c.obj", "clang-d.obj"][..],
+    ] {
+        let d = datas(names);
+        let once = run(names, &d, LIBRARY);
+        let flat: Vec<(Vec<u8>, Vec<u8>)> = once
+            .members
+            .iter()
+            .map(|m| {
+                let mut data = m.data.to_vec();
+                for &(at, bytes) in &m.holes {
+                    data[at..at + bytes.len()].copy_from_slice(bytes);
+                }
+                (m.name.to_vec(), data)
+            })
+            .collect();
+        let names2: Vec<&str> = flat
+            .iter()
+            .map(|(n, _)| std::str::from_utf8(n).unwrap())
+            .collect();
+        let datas2: Vec<Vec<u8>> = flat.iter().map(|(_, d)| d.clone()).collect();
+        let twice = run(&names2, &datas2, LIBRARY);
+        assert_eq!(twice.members.len(), flat.len());
+        for (m, (name, data)) in twice.members.iter().zip(&flat) {
+            assert_eq!(m.name.as_ref(), name.as_slice());
+            assert!(!m.synthesized);
+            assert_eq!(
+                m.data.as_ref(),
+                data.as_slice(),
+                "{}",
+                String::from_utf8_lossy(name)
+            );
+        }
+    }
+}
+
+#[test]
+fn section_checksums_stay_for_the_sections_that_do() {
+    // cl's .chks64: a checksum per section. A shared member keeps those of
+    // its sections that are the same, and has 0 for its debug sections.
+    let names = ["msvc-a.obj", "msvc-b.obj"];
+    let d = datas(&names);
+    for options in [LIBRARY, FOLD_LIBRARY] {
+        let out = run(&names, &d, options);
+        for (k, m) in originals(&out).iter().enumerate() {
+            let before = object(&d[k]);
+            let mut data = m.data.to_vec();
+            for &(at, bytes) in &m.holes {
+                data[at..at + bytes.len()].copy_from_slice(bytes);
+            }
+            let after = object(&data);
+            let sums = |o: &Object<'_>| -> Vec<u64> {
+                section(o, b".chks64")
+                    .unwrap()
+                    .bytes()
+                    .chunks(8)
+                    .map(|c| u64::from_le_bytes(c.try_into().unwrap()))
+                    .collect()
+            };
+            let (old, new) = (sums(&before), sums(&after));
+            assert_eq!(new.len(), after.sections.len());
+            let mut kept = 0;
+            for (j, s) in after.sections.iter().enumerate() {
+                let name = s.name.as_bytes();
+                if name.starts_with(b".debug$") || name == b".chks64" {
+                    assert_eq!(new[j], 0, "{}", String::from_utf8_lossy(name));
+                    continue;
+                }
+                // The same section, by its bytes and name, has its checksum.
+                let i = (0..before.sections.len())
+                    .find(|&i| {
+                        before.sections[i].name.as_bytes() == name
+                            && before.sections[i].bytes() == s.bytes()
+                            && old[i] == new[j]
+                    })
+                    .expect("a kept section with its checksum");
+                assert!(old[i] != 0 || name == b".bss");
+                kept += 1;
+            }
+            assert!(kept > 0);
+        }
+    }
+}

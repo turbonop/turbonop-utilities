@@ -27,7 +27,7 @@ items leave TODO.md as they ship.
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links). Not yet: 3.5, `clustered`. |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
-| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, a first `--fold=identical` for ELF (2.4% smaller on the gcc corpus; `llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold), without debug information for folded functions (dropped and counted), 2.66× GNU `ar`'s time. Not yet: moving DWARF, split DWARF, `select-any` and `--locals` for ELF, ELF `verify` and `compare-images`. |
+| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; 4.24× GNU `ar`'s time on the 20 largest libraries (a noisy measurement). Not yet: GNU's split DWARF 4, `select-any` and `--locals` for ELF, the clang corpus. |
 | 7 Mach-O | Not yet. |
 
 ### Picking this up elsewhere
@@ -1028,11 +1028,13 @@ undefined references, and they refer (strongly) to the synthesized
 member's anchor (a hidden weak absolute symbol named for its contents),
 placed first among their globals.
 
-**Debug information isn't moved** (yet): a giver's `.debug_*`
-relocations to the copy's local symbols are removed and their places
-tombstoned (lld's values), as a link of the original would treat every
-copy but the one it kept; a folded function has no DWARF in the folded
-library's links. `--stats` counts them.
+**Debug information**: a giver's `.debug_*` relocations to the copy's
+local symbols are removed and their places tombstoned (lld's values), as
+a link of the original would treat every copy but the one it kept. In
+this first version a folded function had no DWARF in the folded
+library's links; it moves now (see [Debug information
+(6.5)](#debug-information-65)). The measurements below are this first
+version's.
 
 **Measured** on the gcc build's first 170 libraries (13.96 GiB, 2,640
 members; `foldall.sh` runs `ar s --fold=identical --stats` on a copy of
@@ -1058,9 +1060,8 @@ each with GNU ld 2.46, gold, lld 21, and mold:
 | output of `llvm-nm -C`, `--size-sort -S`, `llvm-readobj --sections --symbols` on the build's libraries | the same | the same | the same | the same |
 | image size | +0.09%, +0.10% | +0.09%, +0.10% | +0.09%, +0.10% | -0.5% |
 
-What the images' bytes are isn't compared (an ELF `compare-images` is
-still to write), nor any debugging: the folded functions have no debug
-information.
+What the images hold is compared by `compare-images` (see 6.4): the same
+but for the folded functions' DWARF.
 
 **Determinism**: `libLLVMSupport.a` and `libLLVMCore.a`, folded with
 `-j 1`, `-j 3`, and `-j 8` in separate processes, are the same bytes
@@ -1109,6 +1110,229 @@ What was found on the way:
   if every name its relocations give that another unit of its member
   defines folds too, to a fixpoint: the largest reason copies stay
   (466,557), as the units with side-effect definers keep their callees.
+
+### Verification (6.4): `verify` and `compare-images` for ELF
+
+Both are in `turbonop_verify::elf`; `turbolib verify` takes GNU and BSD
+archives of ELF objects, and `turbolib compare-images a b` two ELF
+programs (no PDBs: they carry their symbols and DWARF). Both run on every
+core and report by category as for COFF.
+
+**`turbolib verify`** (`elf::library`) hashes each COMDAT group as a unit
+by a canonical form written apart from the engine (sections by name,
+type, flags, alignment, entry size, and bytes; relocations with targets
+by name outside the unit and by place inside it; the symbols it defines;
+its FDEs and their CIEs), and a member's environment apart. It checks
+every original member present in order and every added one synthesized
+(it defines a hidden weak absolute `__turbolib.anchor.` name); in each
+rewritten member, the environment, the sections outside units with their
+bytes and relocations unchanged, `.eh_frame`'s records the original's but
+the lost units' FDEs, `.debug_*` unchanged but at the relocations to lost
+units, which are gone and whose places hold the tombstone, the kept units
+the original's, every lost unit held identically (hash and environment)
+by a synthesized member the member anchors, every definition kept or (in
+a lost unit) a weak undefined reference of its type, and no new
+undefined names but moved ones and anchors; in synthesized members, units
+that givers lost, none in two members, no sections but units',
+environments', `.eh_frame`, tables, and DWARF (reported as left to
+`compare-images`), and only names the original library knows; each
+archive's index against its members (`unix::symbols`, GNU `ar`'s rules);
+and, under `--pull=preserve`, each name of the original's index sent to
+the same member or, from a definer without side effects, to a
+synthesized member.
+
+**`turbolib compare-images`** (`elf`, `elf::program`, `elf::tables`,
+`elf::dwarf`) names every address by a label: `.symtab`'s sized globals,
+then sized locals (by name where no other symbol has it or it has a
+visibility, else `name@file` and an ordinal), other symbols, PLT entries
+and GOT slots by what their dynamic relocations name, sections' starts;
+an address outside every symbol in a non-code section is named by its
+contents (up to 32 bytes or a NUL), since merged strings and constants
+move with the link. Then:
+
+- **functions and data**: each sized symbol (one per extent) paired by
+  its key, its dynamic relocations compared by what they name (and
+  masked), and its bytes compared with COFF's `image::bytes` (x86-64
+  PC-relative operands by their targets' names, other differing 4-byte
+  words as addresses naming the same thing), plus thread-pointer offsets
+  (local-exec TLS displacements and immediates) naming the same TLS
+  variable: the TLS block's layout follows the link. The linker's tables
+  (`.dynamic`, GOT, PLT, relocations, hash tables, versions,
+  `.eh_frame*`) are compared as tables, not bytes.
+- **tables**: header fields and the entry point, program headers and
+  sections (type and flags in order), `.symtab` as a set (anchors only in
+  the second, expected; mold's absolute group-signature locals as a set
+  of names), the dynamic section (`DT_NEEDED` and other strings, flags,
+  `DT_INIT`/`DT_FINI` by name, the tags), dynamic symbols with versions,
+  dynamic relocations as a multiset, the initializer arrays in order,
+  notes (build IDs expected to differ), FDEs by function (instructions
+  without trailing `DW_CFA_nop` padding, CIE, personality and LSDA by
+  name), `.eh_frame_hdr` as a set.
+- **DWARF**: every live subprogram (its entry address in an executable
+  section: lld and mold tombstone discarded copies) keyed by its entry's
+  label, its subtree DIE by DIE (attributes sorted, forms ignored,
+  addresses and range and location lists by names, expressions with
+  addresses as names and references as identities, `DW_AT_GNU_locviews`
+  as view pairs, files as paths; a nested subprogram with code of its own
+  compared apart, and by identity inside its parent), its unit's
+  producer, name, directory, language, and version, and the unit's line
+  rows over its ranges (by offset from each range's start; an end of
+  sequence only if one of its sequence's rows is in the range);
+  variables at fixed addresses by label; named type definitions as
+  (qualified name, contents). A reference compares as the identity of its
+  target (tag, qualified name, name, linkage name, and what a
+  specification or abstract origin names; anonymous DIEs structurally),
+  so a type's declaration and its definition compare equal. Descriptions
+  are compared as sets: GNU ld and gold give a discarded copy's DWARF the
+  kept copy's addresses, so the original may describe a subprogram once
+  per unit that had a copy (expected when the second's descriptions are
+  among them), and a description with the same DIEs and rows from
+  another unit is expected (the link keeps the first loaded copy's,
+  turbolib the first member's).
+
+What they can't prove: `verify` doesn't follow references (a definer
+without side effects may load members that have some), relies on 128-bit
+hashes, and doesn't read synthesized members' DWARF; `compare-images`
+infers differing words as addresses or TLS offsets (and equal bytes
+outside a function's code that decode as PC-relative operands are
+accepted), doesn't compare bytes outside every sized symbol (counted:
+11.3 MB in `llvm-nm`, mostly string and constant pools, jump tables,
+`.gcc_except_table`, and the linker's own tables), decodes only x86-64
+code (ARM64's decoding is COFF's, untested on ELF), takes trailing zeros
+of an FDE's instructions as padding, compares DWARF references by
+identity rather than following them (type definitions are compared
+apart), and runs nothing.
+
+**Results** (gcc corpus, WSL, 8 threads, at low priority beside a build):
+
+| Check | Result |
+|---|---|
+| `verify` of the gcc build's 170 folded libraries (`folded-gcc`, 13.96 GiB) against the build's | 166 pass; 4 fail (`libLLVMVectorize.a`, `libMLIROpenACCDialect.a`, `libMLIROpenMPDialect.a`, `libclangCIR.a`): the folded archive's index lists 1 or 2 empty names for a rewritten member (`SLPVectorizer.cpp.o`, with 99,156 sections) whose symbols give none; 62.6 s for all |
+| ... what it checked | 2,640 original members, 2,488 rewritten, 29,069 synthesized; 1,048,040 moved units, each held by a synthesized member its giver anchors (the engine's count of folded copies); 4,361,268 debug places tombstoned (the engine's count); 3,867,349 definitions; 2,033,763 names of the indexes sent where `--pull=preserve` allows |
+| `compare-images` of a second link of the original against the first (`relink.py --compare-images`), `llvm-nm` and `llvm-readobj` with GNU ld, gold, lld, and mold | 8 of 8 equivalent, 3.2 to 4.3 s each (about 1.8 GB of memory) |
+| the same, original against folded | all 8 equivalent in every category but DWARF: the folded functions' subprograms are only in the original (`llvm-nm`: 11,197 with GNU ld, 13,586 gold, 14,691 lld, 14,666 mold; `llvm-readobj`: 9,801, 10,648, 11,022, 11,031; fewer with GNU ld and gold, which give other libraries' discarded copies' DWARF the kept copy's addresses). Expected: the anchors (3,863 and 3,464), up to 30 subprograms described by another unit's copy, sections' and segments' sizes |
+| ... checked in `llvm-nm` with lld | 171,103 functions and data (31.1 MB), 1,012,838 PC-relative operands, 36,787 dynamic relocations in them, 148,947 FDEs, 147,181 live subprograms, 140,549 distinct type definitions |
+| `breaklib.py`: one byte of `raw_ostream::write` changed in the folded `libLLVMSupport.a`, `llvm-nm` relinked with lld | caught by both: `compare-images` (that function's bytes differ: 1 failure) and `verify` (that member's section changed) |
+
+What was found on the way: linkers make hidden globals locals after
+another object's `STT_FILE` (a synthesized member has none), so locals
+are keyed by name where they can be; TLS variables in COMDAT groups move
+into synthesized members, which changes TLS offsets (`.tbss` 0x30 to 0x29
+bytes in `llvm-nm` with lld, mold uses imm32 and disp8 forms); a lambda's
+DWARF is nested in its enclosing function's, whose kept copy may come
+from a unit where the lambda's code was discarded; `turbonop-elf-object`'s
+`symbols()` searches the sections each call (a first `verify` took 164 s
+on `libLLVMVectorize.a`, 3.5 s once the table was looked up once).
+
+### Debug information (6.5)
+
+A synthesized member describes its units with a compile unit of its own
+(`turbonop_fold::elf`'s `dwarf` module, which documents it in full).
+Every unit of a synthesized member comes from one member, the first that
+held a copy, and the new unit is built from that member's:
+
+- **DIEs**: the roots are the DIEs with addresses in the moved sections
+  (`DW_AT_low_pc`, a range list, `DW_OP_addr`, directly or through
+  `.debug_addr`), each taken up to its subprogram. Each root's subtree is
+  kept, then what kept DIEs refer to (specifications, abstract origins,
+  types, the DIEs location expressions name), to a fixpoint. Ancestors
+  are kept as skeletons (a namespace with only its kept children).
+- **Types**: a named class, structure, or union in named scopes is kept
+  as a *declaration* (its name, `DW_AT_declaration`, and only its kept
+  members, such as the declaration a moved member function's
+  `DW_AT_specification` names), as clang's `-fno-standalone-debug`
+  writes them. The rest is kept whole: base and derived types,
+  enumerations, anonymous and local classes, abstract instances. **A
+  deviation from the plan**, which said "the types they use": kept whole,
+  LLVM's classes' members pull in most of a unit's types, 3.35 GB of DWARF
+  for `libLLVMCodeGen.a`'s 1,343 synthesized members (4.9 GB of synthesized
+  members for a 1.34 GB library). As declarations it is 4.1 MB. The definitions are
+  still in the givers' units (which keep their DIEs, tombstoned), and
+  every link that loads a synthesized member loads one of its givers.
+  Debuggers resolve a declaration by name (gdb's `ptype this` and
+  `print *this` in a folded member function print the same as the
+  original's).
+- **The unit's DIE** is the original's attributes. Its addresses, bases,
+  and macros are left out. `DW_AT_low_pc` is 0, `DW_AT_ranges` lists the
+  moved code sections, and `DW_AT_stmt_list` names the new line table.
+  There is a `.debug_aranges` set if the original had one.
+- **The line table** is the original's header. It keeps only the files
+  the kept DIEs (`DW_AT_decl_file`, `DW_AT_call_file`) and the moved
+  sequences name, plus the unit's primary file, and their directories,
+  renumbered. Then come the sequences whose `DW_LNE_set_address` names a
+  moved section (assemblers write one per section), with their
+  `DW_LNS_set_file`s renumbered. With every file kept, the header was most
+  of a synthesized member's DWARF: 13 KB each in `libLLVMCodeGen.a`, most
+  of it the files' `.debug_line_str` relocations.
+- **Lists and forms**: range and location lists are rewritten as
+  start-and-length entries, with GCC's location views
+  (`DW_AT_GNU_locviews`). Addresses are written `DW_FORM_addr`, so no
+  `.debug_addr` is written: an index is resolved, `DW_OP_addrx` becomes
+  `DW_OP_addr`, and `DW_OP_constx` becomes `DW_OP_const8u` with the
+  entry's relocation (TLS offsets). Strings go to the member's own
+  `.debug_str` and `.debug_line_str`, references are `DW_FORM_ref4`, and
+  expressions' unit-relative references are padded ULEB128 (their
+  branches are re-aimed). `DW_AT_sibling` is left out.
+- **Relocations** go to the copied sections' symbols, to the new debug
+  sections, or to a global name by name, weak where the member doesn't
+  define it (so that it loads nothing). An address of something not
+  moved (a `static` variable a skeleton names) is written 0 and counted.
+- **Split DWARF** (DWARF 5, `-gsplit-dwarf`): the member's skeleton names
+  its `.dwo`, which the `ar` personality reads from `DW_AT_comp_dir`
+  (`turbonop_fold::elf::fold_with` takes the reader). The synthesized
+  member's unit is unsplit, built from the `.dwo`'s DIEs, strings, and
+  lists and the member's `.debug_addr` and line table. This is the
+  plan's first choice: no new outputs for the build rule to declare, and
+  a link may mix split and unsplit units. The givers' `.dwo` files aren't
+  touched: their addresses go through `.debug_addr`, which is
+  tombstoned. GNU's split DWARF 4 (`DW_AT_GNU_dwo_id`) isn't read; its
+  folded functions get no DWARF, and `--stats` says why.
+- **Not handled** (the synthesized member gets no DWARF, and `--stats`
+  says why): 64-bit DWARF, REL machines (only x86-64 and AArch64 are
+  rewritten), compressed debug sections, units that refer outside
+  themselves (`DW_FORM_ref_addr` to another unit), and expression or form
+  kinds not known.
+
+Two kinds of differences from the original are expected:
+
+- A folded function is described by the first member's copy. A link of
+  the original keeps the first loaded member's copy, and GCC can describe
+  one inline function differently in different units. For example,
+  `RTTIExtends<FileSystem, RTTIRoot>::classID()` has a `DW_AT_type` in
+  `FileCollector.cpp.o` and none in `VirtualFileSystem.cpp.o`. COFF has
+  the same difference (2.4).
+- The images' DWARF grows (`llvm-nm` with GNU ld: 317.9 to 325.5 MB, of
+  which about 0.3 MB is from the first version): the givers' DIEs stay
+  (tombstoned), and each synthesized member adds declarations and line
+  headers of its own.
+
+**Results**:
+
+| Check | Result |
+|---|---|
+| fixture (`tools/turbolib/elf-debug/run.sh`: three members sharing inline functions, templates, a lambda, a static local, a TLS variable, virtual functions, exceptions; gcc 15.2 and clang 21.1, DWARF 4 and 5, `-O0` and `-O2`, and DWARF 5 split at both; 12 configurations), each linked with GNU ld, gold, lld, and mold | 204 of 204 checks pass: `verify`, programs' output, `compare-images` (DWARF included), and a gdb session stopped in folded functions (breakpoints by name and by line, `bt`, `info args` and `locals`, `list`, `next`, `step`, `finish`, `ptype this`, `print *this`, `info functions`, `types`, `scope`, `line`, `source`). The sessions are identical, addresses left out, except where the original describes a discarded copy too (GNU ld, and split units' `.dwo`): `info functions` lists it once per unit there, and once in the folded program |
+| `ar s --fold=identical` of all 265 libraries of the gcc build (23.74 GB), one after another | 262.7 s. 310,708 distinct units folded (1,597,064 copies) into 40,402 synthesized members; DWARF moved for all 309,058 that had some (310,028 root DIEs, 178.6 MB), none dropped; 1,453 addresses tombstoned in the copies; 23.74 GB to 23.51 GB (1.0% smaller) |
+| `verify` of those 265 against the build's | 265 pass. The 4 failures of 6.4 (on the older `folded-gcc`) don't occur with this build's output; why they did wasn't investigated |
+| `compare-images` of `llvm-nm` and `llvm-readobj` linked against them (GNU ld, gold, lld, mold), against the build's | "subprograms only in the first program" went from 9,801 to 14,691 per program to 0. 7 to 22 per program are "subprograms whose DIEs differ": the first member's copy against the first loaded one's (above; spot-checked on `classID()` with `llvm-dwarfdump` of both members). 1,227 in `llvm-readobj` with mold are expected (the same DIEs and rows from another unit). Every other category is equivalent |
+| gdb on `llvm-nm` (lld) against folded and original libraries, stepping into the folded `StringRef::size` (defined only in `__turbolib.11.o` of the folded `libLLVMSupport.a`) | the same session: frames, arguments, locals, source lines |
+| determinism: `libLLVMSupport.a` folded with `-j 1`, `-j 3`, and `-j 8` | the same bytes |
+| speed (`relib.py --time --options=--fold=identical`, the same 20 libraries as 6.3, 13.79 GiB, best of 2) | GNU `ar` 58.75 s, turbolib 249.28 s: 4.24× (6.3 measured 2.66×, but GNU `ar` itself took 37.98 s then: this run shared the machine with a gdb check at its start, so the ratios aren't comparable; reading each survivor member's DWARF whole adds work, not measured apart) |
+
+The spot checks of `classID()` show how the differing descriptions arise,
+not that all 7 to 22 per program arise that way. `compare-images` could
+prove it by matching each one against the original's discarded copies
+(their DIEs are in the original image, tombstoned): a TODO.
+
+What `compare-images` needed for this (6.4's tool, extended): LSDAs
+compared by content (call sites relative to their function, action
+chains, and the types they catch by what they name; they were named by
+their place in `.gcc_except_table`, which folding changes); an address
+below which there's only a section's start named by its contents, to a
+string's NUL (`__PRETTY_FUNCTION__`s share long prefixes); an empty
+list entry not placed (it may be at a section's end); `DW_OP_addrx` and
+`DW_OP_constx` compared as the plain operations; split units read from
+their `.dwo` files; and which debug sections each program has compared
+apart from the rest (a folded split program has unsplit ones too).
 
 ## Decisions
 
@@ -2059,7 +2283,10 @@ finding units 25% slower); reading members largest first (no change: reading is 
   - `.debug_addr` entries.
 
   In the original member, the orphaned DIE's addresses are tombstoned, as
-  lld does for discarded sections.
+  lld does for discarded sections. (Done: see [6.5](#debug-information-65).
+  Types reached by reference are declarations where a debugger finds
+  their definitions by name, and addresses are written without
+  `.debug_addr`.)
 - **Split DWARF.** The compiler writes the `.dwo` beside the `.o`; the
   archiver and the linker never touch it, and `dwp` packs the `.dwo` files
   later. turbolib's archive step therefore takes the `.dwo` files as inputs
@@ -2071,6 +2298,8 @@ finding units 25% slower); reading members largest first (no change: reading is 
     rule must declare them as outputs) or carry their DWARF unsplit in the
     `.o`, which a link may mix freely.
   - Unsplit is simpler for Buck2 integration, so it is the first choice.
+    (Done for DWARF 5, unsplit, the `.dwo` found from the skeleton's
+    `DW_AT_comp_dir` and `DW_AT_dwo_name` rather than given as an input.)
 - **Per-object properties:**
   - `.note.GNU-stack`: a synthesized member without it makes the stack
     executable;

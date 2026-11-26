@@ -864,12 +864,24 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
             data: m.data(),
         })
         .collect();
-    let (outputs, report) = turbonop_fold::elf::fold(&inputs, &options);
+    // A split unit's `.dwo` file: its DW_AT_dwo_name, in its DW_AT_comp_dir
+    // (relative to the current directory, as the compiler wrote it).
+    let dwo = |dir: &[u8], name: &[u8]| -> Option<Vec<u8>> {
+        let name = std::path::PathBuf::from(String::from_utf8_lossy(name).into_owned());
+        let path = if name.is_absolute() {
+            name
+        } else {
+            std::path::Path::new(&*String::from_utf8_lossy(dir)).join(name)
+        };
+        std::fs::read(path).ok()
+    };
+    let (outputs, report) = turbonop_fold::elf::fold_with(&inputs, &options, &dwo);
     if run.settings.stats {
         let mut text = format!(
             "turbolib: {archive}: {} members, {} COMDAT units; {} with copies in more than one member, \
              {} folded ({} copies) into {} synthesized members; {} bytes of units removed, {} written; \
-             {} debug relocations tombstoned, {} folded units' debug information dropped\n",
+             {} debug relocations tombstoned; {} folded units' debug information moved ({} root DIEs, \
+             {} bytes, {} addresses tombstoned), {} dropped\n",
             report.members,
             report.units,
             report.duplicated,
@@ -879,8 +891,17 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
             report.removed_bytes,
             report.synthesized_bytes,
             report.tombstoned,
+            report.debug_moved,
+            report.debug_roots,
+            report.debug_bytes,
+            report.debug_tombstoned,
             report.debug_dropped
         );
+        for (why, n) in &report.debug_dropped_why {
+            text.push_str(&format!(
+                "turbolib:   {n} units' debug information dropped: {why}\n"
+            ));
+        }
         for (why, n) in &report.kept {
             text.push_str(&format!("turbolib:   {n} copies stayed: {why}\n"));
         }

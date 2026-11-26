@@ -30,6 +30,7 @@ pub mod consts;
 pub mod expr;
 mod line;
 pub mod names;
+pub mod ops;
 pub mod registers;
 pub mod spelling;
 

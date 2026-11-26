@@ -43,7 +43,7 @@ use std::fmt::Write as _;
 use turbonop_dwarf::consts::*;
 use turbonop_dwarf::{Abbrevs, Attr, LineProgram, Reader, Sections, Unit, UnitSection, Value};
 
-use super::program::Program;
+use super::program::{CONTENT, Program};
 use crate::hash::H128;
 use crate::report::{Report, show};
 
@@ -244,10 +244,30 @@ impl<'p, 'd> Cu<'p, 'd> {
             .is_some_and(|s| !code || s.flags & turbonop_elf::consts::SHF_EXECINSTR != 0)
     }
 
+    /// `addr` as one past the end of what holds the byte before it, if
+    /// that byte is in a section and `addr` is in none.
+    fn end_of_section(&self, addr: u64) -> Option<String> {
+        if !self.unit.is_valid_address(addr) || self.p.section_at(addr).is_some() {
+            return None;
+        }
+        let before = addr.checked_sub(1)?;
+        self.p.section_at(before)?;
+        match self.p.name(before)? {
+            (_, CONTENT) => None,
+            (n, o) => Some(format!("{}+{:#x}", show(n), u64::from(o) + 1)),
+        }
+    }
+
     fn address(&self, out: &mut dyn Sink, addr: u64) {
         if self.unit.is_valid_address(addr) && self.p.section_at(addr).is_some() {
             out.sep("@");
             out.text(self.p.render(addr).as_bytes());
+        } else if let Some(end) = self.end_of_section(addr) {
+            // One past a section's last byte (a tail call's
+            // `DW_AT_call_return_pc` in the last function of `.text`): named
+            // from the byte before it, as it is wherever something follows.
+            out.sep("@");
+            out.text(end.as_bytes());
         } else {
             out.sep("dead");
         }

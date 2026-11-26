@@ -106,3 +106,14 @@ x64 and x86 programs, which take an inline function's address and call it
 through CFG, longjmp, throw, fault, and call through an import's address.
 `TURBOLIB` names turbolib.exe (the default is `target\release`'s). The
 outputs land in `out\`.
+
+## `debug`: synthesized members' debug information (phase 2.4)
+
+Not a spike: the sources of turbonop-fold's debug-information fixtures.
+`build.cmd` builds them into `testdata\coff\fold` (its comments list each
+object). `check.py <turbolib.exe>` links `main.cpp` against libraries of
+them, made by lib.exe and folded by turbolib, with link.exe and lld-link,
+runs both programs, and compares the PDBs with
+`corpus\pdbcompare.py`, which compares procedures (signatures, locals,
+inline sites, lines) and other module symbols structurally, from
+llvm-pdbutil's dumps.

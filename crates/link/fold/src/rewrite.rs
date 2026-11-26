@@ -31,10 +31,10 @@
 //! `.retplne`) are split as [`tables`] describes: entries go with their
 //! code.
 //!
-//! Not yet: folded units' debug information (phase 2.4: a synthesized
-//! member holds no `.debug$S` or `.debug$T` yet, so the folded functions
-//! have no symbols in the PDB).
+//! Each synthesized member carries its units' CodeView, renumbered into
+//! types, checksums, and strings of its own ([`debug`]).
 
+pub mod debug;
 pub mod tables;
 pub mod units;
 
@@ -122,6 +122,13 @@ pub enum Unfoldable {
     /// Its first copy's member has side effects, so folding it could
     /// change which members a link loads (`--pull=preserve`).
     SideEffects,
+    /// Its debug information can't be carried into a synthesized member
+    /// (see [`debug`]).
+    DebugInfo,
+    /// Its object uses a PCH, but names neither the PCH object's symbol
+    /// (so a synthesized member can't name the PCH) nor is the PCH object
+    /// in the library (so its types can't be copied).
+    PrecompMissing,
 }
 
 impl Unfoldable {
@@ -150,6 +157,8 @@ impl Unfoldable {
             Unfoldable::SideEffectsTooFewCopies => {
                 "kept by a member with side effects, too few other copies"
             }
+            Unfoldable::DebugInfo => "debug information turbolib can't carry",
+            Unfoldable::PrecompMissing => "its PCH is neither named nor in the library",
         }
     }
 }
@@ -231,6 +240,7 @@ struct Parsed<'a> {
     object: Option<Object<'a>>,
     facts: Facts,
     passed: Option<Unfoldable>,
+    debug: debug::Facts,
 }
 
 fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
@@ -238,19 +248,25 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         object: None,
         facts: Facts::default(),
         passed: Some(why),
+        debug: debug::Facts::default(),
     };
     match File::parse(input.data) {
         Ok(File::Object(object)) => match units::find(&object) {
-            Ok(facts) => Parsed {
-                object: Some(object),
-                facts,
-                passed: None,
-            },
+            Ok(mut facts) => {
+                let debug = debug::read(&object, &mut facts);
+                Parsed {
+                    object: Some(object),
+                    facts,
+                    passed: None,
+                    debug,
+                }
+            }
             Err(why) => Parsed {
                 // Kept for its definitions, which still count.
                 object: Some(object),
                 facts: Facts::default(),
                 passed: Some(why),
+                debug: debug::Facts::default(),
             },
         },
         Ok(File::Opaque { kind, .. }) => pass(match kind {
@@ -305,7 +321,9 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         times[k] = now - clock;
         clock = now;
     };
-    let parsed: Vec<Parsed<'a>> = turbonop_par::map_balanced(inputs, 4, parse);
+    let mut parsed: Vec<Parsed<'a>> = turbonop_par::map_balanced(inputs, 4, parse);
+    // PCH users' PCH objects (their units' types are there).
+    debug::resolve(&mut parsed);
     let mut report = Report {
         members: inputs.len() as u64,
         bytes_in: inputs.iter().map(|i| i.data.len() as u64).sum(),
@@ -374,7 +392,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     // Under Preserve, each folded name the archive index named a member for
     // stays defined there, as an alias weak external (see `ALIAS_DEFAULT`).
     let mut aliases: Vec<HashSet<&[u8]>> = vec![HashSet::new(); parsed.len()];
-    let mut synth_of: HashMap<(u128, Vec<usize>), usize> = HashMap::new();
+    let mut synth_of: HashMap<(u128, u64, Vec<usize>), usize> = HashMap::new();
     let mut synths: Vec<Synth> = Vec::new();
     for c in &copies {
         let unit = |&(m, u): &(usize, usize)| &parsed[m].facts.units[u];
@@ -466,7 +484,12 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         report.removed_bytes += removed.iter().map(|x| unit(x).size).sum::<u64>();
         let mut givers: Vec<usize> = removed.iter().map(|&(m, _)| m).collect();
         givers.dedup();
-        let key = (parsed[first.0].facts.environment, givers.clone());
+        // (And the PCH its CodeView names, if any: see debug::key.)
+        let key = (
+            parsed[first.0].facts.environment,
+            debug::key(&parsed[first.0]),
+            givers.clone(),
+        );
         let s = *synth_of.entry(key).or_insert_with(|| {
             synths.push(Synth {
                 environment: parsed[first.0].facts.environment,
@@ -542,9 +565,10 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     let members: Vec<OutputMember<'a>> = members.into_iter().map(|(_, o)| o).collect();
     lap(3);
     let made: Vec<OutputMember<'a>> = turbonop_par::map_range(synths.len(), 1, |n| {
-        let skeleton = synthesize(&synths[n], &parsed, &anchors[n]);
+        let name = format!("turbolib{n}.obj").into_bytes();
+        let skeleton = synthesize(&synths[n], &parsed, &anchors[n], &name);
         OutputMember {
-            name: Cow::Owned(format!("turbolib{n}.obj").into_bytes()),
+            name: Cow::Owned(name),
             data: Cow::Owned(skeleton.bytes),
             holes: skeleton.holes,
             synthesized: true,
@@ -703,8 +727,8 @@ const IMAGE_SCN_ALIGN_1BYTES: u32 = 0x0010_0000;
 /// The most sections a regular object can have; past it, big-obj.
 const MAX_REGULAR_SECTIONS: usize = 65_279;
 
-/// A synthesized member.
-fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8]) -> Skeleton<'a> {
+/// A synthesized member, named `name`.
+fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8], name: &[u8]) -> Skeleton<'a> {
     let (m0, _, _) = s.units[0];
     let first = parsed[m0].object.as_ref().expect("units come from objects");
     let facts0 = &parsed[m0].facts;
@@ -756,12 +780,17 @@ fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8]) -> Skeleton<'
         ));
     }
 
+    // The units' CodeView, renumbered into the member's own (phase 2.4);
+    // its per-object .debug$S first, as compilers write it.
+    let mut debug = debug::Builder::new(parsed);
+    debug.begin(&mut o, &s.units);
+
     // The units: their sections and symbols, with names renamed where the
     // copy is a renamed one. Relocations are filled in after, once every
     // unit's symbols are in.
     let mut placed: Vec<Placed> = Vec::with_capacity(s.units.len());
     let mut defined: HashMap<Vec<u8>, SymbolId> = HashMap::new();
-    for &(m, u, renamed_copy) in &s.units {
+    for (k, &(m, u, renamed_copy)) in s.units.iter().enumerate() {
         let object = parsed[m].object.as_ref().expect("units come from objects");
         let unit = &parsed[m].facts.units[u];
         let mut p = Placed {
@@ -770,11 +799,17 @@ fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8]) -> Skeleton<'
         };
         for &id in &unit.sections {
             let sec = &object.sections[id.index()];
-            if is_debug(sec.name.as_bytes()) && !tables::moves_with_unit(sec.name.as_bytes()) {
-                continue;
-            }
-            let mut copy = sec.clone();
-            copy.relocations = Vec::new();
+            let copy = if tables::moves_with_unit(sec.name.as_bytes()) {
+                let mut copy = sec.clone();
+                copy.relocations = Vec::new();
+                copy
+            } else if is_debug(sec.name.as_bytes()) {
+                debug.section(k, m, id, sec)
+            } else {
+                let mut copy = sec.clone();
+                copy.relocations = Vec::new();
+                copy
+            };
             p.sections.insert(id.0, o.push_section(copy));
         }
         for &id in &unit.symbols {
@@ -835,7 +870,7 @@ fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8]) -> Skeleton<'
                     None => names.outside(&mut o, object, &object.symbols[r.symbol.index()]),
                 };
                 relocations.push(Relocation {
-                    offset: r.offset,
+                    offset: debug.offset(k, id, r.offset),
                     symbol,
                     kind: r.kind,
                 });
@@ -846,6 +881,7 @@ fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8]) -> Skeleton<'
     let table_fields = tables::place(&mut o, s, parsed, &placed, &mut |o, object, target| {
         names.outside(o, object, target)
     });
+    debug.finish(&mut o, m0, name);
     o.push_symbol(Symbol::new(
         Name::new(anchor.to_vec()),
         0,

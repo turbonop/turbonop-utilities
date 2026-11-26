@@ -260,6 +260,14 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
         }
         None => env.u64(u64::MAX),
     }
+    // A `/Zi` member's type server: its units' indices are that server's.
+    match super::debug::environment(object) {
+        Some(server) => {
+            env.u64(server.len() as u64);
+            env.bytes(&server);
+        }
+        None => env.u64(u64::MAX),
+    }
     facts.environment = env.finish();
 
     // Each section's unit: a leader, or the leader its association chain

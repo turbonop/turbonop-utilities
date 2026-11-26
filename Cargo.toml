@@ -12,7 +12,19 @@ repository = "https://github.com/turbonop/turbonop-utilities"
 
 [workspace.dependencies]
 # Third-party (see the dependency policy: only complex, non-core utilities).
-regex = "1.13"
+# Regular expressions are users' (filters, bloaty's custom data sources:
+# RE2's syntax): Unicode's categories (\pL) and scripts (\p{Greek}), as
+# RE2 has, and its \w, \d, \s, \b, and case folding; not its ages,
+# segmentation, or other properties (\p{Alphabetic}), which RE2 lacks
+# (158 KB of tables).
+regex = { version = "1.13", default-features = false, features = [
+    "std",
+    "perf",
+    "unicode-case",
+    "unicode-gencat",
+    "unicode-perl",
+    "unicode-script",
+] }
 miniz_oxide = "0.9"
 ruzstd = "0.8"
 # xz (ELF MiniDebugInfo): LZMA2 only; the xz container is ours. No

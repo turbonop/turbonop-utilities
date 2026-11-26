@@ -183,6 +183,9 @@ pub struct Report {
     /// Bytes of all members, before and after.
     pub bytes_in: u64,
     pub bytes_out: u64,
+    /// How long each step took: read and find units, definers, group and
+    /// decide, rewrite members, synthesize members.
+    pub times: [std::time::Duration; 5],
 }
 
 /// How a member gives up one copy.
@@ -274,6 +277,13 @@ struct Synth {
 /// the synthesized members, then the members in the same order, rewritten
 /// where they gave up copies.
 pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
+    let mut clock = std::time::Instant::now();
+    let mut times = [std::time::Duration::ZERO; 5];
+    let mut lap = |k: usize| {
+        let now = std::time::Instant::now();
+        times[k] = now - clock;
+        clock = now;
+    };
     let parsed: Vec<Parsed<'a>> = turbonop_par::map_balanced(inputs, 4, parse);
     let mut report = Report {
         members: inputs.len() as u64,
@@ -287,6 +297,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         report.units += p.facts.units.len() as u64;
     }
 
+    lap(0);
     // The member the archive index names for each name: its first definer.
     let mut first_definer: HashMap<&[u8], usize> = HashMap::new();
     let defs: Vec<Vec<Cow<'_, [u8]>>> = inputs
@@ -300,6 +311,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         }
     }
 
+    lap(1);
     // Groups of copies, in order of first appearance.
     let mut groups: HashMap<u128, usize> = HashMap::new();
     let mut copies: Vec<Vec<(usize, usize)>> = Vec::new();
@@ -425,6 +437,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         }
     }
 
+    lap(2);
     // Rewritten members, then synthesized members, each in parallel.
     let members: Vec<OutputMember<'a>> = turbonop_par::map_range(parsed.len(), 1, |m| {
         let input = &inputs[m];
@@ -446,11 +459,14 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             synthesized: false,
         }
     });
+    lap(3);
     let made: Vec<OutputMember<'a>> = turbonop_par::map_range(synths.len(), 1, |n| OutputMember {
         name: Cow::Owned(format!("turbolib{n}.obj").into_bytes()),
         data: Cow::Owned(synthesize(&synths[n], &parsed, &anchors[n])),
         synthesized: true,
     });
+    lap(4);
+    report.times = times;
     report.rewritten = removals.iter().filter(|r| !r.is_empty()).count() as u64;
     report.synthesized = made.len() as u64;
     // Synthesized members first, so that the index names them for what they

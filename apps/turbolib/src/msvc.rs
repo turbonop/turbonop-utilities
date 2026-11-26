@@ -8,6 +8,7 @@ mod inputs;
 mod library;
 mod options;
 mod order;
+mod output;
 mod run;
 
 pub use args::Flavor;

@@ -12,11 +12,14 @@ use super::inputs::{self, InputKind, MachineCheck};
 use super::library;
 use super::options::{self, Options};
 use super::order::{self, Input};
+use super::output;
 use crate::settings::{Fold, Pull, Settings};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use turbonop_archive::write::{Fields, NewMember, SizeLimit, Style, WriteError};
+use turbonop_archive::write::{
+    Fields, Layout, MemberHeader, NewMember, SizeLimit, Style, WriteError,
+};
 use turbonop_fold::rewrite;
 
 /// The environment a run sees.
@@ -382,6 +385,7 @@ fn build(
         }
         return Ok(());
     }
+    let mut clock = Clock::new();
     let mut read = Vec::new();
     for name in &opts.inputs {
         match read_input(opts, env, name, flavor) {
@@ -389,6 +393,7 @@ fn build(
             Err(d) => return r.report(d),
         }
     }
+    clock.lap("open");
     let mut check = MachineCheck::new(opts.machine.map(options::Machine::number), flavor);
     let mut inputs = Vec::new();
     let mut kinds = Vec::new();
@@ -450,6 +455,7 @@ fn build(
             ))?;
         }
     }
+    clock.lap("classify");
     let ordered = match flavor {
         Flavor::Lib => match order::lib_order(&inputs, &opts.remove, opts.verbose) {
             Ok(o) => o,
@@ -523,6 +529,7 @@ fn build(
     }
 
     // Folding: the members rewritten, then the synthesized ones.
+    clock.lap("order");
     let folded = (settings.fold != Fold::None).then(|| {
         let inputs: Vec<rewrite::Input<'_>> = members
             .iter()
@@ -584,6 +591,7 @@ fn build(
     };
 
     // The index, and lib.exe's warnings about names defined twice.
+    clock.lap("fold");
     let ec = matches!(check.machine, Some(inputs::ARM64EC | inputs::ARM64X));
     let symbols = turbonop_par::map(&finals, 16, |m| {
         library::member_symbols(flavor, &m.place, m.data, ec)
@@ -602,6 +610,7 @@ fn build(
             r.report(w)?;
         }
     }
+    clock.lap("symbols");
     let index = library::index(flavor, member_symbols, ec);
     let new: Vec<NewMember<'_>> = finals
         .iter()
@@ -611,16 +620,39 @@ fn build(
             data: m.data,
         })
         .collect();
-    let bytes = match turbonop_archive::write::write(&new, &index, style, SizeLimit::FourGiB) {
-        Ok(b) => b,
+    clock.lap("index");
+    let headers: Vec<MemberHeader<'_>> = new
+        .iter()
+        .map(|m| MemberHeader {
+            name: m.name,
+            fields: m.fields,
+            size: m.data.len() as u64,
+        })
+        .collect();
+    let layout = match Layout::new(&headers, &index, style, SizeLimit::FourGiB) {
+        Ok(l) => l,
         Err(e) => return r.report(write_error(flavor, &e)),
     };
     if !r.write_output {
         return Ok(());
     }
     let out = output_path(opts, &read);
+    let path = resolve(&env.cwd, &out);
+    let cannot = |out: String| match flavor {
+        Flavor::Lib => Diag::fatal(1104, format!("cannot open file '{out}'")),
+        Flavor::LlvmLib => Diag::llvm(Kind::Fatal, "cannot write the output").on(out),
+    };
+    let datas: Vec<&[u8]> = new.iter().map(|m| m.data).collect();
+    let Ok(temp) = output::write_beside(&path, &layout, &datas, style.conventions().padding) else {
+        return r.report(cannot(out));
+    };
+    clock.lap("archive");
     // The inputs are mapped, and the output may be one of them (`lib
-    // x.lib a.obj` updates x.lib): let them go first.
+    // x.lib a.obj` updates x.lib): let them go before the new file takes
+    // its place.
+    drop(datas);
+    drop(layout);
+    drop(headers);
     drop(index);
     drop(new);
     drop(finals);
@@ -629,13 +661,46 @@ fn build(
     drop(members_of);
     drop(archives);
     drop(read);
-    if write_file(&resolve(&env.cwd, &out), &bytes).is_err() {
-        return r.report(match flavor {
-            Flavor::Lib => Diag::fatal(1104, format!("cannot open file '{out}'")),
-            Flavor::LlvmLib => Diag::llvm(Kind::Fatal, "cannot write the output").on(out),
-        });
+    if output::replace(&temp, &path).is_err() {
+        return r.report(cannot(out));
+    }
+    clock.lap("write");
+    if settings.stats {
+        r.lines.push(clock.report());
     }
     Ok(())
+}
+
+/// How long each stage took, for `--stats`.
+struct Clock {
+    start: std::time::Instant,
+    last: std::time::Instant,
+    laps: Vec<(&'static str, std::time::Duration)>,
+}
+
+impl Clock {
+    fn new() -> Clock {
+        let now = std::time::Instant::now();
+        Clock {
+            start: now,
+            last: now,
+            laps: Vec::new(),
+        }
+    }
+
+    fn lap(&mut self, stage: &'static str) {
+        let now = std::time::Instant::now();
+        self.laps.push((stage, now - self.last));
+        self.last = now;
+    }
+
+    fn report(&self) -> String {
+        let mut s = format!("turbolib: {:.3} s:", (self.last - self.start).as_secs_f64());
+        for (stage, d) in &self.laps {
+            s.push_str(&format!(" {stage} {:.3}", d.as_secs_f64()));
+        }
+        s
+    }
 }
 
 /// One member as written: after folding, its data may be new.
@@ -663,6 +728,15 @@ fn stats_lines(r: &rewrite::Report) -> Vec<String> {
             100.0 * (1.0 - r.bytes_out as f64 / (r.bytes_in.max(1)) as f64)
         ),
     ];
+    let t = &r.times;
+    out.push(format!(
+        "turbolib: fold: read {:.3} definers {:.3} group {:.3} rewrite {:.3} synthesize {:.3}",
+        t[0].as_secs_f64(),
+        t[1].as_secs_f64(),
+        t[2].as_secs_f64(),
+        t[3].as_secs_f64(),
+        t[4].as_secs_f64()
+    ));
     for (why, n) in &r.passed_through {
         out.push(format!(
             "turbolib: {n} members passed through: {}",

@@ -124,6 +124,47 @@ fn identical_copies_fold_into_one_synthesized_member() {
     }
 }
 
+/// A member that gave up copies names its anchors before any other external
+/// or weak external record (link.exe's load order: see `anchors_first`),
+/// and its weak externals' defaults and relocations survive the insertion.
+#[test]
+fn anchors_come_before_every_other_external_record() {
+    let (a, b) = pair();
+    let out = rewrite(&inputs(&[(b"a.obj", &a), (b"b.obj", &b)]), PRESERVE);
+    for (m, original) in out.members[..2].iter().zip([&a, &b]) {
+        let o = object(&m.data);
+        let is_anchor = |s: &Symbol<'_>| s.name.as_bytes().starts_with(b"__turbolib$anchor$");
+        let external =
+            |s: &Symbol<'_>| s.is_external() || s.storage_class == storage_class::WEAK_EXTERNAL;
+        let anchors: Vec<usize> = (0..o.symbols.len())
+            .filter(|&i| is_anchor(&o.symbols[i]))
+            .collect();
+        assert!(!anchors.is_empty());
+        let first = o.symbols.iter().position(external).unwrap();
+        assert_eq!(anchors, (first..first + anchors.len()).collect::<Vec<_>>());
+        // What precedes the anchors is what preceded the first external.
+        let before = object(original);
+        let lead = before.symbols.iter().position(external).unwrap();
+        assert_eq!(first, lead);
+        // Each alias still names the default; each relocation, a symbol.
+        let mut aliases = 0;
+        for s in &o.symbols {
+            if let Aux::WeakExternal(w) = &s.aux
+                && w.search == weak_search::ALIAS
+            {
+                aliases += 1;
+                assert_eq!(o.symbols[w.tag.index()].name.as_bytes(), ALIAS_DEFAULT);
+            }
+        }
+        assert!(aliases > 0);
+        for sec in &o.sections {
+            for r in &sec.relocations {
+                assert!(!is_anchor(&o.symbols[r.symbol.index()]));
+            }
+        }
+    }
+}
+
 #[test]
 fn the_output_is_the_same_every_time() {
     let (a, b) = pair();

@@ -547,8 +547,10 @@ different.
 **Link equivalence** (2.6's `compare-images`, with [the alias
 technique](#the-alias-technique)): in every configuration, both programs'
 `.text` and `.pdata` are the originals' to the byte in size, and `.rdata`
-within 0.003%; lld-link loads the same members, and link.exe the same
-members in another order (two C++ initializers move). What still differs:
+within 0.003%; both linkers load the same members in the same order
+(with the anchors first: `/VERBOSE` on `llvm-nm`, link.exe's 637 and
+lld-link's 631; with the anchors last, link.exe's order differed and two
+C++ initializers moved). What still differs:
 which copy of identical code a link keeps (so names, line blocks, and
 procedures' symbols of a few dozen implicit functions: each translation
 unit's copy has its own lines), and in link.exe's PDBs about 0.3% fewer
@@ -1747,16 +1749,21 @@ Synthesized members are indexed for their anchors alone (under
   corrupt"), and an entry naming the synthesized member would change which
   members load.
 
-What it doesn't keep: **the order** in which link.exe loads the same
-members. On `llvm-nm`, both links load the same 637 original members, but
-in another order, and the order of C++ initializers across members
-follows it: two of `llvm-nm`'s 55 moved. C++ leaves that order
-unspecified, but programs can depend on it. lld-link's order didn't
-change. With `/VERBOSE`, the folded link ends a library's sweep after
-loading anchored synthesized members where the original went on loading
-members already referenced; it isn't the members' order (synthesized
-members last, as `preserve` now puts them, changed nothing). Still open
-(TODO.md).
+- **The anchors first.** A member's references to its anchors come
+  before its first external or weak external record. link.exe searches a
+  library for the undefined names in the order they became undefined (a
+  loaded member's in its records' order), and with the anchors last, some
+  sweeps ended early once an anchored synthesized member loaded: the
+  members they would have loaded came in a later pass, and the order of
+  C++ initializers across members follows the load order (two of
+  `llvm-nm`'s 55 moved; C++ leaves it unspecified, but programs can depend
+  on it). With the anchors first, the synthesized members load before a
+  sweep reaches the moved names, and `llvm-nm` and `llvm-readobj` load
+  their members in the original order (`/VERBOSE`; compare-images finds the
+  initializers in order). Which records end a sweep early isn't known: it
+  reproduces with five of `LLVMObject.lib`'s members and one synthesized
+  member, not with hand-made objects of the same shape. It isn't the
+  members' order (synthesized members first or last changed nothing).
 
 ### `--precomp`: shared types (phase 3)
 

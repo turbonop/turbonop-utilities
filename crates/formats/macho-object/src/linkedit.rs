@@ -23,11 +23,13 @@ pub struct DataInCode {
 /// The entries of `LC_DATA_IN_CODE`'s data (`None` if it isn't a whole
 /// number of entries).
 pub fn decode_data_in_code(data: &[u8], endian: Endian) -> Option<Vec<DataInCode>> {
-    if data.len() % 8 != 0 {
+    if !data.len().is_multiple_of(8) {
         return None;
     }
     Some(
-        data.chunks_exact(8)
+        data.as_chunks::<8>()
+            .0
+            .iter()
             .map(|e| {
                 let u32_at = |b: [u8; 4]| match endian {
                     Endian::Little => u32::from_le_bytes(b),

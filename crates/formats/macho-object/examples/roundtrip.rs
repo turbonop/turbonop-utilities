@@ -5,7 +5,11 @@
 //! (whether the writer lays the object out as the LLVM that wrote it did)
 //! and whether it reads back to the same model (the same commands,
 //! sections, relocations, and symbols, by value). It also checks whether
-//! the sections are at the addresses LLVM gives them.
+//! the sections are at the addresses LLVM gives them, whether the
+//! addresses local relocations encode are in their target sections, and
+//! whether moving every section and moving it back gives the object read
+//! (the relocations' bytes, symbols, and link-edit data moved and moved
+//! back). It tallies the features the objects have.
 //!
 //!     cargo run --release -p turbonop-macho-object --example roundtrip -- [-v] <dir, .o, or .a>...
 //!
@@ -18,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use turbonop_archive::Archive;
-use turbonop_macho_object::Object;
+use turbonop_macho_object::{Command, Contents, Endian, Object, reloc};
 
 fn find(path: &Path, explicit: bool, out: &mut Vec<PathBuf>) {
     if path.is_dir() {
@@ -46,6 +50,16 @@ struct Report {
     relaid_identical_padded: usize,
     relaid_same_model: usize,
     llvm_addresses: usize,
+    /// Objects moved and moved back to the same bytes.
+    moved_back: usize,
+    /// Local relocations whose encoded address was decoded, and of those,
+    /// the ones in (or at the end of) their target sections.
+    local_decoded: usize,
+    local_in_target: usize,
+    /// Local relocations not decoded (an encoding not handled).
+    local_undecoded: BTreeMap<String, usize>,
+    /// Objects with each feature.
+    features: BTreeMap<String, usize>,
     /// Each failure: its kind, then the object and details.
     failures: Vec<(String, String)>,
     unread: BTreeMap<String, usize>,
@@ -60,6 +74,15 @@ impl Report {
         self.relaid_identical_padded += r.relaid_identical_padded;
         self.relaid_same_model += r.relaid_same_model;
         self.llvm_addresses += r.llvm_addresses;
+        self.moved_back += r.moved_back;
+        self.local_decoded += r.local_decoded;
+        self.local_in_target += r.local_in_target;
+        for (k, v) in r.local_undecoded {
+            *self.local_undecoded.entry(k).or_default() += v;
+        }
+        for (k, v) in r.features {
+            *self.features.entry(k).or_default() += v;
+        }
         self.failures.extend(r.failures);
         for (k, v) in r.unread {
             *self.unread.entry(k).or_default() += v;
@@ -76,7 +99,7 @@ fn first_difference(a: &[u8], b: &[u8]) -> Option<usize> {
 
 /// What part of the file read an offset is in.
 fn part(o: &Object<'_>, data: &[u8], at: usize) -> String {
-    let hsize = o.header.size() as usize;
+    let hsize = usize::try_from(o.header.size()).unwrap_or(0);
     if at < hsize {
         return "the header".into();
     }
@@ -117,8 +140,10 @@ fn same_model(a: &Object<'_>, b: &Object<'_>) -> Result<(), String> {
         return Err("the symbol count".into());
     }
     for (i, (s, t)) in a.symbols.iter().zip(&b.symbols).enumerate() {
-        if (&s.name, s.n_type, s.n_sect, s.n_desc, s.n_value)
-            != (&t.name, t.n_type, t.n_sect, t.n_desc, t.n_value)
+        let value =
+            |s: &turbonop_macho_object::Symbol<'_>| s.indirect.is_none().then_some(s.n_value);
+        if (&s.name, s.n_type, s.n_sect, s.n_desc, value(s), &s.indirect)
+            != (&t.name, t.n_type, t.n_sect, t.n_desc, value(t), &t.indirect)
         {
             return Err(format!("symbol {i}"));
         }
@@ -178,6 +203,9 @@ fn check_object(name: &str, data: &[u8], r: &mut Report) {
             ),
         ));
     }
+    features(&o, r);
+    locals(name, &o, r);
+    moves(name, &o, data, r);
     let mut fresh = o.clone();
     fresh.relayout();
     let out = match fresh.write() {
@@ -218,6 +246,170 @@ fn check_object(name: &str, data: &[u8], r: &mut Report) {
         Err(e) => r
             .failures
             .push(("laid out afresh, unreadable".into(), format!("{name}: {e}"))),
+    }
+}
+
+fn features(o: &Object<'_>, r: &mut Report) {
+    let mut f: Vec<String> = Vec::new();
+    f.push(format!(
+        "{} {}",
+        turbonop_macho::arch_name(o.header.cputype, o.header.cpusubtype),
+        if o.is_64() { "64-bit" } else { "32-bit" }
+    ));
+    if o.endian() == Endian::Big {
+        f.push("big-endian".into());
+    }
+    for c in &o.commands {
+        match c {
+            Command::LinkeditData { cmd, .. } => f.push(format!("link-edit data {cmd:#x}")),
+            Command::Other { cmd, .. } => f.push(format!("command {cmd:#x}")),
+            _ => {}
+        }
+    }
+    if !o.indirect_symbols.is_empty() {
+        f.push("indirect symbols".into());
+    }
+    let relocs = || o.sections().flat_map(|s| s.relocations.iter());
+    if relocs().any(turbonop_macho_object::Relocation::is_scattered) {
+        f.push("scattered relocations".into());
+    }
+    if relocs().any(turbonop_macho_object::Relocation::is_local) {
+        f.push("local relocations".into());
+    }
+    if o.sections().any(|s| {
+        reloc::fixups(o.header.cputype, &s.relocations)
+            .iter()
+            .any(|g| g.len() == 2)
+    }) {
+        f.push("relocation pairs".into());
+    }
+    if o.sections()
+        .any(|s| matches!(s.contents, Contents::Zerofill(_)))
+    {
+        f.push("zero-fill sections".into());
+    }
+    if o.symbols.iter().any(turbonop_macho_object::Symbol::is_stab) {
+        f.push("debugger symbols".into());
+    }
+    if o.symbols
+        .iter()
+        .any(|s| !s.is_stab() && s.n_type & turbonop_macho::consts::N_TYPE == 0xA)
+    {
+        f.push("N_INDR symbols".into());
+    }
+    if o.symbols.iter().any(|s| s.is_undefined() && s.n_value != 0) {
+        f.push("common symbols".into());
+    }
+    if !o.symbols_in_order() {
+        f.push("symbols not in the dynamic symbol table's order".into());
+    }
+    if o.dysymtab().is_some_and(|d| *d != o.computed_dysymtab()) {
+        f.push("dysymtab ranges not the computed ones".into());
+    }
+    f.sort();
+    f.dedup();
+    for k in f {
+        *r.features.entry(k).or_default() += 1;
+    }
+}
+
+/// Decodes every local relocation's encoded address, and checks it is in
+/// its target section.
+fn locals(name: &str, o: &Object<'_>, r: &mut Report) {
+    let cputype = o.header.cputype;
+    for (i, s) in o.sections().enumerate() {
+        for (k, rel) in s.relocations.iter().enumerate() {
+            if !reloc::names_section(cputype, rel) {
+                continue;
+            }
+            match o.local_address(i, k) {
+                Some(a) => {
+                    r.local_decoded += 1;
+                    let t = o.section(rel.symbolnum as usize - 1);
+                    if t.is_some_and(|t| a >= t.addr && a <= t.addr + t.size()) {
+                        r.local_in_target += 1;
+                    } else {
+                        r.failures.push((
+                            "a local relocation's address outside its target".into(),
+                            format!(
+                                "{name}: section {i} relocation {k} (type {}) at {a:#x}",
+                                rel.kind
+                            ),
+                        ));
+                    }
+                }
+                None => {
+                    *r.local_undecoded
+                        .entry(format!(
+                            "type {} pcrel {} length {}",
+                            rel.kind, rel.pcrel, rel.length
+                        ))
+                        .or_default() += 1;
+                }
+            }
+        }
+    }
+}
+
+/// Moves every section (each by a different amount), checks the decoded
+/// local addresses moved with their targets, moves them back, and checks
+/// the object is the one read.
+fn moves(name: &str, o: &Object<'_>, data: &[u8], r: &mut Report) {
+    let mut moved = o.clone();
+    let old: Vec<(u64, u64)> = o.sections().map(|s| (s.addr, s.size())).collect();
+    let new: Vec<u64> = old
+        .iter()
+        .enumerate()
+        .map(|(i, &(a, _))| a + 0x1_0000 * (i as u64 + 1))
+        .collect();
+    let before: Vec<Vec<Option<u64>>> = o
+        .sections()
+        .enumerate()
+        .map(|(i, s)| {
+            (0..s.relocations.len())
+                .map(|k| o.local_address(i, k))
+                .collect()
+        })
+        .collect();
+    let unadjusted = moved.move_sections(&new, &old);
+    for (i, s) in moved.sections().enumerate() {
+        for (k, rel) in s.relocations.iter().enumerate() {
+            if let Some(a) = before[i][k] {
+                let t = rel.symbolnum as usize - 1;
+                let want = a.wrapping_add(new[t].wrapping_sub(old[t].0));
+                if moved.local_address(i, k) != Some(want) {
+                    r.failures.push((
+                        "a local address not moved with its target".into(),
+                        format!("{name}: section {i} relocation {k}"),
+                    ));
+                }
+            }
+        }
+    }
+    let back: Vec<u64> = old.iter().map(|&(a, _)| a).collect();
+    let now: Vec<(u64, u64)> = moved.sections().map(|s| (s.addr, s.size())).collect();
+    moved.move_sections(&back, &now);
+    let mut fresh = o.clone();
+    fresh.relayout();
+    let mut moved_fresh = moved.clone();
+    moved_fresh.relayout();
+    match (moved_fresh.write(), fresh.write()) {
+        (Ok(a), Ok(b)) if a == b && unadjusted.is_empty() => r.moved_back += 1,
+        (Ok(a), Ok(b)) if a == b => r.failures.push((
+            "moved with relocations unadjusted".into(),
+            format!("{name}: {} relocations", unadjusted.len()),
+        )),
+        (Ok(a), Ok(b)) => r.failures.push((
+            "moved and moved back differently".into(),
+            format!(
+                "{name}: at {:?} of {}",
+                first_difference(&a, &b),
+                data.len()
+            ),
+        )),
+        _ => r
+            .failures
+            .push(("moved, not written".into(), name.to_string())),
     }
 }
 
@@ -320,6 +512,23 @@ fn main() {
         "  {} with every section at LLVM's address",
         total.llvm_addresses
     );
+    println!(
+        "  {} moved and moved back to the same bytes",
+        total.moved_back
+    );
+    println!(
+        "  {} local relocations' addresses decoded, {} of them in their target sections",
+        total.local_decoded, total.local_in_target
+    );
+    for (what, n) in &total.local_undecoded {
+        println!(
+            "    {n} local relocations not decoded (a SUBTRACTOR pair's halves, or an encoding not handled): {what}"
+        );
+    }
+    println!("  objects with:");
+    for (what, n) in &total.features {
+        println!("    {n} {what}");
+    }
     for (kind, n) in &kinds {
         println!("  {n} {kind}");
     }

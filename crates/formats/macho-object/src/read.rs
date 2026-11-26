@@ -368,6 +368,14 @@ pub(crate) fn parse(data: &[u8]) -> Result<Object<'_>, ReadError> {
             let n_desc = f.u16(p + 6).ok_or_else(e)?;
             let n_value = f.word(p + 8, wide).ok_or_else(e)?;
             let name = string(table, name_offset).ok_or(bad("a symbol's name"))?;
+            let indirect = if n_type & N_STAB == 0 && n_type & N_TYPE == crate::N_INDR {
+                let at = u32::try_from(n_value).map_err(|_| bad("an alias's target"))?;
+                Some(Cow::Borrowed(
+                    string(table, at).ok_or(bad("an alias's target"))?,
+                ))
+            } else {
+                None
+            };
             symbols.push(Symbol {
                 name: Cow::Borrowed(name),
                 name_offset,
@@ -375,6 +383,7 @@ pub(crate) fn parse(data: &[u8]) -> Result<Object<'_>, ReadError> {
                 n_sect,
                 n_desc,
                 n_value,
+                indirect,
             });
         }
         strings = Some(Cow::Borrowed(table));

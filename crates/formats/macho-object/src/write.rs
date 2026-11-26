@@ -91,19 +91,32 @@ pub fn llvm_string_table<'n>(
     (table, offsets)
 }
 
-/// The string table to write and each symbol's name offset.
+/// The string table to write, each symbol's name offset, and each
+/// alias's value (its target's name's offset).
 struct Strings<'t> {
     table: alloc::borrow::Cow<'t, [u8]>,
     offsets: Vec<u32>,
+    values: Vec<u64>,
 }
 
-/// Whether every symbol's name is at its offset in `table` (followed by a
-/// NUL, or the table's end).
+/// Whether `name` is at `at` in `table` (followed by a NUL, or the table's
+/// end).
+fn found(table: &[u8], name: &[u8], at: u64) -> bool {
+    let Ok(at) = usize::try_from(at) else {
+        return false;
+    };
+    let n = name.len();
+    table.get(at..at + n) == Some(name) && table.get(at + n).is_none_or(|&b| b == 0)
+}
+
+/// Whether every symbol's name (and alias's target) is at its offset in
+/// `table`.
 fn names_found(o: &Object<'_>, table: &[u8]) -> bool {
     o.symbols.iter().all(|s| {
-        let at = s.name_offset as usize;
-        let n = s.name.len();
-        table.get(at..at + n) == Some(&s.name[..]) && table.get(at + n).is_none_or(|&b| b == 0)
+        found(table, &s.name, u64::from(s.name_offset))
+            && s.indirect
+                .as_ref()
+                .is_none_or(|t| found(table, t, s.n_value))
     })
 }
 
@@ -114,13 +127,28 @@ fn strings<'t>(o: &'t Object<'_>) -> Strings<'t> {
         return Strings {
             table: alloc::borrow::Cow::Borrowed(t),
             offsets: o.symbols.iter().map(|s| s.name_offset).collect(),
+            values: o.symbols.iter().map(|s| s.n_value).collect(),
         };
     }
-    let (table, at) = llvm_string_table(o.symbols.iter().map(|s| &s.name[..]), o.is_64());
+    let names = o
+        .symbols
+        .iter()
+        .flat_map(|s| core::iter::once(&s.name[..]).chain(s.indirect.as_deref()));
+    let (table, at) = llvm_string_table(names, o.is_64());
     let offsets = o.symbols.iter().map(|s| at[&s.name[..]]).collect();
+    let values = o
+        .symbols
+        .iter()
+        .map(|s| {
+            s.indirect
+                .as_ref()
+                .map_or(s.n_value, |t| u64::from(at[&t[..]]))
+        })
+        .collect();
     Strings {
         table: alloc::borrow::Cow::Owned(table),
         offsets,
+        values,
     }
 }
 
@@ -624,12 +652,12 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
     }
     if let Some((symoff, stroff)) = symtab_at {
         let mut w = Out::new(endian);
-        for (s, &name) in o.symbols.iter().zip(&strings.offsets) {
+        for ((s, &name), &value) in o.symbols.iter().zip(&strings.offsets).zip(&strings.values) {
             w.u32(name);
             w.bytes.push(s.n_type);
             w.bytes.push(s.n_sect);
             w.u16(s.n_desc);
-            w.word(s.n_value, wide, "a symbol's value")?;
+            w.word(value, wide, "a symbol's value")?;
         }
         put(&mut file, u64::from(symoff), &w.bytes, "the symbols")?;
         put(&mut file, u64::from(stroff), &strings.table, "the strings")?;

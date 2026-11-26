@@ -51,6 +51,7 @@ use turbonop_global_alloc as _;
 
 extern crate alloc;
 
+pub mod ehframe;
 pub mod linkedit;
 mod read;
 pub mod reloc;
@@ -73,6 +74,9 @@ pub const INDIRECT_SYMBOL_LOCAL: u32 = 0x8000_0000;
 pub const INDIRECT_SYMBOL_ABS: u32 = 0x4000_0000;
 /// `MH_SUBSECTIONS_VIA_SYMBOLS`: the sections can be split at symbols.
 pub const MH_SUBSECTIONS_VIA_SYMBOLS: u32 = 0x2000;
+/// `N_INDR`: a symbol that is another's alias (its value is the other's
+/// name's offset in the string table).
+pub const N_INDR: u8 = 0xA;
 /// `NO_SECT`: a symbol in no section.
 pub const NO_SECT: u8 = 0;
 
@@ -289,8 +293,12 @@ pub struct Symbol<'a> {
     /// `n_desc`: reference type, `N_WEAK_DEF` and the like (a common
     /// symbol's alignment).
     pub n_desc: u16,
-    /// `n_value`: its address (a common symbol's size).
+    /// `n_value`: its address (a common symbol's size; an alias's, its
+    /// target's name's offset in the string table).
     pub n_value: u64,
+    /// For an alias (`N_INDR`), the name of the symbol it is an alias of;
+    /// the writer sets `n_value` from it when it builds the string table.
+    pub indirect: Option<Cow<'a, [u8]>>,
 }
 
 /// Where a symbol goes in the dynamic symbol table's order.
@@ -300,7 +308,8 @@ pub enum SymbolClass {
     Local,
     /// An external definition (`N_EXT`, defined).
     External,
-    /// An undefined or common symbol (`N_EXT` and `N_UNDF`).
+    /// An undefined or common symbol (`N_EXT` and `N_UNDF`), or an alias
+    /// (`N_EXT` and `N_INDR`): LLVM's undefined symbols.
     Undefined,
 }
 
@@ -329,7 +338,7 @@ impl Symbol<'_> {
     pub fn class(&self) -> SymbolClass {
         if !self.is_external() {
             SymbolClass::Local
-        } else if self.is_undefined() {
+        } else if self.is_undefined() || self.n_type & N_TYPE == N_INDR {
             SymbolClass::Undefined
         } else {
             SymbolClass::External
@@ -482,15 +491,18 @@ impl fmt::Display for WriteError {
 
 impl core::error::Error for WriteError {}
 
-/// A local relocation whose encoded address [`Object::assign_addresses`]
-/// could not rewrite (an encoding [`reloc`] doesn't handle), though a
-/// section it involves moved.
+/// A relocation whose encoded address [`Object::assign_addresses`] could
+/// not rewrite (an encoding [`reloc`] doesn't handle), though a section it
+/// involves moved; or an `__eh_frame` section whose records don't decode
+/// ([`ehframe::pointers`]), or hold a pointer of an encoding it doesn't
+/// move.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Unadjusted {
     /// Its section's index (from 0: the ordinal less 1).
     pub section: usize,
-    /// Its index in the section's relocations.
-    pub relocation: usize,
+    /// Its index in the section's relocations (`None`: the section's
+    /// `__eh_frame` records).
+    pub relocation: Option<usize>,
 }
 
 impl<'a> Object<'a> {
@@ -550,12 +562,7 @@ impl<'a> Object<'a> {
     /// ([`reloc::local_address`]).
     pub fn local_address(&self, section: usize, relocation: usize) -> Option<u64> {
         let s = self.section(section)?;
-        reloc::local_address(
-            self.header.cputype,
-            self.endian(),
-            s,
-            s.relocations.get(relocation)?,
-        )
+        reloc::local_address(self.header.cputype, self.endian(), s, relocation)
     }
 
     /// The section count.
@@ -808,12 +815,10 @@ impl<'a> Object<'a> {
                     };
                     let mut out = Vec::with_capacity(entries.len());
                     for mut e in entries.iter().copied() {
-                        match f(u64::from(e.offset)).and_then(|a| u32::try_from(a).ok()) {
-                            Some(a) => {
-                                e.offset = a;
-                                out.push(e);
-                            }
-                            None => {}
+                        if let Some(a) = f(u64::from(e.offset)).and_then(|a| u32::try_from(a).ok())
+                        {
+                            e.offset = a;
+                            out.push(e);
                         }
                     }
                     if out != entries {
@@ -890,10 +895,12 @@ impl<'a> Object<'a> {
             |a: u64| -> u64 { section_of(a).map_or(a, |i| a.wrapping_add(delta[i] as u64)) };
         let cputype = self.header.cputype;
         let endian = self.endian();
+        let wide = self.is_64();
         let mut unadjusted = Vec::new();
         for (i, s) in self.sections_mut().enumerate() {
             s.addr = new[i];
             let self_delta = delta[i];
+            let moved_at = |v: u32| section_of(u64::from(v)).map_or(0, |t| delta[t]);
             for k in 0..s.relocations.len() {
                 let r = s.relocations[k];
                 let rule = reloc::address_rule(cputype, &r);
@@ -907,6 +914,20 @@ impl<'a> Object<'a> {
                             .copied()
                             .unwrap_or(0);
                         sign * target - if pcrel { self_delta } else { 0 }
+                    }
+                    reloc::AddressRule::Pc => -self_delta,
+                    reloc::AddressRule::Value => moved_at(r.value.unwrap_or(0)),
+                    reloc::AddressRule::Difference => {
+                        match s.relocations.get(k + 1).and_then(|p| p.value) {
+                            Some(b) => moved_at(r.value.unwrap_or(0)) - moved_at(b),
+                            None => {
+                                unadjusted.push(Unadjusted {
+                                    section: i,
+                                    relocation: Some(k),
+                                });
+                                0
+                            }
+                        }
                     }
                     reloc::AddressRule::Unknown => {
                         let target_moved = match r.value {
@@ -922,7 +943,7 @@ impl<'a> Object<'a> {
                         if self_delta != 0 || target_moved {
                             unadjusted.push(Unadjusted {
                                 section: i,
-                                relocation: k,
+                                relocation: Some(k),
                             });
                         }
                         0
@@ -938,7 +959,7 @@ impl<'a> Object<'a> {
                     if !ok {
                         unadjusted.push(Unadjusted {
                             section: i,
-                            relocation: k,
+                            relocation: Some(k),
                         });
                     }
                 }
@@ -947,6 +968,15 @@ impl<'a> Object<'a> {
                 if let Some(v) = r.value {
                     r.value = Some(shift(u64::from(v)) as u32);
                 }
+            }
+            if s.segment_name() == b"__TEXT"
+                && s.name() == b"__eh_frame"
+                && !move_eh_frame(s, old[i].0, self_delta, wide, endian, &section_of, &delta)
+            {
+                unadjusted.push(Unadjusted {
+                    section: i,
+                    relocation: None,
+                });
             }
         }
         for sym in &mut self.symbols {
@@ -961,6 +991,75 @@ impl<'a> Object<'a> {
         self.original = None;
         unadjusted
     }
+}
+
+/// Moves the pointers in an `__eh_frame` section's records that no
+/// relocation covers (PC-relative ones by their targets' sections' moves
+/// less the section's own, absolute ones by their targets'), the section
+/// having been at `old`. Whether every pointer that needed it moved.
+fn move_eh_frame(
+    s: &mut Section<'_>,
+    old: u64,
+    self_delta: i64,
+    wide: bool,
+    endian: Endian,
+    section_of: &dyn Fn(u64) -> Option<usize>,
+    delta: &[i64],
+) -> bool {
+    let Contents::Bytes(bytes) = &s.contents else {
+        return true;
+    };
+    let Some(pointers) = ehframe::pointers(bytes, wide, endian) else {
+        return delta.iter().all(|&d| d == 0);
+    };
+    let covered: alloc::collections::BTreeSet<u32> =
+        s.relocations.iter().map(|r| r.address).collect();
+    let mut edits = Vec::new();
+    let mut ok = true;
+    for p in pointers {
+        let Ok(at) = u32::try_from(p.offset) else {
+            ok = false;
+            continue;
+        };
+        if covered.contains(&at) {
+            continue;
+        }
+        let length = p.size.trailing_zeros() as u8;
+        let Some(v) = reloc::value_at(bytes, at, length, endian) else {
+            ok = false;
+            continue;
+        };
+        let bits = 8 * u32::from(p.size);
+        let signed = if bits == 64 {
+            v as i64
+        } else {
+            ((v << (64 - bits)) as i64) >> (64 - bits)
+        };
+        let d = match p.encoding & 0x70 {
+            0 => section_of(v).map_or(0, |t| delta[t]),
+            ehframe::DW_EH_PE_PCREL => {
+                let target = old.wrapping_add(u64::from(at)).wrapping_add(signed as u64);
+                section_of(target).map_or(0, |t| delta[t]) - self_delta
+            }
+            _ => {
+                ok = false;
+                0
+            }
+        };
+        if d != 0 {
+            edits.push((at, length, d));
+        }
+    }
+    if !edits.is_empty() {
+        let b = match &mut s.contents {
+            Contents::Bytes(b) => b.to_mut(),
+            Contents::Zerofill(_) => return ok,
+        };
+        for (at, length, d) in edits {
+            ok &= reloc::add_at(b, at, length, d, endian);
+        }
+    }
+    ok
 }
 
 #[cfg(test)]

@@ -33,9 +33,18 @@
 //!   `SUBTRACTOR`: as x86_64's. LLVM makes no other local arm64 relocation
 //!   (an instruction's would need its address encoded in its immediate
 //!   fields); another tool's are listed as unadjusted.
-//! - The 32-bit targets' `*_RELOC_VANILLA` that isn't PC-relative: the
-//!   target's address. Their PC-relative, scattered and paired encodings
-//!   aren't decoded here.
+//! - i386 (per LLVM's `X86MachObjectWriter`): a plain local `VANILLA`
+//!   entry, the target's address, less the entry's own address if it is
+//!   PC-relative; a plain external PC-relative one, the addend less the
+//!   entry's own address; a scattered `VANILLA` one that isn't
+//!   PC-relative, the address of its `r_value` plus the addend;
+//!   `SECTDIFF` and `LOCAL_SECTDIFF` (scattered, and a `PAIR` after),
+//!   the difference of the two `r_value`s' addresses plus the addend.
+//!   Scattered PC-relative ones (LLVM leaves out the entry's section's
+//!   address) and `PB_LA_PTR` and `TLV` aren't handled.
+//! - The other 32-bit targets' (arm, PowerPC) `*_RELOC_VANILLA` that
+//!   isn't PC-relative: plain, the target's address. Their PC-relative,
+//!   scattered and paired encodings aren't handled.
 //!
 //! External relocations on x86_64 and arm64 leave only an addend in the
 //! bytes, which doesn't move with the sections.
@@ -43,7 +52,7 @@
 use alloc::vec::Vec;
 use core::ops::Range;
 
-use crate::consts::{CPU_TYPE_ARM64, CPU_TYPE_ARM64_32, CPU_TYPE_X86_64};
+use crate::consts::{CPU_TYPE_ARM64, CPU_TYPE_ARM64_32, CPU_TYPE_X86, CPU_TYPE_X86_64};
 use crate::{Endian, Relocation, Section};
 
 /// x86_64's relocation types (`X86_64_RELOC_*`).
@@ -126,6 +135,17 @@ pub mod arm {
     pub const HALF_SECTDIFF: u8 = 9;
 }
 
+/// The CPU's `SUBTRACTOR` type (none: 0xFF).
+fn subtractor(cputype: u32) -> u8 {
+    if cputype == CPU_TYPE_X86_64 {
+        x86_64::SUBTRACTOR
+    } else if is_arm64(cputype) {
+        arm64::SUBTRACTOR
+    } else {
+        0xFF
+    }
+}
+
 fn is_arm64(cputype: u32) -> bool {
     cputype == CPU_TYPE_ARM64 || cputype == CPU_TYPE_ARM64_32
 }
@@ -191,12 +211,35 @@ pub enum AddressRule {
     /// By the target section's move times `sign`, less the relocation's
     /// own section's move if `pcrel`.
     Target { sign: i64, pcrel: bool },
+    /// Less the relocation's own section's move (i386's PC-relative
+    /// external entries).
+    Pc,
+    /// By the move of the section `r_value` is in (i386's scattered
+    /// `VANILLA`).
+    Value,
+    /// By the move of the section `r_value` is in, less that of the one
+    /// the next entry's (its `PAIR`'s) `r_value` is in (i386's
+    /// `SECTDIFF` and `LOCAL_SECTDIFF`).
+    Difference,
     /// An encoding this module doesn't know.
     Unknown,
 }
 
 /// How `r`'s bytes change when sections move (see the module's notes).
 pub fn address_rule(cputype: u32, r: &Relocation) -> AddressRule {
+    if cputype == CPU_TYPE_X86 {
+        return match (r.value.is_some(), r.kind, r.pcrel, r.external) {
+            (false, generic::VANILLA, pcrel, false) => AddressRule::Target { sign: 1, pcrel },
+            (false, generic::VANILLA, true, true) => AddressRule::Pc,
+            (false, generic::VANILLA, false, true) => AddressRule::None,
+            (true, generic::VANILLA, false, _) => AddressRule::Value,
+            (true, generic::SECTDIFF | generic::LOCAL_SECTDIFF, false, _) => {
+                AddressRule::Difference
+            }
+            (true, generic::PAIR, ..) => AddressRule::None,
+            _ => AddressRule::Unknown,
+        };
+    }
     if r.value.is_some() {
         return AddressRule::Unknown;
     }
@@ -287,19 +330,27 @@ pub(crate) fn add_at(bytes: &mut [u8], at: u32, length: u8, delta: i64, endian: 
     true
 }
 
-/// The address a local relocation's bytes encode (its target's address
-/// plus the addend), where the encoding is plain: x86_64's `UNSIGNED`,
-/// `SIGNED*` and `BRANCH`, arm64's `UNSIGNED`, and the 32-bit targets'
-/// `VANILLA` that isn't PC-relative. `section` is the relocation's own
-/// section (whose address a PC-relative one's is relative to). `None` for
-/// any other entry (a `SUBTRACTOR` pair's value is a difference).
+/// The address local relocation `index` of `section` encodes in the
+/// section's bytes (its target's address plus the addend), where the
+/// encoding is plain: x86_64's `UNSIGNED`, `SIGNED*` and `BRANCH`, arm64's
+/// `UNSIGNED`, and the 32-bit targets' `VANILLA` that isn't PC-relative
+/// (a PC-relative one's is relative to the section's address). `None`
+/// for any other entry, and for either half of a `SUBTRACTOR` pair (whose
+/// bytes hold a difference).
 pub fn local_address(
     cputype: u32,
     endian: Endian,
     section: &Section<'_>,
-    r: &Relocation,
+    index: usize,
 ) -> Option<u64> {
+    let r = section.relocations.get(index)?;
     if r.value.is_some() || r.external {
+        return None;
+    }
+    if let Some(prev) = index.checked_sub(1).map(|i| &section.relocations[i])
+        && pairs(cputype, prev, r)
+        && prev.kind == subtractor(cputype)
+    {
         return None;
     }
     let bytes = section.bytes()?;

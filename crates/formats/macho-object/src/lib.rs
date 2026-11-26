@@ -760,7 +760,7 @@ impl<'a> Object<'a> {
             .sections()
             .zip(&map)
             .filter(|(_, m)| m.is_none())
-            .map(|(s, _)| (s.addr, s.addr + s.size()))
+            .map(|(s, _)| (s.addr, s.addr.saturating_add(s.size())))
             .collect();
         let cputype = self.header.cputype;
         let mut index = 0usize;
@@ -900,8 +900,8 @@ impl<'a> Object<'a> {
         // section's, for labels at the end).
         let section_of = |a: u64| -> Option<usize> {
             old.iter()
-                .position(|&(lo, size)| a >= lo && a < lo + size)
-                .or_else(|| old.iter().position(|&(lo, size)| a == lo + size))
+                .position(|&(lo, size)| a >= lo && a - lo < size)
+                .or_else(|| old.iter().position(|&(lo, size)| a >= lo && a - lo == size))
         };
         let shift =
             |a: u64| -> u64 { section_of(a).map_or(a, |i| a.wrapping_add(delta[i] as u64)) };
@@ -925,13 +925,14 @@ impl<'a> Object<'a> {
                             .and_then(|t| delta.get(t as usize))
                             .copied()
                             .unwrap_or(0);
-                        sign * target - if pcrel { self_delta } else { 0 }
+                        sign.wrapping_mul(target)
+                            .wrapping_sub(if pcrel { self_delta } else { 0 })
                     }
-                    reloc::AddressRule::Pc => -self_delta,
+                    reloc::AddressRule::Pc => self_delta.wrapping_neg(),
                     reloc::AddressRule::Value => moved_at(r.value.unwrap_or(0)),
                     reloc::AddressRule::Difference => {
                         match s.relocations.get(k + 1).and_then(|p| p.value) {
-                            Some(b) => moved_at(r.value.unwrap_or(0)) - moved_at(b),
+                            Some(b) => moved_at(r.value.unwrap_or(0)).wrapping_sub(moved_at(b)),
                             None => {
                                 unadjusted.push(Unadjusted {
                                     section: i,
@@ -1051,7 +1052,9 @@ fn move_eh_frame(
             0 => section_of(v).map_or(0, |t| delta[t]),
             ehframe::DW_EH_PE_PCREL => {
                 let target = old.wrapping_add(u64::from(at)).wrapping_add(signed as u64);
-                section_of(target).map_or(0, |t| delta[t]) - self_delta
+                section_of(target)
+                    .map_or(0, |t| delta[t])
+                    .wrapping_sub(self_delta)
             }
             _ => {
                 ok = false;

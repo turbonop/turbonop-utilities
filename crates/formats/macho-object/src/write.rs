@@ -584,7 +584,11 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
                     if wide {
                         w.u32(s.reserved3);
                     }
-                    if let Contents::Bytes(b) = &s.contents {
+                    // A zero-fill section has no place in the file, whatever
+                    // the model holds.
+                    if let Contents::Bytes(b) = &s.contents
+                        && !s.is_zerofill_kind()
+                    {
                         put(&mut file, u64::from(offset), b, "a section")?;
                     }
                     let mut r = Out::new(endian);

@@ -1,9 +1,17 @@
 #!/bin/sh
-# Builds the objects of these sources (for the roundtrip example) into $1,
-# with $CLANG (clang by default) and $LIPO (llvm-lipo): C++ and C for x86_64 and arm64 macOS, C
-# for i386 macOS (scattered relocations), armv7 iOS, and arm64_32
-# watchOS, the assembly files for their targets, and a universal file of
-# the C objects. No SDK is needed.
+# Builds objects of these sources into $1 (for the roundtrip and
+# remove_section examples), with $CLANG (clang by default) and $LIPO
+# (llvm-lipo): tricky.cpp for x86_64 and arm64 macOS; tricky.c for those,
+# i386 macOS (scattered relocations), armv7 iOS, and arm64_32 watchOS;
+# each of those once more with -DPAD (pad-*.o, with a section the
+# tricky-*.o don't have); the assembly files for their targets; and a
+# universal file of two C objects. No SDK is needed. The objects aren't
+# committed.
+#
+#   sh build.sh <dir>
+#   cargo run --release -p turbonop-macho-object --example roundtrip -- <dir>
+#   cargo run --release -p turbonop-macho-object --example remove_section --
+#     <dir>/pad-c-x86_64-apple-macos13.o __TEXT,__pad <dir>/tricky-c-x86_64-apple-macos13.o ...
 set -e
 out=${1:?usage: build.sh <directory>}
 cc=${CLANG:-clang}

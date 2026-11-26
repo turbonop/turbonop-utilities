@@ -643,3 +643,58 @@ fn rejects_what_isnt_an_object() {
         assert!(Object::parse(&bytes[..cut]).is_err());
     }
 }
+
+#[test]
+fn damage_gives_errors_not_panics() {
+    for (cputype, wide, endian) in [
+        (CPU_TYPE_X86_64, true, Endian::Little),
+        (CPU_TYPE_POWERPC, false, Endian::Big),
+    ] {
+        let bytes = object(cputype, wide, endian).write().unwrap();
+        // Each byte flipped three ways, then runs of random damage (a
+        // linear congruential generator's).
+        let mut seed = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = move || {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (seed >> 33) as usize
+        };
+        let mut cases: Vec<Vec<(usize, u8)>> = Vec::new();
+        for i in 0..bytes.len() {
+            for flip in [0x01u8, 0x80, 0xFF] {
+                cases.push(vec![(i, flip)]);
+            }
+        }
+        for _ in 0..20_000 {
+            let n = 1 + next() % 4;
+            cases.push(
+                (0..n)
+                    .map(|_| (next() % bytes.len(), next() as u8 | 1))
+                    .collect(),
+            );
+        }
+        for case in cases {
+            {
+                let mut damaged = bytes.clone();
+                for &(i, flip) in &case {
+                    damaged[i] ^= flip;
+                }
+                let Ok(o) = Object::parse(&damaged) else {
+                    continue;
+                };
+                // Kept in place: the same size, and the same bytes.
+                assert_eq!(o.write().unwrap(), damaged);
+                // A fresh layout (of alignments that don't make it huge).
+                if o.sections().all(|s| s.align <= 12) {
+                    let mut fresh = o.clone();
+                    fresh.relayout();
+                    if let Ok(out) = fresh.write() {
+                        Object::parse(&out).unwrap();
+                    }
+                    let _ = fresh.assign_addresses();
+                }
+            }
+        }
+    }
+}

@@ -973,6 +973,7 @@ fn rewrite(
             s.data = Data::Bytes(Cow::Owned(out));
         }
     }
+    obj.write().map_err(|e| e.to_string())
 }
 
 fn uleb(b: &[u8]) -> Option<(u64, usize)> {

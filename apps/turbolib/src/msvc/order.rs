@@ -8,7 +8,8 @@
 //! **`lib.exe`.** The output is, first, each input library's members, the
 //! libraries in command-line order and each one's members in reverse of
 //! its archive order (the order `/LIST` prints); then the objects, in
-//! reverse command-line order. In detail:
+//! reverse command-line order. But a library that is the only input keeps
+//! its order, when nothing is removed from it. In detail:
 //!
 //! - An object named twice (names compare without case, `/` read as `\`)
 //!   counts once, with LNK4042 for each repeat. A library named twice
@@ -105,14 +106,23 @@ pub fn lib_order(inputs: &[Input], remove: &[String], verbose: bool) -> Result<O
         }
     }
 
-    // Library members, minus those an object replaces.
+    // Library members, minus those an object replaces. Measured: a library
+    // that is the command line's only input keeps its order (`lib
+    // /OUT:x.lib y.lib` copies y.lib); otherwise each library's members
+    // are reversed (even for `y.lib y.lib`).
+    let only = inputs.len() == 1;
     let mut kept: Vec<(usize, usize, String)> = Vec::new();
     let mut replaced = vec![false; objects.len()];
     for &i in &libraries {
         let Input::Library(_, members) = &inputs[i] else {
             unreachable!()
         };
-        for m in (0..members.len()).rev() {
+        let in_order: Vec<usize> = if only {
+            (0..members.len()).collect()
+        } else {
+            (0..members.len()).rev().collect()
+        };
+        for m in in_order {
             let k = key(&members[m]);
             if let Some(o) = object_keys.iter().position(|ok| *ok == k) {
                 if !replaced[o] {

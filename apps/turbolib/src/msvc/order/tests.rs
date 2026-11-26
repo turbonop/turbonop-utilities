@@ -203,3 +203,23 @@ fn llvm_lib() {
         ["./a.obj", "a.obj"]
     );
 }
+
+#[test]
+fn a_library_alone_keeps_its_order() {
+    // lib /OUT:x1.lib l1.lib, and /OUT:x2.lib names.lib: copied as they are.
+    assert_eq!(order(&[l1()], &[]), ["b.obj", "a.obj"]);
+    assert_eq!(
+        order(&[names()], &[]),
+        [r".\c.obj", B, r"sub.obj", "a.obj"]
+    );
+    // With anything else, reversed: lib /OUT:x3.lib names.lib c.obj, and
+    // /OUT:x4.lib l1.lib l2.lib.
+    assert_eq!(
+        order(&[names(), obj("c.obj")], &[]),
+        ["a.obj", r"sub.obj", B, r".\c.obj", "c.obj"]
+    );
+    assert_eq!(
+        order(&[l1(), l2()], &[]),
+        ["a.obj", "b.obj", "c.obj", r"sub.obj"]
+    );
+}

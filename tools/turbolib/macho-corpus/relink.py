@@ -58,7 +58,7 @@ def link_inputs(tool, arch, libdir):
 def link(tool, arch, libdir, out):
     objs, libs = link_inputs(tool, arch, libdir)
     r = subprocess.run(NICE + [str(B / "ld64.lld"), "-arch", arch, "-platform_version", "macos", "13.0", "13.0",
-                               "-undefined", "dynamic_lookup", "-o", out, *objs, *libs, "-t"],
+                               "-undefined", "dynamic_lookup", "-no_fixup_chains", "-o", out, *objs, *libs, "-t"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"link failed: {r.stderr[:2000]}")
@@ -114,16 +114,34 @@ def sections(image):
 
 
 def init_order(image):
-    """The names __mod_init_func's (or __init_offsets') entries point to."""
-    r = subprocess.run(NICE + [str(B / "llvm-objdump"), "--macho", "--section-headers", image], capture_output=True,
-                       text=True)
-    has = "__mod_init_func" in r.stdout or "__init_offsets" in r.stdout
-    if not has:
+    """The names __mod_init_func's entries point to, in order (the links are
+    made with -no_fixup_chains, so the entries are plain addresses)."""
+    import struct
+    data = Path(image).read_bytes()
+    ncmds = struct.unpack_from("<I", data, 16)[0]
+    at, values = 32, []
+    for _ in range(ncmds):
+        cmd, size = struct.unpack_from("<II", data, at)
+        if cmd == 0x19:  # LC_SEGMENT_64
+            nsects = struct.unpack_from("<I", data, at + 64)[0]
+            for k in range(nsects):
+                s = at + 72 + 80 * k
+                name = data[s:s + 16].rstrip(b"\0")
+                addr, sz, off = struct.unpack_from("<QQI", data, s + 32)
+                flags = struct.unpack_from("<I", data, s + 64)[0]
+                if flags & 0xFF == 0x9 or name == b"__mod_init_func":
+                    values += [struct.unpack_from("<Q", data, off + 8 * i)[0] for i in range(sz // 8)]
+        at += size
+    if not values:
         return []
-    sec = "__DATA_CONST,__mod_init_func" if "__DATA_CONST" in r.stdout else "__DATA,__mod_init_func"
-    r = subprocess.run(NICE + [str(B / "llvm-objdump"), "--macho", f"--section={sec}", image],
-                       capture_output=True, text=True)
-    return [l.split()[-1] for l in r.stdout.splitlines() if l.strip() and not l.startswith(("Contents", image))]
+    r = subprocess.run(NICE + [str(B / "llvm-nm"), "-n", "--defined-only", image], capture_output=True, text=True,
+                       check=True)
+    names = {}
+    for l in r.stdout.splitlines():
+        p = l.split(None, 2)
+        if len(p) == 3:
+            names.setdefault(int(p[0], 16), p[2])
+    return [names.get(v, hex(v)) for v in values]
 
 
 def compare(tool, arch, kind, folded, tmp):

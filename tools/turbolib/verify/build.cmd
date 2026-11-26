@@ -35,14 +35,37 @@ cl /nologo /c /O1 /GL /GS- /Brepro "%SRC%gl.cpp" || exit /b 1
 lib /nologo /Brepro /machine:x64 /def:"%SRC%imports.def" /out:imports.lib || exit /b 1
 lib /nologo /Brepro /out:verify.lib a.obj b.obj c.obj gl.obj imports.lib || exit /b 1
 lib /nologo /Brepro /out:broken.lib broken\a.obj broken\b.obj broken\c.obj gl.obj imports.lib || exit /b 1
-set LINK_FLAGS=/nologo /NODEFAULTLIB /ENTRY:entry /SUBSYSTEM:CONSOLE /DEBUG /guard:cf /INCREMENTAL:NO /Brepro main.obj loadcfg.obj kernel32.lib
-link %LINK_FLAGS% verify.lib /OUT:link-1.exe /PDB:link-1.pdb || exit /b 1
-link %LINK_FLAGS% verify.lib /OUT:link-2.exe /PDB:link-2.pdb || exit /b 1
-link %LINK_FLAGS% verify.lib /ORDER:@"%SRC%order.txt" /OUT:link-order.exe /PDB:link-order.pdb || exit /b 1
-link %LINK_FLAGS% broken.lib /OUT:link-broken.exe /PDB:link-broken.pdb || exit /b 1
-"%LLVM_BIN%\lld-link" %LINK_FLAGS% verify.lib /OUT:lld-1.exe /PDB:lld-1.pdb || exit /b 1
-"%LLVM_BIN%\lld-link" %LINK_FLAGS% verify.lib /order:@"%SRC%order.txt" /OUT:lld-order.exe /PDB:lld-order.pdb || exit /b 1
-"%LLVM_BIN%\lld-link" %LINK_FLAGS% verify.lib /DEBUG:GHASH /OUT:lld-ghash.exe /PDB:lld-ghash.pdb || exit /b 1
-for %%f in (verify.lib broken.lib link-1 link-2 link-order link-broken lld-1 lld-order lld-ghash) do (
-  if exist %%f.exe (copy /y %%f.exe "%OUT%" >nul & copy /y %%f.pdb "%OUT%" >nul) else (copy /y %%f "%OUT%" >nul)
-)
+rem Every program is linked as prog.exe and prog.pdb, in this directory, and
+rem copied out: the PDBs record their paths and command lines, which are then
+rem the same in each.
+set LINK_FLAGS=/nologo /NODEFAULTLIB /ENTRY:entry /SUBSYSTEM:CONSOLE /DEBUG /guard:cf /INCREMENTAL:NO /Brepro main.obj loadcfg.obj kernel32.lib /OUT:prog.exe /PDB:prog.pdb
+set LLD="%LLVM_BIN%\lld-link"
+call :link link-1 link %LINK_FLAGS% verify.lib || exit /b 1
+call :link link-2 link %LINK_FLAGS% verify.lib || exit /b 1
+call :link link-order link %LINK_FLAGS% verify.lib /ORDER:@"%SRC%order.txt" || exit /b 1
+call :link link-broken link %LINK_FLAGS% broken.lib || exit /b 1
+call :link lld-1 %LLD% %LINK_FLAGS% verify.lib || exit /b 1
+call :link lld-order %LLD% %LINK_FLAGS% verify.lib /order:@"%SRC%order.txt" || exit /b 1
+call :link lld-ghash %LLD% %LINK_FLAGS% verify.lib /DEBUG:GHASH || exit /b 1
+copy /y verify.lib "%OUT%" >nul || exit /b 1
+copy /y broken.lib "%OUT%" >nul || exit /b 1
+exit /b 0
+
+rem :link <name> <linker> <arguments>: links, and copies the program out as
+rem <name>.exe and <name>.pdb.
+:link
+set NAME=%1
+shift
+set ARGS=
+:args
+if "%~1"=="" goto run
+set ARGS=%ARGS% %1
+shift
+goto args
+:run
+if exist prog.pdb del prog.pdb
+if exist prog.exe del prog.exe
+%ARGS% || exit /b 1
+copy /y prog.exe "%OUT%\%NAME%.exe" >nul || exit /b 1
+copy /y prog.pdb "%OUT%\%NAME%.pdb" >nul || exit /b 1
+exit /b 0

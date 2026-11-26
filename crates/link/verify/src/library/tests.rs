@@ -367,7 +367,7 @@ fn the_fixture_is_equivalent_to_itself_and_to_our_archive_of_it() {
 }
 
 #[test]
-fn a_correct_relaxed_fold_passes_relaxed_and_fails_preserve() {
+fn a_correct_fold_passes_and_definers_without_side_effects_may_move() {
     let lib = fixture("verify.lib");
     let ours = archive(&folded(), None);
     let r = verify_with(&lib, &ours, Pull::Relaxed);
@@ -381,14 +381,54 @@ fn a_correct_relaxed_fold_passes_relaxed_and_fails_preserve() {
         )
         .is_some()
     );
-    // Under preserve, the index now sends both to the synthesized member.
+    // Under preserve too: the index now sends shared_add and twice<int>
+    // to the synthesized member, but their definers (c.obj and b.obj)
+    // have no side effects.
     let r = verify_with(&lib, &ours, Pull::Preserve);
-    let category = "symbols the index sends to another member (--pull=preserve)";
-    fails(&r, &[category]);
+    fails(&r, &[]);
     let f = r
-        .finding(crate::report::Severity::Failure, category)
+        .finding(
+            crate::report::Severity::Expected,
+            "symbols the index sends to a synthesized member, from a definer without side effects (--pull=preserve allows it)",
+        )
         .unwrap();
     assert_eq!(f.count, 2);
+}
+
+#[test]
+fn synthesized_members_may_come_first() {
+    let lib = fixture("verify.lib");
+    let mut m = folded();
+    let s = m.pop().unwrap();
+    m.insert(0, s);
+    fails(&verify_with(&lib, &archive(&m, None), Pull::Preserve), &[]);
+}
+
+#[test]
+fn moving_a_definer_with_side_effects_fails_preserve() {
+    // An original whose first definer of shared_add is a.obj, which has a
+    // dynamic initializer.
+    let mut m = members();
+    let a = find(&m, b"a.obj");
+    let x = m.remove(a);
+    let first = find(&m, b"c.obj");
+    m.insert(first, x);
+    let original = archive(&m, None);
+    let mut f = m.clone();
+    let b = find(&f, b"b.obj");
+    let s = synthesized(&f[b].1, &[SHARED_ADD], false, ANCHOR);
+    for name in [&b"a.obj"[..], b"b.obj", b"c.obj"] {
+        let i = find(&f, name);
+        f[i].1 = without(&f[i].1, &[SHARED_ADD], false, Some(ANCHOR));
+    }
+    f.insert(0, (b"turbolib-0.obj".to_vec(), s));
+    let ours = archive(&f, None);
+    fails(&verify_with(&original, &ours, Pull::Relaxed), &[]);
+    let r = verify_with(&original, &ours, Pull::Preserve);
+    fails(
+        &r,
+        &["symbols the index sends to another member (--pull=preserve)"],
+    );
 }
 
 #[test]

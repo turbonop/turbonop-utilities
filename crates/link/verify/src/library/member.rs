@@ -9,13 +9,14 @@
 //!
 //! - its selection (and, for `EXACT_MATCH`, its checksum);
 //! - for each of its sections except `.debug$*`, the root first and the
-//!   rest in section order: the name, characteristics, size, and bytes;
+//!   rest in an order of their contents (tools write associative sections
+//!   in different orders): the name, characteristics, size, and bytes;
 //!   and each relocation's offset, type, and target, where a target inside
 //!   the unit is its position (section, value, storage class), and a
 //!   target outside is its name (externals) or its name, value, and
 //!   section's name (statics);
-//! - each symbol it defines: position, value, storage class, and (for
-//!   externals) name.
+//! - each symbol it defines (sorted): position, value, storage class, and
+//!   (for externals) name.
 //!
 //! Names are compared without the prefix of turbolib's renamed copies
 //! ([`RENAMED`]), so a renamed copy matches the copy it was made from.
@@ -524,28 +525,66 @@ fn coff(o: &Object<'_>) -> Coff {
         if d.selection == comdat_select::EXACT_MATCH {
             h.u64(u64::from(d.checksum));
         }
+        let inside = |t: SectionId| t.index() < n && unit_of[t.index()] == Some(u as u32);
+        // The sections in a canonical order: the root, then the others by
+        // their contents (with references inside the unit by section name
+        // and value), since tools write associative sections in different
+        // orders; debug sections left out.
+        let mut order: Vec<(u128, usize)> = list[1..]
+            .iter()
+            .filter(|&&s| !o.sections[s].name.as_bytes().starts_with(b".debug$"))
+            .map(|&s| {
+                let shape = Form {
+                    o,
+                    indices: &indices,
+                    inside,
+                    position: None,
+                };
+                let mut k = H128::new();
+                shape.section(s, &mut k);
+                (k.finish(), s)
+            })
+            .collect();
+        order.sort_unstable();
+        position[r] = 0;
+        for (p, &(_, s)) in order.iter().enumerate() {
+            position[s] = p as u32 + 1;
+        }
         let form = Form {
             o,
             indices: &indices,
-            inside: |t: SectionId| t.index() < n && unit_of[t.index()] == Some(u as u32),
-            position: &position,
+            inside,
+            position: Some(&position),
         };
-        for &s in list {
-            if o.sections[s].name.as_bytes().starts_with(b".debug$") {
-                continue;
-            }
+        form.section(r, &mut h);
+        for &(_, s) in &order {
             form.section(s, &mut h);
         }
-        for s in &defined[u] {
-            let SectionNumber::Section(id) = s.section else {
-                continue;
-            };
-            h.u64(u64::from(position[id.index()]));
-            h.u64(u64::from(s.value));
-            h.u64(u64::from(s.storage_class));
-            if s.is_external() {
-                h.bytes(canonical(s.name.as_bytes()));
-            }
+        let mut symbols: Vec<(u32, u32, u8, &[u8])> = defined[u]
+            .iter()
+            .filter_map(|s| {
+                let id = s.section.id()?;
+                if o.sections[id.index()]
+                    .name
+                    .as_bytes()
+                    .starts_with(b".debug$")
+                {
+                    return None;
+                }
+                let name = if s.is_external() {
+                    canonical(s.name.as_bytes())
+                } else {
+                    &[][..]
+                };
+                Some((position[id.index()], s.value, s.storage_class, name))
+            })
+            .collect();
+        symbols.sort_unstable();
+        for (p, value, class, name) in symbols {
+            h.u64(u64::from(p));
+            h.u64(u64::from(value));
+            h.u64(u64::from(class));
+            h.bytes(name);
         }
         c.units.push(Unit {
             leader: o.symbols[l].name.as_bytes().into(),
@@ -574,7 +613,7 @@ fn coff(o: &Object<'_>) -> Coff {
             o,
             indices: &indices,
             inside: |t: SectionId| t.index() == s,
-            position: &position,
+            position: Some(&position),
         };
         form.section(s, &mut h);
         c.pieces.push(Piece {
@@ -605,8 +644,9 @@ struct Form<'o, 'd, F> {
     indices: &'o [u32],
     /// Which sections count as inside the unit.
     inside: F,
-    /// Their positions in it.
-    position: &'o [u32],
+    /// Their positions in it; `None` names a section inside by its name
+    /// instead (for ordering them).
+    position: Option<&'o [u32]>,
 }
 
 impl<F: Fn(SectionId) -> bool> Form<'_, '_, F> {
@@ -620,9 +660,10 @@ impl<F: Fn(SectionId) -> bool> Form<'_, '_, F> {
         match t.section {
             SectionNumber::Section(id) if (self.inside)(id) => {
                 h.u64(1);
-                h.u64(u64::from(
-                    self.position.get(id.index()).copied().unwrap_or(0),
-                ));
+                match self.position {
+                    Some(p) => h.u64(u64::from(p.get(id.index()).copied().unwrap_or(0))),
+                    None => h.bytes(self.o.section(id).map_or(&[][..], |x| x.name.as_bytes())),
+                }
                 h.u64(u64::from(t.value));
                 h.u64(u64::from(t.storage_class));
             }

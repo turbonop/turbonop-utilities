@@ -12,8 +12,8 @@
 //! - **Members.** Every original member is still there, under its name,
 //!   in the same relative order. Every added member is a synthesized one:
 //!   a COFF object that defines an anchor (a symbol whose name starts with
-//!   [`member::RENAMED`] and that names no original symbol), placed after
-//!   the original members.
+//!   [`member::RENAMED`] and that names no original symbol), wherever it
+//!   is placed.
 //! - **Passed-through members** (import objects, `/GL` objects, anything
 //!   unrecognized) are byte-identical.
 //! - **Definitions.** Every external the original defines is still
@@ -43,7 +43,12 @@
 //!   definition, each name sending to the first member in archive order
 //!   that defines it, and the two linker members agree. Under
 //!   `--pull=preserve`, every symbol of the original's index sends to the
-//!   same member as in the original.
+//!   same member as in the original, or (reported as expected) to a
+//!   synthesized member when the original definer has no side effects of
+//!   its own (initializers, terminators, TLS callbacks, `/INCLUDE`), as the
+//!   engine folds them. That doesn't show that loading the definer had no
+//!   effect through what it refers to (which may load members that have
+//!   side effects); nothing here follows references.
 //!
 //! What it can't prove: anything about debug information (see
 //! `compare-images`), and anything a linker does beyond loading members
@@ -331,7 +336,6 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         }
     }
     let is_anchor = |name: &[u8]| name.starts_with(RENAMED) && !o_defs.contains(&canonical(name));
-    let last_original = p.of_original.iter().flatten().max().copied();
     let mut synthesized = Vec::new();
     for &j in &added {
         let anchored = r.members[j]
@@ -340,12 +344,6 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
             .is_some_and(|c| c.definitions.iter().any(|d| is_anchor(&d.name)));
         if anchored {
             synthesized.push(j);
-            if last_original.is_some_and(|l| j < l) {
-                report.fail(
-                    "synthesized members placed before an original member",
-                    || r.name(j),
-                );
-            }
         } else {
             report.fail("added members that aren't synthesized (no anchor)", || {
                 format!("{}: {}", r.name(j), r.members[j].body.describe())
@@ -905,7 +903,8 @@ fn check_pull(o: &Library<'_>, r: &Library<'_>, p: &Pairing, options: &Options, 
         .div_ceil(turbonop_par::threads() * 4)
         .max(1024);
     let found = turbonop_par::map_range(entries.len().div_ceil(chunk), 1, |c| {
-        let mut f: Vec<String> = Vec::new();
+        // (Whether the original definer has side effects, and the example.)
+        let mut f: Vec<(bool, String)> = Vec::new();
         for &(name, offset) in &entries[c * chunk..entries.len().min((c + 1) * chunk)] {
             let Some(&i) = o.by_offset.get(&offset) else {
                 continue;
@@ -913,18 +912,31 @@ fn check_pull(o: &Library<'_>, r: &Library<'_>, p: &Pairing, options: &Options, 
             let want = p.of_original[i];
             let got = now.get(&name).and_then(|off| r.by_offset.get(off)).copied();
             if got.is_none() || got != want {
-                f.push(format!(
-                    "{}: was {}, now {}",
-                    show(name),
-                    o.name(i),
-                    got.map_or_else(|| "none".into(), |g| r.name(g))
+                // A definer that the original had for a symbol now
+                // defined by a synthesized member: allowed under
+                // preserve when loading the definer does nothing.
+                let to_synthesized = got.is_some_and(|g| p.of_rewritten[g].is_none());
+                let hazard =
+                    !to_synthesized || o.members[i].body.coff().is_none_or(|c| c.side_effects);
+                f.push((
+                    hazard,
+                    format!(
+                        "{}: was {}, now {}",
+                        show(name),
+                        o.name(i),
+                        got.map_or_else(|| "none".into(), |g| r.name(g))
+                    ),
                 ));
             }
         }
         f
     });
-    for example in found.into_iter().flatten() {
+    for (hazard, example) in found.into_iter().flatten() {
         match options.pull {
+            Pull::Preserve if !hazard => rep.expect(
+                "symbols the index sends to a synthesized member, from a definer without side effects (--pull=preserve allows it)",
+                || example,
+            ),
             Pull::Preserve => rep.fail(
                 "symbols the index sends to another member (--pull=preserve)",
                 || example,

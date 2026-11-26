@@ -1002,6 +1002,7 @@ dependencies = [
  "serde",
  "turbonop-archive",
  "turbonop-codeview",
+ "turbonop-coff",
  "turbonop-core",
  "turbonop-global-alloc",
  "turbonop-hash",

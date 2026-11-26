@@ -153,8 +153,11 @@ impl Settings {
 
     /// The modes asked for that turbolib can't do yet, as an error.
     pub fn check_supported(&self) -> Result<(), String> {
-        if self.fold != Fold::None {
-            return Err("only fold=none is written so far (folding comes in phase 2)".into());
+        if self.fold == Fold::SelectAny {
+            return Err("fold=select-any isn't written yet (phase 4)".into());
+        }
+        if self.locals != Locals::Keep {
+            return Err("only locals=keep is written so far (phase 4)".into());
         }
         if self.precomp != Precomp::None {
             return Err(

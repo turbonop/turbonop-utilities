@@ -23,7 +23,7 @@ items leave TODO.md as they ship.
 |---|---|
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, `.retplne`, sanitizers. |
 | 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. Not yet: the import descriptor objects (so `/DEF`), and thin libraries. |
-| 2 Identical folding (COFF) | Not yet. |
+| 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). Not yet: folded units' debug information (2.4), the side tables (2.3), and the link-equivalence checks (2.6). |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
 | 5 Speed | Not yet (but every phase is built to be parallel from the start). |
@@ -446,6 +446,44 @@ read, so the programs linked against them are those `lib.exe`'s give
 (`relink.py` showed two links of the same libraries give identical
 images).
 
+## Phase 2 results
+
+`turbonop_fold::rewrite` folds a library's members as "Rewriting a
+library" describes, and the `lib` personality runs it with
+`/TURBOLIB:fold=identical` (or `TURBOLIB_OPTIONS=--fold=identical`).
+Every step is parallel and decided in member order, so the output doesn't
+depend on the thread count.
+
+What doesn't fold, and why (`--diagnose` will say it per unit;
+`crates/link/fold/examples/why.rs` does now):
+
+- **Internal linkage.** A COMDAT whose own symbol is local (anonymous
+  namespaces, `static` inline functions) is never shared between objects
+  by the linker; folding it is `--locals=copy`. In `LLVMDemangle`, 816 of
+  2,649 units.
+- **References to locals.** A unit that refers to a local symbol outside
+  it (a `$SG` string literal, an anonymous type's member), or whose local
+  symbols something outside refers to.
+- **Weak externals** fold when their default is an external symbol: each
+  vftable refers to `??_E` (the vector deleting destructor), a weak
+  external whose default is `??_G`. The synthesized member makes the weak
+  external again.
+- **Side effects** under `--pull=preserve`: see the weak-external
+  technique's failure above.
+
+**On the corpus** (`build-z7`, with the build's own archiver commands,
+`relib.py` and `TURBOLIB_OPTIONS=--fold=identical`), 188 of the 245
+libraries change (the rest have nothing to fold), from 13.21 GiB to 11.38
+GiB (13.9%), in 59 s. The analyzer projects 2.7 GiB for
+`identical, pull=preserve`; the difference is still to account for.
+(Until 2.4, folded units' `.debug$S` is dropped, which counts as saved.)
+
+`llvm-nm` and `llvm-readobj` link against the folded libraries
+(`relink.py`), and on 22 inputs (`LLVMDemangle`'s objects and library,
+and `testdata/coff`'s objects) print what the originals print, with `nm`
+and with `readobj --all`. The images aren't byte-identical (COMDATs
+move), so link equivalence waits for 2.6's comparison.
+
 ## Decisions
 
 | | Decision |
@@ -683,7 +721,7 @@ has side effects, they leave that link:
 
 | Mode | Behavior |
 |---|---|
-| `preserve` (default) | On COFF, the weak-external technique below: the member the index names keeps its copy, and nothing about which members load changes. That costs one more copy, in the synthesized member, of each name whose definer has side effects. On ELF, those units are not folded. |
+| `preserve` (default) | Nothing about which members load changes. A group is folded only if every definition of its names in the library is a copy in it (so the member the index names keeps being named for them, by a synthesized member), and not if its first copy's member has side effects. The weak-external technique below was meant for those, but it fails in `link.exe` (phase 2's results), so they aren't folded. |
 | `relaxed` | Fold regardless, and report the members whose loading may change. |
 
 **The weak-external technique.** This is for COFF. Phase 0 proved it in
@@ -702,6 +740,19 @@ Expected result: a reference to F still loads A. A link that loads B
 without A gets the copy. A link that has both uses A's F. Under
 `/OPT:REF`, the copy is discarded when it is unused. ELF has nothing
 equivalent, so in phase 6 `preserve` means skipping these units.
+
+**It fails in `link.exe` 14.52** when a strong reference to F reaches the
+link from a library member after the weak externals: from a synthesized
+member whose code calls F, or from any member that refers to F without
+defining it. Then F is reported unresolved (LNK2001), the weak externals
+included, though the renamed copy is in the library. Phase 0's spike
+passed because its strong reference came from an object on the command
+line, which the linker reads before searching libraries. Reproduced with
+three objects (an inline `F`, an inline `G` calling it, and a member with
+a dynamic initializer first). So the engine doesn't use it
+(`rewrite::Options::weak_externals` turns it on, for study), and such
+groups aren't folded under `preserve`. Making all of a library's
+references to F weak too might rescue it; that is untested.
 
 What counts as a side effect: non-COMDAT dynamic initializers,
 terminators, and TLS callbacks (`.CRT$XC*`, `.CRT$XI*`, `.CRT$XL*`,

@@ -10,6 +10,7 @@ repository.workspace = true
 
 [dependencies]
 turbonop-codeview.workspace = true
+turbonop-coff.workspace = true
 turbonop-core.workspace = true
 turbonop-hash.workspace = true
 turbonop-par.workspace = true

@@ -12,10 +12,12 @@ use super::inputs::{self, InputKind, MachineCheck};
 use super::library;
 use super::options::{self, Options};
 use super::order::{self, Input};
-use crate::settings::Settings;
+use crate::settings::{Fold, Pull, Settings};
+use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use turbonop_archive::write::{Fields, NewMember, SizeLimit, Style, WriteError};
+use turbonop_fold::rewrite;
 
 /// The environment a run sees.
 #[derive(Clone, Debug, Default)]
@@ -171,7 +173,7 @@ fn run_inner(flavor: Flavor, args: &[String], env: &Env, out: &mut Out) -> i32 {
     if let Some(n) = settings.threads {
         turbonop_par::set_threads(n);
     }
-    let _ = run_mode(flavor, &opts, env, out, &mut r);
+    let _ = run_mode(flavor, &opts, &settings, env, out, &mut r);
     finish(out, r)
 }
 
@@ -254,6 +256,7 @@ fn text(name: &[u8]) -> String {
 fn run_mode(
     flavor: Flavor,
     opts: &Options,
+    settings: &Settings,
     env: &Env,
     out: &mut Out,
     r: &mut Reporter,
@@ -270,7 +273,7 @@ fn run_mode(
     if !opts.extract.is_empty() {
         return extract(flavor, opts, env, r);
     }
-    build(flavor, opts, env, r)
+    build(flavor, opts, settings, env, r)
 }
 
 /// `/LIST`: the first input that is a library, its members in reverse
@@ -360,7 +363,13 @@ fn write_file(path: &Path, data: &[u8]) -> io::Result<()> {
 }
 
 /// Making or updating a library.
-fn build(flavor: Flavor, opts: &Options, env: &Env, r: &mut Reporter) -> Result<(), ()> {
+fn build(
+    flavor: Flavor,
+    opts: &Options,
+    settings: &Settings,
+    env: &Env,
+    r: &mut Reporter,
+) -> Result<(), ()> {
     if opts.inputs.is_empty() && !opts.empty {
         // Measured: lib.exe writes nothing and says nothing. llvm-lib warns.
         if flavor == Flavor::LlvmLib && !opts.warnings.ignored.contains(&options::EMPTY_OUTPUT) {
@@ -513,9 +522,67 @@ fn build(flavor: Flavor, opts: &Options, env: &Env, r: &mut Reporter) -> Result<
         });
     }
 
+    // Folding: the members rewritten, then the synthesized ones.
+    let folded = (settings.fold != Fold::None).then(|| {
+        let inputs: Vec<rewrite::Input<'_>> = members
+            .iter()
+            .map(|m| rewrite::Input {
+                name: &m.name,
+                data: m.data,
+            })
+            .collect();
+        let pull = match settings.pull {
+            Pull::Preserve => rewrite::Pull::Preserve,
+            Pull::Relaxed => rewrite::Pull::Relaxed,
+        };
+        rewrite::rewrite(
+            &inputs,
+            rewrite::Options {
+                pull,
+                weak_externals: false,
+            },
+        )
+    });
+    let finals: Vec<Final<'_>> = match &folded {
+        None => members
+            .iter()
+            .map(|m| Final {
+                name: &m.name,
+                fields: m.fields,
+                data: m.data,
+                place: Cow::Borrowed(&m.place),
+            })
+            .collect(),
+        Some(folded) => {
+            if settings.stats {
+                r.lines.extend(stats_lines(&folded.report));
+            }
+            let synthesized = style.object_fields(now(), false);
+            folded
+                .members
+                .iter()
+                .enumerate()
+                .map(|(i, m)| Final {
+                    name: &m.name,
+                    fields: if m.synthesized {
+                        synthesized
+                    } else {
+                        members[i].fields
+                    },
+                    data: &m.data,
+                    place: if m.synthesized {
+                        Cow::Owned(text(&m.name))
+                    } else {
+                        Cow::Borrowed(&members[i].place)
+                    },
+                })
+                .collect()
+        }
+    };
+
     // The index, and lib.exe's warnings about names defined twice.
     let ec = matches!(check.machine, Some(inputs::ARM64EC | inputs::ARM64X));
-    let symbols = turbonop_par::map(&members, 16, |m| {
+    let symbols = turbonop_par::map(&finals, 16, |m| {
         library::member_symbols(flavor, &m.place, m.data, ec)
     });
     let mut member_symbols = Vec::with_capacity(symbols.len());
@@ -526,17 +593,17 @@ fn build(flavor: Flavor, opts: &Options, env: &Env, r: &mut Reporter) -> Result<
         }
     }
     if flavor == Flavor::Lib {
-        let strong = turbonop_par::map(&members, 16, |m| library::strong_definitions(m.data));
-        let places: Vec<String> = members.iter().map(|m| m.place.clone()).collect();
+        let strong = turbonop_par::map(&finals, 16, |m| library::strong_definitions(m.data));
+        let places: Vec<String> = finals.iter().map(|m| m.place.to_string()).collect();
         for w in library::duplicate_warnings(&strong, &places) {
             r.report(w)?;
         }
     }
     let index = library::index(flavor, member_symbols, ec);
-    let new: Vec<NewMember<'_>> = members
+    let new: Vec<NewMember<'_>> = finals
         .iter()
         .map(|m| NewMember {
-            name: &m.name,
+            name: m.name,
             fields: m.fields,
             data: m.data,
         })
@@ -553,6 +620,8 @@ fn build(flavor: Flavor, opts: &Options, env: &Env, r: &mut Reporter) -> Result<
     // x.lib a.obj` updates x.lib): let them go first.
     drop(index);
     drop(new);
+    drop(finals);
+    drop(folded);
     drop(members);
     drop(members_of);
     drop(archives);
@@ -564,6 +633,46 @@ fn build(flavor: Flavor, opts: &Options, env: &Env, r: &mut Reporter) -> Result<
         });
     }
     Ok(())
+}
+
+/// One member as written: after folding, its data may be new.
+struct Final<'d> {
+    name: &'d [u8],
+    fields: Fields,
+    data: &'d [u8],
+    place: Cow<'d, str>,
+}
+
+/// What `--stats` prints about folding.
+fn stats_lines(r: &rewrite::Report) -> Vec<String> {
+    let mb = |b: u64| b as f64 / 1_048_576.0;
+    let mut out = vec![
+        format!(
+            "turbolib: {} members, {} fold units; {} groups folded, {} copies removed",
+            r.members, r.units, r.groups, r.copies_removed
+        ),
+        format!(
+            "turbolib: {} members rewritten, {} synthesized; {:.1} MiB to {:.1} MiB ({:.1}% saved)",
+            r.rewritten,
+            r.synthesized,
+            mb(r.bytes_in),
+            mb(r.bytes_out),
+            100.0 * (1.0 - r.bytes_out as f64 / (r.bytes_in.max(1)) as f64)
+        ),
+    ];
+    for (why, n) in &r.passed_through {
+        out.push(format!(
+            "turbolib: {n} members passed through: {}",
+            why.describe()
+        ));
+    }
+    for (why, n) in &r.not_folded {
+        out.push(format!(
+            "turbolib: {n} copies not folded: {}",
+            why.describe()
+        ));
+    }
+    out
 }
 
 /// One output member, before writing.

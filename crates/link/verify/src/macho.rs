@@ -484,10 +484,11 @@ fn compare_member(
             Some(_) => rep.fail("atoms changed in rewritten members", || {
                 let d = desc(&a.key).map(|d| {
                     let k = a.desc.iter().zip(d).position(|(x, y)| x != y).unwrap_or(0);
+                    let lo = k.saturating_sub(3);
                     format!(
                         " (part {k}: {:?} vs {:?})",
-                        a.desc.get(k),
-                        d.get(k)
+                        a.desc.get(lo..(k + 3).min(a.desc.len())),
+                        d.get(lo..(k + 3).min(d.len()))
                     )
                 });
                 format!("{}: {}{}", show(&n.name), show(&a.key), d.unwrap_or_default())

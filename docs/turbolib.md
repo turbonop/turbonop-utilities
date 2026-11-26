@@ -1494,7 +1494,7 @@ average 4 to 7), and GNU `ar`'s own time ranged from 38 s to 163 s
 across this phase's runs, so the ratio is the run's, not a constant.
 What is left, by phase: choosing runs on one thread (2.8 s of
 `libclangSema.a`'s); a huge member is rewritten and its DWARF read on
-one thread each; and system time is a third of the total (21 s of
+one thread each; and system time is about two fifths of the total (21 s of
 `libclangSema.a`'s 51 s of CPU), most of it mimalloc returning and
 refaulting memory: with `MIMALLOC_PURGE_DELAY=-1`, 68 s of system time
 became 16 s before the changes above. Setting the option takes an

@@ -477,7 +477,7 @@ x64. Where the 3.5 MB went:
     largest libraries (the plan's 6.6, a noisy run). Left: choosing runs on
     one thread (2.8 s of `libclangSema.a`'s 15.5 s); a huge member is
     rewritten and its DWARF read on one thread each; mimalloc's purging
-    costs a third of the CPU time as system time (`MIMALLOC_PURGE_DELAY=-1`
+    costs about two fifths of the CPU time as system time (`MIMALLOC_PURGE_DELAY=-1`
     cut it 4×; setting it takes an unsafe call); `turbonop-elf-object`
     decodes and re-encodes every relocation section and a rewritten member
     is copied twice (`Object::write`, then the archive writer); `ranlib`

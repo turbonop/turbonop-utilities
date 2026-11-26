@@ -208,6 +208,30 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   specification, tested against clang's own MIPS16 output (`-mips16 -S`
   against `-c`).
 
+## Managed and other non-native binaries
+
+Binary analysis and size analysis for code that runs on a virtual
+machine, not only native images (PE, ELF, Mach-O) and WebAssembly:
+
+- **.NET assemblies.** A PE image's CLI header and metadata tables
+  (ECMA-335): types, methods, fields, and their sizes; IL bodies
+  decoded; resources; references to other assemblies; and what `size`
+  should attribute IL, metadata, strings, blobs, and resources to (by
+  type and namespace, as by compiland for native code). Portable PDBs
+  for their sources and lines. ReadyToRun images (native code beside the
+  IL) and Native AOT images (native, with .NET's own metadata) too.
+- **Java.** Class files (constant pool, fields, methods, attributes,
+  bytecode decoded) and JARs (zip archives of them, with their
+  manifests): size by package, class, and method.
+- **Android.** DEX files (and APKs and AABs that hold them): their
+  classes, methods, Dalvik bytecode, and size by package.
+- **Others to weigh:** Python bytecode (`.pyc`), Lua bytecode, BEAM
+  (Erlang), and anything else with its own instruction set and metadata
+  a user would want sized.
+
+Each format alike, as native ones: `info`, `dump`, `symbols`,
+disassembly, `size` with its findings, and the extension's pages.
+
 ## arm64e
 
 - **hexcavator as arm64e.** macOS and iOS 26 run third-party arm64e

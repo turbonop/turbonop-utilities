@@ -87,6 +87,9 @@ use crate::hash::H128;
 mod dwarf;
 mod eh_frame;
 
+/// A map only looked up (its order is never seen).
+type Map<K, V> = std::collections::HashMap<K, V, turbonop_hash::State>;
+
 /// `--pull`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pull {
@@ -983,7 +986,7 @@ fn synthesize<'a>(
     parsed: &[Parsed<'a>],
     units: &[(usize, usize)],
     me: usize,
-    moved_into: &BTreeMap<&[u8], usize>,
+    moved_into: &Map<&[u8], usize>,
     anchors: &[Vec<u8>],
     debug: Option<&Result<dwarf::Source<'_>, &'static str>>,
 ) -> Result<(Vec<u8>, Debugged), String> {
@@ -1635,14 +1638,16 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         return abandon(inputs, report);
     }
     // Every definition of each name, in member order.
-    let mut definers: BTreeMap<&[u8], Vec<(usize, Option<usize>)>> = BTreeMap::new();
+    // (Hash maps: looked up only, never walked, so their order is no
+    // part of the output.)
+    let mut definers: Map<&[u8], Vec<(usize, Option<usize>)>> = Map::default();
     for (m, p) in parsed.iter().enumerate() {
         for (name, u) in &p.defs {
             definers.entry(name.as_slice()).or_default().push((m, *u));
         }
     }
     // The copies of each unit, by hash, in member order.
-    let mut copies: BTreeMap<u128, Vec<(usize, usize)>> = BTreeMap::new();
+    let mut copies: Map<u128, Vec<(usize, usize)>> = Map::default();
     let mut order: Vec<u128> = Vec::new();
     for (m, p) in parsed.iter().enumerate() {
         for (u, unit) in p.units.iter().enumerate() {
@@ -1696,7 +1701,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
     // files' order, and made `libLLVMCore.a`'s `Core.cpp.o` live for an
     // inline function its givers each defined). Until nothing changes.
     loop {
-        let names: std::collections::BTreeSet<&[u8]> = folded
+        let names: std::collections::HashSet<&[u8], turbonop_hash::State> = folded
             .iter()
             .flat_map(|(_, list)| list.iter())
             .flat_map(|&(m, u)| parsed[m].units[u].names.iter().map(Vec::as_slice))
@@ -1769,7 +1774,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
     });
     lap(&mut report, "rewriting");
     // Each moved name's synthesized member.
-    let mut moved_into: BTreeMap<&[u8], usize> = BTreeMap::new();
+    let mut moved_into: Map<&[u8], usize> = Map::default();
     for (k, (units, _)) in synth.iter().enumerate() {
         for &(m, u) in units {
             for n in &parsed[m].units[u].names {

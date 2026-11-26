@@ -9,16 +9,30 @@
 //!   moved sections, each taken up to the subprogram that holds it (or to
 //!   the last DIE below the unit or a namespace). Each root's subtree is
 //!   kept, then everything a kept DIE refers to (types, specifications,
-//!   abstract origins, the DIEs location expressions name), whole, to a
-//!   fixpoint; a namespace or unit referred to, and every kept DIE's
-//!   ancestors, are kept as skeletons (the DIE and only its kept children).
-//!   They are written in the original order, `DW_AT_sibling` left out.
+//!   abstract origins, the DIEs location expressions name), to a fixpoint:
+//!   a named class, structure, or union in named scopes as a declaration
+//!   (its name, `DW_AT_declaration`, and only its kept members, such as the
+//!   declaration a moved member function's `DW_AT_specification` names:
+//!   what clang's `-fno-standalone-debug` writes), since its definition is
+//!   in the givers' units, which every link that loads the synthesized
+//!   member loads too, and debuggers find it by name; anything else whole
+//!   (base and derived types, enumerations, anonymous and local classes,
+//!   abstract instances). Kept whole, LLVM's classes' members pull in most
+//!   of a unit's types: 3.35 GB of DWARF for `libLLVMCodeGen.a`'s 1,343
+//!   synthesized members, against 4.1 MB this way. A namespace or unit
+//!   referred to, and every kept DIE's ancestors, are kept as skeletons
+//!   (the DIE and only its kept children; a class ancestor as a
+//!   declaration). They are written in the original order,
+//!   `DW_AT_sibling` left out.
 //! - **The unit's DIE** is the original's attributes but its addresses,
 //!   line table, bases, and macros: `DW_AT_low_pc` 0, `DW_AT_ranges` the
 //!   moved code sections, `DW_AT_stmt_list` the new line table.
-//! - **The line table** is the original's header, then the sequences
-//!   whose `DW_LNE_set_address` names a moved section (assemblers write
-//!   one per section).
+//! - **The line table** is the original's header with only the files (and
+//!   their directories) the kept DIEs (`DW_AT_decl_file`,
+//!   `DW_AT_call_file`) and the moved sequences name, renumbered, and the
+//!   unit's primary file; then the sequences whose `DW_LNE_set_address`
+//!   names a moved section (assemblers write one per section), their
+//!   `DW_LNS_set_file`s renumbered.
 //! - **Range and location lists** are rewritten into the new unit's
 //!   `.debug_rnglists` and `.debug_loclists` (`.debug_ranges` and
 //!   `.debug_loc` before DWARF 5) as start-and-length entries; GCC's
@@ -169,6 +183,8 @@ struct Die {
     tag: u16,
     /// Where its subtree ends (its next sibling, or its parent's end).
     end: u64,
+    /// Whether it has a `DW_AT_name`.
+    named: bool,
 }
 
 /// A line-table sequence of a source unit.
@@ -196,6 +212,7 @@ struct Cu {
     loclists_base: u64,
     /// Its line table: where it starts, its program starts, and it ends.
     line: Option<(u64, u64, u64)>,
+    header: LineHeader,
     seqs: Vec<Seq>,
 }
 
@@ -490,6 +507,7 @@ impl<'p> Source<'p> {
                 rnglists_base: u.rnglists_base,
                 loclists_base: u.loclists_base,
                 line: None,
+                header: LineHeader::default(),
                 seqs: Vec::new(),
             };
             // The unit's DIE: its bases.
@@ -529,8 +547,9 @@ impl<'p> Source<'p> {
             }
             if let Some(a) = stmt {
                 let off = unit.uint(&a.value).ok_or("a bad DW_AT_stmt_list")?;
-                let (line, seqs) = self.sequences(off, cu.address_size)?;
+                let (line, header, seqs) = self.sequences(off, cu.address_size)?;
                 cu.line = Some(line);
+                cu.header = header;
                 cu.seqs = seqs;
             }
             out.push(cu);
@@ -740,9 +759,9 @@ impl<'p> Source<'p> {
         Ok(out)
     }
 
-    /// The line table at `off`: its extent and its sequences.
+    /// The line table at `off`: its extent, its header, and its sequences.
     #[allow(clippy::type_complexity)]
-    fn sequences(&self, off: u64, address_size: u8) -> R<((u64, u64, u64), Vec<Seq>)> {
+    fn sequences(&self, off: u64, address_size: u8) -> R<((u64, u64, u64), LineHeader, Vec<Seq>)> {
         let bad = "a line table that doesn't read";
         let data = self.sec(Kind::Line);
         let mut r = Reader::new(data, off as usize, core_endian(self.endian));
@@ -751,7 +770,7 @@ impl<'p> Source<'p> {
             return Err("64-bit DWARF");
         }
         r.data = &data[..end];
-        let version = r.uint(2).ok_or(bad)?;
+        let version = u16::try_from(r.uint(2).ok_or(bad)?).map_err(|_| bad)?;
         if !(2..=5).contains(&version) {
             return Err(bad);
         }
@@ -762,6 +781,7 @@ impl<'p> Source<'p> {
         }
         let header_length = r.uint(4).ok_or(bad)?;
         let program = r.pos + header_length as usize;
+        let fixed_start = r.pos as u64;
         r.u8().ok_or(bad)?; // minimum instruction length
         if version >= 4 {
             r.u8().ok_or(bad)?;
@@ -776,6 +796,104 @@ impl<'p> Source<'p> {
         }
         if program > end {
             return Err(bad);
+        }
+        let mut header = LineHeader {
+            version,
+            fixed: (fixed_start, r.pos as u64),
+            lengths: lengths.clone(),
+            ..LineHeader::default()
+        };
+        if version >= 5 {
+            for table in 0..2 {
+                let fstart = r.pos as u64;
+                let n = r.u8().ok_or(bad)?;
+                let mut formats = Vec::new();
+                for _ in 0..n {
+                    let kind = r.uleb().ok_or(bad)?;
+                    let form = u16::try_from(r.uleb().ok_or(bad)?).map_err(|_| bad)?;
+                    formats.push((kind, form));
+                }
+                let fend = r.pos as u64;
+                let count = r.uleb().ok_or(bad)?;
+                for _ in 0..count {
+                    let s = r.pos as u64;
+                    let mut dir = 0;
+                    let mut field = None;
+                    for &(kind, form) in &formats {
+                        let at = r.pos as u64;
+                        let v = match form {
+                            DW_FORM_STRING => {
+                                r.cstr().ok_or(bad)?;
+                                0
+                            }
+                            DW_FORM_LINE_STRP | DW_FORM_STRP | DW_FORM_DATA4 => {
+                                r.uint(4).ok_or(bad)?
+                            }
+                            DW_FORM_UDATA => r.uleb().ok_or(bad)?,
+                            DW_FORM_DATA1 => r.uint(1).ok_or(bad)?,
+                            DW_FORM_DATA2 => r.uint(2).ok_or(bad)?,
+                            DW_FORM_DATA8 => r.uint(8).ok_or(bad)?,
+                            DW_FORM_DATA16 => {
+                                r.bytes(16).ok_or(bad)?;
+                                0
+                            }
+                            DW_FORM_BLOCK => {
+                                let n = r.uleb().ok_or(bad)?;
+                                r.bytes(n).ok_or(bad)?;
+                                0
+                            }
+                            _ => return Err("a line table entry of a form not known"),
+                        };
+                        if kind == 2 {
+                            dir = v;
+                            field = Some((at, r.pos as u64, form));
+                        }
+                    }
+                    let e = r.pos as u64;
+                    if table == 0 {
+                        header.dirs.push((s, e));
+                    } else {
+                        header.files.push(FileEnt {
+                            start: s,
+                            end: e,
+                            dir,
+                            field,
+                        });
+                    }
+                }
+                if table == 0 {
+                    header.dir_formats = (fstart, fend);
+                } else {
+                    header.file_formats = (fstart, fend);
+                }
+            }
+        } else {
+            loop {
+                let s = r.pos as u64;
+                let name = r.cstr().ok_or(bad)?;
+                if name.is_empty() {
+                    break;
+                }
+                header.dirs.push((s, r.pos as u64));
+            }
+            loop {
+                let s = r.pos as u64;
+                let name = r.cstr().ok_or(bad)?;
+                if name.is_empty() {
+                    break;
+                }
+                let at = r.pos as u64;
+                let dir = r.uleb().ok_or(bad)?;
+                let field = Some((at, r.pos as u64, DW_FORM_UDATA));
+                r.uleb().ok_or(bad)?;
+                r.uleb().ok_or(bad)?;
+                header.files.push(FileEnt {
+                    start: s,
+                    end: r.pos as u64,
+                    dir,
+                    field,
+                });
+            }
         }
         r.pos = program;
         let mut seqs = Vec::new();
@@ -823,8 +941,65 @@ impl<'p> Source<'p> {
                 }
             }
         }
-        Ok(((off, program as u64, end as u64), seqs))
+        Ok(((off, program as u64, end as u64), header, seqs))
     }
+
+    /// The file indexes sequence `s` sets (`DW_LNS_set_file`).
+    fn files_set(&self, h: &LineHeader, s: &Seq, out: &mut BTreeSet<u64>) -> R<()> {
+        let bad = "a line table that doesn't read";
+        let data = self.sec(Kind::Line);
+        let mut r = Reader::new(data, s.start as usize, core_endian(self.endian));
+        let opcode_base = h.lengths.len() as u8 + 1;
+        while (r.pos as u64) < s.end {
+            let op = r.u8().ok_or(bad)?;
+            if op >= opcode_base {
+                continue;
+            }
+            match op {
+                0 => {
+                    let len = r.uleb().ok_or(bad)?;
+                    r.pos = r.pos.checked_add(len as usize).ok_or(bad)?;
+                }
+                9 => {
+                    r.uint(2).ok_or(bad)?;
+                }
+                4 => {
+                    out.insert(r.uleb().ok_or(bad)?);
+                }
+                _ => {
+                    for _ in 0..h.lengths[usize::from(op) - 1] {
+                        r.uleb().ok_or(bad)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A line table's header, as read: where its parts lie.
+#[derive(Clone, Debug, Default)]
+struct LineHeader {
+    version: u16,
+    /// From `minimum_instruction_length` through `standard_opcode_lengths`.
+    fixed: (u64, u64),
+    lengths: Vec<u8>,
+    /// DWARF 5: each table's entry formats (their count and pairs).
+    dir_formats: (u64, u64),
+    file_formats: (u64, u64),
+    /// Each directory's and file's entry.
+    dirs: Vec<(u64, u64)>,
+    files: Vec<FileEnt>,
+}
+
+/// A file entry of a line table's header.
+#[derive(Clone, Copy, Debug)]
+struct FileEnt {
+    start: u64,
+    end: u64,
+    dir: u64,
+    /// Where its directory index lies, and its form.
+    field: Option<(u64, u64, u16)>,
 }
 
 fn index_kind(k: usize) -> Kind {
@@ -912,6 +1087,7 @@ fn walk(unit: &Unit<'_>, abbrevs: &Abbrevs) -> R<Vec<Die>> {
             parent,
             tag: a.tag,
             end: r.pos as u64,
+            named: a.attrs.iter().any(|s| s.name == DW_AT_NAME),
         });
         if a.children {
             stack.push(i);
@@ -1099,36 +1275,75 @@ struct Builder<'s, 'p> {
     line_str: Strings,
     abbrevs: Vec<Shape>,
     codes: HashMap<Shape, u64>,
+    /// Each file index of the source unit's line table: its index in the
+    /// output's (`u64::MAX`: not kept).
+    files: Vec<u64>,
 }
 
-/// The DIEs of one unit to keep: 2 whole, 1 as a skeleton.
+/// The DIEs of one unit to keep: 2 whole, 1 as a skeleton (the DIE and its
+/// kept children), 3 as a declaration (its name, and its kept children).
 struct Keep {
     mark: Vec<u8>,
     work: Vec<usize>,
+    /// Whether each DIE is a named class, structure, or union a debugger
+    /// can find the definition of by its name (in named scopes only).
+    declarable: Vec<bool>,
 }
 
+const SKELETON: u8 = 1;
+const WHOLE: u8 = 2;
+const DECLARATION: u8 = 3;
+
 impl Keep {
-    /// Keeps DIE `i` and its ancestors: as skeletons those that are scopes
-    /// (units, namespaces, subprograms, blocks), whole the rest (a class
-    /// whose nested type or member is kept is kept with all its members,
-    /// so that its definition is the original's).
+    fn new(dies: &[Die]) -> Self {
+        // Whether names inside each DIE can be looked up from anywhere.
+        let mut open = vec![false; dies.len()];
+        let mut declarable = vec![false; dies.len()];
+        for (i, d) in dies.iter().enumerate() {
+            let parent_open = d.parent == u32::MAX || open[d.parent as usize];
+            let aggregate = matches!(
+                d.tag,
+                DW_TAG_CLASS_TYPE | DW_TAG_STRUCTURE_TYPE | DW_TAG_UNION_TYPE
+            );
+            declarable[i] = aggregate && d.named && d.parent != u32::MAX && parent_open;
+            open[i] = match d.tag {
+                DW_TAG_COMPILE_UNIT | DW_TAG_PARTIAL_UNIT => true,
+                DW_TAG_NAMESPACE => d.named && parent_open,
+                _ => declarable[i],
+            };
+        }
+        Keep {
+            mark: vec![0; dies.len()],
+            work: Vec::new(),
+            declarable,
+        }
+    }
+
+    /// Keeps the ancestors of a kept DIE (from `i`, its parent): scopes
+    /// (units, namespaces, subprograms, blocks) as skeletons, classes a
+    /// debugger finds by name as declarations, the rest whole (an anonymous
+    /// or local class is kept with all its members, so that its definition
+    /// is the original's).
     fn skeleton(&mut self, dies: &[Die], i: usize) {
         let mut at = i;
         loop {
             if self.mark[at] != 0 {
                 return;
             }
-            if !is_scope(dies[at].tag)
-                && !matches!(
+            if self.declarable[at] {
+                self.mark[at] = DECLARATION;
+            } else if is_scope(dies[at].tag)
+                || matches!(
                     dies[at].tag,
                     DW_TAG_SUBPROGRAM | DW_TAG_LEXICAL_BLOCK | DW_TAG_INLINED_SUBROUTINE
                 )
             {
+                self.mark[at] = SKELETON;
+                self.work.push(at);
+            } else {
                 self.whole(dies, at);
                 return;
             }
-            self.mark[at] = 1;
-            self.work.push(at);
             let p = dies[at].parent;
             if p == u32::MAX {
                 return;
@@ -1138,17 +1353,17 @@ impl Keep {
     }
 
     fn whole(&mut self, dies: &[Die], i: usize) {
-        if self.mark[i] == 2 {
+        if self.mark[i] == WHOLE {
             return;
         }
         let end = dies[i].end;
         let mut j = i;
         while j < dies.len() && (j == i || dies[j].offset < end) {
-            if self.mark[j] != 2 {
-                if self.mark[j] == 0 {
+            if self.mark[j] != WHOLE {
+                if self.mark[j] != SKELETON {
                     self.work.push(j);
                 }
-                self.mark[j] = 2;
+                self.mark[j] = WHOLE;
             }
             j += 1;
         }
@@ -1158,12 +1373,37 @@ impl Keep {
         }
     }
 
+    /// Keeps what a kept DIE refers to: a scope as a skeleton, a class a
+    /// debugger finds by name as a declaration (its definition is in the
+    /// givers' units, which a link that loads this member loads), the rest
+    /// whole.
     fn refer(&mut self, dies: &[Die], i: usize) {
         if is_scope(dies[i].tag) {
             self.skeleton(dies, i);
+        } else if self.declarable[i] {
+            if self.mark[i] == 0 {
+                self.mark[i] = DECLARATION;
+                let p = dies[i].parent;
+                if p != u32::MAX {
+                    self.skeleton(dies, p as usize);
+                }
+            }
         } else {
             self.whole(dies, i);
         }
+    }
+}
+
+/// Whether an attribute holds a line-table file index.
+fn is_file(name: u16) -> bool {
+    matches!(name, DW_AT_DECL_FILE | DW_AT_CALL_FILE)
+}
+
+/// A file-index attribute's value.
+fn file_value(unit: &Unit<'_>, a: &A<'_>) -> R<u64> {
+    match a.value {
+        Value::Sint(v) => u64::try_from(v).map_err(|_| "a negative file index"),
+        v => unit.uint(&v).ok_or("a file index of a form not known"),
     }
 }
 
@@ -1798,10 +2038,7 @@ impl<'s, 'p> Builder<'s, 'p> {
         let unit = src.unit(cu)?;
         let dies = &cu.dies;
         // What to keep.
-        let mut keep = Keep {
-            mark: vec![0; dies.len()],
-            work: Vec::new(),
-        };
+        let mut keep = Keep::new(dies);
         for &r in roots {
             keep.whole(dies, r);
         }
@@ -1848,6 +2085,36 @@ impl<'s, 'p> Builder<'s, 'p> {
                 keep.refer(dies, t);
             }
         }
+        // The line table's files the kept DIEs and the moved sequences
+        // name (the unit's primary file too), renumbered in order.
+        let mut used: BTreeSet<u64> = BTreeSet::new();
+        if cu.line.is_some() {
+            let first = u64::from(cu.header.version < 5);
+            used.insert(first);
+            used.insert(1);
+            for s in &cu.seqs {
+                if s.section.is_some_and(|x| self.moved.contains(&x)) {
+                    src.files_set(&cu.header, s, &mut used)?;
+                }
+            }
+            for (i, d) in dies.iter().enumerate() {
+                if !matches!(keep.mark[i], SKELETON | WHOLE) {
+                    continue;
+                }
+                let (_, attrs) = read_die(&unit, &cu.abbrevs, d.offset)?;
+                for a in &attrs {
+                    if is_file(a.name) {
+                        used.insert(file_value(&unit, a)?);
+                    }
+                }
+            }
+            let n = cu.header.files.len() as u64;
+            used.retain(|&x| x >= first && x < n + first);
+            self.files = vec![u64::MAX; (n + first) as usize];
+            for (k, &old) in used.iter().enumerate() {
+                self.files[old as usize] = k as u64 + first;
+            }
+        }
         // Each kept DIE's kept children.
         let mut children: Vec<Vec<usize>> = vec![Vec::new(); dies.len()];
         for (i, d) in dies.iter().enumerate() {
@@ -1883,7 +2150,8 @@ impl<'s, 'p> Builder<'s, 'p> {
                 let c = children[d][next];
                 top.1 += 1;
                 offsets[c] = p.bytes.len() as u64;
-                let q = self.die(cu, &unit, c, !children[c].is_empty())?;
+                let decl = keep.mark[c] == DECLARATION;
+                let q = self.die(cu, &unit, c, !children[c].is_empty(), decl)?;
                 p.append(q);
                 if !children[c].is_empty() {
                     stack.push((c, 0));
@@ -2049,19 +2317,101 @@ impl<'s, 'p> Builder<'s, 'p> {
         at
     }
 
-    /// Writes the unit's line table: the header, then the moved sections'
-    /// sequences. Its offset.
-    fn line_table(&mut self, cu: &Cu, (start, program, _end): (u64, u64, u64)) -> R<u64> {
+    /// Writes the unit's line table: the original's header with only the
+    /// files (and their directories) in `self.files`, renumbered, then the
+    /// moved sections' sequences, their `DW_LNS_set_file`s renumbered. Its
+    /// offset.
+    fn line_table(&mut self, cu: &Cu, (start, _program, _end): (u64, u64, u64)) -> R<u64> {
+        let h = &cu.header;
+        let e = self.endian();
+        let v5 = h.version >= 5;
         let at = self.line.bytes.len() as u64;
         let mut p = Piece::default();
-        self.copy(Kind::Line, start, program, &mut p)?;
+        p.put(0, 4, e);
+        // The version (and DWARF 5's address and selector sizes).
+        self.copy(
+            Kind::Line,
+            start + 4,
+            start + if v5 { 8 } else { 6 },
+            &mut p,
+        )?;
+        let length_at = p.bytes.len();
+        p.put(0, 4, e);
+        self.copy(Kind::Line, h.fixed.0, h.fixed.1, &mut p)?;
+        // The directories the kept files name.
+        let first = u64::from(!v5);
+        let mut dirs: BTreeSet<u64> = BTreeSet::new();
+        if v5 {
+            dirs.insert(0);
+        }
+        for (k, f) in h.files.iter().enumerate() {
+            if self
+                .files
+                .get(k + first as usize)
+                .is_some_and(|&n| n != u64::MAX)
+            {
+                dirs.insert(f.dir);
+            }
+        }
+        let dir_first = u64::from(!v5);
+        dirs.retain(|&d| d >= dir_first && d < h.dirs.len() as u64 + dir_first);
+        let mut dir_map: BTreeMap<u64, u64> = BTreeMap::new();
+        for (k, &d) in dirs.iter().enumerate() {
+            dir_map.insert(d, k as u64 + dir_first);
+        }
+        if v5 {
+            self.copy(Kind::Line, h.dir_formats.0, h.dir_formats.1, &mut p)?;
+            p.uleb(dirs.len() as u64);
+        }
+        for &d in &dirs {
+            let (s, t) = h.dirs[(d - dir_first) as usize];
+            self.copy(Kind::Line, s, t, &mut p)?;
+        }
+        if v5 {
+            self.copy(Kind::Line, h.file_formats.0, h.file_formats.1, &mut p)?;
+            let kept = self.files.iter().filter(|&&n| n != u64::MAX).count();
+            p.uleb(kept as u64);
+        } else {
+            p.bytes.push(0);
+        }
+        for (k, f) in h.files.clone().iter().enumerate() {
+            if self
+                .files
+                .get(k + first as usize)
+                .is_none_or(|&n| n == u64::MAX)
+            {
+                continue;
+            }
+            match f.field {
+                Some((fs, fe, form)) => {
+                    self.copy(Kind::Line, f.start, fs, &mut p)?;
+                    let d = dir_map.get(&f.dir).copied().unwrap_or(0);
+                    match form {
+                        DW_FORM_DATA1 if d <= 0xFF => p.bytes.push(d as u8),
+                        DW_FORM_DATA2 if d <= 0xFFFF => p.put(d, 2, e),
+                        DW_FORM_UDATA => p.uleb(d),
+                        _ => return Err("a directory index too large for its form"),
+                    }
+                    self.copy(Kind::Line, fe, f.end, &mut p)?;
+                }
+                None => self.copy(Kind::Line, f.start, f.end, &mut p)?,
+            }
+        }
+        if !v5 {
+            p.bytes.push(0);
+        }
+        let header_length = (p.bytes.len() - length_at - 4) as u64;
+        let b = match e {
+            Endian::Little => (header_length as u32).to_le_bytes(),
+            Endian::Big => (header_length as u32).to_be_bytes(),
+        };
+        p.bytes[length_at..length_at + 4].copy_from_slice(&b);
         for s in &cu.seqs {
             if s.section.is_some_and(|x| self.moved.contains(&x)) {
-                self.copy(Kind::Line, s.start, s.end, &mut p)?;
+                self.sequence(h, s, &mut p)?;
             }
         }
         let len = p.bytes.len() - 4;
-        let e = self.endian();
         let lb = match e {
             Endian::Little => (len as u32).to_le_bytes(),
             Endian::Big => (len as u32).to_be_bytes(),
@@ -2071,8 +2421,54 @@ impl<'s, 'p> Builder<'s, 'p> {
         Ok(at)
     }
 
-    /// A DIE other than the unit's.
-    fn die(&mut self, cu: &Cu, unit: &Unit<'s>, i: usize, children: bool) -> R<Piece> {
+    /// Copies a sequence, its `DW_LNS_set_file`s renumbered.
+    fn sequence(&mut self, h: &LineHeader, s: &Seq, p: &mut Piece) -> R<()> {
+        let bad = "a line table that doesn't read";
+        let src = self.src;
+        let data = src.sec(Kind::Line);
+        let mut r = Reader::new(data, s.start as usize, core_endian(src.endian));
+        let opcode_base = h.lengths.len() as u8 + 1;
+        let mut from = s.start;
+        while (r.pos as u64) < s.end {
+            let at = r.pos as u64;
+            let op = r.u8().ok_or(bad)?;
+            if op >= opcode_base {
+                continue;
+            }
+            match op {
+                0 => {
+                    let len = r.uleb().ok_or(bad)?;
+                    r.pos = r.pos.checked_add(len as usize).ok_or(bad)?;
+                }
+                9 => {
+                    r.uint(2).ok_or(bad)?;
+                }
+                4 => {
+                    let old = r.uleb().ok_or(bad)?;
+                    let new = self
+                        .files
+                        .get(old as usize)
+                        .copied()
+                        .filter(|&n| n != u64::MAX)
+                        .ok_or("a file index not kept")?;
+                    self.copy(Kind::Line, from, at, p)?;
+                    p.bytes.push(4);
+                    p.uleb(new);
+                    from = r.pos as u64;
+                }
+                _ => {
+                    for _ in 0..h.lengths[usize::from(op) - 1] {
+                        r.uleb().ok_or(bad)?;
+                    }
+                }
+            }
+        }
+        self.copy(Kind::Line, from, s.end, p)
+    }
+
+    /// A DIE other than the unit's; as a declaration (its name only), if
+    /// `decl`.
+    fn die(&mut self, cu: &Cu, unit: &Unit<'s>, i: usize, children: bool, decl: bool) -> R<Piece> {
         let (abbrev, attrs) = read_die(unit, &cu.abbrevs, cu.dies[i].offset)?;
         let mut shape = Shape {
             tag: abbrev.tag,
@@ -2081,7 +2477,15 @@ impl<'s, 'p> Builder<'s, 'p> {
         };
         let mut body = Piece::default();
         for a in &attrs {
+            if decl && a.name != DW_AT_NAME {
+                continue;
+            }
             self.attribute(cu, unit, i, a, &attrs, &mut shape, &mut body)?;
+        }
+        if decl {
+            shape
+                .attrs
+                .push((DW_AT_DECLARATION, DW_FORM_FLAG_PRESENT, 0));
         }
         let mut p = Piece::default();
         let code = self.abbrev(shape);
@@ -2106,6 +2510,19 @@ impl<'s, 'p> Builder<'s, 'p> {
         let n = usize::from(cu.address_size);
         let src = self.src;
         if a.name == DW_AT_SIBLING {
+            return Ok(());
+        }
+        if is_file(a.name) && !self.files.is_empty() {
+            // Renumbered with the line table's files.
+            let old = file_value(unit, a)?;
+            let new = self
+                .files
+                .get(old as usize)
+                .copied()
+                .filter(|&x| x != u64::MAX)
+                .ok_or("a file index not kept")?;
+            shape.attrs.push((a.name, DW_FORM_UDATA, 0));
+            p.uleb(new);
             return Ok(());
         }
         match a.form {
@@ -2345,6 +2762,7 @@ pub(crate) fn build(src: &Source<'_>, moved: &BTreeSet<usize>) -> R<Option<Out>>
         line_str: Strings::default(),
         abbrevs: Vec::new(),
         codes: HashMap::new(),
+        files: Vec::new(),
     };
     if cu.version >= 5 {
         // The list sections' headers.

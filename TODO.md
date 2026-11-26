@@ -508,6 +508,11 @@ x64. Where the 3.5 MB went:
     or `.debug_names`), and check with `dsymutil` and `llvm-dwarfdump
     --verify` on the linked programs (there is no Mac: lldb sessions
     can't be compared).
+  - **x86-64's FDEs**: clang writes an `__eh_frame` FDE for every x86-64
+    function besides its compact unwind entry, and units with FDEs stay
+    (212,881 copies on the corpus: almost nothing folds for x86-64). Move
+    the FDEs (and their CIEs) with their units, as the ELF engine does, and
+    compare them per function in `verify`.
   - **What keeps units from folding**: string literals and other
     `__cstring`/literal-section references (`l_.str`: the linker merges
     those sections by content, so copying the literals into the
@@ -534,7 +539,10 @@ x64. Where the 3.5 MB went:
     files with `--fold` (libtool's several-architecture output folds each
     slice? untested); `ar` (GNU) on Mach-O members (its index isn't
     modeled).
-  - **Speed**: not measured with folding yet.
+  - **Speed**: 4.55× the real tools' time with folding (0.70× without),
+    not profiled. Each member is parsed into the object model and every
+    rewritten member written afresh; `ranlib` after `ar qc` folds again.
+  - `verify` doesn't read universal files (each slice could be verified).
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

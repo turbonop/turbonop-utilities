@@ -1505,7 +1505,46 @@ definitions. The module's documentation has the details; in short:
 Mach-O objects) checks a folded library against the original, written
 apart from the engine (its module documentation lists what it checks).
 
-<!-- 7.3 results -->
+**Results** (the Mach-O corpus, WSL, 8 threads, at low priority):
+
+| Check | Result |
+|---|---|
+| `--fold=identical --stats` of every library's objects, as `libtool -static` (32 libraries per architecture) | arm64: 387,904 units; 49,479 distinct ones with copies in two or more members; 36,371 folded (169,650 copies) into 5,183 synthesized members; 9.2 MB of units removed, 10.6 MB of synthesized members written. x86-64: 40 folded (345 copies) into 32 |
+| ... what stayed (copies), arm64 | 173,616 with no copy in another member; 28,916 calling a name of their member that stays; 13,439 whose first definer has side effects (`--pull=preserve`: LLVM's `cl::opt` initializers); 1,759 whose names have other definitions; 522 whose other copies stayed; 2 reaching a local symbol outside them |
+| ... x86-64 | 212,881 with an FDE: clang writes `__eh_frame` FDEs for every x86-64 function besides its compact unwind entries, and units with FDEs don't fold yet (the main thing left for x86-64) |
+| size (`relib.py --options=--fold=identical`: every archive remade by its own commands) | the `llvm-ar` archives 1,536,552,752 bytes to 1,521,016,080 (1.0% smaller); the `libtool` ones (with the universal files) 3,073,107,040 to 3,042,033,696. The DWARF stays in the givers, and synthesized members carry symbol tables of their own |
+| `turbolib verify` of the 128 single-architecture archives against the originals | 128 pass (the universal files aren't read by `verify`) |
+| `relink.py`: `llvm-nm` and `llvm-readobj` for arm64 and x86-64 linked by ld64.lld against the original and the folded `llvm-ar` archives | 4 of 4 equivalent: the same original members loaded in the same order (527, 529, 403, 404; plus 5,066, 31, 4,409, 24 synthesized ones), the same symbols but the anchors, every function's code the same (170,231, 171,038, 162,460, 163,266, branch targets by name), the same initializers in the same order (20, 20, 24, 24), the same section sizes but arm64 `llvm-readobj`'s `__unwind_info` (0x322d8 to 0x312cc bytes) |
+| `fixture.py`: two libraries sharing inline functions, templates, vtables, a static local, TLS, exceptions, and initializers, arm64 and x86-64, `-O0` and `-O2`, both library orders | 16 of 16 checks pass (`verify` of each folded library, and each link equivalent as above, initializers in order) |
+| determinism: `libLLVMSupport.a` and `libLLVMCore.a` folded with `-j 1`, `-j 3`, `-j 8` | the same bytes |
+| speed (`relib.py --time --options=--fold=identical`: all 160 archives' commands, best of 2) | the real tools 22.41 s, turbolib 101.94 s: 4.55× (0.70× without folding); not profiled |
+
+What `relink.py` can't prove: nothing was run; `adrp`/`add` pairs aren't
+followed to what they address (their shapes are compared), nor data's
+bytes, nor DWARF (none is moved); and the links are ld64.lld's alone.
+
+What was found on the way:
+
+- **The order of a member's undefined names** decides the order members
+  load in with ld64.lld. The first version put the anchors first (as
+  for ELF): every original member still loaded, but four of `llvm-nm`'s
+  20 initializers (`libLLVMCore.a`'s) ran in another order on arm64.
+  Anchors after the original names, but before the moved ones, fixed the
+  order; four extra members (`DwarfTransformer.cpp.o` and three it
+  pulled) then loaded, because a synthesized member's own reference to a
+  name moved into another synthesized member was looked up before the
+  anchor that loads that one. Synthesized members now order their names
+  the same way.
+- **Weak references stay weak**: a synthesized member's reference to a
+  name every copy referred to weakly (`__gthread`'s `pthread_*`) is weak
+  too, or the program's import isn't.
+- **Alignment gaps**: data units of mixed alignment left gaps in a
+  synthesized member that the unit before took into its atom; gaps are
+  atoms of their own now.
+- **A range list's end at a section's end** (`__debug_ranges`) was taken
+  for the next section's first atom, and its relocation removed when that
+  atom moved: an address is now looked for in the section its relocation
+  names.
 
 ## Decisions
 

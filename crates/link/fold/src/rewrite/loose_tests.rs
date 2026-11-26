@@ -491,3 +491,38 @@ fn the_other_compilers_fixtures_fold() {
         }
     }
 }
+
+#[test]
+fn local_units_that_call_each_other_go_together() {
+    // f calls h1, and h1 and h2 (static, other names in each member) call
+    // each other.
+    let member = |a: &'static [u8], b: &'static [u8]| {
+        build(move |o| {
+            let (text, _) = comdat(o, b"f", true, vec![0xE8, 0, 0, 0, 0, 0xC3]);
+            let (t1, h1) = comdat(o, a, false, vec![0xE8, 0, 0, 0, 0, 0xC3]);
+            let (t2, h2) = comdat(o, b, false, vec![0xE8, 0, 0, 0, 0, 0x90, 0xC3]);
+            reloc(o, text, 1, h1);
+            reloc(o, t1, 1, h2);
+            reloc(o, t2, 1, h1);
+        })
+    };
+    let members = pair(member(b"h1a", b"h2a"), member(b"h1b", b"h2b"));
+    let out = run(
+        &members,
+        options(Fold::Identical, Locals::Merge, Pull::Preserve),
+    );
+    readable(&out);
+    assert_eq!(definers(&out, b"f").len(), 1);
+    assert_eq!(out.report.locals.absorbed, 4);
+    assert_eq!(out.report.locals.units_copied, 2);
+    let s = definers(&out, b"f")[0];
+    let o = object(&out.members[s].data);
+    // Each copy's call names the other copy, defined here.
+    for name in [b"h1a".as_slice(), b"h2a"] {
+        let sym = o.symbols.iter().find(|x| x.name == name).unwrap();
+        let sec = &o.sections[sym.section.id().unwrap().index()];
+        let callee = &o.symbols[sec.relocations[0].symbol.index()];
+        assert!(callee.section.id().is_some());
+        assert_ne!(callee.name, name);
+    }
+}

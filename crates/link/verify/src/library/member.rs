@@ -686,9 +686,8 @@ fn coff(o: &Object<'_>, structural: bool) -> Coff {
             if let Some(k) = *at
                 && !unit_edges[u].is_empty()
             {
-                c.units[k].fingerprint = graph
-                    .contents(Local::Unit(u as u32), &mut Vec::new(), &mut memo)
-                    .0;
+                c.units[k].fingerprint =
+                    graph.contents(Local::Unit(u as u32), &mut Vec::new(), &mut memo);
             }
         }
     }
@@ -834,24 +833,18 @@ impl Graph<'_> {
     }
 
     /// Node `n`'s contents: its form, and each edge's target's contents,
-    /// depth first, a reference back to a node being hashed by its depth.
+    /// depth first, a reference back to a node being hashed as a marker.
     /// By contents rather than by which node, so that copies of equal
     /// locals `--locals=merge` made one are the same as the originals.
-    /// The result, and the shallowest depth it refers back to.
-    fn contents(
-        &self,
-        n: Local,
-        stack: &mut Vec<Local>,
-        memo: &mut Map<Local, u128>,
-    ) -> (u128, usize) {
-        if let Some(d) = stack.iter().position(|&x| x == n) {
-            let mut h = H128::new();
-            h.u64(u64::MAX);
-            h.u64(d as u64);
-            return (h.finish(), d);
+    /// Each node is hashed once (`memo`), so a node in a cycle has the
+    /// contents its first walk gave it; the same graph walked in the same
+    /// order gives the same results.
+    fn contents(&self, n: Local, stack: &mut Vec<Local>, memo: &mut Map<Local, u128>) -> u128 {
+        if stack.contains(&n) {
+            return u128::MAX;
         }
         if let Some(&h) = memo.get(&n) {
-            return (h, usize::MAX);
+            return h;
         }
         let (form, edges) = self.node(n);
         stack.push(n);
@@ -859,19 +852,14 @@ impl Graph<'_> {
         h.u64(u64::from(matches!(n, Local::Piece(_))));
         h.u128(form);
         h.u64(edges.len() as u64);
-        let mut back = usize::MAX;
         for &(t, at) in edges {
-            let (c, d) = self.contents(t, stack, memo);
-            h.u128(c);
+            h.u128(self.contents(t, stack, memo));
             h.u64(at);
-            back = back.min(d);
         }
         stack.pop();
         let out = h.finish();
-        if back >= stack.len() {
-            memo.insert(n, out);
-        }
-        (out, back)
+        memo.insert(n, out);
+        out
     }
 }
 

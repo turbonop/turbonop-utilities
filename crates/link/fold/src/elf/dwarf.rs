@@ -349,7 +349,11 @@ impl<'p> Source<'p> {
             if kind_of_section.get(t).copied().flatten().is_none() {
                 continue;
             }
-            if s.kind != turbonop_elf_object::sht::RELA {
+            // (RELA, or CREL with addends: REL and CREL without them hold
+            // implicit addends in the bytes.)
+            let explicit = s.kind == turbonop_elf_object::sht::RELA
+                || matches!(&s.data, Data::Relocations(r) if r.crel_addends() == Some(true));
+            if !explicit {
                 return Err("REL debug relocations");
             }
             let Data::Relocations(rs) = &s.data else {

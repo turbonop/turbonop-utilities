@@ -2,7 +2,9 @@
 //! into the model and writes it back, and checks the result is
 //! byte-identical. Then, with `-relayout`, also lays each out afresh, reads
 //! that back, and checks its model is the original's (the same sections,
-//! symbols, relocations, and groups, by value).
+//! symbols, relocations, and groups, by value), and that every relocation
+//! section (REL, RELA, and CREL) decoded to values and encoded again gives
+//! back the same bytes.
 //!
 //!     cargo run --release -p turbonop-elf-object --example roundtrip -- [-v] [-relayout] <dir, .o, or .a>...
 //!
@@ -41,6 +43,7 @@ struct Report {
     bytes: u64,
     identical: usize,
     relaid: usize,
+    reencoded: usize,
     failures: Vec<String>,
     unread: BTreeMap<String, usize>,
 }
@@ -136,6 +139,23 @@ fn check_object(name: &str, data: &[u8], relayout: bool, r: &mut Report) {
             },
             Err(e) => r.failures.push(format!("{name}: relayout: {e}")),
         }
+        // Every relocation section as values, encoded again.
+        let mut decoded = o.clone();
+        for s in &mut decoded.sections {
+            if let Data::Relocations(rs) = &mut s.data {
+                rs.values_mut();
+            }
+        }
+        match decoded.write() {
+            Ok(out) if out == data => r.reencoded += 1,
+            Ok(out) => r.failures.push(format!(
+                "{name}: relocations encoded again differ at {:?}",
+                first_difference(&out, data)
+            )),
+            Err(e) => r
+                .failures
+                .push(format!("{name}: relocations encoded again: {e}")),
+        }
     }
 }
 
@@ -185,6 +205,7 @@ fn main() {
         total.bytes += r.bytes;
         total.identical += r.identical;
         total.relaid += r.relaid;
+        total.reencoded += r.reencoded;
         total.failures.extend(r.failures);
         for (k, v) in r.unread {
             *total.unread.entry(k).or_default() += v;
@@ -209,6 +230,10 @@ fn main() {
         println!(
             "{} of {} laid out afresh and read back the same",
             total.relaid, total.objects
+        );
+        println!(
+            "{} of {} with every relocation section decoded and encoded again byte-identically",
+            total.reencoded, total.objects
         );
     }
     for (why, n) in &total.unread {

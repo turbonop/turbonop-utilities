@@ -91,9 +91,17 @@ enum Repr<'a> {
         form: Form,
     },
     Values(Vec<Relocation>),
+    /// A CREL section's entries, decoded as read (an entry's size varies),
+    /// with the bytes read while nothing has changed them, and whether the
+    /// section has addends.
+    Crel {
+        bytes: Option<Cow<'a, [u8]>>,
+        values: Vec<Relocation>,
+        addends: bool,
+    },
 }
 
-/// A relocation section's entries (`SHT_REL` or `SHT_RELA`).
+/// A relocation section's entries (`SHT_REL`, `SHT_RELA`, or `SHT_CREL`).
 #[derive(Clone, Debug)]
 pub struct Relocations<'a> {
     repr: Repr<'a>,
@@ -132,11 +140,23 @@ impl<'a> Relocations<'a> {
         })
     }
 
+    /// A CREL section's entries (`values`, decoded from `bytes`), and
+    /// whether it has addends: written back as `bytes` until changed.
+    pub fn crel(bytes: Cow<'a, [u8]>, values: Vec<Relocation>, addends: bool) -> Self {
+        Self {
+            repr: Repr::Crel {
+                bytes: Some(bytes),
+                values,
+                addends,
+            },
+        }
+    }
+
     /// How many entries.
     pub fn len(&self) -> usize {
         match &self.repr {
             Repr::File { bytes, form } => bytes.len() / form.entry(),
-            Repr::Values(v) => v.len(),
+            Repr::Values(v) | Repr::Crel { values: v, .. } => v.len(),
         }
     }
 
@@ -151,7 +171,7 @@ impl<'a> Relocations<'a> {
                 let n = form.entry();
                 bytes.get(i * n..i * n + n).map(|b| form.decode(b))
             }
-            Repr::Values(v) => v.get(i).copied(),
+            Repr::Values(v) | Repr::Crel { values: v, .. } => v.get(i).copied(),
         }
     }
 
@@ -163,7 +183,7 @@ impl<'a> Relocations<'a> {
                     chunks: bytes.chunks_exact(form.entry()),
                     form: *form,
                 },
-                Repr::Values(v) => IterRepr::Values(v.iter()),
+                Repr::Values(v) | Repr::Crel { values: v, .. } => IterRepr::Values(v.iter()),
             },
         }
     }
@@ -172,7 +192,7 @@ impl<'a> Relocations<'a> {
     pub fn to_vec(&self) -> Vec<Relocation> {
         match &self.repr {
             Repr::File { .. } => self.iter().collect(),
-            Repr::Values(v) => v.clone(),
+            Repr::Values(v) | Repr::Crel { values: v, .. } => v.clone(),
         }
     }
 
@@ -183,6 +203,10 @@ impl<'a> Relocations<'a> {
         }
         match &mut self.repr {
             Repr::Values(v) => v,
+            Repr::Crel { bytes, values, .. } => {
+                *bytes = None;
+                values
+            }
             Repr::File { .. } => unreachable!("decoded above"),
         }
     }
@@ -201,6 +225,13 @@ impl<'a> Relocations<'a> {
                 *bytes = Cow::Owned(out);
             }
             Repr::Values(v) => v.retain(f),
+            Repr::Crel { bytes, values, .. } => {
+                let before = values.len();
+                values.retain(f);
+                if values.len() != before {
+                    *bytes = None;
+                }
+            }
         }
     }
 
@@ -222,6 +253,15 @@ impl<'a> Relocations<'a> {
                     r.info = f(r.info);
                 }
             }
+            Repr::Crel { bytes, values, .. } => {
+                for r in values {
+                    let new = f(r.info);
+                    if new != r.info {
+                        r.info = new;
+                        *bytes = None;
+                    }
+                }
+            }
         }
     }
 
@@ -229,6 +269,22 @@ impl<'a> Relocations<'a> {
     pub(crate) fn bytes_as(&self, form: Form) -> Option<&[u8]> {
         match &self.repr {
             Repr::File { bytes, form: f } if *f == form => Some(bytes),
+            _ => None,
+        }
+    }
+
+    /// A CREL section's bytes as read, if nothing has changed its entries.
+    pub(crate) fn crel_bytes(&self) -> Option<&[u8]> {
+        match &self.repr {
+            Repr::Crel { bytes: Some(b), .. } => Some(b),
+            _ => None,
+        }
+    }
+
+    /// Whether a CREL section read has addends (`None`: not one read).
+    pub fn crel_addends(&self) -> Option<bool> {
+        match &self.repr {
+            Repr::Crel { addends, .. } => Some(*addends),
             _ => None,
         }
     }
@@ -286,3 +342,189 @@ impl DoubleEndedIterator for Iter<'_> {
 }
 
 impl ExactSizeIterator for Iter<'_> {}
+/// One CREL entry's fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrelEntry {
+    pub offset: u64,
+    pub symbol: u32,
+    pub kind: u32,
+    pub addend: i64,
+}
+
+/// `CREL_HDR_ADDEND`: the entries have addends.
+const CREL_HDR_ADDEND: u64 = 4;
+
+fn read_uleb(b: &[u8], at: &mut usize) -> Option<u64> {
+    let mut v = 0u64;
+    let mut shift = 0u32;
+    loop {
+        let x = *b.get(*at)?;
+        *at += 1;
+        if shift < 64 {
+            v |= u64::from(x & 0x7F) << shift;
+        }
+        shift += 7;
+        if x & 0x80 == 0 {
+            return Some(v);
+        }
+    }
+}
+
+fn read_sleb(b: &[u8], at: &mut usize) -> Option<i64> {
+    let mut v = 0i64;
+    let mut shift = 0u32;
+    loop {
+        let x = *b.get(*at)?;
+        *at += 1;
+        if shift < 64 {
+            v |= i64::from(x & 0x7F) << shift;
+        }
+        shift += 7;
+        if x & 0x80 == 0 {
+            if shift < 64 && x & 0x40 != 0 {
+                v |= -1i64 << shift;
+            }
+            return Some(v);
+        }
+    }
+}
+
+fn put_uleb(out: &mut Vec<u8>, mut v: u64) {
+    loop {
+        let b = (v & 0x7F) as u8;
+        v >>= 7;
+        if v == 0 {
+            out.push(b);
+            return;
+        }
+        out.push(b | 0x80);
+    }
+}
+
+fn put_sleb(out: &mut Vec<u8>, mut v: i64) {
+    loop {
+        let b = (v & 0x7F) as u8;
+        v >>= 7;
+        let done = (v == 0 && b & 0x40 == 0) || (v == -1 && b & 0x40 != 0);
+        if done {
+            out.push(b);
+            return;
+        }
+        out.push(b | 0x80);
+    }
+}
+
+/// The entries of a CREL section (`SHT_CREL`, LLVM's compact relocations),
+/// as LLVM's `decodeCrel` reads them, and whether they have addends;
+/// `None` if they don't decode or bytes follow them. Offsets and addends
+/// wrap at the class's word.
+pub fn decode_crel(b: &[u8], class: Class) -> Option<(Vec<CrelEntry>, bool)> {
+    let mask = match class {
+        Class::Elf32 => u64::from(u32::MAX),
+        Class::Elf64 => u64::MAX,
+    };
+    let mut at = 0;
+    let hdr = read_uleb(b, &mut at)?;
+    let count = usize::try_from(hdr / 8).ok()?;
+    let addends = hdr & CREL_HDR_ADDEND != 0;
+    let flag_bits = if addends { 3 } else { 2 };
+    let shift = hdr % CREL_HDR_ADDEND;
+    // (Each entry takes a byte at least.)
+    if count > b.len() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(count);
+    let (mut offset, mut addend) = (0u64, 0u64);
+    let (mut symbol, mut kind) = (0u32, 0u32);
+    for _ in 0..count {
+        let first = *b.get(at)?;
+        at += 1;
+        offset = offset.wrapping_add(u64::from(first >> flag_bits));
+        if first >= 0x80 {
+            let more = read_uleb(b, &mut at)?;
+            offset = offset
+                .wrapping_add(more.wrapping_shl(7 - flag_bits))
+                .wrapping_sub(0x80 >> flag_bits);
+        }
+        if first & 1 != 0 {
+            symbol = symbol.wrapping_add(read_sleb(b, &mut at)? as u32);
+        }
+        if first & 2 != 0 {
+            kind = kind.wrapping_add(read_sleb(b, &mut at)? as u32);
+        }
+        if addends && first & 4 != 0 {
+            addend = addend.wrapping_add(read_sleb(b, &mut at)? as u64);
+        }
+        offset &= mask;
+        addend &= mask;
+        let a = match class {
+            Class::Elf32 => i64::from(addend as u32 as i32),
+            Class::Elf64 => addend as i64,
+        };
+        out.push(CrelEntry {
+            offset: offset.wrapping_shl(shift as u32) & mask,
+            symbol,
+            kind,
+            addend: a,
+        });
+    }
+    (at == b.len()).then_some((out, addends))
+}
+
+/// `entries` encoded as LLVM's `encodeCrel` writes them (with addends, as
+/// LLVM's assembler always has, or without: then each entry's addend must
+/// be 0).
+pub fn encode_crel(entries: &[CrelEntry], class: Class, addends: bool) -> Vec<u8> {
+    let mask = match class {
+        Class::Elf32 => u64::from(u32::MAX),
+        Class::Elf64 => u64::MAX,
+    };
+    let flag_bits: u32 = if addends { 3 } else { 2 };
+    let mut offset_mask = 8u64;
+    for e in entries {
+        offset_mask |= e.offset;
+    }
+    let shift = u64::from(offset_mask.trailing_zeros());
+    let mut out = Vec::with_capacity(entries.len() * 2 + 4);
+    put_uleb(
+        &mut out,
+        entries.len() as u64 * 8 + if addends { CREL_HDR_ADDEND } else { 0 } + shift,
+    );
+    let (mut offset, mut addend) = (0u64, 0u64);
+    let (mut symbol, mut kind) = (0u32, 0u32);
+    for e in entries {
+        let delta = (e.offset.wrapping_sub(offset) & mask) >> shift;
+        offset = e.offset;
+        let a = (e.addend as u64) & mask;
+        let flags = u8::from(symbol != e.symbol)
+            | if kind != e.kind { 2 } else { 0 }
+            | if addends && addend != a { 4 } else { 0 };
+        let b = ((delta << flag_bits) as u8) | flags;
+        if delta < (0x80 >> flag_bits) {
+            out.push(b);
+        } else {
+            out.push(b | 0x80);
+            put_uleb(&mut out, delta >> (7 - flag_bits));
+        }
+        if flags & 1 != 0 {
+            put_sleb(&mut out, i64::from(e.symbol.wrapping_sub(symbol) as i32));
+            symbol = e.symbol;
+        }
+        if flags & 2 != 0 {
+            put_sleb(&mut out, i64::from(e.kind.wrapping_sub(kind) as i32));
+            kind = e.kind;
+        }
+        if flags & 4 != 0 {
+            let d = a.wrapping_sub(addend) & mask;
+            put_sleb(
+                &mut out,
+                match class {
+                    Class::Elf32 => i64::from(d as u32 as i32),
+                    Class::Elf64 => d as i64,
+                },
+            );
+            addend = a;
+        }
+    }
+    out
+}

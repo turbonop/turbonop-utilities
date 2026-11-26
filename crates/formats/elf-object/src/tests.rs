@@ -514,3 +514,80 @@ fn encoded_relocations_behave_as_values() {
         }
     }
 }
+
+/// CREL entries encode as LLVM's `encodeCrel` does and decode back, in
+/// both classes, with and without addends: offsets that fall back (the
+/// delta wraps), large deltas, symbol and type changes both ways.
+#[test]
+fn crel_round_trips() {
+    use crate::{CrelEntry, decode_crel, encode_crel};
+    // Hand-checked: two entries at 0 and 8 (shift 3), symbol 1 then 2,
+    // type 4 throughout, addends -4 then 0.
+    let two = [
+        CrelEntry {
+            offset: 0,
+            symbol: 1,
+            kind: 4,
+            addend: -4,
+        },
+        CrelEntry {
+            offset: 8,
+            symbol: 2,
+            kind: 4,
+            addend: 0,
+        },
+    ];
+    let bytes = encode_crel(&two, Class::Elf64, true);
+    // Header 2*8 + 4 + 3 = 23; entry 1: delta 0, all three flags (7), then
+    // +1, +4, -4; entry 2: delta 1 (1 << 3 | 1 | 4 = 13), +1, +4.
+    assert_eq!(bytes, [23, 7, 1, 4, 0x7C, 13, 1, 4]);
+    assert_eq!(
+        decode_crel(&bytes, Class::Elf64),
+        Some((two.to_vec(), true))
+    );
+    let mut x = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    for class in [Class::Elf32, Class::Elf64] {
+        for addends in [false, true] {
+            let mut entries = Vec::new();
+            let mut offset = 0u64;
+            for _ in 0..2000 {
+                let r = next();
+                offset = match r % 7 {
+                    0 => offset.wrapping_sub(r >> 40),
+                    1 => offset + (r >> 20),
+                    _ => offset + (r >> 60) * 8,
+                };
+                if class == Class::Elf32 {
+                    offset &= 0xFFFF_FFFF;
+                }
+                let addend = if addends {
+                    match class {
+                        Class::Elf32 => i64::from(next() as i32),
+                        Class::Elf64 => next() as i64 >> (next() % 60),
+                    }
+                } else {
+                    0
+                };
+                entries.push(CrelEntry {
+                    offset,
+                    symbol: (next() % 50_000) as u32,
+                    kind: (next() % 40) as u32,
+                    addend,
+                });
+            }
+            let bytes = encode_crel(&entries, class, addends);
+            assert_eq!(decode_crel(&bytes, class), Some((entries.clone(), addends)));
+            // Trailing bytes, or too few, don't decode.
+            let mut longer = bytes.clone();
+            longer.push(0);
+            assert_eq!(decode_crel(&longer, class), None);
+            assert_eq!(decode_crel(&bytes[..bytes.len() - 1], class), None);
+        }
+    }
+}

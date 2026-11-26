@@ -393,8 +393,14 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         p.why_not = Some("not a relocatable object".into());
         return p;
     }
-    if obj.sections.iter().any(|s| s.kind == sht::CREL) {
-        p.why_not = Some("CREL relocations".into());
+    // CREL sections (LLVM's compact relocations, `-Wa,--crel`) are read
+    // as relocations when they decode into entries with addends (LLVM's
+    // assembler always writes those); others leave the member as it is.
+    if obj.sections.iter().any(|s| {
+        s.kind == sht::CREL
+            && !matches!(&s.data, Data::Relocations(r) if r.crel_addends() == Some(true))
+    }) {
+        p.why_not = Some("CREL relocations that don't decode, or without addends".into());
         return p;
     }
     if obj

@@ -307,6 +307,36 @@ pub(crate) fn parse(data: &[u8]) -> Result<Object<'_>, ReadError> {
                 }
                 Data::Symbols(symbols)
             }
+            // CREL: decoded as read (its entries' sizes vary), the bytes
+            // kept to write back while nothing changes them; left as bytes
+            // where the entries don't fit a `Relocation`'s `r_info`.
+            sht::CREL => {
+                let probe = Object {
+                    header,
+                    sections: Vec::new(),
+                    shstrndx: 0,
+                    original: None,
+                };
+                let decoded = crate::decode_crel(bytes, class).and_then(|(entries, addends)| {
+                    let values = entries
+                        .iter()
+                        .map(|e| {
+                            Some(crate::Relocation {
+                                offset: e.offset,
+                                info: probe.crel_info(e.symbol, e.kind)?,
+                                addend: e.addend,
+                            })
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some((values, addends))
+                });
+                match decoded {
+                    Some((values, addends)) => {
+                        Data::Relocations(Relocations::crel(Cow::Borrowed(bytes), values, addends))
+                    }
+                    None => Data::Bytes(Cow::Borrowed(bytes)),
+                }
+            }
             sht::REL | sht::RELA => {
                 let rela = r.kind == sht::RELA;
                 let entry = if rela { relasize } else { relsize };

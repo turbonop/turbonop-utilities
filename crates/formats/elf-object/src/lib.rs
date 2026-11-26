@@ -45,7 +45,10 @@ use alloc::borrow::Cow;
 use alloc::vec::Vec;
 use core::fmt;
 
-pub use relocs::{Form as RelocationForm, Iter as RelocationIter, Relocations};
+pub use relocs::{
+    CrelEntry, Form as RelocationForm, Iter as RelocationIter, Relocations, decode_crel,
+    encode_crel,
+};
 pub use turbonop_core::Endian;
 pub use turbonop_elf::Class;
 
@@ -259,9 +262,9 @@ pub struct Section<'a> {
 }
 
 impl Section<'_> {
-    /// Whether it holds relocations (`SHT_REL` or `SHT_RELA`).
+    /// Whether it holds relocations (`SHT_REL`, `SHT_RELA`, or `SHT_CREL`).
     pub fn is_relocations(&self) -> bool {
-        matches!(self.kind, sht::REL | sht::RELA)
+        matches!(self.kind, sht::REL | sht::RELA | sht::CREL)
     }
 }
 
@@ -406,6 +409,19 @@ impl<'a> Object<'a> {
                 r.info = (r.info & 0xFFFF_FFFF_0000_0000) | u64::from(symbol);
             }
             (Class::Elf64, ..) => r.info = (r.info & 0xFFFF_FFFF) | (u64::from(symbol) << 32),
+        }
+    }
+
+    /// The `r_info` of a CREL entry's symbol and type, as a `REL` entry
+    /// of this object holds them (`None` for MIPS64's packing, or a 32-bit
+    /// object's type past a byte).
+    pub fn crel_info(&self, symbol: u32, kind: u32) -> Option<u64> {
+        match (self.class(), self.mips64()) {
+            (_, true) => None,
+            (Class::Elf32, _) => {
+                (kind <= 0xFF && symbol <= 0x00FF_FFFF).then(|| u64::from(symbol << 8 | kind))
+            }
+            (Class::Elf64, _) => Some(u64::from(symbol) << 32 | u64::from(kind)),
         }
     }
 

@@ -281,6 +281,34 @@ fn encode<'s>(o: &'s Object<'_>, strings: &'s Strings) -> Result<Vec<Cow<'s, [u8
                     }
                 }
             }
+            Data::Relocations(rs) if s.kind == sht::CREL => {
+                if let Some(b) = rs.crel_bytes() {
+                    out.push(Cow::Borrowed(b));
+                    continue;
+                }
+                // Encoded as LLVM's assembler does (with addends, unless the
+                // section read had none).
+                let addends = rs.crel_addends().unwrap_or(true);
+                let mut entries = Vec::with_capacity(rs.len());
+                for r in rs {
+                    if o.crel_info(o.reloc_symbol(r), o.reloc_type(r)) != Some(r.info)
+                        || (!addends && r.addend != 0)
+                        || (class == Class::Elf32
+                            && (u32::try_from(r.offset).is_err()
+                                || i32::try_from(r.addend).is_err()))
+                    {
+                        return Err(WriteError::TooLarge("a CREL entry"));
+                    }
+                    entries.push(crate::CrelEntry {
+                        offset: r.offset,
+                        symbol: o.reloc_symbol(r),
+                        kind: o.reloc_type(r),
+                        addend: r.addend,
+                    });
+                }
+                out.push(Cow::Owned(crate::encode_crel(&entries, class, addends)));
+                continue;
+            }
             Data::Relocations(rs) => {
                 let rela = s.kind == sht::RELA;
                 // Still the file's entries in this form: written as they are.

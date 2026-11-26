@@ -1458,10 +1458,10 @@ each run had reported its own mix of "DIEs differ" and "another unit's
 copy".) For example, `SmallString<0>::~SmallString` has
 `DW_AT_decl_file` `MD5.h` in `ELFObjectFile.cpp`'s copy and `XCOFF.h`
 in `ArchiveWriter.cpp`'s; `RTTIExtends<FileSystem, RTTIRoot>::classID()`
-has a `DW_AT_type` in one unit and not the other. What the witness
-doesn't show is that the witness's other changes (more members, other
-copies kept) leave the subprogram's own description alone; it compares
-only that subprogram.
+has a `DW_AT_type` in one unit and not the other. A witness links more
+than the original (that unit's object and what it pulls in) and keeps
+that unit's copies of other functions too; only the subprograms it was
+made for are looked at.
 
 ## Decisions
 

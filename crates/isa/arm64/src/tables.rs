@@ -24,8 +24,13 @@ pub(crate) fn value(pieces: &[Piece], w: u32) -> u64 {
     v
 }
 
+///
+/// (Compact: there are thousands. Its name, `ne`, conditions, and
+/// templates are indexes into shared tables, read by its methods.)
 pub(crate) struct Encoding {
-    pub name: &'static str,
+    /// Its name ([`Encoding::name`]): `NAMES[name_at..][..name_len]`.
+    pub name_at: u32,
+    pub name_len: u8,
     /// The instruction class (an index into `CLASSES`).
     pub class: u8,
     /// The architecture feature the encoding needs, such as `FEAT_SVE2` (an
@@ -37,20 +42,27 @@ pub(crate) struct Encoding {
     /// matched: when they differ, the instruction is CONSTRAINED
     /// UNPREDICTABLE, not UNDEFINED.
     pub should: (u32, u32),
-    /// `(mask, value)` pairs the word must not match.
-    pub ne: &'static [(u32, u32)],
-    pub undef: Option<fn(u32) -> bool>,
-    /// When the encoding is CONSTRAINED UNPREDICTABLE.
-    pub unpred: Option<fn(u32) -> bool>,
+    /// `(mask, value)` pairs the word must not match ([`Encoding::ne`]):
+    /// `NE[ne_at..][..ne_len]`.
+    pub ne_at: u16,
+    pub ne_len: u8,
+    /// When the encoding is UNDEFINED ([`Encoding::undef`]): an index into
+    /// `CONDS`, or `NONE`.
+    pub undef: u16,
+    /// When the encoding is CONSTRAINED UNPREDICTABLE
+    /// ([`Encoding::unpred`]): the same.
+    pub unpred: u16,
     /// For aliases: the index of the encoding this stands for.
     pub alias_of: u16,
-    /// For aliases: when to prefer the alias.
-    pub prefer: Option<fn(u32) -> bool>,
-    /// The template compiled (see build.rs's `tokens`): the mnemonic, the
-    /// operands, and the condition operand folded into the mnemonic (a
+    /// For aliases: when to prefer the alias ([`Encoding::prefer`]): the
+    /// same.
+    pub prefer: u16,
+    /// The template compiled (see build.rs's `tokens`): the mnemonic and
+    /// the operands ([`Encoding::mnem`], [`Encoding::ops`]: indexes into
+    /// `TOK_LISTS`), and the condition operand folded into the mnemonic (a
     /// symbol, or `NONE`).
-    pub mnem: &'static [Tok],
-    pub ops: &'static [Tok],
+    pub mnem: u16,
+    pub ops: u16,
     pub cond: u16,
     /// Whether a word can fail to render (some symbol of the template has
     /// a table, a condition, or a logical immediate): if not, every word
@@ -407,6 +419,62 @@ pub(crate) mod attr {
 }
 
 include!(concat!(env!("OUT_DIR"), "/tables.rs"));
+
+impl Encoding {
+    /// Its name (`ADD_32_addsub_imm`).
+    #[inline]
+    pub fn name(&self) -> &'static str {
+        let at = self.name_at as usize;
+        NAMES.get(at..at + usize::from(self.name_len)).unwrap_or("")
+    }
+
+    /// The `(mask, value)` pairs the word must not match.
+    #[inline]
+    pub fn ne(&self) -> &'static [(u32, u32)] {
+        let at = usize::from(self.ne_at);
+        NE.get(at..at + usize::from(self.ne_len)).unwrap_or(&[])
+    }
+
+    /// Whether `w` is UNDEFINED by the encoding's conditions.
+    #[inline]
+    pub fn undef(&self, w: u32) -> bool {
+        holds(self.undef, w)
+    }
+
+    /// Whether `w` is CONSTRAINED UNPREDICTABLE by its conditions.
+    #[inline]
+    pub fn unpred(&self, w: u32) -> bool {
+        holds(self.unpred, w)
+    }
+
+    /// For aliases: whether the alias is preferred for `w`.
+    #[inline]
+    pub fn prefer(&self, w: u32) -> bool {
+        holds(self.prefer, w)
+    }
+
+    /// The template's mnemonic.
+    #[inline]
+    pub fn mnem(&self) -> &'static [Tok] {
+        TOK_LISTS
+            .get(usize::from(self.mnem))
+            .copied()
+            .unwrap_or(&[])
+    }
+
+    /// The template's operands.
+    #[inline]
+    pub fn ops(&self) -> &'static [Tok] {
+        TOK_LISTS.get(usize::from(self.ops)).copied().unwrap_or(&[])
+    }
+}
+
+/// Whether condition `i` (an index into `CONDS`) holds of `w`: never if
+/// it is `NONE`.
+#[inline]
+fn holds(i: u16, w: u32) -> bool {
+    CONDS.get(usize::from(i)).is_some_and(|f| f(w))
+}
 
 // (The large tables are in chunks, which rustc type-checks in seconds
 // where one array takes minutes: see build.rs's `chunked`.)

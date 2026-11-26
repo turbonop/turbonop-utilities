@@ -423,7 +423,7 @@ fn render_parts(
     match ms_mnemonic(e) {
         Some(m) => out.push_str(m),
         None => {
-            render(inst, e.mnem, symbols, out, start)?;
+            render(inst, e.mnem(), symbols, out, start)?;
         }
     }
     // `b.eq` is `beq`.
@@ -475,7 +475,7 @@ fn render_parts(
     let pad_start = out.len();
     out.extend(core::iter::repeat_n(' ', pad));
     let ops = out.len();
-    render(inst, e.ops, symbols, out, ops)?;
+    render(inst, e.ops(), symbols, out, ops)?;
     if uxt {
         out.truncate(ops);
         push_gpr(out, u64::from(w & 0x1F), true, false);
@@ -618,7 +618,7 @@ pub(crate) fn is_valid(inst: &Instruction) -> bool {
     if e.cond != NONE && !symbol_renders(inst, symbol(usize::from(e.cond))) {
         return false;
     }
-    (ms_mnemonic(e).is_some() || renders(inst, e.mnem)) && renders(inst, e.ops)
+    (ms_mnemonic(e).is_some() || renders(inst, e.mnem())) && renders(inst, e.ops())
 }
 
 /// Whether [`render_symbol`] of `sym` is `Some`: it fails only where its
@@ -704,13 +704,17 @@ pub fn explain_encoding(inst: &Instruction) -> alloc::string::String {
     let _ = writeln!(
         out,
         "  {} {:08x}/{:08x} template {:?} {:?}",
-        e.name, e.mask, e.value, e.mnem, e.ops
+        e.name(),
+        e.mask,
+        e.value,
+        e.mnem(),
+        e.ops()
     );
-    symbols_of(inst, e.mnem, &mut out);
+    symbols_of(inst, e.mnem(), &mut out);
     if e.cond != NONE {
         symbols_of(inst, &[Tok::Sym(e.cond)], &mut out);
     }
-    symbols_of(inst, e.ops, &mut out);
+    symbols_of(inst, e.ops(), &mut out);
     out
 }
 

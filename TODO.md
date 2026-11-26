@@ -304,9 +304,12 @@ x64. Where the 3.5 MB went:
   smaller: buckets in one array with 16-bit starts (16 bytes a bucket
   before, and PowerPC's 4,096 64-bit ones held 105 entries), and an
   instruction's name and syntax one string (72 bytes an instruction
-  before, 56 now). What's left, the same way:
-  - **arm64's, 2.0 MB**: about 7,400 encodings of about 128 bytes (three
-    `Option<fn>`, four slices, a `&str`), and its symbols (5 × 42 KB).
+  before, 56 now). arm64's (2.0 MB) are 450 KB smaller: its 8,182
+  encodings are 48 bytes, not 120 (names, `ne` pairs, conditions, and
+  templates by index into shared tables). What's left, the same way:
+  - **arm64's other 1.56 MB**: its 1,346 symbols of 168 bytes (221 KB),
+    the templates' tokens (24 bytes each, a `&str` or a slice), and its
+    semantics and operand specs.
   - **arm32's, 690 KB**: `A32`, `T32`, and a 64 KB `T32_BUCKETS` (the
     same `&[&[u16]]`).
   - **x86's, 270 KB** (`ENTRIES`, 186 KB).

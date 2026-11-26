@@ -109,7 +109,10 @@ def functions(image):
         body.append((ADDR.sub("N", ins).strip(), tuple(t.split("+")[0] for t in targets)))
     if name is not None:
         funcs[name] = body
-    return funcs
+    # Targets that are functions of the image (a stub, or an address past
+    # every function, is named by whatever symbol precedes it).
+    names = set(funcs)
+    return {f: [(i, tuple(t for t in ts if t in names)) for i, ts in body] for f, body in funcs.items()}
 
 
 def sections(image):

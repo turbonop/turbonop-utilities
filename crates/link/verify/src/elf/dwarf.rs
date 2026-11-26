@@ -1239,8 +1239,10 @@ fn gather<'a>(p: &Program<'a>, s: Sections<'a>) -> All {
         }
         all.unread += o.unread;
     }
+    // By place (the contents' hashes are keyed per process, so ordering
+    // by them would give each run its own examples).
     for v in all.subs.values_mut() {
-        v.sort();
+        v.sort_by_key(|s| s.at);
     }
     all
 }
@@ -1401,29 +1403,42 @@ pub(crate) fn compare(a: &Program<'_>, b: &Program<'_>) -> Report {
             );
             continue;
         }
-        for s in &va {
-            match vb.iter().find(|x| x.same(s)) {
-                Some(_) => {}
-                None => {
-                    // (Compared with the second's first, for the example.)
-                    let other = &vb[0];
-                    let cat = if s.dies == other.dies && s.lines == other.lines {
-                        // The same DIEs and rows, from another unit: a link
-                        // keeps the first loaded copy's, turbolib the first
-                        // member's.
-                        rep.expect(
-                            "subprograms described by another unit's copy (the same DIEs and line rows)",
-                            || format!("{k}: {}", explain(a, sa, s, b, sb, other)),
-                        );
-                        break;
-                    } else if s.dies != other.dies {
-                        "subprograms whose DIEs differ"
-                    } else {
-                        "subprograms whose line rows differ"
+        // The second's descriptions that the first doesn't have, each
+        // classified against the first's closest one; the worst decides.
+        let mut worst: Option<(u8, &Sub, &Sub)> = None;
+        for x in vb.iter().filter(|x| !va.iter().any(|y| y.same(x))) {
+            let Some((rank, y)) = va
+                .iter()
+                .map(|y| {
+                    let rank = match (y.dies == x.dies, y.lines == x.lines) {
+                        (true, true) => 0,
+                        (true, false) => 1,
+                        _ => 2,
                     };
-                    rep.fail(cat, || format!("{k}: {}", explain(a, sa, s, b, sb, other)));
-                    break;
-                }
+                    (rank, y)
+                })
+                .min_by_key(|&(rank, y)| (rank, y.at))
+            else {
+                continue;
+            };
+            if worst.is_none_or(|(w, ..)| rank > w) {
+                worst = Some((rank, y, x));
+            }
+        }
+        if let Some((rank, s, other)) = worst {
+            match rank {
+                // The same DIEs and rows, from another unit: a link keeps the
+                // first loaded copy's, turbolib the first member's.
+                0 => rep.expect(
+                    "subprograms described by another unit's copy (the same DIEs and line rows)",
+                    || format!("{k}: {}", explain(a, sa, s, b, sb, other)),
+                ),
+                1 => rep.fail("subprograms whose line rows differ", || {
+                    format!("{k}: {}", explain(a, sa, s, b, sb, other))
+                }),
+                _ => rep.fail("subprograms whose DIEs differ", || {
+                    format!("{k}: {}", explain(a, sa, s, b, sb, other))
+                }),
             }
         }
     }

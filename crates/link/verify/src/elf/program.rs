@@ -577,7 +577,7 @@ impl<'a> Program<'a> {
     /// address that only its contents name, in a section that isn't code,
     /// holding 32-bit entries relative to it that land in code (x86-64's,
     /// as GCC and clang write them), two or more, up to the first that
-    /// doesn't or the next label.
+    /// doesn't, lands in another function, or is at the next label.
     pub fn jump_table(&self, addr: u64) -> Option<Vec<u64>> {
         if self.machine() != 62 || !matches!(self.name(addr), Some((_, CONTENT))) {
             return None;
@@ -587,6 +587,7 @@ impl<'a> Program<'a> {
         let mut at = usize::try_from(addr - s.addr).ok()?;
         let next = self.label_after(addr);
         let mut out = Vec::new();
+        let mut function: Option<&[u8]> = None;
         while let Some(w) = data.get(at..at + 4) {
             let here = s.addr + at as u64;
             if out.len() >= 1 << 16 || next.is_some_and(|n| here >= n) {
@@ -600,6 +601,15 @@ impl<'a> Program<'a> {
             {
                 break;
             }
+            // Every entry lands in one function: the table ends where
+            // another function's (an adjacent table's) begins.
+            let Some((name, _)) = self.name(t) else {
+                break;
+            };
+            if function.is_some_and(|f| f != name) {
+                break;
+            }
+            function = Some(name);
             out.push(t);
             at += 4;
         }

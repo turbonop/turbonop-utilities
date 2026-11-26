@@ -568,7 +568,10 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                     opaque.insert(r.symbolnum as usize - 1);
                     continue;
                 };
-                let Some((ts, toff)) = section_of_addr(addr) else {
+                // (In the section it names: an address at a section's end is
+                // that section's, not the next one's.)
+                let ts = r.symbolnum as usize - 1;
+                let Some(toff) = sections.get(ts).and_then(|x| addr.checked_sub(x.addr)) else {
                     continue;
                 };
                 let Some(t) = unit_at(&units, ts, toff) else {

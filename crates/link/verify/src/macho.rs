@@ -251,10 +251,24 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
         let k = l.partition_point(|(r, _)| r.start <= off).checked_sub(1)?;
         (off < l[k].0.end || (off == l[k].0.end && k + 1 == l.len())).then_some(k)
     };
-    let locate = |addr: u64| -> Option<(usize, usize, u64)> {
-        let si = sections
-            .iter()
-            .position(|s| addr >= s.addr && addr - s.addr <= s.size())?;
+    // An address's atom: in section `hint` (a symbol's, or the section a
+    // local relocation names) if known, else the section holding it (one
+    // that ends there, for a label at a section's end).
+    let locate = |addr: u64, hint: Option<usize>| -> Option<(usize, usize, u64)> {
+        let si = match hint {
+            Some(h) if h < sections.len() => h,
+            _ => sections
+                .iter()
+                .position(|s| addr >= s.addr && addr - s.addr < s.size())
+                .or_else(|| {
+                    sections
+                        .iter()
+                        .position(|s| addr >= s.addr && addr - s.addr == s.size())
+                })?,
+        };
+        if addr < sections[si].addr {
+            return None;
+        }
         let off = addr - sections[si].addr;
         let k = atom_at(si, off)?;
         Some((si, k, off - atoms[si][k].0.start))
@@ -270,7 +284,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
         if r.external {
             match o.symbols.get(r.symbolnum as usize) {
                 Some(y) if y.n_type & N_EXT != 0 || !y.in_section() => h.bytes(&y.name),
-                Some(y) => match locate(y.n_value) {
+                Some(y) => match locate(y.n_value, usize::from(y.n_sect).checked_sub(1)) {
                     Some((si, k, off)) => {
                         h.bytes(&keys[si][k]);
                         h.u64(off);
@@ -280,7 +294,9 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
                 None => h.u64(7),
             }
         } else if reloc::names_section(cputype, &r) {
-            match reloc::local_address(cputype, endian, s, ri).and_then(locate) {
+            match reloc::local_address(cputype, endian, s, ri)
+                .and_then(|a| locate(a, (r.symbolnum as usize).checked_sub(1)))
+            {
                 Some((si, k, off)) => {
                     h.bytes(&keys[si][k]);
                     h.u64(off);
@@ -313,9 +329,10 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
                 if r.external {
                     o.symbols
                         .get(r.symbolnum as usize)
-                        .and_then(|y| locate(y.n_value))
+                        .and_then(|y| locate(y.n_value, usize::from(y.n_sect).checked_sub(1)))
                 } else {
-                    reloc::local_address(cputype, endian, s, ri).and_then(locate)
+                    reloc::local_address(cputype, endian, s, ri)
+                        .and_then(|a| locate(a, (r.symbolnum as usize).checked_sub(1)))
                 }
             });
             let Some((si, k, off)) = func else { continue };
@@ -401,18 +418,21 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
             .iter()
             .enumerate()
             .filter_map(|(ri, r)| {
-                let addr = if r.external {
+                let (addr, hint) = if r.external {
                     let y = o.symbols.get(r.symbolnum as usize)?;
                     if y.n_type & N_EXT != 0 {
                         return None;
                     }
-                    y.n_value
+                    (y.n_value, usize::from(y.n_sect).checked_sub(1))
                 } else if reloc::names_section(cputype, r) {
-                    reloc::local_address(cputype, endian, s, ri)?
+                    (
+                        reloc::local_address(cputype, endian, s, ri)?,
+                        (r.symbolnum as usize).checked_sub(1),
+                    )
                 } else {
                     return None;
                 };
-                let (si, k, _) = locate(addr)?;
+                let (si, k, _) = locate(addr, hint)?;
                 Some((r.address, r.length, keys[si][k].clone()))
             })
             .collect();

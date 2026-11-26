@@ -982,6 +982,17 @@ fn check_member(
                 {
                     continue;
                 }
+                // A compiler's PCH object's symbol: the synthesized member
+                // holds a PCH user's copy of a unit this member gave up
+                // too, and names the user's PCH (phase 2.4), so a link
+                // that loads this member alone now loads the PCH object.
+                if starts_with_ignore_case(n, b"__@@_PchSym_") {
+                    rep.expect(
+                        "PCH objects' symbols a synthesized member refers to that a member anchoring it didn't (the PCH object loads with it)",
+                        || format!("{}: {} ({})", name(), show(n), r.name(s)),
+                    );
+                    continue;
+                }
                 rep.fail(
                     "names a synthesized member refers to that a member anchoring it didn't (--pull=preserve)",
                     || format!("{}: {} ({})", name(), show(n), r.name(s)),

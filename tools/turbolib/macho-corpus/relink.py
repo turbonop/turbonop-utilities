@@ -97,7 +97,10 @@ def functions(image):
         ins = l.strip()
         # (adrp's target is a page: objdump names it by whatever symbol
         # precedes the page's start, which the layout decides.)
-        targets = [] if ins.startswith("adrp") else re.findall(r"<([^>]+)>", ins)
+        # (Only branches' targets: adrp's is a page, and a data reference
+        # is named by whatever symbol precedes it, which the layout decides.)
+        branch = re.match(r"(call[a-z]*|j[a-z]+|bl?|b\.[a-z]+|cbn?z|tbn?z)\s", ins)
+        targets = re.findall(r"<([^>]+)>", ins) if branch else []
         ins = re.sub(r"<[^>]+>", "", ins)
         body.append((ADDR.sub("N", ins).strip(), tuple(t.split("+")[0] for t in targets)))
     if name is not None:

@@ -72,7 +72,10 @@
 //! compilers make), which load the synthesized members, whose own
 //! undefined names were all the givers' too and are resolved by then; and
 //! last the moved names (out of LLVM's order), defined by then, so they
-//! aren't taken from another library's copy. Synthesized members come
+//! aren't taken from another library's copy. A synthesized member's own
+//! undefined names are in the same three runs: names moved into another
+//! synthesized member come after the anchors that load it. Synthesized
+//! members come
 //! first in the archive, so their names are in the linker's table before a
 //! member of the same archive loaded while the archive is read looks for
 //! them. A synthesized member refers to names moved into another the same
@@ -1445,9 +1448,35 @@ fn build_synth(
     let mut obj = Object::new(header, commands);
     obj.symbols = symbols;
     obj.sort_symbols();
+    // Names moved into other synthesized members after the anchors that
+    // load those, as for givers.
+    move_last(&mut obj, |y| {
+        name_to.get(y.name.as_ref()).is_some_and(|&t| t != i)
+    });
     obj.update_dysymtab();
     obj.relayout();
     obj.write().map_err(|e| e.to_string())
+}
+
+/// Moves the undefined names `late` says to the end of the symbol table
+/// (after the anchors, which LLVM's order puts last among the rest),
+/// renumbering every reference.
+fn move_last(o: &mut Object<'_>, late: impl Fn(&Symbol<'_>) -> bool) {
+    let mut order: Vec<usize> = (0..o.symbols.len()).collect();
+    order.sort_by_key(|&i| (o.symbols[i].is_undefined() && late(&o.symbols[i]), i));
+    if order.iter().enumerate().all(|(n, &i)| n == i) {
+        return;
+    }
+    let mut map = vec![None; order.len()];
+    for (new, &old) in order.iter().enumerate() {
+        map[old] = Some(new as u32);
+    }
+    let mut slots: Vec<Option<Symbol<'_>>> = core::mem::take(&mut o.symbols)
+        .into_iter()
+        .map(Some)
+        .collect();
+    o.symbols = order.iter().filter_map(|&i| slots[i].take()).collect();
+    o.renumber_symbols(&map);
 }
 
 /// Member `p` without its units `gone`, referring to the synthesized
@@ -1609,21 +1638,7 @@ fn rewrite_giver(
         .iter()
         .flat_map(|&k| p.units[k].names.iter().cloned())
         .collect();
-    let late = |y: &Symbol<'_>| y.is_undefined() && moved.contains(y.name.as_ref());
-    let mut order: Vec<usize> = (0..o.symbols.len()).collect();
-    order.sort_by_key(|&i| (late(&o.symbols[i]), i));
-    if order.iter().enumerate().any(|(n, &i)| n != i) {
-        let mut map = vec![None; order.len()];
-        for (new, &old) in order.iter().enumerate() {
-            map[old] = Some(new as u32);
-        }
-        let mut slots: Vec<Option<Symbol<'_>>> = core::mem::take(&mut o.symbols)
-            .into_iter()
-            .map(Some)
-            .collect();
-        o.symbols = order.iter().filter_map(|&i| slots[i].take()).collect();
-        o.renumber_symbols(&map);
-    }
+    move_last(&mut o, |y| moved.contains(y.name.as_ref()));
     o.update_dysymtab();
     o.relayout();
     let data = o.write().map_err(|e| e.to_string())?;

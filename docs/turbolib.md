@@ -28,7 +28,7 @@ items leave TODO.md as they ship.
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
 | 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; 4.24× GNU `ar`'s time on the 20 largest libraries (a noisy measurement). Not yet: GNU's split DWARF 4, `select-any` and `--locals` for ELF, the clang corpus. |
-| 7 Mach-O | Not yet. |
+| 7 Mach-O | In progress (see [Phase 7 results](#phase-7-results)). Done: 7.1, Darwin archives (all 160 archives of the Mach-O corpus written back byte for byte and remade by their own commands; 41 of 41 command lines as `llvm-ar`, `llvm-ranlib`, and `llvm-libtool-darwin` behave) and the `libtool -static` personality (`llvm-libtool-darwin`'s; 0.70× the real tools' time); 7.2, `turbonop-macho-object` (all 5,732 corpus objects round-trip byte for byte, and laid out afresh reproduce LLVM's bytes); 7.3, a first `--fold=identical` for Mach-O, with `verify`. Not yet: folded functions' DWARF, Apple's `libtool`/`ranlib` and linkers (not available here), a Rust `compare-images` for Mach-O. |
 
 ### Picking this up elsewhere
 
@@ -1335,6 +1335,177 @@ list entry not placed (it may be at a section's end); `DW_OP_addrx` and
 `DW_OP_constx` compared as the plain operations; split units read from
 their `.dwo` files; and which debug sections each program has compared
 apart from the rest (a folded split program has unsplit ones too).
+
+## Phase 7 results
+
+### The Mach-O corpus
+
+There is no Mac here, and no macOS SDK. `tools/turbolib/macho-corpus/build.py`
+(in WSL) compiles each object of the libraries `llvm-nm` and `llvm-readobj`
+link, and those tools' own objects, again from the ELF corpus's clang build
+(its `compile_commands.json`, generated headers, and `build.ninja`) for
+`arm64-apple-macos13` and `x86_64-apple-macos13` with `-g` (clang 21.1).
+The C and C++ headers are Linux's: glibc and libstdc++ (x86-64's
+installed; arm64's from Ubuntu's `*-arm64-cross` packages, unpacked
+without root). `__APPLE__`, `__MACH__`, and the nullability keywords are
+undefined so that those headers and LLVM take their Linux paths, and
+x86-64 glibc's `bits/floatn.h` is overlaid (Darwin's clang has no
+`_Float128`). The code is not a Mac build's, but the objects are what
+clang writes for those targets: `MH_SUBSECTIONS_VIA_SYMBOLS`, weak private
+externs (under `-fvisibility-inlines-hidden`), `__compact_unwind`, DWARF 4
+in `__DWARF` with Apple's accelerator tables. 1,462 compiles, 8 left out
+of the archives: 4 x86-64 BLAKE3 `.S` files written for ELF; `Path.cpp`
+for both (`Unix/Path.inc` takes a Darwin path on `statvfs`); arm64's
+`APFloat.cpp` (glibc's `uint64_t` is `unsigned long`, Darwin's
+`arm_acle.h` wants `unsigned long long`) and `xxhash.cpp` (clang 21
+crashes on it for this target). 32 libraries, each archived three ways: `llvm-ar qc` then
+`llvm-ranlib` (CMake's rules), `llvm-libtool-darwin -static`, and
+`llvm-libtool-darwin` of both architectures' objects (a universal file
+of two archives). 160 archives, 4.29 GiB.
+
+### Darwin archives and the `libtool` personality (7.1)
+
+The BSD and Darwin writers of 6.1 (`turbonop_archive::unix`) already wrote
+`llvm-ar`'s Darwin dialect: `#1/` names, `__.SYMDEF` (`__.SYMDEF_64` past
+32 bits), each member's data padded to 8 bytes with `\n`, and in
+deterministic mode each name's copies dated 1, 2, ... (`llvm-ar`'s unique
+timestamps, for the debug map). What was added:
+
+- **Mach-O members' index** (`unix::symbols`, `llvm-ar`'s rules: external,
+  not stabs, not undefined; private externs and commons listed; a
+  universal file is not an object).
+- **A Darwin table without symbols**: `llvm-ar` writes `__.SYMDEF` even
+  when no member is an object, and then without the three NULs it puts in
+  an empty table of an archive with objects (`Options::filler`).
+- **The `libtool -static` personality** (`turbolib` run as
+  `llvm-libtool-darwin` or `libtool`, or `turbolib libtool`):
+  `llvm-libtool-darwin`'s command line (`-static`, `-o`, `-D`/`-U`,
+  `-filelist file[,dir]`, `-arch_only`, `-l`/`-L` with its search
+  directories, `-dependency_info`, `-no_warning_for_no_symbols`,
+  `-warnings_as_errors`, `-syslibroot`), its messages, archives and
+  universal files flattened, members grouped by architecture as it groups
+  them, the duplicate-name and no-symbols warnings, and several
+  architectures written as a universal file (`turbonop_macho::fat_layout`:
+  `FAT_MAGIC`, each archive slice aligned to 8 bytes for 64-bit members,
+  arm64 last, as `MachOUniversalWriter.cpp` sorts them).
+- **Apple's own `libtool` and `ranlib`** (cctools: `__.SYMDEF SORTED`,
+  their own padding) aren't emulated: they can't be run here to measure
+  (building cctools-port wasn't permitted in this session). The reader
+  takes their tables; the personality writes as `llvm-libtool-darwin`
+  does, under either name.
+
+| Check | Result |
+|---|---|
+| `roundtrip_unix -llvm` on the corpus's 160 archives (4.29 GiB, 4,278 members; universal files slice by slice, and their headers rebuilt) | 160 of 160 written back byte for byte, every index computed from the members as `llvm-ar` computes it, 10.4 s |
+| `darcompare.py`: 41 command lines (11 of `llvm-ar`/`llvm-ranlib` on Mach-O members, 30 of `llvm-libtool-darwin`: options, errors, warnings, `-l`, `-filelist`, `-arch_only`, `-dependency_info`, universal inputs and outputs, `-U`) with the real tools and with turbolib | 41 of 41 the same: every file left, standard output, standard error, exit status |
+| `relib.py`: every archive of the corpus remade by its own commands with turbolib in place of the three tools | 160 of 160 byte for byte |
+| speed (`relib.py --time`: all 160 archives' commands, one after another, best of 2) | the real tools 20.16 s, turbolib 14.20 s: 0.70× |
+
+### The Mach-O object model (7.2)
+
+`turbonop-macho-object` reads an `MH_OBJECT` (32- and 64-bit, either byte
+order) into load commands, segments and sections (bytes or zero-fill,
+relocations decoded, scattered ones kept exactly), symbols, the string
+table, the indirect symbol table, and link-edit data (data in code,
+optimization hints), and writes it back: into the layout read while every
+part keeps its size, else afresh as LLVM's `MachObjectWriter` lays an
+object out (sections in order at their alignment, zero-fill last; each
+section's relocations; link-edit data; the indirect symbols; the nlists in
+LLVM's order, locals then external definitions then undefined names, each
+sorted by name; the string table as `StringTableBuilder` builds it,
+reversed-name order with shared suffixes). Edits: `retain_symbols`,
+`sort_symbols`, `retain_sections`, `assign_addresses` and `move_sections`
+(moving what the model holds with each section: symbols, scattered values,
+the addresses x86-64, arm64, arm64_32, and i386 local relocations encode
+in the bytes, `__eh_frame`'s PC-relative pointers that no relocation
+covers, data in code, hints), and `cut` (ranges taken out of sections,
+everything after them moved back: what folding uses).
+
+| Check | Result |
+|---|---|
+| the corpus's objects, loose and in its archives (5,732 objects, 5.5 GiB, 13.3 s on 8 threads) | 5,732 written back byte for byte; 5,732 laid out afresh byte for byte (the writer reproduces LLVM's layout exactly); 5,732 moved and moved back to the same bytes; 8,925,796 local relocations' addresses decoded, all inside their target sections |
+| 23 crafted objects (`crates/formats/macho-object/corpus/build.sh`: exceptions, TLS, `__mod_init_func`, weak definitions and imports, commons, i386 scattered relocations, armv7, arm64_32, assembly with `SIGNED_1/2/4`, local `SUBTRACTOR` pairs, `ADDEND`, `POINTER_TO_GOT`, hints, data in code, stubs, `N_INDR`, `.alt_entry`, another segment's zero-fill, `LC_LINKER_OPTION`, a universal file) | all round-trip and lay out afresh byte for byte |
+| a section removed (`remove_section`: built with and without a 100-byte `__TEXT,__pad`), against LLVM's object built without it | 6 of 7 byte for byte (x86-64, arm64, i386, arm64_32, C and C++ with exceptions, TLS, and DWARF); armv7's instruction encodings aren't moved (reported) |
+
+What the model can't see: arm32 and PowerPC instruction fields; references
+inside a section the assembler resolved without a relocation (inside one
+atom, which `cut` never splits).
+
+### Folding (7.3, first version)
+
+`turbonop_fold::macho` (run by the `ar` and `libtool` personalities with
+`--fold=identical`, `--pull=preserve|relaxed`) folds identical weak
+definitions. The module's documentation has the details; in short:
+
+- **Units.** Mach-O has no COMDATs. A unit is an atom (a section of an
+  object marked `MH_SUBSECTIONS_VIA_SYMBOLS`, split at its symbols that
+  aren't `N_ALT_ENTRY`, as ld64 and ld64.lld split it) whose external
+  symbols are all weak definitions (`N_WEAK_DEF`; inline functions,
+  template instantiations, vtables, typeinfo, inline variables), with its
+  relocations, its symbols, and its `__compact_unwind` entries. LLVM's
+  arm64 section-start labels (`ltmp0` and on) belong to no atom: they stay
+  at their section's start.
+- **What folds** is ELF's rule: every definition of the names is a copy,
+  and under `--pull=preserve` the first definer has no side effects
+  (initializer or terminator sections, Objective-C lists,
+  `LC_LINKER_OPTION`, sections of names the linkers give no meaning); a
+  unit naming what stays in its member stays. **Initializer order**:
+  initializers are `__mod_init_func` entries, atoms without symbols, which
+  never move, so each member keeps its initializers in their order (and
+  the members load in their order: below).
+- **Rewriting.** The first copy goes to a synthesized member (one per set
+  of givers and environment: CPU type and subtype, header flags,
+  `LC_BUILD_VERSION`), with its unwind entries; alignment gaps between
+  its units are atoms of their own (`l_turbolib.pad`), so every unit
+  keeps its size. Givers lose the atoms (`Object::cut`: everything after
+  them moves back, local relocations and `__eh_frame` pointers with it),
+  their definitions become weak undefined references, and they gain a
+  strong undefined reference to the synthesized member's anchor.
+- **The alias technique's Mach-O counterpart, and a deviation from ELF's.**
+  ld64.lld resolves an object's undefined names in symbol-table order as
+  it loads the object, loading an archive member the moment a name meets
+  a lazy archive symbol (recursively), and a weak reference loads one as a
+  strong one does (`SymbolTable::addUndefined`). So, unlike ELF, a giver's
+  weak references alone don't keep another library's copy out, and when a
+  synthesized member loads decides the order in which other members do.
+  What keeps both:
+  - **the giver's undefined names in three runs**: its original ones, in
+    LLVM's order (sorted), which load what they loaded, in the order they
+    did; then its anchors (`~turbolib.anchor.`: `~` sorts after the names
+    compilers make), which load the synthesized members, whose own
+    undefined names were all the givers' too and are resolved by then;
+    last the moved names, out of LLVM's order, defined by then. (A first
+    version put the anchors first, as for ELF: the synthesized members'
+    references then loaded members early, and four of `llvm-nm`'s 20
+    initializers ran in another order on arm64.)
+  - **synthesized members first** in the archive (ELF puts them last), so
+    their index entries are the linker's before a member loaded while the
+    archive's index is being read looks for its anchor.
+
+  The anchor is a private external absolute (as ELF's is a hidden
+  absolute), but ld64.lld makes no absolute symbol weak, so two libraries'
+  anchors must never share a name: the name hashes the synthesized
+  member's contents and the library's file name (`Options::salt`).
+- **Debug information**: a giver's DWARF relocations into what it lost are
+  removed and their places zeroed, so `dsymutil` (which reads the DWARF
+  from the archive member through the program's debug map) finds no
+  address for those DIEs and drops them, as it drops every copy but the
+  linked one. **Not done**: the synthesized members carry no DWARF, so a
+  folded function has none in the dSYM (`--stats` counts them); the
+  plan's "a moved function's DWARF must be in the synthesized member" is
+  still to do. The members' dates: in deterministic mode a synthesized
+  member is dated 0 with a unique name (`__turbolib.N.o`), which the debug
+  map can name.
+- **What stays**: units reaching a local symbol outside them (string
+  literals' `l_.str`, `static` functions), units with an LSDA, an FDE, a
+  local (section-relative) relocation, data in code, or hints, as `--stats`
+  lists.
+
+`turbonop_verify::macho` (`turbolib verify` on Darwin and BSD archives of
+Mach-O objects) checks a folded library against the original, written
+apart from the engine (its module documentation lists what it checks).
+
+<!-- 7.3 results -->
 
 ## Decisions
 

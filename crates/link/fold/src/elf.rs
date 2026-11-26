@@ -832,28 +832,42 @@ fn rewrite(
             continue;
         }
         let value = tombstone(&target.name);
-        let rels = relocations(&obj.sections[r]).to_vec();
-        let mut keep = Vec::with_capacity(rels.len());
-        let mut bytes: Option<Vec<u8>> = None;
-        for rel in rels {
-            let si = obj.reloc_symbol(&rel) as usize;
-            let hit = symbols
+        let hit = |rel: &Relocation| {
+            let si = obj0.reloc_symbol(rel) as usize;
+            symbols
                 .get(si)
-                .is_some_and(|s| s.bind() == 0 && si != 0 && in_removed(s));
-            if !hit {
-                keep.push(rel);
-                continue;
+                .is_some_and(|s| s.bind() == 0 && si != 0 && in_removed(s))
+        };
+        // (Most debug sections name nothing moved: nothing is copied for
+        // those.)
+        if !relocations(&obj.sections[r]).iter().any(hit) {
+            continue;
+        }
+        let Data::Relocations(mut rels) =
+            std::mem::replace(&mut obj.sections[r].data, Data::NoBits)
+        else {
+            continue;
+        };
+        let mut bytes = section_bytes(&obj.sections[t]).to_vec();
+        let mut bad = false;
+        rels.retain(|rel| {
+            if !hit(rel) {
+                return true;
             }
-            let size = debug_reloc_size(machine, obj.reloc_type(&rel))
-                .ok_or("a debug relocation not tombstoned")?;
-            let b = bytes.get_or_insert_with(|| section_bytes(&obj.sections[t]).to_vec());
-            put(b, rel.offset as usize, size, value, endian);
-            report.tombstoned += 1;
+            match debug_reloc_size(machine, obj0.reloc_type(rel)) {
+                Some(size) => {
+                    put(&mut bytes, rel.offset as usize, size, value, endian);
+                    report.tombstoned += 1;
+                }
+                None => bad = true,
+            }
+            false
+        });
+        if bad {
+            return Err("a debug relocation not tombstoned".into());
         }
-        if let Some(b) = bytes {
-            obj.sections[t].data = Data::Bytes(Cow::Owned(b));
-            obj.sections[r].data = Data::Relocations(keep);
-        }
+        obj.sections[t].data = Data::Bytes(Cow::Owned(bytes));
+        obj.sections[r].data = Data::Relocations(rels);
     }
     // The symbols: moved definitions undefined, the moved locals gone.
     let mut keep_symbols = vec![true; symbols.len()];

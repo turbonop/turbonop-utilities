@@ -279,7 +279,8 @@ fn identical_copies_fold() {
     );
     assert_eq!(report.synthesized, 1);
     assert_eq!(report.tombstoned, 2);
-    assert_eq!(report.debug_dropped, 2);
+    // (Its .debug_info is no DWARF: nothing describes the unit.)
+    assert_eq!((report.debug_moved, report.debug_dropped), (0, 1));
     assert_eq!(out.len(), 3);
     let synth = Object::parse(out[2].data.as_ref().unwrap()).unwrap();
     assert_eq!(out[2].name, b"__turbolib.0.o");

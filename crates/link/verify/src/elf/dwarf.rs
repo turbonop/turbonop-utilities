@@ -420,7 +420,14 @@ impl<'p, 'd> Cu<'p, 'd> {
         let mut r = Reader::new(expr, 0, e);
         while let Some(op) = r.u8() {
             out.sep(" op");
-            out.num(u64::from(op));
+            // An indexed address is the address; an indexed constant, the
+            // constant of the address's size (forms aren't compared).
+            out.num(u64::from(match op {
+                0xa1 | 0xfb => 0x03,
+                0xa2 | 0xfc if asize == 8 => 0x0e,
+                0xa2 | 0xfc => 0x0c,
+                _ => op,
+            }));
             let ok = (|| -> Option<()> {
                 match op {
                     0x03 => {
@@ -603,6 +610,10 @@ impl<'p, 'd> Cu<'p, 'd> {
             out.sep(" [");
             if s == 0 && e == u64::MAX {
                 out.sep("default");
+            } else if s == e {
+                // An empty range covers nothing: where it is (perhaps a
+                // section's end, which no address names) isn't compared.
+                out.sep("empty");
             } else {
                 self.address(out, s);
                 out.sep(" len ");

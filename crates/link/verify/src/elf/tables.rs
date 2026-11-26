@@ -365,7 +365,8 @@ fn fde_text(p: &Program<'_>, cfi: &Cfi<'_>, e: &turbonop_dwarf::cfi::Fde<'_>) ->
         format!(
             "range {:#x} LSDA {} instructions {} {cie}",
             e.pc_range,
-            e.lsda.map_or("none".into(), |x| p.render(x)),
+            e.lsda.map_or("none".into(), |x| lsda_text(p, x, e.pc_begin)
+                .unwrap_or_else(|| format!("{} (not read)", p.render(x)))),
             hex(e.instructions)
         ),
     )
@@ -423,4 +424,147 @@ pub(crate) fn unwind(a: &Program<'_>, b: &Program<'_>, rep: &mut Report) {
             .collect()
     };
     sets(&hdr(a), &hdr(b), ".eh_frame_hdr entries", rep);
+}
+
+/// Reads a pointer of `.eh_frame` encoding `enc` at `at` of `data` (which
+/// lies at `base`): its value, `None` for `DW_EH_PE_omit` or what can't be
+/// read. Relative encodings other than `pcrel` are read as their offsets.
+fn encoded(data: &[u8], at: &mut usize, enc: u8, base: u64, word: u8) -> Option<u64> {
+    if enc == 0xFF {
+        return None;
+    }
+    let start = *at;
+    let mut r = turbonop_dwarf::Reader::new(data, start, turbonop_core::Endian::Little);
+    let v = match enc & 0x0F {
+        0x00 => r.uint(usize::from(word))?,
+        0x01 => r.uleb()?,
+        0x02 => r.uint(2)?,
+        0x03 => r.uint(4)?,
+        0x04 => r.uint(8)?,
+        0x09 => r.sleb()? as u64,
+        0x0A => (((r.uint(2)? << 48) as i64) >> 48) as u64,
+        0x0B => (((r.uint(4)? << 32) as i64) >> 32) as u64,
+        0x0C => r.uint(8)?,
+        _ => return None,
+    };
+    *at = r.pos;
+    Some(if enc & 0x70 == 0x10 {
+        v.wrapping_add(base + start as u64)
+    } else {
+        v
+    })
+}
+
+/// A GCC LSDA (`.gcc_except_table`) as text, by content: its call sites
+/// (relative to the function's start, `func`), their action chains, and
+/// the type and exception-specification entries they reach by what they
+/// name. `None` if it doesn't parse.
+fn lsda_text(p: &Program<'_>, addr: u64, func: u64) -> Option<String> {
+    use std::fmt::Write as _;
+    let s = p.section_at(addr)?;
+    let data = p.file.section_data(s);
+    let base = s.addr;
+    let mut at = usize::try_from(addr - base).ok()?;
+    let word = p.word();
+    let get = |at: &mut usize| -> Option<u8> {
+        let b = *data.get(*at)?;
+        *at += 1;
+        Some(b)
+    };
+    let uleb = |at: &mut usize| -> Option<u64> {
+        let mut r = turbonop_dwarf::Reader::new(data, *at, turbonop_core::Endian::Little);
+        let v = r.uleb()?;
+        *at = r.pos;
+        Some(v)
+    };
+    let mut out = String::new();
+    let lp_enc = get(&mut at)?;
+    let lpstart = encoded(data, &mut at, lp_enc, base, word).unwrap_or(func);
+    let tt_enc = get(&mut at)?;
+    let tt_end = if tt_enc == 0xFF {
+        None
+    } else {
+        let off = uleb(&mut at)?;
+        Some(at + usize::try_from(off).ok()?)
+    };
+    let cs_enc = get(&mut at)?;
+    let cs_len = usize::try_from(uleb(&mut at)?).ok()?;
+    let cs_end = at.checked_add(cs_len)?;
+    let _ = write!(out, "lpstart {:+} call sites", lpstart as i64 - func as i64);
+    let mut actions: Vec<u64> = Vec::new();
+    while at < cs_end {
+        let start = encoded(data, &mut at, cs_enc, base, word)?;
+        let len = encoded(data, &mut at, cs_enc, base, word)?;
+        let lp = encoded(data, &mut at, cs_enc, base, word)?;
+        let action = uleb(&mut at)?;
+        let _ = write!(out, " ({start:#x} {len:#x} {lp:#x} {action})");
+        if action != 0 {
+            actions.push(action);
+        }
+    }
+    // The action chains, and the largest type filter they use.
+    let mut max_filter = 0i64;
+    let mut specs = Vec::new();
+    out.push_str(" actions");
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(a) = actions.pop() {
+        let mut rec = cs_end + usize::try_from(a - 1).ok()?;
+        let mut chain = String::new();
+        let mut steps = 0;
+        loop {
+            if !seen.insert(rec) && chain.is_empty() {
+                break;
+            }
+            let mut r = turbonop_dwarf::Reader::new(data, rec, turbonop_core::Endian::Little);
+            let filter = r.sleb()?;
+            let next_at = r.pos;
+            let next = r.sleb()?;
+            let _ = write!(chain, " {filter}");
+            if filter > 0 {
+                max_filter = max_filter.max(filter);
+            } else if filter < 0 {
+                specs.push(filter);
+            }
+            steps += 1;
+            if next == 0 || steps > 1000 {
+                break;
+            }
+            rec = usize::try_from(next_at as i64 + next).ok()?;
+        }
+        let _ = write!(out, " [{}]", chain.trim());
+    }
+    if let Some(end) = tt_end {
+        let size = match tt_enc & 0x0F {
+            0x00 => usize::from(word),
+            0x02 | 0x0A => 2,
+            0x03 | 0x0B => 4,
+            0x04 | 0x0C => 8,
+            _ => return Some(out),
+        };
+        out.push_str(" types");
+        for k in 1..=max_filter {
+            let mut e = end.checked_sub(size * usize::try_from(k).ok()?)?;
+            let v = encoded(data, &mut e, tt_enc, base, word)?;
+            let name = if v == 0 {
+                "catch-all".into()
+            } else {
+                p.render(v)
+            };
+            let _ = write!(out, " {name}");
+        }
+        for f in specs {
+            let mut e = end + usize::try_from(-f - 1).ok()?;
+            out.push_str(" spec");
+            loop {
+                let i = uleb(&mut e)?;
+                if i == 0 {
+                    break;
+                }
+                let mut t = end.checked_sub(size * usize::try_from(i).ok()?)?;
+                let v = encoded(data, &mut t, tt_enc, base, word)?;
+                let _ = write!(out, " {}", p.render(v));
+            }
+        }
+    }
+    Some(out)
 }

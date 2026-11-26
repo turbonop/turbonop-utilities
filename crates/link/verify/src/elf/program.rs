@@ -29,8 +29,10 @@ pub(crate) const CONTENT: u32 = 0x8000_0000;
 
 const STT_GNU_IFUNC: u8 = 10;
 
-/// How many bytes a content name holds at most.
-const CONTENT_BYTES: usize = 32;
+/// How many bytes a content name holds at most (a string to its NUL:
+/// strings that share a long prefix, as `__PRETTY_FUNCTION__`s do, must
+/// get names of their own).
+const CONTENT_BYTES: usize = 4096;
 
 /// A label of an address.
 #[derive(Clone, Debug)]
@@ -540,6 +542,15 @@ impl<'a> Program<'a> {
             }
         }
         let l = &self.labels[i];
+        // Only a section's start below: what lies in the section follows
+        // the link's layout (the input order, folded copies taken out), so
+        // name it by its contents where they can be read.
+        if l.rank == 5
+            && addr != l.addr
+            && let Some(c) = self.content_name(addr)
+        {
+            return Some(c);
+        }
         let off = u32::try_from(addr - l.addr).ok()?;
         if off >= CONTENT {
             return None;

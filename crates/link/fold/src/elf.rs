@@ -51,17 +51,21 @@
 //! another library's copy. A synthesized member refers to names moved
 //! into another one the same way.
 //!
-//! **Debug information** is not moved yet: in the member that gave a copy
-//! up, each relocation from a `.debug_*` section to a local symbol of the
-//! copy (its section's symbol) is removed and its place set to the value a
-//! linker gives one to a discarded section (lld's: 1 in `.debug_loc` and
+//! **Debug information.** In the member that gave a copy up, each
+//! relocation from a `.debug_*` section to a local symbol of the copy (its
+//! section's symbol) is removed and its place set to the value a linker
+//! gives one to a discarded section (lld's: 1 in `.debug_loc` and
 //! `.debug_ranges`, all ones in `.debug_names`, 0 elsewhere), as the link
 //! of the original library would have for every copy but the one it kept.
-//! The synthesized member has none: a folded function has no debug
-//! information (counted in [`Report::debug_dropped`]).
+//! The synthesized member gets a compile unit of its own describing its
+//! units, built from the survivors' member's ([`dwarf`]): the DIEs of the
+//! moved functions with the types they use, their line-table sequences,
+//! and their range and location lists. Where that can't be built, the
+//! synthesized member has none, and the reason is counted
+//! ([`Report::debug_dropped`]).
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use turbonop_elf_object::{
     Class, Data, Endian, Group, Header, Object, Relocation, SHN_ABS, SHN_UNDEF, Section, Symbol,
@@ -70,6 +74,7 @@ use turbonop_elf_object::{
 
 use crate::hash::H128;
 
+mod dwarf;
 mod eh_frame;
 
 /// `--pull`.
@@ -123,10 +128,20 @@ pub struct Report {
     /// synthesized members.
     pub removed_bytes: u64,
     pub synthesized_bytes: u64,
-    /// Debug relocations set to a tombstone, and folded units that had
-    /// debug information (none of which a synthesized member has).
+    /// Debug relocations of givers set to a tombstone.
     pub tombstoned: usize,
+    /// Distinct folded units with debug information: those whose
+    /// synthesized member describes them, and those whose doesn't (by
+    /// why).
+    pub debug_moved: usize,
     pub debug_dropped: usize,
+    pub debug_dropped_why: BTreeMap<&'static str, usize>,
+    /// In the synthesized members' DWARF: the root DIEs copied, the
+    /// addresses written as tombstones (they named nothing moved), and the
+    /// bytes of debug sections.
+    pub debug_roots: usize,
+    pub debug_tombstoned: usize,
+    pub debug_bytes: u64,
 }
 
 /// The machines whose debug relocations can be tombstoned: the size of
@@ -913,6 +928,16 @@ fn put_uleb(out: &mut Vec<u8>, mut v: u64) {
     }
 }
 
+/// What a synthesized member's DWARF came to.
+#[derive(Clone, Debug, Default)]
+struct Debugged {
+    /// Why it has none, if its units had some.
+    dropped: Option<&'static str>,
+    roots: usize,
+    tombstoned: usize,
+    bytes: u64,
+}
+
 /// A synthesized member holding `units` (each its member and its index
 /// there), with their FDEs and CIEs, in the first one's environment. It is
 /// synthesized member `me`; `moved_into` gives each moved name's
@@ -923,7 +948,8 @@ fn synthesize<'a>(
     me: usize,
     moved_into: &BTreeMap<&[u8], usize>,
     anchors: &[Vec<u8>],
-) -> Result<Vec<u8>, String> {
+    debug: Option<&Result<dwarf::Source<'_>, &'static str>>,
+) -> Result<(Vec<u8>, Debugged), String> {
     let anchor = &anchors[me];
     let mut deps: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
     let (m0, _) = *units.first().ok_or("no units")?;
@@ -1060,6 +1086,81 @@ fn synthesize<'a>(
         }
         _ => None,
     };
+    // The units' DWARF (see the module's documentation).
+    let mut debugged = Debugged::default();
+    let built = match debug {
+        _ if units.iter().any(|&(m, _)| m != m0) => Err("units of more than one member"),
+        Some(Ok(src)) => {
+            let moved: BTreeSet<usize> = units
+                .iter()
+                .flat_map(|&(m, u)| parsed[m].units[u].sections.iter().copied())
+                .collect();
+            dwarf::build(src, &moved)
+        }
+        Some(Err(e)) => Err(*e),
+        None => Ok(None),
+    };
+    let built = match built {
+        Ok(b) => b,
+        Err(e) => {
+            debugged.dropped = Some(e);
+            None
+        }
+    };
+    // Each output debug section's index here, and its relocations'.
+    let mut debug_index: Vec<usize> = Vec::new();
+    let mut debug_rela: Vec<Option<usize>> = Vec::new();
+    if let Some(b) = &built {
+        debugged.roots = b.roots;
+        debugged.tombstoned = b.tombstoned;
+        for s in &b.sections {
+            if s.bytes.is_empty() && s.rels.is_empty() {
+                debug_index.push(usize::MAX);
+                debug_rela.push(None);
+                continue;
+            }
+            debugged.bytes += s.bytes.len() as u64;
+            sections.push(Section {
+                name: Cow::Borrowed(s.name),
+                name_offset: 0,
+                kind: sht::PROGBITS,
+                flags: if s.strings {
+                    shf::MERGE | shf::STRINGS
+                } else {
+                    0
+                },
+                addr: 0,
+                link: 0,
+                info: 0,
+                addralign: 1,
+                entsize: u64::from(s.strings),
+                nobits_size: 0,
+                data: Data::Bytes(Cow::Owned(s.bytes.clone())),
+            });
+            let at = sections.len() - 1;
+            debug_index.push(at);
+            if s.rels.is_empty() {
+                debug_rela.push(None);
+                continue;
+            }
+            let mut name = b".rela".to_vec();
+            name.extend_from_slice(s.name);
+            sections.push(Section {
+                name: Cow::Owned(name),
+                name_offset: 0,
+                kind: sht::RELA,
+                flags: shf::INFO_LINK,
+                addr: 0,
+                link: 0,
+                info: at as u32,
+                addralign: 8,
+                entsize: relasize,
+                nobits_size: 0,
+                data: Data::Relocations(Vec::new()),
+            });
+            debug_rela.push(Some(sections.len() - 1));
+        }
+    }
     let symtab = sections.len();
     sections.push(Section {
         name: Cow::Borrowed(b".symtab"),
@@ -1294,6 +1395,63 @@ fn synthesize<'a>(
         }
         sections[eh].data = Data::Bytes(Cow::Owned(eh_bytes));
     }
+    // The DWARF's relocations.
+    if let Some(b) = &built {
+        let obj0 = parsed[m0].obj.as_ref().ok_or("unread")?;
+        let symbols0 = obj0.symbols();
+        for (j, s) in b.sections.iter().enumerate() {
+            let Some(rela) = debug_rela[j] else {
+                continue;
+            };
+            let mut out = Vec::with_capacity(s.rels.len());
+            for r in &s.rels {
+                let t = match &r.target {
+                    dwarf::Target::Section(sec) => {
+                        let at = *placed
+                            .get(&(m0, *sec))
+                            .ok_or("debug information naming a section not copied")?;
+                        (true, section_sym(&mut locals, at))
+                    }
+                    dwarf::Target::Debug(k) => {
+                        let at = debug_index[*k];
+                        if at == usize::MAX {
+                            return Err("debug information naming an empty section".into());
+                        }
+                        (true, section_sym(&mut locals, at))
+                    }
+                    dwarf::Target::Global(si) => {
+                        let sym = symbols0
+                            .get(*si as usize)
+                            .ok_or("debug information naming no symbol")?;
+                        match global_of.get(&*sym.name) {
+                            Some(&g) => (false, g),
+                            None => {
+                                // A weak reference: it loads nothing.
+                                let mut u = sym.clone();
+                                u.value = 0;
+                                u.size = 0;
+                                u.info = (2 << 4) | sym.kind();
+                                u.set_special(SHN_UNDEF);
+                                global_of.insert(sym.name.to_vec(), globals.len());
+                                globals.push(u);
+                                (false, globals.len() - 1)
+                            }
+                        }
+                    }
+                };
+                out.push((
+                    Relocation {
+                        offset: r.offset,
+                        info: u64::from(r.rtype),
+                        addend: r.addend,
+                    },
+                    m0,
+                    t,
+                ));
+            }
+            fix_ups.push((rela, m0, out));
+        }
+    }
     // The anchor.
     globals.push(Symbol {
         name: Cow::Owned(anchor.clone()),
@@ -1395,7 +1553,9 @@ fn synthesize<'a>(
     all.extend(globals);
     obj.sections[symtab].info = nlocal as u32;
     obj.sections[symtab].data = Data::Symbols(all);
-    obj.write().map_err(|e| e.to_string())
+    obj.write()
+        .map(|b| (b, debugged))
+        .map_err(|e| e.to_string())
 }
 
 /// Folds the library `inputs`.
@@ -1533,9 +1693,6 @@ pub fn fold(inputs: &[Input<'_>], options: &Options) -> (Vec<Output>, Report) {
             for &(m, u) in &folded[k].1 {
                 moved[m].push(u);
                 report.removed_bytes += parsed[m].units[u].bytes;
-                if parsed[m].units[u].debug {
-                    report.debug_dropped += 1;
-                }
             }
             report.folded += 1;
             report.copies += folded[k].1.len();
@@ -1563,9 +1720,34 @@ pub fn fold(inputs: &[Input<'_>], options: &Options) -> (Vec<Output>, Report) {
         }
     }
     let anchors: Vec<Vec<u8>> = synth.iter().map(|(_, a)| a.clone()).collect();
-    let made: Vec<Result<Vec<u8>, String>> = turbonop_par::map_range(synth.len(), 1, |k| {
-        synthesize(&parsed, &synth[k].0, k, &moved_into, &anchors)
-    });
+    // The survivors' members' DWARF, read once each, on every core.
+    let debug_members: Vec<usize> = synth
+        .iter()
+        .filter(|(units, _)| units.iter().any(|&(m, u)| parsed[m].units[u].debug))
+        .map(|(units, _)| units[0].0)
+        .collect::<BTreeSet<usize>>()
+        .into_iter()
+        .collect();
+    let sources: Vec<Result<dwarf::Source<'_>, &'static str>> =
+        turbonop_par::map(&debug_members, 1, |&m| match parsed[m].obj.as_ref() {
+            Some(obj) => dwarf::Source::new(obj, &parsed[m].owner),
+            None => Err("unread"),
+        });
+    let source_of: BTreeMap<usize, &Result<dwarf::Source<'_>, &'static str>> =
+        debug_members.iter().copied().zip(sources.iter()).collect();
+    let made: Vec<Result<(Vec<u8>, Debugged), String>> =
+        turbonop_par::map_range(synth.len(), 1, |k| {
+            let has_debug = synth[k].0.iter().any(|&(m, u)| parsed[m].units[u].debug);
+            let src = if has_debug {
+                synth[k]
+                    .0
+                    .first()
+                    .and_then(|&(m, _)| source_of.get(&m).copied())
+            } else {
+                None
+            };
+            synthesize(&parsed, &synth[k].0, k, &moved_into, &anchors, src)
+        });
     let mut out = Vec::with_capacity(inputs.len() + made.len());
     for (m, r) in rewritten.into_iter().enumerate() {
         match r {
@@ -1595,9 +1777,33 @@ pub fn fold(inputs: &[Input<'_>], options: &Options) -> (Vec<Output>, Report) {
     }
     for (k, m) in made.into_iter().enumerate() {
         match m {
-            Ok(bytes) => {
+            Ok((bytes, d)) => {
                 report.synthesized += 1;
                 report.synthesized_bytes += bytes.len() as u64;
+                let described = synth[k]
+                    .0
+                    .iter()
+                    .filter(|&&(m, u)| parsed[m].units[u].debug)
+                    .count();
+                if described > 0 {
+                    let why = match d.dropped {
+                        Some(why) => Some(why),
+                        None if d.bytes == 0 => {
+                            Some("no DIE or line-table sequence describes them")
+                        }
+                        None => None,
+                    };
+                    match why {
+                        Some(why) => {
+                            report.debug_dropped += described;
+                            *report.debug_dropped_why.entry(why).or_default() += described;
+                        }
+                        None => report.debug_moved += described,
+                    }
+                }
+                report.debug_roots += d.roots;
+                report.debug_tombstoned += d.tombstoned;
+                report.debug_bytes += d.bytes;
                 out.push(Output {
                     name: format!("__turbolib.{k}.o").into_bytes(),
                     data: Some(bytes),

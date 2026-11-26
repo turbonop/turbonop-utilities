@@ -42,12 +42,13 @@ pub mod units;
 
 use crate::hash::H128;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use turbonop_coff::{
     Aux, File, Format, Name, Object, Relocation, Section, SectionData, SectionDefinition,
     SectionId, SectionNumber, Skeleton, Symbol, SymbolId, WeakExternal, comdat_select,
     storage_class, weak_search,
 };
+use turbonop_hash::Map as HashMap;
 use units::{Facts, is_debug};
 
 /// One input member: its name in the archive and its bytes.
@@ -340,7 +341,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
 
     lap(0);
     // The member the archive index names for each name: its first definer.
-    let mut first_definer: HashMap<&[u8], usize> = HashMap::new();
+    let mut first_definer: HashMap<&[u8], usize> = HashMap::default();
     let defs: Vec<Vec<Cow<'_, [u8]>>> = inputs
         .iter()
         .zip(&parsed)
@@ -355,7 +356,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     // Each name's code, if every definition of it in the library is a unit
     // with that code (whatever its environment); `None` if any differs, or
     // isn't a unit's.
-    let mut one_code: HashMap<&[u8], Option<u128>> = HashMap::new();
+    let mut one_code: HashMap<&[u8], Option<u128>> = HashMap::default();
     for (p, d) in parsed.iter().zip(&defs) {
         if p.passed.is_some() {
             for name in d {
@@ -378,7 +379,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
 
     lap(1);
     // Groups of copies, in order of first appearance.
-    let mut groups: HashMap<u128, usize> = HashMap::new();
+    let mut groups: HashMap<u128, usize> = HashMap::default();
     let mut copies: Vec<Vec<(usize, usize)>> = Vec::new();
     for (m, p) in parsed.iter().enumerate() {
         for (u, unit) in p.facts.units.iter().enumerate() {
@@ -391,7 +392,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     let mut removals: Vec<Vec<(usize, Removal)>> = vec![Vec::new(); parsed.len()];
-    let mut synth_of: HashMap<(u128, u64, Vec<usize>), usize> = HashMap::new();
+    let mut synth_of: HashMap<(u128, u64, Vec<usize>), usize> = HashMap::default();
     let mut synths: Vec<Synth> = Vec::new();
     for c in &copies {
         let unit = |&(m, u): &(usize, usize)| &parsed[m].facts.units[u];
@@ -672,7 +673,7 @@ fn strip<'a>(
         .remove_sections(|id, _| removed[id.index()])
         .expect("a foldable unit is referred to only by external symbols");
     let before = object.symbol_table_indices();
-    let mut defaults: HashMap<Vec<u8>, SymbolId> = HashMap::new();
+    let mut defaults: HashMap<Vec<u8>, SymbolId> = HashMap::default();
     // (Alias record, the plain record the relocations now name.)
     let mut retarget: Vec<(SymbolId, SymbolId)> = Vec::new();
     for (id, default, search) in weak {
@@ -821,13 +822,13 @@ fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8], name: &[u8]) 
     // copy is a renamed one. Relocations are filled in after, once every
     // unit's symbols are in.
     let mut placed: Vec<Placed> = Vec::with_capacity(s.units.len());
-    let mut defined: HashMap<Vec<u8>, SymbolId> = HashMap::new();
+    let mut defined: HashMap<Vec<u8>, SymbolId> = HashMap::default();
     for (k, &(m, u, renamed_copy)) in s.units.iter().enumerate() {
         let object = parsed[m].object.as_ref().expect("units come from objects");
         let unit = &parsed[m].facts.units[u];
         let mut p = Placed {
-            sections: HashMap::new(),
-            symbols: HashMap::new(),
+            sections: HashMap::default(),
+            symbols: HashMap::default(),
         };
         for &id in &unit.sections {
             let sec = &object.sections[id.index()];
@@ -885,8 +886,8 @@ fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8], name: &[u8]) 
     // a symbol defined here or to an undefined external.
     let mut names = Names {
         defined,
-        undefined: HashMap::new(),
-        weak: HashMap::new(),
+        undefined: HashMap::default(),
+        weak: HashMap::default(),
     };
     for (k, &(m, u, _)) in s.units.iter().enumerate() {
         let object = parsed[m].object.as_ref().expect("units come from objects");

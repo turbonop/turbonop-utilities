@@ -55,11 +55,11 @@ use super::units::{Unit, weak_default};
 use super::{Parsed, Placed, Synth, Unfoldable, section_symbol};
 use crate::hash::H128;
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
 use turbonop_coff::{
     Object, Relocation, Renumbering, Section, SectionData, SectionDefinition, SectionId, Symbol,
     SymbolId, storage_class,
 };
+use turbonop_hash::{Map as HashMap, Set as HashSet};
 
 /// The side tables' section names.
 pub const NAMES: &[&[u8]] = &[
@@ -757,7 +757,7 @@ pub(super) fn place<'d>(
 ) -> Fields {
     let mut fields = Fields::default();
     let mut building: Vec<Building> = Vec::new();
-    let mut by_name: HashMap<Vec<u8>, usize> = HashMap::new();
+    let mut by_name: HashMap<Vec<u8>, usize> = HashMap::default();
     for (k, &(m, u, _)) in s.units.iter().enumerate() {
         let object = parsed[m].object.as_ref().expect("units come from objects");
         let facts = &parsed[m].facts;
@@ -801,7 +801,7 @@ pub(super) fn place<'d>(
                     characteristics: source.characteristics,
                     data: source.bytes()[..t.header as usize].to_vec(),
                     relocations: Vec::new(),
-                    listed: HashSet::new(),
+                    listed: HashSet::default(),
                     fields: Vec::new(),
                     uleb: (t.kind == Kind::Addrsig).then(Vec::new),
                 });

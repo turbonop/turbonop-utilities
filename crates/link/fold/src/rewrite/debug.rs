@@ -68,7 +68,6 @@
 use super::{Parsed, Unfoldable, units};
 use crate::hash::h64;
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
 use turbonop_codeview::annotations;
 use turbonop_codeview::c13::{self, CV_SIGNATURE_C13, InlineeSource, StringTableBuilder};
 use turbonop_codeview::lines::subsection as sub;
@@ -82,6 +81,7 @@ use turbonop_coff::{
     Aux, Object, Section, SectionData, SectionDefinition, SectionId, SectionNumber,
 };
 use turbonop_coff::{Name, Symbol, storage_class};
+use turbonop_hash::{Map as HashMap, Set as HashSet};
 
 /// The first index that isn't a built-in type.
 const FIRST: u32 = 0x1000;
@@ -526,7 +526,7 @@ fn string(table: &[u8], offset: u32) -> Option<&[u8]> {
 pub(super) fn resolve(parsed: &mut [Parsed<'_>]) {
     // PCH objects by signature; a signature two different PCHs have is
     // no one's.
-    let mut pchs: HashMap<u32, Option<usize>> = HashMap::new();
+    let mut pchs: HashMap<u32, Option<usize>> = HashMap::default();
     for (m, p) in parsed.iter().enumerate() {
         if let Types::Records {
             end_precomp: Some((signature, _)),
@@ -720,17 +720,17 @@ impl<'p, 'a> Builder<'p, 'a> {
             parsed,
             types: Vec::new(),
             starts: Vec::new(),
-            by_hash: HashMap::new(),
-            collided: HashMap::new(),
-            merged: HashMap::new(),
+            by_hash: HashMap::default(),
+            collided: HashMap::default(),
+            merged: HashMap::default(),
             server: None,
-            files: HashMap::new(),
+            files: HashMap::default(),
             checksums: Vec::new(),
-            checksum_at: HashMap::new(),
+            checksum_at: HashMap::default(),
             strings: StringTableBuilder::new(),
             inlinees: Vec::new(),
-            inlined: HashSet::new(),
-            moved: HashMap::new(),
+            inlined: HashSet::default(),
+            moved: HashMap::default(),
             main: None,
             base: FIRST,
             precomp: None,

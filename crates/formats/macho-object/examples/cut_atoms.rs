@@ -202,6 +202,9 @@ struct Report {
     bytes_cut: u64,
     orphaned: usize,
     dangling: usize,
+    /// Of `dangling`, those in debug sections.
+    dangling_debug: usize,
+    misaligned: usize,
     unadjusted: usize,
     checked_relocations: usize,
     checked_symbols: usize,
@@ -216,6 +219,8 @@ impl Report {
         self.bytes_cut += r.bytes_cut;
         self.orphaned += r.orphaned;
         self.dangling += r.dangling;
+        self.dangling_debug += r.dangling_debug;
+        self.misaligned += r.misaligned;
         self.unadjusted += r.unadjusted;
         self.checked_relocations += r.checked_relocations;
         self.checked_symbols += r.checked_symbols;
@@ -271,6 +276,15 @@ fn smoke_object(name: &str, data: &[u8], r: &mut Report) {
             .sum::<u64>();
     r.orphaned += report.orphaned_symbols.len();
     r.dangling += report.dangling.len();
+    r.dangling_debug += report
+        .dangling
+        .iter()
+        .filter(|&&(i, _)| {
+            o.section(i)
+                .is_some_and(turbonop_macho_object::Section::is_debug)
+        })
+        .count();
+    r.misaligned += report.misaligned.len();
     r.unadjusted += report.unadjusted.len();
     let out = match o.write() {
         Ok(out) => out,
@@ -404,8 +418,12 @@ fn main() {
             total.objects, total.with_weak, total.atoms, total.bytes_cut
         );
         println!(
-            "  {} orphaned symbols removed, {} relocations dangling, {} unadjusted",
-            total.orphaned, total.dangling, total.unadjusted
+            "  {} orphaned symbols removed, {} relocations dangling ({} in debug sections), {} unadjusted, {} sections misaligned",
+            total.orphaned,
+            total.dangling,
+            total.dangling_debug,
+            total.unadjusted,
+            total.misaligned
         );
         println!(
             "  {} local relocations and {} symbols checked in their sections; {} failures",

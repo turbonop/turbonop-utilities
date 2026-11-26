@@ -50,11 +50,20 @@
 //! can't see: an address in bytes with no relocation and outside
 //! `__eh_frame`, which LLVM doesn't write; a removed section's FDEs and
 //! indirect symbol entries, which stay (the caller removes them; see
-//! [`ehframe`]); and what an edit does to the code itself. Edits inside a
-//! section are the caller's alone: references within one section that the
-//! assembler resolved (branches to labels of the same section, differences
-//! of two of its labels) carry no relocation, so removing bytes from the
-//! middle of a section moves what they refer to unseen.
+//! [`ehframe`]); and what an edit does to the code itself.
+//!
+//! [`Object::cut`] removes byte ranges from inside sections (atoms, for
+//! folding) by the same means: one map of old addresses to new ones moves
+//! relocations' places and encoded targets, symbols, `__eh_frame`'s
+//! pointers and its FDEs' links to their CIEs, and link-edit data, and
+//! reports what was in the ranges. It is sound for ranges that are whole
+//! atoms (an atom's symbol to the next one's): the references within a
+//! section that the assembler resolved itself, with no relocation (a
+//! function's branches to its own labels), stay within an atom, which
+//! moves as one. A range that splits an atom moves such references'
+//! targets unseen; and cut only moves bytes, it doesn't pad: what follows
+//! a range whose length isn't a multiple of its alignment is reported
+//! ([`Cut::misaligned`]).
 
 #![no_std]
 // Mach-O fields are unpacked by masks and shifts, and the writer checks

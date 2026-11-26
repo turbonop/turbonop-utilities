@@ -50,7 +50,11 @@
 //! can't see: an address in bytes with no relocation and outside
 //! `__eh_frame`, which LLVM doesn't write; a removed section's FDEs and
 //! indirect symbol entries, which stay (the caller removes them; see
-//! [`ehframe`]); and what an edit does to the code itself.
+//! [`ehframe`]); and what an edit does to the code itself. Edits inside a
+//! section are the caller's alone: references within one section that the
+//! assembler resolved (branches to labels of the same section, differences
+//! of two of its labels) carry no relocation, so removing bytes from the
+//! middle of a section moves what they refer to unseen.
 
 #![no_std]
 // Mach-O fields are unpacked by masks and shifts, and the writer checks

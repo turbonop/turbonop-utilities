@@ -445,10 +445,17 @@ x64. Where the 3.5 MB went:
   - `.note.gnu.property` is in the environment key as bytes: merge it
     instead (AND-type properties by OR over a unit's copies, OR-type by
     AND), so objects with different `ISA_1_USED` notes fold together.
-  - `--fold=select-any` for ELF; the ELF side of `turbolib verify`; an ELF
-    `compare-images` (functions' bytes modulo PC-relative operands; today
-    `relink.py` compares programs' outputs, members loaded, and the
-    images' symbol names, types, and sizes).
+  - `--fold=select-any` for ELF.
+  - ELF `verify` and `compare-images` are done (the plan's 6.4). Open:
+    the folded index of 4 libraries of the gcc corpus lists 1 or 2 empty
+    names for a rewritten member with extended section numbering
+    (`SLPVectorizer.cpp.o` of `libLLVMVectorize.a`), so `verify` fails
+    them: find where `ar s --fold` takes them from. `compare-images`
+    doesn't compare bytes outside sized symbols (string and constant
+    pools, jump tables, `.gcc_except_table`: name them by content or by
+    the references into them) and has decoded no ARM64 ELF image;
+    `verify` leaves synthesized members' DWARF to `compare-images`. Run
+    both on the clang corpus.
   - Untested: REL machines (i386, ARM) and big-endian objects in a fold;
     AArch64, RISC-V, MIPS objects at all; GCC LTO objects and LLVM
     bitcode members (the `ar` personality refuses to index them); BSD

@@ -27,7 +27,7 @@ items leave TODO.md as they ship.
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links). Not yet: 3.5, `clustered`. |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
-| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, a first `--fold=identical` for ELF (2.4% smaller on the gcc corpus; `llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold), without debug information for folded functions (dropped and counted), 2.66× GNU `ar`'s time. Not yet: moving DWARF, split DWARF, `select-any` and `--locals` for ELF, ELF `verify` and `compare-images`. |
+| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, a first `--fold=identical` for ELF (2.4% smaller on the gcc corpus; `llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold), without debug information for folded functions (dropped and counted), 2.66× GNU `ar`'s time. 6.4, ELF `verify` and `compare-images` (166 of 170 folded libraries verify, the other 4 fail on index entries with empty names; every relinked program equivalent but for the folded functions' missing DWARF). Not yet: moving DWARF, split DWARF, `select-any` and `--locals` for ELF. |
 | 7 Mach-O | Not yet. |
 
 ### Picking this up elsewhere
@@ -1047,9 +1047,8 @@ each with GNU ld 2.46, gold, lld 21, and mold:
 | output of `llvm-nm -C`, `--size-sort -S`, `llvm-readobj --sections --symbols` on the build's libraries | the same | the same | the same | the same |
 | image size | +0.09%, +0.10% | +0.09%, +0.10% | +0.09%, +0.10% | -0.5% |
 
-What the images' bytes are isn't compared (an ELF `compare-images` is
-still to write), nor any debugging: the folded functions have no debug
-information.
+What the images hold is compared by `compare-images` (see 6.4): the same
+but for the folded functions' DWARF.
 
 **Determinism**: `libLLVMSupport.a` and `libLLVMCore.a`, folded with
 `-j 1`, `-j 3`, and `-j 8` in separate processes, are the same bytes
@@ -1098,6 +1097,119 @@ What was found on the way:
   if every name its relocations give that another unit of its member
   defines folds too, to a fixpoint: the largest reason copies stay
   (466,557), as the units with side-effect definers keep their callees.
+
+### Verification (6.4): `verify` and `compare-images` for ELF
+
+Both are in `turbonop_verify::elf`; `turbolib verify` takes GNU and BSD
+archives of ELF objects, and `turbolib compare-images a b` two ELF
+programs (no PDBs: they carry their symbols and DWARF). Both run on every
+core and report by category as for COFF.
+
+**`turbolib verify`** (`elf::library`) hashes each COMDAT group as a unit
+by a canonical form written apart from the engine (sections by name,
+type, flags, alignment, entry size, and bytes; relocations with targets
+by name outside the unit and by place inside it; the symbols it defines;
+its FDEs and their CIEs), and a member's environment apart. It checks
+every original member present in order and every added one synthesized
+(it defines a hidden weak absolute `__turbolib.anchor.` name); in each
+rewritten member, the environment, the sections outside units with their
+bytes and relocations unchanged, `.eh_frame`'s records the original's but
+the lost units' FDEs, `.debug_*` unchanged but at the relocations to lost
+units, which are gone and whose places hold the tombstone, the kept units
+the original's, every lost unit held identically (hash and environment)
+by a synthesized member the member anchors, every definition kept or (in
+a lost unit) a weak undefined reference of its type, and no new
+undefined names but moved ones and anchors; in synthesized members, units
+that givers lost, none in two members, no sections but units',
+environments', `.eh_frame`, tables, and DWARF (reported as left to
+`compare-images`), and only names the original library knows; each
+archive's index against its members (`unix::symbols`, GNU `ar`'s rules);
+and, under `--pull=preserve`, each name of the original's index sent to
+the same member or, from a definer without side effects, to a
+synthesized member.
+
+**`turbolib compare-images`** (`elf`, `elf::program`, `elf::tables`,
+`elf::dwarf`) names every address by a label: `.symtab`'s sized globals,
+then sized locals (by name where no other symbol has it or it has a
+visibility, else `name@file` and an ordinal), other symbols, PLT entries
+and GOT slots by what their dynamic relocations name, sections' starts;
+an address outside every symbol in a non-code section is named by its
+contents (up to 32 bytes or a NUL), since merged strings and constants
+move with the link. Then:
+
+- **functions and data**: each sized symbol (one per extent) paired by
+  its key, its dynamic relocations compared by what they name (and
+  masked), and its bytes compared with COFF's `image::bytes` (x86-64
+  PC-relative operands by their targets' names, other differing 4-byte
+  words as addresses naming the same thing), plus thread-pointer offsets
+  (local-exec TLS displacements and immediates) naming the same TLS
+  variable: the TLS block's layout follows the link. The linker's tables
+  (`.dynamic`, GOT, PLT, relocations, hash tables, versions,
+  `.eh_frame*`) are compared as tables, not bytes.
+- **tables**: header fields and the entry point, program headers and
+  sections (type and flags in order), `.symtab` as a set (anchors only in
+  the second, expected; mold's absolute group-signature locals as a set
+  of names), the dynamic section (`DT_NEEDED` and other strings, flags,
+  `DT_INIT`/`DT_FINI` by name, the tags), dynamic symbols with versions,
+  dynamic relocations as a multiset, the initializer arrays in order,
+  notes (build IDs expected to differ), FDEs by function (instructions
+  without trailing `DW_CFA_nop` padding, CIE, personality and LSDA by
+  name), `.eh_frame_hdr` as a set.
+- **DWARF**: every live subprogram (its entry address in an executable
+  section: lld and mold tombstone discarded copies) keyed by its entry's
+  label, its subtree DIE by DIE (attributes sorted, forms ignored,
+  addresses and range and location lists by names, expressions with
+  addresses as names and references as identities, `DW_AT_GNU_locviews`
+  as view pairs, files as paths; a nested subprogram with code of its own
+  compared apart, and by identity inside its parent), its unit's
+  producer, name, directory, language, and version, and the unit's line
+  rows over its ranges (by offset from each range's start; an end of
+  sequence only if one of its sequence's rows is in the range);
+  variables at fixed addresses by label; named type definitions as
+  (qualified name, contents). A reference compares as the identity of its
+  target (tag, qualified name, name, linkage name, and what a
+  specification or abstract origin names; anonymous DIEs structurally),
+  so a type's declaration and its definition compare equal. Descriptions
+  are compared as sets: GNU ld and gold give a discarded copy's DWARF the
+  kept copy's addresses, so the original may describe a subprogram once
+  per unit that had a copy (expected when the second's descriptions are
+  among them), and a description with the same DIEs and rows from
+  another unit is expected (the link keeps the first loaded copy's,
+  turbolib the first member's).
+
+What they can't prove: `verify` doesn't follow references (a definer
+without side effects may load members that have some), relies on 128-bit
+hashes, and doesn't read synthesized members' DWARF; `compare-images`
+infers differing words as addresses or TLS offsets (and equal bytes
+outside a function's code that decode as PC-relative operands are
+accepted), doesn't compare bytes outside every sized symbol (counted:
+11.3 MB in `llvm-nm`, mostly string and constant pools, jump tables,
+`.gcc_except_table`, and the linker's own tables), decodes only x86-64
+code (ARM64's decoding is COFF's, untested on ELF), takes trailing zeros
+of an FDE's instructions as padding, compares DWARF references by
+identity rather than following them (type definitions are compared
+apart), and runs nothing.
+
+**Results** (gcc corpus, WSL, 8 threads, at low priority beside a build):
+
+| Check | Result |
+|---|---|
+| `verify` of the gcc build's 170 folded libraries (`folded-gcc`, 13.96 GiB) against the build's | 166 pass; 4 fail (`libLLVMVectorize.a`, `libMLIROpenACCDialect.a`, `libMLIROpenMPDialect.a`, `libclangCIR.a`): the folded archive's index lists 1 or 2 empty names for a rewritten member (`SLPVectorizer.cpp.o`, with 99,156 sections) whose symbols give none; 62.6 s for all |
+| ... what it checked | 2,640 original members, 2,488 rewritten, 29,069 synthesized; 1,048,040 moved units, each held by a synthesized member its giver anchors (the engine's count of folded copies); 4,361,268 debug places tombstoned (the engine's count); 3,867,349 definitions; 2,033,763 names of the indexes sent where `--pull=preserve` allows |
+| `compare-images` of a second link of the original against the first (`relink.py --compare-images`), `llvm-nm` and `llvm-readobj` with GNU ld, gold, lld, and mold | 8 of 8 equivalent, 3.2 to 4.3 s each (about 1.8 GB of memory) |
+| the same, original against folded | all 8 equivalent in every category but DWARF: the folded functions' subprograms are only in the original (`llvm-nm`: 11,197 with GNU ld, 13,586 gold, 14,691 lld, 14,666 mold; `llvm-readobj`: 9,801, 10,648, 11,022, 11,031; fewer with GNU ld and gold, which give other libraries' discarded copies' DWARF the kept copy's addresses). Expected: the anchors (3,863 and 3,464), up to 30 subprograms described by another unit's copy, sections' and segments' sizes |
+| ... checked in `llvm-nm` with lld | 171,103 functions and data (31.1 MB), 1,012,838 PC-relative operands, 36,787 dynamic relocations in them, 148,947 FDEs, 147,181 live subprograms, 140,549 distinct type definitions |
+| `breaklib.py`: one byte of `raw_ostream::write` changed in the folded `libLLVMSupport.a`, `llvm-nm` relinked with lld | caught by both: `compare-images` (that function's bytes differ: 1 failure) and `verify` (that member's section changed) |
+
+What was found on the way: linkers make hidden globals locals after
+another object's `STT_FILE` (a synthesized member has none), so locals
+are keyed by name where they can be; TLS variables in COMDAT groups move
+into synthesized members, which changes TLS offsets (`.tbss` 0x30 to 0x29
+bytes in `llvm-nm` with lld, mold uses imm32 and disp8 forms); a lambda's
+DWARF is nested in its enclosing function's, whose kept copy may come
+from a unit where the lambda's code was discarded; `turbonop-elf-object`'s
+`symbols()` searches the sections each call (a first `verify` took 164 s
+on `libLLVMVectorize.a`, 3.5 s once the table was looked up once).
 
 ## Decisions
 

@@ -24,9 +24,9 @@ items leave TODO.md as they ship.
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, sanitizers. |
 | 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. 1.2's `/DEF` too: import libraries and export files as `lib.exe` and `llvm-lib` write them. Not yet: thin libraries. |
 | 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
-| 3 Shared types: a synthesized precompiled-types object | Not yet. |
+| 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links). Not yet: 3.5, `clustered`. |
 | 4 Less conservative folding | Not yet. |
-| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding and 0.97× with it. |
+| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
 | 6 ELF, with split DWARF | Not yet. |
 | 7 Mach-O | Not yet. |
 
@@ -631,6 +631,162 @@ lld-link, the images grow (2.8 MiB for `llvm-nm`); on `build-z7-nopch`
 by exactly as much with the phase 2.2 engine, which drops debug
 information, so not from 2.4.
 
+## Phase 3 results
+
+`--precomp=library` (`/TURBOLIB:precomp=library`, or in
+`TURBOLIB_OPTIONS`) writes one precompiled-types member for each machine
+whose members share records (`turbonop_fold::rewrite::precomp`), with or
+without `--fold`. As [Shared types](#shared-types-phase-3) says, with
+these choices and findings:
+
+- **The shared set.** A record is shared when at least 2 members hold it
+  (`Precomp::Library { min }`; the command line has no option for `min`
+  yet). Never shared: `LF_FUNC_ID`, `LF_MFUNC_ID`, `LF_BUILDINFO`, and in
+  each member the records only its `LF_BUILDINFO` reaches (its command
+  line, directory, and source: that member keeps its own copy, even of a
+  record others share). The set is closed under references: a record
+  naming one that can't be shared isn't (none is known to; a test makes
+  one). Records are hashed structurally with the member's machine, so a
+  library of two machines gets two members.
+- **Order and names.** The records are ordered by depth (each names only
+  earlier ones), then by hash: the same for any thread count. The
+  signature is the low 32 bits of a hash of the records (never 0); the
+  member is `turbolib-types-<64-bit hash>.obj`, its symbol
+  `__@@_PchSym_turbolib_<128-bit hash>`, and its `S_OBJNAME`
+  `turbolib:<member name>` with the signature (real `/Yc` objects have 0
+  there; lld-link finds a PCH by its `S_OBJNAME` signature or else by the
+  file name in `LF_PRECOMP`, which is the member's name, so both lead to
+  it). The same records always give the same names, so two libraries that
+  share the same records name one PCH, and either copy serves.
+- **The symbol is absolute**, not a 4-byte `.bss` as `/Yc` objects and
+  phase 0's spike had: both linkers accept it (the fixtures' links, and
+  the corpus's below), and the image gets no data from it.
+- **A member is rewritten only if that makes it smaller**: one sharing a
+  few small records would grow by its `LF_PRECOMP` and the symbol (2 of
+  the fixtures' 6 /O2 objects; 86 of 2,536 candidates on `build-z7`, 83
+  of 3,632 on `build-z7-nopch`). Members whose `.debug$S` can't be read
+  through (a kind with no known layout, an index out of range) keep their
+  types, and are reported (none on the corpora).
+- **PCH users (3.4).** A user whose PCH object is in the library is
+  absorbed, named or not: its indices into the PCH hash as the PCH
+  object's records, and the records of the PCH it reaches (from its own
+  records and its `.debug$S`, transitively) count as its own, kept or
+  shared. **The PCH object itself stays as it is**, a deviation from the
+  plan's step 5: LLVM's libraries reuse each other's PCH objects, so a
+  user in another library may name it, and it can't name a PCH itself.
+  Its users keep their `/INCLUDE` of its symbol, so it is still loaded as
+  before. A user whose PCH object isn't in the library keeps its types:
+  it can name only one `LF_PRECOMP`. (A PCH that names another PCH
+  would let those users share too; lld-link reads a `.debug$P` as plain
+  records, judging by its source (`InputFiles.cpp`), so it would likely
+  not work there. Not tried.)
+- **What else changes in a member**: its `.debug$H` (lld's precomputed
+  type hashes, stale now) goes; its `.chks64` keeps the checksums of the
+  sections that stay as they were, with 0 (as cl gives `.bss`) for the
+  others. (Before, `.chks64` went from every changed member: link.exe
+  takes its PDB's contribution CRCs from it, and without it
+  `compare-images` labeled every contribution of a changed member
+  differently, 28,064 failures for `llvm-nm` under `/OPT:REF`.)
+- **Synthesized members (2.4)** name the same PCH, and their records that
+  are shared are the PCH's; absorbed users' units go to the same
+  synthesized members as everyone's (their key is the library's PCH now).
+- **Compacting again** changes nothing: a precompiled-types member of
+  turbolib's in the input counts every record for each of its users, so
+  the same set is made, the same bytes, and it is kept rather than
+  written twice.
+- `turbolib verify` takes the PCH symbol as an anchor (defined by an added
+  member, referred to by members), and an original member's `/INCLUDE`
+  as a name it refers to (a synthesized member holding a PCH user's units
+  refers to its PCH object's symbol). `compare-images` expects the PCH
+  symbols' publics, and types and ids only in the second PDB when it has
+  turbolib's PCH modules.
+
+**On the corpus** (`relib.py`, the build's own archiver commands, all 250
+libraries; sizes in GiB):
+
+| | `build-z7` | `build-z7-nopch` |
+|---|---|---|
+| The build's libraries | 13.68 | 21.77 |
+| `--fold=identical` | 12.17 (1.51 saved, 11.0%) | 20.28 (1.49, 6.8%) |
+| `--precomp=library` | 12.61 (1.07, 7.8%) | 11.57 (10.20, 46.8%) |
+| both | 11.08 (2.61, 19.0%) | 9.98 (11.79, 54.1%) |
+| The analyzer's projection, types | 3.1 (22.7%) | 10.2 (47.1%) |
+| The analyzer's projection, the conservative default | 5.8 (42.5%) | 13.0 (59.7%) |
+| Precompiled-types members | 96, 200 MiB | 169, 815 MiB (projected: 816) |
+| Members sharing, of those that could | 2,450 of 2,536 (2,490 absorbed PCH users) | 3,549 of 3,632 |
+| Their `.debug$T` | 1,701 MiB to 404 MiB | 12,074 MiB to 814 MiB |
+
+Kept `.chks64` sections take 0.07 to 0.14 GiB of that (without them,
+shared types alone saved 1.16 and 10.35 GiB). `build-z7-nopch` saves
+about what the analyzer projected. `build-z7` saves 1.07 GiB of the
+projected 3.1: the analyzer counts every PCH user's own
+records as shareable, but about 1,100 of its 3,604 users name a PCH
+object in another library, and keep their types (see above).
+
+**Links** (`relink.py`'s matrix for `llvm-nm` and `llvm-readobj`: link.exe
+and lld-link, `/OPT:REF` and `NOREF`, `/DEBUG:FULL` and lld's `GHASH`;
+12 links each):
+
+- `--precomp=library` alone: `compare-images` finds all 8 lld-link links
+  equivalent on each corpus. lld-link's PDBs hold every record of the
+  PCHs it loads, so they have more: on `build-z7-nopch`, for `llvm-nm`,
+  14,064 types and 699 ids (`LF_UDT_SRC_LINE`), for `llvm-readobj`, 4,901
+  and 263, and none is missing (expected; this is the trade-off the plan
+  measured). link.exe's PDBs have no more records (measured; phase 0's
+  spike had all of a `/Yc` object's records arrive). The 4 link.exe links
+  fail on 4 to 49 records, all picks among same-named records: an `S_UDT`
+  or `S_CONSTANT` naming the other of two definitions of one name (each
+  translation unit's `std::vector` instantiation, for one; both in both
+  PDBs), or another `LF_UDT_SRC_LINE` (`cl::opt<std::string>` at
+  `CommandLine.cpp(79)` or at `CommandLine.h(1573)`). Two link.exe links
+  of the build's own libraries differ in the same categories (4 to 49
+  records: a control run of `relink.py`).
+- `pdbcompare.py`: the same procedures (147,113 in `llvm-nm`, 144,608 in
+  `llvm-readobj`), with the same signatures, locals, inline sites, and
+  lines, in every configuration checked; on `build-z7`, link.exe's records
+  outside procedures differ in the same picks (3 and 9, 38 and 21).
+- With folding too: `pdbcompare.py` finds exactly the procedure
+  differences folding alone has (4,577, 2,092, and 57 on
+  `build-z7-nopch`; 3,294, 2,015, and 35 on `build-z7`: which copy's lines
+  a link keeps), and `compare-images` the categories folding alone has,
+  with slightly fewer failures in each of the 24 links (for `llvm-nm` on
+  `build-z7-nopch`: 15,577 against 16,057 with link.exe `/OPT:REF`,
+  44,438 against 44,922 with lld-link `/OPT:REF`), and without folding's
+  own types only in the second PDB (425 for `llvm-nm`, lld-link).
+- Keeping `.chks64` helps folding alone too: link.exe `/OPT:REF` links of
+  `llvm-nm` against folded libraries had 40,623 failures (`build-z7-nopch`)
+  and 34,477 (`build-z7`) with it dropped, and 16,057 and 9,065 with it
+  kept; the rest are folding's known differences (see 2.6).
+- The programs print what the originals print: `llvm-nm` and
+  `llvm-readobj --all` on 16 inputs (`testdata/coff`'s objects and
+  libraries, `LLVMDemangle`'s objects, `LLVMDemangle.lib`,
+  `LLVMBinaryFormat.lib`), 192 runs for each of shared types alone and
+  with folding, on each corpus: none different.
+- `turbolib verify` passes all 169 and 190 libraries folded with shared
+  types (`build-z7-nopch`, `build-z7`).
+- The fixtures (`tools/turbolib/debug/check.py --options=...`): with
+  shared types, and with folding too, both programs print the same and
+  their PDBs have the same procedures and other records, with both
+  linkers.
+
+**Determinism**: `clangCodeGen.lib` (`build-z7-nopch`, `/Brepro`) is the
+same bytes on 8 threads and on 1, and from two builds of the engine.
+
+**Speed** (`timelib.py`, the 20 largest libraries, best of 2, warm cache,
+8 threads):
+
+| | `build-z7` (7.26 GiB) | `build-z7-nopch` (13.17 GiB) |
+|---|---|---|
+| `lib.exe` 14.52 | 11.02 s, 1.00× | 17.59 s, 1.00× |
+| `--fold=identical` | 11.03 s, 1.00× | 14.34 s, 0.82× |
+| `--fold=identical --precomp=library` | 11.73 s, 1.06× | 16.18 s, 0.92× |
+| `--precomp=library` | 10.71 s, 0.97× | 15.61 s, 0.89× |
+
+Finding the shared types (hashing every record, counting, ordering, and
+writing the PCH) takes about 0.35 s of `clangCodeGen.lib`'s 1.6 s
+(`build-z7-nopch`, 1.5 GiB, 1 GiB of it `.debug$T`), and runs while the
+definers are found; writing the output takes less, as it is smaller.
+
 ## Decisions
 
 | | Decision |
@@ -975,7 +1131,7 @@ members last, as `preserve` now puts them, changed nothing). Still open
 | Mode | Behavior |
 |---|---|
 | `none` | Each member keeps its own `.debug$T`. Synthesized members get merged types of their own. |
-| `library` (default once phase 3 ships) | One precompiled-types member for the whole library. |
+| `library` (written; the default once it is proven in more links) | One precompiled-types member for the whole library (see [Phase 3 results](#phase-3-results)). |
 | `clustered=<n>` | Up to *n* precompiled-types members, with members clustered by the types they share. |
 
 ## Shared types (phase 3)
@@ -1014,7 +1170,9 @@ turbolib makes a PCH object that no compiler ever made:
    |shared|`. Then remap every type and id index in its `.debug$S`
    (symbols, inlinee lines, `S_BUILDINFO`) and add the undefined reference
    to the PCH symbol.
-5. **Members already built with `/Yu`.** If their PCH object is in the
+5. **Members already built with `/Yu`.** (As built, the PCH object stays
+   as it was, since users in other libraries may name it: see
+   [Phase 3 results](#phase-3-results).) If their PCH object is in the
    library, its types join the shared set and the old PCH object becomes
    an ordinary member. If it isn't, those members keep their
    `LF_PRECOMP`, because an object can name only one.
@@ -1382,6 +1540,7 @@ What compare-images reports for the folded libraries (link.exe,
 
 ### Phase 3: shared types
 
+- **3.1** to **3.4**: done (see [Phase 3 results](#phase-3-results)).
 - **3.1** Structural type hashing.
 - **3.2** The shared set and the precompiled-types member.
 - **3.3** Rewriting `.debug$T` and remapping `.debug$S`.
@@ -1424,6 +1583,9 @@ warm cache, 8 threads, 2026-11-25):
 | `lib.exe` 14.52 | 11.76 s | 1.00× |
 | turbolib, `--fold=none` | 5.84 s | 0.50× |
 | turbolib, `--fold=identical` (with 2.4's debug information) | 11.37 s | 0.97× |
+| Again, with phase 3 (same day): `lib.exe` | 11.02 s | 1.00× |
+| `--fold=identical` | 11.03 s | 1.00× |
+| `--fold=identical --precomp=library` | 11.73 s | 1.06× |
 
 What made the difference: writing the library in order. Setting the
 file's length first and writing at offsets on every thread made NTFS

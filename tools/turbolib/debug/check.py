@@ -3,7 +3,7 @@ into main.cpp's program, against a library lib.exe made and against the
 same library folded by turbolib, with link.exe and with lld-link, runs
 each program, and compares the PDBs with ..\\corpus\\pdbcompare.py.
 
-    python check.py <turbolib.exe> [--work DIR]
+    python check.py <turbolib.exe> [--work DIR] [--options "--fold=identical ..."]
 
 The libraries: MSVC's objects (/Od, /O2 with inline sites, and a PCH with
 its users), clang-cl's (/Od, and /O2 with inline sites), and the PCH users
@@ -65,6 +65,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("turbolib")
     ap.add_argument("--work")
+    ap.add_argument("--options", default="--fold=identical",
+                    help="turbolib's options (TURBOLIB_OPTIONS), --stats added")
     a = ap.parse_args()
     work = a.work or tempfile.mkdtemp(prefix="turbolib-debug-")
     os.makedirs(work, exist_ok=True)
@@ -82,7 +84,7 @@ def main():
         run([cl, "/nologo", "/c", "/Od", "/Z7", "/GS-", *defines,
              os.path.join(HERE, "main.cpp"), f"/Fo:{main_obj}"], work, env, log)
         run([lib_exe, "/nologo", f"/out:{name}-original.lib", *objs], work, env, log)
-        fold_env = dict(env, TURBOLIB_OPTIONS="--fold=identical --stats")
+        fold_env = dict(env, TURBOLIB_OPTIONS=a.options + " --stats")
         run([turbolib, "/nologo", f"/out:{name}-folded.lib", *objs], work, fold_env, log)
         for linker in ("link", "lld-link"):
             exe = link if linker == "link" else os.path.join(LLVM_BIN, "lld-link.exe")

@@ -13,7 +13,7 @@ use super::library;
 use super::options::{self, Options};
 use super::order::{self, Input};
 use super::output;
-use crate::settings::{Fold, Pull, Settings};
+use crate::settings::{Fold, Precomp, Pull, Settings};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -532,7 +532,7 @@ fn build(
 
     // Folding: the members rewritten, then the synthesized ones.
     clock.lap("order");
-    let folded = (settings.fold != Fold::None).then(|| {
+    let folded = (settings.fold != Fold::None || settings.precomp != Precomp::None).then(|| {
         let inputs: Vec<rewrite::Input<'_>> = members
             .iter()
             .map(|m| rewrite::Input {
@@ -549,6 +549,12 @@ fn build(
             rewrite::Options {
                 pull,
                 weak_externals: false,
+                fold: settings.fold != Fold::None,
+                precomp: match settings.precomp {
+                    Precomp::Library => rewrite::Precomp::Library { min: 2 },
+                    // (check_supported refuses the others.)
+                    Precomp::None | Precomp::Clustered(_) => rewrite::Precomp::None,
+                },
             },
         )
     });
@@ -777,6 +783,28 @@ fn stats_lines(r: &rewrite::Report) -> Vec<String> {
         t[3].as_secs_f64(),
         t[4].as_secs_f64()
     ));
+    let ty = &r.types;
+    if ty.pchs > 0 || ty.candidates > 0 {
+        out.push(format!(
+            "turbolib: types: {} shared records ({:.1} MiB) in {} precompiled-types member(s); \
+             {} of {} members share them ({} PCH users absorbed), {} share too little, {} unreadable; \
+             their .debug$T {:.1} MiB to {:.1} MiB; {:.3} s",
+            ty.shared_records,
+            mb(ty.shared_bytes),
+            ty.pchs,
+            ty.sharing,
+            ty.candidates,
+            ty.absorbed,
+            ty.nothing_shared,
+            ty.unreadable,
+            mb(ty.types_before),
+            mb(ty.types_after),
+            ty.time.as_secs_f64()
+        ));
+        if let Some(w) = &ty.first_unreadable {
+            out.push(format!("turbolib: types: the first unreadable: {w}"));
+        }
+    }
     for (why, n) in &r.passed_through {
         out.push(format!(
             "turbolib: {n} members passed through: {}",

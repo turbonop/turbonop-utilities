@@ -412,5 +412,60 @@ pub fn debug_s(section: &mut [u8], remap: &mut impl Remap) -> Result<(), Error> 
     subsections(&mut section[4..], remap).map_err(|e| shift(e, 4))
 }
 
+/// Calls `visit` with each type or id index (an id if its second argument)
+/// in a `.debug$S` section (its signature first), from `0x1000`: those
+/// [`debug_s`] renumbers, in the same order, without changing anything.
+pub fn debug_s_indices(section: &[u8], mut visit: impl FnMut(u32, bool)) -> Result<(), Error> {
+    let mut index = |data: &[u8], f: Field| match f {
+        Field::Type(at) | Field::Id(at) => {
+            let v = read(data, at as usize);
+            if v >= TypeIndex::FIRST_NON_SIMPLE {
+                visit(v, matches!(f, Field::Id(_)));
+            }
+        }
+        _ => {}
+    };
+    let old = [c13::CV_SIGNATURE_C7, c13::CV_SIGNATURE_C11].map(u32::to_le_bytes);
+    if let Some(s) = section.get(..4)
+        && old.iter().any(|o| o[..] == *s)
+    {
+        let data = &section[4..];
+        return Ok(c13::fields(kind::DEBUG_S_SYMBOLS, data, |f| {
+            index(data, f);
+        })?);
+    }
+    check_signature(section)?;
+    let c13 = &section[4..];
+    let mut at = 0;
+    while at < c13.len() {
+        let header = c13.get(at..at + 8).ok_or(Error::Truncated { at: at + 4 })?;
+        let kind = read(header, 0);
+        let len = read(header, 4) as usize;
+        let start = at + 8;
+        let end = start
+            .checked_add(len)
+            .filter(|&e| e <= c13.len())
+            .ok_or(Error::Truncated { at: at + 4 })?;
+        let data = &c13[start..end];
+        match kind {
+            kind::DEBUG_S_SYMBOLS
+            | kind::DEBUG_S_LINES
+            | kind::DEBUG_S_IL_LINES
+            | kind::DEBUG_S_FILECHKSMS
+            | kind::DEBUG_S_INLINEELINES
+            | kind::DEBUG_S_FRAMEDATA
+            | kind::DEBUG_S_CROSSSCOPEIMPORTS
+            | kind::DEBUG_S_CROSSSCOPEEXPORTS => {
+                c13::fields(kind, data, |f| {
+                    index(data, f);
+                })?;
+            }
+            _ => {}
+        }
+        at = end + (len.wrapping_neg() & 3);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;

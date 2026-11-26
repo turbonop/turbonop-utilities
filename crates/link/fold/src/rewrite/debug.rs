@@ -65,7 +65,7 @@
 //! [`Builder`] can't fail. A unit whose debug information can't be carried
 //! doesn't fold ([`Unfoldable::DebugInfo`]).
 
-use super::{Parsed, Unfoldable, units};
+use super::{Parsed, Unfoldable, precomp, units};
 use crate::hash::h64;
 use std::borrow::Cow;
 use turbonop_codeview::annotations;
@@ -84,7 +84,7 @@ use turbonop_coff::{Name, Symbol, storage_class};
 use turbonop_hash::{Map as HashMap, Set as HashSet};
 
 /// The first index that isn't a built-in type.
-const FIRST: u32 = 0x1000;
+pub(super) const FIRST: u32 = 0x1000;
 const IMAGE_SCN_LNK_COMDAT: u32 = 0x1000;
 /// MSVC's per-object `.debug$S` and `.debug$T`: initialized, discardable,
 /// read-only, 1-byte aligned.
@@ -131,6 +131,10 @@ pub(super) struct Facts {
     /// The PCH object's member, for a PCH user whose PCH is in the
     /// library ([`resolve`]).
     pub pch: Option<usize>,
+    /// Under `--precomp=library`, a PCH user whose PCH object is in the
+    /// library ([`resolve`]): its types join the library's shared types, so
+    /// a synthesized member doesn't name its PCH (see [`super::precomp`]).
+    pub absorbed: bool,
     /// The per-object file checksums subsection's contents, and where each
     /// entry starts.
     checksums: Vec<u8>,
@@ -157,7 +161,7 @@ impl Facts {
         match self.types {
             Types::Records {
                 precomp: Some(p), ..
-            } if self.pch_symbol.is_some() => Some(p),
+            } if self.pch_symbol.is_some() && !self.absorbed => Some(p),
             _ => None,
         }
     }
@@ -183,7 +187,7 @@ fn kept(parsed: &[Parsed<'_>], m: usize, v: u32) -> bool {
             .is_some_and(|p| v >= p.start && v - p.start < p.count)
 }
 
-fn le32(b: &[u8], at: usize) -> u32 {
+pub(super) fn le32(b: &[u8], at: usize) -> u32 {
     u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
 }
 
@@ -523,7 +527,11 @@ fn string(table: &[u8], offset: u32) -> Option<&[u8]> {
 /// do): its units' types are copied from there. If it isn't there (or its
 /// types are unusable), the user can't fold a unit with debug sections
 /// ([`Unfoldable::PrecompMissing`]).
-pub(super) fn resolve(parsed: &mut [Parsed<'_>]) {
+///
+/// Under `--precomp=library` (`absorb`), every PCH user whose PCH object is
+/// in the library, named or not, is resolved to it, and absorbed: its
+/// types are shared with the library's, through its PCH object's records.
+pub(super) fn resolve(parsed: &mut [Parsed<'_>], absorb: bool) {
     // PCH objects by signature; a signature two different PCHs have is
     // no one's.
     let mut pchs: HashMap<u32, Option<usize>> = HashMap::default();
@@ -552,15 +560,20 @@ pub(super) fn resolve(parsed: &mut [Parsed<'_>]) {
         else {
             continue;
         };
-        if parsed[m].debug.named().is_some() {
+        if parsed[m].debug.named().is_some() && !absorb {
             continue;
         }
         let found = pchs.get(&p.signature).copied().flatten().filter(|&pch| {
             matches!(parsed[pch].debug.types,
                 Types::Records { end_precomp: Some((_, end)), .. } if end == p.start + p.count)
         });
+        if parsed[m].debug.named().is_some() && found.is_none() {
+            // It names its PCH, which synthesized members name too.
+            continue;
+        }
         parsed[m].debug.pch = found;
         if found.is_some() {
+            parsed[m].debug.absorbed = absorb;
             continue;
         }
         let object = parsed[m].object.as_ref().expect("types come from objects");
@@ -636,6 +649,10 @@ struct Moved {
 /// A synthesized member's CodeView, built as its units are copied in.
 pub(super) struct Builder<'p, 'a> {
     parsed: &'p [Parsed<'a>],
+    /// The library's shared types (`--precomp=library`), and whether this
+    /// member uses them: its units' members name no other PCH.
+    plan: Option<&'p precomp::Plan>,
+    sharing: bool,
     /// Its type records, from `FIRST`, and where each starts.
     types: Vec<u8>,
     starts: Vec<u32>,
@@ -685,7 +702,7 @@ impl Remap for Renumber<'_, '_, '_> {
 
 /// A member's index `v` where its record is: in its PCH object, for a PCH
 /// user's index below its count whose types are copied (see [`resolve`]).
-fn canonical(parsed: &[Parsed<'_>], m: usize, v: u32) -> (usize, u32) {
+pub(super) fn canonical(parsed: &[Parsed<'_>], m: usize, v: u32) -> (usize, u32) {
     if let Types::Records {
         precomp: Some(p), ..
     } = parsed[m].debug.types
@@ -698,7 +715,7 @@ fn canonical(parsed: &[Parsed<'_>], m: usize, v: u32) -> (usize, u32) {
 }
 
 /// Member `m`'s record `v` (its length, kind, body, and padding).
-fn record<'p>(parsed: &'p [Parsed<'_>], m: usize, v: u32) -> &'p [u8] {
+pub(super) fn record<'p>(parsed: &'p [Parsed<'_>], m: usize, v: u32) -> &'p [u8] {
     let Types::Records {
         section,
         base,
@@ -715,9 +732,11 @@ fn record<'p>(parsed: &'p [Parsed<'_>], m: usize, v: u32) -> &'p [u8] {
 }
 
 impl<'p, 'a> Builder<'p, 'a> {
-    pub(super) fn new(parsed: &'p [Parsed<'a>]) -> Self {
+    pub(super) fn new(parsed: &'p [Parsed<'a>], plan: Option<&'p precomp::Plan>) -> Self {
         Self {
             parsed,
+            plan,
+            sharing: false,
             types: Vec::new(),
             starts: Vec::new(),
             by_hash: HashMap::default(),
@@ -761,6 +780,15 @@ impl<'p, 'a> Builder<'p, 'a> {
         {
             self.base = p.start + p.count;
             self.precomp = Some((record.clone(), symbol.clone()));
+        } else if let Some(pch) = self
+            .plan
+            .and_then(|plan| plan.pch_for(parsed[m0].object.as_ref().expect("an object").machine))
+        {
+            // The library's shared types: its records that are shared are
+            // the precompiled-types member's.
+            self.base = FIRST + pch.count;
+            self.precomp = Some((pch.precomp.clone(), pch.symbol.clone()));
+            self.sharing = true;
         }
         let characteristics = parsed[m0]
             .debug
@@ -783,11 +811,23 @@ impl<'p, 'a> Builder<'p, 'a> {
             }
             return v;
         }
+        if let Some(n) = self.shared(m, v) {
+            return n;
+        }
         let (m, v) = canonical(self.parsed, m, v);
         if let Some(&n) = self.merged.get(&(m as u32, v)) {
             return n;
         }
         self.merge(m, v)
+    }
+
+    /// The shared types' index of member `m`'s index `v`, if this member
+    /// uses them and that record is shared.
+    fn shared(&self, m: usize, v: u32) -> Option<u32> {
+        if !self.sharing {
+            return None;
+        }
+        self.plan?.shared(self.parsed, m, v)
     }
 
     /// Merges member `m`'s record `v` and what it reaches, depth first: a
@@ -823,7 +863,7 @@ impl<'p, 'a> Builder<'p, 'a> {
             while top.next < top.refs.end {
                 let r = refs[top.next];
                 let value = le32(top.record, 4 + r.offset as usize);
-                if !kept(parsed, top.m, value) {
+                if !kept(parsed, top.m, value) && self.shared(top.m, value).is_none() {
                     let c = canonical(parsed, top.m, value);
                     if !self.merged.contains_key(&(c.0 as u32, c.1)) {
                         child = Some(c);
@@ -843,8 +883,13 @@ impl<'p, 'a> Builder<'p, 'a> {
                 let at = 4 + r.offset as usize;
                 let value = le32(&bytes, at);
                 if !kept(parsed, f.m, value) {
-                    let c = canonical(parsed, f.m, value);
-                    let n = self.merged[&(c.0 as u32, c.1)];
+                    let n = match self.shared(f.m, value) {
+                        Some(n) => n,
+                        None => {
+                            let c = canonical(parsed, f.m, value);
+                            self.merged[&(c.0 as u32, c.1)]
+                        }
+                    };
                     bytes[at..at + 4].copy_from_slice(&n.to_le_bytes());
                 }
             }
@@ -1184,4 +1229,4 @@ fn push(o: &mut Object<'_>, name: &[u8], characteristics: u32, data: Vec<u8>) ->
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -54,10 +54,14 @@ fn inputs<'a>(members: &[(&'a [u8], &'a [u8])]) -> Vec<Input<'a>> {
 const RELAXED: Options = Options {
     pull: Pull::Relaxed,
     weak_externals: false,
+    fold: true,
+    precomp: crate::rewrite::Precomp::None,
 };
 const PRESERVE: Options = Options {
     pull: Pull::Preserve,
     weak_externals: false,
+    fold: true,
+    precomp: crate::rewrite::Precomp::None,
 };
 
 #[test]

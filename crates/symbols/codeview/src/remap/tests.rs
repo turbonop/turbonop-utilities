@@ -149,6 +149,26 @@ fn debug_s_sections() {
     push_subsection(&mut section, kind::DEBUG_S_FILECHKSMS, &checksums);
     push_subsection(&mut section, kind::DEBUG_S_STRINGTABLE, b"\0a\0");
     let before = section.clone();
+    // The visitor finds the indices renumbering renumbers, in its order.
+    let mut seen = Vec::new();
+    debug_s_indices(&section, |v, id| seen.push((v, id))).unwrap();
+    let mut renumbered = Vec::new();
+    debug_s(&mut section.clone(), &mut |v: u32, id: bool| {
+        renumbered.push((v, id));
+        Some(v)
+    })
+    .unwrap();
+    assert_eq!(seen, renumbered);
+    assert_eq!(
+        seen,
+        [
+            (0x1005, true),
+            (0x1006, false),
+            (0x1007, false),
+            (0x1008, true),
+            (0x1008, true)
+        ]
+    );
     debug_s(&mut section, &mut Shift).unwrap();
     let sym = &section[12..];
     assert_eq!(le32(sym, 4 + 24), 0x1105);
@@ -206,6 +226,7 @@ fn debug_s_sections() {
             error: FieldError::Unknown(0x1199)
         })
     );
+    assert!(debug_s_indices(&bad, |_, _| {}).is_err());
     // A header past the end.
     let mut cut = before.clone();
     cut.truncate(10);
@@ -242,6 +263,9 @@ fn c11_sections_are_records() {
     let mut u = RecordBuilder::new(S_UDT);
     u.u32(0x1000).name(b"t");
     u.write_symbol(&mut s, 1).unwrap();
+    let mut seen = Vec::new();
+    debug_s_indices(&s, |v, id| seen.push((v, id))).unwrap();
+    assert_eq!(seen, [(0x1000, false)]);
     debug_s(&mut s, &mut Shift).unwrap();
     assert_eq!(le32(&s, 8), 0x1100);
 }

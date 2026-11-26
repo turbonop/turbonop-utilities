@@ -284,7 +284,7 @@ pub fn directives(data: &[u8]) -> Vec<&[u8]> {
     out
 }
 
-fn starts_with_ignore_case(s: &[u8], prefix: &[u8]) -> bool {
+pub(super) fn starts_with_ignore_case(s: &[u8], prefix: &[u8]) -> bool {
     s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix)
 }
 

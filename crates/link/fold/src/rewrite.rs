@@ -40,7 +40,7 @@ pub mod units;
 
 use crate::hash::H128;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use turbonop_coff::{
     Aux, File, Format, Name, Object, Relocation, Section, SectionData, SectionDefinition,
     SectionId, SectionNumber, Skeleton, Symbol, SymbolId, WeakExternal, comdat_select,
@@ -372,9 +372,8 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
 
     let mut removals: Vec<Vec<(usize, Removal)>> = vec![Vec::new(); parsed.len()];
     // Under Preserve, each folded name the archive index named a member for
-    // stays defined there as an alias weak external whose default is the
-    // synthesized member's anchor: (member, name, synthesized member).
-    let mut aliases: Vec<Vec<(Vec<u8>, usize)>> = vec![Vec::new(); parsed.len()];
+    // stays defined there, as an alias weak external (see `ALIAS_DEFAULT`).
+    let mut aliases: Vec<HashSet<&[u8]>> = vec![HashSet::new(); parsed.len()];
     let mut synth_of: HashMap<(u128, Vec<usize>), usize> = HashMap::new();
     let mut synths: Vec<Synth> = Vec::new();
     for c in &copies {
@@ -482,7 +481,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
                 if let Some(&owner) = first_definer.get(n.as_slice())
                     && removed.iter().any(|&(m, _)| m == owner)
                 {
-                    aliases[owner].push((n.clone(), s));
+                    aliases[owner].insert(n.as_slice());
                 }
             }
         }
@@ -527,11 +526,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             .iter()
             .map(|&n| anchors[n].as_slice())
             .collect();
-        let named: Vec<(&[u8], &[u8])> = aliases[m]
-            .iter()
-            .map(|(n, s)| (n.as_slice(), anchors[*s].as_slice()))
-            .collect();
-        let skeleton = strip(&parsed[m], &removals[m], &refers, &named);
+        let skeleton = strip(&parsed[m], &removals[m], &refers, &aliases[m]);
         (
             m,
             OutputMember {
@@ -594,12 +589,22 @@ fn anchor_name(n: usize, s: &Synth, inputs: &[Input<'_>], parsed: &[Parsed<'_>])
     format!("__turbolib$anchor${:032x}", h.finish()).into_bytes()
 }
 
+/// The default of each alias weak external that keeps a folded name defined
+/// in the member the archive index names for it. The default never matters:
+/// that member refers to the anchor of the synthesized member that defines
+/// the name, whose strong definition overrides the alias. But it must be the
+/// same everywhere, since link.exe refuses two weak externals for one name
+/// with different defaults (LNK1227), as two libraries that fold the same
+/// name would otherwise give it. Nothing defines it, so a link that somehow
+/// used an alias would fail rather than run the wrong code.
+pub const ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
+
 /// A member with the copies it gives up removed.
 fn strip<'a>(
     parsed: &Parsed<'a>,
     removals: &[(usize, Removal)],
     anchors: &[&[u8]],
-    aliases: &[(&[u8], &[u8])],
+    aliases: &HashSet<&[u8]>,
 ) -> Skeleton<'a> {
     let mut object = parsed
         .object
@@ -622,10 +627,9 @@ fn strip<'a>(
             }
             let name = object.symbols[id.index()].name.as_bytes();
             // A name the index named this member for stays defined here,
-            // as an alias whose default is the anchor of the synthesized
-            // member that defines it (which, loaded with this member, wins).
-            if let Some(&(_, anchor)) = aliases.iter().find(|(n, _)| *n == name) {
-                weak.push((id, anchor.to_vec(), weak_search::ALIAS));
+            // as an alias (see `ALIAS_DEFAULT`).
+            if aliases.contains(name) {
+                weak.push((id, ALIAS_DEFAULT.to_vec(), weak_search::ALIAS));
             } else if how == Removal::Weak {
                 weak.push((id, renamed(name), weak_search::NOLIBRARY));
             }
@@ -844,6 +848,17 @@ fn synthesize<'a>(s: &Synth, parsed: &[Parsed<'a>], anchor: &[u8]) -> Skeleton<'
     });
     o.push_symbol(Symbol::new(
         Name::new(anchor.to_vec()),
+        0,
+        SectionNumber::Absolute,
+        0,
+        storage_class::EXTERNAL,
+    ));
+    // Each member with aliases refers to an anchor, so the synthesized
+    // member that resolves their default is loaded with them; the index
+    // doesn't list the default, so it never loads a member itself. Every
+    // synthesized member defines it alike, which both linkers accept.
+    o.push_symbol(Symbol::new(
+        Name::new(ALIAS_DEFAULT.to_vec()),
         0,
         SectionNumber::Absolute,
         0,

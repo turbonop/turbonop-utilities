@@ -10,14 +10,18 @@ pub const EXAMPLES: usize = 5;
 
 static LIMIT: AtomicUsize = AtomicUsize::new(EXAMPLES);
 
-/// Sets how many examples each category keeps, for every report of the
-/// process (`usize::MAX`: all of them).
+/// Sets how many examples each category of failures keeps, for every
+/// report of the process (`usize::MAX`: all of them). Expected and
+/// unchecked findings keep [`EXAMPLES`].
 pub fn set_examples(n: usize) {
     LIMIT.store(n, Ordering::Relaxed);
 }
 
-fn limit() -> usize {
-    LIMIT.load(Ordering::Relaxed)
+fn limit(severity: Severity) -> usize {
+    match severity {
+        Severity::Failure => LIMIT.load(Ordering::Relaxed),
+        _ => EXAMPLES,
+    }
 }
 
 /// What a finding means.
@@ -75,7 +79,7 @@ impl Report {
                 examples: Vec::new(),
             });
         f.count += 1;
-        if f.examples.len() < limit() {
+        if f.examples.len() < limit(severity) {
             f.examples.push(example());
         }
     }
@@ -116,7 +120,7 @@ impl Report {
                     examples: Vec::new(),
                 });
             mine.count += f.count;
-            let room = limit().saturating_sub(mine.examples.len());
+            let room = limit(severity).saturating_sub(mine.examples.len());
             mine.examples.extend(f.examples.into_iter().take(room));
         }
         for (what, n) in other.checked {

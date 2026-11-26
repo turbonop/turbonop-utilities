@@ -35,7 +35,7 @@ options:
                    by content, and local COMDATs may be copied into any
                    number of synthesized members
   -j N             use N threads (1: no threads but this one)
-  --examples=N     list N examples of each finding (0: all; default 5)
+  --examples=N     list N examples of each failure (0: all; default 5)
   --stats          say how long it took
 ";
 
@@ -59,7 +59,7 @@ counts and examples, and exits with 1 if anything fails.
 
 options:
   -j N             use N threads (1: no threads but this one)
-  --examples=N     list N examples of each finding (0: all; default 5)
+  --examples=N     list N examples of each failure (0: all; default 5)
   --stats          say how long it took
 ";
 

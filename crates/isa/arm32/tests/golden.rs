@@ -32,7 +32,7 @@ fn llvm_text() {
         let got = got.split_whitespace().collect::<Vec<_>>().join(" ");
         count += 1;
         if got != want {
-            wrong.push(format!("{line}\n    got  {got} ({})", i.encoding.name));
+            wrong.push(format!("{line}\n    got  {got} ({})", i.encoding.name()));
         }
     }
     assert!(count > 6000, "{count} words");

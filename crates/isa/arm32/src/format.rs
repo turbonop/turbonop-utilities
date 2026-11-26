@@ -29,7 +29,7 @@ pub fn format(i: &Instruction, addr: u64, targets: Targets) -> String {
 /// Where a direct branch or call (B, BL, BLX, CBZ, CBNZ) at `addr` goes;
 /// `None` for anything else.
 pub fn branch_target(i: &Instruction, addr: u64) -> Option<u64> {
-    let n = i.encoding.name;
+    let n = i.encoding.name();
     let branch = n.starts_with("B_")
         || n.starts_with("BL_i")
         || n.starts_with("CBZ")
@@ -88,7 +88,7 @@ pub fn format_in_it(
     if c.alias(out) {
         return;
     }
-    let template = i.encoding.asm;
+    let template = i.encoding.asm();
     let t = template.as_bytes();
     // The mnemonic: its leading letters and digits, lowercased (LLVM's,
     // where it differs).
@@ -96,7 +96,7 @@ pub fn format_in_it(
         .iter()
         .position(|b| !b.is_ascii_alphanumeric())
         .unwrap_or(t.len());
-    match llvm_mnemonic(i.encoding.name) {
+    match llvm_mnemonic(i.encoding.name()) {
         Some(m) => out.push_str(m),
         None => {
             for &b in &t[..end] {
@@ -111,7 +111,7 @@ pub fn format_in_it(
     }
     // (LLVM's `.w` goes after the condition: the template's `{<c>}`
     // comes first.)
-    let wide = i.thumb && i.size == 4 && llvm_wide(i.encoding.name);
+    let wide = i.thumb && i.size == 4 && llvm_wide(i.encoding.name());
     let mut pos = end;
     let before = out.len();
     if wide {
@@ -138,15 +138,15 @@ pub fn format_in_it(
     }
     c.seq(template, &mut pos, out, 0);
     // (LLVM writes comparisons with zero `#0`.)
-    if i.encoding.name.starts_with("VCMP") && out[before..].ends_with("#0.0") {
+    if i.encoding.name().starts_with("VCMP") && out[before..].ends_with("#0.0") {
         out.truncate(out.len() - 2);
     }
 }
 
 /// Whether a T16 encoding has an S form, preferred outside an IT block.
 fn sets_flags_outside_it(e: &crate::Encoding) -> bool {
-    let base = crate::mnemonic_of(e.asm);
-    e.aliases.iter().any(|a| {
+    let base = crate::mnemonic_of(e.asm());
+    e.aliases().iter().any(|a| {
         let m = crate::mnemonic_of(a);
         m.len() == base.len() + 1 && m.starts_with(base) && m.ends_with('S')
     })
@@ -389,7 +389,7 @@ struct Ctx<'a> {
 
 impl Ctx<'_> {
     fn name(&self) -> &'static str {
-        self.i.encoding.name
+        self.i.encoding.name()
     }
 
     /// The condition suffix (`eq`; none for always).
@@ -701,7 +701,7 @@ impl Ctx<'_> {
     fn literal_t32(&self, out: &mut String) -> bool {
         let n = self.name();
         let f = |x: &str| self.field(x);
-        out.push_str(&crate::mnemonic_of(self.i.encoding.asm).to_ascii_lowercase());
+        out.push_str(&crate::mnemonic_of(self.i.encoding.asm()).to_ascii_lowercase());
         if self.i.size == 4 && llvm_wide(n) {
             out.push_str(".w");
         }
@@ -739,7 +739,7 @@ impl Ctx<'_> {
     fn literal_a32(&self, out: &mut String) -> bool {
         let n = self.name();
         let f = |x: &str| self.field(x);
-        let t = self.i.encoding.asm.as_bytes();
+        let t = self.i.encoding.asm().as_bytes();
         let end = t
             .iter()
             .position(|b| !b.is_ascii_alphanumeric())
@@ -784,7 +784,7 @@ impl Ctx<'_> {
     fn field(&self, name: &str) -> Option<u32> {
         self.i
             .encoding
-            .fields
+            .fields()
             .iter()
             .find(|f| f.0 == name)
             .map(|f| bits(self.i.word, f.1, f.2))
@@ -792,7 +792,7 @@ impl Ctx<'_> {
 
     /// Operand `display`'s fields, concatenated: (value, width).
     fn value(&self, display: &str) -> Option<(u32, u32)> {
-        let (_, parts) = self.i.encoding.operands.iter().find(|o| o.0 == display)?;
+        let (_, parts) = self.i.encoding.operands().iter().find(|o| o.0 == display)?;
         let mut v = 0u32;
         let mut width = 0u32;
         for &(hi, lo) in *parts {
@@ -1174,7 +1174,7 @@ impl Ctx<'_> {
         let find = |d: &str| {
             self.i
                 .encoding
-                .operands
+                .operands()
                 .iter()
                 .find(|o| o.0 == d)
                 .map(|o| o.1)
@@ -1371,7 +1371,7 @@ impl Ctx<'_> {
     /// Whether the shift is to the right (its amount `2 * esize - imm6`)
     /// rather than to the left (`imm6 - esize`).
     fn shift_right(&self) -> bool {
-        let m = crate::mnemonic_of(self.i.encoding.asm);
+        let m = crate::mnemonic_of(self.i.encoding.asm());
         matches!(m, "VSHR" | "VSRA" | "VRSHR" | "VRSRA" | "VSRI")
             || m.ends_with("SHRN")
             || m.ends_with("SHRUN")
@@ -1379,7 +1379,7 @@ impl Ctx<'_> {
 
     /// Whether the shift narrows (its size the source's: twice esize).
     fn shift_narrows(&self) -> bool {
-        let m = crate::mnemonic_of(self.i.encoding.asm);
+        let m = crate::mnemonic_of(self.i.encoding.asm());
         m.ends_with("SHRN") || m.ends_with("SHRUN")
     }
 
@@ -1539,7 +1539,7 @@ impl Ctx<'_> {
                 Some(true)
             }
             "<type>" if self.is_simd_shift() => {
-                let m = crate::mnemonic_of(self.i.encoding.asm);
+                let m = crate::mnemonic_of(self.i.encoding.asm());
                 let signed = f("U") == 0 || m == "VQSHLU" || m == "VQSHRUN" || m == "VQRSHRUN";
                 out.push(if signed { 's' } else { 'u' });
                 Some(true)
@@ -1586,7 +1586,7 @@ impl Ctx<'_> {
 
     /// Whether the encoding has the operand `display`.
     fn has_operand(&self, display: &str) -> bool {
-        self.i.encoding.operands.iter().any(|o| o.0 == display)
+        self.i.encoding.operands().iter().any(|o| o.0 == display)
     }
 
     /// VEXT's element size (the largest that divides its byte offset, as

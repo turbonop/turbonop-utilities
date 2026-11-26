@@ -306,12 +306,15 @@ x64. Where the 3.5 MB went:
   instruction's name and syntax one string (72 bytes an instruction
   before, 56 now). arm64's (2.0 MB) are 450 KB smaller: its 8,182
   encodings are 48 bytes, not 120 (names, `ne` pairs, conditions, and
-  templates by index into shared tables). What's left, the same way:
+  templates by index into shared tables). arm32's (690 KB) are 214 KB
+  smaller the same way: names and templates in one string, features,
+  aliases, operands, fields, and conditions by 16-bit index, and the
+  buckets flat with 16-bit starts. What's left, the same way:
   - **arm64's other 1.56 MB**: its 1,346 symbols of 168 bytes (221 KB),
     the templates' tokens (24 bytes each, a `&str` or a slice), and its
     semantics and operand specs.
-  - **arm32's, 690 KB**: `A32`, `T32`, and a 64 KB `T32_BUCKETS` (the
-    same `&[&[u16]]`).
+  - **arm32's rules** (`RULES`: `&str`s and slices of pairs of them) and
+    its operand and field lists' `&str` names.
   - **x86's, 270 KB** (`ENTRIES`, 186 KB).
   - The TableGen decoders' instructions are still 56 bytes: an index
     into a string table, and into a table of operand lists, would make

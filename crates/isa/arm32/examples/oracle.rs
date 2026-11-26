@@ -33,7 +33,7 @@ fn main() {
             Some(i) => writeln!(
                 out,
                 "{line}\t{}\t{}",
-                i.encoding.name,
+                i.encoding.name(),
                 format(&i, at, Targets::Addresses)
             ),
             None => writeln!(out, "{line}\t-\t-"),

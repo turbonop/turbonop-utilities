@@ -180,6 +180,27 @@ struct Unit {
     bytes: u64,
 }
 
+/// A member's `.eh_frame`: its records, and its relocations by offset with
+/// each record's range of them.
+struct Eh {
+    section: usize,
+    records: Vec<eh_frame::Record>,
+    rels: Vec<Relocation>,
+    ranges: Vec<std::ops::Range<usize>>,
+}
+
+impl Eh {
+    /// Record `k`'s relocations.
+    fn rels(&self, k: usize) -> &[Relocation] {
+        &self.rels[self.ranges[k].clone()]
+    }
+
+    /// The index of record `k`'s CIE, if it is an FDE.
+    fn cie(&self, k: usize) -> Option<usize> {
+        eh_frame::index_of(&self.records, self.records[k].cie?)
+    }
+}
+
 /// One member, read.
 struct Parsed<'a> {
     obj: Option<Object<'a>>,
@@ -190,8 +211,8 @@ struct Parsed<'a> {
     /// Every global the member defines, with its unit (`None`: outside
     /// any).
     defs: Vec<(Vec<u8>, Option<usize>)>,
-    /// `.eh_frame`'s index and records, if any.
-    eh: Option<(usize, Vec<eh_frame::Record>)>,
+    /// `.eh_frame`, if any.
+    eh: Option<Eh>,
     /// Each section's unit.
     owner: Vec<Option<usize>>,
     /// An object whose definitions can't be read (another format).
@@ -475,10 +496,20 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         let big = obj.endian() == Endian::Big;
         match eh_frame::records(section_bytes(&obj.sections[eh]), big) {
             Some(records) => {
-                let rels: Vec<&Relocation> = relocation_sections(&obj)
+                // The relocations by offset, and each record's of them.
+                let mut rels: Vec<Relocation> = relocation_sections(&obj)
                     .into_iter()
                     .filter(|&(_, t)| t == eh)
-                    .flat_map(|(r, _)| relocations(&obj.sections[r]).iter())
+                    .flat_map(|(r, _)| relocations(&obj.sections[r]).iter().copied())
+                    .collect();
+                rels.sort_by_key(|r| r.offset);
+                let ranges: Vec<std::ops::Range<usize>> = records
+                    .iter()
+                    .map(|rec| {
+                        let lo = rels.partition_point(|r| (r.offset as usize) < rec.start);
+                        let hi = rels.partition_point(|r| (r.offset as usize) < rec.end());
+                        lo..hi
+                    })
                     .collect();
                 for (k, rec) in records.iter().enumerate() {
                     if rec.cie.is_none() {
@@ -486,11 +517,8 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                     }
                     let mut unit = None;
                     let mut others = Vec::new();
-                    for rel in &rels {
+                    for rel in &rels[ranges[k].clone()] {
                         let at = rel.offset as usize;
-                        if at < rec.start || at >= rec.end() {
-                            continue;
-                        }
                         let sym = symbols.get(obj.reloc_symbol(rel) as usize);
                         let to = sym.filter(|s| s.bind() == 0).and_then(&sym_owner);
                         if at == rec.pc_begin() {
@@ -510,7 +538,12 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                         }
                     }
                 }
-                p.eh = Some((eh, records));
+                p.eh = Some(Eh {
+                    section: eh,
+                    records,
+                    rels,
+                    ranges,
+                });
             }
             None => {
                 for u in &mut units {
@@ -587,31 +620,23 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 h.u64(s.size);
             }
         }
-        if let Some((eh, records)) = &p.eh {
-            let data = section_bytes(&obj.sections[*eh]);
-            let rels: Vec<&Relocation> = relocation_sections(&obj)
-                .into_iter()
-                .filter(|&(_, t)| t == *eh)
-                .flat_map(|(r, _)| relocations(&obj.sections[r]).iter())
-                .collect();
-            let record = |h: &mut H128, rec: &eh_frame::Record| {
+        if let Some(eh) = &p.eh {
+            let data = section_bytes(&obj.sections[eh.section]);
+            let record = |h: &mut H128, k: usize| {
+                let rec = &eh.records[k];
                 let b = &data[rec.start..rec.end()];
                 h.bytes(&b[..rec.id_at]);
                 h.bytes(&b[rec.id_at + 4..]);
-                for rel in &rels {
-                    let at = rel.offset as usize;
-                    if at >= rec.start && at < rec.end() {
-                        h.u64((at - rec.start) as u64);
-                        h.u64(u64::from(obj.reloc_type(rel)));
-                        key(h, obj.reloc_symbol(rel));
-                        h.u64(rel.addend as u64);
-                    }
+                for rel in eh.rels(k) {
+                    h.u64(rel.offset - rec.start as u64);
+                    h.u64(u64::from(obj.reloc_type(rel)));
+                    key(h, obj.reloc_symbol(rel));
+                    h.u64(rel.addend as u64);
                 }
             };
             for &f in &fdes {
-                let rec = &records[f];
-                record(&mut h, rec);
-                if let Some(cie) = rec.cie.and_then(|c| records.iter().find(|r| r.start == c)) {
+                record(&mut h, f);
+                if let Some(cie) = eh.cie(f) {
                     record(&mut h, cie);
                 }
             }
@@ -687,21 +712,29 @@ fn rewrite(
         |s: &Symbol<'_>| s.in_section() && removed.get(s.shndx as usize).copied().unwrap_or(false);
 
     // .eh_frame without the moved units' FDEs.
-    if let Some((eh, records)) = &parsed.eh {
-        let gone: Vec<usize> = moved
-            .iter()
-            .flat_map(|&u| parsed.units[u].fdes.iter().copied())
-            .collect();
-        if !gone.is_empty() {
-            let data = section_bytes(&obj.sections[*eh]).to_vec();
+    if let Some(eh) = &parsed.eh {
+        let mut gone = vec![false; eh.records.len()];
+        for &u in moved {
+            for &f in &parsed.units[u].fdes {
+                gone[f] = true;
+            }
+        }
+        if gone.iter().any(|&g| g) {
+            let records = &eh.records;
+            let data = section_bytes(&obj.sections[eh.section]).to_vec();
             let big = endian == Endian::Big;
-            let kept: Vec<usize> = (0..records.len()).filter(|k| !gone.contains(k)).collect();
-            let index_of = |start: usize| kept.iter().position(|&k| records[k].start == start);
+            let kept: Vec<usize> = (0..records.len()).filter(|&k| !gone[k]).collect();
+            // Each kept record's place among the kept.
+            let mut place = vec![usize::MAX; records.len()];
+            for (i, &k) in kept.iter().enumerate() {
+                place[k] = i;
+            }
             let pieces: Vec<(&[u8], Option<usize>, usize)> = kept
                 .iter()
                 .map(|&k| {
                     let r = &records[k];
-                    (&data[r.start..r.end()], r.cie.and_then(index_of), r.id_at)
+                    let cie = eh.cie(k).map(|c| place[c]).filter(|&c| c != usize::MAX);
+                    (&data[r.start..r.end()], cie, r.id_at)
                 })
                 .collect();
             let (bytes, starts) = eh_frame::build(&pieces, big);
@@ -709,28 +742,30 @@ fn rewrite(
             let tail = records.last().map_or(0, eh_frame::Record::end);
             let mut bytes = bytes;
             bytes.extend_from_slice(&data[tail.min(data.len())..]);
-            let shift = |off: u64| -> Option<u64> {
-                let at = off as usize;
-                kept.iter()
-                    .zip(&starts)
-                    .find(|&(&k, _)| at >= records[k].start && at < records[k].end())
-                    .map(|(&k, &s)| (at - records[k].start + s) as u64)
-            };
+            // The kept records' relocations, moved with them, in order.
+            let mut out = Vec::with_capacity(eh.rels.len());
+            for (i, &k) in kept.iter().enumerate() {
+                let shift = starts[i] as u64;
+                let start = records[k].start as u64;
+                out.extend(eh.rels(k).iter().map(|rel| Relocation {
+                    offset: rel.offset - start + shift,
+                    ..*rel
+                }));
+            }
+            // (One relocation section for .eh_frame: compilers write one.)
+            let mut first = true;
             for (r, t) in relocation_sections(&obj) {
-                if t != *eh {
+                if t != eh.section {
                     continue;
                 }
-                if let Data::Relocations(rs) = &mut obj.sections[r].data {
-                    let mut out = Vec::with_capacity(rs.len());
-                    for rel in rs.iter() {
-                        if let Some(o) = shift(rel.offset) {
-                            out.push(Relocation { offset: o, ..*rel });
-                        }
-                    }
-                    *rs = out;
-                }
+                obj.sections[r].data = Data::Relocations(if first {
+                    std::mem::take(&mut out)
+                } else {
+                    Vec::new()
+                });
+                first = false;
             }
-            obj.sections[*eh].data = Data::Bytes(Cow::Owned(bytes));
+            obj.sections[eh.section].data = Data::Bytes(Cow::Owned(bytes));
         }
     }
     // Debug relocations to the moved units' locals: tombstones.
@@ -963,15 +998,16 @@ fn synthesize<'a>(
         .find(|s| &*s.name == b".eh_frame")
         .cloned();
     let mut eh_pieces: Vec<(usize, usize, bool)> = Vec::new(); // (member, record, is cie)
+    // Each CIE copied: its place among the pieces.
+    let mut cie_place: BTreeMap<(usize, usize), usize> = BTreeMap::new();
     for &(m, u) in units {
-        if let Some((_, records)) = &parsed[m].eh {
+        if let Some(eh) = &parsed[m].eh {
             for &f in &parsed[m].units[u].fdes {
-                if let Some(c) = records[f]
-                    .cie
-                    .and_then(|c| records.iter().position(|r| r.start == c))
-                    && !eh_pieces.contains(&(m, c, true))
-                {
-                    eh_pieces.push((m, c, true));
+                if let Some(c) = eh.cie(f) {
+                    cie_place.entry((m, c)).or_insert_with(|| {
+                        eh_pieces.push((m, c, true));
+                        eh_pieces.len() - 1
+                    });
                 }
             }
         }
@@ -993,10 +1029,10 @@ fn synthesize<'a>(
     };
     // Its relocations, as the first member's (`.rela.eh_frame` or
     // `.rel.eh_frame`).
-    let eh_rel_template = parsed[m0].eh.as_ref().and_then(|(eh, _)| {
+    let eh_rel_template = parsed[m0].eh.as_ref().and_then(|eh| {
         relocation_sections(first)
             .into_iter()
-            .find(|&(_, t)| t == *eh)
+            .find(|&(_, t)| t == eh.section)
             .map(|(r, _)| first.sections[r].clone())
     });
     let rela_eh = match (eh_index, eh_rel_template) {
@@ -1220,30 +1256,21 @@ fn synthesize<'a>(
         let big = endian == Endian::Big;
         let mut pieces: Vec<(Vec<u8>, Option<usize>, usize)> = Vec::new();
         let mut origin: Vec<(usize, usize)> = Vec::new();
-        for (k, &(m, rec, is_cie)) in eh_pieces.iter().enumerate() {
-            let records = &parsed[m].eh.as_ref().ok_or("no records")?.1;
+        for &(m, rec, is_cie) in &eh_pieces {
+            let e = parsed[m].eh.as_ref().ok_or("no records")?;
             let obj = parsed[m].obj.as_ref().ok_or("unread")?;
-            let (eh_sec, _) = parsed[m].eh.as_ref().ok_or("no records")?;
-            let data = section_bytes(&obj.sections[*eh_sec]);
-            let r = &records[rec];
+            let data = section_bytes(&obj.sections[e.section]);
+            let r = &e.records[rec];
             let cie = if is_cie {
                 None
             } else {
-                let c = r
-                    .cie
-                    .and_then(|c| records.iter().position(|x| x.start == c))
-                    .ok_or("an FDE without its CIE")?;
-                Some(
-                    eh_pieces[..cies]
-                        .iter()
-                        .position(|&p| p == (m, c, true))
-                        .ok_or("a CIE not copied")?,
-                )
+                let c = e.cie(rec).ok_or("an FDE without its CIE")?;
+                Some(*cie_place.get(&(m, c)).ok_or("a CIE not copied")?)
             };
-            let _ = k;
             pieces.push((data[r.start..r.end()].to_vec(), cie, r.id_at));
             origin.push((m, rec));
         }
+        debug_assert!(cies <= pieces.len());
         let refs: Vec<(&[u8], Option<usize>, usize)> = pieces
             .iter()
             .map(|(b, c, i)| (b.as_slice(), *c, *i))
@@ -1252,26 +1279,17 @@ fn synthesize<'a>(
         eh_bytes = bytes;
         for (k, &(m, rec)) in origin.iter().enumerate() {
             let obj = parsed[m].obj.as_ref().ok_or("unread")?;
-            let (eh_sec, records) = parsed[m].eh.as_ref().ok_or("no records")?;
-            let r = &records[rec];
-            for (rs, t) in relocation_sections(obj) {
-                if t != *eh_sec {
-                    continue;
-                }
-                for rel in relocations(&obj.sections[rs]) {
-                    let at = rel.offset as usize;
-                    if at >= r.start && at < r.end() {
-                        let tgt =
-                            target(&mut locals, &mut globals, m, obj.reloc_symbol(rel) as usize)?;
-                        eh_relocs.push((
-                            Relocation {
-                                offset: (at - r.start + starts[k]) as u64,
-                                ..*rel
-                            },
-                            tgt,
-                        ));
-                    }
-                }
+            let e = parsed[m].eh.as_ref().ok_or("no records")?;
+            let start = e.records[rec].start as u64;
+            for rel in e.rels(rec) {
+                let tgt = target(&mut locals, &mut globals, m, obj.reloc_symbol(rel) as usize)?;
+                eh_relocs.push((
+                    Relocation {
+                        offset: rel.offset - start + starts[k] as u64,
+                        ..*rel
+                    },
+                    tgt,
+                ));
             }
         }
         sections[eh].data = Data::Bytes(Cow::Owned(eh_bytes));

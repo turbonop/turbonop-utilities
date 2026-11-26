@@ -69,6 +69,9 @@ def for_linker(argv, linker, out, folded, trace):
     res[i + 1] = out
     if trace:
         res.append("-Wl,--trace")
+        if linker == "bfd":
+            # GNU ld lists archive members with the option twice.
+            res.append("-Wl,--trace")
     return res
 
 

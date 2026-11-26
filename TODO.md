@@ -432,9 +432,12 @@ x64. Where the 3.5 MB went:
     folded function has none (tombstoned in the givers, `--stats` counts
     them). Then split DWARF (`.dwo` pairing by `dwo_id`).
   - `--pull=preserve` keeps the units whose first definer has side
-    effects: on the gcc corpus, about 316,000 copies, mostly LLVM's
-    `cl::opt` initializers (`.init_array`). Find what an ELF link could
-    keep loading them instead (there is no `NOLIBRARY`).
+    effects: on the gcc corpus, 344,949 copies, mostly LLVM's `cl::opt`
+    initializers (`.init_array`), and with them (a unit naming what stays
+    in its member stays too) 466,557 more. Find what an ELF link could
+    keep loading them instead (there is no `NOLIBRARY`); and whether a
+    synthesized member could keep a reference to a name that stays in
+    its givers without mold taking it from another member.
   - `--locals=copy` and `merge` for ELF: references into `SHF_MERGE`
     sections (string literals) are content references the linker merges
     anyway, so copying the pieces is semantics-preserving; the main reason

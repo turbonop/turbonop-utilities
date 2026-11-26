@@ -5,7 +5,10 @@
 //! builds from the members' own symbols ([`member_symbols`]) is the one the
 //! archive has.
 //!
-//!     cargo run --release -p turbonop-archive --example roundtrip_unix -- [-v] <dir or .a>...
+//!     cargo run --release -p turbonop-archive --example roundtrip_unix -- [-v] [-gnu | -llvm] <dir or .a>...
+//!
+//! With `-gnu` or `-llvm`, an archive passes only as that tool would write
+//! it and index it (without, as either would).
 //!
 //! Directories are searched for `.a` files. Archives are checked in
 //! parallel, the largest first. `-v` lists every archive, not only those
@@ -99,7 +102,7 @@ fn computed_index<'a>(
     objects.then_some(out)
 }
 
-fn check(path: &Path) -> Report {
+fn check(path: &Path, only: Option<Archiver>) -> Report {
     let map = match turbonop_mmap::Mmap::open(path) {
         Ok(m) => m,
         Err(e) => {
@@ -172,11 +175,16 @@ fn check(path: &Path) -> Report {
     };
     let mut index_failures = Vec::new();
     // (Written without one: `S`, nothing to compare.)
-    let ok = if contents.symbols.is_none() {
+    let ok: Vec<(Archiver, &str)> = if contents.symbols.is_none() {
         Vec::new()
     } else {
-        ok
+        ok.into_iter()
+            .filter(|&(a, _)| only.is_none_or(|o| o == a))
+            .collect()
     };
+    if ok.is_empty() && contents.symbols.is_some() {
+        r.failure = Some("not written back by the tool asked for".into());
+    }
     for &(archiver, name) in &ok {
         let built = computed_index(&contents, archiver, &datas, &mut r);
         if built == contents.symbols {
@@ -214,6 +222,14 @@ fn check(path: &Path) -> Report {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let verbose = args.iter().any(|a| a == "-v");
+    // `-gnu` or `-llvm`: the archives must be that tool's, index and all.
+    let only = if args.iter().any(|a| a == "-gnu") {
+        Some(Archiver::GnuAr)
+    } else if args.iter().any(|a| a == "-llvm") {
+        Some(Archiver::LlvmAr)
+    } else {
+        None
+    };
     let mut paths = Vec::new();
     for a in args.iter().filter(|a| !a.starts_with('-')) {
         find(Path::new(a), &mut paths);
@@ -224,7 +240,7 @@ fn main() {
         .collect();
     sized.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     let start = Instant::now();
-    let reports = turbonop_par::map_balanced(&sized, 1, |(_, p)| check(p));
+    let reports = turbonop_par::map_balanced(&sized, 1, |(_, p)| check(p, only));
     let elapsed = start.elapsed();
     let (mut bytes, mut members, mut reproduced, mut index_ok) = (0u64, 0, 0, 0);
     let mut by_writer: BTreeMap<&str, usize> = BTreeMap::new();

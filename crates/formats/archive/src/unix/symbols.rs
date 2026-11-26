@@ -35,7 +35,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use turbonop_elf::ElfFile;
-use turbonop_elf::consts::{SHT_SYMTAB, STB_GLOBAL, STB_LOCAL, STB_WEAK};
+use turbonop_elf::consts::{SHT_SYMTAB, SHT_SYMTAB_SHNDX, STB_GLOBAL, STB_LOCAL, STB_WEAK};
 
 use super::Archiver;
 
@@ -154,11 +154,25 @@ pub fn member_symbols(data: &[u8], archiver: Archiver) -> Result<MemberSymbols<'
         return Ok(out);
     };
     let symbols = file.symbols(&table);
+    // A section index from SHT_SYMTAB_SHNDX is a section's, even one
+    // numbered like a special index (0xFF02, 0xFFF2: an object of more than
+    // 65,280 sections has them).
+    let extended: Vec<u8> = file
+        .sections()
+        .find(|s| s.kind == SHT_SYMTAB_SHNDX && s.link as usize == table.index)
+        .map(|s| file.section_data(&s).to_vec())
+        .unwrap_or_default();
+    let in_extended = |i: usize| {
+        extended
+            .get(i * 4..i * 4 + 4)
+            .is_some_and(|b| b.iter().any(|&x| x != 0))
+    };
     for s in symbols.iter().skip(1) {
         let listed = match archiver {
             Archiver::GnuAr => {
-                let common = s.shndx == SHN_COMMON
-                    || (machine == EM_X86_64 && s.shndx == SHN_X86_64_LCOMMON);
+                let common = !in_extended(s.index)
+                    && (s.shndx == SHN_COMMON
+                        || (machine == EM_X86_64 && s.shndx == SHN_X86_64_LCOMMON));
                 s.shndx != SHN_UNDEF
                     && (matches!(s.bind, STB_GLOBAL | STB_WEAK | STB_GNU_UNIQUE) || common)
             }

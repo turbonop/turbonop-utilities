@@ -85,15 +85,20 @@ pub fn records(data: &[u8], big: bool) -> Option<Vec<Record>> {
         });
         at = end;
     }
-    // Every FDE names a CIE among the records.
+    // Every FDE names a CIE among the records (in order of their starts).
     for r in &out {
         if let Some(c) = r.cie
-            && !out.iter().any(|x| x.start == c && x.cie.is_none())
+            && index_of(&out, c).is_none_or(|k| out[k].cie.is_some())
         {
             return None;
         }
     }
     Some(out)
+}
+
+/// The index of the record starting at `start` among `records` (in order).
+pub fn index_of(records: &[Record], start: usize) -> Option<usize> {
+    records.binary_search_by_key(&start, |r| r.start).ok()
 }
 
 /// Builds a section of `pieces` (each a record's bytes, in order: CIEs

@@ -968,7 +968,7 @@ header reaches 2^32 (`llvm-ar`, padded to 2; `SYM64_THRESHOLD`).
 
 | Check | Result |
 |---|---|
-| `roundtrip_unix` on 170 libraries of the gcc build (13.96 GiB, 2,640 members) | all written back byte for byte (by both writers), every index computed from the members as the archive has it, 11.3 s |
+| `roundtrip_unix` on all 265 libraries of the gcc build (22.11 GiB, 3,777 members) | all written back byte for byte (264 by either writer's conventions, one by GNU `ar`'s only), every index computed from the members as the archive has it, 17.3 s |
 | the same on 26 archives each tool made from crafted members (long names twice, thin, nested, BSD, Darwin, no objects, commons, absolutes) | all 26 |
 | `arcompare.py`: 60 command lines run with GNU `ar`/`ranlib` and `llvm-ar`/`llvm-ranlib`, and with turbolib in their place | 60 of 60 the same: every file left, standard output, standard error, and exit status |
 
@@ -989,10 +989,13 @@ byte order) into sections with typed contents where folding edits them
 (symbols, `REL`/`RELA` relocations with MIPS64's `r_info`, groups,
 `SHT_SYMTAB_SHNDX` kept in step) and writes it back: into the layout read
 while every part keeps its size, else afresh; string tables are kept
-while every name is at its offset (so GNU `as`'s and LLVM's suffix-shared
-and shared `.strtab` survive), else rebuilt. All 2,640 objects of those
-170 libraries (13.5 GiB, ten of them with extended numbering) write back
-byte for byte, and laid out afresh read back to the same model, in 7.0 s.
+while every name is at its offset (so GNU `as`'s suffix-shared tables
+survive; LLVM's `.strtab` shared by section and symbol names is rebuilt
+as one, tested on synthesized objects only), else rebuilt. All 5,885
+objects of the
+gcc build's `lib` directory (the 265 libraries' members and the `.o`
+files, 29.43 GiB, some with extended numbering) write back byte for byte,
+and laid out afresh read back to the same model, in 11.7 s.
 
 ### Folding (6.3, first version)
 
@@ -1012,6 +1015,34 @@ relocations to the copy's local symbols are removed and their places
 tombstoned (lld's values), as a link of the original would treat every
 copy but the one it kept; a folded function has no DWARF in the folded
 library's links. `--stats` counts them.
+
+**Measured** on the gcc build's first 170 libraries (13.96 GiB, 2,640
+members; `foldall.sh` runs `ar s --fold=identical --stats` on a copy of
+each, 210 s for all, one after another):
+
+| | |
+|---|---|
+| COMDAT units | 3,251,711; 372,295 distinct ones with copies in two or more members |
+| folded | 203,824 distinct units, 1,048,040 copies, into 29,069 synthesized members |
+| stayed (copies) | 466,557 calling a name of their member that stays; 344,949 whose first definer has side effects (`--pull=preserve`: LLVM's `cl::opt` initializers); 20,797 whose names have other definitions; 8,630 reaching a local symbol outside them |
+| debug | 4,361,268 relocations tombstoned; 1,042,476 folded copies' debug information dropped |
+| size | 14.99 GB to 14.64 GB (2.4% smaller; the `.debug_*` sections, 7.5 GiB, stay) |
+
+**Link equivalence** (`relink.py`): `llvm-nm` and `llvm-readobj` linked
+against the build's libraries and against the folded ones (all of them),
+each with GNU ld 2.46, gold, lld 21, and mold:
+
+| | GNU ld | gold | lld | mold |
+|---|---|---|---|---|
+| members loaded (original ones) | the same 530 and 409 | the same | the same | the same (as `--trace` lists them) |
+| synthesized members loaded | 3,863 and 3,464 | the same | the same | 4,947 and 4,243 |
+| images' symbols (names, types, sizes; `nm -S`) | the same, 195,367 and 180,651 | the same | the same | the same |
+| output of `llvm-nm -C`, `--size-sort -S`, `llvm-readobj --sections --symbols` on the build's libraries | the same | the same | the same | the same |
+| image size | +0.09%, +0.10% | +0.09%, +0.10% | +0.09%, +0.10% | -0.5% |
+
+What the images' bytes are isn't compared (an ELF `compare-images` is
+still to write), nor any debugging: the folded functions have no debug
+information.
 
 What was found on the way:
 
@@ -1039,6 +1070,14 @@ What was found on the way:
   what loads the synthesized member that defines them (the anchors first
   among its globals); a synthesized member refers to names moved into
   another the same way, with that one's anchor.
+- **A unit naming what stays in its member must stay too.** A
+  synthesized member's reference to a name each giver defined itself (an
+  inline function whose own copies stay) is resolved by the linker, and
+  mold took it from another member (`libLLVMCore.a`'s `Core.cpp.o`, for
+  `llvm-readobj`: 7,996 symbols more in the image). So a unit folds only
+  if every name its relocations give that another unit of its member
+  defines folds too, to a fixpoint: the largest reason copies stay
+  (466,557), as the units with side-effect definers keep their callees.
 
 ## Decisions
 

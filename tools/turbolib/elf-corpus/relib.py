@@ -38,7 +38,7 @@ def library_commands(build):
     ).stdout
     out = {}
     for line in text.splitlines():
-        if " qc " not in line and " rcs " not in line:
+        if " ar " not in line and "/ar " not in line and "llvm-ar " not in line:
             continue
         parts = [p.strip() for p in line.split("&&")]
         cmds = []
@@ -50,7 +50,8 @@ def library_commands(build):
             tool = os.path.basename(argv[0])
             if tool in ARCHIVERS:
                 cmds.append(argv)
-                if tool in ("ar", "llvm-ar") and lib is None:
+                ops = argv[1].lstrip("-") if len(argv) > 2 else ""
+                if tool in ("ar", "llvm-ar") and lib is None and ("q" in ops or "r" in ops):
                     lib = argv[2]
         if lib and lib.endswith(".a"):
             out[lib] = cmds

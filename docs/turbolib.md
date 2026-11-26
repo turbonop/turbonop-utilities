@@ -26,7 +26,7 @@ items leave TODO.md as they ship.
 | 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
-| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.49× `lib.exe`'s time without folding and 0.99× with it. |
+| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding and 0.97× with it. |
 | 6 ELF, with split DWARF | Not yet. |
 | 7 Mach-O | Not yet. |
 
@@ -1418,9 +1418,9 @@ warm cache, 8 threads, 2026-11-25):
 
 | | Total | Against `lib.exe` |
 |---|---|---|
-| `lib.exe` 14.52 | 11.86 s | 1.00× |
-| turbolib, `--fold=none` | 5.83 s | 0.49× |
-| turbolib, `--fold=identical` (with 2.4's debug information) | 11.77 s | 0.99× |
+| `lib.exe` 14.52 | 11.76 s | 1.00× |
+| turbolib, `--fold=none` | 5.84 s | 0.50× |
+| turbolib, `--fold=identical` (with 2.4's debug information) | 11.37 s | 0.97× |
 
 What made the difference: writing the library in order. Setting the
 file's length first and writing at offsets on every thread made NTFS
@@ -1431,7 +1431,7 @@ finding units 0.31 s, the rest of folding 0.5 s, the index 0.25 s,
 writing 0.35 s, and freeing the inputs' mappings and renaming 0.13 to
 0.2 s. Tried and dropped: a buffered streaming hash with four chains
 (faster on large inputs, but the many small values units hash made
-finding units 25% slower).
+finding units 25% slower); reading members largest first (no change: reading is 4.3× faster on 8 threads than on 1, which this PC's cores bound). The fold engine's maps use turbonop-hash rather than SipHash (definers and grouping 35% faster). On one thread, `clangSema.lib`'s reading is 1.19 s: parsing 0.30, finding units 0.42, and checking debug information 0.47.
 
 ### Phase 6: ELF, with split DWARF
 

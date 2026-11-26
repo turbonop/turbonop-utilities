@@ -190,14 +190,14 @@ const GRP_COMDAT: u32 = 1;
 
 /// A unit of one member.
 #[derive(Clone, Debug)]
-struct Unit {
+struct Unit<'a> {
     /// The group section.
     group: usize,
     /// Its member sections (the group's list, then relocation sections for
     /// them the list leaves out).
     sections: Vec<usize>,
     /// The global names it defines.
-    names: Vec<Vec<u8>>,
+    names: Vec<Cow<'a, [u8]>>,
     hash: u128,
     stays: Option<&'static str>,
     /// Its FDEs (indexes into the member's records).
@@ -206,7 +206,7 @@ struct Unit {
     debug: bool,
     /// The names its relocations name that other units of its member
     /// define.
-    comdat_refs: Vec<Vec<u8>>,
+    comdat_refs: Vec<Cow<'a, [u8]>>,
     bytes: u64,
 }
 
@@ -237,10 +237,10 @@ struct Parsed<'a> {
     why_not: Option<String>,
     env: u128,
     side_effects: bool,
-    units: Vec<Unit>,
+    units: Vec<Unit<'a>>,
     /// Every global the member defines, with its unit (`None`: outside
     /// any).
-    defs: Vec<(Vec<u8>, Option<usize>)>,
+    defs: Vec<(Cow<'a, [u8]>, Option<usize>)>,
     /// `.eh_frame`, if any.
     eh: Option<Eh>,
     /// Each section's unit.
@@ -374,7 +374,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 Ok(f) => {
                     for s in f.all_symbols().iter().skip(1) {
                         if s.bind != 0 && s.shndx != 0 {
-                            p.defs.push((s.name.to_vec(), None));
+                            p.defs.push((Cow::Owned(s.name.to_vec()), None));
                         }
                     }
                 }
@@ -409,7 +409,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
 
     // Each section's unit.
     let mut owner: Vec<Option<usize>> = vec![None; n];
-    let mut units: Vec<Unit> = Vec::new();
+    let mut units: Vec<Unit<'a>> = Vec::new();
     for (i, s) in obj.sections.iter().enumerate() {
         if let Data::Group(g) = &s.data
             && g.flags & GRP_COMDAT != 0
@@ -489,9 +489,9 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     for s in symbols.iter().skip(1) {
         if s.bind() != 0 && s.shndx != SHN_UNDEF {
             let u = sym_owner(s);
-            p.defs.push((s.name.to_vec(), u));
+            p.defs.push((s.name.clone(), u));
             if let Some(u) = u {
-                units[u].names.push(s.name.to_vec());
+                units[u].names.push(s.name.clone());
             }
         }
     }
@@ -519,7 +519,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 if let (Some(a), Some(b)) = (from, sym_owner(sym))
                     && a != b
                 {
-                    units[a].comdat_refs.push(sym.name.to_vec());
+                    units[a].comdat_refs.push(sym.name.clone());
                 }
                 continue;
             }
@@ -1657,7 +1657,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
     let mut definers: Map<&[u8], Vec<(usize, Option<usize>)>> = Map::default();
     for (m, p) in parsed.iter().enumerate() {
         for (name, u) in &p.defs {
-            definers.entry(name.as_slice()).or_default().push((m, *u));
+            definers.entry(&**name).or_default().push((m, *u));
         }
     }
     // The copies of each unit, by hash, in member order.
@@ -1689,7 +1689,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             .find_map(|&(m, u)| parsed[m].units[u].stays)
             .or_else(|| {
                 unit.names.iter().find_map(|n| {
-                    let defs = definers.get(n.as_slice())?;
+                    let defs = definers.get(&**n)?;
                     if defs
                         .iter()
                         .any(|&(m, u)| u.is_none_or(|u| parsed[m].units[u].hash != h))
@@ -1718,7 +1718,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         let names: std::collections::HashSet<&[u8], turbonop_hash::State> = folded
             .iter()
             .flat_map(|(_, list)| list.iter())
-            .flat_map(|&(m, u)| parsed[m].units[u].names.iter().map(Vec::as_slice))
+            .flat_map(|&(m, u)| parsed[m].units[u].names.iter().map(|n| &**n))
             .collect();
         let before = folded.len();
         folded.retain(|(_, list)| {
@@ -1726,7 +1726,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
                 parsed[m].units[u]
                     .comdat_refs
                     .iter()
-                    .all(|n| names.contains(n.as_slice()))
+                    .all(|n| names.contains(&**n))
             });
             if !keep {
                 *report
@@ -1792,7 +1792,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
     for (k, (units, _)) in synth.iter().enumerate() {
         for &(m, u) in units {
             for n in &parsed[m].units[u].names {
-                moved_into.insert(n.as_slice(), k);
+                moved_into.insert(&**n, k);
             }
         }
     }

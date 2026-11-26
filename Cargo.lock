@@ -1150,6 +1150,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-macho-object"
+version = "0.0.7"
+dependencies = [
+ "turbonop-archive",
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-macho",
+ "turbonop-mmap",
+ "turbonop-par",
+]
+
+[[package]]
 name = "turbonop-minidump"
 version = "0.0.7"
 dependencies = [

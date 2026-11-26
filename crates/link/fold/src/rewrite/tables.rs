@@ -51,13 +51,14 @@
 //! A table turbolib can't read makes its member pass through
 //! ([`Unfoldable::SideTables`]).
 
-use super::units::{Unit, weak_default};
-use super::{Parsed, Placed, Synth, Unfoldable, section_symbol};
+use super::locals::{self, Edge};
+use super::units::{Reasons, Unit, weak_default};
+use super::{Parsed, Placed, Unfoldable, section_symbol};
 use crate::hash::H128;
 use std::borrow::Cow;
 use turbonop_coff::{
-    Object, Relocation, Renumbering, Section, SectionData, SectionDefinition, SectionId, Symbol,
-    SymbolId, storage_class,
+    Object, Relocation, Renumbering, Section, SectionData, SectionDefinition, SectionId, SymbolId,
+    storage_class,
 };
 use turbonop_hash::{Map as HashMap, Set as HashSet};
 
@@ -376,18 +377,20 @@ impl Tables {
     /// relocations do: see the module's notes), and indexes the entries
     /// that go with each unit. `unit_of` is each section's unit and
     /// `symbol_unit` each symbol's.
-    pub fn check(
+    pub(super) fn check(
         &mut self,
         object: &Object<'_>,
         unit_of: &[Option<usize>],
         symbol_unit: &[Option<usize>],
-        reason: &mut [Option<Unfoldable>],
-        detail: &mut [Option<String>],
+        reasons: &mut Reasons,
     ) {
-        let mut flag = |u: usize, why: Unfoldable, what: &dyn Fn() -> String| {
-            if reason[u].is_none() {
-                reason[u] = Some(why);
-                detail[u] = Some(what());
+        // About a local symbol a set names (which `--locals=copy` may
+        // lift), or not.
+        let mut flag = |u: usize, why: Unfoldable, local: bool, what: &dyn Fn() -> String| {
+            if local {
+                reasons.local(u, why, what);
+            } else {
+                reasons.hard(u, why, what);
             }
         };
         for (ti, t) in self.tables.iter().enumerate() {
@@ -419,12 +422,13 @@ impl Tables {
                             Some(a) => {
                                 if sym.storage_class == storage_class::WEAK_EXTERNAL {
                                     if weak_default(object, sym).is_none() {
-                                        flag(a, Unfoldable::WeakExternalReference, &what);
+                                        flag(a, Unfoldable::WeakExternalReference, false, &what);
                                     }
                                 } else if !sym.is_external() {
-                                    flag(a, Unfoldable::LocalReference, &what);
+                                    let set = t.kind.is_set();
+                                    flag(a, Unfoldable::LocalReference, set, &what);
                                     if let Some(b) = there {
-                                        flag(b, Unfoldable::ReferencedLocally, &what);
+                                        flag(b, Unfoldable::ReferencedLocally, set, &what);
                                     }
                                 }
                             }
@@ -432,7 +436,8 @@ impl Tables {
                                 if let Some(b) = there
                                     && (!sym.is_external() || t.kind.describes_code())
                                 {
-                                    flag(b, Unfoldable::ReferencedLocally, &what);
+                                    let set = t.kind.is_set() && !sym.is_external();
+                                    flag(b, Unfoldable::ReferencedLocally, set, &what);
                                 }
                             }
                             None => {
@@ -454,14 +459,14 @@ impl Tables {
                         match here {
                             Some(a) if there == Some(a) => {}
                             Some(a) => {
-                                flag(a, Unfoldable::LocalReference, &what);
+                                flag(a, Unfoldable::LocalReference, false, &what);
                                 if let Some(b) = there {
-                                    flag(b, Unfoldable::ReferencedLocally, &what);
+                                    flag(b, Unfoldable::ReferencedLocally, false, &what);
                                 }
                             }
                             None if t.comdat => {
                                 if let Some(b) = there {
-                                    flag(b, Unfoldable::ReferencedLocally, &what);
+                                    flag(b, Unfoldable::ReferencedLocally, false, &what);
                                 }
                             }
                             None => {
@@ -513,13 +518,15 @@ impl Tables {
 impl Table {
     /// Adds the table's contents to a unit's identity: its bytes, with
     /// each target (in place of the field that names it) by position in
-    /// the unit, or by name outside it. Unit `k`'s symbols are `unit`'s.
+    /// the unit, or by name outside it (a local one it reaches by its
+    /// place among `places`, if given). Unit `k`'s symbols are `unit`'s.
     pub(super) fn hash(
         &self,
         object: &Object<'_>,
         unit: &Unit,
         k: usize,
         symbol_unit: &[Option<usize>],
+        places: Option<&[Edge]>,
         h: &mut H128,
     ) {
         let data = object.sections[self.section.index()].bytes();
@@ -538,8 +545,10 @@ impl Table {
                 None => h.u64(u64::MAX),
                 Some(Target::Symbol(s)) => {
                     let inside = symbol_unit.get(s.index()).copied().flatten() == Some(k);
-                    match (inside, unit.symbols.binary_search(&s)) {
-                        (true, Ok(p)) => h.u64(p as u64),
+                    let place = places.and_then(|e| locals::place(e, s));
+                    match (inside, unit.symbols.binary_search(&s), place) {
+                        (true, Ok(p), _) => h.u64(p as u64),
+                        (_, _, Some(place)) => h.u64(locals::PLACE | place),
                         _ => {
                             let t = &object.symbols[s.index()];
                             let name = t.name.as_bytes();
@@ -744,21 +753,22 @@ struct Building {
 
 /// Puts a synthesized member's table entries in: renumbers the tables its
 /// units brought, and makes its own tables for the entries of the givers'
-/// tables outside COMDATs that go with its units. `placed` is where each
-/// unit's sections and symbols went, and `outside` gives the symbol for a
-/// target outside a unit (as relocations get one). Indices are written by
-/// [`finish`], once the symbol table is complete.
+/// tables outside COMDATs that go with its units. `units` are the units
+/// placed (member, unit, renamed), `placed` is where each one's sections
+/// and symbols went, and `outside` gives the symbol for a target outside a
+/// unit (the unit's position, the target), as relocations get one. Indices
+/// are written by [`finish`], once the symbol table is complete.
 pub(super) fn place<'d>(
     o: &mut Object<'d>,
-    s: &Synth,
+    units: &[(usize, usize, bool)],
     parsed: &[Parsed<'d>],
     placed: &[Placed],
-    outside: &mut dyn FnMut(&mut Object<'d>, &Object<'d>, &Symbol<'d>) -> SymbolId,
+    outside: &mut dyn FnMut(&mut Object<'d>, usize, SymbolId) -> SymbolId,
 ) -> Fields {
     let mut fields = Fields::default();
     let mut building: Vec<Building> = Vec::new();
     let mut by_name: HashMap<Vec<u8>, usize> = HashMap::default();
-    for (k, &(m, u, _)) in s.units.iter().enumerate() {
+    for (k, &(m, u, _)) in units.iter().enumerate() {
         let object = parsed[m].object.as_ref().expect("units come from objects");
         let facts = &parsed[m].facts;
         let unit = &facts.units[u];
@@ -766,7 +776,7 @@ pub(super) fn place<'d>(
         let p = &placed[k];
         let mut symbol = |o: &mut Object<'d>, old: SymbolId| match p.symbols.get(&old.0) {
             Some(&new) => new,
-            None => outside(o, object, &object.symbols[old.index()]),
+            None => outside(o, k, old),
         };
 
         // The unit's own tables, copied with its sections.

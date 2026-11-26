@@ -34,7 +34,9 @@ pub(crate) fn object(data: &[u8]) -> Object<'_> {
 pub(crate) const RELAXED: Options = Options {
     pull: Pull::Relaxed,
     weak_externals: false,
-    fold: true,
+    fold: crate::rewrite::Fold::Identical,
+    locals: crate::rewrite::Locals::Keep,
+    odr: false,
     precomp: crate::rewrite::Precomp::None,
 };
 
@@ -723,7 +725,10 @@ fn annotations_that_change_length_rebuild_the_section() {
             name: name.as_bytes(),
             data: &data,
         }];
-        let parsed: Vec<Parsed<'_>> = input.iter().map(super::super::parse).collect();
+        let parsed: Vec<Parsed<'_>> = input
+            .iter()
+            .map(|i| super::super::parse(i, units::Mode::default()))
+            .collect();
         let o = parsed[0].object.as_ref().unwrap();
         let s = stream(o, None);
         let t = tables(o);

@@ -18,13 +18,25 @@
 //! - each symbol it defines (sorted): position, value, storage class, and
 //!   (for externals) name.
 //!
+//! With [`read_with`]'s `structural` (`--locals=copy` and `merge`), a
+//! reference to a static symbol outside the unit is to what holds it, by
+//! content: a unit (its own fingerprint's form, with the symbol's position
+//! in it) or a piece of a section outside units (the bytes from the
+//! symbol to the next symbol of the section, without the zeros at their
+//! end, and their relocations), each with what it reaches in turn,
+//! numbered in the order a breadth-first walk finds them. So a unit that
+//! names its own translation unit's `$SG12345` matches a copy that names
+//! the synthesized member's copy of the same bytes.
+//!
 //! Names are compared without the prefix of turbolib's renamed copies
 //! ([`RENAMED`]), so a renamed copy matches the copy it was made from.
 //! Debug sections aren't part of a fingerprint: under phase 2.4 the
 //! synthesized member's `.debug$S` refers to other type indices, and PDBs
 //! are compared by `compare-images`.
 
+use std::cell::RefCell;
 use turbonop_coff::{Aux, Object, SectionId, SectionNumber, Symbol, comdat_select, storage_class};
+use turbonop_hash::Map;
 use turbonop_pe::consts::section_characteristics as scn;
 use turbonop_pe::import_object::{ImportObject, ImportType};
 
@@ -138,6 +150,11 @@ pub struct Unit {
     pub selection: u8,
     /// See the module's documentation.
     pub fingerprint: u128,
+    /// Its leader is a static symbol (internal linkage).
+    pub local: bool,
+    /// Its leader section's size and COMDAT checksum.
+    pub size: u32,
+    pub checksum: u32,
 }
 
 /// A section outside every unit, other than debug sections, side tables,
@@ -224,6 +241,13 @@ impl Body {
 
 /// Reads a member's data.
 pub fn read(data: &[u8]) -> Body {
+    read_with(data, false)
+}
+
+/// Reads a member's data; with `structural`, its units' references to
+/// static symbols outside them are by content (see the module's
+/// documentation).
+pub fn read_with(data: &[u8], structural: bool) -> Body {
     match turbonop_coff::kind(data) {
         Some(turbonop_coff::Kind::Import) => match ImportObject::parse(data) {
             Ok(i) => {
@@ -239,7 +263,7 @@ pub fn read(data: &[u8]) -> Body {
         Some(turbonop_coff::Kind::Anonymous) => Body::Other("an anonymous object".into()),
         None => Body::Other("too short for an object".into()),
         Some(_) => match Object::parse(data) {
-            Ok(o) => Body::Coff(Box::new(coff(&o))),
+            Ok(o) => Body::Coff(Box::new(coff(&o, structural))),
             Err(e) => Body::Other(e.to_string()),
         },
     }
@@ -302,7 +326,7 @@ fn side_effect_section(name: &[u8]) -> bool {
     .any(|p| name.starts_with(p))
 }
 
-fn coff(o: &Object<'_>) -> Coff {
+fn coff(o: &Object<'_>, structural: bool) -> Coff {
     let n = o.sections.len();
     let mut c = Coff {
         machine: o.machine,
@@ -480,16 +504,17 @@ fn coff(o: &Object<'_>) -> Coff {
             for e in sec.bytes().as_chunks::<4>().0 {
                 let index = u32::from_le_bytes([e[0], e[1], e[2], e[3]]);
                 let entry: Box<[u8]> = match indices.binary_search(&index) {
-                    Ok(i) => entry_name(&o.symbols[i]),
+                    Ok(i) => entry_name(&o.symbols[i], structural),
                     Err(_) => format!("<symbol index {index}>").into_bytes().into(),
                 };
                 c.side.push((name.into(), entry));
             }
         } else if RELOCATION_TABLES.contains(&name) && unit_of[s].is_none() {
             for r in &sec.relocations {
-                let entry = o
-                    .symbol(r.symbol)
-                    .map_or_else(|| b"<no symbol>".to_vec().into(), entry_name);
+                let entry = o.symbol(r.symbol).map_or_else(
+                    || b"<no symbol>".to_vec().into(),
+                    |s| entry_name(s, structural),
+                );
                 c.side.push((name.into(), entry));
             }
         }
@@ -516,6 +541,49 @@ fn coff(o: &Object<'_>) -> Coff {
             defined[u as usize].push(s);
         }
     }
+    // Each unit's sections in a canonical order: the root, then the others
+    // by their contents (with references inside the unit by section name
+    // and value), since tools write associative sections in different
+    // orders; debug sections left out.
+    let mut orders: Vec<Vec<usize>> = Vec::with_capacity(unit_sections.len());
+    for (u, list) in unit_sections.iter().enumerate() {
+        let inside = |t: SectionId| t.index() < n && unit_of[t.index()] == Some(u as u32);
+        let mut order: Vec<(u128, usize)> = list[1..]
+            .iter()
+            .filter(|&&s| !o.sections[s].name.as_bytes().starts_with(b".debug$"))
+            .map(|&s| {
+                let shape = Form {
+                    o,
+                    indices: &indices,
+                    inside,
+                    position: None,
+                    locals: None,
+                };
+                let mut k = H128::new();
+                shape.section(s, &mut k);
+                (k.finish(), s)
+            })
+            .collect();
+        order.sort_unstable();
+        position[list[0]] = 0;
+        for (p, &(_, s)) in order.iter().enumerate() {
+            position[s] = p as u32 + 1;
+        }
+        orders.push(order.into_iter().map(|(_, s)| s).collect());
+    }
+    let locals = structural.then(|| {
+        RefCell::new(Locals {
+            unit_of: &unit_of,
+            pieces: Vec::new(),
+            by_start: Map::default(),
+            bounds: Map::default(),
+            edges: Vec::new(),
+        })
+    });
+    let mut forms: Vec<u128> = vec![0; unit_sections.len()];
+    let mut unit_edges: Vec<Vec<(Local, u64)>> = vec![Vec::new(); unit_sections.len()];
+    // Each unit's position in `c.units` (units without a leader have none).
+    let mut listed: Vec<Option<usize>> = vec![None; unit_sections.len()];
     for (u, list) in unit_sections.iter().enumerate() {
         let r = list[0];
         let Some(l) = leader[r] else { continue };
@@ -526,38 +594,18 @@ fn coff(o: &Object<'_>) -> Coff {
             h.u64(u64::from(d.checksum));
         }
         let inside = |t: SectionId| t.index() < n && unit_of[t.index()] == Some(u as u32);
-        // The sections in a canonical order: the root, then the others by
-        // their contents (with references inside the unit by section name
-        // and value), since tools write associative sections in different
-        // orders; debug sections left out.
-        let mut order: Vec<(u128, usize)> = list[1..]
-            .iter()
-            .filter(|&&s| !o.sections[s].name.as_bytes().starts_with(b".debug$"))
-            .map(|&s| {
-                let shape = Form {
-                    o,
-                    indices: &indices,
-                    inside,
-                    position: None,
-                };
-                let mut k = H128::new();
-                shape.section(s, &mut k);
-                (k.finish(), s)
-            })
-            .collect();
-        order.sort_unstable();
-        position[r] = 0;
-        for (p, &(_, s)) in order.iter().enumerate() {
-            position[s] = p as u32 + 1;
+        if let Some(cell) = &locals {
+            cell.borrow_mut().edges.clear();
         }
         let form = Form {
             o,
             indices: &indices,
             inside,
             position: Some(&position),
+            locals: locals.as_ref(),
         };
         form.section(r, &mut h);
-        for &(_, s) in &order {
+        for &s in &orders[u] {
             form.section(s, &mut h);
         }
         let mut symbols: Vec<(u32, u32, u8, &[u8])> = defined[u]
@@ -586,11 +634,53 @@ fn coff(o: &Object<'_>) -> Coff {
             h.u64(u64::from(class));
             h.bytes(name);
         }
+        forms[u] = h.finish();
+        if let Some(cell) = &locals {
+            unit_edges[u] = std::mem::take(&mut cell.borrow_mut().edges);
+        }
+        listed[u] = Some(c.units.len());
         c.units.push(Unit {
             leader: o.symbols[l].name.as_bytes().into(),
             selection: d.selection,
-            fingerprint: h.finish(),
+            fingerprint: forms[u],
+            local: !o.symbols[l].is_external(),
+            size: o.sections[r].size(),
+            checksum: d.checksum,
         });
+    }
+    // Structural: each piece's form as it is found, then each unit's
+    // fingerprint, a walk of what it reaches.
+    if let Some(cell) = &locals {
+        let mut piece_forms: Vec<u128> = Vec::new();
+        let mut piece_edges: Vec<Vec<(Local, u64)>> = Vec::new();
+        loop {
+            let piece = {
+                let l = cell.borrow();
+                match l.pieces.get(piece_forms.len()) {
+                    Some(&p) => p,
+                    None => break,
+                }
+            };
+            cell.borrow_mut().edges.clear();
+            let form = Form {
+                o,
+                indices: &indices,
+                inside: |_: SectionId| false,
+                position: Some(&position),
+                locals: Some(cell),
+            };
+            let mut h = H128::new();
+            form.piece(piece, &mut h);
+            piece_forms.push(h.finish());
+            piece_edges.push(std::mem::take(&mut cell.borrow_mut().edges));
+        }
+        for (u, at) in listed.iter().enumerate() {
+            if let Some(k) = *at
+                && !unit_edges[u].is_empty()
+            {
+                c.units[k].fingerprint = walk(u, &forms, &unit_edges, &piece_forms, &piece_edges);
+            }
+        }
     }
 
     // Pieces: the other sections.
@@ -614,6 +704,7 @@ fn coff(o: &Object<'_>) -> Coff {
             indices: &indices,
             inside: |t: SectionId| t.index() == s,
             position: Some(&position),
+            locals: None,
         };
         form.section(s, &mut h);
         c.pieces.push(Piece {
@@ -625,11 +716,142 @@ fn coff(o: &Object<'_>) -> Coff {
     c
 }
 
+/// What a static symbol outside a unit is in (under `structural`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Local {
+    Unit(u32),
+    Piece(u32),
+}
+
+/// The static symbols units reach, as they are found.
+struct Locals<'o> {
+    unit_of: &'o [Option<u32>],
+    /// Each piece: (section, start, end).
+    pieces: Vec<(usize, u32, u32)>,
+    by_start: Map<(usize, u32), u32>,
+    /// Each section's symbols' values, sorted.
+    bounds: Map<usize, Vec<u32>>,
+    /// The form being hashed's edges: what it reaches, and where in it.
+    edges: Vec<(Local, u64)>,
+}
+
+impl Locals<'_> {
+    /// The place of static `t` (in section `id`) among the edges of the
+    /// form being hashed.
+    fn place(
+        &mut self,
+        o: &Object<'_>,
+        position: Option<&[u32]>,
+        id: SectionId,
+        t: &Symbol<'_>,
+    ) -> u64 {
+        let s = id.index();
+        let (node, at) = match self.unit_of.get(s).copied().flatten() {
+            Some(v) => {
+                let mut h = H128::new();
+                h.u64(u64::from(
+                    position.and_then(|p| p.get(s).copied()).unwrap_or(0),
+                ));
+                h.u64(u64::from(t.value));
+                h.u64(u64::from(t.storage_class));
+                (Local::Unit(v), h.finish() as u64)
+            }
+            None => {
+                let start = t.value;
+                let p = match self.by_start.get(&(s, start)) {
+                    Some(&p) => p,
+                    None => {
+                        let bounds = self.bounds.entry(s).or_insert_with(|| {
+                            let mut v: Vec<u32> = o
+                                .symbols
+                                .iter()
+                                .filter(|x| x.section == SectionNumber::Section(id))
+                                .map(|x| x.value)
+                                .collect();
+                            v.sort_unstable();
+                            v.dedup();
+                            v
+                        });
+                        let size = o.sections.get(s).map_or(0, turbonop_coff::Section::size);
+                        let end = bounds
+                            .iter()
+                            .copied()
+                            .find(|&b| b > start)
+                            .map_or(size, |b| b.min(size))
+                            .max(start);
+                        let p = self.pieces.len() as u32;
+                        self.pieces.push((s, start.min(end), end));
+                        self.by_start.insert((s, start), p);
+                        p
+                    }
+                };
+                (Local::Piece(p), 0)
+            }
+        };
+        let k = match self.edges.iter().position(|e| *e == (node, at)) {
+            Some(k) => k,
+            None => {
+                self.edges.push((node, at));
+                self.edges.len() - 1
+            }
+        };
+        k as u64
+    }
+}
+
+/// Unit `u`'s fingerprint under `structural`: its form, then everything it
+/// reaches, breadth first, each node's form and its edges with their
+/// targets numbered in the order found.
+fn walk(
+    u: usize,
+    forms: &[u128],
+    unit_edges: &[Vec<(Local, u64)>],
+    piece_forms: &[u128],
+    piece_edges: &[Vec<(Local, u64)>],
+) -> u128 {
+    let root = Local::Unit(u as u32);
+    let mut nodes = vec![root];
+    let mut number: Map<Local, u64> = Map::default();
+    number.insert(root, 0);
+    let none: Vec<(Local, u64)> = Vec::new();
+    let mut h = H128::new();
+    let mut i = 0;
+    while i < nodes.len() {
+        let (form, edges) = match nodes[i] {
+            Local::Unit(v) => (
+                forms.get(v as usize).copied().unwrap_or(0),
+                unit_edges.get(v as usize).unwrap_or(&none),
+            ),
+            Local::Piece(p) => (
+                piece_forms.get(p as usize).copied().unwrap_or(0),
+                piece_edges.get(p as usize).unwrap_or(&none),
+            ),
+        };
+        h.u64(u64::from(matches!(nodes[i], Local::Piece(_))));
+        h.u128(form);
+        h.u64(edges.len() as u64);
+        for &(node, at) in edges {
+            let j = *number.entry(node).or_insert_with(|| {
+                nodes.push(node);
+                (nodes.len() - 1) as u64
+            });
+            h.u64(j);
+            h.u64(at);
+        }
+        i += 1;
+    }
+    h.finish()
+}
+
 /// A side-table entry's name for symbol `s`: an external's name, or a
-/// static's name marked as one.
-fn entry_name(s: &Symbol<'_>) -> Box<[u8]> {
+/// static's name marked as one (under `structural`, a static without its
+/// name: copies of locals keep the names of the translation unit they
+/// were copied from).
+fn entry_name(s: &Symbol<'_>, structural: bool) -> Box<[u8]> {
     if s.is_external() || s.storage_class == storage_class::WEAK_EXTERNAL {
         canonical(s.name.as_bytes()).into()
+    } else if structural {
+        b"static".to_vec().into()
     } else {
         [b"static ", s.name.as_bytes()].concat().into()
     }
@@ -647,9 +869,46 @@ struct Form<'o, 'd, F> {
     /// Their positions in it; `None` names a section inside by its name
     /// instead (for ordering them).
     position: Option<&'o [u32]>,
+    /// Under `structural`, where static symbols outside the unit are
+    /// found, and the edges to them collected.
+    locals: Option<&'o RefCell<Locals<'o>>>,
 }
 
 impl<F: Fn(SectionId) -> bool> Form<'_, '_, F> {
+    /// Hashes a piece's form: its section's name and characteristics, its
+    /// bytes without the zeros at their end (but those of a relocation),
+    /// and its relocations, by offset from its start.
+    fn piece(&self, (s, start, end): (usize, u32, u32), h: &mut H128) {
+        let o = self.o;
+        let sec = &o.sections[s];
+        let bytes = sec.bytes().get(start as usize..end as usize).unwrap_or(&[]);
+        let relocations: Vec<&turbonop_coff::Relocation> = sec
+            .relocations
+            .iter()
+            .filter(|r| r.offset >= start && r.offset < end)
+            .collect();
+        let mut used = bytes.iter().rposition(|&b| b != 0).map_or(0, |p| p + 1);
+        for r in &relocations {
+            let width = if o.machine == 0x8664 && r.kind == 1 {
+                8
+            } else {
+                4
+            };
+            used = used
+                .max((r.offset - start) as usize + width)
+                .min(bytes.len());
+        }
+        h.bytes(sec.name.as_bytes());
+        h.u64(u64::from(sec.characteristics));
+        h.u64(used as u64);
+        h.bytes(&bytes[..used]);
+        for r in relocations {
+            h.u64(u64::from(r.offset - start));
+            h.u64(u64::from(r.kind));
+            self.target(o.symbol(r.symbol), h);
+        }
+    }
+
     /// Hashes a reference to symbol `t`: by position inside the unit, by
     /// name outside it (with a static's value and section name).
     fn target(&self, t: Option<&Symbol<'_>>, h: &mut H128) {
@@ -670,6 +929,14 @@ impl<F: Fn(SectionId) -> bool> Form<'_, '_, F> {
             _ if t.is_external() || t.storage_class == storage_class::WEAK_EXTERNAL => {
                 h.u64(2);
                 h.bytes(canonical(t.name.as_bytes()));
+            }
+            SectionNumber::Section(id)
+                if self.locals.is_some() && !matches!(t.aux, Aux::Section(_)) =>
+            {
+                let cell = self.locals.expect("structural");
+                let place = cell.borrow_mut().place(self.o, self.position, id, t);
+                h.u64(4);
+                h.u64(place);
             }
             section => {
                 h.u64(3);

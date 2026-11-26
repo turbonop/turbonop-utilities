@@ -82,6 +82,7 @@ use crate::report::{Report, show};
 use crate::shard::Sharded;
 use index::Index;
 use member::{Body, Class, Coff, Kind, RENAMED, canonical, starts_with_ignore_case};
+use turbonop_coff::comdat_select;
 
 /// What `--pull` promised about which members a link loads.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -94,10 +95,29 @@ pub enum Pull {
     Relaxed,
 }
 
+/// What `--fold` allowed: which copies may stand for each other.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Fold {
+    /// Only identical copies.
+    #[default]
+    Identical,
+    /// Any copy of the same name, selection, and environment, by the
+    /// selection's rule: `SAME_SIZE` copies of the same size, `EXACT_MATCH`
+    /// ones of the same size and checksum, `LARGEST` ones no larger than
+    /// the copy kept.
+    SelectAny,
+}
+
 /// The options of a check.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
     pub pull: Pull,
+    pub fold: Fold,
+    /// `--locals=copy` or `merge`: units are compared with the static
+    /// symbols they reach by content (see [`member`]), and local units
+    /// (static COMDATs) may be copied into any number of synthesized
+    /// members.
+    pub locals: bool,
 }
 
 /// One member of a library.
@@ -173,7 +193,10 @@ pub fn verify(original: &[u8], rewritten: &[u8], options: &Options) -> Result<Re
     let (ra, rf) = open(rewritten, "the rewritten library")?;
     // Every member of both, read in parallel.
     let all: Vec<&[u8]> = of.iter().chain(&rf).map(|m| m.2).collect();
-    let mut bodies = turbonop_par::map_balanced(&all, 4, |d: &&[u8]| member::read(d)).into_iter();
+    let structural = options.locals;
+    let mut bodies =
+        turbonop_par::map_balanced(&all, 4, |d: &&[u8]| member::read_with(d, structural))
+            .into_iter();
     let o = Library::new(&oa, of, &mut bodies);
     let r = Library::new(&ra, rf, &mut bodies);
     Ok(check(&o, &r, options))
@@ -265,10 +288,24 @@ fn indexed<'s>(
 }
 
 /// A unit's key: its canonical leader name, fingerprint, and environment.
-fn unit_key(leader: &[u8], fingerprint: u128, environment: u128) -> u128 {
+/// (A local unit's leader name doesn't count under `--locals=copy`: its
+/// copies keep the name of the translation unit they came from.)
+fn unit_key(u: &member::Unit, environment: u128, locals: bool) -> u128 {
     let mut h = H128::new();
-    h.bytes(canonical(leader));
-    h.u128(fingerprint);
+    if !(locals && u.local) {
+        h.bytes(canonical(&u.leader));
+    }
+    h.u128(u.fingerprint);
+    h.u128(environment);
+    h.finish()
+}
+
+/// A unit's key by name under `--fold=select-any`: its canonical leader
+/// name, selection, and environment.
+fn name_key(u: &member::Unit, environment: u128) -> u128 {
+    let mut h = H128::new();
+    h.bytes(canonical(&u.leader));
+    h.u64(u64::from(u.selection));
     h.u128(environment);
     h.finish()
 }
@@ -295,6 +332,10 @@ struct Facts<'s> {
     anchor_of: Map<&'s [u8], usize>,
     /// The synthesized members holding each unit key.
     holders: Map<u128, Vec<usize>>,
+    /// Under select-any, the synthesized members holding a copy of each
+    /// name key, with the copy's size and checksum.
+    by_name: Map<u128, Vec<(usize, u32, u32)>>,
+    options: Options,
     /// Every original unit key.
     original_units: Sharded<u128, ()>,
     /// Every name an original member defines or refers to.
@@ -440,7 +481,7 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                         out.extend(
                             c.units
                                 .iter()
-                                .map(|u| (unit_key(&u.leader, u.fingerprint, c.environment), ())),
+                                .map(|u| (unit_key(u, c.environment, options.locals), ())),
                         );
                     }
                 },
@@ -481,6 +522,8 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         defined: &r_defs,
         anchor_of: Map::default(),
         holders: Map::default(),
+        by_name: Map::default(),
+        options: *options,
         original_units,
         original_names,
         synthesized_definitions: Map::default(),
@@ -502,9 +545,16 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         for u in &c.units {
             facts
                 .holders
-                .entry(unit_key(&u.leader, u.fingerprint, c.environment))
+                .entry(unit_key(u, c.environment, options.locals))
                 .or_default()
                 .push(j);
+            if options.fold == Fold::SelectAny && !u.local {
+                facts
+                    .by_name
+                    .entry(name_key(u, c.environment))
+                    .or_default()
+                    .push((j, u.size, u.checksum));
+            }
         }
     }
 
@@ -532,8 +582,28 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
     for rep in reports {
         report.merge(rep);
     }
-    // No unit in two synthesized members.
-    let mut twice: Vec<&Vec<usize>> = facts.holders.values().filter(|h| h.len() > 1).collect();
+    // No unit in two synthesized members (but copies of local units, under
+    // --locals=copy: each synthesized member that reaches one has its own).
+    let local_keys: Set<u128> = if options.locals {
+        synthesized
+            .iter()
+            .filter_map(|&j| r.members[j].body.coff())
+            .flat_map(|c| {
+                c.units
+                    .iter()
+                    .filter(|u| u.local)
+                    .map(move |u| unit_key(u, c.environment, true))
+            })
+            .collect()
+    } else {
+        Set::default()
+    };
+    let mut twice: Vec<&Vec<usize>> = facts
+        .holders
+        .iter()
+        .filter(|(k, h)| h.len() > 1 && !local_keys.contains(k))
+        .map(|(_, h)| h)
+        .collect();
     twice.sort_unstable();
     for holders in twice {
         report.fail("COMDATs held by more than one synthesized member", || {
@@ -677,8 +747,35 @@ fn check_member(
             });
             continue;
         }
-        let key = unit_key(&u.leader, u.fingerprint, oc.environment);
+        let key = unit_key(u, oc.environment, facts.options.locals);
         match facts.holders.get(&key) {
+            None if facts.options.fold == Fold::SelectAny && !u.local => {
+                // Another copy of its name, as the selection allows.
+                let allowed = |&&(j, size, checksum): &&(usize, u32, u32)| {
+                    synthesized.binary_search(&j).is_ok()
+                        && match u.selection {
+                            comdat_select::SAME_SIZE => size == u.size,
+                            comdat_select::EXACT_MATCH => size == u.size && checksum == u.checksum,
+                            comdat_select::LARGEST => size >= u.size,
+                            _ => true,
+                        }
+                };
+                let held = facts
+                    .by_name
+                    .get(&name_key(u, oc.environment))
+                    .is_some_and(|list| list.iter().any(|x| allowed(&x)));
+                if held {
+                    rep.expect(
+                        "moved COMDATs held as another copy of their name (--fold=select-any)",
+                        || format!("{}: {}", name(), show(&u.leader)),
+                    );
+                } else {
+                    rep.fail(
+                        "moved COMDATs that no anchored synthesized member holds, or another copy of whose name the selection allows (--fold=select-any)",
+                        || format!("{}: {}", name(), show(&u.leader)),
+                    );
+                }
+            }
             None => rep.fail(
                 "moved COMDATs that no synthesized member holds (in their environment)",
                 || format!("{}: {}", name(), show(&u.leader)),
@@ -848,6 +945,50 @@ fn check_member(
             );
         }
     }
+    // Under preserve, a synthesized member it anchors refers to nothing it
+    // didn't: so loading it loads no member the original didn't.
+    if facts.options.pull == Pull::Preserve {
+        let had: Set<&[u8]> = oc
+            .undefined
+            .iter()
+            .map(|n| &**n)
+            .chain(oc.definitions.iter().map(|d| &*d.name))
+            .chain(oc.weak.iter().map(|w| &*w.name))
+            .chain(
+                oc.directives
+                    .iter()
+                    .filter(|d| {
+                        starts_with_ignore_case(d, b"/include:")
+                            || starts_with_ignore_case(d, b"-include:")
+                    })
+                    .map(|d| &d[9..]),
+            )
+            .collect();
+        for &s in &synthesized {
+            let Some(sc) = r.members[s].body.coff() else {
+                continue;
+            };
+            rep.checked("references of synthesized members their members anchor", 1);
+            for n in sc
+                .undefined
+                .iter()
+                .map(|n| &**n)
+                .chain(sc.weak.iter().map(|w| &*w.name))
+            {
+                if had.contains(n)
+                    || n.starts_with(RENAMED)
+                    || n.starts_with(PCH_SYMBOL)
+                    || facts.anchor_of.contains_key(n)
+                {
+                    continue;
+                }
+                rep.fail(
+                    "names a synthesized member refers to that a member anchoring it didn't (--pull=preserve)",
+                    || format!("{}: {} ({})", name(), show(n), r.name(s)),
+                );
+            }
+        }
+    }
     if oc.debug {
         rep.unchecked(
             "debug sections (.debug$S, .debug$T) of original members (compare-images compares PDBs)",
@@ -864,7 +1005,7 @@ fn check_synthesized(r: &Library<'_>, j: usize, facts: &Facts<'_>, rep: &mut Rep
         rep.checked("COMDATs in synthesized members", 1);
         if !facts
             .original_units
-            .contains(&unit_key(&u.leader, u.fingerprint, c.environment))
+            .contains(&unit_key(u, c.environment, facts.options.locals))
         {
             rep.fail(
                 "synthesized COMDATs that match no original copy (in their environment)",

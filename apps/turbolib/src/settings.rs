@@ -13,14 +13,17 @@
 //! | `pull` | `preserve`, `relaxed` |
 //! | `locals` | `keep`, `copy`, `merge` |
 //! | `precomp` | `none`, `library`, `clustered=<n>` |
+//! | `report` | `odr`: list the names whose definitions differ |
 //! | `threads` (or `j`) | a number of threads, at least 1 |
 //! | `diagnose` | say what was passed through, and why |
 //! | `stats` | report what was done, when the library is written |
 //! | `extract-whole` | `/EXTRACT` re-inlines folded units |
 //!
-//! Until phase 2 ships, the only folding is `none`, which is the default;
-//! the plan's default, `identical`, takes its place then. Asking for a mode
-//! that isn't written yet is an error, not a silent `none`.
+//! The default folding is still `none` (`identical` is the plan's default,
+//! once the build systems using turbolib choose it). `pick` matters only
+//! with `select-any`, and `locals` only when something folds. Asking for a
+//! mode that isn't written yet (`precomp=clustered`) is an error, not a
+//! silent `none`.
 
 /// `fold`: which copies count as the same.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,6 +75,8 @@ pub struct Settings {
     pub diagnose: bool,
     pub stats: bool,
     pub extract_whole: bool,
+    /// `report=odr`.
+    pub report_odr: bool,
 }
 
 impl Default for Settings {
@@ -86,6 +91,7 @@ impl Default for Settings {
             diagnose: false,
             stats: false,
             extract_whole: false,
+            report_odr: false,
         }
     }
 }
@@ -127,6 +133,7 @@ impl Settings {
             ("diagnose", None) => self.diagnose = true,
             ("stats", None) => self.stats = true,
             ("extract-whole", None) => self.extract_whole = true,
+            ("report", Some("odr")) => self.report_odr = true,
             _ => return Err(bad()),
         }
         Ok(())
@@ -153,12 +160,6 @@ impl Settings {
 
     /// The modes asked for that turbolib can't do yet, as an error.
     pub fn check_supported(&self) -> Result<(), String> {
-        if self.fold == Fold::SelectAny {
-            return Err("fold=select-any isn't written yet (phase 4)".into());
-        }
-        if self.locals != Locals::Keep {
-            return Err("only locals=keep is written so far (phase 4)".into());
-        }
         if let Precomp::Clustered(_) = self.precomp {
             return Err("precomp=clustered isn't written yet (phase 3.5)".into());
         }

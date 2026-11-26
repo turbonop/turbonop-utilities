@@ -21,13 +21,17 @@ const CONFIGURATIONS: &[&str] = &[
 const RELAXED: Options = Options {
     pull: Pull::Relaxed,
     weak_externals: false,
-    fold: true,
+    fold: crate::rewrite::Fold::Identical,
+    locals: crate::rewrite::Locals::Keep,
+    odr: false,
     precomp: crate::rewrite::Precomp::None,
 };
 const PRESERVE: Options = Options {
     pull: Pull::Preserve,
     weak_externals: false,
-    fold: true,
+    fold: crate::rewrite::Fold::Identical,
+    locals: crate::rewrite::Locals::Keep,
+    odr: false,
     precomp: crate::rewrite::Precomp::None,
 };
 

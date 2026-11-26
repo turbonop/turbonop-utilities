@@ -41,6 +41,13 @@ of synthesized members' CodeView: `/Od` and `/O2` objects (inline sites,
 inlinee lines, a file change inside an inlined function), a PCH object and
 its users, `/Zi` objects with their type server, and clang-cl's.
 
+`loose/` is built by `tools/turbolib/loose/build.cmd` (MSVC 14.52 and
+clang-cl of LLVM 24) from the sources there, for turbonop-fold's tests of
+phase 4's modes (`--fold=select-any`, `--locals=copy` and `merge`,
+`--report odr`): three objects compiled with `/Od /Gy`, `/Od` alone,
+`/O2 /Gy`, and clang-cl's `/Od /Gy`, whose inline functions reach
+internal-linkage functions and data, and differ between the objects.
+
 `archives/` is built by `tools/coff/archives.cmd` (lib.exe of MSVC 14.52,
 with and without `/Brepro`, and llvm-lib of LLVM 24), for the archive
 writer's and the `.def` reader's tests, which write each library again

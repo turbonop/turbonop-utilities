@@ -5,7 +5,7 @@
 use std::process::ExitCode;
 use std::time::Instant;
 
-use turbonop_verify::library::{self, Pull};
+use turbonop_verify::library::{self, Fold, Pull};
 
 const VERIFY_USAGE: &str = "\
 usage: turbolib verify [options] <original library> <rewritten library>
@@ -23,6 +23,14 @@ options:
                    the same member (the default)
   --pull=relaxed   report the symbols the index sends elsewhere, but don't
                    fail them
+  --fold=identical moved COMDATs must be held identically (the default)
+  --fold=select-any
+                   or as another copy of their name the selection allows
+  --locals=keep    units compared with the static symbols they reach by
+                   name and place (the default)
+  --locals=copy, --locals=merge
+                   by content, and local COMDATs may be copied into any
+                   number of synthesized members
   -j N             use N threads (1: no threads but this one)
   --stats          say how long it took
 ";
@@ -47,14 +55,14 @@ options:
 /// The options both commands share, and the paths given.
 struct Common {
     stats: bool,
-    pull: Pull,
+    options: library::Options,
     paths: Vec<String>,
 }
 
 fn parse(args: &[String], pull: bool) -> Result<Common, String> {
     let mut c = Common {
         stats: false,
-        pull: Pull::Preserve,
+        options: library::Options::default(),
         paths: Vec::new(),
     };
     let mut it = args.iter();
@@ -69,8 +77,12 @@ fn parse(args: &[String], pull: bool) -> Result<Common, String> {
         };
         match a.as_str() {
             "--stats" => c.stats = true,
-            "--pull=preserve" if pull => c.pull = Pull::Preserve,
-            "--pull=relaxed" if pull => c.pull = Pull::Relaxed,
+            "--pull=preserve" if pull => c.options.pull = Pull::Preserve,
+            "--pull=relaxed" if pull => c.options.pull = Pull::Relaxed,
+            "--fold=identical" if pull => c.options.fold = Fold::Identical,
+            "--fold=select-any" if pull => c.options.fold = Fold::SelectAny,
+            "--locals=keep" if pull => c.options.locals = false,
+            "--locals=copy" | "--locals=merge" if pull => c.options.locals = true,
             "-j" => threads(it.next().ok_or("-j needs a number")?)?,
             s if s.starts_with("-j") && s.len() > 2 => threads(&s[2..])?,
             s if s.starts_with('-') => return Err(format!("{s}: unknown option")),
@@ -102,7 +114,7 @@ pub fn verify(args: &[String]) -> ExitCode {
     let run = || -> Result<turbonop_verify::report::Report, String> {
         let a = map(&c.paths[0])?;
         let b = map(&c.paths[1])?;
-        library::verify(&a, &b, &library::Options { pull: c.pull })
+        library::verify(&a, &b, &c.options)
     };
     finish(run(), c.stats, start)
 }

@@ -209,11 +209,11 @@ fn turbolib_options() {
     );
     let o = run(
         Flavor::Lib,
-        &w(&["/nologo", "/TURBOLIB:fold=select-any", "a.obj"]),
+        &w(&["/nologo", "/TURBOLIB:precomp=clustered=4", "a.obj"]),
         &env_in(&dir),
     );
     assert!(
-        o.stdout.contains("fold=select-any isn't written yet"),
+        o.stdout.contains("precomp=clustered isn't written yet"),
         "{o:?}"
     );
     let mut env = env_in(&dir);
@@ -259,4 +259,92 @@ fn folding_writes_a_library_with_synthesized_members_last() {
         .collect();
     assert_eq!(listed.len(), 1, "{listed:?}");
     assert!(listed[0].starts_with(b"__turbolib$anchor$"));
+}
+
+/// Phase 4's modes, through the `lib` personality: each folds the
+/// fixtures of tools/turbolib/loose, says what it did, and makes a library
+/// `turbolib verify` passes with the same mode, and fails with the
+/// identical, locals-keeping one where the mode did more.
+#[test]
+fn less_conservative_modes_verify() {
+    use turbonop_verify::library::{self, Fold as VFold, Pull as VPull};
+    let dir = scratch("loose");
+    for m in ["a", "b", "c"] {
+        std::fs::copy(
+            testdata(&format!("coff/loose/msvc-od-{m}.obj")),
+            dir.join(format!("{m}.obj")),
+        )
+        .unwrap();
+    }
+    let lib = |out: &str, options: &str| {
+        let mut env = env_in(&dir);
+        env.turbolib_options = Some(options.to_string());
+        let o = run(
+            Flavor::Lib,
+            &w(&[
+                "/nologo",
+                "/Brepro",
+                &format!("/OUT:{out}"),
+                "a.obj",
+                "b.obj",
+                "c.obj",
+            ]),
+            &env,
+        );
+        assert_eq!(o.exit, 0, "{o:?}");
+        (o, std::fs::read(dir.join(out)).unwrap())
+    };
+    let (_, original) = lib("original.lib", "--fold=none");
+    for (options, fold, locals, pull, says) in [
+        (
+            "--fold=select-any --stats",
+            VFold::SelectAny,
+            false,
+            VPull::Preserve,
+            "groups folded whose copies differ",
+        ),
+        (
+            "--fold=select-any --pick=largest --pull=relaxed --stats",
+            VFold::SelectAny,
+            false,
+            VPull::Relaxed,
+            "groups folded whose copies differ",
+        ),
+        (
+            "--fold=identical --locals=copy --stats",
+            VFold::Identical,
+            true,
+            VPull::Preserve,
+            "local units moved with what reaches them",
+        ),
+        (
+            "--fold=select-any --locals=merge --pull=relaxed --stats",
+            VFold::SelectAny,
+            true,
+            VPull::Relaxed,
+            "pieces copied",
+        ),
+        (
+            "--fold=identical --report=odr",
+            VFold::Identical,
+            false,
+            VPull::Preserve,
+            "turbolib: odr: ?variant@@YAHXZ: 2 definitions",
+        ),
+    ] {
+        let (o, folded) = lib("folded.lib", options);
+        assert!(o.stdout.contains(says), "{options}: {o:?}");
+        let check = |fold, locals| {
+            let options = library::Options { pull, fold, locals };
+            library::verify(&original, &folded, &options).unwrap()
+        };
+        let report = check(fold, locals);
+        assert!(report.passed(), "{options}: {}", report.text());
+        if fold == VFold::SelectAny || locals {
+            assert!(
+                !check(VFold::Identical, false).passed(),
+                "{options}: verify in identical, locals=keep mode should fail"
+            );
+        }
+    }
 }

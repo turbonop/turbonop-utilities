@@ -377,9 +377,11 @@ pub(super) fn read(object: &Object<'_>, facts: &mut units::Facts) -> Facts {
         }
     }
 
-    // Each unit's debug sections.
+    // Each unit's debug sections (and each local unit's that could be
+    // copied, under --locals=copy).
     for u in &mut facts.units {
-        if u.unfoldable.is_some() {
+        let local = u.pure_local && u.blocked.is_none();
+        if u.unfoldable.is_some() && !local {
             continue;
         }
         let mut why = None;
@@ -402,8 +404,12 @@ pub(super) fn read(object: &Object<'_>, facts: &mut units::Facts) -> Facts {
             }
         }
         if let Some(w) = why {
-            u.unfoldable = Some(Unfoldable::DebugInfo);
-            u.detail = Some(w);
+            if local {
+                u.blocked = Some((Unfoldable::DebugInfo, w));
+            } else {
+                u.unfoldable = Some(Unfoldable::DebugInfo);
+                u.detail = Some(w);
+            }
         }
     }
     d
@@ -588,12 +594,17 @@ pub(super) fn resolve(parsed: &mut [Parsed<'_>], absorb: bool) {
             })
             .collect();
         for (u, has) in parsed[m].facts.units.iter_mut().zip(has_debug) {
-            if has && u.unfoldable.is_none() {
-                u.unfoldable = Some(Unfoldable::PrecompMissing);
-                u.detail = Some(format!(
+            let why = || {
+                format!(
                     "its PCH (signature {:#010x}) isn't in the library",
                     p.signature
-                ));
+                )
+            };
+            if has && u.unfoldable.is_none() {
+                u.unfoldable = Some(Unfoldable::PrecompMissing);
+                u.detail = Some(why());
+            } else if has && u.pure_local && u.blocked.is_none() {
+                u.blocked = Some((Unfoldable::PrecompMissing, why()));
             }
         }
     }

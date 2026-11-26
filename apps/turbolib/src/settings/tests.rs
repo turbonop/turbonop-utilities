@@ -13,6 +13,7 @@ fn options_in_any_case() {
         "DIAGNOSE",
         "stats",
         "extract-whole",
+        "report=ODR",
     ] {
         s.apply(o).unwrap();
     }
@@ -28,6 +29,7 @@ fn options_in_any_case() {
             diagnose: true,
             stats: true,
             extract_whole: true,
+            report_odr: true,
         }
     );
 }
@@ -42,6 +44,8 @@ fn bad_options() {
         "j=x",
         "precomp=clustered=0",
         "stats=yes",
+        "report",
+        "report=everything",
         "nope",
     ] {
         assert!(s.apply(o).is_err(), "{o}");
@@ -69,10 +73,12 @@ fn what_is_written_so_far() {
     s.apply("fold=identical").unwrap();
     assert!(s.check_supported().is_ok());
     s.apply("fold=select-any").unwrap();
-    assert!(s.check_supported().is_err());
+    assert!(s.check_supported().is_ok());
     let mut s = Settings::default();
     s.apply("locals=copy").unwrap();
-    assert!(s.check_supported().is_err());
+    assert!(s.check_supported().is_ok());
+    s.apply("locals=merge").unwrap();
+    assert!(s.check_supported().is_ok());
     // Shared types: one precompiled-types member, not yet clusters; none
     // is still the default.
     let mut s = Settings::default();

@@ -134,7 +134,15 @@ fn archive(members: &[(Vec<u8>, Vec<u8>)], index: Option<Vec<(Vec<u8>, usize)>>)
 }
 
 fn verify_with(original: &[u8], rewritten: &[u8], pull: Pull) -> Report {
-    super::verify(original, rewritten, &Options { pull }).unwrap()
+    super::verify(
+        original,
+        rewritten,
+        &Options {
+            pull,
+            ..Options::default()
+        },
+    )
+    .unwrap()
 }
 
 /// Asserts that the report fails exactly the categories `want`.

@@ -120,3 +120,15 @@ llvm-pdbutil's dumps. `--options=...` sets turbolib's options (the
 default is `--fold=identical`; phase 3's checks used
 `--options=--precomp=library` and `--options="--fold=identical
 --precomp=library"`).
+
+## `loose`: less conservative folding (phase 4)
+
+Not a spike: the sources of turbonop-fold's phase 4 fixtures. `build.cmd`
+builds `a.cpp`, `b.cpp`, and `c.cpp` (which include `shared.h`, each with
+its own `VARIANT`) into `testdata\coff\loose` with cl and clang-cl (its
+comments list each object). `check.py <turbolib.exe>` links `main.cpp`
+against a library of each set, made by lib.exe and folded by turbolib in
+each of six combinations of `--fold=select-any`, `--pick`, `--locals`,
+`--pull`, and `--precomp`, with link.exe and lld-link, under `/OPT:REF` and
+`/OPT:NOREF`, runs both programs and compares what they print, and runs
+`turbolib verify` with the mode's options on each folded library.

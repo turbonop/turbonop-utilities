@@ -39,8 +39,14 @@
 //! Under [`Precomp::Library`], the records members share go into one
 //! precompiled-types member, which every member holding some of them (and
 //! every synthesized member) names ([`precomp`]).
+//!
+//! Under [`Fold::SelectAny`], copies of one name that the linker could
+//! choose among fold though their code differs, and under
+//! [`Locals::Copy`], units that reach internal-linkage symbols fold with
+//! copies of what they reach ([`locals`]).
 
 pub mod debug;
+pub mod locals;
 pub mod precomp;
 pub mod tables;
 pub mod units;
@@ -87,6 +93,44 @@ pub enum Precomp {
     Library { min: u32 },
 }
 
+/// Which copies count as the same (`--fold`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fold {
+    /// None: only types are shared (if `precomp` says so).
+    None,
+    /// Copies whose identities are equal.
+    Identical,
+    /// Copies the linker could substitute for each other, by their
+    /// selection (see `docs/turbolib.md`, "`--fold`"), the survivor chosen
+    /// by the [`Pick`]: `ANY` copies of one name whatever their code;
+    /// `SAME_SIZE` and `EXACT_MATCH` ones when their sizes (and checksums)
+    /// agree, identical ones otherwise; `LARGEST` ones keeping the largest.
+    /// Only in one environment, as for `Identical`.
+    SelectAny(Pick),
+}
+
+/// Which copy survives under [`Fold::SelectAny`] (`--pick`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pick {
+    /// The first in member order, which the archive index names.
+    First,
+    /// The one whose COMDAT section is largest (the first of those).
+    Largest,
+}
+
+/// Units that reach internal-linkage symbols outside them (`--locals`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Locals {
+    /// They don't fold.
+    Keep,
+    /// They fold, with copies of what they reach ([`locals`]) in the
+    /// synthesized member, one for each member a copy comes from.
+    Copy,
+    /// As `Copy`, but a synthesized member holds one copy of each local
+    /// with given contents.
+    Merge,
+}
+
 /// Options for [`rewrite`].
 #[derive(Clone, Copy, Debug)]
 pub struct Options {
@@ -95,10 +139,11 @@ pub struct Options {
     /// side effects with the weak-external technique. Off: it isn't safe in
     /// link.exe (see [`rewrite`]'s notes in the code).
     pub weak_externals: bool,
-    /// Fold identical COMDATs (`--fold=identical`); off, only types are
-    /// shared (if `precomp` says so).
-    pub fold: bool,
+    pub fold: Fold,
+    pub locals: Locals,
     pub precomp: Precomp,
+    /// List the names whose definitions differ (`--report odr`).
+    pub odr: bool,
 }
 
 /// Why a unit (or a whole member) isn't folded.
@@ -151,6 +196,19 @@ pub enum Unfoldable {
     /// (so a synthesized member can't name the PCH) nor is the PCH object
     /// in the library (so its types can't be copied).
     PrecompMissing,
+    /// It reaches a writable local (`--locals=copy`): a copy would be
+    /// another variable.
+    WritableLocal,
+    /// Its debug information refers to a local symbol outside it
+    /// (`--locals=copy`).
+    LocalDebug,
+    /// `SAME_SIZE` or `EXACT_MATCH` copies whose sizes or checksums differ,
+    /// and no identical copy (`--fold=select-any`).
+    SelectAnyMismatch,
+    /// Copies with other code refer to other names, so keeping one for all
+    /// could change which members a link loads (`--fold=select-any`,
+    /// `--pull=preserve`).
+    DifferingReferences,
 }
 
 impl Unfoldable {
@@ -181,6 +239,16 @@ impl Unfoldable {
             }
             Unfoldable::DebugInfo => "debug information turbolib can't carry",
             Unfoldable::PrecompMissing => "its PCH is neither named nor in the library",
+            Unfoldable::WritableLocal => "reaches a writable local (--locals=copy)",
+            Unfoldable::LocalDebug => {
+                "its debug information refers to a local outside it (--locals=copy)"
+            }
+            Unfoldable::SelectAnyMismatch => {
+                "SAME_SIZE or EXACT_MATCH copies that disagree (--fold=select-any)"
+            }
+            Unfoldable::DifferingReferences => {
+                "copies with other code refer to other names (--fold=select-any, --pull=preserve)"
+            }
         }
     }
 }
@@ -240,6 +308,61 @@ pub struct Report {
     pub times: [std::time::Duration; 5],
     /// Shared types (`--precomp=library`).
     pub types: TypesReport,
+    /// Groups folded whose copies' code differs (`--fold=select-any`).
+    pub differing_groups: u64,
+    /// `SAME_SIZE` and `EXACT_MATCH` copies of one name that disagree, left
+    /// as they are (but for identical ones).
+    pub mismatches: Vec<Mismatch>,
+    /// Copies of locals (`--locals=copy`).
+    pub locals: LocalsReport,
+    /// Names whose definitions differ (`--report odr`).
+    pub odr: Vec<OdrFinding>,
+}
+
+/// `SAME_SIZE` or `EXACT_MATCH` copies of one name that disagree.
+#[derive(Clone, Debug)]
+pub struct Mismatch {
+    pub names: Vec<Vec<u8>>,
+    pub selection: u8,
+    /// Each copy's member, COMDAT section size, and checksum.
+    pub copies: Vec<(usize, u32, u32)>,
+}
+
+/// What copying locals did.
+#[derive(Clone, Debug, Default)]
+pub struct LocalsReport {
+    /// Copies made of local units and of pieces, and their bytes.
+    pub units_copied: u64,
+    pub pieces_copied: u64,
+    pub bytes_copied: u64,
+    /// Local units removed from their members with what reached them, and
+    /// their bytes.
+    pub absorbed: u64,
+    pub absorbed_bytes: u64,
+}
+
+/// A name whose definitions in the library differ (`--report odr`).
+#[derive(Clone, Debug)]
+pub struct OdrFinding {
+    /// The external names the definitions define.
+    pub names: Vec<Vec<u8>>,
+    /// The definitions, in order of first appearance.
+    pub variants: Vec<OdrVariant>,
+    /// Whether two of them are in one environment (rather than in members
+    /// compiled with other options).
+    pub same_environment: bool,
+}
+
+/// One of an [`OdrFinding`]'s definitions.
+#[derive(Clone, Debug)]
+pub struct OdrVariant {
+    pub code: u128,
+    /// Its unit's bytes and selection.
+    pub size: u64,
+    pub selection: u8,
+    /// The members holding it, and their environments.
+    pub members: Vec<Vec<u8>>,
+    pub environments: Vec<u128>,
 }
 
 /// What sharing types did.
@@ -292,7 +415,7 @@ struct Parsed<'a> {
     debug: debug::Facts,
 }
 
-fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
+fn parse<'a>(input: &Input<'a>, mode: units::Mode) -> Parsed<'a> {
     let pass = |why| Parsed {
         object: None,
         facts: Facts::default(),
@@ -300,7 +423,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         debug: debug::Facts::default(),
     };
     match File::parse(input.data) {
-        Ok(File::Object(object)) => match units::find(&object) {
+        Ok(File::Object(object)) => match units::find_with(&object, mode) {
             Ok(mut facts) => {
                 let debug = debug::read(&object, &mut facts);
                 Parsed {
@@ -353,9 +476,21 @@ fn definitions<'a>(input: &Input<'a>, parsed: &'a Parsed<'a>) -> Vec<Cow<'a, [u8
 /// and each name's code, if every definition of it in the library is a
 /// unit with that code (whatever its environment); `None` if any differs,
 /// or isn't a unit's.
-type Definers<'p> = (HashMap<&'p [u8], usize>, HashMap<&'p [u8], Option<u128>>);
+///
+/// Under select-any (`keys`), also each name's [`units::Unit::name_key`],
+/// if every definition of it is a unit with that key; `None` if any
+/// differs, or isn't a unit's.
+type Definers<'p> = (
+    HashMap<&'p [u8], usize>,
+    HashMap<&'p [u8], Option<u128>>,
+    HashMap<&'p [u8], Option<u128>>,
+);
 
-fn definers<'p>(parsed: &'p [Parsed<'_>], defs: &'p [Vec<Cow<'_, [u8]>>]) -> Definers<'p> {
+fn definers<'p>(
+    parsed: &'p [Parsed<'_>],
+    defs: &'p [Vec<Cow<'_, [u8]>>],
+    keys: bool,
+) -> Definers<'p> {
     let mut first_definer: HashMap<&[u8], usize> = HashMap::default();
     for (m, d) in defs.iter().enumerate() {
         for name in d {
@@ -363,10 +498,14 @@ fn definers<'p>(parsed: &'p [Parsed<'_>], defs: &'p [Vec<Cow<'_, [u8]>>]) -> Def
         }
     }
     let mut one_code: HashMap<&[u8], Option<u128>> = HashMap::default();
+    let mut one_key: HashMap<&[u8], Option<u128>> = HashMap::default();
     for (p, d) in parsed.iter().zip(defs) {
         if p.passed.is_some() {
             for name in d {
                 one_code.insert(name.as_ref(), None);
+                if keys {
+                    one_key.insert(name.as_ref(), None);
+                }
             }
             continue;
         }
@@ -376,13 +515,22 @@ fn definers<'p>(parsed: &'p [Parsed<'_>], defs: &'p [Vec<Cow<'_, [u8]>>]) -> Def
                 if *e != Some(unit.code) {
                     *e = None;
                 }
+                if keys {
+                    let e = one_key.entry(n.as_slice()).or_insert(Some(unit.name_key));
+                    if *e != Some(unit.name_key) {
+                        *e = None;
+                    }
+                }
             }
         }
         for n in &p.facts.other_definitions {
             one_code.insert(n.as_slice(), None);
+            if keys {
+                one_key.insert(n.as_slice(), None);
+            }
         }
     }
-    (first_definer, one_code)
+    (first_definer, one_code, one_key)
 }
 
 /// A synthesized member's contents: the surviving copies, and whether each
@@ -393,6 +541,16 @@ struct Synth {
     givers: Vec<usize>,
     /// (member, unit, renamed), in member and unit order.
     units: Vec<(usize, usize, bool)>,
+    /// The locals its units reach, copied (`--locals=copy`).
+    copies: Vec<LocalCopy>,
+}
+
+/// A local a synthesized member holds a copy of: a member's local unit or
+/// piece.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LocalCopy {
+    member: usize,
+    node: locals::Node,
 }
 
 /// Rewrites `inputs` (a library's members, in archive order). The output is
@@ -406,10 +564,22 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         times[k] = now - clock;
         clock = now;
     };
-    let mut parsed: Vec<Parsed<'a>> = turbonop_par::map_balanced(inputs, 4, parse);
+    let mode = units::Mode {
+        copy_locals: options.locals != Locals::Keep && options.fold != Fold::None,
+        structural: options.odr,
+    };
+    let mut parsed: Vec<Parsed<'a>> =
+        turbonop_par::map_balanced(inputs, 4, |i: &Input<'a>| parse(i, mode));
     // PCH users' PCH objects (their units' types are there).
     let library = matches!(options.precomp, Precomp::Library { .. });
     debug::resolve(&mut parsed, library);
+    if mode.copy_locals {
+        // A unit that reaches a local unit whose debug information can't be
+        // carried doesn't fold.
+        for p in &mut parsed {
+            locals::settle(&mut p.facts);
+        }
+    }
     let mut report = Report {
         members: inputs.len() as u64,
         bytes_in: inputs.iter().map(|i| i.data.len() as u64).sum(),
@@ -430,14 +600,14 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         .collect();
     // The shared types, while the definers are found (on one thread).
     let types_clock = std::time::Instant::now();
-    let (plan, (first_definer, one_code)) = turbonop_par::join(
+    let (plan, (first_definer, one_code, one_key)) = turbonop_par::join(
         || match options.precomp {
             Precomp::Library { min } => {
                 Some((precomp::plan(&parsed, min.max(1)), types_clock.elapsed()))
             }
             Precomp::None => None,
         },
-        || definers(&parsed, &defs),
+        || definers(&parsed, &defs, matches!(options.fold, Fold::SelectAny(_))),
     );
     let plan = plan.map(|(plan, time)| {
         let t = &mut report.types;
@@ -458,130 +628,93 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     });
 
     lap(1);
-    // Groups of copies, in order of first appearance.
+    // Groups of copies, in order of first appearance: by identity, or, under
+    // select-any, by environment, selection, and names (for units that have
+    // external names).
+    let select_any = matches!(options.fold, Fold::SelectAny(_));
     let mut groups: HashMap<u128, usize> = HashMap::default();
     let mut copies: Vec<Vec<(usize, usize)>> = Vec::new();
-    for (m, p) in parsed.iter().enumerate().filter(|_| options.fold) {
+    let mut named: Vec<bool> = Vec::new();
+    for (m, p) in parsed
+        .iter()
+        .enumerate()
+        .filter(|_| options.fold != Fold::None)
+    {
         for (u, unit) in p.facts.units.iter().enumerate() {
-            let g = *groups.entry(unit.identity).or_insert_with(|| {
+            let by_name = select_any && unit.name_key != 0;
+            let key = if by_name {
+                let mut h = H128::new();
+                h.u64(0x5345_4C45_4354);
+                h.u128(p.facts.environment);
+                h.u128(unit.name_key);
+                h.finish()
+            } else {
+                unit.identity
+            };
+            let g = *groups.entry(key).or_insert_with(|| {
                 copies.push(Vec::new());
+                named.push(by_name);
                 copies.len() - 1
             });
             copies[g].push((m, u));
         }
     }
 
-    let mut removals: Vec<Vec<(usize, Removal)>> = vec![Vec::new(); parsed.len()];
-    let mut synth_of: HashMap<(u128, u64, Vec<usize>), usize> = HashMap::default();
-    let mut synths: Vec<Synth> = Vec::new();
-    for c in &copies {
-        let unit = |&(m, u): &(usize, usize)| &parsed[m].facts.units[u];
-        // The copies that can move; the first of them survives. A copy that
-        // can't stays where it is.
-        let movable: Vec<(usize, usize)> = c
-            .iter()
-            .copied()
-            .filter(|x| unit(x).unfoldable.is_none())
-            .collect();
-        for x in c.iter().filter(|x| unit(x).unfoldable.is_some()) {
-            let w = unit(x).unfoldable.unwrap_or(Unfoldable::CopyUnfoldable);
-            *report.not_folded.entry(w).or_default() += 1;
-        }
-        if movable.len() < 2 {
-            if movable.len() == 1 {
-                let w = if c.len() < 2 {
-                    Unfoldable::Single
-                } else {
-                    Unfoldable::CopyUnfoldable
-                };
-                *report.not_folded.entry(w).or_default() += 1;
-            }
-            continue;
-        }
-        let first = &movable[0];
-        let mut why = None;
-        // Under Preserve, a link must get the same code for each name, from
-        // the same members. Which copy a link keeps depends on which members
-        // it loads and in what order, so a name folds only if every
-        // definition of it in the library is a unit with the same code;
-        // then any copy is the same. And the member the index named for it
-        // (now the synthesized member, first in the archive) must have had
-        // no side effects, so that no longer loading it changes nothing.
-        if options.pull == Pull::Preserve
-            && unit(first)
-                .externals
-                .iter()
-                .any(|n| one_code.get(n.as_slice()).copied().flatten() != Some(unit(first).code))
-        {
-            why = Some(Unfoldable::OtherDefinitions);
-        }
-        let c = &movable;
-        // Under Preserve, a group whose first copy's member has side effects
-        // isn't folded: the weak-external technique (that member keeps its
-        // copy, the others get NOLIBRARY weak externals whose default is a
-        // renamed copy) fails in link.exe 14.52 when a strong reference to
-        // the name reaches the link from a library member after the weak
-        // externals (measured; see docs/turbolib.md). `weak_externals`
-        // turns it on, for study.
-        let side_effects = options.pull == Pull::Preserve
-            && unit(first).externals.iter().any(|n| {
-                first_definer
-                    .get(n.as_slice())
-                    .is_some_and(|&m| parsed[m].facts.side_effects)
-            });
-        let keep_first = side_effects && options.weak_externals;
-        if why.is_none() && side_effects && !options.weak_externals {
-            why = Some(Unfoldable::SideEffects);
-        }
-        if why.is_none() && keep_first && c.len() < 3 {
-            why = Some(Unfoldable::SideEffectsTooFewCopies);
-        }
-        if let Some(w) = why {
-            *report.not_folded.entry(w).or_default() += c.len().max(1) as u64;
-            if c.len() > 1 {
-                *report.not_folded_bytes.entry(w).or_default() +=
-                    unit(first).size * (c.len() as u64 - 1);
-            }
-            continue;
-        }
-        report.groups += 1;
-        let removed: &[(usize, usize)] = if keep_first {
-            report.kept_for_side_effects += 1;
-            &c[1..]
-        } else {
-            c
-        };
-        let how = if keep_first {
-            Removal::Weak
-        } else {
-            Removal::Undefined
-        };
-        for &(m, u) in removed {
-            removals[m].push((u, how));
-        }
+    let mut d = Decider {
+        parsed: &parsed,
+        options,
+        first_definer: &first_definer,
+        one_code: &one_code,
+        one_key: &one_key,
+        report: &mut report,
+        removals: vec![Vec::new(); parsed.len()],
+        same: vec![Vec::new(); parsed.len()],
+        synth_of: HashMap::default(),
+        synths: Vec::new(),
+    };
+    for (c, &by_name) in copies.iter().zip(&named) {
+        d.group(c, by_name);
+    }
+    let Decider {
+        mut removals,
+        same,
+        mut synths,
+        ..
+    } = d;
 
-        report.copies_removed += removed.len() as u64;
-        report.removed_bytes += removed.iter().map(|x| unit(x).size).sum::<u64>();
-        let mut givers: Vec<usize> = removed.iter().map(|&(m, _)| m).collect();
-        givers.dedup();
-        // (And the PCH its CodeView names, if any: see debug::key.)
-        let key = (
-            parsed[first.0].facts.environment,
-            debug::key(&parsed[first.0]),
-            givers.clone(),
-        );
-        let s = *synth_of.entry(key).or_insert_with(|| {
-            synths.push(Synth {
-                environment: parsed[first.0].facts.environment,
-                givers,
-                units: Vec::new(),
-            });
-            synths.len() - 1
-        });
-        synths[s].units.push((first.0, first.1, keep_first));
+    // Under --locals=copy, a member's local units that only moved units
+    // refer to go too (their copies are in the synthesized members).
+    if options.locals != Locals::Keep {
+        let absorbed: Vec<Vec<usize>> =
+            turbonop_par::map_range(parsed.len(), 16, |m| absorb(&parsed[m].facts, &same[m]));
+        for (m, list) in absorbed.into_iter().enumerate() {
+            report.locals.absorbed += list.len() as u64;
+            for v in list {
+                report.locals.absorbed_bytes += parsed[m].facts.units[v].size;
+                removals[m].push((v, Removal::Undefined));
+            }
+        }
     }
     for s in &mut synths {
         s.units.sort_unstable();
+        if options.locals != Locals::Keep {
+            s.copies = local_copies(s, &parsed, options.locals);
+            for c in &s.copies {
+                let facts = &parsed[c.member].facts;
+                match c.node {
+                    locals::Node::Unit(v) => {
+                        report.locals.units_copied += 1;
+                        report.locals.bytes_copied += facts.units[v as usize].size;
+                    }
+                    locals::Node::Piece(p) => {
+                        let piece = &facts.pieces[p as usize];
+                        report.locals.pieces_copied += 1;
+                        report.locals.bytes_copied += u64::from(piece.end - piece.start)
+                            + 10 * piece.relocations.len() as u64;
+                    }
+                }
+            }
+        }
     }
 
     // Names and anchors.
@@ -695,6 +828,9 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
                 .collect()
         })
         .unwrap_or_default();
+    if options.odr {
+        report.odr = odr(inputs, &parsed);
+    }
     lap(4);
     report.times = times;
     report.rewritten = rewritten;
@@ -721,6 +857,412 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         members: out,
         report,
     }
+}
+
+/// Decides, group by group, which copies fold, and lays out the
+/// synthesized members that hold the survivors.
+struct Decider<'d, 'p, 'a> {
+    parsed: &'p [Parsed<'a>],
+    options: Options,
+    first_definer: &'d HashMap<&'p [u8], usize>,
+    one_code: &'d HashMap<&'p [u8], Option<u128>>,
+    one_key: &'d HashMap<&'p [u8], Option<u128>>,
+    report: &'d mut Report,
+    /// Each member's units that move, and how.
+    removals: Vec<Vec<(usize, Removal)>>,
+    /// Each member's units that move whose copy is the survivor's code (so
+    /// the synthesized member holds the same locals they reach).
+    same: Vec<Vec<usize>>,
+    synth_of: HashMap<(u128, u64, Vec<usize>), usize>,
+    synths: Vec<Synth>,
+}
+
+impl Decider<'_, '_, '_> {
+    fn unit(&self, (m, u): (usize, usize)) -> &units::Unit {
+        &self.parsed[m].facts.units[u]
+    }
+
+    /// One group of copies: by identity, or (`by_name`) by name under
+    /// select-any.
+    fn group(&mut self, c: &[(usize, usize)], by_name: bool) {
+        // The copies that can move; the first of them survives. A copy that
+        // can't stays where it is.
+        let movable: Vec<(usize, usize)> = c
+            .iter()
+            .copied()
+            .filter(|&x| self.unit(x).unfoldable.is_none())
+            .collect();
+        for &x in c {
+            if let Some(w) = self.unit(x).unfoldable {
+                *self.report.not_folded.entry(w).or_default() += 1;
+            }
+        }
+        if movable.len() < 2 {
+            if movable.len() == 1 {
+                let w = if c.len() < 2 {
+                    Unfoldable::Single
+                } else {
+                    Unfoldable::CopyUnfoldable
+                };
+                *self.report.not_folded.entry(w).or_default() += 1;
+            }
+            return;
+        }
+        if by_name {
+            self.select_any(&movable);
+        } else {
+            self.identical(&movable);
+        }
+    }
+
+    fn not_folded(&mut self, c: &[(usize, usize)], why: Unfoldable) {
+        *self.report.not_folded.entry(why).or_default() += c.len().max(1) as u64;
+        if c.len() > 1 {
+            *self.report.not_folded_bytes.entry(why).or_default() +=
+                self.unit(c[0]).size * (c.len() as u64 - 1);
+        }
+    }
+
+    /// Whether member `m`'s name `n`'s first definer (which the archive
+    /// index names) has side effects.
+    fn definer_has_side_effects(&self, x: (usize, usize)) -> bool {
+        self.unit(x).externals.iter().any(|n| {
+            self.first_definer
+                .get(n.as_slice())
+                .is_some_and(|&m| self.parsed[m].facts.side_effects)
+        })
+    }
+
+    /// Copies with the same identity (`--fold=identical`, and what
+    /// select-any leaves).
+    fn identical(&mut self, c: &[(usize, usize)]) {
+        let first = c[0];
+        let mut why = None;
+        // Under Preserve, a link must get the same code for each name, from
+        // the same members. Which copy a link keeps depends on which members
+        // it loads and in what order, so a name folds only if every
+        // definition of it in the library is a unit with the same code;
+        // then any copy is the same. And the member the index named for it
+        // must have had no side effects (see `Pull::Preserve`).
+        if self.options.pull == Pull::Preserve
+            && self.unit(first).externals.iter().any(|n| {
+                self.one_code.get(n.as_slice()).copied().flatten() != Some(self.unit(first).code)
+            })
+        {
+            why = Some(Unfoldable::OtherDefinitions);
+        }
+        // Under Preserve, a group whose first copy's member has side effects
+        // isn't folded: the weak-external technique (that member keeps its
+        // copy, the others get NOLIBRARY weak externals whose default is a
+        // renamed copy) fails in link.exe 14.52 when a strong reference to
+        // the name reaches the link from a library member after the weak
+        // externals (measured; see docs/turbolib.md). `weak_externals`
+        // turns it on, for study.
+        let side_effects =
+            self.options.pull == Pull::Preserve && self.definer_has_side_effects(first);
+        let keep_first = side_effects && self.options.weak_externals;
+        if why.is_none() && side_effects && !self.options.weak_externals {
+            why = Some(Unfoldable::SideEffects);
+        }
+        if why.is_none() && keep_first && c.len() < 3 {
+            why = Some(Unfoldable::SideEffectsTooFewCopies);
+        }
+        if let Some(w) = why {
+            self.not_folded(c, w);
+            return;
+        }
+        if keep_first {
+            self.report.kept_for_side_effects += 1;
+            self.fold(first, &c[1..], true);
+        } else {
+            self.fold(first, c, false);
+        }
+    }
+
+    /// Copies of one name, selection, and environment, under select-any:
+    /// what the linker could choose among (see `docs/turbolib.md`,
+    /// "`--fold`").
+    fn select_any(&mut self, c: &[(usize, usize)]) {
+        let first = c[0];
+        let all_same = c
+            .iter()
+            .all(|&x| self.unit(x).identity == self.unit(first).identity);
+        let selection = self.unit(first).selection;
+        // SAME_SIZE and EXACT_MATCH copies that disagree would fail a link
+        // that has two of them: they stay, and only identical ones fold.
+        let agree = match selection {
+            comdat_select::SAME_SIZE => c
+                .iter()
+                .all(|&x| self.unit(x).leader_size == self.unit(first).leader_size),
+            comdat_select::EXACT_MATCH => c.iter().all(|&x| {
+                self.unit(x).checksum == self.unit(first).checksum
+                    && self.unit(x).leader_size == self.unit(first).leader_size
+            }),
+            _ => true,
+        };
+        if !agree {
+            self.report.mismatches.push(Mismatch {
+                names: self.unit(first).externals.clone(),
+                selection,
+                copies: c
+                    .iter()
+                    .map(|&x| (x.0, self.unit(x).leader_size, self.unit(x).checksum))
+                    .collect(),
+            });
+            // By identity, in order of first appearance.
+            let mut subgroups: Vec<Vec<(usize, usize)>> = Vec::new();
+            let mut of: HashMap<u128, usize> = HashMap::default();
+            for &x in c {
+                let g = *of.entry(self.unit(x).identity).or_insert_with(|| {
+                    subgroups.push(Vec::new());
+                    subgroups.len() - 1
+                });
+                subgroups[g].push(x);
+            }
+            for g in subgroups {
+                if g.len() < 2 {
+                    *self
+                        .report
+                        .not_folded
+                        .entry(Unfoldable::SelectAnyMismatch)
+                        .or_default() += 1;
+                } else {
+                    self.identical(&g);
+                }
+            }
+            return;
+        }
+        // The survivor: the first, or the largest (as LARGEST keeps it).
+        let pick_largest = selection == comdat_select::LARGEST
+            || matches!(self.options.fold, Fold::SelectAny(Pick::Largest));
+        let survivor = if pick_largest {
+            let mut best = first;
+            for &x in c {
+                if self.unit(x).leader_size > self.unit(best).leader_size {
+                    best = x;
+                }
+            }
+            best
+        } else {
+            first
+        };
+        let mut why = None;
+        if self.options.pull == Pull::Preserve {
+            // Every definition of its names in the library is a copy of
+            // this group's kind, so whichever copy a link would have kept,
+            // it could have kept the survivor.
+            if self.unit(first).externals.iter().any(|n| {
+                self.one_key.get(n.as_slice()).copied().flatten() != Some(self.unit(first).name_key)
+            }) {
+                why = Some(Unfoldable::OtherDefinitions);
+            }
+            // The survivor refers to no name a copy it stands for doesn't:
+            // each member that gave a copy keeps the copy's references, so
+            // a link that loads it needs nothing new, and loads no other
+            // member.
+            if why.is_none() && !all_same {
+                let refs = |x: (usize, usize)| {
+                    let p = &self.parsed[x.0];
+                    locals::references(p.object.as_ref().expect("an object"), &p.facts, x.1)
+                };
+                let r0 = refs(survivor);
+                if c.iter().any(|&x| refs(x) != r0) {
+                    why = Some(Unfoldable::DifferingReferences);
+                }
+            }
+            if why.is_none() && self.definer_has_side_effects(first) {
+                why = Some(Unfoldable::SideEffects);
+            }
+        }
+        if let Some(w) = why {
+            self.not_folded(c, w);
+            return;
+        }
+        if !all_same {
+            self.report.differing_groups += 1;
+        }
+        self.fold(survivor, c, false);
+    }
+
+    /// Folds `removed` (the copies that move, in member order) into the
+    /// synthesized member for their members, holding `survivor`.
+    fn fold(&mut self, survivor: (usize, usize), removed: &[(usize, usize)], renamed: bool) {
+        self.report.groups += 1;
+        let how = if renamed {
+            Removal::Weak
+        } else {
+            Removal::Undefined
+        };
+        let identity = self.unit(survivor).identity;
+        for &(m, u) in removed {
+            self.removals[m].push((u, how));
+            if self.parsed[m].facts.units[u].identity == identity {
+                self.same[m].push(u);
+            }
+        }
+        self.report.copies_removed += removed.len() as u64;
+        self.report.removed_bytes += removed.iter().map(|&x| self.unit(x).size).sum::<u64>();
+        let mut givers: Vec<usize> = removed.iter().map(|&(m, _)| m).collect();
+        givers.dedup();
+        // (And the PCH its CodeView names, if any: see debug::key.)
+        let environment = self.parsed[survivor.0].facts.environment;
+        let key = (
+            environment,
+            debug::key(&self.parsed[survivor.0]),
+            givers.clone(),
+        );
+        let synths = &mut self.synths;
+        let s = *self.synth_of.entry(key).or_insert_with(|| {
+            synths.push(Synth {
+                environment,
+                givers,
+                units: Vec::new(),
+                copies: Vec::new(),
+            });
+            synths.len() - 1
+        });
+        self.synths[s].units.push((survivor.0, survivor.1, renamed));
+    }
+}
+
+/// The local units of a member (`facts`) that go with the units it gives
+/// up whose copies are the survivors' (`same`): each local unit those
+/// reach that nothing else refers to (nothing that stays, and no local
+/// unit that stays), and that can be copied.
+fn absorb(facts: &units::Facts, same: &[usize]) -> Vec<usize> {
+    if same.is_empty() {
+        return Vec::new();
+    }
+    let n = facts.units.len();
+    let mut removed = vec![false; n];
+    for &u in same {
+        removed[u] = true;
+    }
+    let mut going = vec![false; n];
+    for &u in same {
+        for node in facts.units[u].closure.iter().skip(1) {
+            if let locals::Node::Unit(v) = *node {
+                let v = v as usize;
+                let unit = &facts.units[v];
+                if unit.pure_local && !unit.pinned && unit.blocked.is_none() {
+                    going[v] = true;
+                }
+            }
+        }
+    }
+    loop {
+        let mut changed = false;
+        for v in 0..n {
+            if going[v]
+                && facts.units[v]
+                    .referrers
+                    .iter()
+                    .any(|&r| !removed[r as usize] && !going[r as usize])
+            {
+                going[v] = false;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    (0..n).filter(|&v| going[v]).collect()
+}
+
+/// The locals a synthesized member holds copies of: what its units reach,
+/// each once for each member it comes from (`copy`), or each once by its
+/// contents (`merge`), in the order its units reach them.
+fn local_copies(s: &Synth, parsed: &[Parsed<'_>], mode: Locals) -> Vec<LocalCopy> {
+    let mut out: Vec<LocalCopy> = Vec::new();
+    let mut seen: HashMap<(u8, u128), ()> = HashMap::default();
+    for &(m, u, _) in &s.units {
+        let facts = &parsed[m].facts;
+        for &node in facts.units[u].closure.iter().skip(1) {
+            let key = match (mode, node) {
+                (Locals::Merge, locals::Node::Unit(v)) => (1, facts.units[v as usize].structural),
+                (Locals::Merge, locals::Node::Piece(p)) => (2, facts.pieces[p as usize].closure),
+                (_, locals::Node::Unit(v)) => (3, (m as u128) << 64 | u128::from(v)),
+                (_, locals::Node::Piece(p)) => (4, (m as u128) << 64 | u128::from(p)),
+            };
+            if seen.insert(key, ()).is_none() {
+                out.push(LocalCopy { member: m, node });
+            }
+        }
+    }
+    out
+}
+
+/// Names whose definitions in the library differ (`--report odr`): units
+/// defining the same external names whose code differs (their locals by
+/// content), in order of first appearance.
+fn odr(inputs: &[Input<'_>], parsed: &[Parsed<'_>]) -> Vec<OdrFinding> {
+    let mut of: HashMap<u128, usize> = HashMap::default();
+    let mut found: Vec<Vec<(usize, usize)>> = Vec::new();
+    for (m, p) in parsed.iter().enumerate() {
+        for (u, unit) in p.facts.units.iter().enumerate() {
+            if unit.externals.is_empty() {
+                continue;
+            }
+            let mut names: Vec<&[u8]> = unit.externals.iter().map(Vec::as_slice).collect();
+            names.sort_unstable();
+            let mut h = H128::new();
+            for n in names {
+                h.u64(n.len() as u64);
+                h.bytes(n);
+            }
+            let g = *of.entry(h.finish()).or_insert_with(|| {
+                found.push(Vec::new());
+                found.len() - 1
+            });
+            found[g].push((m, u));
+        }
+    }
+    let mut out = Vec::new();
+    for copies in found {
+        let unit = |(m, u): (usize, usize)| &parsed[m].facts.units[u];
+        let first = unit(copies[0]).structural;
+        if copies.iter().all(|&x| unit(x).structural == first) {
+            continue;
+        }
+        let mut variants: Vec<OdrVariant> = Vec::new();
+        for &(m, u) in &copies {
+            let x = unit((m, u));
+            let name = inputs[m].name.to_vec();
+            match variants.iter_mut().find(|v| v.code == x.structural) {
+                Some(v) => {
+                    if v.members.last() != Some(&name) {
+                        v.members.push(name);
+                    }
+                    if !v.environments.contains(&parsed[m].facts.environment) {
+                        v.environments.push(parsed[m].facts.environment);
+                    }
+                }
+                None => variants.push(OdrVariant {
+                    code: x.structural,
+                    size: x.size,
+                    selection: x.selection,
+                    members: vec![name],
+                    environments: vec![parsed[m].facts.environment],
+                }),
+            }
+        }
+        // Whether one environment has two of them (not merely other
+        // compiler options in other members).
+        let mut envs: Vec<u128> = variants
+            .iter()
+            .flat_map(|v| v.environments.iter().copied())
+            .collect();
+        let total = envs.len();
+        envs.sort_unstable();
+        envs.dedup();
+        out.push(OdrFinding {
+            names: unit(copies[0]).externals.clone(),
+            same_environment: envs.len() < total,
+            variants,
+        });
+    }
+    out
 }
 
 /// A member as rewritten: its position, the member, and its `.debug$T`'s
@@ -1052,17 +1594,33 @@ fn synthesize<'a>(
         ));
     }
 
+    // What is placed as a unit: the folded units, then the copies of the
+    // local units they reach (`--locals=copy`).
+    let mut placements: Vec<(usize, usize, bool)> = s.units.clone();
+    // Each copy's placement, or its piece's symbol here once made.
+    let mut copy_at: Vec<usize> = vec![usize::MAX; s.copies.len()];
+    for (i, c) in s.copies.iter().enumerate() {
+        if let locals::Node::Unit(v) = c.node {
+            copy_at[i] = placements.len();
+            placements.push((c.member, v as usize, false));
+        }
+    }
+    let folded = s.units.len();
+
     // The units' CodeView, renumbered into the member's own (phase 2.4);
     // its per-object .debug$S first, as compilers write it.
     let mut debug = debug::Builder::new(parsed, plan);
-    debug.begin(&mut o, &s.units);
+    debug.begin(&mut o, &placements);
 
     // The units: their sections and symbols, with names renamed where the
     // copy is a renamed one. Relocations are filled in after, once every
     // unit's symbols are in.
-    let mut placed: Vec<Placed> = Vec::with_capacity(s.units.len());
+    let mut placed: Vec<Placed> = Vec::with_capacity(placements.len());
     let mut defined: HashMap<Vec<u8>, SymbolId> = HashMap::default();
-    for (k, &(m, u, renamed_copy)) in s.units.iter().enumerate() {
+    // The local COMDAT symbols' names of the local units copied, which two
+    // copies mustn't share.
+    let mut local_comdats: HashMap<Vec<u8>, u32> = HashMap::default();
+    for (k, &(m, u, renamed_copy)) in placements.iter().enumerate() {
         let object = parsed[m].object.as_ref().expect("units come from objects");
         let unit = &parsed[m].facts.units[u];
         let mut p = Placed {
@@ -1084,6 +1642,7 @@ fn synthesize<'a>(
             };
             p.sections.insert(id.0, o.push_section(copy));
         }
+        let mut leader_named = false;
         for &id in &unit.symbols {
             let sym = &object.symbols[id.index()];
             let Some(old) = sym.section.id() else {
@@ -1112,6 +1671,24 @@ fn synthesize<'a>(
             if renamed_copy && sym.is_external() {
                 copy.name = Name::new(renamed(sym.name.as_bytes()));
             }
+            // A copied local unit's COMDAT symbol: another copy's name gets
+            // a suffix, as one object can't have two COMDATs of one name.
+            if k >= folded
+                && !leader_named
+                && old == unit.leader
+                && !matches!(sym.aux, Aux::Section(_))
+            {
+                leader_named = true;
+                let n = local_comdats
+                    .entry(sym.name.as_bytes().to_vec())
+                    .or_insert(0);
+                if *n > 0 {
+                    let mut v = sym.name.as_bytes().to_vec();
+                    v.extend_from_slice(format!("$turbolib{n}").as_bytes());
+                    copy.name = Name::new(v);
+                }
+                *n += 1;
+            }
             let new_id = o.push_symbol(copy);
             if sym.is_external() {
                 defined.insert(o.symbols[new_id.index()].name.as_bytes().to_vec(), new_id);
@@ -1121,14 +1698,63 @@ fn synthesize<'a>(
         placed.push(p);
     }
 
-    // Relocations: inside a unit, to its own symbols; outside, by name, to
-    // a symbol defined here or to an undefined external.
+    // The pieces copied: each a section of its own, with one symbol.
+    let mut pieces: Vec<(usize, SectionId, SymbolId)> = Vec::new();
+    for (i, c) in s.copies.iter().enumerate() {
+        let locals::Node::Piece(p) = c.node else {
+            continue;
+        };
+        let object = parsed[c.member].object.as_ref().expect("an object");
+        let piece = &parsed[c.member].facts.pieces[p as usize];
+        let source = &object.sections[piece.section.index()];
+        let bytes = &source.bytes()[piece.start as usize..piece.end as usize];
+        let id = o.push_section(Section::new(
+            Name::new(source.name.as_bytes().to_vec()),
+            source.characteristics,
+            SectionData::Bytes(Cow::Owned(bytes.to_vec())),
+        ));
+        o.push_symbol(section_symbol(
+            source.name.as_bytes(),
+            id,
+            SectionDefinition::default(),
+        ));
+        let label = &object.symbols[piece.labels[0].index()];
+        let symbol = o.push_symbol(Symbol::new(
+            label.name.clone(),
+            0,
+            SectionNumber::Section(id),
+            label.kind,
+            storage_class::STATIC,
+        ));
+        copy_at[i] = pieces.len();
+        pieces.push((i, id, symbol));
+    }
+    let mut exact = HashMap::default();
+    let mut by_contents = HashMap::default();
+    for (i, c) in s.copies.iter().enumerate() {
+        exact.insert((c.member, c.node), i);
+        by_contents
+            .entry(contents(parsed, c.member, c.node))
+            .or_insert(i);
+    }
+    let copies = Copies {
+        parsed,
+        placements: &placements,
+        copy_at: &copy_at,
+        pieces: &pieces,
+        exact,
+        by_contents,
+    };
+
+    // Relocations: inside a unit, to its own symbols; to a local it
+    // reaches, to the copy's; outside, by name, to a symbol defined here or
+    // to an undefined external.
     let mut names = Names {
         defined,
         undefined: HashMap::default(),
         weak: HashMap::default(),
     };
-    for (k, &(m, u, _)) in s.units.iter().enumerate() {
+    for (k, &(m, u, _)) in placements.iter().enumerate() {
         let object = parsed[m].object.as_ref().expect("units come from objects");
         let unit = &parsed[m].facts.units[u];
         for &id in &unit.sections {
@@ -1139,7 +1765,10 @@ fn synthesize<'a>(
             for r in &object.sections[id.index()].relocations {
                 let symbol = match placed[k].symbols.get(&r.symbol.0) {
                     Some(&inside) => inside,
-                    None => names.outside(&mut o, object, &object.symbols[r.symbol.index()]),
+                    None => match copies.local(m, &unit.edges, r.symbol, &placed) {
+                        Some(copy) => copy,
+                        None => names.outside(&mut o, object, &object.symbols[r.symbol.index()]),
+                    },
                 };
                 relocations.push(Relocation {
                     offset: debug.offset(k, id, r.offset),
@@ -1150,8 +1779,36 @@ fn synthesize<'a>(
             o.sections[new.index()].relocations = relocations;
         }
     }
-    let table_fields = tables::place(&mut o, s, parsed, &placed, &mut |o, object, target| {
-        names.outside(o, object, target)
+    for &(i, id, _) in &pieces {
+        let c = &s.copies[i];
+        let locals::Node::Piece(p) = c.node else {
+            continue;
+        };
+        let object = parsed[c.member].object.as_ref().expect("an object");
+        let piece = &parsed[c.member].facts.pieces[p as usize];
+        let source = &object.sections[piece.section.index()];
+        let mut relocations = Vec::with_capacity(piece.relocations.len());
+        for &ri in &piece.relocations {
+            let r = &source.relocations[ri as usize];
+            let symbol = match copies.local(c.member, &piece.edges, r.symbol, &placed) {
+                Some(copy) => copy,
+                None => names.outside(&mut o, object, &object.symbols[r.symbol.index()]),
+            };
+            relocations.push(Relocation {
+                offset: r.offset - piece.start,
+                symbol,
+                kind: r.kind,
+            });
+        }
+        o.sections[id.index()].relocations = relocations;
+    }
+    let table_fields = tables::place(&mut o, &placements, parsed, &placed, &mut |o, k, old| {
+        let (m, u, _) = placements[k];
+        let object = parsed[m].object.as_ref().expect("units come from objects");
+        match copies.local(m, &parsed[m].facts.units[u].edges, old, &placed) {
+            Some(copy) => copy,
+            None => names.outside(o, object, &object.symbols[old.index()]),
+        }
     });
     debug.finish(&mut o, m0, name);
     o.push_symbol(Symbol::new(
@@ -1182,6 +1839,65 @@ fn synthesize<'a>(
         .expect("a synthesized member fits its format")
 }
 
+/// Where a synthesized member's copies of locals went.
+struct Copies<'c, 'p, 'a> {
+    parsed: &'p [Parsed<'a>],
+    /// What is placed as a unit (member, unit, renamed).
+    placements: &'c [(usize, usize, bool)],
+    /// Each copy's placement (a local unit) or position in `pieces`.
+    copy_at: &'c [usize],
+    /// The pieces made: (copy, section, symbol).
+    pieces: &'c [(usize, SectionId, SymbolId)],
+    /// Each copy by (member, node), and by contents.
+    exact: HashMap<(usize, locals::Node), usize>,
+    by_contents: HashMap<(u8, u128), usize>,
+}
+
+impl Copies<'_, '_, '_> {
+    /// The symbol here for member `m`'s local `target`, which a placed
+    /// unit or a piece copied reaches through `edges`, if it is one.
+    fn local(
+        &self,
+        m: usize,
+        edges: &[locals::Edge],
+        target: SymbolId,
+        placed: &[Placed],
+    ) -> Option<SymbolId> {
+        let e = edges.iter().find(|e| e.symbol == target)?;
+        let i = self.find(m, e.node)?;
+        match e.node {
+            locals::Node::Unit(_) => {
+                let k = self.copy_at[i];
+                let (cm, cu, _) = self.placements[k];
+                let source = *self.parsed[cm].facts.units[cu]
+                    .symbols
+                    .get(e.position as usize)?;
+                placed[k].symbols.get(&source.0).copied()
+            }
+            locals::Node::Piece(_) => Some(self.pieces[self.copy_at[i]].2),
+        }
+    }
+
+    /// The copy that stands for member `m`'s `node`: its own, or (under
+    /// `merge`) one with the same contents.
+    fn find(&self, m: usize, node: locals::Node) -> Option<usize> {
+        if let Some(&i) = self.exact.get(&(m, node)) {
+            return Some(i);
+        }
+        self.by_contents
+            .get(&contents(self.parsed, m, node))
+            .copied()
+    }
+}
+
+/// What `merge` makes one copy of: a local's kind and contents.
+fn contents(parsed: &[Parsed<'_>], m: usize, node: locals::Node) -> (u8, u128) {
+    let f = &parsed[m].facts;
+    match node {
+        locals::Node::Unit(v) => (1, f.units[v as usize].structural),
+        locals::Node::Piece(p) => (2, f.pieces[p as usize].closure),
+    }
+}
 /// Where one unit's sections and symbols went in a synthesized member, by
 /// their numbers in the member they came from.
 struct Placed {
@@ -1258,5 +1974,7 @@ fn section_symbol(name: &[u8], id: SectionId, def: SectionDefinition) -> Symbol<
     s
 }
 
+#[cfg(test)]
+mod loose_tests;
 #[cfg(test)]
 mod tests;

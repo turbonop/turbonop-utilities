@@ -16,13 +16,17 @@ use turbonop_coff::File;
 use turbonop_hash::Set as HashSet;
 
 const LIBRARY: Options = Options {
-    fold: false,
+    fold: crate::rewrite::Fold::None,
+    locals: crate::rewrite::Locals::Keep,
+    odr: false,
     precomp: Precomp::Library { min: 2 },
     ..RELAXED
 };
 
 const FOLD_LIBRARY: Options = Options {
-    fold: true,
+    fold: crate::rewrite::Fold::Identical,
+    locals: crate::rewrite::Locals::Keep,
+    odr: false,
     ..LIBRARY
 };
 
@@ -139,7 +143,7 @@ fn check_members(names: &[&str], datas: &[Vec<u8>], pch: Option<&str>, options: 
             .is_some_and(|(kind, body)| kind == leaf::LF_PRECOMP && le32(&body, 8) == signature);
         if !shares {
             // Too little shared to pay for naming the PCH: as it was.
-            if !options.fold {
+            if options.fold == crate::rewrite::Fold::None {
                 assert_eq!(m.data.as_ref(), &datas[k][..], "{}", names[k]);
             }
             continue;
@@ -167,10 +171,10 @@ fn check_members(names: &[&str], datas: &[Vec<u8>], pch: Option<&str>, options: 
                 .collect()
         };
         let (db, da) = (debug_s(&before), debug_s(&after));
-        if options.fold {
-            assert!(da.len() <= db.len());
-        } else {
+        if options.fold == crate::rewrite::Fold::None {
             assert_eq!(da.len(), db.len());
+        } else {
+            assert!(da.len() <= db.len());
         }
         for &i in &da {
             let sec = &after.sections[i];

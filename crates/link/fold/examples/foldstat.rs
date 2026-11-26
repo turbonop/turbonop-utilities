@@ -27,7 +27,9 @@ fn main() {
             Options {
                 pull,
                 weak_externals: false,
-                fold: true,
+                fold: turbonop_fold::rewrite::Fold::Identical,
+                locals: turbonop_fold::rewrite::Locals::Keep,
+                odr: false,
                 precomp: turbonop_fold::rewrite::Precomp::None,
             },
         )

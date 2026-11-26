@@ -13,7 +13,7 @@ use super::library;
 use super::options::{self, Options};
 use super::order::{self, Input};
 use super::output;
-use crate::settings::{Fold, Precomp, Pull, Settings};
+use crate::settings::{Fold, Locals, Pick, Precomp, Pull, Settings};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -532,32 +532,49 @@ fn build(
 
     // Folding: the members rewritten, then the synthesized ones.
     clock.lap("order");
-    let folded = (settings.fold != Fold::None || settings.precomp != Precomp::None).then(|| {
-        let inputs: Vec<rewrite::Input<'_>> = members
-            .iter()
-            .map(|m| rewrite::Input {
-                name: &m.name,
-                data: m.data,
-            })
-            .collect();
-        let pull = match settings.pull {
-            Pull::Preserve => rewrite::Pull::Preserve,
-            Pull::Relaxed => rewrite::Pull::Relaxed,
-        };
-        rewrite::rewrite(
-            &inputs,
-            rewrite::Options {
-                pull,
-                weak_externals: false,
-                fold: settings.fold != Fold::None,
-                precomp: match settings.precomp {
-                    Precomp::Library => rewrite::Precomp::Library { min: 2 },
-                    // (check_supported refuses the others.)
-                    Precomp::None | Precomp::Clustered(_) => rewrite::Precomp::None,
-                },
-            },
-        )
-    });
+    let folded =
+        (settings.fold != Fold::None || settings.precomp != Precomp::None || settings.report_odr)
+            .then(|| {
+                let inputs: Vec<rewrite::Input<'_>> = members
+                    .iter()
+                    .map(|m| rewrite::Input {
+                        name: &m.name,
+                        data: m.data,
+                    })
+                    .collect();
+                let pull = match settings.pull {
+                    Pull::Preserve => rewrite::Pull::Preserve,
+                    Pull::Relaxed => rewrite::Pull::Relaxed,
+                };
+                rewrite::rewrite(
+                    &inputs,
+                    rewrite::Options {
+                        pull,
+                        weak_externals: false,
+                        fold: match (settings.fold, settings.pick) {
+                            (Fold::None, _) => rewrite::Fold::None,
+                            (Fold::Identical, _) => rewrite::Fold::Identical,
+                            (Fold::SelectAny, Pick::First) => {
+                                rewrite::Fold::SelectAny(rewrite::Pick::First)
+                            }
+                            (Fold::SelectAny, Pick::Largest) => {
+                                rewrite::Fold::SelectAny(rewrite::Pick::Largest)
+                            }
+                        },
+                        locals: match settings.locals {
+                            Locals::Keep => rewrite::Locals::Keep,
+                            Locals::Copy => rewrite::Locals::Copy,
+                            Locals::Merge => rewrite::Locals::Merge,
+                        },
+                        odr: settings.report_odr,
+                        precomp: match settings.precomp {
+                            Precomp::Library => rewrite::Precomp::Library { min: 2 },
+                            // (check_supported refuses the others.)
+                            Precomp::None | Precomp::Clustered(_) => rewrite::Precomp::None,
+                        },
+                    },
+                )
+            });
     let finals: Vec<Final<'_>> = match &folded {
         None => members
             .iter()
@@ -573,7 +590,10 @@ fn build(
             .collect(),
         Some(folded) => {
             if settings.stats {
-                r.lines.extend(stats_lines(&folded.report));
+                r.lines.extend(stats_lines(&folded.report, &members));
+            }
+            if settings.report_odr {
+                r.lines.extend(odr_lines(&folded.report));
             }
             let synthesized = style.object_fields(now(), false);
             // The members in their order, with the synthesized members
@@ -758,7 +778,44 @@ struct Final<'d> {
 }
 
 /// What `--stats` prints about folding.
-fn stats_lines(r: &rewrite::Report) -> Vec<String> {
+/// `--report odr`'s findings: each name whose definitions differ, with
+/// the members holding each definition. Information, not warnings.
+fn odr_lines(r: &rewrite::Report) -> Vec<String> {
+    let mut out = vec![format!(
+        "turbolib: odr: {} names with differing definitions ({} of them in one environment)",
+        r.odr.len(),
+        r.odr.iter().filter(|f| f.same_environment).count()
+    )];
+    for f in &r.odr {
+        let more = match f.names.len() {
+            0 | 1 => String::new(),
+            n => format!(" (and {} more names)", n - 1),
+        };
+        out.push(format!(
+            "turbolib: odr: {}{more}: {} definitions{}",
+            f.names.first().map_or_else(String::new, |n| text(n)),
+            f.variants.len(),
+            if f.same_environment {
+                ""
+            } else {
+                ", each in other environments (compiler options) only"
+            }
+        ));
+        for (i, v) in f.variants.iter().enumerate() {
+            let members: Vec<String> = v.members.iter().map(|m| text(m)).collect();
+            out.push(format!(
+                "turbolib: odr:   {}: {} bytes, selection {}: {}",
+                i + 1,
+                v.size,
+                v.selection,
+                members.join(", ")
+            ));
+        }
+    }
+    out
+}
+
+fn stats_lines(r: &rewrite::Report, members: &[Placed<'_>]) -> Vec<String> {
     let mb = |b: u64| b as f64 / 1_048_576.0;
     let mut out = vec![
         format!(
@@ -804,6 +861,42 @@ fn stats_lines(r: &rewrite::Report) -> Vec<String> {
         if let Some(w) = &ty.first_unreadable {
             out.push(format!("turbolib: types: the first unreadable: {w}"));
         }
+    }
+    if r.differing_groups > 0 || !r.mismatches.is_empty() {
+        out.push(format!(
+            "turbolib: select-any: {} groups folded whose copies differ; {} names whose SAME_SIZE or EXACT_MATCH copies disagree, left as they are",
+            r.differing_groups,
+            r.mismatches.len()
+        ));
+        for x in &r.mismatches {
+            let copies: Vec<String> = x
+                .copies
+                .iter()
+                .map(|&(m, size, checksum)| {
+                    format!(
+                        "{} ({size} bytes, checksum {checksum:#010x})",
+                        members.get(m).map_or_else(String::new, |p| text(&p.name))
+                    )
+                })
+                .collect();
+            out.push(format!(
+                "turbolib: select-any: {} (selection {}): {}",
+                x.names.first().map_or_else(String::new, |n| text(n)),
+                x.selection,
+                copies.join(", ")
+            ));
+        }
+    }
+    let l = &r.locals;
+    if l.units_copied + l.pieces_copied + l.absorbed > 0 {
+        out.push(format!(
+            "turbolib: locals: {} local units and {} pieces copied ({:.1} MiB); {} local units moved with what reaches them ({:.1} MiB)",
+            l.units_copied,
+            l.pieces_copied,
+            mb(l.bytes_copied),
+            l.absorbed,
+            mb(l.absorbed_bytes)
+        ));
     }
     for (why, n) in &r.passed_through {
         out.push(format!(

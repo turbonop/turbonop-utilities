@@ -13,8 +13,14 @@
 //!
 //! Side tables' entries count as references too ([`tables`](super::tables)
 //! says how); a member with one turbolib can't read folds nothing.
+//!
+//! Under `--locals=copy` and `merge` ([`Mode::copy_locals`]), a unit that
+//! reaches internal-linkage symbols outside it can fold too, with copies of
+//! what it reaches: [`locals`](super::locals) says which, and its identity
+//! is then of its code with what it reaches, by content.
 
 use super::Unfoldable;
+use super::locals::{self, Edge, Piece};
 use super::tables::{self, Tables};
 use crate::hash::H128;
 use turbonop_coff::{
@@ -48,6 +54,39 @@ pub struct Unit {
     pub unfoldable: Option<Unfoldable>,
     /// What made it so, in words (for `--diagnose`).
     pub detail: Option<String>,
+    /// Its leader section's size and COMDAT checksum, which `SAME_SIZE`
+    /// and `EXACT_MATCH` compare.
+    pub leader_size: u32,
+    pub checksum: u32,
+    /// Its selection and its external names: copies with the same key are
+    /// what the linker chooses among (`--fold=select-any`); 0 for a unit
+    /// with no external name.
+    pub name_key: u128,
+    /// Its code with the internal-linkage things it reaches by content
+    /// (see [`locals`](super::locals)): equal for copies that are the same
+    /// but for which translation unit's locals they name. The same as
+    /// `code` for a unit that reaches none, and computed only when
+    /// [`Mode`] asks for it.
+    pub structural: u128,
+    /// The internal-linkage things outside it that it refers to, in the
+    /// order its code names them (under [`Mode::structural`]).
+    pub edges: Vec<Edge>,
+    /// Its symbols are all local (a COMDAT with internal linkage), so it
+    /// can be copied with a unit that reaches it (under
+    /// [`Mode::structural`]).
+    pub pure_local: bool,
+    /// For a `pure_local` unit: something that never moves (a section
+    /// outside every unit, an auxiliary record, a table of code that
+    /// stays) refers to it, so it stays in its member even when everything
+    /// else that reaches it moves.
+    pub pinned: bool,
+    /// For a `pure_local` unit: the units of its member that refer to it.
+    pub referrers: Vec<u32>,
+    /// For a `pure_local` unit: why it can't be copied, if it can't.
+    pub blocked: Option<(Unfoldable, String)>,
+    /// What it reaches, transitively, in the order its identity numbers
+    /// them (itself first), under [`Mode::structural`].
+    pub closure: Vec<locals::Node>,
 }
 
 /// What one member is, for folding.
@@ -77,6 +116,21 @@ pub struct Facts {
     pub units: Vec<Unit>,
     /// Its side tables.
     pub tables: Tables,
+    /// The pieces of its sections outside units that its units reach
+    /// (under [`Mode::structural`]).
+    pub pieces: Vec<Piece>,
+}
+
+/// What [`find_with`] computes beyond the units and their identities.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Mode {
+    /// Units reaching internal-linkage symbols may fold
+    /// (`--locals=copy`, `merge`): their identity is structural.
+    pub copy_locals: bool,
+    /// Compute each unit's [`structural`](Unit::structural) code (for
+    /// `--report odr`), whether or not such units fold. Implied by
+    /// `copy_locals`.
+    pub structural: bool,
 }
 
 /// Section names (prefixes) whose meaning turbolib knows. A member with a
@@ -162,9 +216,66 @@ fn compile3(section: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-/// Finds the member's units and facts. `Err` is why the member passes
-/// through whole.
+/// Why units can't fold, as they are found: reasons that no mode lifts,
+/// and those about internal linkage, which `--locals=copy` reconsiders;
+/// `first` is whichever was found first, the reason under `--locals=keep`.
+pub(super) struct Reasons {
+    pub hard: Vec<Option<(Unfoldable, String)>>,
+    pub local: Vec<Option<(Unfoldable, String)>>,
+    pub first: Vec<Option<(Unfoldable, Option<String>)>>,
+}
+
+impl Reasons {
+    fn new(n: usize) -> Self {
+        Reasons {
+            hard: vec![None; n],
+            local: vec![None; n],
+            first: vec![None; n],
+        }
+    }
+
+    /// A reason no mode lifts, kept if `u` has none of its kind yet.
+    pub fn hard(&mut self, u: usize, why: Unfoldable, what: impl FnOnce() -> String) {
+        if self.hard[u].is_none() || self.first[u].is_none() {
+            let w = what();
+            if self.first[u].is_none() {
+                self.first[u] = Some((why, Some(w.clone())));
+            }
+            self.hard[u].get_or_insert((why, w));
+        }
+    }
+
+    /// A reason without a detail.
+    fn hard_plain(&mut self, u: usize, why: Unfoldable) {
+        if self.first[u].is_none() {
+            self.first[u] = Some((why, None));
+        }
+        self.hard[u].get_or_insert((why, String::new()));
+    }
+
+    /// A reason about internal linkage, kept if `u` has none of its kind
+    /// yet.
+    pub fn local(&mut self, u: usize, why: Unfoldable, what: impl FnOnce() -> String) {
+        if self.local[u].is_none() || self.first[u].is_none() {
+            let w = what();
+            if self.first[u].is_none() {
+                self.first[u] = Some((why, Some(w.clone())));
+            }
+            self.local[u].get_or_insert((why, w));
+        }
+    }
+}
+
+/// Finds the member's units and facts (`--locals=keep`). `Err` is why the
+/// member passes through whole.
 pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
+    find_with(object, Mode::default())
+}
+
+/// Finds the member's units and facts, as `mode` says. `Err` is why the
+/// member passes through whole.
+pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
+    let structural = mode.structural || mode.copy_locals;
     let n = object.sections.len();
     let mut facts = Facts::default();
 
@@ -306,6 +417,16 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
                     code: 0,
                     unfoldable: None,
                     detail: None,
+                    leader_size: 0,
+                    checksum: checksum[l],
+                    name_key: 0,
+                    structural: 0,
+                    edges: Vec::new(),
+                    pure_local: false,
+                    pinned: false,
+                    referrers: Vec::new(),
+                    blocked: None,
+                    closure: Vec::new(),
                 });
                 units.len() - 1
             });
@@ -349,12 +470,12 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
     }
 
     // Foldability: references in and out.
-    let mut reason: Vec<Option<Unfoldable>> = vec![None; units.len()];
-    let mut detail: Vec<Option<String>> = vec![None; units.len()];
+    let mut reasons = Reasons::new(units.len());
     let show = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
     // A COMDAT's symbol is the first after its section's own; a local one
     // (internal linkage: anonymous namespaces, `static` inline functions)
     // is never shared between objects, so folding it is `--locals=copy`.
+    let mut local_leader = vec![false; units.len()];
     for (k, u) in units.iter().enumerate() {
         let leader = u
             .symbols
@@ -364,22 +485,24 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
                 s.section == SectionNumber::Section(u.leader) && !matches!(s.aux, Aux::Section(_))
             });
         if leader.is_some_and(|s| !s.is_external()) {
-            reason[k] = Some(Unfoldable::InternalLinkage);
-            detail[k] = leader.map(|s| show(s.name.as_bytes()));
+            local_leader[k] = true;
+            reasons.local(k, Unfoldable::InternalLinkage, || {
+                leader.map(|s| show(s.name.as_bytes())).unwrap_or_default()
+            });
         }
     }
     if let Some(why) = &unreadable_table {
-        reason
-            .iter_mut()
-            .for_each(|r| *r = Some(Unfoldable::SideTables));
-        detail.iter_mut().for_each(|d| *d = Some(why.clone()));
+        for k in 0..units.len() {
+            reasons.hard[k] = Some((Unfoldable::SideTables, why.clone()));
+            reasons.first[k] = Some((Unfoldable::SideTables, Some(why.clone())));
+        }
     }
     for (i, sec) in object.sections.iter().enumerate() {
         let here = unit_of[i];
         if let Some(u) = here
             && !sec.line_numbers.is_empty()
         {
-            reason[u].get_or_insert(Unfoldable::LineNumbers);
+            reasons.hard_plain(u, Unfoldable::LineNumbers);
         }
         if tables.splits_relocations(SectionId(i as u32)) {
             continue;
@@ -387,7 +510,7 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
         for r in &sec.relocations {
             let Some(target) = object.symbol(r.symbol) else {
                 if let Some(u) = here {
-                    reason[u].get_or_insert(Unfoldable::BadRelocation);
+                    reasons.hard_plain(u, Unfoldable::BadRelocation);
                 }
                 continue;
             };
@@ -412,36 +535,28 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
                     if target.storage_class == storage_class::WEAK_EXTERNAL
                         && weak_default(object, target).is_none()
                     {
-                        if reason[a].is_none() {
-                            reason[a] = Some(Unfoldable::WeakExternalReference);
-                            detail[a] = Some(what());
-                        }
+                        reasons.hard(a, Unfoldable::WeakExternalReference, what);
                     } else if !target.is_external()
                         && target.storage_class != storage_class::WEAK_EXTERNAL
-                        && reason[a].is_none()
                     {
-                        reason[a] = Some(Unfoldable::LocalReference);
-                        detail[a] = Some(what());
+                        reasons.local(a, Unfoldable::LocalReference, what);
                     }
                     if let Some(b) = there
                         && !target.is_external()
-                        && reason[b].is_none()
                     {
-                        reason[b] = Some(Unfoldable::ReferencedLocally);
-                        detail[b] = Some(what());
+                        reasons.local(b, Unfoldable::ReferencedLocally, what);
                     }
                 }
                 (None, Some(b)) => {
-                    if !target.is_external() && reason[b].is_none() {
-                        reason[b] = Some(Unfoldable::ReferencedLocally);
-                        detail[b] = Some(what());
+                    if !target.is_external() {
+                        reasons.local(b, Unfoldable::ReferencedLocally, what);
                     }
                 }
                 (None, None) => {}
             }
         }
     }
-    tables.check(object, &unit_of, &symbol_unit, &mut reason, &mut detail);
+    tables.check(object, &unit_of, &symbol_unit, &mut reasons);
     // Auxiliary records that name a unit's symbols from outside it.
     for (i, s) in object.symbols.iter().enumerate() {
         let named = match &s.aux {
@@ -456,30 +571,109 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
             && !object
                 .symbol(t)
                 .is_some_and(turbonop_coff::Symbol::is_external)
-            && reason[b].is_none()
         {
-            reason[b] = Some(Unfoldable::ReferencedLocally);
-            detail[b] = Some(format!(
-                "{}'s auxiliary record names {}",
-                show(s.name.as_bytes()),
-                show(object.symbol(t).map_or(&[][..], |t| t.name.as_bytes()))
-            ));
+            reasons.local(b, Unfoldable::ReferencedLocally, || {
+                format!(
+                    "{}'s auxiliary record names {}",
+                    show(s.name.as_bytes()),
+                    show(object.symbol(t).map_or(&[][..], |t| t.name.as_bytes()))
+                )
+            });
         }
         if let (Some(u), Aux::Raw(_)) = (symbol_unit[i], &s.aux) {
-            reason[u].get_or_insert(Unfoldable::RawAuxiliary);
+            reasons.hard_plain(u, Unfoldable::RawAuxiliary);
         }
     }
 
+    // What each unit reaches of the member's internal-linkage symbols.
+    let analysis = structural.then(|| {
+        locals::analyze(
+            object,
+            &units,
+            &local_leader,
+            &unit_of,
+            &symbol_unit,
+            &tables,
+        )
+    });
+
     let codes: Vec<u128> = (0..units.len())
-        .map(|k| code(object, &units[k], k, &symbol_unit, &checksum, &tables))
+        .map(|k| {
+            let places = analysis.as_ref().map(|a| &a.edges[k][..]);
+            code(
+                object,
+                &units[k],
+                k,
+                &symbol_unit,
+                &checksum,
+                &tables,
+                places,
+            )
+        })
         .collect();
+    let mut analysis = analysis;
+    let mut closures = match &mut analysis {
+        Some(a) => locals::closures(a, &codes, &reasons.hard),
+        None => Vec::new(),
+    };
     for (k, u) in units.iter_mut().enumerate() {
-        u.unfoldable = reason[k];
-        u.detail = detail[k].take();
+        let keep = reasons.first[k].take();
         u.code = codes[k];
+        u.structural = codes[k];
+        u.leader_size = object.sections[u.leader.index()].size();
+        if !u.externals.is_empty() {
+            let mut names: Vec<&[u8]> = u.externals.iter().map(Vec::as_slice).collect();
+            names.sort_unstable();
+            let mut h = H128::new();
+            h.u64(u64::from(u.selection));
+            for n in names {
+                h.u64(n.len() as u64);
+                h.bytes(n);
+            }
+            u.name_key = h.finish();
+        }
+        match &mut analysis {
+            Some(a) => {
+                let c = std::mem::take(&mut closures[k]);
+                u.structural = c.hash;
+                u.edges = std::mem::take(&mut a.edges[k]);
+                u.closure = c.nodes;
+                u.pure_local = a.pure[k];
+                u.pinned = a.pinned[k];
+                u.referrers = std::mem::take(&mut a.referrers[k]);
+                if mode.copy_locals {
+                    u.code = c.hash;
+                    // What no mode lifts first, then what about its locals
+                    // can't be copied.
+                    let why = reasons.hard[k]
+                        .take()
+                        .or_else(|| a.hard[k].take())
+                        .or(c.blocked);
+                    if u.pure_local {
+                        // Never folded by itself: copied with what reaches
+                        // it.
+                        u.blocked = why;
+                        u.unfoldable = Some(Unfoldable::InternalLinkage);
+                        u.detail = Some("copied with the units that reach it".into());
+                    } else if let Some((w, d)) = why {
+                        u.unfoldable = Some(w);
+                        u.detail = Some(d);
+                    }
+                } else if let Some((w, d)) = keep {
+                    u.unfoldable = Some(w);
+                    u.detail = d;
+                }
+            }
+            None => {
+                if let Some((w, d)) = keep {
+                    u.unfoldable = Some(w);
+                    u.detail = d;
+                }
+            }
+        }
         let mut h = H128::new();
         h.u128(facts.environment);
-        h.u128(codes[k]);
+        h.u128(u.code);
         u.identity = h.finish();
         u.size = u
             .sections
@@ -492,6 +686,7 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
     }
     facts.units = units;
     facts.tables = tables;
+    facts.pieces = analysis.map(|a| a.pieces).unwrap_or_default();
     Ok(facts)
 }
 
@@ -523,6 +718,10 @@ pub fn weak_default<'o>(
 /// local one without its name, which can differ between translation units
 /// for the same code, such as `$LN` labels). A side table's entries count
 /// as its relocations do.
+///
+/// With `places` (the unit's [`Edge`]s), a local symbol outside the unit
+/// that it reaches is named by its place among them, not by its name,
+/// which differs between translation units (`$SG` string literals).
 fn code(
     object: &Object<'_>,
     unit: &Unit,
@@ -530,6 +729,7 @@ fn code(
     symbol_unit: &[Option<usize>],
     checksum: &[u32],
     tables: &Tables,
+    places: Option<&[Edge]>,
 ) -> u128 {
     let mut h = H128::new();
     h.u64(u64::from(unit.selection));
@@ -546,7 +746,7 @@ fn code(
         }
         h.u64(u64::from(sec.characteristics));
         match (tables.get(s), &sec.data) {
-            (Some(t), _) => t.hash(object, unit, k, symbol_unit, &mut h),
+            (Some(t), _) => t.hash(object, unit, k, symbol_unit, places, &mut h),
             (None, SectionData::Bytes(b)) => {
                 h.u64(b.len() as u64);
                 h.bytes(b);
@@ -557,9 +757,11 @@ fn code(
         for r in &sec.relocations {
             h.u64(u64::from(r.offset) | u64::from(r.kind) << 32);
             let inside = symbol_unit.get(r.symbol.index()).copied().flatten() == Some(k);
-            match (inside, position(r.symbol), object.symbol(r.symbol)) {
-                (true, Some(p), _) => h.u64(p as u64),
-                (_, _, Some(t)) => {
+            let place = places.and_then(|e| locals::place(e, r.symbol));
+            match (inside, position(r.symbol), object.symbol(r.symbol), place) {
+                (true, Some(p), _, _) => h.u64(p as u64),
+                (_, _, Some(_), Some(place)) => h.u64(locals::PLACE | place),
+                (_, _, Some(t), None) => {
                     let name = t.name.as_bytes();
                     h.u64(u64::MAX - name.len() as u64);
                     h.bytes(name);

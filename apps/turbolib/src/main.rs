@@ -410,6 +410,8 @@ fn run_libtool(argv0: &str, args: &[String]) -> ! {
 }
 
 fn main() -> ExitCode {
+    // A batch program: keep freed memory for reuse (see the function).
+    turbonop_global_alloc::for_batch_work();
     let mut argv = std::env::args();
     let argv0 = argv.next().unwrap_or_default();
     let args: Vec<String> = argv.collect();

@@ -145,35 +145,51 @@ pub fn member_symbols<'d>(
 }
 
 /// The names a COFF object defines strongly: outside COMDATs or in a
-/// `NODUPLICATES` COMDAT, the ones LNK4006 is about.
-pub fn strong_definitions(data: &[u8]) -> Vec<Vec<u8>> {
-    use turbonop_coff::{Aux, File, SectionNumber, comdat_select, storage_class};
-    let Ok(File::Object(o)) = File::parse(data) else {
+/// `NODUPLICATES` COMDAT, the ones LNK4006 is about. Read with the
+/// zero-copy reader: a COMDAT's selection is in its section symbol's
+/// auxiliary record (byte 14).
+pub fn strong_definitions(data: &[u8]) -> Vec<&[u8]> {
+    const IMAGE_SCN_LNK_COMDAT: u32 = 0x1000;
+    const EXTERNAL: u8 = 2;
+    const STATIC: u8 = 3;
+    const NODUPLICATES: u8 = 1;
+    let Ok(file) = turbonop_pe::PeFile::parse_object(data) else {
         return Vec::new();
     };
-    const IMAGE_SCN_LNK_COMDAT: u32 = 0x1000;
-    let mut selection = vec![0u8; o.sections.len()];
-    for s in &o.symbols {
-        if let (SectionNumber::Section(id), Aux::Section(d)) = (s.section, &s.aux)
-            && s.storage_class == storage_class::STATIC
-            && let Some(sel) = selection.get_mut(id.index())
+    let Ok(Some(table)) = file.symbols() else {
+        return Vec::new();
+    };
+    let sections = file.sections();
+    let mut selection = vec![0u8; sections.len() + 1];
+    for s in table.iter() {
+        if s.storage_class == STATIC
+            && let Ok(n) = usize::try_from(s.section)
+            && n >= 1
+            && n <= sections.len()
+            && let Some(aux) = s.aux().next()
+            && aux.len() > 14
         {
-            *sel = d.selection;
+            selection[n] = aux[14];
         }
     }
-    o.symbols
-        .iter()
-        .filter(|s| s.is_external())
-        .filter(|s| match s.section {
-            SectionNumber::Section(id) => o.sections.get(id.index()).is_some_and(|sec| {
-                sec.characteristics & IMAGE_SCN_LNK_COMDAT == 0
-                    || selection[id.index()] == comdat_select::NODUPLICATES
-            }),
-            SectionNumber::Absolute => true,
+    let mut out = Vec::new();
+    for s in table.iter() {
+        if s.storage_class != EXTERNAL {
+            continue;
+        }
+        let strong = match s.section {
+            -1 => true,
+            n if n >= 1 && (n as usize) <= sections.len() => {
+                sections[n as usize - 1].characteristics.get() & IMAGE_SCN_LNK_COMDAT == 0
+                    || selection[n as usize] == NODUPLICATES
+            }
             _ => false,
-        })
-        .map(|s| s.name.as_bytes().to_vec())
-        .collect()
+        };
+        if strong && let Some(name) = table.name(&s) {
+            out.push(name);
+        }
+    }
+    out
 }
 
 /// How `lib.exe` shows a name in a message: a C++ name undecorated, with
@@ -190,15 +206,15 @@ pub fn shown(name: &[u8]) -> String {
 
 /// LNK4006 for each strong name defined again by a later member. `places`
 /// says how each member is named in messages (`a.obj`, `x.lib(a.obj)`).
-pub fn duplicate_warnings(strong: &[Vec<Vec<u8>>], places: &[String]) -> Vec<Diag> {
+pub fn duplicate_warnings(strong: &[Vec<&[u8]>], places: &[String]) -> Vec<Diag> {
     let mut first: std::collections::HashMap<&[u8], usize> = std::collections::HashMap::new();
     let mut out = Vec::new();
     for (m, names) in strong.iter().enumerate() {
-        let mut sorted: Vec<&Vec<u8>> = names.iter().collect();
-        sorted.sort();
+        let mut sorted: Vec<&[u8]> = names.clone();
+        sorted.sort_unstable();
         sorted.dedup();
         for n in sorted {
-            match first.get(n.as_slice()) {
+            match first.get(n) {
                 Some(&f) => out.push(
                     Diag::warning(
                         4006,
@@ -211,7 +227,7 @@ pub fn duplicate_warnings(strong: &[Vec<Vec<u8>>], places: &[String]) -> Vec<Dia
                     .on(places[m].clone()),
                 ),
                 None => {
-                    first.insert(n.as_slice(), m);
+                    first.insert(n, m);
                 }
             }
         }

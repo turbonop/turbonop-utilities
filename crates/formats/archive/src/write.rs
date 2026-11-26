@@ -391,27 +391,54 @@ fn sorted_order<'n>(names: impl Iterator<Item = &'n [u8]>) -> Vec<u32> {
     order
 }
 
+/// A hash of a symbol's name, for [`one_of_each`]'s table: eight bytes at a
+/// time, multiplied and folded.
+#[allow(clippy::cast_possible_truncation)] // the fold keeps each half
+fn name_hash(name: &[u8]) -> u64 {
+    let mut h: u64 = 0x9E37_79B9_7F4A_7C15 ^ name.len() as u64;
+    let (words, rest) = name.as_chunks::<8>();
+    for w in words {
+        let p = u128::from(h ^ u64::from_le_bytes(*w)) * 0xD6E8_FEB8_6659_FD93;
+        h = (p as u64) ^ ((p >> 64) as u64);
+    }
+    let mut last = [0u8; 8];
+    last[..rest.len()].copy_from_slice(rest);
+    let p = u128::from(h ^ u64::from_le_bytes(last)) * 0xD6E8_FEB8_6659_FD93;
+    (p as u64) ^ ((p >> 64) as u64)
+}
+
 /// `symbols` (each with its member) with each name once: the first's, or
 /// with `lib.exe`, the first not superseded (a common symbol is, by any
 /// later one).
+#[allow(clippy::cast_possible_truncation)] // a hash's low bits; positions below 2^32
 fn one_of_each<'a>(symbols: Vec<(MemberSymbol<'a>, u32)>, tool: Tool) -> Vec<IndexSymbol<'a>> {
-    let order = sorted_order(symbols.iter().map(|(s, _)| &*s.name));
+    // Each name's winner so far, in an open-addressed table of positions
+    // (in order, so the first definition is met first): one pass, rather
+    // than a sort by name.
     let mut keep = vec![false; symbols.len()];
-    let mut winner: Option<usize> = None;
-    for &i in &order {
-        let i = i as usize;
-        match winner {
-            Some(w) if symbols[w].0.name == symbols[i].0.name => {
+    let capacity = (symbols.len() * 2).next_power_of_two().max(16);
+    let mask = capacity - 1;
+    let mut slots: Vec<u32> = vec![u32::MAX; capacity];
+    for (i, (s, _)) in symbols.iter().enumerate() {
+        let mut at = name_hash(&s.name) as usize & mask;
+        loop {
+            let w = slots[at];
+            if w == u32::MAX {
+                // (Positions fit: a symbol table's count is 32-bit.)
+                slots[at] = i as u32;
+                keep[i] = true;
+                break;
+            }
+            let w = w as usize;
+            if symbols[w].0.name == s.name {
                 if tool == Tool::LibExe && symbols[w].0.common {
                     keep[w] = false;
                     keep[i] = true;
-                    winner = Some(i);
+                    slots[at] = i as u32;
                 }
+                break;
             }
-            _ => {
-                keep[i] = true;
-                winner = Some(i);
-            }
+            at = (at + 1) & mask;
         }
     }
     symbols

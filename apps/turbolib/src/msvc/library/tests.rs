@@ -60,10 +60,8 @@ fn shown_names() {
 
 #[test]
 fn duplicates() {
-    let strong = vec![
-        vec![b"?gy@@YAHXZ".to_vec(), b"?common_c@@3HA".to_vec()],
-        vec![b"?gy@@YAHXZ".to_vec(), b"?common_c@@3HA".to_vec()],
-    ];
+    let names: Vec<&[u8]> = vec![b"?gy@@YAHXZ", b"?common_c@@3HA"];
+    let strong = vec![names.clone(), names];
     let places = vec!["d2.obj".to_string(), "d1.obj".to_string()];
     let got: Vec<String> = duplicate_warnings(&strong, &places)
         .iter()

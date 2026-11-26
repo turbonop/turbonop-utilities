@@ -787,6 +787,15 @@ writing the PCH) takes about 0.35 s of `clangCodeGen.lib`'s 1.6 s
 (`build-z7-nopch`, 1.5 GiB, 1 GiB of it `.debug$T`), and runs while the
 definers are found; writing the output takes less, as it is smaller.
 
+**After merging with phase 2's synthesized-members-last order** (`build-z7`,
+`--fold=identical --precomp=library`, 190 libraries changed): in all six
+configurations, `llvm-nm`'s and `llvm-readobj`'s `.text` and `.pdata` are
+the originals' to the byte in size; the programs print what the originals
+print in 324 of 324 runs; link.exe under `/OPT:REF` has 8,950 and 8,315
+failures (against 34,490 and 30,484 with folding alone before `.chks64`
+was kept), and the C++ initializers' order still differs with link.exe
+(the open item in TODO.md).
+
 ## Decisions
 
 | | Decision |

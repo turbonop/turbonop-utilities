@@ -27,7 +27,7 @@ items leave TODO.md as they ship.
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links). Not yet: 3.5, `clustered`. |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
-| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, a first `--fold=identical` for ELF, without debug information for folded functions (dropped and counted). Not yet: moving DWARF, split DWARF, `select-any` and `--locals` for ELF, ELF `verify` and `compare-images`. |
+| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, a first `--fold=identical` for ELF (2.4% smaller on the gcc corpus; `llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold), without debug information for folded functions (dropped and counted), 2.66× GNU `ar`'s time. Not yet: moving DWARF, split DWARF, `select-any` and `--locals` for ELF, ELF `verify` and `compare-images`. |
 | 7 Mach-O | Not yet. |
 
 ### Picking this up elsewhere
@@ -971,6 +971,13 @@ header reaches 2^32 (`llvm-ar`, padded to 2; `SYM64_THRESHOLD`).
 | `roundtrip_unix` on all 265 libraries of the gcc build (22.11 GiB, 3,777 members) | all written back byte for byte (264 by either writer's conventions, one by GNU `ar`'s only), every index computed from the members as the archive has it, 17.3 s |
 | the same on 26 archives each tool made from crafted members (long names twice, thin, nested, BSD, Darwin, no objects, commons, absolutes) | all 26 |
 | `arcompare.py`: 60 command lines run with GNU `ar`/`ranlib` and `llvm-ar`/`llvm-ranlib`, and with turbolib in their place | 60 of 60 the same: every file left, standard output, standard error, and exit status |
+| `relib.py`: every library of the gcc build remade by its own commands (`cmake -E rm`, `ar Dqc`, `ranlib`) with turbolib as `ar` and `ranlib` | 265 of 265 byte for byte (22.11 GiB) |
+| speed (`relib.py --time`: the 20 largest libraries, 13.79 GiB, each library's commands, best of 2, warm cache) | GNU `ar` 36.62 s, turbolib 9.78 s: 0.27× |
+
+(Before an index fix, 261 of 265: a symbol whose section index comes
+from `SHT_SYMTAB_SHNDX` is in that section, even when the number is
+`SHN_COMMON`'s, 0xFFF2, which objects of more than 65,280 sections
+have.)
 
 The scenarios cover `r` (replacing, positions `a`/`b`, `P`, `u`), `q`,
 `d` (with `N`), `m`, `t` (`v`, `O`, thin), `p`, `x`, `s`, `S`, `T` and
@@ -1043,6 +1050,15 @@ each with GNU ld 2.46, gold, lld 21, and mold:
 What the images' bytes are isn't compared (an ELF `compare-images` is
 still to write), nor any debugging: the folded functions have no debug
 information.
+
+**Speed** (`relib.py --time --options=--fold=identical`, the same 20
+libraries, 13.79 GiB): GNU `ar` 37.98 s, turbolib folding 101.08 s,
+2.66× (CMake's `ar qc` and `ranlib` each fold: the second finds nothing
+new, but reads everything again). A first version took 305 s: its
+`.eh_frame` splitting scanned every relocation for each record. What is
+left is mostly decoding and re-encoding every relocation of every member
+(the debug sections' 3.4 GiB of them among them) and copying each
+rewritten member twice; see TODO.md.
 
 What was found on the way:
 

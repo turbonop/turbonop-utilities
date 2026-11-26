@@ -455,6 +455,18 @@ x64. Where the 3.5 MB went:
     archives from GNU `ar` (this binutils can't write them); thin archives
     and `--fold` (refused); `ar` on Windows hosts beyond the unit tests.
   - GNU `ar -M`'s `DIRECTORY`, `EXTRACT`, `LIST`, `VERBOSE`, and `FULLDIR`.
+  - **Folding's speed**: 2.66× GNU `ar`'s time on the gcc build's 20
+    largest libraries (without folding, 0.27×). `turbonop-elf-object`
+    decodes every relocation section (the `.debug_*` sections' 3.4 GiB of
+    them too) and re-encodes them, and a rewritten member is copied twice
+    (`Object::write`, then the archive writer): keep relocation sections
+    as bytes until something edits them, tombstone in place, and write
+    rewritten members straight into the archive. `ranlib` after `ar qc`
+    folds again (finding nothing new): skip it when no member changed.
+  - The clang corpus (`configure.sh clang`, archived by `llvm-ar`): build
+    it, then `relib.py` (as `llvm-ar qc` and `llvm-ranlib` made each
+    library), `roundtrip_unix -llvm`, the object round trip (LLVM's
+    `.strtab`, `.llvm_addrsig`, `.crel`), and the fold and relink matrix.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

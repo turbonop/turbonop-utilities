@@ -78,7 +78,7 @@ fn code(at: u32, target: u32, data: u32) -> Vec<u8> {
     v
 }
 
-fn run(a: &Fake, ra: u32, x: &[u8], b: &Fake, rb: u32, y: &[u8], isa: Isa) -> (Report, Fields) {
+fn run<N: Names>(a: &N, ra: u32, x: &[u8], b: &N, rb: u32, y: &[u8], isa: Isa) -> (Report, Fields) {
     let mut rep = Report::new();
     let f = compare(
         &Side {
@@ -304,6 +304,214 @@ fn arm64_operands_are_compared_by_what_they_name() {
     // The call goes to h.
     let y3 = arm(0x2000, 0x3000, 0x9100);
     let (rep, _) = run(&a, 0x1000, &x, &b, 0x2000, &y3, Isa::Arm64);
+    assert!(
+        rep.failed("code whose operands name other functions or data"),
+        "{}",
+        rep.text()
+    );
+}
+
+/// A [`Fake`] with a TLS block and constants named by their contents.
+struct Extra {
+    base: Fake,
+    /// The TLS block's aligned size, and its variables: (offset, name).
+    block: u64,
+    tls: Vec<(u64, &'static [u8])>,
+    /// Constants without labels: (address, bytes).
+    constants: Vec<(u32, Vec<u8>)>,
+}
+
+impl Extra {
+    fn constant(&self, rva: u32) -> Option<&[u8]> {
+        let (at, bytes) = self
+            .constants
+            .iter()
+            .find(|c| c.0 <= rva && rva < c.0 + 64)?;
+        bytes.get((rva - at) as usize..)
+    }
+}
+
+impl Names for Extra {
+    fn name(&self, rva: u32) -> Option<(&[u8], u32)> {
+        match self.constant(rva) {
+            Some(b) => Some((b, crate::elf::program::CONTENT)),
+            None => self.base.name(rva),
+        }
+    }
+
+    fn in_code(&self, rva: u32) -> bool {
+        self.base.in_code(rva)
+    }
+
+    fn image_base(&self) -> u64 {
+        BASE
+    }
+
+    fn relocations_in(&self, rva: u32, len: u32) -> &[(u32, u8)] {
+        self.base.relocations_in(rva, len)
+    }
+
+    fn tls(&self, tpoff: i64) -> Option<(&[u8], u32)> {
+        let off = u64::try_from(tpoff + self.block as i64).ok()?;
+        let (at, name) = self.tls.iter().rev().find(|t| t.0 <= off)?;
+        Some((name, (off - at) as u32))
+    }
+
+    fn tls_block(&self) -> Option<u64> {
+        Some(self.block)
+    }
+
+    fn content(&self, rva: u32, len: u32) -> Option<&[u8]> {
+        self.constant(rva)?.get(..len as usize)
+    }
+}
+
+fn extra(base: Fake, block: u64, var_at: u64, constant: u32, tail: u8) -> Extra {
+    let mut bytes: Vec<u8> = (1..=16).collect();
+    bytes.extend([tail; 48]);
+    Extra {
+        base,
+        block,
+        tls: vec![(0, b"other"), (var_at, b"Head"), (var_at + 8, b"after")],
+        constants: vec![(constant, bytes)],
+    }
+}
+
+/// `xor eax,eax; mov rax,fs:[rax]; sub rax,S; mov rcx,rax; (between);
+/// lea rcx,[rcx+d]; ret`, as mold relaxes a dynamic TLS access.
+fn mold_tls(size: u8, d: u8, between: &[u8]) -> Vec<u8> {
+    let mut v = vec![
+        0x31, 0xC0, 0x64, 0x48, 0x8B, 0x00, 0x48, 0x2D, size, 0, 0, 0,
+    ];
+    v.extend([0x48, 0x89, 0xC1]);
+    v.extend(between);
+    v.extend([0x48, 0x8D, 0x89, d, 0, 0, 0, 0xC3]);
+    v
+}
+
+#[test]
+fn mold_tls_offsets_are_named_in_each_block() {
+    let (a, b) = images();
+    // The variable at 0x20 of a 0x38-byte block, and at 0x18 of 0x30.
+    let (a, b) = (
+        extra(a, 0x38, 0x20, 0x8100, 0xAA),
+        extra(b, 0x30, 0x18, 0x9100, 0xBB),
+    );
+    let x = mold_tls(0x38, 0x20, &[]);
+    let y = mold_tls(0x30, 0x18, &[]);
+    let (rep, f) = run(&a, 0x1000, &x, &b, 0x2000, &y, Isa::X64);
+    assert!(rep.passed(), "{}", rep.text());
+    assert_eq!(f.tls, 2);
+    // A copy's register written in between (`mov rcx,[rbp-8]`): no longer
+    // the block's start.
+    let w = [0x48, 0x8B, 0x4D, 0xF8];
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &mold_tls(0x38, 0x20, &w),
+        &b,
+        0x2000,
+        &mold_tls(0x30, 0x18, &w),
+        Isa::X64,
+    );
+    assert!(
+        rep.failed("functions or data whose bytes differ"),
+        "{}",
+        rep.text()
+    );
+    // Another register written (`mov rdx,[rbp-8]`): still is.
+    let w = [0x48, 0x8B, 0x55, 0xF8];
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &mold_tls(0x38, 0x20, &w),
+        &b,
+        0x2000,
+        &mold_tls(0x30, 0x18, &w),
+        Isa::X64,
+    );
+    assert!(rep.passed(), "{}", rep.text());
+    // Another variable (at the same offset of the other block).
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &x,
+        &b,
+        0x2000,
+        &mold_tls(0x30, 0x20, &[]),
+        Isa::X64,
+    );
+    assert!(
+        rep.failed("code whose TLS offsets name other variables"),
+        "{}",
+        rep.text()
+    );
+    // A block size that isn't the program's.
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &x,
+        &b,
+        0x2000,
+        &mold_tls(0x28, 0x18, &[]),
+        Isa::X64,
+    );
+    assert!(!rep.passed(), "{}", rep.text());
+}
+
+#[test]
+fn constants_named_by_contents_compare_as_far_as_they_are_read() {
+    let (a, b) = images();
+    // The same 16 bytes, then other bytes.
+    let (a, b) = (
+        extra(a, 0x38, 0x20, 0x8100, 0xAA),
+        extra(b, 0x30, 0x18, 0x9100, 0xBB),
+    );
+    // `movdqa xmm0, [rip+c]` (16 bytes read); `lea rax, [rip+c]` (none).
+    let load = |at: u32, c: u32, op: &[u8]| {
+        let mut v = op.to_vec();
+        v.extend(rel32(at + op.len() as u32 + 4, c));
+        v.push(0xC3);
+        v
+    };
+    let movdqa = [0x66, 0x0F, 0x6F, 0x05];
+    let (rep, f) = run(
+        &a,
+        0x1000,
+        &load(0x1000, 0x8100, &movdqa),
+        &b,
+        0x2000,
+        &load(0x2000, 0x9100, &movdqa),
+        Isa::X64,
+    );
+    assert!(rep.passed(), "{}", rep.text());
+    assert_eq!(f.relative, 1);
+    // Read from one byte further: 16 bytes of which the last differs.
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &load(0x1000, 0x8101, &movdqa),
+        &b,
+        0x2000,
+        &load(0x2000, 0x9101, &movdqa),
+        Isa::X64,
+    );
+    assert!(
+        rep.failed("code whose operands name other functions or data"),
+        "{}",
+        rep.text()
+    );
+    // An address taken: what follows may be read too.
+    let lea = [0x48, 0x8D, 0x05];
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &load(0x1000, 0x8100, &lea),
+        &b,
+        0x2000,
+        &load(0x2000, 0x9100, &lea),
+        Isa::X64,
+    );
     assert!(
         rep.failed("code whose operands name other functions or data"),
         "{}",

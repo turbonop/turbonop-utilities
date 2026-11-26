@@ -4,7 +4,7 @@ build's own archiver commands (from `ninja -t commands`) with turbolib in
 the archiver's place, and checks each comes out byte for byte as the
 build's.
 
-    relib.py --build ~/tlcorpus/build-gcc --turbolib PATH [--out DIR] [-j N] [--time] [--top N]
+    relib.py --build ~/tlcorpus/build-gcc --turbolib PATH [--out DIR] [-j N] [--time [--against DIR]] [--top N]
 
 CMake's commands for a static library are `cmake -E rm -f lib.a`, then
 `ar qc lib.a objects...` (or `llvm-ar`), then `ranlib lib.a` (or
@@ -15,7 +15,8 @@ and the result compared with the build's library.
 
 --time runs instead each library's commands with the build's own archiver
 and with turbolib, best of 2 (warm cache), on the --top N largest
-libraries, and prints the totals (timelib.py's measure, for ELF).
+libraries, and prints the totals (timelib.py's measure, for ELF). --against
+DIR times the archivers in DIR (named as the build's) in the build's place.
 """
 
 import argparse
@@ -87,6 +88,11 @@ def main():
     ap.add_argument("--time", action="store_true")
     ap.add_argument("--top", type=int, default=20)
     ap.add_argument("--options", default="", help="TURBOLIB_OPTIONS for turbolib's runs (e.g. --fold=identical)")
+    ap.add_argument(
+        "--against",
+        help="--time: run the commands with the archivers of this directory (ar, ranlib, llvm-ar,"
+        " llvm-ranlib: e.g. links to llvm-ar and llvm-ranlib) rather than the build's own",
+    )
     ap.add_argument("-v", action="store_true")
     args = ap.parse_args()
     env = dict(os.environ)
@@ -107,14 +113,14 @@ def main():
         size = 0
         for lib in sized:
             size += os.path.getsize(os.path.join(build, lib))
-            for who, t in (("build", None), ("turbolib", tools)):
+            for who, t in (("build", args.against), ("turbolib", tools)):
                 best = None
                 for _ in range(2):
                     target = os.path.join(out, who + "-" + os.path.basename(lib))
                     if os.path.exists(target):
                         os.remove(target)
                     start = time.perf_counter()
-                    err = run(retarget(libs[lib], lib, target, t), build, env if t else None)
+                    err = run(retarget(libs[lib], lib, target, t), build, env if t == tools else None)
                     took = time.perf_counter() - start
                     if err:
                         sys.exit(f"{lib}: {who}: {err}")
@@ -123,7 +129,7 @@ def main():
             if args.v:
                 print(lib)
         print(f"{len(sized)} largest libraries, {size / 2**30:.2f} GiB:")
-        print(f"  build's archiver: {totals['build']:.2f} s")
+        print(f"  {'--against' if args.against else 'build'}'s archiver: {totals['build']:.2f} s")
         print(f"  turbolib:         {totals['turbolib']:.2f} s ({totals['turbolib'] / totals['build']:.2f}x)")
         return
 

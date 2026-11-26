@@ -52,6 +52,17 @@ pub(crate) trait Names {
         let _ = tpoff;
         None
     }
+    /// The size of the TLS block, rounded up to its alignment (x86-64's
+    /// thread pointer's distance from the block's start), if there is one.
+    fn tls_block(&self) -> Option<u64> {
+        None
+    }
+    /// The `len` bytes at `rva`, if its name is its contents (a constant
+    /// or string with no symbol: see `elf::program`).
+    fn content(&self, rva: u32, len: u32) -> Option<&[u8]> {
+        let _ = (rva, len);
+        None
+    }
     /// The targets of a jump table at `rva`, if it is one that no label
     /// names (entries relative to the table, as GCC and clang write them
     /// for x86-64): its bytes follow the layout, its targets don't.
@@ -273,10 +284,22 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
     fields: &mut Fields,
     fail: &mut dyn FnMut(&str, String),
 ) {
-    use turbonop_x86::{Mode, Operand, decode};
+    use turbonop_x86::{Mnemonic, Mode, Operand, RegClass, Register, decode};
     let len = masked.len();
     let base_a = a.image.image_base() + u64::from(a.rva);
     let base_b = b.image.image_base() + u64::from(b.rva);
+    // A TLS access as mold relaxes the dynamic models to local-exec:
+    // `mov %fs:(...),R; sub $S,R`, S the TLS block's aligned size, leaves R
+    // at the block's start (where `__tls_get_addr` returned the module's
+    // block), and `d(R)` then addresses the variable at offset d of the
+    // block (`lea d(%rax),%rax`), after copies of R too (`mov %rax,%rcx`).
+    // Another TLS layout moves d (and S): each is named in its own program.
+    // The registers known to hold the block's start are followed through
+    // copies and forgotten when written; at any instruction that could
+    // write one other than as its first operand (or jumps), all are.
+    let fs = Register::new(RegClass::Segment, 4);
+    let mut fs_loaded: Option<Register> = None;
+    let mut block: Vec<Register> = Vec::new();
     let mut at = 0;
     while at < len {
         let (Ok(ia), Ok(ib)) = (
@@ -284,11 +307,15 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
             decode(&b.bytes[at..len], Mode::Bits64, base_b + at as u64),
         ) else {
             at += 1;
+            fs_loaded = None;
+            block.clear();
             continue;
         };
         let n = ia.len();
         if n == 0 || n != ib.len() || ia.mnemonic() != ib.mnemonic() {
             at += 1;
+            fs_loaded = None;
+            block.clear();
             continue;
         }
         let (ea, eb) = (&a.bytes[at..at + n], &b.bytes[at..at + n]);
@@ -331,8 +358,28 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
                 tb,
                 b.image.image_base(),
             );
+            // A constant or string named by its contents: those can run on
+            // past it into what the layout puts after it. A load of a size
+            // reads that many bytes, so the same bytes there are the same.
+            let accessed = match (oa, ob) {
+                (Operand::Mem(ma), Operand::Mem(mb)) if ma.size == mb.size => {
+                    u32::from(ma.size.bytes())
+                }
+                _ => 0,
+            };
+            let rva = |t: u64, base: u64| t.checked_sub(base).and_then(|r| u32::try_from(r).ok());
+            let same_contents = accessed > 0
+                && match (
+                    rva(ta, a.image.image_base()).and_then(|r| a.image.content(r, accessed)),
+                    rva(tb, b.image.image_base()).and_then(|r| b.image.content(r, accessed)),
+                ) {
+                    (Some(ca), Some(cb)) => ca == cb,
+                    _ => false,
+                };
             if ea == eb && !checked {
                 // Equal bytes outside a procedure: perhaps data.
+            } else if same_contents {
+                fields.relative += 1;
             } else if !same(
                 a.image,
                 ta.checked_sub(a.image.image_base())
@@ -401,8 +448,118 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
                 }
             }
         }
+        // mold's relaxed TLS accesses (above).
+        let mut mask = |p: Option<usize>, size: usize, fields: &mut Fields| {
+            if let Some(p) = p
+                && !masked[at + p..at + p + size].contains(&true)
+            {
+                masked[at + p..at + p + size].fill(true);
+                fields.tls += 1;
+            }
+        };
+        let (sa, sb) = (a.image.tls_block(), b.image.tls_block());
+        if let (Some(sa), Some(sb)) = (sa, sb) {
+            for (oa, ob) in ia.operands().iter().zip(ib.operands()) {
+                if let (Operand::Mem(ma), Operand::Mem(mb)) = (oa, ob)
+                    && ma.base.is_some_and(|r| block.contains(&r))
+                    && mb.base == ma.base
+                    && ma.index.is_none()
+                    && mb.index.is_none()
+                    && matches!(ma.disp_size, 1 | 4)
+                    && ma.disp_size == mb.disp_size
+                {
+                    let tpoff = |d: i64, s: u64| d.checked_sub(i64::try_from(s).ok()?);
+                    let na = tpoff(ma.disp, sa).and_then(|t| a.image.tls(t));
+                    let nb = tpoff(mb.disp, sb).and_then(|t| b.image.tls(t));
+                    match (na, nb) {
+                        (Some(x), Some(y)) if x == y => {
+                            if ma.disp != mb.disp {
+                                let size = usize::from(ma.disp_size);
+                                mask(field(ea, eb, 1, size, ma.disp, mb.disp), size, fields);
+                            }
+                        }
+                        (None, None) => {}
+                        // (Even where the bytes are the same.)
+                        _ => fail(
+                            "code whose TLS offsets name other variables",
+                            format!("at +{at:#x}: {} and {}", render(na), render(nb)),
+                        ),
+                    }
+                }
+            }
+        }
+        let loaded = fs_loaded.take();
+        match (ia.mnemonic(), ia.operands(), ib.operands()) {
+            (
+                Mnemonic::Mov,
+                [Operand::Reg(r), Operand::Mem(ma)],
+                [Operand::Reg(rb), Operand::Mem(mb)],
+            ) if r == rb
+                && r.class() == RegClass::Gpr64
+                && ma.segment == Some(fs)
+                && mb.segment == Some(fs) =>
+            {
+                block.retain(|x| x != r);
+                fs_loaded = Some(*r);
+            }
+            (
+                Mnemonic::Sub,
+                [Operand::Reg(r), Operand::Imm(xa)],
+                [Operand::Reg(rb), Operand::Imm(xb)],
+            ) if loaded == Some(*r) && r == rb && sa == Some(xa.value) && sb == Some(xb.value) => {
+                block.push(*r);
+                if xa.value != xb.value {
+                    let (va, vb) = (xa.value as i64, xb.value as i64);
+                    mask(field(ea, eb, 1, 4, va, vb), 4, fields);
+                }
+            }
+            // A copy.
+            (
+                Mnemonic::Mov,
+                [Operand::Reg(to), Operand::Reg(from)],
+                [Operand::Reg(to_b), Operand::Reg(from_b)],
+            ) if to == to_b && from == from_b => {
+                let held = block.contains(from) && to.class() == RegClass::Gpr64;
+                block.retain(|x| x != to);
+                if held {
+                    block.push(*to);
+                }
+            }
+            // Instructions that write only their first operand (if that).
+            (
+                Mnemonic::Mov
+                | Mnemonic::Lea
+                | Mnemonic::Add
+                | Mnemonic::Sub
+                | Mnemonic::And
+                | Mnemonic::Or
+                | Mnemonic::Xor
+                | Mnemonic::Cmp
+                | Mnemonic::Test
+                | Mnemonic::Movsxd
+                | Mnemonic::Movzx
+                | Mnemonic::Movsx,
+                ops,
+                _,
+            ) => {
+                if let Some(Operand::Reg(r)) = ops.first() {
+                    // (Any width of it: `mov %ecx,...` writes all of rcx.)
+                    block.retain(|x| x.index() != r.index() || !is_gpr(r.class()));
+                }
+            }
+            _ => block.clear(),
+        }
         at += n;
     }
+}
+
+/// Whether registers of `c` are general-purpose (of any width).
+fn is_gpr(c: turbonop_x86::RegClass) -> bool {
+    use turbonop_x86::RegClass;
+    matches!(
+        c,
+        RegClass::Gpr8 | RegClass::Gpr8High | RegClass::Gpr16 | RegClass::Gpr32 | RegClass::Gpr64
+    )
 }
 
 /// An ARM64 instruction's PC-relative field: the mask of its bits.

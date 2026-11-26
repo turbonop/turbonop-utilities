@@ -90,7 +90,9 @@ use turbonop_global_alloc as _;
 
 extern crate alloc;
 
+pub mod descriptors;
 pub mod imports;
+pub mod library;
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;

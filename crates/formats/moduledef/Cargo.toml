@@ -9,7 +9,9 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+sha2.workspace = true
 turbonop-archive.workspace = true
+turbonop-coff.workspace = true
 turbonop-pe.workspace = true
 
 [dev-dependencies]

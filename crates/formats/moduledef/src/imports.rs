@@ -119,6 +119,10 @@ use turbonop_archive::symbols::{ec_demangle, ec_mangle};
 use turbonop_pe::consts::machine;
 use turbonop_pe::import_object::{ImportNameType, ImportObject, ImportType};
 
+use turbonop_archive::write::Tool;
+
+use crate::descriptors::{Descriptors, Stamp, set_stamp};
+use crate::library::Members;
 use crate::{ExportKind, ModuleDefinition};
 
 /// One import object of the library.
@@ -168,6 +172,10 @@ pub struct ImportLibrary<'a> {
     /// The imports, in the `.def` file's order (the second linker
     /// member's, after the descriptor objects).
     pub imports: Vec<Import<'a>>,
+    /// An ARM64X library's ARM64 imports (`/DEFARM64NATIVE`), in their
+    /// `.def` file's order: after the ARM64EC ones (`imports`) in both
+    /// orders.
+    pub native: Vec<Import<'a>>,
 }
 
 impl<'a> ImportLibrary<'a> {
@@ -175,7 +183,34 @@ impl<'a> ImportLibrary<'a> {
     /// makes of `def` (the DLL is named for the `.def` file when `def`
     /// names none).
     pub fn lib_exe(def: &ModuleDefinition<'a>, machine: u16, def_stem: &[u8]) -> Self {
-        let exports = def.exports();
+        Self {
+            machine,
+            dll: def.file_name(def_stem),
+            imports: Self::lib_exe_imports(&def.exports(), machine),
+            native: Vec::new(),
+        }
+    }
+
+    /// The ARM64X import library `lib /DEF:<def_stem>.def
+    /// /DEFARM64NATIVE:<native>.def /MACHINE:ARM64X` makes: `def`'s
+    /// exports as ARM64EC imports, then `native`'s as ARM64 ones, for the
+    /// DLL `def` names.
+    pub fn lib_exe_arm64x(
+        def: &ModuleDefinition<'a>,
+        native: &ModuleDefinition<'a>,
+        def_stem: &[u8],
+    ) -> Self {
+        Self {
+            machine: machine::ARM64X,
+            dll: def.file_name(def_stem),
+            imports: Self::lib_exe_imports(&def.exports(), machine::ARM64EC),
+            native: Self::lib_exe_imports(&native.exports(), machine::ARM64),
+        }
+    }
+
+    /// `lib.exe`'s import of each of `exports` but the `PRIVATE` ones, for
+    /// `machine`.
+    pub fn lib_exe_imports(exports: &[crate::Export<'a>], machine: u16) -> Vec<Import<'a>> {
         // Hints: places among the named exports, sorted by the names they
         // are exported as.
         let exported = |e: &crate::Export<'a>| e.export_as.unwrap_or(e.name);
@@ -238,11 +273,7 @@ impl<'a> ImportLibrary<'a> {
                 export_name,
             });
         }
-        Self {
-            machine,
-            dll: def.file_name(def_stem),
-            imports,
-        }
+        imports
     }
 
     /// The DLL's name without its last extension: what the descriptor
@@ -266,10 +297,64 @@ impl<'a> ImportLibrary<'a> {
     /// The imports' places in the archive: sorted by symbol (after the
     /// three descriptor objects).
     pub fn archive_order(&self) -> Vec<usize> {
-        let mut order: Vec<usize> = (0..self.imports.len()).collect();
-        order.sort_by(|&a, &b| self.imports[a].symbol.cmp(&self.imports[b].symbol));
-        order
+        sorted(&self.imports)
     }
+
+    /// The members `lib.exe` writes, each import object and descriptor
+    /// with `stamp`: the descriptor objects, then the imports sorted by
+    /// symbol (an ARM64X library's ARM64EC imports, then its ARM64 ones),
+    /// listed in the index in the `.def` files' order.
+    pub fn members(&self, stamp: Stamp) -> Members {
+        let stem = self.stem();
+        let descriptors = Descriptors {
+            machine: self.machine,
+            dll: &self.dll,
+            stem,
+            tool: Tool::LibExe,
+        };
+        let mut data: Vec<Vec<u8>> = descriptors.all(stamp).into();
+        let mut listed: Vec<u32> = (0..3).collect();
+        let groups = [
+            (
+                &self.imports,
+                match self.machine {
+                    machine::ARM64X => machine::ARM64EC,
+                    m => m,
+                },
+            ),
+            (&self.native, machine::ARM64),
+        ];
+        for (imports, m) in groups {
+            let first = data.len();
+            let order = sorted(imports);
+            let mut place = alloc::vec![0u32; imports.len()];
+            for (at, &k) in order.iter().enumerate() {
+                place[k] = crate::descriptors::count(first + at);
+                data.push(import_bytes(&imports[k], m, &self.dll, stamp));
+            }
+            listed.extend(place);
+        }
+        Members {
+            dll: self.dll.clone(),
+            data,
+            listed,
+            machine: self.machine,
+        }
+    }
+}
+
+/// The positions of `imports` sorted by symbol.
+fn sorted(imports: &[Import<'_>]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..imports.len()).collect();
+    order.sort_by(|&a, &b| imports[a].symbol.cmp(&imports[b].symbol));
+    order
+}
+
+/// An import object's bytes, with `stamp`.
+pub fn import_bytes(import: &Import<'_>, machine: u16, dll: &[u8], stamp: Stamp) -> Vec<u8> {
+    let mut bytes = import.object(machine, dll, 0).to_vec().unwrap_or_default();
+    set_stamp(&mut bytes, 8, stamp);
+    bytes
 }
 
 #[cfg(test)]

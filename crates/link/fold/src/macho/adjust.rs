@@ -136,6 +136,10 @@ pub(super) struct Plan {
     /// the end of a range that ends where a cut starts for the start of
     /// what was cut) and put back by [`Plan::apply`]: (section, relocations).
     stripped: Vec<(usize, Vec<Relocation>)>,
+    /// The unit's `DW_AT_low_pc` relocation, taken out the same way: it
+    /// names its section's start (the base of the unit's lists), not the
+    /// atom there, which may go.
+    low_reloc: Option<Relocation>,
 }
 
 fn read_le(b: &[u8], at: usize, n: usize) -> Option<u64> {
@@ -213,6 +217,7 @@ impl Plan {
             line: None,
             lists: Vec::new(),
             stripped: Vec::new(),
+            low_reloc: None,
         };
         let mut stmt = None;
         for a in &top {
@@ -230,6 +235,19 @@ impl Plan {
         }
         let base = plan.low_pc.map_or(0, |l| l.2);
         let sections: Vec<_> = o.sections().collect();
+        if let Some((at, _, _)) = plan.low_pc {
+            plan.low_reloc = sections[info]
+                .relocations
+                .iter()
+                .find(|r| r.address as usize == at)
+                .copied();
+            if plan
+                .low_reloc
+                .is_some_and(|r| r.external || r.value.is_some() || r.symbolnum == 0)
+            {
+                return Err("a DW_AT_low_pc relocation not known");
+            }
+        }
         // The line table: one, the whole section.
         if let (Some(off), Some(&li)) = (stmt, by_name.get(&b"__debug_line"[..])) {
             let bytes = d.line;
@@ -339,19 +357,32 @@ impl Plan {
                 s.relocations.clear();
             }
         }
+        if let Some(r) = self.low_reloc
+            && let Some(s) = o.sections_mut().nth(self.info)
+        {
+            s.relocations.retain(|x| *x != r);
+        }
     }
 
     /// Adjusts `o` (cut, its addresses mapped by `map`). How many list
     /// entries became empty.
     pub(super) fn apply(&self, o: &mut Object<'_>, map: &AddressMap) -> R<usize> {
         let mut emptied = 0;
-        // The unit's base, as it is now (its relocation moved it, or it was
-        // removed with what it named).
-        let info = o.section(self.info).and_then(|s| s.bytes()).unwrap_or(&[]);
+        // The unit's base: where its section's start (or whatever it names)
+        // is now, its relocation put back.
         let old_base = self.low_pc.map_or(0, |l| l.2);
-        let new_base = match self.low_pc {
-            Some((at, n, _)) => read_le(info, at, n).ok_or("a DW_AT_low_pc past its section")?,
-            None => 0,
+        let new_base = match (self.low_pc, self.low_reloc) {
+            (Some((at, n, _)), Some(r)) => {
+                let b = map.place(r.symbolnum as usize - 1, old_base);
+                let s = o.sections_mut().nth(self.info).ok_or("no __debug_info")?;
+                if let Contents::Bytes(x) = &mut s.contents {
+                    write_le(x.to_mut(), at, n, b);
+                }
+                s.relocations.push(r);
+                s.relocations.sort_by_key(|x| core::cmp::Reverse(x.address));
+                b
+            }
+            _ => old_base,
         };
         // DW_AT_high_pc.
         if let Some((at, n, len)) = self.high_pc {

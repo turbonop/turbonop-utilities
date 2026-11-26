@@ -523,8 +523,8 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             i += 1;
             continue;
         }
-        // ADRP: the page, completed by the next ADD or load or store whose
-        // base is its register.
+        // ADRP: the page, completed by each ADD or load or store whose base
+        // is its register (up to one that writes it).
         let rd = wa & 0x1F;
         let mut completed = false;
         for j in i + 1..(i + 9).min(words) {
@@ -570,7 +570,8 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
                 mark(masked, i, mask);
                 mark(masked, j, ARM64_IMM12);
                 completed = true;
-                break;
+                // (Later loads and stores may use the page too, up to one
+                // that writes its register.)
             }
             if xa
                 .written_registers()

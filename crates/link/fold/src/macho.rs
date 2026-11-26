@@ -14,12 +14,23 @@
 //! or initializer section: its bytes (or zero-fill size), the relocations
 //! whose place is in it (whole pairs), the symbols in it (locals too), and
 //! its `__LD,__compact_unwind` entries (those whose function address is
-//! in it). Its identity hash covers the section's names, flags, and
-//! alignment, the bytes, each relocation as (offset in the atom, type,
-//! length, PC-relativeness, target: an external name, or the offset of a
-//! local symbol of the atom), the symbols (names, types, descriptions,
-//! offsets), the unwind entries (offset of the function, length,
-//! encoding, personality by name), and the member's environment.
+//! in it), its `__eh_frame` FDEs (those whose function is in it: clang
+//! writes one for every x86-64 function, its pointers PC-relative with no
+//! relocation), and its LSDAs (the atoms of `__gcc_except_tab` its unwind
+//! entries and FDEs name, when nothing else reaches them: they move with
+//! it as atoms of its own). Its identity hash covers, for each atom, the
+//! section's names, flags, and alignment, the bytes, each relocation as
+//! (offset in the atom, type, length, PC-relativeness, target: an external
+//! name, or the offset of a local symbol of the atom), the symbols (names,
+//! types, descriptions, offsets); the unwind entries (offset of the
+//! function, length, encoding, personality by name, LSDA by atom and
+//! offset); the FDEs (their bytes with their pointers and CIE pointer out,
+//! the pointers' targets by atom and offset, the CIE's bytes and
+//! relocations by name); and the member's environment. A function's
+//! alignment padding (the bytes after its end by its one unwind entry, up
+//! to the next atom, with no relocation or symbol in them) isn't part of
+//! it: x86-64's code is aligned to 16 bytes, so a copy that ends its
+//! section and one that doesn't differ only there.
 //!
 //! **The environment** is what a synthesized member must carry for its
 //! units: the CPU type and subtype, the header's flags, and the
@@ -32,9 +43,11 @@
 //! naming a section (a local relocation: x86-64's references to `L`
 //! labels); something outside it reaching in, but for its unwind entries
 //! and the debug sections (a local relocation into it, an external one to
-//! a local symbol of it); an unwind entry with an LSDA; an `__eh_frame`
-//! FDE for it; a data-in-code entry or an optimization hint in it; a
-//! relocation into its section whose address isn't decoded.
+//! a local symbol of it); an LSDA something else reaches (or two units
+//! share), or one outside `__gcc_except_tab`; an FDE with relocations (not
+//! what LLVM writes for x86-64), or one reaching outside it; a data-in-code
+//! entry or an optimization hint in it; a relocation into its section
+//! whose address isn't decoded.
 //!
 //! **What folds** follows the ELF engine ([`crate::elf`]): the copies of
 //! a unit fold when every definition of each of their names in the
@@ -54,9 +67,13 @@
 //!
 //! **Rewriting.** The first copy survives into a synthesized member (one
 //! per set of members that held the copies, and environment), with its
-//! symbols and unwind entries. Each member that held a copy loses the
-//! atoms (cut out of their sections, everything after them moved back:
-//! [`turbonop_macho_object::Object::cut`]) and their unwind entries; its
+//! symbols, unwind entries (their LSDA fields local relocations to its
+//! LSDAs), and FDEs (after copies of their CIEs, their pointers set to
+//! where the atoms are; alignment gaps in code are NOPs, as LLVM pads).
+//! Each member that held a copy loses the atoms (cut out of their
+//! sections, everything after them moved back:
+//! [`turbonop_macho_object::Object::cut`]), their unwind entries, and
+//! their FDEs; its
 //! definitions become weak undefined references, and it gains a strong
 //! undefined reference to the synthesized member's anchor (a private
 //! external absolute symbol named for the synthesized member's contents
@@ -82,12 +99,18 @@
 //! way.
 //!
 //! **Debug information.** A member that gave a copy up loses each debug
-//! section's local relocation to it (and its place is zeroed), so
-//! `dsymutil`, which reads the DWARF from the member through the
-//! executable's debug map, finds no address for the copy's DIEs and
-//! drops them, as it does for every copy but the linked one. Synthesized
-//! members carry no DWARF yet: a folded function has none in the linked
-//! program's dSYM ([`Report::debug_dropped`]).
+//! section's local relocation to it (its place set to all ones, the
+//! tombstone: 0 is an address of the object), so `dsymutil`, which reads
+//! the DWARF from the member through the executable's debug map, finds no
+//! address for the copy's DIEs and drops them, as it does for every copy
+//! but the linked one; and what in its DWARF holds addresses no relocation
+//! does (its line program, its list entries, its unit's length) moves with
+//! its code (see [`adjust`]). Each synthesized member gets a compile unit
+//! of its own from the survivors' member's (see the `debug` module, and
+//! [`crate::dwarf`]): the moved functions' DIEs and line rows, the types
+//! they name (classes as declarations), their lists. Where that can't be
+//! done, the units' DWARF is dropped, and counted
+//! ([`Report::debug_dropped_why`]).
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -177,9 +200,18 @@ pub struct Report {
     pub synthesized_bytes: u64,
     /// Debug relocations of givers removed (their places set to all ones).
     pub tombstoned: usize,
-    /// Distinct folded units with debug information, which synthesized
-    /// members don't carry yet.
+    /// Distinct folded units with debug information: those whose
+    /// synthesized member describes them, and those whose doesn't (by
+    /// why).
+    pub debug_moved: usize,
     pub debug_dropped: usize,
+    pub debug_dropped_why: BTreeMap<&'static str, usize>,
+    /// In the synthesized members' DWARF: the root DIEs copied, the
+    /// addresses written as tombstones (they named nothing moved), and the
+    /// bytes of debug sections.
+    pub debug_roots: usize,
+    pub debug_tombstoned: usize,
+    pub debug_bytes: u64,
     /// Members whose rewriting failed, kept whole (their copies are still
     /// held by synthesized members too, which is allowed: the copies are
     /// identical weak definitions).
@@ -1405,9 +1437,6 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
         }
         report.folded += 1;
         report.copies += live.len();
-        if parsed[live[0].0].units[live[0].1].debug {
-            report.debug_dropped += 1;
-        }
     }
     if synth.is_empty() {
         return (unchanged(inputs), report);
@@ -1445,10 +1474,27 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
         s.name = format!("__turbolib.{i}.o").into_bytes();
     }
 
+    // The survivors' members' DWARF, read once each, on every core.
+    let debug_members: Vec<usize> = synth
+        .iter()
+        .filter(|s| s.units.iter().any(|&(m, k)| parsed[m].units[k].debug))
+        .map(|s| s.units[0].0)
+        .collect::<BTreeSet<usize>>()
+        .into_iter()
+        .collect();
+    let sources: Vec<Result<debug::Debug<'_>, &'static str>> =
+        turbonop_par::map_balanced(&debug_members, 1, |&m| debug::read(&parsed[m]));
+    let source_of: BTreeMap<usize, &Result<debug::Debug<'_>, &'static str>> =
+        debug_members.iter().copied().zip(sources.iter()).collect();
     // Write the synthesized members and rewrite the givers, on every core.
-    let built: Vec<Result<Vec<u8>, String>> = turbonop_par::map_range(synth.len(), 1, |i| {
-        build_synth(&parsed, &synth, i, &name_to)
-    });
+    let built: Vec<Result<(Vec<u8>, SynthDebug), String>> =
+        turbonop_par::map_range(synth.len(), 1, |i| {
+            let src = synth[i]
+                .units
+                .first()
+                .and_then(|&(m, _)| source_of.get(&m).copied());
+            build_synth(&parsed, &synth, i, &name_to, src)
+        });
     let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_range(parsed.len(), 1, |m| {
         let gone: Vec<usize> = (0..parsed[m].units.len())
             .filter(|&k| folds[m][k])
@@ -1463,8 +1509,20 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     let mut failed_synth = false;
     for (i, b) in built.into_iter().enumerate() {
         match b {
-            Ok(data) => {
+            Ok((data, d)) => {
                 report.synthesized_bytes += data.len() as u64;
+                if d.described > 0 || d.dropped.is_some() {
+                    match d.dropped {
+                        None => report.debug_moved += d.described,
+                        Some(why) => {
+                            report.debug_dropped += d.described;
+                            *report.debug_dropped_why.entry(why).or_default() += d.described;
+                        }
+                    }
+                }
+                report.debug_roots += d.roots;
+                report.debug_tombstoned += d.tombstoned;
+                report.debug_bytes += d.bytes;
                 out.push(Output {
                     name: synth[i].name.clone(),
                     data: Some(data),
@@ -1547,6 +1605,24 @@ fn put_u64(b: &mut [u8], at: usize, v: u64) {
     b[at..at + 8].copy_from_slice(&v.to_le_bytes());
 }
 
+/// Pads `b` to `len` bytes: with NOPs in code (as LLVM pads it: x86-64's
+/// one-byte `nop`, arm64's `nop`), with zeros elsewhere.
+fn pad_to(b: &mut Vec<u8>, len: usize, flags: u32, cputype: u32) {
+    use turbonop_macho_object::consts::{
+        CPU_TYPE_ARM64, CPU_TYPE_X86_64, S_ATTR_PURE_INSTRUCTIONS, S_ATTR_SOME_INSTRUCTIONS,
+    };
+    let code = flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0;
+    while b.len() < len {
+        match cputype {
+            CPU_TYPE_X86_64 if code => b.push(0x90),
+            CPU_TYPE_ARM64 if code && b.len() % 4 == 0 && len - b.len() >= 4 => {
+                b.extend_from_slice(&[0x1f, 0x20, 0x03, 0xd5]);
+            }
+            _ => b.push(0),
+        }
+    }
+}
+
 /// An atom placed in a synthesized member: whose, where.
 struct Placed {
     member: usize,
@@ -1556,13 +1632,26 @@ struct Placed {
     offset: u64,
 }
 
+/// What a synthesized member's DWARF describes: how many of its units with
+/// debug information, unless it was dropped (why); its root DIEs, its
+/// addresses written as tombstones, and its bytes.
+#[derive(Clone, Copy, Debug, Default)]
+struct SynthDebug {
+    described: usize,
+    dropped: Option<&'static str>,
+    roots: usize,
+    tombstoned: usize,
+    bytes: u64,
+}
+
 /// The bytes of synthesized member `i`.
 fn build_synth(
     parsed: &[Parsed<'_>],
     synth: &[Synth],
     i: usize,
     name_to: &BTreeMap<Vec<u8>, usize>,
-) -> Result<Vec<u8>, String> {
+    debug: Option<&Result<debug::Debug<'_>, &'static str>>,
+) -> Result<(Vec<u8>, SynthDebug), String> {
     let s = &synth[i];
     let (m0, _) = s.units[0];
     let base = parsed[m0].obj.as_ref().ok_or("no object")?;
@@ -1652,7 +1741,7 @@ fn build_synth(
             match (&mut sec.contents, src.bytes()) {
                 (Contents::Bytes(b), Some(sb)) => {
                     let b = b.to_mut();
-                    b.resize(at as usize, 0);
+                    pad_to(b, at as usize, src.flags, base.header.cputype);
                     b.extend_from_slice(&sb[atom.range.start as usize..atom.range.end as usize]);
                 }
                 (Contents::Zerofill(n), None) => *n = at + len,
@@ -1915,6 +2004,46 @@ fn build_synth(
         }
         _ => None,
     };
+    // The units' DWARF (see the `debug` module).
+    let mut stats = SynthDebug {
+        described: s
+            .units
+            .iter()
+            .filter(|&&(m, k)| parsed[m].units[k].debug)
+            .count(),
+        ..SynthDebug::default()
+    };
+    let mut debug_secs: Vec<(usize, Vec<(u64, usize, crate::dwarf::Target, i64)>)> = Vec::new();
+    if stats.described > 0 {
+        let built = match debug {
+            _ if s.units.iter().any(|&(m, _)| m != m0) => Err("units of more than one member"),
+            Some(Ok(d)) => {
+                let ks: Vec<usize> = s.units.iter().map(|&(_, k)| k).collect();
+                debug::build(d, &ks)
+            }
+            Some(Err(e)) => Err(*e),
+            None => Err("no DWARF read"),
+        };
+        match built {
+            Ok(Some(out)) => {
+                stats.roots = out.roots;
+                stats.tombstoned = out.tombstoned;
+                let like = |name: &[u8]| {
+                    base.sections()
+                        .find(|x| x.segment_name() == b"__DWARF" && x.name() == name)
+                        .map(|x| (x.align, x.flags))
+                };
+                for (sec, refs) in debug::sections(&out, &like) {
+                    stats.bytes += sec.size();
+                    sections.push(sec);
+                    relocs.push(Vec::new());
+                    debug_secs.push((sections.len() - 1, refs));
+                }
+            }
+            Ok(None) => stats.dropped = Some("no DWARF describes them"),
+            Err(e) => stats.dropped = Some(e),
+        }
+    }
     // Zero-fill sections last, as LLVM orders them (renumbering symbols).
     let mut order: Vec<usize> = (0..sections.len()).collect();
     order.sort_by_key(|&k| (sections[k].bytes().is_none(), k));
@@ -1941,6 +2070,9 @@ fn build_synth(
     }
     let unwind_si = unwind_si.map(|k| new_of[k]);
     let eh_si = eh_si.map(|k| new_of[k]);
+    for d in &mut debug_secs {
+        d.0 = new_of[d.0];
+    }
     // Addresses, as LLVM lays them out.
     let mut addr = 0u64;
     for s in sections.iter_mut().filter(|s| s.bytes().is_some()) {
@@ -2019,6 +2151,25 @@ fn build_synth(
             }
         }
     }
+    // The DWARF's addresses: each moved unit's atom.
+    if !debug_secs.is_empty() {
+        let mut atom_at: BTreeMap<usize, (usize, u64)> = BTreeMap::new();
+        if let Some(Ok(d)) = debug {
+            for (ui, &(_, k)) in s.units.iter().enumerate() {
+                atom_at.insert(
+                    d.unit_atom[k],
+                    address_of(&sections, (unit_placed[ui][0], 0)),
+                );
+            }
+        }
+        for (si, refs) in std::mem::take(&mut debug_secs) {
+            if let Contents::Bytes(b) = &mut sections[si].contents {
+                let (rs, t) = debug::fill(b.to_mut(), &refs, &|id| atom_at.get(&id).copied())?;
+                stats.tombstoned += t;
+                relocs[si] = rs;
+            }
+        }
+    }
     // Local relocations inside the units' bytes encode addresses: none here
     // (a unit with one doesn't fold).
     for (s, r) in sections.iter_mut().zip(relocs) {
@@ -2048,7 +2199,7 @@ fn build_synth(
     });
     obj.update_dysymtab();
     obj.relayout();
-    obj.write().map_err(|e| e.to_string())
+    obj.write().map(|b| (b, stats)).map_err(|e| e.to_string())
 }
 
 /// Moves the undefined names `late` says to the end of the symbol table
@@ -2274,5 +2425,6 @@ fn rewrite_giver(
 
 #[doc(hidden)]
 pub mod adjust;
+mod debug;
 #[cfg(test)]
 mod tests;

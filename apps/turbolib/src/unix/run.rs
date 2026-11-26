@@ -991,8 +991,10 @@ fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>
     let (outputs, report) = turbonop_fold::macho::fold(&inputs, &options);
     if run.settings.stats {
         let mut text = format!(
-            "turbolib: {archive}: {} members, {} weak-definition units; {} with copies in more than one member,              {} folded ({} copies) into {} synthesized members; {} bytes of units removed, {} written;              {} debug relocations removed; {} folded units' debug information dropped (not moved for Mach-O yet)
-",
+            "turbolib: {archive}: {} members, {} weak-definition units; {} with copies in more than one member, \
+             {} folded ({} copies) into {} synthesized members; {} bytes of units removed, {} written; \
+             {} debug relocations removed; {} folded units' debug information moved ({} root DIEs, \
+             {} bytes, {} addresses tombstoned), {} dropped\n",
             report.members,
             report.units,
             report.duplicated,
@@ -1002,8 +1004,17 @@ fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>
             report.removed_bytes,
             report.synthesized_bytes,
             report.tombstoned,
+            report.debug_moved,
+            report.debug_roots,
+            report.debug_bytes,
+            report.debug_tombstoned,
             report.debug_dropped,
         );
+        for (why, n) in &report.debug_dropped_why {
+            text.push_str(&format!(
+                "turbolib:   {n} units' debug information dropped: {why}\n"
+            ));
+        }
         for (why, n) in &report.kept {
             text.push_str(&format!(
                 "turbolib:   {n} copies stayed: {why}

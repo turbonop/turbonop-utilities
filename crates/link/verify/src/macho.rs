@@ -49,6 +49,8 @@ use turbonop_macho_object::{Command, Object, Section, reloc};
 
 use crate::hash::H128;
 
+mod debug;
+
 /// A canonical form's hash, and (with `TURBOLIB_VERIFY_DUMP` set) its
 /// parts as text, to show where two atoms differ.
 struct Canon {
@@ -118,7 +120,7 @@ struct Atom {
 
 /// A debug section: its name, its bytes with relocations' places zeroed,
 /// and its relocations (place, canonical form, the key of the atom reached).
-type Debug = (Vec<u8>, Vec<u8>, Vec<(u32, u128, Option<Vec<u8>>)>);
+type Debug = (Vec<u8>, Vec<u8>, Vec<(u32, u128, Option<Vec<u8>>, u8)>);
 
 /// An atom a rewritten member lost: its key and hash.
 type Lost = (Vec<u8>, u128);
@@ -143,7 +145,7 @@ struct Library<'a> {
 }
 
 /// The atoms of `o`: for each section, (offset range, symbol indexes).
-fn split(o: &Object<'_>) -> Vec<Vec<(core::ops::Range<u64>, Vec<usize>)>> {
+pub(crate) fn split(o: &Object<'_>) -> Vec<Vec<(core::ops::Range<u64>, Vec<usize>)>> {
     let mut out = Vec::new();
     for (si, s) in o.sections().enumerate() {
         let mut syms: Vec<(u64, usize)> = o
@@ -193,6 +195,38 @@ fn split(o: &Object<'_>) -> Vec<Vec<(core::ops::Range<u64>, Vec<usize>)>> {
     out
 }
 
+/// Each atom's key: its first symbol's name, or its section and its place
+/// among the section's unnamed atoms.
+pub(crate) fn atom_keys(
+    o: &Object<'_>,
+    atoms: &[Vec<(core::ops::Range<u64>, Vec<usize>)>],
+) -> Vec<Vec<Vec<u8>>> {
+    let sections: Vec<&Section<'_>> = o.sections().collect();
+    let mut keys: Vec<Vec<Vec<u8>>> = Vec::new();
+    for (si, list) in atoms.iter().enumerate() {
+        let mut unnamed = 0;
+        keys.push(
+            list.iter()
+                .map(|(_, syms)| match syms.first() {
+                    Some(&i) => o.symbols[i].name.to_vec(),
+                    None => {
+                        unnamed += 1;
+                        [
+                            sections[si].segment_name(),
+                            b",",
+                            sections[si].name(),
+                            b"#",
+                            unnamed.to_string().as_bytes(),
+                        ]
+                        .concat()
+                    }
+                })
+                .collect(),
+        );
+    }
+    keys
+}
+
 fn side_effects(o: &Object<'_>) -> bool {
     o.commands.iter().any(|c| c.cmd() == LC_LINKER_OPTION)
         || o.sections().any(|s| {
@@ -230,29 +264,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
     let endian = o.endian();
     let atoms = split(&o);
     let sections: Vec<&Section<'_>> = o.sections().collect();
-    // Each atom's key.
-    let mut keys: Vec<Vec<Vec<u8>>> = Vec::new();
-    for (si, list) in atoms.iter().enumerate() {
-        let mut unnamed = 0;
-        keys.push(
-            list.iter()
-                .map(|(_, syms)| match syms.first() {
-                    Some(&i) => o.symbols[i].name.to_vec(),
-                    None => {
-                        unnamed += 1;
-                        [
-                            sections[si].segment_name(),
-                            b",",
-                            sections[si].name(),
-                            b"#",
-                            unnamed.to_string().as_bytes(),
-                        ]
-                        .concat()
-                    }
-                })
-                .collect(),
-        );
-    }
+    let keys = atom_keys(&o, &atoms);
     // (An address at a section's end, as a range list's end has, reaches no
     // atom: the last atom may be cut while the address stays the end.)
     let atom_at = |si: usize, off: u64| -> Option<usize> {
@@ -703,7 +715,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
             let mut h = Canon::new();
             h.u64(u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16);
             target(s, ri, &mut h);
-            relocs.push((r.address, h.finish(), key));
+            relocs.push((r.address, h.finish(), key, 1u8 << r.length.min(3)));
         }
         relocs.sort();
         m.debug
@@ -840,6 +852,11 @@ fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<Lost
     }
     // Debug sections.
     let lost_keys: BTreeSet<&[u8]> = lost.iter().map(|(k, _)| k.as_slice()).collect();
+    // The line program, the lists, and the unit's extent, by what they
+    // name (`debug`); the unit's DW_AT_low_pc and DW_AT_high_pc are left out
+    // of the bytes compared.
+    let skip = debug::check(oo, no, &lost_keys, &n.name, rep);
+    let skipped = |at: u32| skip.iter().any(|r| r.contains(&(at as usize)));
     for (name, bytes, relocs) in &o.debug {
         let Some((_, nb, nr)) = n.debug.iter().find(|d| &d.0 == name) else {
             rep.fail("debug sections lost", || {
@@ -847,16 +864,58 @@ fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<Lost
             });
             continue;
         };
-        let expect: Vec<&(u32, u128, Option<Vec<u8>>)> = relocs
+        if matches!(
+            name.as_slice(),
+            b"__DWARF,__debug_line" | b"__DWARF,__debug_ranges" | b"__DWARF,__debug_loc"
+        ) {
+            continue;
+        }
+        let into_lost = |r: &(u32, u128, Option<Vec<u8>>, u8)| {
+            r.2.as_deref().is_some_and(|k| lost_keys.contains(k))
+        };
+        let expect: Vec<&(u32, u128, Option<Vec<u8>>, u8)> = relocs
             .iter()
-            .filter(|r| !r.2.as_deref().is_some_and(|k| lost_keys.contains(k)))
+            .filter(|r| !into_lost(r) && !skipped(r.0))
             .collect();
-        let removed = relocs.len() - expect.len();
-        let same_relocs = expect.len() == nr.len()
-            && expect.iter().zip(nr).all(|(a, b)| a.0 == b.0 && a.1 == b.1);
-        if bytes != nb || !same_relocs {
+        let kept: Vec<&(u32, u128, Option<Vec<u8>>, u8)> =
+            nr.iter().filter(|r| !skipped(r.0)).collect();
+        let removed = relocs
+            .iter()
+            .filter(|r| into_lost(r) && !skipped(r.0))
+            .count();
+        let same_relocs = expect.len() == kept.len()
+            && expect
+                .iter()
+                .zip(&kept)
+                .all(|(a, b)| a.0 == b.0 && a.1 == b.1);
+        // A removed relocation's place is all ones; the skipped places
+        // are left out.
+        let (mut bo, mut bn) = (bytes.clone(), nb.clone());
+        let mut tombstones = true;
+        for r in relocs.iter().filter(|r| into_lost(r) && !skipped(r.0)) {
+            let at = r.0 as usize;
+            let w = r.3 as usize;
+            match bn.get_mut(at..at + w) {
+                Some(x) if x.iter().all(|&c| c == 0xFF) => x.fill(0),
+                _ => tombstones = false,
+            }
+        }
+        for s in &skip {
+            for b in [&mut bo, &mut bn] {
+                if let Some(x) = b.get_mut(s.clone()) {
+                    x.fill(0);
+                }
+            }
+        }
+        if !tombstones {
             rep.fail(
-                "debug sections changed but at relocations into lost units (removed, zeroed)",
+                "debug relocations removed whose places aren't all ones",
+                || format!("{}: {}", show(&n.name), show(name)),
+            );
+        }
+        if bo != bn || !same_relocs {
+            rep.fail(
+                "debug sections changed but at relocations into lost units (removed)",
                 || format!("{}: {}", show(&n.name), show(name)),
             );
         }

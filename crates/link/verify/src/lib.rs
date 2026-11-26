@@ -25,6 +25,7 @@ mod hash;
 pub mod image;
 pub mod library;
 pub mod macho;
+pub mod macho_image;
 pub mod pdb;
 pub mod report;
 mod shard;

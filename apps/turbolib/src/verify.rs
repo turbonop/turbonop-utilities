@@ -41,7 +41,7 @@ options:
 
 const COMPARE_USAGE: &str = "\
 usage: turbolib compare-images [options] <a.exe> <a.pdb> <b.exe> <b.pdb>
-       turbolib compare-images [options] <a> <b>        (ELF programs)
+       turbolib compare-images [options] <a> <b>        (ELF programs, Mach-O images)
 
 Checks that two programs, linked from the same inputs except for
 turbolib's rewriting of libraries, are equivalent: the same functions and
@@ -54,7 +54,11 @@ dynamic relocations, and DWARF: functions and data by their bytes with
 addresses mapped through each program's labels; the headers, dynamic
 section, dynamic symbols and relocations, initializer arrays, notes, and
 .eh_frame; and every live subprogram's DWARF, line rows, variables, and
-type definitions, by content. Prints what differs, by category, with
+type definitions, by content. Mach-O images are compared the same way,
+through their symbols, fixups, and stubs: functions and data, symbols,
+initializers, compact unwind information and FDEs, imports, and the DWARF
+of each image's dSYM (<image>.dSYM, as dsymutil makes it), if both have
+one. Prints what differs, by category, with
 counts and examples, and exits with 1 if anything fails.
 
 options:
@@ -161,6 +165,26 @@ pub fn compare_images(args: &[String]) -> ExitCode {
     let run = || -> Result<turbonop_verify::report::Report, String> {
         let files: Vec<turbonop_mmap::Mmap> =
             c.paths.iter().map(|p| map(p)).collect::<Result<_, _>>()?;
+        if files.len() == 2
+            && files
+                .iter()
+                .all(|f| turbonop_verify::macho_image::is_macho_image(f))
+        {
+            // Each image's dSYM, where dsymutil puts it.
+            let dsym = |p: &str| -> Option<turbonop_mmap::Mmap> {
+                let name = std::path::Path::new(p).file_name()?;
+                let d = std::path::PathBuf::from(format!("{p}.dSYM"))
+                    .join("Contents/Resources/DWARF")
+                    .join(name);
+                map(d.to_str()?).ok()
+            };
+            let (da, db) = (dsym(&c.paths[0]), dsym(&c.paths[1]));
+            let dsyms = match (&da, &db) {
+                (Some(x), Some(y)) => Some((&x[..], &y[..])),
+                _ => None,
+            };
+            return turbonop_verify::macho_image::compare(&files[0], &files[1], dsyms);
+        }
         if files.len() == 2 {
             if !files.iter().all(|f| turbonop_verify::elf::is_elf(f)) {
                 return Err("two files are compared as ELF programs: these aren't".into());

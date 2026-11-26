@@ -44,6 +44,32 @@ use turbonop_dwarf::consts::*;
 use turbonop_dwarf::{Abbrevs, Attr, LineProgram, Reader, Sections, Unit, UnitSection, Value};
 
 use super::program::{CONTENT, Program};
+
+/// What the comparison needs of the image a DWARF describes: what its
+/// addresses are.
+pub(crate) trait Addresses: Sync {
+    /// Whether `addr` is in a section of the image, and if so whether one
+    /// of code.
+    fn section_kind(&self, addr: u64) -> Option<bool>;
+    /// The name of `addr` (a label and the distance from it; [`CONTENT`]
+    /// for a name by contents).
+    fn name(&self, addr: u64) -> Option<(&[u8], u32)>;
+    /// `addr`'s name, as text.
+    fn render(&self, addr: u64) -> String;
+}
+
+impl Addresses for Program<'_> {
+    fn section_kind(&self, addr: u64) -> Option<bool> {
+        self.section_at(addr)
+            .map(|s| s.flags & turbonop_elf::consts::SHF_EXECINSTR != 0)
+    }
+    fn name(&self, addr: u64) -> Option<(&[u8], u32)> {
+        Program::name(self, addr)
+    }
+    fn render(&self, addr: u64) -> String {
+        Program::render(self, addr)
+    }
+}
 use crate::hash::H128;
 use crate::report::{Report, show};
 
@@ -110,7 +136,7 @@ struct Die<'d> {
 
 /// One unit, read whole.
 struct Cu<'p, 'd> {
-    p: &'p Program<'d>,
+    p: &'p dyn Addresses,
     unit: Unit<'d>,
     dies: Vec<Die<'d>>,
     line: Option<LineProgram<'d>>,
@@ -124,7 +150,7 @@ struct Cu<'p, 'd> {
 const IN_PROGRESS: u128 = u128::MAX;
 
 impl<'p, 'd> Cu<'p, 'd> {
-    fn read(p: &'p Program<'d>, s: Sections<'d>, offset: u64) -> Option<Self> {
+    fn read(p: &'p dyn Addresses, s: Sections<'d>, offset: u64) -> Option<Self> {
         Self::read_split(p, s, offset, None)
     }
 
@@ -132,7 +158,7 @@ impl<'p, 'd> Cu<'p, 'd> {
     /// with the program's `.debug_addr` and `.debug_line`) with what its
     /// skeleton gives it.
     fn read_split(
-        p: &'p Program<'d>,
+        p: &'p dyn Addresses,
         s: Sections<'d>,
         offset: u64,
         skeleton: Option<Skeleton<'d>>,
@@ -252,19 +278,17 @@ impl<'p, 'd> Cu<'p, 'd> {
         if !self.unit.is_valid_address(addr) {
             return false;
         }
-        self.p
-            .section_at(addr)
-            .is_some_and(|s| !code || s.flags & turbonop_elf::consts::SHF_EXECINSTR != 0)
+        self.p.section_kind(addr).is_some_and(|c| !code || c)
     }
 
     /// `addr` as one past the end of what holds the byte before it, if
     /// that byte is in a section and `addr` is in none.
     fn end_of_section(&self, addr: u64) -> Option<String> {
-        if !self.unit.is_valid_address(addr) || self.p.section_at(addr).is_some() {
+        if !self.unit.is_valid_address(addr) || self.p.section_kind(addr).is_some() {
             return None;
         }
         let before = addr.checked_sub(1)?;
-        self.p.section_at(before)?;
+        self.p.section_kind(before)?;
         match self.p.name(before)? {
             (_, CONTENT) => None,
             (n, o) => Some(format!("{}+{:#x}", show(n), u64::from(o) + 1)),
@@ -272,7 +296,7 @@ impl<'p, 'd> Cu<'p, 'd> {
     }
 
     fn address(&self, out: &mut dyn Sink, addr: u64) {
-        if self.unit.is_valid_address(addr) && self.p.section_at(addr).is_some() {
+        if self.unit.is_valid_address(addr) && self.p.section_kind(addr).is_some() {
             out.sep("@");
             out.text(self.p.render(addr).as_bytes());
         } else if let Some(end) = self.end_of_section(addr) {
@@ -873,7 +897,10 @@ impl<'p, 'd> Cu<'p, 'd> {
                 if r.address > s + n {
                     break;
                 }
-                if r.address == s + n && !r.end_sequence {
+                // (Nothing at the range's end: a sequence's end there says
+                // what the range's end says, and a section's code may be
+                // one sequence, or each function's its own.)
+                if r.address == s + n {
                     continue;
                 }
                 if r.end_sequence && seqs.binary_search(seq).is_err() {
@@ -991,7 +1018,7 @@ struct Skeleton<'d> {
 /// takes, its ID, and where its `.dwo` file is (`DW_AT_dwo_name` in
 /// `DW_AT_comp_dir`).
 fn skeleton<'a>(
-    p: &Program<'a>,
+    p: &dyn Addresses,
     s: Sections<'a>,
     offset: u64,
 ) -> Option<(Skeleton<'a>, u64, std::path::PathBuf)> {
@@ -1049,7 +1076,7 @@ fn gnu_dwo_id(s: Sections<'_>, u: &Unit<'_>) -> Option<u64> {
 
 /// The split unit of the skeleton at `offset`, from its `.dwo` file
 /// (`dwo`), read with the program's addresses and lines.
-fn read_split_unit(p: &Program<'_>, s: Sections<'_>, offset: u64, dwo: &[u8]) -> UnitOut {
+fn read_split_unit(p: &dyn Addresses, s: Sections<'_>, offset: u64, dwo: &[u8]) -> UnitOut {
     let unread = UnitOut {
         unread: 1,
         ..UnitOut::default()
@@ -1088,12 +1115,12 @@ fn read_split_unit(p: &Program<'_>, s: Sections<'_>, offset: u64, dwo: &[u8]) ->
     };
     read_unit_with(p, d, u.offset, Some(sk))
 }
-fn read_unit(p: &Program<'_>, s: Sections<'_>, offset: u64) -> UnitOut {
+fn read_unit(p: &dyn Addresses, s: Sections<'_>, offset: u64) -> UnitOut {
     read_unit_with(p, s, offset, None)
 }
 
 fn read_unit_with(
-    p: &Program<'_>,
+    p: &dyn Addresses,
     s: Sections<'_>,
     offset: u64,
     skeleton: Option<Skeleton<'_>>,
@@ -1201,7 +1228,7 @@ struct All {
     unread: u64,
 }
 
-fn gather<'a>(p: &Program<'a>, s: Sections<'a>) -> All {
+fn gather<'a>(p: &dyn Addresses, s: Sections<'a>) -> All {
     let offsets: Vec<u64> = Unit::iter(s, UnitSection::Info, 0)
         .filter(|u| {
             u.unit_type == DW_UT_COMPILE
@@ -1248,7 +1275,7 @@ fn gather<'a>(p: &Program<'a>, s: Sections<'a>) -> All {
 }
 
 /// A type definition's qualified name, for examples.
-fn type_name(p: &Program<'_>, s: Sections<'_>, at: (u64, usize)) -> String {
+fn type_name(p: &dyn Addresses, s: Sections<'_>, at: (u64, usize)) -> String {
     let Some(cu) = Cu::read(p, s, at.0) else {
         return "?".into();
     };
@@ -1260,14 +1287,14 @@ fn type_name(p: &Program<'_>, s: Sections<'_>, at: (u64, usize)) -> String {
 
 /// Where two subprograms first differ, as text.
 fn explain(
-    pa: &Program<'_>,
+    pa: &dyn Addresses,
     sa: Sections<'_>,
     a: &Sub,
-    pb: &Program<'_>,
+    pb: &dyn Addresses,
     sb: Sections<'_>,
     b: &Sub,
 ) -> String {
-    let unit = |p: &Program<'_>, s: Sections<'_>, at: (u64, usize)| -> String {
+    let unit = |p: &dyn Addresses, s: Sections<'_>, at: (u64, usize)| -> String {
         Cu::read(p, s, at.0)
             .and_then(|cu| cu.string(0, DW_AT_NAME).map(show))
             .unwrap_or_default()
@@ -1278,7 +1305,7 @@ fn explain(
         format!("(units {} and {}) ", unit(pa, sa, a.at), unit(pb, sb, b.at))
     };
     if a.dies == b.dies && a.lines == b.lines {
-        let text = |p: &Program<'_>, s: Sections<'_>, at: (u64, usize)| {
+        let text = |p: &dyn Addresses, s: Sections<'_>, at: (u64, usize)| {
             let mut t = String::new();
             if let Some(cu) = Cu::read(p, s, at.0) {
                 cu.unit_attrs(&mut t);
@@ -1291,10 +1318,10 @@ fn explain(
 }
 
 fn explain_contents(
-    pa: &Program<'_>,
+    pa: &dyn Addresses,
     sa: Sections<'_>,
     a: &Sub,
-    pb: &Program<'_>,
+    pb: &dyn Addresses,
     sb: Sections<'_>,
     b: &Sub,
 ) -> String {
@@ -1305,7 +1332,7 @@ fn explain_contents(
             .zip(&b.dies)
             .position(|(x, y)| x != y)
             .unwrap_or(a.dies.len().min(b.dies.len()));
-        let text = |p: &Program<'_>, s: Sections<'_>, at: (u64, usize)| -> String {
+        let text = |p: &dyn Addresses, s: Sections<'_>, at: (u64, usize)| -> String {
             match Cu::read(p, s, at.0) {
                 Some(mut cu) if at.1 + k < cu.dies.len() => cu.canon_text(at.1 + k),
                 _ => "nothing".into(),
@@ -1319,7 +1346,7 @@ fn explain_contents(
             text(pb, sb, b.at)
         );
     }
-    let text = |p: &Program<'_>, s: Sections<'_>, sub: &Sub| -> Vec<String> {
+    let text = |p: &dyn Addresses, s: Sections<'_>, sub: &Sub| -> Vec<String> {
         let Some(cu) = Cu::read(p, s, sub.at.0) else {
             return Vec::new();
         };
@@ -1349,6 +1376,19 @@ pub(crate) fn compare(a: &Program<'_>, b: &Program<'_>) -> Report {
     let mut rep = Report::new();
     let sa = sections(a, &mut rep);
     let sb = sections(b, &mut rep);
+    rep.merge(compare_with(a, sa, b, sb));
+    rep
+}
+
+/// Compares the DWARF `sa` and `sb` of two images (`a` and `b` name their
+/// addresses): see the module's documentation.
+pub(crate) fn compare_with<'d>(
+    a: &dyn Addresses,
+    sa: Sections<'d>,
+    b: &dyn Addresses,
+    sb: Sections<'d>,
+) -> Report {
+    let mut rep = Report::new();
     if sa.info.is_empty() && sb.info.is_empty() {
         rep.unchecked("DWARF (neither program has any)", String::new);
         return rep;

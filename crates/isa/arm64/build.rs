@@ -882,6 +882,40 @@ const CHUNK: usize = 256;
 /// `src/tables.rs` (`name[i / CHUNK][i % CHUNK]`). One static of tens of
 /// thousands of entries takes rustc minutes to type-check (its time grows
 /// faster than the entries); small ones take seconds in all.
+/// Items (their code) each once, by index: what a `u16` in a table
+/// refers to.
+#[derive(Default)]
+struct Pool {
+    items: Vec<String>,
+    index: HashMap<String, usize>,
+}
+
+impl Pool {
+    fn index(&mut self, item: String) -> usize {
+        let n = self.items.len();
+        let i = *self.index.entry(item.clone()).or_insert(n);
+        if i == n {
+            self.items.push(item);
+            assert!(n < usize::from(u16::MAX), "a u16 index, and NONE");
+        }
+        i
+    }
+
+    fn emit(&self, code: &mut String, name: &str, ty: &str) {
+        let _ = writeln!(
+            code,
+            "pub(crate) static {name}: [{ty}; {}] = [
+{}
+];",
+            self.items.len(),
+            self.items.join(
+                ",
+"
+            )
+        );
+    }
+}
+
 fn chunked(code: &mut String, name: &str, ty: &str, items: &str, n: usize) {
     let lines: Vec<&str> = items.lines().collect();
     assert_eq!(lines.len(), n, "{name}: one entry per line");
@@ -925,6 +959,13 @@ fn main() {
     let mut may_fail: Vec<bool> = Vec::new();
     // Symbols by their code, to emit each only once.
     let mut distinct_syms: HashMap<String, usize> = HashMap::new();
+    // What symbols refer to, each once, by index (src/tables.rs's
+    // `Symbol`): displays, attributes, piece lists, tables, values.
+    let mut displays_pool = Pool::default();
+    let mut attrs_pool = Pool::default();
+    let mut pieces_pool = Pool::default();
+    let mut tables_pool = Pool::default();
+    let mut values_pool = Pool::default();
     // Symbols are compiled per encoding (their fields differ by class), so
     // index them by (file, link) and compile with the first encoding's
     // fields that uses them.
@@ -992,13 +1033,15 @@ fn main() {
                             ))
                         })
                         .collect();
-                    format!(
-                        "Some(&Table {{ key: {}, rows: &[{}] }})",
-                        pieces_code(&key),
-                        rows.join(",")
-                    )
+                    tables_pool
+                        .index(format!(
+                            "Table {{ key: {}, rows: &[{}] }}",
+                            pieces_code(&key),
+                            rows.join(",")
+                        ))
+                        .to_string()
                 }
-                None => "None".into(),
+                None => "NONE".into(),
             };
             // How the formatter shows the symbol (see src/tables.rs's `Kind`),
             // and whether its `special` may apply.
@@ -1008,17 +1051,19 @@ fn main() {
             let fails = s.table.is_some() || s.attr("when").is_some() || kind == "Kind::Bitmask";
             let may_special = may_special(s, encoded.is_empty() && value.is_none());
             let value = match value {
-                Some(v) => format!(
-                    "Some(Value {{ pieces: {}, width: {}, mul: {}, add: {}, modulo: {}, sub_from: {}, signed: {} }})",
-                    pieces_code(&v.pieces),
-                    width(&v.pieces),
-                    v.mul,
-                    v.add,
-                    v.modulo,
-                    v.sub_from.unwrap_or(0),
-                    v.signed
-                ),
-                None => "None".into(),
+                Some(v) => values_pool
+                    .index(format!(
+                        "Value {{ pieces: {}, width: {}, mul: {}, add: {}, modulo: {}, sub_from: {}, signed: {} }}",
+                        pieces_code(&v.pieces),
+                        width(&v.pieces),
+                        v.mul,
+                        v.add,
+                        v.modulo,
+                        v.sub_from.unwrap_or(0),
+                        v.signed
+                    ))
+                    .to_string(),
+                None => "NONE".into(),
             };
             // `when=option<0>=0`: the symbol applies only when those bits
             // have that value (another alternative applies otherwise).
@@ -1027,10 +1072,13 @@ fn main() {
                 .and_then(|t| t.rsplit_once('='))
                 .and_then(|(f, v)| {
                     let p = pieces(f, fields)?;
-                    let value = u64::from_str_radix(v, 2).ok()?;
-                    Some(format!("Some(({}, {value}))", pieces_code(&p)))
+                    let value = u32::from_str_radix(v, 2).ok()?;
+                    Some(format!(
+                        "when: {}, when_value: {value}",
+                        pieces_pool.index(pieces_code(&p))
+                    ))
                 })
-                .unwrap_or_else(|| "None".to_string());
+                .unwrap_or_else(|| "when: NONE, when_value: 0".to_string());
             // Its LLVM operand's register class (src/tables.rs's
             // `REG_CLASSES`), if it has one; the operand's name is for the
             // operand compiler (and keeps symbols of different operands
@@ -1040,10 +1088,10 @@ fn main() {
                 .as_ref()
                 .and_then(|(_, t)| access.classes.get(t).copied());
             let line = format!(
-                "    Symbol {{ display: {:?}, encoded: {}, table: {table}, value: {value}, when: {when}, attrs: {:?}, flags: {:#x}, kind: {kind}, class: {} }}, // {}",
-                s.display,
-                pieces_code(&encoded),
-                s.attrs.join(" "),
+                "    Symbol {{ display: {}, encoded: {}, table: {table}, value: {value}, {when}, attrs: {}, flags: {:#x}, kind: {kind}, class: {} }}, // {}",
+                displays_pool.index(format!("{:?}", s.display)),
+                pieces_pool.index(pieces_code(&encoded)),
+                attrs_pool.index(format!("{:?}", s.attrs.join(" "))),
                 attr_flags(&s.attrs)
                     | if may_special {
                         1 << ATTR_FLAGS.len()
@@ -1100,8 +1148,9 @@ fn main() {
     // array, and their templates' token lists.
     let mut names = String::new();
     let mut ne_pool: Vec<String> = Vec::new();
-    let mut tok_lists: Vec<String> = Vec::new();
-    let mut tok_index: HashMap<String, usize> = HashMap::new();
+    // Token lists (templates', and their groups'), and their literal
+    // texts, each once.
+    let mut toks = TokPools::default();
     // `Some(cond_N)` as N, `None` as `NONE`.
     let cond_index = |f: &str| -> String {
         f.strip_prefix("Some(cond_")
@@ -1216,7 +1265,7 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         // optional groups do not. Mark the list braces so the formatter
         // prints them literally.
         let asm = mark_list_braces(&asm);
-        let (mnem, ops, cond) = template_code(&asm, &displays);
+        let (mnem, ops, cond) = template_code(&asm, &displays, &mut toks);
         // The operands (with the condition Microsoft folds into the
         // mnemonic, last).
         let record = &access.enc_records[ei].1;
@@ -1277,14 +1326,8 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
             ne_at + ne_len <= 0xFFFF && ne_len <= 255,
             "too many `ne` pairs"
         );
-        let mut list = |toks: String| -> usize {
-            *tok_index.entry(toks.clone()).or_insert_with(|| {
-                tok_lists.push(toks);
-                tok_lists.len() - 1
-            })
-        };
-        let mnem = list(mnem);
-        let ops = list(ops);
+        let mnem = toks.lists.index(mnem);
+        let ops = toks.lists.index(ops);
         let _ = writeln!(
             enc_out,
             "    Encoding {{ name_at: {name_at}, name_len: {}, class: {}, feature: {}, mask: {:#010x}, value: {:#010x}, should: ({:#010x}, {:#010x}), ne_at: {ne_at}, ne_len: {ne_len}, undef: {}, unpred: {}, alias_of: {alias_of}, prefer: {}, mnem: {mnem}, ops: {ops}, cond: {cond}, checked: {checked}, group: {group}, ms: {ms}, post_index: {post_index}, rule: {rule} }},",
@@ -1336,13 +1379,9 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         ne_pool.len(),
         ne_pool.join(",")
     );
-    assert!(tok_lists.len() < 0xFFFF && n_fns < 0xFFFF);
-    let _ = writeln!(
-        code,
-        "pub(crate) static TOK_LISTS: [&[Tok]; {}] = [\n{}\n];",
-        tok_lists.len(),
-        tok_lists.join(",\n")
-    );
+    assert!(n_fns < 0xFFFF);
+    toks.lists.emit(&mut code, "TOK_LISTS", "&[Tok]");
+    toks.lits.emit(&mut code, "LITS", "&str");
     let conds: Vec<String> = (0..n_fns).map(|n| format!("cond_{n}")).collect();
     let _ = writeln!(
         code,
@@ -1365,6 +1404,11 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         );
     }
     chunked(&mut code, "SYMBOLS", "Symbol", &sym_out, n_syms);
+    displays_pool.emit(&mut code, "DISPLAYS", "&str");
+    attrs_pool.emit(&mut code, "ATTRS", "&str");
+    pieces_pool.emit(&mut code, "PIECE_LISTS", "&[Piece]");
+    tables_pool.emit(&mut code, "TABLES", "Table");
+    values_pool.emit(&mut code, "VALUES", "Value");
     let _ = writeln!(
         code,
         "pub(crate) static BUCKETS: [&[u16]; 2048] = [\n{bucket_out}];"
@@ -1517,9 +1561,17 @@ fn comma_lists(asm: &str, syms: &[Sym], name: &str) -> String {
 // Templates, compiled to tokens (what src/format.rs's `render` walks): the
 // same reading of the template text the formatter made at run time.
 
+/// Token lists (by index: `Tok::Group`'s, an encoding's `mnem` and
+/// `ops`) and literal texts (`Tok::Lit`'s), each once.
+#[derive(Default)]
+struct TokPools {
+    lists: Pool,
+    lits: Pool,
+}
+
 /// Code for `Tok`s of the template text `t` (`ops`: the operands, not
 /// the mnemonic).
-fn tokens(t: &str, displays: &[String], ops: bool) -> String {
+fn tokens(t: &str, displays: &[String], ops: bool, pools: &mut TokPools) -> String {
     let mut out = Vec::new();
     let mut rest = t;
     while !rest.is_empty() {
@@ -1552,9 +1604,10 @@ fn tokens(t: &str, displays: &[String], ops: bool) -> String {
             // Groups of plain text ("{, VGx2}") are always shown, except a
             // zero offset ("{, #0}").
             let optional = inner.contains('%') || inner.trim() == ", #0";
+            let inner = tokens(inner, displays, ops, pools);
             out.push(format!(
                 "Tok::Group({}, {optional})",
-                tokens(inner, displays, ops)
+                pools.lists.index(inner)
             ));
             rest = &after[end + 1..];
         } else if let Some(after) = rest.strip_prefix('%') {
@@ -1573,10 +1626,8 @@ fn tokens(t: &str, displays: &[String], ops: bool) -> String {
                 .find(['{', '%', '('])
                 .map_or(rest.len(), |i| i + 1);
             let next = &rest[end..];
-            out.push(format!(
-                "Tok::Lit({:?})",
-                literal_text(&rest[..end], next, ops)
-            ));
+            let text = format!("{:?}", literal_text(&rest[..end], next, ops));
+            out.push(format!("Tok::Lit({})", pools.lits.index(text)));
             rest = next;
         }
     }
@@ -1674,7 +1725,7 @@ fn alternation_end(s: &str) -> Option<usize> {
 /// A template's mnemonic and operand tokens, and the condition operand
 /// Microsoft folds into the mnemonic (`csel x0,x1,x2,eq` is `cseleq
 /// x0,x1,x2`, as `b.eq` is `beq`), if any.
-fn template_code(asm: &str, displays: &[String]) -> (String, String, String) {
+fn template_code(asm: &str, displays: &[String], pools: &mut TokPools) -> (String, String, String) {
     let (mnemonic, operands) = asm.split_once(' ').unwrap_or((asm, ""));
     let mut operands = operands;
     let mut cond = "NONE".to_string();
@@ -1690,8 +1741,8 @@ fn template_code(asm: &str, displays: &[String]) -> (String, String, String) {
         }
     }
     (
-        tokens(mnemonic, displays, false),
-        tokens(operands, displays, true),
+        tokens(mnemonic, displays, false, pools),
+        tokens(operands, displays, true, pools),
         cond,
     )
 }

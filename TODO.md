@@ -323,6 +323,11 @@ x64. Where the 3.5 MB went:
   - The SDK's and MSVC's libraries whose index isn't computed from their
     members (103 of 1,851; see the plan's 1.2): the ARM64 CRT's EC
     symbols, and UCRT's members that win a name.
+- **ELF: initializer entries in COMDAT groups** (`.init_array`,
+  `.ctors`, `.preinit_array`, `.fini_array` inside a group) should keep
+  their unit from folding, as `.CRT$X*` does for COFF (layer 1 of the
+  initialization-order guarantee: initializers of one object in their
+  order). Check what the ELF engine does now.
 - **link.exe's load order** against folded libraries (the plan's "The
   alias technique"): the same members, in another order, so C++
   initializers across members run in another order (2 of `llvm-nm`'s 55).

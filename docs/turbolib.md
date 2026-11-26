@@ -517,6 +517,17 @@ What doesn't fold, and why (`--diagnose` will say it per unit;
   external again.
 - **Side effects** under `--pull=preserve`: see the weak-external
   technique's failure above.
+- **Initializer entries.** A unit holding a `.CRT$X*` section (an inline
+  variable's or a template static member's dynamic initializer, which cl
+  writes as a COMDAT `.CRT$XCU` associative to the variable; terminators;
+  TLS callbacks) doesn't fold: in a synthesized member it would run at
+  that member's place in the order, and inline variables' initialization
+  is ordered within each translation unit. Measured cost: none on either
+  corpus (`build-z7` 12,565,125,290 bytes folded with and without the
+  rule, `build-z7-nopch` 21,089,233,154), since LLVM has no such units
+  that folded; code with many inline variables would pay more. cl 14.52
+  with `/std:c++17`: both kinds are caught (a test library of two objects:
+  4 copies held back).
 
 **On the corpus** (`build-z7`, with the build's own archiver commands,
 `relib.py` and `TURBOLIB_OPTIONS=--fold=identical`), 188 of the 245

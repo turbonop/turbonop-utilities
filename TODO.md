@@ -317,6 +317,17 @@ x64. Where the 3.5 MB went:
   - The SDK's and MSVC's libraries whose index isn't computed from their
     members (103 of 1,851; see the plan's 1.2): the ARM64 CRT's EC
     symbols, and UCRT's members that win a name.
+- **Phase 2.4's open ends** (folded units' CodeView, done for x64 MSVC
+  and clang-cl).
+  - Images linked by lld-link against folded libraries are larger
+    (`llvm-nm`: 2.8 MiB more code, 12,756 more procedures): lld loads
+    members link.exe doesn't. Phase 2.2's engine does the same, so not
+    2.4; find out why.
+  - clang-cl objects pass through whole: `.llvm_addrsig` (symbol indices)
+    is a side table (2.3). The fixtures use `-fno-addrsig`.
+  - Untested: x86 frame data and cross-scope imports and exports in a
+    COMDAT's `.debug$S` (renumbered, but no compiler seen writing them
+    there), `/Zi` objects in a link, and clang-cl's PCHs.
 - **A structural PDB comparison.** `link.exe`'s PDBs differ between two
   links of the same inputs, so `relink.py` compares images only. Compare
   PDBs by content (publics, procedures, lines, inlinees, locals, types by

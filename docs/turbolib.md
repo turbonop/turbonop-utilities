@@ -23,7 +23,7 @@ items leave TODO.md as they ship.
 |---|---|
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, `.retplne`, sanitizers. |
 | 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. Not yet: the import descriptor objects (so `/DEF`), and thin libraries. |
-| 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). Not yet: folded units' debug information (2.4), the side tables (2.3), and the link-equivalence checks (2.6). |
+| 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Not yet: the side tables (2.3), and the link-equivalence checks (2.6). |
 | 3 Shared types: a synthesized precompiled-types object | Not yet. |
 | 4 Less conservative folding | Not yet. |
 | 5 Speed | Not yet (but every phase is built to be parallel from the start). |
@@ -476,13 +476,60 @@ What doesn't fold, and why (`--diagnose` will say it per unit;
 libraries change (the rest have nothing to fold), from 13.21 GiB to 11.38
 GiB (13.9%), in 59 s. The analyzer projects 2.7 GiB for
 `identical, pull=preserve`; the difference is still to account for.
-(Until 2.4, folded units' `.debug$S` is dropped, which counts as saved.)
+(Here folded units' `.debug$S` was dropped, which counted as saved; see 2.4 for the sizes with it.)
 
 `llvm-nm` and `llvm-readobj` link against the folded libraries
 (`relink.py`), and on 22 inputs (`LLVMDemangle`'s objects and library,
 and `testdata/coff`'s objects) print what the originals print, with `nm`
 and with `readobj --all`. The images aren't byte-identical (COMDATs
 move), so link equivalence waits for 2.6's comparison.
+
+### Debug information (2.4)
+
+Synthesized members carry their units' CodeView
+(`turbonop_fold::rewrite::debug`). Measured on the corpus (MSVC,
+`crates/link/fold/examples/debug_layout.rs`) and the fixtures
+(`tools/turbolib/debug`, MSVC and clang-cl): each COMDAT's `.debug$S` is
+associative to it, with its symbols (procedures with their locals and
+inline sites, `S_GDATA32` of COMDAT data) and lines; the per-object
+`.debug$S` has `S_OBJNAME`, `S_COMPILE3`, `S_BUILDINFO`, the global
+`S_UDT`s and `S_CONSTANT`s, non-COMDAT functions, the file checksums, the
+string table, and, with inlining, the inlinee lines of every function
+inlined in the object. No frame data or cross-scope imports and exports
+occur on x64. On the corpus, no per-object `.debug$S` relocates to a
+COMDAT's external symbol; 27,246 relocations reach COMDATs' local
+symbols, and those units already don't fold.
+
+A synthesized member gets its units' `.debug$S`, renumbered in place
+into its own `.debug$T`, checksums, and string table (a section whose
+inline sites' file changes take more or fewer bytes is rebuilt, its
+relocations moved); a `.debug$T` of the records its units reach, merged
+by their renumbered bytes, each record after those it names; the inlinee
+lines its inline sites need; and `S_OBJNAME` (`turbolib:<member>`) and the
+units' `S_COMPILE3`, without `S_BUILDINFO`. Units of `/Yu` objects go to
+members that name the same `LF_PRECOMP` and refer to the PCH object's
+symbol: LLVM's libraries reuse each other's PCHs, and copying the PCH's
+records from the library instead left 1.75 million copies on `build-z7`
+unfolded. `/Zi` members keep their indices and name their type server.
+
+**On the corpus**, with debug information kept, `build-z7`'s 184 changed
+libraries go from 13.21 to 11.63 GiB (1.58 GiB saved, 11.6% of 13.68), in
+35 s, and `build-z7-nopch`'s 163 from 21.13 to 19.29 GiB (1.84 GiB, 8.5% of
+21.77). The 45,120 and 53,094 synthesized members hold 152 and 165 MiB of
+`.debug$S` and 59 and 124 MiB of `.debug$T`. `llvm-nm` and `llvm-readobj`,
+linked with link.exe against each build's folded libraries, print what
+the originals print on 25 inputs, and their PDBs
+(`tools/turbolib/corpus/pdbcompare.py`) hold the same procedures (144,587
+to 152,520; 17,106 to 23,080 of them now in synthesized members), with
+the same signatures, locals, inline sites, and lines, except 21 to 50 per
+program whose lines name another file and line: the compiler gives an
+implicit member function the line where each translation unit needs it,
+and turbolib keeps the first member's copy, link.exe the first loaded.
+Records outside procedures (`S_UDT`, `S_CONSTANT`) differ in which copies
+link.exe keeps, as they do between two links of the same inputs. With
+lld-link, the images grow (2.8 MiB for `llvm-nm`); on `build-z7-nopch`
+by exactly as much with the phase 2.2 engine, which drops debug
+information, so not from 2.4.
 
 ## Decisions
 

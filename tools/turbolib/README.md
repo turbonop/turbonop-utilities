@@ -88,3 +88,14 @@ reached each PDB.
 
 Neither linker pruned anything: all 200 structures and all 200 function
 ids arrived every time.
+
+## `debug`: synthesized members' debug information (phase 2.4)
+
+Not a spike: the sources of turbonop-fold's debug-information fixtures.
+`build.cmd` builds them into `testdata\coff\fold` (its comments list each
+object). `check.py <turbolib.exe>` links `main.cpp` against libraries of
+them, made by lib.exe and folded by turbolib, with link.exe and lld-link,
+runs both programs, and compares the PDBs with
+`corpus\pdbcompare.py`, which compares procedures (signatures, locals,
+inline sites, lines) and other module symbols structurally, from
+llvm-pdbutil's dumps.

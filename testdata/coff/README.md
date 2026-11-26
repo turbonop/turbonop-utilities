@@ -28,6 +28,12 @@ x86, ARM64EC, and /clr; clang-cl, with CodeView and with DWARF; llvm-mc;
 ml64; armasm64 -g; cvtres), for the layouts, string tables, and auxiliary
 records each one has. The script's comments list what each object is for.
 
+`fold/` is built by `tools/turbolib/debug/build.cmd` (MSVC 14.52 and
+clang-cl of LLVM 24) from the sources there, for turbonop-fold's tests
+of synthesized members' CodeView: `/Od` and `/O2` objects (inline sites,
+inlinee lines, a file change inside an inlined function), a PCH object and
+its users, `/Zi` objects with their type server, and clang-cl's.
+
 `archives/` is built by `tools/coff/archives.cmd` (lib.exe of MSVC 14.52,
 with and without `/Brepro`, and llvm-lib of LLVM 24), for the archive
 writer's and the `.def` reader's tests, which write each library again

@@ -365,10 +365,17 @@ x64. Where the 3.5 MB went:
     structurally (2.4's check); run it there too.
 - **Phase 3: shared types.** 3.1 to 3.4 are done (`--precomp=library`;
   see the plan's "Phase 3 results"). Still open:
-  - **3.5, `--precomp=clustered=<n>`**: grouping members by the types they
-    share, so a link that loads few members merges fewer unused types.
-    Decide how to form the groups and choose and score *n* (the plan's
-    3.5), measure with the analyzer, then write it.
+  - 3.5, `--precomp=clustered[=<n>]`, is done (the plan's "Phase 3.5
+    results"). Open: an option for its weight (16) and the numbers of
+    groups tried; seeds that model real links (several members' closures
+    at once) rather than one member's; the same groups when a clustered
+    library is compacted again; and its 0.1 to 0.25 s a library, mostly
+    finding the first definers and closures again (reuse the engine's
+    definers).
+  - Folding is slower on `turbolib-writers` than phase 5 measured:
+    `--fold=identical` 2.47× `lib.exe` on `build-z7`'s 20 largest
+    libraries (10.0 s for `clangSema`, against 2.1 s), not from shared
+    types. Find what regressed.
   - Make `library` the default once it is proven in more links: the
     test programs' own suites, clang-cl's PCHs, `/Zi` neighbors, ARM64
     and x86 objects (all untested), and incremental linking with the
@@ -382,10 +389,9 @@ x64. Where the 3.5 MB went:
     names their PCH might let them share; likely not readable by
     lld-link (it reads `.debug$P` as plain records). Spike it with both
     linkers before writing anything.
-  - An option for the threshold (`min`, 2 now), and the PDB cost per
-    link that the plan's trade-off names (lld-link: 14,064 more types in
-    `llvm-nm`; link.exe: none measured), measured with the analyzer for
-    each choice.
+  - An option for the threshold (`min`, 2 now). The PDB cost per link is
+    measured (`corpus/linkcost.py`; lld-link only, 2 to 17% more TPI
+    records with `library`); the analyzer could project it too.
   - Speed: finding the shared types is about 0.35 s of
     `clangCodeGen.lib`'s 1.6 s; rewritten members' `.debug$S` is copied
     twice (renumbered, then into the skeleton).

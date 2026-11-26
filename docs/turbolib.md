@@ -24,7 +24,7 @@ items leave TODO.md as they ship.
 | 0 Measurements and linker spikes | Mostly done (see [Phase 0 results](#phase-0-results)): `turbolib analyze`, both corpora's numbers, and the PCH, weak-external, size-limit, and `.chks64` spikes. Not yet: incremental linking and `.chks64`, sanitizers. |
 | 1 Writers, round trips, and `lib.exe` without folding | In progress (see [Phase 1 results](#phase-1-results)). Done: 1.1, `turbonop-coff`, which every corpus object round-trips through byte-identically; 1.2, the archive writer, import objects, and `.def` files, which every library tried writes back through byte for byte; 1.3, CodeView's fields, C13 subsections, and renumbering, clean on both corpora; 1.4, the `lib` and `llvm-lib` personalities, which remake all 245 libraries of each corpus build as the tool did. 1.2's `/DEF` too: import libraries and export files as `lib.exe` and `llvm-lib` write them. Not yet: thin libraries. |
 | 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
-| 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links). Not yet: 3.5, `clustered`. |
+| 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links); 3.5 done, as `--precomp=clustered[=<n>]` (opt-in; see [Phase 3.5 results](#phase-35-results-clustered)). |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
 | 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; 4.24× GNU `ar`'s time on the 20 largest libraries (a noisy measurement). Not yet: GNU's split DWARF 4, `select-any` and `--locals` for ELF, the clang corpus. |
@@ -808,6 +808,143 @@ print in 324 of 324 runs; link.exe under `/OPT:REF` has 8,950 and 8,315
 failures (against 34,490 and 30,484 with folding alone before `.chks64`
 was kept), and the C++ initializers' order still differs with link.exe
 (the open item in TODO.md).
+
+### Phase 3.5 results: `clustered`
+
+**The cost first** (`tools/turbolib/corpus/linkcost.py`: each program
+linked as its build statement links it, `/DEBUG:FULL /OPT:REF`, best of
+3, against the build's libraries, `--precomp=library`'s, and
+`clustered`'s). The plan's trade-off holds for lld-link only: its PDBs
+hold every record of each PCH a link loads. link.exe's PDBs have exactly
+the TPI records they have without shared types (in all 20 link.exe links
+measured), so it merges only what is used. Shared types make both
+linkers faster and smaller even so: for `llvm-nm` on `build-z7-nopch`,
+link.exe takes 3.87 s and 2,392 MiB at its peak without them, 3.63 s and
+1,812 MiB with `library`; lld-link 3.65 s and 1,497 MiB, then 2.80 s and
+1,242 MiB. The unused records lld-link merges (TPI records beyond
+`none`'s, `build-z7-nopch` / `build-z7`):
+
+| Program (lld-link) | Members loaded | `library` | `clustered` |
+|---|---|---|---|
+| `llvm-nm` | 645, of 47 libraries | +14,064 / +14,022 | +7,453 / +3,906 |
+| `llvm-readobj` | 496, of 30 | +4,901 / +4,892 | +2,484 / +2,345 |
+| `mlir-src-sharder` (58 of `LLVMSupport`'s 184, 1 of `MLIRSupport`'s 8) | 147, of 14 | +11,480 / +8,781 | +3,561 / +1,575 |
+| `llvm-min-tblgen` | 162, of 14 | +9,508 / +8,294 | +3,324 / +1,451 |
+| `llvm-tblgen` | 168, of 15 | +8,425 / +7,216 | +2,503 / +1,921 |
+
+`library` gives 2 to 17% more TPI records (PDBs 0.4 to 4.7% larger);
+`clustered` removes 47 to 83% of them. Link times and peak memory stay
+`library`'s within the noise (lld-link's peak 0 to 4% lower, link.exe's
+up to 2% higher; a link's time varies by up to 0.3 s between rounds).
+
+**How it works** (`turbonop_fold::rewrite::precomp::cluster`):
+
+- **What links load**, the only signal turbolib has: a member's
+  *closure* is the members that define (as the archive index's first
+  definer) the names it refers to and doesn't define, transitively.
+  Closures vary widely: in `clangSema`, `clangCodeGen`, and
+  `LLVMCodeGen` most members reach nearly all (median 85 of 88, 103 of
+  105, 209 of 236); in `clangStaticAnalyzerCheckers` almost none (median
+  1 of 140); `LLVMSupport` has a core (median 54 of 184; nothing refers
+  to 85 of its members). Each sharing member is taken as one link that
+  loads its closure (a *seed*).
+- **Classes**: records held by the same members behave alike under any
+  grouping, so they are counted once per set of holders (4,041 classes
+  for `clangSema`'s 292,678 shared records). Under a grouping, a class is
+  in a group's PCH when at least `min` (2) of its holders are in the
+  group, and otherwise in each of them.
+- **The score**: `seeds × S + w × C`. `S` is the library's bytes of those
+  records; `C` is what the seeds' links read of them (each group's PCH
+  once for each seed whose closure touches the group, each kept copy once
+  for each seed whose closure holds its member). So: the library's bytes
+  plus `w` times what an average one-member link reads. `w` is 16. On
+  the 27 libraries those five programs use (`build-z7-nopch`), `w` = 1
+  removed 0 to 4% of lld-link's extra records, 4 removed 21 to 40%, 16
+  removed 64 to 79%, 64 removed 65 to 85%, and 256 removed 76 to 92%.
+  The libraries grow with `w`: 0.2%, 0.9%, 2.3%, 3.1%, and 3.8% over
+  `library`'s.
+- **The search**, per machine: it tries each number of groups
+  (`clustered`: 1, 2, 4, 8, 16; `clustered=n`: the powers of two below
+  *n*, and *n*). Heads are chosen by their loaders (first the most loaded
+  member, then each time the member least like any head), and each
+  member joins the head most like it. Then each member in turn moves to
+  the group, or out of all of them, that lowers the score most (the change
+  computed exactly and incrementally; a test checks it against
+  recomputing), until no move does; then whole groups merge while that
+  lowers the score. The lowest score wins. A member out of every group
+  keeps its types (as a group of one would). Everything is integers in
+  member order: the same bytes on 1 and 8 threads and from two builds
+  (`LLVMSupport` and `clangCodeGen` of `build-z7`, `LLVMObject` and
+  `clangBasic` of `build-z7-nopch`, with `--fold=identical`).
+- **The members**: one PCH member for each group with shared records,
+  named by its records' hash, so each has its own signature, name,
+  `S_OBJNAME`, and symbol (two groups with the same records share one
+  member). Each member names its group's. A synthesized member names the
+  PCH that most of its units' members name (the first such group), and
+  holds its other records itself. `library`'s output is unchanged, byte
+  for byte.
+
+**On the corpus** (all 250 libraries, the build's own commands):
+
+| | `build-z7` | `build-z7-nopch` |
+|---|---|---|
+| `--precomp=library` | 12.61 GiB, 96 PCH members | 11.57 GiB, 169 |
+| `--precomp=clustered` | 12.70 GiB (+0.7%), 271 PCH members in 96 libraries, 53 with more than one | 11.88 GiB (+2.6%), 331 in 169, 75 with more than one |
+| `--fold=identical --precomp=clustered` | 11.17 GiB | 10.29 GiB |
+
+The libraries whose members reach nearly all the others keep one group
+(`clangSema`, `LLVMCodeGen`), as does `clangStaticAnalyzerCheckers`,
+whose checkers share mostly the same headers. `LLVMSupport` gets 5 groups
+on `build-z7`.
+
+**Verification:**
+
+- `turbolib verify`, with the PCH pairing check (each PCH member's
+  `S_OBJNAME` is the name its users give), passes all 96 and 169
+  clustered libraries, and all 190 and 169 with `--fold=identical` too.
+- `relink.py`'s matrix for `llvm-nm` and `llvm-readobj`: all 16 lld-link
+  links are equivalent (`compare-images`) on both corpora. The 8 link.exe
+  links fail on picks among same-named `S_UDT` and `S_CONSTANT` records
+  and on modules' own records, phase 3's categories and those of two
+  links of the same inputs: 150, 66, 9, and 1 failures on
+  `build-z7-nopch`, and 46, 20, 21, and 28 on `build-z7` (with `library`,
+  measured the same day: 4, 4, 11, 9 and 75, 17, 40, 45).
+  `pdbcompare.py` finds the same procedures in every link checked
+  (147,113 for `llvm-nm`); the records outside procedures differ for
+  link.exe by 1 to 66 (the picks), and are the same for lld-link.
+- With `--fold=identical` too, on `build-z7-nopch`: lld-link's failures
+  are exactly those of `--fold=identical --precomp=library` in all 8
+  links (folding's own, 35,601 to 141,713), and link.exe's are within 14
+  of them (4,004 against 4,018 for `llvm-nm` under `/OPT:REF`).
+- The programs print what the originals print: `llvm-nm` and
+  `llvm-readobj --all` on 27 inputs (`testdata/coff`'s objects,
+  libraries, and `model` objects; `LLVMDemangle`'s objects and library;
+  `LLVMBinaryFormat.lib`; `llvm-nm.exe`), 324 runs for each of `clustered`
+  and `--fold=identical --precomp=clustered` on each corpus: none
+  different.
+- Unit tests: the incremental score against recomputing (200 random
+  cases); the model's figures for one group and for none; separate parts
+  split and parts loaded together kept; and the fixtures with clustered
+  types (every member reads the same through its group's PCH, the
+  signatures are distinct, and a heavy weight splits them).
+
+**Speed** (`timelib.py`, the 20 largest libraries, best of 2):
+`clustered` takes 0.99× `lib.exe`'s time on both corpora, against
+`library`'s 0.89×. The grouping costs about 0.1 to 0.25 s a library, most
+of it finding the first definers and closures again, beside the
+definers the engine already finds. With folding, the same day:
+`--fold=identical` 2.47× (`build-z7`) and 1.69× (`build-z7-nopch`),
+`--fold=identical --precomp=library` 2.60× and 1.95×, and
+`--fold=identical --precomp=clustered` 2.77× and 2.10×. Folding alone is
+slower than phase 5 measured, mostly in `clangSema` (10.0 s against
+`lib.exe`'s 2.1 s); that isn't from shared types.
+
+**Not done:** compacting a clustered library again keeps its PCH
+members' records as each user's (as for `library`), but may group them
+differently, so getting the same bytes again isn't promised. The weight
+and the numbers tried have no option. The seeds are single members, not
+real links: a link that loads many members of a library touches more
+groups than the model's average.
 
 ## Phase 4 results
 
@@ -1771,7 +1908,7 @@ Synthesized members are indexed for their anchors alone (under
 |---|---|
 | `none` | Each member keeps its own `.debug$T`. Synthesized members get merged types of their own. |
 | `library` (written; the default once it is proven in more links) | One precompiled-types member for the whole library (see [Phase 3 results](#phase-3-results)). |
-| `clustered=<n>` | Up to *n* precompiled-types members, with members clustered by the types they share. |
+| `clustered`, `clustered=<n>` (written) | Up to *n* precompiled-types members (16 without *n*), each for a group of members, the groups chosen by a cost model of what links load (see [Phase 3.5 results](#phase-35-results-clustered)). |
 
 ### `--report odr`: names whose definitions differ
 
@@ -1846,7 +1983,10 @@ each used only by its own `/Gy` function:
 The same is true of link.exe and lld-link, with `/OPT:REF` and
 `/OPT:NOREF`. A link that loads three members of a
 library of 1,000 merges types for all 1,000. `clustered` bounds this by
-partitioning, and the analyzer reports the cost for each choice. Shared
+partitioning, and `--stats` reports the cost model's figures for each
+choice. (In the corpus's links, measured in
+[3.5](#phase-35-results-clustered), only lld-link's PDBs gain the unused
+records; link.exe's have the same records as without shared types.) Shared
 records are merged once per link instead of once per member, so for
 links that use much of the library we expect faster links and smaller
 peak memory. Phase 0 measures both.
@@ -2218,6 +2358,11 @@ What compare-images reports for the folded libraries (link.exe,
 ### Phase 3: shared types
 
 - **3.1** to **3.4**: done (see [Phase 3 results](#phase-3-results)).
+  **3.5**: done (see [Phase 3.5 results](#phase-35-results-clustered)),
+  with the open questions below answered there: groups by what links
+  load (the library's own references), *n* fixed or chosen, a score of
+  the library's bytes plus 16 times what an average link reads, and
+  members out of every group when that scores lower.
 - **3.1** Structural type hashing.
 - **3.2** The shared set and the precompiled-types member.
 - **3.3** Rewriting `.debug$T` and remapping `.debug$S`.

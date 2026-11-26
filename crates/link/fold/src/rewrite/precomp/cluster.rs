@@ -91,10 +91,10 @@ pub(super) struct Choice {
 /// What a byte an average one-member link reads weighs against a byte of
 /// the library, by default. On LLVM (`build-z7-nopch`, the 27 libraries
 /// `llvm-nm`, `llvm-readobj`, `mlir-src-sharder`, `llvm-min-tblgen`, and
-/// `llvm-tblgen` use), 1 left lld-link's PDBs with almost all of the
-/// records `--precomp=library` adds (0 to 4% fewer), 4 with 16 to 77%,
-/// 16 with 34 to 64% (the libraries 2.3% larger than `library`'s), and 64
-/// and 256 little better than 16, with larger libraries.
+/// `llvm-tblgen` use), 1 removed 0 to 4% of the records lld-link's PDBs
+/// gain from `--precomp=library`, 4 removed 21 to 40%, 16 removed 64 to
+/// 79% (the libraries 2.3% larger than `library`'s), and 64 and 256 65 to
+/// 85% and 76 to 92% (3.1% and 3.8% larger). See `docs/turbolib.md`.
 pub const WEIGHT: u64 = 16;
 
 /// The search's bound on sweeps over the members.

@@ -209,7 +209,7 @@ def main():
                     failures += 1
                     pairs = pairs[1:]
                 for what, a, b in pairs:
-                    r = subprocess.run([args.compare_images, "compare-images", a, b],
+                    r = subprocess.run([args.compare_images, "compare-images", "--examples=0", a, b],
                                        capture_output=True, text=True)
                     report = os.path.join(out, f"{program}-{linker}-{what}.txt")
                     with open(report, "w") as f:

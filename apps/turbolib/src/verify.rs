@@ -35,6 +35,7 @@ options:
                    by content, and local COMDATs may be copied into any
                    number of synthesized members
   -j N             use N threads (1: no threads but this one)
+  --examples=N     list N examples of each finding (0: all; default 5)
   --stats          say how long it took
 ";
 
@@ -58,6 +59,7 @@ counts and examples, and exits with 1 if anything fails.
 
 options:
   -j N             use N threads (1: no threads but this one)
+  --examples=N     list N examples of each finding (0: all; default 5)
   --stats          say how long it took
 ";
 
@@ -86,6 +88,13 @@ fn parse(args: &[String], pull: bool) -> Result<Common, String> {
         };
         match a.as_str() {
             "--stats" => c.stats = true,
+            s if s.starts_with("--examples=") => {
+                let v = &s["--examples=".len()..];
+                let n: usize = v
+                    .parse()
+                    .map_err(|_| format!("--examples={v}: not a number"))?;
+                turbonop_verify::report::set_examples(if n == 0 { usize::MAX } else { n });
+            }
             "--pull=preserve" if pull => c.options.pull = Pull::Preserve,
             "--pull=relaxed" if pull => c.options.pull = Pull::Relaxed,
             "--fold=identical" if pull => c.options.fold = Fold::Identical,

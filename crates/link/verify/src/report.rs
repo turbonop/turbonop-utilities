@@ -3,9 +3,22 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// How many examples each category keeps.
+/// How many examples each category keeps, by default.
 pub const EXAMPLES: usize = 5;
+
+static LIMIT: AtomicUsize = AtomicUsize::new(EXAMPLES);
+
+/// Sets how many examples each category keeps, for every report of the
+/// process (`usize::MAX`: all of them).
+pub fn set_examples(n: usize) {
+    LIMIT.store(n, Ordering::Relaxed);
+}
+
+fn limit() -> usize {
+    LIMIT.load(Ordering::Relaxed)
+}
 
 /// What a finding means.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -62,7 +75,7 @@ impl Report {
                 examples: Vec::new(),
             });
         f.count += 1;
-        if f.examples.len() < EXAMPLES {
+        if f.examples.len() < limit() {
             f.examples.push(example());
         }
     }
@@ -103,7 +116,7 @@ impl Report {
                     examples: Vec::new(),
                 });
             mine.count += f.count;
-            let room = EXAMPLES.saturating_sub(mine.examples.len());
+            let room = limit().saturating_sub(mine.examples.len());
             mine.examples.extend(f.examples.into_iter().take(room));
         }
         for (what, n) in other.checked {

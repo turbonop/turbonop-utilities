@@ -264,7 +264,7 @@ pub(crate) mod ms {
 
 /// A piece of a compiled template.
 /// (Four bytes: its text and its group's tokens by index.)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub(crate) enum Tok {
     /// Text, as shown: an index into `LITS` (see [`lit`]).
     Lit(u16),
@@ -274,6 +274,21 @@ pub(crate) enum Tok {
     /// out when every symbol in it is a default (and it has symbols, or is
     /// `, #0`: `optional`).
     Group(u16, bool),
+}
+
+/// As the tokens were: their texts, not their indexes (for `explain`).
+impl core::fmt::Debug for Tok {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match *self {
+            Tok::Lit(i) => f.debug_tuple("Lit").field(&lit(i)).finish(),
+            Tok::Sym(i) => f.debug_tuple("Sym").field(&i).finish(),
+            Tok::Group(i, optional) => f
+                .debug_tuple("Group")
+                .field(&toks(i))
+                .field(&optional)
+                .finish(),
+        }
+    }
 }
 
 /// The literal text `i`.

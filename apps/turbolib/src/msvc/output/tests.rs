@@ -8,12 +8,12 @@ fn the_same_bytes_as_the_in_memory_writer() {
     let dir = std::env::temp_dir().join(format!("turbolib-output-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
-    let big: Vec<u8> = (0..(PIECE * 2 + 12_345))
+    let big: Vec<u8> = (0..(CHUNK * 2 + 12_345))
         .map(|i| u8::try_from(i % 251).unwrap())
         .collect();
     let datas: Vec<Vec<u8>> = vec![
         b"odd".to_vec(),
-        vec![1; SMALL + 1],
+        vec![1; CHUNK + 1],
         big,
         Vec::new(),
         b"even".to_vec(),

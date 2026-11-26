@@ -11,11 +11,11 @@
 //! - nothing outside it refers to one of its non-external symbols;
 //! - it has no COFF line numbers, and only sections of known kinds.
 //!
-//! Side tables that hold symbol indices (`.gfids$y` and the other `/guard`
-//! tables, `.sxdata`) and FPO data (`.debug$F`) can't be split yet (phase
-//! 2.3), so a member with any of them folds nothing.
+//! Side tables' entries count as references too ([`tables`](super::tables)
+//! says how); a member with one turbolib can't read folds nothing.
 
 use super::Unfoldable;
+use super::tables::{self, Tables};
 use crate::hash::H128;
 use turbonop_coff::{
     Aux, Object, SectionData, SectionId, SectionNumber, SymbolId, comdat_select, storage_class,
@@ -66,6 +66,8 @@ pub struct Facts {
     pub other_definitions: Vec<Vec<u8>>,
     /// Its units.
     pub units: Vec<Unit>,
+    /// Its side tables.
+    pub tables: Tables,
 }
 
 /// Section names (prefixes) whose meaning turbolib knows. A member with a
@@ -96,19 +98,7 @@ const KNOWN_SECTIONS: &[&[u8]] = &[
     b".rtc$",
     b".00cfg",
     b".retplne",
-];
-
-/// Tables that hold symbol indices or per-function entries outside any
-/// COMDAT, which phase 2.3 will split.
-const SIDE_TABLES: &[&[u8]] = &[
-    b".gfids$y",
-    b".giats$y",
-    b".gljmp$y",
-    b".gehcont$y",
-    b".sxdata",
-    b".debug$F",
-    b".voltbl",
-    b".retplne",
+    b".llvm_addrsig",
 ];
 
 fn starts_with_any(name: &[u8], prefixes: &[&[u8]]) -> bool {
@@ -185,15 +175,15 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
         }
     }
 
-    let mut side_tables = false;
+    let (mut tables, unreadable_table) = match tables::find(object) {
+        Ok(t) => (t, None),
+        Err(why) => (Tables::default(), Some(why)),
+    };
     let mut compile = None;
     for sec in &object.sections {
         let name = sec.name.as_bytes();
         if !starts_with_any(name, KNOWN_SECTIONS) {
             return Err(Unfoldable::UnknownSection);
-        }
-        if starts_with_any(name, SIDE_TABLES) && sec.size() > 0 {
-            side_tables = true;
         }
         let comdat = sec.characteristics & IMAGE_SCN_LNK_COMDAT != 0;
         if name == b".drectve" {
@@ -352,10 +342,11 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
             detail[k] = leader.map(|s| show(s.name.as_bytes()));
         }
     }
-    if side_tables {
+    if let Some(why) = &unreadable_table {
         reason
             .iter_mut()
             .for_each(|r| *r = Some(Unfoldable::SideTables));
+        detail.iter_mut().for_each(|d| *d = Some(why.clone()));
     }
     for (i, sec) in object.sections.iter().enumerate() {
         let here = unit_of[i];
@@ -363,6 +354,9 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
             && !sec.line_numbers.is_empty()
         {
             reason[u].get_or_insert(Unfoldable::LineNumbers);
+        }
+        if tables.splits_relocations(SectionId(i as u32)) {
+            continue;
         }
         for r in &sec.relocations {
             let Some(target) = object.symbol(r.symbol) else {
@@ -421,6 +415,7 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
             }
         }
     }
+    tables.check(object, &unit_of, &symbol_unit, &mut reason, &mut detail);
     // Auxiliary records that name a unit's symbols from outside it.
     for (i, s) in object.symbols.iter().enumerate() {
         let named = match &s.aux {
@@ -458,6 +453,7 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
                 &symbol_unit,
                 facts.environment,
                 &checksum,
+                &tables,
             )
         })
         .collect();
@@ -475,6 +471,7 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
             .sum();
     }
     facts.units = units;
+    facts.tables = tables;
     Ok(facts)
 }
 
@@ -503,7 +500,8 @@ pub fn weak_default<'o>(
 /// relocation, with a target inside the unit by position and one outside
 /// by name; and each symbol defined in it (by position within the unit, a
 /// local one without its name, which can differ between translation units
-/// for the same code, such as `$LN` labels).
+/// for the same code, such as `$LN` labels). A side table's entries count
+/// as its relocations do.
 fn identity(
     object: &Object<'_>,
     unit: &Unit,
@@ -511,6 +509,7 @@ fn identity(
     symbol_unit: &[Option<usize>],
     environment: u128,
     checksum: &[u32],
+    tables: &Tables,
 ) -> u128 {
     let mut h = H128::new();
     h.u128(environment);
@@ -527,12 +526,13 @@ fn identity(
             continue;
         }
         h.u64(u64::from(sec.characteristics));
-        match &sec.data {
-            SectionData::Bytes(b) => {
+        match (tables.get(s), &sec.data) {
+            (Some(t), _) => t.hash(object, unit, k, symbol_unit, &mut h),
+            (None, SectionData::Bytes(b)) => {
                 h.u64(b.len() as u64);
                 h.bytes(b);
             }
-            SectionData::Uninitialized(size) => h.u64(u64::from(*size) | 1 << 63),
+            (None, SectionData::Uninitialized(size)) => h.u64(u64::from(*size) | 1 << 63),
         }
         h.u64(sec.relocations.len() as u64);
         for r in &sec.relocations {

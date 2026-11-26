@@ -28,6 +28,13 @@ x86, ARM64EC, and /clr; clang-cl, with CodeView and with DWARF; llvm-mc;
 ml64; armasm64 -g; cvtres), for the layouts, string tables, and auxiliary
 records each one has. The script's comments list what each object is for.
 
+`tables/` holds turbolib's side-table test objects, built by
+`tools/coff/tables.cmd` from `tools/coff/tables/one.cpp` and `two.cpp`
+(which share `shared.h`'s inline functions): each configuration's pair has
+the `/guard` tables, `.sxdata` and FPO, `.voltbl`, or `.retplne`, as cl
+(x64, x86, ARM64) and clang-cl write them. The script's comments list
+them.
+
 `archives/` is built by `tools/coff/archives.cmd` (lib.exe of MSVC 14.52,
 with and without `/Brepro`, and llvm-lib of LLVM 24), for the archive
 writer's and the `.def` reader's tests, which write each library again

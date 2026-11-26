@@ -26,11 +26,15 @@
 //! Every step's result is independent of the number of threads: groups are
 //! decided in member order, and the survivor is the first copy.
 //!
+//! Side tables (the `/guard` tables, `.sxdata`, FPO, `.voltbl`, and
+//! `.retplne`) are split as [`tables`] describes: entries go with their
+//! code.
+//!
 //! Not yet: folded units' debug information (phase 2.4: a synthesized
 //! member holds no `.debug$S` or `.debug$T` yet, so the folded functions
-//! have no symbols in the PDB), and the side tables (phase 2.3: a member
-//! with any folds nothing).
+//! have no symbols in the PDB).
 
+pub mod tables;
 pub mod units;
 
 use crate::hash::H128;
@@ -86,7 +90,7 @@ pub enum Unfoldable {
     Unreadable,
     /// The member has a section of a kind turbolib doesn't know.
     UnknownSection,
-    /// The member has side tables (phase 2.3).
+    /// The member has a side table turbolib can't read.
     SideTables,
     /// The unit has COFF line numbers.
     LineNumbers,
@@ -127,7 +131,7 @@ impl Unfoldable {
             Unfoldable::Anonymous => "anonymous object",
             Unfoldable::Unreadable => "not a readable object",
             Unfoldable::UnknownSection => "a section of an unknown kind",
-            Unfoldable::SideTables => "side tables (/guard, .sxdata, FPO), not yet split",
+            Unfoldable::SideTables => "a side table turbolib can't read",
             Unfoldable::LineNumbers => "COFF line numbers",
             Unfoldable::BadRelocation => "a relocation naming no symbol",
             Unfoldable::WeakExternalReference => "refers to a weak external",
@@ -501,9 +505,12 @@ fn strip(parsed: &Parsed<'_>, removals: &[(usize, Removal)], anchors: &[&[u8]]) 
             removed[i] = true;
         }
     }
-    object
+    let original = parsed.object.as_ref().expect("an object");
+    let fields = tables::strip(original, &facts.tables, &removed, &mut object);
+    let renumbering = object
         .remove_sections(|id, _| removed[id.index()])
         .expect("a foldable unit is referred to only by external symbols");
+    tables::renumber(&mut object, &fields, &renumbering);
     for a in anchors {
         object.push_symbol(Symbol::new(
             Name::new(a.to_vec()),
@@ -569,10 +576,6 @@ fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
     // The units: their sections and symbols, with names renamed where the
     // copy is a renamed one. Relocations are filled in after, once every
     // unit's symbols are in.
-    struct Placed {
-        sections: HashMap<u32, SectionId>,
-        symbols: HashMap<u32, SymbolId>,
-    }
     let mut placed: Vec<Placed> = Vec::with_capacity(s.units.len());
     let mut defined: HashMap<Vec<u8>, SymbolId> = HashMap::new();
     for &(m, u, renamed_copy) in &s.units {
@@ -584,7 +587,7 @@ fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
         };
         for &id in &unit.sections {
             let sec = &object.sections[id.index()];
-            if is_debug(sec.name.as_bytes()) {
+            if is_debug(sec.name.as_bytes()) && !tables::moves_with_unit(sec.name.as_bytes()) {
                 continue;
             }
             let mut copy = sec.clone();
@@ -630,29 +633,11 @@ fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
 
     // Relocations: inside a unit, to its own symbols; outside, by name, to
     // a symbol defined here or to an undefined external.
-    let mut undefined: HashMap<Vec<u8>, SymbolId> = HashMap::new();
-    let mut weak: HashMap<Vec<u8>, SymbolId> = HashMap::new();
-    // A symbol by name: defined here, or an undefined external.
-    fn by_name<'x>(
-        o: &mut Object<'x>,
-        defined: &HashMap<Vec<u8>, SymbolId>,
-        undefined: &mut HashMap<Vec<u8>, SymbolId>,
-        name: &[u8],
-        kind: u16,
-    ) -> SymbolId {
-        if let Some(&d) = defined.get(name) {
-            return d;
-        }
-        *undefined.entry(name.to_vec()).or_insert_with(|| {
-            o.push_symbol(Symbol::new(
-                Name::new(name.to_vec()),
-                0,
-                SectionNumber::Undefined,
-                kind,
-                storage_class::EXTERNAL,
-            ))
-        })
-    }
+    let mut names = Names {
+        defined,
+        undefined: HashMap::new(),
+        weak: HashMap::new(),
+    };
     for (k, &(m, u, _)) in s.units.iter().enumerate() {
         let object = parsed[m].object.as_ref().expect("units come from objects");
         let unit = &parsed[m].facts.units[u];
@@ -662,40 +647,9 @@ fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
             };
             let mut relocations = Vec::with_capacity(object.sections[id.index()].relocations.len());
             for r in &object.sections[id.index()].relocations {
-                let target = &object.symbols[r.symbol.index()];
                 let symbol = match placed[k].symbols.get(&r.symbol.0) {
                     Some(&inside) => inside,
-                    None => match units::weak_default(object, target) {
-                        // A weak external, made again here, its default by
-                        // name.
-                        Some((search, default)) => {
-                            let name = target.name.as_bytes();
-                            match weak.get(name) {
-                                Some(&w) => w,
-                                None => {
-                                    let tag = by_name(&mut o, &defined, &mut undefined, default, 0);
-                                    let mut w = Symbol::new(
-                                        Name::new(name.to_vec()),
-                                        0,
-                                        SectionNumber::Undefined,
-                                        target.kind,
-                                        storage_class::WEAK_EXTERNAL,
-                                    );
-                                    w.aux = Aux::WeakExternal(WeakExternal { tag, search });
-                                    let id = o.push_symbol(w);
-                                    weak.insert(name.to_vec(), id);
-                                    id
-                                }
-                            }
-                        }
-                        None => by_name(
-                            &mut o,
-                            &defined,
-                            &mut undefined,
-                            target.name.as_bytes(),
-                            target.kind,
-                        ),
-                    },
+                    None => names.outside(&mut o, object, &object.symbols[r.symbol.index()]),
                 };
                 relocations.push(Relocation {
                     offset: r.offset,
@@ -706,6 +660,9 @@ fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
             o.sections[new.index()].relocations = relocations;
         }
     }
+    let table_fields = tables::place(&mut o, s, parsed, &placed, &mut |o, object, target| {
+        names.outside(o, object, target)
+    });
     o.push_symbol(Symbol::new(
         Name::new(anchor.to_vec()),
         0,
@@ -717,8 +674,73 @@ fn synthesize(s: &Synth, parsed: &[Parsed<'_>], anchor: &[u8]) -> Vec<u8> {
         o.set_format(Format::BigObj)
             .expect("a new object converts to big-obj");
     }
+    tables::finish(&mut o, &table_fields);
     o.sync_section_definitions();
     o.write().expect("a synthesized member fits its format")
+}
+
+/// Where one unit's sections and symbols went in a synthesized member, by
+/// their numbers in the member they came from.
+struct Placed {
+    sections: HashMap<u32, SectionId>,
+    symbols: HashMap<u32, SymbolId>,
+}
+
+/// The symbols a synthesized member names things outside its units by.
+struct Names {
+    /// External symbols defined here, by name.
+    defined: HashMap<Vec<u8>, SymbolId>,
+    /// Undefined externals and weak externals made here, by name.
+    undefined: HashMap<Vec<u8>, SymbolId>,
+    weak: HashMap<Vec<u8>, SymbolId>,
+}
+
+impl Names {
+    /// A symbol by name: defined here, or an undefined external.
+    fn by_name(&mut self, o: &mut Object<'_>, name: &[u8], kind: u16) -> SymbolId {
+        if let Some(&d) = self.defined.get(name) {
+            return d;
+        }
+        *self.undefined.entry(name.to_vec()).or_insert_with(|| {
+            o.push_symbol(Symbol::new(
+                Name::new(name.to_vec()),
+                0,
+                SectionNumber::Undefined,
+                kind,
+                storage_class::EXTERNAL,
+            ))
+        })
+    }
+
+    /// The symbol here for `target`, a symbol of `object` outside the
+    /// units: by name, or a weak external made again here, its default by
+    /// name.
+    fn outside(
+        &mut self,
+        o: &mut Object<'_>,
+        object: &Object<'_>,
+        target: &Symbol<'_>,
+    ) -> SymbolId {
+        let Some((search, default)) = units::weak_default(object, target) else {
+            return self.by_name(o, target.name.as_bytes(), target.kind);
+        };
+        let name = target.name.as_bytes();
+        if let Some(&w) = self.weak.get(name) {
+            return w;
+        }
+        let tag = self.by_name(o, default, 0);
+        let mut w = Symbol::new(
+            Name::new(name.to_vec()),
+            0,
+            SectionNumber::Undefined,
+            target.kind,
+            storage_class::WEAK_EXTERNAL,
+        );
+        w.aux = Aux::WeakExternal(WeakExternal { tag, search });
+        let id = o.push_symbol(w);
+        self.weak.insert(name.to_vec(), id);
+        id
+    }
 }
 
 fn section_symbol(name: &[u8], id: SectionId, def: SectionDefinition) -> Symbol<'static> {

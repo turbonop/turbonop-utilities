@@ -40,6 +40,10 @@ pub struct Unit {
     pub size: u64,
     /// Its identity: equal for copies that can stand for each other.
     pub identity: u128,
+    /// The hash of its contents alone, without the environment: equal for
+    /// copies whose code and data are the same, whatever their objects'
+    /// `@feat.00` and `/FAILIFMISMATCH`.
+    pub code: u128,
     /// Why it can't be folded, if it can't.
     pub unfoldable: Option<Unfoldable>,
     /// What made it so, in words (for `--diagnose`).
@@ -291,6 +295,7 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
                     selection: selection[l],
                     size: 0,
                     identity: 0,
+                    code: 0,
                     unfoldable: None,
                     detail: None,
                 });
@@ -457,23 +462,17 @@ pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
         }
     }
 
-    let identities: Vec<u128> = (0..units.len())
-        .map(|k| {
-            identity(
-                object,
-                &units[k],
-                k,
-                &symbol_unit,
-                facts.environment,
-                &checksum,
-                &tables,
-            )
-        })
+    let codes: Vec<u128> = (0..units.len())
+        .map(|k| code(object, &units[k], k, &symbol_unit, &checksum, &tables))
         .collect();
     for (k, u) in units.iter_mut().enumerate() {
         u.unfoldable = reason[k];
         u.detail = detail[k].take();
-        u.identity = identities[k];
+        u.code = codes[k];
+        let mut h = H128::new();
+        h.u128(facts.environment);
+        h.u128(codes[k]);
+        u.identity = h.finish();
         u.size = u
             .sections
             .iter()
@@ -508,24 +507,23 @@ pub fn weak_default<'o>(
         .then(|| (w.search, default.name.as_bytes()))
 }
 
-/// The unit's identity hash: its environment, selection, and checksum; each
-/// non-debug section's name, characteristics, and contents; each
+/// The unit's code hash (its identity is this with its environment): its
+/// selection and checksum; each non-debug section's name, characteristics,
+/// and contents; each
 /// relocation, with a target inside the unit by position and one outside
 /// by name; and each symbol defined in it (by position within the unit, a
 /// local one without its name, which can differ between translation units
 /// for the same code, such as `$LN` labels). A side table's entries count
 /// as its relocations do.
-fn identity(
+fn code(
     object: &Object<'_>,
     unit: &Unit,
     k: usize,
     symbol_unit: &[Option<usize>],
-    environment: u128,
     checksum: &[u32],
     tables: &Tables,
 ) -> u128 {
     let mut h = H128::new();
-    h.u128(environment);
     h.u64(u64::from(unit.selection));
     h.u64(u64::from(checksum[unit.leader.index()]));
     let position = |id: SymbolId| unit.symbols.binary_search(&id).ok();

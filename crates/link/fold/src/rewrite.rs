@@ -58,11 +58,12 @@ pub struct Input<'a> {
 /// Whether which members a link loads may change (`--pull`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pull {
-    /// A link gets the same copy of each name as before, and no member with
-    /// side effects loads or stops loading: a group is folded only if its
-    /// first copy is in the member the index named for its symbols (the
-    /// synthesized members, first in the archive, are named now), and that
-    /// member has no side effects.
+    /// A link gets the same code for each name as before, and no member with
+    /// side effects loads or stops loading: a group is folded only if every
+    /// definition of its symbols in the library is a unit with the same code
+    /// (environments may differ), and the member the index named for them
+    /// (the synthesized members, first in the archive, are named now) has no
+    /// side effects.
     Preserve,
     /// Fold regardless.
     Relaxed,
@@ -112,8 +113,8 @@ pub enum Unfoldable {
     Single,
     /// Another copy can't be folded.
     CopyUnfoldable,
-    /// The member the archive index names for a symbol it defines holds
-    /// another copy, not this group's (`--pull=preserve`).
+    /// A symbol it defines is defined elsewhere in the library with other
+    /// code, or not by a unit (`--pull=preserve`).
     OtherDefinitions,
     /// Its first copy's member has side effects and keeps it, and there
     /// are too few other copies to save anything (`--pull=preserve`).
@@ -143,7 +144,7 @@ impl Unfoldable {
             Unfoldable::Single => "only one copy",
             Unfoldable::CopyUnfoldable => "another copy can't be folded",
             Unfoldable::OtherDefinitions => {
-                "an earlier member defines its symbols differently (--pull=preserve)"
+                "its symbols are defined elsewhere with other code (--pull=preserve)"
             }
             Unfoldable::SideEffects => "its first definer has side effects (--pull=preserve)",
             Unfoldable::SideEffectsTooFewCopies => {
@@ -326,6 +327,30 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         }
     }
 
+    // Each name's code, if every definition of it in the library is a unit
+    // with that code (whatever its environment); `None` if any differs, or
+    // isn't a unit's.
+    let mut one_code: HashMap<&[u8], Option<u128>> = HashMap::new();
+    for (p, d) in parsed.iter().zip(&defs) {
+        if p.passed.is_some() {
+            for name in d {
+                one_code.insert(name.as_ref(), None);
+            }
+            continue;
+        }
+        for unit in &p.facts.units {
+            for n in &unit.externals {
+                let e = one_code.entry(n.as_slice()).or_insert(Some(unit.code));
+                if *e != Some(unit.code) {
+                    *e = None;
+                }
+            }
+        }
+        for n in &p.facts.other_definitions {
+            one_code.insert(n.as_slice(), None);
+        }
+    }
+
     lap(1);
     // Groups of copies, in order of first appearance.
     let mut groups: HashMap<u128, usize> = HashMap::new();
@@ -345,39 +370,42 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     let mut synths: Vec<Synth> = Vec::new();
     for c in &copies {
         let unit = |&(m, u): &(usize, usize)| &parsed[m].facts.units[u];
-        let first = &c[0];
-        // The copies that can move. The first must be one of them: it is
-        // the survivor, the copy a link that refers to its names got before.
-        // A later copy that can't stays where it is, as it was.
+        // The copies that can move; the first of them survives. A copy that
+        // can't stays where it is.
         let movable: Vec<(usize, usize)> = c
             .iter()
             .copied()
             .filter(|x| unit(x).unfoldable.is_none())
             .collect();
         for x in c.iter().filter(|x| unit(x).unfoldable.is_some()) {
-            if x != first {
-                let w = unit(x).unfoldable.unwrap_or(Unfoldable::CopyUnfoldable);
+            let w = unit(x).unfoldable.unwrap_or(Unfoldable::CopyUnfoldable);
+            *report.not_folded.entry(w).or_default() += 1;
+        }
+        if movable.len() < 2 {
+            if movable.len() == 1 {
+                let w = if c.len() < 2 {
+                    Unfoldable::Single
+                } else {
+                    Unfoldable::CopyUnfoldable
+                };
                 *report.not_folded.entry(w).or_default() += 1;
             }
+            continue;
         }
+        let first = &movable[0];
         let mut why = None;
-        if let Some(w) = unit(first).unfoldable {
-            why = Some(w);
-        } else if movable.len() < 2 {
-            why = Some(if c.len() < 2 {
-                Unfoldable::Single
-            } else {
-                Unfoldable::CopyUnfoldable
-            });
-        } else if options.pull == Pull::Preserve
-            // Synthesized members come first in the archive, so the index
-            // names them for what they define. That keeps what a link gets
-            // for each name only if the member the index named was the
-            // survivor's.
+        // Under Preserve, a link must get the same code for each name, from
+        // the same members. Which copy a link keeps depends on which members
+        // it loads and in what order, so a name folds only if every
+        // definition of it in the library is a unit with the same code;
+        // then any copy is the same. And the member the index named for it
+        // (now the synthesized member, first in the archive) must have had
+        // no side effects, so that no longer loading it changes nothing.
+        if options.pull == Pull::Preserve
             && unit(first)
                 .externals
                 .iter()
-                .any(|n| first_definer.get(n.as_slice()) != Some(&first.0))
+                .any(|n| one_code.get(n.as_slice()).copied().flatten() != Some(unit(first).code))
         {
             why = Some(Unfoldable::OtherDefinitions);
         }
@@ -389,7 +417,12 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         // the name reaches the link from a library member after the weak
         // externals (measured; see docs/turbolib.md). `weak_externals`
         // turns it on, for study.
-        let side_effects = options.pull == Pull::Preserve && parsed[first.0].facts.side_effects;
+        let side_effects = options.pull == Pull::Preserve
+            && unit(first).externals.iter().any(|n| {
+                first_definer
+                    .get(n.as_slice())
+                    .is_some_and(|&m| parsed[m].facts.side_effects)
+            });
         let keep_first = side_effects && options.weak_externals;
         if why.is_none() && side_effects && !options.weak_externals {
             why = Some(Unfoldable::SideEffects);

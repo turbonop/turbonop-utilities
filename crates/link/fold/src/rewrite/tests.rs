@@ -182,22 +182,44 @@ fn preserve_holds_back_names_defined_differently_elsewhere() {
         bytes.to_mut()[0] ^= 0xFF;
     }
     let c = o.write().unwrap();
-    // After the identical copies, the different one changes nothing: the
-    // index named a.obj, whose copy survives.
-    let after = inputs(&[(b"a.obj", &a), (b"b.obj", &b), (b"c.obj", &c)]);
-    assert_eq!(rewrite(&after, PRESERVE).report.groups, two);
-    // Before them, the index named c.obj's different copy: that group stays.
-    let before = inputs(&[(b"c.obj", &c), (b"a.obj", &a), (b"b.obj", &b)]);
-    let preserve = rewrite(&before, PRESERVE);
-    assert!(
-        preserve
-            .report
-            .not_folded
-            .contains_key(&Unfoldable::OtherDefinitions)
-    );
-    assert!(preserve.report.groups < two);
-    // Relaxed folds the identical copies anyway.
-    assert!(rewrite(&before, RELAXED).report.groups > preserve.report.groups);
+    // Wherever the different copy is, its name stays: which copy a link
+    // keeps depends on which members it loads, and in what order.
+    for order in [
+        [(&b"a.obj"[..], &a), (b"b.obj", &b), (b"c.obj", &c)],
+        [(&b"c.obj"[..], &c), (b"a.obj", &a), (b"b.obj", &b)],
+    ] {
+        let three = inputs(&order.map(|(n, d)| (n, d.as_slice())));
+        let preserve = rewrite(&three, PRESERVE);
+        assert!(
+            preserve
+                .report
+                .not_folded
+                .contains_key(&Unfoldable::OtherDefinitions)
+        );
+        assert_eq!(preserve.report.groups, two - 1);
+        // Relaxed folds the identical copies anyway.
+        assert_eq!(rewrite(&three, RELAXED).report.groups, two);
+    }
+}
+
+#[test]
+fn preserve_folds_copies_whose_environments_alone_differ() {
+    let (a, b) = pair();
+    let two = rewrite(&inputs(&[(b"a.obj", &a), (b"b.obj", &b)]), PRESERVE)
+        .report
+        .groups;
+    // A third member with the same code but another /FAILIFMISMATCH: its
+    // copies are another environment's, alone there, but the same code, so
+    // the other two still fold.
+    let mut o = object(&a).into_owned();
+    o.push_section(Section::new(
+        Name::new(b".drectve".to_vec()),
+        0x0010_0A00,
+        SectionData::Bytes(Cow::Owned(b" /FAILIFMISMATCH:\"x=1\"".to_vec())),
+    ));
+    let c = o.write().unwrap();
+    let three = inputs(&[(b"c.obj", &c), (b"a.obj", &a), (b"b.obj", &b)]);
+    assert_eq!(rewrite(&three, PRESERVE).report.groups, two);
 }
 
 #[test]

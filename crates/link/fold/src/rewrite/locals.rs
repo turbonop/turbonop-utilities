@@ -170,7 +170,12 @@ fn addend(machine: u16, kind: u16, data: &[u8], at: usize) -> Option<(usize, i64
 /// Finds what each unit of `object` reaches of its locals (see the
 /// module's notes). `units` are its units, `local_leader` says which have
 /// a local COMDAT symbol, and `unit_of` and `symbol_unit` give each
-/// section's and symbol's unit.
+/// section's and symbol's unit. `refs` are the relocations (section,
+/// relocation) that name a local symbol of another unit than their
+/// section's, or one outside every unit from a unit; `aux` the auxiliary
+/// records (symbol, the symbol it names) that name a unit's local from
+/// outside it.
+#[expect(clippy::too_many_arguments, reason = "what units::find has found")]
 pub(super) fn analyze(
     object: &Object<'_>,
     units: &[Unit],
@@ -178,6 +183,8 @@ pub(super) fn analyze(
     unit_of: &[Option<usize>],
     symbol_unit: &[Option<usize>],
     tables: &super::tables::Tables,
+    refs: &[(u32, u32)],
+    aux: &[(usize, SymbolId)],
 ) -> Analysis {
     let n = units.len();
     let mut a = Analysis {
@@ -267,126 +274,137 @@ pub(super) fn analyze(
             a.referrers[b].push(f as u32);
         }
     };
-    for (i, sec) in object.sections.iter().enumerate() {
-        let here = unit_of[i];
-        let id = SectionId(i as u32);
-        if let Some(t) = tables.get(id) {
-            for e in &t.entries {
-                if let Some(super::tables::Target::Symbol(s)) = e.target {
-                    // A table outside COMDATs goes with what it names; one
-                    // in a COMDAT that isn't a unit's is the table of code
-                    // that stays.
-                    if here.is_some() || t.comdat {
-                        refer(&mut a, here, here.is_none(), s);
-                    }
+    for &(s, ri) in refs {
+        let r = &object.sections[s as usize].relocations[ri as usize];
+        refer(&mut a, unit_of[s as usize], false, r.symbol);
+    }
+    for t in &tables.tables {
+        let here = unit_of.get(t.section.index()).copied().flatten();
+        // A table outside COMDATs goes with what it names; one in a COMDAT
+        // that isn't a unit's is the table of code that stays.
+        if here.is_none() && !t.comdat {
+            continue;
+        }
+        for e in &t.entries {
+            if let Some(super::tables::Target::Symbol(s)) = e.target {
+                refer(&mut a, here, here.is_none(), s);
+            }
+        }
+    }
+    for &(i, t) in aux {
+        refer(&mut a, symbol_unit[i], true, t);
+    }
+
+    // Each unit's references to locals outside it, in the order `code`
+    // names them: by the section's place in the unit, a table's entries
+    // before relocations, and in their order. (Place, 0 for an entry and 1
+    // for a relocation, index, target, the relocation.)
+    type Item = (u32, u32, u32, SymbolId, Option<Via>);
+    let mut place_in_unit = vec![0u32; object.sections.len()];
+    for u in units {
+        for (j, s) in u.sections.iter().enumerate() {
+            place_in_unit[s.index()] = j as u32;
+        }
+    }
+    let mut items: Vec<Vec<Item>> = vec![Vec::new(); n];
+    let outside = |k: usize, s: SymbolId| {
+        symbol_unit.get(s.index()).copied().flatten() != Some(k) && is_local(s)
+    };
+    for &(s, ri) in refs {
+        let Some(k) = unit_of[s as usize] else {
+            continue;
+        };
+        let r = &object.sections[s as usize].relocations[ri as usize];
+        if outside(k, r.symbol) {
+            items[k].push((
+                place_in_unit[s as usize],
+                1,
+                ri,
+                r.symbol,
+                Some((s as usize, r.offset, r.kind)),
+            ));
+        }
+    }
+    for t in &tables.tables {
+        let Some(k) = unit_of.get(t.section.index()).copied().flatten() else {
+            continue;
+        };
+        for (ei, e) in t.entries.iter().enumerate() {
+            if let Some(super::tables::Target::Symbol(x)) = e.target
+                && outside(k, x)
+            {
+                if t.kind.is_set() {
+                    items[k].push((place_in_unit[t.section.index()], 0, ei as u32, x, None));
+                } else {
+                    let name = object.sections[t.section.index()].name.as_bytes();
+                    set(
+                        &mut a.hard,
+                        k,
+                        Unfoldable::LocalReference,
+                        format!("{} describes {}", show(name), name_of(x)),
+                    );
                 }
             }
         }
-        if tables.splits_relocations(id) {
+    }
+    let mut finder = Pieces::new(object, unit_of, tables);
+    for (k, list) in items.iter_mut().enumerate() {
+        if list.is_empty() {
             continue;
         }
-        for r in &sec.relocations {
-            refer(&mut a, here, false, r.symbol);
-        }
-    }
-    for (i, s) in object.symbols.iter().enumerate() {
-        let named = match &s.aux {
-            Aux::WeakExternal(w) => Some(w.tag),
-            Aux::Function(f) => f.tag,
-            Aux::ClrToken(c) => Some(c.symbol),
-            _ => None,
-        };
-        if let Some(t) = named {
-            refer(&mut a, symbol_unit[i], true, t);
-        }
-    }
-
-    // Each unit's edges, in the order `code` names them.
-    let mut finder = Pieces::new(object, unit_of, tables);
-    for k in 0..n {
+        list.sort_unstable_by_key(|&(p, o, i, _, _)| (p, o, i));
         let unit = &units[k];
-        let inside = |s: SymbolId| symbol_unit.get(s.index()).copied().flatten() == Some(k);
         let mut edges: Vec<Edge> = Vec::new();
         let mut why: Option<(Unfoldable, String)> = None;
-        for &s in &unit.sections {
-            let sec = &object.sections[s.index()];
-            let name = sec.name.as_bytes();
-            if is_debug(name) {
-                for r in &sec.relocations {
-                    if !inside(r.symbol) && is_local(r.symbol) && why.is_none() {
-                        why = Some((
-                            Unfoldable::LocalDebug,
-                            format!("{} refers to {}", show(name), name_of(r.symbol)),
-                        ));
-                    }
+        for &(p, _, _, x, via) in list.iter() {
+            let section = &object.sections[unit.sections[p as usize].index()];
+            if is_debug(section.name.as_bytes()) {
+                why.get_or_insert_with(|| {
+                    (
+                        Unfoldable::LocalDebug,
+                        format!("{} refers to {}", show(section.name.as_bytes()), name_of(x)),
+                    )
+                });
+                continue;
+            }
+            if let Some(e) = edges.iter().find(|e| e.symbol == x) {
+                if let (Some(via), Node::Piece(p)) = (via, e.node)
+                    && let Err(w) = finder.check_addend(p, via)
+                {
+                    why.get_or_insert(w);
                 }
                 continue;
             }
-            let mut targets: Vec<(SymbolId, Option<Via>)> = Vec::new();
-            if let Some(t) = tables.get(s) {
-                for e in &t.entries {
-                    if let Some(super::tables::Target::Symbol(x)) = e.target
-                        && !inside(x)
-                        && is_local(x)
-                    {
-                        if t.kind.is_set() {
-                            targets.push((x, None));
-                        } else if why.is_none() {
-                            why = Some((
-                                Unfoldable::LocalReference,
-                                format!("{} describes {}", show(name), name_of(x)),
-                            ));
-                        }
-                    }
+            match symbol_unit.get(x.index()).copied().flatten() {
+                Some(b) if a.pure[b] => {
+                    let position = units[b].symbols.binary_search(&x).unwrap_or(0) as u32;
+                    edges.push(Edge {
+                        symbol: x,
+                        node: Node::Unit(b as u32),
+                        position,
+                    });
                 }
-            }
-            for r in &sec.relocations {
-                if !inside(r.symbol) && is_local(r.symbol) {
-                    targets.push((r.symbol, Some((s.index(), r.offset, r.kind))));
-                }
-            }
-            for (x, via) in targets {
-                if edges.iter().any(|e| e.symbol == x) {
-                    if let Some(via) = via
-                        && let Some(&Edge {
-                            node: Node::Piece(p),
-                            ..
-                        }) = edges.iter().find(|e| e.symbol == x)
-                        && let Err(w) = finder.check_addend(p, via)
-                    {
-                        why.get_or_insert(w);
-                    }
-                    continue;
-                }
-                match symbol_unit.get(x.index()).copied().flatten() {
-                    Some(b) if a.pure[b] => {
-                        let position = units[b].symbols.binary_search(&x).unwrap_or(0) as u32;
-                        edges.push(Edge {
-                            symbol: x,
-                            node: Node::Unit(b as u32),
-                            position,
-                        });
-                    }
-                    Some(_) => {
-                        why.get_or_insert((
+                Some(_) => {
+                    why.get_or_insert_with(|| {
+                        (
                             Unfoldable::LocalReference,
                             format!(
                                 "refers to {}, a local of a unit with external symbols",
                                 name_of(x)
                             ),
-                        ));
-                    }
-                    None => match finder.piece(x, via) {
-                        Ok(p) => edges.push(Edge {
-                            symbol: x,
-                            node: Node::Piece(p),
-                            position: 0,
-                        }),
-                        Err(w) => {
-                            why.get_or_insert(w);
-                        }
-                    },
+                        )
+                    });
                 }
+                None => match finder.piece(x, via) {
+                    Ok(p) => edges.push(Edge {
+                        symbol: x,
+                        node: Node::Piece(p),
+                        position: 0,
+                    }),
+                    Err(w) => {
+                        why.get_or_insert(w);
+                    }
+                },
             }
         }
         a.edges[k] = edges;
@@ -523,8 +541,9 @@ pub(super) fn analyze(
 struct Pieces<'o, 'd> {
     object: &'o Object<'d>,
     unit_of: &'o [Option<usize>],
-    /// Each section's symbols' values, sorted (made as needed).
-    bounds: HashMap<u32, Vec<u32>>,
+    /// Each section's symbols, as (value, symbol), sorted (made when
+    /// first needed).
+    bounds: Option<Vec<Vec<(u32, u32)>>>,
     /// The symbols any side table names.
     named: Vec<bool>,
     by_start: HashMap<(u32, u32), u32>,
@@ -550,7 +569,7 @@ impl<'o, 'd> Pieces<'o, 'd> {
         Pieces {
             object,
             unit_of,
-            bounds: HashMap::default(),
+            bounds: None,
             named,
             by_start: HashMap::default(),
             pieces: Vec::new(),
@@ -599,40 +618,38 @@ impl<'o, 'd> Pieces<'o, 'd> {
         if self.named.get(symbol.index()).copied().unwrap_or(false) {
             return refuse(format!("refers to {name}, which a side table names"));
         }
-        let bounds = self.bounds.entry(x.0).or_insert_with(|| {
-            let mut v: Vec<u32> = object
-                .symbols
-                .iter()
-                .filter(|s| s.section == SectionNumber::Section(x))
-                .map(|s| s.value)
-                .collect();
-            v.sort_unstable();
-            v.dedup();
+        // Each section's symbols, by value (made once, when a piece is
+        // first looked for).
+        let by_section = self.bounds.get_or_insert_with(|| {
+            let mut v: Vec<Vec<(u32, u32)>> = vec![Vec::new(); object.sections.len()];
+            for (i, s) in object.symbols.iter().enumerate() {
+                if let SectionNumber::Section(id) = s.section
+                    && let Some(list) = v.get_mut(id.index())
+                {
+                    list.push((s.value, i as u32));
+                }
+            }
+            for list in &mut v {
+                list.sort_unstable();
+            }
             v
         });
+        let list = &by_section[x.index()];
         let start = t.value;
         let size = sec.size();
         if start >= size {
             return refuse(format!("refers to {name}, past its section's end"));
         }
-        let end = bounds
-            .iter()
-            .copied()
-            .find(|&b| b > start)
-            .map_or(size, |b| b.min(size));
+        let after = list.partition_point(|&(v, _)| v <= start);
+        let end = list.get(after).map_or(size, |&(v, _)| v.min(size));
         let p = match self.by_start.get(&(x.0, start)) {
             Some(&p) => p,
             None => {
-                let mut labels: Vec<SymbolId> = object
-                    .symbols
+                let first = list.partition_point(|&(v, _)| v < start);
+                let mut labels: Vec<SymbolId> = list[first..after]
                     .iter()
-                    .enumerate()
-                    .filter(|(_, s)| {
-                        s.section == SectionNumber::Section(x)
-                            && s.value == start
-                            && !matches!(s.aux, Aux::Section(_))
-                    })
-                    .map(|(i, _)| SymbolId(i as u32))
+                    .map(|&(_, i)| SymbolId(i))
+                    .filter(|l| !matches!(object.symbols[l.index()].aux, Aux::Section(_)))
                     .collect();
                 labels.sort_unstable();
                 let blocked = labels

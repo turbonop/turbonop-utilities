@@ -497,6 +497,10 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
             reasons.first[k] = Some((Unfoldable::SideTables, Some(why.clone())));
         }
     }
+    // (Under `structural`, the relocations and auxiliary records that name
+    // a local outside their unit, for `locals::analyze`.)
+    let mut local_refs: Vec<(u32, u32)> = Vec::new();
+    let mut aux_refs: Vec<(usize, SymbolId)> = Vec::new();
     for (i, sec) in object.sections.iter().enumerate() {
         let here = unit_of[i];
         if let Some(u) = here
@@ -507,7 +511,7 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
         if tables.splits_relocations(SectionId(i as u32)) {
             continue;
         }
-        for r in &sec.relocations {
+        for (ri, r) in sec.relocations.iter().enumerate() {
             let Some(target) = object.symbol(r.symbol) else {
                 if let Some(u) = here {
                     reasons.hard_plain(u, Unfoldable::BadRelocation);
@@ -515,6 +519,14 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
                 continue;
             };
             let there = symbol_unit[r.symbol.index()];
+            if structural
+                && (here.is_some() || there.is_some())
+                && !(here.is_some() && here == there)
+                && !target.is_external()
+                && target.storage_class != storage_class::WEAK_EXTERNAL
+            {
+                local_refs.push((i as u32, ri as u32));
+            }
             let what = || {
                 format!(
                     "{} refers to {} (storage class {}, in {})",
@@ -572,6 +584,9 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
                 .symbol(t)
                 .is_some_and(turbonop_coff::Symbol::is_external)
         {
+            if structural {
+                aux_refs.push((i, t));
+            }
             reasons.local(b, Unfoldable::ReferencedLocally, || {
                 format!(
                     "{}'s auxiliary record names {}",
@@ -594,6 +609,8 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
             &unit_of,
             &symbol_unit,
             &tables,
+            &local_refs,
+            &aux_refs,
         )
     });
 

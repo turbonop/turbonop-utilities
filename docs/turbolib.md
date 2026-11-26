@@ -994,6 +994,63 @@ handled according to `--locals`:
 | `copy` | The unit folds, and the locals it reaches are copied into the synthesized member as locals. Only the address identity of those locals is observable, and comparing it across TUs is already an ODR violation. |
 | `merge` | As `copy`, and identical copied locals within a synthesized member are merged. |
 
+As written in phase 4 (`turbonop_fold::rewrite::locals`), what `copy`
+copies, and what it refuses:
+
+- **Local units**: a COMDAT whose symbols are all local (`static inline`
+  functions, anonymous namespaces' inline functions, and their
+  `.pdata`, `.xdata`, and `.debug$S`), copied whole. Its original goes
+  from its member too when only units that move refer to it ("absorbed");
+  when anything that stays refers to it (code outside COMDATs, a unit that
+  stays, an auxiliary record, the table of code that stays) it stays, and
+  the synthesized member has its own copy. A local unit nothing refers
+  to never moves: in a registration section (`.rtc$IMZ`'s
+  `_RTC_InitBase`, one per object under `/RTC1`), the number of copies is
+  the number of calls.
+- **Pieces**: the bytes of a read-only data section outside COMDATs
+  (`.rdata`) from the local symbol to the next symbol of the section (or
+  its end), with their relocations: `$SG` string literals, internal
+  constant tables. The original always stays.
+- **Never**: writable data (`.data`, `.bss`: a copy would be another
+  variable, which is more than address identity); registration sections
+  (`.CRT$*`, `.rtc$*`, `.tls*`, `.00cfg`); code outside COMDATs (without
+  `/Gy`, and clang-cl's `static` functions, each in a section of its own
+  that isn't a COMDAT), whose symbols don't bound functions; a place named
+  by a section symbol; anything a side table names; a local symbol of a
+  unit that has external symbols too; a reference whose in-place addend
+  points outside the piece (read for x64 and x86 relocations; other
+  machines' relocations to pieces aren't read, so their units stay); and
+  a unit whose debug information refers to a local outside it.
+- **Identity** is structural: each local reached is named by its place
+  in the order the unit's code names them, followed by the contents of
+  everything reached, numbered breadth first. A piece's contents leave
+  out the zeros at its end (alignment padding before the next symbol,
+  which depends on where the compiler put it): `{1, 2, 0}` and `{1, 2}`
+  are the same, as two definitions of an inline function that name them
+  can be the same function only if they are, by the ODR.
+- **What a program can tell**: the addresses of the copied locals (two
+  functions that return `&k` from one translation unit can return two
+  addresses, when one of them moved and `k` stayed too). C++ leaves which
+  copy of an inline function a link keeps to the linker, and an inline
+  function that names an internal-linkage entity in several translation
+  units is an ODR violation unless only the entity's value is used, so
+  only a program already depending on that choice can tell.
+- **`merge`** makes one copy of each local of given contents (its
+  structural hash, as the identity) in a synthesized member: copies from
+  different members whose bytes are the same, as string pooling (`/GF`)
+  and ICF do. Locals in different synthesized members are never merged.
+- Copied local units keep their debug information (their `.debug$S`,
+  renumbered as a folded unit's); a copied piece has none (a constant
+  table's `S_LDATA32` stays in its member's module). Per-object side-table
+  entries naming a local unit (clang-cl's and `/Gy-`'s `.gfids$y`) are
+  copied with it. Duplicate local COMDAT names in one synthesized member
+  (two members' copies of one `static` function) get a `$turbolib<n>`
+  suffix: one object can't hold two COMDATs of one name.
+- Not written: giving a local unit that stays an external name in the
+  synthesized member, so that the members that keep referring to it could
+  share one copy (it would also fold the local units only code that stays
+  reaches). Copying alone needs no names no compiler made.
+
 ## Conservativeness
 
 Each axis is its own option, so a team can say exactly what it gives up.
@@ -1007,19 +1064,47 @@ The defaults are the conservative choice on every axis.
 | `identical` (default) | Units whose identity hashes are equal. |
 | `select-any` | Units that the linker could legally substitute for each other, by selection type. See the table below. |
 
-How `select-any` treats each selection type:
+How `select-any` treats each selection type (as written in phase 4: the
+copies of one name are those with the same external names, selection, and
+environment key):
 
 | Selection | In `select-any` |
 |---|---|
-| `NODUPLICATES` | Never folded. |
-| `ANY` | Folded. The survivor is chosen by `--pick`: `first` in member order (the default, closest to what the linker picks), or `largest`. |
-| `SAME_SIZE` | Folded when the sizes agree. When they don't, both copies stay and the report lists them, because the linker would fail only if both copies reached one link. |
-| `EXACT_MATCH` | Folded when the checksums agree. Otherwise, as for `SAME_SIZE`. |
-| `LARGEST` | Folded, keeping the largest. The linker keeps the largest among the copies in a given link, so this can choose a copy from a member that link never loads. That is allowed by the semantics, but it is a different choice. |
+| `NODUPLICATES` | Never folded (not a fold unit in any mode). |
+| `ANY` | Folded. The survivor is chosen by `--pick`: `first` in member order (the default, the copy the archive index names), or `largest` (the largest COMDAT section, the first of those). |
+| `SAME_SIZE` | Folded when the COMDAT sections' sizes agree. When they don't, the copies stay (identical ones still fold as `identical` folds them), and `--stats` lists the name and its copies, because the linker would fail only if two disagreeing copies reached one link. |
+| `EXACT_MATCH` | Folded when the checksums and sizes agree. Otherwise, as for `SAME_SIZE`. |
+| `LARGEST` | Folded, keeping the largest, whatever `--pick` says. The linker keeps the largest among the copies in a given link, so this can choose a copy from a member that link never loads. That is allowed by the semantics, but it is a different choice. |
 | `ASSOCIATIVE` | Always follows its leader. |
+| Mixed | Copies of one name with different selections never fold together. |
 
 In both `identical` and `select-any`, only units with the same
 environment key fold together.
+
+**What `select-any` gives up, exactly.** A link that loads members A and B
+both holding `ANY` copies of F keeps one of them, the first it reads;
+turbolib keeps one for every link, the survivor. When the copies' code
+differs, a link that loads only B now gets A's copy (through the
+synthesized member B anchors), which no link of the original library
+could have given it: `ANY` says the copies may stand for each other, not
+that the linker would have chosen that one. Copies whose code differs are
+an ODR violation in C++ (unless they differ only by compiler options in
+other environments, which `select-any` never mixes), so a program that
+can tell is already one whose behavior depends on link order;
+`--report odr` lists them. Under `--pull=preserve`, `select-any` folds a
+name's differing copies only if every definition of the name in the
+library is such a copy (no other selection, no definition outside a
+COMDAT unit, no member passed through), and all of them refer to the same
+external names (by relocations and side-table entries, through the locals
+they reach too). Each member that gives up a copy keeps that copy's
+references, so a synthesized member then needs nothing its members didn't,
+and the same members load as before (`turbolib verify` checks this
+statically for every synthesized member under `preserve`: the names it
+refers to are names each member anchoring it referred to or defined).
+The member the index names must still have no side effects, as for
+`identical`. Copies that refer to other names (an inline function whose
+`#if` calls another function in each translation unit) stay, reported as
+"copies with other code refer to other names".
 
 ### `--pull`: which members a link loads
 
@@ -1036,7 +1121,7 @@ has side effects, they leave that link:
 
 | Mode | Behavior |
 |---|---|
-| `preserve` (default) | Nothing about which members load changes ([the alias technique](#the-alias-technique)). A group is folded only if every definition of its names in the library is a copy with the same code (so whichever copy a link keeps is the same), and not if the member the index names for them has side effects. The weak-external technique below was meant for those, but it fails in `link.exe` (phase 2's results), so they aren't folded. |
+| `preserve` (default) | Nothing about which members load changes ([the alias technique](#the-alias-technique)). A group is folded only if every definition of its names in the library is a copy with the same code (so whichever copy a link keeps is the same; under `select-any`, a copy of the same kind that refers to the same names: see "What `select-any` gives up"), and not if the member the index names for them has side effects. The weak-external technique below was meant for those, but it fails in `link.exe` (phase 2's results), so they aren't folded. |
 | `relaxed` | Fold regardless, and report the members whose loading may change. |
 
 **The weak-external technique.** This is for COFF. Phase 0 proved it in
@@ -1142,6 +1227,23 @@ members last, as `preserve` now puts them, changed nothing). Still open
 | `none` | Each member keeps its own `.debug$T`. Synthesized members get merged types of their own. |
 | `library` (written; the default once it is proven in more links) | One precompiled-types member for the whole library (see [Phase 3 results](#phase-3-results)). |
 | `clustered=<n>` | Up to *n* precompiled-types members, with members clustered by the types they share. |
+
+### `--report odr`: names whose definitions differ
+
+`--report odr` (`/TURBOLIB:report=odr`) lists, after the library is
+written, each set of external names that COMDAT units in more than one
+member define with different code, with each definition's size,
+selection, and members. Code is compared as `--locals=copy` compares it
+(the locals a unit reaches by content), so a unit naming its own
+translation unit's `$SG` string literal isn't a finding. A finding whose
+definitions all come from members of different environments (other
+compiler options, `/FAILIFMISMATCH` values) says so: it is likely options,
+not source, that differ. It is information, printed as `turbolib: odr:`
+lines, never a warning, and changes nothing in the library (with
+`--fold=none` it folds nothing and writes the members as they are). Not
+listed: `NODUPLICATES` COMDATs and definitions outside COMDATs (two of
+those are the linker's duplicate-symbol error, and `lib.exe` already
+warns, LNK4006).
 
 ## Shared types (phase 3)
 

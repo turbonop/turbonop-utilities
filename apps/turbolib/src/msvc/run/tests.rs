@@ -295,6 +295,10 @@ fn less_conservative_modes_verify() {
         (o, std::fs::read(dir.join(out)).unwrap())
     };
     let (_, original) = lib("original.lib", "--fold=none");
+    // --report odr alone changes nothing.
+    let (o, same) = lib("odr.lib", "--fold=none --report=odr");
+    assert!(o.stdout.contains("turbolib: odr: ?variant@@YAHXZ"), "{o:?}");
+    assert_eq!(same, original);
     for (options, fold, locals, pull, says) in [
         (
             "--fold=select-any --stats",

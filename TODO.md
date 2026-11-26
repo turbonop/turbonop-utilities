@@ -328,19 +328,14 @@ x64. Where the 3.5 MB went:
   their unit from folding, as `.CRT$X*` does for COFF (layer 1 of the
   initialization-order guarantee: initializers of one object in their
   order). Check what the ELF engine does now.
-- **link.exe's load order** against folded libraries (the plan's "The
-  alias technique"): the same members, in another order, so C++
-  initializers across members run in another order (2 of `llvm-nm`'s 55).
-  Measured with `/VERBOSE`: both links search `LLVMObject.lib` alike until
-  `XCOFFObjectFile.cpp.obj` loads; then the folded link finds anchors, loads
-  their synthesized members, and ends that library's sweep, while the
-  original goes on to `SymbolicFile`'s constructor (referenced by members
-  already loaded) and 13 more members. Not member order: putting
-  synthesized members last (done, under `preserve`) changed nothing. Next:
-  whether the aliases or the anchors end the sweep (a library with anchors
-  and no aliases, and the reverse), and whether anchors can be dropped for
-  references the moved names' plain records already make. Until then,
-  `preserve` keeps which members load but not when, with link.exe.
+- **Why link.exe ended library sweeps early** with the anchors last (fixed
+  by putting them first; see the plan's "The alias technique"): it
+  reproduces with `LLVMObject.lib`'s `Error`, `Binary`, `ObjectFactory`,
+  `Archive` and `SymbolicFile` members and `turbolib197.obj` (anchored by
+  `Binary` alone), and not without `Error`; hand-made objects of that shape
+  (aliases, plain records, anchors, unresolved names) didn't. Knowing the
+  rule would show whether some other shape of input can still end a sweep
+  early.
 - **Link equivalence (phase 2.6).** `turbolib verify` and
   `turbolib compare-images` are done (`turbonop-verify`; see the plan's
   "The tools"), and `relink.py` runs compare-images over link.exe and

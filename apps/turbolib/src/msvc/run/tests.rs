@@ -223,7 +223,7 @@ fn turbolib_options() {
 }
 
 #[test]
-fn folding_writes_a_library_with_synthesized_members_first() {
+fn folding_writes_a_library_with_synthesized_members_last() {
     let dir = scratch("fold");
     std::fs::copy(testdata("coff/objects.obj"), dir.join("a.obj")).unwrap();
     std::fs::copy(testdata("coff/objects-big.obj"), dir.join("b.obj")).unwrap();
@@ -243,13 +243,20 @@ fn folding_writes_a_library_with_synthesized_members_first() {
     assert!(o.stdout.contains("groups folded"), "{o:?}");
     let data = std::fs::read(dir.join("f.lib")).unwrap();
     let archive = turbonop_archive::Archive::parse(&data).unwrap();
-    let names: Vec<String> = archive.files().map(|m| text(&m.name)).collect();
-    // lib.exe's order is b.obj, a.obj; the synthesized member comes first.
+    let files: Vec<_> = archive.files().collect();
+    let names: Vec<String> = files.iter().map(|m| text(&m.name)).collect();
+    // lib.exe's order is b.obj, a.obj; under --pull=preserve the
+    // synthesized member comes last, indexed for its anchor alone.
     assert_eq!(names.len(), 3, "{names:?}");
-    assert!(names[0].starts_with("turbolib"), "{names:?}");
-    assert_eq!(&names[1..], ["b.obj", "a.obj"]);
-    // The index names the synthesized member for what it folded.
-    let first = archive.files().next().unwrap().header_offset;
-    let symbols = archive.symbols();
-    assert!(symbols.iter().any(|s| s.member == first));
+    assert_eq!(&names[..2], ["b.obj", "a.obj"]);
+    assert!(names[2].starts_with("turbolib"), "{names:?}");
+    let last = files[2].header_offset;
+    let listed: Vec<&[u8]> = archive
+        .symbols()
+        .iter()
+        .filter(|s| s.member == last)
+        .map(|s| s.name)
+        .collect();
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert!(listed[0].starts_with(b"__turbolib$anchor$"));
 }

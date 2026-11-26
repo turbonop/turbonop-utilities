@@ -570,29 +570,29 @@ fn build(
                 r.lines.extend(stats_lines(&folded.report));
             }
             let synthesized = style.object_fields(now(), false);
-            // The synthesized members come first; then the members, in
-            // their order.
-            let first = folded.members.iter().take_while(|m| m.synthesized).count();
+            // The members in their order, with the synthesized members
+            // before or after them.
+            let mut original = 0;
             folded
                 .members
                 .iter()
-                .enumerate()
-                .map(|(i, m)| Final {
-                    name: &m.name,
-                    fields: if m.synthesized {
-                        synthesized
-                    } else {
-                        members[i - first].fields
-                    },
-                    data: &m.data,
-                    holes: &m.holes,
-                    index_only: m.index_only.as_deref(),
-                    synthesized: m.synthesized,
-                    place: if m.synthesized {
-                        Cow::Owned(text(&m.name))
-                    } else {
-                        Cow::Borrowed(&members[i - first].place)
-                    },
+                .map(|m| {
+                    let from = (!m.synthesized).then(|| {
+                        original += 1;
+                        &members[original - 1]
+                    });
+                    Final {
+                        name: &m.name,
+                        fields: from.map_or(synthesized, |f| f.fields),
+                        data: &m.data,
+                        holes: &m.holes,
+                        index_only: m.index_only.as_deref(),
+                        synthesized: m.synthesized,
+                        place: from.map_or_else(
+                            || Cow::Owned(text(&m.name)),
+                            |f| Cow::Borrowed(f.place.as_ref()),
+                        ),
+                    }
                 })
                 .collect()
         }

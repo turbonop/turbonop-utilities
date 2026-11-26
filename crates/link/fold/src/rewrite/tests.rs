@@ -71,9 +71,12 @@ fn identical_copies_fold_into_one_synthesized_member() {
     assert_eq!(r.synthesized, 1, "one member set: both members");
     assert!(r.bytes_out < r.bytes_in);
     assert_eq!(out.members.len(), 3);
-    assert!(out.members[0].synthesized, "synthesized members first");
-    assert_eq!(&*out.members[1].name, b"a.obj");
-    assert_eq!(&*out.members[2].name, b"b.obj");
+    assert_eq!(&*out.members[0].name, b"a.obj");
+    assert_eq!(&*out.members[1].name, b"b.obj");
+    assert!(out.members[2].synthesized, "synthesized members last");
+    // Under Relaxed, first.
+    let relaxed = rewrite(&inputs(&[(b"a.obj", &a), (b"b.obj", &b)]), RELAXED);
+    assert!(relaxed.members[0].synthesized);
 
     // Every name defined before is defined after, and a folded one only in
     // the synthesized member.
@@ -88,24 +91,24 @@ fn identical_copies_fold_into_one_synthesized_member() {
         );
     }
     for (name, members) in &after {
-        if members.contains(&0) {
+        if members.contains(&2) {
             assert_eq!(
                 members,
-                &[0],
+                &[2],
                 "{} folded once",
                 String::from_utf8_lossy(name)
             );
         }
     }
     // Each rewritten member refers to the synthesized member's anchor.
-    let synth = object(&out.members[0].data);
+    let synth = object(&out.members[2].data);
     let anchor: Vec<u8> = synth
         .symbols
         .iter()
         .find(|s| s.name.as_bytes().starts_with(b"__turbolib$anchor$"))
         .map(|s| s.name.as_bytes().to_vec())
         .expect("an anchor");
-    for m in &out.members[1..] {
+    for m in &out.members[..2] {
         assert!(undefined(&m.data).contains(&anchor));
     }
     for m in &out.members {
@@ -243,8 +246,7 @@ fn passed_through_members_are_unchanged() {
     );
     assert_eq!(out.report.passed_through[&Unfoldable::Import], 1);
     assert_eq!(out.report.passed_through[&Unfoldable::Ltcg], 1);
-    let n = out.report.synthesized as usize;
-    assert_eq!(&*out.members[n].data, import.data);
-    assert_eq!(&*out.members[n + 2].data, &ltcg[..]);
+    assert_eq!(&*out.members[0].data, import.data);
+    assert_eq!(&*out.members[2].data, &ltcg[..]);
     assert!(out.report.groups > 0);
 }

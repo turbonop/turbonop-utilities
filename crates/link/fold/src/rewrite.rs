@@ -24,7 +24,7 @@
 //!    outside references as undefined externals, an anchor (which alone the
 //!    index lists it for, under `Preserve`), `@feat.00`, and the
 //!    environment's `/FAILIFMISMATCH` directives. Synthesized members come
-//!    first in the archive.
+//!    last in the archive under `Preserve`, first under `Relaxed`.
 //!
 //! Every step's result is independent of the number of threads: groups are
 //! decided in member order, and the survivor is the first copy.
@@ -570,10 +570,22 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     report.times = times;
     report.rewritten = removals.iter().filter(|r| !r.is_empty()).count() as u64;
     report.synthesized = made.len() as u64;
-    // Synthesized members first, so that the index names them for what they
-    // define (see the Preserve rule above).
-    let mut out = made;
-    out.extend(members);
+    // Under Preserve, synthesized members last: link.exe searches a library
+    // for the names in its index's order (the members' order), so members
+    // first in the archive are met first in each pass; with them first,
+    // their anchors moved when the original members loaded (measured: the
+    // same members, in another order, and so C++ initializers across
+    // members in another order). Under Relaxed, first, so that the index
+    // names them for what they define.
+    let out = if options.pull == Pull::Preserve {
+        let mut out = members;
+        out.extend(made);
+        out
+    } else {
+        let mut out = made;
+        out.extend(members);
+        out
+    };
     report.bytes_out = out.iter().map(|m| m.data.len() as u64).sum();
     Output {
         members: out,

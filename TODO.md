@@ -326,9 +326,6 @@ x64. Where the 3.5 MB went:
   - The TableGen decoders' instructions are still 56 bytes: an index
     into a string table, and into a table of operand lists, would make
     them about 24.
-- **`THIRD_PARTY_NOTICES.txt`, 247 KB**, embedded for `hexcavator
-  licenses`, with each crate's copy of the same MIT and Apache texts:
-  each text once (and the crates under it), or compressed.
 - **`hexcavator size` misattributes data with no symbol** to the symbol
   before it, even another object's: `load_config::dump` was charged
   135 KB of `turbonop_powerpc`'s data, and LoongArch's `reg_name` (a few

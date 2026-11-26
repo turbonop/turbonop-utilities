@@ -373,7 +373,7 @@ impl Reader<'_, '_> {
     /// A file named on the command line.
     fn add_file(&mut self, file: &str) -> Result<(), Fatal> {
         let path = self.run.env.cwd.join(file);
-        let meta = std::fs::metadata(&path)
+        std::fs::metadata(&path)
             .map_err(|e| self.error(format!("'{file}': {}", run::io_text(&e))))?;
         let map = Arc::new(
             Mmap::open(&path).map_err(|e| self.error(format!("'{file}': {}", run::io_text(&e))))?,
@@ -419,7 +419,6 @@ impl Reader<'_, '_> {
         }
         let mut item = run::new_item(self.run, "", file, false, false, false, self.deterministic)?;
         item.name = name;
-        drop(meta);
         self.add_object(item, file)
     }
 }
@@ -688,7 +687,7 @@ fn write_universal(r: &mut Run<'_>, output: &str, plans: Vec<Plan>) -> Result<()
         .collect();
     let (head, offsets) = turbonop_macho::fat_layout(&shape)
         .ok_or_else(|| Fatal("error: fat file too large to be created".into()))?;
-    let zeros = vec![0u8; 1 << 3];
+    let zeros = [0u8; 8];
     let mut pieces: Vec<&[u8]> = vec![&head];
     let mut at = head.len() as u64;
     for (s, &o) in slices.iter().zip(&offsets) {

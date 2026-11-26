@@ -48,6 +48,43 @@ use turbonop_macho_object::consts::{
 use turbonop_macho_object::{Command, Object, Section, reloc};
 
 use crate::hash::H128;
+
+/// A canonical form's hash, and (with `TURBOLIB_VERIFY_DUMP` set) its
+/// parts as text, to show where two atoms differ.
+struct Canon {
+    h: H128,
+    log: Option<Vec<String>>,
+}
+
+impl Canon {
+    fn new() -> Self {
+        Self {
+            h: H128::new(),
+            log: std::env::var_os("TURBOLIB_VERIFY_DUMP").map(|_| Vec::new()),
+        }
+    }
+    fn u64(&mut self, v: u64) {
+        self.h.u64(v);
+        if let Some(l) = &mut self.log {
+            l.push(format!("{v:#x}"));
+        }
+    }
+    fn u128(&mut self, v: u128) {
+        self.h.u128(v);
+        if let Some(l) = &mut self.log {
+            l.push(format!("{v:#x}"));
+        }
+    }
+    fn bytes(&mut self, b: &[u8]) {
+        self.h.bytes(b);
+        if let Some(l) = &mut self.log {
+            l.push(show(b));
+        }
+    }
+    fn finish(&self) -> u128 {
+        self.h.finish()
+    }
+}
 use crate::library::{Options, Pull};
 use crate::report::{Report, show};
 
@@ -75,6 +112,8 @@ struct Atom {
     /// definitions, at least one).
     unit: bool,
     names: Vec<Vec<u8>>,
+    /// Its canonical form's parts (with `TURBOLIB_VERIFY_DUMP`).
+    desc: Vec<String>,
 }
 
 /// A member, read.
@@ -221,7 +260,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
         Some((si, k, off - atoms[si][k].0.start))
     };
     // A relocation's target, canonical.
-    let target = |s: &Section<'_>, ri: usize, h: &mut H128| {
+    let target = |s: &Section<'_>, ri: usize, h: &mut Canon| {
         let r = s.relocations[ri];
         if r.value.is_some() {
             h.u64(9);
@@ -280,7 +319,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
                 }
             });
             let Some((si, k, off)) = func else { continue };
-            let mut h = H128::new();
+            let mut h = Canon::new();
             h.u64(off);
             h.bytes(&b[e as usize + 8..e as usize + 16]);
             for at in [e + 16, e + 24] {
@@ -298,7 +337,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
             continue;
         }
         for (k, (range, syms)) in list.iter().enumerate() {
-            let mut h = H128::new();
+            let mut h = Canon::new();
             h.bytes(s.segment_name());
             h.bytes(s.name());
             h.u64(u64::from(s.flags));
@@ -352,6 +391,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
                 hash: h.finish(),
                 unit: ext > 0 && weak == ext,
                 names,
+                desc: h.log.take().unwrap_or_default(),
             });
         }
     }
@@ -435,13 +475,22 @@ fn compare_member(
         rep.fail("rewritten members' load commands changed", || show(&n.name));
     }
     let new: BTreeMap<&[u8], u128> = n.atoms.iter().map(|a| (a.key.as_slice(), a.hash)).collect();
+    let desc = |key: &[u8]| n.atoms.iter().find(|a| a.key == key).map(|a| &a.desc);
     let mut lost = Vec::new();
     let mut lost_names: BTreeSet<Vec<u8>> = BTreeSet::new();
     for a in &o.atoms {
         match new.get(a.key.as_slice()) {
             Some(&h) if h == a.hash => {}
             Some(_) => rep.fail("atoms changed in rewritten members", || {
-                format!("{}: {}", show(&n.name), show(&a.key))
+                let d = desc(&a.key).map(|d| {
+                    let k = a.desc.iter().zip(d).position(|(x, y)| x != y).unwrap_or(0);
+                    format!(
+                        " (part {k}: {:?} vs {:?})",
+                        a.desc.get(k),
+                        d.get(k)
+                    )
+                });
+                format!("{}: {}{}", show(&n.name), show(&a.key), d.unwrap_or_default())
             }),
             None if a.unit => {
                 lost.push((a.key.clone(), a.hash));

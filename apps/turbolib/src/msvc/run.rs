@@ -562,6 +562,7 @@ fn build(
                 holes: &[],
                 place: Cow::Borrowed(&m.place),
                 index_only: None,
+                synthesized: false,
             })
             .collect(),
         Some(folded) => {
@@ -586,6 +587,7 @@ fn build(
                     data: &m.data,
                     holes: &m.holes,
                     index_only: m.index_only.as_deref(),
+                    synthesized: m.synthesized,
                     place: if m.synthesized {
                         Cow::Owned(text(&m.name))
                     } else {
@@ -618,7 +620,15 @@ fn build(
         }
     }
     if flavor == Flavor::Lib {
-        let strong = turbonop_par::map(&finals, 16, |m| library::strong_definitions(m.data));
+        // Folding's own members define names no input does, except
+        // `__turbolib$alias`, which each defines alike: never a duplicate.
+        let strong = turbonop_par::map(&finals, 16, |m| {
+            if m.synthesized {
+                Vec::new()
+            } else {
+                library::strong_definitions(m.data)
+            }
+        });
         let places: Vec<String> = finals.iter().map(|m| m.place.to_string()).collect();
         for w in library::duplicate_warnings(&strong, &places) {
             r.report(w)?;
@@ -732,6 +742,8 @@ struct Final<'d> {
     place: Cow<'d, str>,
     /// The index's names for it, if not those it defines (folding's).
     index_only: Option<&'d [Vec<u8>]>,
+    /// Made by folding.
+    synthesized: bool,
 }
 
 /// What `--stats` prints about folding.

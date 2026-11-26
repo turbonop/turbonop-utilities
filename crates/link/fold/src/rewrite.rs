@@ -9,20 +9,22 @@
 //!    fold units ([`units`]). Import objects, `/GL` objects, and members
 //!    with sections turbolib doesn't know are passed through.
 //! 2. **Group** units by identity, and decide for each group whether it
-//!    folds: its first copy and at least one other foldable, and under
-//!    [`Pull::Preserve`] its first copy in the member the archive index
-//!    names for each of its symbols, and that member without side effects.
+//!    folds: at least two copies foldable, and under [`Pull::Preserve`]
+//!    every definition of its names in the library a copy with the same
+//!    code, and the member the archive index names for them without side
+//!    effects.
 //! 3. **Lay out** the synthesized members: one for each set of members that
 //!    gave up copies (and environment), so that a synthesized member is
 //!    wanted exactly when one of those members is.
 //! 4. **Rewrite** each member that gave up copies: their sections go, the
-//!    symbols they defined become undefined externals (or, under
-//!    `Preserve`, weak externals with a renamed copy as default), and it
-//!    refers to each synthesized member's anchor.
+//!    symbols they defined become alias weak externals (see
+//!    [`ALIAS_DEFAULT`]), so the archive index names the same members for
+//!    them, and the member refers to each synthesized member's anchor.
 //! 5. **Write** each synthesized member: the surviving copies, their
-//!    outside references as undefined externals, an anchor, `@feat.00`,
-//!    and the environment's `/FAILIFMISMATCH` directives. Synthesized
-//!    members come first in the archive.
+//!    outside references as undefined externals, an anchor (which alone the
+//!    index lists it for, under `Preserve`), `@feat.00`, and the
+//!    environment's `/FAILIFMISMATCH` directives. Synthesized members come
+//!    first in the archive.
 //!
 //! Every step's result is independent of the number of threads: groups are
 //! decided in member order, and the survivor is the first copy.
@@ -40,7 +42,7 @@ pub mod units;
 
 use crate::hash::H128;
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use turbonop_coff::{
     Aux, File, Format, Name, Object, Relocation, Section, SectionData, SectionDefinition,
     SectionId, SectionNumber, Skeleton, Symbol, SymbolId, WeakExternal, comdat_select,
@@ -389,9 +391,6 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     let mut removals: Vec<Vec<(usize, Removal)>> = vec![Vec::new(); parsed.len()];
-    // Under Preserve, each folded name the archive index named a member for
-    // stays defined there, as an alias weak external (see `ALIAS_DEFAULT`).
-    let mut aliases: Vec<HashSet<&[u8]>> = vec![HashSet::new(); parsed.len()];
     let mut synth_of: HashMap<(u128, u64, Vec<usize>), usize> = HashMap::new();
     let mut synths: Vec<Synth> = Vec::new();
     for c in &copies {
@@ -499,15 +498,6 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             synths.len() - 1
         });
         synths[s].units.push((first.0, first.1, keep_first));
-        if options.pull == Pull::Preserve {
-            for n in &unit(first).externals {
-                if let Some(&owner) = first_definer.get(n.as_slice())
-                    && removed.iter().any(|&(m, _)| m == owner)
-                {
-                    aliases[owner].insert(n.as_slice());
-                }
-            }
-        }
     }
     for s in &mut synths {
         s.units.sort_unstable();
@@ -549,7 +539,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             .iter()
             .map(|&n| anchors[n].as_slice())
             .collect();
-        let skeleton = strip(&parsed[m], &removals[m], &refers, &aliases[m]);
+        let skeleton = strip(&parsed[m], &removals[m], &refers);
         (
             m,
             OutputMember {
@@ -613,14 +603,22 @@ fn anchor_name(n: usize, s: &Synth, inputs: &[Input<'_>], parsed: &[Parsed<'_>])
     format!("__turbolib$anchor${:032x}", h.finish()).into_bytes()
 }
 
-/// The default of each alias weak external that keeps a folded name defined
-/// in the member the archive index names for it. The default never matters:
-/// that member refers to the anchor of the synthesized member that defines
-/// the name, whose strong definition overrides the alias. But it must be the
-/// same everywhere, since link.exe refuses two weak externals for one name
-/// with different defaults (LNK1227), as two libraries that fold the same
-/// name would otherwise give it. Nothing defines it, so a link that somehow
-/// used an alias would fail rather than run the wrong code.
+/// The default of the alias weak externals that keep each moved copy's names
+/// defined in the member that gave it up.
+///
+/// As an alias, the name counts as defined: the archive index still names
+/// the members it named (`lib.exe` indexes aliases), and a member that gave
+/// up a copy never sends the linker to the library for it. Were the name
+/// undefined there, a link could resolve it through the index, loading the
+/// first definer, before the member's anchor brought the copy, and so load
+/// members the original library's link didn't (measured with link.exe).
+///
+/// The default itself never matters: each such member refers to the anchor
+/// of the synthesized member holding the copy, whose strong definition
+/// overrides the alias. But it must be the same everywhere, since link.exe
+/// refuses two weak externals for one name with different defaults
+/// (LNK1227), and both linkers require it resolved: each synthesized member
+/// defines it, as the absolute 0.
 pub const ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
 
 /// A member with the copies it gives up removed.
@@ -628,7 +626,6 @@ fn strip<'a>(
     parsed: &Parsed<'a>,
     removals: &[(usize, Removal)],
     anchors: &[&[u8]],
-    aliases: &HashSet<&[u8]>,
 ) -> Skeleton<'a> {
     let mut object = parsed
         .object
@@ -650,12 +647,12 @@ fn strip<'a>(
                 continue;
             }
             let name = object.symbols[id.index()].name.as_bytes();
-            // A name the index named this member for stays defined here,
-            // as an alias (see `ALIAS_DEFAULT`).
-            if aliases.contains(name) {
-                weak.push((id, ALIAS_DEFAULT.to_vec(), weak_search::ALIAS));
-            } else if how == Removal::Weak {
+            // A moved copy's name stays defined here, as an alias (see
+            // `ALIAS_DEFAULT`).
+            if how == Removal::Weak {
                 weak.push((id, renamed(name), weak_search::NOLIBRARY));
+            } else {
+                weak.push((id, ALIAS_DEFAULT.to_vec(), weak_search::ALIAS));
             }
             let s = &mut object.symbols[id.index()];
             s.section = SectionNumber::Undefined;

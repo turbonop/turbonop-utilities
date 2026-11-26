@@ -196,6 +196,12 @@ pub(crate) fn data_offsets(o: &Object<'_>) -> Vec<u64> {
         .sections()
         .map(|s| (s.align, s.size(), s.is_zerofill_kind()))
         .collect();
+    llvm_offsets(&secs)
+}
+
+/// [`data_offsets`] of sections given as their alignments, sizes, and
+/// whether they are zero-fill.
+pub(crate) fn llvm_offsets(secs: &[(u32, u64, bool)]) -> Vec<u64> {
     let order = secs
         .iter()
         .enumerate()

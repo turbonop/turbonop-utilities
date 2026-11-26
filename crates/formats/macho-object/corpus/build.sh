@@ -5,7 +5,8 @@
 # i386 macOS (scattered relocations), armv7 iOS, and arm64_32 watchOS;
 # each of those once more with -DPAD (pad-*.o, with a section the
 # tricky-*.o don't have); the assembly files for their targets; and a
-# universal file of two C objects. No SDK is needed. The objects aren't
+# universal file of two C objects; and cut.c with and without -DKEEP
+# (keep-*.o, cut-*.o). No SDK is needed. The objects aren't
 # committed.
 #
 #   sh build.sh <dir>
@@ -32,6 +33,13 @@ done
 for t in i386-apple-macos10.13 armv7-apple-ios9 arm64_32-apple-watchos5; do
   "$cc" --target=$t -O2 -g -fcommon -c "$here/tricky.c" -o "$out/tricky-c-$t.o"
   "$cc" --target=$t -O0 -fcommon -c "$here/tricky.c" -o "$out/tricky-c-O0-$t.o"
+done
+# Atoms to cut (cut_atoms's): with -DKEEP (keep-*.o) and without (cut-*.o).
+for t in x86_64-apple-macos13 arm64-apple-macos13 i386-apple-macos10.13 arm64_32-apple-watchos5; do
+  for o in O0 O2; do
+    "$cc" --target=$t -$o -DKEEP -c "$here/cut.c" -o "$out/keep-$o-$t.o"
+    "$cc" --target=$t -$o -c "$here/cut.c" -o "$out/cut-$o-$t.o"
+  done
 done
 "$cc" --target=x86_64-apple-macos13 -c "$here/x86_64.s" -o "$out/asm-x86_64.o"
 "$cc" --target=arm64-apple-macos13 -c "$here/arm64.s" -o "$out/asm-arm64.o"

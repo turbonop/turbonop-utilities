@@ -1,3 +1,6 @@
+// Cuts of one range are written as the API takes them: a Vec of ranges.
+#![allow(clippy::single_range_in_vec_init)]
+
 extern crate std;
 
 use alloc::borrow::Cow;
@@ -697,4 +700,143 @@ fn damage_gives_errors_not_panics() {
             }
         }
     }
+}
+
+#[test]
+fn cuts_inside_text() {
+    let mut o = object(CPU_TYPE_X86_64, true, Endian::Little);
+    // Remove __text's first 8 bytes: the call (at 1) and _f and ltmp0 (at
+    // 0) go; the SIGNED reference (at 8) comes to 0; __data's pointer to
+    // __text+4 dangles; the data-in-code entry (at 16) comes to 8.
+    let cut = o.cut(&[(0, vec![0..8])]).unwrap();
+    assert_eq!(cut.orphaned_symbols, [(0, 0), (2, 0)]);
+    assert_eq!(cut.dangling, [(2, 0)]);
+    assert!(cut.unadjusted.is_empty());
+    let text = o.section(0).unwrap();
+    assert_eq!(text.size(), 13);
+    assert_eq!(text.relocations.len(), 1);
+    assert_eq!(text.relocations[0].address, 0);
+    // LLVM's addresses for the new sizes: __data at 16, __cstring at 40.
+    assert_eq!(
+        o.sections().map(|s| s.addr).collect::<Vec<_>>(),
+        [0, 56, 16, 40]
+    );
+    assert_eq!(o.llvm_addresses(), [0, 56, 16, 40]);
+    // The reference to __data+8 still names it, from its new place.
+    assert_eq!(o.local_address(0, 0), Some(16 + 8));
+    assert_eq!(o.symbols[3].n_value, 16 + 8);
+    // The orphans keep their old values.
+    assert_eq!(o.symbols[2].n_value, 0);
+    let dic =
+        linkedit::decode_data_in_code(o.linkedit_data(LC_DATA_IN_CODE).unwrap(), Endian::Little)
+            .unwrap();
+    assert_eq!(dic[0].offset, 8);
+    let mut keep: Vec<bool> = vec![true; o.symbols.len()];
+    for &(k, _) in &cut.orphaned_symbols {
+        keep[k as usize] = false;
+    }
+    o.retain_symbols(&keep);
+    let bytes = o.write().unwrap();
+    same(&o, &Object::parse(&bytes).unwrap());
+}
+
+#[test]
+fn cuts_inside_data_and_zerofill() {
+    let mut o = object(CPU_TYPE_X86_64, true, Endian::Little);
+    // __data's first 8 bytes (the local pointer) and 8 of __bss's 40.
+    let cut = o.cut(&[(2, vec![0..8]), (1, vec![32..40])]).unwrap();
+    assert!(cut.dangling.is_empty() && cut.orphaned_symbols.is_empty());
+    let data = o.section(2).unwrap();
+    assert_eq!(data.size(), 16);
+    // The SUBTRACTOR pair (both external) moved back 8, its bytes alone.
+    assert_eq!(
+        data.relocations
+            .iter()
+            .map(|r| r.address)
+            .collect::<Vec<_>>(),
+        [0, 0]
+    );
+    assert_eq!(o.section(1).unwrap().size(), 32);
+    // _g was at __data+8: now at __data+0.
+    assert_eq!(o.symbols[3].n_value, o.section(2).unwrap().addr);
+    // __text's SIGNED reference to __data+8 follows it to __data+0.
+    assert_eq!(o.local_address(0, 1), Some(o.section(2).unwrap().addr));
+}
+
+#[test]
+fn cut_composes_with_moves() {
+    // A cut in __text moves the sections after it, and a reference from
+    // __text into __data (which only moves) and one from __data into
+    // __text (after the cut) both follow.
+    let mut o = object(CPU_TYPE_X86_64, true, Endian::Little);
+    let cut = o.cut(&[(0, vec![12..20])]).unwrap();
+    assert!(cut.unadjusted.is_empty());
+    assert!(cut.dangling.is_empty());
+    assert_eq!(o.section(0).unwrap().size(), 13);
+    assert_eq!(o.section(2).unwrap().addr, 16);
+    assert_eq!(o.local_address(0, 1), Some(16 + 8));
+    assert_eq!(o.local_address(2, 0), Some(4));
+}
+
+#[test]
+fn bad_cuts_change_nothing() {
+    let mut o = object(CPU_TYPE_X86_64, true, Endian::Little);
+    let before = o.write().unwrap();
+    assert_eq!(o.cut(&[(9, vec![0..1])]), Err(CutError::NoSection(9)));
+    assert_eq!(o.cut(&[(0, vec![0..4, 2..6])]), Err(CutError::BadRanges(0)));
+    assert_eq!(o.cut(&[(0, vec![20..22])]), Err(CutError::BadRanges(0)));
+    assert_eq!(o.write().unwrap(), before);
+    // Nothing to cut, nothing to move: the same.
+    assert_eq!(o.cut(&[]).unwrap(), Cut::default());
+    assert_eq!(o.write().unwrap(), before);
+}
+
+#[test]
+fn cut_drops_hints_and_pairs() {
+    let mut o = object(CPU_TYPE_ARM64, true, Endian::Little);
+    let Some(Command::Segment(seg)) = o.commands.first_mut() else {
+        unreachable!()
+    };
+    // An ADDEND pair at 4 and a branch at 12.
+    seg.sections[0].relocations = vec![
+        Relocation::plain(4, 8, false, arm64::ADDEND, 2),
+        Relocation {
+            pcrel: true,
+            ..Relocation::plain(4, 4, true, arm64::PAGE21, 2)
+        },
+        Relocation {
+            pcrel: true,
+            ..Relocation::plain(12, 4, true, arm64::BRANCH26, 2)
+        },
+    ];
+    o.commands.push(Command::LinkeditData {
+        cmd: LC_LINKER_OPTIMIZATION_HINT,
+        data: Cow::Owned(linkedit::encode_hints(
+            &[
+                linkedit::Hint {
+                    kind: 1,
+                    args: vec![4, 12],
+                },
+                linkedit::Hint {
+                    kind: 1,
+                    args: vec![12, 16],
+                },
+            ],
+            true,
+        )),
+    });
+    let cut = o.cut(&[(0, vec![0..8])]).unwrap();
+    let r = &o.section(0).unwrap().relocations;
+    assert_eq!(r.len(), 1);
+    assert_eq!((r[0].kind, r[0].address), (arm64::BRANCH26, 4));
+    assert!(cut.unadjusted.is_empty());
+    let hints =
+        linkedit::decode_hints(o.linkedit_data(LC_LINKER_OPTIMIZATION_HINT).unwrap()).unwrap();
+    assert_eq!(
+        hints,
+        [linkedit::Hint {
+            kind: 1,
+            args: vec![4, 8]
+        }]
+    );
 }

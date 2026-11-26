@@ -174,3 +174,33 @@ pub fn pointers(data: &[u8], wide: bool, endian: Endian) -> Option<Vec<Pointer>>
     }
     Some(out)
 }
+
+/// Each FDE's CIE pointer in an `__eh_frame` section's bytes: the
+/// offset of the field (which holds its distance back to the CIE) and of
+/// the CIE (`None` if the records don't decode).
+pub fn cie_links(data: &[u8], endian: Endian) -> Option<Vec<(usize, usize)>> {
+    let u32_at = |at: usize| value_at(data, u32::try_from(at).ok()?, 2, endian);
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while at + 4 <= data.len() {
+        let length = u32_at(at)? as usize;
+        if length == 0 {
+            at += 4;
+            continue;
+        }
+        if length == 0xFFFF_FFFF || length < 4 {
+            return None;
+        }
+        let start = at + 4;
+        let end = start.checked_add(length)?;
+        if end > data.len() {
+            return None;
+        }
+        let id = u32_at(start)? as usize;
+        if id != 0 {
+            out.push((start, start.checked_sub(id)?));
+        }
+        at = end;
+    }
+    Some(out)
+}

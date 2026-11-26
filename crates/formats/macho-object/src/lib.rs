@@ -26,20 +26,31 @@
 //! suffixes shared, padded to the pointer size) ([`Object::relayout`]).
 //!
 //! Edits ([`Object::retain_sections`], [`Object::retain_symbols`],
-//! [`Object::sort_symbols`], [`Object::assign_addresses`]) renumber every
-//! reference the model holds: symbols' sections (`n_sect`), relocations'
-//! symbols (`r_symbolnum` of an external relocation) and sections (of a
-//! local one: section ordinals, from 1), indirect symbols, the dynamic
-//! symbol table's ranges, data-in-code entries and optimization hints in
-//! removed sections. What they can't see on their own is what the bytes
-//! encode: a local relocation (`r_extern` 0) leaves the address of its
-//! target in the section's bytes, and so do the debug sections' (`__DWARF`)
-//! relocations, which are local whenever they can be. Moving a section
-//! changes those addresses, and [`Object::assign_addresses`] rewrites the
-//! ones whose encoding is plain (see [`reloc`]) and lists the rest.
-//! Data-in-code entries and optimization hints hold addresses too, which
-//! it moves. Anything else that holds an address without a relocation is
-//! out of sight: in objects LLVM writes, nothing does.
+//! [`Object::sort_symbols`]) renumber every reference the model holds:
+//! symbols' sections (`n_sect`), relocations' symbols (`r_symbolnum` of an
+//! external relocation) and sections (of a local one: section ordinals,
+//! from 1), indirect symbols, and the dynamic symbol table's ranges; and
+//! they drop the data-in-code entries and optimization hints in removed
+//! sections.
+//!
+//! In an object a section's address is its offset in the one segment, and
+//! the bytes hold addresses the model doesn't decode: a local relocation
+//! (`r_extern` 0) leaves its target's address in the section's bytes (the
+//! debug sections' relocations, `__DWARF`'s, are local whenever they can
+//! be; so are i386's scattered ones), and `__eh_frame`'s FDEs hold their
+//! functions' and LSDAs' addresses as PC-relative differences LLVM
+//! resolves itself, with no relocation. Data-in-code entries and
+//! optimization hints hold addresses too. [`Object::assign_addresses`]
+//! gives the sections LLVM's addresses (after an edit, the ones LLVM would
+//! have given them) and moves everything with them: symbols' values,
+//! scattered relocations' values, link-edit data, `__eh_frame`'s pointers,
+//! and the relocations' encoded addresses where [`reloc`] knows the
+//! encoding (x86_64, arm64, arm64_32, i386; not arm's or PowerPC's
+//! instruction fields), listing the relocations it couldn't. What it
+//! can't see: an address in bytes with no relocation and outside
+//! `__eh_frame`, which LLVM doesn't write; a removed section's FDEs and
+//! indirect symbol entries, which stay (the caller removes them; see
+//! [`ehframe`]); and what an edit does to the code itself.
 
 #![no_std]
 // Mach-O fields are unpacked by masks and shifts, and the writer checks
@@ -862,19 +873,20 @@ impl<'a> Object<'a> {
     /// moves what the model holds with it: symbols' values (`N_SECT`
     /// symbols' and debugger entries' with a section), scattered
     /// relocations' `r_value`s, data-in-code entries, optimization hints,
-    /// and the addresses local relocations encode in the sections' bytes
-    /// where [`reloc`] knows the encoding. Returns the local relocations
-    /// (and scattered and PC-relative ones of CPUs whose encodings it
-    /// doesn't know) whose bytes it couldn't rewrite though their sections
-    /// moved; their bytes are as they were.
+    /// the pointers in `__TEXT,__eh_frame` that no relocation covers, and
+    /// the addresses relocations encode in the sections' bytes where
+    /// [`reloc`] knows the encoding. Returns the relocations whose bytes it
+    /// couldn't rewrite though a section they involve moved (and any
+    /// `__eh_frame` it couldn't decode); their bytes are as they were.
     pub fn assign_addresses(&mut self) -> Vec<Unadjusted> {
         let new = self.llvm_addresses();
         let old: Vec<(u64, u64)> = self.sections().map(|s| (s.addr, s.size())).collect();
         self.move_sections(&new, &old)
     }
 
-    /// Moves each section to `new` (by index), as
-    /// [`Self::assign_addresses`] does.
+    /// Moves each section to `new` (by index; each was at `old`'s address,
+    /// with `old`'s size, which locate the addresses the bytes and
+    /// link-edit data hold), as [`Self::assign_addresses`] does.
     pub fn move_sections(&mut self, new: &[u64], old: &[(u64, u64)]) -> Vec<Unadjusted> {
         let delta: Vec<i64> = old
             .iter()

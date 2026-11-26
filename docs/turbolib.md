@@ -1051,6 +1051,10 @@ What the images' bytes are isn't compared (an ELF `compare-images` is
 still to write), nor any debugging: the folded functions have no debug
 information.
 
+**Determinism**: `libLLVMSupport.a` and `libLLVMCore.a`, folded with
+`-j 1`, `-j 3`, and `-j 8` in separate processes, are the same bytes
+each time (and `ar s` without folding gives back the build's archive).
+
 **Speed** (`relib.py --time --options=--fold=identical`, the same 20
 libraries, 13.79 GiB): GNU `ar` 37.98 s, turbolib folding 101.08 s,
 2.66× (CMake's `ar qc` and `ranlib` each fold: the second finds nothing

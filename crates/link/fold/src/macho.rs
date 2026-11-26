@@ -108,6 +108,10 @@ pub const N_ALT_ENTRY: u16 = 0x200;
 /// of a member that refers to it.
 pub const ANCHOR_PREFIX: &[u8] = b"!turbolib.anchor.";
 
+/// The local label of an alignment gap between a synthesized member's
+/// units (an atom of its own).
+pub const PAD: &[u8] = b"l_turbolib.pad";
+
 /// `--pull`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pull {
@@ -1116,9 +1120,16 @@ fn build_synth(
     let mut unwind: Vec<UnwindEntry> = Vec::new();
     let undefined = |symbols: &mut Vec<Symbol<'static>>,
                      by_name: &mut BTreeMap<Vec<u8>, u32>,
-                     n: &[u8]|
+                     n: &[u8],
+                     weak: bool|
      -> u32 {
+        // (A weak reference only if every reference is: as the link of
+        // the givers would have it.)
         if let Some(&i) = by_name.get(n) {
+            let y = &mut symbols[i as usize];
+            if !weak && y.is_undefined() {
+                y.n_desc &= !N_WEAK_REF;
+            }
             return i;
         }
         symbols.push(Symbol {
@@ -1126,7 +1137,7 @@ fn build_synth(
             name_offset: 0,
             n_type: N_UNDF | N_EXT,
             n_sect: 0,
-            n_desc: 0,
+            n_desc: if weak { N_WEAK_REF } else { 0 },
             n_value: 0,
             indirect: None,
         });
@@ -1144,6 +1155,7 @@ fn build_synth(
         syms: BTreeMap<u32, u32>,
     }
     let mut placed: Vec<Placed> = Vec::new();
+    let mut pads: Vec<(usize, u64)> = Vec::new();
     for &(m, k) in &s.units {
         let o = parsed[m].obj.as_ref().ok_or("no object")?;
         let u = &parsed[m].units[k];
@@ -1175,8 +1187,14 @@ fn build_synth(
         let sec = &mut sections[si];
         sec.align = sec.align.max(src.align);
         let a = 1u64 << src.align.min(15);
-        let at = sec.size().div_ceil(a) * a;
+        let end = sec.size();
+        let at = end.div_ceil(a) * a;
         let len = u.range.end - u.range.start;
+        if at > end && end > 0 {
+            // The alignment gap is an atom of its own (a local label), so
+            // that the unit before it keeps its size.
+            pads.push((si, end));
+        }
         match (&mut sec.contents, src.bytes()) {
             (Contents::Bytes(b), Some(sb)) => {
                 let b = b.to_mut();
@@ -1220,6 +1238,17 @@ fn build_synth(
             }
         }
     }
+    for &(si, off) in &pads {
+        symbols.push(Symbol {
+            name: Cow::Borrowed(PAD),
+            name_offset: 0,
+            n_type: N_SECT,
+            n_sect: (si + 1) as u8,
+            n_desc: 0,
+            n_value: off,
+            indirect: None,
+        });
+    }
     // Relocations, and unwind entries.
     let mut relocs: Vec<Vec<Relocation>> = vec![Vec::new(); sections.len()];
     for p in &placed {
@@ -1238,7 +1267,12 @@ fn build_synth(
                     {
                         anchors_needed.insert(t);
                     }
-                    undefined(&mut symbols, &mut by_name, &y.name)
+                    undefined(
+                        &mut symbols,
+                        &mut by_name,
+                        &y.name,
+                        y.is_undefined() && y.n_desc & N_WEAK_REF != 0,
+                    )
                 } else {
                     *p.syms
                         .get(&r.symbolnum)
@@ -1273,7 +1307,7 @@ fn build_synth(
         .map(|&t| synth[t].anchor.clone())
         .collect();
     for a in &anchor_names {
-        undefined(&mut symbols, &mut by_name, a);
+        undefined(&mut symbols, &mut by_name, a, false);
     }
     // The anchor.
     symbols.push(Symbol {
@@ -1374,7 +1408,7 @@ fn build_synth(
             bytes.extend_from_slice(&entry);
             rs.push(Relocation::plain(at, (sec + 1) as u32, false, 0, 3));
             if let Some(p) = personality {
-                let k = undefined(&mut symbols, &mut by_name, &p);
+                let k = undefined(&mut symbols, &mut by_name, &p, false);
                 rs.push(Relocation::plain(at + 16, k, true, 0, 3));
             }
         }

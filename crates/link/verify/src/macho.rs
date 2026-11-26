@@ -360,6 +360,77 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
         if s.segment_name() == b"__DWARF" || Some(si) == unwind {
             continue;
         }
+        if s.segment_name() == b"__TEXT" && s.name() == b"__eh_frame" {
+            // One atom, its records' pointers (which no relocation covers,
+            // and which move with what they point to) by their targets.
+            let mut h = Canon::new();
+            let mut bytes = s.bytes().unwrap_or(&[]).to_vec();
+            let covered: BTreeSet<u32> = s.relocations.iter().map(|r| r.address).collect();
+            match turbonop_macho_object::ehframe::pointers(&bytes, o.is_64(), endian) {
+                None => h.u64(0xEEEE),
+                Some(ptrs) => {
+                    for p in ptrs {
+                        if covered.contains(&(p.offset as u32)) {
+                            continue;
+                        }
+                        let n = usize::from(p.size);
+                        let Some(raw) = bytes.get(p.offset..p.offset + n) else {
+                            continue;
+                        };
+                        let mut v = [0u8; 8];
+                        v[..n.min(8)].copy_from_slice(&raw[..n.min(8)]);
+                        let v = u64::from_le_bytes(v);
+                        let bits = 8 * n as u32;
+                        let signed = if bits >= 64 {
+                            v as i64
+                        } else {
+                            ((v << (64 - bits)) as i64) >> (64 - bits)
+                        };
+                        let target = if p.encoding & 0x70
+                            == turbonop_macho_object::ehframe::DW_EH_PE_PCREL
+                        {
+                            s.addr
+                                .wrapping_add(p.offset as u64)
+                                .wrapping_add(signed as u64)
+                        } else {
+                            v
+                        };
+                        h.u64(p.offset as u64);
+                        match locate(target, None) {
+                            Some((ts, k, off)) => {
+                                h.bytes(&keys[ts][k]);
+                                h.u64(off);
+                            }
+                            None => h.u64(target),
+                        }
+                        bytes[p.offset..p.offset + n].fill(0);
+                    }
+                }
+            }
+            let mut rels: Vec<usize> = (0..s.relocations.len()).collect();
+            rels.sort_by_key(|&i| (s.relocations[i].address, i));
+            for &i in &rels {
+                let r = s.relocations[i];
+                let n = 1usize << r.length.min(3);
+                if !r.external
+                    && let Some(x) = bytes.get_mut(r.address as usize..r.address as usize + n)
+                {
+                    x.fill(0);
+                }
+                h.u64(u64::from(r.address));
+                h.u64(u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16);
+                target(s, i, &mut h);
+            }
+            h.bytes(&bytes);
+            m.atoms.push(Atom {
+                key: b"__TEXT,__eh_frame".to_vec(),
+                hash: h.finish(),
+                unit: false,
+                names: Vec::new(),
+                desc: h.log.take().unwrap_or_default(),
+            });
+            continue;
+        }
         for (k, (range, syms)) in list.iter().enumerate() {
             let mut h = Canon::new();
             h.bytes(s.segment_name());
@@ -667,6 +738,9 @@ pub fn verify(a: &[u8], b: &[u8], options: &Options) -> Result<Report, String> {
         .collect();
     for &j in &synth {
         for at in &lb.members[j].atoms {
+            if at.key == b"l_turbolib.pad" {
+                continue;
+            }
             if !at.unit {
                 rep.fail("synthesized members' atoms that aren't units", || {
                     format!("{}: {}", show(&lb.members[j].name), show(&at.key))

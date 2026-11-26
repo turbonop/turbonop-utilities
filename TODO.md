@@ -495,6 +495,46 @@ x64. Where the 3.5 MB went:
     it, then `relib.py` (as `llvm-ar qc` and `llvm-ranlib` made each
     library), `roundtrip_unix -llvm`, the object round trip (LLVM's
     `.strtab`, `.llvm_addrsig`, `.crel`), and the fold and relink matrix.
+- **Phase 7: Mach-O** (see the plan's "Phase 7 results"). Done: Darwin
+  archives and the `libtool -static` personality (7.1), the object model
+  (7.2), `--fold=identical` for Mach-O with `verify` (7.3, first version),
+  and the corpus scripts (`tools/turbolib/macho-corpus`). Still open:
+  - **Folded functions' DWARF** isn't moved: a synthesized member has none,
+    so a folded function has no debug information in the program's dSYM
+    (the givers' DIEs for it lose their addresses, as `dsymutil` drops
+    every copy but the linked one). Build a unit in the synthesized
+    member from the survivor member's DWARF 4 (and 5), as `elf::dwarf`
+    does, with Apple's accelerator tables (`__apple_names` and the rest,
+    or `.debug_names`), and check with `dsymutil` and `llvm-dwarfdump
+    --verify` on the linked programs (there is no Mac: lldb sessions
+    can't be compared).
+  - **What keeps units from folding**: string literals and other
+    `__cstring`/literal-section references (`l_.str`: the linker merges
+    those sections by content, so copying the literals into the
+    synthesized member is semantics-preserving: `--locals=copy` for
+    Mach-O); LSDAs (`__gcc_except_tab` atoms referenced only by the unit's
+    unwind entry could move with it); FDEs in `__eh_frame` (x86-64 units
+    whose compact unwind says "use DWARF"); x86-64's local relocations
+    (`L` labels), data in code, optimization hints (`-O2` arm64 objects
+    have LOH: dropping the hints of moved code is allowed).
+  - **Apple's linkers** (ld64, ld-prime) and Apple's `libtool`/`ranlib`
+    (cctools: `__.SYMDEF SORTED`) were neither run nor read here: the
+    loading-order argument (anchors first among undefined names,
+    synthesized members first in the archive) is ld64.lld's. Check on a
+    Mac: `ld -t` member order, `-why_load`, `dyld_info`, and running the
+    programs.
+  - **compare-images for Mach-O** in Rust (`turbonop_verify`): relink.py
+    compares links structurally with llvm-nm and llvm-objdump (members
+    loaded in order, symbols, each function's disassembly with addresses
+    masked, initializers in order); a Rust comparison as for ELF (functions
+    by bytes with PC-relative operands by name, unwind info, chained
+    fixups, DWARF through the debug map) is not written.
+  - `--pull=relaxed`, `--fold=select-any` and `--locals` for Mach-O;
+    32-bit targets (i386, armv7, arm64_32: passed through); universal
+    files with `--fold` (libtool's several-architecture output folds each
+    slice? untested); `ar` (GNU) on Mach-O members (its index isn't
+    modeled).
+  - **Speed**: not measured with folding yet.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

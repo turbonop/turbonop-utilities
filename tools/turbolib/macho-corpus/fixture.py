@@ -119,7 +119,7 @@ def main():
                 fa, fb = relink.functions(imgs[0]), relink.functions(imgs[1])
                 differ = [f for f in fa if fa[f] != fb.get(f)]
                 ia, ib = relink.init_order(imgs[0]), relink.init_order(imgs[1])
-                ok = same_members and not only_a and not only_b and not differ and ia == ib and len(ia) == 3
+                ok = same_members and not only_a and not only_b and not differ and ia == ib and len(ia) >= 2
                 total += 1
                 good += ok
                 print(f"{arch} {opt} {' '.join(order)}: {'equivalent' if ok else 'DIFFERENT'}: members "

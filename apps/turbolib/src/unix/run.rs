@@ -1076,10 +1076,16 @@ fn unchanged(path: &Path, layout: &Layout, members: &[Item]) -> bool {
         let Some(b) = &m.bytes else {
             return false;
         };
-        let at = layout.offset(i) as usize;
+        // (The layout's size is the mapping's, so these fit.)
+        let (Ok(at), Ok(span)) = (
+            usize::try_from(layout.offset(i)),
+            usize::try_from(layout.span(i)),
+        ) else {
+            return false;
+        };
         let header = layout.header(i);
         let data = at + header.len();
-        let end = at + layout.span(i) as usize;
+        let end = at + span;
         Arc::ptr_eq(&b.map, &map)
             && b.start == data
             && b.len as u64 == layout.data_size(i)

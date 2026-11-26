@@ -355,14 +355,14 @@ fn identical_copies_fold() {
         .unwrap();
     let (text, _) = bytes_of(&synth, b".text._Z1fv");
     assert_eq!(
-        synth.reloc_symbol(&relocations_for(&synth, text)[0]) as usize,
+        synth.reloc_symbol(relocations_for(&synth, text)[0]) as usize,
         ext
     );
     let (eh, b) = bytes_of(&synth, b".eh_frame");
     assert_eq!(eh_frame::records(b, false).unwrap().len(), 2);
     let rs = relocations_for(&synth, eh);
     assert_eq!(rs.len(), 1);
-    let target = &synth.symbols()[synth.reloc_symbol(&rs[0]) as usize];
+    let target = &synth.symbols()[synth.reloc_symbol(rs[0]) as usize];
     assert_eq!((target.kind(), target.shndx as usize), (3, text));
     assert!(
         synth

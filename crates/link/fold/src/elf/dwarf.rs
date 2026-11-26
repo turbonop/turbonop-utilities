@@ -363,8 +363,8 @@ impl<'p> Source<'p> {
             for r in rs {
                 e.push(Rel {
                     offset: r.offset,
-                    rtype: obj.reloc_type(&r),
-                    sym: obj.reloc_symbol(&r),
+                    rtype: obj.reloc_type(r),
+                    sym: obj.reloc_symbol(r),
                     addend: r.addend,
                 });
             }
@@ -800,33 +800,44 @@ impl<'p> Source<'p> {
             }
             out.push(cu);
         }
-        // Roots: DIEs with addresses in sections of units.
+        // Roots: DIEs with addresses in sections of units. A unit's DIEs
+        // are read in chunks on every core (a large member's unit has
+        // millions); the first error, in DIE order, is the one reported.
+        const CHUNK: usize = 16 * 1024;
+        let me = &*self;
         let mut roots: BTreeMap<usize, BTreeSet<(usize, usize)>> = BTreeMap::new();
         for (ci, cu) in out.iter().enumerate() {
-            let unit = self.unit(cu)?;
-            for (di, d) in cu.dies.iter().enumerate() {
-                if di == 0 {
-                    continue;
-                }
-                let (_, attrs) = read_die(&unit, &cu.abbrevs, d.offset)?;
-                if attrs.iter().any(|a| a.name == DW_AT_DECLARATION) {
-                    continue;
-                }
-                let mut here = BTreeSet::new();
-                for a in &attrs {
-                    for addr in self.addresses_of(cu, &unit, a)? {
-                        if let Some(s) = self.section_of(addr)
-                            && owner.get(s).copied().flatten().is_some()
-                        {
-                            here.insert(s);
+            let n = cu.dies.len();
+            let found: Vec<R<Vec<(usize, usize)>>> =
+                turbonop_par::map_range(n.div_ceil(CHUNK), 1, |c| {
+                    let unit = me.unit(cu)?;
+                    let mut v = Vec::new();
+                    for di in (c * CHUNK).max(1)..n.min((c + 1) * CHUNK) {
+                        let d = &cu.dies[di];
+                        let (_, attrs) = read_die(&unit, &cu.abbrevs, d.offset)?;
+                        if attrs.iter().any(|a| a.name == DW_AT_DECLARATION) {
+                            continue;
                         }
+                        let mut here = BTreeSet::new();
+                        for a in &attrs {
+                            for addr in me.addresses_of(cu, &unit, a)? {
+                                if let Some(s) = me.section_of(addr)
+                                    && owner.get(s).copied().flatten().is_some()
+                                {
+                                    here.insert(s);
+                                }
+                            }
+                        }
+                        if here.is_empty() {
+                            continue;
+                        }
+                        let root = root_of(&cu.dies, di);
+                        v.extend(here.into_iter().map(|s| (s, root)));
                     }
-                }
-                if here.is_empty() {
-                    continue;
-                }
-                let root = root_of(&cu.dies, di);
-                for s in here {
+                    Ok(v)
+                });
+            for f in found {
+                for (s, root) in f? {
                     roots.entry(s).or_default().insert((ci, root));
                 }
             }

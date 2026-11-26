@@ -585,7 +585,7 @@ impl<'a> Object<'a> {
                         info,
                         addend: 0,
                     };
-                    let sym = probe.reloc_symbol(&r);
+                    let sym = probe.reloc_symbol(r);
                     probe.set_reloc_symbol(&mut r, renumber(sym));
                     r.info
                 }),

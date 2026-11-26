@@ -203,7 +203,7 @@ fn every_class_and_byte_order() {
         let Data::Relocations(rs) = &back.sections[4].data else {
             panic!("relocations");
         };
-        assert_eq!(back.reloc_symbol(&rs.get(0).unwrap()), 6);
+        assert_eq!(back.reloc_symbol(rs.get(0).unwrap()), 6);
         assert_eq!(rs.get(0).unwrap().addend, -4);
     }
 }
@@ -254,11 +254,11 @@ fn mips64_relocations() {
             info,
             addend: 0,
         };
-        assert_eq!(o.reloc_symbol(&r), 6);
-        assert_eq!(o.reloc_type(&r), 7 | (24 << 8) | (5 << 16));
+        assert_eq!(o.reloc_symbol(r), 6);
+        assert_eq!(o.reloc_type(r), 7 | (24 << 8) | (5 << 16));
         o.set_reloc_symbol(&mut r, 0x0102_0304);
-        assert_eq!(o.reloc_symbol(&r), 0x0102_0304);
-        assert_eq!(o.reloc_type(&r), 7 | (24 << 8) | (5 << 16));
+        assert_eq!(o.reloc_symbol(r), 0x0102_0304);
+        assert_eq!(o.reloc_type(r), 7 | (24 << 8) | (5 << 16));
     }
 }
 

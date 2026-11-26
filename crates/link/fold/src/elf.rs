@@ -623,102 +623,114 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             units[u].symbols.push(i);
         }
     }
-    // Hashes.
-    for (ui, u) in units.iter_mut().enumerate() {
-        let group = u.group;
-        let unit_sections = u.sections.clone();
-        let fdes = u.fdes.clone();
-        let mut stays = u.stays;
-        let mut h = H128::new();
-        h.u128(p.env);
-        if let Data::Group(g) = &obj.sections[group].data {
-            h.u64(u64::from(g.flags));
-        }
-        let place = |sec: usize| unit_sections.iter().position(|&x| x == sec);
-        let key = |h: &mut H128, si: u32| {
-            let Some(sym) = symbols.get(si as usize) else {
-                h.u64(u64::MAX);
-                return;
-            };
-            if sym.bind() != 0 || si == 0 {
-                h.u64(1);
-                h.bytes(&sym.name);
-                h.u64(u64::from(sym.bind()));
-            } else {
-                h.u64(2);
-                h.u64(place(sym.shndx as usize).map_or(u64::MAX, |x| x as u64));
-                h.u64(sym.value);
-                h.u64(u64::from(sym.kind()));
+    // Hashes: on every core for a member of many units (one can hold tens
+    // of thousands).
+    let env = p.env;
+    let eh_info = p.eh.as_ref();
+    let hashed: Vec<(u128, u64, Option<&'static str>)> =
+        turbonop_par::map_range(units.len(), 4096, |ui| {
+            let u = &units[ui];
+            let group = u.group;
+            let unit_sections = &u.sections;
+            let fdes = &u.fdes;
+            let mut stays = u.stays;
+            let mut h = H128::new();
+            h.u128(env);
+            if let Data::Group(g) = &obj.sections[group].data {
+                h.u64(u64::from(g.flags));
             }
-        };
-        let mut bytes = 0u64;
-        for &sec in &unit_sections {
-            let s = &obj.sections[sec];
-            h.bytes(&s.name);
-            h.u64(u64::from(s.kind));
-            h.u64(s.flags);
-            h.u64(s.addralign);
-            h.u64(s.entsize);
-            match &s.data {
-                Data::Bytes(b) => {
-                    h.bytes(b);
-                    bytes += b.len() as u64;
+            let place = |sec: usize| unit_sections.iter().position(|&x| x == sec);
+            let key = |h: &mut H128, si: u32| {
+                let Some(sym) = symbols.get(si as usize) else {
+                    h.u64(u64::MAX);
+                    return;
+                };
+                if sym.bind() != 0 || si == 0 {
+                    h.u64(1);
+                    h.bytes(&sym.name);
+                    h.u64(u64::from(sym.bind()));
+                } else {
+                    h.u64(2);
+                    h.u64(place(sym.shndx as usize).map_or(u64::MAX, |x| x as u64));
+                    h.u64(sym.value);
+                    h.u64(u64::from(sym.kind()));
                 }
-                Data::NoBits => h.u64(s.nobits_size),
-                Data::Relocations(rs) => {
-                    h.u64(place(s.info as usize).map_or(u64::MAX, |x| x as u64));
-                    for r in rs {
-                        let r = &r;
-                        h.u64(r.offset);
-                        h.u64(u64::from(obj.reloc_type(r)));
-                        key(&mut h, obj.reloc_symbol(r));
-                        h.u64(r.addend as u64);
+            };
+            let mut bytes = 0u64;
+            for &sec in unit_sections {
+                let s = &obj.sections[sec];
+                h.bytes(&s.name);
+                h.u64(u64::from(s.kind));
+                h.u64(s.flags);
+                h.u64(s.addralign);
+                h.u64(s.entsize);
+                match &s.data {
+                    Data::Bytes(b) => {
+                        h.bytes(b);
+                        bytes += b.len() as u64;
                     }
-                    bytes += rs.len() as u64 * 24;
-                }
-                _ => {
-                    h.u64(0xBAD);
-                    stays = Some("it holds a section of a kind not moved");
-                }
-            }
-        }
-        let unit_symbols = u.symbols.clone();
-        for s in unit_symbols.iter().map(|&i| &symbols[i]) {
-            h.bytes(&s.name);
-            h.u64(u64::from(s.info));
-            h.u64(u64::from(s.other));
-            h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
-            h.u64(s.value);
-            h.u64(s.size);
-        }
-        if let Some(eh) = &p.eh {
-            let data = section_bytes(&obj.sections[eh.section]);
-            let record = |h: &mut H128, k: usize| {
-                let rec = &eh.records[k];
-                let b = &data[rec.start..rec.end()];
-                h.bytes(&b[..rec.id_at]);
-                h.bytes(&b[rec.id_at + 4..]);
-                for rel in eh.rels(k) {
-                    h.u64(rel.offset - rec.start as u64);
-                    h.u64(u64::from(obj.reloc_type(rel)));
-                    key(h, obj.reloc_symbol(rel));
-                    h.u64(rel.addend as u64);
-                }
-            };
-            for &f in &fdes {
-                record(&mut h, f);
-                if let Some(cie) = eh.cie(f) {
-                    record(&mut h, cie);
+                    Data::NoBits => h.u64(s.nobits_size),
+                    Data::Relocations(rs) => {
+                        h.u64(place(s.info as usize).map_or(u64::MAX, |x| x as u64));
+                        for r in rs {
+                            let r = &r;
+                            h.u64(r.offset);
+                            h.u64(u64::from(obj.reloc_type(r)));
+                            key(&mut h, obj.reloc_symbol(r));
+                            h.u64(r.addend as u64);
+                        }
+                        bytes += rs.len() as u64 * 24;
+                    }
+                    _ => {
+                        h.u64(0xBAD);
+                        stays = Some("it holds a section of a kind not moved");
+                    }
                 }
             }
-        }
+            let unit_symbols = u.symbols.clone();
+            for s in unit_symbols.iter().map(|&i| &symbols[i]) {
+                h.bytes(&s.name);
+                h.u64(u64::from(s.info));
+                h.u64(u64::from(s.other));
+                h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
+                h.u64(s.value);
+                h.u64(s.size);
+            }
+            if let Some(eh) = eh_info {
+                let data = section_bytes(&obj.sections[eh.section]);
+                let record = |h: &mut H128, k: usize| {
+                    let rec = &eh.records[k];
+                    let b = &data[rec.start..rec.end()];
+                    h.bytes(&b[..rec.id_at]);
+                    h.bytes(&b[rec.id_at + 4..]);
+                    for rel in eh.rels(k) {
+                        h.u64(rel.offset - rec.start as u64);
+                        h.u64(u64::from(obj.reloc_type(rel)));
+                        key(h, obj.reloc_symbol(rel));
+                        h.u64(rel.addend as u64);
+                    }
+                };
+                for &f in fdes {
+                    record(&mut h, f);
+                    if let Some(cie) = eh.cie(f) {
+                        record(&mut h, cie);
+                    }
+                }
+            }
+            (
+                h.finish(),
+                bytes + 4 * (unit_sections.len() as u64 + 1),
+                stays,
+            )
+        });
+    for (ui, (u, (hash, bytes, stays))) in units.iter_mut().zip(hashed).enumerate() {
         u.stays = if registers[ui] {
             Some("it holds initializer, terminator, or warning sections")
         } else {
             stays
         };
-        u.bytes = bytes + 4 * (unit_sections.len() as u64 + 1);
-        u.hash = h.finish();
+        u.bytes = bytes;
+        u.hash = hash;
     }
     p.owner = owner;
     p.units = units;
@@ -1400,7 +1412,7 @@ fn synthesize<'a>(
             if let Data::Relocations(rs) = &sec.data {
                 let mut out = Vec::with_capacity(rs.len());
                 for r in rs {
-                    let t = target(&mut locals, &mut globals, m, obj.reloc_symbol(&r) as usize)?;
+                    let t = target(&mut locals, &mut globals, m, obj.reloc_symbol(r) as usize)?;
                     out.push((r, m, t));
                 }
                 fix_ups.push((placed[&(m, s)], m, out));

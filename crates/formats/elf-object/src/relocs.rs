@@ -135,7 +135,7 @@ impl<'a> Relocations<'a> {
     /// The entries `bytes` holds, encoded as `form` (`None` unless a whole
     /// number of entries).
     pub fn encoded(bytes: Cow<'a, [u8]>, form: Form) -> Option<Self> {
-        (bytes.len() % form.entry() == 0).then_some(Self {
+        bytes.len().is_multiple_of(form.entry()).then_some(Self {
             repr: Repr::File { bytes, form },
         })
     }
@@ -497,7 +497,7 @@ pub fn encode_crel(entries: &[CrelEntry], class: Class, addends: bool) -> Vec<u8
         offset = e.offset;
         let a = (e.addend as u64) & mask;
         let flags = u8::from(symbol != e.symbol)
-            | if kind != e.kind { 2 } else { 0 }
+            | if kind == e.kind { 0 } else { 2 }
             | if addends && addend != a { 4 } else { 0 };
         let b = ((delta << flag_bits) as u8) | flags;
         if delta < (0x80 >> flag_bits) {

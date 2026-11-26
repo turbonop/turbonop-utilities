@@ -509,7 +509,6 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
             }
         }
     }
-
     // Each sharer's distinct shareable records, by shard, so that each
     // shard counts only its own.
     let n = (turbonop_par::threads() * 4).max(1) as u64;
@@ -519,7 +518,7 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
         .collect();
     let lists: Vec<(Vec<Held>, Vec<u32>)> = turbonop_par::map_balanced(&sharers, 1, |&m| {
         let mem = &members[m];
-        let mut v: Vec<Held> = Vec::with_capacity(mem.hashes.len());
+        let mut v: Vec<Held> = Vec::with_capacity(mem.hashes.len() + mem.reached.len());
         for (i, (&h, &f)) in mem.hashes.iter().zip(&mem.flags).enumerate() {
             if f & SHAREABLE != 0 && f & BUILD == 0 {
                 v.push((h, m as u32, i as u32));
@@ -533,23 +532,38 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
                 }
             }
         }
-        v.sort_unstable_by_key(|&(h, a, b)| (shard_of(h), h, a, b));
-        v.dedup_by_key(|x| x.0);
-        let mut bounds = Vec::with_capacity(n as usize + 1);
-        for s in 0..=n {
-            bounds.push(v.partition_point(|x| shard_of(x.0) < s) as u32);
+        // By shard (a counting sort: the order within a shard doesn't
+        // matter, as counting takes each member's copies once).
+        let mut bounds = vec![0u32; n as usize + 1];
+        for x in &v {
+            bounds[shard_of(x.0) as usize + 1] += 1;
         }
-        (v, bounds)
+        for s in 0..n as usize {
+            bounds[s + 1] += bounds[s];
+        }
+        let mut next = bounds.clone();
+        let mut out: Vec<Held> = vec![(0, 0, 0); v.len()];
+        for x in v {
+            let s = shard_of(x.0) as usize;
+            out[next[s] as usize] = x;
+            next[s] += 1;
+        }
+        (out, bounds)
     });
     let shards: Vec<u64> = (0..n).collect();
     let parts: Vec<Vec<Candidate>> = turbonop_par::map_balanced(&shards, 1, |&s| {
         let s = s as usize;
-        // Each record: how many members hold it, and its first copy.
-        let mut counts: HashMap<u128, (u32, u32, u32)> = HashMap::default();
-        for (list, bounds) in &lists {
+        // Each record: how many members hold it (each counted once: the
+        // last member that counted it), and its first copy.
+        let mut counts: HashMap<u128, (u32, u32, u32, u32)> = HashMap::default();
+        for (k, (list, bounds)) in lists.iter().enumerate() {
+            let k = k as u32;
             for &(h, a, b) in &list[bounds[s] as usize..bounds[s + 1] as usize] {
-                let e = counts.entry(h).or_insert((0, a, b));
-                e.0 += 1;
+                let e = counts.entry(h).or_insert((0, a, b, u32::MAX));
+                if e.3 != k {
+                    e.0 += 1;
+                    e.3 = k;
+                }
                 if (a, b) < (e.1, e.2) {
                     (e.1, e.2) = (a, b);
                 }
@@ -557,8 +571,8 @@ pub(super) fn plan(parsed: &[Parsed<'_>], min: u32) -> Plan {
         }
         counts
             .into_iter()
-            .filter(|&(_, (c, _, _))| c >= min)
-            .map(|(hash, (_, a, b))| Candidate {
+            .filter(|&(_, (c, _, _, _))| c >= min)
+            .map(|(hash, (_, a, b, _))| Candidate {
                 hash,
                 machine: parsed[a as usize].object.as_ref().map_or(0, |o| o.machine),
                 depth: members[a as usize].depth[b as usize],

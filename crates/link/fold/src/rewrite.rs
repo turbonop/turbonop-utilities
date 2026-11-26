@@ -349,6 +349,42 @@ fn definitions<'a>(input: &Input<'a>, parsed: &'a Parsed<'a>) -> Vec<Cow<'a, [u8
     Vec::new()
 }
 
+/// The member the archive index names for each name (its first definer),
+/// and each name's code, if every definition of it in the library is a
+/// unit with that code (whatever its environment); `None` if any differs,
+/// or isn't a unit's.
+type Definers<'p> = (HashMap<&'p [u8], usize>, HashMap<&'p [u8], Option<u128>>);
+
+fn definers<'p>(parsed: &'p [Parsed<'_>], defs: &'p [Vec<Cow<'_, [u8]>>]) -> Definers<'p> {
+    let mut first_definer: HashMap<&[u8], usize> = HashMap::default();
+    for (m, d) in defs.iter().enumerate() {
+        for name in d {
+            first_definer.entry(name.as_ref()).or_insert(m);
+        }
+    }
+    let mut one_code: HashMap<&[u8], Option<u128>> = HashMap::default();
+    for (p, d) in parsed.iter().zip(defs) {
+        if p.passed.is_some() {
+            for name in d {
+                one_code.insert(name.as_ref(), None);
+            }
+            continue;
+        }
+        for unit in &p.facts.units {
+            for n in &unit.externals {
+                let e = one_code.entry(n.as_slice()).or_insert(Some(unit.code));
+                if *e != Some(unit.code) {
+                    *e = None;
+                }
+            }
+        }
+        for n in &p.facts.other_definitions {
+            one_code.insert(n.as_slice(), None);
+        }
+    }
+    (first_definer, one_code)
+}
+
 /// A synthesized member's contents: the surviving copies, and whether each
 /// is a renamed copy.
 struct Synth {
@@ -387,13 +423,23 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     lap(0);
-    // The shared types.
+    let defs: Vec<Vec<Cow<'_, [u8]>>> = inputs
+        .iter()
+        .zip(&parsed)
+        .map(|(i, p)| definitions(i, p))
+        .collect();
+    // The shared types, while the definers are found (on one thread).
     let types_clock = std::time::Instant::now();
-    let plan = match options.precomp {
-        Precomp::Library { min } => Some(precomp::plan(&parsed, min.max(1))),
-        Precomp::None => None,
-    };
-    if let Some(plan) = &plan {
+    let (plan, (first_definer, one_code)) = turbonop_par::join(
+        || match options.precomp {
+            Precomp::Library { min } => {
+                Some((precomp::plan(&parsed, min.max(1)), types_clock.elapsed()))
+            }
+            Precomp::None => None,
+        },
+        || definers(&parsed, &defs),
+    );
+    let plan = plan.map(|(plan, time)| {
         let t = &mut report.types;
         t.pchs = plan.pchs.len() as u64;
         t.shared_records = plan.pchs.iter().map(|p| u64::from(p.count)).sum();
@@ -407,44 +453,9 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         t.unreadable = plan.unreadable;
         t.first_unreadable = plan.first_unreadable.clone();
         t.absorbed = parsed.iter().filter(|p| p.debug.absorbed).count() as u64;
-        t.time = types_clock.elapsed();
-    }
-    // The member the archive index names for each name: its first definer.
-    let mut first_definer: HashMap<&[u8], usize> = HashMap::default();
-    let defs: Vec<Vec<Cow<'_, [u8]>>> = inputs
-        .iter()
-        .zip(&parsed)
-        .map(|(i, p)| definitions(i, p))
-        .collect();
-    for (m, d) in defs.iter().enumerate() {
-        for name in d {
-            first_definer.entry(name.as_ref()).or_insert(m);
-        }
-    }
-
-    // Each name's code, if every definition of it in the library is a unit
-    // with that code (whatever its environment); `None` if any differs, or
-    // isn't a unit's.
-    let mut one_code: HashMap<&[u8], Option<u128>> = HashMap::default();
-    for (p, d) in parsed.iter().zip(&defs) {
-        if p.passed.is_some() {
-            for name in d {
-                one_code.insert(name.as_ref(), None);
-            }
-            continue;
-        }
-        for unit in &p.facts.units {
-            for n in &unit.externals {
-                let e = one_code.entry(n.as_slice()).or_insert(Some(unit.code));
-                if *e != Some(unit.code) {
-                    *e = None;
-                }
-            }
-        }
-        for n in &p.facts.other_definitions {
-            one_code.insert(n.as_slice(), None);
-        }
-    }
+        t.time = time;
+        plan
+    });
 
     lap(1);
     // Groups of copies, in order of first appearance.

@@ -2502,8 +2502,16 @@ finding units 25% slower); reading members largest first (no change: reading is 
   A moved function's DWARF must be in the synthesized member, and the
   member's modification time must be what the debug map records.
 - **Per-object load commands:** `LC_BUILD_VERSION` and `LC_LINKER_OPTION`.
+  (Done: `LC_BUILD_VERSION` is part of the environment and copied into
+  synthesized members; `LC_LINKER_OPTION` stays with its member and counts
+  as a side effect under `--pull=preserve`.)
 - **The tool:** `libtool -static`'s command line, and the BSD archive
-  writer.
+  writer. (Done as `llvm-libtool-darwin` behaves: see [7.1](#darwin-archives-and-the-libtool-personality-71).)
+- **Status** (see [Phase 7 results](#phase-7-results)): archives (7.1), the
+  object model (7.2), and folding with `verify` (7.3) are done; the moved
+  functions' DWARF is not (synthesized members have none yet). There is no
+  Mac here: ld64 and ld-prime, Apple's `libtool`, and running the programs
+  are untested; links are ld64.lld's, compared structurally.
 
 ## Build systems
 

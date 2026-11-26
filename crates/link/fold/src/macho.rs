@@ -175,7 +175,7 @@ pub struct Report {
     /// members' sections.
     pub removed_bytes: u64,
     pub synthesized_bytes: u64,
-    /// Debug relocations of givers removed (their places zeroed).
+    /// Debug relocations of givers removed (their places set to all ones).
     pub tombstoned: usize,
     /// Distinct folded units with debug information, which synthesized
     /// members don't carry yet.
@@ -2082,6 +2082,11 @@ fn rewrite_giver(
     synth: &[Synth],
 ) -> Result<(Vec<u8>, usize, u64), String> {
     let mut o = p.obj.clone().ok_or("no object")?;
+    // What of its DWARF the cut can't move (see `adjust`), read first.
+    let plan = adjust::Plan::read(&o).map_err(|e| format!("its DWARF: {e}"))?;
+    if let Some(p) = &plan {
+        p.strip(&mut o);
+    }
     let cputype = o.header.cputype;
     let endian = o.endian();
     let mut removed = 0u64;
@@ -2114,12 +2119,15 @@ fn rewrite_giver(
                 .flat_map(|a| a.symbols.iter().copied())
         })
         .collect();
-    // 1. Debug sections' relocations to what goes: removed, places zeroed.
+    // 1. Debug sections' relocations to what goes: removed, their places
+    // all ones (the tombstone address: 0 is an address of the object).
     let mut tomb = 0;
     let nsec = o.section_count();
     for si in 0..nsec {
         let Some(s) = o.section(si) else { continue };
-        if s.segment_name() != b"__DWARF" {
+        if s.segment_name() != b"__DWARF" || s.name() == b"__debug_line" {
+            // (The line program is encoded again below, without the rows
+            // of what goes.)
             continue;
         }
         let mut drop = BTreeSet::new();
@@ -2157,7 +2165,7 @@ fn rewrite_giver(
             for (at, len) in places {
                 let n = 1usize << len.min(3);
                 if let Some(x) = b.get_mut(at as usize..at as usize + n) {
-                    x.fill(0);
+                    x.fill(0xFF);
                 }
             }
         }
@@ -2196,12 +2204,26 @@ fn rewrite_giver(
             (s, v)
         })
         .collect();
+    let old: Vec<(u64, u64)> = o.sections().map(|s| (s.addr, s.size())).collect();
     let cut = o.cut(&cuts).map_err(|e| e.to_string())?;
     if !cut.dangling.is_empty() {
         return Err("a relocation still reaches what was cut".into());
     }
     if !cut.unadjusted.is_empty() {
         return Err("an address the cut couldn't move".into());
+    }
+    if let Some(plan) = plan {
+        let mut per = vec![Vec::new(); old.len()];
+        for (s, v) in &cuts {
+            per[*s].clone_from(v);
+        }
+        let map = adjust::AddressMap {
+            old,
+            new: o.sections().map(|s| s.addr).collect(),
+            cuts: per,
+        };
+        plan.apply(&mut o, &map)
+            .map_err(|e| format!("its DWARF: {e}"))?;
     }
     // 3. Symbols: moved names become weak references, locals of the units
     // go; the anchors are added.
@@ -2250,5 +2272,7 @@ fn rewrite_giver(
     Ok((data, tomb, removed))
 }
 
+#[doc(hidden)]
+pub mod adjust;
 #[cfg(test)]
 mod tests;

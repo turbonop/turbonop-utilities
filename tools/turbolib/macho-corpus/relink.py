@@ -111,6 +111,11 @@ def functions(image):
         body.append((BASE.sub(r"[\1, N]", ADDR.sub("N", ins)).strip(), tuple(t.split("+")[0] for t in targets)))
     if name is not None:
         funcs[name] = body
+    # (Without alignment padding: x86-64's NOPs after a function's end
+    # differ with what follows it.)
+    for f, b in funcs.items():
+        while b and b[-1][0].startswith("nop"):
+            b.pop()
     # Targets that are functions of the image (a stub, or an address past
     # every function, is named by whatever symbol precedes it).
     names = set(funcs)

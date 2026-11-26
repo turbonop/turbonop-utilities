@@ -58,7 +58,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use super::Dwo;
+use crate::elf::Dwo;
 
 use turbonop_dwarf::consts::*;
 use turbonop_dwarf::ops::{self, Operand};
@@ -83,6 +83,8 @@ pub(crate) enum Kind {
 }
 
 const KINDS: usize = 12;
+
+pub(crate) mod line;
 
 impl Kind {
     fn of(name: &[u8]) -> Option<Kind> {
@@ -262,19 +264,19 @@ struct Skeleton {
 
 /// A DIE's attribute as read: where its value lies in `.debug_info`.
 #[derive(Clone, Copy, Debug)]
-struct A<'d> {
-    name: u16,
-    form: u16,
-    implicit: i64,
-    pos: u64,
-    end: u64,
-    value: Value<'d>,
+pub(crate) struct A<'d> {
+    pub(crate) name: u16,
+    pub(crate) form: u16,
+    pub(crate) implicit: i64,
+    pub(crate) pos: u64,
+    pub(crate) end: u64,
+    pub(crate) value: Value<'d>,
 }
 
 type R<T> = Result<T, &'static str>;
 
 fn reloc_size(machine: u16, rtype: u32) -> Option<usize> {
-    super::debug_reloc_size(machine, rtype)
+    crate::elf::debug_reloc_size(machine, rtype)
 }
 
 fn read_uint(b: &[u8], at: usize, n: usize, endian: Endian) -> Option<u64> {
@@ -385,7 +387,7 @@ impl<'p> Source<'p> {
                     continue;
                 };
                 let value = symbols[r.sym as usize].value.wrapping_add(r.addend as u64);
-                super::put(&mut bytes, r.offset as usize, size, value, endian);
+                crate::elf::put(&mut bytes, r.offset as usize, size, value, endian);
             }
             secs[k] = Some(Sec { bytes, rels });
         }
@@ -1264,7 +1266,7 @@ fn index_kind(k: usize) -> Kind {
 
 /// Reads the DIE at `offset`: its abbreviation and attributes, each with
 /// where it lies.
-fn read_die<'d, 'a>(
+pub(crate) fn read_die<'d, 'a>(
     unit: &Unit<'d>,
     abbrevs: &'a Abbrevs,
     offset: u64,
@@ -1453,7 +1455,7 @@ impl Piece {
     }
 
     fn uleb(&mut self, v: u64) {
-        super::put_uleb(&mut self.bytes, v);
+        crate::elf::put_uleb(&mut self.bytes, v);
     }
 
     fn append(&mut self, other: Piece) {

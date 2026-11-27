@@ -232,6 +232,26 @@ lists every COFF group with its address and size) and by experiment:
   IAT protected and in its own section, export suppression information,
   long-jump table), with 0x400000 for `/GUARD:EHCONT`; the delay-load
   address tables go to a `.didat` section of their own (read-write).
+- **The manifest.** None by default (an EXE's or a DLL's, `/DEBUG` or
+  not); but a `/MANIFESTDEPENDENCY` (an object's directive too) without
+  `/MANIFEST` writes one beside the image, unless `/MANIFEST:NO`.
+  `/MANIFEST` writes `out.exe.manifest` (or `/MANIFESTFILE`'s path),
+  `/MANIFEST:EMBED[,ID=n]` makes it RT_MANIFEST (24), ID 1 for an EXE, 2
+  for a DLL, or `n`, language 1033, among the `.res` files' resources (a
+  `.res` with an RT_MANIFEST of that ID is CVT1100 then LNK1123). The XML:
+  `<?xml version='1.0' encoding='UTF-8' standalone='yes'?>`, the
+  `assembly` element, the UAC section (`requestedExecutionLevel
+  level='asInvoker' uiAccess='false'`, `/MANIFESTUAC`'s fragment in its
+  place, none with `/MANIFESTUAC:NO`), then a `dependency` per
+  `/MANIFESTDEPENDENCY` (each text once, the command line's first), two
+  spaces of indent, CRLF. `/MANIFESTINPUT` needs `/MANIFEST:EMBED`
+  (LNK1220); link.exe then runs `mt.exe /out:merged /manifest inputs...
+  its own` and embeds what mt.exe writes (its own serialization: a BOM,
+  no whitespace), as turbolink does (LNK1327 if mt.exe fails).
+  `/ALLOWISOLATION:NO` changes only the DLL characteristics (0x200). In
+  the Rich header an embedded manifest counts as resources (cvtres's
+  entry, before the export object's), and with `.res` files besides,
+  each `.res` counts as 0x00970000 first.
 - **Resources** (`.res` files, cvtres's work): the directory (with its
   strings) is the `.rsrc$01` group, the data `.rsrc$02` from the next 16
   bytes, each resource's on 8 and the whole to 8; the Rich header has

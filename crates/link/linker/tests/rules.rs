@@ -903,3 +903,139 @@ fn only_vtables_fold_among_data() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// link.exe's manifest for `words`' options (an EXE's).
+fn manifest_for(words: &[&str]) -> String {
+    let args = args::command_line(words.iter().map(|w| (*w).to_owned()), None, None, &|p| {
+        std::fs::read(p)
+    })
+    .unwrap();
+    let mut diags = Vec::new();
+    let config = config::parse(&args, &mut diags);
+    String::from_utf8(turbonop_linker::manifest::xml(&config)).unwrap()
+}
+
+/// The default manifest's lines, as link.exe writes them (CRLF).
+const MANIFEST_HEAD: &str = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\r\n\
+<assembly xmlns='urn:schemas-microsoft-com:asm.v1' manifestVersion='1.0'>\r\n";
+const MANIFEST_UAC: &str = "  <trustInfo xmlns=\"urn:schemas-microsoft-com:asm.v3\">\r\n\
+\x20   <security>\r\n\
+\x20     <requestedPrivileges>\r\n\
+\x20       <requestedExecutionLevel level='asInvoker' uiAccess='false' />\r\n\
+\x20     </requestedPrivileges>\r\n\
+\x20   </security>\r\n\
+\x20 </trustInfo>\r\n";
+
+/// The manifest's XML, as link.exe writes it: the UAC section (the
+/// default, `/MANIFESTUAC`'s fragment, or none), then each dependency once.
+#[test]
+fn the_manifest_is_link_exes_xml() {
+    let end = "</assembly>\r\n";
+    assert_eq!(
+        manifest_for(&["/MANIFEST"]),
+        format!("{MANIFEST_HEAD}{MANIFEST_UAC}{end}")
+    );
+    assert_eq!(
+        manifest_for(&["/MANIFEST", "/MANIFESTUAC"]),
+        format!("{MANIFEST_HEAD}{MANIFEST_UAC}{end}")
+    );
+    assert_eq!(
+        manifest_for(&["/MANIFEST", "/MANIFESTUAC:NO"]),
+        format!("{MANIFEST_HEAD}{end}")
+    );
+    let admin = manifest_for(&[
+        "/MANIFEST",
+        "/MANIFESTUAC:level='requireAdministrator' uiAccess='true'",
+    ]);
+    assert!(admin.contains(
+        "        <requestedExecutionLevel level='requireAdministrator' uiAccess='true' />\r\n"
+    ));
+    let dep = "/MANIFESTDEPENDENCY:type='win32' name='A.B' version='1.0.0.0'";
+    let deps = manifest_for(&[
+        "/MANIFEST",
+        dep,
+        "/MANIFESTDEPENDENCY:type='win32' name='C.D'",
+        dep,
+    ]);
+    let block = |id: &str| {
+        format!(
+            "  <dependency>\r\n    <dependentAssembly>\r\n      <assemblyIdentity {id} />\r\n    </dependentAssembly>\r\n  </dependency>\r\n"
+        )
+    };
+    assert_eq!(
+        deps,
+        format!(
+            "{MANIFEST_HEAD}{MANIFEST_UAC}{}{}{end}",
+            block("type='win32' name='A.B' version='1.0.0.0'"),
+            block("type='win32' name='C.D'")
+        ),
+        "each dependency once, in order"
+    );
+}
+
+/// The resources of an image: (type, name, language, data).
+fn resources_of(d: &[u8]) -> Vec<(u32, u32, u32, Vec<u8>)> {
+    let (base, _) = directory(d, 2);
+    let mut out = Vec::new();
+    let table = |o: u32| -> Vec<(u32, u32)> {
+        let h = at_rva(d, base + o, 16);
+        let n = u32::from(u16_at(h, 12)) + u32::from(u16_at(h, 14));
+        let entries = at_rva(d, base + o + 16, 8 * n as usize);
+        (0..n as usize)
+            .map(|k| (u32_at(entries, 8 * k), u32_at(entries, 8 * k + 4)))
+            .collect()
+    };
+    for (ty, o) in table(0) {
+        for (name, o2) in table(o & 0x7FFF_FFFF) {
+            for (lang, leaf) in table(o2 & 0x7FFF_FFFF) {
+                let e = at_rva(d, base + leaf, 16);
+                let (rva, size) = (u32_at(e, 0), u32_at(e, 4));
+                out.push((ty, name, lang, at_rva(d, rva, size as usize).to_vec()));
+            }
+        }
+    }
+    out
+}
+
+/// `/MANIFEST:EMBED`: the manifest is the image's RT_MANIFEST (ID 1 for an
+/// EXE, 2 for a DLL, or `ID=`'s), language 1033; `/MANIFEST` writes it
+/// beside the image; a dependency alone asks for it beside the image too,
+/// and `/MANIFEST:NO` for none; `/MANIFESTINPUT` without `/MANIFEST:EMBED`
+/// is LNK1220.
+#[test]
+fn the_manifest_is_where_link_exe_puts_it() {
+    let dir = scratch("manifest");
+    std::fs::write(dir.join("main.obj"), defining("main")).unwrap();
+    let base = [
+        "/NODEFAULTLIB",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        "main.obj",
+    ];
+    let link = |extra: &[&str]| run(&dir, &[&base[..], extra].concat());
+    let xml = format!("{MANIFEST_HEAD}{MANIFEST_UAC}</assembly>\r\n").into_bytes();
+    let image = link(&["/MANIFEST:EMBED"]).expect("links");
+    assert_eq!(resources_of(&image), [(24, 1, 1033, xml.clone())]);
+    assert!(!dir.join("out.img.manifest").exists());
+    let image = link(&["/MANIFEST:EMBED,ID=5"]).expect("links");
+    assert_eq!(resources_of(&image)[0].1, 5);
+    let image = link(&["/MANIFEST:EMBED", "/DLL", "/NOENTRY"]).expect("links");
+    assert_eq!(resources_of(&image)[0].1, 2, "a DLL's is 2");
+    link(&["/MANIFEST"]).expect("links");
+    assert_eq!(std::fs::read(dir.join("out.img.manifest")).unwrap(), xml);
+    std::fs::remove_file(dir.join("out.img.manifest")).unwrap();
+    let dep = "/MANIFESTDEPENDENCY:type='win32' name='A.B'";
+    link(&[dep]).expect("links");
+    assert!(
+        dir.join("out.img.manifest").exists(),
+        "a dependency asks for one"
+    );
+    std::fs::remove_file(dir.join("out.img.manifest")).unwrap();
+    link(&[dep, "/MANIFEST:NO"]).expect("links");
+    assert!(!dir.join("out.img.manifest").exists());
+    assert_eq!(
+        link(&["/MANIFEST", "/MANIFESTINPUT:x.manifest"]),
+        Err(vec![1220])
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

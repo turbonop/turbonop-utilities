@@ -1505,7 +1505,7 @@ pub fn layout(
     };
     // The Rich header (its size depends on its checksum and on the room
     // the headers have), then the PE header.
-    let rich_entries = crate::rich::entries(r);
+    let rich_entries = crate::rich::entries(r, resources.as_ref());
     let key = crate::rich::key(&crate::write::dos_header(), &rich_entries);
     let header_sections = sections.len() + usize::from(!config.fixed);
     let mut l = Layout {

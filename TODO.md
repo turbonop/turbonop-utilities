@@ -674,8 +674,7 @@ same but for the PDB's GUID, age, and name.
 - **Not yet, for native x64 images:** delay loading on other machines;
   `/GUARD:CF` for objects not compiled with `/guard:cf` (link.exe's own
   address-taken analysis), `/GUARD:XFG`, and an exported function that is
-  also a target (its flag); manifests (`/MANIFEST`,
-  `/MANIFESTUAC`, embedding), `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
+  also a target (its flag); `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
   format, the `.exp` file, `/INCREMENTAL`'s padding (it links fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`

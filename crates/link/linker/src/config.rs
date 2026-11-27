@@ -445,6 +445,9 @@ pub struct Config {
     pub force_unresolved: bool,
     /// `/MANIFEST`.
     pub manifest: Manifest,
+    /// Whether `/MANIFEST` was given (without it, a `/MANIFESTDEPENDENCY`
+    /// asks for a manifest beside the image, as link.exe writes one).
+    pub manifest_given: bool,
     /// `/MANIFESTUAC`; `None`: the default fragment; `Some(None)`:
     /// `/MANIFESTUAC:NO`.
     pub manifest_uac: Option<Option<String>>,
@@ -549,6 +552,7 @@ impl Default for Config {
             force_multiple: false,
             force_unresolved: false,
             manifest: Manifest::No,
+            manifest_given: false,
             manifest_uac: None,
             manifest_dependencies: Vec::new(),
             manifest_file: None,
@@ -989,6 +993,9 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
                 None => bad(d),
             }
         };
+    }
+    if name == "manifest" {
+        c.manifest_given = true;
     }
     match name {
         "out" => c.out = need(d).map(PathBuf::from),

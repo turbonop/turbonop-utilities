@@ -97,6 +97,10 @@ pub struct Rsrc {
     /// The directory's size (with its strings, to 16 bytes): where the
     /// data starts (link.exe's `.rsrc$01` group, the data `.rsrc$02`).
     pub directory_size: u32,
+    /// With an embedded manifest, how many `.res` files there are besides
+    /// (the Rich header counts each so: link.exe has rc.exe and cvtres
+    /// rework them); 0 without one.
+    pub res_beside_manifest: u32,
 }
 
 /// The order of entries in a directory: names (by their upper-case
@@ -141,6 +145,7 @@ pub fn plan(mut resources: Vec<Resource>) -> Result<Rsrc, String> {
         resources,
         size,
         directory_size,
+        res_beside_manifest: 0,
     })
 }
 

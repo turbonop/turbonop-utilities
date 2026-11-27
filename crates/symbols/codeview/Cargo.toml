@@ -19,3 +19,6 @@ workspace = true
 [dev-dependencies]
 turbonop-global-alloc.workspace = true
 turbonop-dwarf.workspace = true
+turbonop-archive.workspace = true
+turbonop-mmap.workspace = true
+turbonop-pe.workspace = true

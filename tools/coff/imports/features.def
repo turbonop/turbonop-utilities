@@ -1,0 +1,37 @@
+; Every feature of a .def file that the import library or the export
+; file shows, as lib.exe reads them.
+LIBRARY "features.dll" BASE=0x1A000000
+HEAPSIZE 0x100000,0x1000
+STACKSIZE ,4096
+VERSION 2.5
+DESCRIPTION "ignored, with LNK4017"
+SECTIONS
+  .shared READ WRITE SHARED
+  .code EXECUTEREAD
+  .gone DISCARDABLE
+  .none
+EXPORTS
+  Plain
+  Ordinal @7
+  Hidden @8 NONAME
+  HiddenData @9 NONAME DATA
+  Data DATA
+  Const CONSTANT
+  Private PRIVATE
+  PrivateOrd @10 PRIVATE
+  Renamed=Internal
+  Forward=other.Func
+  ForwardOrd=other.#3
+  ForwardDll=other.dll.Func
+  As EXPORTAS AsName
+  AsData DATA EXPORTAS AsDataName
+  "Quoted"
+  ?Cpp@@YAXH@Z
+  ?Var@@3HA DATA
+  @Fast@8
+  _Std@4
+  _Under
+  Empty=
+  Dup
+  Dup DATA
+  Big @300

@@ -20,6 +20,9 @@
 //!
 //! Everything is read lazily and bounds-checked: a damaged archive yields
 //! fewer (or stranger) members, never a panic.
+//!
+//! [`write`] writes the Microsoft dialect as `lib.exe` and `llvm-lib` do,
+//! and [`symbols`] computes the symbols they index for each member.
 
 #![no_std]
 #![warn(missing_docs)]
@@ -28,6 +31,10 @@
 use turbonop_global_alloc as _;
 
 extern crate alloc;
+
+pub mod symbols;
+pub mod unix;
+pub mod write;
 
 use alloc::borrow::Cow;
 use alloc::vec::Vec;
@@ -85,6 +92,10 @@ pub struct Member<'data> {
     pub gid: &'data [u8],
     /// The mode (octal) field.
     pub mode: &'data [u8],
+    /// In a GNU thin archive, for a member of another (regular) archive:
+    /// the offset of its header in that archive, which [`name`](Self::name)
+    /// names (the header's name field is `/<long name offset>:<offset>`).
+    pub origin: Option<u64>,
 }
 
 impl Member<'_> {
@@ -213,6 +224,7 @@ impl<'data> Archive<'data> {
         let size = decimal(&header[48..58])?;
         let body_offset = offset + HEADER_SIZE;
         let name_field = trim(raw_name);
+        let mut origin = None;
         let (kind, name, name_len) = match name_field {
             b"/" | b"/SYM64/" => (MemberKind::SymbolTable, Cow::Borrowed(name_field), 0),
             b"//" => (MemberKind::LongNames, Cow::Borrowed(name_field), 0),
@@ -248,6 +260,29 @@ impl<'data> Archive<'data> {
                 let n = n.strip_suffix(b"/").unwrap_or(n);
                 (MemberKind::File, Cow::Borrowed(n), 0)
             }
+            [b'/', rest @ ..]
+                if self.thin
+                    && let Some(colon) = rest.iter().position(|&b| b == b':')
+                    && colon > 0
+                    && let (Some(at), Some(o)) =
+                        (decimal(&rest[..colon]), decimal(&rest[colon + 1..])) =>
+            {
+                // GNU thin: a member of the regular archive the long name
+                // names, its header at offset `o` in it.
+                let at = usize::try_from(at).ok()?;
+                let rest = long_names.get(at..).unwrap_or(&[]);
+                let end = rest
+                    .iter()
+                    .position(|&b| b == b'\n' || b == 0)
+                    .unwrap_or(rest.len());
+                let n = &rest[..end];
+                origin = Some(o);
+                (
+                    MemberKind::File,
+                    Cow::Borrowed(n.strip_suffix(b"/").unwrap_or(n)),
+                    0,
+                )
+            }
             _ => {
                 let n = name_field.strip_suffix(b"/").unwrap_or(name_field);
                 (MemberKind::File, Cow::Borrowed(n), 0)
@@ -275,6 +310,7 @@ impl<'data> Archive<'data> {
             uid,
             gid,
             mode,
+            origin,
         })
     }
 
@@ -302,6 +338,74 @@ impl<'data> Archive<'data> {
             .unwrap_or_default(),
         }
     }
+}
+
+impl<'data> Archive<'data> {
+    /// The tables before the first file, in order.
+    fn tables(&self) -> Vec<Member<'data>> {
+        self.members()
+            .take_while(|m| m.kind != MemberKind::File)
+            .collect()
+    }
+
+    /// Microsoft's (or GNU's) first linker member's symbols, in its order,
+    /// each with its member's header offset; `None` without one.
+    pub fn first_linker_member(&self) -> Option<Vec<ArchiveSymbol<'data>>> {
+        let tables = self.tables();
+        let first = tables.iter().find(|m| &*m.name == b"/")?;
+        gnu(first.data, false)
+    }
+
+    /// Microsoft's second linker member: the members' header offsets, and
+    /// the symbols in its (sorted) order, each with its member's header
+    /// offset; `None` without one.
+    pub fn second_linker_member(&self) -> Option<(Vec<u64>, Vec<ArchiveSymbol<'data>>)> {
+        let tables = self.tables();
+        let second = tables.iter().filter(|m| &*m.name == b"/").nth(1)?;
+        Some((member_offsets(second.data)?, microsoft_second(second.data)?))
+    }
+
+    /// `/<ECSYMBOLS>/`'s symbols (ARM64EC and ARM64X archives), in its
+    /// (sorted) order, each with its member's header offset (from the
+    /// second linker member's list); `None` without one.
+    pub fn ec_symbols(&self) -> Option<Vec<ArchiveSymbol<'data>>> {
+        let tables = self.tables();
+        let ec = tables
+            .iter()
+            .find(|m| m.kind == MemberKind::EcSymbolTable)?;
+        let second = tables.iter().filter(|m| &*m.name == b"/").nth(1)?;
+        let offsets = member_offsets(second.data)?;
+        let le32 = |b: &[u8]| u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
+        let count = usize::try_from(le32(ec.data.get(..4)?)).ok()?;
+        let indexes = ec.data.get(4..4usize.checked_add(count.checked_mul(2)?)?)?;
+        let mut names = &ec.data[4 + count * 2..];
+        let mut out = Vec::with_capacity(count.min(1 << 20));
+        for i in indexes.as_chunks::<2>().0 {
+            let index = usize::from(u16::from_le_bytes(*i));
+            let end = turbonop_core::find_nul(names)?;
+            let member = *offsets.get(index.checked_sub(1)?)?;
+            out.push(ArchiveSymbol {
+                name: &names[..end],
+                member,
+            });
+            names = &names[end + 1..];
+        }
+        Some(out)
+    }
+}
+
+/// The member offsets of Microsoft's second linker member.
+fn member_offsets(data: &[u8]) -> Option<Vec<u64>> {
+    let count = usize::try_from(u32::from_le_bytes(data.get(..4)?.try_into().ok()?)).ok()?;
+    let offsets = data.get(4..4usize.checked_add(count.checked_mul(4)?)?)?;
+    Some(
+        offsets
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| u64::from(u32::from_le_bytes(*b)))
+            .collect(),
+    )
 }
 
 /// GNU (and Microsoft's first linker member): a big-endian count, that many

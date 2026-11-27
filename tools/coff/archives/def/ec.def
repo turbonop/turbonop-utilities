@@ -1,0 +1,6 @@
+LIBRARY ecdll.dll
+EXPORTS
+  ExpFunc
+  ExpData DATA
+  ExpConst CONSTANT
+  ExpOrd @4

@@ -15,9 +15,16 @@ path = "src/main.rs"
 [dependencies]
 turbonop-global-alloc.workspace = true
 turbonop-archive.workspace = true
+turbonop-coff.workspace = true
+turbonop-demangle.workspace = true
+turbonop-elf.workspace = true
+turbonop-macho.workspace = true
 turbonop-fold.workspace = true
 turbonop-mmap.workspace = true
+turbonop-moduledef.workspace = true
 turbonop-par.workspace = true
+turbonop-pe.workspace = true
+turbonop-verify.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 

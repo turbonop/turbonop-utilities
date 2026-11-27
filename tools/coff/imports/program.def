@@ -1,0 +1,5 @@
+; NAME, with its options: a program's exports.
+NAME program WINDOWAPI WINDOWCOMPAT
+EXPORTS
+  main
+  entry @1

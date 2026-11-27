@@ -1,0 +1,22 @@
+; a comment
+LIBRARY "a_longer_name_for_testing.dll" BASE=0x10000000
+DESCRIPTION "the description"
+VERSION 3.14
+HEAPSIZE 0x10000,0x1000
+STACKSIZE 65536
+EXPORTS
+  Plain
+  Ordinal @5
+  OrdNoName @6 NONAME
+  _Decorated@8
+  ?Cpp@@YAXXZ
+  DataItem DATA
+  ConstItem CONSTANT
+  PrivItem PRIVATE
+  Renamed=Internal
+  Fwd=other.Func
+  FwdOrd=other.#3
+  "Quoted"
+  OrdData @9 DATA
+  ; comment in exports
+  Spaced = Internal2 @11

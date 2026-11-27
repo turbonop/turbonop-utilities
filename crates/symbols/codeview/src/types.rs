@@ -317,7 +317,7 @@ pub mod prop {
 }
 
 /// A type or id record: its kind and the bytes after the kind.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TypeRecord<'a> {
     pub kind: u16,
     pub data: &'a [u8],

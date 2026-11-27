@@ -26,6 +26,11 @@ pub struct Row {
     pub end_sequence: bool,
     /// The row's sequence was set to address 0: code the linker discarded.
     pub discarded: bool,
+    /// `DW_LNE_set_discriminator`'s value (0 unless set for this row).
+    pub discriminator: u64,
+    /// `DW_LNS_set_prologue_end` and `DW_LNS_set_epilogue_begin`.
+    pub prologue_end: bool,
+    pub epilogue_begin: bool,
 }
 
 /// A line-number program: its header and the rows it produces.
@@ -282,6 +287,15 @@ pub fn line_program<'d>(
         is_stmt: default_is_stmt,
         end_sequence: false,
         discarded: false,
+        discriminator: 0,
+        prologue_end: false,
+        epilogue_begin: false,
+    };
+    // The registers a row's appending resets.
+    let appended = |row: &mut Row| {
+        row.discriminator = 0;
+        row.prologue_end = false;
+        row.epilogue_begin = false;
     };
     let mut row = fresh(0);
     let mut op_index = 0u64;
@@ -301,6 +315,7 @@ pub fn line_program<'d>(
                 .line
                 .wrapping_add((line_base + (adjusted % line_range) as i64) as u64);
             p.rows.push(row);
+            appended(&mut row);
             continue;
         }
         let ok = match op {
@@ -341,6 +356,10 @@ pub fn line_program<'d>(
                         }
                         p.files.push(FileEntry { name, directory });
                     }
+                    4 => {
+                        let Some(d) = r.uleb() else { break };
+                        row.discriminator = d;
+                    }
                     _ => {}
                 }
                 // Whatever the extended opcode read, it is `len` bytes long.
@@ -354,6 +373,7 @@ pub fn line_program<'d>(
             }
             1 => {
                 p.rows.push(row);
+                appended(&mut row);
                 true
             }
             2 => r
@@ -370,7 +390,15 @@ pub fn line_program<'d>(
                 row.is_stmt = !row.is_stmt;
                 true
             }
-            7 | 10 | 11 => true,
+            10 => {
+                row.prologue_end = true;
+                true
+            }
+            11 => {
+                row.epilogue_begin = true;
+                true
+            }
+            7 => true,
             8 => {
                 advance(
                     &mut row,

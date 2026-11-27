@@ -1,0 +1,3 @@
+; no LIBRARY: the output's name
+EXPORTS
+  A

@@ -88,3 +88,47 @@ reached each PDB.
 
 Neither linker pruned anything: all 200 structures and all 200 function
 ids arrived every time.
+
+## `tables`: side tables through a fold (phase 2.3)
+
+`run.py [config...]` compiles `tools/coff/tables/one.cpp` and `two.cpp`
+and `three.cpp` here (which share `shared.h`'s inline functions), for each
+configuration: cl for x64 (`/guard:cf /guard:ehcont`, with and without
+`/Gy`; `/volatileMetadata`; `/d2guardretpoline`), x86 (`/guard:cf`, with
+SafeSEH and FPO), and ARM64, and clang-cl for x64 and x86. It makes
+`orig.lib` with lib.exe and `fold.lib` with turbolib
+(`TURBOLIB_OPTIONS=--fold=identical`), links `main.cpp` against each with
+link.exe and lld-link, under `/OPT:NOREF` and `/OPT:REF`, and compares the
+images' tables by name (from the map file): the load config's CFG,
+longjmp, EH continuation, and SafeSEH tables, the volatile metadata, the
+dynamic relocations (retpoline), and the PDB's FPO data. Then it runs the
+x64 and x86 programs, which take an inline function's address and call it
+through CFG, longjmp, throw, fault, and call through an import's address.
+`TURBOLIB` names turbolib.exe (the default is `target\release`'s). The
+outputs land in `out\`.
+
+## `debug`: synthesized members' debug information (phase 2.4)
+
+Not a spike: the sources of turbonop-fold's debug-information fixtures.
+`build.cmd` builds them into `testdata\coff\fold` (its comments list each
+object). `check.py <turbolib.exe>` links `main.cpp` against libraries of
+them, made by lib.exe and folded by turbolib, with link.exe and lld-link,
+runs both programs, and compares the PDBs with
+`corpus\pdbcompare.py`, which compares procedures (signatures, locals,
+inline sites, lines) and other module symbols structurally, from
+llvm-pdbutil's dumps. `--options=...` sets turbolib's options (the
+default is `--fold=identical`; phase 3's checks used
+`--options=--precomp=library` and `--options="--fold=identical
+--precomp=library"`).
+
+## `loose`: less conservative folding (phase 4)
+
+Not a spike: the sources of turbonop-fold's phase 4 fixtures. `build.cmd`
+builds `a.cpp`, `b.cpp`, and `c.cpp` (which include `shared.h`, each with
+its own `VARIANT`) into `testdata\coff\loose` with cl and clang-cl (its
+comments list each object). `check.py <turbolib.exe>` links `main.cpp`
+against a library of each set, made by lib.exe and folded by turbolib in
+each of six combinations of `--fold=select-any`, `--pick`, `--locals`,
+`--pull`, and `--precomp`, with link.exe and lld-link, under `/OPT:REF` and
+`/OPT:NOREF`, runs both programs and compares what they print, and runs
+`turbolib verify` with the mode's options on each folded library.

@@ -6,6 +6,8 @@
 //!   structurally, and the bytes of each by category.
 //! - [`analyze`]: what folding would save in a library, under each of
 //!   turbolib's modes, without writing anything (`turbolib analyze`).
+//! - [`rewrite`]: folding: a library's members rewritten, and the
+//!   synthesized members that hold what they shared.
 //!
 //! See `docs/turbolib.md` for the plan.
 
@@ -16,5 +18,9 @@
 use turbonop_global_alloc as _;
 
 pub mod analyze;
+mod dwarf;
+pub mod elf;
 mod hash;
+pub mod macho;
 pub mod member;
+pub mod rewrite;

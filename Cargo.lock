@@ -1330,6 +1330,7 @@ dependencies = [
  "turbonop-codeview",
  "turbonop-core",
  "turbonop-debuginfo",
+ "turbonop-demangle",
  "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-macho",

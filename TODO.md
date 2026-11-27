@@ -318,10 +318,15 @@ disassembly, `size` with its findings, and the extension's pages.
 - **`ltcg-drive`'s gaps.** Libraries' members (opened at their offset),
   incremental LTCG, and the written object's debug information
   (`LNK4255` for two objects).
-- **`hexcavator vtables`, an unsized table's end.** It is inferred up
-  to the next symbol (or a `QueryInterface`), so a table with no symbol
-  right after one reads as more of it (link.exe's `std::function`s).
-  Where the image has RTTI, the locator before each table bounds it.
+- **`hexcavator vtables` without RTTI.** With RTTI, tables are found and
+  bounded by their locators (a stripped PDB's lambdas' tables too); an
+  image built without it (`/GR-`: link.exe) still infers a table with no
+  symbol, right after one, as more of it (link.exe's `std::function`s).
+  Heuristics to weigh: a second deleting destructor, or a run of slots
+  all of one other class. And a table RTTI names is named in the
+  demangler's long form (`` `int __cdecl main(int,char * *)'::`2'::<lambda_1> ``)
+  where functions' names have the short one (`` `main'::`2'::<lambda_1> ``):
+  its own class's slots aren't told from others' yet.
 
 ## Speed
 

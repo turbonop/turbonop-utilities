@@ -19,10 +19,14 @@ whose names hold it.
 Slots are read from the image's base relocations, so a table needs only
 its public symbol (a stripped PDB's): its length is then inferred, as
 the slots that follow it holding addresses in code, up to the next
-symbol. That is at most its length: a table with no symbol (a lambda's
-std::function's) right after it reads as more of it. A slot whose
-function was folded with others (/OPT:ICF) names the table's class's
-names first; when more than one is left, it is one of them.
+table. With RTTI (/GR), the slot before each table points to its
+class's locator, which names it: a table with no symbol (a lambda's
+std::function's, which a stripped PDB leaves out) is found and named by
+its RTTI (shown as such), and the table before it ends there. Without
+RTTI, an inferred length is at most the table's: a table with no symbol
+right after it reads as more of it. A slot whose function was folded
+with others (/OPT:ICF) names the table's class's names first; when more
+than one is left, it is one of them.
 
 options:
   -debug <path> its debug information: a PDB, or a file with its DWARF
@@ -113,6 +117,7 @@ fn report(o: &Options) -> Result<String, String> {
                     "address": format!("{:#x}", shown(t.rva)),
                     "section": t.section,
                     "sized": t.sized,
+                    "by_rtti": t.by_rtti,
                     "slots": t.slots.iter().enumerate().map(|(i, s)| json!({
                         "index": i,
                         "offset": s.offset,
@@ -140,9 +145,10 @@ fn text(out: &mut String, t: &Vtable, all: bool, shown: &dyn Fn(u64) -> u64) {
     } else {
         ", length inferred: at most"
     };
+    let rtti = if t.by_rtti { ", named by its RTTI" } else { "" };
     let _ = writeln!(
         out,
-        "{}  ({:#x}, {}, {} slots{length})",
+        "{}  ({:#x}, {}, {} slots{length}{rtti})",
         t.name,
         shown(t.rva),
         t.section,

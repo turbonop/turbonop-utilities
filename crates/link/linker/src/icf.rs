@@ -77,6 +77,13 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
             let Some((selection, _)) = sec.comdat else {
                 continue;
             };
+            let c = sec.characteristics;
+            let read_only = c & scn::MEM_WRITE == 0;
+            let code = c & scn::MEM_EXECUTE != 0;
+            // Unwind data folds too (link.exe shares identical .xdata);
+            // other data doesn't (link.exe keeps every constant apart:
+            // .00cfg's pointers, `static const` objects).
+            let unwind = sec.name.starts_with(b".xdata");
             if let Selection::Associative(parent) = selection {
                 // Debug information and /GUARD's tables don't count.
                 if !sec.name.starts_with(b".debug")
@@ -90,14 +97,11 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
                         .or_default()
                         .push(crate::n32(s));
                 }
-                continue;
+                if !(unwind && read_only) {
+                    continue;
+                }
             }
-            let c = sec.characteristics;
-            let read_only = c & scn::MEM_WRITE == 0;
-            let code = c & scn::MEM_EXECUTE != 0;
-            let constant =
-                c & scn::CNT_INITIALIZED_DATA != 0 && c & scn::CNT_UNINITIALIZED_DATA == 0;
-            if read_only && (code || constant) {
+            if read_only && (code || unwind) {
                 index.insert((crate::n32(f), crate::n32(s)), crate::n32(candidates.len()));
                 candidates.push((crate::n32(f), crate::n32(s)));
             }

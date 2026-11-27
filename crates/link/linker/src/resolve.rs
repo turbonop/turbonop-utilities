@@ -133,6 +133,8 @@ pub enum Synthetic {
     /// A value the link fills in (the `/GUARD` tables and counts, zero
     /// when they are absent).
     Zero,
+    /// `__volatile_metadata`: the volatile metadata link.exe adds (x64).
+    VolatileMetadata,
 }
 
 /// A global symbol.
@@ -241,6 +243,9 @@ struct Linker {
     lib_env: Vec<PathBuf>,
     /// `/VERBOSE`'s lines.
     log: Vec<String>,
+    /// Whether the load configuration has been asked for (after the
+    /// rest of the search).
+    load_config_wanted: bool,
     /// Globals that may want a library's definition: every new global,
     /// until it is seen not to (a definition is never taken back, so a
     /// global dropped from here never needs one again).
@@ -614,67 +619,91 @@ impl Linker {
                 let Some(&lib) = order.get(position) else {
                     break;
                 };
-                loop {
-                    let mut pending = std::mem::take(&mut self.pending);
-                    pending.retain(|&g| self.wanted(&self.globals[g as usize]));
-                    self.pending = pending;
+                // link.exe's walk: the undefined symbols in order, a member
+                // loaded as soon as one is found (what it leaves undefined
+                // joins the end of the list, and is reached in this walk).
+                // Members are parsed ahead, in parallel: all the list needs
+                // now, and again whenever the walk finds one not parsed.
+                let mut pending = std::mem::take(&mut self.pending);
+                pending.retain(|&g| self.wanted(&self.globals[g as usize]));
+                self.pending = pending;
+                let mut parsed: Map<u64, Result<(String, LoadedKind), String>> = Map::default();
+                let mut logged = false;
+                let mut i = 0;
+                while i < self.pending.len() {
+                    let g = self.pending[i];
+                    i += 1;
+                    if !self.wanted(&self.globals[g as usize]) {
+                        continue;
+                    }
                     let library = &self.libraries[lib];
-                    let mut members: Vec<u64> = self
-                        .pending
-                        .iter()
-                        .filter_map(|&g| library.index.get(self.globals[g as usize].name).copied())
-                        .filter(|m| !library.loaded.contains(m))
-                        .collect();
-                    if members.is_empty() {
-                        break;
+                    let Some(&member) = library.index.get(self.globals[g as usize].name) else {
+                        continue;
+                    };
+                    if library.loaded.contains(&member) {
+                        continue;
                     }
-                    // In the order they are first needed (the order of the
-                    // symbols that need them), as link.exe loads them: it
-                    // decides the order of their code, and of the import
-                    // directory.
-                    let mut seen = Set::default();
-                    members.retain(|m| seen.insert(*m));
-                    if self.config.verbose {
-                        let names: Vec<String> = self
-                            .pending
-                            .iter()
-                            .map(|&g| &self.globals[g as usize])
-                            .filter(|g| {
-                                library
-                                    .index
-                                    .get(g.name)
-                                    .is_some_and(|m| !library.loaded.contains(m))
-                            })
-                            .map(|g| format!("      Found {}", String::from_utf8_lossy(g.name)))
-                            .collect();
-                        self.log
-                            .push(format!("    Searching {}:", library.path.display()));
-                        self.log.extend(names);
-                    }
-                    let library = &mut self.libraries[lib];
-                    library.loaded.extend(members.iter().copied());
-                    let archive = library.archive;
-                    let path = library.path.display().to_string();
-                    let start = std::time::Instant::now();
-                    let parsed = turbonop_par::map(&members, 8, |&offset| {
-                        let Some(member) = archive.member_at_offset(offset) else {
-                            return Err(format!("{path}: no member at offset {offset:#x}"));
+                    if !parsed.contains_key(&member) {
+                        let ahead: Vec<u64> = {
+                            let mut seen = Set::default();
+                            self.pending[i - 1..]
+                                .iter()
+                                .filter_map(|&g| {
+                                    library.index.get(self.globals[g as usize].name).copied()
+                                })
+                                .filter(|m| !library.loaded.contains(m) && !parsed.contains_key(m))
+                                .filter(|m| seen.insert(*m))
+                                .collect()
                         };
-                        let name = format!("{path}({})", String::from_utf8_lossy(&member.name));
-                        load(member.data, &name).map(|k| (name, k))
-                    });
-                    self.t_members += start.elapsed();
-                    for p in parsed {
-                        match p {
-                            Ok((name, kind)) => self.add(name, kind),
-                            Err(m) => self.errors.push(LinkError::error(1136, m)),
+                        let archive = library.archive;
+                        let path = library.path.display().to_string();
+                        let start = std::time::Instant::now();
+                        let results = turbonop_par::map(&ahead, 8, |&offset| {
+                            let Some(m) = archive.member_at_offset(offset) else {
+                                return Err(format!("{path}: no member at offset {offset:#x}"));
+                            };
+                            let name = format!("{path}({})", String::from_utf8_lossy(&m.name));
+                            load(m.data, &name).map(|k| (name, k))
+                        });
+                        self.t_members += start.elapsed();
+                        parsed.extend(ahead.into_iter().zip(results));
+                    }
+                    if self.config.verbose {
+                        if !logged {
+                            self.log.push(format!(
+                                "    Searching {}:",
+                                self.libraries[lib].path.display()
+                            ));
+                            logged = true;
                         }
+                        self.log.push(format!(
+                            "      Found {}",
+                            String::from_utf8_lossy(self.globals[g as usize].name)
+                        ));
+                    }
+                    self.libraries[lib].loaded.insert(member);
+                    match parsed.remove(&member) {
+                        Some(Ok((name, kind))) => self.add(name, kind),
+                        Some(Err(m)) => self.errors.push(LinkError::error(1136, m)),
+                        None => {}
                     }
                     loaded_any = true;
                 }
                 position += 1;
             }
             if !loaded_any && !self.resolve_aliases() {
+                // Once nothing more is needed, link.exe looks for the load
+                // configuration (a last round, if a library has it).
+                if !self.load_config_wanted {
+                    self.load_config_wanted = true;
+                    let g = self.intern(b"_load_config_used");
+                    let global = &mut self.globals[g as usize];
+                    global.optional = true;
+                    if global.def == Def::Undefined {
+                        self.pending.push(g);
+                        continue;
+                    }
+                }
                 break;
             }
         }
@@ -788,11 +817,6 @@ const SYNTHETIC: &[&[u8]] = &[
     b"__guard_eh_cont_table",
     b"__enclave_config",
     b"__dynamic_value_reloc_table",
-    b"__volatile_metadata",
-    b"__guard_xfg_check_icall_fptr",
-    b"__guard_xfg_dispatch_icall_fptr",
-    b"__guard_xfg_table_dispatch_icall_fptr",
-    b"__castguard_check_failure_os_handled_fptr",
     b"__CHPEMetadata",
 ];
 
@@ -813,6 +837,7 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         lib_env,
         log: Vec::new(),
         pending: Vec::new(),
+        load_config_wanted: false,
         resources: Vec::new(),
         t_index: std::time::Duration::ZERO,
         t_members: std::time::Duration::ZERO,
@@ -822,9 +847,14 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     let mut lap = std::time::Instant::now();
     let image_base = l.intern(b"__ImageBase");
     l.globals[image_base as usize].def = Def::Synthetic(Synthetic::ImageBase);
+    let volatile = l.intern(b"__volatile_metadata");
+    l.globals[volatile as usize].def = Def::Synthetic(Synthetic::VolatileMetadata);
+    // What the linker defines when nothing else does (after the libraries
+    // were searched: a library's definition wins, as the CRT's of
+    // __guard_xfg_check_icall_fptr).
     for &name in SYNTHETIC {
         let g = l.intern(name);
-        l.globals[g as usize].def = Def::Synthetic(Synthetic::Zero);
+        l.globals[g as usize].optional = true;
     }
 
     // The command line's inputs: objects are read in parallel, then added
@@ -898,14 +928,17 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
             l.globals[g as usize].optional = true;
         }
     }
-    // The load configuration is taken from a library if one has it (as
-    // link.exe does); the TLS directory only if something refers to it.
-    let g = l.intern(b"_load_config_used");
-    l.globals[g as usize].optional = true;
 
     times.push(("  libraries' indexes", lap.elapsed()));
     lap = std::time::Instant::now();
     l.search_libraries();
+    for &name in SYNTHETIC {
+        if let Some(&g) = l.names.get(name)
+            && l.globals[g as usize].def == Def::Undefined
+        {
+            l.globals[g as usize].def = Def::Synthetic(Synthetic::Zero);
+        }
+    }
     times.push(("  library search", lap.elapsed()));
     times.push(("    of which: indexes", l.t_index));
     times.push(("    of which: members parsed", l.t_members));

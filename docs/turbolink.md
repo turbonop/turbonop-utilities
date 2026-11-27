@@ -105,6 +105,68 @@ exports, or PDB yet); turbolink is its own, on this repository's crates
 9. Write: headers, then every input section copied and relocated, every
    synthesized one built, in parallel; the PDB in parallel with all of it.
 
+## Identical output
+
+The goal: the image turbolink writes is byte for byte the image
+`link.exe` writes from the same inputs and options (with `/Brepro`, or
+with time stamps and GUIDs set aside); the PDB is logically the same
+(the same types, symbols, lines, and so on), not necessarily the same
+bytes. Every deliberate difference is listed here. The oracle is a
+logical diff of images and PDBs (`hexcavator`, in progress).
+
+What `link.exe` does, learned from its images (its `coffgrp` debug entry
+lists every COFF group with its address and size) and by experiment:
+
+- **Libraries:** the command line's first, in order, then the default
+  libraries in the order objects name them; each searched for what is
+  undefined, passes repeated. A library's members load in the order
+  the symbols that need them were first seen (not by offset).
+- **Groups in a section:** sorted by full name (`.CRT$XCA` before
+  `.CRT$XCU`), sections merged in sorting among the section's own
+  (`.00cfg` before `.CRT` before `.rdata` before `.xdata` in `.rdata`);
+  except `.idata$5` (the IAT) first and the rest of `.idata$` last.
+- **Imports:** built from the import libraries' own pieces (each short
+  import's slots, the import descriptors, the null thunks), which sort
+  by member name (the DLL's: byte order, upper case first): the IAT, the
+  lookup tables, and the names (each DLL's hint/names, then its name)
+  are in that order. The import directory is in the order each DLL's
+  first import was loaded.
+- **The library walk:** for each library, the undefined symbols in
+  order; a member is loaded as soon as one is found (what it leaves
+  undefined joins the end of the list and is reached in the same walk).
+  `_load_config_used` is asked for only once the rest is resolved, in a
+  last round.
+- **Groups' alignment:** a group starts at the largest alignment of its
+  contributions (an 8-byte `.bss` starts on 16 when another `.bss` of the
+  group wants 16). Uninitialized groups (`.bss`) come after the rest.
+  Padding between contributions in code is `int3` (0xCC).
+- **What link.exe adds to `.rdata`:** the volatile metadata
+  (`.rdata$voltmd`, 24 bytes, for x64's load configuration:
+  `__volatile_metadata`); the debug directory, at the end of the
+  `.rdata` group, followed by padding to 128 bytes; its data in
+  `.rdata$zzzdbg`: the `coffgrp` list (each non-empty group's address,
+  size, and name, after a zero signature; without `/DEBUG`) and, with
+  `/Brepro`, the `repro` entry (32, then a 32-byte hash whose last 4
+  bytes are the time stamp). `/GUARD`'s tables (`.gfids$y` and the rest)
+  are empty groups of `.rdata`.
+- **ICF:** folds code and unwind data (`.xdata`), not other read-only
+  data (`.00cfg`'s pointers, `static const` objects). Import thunks are
+  in the `.text$mn` group.
+- **The imports within one DLL** are in `qsort`'s order: link.exe's
+  `SortPGRPByPMOD` sorts each `.idata` group's contributions with the
+  C runtime's `qsort` and `CompareIdataPCON`, which compares the DLLs'
+  file names (case-sensitive), then section and module flags, and
+  otherwise returns 0 (so `qsort`, not stable, decides). To match it:
+  the same array, flags, and `qsort` algorithm (the UCRT's source is in
+  the Windows SDK). Not done yet.
+- **Still different** (to do): the Rich header (from each input's
+  `@comp.id` and link.exe's own; its entries' order isn't obvious); the
+  `/Brepro` hash (it depends on the output's contents, not its name or
+  the options, but isn't a plain SHA-1/256/512 or MD5 of the file with
+  its time stamps and hash zeroed); the imports' order within a DLL (the
+  `qsort` above); `__guard_flags`' "instrumented" bit link.exe sets for
+  `/guard:cf` objects.
+
 ## Verification
 
 - **lld's COFF tests** (`llvm-project/lld/test/COFF`, Apache-2.0 with LLVM

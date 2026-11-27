@@ -96,6 +96,12 @@ impl<'a> Image<'a> {
                 Def::Absolute(v) => Target::Absolute(v),
                 Def::Synthetic(Synthetic::ImageBase) => Target::Rva(0),
                 Def::Synthetic(Synthetic::Zero) => Target::Absolute(0),
+                Def::Synthetic(Synthetic::VolatileMetadata) => self
+                    .l
+                    .chunks
+                    .iter()
+                    .find(|c| c.kind == ChunkKind::VolatileMetadata)
+                    .map_or(Target::Absolute(0), |c| Target::Rva(c.rva)),
                 Def::ImportAddress(f) => self.import_slot(f).map_or(Target::None, Target::Rva),
                 Def::ImportThunk(f) => self.l.thunk_chunks.get(&f).map_or(Target::None, |&c| {
                     Target::Rva(self.l.chunks[c as usize].rva)
@@ -183,7 +189,7 @@ impl<'a> Image<'a> {
                     }
                 }
             }
-            ChunkKind::Common(_) => {}
+            ChunkKind::Common(_) | ChunkKind::NullImportDescriptor => {}
             ChunkKind::Thunk(f) => {
                 // jmp qword ptr [rip + disp32]
                 out[..2].copy_from_slice(&[0xFF, 0x25]);
@@ -261,6 +267,43 @@ impl<'a> Image<'a> {
                     );
                 }
             }
+            ChunkKind::VolatileMetadata => {
+                // Size 0x18, version 0x80008000, no tables.
+                out[..8].copy_from_slice(&[0x18, 0, 0, 0, 0, 0x80, 0, 0x80]);
+            }
+            ChunkKind::DebugDirectory => {
+                for (i, ty) in crate::layout::debug_entries(&self.r.config)
+                    .into_iter()
+                    .enumerate()
+                {
+                    let data = match ty {
+                        13 => ChunkKind::CoffGroups,
+                        _ => ChunkKind::Repro,
+                    };
+                    let Some(d) = self.l.chunks.iter().find(|c| c.kind == data) else {
+                        continue;
+                    };
+                    let e = &mut out[i * 28..i * 28 + 28];
+                    e[4..8].copy_from_slice(&timestamp(&self.r.config).to_le_bytes());
+                    e[12..16].copy_from_slice(&ty.to_le_bytes());
+                    e[16..20].copy_from_slice(&d.size.to_le_bytes());
+                    e[20..24].copy_from_slice(&d.rva.to_le_bytes());
+                    e[24..28].copy_from_slice(&self.file_offset(d.rva).to_le_bytes());
+                }
+            }
+            ChunkKind::CoffGroups => {
+                let mut at = 4usize;
+                for (start, size, name) in self.coff_groups() {
+                    out[at..at + 4].copy_from_slice(&start.to_le_bytes());
+                    out[at + 4..at + 8].copy_from_slice(&size.to_le_bytes());
+                    out[at + 8..at + 8 + name.len()].copy_from_slice(name);
+                    at += 8 + ((name.len() + 1 + 3) & !3);
+                }
+            }
+            ChunkKind::Repro => {
+                // The hash's length; the hash is filled in once the image is.
+                out[..4].copy_from_slice(&32u32.to_le_bytes());
+            }
             ChunkKind::Resources => {
                 if let Some(r) = &self.l.resources {
                     r.write(out, chunk.rva);
@@ -271,6 +314,48 @@ impl<'a> Image<'a> {
             }
         }
         problems
+    }
+
+    /// Where `rva` is in the file.
+    fn file_offset(&self, rva: u32) -> u32 {
+        self.l
+            .sections
+            .iter()
+            .find(|s| rva >= s.rva && rva < s.rva + s.virtual_size.max(1))
+            .map_or(0, |s| s.file_offset + (rva - s.rva))
+    }
+
+    /// Every COFF group: its start, size (to the next group's start, or
+    /// to its section's end), and name.
+    fn coff_groups(&self) -> Vec<(u32, u32, &[u8])> {
+        let mut out = Vec::new();
+        for s in &self.l.sections {
+            if s.name == b".reloc" {
+                continue;
+            }
+            let starts: Vec<Option<u32>> = s
+                .groups
+                .iter()
+                .map(|(_, chunks)| chunks.iter().map(|&c| self.l.chunks[c as usize].rva).min())
+                .collect();
+            let end = s.rva + s.virtual_size;
+            for (i, (name, _)) in s.groups.iter().enumerate() {
+                // An empty group starts where the next one with contents does.
+                let start = starts[i..].iter().flatten().next().copied().unwrap_or(end);
+                let next = starts[i + 1..]
+                    .iter()
+                    .flatten()
+                    .next()
+                    .copied()
+                    .unwrap_or(end);
+                let start = start.min(next);
+                // Only groups with contents (link.exe lists no empty ones).
+                if next > start {
+                    out.push((start, next - start, name.as_slice()));
+                }
+            }
+        }
+        out
     }
 
     fn names_rva(&self) -> u32 {
@@ -400,13 +485,18 @@ impl<'a> Image<'a> {
             at += sec.raw_size;
             let mut mine = mine;
             let mut offset = 0u32;
+            // Code's padding between chunks is int3 (0xCC), as link.exe's.
+            let code = sec.characteristics & scn::CNT_CODE != 0;
             for &c in &sec.chunks {
                 let chunk = &self.l.chunks[c as usize];
                 if chunk.uninitialized {
                     continue;
                 }
                 let start = chunk.rva - sec.rva;
-                let (_, tail) = mine.split_at_mut((start - offset) as usize);
+                let (gap, tail) = mine.split_at_mut((start - offset) as usize);
+                if code {
+                    gap.fill(0xCC);
+                }
                 let (part, tail) = tail.split_at_mut(chunk.size as usize);
                 parts.push((c, part));
                 mine = tail;
@@ -449,6 +539,28 @@ impl<'a> Image<'a> {
                 *dst = *e;
             }
             bytes[n..].fill(0);
+        }
+        // /Brepro: the hash of the image (its time stamps and hash zero),
+        // whose last 4 bytes are the time stamp. (link.exe's hash covers
+        // something else, not found yet: see docs/turbolink.md.)
+        if let Some(c) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Repro) {
+            use sha2::Digest;
+            let hash: [u8; 32] = sha2::Sha256::digest(&out).into();
+            let at = self.file_offset(c.rva) as usize + 4;
+            out[at..at + 32].copy_from_slice(&hash);
+            let ts = [hash[28], hash[29], hash[30], hash[31]];
+            out[0x88..0x8C].copy_from_slice(&ts);
+            if let Some(d) = self
+                .l
+                .chunks
+                .iter()
+                .find(|c| c.kind == ChunkKind::DebugDirectory)
+            {
+                let at = self.file_offset(d.rva) as usize;
+                for i in 0..crate::layout::debug_entries(&self.r.config).len() {
+                    out[at + i * 28 + 4..at + i * 28 + 8].copy_from_slice(&ts);
+                }
+            }
         }
         (out, problems)
     }
@@ -532,7 +644,7 @@ impl<'a> Image<'a> {
             .find(|s| s.characteristics & scn::CNT_CODE != 0)
             .map_or(0, |s| s.rva);
         w.u16(if is64 { 0x20B } else { 0x10B });
-        w.bytes(&[14, 0]); // linker version
+        w.bytes(&[14, 52]); // linker version (link.exe 14.52's, whose output this is)
         w.u32(code);
         w.u32(data);
         w.u32(bss);
@@ -612,6 +724,14 @@ impl<'a> Image<'a> {
         if let Some(e) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Exports) {
             dirs[0] = (e.rva, e.size);
         }
+        if let Some(d) = self
+            .l
+            .chunks
+            .iter()
+            .find(|c| c.kind == ChunkKind::DebugDirectory)
+        {
+            dirs[6] = (d.rva, d.size);
+        }
         if !self.l.dlls.is_empty() {
             let dir = self
                 .l
@@ -619,7 +739,8 @@ impl<'a> Image<'a> {
                 .iter()
                 .find(|c| c.kind == ChunkKind::ImportDirectory);
             if let Some(d) = dir {
-                dirs[1] = (d.rva, d.size);
+                // The DLLs' entries and the null one after them.
+                dirs[1] = (d.rva, d.size + 20);
             }
             let iats: Vec<_> = self
                 .iat

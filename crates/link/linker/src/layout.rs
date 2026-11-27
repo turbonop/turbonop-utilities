@@ -20,8 +20,10 @@ pub enum ChunkKind {
     Common(u32),
     /// An import's thunk (`jmp [__imp_x]`): the import's file.
     Thunk(u32),
-    /// The import directory (one entry per DLL, and the null entry).
+    /// The import directory's entries (one per DLL).
     ImportDirectory,
+    /// The import directory's null entry (`.idata$3`).
+    NullImportDescriptor,
     /// A DLL's import lookup table: its index among the DLLs.
     ImportLookup(u32),
     /// A DLL's import address table.
@@ -34,6 +36,15 @@ pub enum ChunkKind {
     Exports,
     /// The resources (`.rsrc`).
     Resources,
+    /// The debug directory (at the end of the `.rdata` group, padded to
+    /// 128 bytes after, as link.exe leaves it).
+    DebugDirectory,
+    /// The `coffgrp` debug data: every COFF group's address, size, name.
+    CoffGroups,
+    /// `/Brepro`'s debug data: its hash.
+    Repro,
+    /// The volatile metadata the load configuration points to (x64).
+    VolatileMetadata,
 }
 
 /// A chunk placed.
@@ -69,6 +80,9 @@ pub struct OutputSection {
     pub raw_size: u32,
     /// Its contents' offset in the file.
     pub file_offset: u32,
+    /// Its COFF groups (input section names), in order, with their chunks
+    /// (none for a group whose sections hold nothing in the image).
+    pub groups: Vec<(Vec<u8>, Vec<u32>)>,
 }
 
 /// One DLL's imports.
@@ -150,6 +164,12 @@ const DEFAULT_MERGES: &[(&str, &str)] = &[
     (".xdata", ".rdata"),
     (".00cfg", ".rdata"),
     (".bss", ".data"),
+    // /GUARD's tables: read by the link, empty in the image (link.exe
+    // lists them among .rdata's groups).
+    (".gfids", ".rdata"),
+    (".giats", ".rdata"),
+    (".gljmp", ".rdata"),
+    (".gehcont", ".rdata"),
 ];
 
 /// Sections that are never in the image (`/GUARD`'s tables, which the
@@ -320,7 +340,8 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
             commons.extend(c);
         }
     }
-    commons.sort_unstable();
+    // Commons go at the end of .bss by name, as link.exe places them.
+    commons.sort_unstable_by(|a, b| r.globals[*a as usize].name.cmp(r.globals[*b as usize].name));
     commons.dedup();
     let sections = (0..n)
         .map(|f| {
@@ -360,6 +381,7 @@ pub fn layout(
     if !folded.is_empty() {
         live = mark(r, roots, &folded);
     }
+    let leaders: turbonop_hash::Set<(u32, u32)> = folded.values().copied().collect();
     let mut merges: Vec<(Vec<u8>, Vec<u8>)> = config
         .merges
         .iter()
@@ -393,6 +415,7 @@ pub fn layout(
     };
 
     let mut section_chunks: Vec<Vec<u32>> = Vec::with_capacity(r.files.len());
+    let mut empty_groups: Vec<(&'static [u8], u32)> = Vec::new();
     let mut dll_index: Map<&'static [u8], u32> = Map::default();
     let mut dlls: Vec<Dll> = Vec::new();
     let mut import_slots = Map::default();
@@ -413,12 +436,19 @@ pub fn layout(
                         continue;
                     }
                     if !live.sections[f][s] {
+                        // /GUARD's tables: no contents, but their group is
+                        // listed (as link.exe lists it).
+                        if kept_section(r, f, s) && sec.is_image() && dropped(sec.name) {
+                            empty_groups.push((sec.name, sec.characteristics));
+                        }
                         continue;
                     }
                     if let Some((Selection::Associative(parent), _)) = sec.comdat
                         && folded.contains_key(&(key.0, parent))
+                        && !leaders.contains(&key)
                     {
-                        // A folded section's unwind data goes with it.
+                        // A folded section's unwind data goes with it (unless
+                        // other copies' unwind data was folded into it).
                         continue;
                     }
                     let uninitialized = sec.characteristics & scn::CNT_UNINITIALIZED_DATA != 0;
@@ -454,7 +484,8 @@ pub fn layout(
                 slot.push(crate::n32(f));
                 if live.thunks[f] {
                     let c = add(
-                        b".text$zz",
+                        // Among the code (link.exe's .text$mn group).
+                        b".text$mn",
                         scn::CNT_CODE | scn::MEM_EXECUTE | scn::MEM_READ,
                         Chunk {
                             kind: ChunkKind::Thunk(crate::n32(f)),
@@ -521,13 +552,28 @@ pub fn layout(
     if !dlls.is_empty() {
         let data = scn::CNT_INITIALIZED_DATA | scn::MEM_READ;
         let table = |n: usize| u32::try_from((n + 1) * 8).unwrap_or(u32::MAX);
+        // The DLLs' entries (`.idata$2`, from each import descriptor), and
+        // the null entry after them (`.idata$3`, the null import
+        // descriptor's): link.exe's groups.
         add(
             b".idata$2",
             data,
             Chunk {
                 kind: ChunkKind::ImportDirectory,
                 align: 4,
-                size: u32::try_from((dlls.len() + 1) * 20).unwrap_or(u32::MAX),
+                size: crate::n32(dlls.len() * 20),
+                uninitialized: false,
+                rva: 0,
+            },
+            &mut chunks,
+        );
+        add(
+            b".idata$3",
+            data,
+            Chunk {
+                kind: ChunkKind::NullImportDescriptor,
+                align: 4,
+                size: 20,
                 uninitialized: false,
                 rva: 0,
             },
@@ -621,6 +667,86 @@ pub fn layout(
         );
     }
 
+    // What link.exe adds to .rdata: the volatile metadata (x64, for the
+    // load configuration), the debug directory (at the end of the .rdata
+    // group), and its data (the COFF groups, /Brepro's hash) in
+    // .rdata$zzzdbg.
+    let data_ro = scn::CNT_INITIALIZED_DATA | scn::MEM_READ;
+    let is64 = config.machine.is_none_or(crate::config::Machine::is_64);
+    let has_load_config = r
+        .names
+        .get(&b"_load_config_used"[..])
+        .is_some_and(|&g| matches!(r.globals[g as usize].def, Def::Section { .. }));
+    if is64 && has_load_config {
+        add(
+            b".rdata$voltmd",
+            data_ro,
+            Chunk {
+                kind: ChunkKind::VolatileMetadata,
+                align: 4,
+                size: 24,
+                uninitialized: false,
+                rva: 0,
+            },
+            &mut chunks,
+        );
+    }
+    let entries = crate::n32(debug_entries(config).len());
+    let mut coff_groups = None;
+    if entries > 0 {
+        add(
+            b".rdata",
+            data_ro,
+            Chunk {
+                kind: ChunkKind::DebugDirectory,
+                align: 4,
+                size: 28 * entries,
+                uninitialized: false,
+                rva: 0,
+            },
+            &mut chunks,
+        );
+        if config.debug == crate::config::Debug::None {
+            // Sized once the groups are known (below).
+            coff_groups = Some(add(
+                b".rdata$zzzdbg",
+                data_ro,
+                Chunk {
+                    kind: ChunkKind::CoffGroups,
+                    align: 4,
+                    size: 4,
+                    uninitialized: false,
+                    rva: 0,
+                },
+                &mut chunks,
+            ));
+        }
+        if config.repro {
+            add(
+                b".rdata$zzzdbg",
+                data_ro,
+                Chunk {
+                    kind: ChunkKind::Repro,
+                    align: 4,
+                    size: 36,
+                    uninitialized: false,
+                    rva: 0,
+                },
+                &mut chunks,
+            );
+        }
+    }
+    for (name, chars) in empty_groups {
+        let chars = chars & scn::OUTPUT_MASK;
+        partial_index.entry((name, chars)).or_insert_with(|| {
+            partials.push((
+                (output_name(name, &merges), name.to_vec(), chars),
+                Vec::new(),
+            ));
+            partials.len() - 1
+        });
+    }
+
     // Output sections: link.exe's order first, then the others as their
     // first partial section sorts; within each, partial sections by name
     // (the output section's own name's before those merged into it), and
@@ -660,6 +786,7 @@ pub fn layout(
                 virtual_size: 0,
                 raw_size: 0,
                 file_offset: 0,
+                groups: Vec::new(),
             }),
         }
     }
@@ -680,8 +807,11 @@ pub fn layout(
                 }
             };
             let (ia, ib) = (&a.0.1, &b.0.1);
-            (rank(ia), ia).cmp(&(rank(ib), ib))
+            // Uninitialized data (.bss) after the rest, as it is laid out.
+            let bss = |p: &Partial| p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0;
+            (bss(a), rank(ia), ia).cmp(&(bss(b), rank(ib), ib))
         });
+        s.groups = mine.iter().map(|p| (p.0.1.clone(), p.1.clone())).collect();
         let (init, uninit): (Vec<u32>, Vec<u32>) = mine
             .iter()
             .flat_map(|p| p.1.iter().copied())
@@ -699,6 +829,16 @@ pub fn layout(
     // Empty sections aren't written (the loader refuses a section of no
     // size).
     sections.retain(|s| s.chunks.iter().any(|&c| chunks[c as usize].size > 0));
+    // The COFF groups' list: each section's groups, each 8 bytes and its
+    // name (NUL-terminated, to 4 bytes), after a 4-byte signature.
+    if let Some(c) = coff_groups {
+        chunks[c as usize].size = 4 + sections
+            .iter()
+            .flat_map(|s| &s.groups)
+            .filter(|(_, c)| c.iter().any(|&c| chunks[c as usize].size > 0))
+            .map(|(name, _)| 8 + ((crate::n32(name.len()) + 1 + 3) & !3))
+            .sum::<u32>();
+    }
     // `/SECTION` attributes.
     for a in &config.sections {
         if let Some(s) = sections.iter_mut().find(|s| s.name == a.name.as_bytes()) {
@@ -755,11 +895,29 @@ impl Layout {
             s.file_offset = file;
             let mut at = 0u32;
             let mut init_end = 0u32;
+            // Each group starts at the largest alignment of its chunks (as
+            // link.exe places them: utility.obj's 8-byte .bss starts .bss on
+            // 16 bytes when another .bss in the group wants 16).
+            let mut group_start: Map<u32, u32> = Map::default();
+            for (_, chunks) in &s.groups {
+                if let Some(&first) = chunks.first() {
+                    let align = chunks
+                        .iter()
+                        .map(|&c| self.chunks[c as usize].align)
+                        .max()
+                        .unwrap_or(1);
+                    group_start.insert(first, align);
+                }
+            }
             for &c in &s.chunks {
+                let group_align = group_start.get(&c).copied().unwrap_or(1);
                 let chunk = &mut self.chunks[c as usize];
-                at = align_up(at, chunk.align);
+                at = align_up(at, chunk.align.max(group_align));
                 chunk.rva = rva + at;
                 at += chunk.size;
+                if chunk.kind == ChunkKind::DebugDirectory {
+                    at = align_up(at, 128);
+                }
                 if !chunk.uninitialized {
                     init_end = at;
                 }
@@ -797,6 +955,7 @@ impl Layout {
             virtual_size: 0,
             raw_size: 0,
             file_offset: 0,
+            groups: Vec::new(),
         });
         self.base_relocations = data;
         self.assign_addresses();
@@ -816,4 +975,26 @@ impl Layout {
 /// The name an import object is imported by, for its hint/name entry.
 pub fn import_name(import: &ImportObject<'static>) -> Option<&'static [u8]> {
     import.import_name()
+}
+
+/// Whether file `f`'s section `s` stayed (a COMDAT copy that lost didn't).
+fn kept_section(r: &Resolved, f: usize, s: usize) -> bool {
+    match &r.files[f].kind {
+        FileKind::Object { kept, .. } => kept[s],
+        FileKind::Import { .. } => false,
+    }
+}
+
+/// The debug directory's entries, in link.exe's order: the POGO (COFF
+/// groups) entry without /DEBUG, /Brepro's entry. (/DEBUG's CodeView and
+/// VC feature entries come with the PDB.)
+pub fn debug_entries(c: &Config) -> Vec<u32> {
+    let mut v = Vec::new();
+    if c.debug == crate::config::Debug::None {
+        v.push(13); // IMAGE_DEBUG_TYPE_POGO
+    }
+    if c.repro {
+        v.push(16); // IMAGE_DEBUG_TYPE_REPRO
+    }
+    v
 }

@@ -150,6 +150,24 @@ fn scratch(name: &str) -> PathBuf {
     d
 }
 
+/// The command line's name for file `name` in `dir`: a relative path (an
+/// absolute one starting with `/` would be an option).
+fn input(dir: &Path, name: &str) -> String {
+    let cwd = std::env::current_dir().unwrap();
+    let path = dir.join(name);
+    // Up from the current directory to what it shares with the path, then
+    // down (on Windows, another drive: the path itself, which has no `/`).
+    let (mut up, mut rest) = (PathBuf::new(), path.as_path());
+    for a in cwd.ancestors() {
+        if let Ok(r) = path.strip_prefix(a) {
+            rest = r;
+            break;
+        }
+        up.push("..");
+    }
+    up.join(rest).display().to_string()
+}
+
 /// Links `words` (a command line) in `dir`: the image's bytes, or the
 /// errors' codes.
 fn run(dir: &Path, words: &[&str]) -> Result<Vec<u8>, Vec<u32>> {
@@ -157,7 +175,7 @@ fn run(dir: &Path, words: &[&str]) -> Result<Vec<u8>, Vec<u32>> {
         if w.starts_with('/') {
             (*w).to_owned()
         } else {
-            dir.join(w).display().to_string()
+            input(dir, w)
         }
     });
     let words = args::command_line(argv, None, None, &|p| std::fs::read(p)).unwrap();
@@ -493,7 +511,7 @@ fn run_with_warnings(dir: &Path, words: &[&str]) -> (Result<Vec<u8>, Vec<u32>>, 
         if w.starts_with('/') {
             (*w).to_owned()
         } else {
-            dir.join(w).display().to_string()
+            input(dir, w)
         }
     });
     let words = args::command_line(argv, None, None, &|p| std::fs::read(p)).unwrap();

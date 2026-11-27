@@ -21,7 +21,7 @@ CMAKE=cmake; NINJA=ninja
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_TARGETS_TO_BUILD="X86;AArch64" \
   -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF
-nice -n 19 "$NINJA" -C "$CORPUS/build-release" llvm-ar
+nice -n 19 "$NINJA" -C "$CORPUS/build-release" llvm-ar llvm-ranlib
 mkdir -p "$CORPUS/llvm-release"
 for n in ar llvm-ar; do ln -sf "$CORPUS/build-release/bin/llvm-ar" "$CORPUS/llvm-release/$n"; done
 for n in ranlib llvm-ranlib; do ln -sf "$CORPUS/build-release/bin/llvm-ranlib" "$CORPUS/llvm-release/$n"; done

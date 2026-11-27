@@ -321,8 +321,19 @@ pub(super) fn check(
     let gone = |p: &Place| matches!(p, Place::Atom(k, _) if lost.contains(k.as_slice()));
     // Line rows: the original's but the lost atoms', each naming the same.
     if let (Some(ro), Some(rn)) = (rows(o, &dold, &lo), rows(n, &dnew, &ln)) {
-        let expect: Vec<&(Place, String)> = ro.iter().filter(|r| !gone(&r.0)).collect();
-        let same = expect.len() == rn.len() && expect.iter().zip(&rn).all(|(a, b)| **a == *b);
+        // (A sequence's end in lost code is where what follows it is now.)
+        let expect: Vec<(Place, String)> = ro
+            .iter()
+            .filter(|r| r.1 == "end" || !gone(&r.0))
+            .map(|r| {
+                if r.1 == "end" {
+                    (lo.kept(r.0.clone(), lost), r.1.clone())
+                } else {
+                    r.clone()
+                }
+            })
+            .collect();
+        let same = expect.len() == rn.len() && expect.iter().zip(&rn).all(|(a, b)| *a == *b);
         rep.checked("line rows of rewritten members", rn.len() as u64);
         if !same {
             rep.fail(
@@ -331,7 +342,7 @@ pub(super) fn check(
                     let k = expect
                         .iter()
                         .zip(&rn)
-                        .position(|(a, b)| **a != *b)
+                        .position(|(a, b)| *a != *b)
                         .unwrap_or(expect.len().min(rn.len()));
                     format!(
                         "{}: row {k}: {:?} and {:?}",
@@ -387,8 +398,13 @@ pub(super) fn check(
         let new_low = dnew.low.map_or(0, |l| l.2);
         // The original's range, in the new object: from where its start is
         // to where its end is.
-        let pa = lo.place(low, None);
-        let pz = lo.place(low.wrapping_add(len), None);
+        // (The end in the start's section: the next one may start there.)
+        let si = lo
+            .sections
+            .iter()
+            .position(|&(a, size, _)| low >= a && low - a < size);
+        let pa = lo.place(low, si);
+        let pz = lo.place(low.wrapping_add(len), si);
         let find = |p: &Place| -> Option<u64> {
             match p {
                 Place::End(name) => ln.sections.iter().find(|s| s.2 == *name).map(|s| s.0 + s.1),

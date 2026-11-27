@@ -177,6 +177,8 @@ pub(crate) struct Image<'a> {
     /// two extents to the next symbol: it holds the whole datum): past it,
     /// an address is named by its contents.
     limits: BTreeMap<Box<[u8]>, u64>,
+    /// LSDAs no function's unwind information names (left out).
+    orphan_lsdas: u64,
 }
 
 fn le(b: &[u8], at: usize, n: usize) -> Option<u64> {
@@ -271,6 +273,54 @@ impl<'a> Image<'a> {
                 lsda_of.entry(l).or_insert(e.function);
             }
         }
+        // (And FDEs': a function whose compact unwind is DWARF's.)
+        if let Some(eh) = sections
+            .iter()
+            .find(|s| s.seg == b"__TEXT" && s.name == b"__eh_frame")
+            && let Some(ptrs) = turbonop_macho_object::ehframe::pointers(
+                eh.data,
+                true,
+                turbonop_core::Endian::Little,
+            )
+        {
+            use turbonop_macho_object::ehframe::PointerKind;
+            let target = |p: &turbonop_macho_object::ehframe::Pointer| -> Option<u64> {
+                let n = usize::from(p.size);
+                let v = le(eh.data, p.offset, n)?;
+                let v = if n < 8 {
+                    ((v << (64 - 8 * n)) as i64 >> (64 - 8 * n)) as u64
+                } else {
+                    v
+                };
+                Some(if p.encoding & 0x70 == 0x10 {
+                    eh.addr.wrapping_add(p.offset as u64).wrapping_add(v)
+                } else {
+                    v
+                })
+            };
+            let mut func: BTreeMap<(usize, usize), u64> = BTreeMap::new();
+            for p in ptrs.iter().filter(|p| p.kind == PointerKind::PcBegin) {
+                if let Some(t) = target(p) {
+                    func.insert(p.record, t);
+                }
+            }
+            for p in ptrs.iter().filter(|p| p.kind == PointerKind::Lsda) {
+                if let (Some(t), Some(&f)) = (target(p), func.get(&p.record))
+                    && t != eh.addr.wrapping_add(p.offset as u64)
+                {
+                    lsda_of.entry(t).or_insert(f);
+                }
+            }
+        }
+        // An LSDA no function's unwind information names: a copy the
+        // linker discarded kept its LSDA (it doesn't dead-strip them).
+        let unnamed_lsda = |s: &Sect<'_>, external: bool, a: u64| {
+            !external
+                && s.seg == b"__TEXT"
+                && s.name == b"__gcc_except_tab"
+                && !lsda_of.contains_key(&a)
+        };
+        let mut orphan_lsdas = 0u64;
         let mut seen: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
         let mut pending_lsda: Vec<(usize, u64)> = Vec::new();
         for y in &defined {
@@ -299,7 +349,7 @@ impl<'a> Image<'a> {
                 region: !matches!(
                     sections[si].kind(),
                     S_SYMBOL_STUBS | S_NON_LAZY_SYMBOL_POINTERS | S_LAZY_SYMBOL_POINTERS
-                ),
+                ) && !unnamed_lsda(&sections[si], external, y.n_value),
             });
         }
         // Stubs and the linker's pointers.
@@ -360,6 +410,7 @@ impl<'a> Image<'a> {
             symbols: Vec::new(),
             imports: BTreeSet::new(),
             limits: BTreeMap::new(),
+            orphan_lsdas: 0,
         };
         img.index();
         // LSDAs named by their functions (once those have names).
@@ -387,6 +438,10 @@ impl<'a> Image<'a> {
         // numbered by its object).
         for y in &defined {
             let si = usize::from(y.n_sect) - 1;
+            if unnamed_lsda(&img.sections[si], y.n_type & N_EXT != 0, y.n_value) {
+                orphan_lsdas += 1;
+                continue;
+            }
             let name: Box<[u8]> = match lsda_of.get(&y.n_value) {
                 Some(&f) if y.n_type & N_EXT == 0 => {
                     format!("lsda:{}", img.render(f)).into_bytes().into()
@@ -397,6 +452,7 @@ impl<'a> Image<'a> {
                 .push((name, y.n_type & N_EXT != 0, img.sections[si].full_name()));
         }
         img.symbols.sort();
+        img.orphan_lsdas = orphan_lsdas;
         // Regions: each symbol's extent, to the next symbol of its section.
         let starts: Vec<(u64, usize)> = img
             .labels
@@ -1044,6 +1100,12 @@ fn tables(a: &Image<'_>, b: &Image<'_>, rep: &mut Report) {
                 || format!("{} ({})", show(&k.0), k.2),
             );
         }
+    }
+    if a.orphan_lsdas != b.orphan_lsdas {
+        rep.expect(
+            "LSDAs no function's unwind information names (discarded copies', which the linker keeps), left out",
+            || format!("{} and {}", a.orphan_lsdas, b.orphan_lsdas),
+        );
     }
     // Initializers.
     let (xa, xb) = (initializers(a), initializers(b));

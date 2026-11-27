@@ -2235,28 +2235,6 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
         synth.push((survivors, anchor));
     }
     lap(&mut report, "choosing");
-    // Rewrite the members and make the synthesized ones, on every core.
-    let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_costed(
-        parsed.len(),
-        |m| if moved[m].is_empty() { 0 } else { size(m) },
-        |m| {
-            if moved[m].is_empty() {
-                return None;
-            }
-            let mut r = Report::default();
-            Some(
-                rewrite(
-                    &parsed[m],
-                    &moved[m],
-                    &member_anchors[m],
-                    inputs[m].data,
-                    &mut r,
-                )
-                .map(|b| (b, r)),
-            )
-        },
-    );
-    lap(&mut report, "rewriting");
     // Each moved name's synthesized member.
     let mut moved_into: Map<&[u8], usize> = Map::default();
     for (k, (units, _)) in synth.iter().enumerate() {
@@ -2267,7 +2245,8 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
         }
     }
     let anchors: Vec<Vec<u8>> = synth.iter().map(|(_, a)| a.clone()).collect();
-    // The survivors' members' DWARF, read once each, on every core.
+    // The members whose DWARF synthesized members take from (the
+    // survivors').
     let debug_members: Vec<usize> = synth
         .iter()
         .filter(|(units, _)| units.iter().any(|&(m, u)| parsed[m].units[u].debug))
@@ -2275,18 +2254,56 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
         .collect::<BTreeSet<usize>>()
         .into_iter()
         .collect();
-    let sources: Vec<Result<dwarf::Source<'_>, &'static str>> = turbonop_par::map_costed(
-        debug_members.len(),
-        |k| size(debug_members[k]),
-        |k| {
+    // Rewrite the members, and read those members' DWARF (once each), on
+    // every core, the dearest first: one pool of both, so that neither
+    // waits on the other's largest member.
+    enum Job<'p> {
+        Rewritten(Option<Rewritten>),
+        Read(Result<dwarf::Source<'p>, &'static str>),
+    }
+    let n = parsed.len();
+    let jobs: Vec<Job<'_>> = turbonop_par::map_costed(
+        n + debug_members.len(),
+        |j| match j.checked_sub(n) {
+            None if moved[j].is_empty() => 0,
+            None => size(j),
+            Some(k) => size(debug_members[k]),
+        },
+        |j| {
+            let Some(k) = j.checked_sub(n) else {
+                let m = j;
+                if moved[m].is_empty() {
+                    return Job::Rewritten(None);
+                }
+                let mut r = Report::default();
+                return Job::Rewritten(Some(
+                    rewrite(
+                        &parsed[m],
+                        &moved[m],
+                        &member_anchors[m],
+                        inputs[m].data,
+                        &mut r,
+                    )
+                    .map(|b| (b, r)),
+                ));
+            };
             let m = debug_members[k];
-            match parsed[m].obj.as_ref() {
+            Job::Read(match parsed[m].obj.as_ref() {
                 Some(obj) => dwarf::Source::new(obj, &parsed[m].owner, dwo),
                 None => Err("unread"),
-            }
+            })
         },
     );
-    lap(&mut report, "reading DWARF");
+    let mut rewritten: Vec<Option<Rewritten>> = Vec::with_capacity(n);
+    let mut sources: Vec<Result<dwarf::Source<'_>, &'static str>> =
+        Vec::with_capacity(debug_members.len());
+    for job in jobs {
+        match job {
+            Job::Rewritten(r) => rewritten.push(r),
+            Job::Read(s) => sources.push(s),
+        }
+    }
+    lap(&mut report, "rewriting and reading DWARF");
     let source_of: BTreeMap<usize, &Result<dwarf::Source<'_>, &'static str>> =
         debug_members.iter().copied().zip(sources.iter()).collect();
     let made: Vec<Result<(Vec<u8>, Debugged), String>> = turbonop_par::map_costed(

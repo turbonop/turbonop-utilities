@@ -455,6 +455,7 @@ impl<'p> Source<'p> {
                 continue;
             };
             let e = rels_of.entry(t).or_default();
+            e.reserve(rs.len());
             for r in rs {
                 e.push(Rel {
                     offset: r.offset,
@@ -476,7 +477,7 @@ impl<'p> Source<'p> {
             let kind = index_kind(k);
             // The relocations to debug sections, applied to a copy (a
             // section without them, such as `.debug_str`, is read in place).
-            let mut applied: Vec<(usize, usize, u64)> = Vec::new();
+            let mut applied: Vec<(usize, usize, u64)> = Vec::with_capacity(rels.len());
             for r in &rels {
                 let size = reloc_size(machine, r.rtype).ok_or("a debug relocation not known")?;
                 if !kind.relocated() {
@@ -1604,15 +1605,32 @@ struct DieShape {
     /// The size of its attributes, if every form's is fixed: skipped
     /// without reading them.
     fixed: Option<u64>,
+    /// Otherwise how to pass over them (`Shapes::skips[start..end]`), if
+    /// every form is one [`Skip`] knows.
+    skips: Option<(u32, u32)>,
     /// Whether it has attributes [`Source::addresses_of`] reads addresses
     /// from, and no `DW_AT_declaration` (the search for roots passes over
     /// the rest without reading them).
     roots: bool,
 }
 
+/// How to pass over an attribute's value (or a run of fixed-size ones),
+/// reading what `Unit::read_value` reads for its form.
+#[derive(Clone, Copy, Debug)]
+enum Skip {
+    Fixed(u64),
+    Uleb,
+    Sleb,
+    Cstr,
+    /// A block of the length a 1-, 2-, or 4-byte field (or a ULEB128, 0)
+    /// gives.
+    Block(u8),
+}
+
 /// A unit's abbreviations' [`DieShape`]s, by code.
 struct Shapes {
     list: Vec<(u64, DieShape)>,
+    skips: Vec<Skip>,
     /// Codes to places, unless every code is its place plus 1.
     sparse: Option<HashMap<u64, usize>>,
 }
@@ -1639,6 +1657,29 @@ impl Shapes {
                 _ => return None,
             })
         };
+        let skip = |form: u16| -> Option<Skip> {
+            if let Some(n) = size(form) {
+                return Some(Skip::Fixed(n));
+            }
+            Some(match form {
+                DW_FORM_BLOCK1 => Skip::Block(1),
+                DW_FORM_BLOCK2 => Skip::Block(2),
+                DW_FORM_BLOCK4 => Skip::Block(4),
+                DW_FORM_BLOCK | DW_FORM_EXPRLOC => Skip::Block(0),
+                DW_FORM_STRING => Skip::Cstr,
+                DW_FORM_SDATA => Skip::Sleb,
+                DW_FORM_UDATA
+                | DW_FORM_REF_UDATA
+                | DW_FORM_STRX
+                | DW_FORM_GNU_STR_INDEX
+                | DW_FORM_ADDRX
+                | DW_FORM_GNU_ADDR_INDEX
+                | DW_FORM_LOCLISTX
+                | DW_FORM_RNGLISTX => Skip::Uleb,
+                _ => return None,
+            })
+        };
+        let mut skips: Vec<Skip> = Vec::new();
         let list: Vec<(u64, DieShape)> = abbrevs
             .iter()
             .map(|ab| {
@@ -1646,6 +1687,25 @@ impl Shapes {
                     .attrs
                     .iter()
                     .try_fold(0u64, |n, s| n.checked_add(size(s.form)?));
+                // (Runs of fixed sizes merged.)
+                let start = skips.len();
+                let mut known = fixed.is_none();
+                for a in &ab.attrs {
+                    if !known {
+                        break;
+                    }
+                    let here = skips.len() > start;
+                    match (skip(a.form), skips.last_mut()) {
+                        (Some(Skip::Fixed(n)), Some(Skip::Fixed(m))) if here => *m += n,
+                        (Some(k), _) => skips.push(k),
+                        (None, _) => known = false,
+                    }
+                }
+                if !known {
+                    skips.truncate(start);
+                }
+                let span = (known && skips.len() < u32::MAX as usize)
+                    .then(|| (start as u32, skips.len() as u32));
                 let addresses = ab.attrs.iter().any(|s| match s.form {
                     DW_FORM_ADDR
                     | DW_FORM_ADDRX
@@ -1668,6 +1728,7 @@ impl Shapes {
                         children: ab.children,
                         named: ab.attrs.iter().any(|s| s.name == DW_AT_NAME),
                         fixed,
+                        skips: span,
                         roots: addresses && !declaration,
                     },
                 )
@@ -1683,7 +1744,41 @@ impl Shapes {
                 .map(|(i, &(code, _))| (code, i))
                 .collect()
         });
-        Shapes { list, sparse }
+        Shapes {
+            list,
+            skips,
+            sparse,
+        }
+    }
+
+    /// Passes `r` over the attributes `skips[start..end]` describe: `None`
+    /// where reading them as values would fail.
+    fn skip(&self, r: &mut Reader<'_>, (start, end): (u32, u32)) -> Option<()> {
+        for k in &self.skips[start as usize..end as usize] {
+            match *k {
+                Skip::Fixed(n) => {
+                    r.bytes(n)?;
+                }
+                Skip::Uleb => {
+                    r.uleb()?;
+                }
+                Skip::Sleb => {
+                    r.sleb()?;
+                }
+                Skip::Cstr => {
+                    r.cstr()?;
+                }
+                Skip::Block(w) => {
+                    let n = if w == 0 {
+                        r.uleb()?
+                    } else {
+                        r.uint(usize::from(w))?
+                    };
+                    r.bytes(n)?;
+                }
+            }
+        }
+        Some(())
     }
 
     fn get(&self, code: u64) -> Option<&DieShape> {
@@ -1701,9 +1796,11 @@ fn walk(unit: &Unit<'_>, abbrevs: &Abbrevs) -> R<Vec<Die>> {
     let shapes = Shapes::new(unit, abbrevs);
     let data = unit.sections().info;
     let mut r = Reader::new(data, unit.dies as usize, unit.sections().endian);
-    let mut dies: Vec<Die> = Vec::new();
-    let mut stack: Vec<u32> = Vec::new();
     let end = unit.end as usize;
+    // (Room for a DIE per eight bytes, so that a unit of millions isn't
+    // copied as it grows; pages not written aren't taken.)
+    let mut dies: Vec<Die> = Vec::with_capacity(end.saturating_sub(r.pos) / 8 + 16);
+    let mut stack: Vec<u32> = Vec::new();
     while r.pos < end {
         let at = r.pos as u64;
         let code = r.uleb().ok_or(bad)?;
@@ -1720,11 +1817,12 @@ fn walk(unit: &Unit<'_>, abbrevs: &Abbrevs) -> R<Vec<Die>> {
             continue;
         }
         let shape = *shapes.get(code).ok_or(bad)?;
-        match shape.fixed {
-            Some(n) => {
+        match (shape.fixed, shape.skips) {
+            (Some(n), _) => {
                 r.bytes(n).ok_or(bad)?;
             }
-            None => {
+            (None, Some(span)) => shapes.skip(&mut r, span).ok_or(bad)?,
+            (None, None) => {
                 let a = abbrevs.get(code).ok_or(bad)?;
                 for spec in &a.attrs {
                     unit.read_value(&mut r, spec.form, spec.implicit)

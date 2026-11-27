@@ -739,16 +739,27 @@ same but for the PDB's GUID, age, and name.
   offsets, which origin), and a map of an LLVM-size link checked line for
   line; a delay-loaded DLL's tables with
   two or more imports (link.exe's order, docs/turbolink.md);
-  more large programs to check (`opt`, `clang`: `hexcavator diff` them;
-  `llvm-tblgen` and `llc` are link.exe's images).
+  where 4 bytes of padding fall before `.idata$2` in `llvm-nm` and
+  `llvm-objdump` (link.exe's delay-load room there is 0x108 with the
+  descriptors starting on 8, which the rule in docs/turbolink.md gives
+  0x104 for; it holds for llvm-tblgen, llc, opt and six small programs:
+  not the number of DLLs, the delay-loaded names, the options, the
+  tables' alignment, or the first DLL in the directory). llvm-tblgen,
+  llc, opt, llvm-mc and llvm-ar are link.exe's images.
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
   under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
   header's walk when a library is searched in several passes (each pass's
   modules made in offset order?).
-- **Speed.** Measure large links (LLVM's) once the build machine is idle.
-  Layout hashes owned copies of names per chunk (24 ms of 90 for
-  `llvm-tblgen`); symbols are interned on one thread; the `/OPT:REF` mark
-  is serial; small inputs may read faster than they map.
+- **Speed.** On a quiet machine, `llc` (73 MB, every target) links in
+  1.29 s (median of five) against link.exe's 3.15 s. On a loaded machine
+  (other programs on every core, the disk busy) turbolink on all threads
+  lost to turbolink on one (11-27 s against 4-6 s, link.exe 8-12 s),
+  using no more CPU: its threads wait on each other. Branch
+  `turbolink-next` has experiments for that (work in pieces taken from a
+  counter in turbonop_par; the mark's targets resolved once; higher
+  thresholds before parallelizing), neutral when quiet, not yet measured
+  cleanly under load. Also: layout hashes owned copies of names per chunk;
+  symbols are interned on one thread.
 - **The PDB (`/DEBUG`), the rest.**
   - **Speed:** llvm-tblgen with `/Z7` objects only ties link.exe (the
     PDB about 300 ms of 390). Per stage:

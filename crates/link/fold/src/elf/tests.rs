@@ -232,7 +232,87 @@ fn fold_all(members: &[Vec<u8>], pull: Pull) -> (Vec<Output>, Report) {
         .zip(members)
         .map(|(n, d)| Input { name: n, data: d })
         .collect();
-    fold(&inputs, &Options { pull })
+    let options = Options { pull };
+    let (out, report) = fold(&inputs, &options);
+    // Written as parts, the same members, and each rewritten one's index
+    // what its bytes give.
+    let (parts, _) = fold_parts(&inputs, &options, &|_, _| None);
+    assert_eq!(out.len(), parts.len());
+    for (o, p) in out.iter().zip(&parts) {
+        match (&p.written, p.input) {
+            (Some(w), Some(m)) => {
+                let bytes = w.gather(members[m].as_slice());
+                assert_eq!(o.data.as_deref(), Some(&bytes[..]));
+                assert_eq!(bytes.len() as u64, w.size);
+                let ix = w.index.as_ref().unwrap();
+                for archiver in [
+                    turbonop_archive::unix::Archiver::GnuAr,
+                    turbonop_archive::unix::Archiver::LlvmAr,
+                ] {
+                    let read = turbonop_archive::unix::symbols::member_symbols(&bytes, archiver);
+                    let values = turbonop_archive::unix::symbols::elf_symbols(
+                        archiver,
+                        ix.machine,
+                        ix.lto,
+                        ix.symbols
+                            .iter()
+                            .map(|s| turbonop_archive::unix::symbols::ElfSymbol {
+                                name: &s.name,
+                                bind: s.bind,
+                                kind: s.kind,
+                                shndx: s.shndx,
+                                extended: s.extended,
+                            }),
+                    );
+                    assert_eq!(read, values);
+                }
+            }
+            _ => assert_eq!(o.data, p.data),
+        }
+    }
+    (out, report)
+}
+
+#[test]
+fn tombstones_are_written_over_the_parts() {
+    let input: Vec<u8> = (0..64u8).collect();
+    for endian in [Endian::Little, Endian::Big] {
+        let parts = turbonop_elf_object::Parts {
+            parts: vec![
+                Cow::Borrowed(&input[0..10]),
+                Cow::Owned(vec![0xAA; 6]),
+                Cow::Borrowed(&input[16..40]),
+                Cow::Borrowed(&input[40..50]),
+                Cow::Borrowed(&input[50..64]),
+            ],
+            offsets: Vec::new(),
+            size: 64,
+        };
+        // Across a part's end, from made bytes into the input's, two that
+        // overlap (written in order), one ending a part, one covering a
+        // whole part and more, one at the end.
+        let tombstones = [
+            (8, 4, 0x1111_1111),
+            (12, 8, 0x2222_2222_2222_2222),
+            (14, 4, 0x3333_3333),
+            (36, 4, 0x4444_4444),
+            (39, 2, 0x5555),
+            (44, 8, 0x6666_6666_6666_6666),
+            (48, 4, 0x7777_7777),
+            (60, 4, 0x8888_8888),
+        ];
+        let mut expected: Vec<u8> = parts.parts.concat();
+        for &(at, size, value) in &tombstones {
+            put(&mut expected, at as usize, size, value, endian);
+        }
+        let w = patched(&input, parts, &tombstones, endian, None);
+        assert_eq!(w.gather(&input), expected);
+        assert_eq!(w.size, 64);
+        // The input's bytes not written over stay parts of it.
+        assert!(w.parts.contains(&Part::Input { start: 0, len: 8 }));
+        assert!(w.parts.contains(&Part::Input { start: 20, len: 16 }));
+        assert!(w.parts.contains(&Part::Input { start: 52, len: 8 }));
+    }
 }
 
 fn relocations_for(o: &Object<'_>, section: usize) -> Vec<Relocation> {

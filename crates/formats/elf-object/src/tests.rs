@@ -151,7 +151,17 @@ fn object(class: Class, endian: Endian, machine: u16) -> Object<'static> {
     o
 }
 
+/// `write_parts`' parts, gathered: `write`'s bytes, and their size.
+fn gathered(o: &Object<'_>) -> Vec<u8> {
+    let p = o.write_parts().unwrap();
+    let all: Vec<u8> = p.parts.iter().flat_map(|x| x.iter().copied()).collect();
+    assert_eq!(all.len() as u64, p.size);
+    assert_eq!(all, o.write().unwrap());
+    all
+}
+
 fn round_trip(o: &Object<'_>) {
+    gathered(o);
     let bytes = o.write().unwrap();
     let back = Object::parse(&bytes).unwrap();
     assert!(back.keeps_layout());
@@ -180,10 +190,53 @@ fn round_trip(o: &Object<'_>) {
     }
     // And written again, it is the same file.
     assert_eq!(back.write().unwrap(), bytes);
+    assert_eq!(gathered(&back), bytes);
     // Laid out afresh, the same too (the writer's own layout).
     let mut fresh = back.clone();
     fresh.relayout();
     assert_eq!(fresh.write().unwrap(), bytes);
+    assert_eq!(gathered(&fresh), bytes);
+}
+
+#[test]
+fn parts_borrow_what_is_unchanged() {
+    for (class, endian, machine) in [
+        (Class::Elf64, Endian::Little, 62),
+        (Class::Elf32, Endian::Big, 20),
+    ] {
+        let bytes = object(class, endian, machine).write().unwrap();
+        let back = Object::parse(&bytes).unwrap();
+        // Without a section (and its group's member), and a name changed:
+        // laid out afresh, its tables rebuilt.
+        let mut edited = back.clone();
+        let mut keep = vec![true; edited.sections.len()];
+        keep[6] = false;
+        edited.retain_sections(&keep);
+        edited.symbols_mut().unwrap()[4].name = Cow::Borrowed(b"renamed_global");
+        assert!(!edited.keeps_layout());
+        let again = gathered(&edited);
+        let reread = Object::parse(&again).unwrap();
+        assert_eq!(&*reread.symbols()[4].name, b"renamed_global");
+        // A section's contents read and not changed are the file read's.
+        let p = edited.write_parts().unwrap();
+        let file = bytes.as_ptr_range();
+        let text = match &edited.sections[3].data {
+            Data::Bytes(b) => b.as_ptr(),
+            _ => panic!("bytes"),
+        };
+        assert!(file.contains(&text));
+        assert!(p.parts.iter().any(|x| x.as_ptr() == text));
+        // And each section is at its offset.
+        for (i, s) in edited.sections.iter().enumerate().skip(1) {
+            if let Data::Bytes(b) = &s.data
+                && !b.is_empty()
+                && s.kind != sht::STRTAB
+            {
+                let at = p.offsets[i] as usize;
+                assert_eq!(&again[at..at + b.len()], &b[..]);
+            }
+        }
+    }
 }
 
 #[test]

@@ -359,6 +359,7 @@ impl Reader<'_, '_> {
                     len: m.data.len(),
                 }),
                 old: false,
+                folded: None,
             };
             self.add_object(item, file).map_err(|Fatal(t)| {
                 Fatal(match t.strip_prefix("error: ") {
@@ -411,6 +412,7 @@ impl Reader<'_, '_> {
                             len,
                         }),
                         old: false,
+                        folded: None,
                     };
                     self.add_object(item, file)?;
                 }

@@ -2,7 +2,8 @@
 //! into the model and writes it back, and checks the result is
 //! byte-identical. Then, with `-relayout`, also lays each out afresh, reads
 //! that back, and checks its model is the original's (the same sections,
-//! symbols, relocations, and groups, by value), and that every relocation
+//! symbols, relocations, and groups, by value) and its bytes written as
+//! parts (`write_parts`) are the same, and that every relocation
 //! section (REL, RELA, and CREL) decoded to values and encoded again gives
 //! back the same bytes.
 //!
@@ -102,6 +103,13 @@ fn same_model(a: &Object<'_>, b: &Object<'_>) -> Result<(), String> {
     Ok(())
 }
 
+/// [`Object::write_parts`]' parts, gathered.
+fn gathered(o: &Object<'_>) -> Option<Vec<u8>> {
+    let p = o.write_parts().ok()?;
+    let all: Vec<u8> = p.parts.concat();
+    (all.len() as u64 == p.size).then_some(all)
+}
+
 fn check_object(name: &str, data: &[u8], relayout: bool, r: &mut Report) {
     if !data.starts_with(b"\x7fELF") {
         return;
@@ -130,7 +138,11 @@ fn check_object(name: &str, data: &[u8], relayout: bool, r: &mut Report) {
         match fresh.write() {
             Ok(out) => match Object::parse(&out) {
                 Ok(back) => match same_model(&o, &back) {
-                    Ok(()) => r.relaid += 1,
+                    // (And its parts, gathered, are the same bytes.)
+                    Ok(()) if gathered(&fresh).as_deref() == Some(&out[..]) => r.relaid += 1,
+                    Ok(()) => r
+                        .failures
+                        .push(format!("{name}: relaid out, its parts differ")),
                     Err(e) => r.failures.push(format!("{name}: relaid out: {e}")),
                 },
                 Err(e) => r

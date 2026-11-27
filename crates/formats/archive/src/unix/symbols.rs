@@ -155,16 +155,10 @@ pub fn member_symbols(data: &[u8], archiver: Archiver) -> Result<MemberSymbols<'
             Archiver::LlvmAr => Err(SymbolsError::Malformed),
         };
     };
-    if archiver == Archiver::GnuAr && file.sections().any(|s| s.name.starts_with(b".gnu.lto_")) {
-        return Err(SymbolsError::Unsupported("a GCC LTO object"));
-    }
+    let lto = file.sections().any(|s| s.name.starts_with(b".gnu.lto_"));
     let machine = file.header().machine;
-    let mut out = MemberSymbols {
-        object: true,
-        symbols: Vec::new(),
-    };
     let Some(table) = file.sections().find(|s| s.kind == SHT_SYMTAB) else {
-        return Ok(out);
+        return elf_symbols(archiver, machine, lto, []);
     };
     let symbols = file.symbols(&table);
     // A section index from SHT_SYMTAB_SHNDX is a section's, even one
@@ -180,10 +174,57 @@ pub fn member_symbols(data: &[u8], archiver: Archiver) -> Result<MemberSymbols<'
             .get(i * 4..i * 4 + 4)
             .is_some_and(|b| b.iter().any(|&x| x != 0))
     };
-    for s in symbols.iter().skip(1) {
+    elf_symbols(
+        archiver,
+        machine,
+        lto,
+        symbols.iter().skip(1).map(|s| ElfSymbol {
+            name: s.name,
+            bind: s.bind,
+            kind: s.kind,
+            shndx: s.shndx,
+            extended: in_extended(s.index),
+        }),
+    )
+}
+
+/// An ELF symbol, as the index's rules read it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ElfSymbol<'a> {
+    /// Its name.
+    pub name: &'a [u8],
+    /// Its binding (`STB_*`).
+    pub bind: u8,
+    /// Its type (`STT_*`).
+    pub kind: u8,
+    /// Its section index (one from `SHT_SYMTAB_SHNDX` resolved).
+    pub shndx: u32,
+    /// Whether its entry in `SHT_SYMTAB_SHNDX` is set (not 0).
+    pub extended: bool,
+}
+
+/// The symbols `archiver` indexes for an ELF object of `machine` whose
+/// `.symtab` holds `symbols` (in order, from index 1; none if it has no
+/// table), and with sections named `.gnu.lto_...` if `lto`: what
+/// [`member_symbols`] gives for the object's bytes, for an object known
+/// only as values (a member written as parts).
+pub fn elf_symbols<'a>(
+    archiver: Archiver,
+    machine: u16,
+    lto: bool,
+    symbols: impl IntoIterator<Item = ElfSymbol<'a>>,
+) -> Result<MemberSymbols<'a>, SymbolsError> {
+    if archiver == Archiver::GnuAr && lto {
+        return Err(SymbolsError::Unsupported("a GCC LTO object"));
+    }
+    let mut out = MemberSymbols {
+        object: true,
+        symbols: Vec::new(),
+    };
+    for s in symbols {
         let listed = match archiver {
             Archiver::GnuAr => {
-                let common = !in_extended(s.index)
+                let common = !s.extended
                     && (s.shndx == SHN_COMMON
                         || (machine == EM_X86_64 && s.shndx == SHN_X86_64_LCOMMON));
                 s.shndx != SHN_UNDEF

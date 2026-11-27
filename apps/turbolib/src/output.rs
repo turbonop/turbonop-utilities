@@ -137,12 +137,13 @@ pub fn write_beside(
 }
 
 /// Writes the GNU or BSD archive `layout` describes, with each member's
-/// bytes from `members` (empty for a thin archive's), to a new file beside
-/// `path`, and returns that file's path.
-pub fn write_unix_beside(
+/// bytes from `members` as parts in order (none for a thin archive's: a
+/// member folding rewrote is mostly its input's bytes), to a new file
+/// beside `path`, and returns that file's path.
+pub fn write_unix_parts_beside(
     path: &Path,
     layout: &turbonop_archive::unix::Layout,
-    members: &[Bytes<'_>],
+    members: &[Vec<&[u8]>],
 ) -> io::Result<PathBuf> {
     const NEWLINES: [u8; 8] = [b'\n'; 8];
     let mut pieces: Vec<&[u8]> = vec![layout.head()];
@@ -155,10 +156,10 @@ pub fn write_unix_beside(
         pieces.push(header);
         let data = layout.data_size(i);
         if data > 0 {
-            if data != m.data.len() as u64 {
+            if data != m.iter().map(|p| p.len() as u64).sum::<u64>() {
                 return Err(io::Error::other("a member isn't the size laid out"));
             }
-            pieces.extend(segments(*m));
+            pieces.extend(m.iter().copied());
         }
         // (The padding is at most 7 bytes.)
         let pad = usize::try_from(layout.span(i) - header.len() as u64 - data).unwrap_or(8);

@@ -212,6 +212,18 @@ pub struct Report {
     pub debug_roots: usize,
     pub debug_tombstoned: usize,
     pub debug_bytes: u64,
+    /// Givers whose DWARF lost what described their lost code (see the
+    /// `prune` module): the givers, the dead subprograms and variables
+    /// removed, those kept because a kept DIE names them, the other
+    /// entities removed (what only the dead reached, namespaces
+    /// emptied), and the debug bytes removed; and the givers whose DWARF
+    /// stayed as it was, by why.
+    pub debug_pruned: usize,
+    pub debug_dead_removed: usize,
+    pub debug_dead_kept: usize,
+    pub debug_reached_removed: usize,
+    pub debug_pruned_bytes: u64,
+    pub debug_unpruned_why: BTreeMap<&'static str, usize>,
     /// How long each phase took, in order (for `--stats`).
     pub phases: Vec<(&'static str, std::time::Duration)>,
     /// Members whose rewriting failed, kept whole (their copies are still
@@ -1632,8 +1644,19 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                 data: None,
                 input: Some(m),
             }),
-            Some(Ok((data, tomb, removed))) => {
+            Some(Ok((data, tomb, removed, pruned))) => {
                 report.tombstoned += tomb;
+                match pruned {
+                    Some(Ok(p)) => {
+                        report.debug_pruned += 1;
+                        report.debug_dead_removed += p.dead;
+                        report.debug_dead_kept += p.dead_kept;
+                        report.debug_reached_removed += p.reached;
+                        report.debug_pruned_bytes += p.bytes;
+                    }
+                    Some(Err(why)) => *report.debug_unpruned_why.entry(why).or_default() += 1,
+                    None => {}
+                }
                 report.removed_bytes += removed;
                 out.push(Output {
                     name: inputs[m].name.to_vec(),
@@ -1656,7 +1679,10 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
 
 /// A rewritten giver: its bytes, the debug relocations removed, and the
 /// bytes of units removed; or why it couldn't be rewritten.
-type Rewritten = Result<(Vec<u8>, usize, u64), String>;
+type Rewritten = Result<(Vec<u8>, usize, u64, Option<Pruning>), String>;
+
+/// What pruning a giver's DWARF did, or why it didn't.
+type Pruning = Result<prune::Pruned, &'static str>;
 
 /// An unwind entry of a synthesized member: its function's place (an atom
 /// placed, and the offset in it), the entry's bytes, its personality's
@@ -2312,7 +2338,7 @@ fn rewrite_giver(
     gone: &[usize],
     anchors: &BTreeSet<usize>,
     synth: &[Synth],
-) -> Result<(Vec<u8>, usize, u64), String> {
+) -> Rewritten {
     let mut o = p.obj.clone().ok_or("no object")?;
     // What of its DWARF the cut can't move (see `adjust`), read first.
     let plan = adjust::Plan::read(&o).map_err(|e| format!("its DWARF: {e}"))?;
@@ -2362,6 +2388,7 @@ fn rewrite_giver(
     // 1. Debug sections' relocations to what goes: removed, their places
     // all ones (the tombstone address: 0 is an address of the object).
     let mut tomb = 0;
+    let mut gone_info: BTreeSet<u32> = BTreeSet::new();
     let nsec = o.section_count();
     for si in 0..nsec {
         let Some(s) = o.section(si) else { continue };
@@ -2400,6 +2427,9 @@ fn rewrite_giver(
             .iter()
             .map(|&i| (s.relocations[i].address, s.relocations[i].length))
             .collect();
+        if s.name() == b"__debug_info" {
+            gone_info.extend(places.iter().map(|p| p.0));
+        }
         if let Contents::Bytes(b) = &mut s.contents {
             let b = b.to_mut();
             for (at, len) in places {
@@ -2444,6 +2474,7 @@ fn rewrite_giver(
             (s, v)
         })
         .collect();
+    let mut pruned = None;
     let old: Vec<(u64, u64)> = o.sections().map(|s| (s.addr, s.size())).collect();
     let cut = o.cut(&cuts).map_err(|e| e.to_string())?;
     if !cut.dangling.is_empty() {
@@ -2464,6 +2495,17 @@ fn rewrite_giver(
         };
         plan.apply(&mut o, &map)
             .map_err(|e| format!("its DWARF: {e}"))?;
+        // Its DWARF without what described the lost code (see `prune`),
+        // or as it is.
+        let mut t = o.clone();
+        match prune::prune(&mut t, &gone_info, &gone_syms) {
+            Ok(Some(st)) => {
+                o = t;
+                pruned = Some(Ok(st));
+            }
+            Ok(None) => {}
+            Err(e) => pruned = Some(Err(e)),
+        }
     }
     // 3. Symbols: moved names become weak references, locals of the units
     // go; the anchors are added.
@@ -2509,11 +2551,12 @@ fn rewrite_giver(
     o.update_dysymtab();
     o.relayout();
     let data = o.write().map_err(|e| e.to_string())?;
-    Ok((data, tomb, removed))
+    Ok((data, tomb, removed, pruned))
 }
 
 #[doc(hidden)]
 pub mod adjust;
 mod debug;
+mod prune;
 #[cfg(test)]
 mod tests;

@@ -2214,7 +2214,8 @@ dSYMs are this LLVM's dsymutil's.
   template arguments, its synthesized member holds them as declarations,
   and dsymutil (classic, ODR uniquing) had kept a giver's definition that
   nothing in the dSYM referred to. Why it keeps it wasn't established
-  (dsymutil's source isn't read here); named types are kept since.
+  then (7.6 found it: an earlier `using namespace std::chrono` keeps the
+  namespace whole); named types were kept since.
 - **`verify`** checks pruned DWARF apart from the engine
   (`turbonop_verify::macho::pruned`): the two DIE trees aligned, only
   whole subtrees missing below the unit and namespaces; every kept DIE the

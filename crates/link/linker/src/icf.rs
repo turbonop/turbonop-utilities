@@ -193,9 +193,31 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
                 h.u64(u64::from(rel.kind.get()));
                 match target(f, rel.symbol_table_index.get()) {
                     // A reference to the parent itself (a .pdata entry's
-                    // function) is the same in every copy.
+                    // function) is the same in every copy, as long as it
+                    // names the parent the same way: link.exe keeps a copy
+                    // whose .pdata names the function's own COMDAT symbol
+                    // (a static function's, as cl writes it: LIBCMTD's
+                    // ReadNoFence64, LLVM's vector<GPUEntry>::_Change_array)
+                    // apart from one whose .pdata names a label in it
+                    // (`$LN4`, an external function's).
                     Target::Candidate(c, v) if candidates[c as usize] == own => {
-                        h.u64(1);
+                        // (And by that symbol's kind: a static one isn't an
+                        // external one.)
+                        let k = rel.symbol_table_index.get();
+                        let how = if object.comdat_leaders.get(own.1 as usize) == Some(&k) {
+                            if object
+                                .symbols
+                                .get(k as usize)
+                                .is_some_and(crate::object::Symbol::is_external)
+                            {
+                                8
+                            } else {
+                                7
+                            }
+                        } else {
+                            1
+                        };
+                        h.u64(how);
                         h.u64(u64::from(v));
                     }
                     Target::Candidate(c, v) => {

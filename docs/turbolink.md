@@ -151,7 +151,9 @@ lists every COFF group with its address and size) and by experiment:
   whose every section `/OPT:REF` discarded is kept, empty, and still
   starts at their alignment: guard_support.obj's 128-byte-aligned
   `.rdata$CastGuardVftablesA` and `C` put the next group (`.rdata$r`,
-  `.rdata$T`, `.rdata$voltmd`) on 128 bytes.
+  `.rdata$T`, `.rdata$voltmd`) on 128 bytes. A discarded section counts
+  in a group that keeps others too: LIBCMTD's `.rdata` starts on 32
+  bytes though nothing kept in it wants more than 16.
 - **Commons** go at the end of `.bss`, module by module: the command
   line's objects in order, then each library's, the last loaded first.
 - **What link.exe adds to `.rdata`:** the volatile metadata
@@ -176,7 +178,11 @@ lists every COFF group with its address and size) and by experiment:
   kept is the first, at the largest alignment of its class (main's
   unwind data on 8 when handlers.obj's, on 8, folds into it). A folded
   function's `.pdata` goes, even when it hangs off an unfolded parent (a
-  C++ funclet's). Import thunks are in the `.text$mn` group.
+  C++ funclet's). Copies are the same only if their unwind data names
+  the function the same way: by a label in it (`$LN4`, as cl writes it
+  for an external function), by its own static symbol (a static
+  function), or by its own external symbol; LIBCMTD's static
+  `ReadNoFence64` doesn't fold into cpp.obj's identical `_Bit_cast`. Import thunks are in the `.text$mn` group.
 - **The imports within one DLL** are in `qsort`'s order: link.exe's
   `SortPGRPByPMOD` sorts each `.idata` group's contributions with the
   C runtime's `qsort` and `CompareIdataPCON`, which compares the DLLs'
@@ -229,17 +235,11 @@ lists every COFF group with its address and size) and by experiment:
 - **Still different** (to do): the
   `/Brepro` hash (it depends on the output's contents, not its name or
   the options, but isn't a plain SHA-1/256/512 or MD5 of the file with
-  its time stamps and hash zeroed); unoptimized C++ with the static debug
-  CRT and no `/DEBUG`: link.exe doesn't fold LIBCMTD's guard_support.obj's
-  static `ReadNoFence64` and `ReadPointerNoFence` into identical
-  functions (turbolink does), for a reason not found yet (not their names,
-  symbol class or type, the object's `@comp.id` or `@feat.00`, or its
-  `.debug$S`; its map lists them without the COMDAT `i` flag). The same
-  holds in LLVM's `llvm-tblgen` (AMDGPUTargetDefEmitter's static
-  `vector<GPUEntry>::_Change_array`, which turbolink folds three identical
-  instantiations into): most of what still differs there (0x2530 bytes
-  of code, 102 `.pdata` entries); a
-  delay-loaded DLL's name and address tables with two or more imports
+  its time stamps and hash zeroed); LLVM's `llvm-tblgen`, which is
+  link.exe's image but for where 4 bytes of padding fall (link.exe
+  starts `.idata$2` on 8 bytes there, on 4 in a small program, and every
+  import library's pieces are on 4: not yet explained); a delay-loaded
+  DLL's name and address tables with two or more imports
   (link.exe's order isn't load order, and no `qsort` of it found yet:
   loads C,D give D,C; C,D,S give S,D,C; C,D,X,S give S,D,X,C; C,Q,F,X,E,G
   give G,Q,F,X,E,C; C,Q,F,A,X,E,B,I,M,G give C,M,Q,F,A,X,E,B,I,G).

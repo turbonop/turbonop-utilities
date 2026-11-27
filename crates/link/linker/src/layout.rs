@@ -884,12 +884,27 @@ pub fn layout(
         // The DLLs' entries (`.idata$2`, from each import descriptor), and
         // the null entry after them (`.idata$3`, the null import
         // descriptor's): link.exe's groups.
+        // (Each aligned as the import libraries' own pieces are: an import
+        // descriptor's .idata$2 may want 8.)
+        let piece_align = |name: &[u8]| {
+            r.files
+                .iter()
+                .filter(|f| f.idata.is_some())
+                .filter_map(|f| match &f.kind {
+                    FileKind::Object { object, .. } => Some(object),
+                    FileKind::Import { .. } => None,
+                })
+                .flat_map(|o| o.sections.iter())
+                .filter(|s| s.name == name)
+                .map(crate::object::Section::alignment)
+                .fold(4, u32::max)
+        };
         add(
             b".idata$2",
             data,
             Chunk {
                 kind: ChunkKind::ImportDirectory,
-                align: 4,
+                align: piece_align(b".idata$2"),
                 size: crate::n32(dlls.len() * 20),
                 uninitialized: false,
                 rva: 0,
@@ -901,7 +916,7 @@ pub fn layout(
             data,
             Chunk {
                 kind: ChunkKind::NullImportDescriptor,
-                align: 4,
+                align: piece_align(b".idata$3"),
                 size: 20,
                 uninitialized: false,
                 rva: 0,
@@ -1182,12 +1197,43 @@ pub fn layout(
             );
         }
     }
-    // The groups only discarded sections were in.
+    // The groups only discarded sections were in; and the groups with a
+    // discarded section aligned more than what stays: such a group still
+    // starts at that alignment, as link.exe places it (LIBCMTD's .rdata on
+    // 32 bytes though nothing kept in it wants more than 16).
     let mut emptied: Map<(&'static [u8], u32), u32> = Map::default();
+    let mut aligned: Map<usize, u32> = Map::default();
     for (name, chars, align) in discarded {
-        if !partial_index.contains_key(&(name, chars & scn::OUTPUT_MASK)) {
-            let a = emptied.entry((name, chars & scn::OUTPUT_MASK)).or_insert(1);
-            *a = (*a).max(align);
+        match partial_index.get(&(name, chars & scn::OUTPUT_MASK)) {
+            Some(&p) => {
+                let a = aligned.entry(p).or_insert(1);
+                *a = (*a).max(align);
+            }
+            None => {
+                let a = emptied.entry((name, chars & scn::OUTPUT_MASK)).or_insert(1);
+                *a = (*a).max(align);
+            }
+        }
+    }
+    let mut aligned: Vec<_> = aligned.into_iter().collect();
+    aligned.sort_unstable();
+    for (p, align) in aligned {
+        let most = partials[p]
+            .1
+            .iter()
+            .map(|&c| chunks[c as usize].align)
+            .max()
+            .unwrap_or(1);
+        if align > most {
+            let c = crate::n32(chunks.len());
+            chunks.push(Chunk {
+                kind: ChunkKind::Empty,
+                align,
+                size: 0,
+                uninitialized: partials[p].0.2 & scn::CNT_UNINITIALIZED_DATA != 0,
+                rva: 0,
+            });
+            partials[p].1.insert(0, c);
         }
     }
     let mut emptied: Vec<_> = emptied.into_iter().collect();

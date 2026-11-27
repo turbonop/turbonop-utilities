@@ -642,17 +642,14 @@ static CRTs, C with the debug CRT, a DLL with exports.
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
   members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`, `/Brepro`'s hash.
-- **Byte identity, still different:** unoptimized C++ with the static
-  debug CRT and no `/DEBUG` (link.exe keeps LIBCMTD's guard_support.obj's
-  static `ReadNoFence64` apart; why isn't known); a delay-loaded DLL's
-  tables with two or more imports (link.exe's order, docs/turbolink.md);
-  large programs
-  (`llvm-tblgen`'s image differs: `hexcavator diff` it).
+- **Byte identity, still different:** a delay-loaded DLL's tables with
+  two or more imports (link.exe's order, docs/turbolink.md);
+  `llvm-tblgen`'s 4 bytes of padding before `.idata$2`; more large
+  programs to check (`llc`, `opt`: `hexcavator diff` them).
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
   under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
   header's walk when a library is searched in several passes (each pass's
-  modules made in offset order?); whether a dead section's alignment counts
-  in a group that has live contributions too.
+  modules made in offset order?).
 - **Speed.** Measure large links (LLVM's) once the build machine is idle.
   Layout hashes owned copies of names per chunk (24 ms of 90 for
   `llvm-tblgen`); symbols are interned on one thread; the `/OPT:REF` mark

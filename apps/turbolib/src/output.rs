@@ -7,7 +7,10 @@
 //! first, or that is written out of order, is zero-filled by NTFS up to each
 //! write (its valid data length), which made writing 1 GiB take 1.2 to 1.4 s
 //! against 0.3 s in order (measured on this PC's NVMe drive): in order, the
-//! write is the kernel's copy into the file cache, at memory speed.
+//! write is the kernel's copy into the file cache, at memory speed. On
+//! Windows, the bytes are first copied into chunks on every thread (which
+//! faults the inputs' mappings in at once); elsewhere each large piece is
+//! written straight from its bytes.
 //!
 //! The library is written to a file beside the output and renamed over it
 //! once it is complete, so the output is never half-written, and an input
@@ -48,11 +51,41 @@ fn segments<'a>(b: Bytes<'a>) -> Vec<&'a [u8]> {
 }
 
 /// The output is copied, on every thread, into chunks of this size, which
-/// one thread then writes in order.
+/// one thread then writes in order (Windows).
+#[cfg_attr(unix, allow(dead_code))]
 const CHUNK: usize = 4 << 20;
+
+/// Writes `pieces` in order, each large one straight from its bytes (the
+/// kernel's copy is the only one) and runs of small ones (headers,
+/// padding) gathered first. On Linux this is faster than copying chunks
+/// on every thread and writing those: writing `libclangSema.a` folded
+/// (1.45 GB, its inputs in the page cache) took 0.32 to 0.35 s this way
+/// against 0.38 to 0.63 s.
+#[cfg(unix)]
+fn write_direct(file: &File, pieces: &[&[u8]]) -> io::Result<()> {
+    const SMALL: usize = 64 << 10;
+    let mut buf: Vec<u8> = Vec::with_capacity(SMALL);
+    for &p in pieces {
+        if p.len() >= SMALL {
+            if !buf.is_empty() {
+                io::Write::write_all(&mut &*file, &buf)?;
+                buf.clear();
+            }
+            io::Write::write_all(&mut &*file, p)?;
+        } else {
+            if buf.len() + p.len() > SMALL {
+                io::Write::write_all(&mut &*file, &buf)?;
+                buf.clear();
+            }
+            buf.extend_from_slice(p);
+        }
+    }
+    io::Write::write_all(&mut &*file, &buf)
+}
 
 /// `pieces`, in order, cut into chunks of `CHUNK` bytes (the last may be
 /// shorter): each chunk the pieces' parts it holds.
+#[cfg(not(unix))]
 fn chunks<'a>(pieces: &[&'a [u8]]) -> Vec<Vec<&'a [u8]>> {
     let mut out: Vec<Vec<&[u8]>> = vec![Vec::new()];
     let mut room = CHUNK;
@@ -145,6 +178,9 @@ pub fn write_pieces_beside(path: &Path, pieces: &[&[u8]]) -> io::Result<PathBuf>
     name.push(format!(".turbolib-{}.tmp", std::process::id()));
     let temp = path.with_file_name(name);
     let file = File::create(&temp)?;
+    #[cfg(unix)]
+    let result = write_direct(&file, pieces);
+    #[cfg(not(unix))]
     let result = {
         let chunks = chunks(pieces);
         // A batch of chunks at a time is copied on every thread while one

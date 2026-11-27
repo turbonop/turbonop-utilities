@@ -10,9 +10,12 @@
 #
 #     run.sh TURBOLIB OUT [CONFIG...]
 #
-# A CONFIG is <compiler>-<DWARF version>-<optimization>[-split], e.g.
+# A CONFIG is <compiler>-<DWARF version>-<optimization>[-split|-crel], e.g.
 # gcc-5-O0 or clang-4-O2 (the default: every combination of gcc and clang,
-# DWARF 4 and 5, -O0 and -O2). LINKERS overrides "bfd gold lld mold".
+# DWARF 4 and 5, -O0 and -O2, and the split and CREL ones below). -crel
+# assembles with LLVM's compact relocations (clang's -Wa,--crel), which GNU
+# ld refuses and gold ignores: those link with lld and mold only. LINKERS
+# overrides "bfd gold lld mold".
 # Prints one line per check, and exits 1 if any fails.
 
 set -u
@@ -28,8 +31,8 @@ if [ ${#configs[@]} -eq 0 ]; then
   for c in gcc clang; do for v in 4 5; do for o in O0 O2; do configs+=("$c-$v-$o"); done; done; done
   configs+=(gcc-5-O0-split gcc-5-O2-split clang-5-O0-split clang-5-O2-split)
   configs+=(gcc-4-O0-split gcc-4-O2-split clang-4-O0-split clang-4-O2-split)
+  configs+=(clang-5-O0-crel clang-5-O2-crel clang-4-O0-crel clang-4-O2-crel)
 fi
-linkers=${LINKERS:-"bfd gold lld mold"}
 failed=0
 check() { # name, status
   if [ "$2" -eq 0 ]; then echo "ok    $1"; else echo "FAIL  $1"; failed=1; fi
@@ -41,7 +44,7 @@ normalize() {
 
 
 for config in "${configs[@]}"; do
-  IFS=- read -r cc v opt split <<<"$config"
+  IFS=- read -r cc v opt variant <<<"$config"
   case $cc in
     gcc) cxx=g++ ;;
     clang) cxx=clang++ ;;
@@ -51,7 +54,14 @@ for config in "${configs[@]}"; do
   rm -rf "$d"
   mkdir -p "$d"
   flags=(-g "-gdwarf-$v" "-$opt" -ffunction-sections -fdata-sections -I"$SRC")
-  [ "${split:-}" = split ] && flags+=(-gsplit-dwarf)
+  linkers=${LINKERS:-"bfd gold lld mold"}
+  case ${variant:-} in
+    split) flags+=(-gsplit-dwarf) ;;
+    crel)
+      flags+=(-Wa,--crel,--allow-experimental-crel)
+      linkers=${LINKERS:-"lld mold"}
+      ;;
+  esac
   (
     cd "$d" || exit 1
     for n in a b c main; do

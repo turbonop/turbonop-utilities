@@ -27,7 +27,7 @@ items leave TODO.md as they ship.
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links); 3.5 done, as `--precomp=clustered[=<n>]` (opt-in; see [Phase 3.5 results](#phase-35-results-clustered)). |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
-| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; GNU's split DWARF 4 too; initializer entries in groups kept from folding; the original members loaded in the original order by all four linkers; the clang corpus (relib byte for byte, folded 2.4% smaller, verified, relinked; see 6.6); every differing description proven another unit's copy; 0.80× GNU `ar`'s time folding the 20 largest libraries (a noisy measurement). Not yet: `select-any` and `--locals` for ELF. |
+| 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; GNU's split DWARF 4 too; initializer entries in groups kept from folding; the original members loaded in the original order by all four linkers; the clang corpus (relib byte for byte, folded 2.4% smaller, verified, relinked; see 6.6); every differing description proven another unit's copy; folding the 20 largest libraries in 0.49× to 0.60× GNU `ar`'s time, 3.9× a Release `llvm-ar`'s (6.7, noisy measurements); `compare-images` reading the clang corpus's last differences; CREL objects read, written, and folded (6.7). Not yet: `select-any` and `--locals` for ELF. |
 | 7 Mach-O | In progress (see [Phase 7 results](#phase-7-results)). Done: 7.1, Darwin archives (all 160 archives of the Mach-O corpus written back byte for byte and remade by their own commands; 41 of 41 command lines as `llvm-ar`, `llvm-ranlib`, and `llvm-libtool-darwin` behave) and the `libtool -static` personality (`llvm-libtool-darwin`'s; 0.70× the real tools' time); 7.2, `turbonop-macho-object` (all 5,732 corpus objects round-trip byte for byte, and laid out afresh reproduce LLVM's bytes); 7.3, a first `--fold=identical` for Mach-O, with `verify`; 7.4, x86-64's FDEs and LSDAs move with their units (x86-64 now folds as arm64 does: 36,348 units, 169,617 copies), givers' DWARF moves with their code, synthesized members carry their units' DWARF (every folded unit's), and `compare-images` for Mach-O (dSYMs' DWARF too). Not yet: Apple's `libtool`/`ranlib`, linkers, and dsymutil (not available here); the size the DWARF costs (the folded archives are 9.1% larger); 3.55× the real tools' time folding. |
 
 ### Picking this up elsewhere
@@ -1638,6 +1638,143 @@ refaulting memory: with `MIMALLOC_PURGE_DELAY=-1`, 68 s of system time
 became 16 s before the changes above. Setting the option takes an
 unsafe call into mimalloc, so it isn't done. `ranlib` after `ar qc`
 still folds again (finding nothing new).
+
+### Speed, the clang corpus's last differences, and CREL (6.7)
+
+**Folding's speed.** What 6.6 left, measured on the gcc build's
+libraries (8 threads; `--stats`' phases):
+
+- **Choosing**: the closure "a unit naming what stays in its member stays
+  too" rebuilt the set of every folded name and rescanned every unit
+  until nothing changed. It is now a worklist: each name of a folding
+  unit belongs to that unit alone (every definition of it is a copy), so
+  a unit whose needed name belongs to none stays, and so does each unit
+  needing one of its names. The needs are found on every core.
+  `libclangSema.a`: 0.81 s to 0.02 s.
+- **Scheduling**: members were split into equal chunks per thread, while
+  their sizes differ a thousandfold (`libclangCIR.a`'s largest member is
+  588 MB of its 1.63 GB). `turbonop_par::map_costed` takes the dearest
+  item first, one at a time; reading, rewriting, reading DWARF, and
+  synthesizing use it.
+- **Huge members**: a member of many units hashes them on every core; a
+  unit's DIEs are searched for roots (DIEs with addresses in units'
+  sections) in chunks on every core; string tables are sorted comparing
+  names backwards eight bytes at a time, and on every core
+  (`turbonop-elf-object`'s `parallel` feature, which the fold engine turns
+  on). Writing `CIRGenStmtOpenMP.cpp.o` (its 266 MB string table, 228,727
+  names, rebuilt) took 1.33 s; about 0.4 s now.
+- **Relocations as bytes**: `turbonop-elf-object` keeps a relocation
+  section as the file's bytes (`Relocations`), reads entries from them on
+  demand, renumbers symbols in a copy of the bytes, and writes unchanged
+  ones back as they are; only an edit as values decodes them. Sections'
+  bytes are no longer copied before being placed in the written member,
+  and in the layout read, bytes already in place aren't copied again.
+- **Writing**: on Unix the archive is written straight from the members'
+  bytes (small pieces gathered); Windows keeps its parallel chunk copies
+  (NTFS, see `output.rs`). Writing folded `libclangSema.a`: 0.38 to 0.63 s
+  before, 0.32 to 0.35 s.
+- **`ranlib` after `ar qc`**: an archive that would be written as the
+  bytes it already holds (every member the archive's own bytes at its
+  place; the index, long names, headers, and padding the same) isn't
+  written again; only its date is set. Refolding a folded archive finds
+  nothing new (the units that folded are single copies now), so CMake's
+  `ranlib` costs reading and choosing: on folded `libclangSema.a`, 0.88 s
+  became 0.35 s; `ar s` of the build's (already indexed) `libclangSema.a`,
+  1.21 s became 0.18 s (GNU `ranlib`: 3.49 s).
+- **mimalloc**: turbolib now calls `turbonop_global_alloc::for_batch_work`
+  first (purge delay -1). Best of 3, before and after: system time 3.03 to
+  1.95 s (`libclangSema.a`), 2.28 to 1.13 s (`libclangCIR.a`), 1.96 to
+  1.55 s (`libLLVMCodeGen.a`). Three more options were tried on top
+  (`arena_eager_commit`, `eager_commit_delay` 0, `purge_decommits` 0;
+  each, and all together; seven interleaved rounds of four libraries):
+  medians 7.41 to 7.69 s against 7.96 s, within the rounds' spread (6.5 to
+  10.7 s; another session's builds ran at times), so none is set.
+
+| `relib.py --time --options=--fold=identical` (the 20 largest libraries, each library's CMake commands, best of 2) | archiver | turbolib | ratio |
+|---|---|---|---|
+| gcc build (13.79 GiB), against GNU `ar` and `ranlib` 2.46, this session's first build | 44.97 s | 39.58 s | 0.88× |
+| the same, after the speed changes (three occasions: a build before the parallel hashing and DWARF roots, then the last build twice) | 36.84 s, 40.20 s, 40.24 s | 17.89 s, 20.94 s, 24.22 s | 0.49×, 0.52×, 0.60× |
+| gcc build, against a Release `llvm-ar` and `llvm-ranlib` (`release-tools.sh`, the corpus's LLVM) | 5.94 s | 23.26 s | 3.92× |
+| clang build (4.29 GiB), against the same | 1.91 s | 8.28 s | 4.32× |
+| gcc build without folding, against the Release `llvm-ar` | 6.57 s | 7.03 s | 1.07× |
+
+None of these is a quiet measurement: another session's Mach-O runs came
+and went throughout (load averages 0.4 to 4.6 around them; the scripts
+waited for a minute below 0.8 or 1.5 before each). The corpus builds' own
+`llvm-ar` is a Debug build, far slower than a user's, hence the Release
+one. Against it, folding costs about 4× an archiver that only indexes:
+GNU `ar` reads each member through BFD, `llvm-ar` barely reads them.
+
+| `ar s --fold=identical`, one library (`--stats` phases) | first build | last build |
+|---|---|---|
+| `libclangSema.a` (1.45 GB) | 4.25 s (reading 0.33, choosing 0.84, rewriting 0.65, DWARF 0.58, synthesizing 1.16; 5.1 s of system time) | 3.62 s (0.17, 0.10, 0.45, 0.81, 1.15; 4.8 s) |
+| `libclangCIR.a` (1.77 GB) | 2.97 s (0.30, 0.19, 0.81, 0.57, 0.28) | 2.14 s (0.23, 0.06, 0.32, 0.40, 0.21) |
+
+(The per-library runs vary by a third from run to run on this shared
+machine; the first build's `libclangSema.a` was measured on a quiet one.)
+
+The output is the same bytes as before these changes: all 265 libraries
+of each corpus, folded by this session's first and last builds, compare
+equal; `-j 1`, `3`, and `8` give the same bytes (`libclangSema.a`,
+`libclangCIR.a`, `libLLVMSupport.a`); `relib.py` remakes all 265 of each
+corpus byte for byte; `arcompare.py`'s 60 scenarios behave as GNU `ar` and
+`llvm-ar`; every object of both corpora round-trips byte for byte, and
+decoded to values and encoded again too (`roundtrip -relayout` now checks
+that, for REL, RELA, and CREL).
+
+What is left: a huge member's string table is assembled, and its sections
+copied into the member, on one thread; a rewritten member is built whole
+in memory before the archive writer copies it (borrowing the input's
+pieces would save that copy, but the index is computed from the member's
+bytes); `Source::new` copies each debug section to apply its relocations.
+
+**`compare-images` on the clang corpus.** The three kinds of difference
+6.6 left are read now:
+
+- **A constant named by its contents** ran on past its end into what the
+  layout put after it (16 bytes of `identify_magic`'s, 8 of `expf`'s). A
+  RIP-relative load of a known size (`movdqa`, `movsd`) reads that many
+  bytes, so those are compared; an address taken (`lea`) still names the
+  contents to a NUL or 4096 bytes.
+- **The jump table** of `VPIntrinsic::getVectorLengthParamPos` (298
+  entries) was read on into the next function's table, whose entries,
+  read relative to this table's start, landed in this function too, at
+  places the layout set. A table now ends at the next address outside
+  code that code names (every function's RIP-relative operands, decoded
+  once per program, on every core).
+- **mold's relaxed TLS**: mold rewrites a dynamic TLS access as
+  `mov %fs:0,R; sub $S,R` (S the TLS block's aligned size, so R is the
+  block's start), and the compiler's `d(R)` follows (`lea 0x20(%rax)`),
+  possibly after copies (`mov %rax,%rcx`). S and d are named in each
+  program's TLS layout; R is followed through register copies and
+  forgotten when written (every register, at an instruction that might
+  write one otherwise). The same bytes naming other variables fail (`code
+  whose TLS offsets name other variables`). Unit tests cover the copy, a
+  write in between, another variable, and another block size.
+
+| `compare-images` of the relinks (`llvm-nm`, `llvm-readobj`; GNU ld, gold, lld, mold), original against folded | failures |
+|---|---|
+| clang corpus | 0, 1, 1, 0; 0, 0, 0, 0: the 2 descriptions `witness.py` proved another unit's copy (6.6). Before: also 1 or 2 per `llvm-nm` link (operands) and 21 for `llvm-readobj` with mold (bytes) |
+| gcc corpus | 5, 12, 20, 9; 5, 6, 15, 7: the 79 descriptions proven another unit's copy (6.6), nothing else |
+| each original against a second link of itself (16) | equivalent |
+
+**CREL** (LLVM's compact relocations, `SHT_CREL`; clang's
+`-Wa,--crel,--allow-experimental-crel`). `turbonop-elf-object` decodes a
+CREL section as LLVM's `decodeCrel` does into relocations (their `r_info`
+packed as the class's REL entries pack it), keeps the bytes read to write
+back while nothing changes the entries, and otherwise encodes them as
+LLVM's `encodeCrel` does. The fold engine folds members whose CREL
+sections have addends (LLVM's assembler always writes them; without, or
+on MIPS64, the member passes through); a synthesized member's copied
+sections stay CREL, its DWARF's relocations are RELA. GNU ld refuses CREL
+objects, and gold accepts them and applies none of their relocations, so
+only lld and mold are checked.
+
+| Check | Result |
+|---|---|
+| unit test: LLVM's encoding of a hand-checked pair; 2,000 entries in each class, with and without addends, offsets falling back and jumping | encoding and decoding are inverse; trailing or missing bytes are refused |
+| `elf-debug`'s `clang-{4,5}-{O0,O2}-crel` (lld, mold) | 36 of 36 checks pass (`verify`, output, `compare-images`, gdb); the same folds as without CREL (63 units, 189 copies at `-O0`) |
+| clang's 16 CREL objects and the folded archives' members (`roundtrip -relayout`) | 67 of 67 written back byte for byte, laid out afresh the same, and every relocation section encoded again from values byte for byte (LLVM's encoder reproduced) |
 
 ## Phase 7 results
 

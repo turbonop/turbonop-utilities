@@ -11,6 +11,11 @@ repository.workspace = true
 [dependencies]
 turbonop-core.workspace = true
 turbonop-elf.workspace = true
+turbonop-par = { workspace = true, optional = true }
+
+[features]
+# Large objects' string tables sorted on every core (turbonop-par, std).
+parallel = ["dep:turbonop-par"]
 
 [lints]
 workspace = true

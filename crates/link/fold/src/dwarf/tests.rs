@@ -275,20 +275,20 @@ fn member(own: &'static [u8]) -> Vec<u8> {
     };
     let ri: Vec<Relocation> = info_rels.into_iter().map(|x| rel(&o, x)).collect();
     let rl: Vec<Relocation> = line_rels.into_iter().map(|x| rel(&o, x)).collect();
-    o.sections[6].data = Data::Relocations(ri);
-    o.sections[9].data = Data::Relocations(rl);
+    o.sections[6].data = Data::Relocations(ri.into());
+    o.sections[9].data = Data::Relocations(rl.into());
     o.write().unwrap()
 }
 
-fn relocations_for<'o>(o: &'o Object<'_>, section: usize) -> &'o [Relocation] {
+fn relocations_for(o: &Object<'_>, section: usize) -> Vec<Relocation> {
     match o
         .sections
         .iter()
         .find(|s| s.is_relocations() && s.info as usize == section)
         .map(|s| &s.data)
     {
-        Some(Data::Relocations(rs)) => rs,
-        _ => &[],
+        Some(Data::Relocations(rs)) => rs.to_vec(),
+        _ => Vec::new(),
     }
 }
 

@@ -1072,12 +1072,69 @@ fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>
         .collect())
 }
 
+/// Whether the archive at `path` is already the bytes `layout` lays out:
+/// every member's bytes the ones in that archive's mapping, at their places
+/// in it (so they aren't compared), and its symbol table, long names,
+/// headers, and padding the same bytes.
+fn unchanged(path: &Path, layout: &Layout, members: &[Item]) -> bool {
+    let Some(map) = members
+        .first()
+        .and_then(|m| m.bytes.as_ref())
+        .map(|b| Arc::clone(&b.map))
+    else {
+        return false;
+    };
+    let file = map.as_slice();
+    if layout.size() != file.len() as u64
+        || std::fs::metadata(path).map(|m| m.len()).ok() != Some(file.len() as u64)
+        || file.get(..layout.head().len()) != Some(layout.head())
+    {
+        return false;
+    }
+    members.iter().enumerate().all(|(i, m)| {
+        let Some(b) = &m.bytes else {
+            return false;
+        };
+        // (The layout's size is the mapping's, so these fit.)
+        let (Ok(at), Ok(span)) = (
+            usize::try_from(layout.offset(i)),
+            usize::try_from(layout.span(i)),
+        ) else {
+            return false;
+        };
+        let header = layout.header(i);
+        let data = at + header.len();
+        let end = at + span;
+        Arc::ptr_eq(&b.map, &map)
+            && b.start == data
+            && b.len as u64 == layout.data_size(i)
+            && file.get(at..data) == Some(header)
+            && file
+                .get(data + b.len..end)
+                .is_some_and(|pad| pad.iter().all(|&c| c == b'\n'))
+    })
+}
+
 /// Writes `plan` to `archive`. The plan's members are the last holders of
 /// their files' mappings (the caller drops its own): they are let go
 /// before the new archive takes the old one's place, which Windows needs.
 pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fatal> {
     let thin = plan.thin;
     let (layout, members) = lay_out(run, archive, plan)?;
+    let path = run.resolve(archive);
+    if !thin && unchanged(&path, &layout, &members) {
+        // The archive is already these bytes (`ranlib` after `ar qc` folded
+        // it, or of an archive whose index is current): only its date
+        // changes, as a rewrite would change it. (If it can't be set, the
+        // archive is written as ever.)
+        let touched = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|f| f.set_modified(std::time::SystemTime::now()));
+        if touched.is_ok() {
+            return Ok(());
+        }
+    }
     let datas: Vec<output::Bytes<'_>> = members
         .iter()
         .map(|m| output::Bytes {
@@ -1085,7 +1142,6 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fa
             holes: &[],
         })
         .collect();
-    let path = run.resolve(archive);
     let temp = output::write_unix_beside(&path, &layout, &datas)
         .map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
     drop(datas);

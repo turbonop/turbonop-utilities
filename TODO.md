@@ -473,31 +473,37 @@ x64. Where the 3.5 MB went:
     pools, jump tables, `.gcc_except_table`: name them by content or by
     the references into them) and has decoded no ARM64 ELF image;
     `verify` leaves synthesized members' DWARF to `compare-images`.
-    Content naming should stop at a constant's end (`SHF_MERGE` entry
-    sizes are lost in the image; the reference's access size isn't
-    known).
+    Content naming stops at a constant's end only for loads of a known
+    size (the accessed bytes are compared, the plan's 6.7); an address
+    taken (`lea`) still names its contents to 4096 bytes or a NUL
+    (`SHF_MERGE` entry sizes are lost in the image).
   - Untested: REL machines (i386, ARM) and big-endian objects in a fold;
     AArch64, RISC-V, MIPS objects at all; GCC LTO objects and LLVM
     bitcode members (the `ar` personality refuses to index them); BSD
     archives from GNU `ar` (this binutils can't write them); thin archives
     and `--fold` (refused); `ar` on Windows hosts beyond the unit tests.
   - GNU `ar -M`'s `DIRECTORY`, `EXTRACT`, `LIST`, `VERBOSE`, and `FULLDIR`.
-  - **Folding's speed**: 0.80× GNU `ar`'s time on the gcc build's 20
-    largest libraries (the plan's 6.6, a noisy run). Left: choosing runs on
-    one thread (2.8 s of `libclangSema.a`'s 15.5 s); a huge member is
-    rewritten and its DWARF read on one thread each; mimalloc's purging
-    costs about two fifths of the CPU time as system time (`MIMALLOC_PURGE_DELAY=-1`
-    cut it 4×; setting it takes an unsafe call); `turbonop-elf-object`
-    decodes and re-encodes every relocation section and a rewritten member
-    is copied twice (`Object::write`, then the archive writer); `ranlib`
-    after `ar qc` folds again (finding nothing new). Measure again on a
-    quiet machine.
-  - The clang corpus is done (the plan's 6.6) but for CREL objects
-    (`-Wa,--crel`: the corpus has none; the engine passes such members
-    through) and what `compare-images` doesn't read there yet: a
-    constant named by contents that run past it (2 functions of
-    `llvm-nm`), one jump table not recognized, and mold's TLS relaxation
-    (`sub $tls_size` then `lea off(%reg)`: 21 functions of `llvm-readobj`).
+  - **Folding's speed** (the plan's 6.7): 0.49× to 0.60× GNU `ar`'s time
+    on the gcc build's 20 largest libraries (0.88× at the start), but 3.9×
+    a Release `llvm-ar`'s (4.3× on the clang build; without folding,
+    1.07×); none measured on a quiet machine (another session's runs came
+    and went). Most of the gap to `llvm-ar` is reading DWARF and
+    synthesizing (`libclangSema.a`: 0.8 s and 1.2 s of 3.6 s). Left: a huge
+    member's string table is still assembled, and its sections copied into
+    the member, on one thread (writing `CIRGenStmtOpenMP.cpp.o`, 588 MB,
+    takes about 0.4 s); a rewritten member is still built
+    whole in memory before the archive writer copies it (pieces borrowed
+    from the input would save that copy, but the index is computed from
+    the member's bytes); `Source::new` copies each debug section to apply
+    its relocations. Other mimalloc options (arena eager commit, eager
+    commit delay 0, no decommit on purge) showed nothing beyond the noise
+    of a shared machine, so only the purge delay is set.
+  - CREL objects are read, written, and folded (the plan's 6.7; LLVM's
+    encoder reproduced byte for byte on clang's objects). Not handled: CREL
+    without addends (the member passes through), CREL on MIPS64 (left as
+    bytes, so the member passes through), and GNU ld, which refuses CREL
+    (gold accepts it and applies none of its relocations). A synthesized
+    member's DWARF relocations are RELA even when its units' are CREL.
 - **Phase 7: Mach-O** (see the plan's "Phase 7 results"). Done: Darwin
   archives and the `libtool -static` personality (7.1), the object model
   (7.2), `--fold=identical` with `verify` (7.3), x86-64's FDEs and LSDAs

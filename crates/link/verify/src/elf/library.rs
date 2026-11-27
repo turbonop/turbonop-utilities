@@ -153,11 +153,13 @@ fn bytes<'o>(data: &'o Data<'_>) -> &'o [u8] {
     }
 }
 
-fn relocations<'o>(data: &'o Data<'_>) -> &'o [Relocation] {
+fn relocations<'o>(data: &'o Data<'_>) -> impl Iterator<Item = Relocation> + Clone + 'o {
     match data {
-        Data::Relocations(r) => r,
-        _ => &[],
+        Data::Relocations(r) => Some(r.iter()),
+        _ => None,
     }
+    .into_iter()
+    .flatten()
 }
 
 fn read_u32(b: &[u8], at: usize, big: bool) -> Option<u32> {
@@ -453,7 +455,7 @@ fn read_eh_frame(m: &mut Member<'_>, obj: &Object<'_>) {
         .sections
         .iter()
         .filter(|s| s.is_relocations() && s.info as usize == eh)
-        .flat_map(|s| relocations(&s.data).iter().copied())
+        .flat_map(|s| relocations(&s.data))
         .collect();
     rels.sort_by_key(|r| r.offset);
     let mut at = 0usize;
@@ -603,7 +605,7 @@ fn reloc_list(m: &Member<'_>, obj: &Object<'_>, target: usize) -> Vec<(u64, u128
         .get(&target)
         .into_iter()
         .flatten()
-        .flat_map(|&s| relocations(&obj.sections[s].data).iter())
+        .flat_map(|&s| relocations(&obj.sections[s].data))
         .map(|r| {
             let mut h = H128::new();
             h.u64(u64::from(obj.reloc_type(r)));
@@ -802,7 +804,7 @@ fn compare_debug(
         .get(&i)
         .into_iter()
         .flatten()
-        .flat_map(|&s| relocations(&oo.sections[s].data).iter())
+        .flat_map(|&s| relocations(&oo.sections[s].data))
     {
         let k = oo.reloc_symbol(r) as usize;
         let to_lost = symbols.get(k).is_some_and(|s| {

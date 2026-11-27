@@ -1,6 +1,7 @@
 //! Writing the model: re-encoded into the layout read while every part
 //! keeps its size, else laid out afresh.
 
+use alloc::borrow::Cow;
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -62,6 +63,25 @@ fn found<'n>(table: &[u8], mut names: impl Iterator<Item = (&'n [u8], u32)>) -> 
     })
 }
 
+/// `a` and `b` compared read backwards (from their last bytes), eight
+/// bytes at a time: C++ names share long tails, and a string table can
+/// hold hundreds of megabytes of them (`CIRGenStmtOpenMP.cpp.o`'s, 266 MB).
+pub(crate) fn backwards(a: &[u8], b: &[u8]) -> core::cmp::Ordering {
+    let (mut i, mut j) = (a.len(), b.len());
+    while i >= 8 && j >= 8 {
+        // The last of the eight bytes is the most significant: it comes
+        // first read backwards.
+        let x = u64::from_le_bytes(a[i - 8..i].try_into().expect("eight bytes"));
+        let y = u64::from_le_bytes(b[j - 8..j].try_into().expect("eight bytes"));
+        if x != y {
+            return x.cmp(&y);
+        }
+        i -= 8;
+        j -= 8;
+    }
+    a[..i].iter().rev().cmp(b[..j].iter().rev())
+}
+
 /// A string table of `names` after a NUL, each once, a name that ends
 /// another sharing its tail (as LLVM's tables share `.rela.text.f`,
 /// `.text.f`, and `f`, and GNU `as`'s a symbol's tail with another's);
@@ -71,13 +91,12 @@ fn found<'n>(table: &[u8], mut names: impl Iterator<Item = (&'n [u8], u32)>) -> 
 pub(crate) fn build<'n>(names: impl Iterator<Item = &'n [u8]>) -> (Vec<u8>, Vec<u32>) {
     let names: Vec<&[u8]> = names.collect();
     let mut order: Vec<usize> = (0..names.len()).filter(|&i| !names[i].is_empty()).collect();
-    order.sort_unstable_by(|&a, &b| {
-        names[b]
-            .iter()
-            .rev()
-            .cmp(names[a].iter().rev())
-            .then(a.cmp(&b))
-    });
+    // (A total order: sorted on every core or not, the same.)
+    let cmp = |&a: &usize, &b: &usize| backwards(names[b], names[a]).then(a.cmp(&b));
+    #[cfg(feature = "parallel")]
+    turbonop_par::sort_by(&mut order, cmp);
+    #[cfg(not(feature = "parallel"))]
+    order.sort_unstable_by(cmp);
     let mut table = vec![0u8];
     let mut offsets = vec![0u32; names.len()];
     // The last name written whole: every name after it in this order that
@@ -213,7 +232,7 @@ fn strings(o: &Object<'_>) -> Strings {
 }
 
 /// Each section's bytes in the file.
-fn encode(o: &Object<'_>, strings: &Strings) -> Result<Vec<Vec<u8>>, WriteError> {
+fn encode<'s>(o: &'s Object<'_>, strings: &'s Strings) -> Result<Vec<Cow<'s, [u8]>>, WriteError> {
     let class = o.class();
     let endian = o.endian();
     let mut out = Vec::with_capacity(o.sections.len());
@@ -224,10 +243,14 @@ fn encode(o: &Object<'_>, strings: &Strings) -> Result<Vec<Vec<u8>>, WriteError>
             endian,
         };
         match &s.data {
-            Data::Bytes(b) => match strings.rebuilt.get(&i) {
-                Some(t) => w.bytes.extend_from_slice(t),
-                None => w.bytes.extend_from_slice(b),
-            },
+            // (Not copied: written once, into the file.)
+            Data::Bytes(b) => {
+                out.push(Cow::Borrowed(match strings.rebuilt.get(&i) {
+                    Some(t) => &t[..],
+                    None => &b[..],
+                }));
+                continue;
+            }
             Data::NoBits => {}
             Data::Symbols(symbols) => {
                 let names = &strings.symbol_names[&i];
@@ -258,8 +281,41 @@ fn encode(o: &Object<'_>, strings: &Strings) -> Result<Vec<Vec<u8>>, WriteError>
                     }
                 }
             }
+            Data::Relocations(rs) if s.kind == sht::CREL => {
+                if let Some(b) = rs.crel_bytes() {
+                    out.push(Cow::Borrowed(b));
+                    continue;
+                }
+                // Encoded as LLVM's assembler does (with addends, unless the
+                // section read had none).
+                let addends = rs.crel_addends().unwrap_or(true);
+                let mut entries = Vec::with_capacity(rs.len());
+                for r in rs {
+                    if o.crel_info(o.reloc_symbol(r), o.reloc_type(r)) != Some(r.info)
+                        || (!addends && r.addend != 0)
+                        || (class == Class::Elf32
+                            && (u32::try_from(r.offset).is_err()
+                                || i32::try_from(r.addend).is_err()))
+                    {
+                        return Err(WriteError::TooLarge("a CREL entry"));
+                    }
+                    entries.push(crate::CrelEntry {
+                        offset: r.offset,
+                        symbol: o.reloc_symbol(r),
+                        kind: o.reloc_type(r),
+                        addend: r.addend,
+                    });
+                }
+                out.push(Cow::Owned(crate::encode_crel(&entries, class, addends)));
+                continue;
+            }
             Data::Relocations(rs) => {
                 let rela = s.kind == sht::RELA;
+                // Still the file's entries in this form: written as they are.
+                if let Some(b) = rs.bytes_as(o.relocation_form(rela)) {
+                    out.push(Cow::Borrowed(b));
+                    continue;
+                }
                 for r in rs {
                     w.word(r.offset, "a relocation's offset")?;
                     w.word(r.info, "a relocation's info")?;
@@ -291,7 +347,7 @@ fn encode(o: &Object<'_>, strings: &Strings) -> Result<Vec<Vec<u8>>, WriteError>
                 }
             }
         }
-        out.push(w.bytes);
+        out.push(Cow::Owned(w.bytes));
     }
     Ok(out)
 }
@@ -305,7 +361,7 @@ pub(crate) fn keeps_layout(o: &Object<'_>) -> bool {
     }
 }
 
-fn fits(o: &Object<'_>, bytes: &[Vec<u8>]) -> bool {
+fn fits(o: &Object<'_>, bytes: &[Cow<'_, [u8]>]) -> bool {
     let Some(orig) = &o.original else {
         return false;
     };
@@ -417,6 +473,13 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
             continue;
         }
         let at = usize::try_from(offsets[i]).map_err(|_| WriteError::TooLarge("an offset"))?;
+        // In the layout read, bytes still the file's own, at their place,
+        // are there already.
+        if let (Some(orig), true) = (&o.original, keep)
+            && orig.file.get(at..at + b.len()).map(<[u8]>::as_ptr) == Some(b.as_ptr())
+        {
+            continue;
+        }
         file[at..at + b.len()].copy_from_slice(b);
     }
     // The section headers.

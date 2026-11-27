@@ -94,6 +94,9 @@ pub(crate) struct Program<'a> {
     tls: Vec<(u64, Box<[u8]>)>,
     tls_size: u64,
     tls_aligned: u64,
+    /// The addresses outside code that code names (RIP-relative operands),
+    /// by address: found the first time a jump table is looked for.
+    referenced: std::sync::OnceLock<Vec<u64>>,
 }
 
 /// The size of the place a dynamic relocation patches.
@@ -147,6 +150,7 @@ impl<'a> Program<'a> {
             tls: Vec::new(),
             tls_size: 0,
             tls_aligned: 0,
+            referenced: std::sync::OnceLock::new(),
         };
         if let Some(t) = p.file.segments().find(|s| s.kind == PT_TLS) {
             p.tls_size = t.memsz;
@@ -573,11 +577,56 @@ impl<'a> Program<'a> {
         Some((&rest[..n], CONTENT))
     }
 
+    /// The addresses outside code that code names by RIP-relative operands
+    /// (x86-64), by address: each function's code decoded once, on every
+    /// core.
+    fn referenced(&self) -> &[u64] {
+        self.referenced.get_or_init(|| {
+            use turbonop_x86::{Mode, Operand, decode};
+            let mut found: Vec<u64> = turbonop_par::map(&self.code, 64, |&(start, end)| {
+                let mut out = Vec::new();
+                let Some(code) = self.bytes(start, end - start) else {
+                    return out;
+                };
+                let mut at = 0;
+                while at < code.len() {
+                    let Ok(i) = decode(&code[at..], Mode::Bits64, start + at as u64) else {
+                        at += 1;
+                        continue;
+                    };
+                    for o in i.operands() {
+                        if let Operand::Mem(m) = o
+                            && m.is_rip_relative()
+                        {
+                            let t = i.next_address().wrapping_add(m.disp as u64);
+                            if self
+                                .section_at(t)
+                                .is_some_and(|s| s.flags & SHF_EXECINSTR == 0)
+                            {
+                                out.push(t);
+                            }
+                        }
+                    }
+                    at += i.len().max(1);
+                }
+                out
+            })
+            .into_iter()
+            .flatten()
+            .collect();
+            found.sort_unstable();
+            found.dedup();
+            found
+        })
+    }
+
     /// The targets of the jump table at `addr`, if one is there: an
     /// address that only its contents name, in a section that isn't code,
     /// holding 32-bit entries relative to it that land in code (x86-64's,
     /// as GCC and clang write them), two or more, up to the first that
-    /// doesn't, lands in another function, or is at the next label.
+    /// doesn't, lands in another function, or is at the next label or the
+    /// next address code names (another function's table: read from this
+    /// one's start, its entries can land in this one's function too).
     pub fn jump_table(&self, addr: u64) -> Option<Vec<u64>> {
         if self.machine() != 62 || !matches!(self.name(addr), Some((_, CONTENT))) {
             return None;
@@ -585,7 +634,12 @@ impl<'a> Program<'a> {
         let s = self.section_at(addr)?;
         let data = self.file.section_data(s);
         let mut at = usize::try_from(addr - s.addr).ok()?;
-        let next = self.label_after(addr);
+        let refs = self.referenced();
+        let next_ref = refs.get(refs.partition_point(|&r| r <= addr)).copied();
+        let next = match (self.label_after(addr), next_ref) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         let mut out = Vec::new();
         let mut function: Option<&[u8]> = None;
         while let Some(w) = data.get(at..at + 4) {
@@ -781,6 +835,16 @@ impl super::super::image::bytes::Names for Program<'_> {
         }
         let off = u64::try_from(tpoff.checked_add(i64::try_from(self.tls_aligned).ok()?)?).ok()?;
         self.tls_at(off)
+    }
+
+    fn tls_block(&self) -> Option<u64> {
+        (self.machine() == 62 && self.tls_aligned != 0).then_some(self.tls_aligned)
+    }
+
+    fn content(&self, rva: u32, len: u32) -> Option<&[u8]> {
+        matches!(self.name(u64::from(rva)), Some((_, CONTENT)))
+            .then(|| self.bytes(u64::from(rva), u64::from(len)))
+            .flatten()
     }
 
     fn aliases(&self, rva: u32) -> &[Box<[u8]>] {

@@ -79,7 +79,7 @@ fn object(class: Class, endian: Endian, machine: u16) -> Object<'static> {
             b".rela.text._Z1fv",
             sht::RELA,
             shf::INFO_LINK | shf::GROUP,
-            Data::Relocations(vec![]),
+            Data::Relocations(vec![].into()),
         ),
         section(
             b".data",
@@ -147,7 +147,7 @@ fn object(class: Class, endian: Endian, machine: u16) -> Object<'static> {
         addend: -4,
     };
     o.set_reloc_symbol(&mut r, 6);
-    o.sections[4].data = Data::Relocations(vec![r]);
+    o.sections[4].data = Data::Relocations(vec![r].into());
     o
 }
 
@@ -203,8 +203,8 @@ fn every_class_and_byte_order() {
         let Data::Relocations(rs) = &back.sections[4].data else {
             panic!("relocations");
         };
-        assert_eq!(back.reloc_symbol(&rs[0]), 6);
-        assert_eq!(rs[0].addend, -4);
+        assert_eq!(back.reloc_symbol(rs.get(0).unwrap()), 6);
+        assert_eq!(rs.get(0).unwrap().addend, -4);
     }
 }
 
@@ -254,11 +254,11 @@ fn mips64_relocations() {
             info,
             addend: 0,
         };
-        assert_eq!(o.reloc_symbol(&r), 6);
-        assert_eq!(o.reloc_type(&r), 7 | (24 << 8) | (5 << 16));
+        assert_eq!(o.reloc_symbol(r), 6);
+        assert_eq!(o.reloc_type(r), 7 | (24 << 8) | (5 << 16));
         o.set_reloc_symbol(&mut r, 0x0102_0304);
-        assert_eq!(o.reloc_symbol(&r), 0x0102_0304);
-        assert_eq!(o.reloc_type(&r), 7 | (24 << 8) | (5 << 16));
+        assert_eq!(o.reloc_symbol(r), 0x0102_0304);
+        assert_eq!(o.reloc_type(r), 7 | (24 << 8) | (5 << 16));
     }
 }
 
@@ -416,4 +416,178 @@ fn rebuilt_tables_share_tails() {
     let mut shuffled = names;
     shuffled.reverse();
     assert_eq!(crate::write::build(shuffled.iter().copied()).0, table);
+}
+
+/// Names compared backwards eight bytes at a time order as byte by byte.
+#[test]
+fn backwards_order_is_bytewise() {
+    let mut names: Vec<Vec<u8>> = Vec::new();
+    let mut x = 0x2545_F491_4F6C_DD1Du64;
+    for len in 0..40usize {
+        for _ in 0..6 {
+            let v: Vec<u8> = (0..len)
+                .map(|_| {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    b"ab\0\xFF"[(x % 4) as usize]
+                })
+                .collect();
+            names.push(v);
+        }
+    }
+    for a in &names {
+        for b in &names {
+            assert_eq!(
+                crate::write::backwards(a, b),
+                a.iter().rev().cmp(b.iter().rev()),
+                "{a:?} {b:?}"
+            );
+        }
+    }
+}
+
+/// Relocations kept as the file's bytes read, edit, and write back as
+/// the values would: in both classes and byte orders, `REL` and `RELA`.
+#[test]
+fn encoded_relocations_behave_as_values() {
+    for class in [Class::Elf32, Class::Elf64] {
+        for endian in [Endian::Little, Endian::Big] {
+            for rela in [false, true] {
+                let form = RelocationForm {
+                    class,
+                    endian,
+                    rela,
+                };
+                let w = if class == Class::Elf32 { 4 } else { 8 };
+                let mut bytes = Vec::new();
+                let mut want = Vec::new();
+                for k in 0..5u64 {
+                    let (offset, info, addend) = (k * 8, (k << 8) | 2, -(k as i64) - 1);
+                    let put = |b: &mut Vec<u8>, v: u64| {
+                        let v = match endian {
+                            Endian::Little => v.to_le_bytes(),
+                            Endian::Big => v.to_be_bytes(),
+                        };
+                        match (w, endian) {
+                            (4, Endian::Little) => b.extend_from_slice(&v[..4]),
+                            (4, Endian::Big) => b.extend_from_slice(&v[4..]),
+                            _ => b.extend_from_slice(&v),
+                        }
+                    };
+                    put(&mut bytes, offset);
+                    put(&mut bytes, info);
+                    if rela {
+                        put(&mut bytes, addend as u64);
+                    }
+                    want.push(Relocation {
+                        offset,
+                        info,
+                        addend: if rela { addend } else { 0 },
+                    });
+                }
+                let mut rs = Relocations::encoded(Cow::Borrowed(&bytes[..]), form).unwrap();
+                assert!(Relocations::encoded(Cow::Borrowed(&bytes[1..]), form).is_none());
+                assert_eq!(rs.len(), 5);
+                assert_eq!(rs.to_vec(), want);
+                assert_eq!(rs.iter().rev().collect::<Vec<_>>(), {
+                    let mut r = want.clone();
+                    r.reverse();
+                    r
+                });
+                assert_eq!(rs, Relocations::from(want.clone()));
+                rs.map_info(|i| i + 0x100);
+                rs.retain(|r| r.offset != 16);
+                let mut v = want.clone();
+                for r in &mut v {
+                    r.info += 0x100;
+                }
+                v.retain(|r| r.offset != 16);
+                assert_eq!(rs.to_vec(), v);
+                assert_eq!(rs.get(2), Some(v[2]));
+                assert_eq!(rs.get(4), None);
+                assert!(rs.bytes_as(form).is_some());
+                rs.values_mut().push(want[0]);
+                assert!(rs.bytes_as(form).is_none());
+                assert_eq!(rs.len(), 5);
+            }
+        }
+    }
+}
+
+/// CREL entries encode as LLVM's `encodeCrel` does and decode back, in
+/// both classes, with and without addends: offsets that fall back (the
+/// delta wraps), large deltas, symbol and type changes both ways.
+#[test]
+fn crel_round_trips() {
+    use crate::{CrelEntry, decode_crel, encode_crel};
+    // Hand-checked: two entries at 0 and 8 (shift 3), symbol 1 then 2,
+    // type 4 throughout, addends -4 then 0.
+    let two = [
+        CrelEntry {
+            offset: 0,
+            symbol: 1,
+            kind: 4,
+            addend: -4,
+        },
+        CrelEntry {
+            offset: 8,
+            symbol: 2,
+            kind: 4,
+            addend: 0,
+        },
+    ];
+    let bytes = encode_crel(&two, Class::Elf64, true);
+    // Header 2*8 + 4 + 3 = 23; entry 1: delta 0, all three flags (7), then
+    // +1, +4, -4; entry 2: delta 1 (1 << 3 | 1 | 4 = 13), +1, +4.
+    assert_eq!(bytes, [23, 7, 1, 4, 0x7C, 13, 1, 4]);
+    assert_eq!(
+        decode_crel(&bytes, Class::Elf64),
+        Some((two.to_vec(), true))
+    );
+    let mut x = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        x
+    };
+    for class in [Class::Elf32, Class::Elf64] {
+        for addends in [false, true] {
+            let mut entries = Vec::new();
+            let mut offset = 0u64;
+            for _ in 0..2000 {
+                let r = next();
+                offset = match r % 7 {
+                    0 => offset.wrapping_sub(r >> 40),
+                    1 => offset + (r >> 20),
+                    _ => offset + (r >> 60) * 8,
+                };
+                if class == Class::Elf32 {
+                    offset &= 0xFFFF_FFFF;
+                }
+                let addend = if addends {
+                    match class {
+                        Class::Elf32 => i64::from(next() as i32),
+                        Class::Elf64 => next() as i64 >> (next() % 60),
+                    }
+                } else {
+                    0
+                };
+                entries.push(CrelEntry {
+                    offset,
+                    symbol: (next() % 50_000) as u32,
+                    kind: (next() % 40) as u32,
+                    addend,
+                });
+            }
+            let bytes = encode_crel(&entries, class, addends);
+            assert_eq!(decode_crel(&bytes, class), Some((entries.clone(), addends)));
+            // Trailing bytes, or too few, don't decode.
+            let mut longer = bytes.clone();
+            longer.push(0);
+            assert_eq!(decode_crel(&longer, class), None);
+            assert_eq!(decode_crel(&bytes[..bytes.len() - 1], class), None);
+        }
+    }
 }

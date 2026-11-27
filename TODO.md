@@ -500,52 +500,56 @@ x64. Where the 3.5 MB went:
     (`sub $tls_size` then `lea off(%reg)`: 21 functions of `llvm-readobj`).
 - **Phase 7: Mach-O** (see the plan's "Phase 7 results"). Done: Darwin
   archives and the `libtool -static` personality (7.1), the object model
-  (7.2), `--fold=identical` for Mach-O with `verify` (7.3, first version),
-  and the corpus scripts (`tools/turbolib/macho-corpus`). Still open:
-  - **Folded functions' DWARF** isn't moved: a synthesized member has none,
-    so a folded function has no debug information in the program's dSYM
-    (the givers' DIEs for it lose their addresses, as `dsymutil` drops
-    every copy but the linked one). Build a unit in the synthesized
-    member from the survivor member's DWARF 4 (and 5), as `elf::dwarf`
-    does, with Apple's accelerator tables (`__apple_names` and the rest,
-    or `.debug_names`), and check with `dsymutil` and `llvm-dwarfdump
-    --verify` on the linked programs (there is no Mac: lldb sessions
-    can't be compared).
-  - **x86-64's FDEs**: clang writes an `__eh_frame` FDE for every x86-64
-    function besides its compact unwind entry, and units with FDEs stay
-    (212,881 copies on the corpus: almost nothing folds for x86-64). Move
-    the FDEs (and their CIEs) with their units, as the ELF engine does, and
-    compare them per function in `verify`.
+  (7.2), `--fold=identical` with `verify` (7.3), x86-64's FDEs and LSDAs
+  moving with their units, givers' DWARF moving with their code,
+  synthesized members' DWARF, and a Rust `compare-images` for Mach-O with
+  dSYMs (7.4), and the corpus scripts (`tools/turbolib/macho-corpus`).
+  Still open:
+  - **The size DWARF costs**: the folded corpus archives are 9.1% larger
+    (they were 1.0% smaller before synthesized members carried DWARF):
+    88.7 MB of synthesized members' DWARF per architecture (classes the
+    moved code names kept whole: dsymutil keeps only what linked DIEs
+    reach), and the givers keep their copies' DIEs, tombstoned. Ideas:
+    remove the givers' dead DIEs (and their accelerator table entries);
+    an opt-in `--debug-types=declarations` (14.9 MB, but 1.1% of the
+    dSYM's type definitions lost); share type definitions between a
+    library's synthesized members.
+  - **`compare-images` on the corpus links isn't clean** (see 7.4): code
+    and data past a local constant that a sizeless symbol can't bound
+    (2 to 24 per program; bound them by the dSYM's variables' types);
+    `RTTIRoot::anchor`'s unwind encoding (0 in the original, not
+    explained); 1 to 9 subprograms described by another unit's copy with
+    other DIEs (spot-checked, not proven: write a Mach-O `witness.py`);
+    9 to 11 type definitions only in the original and some with other
+    contents (which units' class templates dsymutil keeps).
+  - **Speed**: 3.55× the real tools' time folding (0.82× without), most
+    of it rewriting givers (their whole DWARF read, line programs
+    decoded and encoded again, every member written afresh) and building
+    synthesized members' DWARF; `ranlib` after `ar qc` folds again.
+  - **DWARF 5** (macOS 15 targets' default): givers with DWARF 5 lists,
+    `__debug_aranges`, or several units are kept whole (their copies stay
+    in synthesized members too, which is allowed); handle `__debug_rnglists`
+    and `__debug_loclists`.
+  - **lldb** isn't in this LLVM build: no debugger session was compared;
+    Apple's accelerator tables aren't written for synthesized members.
   - **What keeps units from folding**: string literals and other
-    `__cstring`/literal-section references (`l_.str`: the linker merges
-    those sections by content, so copying the literals into the
-    synthesized member is semantics-preserving: `--locals=copy` for
-    Mach-O); LSDAs (`__gcc_except_tab` atoms referenced only by the unit's
-    unwind entry could move with it); FDEs in `__eh_frame` (x86-64 units
-    whose compact unwind says "use DWARF"); x86-64's local relocations
-    (`L` labels), data in code, optimization hints (`-O2` arm64 objects
-    have LOH: dropping the hints of moved code is allowed).
-  - **Apple's linkers** (ld64, ld-prime) and Apple's `libtool`/`ranlib`
-    (cctools: `__.SYMDEF SORTED`) were neither run nor read here: the
-    loading-order argument (anchors first among undefined names,
-    synthesized members first in the archive) is ld64.lld's. Check on a
-    Mac: `ld -t` member order, `-why_load`, `dyld_info`, and running the
-    programs.
-  - **compare-images for Mach-O** in Rust (`turbonop_verify`): relink.py
-    compares links structurally with llvm-nm and llvm-objdump (members
-    loaded in order, symbols, each function's disassembly with addresses
-    masked, initializers in order); a Rust comparison as for ELF (functions
-    by bytes with PC-relative operands by name, unwind info, chained
-    fixups, DWARF through the debug map) is not written.
+    `__cstring`/literal-section references (`l_.str`: `--locals=copy`
+    for Mach-O); x86-64's local relocations (`L` labels), data in code,
+    optimization hints (`-O2` arm64 objects have LOH: dropping the hints
+    of moved code is allowed).
+  - **x86-64's `__eh_frame` in links** grows by a CIE per synthesized
+    member (ld64.lld keeps each object's CIEs while dropping FDEs of
+    functions with compact unwind); FDEs are copied anyway (Apple's ld
+    with `-keep_dwarf_unwind` keeps them).
+  - **Apple's linkers** (ld64, ld-prime), Apple's `libtool`/`ranlib`
+    (cctools: `__.SYMDEF SORTED`), and Apple's dsymutil were neither run
+    nor read here: the loading-order argument is ld64.lld's. Check on a
+    Mac: `ld -t` member order, `-why_load`, `dyld_info`, dsymutil, lldb,
+    and running the programs.
   - `--pull=relaxed`, `--fold=select-any` and `--locals` for Mach-O;
     32-bit targets (i386, armv7, arm64_32: passed through); universal
-    files with `--fold` (libtool's several-architecture output folds each
-    slice? untested); `ar` (GNU) on Mach-O members (its index isn't
-    modeled).
-  - **Speed**: 4.55× the real tools' time with folding (0.70× without),
-    not profiled. Each member is parsed into the object model and every
-    rewritten member written afresh; `ranlib` after `ar qc` folds again.
-  - `verify` doesn't read universal files (each slice could be verified).
+    files with `--fold` (untested); `ar` (GNU) on Mach-O members (its index
+    isn't modeled); `verify` doesn't read universal files.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

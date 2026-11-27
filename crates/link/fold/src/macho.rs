@@ -113,7 +113,7 @@
 //! ([`Report::debug_dropped_why`]).
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::Range;
 
 use turbonop_macho_object::consts::{
@@ -1292,7 +1292,7 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
             .collect()
     };
     // Every definition of each name, in member order.
-    let mut definers: BTreeMap<&[u8], Vec<(usize, Option<usize>)>> = BTreeMap::new();
+    let mut definers: HashMap<&[u8], Vec<(usize, Option<usize>)>> = HashMap::new();
     for (m, p) in parsed.iter().enumerate() {
         for (name, u) in &p.defs {
             definers.entry(name.as_slice()).or_default().push((m, *u));
@@ -1353,53 +1353,80 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     // A unit naming a name its member keeps must stay; a unit with fewer
     // than two folding copies stays. To a fixpoint.
     // (Each member's definitions by name: the unit, if a unit's.)
-    let defs_by_name: Vec<BTreeMap<&[u8], Vec<Option<usize>>>> = parsed
+    // (Lookups only: hash maps.)
+    let defs_by_name: Vec<HashMap<&[u8], Vec<Option<usize>>>> = parsed
         .iter()
         .map(|p| {
-            let mut m: BTreeMap<&[u8], Vec<Option<usize>>> = BTreeMap::new();
+            let mut m: HashMap<&[u8], Vec<Option<usize>>> = HashMap::new();
             for (n, u) in &p.defs {
                 m.entry(n.as_slice()).or_default().push(*u);
             }
             m
         })
         .collect();
-    loop {
-        let mut changed = false;
-        for (m, p) in parsed.iter().enumerate() {
+    // (A worklist: a unit that stays makes stay the units of its member
+    // that name its names, and its copies stay when one member is left.)
+    let users: Vec<HashMap<&[u8], Vec<usize>>> = parsed
+        .iter()
+        .map(|p| {
+            let mut m: HashMap<&[u8], Vec<usize>> = HashMap::new();
             for (k, u) in p.units.iter().enumerate() {
-                if !folds[m][k] {
-                    continue;
+                for r in &u.refs {
+                    m.entry(r.as_slice()).or_default().push(k);
                 }
-                let stays = u.refs.iter().any(|r| {
-                    defs_by_name[m]
-                        .get(r.as_slice())
-                        .is_some_and(|ds| ds.iter().any(|du| du.is_none_or(|du| !folds[m][du])))
-                });
-                if stays {
-                    folds[m][k] = false;
-                    why[m][k] = Some("calls a name of its member that stays");
-                    changed = true;
+            }
+            m
+        })
+        .collect();
+    let groups: Vec<&Vec<(usize, usize)>> = by_hash.values().collect();
+    let mut group_of: Vec<Vec<usize>> = parsed.iter().map(|p| vec![0; p.units.len()]).collect();
+    for (g, copies) in groups.iter().enumerate() {
+        for &(m, k) in *copies {
+            group_of[m][k] = g;
+        }
+    }
+    let mut work: Vec<(usize, usize)> = Vec::new();
+    for (m, p) in parsed.iter().enumerate() {
+        for (k, u) in p.units.iter().enumerate() {
+            if !folds[m][k] {
+                work.push((m, k));
+                continue;
+            }
+            // Names a definition that isn't a unit's.
+            let stays = u.refs.iter().any(|r| {
+                defs_by_name[m]
+                    .get(r.as_slice())
+                    .is_some_and(|ds| ds.iter().any(Option::is_none))
+            });
+            if stays {
+                folds[m][k] = false;
+                why[m][k] = Some("calls a name of its member that stays");
+                work.push((m, k));
+            }
+        }
+    }
+    while let Some((m, k)) = work.pop() {
+        for n in &parsed[m].units[k].names {
+            for &k2 in users[m].get(n.as_slice()).map_or(&[][..], Vec::as_slice) {
+                if folds[m][k2] {
+                    folds[m][k2] = false;
+                    why[m][k2] = Some("calls a name of its member that stays");
+                    work.push((m, k2));
                 }
             }
         }
-        for copies in by_hash.values() {
-            let n: BTreeSet<usize> = copies
-                .iter()
-                .filter(|&&(m, k)| folds[m][k])
-                .map(|c| c.0)
-                .collect();
-            if n.len() == 1 {
-                for &(m, k) in copies {
-                    if folds[m][k] {
-                        folds[m][k] = false;
-                        why[m][k] = Some("its other copies stayed");
-                        changed = true;
-                    }
+        let copies = groups[group_of[m][k]];
+        let mut live = copies.iter().filter(|&&(m, k)| folds[m][k]).map(|c| c.0);
+        if let Some(first) = live.next()
+            && live.all(|x| x == first)
+        {
+            for &(m2, k2) in copies {
+                if folds[m2][k2] {
+                    folds[m2][k2] = false;
+                    why[m2][k2] = Some("its other copies stayed");
+                    work.push((m2, k2));
                 }
             }
-        }
-        if !changed {
-            break;
         }
     }
     if std::env::var_os("TURBOLIB_MACHO_WHY").is_some() {
@@ -1469,7 +1496,9 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     // Synthesized members in the order of their first giver, then their
     // first unit (deterministic, whatever the threads).
     let mut order: Vec<usize> = (0..synth.len()).collect();
-    order.sort_by_key(|&s| (synth[s].givers.clone(), synth[s].units[0]));
+    order.sort_by(|&a, &b| {
+        (&synth[a].givers, synth[a].units[0]).cmp(&(&synth[b].givers, synth[b].units[0]))
+    });
     let mut renum = vec![0usize; synth.len()];
     for (new, &old) in order.iter().enumerate() {
         renum[old] = new;

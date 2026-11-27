@@ -1099,6 +1099,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-ltcg-probe"
+version = "0.0.7"
+dependencies = [
+ "serde_json",
+ "turbonop-global-alloc",
+]
+
+[[package]]
 name = "turbonop-lx"
 version = "0.0.7"
 dependencies = [

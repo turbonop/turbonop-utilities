@@ -211,7 +211,7 @@ def self_test():
             {"id": "h", "name": "hexcavator", "manifest_path": "/w/apps/hexcavator/Cargo.toml"},
             {"id": "a", "name": "turbonop-arm64", "manifest_path": "/w/crates/isa/arm64/Cargo.toml"},
             {"id": "t", "name": "turbonop-test", "manifest_path": "/w/crates/test/Cargo.toml"},
-            {"id": "r", "name": "regex", "manifest_path": "/home/.cargo/regex/Cargo.toml"},
+            {"id": "r", "name": "regex", "manifest_path": "/registry/regex/Cargo.toml"},
         ],
         "resolve": {"nodes": [
             {"id": "h", "deps": [

@@ -45,7 +45,7 @@
 use std::collections::BTreeSet;
 
 use turbonop_dwarf::consts::*;
-use turbonop_dwarf::{Abbrevs, Reader, Sections, Unit, Value};
+use turbonop_dwarf::{Abbrevs, Reader, Sections, Unit};
 use turbonop_macho_object::Object;
 
 use crate::dwarf::key;
@@ -198,7 +198,7 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
                 DW_AT_BYTE_SIZE => size = u.uint(&v),
                 DW_AT_DECL_FILE => file = u.uint(&v).unwrap_or(0),
                 DW_AT_DECL_LINE => line = u.uint(&v).unwrap_or(0),
-                DW_AT_DECLARATION => declaration = !matches!(v, Value::Uint(0)),
+                DW_AT_DECLARATION => declaration = u.uint(&v).is_none_or(|x| x != 0),
                 DW_AT_CONST_VALUE => const_value = true,
                 DW_AT_STMT_LIST if parent == NONE => stmt = u.uint(&v),
                 DW_AT_COMP_DIR if parent == NONE => comp_dir = u.string(&v).map(|s| s.bytes),
@@ -311,17 +311,16 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
         }
     }
     while let Some(i) = work.pop() {
-        // Its ancestors.
-        let mut p = dies[i].parent;
-        while p != NONE && p != 0 {
+        // Its parent (and so, in turn, its ancestors).
+        let p = dies[i].parent;
+        if p != NONE && p != 0 && !kept[p as usize] {
             let pi = p as usize;
             if needs_children(dies[pi].tag) {
                 keep_tree(pi, &mut kept, &mut work);
-            } else if !kept[pi] {
+            } else {
                 kept[pi] = true;
                 work.push(pi);
             }
-            p = dies[pi].parent;
         }
         // What it refers to: with its subtree, but a namespace alone.
         for k in ref_at[i]..ref_at[i + 1] {

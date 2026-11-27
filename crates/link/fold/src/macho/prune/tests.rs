@@ -608,3 +608,149 @@ fn finds_nuls_eight_bytes_at_a_time() {
     }
     assert_eq!(nul(&[b'x'; 17]), None);
 }
+
+/// What a giver's DWARF defines in every link that loads it, by dsymutil's
+/// rules (see `reach`): classes live code names, what they name, what a
+/// using declaration or a constant names, and a class a member function's
+/// definition is of (whole); not what only dead code names, nothing names,
+/// or only a `using namespace` reaches, nor a declaration.
+#[test]
+fn reach_follows_dsymutils_rules() {
+    use V::*;
+    let st = |id: usize, name: &'static str, kids: Vec<T>| {
+        die(
+            id,
+            DW_TAG_STRUCTURE_TYPE,
+            vec![
+                (DW_AT_NAME, Str(name)),
+                (DW_AT_BYTE_SIZE, D1(1)),
+                (DW_AT_DECL_LINE, D1(id as u8)),
+            ],
+            kids,
+        )
+    };
+    let member = |id: usize, ty: usize| {
+        die(
+            id,
+            DW_TAG_MEMBER,
+            vec![(DW_AT_NAME, Str("m")), (DW_AT_TYPE, Ref(ty))],
+            vec![],
+        )
+    };
+    let sub = |id: usize, at: V, more: Vec<(u16, V)>| {
+        let mut a = vec![(DW_AT_LOW_PC, at), (DW_AT_HIGH_PC, D4(4))];
+        a.extend(more);
+        die(id, DW_TAG_SUBPROGRAM, a, vec![])
+    };
+    let t = die(
+        0,
+        DW_TAG_COMPILE_UNIT,
+        vec![(DW_AT_PRODUCER, Str("clang"))],
+        vec![
+            st(1, "A", vec![member(30, 2)]),
+            st(2, "B", vec![]),
+            st(3, "C", vec![]),
+            st(4, "D", vec![]),
+            st(5, "E", vec![]),
+            die(
+                6,
+                DW_TAG_NAMESPACE,
+                vec![(DW_AT_NAME, Str("ns"))],
+                vec![
+                    st(7, "F", vec![]),
+                    st(
+                        8,
+                        "I",
+                        vec![
+                            die(
+                                31,
+                                DW_TAG_SUBPROGRAM,
+                                vec![(DW_AT_NAME, Str("f")), (DW_AT_DECLARATION, D1(1))],
+                                vec![],
+                            ),
+                            member(33, 9),
+                        ],
+                    ),
+                    st(9, "J", vec![]),
+                ],
+            ),
+            die(10, DW_TAG_POINTER_TYPE, vec![(DW_AT_TYPE, Ref(1))], vec![]),
+            sub(11, Addr(0), vec![(DW_AT_TYPE, Ref(10))]),
+            sub(12, Gone, vec![(DW_AT_TYPE, Ref(3))]),
+            die(
+                13,
+                DW_TAG_IMPORTED_DECLARATION,
+                vec![(DW_AT_IMPORT, Ref(5))],
+                vec![],
+            ),
+            die(14, DW_TAG_IMPORTED_MODULE, vec![(DW_AT_IMPORT, Ref(6))], vec![]),
+            sub(15, Addr(0x10), vec![(DW_AT_SPECIFICATION, Ref(31))]),
+            die(
+                16,
+                DW_TAG_VARIABLE,
+                vec![
+                    (DW_AT_NAME, Str("k")),
+                    (DW_AT_CONST_VALUE, D1(0)),
+                    (DW_AT_TYPE, Ref(17)),
+                ],
+                vec![],
+            ),
+            st(17, "G", vec![]),
+            die(
+                18,
+                DW_TAG_STRUCTURE_TYPE,
+                vec![(DW_AT_NAME, Str("K")), (DW_AT_DECLARATION, D1(1))],
+                vec![],
+            ),
+            sub(19, Addr(0x20), vec![(DW_AT_TYPE, Ref(18))]),
+        ],
+    );
+    let mut ab = Vec::new();
+    abbrevs(&t, &mut ab);
+    let mut pool = Vec::new();
+    strings(&t, &mut pool);
+    let (full, strs) = emit(&t, &|_| true, &ab, &pool, &|_| true);
+    let rels: Vec<Relocation> = full
+        .relocs
+        .iter()
+        .rev()
+        .map(|&p| Relocation::plain(p, 1, false, 0, 3))
+        .collect();
+    let o = object(vec![
+        section(
+            b"__TEXT",
+            b"__text",
+            S_ATTR_PURE_INSTRUCTIONS,
+            vec![0; 0x40],
+            Vec::new(),
+        ),
+        section(
+            b"__DWARF",
+            b"__debug_abbrev",
+            S_ATTR_DEBUG,
+            abbrev_bytes(&ab),
+            Vec::new(),
+        ),
+        section(b"__DWARF", b"__debug_info", S_ATTR_DEBUG, full.info, rels),
+        section(b"__DWARF", b"__debug_str", S_ATTR_DEBUG, strs, Vec::new()),
+    ]);
+    let got = super::super::reach::reach(&o, &BTreeSet::new())
+        .unwrap()
+        .unwrap();
+    let k = |parent: u128, name: &str, line: u64| {
+        crate::dwarf::key::of(parent, DW_TAG_STRUCTURE_TYPE, name.as_bytes(), Some(1), 0, line)
+    };
+    let root = crate::dwarf::key::ROOT;
+    let ns = crate::dwarf::key::of(root, DW_TAG_NAMESPACE, b"ns", None, 0, 0);
+    let want: turbonop_hash::Set<u128> = [
+        k(root, "A", 1),
+        k(root, "B", 2),
+        k(root, "E", 5),
+        k(ns, "I", 8),
+        k(ns, "J", 9),
+        k(root, "G", 17),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(got, want);
+}

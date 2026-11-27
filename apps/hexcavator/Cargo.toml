@@ -55,6 +55,7 @@ turbonop-deps.workspace = true
 turbonop-wasm.workspace = true
 turbonop-elf.workspace = true
 rustc-hash.workspace = true
+miniz_oxide.workspace = true
 turbonop-size.workspace = true
 turbonop-archive.workspace = true
 turbonop-linkerlog.workspace = true
@@ -64,6 +65,10 @@ turbonop-query.workspace = true
 turbonop-program.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+# (build.rs: THIRD_PARTY_NOTICES.txt, compressed for `hexcavator licenses`.)
+[build-dependencies]
+miniz_oxide.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

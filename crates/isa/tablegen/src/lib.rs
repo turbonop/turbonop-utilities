@@ -346,21 +346,68 @@ pub struct Op {
     pub tied: Option<u8>,
 }
 
-/// An instruction: its LLVM name, size in bytes, decoder table, fixed
-/// bits, the features it needs (an index into the predicates), how many
-/// operands it writes, its syntax (operands as `$name`, `${name}`, or
-/// `${name:modifier}`), and its operands.
+/// An instruction: its LLVM name ([`Inst::name`]), size in bytes, decoder
+/// table, fixed bits, the features it needs (an index into the
+/// predicates), how many operands it writes, its syntax ([`Inst::asm`]),
+/// and its operands. (Made by [`inst!`].)
 #[derive(Debug)]
 pub struct Inst {
-    pub name: &'static str,
+    /// Its name, then its syntax, in one string (one reference, not two:
+    /// a target has thousands).
+    #[doc(hidden)]
+    pub text: &'static str,
+    #[doc(hidden)]
+    pub name_len: u8,
     pub size: u8,
     pub space: u8,
+    pub defs: u8,
+    pub pred: u16,
     pub mask: u64,
     pub value: u64,
-    pub pred: u16,
-    pub defs: u8,
-    pub asm: &'static str,
     pub ops: &'static [Op],
+}
+
+impl Inst {
+    /// Its LLVM name (`ADDI`, `C_ADDI`, `ADD_W`).
+    pub fn name(&self) -> &'static str {
+        self.text.get(..usize::from(self.name_len)).unwrap_or("")
+    }
+
+    /// Its syntax: operands as `$name`, `${name}`, or `${name:modifier}`.
+    pub fn asm(&self) -> &'static str {
+        self.text.get(usize::from(self.name_len)..).unwrap_or("")
+    }
+}
+
+/// An [`Inst`], its fields named as its generated tables write them.
+#[macro_export]
+macro_rules! inst {
+    {
+        name: $name:literal,
+        size: $size:expr,
+        space: $space:expr,
+        mask: $mask:expr,
+        value: $value:expr,
+        pred: $pred:expr,
+        defs: $defs:expr,
+        asm: $asm:literal,
+        ops: $ops:expr $(,)?
+    } => {
+        $crate::Inst {
+            text: concat!($name, $asm),
+            name_len: {
+                assert!($name.len() <= 255, "an instruction's name is too long");
+                $name.len() as u8
+            },
+            size: $size,
+            space: $space,
+            defs: $defs,
+            pred: $pred,
+            mask: $mask,
+            value: $value,
+            ops: $ops,
+        }
+    };
 }
 
 /// What an immediate may be: signed or not, of `bits` bits, with its low
@@ -437,15 +484,19 @@ pub struct Target {
     pub aliases: &'static [Alias],
     pub uncompress: &'static [Uncompress],
     /// The instructions each value of a 16-bit encoding's key bits can be,
-    /// in the order they're tried, and the key's bits.
-    pub buckets16: &'static [&'static [u16]],
+    /// in the order they're tried: value `k`'s are
+    /// `buckets16[starts16[k]..starts16[k + 1]]`. And the key's bits.
+    pub buckets16: &'static [u16],
+    pub starts16: &'static [u16],
     pub key16: &'static [u8],
     /// The same of 32-bit encodings.
-    pub buckets32: &'static [&'static [u16]],
+    pub buckets32: &'static [u16],
+    pub starts32: &'static [u16],
     pub key32: &'static [u8],
     /// The same of 64-bit encodings (PowerPC's prefixed instructions: the
     /// prefix the high word).
-    pub buckets64: &'static [&'static [u16]],
+    pub buckets64: &'static [u16],
+    pub starts64: &'static [u16],
     pub key64: &'static [u8],
     /// Each decoder table's features (an index into the predicates): its
     /// instructions decode only with them on (MIPS's tables, each tried
@@ -603,12 +654,12 @@ impl Instruction {
 
     /// Its LLVM name (`ADDI`, `C_ADDI`, `ADD_W`).
     pub fn name(&self) -> &'static str {
-        self.inst().name
+        self.inst().name()
     }
 
     /// Its mnemonic as LLVM's syntax writes it (not an alias's).
     pub fn mnemonic(&self) -> &'static str {
-        let asm = self.inst().asm;
+        let asm = self.inst().asm();
         asm.split(['\t', ' ']).next().unwrap_or(asm)
     }
 
@@ -650,16 +701,18 @@ pub fn decode_from(
     rv64: bool,
     rve: bool,
 ) -> Option<Instruction> {
-    let (key_bits, buckets) = match size {
-        2 => (t.key16, t.buckets16),
-        8 => (t.key64, t.buckets64),
-        _ => (t.key32, t.buckets32),
+    let (key_bits, buckets, starts) = match size {
+        2 => (t.key16, t.buckets16, t.starts16),
+        8 => (t.key64, t.buckets64, t.starts64),
+        _ => (t.key32, t.buckets32, t.starts32),
     };
     let mut key = 0usize;
     for (j, &b) in key_bits.iter().enumerate() {
         key |= (((w >> b) & 1) as usize) << j;
     }
-    for &c in *buckets.get(key)? {
+    let start = usize::from(*starts.get(key)?);
+    let end = usize::from(*starts.get(key + 1)?);
+    for &c in buckets.get(start..end)? {
         let inst = &t.instructions[usize::from(c)];
         if inst.size != size
             || inst.space < first
@@ -690,7 +743,7 @@ pub fn decode_as(
     rv64: bool,
     rve: bool,
 ) -> Option<Instruction> {
-    let index = t.instructions.iter().position(|i| i.name == name)?;
+    let index = t.instructions.iter().position(|i| i.name() == name)?;
     let inst = &t.instructions[index];
     decode_operands(t, u16::try_from(index).ok()?, inst, w, rv64, rve)
 }
@@ -704,7 +757,7 @@ pub fn build(
     size: u8,
     operands: &[Operand],
 ) -> Option<Instruction> {
-    let index = t.instructions.iter().position(|i| i.name == name)?;
+    let index = t.instructions.iter().position(|i| i.name() == name)?;
     if operands.len() > MAX_OPERANDS {
         return None;
     }
@@ -1133,7 +1186,7 @@ pub fn write(
         return;
     }
     let inst = i.inst();
-    write_asm(out, inst.asm, |out, name, modifier| {
+    write_asm(out, inst.asm(), |out, name, modifier| {
         let Some(op) = inst.ops.iter().position(|o| o.name == name) else {
             return;
         };

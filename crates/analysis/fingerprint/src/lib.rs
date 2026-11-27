@@ -209,7 +209,7 @@ pub fn code(
                 // (What holds an address, PC-relative or built, is left
                 // out: its encoding and registers are the instruction.)
                 if addresses(&inst) || !mine.is_empty() {
-                    h.write(inst.encoding.name.as_bytes());
+                    h.write(inst.encoding.name().as_bytes());
                     arm32_registers(&mut h, &inst);
                 } else {
                     h.write_u32(inst.word);
@@ -449,7 +449,7 @@ fn thumb(code: &[u8]) -> impl Iterator<Item = (usize, turbonop_arm32::Instructio
 /// Whether a 32-bit ARM instruction holds (part of) an address: a
 /// branch's or literal's offset, `ADR`'s, or `MOVW`'s and `MOVT`'s halves.
 fn addresses(i: &turbonop_arm32::Instruction) -> bool {
-    let n = i.encoding.name;
+    let n = i.encoding.name();
     n.starts_with("B_")
         || n.starts_with("BL_i")
         || n.starts_with("CBZ")
@@ -645,7 +645,7 @@ pub fn shape(arch: Arch, mode: turbonop_code::Mode, code: &[u8], start: u64) -> 
         }
         Arch::Arm => {
             for (_, inst) in thumb(code) {
-                let n = inst.encoding.name;
+                let n = inst.encoding.name();
                 // (`ADD_i_T3`: `ADD_i`.)
                 let op = n.rsplit_once('_').map_or(n, |(op, _)| op);
                 h.write(op.as_bytes());

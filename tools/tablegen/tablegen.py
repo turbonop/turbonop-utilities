@@ -772,6 +772,9 @@ class Extractor:
             w(f"    Kind {{ name: {json.dumps(cls)}, class: {reg_s}, decode: {dec_s}, print: {pm_s} }},")
         w("];")
         w("")
+        # Each list of operands once (most instructions share theirs with
+        # others): a static the instructions refer to.
+        op_lists = {}
         w("pub static INSTRUCTIONS: &[Inst] = &[")
         for i in self.insts:
             ops = []
@@ -786,12 +789,20 @@ class Extractor:
                     f"Op {{ name: {json.dumps(name)}, kind: {kind}, fields: &[{segs_s}], "
                     f"constant: {const}, tied: {tie_s} }}"
                 )
+            ops_s = ", ".join(ops)
+            n = op_lists.setdefault(ops_s, len(op_lists))
+            if len(i["name"]) > 255:
+                raise ValueError(f"{i['name']}: a name longer than 255")
             w(
-                f"    Inst {{ name: {json.dumps(i['name'])}, size: {i['size']}, space: {i['space']}, "
+                f"    inst! {{ name: {json.dumps(i['name'])}, size: {i['size']}, space: {i['space']}, "
                 f"mask: {i['mask']:#x}, value: {i['value']:#x}, pred: {i['pred']}, defs: {i['defs']}, "
-                f"asm: {json.dumps(i['asm'])}, ops: &[{', '.join(ops)}] }},"
+                f"asm: {json.dumps(i['asm'])}, ops: &OPS{n} }},"
             )
         w("];")
+        w("")
+        for ops_s, n in op_lists.items():
+            count = ops_s.count("Op {")
+            w(f"static OPS{n}: [Op; {count}] = [{ops_s}];")
         w("")
 
         def cond_s(c):
@@ -812,11 +823,12 @@ class Extractor:
 
         # The instructions each value of an encoding's key bits can be, in
         # the order they're tried: by decoder table, then the most fixed
-        # bits first (the more specific encoding).
-        for size, label, kb in (
-            (4, "BUCKETS32", self.KEY32),
-            (2, "BUCKETS16", self.KEY16),
-            (8, "BUCKETS64", self.KEY64),
+        # bits first (the more specific encoding). All the buckets in one
+        # array, and where each starts (the last, the end).
+        for size, label, starts_label, kb in (
+            (4, "BUCKETS32", "STARTS32", self.KEY32),
+            (2, "BUCKETS16", "STARTS16", self.KEY16),
+            (8, "BUCKETS64", "STARTS64", self.KEY64),
         ):
             buckets = [[] for _ in range(1 << len(kb))]
             for idx, i in enumerate(self.insts):
@@ -830,11 +842,17 @@ class Extractor:
                             break
                     if ok:
                         buckets[key].append(idx)
-            w(f"static {label}: &[&[u16]] = &[")
+            starts = [0]
+            w(f"static {label}: &[u16] = &[")
             for b in buckets:
                 b.sort(key=lambda x: (self.insts[x]["space"], -self.insts[x]["fixed"], x))
-                w(f"    &{b},")
+                if b:
+                    w("    " + ", ".join(map(str, b)) + ",")
+                starts.append(starts[-1] + len(b))
             w("];")
+            if starts[-1] > 0xFFFF:
+                raise ValueError(f"{label}: {starts[-1]} entries, more than u16 starts count")
+            w(f"static {starts_label}: &[u16] = &{starts};")
             w("")
         w("static ALIASES: &[Alias] = &[")
         for a in self.aliases:
@@ -875,10 +893,13 @@ class Extractor:
         w("    aliases: ALIASES,")
         w("    uncompress: UNCOMPRESS,")
         w("    buckets16: BUCKETS16,")
+        w("    starts16: STARTS16,")
         w(f"    key16: &{self.KEY16},")
         w("    buckets32: BUCKETS32,")
+        w("    starts32: STARTS32,")
         w(f"    key32: &{self.KEY32},")
         w("    buckets64: BUCKETS64,")
+        w("    starts64: STARTS64,")
         w(f"    key64: &{self.KEY64},")
         w(f"    spaces: &{self.space_preds},")
         w("};")

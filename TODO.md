@@ -22,8 +22,11 @@ leave this list when they ship.
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
 - **Release notes.** A release's notes are GitHub's list of the pull
-  requests since the last release; write them from the changes instead
-  (what a user would notice, by command).
+  requests since the last release (0.0.11's listed every one since the
+  first, its predecessors' drafts deleted); 0.0.11's were rewritten by
+  hand from the changes (what a user would notice, by command). The
+  release workflow should draft them so: from the pull requests' titles
+  and descriptions since the last tag, for editing before it publishes.
 - **hexcavator on crates.io.** `cargo binstall hexcavator` finds the crate
   on crates.io (its metadata names the release's programs); until it is
   published there (and with it every `turbonop-*` crate it depends on),
@@ -115,6 +118,10 @@ when they're ready. What's left:
   watch, kill and end, from Rust) passes there. The test says which wait
   timed out, the last events, and procupine's stderr; its live part is
   skipped on macOS until that's found and fixed.
+- **"ancestors dimmed" on Windows.** The extension's test of that name
+  failed once on CI's Windows runner (in #54, which touched no
+  Procupine code) and passed on its rerun: a race, likely the view's
+  update and the test's read of it.
 - **The system's CPU on macOS.** In `turbonop-process`'s live
   `cpu_usage` test on CI's macOS runner, the system's CPU share over a
   300 ms busy loop was once 0 (this process's own share was right): the
@@ -208,6 +215,30 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   specification, tested against clang's own MIPS16 output (`-mips16 -S`
   against `-c`).
 
+## Managed and other non-native binaries
+
+Binary analysis and size analysis for code that runs on a virtual
+machine, not only native images (PE, ELF, Mach-O) and WebAssembly:
+
+- **.NET assemblies.** A PE image's CLI header and metadata tables
+  (ECMA-335): types, methods, fields, and their sizes; IL bodies
+  decoded; resources; references to other assemblies; and what `size`
+  should attribute IL, metadata, strings, blobs, and resources to (by
+  type and namespace, as by compiland for native code). Portable PDBs
+  for their sources and lines. ReadyToRun images (native code beside the
+  IL) and Native AOT images (native, with .NET's own metadata) too.
+- **Java.** Class files (constant pool, fields, methods, attributes,
+  bytecode decoded) and JARs (zip archives of them, with their
+  manifests): size by package, class, and method.
+- **Android.** DEX files (and APKs and AABs that hold them): their
+  classes, methods, Dalvik bytecode, and size by package.
+- **Others to weigh:** Python bytecode (`.pyc`), Lua bytecode, BEAM
+  (Erlang), and anything else with its own instruction set and metadata
+  a user would want sized.
+
+Each format alike, as native ones: `info`, `dump`, `symbols`,
+disassembly, `size` with its findings, and the extension's pages.
+
 ## arm64e
 
 - **hexcavator as arm64e.** macOS and iOS 26 run third-party arm64e
@@ -274,12 +305,30 @@ hexcavator itself has grown: 12.8 MB to 16.3 MB on Windows x64 from
 PDB), and 17.1 MB (glibc, dynamic) to 22.9 MB (musl, static) on Linux
 x64. Where the 3.5 MB went:
 
-- **The new decoders, about 1.1 MB.** PowerPC's code (365 KB) and
-  LoongArch's (265 KB); MIPS's tables (about 275 KB: three of 64 KB and
-  more) and RISC-V's (106 KB), anonymous read-only data (`anon.*`, by
-  their objects). Tables of exactly 64 KB are likely indexed by 16 bits
-  and mostly empty: a denser form (by ranges, or a second level) could
-  take a fraction.
+- **The decoders' tables.** Their read-only data was 4.3 MB of the
+  6.7 MB `.rdata` (16.8 MB in all, on 2026-11-25). The four TableGen
+  decoders' (MIPS, PowerPC, RISC-V, LoongArch: 1.3 MB) are 315 KB
+  smaller: buckets in one array with 16-bit starts (16 bytes a bucket
+  before, and PowerPC's 4,096 64-bit ones held 105 entries), and an
+  instruction's name and syntax one string (72 bytes an instruction
+  before, 56 now). arm64's (2.0 MB) are 450 KB smaller: its 8,182
+  encodings are 48 bytes, not 120 (names, `ne` pairs, conditions, and
+  templates by index into shared tables). arm32's (690 KB) are 214 KB
+  smaller the same way: names and templates in one string, features,
+  aliases, operands, fields, and conditions by 16-bit index, and the
+  buckets flat with 16-bit starts. What's left, the same way:
+  - **arm64's other ~1 MB** (its symbols are 24 bytes now, not 168, and
+    its templates' tokens 4, not 24: 597 KB): `SYSREGS` (44 KB), the
+    32 KB `BUCKETS` (`&[u16]`s), `TOK_LISTS`' slices (16 bytes each),
+    and its semantics and operand specs.
+  - **arm32's rules** (`RULES`: `&str`s and slices of pairs of them, and
+    their texts' and alternatives' `%{rule}` references, as templates'
+    were before they became a character each) and its operand and field
+    lists' `&str` names.
+  - **x86's, 270 KB** (`ENTRIES`, 186 KB).
+  - The TableGen decoders' instructions are still 56 bytes: an index
+    into a string table, and into a table of operand lists, would make
+    them about 24.
 - **Generic code, about 1.15 MB**, counted to `core` (+668 KB), `std`
   (+306 KB), and `alloc` (+180 KB): our generics instantiated for each
   type, much of it likely `turbonop_par`'s (+111 KB itself, new)
@@ -560,6 +609,15 @@ x64. Where the 3.5 MB went:
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with
   Stackrabbit.
+
+## rtti-strip
+
+- **Phase 0 of [the plan](docs/rtti-strip.md).** A corpus with RTTI
+  (LTCG release builds); the bytes at stake; descriptor alignment; where
+  `.data$r` lands; the FIXUP stream's coverage under LTCG; FH4's
+  encoding.
+- **Phase 1: pad mode**, its checker, and the test program.
+- **The FIXUP stream's parser** in `crates/symbols/pdb`.
 
 ## Ideas
 

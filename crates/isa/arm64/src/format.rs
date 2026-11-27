@@ -53,11 +53,11 @@ fn gpr_name(n: u64, wide: bool, sp: bool) -> Option<&'static str> {
 
 /// The symbol's raw number (before its attributes' scaling).
 pub(crate) fn raw(sym: &Symbol, w: u32) -> u64 {
-    value(sym.encoded, w)
+    value(sym.encoded(), w)
 }
 
 pub(crate) fn number(sym: &Symbol, w: u32) -> i64 {
-    match &sym.value {
+    match sym.value() {
         Some(v) => v.eval(w),
         None => raw(sym, w) as i64,
     }
@@ -73,7 +73,7 @@ enum TableResult {
 }
 
 fn table_lookup(sym: &Symbol, w: u32) -> Option<TableResult> {
-    let t = sym.table?;
+    let t = sym.table()?;
     let key = value(t.key, w);
     let &(_, _, result, expr, mul, add, shown) = t.rows.iter().find(|r| key & r.0 == r.1)?;
     Some(if let Some((text, default)) = shown {
@@ -130,17 +130,17 @@ fn render_symbol(
     out: &mut String,
 ) -> Option<bool> {
     let w = inst.word;
-    if let Some((p, v)) = sym.when
+    if let Some((p, v)) = sym.when()
         && value(p, w) != v
     {
         return None;
     }
-    if sym.table.is_some() {
-        let name = sym.display.trim_start_matches('<').trim_end_matches('>');
+    if sym.table().is_some() {
+        let name = sym.display().trim_start_matches('<').trim_end_matches('>');
         // (A condition with no row, AL or NV for an inverted condition, is
         // not shown.)
         let lookup = table_lookup(sym, w).or_else(|| {
-            matches!(sym.display, "<cond>" | "<invcond>").then_some(TableResult::Text("AL"))
+            matches!(sym.display(), "<cond>" | "<invcond>").then_some(TableResult::Text("AL"))
         });
         // Values a table of names doesn't name (SVE patterns, barrier
         // options, prefetch operations): the number, as LLVM prints them.
@@ -192,7 +192,7 @@ fn render_symbol(
             push_lower(out, name);
             return Some(false);
         }
-        if matches!(sym.display, "<cond>" | "<invcond>") {
+        if matches!(sym.display(), "<cond>" | "<invcond>") {
             // "CS|HS": Microsoft uses the second name; AL and NV are not
             // shown.
             let c = result.rsplit('|').next().unwrap_or(result);
@@ -208,7 +208,7 @@ fn render_symbol(
             push_imm(out, raw(sym, w) as i64);
             return Some(false);
         }
-        if sym.display == "<prfop>" {
+        if sym.display() == "<prfop>" {
             let classic = result.len() == 9
                 && ["PLD", "PLI", "PST"].contains(&&result[..3])
                 && ["L1", "L2", "L3"].contains(&&result[3..5])
@@ -233,12 +233,12 @@ fn render_symbol(
             return Some(use_lsl);
         }
         // System operation names (AT, DC, IC, TLBI, ...) stay upper case.
-        if sym.display.ends_with("_op>") && inst.encoding_name().contains("_SYS_") {
+        if sym.display().ends_with("_op>") && inst.encoding_name().contains("_SYS_") {
             out.push_str(result);
             return Some(false);
         }
         // SVE predicate patterns: upper case, and ALL is the default.
-        if sym.display == "<pattern>" {
+        if sym.display() == "<pattern>" {
             let start = out.len();
             out.push_str(result);
             fix_numbers_from(out, start);
@@ -247,7 +247,7 @@ fn render_symbol(
         let default = result.ends_with(" #0")
             || result == "#0"
             || result.is_empty()
-            || (result == "LSL" && sym.display == "<extend>");
+            || (result == "LSL" && sym.display() == "<extend>");
         let start = out.len();
         push_lower(out, result);
         fix_numbers_from(out, start);
@@ -362,7 +362,7 @@ fn render(
     let mut all_default = true;
     for t in toks {
         match *t {
-            Tok::Lit(text) => out.push_str(text),
+            Tok::Lit(text) => out.push_str(crate::tables::lit(text)),
             Tok::Sym(i) => {
                 let sym = symbol(usize::from(i));
                 let at = out.len();
@@ -385,7 +385,8 @@ fn render(
             }
             Tok::Group(inner, optional) => {
                 let start = out.len();
-                let defaults = render(inst, inner, symbols, out, floor)? && optional;
+                let defaults =
+                    render(inst, crate::tables::toks(inner), symbols, out, floor)? && optional;
                 if defaults {
                     out.truncate(start);
                     // The space before a left-out group goes too: "SXTH {#0}".
@@ -423,7 +424,7 @@ fn render_parts(
     match ms_mnemonic(e) {
         Some(m) => out.push_str(m),
         None => {
-            render(inst, e.mnem, symbols, out, start)?;
+            render(inst, e.mnem(), symbols, out, start)?;
         }
     }
     // `b.eq` is `beq`.
@@ -475,7 +476,7 @@ fn render_parts(
     let pad_start = out.len();
     out.extend(core::iter::repeat_n(' ', pad));
     let ops = out.len();
-    render(inst, e.ops, symbols, out, ops)?;
+    render(inst, e.ops(), symbols, out, ops)?;
     if uxt {
         out.truncate(ops);
         push_gpr(out, u64::from(w & 0x1F), true, false);
@@ -618,7 +619,7 @@ pub(crate) fn is_valid(inst: &Instruction) -> bool {
     if e.cond != NONE && !symbol_renders(inst, symbol(usize::from(e.cond))) {
         return false;
     }
-    (ms_mnemonic(e).is_some() || renders(inst, e.mnem)) && renders(inst, e.ops)
+    (ms_mnemonic(e).is_some() || renders(inst, e.mnem())) && renders(inst, e.ops())
 }
 
 /// Whether [`render_symbol`] of `sym` is `Some`: it fails only where its
@@ -627,24 +628,24 @@ pub(crate) fn is_valid(inst: &Instruction) -> bool {
 /// are not a valid mask. Everything else renders.
 fn symbol_renders(inst: &Instruction, sym: &Symbol) -> bool {
     let w = inst.word;
-    if let Some((p, v)) = sym.when
+    if let Some((p, v)) = sym.when()
         && value(p, w) != v
     {
         return false;
     }
-    if sym.table.is_some() {
+    if sym.table().is_some() {
         return match table_lookup(sym, w) {
             Some(TableResult::Text(t)) => t != "RESERVED",
             Some(TableResult::Number(_) | TableResult::Shown(..)) => true,
-            None => matches!(sym.display, "<cond>" | "<invcond>") || sym.has(attr::ORIMM),
+            None => matches!(sym.display(), "<cond>" | "<invcond>") || sym.has(attr::ORIMM),
         };
     }
-    let name = sym.display.trim_start_matches('<').trim_end_matches('>');
+    let name = sym.display().trim_start_matches('<').trim_end_matches('>');
     if !(matches!(name, "const" | "imm") && sym.has(attr::BITMASK)) {
         return true;
     }
     if special(inst, sym, &mut String::new()).is_some()
-        || (sym.has(attr::FP8) && sym.value.as_ref().is_some_and(|v| v.width == 8))
+        || (sym.has(attr::FP8) && sym.value().is_some_and(|v| v.width == 8))
     {
         return true;
     }
@@ -671,7 +672,7 @@ fn renders(inst: &Instruction, toks: &[Tok]) -> bool {
     toks.iter().all(|t| match *t {
         Tok::Lit(_) => true,
         Tok::Sym(i) => symbol_renders(inst, symbol(usize::from(i))),
-        Tok::Group(inner, _) => renders(inst, inner),
+        Tok::Group(inner, _) => renders(inst, crate::tables::toks(inner)),
     })
 }
 
@@ -685,7 +686,7 @@ pub fn explain_encoding(inst: &Instruction) -> alloc::string::String {
         for t in toks {
             match *t {
                 Tok::Lit(_) => {}
-                Tok::Group(inner, _) => symbols_of(inst, inner, out),
+                Tok::Group(inner, _) => symbols_of(inst, crate::tables::toks(inner), out),
                 Tok::Sym(i) => {
                     let sym = symbol(usize::from(i));
                     let mut text = String::new();
@@ -693,7 +694,10 @@ pub fn explain_encoding(inst: &Instruction) -> alloc::string::String {
                     let _ = writeln!(
                         out,
                         "    {} {:?} attrs {:?} -> {:?}",
-                        sym.display, sym.encoded, sym.attrs, r
+                        sym.display(),
+                        sym.encoded(),
+                        sym.attrs(),
+                        r
                     );
                 }
             }
@@ -704,13 +708,17 @@ pub fn explain_encoding(inst: &Instruction) -> alloc::string::String {
     let _ = writeln!(
         out,
         "  {} {:08x}/{:08x} template {:?} {:?}",
-        e.name, e.mask, e.value, e.mnem, e.ops
+        e.name(),
+        e.mask,
+        e.value,
+        e.mnem(),
+        e.ops()
     );
-    symbols_of(inst, e.mnem, &mut out);
+    symbols_of(inst, e.mnem(), &mut out);
     if e.cond != NONE {
         symbols_of(inst, &[Tok::Sym(e.cond)], &mut out);
     }
-    symbols_of(inst, e.ops, &mut out);
+    symbols_of(inst, e.ops(), &mut out);
     out
 }
 
@@ -796,7 +804,7 @@ pub(crate) fn special_value(inst: &Instruction, sym: &Symbol) -> Option<Special>
     // A register offset's amount (LLVM's printMemExtend): with S set, the
     // log2 of the access size in bytes (#0 for bytes); without, none.
     if sym.has(attr::MEMEXT)
-        && sym.display == "<amount>"
+        && sym.display() == "<amount>"
         && let Some(width) = sym.attr("memext")
     {
         let width: u32 = width.parse().unwrap_or(8);
@@ -818,7 +826,7 @@ pub(crate) fn special_value(inst: &Instruction, sym: &Symbol) -> Option<Special>
     // amount is tsz:imm3 minus the element size (left shifts) or twice
     // the element size minus tsz:imm3 (right shifts).
     if sym.has(attr::TSZ)
-        && let Some(v) = sym.value.as_ref().filter(|v| v.width >= 4)
+        && let Some(v) = sym.value().filter(|v| v.width >= 4)
     {
         let raw = value(v.pieces, w) as i64;
         // The immediate below the size bits: imm3, or imm5 for the
@@ -840,12 +848,12 @@ pub(crate) fn special_value(inst: &Instruction, sym: &Symbol) -> Option<Special>
         }
     }
     // ZERO { <mask> }.
-    if sym.display == "<mask>" && name.starts_with("zero_za_i") {
+    if sym.display() == "<mask>" && name.starts_with("zero_za_i") {
         return Some(Special::ZaMask(raw(sym, w)));
     }
     // Symbols with no encoding: "is the destination width specifier, H."
     // and "is the second slice index offset, with implicit value 1."
-    if sym.encoded.is_empty() && sym.value.is_none() {
+    if sym.encoded().is_empty() && sym.value().is_none() {
         if let Some(n) = sym.attr("implicit") {
             return Some(Special::Text(n));
         }
@@ -872,7 +880,7 @@ pub(crate) fn special_value(inst: &Instruction, sym: &Symbol) -> Option<Special>
         return Some(Special::Num(v, v == 1));
     }
     // SVE DUP (indexed): the index is above the lowest set bit of tsz.
-    if sym.display == "<imm>"
+    if sym.display() == "<imm>"
         && sym.has(attr::DUPINDEX)
         && (name.starts_with("dup_z_zi") || name.starts_with("mov_z_zi__dup"))
     {
@@ -883,7 +891,7 @@ pub(crate) fn special_value(inst: &Instruction, sym: &Symbol) -> Option<Special>
         }
     }
     let prefix = name.split('_').next().unwrap_or("");
-    match (prefix, sym.display) {
+    match (prefix, sym.display()) {
         ("UBFX" | "SBFX" | "BFXIL", "<lsb>") => num(immr),
         ("UBFX" | "SBFX" | "BFXIL", "<width>") => num(imms + 1 - immr),
         ("UBFIZ" | "SBFIZ" | "BFI" | "BFC", "<lsb>") => num((-immr).rem_euclid(size)),
@@ -1031,7 +1039,7 @@ fn ms_registers(s: &str, out: &mut String) -> bool {
 
 /// The value of a symbol's precise encoding (its `source=`), unscaled.
 pub(crate) fn raw_value(sym: &Symbol, w: u32) -> u64 {
-    match &sym.value {
+    match sym.value() {
         Some(v) => value(v.pieces, w),
         None => raw(sym, w),
     }
@@ -1039,7 +1047,7 @@ pub(crate) fn raw_value(sym: &Symbol, w: u32) -> u64 {
 
 /// Whether `sym` is an 8-bit floating-point immediate.
 pub(crate) fn is_fp_imm8(sym: &Symbol) -> bool {
-    sym.has(attr::FP8) && sym.value.as_ref().is_some_and(|v| v.width == 8)
+    sym.has(attr::FP8) && sym.value().is_some_and(|v| v.width == 8)
 }
 
 /// An 8-bit floating-point immediate, as Microsoft shows it (the shortest

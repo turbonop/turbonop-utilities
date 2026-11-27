@@ -294,6 +294,11 @@ fn package_rows(d: &[u8], endian: Endian) -> Option<Vec<Row>> {
     if columns > 16 {
         return None;
     }
+    // Every unit has a column (its info, at least): units with none are
+    // a damaged index's (whose tables, empty, wouldn't bound them).
+    if columns == 0 {
+        return (units == 0).then(Vec::new);
+    }
     let ids = (0..columns)
         .map(|_| r.uint(4))
         .collect::<Option<Vec<u64>>>()?;
@@ -2181,6 +2186,30 @@ pub(crate) fn crc32(data: &[u8]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A package index's header: version 2, `columns`, `units`, no slots.
+    fn index(columns: u32, units: u32) -> Vec<u8> {
+        [2, columns, units, 0]
+            .iter()
+            .flat_map(|v: &u32| v.to_le_bytes())
+            .collect()
+    }
+
+    #[test]
+    fn package_index_without_columns() {
+        // No units: no rows.
+        assert_eq!(
+            package_rows(&index(0, 0), Endian::Little).map(|r| r.len()),
+            Some(0)
+        );
+        // Units with no columns (no info): damaged, and answered at once,
+        // not after counting through billions of them.
+        let start = std::time::Instant::now();
+        assert!(package_rows(&index(0, 0xFFFF_FF7F), Endian::Little).is_none());
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
+        // Units with columns: bounded by the tables, which aren't there.
+        assert!(package_rows(&index(1, 0xFFFF_FF7F), Endian::Little).is_none());
+    }
 
     #[test]
     fn crc32_is_zlibs() {

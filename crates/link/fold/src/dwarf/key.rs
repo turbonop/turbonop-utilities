@@ -34,7 +34,7 @@ pub(crate) fn of(
     h.u128(parent);
     h.u64(u64::from(tag));
     h.bytes(name);
-    h.u64(byte_size.map_or(u64::MAX, |v| v));
+    h.u64(byte_size.unwrap_or(u64::MAX));
     h.u128(file);
     h.u64(line);
     h.finish()

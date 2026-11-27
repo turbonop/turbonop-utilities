@@ -651,6 +651,38 @@ x64. Where the 3.5 MB went:
   their own units and records. Measure again, and profile with
   Stackrabbit.
 
+## turbolink
+
+[The plan](docs/turbolink.md). What links so far: C and C++ with every
+CRT, DLLs and import libraries, resources, LLVM's `llvm-tblgen`. Byte for
+byte link.exe's images (time stamps aside): C and C++ with the dynamic and
+static CRTs, C with the debug CRT, a DLL with exports.
+
+- **Not yet, for native x64 images:** `/DEBUG` (the PDB: PR #68),
+  delay loading's protected form (`/GUARD:CF`'s `.didat` section) and its
+  other machines, `/GUARD:CF`'s tables, `/GUARD:EHCONT`, manifests (`/MANIFEST`,
+  `/MANIFESTUAC`, embedding), `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
+  format, the `.exp` file, `/INCREMENTAL`'s padding (it links fully),
+  `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
+  `/MERGE` cycles' error, long-form import objects (old `.idata$`
+  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`, `/Brepro`'s hash.
+- **Byte identity, still different:** a delay-loaded DLL's tables with
+  two or more imports (link.exe's order, docs/turbolink.md);
+  `llvm-tblgen`'s 4 bytes of padding before `.idata$2`; more large
+  programs to check (`llc`, `opt`: `hexcavator diff` them).
+- **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
+  under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
+  header's walk when a library is searched in several passes (each pass's
+  modules made in offset order?).
+- **Speed.** Measure large links (LLVM's) once the build machine is idle.
+  Layout hashes owned copies of names per chunk (24 ms of 90 for
+  `llvm-tblgen`); symbols are interned on one thread; the `/OPT:REF` mark
+  is serial; small inputs may read faster than they map.
+- **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
+  list of what passes.
+- **LTCG**, from [prong 2](docs/turbolink-c2.md) (`turbonop-ltcg-probe`'s
+  `ltcg-drive`).
+
 ## rtti-strip
 
 - **Phase 0 of [the plan](docs/rtti-strip.md).** A corpus with RTTI

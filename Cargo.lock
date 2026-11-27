@@ -1122,6 +1122,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-linker"
+version = "0.0.7"
+dependencies = [
+ "sha2",
+ "turbonop-archive",
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-hash",
+ "turbonop-mmap",
+ "turbonop-par",
+ "turbonop-pe",
+]
+
+[[package]]
 name = "turbonop-linkerlog"
 version = "0.0.7"
 dependencies = [
@@ -1475,6 +1489,14 @@ dependencies = [
  "turbonop-par",
  "turbonop-pe",
  "turbonop-verify",
+]
+
+[[package]]
+name = "turbonop-turbolink"
+version = "0.0.1"
+dependencies = [
+ "turbonop-global-alloc",
+ "turbonop-linker",
 ]
 
 [[package]]

@@ -543,21 +543,25 @@ x64. Where the 3.5 MB went:
     archives from GNU `ar` (this binutils can't write them); thin archives
     and `--fold` (refused); `ar` on Windows hosts beyond the unit tests.
   - GNU `ar -M`'s `DIRECTORY`, `EXTRACT`, `LIST`, `VERBOSE`, and `FULLDIR`.
-  - **Folding's speed** (the plan's 6.7): 0.49× to 0.60× GNU `ar`'s time
-    on the gcc build's 20 largest libraries (0.88× at the start), but 3.9×
-    a Release `llvm-ar`'s (4.3× on the clang build; without folding,
-    1.07×); none measured on a quiet machine (another session's runs came
-    and went). Most of the gap to `llvm-ar` is reading DWARF and
-    synthesizing (`libclangSema.a`: 0.8 s and 1.2 s of 3.6 s). Left: a huge
-    member's string table is still assembled, and its sections copied into
-    the member, on one thread (writing `CIRGenStmtOpenMP.cpp.o`, 588 MB,
-    takes about 0.4 s); a rewritten member is still built
-    whole in memory before the archive writer copies it (pieces borrowed
-    from the input would save that copy, but the index is computed from
-    the member's bytes); `Source::new` copies each debug section to apply
-    its relocations. Other mimalloc options (arena eager commit, eager
-    commit delay 0, no decommit on purge) showed nothing beyond the noise
-    of a shared machine, so only the purge delay is set.
+  - **Folding's speed** (the plan's 6.7 and 6.8): profiled and reworked
+    (6.8); the gcc build's 20 largest libraries fold in 1.88× a Release
+    `llvm-ar`'s time (3.46× before; clang build 2.72×, from 4.73×) and
+    0.34× GNU `ar`'s; `libclangSema.a` in 1.40 to 1.59 s, from 2.94 to
+    3.22 s (a quiet machine). The `relib.py` runs aren't quiet ones
+    (another session's runs came and went; `llvm-ar`'s own times differ by
+    40% between runs): measure them again when the machine is idle. Left:
+    reading members is now the largest phase (every symbol and relocation
+    parsed); `.debug_info` is still copied to apply its relocations to
+    debug sections (reading through them needs the shared DWARF reader to
+    read through relocations; reading the relocations in place by binary
+    search was slower, 6.8); a unit's DIEs are walked on one thread;
+    renumbering a rewritten member's relocations copies each relocation
+    section; writing the archive (the kernel's copy, 0.25 to 0.6 s for
+    1.4 GB) and freeing memory end each fold on one thread; minor page
+    faults vary twofold from run to run. Other mimalloc options (arena
+    eager commit, eager commit delay 0, no decommit on purge) showed
+    nothing beyond the noise of a shared machine, so only the purge delay
+    is set.
   - CREL objects are read, written, and folded (the plan's 6.7; LLVM's
     encoder reproduced byte for byte on clang's objects). Not handled: CREL
     without addends (the member passes through), CREL on MIPS64 (left as

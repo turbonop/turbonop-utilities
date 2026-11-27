@@ -1,0 +1,23 @@
+[package]
+name = "turbonop-ltcg-probe"
+description = "A stand-in for Visual C++'s c2.dll that logs every call between link.exe and the real one (LTCG's interface, observed)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+# Built as c2.dll, to stand in for the compiler's back end beside a copy of
+# link.exe (the real one renamed c2real.dll).
+name = "c2"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde_json.workspace = true
+turbonop-global-alloc.workspace = true
+
+[lints]
+workspace = true

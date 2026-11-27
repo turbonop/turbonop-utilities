@@ -28,6 +28,7 @@ mod error;
 pub mod locate;
 pub mod server;
 pub mod variables;
+pub mod vtables;
 
 use std::cell::OnceCell;
 use std::path::{Path, PathBuf};

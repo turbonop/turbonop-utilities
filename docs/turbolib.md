@@ -2067,6 +2067,65 @@ What it can't prove: nothing was run (lldb isn't in this LLVM build:
 no debugger sessions were compared); the links are ld64.lld's alone; the
 dSYMs are this LLVM's dsymutil's.
 
+### Givers' DWARF pruned (7.5)
+
+- **Givers lose the moved copies' DIEs** (`turbonop_fold::macho::prune`,
+  after the cut and `adjust`), instead of keeping them tombstoned. A DIE
+  below the unit or a namespace is an entity, kept or removed whole.
+  Dead: a subprogram or variable entity some of whose debug relocations
+  named lost code (tombstoned, or naming a moved name: x86-64's are
+  external) and none anything kept, without `DW_AT_const_value`, whose
+  lists are all empty after `adjust`. Also removed: what only the dead
+  reach (references and location expressions, transitively) when it is an
+  unnamed type (pointers, qualifiers, arrays, subroutine types) or a
+  subprogram without an address (declarations, abstract instances), and
+  namespaces left empty. Everything else stays, and everything a kept
+  entity refers to (a dead subprogram a kept call site names stays,
+  tombstoned). `__debug_info` loses the subtrees (`Object::cut`), every
+  kept reference, string offset, and list offset is set again,
+  `__debug_str` loses the strings nothing kept names,
+  `__debug_ranges`/`__debug_loc` the lists nothing kept names and the
+  entries the cut emptied, and Apple's four accelerator tables the entries
+  of removed DIEs (written again as LLVM's `AppleAccelTableWriter` does:
+  the corpus's 5,800 tables read and written back byte for byte by the
+  `macho_apple` example; with its bucket count, unless that would grow
+  the table: then the original's). Anything not handled (DWARF 5, several
+  units, references in expressions, `DW_FORM_ref_udata`, sections not
+  known) keeps the giver's DWARF as 7.4 left it, counted (none in the
+  corpus).
+- **Named types stay.** The first version also removed named types only
+  the dead reached; compared with 7.4's folded links, the dSYMs then
+  lacked 2 type definitions per link (`std::ratio<1000000000, 1>` and
+  `std::ratio<1000000, 1>`; and on x86-64 `llvm-readobj` one class with
+  other contents): a moved `std::chrono` function's class names them as
+  template arguments, its synthesized member holds them as declarations,
+  and dsymutil (classic, ODR uniquing) had kept a giver's definition that
+  nothing in the dSYM referred to. Why it keeps it wasn't established
+  (dsymutil's source isn't read here); named types are kept since.
+- **`verify`** checks pruned DWARF apart from the engine
+  (`turbonop_verify::macho::pruned`): the two DIE trees aligned, only
+  whole subtrees missing below the unit and namespaces; every kept DIE the
+  original's (abbreviation, bytes, relocations, strings by content, lists
+  by what they name, references to the matches of the original's
+  targets, `DW_AT_sibling` to its subtree's end); every removed one dead
+  code's, an unnamed type or address-less subprogram without
+  relocations, or a namespace of such; the accelerator tables the
+  original's entries of kept DIEs, each hash its name's, each findable
+  through its bucket.
+- **Sharing class definitions between synthesized members** (a class
+  whole in one, a declaration in the others) wasn't done: it isn't correct
+  for dsymutil's pruning. dsymutil keeps a definition only through the
+  live DIEs of its own object (as far as seen here: see the previous
+  point), and a synthesized member is loaded (by a name of the index, not
+  only through givers' anchors) and dead-stripped independently of the
+  others: the one holding the definition may be absent, or have no live
+  code, while another's code that names the class is live. Even "the
+  member holding the definition has a function this one's code calls"
+  fails when that function's copy is coalesced with another library's.
+  Each synthesized member stays self-sufficient.
+
+RESULTS_TABLE
+
 ## Decisions
 
 | | Decision |

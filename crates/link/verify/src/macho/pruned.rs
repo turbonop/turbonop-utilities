@@ -5,7 +5,8 @@
 //!
 //! - **The DIEs left are the original's**: the two trees are aligned, each
 //!   new DIE matched to an original one in order; below the unit and
-//!   namespaces whole subtrees may be missing, nowhere else. A matched
+//!   namespaces whole subtrees may be missing, nowhere else. (Twins, a DIE
+//!   LLVM wrote twice, may match either: a kept reference decides.) A matched
 //!   DIE has the original's abbreviation and every attribute's value: the
 //!   same bytes (relocations' places aside, each relocation the
 //!   original's, or, for one into a lost atom, gone with its place all
@@ -764,6 +765,53 @@ pub(super) fn check(
         return;
     }
     rep.checked("DIEs of pruned members", nt.dies.len() as u64);
+    // Twins: LLVM may write a DIE twice (two `T *`s), and the alignment
+    // match the one that went. A kept reference to an unmatched DIE whose
+    // new target is matched to its twin (the same signature, parent, and
+    // contents) takes the twin's match.
+    let mut rev = vec![NONE; nt.dies.len()];
+    for (i, &m) in c.map.iter().enumerate() {
+        if m != NONE {
+            rev[m as usize] = i as u32;
+        }
+    }
+    let mut swaps = 0;
+    for i in 0..ot.dies.len() {
+        if c.map[i] == NONE {
+            continue;
+        }
+        let m = c.map[i] as usize;
+        for k in 0..ot.dies[i].attrs.len() {
+            let (oa, na) = (&ot.dies[i].attrs[k], &nt.dies[m].attrs[k]);
+            if !is_ref(oa.form) || oa.name == DW_AT_SIBLING {
+                continue;
+            }
+            let (Value::Uint(x), Value::Uint(y)) = (oa.value, na.value) else {
+                continue;
+            };
+            let (Some(t), Some(y)) = (ot.die_at(x), nt.die_at(y)) else {
+                continue;
+            };
+            let twin = rev[y] as usize;
+            if c.map[t] != NONE || rev[y] == NONE || twin == t {
+                continue;
+            }
+            let s1 = signature(&ot, &mut c.osig, t, SIG_DEPTH);
+            let s2 = signature(&ot, &mut c.osig, twin, SIG_DEPTH);
+            if s1 != s2 || ot.dies[t].parent != ot.dies[twin].parent {
+                continue;
+            }
+            c.unmap(twin);
+            if c.same(t, y, true) {
+                rev[y] = t as u32;
+                swaps += 1;
+            } else {
+                // (Not twins after all: as it was.)
+                let _ = c.same(twin, y, true);
+            }
+        }
+    }
+    rep.checked("DIEs of pruned members matched to their twins", swaps);
     // References: to the matches of the original's targets.
     let mut bad_refs = 0;
     let mut first_bad = None;

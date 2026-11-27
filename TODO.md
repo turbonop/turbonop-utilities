@@ -569,17 +569,21 @@ x64. Where the 3.5 MB went:
   (7.2), `--fold=identical` with `verify` (7.3), x86-64's FDEs and LSDAs
   moving with their units, givers' DWARF moving with their code,
   synthesized members' DWARF, and a Rust `compare-images` for Mach-O with
-  dSYMs (7.4), and the corpus scripts (`tools/turbolib/macho-corpus`).
-  Still open:
-  - **The size DWARF costs**: the folded corpus archives are 9.1% larger
-    (they were 1.0% smaller before synthesized members carried DWARF):
-    88.7 MB of synthesized members' DWARF per architecture (classes the
-    moved code names kept whole: dsymutil keeps only what linked DIEs
-    reach), and the givers keep their copies' DIEs, tombstoned. Ideas:
-    remove the givers' dead DIEs (and their accelerator table entries);
-    an opt-in `--debug-types=declarations` (14.9 MB, but 1.1% of the
-    dSYM's type definitions lost); share type definitions between a
-    library's synthesized members.
+  dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5), and the
+  corpus scripts (`tools/turbolib/macho-corpus`). Still open:
+  - **The size DWARF costs**: the folded corpus archives are 5.9% larger
+    (7.4: 9.1%; 1.0% smaller before synthesized members carried DWARF):
+    88.7 MB of synthesized members' DWARF per architecture, most of it
+    whole class definitions (dsymutil keeps only what linked DIEs reach)
+    and their strings. Sharing class definitions between synthesized
+    members isn't correct for dsymutil (7.5: they load and dead-strip
+    independently). Left: an opt-in `--debug-types=declarations` (14.9
+    MB, but 1.1% of the dSYM's type definitions lost); inline strings
+    (`DW_FORM_string`) for strings a synthesized member uses once (a few
+    percent of its DWARF); find out why dsymutil kept a giver's
+    unreferenced class definition (7.5), which decides whether givers may
+    also lose named types only dead code reached (6.7 MB of both
+    architectures' `llvm-ar` archives).
   - **`compare-images` on the corpus links isn't clean** (see 7.4): code
     and data past a local constant that a sizeless symbol can't bound
     (2 to 24 per program; bound them by the dSYM's variables' types);

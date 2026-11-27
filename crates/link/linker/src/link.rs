@@ -256,9 +256,7 @@ pub fn link(mut config: Config) -> Outcome {
     lap("output", &mut out);
     // The import library, for a DLL (or anything exporting).
     let c = &resolved.config;
-    if let Some(t) = &layout.exports
-        && !c.no_implib
-    {
+    if let Some(t) = &layout.exports {
         let lib_path = c
             .implib
             .clone()
@@ -268,15 +266,18 @@ pub fn link(mut config: Config) -> Outcome {
         for (k, (_, i)) in t.directory.names.iter().enumerate() {
             hints[*i] = u16::try_from(k).unwrap_or(0);
         }
-        let lib = implib::write(
+        // (Not with /NOIMPLIB; the export object still, as link.exe.)
+        let lib = (!c.no_implib).then(|| implib::write(
             &t.dll_name,
             machine.number(),
             machine.is_64(),
             &t.directory.exports,
             &hints,
             crate::write::timestamp(c),
-        );
-        if let Err(e) = std::fs::write(&lib_path, lib) {
+        ));
+        if let Some(lib) = lib
+            && let Err(e) = std::fs::write(&lib_path, lib)
+        {
             out.diagnostics.push(LinkError {
                 code: 1104,
                 message: format!("cannot open file '{}': {e}", lib_path.display()),
@@ -307,7 +308,7 @@ pub fn link(mut config: Config) -> Outcome {
                 &crate::exp::Inputs {
                     path: &exp_path,
                     dll_name: &t.dll_name,
-                    dll: c.dll,
+                    directives: c.def_directives.as_deref(),
                     machine: machine.number(),
                     def: def_path.as_deref().zip(def_text.as_deref()),
                     cwd: &cwd,

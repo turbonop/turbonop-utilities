@@ -179,6 +179,14 @@ pub fn apply_def(c: &mut Config, def: &DefFile) {
         }
         c.library_name = Some(p.to_string_lossy().into_owned());
     }
+    if let Some(n) = &def.name {
+        let mut p = std::path::PathBuf::from(n);
+        if p.extension().is_none() {
+            p.set_extension(if def.library { "dll" } else { "exe" });
+        }
+        let dll = if def.library { " /DLL" } else { "" };
+        c.def_directives = Some(format!("{dll} /OUT:{}", p.display()));
+    }
     if c.out.is_none()
         && let Some(n) = &def.name
     {

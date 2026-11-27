@@ -1,6 +1,6 @@
 //! The `.exp` file: the export object link.exe writes beside an import
-//! library (and links into the image): a COFF object of three sections, as
-//! link.exe 14.52 writes it:
+//! library (and links into the image): a COFF object of two or three
+//! sections, as link.exe 14.52 writes it:
 //!
 //! - `.edata`: the export directory as an object holds it, its addresses
 //!   relocations (ADDR32NB) to the tables in it and to each export's
@@ -10,7 +10,9 @@
 //! - `.debug$S`: CodeView symbols (`S_OBJNAME`, `S_COMPILE3` for LINK,
 //!   `S_ENVBLOCK` with the directory and the linker's path, an `S_EXPORT`
 //!   per export) and, with a `.def` file, its SHA-256 and its path;
-//! - `.drectve`: ` /DLL /OUT:<dll>` (a UTF-8 byte order mark before it).
+//! - `.drectve`, with a `.def` file that names the image (`LIBRARY` or
+//!   `NAME`): ` /DLL /OUT:<its name>` (no `/DLL` for `NAME`; a UTF-8 byte
+//!   order mark before it).
 //!
 //! The time stamps are 0xFFFFFFFF, as link.exe's. What can't be link.exe's
 //! bytes: the linker's path in `S_ENVBLOCK` (turbolink's own).
@@ -25,10 +27,11 @@ const COMP_ID: u32 = crate::rich::EXPORT_COMP_ID;
 pub struct Inputs<'a> {
     /// The `.exp` file's path (its name goes in `S_OBJNAME` as written).
     pub path: &'a std::path::Path,
-    /// The DLL's name (the directory's, and `/OUT:` in `.drectve`).
+    /// The DLL's name (the directory's).
     pub dll_name: &'a str,
-    /// Whether the image is a DLL (`/DLL` in `.drectve`).
-    pub dll: bool,
+    /// What the `.def` file says to link with (` /DLL /OUT:x.dll` for
+    /// `LIBRARY x`, ` /OUT:x.exe` for `NAME x`): `.drectve`'s.
+    pub directives: Option<&'a str>,
     /// The machine (its `IMAGE_FILE_MACHINE_` number) and CodeView's.
     pub machine: u16,
     /// The `.def` file and its contents, if the exports came from one.
@@ -112,20 +115,17 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
     // .debug$S.
     let debug = debug_s(dir, x, &by_name, &internal);
     // .drectve.
-    let mut drectve = vec![0xEF, 0xBB, 0xBF];
-    if x.dll {
-        drectve.extend_from_slice(b" /DLL");
-    }
-    drectve.extend_from_slice(format!(" /OUT:{}", x.dll_name).as_bytes());
+    let drectve = x.directives.map(|d| [&[0xEF, 0xBB, 0xBF][..], d.as_bytes()].concat());
+    let sections: u16 = if drectve.is_some() { 3 } else { 2 };
 
     // The file: header, three section headers, .edata and its relocations,
     // .debug$S, .drectve, the symbols (on 4 bytes), the strings.
-    let edata_at = 20 + 3 * 40;
+    let edata_at = 20 + 40 * usize::from(sections);
     let relocations_at = edata_at + edata.len();
     let debug_at = relocations_at + 10 * relocations.len();
     let drectve_at = debug_at + debug.len();
     // (A NUL after .drectve that its size doesn't count, as link.exe's.)
-    let symbols_at = drectve_at + drectve.len() + 1;
+    let symbols_at = drectve.as_ref().map_or(drectve_at, |d| drectve_at + d.len() + 1);
     let mut strings: Vec<u8> = Vec::new();
     let mut name8 = |n: &str| -> [u8; 8] {
         let mut r = [0u8; 8];
@@ -165,7 +165,7 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
 
     let mut out = Vec::new();
     out.extend_from_slice(&x.machine.to_le_bytes());
-    out.extend_from_slice(&3u16.to_le_bytes());
+    out.extend_from_slice(&sections.to_le_bytes());
     out.extend_from_slice(&u32::MAX.to_le_bytes());
     out.extend_from_slice(&crate::n32(symbols_at).to_le_bytes());
     out.extend_from_slice(&count.to_le_bytes());
@@ -183,7 +183,9 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
     };
     header(&mut out, b".edata\0\0", edata.len(), edata_at, relocations_at, relocations.len(), 0x4000_0040);
     header(&mut out, b".debug$S", debug.len(), debug_at, 0, 0, 0x4210_0040);
-    header(&mut out, b".drectve", drectve.len(), drectve_at, 0, 0, 0x0000_0200);
+    if let Some(d) = &drectve {
+        header(&mut out, b".drectve", d.len(), drectve_at, 0, 0, 0x0000_0200);
+    }
     out.extend_from_slice(&edata);
     let addr32nb: u16 = match x.machine {
         0x8664 => 3,
@@ -197,7 +199,9 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
         out.extend_from_slice(&addr32nb.to_le_bytes());
     }
     out.extend_from_slice(&debug);
-    out.extend_from_slice(&drectve);
+    if let Some(d) = &drectve {
+        out.extend_from_slice(d);
+    }
     out.resize(symbols_at, 0);
     out.extend_from_slice(&symbols);
     out.extend_from_slice(&(4 + crate::n32(strings.len())).to_le_bytes());

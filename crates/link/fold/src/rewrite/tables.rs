@@ -762,6 +762,7 @@ pub(super) fn place<'d>(
     o: &mut Object<'d>,
     units: &[(usize, usize, bool)],
     parsed: &[Parsed<'d>],
+    objects: super::Objects<'_, 'd>,
     placed: &[Placed],
     outside: &mut dyn FnMut(&mut Object<'d>, usize, SymbolId) -> SymbolId,
 ) -> Fields {
@@ -769,7 +770,7 @@ pub(super) fn place<'d>(
     let mut building: Vec<Building> = Vec::new();
     let mut by_name: HashMap<Vec<u8>, usize> = HashMap::default();
     for (k, &(m, u, _)) in units.iter().enumerate() {
-        let object = parsed[m].object.as_ref().expect("units come from objects");
+        let object = objects.get(m);
         let facts = &parsed[m].facts;
         let unit = &facts.units[u];
         let tables = &facts.tables;

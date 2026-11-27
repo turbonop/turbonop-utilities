@@ -18,7 +18,7 @@ use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use turbonop_archive::write::{
-    Fields, Layout, MemberHeader, MemberSymbol, NewMember, SizeLimit, Style, WriteError,
+    Fields, Layout, MemberHeader, MemberSymbol, SizeLimit, Style, WriteError,
 };
 use turbonop_fold::rewrite;
 
@@ -587,6 +587,7 @@ fn build(
                 fields: m.fields,
                 data: m.data,
                 holes: &[],
+                symbol_table: None,
                 place: Cow::Borrowed(&m.place),
                 index_only: None,
                 synthesized: false,
@@ -595,6 +596,27 @@ fn build(
         Some(folded) => {
             if settings.stats {
                 r.lines.extend(stats_lines(&folded.report, &members));
+                // What folding's members hold in memory (their bytes but
+                // the holes, which are the inputs').
+                let held = |synthesized: bool| {
+                    let (mut bytes, mut holes) = (0, 0);
+                    for m in folded
+                        .members
+                        .iter()
+                        .filter(|m| m.synthesized == synthesized)
+                    {
+                        if let Cow::Owned(d) = &m.data {
+                            bytes += d.len();
+                            holes += m.holes.len();
+                        }
+                    }
+                    format!("{:.1} MiB ({holes} holes)", bytes as f64 / 1_048_576.0)
+                };
+                r.lines.push(format!(
+                    "turbolib: held: rewritten members {}, synthesized {}",
+                    held(false),
+                    held(true)
+                ));
             }
             if settings.report_odr {
                 r.lines.extend(odr_lines(&folded.report));
@@ -616,6 +638,7 @@ fn build(
                         fields: from.map_or(synthesized, |f| f.fields),
                         data: &m.data,
                         holes: &m.holes,
+                        symbol_table: m.symbol_table,
                         index_only: m.index_only.as_deref(),
                         synthesized: m.synthesized,
                         place: from.map_or_else(
@@ -632,7 +655,7 @@ fn build(
     clock.lap("fold");
     let ec = matches!(check.machine, Some(inputs::ARM64EC | inputs::ARM64X));
     let symbols = turbonop_par::map(&finals, 16, |m| {
-        library::member_symbols(flavor, &m.place, m.data, ec)
+        library::member_symbols(flavor, &m.place, m.data, m.symbol_table, ec)
     });
     let mut member_symbols = Vec::with_capacity(symbols.len());
     for (s, m) in symbols.into_iter().zip(&finals) {
@@ -661,7 +684,7 @@ fn build(
             if m.synthesized {
                 Vec::new()
             } else {
-                library::strong_definitions(m.data)
+                library::strong_definitions(m.data, m.symbol_table)
             }
         });
         let places: Vec<String> = finals.iter().map(|m| m.place.to_string()).collect();
@@ -671,21 +694,13 @@ fn build(
     }
     clock.lap("symbols");
     let index = library::index(flavor, member_symbols, ec);
-    let new: Vec<NewMember<'_>> = finals
-        .iter()
-        .map(|m| NewMember {
-            name: m.name,
-            fields: m.fields,
-            data: m.data,
-        })
-        .collect();
     clock.lap("index");
-    let headers: Vec<MemberHeader<'_>> = new
+    let headers: Vec<MemberHeader<'_>> = finals
         .iter()
         .map(|m| MemberHeader {
             name: m.name,
             fields: m.fields,
-            size: m.data.len() as u64,
+            size: m.len() as u64,
         })
         .collect();
     let layout = match Layout::new(&headers, &index, style, SizeLimit::FourGiB) {
@@ -719,7 +734,6 @@ fn build(
     drop(layout);
     drop(headers);
     drop(index);
-    drop(new);
     drop(finals);
     drop(folded);
     drop(members);
@@ -774,6 +788,8 @@ struct Final<'d> {
     fields: Fields,
     data: &'d [u8],
     holes: &'d [(usize, &'d [u8])],
+    /// Where `data` has the symbol table, if it has holes.
+    symbol_table: Option<u32>,
     place: Cow<'d, str>,
     /// The index's names for it, if not those it defines (folding's).
     index_only: Option<&'d [Vec<u8>]>,
@@ -781,7 +797,13 @@ struct Final<'d> {
     synthesized: bool,
 }
 
-/// What `--stats` prints about folding.
+impl Final<'_> {
+    /// The member's length: its bytes and its holes'.
+    fn len(&self) -> usize {
+        self.data.len() + self.holes.iter().map(|h| h.1.len()).sum::<usize>()
+    }
+}
+
 /// `--report odr`'s findings: each name whose definitions differ, with
 /// the members holding each definition. Information, not warnings.
 fn odr_lines(r: &rewrite::Report) -> Vec<String> {

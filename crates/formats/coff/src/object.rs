@@ -327,6 +327,15 @@ impl<'data> Name<'data> {
         &self.bytes
     }
 
+    /// The name's bytes, borrowed from the file it was read from where
+    /// they are (copied otherwise).
+    pub fn data(&self) -> Cow<'data, [u8]> {
+        match &self.bytes {
+            Cow::Borrowed(b) => Cow::Borrowed(b),
+            Cow::Owned(v) => Cow::Owned(v.clone()),
+        }
+    }
+
     /// Replaces the name.
     pub fn set(&mut self, bytes: impl Into<Cow<'data, [u8]>>) {
         self.bytes = bytes.into();
@@ -484,7 +493,15 @@ pub enum SectionData<'data> {
     Uninitialized(u32),
 }
 
-impl SectionData<'_> {
+impl<'data> SectionData<'data> {
+    /// The data, if it is borrowed from the file it was read from.
+    pub fn borrowed(&self) -> Option<&'data [u8]> {
+        match self {
+            SectionData::Bytes(Cow::Borrowed(b)) => Some(b),
+            _ => None,
+        }
+    }
+
     /// `SizeOfRawData`.
     pub fn size(&self) -> u32 {
         match self {

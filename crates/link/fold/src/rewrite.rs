@@ -288,20 +288,24 @@ impl Unfoldable {
 
 /// Section data at least this large isn't copied into a rewritten or
 /// synthesized member's bytes: it is left as a hole, filled from the input
-/// when the library is written.
-const HOLE: usize = 4096;
+/// when the library is written. Each hole costs its place in a list (24
+/// bytes) and a piece for the writer to copy, so smaller data is copied.
+const HOLE: usize = 32;
 
 /// One output member.
 #[derive(Clone, Debug)]
 pub struct OutputMember<'a> {
     pub name: Cow<'a, [u8]>,
-    /// Its bytes, with zeros in the holes.
+    /// Its bytes, but for the holes'.
     pub data: Cow<'a, [u8]>,
     /// The pieces of the member that `data` leaves out (see
-    /// [`turbonop_coff::Skeleton`]): each offset in it, and the bytes to put
-    /// there. Everything but section contents is in `data`, so it can be
-    /// read for its headers and symbols as it is.
+    /// [`turbonop_coff::Skeleton`]): each offset in the member, and the
+    /// bytes to put there, in order. Only section contents are left out:
+    /// the headers are where the member has them.
     pub holes: Vec<(usize, &'a [u8])>,
+    /// Where `data` has the symbol table (and the string table after it),
+    /// for a member with holes (see [`turbonop_coff::Skeleton`]).
+    pub symbol_table: Option<u32>,
     /// Made by turbolib.
     pub synthesized: bool,
     /// The names the archive index lists for this member, if not the ones
@@ -309,6 +313,27 @@ pub struct OutputMember<'a> {
     /// for its anchor alone, so that each folded name stays listed for the
     /// member it was listed for (see [`Pull::Preserve`]).
     pub index_only: Option<Vec<Vec<u8>>>,
+}
+
+impl OutputMember<'_> {
+    /// The member's length.
+    pub fn len(&self) -> usize {
+        self.data.len() + self.holes.iter().map(|h| h.1.len()).sum::<usize>()
+    }
+
+    /// Whether the member is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The member's bytes, gathered if it has holes.
+    pub fn file(&self) -> Cow<'_, [u8]> {
+        if self.holes.is_empty() {
+            Cow::Borrowed(&self.data)
+        } else {
+            Cow::Owned(turbonop_coff::skeleton_parts(&self.data, &self.holes).concat())
+        }
+    }
 }
 
 /// What a rewrite did.
@@ -444,36 +469,111 @@ pub fn renamed(name: &[u8]) -> Vec<u8> {
 }
 
 struct Parsed<'a> {
+    /// The object (`None` for a member that isn't one, and, when the
+    /// members are made one at a time, once read: see [`Objects`]).
     object: Option<Object<'a>>,
+    /// Whether the member is a COFF object.
+    is_object: bool,
+    /// The object's machine (0 if it isn't one).
+    machine: u16,
     facts: Facts,
     passed: Option<Unfoldable>,
     debug: debug::Facts,
+    /// Its types' section data (`.debug$T` or `.debug$P`), if it has
+    /// records ([`debug::Types::Records`]).
+    types: &'a [u8],
+    /// The external symbols it defines (see [`definitions`]); taken once
+    /// the definers are found.
+    definitions: Vec<Cow<'a, [u8]>>,
 }
 
-fn parse<'a>(input: &Input<'a>, mode: units::Mode) -> Parsed<'a> {
+/// Where the members' objects are found while members are made: in
+/// `parsed`, or, when the members are made one at a time (each object read
+/// again and let go once its work is done, so that they aren't all in
+/// memory at once), the one being worked on.
+#[derive(Clone, Copy)]
+struct Objects<'p, 'a> {
+    parsed: &'p [Parsed<'a>],
+    current: &'p [(usize, &'p Object<'a>)],
+}
+
+impl<'p, 'a> Objects<'p, 'a> {
+    /// The objects kept in `parsed`.
+    fn kept(parsed: &'p [Parsed<'a>]) -> Self {
+        Objects {
+            parsed,
+            current: &[],
+        }
+    }
+
+    /// Member `m`'s object.
+    fn get(&self, m: usize) -> &'p Object<'a> {
+        match self.current.iter().find(|c| c.0 == m) {
+            Some(&(_, o)) => o,
+            None => self.parsed[m]
+                .object
+                .as_ref()
+                .expect("units come from objects"),
+        }
+    }
+}
+
+/// Whether the members are made one at a time, each object read again
+/// (see [`Objects`]): when every synthesized member's units are one
+/// member's, and nothing needs every object at once (shared types,
+/// `--report odr`, and select-any's and `--locals`' comparisons do).
+fn one_at_a_time(options: &Options) -> bool {
+    options.fold == Fold::Identical
+        && options.locals == Locals::Keep
+        && options.precomp == Precomp::None
+        && !options.odr
+}
+
+/// Reads a member. Its object is kept unless `drop_object` (when the
+/// members are made one at a time, each read again: see [`Objects`]).
+fn parse<'a>(input: &Input<'a>, mode: units::Mode, drop_object: bool) -> Parsed<'a> {
     let pass = |why| Parsed {
         object: None,
+        is_object: false,
+        machine: 0,
         facts: Facts::default(),
         passed: Some(why),
         debug: debug::Facts::default(),
+        types: &[],
+        definitions: Vec::new(),
     };
-    match File::parse(input.data) {
+    let mut p = match File::parse(input.data) {
         Ok(File::Object(object)) => match units::find_with(&object, mode) {
             Ok(mut facts) => {
                 let debug = debug::read(&object, &mut facts);
+                let types = match &debug.types {
+                    debug::Types::Records { section, .. } => object.sections[section.index()]
+                        .data
+                        .borrowed()
+                        .unwrap_or_default(),
+                    _ => &[],
+                };
                 Parsed {
+                    machine: object.machine,
                     object: Some(object),
+                    is_object: true,
                     facts,
                     passed: None,
                     debug,
+                    types,
+                    definitions: Vec::new(),
                 }
             }
             Err(why) => Parsed {
                 // Kept for its definitions, which still count.
+                machine: object.machine,
                 object: Some(object),
+                is_object: true,
                 facts: Facts::default(),
                 passed: Some(why),
                 debug: debug::Facts::default(),
+                types: &[],
+                definitions: Vec::new(),
             },
         },
         Ok(File::Opaque { kind, .. }) => pass(match kind {
@@ -482,19 +582,24 @@ fn parse<'a>(input: &Input<'a>, mode: units::Mode) -> Parsed<'a> {
             _ => Unfoldable::Anonymous,
         }),
         Err(_) => pass(Unfoldable::Unreadable),
+    };
+    p.definitions = definitions(input, &p);
+    if drop_object {
+        p.object = None;
     }
+    p
 }
 
 /// The external symbols a member defines, as the archive index would list
 /// them (for counting definers). Import objects define their symbol and
 /// `__imp_` it; `/GL` objects aren't read.
-fn definitions<'a>(input: &Input<'a>, parsed: &'a Parsed<'a>) -> Vec<Cow<'a, [u8]>> {
+fn definitions<'a>(input: &Input<'a>, parsed: &Parsed<'a>) -> Vec<Cow<'a, [u8]>> {
     if let Some(o) = &parsed.object {
         return o
             .symbols
             .iter()
             .filter(|s| s.is_external() && s.section.id().is_some())
-            .map(|s| Cow::Borrowed(s.name.as_bytes()))
+            .map(|s| s.name.data())
             .collect();
     }
     if parsed.passed == Some(Unfoldable::Import)
@@ -603,8 +708,9 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         copy_locals: options.locals != Locals::Keep && options.fold != Fold::None,
         structural: options.odr,
     };
+    let stream = one_at_a_time(&options);
     let mut parsed: Vec<Parsed<'a>> =
-        turbonop_par::map_balanced(inputs, 4, |i: &Input<'a>| parse(i, mode));
+        turbonop_par::map_balanced(inputs, 4, |i: &Input<'a>| parse(i, mode, stream));
     // PCH users' PCH objects (their units' types are there).
     let library = !matches!(options.precomp, Precomp::None);
     debug::resolve(&mut parsed, library);
@@ -628,10 +734,9 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     lap(0);
-    let defs: Vec<Vec<Cow<'_, [u8]>>> = inputs
-        .iter()
-        .zip(&parsed)
-        .map(|(i, p)| definitions(i, p))
+    let defs: Vec<Vec<Cow<'a, [u8]>>> = parsed
+        .iter_mut()
+        .map(|p| std::mem::take(&mut p.definitions))
         .collect();
     // The shared types, while the definers are found (on one thread).
     let types_clock = std::time::Instant::now();
@@ -733,6 +838,9 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         mut synths,
         ..
     } = d;
+    // What deciding needed, let go before the members are made.
+    drop((first_definer, one_code, one_key, groups, copies, named));
+    drop(defs);
 
     // Under --locals=copy, a member's local units that only moved units
     // refer to go too (their copies are in the synthesized members).
@@ -783,79 +891,112 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     }
 
     lap(2);
-    // Rewritten members, then synthesized members, each in parallel.
-    // Largest first, so the threads finish together.
-    let mut order: Vec<usize> = (0..parsed.len()).collect();
-    order.sort_by_key(|&m| std::cmp::Reverse(inputs[m].data.len()));
-    let mut members: Vec<Rewritten<'a>> = turbonop_par::map_balanced(&order, 1, |&m| {
-        let input = &inputs[m];
-        // Its shared types, if any (not of the sections it gives up).
-        let edit = plan.as_ref().and_then(|plan| {
-            let mut removed =
-                vec![false; parsed[m].object.as_ref().map_or(0, |o| o.sections.len())];
-            for &(u, _) in &removals[m] {
-                for s in &parsed[m].facts.units[u].sections {
-                    removed[s.index()] = true;
-                }
-            }
-            plan.edit(&parsed, m, &removed)
-        });
-        let sizes = edit.as_ref().map(|e| (e.before, e.after));
-        if removals[m].is_empty() && edit.is_none() {
-            return (
-                m,
-                OutputMember {
-                    name: Cow::Borrowed(input.name),
-                    data: Cow::Borrowed(input.data),
-                    holes: Vec::new(),
-                    synthesized: false,
-                    index_only: None,
-                },
-                None,
-            );
-        }
-        let refers: Vec<&[u8]> = anchors_of[m]
-            .iter()
-            .map(|&n| anchors[n].as_slice())
-            .collect();
-        let skeleton = strip(&parsed[m], &removals[m], &refers, edit.as_ref());
-        (
-            m,
-            OutputMember {
-                name: Cow::Borrowed(input.name),
-                data: Cow::Owned(skeleton.bytes),
-                holes: skeleton.holes,
-                synthesized: false,
-                index_only: None,
-            },
-            sizes,
-        )
-    });
-    members.sort_unstable_by_key(|(m, _, _)| *m);
-    let mut rewritten = 0;
-    for (m, _, sizes) in &members {
-        if let Some((before, after)) = sizes {
-            report.types.sharing += 1;
-            report.types.types_before += before;
-            report.types.types_after += after;
-        }
-        rewritten += u64::from(!removals[*m].is_empty() || sizes.is_some());
-    }
-    report.types.nothing_shared =
-        report.types.candidates - report.types.unreadable - report.types.sharing;
-    let members: Vec<OutputMember<'a>> = members.into_iter().map(|(_, o, _)| o).collect();
-    lap(3);
-    let made: Vec<OutputMember<'a>> = turbonop_par::map_range(synths.len(), 1, |n| {
-        let name = format!("turbolib{n}.obj").into_bytes();
-        let skeleton = synthesize(&synths[n], &parsed, plan.as_ref(), &anchors[n], &name);
+    let name_of = |n: usize| format!("turbolib{n}.obj").into_bytes();
+    let synthesized = |n: usize, objects: Objects<'_, 'a>| {
+        let name = name_of(n);
+        let skeleton = synthesize(
+            &synths[n],
+            objects,
+            &parsed,
+            plan.as_ref(),
+            &anchors[n],
+            &name,
+        );
         OutputMember {
             name: Cow::Owned(name),
             data: Cow::Owned(skeleton.bytes),
             holes: skeleton.holes,
+            symbol_table: Some(skeleton.symbol_table),
             synthesized: true,
             index_only: (options.pull == Pull::Preserve).then(|| vec![anchors[n].clone()]),
         }
-    });
+    };
+    let (members, made, rewritten) = if stream {
+        let (members, made) = one_at_a_time_members(
+            inputs,
+            &parsed,
+            &removals,
+            &synths,
+            &anchors,
+            &anchors_of,
+            &synthesized,
+        );
+        let rewritten = removals.iter().filter(|r| !r.is_empty()).count() as u64;
+        lap(3);
+        (members, made, rewritten)
+    } else {
+        // Rewritten members, then synthesized members, each in parallel.
+        // Largest first, so the threads finish together.
+        let mut order: Vec<usize> = (0..parsed.len()).collect();
+        order.sort_by_key(|&m| std::cmp::Reverse(inputs[m].data.len()));
+        let mut members: Vec<Rewritten<'a>> = turbonop_par::map_balanced(&order, 1, |&m| {
+            let input = &inputs[m];
+            // Its shared types, if any (not of the sections it gives up).
+            let edit = plan.as_ref().and_then(|plan| {
+                let mut removed =
+                    vec![false; parsed[m].object.as_ref().map_or(0, |o| o.sections.len())];
+                for &(u, _) in &removals[m] {
+                    for s in &parsed[m].facts.units[u].sections {
+                        removed[s.index()] = true;
+                    }
+                }
+                plan.edit(&parsed, m, &removed)
+            });
+            let sizes = edit.as_ref().map(|e| (e.before, e.after));
+            if removals[m].is_empty() && edit.is_none() {
+                return (
+                    m,
+                    OutputMember {
+                        name: Cow::Borrowed(input.name),
+                        data: Cow::Borrowed(input.data),
+                        holes: Vec::new(),
+                        symbol_table: None,
+                        synthesized: false,
+                        index_only: None,
+                    },
+                    None,
+                );
+            }
+            let refers: Vec<&[u8]> = anchors_of[m]
+                .iter()
+                .map(|&n| anchors[n].as_slice())
+                .collect();
+            let object = parsed[m]
+                .object
+                .as_ref()
+                .expect("a member that gives up copies is an object");
+            let skeleton = strip(object, &parsed[m], &removals[m], &refers, edit.as_ref());
+            (
+                m,
+                OutputMember {
+                    name: Cow::Borrowed(input.name),
+                    data: Cow::Owned(skeleton.bytes),
+                    holes: skeleton.holes,
+                    symbol_table: Some(skeleton.symbol_table),
+                    synthesized: false,
+                    index_only: None,
+                },
+                sizes,
+            )
+        });
+        members.sort_unstable_by_key(|(m, _, _)| *m);
+        let mut rewritten = 0;
+        for (m, _, sizes) in &members {
+            if let Some((before, after)) = sizes {
+                report.types.sharing += 1;
+                report.types.types_before += before;
+                report.types.types_after += after;
+            }
+            rewritten += u64::from(!removals[*m].is_empty() || sizes.is_some());
+        }
+        report.types.nothing_shared =
+            report.types.candidates - report.types.unreadable - report.types.sharing;
+        let members: Vec<OutputMember<'a>> = members.into_iter().map(|(_, o, _)| o).collect();
+        lap(3);
+        let made: Vec<OutputMember<'a>> =
+            turbonop_par::map_range(synths.len(), 1, |n| synthesized(n, Objects::kept(&parsed)));
+        (members, made, rewritten)
+    };
     // The precompiled-types members, after them.
     let pchs: Vec<OutputMember<'a>> = plan
         .as_ref()
@@ -878,6 +1019,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
                     name: Cow::Owned(pch.name.clone()),
                     data: Cow::Owned(data),
                     holes: Vec::new(),
+                    symbol_table: None,
                     synthesized: true,
                     index_only: Some(vec![pch.symbol.clone()]),
                 })
@@ -908,7 +1050,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         out.extend(members);
         out
     };
-    report.bytes_out = out.iter().map(|m| m.data.len() as u64).sum();
+    report.bytes_out = out.iter().map(|m| m.len() as u64).sum();
     Output {
         members: out,
         report,
@@ -1332,6 +1474,21 @@ pub struct Output<'a> {
     pub report: Report,
 }
 
+/// (Tests) [`rewrite`], with each member's bytes gathered, holes and all,
+/// so that tests read the members as files.
+#[cfg(test)]
+pub(crate) fn gathered<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
+    let mut out = rewrite(inputs, options);
+    for m in &mut out.members {
+        if !m.holes.is_empty() {
+            m.data = Cow::Owned(m.file().into_owned());
+            m.holes.clear();
+            m.symbol_table = None;
+        }
+    }
+    out
+}
+
 /// A synthesized member's anchor: a name no other library's anchor has,
 /// from the members that refer to it and what it holds.
 fn anchor_name(n: usize, s: &Synth, inputs: &[Input<'_>], parsed: &[Parsed<'_>]) -> Vec<u8> {
@@ -1368,15 +1525,13 @@ pub const ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
 
 /// A member with the copies it gives up removed.
 fn strip<'a>(
+    original: &Object<'a>,
     parsed: &Parsed<'a>,
     removals: &[(usize, Removal)],
     anchors: &[&[u8]],
     edit: Option<&precomp::Edit>,
 ) -> Skeleton<'a> {
-    let mut object = parsed
-        .object
-        .clone()
-        .expect("a member that gives up copies is an object");
+    let mut object = original.clone();
     let facts = &parsed.facts;
     let mut removed = vec![false; object.sections.len()];
     // The symbols that become weak externals, and their defaults' names
@@ -1419,7 +1574,6 @@ fn strip<'a>(
             removed[i] = true;
         }
     }
-    let original = parsed.object.as_ref().expect("an object");
     let fields = tables::strip(original, &facts.tables, &removed, &mut object);
     let renumbering = object
         .remove_sections(|id, _| removed[id.index()])
@@ -1542,6 +1696,176 @@ fn strip<'a>(
         .expect("a rewritten member fits its format")
 }
 
+/// The rewritten members (in member order) and the synthesized members (in
+/// their order), made one member's object at a time (see [`Objects`]):
+/// each member's work is its rewriting and the synthesized members whose
+/// units are its own (in chunks, so that a member holding many isn't one
+/// thread's work), and its object is read again for them and let go when
+/// the last is done. A synthesized member whose units come from several
+/// members gets those members' objects read on its own.
+#[allow(clippy::too_many_arguments)]
+fn one_at_a_time_members<'a>(
+    inputs: &[Input<'a>],
+    parsed: &[Parsed<'a>],
+    removals: &[Vec<(usize, Removal)>],
+    synths: &[Synth],
+    anchors: &[Vec<u8>],
+    anchors_of: &[Vec<usize>],
+    synthesized: &(dyn Fn(usize, Objects<'_, 'a>) -> OutputMember<'a> + Sync),
+) -> (Vec<OutputMember<'a>>, Vec<OutputMember<'a>>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+    /// The units' bytes a chunk of synthesized members holds, at least.
+    const CHUNK: u64 = 4 << 20;
+    let read = |m: usize| match File::parse(inputs[m].data) {
+        Ok(File::Object(o)) => o,
+        _ => unreachable!("a member read as an object before"),
+    };
+    // The work: (member, Some(synthesized members)) or (member, None) for
+    // its rewriting, with its cost.
+    let mut home: Vec<Vec<usize>> = vec![Vec::new(); parsed.len()];
+    let mut several: Vec<usize> = Vec::new();
+    for (n, s) in synths.iter().enumerate() {
+        let m0 = s.units[0].0;
+        if s.units.iter().all(|&(m, _, _)| m == m0) {
+            home[m0].push(n);
+        } else {
+            several.push(n);
+        }
+    }
+    let mut work: Vec<(usize, Option<Vec<usize>>, u64)> = Vec::new();
+    for m in 0..parsed.len() {
+        if !removals[m].is_empty() {
+            work.push((m, None, inputs[m].data.len() as u64));
+        }
+        let mut chunk = Vec::new();
+        let mut bytes = 0;
+        for &n in &home[m] {
+            chunk.push(n);
+            bytes += synths[n]
+                .units
+                .iter()
+                .map(|&(m, u, _)| parsed[m].facts.units[u].size)
+                .sum::<u64>();
+            if bytes >= CHUNK {
+                work.push((m, Some(std::mem::take(&mut chunk)), bytes));
+                bytes = 0;
+            }
+        }
+        if !chunk.is_empty() {
+            work.push((m, Some(chunk), bytes));
+        }
+    }
+    // Each member's object while its work is being done, and how much of
+    // its work is left.
+    let objects: Vec<Mutex<Option<Arc<Object<'a>>>>> =
+        (0..parsed.len()).map(|_| Mutex::new(None)).collect();
+    let left: Vec<AtomicUsize> = (0..parsed.len()).map(|_| AtomicUsize::new(0)).collect();
+    for (m, _, _) in &work {
+        left[*m].fetch_add(1, Ordering::Relaxed);
+    }
+    let lock = |m: usize| {
+        objects[m]
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    // A member's work all at once, the dearest members' first: its object
+    // is read once, and held no longer than it takes.
+    let mut member_cost = vec![0u64; parsed.len()];
+    for (m, _, c) in &work {
+        member_cost[*m] += c;
+    }
+    let done = turbonop_par::map_costed(
+        work.len(),
+        |i| member_cost[work[i].0],
+        |i| {
+            let (m, ref job, _) = work[i];
+            let object = lock(m).get_or_insert_with(|| Arc::new(read(m))).clone();
+            let current = [(m, &*object)];
+            let objects = Objects {
+                parsed,
+                current: &current,
+            };
+            let out: Vec<OutputMember<'a>> = match job {
+                Some(chunk) => chunk.iter().map(|&n| synthesized(n, objects)).collect(),
+                None => {
+                    let refers: Vec<&[u8]> = anchors_of[m]
+                        .iter()
+                        .map(|&n| anchors[n].as_slice())
+                        .collect();
+                    let skeleton = strip(&object, &parsed[m], &removals[m], &refers, None);
+                    vec![OutputMember {
+                        name: Cow::Borrowed(inputs[m].name),
+                        data: Cow::Owned(skeleton.bytes),
+                        holes: skeleton.holes,
+                        symbol_table: Some(skeleton.symbol_table),
+                        synthesized: false,
+                        index_only: None,
+                    }]
+                }
+            };
+            drop(object);
+            if left[m].fetch_sub(1, Ordering::AcqRel) == 1 {
+                lock(m).take();
+            }
+            out
+        },
+    );
+    let mut members: Vec<Option<OutputMember<'a>>> = (0..parsed.len()).map(|_| None).collect();
+    let mut made: Vec<Option<OutputMember<'a>>> = (0..synths.len()).map(|_| None).collect();
+    for ((m, job, _), out) in work.iter().zip(done) {
+        match job {
+            Some(chunk) => {
+                for (&n, o) in chunk.iter().zip(out) {
+                    made[n] = Some(o);
+                }
+            }
+            None => members[*m] = out.into_iter().next(),
+        }
+    }
+    // Those whose units are several members' (none, folding identical
+    // copies: each one's survivors are the first copies, all its first
+    // giver's), each with its members' objects.
+    let rest = turbonop_par::map_balanced(&several, 1, |&n| {
+        let mut held: Vec<(usize, Object<'a>)> = Vec::new();
+        for &(m, _, _) in &synths[n].units {
+            if !held.iter().any(|h| h.0 == m) {
+                held.push((m, read(m)));
+            }
+        }
+        let current: Vec<(usize, &Object<'a>)> = held.iter().map(|(m, o)| (*m, o)).collect();
+        synthesized(
+            n,
+            Objects {
+                parsed,
+                current: &current,
+            },
+        )
+    });
+    for (&n, o) in several.iter().zip(rest) {
+        made[n] = Some(o);
+    }
+    let members = members
+        .into_iter()
+        .enumerate()
+        .map(|(m, o)| {
+            o.unwrap_or_else(|| OutputMember {
+                name: Cow::Borrowed(inputs[m].name),
+                data: Cow::Borrowed(inputs[m].data),
+                holes: Vec::new(),
+                symbol_table: None,
+                synthesized: false,
+                index_only: None,
+            })
+        })
+        .collect();
+    let made = made
+        .into_iter()
+        .map(|o| o.expect("every synthesized member made"))
+        .collect();
+    (members, made)
+}
+
 /// Where a member that gave up copies gets its references to the anchors:
 /// before its first external or weak external record, so after only the
 /// static records (`.file`, `@comp.id`, `@feat.00`, section symbols) that
@@ -1629,13 +1953,14 @@ const MAX_REGULAR_SECTIONS: usize = 65_279;
 /// A synthesized member, named `name`.
 fn synthesize<'a>(
     s: &Synth,
+    objects: Objects<'_, 'a>,
     parsed: &[Parsed<'a>],
     plan: Option<&precomp::Plan>,
     anchor: &[u8],
     name: &[u8],
 ) -> Skeleton<'a> {
     let (m0, _, _) = s.units[0];
-    let first = parsed[m0].object.as_ref().expect("units come from objects");
+    let first = objects.get(m0);
     let facts0 = &parsed[m0].facts;
     let mut o = Object::new(Format::Regular, first.machine);
 
@@ -1700,7 +2025,7 @@ fn synthesize<'a>(
 
     // The units' CodeView, renumbered into the member's own (phase 2.4);
     // its per-object .debug$S first, as compilers write it.
-    let mut debug = debug::Builder::new(parsed, plan);
+    let mut debug = debug::Builder::new(parsed, objects, plan);
     debug.begin(&mut o, &placements);
 
     // The units: their sections and symbols, with names renamed where the
@@ -1712,7 +2037,7 @@ fn synthesize<'a>(
     // copies mustn't share.
     let mut local_comdats: HashMap<Vec<u8>, u32> = HashMap::default();
     for (k, &(m, u, renamed_copy)) in placements.iter().enumerate() {
-        let object = parsed[m].object.as_ref().expect("units come from objects");
+        let object = objects.get(m);
         let unit = &parsed[m].facts.units[u];
         let mut p = Placed {
             sections: HashMap::default(),
@@ -1795,7 +2120,7 @@ fn synthesize<'a>(
         let locals::Node::Piece(p) = c.node else {
             continue;
         };
-        let object = parsed[c.member].object.as_ref().expect("an object");
+        let object = objects.get(c.member);
         let piece = &parsed[c.member].facts.pieces[p as usize];
         let source = &object.sections[piece.section.index()];
         let bytes = &source.bytes()[piece.start as usize..piece.end as usize];
@@ -1846,7 +2171,7 @@ fn synthesize<'a>(
         weak: HashMap::default(),
     };
     for (k, &(m, u, _)) in placements.iter().enumerate() {
-        let object = parsed[m].object.as_ref().expect("units come from objects");
+        let object = objects.get(m);
         let unit = &parsed[m].facts.units[u];
         for &id in &unit.sections {
             let Some(&new) = placed[k].sections.get(&id.0) else {
@@ -1875,7 +2200,7 @@ fn synthesize<'a>(
         let locals::Node::Piece(p) = c.node else {
             continue;
         };
-        let object = parsed[c.member].object.as_ref().expect("an object");
+        let object = objects.get(c.member);
         let piece = &parsed[c.member].facts.pieces[p as usize];
         let source = &object.sections[piece.section.index()];
         let mut relocations = Vec::with_capacity(piece.relocations.len());
@@ -1893,14 +2218,21 @@ fn synthesize<'a>(
         }
         o.sections[id.index()].relocations = relocations;
     }
-    let table_fields = tables::place(&mut o, &placements, parsed, &placed, &mut |o, k, old| {
-        let (m, u, _) = placements[k];
-        let object = parsed[m].object.as_ref().expect("units come from objects");
-        match copies.local(m, &parsed[m].facts.units[u].edges, old, &placed) {
-            Some(copy) => copy,
-            None => names.outside(o, object, &object.symbols[old.index()]),
-        }
-    });
+    let table_fields = tables::place(
+        &mut o,
+        &placements,
+        parsed,
+        objects,
+        &placed,
+        &mut |o, k, old| {
+            let (m, u, _) = placements[k];
+            let object = objects.get(m);
+            match copies.local(m, &parsed[m].facts.units[u].edges, old, &placed) {
+                Some(copy) => copy,
+                None => names.outside(o, object, &object.symbols[old.index()]),
+            }
+        },
+    );
     debug.finish(&mut o, m0, name);
     o.push_symbol(Symbol::new(
         Name::new(anchor.to_vec()),

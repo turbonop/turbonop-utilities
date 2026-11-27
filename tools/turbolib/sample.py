@@ -275,6 +275,9 @@ def main():
     base = dbghelp.SymLoadModuleExW(me, None, exe[3], None, exe[0], exe[1], None, 0)
     if not base:
         print("SymLoadModuleEx failed", ctypes.get_last_error(), file=sys.stderr)
+    # Other modules by their exports (no symbol server is asked).
+    for b0, size, mod, path in modules[1:]:
+        dbghelp.SymLoadModuleExW(me, None, path, None, b0, size, None, 0)
     names = {}
 
     def frame_names(pc):
@@ -284,7 +287,14 @@ def main():
         if not (exe[0] <= pc < exe[0] + exe[1]):
             for b, size, mod, _ in modules:
                 if b <= pc < b + size:
-                    names[pc] = [mod]
+                    sym = SYMBOL_INFO()
+                    sym.SizeOfStruct = 88
+                    sym.MaxNameLen = 2000
+                    disp = ctypes.c_ulonglong()
+                    if dbghelp.SymFromAddr(me, pc, ctypes.byref(disp), ctypes.byref(sym)):
+                        names[pc] = [f"{mod}!{sym.Name.decode(errors='replace')}"]
+                    else:
+                        names[pc] = [mod]
                     return names[pc]
             names[pc] = ["?"]
             return names[pc]
@@ -316,6 +326,14 @@ def main():
 
     self_count = collections.Counter()
     total_count = collections.Counter()
+    # Threads waiting in the kernel (the thread pool's idle workers wake
+    # now and then) aren't working either.
+    for stack, n in list(stacks.items()):
+        leaf = frame_names(stack[0])[-1]
+        if "!" in leaf and any(w in leaf for w in ("Wait", "Delay", "RemoveIoCompletion")):
+            idle += n
+            samples -= n
+            del stacks[stack]
     for stack, n in stacks.items():
         # The return addresses point after their calls: name call sites
         # by the byte before.

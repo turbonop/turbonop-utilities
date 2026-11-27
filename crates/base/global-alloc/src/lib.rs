@@ -53,14 +53,28 @@ const MI_OPTION_EAGER_COMMIT: libmimalloc_sys::mi_option_t = 3;
 /// Measured on turbolib making `clangSema.lib` (984 MiB) on 8 threads, its
 /// peak commit went from 289 MiB to 167 MiB without folding, in the same
 /// CPU time.
+///
+/// Either is left as it is where its environment variable
+/// (`MIMALLOC_PURGE_DELAY`, `MIMALLOC_EAGER_COMMIT`) sets it, to measure or
+/// tune them.
 pub fn for_batch_work() {
     #[cfg(not(target_family = "wasm"))]
-    // SAFETY: `mi_option_set` sets one of mimalloc's option values, which
-    // it reads with relaxed atomics; any thread may call it at any time.
-    #[allow(unsafe_code)]
-    unsafe {
-        libmimalloc_sys::mi_option_set(MI_OPTION_PURGE_DELAY, -1);
-        libmimalloc_sys::mi_option_set(MI_OPTION_EAGER_COMMIT, 0);
+    {
+        let set = |name: &str| std::env::var_os(name).is_some();
+        let purge = !set("MIMALLOC_PURGE_DELAY");
+        let eager = !set("MIMALLOC_EAGER_COMMIT");
+        // SAFETY: `mi_option_set` sets one of mimalloc's option values,
+        // which it reads with relaxed atomics; any thread may call it at
+        // any time.
+        #[allow(unsafe_code)]
+        unsafe {
+            if purge {
+                libmimalloc_sys::mi_option_set(MI_OPTION_PURGE_DELAY, -1);
+            }
+            if eager {
+                libmimalloc_sys::mi_option_set(MI_OPTION_EAGER_COMMIT, 0);
+            }
+        }
     }
 }
 

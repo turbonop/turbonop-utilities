@@ -1,3 +1,4 @@
+use super::gathered as rewrite;
 use super::*;
 use std::collections::{HashMap, HashSet};
 
@@ -67,6 +68,41 @@ const PRESERVE: Options = Options {
     odr: false,
     precomp: crate::rewrite::Precomp::None,
 };
+
+/// Rewritten and synthesized members are their bytes and holes: gathered,
+/// they are objects (the same as `gathered` gives), and their symbols for
+/// the archive index read from the bytes alone are those of the gathered
+/// objects.
+#[test]
+fn members_with_holes() {
+    use turbonop_archive::symbols::{member_symbols, skeleton_symbols};
+    use turbonop_archive::write::Tool;
+    let (a, b) = pair();
+    for options in [PRESERVE, RELAXED] {
+        let i = inputs(&[(b"a.obj", &a), (b"b.obj", &b)]);
+        let out = super::rewrite(&i, options);
+        let whole = rewrite(&i, options);
+        let mut holes = 0;
+        for (m, w) in out.members.iter().zip(&whole.members) {
+            assert_eq!(m.file(), w.data);
+            assert_eq!(m.len(), w.data.len());
+            holes += m.holes.len();
+            let Some(at) = m.symbol_table else {
+                assert!(m.holes.is_empty());
+                continue;
+            };
+            assert!(m.holes.windows(2).all(|h| h[0].0 + h[0].1.len() <= h[1].0));
+            for tool in [Tool::LibExe, Tool::LlvmLib] {
+                let file = m.file();
+                assert_eq!(
+                    skeleton_symbols(&m.data, at, tool, false).unwrap(),
+                    member_symbols(&file, tool, false).unwrap()
+                );
+            }
+        }
+        assert!(holes > 0);
+    }
+}
 
 #[test]
 fn identical_copies_fold_into_one_synthesized_member() {

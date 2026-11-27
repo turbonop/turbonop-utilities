@@ -125,15 +125,22 @@ pub fn ltcg_symbols(data: &[u8]) -> Option<MemberSymbols<'_>> {
     })
 }
 
-/// A member's symbols for the index.
+/// A member's symbols for the index. `symbol_table` is where `data` has
+/// the symbol table, if `data` is an object without its larger section
+/// data (see `turbonop_coff::Skeleton`).
 pub fn member_symbols<'d>(
     flavor: Flavor,
     name: &str,
     data: &'d [u8],
+    symbol_table: Option<u32>,
     ec: bool,
 ) -> Result<MemberSymbols<'d>, Diag> {
     use turbonop_archive::symbols::{self, SymbolsError};
-    match symbols::member_symbols(data, tool(flavor), ec) {
+    let listed = match symbol_table {
+        Some(at) => symbols::skeleton_symbols(data, at, tool(flavor), ec),
+        None => symbols::member_symbols(data, tool(flavor), ec),
+    };
+    match listed {
         Ok(s) => Ok(s),
         Err(SymbolsError::Ltcg) => ltcg_symbols(data).ok_or_else(|| match flavor {
             Flavor::Lib => Diag::fatal(1107, "invalid or corrupt file").on(name),
@@ -147,13 +154,17 @@ pub fn member_symbols<'d>(
 /// The names a COFF object defines strongly: outside COMDATs or in a
 /// `NODUPLICATES` COMDAT, the ones LNK4006 is about. Read with the
 /// zero-copy reader: a COMDAT's selection is in its section symbol's
-/// auxiliary record (byte 14).
-pub fn strong_definitions(data: &[u8]) -> Vec<&[u8]> {
+/// auxiliary record (byte 14). `symbol_table` is as for [`member_symbols`].
+pub fn strong_definitions(data: &[u8], symbol_table: Option<u32>) -> Vec<&[u8]> {
     const IMAGE_SCN_LNK_COMDAT: u32 = 0x1000;
     const EXTERNAL: u8 = 2;
     const STATIC: u8 = 3;
     const NODUPLICATES: u8 = 1;
-    let Ok(file) = turbonop_pe::PeFile::parse_object(data) else {
+    let file = match symbol_table {
+        Some(at) => turbonop_pe::PeFile::parse_object_at(data, at),
+        None => turbonop_pe::PeFile::parse_object(data),
+    };
+    let Ok(file) = file else {
         return Vec::new();
     };
     let Ok(Some(table)) = file.symbols() else {

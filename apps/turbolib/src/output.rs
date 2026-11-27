@@ -23,31 +23,19 @@ use std::path::{Path, PathBuf};
 use turbonop_archive::write::Layout;
 
 /// A member to write: its bytes, and the pieces those leave out (each one's
-/// offset in the member, and its bytes; see `turbonop_coff::Skeleton`).
+/// offset in the member, and its bytes, in order; see
+/// `turbonop_coff::Skeleton`).
 #[derive(Clone, Copy, Debug)]
 pub struct Bytes<'a> {
     pub data: &'a [u8],
     pub holes: &'a [(usize, &'a [u8])],
 }
 
-/// The member's bytes as pieces in order: the stretches of `data` between
-/// holes, and the holes' bytes.
-fn segments<'a>(b: Bytes<'a>) -> Vec<&'a [u8]> {
-    let mut holes: Vec<(usize, &[u8])> = b.holes.to_vec();
-    holes.sort_unstable_by_key(|h| h.0);
-    let mut out = Vec::with_capacity(holes.len() * 2 + 1);
-    let mut at = 0;
-    for (start, piece) in holes {
-        if start > at {
-            out.push(&b.data[at..start]);
-        }
-        out.push(piece);
-        at = start + piece.len();
+impl Bytes<'_> {
+    /// The member's length.
+    fn len(&self) -> usize {
+        self.data.len() + self.holes.iter().map(|h| h.1.len()).sum::<usize>()
     }
-    if at < b.data.len() {
-        out.push(&b.data[at..]);
-    }
-    out
 }
 
 /// The output is copied, on every thread, into chunks of this size, which
@@ -153,7 +141,11 @@ fn write_chunked(file: &File, chunks: &[Vec<&[u8]>]) -> io::Result<()> {
         failed: false,
     });
     let changed = Condvar::new();
-    let lock = || state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let lock = || {
+        state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
     std::thread::scope(|scope| {
         for _ in 0..copiers {
             scope.spawn(|| {
@@ -164,7 +156,9 @@ fn write_chunked(file: &File, chunks: &[Vec<&[u8]>]) -> io::Result<()> {
                         let mut s = lock();
                         while !s.failed && s.next < chunks.len() && s.next - s.written >= IN_FLIGHT
                         {
-                            s = changed.wait(s).unwrap_or_else(std::sync::PoisonError::into_inner);
+                            s = changed
+                                .wait(s)
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
                         }
                         if s.failed || s.next >= chunks.len() {
                             return;
@@ -187,7 +181,9 @@ fn write_chunked(file: &File, chunks: &[Vec<&[u8]>]) -> io::Result<()> {
                     if let Some(b) = s.ready.remove(&i) {
                         break b;
                     }
-                    s = changed.wait(s).unwrap_or_else(std::sync::PoisonError::into_inner);
+                    s = changed
+                        .wait(s)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                 }
             };
             result = io::Write::write_all(&mut &*file, &buf);
@@ -222,10 +218,8 @@ pub fn write_beside(
     for (i, m) in members.iter().enumerate() {
         misplaced |= at != layout.offset(i);
         pieces.push(&headers[i]);
-        for piece in segments(*m) {
-            pieces.push(piece);
-        }
-        if m.data.len() & 1 == 1 {
+        pieces.extend(turbonop_coff::skeleton_parts(m.data, m.holes));
+        if m.len() & 1 == 1 {
             pieces.push(&pad);
         }
         at += layout.span(i);

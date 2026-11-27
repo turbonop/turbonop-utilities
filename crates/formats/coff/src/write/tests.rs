@@ -546,13 +546,25 @@ fn a_skeleton_filled_is_the_file() {
             let whole = object.write().unwrap();
             for min in [0, 1, 64, 1 << 20] {
                 let s = object.write_skeleton(min).unwrap();
-                assert_eq!(s.bytes.len(), whole.len());
-                let mut filled = s.bytes.clone();
+                assert_eq!(s.len(), whole.len());
                 for (at, piece) in &s.holes {
                     assert!(piece.len() >= min.max(1));
-                    filled[*at..*at + piece.len()].copy_from_slice(piece);
+                    assert_eq!(&whole[*at..*at + piece.len()], *piece);
                 }
-                assert_eq!(filled, whole, "{name}, min {min}");
+                assert!(s.holes.windows(2).all(|w| w[0].0 + w[0].1.len() <= w[1].0));
+                assert_eq!(s.to_file(), whole, "{name}, min {min}");
+                // The symbol table (and what follows it) where the
+                // skeleton says.
+                let field = if object.format == Format::BigObj {
+                    48
+                } else {
+                    8
+                };
+                let ptr = u32::from_le_bytes(whole[field..field + 4].try_into().unwrap()) as usize;
+                if ptr != 0 {
+                    let tail = &s.bytes[s.symbol_table as usize..];
+                    assert_eq!(tail, &whole[ptr..ptr + tail.len()], "{name}, min {min}");
+                }
             }
         }
     }

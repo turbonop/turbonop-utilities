@@ -228,6 +228,26 @@ impl<'data> PeFile<'data> {
         )
     }
 
+    /// An object whose symbol table (and string table, after it) is at
+    /// `symbol_table` in `data` rather than where its header says: `data`
+    /// holds the object's headers where they are, but not all of what
+    /// follows them (an object written without its larger section data,
+    /// as `turbonop_coff::Skeleton` holds one). Only the headers, the
+    /// section table, and the symbol and string tables are then read.
+    pub fn parse_object_at(data: &'data [u8], symbol_table: u32) -> Result<Self> {
+        let mut file = Self::parse_object(data)?;
+        if file.file_header.pointer_to_symbol_table.get() != 0 {
+            file.file_header.pointer_to_symbol_table = turbonop_core::U32Le::new(symbol_table);
+            let record = if file.big { 20 } else { 18 };
+            file.strings = StringTable::parse(
+                data,
+                u64::from(symbol_table)
+                    + u64::from(file.file_header.number_of_symbols.get()) * record,
+            );
+        }
+        Ok(file)
+    }
+
     /// A `/bigobj` object (`ANON_OBJECT_HEADER_BIGOBJ`, version 2 or later
     /// with the bigobj class ID). Other anonymous objects (import objects,
     /// LTCG intermediate objects) are not COFF objects.

@@ -3,6 +3,7 @@
 //! `tools/turbolib/loose/build.cmd` builds (`testdata/coff/loose`) and on
 //! objects made here.
 
+use super::gathered as rewrite;
 use super::locals::tests::{build, comdat, data, reloc};
 use super::*;
 

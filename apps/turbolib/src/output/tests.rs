@@ -49,15 +49,17 @@ fn the_same_bytes_as_the_in_memory_writer() {
     let skeletons: Vec<(Vec<u8>, Holes<'_>)> = datas
         .iter()
         .map(|d| {
-            let mut bytes = d.clone();
+            let mut bytes = Vec::new();
             let mut holes = Vec::new();
             let mut at = 7;
+            let mut kept = 0;
             while at + 1000 <= d.len() {
-                bytes[at..at + 1000].fill(0);
+                bytes.extend_from_slice(&d[kept..at]);
                 holes.push((at, &d[at..at + 1000]));
+                kept = at + 1000;
                 at += 3000;
             }
-            holes.reverse();
+            bytes.extend_from_slice(&d[kept..]);
             (bytes, holes)
         })
         .collect();

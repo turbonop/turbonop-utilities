@@ -730,4 +730,67 @@ mod tests {
         assert!(!md.has_row(Token::new(TableId::Field, 4)));
         assert_eq!(md.row_counts().len(), 5);
     }
+
+    #[test]
+    fn uncompressed_stream_with_ptr_tables() {
+        // Edit and continue's layout: two types whose methods and fields
+        // are listed through MethodPtr and FieldPtr, out of order.
+        let mut b = MetadataBuilder::new();
+        b.uncompressed = true;
+        let a = b.string("A");
+        let bb = b.string("B");
+        b.row(TableId::TypeDef, &[0, a, 0, 0, 1, 1]);
+        b.row(TableId::TypeDef, &[0, bb, 0, 0, 2, 3]);
+        for f in [3, 1, 2] {
+            b.row(TableId::FieldPtr, &[f]);
+        }
+        for m in [2, 3, 1] {
+            b.row(TableId::MethodPtr, &[m]);
+        }
+        for _ in 0..3 {
+            b.row(TableId::Field, &[0, 0, 0]);
+            b.row(TableId::MethodDef, &[0, 0, 0, 0, 0, 1]);
+        }
+        let data = b.build();
+        let md = Metadata::parse(&data).unwrap();
+        assert!(md.tables().uncompressed);
+        assert_eq!(md.type_fields(1).collect::<Vec<_>>(), [3]);
+        assert_eq!(md.type_fields(2).collect::<Vec<_>>(), [1, 2]);
+        assert_eq!(md.type_methods(1).collect::<Vec<_>>(), [2, 3]);
+        assert_eq!(md.type_methods(2).collect::<Vec<_>>(), [1]);
+        assert_eq!(md.field_owner(3), Some(1));
+        assert_eq!(md.field_owner(1), Some(2));
+        assert_eq!(md.method_owner(1), Some(2));
+        assert_eq!(md.method_owner(3), Some(1));
+    }
+
+    #[test]
+    fn a_pdb_counts_the_type_system_from_its_pdb_stream() {
+        // 70000 MethodDefs in the assembly: a PDB's MethodDef indexes are
+        // four bytes.
+        let mut b = MetadataBuilder::new();
+        b.version = b"PDB v1.0";
+        let mut pdb = vec![0u8; 20];
+        pdb.extend_from_slice(&0u32.to_le_bytes());
+        pdb.extend_from_slice(&(1u64 << TableId::MethodDef as u32).to_le_bytes());
+        pdb.extend_from_slice(&70_000u32.to_le_bytes());
+        b.extra_streams.push((b"#Pdb", pdb));
+        // The tables stream: one StateMachineMethod row, its two MethodDef
+        // columns four bytes wide.
+        let mut t = vec![0, 0, 0, 0, 2, 0, 0, 1];
+        t.extend_from_slice(&(1u64 << TableId::StateMachineMethod as u32).to_le_bytes());
+        t.extend_from_slice(&0u64.to_le_bytes());
+        t.extend_from_slice(&1u32.to_le_bytes());
+        t.extend_from_slice(&7u32.to_le_bytes());
+        t.extend_from_slice(&0x1_0001u32.to_le_bytes());
+        b.tables_override = Some(t);
+        let data = b.build();
+        let md = Metadata::parse(&data).unwrap();
+        assert_eq!(md.version(), "PDB v1.0");
+        assert_eq!(md.pdb().unwrap().type_system_rows[6], 70_000);
+        assert_eq!(md.tables().layout(TableId::StateMachineMethod).row_size, 8);
+        let r: crate::tables::StateMachineMethodRow = md.row(1).unwrap();
+        assert_eq!((r.move_next_method, r.kickoff_method), (7, 0x1_0001));
+        assert_eq!(md.kickoff_method(7), Some(0x1_0001));
+    }
 }

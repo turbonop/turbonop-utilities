@@ -15,6 +15,8 @@ pub(crate) struct MetadataBuilder {
     pub(crate) version: &'static [u8],
     pub(crate) extra_streams: Vec<(&'static [u8], Vec<u8>)>,
     pub(crate) uncompressed: bool,
+    /// The tables stream as given, instead of built from the rows.
+    pub(crate) tables_override: Option<Vec<u8>>,
 }
 
 impl MetadataBuilder {
@@ -28,6 +30,7 @@ impl MetadataBuilder {
             version: b"v4.0.30319",
             extra_streams: Vec::new(),
             uncompressed: false,
+            tables_override: None,
         }
     }
 
@@ -103,7 +106,12 @@ impl MetadataBuilder {
 
     pub(crate) fn build(&self) -> Vec<u8> {
         let mut streams: Vec<(&[u8], Vec<u8>)> = vec![
-            (if self.uncompressed { b"#-" } else { b"#~" }, self.tables()),
+            (
+                if self.uncompressed { b"#-" } else { b"#~" },
+                self.tables_override
+                    .clone()
+                    .unwrap_or_else(|| self.tables()),
+            ),
             (b"#Strings", self.strings.clone()),
             (b"#US", self.user_strings.clone()),
             (b"#GUID", self.guids.clone()),

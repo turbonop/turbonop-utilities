@@ -690,17 +690,6 @@ impl Linker {
         }
         changed
     }
-
-    /// `g`'s definition, aliases followed.
-    fn final_def(&self, mut g: u32) -> Def {
-        for _ in 0..64 {
-            match self.globals[g as usize].def {
-                Def::Alias(t) => g = t,
-                d => return d,
-            }
-        }
-        Def::Undefined
-    }
 }
 
 /// What a loaded input is.

@@ -40,8 +40,6 @@ pub struct Image<'a> {
     base: u64,
     /// Each DLL's import address table chunk.
     iat: Vec<u32>,
-    /// Each chunk's output section (1-based, for `SECTION` relocations).
-    chunk_section: Vec<u16>,
 }
 
 impl<'a> Image<'a> {
@@ -53,18 +51,11 @@ impl<'a> Image<'a> {
                 iat[d as usize] = i as u32;
             }
         }
-        let mut chunk_section = vec![0u16; l.chunks.len()];
-        for (s, sec) in l.sections.iter().enumerate() {
-            for &c in &sec.chunks {
-                chunk_section[c as usize] = u16::try_from(s + 1).unwrap_or(0);
-            }
-        }
         Image {
             r,
             l,
             base: image_base(&r.config),
             iat,
-            chunk_section,
         }
     }
 

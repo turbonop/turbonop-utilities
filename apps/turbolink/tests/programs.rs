@@ -1,0 +1,143 @@
+//! Programs compiled with the installed Visual C++ tools, linked by
+//! turbolink, and run: their output and exit code must be what the source
+//! says. Without Visual Studio (found with `vswhere`), nothing is checked.
+
+use turbonop_global_alloc as _;
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+/// `vcvars64.bat`, if Visual Studio's C++ tools are installed.
+fn vcvars() -> Option<PathBuf> {
+    if !cfg!(windows) {
+        return None;
+    }
+    let pf86 = std::env::var_os("ProgramFiles(x86)")?;
+    let vswhere = Path::new(&pf86).join(r"Microsoft Visual Studio\Installer\vswhere.exe");
+    let out = Command::new(vswhere)
+        .args([
+            "-latest",
+            "-prerelease",
+            "-products",
+            "*",
+            "-requires",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property",
+            "installationPath",
+        ])
+        .output()
+        .ok()?;
+    let root = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let bat = Path::new(&root).join(r"VC\Auxiliary\Build\vcvars64.bat");
+    bat.is_file().then_some(bat)
+}
+
+/// A fresh directory for one test's files.
+fn scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("turbolink-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a scratch directory");
+    dir
+}
+
+/// Runs `commands` (joined with `&&`) after `vcvars64.bat`, in `dir`.
+fn in_vs(vcvars: &Path, dir: &Path, commands: &[String]) {
+    let script = dir.join("run.cmd");
+    let body = format!(
+        "@echo off\r\ncall \"{}\" >nul || exit /b 1\r\ncd /d \"{}\" || exit /b 1\r\n{}\r\n",
+        vcvars.display(),
+        dir.display(),
+        commands.join(" || exit /b 1\r\n")
+    );
+    std::fs::write(&script, body).expect("the script");
+    let out = Command::new("cmd")
+        .arg("/c")
+        .arg(&script)
+        .output()
+        .expect("cmd runs");
+    assert!(
+        out.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Compiles `source` (in `tests/programs`) with `cl_flags`, links it with
+/// turbolink, runs it with `args`; returns its output and exit code.
+fn build_and_run(test: &str, source: &str, cl_flags: &str, args: &[&str]) -> Option<(String, i32)> {
+    let Some(vcvars) = vcvars() else {
+        eprintln!("no Visual C++ tools: {test} not checked");
+        return None;
+    };
+    let dir = scratch(test);
+    let src = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/programs")
+        .join(source);
+    let turbolink = env!("CARGO_BIN_EXE_turbolink");
+    in_vs(
+        &vcvars,
+        &dir,
+        &[
+            format!(
+                "cl /nologo /c {cl_flags} /Fo{test}.obj \"{}\" >nul",
+                src.display()
+            ),
+            format!("\"{turbolink}\" /nologo /OUT:{test}.exe {test}.obj"),
+        ],
+    );
+    let out = Command::new(dir.join(format!("{test}.exe")))
+        .args(args)
+        .output()
+        .expect("the program runs");
+    let _ = std::fs::remove_dir_all(&dir);
+    Some((
+        String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n"),
+        out.status.code().unwrap_or(-1),
+    ))
+}
+
+fn hello(test: &str, flags: &str) {
+    if let Some((out, code)) = build_and_run(test, "hello.c", flags, &["a", "b"]) {
+        assert!(out.starts_with("hello from "), "{out}");
+        assert!(out.ends_with(", 3 args\n"), "{out}");
+        assert_eq!(code, 3);
+    }
+}
+
+#[test]
+fn c_with_the_dynamic_crt() {
+    hello("c_md", "/O2 /MD");
+}
+
+#[test]
+fn c_with_the_static_crt() {
+    hello("c_mt", "/O2 /MT");
+}
+
+#[test]
+fn c_unoptimized_with_the_debug_crt() {
+    hello("c_mdd", "/Od /MDd");
+}
+
+fn cpp(test: &str, flags: &str) {
+    if let Some((out, code)) = build_and_run(test, "cpp.cpp", flags, &[]) {
+        assert_eq!(out, "caught: boom 14.000000\ntable two=2 tls=42\n");
+        assert_eq!(code, 14);
+    }
+}
+
+#[test]
+fn cpp_exceptions_and_tls_with_the_dynamic_crt() {
+    cpp("cpp_md", "/EHsc /O2 /MD");
+}
+
+#[test]
+fn cpp_exceptions_and_tls_with_the_static_crt() {
+    cpp("cpp_mt", "/EHsc /O2 /MT");
+}
+
+#[test]
+fn cpp_unoptimized_with_the_static_debug_crt() {
+    cpp("cpp_mtd", "/EHsc /Od /MTd");
+}

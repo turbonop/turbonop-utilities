@@ -4,9 +4,12 @@
 //! `link.exe` builds it (its `IMAGE::CbBuildProdidBlock`):
 //!
 //! - The list starts with the linker's own entry; each tool not seen yet is
-//!   put at the front, walking the inputs library by library (the command
-//!   line's objects first, then each library's in the order they loaded),
-//!   so the list is newest first, the linker last. An object without a
+//!   put at the front, walking the inputs as link.exe's pass 2 does: the
+//!   command line's objects in order, then library by library, each one's
+//!   members from the last in the archive to the first (link.exe makes a
+//!   library's modules in the order of their offsets, each put at the
+//!   front of the library's list); so the list is newest first, the
+//!   linker last. An object without a
 //!   `@comp.id` counts as 0, every import object as `0x00010000`.
 //! - The checksum: the stub's length, plus each of its bytes rotated left
 //!   by its offset (`e_lfanew` zero), plus each entry's ID rotated left by
@@ -51,7 +54,10 @@ pub fn entries(r: &Resolved) -> Vec<(u32, u32)> {
     }
     walk.extend(r.files.iter().filter(|f| f.library.is_none()).map(id));
     for lib in 0..libraries {
-        walk.extend(r.files.iter().filter(|f| f.library == Some(lib)).map(id));
+        let mut members: Vec<&crate::resolve::File> =
+            r.files.iter().filter(|f| f.library == Some(lib)).collect();
+        members.sort_by_key(|f| std::cmp::Reverse(f.member));
+        walk.extend(members.into_iter().map(id));
     }
     let mut seen: Vec<(u32, u32)> = Vec::new();
     for v in walk {

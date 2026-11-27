@@ -630,22 +630,27 @@ x64. Where the 3.5 MB went:
 ## turbolink
 
 [The plan](docs/turbolink.md). What links so far: C and C++ with every
-CRT, DLLs and import libraries, resources, LLVM's `llvm-tblgen`.
+CRT, DLLs and import libraries, resources, LLVM's `llvm-tblgen`. Byte for
+byte link.exe's images (time stamps aside): C and C++ with the dynamic and
+static CRTs, C with the debug CRT, a DLL with exports.
 
-- **Not yet, for native x64 images:** `/DEBUG` (the PDB, the debug
-  directory), `/OPT:ICF`, delay loading (`/DELAYLOAD` is accepted and the
-  imports made ordinary), `/GUARD:CF`'s tables (and `__guard_flags`'s
-  "instrumented" bit link.exe sets for objects built with `/guard:cf`),
-  `/GUARD:EHCONT`, manifests (`/MANIFEST`, `/MANIFESTUAC`, embedding),
-  `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real format, the `.exp` file,
-  `/INCREMENTAL`'s padding (it links fully), `/WHOLEARCHIVE`,
-  `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks, `/MERGE` cycles' error,
-  link.exe's `coffgrp` debug entry, long-form import objects (old
-  `.idata$` members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
+- **Not yet, for native x64 images:** `/DEBUG` (the PDB: PR #68), delay
+  loading (`/DELAYLOAD` is accepted and the imports made ordinary),
+  `/GUARD:CF`'s tables, `/GUARD:EHCONT`, manifests (`/MANIFEST`,
+  `/MANIFESTUAC`, embedding), `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
+  format, the `.exp` file, `/INCREMENTAL`'s padding (it links fully),
+  `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
+  `/MERGE` cycles' error, long-form import objects (old `.idata$`
+  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`, `/Brepro`'s hash.
+- **Byte identity, still different:** unoptimized C++ with the static
+  debug CRT and no `/DEBUG` (link.exe keeps LIBCMTD's guard_support.obj's
+  static `ReadNoFence64` apart; why isn't known); large programs
+  (`llvm-tblgen`'s image differs: `hexcavator diff` it).
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
-  under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; which
-  sections link.exe keeps empty or drops (`.gssep`, `.ltfsmap`, `_RDATA`
-  appear in turbolink's static-CRT image and not in link.exe's).
+  under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
+  header's walk when a library is searched in several passes (each pass's
+  modules made in offset order?); whether a dead section's alignment counts
+  in a group that has live contributions too.
 - **Speed.** Measure large links (LLVM's) once the build machine is idle.
   Layout hashes owned copies of names per chunk (24 ms of 90 for
   `llvm-tblgen`); symbols are interned on one thread; the `/OPT:REF` mark

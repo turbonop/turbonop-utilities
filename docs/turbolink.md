@@ -183,9 +183,11 @@ lists every COFF group with its address and size) and by experiment:
   the same array with a port of the UCRT's `qsort`.
 - **The Rich header** (link.exe's `CbBuildProdidBlock`): link.exe's own
   entry (0x102, build 37029) first in a list to whose front each new
-  `@comp.id` goes, walking the command line's objects, then each library's
-  members in load order (an import object is 0x00010000, an object
-  without a `@comp.id` 0); the checksum is the stub's length, its bytes
+  `@comp.id` goes, walking the command line's objects in order, then each
+  library's members from the last in the archive to the first (link.exe
+  makes a library's modules in the order of their offsets, each put at
+  the front of its list: its `/VERBOSE` pass 2 lists them so). An import
+  object is 0x00010000, an object without a `@comp.id` 0. The checksum is the stub's length, its bytes
   rotated left by their offsets (`e_lfanew` zero), and each entry's ID
   rotated left by its count; then `(checksum >> 5) % 3 + 1` empty
   entries, as many as fit in the headers without enlarging them.
@@ -195,16 +197,18 @@ lists every COFF group with its address and size) and by experiment:
 - **The subsystem** without `/SUBSYSTEM`: the console's if `main` or
   `wmain` is defined, Windows' if `WinMain` or `wWinMain` is, else a
   DLL's is Windows' (entry point or not) and an EXE's is LNK1221.
-- **Status:** a `/MD` C hello world and a DLL with exports are link.exe's
-  images byte for byte, time stamps aside; a `/MT` C hello world is too,
-  but for the Rich header's order (tests check all three).
+- **Status:** link.exe's images byte for byte, time stamps aside, for C
+  and C++ (exceptions, TLS, iostreams) with the dynamic and the static
+  CRT, C with the debug CRT, and a DLL with exports (tests check each).
 - **Still different** (to do): the
   `/Brepro` hash (it depends on the output's contents, not its name or
   the options, but isn't a plain SHA-1/256/512 or MD5 of the file with
-  its time stamps and hash zeroed); the Rich header's order for some
-  libraries (libucrt's tools appear as 0x103, 0x104, 0x105, which no
-  order of its members gives: load, offset, name, or reversed; MSVCRT's
-  0x103 and 0x104 likewise); C++ with the static CRT.
+  its time stamps and hash zeroed); unoptimized C++ with the static debug
+  CRT and no `/DEBUG`: link.exe doesn't fold LIBCMTD's guard_support.obj's
+  static `ReadNoFence64` and `ReadPointerNoFence` into identical
+  functions (turbolink does), for a reason not found yet (not their names,
+  symbol class or type, the object's `@comp.id` or `@feat.00`, or its
+  `.debug$S`; its map lists them without the COMDAT `i` flag).
 
 ## Verification
 

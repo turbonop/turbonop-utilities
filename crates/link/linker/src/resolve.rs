@@ -68,6 +68,9 @@ pub struct File {
     /// The library it was loaded from (its index among the libraries, in
     /// the order they were opened), if any.
     pub library: Option<u32>,
+    /// Its offset in its library, as a member of one (link.exe keeps a
+    /// library's modules in the order of their offsets).
+    pub member: Option<u64>,
 }
 
 /// One of an import library's own objects.
@@ -276,6 +279,8 @@ struct Linker {
     load_config_wanted: bool,
     /// The library the file being added comes from.
     loading_from: Option<u32>,
+    /// The member being loaded's offset (with `loading_from`).
+    loading_member: Option<u64>,
     /// Globals that may want a library's definition: every new global,
     /// until it is seen not to (a definition is never taken back, so a
     /// global dropped from here never needs one again).
@@ -323,6 +328,7 @@ impl Linker {
         self.add_file(name, kind);
         if let Some(f) = self.files.last_mut() {
             f.library = self.loading_from;
+            f.member = self.loading_member.take();
         }
         self.t_add += start.elapsed();
     }
@@ -389,6 +395,7 @@ impl Linker {
                     name,
                     idata,
                     library: None,
+                    member: None,
                     kind: FileKind::Object {
                         object,
                         globals,
@@ -420,6 +427,7 @@ impl Linker {
                     name,
                     idata: None,
                     library: None,
+                    member: None,
                     kind: FileKind::Import {
                         import,
                         address,
@@ -761,6 +769,7 @@ impl Linker {
                     match parsed.remove(&member) {
                         Some(Ok((name, kind))) => {
                             self.loading_from = Some(crate::n32(lib));
+                            self.loading_member = Some(member);
                             self.add(name, kind);
                             self.loading_from = None;
                         }
@@ -919,6 +928,7 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         pending: Vec::new(),
         load_config_wanted: false,
         loading_from: None,
+        loading_member: None,
         resources: Vec::new(),
         t_index: std::time::Duration::ZERO,
         t_members: std::time::Duration::ZERO,

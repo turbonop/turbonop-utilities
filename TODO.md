@@ -24,7 +24,18 @@ leave this list when they ship.
   - link.exe's own PDBs differ from one `/Brepro` link of the same inputs
     to the next (same GUID): which module's copy of a type
     `LF_UDT_MOD_SRC_LINE` names, and which copy of a type S_UDT names. A
-    turbolink PDB should be compared knowing that.
+    turbolink PDB should be compared knowing that. (compare-images now
+    compares those picks by what they say: the globals' and every
+    module's top-level S_UDT and S_CONSTANT as one set, tag-blind; a
+    UDT's source line in the same header file, or one line in common,
+    as a pick.)
+  - compare-images on thread-local variables: `S_GTHREAD32` and
+    `S_LTHREAD32` (`_Init_thread_epoch`, `PrettyStackTraceHead`) differ
+    between an original and a folded llvm-nm link, and with them their
+    modules' own records (`Parallel.cpp.obj`, `PrettyStackTrace.cpp.obj`,
+    `TimeProfiler.cpp.obj`): likely their `.tls` offsets aren't named
+    through the image as other addresses are. Find out, and compare them
+    by what they name.
 
 - **One site for every tool's web version.** GitHub Pages has one site per
   repository, and a deploy replaces all of it: hexcavator's release

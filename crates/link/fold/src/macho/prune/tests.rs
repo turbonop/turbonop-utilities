@@ -328,7 +328,7 @@ fn bytes_of<'a>(o: &'a Object<'_>, name: &[u8]) -> &'a [u8] {
 
 /// The test unit: what the dead code alone names goes; what something
 /// kept names stays (a dead subprogram a kept call site names, a type a
-/// kept subprogram names); a namespace of dead code goes; a namespace's
+/// kept subprogram names), and so does a named type; a namespace of dead code goes; a namespace's
 /// sibling reference moves to the next sibling kept.
 fn unit() -> T {
     use V::*;
@@ -479,14 +479,14 @@ fn removes_dead_code_and_what_only_it_names() {
         Pruned {
             dead: 3,
             dead_kept: 1,
-            reached: 3,
+            reached: 2,
             bytes: st.bytes,
         }
     );
     // What it should be: the same unit emitted without what went.
-    let removed = [10usize, 3, 4, 12, 6, 15];
+    let removed = [10usize, 3, 12, 6, 15];
     let keep = |id: usize| !removed.contains(&id);
-    let gone_strs = ["dead", "T", "dead2", "empty_ns", "dead4"];
+    let gone_strs = ["dead", "dead2", "empty_ns", "dead4"];
     let (want, want_strs) = emit(&t, &keep, &ab, &pool, &|s| !gone_strs.contains(&s));
     assert_eq!(bytes_of(&o, b"__debug_info"), want.info.as_slice());
     assert_eq!(bytes_of(&o, b"__debug_str"), want_strs.as_slice());

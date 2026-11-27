@@ -15,14 +15,22 @@
 //!   none anything kept, with no `DW_AT_const_value`, whose range and
 //!   location lists are all empty now.
 //! - **Reached**: the entities the dead ones refer to, transitively
-//!   (references, location expressions' DIEs), that are types (but base
-//!   types, which dsymutil always keeps) or subprograms without addresses
-//!   (declarations and abstract instances), with no debug relocations.
+//!   (references, location expressions' DIEs), that are unnamed types
+//!   (pointers, qualifiers, arrays, subroutine types, anonymous classes)
+//!   or subprograms without addresses (declarations and abstract
+//!   instances), with no debug relocations. Named types stay: dsymutil
+//!   (classic, with ODR uniquing) was seen to keep a giver's class
+//!   definition that nothing referred to (`std::ratio<1000000000, 1>`,
+//!   which a moved function's class names as a template argument, and
+//!   which its synthesized member holds only as a declaration); removing
+//!   such definitions lost 2 or 3 of each corpus link's dSYM's type
+//!   definitions.
 //! - **Kept**: every other entity, and everything a kept entity refers to,
 //!   to a fixpoint (a dead subprogram a kept call site names stays, its
 //!   address tombstoned, and is counted). The rest is removed. Everything
 //!   dsymutil keeps of the giver (DIEs with linked addresses, base types,
-//!   imported entities, and what they reach) is thus kept, unchanged.
+//!   imported entities, named types, and what they reach) is thus kept,
+//!   unchanged.
 //! - **Rewriting.** The removed subtrees are cut out of `__debug_info`
 //!   ([`Object::cut`], which moves its relocations); every kept reference
 //!   (`DW_FORM_ref*`, `DW_AT_sibling` to where its sibling was), string
@@ -101,6 +109,8 @@ struct Die {
     /// A `DW_AT_low_pc`, `DW_AT_entry_pc`, or `DW_AT_ranges`.
     has_addr: bool,
     const_value: bool,
+    /// A `DW_AT_name`.
+    named: bool,
 }
 
 /// A value of a DIE to set once what it names has moved.
@@ -305,6 +315,7 @@ fn walk(u: &Unit<'_>, abbrevs: &Abbrevs) -> R<(Vec<Die>, Vec<At>)> {
             ent,
             has_addr: false,
             const_value: false,
+            named: false,
         };
         for spec in &a.attrs {
             let pos = r.pos as u32;
@@ -389,6 +400,7 @@ fn walk(u: &Unit<'_>, abbrevs: &Abbrevs) -> R<(Vec<Die>, Vec<At>)> {
             match name {
                 DW_AT_LOW_PC | DW_AT_ENTRY_PC | DW_AT_RANGES => die.has_addr = true,
                 DW_AT_CONST_VALUE => die.const_value = true,
+                DW_AT_NAME => die.named = true,
                 _ => {}
             }
         }
@@ -827,7 +839,7 @@ pub(super) fn prune(
             candidate[t] = gone_n[t] == 0
                 && live_n[t] == 0
                 && !nonempty[t]
-                && (is_type(x.tag) || (x.tag == DW_TAG_SUBPROGRAM && !x.has_addr));
+                && ((is_type(x.tag) && !x.named) || (x.tag == DW_TAG_SUBPROGRAM && !x.has_addr));
         }
     }
     let mut kept: Vec<bool> = (0..n).map(|i| is_ent(i) && !candidate[i]).collect();

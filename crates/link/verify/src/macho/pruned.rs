@@ -17,11 +17,12 @@
 //! - **What was removed** is, at the unit's or a namespace's level: a
 //!   subprogram or variable whose debug relocations all named lost code
 //!   (one at least), without `DW_AT_const_value`, whose lists name only
-//!   lost code; a type (not a base type) or a subprogram without an
-//!   address, without relocations; or a namespace of such. Nothing kept
+//!   lost code; an unnamed type (not a base type) or a subprogram without
+//!   an address, without relocations; or a namespace of such. Nothing kept
 //!   refers into it (references are matched). So what dsymutil keeps of
 //!   the member (DIEs with linked addresses, base types, imported
-//!   entities, constants, and what they reach) is all there, unchanged.
+//!   entities, constants, named types, and what they reach) is all there,
+//!   unchanged.
 //! - **Apple's accelerator tables** hold the original's entries whose DIEs
 //!   are kept, each naming its DIE's match (and no others), every hash the
 //!   DJB hash of its name, findable through its bucket.
@@ -556,7 +557,7 @@ impl Cmp<'_, '_> {
             && !has(DW_AT_LOW_PC)
             && !has(DW_AT_RANGES)
             && !has(DW_AT_ENTRY_PC);
-        if (is_type(d.tag) || addressless) && lost == 0 && kept == 0 {
+        if ((is_type(d.tag) && !has(DW_AT_NAME)) || addressless) && lost == 0 && kept == 0 {
             return Ok(false);
         }
         Err(())

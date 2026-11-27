@@ -325,53 +325,14 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
         let k = dies.partition_point(|x| x.offset < off);
         (k < n && dies[k].offset == off).then_some(k)
     };
-    // 2. The DIEs holding relocations to what stays and is surely linked
-    // from this object: not to a weak definition, which another object's
-    // copy may stand in for (the debug map then names that object's).
-    // Each section's defined symbols by address, and whether weak.
-    let nsec = o.section_count();
-    let mut by_section: Vec<Vec<(u64, bool)>> = vec![Vec::new(); nsec];
-    for y in &o.symbols {
-        if y.in_section() {
-            let s = usize::from(y.n_sect) - 1;
-            if let Some(v) = by_section.get_mut(s) {
-                v.push((y.n_value, y.n_desc & super::N_WEAK_DEF != 0));
-            }
-        }
-    }
-    for v in &mut by_section {
-        v.sort_unstable();
-    }
-    // Whether address `a` of section `s` is in a weak definition's atom.
-    let weak_at = |s: usize, a: u64| -> bool {
-        let Some(v) = by_section.get(s) else {
-            return false;
-        };
-        let k = v.partition_point(|x| x.0 <= a);
-        let Some(&(at, _)) = k.checked_sub(1).map(|k| &v[k]) else {
-            return false;
-        };
-        v[..k].iter().rev().take_while(|x| x.0 == at).any(|x| x.1)
-    };
+    // 2. The DIEs holding relocations to what stays.
     let info_s = o.section(info_i).ok_or("no __debug_info")?;
-    let mut live: Vec<u32> = Vec::new();
-    for (ri, r) in info_s.relocations.iter().enumerate() {
-        let linked = if r.external {
-            !gone_syms.contains(&r.symbolnum)
-                && o.symbols
-                    .get(r.symbolnum as usize)
-                    .is_some_and(|y| y.in_section() && y.n_desc & super::N_WEAK_DEF == 0)
-        } else if let Some(a) = o.local_address(info_i, ri) {
-            (r.symbolnum as usize)
-                .checked_sub(1)
-                .is_some_and(|s| !weak_at(s, a))
-        } else {
-            false
-        };
-        if linked {
-            live.push(r.address);
-        }
-    }
+    let mut live: Vec<u32> = info_s
+        .relocations
+        .iter()
+        .filter(|r| !(r.external && gone_syms.contains(&r.symbolnum)))
+        .map(|r| r.address)
+        .collect();
     live.sort_unstable();
     let mut relocated = vec![false; n];
     {

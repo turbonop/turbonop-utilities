@@ -56,6 +56,7 @@
 //! sections, split units, a unit referring outside itself) gives the
 //! synthesized member no debug information, as before, with the reason.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::elf::Dwo;
@@ -191,9 +192,10 @@ struct Rel {
 }
 
 /// A debug section of the source member: its bytes (with relocations to
-/// debug sections applied) and its relocations, by offset.
-struct Sec {
-    bytes: Vec<u8>,
+/// debug sections applied: the member's own, unless one applies) and its
+/// relocations, by offset.
+struct Sec<'p> {
+    bytes: Cow<'p, [u8]>,
     rels: Vec<Rel>,
 }
 
@@ -208,6 +210,9 @@ struct Die {
     end: u64,
     /// Whether it has a `DW_AT_name`.
     named: bool,
+    /// Whether it may have addresses that make it a root (see
+    /// [`DieShape::roots`]).
+    roots: bool,
 }
 
 /// A line-table sequence of a source unit.
@@ -299,7 +304,7 @@ pub(crate) struct Source<'p> {
     endian: Endian,
     abs32: u32,
     abs64: u32,
-    secs: Vec<Option<Sec>>,
+    secs: Vec<Option<Sec<'p>>>,
     /// Each symbol's debug section, if it is one's (a section symbol).
     sym_kind: Vec<Option<Kind>>,
     /// A split unit's: the member's own `.debug_str` (which its relocations
@@ -436,17 +441,19 @@ impl<'p> Source<'p> {
                 });
             }
         }
-        let mut secs: Vec<Option<Sec>> = (0..KINDS).map(|_| None).collect();
+        let mut secs: Vec<Option<Sec<'p>>> = (0..KINDS).map(|_| None).collect();
         for (k, at) in index.iter().enumerate() {
             let Some(at) = *at else { continue };
             let s = &obj.sections[at];
             let Data::Bytes(b) = &s.data else {
                 return Err("a debug section without contents");
             };
-            let mut bytes = b.to_vec();
             let mut rels = rels_of.remove(&at).unwrap_or_default();
             rels.sort_by_key(|r| r.offset);
             let kind = index_kind(k);
+            // The relocations to debug sections, applied to a copy (a
+            // section without them, such as `.debug_str`, is read in place).
+            let mut applied: Vec<(usize, usize, u64)> = Vec::new();
             for r in &rels {
                 let size = reloc_size(machine, r.rtype).ok_or("a debug relocation not known")?;
                 if !kind.relocated() {
@@ -456,8 +463,17 @@ impl<'p> Source<'p> {
                     continue;
                 };
                 let value = symbols[r.sym as usize].value.wrapping_add(r.addend as u64);
-                crate::elf::put(&mut bytes, r.offset as usize, size, value, endian);
+                applied.push((r.offset as usize, size, value));
             }
+            let bytes: Cow<'p, [u8]> = if applied.is_empty() {
+                Cow::Borrowed(&b[..])
+            } else {
+                let mut bytes = b.to_vec();
+                for (at, size, value) in applied {
+                    crate::elf::put(&mut bytes, at, size, value, endian);
+                }
+                Cow::Owned(bytes)
+            };
             secs[k] = Some(Sec { bytes, rels });
         }
         let mut src = Source {
@@ -776,7 +792,7 @@ impl<'p> Source<'p> {
         }
         for (k, b) in taken {
             self.secs[k as usize] = Some(Sec {
-                bytes: b,
+                bytes: Cow::Owned(b),
                 rels: Vec::new(),
             });
         }
@@ -928,10 +944,11 @@ impl<'p> Source<'p> {
                     let mut v = Vec::new();
                     for di in (c * CHUNK).max(1)..n.min((c + 1) * CHUNK) {
                         let d = &cu.dies[di];
-                        let (_, attrs) = read_die(&unit, &cu.abbrevs, d.offset)?;
-                        if attrs.iter().any(|a| a.name == DW_AT_DECLARATION) {
+                        // (A DIE that can't be one isn't read again.)
+                        if !d.roots {
                             continue;
                         }
+                        let (_, attrs) = read_die(&unit, &cu.abbrevs, d.offset)?;
                         let mut here = BTreeSet::new();
                         for a in &attrs {
                             for addr in me.addresses_of(cu, &unit, a)? {
@@ -1383,7 +1400,10 @@ impl<'p> Source<'p> {
             if !k.relocated() && !rels.is_empty() {
                 return Err("relocations in a string or abbreviation section");
             }
-            secs[k as usize] = Some(Sec { bytes, rels });
+            secs[k as usize] = Some(Sec {
+                bytes: Cow::Owned(bytes),
+                rels,
+            });
         }
         let n = symbols.len();
         let mut extents = vec![None; sections.len()];
@@ -1544,9 +1564,111 @@ pub(crate) fn read_die<'d, 'a>(
     Ok((a, out))
 }
 
+/// What walking a unit's DIEs needs of an abbreviation, and whether a DIE
+/// of it can be a root.
+#[derive(Clone, Copy, Debug)]
+struct DieShape {
+    tag: u16,
+    children: bool,
+    named: bool,
+    /// The size of its attributes, if every form's is fixed: skipped
+    /// without reading them.
+    fixed: Option<u64>,
+    /// Whether it has attributes [`Source::addresses_of`] reads addresses
+    /// from, and no `DW_AT_declaration` (the search for roots passes over
+    /// the rest without reading them).
+    roots: bool,
+}
+
+/// A unit's abbreviations' [`DieShape`]s, by code.
+struct Shapes {
+    list: Vec<(u64, DieShape)>,
+    /// Codes to places, unless every code is its place plus 1.
+    sparse: Option<HashMap<u64, usize>>,
+}
+
+impl Shapes {
+    fn new(unit: &Unit<'_>, abbrevs: &Abbrevs) -> Self {
+        let w = if unit.dwarf64 { 8 } else { 4 };
+        let a = u64::from(unit.address_size);
+        let size = |form: u16| -> Option<u64> {
+            Some(match form {
+                DW_FORM_ADDR => a,
+                DW_FORM_DATA1 | DW_FORM_REF1 | DW_FORM_FLAG | DW_FORM_STRX1 | DW_FORM_ADDRX1 => 1,
+                DW_FORM_DATA2 | DW_FORM_REF2 | DW_FORM_STRX2 | DW_FORM_ADDRX2 => 2,
+                DW_FORM_STRX3 | DW_FORM_ADDRX3 => 3,
+                DW_FORM_DATA4 | DW_FORM_REF4 | DW_FORM_REF_SUP4 | DW_FORM_STRX4
+                | DW_FORM_ADDRX4 => 4,
+                DW_FORM_DATA8 | DW_FORM_REF8 | DW_FORM_REF_SIG8 | DW_FORM_REF_SUP8 => 8,
+                DW_FORM_DATA16 => 16,
+                DW_FORM_FLAG_PRESENT | DW_FORM_IMPLICIT_CONST => 0,
+                DW_FORM_STRP | DW_FORM_LINE_STRP | DW_FORM_STRP_SUP | DW_FORM_GNU_STRP_ALT
+                | DW_FORM_SEC_OFFSET | DW_FORM_GNU_REF_ALT => w,
+                DW_FORM_REF_ADDR if unit.version <= 2 => a,
+                DW_FORM_REF_ADDR => w,
+                _ => return None,
+            })
+        };
+        let list: Vec<(u64, DieShape)> = abbrevs
+            .iter()
+            .map(|ab| {
+                let fixed = ab
+                    .attrs
+                    .iter()
+                    .try_fold(0u64, |n, s| n.checked_add(size(s.form)?));
+                let addresses = ab.attrs.iter().any(|s| match s.form {
+                    DW_FORM_ADDR
+                    | DW_FORM_ADDRX
+                    | DW_FORM_ADDRX1
+                    | DW_FORM_ADDRX2
+                    | DW_FORM_ADDRX3
+                    | DW_FORM_ADDRX4
+                    | DW_FORM_GNU_ADDR_INDEX
+                    | DW_FORM_EXPRLOC => true,
+                    DW_FORM_SEC_OFFSET | DW_FORM_RNGLISTX => {
+                        s.name == DW_AT_RANGES || s.name == DW_AT_START_SCOPE
+                    }
+                    _ => false,
+                });
+                let declaration = ab.attrs.iter().any(|s| s.name == DW_AT_DECLARATION);
+                (
+                    ab.code,
+                    DieShape {
+                        tag: ab.tag,
+                        children: ab.children,
+                        named: ab.attrs.iter().any(|s| s.name == DW_AT_NAME),
+                        fixed,
+                        roots: addresses && !declaration,
+                    },
+                )
+            })
+            .collect();
+        let dense = list
+            .iter()
+            .enumerate()
+            .all(|(i, &(code, _))| code == i as u64 + 1);
+        let sparse = (!dense).then(|| {
+            list.iter()
+                .enumerate()
+                .map(|(i, &(code, _))| (code, i))
+                .collect()
+        });
+        Shapes { list, sparse }
+    }
+
+    fn get(&self, code: u64) -> Option<&DieShape> {
+        let i = match &self.sparse {
+            Some(m) => *m.get(&code)?,
+            None => usize::try_from(code).ok()?.checked_sub(1)?,
+        };
+        self.list.get(i).map(|(_, s)| s)
+    }
+}
+
 /// Every DIE of `unit`, in order, with its parent and extent.
 fn walk(unit: &Unit<'_>, abbrevs: &Abbrevs) -> R<Vec<Die>> {
     let bad = "a DIE that doesn't read";
+    let shapes = Shapes::new(unit, abbrevs);
     let data = unit.sections().info;
     let mut r = Reader::new(data, unit.dies as usize, unit.sections().endian);
     let mut dies: Vec<Die> = Vec::new();
@@ -1567,10 +1689,18 @@ fn walk(unit: &Unit<'_>, abbrevs: &Abbrevs) -> R<Vec<Die>> {
             }
             continue;
         }
-        let a = abbrevs.get(code).ok_or(bad)?;
-        for spec in &a.attrs {
-            unit.read_value(&mut r, spec.form, spec.implicit)
-                .ok_or(bad)?;
+        let shape = *shapes.get(code).ok_or(bad)?;
+        match shape.fixed {
+            Some(n) => {
+                r.bytes(n).ok_or(bad)?;
+            }
+            None => {
+                let a = abbrevs.get(code).ok_or(bad)?;
+                for spec in &a.attrs {
+                    unit.read_value(&mut r, spec.form, spec.implicit)
+                        .ok_or(bad)?;
+                }
+            }
         }
         let parent = stack.last().copied().unwrap_or(u32::MAX);
         if parent == u32::MAX && !dies.is_empty() {
@@ -1580,11 +1710,12 @@ fn walk(unit: &Unit<'_>, abbrevs: &Abbrevs) -> R<Vec<Die>> {
         dies.push(Die {
             offset: at,
             parent,
-            tag: a.tag,
+            tag: shape.tag,
             end: r.pos as u64,
-            named: a.attrs.iter().any(|s| s.name == DW_AT_NAME),
+            named: shape.named,
+            roots: shape.roots,
         });
-        if a.children {
+        if shape.children {
             stack.push(i);
         }
     }

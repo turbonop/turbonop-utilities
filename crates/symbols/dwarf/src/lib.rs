@@ -306,6 +306,16 @@ impl Abbrevs {
     }
 
     pub fn get(&self, code: u64) -> Option<&Abbrev> {
+        // (Compilers number a table's abbreviations 1, 2, ... in order: the
+        // code is then its place, without a search.)
+        if let Some(a) = usize::try_from(code)
+            .ok()
+            .and_then(|c| c.checked_sub(1))
+            .and_then(|i| self.list.get(i))
+            && a.code == code
+        {
+            return Some(a);
+        }
         self.by_code.get(&code).map(|&i| &self.list[i])
     }
 

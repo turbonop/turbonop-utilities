@@ -210,6 +210,10 @@ lists every COFF group with its address and size) and by experiment:
   DLL's address table, in `.data`: each slot its thunk's address, with a
   base relocation). The DLLs are in the order their first imports
   loaded. A `/DELAYLOAD` DLL nothing imports from is LNK4199.
+- **Resources** (`.res` files, cvtres's work): the directory (with its
+  strings) is the `.rsrc$01` group, the data `.rsrc$02` from the next 16
+  bytes, each resource's on 8 and the whole to 8; the Rich header has
+  cvtres's entry (0xFF, build 37029, once) before the inputs'.
 - **The headers** have room for exactly the section headers written: no
   `.reloc`'s when there are no base relocations (a minimal image's
   headers are 0x200 bytes, the Rich header unpadded).
@@ -218,7 +222,8 @@ lists every COFF group with its address and size) and by experiment:
   DLL's is Windows' (entry point or not) and an EXE's is LNK1221.
 - **Status:** link.exe's images byte for byte, time stamps aside, for C
   and C++ (exceptions, TLS, iostreams) with the dynamic and the static
-  CRT, C with the debug CRT, and a DLL with exports (tests check each).
+  CRT, C with the debug CRT, a DLL with exports, delay loading, and
+  resources (tests check each).
 - **Still different** (to do): the
   `/Brepro` hash (it depends on the output's contents, not its name or
   the options, but isn't a plain SHA-1/256/512 or MD5 of the file with

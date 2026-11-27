@@ -29,6 +29,10 @@ pub const LINKER_COMP_ID: u32 = 0x0102_90A5;
 /// before every input.
 pub const EXPORT_COMP_ID: u32 = 0x0100_90A5;
 
+/// link.exe 14.52.37029's cvtres's entry (product 0xFF): the object it
+/// makes of the `.res` files, seen before every input.
+pub const CVTRES_COMP_ID: u32 = 0x00FF_90A5;
+
 /// What an import object counts as.
 const IMPORT: u32 = 0x0001_0000;
 
@@ -44,6 +48,9 @@ pub fn entries(r: &Resolved) -> Vec<(u32, u32)> {
     let mut walk: Vec<u32> = Vec::new();
     if !r.config.exports.is_empty() {
         walk.push(EXPORT_COMP_ID);
+    }
+    if !r.resources.is_empty() {
+        walk.push(CVTRES_COMP_ID);
     }
     walk.extend(r.files.iter().filter(|f| f.library.is_none()).map(id));
     // The libraries as they are searched: the command line's first.

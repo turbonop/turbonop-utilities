@@ -488,9 +488,24 @@ impl<'a> Image<'a> {
                 // The hash's length; the hash is filled in once the image is.
                 out[..4].copy_from_slice(&32u32.to_le_bytes());
             }
-            ChunkKind::Resources => {
+            ChunkKind::Resources | ChunkKind::ResourceData => {
+                // The section's bytes, of which this chunk is the directory
+                // or the data (the data right after the directory).
                 if let Some(r) = &self.l.resources {
-                    r.write(out, chunk.rva);
+                    let data = chunk.kind == ChunkKind::ResourceData;
+                    let start = if data {
+                        chunk.rva - r.directory_size
+                    } else {
+                        chunk.rva
+                    };
+                    let mut all = vec![0u8; r.size as usize];
+                    r.write(&mut all, start);
+                    let part = if data {
+                        &all[r.directory_size as usize..]
+                    } else {
+                        &all[..r.directory_size as usize]
+                    };
+                    out[..part.len()].copy_from_slice(part);
                 }
             }
             ChunkKind::BaseRelocations => {
@@ -957,13 +972,14 @@ impl<'a> Image<'a> {
         if let Some(rva) = self.delay_rva(ChunkKind::DelayDirectory) {
             dirs[13] = (rva, 32 * (crate::n32(self.l.delay_dlls.len()) + 1));
         }
-        if let Some(r) = self
-            .l
-            .chunks
-            .iter()
-            .find(|c| c.kind == ChunkKind::Resources)
-        {
-            dirs[2] = (r.rva, r.size);
+        if let (Some(r), Some(res)) = (
+            self.l
+                .chunks
+                .iter()
+                .find(|c| c.kind == ChunkKind::Resources),
+            &self.l.resources,
+        ) {
+            dirs[2] = (r.rva, res.size);
         } else if let Some(r) = sections.iter().find(|s| s.name == b".rsrc") {
             // Resources from objects (cvtres's `.rsrc`$01` and ``).
             dirs[2] = (r.rva, r.virtual_size);

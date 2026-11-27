@@ -94,6 +94,9 @@ pub struct Rsrc {
     resources: Vec<Resource>,
     /// The size of the section.
     pub size: u32,
+    /// The directory's size (with its strings, to 16 bytes): where the
+    /// data starts (link.exe's `.rsrc$01` group, the data `.rsrc$02`).
+    pub directory_size: u32,
 }
 
 /// The order of entries in a directory: names (by their upper-case
@@ -133,7 +136,12 @@ pub fn plan(mut resources: Vec<Resource>) -> Result<Rsrc, String> {
     }
     let t = Tree::of(&resources);
     let size = t.data_end(&resources);
-    Ok(Rsrc { resources, size })
+    let directory_size = t.data_start();
+    Ok(Rsrc {
+        resources,
+        size,
+        directory_size,
+    })
 }
 
 /// A type's names, each with the indices of its languages' resources.
@@ -191,16 +199,19 @@ impl Tree {
         }
     }
 
+    /// Where the data starts: after the directory, on 16 bytes (as
+    /// link.exe places it; each resource's data then on 8).
     fn data_start(&self) -> u32 {
-        (self.strings + 7) & !7
+        (self.strings + 15) & !15
     }
 
+    /// The section's size: the data's end, on 8 bytes (as link.exe's).
     fn data_end(&self, resources: &[Resource]) -> u32 {
         let mut at = self.data_start();
         for r in resources {
             at = ((at + 7) & !7) + crate::n32(r.data.len());
         }
-        at
+        (at + 7) & !7
     }
 }
 

@@ -74,8 +74,10 @@ pub enum ChunkKind {
     BaseRelocations,
     /// The export directory.
     Exports,
-    /// The resources (`.rsrc`).
+    /// The resources' directory (`.rsrc$01`).
     Resources,
+    /// The resources' data (`.rsrc$02`, right after the directory).
+    ResourceData,
     /// The debug directory (at the end of the `.rdata` group).
     DebugDirectory,
     /// The `coffgrp` debug data: every COFF group's address, size, name.
@@ -1087,19 +1089,30 @@ pub fn layout(
         );
     }
 
+    // The resources: their directory (`.rsrc$01`, as link.exe's groups),
+    // then their data (`.rsrc$02`).
     if let Some(res) = &resources {
-        add(
-            b".rsrc",
-            scn::CNT_INITIALIZED_DATA | scn::MEM_READ,
-            Chunk {
-                kind: ChunkKind::Resources,
-                align: 8,
-                size: res.size,
-                uninitialized: false,
-                rva: 0,
-            },
-            &mut chunks,
-        );
+        for (name, kind, size) in [
+            (&b".rsrc$01"[..], ChunkKind::Resources, res.directory_size),
+            (
+                b".rsrc$02",
+                ChunkKind::ResourceData,
+                res.size - res.directory_size,
+            ),
+        ] {
+            add(
+                name,
+                scn::CNT_INITIALIZED_DATA | scn::MEM_READ,
+                Chunk {
+                    kind,
+                    align: 8,
+                    size,
+                    uninitialized: false,
+                    rva: 0,
+                },
+                &mut chunks,
+            );
+        }
     }
 
     // What link.exe adds to .rdata: the volatile metadata (x64, for the

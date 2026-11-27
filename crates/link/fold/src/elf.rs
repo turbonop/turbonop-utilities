@@ -249,7 +249,43 @@ struct Parsed<'a> {
     owner: Vec<Option<usize>>,
     /// An object whose definitions can't be read (another format).
     opaque: bool,
+    /// Looked up once, not by every synthesized member it gives units to
+    /// (a member can hold tens of thousands of sections): the symbol table,
+    /// the first section of each name of [`ENV_NAMES`], the first
+    /// `.eh_frame`, and the first relocation section for that.
+    symtab: usize,
+    env_sections: Vec<usize>,
+    eh_frame: Option<usize>,
+    eh_rel: Option<usize>,
 }
+
+impl<'a> Parsed<'a> {
+    /// The member's symbols ([`Object::symbols`], without looking for the
+    /// table again).
+    fn symbols(&self) -> &[Symbol<'a>] {
+        match self
+            .obj
+            .as_ref()
+            .and_then(|o| o.sections.get(self.symtab))
+            .map(|s| &s.data)
+        {
+            Some(Data::Symbols(s)) => s,
+            _ => &[],
+        }
+    }
+}
+
+/// The environment sections a synthesized member copies from its first
+/// member, in its order.
+const ENV_NAMES: [&[u8]; 7] = [
+    b".note.GNU-stack",
+    b".note.gnu.property",
+    b".comment",
+    b".ARM.attributes",
+    b".riscv.attributes",
+    b".MIPS.abiflags",
+    b".gnu.attributes",
+];
 
 fn is_c_identifier(name: &[u8]) -> bool {
     !name.is_empty()
@@ -348,6 +384,10 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         eh: None,
         owner: Vec::new(),
         opaque: false,
+        symtab: 0,
+        env_sections: Vec::new(),
+        eh_frame: None,
+        eh_rel: None,
     };
     let data = input.data;
     if !data.starts_with(b"\x7fELF") {
@@ -417,6 +457,12 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     let symbols = obj.symbols();
     let n = obj.sections.len();
     p.env = environment(&obj);
+    p.symtab = symtab;
+    p.env_sections = ENV_NAMES
+        .iter()
+        .filter_map(|&name| obj.sections.iter().position(|s| &*s.name == name))
+        .collect();
+    p.eh_frame = obj.sections.iter().position(|s| &*s.name == b".eh_frame");
 
     // Each section's unit.
     let mut owner: Vec<Option<usize>> = vec![None; n];
@@ -732,6 +778,12 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         u.bytes = bytes;
         u.hash = hash;
     }
+    p.eh_rel = p.eh.as_ref().and_then(|eh| {
+        relocation_sections(&obj)
+            .into_iter()
+            .find(|&(_, t)| t == eh.section)
+            .map(|(r, _)| r)
+    });
     p.owner = owner;
     p.units = units;
     p.obj = Some(obj);
@@ -1090,28 +1142,13 @@ fn synthesize<'a>(
         }
     }
     // Environment sections.
-    let env_names: [&[u8]; 7] = [
-        b".note.GNU-stack",
-        b".note.gnu.property",
-        b".comment",
-        b".ARM.attributes",
-        b".riscv.attributes",
-        b".MIPS.abiflags",
-        b".gnu.attributes",
-    ];
-    for name in env_names {
-        if let Some(s) = first.sections.iter().find(|s| &*s.name == name) {
-            let mut s = s.clone();
-            s.link = 0;
-            sections.push(s);
-        }
+    for &i in &parsed[m0].env_sections {
+        let mut s = first.sections[i].clone();
+        s.link = 0;
+        sections.push(s);
     }
     // .eh_frame: the CIEs the FDEs name, then the FDEs.
-    let eh_template = first
-        .sections
-        .iter()
-        .find(|s| &*s.name == b".eh_frame")
-        .cloned();
+    let eh_template = parsed[m0].eh_frame.map(|i| first.sections[i].clone());
     let mut eh_pieces: Vec<(usize, usize, bool)> = Vec::new(); // (member, record, is cie)
     // Each CIE copied: its place among the pieces.
     let mut cie_place: BTreeMap<(usize, usize), usize> = BTreeMap::new();
@@ -1144,12 +1181,7 @@ fn synthesize<'a>(
     };
     // Its relocations, as the first member's (`.rela.eh_frame` or
     // `.rel.eh_frame`).
-    let eh_rel_template = parsed[m0].eh.as_ref().and_then(|eh| {
-        relocation_sections(first)
-            .into_iter()
-            .find(|&(_, t)| t == eh.section)
-            .map(|(r, _)| first.sections[r].clone())
-    });
+    let eh_rel_template = parsed[m0].eh_rel.map(|r| first.sections[r].clone());
     let rela_eh = match (eh_index, eh_rel_template) {
         (Some(eh), Some(mut s)) => {
             s.info = eh as u32;
@@ -1309,8 +1341,8 @@ fn synthesize<'a>(
     let mut global_of: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
     let mut section_symbol: BTreeMap<usize, usize> = BTreeMap::new();
     for &(m, u) in units {
-        let obj = parsed[m].obj.as_ref().ok_or("unread")?;
-        let all = obj.symbols();
+        parsed[m].obj.as_ref().ok_or("unread")?;
+        let all = parsed[m].symbols();
         // (The unit's own, found once by `parse`: a scan of every symbol
         // for each unit was quadratic in a large member.)
         for &i in &parsed[m].units[u].symbols {
@@ -1361,8 +1393,7 @@ fn synthesize<'a>(
         if let Some(&t) = sym_map.get(&(m, si)) {
             return Ok(t);
         }
-        let obj = parsed[m].obj.as_ref().ok_or("unread")?;
-        let s = obj
+        let s = parsed[m]
             .symbols()
             .get(si)
             .ok_or("a relocation names no symbol")?;
@@ -1480,8 +1511,7 @@ fn synthesize<'a>(
     }
     // The DWARF's relocations.
     if let Some(b) = &built {
-        let obj0 = parsed[m0].obj.as_ref().ok_or("unread")?;
-        let symbols0 = obj0.symbols();
+        let symbols0 = parsed[m0].symbols();
         for (j, s) in b.sections.iter().enumerate() {
             let Some(rela) = debug_rela[j] else {
                 continue;

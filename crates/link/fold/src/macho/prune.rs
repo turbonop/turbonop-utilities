@@ -48,7 +48,7 @@ use std::ops::Range;
 
 use turbonop_dwarf::consts::*;
 use turbonop_dwarf::ops::{self, Operand};
-use turbonop_dwarf::{Abbrevs, Reader, Sections, Unit, Value};
+use turbonop_dwarf::{Abbrevs, Reader, Sections, Unit};
 use turbonop_macho_object::{Contents, Object};
 
 type R<T> = Result<T, &'static str>;
@@ -309,7 +309,6 @@ fn walk(u: &Unit<'_>, abbrevs: &Abbrevs) -> R<(Vec<Die>, Vec<At>)> {
         for spec in &a.attrs {
             let pos = r.pos as u32;
             let (name, form) = (spec.name, spec.form);
-            let v = u.read_value(&mut r, form, spec.implicit).ok_or(bad)?;
             let mut push = |size: u8, fix: Fix| {
                 ats.push(At {
                     pos,
@@ -318,72 +317,73 @@ fn walk(u: &Unit<'_>, abbrevs: &Abbrevs) -> R<(Vec<Die>, Vec<At>)> {
                     fix,
                 });
             };
-            // (A reference or section offset: 32 bits.)
-            let n = match v {
-                Value::Uint(n) => u32::try_from(n).unwrap_or(u32::MAX),
-                _ => 0,
-            };
+            // (Only references, string and list offsets, and expressions are
+            // read; the rest is skipped by its form.)
+            let sibling = name == DW_AT_SIBLING;
             match form {
-                DW_FORM_REF1 | DW_FORM_REF2 | DW_FORM_REF4 | DW_FORM_REF8 => {
-                    let size = match form {
+                DW_FORM_REF1 | DW_FORM_REF2 | DW_FORM_REF4 | DW_FORM_REF8 | DW_FORM_REF_ADDR => {
+                    let size: u8 = match form {
                         DW_FORM_REF1 => 1,
                         DW_FORM_REF2 => 2,
-                        DW_FORM_REF4 => 4,
-                        _ => 8,
+                        DW_FORM_REF8 => 8,
+                        _ => 4,
                     };
-                    push(
-                        size,
-                        Fix::Ref {
-                            target: n,
-                            sibling: name == DW_AT_SIBLING,
-                        },
-                    );
+                    let v = r.uint(usize::from(size)).ok_or(bad)?;
+                    let target = u32::try_from(v).unwrap_or(u32::MAX);
+                    push(size, Fix::Ref { target, sibling });
                 }
-                DW_FORM_REF_ADDR => push(
-                    4,
-                    Fix::Ref {
-                        target: n,
-                        sibling: name == DW_AT_SIBLING,
-                    },
-                ),
                 DW_FORM_STRP => {
-                    let Value::StrOffset(_, x) = v else {
-                        return Err(bad);
-                    };
-                    push(4, Fix::Strp(u32::try_from(x).map_err(|_| bad)?));
+                    let v = r.uint(4).ok_or(bad)? as u32;
+                    push(4, Fix::Strp(v));
                 }
-                DW_FORM_SEC_OFFSET => match name {
-                    DW_AT_RANGES => push(4, Fix::Ranges(n)),
-                    DW_AT_STMT_LIST | DW_AT_MACRO_INFO => {}
-                    x if is_loclist(x) => push(4, Fix::Loc(n)),
-                    _ => return Err("a section offset of an attribute not known"),
-                },
-                DW_FORM_EXPRLOC => {
-                    let Value::Block(b) = v else { return Err(bad) };
-                    check_expr(b, u.address_size)?;
+                DW_FORM_SEC_OFFSET => {
+                    let v = r.uint(4).ok_or(bad)? as u32;
+                    match name {
+                        DW_AT_RANGES => push(4, Fix::Ranges(v)),
+                        DW_AT_STMT_LIST | DW_AT_MACRO_INFO => {}
+                        x if is_loclist(x) => push(4, Fix::Loc(v)),
+                        _ => return Err("a section offset of an attribute not known"),
+                    }
                 }
-                DW_FORM_BLOCK1 | DW_FORM_BLOCK2 | DW_FORM_BLOCK4 | DW_FORM_BLOCK
-                    if is_loclist(name) =>
-                {
-                    let Value::Block(b) = v else { return Err(bad) };
-                    check_expr(b, u.address_size)?;
+                DW_FORM_EXPRLOC | DW_FORM_BLOCK1 | DW_FORM_BLOCK2 | DW_FORM_BLOCK4
+                | DW_FORM_BLOCK => {
+                    let len = match form {
+                        DW_FORM_BLOCK1 => r.uint(1),
+                        DW_FORM_BLOCK2 => r.uint(2),
+                        DW_FORM_BLOCK4 => r.uint(4),
+                        _ => r.uleb(),
+                    }
+                    .ok_or(bad)?;
+                    let b = r.bytes(len).ok_or(bad)?;
+                    if form == DW_FORM_EXPRLOC || is_loclist(name) {
+                        check_expr(b, u.address_size)?;
+                    }
                 }
-                DW_FORM_ADDR
-                | DW_FORM_BLOCK1
-                | DW_FORM_BLOCK2
-                | DW_FORM_BLOCK4
-                | DW_FORM_BLOCK
-                | DW_FORM_DATA1
-                | DW_FORM_DATA2
-                | DW_FORM_DATA4
-                | DW_FORM_DATA8
-                | DW_FORM_DATA16
-                | DW_FORM_STRING
-                | DW_FORM_FLAG
-                | DW_FORM_FLAG_PRESENT
-                | DW_FORM_SDATA
-                | DW_FORM_UDATA
-                | DW_FORM_IMPLICIT_CONST => {}
+                DW_FORM_ADDR => {
+                    r.bytes(u64::from(u.address_size)).ok_or(bad)?;
+                }
+                DW_FORM_DATA1 | DW_FORM_FLAG => {
+                    r.bytes(1).ok_or(bad)?;
+                }
+                DW_FORM_DATA2 => {
+                    r.bytes(2).ok_or(bad)?;
+                }
+                DW_FORM_DATA4 => {
+                    r.bytes(4).ok_or(bad)?;
+                }
+                DW_FORM_DATA8 => {
+                    r.bytes(8).ok_or(bad)?;
+                }
+                DW_FORM_DATA16 => {
+                    r.bytes(16).ok_or(bad)?;
+                }
+                DW_FORM_STRING => {
+                    r.cstr().ok_or(bad)?;
+                }
+                DW_FORM_SDATA | DW_FORM_UDATA => {
+                    r.uleb().ok_or(bad)?;
+                }
+                DW_FORM_FLAG_PRESENT | DW_FORM_IMPLICIT_CONST => {}
                 _ => return Err("a form not handled"),
             }
             match name {

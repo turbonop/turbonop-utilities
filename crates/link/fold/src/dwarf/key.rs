@@ -40,27 +40,6 @@ pub(crate) fn of(
     h.finish()
 }
 
-/// One child of a class (a member, a member function, a template
-/// parameter, a nested type), for [`with_members`]: its tag, name, and
-/// linkage name.
-pub(crate) fn member(tag: u16, name: &[u8], linkage: &[u8]) -> u128 {
-    let mut h = H128::new();
-    h.u64(u64::from(tag));
-    h.bytes(name);
-    h.bytes(linkage);
-    h.finish()
-}
-
-/// A class definition's key with its members (the sum of their
-/// [`member`]s: a set, in any order): two units' versions of a class
-/// template specialization differ in the members each used.
-pub(crate) fn with_members(key: u128, members: u128) -> u128 {
-    let mut h = H128::new();
-    h.u128(key);
-    h.u128(members);
-    h.finish()
-}
-
 /// Each file of the DWARF 2 to 4 line table at `off` of `line`, by its
 /// index (index 0, which names no file before DWARF 5, is 0): its
 /// directory's name and its own hashed, the directory index 0 being

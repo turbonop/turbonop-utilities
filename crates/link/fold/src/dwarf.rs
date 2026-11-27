@@ -2299,36 +2299,6 @@ fn type_key(
     k
 }
 
-/// Mach-O: the members of class `i` of `cu` ([`key::member`]s, summed), as
-/// `macho::reach` sums the givers' (`None` if one doesn't read).
-fn class_members(cu: &Cu, unit: &Unit<'_>, i: usize) -> Option<u128> {
-    let end = cu.dies[i].end;
-    let mut sum = 0u128;
-    let mut attrs = Vec::new();
-    for j in i + 1..cu.dies.len() {
-        let d = &cu.dies[j];
-        if d.offset >= end {
-            break;
-        }
-        if d.parent as usize != i {
-            continue;
-        }
-        read_die_into(unit, &cu.abbrevs, d.offset, &mut attrs).ok()?;
-        let (mut name, mut linkage): (&[u8], &[u8]) = (b"", b"");
-        for a in &attrs {
-            match a.name {
-                DW_AT_NAME => name = unit.string(&a.value).map_or(&b""[..], |s| s.bytes),
-                DW_AT_LINKAGE_NAME | DW_AT_MIPS_LINKAGE_NAME => {
-                    linkage = unit.string(&a.value).map_or(&b""[..], |s| s.bytes);
-                }
-                _ => {}
-            }
-        }
-        sum = sum.wrapping_add(key::member(d.tag, name, linkage));
-    }
-    Some(sum)
-}
-
 /// Whether an attribute holds a line-table file index.
 fn is_file(name: u16) -> bool {
     matches!(name, DW_AT_DECL_FILE | DW_AT_CALL_FILE)
@@ -3029,8 +2999,7 @@ impl<'s, 'p> Builder<'s, 'p> {
             let Some(set) = given else {
                 return false;
             };
-            let k = type_key(cu, &unit, i, &mut memo.borrow_mut())
-                .and_then(|k| Some(key::with_members(k, class_members(cu, &unit, i)?)));
+            let k = type_key(cu, &unit, i, &mut memo.borrow_mut());
             k.is_some_and(|k| set.contains(&k))
         };
         if given.is_some_and(|s| !s.is_empty()) {

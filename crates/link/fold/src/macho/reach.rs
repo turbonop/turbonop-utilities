@@ -41,9 +41,8 @@
 //! defined its context; otherwise it is the earlier object's definition
 //! that is in the dSYM, with what that version reaches, which may be less
 //! (a class template specialization's members are those its unit used).
-//! A first version that followed such references to the end lost 2 to 12 more
-//! of a corpus link's type definitions, and changed 300 to 500 others'
-//! members
+//! A first version that followed such references to the end lost 12 type
+//! definitions per corpus link, and changed 300 to 500 others' members.
 //! A namespace's other children aren't assumed either (an import keeps
 //! them only in some links). The result is the keys of the named classes,
 //! structures, and unions in named scopes defined among what it reaches.
@@ -81,8 +80,6 @@ struct Die {
     /// Its key, if a class, structure, union, or namespace in named scopes
     /// (a class a debugger finds by name, or a scope of one).
     key: Option<u128>,
-    /// A class's members ([`key::member`]s, summed).
-    members: u128,
 }
 
 /// Whether a DIE of `tag` is kept with all its children when a DIE below it
@@ -295,11 +292,6 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
             let p = &dies[parent as usize];
             p.in_function || p.tag == DW_TAG_SUBPROGRAM
         };
-        if parent != NONE && aggregate(dies[parent as usize].tag) {
-            let m = key::member(a.tag, name.unwrap_or(b""), linkage.unwrap_or(b""));
-            let p = &mut dies[parent as usize];
-            p.members = p.members.wrapping_add(m);
-        }
         dies.push(Die {
             offset: at,
             end: if a.children { 0 } else { r.pos as u32 },
@@ -310,7 +302,6 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
             in_function,
             context,
             key,
-            members: 0,
         });
         if a.children {
             stack.push(i);
@@ -407,7 +398,7 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
     Ok(Some(
         (0..n)
             .filter(|&i| (kept[i] || defined[i]) && aggregate(dies[i].tag) && !dies[i].declaration)
-            .filter_map(|i| Some(key::with_members(dies[i].key?, dies[i].members)))
+            .filter_map(|i| dies[i].key)
             .collect(),
     ))
 }

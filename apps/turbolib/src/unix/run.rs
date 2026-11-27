@@ -1187,18 +1187,26 @@ fn lay_out(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(Layout, Vec<
         plan.members = members;
     }
     let archiver = run.archiver();
-    // Each member's symbols, on every core.
-    let symbols = turbonop_par::map(&plan.members, 8, |m| match &m.bytes {
-        Some(b) => member_symbols(b.get(), archiver)
-            .map(|s| {
-                (
-                    s.object,
-                    s.symbols.iter().map(|n| n.to_vec()).collect::<Vec<_>>(),
-                )
-            })
-            .map_err(|e| format!("{}: {e}", m.name)),
-        None => Ok((false, Vec::new())),
-    });
+    // Each member's symbols, on every core (the largest first: members'
+    // sizes differ a thousandfold).
+    let symbols = turbonop_par::map_costed(
+        plan.members.len(),
+        |i| plan.members[i].size,
+        |i| {
+            let m = &plan.members[i];
+            match &m.bytes {
+                Some(b) => member_symbols(b.get(), archiver)
+                    .map(|s| {
+                        (
+                            s.object,
+                            s.symbols.iter().map(|n| n.to_vec()).collect::<Vec<_>>(),
+                        )
+                    })
+                    .map_err(|e| format!("{}: {e}", m.name)),
+                None => Ok((false, Vec::new())),
+            }
+        },
+    );
     let mut index: Vec<IndexSymbol<'_>> = Vec::new();
     let mut objects = false;
     let mut per_member = Vec::with_capacity(symbols.len());

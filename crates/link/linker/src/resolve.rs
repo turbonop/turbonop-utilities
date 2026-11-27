@@ -350,6 +350,18 @@ impl Linker {
                 for lib in new_libs {
                     self.add_default_lib(&lib);
                 }
+                // The symbols a relocation refers to: only an undefined one of
+                // those wants a library's definition (link.exe searches no
+                // library for a name nothing refers to: memcpy.obj's
+                // memcpy_$fo$, which its /ALTERNATENAME then gives a default).
+                let mut used = vec![false; n];
+                for sec in &object.sections {
+                    for rel in sec.relocations {
+                        if let Some(u) = used.get_mut(rel.symbol_table_index.get() as usize) {
+                            *u = true;
+                        }
+                    }
+                }
                 let mut idata = None;
                 for (i, s) in object.symbols.iter().enumerate() {
                     if !s.is_external() {
@@ -370,7 +382,7 @@ impl Linker {
                     }
                     let g = self.intern(s.name);
                     globals[i] = g;
-                    self.define(g, place, &object, i, &mut kept, &name);
+                    self.define(g, place, &object, i, used[i], &mut kept, &name);
                 }
                 self.files.push(File {
                     name,
@@ -441,12 +453,25 @@ impl Linker {
         place: u32,
         object: &Object,
         i: usize,
+        used: bool,
         kept: &mut [bool],
         file_name: &str,
     ) {
         let s = &object.symbols[i];
+        // An undefined name nothing refers to, that has an alternate name, is
+        // left to it: link.exe searches no library for it (memcpy.obj's
+        // memcpy_$fo$, /ALTERNATENAME'd to memcpy_$fo_default$). Without one,
+        // it is searched for (an import descriptor's null thunk).
+        let undefined = matches!(s.kind, SymbolKind::Undefined | SymbolKind::Weak { .. });
+        let left_to_alternate = undefined
+            && !used
+            && self
+                .config
+                .alternate_names
+                .iter()
+                .any(|(a, _)| a.as_bytes() == s.name);
         let global = &mut self.globals[g as usize];
-        if global.referenced_by == NONE {
+        if global.referenced_by == NONE && !left_to_alternate {
             global.referenced_by = place;
         }
         match s.kind {
@@ -781,7 +806,7 @@ impl Linker {
     fn resolve_aliases(&mut self) -> bool {
         let mut changed = false;
         for g in 0..self.globals.len() {
-            if self.globals[g].def != Def::Undefined {
+            if self.globals[g].def != Def::Undefined || self.globals[g].referenced_by == NONE {
                 continue;
             }
             if let Some((file, default, _)) = self.globals[g].weak

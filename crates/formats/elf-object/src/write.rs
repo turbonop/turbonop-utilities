@@ -97,26 +97,81 @@ pub(crate) fn build<'n>(names: impl Iterator<Item = &'n [u8]>) -> (Vec<u8>, Vec<
     turbonop_par::sort_by(&mut order, cmp);
     #[cfg(not(feature = "parallel"))]
     order.sort_unstable_by(cmp);
-    let mut table = vec![0u8];
+    // A name is a tail of the last one written whole exactly when it is a
+    // tail of the one before it in this order (the names with a tail in
+    // common are together, longer ones first), so each is written whole
+    // or not by the one before it alone.
+    let whole = |k: usize| k == 0 || !names[order[k - 1]].ends_with(names[order[k]]);
+    #[cfg(feature = "parallel")]
+    let whole: Vec<bool> = turbonop_par::map_range(order.len(), 64 * 1024, whole);
+    #[cfg(not(feature = "parallel"))]
+    let whole: Vec<bool> = (0..order.len()).map(whole).collect();
+    // Each name's place: a whole one's next, a tail's in the last whole
+    // one.
     let mut offsets = vec![0u32; names.len()];
-    // The last name written whole: every name after it in this order that
-    // is a tail of anything before it is a tail of this one.
-    let mut last: Option<(&[u8], usize)> = None;
-    for i in order {
-        let n = names[i];
-        let place = match last {
-            Some((l, off)) if l.ends_with(n) => off + l.len() - n.len(),
-            _ => {
-                let off = table.len();
-                table.extend_from_slice(n);
-                table.push(0);
-                last = Some((n, off));
-                off
-            }
+    let mut places = vec![0usize; order.len()];
+    let mut at = 1;
+    let mut last = (0usize, 0usize);
+    for (k, &i) in order.iter().enumerate() {
+        let n = names[i].len();
+        let place = if whole[k] {
+            last = (at, n);
+            at += n + 1;
+            last.0
+        } else {
+            last.0 + last.1 - n
         };
+        places[k] = place;
         offsets[i] = place as u32;
     }
+    // The whole names copied to their places (the NULs between them are
+    // the table's zeros): on every core for a large table, in stretches of
+    // names.
+    let mut table = vec![0u8; at];
+    let copy = |dst: &mut [u8], base: usize, ks: core::ops::Range<usize>| {
+        for k in ks {
+            if whole[k] {
+                let n = names[order[k]];
+                let p = places[k] - base;
+                dst[p..p + n.len()].copy_from_slice(n);
+            }
+        }
+    };
+    #[cfg(feature = "parallel")]
+    {
+        const STRETCH: usize = 1 << 20;
+        // (Stretches start at whole names: their bytes don't overlap.)
+        let mut jobs: Vec<(&mut [u8], usize, core::ops::Range<usize>)> = Vec::new();
+        let mut rest: &mut [u8] = &mut table;
+        let mut base = 0;
+        let mut first = 0;
+        for k in 0..=order.len() {
+            let start =
+                k == order.len() || (whole[k] && places[k] - places_at(&places, first) >= STRETCH);
+            if start && k > first {
+                let end = if k == order.len() { at } else { places[k] };
+                let (head, tail) = core::mem::take(&mut rest).split_at_mut(end - base);
+                jobs.push((head, base, first..k));
+                rest = tail;
+                base = end;
+                first = k;
+            }
+        }
+        turbonop_par::for_each_chunk_mut(&mut jobs, 1, |chunk| {
+            for (dst, base, ks) in chunk {
+                copy(dst, *base, ks.clone());
+            }
+        });
+    }
+    #[cfg(not(feature = "parallel"))]
+    copy(&mut table, 0, 0..order.len());
     (table, offsets)
+}
+
+/// The place of the name at `k` in order (the table's start past the end).
+#[cfg(feature = "parallel")]
+fn places_at(places: &[usize], k: usize) -> usize {
+    places.get(k).copied().unwrap_or(0)
 }
 
 /// The string tables to write: each section's name offset, each symbol

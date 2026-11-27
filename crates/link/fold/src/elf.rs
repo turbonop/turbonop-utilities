@@ -935,7 +935,8 @@ fn rewrite(
             removed[s] = true;
         }
     }
-    let symbols: Vec<Symbol<'_>> = obj.symbols().to_vec();
+    // (The member's symbols as read: `obj`'s are changed below.)
+    let symbols: &[Symbol<'_>] = parsed.symbols();
     let in_removed =
         |s: &Symbol<'_>| s.in_section() && removed.get(s.shndx as usize).copied().unwrap_or(false);
 

@@ -471,6 +471,72 @@ fn rebuilt_tables_share_tails() {
     assert_eq!(crate::write::build(shuffled.iter().copied()).0, table);
 }
 
+/// The table as one name after another builds it: each name in order a
+/// tail of the last one written whole, or written whole.
+fn reference_table(names: &[&[u8]]) -> (Vec<u8>, Vec<u32>) {
+    let mut order: Vec<usize> = (0..names.len()).filter(|&i| !names[i].is_empty()).collect();
+    order.sort_by(|&a, &b| crate::write::backwards(names[b], names[a]).then(a.cmp(&b)));
+    let mut table = vec![0u8];
+    let mut offsets = vec![0u32; names.len()];
+    let mut last: Option<(&[u8], usize)> = None;
+    for i in order {
+        let n = names[i];
+        let place = match last {
+            Some((l, off)) if l.ends_with(n) => off + l.len() - n.len(),
+            _ => {
+                let off = table.len();
+                table.extend_from_slice(n);
+                table.push(0);
+                last = Some((n, off));
+                off
+            }
+        };
+        offsets[i] = place as u32;
+    }
+    (table, offsets)
+}
+
+/// Large tables (built in stretches on every core) are the same bytes.
+#[test]
+fn large_tables_are_built_alike() {
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed
+    };
+    let mut owned: Vec<Vec<u8>> = Vec::new();
+    for _ in 0..60_000 {
+        let r = next();
+        // Families sharing tails, duplicates, long names, empty ones.
+        let tail = alloc::format!("_tail{}", r % 97).into_bytes();
+        let len = (r >> 8) as usize % 200;
+        let mut n: Vec<u8> = (0..len)
+            .map(|k| b'a' + ((r >> (k % 50)) % 26) as u8)
+            .collect();
+        match r % 5 {
+            0 => n.clear(),
+            1 => n = tail.clone(),
+            _ => n.extend_from_slice(&tail),
+        }
+        if r % 11 == 0 {
+            n = alloc::format!("{r}").into_bytes();
+            n.extend(core::iter::repeat_n(b'x', 3000 + (r % 5000) as usize));
+        }
+        owned.push(n);
+    }
+    let names: Vec<&[u8]> = owned.iter().map(Vec::as_slice).collect();
+    let (table, offsets) = crate::write::build(names.iter().copied());
+    assert!(table.len() > 4 << 20);
+    assert_eq!((table.clone(), offsets.clone()), reference_table(&names));
+    for (n, &at) in names.iter().zip(&offsets) {
+        let at = at as usize;
+        assert_eq!(&table[at..at + n.len()], *n);
+        assert_eq!(table[at + n.len()], 0);
+    }
+}
+
 /// Names compared backwards eight bytes at a time order as byte by byte.
 #[test]
 fn backwards_order_is_bytewise() {

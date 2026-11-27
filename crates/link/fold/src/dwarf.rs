@@ -2070,6 +2070,11 @@ struct Builder<'s, 'p> {
     /// Mach-O: the keys ([`key`]) of the classes every giver defines in
     /// every link that loads it (see [`build`]).
     supplied: Option<&'s HashSet<u128>>,
+    /// Mach-O: how many times the unit written names each string of
+    /// `.debug_str`: one named once is written inline (`DW_FORM_string`),
+    /// 4 bytes smaller (dsymutil writes every string into the dSYM's
+    /// string table all the same).
+    uses: HashMap<Vec<u8>, u32>,
 }
 
 /// The DIEs of one unit to keep: 2 whole, 1 as a skeleton (the DIE and its
@@ -2984,6 +2989,41 @@ impl<'s, 'p> Builder<'s, 'p> {
         c
     }
 
+    /// Counts the `.debug_str` strings the kept DIEs `kept` will name (a
+    /// declaration only its name), and the unit's DIE's, into `self.uses`.
+    fn count_strings(
+        &mut self,
+        cu: &Cu,
+        unit: &Unit<'s>,
+        kept: &[usize],
+        keep: &Keep<'_>,
+    ) -> R<()> {
+        let mut attrs = Vec::new();
+        for &i in std::iter::once(&0).chain(kept.iter().filter(|&&i| i != 0)) {
+            read_die_into(unit, &cu.abbrevs, cu.dies[i].offset, &mut attrs)?;
+            let decl = i != 0 && keep.mark(i) == DECLARATION;
+            for a in &attrs {
+                if decl && a.name != DW_AT_NAME {
+                    continue;
+                }
+                if matches!(
+                    a.form,
+                    DW_FORM_STRP
+                        | DW_FORM_STRX
+                        | DW_FORM_STRX1
+                        | DW_FORM_STRX2
+                        | DW_FORM_STRX3
+                        | DW_FORM_STRX4
+                        | DW_FORM_GNU_STR_INDEX
+                ) && let Some(s) = unit.string(&a.value)
+                {
+                    *self.uses.entry(s.bytes.to_vec()).or_default() += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Writes unit `cu` of the source, with the roots `roots`, into the
     /// output.
     fn unit(&mut self, cu: &Cu, roots: &[usize]) -> R<()> {
@@ -3066,6 +3106,9 @@ impl<'s, 'p> Builder<'s, 'p> {
         // The kept DIEs, in order.
         let mut kept: Vec<usize> = keep.mark.keys().copied().collect();
         kept.sort_unstable();
+        if src.atoms.is_some() {
+            self.count_strings(cu, &unit, &kept, &keep)?;
+        }
         // The line table's files the kept DIEs and the moved sequences
         // name (the unit's primary file too), renumbered in order.
         let mut used: BTreeSet<u64> = BTreeSet::new();
@@ -3618,6 +3661,12 @@ impl<'s, 'p> Builder<'s, 'p> {
             | DW_FORM_LINE_STRP => {
                 let s = unit.string(&a.value).ok_or("a string that doesn't read")?;
                 let line = a.form == DW_FORM_LINE_STRP;
+                if !line && self.uses.get(s.bytes) == Some(&1) && !s.bytes.contains(&0) {
+                    shape.attrs.push((a.name, DW_FORM_STRING, 0));
+                    p.bytes.extend_from_slice(s.bytes);
+                    p.bytes.push(0);
+                    return Ok(());
+                }
                 let (o, sec, form) = if line {
                     (self.line_str.intern(s.bytes), O_LINE_STR, DW_FORM_LINE_STRP)
                 } else {
@@ -3819,6 +3868,7 @@ pub(crate) fn build(
         codes: HashMap::default(),
         files: Vec::new(),
         supplied,
+        uses: HashMap::default(),
     };
     if cu.version >= 5 {
         // The list sections' headers.

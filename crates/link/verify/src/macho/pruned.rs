@@ -18,11 +18,14 @@
 //! - **What was removed** is, at the unit's or a namespace's level: a
 //!   subprogram or variable whose debug relocations all named lost code
 //!   (one at least), without `DW_AT_const_value`, whose lists name only
-//!   lost code; an unnamed type (not a base type) or a subprogram without
-//!   an address, without relocations; or a namespace of such. Nothing kept
+//!   lost code; a type (not a base type) or a subprogram without an
+//!   address, without relocations, a named type only outside every
+//!   namespace something refers to; or a namespace of such. Nothing kept
 //!   refers into it (references are matched). So what dsymutil keeps of
 //!   the member (DIEs with linked addresses, base types, imported
-//!   entities, constants, named types, and what they reach) is all there,
+//!   entities, constants, and what they reach; a namespace a `using
+//!   namespace` names with all its children, in a link that keeps
+//!   nothing of it before the `DW_TAG_imported_module`) is all there,
 //!   unchanged.
 //! - **Apple's accelerator tables** hold the original's entries whose DIEs
 //!   are kept, each naming its DIE's match (and no others), every hash the
@@ -65,6 +68,10 @@ struct Tree<'d> {
     address_size: u8,
     low: u64,
     dies: Vec<D<'d>>,
+    /// Whether each DIE is inside a namespace something refers to (a
+    /// `using namespace`'s `DW_TAG_imported_module`): dsymutil may keep
+    /// such a namespace with all its children.
+    imported: Vec<bool>,
 }
 
 fn debug_bytes<'a>(o: &'a Object<'a>, name: &[u8]) -> &'a [u8] {
@@ -148,13 +155,32 @@ fn tree<'a>(o: &'a Object<'a>) -> Option<Tree<'a>> {
             _ => None,
         })
     });
-    Some(Tree {
+    let mut t = Tree {
         info: s.info,
         str: s.str,
         address_size: u.address_size,
         low: low.unwrap_or(0),
         dies,
-    })
+        imported: Vec::new(),
+    };
+    let mut named = vec![false; t.dies.len()];
+    for d in &t.dies {
+        for a in &d.attrs {
+            if let (true, Value::Uint(off)) = (is_ref(a.form) && a.name != DW_AT_SIBLING, a.value)
+                && let Some(x) = t.die_at(off)
+                && t.dies[x].tag == DW_TAG_NAMESPACE
+            {
+                named[x] = true;
+            }
+        }
+    }
+    let mut imported = vec![false; t.dies.len()];
+    for i in 0..t.dies.len() {
+        let p = t.dies[i].parent;
+        imported[i] = p != NONE && (named[p as usize] || imported[p as usize]);
+    }
+    t.imported = imported;
+    Some(t)
 }
 
 impl Tree<'_> {
@@ -579,7 +605,10 @@ impl Cmp<'_, '_> {
             && !has(DW_AT_LOW_PC)
             && !has(DW_AT_RANGES)
             && !has(DW_AT_ENTRY_PC);
-        if ((is_type(d.tag) && !has(DW_AT_NAME)) || addressless) && lost == 0 && kept == 0 {
+        if ((is_type(d.tag) && (!has(DW_AT_NAME) || !self.o.imported[c])) || addressless)
+            && lost == 0
+            && kept == 0
+        {
             return Ok(false);
         }
         Err(())

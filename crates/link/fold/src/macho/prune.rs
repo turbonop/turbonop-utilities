@@ -15,22 +15,30 @@
 //!   none anything kept, with no `DW_AT_const_value`, whose range and
 //!   location lists are all empty now.
 //! - **Reached**: the entities the dead ones refer to, transitively
-//!   (references, location expressions' DIEs), that are unnamed types
-//!   (pointers, qualifiers, arrays, subroutine types, anonymous classes)
-//!   or subprograms without addresses (declarations and abstract
-//!   instances), with no debug relocations. Named types stay: dsymutil
-//!   (classic, with ODR uniquing) was seen to keep a giver's class
-//!   definition that nothing referred to (`std::ratio<1000000000, 1>`,
-//!   which a moved function's class names as a template argument, and
-//!   which its synthesized member holds only as a declaration); removing
-//!   such definitions lost 2 or 3 of each corpus link's dSYM's type
-//!   definitions.
+//!   (references, location expressions' DIEs), that are types (pointers,
+//!   qualifiers, arrays, subroutine types, classes, typedefs) or
+//!   subprograms without addresses (declarations and abstract instances),
+//!   with no debug relocations; but a named type inside a namespace
+//!   something refers to stays. dsymutil keeps a namespace that a
+//!   `DW_TAG_imported_module` (`using namespace`) names with every child,
+//!   when nothing in it was kept before the import (see `super::reach`):
+//!   `llvm/Support/Chrono.h`'s imports of `std::chrono` come before the
+//!   namespace in a unit, so in a link where none of the giver's linked
+//!   code reaches into `std::chrono` first, all its durations are in the
+//!   dSYM, and the `std::ratio` definitions they name (7.5 saw two such
+//!   definitions lost when every named type only dead code reached was
+//!   removed).
 //! - **Kept**: every other entity, and everything a kept entity refers to,
 //!   to a fixpoint (a dead subprogram a kept call site names stays, its
 //!   address tombstoned, and is counted). The rest is removed. Everything
-//!   dsymutil keeps of the giver (DIEs with linked addresses, base types,
-//!   imported entities, named types, and what they reach) is thus kept,
-//!   unchanged.
+//!   dsymutil keeps of the giver in any link (DIEs with linked addresses,
+//!   base types, imported entities, constants, the children of a
+//!   namespace an import names, and what they reach) is thus kept,
+//!   unchanged: a named type removed is one no DIE dsymutil can keep
+//!   reaches. (The dead entities inside such a namespace go all the same:
+//!   in a link that keeps the namespace whole, their DIEs, without
+//!   addresses, and what only they name were in the original's dSYM, and
+//!   aren't now; their code is a synthesized member's.)
 //! - **Rewriting.** The removed subtrees are cut out of `__debug_info`
 //!   ([`Object::cut`], which moves its relocations); every kept reference
 //!   (`DW_FORM_ref*`, `DW_AT_sibling` to where its sibling was), string
@@ -841,6 +849,19 @@ pub(super) fn prune(
     if !dead.iter().any(|&x| x) {
         return Ok(None);
     }
+    // Whether each DIE is inside a namespace something refers to (a `using
+    // namespace`'s `DW_TAG_imported_module`): dsymutil keeps such a
+    // namespace with all its children in a link that keeps nothing of it
+    // before the import (see `super::reach`), so named types there stay.
+    let mut ns_named = vec![false; n];
+    for &(_, t) in &ns_refs {
+        ns_named[t as usize] = true;
+    }
+    let mut imported = vec![false; n];
+    for i in 1..n {
+        let p = dies[i].parent as usize;
+        imported[i] = ns_named[p] || imported[p];
+    }
     let mut candidate = dead.clone();
     let mut seen = dead.clone();
     let mut work: Vec<u32> = (0..n as u32).filter(|&i| dead[i as usize]).collect();
@@ -856,7 +877,8 @@ pub(super) fn prune(
             candidate[t] = gone_n[t] == 0
                 && live_n[t] == 0
                 && !nonempty[t]
-                && ((is_type(x.tag) && !x.named) || (x.tag == DW_TAG_SUBPROGRAM && !x.has_addr));
+                && ((is_type(x.tag) && (!x.named || !imported[t]))
+                    || (x.tag == DW_TAG_SUBPROGRAM && !x.has_addr));
         }
     }
     let mut kept: Vec<bool> = (0..n).map(|i| is_ent(i) && !candidate[i]).collect();

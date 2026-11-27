@@ -326,10 +326,11 @@ fn bytes_of<'a>(o: &'a Object<'_>, name: &[u8]) -> &'a [u8] {
         .unwrap()
 }
 
-/// The test unit: what the dead code alone names goes; what something
-/// kept names stays (a dead subprogram a kept call site names, a type a
-/// kept subprogram names), and so does a named type; a namespace of dead code goes; a namespace's
-/// sibling reference moves to the next sibling kept.
+/// The test unit: what the dead code alone names goes (named types too);
+/// what something kept names stays (a dead subprogram a kept call site
+/// names, a type a kept subprogram names), and so does a named type in a
+/// namespace a `using namespace` names; a namespace of dead code goes; a
+/// namespace's sibling reference moves to the next sibling kept.
 fn unit() -> T {
     use V::*;
     let sub = |id, name, at: V, ty: Option<usize>, kids| {
@@ -404,6 +405,26 @@ fn unit() -> T {
                 vec![(DW_AT_NAME, Str("empty_ns"))],
                 vec![sub(15, "dead4", Gone, None, vec![])],
             ),
+            die(
+                7,
+                DW_TAG_NAMESPACE,
+                vec![(DW_AT_NAME, Str("imp"))],
+                vec![
+                    die(
+                        8,
+                        DW_TAG_STRUCTURE_TYPE,
+                        vec![(DW_AT_NAME, Str("W")), (DW_AT_BYTE_SIZE, D1(1))],
+                        vec![],
+                    ),
+                    sub(16, "dead5", Gone, Some(8), vec![]),
+                ],
+            ),
+            die(
+                9,
+                DW_TAG_IMPORTED_MODULE,
+                vec![(DW_AT_IMPORT, Ref(7))],
+                vec![],
+            ),
         ],
     )
 }
@@ -427,8 +448,8 @@ fn removes_dead_code_and_what_only_it_names() {
         }
         unreachable!()
     };
-    let subs = ["dead", "live", "dead2", "live2", "dead3", "dead4"];
-    let ids = [10, 11, 12, 13, 14, 15];
+    let subs = ["dead", "live", "dead2", "live2", "dead3", "dead4", "dead5"];
+    let ids = [10, 11, 12, 13, 14, 15, 16];
     let names: Vec<(&str, Vec<u32>)> = subs
         .iter()
         .zip(ids)
@@ -477,16 +498,16 @@ fn removes_dead_code_and_what_only_it_names() {
     assert_eq!(
         st,
         Pruned {
-            dead: 3,
+            dead: 4,
             dead_kept: 1,
-            reached: 2,
+            reached: 3,
             bytes: st.bytes,
         }
     );
     // What it should be: the same unit emitted without what went.
-    let removed = [10usize, 3, 12, 6, 15];
+    let removed = [10usize, 3, 4, 12, 6, 15, 16];
     let keep = |id: usize| !removed.contains(&id);
-    let gone_strs = ["dead", "dead2", "empty_ns", "dead4"];
+    let gone_strs = ["dead", "dead2", "empty_ns", "dead4", "T", "dead5"];
     let (want, want_strs) = emit(&t, &keep, &ab, &pool, &|s| !gone_strs.contains(&s));
     assert_eq!(bytes_of(&o, b"__debug_info"), want.info.as_slice());
     assert_eq!(bytes_of(&o, b"__debug_str"), want_strs.as_slice());
@@ -683,7 +704,12 @@ fn reach_follows_dsymutils_rules() {
                 vec![(DW_AT_IMPORT, Ref(5))],
                 vec![],
             ),
-            die(14, DW_TAG_IMPORTED_MODULE, vec![(DW_AT_IMPORT, Ref(6))], vec![]),
+            die(
+                14,
+                DW_TAG_IMPORTED_MODULE,
+                vec![(DW_AT_IMPORT, Ref(6))],
+                vec![],
+            ),
             sub(15, Addr(0x10), vec![(DW_AT_SPECIFICATION, Ref(31))]),
             die(
                 16,
@@ -738,7 +764,14 @@ fn reach_follows_dsymutils_rules() {
         .unwrap()
         .unwrap();
     let k = |parent: u128, name: &str, line: u64| {
-        crate::dwarf::key::of(parent, DW_TAG_STRUCTURE_TYPE, name.as_bytes(), Some(1), 0, line)
+        crate::dwarf::key::of(
+            parent,
+            DW_TAG_STRUCTURE_TYPE,
+            name.as_bytes(),
+            Some(1),
+            0,
+            line,
+        )
     };
     let root = crate::dwarf::key::ROOT;
     let ns = crate::dwarf::key::of(root, DW_TAG_NAMESPACE, b"ns", None, 0, 0);

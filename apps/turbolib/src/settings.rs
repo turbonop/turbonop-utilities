@@ -13,6 +13,7 @@
 //! | `pull` | `preserve`, `relaxed` |
 //! | `locals` | `keep`, `copy`, `merge` |
 //! | `precomp` | `none`, `library`, `clustered`, `clustered=<n>` |
+//! | `debug-types` | `complete`, `shared` (Mach-O synthesized members' classes) |
 //! | `report` | `odr`: list the names whose definitions differ |
 //! | `threads` (or `j`) | a number of threads, at least 1 |
 //! | `diagnose` | say what was passed through, and why |
@@ -61,6 +62,19 @@ pub enum Locals {
     Merge,
 }
 
+/// `debug-types`: how a Mach-O synthesized member describes the classes
+/// its moved code names (see the plan's 7.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DebugTypes {
+    /// Whole, so that a dSYM has every class definition the original's
+    /// has, as the original's link kept it (the default).
+    Complete,
+    /// As declarations where every giver defines them in every link that
+    /// loads it: smaller, but which unit's version of a class the dSYM has
+    /// may change.
+    Shared,
+}
+
 /// `precomp`: shared types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Precomp {
@@ -79,6 +93,7 @@ pub struct Settings {
     pub pull: Pull,
     pub locals: Locals,
     pub precomp: Precomp,
+    pub debug_types: DebugTypes,
     pub threads: Option<usize>,
     pub diagnose: bool,
     pub stats: bool,
@@ -113,6 +128,7 @@ impl Default for Settings {
             pull: Pull::Preserve,
             locals: Locals::Keep,
             precomp: Precomp::None,
+            debug_types: DebugTypes::Complete,
             threads: None,
             diagnose: false,
             stats: false,
@@ -145,6 +161,8 @@ impl Settings {
             ("locals", Some("keep")) => self.locals = Locals::Keep,
             ("locals", Some("copy")) => self.locals = Locals::Copy,
             ("locals", Some("merge")) => self.locals = Locals::Merge,
+            ("debug-types", Some("complete")) => self.debug_types = DebugTypes::Complete,
+            ("debug-types", Some("shared")) => self.debug_types = DebugTypes::Shared,
             ("precomp", Some("none")) => self.precomp = Precomp::None,
             ("precomp", Some("library")) => self.precomp = Precomp::Library,
             ("precomp", Some("clustered")) => self.precomp = Precomp::Clustered(None),

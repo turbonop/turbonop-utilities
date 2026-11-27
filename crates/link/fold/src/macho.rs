@@ -163,6 +163,22 @@ pub struct Options<'a> {
     /// What tells this library's anchors from another's (its file name):
     /// part of each anchor's name.
     pub salt: &'a [u8],
+    pub debug_types: DebugTypes,
+}
+
+/// `--debug-types`: how a synthesized member describes the classes its
+/// moved code names (and those it is a member of).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DebugTypes {
+    /// Whole (dsymutil keeps only what the linked DIEs reach, so a class only
+    /// the moved code named would otherwise be in no unit of the dSYM): the
+    /// dSYM has the classes, and the versions of them, that 7.5's did.
+    Complete,
+    /// As declarations when every giver defines them in every link that
+    /// loads it (see `reach`): the corpus's synthesized members' DWARF less
+    /// than half, but dsymutil may then keep another unit's version of a
+    /// class (see the plan's 7.6).
+    Shared,
 }
 
 /// A member of the library.
@@ -1577,7 +1593,13 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                 return Done::Giver(None);
             }
             let anchors: BTreeSet<usize> = gone.iter().map(|&k| moved_to[&(m, k)]).collect();
-            Done::Giver(Some(rewrite_giver(&parsed[m], &gone, &anchors, &synth)))
+            Done::Giver(Some(rewrite_giver(
+                &parsed[m],
+                &gone,
+                &anchors,
+                &synth,
+                options.debug_types == DebugTypes::Shared,
+            )))
         }
     });
     let mut sources = Vec::with_capacity(debug_members.len());
@@ -2367,6 +2389,7 @@ fn rewrite_giver(
     gone: &[usize],
     anchors: &BTreeSet<usize>,
     synth: &[Synth],
+    shared: bool,
 ) -> Rewritten {
     let mut o = p.obj.clone().ok_or("no object")?;
     // What of its DWARF the cut can't move (see `adjust`), read first.
@@ -2527,7 +2550,9 @@ fn rewrite_giver(
             .map_err(|e| format!("its DWARF: {e}"))?;
         // The classes it still defines in every link that loads it (none,
         // where that isn't known).
-        supplies = reach::reach(&o, &gone_syms).ok().flatten();
+        if shared {
+            supplies = reach::reach(&o, &gone_syms).ok().flatten();
+        }
         // Its DWARF without what described the lost code (see `prune`),
         // or as it is.
         let mut t = o.clone();

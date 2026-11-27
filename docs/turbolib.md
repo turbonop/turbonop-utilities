@@ -2823,6 +2823,15 @@ Synthesized members are indexed for their anchors alone (under
 | `library` (written; the default once it is proven in more links) | One precompiled-types member for the whole library (see [Phase 3 results](#phase-3-results)). |
 | `clustered`, `clustered=<n>` (written) | Up to *n* precompiled-types members (16 without *n*), each for a group of members, the groups chosen by a cost model of what links load (see [Phase 3.5 results](#phase-35-results-clustered)). |
 
+### `--debug-types`: a Mach-O synthesized member's classes (7.6)
+
+| Mode | Behavior |
+|---|---|
+| `complete` (default) | The classes the moved code names, and those its functions are members of, are whole in the synthesized member (dsymutil keeps only what the linked code's DIEs reach): the corpus links' dSYMs compare with the originals' as 7.5's did. |
+| `shared` | Such a class is a declaration when every giver of the synthesized member defines it in every link that loads the giver (`turbonop_fold::macho::reach`): the synthesized members' DWARF less than half. But which unit's version of a class template specialization dsymutil keeps then changes (70 to 133 classes per corpus link), and under `-dead_strip` a giver's code that defines a class may be stripped while the moved code that names it stays. See [7.6](#what-dsymutil-keeps-and-synthesized-members-classes-from-their-givers-76). |
+
+ELF and COFF ignore it.
+
 ### `--report odr`: names whose definitions differ
 
 `--report odr` (`/TURBOLIB:report=odr`) lists, after the library is
@@ -2974,7 +2983,7 @@ Within a personality, the format of the output follows the inputs (or
   `-D`, `-U`, and `-t`; turbolib's own options are `--<option>` words and
   `-j N` there.
 - **turbolib's own options.** These are `--fold`, `--pick`, `--pull`,
-  `--locals`, `--precomp`, `--report odr`, `--diagnose`, `--stats`, and
+  `--locals`, `--precomp`, `--debug-types`, `--report odr`, `--diagnose`, `--stats`, and
   `-j`. A personality accepts
   them in its own spelling (`/TURBOLIB:<option>` for `lib`) or from the
   `TURBOLIB_OPTIONS` environment variable, so a build system that can't

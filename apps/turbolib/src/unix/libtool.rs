@@ -451,7 +451,7 @@ fn run_inner(r: &mut Run<'_>, args: &[String]) -> Result<(), Fatal> {
             b"OVERVIEW: llvm-libtool-darwin\n\nUSAGE: llvm-libtool-darwin [options] <input files>\n\n\
               OPTIONS:\n  -arch_only <arch_type>  -D  -dependency_info <string>  -filelist <listfile[,dirname]>\n  \
               -l<x>  -L<dir>  -no_warning_for_no_symbols  -o <filename>  -static  -U  -V  -warnings_as_errors\n \
-              turbolib's options: --fold=, --pull=, --locals=, --stats, -j N (see docs/turbolib.md)\n",
+              turbolib's options: --fold=, --pull=, --locals=, --debug-types=, --stats, -j N (see docs/turbolib.md)\n",
         );
         return Ok(());
     }

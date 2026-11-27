@@ -128,7 +128,30 @@ pub fn member_symbols(
         return Err(SymbolsError::Ltcg);
     }
     let file = PeFile::parse_object(data).map_err(|_| SymbolsError::NotAnObject)?;
-    let symbols = coff_symbols(&file, tool)?;
+    object_symbols(&file, tool, ec_archive)
+}
+
+/// The symbols `tool` lists in the index for a COFF object whose bytes
+/// `data` holds but for its larger section data (as a
+/// `turbonop_coff::Skeleton` does), its symbol table at `symbol_table` in
+/// `data`.
+pub fn skeleton_symbols(
+    data: &[u8],
+    symbol_table: u32,
+    tool: Tool,
+    ec_archive: bool,
+) -> Result<MemberSymbols<'_>, SymbolsError> {
+    let file =
+        PeFile::parse_object_at(data, symbol_table).map_err(|_| SymbolsError::NotAnObject)?;
+    object_symbols(&file, tool, ec_archive)
+}
+
+fn object_symbols<'a>(
+    file: &PeFile<'a>,
+    tool: Tool,
+    ec_archive: bool,
+) -> Result<MemberSymbols<'a>, SymbolsError> {
+    let symbols = coff_symbols(file, tool)?;
     let ec = ec_archive && is_ec_machine(file.machine());
     Ok(if ec {
         MemberSymbols {

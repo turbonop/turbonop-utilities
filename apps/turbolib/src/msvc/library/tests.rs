@@ -85,7 +85,7 @@ fn strong_definitions_skip_comdats_but_noduplicates() {
     // objects.obj is /Gy: its external functions are NODUPLICATES COMDATs,
     // its inline ones ANY.
     let data = fixture("objects.obj");
-    let strong = strong_definitions(&data);
+    let strong = strong_definitions(&data, None);
     assert!(!strong.is_empty());
     let turbonop_coff::File::Object(o) = turbonop_coff::File::parse(&data).unwrap() else {
         unreachable!("objects.obj is a COFF object")

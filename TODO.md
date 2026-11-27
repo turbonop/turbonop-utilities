@@ -662,6 +662,23 @@ x64. Where the 3.5 MB went:
     32-bit targets (i386, armv7, arm64_32: passed through); universal
     files with `--fold` (untested); `ar` (GNU) on Mach-O members (its index
     isn't modeled); `verify` doesn't read universal files.
+- **COFF speed and memory (the plan's Phase 5, "Memory and many
+  processes").** Done: compact members, objects read one at a time when
+  folding identical copies, a bounded writer, mimalloc's eager commit off,
+  slots shared among turbolib processes. Left:
+  - Wall times on a quiet machine (this round's were taken with another
+    build running): the 20 largest libraries against `lib.exe`, 1 to 8
+    threads, and a profile with `tools/turbolib/sample.py`.
+  - Shared types, select-any, `--locals`, and `--report odr` still keep
+    every object (they compare or share across members): read them one at
+    a time too.
+  - Per-thread memory (about 90 MiB a thread on clangSema.lib): `strip`
+    clones the object it rewrites; threads' freed memory isn't reused by
+    the next step's new threads.
+  - The facts (437,527 units of 288 bytes, their names copied): borrow
+    names from the inputs, move what only `--locals` uses out of `Unit`.
+  - mimalloc's 32 MiB committed at start of every run.
+  - Slots for the `ar` and `libtool` personalities (only `lib` takes them).
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

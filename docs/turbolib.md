@@ -26,7 +26,7 @@ items leave TODO.md as they ship.
 | 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links); 3.5 done, as `--precomp=clustered[=<n>]` (opt-in; see [Phase 3.5 results](#phase-35-results-clustered)). |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
-| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
+| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). Memory (2026-11-27): folding clangSema.lib peaks at 1.69 GiB of commit, from 2.39; 8 libraries at once share the cores (slots). |
 | 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; GNU's split DWARF 4 too; initializer entries in groups kept from folding; the original members loaded in the original order by all four linkers; the clang corpus (relib byte for byte, folded 2.4% smaller, verified, relinked; see 6.6); every differing description proven another unit's copy; folding the 20 largest libraries in 0.34× GNU `ar`'s time, 1.88× a Release `llvm-ar`'s (6.8, from 3.46×; noisy measurements); `compare-images` reading the clang corpus's last differences; CREL objects read, written, and folded (6.7). Not yet: `select-any` and `--locals` for ELF. |
 | 7 Mach-O | In progress (see [Phase 7 results](#phase-7-results)). Done: 7.1, Darwin archives (all 160 archives of the Mach-O corpus written back byte for byte and remade by their own commands; 41 of 41 command lines as `llvm-ar`, `llvm-ranlib`, and `llvm-libtool-darwin` behave) and the `libtool -static` personality (`llvm-libtool-darwin`'s; 0.70× the real tools' time); 7.2, `turbonop-macho-object` (all 5,732 corpus objects round-trip byte for byte, and laid out afresh reproduce LLVM's bytes); 7.3, a first `--fold=identical` for Mach-O, with `verify`; 7.4, x86-64's FDEs and LSDAs move with their units (x86-64 now folds as arm64 does: 36,348 units, 169,617 copies), givers' DWARF moves with their code, synthesized members carry their units' DWARF (every folded unit's), and `compare-images` for Mach-O (dSYMs' DWARF too); 7.5, givers' DWARF without the moved copies' DIEs (the folded links' dSYMs equivalent to 7.4's). Not yet: Apple's `libtool`/`ranlib`, linkers, and dsymutil (not available here); the size the DWARF costs (the folded archives are 5.9% larger; 7.4: 9.1%); speed (3.55× the real tools' time folding in 7.4, and pruning adds about a quarter more CPU). |
 
@@ -2788,9 +2788,20 @@ if measurements say it pays.
   thread count cannot change the output.
 - **Plan:** the sizes of every output member are computed first, then the
   archive's index and member offsets, all before any data is written.
-- **Write:** every output member is written in parallel, straight into its
-  offset in a preallocated output file. Any number of threads may write,
-  and the file is complete when they finish.
+- **Make:** folding identical copies, a member's object isn't kept once
+  its facts are read: each member's object is read again for its
+  rewriting and the synthesized members whose units are its own, and let
+  go once they are made (the modes that compare or share across members,
+  shared types, select-any, `--locals`, `--report odr`, keep every object).
+  A rewritten or synthesized member is held as its bytes but its section
+  data (holes, which are the inputs' bytes).
+- **Write:** in order, from one thread, while up to 11 others copy the
+  chunks ahead (4 MiB each, at most 12 in memory whatever the number of
+  threads): NTFS zero-fills a file written out of order.
+- **Many processes:** each `lib` run takes free slots (lock files, one per
+  core) and runs that many threads, so that a build running many
+  archivers at once doesn't run cores × cores threads; a library under
+  4 MiB runs on one thread.
 - **Measured** with Stackrabbit (ETW): the goal is no idle core outside
   I/O waits, and the disk at its bandwidth during reads and writes.
 
@@ -3203,6 +3214,78 @@ writing 0.35 s, and freeing the inputs' mappings and renaming 0.13 to
 0.2 s. Tried and dropped: a buffered streaming hash with four chains
 (faster on large inputs, but the many small values units hash made
 finding units 25% slower); reading members largest first (no change: reading is 4.3× faster on 8 threads than on 1, which this PC's cores bound). The fold engine's maps use turbonop-hash rather than SipHash (definers and grouping 35% faster). On one thread, `clangSema.lib`'s reading is 1.19 s: parsing 0.30, finding units 0.42, and checking debug information 0.47.
+
+**Memory and many processes (2026-11-27).** Measured with
+`tools/turbolib/corpus/perflib.py` (each run in a job object, so
+`lib.exe`'s `link.exe` counts; peak commit is private memory, the working
+set includes the mapped inputs). The machine was shared with another
+session building LLVM (CPU at 50 to 100% throughout), so wall times are
+not comparable between runs; CPU time and memory are. `build-z7`'s 20
+largest libraries, median of 2 interleaved rounds, the largest peak of
+any library (clangSema.lib) and the summed CPU time:
+
+| | CPU before | CPU after | peak commit before | after | peak working set before | after |
+|---|---|---|---|---|---|---|
+| `lib.exe` 14.52 | 17.9 s | | 237 MiB | | 1,700 MiB | |
+| `--fold=none` | 14.6 s | 13.3 s | 485 MiB | 231 MiB | 1,308 MiB | 1,111 MiB |
+| `--fold=identical` | 38.0 s | 39.4 s | 2,392 MiB | 1,694 MiB | 2,882 MiB | 2,398 MiB |
+| `--precomp=library` | 45.9 s | 47.0 s | 2,408 MiB | 2,078 MiB | 2,893 MiB | 2,727 MiB |
+| `--precomp=clustered` | 48.2 s | 50.0 s | 2,440 MiB | 2,093 MiB | 2,902 MiB | 2,723 MiB |
+
+`clangSema.lib` folded on 1, 2, 4, and 8 threads: peak commit 836, 919,
+1,216, and 1,457 MiB (CPU 5.2 to 5.7 s); each thread holds about one
+member's objects and buffers at a time, and mimalloc keeps what each
+thread freed (its purge delay is off: with it at 0, 300 MiB less but 30%
+more CPU).
+
+All 245 libraries of `build-z7`, folded 8 at a time (as a build with
+`-j8` runs them) on this 8-core laptop, the job's peak commit and the
+largest sum of working sets:
+
+| | wall | CPU (kernel) | peak commit | peak working sets |
+|---|---|---|---|---|
+| `lib.exe` | 28.6 s | 46.2 s (31.7) | 1.14 GiB | 4.35 GiB |
+| before | 28.6 s | 91.5 s (44.7) | 11.51 GiB | 12.39 GiB |
+| one at a time, compact members, bounded writer | 29.0 s | 91.4 s (41.6) | 7.20 GiB | 9.99 GiB |
+| the same, `-j1` in every process | 29.7 s | 80.4 s (27.5) | 3.29 GiB | 6.49 GiB |
+| slots (as shipped) | 27.8 s | 80.9 s (28.5) | 4.50 GiB | 7.53 GiB |
+
+What the memory was, and what changed:
+
+- **Members held whole.** A rewritten or synthesized member was held as
+  the whole file with zeros in its holes, which Windows commits (the size
+  of the output, 726 MiB for clangSema.lib's 984): a `Skeleton` is now the
+  bytes but the holes', the index's symbols read from it where it has its
+  symbol table (`PeFile::parse_object_at`), and data of 32 bytes or more
+  is a hole (4,096 before). Held now: 222 MiB for clangSema.lib's
+  rewritten members, 58 MiB for its synthesized ones.
+- **Every object at once.** The object model is about 5× the file's
+  symbol and section tables (96 bytes a symbol, 128 a section;
+  clangSema.lib's 88 objects: 606 MiB, and their units' facts 270 MiB; the
+  `modelsize` example measures it). Folding identical copies now keeps
+  only the facts, and reads each member's object again for its rewriting
+  and the synthesized members whose units are its own (a synthesized
+  member's survivors are all its first giver's), its work scheduled
+  together and the object let go when it is done. Reading twice costs
+  about 4% more CPU.
+- **The writer's buffers** were 2 × threads 4 MiB chunks, up to three
+  batches (192 MiB on 8 threads, 1.5 GiB on 64): now 12 chunks at most.
+- **mimalloc** committed each thread's segments whole (32 MiB); its eager
+  commit is off for batch work. (It still commits 32 MiB at start, before
+  `main` can say otherwise: every turbolib run, even of a tiny library,
+  has 32 MiB of commit, 6 MiB of it used.)
+- **Many processes**: each `lib` run takes slots (one lock file per core
+  in the temporary directory, never waited for) and runs that many
+  threads; under 4 MiB of input, one thread and no slot. Alone it gets
+  every core; 8 at once on 8 cores, 12% less CPU and 37% less commit than
+  8 threads each, and close to `-j1` everywhere.
+
+Profiling: without administrator rights, `tools/turbolib/sample.py`
+(suspends each thread, walks its stack with dbghelp, names frames from
+the PDB) worked, but on a machine at 100% CPU it got too few samples to
+rank functions (a few hundred per run); its leaf samples showed parsing
+(`Object::parse`), copying, and `NtWriteFile` on top. Profile again on a
+quiet machine.
 
 ### Phase 6: ELF, with split DWARF
 

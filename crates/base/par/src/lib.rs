@@ -20,8 +20,17 @@ pub fn set_threads(n: usize) -> bool {
 
 /// How many threads work is split across: what [`set_threads`] set, or the
 /// machine's parallelism (`TURBONOP_THREADS` overrides it; 1 runs
-/// everything on the caller's thread).
+/// everything on the caller's thread); no more than [`set_limit`]'s.
 pub fn threads() -> usize {
+    let n = configured();
+    match LIMIT.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => n,
+        limit => n.min(limit),
+    }
+}
+
+/// The threads [`threads`] gives without a limit.
+pub fn configured() -> usize {
     *THREADS.get_or_init(|| {
         std::env::var("TURBONOP_THREADS")
             .ok()
@@ -30,6 +39,15 @@ pub fn threads() -> usize {
             .unwrap_or_else(|| std::thread::available_parallelism().map_or(1, NonZero::get))
     })
 }
+
+/// The most threads, for now (0: no limit): a program sharing the machine
+/// with others (see turbolib's slots) changes it as it goes. Work already
+/// split keeps its threads.
+pub fn set_limit(n: usize) {
+    LIMIT.store(n, std::sync::atomic::Ordering::Relaxed);
+}
+
+static LIMIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// The chunk size that splits `len` items across the threads, each chunk
 /// at least `min` items; `None` if one thread should do it all.
@@ -349,6 +367,15 @@ mod tests {
             );
         }
         assert_eq!(join(|| 1, || 2), (1, 2));
+        // A limit caps the threads, and splitting still gives the same.
+        set_limit(1);
+        assert_eq!(threads(), 1);
+        assert_eq!(
+            map(&items, 10, |x| x * 2),
+            items.iter().map(|x| x * 2).collect::<Vec<_>>()
+        );
+        set_limit(0);
+        assert_eq!(threads(), configured());
         // A stable sort: of equal keys, the original order.
         let mut pairs: Vec<(u32, u32)> = (0..200_000u32).map(|i| ((i * 7919) % 1000, i)).collect();
         let mut want = pairs.clone();

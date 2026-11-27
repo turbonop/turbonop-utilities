@@ -1,4 +1,4 @@
-use super::super::{Input, Options, Pull, rewrite, units};
+use super::super::{Input, Options, Pull, gathered as rewrite, units};
 use super::*;
 use std::collections::BTreeSet;
 use turbonop_coff::{Aux, File, SectionNumber};

@@ -9,7 +9,7 @@
 use super::super::debug::tests::{
     RELAXED, canonical, fixture, inputs, object, pch_of, pch_streams, stream, tables,
 };
-use super::super::{Options, Output, OutputMember, Precomp, rewrite};
+use super::super::{Options, Output, OutputMember, Precomp, gathered as rewrite};
 use super::*;
 use turbonop_codeview::symbols::kind as sym;
 use turbonop_coff::File;

@@ -84,6 +84,10 @@ pub enum ChunkKind {
     CoffGroups,
     /// `/Brepro`'s debug data: its hash.
     Repro,
+    /// `/DEBUG`'s CodeView record (`RSDS`: the PDB's GUID, age, path).
+    CodeView,
+    /// `/DEBUG`'s VC feature counts (how many objects were compiled how).
+    VcFeature,
     /// The volatile metadata the load configuration points to (x64).
     VolatileMetadata,
     /// A group whose every section /OPT:REF discarded: no bytes, but where
@@ -225,6 +229,8 @@ pub struct Layout {
     /// The Rich header: its entries, its checksum, and the PE header's
     /// offset after it.
     pub rich: (Vec<(u32, u32)>, u32, u32),
+    /// `/DEBUG`: the PDB's name as the CodeView record gives it.
+    pub codeview_name: Vec<u8>,
 }
 
 /// The output section an input section's name goes to: the name without
@@ -459,12 +465,23 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
                 .collect()
         })
         .collect();
-    Live {
+    let mut live = Live {
         sections,
         commons,
         imports: imports.iter().map(|b| b.load(Ordering::Relaxed)).collect(),
         thunks: thunks.iter().map(|b| b.load(Ordering::Relaxed)).collect(),
+    };
+    // Without /OPT:REF, link.exe keeps every loaded import, and a thunk for
+    // each loaded function import, referenced or not.
+    if !gc {
+        for (f, file) in r.files.iter().enumerate() {
+            if let FileKind::Import { thunk, .. } = &file.kind {
+                live.imports[f] = true;
+                live.thunks[f] |= thunk.is_some();
+            }
+        }
     }
+    live
 }
 /// A partial section's key (output name, input name, characteristics)
 /// and its chunks.
@@ -1167,7 +1184,24 @@ pub fn layout(
             },
             &mut chunks,
         );
-        if config.debug == crate::config::Debug::None {
+        if config.debug != crate::config::Debug::None {
+            // Sized once the PDB's name is known (`set_codeview_name`).
+            for (kind, size) in [(ChunkKind::CodeView, 24), (ChunkKind::VcFeature, 20)] {
+                add(
+                    b".rdata$zzzdbg",
+                    data_ro,
+                    Chunk {
+                        kind,
+                        align: 4,
+                        size,
+                        uninitialized: false,
+                        rva: 0,
+                    },
+                    &mut chunks,
+                );
+            }
+        }
+        {
             // Sized once the groups are known (below).
             coff_groups = Some(add(
                 b".rdata$zzzdbg",
@@ -1430,6 +1464,7 @@ pub fn layout(
         exports,
         resources,
         rich: (rich_entries, key, 0),
+        codeview_name: Vec::new(),
     };
     l.size_headers(header_sections);
     l.assign_addresses();
@@ -1535,6 +1570,29 @@ impl Layout {
         self.assign_addresses();
     }
 
+    /// Sets the CodeView record's PDB name (`/DEBUG`), and lays the image
+    /// out again.
+    pub fn set_codeview_name(&mut self, name: Vec<u8>) {
+        if let Some(c) = self
+            .chunks
+            .iter_mut()
+            .find(|c| c.kind == ChunkKind::CodeView)
+        {
+            c.size = crate::n32(24 + name.len() + 1);
+        }
+        self.codeview_name = name;
+        self.assign_addresses();
+    }
+
+    /// The file offset of `rva` (in a section's initialized data).
+    pub fn file_offset_of(&self, rva: u32) -> Option<u32> {
+        let s = self
+            .sections
+            .iter()
+            .find(|s| rva >= s.rva && rva < s.rva + s.raw_size)?;
+        Some(s.file_offset + (rva - s.rva))
+    }
+
     /// The import object's thunk's address, or its IAT entry's.
     pub fn import_address(&self, f: u32) -> Option<u32> {
         let &(d, k) = self.import_slots.get(&f)?;
@@ -1590,9 +1648,11 @@ fn kept_section(r: &Resolved, f: usize, s: usize) -> bool {
 /// VC feature entries come with the PDB.)
 pub fn debug_entries(c: &Config) -> Vec<u32> {
     let mut v = Vec::new();
-    if c.debug == crate::config::Debug::None {
-        v.push(13); // IMAGE_DEBUG_TYPE_POGO
+    if c.debug != crate::config::Debug::None {
+        v.push(2); // IMAGE_DEBUG_TYPE_CODEVIEW
+        v.push(12); // IMAGE_DEBUG_TYPE_VC_FEATURE
     }
+    v.push(13); // IMAGE_DEBUG_TYPE_POGO
     if c.repro {
         v.push(16); // IMAGE_DEBUG_TYPE_REPRO
     }

@@ -18,6 +18,7 @@ pub mod layout;
 pub mod link;
 pub mod msqsort;
 pub mod object;
+pub mod pdb;
 pub mod resolve;
 pub mod resources;
 pub mod rich;

@@ -231,7 +231,11 @@ lists every COFF group with its address and size) and by experiment:
 - **Status:** link.exe's images byte for byte, time stamps aside, for C
   and C++ (exceptions, TLS, iostreams) with the dynamic and the static
   CRT, C with the debug CRT, a DLL with exports, delay loading, and
-  resources (tests check each).
+  resources (tests check each). With `/DEBUG` (and `/INCREMENTAL:NO`:
+  turbolink always links fully), the image is link.exe's but for the
+  PDB's GUID, age, and name (the debug directory: CodeView, VC_FEATURE,
+  then the coffgrp entry); the PDB is logically link.exe's (DIA reads
+  it; `hexcavator diff` compares them), not byte for byte.
 - **Still different** (to do): the
   `/Brepro` hash (it depends on the output's contents, not its name or
   the options, but isn't a plain SHA-1/256/512 or MD5 of the file with

@@ -10,10 +10,13 @@ repository.workspace = true
 
 [dependencies]
 turbonop-archive.workspace = true
+turbonop-codeview.workspace = true
 turbonop-core.workspace = true
 turbonop-hash.workspace = true
 turbonop-mmap.workspace = true
 turbonop-par.workspace = true
+turbonop-pdb.workspace = true
+turbonop-pdb-write.workspace = true
 turbonop-pe.workspace = true
 sha2.workspace = true
 

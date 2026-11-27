@@ -78,6 +78,7 @@ turbonop-coff = { path = "crates/formats/coff" }
 turbonop-moduledef = { path = "crates/formats/moduledef" }
 turbonop-fold = { path = "crates/link/fold" }
 turbonop-linker = { path = "crates/link/linker" }
+turbonop-pdb-write = { path = "crates/symbols/pdb-write" }
 turbonop-verify = { path = "crates/link/verify" }
 turbonop-signature = { path = "crates/formats/signature" }
 turbonop-image = { path = "crates/formats/image" }

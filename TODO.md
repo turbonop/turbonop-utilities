@@ -654,12 +654,13 @@ x64. Where the 3.5 MB went:
 ## turbolink
 
 [The plan](docs/turbolink.md). What links so far: C and C++ with every
-CRT, DLLs and import libraries, resources, LLVM's `llvm-tblgen`. Byte for
-byte link.exe's images (time stamps aside): C and C++ with the dynamic and
-static CRTs, C with the debug CRT, a DLL with exports.
+CRT, DLLs and import libraries, resources, delay loading, `/DEBUG` (the
+PDB), LLVM's `llvm-tblgen`. Byte for byte link.exe's images (time stamps
+aside): C and C++ with the dynamic, static, and debug CRTs, a DLL with
+exports, delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
+same but for the PDB's GUID, age, and name.
 
-- **Not yet, for native x64 images:** `/DEBUG` (the PDB: PR #68),
-  delay loading's protected form (`/GUARD:CF`'s `.didat` section) and its
+- **Not yet, for native x64 images:** delay loading's protected form (`/GUARD:CF`'s `.didat` section) and its
   other machines, `/GUARD:CF`'s tables, `/GUARD:EHCONT`, manifests (`/MANIFEST`,
   `/MANIFESTUAC`, embedding), `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
   format, the `.exp` file, `/INCREMENTAL`'s padding (it links fully),
@@ -678,6 +679,27 @@ static CRTs, C with the debug CRT, a DLL with exports.
   Layout hashes owned copies of names per chunk (24 ms of 90 for
   `llvm-tblgen`); symbols are interned on one thread; the `/OPT:REF` mark
   is serial; small inputs may read faster than they map.
+- **The PDB (`/DEBUG`), the rest.**
+  - **Speed:** llvm-tblgen with `/Z7` objects only ties link.exe (the
+    PDB about 300 ms of 390). Per stage:
+    - the merge's reachability pass: about 60 ms, serial;
+    - hashing: 30 ms;
+    - shard maps: 25 ms;
+    - reading `.debug$T`: 30–50 ms;
+    - `/names`, DLL modules, contributions: 25 ms;
+    - the streams and the MSF: 40 ms;
+    - writing the PDB file at the end: 40 ms, not overlapped.
+
+    Ideas: reachability by shard; hashing ids and types in one pass; the
+    file written as it is built (or mapped).
+  - **Agreement:** about 20 more ids than link.exe's (it keeps fewer
+    `LF_UDT_MOD_SRC_LINE`s: which?), and with `/Zi` 7 fewer types (what
+    link.exe roots that turbolink doesn't).
+  - **Not written:** `/LinkInfo`, `/TMCache`, `/UDTSRCLINEUNDONE`; x86
+    FPO (only `FRAMEDATA`); incremental PDBs; page sizes over 4 KB (a PDB
+    whose directory needs more than one block's list).
+  - **The `/Brepro` hash's input** (link.exe's GUID and time stamp come
+    from it).
 - **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
   list of what passes.
 - **LTCG**, from [prong 2](docs/turbolink-c2.md) (`turbonop-ltcg-probe`'s

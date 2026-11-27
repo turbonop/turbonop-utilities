@@ -173,6 +173,9 @@ const DEFAULT_MERGES: &[(&str, &str)] = &[
     (".giats", ".rdata"),
     (".gljmp", ".rdata"),
     (".gehcont", ".rdata"),
+    // The TLS template (only the loader reads it: link.exe puts it among
+    // .rdata's groups, .rdata staying read-only).
+    (".tls", ".rdata"),
 ];
 
 /// Sections that are never in the image (`/GUARD`'s tables, which the
@@ -894,6 +897,27 @@ pub fn layout(
                 file_offset: 0,
                 groups: Vec::new(),
             }),
+        }
+    }
+    // A section's characteristics are its own groups' (sections merged
+    // into it take its characteristics, as link.exe's merges do: .rdata
+    // stays read-only with .tls in it); a section of merged groups only,
+    // theirs.
+    for s in &mut sections {
+        let own = partials
+            .iter()
+            .filter(|p| p.0.0 == s.name)
+            .filter(|p| {
+                let input = &p.0.1;
+                let base = input
+                    .iter()
+                    .position(|&b| b == b'$')
+                    .map_or(&input[..], |i| &input[..i]);
+                base == s.name.as_slice()
+            })
+            .fold(0, |a, p| a | p.0.2);
+        if own != 0 {
+            s.characteristics = own;
         }
     }
     for s in &mut sections {

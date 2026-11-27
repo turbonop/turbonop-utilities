@@ -40,6 +40,8 @@ pub struct Image<'a> {
     base: u64,
     /// Each DLL's import address table chunk.
     iat: Vec<u32>,
+    /// The TLS template's range (the .tls groups' chunks), if any.
+    tls: Option<(u32, u32)>,
 }
 
 impl<'a> Image<'a> {
@@ -51,11 +53,22 @@ impl<'a> Image<'a> {
                 iat[d as usize] = crate::n32(i);
             }
         }
+        let mut tls: Option<(u32, u32)> = None;
+        for c in &l.chunks {
+            if let ChunkKind::Input(f, s) = c.kind
+                && let FileKind::Object { object, .. } = &r.files[f as usize].kind
+                && object.sections[s as usize].name.starts_with(b".tls")
+            {
+                let (lo, hi) = tls.unwrap_or((u32::MAX, 0));
+                tls = Some((lo.min(c.rva), hi.max(c.rva + c.size.max(1))));
+            }
+        }
         Image {
             r,
             l,
             base: image_base(&r.config),
             iat,
+            tls,
         }
     }
 
@@ -432,6 +445,11 @@ impl<'a> Image<'a> {
             }
             amd64::SECREL => {
                 let off = match s {
+                    // A thread-local variable's: from the TLS template's
+                    // start (its .tls groups, wherever they were merged).
+                    Target::Rva(r) if self.tls.is_some_and(|(lo, hi)| r >= lo && r < hi) => {
+                        u64::from(r - self.tls.map_or(0, |t| t.0))
+                    }
                     Target::Rva(r) => {
                         let n = self.section_number(r);
                         let start = n
@@ -539,6 +557,27 @@ impl<'a> Image<'a> {
                 *dst = *e;
             }
             bytes[n..].fill(0);
+        }
+        // The TLS directory's Characteristics: the TLS data's alignment (its
+        // .tls groups' largest), as link.exe fills it in.
+        if let Some(g) = self.r.names.get(&b"_tls_used"[..])
+            && let Some(rva) = self.rva_of(*g)
+        {
+            let align = self
+                .l
+                .chunks
+                .iter()
+                .filter(|c| self.tls.is_some_and(|(lo, hi)| c.rva >= lo && c.rva < hi))
+                .map(|c| c.align)
+                .max()
+                .unwrap_or(1);
+            let is64 = self.r.config.machine.is_none_or(Machine::is_64);
+            let field = self.file_offset(rva) as usize + if is64 { 0x24 } else { 0x14 };
+            let bits = (align.trailing_zeros() + 1) << 20;
+            if let Some(f) = out.get_mut(field..field + 4) {
+                let old = u32::from_le_bytes([f[0], f[1], f[2], f[3]]);
+                f.copy_from_slice(&((old & !0x00F0_0000) | bits).to_le_bytes());
+            }
         }
         // /Brepro: the hash of the image (its time stamps and hash zero),
         // whose last 4 bytes are the time stamp. (link.exe's hash covers

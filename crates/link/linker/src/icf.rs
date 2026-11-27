@@ -97,7 +97,9 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
                         .or_default()
                         .push(crate::n32(s));
                 }
-                if !(unwind && read_only) {
+                // Associative code folds too (C++ EH funclets, .text$x,
+                // as link.exe folds them).
+                if !((unwind || code) && read_only) {
                     continue;
                 }
             }

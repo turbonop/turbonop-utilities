@@ -592,7 +592,9 @@ x64. Where the 3.5 MB went:
     other DIEs (spot-checked, not proven: write a Mach-O `witness.py`);
     9 to 11 type definitions only in the original and some with other
     contents (which units' class templates dsymutil keeps).
-  - **Speed**: 3.55× the real tools' time folding (0.82× without), most
+  - **Speed**: 3.55× the real tools' time folding in 7.4 (0.82× without),
+    and 7.5's pruning adds about a quarter more CPU (every giver's DWARF
+    walked; lookups, strings, accelerator tables, a second cut); most
     of it rewriting givers (their whole DWARF read, line programs
     decoded and encoded again, every member written afresh) and building
     synthesized members' DWARF; `ranlib` after `ar qc` folds again.

@@ -105,7 +105,10 @@
 //! address for the copy's DIEs and drops them, as it does for every copy
 //! but the linked one; and what in its DWARF holds addresses no relocation
 //! does (its line program, its list entries, its unit's length) moves with
-//! its code (see [`adjust`]). Each synthesized member gets a compile unit
+//! its code (see [`adjust`]). Then the DIEs that described what it lost, and what
+//! only they reached, are removed from it (see [`prune`]: where that can't
+//! be done, they stay, tombstoned, counted in
+//! [`Report::debug_unpruned_why`]). Each synthesized member gets a compile unit
 //! of its own from the survivors' member's (see the `debug` module, and
 //! [`crate::dwarf`]): the moved functions' DIEs and line rows, the types
 //! they name (classes as declarations), their lists. Where that can't be

@@ -703,17 +703,17 @@ pub(super) fn prune(
     // 1. The DIEs, and the values to set.
     let (dies, ats) = walk(u, &abbrevs)?;
     let n = dies.len();
-    // Each DIE by its offset (lookups are most of the work: a table, not
-    // a search).
-    let mut index = vec![NONE; d.info.len() + 1];
+    // Each DIE by its offset, plus one (lookups are most of the work: a
+    // table, zeroed by the allocator, not a search).
+    let mut index = vec![0u32; d.info.len() + 1];
     for (i, x) in dies.iter().enumerate() {
-        index[x.offset as usize] = i as u32;
+        index[x.offset as usize] = i as u32 + 1;
     }
     let die_at = |off: u32| -> Option<usize> {
         index
             .get(off as usize)
-            .filter(|&&i| i != NONE)
-            .map(|&i| i as usize)
+            .filter(|&&i| i != 0)
+            .map(|&i| i as usize - 1)
     };
     // The DIEs whose attributes hold `places` (sorted).
     let owners = |places: &[u32]| -> Vec<u32> {
@@ -937,11 +937,25 @@ pub(super) fn prune(
         return Err("a relocation to what stays in a DIE removed");
     }
     let kept_die = |i: usize| !goes[i];
+    // The DIE table again, each DIE's new offset plus one (or `NONE` if it
+    // goes): what references and accelerator table entries become.
+    for (i, x) in dies.iter().enumerate() {
+        index[x.offset as usize] = if goes[i] { NONE } else { new_off[i] + 1 };
+    }
+    // `None`: no DIE starts there; `Some(None)`: it goes.
+    let moved = |off: u32| -> Option<Option<u32>> {
+        match index.get(off as usize).copied() {
+            None | Some(0) => None,
+            Some(NONE) => Some(None),
+            Some(v) => Some(Some(v - 1)),
+        }
+    };
     // 6. Strings, lists, and accelerator tables: what kept DIEs name.
     let str_b = d.str;
     let mut strings: Vec<Range<u32>> = Vec::new();
-    // Each byte's string.
-    let mut str_index = vec![NONE; str_b.len()];
+    // Each string by its start, plus one (an offset into a string is
+    // looked for among them).
+    let mut str_index = vec![0u32; str_b.len()];
     {
         let mut at = 0;
         while at < str_b.len() {
@@ -949,15 +963,16 @@ pub(super) fn prune(
                 .iter()
                 .position(|&c| c == 0)
                 .ok_or("a __debug_str that doesn't end a string")?;
-            str_index[at..at + z + 1].fill(strings.len() as u32);
+            str_index[at] = strings.len() as u32 + 1;
             strings.push(at as u32..(at + z + 1) as u32);
             at += z + 1;
         }
     }
     let string_of = |off: u32| -> R<usize> {
         match str_index.get(off as usize) {
-            Some(&k) if k != NONE => Ok(k as usize),
-            _ => Err("a string offset past __debug_str"),
+            Some(&k) if k != 0 => Ok(k as usize - 1),
+            Some(_) => Ok(strings.partition_point(|r| r.end <= off)),
+            None => Err("a string offset past __debug_str"),
         }
     };
     let mut str_used = vec![false; strings.len()];
@@ -975,7 +990,7 @@ pub(super) fn prune(
             Fix::Ranges(off) => ranges_used[list_at(&range_lists, off)?] = true,
             Fix::Loc(off) => loc_used[list_at(&loc_lists, off)?] = true,
             Fix::Ref { target, sibling } => {
-                if !sibling && die_at(target).is_none_or(|t| goes[t]) {
+                if !sibling && moved(target).flatten().is_none() {
                     return Err("a kept DIE names a removed one");
                 }
             }
@@ -994,11 +1009,11 @@ pub(super) fn prune(
                 let off = off
                     .checked_add(t.base)
                     .ok_or("an accelerator table entry past __debug_info")?;
-                let i = die_at(off).ok_or("an accelerator table entry naming no DIE")?;
-                if !kept_die(i) {
+                let Some(new) = moved(off).ok_or("an accelerator table entry naming no DIE")?
+                else {
                     continue;
-                }
-                let new = new_off[i]
+                };
+                let new = new
                     .checked_sub(t.base)
                     .ok_or("an accelerator table entry before its base")?;
                 let at = v.len();
@@ -1028,9 +1043,9 @@ pub(super) fn prune(
         }
     }
     let strs = Shift::new(str_cuts);
-    let str_map = |off: u32| -> u32 {
-        let k = str_index[off as usize] as usize;
-        str_new[k] + (off - strings[k].start)
+    let str_map = |off: u32| -> R<u32> {
+        let k = string_of(off)?;
+        Ok(str_new[k] + (off - strings[k].start))
     };
     let list_cuts = |v: &[List], used: &[bool]| -> Vec<Range<u32>> {
         let mut out: Vec<Range<u32>> = Vec::new();
@@ -1063,11 +1078,11 @@ pub(super) fn prune(
         let v = match a.fix {
             // (Unit-relative, the unit at 0: the same as a section offset.
             // A sibling may be where a removed DIE was, or a list's end.)
-            Fix::Ref { target, .. } => match die_at(target) {
-                Some(t) if !goes[t] => u64::from(new_off[t]),
+            Fix::Ref { target, .. } => match moved(target) {
+                Some(Some(t)) => u64::from(t),
                 _ => u64::from(info.map(target)),
             },
-            Fix::Strp(s) => u64::from(str_map(s)),
+            Fix::Strp(s) => u64::from(str_map(s)?),
             Fix::Ranges(off) => u64::from(ranges.map(off)),
             Fix::Loc(off) => u64::from(locs.map(off)),
         };
@@ -1084,8 +1099,8 @@ pub(super) fn prune(
     for (si, t, names, old_len) in pending {
         let names: Vec<Name> = names
             .into_iter()
-            .map(|(h, s, e)| (h, str_map(s), e))
-            .collect();
+            .map(|(h, s, e)| Ok((h, str_map(s)?, e)))
+            .collect::<R<_>>()?;
         let mut b = write_apple(&t, &names, None);
         if b.len() > old_len {
             // (LLVM's count for fewer hashes may be larger: 16 buckets for

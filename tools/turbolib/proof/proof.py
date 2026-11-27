@@ -155,7 +155,8 @@ def test(a):
     for suite in a.suites:
         xml = os.path.join(os.path.abspath(a.results), suite + ".xml")
         e = dict(env)
-        e["LIT_OPTS"] = f"--xunit-xml-output={xml} --no-progress-bar -q"
+        # lit splits LIT_OPTS as a POSIX shell would: backslashes would go.
+        e["LIT_OPTS"] = f"--xunit-xml-output={xml.replace(chr(92), '/')} --no-progress-bar -q"
         start = time.time()
         log = os.path.join(a.results, suite + ".log")
         with open(log, "w", encoding="utf-8", errors="replace") as f:
@@ -383,7 +384,17 @@ def main():
     k = sub.add_parser("compare")
     k.add_argument("base")
     k.add_argument("other")
+    r = sub.add_parser("summary")
+    r.add_argument("xml", nargs="+")
     a = ap.parse_args()
+    if a.cmd == "summary":
+        for x in a.xml:
+            o = outcomes(x)
+            print(f"{x}: {summary(x)}")
+            for t, v in sorted(o.items()):
+                if v == "fail":
+                    print(f"  FAIL {t}")
+        return
     {"configure": configure, "build": build, "test": test, "stats": stats,
      "measure": measure, "compare": compare}[a.cmd](a)
 

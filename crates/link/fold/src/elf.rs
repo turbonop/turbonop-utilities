@@ -1055,11 +1055,8 @@ fn rewrite(
                 .get(si)
                 .is_some_and(|s| s.bind() == 0 && si != 0 && in_removed(s))
         };
-        // (Most debug sections name nothing moved: nothing is copied for
-        // those.)
-        if !relocations(&obj.sections[r]).any(|r| hit(&r)) {
-            continue;
-        }
+        // (No pass first to see whether any is hit: renumbering the
+        // symbols copies every relocation section anyway.)
         let Data::Relocations(mut rels) =
             std::mem::replace(&mut obj.sections[r].data, Data::NoBits)
         else {

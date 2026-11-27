@@ -169,25 +169,31 @@ struct Live {
 /// Marks what the image keeps: every kept non-COMDAT section and what
 /// it refers to (with `/OPT:REF`, COMDATs only if something live refers
 /// to them; without, every kept one), associative sections with theirs.
-fn mark(r: &Resolved, roots: &[u32]) -> Live {
+///
+/// Breadth first, on every core: each step's sections are split across
+/// the threads, and a section is claimed by the first thread to flag it,
+/// so each is visited once. What is live is a set, the same whatever the
+/// threads' order.
+fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Live {
+    use std::sync::atomic::{AtomicBool, Ordering};
     let gc = r.config.gc_sections();
     let n = r.files.len();
-    let mut live = Live {
-        sections: r
-            .files
-            .iter()
-            .map(|f| match &f.kind {
-                FileKind::Object { object, .. } => vec![false; object.sections.len()],
-                FileKind::Import { .. } => Vec::new(),
-            })
-            .collect(),
-        commons: Vec::new(),
-        imports: vec![false; n],
-        thunks: vec![false; n],
-    };
-    let mut work: Vec<(u32, u32)> = Vec::new();
-    // Associative sections, by their parent: (file, parent) -> children.
-    let mut children: Map<(u32, u32), Vec<u32>> = Map::default();
+    // Every file's sections, numbered one after another.
+    let mut base = Vec::with_capacity(n + 1);
+    let mut total = 0usize;
+    for f in &r.files {
+        base.push(total);
+        if let FileKind::Object { object, .. } = &f.kind {
+            total += object.sections.len();
+        }
+    }
+    base.push(total);
+    // Which sections can be in the image, and each one's associative
+    // sections (a list through `first_child` and `next_sibling`).
+    let mut eligible = vec![false; total];
+    let mut first_child = vec![u32::MAX; total];
+    let mut next_sibling = vec![u32::MAX; total];
+    let mut frontier: Vec<u32> = Vec::new();
     for (f, file) in r.files.iter().enumerate() {
         let FileKind::Object { object, kept, .. } = &file.kind else {
             continue;
@@ -196,81 +202,137 @@ fn mark(r: &Resolved, roots: &[u32]) -> Live {
             if !kept[s] || !sec.is_image() || dropped(sec.name) {
                 continue;
             }
+            let i = base[f] + s;
+            eligible[i] = true;
             match sec.comdat {
                 Some((Selection::Associative(parent), _)) => {
-                    children
-                        .entry((crate::n32(f), parent))
-                        .or_default()
-                        .push(crate::n32(s));
+                    let p = base[f] + parent as usize;
+                    next_sibling[i] = first_child[p];
+                    first_child[p] = crate::n32(i);
                 }
                 Some(_) if gc => {}
-                _ => work.push((crate::n32(f), crate::n32(s))),
+                _ => frontier.push(crate::n32(i)),
             }
         }
     }
-    let mark_global = |g: u32, work: &mut Vec<(u32, u32)>, live: &mut Live| {
+    // A folded section's references are its leader's (and it is never
+    // live itself).
+    let mut redirect: Vec<u32> = (0..crate::n32(total)).collect();
+    for (&(f, s), &(lf, ls)) in folded {
+        let i = base[f as usize] + s as usize;
+        redirect[i] = crate::n32(base[lf as usize] + ls as usize);
+        eligible[i] = false;
+    }
+    let live: Vec<AtomicBool> = (0..total).map(|_| AtomicBool::new(false)).collect();
+    let imports: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
+    let thunks: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
+    // Section `i`'s file, by its number.
+    let file_of = |i: usize| base.partition_point(|&b| b <= i) - 1;
+    // Claims section `i` if it can be in the image and isn't yet live.
+    let claim = |i: usize| {
+        let i = redirect[i] as usize;
+        eligible[i] && !live[i].swap(true, Ordering::Relaxed)
+    };
+    // What global `g` keeps: a section (pushed to `next` if newly
+    // claimed), a common, an import.
+    let global = |g: u32, next: &mut Vec<u32>, commons: &mut Vec<u32>| {
         let mut g = g;
         for _ in 0..64 {
             match r.globals[g as usize].def {
                 Def::Alias(t) => g = t,
                 Def::Section { file, section, .. } => {
-                    work.push((file, section));
+                    let i = redirect[base[file as usize] + section as usize] as usize;
+                    if claim(i) {
+                        next.push(crate::n32(i));
+                    }
                     return;
                 }
                 Def::Common { .. } => {
-                    live.commons.push(g);
+                    commons.push(g);
                     return;
                 }
                 Def::ImportAddress(f) => {
-                    live.imports[f as usize] = true;
+                    imports[f as usize].store(true, Ordering::Relaxed);
                     return;
                 }
                 Def::ImportThunk(f) => {
-                    live.imports[f as usize] = true;
-                    live.thunks[f as usize] = true;
+                    imports[f as usize].store(true, Ordering::Relaxed);
+                    thunks[f as usize].store(true, Ordering::Relaxed);
                     return;
                 }
                 _ => return,
             }
         }
     };
+    let mut commons = Vec::new();
+    frontier.retain(|&i| claim(i as usize));
     for &g in roots {
-        mark_global(g, &mut work, &mut live);
+        global(g, &mut frontier, &mut commons);
     }
-    while let Some((f, s)) = work.pop() {
-        let done = &mut live.sections[f as usize][s as usize];
-        if *done {
-            continue;
-        }
-        *done = true;
-        let FileKind::Object {
-            object, globals, ..
-        } = &r.files[f as usize].kind
-        else {
-            continue;
-        };
-        if let Some(kids) = children.get(&(f, s)) {
-            work.extend(kids.iter().map(|&k| (f, k)));
-        }
-        for rel in object.sections[s as usize].relocations {
-            let i = rel.symbol_table_index.get() as usize;
-            match globals.get(i) {
-                Some(&g) if g != crate::resolve::NONE => mark_global(g, &mut work, &mut live),
-                _ => {
-                    if let Some(sym) = object.symbols.get(i)
-                        && let SymbolKind::Local { section, .. } = sym.kind
-                    {
-                        work.push((f, section));
+    while !frontier.is_empty() {
+        let steps = turbonop_par::map_chunks(&frontier, 256, |part| {
+            let mut next = Vec::new();
+            let mut commons = Vec::new();
+            for &i in part {
+                let i = i as usize;
+                let f = file_of(i);
+                let s = i - base[f];
+                let mut c = first_child[i];
+                while c != u32::MAX {
+                    if claim(c as usize) {
+                        next.push(redirect[c as usize]);
+                    }
+                    c = next_sibling[c as usize];
+                }
+                let FileKind::Object {
+                    object, globals, ..
+                } = &r.files[f].kind
+                else {
+                    continue;
+                };
+                for rel in object.sections[s].relocations {
+                    let k = rel.symbol_table_index.get() as usize;
+                    match globals.get(k) {
+                        Some(&g) if g != crate::resolve::NONE => {
+                            global(g, &mut next, &mut commons);
+                        }
+                        _ => {
+                            if let Some(sym) = object.symbols.get(k)
+                                && let SymbolKind::Local { section, .. } = sym.kind
+                            {
+                                let t = redirect[base[f] + section as usize] as usize;
+                                if claim(t) {
+                                    next.push(crate::n32(t));
+                                }
+                            }
+                        }
                     }
                 }
             }
+            vec![(next, commons)]
+        });
+        frontier = Vec::new();
+        for (next, c) in steps {
+            frontier.extend(next);
+            commons.extend(c);
         }
     }
-    live.commons.sort_unstable();
-    live.commons.dedup();
-    live
+    commons.sort_unstable();
+    commons.dedup();
+    let sections = (0..n)
+        .map(|f| {
+            (base[f]..base[f + 1])
+                .map(|i| live[i].load(Ordering::Relaxed))
+                .collect()
+        })
+        .collect();
+    Live {
+        sections,
+        commons,
+        imports: imports.iter().map(|b| b.load(Ordering::Relaxed)).collect(),
+        thunks: thunks.iter().map(|b| b.load(Ordering::Relaxed)).collect(),
+    }
 }
-
 /// A partial section's key (output name, input name, characteristics)
 /// and its chunks.
 type Partial = ((Vec<u8>, Vec<u8>, u32), Vec<u32>);
@@ -283,7 +345,18 @@ pub fn layout(
     resources: Option<crate::resources::Rsrc>,
 ) -> Layout {
     let config: &Config = &r.config;
-    let live = mark(r, roots);
+    let mut live = mark(r, roots, &Map::default());
+    // /OPT:ICF: each folded section's leader (which comes before it); then
+    // the mark again, without the folded copies (what only they referred
+    // to isn't kept, as link.exe doesn't keep it).
+    let folded = if config.icf() {
+        crate::icf::fold(r, &live.sections)
+    } else {
+        Map::default()
+    };
+    if !folded.is_empty() {
+        live = mark(r, roots, &folded);
+    }
     let mut merges: Vec<(Vec<u8>, Vec<u8>)> = config
         .merges
         .iter()
@@ -299,13 +372,16 @@ pub fn layout(
     // Partial sections: (output name, input name, characteristics) and
     // their chunks in input order.
     let mut partials: Vec<Partial> = Vec::new();
-    let mut partial_index: Map<(Vec<u8>, Vec<u8>, u32), usize> = Map::default();
-    let mut add = |name: &[u8], chars: u32, chunk: Chunk, chunks: &mut Vec<Chunk>| -> u32 {
-        let out = output_name(name, &merges);
-        let key = (out, name.to_vec(), chars & scn::OUTPUT_MASK);
+    // Each (input name, characteristics)'s partial section: the names are
+    // the inputs' own bytes, so finding one copies nothing; the output
+    // name is worked out once per distinct one.
+    let mut partial_index: Map<(&'static [u8], u32), usize> = Map::default();
+    let mut add = |name: &'static [u8], chars: u32, chunk: Chunk, chunks: &mut Vec<Chunk>| -> u32 {
+        let chars = chars & scn::OUTPUT_MASK;
         let c = u32::try_from(chunks.len()).expect("fewer than 4 billion chunks");
         chunks.push(chunk);
-        let p = *partial_index.entry(key.clone()).or_insert_with(|| {
+        let p = *partial_index.entry((name, chars)).or_insert_with(|| {
+            let key = (output_name(name, &merges), name.to_vec(), chars);
             partials.push((key, Vec::new()));
             partials.len() - 1
         });
@@ -323,7 +399,23 @@ pub fn layout(
             FileKind::Object { object, .. } => {
                 let mut mine = vec![u32::MAX; object.sections.len()];
                 for (s, sec) in object.sections.iter().enumerate() {
+                    let key = (crate::n32(f), crate::n32(s));
+                    if let Some(&(lf, ls)) = folded.get(&key) {
+                        // Folded: its symbols are its leader's.
+                        mine[s] = if lf == key.0 {
+                            mine[ls as usize]
+                        } else {
+                            section_chunks[lf as usize][ls as usize]
+                        };
+                        continue;
+                    }
                     if !live.sections[f][s] {
+                        continue;
+                    }
+                    if let Some((Selection::Associative(parent), _)) = sec.comdat
+                        && folded.contains_key(&(key.0, parent))
+                    {
+                        // A folded section's unwind data goes with it.
                         continue;
                     }
                     let uninitialized = sec.characteristics & scn::CNT_UNINITIALIZED_DATA != 0;

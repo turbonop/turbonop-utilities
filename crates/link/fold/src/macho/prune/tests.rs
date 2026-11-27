@@ -594,3 +594,17 @@ fn bucket_counts_are_llvms() {
     assert_eq!(bucket_count(1024), 512);
     assert_eq!(bucket_count(1025), 256);
 }
+
+#[test]
+fn finds_nuls_eight_bytes_at_a_time() {
+    for n in 0..40 {
+        let mut b = vec![b'x'; 40];
+        b[n] = 0;
+        assert_eq!(nul(&b), Some(n));
+        // (A byte of 0x80 or 0x01 around it isn't one.)
+        b.insert(0, 0x80);
+        b.insert(0, 0x01);
+        assert_eq!(nul(&b), Some(n + 2));
+    }
+    assert_eq!(nul(&[b'x'; 17]), None);
+}

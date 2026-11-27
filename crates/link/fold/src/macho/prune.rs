@@ -223,6 +223,23 @@ fn check_expr(e: &[u8], address_size: u8) -> R<()> {
     Ok(())
 }
 
+/// Where `b`'s first NUL is: eight bytes at a time (strings are most of a
+/// unit's bytes).
+fn nul(b: &[u8]) -> Option<usize> {
+    const LO: u64 = 0x0101_0101_0101_0101;
+    const HI: u64 = 0x8080_8080_8080_8080;
+    let mut at = 0;
+    for w in b.as_chunks::<8>().0 {
+        let v = u64::from_le_bytes(*w);
+        let z = v.wrapping_sub(LO) & !v & HI;
+        if z != 0 {
+            return Some(at + z.trailing_zeros() as usize / 8);
+        }
+        at += 8;
+    }
+    b[at..].iter().position(|&c| c == 0).map(|k| at + k)
+}
+
 /// Offsets after removing sorted, disjoint `ranges`: an offset in a
 /// removed range is where the range was.
 pub(super) struct Shift {
@@ -959,10 +976,7 @@ pub(super) fn prune(
     {
         let mut at = 0;
         while at < str_b.len() {
-            let z = str_b[at..]
-                .iter()
-                .position(|&c| c == 0)
-                .ok_or("a __debug_str that doesn't end a string")?;
+            let z = nul(&str_b[at..]).ok_or("a __debug_str that doesn't end a string")?;
             str_index[at] = strings.len() as u32 + 1;
             strings.push(at as u32..(at + z + 1) as u32);
             at += z + 1;

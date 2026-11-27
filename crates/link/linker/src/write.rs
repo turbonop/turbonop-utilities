@@ -801,11 +801,13 @@ impl<'a> Image<'a> {
             at += sec.raw_size;
             let mut mine = mine;
             let mut offset = 0u32;
-            // Code's padding between chunks is int3 (0xCC), as link.exe's.
+            // Code's padding between chunks is int3 (0xCC), as link.exe's;
+            // after the last chunk with contents (before an empty group's
+            // place at the end), zeros.
             let code = sec.characteristics & scn::CNT_CODE != 0;
             for &c in &sec.chunks {
                 let chunk = &self.l.chunks[c as usize];
-                if chunk.uninitialized {
+                if chunk.uninitialized || chunk.size == 0 {
                     continue;
                 }
                 let start = chunk.rva - sec.rva;

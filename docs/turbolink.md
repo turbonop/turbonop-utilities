@@ -182,7 +182,17 @@ lists every COFF group with its address and size) and by experiment:
   the function the same way: by a label in it (`$LN4`, as cl writes it
   for an external function), by its own static symbol (a static
   function), or by its own external symbol; LIBCMTD's static
-  `ReadNoFence64` doesn't fold into cpp.obj's identical `_Bit_cast`. Import thunks are in the `.text$mn` group.
+  `ReadNoFence64` doesn't fold into cpp.obj's identical `_Bit_cast`.
+  Likewise a reference to another function counts by the kind of symbol
+  that names it as well as by what that function folds to: a jump
+  through an external symbol and one through a static symbol stay apart
+  even when their targets fold (LLVM's static `get_deleter`s). Dynamic
+  initializers and atexit destructors (`??__E`, `??__F`) never fold,
+  whatever their group; other functions fold across groups (a `.text$di`
+  copy with a `.text$mn` one), the copy kept the one first in the image
+  (its group by name, then the link's order), and a group whose every
+  section folded away stays, empty and aligned (its padding before it, at
+  the end of the section, zeros rather than `int3`). Import thunks are in the `.text$mn` group.
 - **The imports within one DLL** are in `qsort`'s order: link.exe's
   `SortPGRPByPMOD` sorts each `.idata` group's contributions with the
   C runtime's `qsort` and `CompareIdataPCON`, which compares the DLLs'
@@ -213,7 +223,8 @@ lists every COFF group with its address and size) and by experiment:
   name, handle, address table, name table, bound table and unload table
   RVAs), `$3` (the null descriptor), `$4` (each DLL's name table), `$6`
   (hint/names, in load order), `$7` (each DLL's bound table, zeros, then
-  0x104 bytes of room; not with `/DELAY:NOBIND`), `$8` (each DLL's unload
+  0x104 bytes of room, or 0x108 so that the room ends 4 bytes past a
+  multiple of 8 from the descriptors' start; not with `/DELAY:NOBIND`), `$8` (each DLL's unload
   table with `/DELAY:UNLOAD`: a copy of the address table), and `$5` (each
   DLL's address table, in `.data`: each slot its thunk's address, with a
   base relocation). The DLLs are in the order their first imports
@@ -247,7 +258,8 @@ lists every COFF group with its address and size) and by experiment:
   CRT, C with the debug CRT, a DLL with exports, delay loading,
   resources, and `/GUARD:CF` (with indirect calls, long jumps,
   address-taken imports, delay loading, and `/GUARD:EHCONT`; tests check
-  each). With `/DEBUG` (and `/INCREMENTAL:NO`: turbolink always links
+  each); and LLVM's `llvm-tblgen` (4.8 MB) and `llc` (73 MB, every
+  target). With `/DEBUG` (and `/INCREMENTAL:NO`: turbolink always links
   fully), the image is link.exe's but for the PDB's GUID, age, and name
   (the debug directory: CodeView, VC_FEATURE, then the coffgrp entry); the
   PDB is logically link.exe's (DIA reads it; `hexcavator diff` compares
@@ -255,11 +267,7 @@ lists every COFF group with its address and size) and by experiment:
 - **Still different** (to do): the
   `/Brepro` hash (it depends on the output's contents, not its name or
   the options, but isn't a plain SHA-1/256/512 or MD5 of the file with
-  its time stamps and hash zeroed); LLVM's `llvm-tblgen`, which is
-  link.exe's image but for where 4 bytes of padding fall (link.exe
-  starts `.idata$2` on 8 bytes there, on 4 in a small program, and every
-  import library's pieces are on 4: not yet explained); a delay-loaded
-  DLL's name and address tables with two or more imports
+  its time stamps and hash zeroed); a delay-loaded DLL's name and address tables with two or more imports
   (link.exe's order isn't load order, and no `qsort` of it found yet:
   loads C,D give D,C; C,D,S give S,D,C; C,D,X,S give S,D,X,C; C,Q,F,X,E,G
   give G,Q,F,X,E,C; C,Q,F,A,X,E,B,I,M,G give C,M,Q,F,A,X,E,B,I,G).

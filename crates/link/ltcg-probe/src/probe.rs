@@ -646,7 +646,7 @@ fn show_in(p: &Param, v: usize, prev: Option<usize>, method: &str) -> String {
             Some(s) if v != 0 => format!("{s:?}"),
             _ => format!("{v:#x}"),
         },
-        Param::WStrs if method.starts_with("CodeGen") => {
+        Param::WStrs if method.starts_with("CodeGen") || method == "Init" => {
             // An argument vector of `prev` strings.
             let n = prev.unwrap_or(0).min(256);
             let mut s = String::from("[");

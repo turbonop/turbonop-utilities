@@ -668,12 +668,13 @@ x64. Where the 3.5 MB went:
   dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5),
   dsymutil's keeping rules read and applied: givers without named types
   no keepable DIE reaches, synthesized members declaring the classes
-  their givers define, single-use strings inline (7.6), and the corpus
+  their givers define (opt-in: `--debug-types=shared`), single-use strings inline (7.6), and the corpus
   scripts (`tools/turbolib/macho-corpus`). Still open:
-  - **Class versions in the dSYM** (7.6): folding now saves bytes (the
-    `llvm-ar` archives 0.7% smaller, from 5.9% larger), but which unit's
-    version of a class template specialization dsymutil keeps changes:
-    the corpus links have 70 to 133 definitions whose original contents
+  - **The size DWARF costs, and class versions** (7.6): by default
+    (`--debug-types=complete`, 7.5's classes and dSYMs) the folded `llvm-ar`
+    archives are still 5.0% larger (7.5: 5.9%). `--debug-types=shared`
+    makes them 0.95% smaller, but which unit's version of a class template
+    specialization dsymutil keeps changes: the corpus links have 70 to 133 definitions whose original contents
     (member lists) aren't in the folded dSYM (7.5: 21 to 38), and 4 to 6
     lost (7.5: 9 to 11). It is dsymutil's completeness cascade (a version
     is canonical only if complete, which depends on what earlier objects
@@ -682,9 +683,10 @@ x64. Where the 3.5 MB went:
     (it merges a class's declarations by name); measure the versions a
     Mac build's dSYM has from build to build. Givers' classes hold only
     without `-dead_strip` (see `relink.py --dead-strip`'s results in the
-    plan), and only when a giver loads the synthesized member.
-  - **What's left of synthesized members' DWARF** (40 MB per architecture
-    in 7.6, from 88.7; most of the rest of a synthesized member is its load
+    plan), and only when a giver loads the synthesized member. Making
+    `shared` the default needs those answered.
+  - **What's left of synthesized members' DWARF** (84 MB arm64 by
+    default, 40 with `shared`; most of the rest of a synthesized member is its load
     commands and symbols): a unit with one code range could use
     `DW_AT_low_pc`/`DW_AT_high_pc` and no `__debug_ranges` (about 1.3 MB
     and a section header per member); `DW_FORM_ref2` in units under 64

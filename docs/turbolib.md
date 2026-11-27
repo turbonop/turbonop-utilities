@@ -2317,8 +2317,10 @@ LLVM's `dsymutil --linker=classic` on small programs):
   reached. (The dead entities inside an imported namespace went in 7.5
   already: in a link that keeps such a namespace whole, the original's
   dSYM had their DIEs, without addresses, and what only they named.)
-- **A synthesized member holds as declarations the classes its givers
-  define.** A synthesized member is loaded whenever one of its givers is
+- **With `--debug-types=shared`, a synthesized member holds as
+  declarations the classes its givers define** (the default,
+  `--debug-types=complete`, keeps 7.5's whole classes: see the next
+  point). A synthesized member is loaded whenever one of its givers is
   (by the giver's anchor). `turbonop_fold::macho::reach` works out, for
   each giver after its cut, the class definitions it puts in the dSYM of
   every link that loads it with all its code (no `-dead_strip`): its
@@ -2365,20 +2367,26 @@ Tried and not kept:
 
 None of these reproduces the original's versions: the variants trade
 categories, and the ones that keep more classes whole (larger) do no
-better than 7.5 overall. The variant kept loses the fewest definitions.
+better than 7.5 overall. The variant kept, as `--debug-types=shared`,
+loses the fewest definitions. The default stays 7.5's classes
+(`--debug-types=complete`), with the two changes that leave every dSYM as
+it was: givers' named types pruned and strings inline. The relinks show
+it: with the default, `compare-images` reports exactly 7.5's categories
+and counts in all 4 links (expected ones too).
 
 | Check | Result |
 |---|---|
-| size (`relib.py --options=--fold=identical`) | the `llvm-ar` archives 1,536,552,752 bytes to 1,521,951,128, 0.95% smaller (7.5: 1,626,635,896, 5.9% larger; before strings went inline 1,525,594,296); the `libtool` ones (with the universal files) 3,073,107,040 to 3,043,903,792 (7.5: 3,253,273,328). Synthesized members' DWARF per architecture: 40.0 MB arm64 (`__debug_str` 23.8, `__debug_info` 10.4, `__debug_line` 3.2, `__debug_abbrev` 1.9, `__debug_ranges` 0.7) before strings went inline; 7.5: 88.7 |
-| `relink.py` (4 links, against the originals; the build before strings went inline, whose folded `llvm-nm` arm64 link and this build's `compare-images` finds equivalent, with no failures) | the original members loaded in order; code, data, unwind information, imports, and subprograms as 7.5 (the same categories and counts); type definitions only in the original 4, 4, 6, 6 (7.5: 9, 9, 11, 11); with contents only in the original 133, 132, 71, 70 (7.5: 38, 38, 21, 21), only in the folded 54, 54, 30, 31 (7.5: 114, 115, 64, 66) |
-| `relink.py --dead-strip` (new: `-dead_strip`, as a Mac release build links) | against the originals linked the same way: the original members loaded in order; type definitions only in the original 95, 86, 94, 85 (7.5: 150, 141, 98, 89), with contents only in the original 125, 124, 100, 100 (7.5: 49, 49, 37, 38), only in the folded 57, 57, 41, 42 (7.5: 92, 93, 59, 61); code and subprograms as 7.5. Both 7.5 and this lose definitions under `-dead_strip`: a giver's code that names a class may be stripped while the moved code stays |
+| size (`relib.py --options=--fold=identical`, and with `--debug-types=shared`) | the `llvm-ar` archives 1,536,552,752 bytes to 1,613,682,840 by default (5.0% larger; 7.5: 1,626,635,896, 5.9%) and 1,521,951,128 with `shared` (0.95% smaller; 1,525,594,296 before strings went inline); the `libtool` ones (with the universal files) 3,073,107,040 to 3,227,367,216 and 3,043,903,792 (7.5: 3,253,273,328). Synthesized members' DWARF, arm64: 84.1 MB by default (`__debug_info` 74.6, `__debug_line` 3.9, `__debug_abbrev` 3.3, `__debug_str` 1.7, `__debug_ranges` 0.7), 40.0 MB with `shared` (`__debug_str` 23.8, `__debug_info` 10.4, `__debug_line` 3.2, `__debug_abbrev` 1.9, `__debug_ranges` 0.7) before strings went inline; 7.5: 88.7 |
+| `relink.py` (4 links, against the originals) | by default: exactly 7.5's categories and counts, expected ones too, in all 4 links. With `shared`: the original members loaded in order; code, data, unwind information, imports, and subprograms as 7.5 (the same categories and counts); type definitions only in the original 4, 4, 6, 6 (7.5: 9, 9, 11, 11); with contents only in the original 133, 132, 71, 70 (7.5: 38, 38, 21, 21), only in the folded 54, 54, 30, 31 (7.5: 114, 115, 64, 66) |
+| `relink.py --dead-strip` (new: `-dead_strip`, as a Mac release build links) | against the originals linked the same way, by default: exactly 7.5's categories and counts in all 4 links. With `shared` (the build before strings went inline): the original members loaded in order; type definitions only in the original 95, 86, 94, 85 (7.5: 150, 141, 98, 89), with contents only in the original 125, 124, 100, 100 (7.5: 49, 49, 37, 38), only in the folded 57, 57, 41, 42 (7.5: 92, 93, 59, 61); code and subprograms as 7.5. Both settings lose definitions under `-dead_strip`: a giver's code that names a class may be stripped while the moved code stays |
 | `turbolib verify` of the 128 single-architecture archives | 128 pass |
 | `fixture.py` | 16 of 16 |
 | determinism | `libLLVMCore.a` arm64, `libLLVMSupport.a` x86-64, `libLLVMObject.a` arm64 (as `libtool -static`) with `-j 1`, `-j 3`, `-j 8`: the same bytes |
 | ELF | `libLLVMSupport.a`, `libLLVMCore.a`, `libLLVMObject.a` of the clang and gcc corpora folded by 7.5's build and this one: the same bytes |
-| speed (CPU, user + system, `-j 1`, as `libtool -static`, 7.5's build and this one alternating, 3 runs each, the first of each cold and left out; the machine's load about 4 from other work, so only the ratio is meaningful) | `libLLVMCore.a` arm64 9.30 and 9.20 s against 10.79 and 9.95 s (7% less: synthesized members' DWARF is smaller to build, which pays for walking every giver's DWARF once more in `reach`); `libLLVMSupport.a` x86-64 2.54 and 2.50 s against 2.43 and 2.41 s (4% more) |
+| speed (by default; CPU, user + system, `-j 1`, as `libtool -static`, 7.5's build and this one alternating, 3 runs each, the first left out) | `libLLVMCore.a` arm64 10.90 and 11.00 s against 10.73 and 10.44 s (3% more); `libLLVMSupport.a` x86-64 2.74 and 2.60 s against 2.75 and 2.48 s (2% more, within the runs' spread). The named types prune removes, and counting a synthesized member's strings, cost a little; not profiled |
+| speed (with `shared`; CPU, user + system, `-j 1`, as `libtool -static`, 7.5's build and this one alternating, 3 runs each, the first of each cold and left out; the machine's load about 4 from other work, so only the ratio is meaningful) | `libLLVMCore.a` arm64 9.30 and 9.20 s against 10.79 and 9.95 s (7% less: synthesized members' DWARF is smaller to build, which pays for walking every giver's DWARF once more in `reach`); `libLLVMSupport.a` x86-64 2.54 and 2.50 s against 2.43 and 2.41 s (4% more) |
 
-What it can't prove: the giver-supplied classes hold only for links
+What it can't prove: with `shared`, the giver-supplied classes hold only for links
 without `-dead_strip` that load the synthesized member through a giver
 (a giver's code that names a class may be stripped while the moved code
 stays; a synthesized member loaded by its own name, with no giver, has

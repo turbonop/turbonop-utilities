@@ -704,6 +704,7 @@ pub(super) fn check(
     rep.checked("DIEs of pruned members", nt.dies.len() as u64);
     // References: to the matches of the original's targets.
     let mut bad_refs = 0;
+    let mut first_bad = None;
     for (i, &m) in c.map.iter().enumerate() {
         if m == NONE {
             continue;
@@ -726,13 +727,20 @@ pub(super) fn check(
             };
             if !ok {
                 bad_refs += 1;
+                first_bad.get_or_insert((od.offset, oa.name, x, y));
             }
         }
     }
     if bad_refs > 0 {
         rep.fail(
             "pruned DWARF's references that don't name what the original's do",
-            || format!("{}: {bad_refs}", show(what)),
+            || {
+                let (at, name, x, y) = first_bad.unwrap_or_default();
+                format!(
+                    "{}: {bad_refs}, the first in the DIE at {at:#x}: attribute {name:#x}, {x:#x} and {y:#x}",
+                    show(what)
+                )
+            },
         );
     }
     // Every new relocation compared (the unit's own among them).

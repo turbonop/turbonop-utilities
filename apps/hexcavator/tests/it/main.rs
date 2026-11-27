@@ -11,6 +11,7 @@ mod checksec;
 mod data;
 mod debugmap;
 mod deps;
+mod diff;
 mod dwarf;
 mod info;
 mod init;

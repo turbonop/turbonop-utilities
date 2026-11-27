@@ -13,6 +13,7 @@ mod checksec;
 mod data;
 mod deps;
 mod detect;
+mod diff;
 mod dump;
 mod dwarfdump;
 mod init;
@@ -53,6 +54,8 @@ commands:
   checksec [-audit] <image>  its exploit mitigations; -audit: its objects' compilers and options
   data [options] <image> <name>  a datum's bytes, and its value read as its type
   deps [options] <image>     what it loads (as its loader finds it), and what's missing
+  diff [options] <a> <b>     what differs between two images (to the byte, and why),
+                             or two PDBs (by what they say)
   dump [options] <file>...   dumpbin-style dump (see `hexcavator dump` for options)
   dwarf [options] <file>     dump a file's DWARF, as llvm-dwarfdump does (see `hexcavator dwarf`)
   info <file>...             identify the format of each file
@@ -251,6 +254,7 @@ fn command(args: &[String]) -> ExitCode {
         "about" => about::run(rest),
         "data" => data::run(rest),
         "deps" => deps::run(rest),
+        "diff" => diff::run(rest),
         "dump" => dump::run(rest),
         "pdb" => pdbdump::run(rest),
         "dwarf" => dwarfdump::run(rest),

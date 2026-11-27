@@ -6,6 +6,26 @@ leave this list when they ship.
 
 ## TurboNOP's tools
 
+- **`hexcavator diff`, what's still to do.**
+  - Code compared by bytes, references resolved by name: a displacement
+    whose instruction has an immediate after it is resolved from the
+    field's end (the target's name usually still matches). Decoding the
+    instructions (turbonop-x86, turbonop-arm64) would make it exact, and
+    let ARM64's ADRP/ADD pairs and branches count as references.
+  - With map-only names, statics one map lists and the other doesn't
+    become "only in a"; functions without exception data are bounded by
+    the next name either image has.
+  - PDBs: symbol kinds the decoder doesn't model are compared as bytes
+    (but S_CALLEES, S_CALLERS, S_INLINEES, S_HEAPALLOCSITE,
+    S_CALLSITEINFO, and S_FILESTATIC have their indices mapped);
+    LF_UDT_MOD_SRC_LINE's file is compared as its string and its module
+    by name. FPO, OMAP, the section headers stream's contents beyond
+    `sections()`, and LinkInfo aren't compared yet.
+  - link.exe's own PDBs differ from one `/Brepro` link of the same inputs
+    to the next (same GUID): which module's copy of a type
+    `LF_UDT_MOD_SRC_LINE` names, and which copy of a type S_UDT names. A
+    turbolink PDB should be compared knowing that.
+
 - **One site for every tool's web version.** GitHub Pages has one site per
   repository, and a deploy replaces all of it: hexcavator's release
   deploys `/hexcavator/` (and a root that sends visitors there). Once a

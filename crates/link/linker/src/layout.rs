@@ -305,6 +305,7 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
     use std::sync::atomic::{AtomicBool, Ordering};
     let gc = r.config.gc_sections();
     let n = r.files.len();
+    let started = std::time::Instant::now();
     // Every file's sections, numbered one after another.
     let mut base = Vec::with_capacity(n + 1);
     let mut total = 0usize;
@@ -392,6 +393,8 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
         }
     };
     let mut commons = Vec::new();
+    let setup = started.elapsed();
+    let mut levels = 0usize;
     frontier.retain(|&i| claim(i as usize));
     for &g in roots {
         global(g, &mut frontier, &mut commons);
@@ -438,11 +441,19 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
             }
             vec![(next, commons)]
         });
+        levels += 1;
         frontier = Vec::new();
         for (next, c) in steps {
             frontier.extend(next);
             commons.extend(c);
         }
+    }
+    if r.config.time {
+        eprintln!(
+            "turbolink:     mark: setup {:.3} ms, {levels} steps {:.3} ms, {total} sections",
+            setup.as_secs_f64() * 1e3,
+            (started.elapsed() - setup).as_secs_f64() * 1e3
+        );
     }
     // Commons go at the end of .bss, by the file whose definition each
     // is (link.exe allocates them module by module): the command line's
@@ -499,17 +510,32 @@ pub fn layout(
     resources: Option<crate::resources::Rsrc>,
 ) -> Layout {
     let config: &Config = &r.config;
+    // (/TIME's breakdown of the layout.)
+    let mut lap = std::time::Instant::now();
+    let mut note = |what: &str| {
+        if r.config.time {
+            eprintln!(
+                "turbolink:   layout, {what}: {:.3} ms",
+                lap.elapsed().as_secs_f64() * 1e3
+            );
+        }
+        lap = std::time::Instant::now();
+    };
     let mut live = mark(r, roots, &Map::default());
+    note("mark");
     // /OPT:ICF: each folded section's leader (which comes before it); then
     // the mark again, without the folded copies (what only they referred
     // to isn't kept, as link.exe doesn't keep it).
     let folded = if config.icf() {
-        crate::icf::fold(r, &live.sections)
+        let f = crate::icf::fold(r, &live.sections);
+        note("ICF");
+        f
     } else {
         Map::default()
     };
     if !folded.is_empty() {
         live = mark(r, roots, &folded);
+        note("mark again");
     }
     let leaders: turbonop_hash::Set<(u32, u32)> = folded.values().copied().collect();
     // Each leader's alignment: the largest of its class (as link.exe places
@@ -592,13 +618,13 @@ pub fn layout(
                 }
                 for (s, sec) in object.sections.iter().enumerate() {
                     let key = (crate::n32(f), crate::n32(s));
-                    if let Some(&(lf, ls)) = folded.get(&key) {
-                        // Folded: its symbols are its leader's.
-                        mine[s] = if lf == key.0 {
-                            mine[ls as usize]
-                        } else {
-                            section_chunks[lf as usize][ls as usize]
-                        };
+                    if folded.contains_key(&key) {
+                        // Folded: its symbols are its leader's (once every
+                        // file's chunks are known: the leader may come
+                        // later). Its group stays, as a discarded section's
+                        // does (all of .text$yd folded into .text$di: an
+                        // empty .text$yd still on 16 bytes).
+                        discarded.push((sec.name, sec.characteristics, sec.alignment()));
                         continue;
                     }
                     if !live.sections[f][s] {
@@ -780,6 +806,12 @@ pub fn layout(
             }
         }
     }
+    // The folded sections: each one's chunk is its leader's.
+    for (&(f, s), &(lf, ls)) in &folded {
+        let c = section_chunks[lf as usize][ls as usize];
+        section_chunks[f as usize][s as usize] = c;
+    }
+
     // The import tables' order, as link.exe's (see docs/turbolink.md): the
     // pieces in the order they loaded (each import; each DLL's import
     // descriptor and null thunk, from its import library). The directory
@@ -1367,6 +1399,7 @@ pub fn layout(
     // first partial section sorts; within each, partial sections by name
     // (the output section's own name's before those merged into it), and
     // uninitialized data last.
+    note("chunks");
     partials.sort_by(|a, b| a.0.cmp(&b.0));
     const ORDER: &[&[u8]] = &[b".text", b".rdata", b".data", b".pdata", b".tls", b".rsrc"];
     let mut out_names: Vec<(Vec<u8>, u32)> = Vec::new();
@@ -1535,6 +1568,7 @@ pub fn layout(
         rich: (rich_entries, key, 0),
         codeview_name: Vec::new(),
     };
+    note("sections");
     l.size_headers(header_sections);
     l.assign_addresses();
     l
@@ -1586,11 +1620,23 @@ impl Layout {
                     group_start.insert(first, align);
                 }
             }
+            // (Where the delay-load descriptors start: the room after the
+            // bound tables ends 4 bytes past a multiple of 8 from there, as
+            // link.exe's does: 0x104 bytes, or 0x108.)
+            let mut delay_start = None;
             for &c in &s.chunks {
                 let group_align = group_start.get(&c).copied().unwrap_or(1);
                 let chunk = &mut self.chunks[c as usize];
                 at = align_up(at, chunk.align.max(group_align));
                 chunk.rva = rva + at;
+                match chunk.kind {
+                    ChunkKind::DelayDirectory => delay_start = Some(chunk.rva),
+                    ChunkKind::DelayBoundRoom => {
+                        let from = chunk.rva + 0x104 - delay_start.unwrap_or(chunk.rva);
+                        chunk.size = if from % 8 == 4 { 0x104 } else { 0x108 };
+                    }
+                    _ => {}
+                }
                 at += chunk.size;
                 if !chunk.uninitialized {
                     init_end = at;

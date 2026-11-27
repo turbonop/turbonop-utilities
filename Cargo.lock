@@ -301,6 +301,7 @@ dependencies = [
  "serde_json",
  "turbonop-archive",
  "turbonop-arm64",
+ "turbonop-clr",
  "turbonop-codeview",
  "turbonop-core",
  "turbonop-debuginfo",
@@ -843,6 +844,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-clr"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-par",
+ "turbonop-pe",
+]
+
+[[package]]
 name = "turbonop-code"
 version = "0.0.7"
 dependencies = [
@@ -1064,6 +1075,7 @@ dependencies = [
  "mimalloc",
  "turbonop-arm32",
  "turbonop-arm64",
+ "turbonop-clr",
  "turbonop-code",
  "turbonop-debuginfo",
  "turbonop-demangle",

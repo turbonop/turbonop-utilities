@@ -35,22 +35,27 @@
 //! link that loads a giver with all its code (no `-dead_strip`): the roots
 //! its DWARF still has once its units are cut out (DIEs whose relocations
 //! name what stays), what they keep by the rules above, and, where an ODR
-//! reference names a DIE that may have a declaration context, that DIE
-//! and its ancestors, but nothing further. dsymutil keeps such a DIE from
-//! this object (whole, with what it reaches) only if no earlier object
-//! defined its context; otherwise it is the earlier object's definition
-//! that is in the dSYM, with what that version reaches, which may be less
-//! (a class template specialization's members are those its unit used).
-//! A first version that followed such references to the end lost 12 type
-//! definitions per corpus link, and changed 300 to 500 others' members.
+//! reference names a DIE that may have a declaration context, that DIE,
+//! but nothing further. dsymutil keeps such a DIE from this object (whole,
+//! with what it reaches) only if no earlier object defined its context;
+//! otherwise it is the earlier object's definition that is in the dSYM,
+//! with what that version reaches, which may be less (a class template
+//! specialization's members are those its unit used). A first version
+//! that followed such references to the end lost 2 to 12 more of a corpus
+//! link's type definitions, and changed 300 to 500 others' members.
 //! A namespace's other children aren't assumed either (an import keeps
 //! them only in some links). The result is the keys of the named classes,
 //! structures, and unions in named scopes defined among what it reaches.
 //!
-//! When the defining object is the giver itself or an earlier one, it is
-//! so in the original link too, so the dSYM's definition is the one it was
-//! (the same object's, by the same rules), as long as the objects load in
-//! the same order (which `relink.py` checks for the corpus).
+//! What it doesn't decide is which unit's version of a class the dSYM
+//! has. A definition is a canonical one only if it is complete (no member
+//! of it reaches, through pointers, typedefs, and members, a declaration
+//! not yet defined: `updateChildIncompleteness`, `updateRefIncompleteness`),
+//! and that depends on what earlier objects made canonical first; an
+//! incomplete one is kept from every object that reaches it. Any change
+//! to what a synthesized member holds (classes whole, as before, or not)
+//! changes that cascade, and with it some classes' versions (see the
+//! plan's 7.6).
 
 use std::collections::BTreeSet;
 

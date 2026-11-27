@@ -1015,6 +1015,20 @@ fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>
                 "turbolib:   {n} units' debug information dropped: {why}\n"
             ));
         }
+        text.push_str(&format!(
+            "turbolib:   {} givers' DWARF pruned: {} dead DIEs removed ({} kept, named by kept DIEs), \
+             {} other DIEs only they reached removed, {} bytes\n",
+            report.debug_pruned,
+            report.debug_dead_removed,
+            report.debug_dead_kept,
+            report.debug_reached_removed,
+            report.debug_pruned_bytes,
+        ));
+        for (why, n) in &report.debug_unpruned_why {
+            text.push_str(&format!(
+                "turbolib:   {n} givers' DWARF kept as it was: {why}\n"
+            ));
+        }
         for (why, n) in &report.kept {
             text.push_str(&format!(
                 "turbolib:   {n} copies stayed: {why}

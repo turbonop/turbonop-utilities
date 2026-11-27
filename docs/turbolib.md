@@ -28,7 +28,7 @@ items leave TODO.md as they ship.
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
 | 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). |
 | 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; GNU's split DWARF 4 too; initializer entries in groups kept from folding; the original members loaded in the original order by all four linkers; the clang corpus (relib byte for byte, folded 2.4% smaller, verified, relinked; see 6.6); every differing description proven another unit's copy; folding the 20 largest libraries in 0.49× to 0.60× GNU `ar`'s time, 3.9× a Release `llvm-ar`'s (6.7, noisy measurements); `compare-images` reading the clang corpus's last differences; CREL objects read, written, and folded (6.7). Not yet: `select-any` and `--locals` for ELF. |
-| 7 Mach-O | In progress (see [Phase 7 results](#phase-7-results)). Done: 7.1, Darwin archives (all 160 archives of the Mach-O corpus written back byte for byte and remade by their own commands; 41 of 41 command lines as `llvm-ar`, `llvm-ranlib`, and `llvm-libtool-darwin` behave) and the `libtool -static` personality (`llvm-libtool-darwin`'s; 0.70× the real tools' time); 7.2, `turbonop-macho-object` (all 5,732 corpus objects round-trip byte for byte, and laid out afresh reproduce LLVM's bytes); 7.3, a first `--fold=identical` for Mach-O, with `verify`; 7.4, x86-64's FDEs and LSDAs move with their units (x86-64 now folds as arm64 does: 36,348 units, 169,617 copies), givers' DWARF moves with their code, synthesized members carry their units' DWARF (every folded unit's), and `compare-images` for Mach-O (dSYMs' DWARF too). Not yet: Apple's `libtool`/`ranlib`, linkers, and dsymutil (not available here); the size the DWARF costs (the folded archives are 9.1% larger); 3.55× the real tools' time folding. |
+| 7 Mach-O | In progress (see [Phase 7 results](#phase-7-results)). Done: 7.1, Darwin archives (all 160 archives of the Mach-O corpus written back byte for byte and remade by their own commands; 41 of 41 command lines as `llvm-ar`, `llvm-ranlib`, and `llvm-libtool-darwin` behave) and the `libtool -static` personality (`llvm-libtool-darwin`'s; 0.70× the real tools' time); 7.2, `turbonop-macho-object` (all 5,732 corpus objects round-trip byte for byte, and laid out afresh reproduce LLVM's bytes); 7.3, a first `--fold=identical` for Mach-O, with `verify`; 7.4, x86-64's FDEs and LSDAs move with their units (x86-64 now folds as arm64 does: 36,348 units, 169,617 copies), givers' DWARF moves with their code, synthesized members carry their units' DWARF (every folded unit's), and `compare-images` for Mach-O (dSYMs' DWARF too); 7.5, givers' DWARF without the moved copies' DIEs (the folded links' dSYMs equivalent to 7.4's). Not yet: Apple's `libtool`/`ranlib`, linkers, and dsymutil (not available here); the size the DWARF costs (the folded archives are 5.9% larger; 7.4: 9.1%); speed (3.55× the real tools' time folding in 7.4, and pruning adds about a quarter more CPU). |
 
 ### Picking this up elsewhere
 
@@ -2067,6 +2067,78 @@ What it can't prove: nothing was run (lldb isn't in this LLVM build:
 no debugger sessions were compared); the links are ld64.lld's alone; the
 dSYMs are this LLVM's dsymutil's.
 
+### Givers' DWARF pruned (7.5)
+
+- **Givers lose the moved copies' DIEs** (`turbonop_fold::macho::prune`,
+  after the cut and `adjust`), instead of keeping them tombstoned. A DIE
+  below the unit or a namespace is an entity, kept or removed whole.
+  Dead: a subprogram or variable entity some of whose debug relocations
+  named lost code (tombstoned, or naming a moved name: x86-64's are
+  external) and none anything kept, without `DW_AT_const_value`, whose
+  lists are all empty after `adjust`. Also removed: what only the dead
+  reach (references and location expressions, transitively) when it is an
+  unnamed type (pointers, qualifiers, arrays, subroutine types) or a
+  subprogram without an address (declarations, abstract instances), and
+  namespaces left empty. Everything else stays, and everything a kept
+  entity refers to (a dead subprogram a kept call site names stays,
+  tombstoned). `__debug_info` loses the subtrees (`Object::cut`), every
+  kept reference, string offset, and list offset is set again,
+  `__debug_str` loses the strings nothing kept names,
+  `__debug_ranges`/`__debug_loc` the lists nothing kept names and the
+  entries the cut emptied, and Apple's four accelerator tables the entries
+  of removed DIEs (written again as LLVM's `AppleAccelTableWriter` does:
+  the corpus's 5,800 tables read and written back byte for byte by the
+  `macho_apple` example; with its bucket count, unless that would grow
+  the table: then the original's). Anything not handled (DWARF 5, several
+  units, references in expressions, `DW_FORM_ref_udata`, sections not
+  known) keeps the giver's DWARF as 7.4 left it, counted (none in the
+  corpus).
+- **Named types stay.** The first version also removed named types only
+  the dead reached; compared with 7.4's folded links, the dSYMs then
+  lacked 2 type definitions per link (`std::ratio<1000000000, 1>` and
+  `std::ratio<1000000, 1>`; and on x86-64 `llvm-readobj` one class with
+  other contents): a moved `std::chrono` function's class names them as
+  template arguments, its synthesized member holds them as declarations,
+  and dsymutil (classic, ODR uniquing) had kept a giver's definition that
+  nothing in the dSYM referred to. Why it keeps it wasn't established
+  (dsymutil's source isn't read here); named types are kept since.
+- **`verify`** checks pruned DWARF apart from the engine
+  (`turbonop_verify::macho::pruned`): the two DIE trees aligned, only
+  whole subtrees missing below the unit and namespaces; every kept DIE the
+  original's (abbreviation, bytes, relocations, strings by content, lists
+  by what they name, references to the matches of the original's
+  targets, `DW_AT_sibling` to its subtree's end); every removed one dead
+  code's, an unnamed type or address-less subprogram without
+  relocations, or a namespace of such; the accelerator tables the
+  original's entries of kept DIEs, each hash its name's, each findable
+  through its bucket.
+- **Sharing class definitions between synthesized members** (a class
+  whole in one, a declaration in the others) wasn't done: it isn't correct
+  for dsymutil's pruning. dsymutil keeps a definition only through the
+  live DIEs of its own object (as far as seen here: see the previous
+  point), and a synthesized member is loaded (by a name of the index, not
+  only through givers' anchors) and dead-stripped independently of the
+  others: the one holding the definition may be absent, or have no live
+  code, while another's code that names the class is live. Even "the
+  member holding the definition has a function this one's code calls"
+  fails when that function's copy is coalesced with another library's.
+  Each synthesized member stays self-sufficient.
+
+| Check | Result |
+|---|---|
+| `--fold=identical --stats` (as `libtool -static`, 32 libraries per architecture) | every giver's DWARF pruned (675 arm64, 667 x86-64; none kept as they were): 169,502 / 169,450 dead DIEs removed (134 / 134 kept, named by kept DIEs), 43,579 / 43,337 others only they reached; 24.8 MB of debug sections per architecture (28.2 MB when named types went too) |
+| size (`relib.py --options=--fold=identical`) | the `llvm-ar` archives 1,536,552,752 bytes to 1,626,635,896 (5.9% larger; 7.4: 1,676,251,064, 9.1%; 7.3, without DWARF in synthesized members: 1,521,016,080, 1.0% smaller); the `libtool` ones 3,073,107,040 to 3,253,273,328 (7.4: 3,352,503,664). With named types removed too: 1,619,914,792 |
+| what synthesized members' DWARF is (`libLLVMSupport.a` arm64: 706 members, 6.37 MB) | `__debug_str` 3.65 MB, `__debug_info` 1.92 MB (of it whole class definitions 1.48 MB: 2,325 of 1,115 distinct classes, 0.37 MB once each), `__debug_line` 0.41 MB, `__debug_abbrev` 0.32 MB; per architecture 88.7 / 88.0 MB, as in 7.4 |
+| accelerator tables (`macho_apple` example, the corpus's objects) | 5,800 of 5,800 read and written again byte for byte |
+| `turbolib verify` of the 128 single-architecture archives | 128 pass (pruned DWARF checked as above) |
+| `fixture.py` | 16 of 16 |
+| `relink.py` (4 links, ld64.lld, dSYMs by `dsymutil --linker=classic`) | against 7.4's folded links (`compare-images` of each folded image with its dSYM): 4 of 4 equivalent, no failures (the same functions, data, symbols, initializers, unwind information, imports, live subprograms, variables, and 127,832 / 128,067 / 121,429 / 121,654 type definitions). Against the originals: the original members loaded in order, and the same categories and counts as 7.4 (type definitions only in the original 9, 9, 11, 11) |
+| determinism | `libLLVMCore.a` arm64, `libLLVMSupport.a` both, `libLLVMObject.a` arm64 with `-j 1`, `-j 3`, `-j 8`: the same bytes |
+| ELF | `libLLVMSupport.a`, `libLLVMCore.a`, `libLLVMObject.a` (the clang corpus) folded by 7.4's and this build: the same bytes (no shared code changed) |
+| prune's tests | a unit emitted whole and without what goes, compared byte for byte (`__debug_info`, `__debug_str`, relocations, the accelerator table); twins, offsets, bucket counts, NUL search |
+| speed (CPU, `-j 1`, 7.4's build and this one alternating, 3 runs each; the machine shared with another agent's ELF runs, so only the ratio is meaningful) | `libLLVMCore.a` arm64 +23%, `libLLVMSupport.a` x86-64 +26%: slower. Pruning reads every giver's DWARF (7.4 read only survivors'); single-threaded on `libLLVMCore.a` it is 0.69 s of 1.56 s of giver rewriting (walking the DIEs 0.18 s; the rest lookups, strings, lists, accelerator tables, a second cut). Not yet won back |
+
+
 ## Decisions
 
 | | Decision |
@@ -3081,7 +3153,7 @@ finding units 25% slower); reading members largest first (no change: reading is 
   writer. (Done as `llvm-libtool-darwin` behaves: see [7.1](#darwin-archives-and-the-libtool-personality-71).)
 - **Status** (see [Phase 7 results](#phase-7-results)): archives (7.1), the
   object model (7.2), folding with `verify` (7.3), and FDEs, LSDAs, DWARF,
-  and `compare-images` (7.4) are done. There is no
+  and `compare-images` (7.4), and givers' DWARF pruned (7.5) are done. There is no
   Mac here: ld64 and ld-prime, Apple's `libtool`, and running the programs
   are untested; links are ld64.lld's, compared structurally.
 

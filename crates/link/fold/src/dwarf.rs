@@ -57,7 +57,12 @@
 //! synthesized member no debug information, as before, with the reason.
 
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
+
+// (Hash maps here are looked up, not walked in their order; the fast
+// hasher, as the engine's elsewhere.)
+type HashMap<K, V> = turbonop_hash::Map<K, V>;
+type HashSet<K> = turbonop_hash::Set<K>;
 
 use crate::elf::Dwo;
 
@@ -2067,7 +2072,7 @@ struct Keep<'c> {
     /// The type DIEs (pointers, references, qualifiers, typedefs, arrays,
     /// function types) kept for the moved code: what they name, the code
     /// names too.
-    via_code: std::collections::HashSet<usize>,
+    via_code: HashSet<usize>,
 }
 
 const SKELETON: u8 = 1;
@@ -2099,11 +2104,11 @@ fn declarable(dies: &[Die]) -> Vec<bool> {
 impl<'c> Keep<'c> {
     fn new(declarable: &'c [bool]) -> Self {
         Keep {
-            mark: HashMap::new(),
+            mark: HashMap::default(),
             work: Vec::new(),
             declarable,
             complete: false,
-            via_code: std::collections::HashSet::new(),
+            via_code: HashSet::default(),
         }
     }
 
@@ -2998,7 +3003,7 @@ impl<'s, 'p> Builder<'s, 'p> {
             }
         }
         // Each kept DIE's kept children.
-        let mut children: HashMap<usize, Vec<usize>> = HashMap::new();
+        let mut children: HashMap<usize, Vec<usize>> = HashMap::default();
         for &i in &kept {
             let d = &dies[i];
             if d.parent != u32::MAX {
@@ -3023,7 +3028,7 @@ impl<'s, 'p> Builder<'s, 'p> {
             p.put(0, 4, e);
             p.bytes.push(cu.address_size);
         }
-        let mut offsets: HashMap<usize, u64> = HashMap::new();
+        let mut offsets: HashMap<usize, u64> = HashMap::default();
         offsets.insert(0, p.bytes.len() as u64);
         let q = self.top_die(cu, &unit, !children_of(0).is_empty())?;
         p.append(q);
@@ -3705,7 +3710,7 @@ pub(crate) fn build(src: &Source<'_>, moved: &BTreeSet<usize>) -> R<Option<Out>>
         str: Strings::default(),
         line_str: Strings::default(),
         abbrevs: Vec::new(),
-        codes: HashMap::new(),
+        codes: HashMap::default(),
         files: Vec::new(),
     };
     if cu.version >= 5 {

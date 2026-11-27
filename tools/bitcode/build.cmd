@@ -35,7 +35,8 @@ rem Darwin's LTO object: bitcode in its wrapper (0x0B17C0DE).
 rem Bitcode embedded in each object format (-fembed-bitcode).
 "%CC%" %LINUX% -O1 -fembed-bitcode -c "%SRC%embed.c" -o embed-elf.o || exit /b 1
 "%CC%" --target=x86_64-apple-macos11 -O1 -fembed-bitcode -c "%SRC%embed.c" -o embed-macho.o || exit /b 1
-"%CC%" --target=x86_64-pc-windows-msvc -O1 -fembed-bitcode -c "%SRC%embed.c" -o embed-coff.obj || exit /b 1
+rem (No time stamp in the COFF header: the same object each build.)
+"%CC%" --target=x86_64-pc-windows-msvc -O1 -mno-incremental-linker-compatible -fembed-bitcode -c "%SRC%embed.c" -o embed-coff.obj || exit /b 1
 "%CC%" --target=wasm32-unknown-unknown -O1 -fembed-bitcode -c "%SRC%embed.c" -o embed-wasm.o || exit /b 1
 rem Two modules in one file, and an archive of bitcode members (and an
 rem ELF object with bitcode in it).

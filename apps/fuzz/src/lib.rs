@@ -87,6 +87,13 @@ fn is_core(_: &Path, d: &[u8]) -> bool {
 fn is_wasm(_: &Path, d: &[u8]) -> bool {
     starts(d, b"\0asm")
 }
+fn is_bitcode(p: &Path, d: &[u8]) -> bool {
+    turbonop_bitcode::is_bitcode(d)
+        || starts(d, b"DIAG")
+        || starts(d, b"RMRK")
+        // Objects and archives with bitcode in them.
+        || (p.components().any(|c| c.as_os_str() == "bitcode") && !turbonop_bitcode::embedded::find(d).is_empty())
+}
 fn is_legacy(_: &Path, d: &[u8]) -> bool {
     turbonop_mz::MzFile::parse(d)
         .ok()
@@ -302,6 +309,47 @@ fn wasm(data: &[u8], s: &Scratch) {
         );
     }
     unix("input-wasm.bin", data, s);
+}
+
+fn bitcode(data: &[u8], s: &Scratch) {
+    use turbonop_bitcode::dump::{DumpOptions, analyze};
+    let mut out = Vec::new();
+    let _ = analyze(data, &DumpOptions::default(), Some("input"), &mut out);
+    let opts = DumpOptions {
+        symbolic: false,
+        blockinfo: true,
+        binary_blobs: true,
+        ..DumpOptions::default()
+    };
+    let _ = analyze(data, &opts, None, &mut out);
+    let module = |data: &[u8]| {
+        let Ok(bc) = turbonop_bitcode::Bitcode::parse(data) else {
+            return;
+        };
+        for m in &bc.modules {
+            let _ = (m.metadata.compile_units(), m.metadata.subprograms());
+            for t in 0..u32::try_from(m.types.len().min(1 << 12)).unwrap_or(0) {
+                let _ = (m.types.name(t), m.types.body(t));
+            }
+            for f in &m.functions {
+                let _ = (m.ir_name(f.value), m.attribute_list(f.attributes));
+            }
+            for b in &m.bodies {
+                let _ = (b.subprogram(m), b.callees(), b.metadata(m).files());
+                for i in &b.instructions {
+                    let _ = (b.operands_of(i), i.ty.map(|t| b.type_name(m, t)));
+                }
+            }
+        }
+        if let Some(st) = bc.symtab {
+            let _ = (st.symbols(), st.comdats(), st.dependent_libraries());
+        }
+    };
+    module(data);
+    for e in turbonop_bitcode::embedded::find(data) {
+        module(e.data);
+    }
+    let _ = s;
 }
 
 fn pdb(data: &[u8], s: &Scratch) {
@@ -807,6 +855,12 @@ pub const TARGETS: &[Target] = &[
         about: "WebAssembly modules: size by every source, disassembly",
         seeds: is_wasm,
         run: wasm,
+    },
+    Target {
+        name: "bitcode",
+        about: "LLVM bitcode and other bitstreams: the dump, every module and body, embedded bitcode",
+        seeds: is_bitcode,
+        run: bitcode,
     },
     Target {
         name: "pdb",

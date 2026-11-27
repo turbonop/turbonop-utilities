@@ -329,6 +329,113 @@ fn coff_details(o: &turbonop_pe::PeFile<'_>) -> Vec<String> {
 
 /// What `hexcavator info` adds for an LTCG object: what its IL holds (`hexcavator
 /// ltcg` dumps it).
+/// A bitcode file's modules (triple, source, producer, data layout, what
+/// they define, their instructions), or another bitstream's blocks.
+fn bitcode_details(data: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(bc) = turbonop_bitcode::Bitcode::parse(data) else {
+        if let Ok(s) = turbonop_bitcode::Stream::new(data) {
+            out.push(format!("{} top-level blocks", s.top_blocks().len()));
+        }
+        return out;
+    };
+    let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    let several = bc.modules.len() > 1;
+    for (i, m) in bc.modules.iter().enumerate() {
+        let indent = if several {
+            out.push(format!("module {}:", i + 1));
+            "  "
+        } else {
+            ""
+        };
+        let mut line = format!("{indent}target {}", text(&m.triple));
+        if !m.source_filename.is_empty() {
+            line += &format!(", from {}", text(&m.source_filename));
+        }
+        if let Some(id) = &m.identification {
+            line += &format!(" ({})", text(&id.producer));
+        }
+        out.push(line);
+        if !m.datalayout.is_empty() {
+            out.push(format!("{indent}data layout: {}", text(&m.datalayout)));
+        }
+        let defined = m.functions.iter().filter(|f| !f.is_declaration).count();
+        let aliases = m
+            .aliases
+            .iter()
+            .filter(|a| a.kind == turbonop_bitcode::AliasKind::Alias)
+            .count();
+        out.push(format!(
+            "{indent}{defined} functions defined, {} declared; {} globals, {aliases} aliases, {} ifuncs, {} comdats",
+            m.functions.len() - defined,
+            m.globals.len(),
+            m.aliases.len() - aliases,
+            m.comdats.len()
+        ));
+        let instructions: usize = m.bodies.iter().map(|b| b.instructions.len()).sum();
+        let blocks: u64 = m.bodies.iter().map(|b| b.blocks).sum();
+        let bits: u64 = m.bodies.iter().map(|b| b.bits).sum();
+        out.push(format!(
+            "{indent}{instructions} instructions in {blocks} basic blocks; function bodies {} bytes of the module's {}",
+            bits / 8,
+            m.bits / 8
+        ));
+        let units = m.metadata.compile_units();
+        if let Some(u) = units.first() {
+            out.push(format!(
+                "{indent}debug information: {} compile unit{} ({})",
+                units.len(),
+                if units.len() == 1 { "" } else { "s" },
+                text(u.producer)
+            ));
+        }
+        if let Some(id) = m.summary {
+            out.push(format!(
+                "{indent}{} summary",
+                if id == turbonop_bitcode::tables::GLOBALVAL_SUMMARY_BLOCK_ID {
+                    "ThinLTO"
+                } else {
+                    "full LTO"
+                }
+            ));
+        }
+    }
+    if let Some(st) = bc.symtab {
+        // (The symbols LTO links: llvm-nm's and llvm-lto2's.)
+        use turbonop_bitcode::symtab::flags;
+        let symbols = st
+            .symbols()
+            .iter()
+            .filter(|s| s.has(flags::GLOBAL) && !s.has(flags::FORMAT_SPECIFIC))
+            .count();
+        out.push(format!("symbol table: {symbols} symbols"));
+    }
+    out
+}
+
+/// Bitcode an object embeds (`-fembed-bitcode`, fat LTO objects).
+fn embedded_bitcode(data: &[u8]) -> Vec<String> {
+    turbonop_bitcode::embedded::find(data)
+        .iter()
+        .filter(|e| e.container != turbonop_bitcode::embedded::Container::File)
+        .map(|e| {
+            let triple = turbonop_bitcode::Bitcode::parse(e.data)
+                .ok()
+                .and_then(|b| {
+                    b.modules
+                        .first()
+                        .map(|m| String::from_utf8_lossy(&m.triple).into_owned())
+                })
+                .unwrap_or_else(|| "unreadable".to_string());
+            format!(
+                "embedded bitcode: {}, {} bytes ({triple})",
+                String::from_utf8_lossy(e.section.as_deref().unwrap_or_default()),
+                e.data.len()
+            )
+        })
+        .collect()
+}
+
 fn ltcg_details(o: &turbonop_pe::ltcg::LtcgObject<'_>) -> Vec<String> {
     let mut out = Vec::new();
     if let Ok(g) = o.globals() {
@@ -867,7 +974,15 @@ fn info(args: &[String]) -> ExitCode {
                     detect::describe(&map),
                     map.len()
                 );
-                if let Ok(pe) = turbonop_pe::PeFile::parse_image(&map) {
+                let bitstream = turbonop_bitcode::is_bitcode(&map)
+                    || [b"DIAG", b"RMRK", b"CPCH"]
+                        .iter()
+                        .any(|m| map.starts_with(*m));
+                if bitstream {
+                    for line in bitcode_details(&map) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                } else if let Ok(pe) = turbonop_pe::PeFile::parse_image(&map) {
                     for line in pe_details(&pe) {
                         let _ = writeln!(out, "  {line}");
                     }
@@ -893,6 +1008,11 @@ fn info(args: &[String]) -> ExitCode {
                     }
                 } else {
                     for line in legacy_details(&map) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                }
+                if !bitstream {
+                    for line in embedded_bitcode(&map) {
                         let _ = writeln!(out, "  {line}");
                     }
                 }

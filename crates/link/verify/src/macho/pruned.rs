@@ -267,7 +267,8 @@ const SIG_DEPTH: u8 = 3;
 
 /// A DIE's signature, for aligning the trees: its abbreviation, tag, and
 /// the values pruning doesn't change (strings by content, constants,
-/// flags), and its references' targets' signatures, `depth` deep.
+/// flags), its ancestors' names, and its references' targets' signatures,
+/// `depth` deep.
 fn signature(t: &Tree<'_>, memo: &mut Vec<Option<u128>>, i: usize, depth: u8) -> u128 {
     if depth == SIG_DEPTH
         && let Some(s) = memo[i]
@@ -278,6 +279,20 @@ fn signature(t: &Tree<'_>, memo: &mut Vec<Option<u128>>, i: usize, depth: u8) ->
     let mut h = H128::new();
     h.u64(d.code);
     h.u64(u64::from(d.tag));
+    // (Its scope: its ancestors' names.)
+    let mut p = d.parent;
+    while p != NONE {
+        let a = &t.dies[p as usize];
+        for x in &a.attrs {
+            if x.name == DW_AT_NAME
+                && let Value::StrOffset(_, off) = x.value
+            {
+                h.bytes(t.string(off).unwrap_or(b"?"));
+            }
+        }
+        h.u64(u64::from(a.tag));
+        p = a.parent;
+    }
     for a in &d.attrs {
         match a.value {
             Value::StrOffset(_, off) => h.bytes(t.string(off).unwrap_or(b"?")),

@@ -46,6 +46,24 @@ fn main() -> ExitCode {
         eprintln!("turbolink : fatal error: no input files");
         return ExitCode::FAILURE;
     }
-    eprintln!("turbolink : fatal error: linking is not implemented yet");
-    ExitCode::FAILURE
+    let time = config.time;
+    let outcome = turbonop_linker::link::link(config);
+    for d in &outcome.diagnostics {
+        let kind = if d.warning { "warning" } else { "error" };
+        if d.code == 0 {
+            eprintln!("turbolink : {kind}: {}", d.message);
+        } else {
+            eprintln!("turbolink : {kind} LNK{}: {}", d.code, d.message);
+        }
+    }
+    if time {
+        for (name, t) in &outcome.times {
+            eprintln!("turbolink: {name}: {:.3} ms", t.as_secs_f64() * 1000.0);
+        }
+    }
+    if outcome.written {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }

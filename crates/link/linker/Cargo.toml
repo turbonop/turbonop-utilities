@@ -9,6 +9,12 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+turbonop-archive.workspace = true
+turbonop-core.workspace = true
+turbonop-hash.workspace = true
+turbonop-mmap.workspace = true
+turbonop-par.workspace = true
+turbonop-pe.workspace = true
 
 [dev-dependencies]
 turbonop-global-alloc.workspace = true

@@ -843,6 +843,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-bitcode"
+version = "0.0.7"
+dependencies = [
+ "turbonop-archive",
+ "turbonop-coff",
+ "turbonop-core",
+ "turbonop-elf",
+ "turbonop-global-alloc",
+ "turbonop-macho",
+ "turbonop-par",
+ "turbonop-wasm",
+]
+
+[[package]]
 name = "turbonop-code"
 version = "0.0.7"
 dependencies = [

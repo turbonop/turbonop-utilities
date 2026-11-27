@@ -273,6 +273,10 @@ pub(crate) struct Sect {
     pub size: u64,
 }
 
+/// A Mach-O debug section, for [`Source::macho`]: its name, bytes, and
+/// addresses (offset, size, symbol, addend).
+pub(crate) type MachoSection<'a> = (&'a [u8], Vec<u8>, Vec<(u64, u8, u32, i64)>);
+
 pub(crate) struct Source<'p> {
     symbols: Vec<Sym>,
     sections: Vec<Sect>,
@@ -1336,7 +1340,7 @@ impl<'p> Source<'p> {
     /// atoms (each real section's, as [`Source::atoms`]), and what each
     /// atom is ([`Sect`]); `owner` gives each atom's unit.
     pub(crate) fn macho(
-        debug: Vec<(&[u8], Vec<u8>, Vec<(u64, u8, u32, i64)>)>,
+        debug: Vec<MachoSection<'_>>,
         symbols: Vec<Sym>,
         atoms: Vec<Vec<(u64, u64, usize)>>,
         sections: Vec<Sect>,

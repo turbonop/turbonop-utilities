@@ -119,6 +119,10 @@ enum Base {
     Selected(u64),
 }
 
+/// `__debug_line`'s index, its table, and its sequences (each with its
+/// section, if known).
+type LinePlan = (usize, Table, Vec<(line::Sequence, Option<usize>)>);
+
 /// What is to be adjusted, read before the cut.
 pub(super) struct Plan {
     info: usize,
@@ -128,7 +132,7 @@ pub(super) struct Plan {
     high_pc: Option<(usize, usize, u64)>,
     /// `__debug_line`: its index, its table, and the table's sequences
     /// (each with its section, if known).
-    line: Option<(usize, Table, Vec<(line::Sequence, Option<usize>)>)>,
+    line: Option<LinePlan>,
     /// List sections: their index, address size, and fields.
     lists: Vec<(usize, u8, Vec<Field>)>,
     /// The relocations of the list sections and of `__debug_line`, taken
@@ -511,10 +515,13 @@ impl Plan {
     }
 }
 
+/// A line program's bytes, and those encoded again.
+pub type Programs = (Vec<u8>, Vec<u8>);
+
 /// Decodes and encodes again every line table of `o` (one per object, as
 /// [`Plan::read`] reads it): the program's bytes and the encoded ones. For checking
 /// the encoder against LLVM's on a corpus.
-pub fn line_round_trip(o: &Object<'_>) -> Result<Option<(Vec<u8>, Vec<u8>)>, &'static str> {
+pub fn line_round_trip(o: &Object<'_>) -> Result<Option<Programs>, &'static str> {
     let Some(plan) = Plan::read(o)? else {
         return Ok(None);
     };

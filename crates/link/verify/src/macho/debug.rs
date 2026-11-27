@@ -92,6 +92,29 @@ impl Locator {
     }
 }
 
+impl Locator {
+    /// Where `p` is once the atoms `lost` are gone: in a lost atom, the
+    /// start of the next atom kept (or its section's end).
+    pub(super) fn kept(&self, p: Place, lost: &BTreeSet<&[u8]>) -> Place {
+        let Place::Atom(k, _) = &p else { return p };
+        if !lost.contains(k.as_slice()) {
+            return p;
+        }
+        for (si, keys) in self.keys.iter().enumerate() {
+            if let Some(j) = keys.iter().position(|x| x == k) {
+                return keys[j + 1..]
+                    .iter()
+                    .find(|x| !lost.contains(x.as_slice()))
+                    .map_or_else(
+                        || Place::End(self.sections[si].2.clone()),
+                        |x| Place::Atom(x.clone(), 0),
+                    );
+            }
+        }
+        p
+    }
+}
+
 fn read_le(b: &[u8], at: usize, n: usize) -> Option<u64> {
     let s = b.get(at..at.checked_add(n)?)?;
     let mut v = [0u8; 8];
@@ -335,7 +358,14 @@ pub(super) fn check(
             && eo.iter().zip(&en).all(|(a, b)| {
                 a.0 == b.0
                     && match (&a.1, &b.1) {
-                        (Some((s, _)), None) => gone(s),
+                        // (What the original's range holds that stays.)
+                        (Some((s, z)), y) => {
+                            let (s, z) = (lo.kept(s.clone(), lost), lo.kept(z.clone(), lost));
+                            match y {
+                                None => s == z,
+                                Some(y) => (s, z) == *y,
+                            }
+                        }
                         (x, y) => x == y,
                     }
             });

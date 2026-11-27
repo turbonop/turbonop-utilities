@@ -996,7 +996,7 @@ struct UnitOut {
     variables: Vec<(String, u128)>,
     dead_variables: u64,
     /// (qualified name's hash, contents, (unit, DIE)).
-    types: Vec<(u128, u128, (u64, usize), (u128, Vec<u128>))>,
+    types: Vec<(u128, u128, (u64, usize), TypeParts)>,
     unread: u64,
 }
 
@@ -1011,6 +1011,10 @@ fn is_type(tag: u16) -> bool {
             | DW_TAG_BASE_TYPE
     )
 }
+
+/// A type definition's DIE (its canon's hash) and its members' subtrees'
+/// hashes, sorted.
+type TypeParts = (u128, Vec<u128>);
 
 /// A type definition's contents: its DIE, then its members (each member's
 /// subtree) as a set: their order says nothing (a member's offset is an
@@ -1346,6 +1350,7 @@ fn gather<'a>(p: &dyn Addresses, s: Sections<'a>) -> All<'a> {
         }
     }
     let units: Vec<(usize, BTreeSet<u64>)> = by_unit.into_iter().collect();
+    #[allow(clippy::type_complexity)]
     let found: Vec<Vec<(u64, (u128, Option<&'a [u8]>))>> =
         turbonop_par::map_balanced(&units, 1, |(k, offs)| {
             let Some(mut cu) = Cu::read(p, s, offsets[*k]) else {

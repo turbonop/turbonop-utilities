@@ -360,6 +360,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
     // A function's padding (after its end by its one unwind entry, up to
     // the next atom: the next function's alignment), with nothing in it,
     // isn't part of it.
+    #[allow(clippy::type_complexity)]
     let mut own: BTreeMap<(usize, usize), (Canon, bool, Vec<Vec<u8>>)> = BTreeMap::new();
     for (si, list) in atoms.iter().enumerate() {
         let s = sections[si];
@@ -601,7 +602,8 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
                         continue; // A CIE: checked with each FDE that uses it.
                     };
                     let mut h = Canon::new();
-                    let mut skip = vec![start + 4..start + 8];
+                    let mut skip: Vec<std::ops::Range<usize>> = Vec::new();
+                    skip.push(start + 4..start + 8);
                     let mut func = None;
                     for p in records.get(&(start, end)).map_or(&[][..], Vec::as_slice) {
                         let n = usize::from(p.size);

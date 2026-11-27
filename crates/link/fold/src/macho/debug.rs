@@ -157,6 +157,10 @@ pub(super) fn read<'p>(p: &Parsed<'p>) -> R<Debug<'p>> {
     Ok(Debug { src, unit_atom })
 }
 
+/// A debug section's references to fill in: (offset, size, target,
+/// addend).
+pub(super) type Refs = Vec<(u64, usize, Target, i64)>;
+
 /// The debug sections of `out`, to add to a synthesized member: each
 /// section, and its references (offset, size, target, addend) to fill in
 /// once the member's sections have addresses ([`fill`]). `like` gives a
@@ -166,7 +170,7 @@ pub(super) fn read<'p>(p: &Parsed<'p>) -> R<Debug<'p>> {
 pub(super) fn sections(
     out: &Out,
     like: &dyn Fn(&[u8]) -> Option<(u32, u32)>,
-) -> Vec<(Section<'static>, Vec<(u64, usize, Target, i64)>)> {
+) -> Vec<(Section<'static>, Refs)> {
     let mut v = Vec::new();
     for s in &out.sections {
         if s.bytes.is_empty() && s.rels.is_empty() {

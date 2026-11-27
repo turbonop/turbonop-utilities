@@ -153,6 +153,9 @@ impl Fix {
     }
 }
 
+/// A function's or datum's extent: its key, address, size, and whether code.
+type Region = (Box<[u8]>, u64, u64, bool);
+
 /// One linked image, read for comparison.
 pub(crate) struct Image<'a> {
     mach: MachO<'a>,
@@ -991,8 +994,7 @@ pub fn compare(a: &[u8], b: &[u8], dsyms: Option<(&[u8], &[u8])>) -> Result<Repo
 }
 
 fn contents(a: &Image<'_>, b: &Image<'_>, rep: &mut Report) {
-    let by_key: BTreeMap<&[u8], &(Box<[u8]>, u64, u64, bool)> =
-        b.regions.iter().map(|r| (&*r.0, r)).collect();
+    let by_key: BTreeMap<&[u8], &Region> = b.regions.iter().map(|r| (&*r.0, r)).collect();
     let keys_a: BTreeSet<&[u8]> = a.regions.iter().map(|r| &*r.0).collect();
     let mut pairs = Vec::with_capacity(a.regions.len());
     for r in &a.regions {

@@ -1515,7 +1515,7 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
         Giver(usize),
     }
     enum Done<'p> {
-        Source(Result<debug::Debug<'p>, &'static str>),
+        Source(Box<Result<debug::Debug<'p>, &'static str>>),
         Giver(Option<Rewritten>),
     }
     let jobs: Vec<Job> = debug_members
@@ -1524,7 +1524,7 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
         .chain((0..parsed.len()).map(Job::Giver))
         .collect();
     let done: Vec<Done<'_>> = turbonop_par::map_balanced(&jobs, 1, |j| match *j {
-        Job::Source(m) => Done::Source(debug::read(&parsed[m])),
+        Job::Source(m) => Done::Source(Box::new(debug::read(&parsed[m]))),
         Job::Giver(m) => {
             let gone: Vec<usize> = (0..parsed[m].units.len())
                 .filter(|&k| folds[m][k])
@@ -1540,7 +1540,7 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
     let mut rewritten: Vec<Option<Rewritten>> = Vec::with_capacity(parsed.len());
     for d in done {
         match d {
-            Done::Source(s) => sources.push(s),
+            Done::Source(s) => sources.push(*s),
             Done::Giver(g) => rewritten.push(g),
         }
     }
@@ -1667,7 +1667,7 @@ fn pad_to(b: &mut Vec<u8>, len: usize, flags: u32, cputype: u32) {
     while b.len() < len {
         match cputype {
             CPU_TYPE_X86_64 if code => b.push(0x90),
-            CPU_TYPE_ARM64 if code && b.len() % 4 == 0 && len - b.len() >= 4 => {
+            CPU_TYPE_ARM64 if code && b.len().is_multiple_of(4) && len - b.len() >= 4 => {
                 b.extend_from_slice(&[0x1f, 0x20, 0x03, 0xd5]);
             }
             _ => b.push(0),
@@ -2065,7 +2065,7 @@ fn build_synth(
             .count(),
         ..SynthDebug::default()
     };
-    let mut debug_secs: Vec<(usize, Vec<(u64, usize, crate::dwarf::Target, i64)>)> = Vec::new();
+    let mut debug_secs: Vec<(usize, debug::Refs)> = Vec::new();
     if stats.described > 0 {
         let built = match debug {
             _ if s.units.iter().any(|&(m, _)| m != m0) => Err("units of more than one member"),

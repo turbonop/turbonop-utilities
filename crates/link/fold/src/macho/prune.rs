@@ -309,8 +309,9 @@ fn walk(u: &Unit<'_>, abbrevs: &Abbrevs) -> R<(Vec<Die>, Vec<At>)> {
                     fix,
                 });
             };
+            // (A reference or section offset: 32 bits.)
             let n = match v {
-                Value::Uint(n) => u32::try_from(n).map_err(|_| bad)?,
+                Value::Uint(n) => u32::try_from(n).unwrap_or(u32::MAX),
                 _ => 0,
             };
             match form {

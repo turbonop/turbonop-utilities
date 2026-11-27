@@ -549,7 +549,8 @@ impl<'a> Image<'a> {
             let at = self.file_offset(c.rva) as usize + 4;
             out[at..at + 32].copy_from_slice(&hash);
             let ts = [hash[28], hash[29], hash[30], hash[31]];
-            out[0x88..0x8C].copy_from_slice(&ts);
+            let pe = self.l.rich.2 as usize;
+            out[pe + 8..pe + 12].copy_from_slice(&ts);
             if let Some(d) = self
                 .l
                 .chunks
@@ -569,34 +570,17 @@ impl<'a> Image<'a> {
         let c: &Config = &self.r.config;
         let machine = c.machine.unwrap_or(Machine::X64);
         let is64 = machine.is_64();
-        // The DOS header and its stub ("This program cannot be run in DOS
-        // mode."), the PE header at 0x80.
-        const STUB: [u8; 64] = [
-            0x0E, 0x1F, 0xBA, 0x0E, 0x00, 0xB4, 0x09, 0xCD, 0x21, 0xB8, 0x01, 0x4C, 0xCD, 0x21,
-            0x54, 0x68, 0x69, 0x73, 0x20, 0x70, 0x72, 0x6F, 0x67, 0x72, 0x61, 0x6D, 0x20, 0x63,
-            0x61, 0x6E, 0x6E, 0x6F, 0x74, 0x20, 0x62, 0x65, 0x20, 0x72, 0x75, 0x6E, 0x20, 0x69,
-            0x6E, 0x20, 0x44, 0x4F, 0x53, 0x20, 0x6D, 0x6F, 0x64, 0x65, 0x2E, 0x0D, 0x0D, 0x0A,
-            0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        ];
-        let mut w = Writer { out, at: 0 };
-        w.bytes(b"MZ");
-        w.u16(0x90); // bytes on the last page
-        w.u16(3); // pages
-        w.u16(0); // relocations
-        w.u16(4); // header paragraphs
-        w.u16(0);
-        w.u16(0xFFFF);
-        w.u16(0); // ss
-        w.u16(0xB8); // sp
-        w.u16(0); // checksum
-        w.u16(0); // ip
-        w.u16(0); // cs
-        w.u16(0x40); // relocation table
-        w.u16(0); // overlay
-        w.at = 0x3C;
-        w.u32(0x80);
-        w.bytes(&STUB);
-        debug_assert_eq!(w.at, 0x80);
+        // The DOS header and its stub, the Rich header, the PE header.
+        let dos = dos_header();
+        out[..0x80].copy_from_slice(&dos);
+        // The Rich header, then the PE header after it.
+        let (entries, key, pe) = &self.l.rich;
+        crate::rich::write(&mut out[0x80..], entries, *key);
+        out[0x3C..0x40].copy_from_slice(&pe.to_le_bytes());
+        let mut w = Writer {
+            out,
+            at: *pe as usize,
+        };
         w.bytes(b"PE\0\0");
 
         // The file header.
@@ -830,6 +814,26 @@ impl<'a> Image<'a> {
         }
         None
     }
+}
+
+/// The DOS header and stub link.exe writes ("This program cannot be run
+/// in DOS mode."), with e_lfanew zero (it is set once the Rich header's
+/// size is known; the Rich header's checksum covers these bytes so).
+pub fn dos_header() -> [u8; 0x80] {
+    let mut d = [0u8; 0x80];
+    let head: [u16; 14] = [0x5A4D, 0x90, 3, 0, 4, 0, 0xFFFF, 0, 0xB8, 0, 0, 0, 0x40, 0];
+    for (i, v) in head.iter().enumerate() {
+        d[i * 2..i * 2 + 2].copy_from_slice(&v.to_le_bytes());
+    }
+    const STUB: [u8; 64] = [
+        0x0E, 0x1F, 0xBA, 0x0E, 0x00, 0xB4, 0x09, 0xCD, 0x21, 0xB8, 0x01, 0x4C, 0xCD, 0x21, 0x54,
+        0x68, 0x69, 0x73, 0x20, 0x70, 0x72, 0x6F, 0x67, 0x72, 0x61, 0x6D, 0x20, 0x63, 0x61, 0x6E,
+        0x6E, 0x6F, 0x74, 0x20, 0x62, 0x65, 0x20, 0x72, 0x75, 0x6E, 0x20, 0x69, 0x6E, 0x20, 0x44,
+        0x4F, 0x53, 0x20, 0x6D, 0x6F, 0x64, 0x65, 0x2E, 0x0D, 0x0D, 0x0A, 0x24, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00,
+    ];
+    d[0x40..].copy_from_slice(&STUB);
+    d
 }
 
 /// The image's base: `/BASE`, or the default (0x140000000 for a 64-bit

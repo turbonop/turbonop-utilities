@@ -159,8 +159,17 @@ lists every COFF group with its address and size) and by experiment:
   otherwise returns 0 (so `qsort`, not stable, decides). To match it:
   the same array, flags, and `qsort` algorithm (the UCRT's source is in
   the Windows SDK). Not done yet.
-- **Still different** (to do): the Rich header (from each input's
-  `@comp.id` and link.exe's own; its entries' order isn't obvious); the
+- **The Rich header** (link.exe's `CbBuildProdidBlock`): link.exe's own
+  entry (0x102, build 37029) first in a list to whose front each new
+  `@comp.id` goes, walking the command line's objects, then each library's
+  members in load order (an input without a `@comp.id`, and every import
+  object, is 0x00010000); the checksum is the stub's length, its bytes
+  rotated left by their offsets (`e_lfanew` zero), and each entry's ID
+  rotated left by its count; then 1 to 3 empty entries'`(checksum >> 5)` %
+  3 + 1`, as many as fit in the headers without enlarging them.
+- **Status:** a `/MD` C hello world is link.exe's image byte for byte,
+  time stamps aside (a test checks it).
+- **Still different** (to do): the
   `/Brepro` hash (it depends on the output's contents, not its name or
   the options, but isn't a plain SHA-1/256/512 or MD5 of the file with
   its time stamps and hash zeroed); the imports' order within a DLL (the

@@ -207,6 +207,9 @@ pub struct Object {
     /// `@feat.00`'s value (`/SAFESEH`, `/GUARD:CF`, `/GUARD:EHCONT`
     /// compatibility bits), if present.
     pub feat_00: Option<u32>,
+    /// `@comp.id`'s value: the tool that made the object (its product
+    /// in the high 16 bits, its build in the low), for the Rich header.
+    pub comp_id: Option<u32>,
 }
 
 /// An object that can't be read.
@@ -279,6 +282,7 @@ impl Object {
         // Sections whose definition has been seen, and whose leader not yet.
         let mut awaiting_leader = vec![false; sections.len()];
         let mut feat_00 = None;
+        let mut comp_id = None;
         let section_index = |n: i32| -> Option<u32> {
             let i = u32::try_from(n).ok()?.checked_sub(1)?;
             (usize::try_from(i).ok()? < headers.len()).then_some(i)
@@ -316,6 +320,8 @@ impl Object {
                         -1 => {
                             if name == b"@feat.00" {
                                 feat_00 = Some(s.value);
+                            } else if name == b"@comp.id" {
+                                comp_id = Some(s.value);
                             }
                             SymbolKind::Absolute(s.value)
                         }
@@ -384,6 +390,7 @@ impl Object {
             comdat_leaders,
             directives,
             feat_00,
+            comp_id,
         })
     }
 }

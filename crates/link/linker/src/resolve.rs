@@ -65,6 +65,9 @@ pub struct File {
     /// import tables itself; these are loaded as link.exe loads them, for
     /// their place in the order of the tables' contents.
     pub idata: Option<IdataPiece>,
+    /// The library it was loaded from (its index among the libraries, in
+    /// the order they were opened), if any.
+    pub library: Option<u32>,
 }
 
 /// One of an import library's own objects.
@@ -271,6 +274,8 @@ struct Linker {
     /// Whether the load configuration has been asked for (after the
     /// rest of the search).
     load_config_wanted: bool,
+    /// The library the file being added comes from.
+    loading_from: Option<u32>,
     /// Globals that may want a library's definition: every new global,
     /// until it is seen not to (a definition is never taken back, so a
     /// global dropped from here never needs one again).
@@ -306,6 +311,9 @@ impl Linker {
     fn add(&mut self, name: String, kind: LoadedKind) {
         let start = std::time::Instant::now();
         self.add_file(name, kind);
+        if let Some(f) = self.files.last_mut() {
+            f.library = self.loading_from;
+        }
         self.t_add += start.elapsed();
     }
 
@@ -367,6 +375,7 @@ impl Linker {
                 self.files.push(File {
                     name,
                     idata,
+                    library: None,
                     kind: FileKind::Object {
                         object,
                         globals,
@@ -397,6 +406,7 @@ impl Linker {
                 self.files.push(File {
                     name,
                     idata: None,
+                    library: None,
                     kind: FileKind::Import {
                         import,
                         address,
@@ -734,7 +744,11 @@ impl Linker {
                     }
                     self.libraries[lib].loaded.insert(member);
                     match parsed.remove(&member) {
-                        Some(Ok((name, kind))) => self.add(name, kind),
+                        Some(Ok((name, kind))) => {
+                            self.loading_from = Some(crate::n32(lib));
+                            self.add(name, kind);
+                            self.loading_from = None;
+                        }
                         Some(Err(m)) => self.errors.push(LinkError::error(1136, m)),
                         None => {}
                     }
@@ -889,6 +903,7 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         log: Vec::new(),
         pending: Vec::new(),
         load_config_wanted: false,
+        loading_from: None,
         resources: Vec::new(),
         t_index: std::time::Duration::ZERO,
         t_members: std::time::Duration::ZERO,

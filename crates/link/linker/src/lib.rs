@@ -20,6 +20,7 @@ pub mod msqsort;
 pub mod object;
 pub mod resolve;
 pub mod resources;
+pub mod rich;
 pub mod write;
 
 /// `n` (a count or size the link computed) as a `u32`: an image and what

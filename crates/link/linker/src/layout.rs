@@ -134,6 +134,9 @@ pub struct Layout {
     pub exports: Option<crate::exports::ExportTable>,
     /// The resources, if there are any.
     pub resources: Option<crate::resources::Rsrc>,
+    /// The Rich header: its entries, its checksum, and the PE header's
+    /// offset after it.
+    pub rich: (Vec<(u32, u32)>, u32, u32),
 }
 
 /// The output section an input section's name goes to: the name without
@@ -958,7 +961,20 @@ pub fn layout(
     } else {
         224
     };
-    let headers = 0x80 + 4 + 20 + optional + 40 * (crate::n32(sections.len()) + 1);
+    // The Rich header (its size depends on its checksum and on the room
+    // the headers have), then the PE header.
+    let rich_entries = crate::rich::entries(r);
+    let key = crate::rich::key(&crate::write::dos_header(), &rich_entries);
+    let header_sections = sections.len() + usize::from(!config.fixed);
+    let padding = crate::rich::padding(
+        key,
+        rich_entries.len(),
+        header_sections,
+        optional == 240,
+        file_align,
+    );
+    let pe = crate::rich::pe_offset(rich_entries.len(), padding);
+    let headers = pe + 4 + 20 + optional + 40 * crate::n32(header_sections);
     let headers_size = align_up(headers, file_align);
     let mut l = Layout {
         chunks,
@@ -979,6 +995,7 @@ pub fn layout(
         base_relocations: Vec::new(),
         exports,
         resources,
+        rich: (rich_entries, key, pe),
     };
     l.assign_addresses();
     l

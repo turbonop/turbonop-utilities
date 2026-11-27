@@ -193,3 +193,68 @@ fn dll_with_exports_and_its_import_library() {
     assert_eq!(run(&dir, "use-tl2.exe"), want);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `image` with its time stamps zeroed: the file header's and each debug
+/// directory entry's (they differ between two links run apart).
+fn without_time_stamps(mut image: Vec<u8>) -> Vec<u8> {
+    let u32_at = |d: &[u8], o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+    let pe = u32_at(&image, 0x3C) as usize;
+    image[pe + 8..pe + 12].fill(0);
+    let optional = pe + 24;
+    let sections = u16::from_le_bytes([image[pe + 6], image[pe + 7]]) as usize;
+    let headers = optional + u16::from_le_bytes([image[pe + 20], image[pe + 21]]) as usize;
+    let (rva, size) = (
+        u32_at(&image, optional + 112 + 48),
+        u32_at(&image, optional + 112 + 52),
+    );
+    for s in 0..sections {
+        let h = headers + 40 * s;
+        let (va, raw, ptr) = (
+            u32_at(&image, h + 12),
+            u32_at(&image, h + 16),
+            u32_at(&image, h + 20),
+        );
+        if rva >= va && rva < va + raw {
+            let at = (ptr + rva - va) as usize;
+            for e in 0..(size / 28) as usize {
+                image[at + 28 * e + 4..at + 28 * e + 8].fill(0);
+            }
+        }
+    }
+    image
+}
+
+/// A C program with the dynamic CRT: turbolink's image is link.exe's, byte
+/// for byte (time stamps aside): its Rich header, sections, groups, import
+/// tables (in qsort's order), and debug directory.
+#[test]
+fn c_with_the_dynamic_crt_is_link_exes_image() {
+    let Some(vcvars) = vcvars() else {
+        eprintln!("no Visual C++ tools: not checked");
+        return;
+    };
+    let dir = scratch("same_md");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/programs/hello.c");
+    let tl = env!("CARGO_BIN_EXE_turbolink");
+    in_vs(
+        &vcvars,
+        &dir,
+        &[
+            format!(
+                "cl /nologo /c /O2 /MD /Fohello.obj \"{}\" >nul",
+                src.display()
+            ),
+            "link /nologo /OUT:link.exe hello.obj".to_owned(),
+            format!("\"{tl}\" /nologo /OUT:turbolink.exe hello.obj"),
+        ],
+    );
+    let theirs = without_time_stamps(std::fs::read(dir.join("link.exe")).unwrap());
+    let ours = without_time_stamps(std::fs::read(dir.join("turbolink.exe")).unwrap());
+    assert_eq!(theirs.len(), ours.len());
+    let differ: Vec<usize> = (0..ours.len())
+        .filter(|&i| ours[i] != theirs[i])
+        .take(16)
+        .collect();
+    assert!(differ.is_empty(), "bytes differ at {differ:x?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

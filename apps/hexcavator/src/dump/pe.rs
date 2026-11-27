@@ -118,6 +118,9 @@ pub fn dump(
     if options.symbols {
         super::coff_symbols::dump(out, file)?;
     }
+    if options.coffgroups && file.kind() == FileKind::Image {
+        super::debug::coff_groups(out, file)?;
+    }
 
     let alignment = file
         .optional_header()

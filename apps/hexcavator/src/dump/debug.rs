@@ -165,3 +165,48 @@ fn ex_dll_characteristics(out: &mut dyn Write, file: &PeFile<'_>, flags: u32) ->
     }
     Ok(())
 }
+
+/// The POGO debug entry's COFF groups (hexcavator's own part; dumpbin
+/// doesn't decode them): each group the linker laid out, by name, with its
+/// address, size, and section. link.exe writes the entry for every image
+/// it links (not only PGO's), so it says how link.exe laid out the image.
+pub fn coff_groups(out: &mut dyn Write, file: &PeFile<'_>) -> io::Result<()> {
+    for entry in file.debug_entries() {
+        let Some(pogo) = entry.pogo() else { continue };
+        let groups: Vec<_> = pogo.groups().collect();
+        writeln!(
+            out,
+            "\n  COFF Groups ({} groups{})\n",
+            groups.len(),
+            match pogo_kind(pogo.signature) {
+                Some(kind) => format!(", {kind}"),
+                None if pogo.signature != 0 => format!(", signature {:08X}", pogo.signature),
+                None => String::new(),
+            }
+        )?;
+        writeln!(out, "         RVA     Size  Section   Name")?;
+        writeln!(out, "    -------- -------- --------- ----")?;
+        for g in groups {
+            let rva = g.rva.0;
+            let section = file
+                .sections()
+                .iter()
+                .find(|s| {
+                    let start = s.virtual_address.get();
+                    rva >= start
+                        && rva
+                            < start
+                                .saturating_add(s.virtual_size.get().max(s.size_of_raw_data.get()))
+                })
+                .map(|s| String::from_utf8_lossy(file.section_name(s)).into_owned())
+                .unwrap_or_default();
+            writeln!(
+                out,
+                "    {rva:08X} {:8X} {section:9} {}",
+                g.size,
+                String::from_utf8_lossy(g.name)
+            )?;
+        }
+    }
+    Ok(())
+}

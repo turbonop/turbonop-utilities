@@ -162,6 +162,31 @@ symbols with their versions; Mach-O binds, re-exports followed). System
 libraries are leaves unless `-system`. `tools/deps` builds the test's
 images, each platform's with a system of stand-ins.
 
+### Two images, or two PDBs, compared
+
+```
+hexcavator diff a.exe b.exe                      # every byte that differs and what holds it, then why: each structure, each function
+hexcavator diff -map a.map -map2 b.map a.exe b.exe   # names from the linkers' maps, when there are no PDBs
+hexcavator diff -only imports,functions a.dll b.dll  # only some parts
+hexcavator diff a.pdb b.pdb                      # whether they say the same (types compared as graphs, not by index)
+```
+
+For one linker's output against another's. Images: each range of
+differing bytes attributed to what holds it (a header's field, a section
+header's, a data directory, a function), then the headers, sections, data
+directories, imports, exports, base relocations, exception data, the load
+configuration and its guard tables, TLS, resources, the debug directory,
+the COFF groups (the POGO debug entry: how link.exe laid the image out,
+group by group; `hexcavator dump -coffgroups` lists them), and the Rich
+header compared, and the functions and data matched by name:
+identical, different only where they refer to what moved, only in their
+padding, folded differently, or different (from where). PDBs: what they
+say, not their bytes: types and ids equal if their records are equal with
+each index replaced by what it names, modules, section contributions, the
+section map, each module's symbols (their offsets aside), lines,
+checksums, and inlinee lines, the globals, the publics, the string table.
+Exits 0 if they are the same, 1 if not; `-json` for scripts.
+
 ### Signatures
 
 ```

@@ -49,6 +49,8 @@ usage: hexcavator dump [options] <file>...
 
 options (dumpbin-style; write as /name, -name, or --name):
   /all          everything below
+  /coffgroups   the COFF groups the linker laid out (the POGO debug entry's;
+                hexcavator's own: dumpbin doesn't decode them)
   /disasm       disassembly of code sections
   /exports      exported functions
   /headers      file, optional, and section headers
@@ -76,6 +78,7 @@ llvm-objdump's --macho --dyld-info lists them, with --dyld-info.";
 /// Options that may be written with a leading `/` as well as `-`/`--`.
 const OPTIONS: &[&str] = &[
     "all",
+    "coffgroups",
     "disasm",
     "exports",
     "headers",
@@ -103,6 +106,8 @@ struct Options {
     pdata: bool,
     unwindinfo: bool,
     tls: bool,
+    /// The POGO debug entry's COFF groups.
+    coffgroups: bool,
     /// The COFF symbol table (and, of other formats, their symbols).
     symbols: bool,
     /// Do not look for the image's PDB.
@@ -132,6 +137,7 @@ impl Options {
                 "/unwindinfo (hexcavator dwarf -frames shows DWARF's call frames)",
             ),
             (self.tls, "/tls"),
+            (self.coffgroups, "/coffgroups"),
             (self.loadconfig, "/loadconfig"),
             (self.nopdb, "/nopdb"),
         ]
@@ -161,6 +167,7 @@ pub fn run(args: &[String]) -> ExitCode {
                 "pdata" => options.pdata = true,
                 "unwindinfo" => options.unwindinfo = true,
                 "tls" => options.tls = true,
+                "coffgroups" => options.coffgroups = true,
                 "symbols" => options.symbols = true,
                 "nopdb" => options.nopdb = true,
                 "all" => {
@@ -172,6 +179,7 @@ pub fn run(args: &[String]) -> ExitCode {
                     options.relocations = true;
                     options.unwindinfo = true;
                     options.tls = true;
+                    options.coffgroups = true;
                     options.symbols = true;
                     options.disasm = true;
                 }

@@ -422,7 +422,10 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
             let mut names = Vec::new();
             for &i in syms {
                 let y = &o.symbols[i];
-                h.bytes(&y.name);
+                // (An LSDA's local label is numbered by its object.)
+                if Some(si) != lsda || y.n_type & N_EXT != 0 {
+                    h.bytes(&y.name);
+                }
                 h.u64(u64::from(y.n_type) | u64::from(y.n_desc) << 8);
                 h.u64(y.n_value.wrapping_sub(s.addr) - range.start);
                 if y.n_type & N_EXT != 0 {

@@ -62,8 +62,11 @@ def link(tool, arch, libdir, out):
 
 
 def dsym(image):
-    """Makes the image's dSYM (`<image>.dSYM`), as a Mac build would."""
-    subprocess.run(NICE + [str(B / "dsymutil"), "--verify-dwarf=none", image], capture_output=True, check=True)
+    """Makes the image's dSYM (`<image>.dSYM`), as a Mac build would (with the
+    classic linker, which Apple's dsymutil uses; this LLVM's defaults to its
+    parallel one)."""
+    subprocess.run(NICE + [str(B / "dsymutil"), "--linker=classic", "--verify-dwarf=none", image],
+                   capture_output=True, check=True)
 
 
 def compare(tool, arch, kind, folded, tmp, turbolib):

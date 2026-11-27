@@ -117,13 +117,40 @@ struct Label {
     region: bool,
 }
 
-/// A fixup in an image, as text: a rebased pointer by what its target
-/// names, a bound one by its import.
+/// A fixup in an image: a rebased pointer (its target), or a bound one
+/// (its import, addend, and whether weak).
 #[derive(Clone, Debug)]
 struct Fix {
     addr: u64,
     width: u8,
-    text: String,
+    rebase: Option<u64>,
+    bind: Option<(Box<[u8]>, i64, bool)>,
+}
+
+impl Fix {
+    /// The fixup as text: a rebased pointer by what its target names, a
+    /// bound one by its import.
+    fn text(&self, img: &Image<'_>) -> String {
+        match (&self.rebase, &self.bind) {
+            (Some(target), _) => {
+                // (arm64's type-name pointers of non-unique RTTI have the
+                // top bit set.)
+                let top = target & (1 << 63);
+                let t = target & !(1 << 63);
+                format!(
+                    "rebase {}{}",
+                    img.render_of(t),
+                    if top != 0 { " | 1 << 63" } else { "" }
+                )
+            }
+            (None, Some((symbol, addend, weak))) => format!(
+                "bind {}{addend:+}{}",
+                show(symbol),
+                if *weak { " weak" } else { "" }
+            ),
+            (None, None) => String::new(),
+        }
+    }
 }
 
 /// One linked image, read for comparison.
@@ -143,6 +170,10 @@ pub(crate) struct Image<'a> {
     symbols: Vec<(Box<[u8]>, bool, String)>,
     /// Bound import names (each with whether it is a weak import).
     imports: BTreeSet<(Box<[u8]>, bool)>,
+    /// Each datum's extent bound, from both images (the shorter of its
+    /// two extents to the next symbol: it holds the whole datum): past it,
+    /// an address is named by its contents.
+    limits: BTreeMap<Box<[u8]>, u64>,
 }
 
 fn le(b: &[u8], at: usize, n: usize) -> Option<u64> {
@@ -325,12 +356,8 @@ impl<'a> Image<'a> {
             regions: Vec::new(),
             symbols: Vec::new(),
             imports: BTreeSet::new(),
+            limits: BTreeMap::new(),
         };
-        if std::env::var_os("TURBOLIB_MACHO_LABELS").is_some() {
-            for l in &img.labels {
-                eprintln!("{:#x} {} {}", l.addr, l.rank, show(&l.name));
-            }
-        }
         img.index();
         // LSDAs named by their functions (once those have names).
         if !pending_lsda.is_empty() {
@@ -353,14 +380,18 @@ impl<'a> Image<'a> {
                 .sort_by(|a, b| (a.addr, a.rank, &a.name).cmp(&(b.addr, b.rank, &b.name)));
             img.index();
         }
-        // Symbols, as a set.
+        // Symbols, as a set (an LSDA's by its function: its own name is
+        // numbered by its object).
         for y in &defined {
             let si = usize::from(y.n_sect) - 1;
-            img.symbols.push((
-                y.name.into(),
-                y.n_type & N_EXT != 0,
-                img.sections[si].full_name(),
-            ));
+            let name: Box<[u8]> = match lsda_of.get(&y.n_value) {
+                Some(&f) if y.n_type & N_EXT == 0 => {
+                    format!("lsda:{}", img.render(f)).into_bytes().into()
+                }
+                _ => y.name.into(),
+            };
+            img.symbols
+                .push((name, y.n_type & N_EXT != 0, img.sections[si].full_name()));
         }
         img.symbols.sort();
         // Regions: each symbol's extent, to the next symbol of its section.
@@ -393,18 +424,8 @@ impl<'a> Image<'a> {
         // Fixups.
         let mut fixes = Vec::new();
         for f in img.mach.fixups() {
-            let text = match f.kind {
-                FixupKind::Rebase { target } => {
-                    // (arm64's type-name pointers of non-unique RTTI have the
-                    // top bit set.)
-                    let top = target & (1 << 63);
-                    let t = target & !(1 << 63);
-                    format!(
-                        "rebase {}{}",
-                        img.render(t),
-                        if top != 0 { " | 1 << 63" } else { "" }
-                    )
-                }
+            let (rebase, bind) = match f.kind {
+                FixupKind::Rebase { target } => (Some(target), None),
                 FixupKind::Bind {
                     symbol,
                     addend,
@@ -412,17 +433,14 @@ impl<'a> Image<'a> {
                     ..
                 } => {
                     img.imports.insert((symbol.into(), weak));
-                    format!(
-                        "bind {}{addend:+}{}",
-                        show(symbol),
-                        if weak { " weak" } else { "" }
-                    )
+                    (None, Some((symbol.into(), addend, weak)))
                 }
             };
             fixes.push(Fix {
                 addr: f.addr,
                 width: f.width,
-                text,
+                rebase,
+                bind,
             });
         }
         fixes.sort_by_key(|f| f.addr);
@@ -469,10 +487,14 @@ impl<'a> Image<'a> {
         // past a local one's start, in data, may be data no symbol names,
         // a literal or a table, whose neighbor follows the layout: named
         // by its contents.)
-        if l.addr < s.addr
-            || (l.rank == 3 && addr != l.addr)
-            || (l.rank == 1 && addr != l.addr && !s.code())
-        {
+        let past = !s.code()
+            && addr != l.addr
+            && l.rank <= 1
+            && match self.limits.get(&l.name) {
+                Some(&lim) => addr - l.addr >= lim,
+                None => l.rank == 1,
+            };
+        if l.addr < s.addr || (l.rank == 3 && addr != l.addr) || past {
             return self.content_name(s, addr);
         }
         let off = u32::try_from(addr - l.addr).ok()?;
@@ -624,7 +646,7 @@ fn masked<'a>(img: &Image<'_>, addr: u64, bytes: &'a [u8]) -> (Cow<'a, [u8]>, Ve
         let at = (f.addr - addr) as usize;
         let end = (at + usize::from(f.width)).min(out.len());
         out[at..end].fill(0);
-        list.push(format!("+{at:#x} {}", f.text));
+        list.push(format!("+{at:#x} {}", f.text(img)));
     }
     (Cow::Owned(out), list)
 }
@@ -779,7 +801,7 @@ fn initializers(img: &Image<'_>) -> Vec<String> {
             let at = s.addr + 8 * k;
             let v = le(s.data, 8 * k as usize, 8).unwrap_or(0);
             out.push(match img.fixes_in(at, 8).first() {
-                Some(f) => f.text.clone(),
+                Some(f) => f.text(img),
                 None => img.render_of(v),
             });
         }
@@ -832,7 +854,7 @@ fn unwind(img: &Image<'_>) -> BTreeMap<String, String> {
                     let at = img.base + u64::from(o);
                     img.fixes_in(at, 8)
                         .first()
-                        .map_or_else(|| img.render_of(at), |f| f.text.clone())
+                        .map_or_else(|| img.render_of(at), |f| f.text(img))
                 })
                 .unwrap_or_default()
         } else {
@@ -919,7 +941,22 @@ pub fn compare(a: &[u8], b: &[u8], dsyms: Option<(&[u8], &[u8])>) -> Result<Repo
         || Image::read(a, "the first image"),
         || Image::read(b, "the second image"),
     );
-    let (ia, ib) = (ia?, ib?);
+    let (mut ia, mut ib) = (ia?, ib?);
+    // Data's extent bounds, from both.
+    let sizes: BTreeMap<&[u8], u64> = ib
+        .regions
+        .iter()
+        .filter(|r| !r.3)
+        .map(|r| (&*r.0, r.2))
+        .collect();
+    let limits: BTreeMap<Box<[u8]>, u64> = ia
+        .regions
+        .iter()
+        .filter(|r| !r.3)
+        .filter_map(|r| sizes.get(&*r.0).map(|&s| (r.0.clone(), s.min(r.2))))
+        .collect();
+    ia.limits.clone_from(&limits);
+    ib.limits = limits;
     let mut rep = Report::new();
     if ia.cputype != ib.cputype {
         rep.fail("images of other CPU types", String::new);

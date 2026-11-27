@@ -526,3 +526,32 @@ pub fn line_round_trip(o: &Object<'_>) -> Result<Option<(Vec<u8>, Vec<u8>)>, &'s
     let old = o.section(*li).and_then(|s| s.bytes()).unwrap_or(&[]);
     Ok(Some((old[t.program.clone()].to_vec(), program)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn addresses_move_back_past_cuts() {
+        // A section at 0x100 of 0x100 bytes, 0x10..0x30 and 0x80..0x90 cut;
+        // the next at 0x200 now at 0x1D0.
+        let map = AddressMap {
+            old: vec![(0x100, 0x100), (0x200, 0x10)],
+            new: vec![0x100, 0x1D0],
+            cuts: vec![vec![0x10..0x30, 0x80..0x90], Vec::new()],
+        };
+        assert_eq!(map.place(0, 0x100), 0x100);
+        assert_eq!(map.place(0, 0x10F), 0x10F);
+        // In a cut: where the cut was.
+        assert!(map.cut_out(0, 0x110) && map.cut_out(0, 0x12F));
+        assert_eq!(map.place(0, 0x120), 0x110);
+        assert_eq!(map.place(0, 0x130), 0x110);
+        assert!(!map.cut_out(0, 0x130));
+        assert_eq!(map.place(0, 0x190), 0x160);
+        // The section's end, and the next section.
+        assert_eq!(map.place(0, 0x200), 0x1D0);
+        assert_eq!(map.section_of(0x200), Some(1));
+        assert_eq!(map.place_any(0x208), 0x1D8);
+        assert_eq!(map.place_any(0x500), 0x500);
+    }
+}

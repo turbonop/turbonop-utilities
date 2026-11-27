@@ -1172,7 +1172,11 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             }
             for &i in &a.symbols {
                 let y = &o.symbols[i as usize];
-                h.bytes(&y.name);
+                // (An LSDA's local label, `GCC_except_tableN`, is numbered
+                // by its object: not part of what it is.)
+                if ai == 0 || y.is_external() {
+                    h.bytes(&y.name);
+                }
                 h.u64(u64::from(y.n_type) | u64::from(y.n_desc) << 8);
                 h.u64(y.n_value.wrapping_sub(s.addr) - a.range.start);
             }

@@ -134,6 +134,10 @@ struct Die<'d> {
     end: usize,
 }
 
+/// The DIEs of other units references name: each one's identity and the
+/// name it goes by as a scope (see `Cu::scope_name`), by its offset.
+type Foreign<'d> = BTreeMap<u64, (u128, Option<&'d [u8]>)>;
+
 /// One unit, read whole.
 struct Cu<'p, 'd> {
     p: &'p dyn Addresses,
@@ -145,6 +149,10 @@ struct Cu<'p, 'd> {
     /// GNU's split DWARF 4: the skeleton's `DW_AT_GNU_ranges_base`, which
     /// the split unit's range list offsets are from.
     ranges_base: u64,
+    /// The identities of DIEs of other units this one's `DW_FORM_ref_addr`
+    /// references name (dsymutil's, uniquing types across units), by their
+    /// offsets.
+    foreign: Option<&'p Foreign<'d>>,
 }
 
 const IN_PROGRESS: u128 = u128::MAX;
@@ -248,7 +256,13 @@ impl<'p, 'd> Cu<'p, 'd> {
             line,
             comp_dir,
             ranges_base,
+            foreign: None,
         })
+    }
+
+    /// The identity of a DIE of another unit, by its offset.
+    fn foreign_id(&self, off: u64) -> Option<u128> {
+        self.foreign?.get(&off).map(|x| x.0)
     }
 
     fn index_of(&self, offset: u64) -> Option<usize> {
@@ -366,10 +380,19 @@ impl<'p, 'd> Cu<'p, 'd> {
                     return Some(s);
                 }
             }
-            let next = [DW_AT_SPECIFICATION, DW_AT_ABSTRACT_ORIGIN]
-                .iter()
-                .find_map(|&n| self.attr(at, n).and_then(|a| self.target(a)))?;
-            at = next;
+            let mut next = None;
+            for n in [DW_AT_SPECIFICATION, DW_AT_ABSTRACT_ORIGIN] {
+                let Some(a) = self.attr(at, n) else { continue };
+                if let Some(t) = self.target(a) {
+                    next = Some(t);
+                    break;
+                }
+                // (A DIE of another unit: the name it goes by there.)
+                if let (DW_FORM_REF_ADDR, Value::Uint(off)) = (a.form, a.value) {
+                    return self.foreign?.get(&off)?.1;
+                }
+            }
+            at = next?;
         }
         None
     }
@@ -466,7 +489,14 @@ impl<'p, 'd> Cu<'p, 'd> {
                     out.num(v as u64);
                     out.num((v >> 64) as u64);
                 }
-                None => out.sep("(in another unit)"),
+                None => match (a.form, a.value) {
+                    (DW_FORM_REF_ADDR, Value::Uint(off)) if self.foreign_id(off).is_some() => {
+                        let v = self.foreign_id(off).unwrap_or(0);
+                        out.num(v as u64);
+                        out.num((v >> 64) as u64);
+                    }
+                    _ => out.sep("(in another unit)"),
+                },
             },
         }
     }
@@ -966,7 +996,7 @@ struct UnitOut {
     variables: Vec<(String, u128)>,
     dead_variables: u64,
     /// (qualified name's hash, contents, (unit, DIE)).
-    types: Vec<(u128, u128, (u64, usize))>,
+    types: Vec<(u128, u128, (u64, usize), (u128, Vec<u128>))>,
     unread: u64,
 }
 
@@ -986,8 +1016,9 @@ fn is_type(tag: u16) -> bool {
 /// subtree) as a set: their order says nothing (a member's offset is an
 /// attribute), and dsymutil, merging a declaration's members into the
 /// definition it keeps, writes them in another.
-fn type_subtree(cu: &mut Cu<'_, '_>, code: &[bool], i: usize, out: &mut dyn Sink) {
-    cu.canon(i, out);
+fn type_parts(cu: &mut Cu<'_, '_>, code: &[bool], i: usize) -> (u128, Vec<u128>) {
+    let mut o = H128::new();
+    cu.canon(i, &mut o);
     let end = cu.dies[i].end.max(i + 1);
     let depth = cu.dies[i].depth;
     let mut members: Vec<u128> = Vec::new();
@@ -1001,11 +1032,7 @@ fn type_subtree(cu: &mut Cu<'_, '_>, code: &[bool], i: usize, out: &mut dyn Sink
         j += 1;
     }
     members.sort_unstable();
-    out.sep("members");
-    for m in members {
-        out.num(m as u64);
-        out.num((m >> 64) as u64);
-    }
+    (o.finish(), members)
 }
 
 /// The contents of DIE `i`'s subtree, with each nested subprogram that
@@ -1102,7 +1129,13 @@ fn gnu_dwo_id(s: Sections<'_>, u: &Unit<'_>) -> Option<u64> {
 
 /// The split unit of the skeleton at `offset`, from its `.dwo` file
 /// (`dwo`), read with the program's addresses and lines.
-fn read_split_unit(p: &dyn Addresses, s: Sections<'_>, offset: u64, dwo: &[u8]) -> UnitOut {
+fn read_split_unit<'d>(
+    p: &dyn Addresses,
+    s: Sections<'d>,
+    offset: u64,
+    dwo: &'d [u8],
+    foreign: &Foreign<'d>,
+) -> UnitOut {
     let unread = UnitOut {
         unread: 1,
         ..UnitOut::default()
@@ -1139,23 +1172,30 @@ fn read_split_unit(p: &dyn Addresses, s: Sections<'_>, offset: u64, dwo: &[u8]) 
     }) else {
         return unread;
     };
-    read_unit_with(p, d, u.offset, Some(sk))
+    read_unit_with(p, d, u.offset, Some(sk), foreign)
 }
-fn read_unit(p: &dyn Addresses, s: Sections<'_>, offset: u64) -> UnitOut {
-    read_unit_with(p, s, offset, None)
+fn read_unit<'d>(
+    p: &dyn Addresses,
+    s: Sections<'d>,
+    offset: u64,
+    foreign: &Foreign<'d>,
+) -> UnitOut {
+    read_unit_with(p, s, offset, None, foreign)
 }
 
-fn read_unit_with(
+fn read_unit_with<'d>(
     p: &dyn Addresses,
-    s: Sections<'_>,
+    s: Sections<'d>,
     offset: u64,
     skeleton: Option<Skeleton<'_>>,
+    foreign: &Foreign<'d>,
 ) -> UnitOut {
     let mut out = UnitOut::default();
     let Some(mut cu) = Cu::read_split(p, s, offset, skeleton) else {
         out.unread = 1;
         return out;
     };
+    cu.foreign = Some(foreign);
     let mut ua = H128::new();
     cu.unit_attrs(&mut ua);
     let unit_attrs = ua.finish();
@@ -1233,9 +1273,13 @@ fn read_unit_with(
             k.num(u64::from(tag));
             cu.qualified(i, &mut k);
             k.text(cu.string(i, DW_AT_NAME).unwrap_or(b""));
+            let parts = type_parts(&mut cu, &code, i);
             let mut h = H128::new();
-            type_subtree(&mut cu, &code, i, &mut h);
-            out.types.push((k.finish(), h.finish(), (offset, i)));
+            h.u128(parts.0);
+            for m in &parts.1 {
+                h.u128(*m);
+            }
+            out.types.push((k.finish(), h.finish(), (offset, i), parts));
         }
         i += 1;
     }
@@ -1244,17 +1288,21 @@ fn read_unit_with(
 
 /// Everything one program's DWARF holds, gathered.
 #[derive(Default)]
-struct All {
+struct All<'a> {
     subs: BTreeMap<String, Vec<Sub>>,
     dead: u64,
     variables: BTreeMap<String, BTreeSet<u128>>,
     dead_variables: u64,
     types: BTreeMap<(u128, u128), (u64, usize)>,
+    /// The identities of DIEs other units' references name.
+    foreign: Foreign<'a>,
+    /// Each type definition's DIE and members (see [`type_parts`]).
+    type_parts: BTreeMap<(u128, u128), (u128, Vec<u128>)>,
     units: u64,
     unread: u64,
 }
 
-fn gather<'a>(p: &dyn Addresses, s: Sections<'a>) -> All {
+fn gather<'a>(p: &dyn Addresses, s: Sections<'a>) -> All<'a> {
     let offsets: Vec<u64> = Unit::iter(s, UnitSection::Info, 0)
         .filter(|u| {
             u.unit_type == DW_UT_COMPILE
@@ -1270,14 +1318,53 @@ fn gather<'a>(p: &dyn Addresses, s: Sections<'a>) -> All {
         .map(|&o| skeleton(p, s, o).and_then(|(_, _, path)| std::fs::read(path).ok()))
         .collect();
     let at: Vec<usize> = (0..offsets.len()).collect();
+    // The DIEs of other units that `DW_FORM_ref_addr` references name
+    // (dsymutil's dSYMs: it uniques types across units), and their
+    // identities, each read in its own unit.
+    let wanted: Vec<Vec<u64>> = turbonop_par::map_balanced(&at, 4, |&k| {
+        let Some(cu) = Cu::read(p, s, offsets[k]) else {
+            return Vec::new();
+        };
+        let mut v: Vec<u64> = Vec::new();
+        for d in &cu.dies {
+            for a in &d.attrs {
+                if a.form == DW_FORM_REF_ADDR
+                    && let Value::Uint(off) = a.value
+                    && cu.index_of(off).is_none()
+                {
+                    v.push(off);
+                }
+            }
+        }
+        v
+    });
+    let mut by_unit: BTreeMap<usize, BTreeSet<u64>> = BTreeMap::new();
+    for off in wanted.into_iter().flatten() {
+        let k = offsets.partition_point(|&o| o <= off);
+        if let Some(k) = k.checked_sub(1) {
+            by_unit.entry(k).or_default().insert(off);
+        }
+    }
+    let units: Vec<(usize, BTreeSet<u64>)> = by_unit.into_iter().collect();
+    let found: Vec<Vec<(u64, (u128, Option<&'a [u8]>))>> =
+        turbonop_par::map_balanced(&units, 1, |(k, offs)| {
+            let Some(mut cu) = Cu::read(p, s, offsets[*k]) else {
+                return Vec::new();
+            };
+            offs.iter()
+                .filter_map(|&o| cu.index_of(o).map(|j| (o, (cu.id(j), cu.scope_name(j)))))
+                .collect()
+        });
+    let foreign: Foreign<'a> = found.into_iter().flatten().collect();
     let outs = turbonop_par::map_balanced(&at, 4, |&k| match &dwos[k] {
-        Some(d) => read_split_unit(p, s, offsets[k], d),
-        None => read_unit(p, s, offsets[k]),
+        Some(d) => read_split_unit(p, s, offsets[k], d, &foreign),
+        None => read_unit(p, s, offsets[k], &foreign),
     });
     let mut all = All {
         units: offsets.len() as u64,
         ..All::default()
     };
+    all.foreign = foreign;
     for o in outs {
         for (k, sub) in o.subs {
             all.subs.entry(k).or_default().push(sub);
@@ -1287,8 +1374,9 @@ fn gather<'a>(p: &dyn Addresses, s: Sections<'a>) -> All {
             all.variables.entry(k).or_default().insert(h);
         }
         all.dead_variables += o.dead_variables;
-        for (k, h, at) in o.types {
+        for (k, h, at, parts) in o.types {
             all.types.entry((k, h)).or_insert(at);
+            all.type_parts.entry((k, h)).or_insert(parts);
         }
         all.unread += o.unread;
     }
@@ -1312,13 +1400,16 @@ fn type_name(p: &dyn Addresses, s: Sections<'_>, at: (u64, usize)) -> String {
 }
 
 /// Where two subprograms first differ, as text.
-fn explain(
+#[allow(clippy::too_many_arguments)]
+fn explain<'d>(
     pa: &dyn Addresses,
-    sa: Sections<'_>,
+    sa: Sections<'d>,
     a: &Sub,
     pb: &dyn Addresses,
-    sb: Sections<'_>,
+    sb: Sections<'d>,
     b: &Sub,
+    fa: &Foreign<'d>,
+    fb: &Foreign<'d>,
 ) -> String {
     let unit = |p: &dyn Addresses, s: Sections<'_>, at: (u64, usize)| -> String {
         Cu::read(p, s, at.0)
@@ -1340,16 +1431,19 @@ fn explain(
         };
         return format!("unit:{} and{}", text(pa, sa, a.at), text(pb, sb, b.at));
     }
-    format!("{units}{}", explain_contents(pa, sa, a, pb, sb, b))
+    format!("{units}{}", explain_contents(pa, sa, a, pb, sb, b, fa, fb))
 }
 
-fn explain_contents(
+#[allow(clippy::too_many_arguments)]
+fn explain_contents<'d>(
     pa: &dyn Addresses,
-    sa: Sections<'_>,
+    sa: Sections<'d>,
     a: &Sub,
     pb: &dyn Addresses,
-    sb: Sections<'_>,
+    sb: Sections<'d>,
     b: &Sub,
+    fa: &Foreign<'d>,
+    fb: &Foreign<'d>,
 ) -> String {
     if a.dies != b.dies {
         let k = a
@@ -1358,18 +1452,22 @@ fn explain_contents(
             .zip(&b.dies)
             .position(|(x, y)| x != y)
             .unwrap_or(a.dies.len().min(b.dies.len()));
-        let text = |p: &dyn Addresses, s: Sections<'_>, at: (u64, usize)| -> String {
-            match Cu::read(p, s, at.0) {
-                Some(mut cu) if at.1 + k < cu.dies.len() => cu.canon_text(at.1 + k),
-                _ => "nothing".into(),
-            }
-        };
+        let text =
+            |p: &dyn Addresses, s: Sections<'d>, at: (u64, usize), f: &Foreign<'d>| -> String {
+                match Cu::read(p, s, at.0) {
+                    Some(mut cu) if at.1 + k < cu.dies.len() => {
+                        cu.foreign = Some(f);
+                        cu.canon_text(at.1 + k)
+                    }
+                    _ => "nothing".into(),
+                }
+            };
         return format!(
             "DIE {k} of {} and {}: {} and {}",
             a.dies.len(),
             b.dies.len(),
-            text(pa, sa, a.at),
-            text(pb, sb, b.at)
+            text(pa, sa, a.at, fa),
+            text(pb, sb, b.at, fb)
         );
     }
     let text = |p: &dyn Addresses, s: Sections<'_>, sub: &Sub| -> Vec<String> {
@@ -1497,13 +1595,24 @@ pub(crate) fn compare_with<'d>(
                 // first loaded copy's, turbolib the first member's.
                 0 => rep.expect(
                     "subprograms described by another unit's copy (the same DIEs and line rows)",
-                    || format!("{k}: {}", explain(a, sa, s, b, sb, other)),
+                    || {
+                        format!(
+                            "{k}: {}",
+                            explain(a, sa, s, b, sb, other, &x.foreign, &y.foreign)
+                        )
+                    },
                 ),
                 1 => rep.fail("subprograms whose line rows differ", || {
-                    format!("{k}: {}", explain(a, sa, s, b, sb, other))
+                    format!(
+                        "{k}: {}",
+                        explain(a, sa, s, b, sb, other, &x.foreign, &y.foreign)
+                    )
                 }),
                 _ => rep.fail("subprograms whose DIEs differ", || {
-                    format!("{k}: {}", explain(a, sa, s, b, sb, other))
+                    format!(
+                        "{k}: {}",
+                        explain(a, sa, s, b, sb, other, &x.foreign, &y.foreign)
+                    )
                 }),
             }
         }
@@ -1539,7 +1648,39 @@ pub(crate) fn compare_with<'d>(
         t.keys().map(|k| k.0).collect()
     };
     let (na, nb) = (names(&x.types), names(&y.types));
+    // Whether a definition of the first is one of the second's with fewer
+    // members (dsymutil, uniquing a type, merges into the definition it
+    // keeps the members other units' declarations of it list; which units
+    // those are follows the link).
+    let fewer = |p: &(u128, Vec<u128>), q: &(u128, Vec<u128>)| {
+        p.0 == q.0 && p.1.iter().all(|m| q.1.binary_search(m).is_ok())
+    };
+    fn same_name<'t>(t: &'t All<'_>, name: u128) -> Vec<&'t (u128, Vec<u128>)> {
+        t.type_parts
+            .range((name, 0)..=(name, u128::MAX))
+            .map(|(_, v)| v)
+            .collect()
+    }
+    let mut merged = BTreeSet::new();
     for (k, &at) in &x.types {
+        if !y.types.contains_key(k)
+            && let Some(p) = x.type_parts.get(k)
+        {
+            let wider: Vec<&(u128, Vec<u128>)> = same_name(&y, k.0)
+                .into_iter()
+                .filter(|q| fewer(p, q))
+                .collect();
+            if !wider.is_empty() {
+                for q in wider {
+                    merged.insert((q.0, q.1.clone()));
+                }
+                rep.expect(
+                    "type definitions the second describes with more members (dsymutil merges other units' declarations' members into the one it keeps)",
+                    || type_name(a, sa, at),
+                );
+                continue;
+            }
+        }
         if !y.types.contains_key(k) {
             let cat = if nb.contains(&k.0) {
                 "type definitions with contents only in the first program"
@@ -1550,13 +1691,27 @@ pub(crate) fn compare_with<'d>(
         }
     }
     for (k, &at) in &y.types {
+        if !x.types.contains_key(k)
+            && y.type_parts
+                .get(k)
+                .is_some_and(|p| merged.contains(&(p.0, p.1.clone())))
+        {
+            continue;
+        }
         if !x.types.contains_key(k) {
-            let cat = if na.contains(&k.0) {
-                "type definitions with contents only in the second program"
+            if na.contains(&k.0) {
+                rep.fail(
+                    "type definitions with contents only in the second program",
+                    || type_name(b, sb, at),
+                );
             } else {
-                "type definitions only in the second program"
-            };
-            rep.fail(cat, || type_name(b, sb, at));
+                // (More than the first describes: a Mach-O synthesized
+                // member's unit is built from another member's, which may
+                // define what the linked copy's only declared.)
+                rep.expect("type definitions only in the second program", || {
+                    type_name(b, sb, at)
+                });
+            }
         }
     }
     rep

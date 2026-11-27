@@ -94,8 +94,11 @@ pub struct Layout {
     pub import_slots: Map<u32, (u32, u32)>,
     /// For each import file with a thunk, the thunk's chunk.
     pub thunk_chunks: Map<u32, u32>,
-    /// The DLLs imported from.
+    /// The DLLs imported from, in the import tables' order (by name).
     pub dlls: Vec<Dll>,
+    /// The import directory's order: each DLL (its index in `dlls`) as
+    /// its first import was loaded.
+    pub directory_order: Vec<u32>,
     /// The headers' size (file-aligned).
     pub headers_size: u32,
     /// The image's size in memory.
@@ -467,6 +470,30 @@ pub fn layout(
             }
         }
     }
+    // link.exe builds the import tables from the import library's own
+    // pieces, which it sorts by their member's name (the DLL's: byte
+    // order, `KERNEL32.dll` before `VCRUNTIME140.dll` before `api-ms-...`),
+    // keeping the order they were loaded in otherwise.
+    let mut directory_order: Vec<u32> = (0..crate::n32(dlls.len())).collect();
+    if dlls.len() > 1 {
+        let mut order: Vec<u32> = (0..crate::n32(dlls.len())).collect();
+        order.sort_by(|&a, &b| dlls[a as usize].name.cmp(dlls[b as usize].name));
+        let mut new_index = vec![0u32; dlls.len()];
+        for (new, &old) in order.iter().enumerate() {
+            new_index[old as usize] = crate::n32(new);
+        }
+        let mut old: Vec<Option<Dll>> = dlls.into_iter().map(Some).collect();
+        dlls = order
+            .iter()
+            .map(|&o| old[o as usize].take().expect("each once"))
+            .collect();
+        for slot in import_slots.values_mut() {
+            slot.0 = new_index[slot.0 as usize];
+        }
+        for d in &mut directory_order {
+            *d = new_index[*d as usize];
+        }
+    }
     let mut common_chunks = Map::default();
     for &g in &live.commons {
         if let Def::Common { size, .. } = r.globals[g as usize].def {
@@ -533,6 +560,8 @@ pub fn layout(
                 &mut chunks,
             );
         }
+        // Each DLL's hint/name entries, then its name (the import
+        // descriptor's, loaded after its imports).
         let mut at = 0u32;
         for dll in &dlls {
             for &f in &dll.imports {
@@ -544,8 +573,6 @@ pub fn layout(
                     at += (2 + crate::n32(n.len()) + 1 + 1) & !1;
                 }
             }
-        }
-        for dll in &dlls {
             dll_name_offsets.push(at);
             at += (crate::n32(dll.name.len()) + 1 + 1) & !1;
         }
@@ -638,16 +665,22 @@ pub fn layout(
     }
     for s in &mut sections {
         let mut mine: Vec<&Partial> = partials.iter().filter(|p| p.0.0 == s.name).collect();
-        let base = |input: &[u8]| -> Vec<u8> {
-            match input.iter().position(|&b| b == b'$') {
-                Some(p) => input[..p].to_vec(),
-                None => input.to_vec(),
-            }
-        };
+        // link.exe's order (as its COFF groups record it): every group
+        // (input section name) by its name, the merged ones among the
+        // section's own; except the imports': the address table
+        // (`.idata$5`) first, the rest of `.idata$` last.
         mine.sort_by(|a, b| {
+            let rank = |i: &[u8]| {
+                if i == b".idata$5" {
+                    0
+                } else if i.starts_with(b".idata$") {
+                    2
+                } else {
+                    1
+                }
+            };
             let (ia, ib) = (&a.0.1, &b.0.1);
-            let own = |i: &[u8]| base(i) != s.name;
-            (own(ia), base(ia), ia).cmp(&(own(ib), base(ib), ib))
+            (rank(ia), ia).cmp(&(rank(ib), ib))
         });
         let (init, uninit): (Vec<u32>, Vec<u32>) = mine
             .iter()
@@ -692,6 +725,7 @@ pub fn layout(
         import_slots,
         thunk_chunks,
         dlls,
+        directory_order,
         headers_size,
         image_size: 0,
         file_size: 0,

@@ -194,7 +194,9 @@ impl<'a> Image<'a> {
                 out[2..6].copy_from_slice(&disp.to_le_bytes());
             }
             ChunkKind::ImportDirectory => {
-                for (d, dll) in self.l.dlls.iter().enumerate() {
+                for (slot, &d) in self.l.directory_order.iter().enumerate() {
+                    let d = d as usize;
+                    let dll = &self.l.dlls[d];
                     let lookup = self
                         .l
                         .chunks
@@ -203,7 +205,7 @@ impl<'a> Image<'a> {
                         .map_or(0, |c| c.rva);
                     let iat = self.l.chunks[self.iat[d] as usize].rva;
                     let names = self.names_rva();
-                    let e = &mut out[d * 20..d * 20 + 20];
+                    let e = &mut out[slot * 20..slot * 20 + 20];
                     e[0..4].copy_from_slice(&lookup.to_le_bytes());
                     e[12..16].copy_from_slice(&(names + self.l.dll_name_offsets[d]).to_le_bytes());
                     e[16..20].copy_from_slice(&iat.to_le_bytes());

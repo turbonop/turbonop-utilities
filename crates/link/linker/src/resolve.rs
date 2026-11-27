@@ -154,6 +154,9 @@ pub struct Global {
 
 /// A library being searched.
 struct Library {
+    /// A default library (`/DEFAULTLIB`), searched after the command
+    /// line's.
+    default: bool,
     path: PathBuf,
     archive: Archive<'static>,
     /// Each symbol's member (its header's offset), the first member that
@@ -533,14 +536,14 @@ impl Linker {
             return;
         }
         match self.find_library(name) {
-            Some(path) => self.add_library(path),
+            Some(path) => self.add_library(path, true),
             None => self
                 .errors
                 .push(LinkError::error(1104, format!("cannot open file '{name}'"))),
         }
     }
 
-    fn add_library(&mut self, path: PathBuf) {
+    fn add_library(&mut self, path: PathBuf, default: bool) {
         let key = path.to_string_lossy().to_ascii_lowercase();
         if !self.library_paths.insert(key) {
             return;
@@ -576,6 +579,7 @@ impl Linker {
             archive,
             index,
             loaded: Set::default(),
+            default,
         });
         self.t_index += start.elapsed();
     }
@@ -598,8 +602,18 @@ impl Linker {
     fn search_libraries(&mut self) {
         loop {
             let mut loaded_any = false;
-            let mut lib = 0;
-            while lib < self.libraries.len() {
+            // The command line's libraries in their order, then the default
+            // libraries in the order objects named them (a library named
+            // during the search joins the end).
+            let mut position = 0;
+            loop {
+                let order: Vec<usize> = (0..self.libraries.len())
+                    .filter(|&i| !self.libraries[i].default)
+                    .chain((0..self.libraries.len()).filter(|&i| self.libraries[i].default))
+                    .collect();
+                let Some(&lib) = order.get(position) else {
+                    break;
+                };
                 loop {
                     let mut pending = std::mem::take(&mut self.pending);
                     pending.retain(|&g| self.wanted(&self.globals[g as usize]));
@@ -614,8 +628,12 @@ impl Linker {
                     if members.is_empty() {
                         break;
                     }
-                    members.sort_unstable();
-                    members.dedup();
+                    // In the order they are first needed (the order of the
+                    // symbols that need them), as link.exe loads them: it
+                    // decides the order of their code, and of the import
+                    // directory.
+                    let mut seen = Set::default();
+                    members.retain(|m| seen.insert(*m));
                     if self.config.verbose {
                         let names: Vec<String> = self
                             .pending
@@ -654,7 +672,7 @@ impl Linker {
                     }
                     loaded_any = true;
                 }
-                lib += 1;
+                position += 1;
             }
             if !loaded_any && !self.resolve_aliases() {
                 break;
@@ -839,7 +857,7 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     for (path, r) in inputs.iter().zip(read) {
         match r {
             Ok(Input::Loaded(kind)) => l.add(path.clone(), kind),
-            Ok(Input::Library(p)) => l.add_library(p),
+            Ok(Input::Library(p)) => l.add_library(p, false),
             Ok(Input::Resources(data)) => l.resources.push((path.clone(), data)),
             Err(m) => l.errors.push(LinkError::error(1104, m)),
         }

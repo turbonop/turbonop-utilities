@@ -125,11 +125,27 @@ pub fn link(mut config: Config) -> Outcome {
             }
         }
     }
+    // The manifest: written beside the image, or one of its resources.
+    let mut res_beside_manifest = 0;
+    match crate::manifest::make(&resolved.config, &path) {
+        Ok(Some(embedded)) => {
+            res_beside_manifest = crate::n32(resolved.resources.len());
+            all.push(embedded);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            out.diagnostics.push(e);
+            return out;
+        }
+    }
     let resources = if all.is_empty() {
         None
     } else {
         match crate::resources::plan(all) {
-            Ok(r) => Some(r),
+            Ok(mut r) => {
+                r.res_beside_manifest = res_beside_manifest;
+                Some(r)
+            }
             Err(m) => {
                 out.diagnostics.push(LinkError {
                     code: 1123,

@@ -32,6 +32,7 @@ mod symbolize;
 mod symbols;
 mod time;
 mod types;
+mod vtables;
 mod xref;
 
 use std::path::{Path, PathBuf};
@@ -74,6 +75,7 @@ commands:
   symbolize <image> [<address>...]  the function, line, and inlined functions at
                              each address; or, without, added to a log's addresses
   types [options] <image>    the layouts of its classes and structures, and their padding
+  vtables [options] <image>  its virtual function tables, each slot named (public symbols suffice)
   xref [options] <image>     what refers to what, and why each function and datum is there
   help                       show this message
   version                    show the version
@@ -264,6 +266,7 @@ fn command(args: &[String]) -> ExitCode {
         "recommend" => recommend::run(rest),
         "relocations" | "relocs" => relocations::run(rest),
         "resources" => resources::run(rest),
+        "vtables" => vtables::run(rest),
         "types" => types::run(rest),
         "inlines" => lines::run_inlines(rest),
         "sourcefiles" => lines::run_sourcefiles(rest),

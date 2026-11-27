@@ -34,4 +34,5 @@ mod snapshot;
 mod symbolize;
 mod targets;
 mod types;
+mod vtables;
 mod xref;

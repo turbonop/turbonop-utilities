@@ -36,8 +36,7 @@ pub enum ChunkKind {
     Exports,
     /// The resources (`.rsrc`).
     Resources,
-    /// The debug directory (at the end of the `.rdata` group, padded to
-    /// 128 bytes after, as link.exe leaves it).
+    /// The debug directory (at the end of the `.rdata` group).
     DebugDirectory,
     /// The `coffgrp` debug data: every COFF group's address, size, name.
     CoffGroups,
@@ -45,6 +44,11 @@ pub enum ChunkKind {
     Repro,
     /// The volatile metadata the load configuration points to (x64).
     VolatileMetadata,
+    /// A group whose every section /OPT:REF discarded: no bytes, but where
+    /// it starts is aligned as they were (as link.exe keeps the group:
+    /// guard_support.obj's 128-byte `.rdata$CastGuardVftablesA` puts the
+    /// next group on 128 bytes).
+    Empty,
 }
 
 /// A chunk placed.
@@ -346,8 +350,23 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
             commons.extend(c);
         }
     }
-    // Commons go at the end of .bss by name, as link.exe places them.
-    commons.sort_unstable_by(|a, b| r.globals[*a as usize].name.cmp(r.globals[*b as usize].name));
+    // Commons go at the end of .bss, by the file whose definition each
+    // is (link.exe allocates them module by module): the command line's
+    // in order, then each library's, the last loaded first (LIBCMT's
+    // ucrt_detection.obj's __scrt_ucrt_dll_is_in_use before
+    // dyn_tls_dtor.obj's __dyn_tls_dtor_callback before dyn_tls_init.obj's
+    // __dyn_tls_init_callback); one file's by name.
+    let owner = |g: u32| -> (u32, u32, &[u8]) {
+        let global = &r.globals[g as usize];
+        let Def::Common { file, .. } = global.def else {
+            return (0, 0, global.name);
+        };
+        match r.files[file as usize].library {
+            None => (0, file, global.name),
+            Some(lib) => (lib + 1, u32::MAX - file, global.name),
+        }
+    };
+    commons.sort_unstable_by(|&a, &b| owner(a).cmp(&owner(b)));
     commons.dedup();
     let sections = (0..n)
         .map(|f| {
@@ -388,6 +407,16 @@ pub fn layout(
         live = mark(r, roots, &folded);
     }
     let leaders: turbonop_hash::Set<(u32, u32)> = folded.values().copied().collect();
+    // Each leader's alignment: the largest of its class (as link.exe places
+    // main's unwind data on 8 bytes when handlers.obj's, aligned on 8, is
+    // folded into it).
+    let mut class_align: Map<(u32, u32), u32> = Map::default();
+    for (&(f, s), &leader) in &folded {
+        if let FileKind::Object { object, .. } = &r.files[f as usize].kind {
+            let a = class_align.entry(leader).or_insert(1);
+            *a = (*a).max(object.sections[s as usize].alignment());
+        }
+    }
     let mut merges: Vec<(Vec<u8>, Vec<u8>)> = config
         .merges
         .iter()
@@ -422,6 +451,8 @@ pub fn layout(
 
     let mut section_chunks: Vec<Vec<u32>> = Vec::with_capacity(r.files.len());
     let mut empty_groups: Vec<(&'static [u8], u32)> = Vec::new();
+    // The sections /OPT:REF discarded: (name, characteristics, alignment).
+    let mut discarded: Vec<(&'static [u8], u32, u32)> = Vec::new();
     let mut dll_index: Map<&'static [u8], u32> = Map::default();
     let mut dlls: Vec<Dll> = Vec::new();
     let mut import_slots = Map::default();
@@ -450,8 +481,12 @@ pub fn layout(
                     if !live.sections[f][s] {
                         // /GUARD's tables: no contents, but their group is
                         // listed (as link.exe lists it).
-                        if kept_section(r, f, s) && sec.is_image() && dropped(sec.name) {
-                            empty_groups.push((sec.name, sec.characteristics));
+                        if kept_section(r, f, s) && sec.is_image() {
+                            if dropped(sec.name) {
+                                empty_groups.push((sec.name, sec.characteristics));
+                            } else {
+                                discarded.push((sec.name, sec.characteristics, sec.alignment()));
+                            }
                         }
                         continue;
                     }
@@ -463,13 +498,24 @@ pub fn layout(
                         // other copies' unwind data was folded into it).
                         continue;
                     }
+                    if !folded.is_empty()
+                        && sec.name == b".pdata"
+                        && pdata_function(r, f, s).is_some_and(|t| folded.contains_key(&t))
+                    {
+                        // The .pdata of a function folded into another (a
+                        // C++ funclet, .text$x, whose parent isn't folded):
+                        // link.exe keeps one entry per function.
+                        continue;
+                    }
                     let uninitialized = sec.characteristics & scn::CNT_UNINITIALIZED_DATA != 0;
                     mine[s] = add(
                         sec.name,
                         sec.characteristics,
                         Chunk {
                             kind: ChunkKind::Input(crate::n32(f), crate::n32(s)),
-                            align: sec.alignment(),
+                            align: sec
+                                .alignment()
+                                .max(class_align.get(&key).copied().unwrap_or(1)),
                             size: sec.size,
                             uninitialized,
                             rva: 0,
@@ -845,6 +891,28 @@ pub fn layout(
             );
         }
     }
+    // The groups only discarded sections were in.
+    let mut emptied: Map<(&'static [u8], u32), u32> = Map::default();
+    for (name, chars, align) in discarded {
+        if !partial_index.contains_key(&(name, chars & scn::OUTPUT_MASK)) {
+            let a = emptied.entry((name, chars & scn::OUTPUT_MASK)).or_insert(1);
+            *a = (*a).max(align);
+        }
+    }
+    let mut emptied: Vec<_> = emptied.into_iter().collect();
+    emptied.sort_unstable();
+    for ((name, chars), align) in emptied {
+        let c = crate::n32(chunks.len());
+        chunks.push(Chunk {
+            kind: ChunkKind::Empty,
+            align,
+            size: 0,
+            uninitialized: chars & scn::CNT_UNINITIALIZED_DATA != 0,
+            rva: 0,
+        });
+        partials.push(((output_name(name, &merges), name.to_vec(), chars), vec![c]));
+        partial_index.insert((name, chars), partials.len() - 1);
+    }
     for (name, chars) in empty_groups {
         let chars = chars & scn::OUTPUT_MASK;
         partial_index.entry((name, chars)).or_insert_with(|| {
@@ -957,19 +1025,25 @@ pub fn layout(
             s.characteristics &= !scn::CNT_UNINITIALIZED_DATA;
         }
     }
-    // Empty sections aren't written (the loader refuses a section of no
-    // size).
-    sections.retain(|s| s.chunks.iter().any(|&c| chunks[c as usize].size > 0));
     // The COFF groups' list: each section's groups, each 8 bytes and its
-    // name (NUL-terminated, to 4 bytes), after a 4-byte signature.
+    // name (NUL-terminated, to 4 bytes), after a 4-byte signature. Its
+    // room is for every group something is in, empty or not (an
+    // assembler's empty .gssep$x and .gsspr$y, whose sections aren't
+    // written), as link.exe reserves it; only those not empty are listed.
     if let Some(c) = coff_groups {
         chunks[c as usize].size = 4 + sections
             .iter()
             .flat_map(|s| &s.groups)
-            .filter(|(_, c)| c.iter().any(|&c| chunks[c as usize].size > 0))
+            .filter(|(_, c)| {
+                c.iter()
+                    .any(|&c| chunks[c as usize].kind != ChunkKind::Empty)
+            })
             .map(|(name, _)| 8 + ((crate::n32(name.len()) + 1 + 3) & !3))
             .sum::<u32>();
     }
+    // Empty sections aren't written (the loader refuses a section of no
+    // size).
+    sections.retain(|s| s.chunks.iter().any(|&c| chunks[c as usize].size > 0));
     // `/SECTION` attributes.
     for a in &config.sections {
         if let Some(s) = sections.iter_mut().find(|s| s.name == a.name.as_bytes()) {
@@ -1060,9 +1134,6 @@ impl Layout {
                 at = align_up(at, chunk.align.max(group_align));
                 chunk.rva = rva + at;
                 at += chunk.size;
-                if chunk.kind == ChunkKind::DebugDirectory {
-                    at = align_up(at, 128);
-                }
                 if !chunk.uninitialized {
                     init_end = at;
                 }
@@ -1123,6 +1194,32 @@ pub fn import_name(import: &ImportObject<'static>) -> Option<&'static [u8]> {
 }
 
 /// Whether file `f`'s section `s` stayed (a COMDAT copy that lost didn't).
+/// The section (file, section) that .pdata section `s` of file `f` is the
+/// unwind entry of: what its first relocation (the function's start) refers to.
+fn pdata_function(r: &Resolved, f: usize, s: usize) -> Option<(u32, u32)> {
+    let FileKind::Object {
+        object, globals, ..
+    } = &r.files[f].kind
+    else {
+        return None;
+    };
+    let rel = object.sections[s]
+        .relocations
+        .iter()
+        .find(|rel| rel.virtual_address.get() == 0)?;
+    let k = rel.symbol_table_index.get() as usize;
+    match globals.get(k) {
+        Some(&g) if g != crate::resolve::NONE => match r.globals[g as usize].def {
+            Def::Section { file, section, .. } => Some((file, section)),
+            _ => None,
+        },
+        _ => match object.symbols.get(k)?.kind {
+            SymbolKind::Local { section, .. } => Some((crate::n32(f), section)),
+            _ => None,
+        },
+    }
+}
+
 fn kept_section(r: &Resolved, f: usize, s: usize) -> bool {
     match &r.files[f].kind {
         FileKind::Object { kept, .. } => kept[s],

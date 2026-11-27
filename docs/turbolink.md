@@ -135,30 +135,51 @@ lists every COFF group with its address and size) and by experiment:
   order; a member is loaded as soon as one is found (what it leaves
   undefined joins the end of the list and is reached in the same walk).
   `_load_config_used` is asked for only once the rest is resolved, in a
-  last round.
+  last round. A member's directive `/INCLUDE`s join the list after its
+  own symbols (libucrt's `_file.obj`'s `__acrt_stdio_initializer` is
+  searched for after its `__pioinfo`).
+- **Function overrides:** a name ending in `_$fo$` (`memcpy_$fo$`,
+  `_guard_check_icall_$fo$`) is never searched for; if nothing defines
+  it, it is the image base (RVA 0: a `REL32` to it reaches the image's
+  start, an `ADDR64` is the base with a base relocation), even with an
+  `/ALTERNATENAME` for it, and it is no error. Only that suffix:
+  `f$fo$` and `f_$fo_bdd$` are ordinary names.
 - **Groups' alignment:** a group starts at the largest alignment of its
   contributions (an 8-byte `.bss` starts on 16 when another `.bss` of the
   group wants 16). Uninitialized groups (`.bss`) come after the rest.
-  Padding between contributions in code is `int3` (0xCC).
+  Padding between contributions in code is `int3` (0xCC). A group
+  whose every section `/OPT:REF` discarded is kept, empty, and still
+  starts at their alignment: guard_support.obj's 128-byte-aligned
+  `.rdata$CastGuardVftablesA` and `C` put the next group (`.rdata$r`,
+  `.rdata$T`, `.rdata$voltmd`) on 128 bytes.
+- **Commons** go at the end of `.bss`, module by module: the command
+  line's objects in order, then each library's, the last loaded first.
 - **What link.exe adds to `.rdata`:** the volatile metadata
   (`.rdata$voltmd`, 24 bytes, for x64's load configuration:
   `__volatile_metadata`); the debug directory, at the end of the
-  `.rdata` group, followed by padding to 128 bytes; its data in
-  `.rdata$zzzdbg`: the `coffgrp` list (each non-empty group's address,
-  size, and name, after a zero signature; without `/DEBUG`) and, with
+  `.rdata` group; its data in `.rdata$zzzdbg`: the `coffgrp` list (each
+  non-empty group's address, size, and name, after a zero signature),
+  in room for every group something is in, empty ones too (an
+  assembler's empty `.gssep$x` and `.gsspr$y`: the debug entry's size is
+  the list's, the rest zeros), and, with
   `/Brepro`, the `repro` entry (32, then a 32-byte hash whose last 4
   bytes are the time stamp). `/GUARD`'s tables (`.gfids$y` and the rest)
   are empty groups of `.rdata`.
-- **ICF:** folds code and unwind data (`.xdata`), not other read-only
-  data (`.00cfg`'s pointers, `static const` objects). Import thunks are
-  in the `.text$mn` group.
+- **ICF:** folds code (only the C/C++ compiler's: an assembler's
+  identical functions stay apart), unwind data (`.xdata`), and a
+  function's associative read-only data (its C++ EH `FuncInfo` in
+  `.rdata`, though the functions themselves don't fold), not other
+  read-only data (`.00cfg`'s pointers, `static const` objects). The copy
+  kept is the first, at the largest alignment of its class (main's
+  unwind data on 8 when handlers.obj's, on 8, folds into it). A folded
+  function's `.pdata` goes, even when it hangs off an unfolded parent (a
+  C++ funclet's). Import thunks are in the `.text$mn` group.
 - **The imports within one DLL** are in `qsort`'s order: link.exe's
   `SortPGRPByPMOD` sorts each `.idata` group's contributions with the
   C runtime's `qsort` and `CompareIdataPCON`, which compares the DLLs'
   file names (case-sensitive), then section and module flags, and
-  otherwise returns 0 (so `qsort`, not stable, decides). To match it:
-  the same array, flags, and `qsort` algorithm (the UCRT's source is in
-  the Windows SDK). Not done yet.
+  otherwise returns 0 (so `qsort`, not stable, decides). turbolink sorts
+  the same array with a port of the UCRT's `qsort`.
 - **The Rich header** (link.exe's `CbBuildProdidBlock`): link.exe's own
   entry (0x102, build 37029) first in a list to whose front each new
   `@comp.id` goes, walking the command line's objects, then each library's
@@ -167,14 +188,16 @@ lists every COFF group with its address and size) and by experiment:
   rotated left by their offsets (`e_lfanew` zero), and each entry's ID
   rotated left by its count; then 1 to 3 empty entries'`(checksum >> 5)` %
   3 + 1`, as many as fit in the headers without enlarging them.
-- **Status:** a `/MD` C hello world is link.exe's image byte for byte,
-  time stamps aside (a test checks it).
+- **Status:** a `/MD` C hello world and a DLL with exports are link.exe's
+  images byte for byte, time stamps aside; a `/MT` C hello world is too,
+  but for the Rich header's order (tests check all three).
 - **Still different** (to do): the
   `/Brepro` hash (it depends on the output's contents, not its name or
   the options, but isn't a plain SHA-1/256/512 or MD5 of the file with
-  its time stamps and hash zeroed); the imports' order within a DLL (the
-  `qsort` above); `__guard_flags`' "instrumented" bit link.exe sets for
-  `/guard:cf` objects.
+  its time stamps and hash zeroed); the Rich header's order for some
+  libraries (libucrt's tools appear as 0x103, 0x104, 0x105, which no
+  order of its members gives: load, offset, name, or reversed; MSVCRT's
+  0x103 and 0x104 likewise); C++ with the static CRT.
 
 ## Verification
 

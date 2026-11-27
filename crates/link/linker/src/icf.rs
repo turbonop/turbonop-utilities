@@ -70,6 +70,12 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
         let FileKind::Object { object, .. } = &file.kind else {
             continue;
         };
+        // Only the C/C++ compiler's code folds (link.exe keeps an assembler's
+        // functions apart, as identical as they are: libvcruntime's
+        // __NLG_Dispatch2 and __NLG_Return2; their unwind data still folds).
+        let compiled = object
+            .comp_id
+            .is_none_or(|id| (0x104..=0x109).contains(&(id >> 16)));
         for (s, sec) in object.sections.iter().enumerate() {
             if !live[f][s] {
                 continue;
@@ -79,29 +85,36 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
             };
             let c = sec.characteristics;
             let read_only = c & scn::MEM_WRITE == 0;
-            let code = c & scn::MEM_EXECUTE != 0;
+            let code = c & scn::MEM_EXECUTE != 0 && compiled;
             // Unwind data folds too (link.exe shares identical .xdata);
             // other data doesn't (link.exe keeps every constant apart:
             // .00cfg's pointers, `static const` objects).
             let unwind = sec.name.starts_with(b".xdata");
             if let Selection::Associative(parent) = selection {
                 // Debug information and /GUARD's tables don't count.
-                if !sec.name.starts_with(b".debug")
-                    && !matches!(
+                let bookkeeping = sec.name.starts_with(b".debug")
+                    || matches!(
                         sec.name,
                         b".gfids$y" | b".giats$y" | b".gljmp$y" | b".gehcont$y"
-                    )
-                {
+                    );
+                if !bookkeeping {
                     children
                         .entry((crate::n32(f), parent))
                         .or_default()
                         .push(crate::n32(s));
                 }
                 // Associative code folds too (C++ EH funclets, .text$x,
-                // as link.exe folds them).
-                if !((unwind || code) && read_only) {
+                // as link.exe folds them), and so does a function's other
+                // read-only data (its C++ EH FuncInfo, in .rdata: libucrt's
+                // $cppxdata$__acrt_getptd_head folds into an identical one,
+                // though the functions don't), but not its .pdata entry.
+                let executable = c & scn::MEM_EXECUTE != 0;
+                if !read_only || bookkeeping || sec.name == b".pdata" || (executable && !code) {
                     continue;
                 }
+                index.insert((crate::n32(f), crate::n32(s)), crate::n32(candidates.len()));
+                candidates.push((crate::n32(f), crate::n32(s)));
+                continue;
             }
             if read_only && (code || unwind) {
                 index.insert((crate::n32(f), crate::n32(s)), crate::n32(candidates.len()));

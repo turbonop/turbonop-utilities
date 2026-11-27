@@ -281,6 +281,7 @@ impl<'a> Image<'a> {
                     );
                 }
             }
+            ChunkKind::Empty => {}
             ChunkKind::VolatileMetadata => {
                 // Size 0x18, version 0x80008000, no tables.
                 out[..8].copy_from_slice(&[0x18, 0, 0, 0, 0, 0x80, 0, 0x80]);
@@ -300,7 +301,17 @@ impl<'a> Image<'a> {
                     let e = &mut out[i * 28..i * 28 + 28];
                     e[4..8].copy_from_slice(&timestamp(&self.r.config).to_le_bytes());
                     e[12..16].copy_from_slice(&ty.to_le_bytes());
-                    e[16..20].copy_from_slice(&d.size.to_le_bytes());
+                    // (The COFF groups' list is shorter than its room.)
+                    let size = if ty == 13 {
+                        self.coff_groups()
+                            .iter()
+                            .map(|(_, _, name)| 8 + ((crate::n32(name.len()) + 1 + 3) & !3))
+                            .sum::<u32>()
+                            + 4
+                    } else {
+                        d.size
+                    };
+                    e[16..20].copy_from_slice(&size.to_le_bytes());
                     e[20..24].copy_from_slice(&d.rva.to_le_bytes());
                     e[24..28].copy_from_slice(&self.file_offset(d.rva).to_le_bytes());
                 }

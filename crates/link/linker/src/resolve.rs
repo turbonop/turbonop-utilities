@@ -295,9 +295,19 @@ impl Linker {
             return g;
         }
         let g = u32::try_from(self.globals.len()).expect("fewer than 4 billion symbols");
+        // A function override's name (`f_$fo$`) that nothing defines is the
+        // image's base (RVA 0), as link.exe makes it without /FUNCTIONOVERRIDE:
+        // no library is searched for it, and an /ALTERNATENAME for it is not
+        // used (memcpy.obj's memcpy_$fo$; checkcfg.obj's
+        // _guard_check_icall_$fo$). Only that suffix: `f$fo$` is searched for.
+        let def = if name.ends_with(b"_$fo$") {
+            Def::Synthetic(Synthetic::ImageBase)
+        } else {
+            Def::Undefined
+        };
         self.globals.push(Global {
             name,
-            def: Def::Undefined,
+            def,
             weak: None,
             referenced_by: NONE,
             optional: false,
@@ -330,16 +340,7 @@ impl Linker {
                 let before = self.config.default_libs.len();
                 let includes_before = self.config.includes.len();
                 crate::config::apply_directives(&mut self.config, &object.directives, &mut diags);
-                // An object's /INCLUDEs are wanted as the command line's are
-                // (and are roots of /OPT:REF's mark).
                 let new_includes = self.config.includes.split_off(includes_before);
-                for include in &new_includes {
-                    let g = self.intern(Box::leak(include.clone().into_bytes().into_boxed_slice()));
-                    if self.globals[g as usize].referenced_by == NONE {
-                        self.globals[g as usize].referenced_by = place;
-                    }
-                }
-                self.config.includes.extend(new_includes);
                 for d in diags {
                     if let crate::config::Diagnostic::Bad(m) = d {
                         self.errors
@@ -349,18 +350,6 @@ impl Linker {
                 let new_libs: Vec<String> = self.config.default_libs[before..].to_vec();
                 for lib in new_libs {
                     self.add_default_lib(&lib);
-                }
-                // The symbols a relocation refers to: only an undefined one of
-                // those wants a library's definition (link.exe searches no
-                // library for a name nothing refers to: memcpy.obj's
-                // memcpy_$fo$, which its /ALTERNATENAME then gives a default).
-                let mut used = vec![false; n];
-                for sec in &object.sections {
-                    for rel in sec.relocations {
-                        if let Some(u) = used.get_mut(rel.symbol_table_index.get() as usize) {
-                            *u = true;
-                        }
-                    }
                 }
                 let mut idata = None;
                 for (i, s) in object.symbols.iter().enumerate() {
@@ -382,8 +371,20 @@ impl Linker {
                     }
                     let g = self.intern(s.name);
                     globals[i] = g;
-                    self.define(g, place, &object, i, used[i], &mut kept, &name);
+                    self.define(g, place, &object, i, &mut kept, &name);
                 }
+                // An object's /INCLUDEs are wanted as the command line's are
+                // (and are roots of /OPT:REF's mark); after its symbols, as
+                // link.exe adds them to the names still wanted (libucrt's
+                // _file.obj's __acrt_stdio_initializer is searched for after
+                // its __pioinfo).
+                for include in &new_includes {
+                    let g = self.intern(Box::leak(include.clone().into_bytes().into_boxed_slice()));
+                    if self.globals[g as usize].referenced_by == NONE {
+                        self.globals[g as usize].referenced_by = place;
+                    }
+                }
+                self.config.includes.extend(new_includes);
                 self.files.push(File {
                     name,
                     idata,
@@ -449,32 +450,18 @@ impl Linker {
     /// Resolves symbol `i` of `object` (file `place`), global `g`.
     // (The object's parts it needs are passed apart: `object` is being
     // added, not yet one of `self`'s files.)
-    #[allow(clippy::too_many_arguments)]
     fn define(
         &mut self,
         g: u32,
         place: u32,
         object: &Object,
         i: usize,
-        used: bool,
         kept: &mut [bool],
         file_name: &str,
     ) {
         let s = &object.symbols[i];
-        // An undefined name nothing refers to, that has an alternate name, is
-        // left to it: link.exe searches no library for it (memcpy.obj's
-        // memcpy_$fo$, /ALTERNATENAME'd to memcpy_$fo_default$). Without one,
-        // it is searched for (an import descriptor's null thunk).
-        let undefined = matches!(s.kind, SymbolKind::Undefined | SymbolKind::Weak { .. });
-        let left_to_alternate = undefined
-            && !used
-            && self
-                .config
-                .alternate_names
-                .iter()
-                .any(|(a, _)| a.as_bytes() == s.name);
         let global = &mut self.globals[g as usize];
-        if global.referenced_by == NONE && !left_to_alternate {
+        if global.referenced_by == NONE {
             global.referenced_by = place;
         }
         match s.kind {

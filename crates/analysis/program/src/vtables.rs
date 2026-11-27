@@ -5,19 +5,26 @@
 //! table is read without its type: from public symbols alone (a stripped
 //! PDB's, as Microsoft's symbol server serves), where a table's symbol has
 //! no size. Its length is then inferred: the slots that follow it, one
-//! after another, each holding an address in code, up to the next symbol
-//! (or another COM object's `QueryInterface`, which starts a table). That
-//! is an upper bound: a table with no symbol of its own (a lambda's
-//! `std::function`'s, in an image built without RTTI) that follows one
-//! directly is read as more of it.
+//! after another, each holding an address in code, up to the next table
+//! (or another COM object's `QueryInterface`, which starts a table).
+//!
+//! With RTTI (MSVC's `/GR`), the slot before each table points to its
+//! class's Complete Object Locator, whose type descriptor names the class
+//! (and, for a table of a base other than the first, the class hierarchy
+//! says which base): so a table with no symbol of its own (a lambda's
+//! `std::function`'s, whose names a stripped PDB leaves out) is found and
+//! named by its RTTI, and a table before it ends there. Without RTTI, the
+//! inferred length is an upper bound: a table with no symbol that follows
+//! one directly is read as more of it.
 //!
 //! Identical functions folded into one (`/OPT:ICF`) leave a slot with
 //! several names. Names of the table's own class come first; when more than
 //! one of them is left, the slot is one of them, and which one the image
 //! doesn't say.
 
-use turbonop_image::PointerSlot;
 use turbonop_size::symbols::{Symbol, SymbolKind};
+
+use turbonop_image::{Image, PointerSlot};
 
 use crate::Program;
 
@@ -39,6 +46,9 @@ pub struct Vtable {
     pub section: String,
     /// Whether its length is the debug information's (else inferred).
     pub sized: bool,
+    /// Whether it was found by its RTTI (no symbol names it), and named
+    /// for its class's type descriptor.
+    pub by_rtti: bool,
     /// Its slots, in order.
     pub slots: Vec<Slot>,
 }
@@ -116,17 +126,35 @@ fn is_table_kind(kind: SymbolKind) -> bool {
     matches!(kind, SymbolKind::Data | SymbolKind::Public)
 }
 
+/// A table its RTTI names: where it starts, and its name (as a public
+/// symbol's, ``const X::`vftable'{for `B'}``).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RttiTable {
+    /// Where it starts (the slot after its locator's).
+    pub addr: u64,
+    /// Its name, as its public symbol's would be.
+    pub name: String,
+}
+
 /// The tables among `symbols`, their slots read from `slots` (sorted by
-/// address), code told by `sections`.
-pub fn find(symbols: &[Symbol], slots: &[PointerSlot], sections: &[(String, Span)]) -> Vec<Vtable> {
+/// address), code told by `sections`; and those of `rtti` that no symbol
+/// names.
+pub fn find(
+    symbols: &[Symbol],
+    slots: &[PointerSlot],
+    sections: &[(String, Span)],
+    rtti: &[RttiTable],
+) -> Vec<Vtable> {
     // Every name at each address (folded ones too), for naming targets.
     let mut at: Vec<(u64, &Symbol)> = symbols.iter().map(|s| (s.addr, s)).collect();
     at.sort_by_key(|(a, s)| (*a, s.folded));
     // Where symbols start (any of them), for bounding unsized tables.
+    // (A table its RTTI names starts where it does.)
     let mut starts: Vec<u64> = symbols
         .iter()
         .filter(|s| !s.folded)
         .map(|s| s.addr)
+        .chain(rtti.iter().map(|t| t.addr))
         .collect();
     starts.sort_unstable();
     starts.dedup();
@@ -137,22 +165,43 @@ pub fn find(symbols: &[Symbol], slots: &[PointerSlot], sections: &[(String, Span
     };
     let in_code = |addr: u64| section_of(addr).is_some_and(|(_, s)| s.executable);
 
-    // The tables, one per address: the unfolded name, the rest aliases.
-    let mut tables: Vec<&Symbol> = symbols
+    // The tables, one per address: the unfolded name, the rest aliases;
+    // and those only their RTTI names (with no size).
+    let mut tables: Vec<TableAt<'_>> = symbols
         .iter()
         .filter(|s| is_table_kind(s.kind) && class_of(&s.name).is_some())
+        .map(|s| TableAt {
+            addr: s.addr,
+            folded: s.folded,
+            name: &s.name,
+            size: s.size.vm.max(s.size.file),
+            by_rtti: false,
+        })
         .collect();
-    tables.sort_by(|a, b| (a.addr, a.folded, &a.name).cmp(&(b.addr, b.folded, &b.name)));
+    tables.sort_by(|a, b| (a.addr, a.folded, a.name).cmp(&(b.addr, b.folded, b.name)));
+    let unnamed: Vec<TableAt<'_>> = rtti
+        .iter()
+        .filter(|t| tables.binary_search_by_key(&t.addr, |n| n.addr).is_err())
+        .map(|t| TableAt {
+            addr: t.addr,
+            folded: false,
+            name: &t.name,
+            size: 0,
+            by_rtti: true,
+        })
+        .collect();
+    tables.extend(unnamed);
+    tables.sort_by(|a, b| (a.addr, a.folded, a.name).cmp(&(b.addr, b.folded, b.name)));
     let mut out: Vec<Vtable> = Vec::new();
     for t in tables {
         if let Some(last) = out.last_mut().filter(|v| v.rva == t.addr) {
-            last.aliases.push(t.name.clone());
+            last.aliases.push(t.name.to_string());
             continue;
         }
-        let Some((class, for_base)) = class_of(&t.name) else {
+        let Some((class, for_base)) = class_of(t.name) else {
             continue;
         };
-        let size = t.size.vm.max(t.size.file);
+        let size = t.size;
         let sized = size > 0;
         let section = section_of(t.addr);
         let end = if sized {
@@ -220,17 +269,155 @@ pub fn find(symbols: &[Symbol], slots: &[PointerSlot], sections: &[(String, Span
             });
         }
         out.push(Vtable {
-            name: t.name.clone(),
+            name: t.name.to_string(),
             aliases: Vec::new(),
             class,
             for_base,
             rva: t.addr,
             section: section.map(|(n, _)| n.clone()).unwrap_or_default(),
             sized,
+            by_rtti: t.by_rtti,
             slots: found,
         });
     }
     out
+}
+
+/// A table's symbol (or RTTI's name for it), as [`find`] reads it.
+struct TableAt<'a> {
+    addr: u64,
+    folded: bool,
+    name: &'a str,
+    size: u64,
+    by_rtti: bool,
+}
+
+/// The tables `image`'s RTTI names (MSVC's, a PE image's): each slot of
+/// `slots` that points to a Complete Object Locator starts one, right
+/// after it, named for the locator's class (and, for a table of a base
+/// other than the first, that base: the first in the class's hierarchy at
+/// the locator's offset).
+pub fn rtti_tables(image: &Image<'_>, slots: &[PointerSlot]) -> Vec<RttiTable> {
+    let Some(pe) = image.pe() else {
+        return Vec::new();
+    };
+    let wide = pe
+        .optional_header()
+        .is_some_and(turbonop_pe::OptionalHeader::is_64);
+    let base = image.image_base();
+    let mut demangler = turbonop_demangle::Demangler::new();
+    let mut out = Vec::new();
+    for slot in slots {
+        let Some(at) = slot.target else { continue };
+        if u64::from(slot.width) != if wide { 8 } else { 4 } {
+            continue;
+        }
+        let Some(col) = locator(image, at, wide, base) else {
+            continue;
+        };
+        let Some(class) = type_name(image, col.type_descriptor, wide) else {
+            continue;
+        };
+        let mut decorated = format!("??_7{}6B", &class[4..]);
+        if col.offset != 0
+            && let Some(b) = base_at(image, col.hierarchy, col.offset, wide, base)
+                .and_then(|td| type_name(image, td, wide))
+        {
+            decorated.push_str(&b[4..]);
+        }
+        decorated.push('@');
+        let Some(name) = demangler.demangle(&decorated, turbonop_demangle::msvc::flags::NO_PTR64)
+        else {
+            continue;
+        };
+        out.push(RttiTable {
+            addr: slot.addr + u64::from(slot.width),
+            name,
+        });
+    }
+    out.sort_by_key(|t| t.addr);
+    out
+}
+
+/// A Complete Object Locator's offset (of the table's subobject in the
+/// complete object), type descriptor, and class hierarchy (RVAs).
+struct Locator {
+    offset: u32,
+    type_descriptor: u64,
+    hierarchy: u64,
+}
+
+/// `N` little-endian `u32`s of `image` at `at`.
+fn words<const N: usize>(image: &Image<'_>, at: u64) -> Option<[u32; N]> {
+    let b = image.bytes_at(at, 4 * N as u64)?;
+    let mut w = [0u32; N];
+    for (w, c) in w.iter_mut().zip(b.as_chunks::<4>().0) {
+        *w = u32::from_le_bytes(*c);
+    }
+    Some(w)
+}
+
+/// An address an RTTI structure holds, as an RVA: a 64-bit image's are
+/// RVAs already; a 32-bit image's are addresses, less the image base.
+fn rva_of(v: u32, wide: bool, base: u64) -> Option<u64> {
+    if wide {
+        Some(u64::from(v))
+    } else {
+        u64::from(v).checked_sub(base)
+    }
+}
+
+/// The Complete Object Locator at `at`, if one is: signature 1 (64-bit,
+/// its own RVA last) or 0 (32-bit).
+fn locator(image: &Image<'_>, at: u64, wide: bool, base: u64) -> Option<Locator> {
+    let [signature, offset, _cd_offset, td, chd, own] = if wide {
+        words::<6>(image, at)?
+    } else {
+        let [a, b, c, d, e] = words::<5>(image, at)?;
+        [a, b, c, d, e, 0]
+    };
+    if signature != u32::from(wide) || (wide && u64::from(own) != at) {
+        return None;
+    }
+    Some(Locator {
+        offset,
+        type_descriptor: rva_of(td, wide, base)?,
+        hierarchy: rva_of(chd, wide, base)?,
+    })
+}
+
+/// A type descriptor's decorated name (`.?AVSquare@@`), if it has one.
+fn type_name(image: &Image<'_>, td: u64, wide: bool) -> Option<String> {
+    let at = td + if wide { 16 } else { 8 };
+    // (Up to its NUL: names are short.)
+    let mut name = Vec::new();
+    for i in 0..4096 {
+        let &b = image.bytes_at(at + i, 1)?.first()?;
+        if b == 0 {
+            break;
+        }
+        name.push(b);
+    }
+    let name = String::from_utf8(name).ok()?;
+    (name.starts_with(".?A") && name.len() > 4).then_some(name)
+}
+
+/// The type descriptor of the first base in the class hierarchy at `chd`
+/// at `offset` in the complete object (not a virtual base: the hierarchy
+/// doesn't place those).
+fn base_at(image: &Image<'_>, chd: u64, offset: u32, wide: bool, base: u64) -> Option<u64> {
+    let [_signature, _attributes, count, array] = words::<4>(image, chd)?;
+    let array = rva_of(array, wide, base)?;
+    // (The first entry is the class itself.)
+    for i in 1..count.min(4096) {
+        let [bcd] = words::<1>(image, array + 4 * u64::from(i))?;
+        let bcd = rva_of(bcd, wide, base)?;
+        let [td, _contained, mdisp, pdisp, _vdisp] = words::<5>(image, bcd)?;
+        if mdisp == offset && pdisp == u32::MAX {
+            return rva_of(td, wide, base);
+        }
+    }
+    None
 }
 
 impl Program<'_> {
@@ -258,7 +445,8 @@ impl Program<'_> {
             .collect();
         let mut slots = self.image.pointer_slots();
         slots.sort_by_key(|p| p.addr);
-        Ok(find(symbols, &slots, &sections))
+        let rtti = rtti_tables(&self.image, &slots);
+        Ok(find(symbols, &slots, &sections, &rtti))
     }
 }
 
@@ -388,7 +576,7 @@ mod tests {
             slot(0x2020, 0x2800),
             slot(0x2040, 0x1020),
         ];
-        let t = find(&symbols, &slots, &sections());
+        let t = find(&symbols, &slots, &sections(), &[]);
         assert_eq!(t.len(), 2);
         let c = &t[0];
         assert!(!c.sized);
@@ -449,7 +637,7 @@ mod tests {
             slot(0x2008, 0x1010),
             slot(0x2010, 0x1020),
         ];
-        let t = find(&symbols, &slots, &sections());
+        let t = find(&symbols, &slots, &sections(), &[]);
         assert_eq!(t[0].slots.len(), 2);
     }
 
@@ -467,7 +655,7 @@ mod tests {
             slot(0x2008, 0x1008),
             slot(0x2010, 0x1000),
         ];
-        let t = find(&symbols, &slots, &sections());
+        let t = find(&symbols, &slots, &sections(), &[]);
         assert_eq!(t.len(), 1);
         assert!(t[0].sized);
         assert_eq!(t[0].aliases, ["B::`vftable'"]);

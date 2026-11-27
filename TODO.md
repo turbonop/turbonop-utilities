@@ -7,11 +7,12 @@ leave this list when they ship.
 ## TurboNOP's tools
 
 - **`hexcavator diff`, what's still to do.**
-  - Code compared by bytes, references resolved by name: a displacement
-    whose instruction has an immediate after it is resolved from the
-    field's end (the target's name usually still matches). Decoding the
-    instructions (turbonop-x86, turbonop-arm64) would make it exact, and
-    let ARM64's ADRP/ADD pairs and branches count as references.
+  - Code is compared by its instructions, decoded (x64, ARM64: branches,
+    RIP-relative operands, ADRP pairs, literal loads, each access in
+    full); x86's (32-bit) code, and bytes that don't decode, still by
+    bytes, a field's width at a time. Identical bytes are taken as the
+    same: an instruction that refers to the same address in both images
+    is not checked for what each image has there (the data parts tell).
   - With map-only names, statics one map lists and the other doesn't
     become "only in a"; functions without exception data are bounded by
     the next name either image has.

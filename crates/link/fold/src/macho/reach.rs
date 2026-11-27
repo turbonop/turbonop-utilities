@@ -389,11 +389,7 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
             let (off, odr) = refs[k as usize];
             let t = die_at(off).ok_or("a reference to no DIE")?;
             if odr && dies[t].context {
-                let mut a = t as u32;
-                while a != NONE && a != 0 && !defined[a as usize] {
-                    defined[a as usize] = true;
-                    a = dies[a as usize].parent;
-                }
+                defined[t] = true;
             } else if !kept[t] {
                 keep_tree(t, &mut kept, &mut work);
             }

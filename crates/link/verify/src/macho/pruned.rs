@@ -262,6 +262,17 @@ struct Cmp<'t, 'd> {
     seen_rels: usize,
 }
 
+/// Hashes DIE `i`'s strings.
+fn strings(t: &Tree<'_>, i: usize, h: &mut H128) {
+    for x in &t.dies[i].attrs {
+        match x.value {
+            Value::StrOffset(_, off) => h.bytes(t.string(off).unwrap_or(b"?")),
+            Value::Str(s) => h.bytes(s),
+            _ => {}
+        }
+    }
+}
+
 /// How deep [`signature`] follows references.
 const SIG_DEPTH: u8 = 3;
 
@@ -279,18 +290,21 @@ fn signature(t: &Tree<'_>, memo: &mut Vec<Option<u128>>, i: usize, depth: u8) ->
     let mut h = H128::new();
     h.u64(d.code);
     h.u64(u64::from(d.tag));
-    // (Its scope: its ancestors' names.)
+    // (Its scope: its ancestors' names, and their specifications' and
+    // abstract origins': a local class's function may have none of its own.)
     let mut p = d.parent;
     while p != NONE {
         let a = &t.dies[p as usize];
+        h.u64(u64::from(a.tag));
+        strings(t, p as usize, &mut h);
         for x in &a.attrs {
-            if x.name == DW_AT_NAME
-                && let Value::StrOffset(_, off) = x.value
+            if matches!(x.name, DW_AT_SPECIFICATION | DW_AT_ABSTRACT_ORIGIN)
+                && let Value::Uint(v) = x.value
+                && let Some(j) = t.die_at(v)
             {
-                h.bytes(t.string(off).unwrap_or(b"?"));
+                strings(t, j, &mut h);
             }
         }
-        h.u64(u64::from(a.tag));
         p = a.parent;
     }
     for a in &d.attrs {

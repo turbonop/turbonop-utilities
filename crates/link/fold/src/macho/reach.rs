@@ -31,16 +31,26 @@
 //! before the import: this is why a giver's class definition that no kept
 //! DIE named was in a dSYM (7.5).
 //!
-//! What this computes is a part of what dsymutil keeps of a giver in every
-//! link that loads it with all its code (no `-dead_strip`): the roots its
-//! DWARF still has once its units are cut out (DIEs whose relocations name
-//! what stays), and everything they reach by the rules above, without
-//! ODR's shortcut (a reference to a type already defined elsewhere isn't
-//! followed by dsymutil, but that type is then defined in the dSYM, and
-//! what it reaches was reached from that definition) and without a
-//! namespace's other children (an import keeps them only in some links).
-//! Its result is the keys of the named classes, structures, and unions in
-//! named scopes defined among what it reaches.
+//! What this computes is a part of what dsymutil puts in the dSYM of every
+//! link that loads a giver with all its code (no `-dead_strip`): the roots
+//! its DWARF still has once its units are cut out (DIEs whose relocations
+//! name what stays), what they keep by the rules above, and, where an ODR
+//! reference names a DIE that may have a declaration context, that DIE
+//! and its ancestors, but nothing further. dsymutil keeps such a DIE from
+//! this object (whole, with what it reaches) only if no earlier object
+//! defined its context; otherwise it is the earlier object's definition
+//! that is in the dSYM, with what that version reaches, which may be less
+//! (a class template specialization's members are those its unit used).
+//! A first version that followed such references to the end lost 12 type
+//! definitions per corpus link, and changed 300 to 500 others' members.
+//! A namespace's other children aren't assumed either (an import keeps
+//! them only in some links). The result is the keys of the named classes,
+//! structures, and unions in named scopes defined among what it reaches.
+//!
+//! When the defining object is the giver itself or an earlier one, it is
+//! so in the original link too, so the dSYM's definition is the one it was
+//! (the same object's, by the same rules), as long as the objects load in
+//! the same order (which `relink.py` checks for the corpus).
 
 use std::collections::BTreeSet;
 
@@ -64,6 +74,9 @@ struct Die {
     const_value: bool,
     /// Inside a subprogram (dsymutil's `TF_InFunctionScope`).
     in_function: bool,
+    /// Whether dsymutil may give it a declaration context (and so point an
+    /// ODR reference to it at another object's DIE instead of keeping it).
+    context: bool,
     /// Its key, if a class, structure, union, or namespace in named scopes
     /// (a class a debugger finds by name, or a scope of one).
     key: Option<u128>,
@@ -82,6 +95,42 @@ fn needs_children(tag: u16) -> bool {
             | DW_TAG_SUBPROGRAM
             | DW_TAG_SUBROUTINE_TYPE
             | DW_TAG_UNION_TYPE
+    )
+}
+
+/// `DW_AT_LLVM_alloc_type`.
+const DW_AT_LLVM_ALLOC_TYPE: u16 = 0x3E0E;
+
+/// Whether a reference by attribute `name` is one dsymutil may point at
+/// another object's DIE of the same declaration context (`isODRAttribute`).
+fn is_odr(name: u16) -> bool {
+    matches!(
+        name,
+        DW_AT_TYPE
+            | DW_AT_CONTAINING_TYPE
+            | DW_AT_SPECIFICATION
+            | DW_AT_ABSTRACT_ORIGIN
+            | DW_AT_IMPORT
+            | DW_AT_LLVM_ALLOC_TYPE
+    )
+}
+
+/// Whether dsymutil may give a DIE of `tag` a declaration context, when its
+/// parent has one (`DeclContextTree::getChildDeclContext`; it may also
+/// decline, for an artificial DIE, a local function's, or one seen twice
+/// in a unit, which only makes it kept where this assumes it may not be).
+fn may_have_context(tag: u16) -> bool {
+    matches!(
+        tag,
+        DW_TAG_SUBPROGRAM
+            | DW_TAG_MEMBER
+            | DW_TAG_NAMESPACE
+            | DW_TAG_STRUCTURE_TYPE
+            | DW_TAG_CLASS_TYPE
+            | DW_TAG_UNION_TYPE
+            | DW_TAG_ENUMERATION_TYPE
+            | DW_TAG_TYPEDEF
+            | DW_TAG_MODULE
     )
 }
 
@@ -138,7 +187,7 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
     let mut r = Reader::new(d.info, u.dies as usize, d.endian);
     let mut dies: Vec<Die> = Vec::new();
     // (Each DIE's references, as offsets: `refs[ref_at[i]..ref_at[i + 1]]`.)
-    let mut refs: Vec<u32> = Vec::new();
+    let mut refs: Vec<(u32, bool)> = Vec::new();
     let mut ref_at: Vec<u32> = Vec::new();
     // Whether names inside each DIE can be looked up from anywhere.
     let mut open: Vec<bool> = Vec::new();
@@ -186,7 +235,8 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
                             value: v,
                         })
                         .ok_or("a bad reference")?;
-                    refs.push(u32::try_from(t).map_err(|_| "a bad reference")?);
+                    let odr = spec.form != DW_FORM_REF_ADDR && is_odr(spec.name);
+                    refs.push((u32::try_from(t).map_err(|_| "a bad reference")?, odr));
                 }
                 _ => {}
             }
@@ -235,6 +285,9 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
             DW_TAG_COMPILE_UNIT => true,
             _ => key.is_some(),
         });
+        let context = parent != NONE
+            && may_have_context(a.tag)
+            && (parent == 0 || dies[parent as usize].context);
         let in_function = parent != NONE && {
             let p = &dies[parent as usize];
             p.in_function || p.tag == DW_TAG_SUBPROGRAM
@@ -247,6 +300,7 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
             declaration,
             const_value,
             in_function,
+            context,
             key,
         });
         if a.children {
@@ -282,7 +336,10 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
         }
     }
     // 3. The roots, then what they keep.
+    // (`kept`: kept from this object in every such link; `defined`: in the
+    // dSYM, from this object or an earlier one.)
     let mut kept = vec![false; n];
+    let mut defined = vec![false; n];
     let mut work: Vec<usize> = Vec::new();
     // Keeps DIE `i` and its subtree.
     let keep_tree = |i: usize, kept: &mut Vec<bool>, work: &mut Vec<usize>| {
@@ -322,13 +379,20 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
                 work.push(pi);
             }
         }
-        // What it refers to: with its subtree, but a namespace alone.
+        // What it refers to. An ODR reference to a DIE that may have a
+        // declaration context is followed only if no earlier object of the
+        // link has defined that context: either way the DIE and its
+        // ancestors are in the dSYM, but what it reaches in turn may be
+        // another object's version's, so nothing further is assumed.
+        // Otherwise the DIE is kept here, with its subtree.
         for k in ref_at[i]..ref_at[i + 1] {
-            let t = die_at(refs[k as usize]).ok_or("a reference to no DIE")?;
-            if dies[t].tag == DW_TAG_NAMESPACE {
-                if !kept[t] {
-                    kept[t] = true;
-                    work.push(t);
+            let (off, odr) = refs[k as usize];
+            let t = die_at(off).ok_or("a reference to no DIE")?;
+            if odr && dies[t].context {
+                let mut a = t as u32;
+                while a != NONE && a != 0 && !defined[a as usize] {
+                    defined[a as usize] = true;
+                    a = dies[a as usize].parent;
                 }
             } else if !kept[t] {
                 keep_tree(t, &mut kept, &mut work);
@@ -337,7 +401,7 @@ pub(super) fn reach(o: &Object<'_>, gone_syms: &BTreeSet<u32>) -> R<Option<HashS
     }
     Ok(Some(
         (0..n)
-            .filter(|&i| kept[i] && aggregate(dies[i].tag) && !dies[i].declaration)
+            .filter(|&i| (kept[i] || defined[i]) && aggregate(dies[i].tag) && !dies[i].declaration)
             .filter_map(|i| dies[i].key)
             .collect(),
     ))

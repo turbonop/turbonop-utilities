@@ -631,10 +631,11 @@ fn finds_nuls_eight_bytes_at_a_time() {
 }
 
 /// What a giver's DWARF defines in every link that loads it, by dsymutil's
-/// rules (see `reach`): classes live code names, what they name, what a
-/// using declaration or a constant names, and a class a member function's
-/// definition is of (whole); not what only dead code names, nothing names,
-/// or only a `using namespace` reaches, nor a declaration.
+/// rules (see `reach`): classes live code names, what a using declaration or
+/// a constant names, and a class a member function's definition is of; not
+/// what those name (another object's version of them may be the dSYM's),
+/// what only dead code names, nothing names, or only a `using namespace`
+/// reaches, nor a declaration.
 #[test]
 fn reach_follows_dsymutils_rules() {
     use V::*;
@@ -777,10 +778,8 @@ fn reach_follows_dsymutils_rules() {
     let ns = crate::dwarf::key::of(root, DW_TAG_NAMESPACE, b"ns", None, 0, 0);
     let want: turbonop_hash::Set<u128> = [
         k(root, "A", 1),
-        k(root, "B", 2),
         k(root, "E", 5),
         k(ns, "I", 8),
-        k(ns, "J", 9),
         k(root, "G", 17),
     ]
     .into_iter()

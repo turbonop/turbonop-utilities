@@ -178,6 +178,12 @@ lists every COFF group with its address and size) and by experiment:
 
 ## Verification
 
+- **Extended tests** (they need Visual Studio, so they live in the private
+  repository, `hexcavator-private`'s `turbolink/`: this repository's tests
+  read nothing outside it): programs compiled with the installed Visual C++
+  tools, linked by turbolink, run, and compared with link.exe's images byte
+  for byte (time stamps aside): a `/MD` C hello world and a DLL so far.
+
 - **lld's COFF tests** (`llvm-project/lld/test/COFF`, Apache-2.0 with LLVM
   exception): run with lld-link replaced by turbolink. They need LLVM's
   tools (`llvm-mc`, `yaml2obj`, `llvm-readobj`, `FileCheck`, `lit`, ...),

@@ -21,6 +21,11 @@ use crate::resolve::{FileKind, Resolved};
 /// linker whose output turbolink's is.
 pub const LINKER_COMP_ID: u32 = 0x0102_90A5;
 
+/// link.exe 14.52.37029's export object's entry (product 0x100): what it
+/// makes of an image's exports (its .edata, and the .exp file), seen
+/// before every input.
+pub const EXPORT_COMP_ID: u32 = 0x0100_90A5;
+
 /// What an input without a `@comp.id` counts as.
 const UNMARKED: u32 = 0x0001_0000;
 
@@ -40,12 +45,11 @@ pub fn entries(r: &Resolved) -> Vec<(u32, u32)> {
         .filter_map(|f| f.library)
         .max()
         .map_or(0, |m| m + 1);
-    let mut walk: Vec<u32> = r
-        .files
-        .iter()
-        .filter(|f| f.library.is_none())
-        .map(id)
-        .collect();
+    let mut walk: Vec<u32> = Vec::new();
+    if !r.config.exports.is_empty() {
+        walk.push(EXPORT_COMP_ID);
+    }
+    walk.extend(r.files.iter().filter(|f| f.library.is_none()).map(id));
     for lib in 0..libraries {
         walk.extend(r.files.iter().filter(|f| f.library == Some(lib)).map(id));
     }

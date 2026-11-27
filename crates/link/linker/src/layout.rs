@@ -501,7 +501,7 @@ pub fn layout(
                         scn::CNT_CODE | scn::MEM_EXECUTE | scn::MEM_READ,
                         Chunk {
                             kind: ChunkKind::Thunk(crate::n32(f)),
-                            align: 2,
+                            align: 1, // (link.exe packs thunks)
                             size: 6,
                             uninitialized: false,
                             rva: 0,
@@ -752,7 +752,7 @@ pub fn layout(
             scn::CNT_INITIALIZED_DATA | scn::MEM_READ,
             Chunk {
                 kind: ChunkKind::Exports,
-                align: 4,
+                align: 16, // (as link.exe aligns the export directory)
                 size: t.directory.size,
                 uninitialized: false,
                 rva: 0,
@@ -930,7 +930,8 @@ pub fn layout(
             let rank = |i: &[u8]| {
                 if i == b".idata$5" {
                     0
-                } else if i.starts_with(b".idata$") {
+                } else if i.starts_with(b".idata$") || i.starts_with(b".edata") {
+                    // (The export directory sorts among them too.)
                     2
                 } else {
                     1

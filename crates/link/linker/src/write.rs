@@ -271,7 +271,8 @@ impl<'a> Image<'a> {
                         out,
                         chunk.rva,
                         &t.dll_name,
-                        timestamp(&self.r.config),
+                        // link.exe's export directory's time stamp.
+                        u32::MAX,
                         |i| match t.targets[i] {
                             u32::MAX => 0,
                             g => self.rva_of(g).unwrap_or(0),
@@ -698,7 +699,13 @@ impl<'a> Image<'a> {
         w.u32(self.l.headers_size);
         let checksum_at = w.at;
         w.u32(0); // checksum, below
-        let subsystem = c.subsystem.unwrap_or(Subsystem::Console);
+        // Without /SUBSYSTEM: a DLL's is Windows (as link.exe's), an EXE's
+        // what its entry point says.
+        let subsystem = c.subsystem.unwrap_or(if c.dll {
+            Subsystem::Windows
+        } else {
+            Subsystem::Console
+        });
         w.u16(subsystem.number());
         let mut dll = 0u16;
         if c.dynamic_base && !c.fixed {

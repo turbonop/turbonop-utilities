@@ -258,9 +258,10 @@ fn export_table(
         });
         forwarders.push(f);
     }
-    let dll_name = path
-        .file_name()
-        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let dll_name = r.config.library_name.clone().unwrap_or_else(|| {
+        path.file_name()
+            .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
+    });
     let directory = exports::plan(list, &dll_name, &forwarders);
     Ok(Some(exports::ExportTable {
         directory,

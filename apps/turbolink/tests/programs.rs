@@ -258,3 +258,37 @@ fn c_with_the_dynamic_crt_is_link_exes_image() {
     assert!(differ.is_empty(), "bytes differ at {differ:x?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A DLL with exports from `__declspec(dllexport)` and a `.def` file:
+/// turbolink's image is link.exe's, byte for byte (time stamps aside).
+#[test]
+fn dll_is_link_exes_image() {
+    let Some(vcvars) = vcvars() else {
+        eprintln!("no Visual C++ tools: not checked");
+        return;
+    };
+    let dir = scratch("same_dll");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/programs");
+    for f in ["dll.c", "dll.def"] {
+        std::fs::copy(src.join(f), dir.join(f)).expect("a copy");
+    }
+    let tl = env!("CARGO_BIN_EXE_turbolink");
+    in_vs(
+        &vcvars,
+        &dir,
+        &[
+            "cl /nologo /c /O2 /MD dll.c >nul".to_owned(),
+            "link /nologo /DLL /DEF:dll.def /NOIMPLIB /OUT:link.dll dll.obj".to_owned(),
+            format!("\"{tl}\" /nologo /DLL /DEF:dll.def /NOIMPLIB /OUT:turbolink.dll dll.obj"),
+        ],
+    );
+    let theirs = without_time_stamps(std::fs::read(dir.join("link.dll")).unwrap());
+    let ours = without_time_stamps(std::fs::read(dir.join("turbolink.dll")).unwrap());
+    assert_eq!(theirs.len(), ours.len());
+    let differ: Vec<usize> = (0..ours.len())
+        .filter(|&i| ours[i] != theirs[i])
+        .take(16)
+        .collect();
+    assert!(differ.is_empty(), "bytes differ at {differ:x?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

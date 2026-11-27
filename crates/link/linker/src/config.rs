@@ -380,6 +380,9 @@ pub struct Config {
     pub exports: Vec<Export>,
     /// `/DEF`.
     pub def: Option<PathBuf>,
+    /// The `.def` file's `LIBRARY` name: the DLL's name in its export
+    /// directory (else the output's file name).
+    pub library_name: Option<String>,
     /// `/IMPLIB`.
     pub implib: Option<PathBuf>,
     /// `/NOIMPLIB`.
@@ -514,6 +517,7 @@ impl Default for Config {
             sections: Vec::new(),
             exports: Vec::new(),
             def: None,
+            library_name: None,
             implib: None,
             no_implib: false,
             no_exp: false,

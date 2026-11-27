@@ -170,6 +170,15 @@ pub fn apply_def(c: &mut Config, def: &DefFile) {
     if def.library {
         c.dll = true;
     }
+    if def.library
+        && let Some(n) = &def.name
+    {
+        let mut p = std::path::PathBuf::from(n);
+        if p.extension().is_none() {
+            p.set_extension("dll");
+        }
+        c.library_name = Some(p.to_string_lossy().into_owned());
+    }
     if c.out.is_none()
         && let Some(n) = &def.name
     {

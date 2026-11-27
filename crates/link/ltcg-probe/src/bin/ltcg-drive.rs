@@ -382,7 +382,7 @@ mod drive {
             ]),
         })) as *mut c_void;
         let _ = OURS.set((coordinator as usize, notify as usize));
-        
+
         Box::into_raw(Box::new(Plain {
             vtbl: leak_vtbl(vec![
                 cg_qi as *const () as usize,

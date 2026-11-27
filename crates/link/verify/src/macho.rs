@@ -49,6 +49,8 @@ use turbonop_macho_object::{Command, Object, Section, reloc};
 
 use crate::hash::H128;
 
+mod debug;
+
 /// A canonical form's hash, and (with `TURBOLIB_VERIFY_DUMP` set) its
 /// parts as text, to show where two atoms differ.
 struct Canon {
@@ -118,7 +120,7 @@ struct Atom {
 
 /// A debug section: its name, its bytes with relocations' places zeroed,
 /// and its relocations (place, canonical form, the key of the atom reached).
-type Debug = (Vec<u8>, Vec<u8>, Vec<(u32, u128, Option<Vec<u8>>)>);
+type Debug = (Vec<u8>, Vec<u8>, Vec<(u32, u128, Option<Vec<u8>>, u8)>);
 
 /// An atom a rewritten member lost: its key and hash.
 type Lost = (Vec<u8>, u128);
@@ -143,7 +145,7 @@ struct Library<'a> {
 }
 
 /// The atoms of `o`: for each section, (offset range, symbol indexes).
-fn split(o: &Object<'_>) -> Vec<Vec<(core::ops::Range<u64>, Vec<usize>)>> {
+pub(crate) fn split(o: &Object<'_>) -> Vec<Vec<(core::ops::Range<u64>, Vec<usize>)>> {
     let mut out = Vec::new();
     for (si, s) in o.sections().enumerate() {
         let mut syms: Vec<(u64, usize)> = o
@@ -193,6 +195,38 @@ fn split(o: &Object<'_>) -> Vec<Vec<(core::ops::Range<u64>, Vec<usize>)>> {
     out
 }
 
+/// Each atom's key: its first symbol's name, or its section and its place
+/// among the section's unnamed atoms.
+pub(crate) fn atom_keys(
+    o: &Object<'_>,
+    atoms: &[Vec<(core::ops::Range<u64>, Vec<usize>)>],
+) -> Vec<Vec<Vec<u8>>> {
+    let sections: Vec<&Section<'_>> = o.sections().collect();
+    let mut keys: Vec<Vec<Vec<u8>>> = Vec::new();
+    for (si, list) in atoms.iter().enumerate() {
+        let mut unnamed = 0;
+        keys.push(
+            list.iter()
+                .map(|(_, syms)| match syms.first() {
+                    Some(&i) => o.symbols[i].name.to_vec(),
+                    None => {
+                        unnamed += 1;
+                        [
+                            sections[si].segment_name(),
+                            b",",
+                            sections[si].name(),
+                            b"#",
+                            unnamed.to_string().as_bytes(),
+                        ]
+                        .concat()
+                    }
+                })
+                .collect(),
+        );
+    }
+    keys
+}
+
 fn side_effects(o: &Object<'_>) -> bool {
     o.commands.iter().any(|c| c.cmd() == LC_LINKER_OPTION)
         || o.sections().any(|s| {
@@ -230,29 +264,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
     let endian = o.endian();
     let atoms = split(&o);
     let sections: Vec<&Section<'_>> = o.sections().collect();
-    // Each atom's key.
-    let mut keys: Vec<Vec<Vec<u8>>> = Vec::new();
-    for (si, list) in atoms.iter().enumerate() {
-        let mut unnamed = 0;
-        keys.push(
-            list.iter()
-                .map(|(_, syms)| match syms.first() {
-                    Some(&i) => o.symbols[i].name.to_vec(),
-                    None => {
-                        unnamed += 1;
-                        [
-                            sections[si].segment_name(),
-                            b",",
-                            sections[si].name(),
-                            b"#",
-                            unnamed.to_string().as_bytes(),
-                        ]
-                        .concat()
-                    }
-                })
-                .collect(),
-        );
-    }
+    let keys = atom_keys(&o, &atoms);
     // (An address at a section's end, as a range list's end has, reaches no
     // atom: the last atom may be cut while the address stays the end.)
     let atom_at = |si: usize, off: u64| -> Option<usize> {
@@ -322,16 +334,150 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
     let unwind = sections
         .iter()
         .position(|s| s.segment_name() == b"__LD" && s.name() == b"__compact_unwind");
-    // Unwind entries by the atom of their function.
+    let eh = sections
+        .iter()
+        .position(|s| s.segment_name() == b"__TEXT" && s.name() == b"__eh_frame");
+    let lsda = sections
+        .iter()
+        .position(|s| s.segment_name() == b"__TEXT" && s.name() == b"__gcc_except_tab");
+    // Each function's length by its unwind entries: (atom) -> (offset, length).
+    let mut lengths: BTreeMap<(usize, usize), Vec<(u64, u64)>> = BTreeMap::new();
+    if let Some(ui) = unwind {
+        let s = sections[ui];
+        let b = s.bytes().unwrap_or(&[]);
+        for e in (0..b.len() / 32).map(|i| i * 32) {
+            let start = u64::from_le_bytes(b[e..e + 8].try_into().unwrap_or([0; 8]));
+            let len = u64::from(u32::from_le_bytes(
+                b[e + 8..e + 12].try_into().unwrap_or([0; 4]),
+            ));
+            if let Some((si, k, off)) = locate(start, None) {
+                lengths.entry((si, k)).or_default().push((off, len));
+            }
+        }
+    }
+    // Each atom's own canonical form: its section, bytes, relocations, and
+    // symbols (unwind information is added below, by the atom it is for).
+    // A function's padding (after its end by its one unwind entry, up to
+    // the next atom: the next function's alignment), with nothing in it,
+    // isn't part of it.
+    #[allow(clippy::type_complexity)]
+    let mut own: BTreeMap<(usize, usize), (Canon, bool, Vec<Vec<u8>>)> = BTreeMap::new();
+    for (si, list) in atoms.iter().enumerate() {
+        let s = sections[si];
+        if s.segment_name() == b"__DWARF" || Some(si) == unwind || Some(si) == eh {
+            continue;
+        }
+        // Relocations by place, once.
+        let mut by_place: Vec<usize> = (0..s.relocations.len()).collect();
+        by_place.sort_by_key(|&i| (s.relocations[i].address, i));
+        for (k, (range, syms)) in list.iter().enumerate() {
+            let mut h = Canon::new();
+            h.bytes(s.segment_name());
+            h.bytes(s.name());
+            h.u64(u64::from(s.flags));
+            h.u64(u64::from(s.align));
+            let lo =
+                by_place.partition_point(|&i| u64::from(s.relocations[i].address) < range.start);
+            let hi = by_place.partition_point(|&i| u64::from(s.relocations[i].address) < range.end);
+            let rels = &by_place[lo..hi];
+            let code = s.flags & 0x8000_0400 != 0;
+            let end = match lengths.get(&(si, k)).map(Vec::as_slice) {
+                Some(&[(0, len)])
+                    if code
+                        && len > 0
+                        && range.start + len < range.end
+                        && rels
+                            .iter()
+                            .all(|&i| u64::from(s.relocations[i].address) < range.start + len)
+                        && syms.iter().all(|&i| {
+                            o.symbols[i].n_value.wrapping_sub(s.addr) < range.start + len
+                        }) =>
+                {
+                    range.start + len
+                }
+                _ => range.end,
+            };
+            h.u64(end - range.start);
+            if let Some(b) = s.bytes() {
+                let mut bytes = b[range.start as usize..end as usize].to_vec();
+                for &i in rels {
+                    let r = s.relocations[i];
+                    if !r.external {
+                        let at = (u64::from(r.address) - range.start) as usize;
+                        let n = 1usize << r.length.min(3);
+                        if let Some(x) = bytes.get_mut(at..at + n) {
+                            x.fill(0);
+                        }
+                    }
+                }
+                h.bytes(&bytes);
+            }
+            for &i in rels {
+                let r = s.relocations[i];
+                h.u64(u64::from(r.address) - range.start);
+                h.u64(u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16);
+                target(s, i, &mut h);
+            }
+            let mut ext = 0;
+            let mut weak = 0;
+            let mut names = Vec::new();
+            for &i in syms {
+                let y = &o.symbols[i];
+                // (An LSDA's local label is numbered by its object.)
+                if Some(si) != lsda || y.n_type & N_EXT != 0 {
+                    h.bytes(&y.name);
+                }
+                h.u64(u64::from(y.n_type) | u64::from(y.n_desc) << 8);
+                h.u64(y.n_value.wrapping_sub(s.addr) - range.start);
+                if y.n_type & N_EXT != 0 {
+                    ext += 1;
+                    names.push(y.name.to_vec());
+                    if y.n_desc & N_WEAK_DEF != 0 {
+                        weak += 1;
+                    }
+                }
+            }
+            own.insert((si, k), (h, ext > 0 && weak == ext, names));
+        }
+    }
+    // LSDAs (atoms of `__gcc_except_tab`) are part of the atoms whose unwind
+    // information names them: by their own canonical form there.
+    let own_hash: BTreeMap<(usize, usize), u128> =
+        own.iter().map(|(&k, (h, _, _))| (k, h.finish())).collect();
+    let mut attached: BTreeSet<(usize, usize)> = BTreeSet::new();
+    // A pointer of unwind information to `addr`, canonical: an LSDA by its
+    // form and the offset in it, anything else by its atom's key.
+    let pointer =
+        |addr: u64, hint: Option<usize>, h: &mut Canon, attached: &mut BTreeSet<_>| match locate(
+            addr, hint,
+        ) {
+            Some((si, k, off)) if Some(si) == lsda => {
+                h.u64(0x15DA);
+                h.u128(own_hash.get(&(si, k)).copied().unwrap_or(0));
+                h.u64(off);
+                attached.insert((si, k));
+            }
+            Some((si, k, off)) => {
+                h.bytes(&keys[si][k]);
+                h.u64(off);
+            }
+            None => {
+                h.u64(5);
+                h.u64(addr);
+            }
+        };
+    // Unwind entries and FDEs by the atom of their function.
     let mut entries: BTreeMap<(usize, usize), Vec<u128>> = BTreeMap::new();
     if let Some(ui) = unwind {
         let s = sections[ui];
         let b = s.bytes().unwrap_or(&[]);
-        let rel_at = |at: u64| {
-            s.relocations
-                .iter()
-                .position(|r| u64::from(r.address) == at)
-        };
+        let rel_at: BTreeMap<u64, usize> = s
+            .relocations
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (u64::from(r.address), i))
+            .collect();
+        let rel_at = |at: u64| rel_at.get(&at).copied();
         for e in (0..b.len() as u64 / 32).map(|i| i * 32) {
             let func = rel_at(e).and_then(|ri| {
                 let r = s.relocations[ri];
@@ -348,34 +494,122 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
             let mut h = Canon::new();
             h.u64(off);
             h.bytes(&b[e as usize + 8..e as usize + 16]);
-            for at in [e + 16, e + 24] {
-                match rel_at(at) {
-                    Some(ri) => target(s, ri, &mut h),
-                    None => h.bytes(&b[at as usize..at as usize + 8]),
+            match rel_at(e + 16) {
+                Some(ri) => target(s, ri, &mut h),
+                None => h.bytes(&b[e as usize + 16..e as usize + 24]),
+            }
+            // The LSDA.
+            match rel_at(e + 24) {
+                Some(ri) => {
+                    let r = s.relocations[ri];
+                    let a = if r.external {
+                        o.symbols.get(r.symbolnum as usize).and_then(|y| {
+                            (y.n_type & N_EXT == 0 && y.in_section()).then(|| {
+                                (
+                                    y.n_value.wrapping_add(u64::from_le_bytes(
+                                        b[e as usize + 24..e as usize + 32]
+                                            .try_into()
+                                            .unwrap_or([0; 8]),
+                                    )),
+                                    usize::from(y.n_sect).checked_sub(1),
+                                )
+                            })
+                        })
+                    } else {
+                        reloc::local_address(cputype, endian, s, ri)
+                            .map(|a| (a, (r.symbolnum as usize).checked_sub(1)))
+                    };
+                    match a {
+                        Some((a, hint)) => pointer(a, hint, &mut h, &mut attached),
+                        None => target(s, ri, &mut h),
+                    }
                 }
+                None => h.bytes(&b[e as usize + 24..e as usize + 32]),
             }
             entries.entry((si, k)).or_default().push(h.finish());
         }
     }
-    for (si, list) in atoms.iter().enumerate() {
-        let s = sections[si];
-        if s.segment_name() == b"__DWARF" || Some(si) == unwind {
-            continue;
-        }
-        if s.segment_name() == b"__TEXT" && s.name() == b"__eh_frame" {
-            // One atom, its records' pointers (which no relocation covers,
-            // and which move with what they point to) by their targets.
-            let mut h = Canon::new();
-            let mut bytes = s.bytes().unwrap_or(&[]).to_vec();
-            let covered: BTreeSet<u32> = s.relocations.iter().map(|r| r.address).collect();
-            match turbonop_macho_object::ehframe::pointers(&bytes, o.is_64(), endian) {
-                None => h.u64(0xEEEE),
-                Some(ptrs) => {
-                    for p in ptrs {
-                        if covered.contains(&(p.offset as u32)) {
+    // FDEs: each by its record's bytes (its CIE pointer and pointers taken
+    // out), its pointers' targets, and its CIE's bytes and relocations; FDEs
+    // whose function is in no atom make an atom of their own.
+    let mut orphans = Canon::new();
+    let mut orphan_count = 0;
+    if let Some(ei) = eh {
+        let s = sections[ei];
+        let bytes = s.bytes().unwrap_or(&[]);
+        let covered: BTreeMap<u32, usize> = s
+            .relocations
+            .iter()
+            .enumerate()
+            .map(|(i, r)| (r.address, i))
+            .collect();
+        match turbonop_macho_object::ehframe::pointers(bytes, o.is_64(), endian) {
+            None => {
+                orphans.u64(0xEEEE);
+                orphans.bytes(bytes);
+                orphan_count += 1;
+            }
+            Some(ptrs) => {
+                // Records: (start, end) -> pointers; CIEs by start.
+                let mut records: BTreeMap<(usize, usize), Vec<_>> = BTreeMap::new();
+                for p in &ptrs {
+                    records.entry(p.record).or_default().push(*p);
+                }
+                let cie_of: BTreeMap<usize, usize> =
+                    turbonop_macho_object::ehframe::cie_links(bytes, endian)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|(field, cie)| (field - 4, cie))
+                        .collect();
+                // A record's span by its start (CIEs too).
+                let mut spans: BTreeMap<usize, usize> = BTreeMap::new();
+                let mut at = 0usize;
+                while at + 4 <= bytes.len() {
+                    let len =
+                        u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap_or([0; 4])) as usize;
+                    if len == 0 || len == 0xFFFF_FFFF || at + 4 + len > bytes.len() {
+                        break;
+                    }
+                    spans.insert(at, at + 4 + len);
+                    at += 4 + len;
+                }
+                let canon_record = |start: usize,
+                                    end: usize,
+                                    skip: &[std::ops::Range<usize>],
+                                    h: &mut Canon| {
+                    let mut b = bytes[start..end].to_vec();
+                    for r in skip {
+                        b[r.start - start..r.end - start].fill(0);
+                    }
+                    for (&a, &ri) in covered.range(start as u32..end as u32) {
+                        let r = s.relocations[ri];
+                        let n = 1usize << r.length.min(3);
+                        if !r.external
+                            && let Some(x) = b.get_mut(a as usize - start..a as usize - start + n)
+                        {
+                            x.fill(0);
+                        }
+                        h.u64(u64::from(a) - start as u64);
+                        h.u64(
+                            u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16,
+                        );
+                        target(s, ri, h);
+                    }
+                    h.bytes(&b);
+                };
+                for (&start, &end) in &spans {
+                    let Some(&cie) = cie_of.get(&start) else {
+                        continue; // A CIE: checked with each FDE that uses it.
+                    };
+                    let mut h = Canon::new();
+                    let mut skip: Vec<std::ops::Range<usize>> = Vec::new();
+                    skip.push(start + 4..start + 8);
+                    let mut func = None;
+                    for p in records.get(&(start, end)).map_or(&[][..], Vec::as_slice) {
+                        let n = usize::from(p.size);
+                        if covered.contains_key(&(p.offset as u32)) {
                             continue;
                         }
-                        let n = usize::from(p.size);
                         let Some(raw) = bytes.get(p.offset..p.offset + n) else {
                             continue;
                         };
@@ -388,7 +622,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
                         } else {
                             ((v << (64 - bits)) as i64) >> (64 - bits)
                         };
-                        let target = if p.encoding & 0x70
+                        let t = if p.encoding & 0x70
                             == turbonop_macho_object::ehframe::DW_EH_PE_PCREL
                         {
                             s.addr
@@ -397,100 +631,66 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
                         } else {
                             v
                         };
-                        h.u64(p.offset as u64);
-                        match locate(target, None) {
-                            Some((ts, k, off)) => {
-                                h.bytes(&keys[ts][k]);
+                        h.u64((p.offset - start) as u64);
+                        if p.kind == turbonop_macho_object::ehframe::PointerKind::PcBegin {
+                            func = locate(t, None);
+                            if let Some((_, _, off)) = func {
                                 h.u64(off);
                             }
-                            None => h.u64(target),
+                        } else {
+                            pointer(t, None, &mut h, &mut attached);
                         }
-                        bytes[p.offset..p.offset + n].fill(0);
+                        skip.push(p.offset..p.offset + n);
+                    }
+                    canon_record(start, end, &skip, &mut h);
+                    // Its CIE.
+                    match spans.get(&cie) {
+                        Some(&cend) => {
+                            let skip: Vec<_> = records
+                                .get(&(cie, cend))
+                                .map_or(&[][..], Vec::as_slice)
+                                .iter()
+                                .filter(|p| !covered.contains_key(&(p.offset as u32)))
+                                .map(|p| p.offset..p.offset + usize::from(p.size))
+                                .collect();
+                            canon_record(cie, cend, &skip, &mut h);
+                        }
+                        None => h.u64(0xC1E),
+                    }
+                    match func {
+                        Some((si, k, _)) => entries.entry((si, k)).or_default().push(h.finish()),
+                        None => {
+                            orphans.u128(h.finish());
+                            orphan_count += 1;
+                        }
                     }
                 }
             }
-            let mut rels: Vec<usize> = (0..s.relocations.len()).collect();
-            rels.sort_by_key(|&i| (s.relocations[i].address, i));
-            for &i in &rels {
-                let r = s.relocations[i];
-                let n = 1usize << r.length.min(3);
-                if !r.external
-                    && let Some(x) = bytes.get_mut(r.address as usize..r.address as usize + n)
-                {
-                    x.fill(0);
-                }
-                h.u64(u64::from(r.address));
-                h.u64(u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16);
-                target(s, i, &mut h);
-            }
-            h.bytes(&bytes);
-            m.atoms.push(Atom {
-                key: b"__TEXT,__eh_frame".to_vec(),
-                hash: h.finish(),
-                unit: false,
-                names: Vec::new(),
-                desc: h.log.take().unwrap_or_default(),
-            });
+        }
+    }
+    for ((si, k), (mut h, unit, names)) in own {
+        if attached.contains(&(si, k)) {
             continue;
         }
-        for (k, (range, syms)) in list.iter().enumerate() {
-            let mut h = Canon::new();
-            h.bytes(s.segment_name());
-            h.bytes(s.name());
-            h.u64(u64::from(s.flags));
-            h.u64(u64::from(s.align));
-            h.u64(range.end - range.start);
-            let mut rels: Vec<usize> = (0..s.relocations.len())
-                .filter(|&i| range.contains(&u64::from(s.relocations[i].address)))
-                .collect();
-            rels.sort_by_key(|&i| (s.relocations[i].address, i));
-            if let Some(b) = s.bytes() {
-                let mut bytes = b[range.start as usize..range.end as usize].to_vec();
-                for &i in &rels {
-                    let r = s.relocations[i];
-                    if !r.external {
-                        let at = (u64::from(r.address) - range.start) as usize;
-                        let n = 1usize << r.length.min(3);
-                        if let Some(x) = bytes.get_mut(at..at + n) {
-                            x.fill(0);
-                        }
-                    }
-                }
-                h.bytes(&bytes);
-            }
-            for &i in &rels {
-                let r = s.relocations[i];
-                h.u64(u64::from(r.address) - range.start);
-                h.u64(u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16);
-                target(s, i, &mut h);
-            }
-            let mut ext = 0;
-            let mut weak = 0;
-            let mut names = Vec::new();
-            for &i in syms {
-                let y = &o.symbols[i];
-                h.bytes(&y.name);
-                h.u64(u64::from(y.n_type) | u64::from(y.n_desc) << 8);
-                h.u64(y.n_value.wrapping_sub(s.addr) - range.start);
-                if y.n_type & N_EXT != 0 {
-                    ext += 1;
-                    names.push(y.name.to_vec());
-                    if y.n_desc & N_WEAK_DEF != 0 {
-                        weak += 1;
-                    }
-                }
-            }
-            for e in entries.get(&(si, k)).into_iter().flatten() {
-                h.u128(*e);
-            }
-            m.atoms.push(Atom {
-                key: keys[si][k].clone(),
-                hash: h.finish(),
-                unit: ext > 0 && weak == ext,
-                names,
-                desc: h.log.take().unwrap_or_default(),
-            });
+        for e in entries.get(&(si, k)).into_iter().flatten() {
+            h.u128(*e);
         }
+        m.atoms.push(Atom {
+            key: keys[si][k].clone(),
+            hash: h.finish(),
+            unit,
+            names,
+            desc: h.log.take().unwrap_or_default(),
+        });
+    }
+    if orphan_count > 0 {
+        m.atoms.push(Atom {
+            key: b"__TEXT,__eh_frame".to_vec(),
+            hash: orphans.finish(),
+            unit: false,
+            names: Vec::new(),
+            desc: orphans.log.take().unwrap_or_default(),
+        });
     }
     for s in sections.iter().filter(|s| s.segment_name() == b"__DWARF") {
         // The bytes with every relocation's place zeroed, and each
@@ -520,7 +720,7 @@ fn read_member<'a>(name: &[u8], data: &'a [u8], header_offset: u64) -> Member<'a
             let mut h = Canon::new();
             h.u64(u64::from(r.kind) | u64::from(r.length) << 8 | u64::from(r.pcrel) << 16);
             target(s, ri, &mut h);
-            relocs.push((r.address, h.finish(), key));
+            relocs.push((r.address, h.finish(), key, 1u8 << r.length.min(3)));
         }
         relocs.sort();
         m.debug
@@ -657,6 +857,11 @@ fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<Lost
     }
     // Debug sections.
     let lost_keys: BTreeSet<&[u8]> = lost.iter().map(|(k, _)| k.as_slice()).collect();
+    // The line program, the lists, and the unit's extent, by what they
+    // name (`debug`); the unit's DW_AT_low_pc and DW_AT_high_pc are left out
+    // of the bytes compared.
+    let skip = debug::check(oo, no, &lost_keys, &n.name, rep);
+    let skipped = |at: u32| skip.iter().any(|r| r.contains(&(at as usize)));
     for (name, bytes, relocs) in &o.debug {
         let Some((_, nb, nr)) = n.debug.iter().find(|d| &d.0 == name) else {
             rep.fail("debug sections lost", || {
@@ -664,16 +869,58 @@ fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<Lost
             });
             continue;
         };
-        let expect: Vec<&(u32, u128, Option<Vec<u8>>)> = relocs
+        if matches!(
+            name.as_slice(),
+            b"__DWARF,__debug_line" | b"__DWARF,__debug_ranges" | b"__DWARF,__debug_loc"
+        ) {
+            continue;
+        }
+        let into_lost = |r: &(u32, u128, Option<Vec<u8>>, u8)| {
+            r.2.as_deref().is_some_and(|k| lost_keys.contains(k))
+        };
+        let expect: Vec<&(u32, u128, Option<Vec<u8>>, u8)> = relocs
             .iter()
-            .filter(|r| !r.2.as_deref().is_some_and(|k| lost_keys.contains(k)))
+            .filter(|r| !into_lost(r) && !skipped(r.0))
             .collect();
-        let removed = relocs.len() - expect.len();
-        let same_relocs = expect.len() == nr.len()
-            && expect.iter().zip(nr).all(|(a, b)| a.0 == b.0 && a.1 == b.1);
-        if bytes != nb || !same_relocs {
+        let kept: Vec<&(u32, u128, Option<Vec<u8>>, u8)> =
+            nr.iter().filter(|r| !skipped(r.0)).collect();
+        let removed = relocs
+            .iter()
+            .filter(|r| into_lost(r) && !skipped(r.0))
+            .count();
+        let same_relocs = expect.len() == kept.len()
+            && expect
+                .iter()
+                .zip(&kept)
+                .all(|(a, b)| a.0 == b.0 && a.1 == b.1);
+        // A removed relocation's place is all ones; the skipped places
+        // are left out.
+        let (mut bo, mut bn) = (bytes.clone(), nb.clone());
+        let mut tombstones = true;
+        for r in relocs.iter().filter(|r| into_lost(r) && !skipped(r.0)) {
+            let at = r.0 as usize;
+            let w = r.3 as usize;
+            match bn.get_mut(at..at + w) {
+                Some(x) if x.iter().all(|&c| c == 0xFF) => x.fill(0),
+                _ => tombstones = false,
+            }
+        }
+        for s in &skip {
+            for b in [&mut bo, &mut bn] {
+                if let Some(x) = b.get_mut(s.clone()) {
+                    x.fill(0);
+                }
+            }
+        }
+        if !tombstones {
             rep.fail(
-                "debug sections changed but at relocations into lost units (removed, zeroed)",
+                "debug relocations removed whose places aren't all ones",
+                || format!("{}: {}", show(&n.name), show(name)),
+            );
+        }
+        if bo != bn || !same_relocs {
+            rep.fail(
+                "debug sections changed but at relocations into lost units (removed)",
                 || format!("{}: {}", show(&n.name), show(name)),
             );
         }
@@ -765,7 +1012,23 @@ pub fn verify(a: &[u8], b: &[u8], options: &Options) -> Result<Report, String> {
             });
             if !ok {
                 rep.fail("lost units no anchored synthesized member holds", || {
-                    format!("{}: {}", show(&la.members[*k].name), show(&key))
+                    let mut s = format!("{}: {}", show(&la.members[*k].name), show(&key));
+                    if std::env::var_os("TURBOLIB_VERIFY_DUMP").is_some() {
+                        // The lost atom's form, and that of each synthesized
+                        // atom of its key.
+                        let mine = la.members[*k].atoms.iter().find(|a| a.key == key);
+                        s += &format!("\n      lost: {:?}", mine.map(|a| &a.desc));
+                        for &j in &synth {
+                            for at in lb.members[j].atoms.iter().filter(|a| a.key == key) {
+                                s += &format!(
+                                    "\n      in {}: {:?}",
+                                    show(&lb.members[j].name),
+                                    at.desc
+                                );
+                            }
+                        }
+                    }
+                    s
                 });
             }
         }

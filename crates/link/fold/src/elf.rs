@@ -84,8 +84,8 @@ use turbonop_elf_object::{
 
 use crate::hash::H128;
 
-mod dwarf;
-mod eh_frame;
+use crate::dwarf;
+pub(crate) mod eh_frame;
 
 /// A map only looked up (its order is never seen).
 type Map<K, V> = std::collections::HashMap<K, V, turbonop_hash::State>;
@@ -161,7 +161,7 @@ pub struct Report {
 
 /// The machines whose debug relocations can be tombstoned: the size of
 /// each absolute relocation type a debug section uses.
-fn debug_reloc_size(machine: u16, kind: u32) -> Option<usize> {
+pub(crate) fn debug_reloc_size(machine: u16, kind: u32) -> Option<usize> {
     match (machine, kind) {
         // R_X86_64_64, _32, _32S, _DTPOFF64, _DTPOFF32.
         (62, 1 | 17) => Some(8),
@@ -739,7 +739,7 @@ fn anchor_name(hashes: &[u128], env: u128) -> Vec<u8> {
 }
 
 /// Writes `value` (`size` bytes, in `endian`) at `at` in `bytes`.
-fn put(bytes: &mut [u8], at: usize, size: usize, value: u64, endian: Endian) {
+pub(crate) fn put(bytes: &mut [u8], at: usize, size: usize, value: u64, endian: Endian) {
     let Some(place) = bytes.get_mut(at..at + size) else {
         return;
     };
@@ -979,7 +979,7 @@ fn uleb(b: &[u8]) -> Option<(u64, usize)> {
     None
 }
 
-fn put_uleb(out: &mut Vec<u8>, mut v: u64) {
+pub(crate) fn put_uleb(out: &mut Vec<u8>, mut v: u64) {
     loop {
         let b = (v & 0x7F) as u8;
         v >>= 7;

@@ -5,7 +5,9 @@ a TLS variable, exceptions, and static initializers (members with side
 effects first, in between, and last), each folded with turbolib, and a
 program linked with ld64.lld against the originals and against the folded
 ones in both library orders, compared as relink.py compares (members
-loaded in order, symbols, code, initializers in order).
+loaded in order, then `turbolib compare-images` of the two images with
+their dSYMs: code, data, symbols, initializers in order, unwind
+information, imports, DWARF).
 
     fixture.py --turbolib PATH [--keep]
 
@@ -15,6 +17,7 @@ folded library too.
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -114,22 +117,21 @@ def main():
                 strip = lambda ts: [t.split("/")[-1] for t in ts if "__turbolib." not in t]
                 same_members = strip(traces[0]) == strip(traces[1])
                 synth = sum(1 for t in traces[1] if "__turbolib." in t)
-                ya, yb = relink.symbols(imgs[0]), relink.symbols(imgs[1])
-                only_a, only_b = ya - yb, {y for y in yb - ya if "~turbolib.anchor." not in y}
-                fa, fb = relink.functions(imgs[0]), relink.functions(imgs[1])
-                differ = [f for f in fa if fa[f] != fb.get(f)]
-                ia, ib = relink.init_order(imgs[0]), relink.init_order(imgs[1])
-                ok = same_members and not only_a and not only_b and not differ and ia == ib and len(ia) >= 2
+                for img in imgs:
+                    relink.dsym(img)
+                c = subprocess.run([a.turbolib, "compare-images", "--examples=3", imgs[0], imgs[1]],
+                                   capture_output=True, text=True)
+                init = re.search(r"(\d+)  initializers", c.stdout)
+                inits = int(init.group(1)) if init else 0
+                ok = same_members and c.returncode == 0 and inits >= 2
                 total += 1
                 good += ok
                 print(f"{arch} {opt} {' '.join(order)}: {'equivalent' if ok else 'DIFFERENT'}: members "
                       f"{'same order' if same_members else strip(traces[0]) + strip(traces[1])}, {synth} synthesized; "
-                      f"symbols -{len(only_a)} +{len(only_b)}; functions {len(fa)}, {len(differ)} differ; "
-                      f"initializers {ia} {'same' if ia == ib else ib}")
-                for f in differ[:3]:
-                    print(f"    differs: {f}")
-                for y in sorted(only_a)[:3] + sorted(only_b)[:3]:
-                    print(f"    symbol: {y}")
+                      f"{inits} initializers")
+                if c.returncode != 0:
+                    print("   " + "\n   ".join(l for l in c.stdout.splitlines() if not re.match(r"\s+\d+  ", l)))
+                    print("   " + c.stderr.strip()[:300])
     print(f"{good} of {total} checks pass")
     if a.keep:
         print(top)

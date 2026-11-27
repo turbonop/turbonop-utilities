@@ -24,7 +24,7 @@
 //!   unit's attributes and line rows, variables at fixed addresses, and
 //!   named types, by content.
 
-mod dwarf;
+pub(crate) mod dwarf;
 pub mod library;
 pub(crate) mod program;
 mod tables;

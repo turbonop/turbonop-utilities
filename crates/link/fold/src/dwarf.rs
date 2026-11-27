@@ -58,12 +58,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use super::Dwo;
+use crate::elf::Dwo;
 
 use turbonop_dwarf::consts::*;
 use turbonop_dwarf::ops::{self, Operand};
 use turbonop_dwarf::{Abbrev, Abbrevs, Attr, Reader, Sections, Unit, Value};
-use turbonop_elf_object::{Data, Endian, Object, Symbol, shf};
+use turbonop_elf_object::{Data, Endian, Object, shf};
 
 /// A debug section's role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -84,6 +84,8 @@ pub(crate) enum Kind {
 
 const KINDS: usize = 12;
 
+pub(crate) mod line;
+
 impl Kind {
     fn of(name: &[u8]) -> Option<Kind> {
         Some(match name {
@@ -99,6 +101,25 @@ impl Kind {
             b".debug_addr" => Kind::Addr,
             b".debug_str_offsets" => Kind::StrOffsets,
             b".debug_aranges" => Kind::Aranges,
+            _ => return None,
+        })
+    }
+
+    /// A Mach-O section's kind (its name, at most 16 bytes).
+    fn of_macho(name: &[u8]) -> Option<Kind> {
+        Some(match name {
+            b"__debug_info" => Kind::Info,
+            b"__debug_abbrev" => Kind::Abbrev,
+            b"__debug_str" => Kind::Str,
+            b"__debug_line_str" => Kind::LineStr,
+            b"__debug_line" => Kind::Line,
+            b"__debug_rnglists" => Kind::Rnglists,
+            b"__debug_loclists" => Kind::Loclists,
+            b"__debug_ranges" => Kind::Ranges,
+            b"__debug_loc" => Kind::Loc,
+            b"__debug_addr" => Kind::Addr,
+            b"__debug_str_offs" => Kind::StrOffsets,
+            b"__debug_aranges" => Kind::Aranges,
             _ => return None,
         })
     }
@@ -222,13 +243,59 @@ struct Cu {
     line: Option<(u64, u64, u64)>,
     header: LineHeader,
     seqs: Vec<Seq>,
+    /// Mach-O: the line table's rows by real section (each row's address
+    /// an offset in it), and what its program depends on: a moved atom's
+    /// rows make a sequence of their own.
+    rows: Vec<(usize, Vec<line::Row>)>,
+    params: Option<line::Params>,
 }
 
 /// One member's DWARF, read once for every synthesized member it gives
 /// units to.
+/// A symbol, as the DWARF's relocations name it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Sym {
+    /// A global (a name of the member's, or an undefined one).
+    pub global: bool,
+    /// The section it is in, if any (for Mach-O, a real section, which
+    /// [`Source::atoms`] divides).
+    pub section: Option<usize>,
+    pub value: u64,
+    /// A section's symbol: its value isn't added.
+    pub section_symbol: bool,
+}
+
+/// A section of the source member, as the DWARF's addresses see it (for
+/// Mach-O, an atom).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Sect {
+    pub code: bool,
+    pub size: u64,
+}
+
+/// A Mach-O debug section, for [`Source::macho`]: its name, bytes, and
+/// addresses (offset, size, symbol, addend).
+pub(crate) type MachoSection<'a> = (&'a [u8], Vec<u8>, Vec<(u64, u8, u32, i64)>);
+
 pub(crate) struct Source<'p> {
-    symbols: &'p [Symbol<'p>],
-    sections: Vec<(u64, u64)>,
+    symbols: Vec<Sym>,
+    sections: Vec<Sect>,
+    /// Mach-O: each real section's atoms (start, end, and the atom's index
+    /// among [`Source::sections`]), in order: what an address of a real
+    /// section is in. `None` for ELF, whose sections are the units'.
+    atoms: Option<Vec<Vec<(u64, u64, usize)>>>,
+    /// Mach-O: each atom's real section, start, and end.
+    extents: Vec<Option<(usize, u64, u64)>>,
+    /// Mach-O: classes the moved code names (from its own DIEs: its
+    /// variables', parameters', and specifications' types) and the classes
+    /// it is a member of are kept whole, not as declarations: dsymutil
+    /// keeps only what the linked code's DIEs reach, so a definition only
+    /// the moved code named would be in no unit of the dSYM. (What those
+    /// definitions name are declarations again: keeping every class whole
+    /// would make the corpus's synthesized members' DWARF 6.07 GB, not
+    /// 14.9 MB.)
+    complete: bool,
+    _p: core::marker::PhantomData<&'p ()>,
     endian: Endian,
     abs32: u32,
     abs64: u32,
@@ -262,19 +329,19 @@ struct Skeleton {
 
 /// A DIE's attribute as read: where its value lies in `.debug_info`.
 #[derive(Clone, Copy, Debug)]
-struct A<'d> {
-    name: u16,
-    form: u16,
-    implicit: i64,
-    pos: u64,
-    end: u64,
-    value: Value<'d>,
+pub(crate) struct A<'d> {
+    pub(crate) name: u16,
+    pub(crate) form: u16,
+    pub(crate) implicit: i64,
+    pub(crate) pos: u64,
+    pub(crate) end: u64,
+    pub(crate) value: Value<'d>,
 }
 
 type R<T> = Result<T, &'static str>;
 
 fn reloc_size(machine: u16, rtype: u32) -> Option<usize> {
-    super::debug_reloc_size(machine, rtype)
+    crate::elf::debug_reloc_size(machine, rtype)
 }
 
 fn read_uint(b: &[u8], at: usize, n: usize, endian: Endian) -> Option<u64> {
@@ -385,12 +452,20 @@ impl<'p> Source<'p> {
                     continue;
                 };
                 let value = symbols[r.sym as usize].value.wrapping_add(r.addend as u64);
-                super::put(&mut bytes, r.offset as usize, size, value, endian);
+                crate::elf::put(&mut bytes, r.offset as usize, size, value, endian);
             }
             secs[k] = Some(Sec { bytes, rels });
         }
         let mut src = Source {
-            symbols,
+            symbols: symbols
+                .iter()
+                .map(|s| Sym {
+                    global: s.bind() != 0,
+                    section: s.in_section().then_some(s.shndx as usize),
+                    value: s.value,
+                    section_symbol: s.kind() == 3,
+                })
+                .collect(),
             sections: obj
                 .sections
                 .iter()
@@ -399,9 +474,16 @@ impl<'p> Source<'p> {
                         Data::Bytes(b) => b.len() as u64,
                         _ => s.nobits_size,
                     };
-                    (s.flags, size)
+                    Sect {
+                        code: s.flags & shf::EXECINSTR != 0 && s.flags & shf::ALLOC != 0,
+                        size,
+                    }
                 })
                 .collect(),
+            atoms: None,
+            extents: Vec::new(),
+            complete: false,
+            _p: core::marker::PhantomData,
             endian,
             abs32,
             abs64,
@@ -502,11 +584,32 @@ impl<'p> Source<'p> {
     /// The member section an address is in, if it names one of the
     /// member's sections by a local symbol or a definition.
     fn section_of(&self, a: Addr) -> Option<usize> {
-        let Addr::Sym { sym, .. } = a else {
+        self.locate(a).map(|(s, _)| s)
+    }
+
+    /// The section (for Mach-O, the atom) an address is in, and its offset
+    /// in it, if it names one of the member's by a local symbol or a
+    /// definition.
+    fn locate(&self, a: Addr) -> Option<(usize, i64)> {
+        let Addr::Sym { sym, addend, .. } = a else {
             return None;
         };
         let s = self.symbols.get(sym as usize)?;
-        s.in_section().then_some(s.shndx as usize)
+        if s.global && s.section.is_none() {
+            return None;
+        }
+        let sec = s.section?;
+        let off = addend.wrapping_add(if s.section_symbol { 0 } else { s.value as i64 });
+        match &self.atoms {
+            None => Some((sec, off)),
+            Some(atoms) => {
+                let list = atoms.get(sec)?;
+                let o = u64::try_from(off).ok()?;
+                let k = list.partition_point(|x| x.0 <= o).checked_sub(1)?;
+                let (start, end, id) = list[k];
+                (o < end).then_some((id, (o - start) as i64))
+            }
+        }
     }
 
     fn unit<'s>(&'s self, cu: &Cu) -> R<Unit<'s>> {
@@ -586,6 +689,8 @@ impl<'p> Source<'p> {
             line: None,
             header: LineHeader::default(),
             seqs: Vec::new(),
+            rows: Vec::new(),
+            params: None,
         };
         let low_pc = match top.iter().find(|a| a.name == DW_AT_LOW_PC) {
             Some(a) => self.attr_addr(&probe, a)?,
@@ -730,6 +835,8 @@ impl<'p> Source<'p> {
                 line: None,
                 header: LineHeader::default(),
                 seqs: Vec::new(),
+                rows: Vec::new(),
+                params: None,
             };
             // The unit's DIE: its bases.
             let (_, top) = read_die(u, &cu.abbrevs, u.dies)?;
@@ -793,6 +900,13 @@ impl<'p> Source<'p> {
                 cu.line = Some(line);
                 cu.header = header;
                 cu.seqs = seqs;
+                if self.atoms.is_some() {
+                    // (Sequences are a section's, not an atom's.)
+                    for s in &mut cu.seqs {
+                        s.section = None;
+                    }
+                    self.rows(&mut cu, off)?;
+                }
             }
             out.push(cu);
         }
@@ -1187,6 +1301,129 @@ impl<'p> Source<'p> {
         Ok(((off, program as u64, end as u64), header, seqs))
     }
 
+    /// Mach-O: the rows of `cu`'s line table (at `off`), by real section,
+    /// each row's address an offset in its section (what the sequence's
+    /// `DW_LNE_set_address` relocation names).
+    fn rows(&self, cu: &mut Cu, off: u64) -> R<()> {
+        let data = self.sec(Kind::Line);
+        let e = core_endian(self.endian);
+        let t = line::table(data, off as usize, cu.address_size, e)?;
+        let read = |at: usize, n: u8| read_uint(data, at, usize::from(n), self.endian);
+        let seqs = line::decode(data, &t, e, &read)?;
+        let mut by: BTreeMap<usize, Vec<line::Row>> = BTreeMap::new();
+        for s in seqs {
+            let Some(at) = s.set_address else { continue };
+            let Some(r) = self.rel_at(Kind::Line, at as u64) else {
+                continue; // (An address no relocation names: no code's.)
+            };
+            let Some(sec) = self.symbols.get(r.sym as usize).and_then(|y| y.section) else {
+                continue;
+            };
+            // The section's address: the operand's value less its offset.
+            let raw = read_uint(data, at, usize::from(t.params.address_size), self.endian)
+                .ok_or("a line table that doesn't read")?;
+            let base = raw.wrapping_sub(r.addend as u64);
+            let rows = by.entry(sec).or_default();
+            for mut row in s.rows {
+                row.address = row.address.wrapping_sub(base);
+                rows.push(row);
+            }
+        }
+        cu.rows = by.into_iter().collect();
+        cu.params = Some(t.params);
+        Ok(())
+    }
+
+    /// Mach-O: a member's DWARF, from its debug sections (`__debug_info`
+    /// and the rest: each name, bytes, and relocations, every one an
+    /// address: its offset, size, symbol, and addend), its symbols, its
+    /// atoms (each real section's, as [`Source::atoms`]), and what each
+    /// atom is ([`Sect`]); `owner` gives each atom's unit.
+    pub(crate) fn macho(
+        debug: Vec<MachoSection<'_>>,
+        symbols: Vec<Sym>,
+        atoms: Vec<Vec<(u64, u64, usize)>>,
+        sections: Vec<Sect>,
+        owner: &[Option<usize>],
+    ) -> R<Self> {
+        let (abs32, abs64) = (10, 1);
+        let mut secs: Vec<Option<Sec>> = (0..KINDS).map(|_| None).collect();
+        for (name, bytes, rels) in debug {
+            let Some(k) = Kind::of_macho(name) else {
+                continue;
+            };
+            if secs[k as usize].is_some() {
+                return Err("two debug sections of one kind");
+            }
+            let mut rels: Vec<Rel> = rels
+                .into_iter()
+                .map(|(offset, size, sym, addend)| Rel {
+                    offset,
+                    rtype: if size == 4 { abs32 } else { abs64 },
+                    sym,
+                    addend,
+                })
+                .collect();
+            rels.sort_by_key(|r| r.offset);
+            if !k.relocated() && !rels.is_empty() {
+                return Err("relocations in a string or abbreviation section");
+            }
+            secs[k as usize] = Some(Sec { bytes, rels });
+        }
+        let n = symbols.len();
+        let mut extents = vec![None; sections.len()];
+        for (s, list) in atoms.iter().enumerate() {
+            for &(a, b, id) in list {
+                if let Some(x) = extents.get_mut(id) {
+                    *x = Some((s, a, b));
+                }
+            }
+        }
+        let mut src = Source {
+            symbols,
+            sections,
+            atoms: Some(atoms),
+            extents,
+            complete: true,
+            _p: core::marker::PhantomData,
+            endian: Endian::Little,
+            abs32,
+            abs64,
+            secs,
+            sym_kind: vec![None; n],
+            obj_str: None,
+            skeleton: None,
+            cus: Vec::new(),
+            roots: BTreeMap::new(),
+        };
+        if src.secs[Kind::Info as usize].is_none() {
+            return Ok(src);
+        }
+        src.read_units(owner)?;
+        Ok(src)
+    }
+
+    /// Mach-O: atom `id`'s real section, start, and end.
+    fn atom_extent(&self, id: usize) -> Option<(usize, u64, u64)> {
+        self.extents.get(id).copied().flatten()
+    }
+
+    /// Mach-O: the rows of `cu` in atom `id`, each address an offset in it,
+    /// and the atom's size.
+    fn atom_rows<'c>(&self, cu: &'c Cu, id: usize) -> Option<(&'c [line::Row], u64)> {
+        let (s, a, b) = self.atom_extent(id)?;
+        let rows = &cu.rows.iter().find(|(x, _)| *x == s)?.1;
+        let lo = rows.partition_point(|r| r.address < a);
+        let hi = rows.partition_point(|r| r.address < b);
+        // (Within a sequence rows go up; a section's sequences don't
+        // overlap.)
+        let part = &rows[lo..hi];
+        if part.iter().any(|r| r.end_sequence) || part.is_empty() {
+            return None;
+        }
+        Some((part, b - a))
+    }
+
     /// The file indexes sequence `s` sets (`DW_LNS_set_file`).
     fn files_set(&self, h: &LineHeader, s: &Seq, out: &mut BTreeSet<u64>) -> R<()> {
         let bad = "a line table that doesn't read";
@@ -1264,7 +1501,7 @@ fn index_kind(k: usize) -> Kind {
 
 /// Reads the DIE at `offset`: its abbreviation and attributes, each with
 /// where it lies.
-fn read_die<'d, 'a>(
+pub(crate) fn read_die<'d, 'a>(
     unit: &Unit<'d>,
     abbrevs: &'a Abbrevs,
     offset: u64,
@@ -1453,7 +1690,7 @@ impl Piece {
     }
 
     fn uleb(&mut self, v: u64) {
-        super::put_uleb(&mut self.bytes, v);
+        crate::elf::put_uleb(&mut self.bytes, v);
     }
 
     fn append(&mut self, other: Piece) {
@@ -1535,6 +1772,13 @@ struct Keep<'c> {
     /// can find the definition of by its name (in named scopes only): the
     /// unit's, worked out once.
     declarable: &'c [bool],
+    /// Mach-O: classes the moved code names, and those it is a member of,
+    /// whole (see [`Source::complete`]).
+    complete: bool,
+    /// The type DIEs (pointers, references, qualifiers, typedefs, arrays,
+    /// function types) kept for the moved code: what they name, the code
+    /// names too.
+    via_code: std::collections::HashSet<usize>,
 }
 
 const SKELETON: u8 = 1;
@@ -1569,6 +1813,8 @@ impl<'c> Keep<'c> {
             mark: HashMap::new(),
             work: Vec::new(),
             declarable,
+            complete: false,
+            via_code: std::collections::HashSet::new(),
         }
     }
 
@@ -1587,7 +1833,10 @@ impl<'c> Keep<'c> {
             if self.mark(at) != 0 {
                 return;
             }
-            if self.declarable[at] {
+            if self.declarable[at] && self.complete {
+                self.whole(dies, at);
+                return;
+            } else if self.declarable[at] {
                 self.mark.insert(at, DECLARATION);
             } else if is_scope(dies[at].tag)
                 || matches!(
@@ -1635,10 +1884,10 @@ impl<'c> Keep<'c> {
     /// debugger finds by name as a declaration (its definition is in the
     /// givers' units, which a link that loads this member loads), the rest
     /// whole.
-    fn refer(&mut self, dies: &[Die], i: usize) {
+    fn refer(&mut self, dies: &[Die], i: usize, from_code: bool) {
         if is_scope(dies[i].tag) {
             self.skeleton(dies, i);
-        } else if self.declarable[i] {
+        } else if self.declarable[i] && !(self.complete && from_code) {
             if self.mark(i) == 0 {
                 self.mark.insert(i, DECLARATION);
                 let p = dies[i].parent;
@@ -1647,6 +1896,25 @@ impl<'c> Keep<'c> {
                 }
             }
         } else {
+            if self.complete
+                && from_code
+                && matches!(
+                    dies[i].tag,
+                    DW_TAG_POINTER_TYPE
+                        | DW_TAG_REFERENCE_TYPE
+                        | DW_TAG_RVALUE_REFERENCE_TYPE
+                        | DW_TAG_CONST_TYPE
+                        | DW_TAG_VOLATILE_TYPE
+                        | DW_TAG_RESTRICT_TYPE
+                        | DW_TAG_TYPEDEF
+                        | DW_TAG_ARRAY_TYPE
+                        | DW_TAG_SUBROUTINE_TYPE
+                        | DW_TAG_PTR_TO_MEMBER_TYPE
+                )
+                && self.mark(i) != WHOLE
+            {
+                self.via_code.insert(i);
+            }
             self.whole(dies, i);
         }
     }
@@ -1716,14 +1984,15 @@ impl<'s, 'p> Builder<'s, 'p> {
             return None;
         };
         let s = self.src.symbols.get(sym as usize)?;
-        if s.bind() != 0 {
+        if s.global && (self.src.atoms.is_none() || s.section.is_none()) {
             return Some((rtype, Target::Global(sym), addend));
         }
-        if s.in_section() && self.moved.contains(&(s.shndx as usize)) {
-            let value = if s.kind() == 3 { 0 } else { s.value as i64 };
-            return Some((rtype, Target::Section(s.shndx as usize), addend + value));
+        match self.src.locate(a) {
+            Some((sec, off)) if self.moved.contains(&sec) => {
+                Some((rtype, Target::Section(sec), off))
+            }
+            _ => None,
         }
-        None
     }
 
     /// Writes an address of `n` bytes.
@@ -2344,9 +2613,20 @@ impl<'s, 'p> Builder<'s, 'p> {
         let dies = &cu.dies;
         // What to keep.
         let mut keep = Keep::new(&cu.declarable);
+        keep.complete = src.complete;
         for &r in roots {
             keep.whole(dies, r);
         }
+        // The moved code's DIEs: the roots' subtrees (offsets).
+        let mut code: Vec<(u64, u64)> = roots
+            .iter()
+            .map(|&r| (dies[r].offset, dies[r].end))
+            .collect();
+        code.sort_unstable();
+        let in_code = |off: u64| {
+            let k = code.partition_point(|c| c.0 <= off);
+            k.checked_sub(1).is_some_and(|k| off < code[k].1)
+        };
         keep.skeleton(dies, 0);
         let mut refs = Vec::new();
         while let Some(i) = keep.work.pop() {
@@ -2386,8 +2666,9 @@ impl<'s, 'p> Builder<'s, 'p> {
                     _ => {}
                 }
             }
+            let from_code = in_code(dies[i].offset) || keep.via_code.contains(&i);
             for &t in &refs {
-                keep.refer(dies, t);
+                keep.refer(dies, t, from_code);
             }
         }
         // The kept DIEs, in order.
@@ -2403,6 +2684,11 @@ impl<'s, 'p> Builder<'s, 'p> {
             for s in &cu.seqs {
                 if s.section.is_some_and(|x| self.moved.contains(&x)) {
                     src.files_set(&cu.header, s, &mut used)?;
+                }
+            }
+            for &m in self.moved {
+                if let Some((rows, _)) = src.atom_rows(cu, m) {
+                    used.extend(rows.iter().map(|r| r.file));
                 }
             }
             for &i in &kept {
@@ -2514,7 +2800,7 @@ impl<'s, 'p> Builder<'s, 'p> {
             for &s in &self.code_sections() {
                 a.rel(src.abs64, Target::Section(s), 0);
                 a.put(0, n, e);
-                a.put(src.sections[s].1, n, e);
+                a.put(src.sections[s].size, n, e);
             }
             a.put(0, n, e);
             a.put(0, n, e);
@@ -2536,8 +2822,8 @@ impl<'s, 'p> Builder<'s, 'p> {
             .iter()
             .copied()
             .filter(|&s| {
-                let (flags, size) = self.src.sections[s];
-                flags & shf::EXECINSTR != 0 && flags & shf::ALLOC != 0 && size > 0
+                let x = self.src.sections[s];
+                x.code && x.size > 0
             })
             .collect()
     }
@@ -2618,7 +2904,7 @@ impl<'s, 'p> Builder<'s, 'p> {
         let mut p = Piece::default();
         let rtype = self.src.abs64;
         for &s in sections {
-            let len = self.src.sections[s].1;
+            let len = self.src.sections[s].size;
             let t = Target::Section(s);
             if cu.version >= 5 {
                 p.bytes.push(DW_RLE_START_LENGTH);
@@ -2734,6 +3020,59 @@ impl<'s, 'p> Builder<'s, 'p> {
         for s in &cu.seqs {
             if s.section.is_some_and(|x| self.moved.contains(&x)) {
                 self.sequence(h, s, &mut p)?;
+            }
+        }
+        // Mach-O: each moved atom's rows, a sequence of their own.
+        if let Some(params) = &cu.params {
+            for &m in self.moved {
+                let Some((rows, size)) = self.src.atom_rows(cu, m) else {
+                    continue;
+                };
+                let (a, _, _) = self.src.atom_extent(m).unwrap_or((0, 0, 0));
+                let start = self.src.atom_extent(m).map_or(0, |x| x.1);
+                let _ = a;
+                let mut out: Vec<line::Row> = Vec::with_capacity(rows.len() + 1);
+                for r in rows {
+                    let file = self
+                        .files
+                        .get(r.file as usize)
+                        .copied()
+                        .filter(|&n| n != u64::MAX)
+                        .ok_or("a file index not kept")?;
+                    out.push(line::Row {
+                        address: r.address - start,
+                        file,
+                        ..*r
+                    });
+                }
+                let last = *out.last().ok_or("no rows")?;
+                out.push(line::Row {
+                    address: size,
+                    end_sequence: true,
+                    basic_block: false,
+                    prologue_end: false,
+                    epilogue_begin: false,
+                    discriminator: 0,
+                    ..last
+                });
+                let first = out[0].address;
+                let (bytes, at) = line::encode(params, &[&out], core_endian(e))?;
+                let base = p.bytes.len();
+                p.bytes.extend_from_slice(&bytes);
+                let n = usize::from(params.address_size);
+                for k in at {
+                    p.bytes[base + k..base + k + n].fill(0);
+                    p.rels.push(OutRel {
+                        offset: (base + k) as u64,
+                        rtype: if n == 4 {
+                            self.src.abs32
+                        } else {
+                            self.src.abs64
+                        },
+                        target: Target::Section(m),
+                        addend: first as i64,
+                    });
+                }
             }
         }
         let len = p.bytes.len() - 4;
@@ -3050,6 +3389,7 @@ pub(crate) fn build(src: &Source<'_>, moved: &BTreeSet<usize>) -> R<Option<Out>>
         cu.seqs
             .iter()
             .any(|q| q.section.is_some_and(|x| moved.contains(&x)))
+            || moved.iter().any(|&m| src.atom_rows(cu, m).is_some())
     });
     if by_unit.is_empty() && !has_lines {
         return Ok(None);

@@ -18,6 +18,7 @@
 use turbonop_global_alloc as _;
 
 pub mod analyze;
+mod dwarf;
 pub mod elf;
 mod hash;
 pub mod macho;

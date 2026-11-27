@@ -667,7 +667,7 @@ x64. Where the 3.5 MB went:
   - Shared types, select-any, `--locals`, and `--report odr` still keep
     every object (they compare or share across members): read them one at
     a time too.
-  - Per-thread memory (about 75 MiB a thread on clangSema.lib): `strip`
+  - Per-thread memory (about 90 MiB a thread on clangSema.lib): `strip`
     clones the object it rewrites; threads' freed memory isn't reused by
     the next step's new threads.
   - The facts (437,527 units of 288 bytes, their names copied): borrow

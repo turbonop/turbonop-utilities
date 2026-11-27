@@ -71,10 +71,7 @@ fn main() {
                 + x.detail.as_ref().map_or(0, String::capacity);
         }
         other += f.other_definitions.capacity() * 24
-            + f.other_definitions
-                .iter()
-                .map(Vec::capacity)
-                .sum::<usize>();
+            + f.other_definitions.iter().map(Vec::capacity).sum::<usize>();
     }
     println!(
         "{nunits} units ({} B each) {:.1} MiB; their sections {:.1}, symbols {:.1}, externals {:.1} + names {:.1}, the rest {:.1}; other definitions {:.1} MiB",

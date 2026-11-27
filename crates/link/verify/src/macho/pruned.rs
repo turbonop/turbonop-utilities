@@ -263,6 +263,19 @@ struct Cmp<'t, 'd> {
     seen_rels: usize,
 }
 
+/// Hashes DIE `i`'s strings and constants.
+fn values(t: &Tree<'_>, i: usize, h: &mut H128) {
+    for x in &t.dies[i].attrs {
+        match x.value {
+            Value::StrOffset(_, off) => h.bytes(t.string(off).unwrap_or(b"?")),
+            Value::Str(s) | Value::Data(s) => h.bytes(s),
+            Value::Sint(v) => h.u64(v as u64),
+            Value::Uint(v) if !is_ref(x.form) && x.form != DW_FORM_SEC_OFFSET => h.u64(v),
+            _ => {}
+        }
+    }
+}
+
 /// Hashes DIE `i`'s strings.
 fn strings(t: &Tree<'_>, i: usize, h: &mut H128) {
     for x in &t.dies[i].attrs {
@@ -279,7 +292,7 @@ const SIG_DEPTH: u8 = 3;
 
 /// A DIE's signature, for aligning the trees: its abbreviation, tag, and
 /// the values pruning doesn't change (strings by content, constants,
-/// flags), its ancestors' names, and its references' targets' signatures,
+/// flags), its children's, its ancestors' names, and its references' targets' signatures,
 /// `depth` deep.
 fn signature(t: &Tree<'_>, memo: &mut Vec<Option<u128>>, i: usize, depth: u8) -> u128 {
     if depth == SIG_DEPTH
@@ -307,6 +320,14 @@ fn signature(t: &Tree<'_>, memo: &mut Vec<Option<u128>>, i: usize, depth: u8) ->
             }
         }
         p = a.parent;
+    }
+    // (Its children's own values: two instantiations may print alike. Not
+    // a scope's, which may lose children.)
+    let scope = matches!(d.tag, DW_TAG_NAMESPACE | DW_TAG_COMPILE_UNIT);
+    for &k in d.children.iter().filter(|_| !scope) {
+        let c = &t.dies[k as usize];
+        h.u64(c.code);
+        values(t, k as usize, &mut h);
     }
     for a in &d.attrs {
         match a.value {

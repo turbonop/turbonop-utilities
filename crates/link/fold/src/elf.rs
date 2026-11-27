@@ -2403,6 +2403,13 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
             }
         }
     }
+    // What was read, freed on every core (a large library's is millions
+    // of small allocations).
+    drop(source_of);
+    turbonop_par::map_into(sources, 1, drop);
+    turbonop_par::map_into(copies, 1, drop);
+    turbonop_par::map_into(definers, 1, drop);
+    turbonop_par::map_into(parsed, 1, drop);
     (out, report)
 }
 

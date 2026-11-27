@@ -973,13 +973,14 @@ impl<'p> Source<'p> {
                 turbonop_par::map_range(n.div_ceil(CHUNK), 1, |c| {
                     let unit = me.unit(cu)?;
                     let mut v = Vec::new();
+                    let mut attrs = Vec::new();
                     for di in (c * CHUNK).max(1)..n.min((c + 1) * CHUNK) {
                         let d = &cu.dies[di];
                         // (A DIE that can't be one isn't read again.)
                         if !d.roots {
                             continue;
                         }
-                        let (_, attrs) = read_die(&unit, &cu.abbrevs, d.offset)?;
+                        read_die_into(&unit, &cu.abbrevs, d.offset, &mut attrs)?;
                         let mut here = BTreeSet::new();
                         for a in &attrs {
                             for addr in me.addresses_of(cu, &unit, a)? {
@@ -1572,12 +1573,26 @@ pub(crate) fn read_die<'d, 'a>(
     abbrevs: &'a Abbrevs,
     offset: u64,
 ) -> R<(&'a Abbrev, Vec<A<'d>>)> {
+    let mut out = Vec::new();
+    let a = read_die_into(unit, abbrevs, offset, &mut out)?;
+    Ok((a, out))
+}
+
+/// [`read_die`] into `out` (cleared first): for reading many DIEs without
+/// a vector each.
+fn read_die_into<'d, 'a>(
+    unit: &Unit<'d>,
+    abbrevs: &'a Abbrevs,
+    offset: u64,
+    out: &mut Vec<A<'d>>,
+) -> R<&'a Abbrev> {
     let bad = "a DIE that doesn't read";
+    out.clear();
     let data = unit.sections().info;
     let mut r = Reader::new(data, offset as usize, unit.sections().endian);
     let code = r.uleb().ok_or(bad)?;
     let a = abbrevs.get(code).ok_or(bad)?;
-    let mut out = Vec::with_capacity(a.attrs.len());
+    out.reserve(a.attrs.len());
     for spec in &a.attrs {
         let pos = r.pos as u64;
         let value = unit
@@ -1592,7 +1607,7 @@ pub(crate) fn read_die<'d, 'a>(
             value,
         });
     }
-    Ok((a, out))
+    Ok(a)
 }
 
 /// What walking a unit's DIEs needs of an abbreviation, and whether a DIE
@@ -2903,8 +2918,9 @@ impl<'s, 'p> Builder<'s, 'p> {
         };
         keep.skeleton(dies, 0);
         let mut refs = Vec::new();
+        let mut attrs = Vec::new();
         while let Some(i) = keep.work.pop() {
-            let (_, attrs) = read_die(&unit, &cu.abbrevs, dies[i].offset)?;
+            read_die_into(&unit, &cu.abbrevs, dies[i].offset, &mut attrs)?;
             refs.clear();
             for a in &attrs {
                 if a.name == DW_AT_SIBLING {
@@ -2967,7 +2983,7 @@ impl<'s, 'p> Builder<'s, 'p> {
                 if !matches!(keep.mark(i), SKELETON | WHOLE) {
                     continue;
                 }
-                let (_, attrs) = read_die(&unit, &cu.abbrevs, dies[i].offset)?;
+                read_die_into(&unit, &cu.abbrevs, dies[i].offset, &mut attrs)?;
                 for a in &attrs {
                     if is_file(a.name) {
                         used.insert(file_value(&unit, a)?);

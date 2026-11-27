@@ -112,9 +112,12 @@ pub fn link(mut config: Config) -> Outcome {
         }
     };
     let mut all = Vec::new();
-    for (name, data) in &resolved.resources {
+    for (source, (name, data)) in resolved.resources.iter().enumerate() {
         match crate::resources::parse_res(data) {
-            Ok(r) => all.extend(r),
+            Ok(r) => all.extend(r.into_iter().map(|mut r| {
+                r.source = crate::n32(source);
+                r
+            })),
             Err(m) => {
                 out.diagnostics.push(LinkError {
                     code: 1136,

@@ -50,6 +50,10 @@ const ABSOLUTES: &[&[u8]] = &[
     b"__x64_code_ranges_to_entry_points_count",
 ];
 
+/// The sections `/GUARD:CF` reads its tables from (and drops), whose
+/// static symbols link.exe lists at their values.
+const GUARD_INPUTS: &[&[u8]] = &[b".gfids$y", b".giats$y", b".gljmp$y", b".gehcont$y"];
+
 /// One line of the publics or the statics.
 struct Entry {
     /// The address (VA), what the lines are sorted by.
@@ -134,7 +138,14 @@ impl Image<'_> {
                 .map(|(_, chunks)| {
                     chunks
                         .iter()
-                        .map(|&c| l.chunks[c as usize].rva + l.chunks[c as usize].size)
+                        .map(|&c| {
+                            let chunk = &l.chunks[c as usize];
+                            // (link.exe's room after the bound tables is
+                            // 0x103 bytes, and the alignment after it the
+                            // 0x104th: an empty group after it starts there.)
+                            let short = u32::from(chunk.kind == ChunkKind::DelayBoundRoom);
+                            chunk.rva + chunk.size - short
+                        })
                         .max()
                 })
                 .collect();
@@ -179,13 +190,16 @@ impl Image<'_> {
         // The publics.
         let mut publics: Vec<Entry> = Vec::new();
         for &name in ABSOLUTES {
-            let value = r
-                .names
-                .get(name)
-                .map_or(0, |&g| match self.global(g) {
-                    super::Target::Absolute(v) => v,
-                    _ => 0,
-                });
+            let target = r.names.get(name).map(|&g| self.global(g));
+            if let Some(super::Target::Rva(rva)) = target {
+                // (A /GUARD table: where it is.)
+                publics.push(at(rva, name.to_vec(), false, false, "<linker-defined>".into()));
+                continue;
+            }
+            let value = match target {
+                Some(super::Target::Absolute(v)) => v,
+                _ => 0,
+            };
             publics.push(Entry {
                 va: value,
                 section: 0,
@@ -273,6 +287,20 @@ impl Image<'_> {
                         let rva = l.chunks[c as usize].rva + value;
                         publics.push(at(rva, name.to_vec(), function, function && inline_chunk(c), file_origin(file)));
                     }
+                    // (An alias of an import's thunk or address: as that.)
+                    match r.globals[t as usize].def {
+                        Def::ImportThunk(f) => {
+                            if let Some(&c) = l.thunk_chunks.get(&f) {
+                                publics.push(at(l.chunks[c as usize].rva, name.to_vec(), true, false, file_origin(f)));
+                            }
+                        }
+                        Def::ImportAddress(f) => {
+                            if let Some(rva) = self.import_slot(f) {
+                                publics.push(at(rva, name.to_vec(), false, false, file_origin(f)));
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 Def::Common { .. } => {
                     if let Some(rva) = self.rva_of(g) {
@@ -282,6 +310,15 @@ impl Image<'_> {
                 Def::ImportAddress(f) => {
                     if let Some(rva) = self.import_slot(f) {
                         publics.push(at(rva, name.to_vec(), false, false, file_origin(f)));
+                    }
+                    // A delay-loaded import's thunk, `__imp_load_x`.
+                    if l.delay_slots.contains_key(&f)
+                        && let Some(rest) = name.strip_prefix(b"__imp_")
+                        && let Some(rva) = self.delay_rva(ChunkKind::DelayThunk(f))
+                    {
+                        let mut n = b"__imp_load_".to_vec();
+                        n.extend_from_slice(rest);
+                        publics.push(at(rva, n, true, false, file_origin(f)));
                     }
                 }
                 Def::ImportThunk(f) => {
@@ -325,6 +362,37 @@ impl Image<'_> {
             }
         }
         let _ = names_rva;
+        // The delay-load tables' symbols, as link.exe names what it builds
+        // for each delay-loaded DLL (from its first import's library).
+        for (d, dll) in l.delay_dlls.iter().enumerate() {
+            let d = crate::n32(d);
+            let Some(&first) = dll.imports.first() else {
+                continue;
+            };
+            let from = file_origin(first);
+            let underscored: Vec<u8> = dll.name.iter().map(|&b| if b == b'.' { b'_' } else { b }).collect();
+            let lower = underscored.to_ascii_lowercase();
+            let stem = crate::resolve::dll_stem(dll.name);
+            let named = |prefix: &[u8], rest: &[u8]| [prefix, rest].concat();
+            let n = 8 * crate::n32(dll.imports.len());
+            let mut put = |kind: ChunkKind, plus: u32, name: Vec<u8>| {
+                if let Some(rva) = self.delay_rva(kind) {
+                    publics.push(at(rva + plus, name, false, false, from.clone()));
+                }
+            };
+            put(ChunkKind::TailMerge(d), 0, named(b"__tailMerge_", &lower));
+            put(ChunkKind::DelayDllName(d), 0, named(b"__sz_", &underscored));
+            put(ChunkKind::DelayHandle(d), 0, named(b"__hmod__", &underscored));
+            put(ChunkKind::DelayDirectory, 32 * d, named(b"__DELAY_IMPORT_DESCRIPTOR_", &lower));
+            if d == 0 {
+                put(ChunkKind::DelayNullDescriptor, 0, b"__NULL_DELAY_IMPORT_DESCRIPTOR".to_vec());
+            }
+            let thunk = |suffix: &[u8]| [b"\x7f", stem, b"_NULL_THUNK_DATA_", suffix].concat();
+            put(ChunkKind::DelayNames(d), n, thunk(b"DLN"));
+            put(ChunkKind::DelayBound(d), n, thunk(b"DLB"));
+            put(ChunkKind::DelayAddresses(d), n, thunk(b"DLA"));
+            put(ChunkKind::DelayUnload(d), n, thunk(b"DLU"));
+        }
         // (link.exe lists __volatile_metadata whenever it writes it.)
         if !r.names.contains_key(&b"__volatile_metadata"[..])
             && let Some(c) = l.chunks.iter().find(|c| c.kind == ChunkKind::VolatileMetadata)
@@ -351,22 +419,52 @@ impl Image<'_> {
 
         // The statics: every object's static symbols (not its sections' or
         // labels), where they are in the image.
-        let statics = turbonop_par::map(&r.files, 16, |file| {
+        let files: Vec<u32> = (0..crate::n32(r.files.len())).collect();
+        let statics = turbonop_par::map(&files, 16, |&f| {
+            let file = &r.files[f as usize];
             let mut mine = Vec::new();
             let FileKind::Object { object, .. } = &file.kind else {
                 return mine;
             };
-            let f = r.files.iter().position(|x| std::ptr::eq(x, file)).map_or(0, crate::n32);
             for sym in &object.symbols {
                 let SymbolKind::Local { section, value } = sym.kind else {
                     continue;
                 };
                 // (Not a section's, a label, or .pdata's: link.exe lists none
                 // of those.)
+                // (Nor one in an empty section: MASM's `$xdatasym` in the
+                // empty `.xdata` it starts with.)
                 if sym.class != 3
                     || sym.aux != 0
-                    || object.sections.get(section as usize).is_some_and(|x| x.name == b".pdata")
+                    || object
+                        .sections
+                        .get(section as usize)
+                        .is_some_and(|x| x.name == b".pdata" || x.size == 0)
                 {
+                    continue;
+                }
+                let sec_name = object.sections.get(section as usize).map_or(&[][..], |x| x.name);
+                if r.config.guard_cf
+                    && chunk_of(f, section).is_none()
+                    && GUARD_INPUTS.contains(&sec_name)
+                    && let Some((i, s)) = l
+                        .sections
+                        .iter()
+                        .enumerate()
+                        .find(|(_, s)| s.groups.iter().any(|(g, _)| g == sec_name))
+                {
+                    mine.push((
+                        f,
+                        Entry {
+                            va: self.base + u64::from(value),
+                            section: u16::try_from(i + 1).unwrap_or(0),
+                            offset: value.wrapping_sub(s.rva),
+                            name: sym.name.to_vec(),
+                            function: false,
+                            inline: false,
+                            origin: origin(&file.name, file.library.is_some()),
+                        },
+                    ));
                     continue;
                 }
                 let rva = if let Some(piece) = &file.idata {
@@ -381,20 +479,42 @@ impl Image<'_> {
                 if let Some(rva) = rva {
                     let c = chunk_of(f, section).unwrap_or(u32::MAX);
                     let function = sym.ty & 0x30 == 0x20;
-                    mine.push(at(
-                        rva,
-                        sym.name.to_vec(),
-                        function,
-                        function && inline_chunk(c),
-                        origin(&file.name, file.library.is_some()),
+                    mine.push((
+                        f,
+                        at(
+                            rva,
+                            sym.name.to_vec(),
+                            function,
+                            function && inline_chunk(c),
+                            origin(&file.name, file.library.is_some()),
+                        ),
                     ));
                 }
             }
             mine
         });
-        // (At one address, statics come by where they're from, ignoring
-        // case, then by name: hello.obj's before MSVCRT:exe_main.obj's.)
-        let mut statics: Vec<Entry> = statics.into_iter().flatten().collect();
+        let mut statics: Vec<(u32, Entry)> = statics.into_iter().flatten().collect();
+        // The resources' data, as cvtres names it (`$R000000`), from each
+        // `.res` file.
+        if let Some(res) = &l.resources
+            && let Some(c) = l.chunks.iter().find(|c| c.kind == ChunkKind::Resources)
+        {
+            for (name, offset, source) in res.symbols() {
+                let from = r
+                    .resources
+                    .get(source as usize)
+                    .map_or_else(String::new, |(n, _)| origin(n, false));
+                statics.push((u32::MAX, at(c.rva + offset, name.into_bytes(), false, false, from)));
+            }
+        }
+        // Each delay-loaded DLL's tail merge's unwind data, `xdata`.
+        for (d, dll) in l.delay_dlls.iter().enumerate() {
+            if let Some(&first) = dll.imports.first()
+                && let Some(rva) = self.delay_rva(ChunkKind::TailMergeUnwind(crate::n32(d)))
+            {
+                statics.push((first, at(rva, b"xdata".to_vec(), false, false, file_origin(first))));
+            }
+        }
         // The export object's (link.exe links its .exp into the image).
         if let Some(t) = &l.exports
             && let Some(c) = l.chunks.iter().find(|c| c.kind == ChunkKind::Exports)
@@ -407,14 +527,18 @@ impl Image<'_> {
                 .with_extension("exp");
             let exp = origin(&exp.display().to_string(), false);
             for (name, offset) in t.directory.symbols(&t.dll_name) {
-                statics.push(at(c.rva + offset, name.into_bytes(), false, false, exp.clone()));
+                statics.push((u32::MAX, at(c.rva + offset, name.into_bytes(), false, false, exp.clone())));
             }
         }
-        let mut statics: Vec<(String, Entry)> = statics
-            .into_iter()
-            .map(|e| (e.origin.to_ascii_lowercase(), e))
-            .collect();
-        statics.sort_by(|(oa, a), (ob, b)| (a.va, oa, &a.name).cmp(&(b.va, ob, &b.name)));
+        // (At one address: the command line's objects, then libraries'
+        // members, each by its whole name as the link has it (a library's
+        // path, then the member's), then by name.)
+        let key = |f: u32| -> (u8, &[u8]) {
+            r.files.get(f as usize).map_or((2, &[][..]), |file| {
+                (u8::from(file.library.is_some()), file.name.as_bytes())
+            })
+        };
+        turbonop_par::sort_by(&mut statics, |(fa, a), (fb, b)| (a.va, key(*fa), &a.name).cmp(&(b.va, key(*fb), &b.name)));
         let statics: Vec<Entry> = statics.into_iter().map(|(_, e)| e).collect();
         line(&mut out, b" Static symbols");
         line(&mut out, b"");
@@ -446,8 +570,8 @@ impl Image<'_> {
 }
 
 /// Publics and statics in link.exe's order: by address, then name.
-fn sort(v: &mut [Entry]) {
-    v.sort_by(|a, b| (a.va, &a.name).cmp(&(b.va, &b.name)));
+fn sort(v: &mut Vec<Entry>) {
+    turbonop_par::sort_by(v, |a, b| (a.va, &a.name).cmp(&(b.va, &b.name)));
 }
 
 /// The lines of `entries`: " 0001:00000000       name  0000000140001000 f i origin".

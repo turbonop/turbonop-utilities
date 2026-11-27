@@ -2557,6 +2557,7 @@ fn rewrite_giver(
 #[doc(hidden)]
 pub mod adjust;
 mod debug;
-mod prune;
+#[doc(hidden)]
+pub mod prune;
 #[cfg(test)]
 mod tests;

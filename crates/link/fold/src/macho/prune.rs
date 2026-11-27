@@ -472,6 +472,7 @@ fn lists(b: &[u8], address_size: u8, loc: bool) -> R<Vec<List>> {
 /// names in order: (hash, string offset, entries).
 struct Apple {
     header: Vec<u8>,
+    buckets: usize,
     die_at: usize,
     base: u32,
     names: Vec<(u32, u32, Vec<Vec<u8>>)>,
@@ -547,6 +548,7 @@ fn apple(b: &[u8]) -> R<Apple> {
     }
     Ok(Apple {
         header: b[..head].to_vec(),
+        buckets,
         die_at,
         base,
         names,
@@ -565,10 +567,13 @@ fn bucket_count(n: usize) -> usize {
 }
 
 /// Writes `t` with `names` (each its hash, string offset, and entries),
-/// as LLVM's `AppleAccelTableWriter` lays a table out.
-fn write_apple(t: &Apple, names: &[(u32, u32, Vec<Vec<u8>>)]) -> Vec<u8> {
+/// as LLVM's `AppleAccelTableWriter` lays a table out: with `buckets`
+/// buckets, or LLVM's count for the hashes.
+fn write_apple(t: &Apple, names: &[(u32, u32, Vec<Vec<u8>>)], buckets: Option<usize>) -> Vec<u8> {
     let distinct: BTreeSet<u32> = names.iter().map(|n| n.0).collect();
-    let nb = bucket_count(distinct.len());
+    let nb = buckets
+        .unwrap_or_else(|| bucket_count(distinct.len()))
+        .max(1);
     // Each bucket's names: by hash, then in their order.
     let mut order: Vec<usize> = (0..names.len()).collect();
     order.sort_by_key(|&i| (names[i].0 as usize % nb, names[i].0, i));
@@ -1001,7 +1006,12 @@ pub(super) fn prune(
             .into_iter()
             .map(|(h, s, e)| (h, strs.map(s), e))
             .collect();
-        let b = write_apple(&t, &names);
+        let mut b = write_apple(&t, &names, None);
+        if b.len() > old_len {
+            // (LLVM's count for fewer hashes may be larger: 16 buckets for
+            // 16 hashes, 8 for 17. The original count, then.)
+            b = write_apple(&t, &names, Some(t.buckets));
+        }
         if b.len() > old_len {
             return Err("an accelerator table that grew");
         }
@@ -1060,4 +1070,21 @@ pub(super) fn prune(
     stats.bytes = before - after;
 
     Ok(Some(stats))
+}
+
+/// Each Apple accelerator table of `o` (by section name), and whether it
+/// reads and [`write_apple`] writes it again as the same bytes (with
+/// LLVM's bucket count): for checking the writer against LLVM's on a
+/// corpus.
+pub fn apple_round_trip(o: &Object<'_>) -> Vec<(Vec<u8>, R<bool>)> {
+    let mut out = Vec::new();
+    for s in o.sections() {
+        if s.segment_name() != b"__DWARF" || !KNOWN[APPLE].contains(&s.name()) {
+            continue;
+        }
+        let b = s.bytes().unwrap_or(&[]);
+        let r = apple(b).map(|t| write_apple(&t, &t.names, None) == b);
+        out.push((s.name().to_vec(), r));
+    }
+    out
 }

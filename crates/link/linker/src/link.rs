@@ -141,14 +141,69 @@ pub fn link(mut config: Config) -> Outcome {
         }
     };
     let mut layout = layout::layout(&resolved, &roots, export_table, resources);
+    let debug = resolved.config.debug != crate::config::Debug::None;
+    let pdb_path = crate::pdb::pdb_path(&resolved, &path);
+    if debug {
+        layout.set_codeview_name(crate::pdb::image_pdb_name(&resolved, &pdb_path));
+    }
     lap("layout", &mut out);
     let sites = Image::new(&resolved, &layout).base_relocation_sites();
     layout.add_base_relocations(base_relocation_blocks(&sites));
     lap("base relocations", &mut out);
 
     let image = Image::new(&resolved, &layout);
-    let (bytes, problems) = image.write(resolved.entry);
-    lap("write", &mut out);
+    // The image and the PDB, at once.
+    let ((mut bytes, problems), pdb) = turbonop_par::join(
+        || image.write(resolved.entry),
+        || debug.then(|| crate::pdb::build(&resolved, &layout, &image, &pdb_path)),
+    );
+    lap("write (and PDB)", &mut out);
+    if let Some(pdb) = pdb {
+        match pdb {
+            Ok((mut written, warnings)) => {
+                for w in warnings {
+                    out.diagnostics.push(LinkError {
+                        code: 4099,
+                        message: w,
+                        warning: true,
+                    });
+                }
+                // One GUID for both: with /Brepro the image's hash's (as
+                // link.exe's), else the PDB's contents'.
+                if let Some(c) = layout
+                    .chunks
+                    .iter()
+                    .find(|c| c.kind == crate::layout::ChunkKind::CodeView)
+                    && let Some(at) = layout.file_offset_of(c.rva + 4)
+                {
+                    let at = at as usize;
+                    if resolved.config.repro {
+                        let mut guid = [0u8; 16];
+                        guid.copy_from_slice(&bytes[at..at + 16]);
+                        written.set_guid(guid);
+                    } else {
+                        bytes[at..at + 16].copy_from_slice(&written.guid);
+                    }
+                }
+                if let Err(e) = std::fs::write(&pdb_path, &written.file) {
+                    out.diagnostics.push(LinkError {
+                        code: 1201,
+                        message: format!(
+                            "error writing to program database '{}': {e}",
+                            pdb_path.display()
+                        ),
+                        warning: false,
+                    });
+                }
+                lap("PDB written", &mut out);
+            }
+            Err(m) => out.diagnostics.push(LinkError {
+                code: 1201,
+                message: format!("program database '{}': {m}", pdb_path.display()),
+                warning: false,
+            }),
+        }
+    }
     if let Some(map) = &resolved.config.map {
         let map_path = map.clone().unwrap_or_else(|| path.with_extension("map"));
         let mut lines: Vec<(u32, String)> = (0..crate::n32(resolved.globals.len()))

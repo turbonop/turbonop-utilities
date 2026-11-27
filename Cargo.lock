@@ -1127,11 +1127,14 @@ version = "0.0.7"
 dependencies = [
  "sha2",
  "turbonop-archive",
+ "turbonop-codeview",
  "turbonop-core",
  "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-mmap",
  "turbonop-par",
+ "turbonop-pdb",
+ "turbonop-pdb-write",
  "turbonop-pe",
 ]
 
@@ -1277,6 +1280,18 @@ dependencies = [
  "turbonop-core",
  "turbonop-global-alloc",
  "turbonop-par",
+]
+
+[[package]]
+name = "turbonop-pdb-write"
+version = "0.0.7"
+dependencies = [
+ "turbonop-codeview",
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-hash",
+ "turbonop-par",
+ "turbonop-pdb",
 ]
 
 [[package]]
@@ -1497,6 +1512,7 @@ version = "0.0.1"
 dependencies = [
  "turbonop-global-alloc",
  "turbonop-linker",
+ "turbonop-pdb",
 ]
 
 [[package]]

@@ -1,0 +1,22 @@
+[package]
+name = "turbonop-pdb-write"
+description = "Writing PDBs: the MSF container and its streams (info, TPI/IPI with hashes, DBI, globals, publics, modules), and CodeView type merging on every core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+turbonop-codeview.workspace = true
+turbonop-core.workspace = true
+turbonop-hash.workspace = true
+turbonop-par.workspace = true
+turbonop-pdb.workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true
+
+[lints]
+workspace = true

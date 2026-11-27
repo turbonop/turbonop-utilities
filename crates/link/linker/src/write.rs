@@ -451,6 +451,8 @@ impl<'a> Image<'a> {
                     .enumerate()
                 {
                     let data = match ty {
+                        2 => ChunkKind::CodeView,
+                        12 => ChunkKind::VcFeature,
                         13 => ChunkKind::CoffGroups,
                         _ => ChunkKind::Repro,
                     };
@@ -487,6 +489,19 @@ impl<'a> Image<'a> {
             ChunkKind::Repro => {
                 // The hash's length; the hash is filled in once the image is.
                 out[..4].copy_from_slice(&32u32.to_le_bytes());
+            }
+            ChunkKind::CodeView => {
+                // RSDS, the GUID (filled in once the PDB, or /Brepro's
+                // hash, gives it), the age, the PDB's name.
+                out[..4].copy_from_slice(b"RSDS");
+                out[20..24].copy_from_slice(&1u32.to_le_bytes());
+                let n = &self.l.codeview_name;
+                out[24..24 + n.len()].copy_from_slice(n);
+            }
+            ChunkKind::VcFeature => {
+                for (i, v) in self.vc_features().iter().enumerate() {
+                    out[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+                }
             }
             ChunkKind::Resources | ChunkKind::ResourceData => {
                 // The section's bytes, of which this chunk is the directory
@@ -623,9 +638,12 @@ impl<'a> Image<'a> {
                 add32(field, rva_of(s).wrapping_sub(from));
             }
             amd64::SECTION => {
+                // An absolute symbol's section is the one after the last
+                // (as the PDB's section map has it).
                 let n = match s {
                     Target::Rva(r) => self.section_number(r),
-                    _ => 0,
+                    Target::Absolute(_) => crate::n16(self.l.sections.len() + 1),
+                    Target::None => 0,
                 };
                 field.copy_from_slice(&n.to_le_bytes());
             }
@@ -644,7 +662,8 @@ impl<'a> Image<'a> {
                             .map_or(0, |sec| sec.rva);
                         u64::from(r - start)
                     }
-                    _ => 0,
+                    Target::Absolute(v) => v,
+                    Target::None => 0,
                 };
                 add32(field, off);
             }
@@ -661,6 +680,55 @@ impl<'a> Image<'a> {
             .map_or(0, |i| u16::try_from(i + 1).unwrap_or(0))
     }
 
+    /// Input section `s` of file `f` with its relocations applied (for
+    /// debug information: `SECREL` and `SECTION` give a symbol's place in
+    /// the image's sections); a relocation to a symbol not in the image
+    /// leaves its field as it was.
+    pub fn relocated(&self, f: u32, s: u32) -> Vec<u8> {
+        let FileKind::Object { object, .. } = &self.r.files[f as usize].kind else {
+            return Vec::new();
+        };
+        let sec = &object.sections[s as usize];
+        let mut out = sec.data.to_vec();
+        for rel in sec.relocations {
+            let at = rel.virtual_address.get() as usize;
+            let target = self.symbol(f, rel.symbol_table_index.get());
+            let _ = self.relocate(&mut out, at, rel.kind.get(), target, 0);
+        }
+        out
+    }
+
+    /// The section (1-based) and offset of `rva`.
+    pub fn section_offset(&self, rva: u32) -> (u16, u32) {
+        match self.section_number(rva) {
+            0 => (0, rva),
+            n => (n, rva - self.l.sections[usize::from(n) - 1].rva),
+        }
+    }
+
+    /// The VC feature counts (`IMAGE_DEBUG_TYPE_VC_FEATURE`), as link.exe
+    /// counts them: of the objects the C or C++ compiler made (by
+    /// `@comp.id`'s product: VS2015's and later's, `0x104` to `0x109`),
+    /// those from before Visual C++ 11, all of them, and those compiled with
+    /// `/GS`, `/sdl`, and `/guard:cf` (`@feat.00`'s bits).
+    fn vc_features(&self) -> [u32; 5] {
+        let mut v = [0u32; 5];
+        for f in &self.r.files {
+            let FileKind::Object { object, .. } = &f.kind else {
+                continue;
+            };
+            let product = object.comp_id.map_or(0, |c| c >> 16);
+            if !(0x104..=0x109).contains(&product) {
+                continue;
+            }
+            let feat = object.feat_00.unwrap_or(0);
+            v[1] += 1;
+            v[2] += u32::from(feat & 0x100 != 0);
+            v[3] += u32::from(feat & 0x200 != 0);
+            v[4] += u32::from(feat & 0x800 != 0);
+        }
+        v
+    }
     /// Where global `g` is, relative to the image base (`None` if
     /// nowhere or absolute).
     pub fn rva_of(&self, g: u32) -> Option<u32> {
@@ -774,6 +842,11 @@ impl<'a> Image<'a> {
             let at = self.file_offset(c.rva) as usize + 4;
             out[at..at + 32].copy_from_slice(&hash);
             let ts = [hash[28], hash[29], hash[30], hash[31]];
+            // The PDB's GUID is the hash's first 16 bytes (as link.exe's).
+            if let Some(cv) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::CodeView) {
+                let at = self.file_offset(cv.rva) as usize + 4;
+                out[at..at + 16].copy_from_slice(&hash[..16]);
+            }
             let pe = self.l.rich.2 as usize;
             out[pe + 8..pe + 12].copy_from_slice(&ts);
             if let Some(d) = self

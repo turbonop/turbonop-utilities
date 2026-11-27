@@ -54,7 +54,10 @@ fn form(v: V) -> u16 {
     }
 }
 
-fn shape(t: &T) -> (u16, bool, Vec<(u16, u16)>) {
+/// An abbreviation: tag, children, and attributes (name, form).
+type Shape = (u16, bool, Vec<(u16, u16)>);
+
+fn shape(t: &T) -> Shape {
     (
         t.tag,
         t.children,
@@ -63,7 +66,7 @@ fn shape(t: &T) -> (u16, bool, Vec<(u16, u16)>) {
 }
 
 /// The abbreviations of `t`'s tree, by first use.
-fn abbrevs(t: &T, out: &mut Vec<(u16, bool, Vec<(u16, u16)>)>) {
+fn abbrevs(t: &T, out: &mut Vec<Shape>) {
     let s = shape(t);
     if !out.contains(&s) {
         out.push(s);
@@ -73,7 +76,7 @@ fn abbrevs(t: &T, out: &mut Vec<(u16, bool, Vec<(u16, u16)>)>) {
     }
 }
 
-fn abbrev_bytes(a: &[(u16, bool, Vec<(u16, u16)>)]) -> Vec<u8> {
+fn abbrev_bytes(a: &[Shape]) -> Vec<u8> {
     let mut b = Vec::new();
     for (i, (tag, ch, attrs)) in a.iter().enumerate() {
         b.push(i as u8 + 1);
@@ -155,7 +158,7 @@ fn layout(t: &T, at: u32, keep: &dyn Fn(usize) -> bool, offsets: &mut BTreeMap<u
 fn emit_die(
     t: &T,
     keep: &dyn Fn(usize) -> bool,
-    ab: &[(u16, bool, Vec<(u16, u16)>)],
+    ab: &[Shape],
     pool: &[&str],
     str_at: &dyn Fn(&str) -> u32,
     e: &mut Emitted,
@@ -198,7 +201,7 @@ fn emit_die(
 fn emit(
     t: &T,
     keep: &dyn Fn(usize) -> bool,
-    ab: &[(u16, bool, Vec<(u16, u16)>)],
+    ab: &[Shape],
     pool: &[&'static str],
     used: &dyn Fn(&str) -> bool,
 ) -> (Emitted, Vec<u8>) {

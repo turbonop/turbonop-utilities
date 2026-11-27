@@ -1021,7 +1021,7 @@ pub(super) fn prune(
     let before: u64 = o
         .sections()
         .filter(|s| s.segment_name() == b"__DWARF")
-        .map(|s| s.size())
+        .map(turbonop_macho_object::Section::size)
         .sum();
     let mut cuts: Vec<(usize, Vec<Range<u64>>)> = Vec::new();
     let wide = |s: &Shift| -> Vec<Range<u64>> {
@@ -1040,7 +1040,10 @@ pub(super) fn prune(
     }
     for (si, b, old_len) in &apple_out {
         if b.len() < *old_len {
-            cuts.push((*si, vec![b.len() as u64..*old_len as u64]));
+            cuts.push((
+                *si,
+                std::iter::once(b.len() as u64..*old_len as u64).collect(),
+            ));
         }
     }
     cuts.sort_by_key(|c| c.0);
@@ -1065,7 +1068,7 @@ pub(super) fn prune(
     let after: u64 = o
         .sections()
         .filter(|s| s.segment_name() == b"__DWARF")
-        .map(|s| s.size())
+        .map(turbonop_macho_object::Section::size)
         .sum();
     stats.bytes = before - after;
 

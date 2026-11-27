@@ -863,7 +863,7 @@ fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<Lost
     // of the bytes compared.
     // (A giver's DWARF pruned of what described its lost code: see
     // `pruned`.)
-    fn info_of<'m>(m: &'m Member<'_>) -> Option<(usize, &'m [(u32, u128, Option<Vec<u8>>, u8)])> {
+    fn info_of<'m>(m: &'m Member<'_>) -> Option<(usize, pruned::Relocs<'m>)> {
         m.debug
             .iter()
             .find(|d| d.0 == b"__DWARF,__debug_info")

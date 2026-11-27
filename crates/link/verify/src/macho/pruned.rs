@@ -563,9 +563,12 @@ impl Cmp<'_, '_> {
     }
 }
 
-/// An accelerator table's entries: (name, hash, DIE offset, the entry's
-/// other atoms); or why it doesn't read.
-fn apple_entries(b: &[u8], str: &[u8]) -> Result<Vec<(Vec<u8>, u32, u32, Vec<u8>)>, &'static str> {
+/// An accelerator table entry: name, hash, DIE offset, the entry's other
+/// atoms.
+type Entry = (Vec<u8>, u32, u32, Vec<u8>);
+
+/// An accelerator table's entries, or why it doesn't read.
+fn apple_entries(b: &[u8], str: &[u8]) -> Result<Vec<Entry>, &'static str> {
     let bad = "doesn't read";
     let u32_at = |at: usize| -> Result<u32, &'static str> {
         b.get(at..at + 4)
@@ -841,7 +844,7 @@ pub(super) fn check(
             });
             continue;
         };
-        let mut expect: Vec<(Vec<u8>, u32, u32, Vec<u8>)> = oe
+        let mut expect: Vec<Entry> = oe
             .into_iter()
             .filter_map(|(s, h, off, rest)| {
                 let t = ot.die_at(u64::from(off))?;

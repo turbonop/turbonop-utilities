@@ -1,0 +1,4 @@
+LIBRARY dll
+EXPORTS
+    times = times_impl
+    hidden @9 NONAME

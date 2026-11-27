@@ -141,3 +141,55 @@ fn cpp_exceptions_and_tls_with_the_static_crt() {
 fn cpp_unoptimized_with_the_static_debug_crt() {
     cpp("cpp_mtd", "/EHsc /Od /MTd");
 }
+
+/// Runs `exe` (in `dir`), returning its output.
+fn run(dir: &Path, exe: &str) -> String {
+    let out = Command::new(dir.join(exe))
+        .current_dir(dir)
+        .output()
+        .expect("the program runs");
+    assert!(out.status.success(), "{exe}: {:?}", out.status);
+    String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n")
+}
+
+/// A DLL linked by turbolink (exports from `__declspec(dllexport)` and a
+/// `.def` file: renamed, by ordinal only), used through turbolink's import
+/// library by a program linked by turbolink and by one linked by link.exe;
+/// and link.exe's DLL's import library used by turbolink.
+#[test]
+fn dll_with_exports_and_its_import_library() {
+    let Some(vcvars) = vcvars() else {
+        eprintln!("no Visual C++ tools: not checked");
+        return;
+    };
+    let dir = scratch("dll");
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/programs");
+    for f in ["dll.c", "dll.def", "usedll.c"] {
+        std::fs::copy(src.join(f), dir.join(f)).expect("a copy");
+    }
+    let tl = env!("CARGO_BIN_EXE_turbolink");
+    in_vs(
+        &vcvars,
+        &dir,
+        &[
+            "cl /nologo /c /O2 /MD dll.c usedll.c >nul".to_owned(),
+            format!("\"{tl}\" /nologo /DLL /DEF:dll.def /OUT:dll.dll dll.obj"),
+            format!("\"{tl}\" /nologo /OUT:use-tl.exe usedll.obj dll.lib"),
+            "link /nologo /OUT:use-link.exe usedll.obj dll.lib".to_owned(),
+        ],
+    );
+    let want = "add=5 counter=41 times=42 hidden=7\n";
+    assert_eq!(run(&dir, "use-tl.exe"), want);
+    assert_eq!(run(&dir, "use-link.exe"), want);
+    // link.exe's DLL and import library, used by turbolink.
+    in_vs(
+        &vcvars,
+        &dir,
+        &[
+            "link /nologo /DLL /DEF:dll.def /OUT:dll.dll dll.obj".to_owned(),
+            format!("\"{tl}\" /nologo /OUT:use-tl2.exe usedll.obj dll.lib"),
+        ],
+    );
+    assert_eq!(run(&dir, "use-tl2.exe"), want);
+    let _ = std::fs::remove_dir_all(&dir);
+}

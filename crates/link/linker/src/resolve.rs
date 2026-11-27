@@ -234,6 +234,10 @@ struct Linker {
     lib_env: Vec<PathBuf>,
     /// `/VERBOSE`'s lines.
     log: Vec<String>,
+    /// Globals that may want a library's definition: every new global,
+    /// until it is seen not to (a definition is never taken back, so a
+    /// global dropped from here never needs one again).
+    pending: Vec<u32>,
 }
 
 impl Linker {
@@ -250,6 +254,7 @@ impl Linker {
             optional: false,
         });
         self.names.insert(name, g);
+        self.pending.push(g);
         g
     }
 
@@ -575,12 +580,14 @@ impl Linker {
             let mut lib = 0;
             while lib < self.libraries.len() {
                 loop {
+                    let mut pending = std::mem::take(&mut self.pending);
+                    pending.retain(|&g| self.wanted(&self.globals[g as usize]));
+                    self.pending = pending;
                     let library = &self.libraries[lib];
                     let mut members: Vec<u64> = self
-                        .globals
+                        .pending
                         .iter()
-                        .filter(|g| self.wanted(g))
-                        .filter_map(|g| library.index.get(g.name).copied())
+                        .filter_map(|&g| library.index.get(self.globals[g as usize].name).copied())
                         .filter(|m| !library.loaded.contains(m))
                         .collect();
                     if members.is_empty() {
@@ -590,9 +597,9 @@ impl Linker {
                     members.dedup();
                     if self.config.verbose {
                         let names: Vec<String> = self
-                            .globals
+                            .pending
                             .iter()
-                            .filter(|g| self.wanted(g))
+                            .map(|&g| &self.globals[g as usize])
                             .filter(|g| {
                                 library
                                     .index
@@ -754,6 +761,7 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         errors: Vec::new(),
         lib_env,
         log: Vec::new(),
+        pending: Vec::new(),
     };
     let image_base = l.intern(b"__ImageBase");
     l.globals[image_base as usize].def = Def::Synthetic(Synthetic::ImageBase);
@@ -800,6 +808,19 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         let g = l.intern(Box::leak(name.into_bytes().into_boxed_slice()));
         if l.globals[g as usize].referenced_by == NONE {
             l.globals[g as usize].referenced_by = 0;
+        }
+    }
+    // What is exported is wanted (a forwarder, `f=other.g`, names no
+    // symbol: it is optional).
+    for e in l.config.exports.clone() {
+        let target = e.internal.clone().unwrap_or_else(|| e.name.clone());
+        let forwarder = target.contains('.');
+        let g = l.intern(Box::leak(target.into_bytes().into_boxed_slice()));
+        if l.globals[g as usize].referenced_by == NONE {
+            l.globals[g as usize].referenced_by = 0;
+        }
+        if forwarder {
+            l.globals[g as usize].optional = true;
         }
     }
     // The load configuration is taken from a library if one has it (as

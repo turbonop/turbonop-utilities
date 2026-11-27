@@ -322,7 +322,13 @@ impl Object {
                         n => match section_index(n) {
                             Some(section) => SymbolKind::Local {
                                 section,
-                                value: s.value,
+                                // A SECTION-class symbol's value is the
+                                // section's characteristics, not an offset.
+                                value: if s.storage_class == class::SECTION {
+                                    0
+                                } else {
+                                    s.value
+                                },
                             },
                             None => SymbolKind::Other,
                         },

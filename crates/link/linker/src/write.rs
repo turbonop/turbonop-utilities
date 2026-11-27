@@ -242,6 +242,21 @@ impl<'a> Image<'a> {
                     out[o..o + dll.name.len()].copy_from_slice(dll.name);
                 }
             }
+            ChunkKind::Exports => {
+                if let Some(t) = &self.l.exports {
+                    t.directory.write(
+                        out,
+                        chunk.rva,
+                        &t.dll_name,
+                        timestamp(&self.r.config),
+                        |i| match t.targets[i] {
+                            u32::MAX => 0,
+                            g => self.rva_of(g).unwrap_or(0),
+                        },
+                        &t.forwarders,
+                    );
+                }
+            }
             ChunkKind::BaseRelocations => {
                 out[..self.l.base_relocations.len()].copy_from_slice(&self.l.base_relocations);
             }
@@ -585,6 +600,9 @@ impl<'a> Image<'a> {
         w.u32(0); // loader flags
         w.u32(16);
         let mut dirs = [(0u32, 0u32); 16];
+        if let Some(e) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Exports) {
+            dirs[0] = (e.rva, e.size);
+        }
         if !self.l.dlls.is_empty() {
             let dir = self
                 .l
@@ -688,7 +706,8 @@ pub fn image_base(c: &Config) -> u64 {
     }
 }
 
-fn timestamp(c: &Config) -> u32 {
+/// The image's time stamp: now, or 0 for `/Brepro`.
+pub fn timestamp(c: &Config) -> u32 {
     if c.repro {
         return 0;
     }

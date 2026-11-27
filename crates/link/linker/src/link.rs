@@ -4,9 +4,9 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::config::Config;
-use crate::layout;
 use crate::resolve::{self, LinkError};
 use crate::write::{Image, base_relocation_blocks};
+use crate::{exports, implib, layout};
 
 /// What a link did.
 #[derive(Debug, Default)]
@@ -32,8 +32,27 @@ pub fn output_path(c: &Config) -> Option<PathBuf> {
 }
 
 /// Links.
-pub fn link(config: Config) -> Outcome {
+pub fn link(mut config: Config) -> Outcome {
     let mut out = Outcome::default();
+    if let Some(def) = config.def.clone() {
+        let parsed = std::fs::read(&def)
+            .map_err(|e| format!("cannot open file '{}': {e}", def.display()))
+            .and_then(|b| {
+                exports::parse_def(&crate::args::decode_text(&b))
+                    .map_err(|e| format!("{}: {e}", def.display()))
+            });
+        match parsed {
+            Ok(d) => exports::apply_def(&mut config, &d),
+            Err(m) => {
+                out.diagnostics.push(LinkError {
+                    code: 1118,
+                    message: m,
+                    warning: false,
+                });
+                return out;
+            }
+        }
+    }
     let mut phase = Instant::now();
     let mut lap = |name: &'static str, out: &mut Outcome| {
         let now = Instant::now();
@@ -74,7 +93,18 @@ pub fn link(config: Config) -> Outcome {
             roots.push(g);
         }
     }
-    let mut layout = layout::layout(&resolved, &roots);
+    let export_table = match export_table(&resolved, &path) {
+        Ok(t) => t,
+        Err(m) => {
+            out.diagnostics.push(LinkError {
+                code: 1120,
+                message: m,
+                warning: false,
+            });
+            return out;
+        }
+    };
+    let mut layout = layout::layout(&resolved, &roots, export_table);
     lap("layout", &mut out);
     let sites = Image::new(&resolved, &layout).base_relocation_sites();
     layout.add_base_relocations(base_relocation_blocks(&sites));
@@ -133,6 +163,79 @@ pub fn link(config: Config) -> Outcome {
         return out;
     }
     lap("output", &mut out);
+    // The import library, for a DLL (or anything exporting).
+    let c = &resolved.config;
+    if let Some(t) = &layout.exports
+        && !c.no_implib
+    {
+        let lib_path = c
+            .implib
+            .clone()
+            .unwrap_or_else(|| path.with_extension("lib"));
+        let machine = c.machine.unwrap_or(crate::config::Machine::X64);
+        let mut hints = vec![0u16; t.directory.exports.len()];
+        for (k, (_, i)) in t.directory.names.iter().enumerate() {
+            hints[*i] = u16::try_from(k).unwrap_or(0);
+        }
+        let lib = implib::write(
+            &t.dll_name,
+            machine.number(),
+            machine.is_64(),
+            &t.directory.exports,
+            &hints,
+            crate::write::timestamp(c),
+        );
+        if let Err(e) = std::fs::write(&lib_path, lib) {
+            out.diagnostics.push(LinkError {
+                code: 1104,
+                message: format!("cannot open file '{}': {e}", lib_path.display()),
+                warning: false,
+            });
+            return out;
+        }
+        lap("import library", &mut out);
+    }
     out.written = true;
     out
+}
+
+/// The export directory's plan, if the image exports anything.
+fn export_table(
+    r: &resolve::Resolved,
+    path: &std::path::Path,
+) -> Result<Option<exports::ExportTable>, String> {
+    if r.config.exports.is_empty() {
+        return Ok(None);
+    }
+    let list = exports::finish(&r.config.exports)?;
+    let defined = |n: &str| {
+        r.names
+            .get(n.as_bytes())
+            .is_some_and(|&g| r.globals[g as usize].def != resolve::Def::Undefined)
+    };
+    let mut forwarders = Vec::with_capacity(list.len());
+    let mut targets = Vec::with_capacity(list.len());
+    for e in &list {
+        let f = exports::forwarder(e, defined).map(str::to_owned);
+        let target = e.internal.as_deref().unwrap_or(&e.name);
+        targets.push(if f.is_some() {
+            u32::MAX
+        } else {
+            match r.names.get(target.as_bytes()) {
+                Some(&g) if r.globals[g as usize].def != resolve::Def::Undefined => g,
+                _ => return Err(format!("unresolved external symbol {target} (an export)")),
+            }
+        });
+        forwarders.push(f);
+    }
+    let dll_name = path
+        .file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+    let directory = exports::plan(list, &dll_name, &forwarders);
+    Ok(Some(exports::ExportTable {
+        directory,
+        forwarders,
+        targets,
+        dll_name,
+    }))
 }

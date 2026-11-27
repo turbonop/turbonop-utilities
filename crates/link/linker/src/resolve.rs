@@ -60,6 +60,31 @@ pub struct File {
     pub name: String,
     /// What it is.
     pub kind: FileKind,
+    /// For an import library's own pieces (its import descriptor, null
+    /// import descriptor, and null thunks): which. turbolink builds the
+    /// import tables itself; these are loaded as link.exe loads them, for
+    /// their place in the order of the tables' contents.
+    pub idata: Option<IdataPiece>,
+}
+
+/// One of an import library's own objects.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum IdataPiece {
+    /// `__IMPORT_DESCRIPTOR_x`: DLL `x`'s directory entry and name.
+    Descriptor(Vec<u8>),
+    /// `\x7fx_NULL_THUNK_DATA`: DLL `x`'s lookup and address tables' end.
+    NullThunk(Vec<u8>),
+    /// `__NULL_IMPORT_DESCRIPTOR`: the directory's end.
+    NullDescriptor,
+}
+
+/// The name a DLL's import library pieces are named for: its name without
+/// its extension (`KERNEL32.dll`: `KERNEL32`).
+pub fn dll_stem(dll: &[u8]) -> &[u8] {
+    match dll.iter().rposition(|&b| b == b'.') {
+        Some(p) => &dll[..p],
+        None => dll,
+    }
 }
 
 /// What a loaded file is.
@@ -317,9 +342,23 @@ impl Linker {
                 for lib in new_libs {
                     self.add_default_lib(&lib);
                 }
+                let mut idata = None;
                 for (i, s) in object.symbols.iter().enumerate() {
                     if !s.is_external() {
                         continue;
+                    }
+                    if let SymbolKind::Defined { .. } = s.kind {
+                        if let Some(x) = s.name.strip_prefix(b"__IMPORT_DESCRIPTOR_") {
+                            idata = Some(IdataPiece::Descriptor(x.to_vec()));
+                        } else if s.name == b"__NULL_IMPORT_DESCRIPTOR" {
+                            idata = Some(IdataPiece::NullDescriptor);
+                        } else if let Some(x) = s
+                            .name
+                            .strip_prefix(b"\x7f")
+                            .and_then(|n| n.strip_suffix(b"_NULL_THUNK_DATA"))
+                        {
+                            idata = Some(IdataPiece::NullThunk(x.to_vec()));
+                        }
                     }
                     let g = self.intern(s.name);
                     globals[i] = g;
@@ -327,6 +366,7 @@ impl Linker {
                 }
                 self.files.push(File {
                     name,
+                    idata,
                     kind: FileKind::Object {
                         object,
                         globals,
@@ -344,8 +384,19 @@ impl Linker {
                     self.define_import(t, Def::ImportThunk(place), &name);
                     t
                 });
+                // An import wants its DLL's import descriptor (from its
+                // library), as link.exe's do: where that loads orders the
+                // import directory and the DLLs' names.
+                let descriptor = [&b"__IMPORT_DESCRIPTOR_"[..], dll_stem(import.dll)].concat();
+                let d = self.intern(Box::leak(descriptor.into_boxed_slice()));
+                let global = &mut self.globals[d as usize];
+                global.optional = true;
+                if global.referenced_by == NONE {
+                    global.referenced_by = place;
+                }
                 self.files.push(File {
                     name,
+                    idata: None,
                     kind: FileKind::Import {
                         import,
                         address,
@@ -938,6 +989,18 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         {
             l.globals[g as usize].def = Def::Synthetic(Synthetic::Zero);
         }
+    }
+    // __guard_flags without /GUARD:CF: "instrumented" (0x100) if an
+    // object was compiled for it (@feat.00's 0x800), as link.exe sets it.
+    if !l.config.guard_cf
+        && let Some(&g) = l.names.get(&b"__guard_flags"[..])
+        && l.globals[g as usize].def == Def::Synthetic(Synthetic::Zero)
+        && l.files.iter().any(|f| match &f.kind {
+            FileKind::Object { object, .. } => object.feat_00.is_some_and(|v| v & 0x800 != 0),
+            FileKind::Import { .. } => false,
+        })
+    {
+        l.globals[g as usize].def = Def::Absolute(0x100);
     }
     times.push(("  library search", lap.elapsed()));
     times.push(("    of which: indexes", l.t_index));

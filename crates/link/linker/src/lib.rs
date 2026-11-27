@@ -16,6 +16,7 @@ pub mod icf;
 pub mod implib;
 pub mod layout;
 pub mod link;
+pub mod msqsort;
 pub mod object;
 pub mod resolve;
 pub mod resources;

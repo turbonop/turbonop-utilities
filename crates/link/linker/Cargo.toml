@@ -1,0 +1,17 @@
+[package]
+name = "turbonop-linker"
+description = "turbolink's engine: a fast PE/COFF linker, a drop-in for link.exe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true
+
+[lints]
+workspace = true

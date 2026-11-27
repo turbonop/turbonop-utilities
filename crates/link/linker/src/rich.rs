@@ -41,19 +41,13 @@ pub fn entries(r: &Resolved) -> Vec<(u32, u32)> {
         FileKind::Object { object, .. } => object.comp_id.unwrap_or(0),
         FileKind::Import { .. } => IMPORT,
     };
-    // The inputs, library by library: the command line's first.
-    let libraries = r
-        .files
-        .iter()
-        .filter_map(|f| f.library)
-        .max()
-        .map_or(0, |m| m + 1);
     let mut walk: Vec<u32> = Vec::new();
     if !r.config.exports.is_empty() {
         walk.push(EXPORT_COMP_ID);
     }
     walk.extend(r.files.iter().filter(|f| f.library.is_none()).map(id));
-    for lib in 0..libraries {
+    // The libraries as they are searched: the command line's first.
+    for &lib in &r.library_order {
         let mut members: Vec<&crate::resolve::File> =
             r.files.iter().filter(|f| f.library == Some(lib)).collect();
         members.sort_by_key(|f| std::cmp::Reverse(f.member));

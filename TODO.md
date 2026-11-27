@@ -634,9 +634,9 @@ CRT, DLLs and import libraries, resources, LLVM's `llvm-tblgen`. Byte for
 byte link.exe's images (time stamps aside): C and C++ with the dynamic and
 static CRTs, C with the debug CRT, a DLL with exports.
 
-- **Not yet, for native x64 images:** `/DEBUG` (the PDB: PR #68), delay
-  loading (`/DELAYLOAD` is accepted and the imports made ordinary),
-  `/GUARD:CF`'s tables, `/GUARD:EHCONT`, manifests (`/MANIFEST`,
+- **Not yet, for native x64 images:** `/DEBUG` (the PDB: PR #68),
+  delay loading's protected form (`/GUARD:CF`'s `.didat` section) and its
+  other machines, `/GUARD:CF`'s tables, `/GUARD:EHCONT`, manifests (`/MANIFEST`,
   `/MANIFESTUAC`, embedding), `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
   format, the `.exp` file, `/INCREMENTAL`'s padding (it links fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
@@ -644,7 +644,9 @@ static CRTs, C with the debug CRT, a DLL with exports.
   members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`, `/Brepro`'s hash.
 - **Byte identity, still different:** unoptimized C++ with the static
   debug CRT and no `/DEBUG` (link.exe keeps LIBCMTD's guard_support.obj's
-  static `ReadNoFence64` apart; why isn't known); large programs
+  static `ReadNoFence64` apart; why isn't known); a delay-loaded DLL's
+  tables with two or more imports (link.exe's order, docs/turbolink.md);
+  large programs
   (`llvm-tblgen`'s image differs: `hexcavator diff` it).
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
   under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich

@@ -191,6 +191,25 @@ lists every COFF group with its address and size) and by experiment:
   rotated left by their offsets (`e_lfanew` zero), and each entry's ID
   rotated left by its count; then `(checksum >> 5) % 3 + 1` empty
   entries, as many as fit in the headers without enlarging them.
+- **Delay loading** (`/DELAYLOAD`, x64), as link.exe lays it out: a
+  delay-loaded DLL's import wants no import descriptor but
+  `__delayLoadHelper2` (asked for as the first one loads). Where the DLL's
+  first import loads: its `__tailMerge_dll` (0x79 bytes of code: the
+  argument registers saved, the helper called with the DLL's descriptor,
+  `jmp rax`; its `.pdata` entry covers all but the `jmp rax`, its unwind
+  data is a 0x18-byte prologue allocating 0x68), the DLL's name (in
+  `.rdata`, on 16 bytes), its module handle (`__hmod__`, 8 bytes of
+  `.bss`); where each import loads, its `__imp_load_x` (`lea rax,
+  [slot]; jmp tail merge`, 12 bytes). The tables are groups that sort
+  with `.idata`'s: `.didat$2` (32-byte descriptors: attributes 1, the
+  name, handle, address table, name table, bound table and unload table
+  RVAs), `$3` (the null descriptor), `$4` (each DLL's name table), `$6`
+  (hint/names, in load order), `$7` (each DLL's bound table, zeros, then
+  0x104 bytes of room; not with `/DELAY:NOBIND`), `$8` (each DLL's unload
+  table with `/DELAY:UNLOAD`: a copy of the address table), and `$5` (each
+  DLL's address table, in `.data`: each slot its thunk's address, with a
+  base relocation). The DLLs are in the order their first imports
+  loaded. A `/DELAYLOAD` DLL nothing imports from is LNK4199.
 - **The headers** have room for exactly the section headers written: no
   `.reloc`'s when there are no base relocations (a minimal image's
   headers are 0x200 bytes, the Rich header unpadded).
@@ -208,7 +227,11 @@ lists every COFF group with its address and size) and by experiment:
   static `ReadNoFence64` and `ReadPointerNoFence` into identical
   functions (turbolink does), for a reason not found yet (not their names,
   symbol class or type, the object's `@comp.id` or `@feat.00`, or its
-  `.debug$S`; its map lists them without the COMDAT `i` flag).
+  `.debug$S`; its map lists them without the COMDAT `i` flag); a
+  delay-loaded DLL's name and address tables with two or more imports
+  (link.exe's order isn't load order, and no `qsort` of it found yet:
+  loads C,D give D,C; C,D,S give S,D,C; C,D,X,S give S,D,X,C; C,Q,F,X,E,G
+  give G,Q,F,X,E,C; C,Q,F,A,X,E,B,I,M,G give C,M,Q,F,A,X,E,B,I,G).
 
 ## Verification
 

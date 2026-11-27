@@ -82,7 +82,13 @@ pub fn link(mut config: Config) -> Outcome {
         .includes
         .iter()
         .map(String::as_bytes)
-        .chain([&b"_load_config_used"[..], b"_tls_used"])
+        // (The delay-load helper: only the tail merges turbolink writes
+        // call it.)
+        .chain([
+            &b"_load_config_used"[..],
+            b"_tls_used",
+            b"__delayLoadHelper2",
+        ])
     {
         if let Some(&g) = resolved.names.get(name) {
             roots.push(g);

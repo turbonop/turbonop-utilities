@@ -465,3 +465,289 @@ fn a_minimal_image_is_link_exes_shape() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// An x64 import object (the short form): `symbol` from `dll`, by name, of
+/// code, with `hint`.
+fn import(dll: &str, symbol: &str, hint: u16) -> Vec<u8> {
+    let mut names = symbol.as_bytes().to_vec();
+    names.push(0);
+    names.extend_from_slice(dll.as_bytes());
+    names.push(0);
+    let mut o = Vec::new();
+    o.extend_from_slice(&0u16.to_le_bytes());
+    o.extend_from_slice(&0xFFFFu16.to_le_bytes());
+    o.extend_from_slice(&0u16.to_le_bytes()); // version
+    o.extend_from_slice(&0x8664u16.to_le_bytes());
+    o.extend_from_slice(&0u32.to_le_bytes()); // time stamp
+    o.extend_from_slice(&n32(names.len()).to_le_bytes());
+    o.extend_from_slice(&hint.to_le_bytes());
+    o.extend_from_slice(&(1u16 << 2).to_le_bytes()); // code, by name
+    o.extend_from_slice(&names);
+    o
+}
+
+/// Links `words` in `dir`: the image (or the errors' codes), and the
+/// warnings' codes.
+fn run_with_warnings(dir: &Path, words: &[&str]) -> (Result<Vec<u8>, Vec<u32>>, Vec<u32>) {
+    let argv = words.iter().map(|w| {
+        if w.starts_with('/') {
+            (*w).to_owned()
+        } else {
+            dir.join(w).display().to_string()
+        }
+    });
+    let words = args::command_line(argv, None, None, &|p| std::fs::read(p)).unwrap();
+    let mut diags = Vec::new();
+    let mut config = config::parse(&words, &mut diags);
+    let out = dir.join("out.img");
+    config.out = Some(out.clone());
+    let outcome = link::link(config);
+    let codes = |warning: bool| -> Vec<u32> {
+        outcome
+            .diagnostics
+            .iter()
+            .filter(|d| d.warning == warning)
+            .map(|d| d.code)
+            .collect()
+    };
+    let (errors, warnings) = (codes(false), codes(true));
+    if !errors.is_empty() || !outcome.written {
+        return (Err(errors), warnings);
+    }
+    (Ok(std::fs::read(out).unwrap()), warnings)
+}
+
+/// Data directory `i`: (RVA, size).
+fn directory(d: &[u8], i: usize) -> (u32, u32) {
+    let at = optional_header(d) + 112 + 8 * i;
+    (u32_at(d, at), u32_at(d, at + 4))
+}
+
+/// The base relocations' sites (RVAs).
+fn base_relocation_sites(d: &[u8]) -> Vec<u32> {
+    let (rva, size) = directory(d, 5);
+    let mut sites = Vec::new();
+    if size == 0 {
+        return sites;
+    }
+    let blocks = at_rva(d, rva, size as usize);
+    let mut o = 0;
+    while o + 8 <= blocks.len() {
+        let page = u32_at(blocks, o);
+        let n = u32_at(blocks, o + 4) as usize;
+        for k in (8..n).step_by(2) {
+            let e = u16_at(blocks, o + k);
+            if e >> 12 != 0 {
+                sites.push(page + u32::from(e & 0xFFF));
+            }
+        }
+        o += n;
+    }
+    sites
+}
+
+/// Where the 4-byte displacement at `at` in `code` (at `rva`) leads.
+fn rel32(code: &[u8], rva: u32, at: usize) -> u32 {
+    let disp = i32::from_le_bytes(code[at..at + 4].try_into().unwrap());
+    let end = i64::from(rva) + i64::from(n32(at)) + 4;
+    u32::try_from(end + i64::from(disp)).unwrap()
+}
+
+/// `main` calls `f` and `g` through their `__imp_` slots (as dllimport code
+/// does), from `x.dll`, delay-loaded; delay.lib has a stand-in
+/// `__delayLoadHelper2`.
+fn delay_inputs(dir: &Path) {
+    let main = object(
+        &[0xFF, 0x15, 0, 0, 0, 0, 0xFF, 0x15, 0, 0, 0, 0, 0xC3],
+        &[(2, 1, 4), (8, 2, 4)], // REL32 to __imp_f, __imp_g
+        &[Sym("main", 1), Sym("__imp_f", 0), Sym("__imp_g", 0)],
+    );
+    std::fs::write(dir.join("main.obj"), main).unwrap();
+    let x = archive(&[
+        ("x.dll", import("x.dll", "f", 7), &["f", "__imp_f"]),
+        ("x.dll", import("x.dll", "g", 9), &["g", "__imp_g"]),
+    ]);
+    std::fs::write(dir.join("x.lib"), x).unwrap();
+    let helper = archive(&[(
+        "helper.obj",
+        defining("__delayLoadHelper2"),
+        &["__delayLoadHelper2"],
+    )]);
+    std::fs::write(dir.join("delay.lib"), helper).unwrap();
+}
+
+/// Delay loading as link.exe lays it out (x64): a descriptor per DLL and a
+/// null one (`.didat$2`, `$3`); the name table (`$4`) and hint/names
+/// (`$6`); the bound table (`$7`, zeros, then 0x104 bytes of room); the
+/// address table in `.data`, each slot the address of its import's
+/// `__imp_load_` thunk (with a base relocation); the tail merge and the
+/// thunks in `.text`, the tail merge's `.pdata` entry and unwind data.
+#[test]
+fn delay_loading_is_link_exes() {
+    let dir = scratch("delay");
+    delay_inputs(&dir);
+    let (image, warnings) = run_with_warnings(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/ENTRY:main",
+            "/SUBSYSTEM:CONSOLE",
+            "/DELAYLOAD:X.DLL",
+            "main.obj",
+            "x.lib",
+            "delay.lib",
+        ],
+    );
+    let image = image.expect("links");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let base = 0x1_4000_0000u64;
+    let (desc, size) = directory(&image, 13);
+    assert_eq!(size, 64, "one descriptor and the null one");
+    assert_eq!(directory(&image, 1), (0, 0), "no ordinary imports");
+    let d = at_rva(&image, desc, 64);
+    let field = |i: usize| u32_at(d, 4 * i);
+    assert_eq!(field(0), 1, "RVAs");
+    assert_eq!(at_rva(&image, field(1), 6), b"x.dll\0");
+    assert!(d[32..].iter().all(|&b| b == 0), "the null descriptor");
+    let (handle, iat, int, bound) = (field(2), field(3), field(4), field(5));
+    assert_eq!((field(6), field(7)), (0, 0), "no unload table, not bound");
+    let data = sections(&image)
+        .into_iter()
+        .find(|s| s.0 == ".data")
+        .expect(".data");
+    assert!(
+        data.2 <= iat && iat < data.2 + data.1,
+        "the address table is in .data"
+    );
+    assert!(
+        data.2 <= handle && handle < data.2 + data.1,
+        "so is the module handle"
+    );
+    // The name table: hint/names, then 0.
+    let names = at_rva(&image, int, 24);
+    for (k, (hint, name)) in [(7u16, &b"f\0"[..]), (9, b"g\0")].into_iter().enumerate() {
+        let entry = u32_at(names, 8 * k);
+        assert_eq!(u32_at(names, 8 * k + 4), 0);
+        let hn = at_rva(&image, entry, 4);
+        assert_eq!(u16_at(hn, 0), hint);
+        assert_eq!(&hn[2..4], name);
+    }
+    assert_eq!(&names[16..24], &[0; 8]);
+    // The bound table: zeros, and the room after it.
+    assert!(at_rva(&image, bound, 24 + 0x104).iter().all(|&b| b == 0));
+    // The address table: each slot the address of its thunk, relocated.
+    let slots = at_rva(&image, iat, 24);
+    let relocations = base_relocation_sites(&image);
+    let mut tail_merge = None;
+    for k in 0..2 {
+        let at = 8 * k;
+        let thunk = u64::from_le_bytes(slots[at..at + 8].try_into().unwrap()) - base;
+        let thunk = u32::try_from(thunk).unwrap();
+        let t = at_rva(&image, thunk, 12);
+        assert_eq!(&t[..3], &[0x48, 0x8D, 0x05], "lea rax, [rip + slot]");
+        assert_eq!(
+            rel32(t, thunk, 3),
+            iat + n32(at),
+            "the thunk names its slot"
+        );
+        assert_eq!(t[7], 0xE9, "jmp");
+        let to = rel32(t, thunk, 8);
+        assert_eq!(
+            *tail_merge.get_or_insert(to),
+            to,
+            "one tail merge for the DLL"
+        );
+        assert!(relocations.contains(&(iat + n32(at))), "slot {k} relocated");
+    }
+    assert_eq!(&slots[16..24], &[0; 8]);
+    // The tail merge: link.exe's code, its descriptor and the helper.
+    let tail_merge = tail_merge.unwrap();
+    let code = at_rva(&image, tail_merge, 0x79);
+    assert_eq!(&code[..0x36], &turbonop_linker::layout::TAIL_MERGE[..0x36]);
+    assert_eq!(rel32(code, tail_merge, 0x36), desc, "the descriptor");
+    let text = &sections(&image)[0];
+    let helper = rel32(code, tail_merge, 0x3B);
+    assert!(text.2 <= helper && helper < text.2 + text.1, "the helper");
+    assert_eq!(&code[0x75..], &[0xEB, 0x00, 0xFF, 0xE0]);
+    // Its .pdata entry and unwind data.
+    let (pdata, psize) = directory(&image, 3);
+    let entries = at_rva(&image, pdata, psize as usize);
+    let entry = entries
+        .chunks(12)
+        .find(|e| u32_at(e, 0) == tail_merge)
+        .expect("the tail merge's .pdata entry");
+    assert_eq!(u32_at(entry, 4), tail_merge + 0x77);
+    assert_eq!(
+        at_rva(&image, u32_at(entry, 8), 8),
+        &[0x01, 0x18, 0x01, 0x00, 0x18, 0xC2, 0x00, 0x00]
+    );
+    // main's calls reach the slots.
+    let call = at_rva(&image, 0x1000, 12);
+    assert_eq!(rel32(call, 0x1000, 2), iat);
+    assert_eq!(rel32(call, 0x1000, 8), iat + 8);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// /DELAY:UNLOAD adds an unload table (a copy of the address table,
+/// relocated); /DELAY:NOBIND drops the bound table and its room.
+#[test]
+fn delay_unload_and_nobind() {
+    let dir = scratch("delay-options");
+    delay_inputs(&dir);
+    let link = |extra: &str| {
+        run_with_warnings(
+            &dir,
+            &[
+                "/NODEFAULTLIB",
+                "/ENTRY:main",
+                "/SUBSYSTEM:CONSOLE",
+                "/DELAYLOAD:x.dll",
+                extra,
+                "main.obj",
+                "x.lib",
+                "delay.lib",
+            ],
+        )
+        .0
+        .expect("links")
+    };
+    let unload = link("/DELAY:UNLOAD");
+    let (desc, _) = directory(&unload, 13);
+    let d = at_rva(&unload, desc, 32);
+    let (iat, table) = (u32_at(d, 12), u32_at(d, 24));
+    assert_ne!(table, 0);
+    assert_eq!(at_rva(&unload, iat, 24), at_rva(&unload, table, 24));
+    let relocations = base_relocation_sites(&unload);
+    assert!(relocations.contains(&table) && relocations.contains(&(table + 8)));
+    let nobind = link("/DELAY:NOBIND");
+    let (desc, _) = directory(&nobind, 13);
+    assert_eq!(u32_at(at_rva(&nobind, desc, 32), 20), 0, "no bound table");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A /DELAYLOAD DLL nothing imports from is LNK4199 (a warning); without
+/// `__delayLoadHelper2` (delayimp.lib) the link fails.
+#[test]
+fn delay_loading_diagnostics() {
+    let dir = scratch("delay-diagnostics");
+    delay_inputs(&dir);
+    let base = [
+        "/NODEFAULTLIB",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        "/DELAYLOAD:x.dll",
+    ];
+    let (image, warnings) = run_with_warnings(
+        &dir,
+        &[
+            &base[..],
+            &["/DELAYLOAD:y.dll", "main.obj", "x.lib", "delay.lib"],
+        ]
+        .concat(),
+    );
+    assert!(image.is_ok());
+    assert_eq!(warnings, [4199]);
+    let (image, _) = run_with_warnings(&dir, &[&base[..], &["main.obj", "x.lib"]].concat());
+    assert_eq!(image, Err(vec![2001]));
+    let _ = std::fs::remove_dir_all(&dir);
+}

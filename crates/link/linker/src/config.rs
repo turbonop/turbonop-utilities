@@ -568,6 +568,14 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Whether `/DELAYLOAD` names DLL `dll` (as an import object names it;
+    /// case aside).
+    pub fn is_delay_loaded(&self, dll: &[u8]) -> bool {
+        self.delay_load
+            .iter()
+            .any(|d| d.as_bytes().eq_ignore_ascii_case(dll))
+    }
+
     /// Whether unreferenced functions and data are removed: `/OPT:REF`,
     /// by default unless `/DEBUG`.
     pub fn gc_sections(&self) -> bool {

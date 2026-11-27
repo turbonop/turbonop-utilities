@@ -11,8 +11,48 @@ use crate::config::Config;
 use crate::object::{Selection, SymbolKind, scn};
 use crate::resolve::{Def, FileKind, Resolved};
 
+/// A delay-loaded DLL's `__tailMerge_dll`, as link.exe writes it (x64): the
+/// argument registers saved, `__delayLoadHelper2(descriptor, rax)` called
+/// (rax: the import's slot), the registers restored, then a jump to what
+/// it returned. The descriptor's displacement is at `TAIL_MERGE_DESCRIPTOR`,
+/// the helper's at `TAIL_MERGE_HELPER` (each relative to the 4 bytes' end).
+pub const TAIL_MERGE: [u8; 0x79] = [
+    0x48, 0x89, 0x4C, 0x24, 0x08, // mov [rsp+8], rcx
+    0x48, 0x89, 0x54, 0x24, 0x10, // mov [rsp+10h], rdx
+    0x4C, 0x89, 0x44, 0x24, 0x18, // mov [rsp+18h], r8
+    0x4C, 0x89, 0x4C, 0x24, 0x20, // mov [rsp+20h], r9
+    0x48, 0x83, 0xEC, 0x68, // sub rsp, 68h
+    0x66, 0x0F, 0x7F, 0x44, 0x24, 0x20, // movdqa [rsp+20h], xmm0
+    0x66, 0x0F, 0x7F, 0x4C, 0x24, 0x30, // movdqa [rsp+30h], xmm1
+    0x66, 0x0F, 0x7F, 0x54, 0x24, 0x40, // movdqa [rsp+40h], xmm2
+    0x66, 0x0F, 0x7F, 0x5C, 0x24, 0x50, // movdqa [rsp+50h], xmm3
+    0x48, 0x8B, 0xD0, // mov rdx, rax
+    0x48, 0x8D, 0x0D, 0, 0, 0, 0, // lea rcx, [descriptor]
+    0xE8, 0, 0, 0, 0, // call __delayLoadHelper2
+    0x66, 0x0F, 0x6F, 0x44, 0x24, 0x20, // movdqa xmm0, [rsp+20h]
+    0x66, 0x0F, 0x6F, 0x4C, 0x24, 0x30, // movdqa xmm1, [rsp+30h]
+    0x66, 0x0F, 0x6F, 0x54, 0x24, 0x40, // movdqa xmm2, [rsp+40h]
+    0x66, 0x0F, 0x6F, 0x5C, 0x24, 0x50, // movdqa xmm3, [rsp+50h]
+    0x48, 0x8B, 0x4C, 0x24, 0x70, // mov rcx, [rsp+70h]
+    0x48, 0x8B, 0x54, 0x24, 0x78, // mov rdx, [rsp+78h]
+    0x4C, 0x8B, 0x84, 0x24, 0x80, 0, 0, 0, // mov r8, [rsp+80h]
+    0x4C, 0x8B, 0x8C, 0x24, 0x88, 0, 0, 0, // mov r9, [rsp+88h]
+    0x48, 0x83, 0xC4, 0x68, // add rsp, 68h
+    0xEB, 0x00, // jmp $+2
+    0xFF, 0xE0, // jmp rax
+];
+/// Where `TAIL_MERGE`'s descriptor displacement is.
+pub const TAIL_MERGE_DESCRIPTOR: usize = 0x36;
+/// Where `TAIL_MERGE`'s call displacement is.
+pub const TAIL_MERGE_HELPER: usize = 0x3B;
+/// How much of `TAIL_MERGE` its `.pdata` entry covers (all but `jmp rax`).
+pub const TAIL_MERGE_FUNCTION: u32 = 0x77;
+/// The tail merge's unwind data: a 0x18-byte prologue that allocates 0x68
+/// bytes (`sub rsp, 68h`).
+pub const TAIL_MERGE_UNWIND: [u8; 8] = [0x01, 0x18, 0x01, 0x00, 0x18, 0xC2, 0x00, 0x00];
+
 /// One piece of an output section.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ChunkKind {
     /// An input section: file, 0-based section.
     Input(u32, u32),
@@ -49,6 +89,38 @@ pub enum ChunkKind {
     /// guard_support.obj's 128-byte `.rdata$CastGuardVftablesA` puts the
     /// next group on 128 bytes).
     Empty,
+    /// The delay-load directory (`.didat$2`): a descriptor per delay-loaded
+    /// DLL.
+    DelayDirectory,
+    /// Its null descriptor (`.didat$3`).
+    DelayNullDescriptor,
+    /// A delay-loaded DLL's name table (`.didat$4`): its index among them.
+    DelayNames(u32),
+    /// The delay-loaded imports' hint/name entries (`.didat$6`).
+    DelayHintNames,
+    /// A delay-loaded DLL's bound address table (`.didat$7`, zeros).
+    DelayBound(u32),
+    /// The room link.exe leaves after the bound tables (0x104 zero bytes).
+    DelayBoundRoom,
+    /// A delay-loaded DLL's unload table (`.didat$8`, `/DELAY:UNLOAD`: a
+    /// copy of its address table).
+    DelayUnload(u32),
+    /// A delay-loaded DLL's address table (`.didat$5`, in `.data`).
+    DelayAddresses(u32),
+    /// A delay-loaded DLL's name (in `.rdata`, where its first import loads).
+    DelayDllName(u32),
+    /// A delay-loaded DLL's module handle (`__hmod__dll`, in `.bss`).
+    DelayHandle(u32),
+    /// A delay-loaded DLL's `__tailMerge_dll`: saves the arguments, calls
+    /// `__delayLoadHelper2` with the DLL's descriptor, jumps to the import.
+    TailMerge(u32),
+    /// The tail merge's unwind data (in `.xdata`).
+    TailMergeUnwind(u32),
+    /// The tail merge's `.pdata` entry.
+    TailMergeFunction(u32),
+    /// A delay-loaded import's `__imp_load_x`: `lea rax, [__imp_x]`, then a
+    /// jump to its DLL's tail merge (the import's file).
+    DelayThunk(u32),
 }
 
 /// A chunk placed.
@@ -117,6 +189,14 @@ pub struct Layout {
     /// The import directory's order: each DLL (its index in `dlls`) as
     /// its first import was loaded.
     pub directory_order: Vec<u32>,
+    /// The delay-loaded DLLs, in the order their first imports loaded.
+    pub delay_dlls: Vec<Dll>,
+    /// For each delay-loaded import file: its DLL's index (in `delay_dlls`)
+    /// and its place in the DLL's tables.
+    pub delay_slots: Map<u32, (u32, u32)>,
+    /// Each delay-loaded import's hint/name entry's offset in
+    /// `DelayHintNames`.
+    pub delay_name_offsets: Map<u32, u32>,
     /// The headers' size (file-aligned).
     pub headers_size: u32,
     /// The optional header's size (240 for PE32+, 224 for PE32).
@@ -443,7 +523,15 @@ pub fn layout(
         let c = u32::try_from(chunks.len()).expect("fewer than 4 billion chunks");
         chunks.push(chunk);
         let p = *partial_index.entry((name, chars)).or_insert_with(|| {
-            let key = (output_name(name, &merges), name.to_vec(), chars);
+            // (A delay-load address table, written to as its DLL loads,
+            // goes to .data as link.exe puts it, the rest of .didat to
+            // .rdata.)
+            let out = if name.starts_with(b".didat") && chars & scn::MEM_WRITE != 0 {
+                b".data".to_vec()
+            } else {
+                output_name(name, &merges)
+            };
+            let key = (out, name.to_vec(), chars);
             partials.push((key, Vec::new()));
             partials.len() - 1
         });
@@ -459,6 +547,9 @@ pub fn layout(
     let mut dlls: Vec<Dll> = Vec::new();
     let mut import_slots = Map::default();
     let mut thunk_chunks = Map::default();
+    let mut delay_index: Map<&'static [u8], u32> = Map::default();
+    let mut delay_dlls: Vec<Dll> = Vec::new();
+    let mut delay_slots: Map<u32, (u32, u32)> = Map::default();
     for (f, file) in r.files.iter().enumerate() {
         match &file.kind {
             FileKind::Object { object, .. } => {
@@ -532,6 +623,104 @@ pub fn layout(
                 if !live.imports[f] {
                     continue;
                 }
+                let code = scn::CNT_CODE | scn::MEM_EXECUTE | scn::MEM_READ;
+                if config.is_delay_loaded(import.dll) {
+                    // A delay-loaded DLL's pieces, where its first import
+                    // loads (as link.exe places them): the tail merge (code),
+                    // its unwind data and .pdata entry, the DLL's name, its
+                    // module handle.
+                    let d = match delay_index.get(import.dll) {
+                        Some(&d) => d,
+                        None => {
+                            let d = crate::n32(delay_dlls.len());
+                            delay_index.insert(import.dll, d);
+                            delay_dlls.push(Dll {
+                                name: import.dll,
+                                imports: Vec::new(),
+                            });
+                            let data = scn::CNT_INITIALIZED_DATA | scn::MEM_READ;
+                            let pieces = [
+                                (
+                                    &b".text$mn"[..],
+                                    code,
+                                    ChunkKind::TailMerge(d),
+                                    1,
+                                    TAIL_MERGE.len(),
+                                ),
+                                (
+                                    b".rdata",
+                                    data,
+                                    ChunkKind::DelayDllName(d),
+                                    16,
+                                    import.dll.len() + 1,
+                                ),
+                                (
+                                    b".bss",
+                                    scn::CNT_UNINITIALIZED_DATA | scn::MEM_READ | scn::MEM_WRITE,
+                                    ChunkKind::DelayHandle(d),
+                                    8,
+                                    8,
+                                ),
+                                (
+                                    b".xdata",
+                                    data,
+                                    ChunkKind::TailMergeUnwind(d),
+                                    4,
+                                    TAIL_MERGE_UNWIND.len(),
+                                ),
+                                (b".pdata", data, ChunkKind::TailMergeFunction(d), 4, 12),
+                            ];
+                            for (name, chars, kind, align, size) in pieces {
+                                add(
+                                    name,
+                                    chars,
+                                    Chunk {
+                                        kind,
+                                        align,
+                                        size: crate::n32(size),
+                                        uninitialized: kind == ChunkKind::DelayHandle(d),
+                                        rva: 0,
+                                    },
+                                    &mut chunks,
+                                );
+                            }
+                            d
+                        }
+                    };
+                    let slot = &mut delay_dlls[d as usize].imports;
+                    delay_slots.insert(crate::n32(f), (d, crate::n32(slot.len())));
+                    slot.push(crate::n32(f));
+                    // A call to the import itself (not through __imp_) goes
+                    // through an ordinary thunk to its delay-load slot.
+                    if live.thunks[f] {
+                        let c = add(
+                            b".text$mn",
+                            code,
+                            Chunk {
+                                kind: ChunkKind::Thunk(crate::n32(f)),
+                                align: 1,
+                                size: 6,
+                                uninitialized: false,
+                                rva: 0,
+                            },
+                            &mut chunks,
+                        );
+                        thunk_chunks.insert(crate::n32(f), c);
+                    }
+                    add(
+                        b".text$mn",
+                        code,
+                        Chunk {
+                            kind: ChunkKind::DelayThunk(crate::n32(f)),
+                            align: 1,
+                            size: 12,
+                            uninitialized: false,
+                            rva: 0,
+                        },
+                        &mut chunks,
+                    );
+                    continue;
+                }
                 let d = *dll_index.entry(import.dll).or_insert_with(|| {
                     dlls.push(Dll {
                         name: import.dll,
@@ -546,7 +735,7 @@ pub fn layout(
                     let c = add(
                         // Among the code (link.exe's .text$mn group).
                         b".text$mn",
-                        scn::CNT_CODE | scn::MEM_EXECUTE | scn::MEM_READ,
+                        code,
                         Chunk {
                             kind: ChunkKind::Thunk(crate::n32(f)),
                             align: 1, // (link.exe packs thunks)
@@ -793,6 +982,95 @@ pub fn layout(
         );
     }
 
+    // The delay-load tables (`.didat$`, as link.exe's groups): the
+    // descriptors and their null one, each DLL's name table, the hint/name
+    // entries, each DLL's bound table (zeros, and 0x104 bytes of room
+    // after them; not with /DELAY:NOBIND), each one's unload table (with
+    // /DELAY:UNLOAD), and each one's address table (in .data). Each DLL's
+    // imports are in the order they loaded.
+    let mut delay_name_offsets = Map::default();
+    if !delay_dlls.is_empty() {
+        let data = scn::CNT_INITIALIZED_DATA | scn::MEM_READ;
+        let table = |n: usize| crate::n32((n + 1) * 8);
+        let mut tables: Vec<(&'static [u8], u32, ChunkKind, u32, u32)> = vec![
+            (
+                b".didat$2",
+                data,
+                ChunkKind::DelayDirectory,
+                4,
+                crate::n32(delay_dlls.len() * 32),
+            ),
+            (b".didat$3", data, ChunkKind::DelayNullDescriptor, 4, 32),
+        ];
+        for (d, dll) in delay_dlls.iter().enumerate() {
+            tables.push((
+                b".didat$4",
+                data,
+                ChunkKind::DelayNames(crate::n32(d)),
+                8,
+                table(dll.imports.len()),
+            ));
+        }
+        let mut at = 0u32;
+        for dll in &delay_dlls {
+            for &f in &dll.imports {
+                if let FileKind::Import { import, .. } = &r.files[f as usize].kind
+                    && let Some(n) = import.import_name()
+                {
+                    delay_name_offsets.insert(f, at);
+                    at += (2 + crate::n32(n.len()) + 1 + 1) & !1;
+                }
+            }
+        }
+        tables.push((b".didat$6", data, ChunkKind::DelayHintNames, 2, at));
+        if !config.delay_nobind {
+            for (d, dll) in delay_dlls.iter().enumerate() {
+                tables.push((
+                    b".didat$7",
+                    data,
+                    ChunkKind::DelayBound(crate::n32(d)),
+                    8,
+                    table(dll.imports.len()),
+                ));
+            }
+            tables.push((b".didat$7", data, ChunkKind::DelayBoundRoom, 1, 0x104));
+        }
+        if config.delay_unload {
+            for (d, dll) in delay_dlls.iter().enumerate() {
+                tables.push((
+                    b".didat$8",
+                    data,
+                    ChunkKind::DelayUnload(crate::n32(d)),
+                    8,
+                    table(dll.imports.len()),
+                ));
+            }
+        }
+        for (d, dll) in delay_dlls.iter().enumerate() {
+            tables.push((
+                b".didat$5",
+                data | scn::MEM_WRITE,
+                ChunkKind::DelayAddresses(crate::n32(d)),
+                8,
+                table(dll.imports.len()),
+            ));
+        }
+        for (name, chars, kind, align, size) in tables {
+            add(
+                name,
+                chars,
+                Chunk {
+                    kind,
+                    align,
+                    size,
+                    uninitialized: false,
+                    rva: 0,
+                },
+                &mut chunks,
+            );
+        }
+    }
+
     // The export directory, in `.edata` (merged into `.rdata`).
     if let Some(t) = &exports {
         add(
@@ -998,8 +1276,12 @@ pub fn layout(
             let rank = |i: &[u8]| {
                 if i == b".idata$5" {
                     0
-                } else if i.starts_with(b".idata$") || i.starts_with(b".edata") {
-                    // (The export directory sorts among them too.)
+                } else if i.starts_with(b".idata$")
+                    || i.starts_with(b".edata")
+                    || i.starts_with(b".didat$")
+                {
+                    // (The export directory and the delay-load tables sort
+                    // among them too.)
                     2
                 } else {
                     1
@@ -1074,6 +1356,9 @@ pub fn layout(
         thunk_chunks,
         dlls,
         directory_order,
+        delay_dlls,
+        delay_slots,
+        delay_name_offsets,
         headers_size: 0,
         optional_size: optional,
         image_size: 0,

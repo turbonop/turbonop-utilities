@@ -42,6 +42,8 @@ pub struct Image<'a> {
     iat: Vec<u32>,
     /// The TLS template's range (the .tls groups' chunks), if any.
     tls: Option<(u32, u32)>,
+    /// The delay-load chunks' addresses, by kind.
+    delay: turbonop_hash::Map<ChunkKind, u32>,
 }
 
 impl<'a> Image<'a> {
@@ -63,16 +65,39 @@ impl<'a> Image<'a> {
                 tls = Some((lo.min(c.rva), hi.max(c.rva + c.size.max(1))));
             }
         }
+        let mut delay = turbonop_hash::Map::default();
+        if !l.delay_dlls.is_empty() {
+            for c in &l.chunks {
+                if !matches!(
+                    c.kind,
+                    ChunkKind::Input(..)
+                        | ChunkKind::Common(_)
+                        | ChunkKind::Thunk(_)
+                        | ChunkKind::Empty
+                ) {
+                    delay.insert(c.kind, c.rva);
+                }
+            }
+        }
         Image {
             r,
             l,
             base: image_base(&r.config),
             iat,
             tls,
+            delay,
         }
     }
 
+    /// The address of the (delay-load) chunk of kind `k`.
+    fn delay_rva(&self, k: ChunkKind) -> Option<u32> {
+        self.delay.get(&k).copied()
+    }
+
     fn import_slot(&self, f: u32) -> Option<u32> {
+        if let Some(&(d, k)) = self.l.delay_slots.get(&f) {
+            return Some(self.delay_rva(ChunkKind::DelayAddresses(d))? + 8 * k);
+        }
         let &(d, k) = self.l.import_slots.get(&f)?;
         let chunk = self.l.chunks.get(*self.iat.get(d as usize)? as usize)?;
         Some(chunk.rva + 8 * k)
@@ -173,6 +198,18 @@ impl<'a> Image<'a> {
                     };
                     if let Target::Rva(_) = self.symbol(f, rel.symbol_table_index.get()) {
                         sites.push((chunk.rva + rel.virtual_address.get(), ty));
+                    }
+                }
+            }
+        }
+        // The delay-load address tables (and unload tables): each slot holds
+        // its thunk's address.
+        for (d, dll) in self.l.delay_dlls.iter().enumerate() {
+            let d = crate::n32(d);
+            for kind in [ChunkKind::DelayAddresses(d), ChunkKind::DelayUnload(d)] {
+                if let Some(rva) = self.delay_rva(kind) {
+                    for k in 0..dll.imports.len() {
+                        sites.push((rva + 8 * crate::n32(k), 10));
                     }
                 }
             }
@@ -281,7 +318,129 @@ impl<'a> Image<'a> {
                     );
                 }
             }
-            ChunkKind::Empty => {}
+            ChunkKind::Empty
+            | ChunkKind::DelayNullDescriptor
+            | ChunkKind::DelayBound(_)
+            | ChunkKind::DelayBoundRoom
+            | ChunkKind::DelayHandle(_) => {}
+            ChunkKind::DelayDirectory => {
+                let c = &self.r.config;
+                for d in 0..crate::n32(self.l.delay_dlls.len()) {
+                    let rva = |k| self.delay_rva(k).unwrap_or(0);
+                    let fields = [
+                        1, // the descriptor's addresses are RVAs
+                        rva(ChunkKind::DelayDllName(d)),
+                        rva(ChunkKind::DelayHandle(d)),
+                        rva(ChunkKind::DelayAddresses(d)),
+                        rva(ChunkKind::DelayNames(d)),
+                        if c.delay_nobind {
+                            0
+                        } else {
+                            rva(ChunkKind::DelayBound(d))
+                        },
+                        if c.delay_unload {
+                            rva(ChunkKind::DelayUnload(d))
+                        } else {
+                            0
+                        },
+                        0, // the time stamp (not bound)
+                    ];
+                    for (i, v) in fields.into_iter().enumerate() {
+                        let at = d as usize * 32 + i * 4;
+                        out[at..at + 4].copy_from_slice(&v.to_le_bytes());
+                    }
+                }
+            }
+            ChunkKind::DelayNames(d) => {
+                let names = self.delay_rva(ChunkKind::DelayHintNames).unwrap_or(0);
+                for (k, &f) in self.l.delay_dlls[d as usize].imports.iter().enumerate() {
+                    let FileKind::Import { import, .. } = &self.r.files[f as usize].kind else {
+                        continue;
+                    };
+                    let v: u64 = match self.l.delay_name_offsets.get(&f) {
+                        Some(&o) => u64::from(names + o),
+                        None => (1 << 63) | u64::from(import.ordinal_or_hint),
+                    };
+                    out[k * 8..k * 8 + 8].copy_from_slice(&v.to_le_bytes());
+                }
+            }
+            ChunkKind::DelayHintNames => {
+                for dll in &self.l.delay_dlls {
+                    for &f in &dll.imports {
+                        let FileKind::Import { import, .. } = &self.r.files[f as usize].kind else {
+                            continue;
+                        };
+                        if let (Some(&o), Some(n)) =
+                            (self.l.delay_name_offsets.get(&f), import.import_name())
+                        {
+                            let o = o as usize;
+                            out[o..o + 2].copy_from_slice(&import.ordinal_or_hint.to_le_bytes());
+                            out[o + 2..o + 2 + n.len()].copy_from_slice(n);
+                        }
+                    }
+                }
+            }
+            ChunkKind::DelayAddresses(d) | ChunkKind::DelayUnload(d) => {
+                // Each slot starts at its import's __imp_load_ thunk.
+                for (k, &f) in self.l.delay_dlls[d as usize].imports.iter().enumerate() {
+                    let thunk = self.delay_rva(ChunkKind::DelayThunk(f)).unwrap_or(0);
+                    let v = self.base + u64::from(thunk);
+                    out[k * 8..k * 8 + 8].copy_from_slice(&v.to_le_bytes());
+                }
+            }
+            ChunkKind::DelayDllName(d) => {
+                let name = self.l.delay_dlls[d as usize].name;
+                out[..name.len()].copy_from_slice(name);
+            }
+            ChunkKind::TailMerge(d) => {
+                use crate::layout::{TAIL_MERGE, TAIL_MERGE_DESCRIPTOR, TAIL_MERGE_HELPER};
+                out[..TAIL_MERGE.len()].copy_from_slice(&TAIL_MERGE);
+                let descriptor = self.delay_rva(ChunkKind::DelayDirectory).unwrap_or(0) + 32 * d;
+                let helper = self
+                    .r
+                    .names
+                    .get(&b"__delayLoadHelper2"[..])
+                    .map(|&g| self.global(g));
+                let helper = match helper {
+                    Some(Target::Rva(h)) => h,
+                    _ => {
+                        problems.push("__delayLoadHelper2 is not defined (delayimp.lib)".into());
+                        0
+                    }
+                };
+                for (at, to) in [
+                    (TAIL_MERGE_DESCRIPTOR, descriptor),
+                    (TAIL_MERGE_HELPER, helper),
+                ] {
+                    let from = i64::from(chunk.rva) + i64::from(crate::n32(at)) + 4;
+                    let disp = i32::try_from(i64::from(to) - from).unwrap_or(0);
+                    out[at..at + 4].copy_from_slice(&disp.to_le_bytes());
+                }
+            }
+            ChunkKind::TailMergeUnwind(_) => {
+                out[..8].copy_from_slice(&crate::layout::TAIL_MERGE_UNWIND);
+            }
+            ChunkKind::TailMergeFunction(d) => {
+                let start = self.delay_rva(ChunkKind::TailMerge(d)).unwrap_or(0);
+                let unwind = self.delay_rva(ChunkKind::TailMergeUnwind(d)).unwrap_or(0);
+                out[0..4].copy_from_slice(&start.to_le_bytes());
+                out[4..8]
+                    .copy_from_slice(&(start + crate::layout::TAIL_MERGE_FUNCTION).to_le_bytes());
+                out[8..12].copy_from_slice(&unwind.to_le_bytes());
+            }
+            ChunkKind::DelayThunk(f) => {
+                // lea rax, [rip + slot]; jmp tail merge
+                let (d, _) = self.l.delay_slots.get(&f).copied().unwrap_or((0, 0));
+                let slot = self.import_slot(f).unwrap_or(0);
+                let tail = self.delay_rva(ChunkKind::TailMerge(d)).unwrap_or(0);
+                let rel = |to: u32, end: u32| {
+                    i32::try_from(i64::from(to) - i64::from(chunk.rva + end)).unwrap_or(0)
+                };
+                out[..3].copy_from_slice(&[0x48, 0x8D, 0x05]);
+                out[3..7].copy_from_slice(&rel(slot, 7).to_le_bytes());
+                out[7] = 0xE9;
+                out[8..12].copy_from_slice(&rel(tail, 12).to_le_bytes());
+            }
             ChunkKind::VolatileMetadata => {
                 // Size 0x18, version 0x80008000, no tables.
                 out[..8].copy_from_slice(&[0x18, 0, 0, 0, 0, 0x80, 0, 0x80]);
@@ -793,6 +952,10 @@ impl<'a> Image<'a> {
             ) {
                 dirs[12] = (first, last - first);
             }
+        }
+        // The delay-load directory: the descriptors and the null one.
+        if let Some(rva) = self.delay_rva(ChunkKind::DelayDirectory) {
+            dirs[13] = (rva, 32 * (crate::n32(self.l.delay_dlls.len()) + 1));
         }
         if let Some(r) = self
             .l

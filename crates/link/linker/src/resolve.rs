@@ -216,6 +216,9 @@ pub struct Resolved {
     pub resources: Vec<(String, &'static [u8])>,
     /// Its phases' times.
     pub times: Vec<(&'static str, std::time::Duration)>,
+    /// The libraries (their indices, as files name them) in the order they
+    /// are searched: the command line's, then the default libraries.
+    pub library_order: Vec<u32>,
 }
 
 /// Maps `path`, for the rest of the process (inputs are never unmapped:
@@ -281,6 +284,8 @@ struct Linker {
     loading_from: Option<u32>,
     /// The member being loaded's offset (with `loading_from`).
     loading_member: Option<u64>,
+    /// Whether a delay-loaded import has asked for `__delayLoadHelper2`.
+    delay_helper_wanted: bool,
     /// Globals that may want a library's definition: every new global,
     /// until it is seen not to (a definition is never taken back, so a
     /// global dropped from here never needs one again).
@@ -413,15 +418,29 @@ impl Linker {
                     self.define_import(t, Def::ImportThunk(place), &name);
                     t
                 });
-                // An import wants its DLL's import descriptor (from its
-                // library), as link.exe's do: where that loads orders the
-                // import directory and the DLLs' names.
-                let descriptor = [&b"__IMPORT_DESCRIPTOR_"[..], dll_stem(import.dll)].concat();
-                let d = self.intern(Box::leak(descriptor.into_boxed_slice()));
-                let global = &mut self.globals[d as usize];
-                global.optional = true;
-                if global.referenced_by == NONE {
-                    global.referenced_by = place;
+                if self.config.is_delay_loaded(import.dll) {
+                    // A delay-loaded import wants no import descriptor, but
+                    // the helper that loads its DLL (from delayimp.lib), as
+                    // link.exe asks for it once the first one loads.
+                    if !self.delay_helper_wanted {
+                        self.delay_helper_wanted = true;
+                        let h = self.intern(b"__delayLoadHelper2");
+                        let global = &mut self.globals[h as usize];
+                        if global.referenced_by == NONE {
+                            global.referenced_by = place;
+                        }
+                    }
+                } else {
+                    // An import wants its DLL's import descriptor (from its
+                    // library), as link.exe's do: where that loads orders
+                    // the import directory and the DLLs' names.
+                    let descriptor = [&b"__IMPORT_DESCRIPTOR_"[..], dll_stem(import.dll)].concat();
+                    let d = self.intern(Box::leak(descriptor.into_boxed_slice()));
+                    let global = &mut self.globals[d as usize];
+                    global.optional = true;
+                    if global.referenced_by == NONE {
+                        global.referenced_by = place;
+                    }
                 }
                 self.files.push(File {
                     name,
@@ -929,6 +948,7 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         load_config_wanted: false,
         loading_from: None,
         loading_member: None,
+        delay_helper_wanted: false,
         resources: Vec::new(),
         t_index: std::time::Duration::ZERO,
         t_members: std::time::Duration::ZERO,
@@ -1047,6 +1067,20 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     times.push(("    of which: members parsed", l.t_members));
     times.push(("  (all files' symbols added)", l.t_add));
 
+    // A /DELAYLOAD DLL nothing imports from: link.exe's warning.
+    for dll in &l.config.delay_load {
+        let imported = l.files.iter().any(|f| match &f.kind {
+            FileKind::Import { import, .. } => import.dll.eq_ignore_ascii_case(dll.as_bytes()),
+            FileKind::Object { .. } => false,
+        });
+        if !imported {
+            l.errors.push(LinkError::warning(
+                4199,
+                format!("/DELAYLOAD:{dll} ignored; no imports found from {dll}"),
+            ));
+        }
+    }
+
     // Without /SUBSYSTEM, link.exe's inference: what the image defines
     // (main or wmain: the console; WinMain or wWinMain: Windows), then a
     // DLL's (Windows, entry point or not); an EXE's can't be inferred.
@@ -1094,7 +1128,13 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     if errors.iter().any(|e| !e.warning) {
         return None;
     }
+    let library_order = (0..l.libraries.len())
+        .filter(|&i| !l.libraries[i].default)
+        .chain((0..l.libraries.len()).filter(|&i| l.libraries[i].default))
+        .map(crate::n32)
+        .collect();
     Some(Resolved {
+        library_order,
         files: l.files,
         globals: l.globals,
         names: l.names,

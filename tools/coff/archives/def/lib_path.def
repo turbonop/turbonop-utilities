@@ -1,0 +1,4 @@
+; the directory is dropped (LNK4093)
+LIBRARY c:\some\dir/path.dll
+EXPORTS
+  A

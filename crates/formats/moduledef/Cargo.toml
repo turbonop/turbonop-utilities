@@ -1,0 +1,21 @@
+[package]
+name = "turbonop-moduledef"
+description = "Module-definition (.def) files as lib.exe and link.exe read them, and the import libraries lib /DEF makes of them"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+sha2.workspace = true
+turbonop-archive.workspace = true
+turbonop-coff.workspace = true
+turbonop-pe.workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true
+
+[lints]
+workspace = true

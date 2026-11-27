@@ -1,0 +1,5 @@
+LIBRARY ecdll.dll
+EXPORTS
+  ExpFunc
+  NatOnly
+  ExpData DATA

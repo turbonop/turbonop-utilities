@@ -1,0 +1,29 @@
+; every statement, and those lib.exe ignores (LNK4017)
+LIBRARY statements BASE=0x10000000 ; comment
+DESCRIPTION "ignored"
+STUB stub.exe
+CODE PRELOAD
+DATA READ
+IMPORTS x.y
+SEGMENTS
+  .seg READ
+APPLOADER x
+EXETYPE WINDOWS
+SECTIONS .one READ
+  .two write EXECUTE Shared
+  .three DISCARDABLE READONLY READWRITE
+  .four EXECUTEONLY EXECUTEREAD NONSHARED
+  .none
+HEAPSIZE ,100
+STACKSIZE 0x100000,0x1000
+HEAPSIZE 1k ; the last counts
+VERSION 3.14
+VERSION  65535.0
+exports
+  Ignored
+EXPORTS
+  A
+  SECTIONS
+  .sec READ
+EXPORTS
+  B

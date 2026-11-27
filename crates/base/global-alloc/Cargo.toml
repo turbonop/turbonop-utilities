@@ -13,6 +13,7 @@ workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 mimalloc.workspace = true
+libmimalloc-sys.workspace = true
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 turbonop-alloc.workspace = true

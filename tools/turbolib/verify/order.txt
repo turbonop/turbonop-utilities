@@ -1,0 +1,14 @@
+entry
+fixture_export
+?switch_on@@YAHH@Z
+?c_value@@YAHH@Z
+??$twice@N@@YANN@Z
+?greeting@@YAPEBDXZ
+?b_value@@YAHH@Z
+?area@Square@@UEBAHXZ
+?area@Shape@@UEBAHXZ
+?compute@@YAHXZ
+?a_value@@YAHH@Z
+??$twice@H@@YAHH@Z
+?shared_add@@YAHHH@Z
+check_icall

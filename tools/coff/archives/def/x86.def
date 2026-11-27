@@ -1,0 +1,16 @@
+LIBRARY x86dll
+EXPORTS
+  Plain
+  _Under
+  Stdcall@8
+  _StdcallU@8
+  @Fast@4
+  ?Cpp@@YAXXZ
+  Ordinal @5
+  OrdNoName @6 NONAME
+  DataItem DATA
+  _DataU DATA
+  ConstItem CONSTANT
+  Renamed=Internal
+  Ren2=_Internal2@4
+  Fwd=other.Func

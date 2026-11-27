@@ -1,0 +1,4 @@
+; single quotes are part of the name
+LIBRARY 'single.dll'
+EXPORTS
+  A

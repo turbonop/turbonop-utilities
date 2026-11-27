@@ -1,0 +1,4 @@
+; the stem is all but the last extension
+LIBRARY foo.bar.baz
+EXPORTS
+  A

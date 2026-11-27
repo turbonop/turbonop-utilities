@@ -175,6 +175,48 @@ pub fn map_balanced<T: Sync, R: Send>(
     out
 }
 
+/// `f` of each index of `0..len`, in order, for work whose cost `cost`
+/// estimates: threads take the dearest first, one at a time as they
+/// finish (so one large item, met last, doesn't leave the others idle).
+/// The results don't depend on the schedule.
+pub fn map_costed<R: Send>(
+    len: usize,
+    cost: impl Fn(usize) -> u64,
+    f: impl Fn(usize) -> R + Sync,
+) -> Vec<R> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let threads = threads().min(len);
+    if threads < 2 {
+        return (0..len).map(f).collect();
+    }
+    let mut order: Vec<usize> = (0..len).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(cost(i)));
+    let next = AtomicUsize::new(0);
+    let (f, next, order) = (&f, &next, &order);
+    let done: Vec<Vec<(usize, R)>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|_| {
+                scope.spawn(move || {
+                    let mut mine = Vec::new();
+                    while let Some(&i) = order.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        mine.push((i, f(i)));
+                    }
+                    mine
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+            .collect()
+    });
+    let mut slots: Vec<Option<R>> = (0..len).map(|_| None).collect();
+    for (i, r) in done.into_iter().flatten() {
+        slots[i] = Some(r);
+    }
+    slots.into_iter().flatten().collect()
+}
+
 /// `f` over chunks of `items`, mutably, in parallel.
 pub fn for_each_chunk_mut<T: Send>(items: &mut [T], min: usize, f: impl Fn(&mut [T]) + Sync) {
     let Some(size) = chunk(items.len(), min) else {
@@ -298,6 +340,12 @@ mod tests {
             assert_eq!(
                 map_range(len, 3, |i| i * 7),
                 (0..len).map(|i| i * 7).collect::<Vec<_>>()
+            );
+        }
+        for len in [0usize, 1, 19, 10_000] {
+            assert_eq!(
+                map_costed(len, |i| (i as u64 * 7919) % 101, |i| i * 3),
+                (0..len).map(|i| i * 3).collect::<Vec<_>>()
             );
         }
         assert_eq!(join(|| 1, || 2), (1, 2));

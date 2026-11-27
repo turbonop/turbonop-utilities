@@ -229,6 +229,12 @@ pub const DW_AT_GNU_ADDR_BASE: u16 = 0x2133;
 pub const DW_AT_GNU_PUBNAMES: u16 = 0x2134;
 pub const DW_AT_GNU_PUBTYPES: u16 = 0x2135;
 pub const DW_AT_GNU_DISCRIMINATOR: u16 = 0x2136;
+/// The view pairs of a location list's entries (GCC's location views): a
+/// section offset of `.debug_loclists` (or `.debug_loc`) where one pair of
+/// ULEB128 views per bounded entry of the DIE's location list lies.
+pub const DW_AT_GNU_LOCVIEWS: u16 = 0x2137;
+/// The view of `DW_AT_entry_pc` (GCC).
+pub const DW_AT_GNU_ENTRY_VIEW: u16 = 0x2138;
 pub const DW_AT_APPLE_OPTIMIZED: u16 = 0x3FE1;
 /// The compiler's command line, where Apple targets record it (rather than in
 /// `DW_AT_producer`).

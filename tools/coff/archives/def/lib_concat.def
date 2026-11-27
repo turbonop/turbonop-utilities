@@ -1,0 +1,4 @@
+; what follows the closing quote is part of the name
+LIBRARY "concat.dll"x
+EXPORTS
+  A

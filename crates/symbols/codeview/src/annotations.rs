@@ -197,9 +197,177 @@ pub fn decode(annotations: &[u8]) -> Site {
     site
 }
 
+/// The largest value the compressed encoding holds (29 bits).
+pub const MAX_COMPRESSED: u32 = 0x1FFF_FFFF;
+
+/// Appends `v` compressed (cvinfo.h's `CVCompressData`), in the fewest
+/// bytes; `None` if it is above [`MAX_COMPRESSED`].
+pub fn compress(v: u32, out: &mut Vec<u8>) -> Option<()> {
+    use compressed::*;
+    let [b0, b1, b2, b3] = v.to_be_bytes();
+    if v <= 0x7F {
+        out.push(b3);
+    } else if v <= 0x3FFF {
+        out.extend_from_slice(&[(TWO_BYTE_PREFIX as u8) | b2, b3]);
+    } else if v <= MAX_COMPRESSED {
+        out.extend_from_slice(&[(FOUR_BYTE_PREFIX as u8) | b0, b1, b2, b3]);
+    } else {
+        return None;
+    }
+    Some(())
+}
+
+/// How many operands an opcode takes, or `None` for one that isn't known.
+fn operands(code: u32) -> Option<usize> {
+    match code {
+        op::BA_OP_CHANGE_CODE_LENGTH_AND_CODE_OFFSET => Some(2),
+        op::BA_OP_CODE_OFFSET..=op::BA_OP_CHANGE_COLUMN_END => Some(1),
+        _ => None,
+    }
+}
+
+/// Walks `annotations` to their end (or to `BA_OP_Invalid`, after which
+/// only padding follows), calling `each(opcode, operands, bytes)` with each
+/// annotation's position and bytes; the position where they stop, or
+/// `None` if one doesn't decode.
+fn walk(annotations: &[u8], mut each: impl FnMut(u32, &[u32], usize, &[u8])) -> Option<usize> {
+    let mut r = Reader::new(annotations);
+    while !r.is_empty() {
+        let start = r.position();
+        let code = uncompress(&mut r)?;
+        if code == op::BA_OP_INVALID {
+            return Some(start);
+        }
+        let n = operands(code)?;
+        let mut values = [0u32; 2];
+        for v in values.iter_mut().take(n) {
+            *v = uncompress(&mut r)?;
+        }
+        each(code, &values[..n], start, &annotations[start..r.position()]);
+    }
+    Some(r.position())
+}
+
+/// The file checksum offsets `annotations` change to (`BA_OP_ChangeFile`'s
+/// operands), in order; `None` if an annotation doesn't decode.
+pub fn files(annotations: &[u8]) -> Option<Vec<u32>> {
+    let mut out = Vec::new();
+    walk(annotations, |code, v, _, _| {
+        if code == op::BA_OP_CHANGE_FILE {
+            out.push(v[0]);
+        }
+    })?;
+    Some(out)
+}
+
+/// Each `BA_OP_ChangeFile`'s operand in `annotations`: where it starts,
+/// how many bytes it takes, and its value (a file checksum offset); `None`
+/// if an annotation doesn't decode.
+pub fn file_operands(annotations: &[u8]) -> Option<Vec<(usize, usize, u32)>> {
+    let mut out = Vec::new();
+    walk(annotations, |code, v, start, bytes| {
+        if code == op::BA_OP_CHANGE_FILE {
+            // (The opcode is one byte: it is below 0x80.)
+            out.push((start + 1, bytes.len() - 1, v[0]));
+        }
+    })?;
+    Some(out)
+}
+
+/// Appends `annotations` to `out` with each `BA_OP_ChangeFile`'s file
+/// (a checksum offset) replaced by `map` of it, everything else (padding
+/// included) as it was. A changed offset can take more or fewer bytes, so
+/// the result's length can differ. `None` (with `out` partly written) if
+/// an annotation doesn't decode or a new offset doesn't fit
+/// ([`MAX_COMPRESSED`]).
+pub fn rewrite_files(
+    annotations: &[u8],
+    out: &mut Vec<u8>,
+    mut map: impl FnMut(u32) -> u32,
+) -> Option<()> {
+    let mut fits = true;
+    let end = walk(annotations, |code, v, _, bytes| {
+        if code == op::BA_OP_CHANGE_FILE {
+            out.push(bytes[0]);
+            fits &= compress(map(v[0]), out).is_some();
+        } else {
+            out.extend_from_slice(bytes);
+        }
+    })?;
+    out.extend_from_slice(&annotations[end..]);
+    fits.then_some(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compressing_inverts_uncompressing() {
+        for v in [
+            0,
+            1,
+            0x7F,
+            0x80,
+            0x3FFF,
+            0x4000,
+            0x12_3456,
+            MAX_COMPRESSED - 1,
+            MAX_COMPRESSED,
+        ] {
+            let mut b = Vec::new();
+            compress(v, &mut b).unwrap();
+            let want = if v <= 0x7F {
+                1
+            } else if v <= 0x3FFF {
+                2
+            } else {
+                4
+            };
+            assert_eq!(b.len(), want, "{v:#x}");
+            assert_eq!(uncompress(&mut Reader::new(&b)), Some(v), "{v:#x}");
+        }
+        assert_eq!(compress(MAX_COMPRESSED + 1, &mut Vec::new()), None);
+    }
+
+    #[test]
+    fn files_are_found_and_rewritten() {
+        let a = [
+            op::BA_OP_CHANGE_FILE as u8,
+            0x18,
+            op::BA_OP_CHANGE_CODE_LENGTH_AND_CODE_OFFSET as u8,
+            0x03,
+            0x00,
+            op::BA_OP_CHANGE_FILE as u8,
+            0x80,
+            0x90, // 0x90, in two bytes
+            op::BA_OP_CHANGE_LINE_OFFSET as u8,
+            0x0A,
+            0, // the end, then padding
+            0,
+        ];
+        assert_eq!(files(&a), Some(vec![0x18, 0x90]));
+        assert_eq!(file_operands(&a), Some(vec![(1, 1, 0x18), (6, 2, 0x90)]));
+        // The same offsets: the same bytes.
+        let mut same = Vec::new();
+        rewrite_files(&a, &mut same, |f| f).unwrap();
+        assert_eq!(same, a);
+        // 0x18 to 0x4000 (four bytes), 0x90 to 0x10 (one).
+        let mut out = Vec::new();
+        rewrite_files(&a, &mut out, |f| if f == 0x18 { 0x4000 } else { 0x10 }).unwrap();
+        assert_eq!(
+            out,
+            [5, 0xC0, 0x00, 0x40, 0x00, 12, 3, 0, 5, 0x10, 6, 0x0A, 0, 0]
+        );
+        assert_eq!(files(&out), Some(vec![0x4000, 0x10]));
+        // Too large to compress.
+        assert_eq!(rewrite_files(&a, &mut Vec::new(), |_| u32::MAX), None);
+        // An unknown opcode, or a truncated operand: none.
+        assert_eq!(files(&[0x0E, 1]), None);
+        assert_eq!(files(&[op::BA_OP_CHANGE_FILE as u8]), None);
+        assert_eq!(files(&[op::BA_OP_CHANGE_FILE as u8, 0x80]), None);
+        assert_eq!(files(&[]), Some(vec![]));
+    }
 
     #[test]
     fn compressed_integers() {

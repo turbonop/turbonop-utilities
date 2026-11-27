@@ -354,17 +354,274 @@ x64. Where the 3.5 MB went:
 
 - **The rest of phase 0 of [the plan](docs/turbolib.md).**
   - Whether incremental linking uses `.chks64`: neither linker checks it
-    in a full link. And `.retplne`.
+    in a full link.
   - Which sections of ASan and SanCov objects are per object.
   - Whether `/DEFAULTLIB` directives that differ from the rest of a
     library's count as side effects for `--pull=preserve`.
-- **Phase 1: the writers.**
-  - A COFF object model that round-trips byte-identically.
-  - The Microsoft archive writer, with `lib.exe`'s member order (the
-    reverse of its command line).
-  - CodeView symbol records' index fields: types have them, in
-    `turbonop_codeview::type_refs`.
-  - `turbolib` as `lib` with `--fold=none`.
+- **Side tables (2.3): what is untested.** A large `/guard:cf` library
+  (the corpus is built without it); whether the EH continuation checks
+  were enforced when `tools/turbolib/tables` ran (CET shadow stacks); the
+  ARM64 programs, linked but not run; `.voltbl` and `.retplne` from
+  compilers other than cl 14.52.
+- **Phase 1: what is left of the writers.**
+  - CodeView: done (`symbol_refs`, `c13`, `write`, `remap`; checked on
+    both corpora by `turbonop-codeview`'s `corpus` example). Still open:
+    rewriting a record whose binary annotations' file offsets change
+    length (`remap` reports it; `annotations::rewrite_files` does the
+    bytes), and the kinds whose layouts nobody documents (S_FRAMEREG,
+    S_FASTLINK, S_GPROC32EX and the rest `symbol_refs` lists as unknown)
+    if a compiler is found writing them.
+  - `/DEF`: done (plan 1.2). Left: `lib.exe`'s ARM64EC hints (memory it
+    didn't set: not reproducible); LLVM's demangler's `$$h` place for
+    template and special C++ names; `/DEF` with `/GL` objects, and
+    ARM64EC objects' exports (untested); and the `Hint on symbols that
+    could potentially match` lines after LNK2001.
+  - What `lib.exe` and link.exe do with `.def` values the import library
+    doesn't show: `BASE`, `HEAPSIZE`, and `STACKSIZE` past 32 bits or
+    negative (read as `strtoul` reads them; untested what the image
+    gets).
+  - The SDK's and MSVC's libraries whose index isn't computed from their
+    members (103 of 1,851; see the plan's 1.2): the ARM64 CRT's EC
+    symbols, and UCRT's members that win a name.
+- **Why link.exe ended library sweeps early** with the anchors last (fixed
+  by putting them first; see the plan's "The alias technique"): it
+  reproduces with `LLVMObject.lib`'s `Error`, `Binary`, `ObjectFactory`,
+  `Archive` and `SymbolicFile` members and `turbolib197.obj` (anchored by
+  `Binary` alone), and not without `Error`; hand-made objects of that shape
+  (aliases, plain records, anchors, unresolved names) didn't. Knowing the
+  rule would show whether some other shape of input can still end a sweep
+  early.
+- **Link equivalence (phase 2.6).** `turbolib verify` and
+  `turbolib compare-images` are done (`turbonop-verify`; see the plan's
+  "The tools"), and `relink.py` runs compare-images over link.exe and
+  lld-link, /OPT:REF and NOREF, /DEBUG:FULL and GHASH. Still open:
+  - compare-images on x86 (32-bit) images: decode x86 code, so relative
+    calls between moved functions don't show as differences; and on an
+    ARM64 image (only synthesized instructions are tested);
+  - the members each link loads, from `/VERBOSE` (the PDB's module list is
+    compared now, which shows the same for loaded members);
+  - the test programs' own test suites, linked against folded libraries;
+  - `/<ECSYMBOLS>/` in verify; C13 subsections other than lines and
+    inlinees (frame data, cross-scope imports and exports) in
+    compare-images.
+- **Phase 2.4's open ends** (folded units' CodeView, done for x64 MSVC
+  and clang-cl).
+  - (Done: lld-link loaded members link.exe didn't, 2.8 MiB more code in
+    `llvm-nm`, because a member that gave up a copy had the name
+    undefined. With [the alias technique](docs/turbolib.md#the-alias-technique),
+    lld-link's images against folded libraries have the original's
+    sections to the byte in size.)
+  - clang-cl objects pass through whole: `.llvm_addrsig` (symbol indices)
+    is a side table (2.3). The fixtures use `-fno-addrsig`.
+  - Untested: x86 frame data and cross-scope imports and exports in a
+    COMDAT's `.debug$S` (renumbered, but no compiler seen writing them
+    there), `/Zi` objects in a link, and clang-cl's PCHs.
+  - PDBs in `relink.py`'s matrix: `corpus/pdbcompare.py` compares them
+    structurally (2.4's check); run it there too.
+- **Phase 3: shared types.** 3.1 to 3.4 are done (`--precomp=library`;
+  see the plan's "Phase 3 results"). Still open:
+  - 3.5, `--precomp=clustered[=<n>]`, is done (the plan's "Phase 3.5
+    results"). Open: an option for its weight (16) and the numbers of
+    groups tried; seeds that model real links (several members' closures
+    at once) rather than one member's; the same groups when a clustered
+    library is compacted again; and its 0.1 to 0.25 s a library, mostly
+    finding the first definers and closures again (reuse the engine's
+    definers).
+  - (Found: folding's 2.47× `lib.exe` on `build-z7` came from inserting a
+    member's anchors one at a time, each renumbering the whole object;
+    fixed in 863ae3d6, `clangSema`'s rewriting 11 to 15 s back to 0.3 s.
+    Measure the 20 largest libraries again on a quiet machine.)
+  - Make `library` the default once it is proven in more links: the
+    test programs' own suites, clang-cl's PCHs, `/Zi` neighbors, ARM64
+    and x86 objects (all untested), and incremental linking with the
+    kept `.chks64` (0 for changed sections; untested).
+  - The analyzer's projection for PCH builds: it counts users of a PCH in
+    another library as sharing (3.1 GiB projected on `build-z7`, 1.16
+    GiB made). Project what the engine does: through in-library PCH
+    objects' records, and not for users of other libraries' PCHs.
+  - Users of a PCH in another library keep their types (most of what
+    `build-z7` doesn't save). A precompiled-types member that itself
+    names their PCH might let them share; likely not readable by
+    lld-link (it reads `.debug$P` as plain records). Spike it with both
+    linkers before writing anything.
+  - An option for the threshold (`min`, 2 now). The PDB cost per link is
+    measured (`corpus/linkcost.py`; lld-link only, 2 to 17% more TPI
+    records with `library`); the analyzer could project it too.
+  - Speed: finding the shared types is about 0.35 s of
+    `clangCodeGen.lib`'s 1.6 s; rewritten members' `.debug$S` is copied
+    twice (renumbered, then into the skeleton).
+  - The PCH signature is 32 bits (the CodeView field's width), so two
+    libraries' PCH members in one link can share one by chance (about
+    n²/2³³ for n libraries). Measured (two libraries, the signature forced
+    equal by a local patch): link.exe matches users by name and signature
+    and links correctly (each function's locals have their own library's
+    types); lld-link fails the link ("a PCH object with the same signature
+    has already been provided"; it matches by signature alone, read in
+    `lld/COFF/DebugTypes.cpp`). Two libraries whose shared records are
+    the same get the same signature, name, and symbol: harmless with both
+    (one PCH member loads). A signature of 0 isn't a way out (lld-link
+    registers no PCH whose signature is 0). So the risk is a loud lld-link
+    failure, never wrong debug information; not handled further.
+- **Phase 4: less conservative folding.** `--fold=select-any`, `--pick`,
+  `--locals=copy` and `merge`, and `--report odr` are done (see the plan's
+  "Phase 4 results"). Still open:
+  - Synthesized members that name a compiler PCH object's symbol for a
+    member that didn't (a PCH user's copy of a unit non-users gave up too;
+    phase 2.4's key is the survivor's): under `preserve`, a link loading
+    such a member alone now loads the PCH object. `verify` reports it as
+    expected (2 libraries of `build-z7`). Fix: key synthesized members by
+    every giver's PCH, or keep a PCH user's copy out of non-users' groups.
+  - `--locals=copy` folds no unit that reaches code outside COMDATs: LLVM's
+    Debug build has no `/Gy`, so its `static` functions are there, and
+    clang-cl puts each `static` function in a section of its own that
+    isn't a COMDAT. Copying such a section whole (with its `.pdata` and
+    `.xdata` entries) when it holds one function is the next step.
+  - Local units that code which stays reaches are copied, not shared:
+    giving them an external name in the synthesized member would let the
+    members share one (and fold local units nothing that moves reaches).
+  - Pieces are copied only for x64 and x86 relocations (their addends are
+    read in place); ARM64's (PAGEBASE_REL21 with PAGEOFFSET_12A, and the
+    rest) aren't read, so those units stay. Untested on x86 and ARM64
+    objects of any compiler.
+  - Under `preserve`, select-any requires every copy to refer to the same
+    names; a survivor whose references are a subset of every copy's would
+    be enough.
+  - `--report odr` prints lines; a `--json` form, and an option to list
+    only findings within one environment, if users want them.
+  - lld-link's `.tls` is 8 bytes larger against folded libraries in
+    `llvm-nm` (`/OPT:NOREF`, `build-z7`), with `--fold=identical` as with
+    phase 4's modes: not explained yet.
+- **Phase 6: ELF** (see the plan's "Phase 6 results"). Done: the GNU and
+  BSD archive writers and the `ar`, `llvm-ar`, and `ranlib` personalities
+  (6.1), the ELF object model (6.2), a first `--fold=identical` for ELF
+  (6.3), ELF `verify` and `compare-images` (6.4), and folded functions'
+  DWARF in synthesized members, split DWARF 5 included (6.5). Still open:
+  - **DWARF (6.5)**: not read (the folded functions get none): 64-bit
+    DWARF, REL machines (i386,
+    ARM), compressed debug sections (`-gz`), or `DW_FORM_ref_addr` to
+    another unit (`--stats` counts each). `.dwp` packages and type units
+    (`-fdebug-types-section`, in COMDAT groups of their own, which stay)
+    are untested. A synthesized member's DIEs are always the first
+    member's copy; `witness.py` proves each description `compare-images`
+    finds differing to be another unit's copy (the plan's 6.6). The images' DWARF grows
+    about 2.4% (the givers' DIEs stay, and each synthesized member adds
+    declarations and a line header): share line headers or declarations
+    between a library's synthesized members (one unit per survivor
+    member?), and measure what lld and mold then write. Untested: lldb
+    (not installed), AArch64 objects.
+  - `--pull=preserve` keeps the units whose first definer has side
+    effects: on the gcc corpus, 344,949 copies, mostly LLVM's `cl::opt`
+    initializers (`.init_array`), and with them (a unit naming what stays
+    in its member stays too) 466,557 more. Find what an ELF link could
+    keep loading them instead (there is no `NOLIBRARY`); and whether a
+    synthesized member could keep a reference to a name that stays in
+    its givers without mold taking it from another member.
+  - `--locals=copy` and `merge` for ELF: references into `SHF_MERGE`
+    sections (string literals) are content references the linker merges
+    anyway, so copying the pieces is semantics-preserving; the main reason
+    units stay ("reaches a local symbol outside it").
+  - `.note.gnu.property` is in the environment key as bytes: merge it
+    instead (AND-type properties by OR over a unit's copies, OR-type by
+    AND), so objects with different `ISA_1_USED` notes fold together.
+  - `--fold=select-any` for ELF.
+  - ELF `verify` and `compare-images` are done (the plan's 6.4). Open:
+    the older folded index of 4 libraries of the gcc corpus listed 1 or 2
+    empty names for a rewritten member with extended section numbering
+    (`SLPVectorizer.cpp.o` of `libLLVMVectorize.a`); this build's output of
+    all 265 verifies, but why the older one didn't isn't known. `compare-images`
+    doesn't compare bytes outside sized symbols (string and constant
+    pools, jump tables, `.gcc_except_table`: name them by content or by
+    the references into them) and has decoded no ARM64 ELF image;
+    `verify` leaves synthesized members' DWARF to `compare-images`.
+    Content naming stops at a constant's end only for loads of a known
+    size (the accessed bytes are compared, the plan's 6.7); an address
+    taken (`lea`) still names its contents to 4096 bytes or a NUL
+    (`SHF_MERGE` entry sizes are lost in the image).
+  - Untested: REL machines (i386, ARM) and big-endian objects in a fold;
+    AArch64, RISC-V, MIPS objects at all; GCC LTO objects and LLVM
+    bitcode members (the `ar` personality refuses to index them); BSD
+    archives from GNU `ar` (this binutils can't write them); thin archives
+    and `--fold` (refused); `ar` on Windows hosts beyond the unit tests.
+  - GNU `ar -M`'s `DIRECTORY`, `EXTRACT`, `LIST`, `VERBOSE`, and `FULLDIR`.
+  - **Folding's speed** (the plan's 6.7): 0.49× to 0.60× GNU `ar`'s time
+    on the gcc build's 20 largest libraries (0.88× at the start), but 3.9×
+    a Release `llvm-ar`'s (4.3× on the clang build; without folding,
+    1.07×); none measured on a quiet machine (another session's runs came
+    and went). Most of the gap to `llvm-ar` is reading DWARF and
+    synthesizing (`libclangSema.a`: 0.8 s and 1.2 s of 3.6 s). Left: a huge
+    member's string table is still assembled, and its sections copied into
+    the member, on one thread (writing `CIRGenStmtOpenMP.cpp.o`, 588 MB,
+    takes about 0.4 s); a rewritten member is still built
+    whole in memory before the archive writer copies it (pieces borrowed
+    from the input would save that copy, but the index is computed from
+    the member's bytes); `Source::new` copies each debug section to apply
+    its relocations. Other mimalloc options (arena eager commit, eager
+    commit delay 0, no decommit on purge) showed nothing beyond the noise
+    of a shared machine, so only the purge delay is set.
+  - CREL objects are read, written, and folded (the plan's 6.7; LLVM's
+    encoder reproduced byte for byte on clang's objects). Not handled: CREL
+    without addends (the member passes through), CREL on MIPS64 (left as
+    bytes, so the member passes through), and GNU ld, which refuses CREL
+    (gold accepts it and applies none of its relocations). A synthesized
+    member's DWARF relocations are RELA even when its units' are CREL.
+- **Phase 7: Mach-O** (see the plan's "Phase 7 results"). Done: Darwin
+  archives and the `libtool -static` personality (7.1), the object model
+  (7.2), `--fold=identical` with `verify` (7.3), x86-64's FDEs and LSDAs
+  moving with their units, givers' DWARF moving with their code,
+  synthesized members' DWARF, and a Rust `compare-images` for Mach-O with
+  dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5), and the
+  corpus scripts (`tools/turbolib/macho-corpus`). Still open:
+  - **The size DWARF costs**: the folded corpus archives are 5.9% larger
+    (7.4: 9.1%; 1.0% smaller before synthesized members carried DWARF):
+    88.7 MB of synthesized members' DWARF per architecture, most of it
+    whole class definitions (dsymutil keeps only what linked DIEs reach)
+    and their strings. Sharing class definitions between synthesized
+    members isn't correct for dsymutil (7.5: they load and dead-strip
+    independently). Left: an opt-in `--debug-types=declarations` (14.9
+    MB, but 1.1% of the dSYM's type definitions lost); inline strings
+    (`DW_FORM_string`) for strings a synthesized member uses once (a few
+    percent of its DWARF); find out why dsymutil kept a giver's
+    unreferenced class definition (7.5), which decides whether givers may
+    also lose named types only dead code reached (6.7 MB of both
+    architectures' `llvm-ar` archives).
+  - **`compare-images` on the corpus links isn't clean** (see 7.4): code
+    and data past a local constant that a sizeless symbol can't bound
+    (2 to 24 per program; bound them by the dSYM's variables' types);
+    `RTTIRoot::anchor`'s unwind encoding (0 in the original, not
+    explained); 1 to 9 subprograms described by another unit's copy with
+    other DIEs (spot-checked, not proven: write a Mach-O `witness.py`);
+    9 to 11 type definitions only in the original and some with other
+    contents (which units' class templates dsymutil keeps).
+  - **Speed**: 3.55× the real tools' time folding in 7.4 (0.82× without),
+    and 7.5's pruning adds about a quarter more CPU (every giver's DWARF
+    walked; lookups, strings, accelerator tables, a second cut); most
+    of it rewriting givers (their whole DWARF read, line programs
+    decoded and encoded again, every member written afresh) and building
+    synthesized members' DWARF; `ranlib` after `ar qc` folds again.
+  - **DWARF 5** (macOS 15 targets' default): givers with DWARF 5 lists,
+    `__debug_aranges`, or several units are kept whole (their copies stay
+    in synthesized members too, which is allowed); handle `__debug_rnglists`
+    and `__debug_loclists`.
+  - **lldb** isn't in this LLVM build: no debugger session was compared;
+    Apple's accelerator tables aren't written for synthesized members.
+  - **What keeps units from folding**: string literals and other
+    `__cstring`/literal-section references (`l_.str`: `--locals=copy`
+    for Mach-O); x86-64's local relocations (`L` labels), data in code,
+    optimization hints (`-O2` arm64 objects have LOH: dropping the hints
+    of moved code is allowed).
+  - **x86-64's `__eh_frame` in links** grows by a CIE per synthesized
+    member (ld64.lld keeps each object's CIEs while dropping FDEs of
+    functions with compact unwind); FDEs are copied anyway (Apple's ld
+    with `-keep_dwarf_unwind` keeps them).
+  - **Apple's linkers** (ld64, ld-prime), Apple's `libtool`/`ranlib`
+    (cctools: `__.SYMDEF SORTED`), and Apple's dsymutil were neither run
+    nor read here: the loading-order argument is ld64.lld's. Check on a
+    Mac: `ld -t` member order, `-why_load`, `dyld_info`, dsymutil, lldb,
+    and running the programs.
+  - `--pull=relaxed`, `--fold=select-any` and `--locals` for Mach-O;
+    32-bit targets (i386, armv7, arm64_32: passed through); universal
+    files with `--fold` (untested); `ar` (GNU) on Mach-O members (its index
+    isn't modeled); `verify` doesn't read universal files.
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with

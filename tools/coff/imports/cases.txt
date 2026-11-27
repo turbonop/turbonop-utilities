@@ -1,0 +1,16 @@
+features-x64|lib|/nologo /brepro /machine:x64 /def:features.def /out:features-x64.lib
+features-x86|lib|/nologo /brepro /machine:x86 /def:features.def /out:features-x86.lib
+features-arm64|lib|/nologo /brepro /machine:arm64 /def:features.def /out:features-arm64.lib
+features-arm64ec|lib|/nologo /brepro /machine:arm64ec /def:features.def /out:features-arm64ec.lib
+features-arm64x|lib|/nologo /brepro /machine:arm64x /def:features.def /defArm64Native:program.def /out:features-arm64x.lib
+program-x64|lib|/nologo /brepro /machine:x64 /def:program.def /out:program-x64.lib
+limits-x64|lib|/nologo /brepro /machine:x64 /def:limits.def /out:limits-x64.lib
+options-x64|lib|/nologo /brepro /machine:x64 /def:limits.def /name:ignored.dll /export:Cmd /export:CmdOrd,@3,NONAME /export:CmdData,DATA,PRIVATE /export:CmdAs,EXPORTAS,Other /export:CmdRen=Int /out:options-x64.lib
+noname-x64|lib|/nologo /brepro /machine:x64 /def /name:named /export:Only /out:noname-x64.lib
+objects-x86|lib|/nologo /brepro /machine:x86 /def:decorated.def /out:objects-x86.lib decorated.obj
+directives-x86|lib|/nologo /brepro /machine:x86 /def /out:directives-x86.lib exports.obj
+llvm-x64-llvm|llvm-lib|/machine:x64 /def:llvm.def /out:llvm-x64-llvm.lib
+llvm-x86-llvm|llvm-lib|/machine:x86 /def:llvm.def /out:llvm-x86-llvm.lib
+llvm-arm64ec-llvm|llvm-lib|/machine:arm64ec /def:llvm.def /out:llvm-arm64ec-llvm.lib
+llvm-arm64x-llvm|llvm-lib|/machine:arm64x /def:llvm.def /defArm64Native:limits.def /out:llvm-arm64x-llvm.lib
+limits-x86-llvm|llvm-lib|/machine:x86 /def:limits.def /out:limits-x86-llvm.lib

@@ -97,7 +97,7 @@ pub struct LineBlock<'a> {
 }
 
 /// A file checksum entry.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FileChecksum<'a> {
     /// Offset of the file name in the string table (`/names` in a PDB).
     pub name: u32,

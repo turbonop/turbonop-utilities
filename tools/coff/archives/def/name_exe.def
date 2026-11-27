@@ -1,0 +1,4 @@
+; NAME: a program, .exe added
+NAME prog
+EXPORTS
+  A

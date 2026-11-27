@@ -5,7 +5,7 @@ members = ["crates/*/*", "apps/*"]
 [workspace.package]
 version = "0.0.7"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "Apache-2.0"
 authors = ["James McNellis <james@jamesmcnellis.com>"]
 repository = "https://github.com/turbonop/turbonop-utilities"

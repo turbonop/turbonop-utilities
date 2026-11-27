@@ -396,6 +396,14 @@ fn build(
         }
     }
     clock.lap("open");
+    // The threads to run: with others' turbolib processes in mind (see
+    // `slots`), unless a number was given.
+    let mut slots = crate::slots::Slots::default();
+    let total: u64 = read.iter().map(|i| i.data.len() as u64).sum();
+    let sharing = settings.threads.is_none() && std::env::var_os("TURBONOP_THREADS").is_none();
+    if sharing {
+        crate::slots::share(&mut slots, total);
+    }
     let mut check = MachineCheck::new(opts.machine.map(options::Machine::number), flavor);
     let mut inputs = Vec::new();
     let mut kinds = Vec::new();
@@ -716,6 +724,10 @@ fn build(
         Flavor::Lib => Diag::fatal(1104, format!("cannot open file '{out}'")),
         Flavor::LlvmLib => Diag::llvm(Kind::Fatal, "cannot write the output").on(out),
     };
+    if sharing {
+        // Slots others let go of since.
+        crate::slots::share(&mut slots, total);
+    }
     let datas: Vec<output::Bytes<'_>> = finals
         .iter()
         .map(|m| output::Bytes {

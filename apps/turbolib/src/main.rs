@@ -11,6 +11,7 @@ use turbonop_global_alloc as _;
 mod msvc;
 mod output;
 mod settings;
+mod slots;
 mod unix;
 mod verify;
 

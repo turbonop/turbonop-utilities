@@ -6,8 +6,8 @@
 //! - The list starts with the linker's own entry; each tool not seen yet is
 //!   put at the front, walking the inputs library by library (the command
 //!   line's objects first, then each library's in the order they loaded),
-//!   so the list is newest first, the linker last. An input without a
-//!   `@comp.id`, and every import object, counts as `0x00010000`.
+//!   so the list is newest first, the linker last. An object without a
+//!   `@comp.id` counts as 0, every import object as `0x00010000`.
 //! - The checksum: the stub's length, plus each of its bytes rotated left
 //!   by its offset (`e_lfanew` zero), plus each entry's ID rotated left by
 //!   its count.
@@ -26,8 +26,8 @@ pub const LINKER_COMP_ID: u32 = 0x0102_90A5;
 /// before every input.
 pub const EXPORT_COMP_ID: u32 = 0x0100_90A5;
 
-/// What an input without a `@comp.id` counts as.
-const UNMARKED: u32 = 0x0001_0000;
+/// What an import object counts as.
+const IMPORT: u32 = 0x0001_0000;
 
 /// The DOS stub's length: where the Rich header starts.
 pub const STUB: u32 = 0x80;
@@ -35,8 +35,8 @@ pub const STUB: u32 = 0x80;
 /// The Rich header's entries (ID, count), in their order.
 pub fn entries(r: &Resolved) -> Vec<(u32, u32)> {
     let id = |f: &crate::resolve::File| match &f.kind {
-        FileKind::Object { object, .. } => object.comp_id.unwrap_or(UNMARKED),
-        FileKind::Import { .. } => UNMARKED,
+        FileKind::Object { object, .. } => object.comp_id.unwrap_or(0),
+        FileKind::Import { .. } => IMPORT,
     };
     // The inputs, library by library: the command line's first.
     let libraries = r

@@ -710,8 +710,7 @@ impl<'a> Image<'a> {
         w.u32(self.l.headers_size);
         let checksum_at = w.at;
         w.u32(0); // checksum, below
-        // Without /SUBSYSTEM: a DLL's is Windows (as link.exe's), an EXE's
-        // what its entry point says.
+        // (Resolution infers it without /SUBSYSTEM, as link.exe does.)
         let subsystem = c.subsystem.unwrap_or(if c.dll {
             Subsystem::Windows
         } else {

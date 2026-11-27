@@ -1037,6 +1037,31 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     times.push(("    of which: members parsed", l.t_members));
     times.push(("  (all files' symbols added)", l.t_add));
 
+    // Without /SUBSYSTEM, link.exe's inference: what the image defines
+    // (main or wmain: the console; WinMain or wWinMain: Windows), then a
+    // DLL's (Windows, entry point or not); an EXE's can't be inferred.
+    if l.config.subsystem.is_none() {
+        use crate::config::Subsystem;
+        let defined = |n: &str| {
+            l.names
+                .get(n.as_bytes())
+                .is_some_and(|&g| matches!(l.globals[g as usize].def, Def::Section { .. }))
+        };
+        l.config.subsystem = if defined("main") || defined("wmain") {
+            Some(Subsystem::Console)
+        } else if defined("WinMain") || defined("wWinMain") || l.config.dll {
+            Some(Subsystem::Windows)
+        } else {
+            None
+        };
+        if l.config.subsystem.is_none() {
+            l.errors.push(LinkError::error(
+                1221,
+                "a subsystem can't be inferred and must be defined".to_owned(),
+            ));
+        }
+    }
+
     // What is still undefined.
     for g in &l.globals {
         if g.def == Def::Undefined && g.referenced_by != NONE && !g.optional {

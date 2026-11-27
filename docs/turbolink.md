@@ -155,8 +155,9 @@ lists every COFF group with its address and size) and by experiment:
 - **Commons** go at the end of `.bss`, module by module: the command
   line's objects in order, then each library's, the last loaded first.
 - **What link.exe adds to `.rdata`:** the volatile metadata
-  (`.rdata$voltmd`, 24 bytes, for x64's load configuration:
-  `__volatile_metadata`); the debug directory, at the end of the
+  (`.rdata$voltmd`, 24 bytes, `__volatile_metadata`, for x64's load
+  configuration but in every x64 image, with no load configuration
+  too); the debug directory, at the end of the
   `.rdata` group; its data in `.rdata$zzzdbg`: the `coffgrp` list (each
   non-empty group's address, size, and name, after a zero signature),
   in room for every group something is in, empty ones too (an
@@ -183,11 +184,17 @@ lists every COFF group with its address and size) and by experiment:
 - **The Rich header** (link.exe's `CbBuildProdidBlock`): link.exe's own
   entry (0x102, build 37029) first in a list to whose front each new
   `@comp.id` goes, walking the command line's objects, then each library's
-  members in load order (an input without a `@comp.id`, and every import
-  object, is 0x00010000); the checksum is the stub's length, its bytes
+  members in load order (an import object is 0x00010000, an object
+  without a `@comp.id` 0); the checksum is the stub's length, its bytes
   rotated left by their offsets (`e_lfanew` zero), and each entry's ID
-  rotated left by its count; then 1 to 3 empty entries'`(checksum >> 5)` %
-  3 + 1`, as many as fit in the headers without enlarging them.
+  rotated left by its count; then `(checksum >> 5) % 3 + 1` empty
+  entries, as many as fit in the headers without enlarging them.
+- **The headers** have room for exactly the section headers written: no
+  `.reloc`'s when there are no base relocations (a minimal image's
+  headers are 0x200 bytes, the Rich header unpadded).
+- **The subsystem** without `/SUBSYSTEM`: the console's if `main` or
+  `wmain` is defined, Windows' if `WinMain` or `wWinMain` is, else a
+  DLL's is Windows' (entry point or not) and an EXE's is LNK1221.
 - **Status:** a `/MD` C hello world and a DLL with exports are link.exe's
   images byte for byte, time stamps aside; a `/MT` C hello world is too,
   but for the Rich header's order (tests check all three).

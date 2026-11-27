@@ -119,6 +119,8 @@ pub struct Layout {
     pub directory_order: Vec<u32>,
     /// The headers' size (file-aligned).
     pub headers_size: u32,
+    /// The optional header's size (240 for PE32+, 224 for PE32).
+    pub optional_size: u32,
     /// The image's size in memory.
     pub image_size: u32,
     /// The file's size.
@@ -828,11 +830,9 @@ pub fn layout(
     // .rdata$zzzdbg.
     let data_ro = scn::CNT_INITIALIZED_DATA | scn::MEM_READ;
     let is64 = config.machine.is_none_or(crate::config::Machine::is_64);
-    let has_load_config = r
-        .names
-        .get(&b"_load_config_used"[..])
-        .is_some_and(|&g| matches!(r.globals[g as usize].def, Def::Section { .. }));
-    if is64 && has_load_config {
+    // (In every 64-bit image, load configuration or not: link.exe writes it
+    // for an object with no CRT and /NODEFAULTLIB too.)
+    if is64 {
         add(
             b".rdata$voltmd",
             data_ro,
@@ -1065,16 +1065,6 @@ pub fn layout(
     let rich_entries = crate::rich::entries(r);
     let key = crate::rich::key(&crate::write::dos_header(), &rich_entries);
     let header_sections = sections.len() + usize::from(!config.fixed);
-    let padding = crate::rich::padding(
-        key,
-        rich_entries.len(),
-        header_sections,
-        optional == 240,
-        file_align,
-    );
-    let pe = crate::rich::pe_offset(rich_entries.len(), padding);
-    let headers = pe + 4 + 20 + optional + 40 * crate::n32(header_sections);
-    let headers_size = align_up(headers, file_align);
     let mut l = Layout {
         chunks,
         sections,
@@ -1084,7 +1074,8 @@ pub fn layout(
         thunk_chunks,
         dlls,
         directory_order,
-        headers_size,
+        headers_size: 0,
+        optional_size: optional,
         image_size: 0,
         file_size: 0,
         section_align,
@@ -1094,8 +1085,9 @@ pub fn layout(
         base_relocations: Vec::new(),
         exports,
         resources,
-        rich: (rich_entries, key, pe),
+        rich: (rich_entries, key, 0),
     };
+    l.size_headers(header_sections);
     l.assign_addresses();
     l
 }
@@ -1105,6 +1097,24 @@ pub(crate) fn align_up(v: u32, a: u32) -> u32 {
 }
 
 impl Layout {
+    /// Sizes the headers for `header_sections` section headers: the Rich
+    /// header (its padding depends on the room the headers have), the PE
+    /// header after it.
+    fn size_headers(&mut self, header_sections: usize) {
+        let (entries, key, _) = &self.rich;
+        let padding = crate::rich::padding(
+            *key,
+            entries.len(),
+            header_sections,
+            self.optional_size == 240,
+            self.file_align,
+        );
+        let pe = crate::rich::pe_offset(entries.len(), padding);
+        self.rich.2 = pe;
+        let headers = pe + 4 + 20 + self.optional_size + 40 * crate::n32(header_sections);
+        self.headers_size = align_up(headers, self.file_align);
+    }
+
     /// Gives every section and chunk its address and file offset.
     pub fn assign_addresses(&mut self) {
         let mut rva = align_up(self.headers_size, self.section_align);
@@ -1153,6 +1163,10 @@ impl Layout {
     /// Adds the `.reloc` section (after every other section).
     pub fn add_base_relocations(&mut self, data: Vec<u8>) {
         if data.is_empty() {
+            // No .reloc: the headers have no room kept for it (as link.exe
+            // sizes them: a hello world without relocations has 0x200).
+            self.size_headers(self.sections.len());
+            self.assign_addresses();
             return;
         }
         let c = u32::try_from(self.chunks.len()).unwrap_or(u32::MAX);

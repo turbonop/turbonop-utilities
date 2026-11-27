@@ -303,14 +303,95 @@ fn lists(
     Some((out, rest))
 }
 
-/// Checks a rewritten member's line program, lists, and unit length
-/// against the original's (`lost`: the keys of the atoms it lost). The
-/// places in `__debug_info` the caller should leave out of its byte
-/// comparison (the unit's `DW_AT_high_pc`).
+/// The entries of the DWARF 4 list at `offset` of section `name` that hold
+/// something: each range by the places its ends name (taken with
+/// [`Locator::kept`] when `lost` is given, and left out if that empties
+/// it), and a location list entry's expression. `base` is the unit's
+/// `DW_AT_low_pc`.
+pub(super) fn list_at(
+    o: &Object<'_>,
+    loc: &Locator,
+    name: &[u8],
+    offset: u64,
+    address_size: u8,
+    base: u64,
+    lost: Option<&BTreeSet<&[u8]>>,
+) -> Option<Vec<(Place, Place, Vec<u8>)>> {
+    let x = o
+        .sections()
+        .find(|x| x.segment_name() == b"__DWARF" && x.name() == name)?;
+    let b = x.bytes()?;
+    let rel: std::collections::BTreeMap<u32, usize> = x
+        .relocations
+        .iter()
+        .filter(|r| !r.external)
+        .map(|r| (r.address, r.symbolnum as usize - 1))
+        .collect();
+    let n = usize::from(address_size);
+    let max = if n == 8 {
+        u64::MAX
+    } else {
+        u64::from(u32::MAX)
+    };
+    let loc_list = name == b"__debug_loc";
+    let mut out = Vec::new();
+    let mut at = usize::try_from(offset).ok()?;
+    let mut cur = base;
+    loop {
+        let entry = at;
+        let s = read_le(b, at, n)?;
+        let e = read_le(b, at + n, n)?;
+        at += 2 * n;
+        if s == 0 && e == 0 {
+            return Some(out);
+        }
+        if s == max {
+            cur = e;
+            continue;
+        }
+        let expr = if loc_list {
+            let len = read_le(b, at, 2)? as usize;
+            let x = b.get(at + 2..at + 2 + len)?.to_vec();
+            at += 2 + len;
+            x
+        } else {
+            Vec::new()
+        };
+        let hint = rel.get(&(entry as u32)).copied();
+        let b0 = if hint.is_some() { 0 } else { cur };
+        let (a, z) = (b0.wrapping_add(s), b0.wrapping_add(e));
+        if a == z {
+            continue;
+        }
+        let pa = loc.place(a, hint);
+        let hz = hint.or(match &pa {
+            Place::Atom(..) => loc
+                .sections
+                .iter()
+                .position(|&(lo, size, _)| a >= lo && a - lo < size),
+            _ => None,
+        });
+        let pz = loc.place(z, hz);
+        let (pa, pz) = match lost {
+            Some(l) => (loc.kept(pa, l), loc.kept(pz, l)),
+            None => (pa, pz),
+        };
+        if pa != pz {
+            out.push((pa, pz, expr));
+        }
+    }
+}
+
+/// Checks a rewritten member's line program, lists (by place, unless its
+/// DWARF was pruned: then each kept DIE's lists are compared by the
+/// `pruned` module), and unit length against the original's (`lost`: the
+/// keys of the atoms it lost). The places in `__debug_info` the caller
+/// should leave out of its byte comparison (the unit's `DW_AT_high_pc`).
 pub(super) fn check(
     o: &Object<'_>,
     n: &Object<'_>,
     lost: &BTreeSet<&[u8]>,
+    pruned: bool,
     what: &[u8],
     rep: &mut Report,
 ) -> Vec<Range<usize>> {
@@ -358,6 +439,9 @@ pub(super) fn check(
     }
     // Lists.
     for name in [&b"__debug_ranges"[..], b"__debug_loc"] {
+        if pruned {
+            break;
+        }
         let (Some((eo, bo)), Some((en, bn))) =
             (lists(o, &dold, &lo, name), lists(n, &dnew, &ln, name))
         else {

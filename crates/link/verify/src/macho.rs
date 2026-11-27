@@ -50,6 +50,7 @@ use turbonop_macho_object::{Command, Object, Section, reloc};
 use crate::hash::H128;
 
 mod debug;
+mod pruned;
 
 /// A canonical form's hash, and (with `TURBOLIB_VERIFY_DUMP` set) its
 /// parts as text, to show where two atoms differ.
@@ -860,7 +861,22 @@ fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<Lost
     // The line program, the lists, and the unit's extent, by what they
     // name (`debug`); the unit's DW_AT_low_pc and DW_AT_high_pc are left out
     // of the bytes compared.
-    let skip = debug::check(oo, no, &lost_keys, &n.name, rep);
+    // (A giver's DWARF pruned of what described its lost code: see
+    // `pruned`.)
+    fn info_of<'m>(m: &'m Member<'_>) -> Option<(usize, &'m [(u32, u128, Option<Vec<u8>>, u8)])> {
+        m.debug
+            .iter()
+            .find(|d| d.0 == b"__DWARF,__debug_info")
+            .map(|d| (d.1.len(), d.2.as_slice()))
+    }
+    let pruned = match (info_of(o), info_of(n)) {
+        (Some((a, orel)), Some((b, nrel))) if a != b => {
+            pruned::check(oo, no, orel, nrel, &lost_keys, &lost_names, &n.name, rep);
+            true
+        }
+        _ => false,
+    };
+    let skip = debug::check(oo, no, &lost_keys, pruned, &n.name, rep);
     let skipped = |at: u32| skip.iter().any(|r| r.contains(&(at as usize)));
     for (name, bytes, relocs) in &o.debug {
         let Some((_, nb, nr)) = n.debug.iter().find(|d| &d.0 == name) else {
@@ -869,6 +885,19 @@ fn compare_member(o: &Member<'_>, n: &Member<'_>, rep: &mut Report) -> (Vec<Lost
             });
             continue;
         };
+        if pruned
+            && matches!(
+                name.as_slice(),
+                b"__DWARF,__debug_info"
+                    | b"__DWARF,__debug_str"
+                    | b"__DWARF,__apple_names"
+                    | b"__DWARF,__apple_types"
+                    | b"__DWARF,__apple_namespac"
+                    | b"__DWARF,__apple_objc"
+            )
+        {
+            continue;
+        }
         if matches!(
             name.as_slice(),
             b"__DWARF,__debug_line" | b"__DWARF,__debug_ranges" | b"__DWARF,__debug_loc"

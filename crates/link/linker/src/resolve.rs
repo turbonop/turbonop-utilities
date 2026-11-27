@@ -447,6 +447,9 @@ impl Linker {
     }
 
     /// Resolves symbol `i` of `object` (file `place`), global `g`.
+    // (The object's parts it needs are passed apart: `object` is being
+    // added, not yet one of `self`'s files.)
+    #[allow(clippy::too_many_arguments)]
     fn define(
         &mut self,
         g: u32,

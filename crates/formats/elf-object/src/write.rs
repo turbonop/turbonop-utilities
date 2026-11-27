@@ -97,26 +97,81 @@ pub(crate) fn build<'n>(names: impl Iterator<Item = &'n [u8]>) -> (Vec<u8>, Vec<
     turbonop_par::sort_by(&mut order, cmp);
     #[cfg(not(feature = "parallel"))]
     order.sort_unstable_by(cmp);
-    let mut table = vec![0u8];
+    // A name is a tail of the last one written whole exactly when it is a
+    // tail of the one before it in this order (the names with a tail in
+    // common are together, longer ones first), so each is written whole
+    // or not by the one before it alone.
+    let whole = |k: usize| k == 0 || !names[order[k - 1]].ends_with(names[order[k]]);
+    #[cfg(feature = "parallel")]
+    let whole: Vec<bool> = turbonop_par::map_range(order.len(), 64 * 1024, whole);
+    #[cfg(not(feature = "parallel"))]
+    let whole: Vec<bool> = (0..order.len()).map(whole).collect();
+    // Each name's place: a whole one's next, a tail's in the last whole
+    // one.
     let mut offsets = vec![0u32; names.len()];
-    // The last name written whole: every name after it in this order that
-    // is a tail of anything before it is a tail of this one.
-    let mut last: Option<(&[u8], usize)> = None;
-    for i in order {
-        let n = names[i];
-        let place = match last {
-            Some((l, off)) if l.ends_with(n) => off + l.len() - n.len(),
-            _ => {
-                let off = table.len();
-                table.extend_from_slice(n);
-                table.push(0);
-                last = Some((n, off));
-                off
-            }
+    let mut places = vec![0usize; order.len()];
+    let mut at = 1;
+    let mut last = (0usize, 0usize);
+    for (k, &i) in order.iter().enumerate() {
+        let n = names[i].len();
+        let place = if whole[k] {
+            last = (at, n);
+            at += n + 1;
+            last.0
+        } else {
+            last.0 + last.1 - n
         };
+        places[k] = place;
         offsets[i] = place as u32;
     }
+    // The whole names copied to their places (the NULs between them are
+    // the table's zeros): on every core for a large table, in stretches of
+    // names.
+    let mut table = vec![0u8; at];
+    let copy = |dst: &mut [u8], base: usize, ks: core::ops::Range<usize>| {
+        for k in ks {
+            if whole[k] {
+                let n = names[order[k]];
+                let p = places[k] - base;
+                dst[p..p + n.len()].copy_from_slice(n);
+            }
+        }
+    };
+    #[cfg(feature = "parallel")]
+    {
+        const STRETCH: usize = 1 << 20;
+        // (Stretches start at whole names: their bytes don't overlap.)
+        let mut jobs: Vec<(&mut [u8], usize, core::ops::Range<usize>)> = Vec::new();
+        let mut rest: &mut [u8] = &mut table;
+        let mut base = 0;
+        let mut first = 0;
+        for k in 0..=order.len() {
+            let start =
+                k == order.len() || (whole[k] && places[k] - places_at(&places, first) >= STRETCH);
+            if start && k > first {
+                let end = if k == order.len() { at } else { places[k] };
+                let (head, tail) = core::mem::take(&mut rest).split_at_mut(end - base);
+                jobs.push((head, base, first..k));
+                rest = tail;
+                base = end;
+                first = k;
+            }
+        }
+        turbonop_par::for_each_chunk_mut(&mut jobs, 1, |chunk| {
+            for (dst, base, ks) in chunk {
+                copy(dst, *base, ks.clone());
+            }
+        });
+    }
+    #[cfg(not(feature = "parallel"))]
+    copy(&mut table, 0, 0..order.len());
     (table, offsets)
+}
+
+/// The place of the name at `k` in order (the table's start past the end).
+#[cfg(feature = "parallel")]
+fn places_at(places: &[usize], k: usize) -> usize {
+    places.get(k).copied().unwrap_or(0)
 }
 
 /// The string tables to write: each section's name offset, each symbol
@@ -232,7 +287,12 @@ fn strings(o: &Object<'_>) -> Strings {
 }
 
 /// Each section's bytes in the file.
-fn encode<'s>(o: &'s Object<'_>, strings: &'s Strings) -> Result<Vec<Cow<'s, [u8]>>, WriteError> {
+/// (`tables`: the rebuilt string tables, by section index.)
+fn encode<'s>(
+    o: &'s Object<'_>,
+    strings: &Strings,
+    tables: &'s BTreeMap<usize, Vec<u8>>,
+) -> Result<Vec<Cow<'s, [u8]>>, WriteError> {
     let class = o.class();
     let endian = o.endian();
     let mut out = Vec::with_capacity(o.sections.len());
@@ -245,7 +305,7 @@ fn encode<'s>(o: &'s Object<'_>, strings: &'s Strings) -> Result<Vec<Cow<'s, [u8
         match &s.data {
             // (Not copied: written once, into the file.)
             Data::Bytes(b) => {
-                out.push(Cow::Borrowed(match strings.rebuilt.get(&i) {
+                out.push(Cow::Borrowed(match tables.get(&i) {
                     Some(t) => &t[..],
                     None => &b[..],
                 }));
@@ -355,7 +415,7 @@ fn encode<'s>(o: &'s Object<'_>, strings: &'s Strings) -> Result<Vec<Cow<'s, [u8
 /// Whether the object, written now, keeps the layout it was read with.
 pub(crate) fn keeps_layout(o: &Object<'_>) -> bool {
     let strings = strings(o);
-    match encode(o, &strings) {
+    match encode(o, &strings, &strings.rebuilt) {
         Ok(bytes) => fits(o, &bytes),
         Err(_) => false,
     }
@@ -381,12 +441,16 @@ fn needs_xindex(symbols: &[Symbol<'_>]) -> bool {
     symbols.iter().any(|s| s.xindex)
 }
 
-pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
-    let class = o.class();
-    let endian = o.endian();
-    let (ehsize, shentsize, ..) = sizes(class);
-    let strings = strings(o);
-    let bytes = encode(o, &strings)?;
+/// Where the object's parts go: each section's offset, the section
+/// headers', and the file's size; and whether that is the layout read.
+struct Placement {
+    keep: bool,
+    offsets: Vec<u64>,
+    shoff: u64,
+    size: u64,
+}
+
+fn check_xindex(o: &Object<'_>) -> Result<(), WriteError> {
     for s in &o.sections {
         if let Data::Symbols(symbols) = &s.data
             && needs_xindex(symbols)
@@ -397,15 +461,21 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
             ));
         }
     }
+    Ok(())
+}
+
+fn place(o: &Object<'_>, bytes: &[Cow<'_, [u8]>]) -> Placement {
+    let class = o.class();
+    let (ehsize, shentsize, ..) = sizes(class);
     let n = o.sections.len();
-    let keep = fits(o, &bytes);
-    // Where each section and the headers go.
-    let (offsets, shoff, size): (Vec<u64>, u64, u64) = match (&o.original, keep) {
-        (Some(orig), true) => (
-            orig.sections.iter().map(|&(off, _)| off).collect(),
-            orig.shoff,
-            orig.file.len() as u64,
-        ),
+    let keep = fits(o, bytes);
+    match (&o.original, keep) {
+        (Some(orig), true) => Placement {
+            keep,
+            offsets: orig.sections.iter().map(|&(off, _)| off).collect(),
+            shoff: orig.shoff,
+            size: orig.file.len() as u64,
+        },
         _ => {
             let mut at = ehsize;
             let mut offsets = vec![0u64; n];
@@ -422,13 +492,23 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
                 Class::Elf64 => 8,
             };
             let shoff = at.div_ceil(align) * align;
-            (offsets, shoff, shoff + n as u64 * shentsize)
+            Placement {
+                keep,
+                offsets,
+                shoff,
+                size: shoff + n as u64 * shentsize,
+            }
         }
-    };
-    let mut file = match (&o.original, keep) {
-        (Some(orig), true) => orig.file.to_vec(),
-        _ => vec![0u8; usize::try_from(size).map_err(|_| WriteError::TooLarge("the object"))?],
-    };
+    }
+}
+
+/// The ELF header's bytes.
+fn header_bytes(o: &Object<'_>, p: &Placement) -> Result<Vec<u8>, WriteError> {
+    let class = o.class();
+    let endian = o.endian();
+    let (ehsize, shentsize, ..) = sizes(class);
+    let n = o.sections.len();
+    let keep = p.keep;
     let extended = n >= SHN_LORESERVE as usize;
     let shstrndx_ext = o.shstrndx >= SHN_LORESERVE;
     let (shnum_field, shstrndx_field) = match (&o.original, keep) {
@@ -442,7 +522,6 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
             },
         ),
     };
-    // The header.
     let mut h = Out {
         bytes: Vec::with_capacity(ehsize as usize),
         class,
@@ -458,7 +537,7 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
         _ => (0, 0),
     };
     h.word(phoff, "e_phoff")?;
-    h.word(shoff, "e_shoff")?;
+    h.word(p.shoff, "e_shoff")?;
     h.u32(o.header.flags);
     h.u16(ehsize as u16);
     h.u16(phentsize);
@@ -466,23 +545,23 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
     h.u16(shentsize as u16);
     h.u16(shnum_field);
     h.u16(shstrndx_field);
-    file[..h.bytes.len()].copy_from_slice(&h.bytes);
-    // The sections.
-    for (i, b) in bytes.iter().enumerate() {
-        if i == 0 || o.sections[i].kind == sht::NOBITS || b.is_empty() {
-            continue;
-        }
-        let at = usize::try_from(offsets[i]).map_err(|_| WriteError::TooLarge("an offset"))?;
-        // In the layout read, bytes still the file's own, at their place,
-        // are there already.
-        if let (Some(orig), true) = (&o.original, keep)
-            && orig.file.get(at..at + b.len()).map(<[u8]>::as_ptr) == Some(b.as_ptr())
-        {
-            continue;
-        }
-        file[at..at + b.len()].copy_from_slice(b);
-    }
-    // The section headers.
+    Ok(h.bytes)
+}
+
+/// The section headers' bytes.
+fn section_headers(
+    o: &Object<'_>,
+    strings: &Strings,
+    bytes: &[Cow<'_, [u8]>],
+    p: &Placement,
+) -> Result<Vec<u8>, WriteError> {
+    let class = o.class();
+    let endian = o.endian();
+    let (_, shentsize, ..) = sizes(class);
+    let n = o.sections.len();
+    let keep = p.keep;
+    let extended = n >= SHN_LORESERVE as usize;
+    let shstrndx_ext = o.shstrndx >= SHN_LORESERVE;
     let mut sh = Out {
         bytes: Vec::with_capacity(n * shentsize as usize),
         class,
@@ -509,7 +588,7 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
         let offset = match (&o.original, keep) {
             (Some(orig), true) => orig.sections[i].0,
             _ if i == 0 => 0,
-            _ => offsets[i],
+            _ => p.offsets[i],
         };
         sh.u32(strings.section_names[i]);
         sh.u32(s.kind);
@@ -522,11 +601,111 @@ pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
         sh.word(s.addralign, "a section's alignment")?;
         sh.word(s.entsize, "a section's entry size")?;
     }
-    let at = usize::try_from(shoff).map_err(|_| WriteError::TooLarge("e_shoff"))?;
-    let end = at + sh.bytes.len();
+    Ok(sh.bytes)
+}
+
+pub(crate) fn write(o: &Object<'_>) -> Result<Vec<u8>, WriteError> {
+    let strings = strings(o);
+    let bytes = encode(o, &strings, &strings.rebuilt)?;
+    check_xindex(o)?;
+    let p = place(o, &bytes);
+    let keep = p.keep;
+    let mut file = match (&o.original, keep) {
+        (Some(orig), true) => orig.file.to_vec(),
+        _ => vec![0u8; usize::try_from(p.size).map_err(|_| WriteError::TooLarge("the object"))?],
+    };
+    let h = header_bytes(o, &p)?;
+    file[..h.len()].copy_from_slice(&h);
+    // The sections.
+    for (i, b) in bytes.iter().enumerate() {
+        if i == 0 || o.sections[i].kind == sht::NOBITS || b.is_empty() {
+            continue;
+        }
+        let at = usize::try_from(p.offsets[i]).map_err(|_| WriteError::TooLarge("an offset"))?;
+        // In the layout read, bytes still the file's own, at their place,
+        // are there already.
+        if let (Some(orig), true) = (&o.original, keep)
+            && orig.file.get(at..at + b.len()).map(<[u8]>::as_ptr) == Some(b.as_ptr())
+        {
+            continue;
+        }
+        file[at..at + b.len()].copy_from_slice(b);
+    }
+    let sh = section_headers(o, &strings, &bytes, &p)?;
+    let at = usize::try_from(p.shoff).map_err(|_| WriteError::TooLarge("e_shoff"))?;
+    let end = at + sh.len();
     if end > file.len() {
         return Err(WriteError::TooLarge("the section headers"));
     }
-    file[at..end].copy_from_slice(&sh.bytes);
+    file[at..end].copy_from_slice(&sh);
     Ok(file)
+}
+
+/// No rebuilt tables (for [`encode`]).
+static NO_TABLES: BTreeMap<usize, Vec<u8>> = BTreeMap::new();
+
+/// The object's bytes as parts in order (see [`crate::Object::write_parts`]).
+pub(crate) fn write_parts<'s>(o: &'s Object<'_>) -> Result<Parts<'s>, WriteError> {
+    let mut strings = strings(o);
+    // (Rebuilt tables are moved into the parts, not copied.)
+    let mut rebuilt = core::mem::take(&mut strings.rebuilt);
+    let mut bytes = encode(o, &strings, &NO_TABLES)?;
+    for (&i, t) in &mut rebuilt {
+        bytes[i] = Cow::Owned(core::mem::take(t));
+    }
+    check_xindex(o)?;
+    let p = place(o, &bytes);
+    if p.keep {
+        // The layout read: the original file with parts re-encoded in
+        // place, which may lie anywhere. (Not what an edit that removes
+        // sections makes.)
+        drop(bytes);
+        let offsets = p.offsets.clone();
+        return Ok(Parts {
+            parts: vec![Cow::Owned(write(o)?)],
+            offsets,
+            size: p.size,
+        });
+    }
+    let h = header_bytes(o, &p)?;
+    let sh = section_headers(o, &strings, &bytes, &p)?;
+    let zeros = |n: u64| -> Result<Cow<'s, [u8]>, WriteError> {
+        let n = usize::try_from(n).map_err(|_| WriteError::TooLarge("the object"))?;
+        Ok(Cow::Owned(vec![0u8; n]))
+    };
+    let mut parts: Vec<Cow<'s, [u8]>> = Vec::with_capacity(2 * bytes.len() + 2);
+    let mut at = h.len() as u64;
+    parts.push(Cow::Owned(h));
+    for (i, b) in bytes.into_iter().enumerate() {
+        if i == 0 || o.sections[i].kind == sht::NOBITS || b.is_empty() {
+            continue;
+        }
+        let off = p.offsets[i];
+        if off > at {
+            parts.push(zeros(off - at)?);
+        }
+        at = off + b.len() as u64;
+        parts.push(b);
+    }
+    if p.shoff > at {
+        parts.push(zeros(p.shoff - at)?);
+    }
+    parts.push(Cow::Owned(sh));
+    Ok(Parts {
+        parts,
+        offsets: p.offsets,
+        size: p.size,
+    })
+}
+
+/// An object's bytes as parts (see [`crate::Object::write_parts`]).
+#[derive(Clone, Debug)]
+pub struct Parts<'s> {
+    /// The bytes, in order: sections' contents borrowed from the model
+    /// where it holds them as written, the rest made by the writer.
+    pub parts: Vec<Cow<'s, [u8]>>,
+    /// Each section's offset in the file.
+    pub offsets: Vec<u64>,
+    /// The file's size (the parts' total).
+    pub size: u64,
 }

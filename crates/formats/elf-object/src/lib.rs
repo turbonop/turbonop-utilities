@@ -51,6 +51,7 @@ pub use relocs::{
 };
 pub use turbonop_core::Endian;
 pub use turbonop_elf::Class;
+pub use write::Parts;
 
 /// `SHN_XINDEX`: the symbol's section index is in `SHT_SYMTAB_SHNDX`.
 pub const SHN_XINDEX: u16 = 0xFFFF;
@@ -470,6 +471,15 @@ impl<'a> Object<'a> {
     /// The object's bytes.
     pub fn write(&self) -> Result<Vec<u8>, WriteError> {
         write::write(self)
+    }
+
+    /// The object's bytes ([`Object::write`]'s) as parts in order, so that
+    /// they can be written out without being gathered in memory first: the
+    /// sections' contents are borrowed from the model where it holds them
+    /// as they are written (a section read and not changed borrows the
+    /// file read).
+    pub fn write_parts(&self) -> Result<Parts<'_>, WriteError> {
+        write::write_parts(self)
     }
 
     /// Keeps the sections `keep` says (section 0 always), renumbering every

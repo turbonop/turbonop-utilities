@@ -187,12 +187,40 @@ pub struct Item {
     pub bytes: Option<Bytes>,
     /// Whether it came from the archive (rather than a file named now).
     pub old: bool,
+    /// A member folding rewrote: its bytes as parts, most of them its
+    /// input's (`bytes` is `None`).
+    pub folded: Option<Arc<Folded>>,
+}
+
+/// A member folding rewrote ([`turbonop_fold::elf::Written`]), and the
+/// input it was.
+#[derive(Debug)]
+pub struct Folded {
+    pub input: Bytes,
+    pub written: turbonop_fold::elf::Written,
 }
 
 impl Item {
     /// Its bytes (none for a thin archive's member whose file isn't there).
+    /// (Not a folded one's: see [`Item::parts`].)
     pub fn data(&self) -> &[u8] {
         self.bytes.as_ref().map_or(&[], Bytes::get)
+    }
+
+    /// Its bytes as parts in order.
+    fn parts(&self) -> Vec<&[u8]> {
+        match &self.folded {
+            Some(f) => f.written.slices(f.input.get()).collect(),
+            None => vec![self.data()],
+        }
+    }
+
+    /// Its bytes, gathered (a copy only of a folded member's).
+    fn gathered(&self) -> std::borrow::Cow<'_, [u8]> {
+        match &self.folded {
+            Some(f) => std::borrow::Cow::Owned(f.written.gather(f.input.get())),
+            None => std::borrow::Cow::Borrowed(self.data()),
+        }
     }
 }
 
@@ -365,6 +393,7 @@ pub fn read_old(run: &Run<'_>, path: &str) -> Result<Option<Old>, Fatal> {
             size: if thin { m.size } else { m.data.len() as u64 },
             bytes,
             old: true,
+            folded: None,
         });
     }
     Ok(Some(Old {
@@ -433,6 +462,7 @@ pub fn new_item(
         size: map.as_slice().len() as u64,
         bytes: Some(Bytes::whole(map)),
         old: false,
+        folded: None,
     })
 }
 
@@ -768,6 +798,7 @@ fn add_file(
                 size: m.data.len() as u64,
                 bytes,
                 old: false,
+                folded: None,
             }
         } else {
             Item {
@@ -777,6 +808,7 @@ fn add_file(
                 size: m.data.len() as u64,
                 bytes,
                 old: false,
+                folded: None,
             }
         });
     }
@@ -895,7 +927,7 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
         };
         std::fs::read(path).ok()
     };
-    let (outputs, report) = turbonop_fold::elf::fold_with(&inputs, &options, &dwo);
+    let (outputs, report) = turbonop_fold::elf::fold_parts(&inputs, &options, &dwo);
     if run.settings.stats {
         let mut text = format!(
             "turbolib: {archive}: {} members, {} COMDAT units; {} with copies in more than one member, \
@@ -946,9 +978,24 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
     };
     Ok(outputs
         .into_iter()
-        .map(|o| match (o.input, o.data) {
-            (Some(i), None) => plan.members[i].clone(),
-            (input, Some(data)) => {
+        .map(|o| match (o.input, o.data, o.written) {
+            (Some(i), None, Some(written)) => {
+                let from = &plan.members[i];
+                Item {
+                    name: from.name.clone(),
+                    origin: None,
+                    fields: from.fields,
+                    size: written.size,
+                    bytes: None,
+                    old: from.old,
+                    folded: from
+                        .bytes
+                        .clone()
+                        .map(|input| Arc::new(Folded { input, written })),
+                }
+            }
+            (Some(i), None, None) => plan.members[i].clone(),
+            (input, Some(data), _) => {
                 let from = input.map(|i| &plan.members[i]);
                 Item {
                     name: from.map_or_else(
@@ -960,9 +1007,10 @@ fn fold_members(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Ite
                     size: data.len() as u64,
                     bytes: Some(Bytes::whole(Arc::new(Mmap::from(data)))),
                     old: from.is_some_and(|f| f.old),
+                    folded: None,
                 }
             }
-            (None, None) => unreachable!("a synthesized member has its bytes"),
+            (None, None, _) => unreachable!("a synthesized member has its bytes"),
         })
         .collect())
 }
@@ -1079,6 +1127,7 @@ fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>
                     size: data.len() as u64,
                     bytes: Some(Bytes::whole(Arc::new(Mmap::from(data)))),
                     old: from.is_some_and(|f| f.old),
+                    folded: None,
                 }
             }
             (None, None) => unreachable!("a synthesized member has its bytes"),
@@ -1149,14 +1198,11 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fa
             return Ok(());
         }
     }
-    let datas: Vec<output::Bytes<'_>> = members
+    let datas: Vec<Vec<&[u8]>> = members
         .iter()
-        .map(|m| output::Bytes {
-            data: if thin { &[] } else { m.data() },
-            holes: &[],
-        })
+        .map(|m| if thin { Vec::new() } else { m.parts() })
         .collect();
-    let temp = output::write_unix_beside(&path, &layout, &datas)
+    let temp = output::write_unix_parts_beside(&path, &layout, &datas)
         .map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
     drop(datas);
     drop(members);
@@ -1171,7 +1217,8 @@ pub fn plan_bytes(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<Vec<u8
     let size =
         usize::try_from(layout.size()).map_err(|_| run.fatal(format!("{archive}: too large")))?;
     let mut out = vec![0u8; size];
-    layout.write_into(&mut out, |i| if thin { &[] } else { members[i].data() });
+    let gathered: Vec<std::borrow::Cow<'_, [u8]>> = members.iter().map(Item::gathered).collect();
+    layout.write_into(&mut out, |i| if thin { &[] } else { &gathered[i] });
     Ok(out)
 }
 
@@ -1187,18 +1234,53 @@ fn lay_out(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(Layout, Vec<
         plan.members = members;
     }
     let archiver = run.archiver();
-    // Each member's symbols, on every core.
-    let symbols = turbonop_par::map(&plan.members, 8, |m| match &m.bytes {
-        Some(b) => member_symbols(b.get(), archiver)
-            .map(|s| {
-                (
-                    s.object,
-                    s.symbols.iter().map(|n| n.to_vec()).collect::<Vec<_>>(),
-                )
-            })
-            .map_err(|e| format!("{}: {e}", m.name)),
-        None => Ok((false, Vec::new())),
-    });
+    // Each member's symbols, on every core (the largest first: members'
+    // sizes differ a thousandfold).
+    let symbols = turbonop_par::map_costed(
+        plan.members.len(),
+        |i| plan.members[i].size,
+        |i| {
+            let m = &plan.members[i];
+            if let Some(f) = &m.folded {
+                // A rewritten member's, from its values (its bytes are
+                // parts), unless they must be read.
+                let r = match &f.written.index {
+                    Some(ix) => turbonop_archive::unix::symbols::elf_symbols(
+                        archiver,
+                        ix.machine,
+                        ix.lto,
+                        ix.symbols
+                            .iter()
+                            .map(|s| turbonop_archive::unix::symbols::ElfSymbol {
+                                name: &s.name,
+                                bind: s.bind,
+                                kind: s.kind,
+                                shndx: s.shndx,
+                                extended: s.extended,
+                            }),
+                    )
+                    .map(|s| (s.object, s.symbols.iter().map(|n| n.to_vec()).collect())),
+                    None => {
+                        let bytes = m.gathered();
+                        member_symbols(&bytes, archiver)
+                            .map(|s| (s.object, s.symbols.iter().map(|n| n.to_vec()).collect()))
+                    }
+                };
+                return r.map_err(|e| format!("{}: {e}", m.name));
+            }
+            match &m.bytes {
+                Some(b) => member_symbols(b.get(), archiver)
+                    .map(|s| {
+                        (
+                            s.object,
+                            s.symbols.iter().map(|n| n.to_vec()).collect::<Vec<_>>(),
+                        )
+                    })
+                    .map_err(|e| format!("{}: {e}", m.name)),
+                None => Ok((false, Vec::new())),
+            }
+        },
+    );
     let mut index: Vec<IndexSymbol<'_>> = Vec::new();
     let mut objects = false;
     let mut per_member = Vec::with_capacity(symbols.len());
@@ -1599,6 +1681,7 @@ fn write_op(run: &mut Run<'_>, c: &Command, archive: &str) -> Result<(), Fatal> 
             size: data.len() as u64,
             bytes: Some(Bytes::whole(Arc::new(Mmap::from(data)))),
             old: false,
+            folded: None,
         };
         let at = usize::from(!members.is_empty() && !c.files.is_empty());
         members.insert(at.min(members.len()), item);

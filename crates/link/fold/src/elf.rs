@@ -116,10 +116,85 @@ pub struct Input<'a> {
 #[derive(Clone, Debug)]
 pub struct Output {
     pub name: Vec<u8>,
-    /// Its bytes: `None` for an input unchanged (`input`'s).
+    /// Its bytes: `None` for an input unchanged (`input`'s), and for one
+    /// [`fold_parts`] gives as [`Output::written`].
     pub data: Option<Vec<u8>>,
+    /// A rewritten member, as parts ([`fold_parts`]'s).
+    pub written: Option<Written>,
     /// The input it is, if not synthesized.
     pub input: Option<usize>,
+}
+
+/// A rewritten member's bytes as parts in order, most of them its input's
+/// (so that the member is written out without being gathered in memory),
+/// and the symbols an archive's index takes from it.
+#[derive(Clone, Debug, Default)]
+pub struct Written {
+    /// Bytes made for it, which [`Part::Made`] refers to.
+    pub made: Vec<Vec<u8>>,
+    pub parts: Vec<Part>,
+    /// Its size (the parts' total).
+    pub size: u64,
+    /// What the index takes from it; `None` where the member's bytes must
+    /// be read for it (a symbol table of an entry size not its class's, or
+    /// of more symbols or sections than `turbonop_elf` reads).
+    pub index: Option<Index>,
+}
+
+/// A stretch of a rewritten member's bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
+    /// Its input's bytes at `start`.
+    Input { start: usize, len: usize },
+    /// Bytes of `made[buffer]` at `start`.
+    Made {
+        buffer: usize,
+        start: usize,
+        len: usize,
+    },
+}
+
+impl Written {
+    /// Each part's bytes, in order (`input`: the input member's bytes).
+    pub fn slices<'s>(&'s self, input: &'s [u8]) -> impl Iterator<Item = &'s [u8]> + 's {
+        self.parts.iter().map(move |&p| match p {
+            Part::Input { start, len } => &input[start..start + len],
+            Part::Made { buffer, start, len } => &self.made[buffer][start..start + len],
+        })
+    }
+
+    /// The member's bytes, gathered.
+    pub fn gather(&self, input: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(usize::try_from(self.size).unwrap_or(0));
+        for b in self.slices(input) {
+            out.extend_from_slice(b);
+        }
+        out
+    }
+}
+
+/// What an archive's index takes from a rewritten member: what the member
+/// read back would give (`turbonop_elf::ElfFile`'s view).
+#[derive(Clone, Debug, Default)]
+pub struct Index {
+    pub machine: u16,
+    /// Whether a section's name starts `.gnu.lto_` (GCC's LTO objects).
+    pub lto: bool,
+    /// The symbols, in order, but those neither archiver lists (undefined
+    /// ones, and locals outside `SHN_COMMON` and `SHN_X86_64_LCOMMON`).
+    pub symbols: Vec<IndexSymbol>,
+}
+
+/// A symbol for [`Index`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IndexSymbol {
+    pub name: Vec<u8>,
+    pub bind: u8,
+    pub kind: u8,
+    /// Its section index (an extended one resolved).
+    pub shndx: u32,
+    /// Whether its index is in `SHT_SYMTAB_SHNDX` (and not 0 there).
+    pub extended: bool,
 }
 
 /// What folding did.
@@ -200,6 +275,12 @@ struct Unit<'a> {
     names: Vec<Cow<'a, [u8]>>,
     /// The symbols defined in its sections (indexes, in order).
     symbols: Vec<usize>,
+    /// What its hash covers that is read without its contents: units with
+    /// different keys have different hashes, so only units whose key is in
+    /// two members or more are hashed (see `fold_parts`).
+    key: u64,
+    /// Its contents' hash: equal for copies (for a unit no other member's
+    /// can be a copy of, one of its own).
     hash: u128,
     stays: Option<&'static str>,
     /// Its FDEs (indexes into the member's records).
@@ -249,7 +330,70 @@ struct Parsed<'a> {
     owner: Vec<Option<usize>>,
     /// An object whose definitions can't be read (another format).
     opaque: bool,
+    /// Looked up once, not by every synthesized member it gives units to
+    /// (a member can hold tens of thousands of sections): the symbol table,
+    /// the first section of each name of [`ENV_NAMES`], the first
+    /// `.eh_frame`, and the first relocation section for that.
+    symtab: usize,
+    env_sections: Vec<usize>,
+    eh_frame: Option<usize>,
+    eh_rel: Option<usize>,
 }
+
+impl<'a> Parsed<'a> {
+    /// The member's symbols ([`Object::symbols`], without looking for the
+    /// table again).
+    fn symbols(&self) -> &[Symbol<'a>] {
+        match self
+            .obj
+            .as_ref()
+            .and_then(|o| o.sections.get(self.symtab))
+            .map(|s| &s.data)
+        {
+            Some(Data::Symbols(s)) => s,
+            _ => &[],
+        }
+    }
+}
+
+/// [`turbonop_par::map_costed`], or in order on this thread unless `par`.
+fn costed<R: Send>(
+    par: bool,
+    len: usize,
+    cost: impl Fn(usize) -> u64,
+    f: impl Fn(usize) -> R + Sync,
+) -> Vec<R> {
+    if par {
+        turbonop_par::map_costed(len, cost, f)
+    } else {
+        (0..len).map(f).collect()
+    }
+}
+
+/// The shards the maps of names and units are built in.
+const SHARDS: usize = 64;
+
+/// A name's definitions in the library, summed up.
+#[derive(Clone, Copy, Debug)]
+struct Defined {
+    /// The first one's member.
+    first: usize,
+    /// The hash of the unit every definition is a copy of; `None` if they
+    /// are of different units, or one is outside any.
+    copies: Option<u128>,
+}
+
+/// The environment sections a synthesized member copies from its first
+/// member, in its order.
+const ENV_NAMES: [&[u8]; 7] = [
+    b".note.GNU-stack",
+    b".note.gnu.property",
+    b".comment",
+    b".ARM.attributes",
+    b".riscv.attributes",
+    b".MIPS.abiflags",
+    b".gnu.attributes",
+];
 
 fn is_c_identifier(name: &[u8]) -> bool {
     !name.is_empty()
@@ -336,6 +480,92 @@ fn environment(obj: &Object<'_>) -> u128 {
     h.finish()
 }
 
+/// Unit `ui`'s hash: its sections' contents, relocations (by what they
+/// name), symbols, and FDEs, in the member's environment.
+fn unit_hash(p: &Parsed<'_>, ui: usize) -> u128 {
+    let Some(obj) = p.obj.as_ref() else {
+        return 0;
+    };
+    let symbols = p.symbols();
+    let u = &p.units[ui];
+    let unit_sections = &u.sections;
+    let mut h = H128::new();
+    h.u128(p.env);
+    if let Data::Group(g) = &obj.sections[u.group].data {
+        h.u64(u64::from(g.flags));
+    }
+    let place = |sec: usize| unit_sections.iter().position(|&x| x == sec);
+    let key = |h: &mut H128, si: u32| {
+        let Some(sym) = symbols.get(si as usize) else {
+            h.u64(u64::MAX);
+            return;
+        };
+        if sym.bind() != 0 || si == 0 {
+            h.u64(1);
+            h.bytes(&sym.name);
+            h.u64(u64::from(sym.bind()));
+        } else {
+            h.u64(2);
+            h.u64(place(sym.shndx as usize).map_or(u64::MAX, |x| x as u64));
+            h.u64(sym.value);
+            h.u64(u64::from(sym.kind()));
+        }
+    };
+    for &sec in unit_sections {
+        let s = &obj.sections[sec];
+        h.bytes(&s.name);
+        h.u64(u64::from(s.kind));
+        h.u64(s.flags);
+        h.u64(s.addralign);
+        h.u64(s.entsize);
+        match &s.data {
+            Data::Bytes(b) => h.bytes(b),
+            Data::NoBits => h.u64(s.nobits_size),
+            Data::Relocations(rs) => {
+                h.u64(place(s.info as usize).map_or(u64::MAX, |x| x as u64));
+                for r in rs {
+                    let r = &r;
+                    h.u64(r.offset);
+                    h.u64(u64::from(obj.reloc_type(r)));
+                    key(&mut h, obj.reloc_symbol(r));
+                    h.u64(r.addend as u64);
+                }
+            }
+            _ => h.u64(0xBAD),
+        }
+    }
+    for s in u.symbols.iter().map(|&i| &symbols[i]) {
+        h.bytes(&s.name);
+        h.u64(u64::from(s.info));
+        h.u64(u64::from(s.other));
+        h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
+        h.u64(s.value);
+        h.u64(s.size);
+    }
+    if let Some(eh) = p.eh.as_ref() {
+        let data = section_bytes(&obj.sections[eh.section]);
+        let record = |h: &mut H128, k: usize| {
+            let rec = &eh.records[k];
+            let b = &data[rec.start..rec.end()];
+            h.bytes(&b[..rec.id_at]);
+            h.bytes(&b[rec.id_at + 4..]);
+            for rel in eh.rels(k) {
+                h.u64(rel.offset - rec.start as u64);
+                h.u64(u64::from(obj.reloc_type(rel)));
+                key(h, obj.reloc_symbol(rel));
+                h.u64(rel.addend as u64);
+            }
+        };
+        for &f in &u.fdes {
+            record(&mut h, f);
+            if let Some(cie) = eh.cie(f) {
+                record(&mut h, cie);
+            }
+        }
+    }
+    h.finish()
+}
+
 /// Reads one member and finds its units.
 fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     let mut p = Parsed {
@@ -348,6 +578,10 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
         eh: None,
         owner: Vec::new(),
         opaque: false,
+        symtab: 0,
+        env_sections: Vec::new(),
+        eh_frame: None,
+        eh_rel: None,
     };
     let data = input.data;
     if !data.starts_with(b"\x7fELF") {
@@ -417,6 +651,12 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
     let symbols = obj.symbols();
     let n = obj.sections.len();
     p.env = environment(&obj);
+    p.symtab = symtab;
+    p.env_sections = ENV_NAMES
+        .iter()
+        .filter_map(|&name| obj.sections.iter().position(|s| &*s.name == name))
+        .collect();
+    p.eh_frame = obj.sections.iter().position(|s| &*s.name == b".eh_frame");
 
     // Each section's unit.
     let mut owner: Vec<Option<usize>> = vec![None; n];
@@ -443,6 +683,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 sections: members,
                 names: Vec::new(),
                 symbols: Vec::new(),
+                key: 0,
                 hash: 0,
                 stays: (!ok).then_some("its group's members are malformed"),
                 fdes: Vec::new(),
@@ -623,115 +864,52 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             units[u].symbols.push(i);
         }
     }
-    // Hashes: on every core for a member of many units (one can hold tens
-    // of thousands).
+    // Each unit's key, size, and whether a section of it can't move. (Its
+    // hash is taken in `fold_parts`, only if another member has a unit of
+    // its key.)
     let env = p.env;
-    let eh_info = p.eh.as_ref();
-    let hashed: Vec<(u128, u64, Option<&'static str>)> =
-        turbonop_par::map_range(units.len(), 4096, |ui| {
-            let u = &units[ui];
-            let group = u.group;
-            let unit_sections = &u.sections;
-            let fdes = &u.fdes;
-            let mut stays = u.stays;
-            let mut h = H128::new();
-            h.u128(env);
-            if let Data::Group(g) = &obj.sections[group].data {
-                h.u64(u64::from(g.flags));
-            }
-            let place = |sec: usize| unit_sections.iter().position(|&x| x == sec);
-            let key = |h: &mut H128, si: u32| {
-                let Some(sym) = symbols.get(si as usize) else {
-                    h.u64(u64::MAX);
-                    return;
-                };
-                if sym.bind() != 0 || si == 0 {
-                    h.u64(1);
-                    h.bytes(&sym.name);
-                    h.u64(u64::from(sym.bind()));
-                } else {
-                    h.u64(2);
-                    h.u64(place(sym.shndx as usize).map_or(u64::MAX, |x| x as u64));
-                    h.u64(sym.value);
-                    h.u64(u64::from(sym.kind()));
+    for (ui, u) in units.iter_mut().enumerate() {
+        let mut k = H128::new();
+        k.u128(env);
+        if let Data::Group(g) = &obj.sections[u.group].data {
+            k.u64(u64::from(g.flags));
+        }
+        let mut bytes = 0u64;
+        let mut stays = u.stays;
+        for &sec in &u.sections {
+            let s = &obj.sections[sec];
+            k.bytes(&s.name);
+            k.u64(u64::from(s.kind));
+            k.u64(s.flags);
+            match &s.data {
+                Data::Bytes(b) => {
+                    k.u64(b.len() as u64);
+                    bytes += b.len() as u64;
                 }
-            };
-            let mut bytes = 0u64;
-            for &sec in unit_sections {
-                let s = &obj.sections[sec];
-                h.bytes(&s.name);
-                h.u64(u64::from(s.kind));
-                h.u64(s.flags);
-                h.u64(s.addralign);
-                h.u64(s.entsize);
-                match &s.data {
-                    Data::Bytes(b) => {
-                        h.bytes(b);
-                        bytes += b.len() as u64;
-                    }
-                    Data::NoBits => h.u64(s.nobits_size),
-                    Data::Relocations(rs) => {
-                        h.u64(place(s.info as usize).map_or(u64::MAX, |x| x as u64));
-                        for r in rs {
-                            let r = &r;
-                            h.u64(r.offset);
-                            h.u64(u64::from(obj.reloc_type(r)));
-                            key(&mut h, obj.reloc_symbol(r));
-                            h.u64(r.addend as u64);
-                        }
-                        bytes += rs.len() as u64 * 24;
-                    }
-                    _ => {
-                        h.u64(0xBAD);
-                        stays = Some("it holds a section of a kind not moved");
-                    }
+                Data::NoBits => k.u64(s.nobits_size),
+                Data::Relocations(rs) => {
+                    k.u64(rs.len() as u64);
+                    bytes += rs.len() as u64 * 24;
                 }
+                _ => stays = Some("it holds a section of a kind not moved"),
             }
-            let unit_symbols = u.symbols.clone();
-            for s in unit_symbols.iter().map(|&i| &symbols[i]) {
-                h.bytes(&s.name);
-                h.u64(u64::from(s.info));
-                h.u64(u64::from(s.other));
-                h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
-                h.u64(s.value);
-                h.u64(s.size);
-            }
-            if let Some(eh) = eh_info {
-                let data = section_bytes(&obj.sections[eh.section]);
-                let record = |h: &mut H128, k: usize| {
-                    let rec = &eh.records[k];
-                    let b = &data[rec.start..rec.end()];
-                    h.bytes(&b[..rec.id_at]);
-                    h.bytes(&b[rec.id_at + 4..]);
-                    for rel in eh.rels(k) {
-                        h.u64(rel.offset - rec.start as u64);
-                        h.u64(u64::from(obj.reloc_type(rel)));
-                        key(h, obj.reloc_symbol(rel));
-                        h.u64(rel.addend as u64);
-                    }
-                };
-                for &f in fdes {
-                    record(&mut h, f);
-                    if let Some(cie) = eh.cie(f) {
-                        record(&mut h, cie);
-                    }
-                }
-            }
-            (
-                h.finish(),
-                bytes + 4 * (unit_sections.len() as u64 + 1),
-                stays,
-            )
-        });
-    for (ui, (u, (hash, bytes, stays))) in units.iter_mut().zip(hashed).enumerate() {
+        }
+        k.u64(u.symbols.len() as u64);
+        k.u64(u.fdes.len() as u64);
+        u.key = k.finish() as u64;
+        u.bytes = bytes + 4 * (u.sections.len() as u64 + 1);
         u.stays = if registers[ui] {
             Some("it holds initializer, terminator, or warning sections")
         } else {
             stays
         };
-        u.bytes = bytes;
-        u.hash = hash;
     }
+    p.eh_rel = p.eh.as_ref().and_then(|eh| {
+        relocation_sections(&obj)
+            .into_iter()
+            .find(|&(_, t)| t == eh.section)
+            .map(|(r, _)| r)
+    });
     p.owner = owner;
     p.units = units;
     p.obj = Some(obj);
@@ -749,7 +927,7 @@ type FixUp = (usize, usize, Vec<(Relocation, usize, Target)>);
 type Synthesis = (Vec<(usize, usize)>, Vec<u8>);
 
 /// A rewritten member, and what rewriting it counted.
-type Rewritten = Result<(Vec<u8>, Report), String>;
+type Rewritten = Result<(Written, Report), String>;
 
 /// Builds the anchor's name for a synthesized member of these units.
 fn anchor_name(hashes: &[u128], env: u128) -> Vec<u8> {
@@ -777,8 +955,9 @@ fn rewrite(
     parsed: &Parsed<'_>,
     moved: &[usize],
     anchors: &[Vec<u8>],
+    input: &[u8],
     report: &mut Report,
-) -> Result<Vec<u8>, String> {
+) -> Result<Written, String> {
     let obj0 = parsed.obj.as_ref().ok_or("unread")?;
     let mut obj = obj0.clone();
     let n = obj.sections.len();
@@ -794,7 +973,8 @@ fn rewrite(
             removed[s] = true;
         }
     }
-    let symbols: Vec<Symbol<'_>> = obj.symbols().to_vec();
+    // (The member's symbols as read: `obj`'s are changed below.)
+    let symbols: &[Symbol<'_>] = parsed.symbols();
     let in_removed =
         |s: &Symbol<'_>| s.in_section() && removed.get(s.shndx as usize).copied().unwrap_or(false);
 
@@ -858,7 +1038,9 @@ fn rewrite(
             obj.sections[eh.section].data = Data::Bytes(Cow::Owned(bytes));
         }
     }
-    // Debug relocations to the moved units' locals: tombstones.
+    // Debug relocations to the moved units' locals: tombstones (section,
+    // offset, size, value), in order.
+    let mut tombstones: Vec<(usize, usize, usize, u64)> = Vec::new();
     for (r, t) in relocation_sections(&obj) {
         let Some(target) = obj.sections.get(t) else {
             continue;
@@ -873,17 +1055,16 @@ fn rewrite(
                 .get(si)
                 .is_some_and(|s| s.bind() == 0 && si != 0 && in_removed(s))
         };
-        // (Most debug sections name nothing moved: nothing is copied for
-        // those.)
-        if !relocations(&obj.sections[r]).any(|r| hit(&r)) {
-            continue;
-        }
+        // (No pass first to see whether any is hit: renumbering the
+        // symbols copies every relocation section anyway.)
         let Data::Relocations(mut rels) =
             std::mem::replace(&mut obj.sections[r].data, Data::NoBits)
         else {
             continue;
         };
-        let mut bytes = section_bytes(&obj.sections[t]).to_vec();
+        // (The section isn't copied: the tombstones are written over its
+        // bytes as the member is, see `patched`.)
+        let len = section_bytes(&obj.sections[t]).len();
         let mut bad = false;
         rels.retain(|rel| {
             if !hit(rel) {
@@ -891,7 +1072,11 @@ fn rewrite(
             }
             match debug_reloc_size(machine, obj0.reloc_type(rel)) {
                 Some(size) => {
-                    put(&mut bytes, rel.offset as usize, size, value, endian);
+                    // (As `put` does: a tombstone past the end isn't.)
+                    let at = rel.offset as usize;
+                    if at.checked_add(size).is_some_and(|end| end <= len) {
+                        tombstones.push((t, at, size, value));
+                    }
                     report.tombstoned += 1;
                 }
                 None => bad = true,
@@ -901,7 +1086,6 @@ fn rewrite(
         if bad {
             return Err("a debug relocation not tombstoned".into());
         }
-        obj.sections[t].data = Data::Bytes(Cow::Owned(bytes));
         obj.sections[r].data = Data::Relocations(rels);
     }
     // The symbols: moved definitions undefined, the moved locals gone.
@@ -944,7 +1128,7 @@ fn rewrite(
         }
     }
     let keep: Vec<bool> = removed.iter().map(|&r| !r).collect();
-    obj.retain_sections(&keep);
+    let section_map = obj.retain_sections(&keep);
     let kept = obj.retain_symbols(&keep_symbols);
     // The anchors first among the globals: lld and mold take an archive
     // member the moment a loaded object's undefined symbol meets a lazy
@@ -991,7 +1175,198 @@ fn rewrite(
             s.data = Data::Bytes(Cow::Owned(out));
         }
     }
-    obj.write().map_err(|e| e.to_string())
+    let standard = match obj.class() {
+        Class::Elf32 => 16,
+        Class::Elf64 => 24,
+    };
+    let readable = obj.sections.len() < 1 << 24
+        && obj.symbols().len() < 1 << 24
+        && obj.symtab().is_some_and(|t| {
+            matches!(obj.sections[t].entsize, 0) || obj.sections[t].entsize == standard
+        });
+    let index = readable.then(|| Index {
+        machine: obj.header.machine,
+        lto: obj
+            .sections
+            .iter()
+            .any(|s| s.name.starts_with(b".gnu.lto_")),
+        symbols: obj
+            .symbols()
+            .iter()
+            .skip(1)
+            .filter_map(|s| {
+                let extended = s.xindex && s.shndx != 0;
+                let common =
+                    !extended && matches!(s.shndx, turbonop_elf_object::SHN_COMMON | 0xFF02);
+                (s.shndx != SHN_UNDEF && (s.bind() != 0 || common)).then(|| IndexSymbol {
+                    name: s.name.to_vec(),
+                    bind: s.bind(),
+                    kind: s.kind(),
+                    shndx: s.shndx,
+                    extended,
+                })
+            })
+            .collect(),
+    });
+    let parts = obj.write_parts().map_err(|e| e.to_string())?;
+    // The tombstones at their places in the member.
+    let mut at_member: Vec<(u64, usize, u64)> = Vec::with_capacity(tombstones.len());
+    for &(t, at, size, value) in &tombstones {
+        let new = section_map
+            .get(t)
+            .copied()
+            .flatten()
+            .ok_or("a tombstone in a section removed")?;
+        at_member.push((parts.offsets[new as usize] + at as u64, size, value));
+    }
+    Ok(patched(input, parts, &at_member, endian, index))
+}
+
+/// The member written as `parts`, as a [`Written`] (parts of `input` where
+/// they are its bytes), with `tombstones` (offset, size, value) written
+/// over it in order.
+fn patched(
+    input: &[u8],
+    parts: turbonop_elf_object::Parts<'_>,
+    tombstones: &[(u64, usize, u64)],
+    endian: Endian,
+    index: Option<Index>,
+) -> Written {
+    let mut w = Written {
+        size: parts.size,
+        index,
+        ..Written::default()
+    };
+    let range = input.as_ptr_range();
+    let mut at = 0u64;
+    // Each part's place in the member, and where its bytes are.
+    let mut placed: Vec<(u64, Part)> = Vec::with_capacity(parts.parts.len());
+    for p in parts.parts {
+        let len = p.len();
+        if len == 0 {
+            continue;
+        }
+        let part = match p {
+            Cow::Borrowed(b)
+                if range.contains(&b.as_ptr()) && b.as_ptr_range().end <= range.end =>
+            {
+                Part::Input {
+                    start: b.as_ptr() as usize - input.as_ptr() as usize,
+                    len,
+                }
+            }
+            other => {
+                w.made.push(other.into_owned());
+                Part::Made {
+                    buffer: w.made.len() - 1,
+                    start: 0,
+                    len,
+                }
+            }
+        };
+        placed.push((at, part));
+        at += len as u64;
+    }
+    if tombstones.is_empty() {
+        w.parts = placed.into_iter().map(|(_, p)| p).collect();
+        return w;
+    }
+    // The tombstones' stretches, overlapping ones merged: each stretch's
+    // bytes are the member's there with its tombstones written in order.
+    let mut order: Vec<usize> = (0..tombstones.len()).collect();
+    order.sort_by_key(|&k| (tombstones[k].0, k));
+    let mut stretches: Vec<(u64, u64, Vec<usize>)> = Vec::new();
+    for k in order {
+        let (off, size, _) = tombstones[k];
+        let end = off + size as u64;
+        match stretches.last_mut() {
+            Some(last) if off < last.1 => {
+                last.1 = last.1.max(end);
+                last.2.push(k);
+            }
+            _ => stretches.push((off, end, vec![k])),
+        }
+    }
+    // The member's bytes in [lo, hi), appended to `out`.
+    let bytes_in =
+        |placed: &[(u64, Part)], made: &[Vec<u8>], lo: u64, hi: u64, out: &mut Vec<u8>| {
+            let mut i = placed.partition_point(|x| x.0 <= lo) - 1;
+            let mut at = lo;
+            while at < hi {
+                let (start, part) = placed[i];
+                let (bytes, len) = match part {
+                    Part::Input { start, len } => (&input[start..], len),
+                    Part::Made { buffer, start, len } => (&made[buffer][start..], len),
+                };
+                let from = (at - start) as usize;
+                let to = len.min((hi - start) as usize);
+                out.extend_from_slice(&bytes[from..to]);
+                at = start + to as u64;
+                i += 1;
+            }
+        };
+    let buffer = w.made.len();
+    let mut patch = Vec::new();
+    let mut spans: Vec<(u64, u64, usize)> = Vec::with_capacity(stretches.len());
+    for (lo, hi, mut ks) in stretches {
+        ks.sort_unstable();
+        let mut bytes: Vec<u8> = Vec::with_capacity((hi - lo) as usize);
+        bytes_in(&placed, &w.made, lo, hi, &mut bytes);
+        for k in ks {
+            let (off, size, value) = tombstones[k];
+            put(&mut bytes, (off - lo) as usize, size, value, endian);
+        }
+        spans.push((lo, hi, patch.len()));
+        patch.extend_from_slice(&bytes);
+    }
+    // The parts, cut around the stretches.
+    let mut out: Vec<Part> = Vec::with_capacity(placed.len() + 2 * spans.len());
+    let cut = |p: Part, from: usize, len: usize| match p {
+        Part::Input { start, .. } => Part::Input {
+            start: start + from,
+            len,
+        },
+        Part::Made { buffer, start, .. } => Part::Made {
+            buffer,
+            start: start + from,
+            len,
+        },
+    };
+    let mut next = spans.iter().peekable();
+    for (i, &(start, part)) in placed.iter().enumerate() {
+        let end = placed.get(i + 1).map_or(w.size, |x| x.0);
+        let mut at = start;
+        while at < end {
+            match next.peek() {
+                Some(&&(lo, hi, from)) if lo < end => {
+                    if lo > at {
+                        out.push(cut(part, (at - start) as usize, (lo - at) as usize));
+                    }
+                    if lo >= at {
+                        // (A stretch is written whole where it starts.)
+                        out.push(Part::Made {
+                            buffer,
+                            start: from,
+                            len: (hi - lo) as usize,
+                        });
+                    }
+                    at = at.max(hi);
+                    if hi <= end {
+                        next.next();
+                    } else {
+                        break;
+                    }
+                }
+                _ => {
+                    out.push(cut(part, (at - start) as usize, (end - at) as usize));
+                    at = end;
+                }
+            }
+        }
+    }
+    w.made.push(patch);
+    w.parts = out;
+    w
 }
 
 fn uleb(b: &[u8]) -> Option<(u64, usize)> {
@@ -1090,28 +1465,13 @@ fn synthesize<'a>(
         }
     }
     // Environment sections.
-    let env_names: [&[u8]; 7] = [
-        b".note.GNU-stack",
-        b".note.gnu.property",
-        b".comment",
-        b".ARM.attributes",
-        b".riscv.attributes",
-        b".MIPS.abiflags",
-        b".gnu.attributes",
-    ];
-    for name in env_names {
-        if let Some(s) = first.sections.iter().find(|s| &*s.name == name) {
-            let mut s = s.clone();
-            s.link = 0;
-            sections.push(s);
-        }
+    for &i in &parsed[m0].env_sections {
+        let mut s = first.sections[i].clone();
+        s.link = 0;
+        sections.push(s);
     }
     // .eh_frame: the CIEs the FDEs name, then the FDEs.
-    let eh_template = first
-        .sections
-        .iter()
-        .find(|s| &*s.name == b".eh_frame")
-        .cloned();
+    let eh_template = parsed[m0].eh_frame.map(|i| first.sections[i].clone());
     let mut eh_pieces: Vec<(usize, usize, bool)> = Vec::new(); // (member, record, is cie)
     // Each CIE copied: its place among the pieces.
     let mut cie_place: BTreeMap<(usize, usize), usize> = BTreeMap::new();
@@ -1144,12 +1504,7 @@ fn synthesize<'a>(
     };
     // Its relocations, as the first member's (`.rela.eh_frame` or
     // `.rel.eh_frame`).
-    let eh_rel_template = parsed[m0].eh.as_ref().and_then(|eh| {
-        relocation_sections(first)
-            .into_iter()
-            .find(|&(_, t)| t == eh.section)
-            .map(|(r, _)| first.sections[r].clone())
-    });
+    let eh_rel_template = parsed[m0].eh_rel.map(|r| first.sections[r].clone());
     let rela_eh = match (eh_index, eh_rel_template) {
         (Some(eh), Some(mut s)) => {
             s.info = eh as u32;
@@ -1309,8 +1664,8 @@ fn synthesize<'a>(
     let mut global_of: BTreeMap<Vec<u8>, usize> = BTreeMap::new();
     let mut section_symbol: BTreeMap<usize, usize> = BTreeMap::new();
     for &(m, u) in units {
-        let obj = parsed[m].obj.as_ref().ok_or("unread")?;
-        let all = obj.symbols();
+        parsed[m].obj.as_ref().ok_or("unread")?;
+        let all = parsed[m].symbols();
         // (The unit's own, found once by `parse`: a scan of every symbol
         // for each unit was quadratic in a large member.)
         for &i in &parsed[m].units[u].symbols {
@@ -1361,8 +1716,7 @@ fn synthesize<'a>(
         if let Some(&t) = sym_map.get(&(m, si)) {
             return Ok(t);
         }
-        let obj = parsed[m].obj.as_ref().ok_or("unread")?;
-        let s = obj
+        let s = parsed[m]
             .symbols()
             .get(si)
             .ok_or("a relocation names no symbol")?;
@@ -1480,8 +1834,7 @@ fn synthesize<'a>(
     }
     // The DWARF's relocations.
     if let Some(b) = &built {
-        let obj0 = parsed[m0].obj.as_ref().ok_or("unread")?;
-        let symbols0 = obj0.symbols();
+        let symbols0 = parsed[m0].symbols();
         for (j, s) in b.sections.iter().enumerate() {
             let Some(rela) = debug_rela[j] else {
                 continue;
@@ -1655,6 +2008,19 @@ pub fn fold(inputs: &[Input<'_>], options: &Options) -> (Vec<Output>, Report) {
 /// `dwo`, so that synthesized members describe folded functions of split
 /// units too (unsplit).
 pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<Output>, Report) {
+    let (mut out, report) = fold_parts(inputs, options, dwo);
+    for o in &mut out {
+        if let (Some(w), Some(m)) = (o.written.take(), o.input) {
+            o.data = Some(w.gather(inputs[m].data));
+        }
+    }
+    (out, report)
+}
+
+/// [`fold_with`], each rewritten member given as parts
+/// ([`Output::written`]): most of a member's bytes are its input's, and
+/// are written from there.
+pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<Output>, Report) {
     let mut report = Report {
         members: inputs.len(),
         ..Report::default()
@@ -1669,6 +2035,72 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
     let size = |m: usize| inputs[m].data.len() as u64;
     let parsed: Vec<Parsed<'_>> =
         turbonop_par::map_costed(inputs.len(), size, |m| parse(&inputs[m]));
+    // Hashes, of the units another member has a unit of the same key of
+    // (only those can have copies elsewhere); the rest get hashes of their
+    // own, of their places. On every core, in shards of keys.
+    let mut parsed = parsed;
+    // (A small library's maps are built on one thread: starting threads
+    // would cost more.)
+    let big = parsed
+        .iter()
+        .map(|p| p.units.len() + p.defs.len())
+        .sum::<usize>()
+        >= 1 << 14;
+    let shards_min = if big { 1 } else { SHARDS };
+    {
+        let shard_of = |key: u64| (key >> 32) as usize & (SHARDS - 1);
+        let by_member: Vec<Vec<Vec<u64>>> = costed(
+            big,
+            parsed.len(),
+            |m| parsed[m].units.len() as u64,
+            |m| {
+                let mut out: Vec<Vec<u64>> = vec![Vec::new(); SHARDS];
+                for u in &parsed[m].units {
+                    out[shard_of(u.key)].push(u.key);
+                }
+                out
+            },
+        );
+        // Each shard's keys in two members or more.
+        let shared: Vec<turbonop_hash::Set<u64>> =
+            turbonop_par::map_range(SHARDS, shards_min, |k| {
+                let mut first: Map<u64, usize> = Map::default();
+                let mut shared = turbonop_hash::Set::default();
+                for (m, shards) in by_member.iter().enumerate() {
+                    for &key in &shards[k] {
+                        if *first.entry(key).or_insert(m) != m {
+                            shared.insert(key);
+                        }
+                    }
+                }
+                shared
+            });
+        let hashes: Vec<Vec<u128>> = costed(
+            big,
+            parsed.len(),
+            |m| parsed[m].units.iter().map(|u| u.bytes).sum(),
+            |m| {
+                let p = &parsed[m];
+                turbonop_par::map_range(p.units.len(), 4096, |ui| {
+                    let key = p.units[ui].key;
+                    if shared[shard_of(key)].contains(&key) {
+                        unit_hash(p, ui)
+                    } else {
+                        let mut h = H128::new();
+                        h.u64(0x6F77_6E00);
+                        h.u64(m as u64);
+                        h.u64(ui as u64);
+                        h.finish()
+                    }
+                })
+            },
+        );
+        for (p, hs) in parsed.iter_mut().zip(hashes) {
+            for (u, h) in p.units.iter_mut().zip(hs) {
+                u.hash = h;
+            }
+        }
+    }
     lap(&mut report, "reading");
     for p in &parsed {
         if let Some(w) = &p.why_not {
@@ -1683,62 +2115,123 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             .or_default() += 1;
         return abandon(inputs, report);
     }
-    // Every definition of each name, in member order.
+    // Every name's definitions, summed up: the first one's member, and
+    // whether all are copies of one unit (its hash). Built in shards on
+    // every core (a large library defines millions of names), each
+    // shard's names' definitions taken in member order.
     // (Hash maps: looked up only, never walked, so their order is no
     // part of the output.)
-    let mut definers: Map<&[u8], Vec<(usize, Option<usize>)>> = Map::default();
-    for (m, p) in parsed.iter().enumerate() {
-        for (name, u) in &p.defs {
-            definers.entry(&**name).or_default().push((m, *u));
-        }
-    }
-    // The copies of each unit, by hash, in member order.
-    let mut copies: Map<u128, Vec<(usize, usize)>> = Map::default();
-    let mut order: Vec<u128> = Vec::new();
-    for (m, p) in parsed.iter().enumerate() {
-        for (u, unit) in p.units.iter().enumerate() {
-            let e = copies.entry(unit.hash).or_default();
-            if e.is_empty() {
-                order.push(unit.hash);
+    let state = turbonop_hash::State::default();
+    // (Bits the maps' own hashing of a name, with the same seed, leaves
+    // alone: a table's buckets are its low bits, its tags the top seven.)
+    let shard_of = |name: &[u8]| {
+        (std::hash::BuildHasher::hash_one(&state, name) >> 32) as usize & (SHARDS - 1)
+    };
+    let definers: Vec<Map<&[u8], Defined>> = {
+        // Each member's definitions, by shard.
+        // (Each member's: by shard, (name, its unit's hash).)
+        type Defs<'n> = Vec<Vec<(&'n [u8], Option<u128>)>>;
+        let by_member: Vec<Defs<'_>> = costed(
+            big,
+            parsed.len(),
+            |m| parsed[m].defs.len() as u64,
+            |m| {
+                let p = &parsed[m];
+                let mut out: Vec<Vec<(&[u8], Option<u128>)>> = vec![Vec::new(); SHARDS];
+                for (name, u) in &p.defs {
+                    out[shard_of(name)].push((&**name, u.map(|u| p.units[u].hash)));
+                }
+                out
+            },
+        );
+        turbonop_par::map_range(SHARDS, shards_min, |k| {
+            let mut map: Map<&[u8], Defined> = Map::default();
+            for (m, shards) in by_member.iter().enumerate() {
+                for &(name, unit) in &shards[k] {
+                    map.entry(name)
+                        .and_modify(|d| {
+                            if d.copies != unit {
+                                d.copies = None;
+                            }
+                        })
+                        .or_insert(Defined {
+                            first: m,
+                            copies: unit,
+                        });
+                }
             }
-            e.push((m, u));
-        }
-    }
-    // Which fold.
-    let mut folded: Vec<(u128, Vec<(usize, usize)>)> = Vec::new();
-    for h in order {
-        let list = &copies[&h];
-        let mut members: Vec<usize> = list.iter().map(|&(m, _)| m).collect();
-        members.dedup();
-        if members.len() < 2 {
-            continue;
-        }
-        report.duplicated += 1;
-        let (m0, u0) = list[0];
-        let unit = &parsed[m0].units[u0];
-        let why = list
-            .iter()
-            .find_map(|&(m, u)| parsed[m].units[u].stays)
-            .or_else(|| {
-                unit.names.iter().find_map(|n| {
-                    let defs = definers.get(&**n)?;
-                    if defs
-                        .iter()
-                        .any(|&(m, u)| u.is_none_or(|u| parsed[m].units[u].hash != h))
-                    {
-                        return Some("its names have other definitions in the library");
-                    }
-                    let first = defs.first()?.0;
-                    (options.pull == Pull::Preserve && parsed[first].side_effects)
-                        .then_some("the member the index sends its names to has side effects")
+            map
+        })
+    };
+    let defined = |name: &[u8]| definers[shard_of(name)].get(name);
+    // The copies of each unit, by hash, in member order; and the hashes in
+    // the order of their first copies. (In shards on every core too.)
+    let copies: Vec<Map<u128, Vec<(usize, usize)>>> = {
+        let by_member: Vec<Vec<Vec<(u128, usize)>>> = costed(
+            big,
+            parsed.len(),
+            |m| parsed[m].units.len() as u64,
+            |m| {
+                let mut out: Vec<Vec<(u128, usize)>> = vec![Vec::new(); SHARDS];
+                for (u, unit) in parsed[m].units.iter().enumerate() {
+                    out[(unit.hash as usize) & (SHARDS - 1)].push((unit.hash, u));
+                }
+                out
+            },
+        );
+        turbonop_par::map_range(SHARDS, shards_min, |k| {
+            let mut map: Map<u128, Vec<(usize, usize)>> = Map::default();
+            for (m, shards) in by_member.iter().enumerate() {
+                for &(h, u) in &shards[k] {
+                    map.entry(h).or_default().push((m, u));
+                }
+            }
+            map
+        })
+    };
+    let copies_of = |h: u128| &copies[(h as usize) & (SHARDS - 1)][&h];
+    let mut order: Vec<(usize, usize, u128)> = copies
+        .iter()
+        .flat_map(|c| c.iter().map(|(&h, list)| (list[0].0, list[0].1, h)))
+        .collect();
+    turbonop_par::sort_by(&mut order, Ord::cmp);
+    // Which fold: each unit decided on every core, then counted in order.
+    let decided: Vec<Option<Result<(), &'static str>>> =
+        turbonop_par::map_range(order.len(), 1024, |k| {
+            let h = order[k].2;
+            let list = copies_of(h);
+            let mut members: Vec<usize> = list.iter().map(|&(m, _)| m).collect();
+            members.dedup();
+            if members.len() < 2 {
+                return None;
+            }
+            let (m0, u0) = list[0];
+            let unit = &parsed[m0].units[u0];
+            let why = list
+                .iter()
+                .find_map(|&(m, u)| parsed[m].units[u].stays)
+                .or_else(|| {
+                    unit.names.iter().find_map(|n| {
+                        let d = defined(n)?;
+                        if d.copies != Some(h) {
+                            return Some("its names have other definitions in the library");
+                        }
+                        (options.pull == Pull::Preserve && parsed[d.first].side_effects)
+                            .then_some("the member the index sends its names to has side effects")
+                    })
                 })
-            })
-            .or_else(|| unit.names.is_empty().then_some("it defines no name"));
-        if let Some(w) = why {
-            *report.kept.entry(w).or_default() += list.len();
-            continue;
+                .or_else(|| unit.names.is_empty().then_some("it defines no name"));
+            Some(why.map_or(Ok(()), Err))
+        });
+    let mut folded: Vec<(u128, Vec<(usize, usize)>)> = Vec::new();
+    for (&(_, _, h), d) in order.iter().zip(decided) {
+        let Some(d) = d else { continue };
+        report.duplicated += 1;
+        let list = copies_of(h);
+        match d {
+            Err(w) => *report.kept.entry(w).or_default() += list.len(),
+            Ok(()) => folded.push((h, list.clone())),
         }
-        folded.push((h, list.clone()));
     }
     // A unit whose code names what another unit of its member defines folds
     // only if that one folds too. Otherwise the synthesized member would
@@ -1847,19 +2340,6 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         synth.push((survivors, anchor));
     }
     lap(&mut report, "choosing");
-    // Rewrite the members and make the synthesized ones, on every core.
-    let rewritten: Vec<Option<Rewritten>> = turbonop_par::map_costed(
-        parsed.len(),
-        |m| if moved[m].is_empty() { 0 } else { size(m) },
-        |m| {
-            if moved[m].is_empty() {
-                return None;
-            }
-            let mut r = Report::default();
-            Some(rewrite(&parsed[m], &moved[m], &member_anchors[m], &mut r).map(|b| (b, r)))
-        },
-    );
-    lap(&mut report, "rewriting");
     // Each moved name's synthesized member.
     let mut moved_into: Map<&[u8], usize> = Map::default();
     for (k, (units, _)) in synth.iter().enumerate() {
@@ -1870,7 +2350,8 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         }
     }
     let anchors: Vec<Vec<u8>> = synth.iter().map(|(_, a)| a.clone()).collect();
-    // The survivors' members' DWARF, read once each, on every core.
+    // The members whose DWARF synthesized members take from (the
+    // survivors').
     let debug_members: Vec<usize> = synth
         .iter()
         .filter(|(units, _)| units.iter().any(|&(m, u)| parsed[m].units[u].debug))
@@ -1878,18 +2359,56 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
         .collect::<BTreeSet<usize>>()
         .into_iter()
         .collect();
-    let sources: Vec<Result<dwarf::Source<'_>, &'static str>> = turbonop_par::map_costed(
-        debug_members.len(),
-        |k| size(debug_members[k]),
-        |k| {
+    // Rewrite the members, and read those members' DWARF (once each), on
+    // every core, the dearest first: one pool of both, so that neither
+    // waits on the other's largest member.
+    enum Job<'p> {
+        Rewritten(Option<Rewritten>),
+        Read(Result<dwarf::Source<'p>, &'static str>),
+    }
+    let n = parsed.len();
+    let jobs: Vec<Job<'_>> = turbonop_par::map_costed(
+        n + debug_members.len(),
+        |j| match j.checked_sub(n) {
+            None if moved[j].is_empty() => 0,
+            None => size(j),
+            Some(k) => size(debug_members[k]),
+        },
+        |j| {
+            let Some(k) = j.checked_sub(n) else {
+                let m = j;
+                if moved[m].is_empty() {
+                    return Job::Rewritten(None);
+                }
+                let mut r = Report::default();
+                return Job::Rewritten(Some(
+                    rewrite(
+                        &parsed[m],
+                        &moved[m],
+                        &member_anchors[m],
+                        inputs[m].data,
+                        &mut r,
+                    )
+                    .map(|b| (b, r)),
+                ));
+            };
             let m = debug_members[k];
-            match parsed[m].obj.as_ref() {
+            Job::Read(match parsed[m].obj.as_ref() {
                 Some(obj) => dwarf::Source::new(obj, &parsed[m].owner, dwo),
                 None => Err("unread"),
-            }
+            })
         },
     );
-    lap(&mut report, "reading DWARF");
+    let mut rewritten: Vec<Option<Rewritten>> = Vec::with_capacity(n);
+    let mut sources: Vec<Result<dwarf::Source<'_>, &'static str>> =
+        Vec::with_capacity(debug_members.len());
+    for job in jobs {
+        match job {
+            Job::Rewritten(r) => rewritten.push(r),
+            Job::Read(s) => sources.push(s),
+        }
+    }
+    lap(&mut report, "rewriting and reading DWARF");
     let source_of: BTreeMap<usize, &Result<dwarf::Source<'_>, &'static str>> =
         debug_members.iter().copied().zip(sources.iter()).collect();
     let made: Vec<Result<(Vec<u8>, Debugged), String>> = turbonop_par::map_costed(
@@ -1921,13 +2440,15 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             None => out.push(Output {
                 name: inputs[m].name.to_vec(),
                 data: None,
+                written: None,
                 input: Some(m),
             }),
-            Some(Ok((bytes, sub))) => {
+            Some(Ok((written, sub))) => {
                 report.tombstoned += sub.tombstoned;
                 out.push(Output {
                     name: inputs[m].name.to_vec(),
-                    data: Some(bytes),
+                    data: None,
+                    written: Some(written),
                     input: Some(m),
                 });
             }
@@ -1974,6 +2495,7 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
                 out.push(Output {
                     name: format!("__turbolib.{k}.o").into_bytes(),
                     data: Some(bytes),
+                    written: None,
                     input: None,
                 });
             }
@@ -1986,6 +2508,13 @@ pub fn fold_with(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec<
             }
         }
     }
+    // What was read, freed on every core (a large library's is millions
+    // of small allocations).
+    drop(source_of);
+    turbonop_par::map_into(sources, 1, drop);
+    turbonop_par::map_into(copies, 1, drop);
+    turbonop_par::map_into(definers, 1, drop);
+    turbonop_par::map_into(parsed, 1, drop);
     (out, report)
 }
 
@@ -2002,6 +2531,7 @@ fn abandon(inputs: &[Input<'_>], mut report: Report) -> (Vec<Output>, Report) {
         .map(|(m, i)| Output {
             name: i.name.to_vec(),
             data: None,
+            written: None,
             input: Some(m),
         })
         .collect();

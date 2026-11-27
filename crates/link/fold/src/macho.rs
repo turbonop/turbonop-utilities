@@ -1598,7 +1598,28 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                 .units
                 .first()
                 .and_then(|&(m, _)| source_of.get(&m).copied());
-            build_synth(&parsed, &synth, i, &name_to, src)
+            // The classes all its givers define in every link that loads
+            // them (see `reach`): a link that loads it through a giver
+            // has their definitions.
+            let mut sets: Vec<&Supplies> = Vec::with_capacity(synth[i].givers.len());
+            for &g in &synth[i].givers {
+                match rewritten.get(g) {
+                    Some(Some(Ok((.., Some(s))))) => sets.push(s),
+                    _ => {
+                        sets.clear();
+                        break;
+                    }
+                }
+            }
+            sets.sort_by_key(|s| s.len());
+            let supplied: Option<Supplies> = sets.split_first().map(|(first, rest)| {
+                first
+                    .iter()
+                    .filter(|k| rest.iter().all(|s| s.contains(*k)))
+                    .copied()
+                    .collect()
+            });
+            build_synth(&parsed, &synth, i, &name_to, src, supplied.as_ref())
         });
     lap(&mut report, "synthesizing");
     let mut out = Vec::with_capacity(inputs.len() + synth.len());
@@ -1647,7 +1668,7 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                 data: None,
                 input: Some(m),
             }),
-            Some(Ok((data, tomb, removed, pruned))) => {
+            Some(Ok((data, tomb, removed, pruned, _))) => {
                 report.tombstoned += tomb;
                 match pruned {
                     Some(Ok(p)) => {
@@ -1682,7 +1703,11 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
 
 /// A rewritten giver: its bytes, the debug relocations removed, and the
 /// bytes of units removed; or why it couldn't be rewritten.
-type Rewritten = Result<(Vec<u8>, usize, u64, Option<Pruning>), String>;
+type Rewritten = Result<(Vec<u8>, usize, u64, Option<Pruning>, Option<Supplies>), String>;
+
+/// The keys of the classes a giver's DWARF defines in every link that loads
+/// it (see `reach`).
+type Supplies = turbonop_hash::Set<u128>;
 
 /// What pruning a giver's DWARF did, or why it didn't.
 type Pruning = Result<prune::Pruned, &'static str>;
@@ -1761,6 +1786,7 @@ fn build_synth(
     i: usize,
     name_to: &BTreeMap<Vec<u8>, usize>,
     debug: Option<&Result<debug::Debug<'_>, &'static str>>,
+    supplied: Option<&Supplies>,
 ) -> Result<(Vec<u8>, SynthDebug), String> {
     let s = &synth[i];
     let (m0, _) = s.units[0];
@@ -2129,7 +2155,7 @@ fn build_synth(
             _ if s.units.iter().any(|&(m, _)| m != m0) => Err("units of more than one member"),
             Some(Ok(d)) => {
                 let ks: Vec<usize> = s.units.iter().map(|&(_, k)| k).collect();
-                debug::build(d, &ks)
+                debug::build(d, &ks, supplied)
             }
             Some(Err(e)) => Err(*e),
             None => Err("no DWARF read"),
@@ -2478,6 +2504,7 @@ fn rewrite_giver(
         })
         .collect();
     let mut pruned = None;
+    let mut supplies = None;
     let old: Vec<(u64, u64)> = o.sections().map(|s| (s.addr, s.size())).collect();
     let cut = o.cut(&cuts).map_err(|e| e.to_string())?;
     if !cut.dangling.is_empty() {
@@ -2498,6 +2525,9 @@ fn rewrite_giver(
         };
         plan.apply(&mut o, &map)
             .map_err(|e| format!("its DWARF: {e}"))?;
+        // The classes it still defines in every link that loads it (none,
+        // where that isn't known).
+        supplies = reach::reach(&o, &gone_syms).ok().flatten();
         // Its DWARF without what described the lost code (see `prune`),
         // or as it is.
         let mut t = o.clone();
@@ -2554,7 +2584,7 @@ fn rewrite_giver(
     o.update_dysymtab();
     o.relayout();
     let data = o.write().map_err(|e| e.to_string())?;
-    Ok((data, tomb, removed, pruned))
+    Ok((data, tomb, removed, pruned, supplies))
 }
 
 #[doc(hidden)]
@@ -2562,5 +2592,6 @@ pub mod adjust;
 mod debug;
 #[doc(hidden)]
 pub mod prune;
+mod reach;
 #[cfg(test)]
 mod tests;

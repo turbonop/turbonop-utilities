@@ -90,6 +90,7 @@ pub(crate) enum Kind {
 
 const KINDS: usize = 12;
 
+pub(crate) mod key;
 pub(crate) mod line;
 
 impl Kind {
@@ -261,6 +262,9 @@ struct Cu {
     /// rows make a sequence of their own.
     rows: Vec<(usize, Vec<line::Row>)>,
     params: Option<line::Params>,
+    /// Mach-O: each file of its line table's [`key::files`] (empty if it
+    /// has none, or one not read).
+    file_keys: Vec<u128>,
 }
 
 impl Cu {
@@ -741,6 +745,7 @@ impl<'p> Source<'p> {
             by_section: BTreeMap::new(),
             rows: Vec::new(),
             params: None,
+            file_keys: Vec::new(),
         };
         let low_pc = match top.iter().find(|a| a.name == DW_AT_LOW_PC) {
             Some(a) => self.attr_addr(&probe, a)?,
@@ -888,6 +893,7 @@ impl<'p> Source<'p> {
                 by_section: BTreeMap::new(),
                 rows: Vec::new(),
                 params: None,
+                file_keys: Vec::new(),
             };
             // The unit's DIE: its bases.
             let (_, top) = read_die(u, &cu.abbrevs, u.dies)?;
@@ -934,11 +940,20 @@ impl<'p> Source<'p> {
                 unit,
                 top.iter().find(|a| a.name == DW_AT_LOW_PC).copied(),
                 top.iter().find(|a| a.name == DW_AT_STMT_LIST).copied(),
+                top.iter().find(|a| a.name == DW_AT_COMP_DIR).copied(),
             ));
         }
         let mut out = Vec::new();
-        for (mut cu, unit, low, stmt) in cus {
+        for (mut cu, unit, low, stmt, comp_dir) in cus {
             let mut line = stmt.and_then(|a| unit.uint(&a.value));
+            if self.atoms.is_some()
+                && let Some(off) = line
+            {
+                let dir = comp_dir
+                    .and_then(|a| unit.string(&a.value))
+                    .map_or(&b""[..], |s| s.bytes);
+                cu.file_keys = key::files(self.sec(Kind::Line), off, dir).unwrap_or_default();
+            }
             if let Some(a) = low {
                 cu.low_pc = self.attr_addr(&cu, &a)?;
             }
@@ -2052,6 +2067,9 @@ struct Builder<'s, 'p> {
     /// Each file index of the source unit's line table: its index in the
     /// output's (`u64::MAX`: not kept).
     files: Vec<u64>,
+    /// Mach-O: the keys ([`key`]) of the classes every giver defines in
+    /// every link that loads it (see [`build`]).
+    supplied: Option<&'s HashSet<u128>>,
 }
 
 /// The DIEs of one unit to keep: 2 whole, 1 as a skeleton (the DIE and its
@@ -2073,6 +2091,10 @@ struct Keep<'c> {
     /// function types) kept for the moved code: what they name, the code
     /// names too.
     via_code: HashSet<usize>,
+    /// Mach-O: whether a class the moved code names is defined, in every
+    /// link that loads the synthesized member, by its givers (see
+    /// [`build`]): then it is a declaration, as any other.
+    supplied: Option<&'c dyn Fn(usize) -> bool>,
 }
 
 const SKELETON: u8 = 1;
@@ -2109,7 +2131,14 @@ impl<'c> Keep<'c> {
             declarable,
             complete: false,
             via_code: HashSet::default(),
+            supplied: None,
         }
+    }
+
+    /// Whether class `i` (one a debugger finds by name) is kept whole when
+    /// the moved code names it.
+    fn whole_class(&self, i: usize) -> bool {
+        self.complete && !self.supplied.is_some_and(|f| f(i))
     }
 
     fn mark(&self, i: usize) -> u8 {
@@ -2127,7 +2156,7 @@ impl<'c> Keep<'c> {
             if self.mark(at) != 0 {
                 return;
             }
-            if self.declarable[at] && self.complete {
+            if self.declarable[at] && self.whole_class(at) {
                 self.whole(dies, at);
                 return;
             } else if self.declarable[at] {
@@ -2181,7 +2210,7 @@ impl<'c> Keep<'c> {
     fn refer(&mut self, dies: &[Die], i: usize, from_code: bool) {
         if is_scope(dies[i].tag) {
             self.skeleton(dies, i);
-        } else if self.declarable[i] && !(self.complete && from_code) {
+        } else if self.declarable[i] && !(from_code && self.whole_class(i)) {
             if self.mark(i) == 0 {
                 self.mark.insert(i, DECLARATION);
                 let p = dies[i].parent;
@@ -2212,6 +2241,62 @@ impl<'c> Keep<'c> {
             self.whole(dies, i);
         }
     }
+}
+
+/// Mach-O: the key ([`key::of`]) of DIE `i` of `cu`, a class a debugger
+/// finds by name (or a scope of one), as `macho::reach` keys the givers'
+/// (`None` if a DIE of its chain doesn't read).
+fn type_key(
+    cu: &Cu,
+    unit: &Unit<'_>,
+    i: usize,
+    memo: &mut HashMap<usize, Option<u128>>,
+) -> Option<u128> {
+    if let Some(&k) = memo.get(&i) {
+        return k;
+    }
+    let d = cu.dies[i];
+    let p = d.parent;
+    if p == u32::MAX {
+        return None;
+    }
+    let pk = if matches!(
+        cu.dies[p as usize].tag,
+        DW_TAG_COMPILE_UNIT | DW_TAG_PARTIAL_UNIT
+    ) {
+        Some(key::ROOT)
+    } else {
+        type_key(cu, unit, p as usize, memo)
+    };
+    let k = pk.and_then(|pk| {
+        let (_, attrs) = read_die(unit, &cu.abbrevs, d.offset).ok()?;
+        let (mut name, mut linkage) = (None, None);
+        let (mut size, mut file, mut line) = (None, 0u64, 0u64);
+        for a in &attrs {
+            match a.name {
+                DW_AT_NAME => name = unit.string(&a.value).map(|s| s.bytes),
+                DW_AT_LINKAGE_NAME | DW_AT_MIPS_LINKAGE_NAME => {
+                    linkage = unit.string(&a.value).map(|s| s.bytes);
+                }
+                DW_AT_BYTE_SIZE => size = unit.uint(&a.value),
+                DW_AT_DECL_FILE => file = unit.uint(&a.value).unwrap_or(0),
+                DW_AT_DECL_LINE => line = unit.uint(&a.value).unwrap_or(0),
+                _ => {}
+            }
+        }
+        let name = linkage.or(Some(name?))?;
+        if d.tag == DW_TAG_NAMESPACE {
+            return Some(key::of(pk, d.tag, name, None, 0, 0));
+        }
+        let f = usize::try_from(file)
+            .ok()
+            .and_then(|f| cu.file_keys.get(f))
+            .copied()
+            .unwrap_or(0);
+        Some(key::of(pk, d.tag, name, size, f, line))
+    });
+    memo.insert(i, k);
+    k
 }
 
 /// Whether an attribute holds a line-table file index.
@@ -2908,6 +2993,18 @@ impl<'s, 'p> Builder<'s, 'p> {
         // What to keep.
         let mut keep = Keep::new(&cu.declarable);
         keep.complete = src.complete;
+        let given = self.supplied;
+        let memo: std::cell::RefCell<HashMap<usize, Option<u128>>> = Default::default();
+        let supplied = |i: usize| -> bool {
+            let Some(set) = given else {
+                return false;
+            };
+            let k = type_key(cu, &unit, i, &mut memo.borrow_mut());
+            k.is_some_and(|k| set.contains(&k))
+        };
+        if given.is_some_and(|s| !s.is_empty()) {
+            keep.supplied = Some(&supplied);
+        }
         for &r in roots {
             keep.whole(dies, r);
         }
@@ -3668,7 +3765,16 @@ fn write_fix(
 
 /// Builds the debug sections of a synthesized member holding `moved` (the
 /// source member's sections). `None` when they describe nothing.
-pub(crate) fn build(src: &Source<'_>, moved: &BTreeSet<usize>) -> R<Option<Out>> {
+///
+/// Mach-O: `supplied` are the keys ([`key`]) of the classes every giver
+/// of the synthesized member defines in every link that loads it: a class
+/// the moved code names is then a declaration, as the classes it doesn't
+/// name are (see [`Source::complete`]).
+pub(crate) fn build(
+    src: &Source<'_>,
+    moved: &BTreeSet<usize>,
+    supplied: Option<&HashSet<u128>>,
+) -> R<Option<Out>> {
     // The roots, by unit.
     let mut by_unit: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
     for s in moved {
@@ -3712,6 +3818,7 @@ pub(crate) fn build(src: &Source<'_>, moved: &BTreeSet<usize>) -> R<Option<Out>>
         abbrevs: Vec::new(),
         codes: HashMap::default(),
         files: Vec::new(),
+        supplied,
     };
     if cu.version >= 5 {
         // The list sections' headers.

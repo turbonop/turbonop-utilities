@@ -41,7 +41,12 @@ rem Two modules in one file, and an archive of bitcode members (and an
 rem ELF object with bitcode in it).
 "%LLVM_BIN%\llvm-cat.exe" -b kinds-thin.bc every.bc -o multi.bc || exit /b 1
 "%LLVM_BIN%\llvm-ar.exe" --format=gnu rcsD libbitcode.a kinds-thin.bc every.bc embed-elf.o || exit /b 1
+rem Other bitstreams: clang's serialized diagnostics (DIAG) and
+rem optimization remarks (RMRK), with BLOCKINFO naming their blocks.
+"%CC%" %LINUX% -Wall -fsyntax-only --serialize-diagnostics warn.dia "%SRC%warn.c" 2>nul
+if not exist warn.dia exit /b 1
+"%CC%" %LINUX% -O2 -c "%SRC%embed.c" -o remarks.o -fsave-optimization-record=bitstream -foptimization-record-file=embed.opt.bitstream || exit /b 1
 
-for %%f in (kinds.bc shapes-linux.bc shapes-windows.bc kinds-thin.bc every.bc embed-darwin.bc embed-elf.o embed-macho.o embed-coff.obj embed-wasm.o multi.bc libbitcode.a) do copy /y %%f "%OUT%\%%f" >nul || exit /b 1
+for %%f in (kinds.bc shapes-linux.bc shapes-windows.bc kinds-thin.bc every.bc embed-darwin.bc embed-elf.o embed-macho.o embed-coff.obj embed-wasm.o multi.bc libbitcode.a warn.dia embed.opt.bitstream) do copy /y %%f "%OUT%\%%f" >nul || exit /b 1
 python "%SRC%oracle.py" "%LLVM_BIN%" "%OUT%" || exit /b 1
 exit /b 0

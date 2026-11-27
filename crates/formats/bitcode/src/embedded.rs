@@ -75,12 +75,18 @@ fn le32(data: &[u8], at: usize) -> Option<u32> {
 
 /// The bitcode files in `data` (a section's bytes): each from its magic
 /// (or wrapper) to its last top-level block, then the next one after
-/// that (at a 4-byte boundary).
+/// that (at a 4-byte boundary, past any zero words of padding).
 pub fn split(data: &[u8]) -> Vec<(usize, &[u8])> {
     let mut out = Vec::new();
     let mut at = 0usize;
     while at < data.len() {
-        let rest = &data[at..];
+        // Alignment padding between files (zero words) is skipped.
+        if at > 0 {
+            while data.get(at..at + 4) == Some(&[0; 4]) {
+                at += 4;
+            }
+        }
+        let rest = &data[at.min(data.len())..];
         if !is_bitcode(rest) {
             break;
         }

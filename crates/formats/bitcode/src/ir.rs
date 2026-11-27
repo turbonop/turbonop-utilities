@@ -867,6 +867,10 @@ impl<'d> Bitcode<'d> {
     }
 }
 
+/// The function blocks' size, in bits, from which their bodies are read
+/// on every core.
+const PARALLEL_BITS: u64 = 256 * 1024 * 8;
+
 /// What reading a module's block collects besides the module.
 struct Pending {
     /// Function blocks: where each starts (its `ENTER_SUBBLOCK`) and its
@@ -888,6 +892,8 @@ struct ModuleReader<'a, 'd> {
     pending: Pending,
     /// Whether types are typed pointers (old bitcode).
     typed_pointers: bool,
+    /// The types' IDs, for interning (made when first needed).
+    type_index: Option<HashMap<Type, u32>>,
 }
 
 fn read_module<'d>(
@@ -915,6 +921,7 @@ fn read_module<'d>(
             info: Arc::clone(c.block_info()),
         },
         typed_pointers: false,
+        type_index: None,
     };
     r.read(&mut c)?;
     r.finish(origin);
@@ -1004,6 +1011,8 @@ impl<'d> ModuleReader<'_, 'd> {
             PARAMATTR_BLOCK_ID => self.attribute_lists(c),
             PARAMATTR_GROUP_BLOCK_ID => self.attribute_groups(c),
             CONSTANTS_BLOCK_ID => {
+                // (Interning i32 outdates the index.)
+                self.type_index = None;
                 let m = &mut *self.m;
                 let i32_type = m.types.intern(Type::Integer(32));
                 read_constants(c, i32_type, &mut m.value_types, &mut |k| {
@@ -1053,6 +1062,7 @@ impl<'d> ModuleReader<'_, 'd> {
                 }
             }
         }
+        self.type_index = None;
         self.typed_pointers = self.m.types.types.iter().any(|t| {
             matches!(
                 t,
@@ -1167,7 +1177,15 @@ impl<'d> ModuleReader<'_, 'd> {
             pointee: self.typed_pointers.then_some(pointee),
             address_space,
         };
-        self.m.types.intern(t)
+        let types = &mut self.m.types;
+        let index = self.type_index.get_or_insert_with(|| type_index(types));
+        if let Some(&id) = index.get(&t) {
+            return id;
+        }
+        let id = low32(types.types.len() as u64);
+        types.types.push(t.clone());
+        index.insert(t, id);
+        id
     }
 
     fn record(&mut self, code: u32, ops: &[u64], at: u64) {
@@ -1478,9 +1496,25 @@ impl<'d> ModuleReader<'_, 'd> {
             .collect();
         let data = self.data;
         let info = Arc::clone(&self.pending.info);
-        let bodies = turbonop_par::map(&jobs, 8, |&(_, f, start, header)| {
+        // Bodies' sizes vary widely (one can be most of the module): the
+        // largest are taken first, a core each. Below a few hundred
+        // kilobytes, threads cost more than they save.
+        let size =
+            |i: usize| self.pending.bodies.get(i + 1).map_or(0, |n| n.0) - self.pending.bodies[i].0;
+        let total: u64 = (0..jobs.len().saturating_sub(1)).map(size).sum();
+        let read = |i: usize| {
+            let (_, f, start, header) = jobs[i];
             function::read_body(&ctx, data, &info, f, start, header)
-        });
+        };
+        let bodies = if total < PARALLEL_BITS {
+            (0..jobs.len()).map(read).collect()
+        } else {
+            turbonop_par::map_costed(
+                jobs.len(),
+                |i| if i + 1 < jobs.len() { size(i) } else { 0 },
+                read,
+            )
+        };
         for (i, b) in bodies.into_iter().enumerate() {
             if let Some(f) = b.function_index()
                 && let Some(func) = self.m.functions.get_mut(f)

@@ -873,3 +873,118 @@ fn symtabs_match_llvm_lto2() {
         assert_eq!(symtab_text(&bc, file), want, "{file}");
     }
 }
+
+/// Every `.bc` file under `$TURBONOP_LLVM_BITCODE` (LLVM's own test
+/// inputs: bitcode from many LLVM versions, which can't be committed here),
+/// with the tools in `$TURBONOP_LLVM_BIN`: dumps against llvm-bcanalyzer's,
+/// and each function's instructions against llvm-dis's where LLVM's reader
+/// doesn't upgrade them. Run by hand:
+///
+/// ```text
+/// TURBONOP_LLVM_BITCODE=<llvm-project>/llvm/test TURBONOP_LLVM_BIN=<build>/bin
+///     cargo test -p turbonop-bitcode --test llvm -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "needs LLVM's test inputs and tools"]
+fn llvm_test_inputs() {
+    let (Some(dir), Some(bin)) = (
+        std::env::var_os("TURBONOP_LLVM_BITCODE"),
+        std::env::var_os("TURBONOP_LLVM_BIN"),
+    ) else {
+        panic!("set TURBONOP_LLVM_BITCODE and TURBONOP_LLVM_BIN");
+    };
+    let bin = PathBuf::from(bin);
+    let mut files = Vec::new();
+    let mut stack = vec![PathBuf::from(dir)];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "bc") {
+                files.push(p);
+            }
+        }
+    }
+    files.sort();
+    let (mut dumps, mut dump_diffs, mut irs, mut ir_diffs) = (0, 0, 0, 0);
+    for p in &files {
+        let data = std::fs::read(p).unwrap();
+        let name = p.file_name().unwrap().to_str().unwrap();
+        let out = std::process::Command::new(bin.join("llvm-bcanalyzer"))
+            .args(["--dump", "--disable-histogram"])
+            .arg(name)
+            .current_dir(p.parent().unwrap())
+            .output()
+            .unwrap();
+        let mut ours = Vec::new();
+        let opts = turbonop_bitcode::dump::DumpOptions {
+            histogram: false,
+            ..Default::default()
+        };
+        let r = turbonop_bitcode::dump::analyze(&data, &opts, Some(name), &mut ours);
+        if out.status.success() {
+            dumps += 1;
+            let theirs = String::from_utf8_lossy(&out.stdout).replace("\r\n", "\n");
+            if r.is_err() || ours != theirs.as_bytes() {
+                dump_diffs += 1;
+                let ours = String::from_utf8_lossy(&ours);
+                let line = ours.lines().zip(theirs.lines()).position(|(a, b)| a != b);
+                println!("dump differs: {} ({r:?}) at line {line:?}", p.display());
+                if let Some(l) = line {
+                    println!("  ours:   {:?}", ours.lines().nth(l));
+                    println!("  theirs: {:?}", theirs.lines().nth(l));
+                }
+            }
+        }
+        let bc = Bitcode::parse(&data);
+        let out = std::process::Command::new(bin.join("llvm-dis"))
+            .arg(p)
+            .arg("-o")
+            .arg("-")
+            .output()
+            .unwrap();
+        if !out.status.success() {
+            continue;
+        }
+        let Ok(bc) = bc else {
+            println!("parse failed: {}: {:?}", p.display(), bc.err());
+            ir_diffs += 1;
+            continue;
+        };
+        let ll = parse_ll(&String::from_utf8_lossy(&out.stdout));
+        irs += 1;
+        let Some(m) = bc.modules.first() else {
+            continue;
+        };
+        let mut bad = Vec::new();
+        for (f, b) in m.defined() {
+            let n = m.ir_name(f.value).unwrap();
+            let Some((_, want)) = ll.defined.get(&n) else {
+                bad.push(format!("{n}: not in llvm-dis"));
+                continue;
+            };
+            if let Some(e) = &b.error {
+                bad.push(format!("{n}: {e}"));
+            }
+            let ops: Vec<&str> = b.instructions.iter().map(|i| i.opcode.name()).collect();
+            if ops != want.opcodes {
+                bad.push(format!(
+                    "{n}: ours {ops:?}\n      theirs {:?}",
+                    want.opcodes
+                ));
+            }
+        }
+        if !bad.is_empty() {
+            ir_diffs += 1;
+            println!("instructions differ: {}", p.display());
+            for b in bad.iter().take(3) {
+                println!("    {b}");
+            }
+        }
+    }
+    println!(
+        "{} files: {dumps} dumped, {dump_diffs} differ; {irs} disassembled, {ir_diffs} differ",
+        files.len()
+    );
+}

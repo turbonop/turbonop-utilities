@@ -4,7 +4,8 @@
 
 For each bitcode file there: llvm-dis's IR (<file>.ll), llvm-bcanalyzer's
 dump and per-block summary (<file>.dump.txt, without the per-record
-histogram), and for those with a symbol table, llvm-lto2's view of it
+histogram; other options' in <file>.<variant>.txt), and for those with a
+symbol table, llvm-lto2's view of it
 (<file>.symtab.txt). Line endings are \\n; the tools run in the directory,
 on bare file names, so no path but the fixtures' own is recorded.
 """
@@ -22,8 +23,16 @@ BITCODE = [
     "every.bc",
     "embed-darwin.bc",
 ]
-# Files with more than one module: the dump only (llvm-dis writes one).
-MULTI = ["multi.bc"]
+# Files with more than one module, and other bitstreams: the dump only
+# (llvm-dis writes one module).
+MULTI = ["multi.bc", "warn.dia", "embed.opt.bitstream"]
+# Dumps with other options: (file, suffix, options).
+VARIANTS = [
+    ("kinds-thin.bc", ".stats.txt", []),
+    ("every.bc", ".nonsymbolic.txt", ["--dump", "--non-symbolic", "--disable-histogram"]),
+    ("every.bc", ".blockinfo.txt", ["--dump", "--dump-blockinfo", "--show-binary-blobs", "--disable-histogram"]),
+    ("warn.dia", ".blockinfo.txt", ["--dump", "--dump-blockinfo", "--show-binary-blobs"]),
+]
 # Files with an irsymtab (a SYMTAB block).
 SYMTAB = ["kinds-thin.bc", "every.bc", "embed-darwin.bc"]
 
@@ -57,6 +66,9 @@ def main() -> int:
             out,
         )
         write(out / (name + ".dump.txt"), dump)
+    for name, suffix, options in VARIANTS:
+        dump = run(bin_dir / "llvm-bcanalyzer.exe", [*options, name], out)
+        write(out / (name + suffix), dump)
     for name in SYMTAB:
         symtab = run(bin_dir / "llvm-lto2.exe", ["dump-symtab", name], out)
         write(out / (name + ".symtab.txt"), symtab)

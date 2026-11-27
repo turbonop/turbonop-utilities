@@ -84,6 +84,11 @@ struct Analyzer<'a, 'd> {
     top_blocks: u64,
 }
 
+/// A name as llvm-bcanalyzer prints it: as a C string, to its first NUL.
+fn c_str(name: &[u8]) -> Vec<u8> {
+    name.split(|&b| b == 0).next().unwrap_or(&[]).to_vec()
+}
+
 fn is_print(b: u8) -> bool {
     (0x20..=0x7E).contains(&b)
 }
@@ -136,7 +141,7 @@ impl Analyzer<'_, '_> {
             return (id == BLOCKINFO_BLOCK_ID).then(|| b"BLOCKINFO_BLOCK".to_vec());
         }
         if let Some(n) = self.info.block_name(id).filter(|n| !n.is_empty()) {
-            return Some(n.to_vec());
+            return Some(c_str(n));
         }
         if self.kind != StreamKind::LlvmIr {
             return None;
@@ -152,7 +157,7 @@ impl Analyzer<'_, '_> {
             return None;
         }
         if let Some(n) = self.info.record_name(block, code) {
-            return Some(n.to_vec());
+            return Some(c_str(n));
         }
         if self.kind != StreamKind::LlvmIr {
             return None;

@@ -2251,6 +2251,139 @@ dSYMs are this LLVM's dsymutil's.
 | prune's tests | a unit emitted whole and without what goes, compared byte for byte (`__debug_info`, `__debug_str`, relocations, the accelerator table); twins, offsets, bucket counts, NUL search |
 | speed (CPU, `-j 1`, 7.4's build and this one alternating, 3 runs each; the machine shared with another agent's ELF runs, so only the ratio is meaningful) | `libLLVMCore.a` arm64 +23%, `libLLVMSupport.a` x86-64 +26%: slower. Pruning reads every giver's DWARF (7.4 read only survivors'); single-threaded on `libLLVMCore.a` it is 0.69 s of 1.56 s of giver rewriting (walking the DIEs 0.18 s; the rest lookups, strings, lists, accelerator tables, a second cut). Not yet won back |
 
+### What dsymutil keeps, and synthesized members' classes from their givers (7.6)
+
+**dsymutil's rules** (the classic linker, Apple's; read in LLVM's
+`llvm/lib/DWARFLinker/Classic/DWARFLinker.cpp` and
+`DWARFLinkerDeclContext.cpp` at the corpus's LLVM, and checked with this
+LLVM's `dsymutil --linker=classic` on small programs):
+
+- **Per object, from its own roots.** `lookForDIEsToKeep` walks every DIE
+  of each unit in file order from the unit's DIE. Roots (`shouldKeepDIE`):
+  subprograms and labels whose `DW_AT_low_pc` relocation is in the debug
+  map (`shouldKeepSubprogramDIE`); variables and constants outside
+  functions with `DW_AT_const_value`, or with a location relocated into
+  the debug map (`shouldKeepVariableDIE`); base types,
+  `DW_TAG_imported_module`, `DW_TAG_imported_declaration`, and
+  `DW_TAG_imported_unit`, always. A kept DIE keeps its children (the keep
+  flag passes down), its ancestors (`lookForParentDIEsToKeep`), all the
+  children of an ancestor that is a class, structure, union, enumeration,
+  subprogram, lexical block, subroutine type, or common block
+  (`dieNeedsChildrenToBeMeaningful`), and what every reference attribute
+  but `DW_AT_sibling` names, with its children (`lookForRefDIEsToKeep`). A
+  DIE already kept isn't walked again. References are followed only
+  within the object (its units): an object's definition is in the dSYM
+  only if that object's own roots reach it. A definition is not kept
+  because it is "found in a live object".
+- **ODR uniquing, per link.** Each named type, namespace, member, and
+  external subprogram in named scopes has a declaration context
+  (`getChildDeclContext`: the parent's, the tag, the linkage name or name,
+  and but for namespaces the byte size, the resolved `DW_AT_decl_file`,
+  and `DW_AT_decl_line`; a declaration has no size or file, so its
+  context isn't its definition's). The first complete DIE of a context
+  kept, in debug-map order, becomes its canonical one
+  (`markODRCanonicalDie`; complete: not a declaration, and no member
+  reaching, through members, pointers, references, and typedefs, an
+  incomplete DIE: `updateChildIncompleteness`,
+  `updateRefIncompleteness`). An ODR reference (`DW_AT_type`,
+  `DW_AT_containing_type`, `DW_AT_specification`, `DW_AT_abstract_origin`,
+  `DW_AT_import`, `DW_AT_LLVM_alloc_type`; `isODRAttribute`) to a context
+  that has one isn't followed, and is pointed at it when cloned
+  (`cloneDieReferenceAttribute`). An incomplete definition is never
+  canonical, so it is kept from every object that reaches it (the
+  original `llvm-nm` arm64 dSYM has 18 definitions of `llvm::StringRef`).
+- **Why a giver's class definition nothing referred to was in a dSYM
+  (7.5).** An always-kept `DW_TAG_imported_module` keeps the namespace it
+  names through a dependency walk, with every child, unless something
+  had kept the namespace before it in file order. In
+  `ArchiveWriter.cpp.o`, `llvm/Support/Chrono.h`'s two `using namespace
+  std::chrono` (at 0xeb81 and 0xec2e, inside namespace `llvm`) come before
+  the `std::chrono` namespace DIE (0x3786e): in a link where nothing of
+  the object reaches into `std::chrono` first, every duration of it is in
+  the dSYM, with the `std::ratio` definitions they name. A small program
+  (`namespace ns` with classes only dead code names, and `using namespace
+  ns`) shows dsymutil keeping all of them; with the namespace's DIE kept
+  before the import (a child of it an always-kept import), none.
+
+**What follows for folding:**
+
+- **Givers may lose named types no DIE dsymutil can keep reaches.** A
+  giver's named type only dead code reaches (after 7.5's pruning) can be
+  kept by dsymutil only as a child of a namespace an import names (or a
+  descendant of one). `prune` now removes named types too, but those
+  inside a namespace something refers to; `verify` checks the same rule.
+  That is no change to any dSYM: a removed type was one no kept DIE
+  reached. (The dead entities inside an imported namespace went in 7.5
+  already: in a link that keeps such a namespace whole, the original's
+  dSYM had their DIEs, without addresses, and what only they named.)
+- **A synthesized member holds as declarations the classes its givers
+  define.** A synthesized member is loaded whenever one of its givers is
+  (by the giver's anchor). `turbonop_fold::macho::reach` works out, for
+  each giver after its cut, the class definitions it puts in the dSYM of
+  every link that loads it with all its code (no `-dead_strip`): its
+  roots (DIEs whose relocations still name what it holds), what dsymutil
+  keeps from them by the rules above, and the target of each ODR
+  reference to a DIE that may have a declaration context (dsymutil keeps
+  that from this object, or an earlier object's definition is the
+  canonical one), but nothing beyond such a target (another object's
+  version may be the dSYM's, and what that version names may differ),
+  nor a namespace's other children. Keys are dsymutil's context keys
+  (`turbonop_fold::dwarf::key`: tag, name, byte size, file by directory
+  and name, line, and the parent's key). A class the moved code names,
+  which 7.4 kept whole, is a declaration when every giver of the
+  synthesized member defines it so.
+- **What isn't kept: the versions.** dsymutil keeps one version of a
+  class template specialization per object that reaches it while it is
+  incomplete, and the first complete one, and which ones are complete
+  depends on what earlier objects made canonical (a member reaching a
+  type whose context is already canonical isn't followed, so doesn't
+  make it incomplete). Any change to what a synthesized member holds
+  changes that cascade. In the corpus, `llvm::gsym::SourceLocation` had
+  `FunctionInfo.cpp.o`'s definition in the original's dSYM and
+  `Symbolize.cpp.o`'s (an earlier object's) in the folded one's, though
+  both links load the objects in the same order and the giver's
+  surviving `FunctionInfo::lookup` still names it: `Symbolize.cpp.o`'s
+  version was incomplete in the original link and complete in the folded
+  one. 7.4's whole classes changed versions this way too (the classes
+  "with contents only in" one image of 7.4's table).
+- **Strings named once are inline** (`DW_FORM_string`) in a synthesized
+  member: 4 bytes smaller each, and no change to the dSYM (dsymutil
+  writes every string into its own table).
+
+Tried and not kept:
+
+| Variant | `llvm-ar` archives | `llvm-nm` arm64: types only in the original / with contents only in the original / only in the folded |
+|---|---|---|
+| 7.5 (classes the code names whole) | 1,626,635,896 | 9 / 38 / 114 |
+| reach followed to the end (through the classes ODR references name) | 1,476,852,664 | 21 / 516 / 4 |
+| reach to ODR targets and their ancestors | 1,522,627,136 | 4 / 134 / 52 |
+| reach to ODR targets (kept) | 1,525,594,296 | 4 / 133 / 54 |
+| ... and a class declared only if every giver's has its members | 1,597,908,384 | 9 / 112 / 112 |
+| ... and roots only strong definitions (a weak one's copy may be another object's) | 1,573,510,800 | 9 / 69 / 92 |
+| ... both | 1,610,137,096 | 9 / 58 / 114 |
+
+None of these reproduces the original's versions: the variants trade
+categories, and the ones that keep more classes whole (larger) do no
+better than 7.5 overall. The variant kept loses the fewest definitions.
+
+| Check | Result |
+|---|---|
+| size (`relib.py --options=--fold=identical`) | the `llvm-ar` archives 1,536,552,752 bytes to 1,521,951,128, 0.95% smaller (7.5: 1,626,635,896, 5.9% larger; before strings went inline 1,525,594,296); the `libtool` ones (with the universal files) 3,073,107,040 to 3,043,903,792 (7.5: 3,253,273,328). Synthesized members' DWARF per architecture: 40.0 MB arm64 (`__debug_str` 23.8, `__debug_info` 10.4, `__debug_line` 3.2, `__debug_abbrev` 1.9, `__debug_ranges` 0.7) before strings went inline; 7.5: 88.7 |
+| `relink.py` (4 links, against the originals; the build before strings went inline, whose folded `llvm-nm` arm64 link and this build's `compare-images` finds equivalent, with no failures) | the original members loaded in order; code, data, unwind information, imports, and subprograms as 7.5 (the same categories and counts); type definitions only in the original 4, 4, 6, 6 (7.5: 9, 9, 11, 11); with contents only in the original 133, 132, 71, 70 (7.5: 38, 38, 21, 21), only in the folded 54, 54, 30, 31 (7.5: 114, 115, 64, 66) |
+| `relink.py --dead-strip` (new: `-dead_strip`, as a Mac release build links) | against the originals linked the same way: the original members loaded in order; type definitions only in the original 95, 86, 94, 85 (7.5: 150, 141, 98, 89), with contents only in the original 125, 124, 100, 100 (7.5: 49, 49, 37, 38), only in the folded 57, 57, 41, 42 (7.5: 92, 93, 59, 61); code and subprograms as 7.5. Both 7.5 and this lose definitions under `-dead_strip`: a giver's code that names a class may be stripped while the moved code stays |
+| `turbolib verify` of the 128 single-architecture archives | 128 pass |
+| `fixture.py` | 16 of 16 |
+| determinism | `libLLVMCore.a` arm64, `libLLVMSupport.a` x86-64, `libLLVMObject.a` arm64 (as `libtool -static`) with `-j 1`, `-j 3`, `-j 8`: the same bytes |
+| ELF | `libLLVMSupport.a`, `libLLVMCore.a`, `libLLVMObject.a` of the clang and gcc corpora folded by 7.5's build and this one: the same bytes |
+| speed (CPU, user + system, `-j 1`, as `libtool -static`, 7.5's build and this one alternating, 3 runs each, the first of each cold and left out; the machine's load about 4 from other work, so only the ratio is meaningful) | `libLLVMCore.a` arm64 9.30 and 9.20 s against 10.79 and 9.95 s (7% less: synthesized members' DWARF is smaller to build, which pays for walking every giver's DWARF once more in `reach`); `libLLVMSupport.a` x86-64 2.54 and 2.50 s against 2.43 and 2.41 s (4% more) |
+
+What it can't prove: the giver-supplied classes hold only for links
+without `-dead_strip` that load the synthesized member through a giver
+(a giver's code that names a class may be stripped while the moved code
+stays; a synthesized member loaded by its own name, with no giver, has
+only declarations); the versions of classes in a dSYM aren't preserved;
+the dSYMs are this LLVM's dsymutil's, and Apple's wasn't run.
+
 
 ## Decisions
 

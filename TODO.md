@@ -665,29 +665,38 @@ x64. Where the 3.5 MB went:
   (7.2), `--fold=identical` with `verify` (7.3), x86-64's FDEs and LSDAs
   moving with their units, givers' DWARF moving with their code,
   synthesized members' DWARF, and a Rust `compare-images` for Mach-O with
-  dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5), and the
-  corpus scripts (`tools/turbolib/macho-corpus`). Still open:
-  - **The size DWARF costs**: the folded corpus archives are 5.9% larger
-    (7.4: 9.1%; 1.0% smaller before synthesized members carried DWARF):
-    88.7 MB of synthesized members' DWARF per architecture, most of it
-    whole class definitions (dsymutil keeps only what linked DIEs reach)
-    and their strings. Sharing class definitions between synthesized
-    members isn't correct for dsymutil (7.5: they load and dead-strip
-    independently). Left: an opt-in `--debug-types=declarations` (14.9
-    MB, but 1.1% of the dSYM's type definitions lost); inline strings
-    (`DW_FORM_string`) for strings a synthesized member uses once (a few
-    percent of its DWARF); find out why dsymutil kept a giver's
-    unreferenced class definition (7.5), which decides whether givers may
-    also lose named types only dead code reached (6.7 MB of both
-    architectures' `llvm-ar` archives).
+  dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5),
+  dsymutil's keeping rules read and applied: givers without named types
+  no keepable DIE reaches, synthesized members declaring the classes
+  their givers define, single-use strings inline (7.6), and the corpus
+  scripts (`tools/turbolib/macho-corpus`). Still open:
+  - **Class versions in the dSYM** (7.6): folding now saves bytes (the
+    `llvm-ar` archives 0.7% smaller, from 5.9% larger), but which unit's
+    version of a class template specialization dsymutil keeps changes:
+    the corpus links have 70 to 133 definitions whose original contents
+    (member lists) aren't in the folded dSYM (7.5: 21 to 38), and 4 to 6
+    lost (7.5: 9 to 11). It is dsymutil's completeness cascade (a version
+    is canonical only if complete, which depends on what earlier objects
+    made canonical), not a rule a member's DWARF can follow; 7.4's whole
+    classes changed versions too. Find whether lldb sees any difference
+    (it merges a class's declarations by name); measure the versions a
+    Mac build's dSYM has from build to build. Givers' classes hold only
+    without `-dead_strip` (see `relink.py --dead-strip`'s results in the
+    plan), and only when a giver loads the synthesized member.
+  - **What's left of synthesized members' DWARF** (40 MB per architecture
+    in 7.6, from 88.7; most of the rest of a synthesized member is its load
+    commands and symbols): a unit with one code range could use
+    `DW_AT_low_pc`/`DW_AT_high_pc` and no `__debug_ranges` (about 1.3 MB
+    and a section header per member); `DW_FORM_ref2` in units under 64
+    KiB.
   - **`compare-images` on the corpus links isn't clean** (see 7.4): code
     and data past a local constant that a sizeless symbol can't bound
     (2 to 24 per program; bound them by the dSYM's variables' types);
     `RTTIRoot::anchor`'s unwind encoding (0 in the original, not
     explained); 1 to 9 subprograms described by another unit's copy with
     other DIEs (spot-checked, not proven: write a Mach-O `witness.py`);
-    9 to 11 type definitions only in the original and some with other
-    contents (which units' class templates dsymutil keeps).
+    type definitions only in the original and with other contents (see
+    the first point).
   - **Speed**: 3.55× the real tools' time folding in 7.4 (0.82× without),
     and 7.5's pruning adds about a quarter more CPU (every giver's DWARF
     walked; lookups, strings, accelerator tables, a second cut); most

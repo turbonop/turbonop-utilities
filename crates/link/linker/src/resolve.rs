@@ -176,6 +176,10 @@ pub struct Resolved {
     pub config: Config,
     /// `/VERBOSE`'s lines.
     pub log: Vec<String>,
+    /// The `.res` files, in order: their names and contents.
+    pub resources: Vec<(String, &'static [u8])>,
+    /// Its phases' times.
+    pub times: Vec<(&'static str, std::time::Duration)>,
 }
 
 /// Maps `path`, for the rest of the process (inputs are never unmapped:
@@ -238,6 +242,13 @@ struct Linker {
     /// until it is seen not to (a definition is never taken back, so a
     /// global dropped from here never needs one again).
     pending: Vec<u32>,
+    /// The `.res` files, in order: their names and contents.
+    resources: Vec<(String, &'static [u8])>,
+    /// Time spent: reading libraries' indexes, parsing members, adding
+    /// files' symbols.
+    t_index: std::time::Duration,
+    t_members: std::time::Duration,
+    t_add: std::time::Duration,
 }
 
 impl Linker {
@@ -260,6 +271,12 @@ impl Linker {
 
     /// Adds the loaded file, its symbols resolved against those before it.
     fn add(&mut self, name: String, kind: LoadedKind) {
+        let start = std::time::Instant::now();
+        self.add_file(name, kind);
+        self.t_add += start.elapsed();
+    }
+
+    fn add_file(&mut self, name: String, kind: LoadedKind) {
         let place = u32::try_from(self.files.len()).expect("fewer than 4 billion files");
         match kind {
             LoadedKind::Object(object) => {
@@ -546,6 +563,7 @@ impl Linker {
                 return;
             }
         };
+        let start = std::time::Instant::now();
         let symbols = archive.symbols();
         let mut index = turbonop_hash::map_with_capacity(symbols.len());
         for s in symbols {
@@ -557,6 +575,7 @@ impl Linker {
             index,
             loaded: Set::default(),
         });
+        self.t_index += start.elapsed();
     }
 
     /// Whether `g` still wants a definition a library could give.
@@ -616,6 +635,7 @@ impl Linker {
                     library.loaded.extend(members.iter().copied());
                     let archive = library.archive;
                     let path = library.path.display().to_string();
+                    let start = std::time::Instant::now();
                     let parsed = turbonop_par::map(&members, 8, |&offset| {
                         let Some(member) = archive.member_at_offset(offset) else {
                             return Err(format!("{path}: no member at offset {offset:#x}"));
@@ -623,6 +643,7 @@ impl Linker {
                         let name = format!("{path}({})", String::from_utf8_lossy(&member.name));
                         load(member.data, &name).map(|k| (name, k))
                     });
+                    self.t_members += start.elapsed();
                     for p in parsed {
                         match p {
                             Ok((name, kind)) => self.add(name, kind),
@@ -699,6 +720,16 @@ impl Linker {
     }
 }
 
+/// A command-line input, read.
+enum Input {
+    /// An object or import object.
+    Loaded(LoadedKind),
+    /// A library (searched later), found here.
+    Library(PathBuf),
+    /// A compiled resource file.
+    Resources(&'static [u8]),
+}
+
 /// What a loaded input is.
 #[derive(Debug)]
 pub enum LoadedKind {
@@ -762,7 +793,13 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         lib_env,
         log: Vec::new(),
         pending: Vec::new(),
+        resources: Vec::new(),
+        t_index: std::time::Duration::ZERO,
+        t_members: std::time::Duration::ZERO,
+        t_add: std::time::Duration::ZERO,
     };
+    let mut times = Vec::new();
+    let mut lap = std::time::Instant::now();
     let image_base = l.intern(b"__ImageBase");
     l.globals[image_base as usize].def = Def::Synthetic(Synthetic::ImageBase);
     for &name in SYNTHETIC {
@@ -772,23 +809,41 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
 
     // The command line's inputs: objects are read in parallel, then added
     // in order; libraries are searched later, in their order.
+    // A file not found as named is looked for as libraries are (in each
+    // /LIBPATH, then in LIB's directories): `kernel32.lib`.
     let inputs = l.config.inputs.clone();
+    let lookup = &l;
     let read = turbonop_par::map_balanced(&inputs, 1, |path| {
-        let p = PathBuf::from(path);
-        let data = map(&p).map_err(|e| format!("cannot open file '{path}': {e}"))?;
-        match identify(data) {
-            InputKind::Library => Ok(None),
-            InputKind::Resources => Err(format!("{path}: resources are not supported yet")),
-            _ => load(data, path).map(Some),
+        let mut p = PathBuf::from(path);
+        if !p.is_file()
+            && p.is_relative()
+            && let Some(found) = lookup
+                .config
+                .lib_paths
+                .iter()
+                .chain(&lookup.lib_env)
+                .map(|d| d.join(path))
+                .find(|c| c.is_file())
+        {
+            p = found;
         }
+        let data = map(&p).map_err(|e| format!("cannot open file '{path}': {e}"))?;
+        Ok(match identify(data) {
+            InputKind::Library => Input::Library(p),
+            InputKind::Resources => Input::Resources(data),
+            _ => Input::Loaded(load(data, path)?),
+        })
     });
     for (path, r) in inputs.iter().zip(read) {
         match r {
-            Ok(Some(kind)) => l.add(path.clone(), kind),
-            Ok(None) => l.add_library(PathBuf::from(path)),
+            Ok(Input::Loaded(kind)) => l.add(path.clone(), kind),
+            Ok(Input::Library(p)) => l.add_library(p),
+            Ok(Input::Resources(data)) => l.resources.push((path.clone(), data)),
             Err(m) => l.errors.push(LinkError::error(1104, m)),
         }
     }
+    times.push(("  inputs (objects read, added)", lap.elapsed()));
+    lap = std::time::Instant::now();
     let cmdline_defaults = l.config.default_libs.clone();
     for lib in &cmdline_defaults {
         l.add_default_lib(lib);
@@ -828,7 +883,13 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     let g = l.intern(b"_load_config_used");
     l.globals[g as usize].optional = true;
 
+    times.push(("  libraries' indexes", lap.elapsed()));
+    lap = std::time::Instant::now();
     l.search_libraries();
+    times.push(("  library search", lap.elapsed()));
+    times.push(("    of which: indexes", l.t_index));
+    times.push(("    of which: members parsed", l.t_members));
+    times.push(("  (all files' symbols added)", l.t_add));
 
     // What is still undefined.
     for g in &l.globals {
@@ -859,6 +920,8 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         entry,
         config: l.config,
         log: l.log,
+        resources: l.resources,
+        times,
     })
 }
 

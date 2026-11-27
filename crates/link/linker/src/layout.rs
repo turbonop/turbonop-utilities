@@ -32,6 +32,8 @@ pub enum ChunkKind {
     BaseRelocations,
     /// The export directory.
     Exports,
+    /// The resources (`.rsrc`).
+    Resources,
 }
 
 /// A chunk placed.
@@ -113,6 +115,8 @@ pub struct Layout {
     pub base_relocations: Vec<u8>,
     /// The exports, for a DLL that has any.
     pub exports: Option<crate::exports::ExportTable>,
+    /// The resources, if there are any.
+    pub resources: Option<crate::resources::Rsrc>,
 }
 
 /// The output section an input section's name goes to: the name without
@@ -268,7 +272,12 @@ fn mark(r: &Resolved, roots: &[u32]) -> Live {
 }
 
 /// Lays the image out.
-pub fn layout(r: &Resolved, roots: &[u32], exports: Option<crate::exports::ExportTable>) -> Layout {
+pub fn layout(
+    r: &Resolved,
+    roots: &[u32],
+    exports: Option<crate::exports::ExportTable>,
+    resources: Option<crate::resources::Rsrc>,
+) -> Layout {
     let config: &Config = &r.config;
     let live = mark(r, roots);
     let mut merges: Vec<(Vec<u8>, Vec<u8>)> = config
@@ -474,6 +483,21 @@ pub fn layout(r: &Resolved, roots: &[u32], exports: Option<crate::exports::Expor
         );
     }
 
+    if let Some(res) = &resources {
+        add(
+            b".rsrc",
+            scn::CNT_INITIALIZED_DATA | scn::MEM_READ,
+            Chunk {
+                kind: ChunkKind::Resources,
+                align: 8,
+                size: res.size,
+                uninitialized: false,
+                rva: 0,
+            },
+            &mut chunks,
+        );
+    }
+
     // Output sections: link.exe's order first, then the others as their
     // first partial section sorts; within each, partial sections by name
     // (the output section's own name's before those merged into it), and
@@ -582,6 +606,7 @@ pub fn layout(r: &Resolved, roots: &[u32], exports: Option<crate::exports::Expor
         dll_name_offsets,
         base_relocations: Vec::new(),
         exports,
+        resources,
     };
     l.assign_addresses();
     l

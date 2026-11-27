@@ -71,6 +71,7 @@ pub fn link(mut config: Config) -> Outcome {
         return out;
     };
     lap("resolve", &mut out);
+    out.times.extend(resolved.times.iter().copied());
     for line in &resolved.log {
         eprintln!("{line}");
     }
@@ -104,7 +105,36 @@ pub fn link(mut config: Config) -> Outcome {
             return out;
         }
     };
-    let mut layout = layout::layout(&resolved, &roots, export_table);
+    let mut all = Vec::new();
+    for (name, data) in &resolved.resources {
+        match crate::resources::parse_res(data) {
+            Ok(r) => all.extend(r),
+            Err(m) => {
+                out.diagnostics.push(LinkError {
+                    code: 1136,
+                    message: format!("{name}: invalid or corrupt file: {m}"),
+                    warning: false,
+                });
+                return out;
+            }
+        }
+    }
+    let resources = if all.is_empty() {
+        None
+    } else {
+        match crate::resources::plan(all) {
+            Ok(r) => Some(r),
+            Err(m) => {
+                out.diagnostics.push(LinkError {
+                    code: 1123,
+                    message: m,
+                    warning: false,
+                });
+                return out;
+            }
+        }
+    };
+    let mut layout = layout::layout(&resolved, &roots, export_table, resources);
     lap("layout", &mut out);
     let sites = Image::new(&resolved, &layout).base_relocation_sites();
     layout.add_base_relocations(base_relocation_blocks(&sites));

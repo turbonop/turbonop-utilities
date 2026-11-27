@@ -257,6 +257,11 @@ impl<'a> Image<'a> {
                     );
                 }
             }
+            ChunkKind::Resources => {
+                if let Some(r) = &self.l.resources {
+                    r.write(out, chunk.rva);
+                }
+            }
             ChunkKind::BaseRelocations => {
                 out[..self.l.base_relocations.len()].copy_from_slice(&self.l.base_relocations);
             }
@@ -623,6 +628,17 @@ impl<'a> Image<'a> {
             ) {
                 dirs[12] = (first, last - first);
             }
+        }
+        if let Some(r) = self
+            .l
+            .chunks
+            .iter()
+            .find(|c| c.kind == ChunkKind::Resources)
+        {
+            dirs[2] = (r.rva, r.size);
+        } else if let Some(r) = sections.iter().find(|s| s.name == b".rsrc") {
+            // Resources from objects (cvtres's `.rsrc`$01` and ``).
+            dirs[2] = (r.rva, r.virtual_size);
         }
         if let Some(p) = sections.iter().find(|s| s.name == b".pdata") {
             dirs[3] = (p.rva, p.virtual_size);

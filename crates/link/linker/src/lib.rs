@@ -17,4 +17,5 @@ pub mod layout;
 pub mod link;
 pub mod object;
 pub mod resolve;
+pub mod resources;
 pub mod write;

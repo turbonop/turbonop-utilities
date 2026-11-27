@@ -2028,7 +2028,9 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
     };
     let definers: Vec<Map<&[u8], Defined>> = {
         // Each member's definitions, by shard.
-        let by_member: Vec<Vec<Vec<(&[u8], Option<u128>)>>> = turbonop_par::map_costed(
+        // (Each member's: by shard, (name, its unit's hash).)
+        type Defs<'n> = Vec<Vec<(&'n [u8], Option<u128>)>>;
+        let by_member: Vec<Defs<'_>> = turbonop_par::map_costed(
             parsed.len(),
             |m| parsed[m].defs.len() as u64,
             |m| {
@@ -2089,7 +2091,7 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
         .iter()
         .flat_map(|c| c.iter().map(|(&h, list)| (list[0].0, list[0].1, h)))
         .collect();
-    turbonop_par::sort_by(&mut order, |a, b| a.cmp(b));
+    turbonop_par::sort_by(&mut order, Ord::cmp);
     // Which fold: each unit decided on every core, then counted in order.
     let decided: Vec<Option<Result<(), &'static str>>> =
         turbonop_par::map_range(order.len(), 1024, |k| {

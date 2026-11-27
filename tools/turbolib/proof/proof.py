@@ -227,7 +227,7 @@ def ninja_log(build_dir):
                 continue
             parts = line.rstrip("\n").split("\t")
             if len(parts) >= 4:
-                steps[parts[3]] = (int(parts[0]), int(parts[1]))
+                steps[parts[3].replace("/", "\\")] = (int(parts[0]), int(parts[1]))
     return steps
 
 
@@ -250,10 +250,9 @@ def stats(a):
              if os.path.exists(os.path.join(a.build_dir, l))}
     links = {}
     for t in BIG:
-        key = t.replace("/", "\\")
-        for k in (t, key):
-            if k in steps:
-                links[t] = (steps[k][1] - steps[k][0]) / 1000
+        k = t.replace("/", "\\")
+        if k in steps:
+            links[t] = (steps[k][1] - steps[k][0]) / 1000
     times_path = os.path.join(a.build_dir, "proof-times.json")
     times = json.load(open(times_path)) if os.path.exists(times_path) else []
     result = {

@@ -251,16 +251,17 @@ fn apple_names(names: &[(&str, Vec<u32>)], str_at: &dyn Fn(&str) -> u32) -> Vec<
         header,
         buckets: 0,
         die_at: 0,
+        entry: 4,
         base: 0,
         names: Vec::new(),
     };
-    let names: Vec<(u32, u32, Vec<Vec<u8>>)> = names
+    let names: Vec<Name> = names
         .iter()
         .map(|(s, v)| {
             (
                 djb(s),
                 str_at(s),
-                v.iter().map(|o| o.to_le_bytes().to_vec()).collect(),
+                v.iter().flat_map(|o| o.to_le_bytes()).collect(),
             )
         })
         .collect();
@@ -504,7 +505,7 @@ fn removes_dead_code_and_what_only_it_names() {
     let mut got: Vec<(u32, u32, u32)> = a
         .names
         .iter()
-        .map(|(h, s, e)| (*h, *s, u32::from_le_bytes(e[0][..4].try_into().unwrap())))
+        .map(|(h, s, e)| (*h, *s, u32::from_le_bytes(e[..4].try_into().unwrap())))
         .collect();
     got.sort_unstable();
     let new_at = |s: &str| {
@@ -581,7 +582,7 @@ fn shifts_map_offsets_past_removed_ranges() {
     assert_eq!(s.map(11), 6);
     assert_eq!(s.map(12), 6);
     assert_eq!(s.map(20), 14);
-    assert!(s.removed(4) && s.removed(11) && !s.removed(8) && !s.removed(12));
+
     assert_eq!(s.total(), 6);
 }
 

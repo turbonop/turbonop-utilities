@@ -1080,7 +1080,13 @@ dependencies = [
 name = "turbonop-linker"
 version = "0.0.7"
 dependencies = [
+ "turbonop-archive",
+ "turbonop-core",
  "turbonop-global-alloc",
+ "turbonop-hash",
+ "turbonop-mmap",
+ "turbonop-par",
+ "turbonop-pe",
 ]
 
 [[package]]

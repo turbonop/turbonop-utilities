@@ -145,7 +145,7 @@ pub fn link(mut config: Config) -> Outcome {
     lap("write", &mut out);
     if let Some(map) = &resolved.config.map {
         let map_path = map.clone().unwrap_or_else(|| path.with_extension("map"));
-        let mut lines: Vec<(u32, String)> = (0..resolved.globals.len() as u32)
+        let mut lines: Vec<(u32, String)> = (0..crate::n32(resolved.globals.len()))
             .filter_map(|g| {
                 let rva = image.rva_of(g)?;
                 let global = &resolved.globals[g as usize];

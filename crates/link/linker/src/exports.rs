@@ -272,13 +272,13 @@ pub fn plan(exports: Vec<Export>, dll_name: &str, forwarders: &[Option<String>])
         .map(|(i, e)| (exported_name(e).to_owned(), i))
         .collect();
     names.sort_by(|a, b| a.0.as_bytes().cmp(b.0.as_bytes()));
-    let mut size = 40 + functions * 4 + names.len() as u32 * 6;
-    size += dll_name.len() as u32 + 1;
+    let mut size = 40 + functions * 4 + crate::n32(names.len()) * 6;
+    size += crate::n32(dll_name.len()) + 1;
     for (n, _) in &names {
-        size += n.len() as u32 + 1;
+        size += crate::n32(n.len()) + 1;
     }
     for f in forwarders.iter().flatten() {
-        size += f.len() as u32 + 1;
+        size += crate::n32(f.len()) + 1;
     }
     Directory {
         exports,
@@ -303,15 +303,15 @@ impl Directory {
     ) {
         let functions_at = 40u32;
         let names_at = functions_at + self.functions * 4;
-        let ordinals_at = names_at + self.names.len() as u32 * 4;
-        let mut strings_at = ordinals_at + self.names.len() as u32 * 2;
+        let ordinals_at = names_at + crate::n32(self.names.len()) * 4;
+        let mut strings_at = ordinals_at + crate::n32(self.names.len()) * 2;
         let put32 = |out: &mut [u8], at: u32, v: u32| {
             out[at as usize..at as usize + 4].copy_from_slice(&v.to_le_bytes());
         };
         let mut put_string = |out: &mut [u8], s: &str| -> u32 {
             let at = strings_at;
             out[at as usize..at as usize + s.len()].copy_from_slice(s.as_bytes());
-            strings_at += s.len() as u32 + 1;
+            strings_at += crate::n32(s.len()) + 1;
             rva + at
         };
         let name_rva = put_string(out, dll_name);
@@ -319,15 +319,15 @@ impl Directory {
         put32(out, 12, name_rva);
         put32(out, 16, u32::from(self.base));
         put32(out, 20, self.functions);
-        put32(out, 24, self.names.len() as u32);
+        put32(out, 24, crate::n32(self.names.len()));
         put32(out, 28, rva + functions_at);
         put32(out, 32, rva + names_at);
         put32(out, 36, rva + ordinals_at);
         for (k, (name, i)) in self.names.iter().enumerate() {
             let at = put_string(out, name);
-            put32(out, names_at + k as u32 * 4, at);
+            put32(out, names_at + crate::n32(k) * 4, at);
             let ord = self.exports[*i].ordinal.unwrap_or(self.base) - self.base;
-            let o = (ordinals_at + k as u32 * 2) as usize;
+            let o = (ordinals_at + crate::n32(k) * 2) as usize;
             out[o..o + 2].copy_from_slice(&ord.to_le_bytes());
         }
         for (i, e) in self.exports.iter().enumerate() {

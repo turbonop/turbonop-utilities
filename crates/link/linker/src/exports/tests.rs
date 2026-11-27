@@ -85,7 +85,7 @@ fn directory() {
         0x5000,
         "x.dll",
         7,
-        |i| 0x1000 + i as u32,
+        |i| 0x1000 + crate::n32(i),
         &forwarders,
     );
     let u32_at = |o: usize| u32::from_le_bytes(out[o..o + 4].try_into().unwrap());

@@ -199,12 +199,12 @@ fn mark(r: &Resolved, roots: &[u32]) -> Live {
             match sec.comdat {
                 Some((Selection::Associative(parent), _)) => {
                     children
-                        .entry((f as u32, parent))
+                        .entry((crate::n32(f), parent))
                         .or_default()
-                        .push(s as u32);
+                        .push(crate::n32(s));
                 }
                 Some(_) if gc => {}
-                _ => work.push((f as u32, s as u32)),
+                _ => work.push((crate::n32(f), crate::n32(s))),
             }
         }
     }
@@ -271,6 +271,10 @@ fn mark(r: &Resolved, roots: &[u32]) -> Live {
     live
 }
 
+/// A partial section's key (output name, input name, characteristics)
+/// and its chunks.
+type Partial = ((Vec<u8>, Vec<u8>, u32), Vec<u32>);
+
 /// Lays the image out.
 pub fn layout(
     r: &Resolved,
@@ -294,7 +298,7 @@ pub fn layout(
     let mut chunks: Vec<Chunk> = Vec::new();
     // Partial sections: (output name, input name, characteristics) and
     // their chunks in input order.
-    let mut partials: Vec<((Vec<u8>, Vec<u8>, u32), Vec<u32>)> = Vec::new();
+    let mut partials: Vec<Partial> = Vec::new();
     let mut partial_index: Map<(Vec<u8>, Vec<u8>, u32), usize> = Map::default();
     let mut add = |name: &[u8], chars: u32, chunk: Chunk, chunks: &mut Vec<Chunk>| -> u32 {
         let out = output_name(name, &merges);
@@ -327,7 +331,7 @@ pub fn layout(
                         sec.name,
                         sec.characteristics,
                         Chunk {
-                            kind: ChunkKind::Input(f as u32, s as u32),
+                            kind: ChunkKind::Input(crate::n32(f), crate::n32(s)),
                             align: sec.alignment(),
                             size: sec.size,
                             uninitialized,
@@ -351,14 +355,14 @@ pub fn layout(
                     u32::try_from(dlls.len() - 1).unwrap_or(u32::MAX)
                 });
                 let slot = &mut dlls[d as usize].imports;
-                import_slots.insert(f as u32, (d, u32::try_from(slot.len()).unwrap_or(0)));
-                slot.push(f as u32);
+                import_slots.insert(crate::n32(f), (d, u32::try_from(slot.len()).unwrap_or(0)));
+                slot.push(crate::n32(f));
                 if live.thunks[f] {
                     let c = add(
                         b".text$zz",
                         scn::CNT_CODE | scn::MEM_EXECUTE | scn::MEM_READ,
                         Chunk {
-                            kind: ChunkKind::Thunk(f as u32),
+                            kind: ChunkKind::Thunk(crate::n32(f)),
                             align: 2,
                             size: 6,
                             uninitialized: false,
@@ -366,7 +370,7 @@ pub fn layout(
                         },
                         &mut chunks,
                     );
-                    thunk_chunks.insert(f as u32, c);
+                    thunk_chunks.insert(crate::n32(f), c);
                 }
             }
         }
@@ -416,7 +420,7 @@ pub fn layout(
                 b".idata$4",
                 data,
                 Chunk {
-                    kind: ChunkKind::ImportLookup(d as u32),
+                    kind: ChunkKind::ImportLookup(crate::n32(d)),
                     align: 8,
                     size,
                     uninitialized: false,
@@ -428,7 +432,7 @@ pub fn layout(
                 b".idata$5",
                 data,
                 Chunk {
-                    kind: ChunkKind::ImportAddresses(d as u32),
+                    kind: ChunkKind::ImportAddresses(crate::n32(d)),
                     align: 8,
                     size,
                     uninitialized: false,
@@ -445,13 +449,13 @@ pub fn layout(
                 };
                 if let Some(n) = import.import_name() {
                     name_offsets.insert(f, at);
-                    at += (2 + n.len() as u32 + 1 + 1) & !1;
+                    at += (2 + crate::n32(n.len()) + 1 + 1) & !1;
                 }
             }
         }
         for dll in &dlls {
             dll_name_offsets.push(at);
-            at += (dll.name.len() as u32 + 1 + 1) & !1;
+            at += (crate::n32(dll.name.len()) + 1 + 1) & !1;
         }
         add(
             b".idata$6",
@@ -541,8 +545,7 @@ pub fn layout(
         }
     }
     for s in &mut sections {
-        let mut mine: Vec<&((Vec<u8>, Vec<u8>, u32), Vec<u32>)> =
-            partials.iter().filter(|p| p.0.0 == s.name).collect();
+        let mut mine: Vec<&Partial> = partials.iter().filter(|p| p.0.0 == s.name).collect();
         let base = |input: &[u8]| -> Vec<u8> {
             match input.iter().position(|&b| b == b'$') {
                 Some(p) => input[..p].to_vec(),
@@ -587,7 +590,7 @@ pub fn layout(
     } else {
         224
     };
-    let headers = 0x80 + 4 + 20 + optional + 40 * (sections.len() as u32 + 1);
+    let headers = 0x80 + 4 + 20 + optional + 40 * (crate::n32(sections.len()) + 1);
     let headers_size = align_up(headers, file_align);
     let mut l = Layout {
         chunks,

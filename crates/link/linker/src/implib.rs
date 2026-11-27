@@ -21,10 +21,14 @@ struct Member {
     symbols: Vec<Vec<u8>>,
 }
 
+/// A section to build: name, characteristics, contents, relocations
+/// (address, symbol, type).
+type BuiltSection = (&'static [u8], u32, Vec<u8>, Vec<(u32, u32, u16)>);
+
 /// A COFF object with initialized-data sections, for the descriptors.
 struct CoffBuilder {
     machine: u16,
-    sections: Vec<(&'static [u8], u32, Vec<u8>, Vec<(u32, u32, u16)>)>,
+    sections: Vec<BuiltSection>,
     symbols: Vec<(Vec<u8>, u32, i16, u8)>,
 }
 
@@ -68,10 +72,10 @@ impl CoffBuilder {
         }
         let symtab = at;
         out.extend_from_slice(&self.machine.to_le_bytes());
-        out.extend_from_slice(&(n as u16).to_le_bytes());
+        out.extend_from_slice(&(crate::n16(n)).to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
-        out.extend_from_slice(&(symtab as u32).to_le_bytes());
-        out.extend_from_slice(&(self.symbols.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(crate::n32(symtab)).to_le_bytes());
+        out.extend_from_slice(&(crate::n32(self.symbols.len())).to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes());
         out.extend_from_slice(&0u16.to_le_bytes());
         for ((name, chars, data, relocs), (raw, rel)) in self.sections.iter().zip(&placed) {
@@ -80,12 +84,16 @@ impl CoffBuilder {
             out.extend_from_slice(&h);
             out.extend_from_slice(&0u32.to_le_bytes());
             out.extend_from_slice(&0u32.to_le_bytes());
-            out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-            out.extend_from_slice(&(*raw as u32).to_le_bytes());
-            let rel_at = if relocs.is_empty() { 0 } else { *rel as u32 };
+            out.extend_from_slice(&(crate::n32(data.len())).to_le_bytes());
+            out.extend_from_slice(&(crate::n32(*raw)).to_le_bytes());
+            let rel_at = if relocs.is_empty() {
+                0
+            } else {
+                crate::n32(*rel)
+            };
             out.extend_from_slice(&rel_at.to_le_bytes());
             out.extend_from_slice(&0u32.to_le_bytes());
-            out.extend_from_slice(&(relocs.len() as u16).to_le_bytes());
+            out.extend_from_slice(&(crate::n16(relocs.len())).to_le_bytes());
             out.extend_from_slice(&0u16.to_le_bytes());
             out.extend_from_slice(&chars.to_le_bytes());
         }
@@ -105,7 +113,7 @@ impl CoffBuilder {
                 out.extend_from_slice(&n);
             } else {
                 out.extend_from_slice(&0u32.to_le_bytes());
-                out.extend_from_slice(&(4 + strings.len() as u32).to_le_bytes());
+                out.extend_from_slice(&(4 + crate::n32(strings.len())).to_le_bytes());
                 strings.extend_from_slice(name);
                 strings.push(0);
             }
@@ -115,7 +123,7 @@ impl CoffBuilder {
             out.push(*class);
             out.push(0);
         }
-        out.extend_from_slice(&(4 + strings.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(4 + crate::n32(strings.len())).to_le_bytes());
         out.extend_from_slice(&strings);
         out
     }
@@ -229,7 +237,7 @@ fn short_import(dll: &str, machine: u16, e: &Export, hint: u16, timestamp: u32) 
     data.extend_from_slice(&0u16.to_le_bytes());
     data.extend_from_slice(&machine.to_le_bytes());
     data.extend_from_slice(&timestamp.to_le_bytes());
-    data.extend_from_slice(&(names.len() as u32).to_le_bytes());
+    data.extend_from_slice(&(crate::n32(names.len())).to_le_bytes());
     data.extend_from_slice(&ordinal_or_hint.to_le_bytes());
     data.extend_from_slice(&(kind | (name_type << 2)).to_le_bytes());
     data.extend_from_slice(&names);
@@ -316,7 +324,7 @@ fn archive(members: &[Member], timestamp: u32) -> Vec<u8> {
     }
     let mut offsets = Vec::with_capacity(members.len());
     for m in members {
-        offsets.push(at as u32);
+        offsets.push(crate::n32(at));
         at += 60 + pad(m.data.len());
     }
 
@@ -324,7 +332,7 @@ fn archive(members: &[Member], timestamp: u32) -> Vec<u8> {
     out.extend_from_slice(b"!<arch>\n");
     // The first linker member: big-endian offsets, symbols in member order.
     header(&mut out, "/", first_size, timestamp);
-    out.extend_from_slice(&(symbol_count as u32).to_be_bytes());
+    out.extend_from_slice(&(crate::n32(symbol_count)).to_be_bytes());
     for (m, &o) in members.iter().zip(&offsets) {
         for _ in &m.symbols {
             out.extend_from_slice(&o.to_be_bytes());
@@ -339,18 +347,18 @@ fn archive(members: &[Member], timestamp: u32) -> Vec<u8> {
     }
     // The second: little-endian, members by number, symbols sorted.
     header(&mut out, "/", second_size, timestamp);
-    out.extend_from_slice(&(members.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(crate::n32(members.len())).to_le_bytes());
     for &o in &offsets {
         out.extend_from_slice(&o.to_le_bytes());
     }
-    out.extend_from_slice(&(symbol_count as u32).to_le_bytes());
+    out.extend_from_slice(&(crate::n32(symbol_count)).to_le_bytes());
     let mut sorted: Vec<(&[u8], u16)> = members
         .iter()
         .enumerate()
         .flat_map(|(i, m)| {
             m.symbols
                 .iter()
-                .map(move |s| (s.as_slice(), (i + 1) as u16))
+                .map(move |s| (s.as_slice(), crate::n16(i + 1)))
         })
         .collect();
     sorted.sort();

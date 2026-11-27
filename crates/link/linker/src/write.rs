@@ -48,7 +48,7 @@ impl<'a> Image<'a> {
         let mut iat = vec![u32::MAX; l.dlls.len()];
         for (i, c) in l.chunks.iter().enumerate() {
             if let ChunkKind::ImportAddresses(d) = c.kind {
-                iat[d as usize] = i as u32;
+                iat[d as usize] = crate::n32(i);
             }
         }
         Image {
@@ -189,7 +189,9 @@ impl<'a> Image<'a> {
                 out[..2].copy_from_slice(&[0xFF, 0x25]);
                 let slot = self.import_slot(f).unwrap_or(0);
                 let disp = i64::from(slot) - i64::from(chunk.rva + 6);
-                out[2..6].copy_from_slice(&(disp as i32).to_le_bytes());
+                // (An image is under 4 GB and its IAT and code under 2 GB apart.)
+                let disp = i32::try_from(disp).unwrap_or(0);
+                out[2..6].copy_from_slice(&disp.to_le_bytes());
             }
             ChunkKind::ImportDirectory => {
                 for (d, dll) in self.l.dlls.iter().enumerate() {
@@ -197,7 +199,7 @@ impl<'a> Image<'a> {
                         .l
                         .chunks
                         .iter()
-                        .find(|c| c.kind == ChunkKind::ImportLookup(d as u32))
+                        .find(|c| c.kind == ChunkKind::ImportLookup(crate::n32(d)))
                         .map_or(0, |c| c.rva);
                     let iat = self.l.chunks[self.iat[d] as usize].rva;
                     let names = self.names_rva();
@@ -286,7 +288,7 @@ impl<'a> Image<'a> {
         target: Target,
         rva: u32,
     ) -> Result<(), String> {
-        let place = rva.wrapping_add(at as u32);
+        let place = rva.wrapping_add(crate::n32(at));
         let size = match kind {
             amd64::ABSOLUTE => return Ok(()),
             amd64::ADDR64 => 8,
@@ -320,7 +322,7 @@ impl<'a> Image<'a> {
         };
         let add32 = |field: &mut [u8], v: u64| {
             let old = u32::from_le_bytes([field[0], field[1], field[2], field[3]]);
-            field.copy_from_slice(&old.wrapping_add(v as u32).to_le_bytes());
+            field.copy_from_slice(&old.wrapping_add(crate::low32(v)).to_le_bytes());
         };
         match kind {
             amd64::ADDR64 => {
@@ -542,7 +544,7 @@ impl<'a> Image<'a> {
                 .find(|s| s.characteristics & scn::CNT_CODE == 0)
                 .map_or(0, |s| s.rva);
             w.u32(base_of_data);
-            w.u32(self.base as u32);
+            w.u32(field32(self.base));
         }
         w.u32(self.l.section_align);
         w.u32(self.l.file_align);
@@ -597,10 +599,10 @@ impl<'a> Image<'a> {
             w.u64(c.heap.0);
             w.u64(commit(c.heap));
         } else {
-            w.u32(c.stack.0 as u32);
-            w.u32(commit(c.stack) as u32);
-            w.u32(c.heap.0 as u32);
-            w.u32(commit(c.heap) as u32);
+            w.u32(field32(c.stack.0));
+            w.u32(field32(commit(c.stack)));
+            w.u32(field32(c.heap.0));
+            w.u32(field32(commit(c.heap)));
         }
         w.u32(0); // loader flags
         w.u32(16);
@@ -729,7 +731,14 @@ pub fn timestamp(c: &Config) -> u32 {
     }
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs() as u32)
+        .map_or(0, |d| u32::try_from(d.as_secs()).unwrap_or(u32::MAX))
+}
+
+/// A PE32 header's 32-bit field for a value given as 64 bits (a base,
+/// stack, or heap size, which a 32-bit image can't exceed; the largest if
+/// asked for more).
+fn field32(v: u64) -> u32 {
+    u32::try_from(v).unwrap_or(u32::MAX)
 }
 
 struct Writer<'a> {
@@ -772,7 +781,7 @@ pub fn base_relocation_blocks(sites: &[(u32, u16)]) -> Vec<u8> {
         if n % 2 == 1 {
             out.extend_from_slice(&0u16.to_le_bytes());
         }
-        let size = (out.len() - start) as u32;
+        let size = crate::n32(out.len() - start);
         out[start + 4..start + 8].copy_from_slice(&size.to_le_bytes());
     }
     out

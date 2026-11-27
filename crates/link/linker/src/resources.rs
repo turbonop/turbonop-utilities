@@ -136,11 +136,14 @@ pub fn plan(mut resources: Vec<Resource>) -> Result<Rsrc, String> {
     Ok(Rsrc { resources, size })
 }
 
+/// A type's names, each with the indices of its languages' resources.
+type Names = Vec<(Id, Vec<usize>)>;
+
 /// Where each part of the tree goes.
 struct Tree {
     /// Per type: its name directories; per name: the indices (into the
     /// sorted resources) of its languages.
-    types: Vec<(Id, Vec<(Id, Vec<usize>)>)>,
+    types: Vec<(Id, Names)>,
     /// Offsets: the directories end here; then data entries, names, data.
     directories: u32,
     entries: u32,
@@ -149,7 +152,7 @@ struct Tree {
 
 impl Tree {
     fn of(resources: &[Resource]) -> Tree {
-        let mut types: Vec<(Id, Vec<(Id, Vec<usize>)>)> = Vec::new();
+        let mut types: Vec<(Id, Names)> = Vec::new();
         for (i, r) in resources.iter().enumerate() {
             if types.last().is_none_or(|t| t.0 != r.ty) {
                 types.push((r.ty.clone(), Vec::new()));
@@ -160,7 +163,7 @@ impl Tree {
             }
             names.last_mut().expect("just pushed").1.push(i);
         }
-        let table = |n: usize| 16 + 8 * n as u32;
+        let table = |n: usize| 16 + 8 * crate::n32(n);
         let mut directories = table(types.len());
         for (_, names) in &types {
             directories += table(names.len());
@@ -168,7 +171,7 @@ impl Tree {
                 directories += table(langs.len());
             }
         }
-        let entries = directories + 16 * resources.len() as u32;
+        let entries = directories + 16 * crate::n32(resources.len());
         let mut strings = entries;
         let mut seen = turbonop_hash::Set::default();
         for (ty, names) in &types {
@@ -176,7 +179,7 @@ impl Tree {
                 if let Id::Name(s) = id
                     && seen.insert(s.clone())
                 {
-                    strings += 2 + 2 * s.len() as u32;
+                    strings += 2 + 2 * crate::n32(s.len());
                 }
             }
         }
@@ -195,7 +198,7 @@ impl Tree {
     fn data_end(&self, resources: &[Resource]) -> u32 {
         let mut at = self.data_start();
         for r in resources {
-            at = ((at + 7) & !7) + r.data.len() as u32;
+            at = ((at + 7) & !7) + crate::n32(r.data.len());
         }
         at
     }
@@ -219,11 +222,11 @@ impl Rsrc {
                 return o;
             }
             let o = next_string;
-            put16(out, o, s.len() as u16);
+            put16(out, o, crate::n16(s.len()));
             for (k, &c) in s.iter().enumerate() {
-                put16(out, o + 2 + 2 * k as u32, c);
+                put16(out, o + 2 + 2 * crate::n32(k), c);
             }
-            next_string += 2 + 2 * s.len() as u32;
+            next_string += 2 + 2 * crate::n32(s.len());
             string_at.insert(s.to_vec(), o);
             o
         };
@@ -235,11 +238,11 @@ impl Rsrc {
                      string: &mut dyn FnMut(&mut [u8], &[u16]) -> u32|
          -> Vec<u32> {
             let named = ids.iter().filter(|i| matches!(i, Id::Name(_))).count();
-            put16(out, at + 12, named as u16);
-            put16(out, at + 14, (ids.len() - named) as u16);
+            put16(out, at + 12, crate::n16(named));
+            put16(out, at + 14, crate::n16(ids.len() - named));
             let mut fields = Vec::with_capacity(ids.len());
             for (k, id) in ids.iter().enumerate() {
-                let e = at + 16 + 8 * k as u32;
+                let e = at + 16 + 8 * crate::n32(k);
                 let name = match id {
                     Id::Number(n) => u32::from(*n),
                     Id::Name(s) => 0x8000_0000 | string(out, s),
@@ -253,13 +256,13 @@ impl Rsrc {
         // then each name's languages' table.
         let ty_ids: Vec<&Id> = t.types.iter().map(|x| &x.0).collect();
         let type_fields = table(out, 0, &ty_ids, &mut string);
-        let mut at = 16 + 8 * t.types.len() as u32;
+        let mut at = 16 + 8 * crate::n32(t.types.len());
         let mut name_tables = Vec::new();
         for ((_, names), field) in t.types.iter().zip(&type_fields) {
             put32(out, *field, 0x8000_0000 | at);
             let ids: Vec<&Id> = names.iter().map(|x| &x.0).collect();
             name_tables.push((at, table(out, at, &ids, &mut string)));
-            at += 16 + 8 * names.len() as u32;
+            at += 16 + 8 * crate::n32(names.len());
         }
         let mut data_at = t.data_start();
         let mut entry = 0u32;
@@ -272,7 +275,7 @@ impl Rsrc {
                     .collect();
                 let refs: Vec<&Id> = lang_ids.iter().collect();
                 let lang_fields = table(out, at, &refs, &mut string);
-                at += 16 + 8 * langs.len() as u32;
+                at += 16 + 8 * crate::n32(langs.len());
                 for (&i, lf) in langs.iter().zip(&lang_fields) {
                     let r = &self.resources[i];
                     let e = t.directories + 16 * entry;
@@ -280,9 +283,9 @@ impl Rsrc {
                     put32(out, *lf, e);
                     data_at = (data_at + 7) & !7;
                     put32(out, e, rva + data_at);
-                    put32(out, e + 4, r.data.len() as u32);
+                    put32(out, e + 4, crate::n32(r.data.len()));
                     out[data_at as usize..data_at as usize + r.data.len()].copy_from_slice(r.data);
-                    data_at += r.data.len() as u32;
+                    data_at += crate::n32(r.data.len());
                 }
             }
         }
@@ -319,11 +322,11 @@ mod tests {
         h.extend_from_slice(&lang.to_le_bytes());
         h.extend_from_slice(&0u32.to_le_bytes());
         h.extend_from_slice(&0u32.to_le_bytes());
-        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
-        out.extend_from_slice(&((8 + h.len()) as u32).to_le_bytes());
+        out.extend_from_slice(&(crate::n32(data.len())).to_le_bytes());
+        out.extend_from_slice(&(crate::n32(8 + h.len())).to_le_bytes());
         out.extend_from_slice(&h);
         out.extend_from_slice(data);
-        while out.len() % 4 != 0 {
+        while !out.len().is_multiple_of(4) {
             out.push(0);
         }
     }

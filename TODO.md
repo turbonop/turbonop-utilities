@@ -359,6 +359,34 @@ x64. Where the 3.5 MB went:
   their own units and records. Measure again, and profile with
   Stackrabbit.
 
+## turbolink
+
+[The plan](docs/turbolink.md). What links so far: C and C++ with every
+CRT, DLLs and import libraries, resources, LLVM's `llvm-tblgen`.
+
+- **Not yet, for native x64 images:** `/DEBUG` (the PDB, the debug
+  directory), `/OPT:ICF`, delay loading (`/DELAYLOAD` is accepted and the
+  imports made ordinary), `/GUARD:CF`'s tables (and `__guard_flags`'s
+  "instrumented" bit link.exe sets for objects built with `/guard:cf`),
+  `/GUARD:EHCONT`, manifests (`/MANIFEST`, `/MANIFESTUAC`, embedding),
+  `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real format, the `.exp` file,
+  `/INCREMENTAL`'s padding (it links fully), `/WHOLEARCHIVE`,
+  `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks, `/MERGE` cycles' error,
+  link.exe's `coffgrp` debug entry, long-form import objects (old
+  `.idata$` members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
+- **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
+  under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; which
+  sections link.exe keeps empty or drops (`.gssep`, `.ltfsmap`, `_RDATA`
+  appear in turbolink's static-CRT image and not in link.exe's).
+- **Speed.** Measure large links (LLVM's) once the build machine is idle.
+  Layout hashes owned copies of names per chunk (24 ms of 90 for
+  `llvm-tblgen`); symbols are interned on one thread; the `/OPT:REF` mark
+  is serial; small inputs may read faster than they map.
+- **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
+  list of what passes.
+- **LTCG**, from [prong 2](docs/turbolink-c2.md) (`turbonop-ltcg-probe`'s
+  `ltcg-drive`).
+
 ## rtti-strip
 
 - **Phase 0 of [the plan](docs/rtti-strip.md).** A corpus with RTTI

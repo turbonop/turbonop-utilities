@@ -291,12 +291,14 @@ impl Linker {
                 crate::config::apply_directives(&mut self.config, &object.directives, &mut diags);
                 // An object's /INCLUDEs are wanted as the command line's are
                 // (and are roots of /OPT:REF's mark).
-                for include in self.config.includes[includes_before..].to_vec() {
-                    let g = self.intern(Box::leak(include.into_bytes().into_boxed_slice()));
+                let new_includes = self.config.includes.split_off(includes_before);
+                for include in &new_includes {
+                    let g = self.intern(Box::leak(include.clone().into_bytes().into_boxed_slice()));
                     if self.globals[g as usize].referenced_by == NONE {
                         self.globals[g as usize].referenced_by = place;
                     }
                 }
+                self.config.includes.extend(new_includes);
                 for d in diags {
                     if let crate::config::Diagnostic::Bad(m) = d {
                         self.errors
@@ -403,7 +405,7 @@ impl Linker {
             },
             SymbolKind::Defined { section, value } => {
                 let comdat = object.sections[section as usize].comdat;
-                let leader = object.comdat_leaders[section as usize] == i as u32;
+                let leader = object.comdat_leaders[section as usize] == crate::n32(i);
                 if comdat.is_some() && !kept[section as usize] {
                     // A copy of a COMDAT that lost: its symbols aren't
                     // definitions.
@@ -676,7 +678,7 @@ impl Linker {
                 } = &self.files[file as usize].kind
             {
                 let target = globals.get(default as usize).copied().unwrap_or(NONE);
-                if target != NONE && target != g as u32 {
+                if target != NONE && target != crate::n32(g) {
                     self.globals[g].def = Def::Alias(target);
                     changed = true;
                     if self.globals[target as usize].referenced_by == NONE {

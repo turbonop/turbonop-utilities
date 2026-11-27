@@ -280,6 +280,17 @@ disassembly, `size` with its findings, and the extension's pages.
   as lib.exe tells them.
 - **The other IL sections.** `.cil$ex` (each function's IL), `.cil$sy`
   (its locals), and `.cil$in`: their contents.
+- **The back end's interface, the rest** (docs/turbolink-c2.md): the
+  back-end switches each link option produces (the probe over a matrix
+  of options), `CodeGen6`'s outputs, the second root list's rule,
+  `SymType`'s values, and what hands native objects to the back end.
+- **`ltcg-drive`'s gaps.** Libraries' members (opened at their offset),
+  incremental LTCG, and the written object's debug information
+  (`LNK4255` for two objects).
+- **`hexcavator vtables`, an unsized table's end.** It is inferred up
+  to the next symbol (or a `QueryInterface`), so a table with no symbol
+  right after one reads as more of it (link.exe's `std::function`s).
+  Where the image has RTTI, the locator before each table bounds it.
 
 ## Speed
 

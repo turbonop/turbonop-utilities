@@ -196,59 +196,7 @@ struct Rel {
 /// relocations, by offset.
 struct Sec<'p> {
     bytes: Cow<'p, [u8]>,
-    rels: Rels<'p>,
-}
-
-/// A debug section's relocations, by offset (of equal offsets, in the
-/// member's order): decoded and sorted, or, when they are one relocation
-/// section's entries already in order, read from it as they are needed
-/// (a large member's `.rela.debug_info` holds millions).
-enum Rels<'p> {
-    Values(Vec<Rel>),
-    Member {
-        rs: &'p turbonop_elf_object::Relocations<'p>,
-        obj: &'p Object<'p>,
-    },
-}
-
-impl Rels<'_> {
-    fn len(&self) -> usize {
-        match self {
-            Rels::Values(v) => v.len(),
-            Rels::Member { rs, .. } => rs.len(),
-        }
-    }
-
-    fn get(&self, i: usize) -> Option<Rel> {
-        match self {
-            Rels::Values(v) => v.get(i).copied(),
-            Rels::Member { rs, obj } => rs.get(i).map(|r| Rel {
-                offset: r.offset,
-                rtype: obj.reloc_type(r),
-                sym: obj.reloc_symbol(r),
-                addend: r.addend,
-            }),
-        }
-    }
-
-    /// The first entry whose offset isn't below `offset` (`len` if none).
-    fn first_at(&self, offset: u64) -> usize {
-        match self {
-            Rels::Values(v) => v.partition_point(|r| r.offset < offset),
-            Rels::Member { rs, .. } => {
-                let (mut lo, mut hi) = (0, rs.len());
-                while lo < hi {
-                    let mid = lo + (hi - lo) / 2;
-                    if rs.get(mid).is_some_and(|r| r.offset < offset) {
-                        lo = mid + 1;
-                    } else {
-                        hi = mid;
-                    }
-                }
-                lo
-            }
-        }
-    }
+    rels: Vec<Rel>,
 }
 
 /// One DIE of a source unit.
@@ -487,9 +435,7 @@ impl<'p> Source<'p> {
                 }
             })
             .collect();
-        // Each debug section's relocation sections, in order.
-        let mut rels_of: BTreeMap<usize, Vec<&'p turbonop_elf_object::Relocations<'p>>> =
-            BTreeMap::new();
+        let mut rels_of: BTreeMap<usize, Vec<Rel>> = BTreeMap::new();
         for s in &obj.sections {
             if !s.is_relocations() {
                 continue;
@@ -508,7 +454,16 @@ impl<'p> Source<'p> {
             let Data::Relocations(rs) = &s.data else {
                 continue;
             };
-            rels_of.entry(t).or_default().push(rs);
+            let e = rels_of.entry(t).or_default();
+            e.reserve(rs.len());
+            for r in rs {
+                e.push(Rel {
+                    offset: r.offset,
+                    rtype: obj.reloc_type(r),
+                    sym: obj.reloc_symbol(r),
+                    addend: r.addend,
+                });
+            }
         }
         let mut secs: Vec<Option<Sec<'p>>> = (0..KINDS).map(|_| None).collect();
         for (k, at) in index.iter().enumerate() {
@@ -517,31 +472,13 @@ impl<'p> Source<'p> {
             let Data::Bytes(b) = &s.data else {
                 return Err("a debug section without contents");
             };
-            let lists = rels_of.remove(&at).unwrap_or_default();
-            let decode = |r: turbonop_elf_object::Relocation| Rel {
-                offset: r.offset,
-                rtype: obj.reloc_type(r),
-                sym: obj.reloc_symbol(r),
-                addend: r.addend,
-            };
-            // (One section's entries in order are read where they are;
-            // otherwise all are decoded, and sorted as they came.)
-            let rels = match lists.as_slice() {
-                [rs] if rs.iter().is_sorted_by_key(|r| r.offset) => Rels::Member { rs, obj },
-                _ => {
-                    let mut v: Vec<Rel> = Vec::with_capacity(lists.iter().map(|r| r.len()).sum());
-                    for rs in &lists {
-                        v.extend(rs.iter().map(decode));
-                    }
-                    v.sort_by_key(|r| r.offset);
-                    Rels::Values(v)
-                }
-            };
+            let mut rels = rels_of.remove(&at).unwrap_or_default();
+            rels.sort_by_key(|r| r.offset);
             let kind = index_kind(k);
             // The relocations to debug sections, applied to a copy (a
             // section without them, such as `.debug_str`, is read in place).
-            let mut applied: Vec<(usize, usize, u64)> = Vec::new();
-            for r in (0..rels.len()).filter_map(|i| rels.get(i)) {
+            let mut applied: Vec<(usize, usize, u64)> = Vec::with_capacity(rels.len());
+            for r in &rels {
                 let size = reloc_size(machine, r.rtype).ok_or("a debug relocation not known")?;
                 if !kind.relocated() {
                     return Err("relocations in a string or abbreviation section");
@@ -622,8 +559,8 @@ impl<'p> Source<'p> {
         }
     }
 
-    fn rels(&self, k: Kind) -> Option<&Rels<'p>> {
-        self.secs[k as usize].as_ref().map(|s| &s.rels)
+    fn rels(&self, k: Kind) -> &[Rel] {
+        self.secs[k as usize].as_ref().map_or(&[], |s| &s.rels)
     }
 
     fn dwarf(&self) -> Sections<'_> {
@@ -643,17 +580,18 @@ impl<'p> Source<'p> {
     }
 
     /// The relocation at `offset` of `k`, if any.
-    fn rel_at(&self, k: Kind, offset: u64) -> Option<Rel> {
-        let rels = self.rels(k)?;
-        rels.get(rels.first_at(offset))
-            .filter(|r| r.offset == offset)
+    fn rel_at(&self, k: Kind, offset: u64) -> Option<&Rel> {
+        let rels = self.rels(k);
+        let i = rels.partition_point(|r| r.offset < offset);
+        rels.get(i).filter(|r| r.offset == offset)
     }
 
-    /// The relocations in `[start, end)` of `k`, in order.
-    fn rels_in(&self, k: Kind, start: u64, end: u64) -> impl Iterator<Item = Rel> + '_ {
+    /// The relocations in `[start, end)` of `k`.
+    fn rels_in(&self, k: Kind, start: u64, end: u64) -> &[Rel] {
         let rels = self.rels(k);
-        let (lo, hi) = rels.map_or((0, 0), |r| (r.first_at(start), r.first_at(end)));
-        (lo..hi).filter_map(move |i| rels.and_then(|r| r.get(i)))
+        let lo = rels.partition_point(|r| r.offset < start);
+        let hi = rels.partition_point(|r| r.offset < end);
+        &rels[lo..hi]
     }
 
     /// The address of `n` bytes at `offset` of `k`.
@@ -880,7 +818,7 @@ impl<'p> Source<'p> {
         for (k, b) in taken {
             self.secs[k as usize] = Some(Sec {
                 bytes: Cow::Owned(b),
-                rels: Rels::Values(Vec::new()),
+                rels: Vec::new(),
             });
         }
         self.skeleton = Some(skeleton);
@@ -1496,7 +1434,7 @@ impl<'p> Source<'p> {
             }
             secs[k as usize] = Some(Sec {
                 bytes: Cow::Owned(bytes),
-                rels: Rels::Values(rels),
+                rels,
             });
         }
         let n = symbols.len();

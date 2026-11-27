@@ -2,6 +2,9 @@
 //! its own part of the output, split with `split_at_mut`, relocated in
 //! place), the base relocations, and `.pdata` sorted.
 
+#[path = "map.rs"]
+mod map;
+
 use turbonop_hash::Map;
 
 use crate::config::{Config, Debug, Machine, Subsystem};

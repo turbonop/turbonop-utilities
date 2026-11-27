@@ -175,6 +175,11 @@ pub struct Symbol {
     pub kind: SymbolKind,
     /// The `Type` field (0x20 for functions).
     pub ty: u16,
+    /// The storage class (2 external, 3 static, 6 label, ...).
+    pub class: u8,
+    /// How many auxiliary records follow it (a section's definition has
+    /// one).
+    pub aux: u8,
 }
 
 impl Symbol {
@@ -275,6 +280,8 @@ impl Object {
                 name: b"",
                 kind: SymbolKind::Aux,
                 ty: 0,
+                class: 0,
+                aux: 0,
             };
             table.len()
         ];
@@ -381,6 +388,8 @@ impl Object {
                 name,
                 kind,
                 ty: s.kind,
+                class: s.storage_class,
+                aux: u8::try_from(s.aux_count()).unwrap_or(u8::MAX),
             };
         }
         Ok(Object {

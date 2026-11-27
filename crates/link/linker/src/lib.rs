@@ -11,6 +11,7 @@ use turbonop_global_alloc as _;
 
 pub mod args;
 pub mod config;
+pub mod exp;
 pub mod exports;
 pub mod guard;
 pub mod icf;

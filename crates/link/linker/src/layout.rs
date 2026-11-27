@@ -205,6 +205,9 @@ pub struct Layout {
     /// Each delay-loaded import's hint/name entry's offset in
     /// `DelayHintNames`.
     pub delay_name_offsets: Map<u32, u32>,
+    /// `/OPT:ICF`'s folds: each folded section (file, section) and the one
+    /// it folded into (for the map's names in them).
+    pub folded: Map<(u32, u32), (u32, u32)>,
     /// `/GUARD:CF`'s tables' entries.
     pub guard: crate::guard::Tables,
     /// The headers' size (file-aligned).
@@ -1384,6 +1387,11 @@ pub fn layout(
         partials.push(((output_name(name, &merges), name.to_vec(), chars), vec![c]));
         partial_index.insert((name, chars), partials.len() - 1);
     }
+    // An .edata group is always there (empty without exports), as link.exe
+    // lists it.
+    if exports.is_none() {
+        empty_groups.push((b".edata", scn::CNT_INITIALIZED_DATA | scn::MEM_READ));
+    }
     for (name, chars) in empty_groups {
         let chars = chars & scn::OUTPUT_MASK;
         partial_index.entry((name, chars)).or_insert_with(|| {
@@ -1466,22 +1474,33 @@ pub fn layout(
         // (input section name) by its name, the merged ones among the
         // section's own; except the imports': the address table
         // (`.idata$5`) first, the rest of `.idata$` last.
+        // (The export directory sorts among the imports' groups, or with
+        // no imports right after the .rdata group: a DLL with no imports.)
+        let imports = mine
+            .iter()
+            .any(|p| p.0.1.starts_with(b".idata$") || p.0.1.starts_with(b".didat$"));
         mine.sort_by(|a, b| {
             let rank = |i: &[u8]| {
                 if i == b".idata$5" {
                     0
                 } else if i.starts_with(b".idata$")
-                    || i.starts_with(b".edata")
+                    || (i.starts_with(b".edata") && imports)
                     || i.starts_with(b".didat$")
                 {
-                    // (The export directory and the delay-load tables sort
-                    // among them too.)
+                    // (The delay-load tables sort among them too.)
                     2
                 } else {
                     1
                 }
             };
-            let (ia, ib) = (&a.0.1, &b.0.1);
+            let key = |i: &[u8]| -> Vec<u8> {
+                if i.starts_with(b".edata") && !imports {
+                    b".rdata\0".to_vec()
+                } else {
+                    i.to_vec()
+                }
+            };
+            let (ia, ib) = (&key(&a.0.1), &key(&b.0.1));
             // Uninitialized data (.bss) after the rest, as it is laid out.
             let bss = |p: &Partial| p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0;
             (bss(a), rank(ia), ia).cmp(&(bss(b), rank(ib), ib))
@@ -1553,6 +1572,7 @@ pub fn layout(
         delay_dlls,
         delay_slots,
         delay_name_offsets,
+        folded,
         guard,
         headers_size: 0,
         optional_size: optional,

@@ -299,6 +299,32 @@ pub fn plan(exports: Vec<Export>, dll_name: &str, forwarders: &[Option<String>])
 }
 
 impl Directory {
+    /// The export object's symbols (link.exe's `.exp`, which it links into
+    /// the image) and their offsets in the directory: the section, the
+    /// address table (`rgpv`), the name pointers (`rgszName`), the
+    /// ordinals (`rgwOrd`), the DLL's name (`szName`), and each name's
+    /// string (`$N` and its export's ordinal, five digits).
+    pub fn symbols(&self, dll_name: &str) -> Vec<(String, u32)> {
+        let functions_at = 40u32;
+        let names_at = functions_at + self.functions * 4;
+        let ordinals_at = names_at + crate::n32(self.names.len()) * 4;
+        let strings_at = ordinals_at + crate::n32(self.names.len()) * 2;
+        let mut out = vec![
+            (".edata".to_owned(), 0),
+            ("rgpv".to_owned(), functions_at),
+            ("rgszName".to_owned(), names_at),
+            ("rgwOrd".to_owned(), ordinals_at),
+            ("szName".to_owned(), strings_at),
+        ];
+        let mut at = strings_at + crate::n32(dll_name.len()) + 1;
+        for (name, i) in &self.names {
+            let ordinal = self.exports[*i].ordinal.unwrap_or(self.base);
+            out.push((format!("$N{ordinal:05}"), at));
+            at += crate::n32(name.len()) + 1;
+        }
+        out
+    }
+
     /// Writes the directory at `rva` into `out`: `address(i)` is export
     /// `i`'s address (unused for forwarders).
     pub fn write(

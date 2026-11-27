@@ -134,6 +134,20 @@ impl<'a> Image<'a> {
                 Def::Absolute(v) => Target::Absolute(v),
                 Def::Synthetic(Synthetic::ImageBase) => Target::Rva(0),
                 Def::Synthetic(Synthetic::Zero) => Target::Absolute(0),
+                Def::Synthetic(Synthetic::Guard(s)) => match s {
+                    crate::guard::Symbol::Table(i) => self
+                        .l
+                        .chunks
+                        .iter()
+                        .find(|c| c.kind == ChunkKind::GuardTable(i))
+                        .map_or(Target::Absolute(0), |c| Target::Rva(c.rva)),
+                    crate::guard::Symbol::Count(i) => {
+                        Target::Absolute(self.l.guard.table(i).len() as u64)
+                    }
+                    crate::guard::Symbol::Flags => {
+                        Target::Absolute(u64::from(crate::guard::flags(self.r, &self.l.guard)))
+                    }
+                },
                 Def::Synthetic(Synthetic::VolatileMetadata) => self
                     .l
                     .chunks
@@ -316,6 +330,36 @@ impl<'a> Image<'a> {
                         },
                         &t.forwarders,
                     );
+                }
+            }
+            ChunkKind::GuardTable(i) => {
+                // The targets' RVAs, ascending (the functions' each with its
+                // metadata byte, if any has one).
+                let g = &self.l.guard;
+                let mut rvas: Vec<(u32, u8)> = g
+                    .table(i)
+                    .iter()
+                    .filter_map(|p| {
+                        let rva = match *p {
+                            crate::guard::Place::Chunk(c, off) => {
+                                Some(self.l.chunks[c as usize].rva + off)
+                            }
+                            crate::guard::Place::Slot(f) => self.import_slot(f),
+                        }?;
+                        Some((rva, g.function_flags.get(p).copied().unwrap_or(0)))
+                    })
+                    .collect();
+                rvas.sort_unstable();
+                let size = if i == 0 {
+                    crate::guard::function_entry_size(g) as usize
+                } else {
+                    4
+                };
+                for (k, (v, flags)) in rvas.into_iter().enumerate() {
+                    out[size * k..size * k + 4].copy_from_slice(&v.to_le_bytes());
+                    if size == 5 {
+                        out[size * k + 4] = flags;
+                    }
                 }
             }
             ChunkKind::Empty
@@ -1009,7 +1053,8 @@ impl<'a> Image<'a> {
         w.u32(16);
         let mut dirs = [(0u32, 0u32); 16];
         if let Some(e) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Exports) {
-            dirs[0] = (e.rva, e.size);
+            // (Its size to 4 bytes, as link.exe gives it.)
+            dirs[0] = (e.rva, crate::layout::align_up(e.size, 4));
         }
         if let Some(d) = self
             .l

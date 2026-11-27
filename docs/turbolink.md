@@ -218,6 +218,20 @@ lists every COFF group with its address and size) and by experiment:
   DLL's address table, in `.data`: each slot its thunk's address, with a
   base relocation). The DLLs are in the order their first imports
   loaded. A `/DELAYLOAD` DLL nothing imports from is LNK4199.
+- **`/GUARD:CF`'s tables**, groups of `.rdata` after `.CRT`'s: `.gfids`
+  (the function table: what the kept `.gfids$y` sections name, the entry
+  point, `__delayLoadHelper2` with delay loading, and each exported
+  function not otherwise there with metadata flag 2, export suppressed),
+  `.giats` (address-taken imports' slots, from `.giats$y`), `.gljmp`
+  (long-jump targets, from `.gljmp$y`), and with `/GUARD:EHCONT`
+  `.gehcont`. Each is its targets' RVAs, ascending, each once; the
+  function table's entries take a metadata byte (5 bytes, stride 1 in
+  `__guard_flags`' top nibble) once any has one. Every function in the
+  table starts on 16 bytes (an import thunk, packed otherwise, too).
+  `__guard_flags` is 0x17500 (instrumented, function table, delay-load
+  IAT protected and in its own section, export suppression information,
+  long-jump table), with 0x400000 for `/GUARD:EHCONT`; the delay-load
+  address tables go to a `.didat` section of their own (read-write).
 - **Resources** (`.res` files, cvtres's work): the directory (with its
   strings) is the `.rsrc$01` group, the data `.rsrc$02` from the next 16
   bytes, each resource's on 8 and the whole to 8; the Rich header has
@@ -230,12 +244,14 @@ lists every COFF group with its address and size) and by experiment:
   DLL's is Windows' (entry point or not) and an EXE's is LNK1221.
 - **Status:** link.exe's images byte for byte, time stamps aside, for C
   and C++ (exceptions, TLS, iostreams) with the dynamic and the static
-  CRT, C with the debug CRT, a DLL with exports, delay loading, and
-  resources (tests check each). With `/DEBUG` (and `/INCREMENTAL:NO`:
-  turbolink always links fully), the image is link.exe's but for the
-  PDB's GUID, age, and name (the debug directory: CodeView, VC_FEATURE,
-  then the coffgrp entry); the PDB is logically link.exe's (DIA reads
-  it; `hexcavator diff` compares them), not byte for byte.
+  CRT, C with the debug CRT, a DLL with exports, delay loading,
+  resources, and `/GUARD:CF` (with indirect calls, long jumps,
+  address-taken imports, delay loading, and `/GUARD:EHCONT`; tests check
+  each). With `/DEBUG` (and `/INCREMENTAL:NO`: turbolink always links
+  fully), the image is link.exe's but for the PDB's GUID, age, and name
+  (the debug directory: CodeView, VC_FEATURE, then the coffgrp entry); the
+  PDB is logically link.exe's (DIA reads it; `hexcavator diff` compares
+  them), not byte for byte.
 - **Still different** (to do): the
   `/Brepro` hash (it depends on the output's contents, not its name or
   the options, but isn't a plain SHA-1/256/512 or MD5 of the file with

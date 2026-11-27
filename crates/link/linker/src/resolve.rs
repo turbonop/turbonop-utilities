@@ -166,6 +166,8 @@ pub enum Synthetic {
     Zero,
     /// `__volatile_metadata`: the volatile metadata link.exe adds (x64).
     VolatileMetadata,
+    /// One of `/GUARD:CF`'s tables, counts, or its flags.
+    Guard(crate::guard::Symbol),
 }
 
 /// A global symbol.
@@ -1047,7 +1049,10 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         if let Some(&g) = l.names.get(name)
             && l.globals[g as usize].def == Def::Undefined
         {
-            l.globals[g as usize].def = Def::Synthetic(Synthetic::Zero);
+            // (With /GUARD:CF, the tables the layout builds.)
+            let guard = crate::guard::Symbol::of(name).filter(|_| l.config.guard_cf);
+            l.globals[g as usize].def =
+                Def::Synthetic(guard.map_or(Synthetic::Zero, Synthetic::Guard));
         }
     }
     // __guard_flags without /GUARD:CF: "instrumented" (0x100) if an

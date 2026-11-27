@@ -127,6 +127,8 @@ pub enum ChunkKind {
     /// A delay-loaded import's `__imp_load_x`: `lea rax, [__imp_x]`, then a
     /// jump to its DLL's tail merge (the import's file).
     DelayThunk(u32),
+    /// One of `/GUARD:CF`'s tables (as `guard::Symbol::Table` numbers them).
+    GuardTable(u8),
 }
 
 /// A chunk placed.
@@ -203,6 +205,8 @@ pub struct Layout {
     /// Each delay-loaded import's hint/name entry's offset in
     /// `DelayHintNames`.
     pub delay_name_offsets: Map<u32, u32>,
+    /// `/GUARD:CF`'s tables' entries.
+    pub guard: crate::guard::Tables,
     /// The headers' size (file-aligned).
     pub headers_size: u32,
     /// The optional header's size (240 for PE32+, 224 for PE32).
@@ -537,6 +541,7 @@ pub fn layout(
     // the inputs' own bytes, so finding one copies nothing; the output
     // name is worked out once per distinct one.
     let mut partial_index: Map<(&'static [u8], u32), usize> = Map::default();
+    let guard_cf = config.guard_cf;
     let mut add = |name: &'static [u8], chars: u32, chunk: Chunk, chunks: &mut Vec<Chunk>| -> u32 {
         let chars = chars & scn::OUTPUT_MASK;
         let c = u32::try_from(chunks.len()).expect("fewer than 4 billion chunks");
@@ -546,7 +551,13 @@ pub fn layout(
             // goes to .data as link.exe puts it, the rest of .didat to
             // .rdata.)
             let out = if name.starts_with(b".didat") && chars & scn::MEM_WRITE != 0 {
-                b".data".to_vec()
+                // (With /GUARD:CF, in a section of its own, which the
+                // loader can protect once the DLLs load.)
+                if guard_cf {
+                    b".didat".to_vec()
+                } else {
+                    b".data".to_vec()
+                }
             } else {
                 output_name(name, &merges)
             };
@@ -1016,6 +1027,63 @@ pub fn layout(
         );
     }
 
+    // /GUARD:CF's tables, in link.exe's groups (merged into .rdata).
+    let guard = if config.guard_cf {
+        let chunk_of = |f: u32, s: u32| {
+            section_chunks
+                .get(f as usize)
+                .and_then(|c| c.get(s as usize))
+                .copied()
+                .unwrap_or(u32::MAX)
+        };
+        let thunk_of = |f: u32| thunk_chunks.get(&f).copied();
+        let delay_thunks: Vec<u32> = chunks
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| matches!(c.kind, ChunkKind::DelayThunk(_)))
+            .map(|(i, _)| crate::n32(i))
+            .collect();
+        crate::guard::tables(r, &chunk_of, &thunk_of, &delay_thunks)
+    } else {
+        crate::guard::Tables::default()
+    };
+    // A function that is a valid target starts on 16 bytes, as control-flow
+    // guard's targets must: link.exe aligns its section so (an import thunk,
+    // packed otherwise; delayimp.lib's __delayLoadHelper2).
+    for p in &guard.functions {
+        if let crate::guard::Place::Chunk(c, 0) = *p
+            && matches!(
+                chunks[c as usize].kind,
+                ChunkKind::Thunk(_) | ChunkKind::Input(..)
+            )
+        {
+            let a = &mut chunks[c as usize].align;
+            *a = (*a).max(16);
+        }
+    }
+    for (i, group) in crate::guard::GROUPS.into_iter().enumerate() {
+        let n = guard.table(crate::n32(i).try_into().unwrap_or(0)).len();
+        let entry = if i == 0 {
+            crate::guard::function_entry_size(&guard)
+        } else {
+            4
+        };
+        if n > 0 {
+            add(
+                group,
+                scn::CNT_INITIALIZED_DATA | scn::MEM_READ,
+                Chunk {
+                    kind: ChunkKind::GuardTable(u8::try_from(i).unwrap_or(0)),
+                    align: 4,
+                    size: entry * crate::n32(n),
+                    uninitialized: false,
+                    rva: 0,
+                },
+                &mut chunks,
+            );
+        }
+    }
+
     // The delay-load tables (`.didat$`, as link.exe's groups): the
     // descriptors and their null one, each DLL's name table, the hint/name
     // entries, each DLL's bound table (zeros, and 0x104 bytes of room
@@ -1452,6 +1520,7 @@ pub fn layout(
         delay_dlls,
         delay_slots,
         delay_name_offsets,
+        guard,
         headers_size: 0,
         optional_size: optional,
         image_size: 0,

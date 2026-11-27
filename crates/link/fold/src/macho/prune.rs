@@ -1088,3 +1088,6 @@ pub fn apple_round_trip(o: &Object<'_>) -> Vec<(Vec<u8>, R<bool>)> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests;

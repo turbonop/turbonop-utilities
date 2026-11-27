@@ -350,6 +350,19 @@ impl<'a> Parsed<'a> {
     }
 }
 
+/// The shards the maps of names and units are built in.
+const SHARDS: usize = 64;
+
+/// A name's definitions in the library, summed up.
+#[derive(Clone, Copy, Debug)]
+struct Defined {
+    /// The first one's member.
+    first: usize,
+    /// The hash of the unit every definition is a copy of; `None` if they
+    /// are of different units, or one is outside any.
+    copies: Option<u128>,
+}
+
 /// The environment sections a synthesized member copies from its first
 /// member, in its order.
 const ENV_NAMES: [&[u8]; 7] = [
@@ -1238,21 +1251,31 @@ fn patched(
             _ => stretches.push((off, end, vec![k])),
         }
     }
-    let byte_at = |placed: &[(u64, Part)], made: &[Vec<u8>], off: u64| -> u8 {
-        let i = placed.partition_point(|x| x.0 <= off) - 1;
-        let (start, part) = placed[i];
-        let d = (off - start) as usize;
-        match part {
-            Part::Input { start, .. } => input[start + d],
-            Part::Made { buffer, start, .. } => made[buffer][start + d],
-        }
-    };
+    // The member's bytes in [lo, hi), appended to `out`.
+    let bytes_in =
+        |placed: &[(u64, Part)], made: &[Vec<u8>], lo: u64, hi: u64, out: &mut Vec<u8>| {
+            let mut i = placed.partition_point(|x| x.0 <= lo) - 1;
+            let mut at = lo;
+            while at < hi {
+                let (start, part) = placed[i];
+                let (bytes, len) = match part {
+                    Part::Input { start, len } => (&input[start..], len),
+                    Part::Made { buffer, start, len } => (&made[buffer][start..], len),
+                };
+                let from = (at - start) as usize;
+                let to = len.min((hi - start) as usize);
+                out.extend_from_slice(&bytes[from..to]);
+                at = start + to as u64;
+                i += 1;
+            }
+        };
     let buffer = w.made.len();
     let mut patch = Vec::new();
     let mut spans: Vec<(u64, u64, usize)> = Vec::with_capacity(stretches.len());
     for (lo, hi, mut ks) in stretches {
         ks.sort_unstable();
-        let mut bytes: Vec<u8> = (lo..hi).map(|o| byte_at(&placed, &w.made, o)).collect();
+        let mut bytes: Vec<u8> = Vec::with_capacity((hi - lo) as usize);
+        bytes_in(&placed, &w.made, lo, hi, &mut bytes);
         for k in ks {
             let (off, size, value) = tombstones[k];
             put(&mut bytes, (off - lo) as usize, size, value, endian);
@@ -1990,62 +2013,119 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
             .or_default() += 1;
         return abandon(inputs, report);
     }
-    // Every definition of each name, in member order.
+    // Every name's definitions, summed up: the first one's member, and
+    // whether all are copies of one unit (its hash). Built in shards on
+    // every core (a large library defines millions of names), each
+    // shard's names' definitions taken in member order.
     // (Hash maps: looked up only, never walked, so their order is no
     // part of the output.)
-    let mut definers: Map<&[u8], Vec<(usize, Option<usize>)>> = Map::default();
-    for (m, p) in parsed.iter().enumerate() {
-        for (name, u) in &p.defs {
-            definers.entry(&**name).or_default().push((m, *u));
-        }
-    }
-    // The copies of each unit, by hash, in member order.
-    let mut copies: Map<u128, Vec<(usize, usize)>> = Map::default();
-    let mut order: Vec<u128> = Vec::new();
-    for (m, p) in parsed.iter().enumerate() {
-        for (u, unit) in p.units.iter().enumerate() {
-            let e = copies.entry(unit.hash).or_default();
-            if e.is_empty() {
-                order.push(unit.hash);
+    let state = turbonop_hash::State::default();
+    // (Bits the maps' own hashing of a name, with the same seed, leaves
+    // alone: a table's buckets are its low bits, its tags the top seven.)
+    let shard_of = |name: &[u8]| {
+        (std::hash::BuildHasher::hash_one(&state, name) >> 32) as usize & (SHARDS - 1)
+    };
+    let definers: Vec<Map<&[u8], Defined>> = {
+        // Each member's definitions, by shard.
+        let by_member: Vec<Vec<Vec<(&[u8], Option<u128>)>>> = turbonop_par::map_costed(
+            parsed.len(),
+            |m| parsed[m].defs.len() as u64,
+            |m| {
+                let p = &parsed[m];
+                let mut out: Vec<Vec<(&[u8], Option<u128>)>> = vec![Vec::new(); SHARDS];
+                for (name, u) in &p.defs {
+                    out[shard_of(name)].push((&**name, u.map(|u| p.units[u].hash)));
+                }
+                out
+            },
+        );
+        turbonop_par::map_range(SHARDS, 1, |k| {
+            let mut map: Map<&[u8], Defined> = Map::default();
+            for (m, shards) in by_member.iter().enumerate() {
+                for &(name, unit) in &shards[k] {
+                    map.entry(name)
+                        .and_modify(|d| {
+                            if d.copies != unit {
+                                d.copies = None;
+                            }
+                        })
+                        .or_insert(Defined {
+                            first: m,
+                            copies: unit,
+                        });
+                }
             }
-            e.push((m, u));
-        }
-    }
-    // Which fold.
-    let mut folded: Vec<(u128, Vec<(usize, usize)>)> = Vec::new();
-    for h in order {
-        let list = &copies[&h];
-        let mut members: Vec<usize> = list.iter().map(|&(m, _)| m).collect();
-        members.dedup();
-        if members.len() < 2 {
-            continue;
-        }
-        report.duplicated += 1;
-        let (m0, u0) = list[0];
-        let unit = &parsed[m0].units[u0];
-        let why = list
-            .iter()
-            .find_map(|&(m, u)| parsed[m].units[u].stays)
-            .or_else(|| {
-                unit.names.iter().find_map(|n| {
-                    let defs = definers.get(&**n)?;
-                    if defs
-                        .iter()
-                        .any(|&(m, u)| u.is_none_or(|u| parsed[m].units[u].hash != h))
-                    {
-                        return Some("its names have other definitions in the library");
-                    }
-                    let first = defs.first()?.0;
-                    (options.pull == Pull::Preserve && parsed[first].side_effects)
-                        .then_some("the member the index sends its names to has side effects")
+            map
+        })
+    };
+    let defined = |name: &[u8]| definers[shard_of(name)].get(name);
+    // The copies of each unit, by hash, in member order; and the hashes in
+    // the order of their first copies. (In shards on every core too.)
+    let copies: Vec<Map<u128, Vec<(usize, usize)>>> = {
+        let by_member: Vec<Vec<Vec<(u128, usize)>>> = turbonop_par::map_costed(
+            parsed.len(),
+            |m| parsed[m].units.len() as u64,
+            |m| {
+                let mut out: Vec<Vec<(u128, usize)>> = vec![Vec::new(); SHARDS];
+                for (u, unit) in parsed[m].units.iter().enumerate() {
+                    out[(unit.hash as usize) & (SHARDS - 1)].push((unit.hash, u));
+                }
+                out
+            },
+        );
+        turbonop_par::map_range(SHARDS, 1, |k| {
+            let mut map: Map<u128, Vec<(usize, usize)>> = Map::default();
+            for (m, shards) in by_member.iter().enumerate() {
+                for &(h, u) in &shards[k] {
+                    map.entry(h).or_default().push((m, u));
+                }
+            }
+            map
+        })
+    };
+    let copies_of = |h: u128| &copies[(h as usize) & (SHARDS - 1)][&h];
+    let mut order: Vec<(usize, usize, u128)> = copies
+        .iter()
+        .flat_map(|c| c.iter().map(|(&h, list)| (list[0].0, list[0].1, h)))
+        .collect();
+    turbonop_par::sort_by(&mut order, |a, b| a.cmp(b));
+    // Which fold: each unit decided on every core, then counted in order.
+    let decided: Vec<Option<Result<(), &'static str>>> =
+        turbonop_par::map_range(order.len(), 1024, |k| {
+            let h = order[k].2;
+            let list = copies_of(h);
+            let mut members: Vec<usize> = list.iter().map(|&(m, _)| m).collect();
+            members.dedup();
+            if members.len() < 2 {
+                return None;
+            }
+            let (m0, u0) = list[0];
+            let unit = &parsed[m0].units[u0];
+            let why = list
+                .iter()
+                .find_map(|&(m, u)| parsed[m].units[u].stays)
+                .or_else(|| {
+                    unit.names.iter().find_map(|n| {
+                        let d = defined(n)?;
+                        if d.copies != Some(h) {
+                            return Some("its names have other definitions in the library");
+                        }
+                        (options.pull == Pull::Preserve && parsed[d.first].side_effects)
+                            .then_some("the member the index sends its names to has side effects")
+                    })
                 })
-            })
-            .or_else(|| unit.names.is_empty().then_some("it defines no name"));
-        if let Some(w) = why {
-            *report.kept.entry(w).or_default() += list.len();
-            continue;
+                .or_else(|| unit.names.is_empty().then_some("it defines no name"));
+            Some(why.map_or(Ok(()), Err))
+        });
+    let mut folded: Vec<(u128, Vec<(usize, usize)>)> = Vec::new();
+    for (&(_, _, h), d) in order.iter().zip(decided) {
+        let Some(d) = d else { continue };
+        report.duplicated += 1;
+        let list = copies_of(h);
+        match d {
+            Err(w) => *report.kept.entry(w).or_default() += list.len(),
+            Ok(()) => folded.push((h, list.clone())),
         }
-        folded.push((h, list.clone()));
     }
     // A unit whose code names what another unit of its member defines folds
     // only if that one folds too. Otherwise the synthesized member would

@@ -248,11 +248,34 @@ struct Cu {
     line: Option<(u64, u64, u64)>,
     header: LineHeader,
     seqs: Vec<Seq>,
+    /// Each section's sequences (indexes into `seqs`, in order): a
+    /// synthesized member's are found without reading every sequence.
+    by_section: BTreeMap<usize, Vec<usize>>,
     /// Mach-O: the line table's rows by real section (each row's address
     /// an offset in it), and what its program depends on: a moved atom's
     /// rows make a sequence of their own.
     rows: Vec<(usize, Vec<line::Row>)>,
     params: Option<line::Params>,
+}
+
+impl Cu {
+    /// The sequences of the sections `moved`, in order.
+    fn moved_seqs(&self, moved: &BTreeSet<usize>) -> Vec<&Seq> {
+        let mut ks: Vec<usize> = moved
+            .iter()
+            .filter_map(|x| self.by_section.get(x))
+            .flatten()
+            .copied()
+            .collect();
+        ks.sort_unstable();
+        ks.dedup();
+        ks.into_iter().map(|k| &self.seqs[k]).collect()
+    }
+
+    /// Whether a sequence is of one of the sections `moved`.
+    fn has_moved_seqs(&self, moved: &BTreeSet<usize>) -> bool {
+        moved.iter().any(|x| self.by_section.contains_key(x))
+    }
 }
 
 /// One member's DWARF, read once for every synthesized member it gives
@@ -709,6 +732,7 @@ impl<'p> Source<'p> {
             line: None,
             header: LineHeader::default(),
             seqs: Vec::new(),
+            by_section: BTreeMap::new(),
             rows: Vec::new(),
             params: None,
         };
@@ -855,6 +879,7 @@ impl<'p> Source<'p> {
                 line: None,
                 header: LineHeader::default(),
                 seqs: Vec::new(),
+                by_section: BTreeMap::new(),
                 rows: Vec::new(),
                 params: None,
             };
@@ -926,6 +951,11 @@ impl<'p> Source<'p> {
                         s.section = None;
                     }
                     self.rows(&mut cu, off)?;
+                }
+            }
+            for (k, q) in cu.seqs.iter().enumerate() {
+                if let Some(x) = q.section {
+                    cu.by_section.entry(x).or_default().push(k);
                 }
             }
             out.push(cu);
@@ -2827,10 +2857,8 @@ impl<'s, 'p> Builder<'s, 'p> {
             let first = u64::from(cu.header.version < 5);
             used.insert(first);
             used.insert(1);
-            for s in &cu.seqs {
-                if s.section.is_some_and(|x| self.moved.contains(&x)) {
-                    src.files_set(&cu.header, s, &mut used)?;
-                }
+            for s in cu.moved_seqs(self.moved) {
+                src.files_set(&cu.header, s, &mut used)?;
             }
             for &m in self.moved {
                 if let Some((rows, _)) = src.atom_rows(cu, m) {
@@ -3163,10 +3191,8 @@ impl<'s, 'p> Builder<'s, 'p> {
             Endian::Big => (header_length as u32).to_be_bytes(),
         };
         p.bytes[length_at..length_at + 4].copy_from_slice(&b);
-        for s in &cu.seqs {
-            if s.section.is_some_and(|x| self.moved.contains(&x)) {
-                self.sequence(h, s, &mut p)?;
-            }
+        for s in cu.moved_seqs(self.moved) {
+            self.sequence(h, s, &mut p)?;
         }
         // Mach-O: each moved atom's rows, a sequence of their own.
         if let Some(params) = &cu.params {
@@ -3532,10 +3558,7 @@ pub(crate) fn build(src: &Source<'_>, moved: &BTreeSet<usize>) -> R<Option<Out>>
         }
     }
     let has_lines = src.cus.iter().any(|cu| {
-        cu.seqs
-            .iter()
-            .any(|q| q.section.is_some_and(|x| moved.contains(&x)))
-            || moved.iter().any(|&m| src.atom_rows(cu, m).is_some())
+        cu.has_moved_seqs(moved) || moved.iter().any(|&m| src.atom_rows(cu, m).is_some())
     });
     if by_unit.is_empty() && !has_lines {
         return Ok(None);
@@ -3548,11 +3571,7 @@ pub(crate) fn build(src: &Source<'_>, moved: &BTreeSet<usize>) -> R<Option<Out>>
         None => src
             .cus
             .iter()
-            .position(|cu| {
-                cu.seqs
-                    .iter()
-                    .any(|q| q.section.is_some_and(|x| moved.contains(&x)))
-            })
+            .position(|cu| cu.has_moved_seqs(moved))
             .unwrap_or(0),
     };
     let cu = src.cus.get(cu_index).ok_or("no unit")?;

@@ -48,7 +48,7 @@ options:
   -n <n>          differences listed in each part (default 20; 0: all)
   -only <parts>   only these parts (comma-separated: bytes, headers,
                   sections, directories, imports, exports, relocations,
-                  exceptions, loadconfig, tls, resources, debug, rich,
+                  exceptions, loadconfig, tls, resources, debug, coffgroups, rich,
                   functions; for PDBs: info, types, ids, modules,
                   contributions, sectionmap, symbols, lines, globals, publics,
                   names)
@@ -68,6 +68,19 @@ pub(crate) struct Options {
 }
 
 impl Options {
+    /// An error for an `-only` part this comparison doesn't have.
+    pub fn check_parts(&self, known: &[&str]) -> Result<(), String> {
+        for p in self.only.iter().flatten() {
+            if !known.contains(&p.as_str()) {
+                return Err(format!(
+                    "-only: no part '{p}' (the parts are {})",
+                    known.join(", ")
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Whether part `name` is to be compared.
     pub fn wants(&self, name: &str) -> bool {
         self.only

@@ -153,3 +153,47 @@ fn two_builds_of_one_program() {
     let (code, out, _) = diff(&[pdb.as_os_str(), pdb.as_os_str()]);
     assert_eq!(code, 0, "{out}");
 }
+
+#[test]
+fn coff_groups_in_dump_and_diff() {
+    // link.exe's COFF groups (the POGO debug entry): how it laid the image
+    // out, group by group.
+    let v1 = testdata("diff/diff-v1.exe");
+    let out = Command::new(env!("CARGO_BIN_EXE_hexcavator"))
+        .args(["dump", "-coffgroups"])
+        .arg(&v1)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("COFF Groups (31 groups)"), "{text}");
+    assert!(
+        text.contains("00001000      C80 .text     .text$mn"),
+        "{text}"
+    );
+    assert!(
+        text.contains("00002000      158 .rdata    .idata$5"),
+        "{text}"
+    );
+    let v2 = testdata("diff/diff-v2.exe");
+    let (code, out, err) = diff(&[
+        "-only".as_ref(),
+        "coffgroups".as_ref(),
+        v1.as_os_str(),
+        v2.as_os_str(),
+    ]);
+    assert_eq!(code, 1, "{out}{err}");
+    assert!(
+        out.contains(".text$mn: .text+0x0, 0xc80 bytes | .text+0x0, 0xd10 bytes"),
+        "{out}"
+    );
+    // A part there isn't is an error, not "the same".
+    let (code, _, err) = diff(&[
+        "-only".as_ref(),
+        "bogus".as_ref(),
+        v1.as_os_str(),
+        v2.as_os_str(),
+    ]);
+    assert_eq!(code, 2, "{err}");
+    assert!(err.contains("no part 'bogus'"), "{err}");
+}

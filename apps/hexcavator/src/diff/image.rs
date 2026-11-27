@@ -1178,31 +1178,8 @@ fn debug(a: &Side<'_>, b: &Side<'_>, o: &Options) -> Part {
             (None, None) => {}
             _ => p.add(format!("{k}: only one is a CodeView record")),
         }
-        if let (Some(px), Some(py)) = (x.pogo(), y.pogo()) {
-            let groups = |s: &Side<'_>, g: &turbonop_pe::Pogo<'_>| {
-                g.groups()
-                    .map(|c| {
-                        format!(
-                            "{} {} [{:#x}]",
-                            String::from_utf8_lossy(c.name),
-                            s.names.describe(c.rva.0),
-                            c.size
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            };
-            let (gx, gy) = (groups(a, &px), groups(b, &py));
-            if gx != gy {
-                let sx: std::collections::BTreeSet<_> = gx.iter().collect();
-                let sy: std::collections::BTreeSet<_> = gy.iter().collect();
-                p.add(format!("POGO: {} | {} groups", gx.len(), gy.len()));
-                for g in sx.difference(&sy).take(o.rows) {
-                    p.add(format!("  POGO group {g} only in a"));
-                }
-                for g in sy.difference(&sx).take(o.rows) {
-                    p.add(format!("  POGO group {g} only in b"));
-                }
-            }
+        if x.pogo().is_some() && y.pogo().is_some() {
+            // (Its groups are the COFF groups part's.)
             continue;
         }
         if x.data != y.data {
@@ -1218,6 +1195,95 @@ fn debug(a: &Side<'_>, b: &Side<'_>, o: &Options) -> Part {
                     .unwrap_or(&[])
                     .get(..32)
                     .unwrap_or(y.data.unwrap_or(&[])))
+            ));
+        }
+    }
+    p
+}
+
+/// One COFF group of the POGO debug entry: its name, section, offset in
+/// the section, size.
+type Group = (String, String, u32, u32);
+
+fn groups(s: &Side<'_>) -> Option<Vec<Group>> {
+    let pogo = s.pe.debug_entries().find_map(|e| e.pogo())?;
+    Some(
+        pogo.groups()
+            .map(|g| {
+                let rva = g.rva.0;
+                let (section, start) = s
+                    .sections
+                    .iter()
+                    .find(|x| rva >= x.0 && rva < x.0.saturating_add(x.1.max(x.3)))
+                    .map_or((String::new(), 0), |x| (x.4.clone(), x.0));
+                (
+                    String::from_utf8_lossy(g.name).into_owned(),
+                    section,
+                    rva - start,
+                    g.size,
+                )
+            })
+            .collect(),
+    )
+}
+
+/// The COFF groups (the POGO debug entry: link.exe writes it for every
+/// image): how each image's linker laid it out, group by group. The best
+/// account of a layout: each group's section, where in it, and its size,
+/// and the groups' order.
+fn coff_groups(a: &Side<'_>, b: &Side<'_>, o: &Options) -> Part {
+    let mut p = Part::new("coffgroups", "COFF groups (the POGO entry's)", o.rows);
+    let (ga, gb) = match (groups(a), groups(b)) {
+        (None, None) => return p,
+        (Some(_), None) => {
+            p.add("only a has them");
+            return p;
+        }
+        (None, Some(_)) => {
+            p.add("only b has them");
+            return p;
+        }
+        (Some(x), Some(y)) => (x, y),
+    };
+    p.note(format!("{} | {} groups", ga.len(), gb.len()));
+    fn order(g: &[Group]) -> Vec<&str> {
+        g.iter().map(|x| x.0.as_str()).collect()
+    }
+    let (oa, ob) = (order(&ga), order(&gb));
+    if oa != ob {
+        let first = oa
+            .iter()
+            .zip(&ob)
+            .position(|(x, y)| x != y)
+            .unwrap_or(oa.len().min(ob.len()));
+        p.add(format!(
+            "order differs from group {first}: {} | {}",
+            oa.get(first).copied().unwrap_or("(none)"),
+            ob.get(first).copied().unwrap_or("(none)")
+        ));
+    }
+    let named = |g: &[Group]| -> std::collections::BTreeMap<String, Group> {
+        g.iter().map(|x| (x.0.clone(), x.clone())).collect()
+    };
+    let (na, nb) = (named(&ga), named(&gb));
+    for g in &ga {
+        match nb.get(&g.0) {
+            None => p.add(format!(
+                "{}: only in a ({}+{:#x}, {:#x} bytes)",
+                g.0, g.1, g.2, g.3
+            )),
+            Some(h) if (&g.1, g.2, g.3) != (&h.1, h.2, h.3) => p.add(format!(
+                "{}: {}+{:#x}, {:#x} bytes | {}+{:#x}, {:#x} bytes",
+                g.0, g.1, g.2, g.3, h.1, h.2, h.3
+            )),
+            _ => {}
+        }
+    }
+    for h in &gb {
+        if !na.contains_key(&h.0) {
+            p.add(format!(
+                "{}: only in b ({}+{:#x}, {:#x} bytes)",
+                h.0, h.1, h.2, h.3
             ));
         }
     }
@@ -1572,7 +1638,7 @@ pub(crate) fn compare(a: &[u8], b: &[u8], o: &Options) -> Result<Report, String>
         s.starts = starts;
     }
     type Compare = fn(&Side<'_>, &Side<'_>, &Options) -> Part;
-    let parts: [(&str, Compare); 14] = [
+    let parts: [(&str, Compare); 15] = [
         ("bytes", bytes),
         ("headers", headers),
         ("sections", sections),
@@ -1585,9 +1651,11 @@ pub(crate) fn compare(a: &[u8], b: &[u8], o: &Options) -> Result<Report, String>
         ("tls", tls),
         ("resources", resources),
         ("debug", debug),
+        ("coffgroups", coff_groups),
         ("rich", rich),
         ("functions", functions),
     ];
+    o.check_parts(&parts.iter().map(|p| p.0).collect::<Vec<_>>())?;
     let wanted: Vec<_> = parts.iter().filter(|(k, _)| o.wants(k)).collect();
     let done = turbonop_par::map_balanced(&wanted, 1, |(_, f)| f(&sa, &sb, o));
     // A byte-identical pair is identical in every part.

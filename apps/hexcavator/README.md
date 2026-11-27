@@ -176,7 +176,9 @@ differing bytes attributed to what holds it (a header's field, a section
 header's, a data directory, a function), then the headers, sections, data
 directories, imports, exports, base relocations, exception data, the load
 configuration and its guard tables, TLS, resources, the debug directory,
-and the Rich header compared, and the functions and data matched by name:
+the COFF groups (the POGO debug entry: how link.exe laid the image out,
+group by group; `hexcavator dump -coffgroups` lists them), and the Rich
+header compared, and the functions and data matched by name:
 identical, different only where they refer to what moved, only in their
 padding, folded differently, or different (from where). PDBs: what they
 say, not their bytes: types and ids equal if their records are equal with

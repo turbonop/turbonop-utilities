@@ -880,6 +880,19 @@ fn names_text(s: &Side<'_>) -> Vec<String> {
 pub(crate) fn compare(a: &[u8], b: &[u8], o: &Options) -> Result<Report, String> {
     let (sa, sb) = turbonop_par::join(|| Side::open(a, &o.a), || Side::open(b, &o.b));
     let (sa, sb) = (sa?, sb?);
+    o.check_parts(&[
+        "info",
+        "types",
+        "ids",
+        "modules",
+        "contributions",
+        "sectionmap",
+        "symbols",
+        "lines",
+        "globals",
+        "publics",
+        "names",
+    ])?;
     let mut parts = Vec::new();
     if o.wants("info") {
         parts.push(info(&sa, &sb, o));

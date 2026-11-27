@@ -275,6 +275,12 @@ struct Unit<'a> {
     names: Vec<Cow<'a, [u8]>>,
     /// The symbols defined in its sections (indexes, in order).
     symbols: Vec<usize>,
+    /// What its hash covers that is read without its contents: units with
+    /// different keys have different hashes, so only units whose key is in
+    /// two members or more are hashed (see `fold_parts`).
+    key: u64,
+    /// Its contents' hash: equal for copies (for a unit no other member's
+    /// can be a copy of, one of its own).
     hash: u128,
     stays: Option<&'static str>,
     /// Its FDEs (indexes into the member's records).
@@ -347,6 +353,20 @@ impl<'a> Parsed<'a> {
             Some(Data::Symbols(s)) => s,
             _ => &[],
         }
+    }
+}
+
+/// [`turbonop_par::map_costed`], or in order on this thread unless `par`.
+fn costed<R: Send>(
+    par: bool,
+    len: usize,
+    cost: impl Fn(usize) -> u64,
+    f: impl Fn(usize) -> R + Sync,
+) -> Vec<R> {
+    if par {
+        turbonop_par::map_costed(len, cost, f)
+    } else {
+        (0..len).map(f).collect()
     }
 }
 
@@ -455,6 +475,92 @@ fn environment(obj: &Object<'_>) -> u128 {
                 h.bytes(section_bytes(s));
             }
             None => h.u64(0),
+        }
+    }
+    h.finish()
+}
+
+/// Unit `ui`'s hash: its sections' contents, relocations (by what they
+/// name), symbols, and FDEs, in the member's environment.
+fn unit_hash(p: &Parsed<'_>, ui: usize) -> u128 {
+    let Some(obj) = p.obj.as_ref() else {
+        return 0;
+    };
+    let symbols = p.symbols();
+    let u = &p.units[ui];
+    let unit_sections = &u.sections;
+    let mut h = H128::new();
+    h.u128(p.env);
+    if let Data::Group(g) = &obj.sections[u.group].data {
+        h.u64(u64::from(g.flags));
+    }
+    let place = |sec: usize| unit_sections.iter().position(|&x| x == sec);
+    let key = |h: &mut H128, si: u32| {
+        let Some(sym) = symbols.get(si as usize) else {
+            h.u64(u64::MAX);
+            return;
+        };
+        if sym.bind() != 0 || si == 0 {
+            h.u64(1);
+            h.bytes(&sym.name);
+            h.u64(u64::from(sym.bind()));
+        } else {
+            h.u64(2);
+            h.u64(place(sym.shndx as usize).map_or(u64::MAX, |x| x as u64));
+            h.u64(sym.value);
+            h.u64(u64::from(sym.kind()));
+        }
+    };
+    for &sec in unit_sections {
+        let s = &obj.sections[sec];
+        h.bytes(&s.name);
+        h.u64(u64::from(s.kind));
+        h.u64(s.flags);
+        h.u64(s.addralign);
+        h.u64(s.entsize);
+        match &s.data {
+            Data::Bytes(b) => h.bytes(b),
+            Data::NoBits => h.u64(s.nobits_size),
+            Data::Relocations(rs) => {
+                h.u64(place(s.info as usize).map_or(u64::MAX, |x| x as u64));
+                for r in rs {
+                    let r = &r;
+                    h.u64(r.offset);
+                    h.u64(u64::from(obj.reloc_type(r)));
+                    key(&mut h, obj.reloc_symbol(r));
+                    h.u64(r.addend as u64);
+                }
+            }
+            _ => h.u64(0xBAD),
+        }
+    }
+    for s in u.symbols.iter().map(|&i| &symbols[i]) {
+        h.bytes(&s.name);
+        h.u64(u64::from(s.info));
+        h.u64(u64::from(s.other));
+        h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
+        h.u64(s.value);
+        h.u64(s.size);
+    }
+    if let Some(eh) = p.eh.as_ref() {
+        let data = section_bytes(&obj.sections[eh.section]);
+        let record = |h: &mut H128, k: usize| {
+            let rec = &eh.records[k];
+            let b = &data[rec.start..rec.end()];
+            h.bytes(&b[..rec.id_at]);
+            h.bytes(&b[rec.id_at + 4..]);
+            for rel in eh.rels(k) {
+                h.u64(rel.offset - rec.start as u64);
+                h.u64(u64::from(obj.reloc_type(rel)));
+                key(h, obj.reloc_symbol(rel));
+                h.u64(rel.addend as u64);
+            }
+        };
+        for &f in &u.fdes {
+            record(&mut h, f);
+            if let Some(cie) = eh.cie(f) {
+                record(&mut h, cie);
+            }
         }
     }
     h.finish()
@@ -577,6 +683,7 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
                 sections: members,
                 names: Vec::new(),
                 symbols: Vec::new(),
+                key: 0,
                 hash: 0,
                 stays: (!ok).then_some("its group's members are malformed"),
                 fdes: Vec::new(),
@@ -757,114 +864,45 @@ fn parse<'a>(input: &Input<'a>) -> Parsed<'a> {
             units[u].symbols.push(i);
         }
     }
-    // Hashes: on every core for a member of many units (one can hold tens
-    // of thousands).
+    // Each unit's key, size, and whether a section of it can't move. (Its
+    // hash is taken in `fold_parts`, only if another member has a unit of
+    // its key.)
     let env = p.env;
-    let eh_info = p.eh.as_ref();
-    let hashed: Vec<(u128, u64, Option<&'static str>)> =
-        turbonop_par::map_range(units.len(), 4096, |ui| {
-            let u = &units[ui];
-            let group = u.group;
-            let unit_sections = &u.sections;
-            let fdes = &u.fdes;
-            let mut stays = u.stays;
-            let mut h = H128::new();
-            h.u128(env);
-            if let Data::Group(g) = &obj.sections[group].data {
-                h.u64(u64::from(g.flags));
-            }
-            let place = |sec: usize| unit_sections.iter().position(|&x| x == sec);
-            let key = |h: &mut H128, si: u32| {
-                let Some(sym) = symbols.get(si as usize) else {
-                    h.u64(u64::MAX);
-                    return;
-                };
-                if sym.bind() != 0 || si == 0 {
-                    h.u64(1);
-                    h.bytes(&sym.name);
-                    h.u64(u64::from(sym.bind()));
-                } else {
-                    h.u64(2);
-                    h.u64(place(sym.shndx as usize).map_or(u64::MAX, |x| x as u64));
-                    h.u64(sym.value);
-                    h.u64(u64::from(sym.kind()));
+    for (ui, u) in units.iter_mut().enumerate() {
+        let mut k = H128::new();
+        k.u128(env);
+        if let Data::Group(g) = &obj.sections[u.group].data {
+            k.u64(u64::from(g.flags));
+        }
+        let mut bytes = 0u64;
+        let mut stays = u.stays;
+        for &sec in &u.sections {
+            let s = &obj.sections[sec];
+            k.bytes(&s.name);
+            k.u64(u64::from(s.kind));
+            k.u64(s.flags);
+            match &s.data {
+                Data::Bytes(b) => {
+                    k.u64(b.len() as u64);
+                    bytes += b.len() as u64;
                 }
-            };
-            let mut bytes = 0u64;
-            for &sec in unit_sections {
-                let s = &obj.sections[sec];
-                h.bytes(&s.name);
-                h.u64(u64::from(s.kind));
-                h.u64(s.flags);
-                h.u64(s.addralign);
-                h.u64(s.entsize);
-                match &s.data {
-                    Data::Bytes(b) => {
-                        h.bytes(b);
-                        bytes += b.len() as u64;
-                    }
-                    Data::NoBits => h.u64(s.nobits_size),
-                    Data::Relocations(rs) => {
-                        h.u64(place(s.info as usize).map_or(u64::MAX, |x| x as u64));
-                        for r in rs {
-                            let r = &r;
-                            h.u64(r.offset);
-                            h.u64(u64::from(obj.reloc_type(r)));
-                            key(&mut h, obj.reloc_symbol(r));
-                            h.u64(r.addend as u64);
-                        }
-                        bytes += rs.len() as u64 * 24;
-                    }
-                    _ => {
-                        h.u64(0xBAD);
-                        stays = Some("it holds a section of a kind not moved");
-                    }
+                Data::NoBits => k.u64(s.nobits_size),
+                Data::Relocations(rs) => {
+                    k.u64(rs.len() as u64);
+                    bytes += rs.len() as u64 * 24;
                 }
+                _ => stays = Some("it holds a section of a kind not moved"),
             }
-            let unit_symbols = u.symbols.clone();
-            for s in unit_symbols.iter().map(|&i| &symbols[i]) {
-                h.bytes(&s.name);
-                h.u64(u64::from(s.info));
-                h.u64(u64::from(s.other));
-                h.u64(place(s.shndx as usize).map_or(u64::MAX, |x| x as u64));
-                h.u64(s.value);
-                h.u64(s.size);
-            }
-            if let Some(eh) = eh_info {
-                let data = section_bytes(&obj.sections[eh.section]);
-                let record = |h: &mut H128, k: usize| {
-                    let rec = &eh.records[k];
-                    let b = &data[rec.start..rec.end()];
-                    h.bytes(&b[..rec.id_at]);
-                    h.bytes(&b[rec.id_at + 4..]);
-                    for rel in eh.rels(k) {
-                        h.u64(rel.offset - rec.start as u64);
-                        h.u64(u64::from(obj.reloc_type(rel)));
-                        key(h, obj.reloc_symbol(rel));
-                        h.u64(rel.addend as u64);
-                    }
-                };
-                for &f in fdes {
-                    record(&mut h, f);
-                    if let Some(cie) = eh.cie(f) {
-                        record(&mut h, cie);
-                    }
-                }
-            }
-            (
-                h.finish(),
-                bytes + 4 * (unit_sections.len() as u64 + 1),
-                stays,
-            )
-        });
-    for (ui, (u, (hash, bytes, stays))) in units.iter_mut().zip(hashed).enumerate() {
+        }
+        k.u64(u.symbols.len() as u64);
+        k.u64(u.fdes.len() as u64);
+        u.key = k.finish() as u64;
+        u.bytes = bytes + 4 * (u.sections.len() as u64 + 1);
         u.stays = if registers[ui] {
             Some("it holds initializer, terminator, or warning sections")
         } else {
             stays
         };
-        u.bytes = bytes;
-        u.hash = hash;
     }
     p.eh_rel = p.eh.as_ref().and_then(|eh| {
         relocation_sections(&obj)
@@ -2000,6 +2038,72 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
     let size = |m: usize| inputs[m].data.len() as u64;
     let parsed: Vec<Parsed<'_>> =
         turbonop_par::map_costed(inputs.len(), size, |m| parse(&inputs[m]));
+    // Hashes, of the units another member has a unit of the same key of
+    // (only those can have copies elsewhere); the rest get hashes of their
+    // own, of their places. On every core, in shards of keys.
+    let mut parsed = parsed;
+    // (A small library's maps are built on one thread: starting threads
+    // would cost more.)
+    let big = parsed
+        .iter()
+        .map(|p| p.units.len() + p.defs.len())
+        .sum::<usize>()
+        >= 1 << 14;
+    let shards_min = if big { 1 } else { SHARDS };
+    {
+        let shard_of = |key: u64| (key >> 32) as usize & (SHARDS - 1);
+        let by_member: Vec<Vec<Vec<u64>>> = costed(
+            big,
+            parsed.len(),
+            |m| parsed[m].units.len() as u64,
+            |m| {
+                let mut out: Vec<Vec<u64>> = vec![Vec::new(); SHARDS];
+                for u in &parsed[m].units {
+                    out[shard_of(u.key)].push(u.key);
+                }
+                out
+            },
+        );
+        // Each shard's keys in two members or more.
+        let shared: Vec<turbonop_hash::Set<u64>> =
+            turbonop_par::map_range(SHARDS, shards_min, |k| {
+                let mut first: Map<u64, usize> = Map::default();
+                let mut shared = turbonop_hash::Set::default();
+                for (m, shards) in by_member.iter().enumerate() {
+                    for &key in &shards[k] {
+                        if *first.entry(key).or_insert(m) != m {
+                            shared.insert(key);
+                        }
+                    }
+                }
+                shared
+            });
+        let hashes: Vec<Vec<u128>> = costed(
+            big,
+            parsed.len(),
+            |m| parsed[m].units.iter().map(|u| u.bytes).sum(),
+            |m| {
+                let p = &parsed[m];
+                turbonop_par::map_range(p.units.len(), 4096, |ui| {
+                    let key = p.units[ui].key;
+                    if shared[shard_of(key)].contains(&key) {
+                        unit_hash(p, ui)
+                    } else {
+                        let mut h = H128::new();
+                        h.u64(0x6F77_6E00);
+                        h.u64(m as u64);
+                        h.u64(ui as u64);
+                        h.finish()
+                    }
+                })
+            },
+        );
+        for (p, hs) in parsed.iter_mut().zip(hashes) {
+            for (u, h) in p.units.iter_mut().zip(hs) {
+                u.hash = h;
+            }
+        }
+    }
     lap(&mut report, "reading");
     for p in &parsed {
         if let Some(w) = &p.why_not {
@@ -2030,7 +2134,8 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
         // Each member's definitions, by shard.
         // (Each member's: by shard, (name, its unit's hash).)
         type Defs<'n> = Vec<Vec<(&'n [u8], Option<u128>)>>;
-        let by_member: Vec<Defs<'_>> = turbonop_par::map_costed(
+        let by_member: Vec<Defs<'_>> = costed(
+            big,
             parsed.len(),
             |m| parsed[m].defs.len() as u64,
             |m| {
@@ -2042,7 +2147,7 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
                 out
             },
         );
-        turbonop_par::map_range(SHARDS, 1, |k| {
+        turbonop_par::map_range(SHARDS, shards_min, |k| {
             let mut map: Map<&[u8], Defined> = Map::default();
             for (m, shards) in by_member.iter().enumerate() {
                 for &(name, unit) in &shards[k] {
@@ -2065,7 +2170,8 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
     // The copies of each unit, by hash, in member order; and the hashes in
     // the order of their first copies. (In shards on every core too.)
     let copies: Vec<Map<u128, Vec<(usize, usize)>>> = {
-        let by_member: Vec<Vec<Vec<(u128, usize)>>> = turbonop_par::map_costed(
+        let by_member: Vec<Vec<Vec<(u128, usize)>>> = costed(
+            big,
             parsed.len(),
             |m| parsed[m].units.len() as u64,
             |m| {
@@ -2076,7 +2182,7 @@ pub fn fold_parts(inputs: &[Input<'_>], options: &Options, dwo: Dwo<'_>) -> (Vec
                 out
             },
         );
-        turbonop_par::map_range(SHARDS, 1, |k| {
+        turbonop_par::map_range(SHARDS, shards_min, |k| {
             let mut map: Map<u128, Vec<(usize, usize)>> = Map::default();
             for (m, shards) in by_member.iter().enumerate() {
                 for &(h, u) in &shards[k] {

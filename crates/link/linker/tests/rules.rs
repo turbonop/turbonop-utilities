@@ -769,3 +769,137 @@ fn delay_loading_diagnostics() {
     assert_eq!(image, Err(vec![2001]));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// An x64 object: `main` (`lea rax, [x]` for each of `names`, then `ret`),
+/// and per name a COMDAT (any) 8-byte `.rdata` section, `name` its symbol,
+/// holding `main`'s address: pairs of identical data, told apart by name.
+fn data_pairs(names: &[&str]) -> Vec<u8> {
+    let count = 1 + names.len();
+    let main = n32(2 * count); // after the section symbols and their aux
+    let mut strings: Vec<u8> = Vec::new();
+    let mut name8 = |n: &str| -> [u8; 8] {
+        let mut r = [0u8; 8];
+        if n.len() <= 8 {
+            r[..n.len()].copy_from_slice(n.as_bytes());
+        } else {
+            r[4..].copy_from_slice(&(4 + n32(strings.len())).to_le_bytes());
+            strings.extend_from_slice(n.as_bytes());
+            strings.push(0);
+        }
+        r
+    };
+    let mut text = Vec::new();
+    let mut text_relocations = Vec::new();
+    for i in 0..names.len() {
+        text.extend_from_slice(&[0x48, 0x8D, 0x05, 0, 0, 0, 0]);
+        text_relocations.push((n32(7 * i + 3), main + 1 + n32(i), 4u16));
+    }
+    text.push(0xC3);
+    // (name, characteristics, contents, relocations, COMDAT selection)
+    let mut sections = vec![(b".text$mn", 0x6050_0020u32, text, text_relocations, 0u8)];
+    for _ in names {
+        sections.push((
+            b".rdata\0\0",
+            0x4040_1040,
+            vec![0; 8],
+            vec![(0, main, 1)],
+            2,
+        ));
+    }
+    let mut records = Vec::new();
+    for (k, (name, _, data, relocations, selection)) in sections.iter().enumerate() {
+        records.extend_from_slice(&name8(
+            std::str::from_utf8(&name[..])
+                .unwrap()
+                .trim_end_matches('\0'),
+        ));
+        records.extend_from_slice(&0u32.to_le_bytes());
+        records.extend_from_slice(&i16::try_from(k + 1).unwrap().to_le_bytes());
+        records.extend_from_slice(&[0, 0, 3, 1]);
+        records.extend_from_slice(&n32(data.len()).to_le_bytes());
+        records.extend_from_slice(&u16::try_from(relocations.len()).unwrap().to_le_bytes());
+        records.extend_from_slice(&[0; 8]);
+        records.push(*selection);
+        records.extend_from_slice(&[0; 3]);
+    }
+    let symbol_names: Vec<&str> = std::iter::once("main")
+        .chain(names.iter().copied())
+        .collect();
+    for (k, n) in symbol_names.iter().enumerate() {
+        records.extend_from_slice(&name8(n));
+        records.extend_from_slice(&0u32.to_le_bytes());
+        records.extend_from_slice(&i16::try_from(k + 1).unwrap().to_le_bytes());
+        records.extend_from_slice(&[0, 0, 2, 0]);
+    }
+    let headers = 20 + 40 * count;
+    let mut body = Vec::new();
+    let mut section_headers = Vec::new();
+    for (name, chars, data, relocations, _) in &sections {
+        let data_at = headers + body.len();
+        body.extend_from_slice(data);
+        let relocations_at = headers + body.len();
+        for (at, symbol, kind) in relocations {
+            body.extend_from_slice(&at.to_le_bytes());
+            body.extend_from_slice(&symbol.to_le_bytes());
+            body.extend_from_slice(&kind.to_le_bytes());
+        }
+        section_headers.extend_from_slice(&name[..]);
+        for v in [0, 0, n32(data.len()), n32(data_at), n32(relocations_at), 0] {
+            section_headers.extend_from_slice(&v.to_le_bytes());
+        }
+        section_headers.extend_from_slice(&u16::try_from(relocations.len()).unwrap().to_le_bytes());
+        section_headers.extend_from_slice(&0u16.to_le_bytes());
+        section_headers.extend_from_slice(&chars.to_le_bytes());
+    }
+    let mut o = Vec::new();
+    o.extend_from_slice(&0x8664u16.to_le_bytes());
+    o.extend_from_slice(&u16::try_from(count).unwrap().to_le_bytes());
+    o.extend_from_slice(&0u32.to_le_bytes());
+    o.extend_from_slice(&n32(headers + body.len()).to_le_bytes());
+    o.extend_from_slice(&(main + n32(symbol_names.len())).to_le_bytes());
+    o.extend_from_slice(&[0; 4]);
+    o.extend_from_slice(&section_headers);
+    o.extend_from_slice(&body);
+    o.extend_from_slice(&records);
+    o.extend_from_slice(&(4 + n32(strings.len())).to_le_bytes());
+    o.extend_from_slice(&strings);
+    o
+}
+
+/// /OPT:ICF folds identical vtables (`??_7`), and no other read-only data,
+/// however identical: not vbtables (`??_8`), RTTI (`??_R`), or constants.
+#[test]
+fn only_vtables_fold_among_data() {
+    let dir = scratch("icf-data");
+    let names = [
+        "??_7A@@6B@",
+        "??_7B@@6B@",
+        "??_8A@@7B@",
+        "??_8B@@7B@",
+        "??_R4A@@6B@",
+        "??_R4B@@6B@",
+        "?x@@3QBHB",
+        "?y@@3QBHB",
+    ];
+    std::fs::write(dir.join("d.obj"), data_pairs(&names)).unwrap();
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/ENTRY:main",
+            "/SUBSYSTEM:CONSOLE",
+            "/OPT:REF,ICF",
+            "d.obj",
+        ],
+    )
+    .expect("links");
+    let code = at_rva(&image, 0x1000, 7 * names.len());
+    let at: Vec<u32> = (0..names.len())
+        .map(|i| rel32(code, 0x1000, 7 * i + 3))
+        .collect();
+    assert_eq!(at[0], at[1], "the vtables fold");
+    for pair in at[2..].chunks(2) {
+        assert_ne!(pair[0], pair[1], "the rest don't");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

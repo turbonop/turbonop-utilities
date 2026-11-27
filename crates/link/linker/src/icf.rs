@@ -116,7 +116,16 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
                 candidates.push((crate::n32(f), crate::n32(s)));
                 continue;
             }
-            if read_only && (code || unwind) {
+            // Of other read-only data, only vtables (a COMDAT named `??_7`):
+            // link.exe folds identical ones (LLVM's CheckAllNode's and
+            // CheckAnyNode's, whose destructors fold), and no other constant
+            // (not `??_8`, `??_R`, `??_C`, `?x@@3QBHB`, however identical).
+            let vtable = object
+                .comdat_leaders
+                .get(s)
+                .and_then(|&l| object.symbols.get(l as usize))
+                .is_some_and(|sym| sym.name.starts_with(b"??_7"));
+            if read_only && (code || unwind || vtable) {
                 index.insert((crate::n32(f), crate::n32(s)), crate::n32(candidates.len()));
                 candidates.push((crate::n32(f), crate::n32(s)));
             }

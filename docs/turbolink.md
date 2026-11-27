@@ -169,8 +169,10 @@ lists every COFF group with its address and size) and by experiment:
 - **ICF:** folds code (only the C/C++ compiler's: an assembler's
   identical functions stay apart), unwind data (`.xdata`), and a
   function's associative read-only data (its C++ EH `FuncInfo` in
-  `.rdata`, though the functions themselves don't fold), not other
-  read-only data (`.00cfg`'s pointers, `static const` objects). The copy
+  `.rdata`, though the functions themselves don't fold), and vtables (a
+  COMDAT named `??_7`: LLVM's `CheckAllNode` and `CheckAnyNode`'s, once
+  their destructors fold), not other read-only data however identical
+  (`??_8` vbtables, `??_R` RTTI, string literals, constants). The copy
   kept is the first, at the largest alignment of its class (main's
   unwind data on 8 when handlers.obj's, on 8, folds into it). A folded
   function's `.pdata` goes, even when it hangs off an unfolded parent (a
@@ -232,7 +234,11 @@ lists every COFF group with its address and size) and by experiment:
   static `ReadNoFence64` and `ReadPointerNoFence` into identical
   functions (turbolink does), for a reason not found yet (not their names,
   symbol class or type, the object's `@comp.id` or `@feat.00`, or its
-  `.debug$S`; its map lists them without the COMDAT `i` flag); a
+  `.debug$S`; its map lists them without the COMDAT `i` flag). The same
+  holds in LLVM's `llvm-tblgen` (AMDGPUTargetDefEmitter's static
+  `vector<GPUEntry>::_Change_array`, which turbolink folds three identical
+  instantiations into): most of what still differs there (0x2530 bytes
+  of code, 102 `.pdata` entries); a
   delay-loaded DLL's name and address tables with two or more imports
   (link.exe's order isn't load order, and no `qsort` of it found yet:
   loads C,D give D,C; C,D,S give S,D,C; C,D,X,S give S,D,X,C; C,Q,F,X,E,G

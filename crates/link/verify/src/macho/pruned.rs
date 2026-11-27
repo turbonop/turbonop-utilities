@@ -255,16 +255,21 @@ struct Cmp<'t, 'd> {
     lost: &'t BTreeSet<&'t [u8]>,
     /// Each original DIE's match.
     map: Vec<u32>,
-    /// Each DIE's signature (its abbreviation, tag, strings, and its
-    /// references' targets' signatures, two deep), by tree.
+    /// Each DIE's [`signature`], by tree.
     osig: Vec<Option<u128>>,
     nsig: Vec<Option<u128>>,
     /// New relocations compared.
     seen_rels: usize,
 }
 
+/// How deep [`signature`] follows references.
+const SIG_DEPTH: u8 = 3;
+
+/// A DIE's signature, for aligning the trees: its abbreviation, tag, and
+/// the values pruning doesn't change (strings by content, constants,
+/// flags), and its references' targets' signatures, `depth` deep.
 fn signature(t: &Tree<'_>, memo: &mut Vec<Option<u128>>, i: usize, depth: u8) -> u128 {
-    if depth == 2
+    if depth == SIG_DEPTH
         && let Some(s) = memo[i]
     {
         return s;
@@ -277,6 +282,9 @@ fn signature(t: &Tree<'_>, memo: &mut Vec<Option<u128>>, i: usize, depth: u8) ->
         match a.value {
             Value::StrOffset(_, off) => h.bytes(t.string(off).unwrap_or(b"?")),
             Value::Str(s) => h.bytes(s),
+            Value::Data(b) => h.bytes(b),
+            Value::Sint(v) => h.u64(v as u64),
+            Value::Uint(v) if !is_ref(a.form) && a.form != DW_FORM_SEC_OFFSET => h.u64(v),
             Value::Uint(v) if is_ref(a.form) && depth > 0 => {
                 // (The unit at 0: unit-relative references are section offsets.)
                 match t.die_at(v) {
@@ -288,7 +296,7 @@ fn signature(t: &Tree<'_>, memo: &mut Vec<Option<u128>>, i: usize, depth: u8) ->
         }
     }
     let s = h.finish();
-    if depth == 2 {
+    if depth == SIG_DEPTH {
         memo[i] = Some(s);
     }
     s
@@ -434,8 +442,8 @@ impl Cmp<'_, '_> {
         for &x in &oc {
             let Some(&y) = nc.get(j) else { break };
             let (x, y) = (x as usize, y as usize);
-            let s1 = signature(self.o, &mut self.osig, x, 2);
-            let s2 = signature(self.n, &mut self.nsig, y, 2);
+            let s1 = signature(self.o, &mut self.osig, x, SIG_DEPTH);
+            let s2 = signature(self.n, &mut self.nsig, y, SIG_DEPTH);
             if s1 != s2 {
                 continue;
             }

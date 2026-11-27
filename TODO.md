@@ -707,8 +707,13 @@ same but for the PDB's GUID, age, and name.
   `.rdata` group, before `.rdata$voltmd`, not with the `.idata` groups; a
   delay-loaded DLL's tables with
   two or more imports (link.exe's order, docs/turbolink.md);
-  more large programs to check (`opt`, `clang`: `hexcavator diff` them;
-  `llvm-tblgen` and `llc` are link.exe's images).
+  where 4 bytes of padding fall before `.idata$2` in `llvm-nm` and
+  `llvm-objdump` (link.exe's delay-load room there is 0x108 with the
+  descriptors starting on 8, which the rule in docs/turbolink.md gives
+  0x104 for; it holds for llvm-tblgen, llc, opt and six small programs:
+  not the number of DLLs, the delay-loaded names, the options, the
+  tables' alignment, or the first DLL in the directory). llvm-tblgen,
+  llc, opt, llvm-mc and llvm-ar are link.exe's images.
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
   under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
   header's walk when a library is searched in several passes (each pass's

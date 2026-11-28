@@ -1,0 +1,204 @@
+diff --git a/apps/hexcavator/src/size.rs b/apps/hexcavator/src/size.rs
+index d02cc472..dffcf1c8 100644
+--- a/apps/hexcavator/src/size.rs
++++ b/apps/hexcavator/src/size.rs
+@@ -1726,6 +1726,7 @@ pub(crate) fn is_object_input(data: &[u8]) -> bool {
+         || turbonop_size::wasm::is_wasm_input(data);
+     turbonop_archive::Archive::is_archive(data)
+         || turbonop_pe::import_object::ImportObject::is_import_object(data)
++        || turbonop_pe::ltcg::LtcgObject::is_ltcg(data)
+         || (!other && !data.starts_with(b"MZ") && turbonop_pe::PeFile::parse_object(data).is_ok())
+ }
+ 
+diff --git a/crates/analysis/size/src/objects.rs b/crates/analysis/size/src/objects.rs
+index 2bfa87a1..2655529d 100644
+--- a/crates/analysis/size/src/objects.rs
++++ b/crates/analysis/size/src/objects.rs
+@@ -19,6 +19,7 @@ use turbonop_archive::{Archive, MemberKind};
+ use turbonop_core::Result;
+ use turbonop_pe::consts::section_characteristics as scn;
+ use turbonop_pe::import_object::ImportObject;
++use turbonop_pe::ltcg::LtcgObject;
+ use turbonop_pe::{CoffSymbol, PeFile, comdat_select};
+ 
+ use crate::rangemap::{DualMap, Label, Labels};
+@@ -35,6 +36,10 @@ pub const AR_HEADERS: &str = "[AR Headers]";
+ pub const AR_SYMBOLS: &str = "[AR Symbol Table]";
+ pub const AR_LONG_NAMES: &str = "[AR Long Names]";
+ pub const UNPARSED_MEMBER: &str = "[Unparsed Member]";
++pub const LTCG_HEADER: &str = "[LTCG Header]";
++/// The IL of functions with no record: ones nothing refers to (inline or
++/// `static`), whose IL the compiler keeps.
++pub const LTCG_UNREFERENCED: &str = "[IL of functions nothing refers to]";
+ 
+ /// The image section an object section becomes: its name before `$`
+ /// (debug information, which becomes no image section, keeps its name).
+@@ -58,6 +63,8 @@ struct Unit<'d> {
+     member: String,
+     pe: Option<PeFile<'d>>,
+     import: Option<ImportObject<'d>>,
++    /// A `/GL` object (its IL).
++    ltcg: Option<LtcgObject<'d>>,
+     len: u64,
+ }
+ 
+@@ -159,6 +166,104 @@ impl Builder {
+     }
+ }
+ 
++impl Builder {
++    /// The base map's ranges for a `/GL` object at `offset`: its header,
++    /// the IL object's headers and symbol table, and each IL section by
++    /// name. (IL has no memory size: what code it becomes is the back
++    /// end's to say.)
++    fn ltcg(&mut self, offset: u64, l: &LtcgObject<'_>) {
++        self.file(offset, turbonop_pe::ltcg::HEADER_SIZE as u64, LTCG_HEADER);
++        let header = turbonop_pe::ltcg::HEADER_SIZE as u64;
++        self.file(offset + header, 20, COFF_HEADER);
++        self.file(
++            offset + header + 20,
++            (l.headers_end as u64).saturating_sub(header + 20),
++            COFF_SECTION_HEADERS,
++        );
++        for st in l.streams() {
++            let name = String::from_utf8_lossy(st.name).into_owned();
++            self.file(offset + st.offset, st.data.len() as u64, &name);
++        }
++        let (at, len) = l.symbol_table;
++        if len > 0 {
++            self.file(offset + at, len, COFF_SYMBOLS);
++        }
++    }
++}
++
++/// The symbols source of a `/GL` object at `offset`: each function's IL
++/// (its `.cil$ex` unit and its `.cil$sy` stream), each variable's
++/// initializer (`.cil$in`), and each symbol's record (`.cil$gl`), charged
++/// to the symbol; the IL of functions with no record to
++/// [`LTCG_UNREFERENCED`].
++fn ltcg_symbols(
++    l: &LtcgObject<'_>,
++    offset: u64,
++    labels: &mut Labels,
++    map: &mut DualMap,
++    base: &DualMap,
++) {
++    let Ok(g) = l.globals() else { return };
++    let mut demangler = turbonop_demangle::msvc::Demangler::default();
++    let label_of: Vec<Label> = g
++        .symbols
++        .iter()
++        .map(|s| labels.intern(&display(&mut demangler, s.name)))
++        .collect();
++    let mut add = |section: &[u8], start: u64, end: u64, label: Label| {
++        if let Some(at) = l.stream_offset(section)
++            && start < end
++        {
++            map.add_file(offset + at + start, offset + at + end, label, base);
++        }
++    };
++    for (s, &label) in g.symbols.iter().zip(&label_of) {
++        add(b".cil$gl", s.offset as u64, s.end as u64, label);
++    }
++    let units = l.il_units();
++    let locals = l.locals().ok();
++    let agrees = locals.as_ref().is_some_and(|x| units.agrees_with(x));
++    let unreferenced = labels.intern(LTCG_UNREFERENCED);
++    if agrees && let Some(locals) = &locals {
++        let mut owner = vec![unreferenced; units.len()];
++        for (s, &label) in g.symbols.iter().zip(&label_of) {
++            if let Some(il) = s.il
++                && let Some(k) = units.index_of(il.il_offset)
++            {
++                owner[k] = label;
++            }
++        }
++        for (k, &label) in owner.iter().enumerate() {
++            if let Some((a, e)) = units.range(k) {
++                add(b".cil$ex", a.into(), e.into(), label);
++            }
++            if let Some(f) = locals.functions.get(k) {
++                add(b".cil$sy", f.offset as u64, f.end as u64, label);
++            }
++        }
++    } else {
++        // (Units not found: each function's IL from its offset to the
++        // next one's.)
++        let len = l.stream(b".cil$ex").map_or(0, <[u8]>::len);
++        for ((s, size), &label) in g.symbols.iter().zip(g.il_sizes(len)).zip(&label_of) {
++            if let (Some(il), Some(size)) = (s.il, size) {
++                let a = u64::from(il.il_offset);
++                add(b".cil$ex", a, a + u64::from(size), label);
++            }
++        }
++    }
++    if let Ok(init) = l.initializers() {
++        let mut by_id: Vec<(u32, Label)> =
++            g.symbols.iter().map(|s| s.id).zip(label_of.iter().copied()).collect();
++        by_id.sort_unstable_by_key(|e| e.0);
++        for i in &init.list {
++            if let Ok(k) = by_id.binary_search_by_key(&i.id, |e| e.0) {
++                add(b".cil$in", i.offset as u64, i.end as u64, by_id[k].1);
++            }
++        }
++    }
++}
++
+ /// The bytes of a section's relocation table (with the count entry of an
+ /// overflowed one).
+ fn relocation_bytes(pe: &PeFile<'_>, s: &turbonop_pe::raw::SectionHeader) -> u64 {
+@@ -334,6 +439,12 @@ pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
+                 b.file(u.offset, u.len, IMPORT_OBJECT);
+                 addrs.push(Vec::new());
+             }
++            _ if u.ltcg.is_some() => {
++                if let Some(l) = &u.ltcg {
++                    b.ltcg(u.offset, l);
++                }
++                addrs.push(Vec::new());
++            }
+             _ => {
+                 b.file(u.offset, u.len, UNPARSED_MEMBER);
+                 addrs.push(Vec::new());
+@@ -370,7 +481,9 @@ pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
+                     .iter()
+                     .find_map(|u| {
+                         u.pe.as_ref()
+-                            .map(|p| turbonop_image::coff_machine_name(p.machine()))
++                            .map(|p| p.machine())
++                            .or_else(|| u.ltcg.as_ref().map(|l| l.machine))
++                            .map(turbonop_image::coff_machine_name)
+                     })
+                     .unwrap_or("unknown");
+                 let l = b.labels.intern(name);
+@@ -414,6 +527,10 @@ pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
+                         map.add_file(u.offset, u.offset + u.len, l, &b.base);
+                         continue;
+                     }
++                    if let Some(l) = &u.ltcg {
++                        ltcg_symbols(l, u.offset, &mut b.labels, &mut map, &b.base);
++                        continue;
++                    }
+                     let Some(pe) = &u.pe else { continue };
+                     let pieces = symbol_pieces(pe, &mut b.labels);
+                     for ((s, pieces), addr) in pe.sections().iter().zip(&pieces).zip(addrs) {
+@@ -467,7 +584,10 @@ fn unit<'d>(data: &'d [u8], offset: u64, member: String) -> Unit<'d> {
+     let import = ImportObject::is_import_object(data)
+         .then(|| ImportObject::parse(data).ok())
+         .flatten();
+-    let pe = if import.is_some() {
++    let ltcg = LtcgObject::is_ltcg(data)
++        .then(|| LtcgObject::parse(data).ok())
++        .flatten();
++    let pe = if import.is_some() || ltcg.is_some() {
+         None
+     } else {
+         PeFile::parse_object(data).ok()
+@@ -477,6 +597,7 @@ fn unit<'d>(data: &'d [u8], offset: u64, member: String) -> Unit<'d> {
+         member,
+         pe,
+         import,
++        ltcg,
+         len: data.len() as u64,
+     }
+ }

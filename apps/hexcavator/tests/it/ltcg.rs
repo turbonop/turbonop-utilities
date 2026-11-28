@@ -343,7 +343,8 @@ fn il_sections_walked_whole() {
         // Functions nothing refers to keep their IL, but no record (the
         // C++ sources have some).
         assert!(units.len() >= bodies, "{name}");
-        if name.ends_with("records.obj") || name.ends_with("a64.obj") || name.ends_with("/ltcg.obj") {
+        if name.ends_with("records.obj") || name.ends_with("a64.obj") || name.ends_with("/ltcg.obj")
+        {
             assert!(units.len() > bodies, "{name}");
         }
         // The spans tile the table after its header.

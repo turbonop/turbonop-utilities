@@ -735,3 +735,58 @@ fn one_library_alone_is_copied() {
     assert_ne!(std::fs::read(dir.join("f.lib")).unwrap(), original);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Folds `objects` (of testdata/coff/tables) with the self-check under
+/// `strict`, so a fold the self-check rejects fails the test; gives the
+/// library's members' names.
+fn fold_strictly(name: &str, objects: &[&str]) -> Vec<String> {
+    let dir = scratch(name);
+    let mut args = w(&["/nologo", "/Brepro", "/OUT:f.lib"]);
+    for o in objects {
+        let file = format!("{o}.obj");
+        std::fs::copy(testdata(&format!("coff/tables/{file}")), dir.join(&file)).unwrap();
+        args.push(file);
+    }
+    let mut env = env_in(&dir);
+    env.turbolib_options = Some("--fold=identical --precomp=library --strict".into());
+    let o = run(Flavor::Lib, &args, &env);
+    assert_eq!(o.exit, 0, "{name}: {o:?}");
+    assert!(!o.stdout.contains("warning"), "{name}: {o:?}");
+    let data = std::fs::read(dir.join("f.lib")).unwrap();
+    let archive = turbonop_archive::Archive::parse(&data).unwrap();
+    let names = archive.files().map(|m| text(&m.name)).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    names
+}
+
+/// cl's C and C++ front ends write the same COMDATs (a `selectany`
+/// constant, a floating-point constant) under their own `@comp.id` and
+/// `S_COMPILE3`, as `libucrt.lib`'s members do (`_Fenv1`,
+/// `__real@0000000000000000`): each language's copies fold into a
+/// synthesized member of its own, which the self-check accepts (it once
+/// fell back: one COMDAT held by two synthesized members).
+#[test]
+fn c_and_cpp_copies_of_one_comdat_fold_apart() {
+    for arch in ["x64", "x86"] {
+        let objects: Vec<String> = ["c", "c2", "cpp", "cpp2"]
+            .iter()
+            .map(|u| format!("msvc-{arch}-mixed-{u}"))
+            .collect();
+        let objects: Vec<&str> = objects.iter().map(String::as_str).collect();
+        let names = fold_strictly(&format!("mixed-{arch}"), &objects);
+        let synthesized = names.iter().filter(|n| n.starts_with("turbolib")).count();
+        assert_eq!(synthesized, 3, "{arch}: {names:?}");
+    }
+}
+
+/// `.retplne` records (`/d2guardretpoline`) move with their code, and the
+/// self-check reads them as entries, not as a section that must stay the
+/// same (`BufferOverflow.lib` once fell back: `.retplne` changed).
+#[test]
+fn retpoline_tables_split_and_pass_the_self_check() {
+    let names = fold_strictly(
+        "retpoline",
+        &["msvc-x64-retpoline-one", "msvc-x64-retpoline-two"],
+    );
+    assert!(names.iter().any(|n| n.starts_with("turbolib")), "{names:?}");
+}

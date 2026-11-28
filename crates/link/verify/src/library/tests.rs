@@ -854,3 +854,44 @@ fn an_alias_no_anchored_member_defines_is_caught() {
         r.text()
     );
 }
+
+/// A `.retplne` record is an entry (what its section is, and its branches),
+/// not bytes that must stay the same: a record whose branches changed is
+/// caught, and the same library passes.
+#[test]
+fn a_changed_retpoline_record_is_caught() {
+    let read = |name: &str| {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../testdata/coff/tables")
+            .join(name);
+        std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+    };
+    let members = vec![
+        (b"one.obj".to_vec(), read("msvc-x64-retpoline-one.obj")),
+        (b"two.obj".to_vec(), read("msvc-x64-retpoline-two.obj")),
+    ];
+    let original = archive(&members, None);
+    let same = verify_with(&original, &original, Pull::Preserve);
+    fails(&same, &[]);
+    let Body::Coff(c) = member::read(&members[0].1) else {
+        panic!("one.obj isn't read as an object");
+    };
+    assert!(
+        c.side.iter().any(|(t, _)| &**t == member::RETPOLINE_TABLE),
+        "{:?}",
+        c.side
+    );
+    // The first record's first branch's offset, one byte later.
+    let mut changed = members.clone();
+    let data = &mut changed[0].1;
+    let magic = data
+        .windows(12)
+        .position(|w| w == b"RetpolineV1\0")
+        .expect("one.obj has a .retplne");
+    data[magic + 12 + 8 + 4] ^= 1;
+    let r = verify_with(&original, &archive(&changed, None), Pull::Preserve);
+    fails(
+        &r,
+        &["side-table entries neither in their member nor in a synthesized member it anchors"],
+    );
+}

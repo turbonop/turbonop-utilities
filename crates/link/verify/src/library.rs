@@ -364,8 +364,8 @@ struct Facts<'s> {
     defined: &'s Definitions<'s>,
     /// The synthesized members that define each anchor.
     anchor_of: Map<&'s [u8], usize>,
-    /// The synthesized members holding each unit key.
-    holders: Map<u128, Vec<usize>>,
+    /// The synthesized members holding each unit key (and its leader).
+    holders: Map<u128, (&'s [u8], Vec<usize>)>,
     /// Under select-any, the synthesized members holding a copy of each
     /// name key, with the copy's size and checksum.
     by_name: Map<u128, Vec<(usize, u32, u32)>>,
@@ -607,7 +607,12 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                 .collect(),
         );
         for u in &c.units {
-            facts.holders.entry(u.key).or_default().push(j);
+            facts
+                .holders
+                .entry(u.key)
+                .or_insert_with(|| (u.leader, Vec::new()))
+                .1
+                .push(j);
             if options.fold == Fold::SelectAny && !u.local {
                 facts
                     .by_name
@@ -658,20 +663,30 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
     } else {
         Set::default()
     };
-    let mut twice: Vec<&Vec<usize>> = facts
+    let mut twice: Vec<&(&[u8], Vec<usize>)> = facts
         .holders
         .iter()
-        .filter(|(k, h)| h.len() > 1 && !local_keys.contains(k))
+        // (Copies from two compilers' members, in two synthesized members
+        // that each name their own compiler, as turbolib keeps them apart.)
+        .filter(|(k, (_, h))| {
+            let mut compilers: Vec<u128> = h
+                .iter()
+                .map(|&j| r.members[j].body.coff().map_or(0, |c| c.compiler))
+                .collect();
+            compilers.sort_unstable();
+            compilers.windows(2).any(|w| w[0] == w[1]) && !local_keys.contains(k)
+        })
         .map(|(_, h)| h)
         .collect();
-    twice.sort_unstable();
-    for holders in twice {
+    twice.sort_unstable_by(|a, b| (&a.1, a.0).cmp(&(&b.1, b.0)));
+    for (leader, holders) in twice {
         report.fail("COMDATs held by more than one synthesized member", || {
-            holders
+            let held = holders
                 .iter()
                 .map(|&j| r.name(j))
                 .collect::<Vec<_>>()
-                .join(", ")
+                .join(", ");
+            format!("{}: {held}", show(leader))
         });
     }
 
@@ -849,7 +864,7 @@ fn check_member(
                 "moved COMDATs that no synthesized member holds (in their environment)",
                 || format!("{}: {}", name(), show(u.leader)),
             ),
-            Some(holders) => {
+            Some((_, holders)) => {
                 if !holders.iter().any(|h| synthesized.binary_search(h).is_ok()) {
                     rep.fail(
                         "moved COMDATs whose synthesized member the original member doesn't anchor",

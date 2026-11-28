@@ -70,6 +70,14 @@ pub const INDEX_TABLES: [&[u8]; 5] = [
 /// section its relocation names).
 pub const RELOCATION_TABLES: [&[u8]; 1] = [b".voltbl"];
 
+/// The retpoline table (`/d2guardretpoline`): `RetpolineV1\0`, then records
+/// of a 32-bit size, a section number, and (kind, offset) pairs for that
+/// section's indirect branches. Each record moves with its section; its
+/// entry is what the section is (a unit's leader, or a piece's contents)
+/// and the pairs.
+pub const RETPOLINE_TABLE: &[u8] = b".retplne";
+const RETPOLINE_MAGIC: &[u8] = b"RetpolineV1\0";
+
 /// What a definition is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Class {
@@ -204,6 +212,9 @@ pub struct Coff<'d> {
     /// The environment key: machine, `@feat.00`, and the sorted
     /// `/FAILIFMISMATCH` directives.
     pub environment: u128,
+    /// Its compiler (see `compiler_key`): the `@` markers other than
+    /// `@feat.00`, and the compiler's `S_COMPILE3`.
+    pub compiler: u128,
     pub definitions: Vec<Definition<'d>>,
     /// Undefined externals that aren't weak or common, in the symbol
     /// table's order (a name with two records is listed twice).
@@ -305,6 +316,84 @@ pub fn read_with(data: &[u8], structural: bool) -> Body<'_> {
     }
 }
 
+/// What tells compilers apart beyond `verify`'s environment (machine,
+/// `@feat.00`, `/FAILIFMISMATCH`): the static absolute `@` markers other
+/// than `@feat.00` (`@comp.id`, `@vol.md`), and the first `S_COMPILE3` of
+/// the `.debug$S` outside COMDATs. turbolib's environment has the markers
+/// and `S_COMPILE3`, so copies of one COMDAT from two compilers (cl's C and
+/// C++ front ends: `libucrt.lib`'s `_Fenv1` and `__real@0000000000000000`)
+/// go to two synthesized members, each with its own compiler's `@comp.id`
+/// (and `S_COMPILE3`, when its units have CodeView).
+fn compiler_key(o: &Object<'_>) -> u128 {
+    const S_COMPILE3: u16 = 0x113C;
+    let mut h = H128::new();
+    for s in &o.symbols {
+        let name = s.name.as_bytes();
+        if s.section == SectionNumber::Absolute
+            && s.storage_class == storage_class::STATIC
+            && name.starts_with(b"@")
+            && name != b"@feat.00"
+        {
+            h.u64(name.len() as u64);
+            h.bytes(name);
+            h.u64(u64::from(s.value));
+        }
+    }
+    let compile = o
+        .sections
+        .iter()
+        .filter(|s| s.name.as_bytes() == b".debug$S" && !is_comdat(s.characteristics))
+        .find_map(|s| {
+            use turbonop_codeview::c13;
+            let subsections = c13::section_subsections(s.bytes()).ok()?;
+            subsections
+                .into_iter()
+                .filter(|x| x.kind == turbonop_codeview::lines::subsection::DEBUG_S_SYMBOLS)
+                .find_map(|x| {
+                    c13::symbol_records(x.data)
+                        .ok()?
+                        .into_iter()
+                        .find(|r| r.kind == S_COMPILE3)
+                        .map(|r| r.data)
+                })
+        });
+    match compile {
+        Some(c) => {
+            h.u64(c.len() as u64);
+            h.bytes(c);
+        }
+        None => h.u64(u64::MAX),
+    }
+    h.finish()
+}
+
+/// A `.retplne` section's records, as (section index, the record's
+/// (kind, offset) pairs), or `None` if it can't be read.
+fn retpoline_records(data: &[u8], sections: usize) -> Option<Vec<(usize, &[u8])>> {
+    let mut at = RETPOLINE_MAGIC.len();
+    if !data.starts_with(RETPOLINE_MAGIC) {
+        return None;
+    }
+    let u32_at = |i: usize| {
+        data.get(i..i + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    let mut out = Vec::new();
+    while at < data.len() {
+        let size = u32_at(at)?;
+        let number = u32_at(at + 4)?;
+        if size < 8 || !size.is_multiple_of(4) || at + size > data.len() {
+            return None;
+        }
+        if number == 0 || number > sections {
+            return None;
+        }
+        out.push((number - 1, &data[at + 8..at + size]));
+        at += size;
+    }
+    Some(out)
+}
+
 fn is_comdat(characteristics: u32) -> bool {
     characteristics & scn::LNK_COMDAT != 0
 }
@@ -398,6 +487,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
             feat00 = Some(s.value);
         }
     }
+    c.compiler = compiler_key(o);
     let def = |at: usize| {
         definition[at]
             .and_then(|i| o.symbols[i].section_definition())
@@ -529,6 +619,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
 
     // Directives, side effects, side tables, debug sections.
     let indices = o.symbol_table_indices();
+    let mut retpolines: Vec<(usize, &[u8])> = Vec::new();
     let mut mismatches: Vec<&[u8]> = Vec::new();
     for (s, sec) in o.sections.iter().enumerate() {
         let name = borrowed(&sec.name);
@@ -560,6 +651,13 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
                     Err(_) => Cow::Owned(format!("<symbol index {index}>").into_bytes()),
                 };
                 c.side.push((name, entry));
+            }
+        } else if name == RETPOLINE_TABLE {
+            match retpoline_records(sec.bytes(), n) {
+                Some(records) => retpolines.extend(records),
+                None => c
+                    .side
+                    .push((name.into(), b"<a table that can't be read>".to_vec().into())),
             }
         } else if RELOCATION_TABLES.contains(&name) && unit_of[s].is_none() {
             for r in &sec.relocations {
@@ -781,6 +879,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
     }
 
     // Pieces: the other sections.
+    let mut piece_of: Vec<Option<usize>> = vec![None; n];
     for (s, sec) in o.sections.iter().enumerate() {
         let name = borrowed(&sec.name);
         if unit_of[s].is_some()
@@ -789,6 +888,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
             || name == b".chks64"
             || INDEX_TABLES.contains(&name)
             || RELOCATION_TABLES.contains(&name)
+            || name == RETPOLINE_TABLE
         {
             continue;
         }
@@ -804,11 +904,47 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
             locals: None,
         };
         form.section(s, &mut h);
+        piece_of[s] = Some(c.pieces.len());
         c.pieces.push(Piece {
             name,
             fingerprint: h.finish(),
         });
     }
+    // Retpoline records, by what their section is.
+    for (s, pairs) in retpolines {
+        let what = match unit_of[s] {
+            // (By its place in the unit's canonical order: the root first.)
+            Some(u) => match leader[roots[u as usize]] {
+                Some(l) => [
+                    b"unit ",
+                    canonical(o.symbols[l].name.as_bytes()),
+                    format!(" section {}", position[s]).as_bytes(),
+                ]
+                .concat(),
+                None => format!("a unit without a leader, section {}", position[s]).into_bytes(),
+            },
+            None => match piece_of[s] {
+                Some(p) => {
+                    let piece = &c.pieces[p];
+                    [
+                        b"section ",
+                        &*piece.name,
+                        format!(" {:032x}", piece.fingerprint).as_bytes(),
+                    ]
+                    .concat()
+                }
+                None => [b"section ", o.sections[s].name.as_bytes()].concat(),
+            },
+        };
+        let mut entry = what;
+        entry.extend_from_slice(b": ");
+        for p in pairs.chunks(4) {
+            entry.extend_from_slice(format!("{p:02x?}").as_bytes());
+        }
+        c.side.push((RETPOLINE_TABLE.into(), entry.into()));
+    }
+    c.side.sort_unstable();
+    c.side.dedup();
     c.pieces.sort_unstable();
     for u in &mut c.units {
         u.key = unit_key(u.leader, u.local, u.fingerprint, c.environment, structural);

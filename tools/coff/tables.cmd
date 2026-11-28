@@ -18,6 +18,9 @@ rem   clang-x86-*.obj          clang-cl -m32 /guard:cf: .sxdata
 rem   msvc-x64-voltbl-*.obj    cl /Gy /volatileMetadata: .voltbl in COMDATs
 rem   msvc-x64-voltbl-nogy-*.obj  /Gy-: .voltbl records outside COMDATs
 rem   msvc-x64-retpoline-*.obj    cl /Gy /d2guardretpoline: .retplne
+rem   msvc-{x64,x86}-mixed-*.obj  cl /Gy /Z7 of tables\mixed-*.c (C) and
+rem                            mixed-*.cpp (C++): the same COMDATs from cl's
+rem                            two front ends (other @comp.id, S_COMPILE3)
 rem
 rem LLVM_BIN is where clang-cl is (the default is a Release build of
 rem llvm-project at C:\jm\dev\llvm-project\build-release).
@@ -41,6 +44,7 @@ call :both clang-x64-cf "%LLVM_BIN%\clang-cl" %CL_FLAGS% /guard:cf /guard:ehcont
 call :both msvc-x64-voltbl cl %CL_FLAGS% /Gy /volatileMetadata || exit /b 1
 call :both msvc-x64-voltbl-nogy cl %CL_FLAGS% /Gy- /volatileMetadata || exit /b 1
 call :both msvc-x64-retpoline cl %CL_FLAGS% /Gy /d2guardretpoline || exit /b 1
+call :mixed msvc-x64-mixed || exit /b 1
 endlocal
 
 setlocal
@@ -52,6 +56,7 @@ setlocal
 call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" amd64_x86 >nul 2>&1 || exit /b 1
 call :both msvc-x86 cl %CL_FLAGS% /Gy /guard:cf || exit /b 1
 call :both msvc-x86-nogy cl %CL_FLAGS% /Gy- /guard:cf || exit /b 1
+call :mixed msvc-x86-mixed || exit /b 1
 call :both clang-x86 "%LLVM_BIN%\clang-cl" -m32 %CL_FLAGS% /guard:cf || exit /b 1
 endlocal
 exit /b 0
@@ -69,4 +74,10 @@ goto args
 :run
 %CMD% "%SRC%\one.cpp" /Fo:%NAME%-one.obj >nul || exit /b 1
 %CMD% "%SRC%\two.cpp" /Fo:%NAME%-two.obj >nul || exit /b 1
+exit /b 0
+
+rem :mixed name: name-c.obj, name-c2.obj (C), name-cpp.obj, name-cpp2.obj (C++).
+:mixed
+for %%u in (c c2) do (cl %CL_FLAGS% /Gy /Z7 /TC "%SRC%\mixed-%%u.c" /Fo:%~1-%%u.obj >nul || exit /b 1)
+for %%u in (cpp cpp2) do (cl %CL_FLAGS% /Gy /Z7 /TP "%SRC%\mixed-%%u.cpp" /Fo:%~1-%%u.obj >nul || exit /b 1)
 exit /b 0

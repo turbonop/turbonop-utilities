@@ -273,6 +273,18 @@ lists every COFF group with its address and size) and by experiment:
   IAT protected and in its own section, export suppression information,
   long-jump table), with 0x400000 for `/GUARD:EHCONT`; the delay-load
   address tables go to a `.didat` section of their own (read-write).
+- **`/FAILIFMISMATCH` and `/DISALLOWLIB`** (objects' directives). The
+  first value a `/FAILIFMISMATCH` key is given, in the order the files
+  load, is what the rest must match: each file whose value differs is
+  LNK2038 (`b.obj: mismatch detected for 'K': value 'Two' doesn't match
+  value 'One' in a.obj`, a library member as `lib(member)`), and the link
+  ends with LNK1319 (`n mismatches detected`, `/FORCE` or not) unless
+  unresolved symbols end it first (LNK1120; with `/FORCE:UNRESOLVED`, the
+  LNK1319). On the command line the option is unknown (LNK4044). A
+  default library a `/DISALLOWLIB` names (as written, either case, `.lib`
+  or not) is still used, but is LNK4098 once, searched or loaded: named
+  for the disallowing file if the library came after it, the link's if
+  before; a command-line library isn't checked.
 - **The manifest.** None by default (an EXE's or a DLL's, `/DEBUG` or
   not); but a `/MANIFESTDEPENDENCY` (an object's directive too) without
   `/MANIFEST` writes one beside the image, unless `/MANIFEST:NO`.

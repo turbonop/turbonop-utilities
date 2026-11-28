@@ -793,7 +793,7 @@ same but for the PDB's GUID, age, and name.
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
   library X and object Y" message, `/INCREMENTAL`'s padding (it links
   fully),
-  `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
+  `/WHOLEARCHIVE`, link.exe's exit codes (the fatal error's number),
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
   members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
 - **Exports' diagnostics:** link.exe warns LNK4197 for a name exported

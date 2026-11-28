@@ -365,7 +365,7 @@ pub struct Config {
     pub default_libs: Vec<String>,
     /// `/NODEFAULTLIB`.
     pub no_default_lib: NoDefaultLib,
-    /// `/DISALLOWLIB`s (lower case): libraries the link mustn't use (a
+    /// `/DISALLOWLIB`s, as written: libraries the link shouldn't use (a
     /// CRT's objects name the CRTs they can't be mixed with).
     pub disallow_libs: Vec<String>,
     /// `/INCLUDE`s: symbols to keep (and to pull from libraries).
@@ -934,6 +934,11 @@ pub fn parse(args: &[Arg], diags: &mut Vec<Diagnostic>) -> Config {
     for a in args {
         match a {
             Arg::Input(path) => c.inputs.push(path.clone()),
+            // (Only a directive may give /FAILIFMISMATCH: on the command
+            // line link.exe doesn't know it, LNK4044.)
+            Arg::Option { name, .. } if name.eq_ignore_ascii_case("failifmismatch") => {
+                diags.push(Diagnostic::Unknown(a.to_string()));
+            }
             Arg::Option { name, value } => apply(&mut c, name, value.as_deref(), a, diags),
         }
     }
@@ -1354,7 +1359,7 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
         // for it to see).
         "disallowlib" => {
             if let Some(v) = need(d) {
-                c.disallow_libs.push(v.to_ascii_lowercase());
+                c.disallow_libs.push(v);
             }
         }
         "guardsym" | "inferasanlibs" => {}

@@ -1911,3 +1911,128 @@ fn the_export_directorys_strings_are_link_exes() {
     assert_eq!(sorted, want);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// An x64 object defining `name` (a `ret`, in `.text`) with `directives`
+/// in its `.drectve`.
+fn with_directives(name: &'static str, directives: &str) -> Vec<u8> {
+    let text = [0xC3u8];
+    let drectve = directives.as_bytes();
+    let text_at = 20 + 2 * 40;
+    let drectve_at = text_at + text.len();
+    let symbols_at = drectve_at + drectve.len();
+    let mut o = Vec::new();
+    o.extend_from_slice(&0x8664u16.to_le_bytes());
+    o.extend_from_slice(&2u16.to_le_bytes());
+    o.extend_from_slice(&0u32.to_le_bytes());
+    o.extend_from_slice(&n32(symbols_at).to_le_bytes());
+    o.extend_from_slice(&1u32.to_le_bytes());
+    o.extend_from_slice(&[0; 4]);
+    for (sec, at, size, chars) in [
+        (b".text\0\0\0", text_at, text.len(), 0x6050_0020u32),
+        (b".drectve", drectve_at, drectve.len(), 0x0010_0A00),
+    ] {
+        o.extend_from_slice(sec);
+        for v in [0u32, 0, n32(size), n32(at), 0, 0] {
+            o.extend_from_slice(&v.to_le_bytes());
+        }
+        o.extend_from_slice(&[0; 4]);
+        o.extend_from_slice(&chars.to_le_bytes());
+    }
+    o.extend_from_slice(&text);
+    o.extend_from_slice(drectve);
+    let mut short = [0u8; 8];
+    short[..name.len()].copy_from_slice(name.as_bytes());
+    o.extend_from_slice(&short);
+    o.extend_from_slice(&0u32.to_le_bytes());
+    o.extend_from_slice(&1i16.to_le_bytes());
+    o.extend_from_slice(&0x20u16.to_le_bytes());
+    o.push(2);
+    o.push(0);
+    o.extend_from_slice(&4u32.to_le_bytes());
+    o
+}
+
+/// `/FAILIFMISMATCH` (an object's directive): the first value a key is
+/// given, in the order the files load, is what the others must match;
+/// each file that doesn't is LNK2038, and the link ends with LNK1319. The
+/// same value again is fine; on the command line the option is ignored.
+/// (As link.exe 14.52 does.)
+#[test]
+fn failifmismatch_values_must_match() {
+    let dir = scratch("failifmismatch");
+    let write =
+        |file: &str, name, d| std::fs::write(dir.join(file), with_directives(name, d)).unwrap();
+    write(
+        "main.obj",
+        "main",
+        " /FAILIFMISMATCH:Key=One /FAILIFMISMATCH:Other=X",
+    );
+    write("a.obj", "a", " /FAILIFMISMATCH:Key=One");
+    write("b.obj", "b", " /FAILIFMISMATCH:Key=Two");
+    write("d.obj", "d", " /FAILIFMISMATCH:Other=Y");
+    let base = [
+        "/NODEFAULTLIB",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        "main.obj",
+    ];
+    let link = |more: &[&str]| {
+        let mut words = base.to_vec();
+        words.extend_from_slice(more);
+        run_with_warnings(&dir, &words)
+    };
+    assert!(link(&["a.obj"]).0.is_ok(), "the same value");
+    assert_eq!(link(&["a.obj", "b.obj"]).0.err(), Some(vec![2038, 1319]));
+    assert_eq!(
+        link(&["a.obj", "d.obj", "b.obj"]).0.err(),
+        Some(vec![2038, 2038, 1319])
+    );
+    // (On the command line: ignored, LNK4044, as config's tests check.)
+    assert!(link(&["/FAILIFMISMATCH:Key=Three", "a.obj"]).0.is_ok());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `/DISALLOWLIB` (an object's directive): a default library the link
+/// uses anyway is a warning (LNK4098), once, whether its members are
+/// loaded or not; a library named on the command line isn't one. (As
+/// link.exe 14.52 does.)
+#[test]
+fn a_disallowed_default_library_is_a_warning() {
+    let dir = scratch("disallowlib");
+    std::fs::write(
+        dir.join("main.obj"),
+        with_directives("main", " /DEFAULTLIB:x.lib"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("e.obj"), with_directives("e", " /DISALLOWLIB:X")).unwrap();
+    std::fs::write(
+        dir.join("e2.obj"),
+        with_directives("e2", " /DISALLOWLIB:x.lib"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("plain.obj"), defining("main")).unwrap();
+    std::fs::write(
+        dir.join("x.lib"),
+        archive(&[("x.obj", defining("x"), &["x"])]),
+    )
+    .unwrap();
+    let libpath = format!("/LIBPATH:{}", dir.display());
+    let link = |files: &[&str]| {
+        let mut words = vec!["/ENTRY:main", "/SUBSYSTEM:CONSOLE", libpath.as_str()];
+        words.extend_from_slice(files);
+        run_with_warnings(&dir, &words)
+    };
+    for files in [
+        &["main.obj", "e.obj"][..],
+        &["e.obj", "main.obj"],
+        &["main.obj", "e.obj", "e2.obj"],
+    ] {
+        let (image, warnings) = link(files);
+        assert!(image.is_ok(), "{files:?}");
+        assert_eq!(warnings, [4098], "{files:?}");
+    }
+    let (image, warnings) = link(&["plain.obj", "e.obj", "x.lib"]);
+    assert!(image.is_ok());
+    assert!(warnings.is_empty(), "a command line library: {warnings:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

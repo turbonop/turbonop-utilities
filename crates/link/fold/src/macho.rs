@@ -163,6 +163,22 @@ pub struct Options<'a> {
     /// What tells this library's anchors from another's (its file name):
     /// part of each anchor's name.
     pub salt: &'a [u8],
+    pub debug_types: DebugTypes,
+}
+
+/// `--debug-types`: how a synthesized member describes the classes its
+/// moved code names (and those it is a member of).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DebugTypes {
+    /// Whole (dsymutil keeps only what the linked DIEs reach, so a class only
+    /// the moved code named would otherwise be in no unit of the dSYM): the
+    /// dSYM has the classes, and the versions of them, that 7.5's did.
+    Complete,
+    /// As declarations when every giver defines them in every link that
+    /// loads it (see `reach`): the corpus's synthesized members' DWARF less
+    /// than half, but dsymutil may then keep another unit's version of a
+    /// class (see the plan's 7.6).
+    Shared,
 }
 
 /// A member of the library.
@@ -1577,7 +1593,13 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                 return Done::Giver(None);
             }
             let anchors: BTreeSet<usize> = gone.iter().map(|&k| moved_to[&(m, k)]).collect();
-            Done::Giver(Some(rewrite_giver(&parsed[m], &gone, &anchors, &synth)))
+            Done::Giver(Some(rewrite_giver(
+                &parsed[m],
+                &gone,
+                &anchors,
+                &synth,
+                options.debug_types == DebugTypes::Shared,
+            )))
         }
     });
     let mut sources = Vec::with_capacity(debug_members.len());
@@ -1598,7 +1620,28 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                 .units
                 .first()
                 .and_then(|&(m, _)| source_of.get(&m).copied());
-            build_synth(&parsed, &synth, i, &name_to, src)
+            // The classes all its givers define in every link that loads
+            // them (see `reach`): a link that loads it through a giver
+            // has their definitions.
+            let mut sets: Vec<&Supplies> = Vec::with_capacity(synth[i].givers.len());
+            for &g in &synth[i].givers {
+                match rewritten.get(g) {
+                    Some(Some(Ok((.., Some(s))))) => sets.push(s),
+                    _ => {
+                        sets.clear();
+                        break;
+                    }
+                }
+            }
+            sets.sort_by_key(|s| s.len());
+            let supplied: Option<Supplies> = sets.split_first().map(|(first, rest)| {
+                first
+                    .iter()
+                    .filter(|k| rest.iter().all(|s| s.contains(*k)))
+                    .copied()
+                    .collect()
+            });
+            build_synth(&parsed, &synth, i, &name_to, src, supplied.as_ref())
         });
     lap(&mut report, "synthesizing");
     let mut out = Vec::with_capacity(inputs.len() + synth.len());
@@ -1647,7 +1690,7 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
                 data: None,
                 input: Some(m),
             }),
-            Some(Ok((data, tomb, removed, pruned))) => {
+            Some(Ok((data, tomb, removed, pruned, _))) => {
                 report.tombstoned += tomb;
                 match pruned {
                     Some(Ok(p)) => {
@@ -1682,7 +1725,11 @@ pub fn fold(inputs: &[Input<'_>], options: &Options<'_>) -> (Vec<Output>, Report
 
 /// A rewritten giver: its bytes, the debug relocations removed, and the
 /// bytes of units removed; or why it couldn't be rewritten.
-type Rewritten = Result<(Vec<u8>, usize, u64, Option<Pruning>), String>;
+type Rewritten = Result<(Vec<u8>, usize, u64, Option<Pruning>, Option<Supplies>), String>;
+
+/// The keys of the classes a giver's DWARF defines in every link that loads
+/// it (see `reach`).
+type Supplies = turbonop_hash::Set<u128>;
 
 /// What pruning a giver's DWARF did, or why it didn't.
 type Pruning = Result<prune::Pruned, &'static str>;
@@ -1761,6 +1808,7 @@ fn build_synth(
     i: usize,
     name_to: &BTreeMap<Vec<u8>, usize>,
     debug: Option<&Result<debug::Debug<'_>, &'static str>>,
+    supplied: Option<&Supplies>,
 ) -> Result<(Vec<u8>, SynthDebug), String> {
     let s = &synth[i];
     let (m0, _) = s.units[0];
@@ -2129,7 +2177,7 @@ fn build_synth(
             _ if s.units.iter().any(|&(m, _)| m != m0) => Err("units of more than one member"),
             Some(Ok(d)) => {
                 let ks: Vec<usize> = s.units.iter().map(|&(_, k)| k).collect();
-                debug::build(d, &ks)
+                debug::build(d, &ks, supplied)
             }
             Some(Err(e)) => Err(*e),
             None => Err("no DWARF read"),
@@ -2341,6 +2389,7 @@ fn rewrite_giver(
     gone: &[usize],
     anchors: &BTreeSet<usize>,
     synth: &[Synth],
+    shared: bool,
 ) -> Rewritten {
     let mut o = p.obj.clone().ok_or("no object")?;
     // What of its DWARF the cut can't move (see `adjust`), read first.
@@ -2478,6 +2527,7 @@ fn rewrite_giver(
         })
         .collect();
     let mut pruned = None;
+    let mut supplies = None;
     let old: Vec<(u64, u64)> = o.sections().map(|s| (s.addr, s.size())).collect();
     let cut = o.cut(&cuts).map_err(|e| e.to_string())?;
     if !cut.dangling.is_empty() {
@@ -2498,6 +2548,11 @@ fn rewrite_giver(
         };
         plan.apply(&mut o, &map)
             .map_err(|e| format!("its DWARF: {e}"))?;
+        // The classes it still defines in every link that loads it (none,
+        // where that isn't known).
+        if shared {
+            supplies = reach::reach(&o, &gone_syms).ok().flatten();
+        }
         // Its DWARF without what described the lost code (see `prune`),
         // or as it is.
         let mut t = o.clone();
@@ -2554,7 +2609,7 @@ fn rewrite_giver(
     o.update_dysymtab();
     o.relayout();
     let data = o.write().map_err(|e| e.to_string())?;
-    Ok((data, tomb, removed, pruned))
+    Ok((data, tomb, removed, pruned, supplies))
 }
 
 #[doc(hidden)]
@@ -2562,5 +2617,6 @@ pub mod adjust;
 mod debug;
 #[doc(hidden)]
 pub mod prune;
+mod reach;
 #[cfg(test)]
 mod tests;

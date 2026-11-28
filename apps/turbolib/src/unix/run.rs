@@ -19,7 +19,7 @@
 
 use super::args::{self, Command, Flavor, Op, Position};
 use crate::output;
-use crate::settings::{Fold, Locals, Precomp, Pull, Settings};
+use crate::settings::{DebugTypes, Fold, Locals, Precomp, Pull, Settings};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -1027,6 +1027,10 @@ fn fold_macho(run: &mut Run<'_>, archive: &str, plan: &Plan) -> Result<Vec<Item>
             Pull::Relaxed => turbonop_fold::macho::Pull::Relaxed,
         },
         salt: salt.as_bytes(),
+        debug_types: match run.settings.debug_types {
+            DebugTypes::Complete => turbonop_fold::macho::DebugTypes::Complete,
+            DebugTypes::Shared => turbonop_fold::macho::DebugTypes::Shared,
+        },
     };
     let inputs: Vec<turbonop_fold::macho::Input<'_>> = plan
         .members

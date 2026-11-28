@@ -1,0 +1,15 @@
+[package]
+name = "turbonop-isa"
+description = "The vocabulary every instruction set's decoder speaks: decoding, control flow, registers, memory, operands, and text"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true

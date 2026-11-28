@@ -725,15 +725,21 @@ x64. Where the 3.5 MB went:
   - Wall times on a quiet machine (this round's were taken with another
     build running): the 20 largest libraries against `lib.exe`, 1 to 8
     threads, and a profile with `tools/turbolib/sample.py`.
-  - Shared types, select-any, `--locals`, and `--report odr` still keep
-    every object (they compare or share across members): read them one at
-    a time too.
-  - Per-thread memory (about 90 MiB a thread on clangSema.lib): `strip`
-    clones the object it rewrites; threads' freed memory isn't reused by
-    the next step's new threads.
-  - The facts (437,527 units of 288 bytes, their names copied): borrow
-    names from the inputs, move what only `--locals` uses out of `Unit`.
-  - mimalloc's 32 MiB committed at start of every run.
+  - Done (2026-11-28, the plan's "Memory, round 2"): every mode reads
+    its objects one at a time, shared types, select-any, `--locals`, and
+    `--report odr` included; `strip` edits the object in place; unit facts
+    are 176 bytes (from 288), their names borrowed.
+  - Per-thread memory is still about 60 MiB a thread on clangSema.lib
+    (from 91): the 8 largest members' objects at once, and what is made of
+    them. Freed memory is reused across steps (mimalloc reclaims the
+    exited threads' segments: with `MIMALLOC_MAX_SEGMENT_RECLAIM=0`,
+    240 MiB more); what isn't reused is pages left part-used (purging at
+    once, `MIMALLOC_PURGE_DELAY=0`: 330 MiB less commit, 23% more CPU).
+    Left: a smaller object model (96 bytes a symbol, 128 a section, in
+    `turbonop-coff`), writing members as they are made rather than holding
+    them all (222 + 58 MiB on clangSema.lib), maybe a scoped thread pool.
+  - mimalloc's 32 MiB committed at start of every run: accepted (a run
+    that does real work uses it).
   - Slots for the `ar` and `libtool` personalities (only `lib` takes them).
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only

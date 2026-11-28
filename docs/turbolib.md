@@ -26,7 +26,7 @@ items leave TODO.md as they ship.
 | 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links); 3.5 done, as `--precomp=clustered[=<n>]` (opt-in; see [Phase 3.5 results](#phase-35-results-clustered)). |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
-| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). Memory (2026-11-27): folding clangSema.lib peaks at 1.69 GiB of commit, from 2.39; 8 libraries at once share the cores (slots). |
+| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). Memory (2026-11-27): folding clangSema.lib peaks at 1.69 GiB of commit, from 2.39; 8 libraries at once share the cores (slots). Round 2 (2026-11-28): every mode reads its objects one at a time; with shared types clangSema.lib peaks at 1.33 GiB, from 1.97 (836 MiB on one thread, from 1,581). |
 | 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; GNU's split DWARF 4 too; initializer entries in groups kept from folding; the original members loaded in the original order by all four linkers; the clang corpus (relib byte for byte, folded 2.4% smaller, verified, relinked; see 6.6); every differing description proven another unit's copy; folding the 20 largest libraries in 0.34× GNU `ar`'s time, 1.88× a Release `llvm-ar`'s (6.8, from 3.46×; noisy measurements); `compare-images` reading the clang corpus's last differences; CREL objects read, written, and folded (6.7). Not yet: `select-any` and `--locals` for ELF. |
 | 7 Mach-O | In progress (see [Phase 7 results](#phase-7-results)). Done: 7.1, Darwin archives (all 160 archives of the Mach-O corpus written back byte for byte and remade by their own commands; 41 of 41 command lines as `llvm-ar`, `llvm-ranlib`, and `llvm-libtool-darwin` behave) and the `libtool -static` personality (`llvm-libtool-darwin`'s; 0.70× the real tools' time); 7.2, `turbonop-macho-object` (all 5,732 corpus objects round-trip byte for byte, and laid out afresh reproduce LLVM's bytes); 7.3, a first `--fold=identical` for Mach-O, with `verify`; 7.4, x86-64's FDEs and LSDAs move with their units (x86-64 now folds as arm64 does: 36,348 units, 169,617 copies), givers' DWARF moves with their code, synthesized members carry their units' DWARF (every folded unit's), and `compare-images` for Mach-O (dSYMs' DWARF too); 7.5, givers' DWARF without the moved copies' DIEs (the folded links' dSYMs equivalent to 7.4's). Not yet: Apple's `libtool`/`ranlib`, linkers, and dsymutil (not available here); the size the DWARF costs (the folded archives are 5.9% larger; 7.4: 9.1%); speed (3.55× the real tools' time folding in 7.4, and pruning adds about a quarter more CPU). |
 
@@ -2788,11 +2788,13 @@ if measurements say it pays.
   thread count cannot change the output.
 - **Plan:** the sizes of every output member are computed first, then the
   archive's index and member offsets, all before any data is written.
-- **Make:** folding identical copies, a member's object isn't kept once
-  its facts are read: each member's object is read again for its
-  rewriting and the synthesized members whose units are its own, and let
-  go once they are made (the modes that compare or share across members,
-  shared types, select-any, `--locals`, `--report odr`, keep every object).
+- **Make:** in every mode, a member's object isn't kept once its facts
+  (and what shared types, select-any, and `--report odr` need of it) are
+  read: each member's object is read again for the synthesized members
+  whose units are its own and then its rewriting, which edits it in place
+  when nothing else holds it, and let go once they are made. A
+  synthesized member whose units are several members' (select-any's
+  largest pick, copies kept for side effects) reads them on its own.
   A rewritten or synthesized member is held as its bytes but its section
   data (holes, which are the inputs' bytes).
 - **Write:** in order, from one thread, while up to 11 others copy the
@@ -3279,6 +3281,62 @@ What the memory was, and what changed:
   threads; under 4 MiB of input, one thread and no slot. Alone it gets
   every core; 8 at once on 8 cores, 12% less CPU and 37% less commit than
   8 threads each, and close to `-j1` everywhere.
+
+**Memory, round 2 (2026-11-28).** The same tools and the same caveat:
+another session's builds held the CPU at 100% throughout, so only CPU
+time and memory compare. `clangSema.lib`, median of 2 interleaved rounds:
+
+| | peak commit before | after | peak working set before | after |
+|---|---|---|---|---|
+| `--fold=identical`, 8 threads | 1,486 MiB | 1,296 MiB | 2,249 MiB | 2,135 MiB |
+| `--fold=identical`, 1 thread | 847 MiB | 820 MiB | 1,749 MiB | 1,718 MiB |
+| `--precomp=library`, 8 threads | 1,966 MiB | 1,333 MiB | 2,616 MiB | 2,138 MiB |
+| `--precomp=library`, 1 thread | 1,581 MiB | 836 MiB | 2,312 MiB | 1,720 MiB |
+| `--precomp=clustered`, 8 threads | 1,977 MiB | 1,330 MiB | 2,658 MiB | 2,134 MiB |
+
+CPU time was the same within the noise (4.9 to 5.5 s in every run).
+
+- **Every mode one object at a time.** Shared types, select-any,
+  `--locals`, and `--report odr` kept every object. Now what they need of
+  an object beyond its facts is read with it: shared types' scan of its
+  `.debug$S` (whether it can be renumbered, and which of its PCH's
+  records it names), whether it defines one of turbolib's PCH symbols,
+  and under `clustered` its undefined names; select-any's references of
+  each unit. The types themselves were already borrowed from the inputs.
+  A member that may share types is rewritten from its object read again,
+  as one that gives up copies is. Shared types now cost what folding
+  alone does (1 thread: 836 MiB against 820).
+- **`strip` edits the object in place.** It cloned the object it
+  rewrote. A member's synthesized members are made first, and its
+  rewriting last takes the object (it copies it only if another thread is
+  still making one of them). The side tables are split from the symbols
+  as read, before the symbols change, and `.chks64` compares each
+  section's bytes with where they were when read. About 91 MiB a thread
+  became about 68 (the rewriting step: the 8 largest members' objects at
+  once, and what is made of them).
+- **Freed memory and new threads.** Not the cause it was thought to be:
+  mimalloc reclaims the segments that exited threads leave (with
+  `MIMALLOC_MAX_SEGMENT_RECLAIM=0`, 240 MiB more commit; raising it
+  changed nothing). The rest of the gap to what is live is pages left
+  part-used: purging at once (`MIMALLOC_PURGE_DELAY=0`) peaks at 1,036 MiB
+  against 1,368 MiB, but takes 23% more CPU.
+- **Slimmer unit facts.** A unit was 288 bytes and copied its external
+  names: now 176 bytes, the names borrowed from the members, and what
+  only `--locals` and `--report odr` use (structural code, edges,
+  closure, referrers, and so on) in a box of its own, there only in those
+  modes. clangSema.lib's 437,527 units: 73 MiB (with the vector trimmed
+  to size), from at least 120 MiB and 46 MiB of copied names, each its
+  own allocation (the `modelsize` example).
+- **mimalloc's 32 MiB at start**: accepted, since a run that does real
+  work uses it.
+
+Output is the same, byte for byte with `/Brepro`, on all 245 libraries
+of `build-z7`, at 1, 3, and the default number of threads, against the
+build before, in eight modes: `--fold=none`, `identical`,
+`identical --precomp=library`, `identical --precomp=clustered`,
+`select-any`, `select-any --pick=largest --precomp=library`,
+`identical --locals=copy`, and `identical --locals=merge --report=odr`
+(`perflib.py identical`).
 
 Profiling: without administrator rights, `tools/turbolib/sample.py`
 (suspends each thread, walks its stack with dbghelp, names frames from

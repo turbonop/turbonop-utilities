@@ -523,8 +523,11 @@ x64. Where the 3.5 MB went:
     and NOREF, FULL and GHASH. Every failure was compare-images's own, or
     debug information of another translation unit's copy of a COMDAT
     (the code identical); none was a difference in a program. Open:
-    - refold with the engine as of #88 (the relinks used libraries
-      folded before it) and compare again;
+    - the other three programs against libraries refolded with the
+      engine as of #88 (llvm-objdump's 33, refolded, are the same size as
+      before and compare equivalent with both linkers, REF and NOREF);
+    - the debugger sessions on a folded
+      link (`proof/debug.py`);
     - which copy of a duplicate COMDAT a folded library makes the link
       keep differs from the original link's when the copies' debug
       information differs (another TU's lines for a compiler-generated

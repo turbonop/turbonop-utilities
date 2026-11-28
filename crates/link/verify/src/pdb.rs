@@ -60,6 +60,15 @@ use types::Hashes;
 
 /// A contribution, as compared: section, characteristics, size, CRCs.
 type ContributionKey = (Vec<u8>, u32, u32, u32, u32);
+/// A module's name, whether turbolib synthesized it, and its own records:
+/// their hashes, descriptions, and hashes without translation units' tags.
+type ModuleRecords = (Vec<u8>, bool, Vec<u128>, Vec<String>, Vec<u128>);
+/// A line block: what its start names, its hash, its code size if it is
+/// one line for the whole function (and whether at a translation unit's
+/// end), and a description.
+type LineBlock = (Vec<u8>, u128, Option<(u32, bool)>, String);
+/// A [`LineBlock`] borrowed, its hash first.
+type BlockRef<'x> = (u128, &'x [u8], Option<(u32, bool)>, &'x str);
 
 /// What one PDB holds, reduced.
 #[derive(Default)]
@@ -82,13 +91,13 @@ struct Reduced {
     /// Each module's name, whether it is synthesized, and its other
     /// records' hashes (sorted).
     /// (name, synthesized, its own records' hashes, and their descriptions)
-    modules: Vec<(Vec<u8>, bool, Vec<u128>, Vec<String>, Vec<u128>)>,
+    modules: Vec<ModuleRecords>,
     /// (what the block's start names, hash).
     /// (what its start names, hash, and its code size if it is a
     /// function's one line at its translation unit's end: see
     /// [`at_end_of_file`])
     /// and a description: its size, and its first file and line)
-    lines: Vec<(Vec<u8>, u128, Option<(u32, bool)>, String)>,
+    lines: Vec<LineBlock>,
     inlinees: Vec<u128>,
     /// Records whose fields aren't known, by kind; subsections not
     /// compared, by kind.
@@ -839,8 +848,8 @@ fn compare_rest(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
 /// end of a file in both, at what the same name starts (with the same
 /// code size), pair as expected.
 fn lines_compared(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
-    fn sorted(r: &Reduced) -> Vec<(u128, &[u8], Option<(u32, bool)>, &str)> {
-        let mut v: Vec<(u128, &[u8], Option<(u32, bool)>, &str)> = r
+    fn sorted(r: &Reduced) -> Vec<BlockRef<'_>> {
+        let mut v: Vec<BlockRef<'_>> = r
             .lines
             .iter()
             .map(|(n, h, e, d)| (*h, n.as_slice(), *e, d.as_str()))
@@ -877,15 +886,12 @@ fn lines_compared(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     // code size, then (identical code folded into groups another layout
     // labels otherwise) by code size alone.
     fn pair<'x, K: std::hash::Hash + Eq>(
-        only_a: Vec<(u128, &'x [u8], Option<(u32, bool)>, &'x str)>,
-        only_b: Vec<(u128, &'x [u8], Option<(u32, bool)>, &'x str)>,
-        key: impl Fn(&(u128, &'x [u8], Option<(u32, bool)>, &'x str)) -> Option<K>,
+        only_a: Vec<BlockRef<'x>>,
+        only_b: Vec<BlockRef<'x>>,
+        key: impl Fn(&BlockRef<'x>) -> Option<K>,
         what: &str,
         rep: &mut Report,
-    ) -> (
-        Vec<(u128, &'x [u8], Option<(u32, bool)>, &'x str)>,
-        Vec<(u128, &'x [u8], Option<(u32, bool)>, &'x str)>,
-    ) {
+    ) -> (Vec<BlockRef<'x>>, Vec<BlockRef<'x>>) {
         // The second's, by key: those at an end, and those not.
         let mut b: Map<K, (Vec<usize>, Vec<usize>)> = Map::default();
         for (k, y) in only_b.iter().enumerate() {
@@ -1172,7 +1178,7 @@ struct ModuleFacts {
     /// function's one line at its translation unit's end: see
     /// [`at_end_of_file`])
     /// and a description: its size, and its first file and line)
-    lines: Vec<(Vec<u8>, u128, Option<(u32, bool)>, String)>,
+    lines: Vec<LineBlock>,
     inlinees: Vec<u128>,
     unknown_records: Map<u16, u64>,
     unknown_subsections: Map<u32, u64>,
@@ -1446,7 +1452,10 @@ fn module(
                     blocks.iter().map(|b| b.lines.len()).sum::<usize>(),
                     cx.file(first.file)
                         .map_or_else(|| "?".into(), |f| show(file_name(f))),
-                    first.lines.first().map_or(0, |l| l.line())
+                    first
+                        .lines
+                        .first()
+                        .map_or(0, turbonop_codeview::lines::LineEntry::line)
                 );
                 out.lines.push((name, h.finish(), end, desc));
             }

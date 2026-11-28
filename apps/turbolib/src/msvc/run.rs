@@ -688,13 +688,41 @@ fn build(
                 return Ok(None);
             }
             let datas: Vec<output::Bytes<'_>> = finals.iter().map(Final::bytes).collect();
-            let written = output::write_beside(&path, &layout, &datas, style.conventions().padding)
-                .map_err(Attempt::Io)?;
-            if settings.verify {
-                let start = std::time::Instant::now();
-                self_check(flavor, style, ec, &unfolded, &written, settings)
-                    .map_err(Attempt::Unusable)?;
-                checked.set(Some(start.elapsed()));
+            // The self-check's original (the unfolded library, laid out and
+            // read) on the other cores while the folded library is written.
+            let start = std::time::Instant::now();
+            let original = settings
+                .verify
+                .then(|| lay_out(flavor, style, ec, &unfolded))
+                .transpose()
+                .map_err(|d| {
+                    Attempt::Unusable(format!(
+                        "the unfolded library can't be laid out: {}",
+                        d.text
+                    ))
+                })?;
+            let options = verify_options(settings);
+            let (written, read) = turbonop_par::join(
+                || output::write_beside(&path, &layout, &datas, style.conventions().padding),
+                || {
+                    original.as_ref().map(|l| {
+                        let members: Vec<turbonop_verify::library::LaidOut<'_>> = unfolded
+                            .iter()
+                            .enumerate()
+                            .map(|(i, m)| (Cow::Borrowed(m.name), l.offset(i), m.data))
+                            .collect();
+                        let read =
+                            turbonop_verify::library::read_laid_out(l.head(), members, &options);
+                        (read, start.elapsed())
+                    })
+                },
+            );
+            let written = written.map_err(Attempt::Io)?;
+            if let Some((read, originals)) = read {
+                let read = read.map_err(Attempt::Unusable)?;
+                let times =
+                    self_check(&read, &written, &options, settings).map_err(Attempt::Unusable)?;
+                checked.set(Some((start.elapsed(), originals, times)));
             }
             Ok(Some(written))
         });
@@ -706,10 +734,15 @@ fn build(
             Ok(Err(Attempt::Unusable(why))) | Err(why) => fell_back = Some(why),
         }
         clock.lap("archive");
-        if let (true, Some(t)) = (settings.stats, checked.get()) {
+        if let (true, Some((all, originals, (rewritten, compared)))) =
+            (settings.stats, checked.get())
+        {
             r.lines.push(format!(
-                "turbolib: self-check {:.3} s (in archive)",
-                t.as_secs_f64()
+                "turbolib: self-check {:.3} s (in archive): original laid out and read {:.3} (as the folded library was written), written library read {:.3}, compared {:.3}",
+                all.as_secs_f64(),
+                originals.as_secs_f64(),
+                rewritten.as_secs_f64(),
+                compared.as_secs_f64(),
             ));
         }
     }
@@ -894,28 +927,10 @@ fn lay_out<'d>(
     Layout::new(&headers, &index, style, SizeLimit::FourGiB).map_err(|e| write_error(flavor, &e))
 }
 
-/// Checks the folded library written at `written` against the library
-/// `unfolded` makes (`turbonop_verify`, in the modes folding used), and
-/// says why it fails if it does.
-fn self_check(
-    flavor: Flavor,
-    style: Style,
-    ec: bool,
-    unfolded: &[Final<'_>],
-    written: &output::Temp,
-    settings: &Settings,
-) -> Result<(), String> {
+/// The self-check's options: the modes folding used.
+fn verify_options(settings: &Settings) -> turbonop_verify::library::Options {
     use turbonop_verify::library as v;
-    let layout = lay_out(flavor, style, ec, unfolded)
-        .map_err(|d| format!("the unfolded library can't be laid out: {}", d.text))?;
-    let members: Vec<v::LaidOut<'_>> = unfolded
-        .iter()
-        .enumerate()
-        .map(|(i, m)| (Cow::Borrowed(m.name), layout.offset(i), m.data))
-        .collect();
-    let map = turbonop_mmap::Mmap::open(written.path())
-        .map_err(|e| format!("the folded library can't be read back: {e}"))?;
-    let options = v::Options {
+    v::Options {
         pull: match settings.pull {
             Pull::Preserve => v::Pull::Preserve,
             Pull::Relaxed => v::Pull::Relaxed,
@@ -925,8 +940,27 @@ fn self_check(
             Fold::None | Fold::Identical => v::Fold::Identical,
         },
         locals: settings.locals != Locals::Keep,
-    };
-    let report = v::verify_laid_out(layout.head(), members, &map, &options)?;
+    }
+}
+
+/// Checks the folded library written at `written` against `original`, the
+/// library turbolib would have written without folding, read
+/// (`turbonop_verify`, in the modes folding used), and says why it fails if
+/// it does; or how long reading the written library and comparing took.
+fn self_check(
+    original: &turbonop_verify::library::Read<'_>,
+    written: &output::Temp,
+    options: &turbonop_verify::library::Options,
+    settings: &Settings,
+) -> Result<(std::time::Duration, std::time::Duration), String> {
+    use turbonop_verify::library as v;
+    let start = std::time::Instant::now();
+    let map = turbonop_mmap::Mmap::open(written.path())
+        .map_err(|e| format!("the folded library can't be read back: {e}"))?;
+    let rewritten = v::read_rewritten(&map, options)?;
+    let read = start.elapsed();
+    let report = v::compare(original, &rewritten, options);
+    let compared = start.elapsed() - read;
     if settings.inject == Some(Inject::Verify) {
         return Err("the self-check failed: injected failure".into());
     }
@@ -956,7 +990,7 @@ fn self_check(
         *s == turbonop_verify::report::Severity::Failure
             && !(index_check(c) && (c.starts_with("original ") || original_failed(c)))
     }) {
-        None => Ok(()),
+        None => Ok((read, compared)),
         Some((_, category, f)) => Err(format!(
             "the self-check failed: {category} ({}{})",
             f.count,

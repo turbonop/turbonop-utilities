@@ -125,13 +125,28 @@ unwind, and the PDBs' contents).
   doesn't read every IL reference, so it lists fewer of a `/GL` object's
   inline functions), with or without folding: a link may then load
   another member that defines the same COMDAT.
+- **Libraries of folded libraries** fold again (a library folded before,
+  alone or with more objects, and two folded libraries together):
+  copies in the inputs' synthesized members fold with other copies, and
+  the result passes the self-check. It saves only what the inputs still
+  duplicate (`LLVMSupport.lib` and `LLVMCore.lib`, each folded, folded
+  together: 1.0% smaller than `lib.exe`'s combination of them, 0.3%
+  larger than one fold of both), and each fold adds synthesized members
+  of its own: two small folded libraries combined can come out larger
+  than `lib.exe`'s combination of them.
+- **`lib.exe` combining a folded library** with anything else warns
+  LNK4006 for `__turbolib$alias` (each synthesized member defines it, as
+  the same absolute 0, which both linkers accept) and so fails under
+  `/WX`. turbolib, as the archiver, doesn't warn.
 - **The self-check rejects some folds**, which are then written unfolded
-  with the warning: a library folded before and archived again with more
-  members; some SDK libraries (`libucrt.lib`, `Uuid.lib`: one COMDAT held
-  by two synthesized members; `BufferOverflow.lib`: `.retplne`).
-- **The self-check's cost**: on LLVM's libraries it took about as long as
-  folding itself on a quiet machine (`LLVMCore.lib`: 0.45 s against 0.38 s)
-  and two to five times as long on a loaded one; `verify=off` saves it.
+  with the warning: some SDK libraries (`libucrt.lib`, `Uuid.lib`: one
+  COMDAT held by two synthesized members; `BufferOverflow.lib`:
+  `.retplne`).
+- **The self-check's cost**: on a loaded machine it adds about 0.65× the
+  CPU folding takes on `clangSema.lib` (3.7 s against 5.7 s; it was 4.95 s)
+  and 0.70× on `LLVMCore.lib` (1.14 s against 1.62 s), and a fifth to a
+  third more peak working set (mostly the written library, mapped to be
+  read back); `verify=off` saves it.
 - **Two folded libraries with identical shared types** in one link share
   one precompiled-types member, which is fine; two whose 32-bit PCH
   signatures collide by chance (about n²/2³³ for n libraries) make

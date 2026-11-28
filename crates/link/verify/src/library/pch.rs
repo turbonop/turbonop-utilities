@@ -74,8 +74,12 @@ fn section<'o>(o: &'o Object<'_>, name: &[u8]) -> Option<&'o [u8]> {
 
 /// The member's `LF_PRECOMP`, if its `.debug$T` begins with one.
 pub fn use_of(data: &[u8]) -> Option<Use> {
-    let o = object(data)?;
-    let t = section(&o, b".debug$T")?;
+    use_in(&object(data)?)
+}
+
+/// [`use_of`], of an object read.
+pub fn use_in(o: &Object<'_>) -> Option<Use> {
+    let t = section(o, b".debug$T")?;
     if u32_at(t, 0)? != CV_SIGNATURE_C13 || u16_at(t, 6)? != LF_PRECOMP {
         return None;
     }
@@ -90,8 +94,12 @@ pub fn use_of(data: &[u8]) -> Option<Use> {
 /// The member's identity as a PCH object, if it has a `.debug$P` ending in
 /// `LF_ENDPRECOMP` and an `S_OBJNAME`.
 pub fn pch_of(data: &[u8]) -> Option<Pch> {
-    let o = object(data)?;
-    let p = section(&o, b".debug$P")?;
+    pch_in(&object(data)?)
+}
+
+/// [`pch_of`], of an object read.
+pub fn pch_in(o: &Object<'_>) -> Option<Pch> {
+    let p = section(o, b".debug$P")?;
     if u32_at(p, 0)? != CV_SIGNATURE_C13 {
         return None;
     }
@@ -106,7 +114,7 @@ pub fn pch_of(data: &[u8]) -> Option<Pch> {
         at += 2 + len;
     }
     let end_signature = end?;
-    let s = section(&o, b".debug$S")?;
+    let s = section(o, b".debug$S")?;
     let mut at = 4usize;
     while at + 8 <= s.len() {
         let (kind, len) = (u32_at(s, at)?, u32_at(s, at + 4)? as usize);

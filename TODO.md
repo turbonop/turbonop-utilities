@@ -431,8 +431,18 @@ x64. Where the 3.5 MB went:
   `verify` (on by default), `strict`, `inject-failure`; output retries and
   cleanup; `tools/turbolib/incremental` (incremental, FASTLINK, LTCG,
   lld-link; x64, x86, ARM64); `tools/turbolib/corpus/everylib.py`. Open:
-  - the self-check costs about as much as folding (more on a loaded
-    machine): make it cheaper, then decide its default again;
+  - the self-check, made cheaper (the plan's "The self-check"), still
+    adds about 0.65-0.70x folding's CPU (`clangSema.lib`, `LLVMCore.lib`,
+    loaded machine) and a quarter more peak working set. Left: a third of
+    what remains is kernel time, mostly faulting in the mapping of the
+    library just written (prefetching the view would need new unsafe
+    FFI); the compare stage's name hashing (interning names once per
+    library would make its maps integer-keyed); and a cheaper mode to
+    decide on: `verify=links`, every check but units' and sections'
+    fingerprints (it would no longer prove that a moved COMDAT is
+    identical to the copy kept, nor that what members keep is unchanged
+    byte for byte: only that the same names are defined, referred to,
+    indexed, and loaded); then decide the default again;
   - (Found: the 305 SDK libraries whose `--fold=none /Brepro` output
     wasn't lib.exe's were lib.exe copying a lone library input byte for
     byte; turbolib now copies it too.) Forced to write such a library
@@ -448,8 +458,18 @@ x64. Where the 3.5 MB went:
   - the engine puts a COMDAT in two synthesized members (`libucrt.lib`,
     `Uuid.lib`), and changes `.retplne` (`BufferOverflow.lib`): the
     self-check falls back;
-  - re-folding a folded library (or combining folded libraries) falls
-    back: a member newly refers to the input's precompiled-types member;
+  - folding a folded library works (the plan's "Folding a folded
+    library"; `tools/turbolib/refold/run.py`). Open: the inputs'
+    precompiled-types members stay beside the new one, so combining
+    folded libraries can grow them (drop an input's types member when
+    every user of it in the library was absorbed, and teach `verify` that
+    it may go); `lib.exe` combining a folded library warns LNK4006 for
+    `__turbolib$alias` (and fails under /WX): defining it so that lib.exe
+    doesn't count it as a definition (a COMDAT? both linkers' behavior to
+    measure first); compare-images compares FH4 C++ EH tables'
+    image-relative words (`$ip2state$`, `$stateUnwindMap$`) and `.pdata`
+    COMDATs' as bytes, not by what they name, so any two links of code
+    with them differ;
   - `/GL` objects' index: `use_shared`-like inline functions' IL
     references read as none (`turbonop_pe::ltcg::function_il`), so fewer
     names are listed than lib.exe lists (tools/turbolib/incremental);

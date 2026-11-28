@@ -99,8 +99,9 @@ pub(super) struct Member {
     /// Why a member that could share doesn't, for reports.
     why_not: Option<String>,
     /// A precompiled-types member turbolib made (the library is being
-    /// compacted again): every record of it counts for each of its users,
-    /// as each was shared, so that the same records are shared again.
+    /// folded again): the members of its machine keep their types as they
+    /// are (see [`plan`]); were one shared again, every record of it would
+    /// count for it, as each was shared.
     ours: bool,
     /// A sharer's group (an index into [`Plan::groups`]), or `None` if it
     /// is out of every group (`--precomp=clustered`) and keeps its types.
@@ -583,7 +584,26 @@ fn shards() -> u64 {
 /// at least `min` members of a group hold. With `clustering`, the groups
 /// are chosen ([`cluster`]); without, there is one for each machine.
 pub(super) fn plan(parsed: &[Parsed<'_>], min: u32, clustering: Option<&Clustering<'_>>) -> Plan {
-    let roles: Vec<Role> = parsed.iter().map(role).collect();
+    // A library folded before, folded again: where it holds a
+    // precompiled-types member turbolib made, the members of that machine
+    // keep their types as they are, and no other such member is made for
+    // it. Its users' records are shared already; shared again, they would
+    // go into a new member beside it (which its other users keep), and the
+    // library would grow; and what the other members would share among
+    // themselves would be another member, made of records the first fold
+    // didn't share, again and again with each fold.
+    let ours: Vec<u16> = parsed
+        .iter()
+        .filter(|p| p.scan.ours)
+        .map(|p| p.machine)
+        .collect();
+    let roles: Vec<Role> = parsed
+        .iter()
+        .map(|p| match role(p) {
+            Role::Sharer if ours.contains(&p.machine) => Role::None,
+            r => r,
+        })
+        .collect();
     // PCH objects first: their users hash through them.
     let mut members: Vec<Member> = vec![Member::default(); parsed.len()];
     let sources: Vec<usize> = (0..parsed.len())

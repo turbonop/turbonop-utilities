@@ -355,6 +355,51 @@ disassembly, `size` with its findings, and the extension's pages.
   where functions' names have the short one (`` `main'::`2'::<lambda_1> ``):
   its own class's slots aren't told from others' yet.
 
+## LLVM bitcode
+
+`turbonop-bitcode` reads the bitstream (any: IR, serialized diagnostics,
+remarks; its dump is llvm-bcanalyzer's, byte for byte) and LLVM IR
+modules, every instruction of every body, debug information's compile
+units, files, and subprograms, and the `irsymtab`, in bitcode files and
+embedded in objects and archives. `hexcavator info` describes a bitcode
+file and an object's embedded bitcode. What's left:
+
+- **`hexcavator size` weighing LTO objects.** Each function's block
+  size in bits (`FunctionBody::bits`) is there, with its subprogram's
+  source file and line: a bitcode file, an archive of LTO objects, or an
+  object's `.llvmbc`, weighed by function, source file, and archive
+  member, as `size` weighs machine code.
+- **`hexcavator symbols` of bitcode.** The `irsymtab`'s symbols (as
+  llvm-nm lists an LTO object's), and for bitcode without one, symbols
+  made from the module as `irsymtab::build` makes them (name mangling by
+  the data layout, and module-level inline assembly's symbols, which
+  need an assembler's view of the asm).
+- **`hexcavator dump` of bitcode.** The bcanalyzer dump is there
+  (`turbonop_bitcode::dump`): a command for it, and IR as text
+  (instructions with their operands, constants, types), llvm-dis's way.
+- **Summaries.** The ThinLTO and full LTO summary blocks
+  (`GLOBALVAL_SUMMARY_BLOCK`, `FULL_LTO_GLOBALVAL_SUMMARY_BLOCK`) are
+  noted, not read: their per-function instruction counts, call edges
+  with hotness, references, and type tests; and combined index files
+  (`MODULE_STRTAB_BLOCK`).
+- **The rest of the debug information.** Every metadata record is kept
+  with its operands; only compile units, files, and subprograms are
+  interpreted. Types, variables, scopes, and locations' inlining chains
+  as `DebugInfo` gives them for DWARF and PDBs would let `query`,
+  `types`, and `layout` read an LTO object.
+- **LLVM's upgrades.** Old bitcode reads as it was written: what LLVM's
+  reader rewrites on the way (debug intrinsics to debug records, an old
+  `cmpxchg`'s implied `extractvalue`, constant expressions LLVM no longer
+  has expanded into instructions, intrinsics' new signatures and
+  attributes) isn't applied. Over LLVM's own test inputs (bitcode from
+  3.2 on: `llvm_test_inputs` in the crate's tests, run by hand), those
+  are the only differences from llvm-dis.
+- **The module hash.** `MODULE_CODE_HASH` is read, not checked
+  (llvm-bcanalyzer's `--check-hash`: SHA-1 of the string table and the
+  module block).
+- **Apple's bitcode bundles.** A linked Mach-O image's
+  `__LLVM,__bundle` is a xar archive of its objects' bitcode: not read.
+
 ## Speed
 
 Every command should be as fast as the hardware allows (on clang.exe,

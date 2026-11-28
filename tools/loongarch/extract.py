@@ -1,4 +1,4 @@
-"""Writes crates/isa/loongarch/src/tables.rs: LoongArch's instructions as
+"""Writes crates/isa/loongarch/src/generated/tables.rs: LoongArch's instructions as
 LLVM's TableGen describes them (`llvm-tblgen --dump-json` of
 llvm/lib/Target/LoongArch/LoongArch.td; see tools/tablegen/tablegen.py):
 those LLVM's disassembler decodes (the base, F and D, LSX and LASX, LVZ,

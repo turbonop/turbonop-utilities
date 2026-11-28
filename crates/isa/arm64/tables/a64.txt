@@ -63390,8 +63390,8 @@ enc BTI_HB_hints general
   bits 110101010000001100100100xx011111
   fields op0=31:29 op1=25:12 op3=11:10 CRm=11:8 op4=9:5 op2=7:5
   feat FEAT_BTI
-  asm BTI%{optional_targets}
-sym optional_targets None = ? | 00:
+  asm BTI {%{optional_targets}}
+sym optional_targets <targets> op2[2:1] = op2[2:1] | 00: | 01:C | 10:J | 11:JC
 
 file PACM_HI_hints instruction PACM_HI_hints
 enc PACM_HI_hints general
@@ -63532,16 +63532,16 @@ enc SMSTART_MSR_SI_pstate general
   fields op0=31:29 op1=18:16 op3=11:10 CRm=11:8 op4=9:5 op2=7:5 Rt=4:0
   undef !!(((op1 == '000') && (op2 IN {'00x', '010'})))
   alias MSR_SI_pstate when !(((op1 == '000') && (op2 IN {'00x', '010'})))
-  asm SMSTART%{optional_targets__2}
-sym optional_targets__2 None = ? | 11:
+  asm SMSTART {%{optional_targets__2}}
+sym optional_targets__2 <option> CRm[2:1] = CRm[2:1] | 01:SM | 10:ZA | 11:
 file SMSTOP_MSR_SI_pstate part 0
 enc SMSTOP_MSR_SI_pstate general
   bits 110101010000001101000xx001111111
   fields op0=31:29 op1=18:16 op3=11:10 CRm=11:8 op4=9:5 op2=7:5 Rt=4:0
   undef !!(((op1 == '000') && (op2 IN {'00x', '010'})))
   alias MSR_SI_pstate when !(((op1 == '000') && (op2 IN {'00x', '010'})))
-  asm SMSTOP%{optional_targets__3}
-sym optional_targets__3 None = ? | 11:
+  asm SMSTOP {%{optional_targets__3}}
+sym optional_targets__3 <option> CRm[2:1] = CRm[2:1] | 01:SM | 10:ZA | 11:
 
 file CFINV_M_pstate instruction CFINV_M_pstate
 enc CFINV_M_pstate general

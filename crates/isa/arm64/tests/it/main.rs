@@ -7,4 +7,5 @@ mod access;
 mod access_cases;
 mod exhaustive;
 mod golden;
+mod llvm_cases;
 mod operands;

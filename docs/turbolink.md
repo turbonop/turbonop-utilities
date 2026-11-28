@@ -271,7 +271,9 @@ lists every COFF group with its address and size) and by experiment:
   table starts on 16 bytes (an import thunk, packed otherwise, too).
   `__guard_flags` is 0x17500 (instrumented, function table, delay-load
   IAT protected and in its own section, export suppression information,
-  long-jump table), with 0x400000 for `/GUARD:EHCONT`; the delay-load
+  long-jump table), with 0x400000 for `/GUARD:EHCONT`; `/GUARD:NOLONGJMP`
+  (the last of it and `LONGJMP` counts) writes no long-jump table and
+  clears 0x10000; the delay-load
   address tables go to a `.didat` section of their own (read-write).
 - **`/FAILIFMISMATCH` and `/DISALLOWLIB`** (objects' directives). The
   first value a `/FAILIFMISMATCH` key is given, in the order the files

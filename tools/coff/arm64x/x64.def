@@ -1,0 +1,4 @@
+LIBRARY x64.dll
+EXPORTS
+  x64_fn
+  shared_fn

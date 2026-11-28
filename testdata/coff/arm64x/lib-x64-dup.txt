@@ -1,0 +1,3 @@
+x64b.lib(x64b.dll) : warning LNK4006: __imp_shared_fn already defined in x64.lib(x64.dll); second definition ignored
+x64b.lib(x64b.dll) : warning LNK4006: shared_fn already defined in x64.lib(x64.dll); second definition ignored
+x64b.lib(x64b.dll) : warning LNK4006: __NULL_IMPORT_DESCRIPTOR already defined in x64.lib(x64.dll); second definition ignored

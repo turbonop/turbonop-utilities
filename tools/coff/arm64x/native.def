@@ -1,0 +1,5 @@
+LIBRARY both.dll
+EXPORTS
+  shared_fn
+  native_only
+  shared_data DATA

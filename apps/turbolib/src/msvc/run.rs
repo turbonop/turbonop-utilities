@@ -600,7 +600,32 @@ fn build(
     // lib.exe's warnings about names defined twice: folding moves no
     // strong definition, so they are the unfolded library's.
     let duplicates = if flavor == Flavor::Lib && !lone {
-        let strong = turbonop_par::map(&members, 16, |m| library::strong_definitions(m.data, None));
+        // (Import objects' names too, outside ARM64EC and ARM64X archives;
+        // in those, lib.exe warns about some of an import's names and not
+        // others, which isn't modeled.)
+        let ec_archive = matches!(
+            opts.machine.map(options::Machine::number),
+            Some(inputs::ARM64EC | inputs::ARM64X)
+        );
+        let imports: Vec<Vec<Vec<u8>>> = members
+            .iter()
+            .map(|m| {
+                if ec_archive {
+                    Vec::new()
+                } else {
+                    library::import_definitions(m.data)
+                }
+            })
+            .collect();
+        let strong: Vec<Vec<&[u8]>> =
+            turbonop_par::map(&members, 16, |m| library::strong_definitions(m.data, None))
+                .into_iter()
+                .zip(&imports)
+                .map(|(mut s, i)| {
+                    s.extend(i.iter().map(Vec::as_slice));
+                    s
+                })
+                .collect();
         let places: Vec<String> = members.iter().map(|m| m.place.clone()).collect();
         library::duplicate_warnings(&strong, &places)
     } else {

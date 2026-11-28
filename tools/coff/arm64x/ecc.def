@@ -1,0 +1,4 @@
+LIBRARY both.dll
+EXPORTS
+  ec_const CONSTANT
+  ec_fn2

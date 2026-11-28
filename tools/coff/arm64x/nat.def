@@ -1,0 +1,3 @@
+LIBRARY nat.dll
+EXPORTS
+  nat_fn

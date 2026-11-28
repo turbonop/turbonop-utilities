@@ -121,10 +121,6 @@ unwind, and the PDBs' contents).
   not on large ones. link.exe 14.52's incremental relink can fail after a
   `/Yu` member of a library changes (LNK1235 with `lib.exe`'s library,
   LNK1236 with a folded one); the next link is a full one and is right.
-- **`/GL` members' index entries** can differ from `lib.exe`'s (turbolib
-  doesn't read every IL reference, so it lists fewer of a `/GL` object's
-  inline functions), with or without folding: a link may then load
-  another member that defines the same COMDAT.
 - **Libraries of folded libraries** fold again (a library folded before,
   alone or with more objects, and two folded libraries together):
   copies in the inputs' synthesized members fold with other copies, and
@@ -138,15 +134,19 @@ unwind, and the PDBs' contents).
   LNK4006 for `__turbolib$alias` (each synthesized member defines it, as
   the same absolute 0, which both linkers accept) and so fails under
   `/WX`. turbolib, as the archiver, doesn't warn.
-- **The self-check rejects some folds**, which are then written unfolded
-  with the warning: some SDK libraries (`libucrt.lib`, `Uuid.lib`: one
-  COMDAT held by two synthesized members; `BufferOverflow.lib`:
-  `.retplne`).
 - **The self-check's cost**: on a loaded machine it adds about 0.65× the
   CPU folding takes on `clangSema.lib` (3.7 s against 5.7 s; it was 4.95 s)
   and 0.70× on `LLVMCore.lib` (1.14 s against 1.62 s), and a fifth to a
   third more peak working set (mostly the written library, mapped to be
   read back); `verify=off` saves it.
+- **ARM64 libraries archived again** (with objects added, or `/REMOVE`):
+  of the SDK's and MSVC's 566 ARM64 libraries, archived again with
+  `/REMOVE` of a member that isn't there, turbolib writes `lib.exe`'s
+  bytes for 519 without `/MACHINE` and 486 with `/MACHINE:ARM64X`; the
+  rest differ in bytes (47 and 80) or only in LNK4006 messages (10 and
+  87), mostly where ARM64EC objects define what ARM64 ones do. Whether
+  those differences change a link wasn't tested. x64 and x86 libraries,
+  and a library given alone (which both copy), aren't affected.
 - **Two folded libraries with identical shared types** in one link share
   one precompiled-types member, which is fine; two whose 32-bit PCH
   signatures collide by chance (about n²/2³³ for n libraries) make

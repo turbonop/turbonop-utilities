@@ -237,6 +237,25 @@ pub fn strong_definitions(data: &[u8], symbol_table: Option<u32>) -> Vec<&[u8]> 
     out
 }
 
+/// The names an import object defines, which LNK4006 is about when another
+/// member defines them too (`__imp_X` and `X`, or `__imp_X` for data, as
+/// it indexes them outside ARM64EC and ARM64X archives; measured on two
+/// x64 import libraries exporting one name). Nothing for other members.
+pub fn import_definitions(data: &[u8]) -> Vec<Vec<u8>> {
+    use turbonop_pe::import_object::ImportObject;
+    if !ImportObject::is_import_object(data) {
+        return Vec::new();
+    }
+    let Ok(import) = ImportObject::parse(data) else {
+        return Vec::new();
+    };
+    turbonop_archive::symbols::archived_import_symbols(&import, false)
+        .symbols
+        .into_iter()
+        .map(|s| s.name.into_owned())
+        .collect()
+}
+
 /// How `lib.exe` shows a name in a message: a C++ name undecorated, with
 /// the decorated name after it in parentheses.
 pub fn shown(name: &[u8]) -> String {

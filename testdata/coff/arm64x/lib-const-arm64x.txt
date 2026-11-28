@@ -1,0 +1,1 @@
+LINK : warning LNK4014: cannot find member object none.obj

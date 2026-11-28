@@ -790,3 +790,71 @@ fn retpoline_tables_split_and_pass_the_self_check() {
     );
     assert!(names.iter().any(|n| n.starts_with("turbolib")), "{names:?}");
 }
+
+/// ARM64X, ARM64EC, ARM64 and x64 import libraries archived again (with
+/// `/REMOVE` of a member that isn't there, or together): the bytes and
+/// messages lib.exe 14.52 gave (tools/coff/arm64x.cmd): members of other
+/// machines left out, `/<ECSYMBOLS>/` only for `/MACHINE:ARM64EC` or
+/// `ARM64X`, import objects' names as lib.exe lists them when archiving,
+/// LNK4006 for an import's names defined twice.
+#[test]
+fn arm64x_libraries_archived_again_are_lib_exes() {
+    let cases: &[(&str, &[&str])] = &[
+        ("nomach", &["/REMOVE:none.obj", "x.lib"]),
+        ("arm64x", &["/machine:arm64x", "/REMOVE:none.obj", "x.lib"]),
+        ("arm64", &["/machine:arm64", "/REMOVE:none.obj", "x.lib"]),
+        (
+            "arm64ec",
+            &["/machine:arm64ec", "/REMOVE:none.obj", "x.lib"],
+        ),
+        ("ec-nomach", &["/REMOVE:none.obj", "ec.lib"]),
+        (
+            "ec-arm64",
+            &["/machine:arm64", "/REMOVE:none.obj", "ec.lib"],
+        ),
+        (
+            "ec-arm64ec",
+            &["/machine:arm64ec", "/REMOVE:none.obj", "ec.lib"],
+        ),
+        ("x-x64-nomach", &["x.lib", "x64.lib"]),
+        ("ec-x64-nomach", &["ec.lib", "x64.lib"]),
+        ("nat-x64-nomach", &["nat.lib", "x64.lib"]),
+        (
+            "const-arm64x",
+            &["/machine:arm64x", "/REMOVE:none.obj", "c.lib"],
+        ),
+        ("x64-dup", &["x64.lib", "x64b.lib"]),
+    ];
+    let dir = scratch("arm64x");
+    for lib in ["x", "ec", "c", "x64", "x64b", "nat"] {
+        let name = format!("{lib}.lib");
+        std::fs::copy(testdata(&format!("coff/arm64x/{name}")), dir.join(&name)).unwrap();
+    }
+    for &(name, args) in cases {
+        let out = format!("lib-{name}.lib");
+        let mut all = w(&["/nologo", "/Brepro", &format!("/out:{out}")]);
+        all.extend(w(args));
+        let o = run(Flavor::Lib, &all, &env_in(&dir));
+        let want =
+            std::fs::read_to_string(testdata(&format!("coff/arm64x/lib-{name}.txt"))).unwrap();
+        let lf = |s: &str| s.replace("\r\n", "\n").trim_end().to_string();
+        assert_eq!(lf(&o.stdout), lf(&want), "{name}: {o:?}");
+        let want = std::fs::read(testdata(&format!("coff/arm64x/{out}"))).unwrap();
+        assert!(
+            std::fs::read(dir.join(&out)).unwrap() == want,
+            "{name}: not lib.exe's bytes"
+        );
+    }
+    // x64 then ARM64 (inferred x64): lib.exe stops.
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/out:bad.lib", "x64.lib", "nat.lib"]),
+        &env_in(&dir),
+    );
+    assert_eq!(o.exit, 1392, "{o:?}");
+    assert!(
+        o.stdout.contains("nat.lib(nat.dll) : fatal error LNK1392"),
+        "{o:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

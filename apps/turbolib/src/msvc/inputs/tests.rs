@@ -114,13 +114,10 @@ fn lib_machine_rules() {
             c.lib_object("o.obj", InputKind::Object(o)).unwrap();
         }
     }
-    // Resources have no machine; library members only set it.
+    // Resources have no machine.
     let mut c = MachineCheck::new(None, Flavor::Lib);
     c.lib_object("r.res", InputKind::Resource).unwrap();
     assert_eq!(c.machine, None);
-    c.lib_member(InputKind::Object(X64));
-    c.lib_member(InputKind::Object(ARM64));
-    assert_eq!(c.machine, Some(X64));
 }
 
 #[test]

@@ -1,0 +1,3 @@
+LIBRARY both.dll
+EXPORTS
+  nat_const CONSTANT

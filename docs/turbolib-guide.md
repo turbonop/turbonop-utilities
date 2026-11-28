@@ -110,6 +110,24 @@ unwind, and the PDBs' contents).
 
 ## Known limitations
 
+- **Very large `/INCREMENTAL` links fail with `LNK1140`.** Folding adds
+  synthesized members (one for each set of members that gave up copies:
+  4,574 in `clangAST.lib`), and each one a link loads is a module in the
+  PDB. In a Debug LLVM build with `fold=identical`, `clang.exe` loads
+  50,119 modules (2,752 with `lib.exe`'s libraries), and link.exe 14.52's
+  incremental link fails with `LNK1140: limit exceeded for program
+  database` (`clang.exe`, `libclang.dll`, `clang-repl.exe`, and four more;
+  `lld.exe`, 24,640 modules, links). The same links with `/INCREMENTAL:NO`
+  succeed (`clang.exe`'s PDB: 47,571 streams), most likely because an
+  incremental PDB needs about two streams a module and the stream numbers
+  are 16 bits; a non-incremental link would fail the same way near 65,535
+  modules. Until turbolib makes fewer synthesized members, link programs
+  of that size with `/INCREMENTAL:NO`, or leave folding off for them.
+- **Switching an incremental build to turbolib**: the first incremental
+  relink of a program whose libraries' `/Yu` members changed can fail
+  with `LNK1236` (seen on 5 of 58 LLVM programs); link.exe has then
+  deleted the `.ilk`, and the next build links in full and succeeds.
+  Deleting the `.ilk` files (or the programs) when switching avoids it.
 - **COFF only for folding in this personality**; `/GL` (LTCG) objects,
   import objects, resources, and anything turbolib doesn't recognize pass
   through untouched (the library still links).

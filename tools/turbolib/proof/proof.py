@@ -410,8 +410,16 @@ def test(a):
         with open(log, "w", encoding="utf-8", errors="replace") as f:
             f.write(f"proof: LIT_OPTS={e['LIT_OPTS']}\n")
             f.flush()
-            r = run_in_job([tool("ninja", env), "-C", a.build_dir, f"-j{a.jobs}", suite], e,
-                           a.timeout, stdout=f)[1]
+            args = [tool("ninja", env), "-C", a.build_dir, f"-j{a.jobs}", suite]
+            if a.lit_only:
+                # The check target's own command (lit), without building
+                # what it depends on first.
+                last = subprocess.run(args[:3] + ["-t", "commands", "-s", suite], env=e,
+                                      capture_output=True, text=True, check=True).stdout
+                args = last.strip().splitlines()[-1]  # cmd.exe /C "...", as Ninja runs it
+                f.write(f"proof: {args}\n")
+                f.flush()
+            r = run_in_job(args, e, a.timeout, stdout=f)[1]
         seconds = time.time() - start
         record_time(a.build_dir, {"targets": [suite], "lit_opts": a.lit_opts,
                                   "filter_out_file": a.filter_out_file,
@@ -584,7 +592,8 @@ def run_in_job(args, env, timeout=None, stdout=None):
     try:
         rc = p.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        print(f"proof: {timeout} s passed: stopping {' '.join(args)}", flush=True)
+        shown = args if isinstance(args, str) else " ".join(args)
+        print(f"proof: {timeout} s passed: stopping {shown}", flush=True)
         k32.TerminateJobObject(wintypes.HANDLE(job), 124)
         rc = p.wait()
         rc = 124
@@ -626,9 +635,100 @@ def measure(a):
             json.dump(results, f, indent=1)
 
 
+def relink(a):
+    """Links a program of the build again, as its build links it but into
+    another directory and with more options (as /INCREMENTAL:NO): the link
+    command with its response file expanded (ninja -t compdb -x), without
+    CMake's manifest step. Reads the build directory only."""
+    env = vs_env()
+    os.makedirs(a.out_dir, exist_ok=True)
+    out = subprocess.run([tool("ninja", env), "-C", a.build_dir, "-t", "compdb", "-x"], env=env,
+                         capture_output=True, check=True).stdout
+    entries = {e["output"].replace("/", "\\"): e
+               for e in json.loads(out.decode("utf-8", errors="surrogateescape"))}
+    results = []
+    for t in a.targets:
+        e = entries[t.replace("/", "\\")]
+        # cmake -E vs_link_exe ... -- link.exe <options> && <post-build steps,
+        # which write into the build directory: left out>
+        command = e["command"].split(" -- ", 1)[1].split(" && ", 1)[0]
+        if not re.match(r"\S*link\.exe ", command, re.I):
+            raise SystemExit(f"{t}: not a link.exe command: {command[:200]}")
+        target = os.path.join(os.path.abspath(a.out_dir), os.path.splitext(os.path.basename(t))[0])
+
+        def place(m):
+            return f"{m.group(1)}{target}{m.group(3)}"
+        command = re.sub(r"(/out:)(\S+?)(\.exe|\.dll)", place, command, flags=re.I)
+        command = re.sub(r"(/pdb:)(\S+?)(\.pdb)", place, command, flags=re.I)
+        command = re.sub(r"(/implib:)(\S+?)(\.lib)", place, command, flags=re.I)
+        command += " " + " ".join(a.link_opt)
+        for ext in (".exe", ".dll", ".pdb", ".ilk"):
+            if os.path.exists(target + ext):
+                os.remove(target + ext)
+        script = target + ".link.cmd"
+        with open(script, "w") as f:
+            f.write(f"@cd /d {os.path.abspath(a.build_dir)}\n{command}\n")
+        with open(target + ".log", "w") as log:
+            seconds, rc, peak, job_peak = run_in_job(["cmd", "/c", script], env, stdout=log)
+        image = next((target + x for x in (".exe", ".dll") if os.path.exists(target + x)), None)
+        r = {"target": t, "options": a.link_opt, "seconds": round(seconds, 2), "exit": rc,
+             "peak_process_commit": peak, "peak_job_commit": job_peak,
+             "exe_bytes": os.path.getsize(image) if image else 0,
+             "pdb_bytes": os.path.getsize(target + ".pdb") if os.path.exists(target + ".pdb") else 0}
+        print(json.dumps(r), flush=True)
+        results.append(r)
+    if a.json:
+        with open(a.json, "w") as f:
+            json.dump(results, f, indent=1)
+
+
+def link_noinc(a):
+    """Links programs the build couldn't link (LNK1140) in place, with the
+    build's own command (CMake's manifest and post-build steps included)
+    and /INCREMENTAL:NO, so that their tests can run (`test --lit-only`).
+    Ninja still counts them as not built."""
+    env = vs_env()
+    for t in a.targets:
+        command = subprocess.run([tool("ninja", env), "-C", a.build_dir, "-t", "commands", "-s",
+                                  t], env=env, capture_output=True, text=True,
+                                 check=True).stdout.strip().splitlines()[-1]
+        rsp = re.search(r"@(\S+\.rsp)", command)
+        if rsp and not os.path.exists(os.path.join(a.build_dir, rsp.group(1))):
+            # Ninja keeps a response file only after a failed step: write it.
+            e = [x for x in json.loads(subprocess.run(
+                [tool("ninja", env), "-C", a.build_dir, "-t", "compdb", "-x"], env=env,
+                capture_output=True, check=True).stdout.decode("utf-8", "surrogateescape"))
+                 if x["output"].replace("/", "\\") == t.replace("/", "\\")][0]["command"]
+            before, _, after = command.partition(rsp.group(0))
+            inline = e[len(before):len(e) - len(after)]
+            with open(os.path.join(a.build_dir, rsp.group(1)), "w") as f:
+                f.write(inline)
+        command, n = re.subn(r"/INCREMENTAL(?=\s)", "/INCREMENTAL:NO", command)
+        if n != 1:
+            raise SystemExit(f"{t}: /INCREMENTAL not found once in {command[:300]}")
+        script = os.path.join(a.build_dir, os.path.basename(t) + ".noinc.cmd")
+        with open(script, "w") as f:
+            f.write(f"@cd /d {os.path.abspath(a.build_dir)}\n{command}\n")
+        seconds, rc, peak, _ = run_in_job(["cmd", "/c", script], env, timeout=3600)
+        print(json.dumps({"target": t, "seconds": round(seconds, 2), "exit": rc,
+                          "peak_process_commit": peak}), flush=True)
+        if rc:
+            raise SystemExit(f"{t}: exit {rc}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
+    ln = sub.add_parser("link-noinc")
+    ln.add_argument("build_dir")
+    ln.add_argument("targets", nargs="+")
+    rl = sub.add_parser("relink")
+    rl.add_argument("build_dir")
+    rl.add_argument("out_dir")
+    rl.add_argument("targets", nargs="+")
+    rl.add_argument("--link-opt", action="append", default=[],
+                    help="another link.exe option, as --link-opt=/INCREMENTAL:NO")
+    rl.add_argument("--json")
     c = sub.add_parser("configure")
     c.add_argument("mode", choices=MODES)
     c.add_argument("build_dir")
@@ -659,6 +759,9 @@ def main():
     t.add_argument("--lit-opt", dest="lit_opts", action="append", default=[],
                    help="more of lit's options, as --lit-opt=--filter-out=REGEX (LIT_OPTS is "
                         "split as a POSIX shell would)")
+    t.add_argument("--lit-only", action="store_true",
+                   help="run the suite's lit command without building its dependencies (for "
+                        "a build whose programs were linked by hand)")
     t.add_argument("--filter-out-file",
                    help="leave out the tests matching the file's regexes (one a line; see "
                         "clang-slow.re)")
@@ -688,7 +791,8 @@ def main():
                 if v == "fail":
                     print(f"  FAIL {t}")
         return
-    {"configure": configure, "clone": clone, "build": build, "test": test, "stats": stats,
+    {"configure": configure, "clone": clone, "build": build, "relink": relink, "link-noinc": link_noinc, "test": test,
+     "stats": stats,
      "measure": measure, "compare": compare}[a.cmd](a)
 
 

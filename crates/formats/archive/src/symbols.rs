@@ -340,12 +340,7 @@ pub fn archived_import_symbols<'a>(
         Cow::Borrowed(s)
     };
     let mut v: Vec<Cow<'a, [u8]>> = Vec::with_capacity(6);
-    if !ec_archive {
-        v.push(concat(b"__imp_", &d));
-        if import.kind != ImportType::Data {
-            v.push(d);
-        }
-    } else {
+    if ec_archive {
         if ec_machine
             && import.kind == ImportType::Code
             && let Some(m) = ec_mangle(s)
@@ -358,6 +353,11 @@ pub fn archived_import_symbols<'a>(
         if ec_machine && import.kind == ImportType::Code {
             v.push(concat(b"__impchk_", &d));
         }
+        if import.kind != ImportType::Data {
+            v.push(d);
+        }
+    } else {
+        v.push(concat(b"__imp_", &d));
         if import.kind != ImportType::Data {
             v.push(d);
         }

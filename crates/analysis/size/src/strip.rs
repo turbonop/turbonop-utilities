@@ -448,6 +448,7 @@ mod tests {
         base.add_range(0x2000, 8, 16, 8, 3);
         base.add_range(0x1000, 8, 24, 8, 4);
         let mut maps = Maps {
+            crate_hints: Default::default(),
             base: base.clone(),
             sources: vec![(Source::Sections, base)],
             file_size: 32,
@@ -463,6 +464,7 @@ mod tests {
         }
         // (The third's stripping left the first's memory.)
         let mut maps = Maps {
+            crate_hints: Default::default(),
             base: maps.base.clone(),
             file_size: 32,
             ..Maps::default()

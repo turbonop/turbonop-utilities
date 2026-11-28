@@ -327,6 +327,15 @@ impl<'data> Name<'data> {
         &self.bytes
     }
 
+    /// The name's bytes, if they are borrowed from the file it was read
+    /// from (as every name [`Object::parse`] reads is).
+    pub fn borrowed(&self) -> Option<&'data [u8]> {
+        match &self.bytes {
+            Cow::Borrowed(b) => Some(b),
+            Cow::Owned(_) => None,
+        }
+    }
+
     /// The name's bytes, borrowed from the file it was read from where
     /// they are (copied otherwise).
     pub fn data(&self) -> Cow<'data, [u8]> {

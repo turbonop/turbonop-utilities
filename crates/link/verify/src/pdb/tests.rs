@@ -35,7 +35,7 @@ fn hashes(records: &[(u16, Vec<u8>)]) -> types::Hashes {
         .iter()
         .map(|(k, d)| TypeRecord { kind: *k, data: d })
         .collect();
-    types::hash(&r, None, None, false)
+    types::hash(&r, None, None, false, false)
 }
 
 #[test]

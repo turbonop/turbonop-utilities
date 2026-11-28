@@ -627,17 +627,29 @@ impl Fields {
 
 /// Splits a member's tables before the edit that removes its units'
 /// sections (`removed`, by section): entries that go with a removed unit
-/// are taken out (see the module's notes). `original` is the member as it
-/// was read; `object` is the member being edited, whose sections are still
-/// numbered as `original`'s. The rest is renumbered by [`renumber`], once
-/// the edit is done.
-pub(super) fn strip(
-    original: &Object<'_>,
-    tables: &Tables,
-    removed: &[bool],
-    object: &mut Object<'_>,
-) -> Fields {
+/// are taken out (see the module's notes). `object` is the member as it was
+/// read (its symbols not yet edited), whose tables' sections are rewritten
+/// in place. The rest is renumbered by [`renumber`], once the edit is done.
+pub(super) fn strip(object: &mut Object<'_>, tables: &Tables, removed: &[bool]) -> Fields {
+    let (fields, data) = stripped(object, tables, removed);
+    for (t, (data, relocations)) in tables.tables.iter().zip(data) {
+        let Some(data) = data else { continue };
+        let sec = &mut object.sections[t.section.index()];
+        sec.data = SectionData::Bytes(Cow::Owned(data));
+        if t.kind == Kind::Fpo {
+            sec.relocations = relocations;
+        }
+    }
+    fields
+}
+
+/// Each table's new contents and relocations (`None` for a table in a
+/// removed section), read from `original` as it was read.
+type Stripped = Vec<(Option<Vec<u8>>, Vec<Relocation>)>;
+
+fn stripped(original: &Object<'_>, tables: &Tables, removed: &[bool]) -> (Fields, Stripped) {
     let mut fields = Fields::default();
+    let mut out: Stripped = Vec::with_capacity(tables.tables.len());
     let mut indices: Option<Vec<u32>> = None;
     let gone = |s: SymbolId| {
         original.symbols[s.index()]
@@ -647,6 +659,7 @@ pub(super) fn strip(
     };
     for t in &tables.tables {
         if removed[t.section.index()] {
+            out.push((None, Vec::new()));
             continue;
         }
         let old = original.sections[t.section.index()].bytes();
@@ -692,16 +705,12 @@ pub(super) fn strip(
                 _ => {}
             }
         }
-        let sec = &mut object.sections[t.section.index()];
-        sec.data = SectionData::Bytes(Cow::Owned(data));
-        if t.kind == Kind::Fpo {
-            sec.relocations = relocations;
-        }
         if t.kind == Kind::Addrsig {
             fields.uleb.push((t.section, uleb));
         }
+        out.push((Some(data), relocations));
     }
-    fields
+    (fields, out)
 }
 
 /// Renumbers the tables [`strip`] kept, after the edit.

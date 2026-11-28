@@ -1,0 +1,300 @@
+Summary of kinds-thin.bc:
+         Total size: 87200b/10900.00B/2725W
+        Stream type: LLVM IR
+  # Toplevel Blocks: 4
+
+Per-block Summary:
+  Block ID #0 (BLOCKINFO_BLOCK):
+      Num Instances: 1
+         Total Size: 1280b/160.00B/40W
+    Percent of file: 1.4679%
+      Num SubBlocks: 0
+        Num Abbrevs: 28
+        Num Records: 3
+    Percent Abbrevs: 0.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		      3        60      20.0          SETBID
+
+  Block ID #8 (MODULE_BLOCK):
+      Num Instances: 1
+         Total Size: 9934b/1241.75B/310W
+    Percent of file: 11.3922%
+      Num SubBlocks: 28
+        Num Abbrevs: 4
+        Num Records: 44
+    Percent Abbrevs: 6.8182%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     25      3825     153.0          FUNCTION
+		      9      1299     144.3          GLOBALVAR
+		      1      2255            100.00  GUIDLIST
+		      1        81                    UnknownCode18
+		      1       213                    HASH
+		      1       177            100.00  SOURCE_FILENAME
+		      1        99                    ALIAS
+		      1        35            100.00  VSTOFFSET
+		      1        99                    SECTIONNAME
+		      1       969                    DATALAYOUT
+		      1       303                    TRIPLE
+		      1        21                    VERSION
+
+  Block ID #9 (PARAMATTR_BLOCK):
+      Num Instances: 1
+         Total Size: 1077b/134.62B/33W
+    Percent of file: 1.2351%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 35
+    Percent Abbrevs: 0.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     35       993      28.4          ENTRY
+
+  Block ID #10 (PARAMATTR_GROUP_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 22037b/2754.62B/688W
+    Percent of file: 25.2718%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 34
+    Percent Abbrevs: 0.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     34     21978     646.4          ENTRY
+
+  Block ID #11 (CONSTANTS_BLOCK):
+      Num Instances: 9
+         Total Size: 4646b/580.75B/145W
+    Percent of file: 5.3280%
+       Average Size: 516.22/64.53B/16W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 4/4.444444e-01
+    Tot/Avg Records: 85/9.444444e+00
+    Percent Abbrevs: 84.7059%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     47      2260      48.1  100.00  INTEGER
+		     21       210      10.0  100.00  SETTYPE
+		      3       258      86.0          DATA
+		      3       102      34.0          CST_CODE_BLOCKADDRESS
+		      3        93      31.0  100.00  AGGREGATE
+		      3        48      16.0          NULL
+		      2        32      16.0          UnknownCode26
+		      1        64                    CE_GEP
+		      1       604                    INLINEASM
+		      1       157            100.00  CSTRING
+
+  Block ID #12 (FUNCTION_BLOCK):
+      Num Instances: 17
+         Total Size: 8662b/1082.75B/270W
+    Percent of file: 9.9335%
+       Average Size: 509.53/63.69B/15W
+  Tot/Avg SubBlocks: 42/2.470588e+00
+    Tot/Avg Abbrevs: 0/0.000000e+00
+    Tot/Avg Records: 190/1.117647e+01
+    Percent Abbrevs: 62.6316%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     43      1141      26.5  100.00  INST_BINOP
+		     26      2152      82.8          INST_CALL
+		     17       247      14.5  100.00  INST_BR
+		     17       205      12.1  100.00  INST_RET
+		     17       391      23.0          DECLAREBLOCKS
+		     16       363      22.7  100.00  INST_CAST
+		     11       260      23.6  100.00  INST_LOAD
+		     11       613      55.7          INST_PHI
+		      7       242      34.6  100.00  INST_GEP
+		      5       133      26.6  100.00  INST_CMP2
+		      3        87      29.0          INST_EXTRACTVAL
+		      2       148      74.0          INST_ATOMICRMW
+		      2        44      22.0  100.00  INST_STORE
+		      2        70      35.0          INST_INSERTVAL
+		      2        70      35.0          INST_SHUFFLEVEC
+		      1        15            100.00  INST_UNOP
+		      1        83                    INST_CMPXCHG
+		      1        59                    INST_STOREATOMIC
+		      1        59                    INST_LOADATOMIC
+		      1        35                    INST_FENCE
+		      1        47                    UnknownCode31
+		      1        53                    INST_ALLOCA
+		      1       125                    INST_SWITCH
+		      1        29                    INST_EXTRACTELT
+
+  Block ID #13 (IDENTIFICATION_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 214b/26.75B/6W
+    Percent of file: 0.2454%
+      Num SubBlocks: 0
+        Num Abbrevs: 2
+        Num Records: 2
+    Percent Abbrevs: 100.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		      1        11            100.00  EPOCH
+		      1        89            100.00  STRING
+
+  Block ID #14 (VALUE_SYMTAB):
+      Num Instances: 1
+         Total Size: 597b/74.62B/18W
+    Percent of file: 0.6846%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 17
+    Percent Abbrevs: 100.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     17       476      28.0  100.00  FNENTRY
+
+  Block ID #15 (METADATA_BLOCK):
+      Num Instances: 18
+         Total Size: 7753b/969.12B/242W
+    Percent of file: 8.8911%
+       Average Size: 430.72/53.84B/13W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 9/5.000000e-01
+    Tot/Avg Records: 96/5.333333e+00
+    Percent Abbrevs: 8.3333%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     44      1335      30.3          NODE
+		     32      1070      33.4          VALUE
+		      8       416      52.0          GLOBAL_DECL_ATTACHMENT
+		      3      2333     777.7  100.00  STRINGS
+		      3        96      32.0          NAMED_NODE
+		      3       366     122.0  100.00  NAME
+		      1       370            100.00  INDEX
+		      1        68            100.00  INDEX_OFFSET
+		      1        39                    DISTINCT_NODE
+
+  Block ID #16 (METADATA_ATTACHMENT_BLOCK):
+      Num Instances: 17
+         Total Size: 2427b/303.38B/75W
+    Percent of file: 2.7833%
+       Average Size: 142.76/17.85B/4W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 0/0.000000e+00
+    Tot/Avg Records: 27/1.588235e+00
+    Percent Abbrevs: 0.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     27      1107      41.0          ATTACHMENT
+
+  Block ID #17 (TYPE_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 1301b/162.62B/40W
+    Percent of file: 1.4920%
+      Num SubBlocks: 0
+        Num Abbrevs: 6
+        Num Records: 40
+    Percent Abbrevs: 67.5000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     14       358      25.6  100.00  FUNCTION
+		      7       126      18.0  100.00  ARRAY
+		      5       122      24.4          INTEGER
+		      3        81      27.0  100.00  STRUCT_ANON
+		      2        56      28.0          VECTOR
+		      1         4            100.00  UnknownCode25
+		      1        35            100.00  STRUCT_NAMED
+		      1       130            100.00  STRUCT_NAME
+		      1        16                    METADATA
+		      1        16                    LABEL
+		      1        16                    DOUBLE
+		      1        16                    FLOAT
+		      1        16                    VOID
+		      1        28                    NUMENTRY
+
+  Block ID #20 (GLOBALVAL_SUMMARY_BLOCK):
+      Num Instances: 1
+         Total Size: 2229b/278.62B/69W
+    Percent of file: 2.5562%
+      Num SubBlocks: 0
+        Num Abbrevs: 9
+        Num Records: 28
+    Percent Abbrevs: 92.8571%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     17      1288      75.8  100.00  PERMODULE_PROFILE
+		      8       328      41.0  100.00  PERMODULE_GLOBALVAR_INIT_REFS
+		      1        22                    FLAGS
+		      1        22                    VERSION
+		      1        32            100.00  ALIAS
+
+  Block ID #21 (OPERAND_BUNDLE_TAGS_BLOCK):
+      Num Instances: 1
+         Total Size: 2901b/362.62B/90W
+    Percent of file: 3.3268%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 20
+    Percent Abbrevs: 0.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     20      2844     142.2          OPERAND_BUNDLE_TAG
+
+  Block ID #22 (METADATA_KIND_BLOCK):
+      Num Instances: 1
+         Total Size: 9525b/1190.62B/297W
+    Percent of file: 10.9232%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 58
+    Percent Abbrevs: 0.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		     58      9438     162.7          KIND
+
+  Block ID #23 (STRTAB_BLOCK):
+      Num Instances: 1
+         Total Size: 4310b/538.75B/134W
+    Percent of file: 4.9427%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 1
+    Percent Abbrevs: 100.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		      1      4203            100.00  BLOB
+
+  Block ID #25 (SYMTAB_BLOCK):
+      Num Instances: 1
+         Total Size: 7990b/998.75B/249W
+    Percent of file: 9.1628%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 1
+    Percent Abbrevs: 100.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		      1      7883            100.00  BLOB
+
+  Block ID #26:
+      Num Instances: 1
+         Total Size: 245b/30.62B/7W
+    Percent of file: 0.2810%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 2
+    Percent Abbrevs: 0.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		      2       172      86.0          UnknownCode1
+

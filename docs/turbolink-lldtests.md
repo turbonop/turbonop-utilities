@@ -242,6 +242,10 @@ link.exe does.
   lld's message differs.
 - **wholearchive-implib.s:** link.exe writes one import directory entry for
   `lib.dll` (it uses the import library's descriptor objects); lld two.
+- **invalid-debug-type.test:** an unknown `/DEBUGTYPE` value is a fatal
+  error in link.exe (LNK1117), a warning in lld. link.exe refuses lld's
+  `/DEBUG:SYMTAB`, `DWARF`, `GHASH`, `NOGHASH` and `/SUBSYSTEM:DEFAULT` the
+  same way (counted as lld-only options).
 - **cfguard-weak-undef.s:** link.exe 14.52 crashes (C0000005) on it.
 - **implib-name.test, lib.test, strtab.s:** link.exe makes no import library
   from `/DEF` without objects (LNK1159, or LNK1118 on lld's `.def`); that's

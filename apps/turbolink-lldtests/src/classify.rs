@@ -125,6 +125,12 @@ const LLD_ONLY: &[&str] = &[
     // (link.exe ignores these, LNK4044.)
     "timestamp",
     "summary",
+    // (Values link.exe refuses, LNK1117.)
+    "debug:symtab",
+    "debug:dwarf",
+    "debug:ghash",
+    "debug:noghash",
+    "subsystem:default",
 ];
 
 /// What the inputs test `t` names from `Inputs/` say of their machine:
@@ -263,12 +269,13 @@ fn normalize(s: &str) -> String {
 fn lld_only(line: &str) -> Option<String> {
     for word in line.split_whitespace() {
         let w = word.trim_start_matches(['/', '-']).to_ascii_lowercase();
-        if word.starts_with(['/', '-'])
-            && LLD_ONLY.iter().any(|o| {
-                w == *o || w.starts_with(&format!("{o}:")) || o.ends_with('-') && w.starts_with(o)
-            })
-        {
-            return Some(format!("/{}", w.split(':').next().unwrap_or(&w)));
+        if !word.starts_with(['/', '-']) {
+            continue;
+        }
+        if let Some(o) = LLD_ONLY.iter().find(|o| {
+            w == **o || w.starts_with(&format!("{o}:")) || o.ends_with('-') && w.starts_with(**o)
+        }) {
+            return Some(format!("/{o}"));
         }
     }
     None
@@ -295,6 +302,10 @@ const LINK_EXE_DIFFERS: &[(&str, &str)] = &[
         "one import directory entry (the library's descriptor objects)",
     ),
     ("cfguard-weak-undef.s", "link.exe 14.52 crashes on it"),
+    (
+        "invalid-debug-type.test",
+        "an unknown /DEBUGTYPE is LNK1117, not a warning",
+    ),
     (
         "implib-name.test",
         "no import library from /DEF without objects (that's lib /DEF)",

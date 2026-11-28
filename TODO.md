@@ -787,9 +787,11 @@ same but for the PDB's GUID, age, and name.
   32 steps each) was most of it; it is one traversal now
   (`turbonop_par::traverse`, no steps), 1.1-2.0 s to 60-160 ms each under
   load. Left, by `/TIME` under load: ICF's 9 rounds (each a parallel step
-  and a serial count of the classes, 65 ms of sorting in all), the library
-  search's members parsed round by round, the serial gathering of ICF's
-  candidates (45 ms). Tried without gain: work in pieces taken from a
+  and a serial count of the classes, 65 ms of sorting in all), the serial
+  gathering of ICF's candidates (45 ms), the library search's serial walk
+  (adding each member's symbols, about 200 ms; its members are parsed
+  ahead by helper threads now, waiting on them 210 ms-1.8 s to
+  70-140 ms). Tried without gain: work in pieces taken from a
   counter in turbonop_par's maps, and a parallel sort for ICF's class
   count (slower, and once 2 s under load). Also: layout hashes owned
   copies of names per chunk; symbols are interned on one thread.

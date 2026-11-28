@@ -813,7 +813,10 @@ fn folded_with_aliases(default: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
 /// `data` as the engine writes a member of a library folded before: each
 /// external record of `__turbolib$alias` an undefined `__ImageBase`.
 fn renewed(data: &[u8]) -> Vec<u8> {
-    let mut o = Object::parse(data).unwrap().into_owned();
+    let Ok(o) = Object::parse(data) else {
+        return data.to_vec(); // (an import object)
+    };
+    let mut o = o.into_owned();
     for s in &mut o.symbols {
         if s.is_external() && s.name == LEGACY_ALIAS_DEFAULT {
             s.name = alias_default(0x8664).to_vec().into();
@@ -856,9 +859,10 @@ fn the_engines_alias_fold_passes_preserve_exactly() {
 }
 
 /// A library an earlier turbolib folded, with its synthesized member's
-/// absolute `__turbolib$alias`, passes as it is, and archived again in the
-/// new form (each record of the old default an undefined `__ImageBase`)
-/// passes against it.
+/// absolute `__turbolib$alias`, passes as it is, and so does it in the new
+/// form (each record of the old default an undefined `__ImageBase`, as the
+/// engine writes it folding the library again). (Against a folded library
+/// as the original, `apps/turbolib`'s tests.)
 #[test]
 fn the_old_form_and_its_renewal_pass() {
     let lib = fixture("verify.lib");
@@ -867,16 +871,11 @@ fn the_old_form_and_its_renewal_pass() {
     let r = verify_with(&lib, &old_lib, Pull::Preserve);
     fails(&r, &[]);
     assert_eq!(r.checked_count("COMDATs moved out of original members"), 5);
-    let new: Vec<(Vec<u8>, Vec<u8>)> = old
-        .iter()
-        .map(|(n, d)| (n.clone(), renewed(d)))
-        .collect();
+    let new: Vec<(Vec<u8>, Vec<u8>)> = old.iter().map(|(n, d)| (n.clone(), renewed(d))).collect();
     let new_lib = archive(&new, Some(engine_index(&new)));
-    let r = verify_with(&old_lib, &new_lib, Pull::Preserve);
-    fails(&r, &[]);
-    // And against the unfolded library.
     let r = verify_with(&lib, &new_lib, Pull::Preserve);
     fails(&r, &[]);
+    assert_eq!(r.checked_count("COMDATs moved out of original members"), 5);
 }
 
 /// Members with aliases of the old default beside members with aliases of

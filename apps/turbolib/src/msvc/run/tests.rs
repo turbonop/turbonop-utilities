@@ -683,10 +683,10 @@ fn records_of(library: &[u8], name: &[u8]) -> Vec<(String, bool)> {
     out
 }
 
-/// What lib.exe would warn LNK4006 about archiving `library` again: names
-/// two members define strongly (`library::strong_definitions`, whose
-/// exemption for the old alias default doesn't matter: it mustn't be
-/// there).
+/// What lib.exe would warn LNK4006 about combining `library` with more:
+/// names two members define strongly (`library::strong_definitions`,
+/// whose exemption for the old alias default doesn't matter: it mustn't
+/// be there).
 fn duplicate_strong_definitions(library: &[u8]) -> Vec<String> {
     let archive = turbonop_archive::Archive::parse(library).unwrap();
     let members: Vec<_> = archive.files().collect();
@@ -702,12 +702,16 @@ fn duplicate_strong_definitions(library: &[u8]) -> Vec<String> {
 }
 
 /// A folded library in the new form: no record of `__turbolib$alias`
-/// anywhere, `__ImageBase` neither defined nor indexed, each alias's
+/// anywhere (nor its name), `__ImageBase` neither defined nor indexed, each alias's
 /// default `__ImageBase`, and nothing lib.exe would warn LNK4006 about.
 fn assert_new_alias_form(library: &[u8], what: &str) {
     let legacy = turbonop_fold::rewrite::LEGACY_ALIAS_DEFAULT;
     let default = turbonop_fold::rewrite::alias_default(0x8664);
     assert_eq!(records_of(library, legacy), [], "{what}: the old default");
+    assert!(
+        !library.windows(legacy.len()).any(|w| w == legacy),
+        "{what}: the old default's name, in a string table"
+    );
     let defaults = records_of(library, default);
     assert!(!defaults.is_empty(), "{what}: no aliases");
     assert!(
@@ -790,10 +794,10 @@ fn archive_unfolded(dir: &Path, out: &str, members: &[String]) {
     assert_eq!(o.exit, 0, "{o:?}");
 }
 
-/// The fixtures folded (into more than one synthesized member, so that
-/// lib.exe archiving the old form again warned LNK4006) have nothing two
-/// members define; in the old form, each synthesized member defined
-/// `__turbolib$alias`.
+/// The fixtures folded (into more than one synthesized member, whose
+/// definitions of `__turbolib$alias` in the old form made lib.exe warn
+/// LNK4006 combining the library with anything else) have nothing two
+/// members define; in the old form, each synthesized member defined it.
 #[test]
 fn a_folded_library_defines_nothing_twice() {
     let dir = loose_dir("defines-once");

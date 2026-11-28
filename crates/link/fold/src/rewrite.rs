@@ -1623,7 +1623,8 @@ pub const LEGACY_ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
 /// Turns each external record of [`LEGACY_ALIAS_DEFAULT`] in `object` (an
 /// alias's default, or a synthesized member's absolute definition) into an
 /// undefined [`alias_default`], in place, so that no symbol table index
-/// moves. Whether there was one.
+/// moves; and forgets the layout read, so that the string table written
+/// holds the names used, not the old one too. Whether there was one.
 fn renew_alias_default(object: &mut Object<'_>) -> bool {
     let new = alias_default(object.machine);
     let mut changed = false;
@@ -1636,6 +1637,9 @@ fn renew_alias_default(object: &mut Object<'_>) -> bool {
             s.aux = Aux::None;
             changed = true;
         }
+    }
+    if changed {
+        object.forget_layout();
     }
     changed
 }

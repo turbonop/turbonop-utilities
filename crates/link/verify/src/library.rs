@@ -667,7 +667,14 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                 .iter()
                 .copied()
                 .chain(c.weak.iter().map(|w| w.name))
-                .filter(|n| !n.starts_with(RENAMED) && !n.starts_with(PCH_SYMBOL) && !is_anchor(n))
+                // (Nor the alias default, which the linkers define: a
+                // reference to it loads nothing.)
+                .filter(|n| {
+                    !n.starts_with(RENAMED)
+                        && !n.starts_with(PCH_SYMBOL)
+                        && !is_anchor(n)
+                        && *n != alias_default(c.machine)
+                })
                 .collect(),
         );
         for u in &c.units {

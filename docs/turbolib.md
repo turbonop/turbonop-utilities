@@ -2600,7 +2600,11 @@ any object, so:
   member's records of it (a default, a definition) become undefined
   references to `__ImageBase`, in place (no symbol moves), so the result is
   in the new form throughout, and has no name aliased with both defaults
-  (link.exe's LNK1227). A member the fold doesn't otherwise change is
+  (link.exe's LNK1227 for two weak externals of one name with different
+  defaults). A link of an old-form library with a new-form one of the
+  same code fails with lld-link (duplicate symbols, measured on
+  `tools/turbolib/refold`'s objects; link.exe linked it): fold the old one
+  again first. A member the fold doesn't otherwise change is
   rewritten for it alone: a quick look for the name's bytes finds them.
   Archived again unfolded, the old form stays: turbolib's `lib` personality
   doesn't warn LNK4006 for it, nor index it (`lib.exe` does both); `verify`
@@ -2855,8 +2859,8 @@ Synthesized members are indexed for their anchors alone (under
   Until 2026-11-28 the default was `__turbolib$alias`, which every
   synthesized member defined as the absolute 0. Both linkers accept equal
   absolutes, but `lib.exe` (14.52) warns LNK4006 for each definition after
-  the first whenever it archives a folded library again, alone or with
-  anything else (3,088 warnings for `LLVMSupport.lib` with
+  the first whenever it combines a folded library with anything else,
+  even another folded library (3,088 warnings for `LLVMSupport.lib` with
   `LLVMCore.lib`), which `/WX` makes an error. Measured on
   `tools/turbolib/refold`'s objects (cl `/Od`, cl `/O2`, clang-cl `/Od`),
   linked against two folded libraries, against `lib.exe`'s and

@@ -513,7 +513,14 @@ x64. Where the 3.5 MB went:
     combines folded libraries without LNK4006: the aliases' default is now
     `__ImageBase`, which the linkers define, not `__turbolib$alias`, which
     every synthesized member defined (the alias technique has the options
-    measured); libraries in the old form fold again into the new. Open: the inputs'
+    measured); libraries in the old form fold again into the new. Open:
+    a link of an old-form and a new-form library of the same code fails
+    with lld-link (duplicate symbols; could the new form keep the name
+    `__turbolib$alias`, as a NOLIBRARY weak external defaulting to
+    `__ImageBase`? measure both linkers); `refold/run.py` fails on main
+    too: link.exe's PDBs differ between links in UDTs' source lines (which
+    cases, at random), and lld-link's clang-od `more` programs differ under
+    /OPT:NOREF (every run); the inputs'
     precompiled-types members stay beside the new one, so combining
     folded libraries can grow them (drop an input's types member when
     every user of it in the library was absorbed, and teach `verify` that

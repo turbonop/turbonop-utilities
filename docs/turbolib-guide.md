@@ -142,8 +142,9 @@ unwind, and the PDBs' contents).
   technique](turbolib.md#the-alias-technique)), so `lib.exe` and `llvm-lib`
   combine them without a warning. Fold an old library again (turbolib
   turns it into the new form), or make it again; don't link old and new
-  folded libraries of the same code together, as link.exe may refuse a
-  name aliased with both defaults (LNK1227).
+  folded libraries of the same code together: lld-link refuses such a
+  link (duplicate symbols; measured with `tools/turbolib/refold`'s
+  objects, where link.exe linked it).
 - **The self-check rejects some folds**, which are then written unfolded
   with the warning: some SDK libraries (`libucrt.lib`, `Uuid.lib`: one
   COMDAT held by two synthesized members; `BufferOverflow.lib`:

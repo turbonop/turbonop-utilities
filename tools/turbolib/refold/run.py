@@ -18,7 +18,9 @@ With --inputs-from, x1 and x2 are made by another turbolib.exe (an older
 one: a library folded in the old form, each alias's default the absolute
 `__turbolib$alias` every synthesized member defined), and the rest by
 <turbolib.exe>, as a build that keeps libraries an older turbolib made
-would.
+would. (The case that links x2 links it, against the fold, folded again,
+in the new form: lld-link refuses a link of old-form and new-form
+libraries of the same code, with duplicate symbols.)
 
 lib.exe, with /WX, archives each library again by itself, and makes the
 cases' lib.exe libraries (of folded libraries) with /WX too, unless they
@@ -175,6 +177,7 @@ def main():
 
             x1, _ = lib("x1", [objs[m] for m in "abc"], inputs_tool)
             x2, _ = lib("x2", [objs[m] for m in "de"], inputs_tool)
+            x2_new = lib("x2-new", [x2], turbolib)[0] if a.inputs_from else None
             quiet("llvm-lib x1 x2", [tools["llvm-lib"], "/WX",
                                      f"/out:{os.path.join(d, mode + '-llvm-lib.lib')}", x1, x2])
             cases = {
@@ -192,7 +195,7 @@ def main():
                 folded, text = lib(case, inputs, turbolib)
                 quiet(f"{case}: lib.exe /WX archiving it again",
                       [lib_exe, "/nologo", "/Brepro", "/WX",
-                       f"/out:{os.path.join(d, mode + '-' + case + '-again.lib')}", folded])
+                       f"/out:{os.path.join(d, mode + '-' + case + '-relib.lib')}", folded])
                 made[case] = folded
                 m = re.search(r"(\d+) groups folded, (\d+) copies removed", text)
                 removed = m.group(2) if m else "0"
@@ -210,8 +213,14 @@ def main():
                     bad += 1
                 rows.append((set_name, mode, case, os.path.getsize(plain),
                              os.path.getsize(folded), removed))
-                # (A case without d and e links them from x2.)
-                extra = [] if case != "alone" else [x2]
+                # (A case without d and e links them from x2. With
+                # --inputs-from, the folded library links x2 folded again,
+                # in the new form, and lib.exe's library x2 as it is: a link
+                # of old-form and new-form libraries of the same code fails
+                # with lld-link, duplicate symbols.)
+                extra = {"original": [] if case != "alone" else [x2],
+                         "folded": [] if case != "alone" else [x2_new or x2],
+                         "everything": []}
                 for linker in ("link", "lld-link"):
                     for opt in ("REF", "NOREF"):
                         outs = {}
@@ -227,7 +236,7 @@ def main():
                             shutil.copyfile(objs["main"], os.path.join(here, "main.obj"))
                             shutil.copyfile(library, os.path.join(here, "lib.lib"))
                             more = []
-                            for k, e in enumerate(extra if which != "everything" else []):
+                            for k, e in enumerate(extra[which]):
                                 shutil.copyfile(e, os.path.join(here, f"more{k}.lib"))
                                 more.append(f"more{k}.lib")
                             r.must([tools[linker], "/nologo", "/DEBUG", "/INCREMENTAL:NO",

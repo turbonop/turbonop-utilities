@@ -695,11 +695,17 @@ fn build(
     // (lib.exe writes `/<ECSYMBOLS>/` only for `/MACHINE:ARM64EC` or
     // `ARM64X`: a machine it infers from a library's ARM64EC member gives
     // none, measured.)
+    // (And a lone library folded that has one: lib.exe's library is its
+    // copy, `/<ECSYMBOLS>/` and all.)
     let ec = match flavor {
-        Flavor::Lib => matches!(
-            opts.machine.map(options::Machine::number),
-            Some(inputs::ARM64EC | inputs::ARM64X)
-        ),
+        Flavor::Lib => {
+            matches!(
+                opts.machine.map(options::Machine::number),
+                Some(inputs::ARM64EC | inputs::ARM64X)
+            ) || (lone
+                && turbonop_archive::Archive::parse(&read[0].data)
+                    .is_ok_and(|a| a.ec_symbols().is_some()))
+        }
         Flavor::LlvmLib => matches!(check.machine, Some(inputs::ARM64EC | inputs::ARM64X)),
     };
     let unfolded: Vec<Final<'_>> = members

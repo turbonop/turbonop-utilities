@@ -871,3 +871,51 @@ fn arm64x_libraries_archived_again_are_lib_exes() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// An ARM64X library given alone and folded keeps its `/<ECSYMBOLS>/`
+/// (lib.exe's library is its copy): without it, the folded library would
+/// list its EC names in the linker members, and ARM64EC links couldn't
+/// find them.
+#[test]
+fn a_lone_arm64x_library_folded_keeps_its_ec_symbols() {
+    let dir = scratch("lone-arm64x");
+    for o in ["msvc-arm64-cf-one", "msvc-arm64-cf-two"] {
+        std::fs::copy(
+            testdata(&format!("coff/tables/{o}.obj")),
+            dir.join(format!("{o}.obj")),
+        )
+        .unwrap();
+    }
+    let o = run(
+        Flavor::Lib,
+        &w(&[
+            "/nologo",
+            "/machine:arm64x",
+            "/out:x.lib",
+            "msvc-arm64-cf-one.obj",
+            "msvc-arm64-cf-two.obj",
+        ]),
+        &env_in(&dir),
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    let ec = |name: &str| {
+        let data = std::fs::read(dir.join(name)).unwrap();
+        turbonop_archive::Archive::parse(&data)
+            .unwrap()
+            .ec_symbols()
+            .is_some()
+    };
+    assert!(ec("x.lib"));
+    let mut env = env_in(&dir);
+    env.turbolib_options = Some("--fold=identical --precomp=library --strict".into());
+    let o = run(Flavor::Lib, &w(&["/nologo", "/out:f.lib", "x.lib"]), &env);
+    assert_eq!(o.exit, 0, "{o:?}");
+    let folded = std::fs::read(dir.join("f.lib")).unwrap();
+    assert_ne!(
+        folded,
+        std::fs::read(dir.join("x.lib")).unwrap(),
+        "nothing folded"
+    );
+    assert!(ec("f.lib"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

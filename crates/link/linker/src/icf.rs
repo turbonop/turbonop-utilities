@@ -21,6 +21,13 @@ use crate::resolve::{Def, FileKind, NONE, Resolved};
 /// A 128-bit digest.
 type Digest = (u64, u64);
 
+/// One file's candidates (its sections, in order) and each section's
+/// associative sections.
+struct Scan {
+    candidates: Vec<u32>,
+    children: Map<u32, Vec<u32>>,
+}
+
 /// How a relocation's target is described, for hashing: a candidate (by
 /// its index, and the offset into it), or anything else by identity.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -63,13 +70,26 @@ impl Hash2 {
 /// into (both as (file, section)). `live` says which sections are in the
 /// image.
 pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
-    // The candidates, in link order; and each one's associative sections.
-    let mut candidates: Vec<(u32, u32)> = Vec::new();
-    let mut index: Map<(u32, u32), u32> = Map::default();
-    let mut children: Map<(u32, u32), Vec<u32>> = Map::default();
-    for (f, file) in r.files.iter().enumerate() {
-        let FileKind::Object { object, .. } = &file.kind else {
-            continue;
+    let started = std::time::Instant::now();
+    // The candidates, in link order, and each one's associative sections:
+    // file by file, in parallel.
+    let mut base = Vec::with_capacity(r.files.len() + 1);
+    let mut total = 0usize;
+    for file in &r.files {
+        base.push(total);
+        if let FileKind::Object { object, .. } = &file.kind {
+            total += object.sections.len();
+        }
+    }
+    base.push(total);
+    let scans: Vec<Scan> = turbonop_par::map_range(r.files.len(), 64, |f| {
+        let mut candidates: Vec<u32> = Vec::new();
+        let mut children: Map<u32, Vec<u32>> = Map::default();
+        let FileKind::Object { object, .. } = &r.files[f].kind else {
+            return Scan {
+                candidates,
+                children,
+            };
         };
         // Only the C/C++ compiler's code folds (link.exe keeps an assembler's
         // functions apart, as identical as they are: libvcruntime's
@@ -99,10 +119,7 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
                         b".gfids$y" | b".giats$y" | b".gljmp$y" | b".gehcont$y"
                     );
                 if !bookkeeping {
-                    children
-                        .entry((crate::n32(f), parent))
-                        .or_default()
-                        .push(crate::n32(s));
+                    children.entry(parent).or_default().push(crate::n32(s));
                 }
                 // Associative code folds too (C++ EH funclets, .text$x,
                 // as link.exe folds them), and so does a function's other
@@ -113,8 +130,7 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
                 if !read_only || bookkeeping || sec.name == b".pdata" || (executable && !code) {
                     continue;
                 }
-                index.insert((crate::n32(f), crate::n32(s)), crate::n32(candidates.len()));
-                candidates.push((crate::n32(f), crate::n32(s)));
+                candidates.push(crate::n32(s));
                 continue;
             }
             // Of other read-only data, only vtables (a COMDAT named `??_7`):
@@ -132,9 +148,21 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
             // two thousand.)
             let dynamic = leader.starts_with(b"??__E") || leader.starts_with(b"??__F");
             if read_only && (code || unwind || vtable) && !dynamic {
-                index.insert((crate::n32(f), crate::n32(s)), crate::n32(candidates.len()));
-                candidates.push((crate::n32(f), crate::n32(s)));
+                candidates.push(crate::n32(s));
             }
+        }
+        Scan {
+            candidates,
+            children,
+        }
+    });
+    // Each section's candidate (by its number, `base[file] + section`).
+    let mut index = vec![u32::MAX; total];
+    let mut candidates: Vec<(u32, u32)> = Vec::new();
+    for (f, scan) in scans.iter().enumerate() {
+        for &s in &scan.candidates {
+            index[base[f] + s as usize] = crate::n32(candidates.len());
+            candidates.push((crate::n32(f), s));
         }
     }
     if candidates.len() < 2 {
@@ -149,9 +177,17 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
         else {
             return Target::Nowhere;
         };
-        let at = |file: u32, section: u32, value: u32| match index.get(&(file, section)) {
-            Some(&c) => Target::Candidate(c, value),
-            None => Target::Local(file, section, value),
+        let at = |file: u32, section: u32, value: u32| {
+            let c = base
+                .get(file as usize)
+                .and_then(|&b| index.get(b + section as usize))
+                .copied()
+                .unwrap_or(u32::MAX);
+            if c == u32::MAX {
+                Target::Local(file, section, value)
+            } else {
+                Target::Candidate(c, value)
+            }
         };
         match globals.get(k as usize) {
             Some(&g) if g != NONE => {
@@ -177,6 +213,7 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
     };
 
     // Each candidate's own parts, and the candidates it refers to.
+    let gathered = started.elapsed();
     let parts = turbonop_par::map(&candidates, 64, |&(f, s)| {
         let FileKind::Object { object, .. } = &r.files[f as usize].kind else {
             return ((0, 0), Vec::new());
@@ -195,7 +232,10 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
         h.u64(u64::from(sec.size));
         h.bytes(sec.data);
         let mut edges = Vec::new();
-        let kids: &[u32] = children.get(&(f, s)).map_or(&[], Vec::as_slice);
+        let kids: &[u32] = scans[f as usize]
+            .children
+            .get(&s)
+            .map_or(&[], Vec::as_slice);
         let hash_relocations = |h: &mut Hash2,
                                 sec: &crate::object::Section,
                                 own: (u32, u32),
@@ -282,37 +322,129 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
         }
         (h.digest(), edges)
     });
-    let (mut digests, edges): (Vec<Digest>, Vec<Vec<u32>>) = parts.into_iter().unzip();
+    let (digests, edges): (Vec<Digest>, Vec<Vec<u32>>) = parts.into_iter().unzip();
+    let hashed = started.elapsed();
 
-    // Rounds: each digest mixed with its targets' digests, until the
-    // classes stop splitting (at most as many rounds as candidates).
-    let distinct = |d: &[Digest]| {
-        let mut v = d.to_vec();
-        v.sort_unstable();
-        v.dedup();
-        v.len()
-    };
-    let mut classes = distinct(&digests);
-    let indices: Vec<usize> = (0..candidates.len()).collect();
-    for _ in 0..candidates.len() {
-        let next = turbonop_par::map(&indices, 1024, |&i| {
-            let mut h = Hash2::new();
-            h.u64(digests[i].0);
-            h.u64(digests[i].1);
-            for &t in &edges[i] {
-                h.u64(digests[t as usize].0);
-                h.u64(digests[t as usize].1);
+    // The classes: candidates with the same digest, then split, round by
+    // round, by the classes their targets are in, until none splits (as
+    // mixing each digest with its targets' digests, round by round, would,
+    // but only the classes of two or more are looked at again, by their
+    // targets' classes exactly). A class is a run of `order`, its number
+    // the run's start.
+    let n = candidates.len();
+    // (Sorted by digest in buckets, by the digest's low byte, in parallel:
+    // where a class's run is doesn't matter, only what's in it.)
+    const BUCKETS: usize = 256;
+    let piece = n.div_ceil(turbonop_par::threads() * 4).max(4096);
+    let scattered = turbonop_par::map_range(n.div_ceil(piece), 1, |p| {
+        let mut b: Vec<Vec<u32>> = vec![Vec::new(); BUCKETS];
+        for i in p * piece..n.min((p + 1) * piece) {
+            b[usize::from(digests[i].0.to_le_bytes()[0])].push(crate::n32(i));
+        }
+        b
+    });
+    let buckets = turbonop_par::map_range(BUCKETS, 1, |k| {
+        let mut v: Vec<u32> = scattered
+            .iter()
+            .flat_map(|b| b[k].iter().copied())
+            .collect();
+        v.sort_unstable_by_key(|&i| (digests[i as usize], i));
+        v
+    });
+    drop(scattered);
+    let mut order: Vec<u32> = Vec::with_capacity(n);
+    for b in buckets {
+        order.extend(b);
+    }
+    let mut class = vec![0u32; n];
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    let mut at = 0;
+    while at < n {
+        let mut end = at + 1;
+        while end < n && digests[order[end] as usize] == digests[order[at] as usize] {
+            end += 1;
+        }
+        for &i in &order[at..end] {
+            class[i as usize] = crate::n32(at);
+        }
+        if end - at >= 2 {
+            runs.push((crate::n32(at), crate::n32(end)));
+        }
+        at = end;
+    }
+    drop(digests);
+    let classed = started.elapsed();
+    let mut rounds = 0;
+    while !runs.is_empty() {
+        rounds += 1;
+        // Each run's members by their targets' classes (then by number),
+        // and where it splits.
+        // Whether candidates `i` and `j`'s targets are in the same classes.
+        let same = |i: u32, j: u32| {
+            let (x, y) = (&edges[i as usize], &edges[j as usize]);
+            x.len() == y.len()
+                && x.iter()
+                    .zip(y)
+                    .all(|(&p, &q)| class[p as usize] == class[q as usize])
+        };
+        // (In parallel only when there's much to do: a round is little work,
+        // and a parallel step waits for its slowest thread, which on a busy
+        // machine costs more than the round.)
+        let split = turbonop_par::map(&runs, 1 << 16, |&(a, b)| {
+            // (Most classes don't split: seen at a glance.)
+            let members = &order[a as usize..b as usize];
+            if members[1..].iter().all(|&i| same(i, members[0])) {
+                return (a, b, Vec::new(), Vec::new());
             }
-            h.digest()
+            let mut keyed: Vec<(Vec<u32>, u32)> = order[a as usize..b as usize]
+                .iter()
+                .map(|&i| {
+                    let key = edges[i as usize]
+                        .iter()
+                        .map(|&t| class[t as usize])
+                        .collect();
+                    (key, i)
+                })
+                .collect();
+            keyed.sort_unstable();
+            let mut cuts = Vec::new();
+            for k in 1..keyed.len() {
+                if keyed[k].0 != keyed[k - 1].0 {
+                    cuts.push(a + crate::n32(k));
+                }
+            }
+            let members: Vec<u32> = keyed.into_iter().map(|(_, i)| i).collect();
+            (a, b, members, cuts)
         });
-        let n = distinct(&next);
-        digests = next;
-        if n == classes {
+        // A round that splits nothing is the last; otherwise every class of
+        // two or more goes round again (one whose targets split may split).
+        let mut next = Vec::new();
+        let mut any = false;
+        for (a, b, members, cuts) in split {
+            if cuts.is_empty() {
+                next.push((a, b));
+                continue;
+            }
+            any = true;
+            order[a as usize..b as usize].copy_from_slice(&members);
+            let mut start = a;
+            for end in cuts.into_iter().chain(std::iter::once(b)) {
+                for &i in &order[start as usize..end as usize] {
+                    class[i as usize] = start;
+                }
+                if end - start >= 2 {
+                    next.push((start, end));
+                }
+                start = end;
+            }
+        }
+        if !any {
             break;
         }
-        classes = n;
+        runs = next;
     }
 
+    let refined = started.elapsed();
     // Each class's leader: its member first in the image's order, as
     // link.exe keeps (its group, by name, then the link's order: a
     // .text$di copy before a .text$mn one).
@@ -323,19 +455,46 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
             FileKind::Import { .. } => &b""[..],
         }
     };
-    let mut leader: Map<Digest, u32> = Map::default();
-    for (i, d) in digests.iter().enumerate() {
-        let l = leader.entry(*d).or_insert(crate::n32(i));
-        if name(i) < name(*l as usize) {
-            *l = crate::n32(i);
+    let mut classes: Vec<(u32, u32)> = Vec::new();
+    let mut at = 0;
+    while at < n {
+        let c = class[order[at] as usize];
+        let mut end = at + 1;
+        while end < n && class[order[end] as usize] == c {
+            end += 1;
+        }
+        if end - at >= 2 {
+            classes.push((crate::n32(at), crate::n32(end)));
+        }
+        at = end;
+    }
+    let leaders = turbonop_par::map(&classes, 64, |&(a, b)| {
+        let members = &order[a as usize..b as usize];
+        members
+            .iter()
+            .copied()
+            .min_by(|&x, &y| (name(x as usize), x).cmp(&(name(y as usize), y)))
+            .unwrap_or(members[0])
+    });
+    let mut folded =
+        turbonop_hash::map_with_capacity(classes.iter().map(|&(a, b)| (b - a) as usize).sum());
+    for (&(a, b), leader) in classes.iter().zip(leaders) {
+        for &i in &order[a as usize..b as usize] {
+            if i != leader {
+                folded.insert(candidates[i as usize], candidates[leader as usize]);
+            }
         }
     }
-    let mut folded = Map::default();
-    for (i, d) in digests.iter().enumerate() {
-        let l = leader[d];
-        if l != crate::n32(i) {
-            folded.insert(candidates[i], candidates[l as usize]);
-        }
+    if r.config.time {
+        eprintln!(
+            "turbolink:     ICF: {} candidates gathered {:.3} ms, hashed {:.3} ms, classes {:.3} ms, {rounds} rounds {:.3} ms, leaders {:.3} ms",
+            candidates.len(),
+            gathered.as_secs_f64() * 1e3,
+            (hashed - gathered).as_secs_f64() * 1e3,
+            (classed - hashed).as_secs_f64() * 1e3,
+            (refined - classed).as_secs_f64() * 1e3,
+            (started.elapsed() - refined).as_secs_f64() * 1e3,
+        );
     }
     folded
 }

@@ -99,8 +99,9 @@ pub(super) struct Member {
     /// Why a member that could share doesn't, for reports.
     why_not: Option<String>,
     /// A precompiled-types member turbolib made (the library is being
-    /// compacted again): every record of it counts for each of its users,
-    /// as each was shared, so that the same records are shared again.
+    /// folded again): the members of its machine keep their types as they
+    /// are (see [`plan`]); were one shared again, every record of it would
+    /// count for it, as each was shared.
     ours: bool,
     /// A sharer's group (an index into [`Plan::groups`]), or `None` if it
     /// is out of every group (`--precomp=clustered`) and keeps its types.
@@ -201,20 +202,99 @@ fn shareable(kind: u16) -> bool {
     )
 }
 
+/// What sharing needs of a member's object beyond its types, read with it
+/// ([`scan`]): the objects aren't kept once read (see [`super::Objects`]).
+#[derive(Clone, Debug, Default)]
+pub(super) struct Scan<'a> {
+    /// It defines a precompiled-types member's symbol of turbolib's.
+    ours: bool,
+    /// Why its `.debug$S` can't be renumbered (an index that is neither
+    /// one of its records nor its PCH's, or a field not known), if so.
+    why_not: Option<String>,
+    /// The positions (from `FIRST`) of its PCH's records that its
+    /// `.debug$S` names, ascending.
+    reach: Vec<u32>,
+    /// The names of its undefined externals (`--precomp=clustered`: what
+    /// it loads).
+    undefined: Vec<Cow<'a, [u8]>>,
+}
+
+/// Reads what sharing needs of member `object` (its debug information
+/// `debug`): the undefined names only if `clustered`.
+pub(super) fn scan<'a>(object: &Object<'a>, debug: &debug::Facts, clustered: bool) -> Scan<'a> {
+    let mut out = Scan {
+        ours: object.symbols.iter().any(|s| {
+            s.is_external()
+                && s.section != SectionNumber::Undefined
+                && s.name.as_bytes().starts_with(PCH_SYMBOL_PREFIX)
+        }),
+        ..Scan::default()
+    };
+    if clustered {
+        out.undefined = object
+            .symbols
+            .iter()
+            .filter(|s| s.is_external() && s.section == SectionNumber::Undefined && s.value == 0)
+            .map(|s| s.name.data())
+            .collect();
+    }
+    let Types::Records {
+        base,
+        ref offsets,
+        precomp,
+        end_precomp,
+        ..
+    } = debug.types
+    else {
+        return out;
+    };
+    // A PCH object's .debug$S isn't renumbered (it isn't rewritten).
+    if precomp.is_none() && end_precomp.is_some() {
+        return out;
+    }
+    // Every index must name a record it has (or its PCH's), and every
+    // field must be known, so that it can be renumbered.
+    let own = base..base + offsets.len() as u32;
+    let mut reach: Vec<u32> = Vec::new();
+    for s in &object.sections {
+        if s.name.as_bytes() != b".debug$S" {
+            continue;
+        }
+        let mut bad = None;
+        let r = remap::debug_s_indices(s.bytes(), |v, _| {
+            if own.contains(&v) {
+                return;
+            }
+            match precomp {
+                Some(rg) if v - rg.start < rg.count => reach.push(v - FIRST),
+                _ => {
+                    bad.get_or_insert(v);
+                }
+            }
+        });
+        let why = match (r, bad) {
+            (Err(e), _) => Some(format!("its .debug$S: {e}")),
+            (Ok(()), Some(v)) => Some(format!("its .debug$S names {v:#x}, not one of its records")),
+            (Ok(()), None) => None,
+        };
+        if why.is_some() {
+            out.why_not = why;
+            return out;
+        }
+    }
+    reach.sort_unstable();
+    reach.dedup();
+    out.reach = reach;
+    out
+}
+
 /// A member's records: the section's bytes, the first index, and where
 /// each record starts.
 fn records<'p>(p: &'p Parsed<'_>) -> Option<(&'p [u8], u32, &'p [u32])> {
-    let Types::Records {
-        section,
-        base,
-        offsets,
-        ..
-    } = &p.debug.types
-    else {
+    let Types::Records { base, offsets, .. } = &p.debug.types else {
         return None;
     };
-    let data = p.object.as_ref()?.sections[section.index()].bytes();
-    Some((data, *base, offsets))
+    p.is_object.then_some((p.types, *base, &offsets[..]))
 }
 
 /// The record at `at` in `data`: its kind and body (padding included).
@@ -236,7 +316,7 @@ fn precomp_range(p: &Parsed<'_>) -> Option<debug::Precomp> {
 }
 
 fn role(p: &Parsed<'_>) -> Role {
-    if p.passed.is_some() || p.object.is_none() {
+    if p.passed.is_some() || !p.is_object {
         return Role::None;
     }
     match &p.debug.types {
@@ -266,7 +346,7 @@ fn hash_member(parsed: &[Parsed<'_>], m: usize, role: Role, pch: Option<&Member>
         out.role = Role::None;
         return out;
     };
-    let machine = p.object.as_ref().map_or(0, |o| o.machine);
+    let machine = p.machine;
     let range = precomp_range(p).filter(|_| pch.is_some());
     let n = offsets.len();
     out.hashes.reserve_exact(n);
@@ -335,48 +415,29 @@ fn hash_member(parsed: &[Parsed<'_>], m: usize, role: Role, pch: Option<&Member>
         }
     }
     if role != Role::Sharer {
-        out.ours = p.object.as_ref().is_some_and(|o| {
-            o.symbols.iter().any(|s| {
-                s.is_external()
-                    && s.section != SectionNumber::Undefined
-                    && s.name.as_bytes().starts_with(PCH_SYMBOL_PREFIX)
-            })
-        });
+        out.ours = p.scan.ours;
         return out;
     }
     build_only(data, base, offsets, &builds, &mut referrers, &mut out.flags);
 
-    // Its .debug$S: every index must name a record it has (or its PCH's),
-    // and every field must be known, so that it can be renumbered; and
-    // what of its PCH it names.
-    let object = p.object.as_ref().expect("a sharer is an object");
-    let own = base..base + n as u32;
-    for s in &object.sections {
-        if s.name.as_bytes() != b".debug$S" {
-            continue;
+    // Its .debug$S, read with its object ([`scan`]): whether it can be
+    // renumbered, and what of its PCH it names.
+    if let Some(w) = &p.scan.why_not {
+        out.role = Role::None;
+        out.why_not = Some(w.clone());
+        return out;
+    }
+    if range.is_some() {
+        for &j in &p.scan.reach {
+            reach[j as usize] = true;
         }
-        let mut bad = None;
-        let r = remap::debug_s_indices(s.bytes(), |v, _| {
-            if own.contains(&v) {
-                return;
-            }
-            match range {
-                Some(rg) if v - rg.start < rg.count => reach[(v - FIRST) as usize] = true,
-                _ => {
-                    bad.get_or_insert(v);
-                }
-            }
-        });
-        let why = match (r, bad) {
-            (Err(e), _) => Some(format!("its .debug$S: {e}")),
-            (Ok(()), Some(v)) => Some(format!("its .debug$S names {v:#x}, not one of its records")),
-            (Ok(()), None) => None,
-        };
-        if let Some(w) = why {
-            out.role = Role::None;
-            out.why_not = Some(w);
-            return out;
-        }
+    } else if !p.scan.reach.is_empty() {
+        out.role = Role::None;
+        out.why_not = Some(format!(
+            "its .debug$S names {:#x}, not one of its records",
+            FIRST + p.scan.reach[0]
+        ));
+        return out;
     }
     if let Some(pch) = pch
         && pch.ours
@@ -523,7 +584,26 @@ fn shards() -> u64 {
 /// at least `min` members of a group hold. With `clustering`, the groups
 /// are chosen ([`cluster`]); without, there is one for each machine.
 pub(super) fn plan(parsed: &[Parsed<'_>], min: u32, clustering: Option<&Clustering<'_>>) -> Plan {
-    let roles: Vec<Role> = parsed.iter().map(role).collect();
+    // A library folded before, folded again: where it holds a
+    // precompiled-types member turbolib made, the members of that machine
+    // keep their types as they are, and no other such member is made for
+    // it. Its users' records are shared already; shared again, they would
+    // go into a new member beside it (which its other users keep), and the
+    // library would grow; and what the other members would share among
+    // themselves would be another member, made of records the first fold
+    // didn't share, again and again with each fold.
+    let ours: Vec<u16> = parsed
+        .iter()
+        .filter(|p| p.scan.ours)
+        .map(|p| p.machine)
+        .collect();
+    let roles: Vec<Role> = parsed
+        .iter()
+        .map(|p| match role(p) {
+            Role::Sharer if ours.contains(&p.machine) => Role::None,
+            r => r,
+        })
+        .collect();
     // PCH objects first: their users hash through them.
     let mut members: Vec<Member> = vec![Member::default(); parsed.len()];
     let sources: Vec<usize> = (0..parsed.len())
@@ -725,7 +805,7 @@ struct Grouped {
 }
 
 fn machine_of(parsed: &[Parsed<'_>], m: usize) -> u16 {
-    parsed[m].object.as_ref().map_or(0, |o| o.machine)
+    parsed[m].machine
 }
 
 /// One group for each machine (`--precomp=library`).
@@ -921,14 +1001,11 @@ fn clustered(
         }
     }
     let edges: Vec<Vec<u32>> = turbonop_par::map_range(parsed.len(), 16, |m| {
-        let Some(o) = &parsed[m].object else {
-            return Vec::new();
-        };
-        let mut e: Vec<u32> = o
-            .symbols
+        let mut e: Vec<u32> = parsed[m]
+            .scan
+            .undefined
             .iter()
-            .filter(|s| s.is_external() && s.section == SectionNumber::Undefined && s.value == 0)
-            .filter_map(|s| first.get(s.name.as_bytes()).copied())
+            .filter_map(|n| first.get(n.as_ref()).copied())
             .filter(|&d| d != m as u32)
             .collect();
         e.sort_unstable();
@@ -1146,15 +1223,27 @@ impl Plan {
             .get(pch.group, hash_of(parsed, &self.members, m, v)?)
     }
 
-    /// The sharing of member `m` (not its sections `removed`, by number):
-    /// `None` if it doesn't share, or none of its records is shared.
-    pub(super) fn edit(&self, parsed: &[Parsed<'_>], m: usize, removed: &[bool]) -> Option<Edit> {
+    /// Whether member `m` may share: [`edit`](Self::edit) may change it.
+    pub(super) fn may_edit(&self, m: usize) -> bool {
+        let mem = &self.members[m];
+        mem.role == Role::Sharer && mem.group.is_some_and(|g| self.pch(g).is_some())
+    }
+
+    /// The sharing of member `m` (its `object`, not its sections `removed`,
+    /// by number): `None` if it doesn't share, or none of its records is
+    /// shared.
+    pub(super) fn edit(
+        &self,
+        parsed: &[Parsed<'_>],
+        m: usize,
+        object: &Object<'_>,
+        removed: &[bool],
+    ) -> Option<Edit> {
         let mem = &self.members[m];
         if mem.role != Role::Sharer {
             return None;
         }
         let p = &parsed[m];
-        let object = p.object.as_ref()?;
         let pch = self.pch(mem.group?)?;
         let (data, base, offsets) = records(p)?;
         let Types::Records { section, .. } = p.debug.types else {

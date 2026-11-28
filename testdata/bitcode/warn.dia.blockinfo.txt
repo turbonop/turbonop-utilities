@@ -1,0 +1,108 @@
+<BLOCKINFO_BLOCK NumWords=48 BlockCodeSize=2>
+  <SETBID op0=8/>
+  <BLOCKNAME op0=77 op1=101 op2=116 op3=97/>
+  <SETRECORDNAME op0=1 op1=86 op2=101 op3=114 op4=115 op5=105 op6=111 op7=110/>
+  <SETBID op0=8/>
+  <SETBID op0=9/>
+  <BLOCKNAME op0=68 op1=105 op2=97 op3=103/>
+  <SETRECORDNAME op0=2 op1=68 op2=105 op3=97 op4=103 op5=73 op6=110 op7=102 op8=111/>
+  <SETRECORDNAME op0=3 op1=83 op2=114 op3=99 op4=82 op5=97 op6=110 op7=103 op8=101/>
+  <SETRECORDNAME op0=5 op1=67 op2=97 op3=116 op4=78 op5=97 op6=109 op7=101/>
+  <SETRECORDNAME op0=4 op1=68 op2=105 op3=97 op4=103 op5=70 op6=108 op7=97 op8=103/>
+  <SETRECORDNAME op0=6 op1=70 op2=105 op3=108 op4=101 op5=78 op6=97 op7=109 op8=101/>
+  <SETRECORDNAME op0=7 op1=70 op2=105 op3=120 op4=73 op5=116/>
+  <SETBID op0=9/>
+</BLOCKINFO_BLOCK>
+<Meta NumWords=2 BlockCodeSize=3>
+  <Version abbrevid=4 op0=2/>
+</Meta>
+<Diag NumWords=148 BlockCodeSize=4>
+  <FileName abbrevid=8 op0=1 op1=0 op2=0 op3=23/> blob data = 'R:\\tools\\bitcode\\warn.c'
+  <CatName abbrevid=5 op0=2 op1=14/> blob data = 'Semantic Issue'
+  <DiagFlag abbrevid=7 op0=1 op1=11/> blob data = 'parentheses'
+  <DiagInfo abbrevid=4 op0=2 op1=1 op2=9 op3=11 op4=313 op5=2 op6=1 op7=68/> blob data = 'using the result of an assignment as a condition without parentheses'
+  <SrcRange abbrevid=6 op0=1 op1=9 op2=9 op3=311 op4=1 op5=9 op6=14 op7=315/>
+  <Diag NumWords=54 BlockCodeSize=4>
+    <DiagInfo abbrevid=4 op0=1 op1=1 op2=9 op3=11 op4=313 op5=2 op6=0 op7=63/> blob data = 'place parentheses around the assignment to silence this warning'
+    <SrcRange abbrevid=6 op0=1 op1=9 op2=9 op3=311 op4=1 op5=9 op6=9 op7=311/>
+    <SrcRange abbrevid=6 op0=1 op1=9 op2=14 op3=316 op4=1 op5=9 op6=14 op7=316/>
+    <FixIt abbrevid=9 op0=1 op1=9 op2=9 op3=311 op4=1 op5=9 op6=9 op7=311 op8=1/> blob data = '('
+    <FixIt abbrevid=9 op0=1 op1=9 op2=14 op3=316 op4=1 op5=9 op6=14 op7=316 op8=1/> blob data = ')'
+  </Diag>
+  <Diag NumWords=38 BlockCodeSize=4>
+    <DiagInfo abbrevid=4 op0=1 op1=1 op2=9 op3=11 op4=313 op5=2 op6=0 op7=60/> blob data = 'use '==' to turn this assignment into an equality comparison'
+    <SrcRange abbrevid=6 op0=1 op1=9 op2=11 op3=313 op4=1 op5=9 op6=12 op7=314/>
+    <FixIt abbrevid=9 op0=1 op1=9 op2=11 op3=313 op4=1 op5=9 op6=12 op7=314 op8=2/> blob data = '=='
+  </Diag>
+</Diag>
+<Diag NumWords=36 BlockCodeSize=4>
+  <DiagFlag abbrevid=7 op0=2 op1=20/> blob data = 'return-stack-address'
+  <DiagInfo abbrevid=4 op0=2 op1=1 op2=11 op3=19 op4=354 op5=2 op6=2 op7=62/> blob data = 'address of stack memory associated with parameter 'x' returned'
+  <SrcRange abbrevid=6 op0=1 op1=11 op2=19 op3=354 op4=1 op5=11 op6=20 op7=354/>
+</Diag>
+<Diag NumWords=31 BlockCodeSize=4>
+  <CatName abbrevid=5 op0=41 op1=19/> blob data = 'Unused Entity Issue'
+  <DiagFlag abbrevid=7 op0=3 op1=15/> blob data = 'unused-variable'
+  <DiagInfo abbrevid=4 op0=2 op1=1 op2=8 op3=9 op4=295 op5=41 op6=3 op7=24/> blob data = 'unused variable 'unused''
+  <SrcRange abbrevid=6 op0=1 op1=8 op2=9 op3=295 op4=1 op5=8 op6=15 op7=295/>
+</Diag>
+<Diag NumWords=28 BlockCodeSize=4>
+  <DiagFlag abbrevid=7 op0=4 op1=15/> blob data = 'unused-function'
+  <DiagInfo abbrevid=4 op0=2 op1=1 op2=5 op3=12 op4=232 op5=41 op6=4 op7=33/> blob data = 'unused function 'unused_function''
+  <SrcRange abbrevid=6 op0=1 op1=5 op2=12 op3=232 op4=1 op5=5 op6=27 op7=232/>
+</Diag>
+
+
+Summary of warn.dia:
+         Total size: 9792b/1224.00B/306W
+        Stream type: Clang Serialized Diagnostics
+  # Toplevel Blocks: 6
+
+Per-block Summary:
+  Block ID #0 (BLOCKINFO_BLOCK):
+      Num Instances: 1
+         Total Size: 1590b/198.75B/49W
+    Percent of file: 16.2377%
+      Num SubBlocks: 0
+        Num Abbrevs: 7
+        Num Records: 13
+    Percent Abbrevs: 0.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		      7       752     107.4          SETRECORDNAME
+		      4        80      20.0          SETBID
+		      2       124      62.0          BLOCKNAME
+
+  Block ID #8 (Meta):
+      Num Instances: 1
+         Total Size: 118b/14.75B/3W
+    Percent of file: 1.2051%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 1
+    Percent Abbrevs: 100.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		      1        35            100.00  Version
+
+  Block ID #9 (Diag):
+      Num Instances: 6
+         Total Size: 7992b/999.00B/249W
+    Percent of file: 81.6176%
+       Average Size: 1332.00/166.50B/41W
+  Tot/Avg SubBlocks: 2/3.333333e-01
+    Tot/Avg Abbrevs: 0/0.000000e+00
+    Tot/Avg Records: 23/3.833333e+00
+    Percent Abbrevs: 100.0000%
+
+	Record Histogram:
+		  Count    # Bits     b/Rec   % Abv  Record Kind
+		      7      1512     216.0  100.00  SrcRange
+		      6      3648     608.0  100.00  DiagInfo
+		      4       768     192.0  100.00  DiagFlag
+		      3       856     285.3  100.00  FixIt
+		      2       416     208.0  100.00  CatName
+		      1       320            100.00  FileName
+

@@ -48,8 +48,15 @@ pub fn compare(a: Program<'_>, b: Program<'_>) -> Result<Report, String> {
         || Linked::read(a.image, a.pdb, "the first program"),
         || Linked::read(b.image, b.pdb, "the second program"),
     );
-    let (la, lb) = (la?, lb?);
+    let (mut la, mut lb) = (la?, lb?);
     let mut report = Report::new();
+    let named = name_by_content(&mut la, &mut lb);
+    if named > 0 {
+        report.expect(
+            "unlabeled read-only data named by its content (a copy in another module)",
+            || format!("{named} contributions"),
+        );
+    }
     headers(&la, &lb, &mut report);
     let (contents, pdbs) = turbonop_par::join(
         || {
@@ -195,8 +202,9 @@ fn isa(p: &Linked<'_>, c: &Contribution) -> Isa {
 
 /// A contribution's content, its addresses read as names: the key that
 /// pairs the contributions whose labels matched nothing (those that moved
-/// to another module, say). Every 4-byte aligned word that is an RVA in
-/// the image, and every base-relocated address, stands for its name.
+/// to another module, say). Every base-relocated address stands for its
+/// name, and so does every 4-byte aligned word that is the RVA of a
+/// label's start.
 fn content(p: &Linked<'_>, c: &Contribution) -> Vec<u8> {
     let data = p.bytes(c.rva, c.size);
     let mut out = Vec::with_capacity(data.len() + 16);
@@ -212,15 +220,41 @@ fn content(p: &Linked<'_>, c: &Contribution) -> Vec<u8> {
             let mut v = [0u8; 8];
             let n = size.min(data.len() - at);
             v[..n].copy_from_slice(&data[at..at + n]);
-            let name = p.name_va(u64::from_le_bytes(v));
-            out.extend_from_slice(format!("{name:?}").as_bytes());
+            let va = u64::from_le_bytes(v);
+            // An address in the contribution itself, by its offset: its own
+            // label names the module that holds it.
+            let own = va
+                .checked_sub(p.image_base + u64::from(c.rva))
+                .filter(|&o| o < u64::from(c.size));
+            match own {
+                Some(o) => out.extend_from_slice(format!("<self+{o:#x}>").as_bytes()),
+                None => {
+                    let name = p.name_va(va);
+                    out.extend_from_slice(format!("{name:?}").as_bytes());
+                }
+            }
             at += size;
             r += 1;
             continue;
         }
-        if (c.rva as usize + at) & 3 == 0 && at + 4 <= data.len() {
+        // A compiler temporary's name in `/RTC1` data: its number is the
+        // translation unit's own.
+        if let Some(n) = bytes::temporary(&data, at) {
+            out.extend_from_slice(b"<$S#>");
+            at += n;
+            // (And the NULs padding it: its number's length varies.)
+            while data.get(at) == Some(&0) {
+                at += 1;
+            }
+            continue;
+        }
+        if (c.rva as usize + at) & 3 == 0 && at + 4 <= data.len() && !text(&data[at..at + 4]) {
             let w = u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]);
-            if let Some(n) = p.section_of(w).and(p.name(w)) {
+            // Only a word naming the start of something: any small integer
+            // (a size, an offset, four characters of a string) is an RVA in
+            // some section, and would name a function's middle by its
+            // address (which follows the layout).
+            if let Some(n) = p.section_of(w).and(p.name(w)).filter(|n| n.1 == 0) {
                 out.extend_from_slice(format!("{n:?}").as_bytes());
                 at += 4;
                 continue;
@@ -230,6 +264,135 @@ fn content(p: &Linked<'_>, c: &Contribution) -> Vec<u8> {
         at += 1;
     }
     out
+}
+
+/// Whether a word's bytes read as text: a printable character, then
+/// printable characters or NULs (`Pos\0`, a variable's name in MSVC's
+/// `/RTC1` data). As an RVA it would name whatever starts there, which
+/// follows the layout; a real RVA that reads as text (about one in twenty)
+/// keeps its bytes, and its contribution then pairs with nothing (reported).
+fn text(w: &[u8]) -> bool {
+    let printable = |c: u8| (0x20..0x7F).contains(&c);
+    printable(w[0]) && w[1..].iter().all(|&c| c == 0 || printable(c))
+}
+
+/// Names unlabeled read-only data by its content, in both programs, so
+/// that references to it compare by what it holds rather than by the
+/// module that held it.
+///
+/// Folding moves a function's associative read-only data (MSVC's `/RTC1`
+/// variable descriptions and their names, say) with it, into another
+/// module, and nothing labels it but its contribution (module,
+/// characteristics, size, CRCs); and a function whose copy came from
+/// another module refers to that module's copy of the data, while the
+/// first module's copy may stay for its other functions. That data refers to more such data, so a
+/// name by content is found in rounds: each round names every such
+/// contribution by its content with the previous round's names in it (see
+/// [`content`]), until a round tells no two contributions apart that the
+/// one before didn't, and joins none it had told apart (at most 16).
+///
+/// Named so are the contributions whose labels the other program lacks,
+/// and, round by round, every other with the content of one named so.
+/// Two contributions of the same content then have one name, and are
+/// interchangeable: sound for data nothing writes (an address compared as
+/// a number is the exception, as everywhere in this comparison). Code and
+/// writable data keep their labels. Returns how many contributions were
+/// named.
+fn name_by_content(a: &mut Linked<'_>, b: &mut Linked<'_>) -> usize {
+    fn candidates(p: &Linked<'_>) -> Vec<usize> {
+        p.contributions
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| {
+                c.characteristics & (scn::CNT_CODE | scn::MEM_WRITE | scn::CNT_UNINITIALIZED_DATA)
+                    == 0
+                    && c.size > 0
+                    && !p.in_tables(c.rva, c.size)
+                    && p.label_at(c.rva)
+                        .is_none_or(|l| l.priority >= priority::CONTRIBUTION)
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+    let (ca, cb) = (candidates(a), candidates(b));
+    if ca.is_empty() || cb.is_empty() {
+        return 0;
+    }
+    // Named by content: at first those whose labels the other program
+    // lacks; then also each with the content of one so named.
+    let lone = |p: &Linked<'_>, which: &[usize], other: &Linked<'_>| -> Vec<bool> {
+        let theirs: turbonop_hash::Set<&[u8]> = other
+            .contributions
+            .iter()
+            .map(|c| key(other, c).0)
+            .collect();
+        which
+            .iter()
+            .map(|&i| !theirs.contains(&*p.contributions[i].label))
+            .collect()
+    };
+    let mut named: Vec<bool> = lone(a, &ca, b);
+    named.extend(lone(b, &cb, a));
+    // Each candidate's class in the round before (its label at first).
+    let mut previous: Vec<usize> = (0..ca.len() + cb.len()).collect();
+    for round in 0..16 {
+        let (xa, xb) = turbonop_par::join(
+            || turbonop_par::map(&ca, 64, |&i| content(a, &a.contributions[i])),
+            || turbonop_par::map(&cb, 64, |&j| content(b, &b.contributions[j])),
+        );
+        let mut ids: Map<&[u8], usize> = Map::default();
+        let classes: Vec<usize> = xa
+            .iter()
+            .chain(&xb)
+            .map(|c| {
+                let n = ids.len();
+                *ids.entry(c.as_slice()).or_insert(n)
+            })
+            .collect();
+        // Stable when the two rounds' classes correspond one to one.
+        let mut pairs: turbonop_hash::Set<(usize, usize)> = turbonop_hash::Set::default();
+        let mut olds: turbonop_hash::Set<usize> = turbonop_hash::Set::default();
+        for (&o, &n) in previous.iter().zip(&classes) {
+            pairs.insert((o, n));
+            olds.insert(o);
+        }
+        let n_classes = ids.len();
+        drop(ids);
+        let mut stable = round > 0 && pairs.len() == n_classes && pairs.len() == olds.len();
+        drop(xa);
+        drop(xb);
+        let mut named_class = vec![false; n_classes];
+        for (&class, &n) in classes.iter().zip(&named) {
+            named_class[class] |= n;
+        }
+        for (n, &class) in named.iter_mut().zip(&classes) {
+            if !*n && named_class[class] {
+                *n = true;
+                stable = false;
+            }
+        }
+        fn apply(p: &mut Linked<'_>, which: &[usize], classes: &[usize], named: &[bool]) {
+            for ((&i, &class), _) in which.iter().zip(classes).zip(named).filter(|x| *x.1) {
+                let c = &p.contributions[i];
+                let name: Box<[u8]> = format!(
+                    "[read-only data {:x} {:x} by content {class}]",
+                    c.characteristics, c.size
+                )
+                .into_bytes()
+                .into();
+                let rva = c.rva;
+                p.rename(rva, name.clone());
+                p.contributions[i].label = name;
+            }
+        }
+        apply(a, &ca, &classes[..ca.len()], &named[..ca.len()]);
+        apply(b, &cb, &classes[ca.len()..], &named[ca.len()..]);
+        previous = classes;
+        if stable {
+            break;
+        }
+    }
+    named.iter().filter(|&&n| n).count()
 }
 
 fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
@@ -242,14 +405,22 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
     let mut pairs = Vec::new();
     let mut lone_a = Vec::new();
     // (Contributions holding the linker's tables are compared as tables.)
+    // (And those that are wholly unwind information, compared function
+    // by function with the `.pdata` entries that name them.)
+    let (ua, ub) = (tables::unwind_ranges(a), tables::unwind_ranges(b));
     let mut paired_b: Vec<bool> = b
         .contributions
         .iter()
-        .map(|c| b.in_tables(c.rva, c.size))
+        .map(|c| c.size == 0 || b.in_tables(c.rva, c.size) || tables::covered(&ub, c.rva, c.size))
         .collect();
     let mut tables = 0;
     for (i, c) in a.contributions.iter().enumerate() {
-        if a.in_tables(c.rva, c.size) {
+        // (lld-link lists empty contributions, at the address of what
+        // follows them: nothing to compare.)
+        if c.size == 0 {
+            continue;
+        }
+        if a.in_tables(c.rva, c.size) || tables::covered(&ua, c.rva, c.size) {
             tables += 1;
             continue;
         }
@@ -297,7 +468,7 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
     for i in lone_a {
         let c = &a.contributions[i];
         rep.fail("functions or data only in the first program", || {
-            show(key(a, c).0)
+            format!("{} (RVA {:#x})", show(key(a, c).0), c.rva)
         });
     }
     for (j, c) in b.contributions.iter().enumerate() {
@@ -311,7 +482,9 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
                 || show(k),
             );
         } else {
-            rep.fail("functions or data only in the second program", || show(k));
+            rep.fail("functions or data only in the second program", || {
+                format!("{} (RVA {:#x})", show(k), c.rva)
+            });
         }
     }
     // Each pair, in parallel.
@@ -354,6 +527,7 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
         fields.absolute += f.absolute;
         fields.relative += f.relative;
         fields.inferred += f.inferred;
+        fields.temporaries += f.temporaries;
         compared += n;
     }
     rep.checked(
@@ -374,6 +548,12 @@ fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {
         "image-relative words matched by name (inferred)",
         fields.inferred,
     );
+    if fields.temporaries > 0 {
+        rep.expect(
+            "names of compiler temporaries in /RTC1 data numbered otherwise (another translation unit's copy kept)",
+            || format!("{}", fields.temporaries),
+        );
+    }
     // What no contribution covers.
     let uncovered = |p: &Linked<'_>| {
         let covered: u64 = p.contributions.iter().map(|c| u64::from(c.size)).sum();

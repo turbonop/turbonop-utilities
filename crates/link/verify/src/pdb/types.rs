@@ -64,12 +64,23 @@ pub(crate) fn records<'s>(stream: &'s TypeStream<'_>) -> Vec<TypeRecord<'s>> {
 /// With `tagless`, a unique name's translation-unit tag (MSVC ends a
 /// lambda's or an anonymous type's unique name with `` `xxxxxxxx ``, eight
 /// hex digits naming the translation unit) is left out, so that the same
-/// type from two translation units' copies hashes the same.
+/// type from two translation units' copies hashes the same; and so is a
+/// function type's attribute 0x08 (a bit of `CV_funcattr_t` that
+/// `cvinfo.h` leaves unused), which MSVC 14.52 sets in the type of a
+/// constructor in some translation units and not in others (seen on the
+/// implicit constructors of the same classes, in two objects).
+///
+/// With `by_name` too, a class, structure, union, interface, or enum is
+/// its kind and name (without tags) alone, not its fields: another
+/// translation unit's definition of a class can differ in the members it
+/// lists (MSVC lists the special members a translation unit declares
+/// implicitly, which follows what it uses).
 pub(crate) fn hash(
     records: &[TypeRecord<'_>],
     other: Option<(&Hashes, &[TypeRecord<'_>])>,
     names: Option<&turbonop_pdb::StringTable<'_>>,
     tagless: bool,
+    by_name: bool,
 ) -> Hashes {
     let other_hashes = other.map(|o| o.0);
     // Each record's index fields, in parallel.
@@ -128,19 +139,37 @@ pub(crate) fn hash(
         let hashed = turbonop_par::map(indices, 2048, |&i| {
             let i = i as usize;
             let r = &records[i];
+            let owned;
+            let data: &[u8] = match function_attributes(r.kind, r.data) {
+                Some(at) if tagless && r.data[at] & 0x08 != 0 => {
+                    let mut d = r.data.to_vec();
+                    d[at] &= !0x08;
+                    owned = d;
+                    &owned
+                }
+                _ => r.data,
+            };
             let mut h = H128::new();
+            if by_name
+                && is_udt(r.kind)
+                && let Some(name) = r.name()
+            {
+                h.u64(0xDE);
+                h.bytes(&without_tags(name));
+                return h.finish();
+            }
             h.u64(u64::from(r.kind));
             match &refs[i] {
-                Err(_) => h.bytes(r.data),
+                Err(_) => h.bytes(data),
                 Ok(list) => {
                     let mut from = 0;
                     for f in list {
                         let o = f.offset as usize;
-                        if o < from || o + 4 > r.data.len() {
+                        if o < from || o + 4 > data.len() {
                             continue;
                         }
-                        h.bytes(&r.data[from..o]);
-                        let v = value(r.data, f);
+                        h.bytes(&data[from..o]);
+                        let v = value(data, f);
                         if own(f) {
                             if v >= FIRST && (v - FIRST) as usize >= i {
                                 h.u64(u64::from(v) | (1 << 63));
@@ -166,15 +195,15 @@ pub(crate) fn hash(
                     // linker saw the type in first, an index into the
                     // module list, whose order differs between links (and
                     // which folding may change), so it is left out.
-                    if r.kind == LF_UDT_MOD_SRC_LINE && from == 4 && r.data.len() >= 14 {
-                        let file = u32::from_le_bytes([r.data[4], r.data[5], r.data[6], r.data[7]]);
+                    if r.kind == LF_UDT_MOD_SRC_LINE && from == 4 && data.len() >= 14 {
+                        let file = u32::from_le_bytes([data[4], data[5], data[6], data[7]]);
                         h.bytes(names.and_then(|n| n.get(file)).unwrap_or(b"\xFF"));
-                        h.bytes(&r.data[8..12]);
-                        h.bytes(&r.data[14..]);
+                        h.bytes(&data[8..12]);
+                        h.bytes(&data[14..]);
                     } else if tagless {
-                        h.bytes(&without_tags(&r.data[from..]));
+                        h.bytes(&without_tags(&data[from..]));
                     } else {
-                        h.bytes(&r.data[from..]);
+                        h.bytes(&data[from..]);
                     }
                 }
             }
@@ -185,6 +214,32 @@ pub(crate) fn hash(
         }
     }
     out
+}
+
+/// Whether a TPI record is a user-defined type (a class, structure, union,
+/// interface, or enum).
+fn is_udt(kind: u16) -> bool {
+    // LF_CLASS, LF_STRUCTURE, LF_UNION, LF_ENUM, LF_INTERFACE, and their
+    // 19-series forms.
+    matches!(
+        kind,
+        0x1504 | 0x1505 | 0x1506 | 0x1507 | 0x1519 | 0x1608 | 0x1609 | 0x160B | 0x160C
+    )
+}
+
+/// Where a function type's attributes (`CV_funcattr_t`) are in its
+/// record's data: `LF_MFUNCTION` (return, class, and `this` types, then
+/// the calling convention) and `LF_PROCEDURE` (return type, calling
+/// convention).
+fn function_attributes(kind: u16, data: &[u8]) -> Option<usize> {
+    const LF_PROCEDURE: u16 = 0x1008;
+    const LF_MFUNCTION: u16 = 0x1009;
+    let at = match kind {
+        LF_MFUNCTION => 13,
+        LF_PROCEDURE => 5,
+        _ => return None,
+    };
+    (at < data.len()).then_some(at)
 }
 
 /// `LF_UDT_SRC_LINE`: an object's source line of a UDT.

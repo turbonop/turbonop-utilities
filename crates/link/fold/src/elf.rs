@@ -1539,7 +1539,7 @@ fn synthesize<'a>(
                 .iter()
                 .flat_map(|&(m, u)| parsed[m].units[u].sections.iter().copied())
                 .collect();
-            dwarf::build(src, &moved)
+            dwarf::build(src, &moved, None)
         }
         Some(Err(e)) => Err(*e),
         None => Ok(None),

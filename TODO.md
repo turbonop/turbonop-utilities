@@ -308,11 +308,16 @@ disassembly, `size` with its findings, and the extension's pages.
 
 ## ARM64
 
-- **SMSTART and SMSTOP don't decode.** `D503417F` to `D503477F` (and so
-  MSR SVCRSM, SVCRZA, SVCRSMZA) are None: MSR (immediate)'s
-  `<pstatefield>` has no SVCR rows, and the SMSTART alias's `<option>`
-  doesn't render. LLVM decodes them. (Their access data, zeroing the
-  vector state, is in place for when they do.)
+- **Unallocated PSTATE fields.** MSR (immediate) with a field no row
+  names (`D503417F`: SVCR's with neither SM nor ZA) doesn't decode; LLVM
+  writes it as the MSR (register) it would be with op0 0 (`msr
+  S0_3_C4_C1_3, xzr`). Which to follow (dumpbin's golden words have
+  none).
+- **The fixes in `tools/arm64/extract.py`** (`FIXES`: BTI's, SMSTART's,
+  and SMSTOP's operand) correct lines its reading of AARCHMRS writes
+  wrong; when AARCHMRS is next read, see whether the reading of such
+  rules (no encoded field; alternatives starting with a space) can be
+  fixed itself.
 
 ## The web version
 

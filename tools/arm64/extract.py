@@ -1420,10 +1420,46 @@ def mark_should_bits(text, should):
     return "\n".join(out)
 
 
+# Lines the grammar's reading gets wrong, replaced as they are written:
+# (the line written, the lines it is instead). A fix whose line isn't
+# written any more is an error (the reading changed: see if it still
+# applies).
+#
+# - BTI's, SMSTART's, and SMSTOP's optional operand (`BTI {<targets>}`,
+#   `SMSTART {<option>}`) is a rule AARCHMRS gives no encoded field, and
+#   whose alternatives start with a space: it was read as a table of one
+#   empty row keyed by nothing (`None = ? | 00:`), which renders no word,
+#   so that BTI, SMSTART, and SMSTOP didn't decode. As LLVM reads them:
+#   BTI's targets are op2<2:1> (none, C, J, JC); SMSTART's and SMSTOP's
+#   are CRm<2:1> (SM, ZA, or both, shown as none; 00 is unallocated).
+FIXES = [
+    ("  asm BTI%{optional_targets}", ["  asm BTI {%{optional_targets}}"]),
+    ("sym optional_targets None = ? | 00:",
+     ["sym optional_targets <targets> op2[2:1] = op2[2:1] | 00: | 01:C | 10:J | 11:JC"]),
+    ("  asm SMSTART%{optional_targets__2}", ["  asm SMSTART {%{optional_targets__2}}"]),
+    ("sym optional_targets__2 None = ? | 11:",
+     ["sym optional_targets__2 <option> CRm[2:1] = CRm[2:1] | 01:SM | 10:ZA | 11:"]),
+    ("  asm SMSTOP%{optional_targets__3}", ["  asm SMSTOP {%{optional_targets__3}}"]),
+    ("sym optional_targets__3 None = ? | 11:",
+     ["sym optional_targets__3 <option> CRm[2:1] = CRm[2:1] | 01:SM | 10:ZA | 11:"]),
+]
+
+
+def apply_fixes(text):
+    """`text` with each of FIXES' lines replaced (each must be there, once)."""
+    lines = text.split("\n")
+    for old, new in FIXES:
+        at = [i for i, line in enumerate(lines) if line == old]
+        if len(at) != 1:
+            raise SystemExit(f"extract.py: fix for {old!r}: found {len(at)} times, not once")
+        lines[at[0]:at[0] + 1] = new
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     _buf = io.StringIO()
     with contextlib.redirect_stdout(_buf):
         main()
     _mrs = load_mrs(sys.argv[1])
     _a64 = next(g for g in _mrs["instructions"] if g["name"] == "A64")
-    sys.stdout.write(mark_should_bits(_buf.getvalue(), should_bits(_a64)))
+    sys.stdout.write(apply_fixes(mark_should_bits(_buf.getvalue(), should_bits(_a64))))

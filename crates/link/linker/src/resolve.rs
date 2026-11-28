@@ -306,10 +306,12 @@ struct Linker {
 
 impl Linker {
     fn intern(&mut self, name: &'static [u8]) -> u32 {
-        if let Some(&g) = self.names.get(name) {
-            return g;
-        }
-        let g = u32::try_from(self.globals.len()).expect("fewer than 4 billion symbols");
+        // (One lookup, the name hashed once, whether it's new or not.)
+        let next = u32::try_from(self.globals.len()).expect("fewer than 4 billion symbols");
+        let g = match self.names.entry(name) {
+            std::collections::hash_map::Entry::Occupied(e) => return *e.get(),
+            std::collections::hash_map::Entry::Vacant(e) => *e.insert(next),
+        };
         // A function override's name (`f_$fo$`) that nothing defines is the
         // image's base (RVA 0), as link.exe makes it without /FUNCTIONOVERRIDE:
         // no library is searched for it, and an /ALTERNATENAME for it is not
@@ -327,7 +329,6 @@ impl Linker {
             referenced_by: NONE,
             optional: false,
         });
-        self.names.insert(name, g);
         self.pending.push(g);
         g
     }

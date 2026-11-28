@@ -1,0 +1,64 @@
+Classfile /R:/testdata/java/main/fixture/Annotated$Inner.class
+  Last modified Nov 27, 2026; size 533 bytes
+  SHA-256 checksum 36385fddf0abd8be73b0428a55e4292745620207b66cdba111b186e7a4d57ca1
+  Compiled from "Annotated.java"
+public class fixture.Annotated$Inner
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #7                          // fixture/Annotated$Inner
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 1, attributes: 3
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = Class              #8             // fixture/Annotated$Inner
+   #8 = Utf8               fixture/Annotated$Inner
+   #9 = Utf8               (Lfixture/Annotated;)V
+  #10 = Utf8               Code
+  #11 = Utf8               LineNumberTable
+  #12 = Utf8               LocalVariableTable
+  #13 = Utf8               this
+  #14 = Utf8               Lfixture/Annotated$Inner;
+  #15 = Utf8               this$0
+  #16 = Utf8               Lfixture/Annotated;
+  #17 = Utf8               LocalVariableTypeTable
+  #18 = Utf8               Lfixture/Annotated<TT;>.Inner;
+  #19 = Utf8               MethodParameters
+  #20 = Utf8               SourceFile
+  #21 = Utf8               Annotated.java
+  #22 = Utf8               NestHost
+  #23 = Class              #24            // fixture/Annotated
+  #24 = Utf8               fixture/Annotated
+  #25 = Utf8               InnerClasses
+  #26 = Utf8               Inner
+{
+  public fixture.Annotated$Inner(fixture.Annotated);
+    descriptor: (Lfixture/Annotated;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=2, args_size=2
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 24: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Annotated$Inner;
+            0       5     1 this$0   Lfixture/Annotated;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Annotated<TT;>.Inner;
+    MethodParameters:
+      Name                           Flags
+      this$0                         final mandated
+}
+SourceFile: "Annotated.java"
+NestHost: class fixture/Annotated
+InnerClasses:
+  public #26= #7 of #23;                  // Inner=class fixture/Annotated$Inner of class fixture/Annotated

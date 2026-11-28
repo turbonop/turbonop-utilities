@@ -73,6 +73,8 @@ turbonop-macho = { path = "crates/formats/macho" }
 turbonop-macho-object = { path = "crates/formats/macho-object" }
 turbonop-wasm = { path = "crates/formats/wasm" }
 turbonop-clr = { path = "crates/formats/clr" }
+turbonop-zip = { path = "crates/formats/zip" }
+turbonop-java = { path = "crates/formats/java" }
 turbonop-wasm-isa = { path = "crates/isa/wasm" }
 turbonop-pe = { path = "crates/formats/pe" }
 turbonop-coff = { path = "crates/formats/coff" }

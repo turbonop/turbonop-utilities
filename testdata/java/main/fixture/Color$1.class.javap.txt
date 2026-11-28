@@ -1,0 +1,81 @@
+Classfile /R:/testdata/java/main/fixture/Color$1.class
+  Last modified Nov 27, 2026; size 550 bytes
+  SHA-256 checksum f1c4961da58c49a6a113361a57c60660aca92fa775309f29baf42ea892a60159
+  Compiled from "Color.java"
+final class fixture.Color$1 extends fixture.Color
+  minor version: 0
+  major version: 65
+  flags: (0x4030) ACC_FINAL, ACC_SUPER, ACC_ENUM
+  this_class: #9                          // fixture/Color$1
+  super_class: #2                         // fixture/Color
+  interfaces: 0, fields: 0, methods: 2, attributes: 4
+Constant pool:
+   #1 = Methodref          #2.#3          // fixture/Color."<init>":(Ljava/lang/String;II)V
+   #2 = Class              #4             // fixture/Color
+   #3 = NameAndType        #5:#6          // "<init>":(Ljava/lang/String;II)V
+   #4 = Utf8               fixture/Color
+   #5 = Utf8               <init>
+   #6 = Utf8               (Ljava/lang/String;II)V
+   #7 = String             #8             // green!
+   #8 = Utf8               green!
+   #9 = Class              #10            // fixture/Color$1
+  #10 = Utf8               fixture/Color$1
+  #11 = Utf8               Code
+  #12 = Utf8               LineNumberTable
+  #13 = Utf8               LocalVariableTable
+  #14 = Utf8               this
+  #15 = Utf8               Lfixture/Color$1;
+  #16 = Utf8               rgb
+  #17 = Utf8               I
+  #18 = Utf8               MethodParameters
+  #19 = Utf8               $enum$name
+  #20 = Utf8               $enum$ordinal
+  #21 = Utf8               describe
+  #22 = Utf8               ()Ljava/lang/String;
+  #23 = Utf8               SourceFile
+  #24 = Utf8               Color.java
+  #25 = Utf8               EnclosingMethod
+  #26 = Utf8               NestHost
+  #27 = Utf8               InnerClasses
+{
+  private fixture.Color$1(java.lang.String, int, int);
+    descriptor: (Ljava/lang/String;II)V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=4, locals=4, args_size=4
+         0: aload_0
+         1: aload_1
+         2: iload_2
+         3: iload_3
+         4: invokespecial #1                  // Method fixture/Color."<init>":(Ljava/lang/String;II)V
+         7: return
+      LineNumberTable:
+        line 6: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       8     0  this   Lfixture/Color$1;
+            0       8     3   rgb   I
+    MethodParameters:
+      Name                           Flags
+      $enum$name                     synthetic
+      $enum$ordinal                  synthetic
+      rgb
+
+  public java.lang.String describe();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: ldc           #7                  // String green!
+         2: areturn
+      LineNumberTable:
+        line 9: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       3     0  this   Lfixture/Color$1;
+}
+SourceFile: "Color.java"
+EnclosingMethod: #2.#0                  // fixture.Color
+NestHost: class fixture/Color
+InnerClasses:
+  final #9;                               // class fixture/Color$1

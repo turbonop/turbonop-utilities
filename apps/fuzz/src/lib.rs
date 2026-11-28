@@ -90,6 +90,12 @@ fn is_clr(_: &Path, d: &[u8]) -> bool {
         || (starts(d, b"MZ")
             && turbonop_pe::PeFile::parse_image(d).is_ok_and(|pe| pe.clr().is_some()))
 }
+fn is_java(_: &Path, d: &[u8]) -> bool {
+    turbonop_java::is_class(d)
+}
+fn is_zip(_: &Path, d: &[u8]) -> bool {
+    turbonop_zip::is_zip(d)
+}
 fn is_wasm(_: &Path, d: &[u8]) -> bool {
     starts(d, b"\0asm")
 }
@@ -308,6 +314,84 @@ fn wasm(data: &[u8], s: &Scratch) {
         );
     }
     unix("input-wasm.bin", data, s);
+}
+
+/// Java class files: the constant pool and every lookup, attributes,
+/// signatures and descriptors, bytecode, javap's text; `info`.
+fn java(data: &[u8], s: &Scratch) {
+    java_class(data);
+    let f = s.file("input-java.bin", data);
+    hexcavator(&["info", &f]);
+}
+
+fn java_class(data: &[u8]) {
+    use turbonop_java::attributes::AttributeValue;
+    use turbonop_java::types::{
+        parse_any_signature, parse_field_descriptor, parse_method_descriptor,
+    };
+    let Ok(cf) = turbonop_java::ClassFile::parse(data) else {
+        return;
+    };
+    let cp = &cf.constant_pool;
+    let _ = (
+        cf.name(),
+        cf.super_name(),
+        cf.interface_names(),
+        cf.source_file(),
+    );
+    for i in 0..u16::try_from(cp.count()).unwrap_or(u16::MAX) {
+        let _ = (
+            cp.utf8(i),
+            cp.class_name(i),
+            cp.member_ref(i),
+            cp.name_and_type(i),
+        );
+    }
+    for m in cf.methods.iter().chain(&cf.fields) {
+        if let Ok(d) = m.descriptor(cp) {
+            let _ = (parse_method_descriptor(&d), parse_field_descriptor(&d));
+        }
+        for a in &m.attributes {
+            match &a.value {
+                AttributeValue::Signature(i) => {
+                    if let Ok(s) = cp.utf8(*i) {
+                        let _ = parse_any_signature(&s);
+                    }
+                }
+                AttributeValue::Code(c) => {
+                    let _ = turbonop_java::bytecode::decode(c.code).count();
+                }
+                _ => {}
+            }
+        }
+    }
+    let _ = turbonop_java::javap::render(&cf, &turbonop_java::javap::Options::default());
+}
+
+/// ZIP archives and JARs: every entry's headers, extra fields, data
+/// (inflated, CRC checked); a JAR's manifest, layout, and classes; `info`.
+fn zip(data: &[u8], s: &Scratch) {
+    if let Ok(a) = turbonop_zip::Archive::parse(data) {
+        for e in a.entries() {
+            let _ = (
+                e.name(),
+                e.comment(),
+                e.unix_modified(),
+                e.extra_fields().count(),
+            );
+            let _ = (a.extent(e), a.data_descriptor(e));
+        }
+        let jar = turbonop_java::Jar::from_archive(a);
+        let _ = (jar.releases(), jar.signature_files(), jar.package_sizes());
+        let _ = jar.classes_for_release(21);
+        jar.par_map_classes(|_, d| {
+            if let Ok(d) = d {
+                java_class(&d);
+            }
+        });
+    }
+    let f = s.file("input-zip.bin", data);
+    hexcavator(&["info", &f]);
 }
 
 /// .NET metadata: every table, heap, name, signature, method body and its
@@ -908,6 +992,18 @@ pub const TARGETS: &[Target] = &[
         about: "WebAssembly modules: size by every source, disassembly",
         seeds: is_wasm,
         run: wasm,
+    },
+    Target {
+        name: "java",
+        about: "Java class files: constant pool, attributes, signatures, bytecode, javap text",
+        seeds: is_java,
+        run: java,
+    },
+    Target {
+        name: "zip",
+        about: "ZIP archives and JARs: entries, extra fields, inflate, manifests, classes",
+        seeds: is_zip,
+        run: zip,
     },
     Target {
         name: "clr",

@@ -1,0 +1,3012 @@
+Classfile /R:/testdata/java/main/fixture/Wide.class
+  Last modified Nov 27, 2026; size 10928 bytes
+  SHA-256 checksum 0d3f3cda4f4db765d7e04ae4e3939eb6d564e51a8f1170681ad92ee6e7a163d8
+  Compiled from "Wide.java"
+public class fixture.Wide
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #866                        // fixture/Wide
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 4, attributes: 1
+Constant pool:
+     #1 = Methodref          #2.#3        // java/lang/Object."<init>":()V
+     #2 = Class              #4           // java/lang/Object
+     #3 = NameAndType        #5:#6        // "<init>":()V
+     #4 = Utf8               java/lang/Object
+     #5 = Utf8               <init>
+     #6 = Utf8               ()V
+     #7 = Long               2l
+     #9 = Long               3l
+    #11 = Long               4l
+    #13 = Long               5l
+    #15 = Long               6l
+    #17 = Long               7l
+    #19 = Long               8l
+    #21 = Long               9l
+    #23 = Long               10l
+    #25 = Long               11l
+    #27 = Long               12l
+    #29 = Long               13l
+    #31 = Long               14l
+    #33 = Long               15l
+    #35 = Long               16l
+    #37 = Long               17l
+    #39 = Long               18l
+    #41 = Long               19l
+    #43 = Long               20l
+    #45 = Long               21l
+    #47 = Long               22l
+    #49 = Long               23l
+    #51 = Long               24l
+    #53 = Long               25l
+    #55 = Long               26l
+    #57 = Long               27l
+    #59 = Long               28l
+    #61 = Long               29l
+    #63 = Long               30l
+    #65 = Long               31l
+    #67 = Long               32l
+    #69 = Long               33l
+    #71 = Long               34l
+    #73 = Long               35l
+    #75 = Long               36l
+    #77 = Long               37l
+    #79 = Long               38l
+    #81 = Long               39l
+    #83 = Long               40l
+    #85 = Long               41l
+    #87 = Long               42l
+    #89 = Long               43l
+    #91 = Long               44l
+    #93 = Long               45l
+    #95 = Long               46l
+    #97 = Long               47l
+    #99 = Long               48l
+   #101 = Long               49l
+   #103 = Long               50l
+   #105 = Long               51l
+   #107 = Long               52l
+   #109 = Long               53l
+   #111 = Long               54l
+   #113 = Long               55l
+   #115 = Long               56l
+   #117 = Long               57l
+   #119 = Long               58l
+   #121 = Long               59l
+   #123 = Long               60l
+   #125 = Long               61l
+   #127 = Long               62l
+   #129 = Long               63l
+   #131 = Long               64l
+   #133 = Long               65l
+   #135 = Long               66l
+   #137 = Long               67l
+   #139 = Long               68l
+   #141 = Long               69l
+   #143 = Long               70l
+   #145 = Long               71l
+   #147 = Long               72l
+   #149 = Long               73l
+   #151 = Long               74l
+   #153 = Long               75l
+   #155 = Long               76l
+   #157 = Long               77l
+   #159 = Long               78l
+   #161 = Long               79l
+   #163 = Long               80l
+   #165 = Long               81l
+   #167 = Long               82l
+   #169 = Long               83l
+   #171 = Long               84l
+   #173 = Long               85l
+   #175 = Long               86l
+   #177 = Long               87l
+   #179 = Long               88l
+   #181 = Long               89l
+   #183 = Long               90l
+   #185 = Long               91l
+   #187 = Long               92l
+   #189 = Long               93l
+   #191 = Long               94l
+   #193 = Long               95l
+   #195 = Long               96l
+   #197 = Long               97l
+   #199 = Long               98l
+   #201 = Long               99l
+   #203 = Long               100l
+   #205 = Long               101l
+   #207 = Long               102l
+   #209 = Long               103l
+   #211 = Long               104l
+   #213 = Long               105l
+   #215 = Long               106l
+   #217 = Long               107l
+   #219 = Long               108l
+   #221 = Long               109l
+   #223 = Long               110l
+   #225 = Long               111l
+   #227 = Long               112l
+   #229 = Long               113l
+   #231 = Long               114l
+   #233 = Long               115l
+   #235 = Long               116l
+   #237 = Long               117l
+   #239 = Long               118l
+   #241 = Long               119l
+   #243 = Long               120l
+   #245 = Long               121l
+   #247 = Long               122l
+   #249 = Long               123l
+   #251 = Long               124l
+   #253 = Long               125l
+   #255 = Long               126l
+   #257 = Long               127l
+   #259 = Long               128l
+   #261 = Long               129l
+   #263 = Class              #264         // java/lang/String
+   #264 = Utf8               java/lang/String
+   #265 = String             #266         // s0
+   #266 = Utf8               s0
+   #267 = String             #268         // s1
+   #268 = Utf8               s1
+   #269 = String             #270         // s2
+   #270 = Utf8               s2
+   #271 = String             #272         // s3
+   #272 = Utf8               s3
+   #273 = String             #274         // s4
+   #274 = Utf8               s4
+   #275 = String             #276         // s5
+   #276 = Utf8               s5
+   #277 = String             #278         // s6
+   #278 = Utf8               s6
+   #279 = String             #280         // s7
+   #280 = Utf8               s7
+   #281 = String             #282         // s8
+   #282 = Utf8               s8
+   #283 = String             #284         // s9
+   #284 = Utf8               s9
+   #285 = String             #286         // s10
+   #286 = Utf8               s10
+   #287 = String             #288         // s11
+   #288 = Utf8               s11
+   #289 = String             #290         // s12
+   #290 = Utf8               s12
+   #291 = String             #292         // s13
+   #292 = Utf8               s13
+   #293 = String             #294         // s14
+   #294 = Utf8               s14
+   #295 = String             #296         // s15
+   #296 = Utf8               s15
+   #297 = String             #298         // s16
+   #298 = Utf8               s16
+   #299 = String             #300         // s17
+   #300 = Utf8               s17
+   #301 = String             #302         // s18
+   #302 = Utf8               s18
+   #303 = String             #304         // s19
+   #304 = Utf8               s19
+   #305 = String             #306         // s20
+   #306 = Utf8               s20
+   #307 = String             #308         // s21
+   #308 = Utf8               s21
+   #309 = String             #310         // s22
+   #310 = Utf8               s22
+   #311 = String             #312         // s23
+   #312 = Utf8               s23
+   #313 = String             #314         // s24
+   #314 = Utf8               s24
+   #315 = String             #316         // s25
+   #316 = Utf8               s25
+   #317 = String             #318         // s26
+   #318 = Utf8               s26
+   #319 = String             #320         // s27
+   #320 = Utf8               s27
+   #321 = String             #322         // s28
+   #322 = Utf8               s28
+   #323 = String             #324         // s29
+   #324 = Utf8               s29
+   #325 = String             #326         // s30
+   #326 = Utf8               s30
+   #327 = String             #328         // s31
+   #328 = Utf8               s31
+   #329 = String             #330         // s32
+   #330 = Utf8               s32
+   #331 = String             #332         // s33
+   #332 = Utf8               s33
+   #333 = String             #334         // s34
+   #334 = Utf8               s34
+   #335 = String             #336         // s35
+   #336 = Utf8               s35
+   #337 = String             #338         // s36
+   #338 = Utf8               s36
+   #339 = String             #340         // s37
+   #340 = Utf8               s37
+   #341 = String             #342         // s38
+   #342 = Utf8               s38
+   #343 = String             #344         // s39
+   #344 = Utf8               s39
+   #345 = String             #346         // s40
+   #346 = Utf8               s40
+   #347 = String             #348         // s41
+   #348 = Utf8               s41
+   #349 = String             #350         // s42
+   #350 = Utf8               s42
+   #351 = String             #352         // s43
+   #352 = Utf8               s43
+   #353 = String             #354         // s44
+   #354 = Utf8               s44
+   #355 = String             #356         // s45
+   #356 = Utf8               s45
+   #357 = String             #358         // s46
+   #358 = Utf8               s46
+   #359 = String             #360         // s47
+   #360 = Utf8               s47
+   #361 = String             #362         // s48
+   #362 = Utf8               s48
+   #363 = String             #364         // s49
+   #364 = Utf8               s49
+   #365 = String             #366         // s50
+   #366 = Utf8               s50
+   #367 = String             #368         // s51
+   #368 = Utf8               s51
+   #369 = String             #370         // s52
+   #370 = Utf8               s52
+   #371 = String             #372         // s53
+   #372 = Utf8               s53
+   #373 = String             #374         // s54
+   #374 = Utf8               s54
+   #375 = String             #376         // s55
+   #376 = Utf8               s55
+   #377 = String             #378         // s56
+   #378 = Utf8               s56
+   #379 = String             #380         // s57
+   #380 = Utf8               s57
+   #381 = String             #382         // s58
+   #382 = Utf8               s58
+   #383 = String             #384         // s59
+   #384 = Utf8               s59
+   #385 = String             #386         // s60
+   #386 = Utf8               s60
+   #387 = String             #388         // s61
+   #388 = Utf8               s61
+   #389 = String             #390         // s62
+   #390 = Utf8               s62
+   #391 = String             #392         // s63
+   #392 = Utf8               s63
+   #393 = String             #394         // s64
+   #394 = Utf8               s64
+   #395 = String             #396         // s65
+   #396 = Utf8               s65
+   #397 = String             #398         // s66
+   #398 = Utf8               s66
+   #399 = String             #400         // s67
+   #400 = Utf8               s67
+   #401 = String             #402         // s68
+   #402 = Utf8               s68
+   #403 = String             #404         // s69
+   #404 = Utf8               s69
+   #405 = String             #406         // s70
+   #406 = Utf8               s70
+   #407 = String             #408         // s71
+   #408 = Utf8               s71
+   #409 = String             #410         // s72
+   #410 = Utf8               s72
+   #411 = String             #412         // s73
+   #412 = Utf8               s73
+   #413 = String             #414         // s74
+   #414 = Utf8               s74
+   #415 = String             #416         // s75
+   #416 = Utf8               s75
+   #417 = String             #418         // s76
+   #418 = Utf8               s76
+   #419 = String             #420         // s77
+   #420 = Utf8               s77
+   #421 = String             #422         // s78
+   #422 = Utf8               s78
+   #423 = String             #424         // s79
+   #424 = Utf8               s79
+   #425 = String             #426         // s80
+   #426 = Utf8               s80
+   #427 = String             #428         // s81
+   #428 = Utf8               s81
+   #429 = String             #430         // s82
+   #430 = Utf8               s82
+   #431 = String             #432         // s83
+   #432 = Utf8               s83
+   #433 = String             #434         // s84
+   #434 = Utf8               s84
+   #435 = String             #436         // s85
+   #436 = Utf8               s85
+   #437 = String             #438         // s86
+   #438 = Utf8               s86
+   #439 = String             #440         // s87
+   #440 = Utf8               s87
+   #441 = String             #442         // s88
+   #442 = Utf8               s88
+   #443 = String             #444         // s89
+   #444 = Utf8               s89
+   #445 = String             #446         // s90
+   #446 = Utf8               s90
+   #447 = String             #448         // s91
+   #448 = Utf8               s91
+   #449 = String             #450         // s92
+   #450 = Utf8               s92
+   #451 = String             #452         // s93
+   #452 = Utf8               s93
+   #453 = String             #454         // s94
+   #454 = Utf8               s94
+   #455 = String             #456         // s95
+   #456 = Utf8               s95
+   #457 = String             #458         // s96
+   #458 = Utf8               s96
+   #459 = String             #460         // s97
+   #460 = Utf8               s97
+   #461 = String             #462         // s98
+   #462 = Utf8               s98
+   #463 = String             #464         // s99
+   #464 = Utf8               s99
+   #465 = String             #466         // s100
+   #466 = Utf8               s100
+   #467 = String             #468         // s101
+   #468 = Utf8               s101
+   #469 = String             #470         // s102
+   #470 = Utf8               s102
+   #471 = String             #472         // s103
+   #472 = Utf8               s103
+   #473 = String             #474         // s104
+   #474 = Utf8               s104
+   #475 = String             #476         // s105
+   #476 = Utf8               s105
+   #477 = String             #478         // s106
+   #478 = Utf8               s106
+   #479 = String             #480         // s107
+   #480 = Utf8               s107
+   #481 = String             #482         // s108
+   #482 = Utf8               s108
+   #483 = String             #484         // s109
+   #484 = Utf8               s109
+   #485 = String             #486         // s110
+   #486 = Utf8               s110
+   #487 = String             #488         // s111
+   #488 = Utf8               s111
+   #489 = String             #490         // s112
+   #490 = Utf8               s112
+   #491 = String             #492         // s113
+   #492 = Utf8               s113
+   #493 = String             #494         // s114
+   #494 = Utf8               s114
+   #495 = String             #496         // s115
+   #496 = Utf8               s115
+   #497 = String             #498         // s116
+   #498 = Utf8               s116
+   #499 = String             #500         // s117
+   #500 = Utf8               s117
+   #501 = String             #502         // s118
+   #502 = Utf8               s118
+   #503 = String             #504         // s119
+   #504 = Utf8               s119
+   #505 = String             #506         // s120
+   #506 = Utf8               s120
+   #507 = String             #508         // s121
+   #508 = Utf8               s121
+   #509 = String             #510         // s122
+   #510 = Utf8               s122
+   #511 = String             #512         // s123
+   #512 = Utf8               s123
+   #513 = String             #514         // s124
+   #514 = Utf8               s124
+   #515 = String             #516         // s125
+   #516 = Utf8               s125
+   #517 = String             #518         // s126
+   #518 = Utf8               s126
+   #519 = String             #520         // s127
+   #520 = Utf8               s127
+   #521 = String             #522         // s128
+   #522 = Utf8               s128
+   #523 = String             #524         // s129
+   #524 = Utf8               s129
+   #525 = String             #526         // s130
+   #526 = Utf8               s130
+   #527 = String             #528         // s131
+   #528 = Utf8               s131
+   #529 = String             #530         // s132
+   #530 = Utf8               s132
+   #531 = String             #532         // s133
+   #532 = Utf8               s133
+   #533 = String             #534         // s134
+   #534 = Utf8               s134
+   #535 = String             #536         // s135
+   #536 = Utf8               s135
+   #537 = String             #538         // s136
+   #538 = Utf8               s136
+   #539 = String             #540         // s137
+   #540 = Utf8               s137
+   #541 = String             #542         // s138
+   #542 = Utf8               s138
+   #543 = String             #544         // s139
+   #544 = Utf8               s139
+   #545 = String             #546         // s140
+   #546 = Utf8               s140
+   #547 = String             #548         // s141
+   #548 = Utf8               s141
+   #549 = String             #550         // s142
+   #550 = Utf8               s142
+   #551 = String             #552         // s143
+   #552 = Utf8               s143
+   #553 = String             #554         // s144
+   #554 = Utf8               s144
+   #555 = String             #556         // s145
+   #556 = Utf8               s145
+   #557 = String             #558         // s146
+   #558 = Utf8               s146
+   #559 = String             #560         // s147
+   #560 = Utf8               s147
+   #561 = String             #562         // s148
+   #562 = Utf8               s148
+   #563 = String             #564         // s149
+   #564 = Utf8               s149
+   #565 = String             #566         // s150
+   #566 = Utf8               s150
+   #567 = String             #568         // s151
+   #568 = Utf8               s151
+   #569 = String             #570         // s152
+   #570 = Utf8               s152
+   #571 = String             #572         // s153
+   #572 = Utf8               s153
+   #573 = String             #574         // s154
+   #574 = Utf8               s154
+   #575 = String             #576         // s155
+   #576 = Utf8               s155
+   #577 = String             #578         // s156
+   #578 = Utf8               s156
+   #579 = String             #580         // s157
+   #580 = Utf8               s157
+   #581 = String             #582         // s158
+   #582 = Utf8               s158
+   #583 = String             #584         // s159
+   #584 = Utf8               s159
+   #585 = String             #586         // s160
+   #586 = Utf8               s160
+   #587 = String             #588         // s161
+   #588 = Utf8               s161
+   #589 = String             #590         // s162
+   #590 = Utf8               s162
+   #591 = String             #592         // s163
+   #592 = Utf8               s163
+   #593 = String             #594         // s164
+   #594 = Utf8               s164
+   #595 = String             #596         // s165
+   #596 = Utf8               s165
+   #597 = String             #598         // s166
+   #598 = Utf8               s166
+   #599 = String             #600         // s167
+   #600 = Utf8               s167
+   #601 = String             #602         // s168
+   #602 = Utf8               s168
+   #603 = String             #604         // s169
+   #604 = Utf8               s169
+   #605 = String             #606         // s170
+   #606 = Utf8               s170
+   #607 = String             #608         // s171
+   #608 = Utf8               s171
+   #609 = String             #610         // s172
+   #610 = Utf8               s172
+   #611 = String             #612         // s173
+   #612 = Utf8               s173
+   #613 = String             #614         // s174
+   #614 = Utf8               s174
+   #615 = String             #616         // s175
+   #616 = Utf8               s175
+   #617 = String             #618         // s176
+   #618 = Utf8               s176
+   #619 = String             #620         // s177
+   #620 = Utf8               s177
+   #621 = String             #622         // s178
+   #622 = Utf8               s178
+   #623 = String             #624         // s179
+   #624 = Utf8               s179
+   #625 = String             #626         // s180
+   #626 = Utf8               s180
+   #627 = String             #628         // s181
+   #628 = Utf8               s181
+   #629 = String             #630         // s182
+   #630 = Utf8               s182
+   #631 = String             #632         // s183
+   #632 = Utf8               s183
+   #633 = String             #634         // s184
+   #634 = Utf8               s184
+   #635 = String             #636         // s185
+   #636 = Utf8               s185
+   #637 = String             #638         // s186
+   #638 = Utf8               s186
+   #639 = String             #640         // s187
+   #640 = Utf8               s187
+   #641 = String             #642         // s188
+   #642 = Utf8               s188
+   #643 = String             #644         // s189
+   #644 = Utf8               s189
+   #645 = String             #646         // s190
+   #646 = Utf8               s190
+   #647 = String             #648         // s191
+   #648 = Utf8               s191
+   #649 = String             #650         // s192
+   #650 = Utf8               s192
+   #651 = String             #652         // s193
+   #652 = Utf8               s193
+   #653 = String             #654         // s194
+   #654 = Utf8               s194
+   #655 = String             #656         // s195
+   #656 = Utf8               s195
+   #657 = String             #658         // s196
+   #658 = Utf8               s196
+   #659 = String             #660         // s197
+   #660 = Utf8               s197
+   #661 = String             #662         // s198
+   #662 = Utf8               s198
+   #663 = String             #664         // s199
+   #664 = Utf8               s199
+   #665 = String             #666         // s200
+   #666 = Utf8               s200
+   #667 = String             #668         // s201
+   #668 = Utf8               s201
+   #669 = String             #670         // s202
+   #670 = Utf8               s202
+   #671 = String             #672         // s203
+   #672 = Utf8               s203
+   #673 = String             #674         // s204
+   #674 = Utf8               s204
+   #675 = String             #676         // s205
+   #676 = Utf8               s205
+   #677 = String             #678         // s206
+   #678 = Utf8               s206
+   #679 = String             #680         // s207
+   #680 = Utf8               s207
+   #681 = String             #682         // s208
+   #682 = Utf8               s208
+   #683 = String             #684         // s209
+   #684 = Utf8               s209
+   #685 = String             #686         // s210
+   #686 = Utf8               s210
+   #687 = String             #688         // s211
+   #688 = Utf8               s211
+   #689 = String             #690         // s212
+   #690 = Utf8               s212
+   #691 = String             #692         // s213
+   #692 = Utf8               s213
+   #693 = String             #694         // s214
+   #694 = Utf8               s214
+   #695 = String             #696         // s215
+   #696 = Utf8               s215
+   #697 = String             #698         // s216
+   #698 = Utf8               s216
+   #699 = String             #700         // s217
+   #700 = Utf8               s217
+   #701 = String             #702         // s218
+   #702 = Utf8               s218
+   #703 = String             #704         // s219
+   #704 = Utf8               s219
+   #705 = String             #706         // s220
+   #706 = Utf8               s220
+   #707 = String             #708         // s221
+   #708 = Utf8               s221
+   #709 = String             #710         // s222
+   #710 = Utf8               s222
+   #711 = String             #712         // s223
+   #712 = Utf8               s223
+   #713 = String             #714         // s224
+   #714 = Utf8               s224
+   #715 = String             #716         // s225
+   #716 = Utf8               s225
+   #717 = String             #718         // s226
+   #718 = Utf8               s226
+   #719 = String             #720         // s227
+   #720 = Utf8               s227
+   #721 = String             #722         // s228
+   #722 = Utf8               s228
+   #723 = String             #724         // s229
+   #724 = Utf8               s229
+   #725 = String             #726         // s230
+   #726 = Utf8               s230
+   #727 = String             #728         // s231
+   #728 = Utf8               s231
+   #729 = String             #730         // s232
+   #730 = Utf8               s232
+   #731 = String             #732         // s233
+   #732 = Utf8               s233
+   #733 = String             #734         // s234
+   #734 = Utf8               s234
+   #735 = String             #736         // s235
+   #736 = Utf8               s235
+   #737 = String             #738         // s236
+   #738 = Utf8               s236
+   #739 = String             #740         // s237
+   #740 = Utf8               s237
+   #741 = String             #742         // s238
+   #742 = Utf8               s238
+   #743 = String             #744         // s239
+   #744 = Utf8               s239
+   #745 = String             #746         // s240
+   #746 = Utf8               s240
+   #747 = String             #748         // s241
+   #748 = Utf8               s241
+   #749 = String             #750         // s242
+   #750 = Utf8               s242
+   #751 = String             #752         // s243
+   #752 = Utf8               s243
+   #753 = String             #754         // s244
+   #754 = Utf8               s244
+   #755 = String             #756         // s245
+   #756 = Utf8               s245
+   #757 = String             #758         // s246
+   #758 = Utf8               s246
+   #759 = String             #760         // s247
+   #760 = Utf8               s247
+   #761 = String             #762         // s248
+   #762 = Utf8               s248
+   #763 = String             #764         // s249
+   #764 = Utf8               s249
+   #765 = String             #766         // s250
+   #766 = Utf8               s250
+   #767 = String             #768         // s251
+   #768 = Utf8               s251
+   #769 = String             #770         // s252
+   #770 = Utf8               s252
+   #771 = String             #772         // s253
+   #772 = Utf8               s253
+   #773 = String             #774         // s254
+   #774 = Utf8               s254
+   #775 = String             #776         // s255
+   #776 = Utf8               s255
+   #777 = String             #778         // s256
+   #778 = Utf8               s256
+   #779 = String             #780         // s257
+   #780 = Utf8               s257
+   #781 = String             #782         // s258
+   #782 = Utf8               s258
+   #783 = String             #784         // s259
+   #784 = Utf8               s259
+   #785 = String             #786         // s260
+   #786 = Utf8               s260
+   #787 = String             #788         // s261
+   #788 = Utf8               s261
+   #789 = String             #790         // s262
+   #790 = Utf8               s262
+   #791 = String             #792         // s263
+   #792 = Utf8               s263
+   #793 = String             #794         // s264
+   #794 = Utf8               s264
+   #795 = String             #796         // s265
+   #796 = Utf8               s265
+   #797 = String             #798         // s266
+   #798 = Utf8               s266
+   #799 = String             #800         // s267
+   #800 = Utf8               s267
+   #801 = String             #802         // s268
+   #802 = Utf8               s268
+   #803 = String             #804         // s269
+   #804 = Utf8               s269
+   #805 = String             #806         // s270
+   #806 = Utf8               s270
+   #807 = String             #808         // s271
+   #808 = Utf8               s271
+   #809 = String             #810         // s272
+   #810 = Utf8               s272
+   #811 = String             #812         // s273
+   #812 = Utf8               s273
+   #813 = String             #814         // s274
+   #814 = Utf8               s274
+   #815 = String             #816         // s275
+   #816 = Utf8               s275
+   #817 = String             #818         // s276
+   #818 = Utf8               s276
+   #819 = String             #820         // s277
+   #820 = Utf8               s277
+   #821 = String             #822         // s278
+   #822 = Utf8               s278
+   #823 = String             #824         // s279
+   #824 = Utf8               s279
+   #825 = String             #826         // s280
+   #826 = Utf8               s280
+   #827 = String             #828         // s281
+   #828 = Utf8               s281
+   #829 = String             #830         // s282
+   #830 = Utf8               s282
+   #831 = String             #832         // s283
+   #832 = Utf8               s283
+   #833 = String             #834         // s284
+   #834 = Utf8               s284
+   #835 = String             #836         // s285
+   #836 = Utf8               s285
+   #837 = String             #838         // s286
+   #838 = Utf8               s286
+   #839 = String             #840         // s287
+   #840 = Utf8               s287
+   #841 = String             #842         // s288
+   #842 = Utf8               s288
+   #843 = String             #844         // s289
+   #844 = Utf8               s289
+   #845 = String             #846         // s290
+   #846 = Utf8               s290
+   #847 = String             #848         // s291
+   #848 = Utf8               s291
+   #849 = String             #850         // s292
+   #850 = Utf8               s292
+   #851 = String             #852         // s293
+   #852 = Utf8               s293
+   #853 = String             #854         // s294
+   #854 = Utf8               s294
+   #855 = String             #856         // s295
+   #856 = Utf8               s295
+   #857 = String             #858         // s296
+   #858 = Utf8               s296
+   #859 = String             #860         // s297
+   #860 = Utf8               s297
+   #861 = String             #862         // s298
+   #862 = Utf8               s298
+   #863 = String             #864         // s299
+   #864 = Utf8               s299
+   #865 = Float              1234.5f
+   #866 = Class              #867         // fixture/Wide
+   #867 = Utf8               fixture/Wide
+   #868 = Utf8               Code
+   #869 = Utf8               LineNumberTable
+   #870 = Utf8               LocalVariableTable
+   #871 = Utf8               this
+   #872 = Utf8               Lfixture/Wide;
+   #873 = Utf8               locals
+   #874 = Utf8               (J)J
+   #875 = Utf8               seed
+   #876 = Utf8               J
+   #877 = Utf8               l0
+   #878 = Utf8               l1
+   #879 = Utf8               l2
+   #880 = Utf8               l3
+   #881 = Utf8               l4
+   #882 = Utf8               l5
+   #883 = Utf8               l6
+   #884 = Utf8               l7
+   #885 = Utf8               l8
+   #886 = Utf8               l9
+   #887 = Utf8               l10
+   #888 = Utf8               l11
+   #889 = Utf8               l12
+   #890 = Utf8               l13
+   #891 = Utf8               l14
+   #892 = Utf8               l15
+   #893 = Utf8               l16
+   #894 = Utf8               l17
+   #895 = Utf8               l18
+   #896 = Utf8               l19
+   #897 = Utf8               l20
+   #898 = Utf8               l21
+   #899 = Utf8               l22
+   #900 = Utf8               l23
+   #901 = Utf8               l24
+   #902 = Utf8               l25
+   #903 = Utf8               l26
+   #904 = Utf8               l27
+   #905 = Utf8               l28
+   #906 = Utf8               l29
+   #907 = Utf8               l30
+   #908 = Utf8               l31
+   #909 = Utf8               l32
+   #910 = Utf8               l33
+   #911 = Utf8               l34
+   #912 = Utf8               l35
+   #913 = Utf8               l36
+   #914 = Utf8               l37
+   #915 = Utf8               l38
+   #916 = Utf8               l39
+   #917 = Utf8               l40
+   #918 = Utf8               l41
+   #919 = Utf8               l42
+   #920 = Utf8               l43
+   #921 = Utf8               l44
+   #922 = Utf8               l45
+   #923 = Utf8               l46
+   #924 = Utf8               l47
+   #925 = Utf8               l48
+   #926 = Utf8               l49
+   #927 = Utf8               l50
+   #928 = Utf8               l51
+   #929 = Utf8               l52
+   #930 = Utf8               l53
+   #931 = Utf8               l54
+   #932 = Utf8               l55
+   #933 = Utf8               l56
+   #934 = Utf8               l57
+   #935 = Utf8               l58
+   #936 = Utf8               l59
+   #937 = Utf8               l60
+   #938 = Utf8               l61
+   #939 = Utf8               l62
+   #940 = Utf8               l63
+   #941 = Utf8               l64
+   #942 = Utf8               l65
+   #943 = Utf8               l66
+   #944 = Utf8               l67
+   #945 = Utf8               l68
+   #946 = Utf8               l69
+   #947 = Utf8               l70
+   #948 = Utf8               l71
+   #949 = Utf8               l72
+   #950 = Utf8               l73
+   #951 = Utf8               l74
+   #952 = Utf8               l75
+   #953 = Utf8               l76
+   #954 = Utf8               l77
+   #955 = Utf8               l78
+   #956 = Utf8               l79
+   #957 = Utf8               l80
+   #958 = Utf8               l81
+   #959 = Utf8               l82
+   #960 = Utf8               l83
+   #961 = Utf8               l84
+   #962 = Utf8               l85
+   #963 = Utf8               l86
+   #964 = Utf8               l87
+   #965 = Utf8               l88
+   #966 = Utf8               l89
+   #967 = Utf8               l90
+   #968 = Utf8               l91
+   #969 = Utf8               l92
+   #970 = Utf8               l93
+   #971 = Utf8               l94
+   #972 = Utf8               l95
+   #973 = Utf8               l96
+   #974 = Utf8               l97
+   #975 = Utf8               l98
+   #976 = Utf8               l99
+   #977 = Utf8               l100
+   #978 = Utf8               l101
+   #979 = Utf8               l102
+   #980 = Utf8               l103
+   #981 = Utf8               l104
+   #982 = Utf8               l105
+   #983 = Utf8               l106
+   #984 = Utf8               l107
+   #985 = Utf8               l108
+   #986 = Utf8               l109
+   #987 = Utf8               l110
+   #988 = Utf8               l111
+   #989 = Utf8               l112
+   #990 = Utf8               l113
+   #991 = Utf8               l114
+   #992 = Utf8               l115
+   #993 = Utf8               l116
+   #994 = Utf8               l117
+   #995 = Utf8               l118
+   #996 = Utf8               l119
+   #997 = Utf8               l120
+   #998 = Utf8               l121
+   #999 = Utf8               l122
+  #1000 = Utf8               l123
+  #1001 = Utf8               l124
+  #1002 = Utf8               l125
+  #1003 = Utf8               l126
+  #1004 = Utf8               l127
+  #1005 = Utf8               l128
+  #1006 = Utf8               l129
+  #1007 = Utf8               i0
+  #1008 = Utf8               I
+  #1009 = Utf8               d0
+  #1010 = Utf8               D
+  #1011 = Utf8               f0
+  #1012 = Utf8               F
+  #1013 = Utf8               o0
+  #1014 = Utf8               Ljava/lang/Object;
+  #1015 = Utf8               StackMapTable
+  #1016 = Utf8               MethodParameters
+  #1017 = Utf8               strings
+  #1018 = Utf8               ()[Ljava/lang/String;
+  #1019 = Utf8               lastFloat
+  #1020 = Utf8               ()F
+  #1021 = Utf8               SourceFile
+  #1022 = Utf8               Wide.java
+{
+  public fixture.Wide();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 4: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Wide;
+
+  static long locals(long);
+    descriptor: (J)J
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=6, locals=267, args_size=1
+         0: lload_0
+         1: lconst_0
+         2: ladd
+         3: lstore_2
+         4: lload_0
+         5: lconst_1
+         6: ladd
+         7: lstore        4
+         9: lload_0
+        10: ldc2_w        #7                  // long 2l
+        13: ladd
+        14: lstore        6
+        16: lload_0
+        17: ldc2_w        #9                  // long 3l
+        20: ladd
+        21: lstore        8
+        23: lload_0
+        24: ldc2_w        #11                 // long 4l
+        27: ladd
+        28: lstore        10
+        30: lload_0
+        31: ldc2_w        #13                 // long 5l
+        34: ladd
+        35: lstore        12
+        37: lload_0
+        38: ldc2_w        #15                 // long 6l
+        41: ladd
+        42: lstore        14
+        44: lload_0
+        45: ldc2_w        #17                 // long 7l
+        48: ladd
+        49: lstore        16
+        51: lload_0
+        52: ldc2_w        #19                 // long 8l
+        55: ladd
+        56: lstore        18
+        58: lload_0
+        59: ldc2_w        #21                 // long 9l
+        62: ladd
+        63: lstore        20
+        65: lload_0
+        66: ldc2_w        #23                 // long 10l
+        69: ladd
+        70: lstore        22
+        72: lload_0
+        73: ldc2_w        #25                 // long 11l
+        76: ladd
+        77: lstore        24
+        79: lload_0
+        80: ldc2_w        #27                 // long 12l
+        83: ladd
+        84: lstore        26
+        86: lload_0
+        87: ldc2_w        #29                 // long 13l
+        90: ladd
+        91: lstore        28
+        93: lload_0
+        94: ldc2_w        #31                 // long 14l
+        97: ladd
+        98: lstore        30
+       100: lload_0
+       101: ldc2_w        #33                 // long 15l
+       104: ladd
+       105: lstore        32
+       107: lload_0
+       108: ldc2_w        #35                 // long 16l
+       111: ladd
+       112: lstore        34
+       114: lload_0
+       115: ldc2_w        #37                 // long 17l
+       118: ladd
+       119: lstore        36
+       121: lload_0
+       122: ldc2_w        #39                 // long 18l
+       125: ladd
+       126: lstore        38
+       128: lload_0
+       129: ldc2_w        #41                 // long 19l
+       132: ladd
+       133: lstore        40
+       135: lload_0
+       136: ldc2_w        #43                 // long 20l
+       139: ladd
+       140: lstore        42
+       142: lload_0
+       143: ldc2_w        #45                 // long 21l
+       146: ladd
+       147: lstore        44
+       149: lload_0
+       150: ldc2_w        #47                 // long 22l
+       153: ladd
+       154: lstore        46
+       156: lload_0
+       157: ldc2_w        #49                 // long 23l
+       160: ladd
+       161: lstore        48
+       163: lload_0
+       164: ldc2_w        #51                 // long 24l
+       167: ladd
+       168: lstore        50
+       170: lload_0
+       171: ldc2_w        #53                 // long 25l
+       174: ladd
+       175: lstore        52
+       177: lload_0
+       178: ldc2_w        #55                 // long 26l
+       181: ladd
+       182: lstore        54
+       184: lload_0
+       185: ldc2_w        #57                 // long 27l
+       188: ladd
+       189: lstore        56
+       191: lload_0
+       192: ldc2_w        #59                 // long 28l
+       195: ladd
+       196: lstore        58
+       198: lload_0
+       199: ldc2_w        #61                 // long 29l
+       202: ladd
+       203: lstore        60
+       205: lload_0
+       206: ldc2_w        #63                 // long 30l
+       209: ladd
+       210: lstore        62
+       212: lload_0
+       213: ldc2_w        #65                 // long 31l
+       216: ladd
+       217: lstore        64
+       219: lload_0
+       220: ldc2_w        #67                 // long 32l
+       223: ladd
+       224: lstore        66
+       226: lload_0
+       227: ldc2_w        #69                 // long 33l
+       230: ladd
+       231: lstore        68
+       233: lload_0
+       234: ldc2_w        #71                 // long 34l
+       237: ladd
+       238: lstore        70
+       240: lload_0
+       241: ldc2_w        #73                 // long 35l
+       244: ladd
+       245: lstore        72
+       247: lload_0
+       248: ldc2_w        #75                 // long 36l
+       251: ladd
+       252: lstore        74
+       254: lload_0
+       255: ldc2_w        #77                 // long 37l
+       258: ladd
+       259: lstore        76
+       261: lload_0
+       262: ldc2_w        #79                 // long 38l
+       265: ladd
+       266: lstore        78
+       268: lload_0
+       269: ldc2_w        #81                 // long 39l
+       272: ladd
+       273: lstore        80
+       275: lload_0
+       276: ldc2_w        #83                 // long 40l
+       279: ladd
+       280: lstore        82
+       282: lload_0
+       283: ldc2_w        #85                 // long 41l
+       286: ladd
+       287: lstore        84
+       289: lload_0
+       290: ldc2_w        #87                 // long 42l
+       293: ladd
+       294: lstore        86
+       296: lload_0
+       297: ldc2_w        #89                 // long 43l
+       300: ladd
+       301: lstore        88
+       303: lload_0
+       304: ldc2_w        #91                 // long 44l
+       307: ladd
+       308: lstore        90
+       310: lload_0
+       311: ldc2_w        #93                 // long 45l
+       314: ladd
+       315: lstore        92
+       317: lload_0
+       318: ldc2_w        #95                 // long 46l
+       321: ladd
+       322: lstore        94
+       324: lload_0
+       325: ldc2_w        #97                 // long 47l
+       328: ladd
+       329: lstore        96
+       331: lload_0
+       332: ldc2_w        #99                 // long 48l
+       335: ladd
+       336: lstore        98
+       338: lload_0
+       339: ldc2_w        #101                // long 49l
+       342: ladd
+       343: lstore        100
+       345: lload_0
+       346: ldc2_w        #103                // long 50l
+       349: ladd
+       350: lstore        102
+       352: lload_0
+       353: ldc2_w        #105                // long 51l
+       356: ladd
+       357: lstore        104
+       359: lload_0
+       360: ldc2_w        #107                // long 52l
+       363: ladd
+       364: lstore        106
+       366: lload_0
+       367: ldc2_w        #109                // long 53l
+       370: ladd
+       371: lstore        108
+       373: lload_0
+       374: ldc2_w        #111                // long 54l
+       377: ladd
+       378: lstore        110
+       380: lload_0
+       381: ldc2_w        #113                // long 55l
+       384: ladd
+       385: lstore        112
+       387: lload_0
+       388: ldc2_w        #115                // long 56l
+       391: ladd
+       392: lstore        114
+       394: lload_0
+       395: ldc2_w        #117                // long 57l
+       398: ladd
+       399: lstore        116
+       401: lload_0
+       402: ldc2_w        #119                // long 58l
+       405: ladd
+       406: lstore        118
+       408: lload_0
+       409: ldc2_w        #121                // long 59l
+       412: ladd
+       413: lstore        120
+       415: lload_0
+       416: ldc2_w        #123                // long 60l
+       419: ladd
+       420: lstore        122
+       422: lload_0
+       423: ldc2_w        #125                // long 61l
+       426: ladd
+       427: lstore        124
+       429: lload_0
+       430: ldc2_w        #127                // long 62l
+       433: ladd
+       434: lstore        126
+       436: lload_0
+       437: ldc2_w        #129                // long 63l
+       440: ladd
+       441: lstore        128
+       443: lload_0
+       444: ldc2_w        #131                // long 64l
+       447: ladd
+       448: lstore        130
+       450: lload_0
+       451: ldc2_w        #133                // long 65l
+       454: ladd
+       455: lstore        132
+       457: lload_0
+       458: ldc2_w        #135                // long 66l
+       461: ladd
+       462: lstore        134
+       464: lload_0
+       465: ldc2_w        #137                // long 67l
+       468: ladd
+       469: lstore        136
+       471: lload_0
+       472: ldc2_w        #139                // long 68l
+       475: ladd
+       476: lstore        138
+       478: lload_0
+       479: ldc2_w        #141                // long 69l
+       482: ladd
+       483: lstore        140
+       485: lload_0
+       486: ldc2_w        #143                // long 70l
+       489: ladd
+       490: lstore        142
+       492: lload_0
+       493: ldc2_w        #145                // long 71l
+       496: ladd
+       497: lstore        144
+       499: lload_0
+       500: ldc2_w        #147                // long 72l
+       503: ladd
+       504: lstore        146
+       506: lload_0
+       507: ldc2_w        #149                // long 73l
+       510: ladd
+       511: lstore        148
+       513: lload_0
+       514: ldc2_w        #151                // long 74l
+       517: ladd
+       518: lstore        150
+       520: lload_0
+       521: ldc2_w        #153                // long 75l
+       524: ladd
+       525: lstore        152
+       527: lload_0
+       528: ldc2_w        #155                // long 76l
+       531: ladd
+       532: lstore        154
+       534: lload_0
+       535: ldc2_w        #157                // long 77l
+       538: ladd
+       539: lstore        156
+       541: lload_0
+       542: ldc2_w        #159                // long 78l
+       545: ladd
+       546: lstore        158
+       548: lload_0
+       549: ldc2_w        #161                // long 79l
+       552: ladd
+       553: lstore        160
+       555: lload_0
+       556: ldc2_w        #163                // long 80l
+       559: ladd
+       560: lstore        162
+       562: lload_0
+       563: ldc2_w        #165                // long 81l
+       566: ladd
+       567: lstore        164
+       569: lload_0
+       570: ldc2_w        #167                // long 82l
+       573: ladd
+       574: lstore        166
+       576: lload_0
+       577: ldc2_w        #169                // long 83l
+       580: ladd
+       581: lstore        168
+       583: lload_0
+       584: ldc2_w        #171                // long 84l
+       587: ladd
+       588: lstore        170
+       590: lload_0
+       591: ldc2_w        #173                // long 85l
+       594: ladd
+       595: lstore        172
+       597: lload_0
+       598: ldc2_w        #175                // long 86l
+       601: ladd
+       602: lstore        174
+       604: lload_0
+       605: ldc2_w        #177                // long 87l
+       608: ladd
+       609: lstore        176
+       611: lload_0
+       612: ldc2_w        #179                // long 88l
+       615: ladd
+       616: lstore        178
+       618: lload_0
+       619: ldc2_w        #181                // long 89l
+       622: ladd
+       623: lstore        180
+       625: lload_0
+       626: ldc2_w        #183                // long 90l
+       629: ladd
+       630: lstore        182
+       632: lload_0
+       633: ldc2_w        #185                // long 91l
+       636: ladd
+       637: lstore        184
+       639: lload_0
+       640: ldc2_w        #187                // long 92l
+       643: ladd
+       644: lstore        186
+       646: lload_0
+       647: ldc2_w        #189                // long 93l
+       650: ladd
+       651: lstore        188
+       653: lload_0
+       654: ldc2_w        #191                // long 94l
+       657: ladd
+       658: lstore        190
+       660: lload_0
+       661: ldc2_w        #193                // long 95l
+       664: ladd
+       665: lstore        192
+       667: lload_0
+       668: ldc2_w        #195                // long 96l
+       671: ladd
+       672: lstore        194
+       674: lload_0
+       675: ldc2_w        #197                // long 97l
+       678: ladd
+       679: lstore        196
+       681: lload_0
+       682: ldc2_w        #199                // long 98l
+       685: ladd
+       686: lstore        198
+       688: lload_0
+       689: ldc2_w        #201                // long 99l
+       692: ladd
+       693: lstore        200
+       695: lload_0
+       696: ldc2_w        #203                // long 100l
+       699: ladd
+       700: lstore        202
+       702: lload_0
+       703: ldc2_w        #205                // long 101l
+       706: ladd
+       707: lstore        204
+       709: lload_0
+       710: ldc2_w        #207                // long 102l
+       713: ladd
+       714: lstore        206
+       716: lload_0
+       717: ldc2_w        #209                // long 103l
+       720: ladd
+       721: lstore        208
+       723: lload_0
+       724: ldc2_w        #211                // long 104l
+       727: ladd
+       728: lstore        210
+       730: lload_0
+       731: ldc2_w        #213                // long 105l
+       734: ladd
+       735: lstore        212
+       737: lload_0
+       738: ldc2_w        #215                // long 106l
+       741: ladd
+       742: lstore        214
+       744: lload_0
+       745: ldc2_w        #217                // long 107l
+       748: ladd
+       749: lstore        216
+       751: lload_0
+       752: ldc2_w        #219                // long 108l
+       755: ladd
+       756: lstore        218
+       758: lload_0
+       759: ldc2_w        #221                // long 109l
+       762: ladd
+       763: lstore        220
+       765: lload_0
+       766: ldc2_w        #223                // long 110l
+       769: ladd
+       770: lstore        222
+       772: lload_0
+       773: ldc2_w        #225                // long 111l
+       776: ladd
+       777: lstore        224
+       779: lload_0
+       780: ldc2_w        #227                // long 112l
+       783: ladd
+       784: lstore        226
+       786: lload_0
+       787: ldc2_w        #229                // long 113l
+       790: ladd
+       791: lstore        228
+       793: lload_0
+       794: ldc2_w        #231                // long 114l
+       797: ladd
+       798: lstore        230
+       800: lload_0
+       801: ldc2_w        #233                // long 115l
+       804: ladd
+       805: lstore        232
+       807: lload_0
+       808: ldc2_w        #235                // long 116l
+       811: ladd
+       812: lstore        234
+       814: lload_0
+       815: ldc2_w        #237                // long 117l
+       818: ladd
+       819: lstore        236
+       821: lload_0
+       822: ldc2_w        #239                // long 118l
+       825: ladd
+       826: lstore        238
+       828: lload_0
+       829: ldc2_w        #241                // long 119l
+       832: ladd
+       833: lstore        240
+       835: lload_0
+       836: ldc2_w        #243                // long 120l
+       839: ladd
+       840: lstore        242
+       842: lload_0
+       843: ldc2_w        #245                // long 121l
+       846: ladd
+       847: lstore        244
+       849: lload_0
+       850: ldc2_w        #247                // long 122l
+       853: ladd
+       854: lstore        246
+       856: lload_0
+       857: ldc2_w        #249                // long 123l
+       860: ladd
+       861: lstore        248
+       863: lload_0
+       864: ldc2_w        #251                // long 124l
+       867: ladd
+       868: lstore        250
+       870: lload_0
+       871: ldc2_w        #253                // long 125l
+       874: ladd
+       875: lstore        252
+       877: lload_0
+       878: ldc2_w        #255                // long 126l
+       881: ladd
+       882: lstore        254
+       884: lload_0
+       885: ldc2_w        #257                // long 127l
+       888: ladd
+       889: lstore_w      256
+       893: lload_0
+       894: ldc2_w        #259                // long 128l
+       897: ladd
+       898: lstore_w      258
+       902: lload_0
+       903: ldc2_w        #261                // long 129l
+       906: ladd
+       907: lstore_w      260
+       911: lload_0
+       912: l2i
+       913: istore_w      262
+       917: lload_0
+       918: l2d
+       919: dstore_w      263
+       923: lload_0
+       924: l2f
+       925: fstore_w      265
+       929: aconst_null
+       930: astore_w      266
+       934: iinc_w        262, 1000
+       940: iinc_w        262, -3
+       946: iinc_w        262, 1
+       952: lload_w       260
+       956: iload_w       262
+       960: i2l
+       961: dload_w       263
+       965: d2l
+       966: ladd
+       967: fload_w       265
+       971: f2l
+       972: ladd
+       973: aload_w       266
+       977: ifnonnull     984
+       980: iconst_1
+       981: goto          985
+       984: iconst_0
+       985: i2l
+       986: ladd
+       987: ladd
+       988: lstore_w      260
+       992: lload_2
+       993: lload         28
+       995: ladd
+       996: lload         54
+       998: ladd
+       999: lload         80
+      1001: ladd
+      1002: lload         106
+      1004: ladd
+      1005: lload         132
+      1007: ladd
+      1008: lload         158
+      1010: ladd
+      1011: lload         184
+      1013: ladd
+      1014: lload         210
+      1016: ladd
+      1017: lload         236
+      1019: ladd
+      1020: lload_w       260
+      1024: ladd
+      1025: lreturn
+      LineNumberTable:
+        line 6: 0
+        line 7: 4
+        line 8: 9
+        line 9: 16
+        line 10: 23
+        line 11: 30
+        line 12: 37
+        line 13: 44
+        line 14: 51
+        line 15: 58
+        line 16: 65
+        line 17: 72
+        line 18: 79
+        line 19: 86
+        line 20: 93
+        line 21: 100
+        line 22: 107
+        line 23: 114
+        line 24: 121
+        line 25: 128
+        line 26: 135
+        line 27: 142
+        line 28: 149
+        line 29: 156
+        line 30: 163
+        line 31: 170
+        line 32: 177
+        line 33: 184
+        line 34: 191
+        line 35: 198
+        line 36: 205
+        line 37: 212
+        line 38: 219
+        line 39: 226
+        line 40: 233
+        line 41: 240
+        line 42: 247
+        line 43: 254
+        line 44: 261
+        line 45: 268
+        line 46: 275
+        line 47: 282
+        line 48: 289
+        line 49: 296
+        line 50: 303
+        line 51: 310
+        line 52: 317
+        line 53: 324
+        line 54: 331
+        line 55: 338
+        line 56: 345
+        line 57: 352
+        line 58: 359
+        line 59: 366
+        line 60: 373
+        line 61: 380
+        line 62: 387
+        line 63: 394
+        line 64: 401
+        line 65: 408
+        line 66: 415
+        line 67: 422
+        line 68: 429
+        line 69: 436
+        line 70: 443
+        line 71: 450
+        line 72: 457
+        line 73: 464
+        line 74: 471
+        line 75: 478
+        line 76: 485
+        line 77: 492
+        line 78: 499
+        line 79: 506
+        line 80: 513
+        line 81: 520
+        line 82: 527
+        line 83: 534
+        line 84: 541
+        line 85: 548
+        line 86: 555
+        line 87: 562
+        line 88: 569
+        line 89: 576
+        line 90: 583
+        line 91: 590
+        line 92: 597
+        line 93: 604
+        line 94: 611
+        line 95: 618
+        line 96: 625
+        line 97: 632
+        line 98: 639
+        line 99: 646
+        line 100: 653
+        line 101: 660
+        line 102: 667
+        line 103: 674
+        line 104: 681
+        line 105: 688
+        line 106: 695
+        line 107: 702
+        line 108: 709
+        line 109: 716
+        line 110: 723
+        line 111: 730
+        line 112: 737
+        line 113: 744
+        line 114: 751
+        line 115: 758
+        line 116: 765
+        line 117: 772
+        line 118: 779
+        line 119: 786
+        line 120: 793
+        line 121: 800
+        line 122: 807
+        line 123: 814
+        line 124: 821
+        line 125: 828
+        line 126: 835
+        line 127: 842
+        line 128: 849
+        line 129: 856
+        line 130: 863
+        line 131: 870
+        line 132: 877
+        line 133: 884
+        line 134: 893
+        line 135: 902
+        line 136: 911
+        line 137: 917
+        line 138: 923
+        line 139: 929
+        line 140: 934
+        line 141: 940
+        line 142: 946
+        line 143: 952
+        line 144: 992
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0    1026     0  seed   J
+            4    1022     2    l0   J
+            9    1017     4    l1   J
+           16    1010     6    l2   J
+           23    1003     8    l3   J
+           30     996    10    l4   J
+           37     989    12    l5   J
+           44     982    14    l6   J
+           51     975    16    l7   J
+           58     968    18    l8   J
+           65     961    20    l9   J
+           72     954    22   l10   J
+           79     947    24   l11   J
+           86     940    26   l12   J
+           93     933    28   l13   J
+          100     926    30   l14   J
+          107     919    32   l15   J
+          114     912    34   l16   J
+          121     905    36   l17   J
+          128     898    38   l18   J
+          135     891    40   l19   J
+          142     884    42   l20   J
+          149     877    44   l21   J
+          156     870    46   l22   J
+          163     863    48   l23   J
+          170     856    50   l24   J
+          177     849    52   l25   J
+          184     842    54   l26   J
+          191     835    56   l27   J
+          198     828    58   l28   J
+          205     821    60   l29   J
+          212     814    62   l30   J
+          219     807    64   l31   J
+          226     800    66   l32   J
+          233     793    68   l33   J
+          240     786    70   l34   J
+          247     779    72   l35   J
+          254     772    74   l36   J
+          261     765    76   l37   J
+          268     758    78   l38   J
+          275     751    80   l39   J
+          282     744    82   l40   J
+          289     737    84   l41   J
+          296     730    86   l42   J
+          303     723    88   l43   J
+          310     716    90   l44   J
+          317     709    92   l45   J
+          324     702    94   l46   J
+          331     695    96   l47   J
+          338     688    98   l48   J
+          345     681   100   l49   J
+          352     674   102   l50   J
+          359     667   104   l51   J
+          366     660   106   l52   J
+          373     653   108   l53   J
+          380     646   110   l54   J
+          387     639   112   l55   J
+          394     632   114   l56   J
+          401     625   116   l57   J
+          408     618   118   l58   J
+          415     611   120   l59   J
+          422     604   122   l60   J
+          429     597   124   l61   J
+          436     590   126   l62   J
+          443     583   128   l63   J
+          450     576   130   l64   J
+          457     569   132   l65   J
+          464     562   134   l66   J
+          471     555   136   l67   J
+          478     548   138   l68   J
+          485     541   140   l69   J
+          492     534   142   l70   J
+          499     527   144   l71   J
+          506     520   146   l72   J
+          513     513   148   l73   J
+          520     506   150   l74   J
+          527     499   152   l75   J
+          534     492   154   l76   J
+          541     485   156   l77   J
+          548     478   158   l78   J
+          555     471   160   l79   J
+          562     464   162   l80   J
+          569     457   164   l81   J
+          576     450   166   l82   J
+          583     443   168   l83   J
+          590     436   170   l84   J
+          597     429   172   l85   J
+          604     422   174   l86   J
+          611     415   176   l87   J
+          618     408   178   l88   J
+          625     401   180   l89   J
+          632     394   182   l90   J
+          639     387   184   l91   J
+          646     380   186   l92   J
+          653     373   188   l93   J
+          660     366   190   l94   J
+          667     359   192   l95   J
+          674     352   194   l96   J
+          681     345   196   l97   J
+          688     338   198   l98   J
+          695     331   200   l99   J
+          702     324   202  l100   J
+          709     317   204  l101   J
+          716     310   206  l102   J
+          723     303   208  l103   J
+          730     296   210  l104   J
+          737     289   212  l105   J
+          744     282   214  l106   J
+          751     275   216  l107   J
+          758     268   218  l108   J
+          765     261   220  l109   J
+          772     254   222  l110   J
+          779     247   224  l111   J
+          786     240   226  l112   J
+          793     233   228  l113   J
+          800     226   230  l114   J
+          807     219   232  l115   J
+          814     212   234  l116   J
+          821     205   236  l117   J
+          828     198   238  l118   J
+          835     191   240  l119   J
+          842     184   242  l120   J
+          849     177   244  l121   J
+          856     170   246  l122   J
+          863     163   248  l123   J
+          870     156   250  l124   J
+          877     149   252  l125   J
+          884     142   254  l126   J
+          893     133   256  l127   J
+          902     124   258  l128   J
+          911     115   260  l129   J
+          917     109   262    i0   I
+          923     103   263    d0   D
+          929      97   265    f0   F
+          934      92   266    o0   Ljava/lang/Object;
+      StackMapTable: number_of_entries = 2
+        frame_type = 255 /* full_frame */
+          offset_delta = 984
+          locals = [ long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, int, double, float, class java/lang/Object ]
+          stack = [ long, long ]
+        frame_type = 255 /* full_frame */
+          offset_delta = 0
+          locals = [ long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long, int, double, float, class java/lang/Object ]
+          stack = [ long, long, int ]
+    MethodParameters:
+      Name                           Flags
+      seed
+
+  static java.lang.String[] strings();
+    descriptor: ()[Ljava/lang/String;
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=4, locals=0, args_size=0
+         0: sipush        300
+         3: anewarray     #263                // class java/lang/String
+         6: dup
+         7: iconst_0
+         8: ldc_w         #265                // String s0
+        11: aastore
+        12: dup
+        13: iconst_1
+        14: ldc_w         #267                // String s1
+        17: aastore
+        18: dup
+        19: iconst_2
+        20: ldc_w         #269                // String s2
+        23: aastore
+        24: dup
+        25: iconst_3
+        26: ldc_w         #271                // String s3
+        29: aastore
+        30: dup
+        31: iconst_4
+        32: ldc_w         #273                // String s4
+        35: aastore
+        36: dup
+        37: iconst_5
+        38: ldc_w         #275                // String s5
+        41: aastore
+        42: dup
+        43: bipush        6
+        45: ldc_w         #277                // String s6
+        48: aastore
+        49: dup
+        50: bipush        7
+        52: ldc_w         #279                // String s7
+        55: aastore
+        56: dup
+        57: bipush        8
+        59: ldc_w         #281                // String s8
+        62: aastore
+        63: dup
+        64: bipush        9
+        66: ldc_w         #283                // String s9
+        69: aastore
+        70: dup
+        71: bipush        10
+        73: ldc_w         #285                // String s10
+        76: aastore
+        77: dup
+        78: bipush        11
+        80: ldc_w         #287                // String s11
+        83: aastore
+        84: dup
+        85: bipush        12
+        87: ldc_w         #289                // String s12
+        90: aastore
+        91: dup
+        92: bipush        13
+        94: ldc_w         #291                // String s13
+        97: aastore
+        98: dup
+        99: bipush        14
+       101: ldc_w         #293                // String s14
+       104: aastore
+       105: dup
+       106: bipush        15
+       108: ldc_w         #295                // String s15
+       111: aastore
+       112: dup
+       113: bipush        16
+       115: ldc_w         #297                // String s16
+       118: aastore
+       119: dup
+       120: bipush        17
+       122: ldc_w         #299                // String s17
+       125: aastore
+       126: dup
+       127: bipush        18
+       129: ldc_w         #301                // String s18
+       132: aastore
+       133: dup
+       134: bipush        19
+       136: ldc_w         #303                // String s19
+       139: aastore
+       140: dup
+       141: bipush        20
+       143: ldc_w         #305                // String s20
+       146: aastore
+       147: dup
+       148: bipush        21
+       150: ldc_w         #307                // String s21
+       153: aastore
+       154: dup
+       155: bipush        22
+       157: ldc_w         #309                // String s22
+       160: aastore
+       161: dup
+       162: bipush        23
+       164: ldc_w         #311                // String s23
+       167: aastore
+       168: dup
+       169: bipush        24
+       171: ldc_w         #313                // String s24
+       174: aastore
+       175: dup
+       176: bipush        25
+       178: ldc_w         #315                // String s25
+       181: aastore
+       182: dup
+       183: bipush        26
+       185: ldc_w         #317                // String s26
+       188: aastore
+       189: dup
+       190: bipush        27
+       192: ldc_w         #319                // String s27
+       195: aastore
+       196: dup
+       197: bipush        28
+       199: ldc_w         #321                // String s28
+       202: aastore
+       203: dup
+       204: bipush        29
+       206: ldc_w         #323                // String s29
+       209: aastore
+       210: dup
+       211: bipush        30
+       213: ldc_w         #325                // String s30
+       216: aastore
+       217: dup
+       218: bipush        31
+       220: ldc_w         #327                // String s31
+       223: aastore
+       224: dup
+       225: bipush        32
+       227: ldc_w         #329                // String s32
+       230: aastore
+       231: dup
+       232: bipush        33
+       234: ldc_w         #331                // String s33
+       237: aastore
+       238: dup
+       239: bipush        34
+       241: ldc_w         #333                // String s34
+       244: aastore
+       245: dup
+       246: bipush        35
+       248: ldc_w         #335                // String s35
+       251: aastore
+       252: dup
+       253: bipush        36
+       255: ldc_w         #337                // String s36
+       258: aastore
+       259: dup
+       260: bipush        37
+       262: ldc_w         #339                // String s37
+       265: aastore
+       266: dup
+       267: bipush        38
+       269: ldc_w         #341                // String s38
+       272: aastore
+       273: dup
+       274: bipush        39
+       276: ldc_w         #343                // String s39
+       279: aastore
+       280: dup
+       281: bipush        40
+       283: ldc_w         #345                // String s40
+       286: aastore
+       287: dup
+       288: bipush        41
+       290: ldc_w         #347                // String s41
+       293: aastore
+       294: dup
+       295: bipush        42
+       297: ldc_w         #349                // String s42
+       300: aastore
+       301: dup
+       302: bipush        43
+       304: ldc_w         #351                // String s43
+       307: aastore
+       308: dup
+       309: bipush        44
+       311: ldc_w         #353                // String s44
+       314: aastore
+       315: dup
+       316: bipush        45
+       318: ldc_w         #355                // String s45
+       321: aastore
+       322: dup
+       323: bipush        46
+       325: ldc_w         #357                // String s46
+       328: aastore
+       329: dup
+       330: bipush        47
+       332: ldc_w         #359                // String s47
+       335: aastore
+       336: dup
+       337: bipush        48
+       339: ldc_w         #361                // String s48
+       342: aastore
+       343: dup
+       344: bipush        49
+       346: ldc_w         #363                // String s49
+       349: aastore
+       350: dup
+       351: bipush        50
+       353: ldc_w         #365                // String s50
+       356: aastore
+       357: dup
+       358: bipush        51
+       360: ldc_w         #367                // String s51
+       363: aastore
+       364: dup
+       365: bipush        52
+       367: ldc_w         #369                // String s52
+       370: aastore
+       371: dup
+       372: bipush        53
+       374: ldc_w         #371                // String s53
+       377: aastore
+       378: dup
+       379: bipush        54
+       381: ldc_w         #373                // String s54
+       384: aastore
+       385: dup
+       386: bipush        55
+       388: ldc_w         #375                // String s55
+       391: aastore
+       392: dup
+       393: bipush        56
+       395: ldc_w         #377                // String s56
+       398: aastore
+       399: dup
+       400: bipush        57
+       402: ldc_w         #379                // String s57
+       405: aastore
+       406: dup
+       407: bipush        58
+       409: ldc_w         #381                // String s58
+       412: aastore
+       413: dup
+       414: bipush        59
+       416: ldc_w         #383                // String s59
+       419: aastore
+       420: dup
+       421: bipush        60
+       423: ldc_w         #385                // String s60
+       426: aastore
+       427: dup
+       428: bipush        61
+       430: ldc_w         #387                // String s61
+       433: aastore
+       434: dup
+       435: bipush        62
+       437: ldc_w         #389                // String s62
+       440: aastore
+       441: dup
+       442: bipush        63
+       444: ldc_w         #391                // String s63
+       447: aastore
+       448: dup
+       449: bipush        64
+       451: ldc_w         #393                // String s64
+       454: aastore
+       455: dup
+       456: bipush        65
+       458: ldc_w         #395                // String s65
+       461: aastore
+       462: dup
+       463: bipush        66
+       465: ldc_w         #397                // String s66
+       468: aastore
+       469: dup
+       470: bipush        67
+       472: ldc_w         #399                // String s67
+       475: aastore
+       476: dup
+       477: bipush        68
+       479: ldc_w         #401                // String s68
+       482: aastore
+       483: dup
+       484: bipush        69
+       486: ldc_w         #403                // String s69
+       489: aastore
+       490: dup
+       491: bipush        70
+       493: ldc_w         #405                // String s70
+       496: aastore
+       497: dup
+       498: bipush        71
+       500: ldc_w         #407                // String s71
+       503: aastore
+       504: dup
+       505: bipush        72
+       507: ldc_w         #409                // String s72
+       510: aastore
+       511: dup
+       512: bipush        73
+       514: ldc_w         #411                // String s73
+       517: aastore
+       518: dup
+       519: bipush        74
+       521: ldc_w         #413                // String s74
+       524: aastore
+       525: dup
+       526: bipush        75
+       528: ldc_w         #415                // String s75
+       531: aastore
+       532: dup
+       533: bipush        76
+       535: ldc_w         #417                // String s76
+       538: aastore
+       539: dup
+       540: bipush        77
+       542: ldc_w         #419                // String s77
+       545: aastore
+       546: dup
+       547: bipush        78
+       549: ldc_w         #421                // String s78
+       552: aastore
+       553: dup
+       554: bipush        79
+       556: ldc_w         #423                // String s79
+       559: aastore
+       560: dup
+       561: bipush        80
+       563: ldc_w         #425                // String s80
+       566: aastore
+       567: dup
+       568: bipush        81
+       570: ldc_w         #427                // String s81
+       573: aastore
+       574: dup
+       575: bipush        82
+       577: ldc_w         #429                // String s82
+       580: aastore
+       581: dup
+       582: bipush        83
+       584: ldc_w         #431                // String s83
+       587: aastore
+       588: dup
+       589: bipush        84
+       591: ldc_w         #433                // String s84
+       594: aastore
+       595: dup
+       596: bipush        85
+       598: ldc_w         #435                // String s85
+       601: aastore
+       602: dup
+       603: bipush        86
+       605: ldc_w         #437                // String s86
+       608: aastore
+       609: dup
+       610: bipush        87
+       612: ldc_w         #439                // String s87
+       615: aastore
+       616: dup
+       617: bipush        88
+       619: ldc_w         #441                // String s88
+       622: aastore
+       623: dup
+       624: bipush        89
+       626: ldc_w         #443                // String s89
+       629: aastore
+       630: dup
+       631: bipush        90
+       633: ldc_w         #445                // String s90
+       636: aastore
+       637: dup
+       638: bipush        91
+       640: ldc_w         #447                // String s91
+       643: aastore
+       644: dup
+       645: bipush        92
+       647: ldc_w         #449                // String s92
+       650: aastore
+       651: dup
+       652: bipush        93
+       654: ldc_w         #451                // String s93
+       657: aastore
+       658: dup
+       659: bipush        94
+       661: ldc_w         #453                // String s94
+       664: aastore
+       665: dup
+       666: bipush        95
+       668: ldc_w         #455                // String s95
+       671: aastore
+       672: dup
+       673: bipush        96
+       675: ldc_w         #457                // String s96
+       678: aastore
+       679: dup
+       680: bipush        97
+       682: ldc_w         #459                // String s97
+       685: aastore
+       686: dup
+       687: bipush        98
+       689: ldc_w         #461                // String s98
+       692: aastore
+       693: dup
+       694: bipush        99
+       696: ldc_w         #463                // String s99
+       699: aastore
+       700: dup
+       701: bipush        100
+       703: ldc_w         #465                // String s100
+       706: aastore
+       707: dup
+       708: bipush        101
+       710: ldc_w         #467                // String s101
+       713: aastore
+       714: dup
+       715: bipush        102
+       717: ldc_w         #469                // String s102
+       720: aastore
+       721: dup
+       722: bipush        103
+       724: ldc_w         #471                // String s103
+       727: aastore
+       728: dup
+       729: bipush        104
+       731: ldc_w         #473                // String s104
+       734: aastore
+       735: dup
+       736: bipush        105
+       738: ldc_w         #475                // String s105
+       741: aastore
+       742: dup
+       743: bipush        106
+       745: ldc_w         #477                // String s106
+       748: aastore
+       749: dup
+       750: bipush        107
+       752: ldc_w         #479                // String s107
+       755: aastore
+       756: dup
+       757: bipush        108
+       759: ldc_w         #481                // String s108
+       762: aastore
+       763: dup
+       764: bipush        109
+       766: ldc_w         #483                // String s109
+       769: aastore
+       770: dup
+       771: bipush        110
+       773: ldc_w         #485                // String s110
+       776: aastore
+       777: dup
+       778: bipush        111
+       780: ldc_w         #487                // String s111
+       783: aastore
+       784: dup
+       785: bipush        112
+       787: ldc_w         #489                // String s112
+       790: aastore
+       791: dup
+       792: bipush        113
+       794: ldc_w         #491                // String s113
+       797: aastore
+       798: dup
+       799: bipush        114
+       801: ldc_w         #493                // String s114
+       804: aastore
+       805: dup
+       806: bipush        115
+       808: ldc_w         #495                // String s115
+       811: aastore
+       812: dup
+       813: bipush        116
+       815: ldc_w         #497                // String s116
+       818: aastore
+       819: dup
+       820: bipush        117
+       822: ldc_w         #499                // String s117
+       825: aastore
+       826: dup
+       827: bipush        118
+       829: ldc_w         #501                // String s118
+       832: aastore
+       833: dup
+       834: bipush        119
+       836: ldc_w         #503                // String s119
+       839: aastore
+       840: dup
+       841: bipush        120
+       843: ldc_w         #505                // String s120
+       846: aastore
+       847: dup
+       848: bipush        121
+       850: ldc_w         #507                // String s121
+       853: aastore
+       854: dup
+       855: bipush        122
+       857: ldc_w         #509                // String s122
+       860: aastore
+       861: dup
+       862: bipush        123
+       864: ldc_w         #511                // String s123
+       867: aastore
+       868: dup
+       869: bipush        124
+       871: ldc_w         #513                // String s124
+       874: aastore
+       875: dup
+       876: bipush        125
+       878: ldc_w         #515                // String s125
+       881: aastore
+       882: dup
+       883: bipush        126
+       885: ldc_w         #517                // String s126
+       888: aastore
+       889: dup
+       890: bipush        127
+       892: ldc_w         #519                // String s127
+       895: aastore
+       896: dup
+       897: sipush        128
+       900: ldc_w         #521                // String s128
+       903: aastore
+       904: dup
+       905: sipush        129
+       908: ldc_w         #523                // String s129
+       911: aastore
+       912: dup
+       913: sipush        130
+       916: ldc_w         #525                // String s130
+       919: aastore
+       920: dup
+       921: sipush        131
+       924: ldc_w         #527                // String s131
+       927: aastore
+       928: dup
+       929: sipush        132
+       932: ldc_w         #529                // String s132
+       935: aastore
+       936: dup
+       937: sipush        133
+       940: ldc_w         #531                // String s133
+       943: aastore
+       944: dup
+       945: sipush        134
+       948: ldc_w         #533                // String s134
+       951: aastore
+       952: dup
+       953: sipush        135
+       956: ldc_w         #535                // String s135
+       959: aastore
+       960: dup
+       961: sipush        136
+       964: ldc_w         #537                // String s136
+       967: aastore
+       968: dup
+       969: sipush        137
+       972: ldc_w         #539                // String s137
+       975: aastore
+       976: dup
+       977: sipush        138
+       980: ldc_w         #541                // String s138
+       983: aastore
+       984: dup
+       985: sipush        139
+       988: ldc_w         #543                // String s139
+       991: aastore
+       992: dup
+       993: sipush        140
+       996: ldc_w         #545                // String s140
+       999: aastore
+      1000: dup
+      1001: sipush        141
+      1004: ldc_w         #547                // String s141
+      1007: aastore
+      1008: dup
+      1009: sipush        142
+      1012: ldc_w         #549                // String s142
+      1015: aastore
+      1016: dup
+      1017: sipush        143
+      1020: ldc_w         #551                // String s143
+      1023: aastore
+      1024: dup
+      1025: sipush        144
+      1028: ldc_w         #553                // String s144
+      1031: aastore
+      1032: dup
+      1033: sipush        145
+      1036: ldc_w         #555                // String s145
+      1039: aastore
+      1040: dup
+      1041: sipush        146
+      1044: ldc_w         #557                // String s146
+      1047: aastore
+      1048: dup
+      1049: sipush        147
+      1052: ldc_w         #559                // String s147
+      1055: aastore
+      1056: dup
+      1057: sipush        148
+      1060: ldc_w         #561                // String s148
+      1063: aastore
+      1064: dup
+      1065: sipush        149
+      1068: ldc_w         #563                // String s149
+      1071: aastore
+      1072: dup
+      1073: sipush        150
+      1076: ldc_w         #565                // String s150
+      1079: aastore
+      1080: dup
+      1081: sipush        151
+      1084: ldc_w         #567                // String s151
+      1087: aastore
+      1088: dup
+      1089: sipush        152
+      1092: ldc_w         #569                // String s152
+      1095: aastore
+      1096: dup
+      1097: sipush        153
+      1100: ldc_w         #571                // String s153
+      1103: aastore
+      1104: dup
+      1105: sipush        154
+      1108: ldc_w         #573                // String s154
+      1111: aastore
+      1112: dup
+      1113: sipush        155
+      1116: ldc_w         #575                // String s155
+      1119: aastore
+      1120: dup
+      1121: sipush        156
+      1124: ldc_w         #577                // String s156
+      1127: aastore
+      1128: dup
+      1129: sipush        157
+      1132: ldc_w         #579                // String s157
+      1135: aastore
+      1136: dup
+      1137: sipush        158
+      1140: ldc_w         #581                // String s158
+      1143: aastore
+      1144: dup
+      1145: sipush        159
+      1148: ldc_w         #583                // String s159
+      1151: aastore
+      1152: dup
+      1153: sipush        160
+      1156: ldc_w         #585                // String s160
+      1159: aastore
+      1160: dup
+      1161: sipush        161
+      1164: ldc_w         #587                // String s161
+      1167: aastore
+      1168: dup
+      1169: sipush        162
+      1172: ldc_w         #589                // String s162
+      1175: aastore
+      1176: dup
+      1177: sipush        163
+      1180: ldc_w         #591                // String s163
+      1183: aastore
+      1184: dup
+      1185: sipush        164
+      1188: ldc_w         #593                // String s164
+      1191: aastore
+      1192: dup
+      1193: sipush        165
+      1196: ldc_w         #595                // String s165
+      1199: aastore
+      1200: dup
+      1201: sipush        166
+      1204: ldc_w         #597                // String s166
+      1207: aastore
+      1208: dup
+      1209: sipush        167
+      1212: ldc_w         #599                // String s167
+      1215: aastore
+      1216: dup
+      1217: sipush        168
+      1220: ldc_w         #601                // String s168
+      1223: aastore
+      1224: dup
+      1225: sipush        169
+      1228: ldc_w         #603                // String s169
+      1231: aastore
+      1232: dup
+      1233: sipush        170
+      1236: ldc_w         #605                // String s170
+      1239: aastore
+      1240: dup
+      1241: sipush        171
+      1244: ldc_w         #607                // String s171
+      1247: aastore
+      1248: dup
+      1249: sipush        172
+      1252: ldc_w         #609                // String s172
+      1255: aastore
+      1256: dup
+      1257: sipush        173
+      1260: ldc_w         #611                // String s173
+      1263: aastore
+      1264: dup
+      1265: sipush        174
+      1268: ldc_w         #613                // String s174
+      1271: aastore
+      1272: dup
+      1273: sipush        175
+      1276: ldc_w         #615                // String s175
+      1279: aastore
+      1280: dup
+      1281: sipush        176
+      1284: ldc_w         #617                // String s176
+      1287: aastore
+      1288: dup
+      1289: sipush        177
+      1292: ldc_w         #619                // String s177
+      1295: aastore
+      1296: dup
+      1297: sipush        178
+      1300: ldc_w         #621                // String s178
+      1303: aastore
+      1304: dup
+      1305: sipush        179
+      1308: ldc_w         #623                // String s179
+      1311: aastore
+      1312: dup
+      1313: sipush        180
+      1316: ldc_w         #625                // String s180
+      1319: aastore
+      1320: dup
+      1321: sipush        181
+      1324: ldc_w         #627                // String s181
+      1327: aastore
+      1328: dup
+      1329: sipush        182
+      1332: ldc_w         #629                // String s182
+      1335: aastore
+      1336: dup
+      1337: sipush        183
+      1340: ldc_w         #631                // String s183
+      1343: aastore
+      1344: dup
+      1345: sipush        184
+      1348: ldc_w         #633                // String s184
+      1351: aastore
+      1352: dup
+      1353: sipush        185
+      1356: ldc_w         #635                // String s185
+      1359: aastore
+      1360: dup
+      1361: sipush        186
+      1364: ldc_w         #637                // String s186
+      1367: aastore
+      1368: dup
+      1369: sipush        187
+      1372: ldc_w         #639                // String s187
+      1375: aastore
+      1376: dup
+      1377: sipush        188
+      1380: ldc_w         #641                // String s188
+      1383: aastore
+      1384: dup
+      1385: sipush        189
+      1388: ldc_w         #643                // String s189
+      1391: aastore
+      1392: dup
+      1393: sipush        190
+      1396: ldc_w         #645                // String s190
+      1399: aastore
+      1400: dup
+      1401: sipush        191
+      1404: ldc_w         #647                // String s191
+      1407: aastore
+      1408: dup
+      1409: sipush        192
+      1412: ldc_w         #649                // String s192
+      1415: aastore
+      1416: dup
+      1417: sipush        193
+      1420: ldc_w         #651                // String s193
+      1423: aastore
+      1424: dup
+      1425: sipush        194
+      1428: ldc_w         #653                // String s194
+      1431: aastore
+      1432: dup
+      1433: sipush        195
+      1436: ldc_w         #655                // String s195
+      1439: aastore
+      1440: dup
+      1441: sipush        196
+      1444: ldc_w         #657                // String s196
+      1447: aastore
+      1448: dup
+      1449: sipush        197
+      1452: ldc_w         #659                // String s197
+      1455: aastore
+      1456: dup
+      1457: sipush        198
+      1460: ldc_w         #661                // String s198
+      1463: aastore
+      1464: dup
+      1465: sipush        199
+      1468: ldc_w         #663                // String s199
+      1471: aastore
+      1472: dup
+      1473: sipush        200
+      1476: ldc_w         #665                // String s200
+      1479: aastore
+      1480: dup
+      1481: sipush        201
+      1484: ldc_w         #667                // String s201
+      1487: aastore
+      1488: dup
+      1489: sipush        202
+      1492: ldc_w         #669                // String s202
+      1495: aastore
+      1496: dup
+      1497: sipush        203
+      1500: ldc_w         #671                // String s203
+      1503: aastore
+      1504: dup
+      1505: sipush        204
+      1508: ldc_w         #673                // String s204
+      1511: aastore
+      1512: dup
+      1513: sipush        205
+      1516: ldc_w         #675                // String s205
+      1519: aastore
+      1520: dup
+      1521: sipush        206
+      1524: ldc_w         #677                // String s206
+      1527: aastore
+      1528: dup
+      1529: sipush        207
+      1532: ldc_w         #679                // String s207
+      1535: aastore
+      1536: dup
+      1537: sipush        208
+      1540: ldc_w         #681                // String s208
+      1543: aastore
+      1544: dup
+      1545: sipush        209
+      1548: ldc_w         #683                // String s209
+      1551: aastore
+      1552: dup
+      1553: sipush        210
+      1556: ldc_w         #685                // String s210
+      1559: aastore
+      1560: dup
+      1561: sipush        211
+      1564: ldc_w         #687                // String s211
+      1567: aastore
+      1568: dup
+      1569: sipush        212
+      1572: ldc_w         #689                // String s212
+      1575: aastore
+      1576: dup
+      1577: sipush        213
+      1580: ldc_w         #691                // String s213
+      1583: aastore
+      1584: dup
+      1585: sipush        214
+      1588: ldc_w         #693                // String s214
+      1591: aastore
+      1592: dup
+      1593: sipush        215
+      1596: ldc_w         #695                // String s215
+      1599: aastore
+      1600: dup
+      1601: sipush        216
+      1604: ldc_w         #697                // String s216
+      1607: aastore
+      1608: dup
+      1609: sipush        217
+      1612: ldc_w         #699                // String s217
+      1615: aastore
+      1616: dup
+      1617: sipush        218
+      1620: ldc_w         #701                // String s218
+      1623: aastore
+      1624: dup
+      1625: sipush        219
+      1628: ldc_w         #703                // String s219
+      1631: aastore
+      1632: dup
+      1633: sipush        220
+      1636: ldc_w         #705                // String s220
+      1639: aastore
+      1640: dup
+      1641: sipush        221
+      1644: ldc_w         #707                // String s221
+      1647: aastore
+      1648: dup
+      1649: sipush        222
+      1652: ldc_w         #709                // String s222
+      1655: aastore
+      1656: dup
+      1657: sipush        223
+      1660: ldc_w         #711                // String s223
+      1663: aastore
+      1664: dup
+      1665: sipush        224
+      1668: ldc_w         #713                // String s224
+      1671: aastore
+      1672: dup
+      1673: sipush        225
+      1676: ldc_w         #715                // String s225
+      1679: aastore
+      1680: dup
+      1681: sipush        226
+      1684: ldc_w         #717                // String s226
+      1687: aastore
+      1688: dup
+      1689: sipush        227
+      1692: ldc_w         #719                // String s227
+      1695: aastore
+      1696: dup
+      1697: sipush        228
+      1700: ldc_w         #721                // String s228
+      1703: aastore
+      1704: dup
+      1705: sipush        229
+      1708: ldc_w         #723                // String s229
+      1711: aastore
+      1712: dup
+      1713: sipush        230
+      1716: ldc_w         #725                // String s230
+      1719: aastore
+      1720: dup
+      1721: sipush        231
+      1724: ldc_w         #727                // String s231
+      1727: aastore
+      1728: dup
+      1729: sipush        232
+      1732: ldc_w         #729                // String s232
+      1735: aastore
+      1736: dup
+      1737: sipush        233
+      1740: ldc_w         #731                // String s233
+      1743: aastore
+      1744: dup
+      1745: sipush        234
+      1748: ldc_w         #733                // String s234
+      1751: aastore
+      1752: dup
+      1753: sipush        235
+      1756: ldc_w         #735                // String s235
+      1759: aastore
+      1760: dup
+      1761: sipush        236
+      1764: ldc_w         #737                // String s236
+      1767: aastore
+      1768: dup
+      1769: sipush        237
+      1772: ldc_w         #739                // String s237
+      1775: aastore
+      1776: dup
+      1777: sipush        238
+      1780: ldc_w         #741                // String s238
+      1783: aastore
+      1784: dup
+      1785: sipush        239
+      1788: ldc_w         #743                // String s239
+      1791: aastore
+      1792: dup
+      1793: sipush        240
+      1796: ldc_w         #745                // String s240
+      1799: aastore
+      1800: dup
+      1801: sipush        241
+      1804: ldc_w         #747                // String s241
+      1807: aastore
+      1808: dup
+      1809: sipush        242
+      1812: ldc_w         #749                // String s242
+      1815: aastore
+      1816: dup
+      1817: sipush        243
+      1820: ldc_w         #751                // String s243
+      1823: aastore
+      1824: dup
+      1825: sipush        244
+      1828: ldc_w         #753                // String s244
+      1831: aastore
+      1832: dup
+      1833: sipush        245
+      1836: ldc_w         #755                // String s245
+      1839: aastore
+      1840: dup
+      1841: sipush        246
+      1844: ldc_w         #757                // String s246
+      1847: aastore
+      1848: dup
+      1849: sipush        247
+      1852: ldc_w         #759                // String s247
+      1855: aastore
+      1856: dup
+      1857: sipush        248
+      1860: ldc_w         #761                // String s248
+      1863: aastore
+      1864: dup
+      1865: sipush        249
+      1868: ldc_w         #763                // String s249
+      1871: aastore
+      1872: dup
+      1873: sipush        250
+      1876: ldc_w         #765                // String s250
+      1879: aastore
+      1880: dup
+      1881: sipush        251
+      1884: ldc_w         #767                // String s251
+      1887: aastore
+      1888: dup
+      1889: sipush        252
+      1892: ldc_w         #769                // String s252
+      1895: aastore
+      1896: dup
+      1897: sipush        253
+      1900: ldc_w         #771                // String s253
+      1903: aastore
+      1904: dup
+      1905: sipush        254
+      1908: ldc_w         #773                // String s254
+      1911: aastore
+      1912: dup
+      1913: sipush        255
+      1916: ldc_w         #775                // String s255
+      1919: aastore
+      1920: dup
+      1921: sipush        256
+      1924: ldc_w         #777                // String s256
+      1927: aastore
+      1928: dup
+      1929: sipush        257
+      1932: ldc_w         #779                // String s257
+      1935: aastore
+      1936: dup
+      1937: sipush        258
+      1940: ldc_w         #781                // String s258
+      1943: aastore
+      1944: dup
+      1945: sipush        259
+      1948: ldc_w         #783                // String s259
+      1951: aastore
+      1952: dup
+      1953: sipush        260
+      1956: ldc_w         #785                // String s260
+      1959: aastore
+      1960: dup
+      1961: sipush        261
+      1964: ldc_w         #787                // String s261
+      1967: aastore
+      1968: dup
+      1969: sipush        262
+      1972: ldc_w         #789                // String s262
+      1975: aastore
+      1976: dup
+      1977: sipush        263
+      1980: ldc_w         #791                // String s263
+      1983: aastore
+      1984: dup
+      1985: sipush        264
+      1988: ldc_w         #793                // String s264
+      1991: aastore
+      1992: dup
+      1993: sipush        265
+      1996: ldc_w         #795                // String s265
+      1999: aastore
+      2000: dup
+      2001: sipush        266
+      2004: ldc_w         #797                // String s266
+      2007: aastore
+      2008: dup
+      2009: sipush        267
+      2012: ldc_w         #799                // String s267
+      2015: aastore
+      2016: dup
+      2017: sipush        268
+      2020: ldc_w         #801                // String s268
+      2023: aastore
+      2024: dup
+      2025: sipush        269
+      2028: ldc_w         #803                // String s269
+      2031: aastore
+      2032: dup
+      2033: sipush        270
+      2036: ldc_w         #805                // String s270
+      2039: aastore
+      2040: dup
+      2041: sipush        271
+      2044: ldc_w         #807                // String s271
+      2047: aastore
+      2048: dup
+      2049: sipush        272
+      2052: ldc_w         #809                // String s272
+      2055: aastore
+      2056: dup
+      2057: sipush        273
+      2060: ldc_w         #811                // String s273
+      2063: aastore
+      2064: dup
+      2065: sipush        274
+      2068: ldc_w         #813                // String s274
+      2071: aastore
+      2072: dup
+      2073: sipush        275
+      2076: ldc_w         #815                // String s275
+      2079: aastore
+      2080: dup
+      2081: sipush        276
+      2084: ldc_w         #817                // String s276
+      2087: aastore
+      2088: dup
+      2089: sipush        277
+      2092: ldc_w         #819                // String s277
+      2095: aastore
+      2096: dup
+      2097: sipush        278
+      2100: ldc_w         #821                // String s278
+      2103: aastore
+      2104: dup
+      2105: sipush        279
+      2108: ldc_w         #823                // String s279
+      2111: aastore
+      2112: dup
+      2113: sipush        280
+      2116: ldc_w         #825                // String s280
+      2119: aastore
+      2120: dup
+      2121: sipush        281
+      2124: ldc_w         #827                // String s281
+      2127: aastore
+      2128: dup
+      2129: sipush        282
+      2132: ldc_w         #829                // String s282
+      2135: aastore
+      2136: dup
+      2137: sipush        283
+      2140: ldc_w         #831                // String s283
+      2143: aastore
+      2144: dup
+      2145: sipush        284
+      2148: ldc_w         #833                // String s284
+      2151: aastore
+      2152: dup
+      2153: sipush        285
+      2156: ldc_w         #835                // String s285
+      2159: aastore
+      2160: dup
+      2161: sipush        286
+      2164: ldc_w         #837                // String s286
+      2167: aastore
+      2168: dup
+      2169: sipush        287
+      2172: ldc_w         #839                // String s287
+      2175: aastore
+      2176: dup
+      2177: sipush        288
+      2180: ldc_w         #841                // String s288
+      2183: aastore
+      2184: dup
+      2185: sipush        289
+      2188: ldc_w         #843                // String s289
+      2191: aastore
+      2192: dup
+      2193: sipush        290
+      2196: ldc_w         #845                // String s290
+      2199: aastore
+      2200: dup
+      2201: sipush        291
+      2204: ldc_w         #847                // String s291
+      2207: aastore
+      2208: dup
+      2209: sipush        292
+      2212: ldc_w         #849                // String s292
+      2215: aastore
+      2216: dup
+      2217: sipush        293
+      2220: ldc_w         #851                // String s293
+      2223: aastore
+      2224: dup
+      2225: sipush        294
+      2228: ldc_w         #853                // String s294
+      2231: aastore
+      2232: dup
+      2233: sipush        295
+      2236: ldc_w         #855                // String s295
+      2239: aastore
+      2240: dup
+      2241: sipush        296
+      2244: ldc_w         #857                // String s296
+      2247: aastore
+      2248: dup
+      2249: sipush        297
+      2252: ldc_w         #859                // String s297
+      2255: aastore
+      2256: dup
+      2257: sipush        298
+      2260: ldc_w         #861                // String s298
+      2263: aastore
+      2264: dup
+      2265: sipush        299
+      2268: ldc_w         #863                // String s299
+      2271: aastore
+      2272: areturn
+      LineNumberTable:
+        line 148: 0
+
+  static float lastFloat();
+    descriptor: ()F
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: ldc_w         #865                // float 1234.5f
+         3: freturn
+      LineNumberTable:
+        line 203: 0
+}
+SourceFile: "Wide.java"

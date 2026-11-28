@@ -1,0 +1,589 @@
+Classfile /R:/testdata/java/main/fixture/Annotated.class
+  Last modified Nov 27, 2026; size 4299 bytes
+  SHA-256 checksum 2d1de680aa84b896cd3edf0da4ba593e894e3a48af29813f09e0ac1142974470
+  Compiled from "Annotated.java"
+public class fixture.Annotated<T extends java.io.Serializable & java.lang.Comparable<T>> extends java.lang.Object implements java.util.function.Supplier<T>
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #45                         // fixture/Annotated
+  super_class: #2                         // java/lang/Object
+  interfaces: 1, fields: 4, methods: 6, attributes: 9
+Constant pool:
+    #1 = Methodref          #2.#3         // java/lang/Object."<init>":()V
+    #2 = Class              #4            // java/lang/Object
+    #3 = NameAndType        #5:#6         // "<init>":()V
+    #4 = Utf8               java/lang/Object
+    #5 = Utf8               <init>
+    #6 = Utf8               ()V
+    #7 = Class              #8            // java/lang/Number
+    #8 = Utf8               java/lang/Number
+    #9 = Class              #10           // java/lang/Integer
+   #10 = Utf8               java/lang/Integer
+   #11 = Class              #12           // java/lang/StringBuilder
+   #12 = Utf8               java/lang/StringBuilder
+   #13 = Methodref          #11.#3        // java/lang/StringBuilder."<init>":()V
+   #14 = InvokeDynamic      #0:#15        // #0:close:()Ljava/lang/AutoCloseable;
+   #15 = NameAndType        #16:#17       // close:()Ljava/lang/AutoCloseable;
+   #16 = Utf8               close
+   #17 = Utf8               ()Ljava/lang/AutoCloseable;
+   #18 = InterfaceMethodref #19.#20       // java/util/List.of:()Ljava/util/List;
+   #19 = Class              #21           // java/util/List
+   #20 = NameAndType        #22:#23       // of:()Ljava/util/List;
+   #21 = Utf8               java/util/List
+   #22 = Utf8               of
+   #23 = Utf8               ()Ljava/util/List;
+   #24 = InterfaceMethodref #25.#26       // java/lang/AutoCloseable.close:()V
+   #25 = Class              #27           // java/lang/AutoCloseable
+   #26 = NameAndType        #16:#6        // close:()V
+   #27 = Utf8               java/lang/AutoCloseable
+   #28 = Class              #29           // java/lang/Throwable
+   #29 = Utf8               java/lang/Throwable
+   #30 = Methodref          #28.#31       // java/lang/Throwable.addSuppressed:(Ljava/lang/Throwable;)V
+   #31 = NameAndType        #32:#33       // addSuppressed:(Ljava/lang/Throwable;)V
+   #32 = Utf8               addSuppressed
+   #33 = Utf8               (Ljava/lang/Throwable;)V
+   #34 = Class              #35           // java/lang/Exception
+   #35 = Utf8               java/lang/Exception
+   #36 = Class              #37           // java/io/IOException
+   #37 = Utf8               java/io/IOException
+   #38 = Methodref          #36.#39       // java/io/IOException."<init>":(Ljava/lang/Throwable;)V
+   #39 = NameAndType        #5:#33        // "<init>":(Ljava/lang/Throwable;)V
+   #40 = InvokeDynamic      #1:#41        // #1:get:()Ljava/util/function/Supplier;
+   #41 = NameAndType        #42:#43       // get:()Ljava/util/function/Supplier;
+   #42 = Utf8               get
+   #43 = Utf8               ()Ljava/util/function/Supplier;
+   #44 = Methodref          #45.#46       // fixture/Annotated.get:()Ljava/io/Serializable;
+   #45 = Class              #47           // fixture/Annotated
+   #46 = NameAndType        #42:#48       // get:()Ljava/io/Serializable;
+   #47 = Utf8               fixture/Annotated
+   #48 = Utf8               ()Ljava/io/Serializable;
+   #49 = Class              #50           // java/util/function/Supplier
+   #50 = Utf8               java/util/function/Supplier
+   #51 = Utf8               field
+   #52 = Utf8               Ljava/lang/String;
+   #53 = Utf8               RuntimeVisibleAnnotations
+   #54 = Utf8               Lfixture/Info;
+   #55 = Utf8               id
+   #56 = Integer            2
+   #57 = Utf8               RuntimeInvisibleAnnotations
+   #58 = Utf8               Lfixture/Hidden;
+   #59 = Utf8               RuntimeVisibleTypeAnnotations
+   #60 = Utf8               Lfixture/TypeUse;
+   #61 = Utf8               value
+   #62 = Utf8               nested
+   #63 = Utf8               Ljava/util/Map;
+   #64 = Utf8               Signature
+   #65 = Utf8               Ljava/util/Map<Ljava/lang/String;Ljava/util/List<+Ljava/lang/Number;>;>;
+   #66 = Utf8               key
+   #67 = Utf8               wild
+   #68 = Utf8               ext
+   #69 = Utf8               arrays
+   #70 = Utf8               [[Ljava/lang/String;
+   #71 = Utf8               array
+   #72 = Utf8               inner
+   #73 = Utf8               Lfixture/Annotated$Inner;
+   #74 = Utf8               Lfixture/Annotated<TT;>.Inner;
+   #75 = Utf8               in
+   #76 = Utf8               outer
+   #77 = Utf8               Code
+   #78 = Utf8               LineNumberTable
+   #79 = Utf8               LocalVariableTable
+   #80 = Utf8               this
+   #81 = Utf8               Lfixture/Annotated;
+   #82 = Utf8               LocalVariableTypeTable
+   #83 = Utf8               Lfixture/Annotated<TT;>;
+   #84 = Integer            3
+   #85 = Utf8               method
+   #86 = Utf8               (Ljava/lang/Number;I[Ljava/lang/String;)Ljava/lang/Number;
+   #87 = Utf8               r
+   #88 = Utf8               Ljava/lang/AutoCloseable;
+   #89 = Utf8               e
+   #90 = Utf8               Ljava/lang/Exception;
+   #91 = Utf8               u
+   #92 = Utf8               Ljava/lang/Number;
+   #93 = Utf8               plain
+   #94 = Utf8               I
+   #95 = Utf8               rest
+   #96 = Utf8               [Ljava/lang/String;
+   #97 = Utf8               local
+   #98 = Utf8               Ljava/lang/Object;
+   #99 = Utf8               cast
+  #100 = Utf8               s
+  #101 = Utf8               Ljava/util/function/Supplier;
+  #102 = Utf8               TU;
+  #103 = Utf8               Ljava/util/function/Supplier<Ljava/lang/Object;>;
+  #104 = Utf8               StackMapTable
+  #105 = Class              #96           // "[Ljava/lang/String;"
+  #106 = Utf8               instanceof
+  #107 = Utf8               new
+  #108 = Utf8               typearg
+  #109 = Utf8               ref
+  #110 = Utf8               resource
+  #111 = Utf8               catch
+  #112 = Utf8               Exceptions
+  #113 = Class              #114          // java/lang/RuntimeException
+  #114 = Utf8               java/lang/RuntimeException
+  #115 = Utf8               MethodParameters
+  #116 = Utf8               <U:Ljava/lang/Number;>(TU;I[Ljava/lang/String;)TU;
+  #117 = Utf8               U
+  #118 = Utf8               ubound
+  #119 = Utf8               throws
+  #120 = Utf8               ret
+  #121 = Utf8               param
+  #122 = Utf8               varargs
+  #123 = Utf8               dims
+  #124 = Utf8               RuntimeInvisibleTypeAnnotations
+  #125 = Utf8               Lfixture/HiddenType;
+  #126 = Utf8               RuntimeVisibleParameterAnnotations
+  #127 = Integer            4
+  #128 = Utf8               RuntimeInvisibleParameterAnnotations
+  #129 = Utf8               p
+  #130 = Utf8               receiver
+  #131 = Utf8               ()TT;
+  #132 = Utf8               ()Ljava/lang/Object;
+  #133 = Utf8               lambda$method$0
+  #134 = Utf8               <T::Ljava/io/Serializable;:Ljava/lang/Comparable<TT;>;>Ljava/lang/Object;Ljava/util/function/Supplier<TT;>;
+  #135 = Utf8               SourceFile
+  #136 = Utf8               Annotated.java
+  #137 = Integer            1
+  #138 = Utf8               name
+  #139 = Utf8               annotated
+  #140 = Utf8               kind
+  #141 = Utf8               Ljava/lang/annotation/ElementType;
+  #142 = Utf8               FIELD
+  #143 = Utf8               type
+  #144 = Utf8               values
+  #145 = Integer            5
+  #146 = Utf8               n
+  #147 = Utf8               class
+  #148 = Utf8               super
+  #149 = Utf8               iface
+  #150 = Utf8               arg
+  #151 = Utf8               T
+  #152 = Utf8               bound
+  #153 = Utf8               NestMembers
+  #154 = Class              #155          // fixture/Annotated$Inner
+  #155 = Utf8               fixture/Annotated$Inner
+  #156 = Utf8               BootstrapMethods
+  #157 = MethodType         #6            //  ()V
+  #158 = MethodHandle       6:#159        // REF_invokeStatic fixture/Annotated.lambda$method$0:()V
+  #159 = Methodref          #45.#160      // fixture/Annotated.lambda$method$0:()V
+  #160 = NameAndType        #133:#6       // lambda$method$0:()V
+  #161 = MethodType         #132          //  ()Ljava/lang/Object;
+  #162 = MethodHandle       8:#13         // REF_newInvokeSpecial java/lang/StringBuilder."<init>":()V
+  #163 = MethodHandle       6:#164        // REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #164 = Methodref          #165.#166     // java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #165 = Class              #167          // java/lang/invoke/LambdaMetafactory
+  #166 = NameAndType        #168:#169     // metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #167 = Utf8               java/lang/invoke/LambdaMetafactory
+  #168 = Utf8               metafactory
+  #169 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #170 = Utf8               InnerClasses
+  #171 = Utf8               Inner
+  #172 = Class              #173          // java/lang/invoke/MethodHandles$Lookup
+  #173 = Utf8               java/lang/invoke/MethodHandles$Lookup
+  #174 = Class              #175          // java/lang/invoke/MethodHandles
+  #175 = Utf8               java/lang/invoke/MethodHandles
+  #176 = Utf8               Lookup
+{
+  public java.lang.String field;
+    descriptor: Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    RuntimeVisibleAnnotations:
+      0: #54(#55=I#56)
+        fixture.Info(
+          id=2
+        )
+    RuntimeInvisibleAnnotations:
+      0: #58()
+        fixture.Hidden
+    RuntimeVisibleTypeAnnotations:
+      0: #60(#61=s#51): FIELD
+        fixture.TypeUse(
+          value="field"
+        )
+
+  public java.util.Map<java.lang.String, java.util.List<? extends java.lang.Number>> nested;
+    descriptor: Ljava/util/Map;
+    flags: (0x0001) ACC_PUBLIC
+    Signature: #65                          // Ljava/util/Map<Ljava/lang/String;Ljava/util/List<+Ljava/lang/Number;>;>;
+    RuntimeVisibleTypeAnnotations:
+      0: #60(#61=s#66): FIELD, location=[TYPE_ARGUMENT(0)]
+        fixture.TypeUse(
+          value="key"
+        )
+      1: #60(#61=s#67): FIELD, location=[TYPE_ARGUMENT(1), TYPE_ARGUMENT(0)]
+        fixture.TypeUse(
+          value="wild"
+        )
+      2: #60(#61=s#68): FIELD, location=[TYPE_ARGUMENT(1), TYPE_ARGUMENT(0), WILDCARD]
+        fixture.TypeUse(
+          value="ext"
+        )
+
+  public java.lang.String[][] arrays;
+    descriptor: [[Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    RuntimeVisibleTypeAnnotations:
+      0: #60(#61=s#71): FIELD
+        fixture.TypeUse(
+          value="array"
+        )
+      1: #60(#61=s#72): FIELD, location=[ARRAY]
+        fixture.TypeUse(
+          value="inner"
+        )
+
+  public fixture.Annotated<T>.Inner inner;
+    descriptor: Lfixture/Annotated$Inner;
+    flags: (0x0001) ACC_PUBLIC
+    Signature: #74                          // Lfixture/Annotated<TT;>.Inner;
+    RuntimeVisibleTypeAnnotations:
+      0: #60(#61=s#75): FIELD, location=[INNER_TYPE]
+        fixture.TypeUse(
+          value="in"
+        )
+      1: #60(#61=s#76): FIELD
+        fixture.TypeUse(
+          value="outer"
+        )
+
+  public fixture.Annotated();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 27: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Annotated;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Annotated<TT;>;
+    RuntimeVisibleAnnotations:
+      0: #54(#55=I#84)
+        fixture.Info(
+          id=3
+        )
+
+  public <U extends java.lang.Number> U method(U, int, java.lang.String...) throws java.io.IOException, java.lang.RuntimeException;
+    descriptor: (Ljava/lang/Number;I[Ljava/lang/String;)Ljava/lang/Number;
+    flags: (0x0081) ACC_PUBLIC, ACC_VARARGS
+    Code:
+      stack=3, locals=9, args_size=4
+         0: aload_1
+         1: astore        4
+         3: aload         4
+         5: checkcast     #7                  // class java/lang/Number
+         8: astore        5
+        10: aload         5
+        12: instanceof    #9                  // class java/lang/Integer
+        15: ifeq          27
+        18: new           #11                 // class java/lang/StringBuilder
+        21: dup
+        22: invokespecial #13                 // Method java/lang/StringBuilder."<init>":()V
+        25: astore        4
+        27: invokedynamic #14,  0             // InvokeDynamic #0:close:()Ljava/lang/AutoCloseable;
+        32: astore        6
+        34: invokestatic  #18                 // InterfaceMethod java/util/List.of:()Ljava/util/List;
+        37: astore        4
+        39: aload         6
+        41: ifnull        83
+        44: aload         6
+        46: invokeinterface #24,  1           // InterfaceMethod java/lang/AutoCloseable.close:()V
+        51: goto          83
+        54: astore        7
+        56: aload         6
+        58: ifnull        80
+        61: aload         6
+        63: invokeinterface #24,  1           // InterfaceMethod java/lang/AutoCloseable.close:()V
+        68: goto          80
+        71: astore        8
+        73: aload         7
+        75: aload         8
+        77: invokevirtual #30                 // Method java/lang/Throwable.addSuppressed:(Ljava/lang/Throwable;)V
+        80: aload         7
+        82: athrow
+        83: goto          98
+        86: astore        6
+        88: new           #36                 // class java/io/IOException
+        91: dup
+        92: aload         6
+        94: invokespecial #38                 // Method java/io/IOException."<init>":(Ljava/lang/Throwable;)V
+        97: athrow
+        98: invokedynamic #40,  0             // InvokeDynamic #1:get:()Ljava/util/function/Supplier;
+       103: astore        6
+       105: aload_1
+       106: areturn
+      Exception table:
+         from    to  target type
+            34    39    54   Class java/lang/Throwable
+            61    68    71   Class java/lang/Throwable
+            27    83    86   Class java/lang/Exception
+      LineNumberTable:
+        line 33: 0
+        line 34: 3
+        line 35: 10
+        line 36: 18
+        line 38: 27
+        line 39: 34
+        line 40: 39
+        line 38: 54
+        line 42: 83
+        line 40: 86
+        line 41: 88
+        line 43: 98
+        line 44: 105
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+           34      49     6     r   Ljava/lang/AutoCloseable;
+           88      10     6     e   Ljava/lang/Exception;
+            0     107     0  this   Lfixture/Annotated;
+            0     107     1     u   Ljava/lang/Number;
+            0     107     2 plain   I
+            0     107     3  rest   [Ljava/lang/String;
+            3     104     4 local   Ljava/lang/Object;
+           10      97     5  cast   Ljava/lang/Object;
+          105       2     6     s   Ljava/util/function/Supplier;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0     107     0  this   Lfixture/Annotated<TT;>;
+            0     107     1     u   TU;
+          105       2     6     s   Ljava/util/function/Supplier<Ljava/lang/Object;>;
+      StackMapTable: number_of_entries = 7
+        frame_type = 253 /* append */
+          offset_delta = 27
+          locals = [ class java/lang/Object, class java/lang/Object ]
+        frame_type = 255 /* full_frame */
+          offset_delta = 26
+          locals = [ class fixture/Annotated, class java/lang/Number, int, class "[Ljava/lang/String;", class java/lang/Object, class java/lang/Object, class java/lang/AutoCloseable ]
+          stack = [ class java/lang/Throwable ]
+        frame_type = 255 /* full_frame */
+          offset_delta = 16
+          locals = [ class fixture/Annotated, class java/lang/Number, int, class "[Ljava/lang/String;", class java/lang/Object, class java/lang/Object, class java/lang/AutoCloseable, class java/lang/Throwable ]
+          stack = [ class java/lang/Throwable ]
+        frame_type = 8 /* same */
+        frame_type = 249 /* chop */
+          offset_delta = 2
+        frame_type = 66 /* same_locals_1_stack_item */
+          stack = [ class java/lang/Exception ]
+        frame_type = 11 /* same */
+      RuntimeVisibleTypeAnnotations:
+        0: #60(#61=s#99): CAST, offset=5, type_index=0
+          fixture.TypeUse(
+            value="cast"
+          )
+        1: #60(#61=s#106): INSTANCEOF, offset=12
+          fixture.TypeUse(
+            value="instanceof"
+          )
+        2: #60(#61=s#107): NEW, offset=18
+          fixture.TypeUse(
+            value="new"
+          )
+        3: #60(#61=s#108): METHOD_INVOCATION_TYPE_ARGUMENT, offset=34, type_index=0
+          fixture.TypeUse(
+            value="typearg"
+          )
+        4: #60(#61=s#109): CONSTRUCTOR_REFERENCE, offset=98
+          fixture.TypeUse(
+            value="ref"
+          )
+        5: #60(#61=s#97): LOCAL_VARIABLE, {start_pc=3, length=104, index=4}
+          fixture.TypeUse(
+            value="local"
+          )
+        6: #60(#61=s#110): RESOURCE_VARIABLE, {start_pc=34, length=49, index=6}
+          fixture.TypeUse(
+            value="resource"
+          )
+        7: #60(#61=s#111): EXCEPTION_PARAMETER, exception_index=2
+          fixture.TypeUse(
+            value="catch"
+          )
+    Exceptions:
+      throws java.io.IOException, java.lang.RuntimeException
+    MethodParameters:
+      Name                           Flags
+      u                              final
+      plain
+      rest
+    Signature: #116                         // <U:Ljava/lang/Number;>(TU;I[Ljava/lang/String;)TU;
+    RuntimeVisibleTypeAnnotations:
+      0: #60(#61=s#117): METHOD_TYPE_PARAMETER, param_index=0
+        fixture.TypeUse(
+          value="U"
+        )
+      1: #60(#61=s#118): METHOD_TYPE_PARAMETER_BOUND, param_index=0, bound_index=0
+        fixture.TypeUse(
+          value="ubound"
+        )
+      2: #60(#61=s#119): THROWS, type_index=0
+        fixture.TypeUse(
+          value="throws"
+        )
+      3: #60(#61=s#120): METHOD_RETURN
+        fixture.TypeUse(
+          value="ret"
+        )
+      4: #60(#61=s#121): METHOD_FORMAL_PARAMETER, param_index=0
+        fixture.TypeUse(
+          value="param"
+        )
+      5: #60(#61=s#122): METHOD_FORMAL_PARAMETER, param_index=2, location=[ARRAY]
+        fixture.TypeUse(
+          value="varargs"
+        )
+      6: #60(#61=s#123): METHOD_FORMAL_PARAMETER, param_index=2
+        fixture.TypeUse(
+          value="dims"
+        )
+    RuntimeInvisibleTypeAnnotations:
+      0: #125(): THROWS, type_index=1
+        fixture.HiddenType
+    RuntimeVisibleParameterAnnotations:
+      parameter 0:
+        0: #54(#55=I#127)
+          fixture.Info(
+            id=4
+          )
+      parameter 1:
+      parameter 2:
+    RuntimeInvisibleParameterAnnotations:
+      parameter 0:
+      parameter 1:
+        0: #58(#61=s#129)
+          fixture.Hidden(
+            value="p"
+          )
+      parameter 2:
+
+  public void receiver();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=0, locals=1, args_size=1
+         0: return
+      LineNumberTable:
+        line 47: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       1     0  this   Lfixture/Annotated;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0       1     0  this   Lfixture/Annotated<TT;>;
+    RuntimeVisibleTypeAnnotations:
+      0: #60(#61=s#80): METHOD_RECEIVER
+        fixture.TypeUse(
+          value="this"
+        )
+
+  public T get();
+    descriptor: ()Ljava/io/Serializable;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aconst_null
+         1: areturn
+      LineNumberTable:
+        line 51: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       2     0  this   Lfixture/Annotated;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0       2     0  this   Lfixture/Annotated<TT;>;
+    Signature: #131                         // ()TT;
+
+  public java.lang.Object get();
+    descriptor: ()Ljava/lang/Object;
+    flags: (0x1041) ACC_PUBLIC, ACC_BRIDGE, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokevirtual #44                 // Method get:()Ljava/io/Serializable;
+         4: areturn
+      LineNumberTable:
+        line 10: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Annotated;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Annotated<TT;>;
+
+  private static void lambda$method$0() throws java.lang.Exception;
+    descriptor: ()V
+    flags: (0x100a) ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=0, locals=0, args_size=0
+         0: return
+      LineNumberTable:
+        line 38: 0
+    Exceptions:
+      throws java.lang.Exception
+}
+Signature: #134                         // <T::Ljava/io/Serializable;:Ljava/lang/Comparable<TT;>;>Ljava/lang/Object;Ljava/util/function/Supplier<TT;>;
+SourceFile: "Annotated.java"
+RuntimeVisibleAnnotations:
+  0: #54(#55=I#137,#138=s#139,#140=e#141.#142,#143=c#52,#144=[I#127,I#145],#62=@#58(#61=s#146))
+    fixture.Info(
+      id=1
+      name="annotated"
+      kind=Ljava/lang/annotation/ElementType;.FIELD
+      type=class Ljava/lang/String;
+      values=[4,5]
+      nested=@fixture.Hidden(
+        value="n"
+      )
+    )
+RuntimeInvisibleAnnotations:
+  0: #58(#61=s#147)
+    fixture.Hidden(
+      value="class"
+    )
+RuntimeVisibleTypeAnnotations:
+  0: #60(#61=s#148): CLASS_EXTENDS, type_index=65535
+    fixture.TypeUse(
+      value="super"
+    )
+  1: #60(#61=s#149): CLASS_EXTENDS, type_index=0
+    fixture.TypeUse(
+      value="iface"
+    )
+  2: #60(#61=s#150): CLASS_EXTENDS, type_index=0, location=[TYPE_ARGUMENT(0)]
+    fixture.TypeUse(
+      value="arg"
+    )
+  3: #60(#61=s#151): CLASS_TYPE_PARAMETER, param_index=0
+    fixture.TypeUse(
+      value="T"
+    )
+  4: #60(#61=s#152): CLASS_TYPE_PARAMETER_BOUND, param_index=0, bound_index=1
+    fixture.TypeUse(
+      value="bound"
+    )
+RuntimeInvisibleTypeAnnotations:
+  0: #125(): CLASS_TYPE_PARAMETER_BOUND, param_index=0, bound_index=2
+    fixture.HiddenType
+NestMembers:
+  fixture/Annotated$Inner
+BootstrapMethods:
+  0: #163 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #157 ()V
+      #158 REF_invokeStatic fixture/Annotated.lambda$method$0:()V
+      #157 ()V
+  1: #163 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #161 ()Ljava/lang/Object;
+      #162 REF_newInvokeSpecial java/lang/StringBuilder."<init>":()V
+      #161 ()Ljava/lang/Object;
+InnerClasses:
+  public #171= #154 of #45;               // Inner=class fixture/Annotated$Inner of class fixture/Annotated
+  public static final #176= #172 of #174; // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles

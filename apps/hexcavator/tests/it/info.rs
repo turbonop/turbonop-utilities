@@ -77,3 +77,32 @@ fn managed() {
             .contains("\n  module Sample.Extra.netmodule (no assembly manifest)\n")
     );
 }
+
+#[test]
+fn java() {
+    assert_eq!(
+        info("java/main/fixture/Hello.class"),
+        "Java class file, version 65.0 (Java 21), 1098 bytes\n  \
+         class fixture.Hello\n  \
+         0 fields, 2 methods, 0 interfaces; constant pool of 57 entries (853 bytes)\n  \
+         source file: Hello.java\n"
+    );
+    assert!(info("java/preview/preview/Preview.class").contains("(Java 21, preview features)"));
+    let jar = info("java/fixtures.jar");
+    assert!(jar.starts_with("JAR (ZIP archive), 42 entries, "), "{jar}");
+    for line in [
+        "\n  Main-Class: fixture.Hello\n",
+        "\n  36 classes in 3 packages, class version 65 (Java 21)\n",
+        "\n  modular JAR (module-info.class)\n",
+        "\n  signed: META-INF/FIXTURE.SF, META-INF/FIXTURE.EC\n",
+    ] {
+        assert!(jar.contains(line), "{jar}");
+    }
+    let mr = info("java/mr.jar");
+    assert!(mr.contains("class versions 52 to 61 (Java 8 to Java 17)"), "{mr}");
+    assert!(mr.contains("multi-release: versions 17"), "{mr}");
+    assert_eq!(
+        info("zip/prefixed.zip"),
+        "ZIP archive, 1 entries, 676 bytes\n  1 entries, 7490 bytes uncompressed, after 46 bytes of other data\n"
+    );
+}

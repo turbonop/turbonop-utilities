@@ -1,0 +1,125 @@
+Classfile /R:/testdata/java/main/fixture/Hello.class
+  Last modified Nov 27, 2026; size 1098 bytes
+  SHA-256 checksum 9609c0d677130d6de7dff0cb99f81980fb24bf630f8832c3239e82e5160a034c
+  Compiled from "Hello.java"
+public class fixture.Hello
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #25                         // fixture/Hello
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 2, attributes: 3
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = Fieldref           #8.#9          // java/lang/System.out:Ljava/io/PrintStream;
+   #8 = Class              #10            // java/lang/System
+   #9 = NameAndType        #11:#12        // out:Ljava/io/PrintStream;
+  #10 = Utf8               java/lang/System
+  #11 = Utf8               out
+  #12 = Utf8               Ljava/io/PrintStream;
+  #13 = String             #14            // world
+  #14 = Utf8               world
+  #15 = InvokeDynamic      #0:#16         // #0:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+  #16 = NameAndType        #17:#18        // makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+  #17 = Utf8               makeConcatWithConstants
+  #18 = Utf8               (Ljava/lang/String;)Ljava/lang/String;
+  #19 = Methodref          #20.#21        // java/io/PrintStream.println:(Ljava/lang/String;)V
+  #20 = Class              #22            // java/io/PrintStream
+  #21 = NameAndType        #23:#24        // println:(Ljava/lang/String;)V
+  #22 = Utf8               java/io/PrintStream
+  #23 = Utf8               println
+  #24 = Utf8               (Ljava/lang/String;)V
+  #25 = Class              #26            // fixture/Hello
+  #26 = Utf8               fixture/Hello
+  #27 = Utf8               Code
+  #28 = Utf8               LineNumberTable
+  #29 = Utf8               LocalVariableTable
+  #30 = Utf8               this
+  #31 = Utf8               Lfixture/Hello;
+  #32 = Utf8               main
+  #33 = Utf8               ([Ljava/lang/String;)V
+  #34 = Utf8               args
+  #35 = Utf8               [Ljava/lang/String;
+  #36 = Utf8               StackMapTable
+  #37 = Class              #35            // "[Ljava/lang/String;"
+  #38 = Class              #39            // java/lang/String
+  #39 = Utf8               java/lang/String
+  #40 = Utf8               MethodParameters
+  #41 = Utf8               SourceFile
+  #42 = Utf8               Hello.java
+  #43 = Utf8               BootstrapMethods
+  #44 = String             #45            // Hello, \u0001!
+  #45 = Utf8               Hello, \u0001!
+  #46 = MethodHandle       6:#47          // REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #47 = Methodref          #48.#49        // java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #48 = Class              #50            // java/lang/invoke/StringConcatFactory
+  #49 = NameAndType        #17:#51        // makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #50 = Utf8               java/lang/invoke/StringConcatFactory
+  #51 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #52 = Utf8               InnerClasses
+  #53 = Class              #54            // java/lang/invoke/MethodHandles$Lookup
+  #54 = Utf8               java/lang/invoke/MethodHandles$Lookup
+  #55 = Class              #56            // java/lang/invoke/MethodHandles
+  #56 = Utf8               java/lang/invoke/MethodHandles
+  #57 = Utf8               Lookup
+{
+  public fixture.Hello();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 4: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Hello;
+
+  public static void main(java.lang.String[]);
+    descriptor: ([Ljava/lang/String;)V
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=3, locals=1, args_size=1
+         0: getstatic     #7                  // Field java/lang/System.out:Ljava/io/PrintStream;
+         3: aload_0
+         4: arraylength
+         5: ifle          14
+         8: aload_0
+         9: iconst_0
+        10: aaload
+        11: goto          16
+        14: ldc           #13                 // String world
+        16: invokedynamic #15,  0             // InvokeDynamic #0:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+        21: invokevirtual #19                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+        24: return
+      LineNumberTable:
+        line 6: 0
+        line 7: 24
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      25     0  args   [Ljava/lang/String;
+      StackMapTable: number_of_entries = 2
+        frame_type = 78 /* same_locals_1_stack_item */
+          stack = [ class java/io/PrintStream ]
+        frame_type = 255 /* full_frame */
+          offset_delta = 1
+          locals = [ class "[Ljava/lang/String;" ]
+          stack = [ class java/io/PrintStream, class java/lang/String ]
+    MethodParameters:
+      Name                           Flags
+      args
+}
+SourceFile: "Hello.java"
+BootstrapMethods:
+  0: #46 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #44 Hello, \u0001!
+InnerClasses:
+  public static final #57= #53 of #55;    // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles

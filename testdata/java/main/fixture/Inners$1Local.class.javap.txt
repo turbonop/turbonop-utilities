@@ -1,0 +1,112 @@
+Classfile /R:/testdata/java/main/fixture/Inners$1Local.class
+  Last modified Nov 27, 2026; size 751 bytes
+  SHA-256 checksum 2bbd55c62bf0a0ea2c917ed81fff823675d6c136a6927f771db6aff6c3141ebf
+  Compiled from "Inners.java"
+class fixture.Inners$1Local implements java.util.function.IntSupplier
+  minor version: 0
+  major version: 65
+  flags: (0x0020) ACC_SUPER
+  this_class: #2                          // fixture/Inners$1Local
+  super_class: #12                        // java/lang/Object
+  interfaces: 1, fields: 2, methods: 2, attributes: 4
+Constant pool:
+   #1 = Fieldref           #2.#3          // fixture/Inners$1Local.this$0:Lfixture/Inners;
+   #2 = Class              #4             // fixture/Inners$1Local
+   #3 = NameAndType        #5:#6          // this$0:Lfixture/Inners;
+   #4 = Utf8               fixture/Inners$1Local
+   #5 = Utf8               this$0
+   #6 = Utf8               Lfixture/Inners;
+   #7 = Fieldref           #2.#8          // fixture/Inners$1Local.val$offset:I
+   #8 = NameAndType        #9:#10         // val$offset:I
+   #9 = Utf8               val$offset
+  #10 = Utf8               I
+  #11 = Methodref          #12.#13        // java/lang/Object."<init>":()V
+  #12 = Class              #14            // java/lang/Object
+  #13 = NameAndType        #15:#16        // "<init>":()V
+  #14 = Utf8               java/lang/Object
+  #15 = Utf8               <init>
+  #16 = Utf8               ()V
+  #17 = Fieldref           #18.#19        // fixture/Inners.secret:I
+  #18 = Class              #20            // fixture/Inners
+  #19 = NameAndType        #21:#10        // secret:I
+  #20 = Utf8               fixture/Inners
+  #21 = Utf8               secret
+  #22 = Class              #23            // java/util/function/IntSupplier
+  #23 = Utf8               java/util/function/IntSupplier
+  #24 = Utf8               (Lfixture/Inners;I)V
+  #25 = Utf8               Code
+  #26 = Utf8               LineNumberTable
+  #27 = Utf8               LocalVariableTable
+  #28 = Utf8               this
+  #29 = Utf8               Lfixture/Inners$1Local;
+  #30 = Utf8               MethodParameters
+  #31 = Utf8               Signature
+  #32 = Utf8               getAsInt
+  #33 = Utf8               ()I
+  #34 = Utf8               SourceFile
+  #35 = Utf8               Inners.java
+  #36 = Utf8               EnclosingMethod
+  #37 = NameAndType        #38:#39        // local:(I)Ljava/util/function/IntSupplier;
+  #38 = Utf8               local
+  #39 = Utf8               (I)Ljava/util/function/IntSupplier;
+  #40 = Utf8               NestHost
+  #41 = Utf8               InnerClasses
+  #42 = Utf8               Local
+{
+  final int val$offset;
+    descriptor: I
+    flags: (0x1010) ACC_FINAL, ACC_SYNTHETIC
+
+  final fixture.Inners this$0;
+    descriptor: Lfixture/Inners;
+    flags: (0x1010) ACC_FINAL, ACC_SYNTHETIC
+
+  fixture.Inners$1Local();
+    descriptor: (Lfixture/Inners;I)V
+    flags: (0x0000)
+    Code:
+      stack=2, locals=3, args_size=3
+         0: aload_0
+         1: aload_1
+         2: putfield      #1                  // Field this$0:Lfixture/Inners;
+         5: aload_0
+         6: iload_2
+         7: putfield      #7                  // Field val$offset:I
+        10: aload_0
+        11: invokespecial #11                 // Method java/lang/Object."<init>":()V
+        14: return
+      LineNumberTable:
+        line 37: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      15     0  this   Lfixture/Inners$1Local;
+            0      15     1 this$0   Lfixture/Inners;
+    MethodParameters:
+      Name                           Flags
+      this$0                         final mandated
+      val$offset                     final synthetic
+    Signature: #16                          // ()V
+
+  public int getAsInt();
+    descriptor: ()I
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #1                  // Field this$0:Lfixture/Inners;
+         4: getfield      #17                 // Field fixture/Inners.secret:I
+         7: aload_0
+         8: getfield      #7                  // Field val$offset:I
+        11: iadd
+        12: ireturn
+      LineNumberTable:
+        line 39: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      13     0  this   Lfixture/Inners$1Local;
+}
+SourceFile: "Inners.java"
+EnclosingMethod: #18.#37                // fixture.Inners.local
+NestHost: class fixture/Inners
+InnerClasses:
+  #42= #2;                                // Local=class fixture/Inners$1Local

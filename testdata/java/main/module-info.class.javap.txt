@@ -1,0 +1,67 @@
+Classfile /R:/testdata/java/main/module-info.class
+  Last modified Nov 27, 2026; size 407 bytes
+  SHA-256 checksum 37f4121606974a68475b1ecd51f16f8e17f4d86484f1ccf73ebd9f752feda5a1
+  Compiled from "module-info.java"
+module fixture.mod
+  minor version: 0
+  major version: 65
+  flags: (0x8000) ACC_MODULE
+  this_class: #1                          // "module-info"
+  super_class: #0
+  interfaces: 0, fields: 0, methods: 0, attributes: 3
+Constant pool:
+   #1 = Class              #2             // "module-info"
+   #2 = Utf8               module-info
+   #3 = Utf8               SourceFile
+   #4 = Utf8               module-info.java
+   #5 = Utf8               RuntimeVisibleAnnotations
+   #6 = Utf8               Ljava/lang/Deprecated;
+   #7 = Utf8               Module
+   #8 = Module             #9             // "fixture.mod"
+   #9 = Utf8               fixture.mod
+  #10 = Module             #11            // "java.base"
+  #11 = Utf8               java.base
+  #12 = Utf8               21.0.8
+  #13 = Module             #14            // "java.logging"
+  #14 = Utf8               java.logging
+  #15 = Module             #16            // "java.sql"
+  #16 = Utf8               java.sql
+  #17 = Module             #18            // "java.compiler"
+  #18 = Utf8               java.compiler
+  #19 = Package            #20            // fixture
+  #20 = Utf8               fixture
+  #21 = Package            #22            // fixture/internal
+  #22 = Utf8               fixture/internal
+  #23 = Class              #24            // java/lang/Runnable
+  #24 = Utf8               java/lang/Runnable
+  #25 = Class              #26            // fixture/internal/Impl
+  #26 = Utf8               fixture/internal/Impl
+{
+}
+SourceFile: "module-info.java"
+RuntimeVisibleAnnotations:
+  0: #6()
+    java.lang.Deprecated
+Module:
+  #8,0                                    // "fixture.mod"
+  #0
+  4                                       // requires
+    #10,8000                                // "java.base" ACC_MANDATED
+    #12                                     // 21.0.8
+    #13,0                                   // "java.logging"
+    #12                                     // 21.0.8
+    #15,20                                  // "java.sql" ACC_TRANSITIVE
+    #12                                     // 21.0.8
+    #17,40                                  // "java.compiler" ACC_STATIC_PHASE
+    #12                                     // 21.0.8
+  2                                       // exports
+    #19,0                                   // fixture
+    #21,0                                   // fixture/internal to ... 1
+      #13                                     // ... to "java.logging"
+  1                                       // opens
+    #21,0                                   // fixture/internal
+  1                                       // uses
+    #23                                     // java/lang/Runnable
+  1                                       // provides
+    #23                                     // java/lang/Runnable with ... 1
+      #25                                     // ... with fixture/internal/Impl

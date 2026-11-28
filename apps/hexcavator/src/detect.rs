@@ -21,6 +21,9 @@ pub fn describe(data: &[u8]) -> String {
     if data.starts_with(b"!<arch>\n") {
         return "ar archive".to_string();
     }
+    if turbonop_java::is_class(data) {
+        return describe_class(data);
+    }
     if let Some(desc) = describe_macho(data) {
         return desc;
     }
@@ -34,12 +37,55 @@ pub fn describe(data: &[u8]) -> String {
             if object { "object" } else { "module" }
         );
     }
+    if turbonop_zip::is_zip(data) {
+        return describe_zip(data);
+    }
     // (A COFF object's header has no magic: last, so that nothing else
     // reads as one.)
     if let Some(desc) = describe_coff(data) {
         return desc;
     }
     "unknown format".to_string()
+}
+
+/// A Java class file: its version.
+fn describe_class(data: &[u8]) -> String {
+    let major = u16::from_be_bytes([data[6], data[7]]);
+    let minor = u16::from_be_bytes([data[4], data[5]]);
+    let java = turbonop_java::java_version_name(major).map_or_else(
+        || {
+            format!(
+                "newer than Java {}",
+                turbonop_java::LATEST_MAJOR_VERSION - 44
+            )
+        },
+        |v| format!("Java {v}"),
+    );
+    let preview = if minor == turbonop_java::PREVIEW_MINOR_VERSION && major >= 56 {
+        ", preview features"
+    } else {
+        ""
+    };
+    format!("Java class file, version {major}.{minor} ({java}{preview})")
+}
+
+/// A ZIP archive: a JAR if it has a manifest or classes.
+fn describe_zip(data: &[u8]) -> String {
+    match turbonop_zip::Archive::parse(data) {
+        Ok(a) => {
+            let jar = a.entries().iter().any(|e| {
+                let n = e.name();
+                n.eq_ignore_ascii_case(turbonop_java::jar::MANIFEST_NAME) || n.ends_with(".class")
+            });
+            let kind = if jar {
+                "JAR (ZIP archive)"
+            } else {
+                "ZIP archive"
+            };
+            format!("{kind}, {} entries", a.len())
+        }
+        Err(e) => format!("ZIP archive (unreadable: {e})"),
+    }
 }
 
 /// A COFF object (or a /bigobj one, or an import object), if `data` is.
@@ -133,11 +179,11 @@ fn describe_macho(data: &[u8]) -> Option<String> {
         0xFEED_FACF => ("64-bit", Endian::Big),
         0xCEFA_EDFE => ("32-bit", Endian::Little),
         0xCFFA_EDFE => ("64-bit", Endian::Little),
-        // 0xCAFEBABE is shared with Java class files; tell them apart by the
-        // architecture count, which is small for fat Mach-O.
+        // 0xCAFEBABE is shared with Java class files (read first: a major
+        // version of 45 or more), whose architecture count is small.
         0xCAFE_BABE => {
             let count = read_at::<U32E>(data, 4).ok()?.get(Endian::Big);
-            return (count < 64).then(|| format!("Mach-O universal binary, {count} architectures"));
+            return (count < 45).then(|| format!("Mach-O universal binary, {count} architectures"));
         }
         _ => return None,
     };

@@ -1,0 +1,77 @@
+Classfile /R:/testdata/java/main/fixture/Inners$3.class
+  Last modified Nov 27, 2026; size 554 bytes
+  SHA-256 checksum ae36bfbd996f5016c584452d59788c1fc26beb2a3bca1a83052860779a7a12d3
+  Compiled from "Inners.java"
+class fixture.Inners$3
+  minor version: 0
+  major version: 65
+  flags: (0x0020) ACC_SUPER
+  this_class: #9                          // fixture/Inners$3
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 2, attributes: 4
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = String             #8             // init
+   #8 = Utf8               init
+   #9 = Class              #10            // fixture/Inners$3
+  #10 = Utf8               fixture/Inners$3
+  #11 = Utf8               (Lfixture/Inners;)V
+  #12 = Utf8               Code
+  #13 = Utf8               LineNumberTable
+  #14 = Utf8               LocalVariableTable
+  #15 = Utf8               this
+  #16 = Utf8               Lfixture/Inners$3;
+  #17 = Utf8               this$0
+  #18 = Utf8               Lfixture/Inners;
+  #19 = Utf8               MethodParameters
+  #20 = Utf8               toString
+  #21 = Utf8               ()Ljava/lang/String;
+  #22 = Utf8               SourceFile
+  #23 = Utf8               Inners.java
+  #24 = Utf8               EnclosingMethod
+  #25 = Class              #26            // fixture/Inners
+  #26 = Utf8               fixture/Inners
+  #27 = Utf8               NestHost
+  #28 = Utf8               InnerClasses
+{
+  fixture.Inners$3(fixture.Inners);
+    descriptor: (Lfixture/Inners;)V
+    flags: (0x0000)
+    Code:
+      stack=1, locals=2, args_size=2
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 62: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Inners$3;
+            0       5     1 this$0   Lfixture/Inners;
+    MethodParameters:
+      Name                           Flags
+      this$0                         final mandated
+
+  public java.lang.String toString();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: ldc           #7                  // String init
+         2: areturn
+      LineNumberTable:
+        line 65: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       3     0  this   Lfixture/Inners$3;
+}
+SourceFile: "Inners.java"
+EnclosingMethod: #25.#0                 // fixture.Inners
+NestHost: class fixture/Inners
+InnerClasses:
+  #9;                                     // class fixture/Inners$3

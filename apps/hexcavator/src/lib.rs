@@ -463,6 +463,131 @@ fn clr_details(pe: &turbonop_pe::PeFile<'_>) -> Vec<String> {
     out
 }
 
+/// What `hexcavator info` adds for a Java class file: its declaration,
+/// members, constant pool, and source file.
+fn class_details(data: &[u8]) -> Vec<String> {
+    let cf = match turbonop_java::ClassFile::parse(data) {
+        Ok(c) => c,
+        Err(e) => return vec![format!("class file unreadable: {e}")],
+    };
+    let mut out = Vec::new();
+    let name = cf
+        .name()
+        .map_or_else(|e| format!("<{e}>"), |n| n.replace('/', "."));
+    if cf.is_module() {
+        out.push(format!("module descriptor ({name})"));
+    } else {
+        let kind = if cf.access_flags & turbonop_java::access::ANNOTATION != 0 {
+            "annotation interface"
+        } else if cf.is_interface() {
+            "interface"
+        } else if cf.access_flags & turbonop_java::access::ENUM != 0 {
+            "enum"
+        } else {
+            "class"
+        };
+        let sup = match cf.super_name() {
+            Ok(Some(s)) if s != "java/lang/Object" => format!(" extends {}", s.replace('/', ".")),
+            _ => String::new(),
+        };
+        out.push(format!("{kind} {name}{sup}"));
+    }
+    out.push(format!(
+        "{} fields, {} methods, {} interfaces; constant pool of {} entries ({} bytes)",
+        cf.fields.len(),
+        cf.methods.len(),
+        cf.interfaces.len(),
+        cf.constant_pool.count().saturating_sub(1),
+        cf.layout().constant_pool.end - cf.layout().constant_pool.start
+    ));
+    if let Some(s) = cf.source_file() {
+        out.push(format!("source file: {s}"));
+    }
+    let bad = cf.malformed_attributes().len();
+    if bad > 0 {
+        out.push(format!("{bad} attributes unreadable"));
+    }
+    out
+}
+
+/// What `hexcavator info` adds for a ZIP archive, and for a JAR: its
+/// manifest's main class, classes and packages, versions, signatures.
+fn zip_details(a: turbonop_zip::Archive<'_>) -> Vec<String> {
+    let mut out = Vec::new();
+    let total: u64 = a.entries().iter().map(|e| e.uncompressed_size).sum();
+    out.push(format!(
+        "{} entries, {total} bytes uncompressed{}",
+        a.len(),
+        if a.base() > 0 {
+            format!(", after {} bytes of other data", a.base())
+        } else {
+            String::new()
+        }
+    ));
+    let jar = turbonop_java::Jar::from_archive(a);
+    if let Some(e) = jar.manifest_error() {
+        out.push(format!("manifest unreadable: {e}"));
+    }
+    if let Some(m) = jar.manifest() {
+        if let Some(c) = m.main_class() {
+            out.push(format!("Main-Class: {c}"));
+        }
+        if let Some(c) = m.created_by() {
+            out.push(format!("Created-By: {c}"));
+        }
+    }
+    let classes = jar.read_classes();
+    if !classes.is_empty() {
+        let packages = jar.package_sizes().len();
+        let majors: Vec<u16> = classes
+            .iter()
+            .filter_map(|(_, s)| s.as_ref().ok().map(|s| s.major_version))
+            .collect();
+        let unreadable = classes.len() - majors.len();
+        let range = match (majors.iter().min(), majors.iter().max()) {
+            (Some(lo), Some(hi)) => {
+                let name = |m: u16| {
+                    turbonop_java::java_version_name(m)
+                        .map_or_else(|| format!("version {m}"), |v| format!("Java {v}"))
+                };
+                if lo == hi {
+                    format!(", class version {lo} ({})", name(*lo))
+                } else {
+                    format!(
+                        ", class versions {lo} to {hi} ({} to {})",
+                        name(*lo),
+                        name(*hi)
+                    )
+                }
+            }
+            _ => String::new(),
+        };
+        out.push(format!(
+            "{} classes in {packages} packages{range}",
+            classes.len()
+        ));
+        if unreadable > 0 {
+            out.push(format!("{unreadable} classes unreadable"));
+        }
+        if let Some((_, Ok(_))) = classes
+            .iter()
+            .find(|(c, _)| c.class_name == "module-info" && c.release.is_none())
+        {
+            out.push("modular JAR (module-info.class)".into());
+        }
+    }
+    if jar.is_multi_release() {
+        let r: Vec<String> = jar.releases().iter().map(ToString::to_string).collect();
+        out.push(format!("multi-release: versions {}", r.join(", ")));
+    }
+    let sigs = jar.signature_files();
+    if !sigs.is_empty() {
+        let names: Vec<&str> = sigs.iter().map(|s| s.path.as_str()).collect();
+        out.push(format!("signed: {}", names.join(", ")));
+    }
+    out
+}
+
 /// What `hexcavator info` adds for a Mach-O image: its Objective-C metadata,
 /// function starts, compact unwind, and code signature.
 fn macho_details(m: &turbonop_macho::MachO<'_>) -> Vec<String> {
@@ -923,7 +1048,11 @@ fn info(args: &[String]) -> ExitCode {
                     detect::describe(&map),
                     map.len()
                 );
-                if let Ok(pe) = turbonop_pe::PeFile::parse_image(&map) {
+                if turbonop_java::is_class(&map) {
+                    for line in class_details(&map) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                } else if let Ok(pe) = turbonop_pe::PeFile::parse_image(&map) {
                     for line in pe_details(&pe) {
                         let _ = writeln!(out, "  {line}");
                     }
@@ -945,6 +1074,10 @@ fn info(args: &[String]) -> ExitCode {
                     }
                 } else if let Ok(o) = turbonop_pe::PeFile::parse_object(&map) {
                     for line in coff_details(&o) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                } else if let Ok(a) = turbonop_zip::Archive::parse(&map) {
+                    for line in zip_details(a) {
                         let _ = writeln!(out, "  {line}");
                     }
                 } else {

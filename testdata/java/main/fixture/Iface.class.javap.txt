@@ -1,0 +1,177 @@
+Classfile /R:/testdata/java/main/fixture/Iface.class
+  Last modified Nov 27, 2026; size 1576 bytes
+  SHA-256 checksum d295e880cadf1bc4d2713cd2e03d7335fe4e31efc27240a3139ad6c624c6e394
+  Compiled from "Iface.java"
+public interface fixture.Iface
+  minor version: 0
+  major version: 65
+  flags: (0x0601) ACC_PUBLIC, ACC_INTERFACE, ACC_ABSTRACT
+  this_class: #2                          // fixture/Iface
+  super_class: #17                        // java/lang/Object
+  interfaces: 0, fields: 2, methods: 6, attributes: 3
+Constant pool:
+   #1 = InterfaceMethodref #2.#3          // fixture/Iface.helper:()Ljava/lang/String;
+   #2 = Class              #4             // fixture/Iface
+   #3 = NameAndType        #5:#6          // helper:()Ljava/lang/String;
+   #4 = Utf8               fixture/Iface
+   #5 = Utf8               helper
+   #6 = Utf8               ()Ljava/lang/String;
+   #7 = InvokeDynamic      #0:#8          // #0:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+   #8 = NameAndType        #9:#10         // makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+   #9 = Utf8               makeConcatWithConstants
+  #10 = Utf8               (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+  #11 = InvokeDynamic      #1:#12         // #1:describe:(Ljava/lang/String;)Lfixture/Iface;
+  #12 = NameAndType        #13:#14        // describe:(Ljava/lang/String;)Lfixture/Iface;
+  #13 = Utf8               describe
+  #14 = Utf8               (Ljava/lang/String;)Lfixture/Iface;
+  #15 = InterfaceMethodref #2.#16         // fixture/Iface.describe:()Ljava/lang/String;
+  #16 = NameAndType        #13:#6         // describe:()Ljava/lang/String;
+  #17 = Class              #18            // java/lang/Object
+  #18 = Utf8               java/lang/Object
+  #19 = Utf8               LIMIT
+  #20 = Utf8               I
+  #21 = Utf8               ConstantValue
+  #22 = Integer            10
+  #23 = Utf8               NAME
+  #24 = Utf8               Ljava/lang/String;
+  #25 = String             #26            // iface
+  #26 = Utf8               iface
+  #27 = Utf8               twice
+  #28 = Utf8               Code
+  #29 = Utf8               LineNumberTable
+  #30 = Utf8               LocalVariableTable
+  #31 = Utf8               this
+  #32 = Utf8               Lfixture/Iface;
+  #33 = Utf8               of
+  #34 = Utf8               s
+  #35 = Utf8               MethodParameters
+  #36 = Utf8               count
+  #37 = Utf8               ()I
+  #38 = Utf8               lambda$of$0
+  #39 = Utf8               (Ljava/lang/String;)Ljava/lang/String;
+  #40 = Utf8               SourceFile
+  #41 = Utf8               Iface.java
+  #42 = Utf8               BootstrapMethods
+  #43 = String             #44            // \u0001\u0001
+  #44 = Utf8               \u0001\u0001
+  #45 = MethodType         #6             //  ()Ljava/lang/String;
+  #46 = MethodHandle       6:#47          // REF_invokeStatic fixture/Iface.lambda$of$0:(Ljava/lang/String;)Ljava/lang/String;
+  #47 = InterfaceMethodref #2.#48         // fixture/Iface.lambda$of$0:(Ljava/lang/String;)Ljava/lang/String;
+  #48 = NameAndType        #38:#39        // lambda$of$0:(Ljava/lang/String;)Ljava/lang/String;
+  #49 = MethodHandle       6:#50          // REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #50 = Methodref          #51.#52        // java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #51 = Class              #53            // java/lang/invoke/StringConcatFactory
+  #52 = NameAndType        #9:#54         // makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #53 = Utf8               java/lang/invoke/StringConcatFactory
+  #54 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+  #55 = MethodHandle       6:#56          // REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #56 = Methodref          #57.#58        // java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #57 = Class              #59            // java/lang/invoke/LambdaMetafactory
+  #58 = NameAndType        #60:#61        // metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #59 = Utf8               java/lang/invoke/LambdaMetafactory
+  #60 = Utf8               metafactory
+  #61 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #62 = Utf8               InnerClasses
+  #63 = Class              #64            // java/lang/invoke/MethodHandles$Lookup
+  #64 = Utf8               java/lang/invoke/MethodHandles$Lookup
+  #65 = Class              #66            // java/lang/invoke/MethodHandles
+  #66 = Utf8               java/lang/invoke/MethodHandles
+  #67 = Utf8               Lookup
+{
+  public static final int LIMIT;
+    descriptor: I
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    ConstantValue: int 10
+
+  public static final java.lang.String NAME;
+    descriptor: Ljava/lang/String;
+    flags: (0x0019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL
+    ConstantValue: String iface
+
+  public abstract java.lang.String describe();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0401) ACC_PUBLIC, ACC_ABSTRACT
+
+  public default java.lang.String twice();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: invokeinterface #1,  1            // InterfaceMethod helper:()Ljava/lang/String;
+         6: aload_0
+         7: invokeinterface #1,  1            // InterfaceMethod helper:()Ljava/lang/String;
+        12: invokedynamic #7,  0              // InvokeDynamic #0:makeConcatWithConstants:(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+        17: areturn
+      LineNumberTable:
+        line 11: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      18     0  this   Lfixture/Iface;
+
+  public static fixture.Iface of(java.lang.String);
+    descriptor: (Ljava/lang/String;)Lfixture/Iface;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokedynamic #11,  0             // InvokeDynamic #1:describe:(Ljava/lang/String;)Lfixture/Iface;
+         6: areturn
+      LineNumberTable:
+        line 15: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       7     0     s   Ljava/lang/String;
+    MethodParameters:
+      Name                           Flags
+      s
+
+  private java.lang.String helper();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokeinterface #15,  1           // InterfaceMethod describe:()Ljava/lang/String;
+         6: areturn
+      LineNumberTable:
+        line 19: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       7     0  this   Lfixture/Iface;
+
+  private static int count();
+    descriptor: ()I
+    flags: (0x000a) ACC_PRIVATE, ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: bipush        10
+         2: ireturn
+      LineNumberTable:
+        line 23: 0
+
+  private static java.lang.String lambda$of$0(java.lang.String);
+    descriptor: (Ljava/lang/String;)Ljava/lang/String;
+    flags: (0x100a) ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: areturn
+      LineNumberTable:
+        line 15: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       2     0     s   Ljava/lang/String;
+}
+SourceFile: "Iface.java"
+BootstrapMethods:
+  0: #49 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #43 \u0001\u0001
+  1: #55 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #45 ()Ljava/lang/String;
+      #46 REF_invokeStatic fixture/Iface.lambda$of$0:(Ljava/lang/String;)Ljava/lang/String;
+      #45 ()Ljava/lang/String;
+InnerClasses:
+  public static final #67= #63 of #65;    // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles

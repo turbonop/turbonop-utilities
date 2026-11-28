@@ -312,6 +312,7 @@ dependencies = [
  "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-image",
+ "turbonop-java",
  "turbonop-linkerlog",
  "turbonop-linkmap",
  "turbonop-lx",
@@ -329,6 +330,7 @@ dependencies = [
  "turbonop-wasm",
  "turbonop-x86",
  "turbonop-xref",
+ "turbonop-zip",
 ]
 
 [[package]]
@@ -1083,6 +1085,7 @@ dependencies = [
  "turbonop-etl",
  "turbonop-etw",
  "turbonop-image",
+ "turbonop-java",
  "turbonop-linkerlog",
  "turbonop-linkmap",
  "turbonop-loongarch",
@@ -1103,6 +1106,7 @@ dependencies = [
  "turbonop-trace-analysis",
  "turbonop-wasm",
  "turbonop-x86",
+ "turbonop-zip",
 ]
 
 [[package]]
@@ -1131,6 +1135,16 @@ dependencies = [
  "turbonop-macho",
  "turbonop-pe",
  "turbonop-wasm",
+]
+
+[[package]]
+name = "turbonop-java"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-par",
+ "turbonop-zip",
 ]
 
 [[package]]
@@ -1607,6 +1621,16 @@ dependencies = [
  "turbonop-powerpc",
  "turbonop-riscv",
  "turbonop-x86",
+]
+
+[[package]]
+name = "turbonop-zip"
+version = "0.0.7"
+dependencies = [
+ "miniz_oxide",
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-par",
 ]
 
 [[package]]

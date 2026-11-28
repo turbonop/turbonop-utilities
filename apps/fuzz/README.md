@@ -58,6 +58,8 @@ Without it, mutation is blind (but much faster per input).
 | `pe` | `hexcavator dump /all /nopdb`, `size` by sections, `info`, `batch` |
 | `coff`, `archive` | `dump /all`, `size` by sections, symbols, members |
 | `elf`, `macho`, `wasm` | `size` by every data source, `-disassemble` (text and JSON) |
+| `java` | Java class files: the constant pool and its lookups, every attribute, descriptors and signatures, bytecode, javap's text; `info` |
+| `zip` | ZIP archives and JARs: entries, extra fields, data descriptors, inflated data, manifests, multi-release layout, every class; `info` |
 | `clr` | .NET assemblies and portable PDBs: every table, heap, name, signature, method body and its IL, custom attribute, resource, and PDB record; `info` |
 | `pdb` | `pdb -all`, `types`, and every `DebugInfo` query: symbols, lines, inline sites, annotations, classes, variables, layouts, values |
 | `etl` | the ETL reader: buffers, records, extended data, LZ77 decompression, the timestamp merge |

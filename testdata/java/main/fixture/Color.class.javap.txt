@@ -1,0 +1,270 @@
+Classfile /R:/testdata/java/main/fixture/Color.class
+  Last modified Nov 27, 2026; size 1553 bytes
+  SHA-256 checksum fc8eca57e657b5bd2faae3500ab73b470df5733c6be8ce7b6555836005a391c4
+  Compiled from "Color.java"
+public class fixture.Color extends java.lang.Enum<fixture.Color> implements fixture.Iface
+  minor version: 0
+  major version: 65
+  flags: (0x4021) ACC_PUBLIC, ACC_SUPER, ACC_ENUM
+  this_class: #1                          // fixture/Color
+  super_class: #23                        // java/lang/Enum
+  interfaces: 1, fields: 5, methods: 7, attributes: 5
+Constant pool:
+   #1 = Class              #2             // fixture/Color
+   #2 = Utf8               fixture/Color
+   #3 = Fieldref           #1.#4          // fixture/Color.RED:Lfixture/Color;
+   #4 = NameAndType        #5:#6          // RED:Lfixture/Color;
+   #5 = Utf8               RED
+   #6 = Utf8               Lfixture/Color;
+   #7 = Fieldref           #1.#8          // fixture/Color.GREEN:Lfixture/Color;
+   #8 = NameAndType        #9:#6          // GREEN:Lfixture/Color;
+   #9 = Utf8               GREEN
+  #10 = Fieldref           #1.#11         // fixture/Color.BLUE:Lfixture/Color;
+  #11 = NameAndType        #12:#6         // BLUE:Lfixture/Color;
+  #12 = Utf8               BLUE
+  #13 = Fieldref           #1.#14         // fixture/Color.$VALUES:[Lfixture/Color;
+  #14 = NameAndType        #15:#16        // $VALUES:[Lfixture/Color;
+  #15 = Utf8               $VALUES
+  #16 = Utf8               [Lfixture/Color;
+  #17 = Methodref          #18.#19        // "[Lfixture/Color;".clone:()Ljava/lang/Object;
+  #18 = Class              #16            // "[Lfixture/Color;"
+  #19 = NameAndType        #20:#21        // clone:()Ljava/lang/Object;
+  #20 = Utf8               clone
+  #21 = Utf8               ()Ljava/lang/Object;
+  #22 = Methodref          #23.#24        // java/lang/Enum.valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #23 = Class              #25            // java/lang/Enum
+  #24 = NameAndType        #26:#27        // valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #25 = Utf8               java/lang/Enum
+  #26 = Utf8               valueOf
+  #27 = Utf8               (Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #28 = Methodref          #23.#29        // java/lang/Enum."<init>":(Ljava/lang/String;I)V
+  #29 = NameAndType        #30:#31        // "<init>":(Ljava/lang/String;I)V
+  #30 = Utf8               <init>
+  #31 = Utf8               (Ljava/lang/String;I)V
+  #32 = Fieldref           #1.#33         // fixture/Color.rgb:I
+  #33 = NameAndType        #34:#35        // rgb:I
+  #34 = Utf8               rgb
+  #35 = Utf8               I
+  #36 = Methodref          #1.#37         // fixture/Color.name:()Ljava/lang/String;
+  #37 = NameAndType        #38:#39        // name:()Ljava/lang/String;
+  #38 = Utf8               name
+  #39 = Utf8               ()Ljava/lang/String;
+  #40 = Methodref          #41.#42        // java/lang/String.toLowerCase:()Ljava/lang/String;
+  #41 = Class              #43            // java/lang/String
+  #42 = NameAndType        #44:#39        // toLowerCase:()Ljava/lang/String;
+  #43 = Utf8               java/lang/String
+  #44 = Utf8               toLowerCase
+  #45 = String             #5             // RED
+  #46 = Integer            16711680
+  #47 = Methodref          #1.#48         // fixture/Color."<init>":(Ljava/lang/String;II)V
+  #48 = NameAndType        #30:#49        // "<init>":(Ljava/lang/String;II)V
+  #49 = Utf8               (Ljava/lang/String;II)V
+  #50 = Class              #51            // fixture/Color$1
+  #51 = Utf8               fixture/Color$1
+  #52 = String             #9             // GREEN
+  #53 = Integer            65280
+  #54 = Methodref          #50.#48        // fixture/Color$1."<init>":(Ljava/lang/String;II)V
+  #55 = String             #12            // BLUE
+  #56 = Methodref          #1.#57         // fixture/Color.$values:()[Lfixture/Color;
+  #57 = NameAndType        #58:#59        // $values:()[Lfixture/Color;
+  #58 = Utf8               $values
+  #59 = Utf8               ()[Lfixture/Color;
+  #60 = Class              #61            // fixture/Iface
+  #61 = Utf8               fixture/Iface
+  #62 = Utf8               values
+  #63 = Utf8               Code
+  #64 = Utf8               LineNumberTable
+  #65 = Utf8               (Ljava/lang/String;)Lfixture/Color;
+  #66 = Utf8               LocalVariableTable
+  #67 = Utf8               Ljava/lang/String;
+  #68 = Utf8               MethodParameters
+  #69 = Utf8               this
+  #70 = Utf8               $enum$name
+  #71 = Utf8               $enum$ordinal
+  #72 = Utf8               Signature
+  #73 = Utf8               (I)V
+  #74 = Utf8               ()I
+  #75 = Utf8               describe
+  #76 = Utf8               <clinit>
+  #77 = Utf8               ()V
+  #78 = Utf8               Ljava/lang/Enum<Lfixture/Color;>;Lfixture/Iface;
+  #79 = Utf8               SourceFile
+  #80 = Utf8               Color.java
+  #81 = Utf8               NestMembers
+  #82 = Utf8               PermittedSubclasses
+  #83 = Utf8               InnerClasses
+{
+  public static final fixture.Color RED;
+    descriptor: Lfixture/Color;
+    flags: (0x4019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_ENUM
+
+  public static final fixture.Color GREEN;
+    descriptor: Lfixture/Color;
+    flags: (0x4019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_ENUM
+
+  public static final fixture.Color BLUE;
+    descriptor: Lfixture/Color;
+    flags: (0x4019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_ENUM
+
+  private final int rgb;
+    descriptor: I
+    flags: (0x0012) ACC_PRIVATE, ACC_FINAL
+
+  private static final fixture.Color[] $VALUES;
+    descriptor: [Lfixture/Color;
+    flags: (0x101a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL, ACC_SYNTHETIC
+
+  public static fixture.Color[] values();
+    descriptor: ()[Lfixture/Color;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: getstatic     #13                 // Field $VALUES:[Lfixture/Color;
+         3: invokevirtual #17                 // Method "[Lfixture/Color;".clone:()Ljava/lang/Object;
+         6: checkcast     #18                 // class "[Lfixture/Color;"
+         9: areturn
+      LineNumberTable:
+        line 4: 0
+
+  public static fixture.Color valueOf(java.lang.String);
+    descriptor: (Ljava/lang/String;)Lfixture/Color;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: ldc           #1                  // class fixture/Color
+         2: aload_0
+         3: invokestatic  #22                 // Method java/lang/Enum.valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+         6: checkcast     #1                  // class fixture/Color
+         9: areturn
+      LineNumberTable:
+        line 4: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  name   Ljava/lang/String;
+    MethodParameters:
+      Name                           Flags
+      name                           mandated
+
+  private fixture.Color(int);
+    descriptor: (Ljava/lang/String;II)V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=3, locals=4, args_size=4
+         0: aload_0
+         1: aload_1
+         2: iload_2
+         3: invokespecial #28                 // Method java/lang/Enum."<init>":(Ljava/lang/String;I)V
+         6: aload_0
+         7: iload_3
+         8: putfield      #32                 // Field rgb:I
+        11: return
+      LineNumberTable:
+        line 16: 0
+        line 17: 6
+        line 18: 11
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      12     0  this   Lfixture/Color;
+            0      12     3   rgb   I
+    MethodParameters:
+      Name                           Flags
+      $enum$name                     synthetic
+      $enum$ordinal                  synthetic
+      rgb
+    Signature: #73                          // (I)V
+
+  public int rgb();
+    descriptor: ()I
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #32                 // Field rgb:I
+         4: ireturn
+      LineNumberTable:
+        line 21: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Color;
+
+  public java.lang.String describe();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokevirtual #36                 // Method name:()Ljava/lang/String;
+         4: invokevirtual #40                 // Method java/lang/String.toLowerCase:()Ljava/lang/String;
+         7: areturn
+      LineNumberTable:
+        line 26: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       8     0  this   Lfixture/Color;
+
+  private static fixture.Color[] $values();
+    descriptor: ()[Lfixture/Color;
+    flags: (0x100a) ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=4, locals=0, args_size=0
+         0: iconst_3
+         1: anewarray     #1                  // class fixture/Color
+         4: dup
+         5: iconst_0
+         6: getstatic     #3                  // Field RED:Lfixture/Color;
+         9: aastore
+        10: dup
+        11: iconst_1
+        12: getstatic     #7                  // Field GREEN:Lfixture/Color;
+        15: aastore
+        16: dup
+        17: iconst_2
+        18: getstatic     #10                 // Field BLUE:Lfixture/Color;
+        21: aastore
+        22: areturn
+      LineNumberTable:
+        line 4: 0
+
+  static {};
+    descriptor: ()V
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=5, locals=0, args_size=0
+         0: new           #1                  // class fixture/Color
+         3: dup
+         4: ldc           #45                 // String RED
+         6: iconst_0
+         7: ldc           #46                 // int 16711680
+         9: invokespecial #47                 // Method "<init>":(Ljava/lang/String;II)V
+        12: putstatic     #3                  // Field RED:Lfixture/Color;
+        15: new           #50                 // class fixture/Color$1
+        18: dup
+        19: ldc           #52                 // String GREEN
+        21: iconst_1
+        22: ldc           #53                 // int 65280
+        24: invokespecial #54                 // Method fixture/Color$1."<init>":(Ljava/lang/String;II)V
+        27: putstatic     #7                  // Field GREEN:Lfixture/Color;
+        30: new           #1                  // class fixture/Color
+        33: dup
+        34: ldc           #55                 // String BLUE
+        36: iconst_2
+        37: sipush        255
+        40: invokespecial #47                 // Method "<init>":(Ljava/lang/String;II)V
+        43: putstatic     #10                 // Field BLUE:Lfixture/Color;
+        46: invokestatic  #56                 // Method $values:()[Lfixture/Color;
+        49: putstatic     #13                 // Field $VALUES:[Lfixture/Color;
+        52: return
+      LineNumberTable:
+        line 5: 0
+        line 6: 15
+        line 12: 30
+        line 4: 46
+}
+Signature: #78                          // Ljava/lang/Enum<Lfixture/Color;>;Lfixture/Iface;
+SourceFile: "Color.java"
+NestMembers:
+  fixture/Color$1
+PermittedSubclasses:
+  fixture/Color$1
+InnerClasses:
+  final #50;                              // class fixture/Color$1

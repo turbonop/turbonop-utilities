@@ -285,9 +285,41 @@ machine, not only native images (PE, ELF, Mach-O) and WebAssembly:
   - **C++/CLI mixed images**: the v-table fixups' native thunks, native
     method bodies (code type native, not IL), field-kind stand-alone
     signatures; and edit-and-continue deltas (ENCLog, ENCMap applied).
-- **Java.** Class files (constant pool, fields, methods, attributes,
-  bytecode decoded) and JARs (zip archives of them, with their
-  manifests): size by package, class, and method.
+- **Java.** The parsers are done: `turbonop-java` reads class files of
+  every version (Java 1.1's to 27's, preview features), the whole
+  constant pool (dynamic constants, modules, packages, method handles and
+  types), every standard attribute and the JDK's own (ModuleHashes,
+  ModuleTarget, ModuleResolution, CharacterRangeTable), annotations of
+  every kind with type annotations and defaults, StackMapTable frames,
+  descriptors and generic signatures written as Java writes them, and
+  every JVM instruction; `javap` writes a class as JDK 21's `javap -v -p`
+  does. JARs on `turbonop-zip` (a general ZIP reader: ZIP64, data
+  descriptors, extra fields, stored and deflated entries, data before the
+  archive, encryption named, multi-disk refused): the manifest, the
+  multi-release layout, signature files, each class's sizes. Tested
+  against javap: every fixture class (tools/java, built by build.cmd)
+  line for line, hand-built classes (jsr/ret, goto_w, condy, reserved
+  opcodes, rare attributes) and a sample of the JDK's classes live where
+  there's a JDK 21; every class of the machine's JDK reads with no
+  errors. `hexcavator info` shows a class's declaration and members, and
+  a JAR's main class, classes, packages, versions, and signatures. Left:
+  - **`size`**: a JAR by package, class, and method (the class files'
+    parts from `ClassFile::layout` and `Member::size`, each entry's
+    compressed size and ZIP overhead from `Jar::classes`, the compression
+    shared out over a class's parts), the constant pool's entries to the
+    members that use them, resources and `META-INF` as their own groups;
+    findings (duplicate classes across versions, unused versions, big
+    constant pools, debug attributes a release build could drop).
+  - **`dump`, `symbols`, disassembly**: classes as `javap::render` writes
+    them, members as symbols, bytecode in the disassembly views; `info
+    -json`'s fields; JMODs (`turbonop-zip` reads them already) and the
+    runtime image (`lib/modules`, jimage: its own format).
+  - **Signatures verified**: a signed JAR's digests (the manifest's
+    against the entries, the `.SF`'s against the manifest) and its PKCS #7
+    block (turbonop-signature has the cryptography).
+  - **javap of other JDKs**: the renderer follows JDK 21's javap; JDK 22's
+    (the java.lang.classfile rewrite) writes some attributes differently.
+  - **The extension's pages** for all of it.
 - **Android.** DEX files (and APKs and AABs that hold them): their
   classes, methods, Dalvik bytecode, and size by package.
 - **Others to weigh:** Python bytecode (`.pyc`), Lua bytecode, BEAM

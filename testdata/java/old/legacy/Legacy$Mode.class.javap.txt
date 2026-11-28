@@ -1,0 +1,179 @@
+Classfile /R:/testdata/java/old/legacy/Legacy$Mode.class
+  Last modified Nov 27, 2026; size 1099 bytes
+  SHA-256 checksum cfe8567a62c4a8803843f638efa8ff7abe22f5bf9a3bb44c6fe97d36f73ad9bb
+  Compiled from "Legacy.java"
+final class legacy.Legacy$Mode extends java.lang.Enum<legacy.Legacy$Mode>
+  minor version: 0
+  major version: 52
+  flags: (0x4030) ACC_FINAL, ACC_SUPER, ACC_ENUM
+  this_class: #1                          // legacy/Legacy$Mode
+  super_class: #20                        // java/lang/Enum
+  interfaces: 0, fields: 3, methods: 5, attributes: 3
+Constant pool:
+   #1 = Class              #2             // legacy/Legacy$Mode
+   #2 = Utf8               legacy/Legacy$Mode
+   #3 = Fieldref           #1.#4          // legacy/Legacy$Mode.ON:Llegacy/Legacy$Mode;
+   #4 = NameAndType        #5:#6          // ON:Llegacy/Legacy$Mode;
+   #5 = Utf8               ON
+   #6 = Utf8               Llegacy/Legacy$Mode;
+   #7 = Fieldref           #1.#8          // legacy/Legacy$Mode.OFF:Llegacy/Legacy$Mode;
+   #8 = NameAndType        #9:#6          // OFF:Llegacy/Legacy$Mode;
+   #9 = Utf8               OFF
+  #10 = Fieldref           #1.#11         // legacy/Legacy$Mode.$VALUES:[Llegacy/Legacy$Mode;
+  #11 = NameAndType        #12:#13        // $VALUES:[Llegacy/Legacy$Mode;
+  #12 = Utf8               $VALUES
+  #13 = Utf8               [Llegacy/Legacy$Mode;
+  #14 = Methodref          #15.#16        // "[Llegacy/Legacy$Mode;".clone:()Ljava/lang/Object;
+  #15 = Class              #13            // "[Llegacy/Legacy$Mode;"
+  #16 = NameAndType        #17:#18        // clone:()Ljava/lang/Object;
+  #17 = Utf8               clone
+  #18 = Utf8               ()Ljava/lang/Object;
+  #19 = Methodref          #20.#21        // java/lang/Enum.valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #20 = Class              #22            // java/lang/Enum
+  #21 = NameAndType        #23:#24        // valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #22 = Utf8               java/lang/Enum
+  #23 = Utf8               valueOf
+  #24 = Utf8               (Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+  #25 = Methodref          #20.#26        // java/lang/Enum."<init>":(Ljava/lang/String;I)V
+  #26 = NameAndType        #27:#28        // "<init>":(Ljava/lang/String;I)V
+  #27 = Utf8               <init>
+  #28 = Utf8               (Ljava/lang/String;I)V
+  #29 = String             #5             // ON
+  #30 = Methodref          #1.#26         // legacy/Legacy$Mode."<init>":(Ljava/lang/String;I)V
+  #31 = String             #9             // OFF
+  #32 = Methodref          #1.#33         // legacy/Legacy$Mode.$values:()[Llegacy/Legacy$Mode;
+  #33 = NameAndType        #34:#35        // $values:()[Llegacy/Legacy$Mode;
+  #34 = Utf8               $values
+  #35 = Utf8               ()[Llegacy/Legacy$Mode;
+  #36 = Utf8               values
+  #37 = Utf8               Code
+  #38 = Utf8               LineNumberTable
+  #39 = Utf8               (Ljava/lang/String;)Llegacy/Legacy$Mode;
+  #40 = Utf8               LocalVariableTable
+  #41 = Utf8               name
+  #42 = Utf8               Ljava/lang/String;
+  #43 = Utf8               MethodParameters
+  #44 = Utf8               this
+  #45 = Utf8               $enum$name
+  #46 = Utf8               $enum$ordinal
+  #47 = Utf8               Signature
+  #48 = Utf8               ()V
+  #49 = Utf8               <clinit>
+  #50 = Utf8               Ljava/lang/Enum<Llegacy/Legacy$Mode;>;
+  #51 = Utf8               SourceFile
+  #52 = Utf8               Legacy.java
+  #53 = Utf8               InnerClasses
+  #54 = Class              #55            // legacy/Legacy
+  #55 = Utf8               legacy/Legacy
+  #56 = Utf8               Mode
+{
+  public static final legacy.Legacy$Mode ON;
+    descriptor: Llegacy/Legacy$Mode;
+    flags: (0x4019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_ENUM
+
+  public static final legacy.Legacy$Mode OFF;
+    descriptor: Llegacy/Legacy$Mode;
+    flags: (0x4019) ACC_PUBLIC, ACC_STATIC, ACC_FINAL, ACC_ENUM
+
+  private static final legacy.Legacy$Mode[] $VALUES;
+    descriptor: [Llegacy/Legacy$Mode;
+    flags: (0x101a) ACC_PRIVATE, ACC_STATIC, ACC_FINAL, ACC_SYNTHETIC
+
+  public static legacy.Legacy$Mode[] values();
+    descriptor: ()[Llegacy/Legacy$Mode;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: getstatic     #10                 // Field $VALUES:[Llegacy/Legacy$Mode;
+         3: invokevirtual #14                 // Method "[Llegacy/Legacy$Mode;".clone:()Ljava/lang/Object;
+         6: checkcast     #15                 // class "[Llegacy/Legacy$Mode;"
+         9: areturn
+      LineNumberTable:
+        line 15: 0
+
+  public static legacy.Legacy$Mode valueOf(java.lang.String);
+    descriptor: (Ljava/lang/String;)Llegacy/Legacy$Mode;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: ldc           #1                  // class legacy/Legacy$Mode
+         2: aload_0
+         3: invokestatic  #19                 // Method java/lang/Enum.valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum;
+         6: checkcast     #1                  // class legacy/Legacy$Mode
+         9: areturn
+      LineNumberTable:
+        line 15: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  name   Ljava/lang/String;
+    MethodParameters:
+      Name                           Flags
+      name                           mandated
+
+  private legacy.Legacy$Mode();
+    descriptor: (Ljava/lang/String;I)V
+    flags: (0x0002) ACC_PRIVATE
+    Code:
+      stack=3, locals=3, args_size=3
+         0: aload_0
+         1: aload_1
+         2: iload_2
+         3: invokespecial #25                 // Method java/lang/Enum."<init>":(Ljava/lang/String;I)V
+         6: return
+      LineNumberTable:
+        line 15: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       7     0  this   Llegacy/Legacy$Mode;
+    MethodParameters:
+      Name                           Flags
+      $enum$name                     synthetic
+      $enum$ordinal                  synthetic
+    Signature: #48                          // ()V
+
+  private static legacy.Legacy$Mode[] $values();
+    descriptor: ()[Llegacy/Legacy$Mode;
+    flags: (0x100a) ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=4, locals=0, args_size=0
+         0: iconst_2
+         1: anewarray     #1                  // class legacy/Legacy$Mode
+         4: dup
+         5: iconst_0
+         6: getstatic     #3                  // Field ON:Llegacy/Legacy$Mode;
+         9: aastore
+        10: dup
+        11: iconst_1
+        12: getstatic     #7                  // Field OFF:Llegacy/Legacy$Mode;
+        15: aastore
+        16: areturn
+      LineNumberTable:
+        line 15: 0
+
+  static {};
+    descriptor: ()V
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=4, locals=0, args_size=0
+         0: new           #1                  // class legacy/Legacy$Mode
+         3: dup
+         4: ldc           #29                 // String ON
+         6: iconst_0
+         7: invokespecial #30                 // Method "<init>":(Ljava/lang/String;I)V
+        10: putstatic     #3                  // Field ON:Llegacy/Legacy$Mode;
+        13: new           #1                  // class legacy/Legacy$Mode
+        16: dup
+        17: ldc           #31                 // String OFF
+        19: iconst_1
+        20: invokespecial #30                 // Method "<init>":(Ljava/lang/String;I)V
+        23: putstatic     #7                  // Field OFF:Llegacy/Legacy$Mode;
+        26: invokestatic  #32                 // Method $values:()[Llegacy/Legacy$Mode;
+        29: putstatic     #10                 // Field $VALUES:[Llegacy/Legacy$Mode;
+        32: return
+      LineNumberTable:
+        line 15: 0
+}
+Signature: #50                          // Ljava/lang/Enum<Llegacy/Legacy$Mode;>;
+SourceFile: "Legacy.java"
+InnerClasses:
+  static final #56= #1 of #54;            // Mode=class legacy/Legacy$Mode of class legacy/Legacy

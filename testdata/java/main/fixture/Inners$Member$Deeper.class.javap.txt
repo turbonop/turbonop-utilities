@@ -1,0 +1,105 @@
+Classfile /R:/testdata/java/main/fixture/Inners$Member$Deeper.class
+  Last modified Nov 27, 2026; size 705 bytes
+  SHA-256 checksum c373d8850eb072f737dcedd3109c2a720f28897e1094dc55b833721c862ad2da
+  Compiled from "Inners.java"
+class fixture.Inners$Member$Deeper
+  minor version: 0
+  major version: 65
+  flags: (0x0020) ACC_SUPER
+  this_class: #2                          // fixture/Inners$Member$Deeper
+  super_class: #8                         // java/lang/Object
+  interfaces: 0, fields: 1, methods: 2, attributes: 3
+Constant pool:
+   #1 = Fieldref           #2.#3          // fixture/Inners$Member$Deeper.this$1:Lfixture/Inners$Member;
+   #2 = Class              #4             // fixture/Inners$Member$Deeper
+   #3 = NameAndType        #5:#6          // this$1:Lfixture/Inners$Member;
+   #4 = Utf8               fixture/Inners$Member$Deeper
+   #5 = Utf8               this$1
+   #6 = Utf8               Lfixture/Inners$Member;
+   #7 = Methodref          #8.#9          // java/lang/Object."<init>":()V
+   #8 = Class              #10            // java/lang/Object
+   #9 = NameAndType        #11:#12        // "<init>":()V
+  #10 = Utf8               java/lang/Object
+  #11 = Utf8               <init>
+  #12 = Utf8               ()V
+  #13 = Fieldref           #14.#15        // fixture/Inners$Member.this$0:Lfixture/Inners;
+  #14 = Class              #16            // fixture/Inners$Member
+  #15 = NameAndType        #17:#18        // this$0:Lfixture/Inners;
+  #16 = Utf8               fixture/Inners$Member
+  #17 = Utf8               this$0
+  #18 = Utf8               Lfixture/Inners;
+  #19 = Fieldref           #20.#21        // fixture/Inners.secret:I
+  #20 = Class              #22            // fixture/Inners
+  #21 = NameAndType        #23:#24        // secret:I
+  #22 = Utf8               fixture/Inners
+  #23 = Utf8               secret
+  #24 = Utf8               I
+  #25 = Methodref          #14.#26        // fixture/Inners$Member.peek:()I
+  #26 = NameAndType        #27:#28        // peek:()I
+  #27 = Utf8               peek
+  #28 = Utf8               ()I
+  #29 = Utf8               (Lfixture/Inners$Member;)V
+  #30 = Utf8               Code
+  #31 = Utf8               LineNumberTable
+  #32 = Utf8               LocalVariableTable
+  #33 = Utf8               this
+  #34 = Utf8               Lfixture/Inners$Member$Deeper;
+  #35 = Utf8               MethodParameters
+  #36 = Utf8               deeper
+  #37 = Utf8               SourceFile
+  #38 = Utf8               Inners.java
+  #39 = Utf8               NestHost
+  #40 = Utf8               InnerClasses
+  #41 = Utf8               Member
+  #42 = Utf8               Deeper
+{
+  final fixture.Inners$Member this$1;
+    descriptor: Lfixture/Inners$Member;
+    flags: (0x1010) ACC_FINAL, ACC_SYNTHETIC
+
+  fixture.Inners$Member$Deeper(fixture.Inners$Member);
+    descriptor: (Lfixture/Inners$Member;)V
+    flags: (0x0000)
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #1                  // Field this$1:Lfixture/Inners$Member;
+         5: aload_0
+         6: invokespecial #7                  // Method java/lang/Object."<init>":()V
+         9: return
+      LineNumberTable:
+        line 19: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Lfixture/Inners$Member$Deeper;
+            0      10     1 this$1   Lfixture/Inners$Member;
+    MethodParameters:
+      Name                           Flags
+      this$1                         final mandated
+
+  int deeper();
+    descriptor: ()I
+    flags: (0x0000)
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #1                  // Field this$1:Lfixture/Inners$Member;
+         4: getfield      #13                 // Field fixture/Inners$Member.this$0:Lfixture/Inners;
+         7: getfield      #19                 // Field fixture/Inners.secret:I
+        10: aload_0
+        11: getfield      #1                  // Field this$1:Lfixture/Inners$Member;
+        14: invokevirtual #25                 // Method fixture/Inners$Member.peek:()I
+        17: iadd
+        18: ireturn
+      LineNumberTable:
+        line 21: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      19     0  this   Lfixture/Inners$Member$Deeper;
+}
+SourceFile: "Inners.java"
+NestHost: class fixture/Inners
+InnerClasses:
+  public #41= #14 of #20;                 // Member=class fixture/Inners$Member of class fixture/Inners
+  #42= #2 of #14;                         // Deeper=class fixture/Inners$Member$Deeper of class fixture/Inners$Member

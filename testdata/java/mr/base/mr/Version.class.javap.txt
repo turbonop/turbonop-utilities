@@ -1,0 +1,57 @@
+Classfile /R:/testdata/java/mr/base/mr/Version.class
+  Last modified Nov 27, 2026; size 332 bytes
+  SHA-256 checksum bf9a5e03fda0b75d44c901b230e6e5edcfc4122214c73ff39b679d66cd4b8047
+  Compiled from "Version.java"
+public class mr.Version
+  minor version: 0
+  major version: 52
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #9                          // mr/Version
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 2, attributes: 1
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = String             #8             // base
+   #8 = Utf8               base
+   #9 = Class              #10            // mr/Version
+  #10 = Utf8               mr/Version
+  #11 = Utf8               Code
+  #12 = Utf8               LineNumberTable
+  #13 = Utf8               LocalVariableTable
+  #14 = Utf8               this
+  #15 = Utf8               Lmr/Version;
+  #16 = Utf8               get
+  #17 = Utf8               ()Ljava/lang/String;
+  #18 = Utf8               SourceFile
+  #19 = Utf8               Version.java
+{
+  public mr.Version();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 4: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lmr/Version;
+
+  public static java.lang.String get();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: ldc           #7                  // String base
+         2: areturn
+      LineNumberTable:
+        line 6: 0
+}
+SourceFile: "Version.java"

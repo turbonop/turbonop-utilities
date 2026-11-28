@@ -1,0 +1,105 @@
+Classfile /R:/testdata/java/main/fixture/Generics$Node.class
+  Last modified Nov 27, 2026; size 822 bytes
+  SHA-256 checksum 9f334b10c6596c4fd7b3abe25e844ccfd36706116a3d752514fc72baac687751
+  Compiled from "Generics.java"
+public class fixture.Generics$Node<T extends java.lang.Object> extends java.lang.Object
+  minor version: 0
+  major version: 65
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #2                          // fixture/Generics$Node
+  super_class: #8                         // java/lang/Object
+  interfaces: 0, fields: 2, methods: 2, attributes: 4
+Constant pool:
+   #1 = Fieldref           #2.#3          // fixture/Generics$Node.this$0:Lfixture/Generics;
+   #2 = Class              #4             // fixture/Generics$Node
+   #3 = NameAndType        #5:#6          // this$0:Lfixture/Generics;
+   #4 = Utf8               fixture/Generics$Node
+   #5 = Utf8               this$0
+   #6 = Utf8               Lfixture/Generics;
+   #7 = Methodref          #8.#9          // java/lang/Object."<init>":()V
+   #8 = Class              #10            // java/lang/Object
+   #9 = NameAndType        #11:#12        // "<init>":()V
+  #10 = Utf8               java/lang/Object
+  #11 = Utf8               <init>
+  #12 = Utf8               ()V
+  #13 = Utf8               value
+  #14 = Utf8               Ljava/lang/Object;
+  #15 = Utf8               Signature
+  #16 = Utf8               TT;
+  #17 = Utf8               (Lfixture/Generics;)V
+  #18 = Utf8               Code
+  #19 = Utf8               LineNumberTable
+  #20 = Utf8               LocalVariableTable
+  #21 = Utf8               this
+  #22 = Utf8               Lfixture/Generics$Node;
+  #23 = Utf8               LocalVariableTypeTable
+  #24 = Utf8               Lfixture/Generics<TK;TV;TE;>.Node<TT;>;
+  #25 = Utf8               MethodParameters
+  #26 = Utf8               outer
+  #27 = Utf8               ()Lfixture/Generics;
+  #28 = Utf8               ()Lfixture/Generics<TK;TV;TE;>;
+  #29 = Utf8               <T:Ljava/lang/Object;>Ljava/lang/Object;
+  #30 = Utf8               SourceFile
+  #31 = Utf8               Generics.java
+  #32 = Utf8               NestHost
+  #33 = Class              #34            // fixture/Generics
+  #34 = Utf8               fixture/Generics
+  #35 = Utf8               InnerClasses
+  #36 = Utf8               Node
+{
+  public T value;
+    descriptor: Ljava/lang/Object;
+    flags: (0x0001) ACC_PUBLIC
+    Signature: #16                          // TT;
+
+  final fixture.Generics this$0;
+    descriptor: Lfixture/Generics;
+    flags: (0x1010) ACC_FINAL, ACC_SYNTHETIC
+
+  public fixture.Generics$Node(fixture.Generics);
+    descriptor: (Lfixture/Generics;)V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #1                  // Field this$0:Lfixture/Generics;
+         5: aload_0
+         6: invokespecial #7                  // Method java/lang/Object."<init>":()V
+         9: return
+      LineNumberTable:
+        line 20: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Lfixture/Generics$Node;
+            0      10     1 this$0   Lfixture/Generics;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Lfixture/Generics<TK;TV;TE;>.Node<TT;>;
+    MethodParameters:
+      Name                           Flags
+      this$0                         final mandated
+
+  public fixture.Generics<K, V, E> outer();
+    descriptor: ()Lfixture/Generics;
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #1                  // Field this$0:Lfixture/Generics;
+         4: areturn
+      LineNumberTable:
+        line 23: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Generics$Node;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lfixture/Generics<TK;TV;TE;>.Node<TT;>;
+    Signature: #28                          // ()Lfixture/Generics<TK;TV;TE;>;
+}
+Signature: #29                          // <T:Ljava/lang/Object;>Ljava/lang/Object;
+SourceFile: "Generics.java"
+NestHost: class fixture/Generics
+InnerClasses:
+  public #36= #2 of #33;                  // Node=class fixture/Generics$Node of class fixture/Generics

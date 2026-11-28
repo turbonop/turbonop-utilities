@@ -1,0 +1,43 @@
+Classfile /R:/testdata/java/main/fixture/Inners$Nested$Callback.class
+  Last modified Nov 27, 2026; size 298 bytes
+  SHA-256 checksum 28236d5d1c78484c3744d678883e389463bc1b21a8e76a7e596a595cef555e22
+  Compiled from "Inners.java"
+public interface fixture.Inners$Nested$Callback
+  minor version: 0
+  major version: 65
+  flags: (0x0601) ACC_PUBLIC, ACC_INTERFACE, ACC_ABSTRACT
+  this_class: #1                          // fixture/Inners$Nested$Callback
+  super_class: #3                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 1, attributes: 3
+Constant pool:
+   #1 = Class              #2             // fixture/Inners$Nested$Callback
+   #2 = Utf8               fixture/Inners$Nested$Callback
+   #3 = Class              #4             // java/lang/Object
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               call
+   #6 = Utf8               (I)V
+   #7 = Utf8               MethodParameters
+   #8 = Utf8               x
+   #9 = Utf8               SourceFile
+  #10 = Utf8               Inners.java
+  #11 = Utf8               NestHost
+  #12 = Class              #13            // fixture/Inners
+  #13 = Utf8               fixture/Inners
+  #14 = Utf8               InnerClasses
+  #15 = Class              #16            // fixture/Inners$Nested
+  #16 = Utf8               fixture/Inners$Nested
+  #17 = Utf8               Nested
+  #18 = Utf8               Callback
+{
+  public abstract void call(int);
+    descriptor: (I)V
+    flags: (0x0401) ACC_PUBLIC, ACC_ABSTRACT
+    MethodParameters:
+      Name                           Flags
+      x
+}
+SourceFile: "Inners.java"
+NestHost: class fixture/Inners
+InnerClasses:
+  static #17= #15 of #12;                 // Nested=class fixture/Inners$Nested of class fixture/Inners
+  protected static #18= #1 of #15;        // Callback=class fixture/Inners$Nested$Callback of class fixture/Inners$Nested

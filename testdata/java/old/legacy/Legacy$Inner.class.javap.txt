@@ -1,0 +1,107 @@
+Classfile /R:/testdata/java/old/legacy/Legacy$Inner.class
+  Last modified Nov 27, 2026; size 688 bytes
+  SHA-256 checksum 33dafbd1a984e71396de08246c5dd1a6b6f3b9ffeda07807dbc324b1e2cd752f
+  Compiled from "Legacy.java"
+class legacy.Legacy$Inner
+  minor version: 0
+  major version: 52
+  flags: (0x0020) ACC_SUPER
+  this_class: #2                          // legacy/Legacy$Inner
+  super_class: #8                         // java/lang/Object
+  interfaces: 0, fields: 1, methods: 2, attributes: 2
+Constant pool:
+   #1 = Fieldref           #2.#3          // legacy/Legacy$Inner.this$0:Llegacy/Legacy;
+   #2 = Class              #4             // legacy/Legacy$Inner
+   #3 = NameAndType        #5:#6          // this$0:Llegacy/Legacy;
+   #4 = Utf8               legacy/Legacy$Inner
+   #5 = Utf8               this$0
+   #6 = Utf8               Llegacy/Legacy;
+   #7 = Methodref          #8.#9          // java/lang/Object."<init>":()V
+   #8 = Class              #10            // java/lang/Object
+   #9 = NameAndType        #11:#12        // "<init>":()V
+  #10 = Utf8               java/lang/Object
+  #11 = Utf8               <init>
+  #12 = Utf8               ()V
+  #13 = Methodref          #14.#15        // legacy/Legacy.access$008:(Llegacy/Legacy;)I
+  #14 = Class              #16            // legacy/Legacy
+  #15 = NameAndType        #17:#18        // access$008:(Llegacy/Legacy;)I
+  #16 = Utf8               legacy/Legacy
+  #17 = Utf8               access$008
+  #18 = Utf8               (Llegacy/Legacy;)I
+  #19 = Methodref          #14.#20        // legacy/Legacy.access$000:(Llegacy/Legacy;)I
+  #20 = NameAndType        #21:#18        // access$000:(Llegacy/Legacy;)I
+  #21 = Utf8               access$000
+  #22 = Methodref          #14.#23        // legacy/Legacy.access$100:()Ljava/lang/String;
+  #23 = NameAndType        #24:#25        // access$100:()Ljava/lang/String;
+  #24 = Utf8               access$100
+  #25 = Utf8               ()Ljava/lang/String;
+  #26 = Methodref          #27.#28        // java/lang/String.length:()I
+  #27 = Class              #29            // java/lang/String
+  #28 = NameAndType        #30:#31        // length:()I
+  #29 = Utf8               java/lang/String
+  #30 = Utf8               length
+  #31 = Utf8               ()I
+  #32 = Utf8               (Llegacy/Legacy;)V
+  #33 = Utf8               Code
+  #34 = Utf8               LineNumberTable
+  #35 = Utf8               LocalVariableTable
+  #36 = Utf8               this
+  #37 = Utf8               Llegacy/Legacy$Inner;
+  #38 = Utf8               MethodParameters
+  #39 = Utf8               peek
+  #40 = Utf8               SourceFile
+  #41 = Utf8               Legacy.java
+  #42 = Utf8               InnerClasses
+  #43 = Utf8               Inner
+{
+  final legacy.Legacy this$0;
+    descriptor: Llegacy/Legacy;
+    flags: (0x1010) ACC_FINAL, ACC_SYNTHETIC
+
+  legacy.Legacy$Inner(legacy.Legacy);
+    descriptor: (Llegacy/Legacy;)V
+    flags: (0x0000)
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: aload_1
+         2: putfield      #1                  // Field this$0:Llegacy/Legacy;
+         5: aload_0
+         6: invokespecial #7                  // Method java/lang/Object."<init>":()V
+         9: return
+      LineNumberTable:
+        line 17: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Llegacy/Legacy$Inner;
+            0      10     1 this$0   Llegacy/Legacy;
+    MethodParameters:
+      Name                           Flags
+      this$0                         final mandated
+
+  int peek();
+    descriptor: ()I
+    flags: (0x0000)
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #1                  // Field this$0:Llegacy/Legacy;
+         4: invokestatic  #13                 // Method legacy/Legacy.access$008:(Llegacy/Legacy;)I
+         7: pop
+         8: aload_0
+         9: getfield      #1                  // Field this$0:Llegacy/Legacy;
+        12: invokestatic  #19                 // Method legacy/Legacy.access$000:(Llegacy/Legacy;)I
+        15: invokestatic  #22                 // Method legacy/Legacy.access$100:()Ljava/lang/String;
+        18: invokevirtual #26                 // Method java/lang/String.length:()I
+        21: iadd
+        22: ireturn
+      LineNumberTable:
+        line 19: 0
+        line 20: 8
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      23     0  this   Llegacy/Legacy$Inner;
+}
+SourceFile: "Legacy.java"
+InnerClasses:
+  #43= #2 of #14;                         // Inner=class legacy/Legacy$Inner of class legacy/Legacy

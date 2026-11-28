@@ -1,0 +1,230 @@
+Classfile /R:/testdata/java/main/fixture/Shape.class
+  Last modified Nov 27, 2026; size 1926 bytes
+  SHA-256 checksum d7c150ebed23325e8ca37ecad599567dd2c85f64598ab86ee35933be3850be6b
+  Compiled from "Shape.java"
+public interface fixture.Shape
+  minor version: 0
+  major version: 65
+  flags: (0x0601) ACC_PUBLIC, ACC_INTERFACE, ACC_ABSTRACT
+  this_class: #42                         // fixture/Shape
+  super_class: #44                        // java/lang/Object
+  interfaces: 0, fields: 0, methods: 2, attributes: 5
+Constant pool:
+    #1 = Methodref          #2.#3         // java/util/Objects.requireNonNull:(Ljava/lang/Object;)Ljava/lang/Object;
+    #2 = Class              #4            // java/util/Objects
+    #3 = NameAndType        #5:#6         // requireNonNull:(Ljava/lang/Object;)Ljava/lang/Object;
+    #4 = Utf8               java/util/Objects
+    #5 = Utf8               requireNonNull
+    #6 = Utf8               (Ljava/lang/Object;)Ljava/lang/Object;
+    #7 = InvokeDynamic      #0:#8         // #0:typeSwitch:(Ljava/lang/Object;I)I
+    #8 = NameAndType        #9:#10        // typeSwitch:(Ljava/lang/Object;I)I
+    #9 = Utf8               typeSwitch
+   #10 = Utf8               (Ljava/lang/Object;I)I
+   #11 = Class              #12           // java/lang/MatchException
+   #12 = Utf8               java/lang/MatchException
+   #13 = Methodref          #11.#14       // java/lang/MatchException."<init>":(Ljava/lang/String;Ljava/lang/Throwable;)V
+   #14 = NameAndType        #15:#16       // "<init>":(Ljava/lang/String;Ljava/lang/Throwable;)V
+   #15 = Utf8               <init>
+   #16 = Utf8               (Ljava/lang/String;Ljava/lang/Throwable;)V
+   #17 = Class              #18           // fixture/Shape$Circle
+   #18 = Utf8               fixture/Shape$Circle
+   #19 = Methodref          #17.#20       // fixture/Shape$Circle.r:()D
+   #20 = NameAndType        #21:#22       // r:()D
+   #21 = Utf8               r
+   #22 = Utf8               ()D
+   #23 = InvokeDynamic      #1:#24        // #1:makeConcatWithConstants:(D)Ljava/lang/String;
+   #24 = NameAndType        #25:#26       // makeConcatWithConstants:(D)Ljava/lang/String;
+   #25 = Utf8               makeConcatWithConstants
+   #26 = Utf8               (D)Ljava/lang/String;
+   #27 = Class              #28           // fixture/Shape$Square
+   #28 = Utf8               fixture/Shape$Square
+   #29 = Fieldref           #27.#30       // fixture/Shape$Square.side:D
+   #30 = NameAndType        #31:#32       // side:D
+   #31 = Utf8               side
+   #32 = Utf8               D
+   #33 = InvokeDynamic      #2:#24        // #2:makeConcatWithConstants:(D)Ljava/lang/String;
+   #34 = Class              #35           // fixture/Shape$Triangle
+   #35 = Utf8               fixture/Shape$Triangle
+   #36 = String             #37           // triangle
+   #37 = Utf8               triangle
+   #38 = Class              #39           // fixture/Shape$Other
+   #39 = Utf8               fixture/Shape$Other
+   #40 = String             #41           // other
+   #41 = Utf8               other
+   #42 = Class              #43           // fixture/Shape
+   #43 = Utf8               fixture/Shape
+   #44 = Class              #45           // java/lang/Object
+   #45 = Utf8               java/lang/Object
+   #46 = Utf8               area
+   #47 = Utf8               name
+   #48 = Utf8               (Lfixture/Shape;)Ljava/lang/String;
+   #49 = Utf8               Code
+   #50 = Utf8               LineNumberTable
+   #51 = Utf8               LocalVariableTable
+   #52 = Utf8               c
+   #53 = Utf8               Lfixture/Shape$Circle;
+   #54 = Utf8               q
+   #55 = Utf8               Lfixture/Shape$Square;
+   #56 = Utf8               t
+   #57 = Utf8               Lfixture/Shape$Triangle;
+   #58 = Utf8               o
+   #59 = Utf8               Lfixture/Shape$Other;
+   #60 = Utf8               s
+   #61 = Utf8               Lfixture/Shape;
+   #62 = Utf8               StackMapTable
+   #63 = Class              #64           // java/lang/String
+   #64 = Utf8               java/lang/String
+   #65 = Utf8               MethodParameters
+   #66 = Utf8               SourceFile
+   #67 = Utf8               Shape.java
+   #68 = Utf8               NestMembers
+   #69 = Class              #70           // fixture/Shape$Polygon
+   #70 = Utf8               fixture/Shape$Polygon
+   #71 = Utf8               PermittedSubclasses
+   #72 = Utf8               BootstrapMethods
+   #73 = String             #74           // circle \u0001
+   #74 = Utf8               circle \u0001
+   #75 = String             #76           // square \u0001
+   #76 = Utf8               square \u0001
+   #77 = MethodHandle       6:#78         // REF_invokeStatic java/lang/runtime/SwitchBootstraps.typeSwitch:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+   #78 = Methodref          #79.#80       // java/lang/runtime/SwitchBootstraps.typeSwitch:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+   #79 = Class              #81           // java/lang/runtime/SwitchBootstraps
+   #80 = NameAndType        #9:#82        // typeSwitch:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+   #81 = Utf8               java/lang/runtime/SwitchBootstraps
+   #82 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+   #83 = MethodHandle       6:#84         // REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+   #84 = Methodref          #85.#86       // java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+   #85 = Class              #87           // java/lang/invoke/StringConcatFactory
+   #86 = NameAndType        #25:#88       // makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+   #87 = Utf8               java/lang/invoke/StringConcatFactory
+   #88 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+   #89 = Utf8               InnerClasses
+   #90 = Utf8               Circle
+   #91 = Utf8               Square
+   #92 = Utf8               Triangle
+   #93 = Utf8               Other
+   #94 = Utf8               Polygon
+   #95 = Class              #96           // java/lang/invoke/MethodHandles$Lookup
+   #96 = Utf8               java/lang/invoke/MethodHandles$Lookup
+   #97 = Class              #98           // java/lang/invoke/MethodHandles
+   #98 = Utf8               java/lang/invoke/MethodHandles
+   #99 = Utf8               Lookup
+{
+  public abstract double area();
+    descriptor: ()D
+    flags: (0x0401) ACC_PUBLIC, ACC_ABSTRACT
+
+  public static java.lang.String name(fixture.Shape);
+    descriptor: (Lfixture/Shape;)Ljava/lang/String;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=4, locals=7, args_size=1
+         0: aload_0
+         1: dup
+         2: invokestatic  #1                  // Method java/util/Objects.requireNonNull:(Ljava/lang/Object;)Ljava/lang/Object;
+         5: pop
+         6: astore_1
+         7: iconst_0
+         8: istore_2
+         9: aload_1
+        10: iload_2
+        11: invokedynamic #7,  0              // InvokeDynamic #0:typeSwitch:(Ljava/lang/Object;I)I
+        16: tableswitch   { // 0 to 3
+                       0: 58
+                       1: 75
+                       2: 94
+                       3: 105
+                 default: 48
+            }
+        48: new           #11                 // class java/lang/MatchException
+        51: dup
+        52: aconst_null
+        53: aconst_null
+        54: invokespecial #13                 // Method java/lang/MatchException."<init>":(Ljava/lang/String;Ljava/lang/Throwable;)V
+        57: athrow
+        58: aload_1
+        59: checkcast     #17                 // class fixture/Shape$Circle
+        62: astore_3
+        63: aload_3
+        64: invokevirtual #19                 // Method fixture/Shape$Circle.r:()D
+        67: invokedynamic #23,  0             // InvokeDynamic #1:makeConcatWithConstants:(D)Ljava/lang/String;
+        72: goto          113
+        75: aload_1
+        76: checkcast     #27                 // class fixture/Shape$Square
+        79: astore        4
+        81: aload         4
+        83: getfield      #29                 // Field fixture/Shape$Square.side:D
+        86: invokedynamic #33,  0             // InvokeDynamic #2:makeConcatWithConstants:(D)Ljava/lang/String;
+        91: goto          113
+        94: aload_1
+        95: checkcast     #34                 // class fixture/Shape$Triangle
+        98: astore        5
+       100: ldc           #36                 // String triangle
+       102: goto          113
+       105: aload_1
+       106: checkcast     #38                 // class fixture/Shape$Other
+       109: astore        6
+       111: ldc           #40                 // String other
+       113: areturn
+      LineNumberTable:
+        line 40: 0
+        line 41: 58
+        line 42: 75
+        line 43: 94
+        line 44: 105
+        line 40: 113
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+           63      12     3     c   Lfixture/Shape$Circle;
+           81      13     4     q   Lfixture/Shape$Square;
+          100       5     5     t   Lfixture/Shape$Triangle;
+          111       2     6     o   Lfixture/Shape$Other;
+            0     114     0     s   Lfixture/Shape;
+      StackMapTable: number_of_entries = 7
+        frame_type = 253 /* append */
+          offset_delta = 9
+          locals = [ class fixture/Shape, int ]
+        frame_type = 38 /* same */
+        frame_type = 9 /* same */
+        frame_type = 16 /* same */
+        frame_type = 18 /* same */
+        frame_type = 10 /* same */
+        frame_type = 255 /* full_frame */
+          offset_delta = 7
+          locals = [ class fixture/Shape ]
+          stack = [ class java/lang/String ]
+    MethodParameters:
+      Name                           Flags
+      s
+}
+SourceFile: "Shape.java"
+NestMembers:
+  fixture/Shape$Other
+  fixture/Shape$Triangle
+  fixture/Shape$Polygon
+  fixture/Shape$Square
+  fixture/Shape$Circle
+PermittedSubclasses:
+  fixture/Shape$Circle
+  fixture/Shape$Square
+  fixture/Shape$Polygon
+BootstrapMethods:
+  0: #77 REF_invokeStatic java/lang/runtime/SwitchBootstraps.typeSwitch:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #17 fixture/Shape$Circle
+      #27 fixture/Shape$Square
+      #34 fixture/Shape$Triangle
+      #38 fixture/Shape$Other
+  1: #83 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #73 circle \u0001
+  2: #83 REF_invokeStatic java/lang/invoke/StringConcatFactory.makeConcatWithConstants:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #75 square \u0001
+InnerClasses:
+  public static final #90= #17 of #42;    // Circle=class fixture/Shape$Circle of class fixture/Shape
+  public static final #91= #27 of #42;    // Square=class fixture/Shape$Square of class fixture/Shape
+  public static final #92= #34 of #42;    // Triangle=class fixture/Shape$Triangle of class fixture/Shape
+  public static #93= #38 of #42;          // Other=class fixture/Shape$Other of class fixture/Shape
+  public static abstract #94= #69 of #42; // Polygon=class fixture/Shape$Polygon of class fixture/Shape
+  public static final #99= #95 of #97;    // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles

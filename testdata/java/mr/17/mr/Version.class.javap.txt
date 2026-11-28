@@ -1,0 +1,76 @@
+Classfile /R:/testdata/java/mr/17/mr/Version.class
+  Last modified Nov 27, 2026; size 466 bytes
+  SHA-256 checksum 3924249982375f367c556d0a552c4fdc02e04493c4fecf89c6e96fbca446954e
+  Compiled from "Version.java"
+public class mr.Version
+  minor version: 0
+  major version: 61
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #18                         // mr/Version
+  super_class: #2                         // java/lang/Object
+  interfaces: 0, fields: 0, methods: 2, attributes: 3
+Constant pool:
+   #1 = Methodref          #2.#3          // java/lang/Object."<init>":()V
+   #2 = Class              #4             // java/lang/Object
+   #3 = NameAndType        #5:#6          // "<init>":()V
+   #4 = Utf8               java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = Class              #8             // mr/Version$1R
+   #8 = Utf8               mr/Version$1R
+   #9 = String             #10            // 17
+  #10 = Utf8               17
+  #11 = Methodref          #7.#12         // mr/Version$1R."<init>":(Ljava/lang/String;)V
+  #12 = NameAndType        #5:#13         // "<init>":(Ljava/lang/String;)V
+  #13 = Utf8               (Ljava/lang/String;)V
+  #14 = Methodref          #7.#15         // mr/Version$1R.s:()Ljava/lang/String;
+  #15 = NameAndType        #16:#17        // s:()Ljava/lang/String;
+  #16 = Utf8               s
+  #17 = Utf8               ()Ljava/lang/String;
+  #18 = Class              #19            // mr/Version
+  #19 = Utf8               mr/Version
+  #20 = Utf8               Code
+  #21 = Utf8               LineNumberTable
+  #22 = Utf8               LocalVariableTable
+  #23 = Utf8               this
+  #24 = Utf8               Lmr/Version;
+  #25 = Utf8               get
+  #26 = Utf8               SourceFile
+  #27 = Utf8               Version.java
+  #28 = Utf8               NestMembers
+  #29 = Utf8               InnerClasses
+  #30 = Utf8               R
+{
+  public mr.Version();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 4: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0  this   Lmr/Version;
+
+  public static java.lang.String get();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x0009) ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=3, locals=0, args_size=0
+         0: new           #7                  // class mr/Version$1R
+         3: dup
+         4: ldc           #9                  // String 17
+         6: invokespecial #11                 // Method mr/Version$1R."<init>":(Ljava/lang/String;)V
+         9: invokevirtual #14                 // Method mr/Version$1R.s:()Ljava/lang/String;
+        12: areturn
+      LineNumberTable:
+        line 7: 0
+}
+SourceFile: "Version.java"
+NestMembers:
+  mr/Version$1R
+InnerClasses:
+  static final #30= #7;                   // R=class mr/Version$1R

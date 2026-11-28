@@ -1,0 +1,385 @@
+Classfile /R:/testdata/java/old/legacy/Legacy.class
+  Last modified Nov 27, 2026; size 2725 bytes
+  SHA-256 checksum 5c9acc8f0e75c8f936460b084ac4bed51065d276210cbdc645af4335da138a70
+  Compiled from "Legacy.java"
+public class legacy.Legacy
+  minor version: 0
+  major version: 52
+  flags: (0x0021) ACC_PUBLIC, ACC_SUPER
+  this_class: #2                          // legacy/Legacy
+  super_class: #12                        // java/lang/Object
+  interfaces: 0, fields: 3, methods: 9, attributes: 3
+Constant pool:
+    #1 = Fieldref           #2.#3         // legacy/Legacy.name:Ljava/lang/String;
+    #2 = Class              #4            // legacy/Legacy
+    #3 = NameAndType        #5:#6         // name:Ljava/lang/String;
+    #4 = Utf8               legacy/Legacy
+    #5 = Utf8               name
+    #6 = Utf8               Ljava/lang/String;
+    #7 = Fieldref           #2.#8         // legacy/Legacy.secret:I
+    #8 = NameAndType        #9:#10        // secret:I
+    #9 = Utf8               secret
+   #10 = Utf8               I
+   #11 = Methodref          #12.#13       // java/lang/Object."<init>":()V
+   #12 = Class              #14           // java/lang/Object
+   #13 = NameAndType        #15:#16       // "<init>":()V
+   #14 = Utf8               java/lang/Object
+   #15 = Utf8               <init>
+   #16 = Utf8               ()V
+   #17 = Class              #18           // java/lang/StringBuilder
+   #18 = Utf8               java/lang/StringBuilder
+   #19 = Methodref          #17.#13       // java/lang/StringBuilder."<init>":()V
+   #20 = Methodref          #17.#21       // java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+   #21 = NameAndType        #22:#23       // append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+   #22 = Utf8               append
+   #23 = Utf8               (Ljava/lang/String;)Ljava/lang/StringBuilder;
+   #24 = Methodref          #17.#25       // java/lang/StringBuilder.append:(I)Ljava/lang/StringBuilder;
+   #25 = NameAndType        #22:#26       // append:(I)Ljava/lang/StringBuilder;
+   #26 = Utf8               (I)Ljava/lang/StringBuilder;
+   #27 = Methodref          #17.#28       // java/lang/StringBuilder.append:(D)Ljava/lang/StringBuilder;
+   #28 = NameAndType        #22:#29       // append:(D)Ljava/lang/StringBuilder;
+   #29 = Utf8               (D)Ljava/lang/StringBuilder;
+   #30 = Methodref          #17.#31       // java/lang/StringBuilder.append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+   #31 = NameAndType        #22:#32       // append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+   #32 = Utf8               (Ljava/lang/Object;)Ljava/lang/StringBuilder;
+   #33 = Methodref          #17.#34       // java/lang/StringBuilder.append:(C)Ljava/lang/StringBuilder;
+   #34 = NameAndType        #22:#35       // append:(C)Ljava/lang/StringBuilder;
+   #35 = Utf8               (C)Ljava/lang/StringBuilder;
+   #36 = Methodref          #17.#37       // java/lang/StringBuilder.toString:()Ljava/lang/String;
+   #37 = NameAndType        #38:#39       // toString:()Ljava/lang/String;
+   #38 = Utf8               toString
+   #39 = Utf8               ()Ljava/lang/String;
+   #40 = Methodref          #41.#42       // legacy/Legacy$Mode.ordinal:()I
+   #41 = Class              #43           // legacy/Legacy$Mode
+   #42 = NameAndType        #44:#45       // ordinal:()I
+   #43 = Utf8               legacy/Legacy$Mode
+   #44 = Utf8               ordinal
+   #45 = Utf8               ()I
+   #46 = Fieldref           #2.#47        // legacy/Legacy.$assertionsDisabled:Z
+   #47 = NameAndType        #48:#49       // $assertionsDisabled:Z
+   #48 = Utf8               $assertionsDisabled
+   #49 = Utf8               Z
+   #50 = Class              #51           // java/lang/AssertionError
+   #51 = Utf8               java/lang/AssertionError
+   #52 = String             #53           // positive
+   #53 = Utf8               positive
+   #54 = Methodref          #50.#55       // java/lang/AssertionError."<init>":(Ljava/lang/Object;)V
+   #55 = NameAndType        #15:#56       // "<init>":(Ljava/lang/Object;)V
+   #56 = Utf8               (Ljava/lang/Object;)V
+   #57 = Class              #58           // java/util/ArrayList
+   #58 = Utf8               java/util/ArrayList
+   #59 = Methodref          #57.#13       // java/util/ArrayList."<init>":()V
+   #60 = InvokeDynamic      #0:#61        // #0:run:(Llegacy/Legacy;)Ljava/lang/Runnable;
+   #61 = NameAndType        #62:#63       // run:(Llegacy/Legacy;)Ljava/lang/Runnable;
+   #62 = Utf8               run
+   #63 = Utf8               (Llegacy/Legacy;)Ljava/lang/Runnable;
+   #64 = InterfaceMethodref #65.#66       // java/util/List.add:(Ljava/lang/Object;)Z
+   #65 = Class              #67           // java/util/List
+   #66 = NameAndType        #68:#69       // add:(Ljava/lang/Object;)Z
+   #67 = Utf8               java/util/List
+   #68 = Utf8               add
+   #69 = Utf8               (Ljava/lang/Object;)Z
+   #70 = Methodref          #71.#72       // java/lang/Class.desiredAssertionStatus:()Z
+   #71 = Class              #73           // java/lang/Class
+   #72 = NameAndType        #74:#75       // desiredAssertionStatus:()Z
+   #73 = Utf8               java/lang/Class
+   #74 = Utf8               desiredAssertionStatus
+   #75 = Utf8               ()Z
+   #76 = String             #77           // legacy
+   #77 = Utf8               legacy
+   #78 = Utf8               Code
+   #79 = Utf8               LineNumberTable
+   #80 = Utf8               LocalVariableTable
+   #81 = Utf8               this
+   #82 = Utf8               Llegacy/Legacy;
+   #83 = Utf8               concat
+   #84 = Utf8               (Ljava/lang/String;IDLjava/lang/Object;)Ljava/lang/String;
+   #85 = Utf8               a
+   #86 = Utf8               b
+   #87 = Utf8               c
+   #88 = Utf8               D
+   #89 = Utf8               d
+   #90 = Utf8               Ljava/lang/Object;
+   #91 = Utf8               MethodParameters
+   #92 = Utf8               mode
+   #93 = Utf8               (Llegacy/Legacy$Mode;)I
+   #94 = Utf8               m
+   #95 = Utf8               Llegacy/Legacy$Mode;
+   #96 = Utf8               StackMapTable
+   #97 = Utf8               check
+   #98 = Utf8               (I)I
+   #99 = Utf8               x
+  #100 = Utf8               rs
+  #101 = Utf8               Ljava/util/List;
+  #102 = Utf8               LocalVariableTypeTable
+  #103 = Utf8               Ljava/util/List<Ljava/lang/Runnable;>;
+  #104 = Utf8               lambda$check$0
+  #105 = Utf8               access$008
+  #106 = Utf8               (Llegacy/Legacy;)I
+  #107 = Utf8               x0
+  #108 = Utf8               access$000
+  #109 = Utf8               access$100
+  #110 = Utf8               <clinit>
+  #111 = Utf8               SourceFile
+  #112 = Utf8               Legacy.java
+  #113 = Utf8               BootstrapMethods
+  #114 = MethodType         #16           //  ()V
+  #115 = MethodHandle       7:#116        // REF_invokeSpecial legacy/Legacy.lambda$check$0:()V
+  #116 = Methodref          #2.#117       // legacy/Legacy.lambda$check$0:()V
+  #117 = NameAndType        #104:#16      // lambda$check$0:()V
+  #118 = MethodHandle       6:#119        // REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #119 = Methodref          #120.#121     // java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #120 = Class              #122          // java/lang/invoke/LambdaMetafactory
+  #121 = NameAndType        #123:#124     // metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #122 = Utf8               java/lang/invoke/LambdaMetafactory
+  #123 = Utf8               metafactory
+  #124 = Utf8               (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+  #125 = Utf8               InnerClasses
+  #126 = Utf8               Mode
+  #127 = Class              #128          // legacy/Legacy$Inner
+  #128 = Utf8               legacy/Legacy$Inner
+  #129 = Utf8               Inner
+  #130 = Class              #131          // java/lang/invoke/MethodHandles$Lookup
+  #131 = Utf8               java/lang/invoke/MethodHandles$Lookup
+  #132 = Class              #133          // java/lang/invoke/MethodHandles
+  #133 = Utf8               java/lang/invoke/MethodHandles
+  #134 = Utf8               Lookup
+{
+  private int secret;
+    descriptor: I
+    flags: (0x0002) ACC_PRIVATE
+
+  private static java.lang.String name;
+    descriptor: Ljava/lang/String;
+    flags: (0x000a) ACC_PRIVATE, ACC_STATIC
+
+  static final boolean $assertionsDisabled;
+    descriptor: Z
+    flags: (0x1018) ACC_STATIC, ACC_FINAL, ACC_SYNTHETIC
+
+  public legacy.Legacy();
+    descriptor: ()V
+    flags: (0x0001) ACC_PUBLIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #11                 // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: iconst_1
+         6: putfield      #7                  // Field secret:I
+         9: return
+      LineNumberTable:
+        line 11: 0
+        line 12: 4
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      10     0  this   Llegacy/Legacy;
+
+  static java.lang.String concat(java.lang.String, int, double, java.lang.Object);
+    descriptor: (Ljava/lang/String;IDLjava/lang/Object;)Ljava/lang/String;
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=3, locals=5, args_size=4
+         0: new           #17                 // class java/lang/StringBuilder
+         3: dup
+         4: invokespecial #19                 // Method java/lang/StringBuilder."<init>":()V
+         7: aload_0
+         8: invokevirtual #20                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+        11: iload_1
+        12: invokevirtual #24                 // Method java/lang/StringBuilder.append:(I)Ljava/lang/StringBuilder;
+        15: dload_2
+        16: invokevirtual #27                 // Method java/lang/StringBuilder.append:(D)Ljava/lang/StringBuilder;
+        19: aload         4
+        21: invokevirtual #30                 // Method java/lang/StringBuilder.append:(Ljava/lang/Object;)Ljava/lang/StringBuilder;
+        24: bipush        120
+        26: invokevirtual #33                 // Method java/lang/StringBuilder.append:(C)Ljava/lang/StringBuilder;
+        29: invokevirtual #36                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+        32: areturn
+      LineNumberTable:
+        line 25: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      33     0     a   Ljava/lang/String;
+            0      33     1     b   I
+            0      33     2     c   D
+            0      33     4     d   Ljava/lang/Object;
+    MethodParameters:
+      Name                           Flags
+      a
+      b
+      c
+      d
+
+  static int mode(legacy.Legacy$Mode);
+    descriptor: (Llegacy/Legacy$Mode;)I
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokevirtual #40                 // Method legacy/Legacy$Mode.ordinal:()I
+         4: lookupswitch  { // 2
+                       0: 32
+                       1: 34
+                 default: 36
+            }
+        32: iconst_1
+        33: ireturn
+        34: iconst_2
+        35: ireturn
+        36: iconst_0
+        37: ireturn
+      LineNumberTable:
+        line 29: 0
+        line 30: 32
+        line 31: 34
+        line 32: 36
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      38     0     m   Llegacy/Legacy$Mode;
+      StackMapTable: number_of_entries = 3
+        frame_type = 32 /* same */
+        frame_type = 1 /* same */
+        frame_type = 1 /* same */
+    MethodParameters:
+      Name                           Flags
+      m
+
+  int check(int);
+    descriptor: (I)I
+    flags: (0x0000)
+    Code:
+      stack=3, locals=3, args_size=2
+         0: getstatic     #46                 // Field $assertionsDisabled:Z
+         3: ifne          20
+         6: iload_1
+         7: ifgt          20
+        10: new           #50                 // class java/lang/AssertionError
+        13: dup
+        14: ldc           #52                 // String positive
+        16: invokespecial #54                 // Method java/lang/AssertionError."<init>":(Ljava/lang/Object;)V
+        19: athrow
+        20: new           #57                 // class java/util/ArrayList
+        23: dup
+        24: invokespecial #59                 // Method java/util/ArrayList."<init>":()V
+        27: astore_2
+        28: aload_2
+        29: aload_0
+        30: invokedynamic #60,  0             // InvokeDynamic #0:run:(Llegacy/Legacy;)Ljava/lang/Runnable;
+        35: invokeinterface #64,  2           // InterfaceMethod java/util/List.add:(Ljava/lang/Object;)Z
+        40: pop
+        41: iload_1
+        42: ireturn
+      LineNumberTable:
+        line 37: 0
+        line 38: 20
+        line 39: 28
+        line 40: 41
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      43     0  this   Llegacy/Legacy;
+            0      43     1     x   I
+           28      15     2    rs   Ljava/util/List;
+      LocalVariableTypeTable:
+        Start  Length  Slot  Name   Signature
+           28      15     2    rs   Ljava/util/List<Ljava/lang/Runnable;>;
+      StackMapTable: number_of_entries = 1
+        frame_type = 20 /* same */
+    MethodParameters:
+      Name                           Flags
+      x
+
+  private void lambda$check$0();
+    descriptor: ()V
+    flags: (0x1002) ACC_PRIVATE, ACC_SYNTHETIC
+    Code:
+      stack=3, locals=1, args_size=1
+         0: aload_0
+         1: dup
+         2: getfield      #7                  // Field secret:I
+         5: iconst_1
+         6: iadd
+         7: putfield      #7                  // Field secret:I
+        10: return
+      LineNumberTable:
+        line 39: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      11     0  this   Llegacy/Legacy;
+
+  static int access$008(legacy.Legacy);
+    descriptor: (Llegacy/Legacy;)I
+    flags: (0x1008) ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=4, locals=1, args_size=1
+         0: aload_0
+         1: dup
+         2: getfield      #7                  // Field secret:I
+         5: dup_x1
+         6: iconst_1
+         7: iadd
+         8: putfield      #7                  // Field secret:I
+        11: ireturn
+      LineNumberTable:
+        line 11: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0      12     0    x0   Llegacy/Legacy;
+
+  static int access$000(legacy.Legacy);
+    descriptor: (Llegacy/Legacy;)I
+    flags: (0x1008) ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #7                  // Field secret:I
+         4: ireturn
+      LineNumberTable:
+        line 11: 0
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+            0       5     0    x0   Llegacy/Legacy;
+
+  static java.lang.String access$100();
+    descriptor: ()Ljava/lang/String;
+    flags: (0x1008) ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: getstatic     #1                  // Field name:Ljava/lang/String;
+         3: areturn
+      LineNumberTable:
+        line 11: 0
+
+  static {};
+    descriptor: ()V
+    flags: (0x0008) ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: ldc           #2                  // class legacy/Legacy
+         2: invokevirtual #70                 // Method java/lang/Class.desiredAssertionStatus:()Z
+         5: ifne          12
+         8: iconst_1
+         9: goto          13
+        12: iconst_0
+        13: putstatic     #46                 // Field $assertionsDisabled:Z
+        16: ldc           #76                 // String legacy
+        18: putstatic     #1                  // Field name:Ljava/lang/String;
+        21: return
+      LineNumberTable:
+        line 11: 0
+        line 13: 16
+      StackMapTable: number_of_entries = 2
+        frame_type = 12 /* same */
+        frame_type = 64 /* same_locals_1_stack_item */
+          stack = [ int ]
+}
+SourceFile: "Legacy.java"
+BootstrapMethods:
+  0: #118 REF_invokeStatic java/lang/invoke/LambdaMetafactory.metafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+    Method arguments:
+      #114 ()V
+      #115 REF_invokeSpecial legacy/Legacy.lambda$check$0:()V
+      #114 ()V
+InnerClasses:
+  static final #126= #41 of #2;           // Mode=class legacy/Legacy$Mode of class legacy/Legacy
+  #129= #127 of #2;                       // Inner=class legacy/Legacy$Inner of class legacy/Legacy
+  public static final #134= #130 of #132; // Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles

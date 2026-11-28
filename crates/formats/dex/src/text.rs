@@ -26,7 +26,9 @@ pub enum Style {
 pub fn format_g(v: f64) -> String {
     const P: i32 = 6;
     if v.is_nan() {
-        return if v.is_sign_negative() { "-nan" } else { "nan" }.to_string();
+        // (Without a sign, as the SDK's dexdump.exe writes it; glibc's
+        // printf writes a negative NaN `-nan`.)
+        return "nan".to_string();
     }
     if v.is_infinite() {
         return if v < 0.0 { "-inf" } else { "inf" }.to_string();
@@ -450,9 +452,13 @@ pub fn encoded_value(dex: &Dex<'_>, v: &EncodedValue, style: Style, out: &mut Ve
         }
         EncodedValue::Null => out.extend_from_slice(b"null"),
         EncodedValue::Boolean(b) => out.extend_from_slice(if *b { b"true" } else { b"false" }),
-        // (dexdump has no text for these outside call sites.)
-        EncodedValue::MethodType(_) | EncodedValue::MethodHandle(_) => {
-            out.extend_from_slice(b"????");
+        EncodedValue::MethodType(p) => {
+            if !proto_signature(dex, *p, style, out) {
+                out.extend_from_slice(b"<proto?>");
+            }
+        }
+        EncodedValue::MethodHandle(h) => {
+            let _ = write!(out, "method_handle@{h}");
         }
     }
 }

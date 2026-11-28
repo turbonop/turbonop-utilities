@@ -1,0 +1,623 @@
+Processing 'Handmade-039.dex'...
+Opened 'Handmade-039.dex', DEX version '039'
+DEX file header:
+magic               : 'dex\n039\0'
+checksum            : 47ed343a
+signature           : 5a05...9570
+file_size           : 3612
+header_size         : 112
+link_size           : 0
+link_off            : 0 (0x000000)
+string_ids_size     : 86
+string_ids_off      : 112 (0x000070)
+type_ids_size       : 26
+type_ids_off        : 456 (0x0001c8)
+proto_ids_size      : 7
+proto_ids_off       : 560 (0x000230)
+field_ids_size      : 15
+field_ids_off       : 644 (0x000284)
+method_ids_size     : 10
+method_ids_off      : 764 (0x0002fc)
+class_defs_size     : 2
+class_defs_off      : 844 (0x00034c)
+data_size           : 2652
+data_off            : 960 (0x0003c0)
+
+Class #0 header:
+class_idx           : 9
+access_flags        : 1537 (0x0601)
+superclass_idx      : 12
+interfaces_off      : 0 (0x000000)
+source_file_idx     : -1
+annotations_off     : 0 (0x000000)
+class_data_off      : 2972 (0x000b9c)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 0
+virtual_methods_size: 1
+
+Class #0            -
+  Class descriptor  : 'LIface;'
+  Access flags      : 0x0601 (PUBLIC INTERFACE ABSTRACT)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+  Virtual methods   -
+    #0              : (in LIface;)
+      name          : 'run'
+      type          : '()V'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 7
+      code          : (none)
+
+  source_file_idx   : -1 (unknown)
+
+Class #1 header:
+class_idx           : 8
+access_flags        : 1 (0x0001)
+superclass_idx      : 12
+interfaces_off      : 2244 (0x0008c4)
+source_file_idx     : 5
+annotations_off     : 3272 (0x000cc8)
+class_data_off      : 2980 (0x000ba4)
+static_fields_size  : 13
+instance_fields_size: 2
+direct_methods_size : 4
+virtual_methods_size: 2
+
+Class #1 annotations:
+Annotations on class
+  VISIBILITY_BUILD LAnn; ann=LAnn; value=7 arr={ 1 { } null false } b=-128 c=65535 d=1e+300 en=sInt f=-1.25 fld=iObj i=-2147483648 j=20015998343868 mh=method_handle@1 mt=(ILjava/lang/String;)I mth=wide nul=null s=-300 str="í ½í¸€ í°€!" ty=[[Ljava/lang/String; z=true
+  VISIBILITY_SYSTEM Ljava/lang/Exception;
+Annotations on field #1 'iObj'
+  VISIBILITY_RUNTIME LAnn;
+Annotations on field #9 'sInt'
+  VISIBILITY_RUNTIME LAnn; value=1
+Annotations on method #2 'all'
+  VISIBILITY_SYSTEM LAnn; z=false
+Annotations on method #2 'all' parameters
+#0
+  VISIBILITY_RUNTIME LAnn; value=2
+#1
+  empty-annotation-set
+
+Class #1            -
+  Class descriptor  : 'LHand;'
+  Access flags      : 0x0001 (PUBLIC)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'LIface;'
+  Static fields     -
+    #0              : (in LHand;)
+      name          : 'sBool'
+      type          : 'Z'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : true
+    #1              : (in LHand;)
+      name          : 'sByte'
+      type          : 'B'
+      access        : 0x0008 (STATIC)
+      hiddenapi     : 0x0001 (UNSUPPORTED)
+      value         : -5
+    #2              : (in LHand;)
+      name          : 'sChar'
+      type          : 'C'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      hiddenapi     : 0x0002 (BLOCKED)
+      value         : 65535
+    #3              : (in LHand;)
+      name          : 'sClass'
+      type          : 'Ljava/lang/Class;'
+      access        : 0x0008 (STATIC)
+      hiddenapi     : 0x0003 (MAX-TARGET-O)
+      value         : LHand;
+    #4              : (in LHand;)
+      name          : 'sDouble'
+      type          : 'D'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      hiddenapi     : 0x0004 (MAX-TARGET-P)
+      value         : -0
+    #5              : (in LHand;)
+      name          : 'sFloat'
+      type          : 'F'
+      access        : 0x0008 (STATIC)
+      hiddenapi     : 0x0005 (MAX-TARGET-Q)
+      value         : 3.5
+    #6              : (in LHand;)
+      name          : 'sHandle'
+      type          : 'Ljava/lang/invoke/MethodHandle;'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      hiddenapi     : 0x0006 (MAX-TARGET-R)
+      value         : null
+    #7              : (in LHand;)
+      name          : 'sInt'
+      type          : 'I'
+      access        : 0x0008 (STATIC)
+      hiddenapi     : 0x0007 (MAX-TARGET-S)
+      value         : -123456
+    #8              : (in LHand;)
+      name          : 'sLong'
+      type          : 'J'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      hiddenapi     : 0x0008 (UNSUPPORTED)
+      value         : -9223372036854775808
+    #9              : (in LHand;)
+      name          : 'sObj'
+      type          : 'Ljava/lang/Object;'
+      access        : 0x0008 (STATIC)
+      hiddenapi     : 0x0009 (UNSUPPORTED)
+      value         : null
+    #10              : (in LHand;)
+      name          : 'sShort'
+      type          : 'S'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      hiddenapi     : 0x000a (UNSUPPORTED)
+      value         : -2
+    #11              : (in LHand;)
+      name          : 'sStr'
+      type          : 'Ljava/lang/String;'
+      access        : 0x0008 (STATIC)
+      hiddenapi     : 0x000b (UNSUPPORTED)
+      value         : "hello \"q\"\n"
+    #12              : (in LHand;)
+      name          : 'sType'
+      type          : 'Ljava/lang/invoke/MethodType;'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      hiddenapi     : 0x000c (UNSUPPORTED)
+      value         : Ljava/lang/invoke/MethodType;
+  Instance fields   -
+    #0              : (in LHand;)
+      name          : 'iInt'
+      type          : 'I'
+      access        : 0x0002 (PRIVATE)
+      hiddenapi     : 0x000d (UNSUPPORTED)
+    #1              : (in LHand;)
+      name          : 'iObj'
+      type          : 'Ljava/lang/Object;'
+      access        : 0x00c4 (PROTECTED VOLATILE TRANSIENT)
+      hiddenapi     : 0x000e (UNSUPPORTED)
+  Direct methods    -
+    #0              : (in LHand;)
+      name          : '<init>'
+      type          : '()V'
+      access        : 0x10001 (PUBLIC CONSTRUCTOR)
+      method_idx    : 1
+      hiddenapi     : 0x000f (INVALID)
+      code          -
+      registers     : 1
+      ins           : 1
+      outs          : 1
+      insns size    : 4 16-bit code units
+0003c0:                                        |[0003c0] Hand.<init>:()V
+0003d0: 7010 0800 0000                         |0000: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@0008
+0003d6: 0e00                                   |0003: return-void
+      catches       : (none)
+      positions     :
+      locals        :
+
+    #1              : (in LHand;)
+      name          : 'all'
+      type          : '(IJ)V'
+      access        : 0x0009 (PUBLIC STATIC)
+      method_idx    : 2
+      hiddenapi     : 0x0010 (SDK,CORE-PLATFORM-API)
+      code          -
+      registers     : 4096
+      ins           : 3
+      outs          : 5
+      insns size    : 496 16-bit code units
+0003d8:                                        |[0003d8] Hand.all:(IJ)V
+0003e8: 0000                                   |0000: nop // spacer
+0003ea: 01f1                                   |0001: move v1, v15
+0003ec: 02ff ffff                              |0002: move/from16 v255, v65535
+0003f0: 0300 ffff 3412                         |0004: move/16 v65535, v4660
+0003f6: 04f1                                   |0007: move-wide v1, v15
+0003f8: 05ff ffff                              |0008: move-wide/from16 v255, v65535
+0003fc: 0600 ffff 3412                         |000a: move-wide/16 v65535, v4660
+000402: 07f1                                   |000d: move-object v1, v15
+000404: 08ff ffff                              |000e: move-object/from16 v255, v65535
+000408: 0900 ffff 3412                         |0010: move-object/16 v65535, v4660
+00040e: 0aff                                   |0013: move-result v255
+000410: 0bff                                   |0014: move-result-wide v255
+000412: 0cff                                   |0015: move-result-object v255
+000414: 0dff                                   |0016: move-exception v255
+000416: 0e00                                   |0017: return-void
+000418: 0fff                                   |0018: return v255
+00041a: 10ff                                   |0019: return-wide v255
+00041c: 11ff                                   |001a: return-object v255
+00041e: 128f                                   |001b: const/4 v15, #int -8 // #f8
+000420: 1303 0080                              |001c: const/16 v3, #int -32768 // #8000
+000424: 1407 0000 803f                         |001e: const v7, #float 1 // #3f800000
+00042a: 1504 0040                              |0021: const/high16 v4, #int 1073741824 // #4000
+00042e: 1603 0080                              |0023: const-wide/16 v3, #int -32768 // #8000
+000432: 1708 ffff ffff                         |0025: const-wide/32 v8, #float nan // #ffffffff
+000438: 18fe 182d 4454 fb21 0940               |0028: const-wide v254, #double 3.14159 // #400921fb54442d18
+000442: 1904 0040                              |002d: const-wide/high16 v4, #long 4611686018427387904 // #4000
+000446: 1a05 3100                              |002f: const-string v5, "hello \"q\"\n" // string@0031
+00044a: 1b0a 3100 0000                         |0031: const-string/jumbo v10, "hello \"q\"\n" // string@00000031
+000450: 1c05 0d00                              |0034: const-class v5, Ljava/lang/String; // type@000d
+000454: 1dff                                   |0036: monitor-enter v255
+000456: 1eff                                   |0037: monitor-exit v255
+000458: 1f05 0d00                              |0038: check-cast v5, Ljava/lang/String; // type@000d
+00045c: 2065 0d00                              |003a: instance-of v5, v6, Ljava/lang/String; // type@000d
+000460: 21f1                                   |003c: array-length v1, v15
+000462: 2205 0d00                              |003d: new-instance v5, Ljava/lang/String; // type@000d
+000466: 2365 1600                              |003f: new-array v5, v6, [I // type@0016
+00046a: 245f 1600 cbed                         |0041: filled-new-array {v11, v12, v13, v14, v15}, [I // type@0016
+000470: 2503 1600 0001                         |0044: filled-new-array/range {v256, v257, v258}, [I // type@0016
+000476: 2609 9101 0000                         |0047: fill-array-data v9, 000001d8 // +00000191
+00047c: 27ff                                   |004a: throw v255
+00047e: 2880                                   |004b: goto ffffffcb // -0080
+000480: 2900 ff7f                              |004c: goto/16 804b // +7fff
+000484: 2a00 0000 0080                         |004e: goto/32 #80000000
+00048a: 2b09 7301 0000                         |0051: packed-switch v9, 000001c4 // +00000173
+000490: 2c09 7a01 0000                         |0054: sparse-switch v9, 000001ce // +0000017a
+000496: 2dff fe80                              |0057: cmpl-float v255, v254, v128
+00049a: 2eff fe80                              |0059: cmpg-float v255, v254, v128
+00049e: 2fff fe80                              |005b: cmpl-double v255, v254, v128
+0004a2: 30ff fe80                              |005d: cmpg-double v255, v254, v128
+0004a6: 31ff fe80                              |005f: cmp-long v255, v254, v128
+0004aa: 3221 0300                              |0061: if-eq v1, v2, 0064 // +0003
+0004ae: 3321 0300                              |0063: if-ne v1, v2, 0066 // +0003
+0004b2: 3421 0300                              |0065: if-lt v1, v2, 0068 // +0003
+0004b6: 3521 0300                              |0067: if-ge v1, v2, 006a // +0003
+0004ba: 3621 0300                              |0069: if-gt v1, v2, 006c // +0003
+0004be: 3721 0300                              |006b: if-le v1, v2, 006e // +0003
+0004c2: 3802 feff                              |006d: if-eqz v2, 006b // -0002
+0004c6: 3902 feff                              |006f: if-nez v2, 006d // -0002
+0004ca: 3a02 feff                              |0071: if-ltz v2, 006f // -0002
+0004ce: 3b02 feff                              |0073: if-gez v2, 0071 // -0002
+0004d2: 3c02 feff                              |0075: if-gtz v2, 0073 // -0002
+0004d6: 3d02 feff                              |0077: if-lez v2, 0075 // -0002
+0004da: 3e00                                   |0079: unused-3e
+0004dc: 3f00                                   |007a: unused-3f
+0004de: 4000                                   |007b: unused-40
+0004e0: 4100                                   |007c: unused-41
+0004e2: 4200                                   |007d: unused-42
+0004e4: 4300                                   |007e: unused-43
+0004e6: 44ff fe80                              |007f: aget v255, v254, v128
+0004ea: 45ff fe80                              |0081: aget-wide v255, v254, v128
+0004ee: 46ff fe80                              |0083: aget-object v255, v254, v128
+0004f2: 47ff fe80                              |0085: aget-boolean v255, v254, v128
+0004f6: 48ff fe80                              |0087: aget-byte v255, v254, v128
+0004fa: 49ff fe80                              |0089: aget-char v255, v254, v128
+0004fe: 4aff fe80                              |008b: aget-short v255, v254, v128
+000502: 4bff fe80                              |008d: aput v255, v254, v128
+000506: 4cff fe80                              |008f: aput-wide v255, v254, v128
+00050a: 4dff fe80                              |0091: aput-object v255, v254, v128
+00050e: 4eff fe80                              |0093: aput-boolean v255, v254, v128
+000512: 4fff fe80                              |0095: aput-byte v255, v254, v128
+000516: 50ff fe80                              |0097: aput-char v255, v254, v128
+00051a: 51ff fe80                              |0099: aput-short v255, v254, v128
+00051e: 5265 0000                              |009b: iget v5, v6, LHand;.iInt:I // field@0000
+000522: 5365 0000                              |009d: iget-wide v5, v6, LHand;.iInt:I // field@0000
+000526: 5465 0000                              |009f: iget-object v5, v6, LHand;.iInt:I // field@0000
+00052a: 5565 0000                              |00a1: iget-boolean v5, v6, LHand;.iInt:I // field@0000
+00052e: 5665 0000                              |00a3: iget-byte v5, v6, LHand;.iInt:I // field@0000
+000532: 5765 0000                              |00a5: iget-char v5, v6, LHand;.iInt:I // field@0000
+000536: 5865 0000                              |00a7: iget-short v5, v6, LHand;.iInt:I // field@0000
+00053a: 5965 0000                              |00a9: iput v5, v6, LHand;.iInt:I // field@0000
+00053e: 5a65 0000                              |00ab: iput-wide v5, v6, LHand;.iInt:I // field@0000
+000542: 5b65 0000                              |00ad: iput-object v5, v6, LHand;.iInt:I // field@0000
+000546: 5c65 0000                              |00af: iput-boolean v5, v6, LHand;.iInt:I // field@0000
+00054a: 5d65 0000                              |00b1: iput-byte v5, v6, LHand;.iInt:I // field@0000
+00054e: 5e65 0000                              |00b3: iput-char v5, v6, LHand;.iInt:I // field@0000
+000552: 5f65 0000                              |00b5: iput-short v5, v6, LHand;.iInt:I // field@0000
+000556: 6005 0900                              |00b7: sget v5, LHand;.sInt:I // field@0009
+00055a: 6105 0900                              |00b9: sget-wide v5, LHand;.sInt:I // field@0009
+00055e: 6205 0900                              |00bb: sget-object v5, LHand;.sInt:I // field@0009
+000562: 6305 0900                              |00bd: sget-boolean v5, LHand;.sInt:I // field@0009
+000566: 6405 0900                              |00bf: sget-byte v5, LHand;.sInt:I // field@0009
+00056a: 6505 0900                              |00c1: sget-char v5, LHand;.sInt:I // field@0009
+00056e: 6605 0900                              |00c3: sget-short v5, LHand;.sInt:I // field@0009
+000572: 6705 0900                              |00c5: sput v5, LHand;.sInt:I // field@0009
+000576: 6805 0900                              |00c7: sput-wide v5, LHand;.sInt:I // field@0009
+00057a: 6905 0900                              |00c9: sput-object v5, LHand;.sInt:I // field@0009
+00057e: 6a05 0900                              |00cb: sput-boolean v5, LHand;.sInt:I // field@0009
+000582: 6b05 0900                              |00cd: sput-byte v5, LHand;.sInt:I // field@0009
+000586: 6c05 0900                              |00cf: sput-char v5, LHand;.sInt:I // field@0009
+00058a: 6d05 0900                              |00d1: sput-short v5, LHand;.sInt:I // field@0009
+00058e: 6e14 0800 1032                         |00d3: invoke-virtual {v0}, Ljava/lang/Object;.<init>:()V // method@0008
+000594: 6f24 0800 1032                         |00d6: invoke-super {v0, v1}, Ljava/lang/Object;.<init>:()V // method@0008
+00059a: 7034 0800 1032                         |00d9: invoke-direct {v0, v1, v2}, Ljava/lang/Object;.<init>:()V // method@0008
+0005a0: 7144 0800 1032                         |00dc: invoke-static {v0, v1, v2, v3}, Ljava/lang/Object;.<init>:()V // method@0008
+0005a6: 7210 0700 0900                         |00df: invoke-interface {v9}, LIface;.run:()V // method@0007
+0005ac: 7300                                   |00e2: unused-73
+0005ae: 7403 0800 0001                         |00e3: invoke-virtual/range {v256, v257, v258}, Ljava/lang/Object;.<init>:()V // method@0008
+0005b4: 7503 0800 0001                         |00e6: invoke-super/range {v256, v257, v258}, Ljava/lang/Object;.<init>:()V // method@0008
+0005ba: 7603 0800 0001                         |00e9: invoke-direct/range {v256, v257, v258}, Ljava/lang/Object;.<init>:()V // method@0008
+0005c0: 7703 0800 0001                         |00ec: invoke-static/range {v256, v257, v258}, Ljava/lang/Object;.<init>:()V // method@0008
+0005c6: 7803 0700 0001                         |00ef: invoke-interface/range {v256, v257, v258}, LIface;.run:()V // method@0007
+0005cc: 7900                                   |00f2: unused-79
+0005ce: 7a00                                   |00f3: unused-7a
+0005d0: 7bf1                                   |00f4: neg-int v1, v15
+0005d2: 7cf1                                   |00f5: not-int v1, v15
+0005d4: 7df1                                   |00f6: neg-long v1, v15
+0005d6: 7ef1                                   |00f7: not-long v1, v15
+0005d8: 7ff1                                   |00f8: neg-float v1, v15
+0005da: 80f1                                   |00f9: neg-double v1, v15
+0005dc: 81f1                                   |00fa: int-to-long v1, v15
+0005de: 82f1                                   |00fb: int-to-float v1, v15
+0005e0: 83f1                                   |00fc: int-to-double v1, v15
+0005e2: 84f1                                   |00fd: long-to-int v1, v15
+0005e4: 85f1                                   |00fe: long-to-float v1, v15
+0005e6: 86f1                                   |00ff: long-to-double v1, v15
+0005e8: 87f1                                   |0100: float-to-int v1, v15
+0005ea: 88f1                                   |0101: float-to-long v1, v15
+0005ec: 89f1                                   |0102: float-to-double v1, v15
+0005ee: 8af1                                   |0103: double-to-int v1, v15
+0005f0: 8bf1                                   |0104: double-to-long v1, v15
+0005f2: 8cf1                                   |0105: double-to-float v1, v15
+0005f4: 8df1                                   |0106: int-to-byte v1, v15
+0005f6: 8ef1                                   |0107: int-to-char v1, v15
+0005f8: 8ff1                                   |0108: int-to-short v1, v15
+0005fa: 90ff fe80                              |0109: add-int v255, v254, v128
+0005fe: 91ff fe80                              |010b: sub-int v255, v254, v128
+000602: 92ff fe80                              |010d: mul-int v255, v254, v128
+000606: 93ff fe80                              |010f: div-int v255, v254, v128
+00060a: 94ff fe80                              |0111: rem-int v255, v254, v128
+00060e: 95ff fe80                              |0113: and-int v255, v254, v128
+000612: 96ff fe80                              |0115: or-int v255, v254, v128
+000616: 97ff fe80                              |0117: xor-int v255, v254, v128
+00061a: 98ff fe80                              |0119: shl-int v255, v254, v128
+00061e: 99ff fe80                              |011b: shr-int v255, v254, v128
+000622: 9aff fe80                              |011d: ushr-int v255, v254, v128
+000626: 9bff fe80                              |011f: add-long v255, v254, v128
+00062a: 9cff fe80                              |0121: sub-long v255, v254, v128
+00062e: 9dff fe80                              |0123: mul-long v255, v254, v128
+000632: 9eff fe80                              |0125: div-long v255, v254, v128
+000636: 9fff fe80                              |0127: rem-long v255, v254, v128
+00063a: a0ff fe80                              |0129: and-long v255, v254, v128
+00063e: a1ff fe80                              |012b: or-long v255, v254, v128
+000642: a2ff fe80                              |012d: xor-long v255, v254, v128
+000646: a3ff fe80                              |012f: shl-long v255, v254, v128
+00064a: a4ff fe80                              |0131: shr-long v255, v254, v128
+00064e: a5ff fe80                              |0133: ushr-long v255, v254, v128
+000652: a6ff fe80                              |0135: add-float v255, v254, v128
+000656: a7ff fe80                              |0137: sub-float v255, v254, v128
+00065a: a8ff fe80                              |0139: mul-float v255, v254, v128
+00065e: a9ff fe80                              |013b: div-float v255, v254, v128
+000662: aaff fe80                              |013d: rem-float v255, v254, v128
+000666: abff fe80                              |013f: add-double v255, v254, v128
+00066a: acff fe80                              |0141: sub-double v255, v254, v128
+00066e: adff fe80                              |0143: mul-double v255, v254, v128
+000672: aeff fe80                              |0145: div-double v255, v254, v128
+000676: afff fe80                              |0147: rem-double v255, v254, v128
+00067a: b0f1                                   |0149: add-int/2addr v1, v15
+00067c: b1f1                                   |014a: sub-int/2addr v1, v15
+00067e: b2f1                                   |014b: mul-int/2addr v1, v15
+000680: b3f1                                   |014c: div-int/2addr v1, v15
+000682: b4f1                                   |014d: rem-int/2addr v1, v15
+000684: b5f1                                   |014e: and-int/2addr v1, v15
+000686: b6f1                                   |014f: or-int/2addr v1, v15
+000688: b7f1                                   |0150: xor-int/2addr v1, v15
+00068a: b8f1                                   |0151: shl-int/2addr v1, v15
+00068c: b9f1                                   |0152: shr-int/2addr v1, v15
+00068e: baf1                                   |0153: ushr-int/2addr v1, v15
+000690: bbf1                                   |0154: add-long/2addr v1, v15
+000692: bcf1                                   |0155: sub-long/2addr v1, v15
+000694: bdf1                                   |0156: mul-long/2addr v1, v15
+000696: bef1                                   |0157: div-long/2addr v1, v15
+000698: bff1                                   |0158: rem-long/2addr v1, v15
+00069a: c0f1                                   |0159: and-long/2addr v1, v15
+00069c: c1f1                                   |015a: or-long/2addr v1, v15
+00069e: c2f1                                   |015b: xor-long/2addr v1, v15
+0006a0: c3f1                                   |015c: shl-long/2addr v1, v15
+0006a2: c4f1                                   |015d: shr-long/2addr v1, v15
+0006a4: c5f1                                   |015e: ushr-long/2addr v1, v15
+0006a6: c6f1                                   |015f: add-float/2addr v1, v15
+0006a8: c7f1                                   |0160: sub-float/2addr v1, v15
+0006aa: c8f1                                   |0161: mul-float/2addr v1, v15
+0006ac: c9f1                                   |0162: div-float/2addr v1, v15
+0006ae: caf1                                   |0163: rem-float/2addr v1, v15
+0006b0: cbf1                                   |0164: add-double/2addr v1, v15
+0006b2: ccf1                                   |0165: sub-double/2addr v1, v15
+0006b4: cdf1                                   |0166: mul-double/2addr v1, v15
+0006b6: cef1                                   |0167: div-double/2addr v1, v15
+0006b8: cff1                                   |0168: rem-double/2addr v1, v15
+0006ba: d043 ff7f                              |0169: add-int/lit16 v3, v4, #int 32767 // #7fff
+0006be: d143 ff7f                              |016b: rsub-int v3, v4, #int 32767 // #7fff
+0006c2: d243 ff7f                              |016d: mul-int/lit16 v3, v4, #int 32767 // #7fff
+0006c6: d343 ff7f                              |016f: div-int/lit16 v3, v4, #int 32767 // #7fff
+0006ca: d443 ff7f                              |0171: rem-int/lit16 v3, v4, #int 32767 // #7fff
+0006ce: d543 ff7f                              |0173: and-int/lit16 v3, v4, #int 32767 // #7fff
+0006d2: d643 ff7f                              |0175: or-int/lit16 v3, v4, #int 32767 // #7fff
+0006d6: d743 ff7f                              |0177: xor-int/lit16 v3, v4, #int 32767 // #7fff
+0006da: d806 0780                              |0179: add-int/lit8 v6, v7, #int -128 // #80
+0006de: d906 0780                              |017b: rsub-int/lit8 v6, v7, #int -128 // #80
+0006e2: da06 0780                              |017d: mul-int/lit8 v6, v7, #int -128 // #80
+0006e6: db06 0780                              |017f: div-int/lit8 v6, v7, #int -128 // #80
+0006ea: dc06 0780                              |0181: rem-int/lit8 v6, v7, #int -128 // #80
+0006ee: dd06 0780                              |0183: and-int/lit8 v6, v7, #int -128 // #80
+0006f2: de06 0780                              |0185: or-int/lit8 v6, v7, #int -128 // #80
+0006f6: df06 0780                              |0187: xor-int/lit8 v6, v7, #int -128 // #80
+0006fa: e006 0780                              |0189: shl-int/lit8 v6, v7, #int -128 // #80
+0006fe: e106 0780                              |018b: shr-int/lit8 v6, v7, #int -128 // #80
+000702: e206 0780                              |018d: ushr-int/lit8 v6, v7, #int -128 // #80
+000706: e300                                   |018f: unused-e3
+000708: e400                                   |0190: unused-e4
+00070a: e500                                   |0191: unused-e5
+00070c: e600                                   |0192: unused-e6
+00070e: e700                                   |0193: unused-e7
+000710: e800                                   |0194: unused-e8
+000712: e900                                   |0195: unused-e9
+000714: ea00                                   |0196: unused-ea
+000716: eb00                                   |0197: unused-eb
+000718: ec00                                   |0198: unused-ec
+00071a: ed00                                   |0199: unused-ed
+00071c: ee00                                   |019a: unused-ee
+00071e: ef00                                   |019b: unused-ef
+000720: f000                                   |019c: unused-f0
+000722: f100                                   |019d: unused-f1
+000724: f200                                   |019e: unused-f2
+000726: f300                                   |019f: unused-f3
+000728: f400                                   |01a0: unused-f4
+00072a: f500                                   |01a1: unused-f5
+00072c: f600                                   |01a2: unused-f6
+00072e: f700                                   |01a3: unused-f7
+000730: f800                                   |01a4: unused-f8
+000732: f900                                   |01a5: unused-f9
+000734: fa20 0900 0100 0100                    |01a6: invoke-polymorphic {v1, v0}, Ljava/lang/invoke/MethodHandle;.invokeExact:([Ljava/lang/Object;)Ljava/lang/Object;, (ILjava/lang/String;)I // method@0009, proto@0001
+00073c: fb02 0900 fe00 0100                    |01aa: invoke-polymorphic/range {v254, v255}, Ljava/lang/invoke/MethodHandle;.invokeExact:([Ljava/lang/Object;)Ljava/lang/Object;, (ILjava/lang/String;)I // method@0009, proto@0001
+000744: fc00 0000 0000                         |01ae: invoke-custom {}, call_site@0000
+00074a: fd03 0000 0001                         |01b1: invoke-custom/range {v256, v257, v258}, call_site@0000
+000750: fe05 0000                              |01b4: const-method-handle v5, method_handle@0000
+000754: ff05 0500                              |01b6: const-method-type v5, ()V // proto@0005
+000758: 260b 2a00 0000                         |01b8: fill-array-data v11, 000001e2 // +0000002a
+00075e: 260b 2d00 0000                         |01bb: fill-array-data v11, 000001e8 // +0000002d
+000764: 1270                                   |01be: const/4 v0, #int 7 // #7
+000766: 28ff                                   |01bf: goto 01be // -0001
+000768: 3800 0200                              |01c0: if-eqz v0, 01c2 // +0002
+00076c: 0e00                                   |01c2: return-void
+00076e: 0000                                   |01c3: nop // spacer
+000770: 0001 0300 feff ffff 0400 0000 fcff ... |01c4: packed-switch-data (10 units)
+000784: 0002 0200 0000 0080 0500 0000 0300 ... |01ce: sparse-switch-data (10 units)
+000798: 0003 0400 0300 0000 0100 0000 ffff ... |01d8: array-data (10 units)
+0007ac: 0003 0100 0300 0000 0102 0300          |01e2: array-data (6 units)
+0007b8: 0003 0800 0100 0000 0100 0200 0300 ... |01e8: array-data (8 units)
+      catches       : 3
+        0x0000 - 0x0004
+          Ljava/lang/Exception; -> 0x0005
+          Ljava/lang/Throwable; -> 0x0006
+          <any> -> 0x0007
+        0x000a - 0x000c
+          <any> -> 0x0008
+        0x0014 - 0x0015
+          Ljava/lang/Exception; -> 0x0009
+      positions     :
+        0x0000 line=10
+        0x0003 line=5
+        0x0005 line=1
+        0x0006 line=11
+        0x000a line=8
+        0x001a line=1009
+        0x001a line=1005
+      locals        :
+        0x0002 - 0x0005 reg=5 x I
+        0x0006 - 0x0007 reg=7 (null) (null)
+        0x0006 - 0x01f0 reg=5 x I
+        0x0003 - 0x01f0 reg=6 y Ljava/lang/Object; TT;
+        0x0007 - 0x01f0 reg=7 x [I
+        0x0000 - 0x01f0 reg=4093 a I
+        0x0000 - 0x01f0 reg=4094 (null) J
+
+    #2              : (in LHand;)
+      name          : 'broken'
+      type          : '()V'
+      access        : 0x000a (PRIVATE STATIC)
+      method_idx    : 3
+      hiddenapi     : 0x0020 (SDK,TEST-API)
+      code          -
+      registers     : 2
+      ins           : 0
+      outs          : 1
+      insns size    : 19 16-bit code units
+0007ec:                                        |[0007ec] Hand.broken:()V
+0007fc: 1a00 ffff                              |0000: const-string v0, <string?> // string@ffff
+000800: 1c00 ffff                              |0002: const-class v0, <type?> // type@ffff
+000804: 5210 ffff                              |0004: iget v0, v1, <field?> // field@ffff
+000808: 7110 ffff 0000                         |0006: invoke-static {v0}, <method?> // method@ffff
+00080e: fa10 ffff 0000 ffff                    |0009: invoke-polymorphic {v0}, <method?>, <proto?> // method@ffff, proto@ffff
+000816: ff00 ffff                              |000d: const-method-type v0, <?> // proto@ffff
+00081a: 1b00 ffff ffff                         |000f: const-string/jumbo v0, <string?> // string@ffffffff
+000820: 0e00                                   |0012: return-void
+      catches       : (none)
+      positions     :
+      locals        :
+
+    #3              : (in LHand;)
+      name          : 'wide'
+      type          : '(JD[I)J'
+      access        : 0x0088 (STATIC VARARGS)
+      method_idx    : 6
+      hiddenapi     : 0x0021 (UNSUPPORTED,TEST-API)
+      code          -
+      registers     : 6
+      ins           : 5
+      outs          : 0
+      insns size    : 2 16-bit code units
+000824:                                        |[000824] Hand.wide:(JD[I)J
+000834: 1000                                   |0000: return-wide v0
+000836: 0000                                   |0001: nop // spacer
+      catches       : (none)
+      positions     :
+        0x0001 line=-3
+      locals        :
+        0x0000 - 0x0002 reg=1 j J
+        0x0000 - 0x0002 reg=3 d D
+        0x0000 - 0x0002 reg=5 x [I Ljava/util/List<TT;>;
+
+  Virtual methods   -
+    #0              : (in LHand;)
+      name          : 'nat'
+      type          : '()V'
+      access        : 0x0101 (PUBLIC NATIVE)
+      method_idx    : 4
+      hiddenapi     : 0x0031 (UNSUPPORTED,CORE-PLATFORM-API,TEST-API)
+      code          : (none)
+
+    #1              : (in LHand;)
+      name          : 'virt'
+      type          : '(I)I'
+      access        : 0x0021 (PUBLIC SYNCHRONIZED)
+      method_idx    : 5
+      hiddenapi     : 0x0040 (SDK)
+      code          -
+      registers     : 3
+      ins           : 2
+      outs          : 0
+      insns size    : 1 16-bit code units
+000838:                                        |[000838] Hand.virt:(I)I
+000848: 0f02                                   |0000: return v2
+      catches       : (none)
+      positions     :
+        0x0000 line=-2
+      locals        :
+        0x0000 - 0x0001 reg=1 this LHand;
+        0x0000 - 0x0001 reg=2 (null) I
+
+  source_file_idx   : 5 (Hand.java)
+
+Method handle #0:
+  type        : invoke-static
+  target      : LBoot; bsm
+  target_type : (Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;
+Method handle #1:
+  type        : put-static
+  target      : LHand; sInt
+  target_type : I
+Method handle #2:
+  type        : get-instance
+  target      : LHand; iInt
+  target_type : (LHand;
+Method handle #3:
+  type        : invoke-constructor
+  target      : LHand; <init>
+  target_type : (LHand;)V
+Method handle #4:
+  type        : invoke-interface
+  target      : LIface; run
+  target_type : (LIface;)V
+Method handle #5:
+  type        : invoke-direct
+  target      : LHand; virt
+  target_type : (LHand;I)I
+Call site #0: // offset 3077
+  link_argument[0] : 0 (MethodHandle)
+  link_argument[1] : site (String)
+  link_argument[2] : ()V (MethodType)
+  link_argument[3] : -1 (int)
+  link_argument[4] : 4294967294 (byte)
+  link_argument[5] : -3 (short)
+  link_argument[6] : 65 (char)
+  link_argument[7] : -4 (long)
+  link_argument[8] : 0.5 (float)
+  link_argument[9] : -0.25 (double)
+  link_argument[10] : hello \"q\"\n (String)
+  link_argument[11] : LHand; (Class)
+  link_argument[12] : (ILjava/lang/String;)I (MethodType)
+  link_argument[13] : 2 (MethodHandle)
+  link_argument[14] : null (Null)
+  link_argument[15] : true (boolean)

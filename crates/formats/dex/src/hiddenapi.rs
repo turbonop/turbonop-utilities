@@ -7,7 +7,8 @@ use turbonop_core::{Error, ErrorKind, Result};
 use crate::ClassData;
 use crate::reader::{Cursor, u32_at};
 
-/// The restriction values (the flags' low three bits), as ART names them.
+/// The restriction values (the flags' low four bits), as ART names them;
+/// 15 is ART's "invalid", and 8 to 14 have no names.
 pub const API_LIST_NAMES: [&str; 8] = [
     "sdk",
     "unsupported",
@@ -19,14 +20,22 @@ pub const API_LIST_NAMES: [&str; 8] = [
     "max-target-s",
 ];
 
-/// The domain flags (the bits above the value), as ART names them.
-pub const DOMAIN_NAMES: [(u32, &str); 2] = [(1 << 3, "core-platform-api"), (1 << 4, "test-api")];
+/// The restriction value's bits.
+pub const VALUE_MASK: u32 = 0xF;
 
-/// The flags' names, `,`-separated (`blocked,core-platform-api`); bits
-/// that have none in hex.
+/// The domain flags (the bits above the value), as ART names them.
+pub const DOMAIN_NAMES: [(u32, &str); 2] = [(1 << 4, "core-platform-api"), (1 << 5, "test-api")];
+
+/// The flags' names, `,`-separated (`blocked,core-platform-api`); a value
+/// without a name as `value-N`, other bits in hex.
 pub fn flag_names(flags: u32) -> String {
-    let mut names = vec![API_LIST_NAMES[(flags & 7) as usize].to_string()];
-    let mut rest = flags & !7;
+    let value = flags & VALUE_MASK;
+    let mut names = vec![match value {
+        0..=7 => API_LIST_NAMES[value as usize].to_string(),
+        15 => "invalid".to_string(),
+        v => format!("value-{v}"),
+    }];
+    let mut rest = flags & !VALUE_MASK;
     for (bit, name) in DOMAIN_NAMES {
         if rest & bit != 0 {
             names.push(name.to_string());
@@ -149,7 +158,9 @@ mod tests {
         assert!(HiddenApi::parse(&d, 4, 4).is_err());
         assert!(HiddenApi::parse(&d[..10], 4, 2).is_err());
         assert_eq!(flag_names(0), "sdk");
-        assert_eq!(flag_names(2 | 8), "blocked,core-platform-api");
-        assert_eq!(flag_names(16 | 7 | 0x100), "max-target-s,test-api,0x100");
+        assert_eq!(flag_names(2 | 0x10), "blocked,core-platform-api");
+        assert_eq!(flag_names(0x20 | 7 | 0x100), "max-target-s,test-api,0x100");
+        assert_eq!(flag_names(15), "invalid");
+        assert_eq!(flag_names(9 | 0x30), "value-9,core-platform-api,test-api");
     }
 }

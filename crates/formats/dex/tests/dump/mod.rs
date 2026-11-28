@@ -197,9 +197,15 @@ fn class_annotations(dex: &Dex<'_>, i: u32, c: &ClassDef, out: &mut Vec<u8>) {
     out.push(b'\n');
 }
 
+/// dexdump's names for the flags: as ART's, but values 8 to 14 as
+/// `UNSUPPORTED`, and bits above the domains not at all.
 fn hiddenapi_line(flags: Option<u32>, out: &mut Vec<u8>) {
     if let Some(f) = flags.filter(|&f| f != 0) {
-        let names = turbonop_dex::hiddenapi::flag_names(f).to_uppercase();
+        let value = match f & 0xF {
+            8..=14 => 1,
+            v => v,
+        };
+        let names = turbonop_dex::hiddenapi::flag_names(value | (f & 0x30)).to_uppercase();
         let _ = writeln!(out, "      hiddenapi     : 0x{f:04x} ({names})");
     }
 }
@@ -356,8 +362,8 @@ fn method(dex: &Dex<'_>, i: usize, m: &EncodedMethod, hidden: Option<u32>, out: 
         m.access_flags,
         access_flags_text(m.access_flags, AccessFor::Method)
     );
-    hiddenapi_line(hidden, out);
     let _ = writeln!(out, "      method_idx    : {}", m.method_idx);
+    hiddenapi_line(hidden, out);
     match (m.code_off != 0).then(|| dex.code_item(m.code_off)) {
         None => out.extend_from_slice(b"      code          : (none)\n"),
         Some(Ok(item)) => {
@@ -517,7 +523,11 @@ fn call_site(dex: &Dex<'_>, i: u32, out: &mut Vec<u8>) {
                 (s, "MethodType")
             }
             EncodedValue::MethodHandle(h) => (format!("{h}").into_bytes(), "MethodHandle"),
-            EncodedValue::String(s) => (string(dex, *s), "String"),
+            EncodedValue::String(s) => {
+                let mut e = Vec::new();
+                text::escape(&string(dex, *s), &mut e);
+                (e, "String")
+            }
             EncodedValue::Type(t) => (descriptor(dex, *t), "Class"),
             EncodedValue::Null => (b"null".to_vec(), "Null"),
             EncodedValue::Boolean(b) => (if *b { b"true".to_vec() } else { b"false".to_vec() }, "boolean"),

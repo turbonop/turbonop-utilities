@@ -52,6 +52,13 @@ pub(crate) trait Names {
         let _ = tpoff;
         None
     }
+    /// Whether [`tls`](Self::tls) takes an offset in the image's TLS
+    /// section (Windows: code addresses a variable by its `SECREL` from the
+    /// thread's block, which it reads from the TLS array at `gs:[58h]`),
+    /// rather than from the thread pointer.
+    fn tls_in_section(&self) -> bool {
+        false
+    }
     /// The size of the TLS block, rounded up to its alignment (x86-64's
     /// thread pointer's distance from the block's start), if there is one.
     fn tls_block(&self) -> Option<u64> {
@@ -165,6 +172,15 @@ pub(crate) fn compare<A: Names + ?Sized, B: Names + ?Sized>(
     let len = a.bytes.len().min(b.bytes.len());
     let mut fields = Fields::default();
     let mut masked = vec![false; len];
+    // Bytes that decoded as PC-relative operands naming the same thing in
+    // both, outside every procedure's code: there they may be data (a jump
+    // table, say), so they explain a difference only where reading the
+    // word as an RVA doesn't.
+    let mut soft = vec![false; len];
+    // Operands in a procedure's code that name other things: differences,
+    // unless the bytes are a table's (MSVC puts a switch's jump table in
+    // the procedure, after its code) and its words explain them.
+    let mut pending: Vec<Pending> = Vec::new();
     let mut failed = false;
     let mut fail = |rep: &mut Report, category: &str, detail: String| {
         if !failed {
@@ -222,12 +238,21 @@ pub(crate) fn compare<A: Names + ?Sized, B: Names + ?Sized>(
 
     // PC-relative operands.
     match isa {
-        Isa::X64 => x64(a, b, &mut masked, &mut fields, &mut |c, d| fail(rep, c, d)),
-        Isa::Arm64 => arm64(a, b, &mut masked, &mut fields, &mut |c, d| fail(rep, c, d)),
+        Isa::X64 => x64(
+            a,
+            b,
+            &mut masked,
+            &mut soft,
+            &mut pending,
+            &mut fields,
+            &mut |c, d| fail(rep, c, d),
+        ),
+        Isa::Arm64 => arm64(a, b, &mut masked, &mut soft, &mut pending, &mut fields),
         Isa::Data => {}
     }
 
     // What still differs: image-relative words, or a difference.
+    let mut differs: Option<usize> = None;
     let mut at = 0;
     while at < len {
         if masked[at] || a.bytes[at] == b.bytes[at] {
@@ -237,11 +262,12 @@ pub(crate) fn compare<A: Names + ?Sized, B: Names + ?Sized>(
         // The aligned word holding the difference, read as an RVA in both.
         let misaligned = (a.rva as usize + at) & 3;
         let same_alignment = (a.rva & 3) == (b.rva & 3);
-        let fits = at >= misaligned
-            && at - misaligned + 4 <= len
-            && same_alignment
-            && !masked[at - misaligned..at - misaligned + 4].contains(&true);
         let start = at.saturating_sub(misaligned);
+        // (The word may hold bytes explained already, as fields of what
+        // they decoded to: a table in a procedure's code decodes as
+        // instructions too. Two words that differ and name the same thing
+        // in both images are the better explanation.)
+        let fits = at >= misaligned && at - misaligned + 4 <= len && same_alignment;
         if fits {
             let wa = word(a.bytes, start, 4) as u32;
             let wb = word(b.bytes, start, 4) as u32;
@@ -253,14 +279,64 @@ pub(crate) fn compare<A: Names + ?Sized, B: Names + ?Sized>(
                 continue;
             }
         }
+        // In data, an RVA needn't be aligned: the C++ exception handler's
+        // compressed tables (`__CxxFrameHandler4`'s) hold them at any byte.
+        if isa == Isa::Data
+            && let Some(s) = (at.saturating_sub(3)..=at).find(|&s| {
+                s + 4 <= len && s != start && {
+                    let wa = word(a.bytes, s, 4) as u32;
+                    let wb = word(b.bytes, s, 4) as u32;
+                    a.image.name(wa).is_some()
+                        && b.image.name(wb).is_some()
+                        && same(a.image, Some(wa), b.image, Some(wb))
+                        && !(s..s + 4).any(|k| masked[k] && a.bytes[k] != b.bytes[k])
+                }
+            })
+        {
+            fields.inferred += 1;
+            masked[s..s + 4].fill(true);
+            at = s + 4;
+            continue;
+        }
+        if !soft[at] && differs.is_none() {
+            differs = Some(at);
+        }
+        at += 1;
+    }
+    for p in pending {
+        let bytes = p.at..p.at + p.len;
+        let equal = bytes.clone().all(|k| a.bytes[k] == b.bytes[k]);
+        let explained = bytes.clone().all(|k| a.bytes[k] == b.bytes[k] || masked[k]);
+        if equal || !explained {
+            fail(
+                rep,
+                "code whose operands name other functions or data",
+                p.detail,
+            );
+        }
+    }
+    if let Some(at) = differs {
         fail(
             rep,
             "functions or data whose bytes differ",
-            format!("at +{at:#x}: {:#04x} and {:#04x}", a.bytes[at], b.bytes[at]),
+            format!(
+                "at +{at:#x}: {:#04x} and {:#04x} (RVAs {:#x} and {:#x})",
+                a.bytes[at],
+                b.bytes[at],
+                a.rva as usize + at,
+                b.rva as usize + at
+            ),
         );
-        break;
     }
     fields
+}
+
+/// An operand in a procedure's code whose targets name other things (see
+/// `pending` in [`compare`]): its field, and what it names in each.
+struct Pending {
+    at: usize,
+    len: usize,
+    detail: String,
 }
 
 /// The position of a `size`-byte little-endian field in both encodings
@@ -280,12 +356,14 @@ fn field(a: &[u8], b: &[u8], from: usize, size: usize, da: i64, db: i64) -> Opti
 fn x64<A: Names + ?Sized, B: Names + ?Sized>(
     a: &Side<'_, A>,
     b: &Side<'_, B>,
-    masked: &mut [bool],
+    hard: &mut [bool],
+    soft: &mut [bool],
+    pending: &mut Vec<Pending>,
     fields: &mut Fields,
     fail: &mut dyn FnMut(&str, String),
 ) {
     use turbonop_x86::{Mnemonic, Mode, Operand, RegClass, Register, decode};
-    let len = masked.len();
+    let len = hard.len();
     let base_a = a.image.image_base() + u64::from(a.rva);
     let base_b = b.image.image_base() + u64::from(b.rva);
     // A TLS access as mold relaxes the dynamic models to local-exec:
@@ -300,6 +378,23 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
     let fs = Register::new(RegClass::Segment, 4);
     let mut fs_loaded: Option<Register> = None;
     let mut block: Vec<Register> = Vec::new();
+    // Windows: where the code reads the TLS array (`gs:[58h]`), in both. A
+    // `SECREL` (a displacement or an immediate) is taken as one only near
+    // such a read: MSVC loads it a few instructions before or after.
+    let in_section = a.image.tls_in_section() && b.image.tls_in_section();
+    let tls_reads: Vec<usize> = if in_section {
+        let theirs = tls_array_reads(&b.bytes[..len], base_b);
+        tls_array_reads(&a.bytes[..len], base_a)
+            .into_iter()
+            .filter(|p| theirs.binary_search(p).is_ok())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let near_tls_read = |at: usize| {
+        let i = tls_reads.partition_point(|&p| p + TLS_WINDOW < at);
+        tls_reads.get(i).is_some_and(|&p| p <= at + TLS_WINDOW)
+    };
     let mut at = 0;
     while at < len {
         let (Ok(ia), Ok(ib)) = (
@@ -318,8 +413,22 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
             block.clear();
             continue;
         }
-        let (ea, eb) = (&a.bytes[at..at + n], &b.bytes[at..at + n]);
         let checked = a.image.in_code(a.rva + at as u32);
+        // Bytes outside a procedure that decode across the start of one
+        // (data before it, read as an instruction) would put the decoding
+        // of its code out of step: it starts at the procedure.
+        if !checked
+            && let Some(k) = (1..n).find(|&k| a.image.in_code(a.rva + (at + k) as u32))
+        {
+            at += k;
+            fs_loaded = None;
+            block.clear();
+            continue;
+        }
+        let (ea, eb) = (&a.bytes[at..at + n], &b.bytes[at..at + n]);
+        // What an instruction outside a procedure explains is only
+        // perhaps explained (see `soft` in `compare`).
+        let masked: &mut [bool] = if checked { &mut *hard } else { &mut *soft };
         for (oa, ob) in ia.operands().iter().zip(ib.operands()) {
             // (target, the field's encoded value, its possible sizes)
             let (ta, tb, sizes): (u64, u64, &[usize]) = match (oa, ob) {
@@ -388,16 +497,22 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
                 tb.checked_sub(b.image.image_base())
                     .and_then(|r| u32::try_from(r).ok()),
             ) {
-                if ea != eb || checked {
-                    fail(
-                        "code whose operands name other functions or data",
-                        format!(
-                            "at +{at:#x}: {} and {}",
+                // (Outside a procedure, the bytes are left for the
+                // comparison of words to explain, or not.)
+                if checked {
+                    pending.push(Pending {
+                        at: at + p,
+                        len: size,
+                        detail: format!(
+                            "at +{at:#x}: {} and {} (RVAs {:#x} and {:#x})",
                             render(na.as_ref().map(|(n, o)| (n.as_slice(), *o))),
-                            render(nb.as_ref().map(|(n, o)| (n.as_slice(), *o)))
+                            render(nb.as_ref().map(|(n, o)| (n.as_slice(), *o))),
+                            a.rva as usize + at,
+                            b.rva as usize + at
                         ),
-                    );
+                    });
                 }
+                continue;
             } else {
                 fields.relative += 1;
             }
@@ -405,7 +520,7 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
         }
         // Thread-pointer offsets: displacements and immediates that name
         // the same TLS variable (another TLS layout moves them all).
-        if ea != eb {
+        if ea != eb && (!in_section || near_tls_read(at)) {
             for (oa, ob) in ia.operands().iter().zip(ib.operands()) {
                 let (va, vb, size) = match (oa, ob) {
                     (Operand::Mem(ma), Operand::Mem(mb))
@@ -577,6 +692,35 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
     }
 }
 
+/// How far (in bytes) from a read of the TLS array a `SECREL` may be.
+const TLS_WINDOW: usize = 48;
+
+/// The offsets of the instructions in `code` that read the TLS array
+/// (`gs:[58h]`, x64 Windows), decoded from the start.
+fn tls_array_reads(code: &[u8], va: u64) -> Vec<usize> {
+    use turbonop_x86::{Mode, Operand, RegClass, Register, decode};
+    let gs = Register::new(RegClass::Segment, 5);
+    let mut out = Vec::new();
+    // (Cheap: most code has no gs prefix at all.)
+    if !code.contains(&0x65) {
+        return out;
+    }
+    let mut at = 0;
+    while at < code.len() {
+        let Ok(i) = decode(&code[at..], Mode::Bits64, va + at as u64) else {
+            at += 1;
+            continue;
+        };
+        if i.operands().iter().any(|o| {
+            matches!(o, Operand::Mem(m) if m.segment == Some(gs) && m.base.is_none() && m.index.is_none() && m.disp == 0x58)
+        }) {
+            out.push(at);
+        }
+        at += i.len().max(1);
+    }
+    out
+}
+
 /// Whether registers of `c` are general-purpose (of any width).
 fn is_gpr(c: turbonop_x86::RegClass) -> bool {
     use turbonop_x86::RegClass;
@@ -613,12 +757,13 @@ const ARM64_IMM12: u32 = 0x003F_FC00;
 fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
     a: &Side<'_, A>,
     b: &Side<'_, B>,
-    masked: &mut [bool],
+    hard: &mut [bool],
+    soft: &mut [bool],
+    pending: &mut Vec<Pending>,
     fields: &mut Fields,
-    fail: &mut dyn FnMut(&str, String),
 ) {
     use turbonop_arm64::{AddrMode, OperandKind, decode};
-    let words = masked.len() / 4;
+    let words = hard.len() / 4;
     let w = |x: &[u8], i: usize| {
         u32::from_le_bytes([x[4 * i], x[4 * i + 1], x[4 * i + 2], x[4 * i + 3]])
     };
@@ -636,7 +781,11 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             .and_then(|r| b.image.name(r))
             .map(|(n, o)| (n.to_vec(), o))
     };
-    let mut check = |at: usize, ta: u64, tb: u64, mask: u32, equal: bool, checked: bool| {
+    // Whether the field is explained: the targets name the same thing.
+    // Inside a procedure, a field that names other things is a difference
+    // unless the word is a table's (see `pending` in `compare`); outside
+    // one, it is left for the comparison of words.
+    let mut check = |at: usize, ta: u64, tb: u64, checked: bool| -> bool {
         let (na, nb) = (name_a(ta), name_b(tb));
         let rva = |t: u64, base: u64| t.checked_sub(base).and_then(|r| u32::try_from(r).ok());
         if same(
@@ -646,18 +795,21 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             rva(tb, b.image.image_base()),
         ) {
             fields.relative += 1;
-        } else if !equal || checked {
-            fail(
-                "code whose operands name other functions or data",
-                format!(
+            return true;
+        }
+        if checked {
+            pending.push(Pending {
+                at: 4 * at,
+                len: 4,
+                detail: format!(
                     "at +{:#x}: {} and {}",
                     4 * at,
                     render(na.as_ref().map(|(n, o)| (n.as_slice(), *o))),
                     render(nb.as_ref().map(|(n, o)| (n.as_slice(), *o)))
                 ),
-            );
+            });
         }
-        let _ = (at, mask);
+        false
     };
     // Marks a word's field bytes as explained.
     let mark = |masked: &mut [bool], at: usize, mask: u32| {
@@ -675,6 +827,7 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             continue;
         };
         let checked = a.image.in_code(a.rva + 4 * i as u32);
+        let masked: &mut [bool] = if checked { &mut *hard } else { &mut *soft };
         let encoding = ia.encoding_name();
         if encoding != ib.encoding_name() {
             i += 1;
@@ -699,8 +852,9 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             continue;
         };
         if !encoding.starts_with("ADRP_only") {
-            check(i, ta, tb, mask, wa == wb, checked);
-            mark(masked, i, mask);
+            if check(i, ta, tb, checked) {
+                mark(masked, i, mask);
+            }
             i += 1;
             continue;
         }
@@ -740,16 +894,10 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
                         _ => break,
                     }
                 };
-                check(
-                    i,
-                    ta.wrapping_add(oa as u64),
-                    tb.wrapping_add(ob as u64),
-                    mask,
-                    wa == wb && ja == jb,
-                    checked,
-                );
-                mark(masked, i, mask);
-                mark(masked, j, ARM64_IMM12);
+                if check(i, ta.wrapping_add(oa as u64), tb.wrapping_add(ob as u64), checked) {
+                    mark(masked, i, mask);
+                    mark(masked, j, ARM64_IMM12);
+                }
                 completed = true;
                 // (Later loads and stores may use the page too, up to one
                 // that writes its register.)
@@ -764,8 +912,9 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
         }
         if !completed {
             // A page alone: names the page's start.
-            check(i, ta, tb, mask, wa == wb, checked);
-            mark(masked, i, mask);
+            if check(i, ta, tb, checked) {
+                mark(masked, i, mask);
+            }
         }
         i += 1;
     }

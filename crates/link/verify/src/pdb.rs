@@ -745,7 +745,19 @@ impl Context<'_, '_, '_> {
                     let seg = body
                         .get(section as usize..section as usize + 2)
                         .map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
-                    self.address(self.p.rva_of(seg, u32_at(offset as usize)), h);
+                    let offset = u32_at(offset as usize);
+                    // (A thread-local's offset is from the TLS template's
+                    // start.)
+                    let rva = if matches!(
+                        kind,
+                        turbonop_codeview::symbols::kind::S_GTHREAD32
+                            | turbonop_codeview::symbols::kind::S_LTHREAD32
+                    ) {
+                        self.p.tls.and_then(|(start, _)| start.checked_add(offset))
+                    } else {
+                        self.p.rva_of(seg, offset)
+                    };
+                    self.address(rva, h);
                 }
                 Field::Rva(o) => self.address(Some(u32_at(o as usize)), h),
                 Field::String(o) => h.bytes(self.string(u32_at(o as usize)).unwrap_or(b"\xFF")),

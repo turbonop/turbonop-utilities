@@ -504,6 +504,17 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
 /// and its chunks.
 type Partial = ((Vec<u8>, Vec<u8>, u32), Vec<u32>);
 
+/// What becomes of an object's section in the layout.
+enum Fate {
+    /// A chunk (the section, its alignment).
+    Chunk(u32, u32),
+    /// Discarded or folded: its group stays (name, characteristics,
+    /// alignment).
+    Discarded(&'static [u8], u32, u32),
+    /// A /GUARD table not kept: its group is listed, empty.
+    EmptyGroup(&'static [u8], u32),
+}
+
 /// Lays the image out.
 pub fn layout(
     r: &Resolved,
@@ -562,6 +573,7 @@ pub fn layout(
         }
     }
 
+    note("chunks: folds' leaders");
     let mut chunks: Vec<Chunk> = Vec::new();
     // Partial sections: (output name, input name, characteristics) and
     // their chunks in input order.
@@ -609,71 +621,100 @@ pub fn layout(
     let mut delay_index: Map<&'static [u8], u32> = Map::default();
     let mut delay_dlls: Vec<Dll> = Vec::new();
     let mut delay_slots: Map<u32, (u32, u32)> = Map::default();
+    // What becomes of each object's sections, worked out file by file in
+    // parallel; then, in order, the chunks are made.
+    let fates: Vec<Vec<Fate>> = turbonop_par::map_range(r.files.len(), 64, |f| {
+        let file = &r.files[f];
+        let FileKind::Object { object, .. } = &file.kind else {
+            return Vec::new();
+        };
+        // An import library's own pieces: the tables are built without
+        // them.
+        if file.idata.is_some() {
+            return Vec::new();
+        }
+        let mut fates = Vec::new();
+        for (s, sec) in object.sections.iter().enumerate() {
+            let key = (crate::n32(f), crate::n32(s));
+            if folded.contains_key(&key) {
+                // Folded: its symbols are its leader's (once every file's
+                // chunks are known: the leader may come later). Its group
+                // stays, as a discarded section's does (all of .text$yd
+                // folded into .text$di: an empty .text$yd still on 16
+                // bytes).
+                fates.push(Fate::Discarded(
+                    sec.name,
+                    sec.characteristics,
+                    sec.alignment(),
+                ));
+                continue;
+            }
+            if !live.sections[f][s] {
+                // /GUARD's tables: no contents, but their group is listed
+                // (as link.exe lists it).
+                if kept_section(r, f, s) && sec.is_image() {
+                    if dropped(sec.name) {
+                        fates.push(Fate::EmptyGroup(sec.name, sec.characteristics));
+                    } else {
+                        fates.push(Fate::Discarded(
+                            sec.name,
+                            sec.characteristics,
+                            sec.alignment(),
+                        ));
+                    }
+                }
+                continue;
+            }
+            if let Some((Selection::Associative(parent), _)) = sec.comdat
+                && folded.contains_key(&(key.0, parent))
+                && !leaders.contains(&key)
+            {
+                // A folded section's unwind data goes with it (unless other
+                // copies' unwind data was folded into it).
+                continue;
+            }
+            if !folded.is_empty()
+                && sec.name == b".pdata"
+                && pdata_function(r, f, s).is_some_and(|t| folded.contains_key(&t))
+            {
+                // The .pdata of a function folded into another (a C++
+                // funclet, .text$x, whose parent isn't folded): link.exe
+                // keeps one entry per function.
+                continue;
+            }
+            let align = sec
+                .alignment()
+                .max(class_align.get(&key).copied().unwrap_or(1));
+            fates.push(Fate::Chunk(crate::n32(s), align));
+        }
+        fates
+    });
     for (f, file) in r.files.iter().enumerate() {
         match &file.kind {
             FileKind::Object { object, .. } => {
                 let mut mine = vec![u32::MAX; object.sections.len()];
-                // An import library's own pieces: the tables are built
-                // without them.
-                if file.idata.is_some() {
-                    section_chunks.push(mine);
-                    continue;
-                }
-                for (s, sec) in object.sections.iter().enumerate() {
-                    let key = (crate::n32(f), crate::n32(s));
-                    if folded.contains_key(&key) {
-                        // Folded: its symbols are its leader's (once every
-                        // file's chunks are known: the leader may come
-                        // later). Its group stays, as a discarded section's
-                        // does (all of .text$yd folded into .text$di: an
-                        // empty .text$yd still on 16 bytes).
-                        discarded.push((sec.name, sec.characteristics, sec.alignment()));
-                        continue;
-                    }
-                    if !live.sections[f][s] {
-                        // /GUARD's tables: no contents, but their group is
-                        // listed (as link.exe lists it).
-                        if kept_section(r, f, s) && sec.is_image() {
-                            if dropped(sec.name) {
-                                empty_groups.push((sec.name, sec.characteristics));
-                            } else {
-                                discarded.push((sec.name, sec.characteristics, sec.alignment()));
-                            }
+                for fate in &fates[f] {
+                    match *fate {
+                        Fate::Discarded(name, chars, align) => discarded.push((name, chars, align)),
+                        Fate::EmptyGroup(name, chars) => empty_groups.push((name, chars)),
+                        Fate::Chunk(s, align) => {
+                            let sec = &object.sections[s as usize];
+                            let uninitialized =
+                                sec.characteristics & scn::CNT_UNINITIALIZED_DATA != 0;
+                            mine[s as usize] = add(
+                                sec.name,
+                                sec.characteristics,
+                                Chunk {
+                                    kind: ChunkKind::Input(crate::n32(f), s),
+                                    align,
+                                    size: sec.size,
+                                    uninitialized,
+                                    rva: 0,
+                                },
+                                &mut chunks,
+                            );
                         }
-                        continue;
                     }
-                    if let Some((Selection::Associative(parent), _)) = sec.comdat
-                        && folded.contains_key(&(key.0, parent))
-                        && !leaders.contains(&key)
-                    {
-                        // A folded section's unwind data goes with it (unless
-                        // other copies' unwind data was folded into it).
-                        continue;
-                    }
-                    if !folded.is_empty()
-                        && sec.name == b".pdata"
-                        && pdata_function(r, f, s).is_some_and(|t| folded.contains_key(&t))
-                    {
-                        // The .pdata of a function folded into another (a
-                        // C++ funclet, .text$x, whose parent isn't folded):
-                        // link.exe keeps one entry per function.
-                        continue;
-                    }
-                    let uninitialized = sec.characteristics & scn::CNT_UNINITIALIZED_DATA != 0;
-                    mine[s] = add(
-                        sec.name,
-                        sec.characteristics,
-                        Chunk {
-                            kind: ChunkKind::Input(crate::n32(f), crate::n32(s)),
-                            align: sec
-                                .alignment()
-                                .max(class_align.get(&key).copied().unwrap_or(1)),
-                            size: sec.size,
-                            uninitialized,
-                            rva: 0,
-                        },
-                        &mut chunks,
-                    );
                 }
                 section_chunks.push(mine);
             }
@@ -809,6 +850,7 @@ pub fn layout(
             }
         }
     }
+    note("chunks: inputs'");
     // The folded sections: each one's chunk is its leader's.
     for (&(f, s), &(lf, ls)) in &folded {
         let c = section_chunks[lf as usize][ls as usize];
@@ -1334,6 +1376,7 @@ pub fn layout(
             );
         }
     }
+    note("chunks: the linker's");
     // The groups only discarded sections were in; and the groups with a
     // discarded section aligned more than what stays: such a group still
     // starts at that alignment, as link.exe places it (LIBCMTD's .rdata on

@@ -825,12 +825,19 @@ same but for the PDB's GUID, age, and name.
   1.29 s (median of five) against link.exe's 3.15 s. On a loaded machine
   (other programs on every core, the disk busy) turbolink on all threads
   lost to turbolink on one (11-27 s against 4-6 s, link.exe 8-12 s),
-  using no more CPU: its threads wait on each other. Branch
-  `turbolink-next` has experiments for that (work in pieces taken from a
-  counter in turbonop_par; the mark's targets resolved once; higher
-  thresholds before parallelizing), neutral when quiet, not yet measured
-  cleanly under load. Also: layout hashes owned copies of names per chunk;
-  symbols are interned on one thread.
+  using no more CPU: its threads wait on each other. The mark (twice,
+  32 steps each) was most of it; it is one traversal now
+  (`turbonop_par::traverse`, no steps), 1.1-2.0 s to 60-160 ms each under
+  load. ICF refines classes now (only those of two or more, a class
+  that can't split seen at a glance, the rounds serial): 230 ms to 130 ms
+  quiet, its rounds 130-590 ms to 17-44 ms. Left, by `/TIME` under load:
+  the library search's serial walk
+  (adding each member's symbols, about 200 ms; its members are parsed
+  ahead by helper threads now, waiting on them 210 ms-1.8 s to
+  70-140 ms). Tried without gain: work in pieces taken from a
+  counter in turbonop_par's maps, and a parallel sort for ICF's class
+  count (slower, and once 2 s under load). Also: layout hashes owned
+  copies of names per chunk; symbols are interned on one thread.
 - **The PDB (`/DEBUG`), the rest.**
   - **Speed:** llvm-tblgen with `/Z7` objects only ties link.exe (the
     PDB about 300 ms of 390). Per stage:

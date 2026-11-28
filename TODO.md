@@ -850,8 +850,12 @@ same but for the PDB's GUID, age, and name.
   - **Not written:** `/LinkInfo`, `/TMCache`, `/UDTSRCLINEUNDONE`; x86
     FPO (only `FRAMEDATA`); incremental PDBs; page sizes over 4 KB (a PDB
     whose directory needs more than one block's list).
-- **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
-  list of what passes.
+- **lld's COFF tests** ([the results](docs/turbolink-lldtests.md),
+  `apps/turbolink-lldtests`): 55 of 563 pass, 252 skipped (other machines,
+  LTO). Fix what turbolink rejects (77: crashes, unresolved externals,
+  commons, subsystem inference, `/TIMESTAMP`, `/SUMMARY`, `/LIB`, `/HELP`,
+  invalid options), then the images that differ (76); run ARM64 and 32-bit
+  x86 tests once those machines link.
 - **LTCG: the rest** ([docs/turbolink-c2.md](docs/turbolink-c2.md),
   "turbolink's LTCG"). `/GL` objects link and run as `link.exe /LTCG`'s
   builds do. Still to do:

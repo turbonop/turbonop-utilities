@@ -37,7 +37,7 @@ as done; every archive, link, and custom command (tablegen, whose
 appends the wall time to <build dir>\\proof-times.json. `test` runs the
 check targets (check-llvm, check-clang, check-lld by default) with lit's
 xunit output in <results dir>; --filter-out-file names the tests to leave
-out (clang-slow.txt: Debug clang's slowest). Both run Ninja in a job object
+out (clang-slow.re: Debug clang's slowest). Both run Ninja in a job object
 and stop every process in it after --timeout seconds. `stats` reads .ninja_log: every step's time,
 the archiver steps' (static libraries) total, the big programs' links, and
 the libraries' sizes. `measure` deletes each target's image, PDB, and
@@ -661,7 +661,7 @@ def main():
                         "split as a POSIX shell would)")
     t.add_argument("--filter-out-file",
                    help="leave out the tests matching the file's regexes (one a line; see "
-                        "clang-slow.txt)")
+                        "clang-slow.re)")
     s = sub.add_parser("stats")
     s.add_argument("build_dir")
     s.add_argument("--json")

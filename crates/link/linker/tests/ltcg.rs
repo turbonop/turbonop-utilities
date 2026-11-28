@@ -287,19 +287,21 @@ fn a_librarys_gl_member_is_generated_with_the_rest() {
     std::fs::write(dir.join("gl.lib"), &gl).unwrap();
     std::fs::write(dir.join("nat.lib"), &nat).unwrap();
     let p = |f: &str| dir.join(f).display().to_string();
+    // (The inputs given as such: an absolute path elsewhere than Windows
+    // begins with `/`, which the command line would take for an option.)
     let argv = [
-        "/LTCG".to_owned(),
-        "/ENTRY:main".to_owned(),
-        "/SUBSYSTEM:CONSOLE".to_owned(),
-        "/NODEFAULTLIB".to_owned(),
-        p("first.obj"),
-        p("main.obj"),
-        p("gl.lib"),
-        p("nat.lib"),
-    ];
+        "/LTCG",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        "/NODEFAULTLIB",
+    ]
+    .map(str::to_owned);
     let words = args::command_line(argv, None, None, &|f| std::fs::read(f)).unwrap();
     let mut diags = Vec::new();
-    let config = config::parse(&words, &mut diags);
+    let mut config = config::parse(&words, &mut diags);
+    config.inputs = ["first.obj", "main.obj", "gl.lib", "nat.lib"]
+        .map(p)
+        .to_vec();
     let backend = FakeBackEnd::default();
     let opened = backend.opened.clone();
     let mut errors = Vec::new();

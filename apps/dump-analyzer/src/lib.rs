@@ -497,9 +497,9 @@ fn disasm(s: &Session, f: &Frame, count: u64) -> Json {
             }
             turbonop_core::Arch::Arm64 => {
                 let w = u32::from_le_bytes([code[0], code[1], code[2], code[3]]);
-                match turbonop_arm64::decode(w, pc) {
-                    Some(i) => (4, turbonop_arm64::format(&i)),
-                    None => (4, format!(".inst {w:#010x}")),
+                match turbonop_arm64::decode(w) {
+                    Ok(i) => (4, turbonop_arm64::format(&i, pc)),
+                    Err(_) => (4, format!(".inst {w:#010x}")),
                 }
             }
             _ => break,

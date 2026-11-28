@@ -80,8 +80,8 @@ fn note(classes: &mut Classes, class: String, example: String) {
 /// Our mnemonic for an instruction (lower case), and whether we mark it
 /// CONSTRAINED UNPREDICTABLE.
 fn ours(word: u32) -> Option<(String, bool)> {
-    let inst = turbonop_arm64::decode(word, 0)?;
-    let text = turbonop_arm64::format(&inst);
+    let inst = turbonop_arm64::decode(word).ok()?;
+    let text = turbonop_arm64::format(&inst, 0);
     let m = text
         .trim_start_matches('?')
         .split_whitespace()
@@ -159,7 +159,9 @@ fn run_chunk(
             (None, None) => same += 1,
             (Some((a, _)), Some(b)) if same_mnemonic(a, b) => same += 1,
             (Some((a, marked)), None) => {
-                let enc = turbonop_arm64::decode(word, 0).map_or("?", |i| i.encoding_name());
+                let enc = turbonop_arm64::decode(word)
+                    .ok()
+                    .map_or("?", |i| i.encoding_name());
                 let how = if *marked {
                     "only ours (marked unpredictable)"
                 } else {
@@ -177,7 +179,9 @@ fn run_chunk(
                 format!("{word:08x} {}", rest.trim()),
             ),
             (Some((a, _)), Some(b)) => {
-                let enc = turbonop_arm64::decode(word, 0).map_or("?", |i| i.encoding_name());
+                let enc = turbonop_arm64::decode(word)
+                    .ok()
+                    .map_or("?", |i| i.encoding_name());
                 note(
                     &mut local,
                     format!("mnemonic: {enc}: {a} vs {b}"),

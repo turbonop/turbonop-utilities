@@ -313,6 +313,7 @@ dependencies = [
  "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-image",
+ "turbonop-isa",
  "turbonop-linkerlog",
  "turbonop-linkmap",
  "turbonop-lx",
@@ -842,6 +843,7 @@ name = "turbonop-arm64"
 version = "0.0.7"
 dependencies = [
  "turbonop-global-alloc",
+ "turbonop-isa",
 ]
 
 [[package]]
@@ -876,6 +878,7 @@ dependencies = [
  "turbonop-arm64",
  "turbonop-core",
  "turbonop-global-alloc",
+ "turbonop-isa",
  "turbonop-loongarch",
  "turbonop-mips",
  "turbonop-powerpc",
@@ -1101,6 +1104,7 @@ dependencies = [
  "turbonop-etl",
  "turbonop-etw",
  "turbonop-image",
+ "turbonop-isa",
  "turbonop-linkerlog",
  "turbonop-linkmap",
  "turbonop-loongarch",
@@ -1149,6 +1153,13 @@ dependencies = [
  "turbonop-macho",
  "turbonop-pe",
  "turbonop-wasm",
+]
+
+[[package]]
+name = "turbonop-isa"
+version = "0.0.7"
+dependencies = [
+ "turbonop-global-alloc",
 ]
 
 [[package]]
@@ -1426,6 +1437,7 @@ dependencies = [
  "turbonop-global-alloc",
  "turbonop-hash",
  "turbonop-image",
+ "turbonop-isa",
  "turbonop-linkmap",
  "turbonop-loongarch",
  "turbonop-macho",
@@ -1629,6 +1641,7 @@ dependencies = [
  "turbonop-code",
  "turbonop-core",
  "turbonop-global-alloc",
+ "turbonop-isa",
  "turbonop-loongarch",
  "turbonop-mips",
  "turbonop-par",

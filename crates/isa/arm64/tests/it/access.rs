@@ -7,40 +7,40 @@
 
 use std::collections::BTreeMap;
 
-use turbonop_arm64::{Reg, RegSet};
+use turbonop_arm64::{Register, RegisterSet};
 
 /// A register by the name the golden file uses (`X3`, `SP`, `V7`, `ZA`).
-fn reg(name: &str) -> Reg {
+fn reg(name: &str) -> Register {
     let num = |p: &str| name.strip_prefix(p).and_then(|n| n.parse::<u8>().ok());
     if let Some(n) = num("X") {
-        return Reg::X(n);
+        return Register::X(n);
     }
     if let Some(n) = num("V") {
-        return Reg::V(n);
+        return Register::V(n);
     }
     if let Some(n) = num("P") {
-        return Reg::P(n);
+        return Register::P(n);
     }
     match name {
-        "SP" => Reg::Sp,
-        "FFR" => Reg::Ffr,
-        "ZA" => Reg::Za,
-        "ZT0" => Reg::Zt0,
-        "NZCV" => Reg::Nzcv,
-        "FPCR" => Reg::Fpcr,
-        "FPSR" => Reg::Fpsr,
-        "FPMR" => Reg::Fpmr,
-        "VG" => Reg::Vg,
+        "SP" => Register::Sp,
+        "FFR" => Register::Ffr,
+        "ZA" => Register::Za,
+        "ZT0" => Register::Zt0,
+        "NZCV" => Register::Nzcv,
+        "FPCR" => Register::Fpcr,
+        "FPSR" => Register::Fpsr,
+        "FPMR" => Register::Fpmr,
+        "VG" => Register::Vg,
         _ => panic!("a register name the test doesn't know: {name}"),
     }
 }
 
-fn set(list: &str) -> RegSet {
+fn set(list: &str) -> RegisterSet {
     list.split(',').filter(|r| *r != "-").map(reg).collect()
 }
 
-fn names(s: RegSet) -> String {
-    s.iter()
+fn names(s: RegisterSet) -> String {
+    s.registers()
         .map(|r| format!("{r:?}"))
         .collect::<Vec<_>>()
         .join(",")
@@ -63,7 +63,7 @@ fn agrees_with_llvm() {
             p[4][2..].to_string(),
         );
         count += 1;
-        let Some(inst) = turbonop_arm64::decode(word, 0x1000) else {
+        let Ok(inst) = turbonop_arm64::decode(word) else {
             failures.push(format!("{word:08X} ({llvm}): doesn't decode"));
             continue;
         };
@@ -71,17 +71,17 @@ fn agrees_with_llvm() {
         let ours_r = inst.read_registers();
         let what = format!(
             "{word:08X} {} ({}, LLVM's {llvm})",
-            turbonop_arm64::format(&inst),
+            turbonop_arm64::format(&inst, 0x1000),
             inst.llvm_record()
         );
         // Where LLVM is wrong (tools/arm64/access.py's DROP): MRS writes
         // only Xt, not NZCV.
         let mut writes = writes;
         if llvm == "MRS" {
-            writes.remove(Reg::Nzcv);
+            writes.remove(Register::Nzcv);
         }
-        let missing_w = writes.difference(ours_w);
-        let missing_r = reads.difference(ours_r);
+        let missing_w = writes.difference(&ours_w);
+        let missing_r = reads.difference(&ours_r);
         if !missing_w.is_empty() {
             failures.push(format!("{what}: doesn't write {}", names(missing_w)));
         }
@@ -108,10 +108,10 @@ fn agrees_with_llvm() {
             ));
         }
         for (kind, s) in [
-            ("writes", ours_w.difference(writes)),
-            ("reads", ours_r.difference(reads)),
+            ("writes", ours_w.difference(&writes)),
+            ("reads", ours_r.difference(&reads)),
         ] {
-            for r in s.iter() {
+            for r in s.registers() {
                 let e = extra
                     .entry(format!("{kind} {r:?}"))
                     .or_insert_with(|| (0, what.clone()));
@@ -132,7 +132,7 @@ fn agrees_with_llvm() {
         .lines()
         .filter(|l| !l.starts_with('#'))
         .filter_map(|l| u32::from_str_radix(l.split(' ').next()?, 16).ok())
-        .filter_map(|w| turbonop_arm64::decode(w, 0x1000))
+        .filter_map(|w| turbonop_arm64::decode(w).ok())
         .map(|i| i.encoding_name())
         .collect();
     let uncovered: Vec<&&str> = all.difference(&covered).collect();

@@ -46,6 +46,21 @@ impl Flow {
     pub fn ends_block(self) -> bool {
         matches!(self, Flow::Jump | Flow::Branch | Flow::Return | Flow::Stop)
     }
+
+    /// The flow of a decoder's [`ControlFlow`](turbonop_isa::ControlFlow):
+    /// a system call goes on; a conditional jump (or return) is a branch;
+    /// a conditional trap goes on.
+    pub fn of(f: turbonop_isa::ControlFlow) -> Flow {
+        use turbonop_isa::FlowKind as K;
+        match (f.kind, f.conditional) {
+            (K::Call, _) => Flow::Call,
+            (K::Jump | K::Return, true) => Flow::Branch,
+            (K::Jump, false) => Flow::Jump,
+            (K::Return, false) => Flow::Return,
+            (K::Trap, false) => Flow::Stop,
+            _ => Flow::Next,
+        }
+    }
 }
 
 /// An instruction, as control flow sees it.
@@ -143,17 +158,12 @@ pub fn decode_in(arch: Arch, mode: Mode, bytes: &[u8], address: u64) -> Option<I
         }
         Arch::Arm64 => {
             let word = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-            let i = turbonop_arm64::decode(word, address)?;
-            let flow = arm64_flow(i.encoding_name());
-            let target = match flow {
-                Flow::Call | Flow::Jump | Flow::Branch => arm64_target(word, address),
-                _ => None,
-            };
+            let f = turbonop_arm64::decode(word).ok()?.flow(address);
             Some(Insn {
                 address,
                 len: 4,
-                flow,
-                target,
+                flow: Flow::of(f),
+                target: f.direct_target(),
             })
         }
         Arch::Arm => {
@@ -630,43 +640,6 @@ fn x86_flow(f: turbonop_x86::Flow) -> Flow {
         X::Return => Flow::Return,
         X::Stop => Flow::Stop,
     }
-}
-
-/// How control leaves an ARM64 instruction, by its encoding's name.
-pub fn arm64_flow(name: &str) -> Flow {
-    match name {
-        "BL_only_branch_imm" => Flow::Call,
-        "B_only_branch_imm" => Flow::Jump,
-        "B_only_condbranch" | "BC_only_condbranch" => Flow::Branch,
-        "BRK_EX_exception" | "HLT_EX_exception" | "UDF_only_perm_undef" => Flow::Stop,
-        _ if name.ends_with("_compbranch") || name.ends_with("_testbranch") => Flow::Branch,
-        _ if name.starts_with("BLR") => Flow::Call,
-        _ if name.starts_with("BR") && name.contains("_branch_reg") => Flow::Jump,
-        _ if name.starts_with("RET") || name.starts_with("ERET") => Flow::Return,
-        _ => Flow::Next,
-    }
-}
-
-fn sext(v: u32, bits: u32) -> i64 {
-    let shift = 64 - bits;
-    (i64::from(v) << shift) >> shift
-}
-
-/// A direct ARM64 branch's target (B, BL, B.cond, BC.cond, CBZ/CBNZ,
-/// TBZ/TBNZ); `None` for indirect ones.
-fn arm64_target(word: u32, pc: u64) -> Option<u64> {
-    let off = match word >> 24 {
-        // B, BL: imm26.
-        0x14..=0x17 | 0x94..=0x97 => sext(word & 0x3FF_FFFF, 26),
-        // B.cond, BC.cond: imm19.
-        0x54 => sext((word >> 5) & 0x7FFFF, 19),
-        // CBZ, CBNZ (32 and 64): imm19.
-        0x34 | 0x35 | 0xB4 | 0xB5 => sext((word >> 5) & 0x7FFFF, 19),
-        // TBZ, TBNZ: imm14.
-        0x36 | 0x37 | 0xB6 | 0xB7 => sext((word >> 5) & 0x3FFF, 14),
-        _ => return None,
-    };
-    Some(pc.wrapping_add_signed(off << 2))
 }
 
 /// The instructions of `code` (at `address`), in order, up to the first

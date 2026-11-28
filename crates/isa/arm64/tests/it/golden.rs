@@ -20,7 +20,7 @@ fn golden() {
         let (word, expected) = rest.split_once(' ').unwrap_or((rest, ""));
         let word = u32::from_str_radix(word, 16).unwrap();
         if address == "-" {
-            if let Some(inst) = turbonop_arm64::decode(word, 0) {
+            if let Ok(inst) = turbonop_arm64::decode(word) {
                 if NEWER.iter().any(|(name, _)| *name == inst.encoding_name()) {
                     continue;
                 }
@@ -31,14 +31,15 @@ fn golden() {
                 }
                 failures.push(format!(
                     "{word:08X}: expected invalid, got {}",
-                    turbonop_arm64::format(&inst)
+                    turbonop_arm64::format(&inst, 0)
                 ));
             }
             continue;
         }
         let address = u64::from_str_radix(address, 16).unwrap();
-        let ours = turbonop_arm64::decode(word, address)
-            .map(|i| turbonop_arm64::format(&i))
+        let ours = turbonop_arm64::decode(word)
+            .ok()
+            .map(|i| turbonop_arm64::format(&i, address))
             .unwrap_or_default();
         if !ours.split_whitespace().eq(expected.split_whitespace()) {
             failures.push(format!("{word:08X}: expected '{expected}', got '{ours}'"));

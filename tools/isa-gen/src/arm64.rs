@@ -1368,6 +1368,93 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         let _ = writeln!(bucket_out, "    &[{}],", ids.join(","));
     }
 
+    // Opcodes: one per encoding name (an encoding in parts is one opcode),
+    // numbered in the order they first appear; each its first encoding,
+    // its mnemonic (the template's, as the architecture writes it: up to
+    // its first symbol, `B.%{cond}`'s `b`), and a constant named for it.
+    let mut opcode_of = Vec::with_capacity(encs.len());
+    let mut opcode_first: Vec<usize> = Vec::new();
+    let mut opcode_by_name: HashMap<&str, usize> = HashMap::new();
+    for (i, e) in encs.iter().enumerate() {
+        let n = *opcode_by_name.entry(e.name.as_str()).or_insert_with(|| {
+            opcode_first.push(i);
+            opcode_first.len() - 1
+        });
+        opcode_of.push(n);
+    }
+    assert!(opcode_first.len() < usize::from(u16::MAX), "too many opcodes");
+    // Each opcode's attributes, by its encoding's class (the name's
+    // suffix): 1, an atomic access (the atomic memory operations, compare
+    // and swap, exclusive loads and stores); 2, it may order memory
+    // accesses (barriers; acquire and release loads and stores; and every
+    // atomic one, of which some forms acquire or release: a superset).
+    const ATOMIC: &[&str] = &[
+        "_memop",
+        "_comswap",
+        "_comswappr",
+        "_rcwcomswap",
+        "_rcwcomswappr",
+        "_ldstexclr",
+        "_ldstexclp",
+    ];
+    const ORDERED: &[&str] = &["_barriers", "_ldstord", "_ldiappstilp", "_ldapstl_"];
+    let mut attrs_out = String::new();
+    for &i in &opcode_first {
+        let n = &encs[i].name;
+        let atomic = ATOMIC.iter().any(|c| n.ends_with(c) || n.contains(&format!("{c}_")));
+        let ordered = atomic || ORDERED.iter().any(|c| n.contains(c));
+        let _ = write!(attrs_out, "{},", u8::from(atomic) | u8::from(ordered) << 1);
+    }
+    let mut opcodes_out = String::new();
+    let mut mnemonics_out = String::new();
+    let mut const_names: HashMap<String, &str> = HashMap::new();
+    for (n, &i) in opcode_first.iter().enumerate() {
+        let e = &encs[i];
+        let word = e.asm.split_whitespace().next().unwrap_or("");
+        let mnemonic = word.split('%').next().unwrap().trim_end_matches('.').to_lowercase();
+        assert!(!mnemonic.is_empty(), "{}: no mnemonic", e.name);
+        let _ = write!(mnemonics_out, "{mnemonic:?},");
+        // (Arm's names end in `_` where their last part is empty: nothing
+        // that tells two apart, and `Opcode::name` keeps Arm's spelling.)
+        let constant = e.name.to_uppercase().trim_end_matches('_').to_string();
+        if let Some(other) = const_names.insert(constant.clone(), &e.name) {
+            panic!("{} and {other}: the same constant", e.name);
+        }
+        let _ = writeln!(
+            opcodes_out,
+            "    /// `{}`.\n    pub const {constant}: Opcode = Opcode({n});",
+            e.name
+        );
+    }
+    let join = |v: &[usize]| v.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
+    let _ = writeln!(
+        code,
+        "pub(crate) static OPCODE_OF: [u16; {}] = [{}];",
+        opcode_of.len(),
+        join(&opcode_of)
+    );
+    let _ = writeln!(
+        code,
+        "pub(crate) static OPCODE_FIRST: [u16; {}] = [{}];",
+        opcode_first.len(),
+        join(&opcode_first)
+    );
+    let _ = writeln!(
+        code,
+        "pub(crate) static OPCODE_MNEMONICS: [&str; {}] = [{mnemonics_out}];",
+        opcode_first.len()
+    );
+    let _ = writeln!(
+        code,
+        "pub(crate) static OPCODE_ATTRS: [u8; {}] = [{attrs_out}];",
+        opcode_first.len()
+    );
+    let _ = writeln!(
+        code,
+        "/// Every opcode, named for its encoding in Arm's specification.\n\
+         pub mod opcodes {{\n    use crate::Opcode;\n\n{opcodes_out}}}"
+    );
+
     let _ = writeln!(code, "pub(crate) const NONE: u16 = u16::MAX;");
     chunked(&mut code, "ENCODINGS", "Encoding", &enc_out, encs.len());
     assert!(names.len() <= u32::MAX as usize);

@@ -125,11 +125,12 @@ fn targets_by(
 /// memory operand, or registers whose width it doesn't say (vector
 /// lists: a byte, then).
 fn arm64_access(i: &turbonop_arm64::Instruction) -> Option<(u64, u64)> {
-    use turbonop_arm64::{OperandKind as K, Reg};
-    let ops = i.operands();
+    use turbonop_arm64::{OperandKind as K, Register};
+    // (Operands' kinds and registers alone: where it is doesn't matter.)
+    let ops = i.detailed_operands(0);
     let mem = ops
         .iter()
-        .position(|o| matches!(o.kind, K::Mem(_) | K::Label(_)))?;
+        .position(|o| matches!(o.kind, K::Memory(_) | K::Label(_)))?;
     let name = i.encoding_name();
     let narrow = [
         ("LDRSB", 1),
@@ -164,13 +165,13 @@ fn arm64_access(i: &turbonop_arm64::Instruction) -> Option<(u64, u64)> {
     let mut count = 0u64;
     let mut width = 0u64;
     for o in &ops[..mem] {
-        let K::Reg(r) = o.kind else { continue };
-        let w = match r.reg {
-            Reg::X(_) | Reg::Xzr | Reg::D(_) => 8,
-            Reg::W(_) | Reg::Wzr | Reg::S(_) => 4,
-            Reg::Q(_) => 16,
-            Reg::H(_) => 2,
-            Reg::B(_) => 1,
+        let K::Register(r) = o.kind else { continue };
+        let w = match r.register {
+            Register::X(_) | Register::Xzr | Register::D(_) => 8,
+            Register::W(_) | Register::Wzr | Register::S(_) => 4,
+            Register::Q(_) => 16,
+            Register::H(_) => 2,
+            Register::B(_) => 1,
             _ => return Some((1, 1)),
         };
         count += 1;
@@ -224,7 +225,7 @@ pub(super) fn compare(
     // ARM64 `ADRP`s that differ (their offset, and the register they
     // write): explained by an instruction that completes the address from
     // that register, later, alike in both (over all it accesses).
-    let mut pending: Vec<(usize, turbonop_arm64::Reg)> = Vec::new();
+    let mut pending: Vec<(usize, turbonop_arm64::Register)> = Vec::new();
     let mut o = 0usize;
     while o < x.len() {
         // The rest padding in both: the copies differ in their padding.
@@ -280,10 +281,11 @@ pub(super) fn compare(
                     return Some(Same::Different(o));
                 };
                 let w = |s: &[u8]| u32::from_le_bytes([s[0], s[1], s[2], s[3]]);
+                let (ax, ay) = (u64::from(ra) + o as u64, u64::from(rb) + o as u64);
                 let decoded = || {
                     Some((
-                        turbonop_arm64::decode(w(wx), u64::from(ra) + o as u64)?,
-                        turbonop_arm64::decode(w(wy), u64::from(rb) + o as u64)?,
+                        turbonop_arm64::decode(w(wx)).ok()?,
+                        turbonop_arm64::decode(w(wy)).ok()?,
                     ))
                 };
                 // An address completed from a pending ADRP's register, the
@@ -300,7 +302,7 @@ pub(super) fn compare(
                 }
                 if wx != wy {
                     let (ix, iy) = decoded()?;
-                    match arm64_alike(a, b, &ix, &iy, rx.get(&o32), ry.get(&o32)) {
+                    match arm64_alike(a, b, (&ix, ax), (&iy, ay), rx.get(&o32), ry.get(&o32)) {
                         Arm64::Same(u) => {
                             moved = true;
                             unnamed |= u;
@@ -435,15 +437,15 @@ enum Arm64 {
     Same(bool),
     /// The same `ADRP` (writing this register) but for its page: the
     /// instruction that completes its address decides.
-    Page(turbonop_arm64::Reg),
+    Page(turbonop_arm64::Register),
     Different,
 }
 
 fn arm64_alike(
     a: &Side<'_>,
     b: &Side<'_>,
-    ix: &turbonop_arm64::Instruction,
-    iy: &turbonop_arm64::Instruction,
+    (ix, ax): (&turbonop_arm64::Instruction, u64),
+    (iy, ay): (&turbonop_arm64::Instruction, u64),
     rx: Option<&Vec<u64>>,
     ry: Option<&Vec<u64>>,
 ) -> Arm64 {
@@ -451,7 +453,7 @@ fn arm64_alike(
     if ix.encoding_name() != iy.encoding_name() {
         return Arm64::Different;
     }
-    let (ox, oy) = (ix.operands(), iy.operands());
+    let (ox, oy) = (ix.detailed_operands(ax), iy.detailed_operands(ay));
     if ox.len() != oy.len() {
         return Arm64::Different;
     }
@@ -463,7 +465,7 @@ fn arm64_alike(
     // over all it accesses.
     if adrp {
         return match (ox.first().map(|o| o.kind), oy.first().map(|o| o.kind)) {
-            (Some(K::Reg(r)), Some(K::Reg(s))) if r == s => Arm64::Page(r.reg),
+            (Some(K::Register(r)), Some(K::Register(s))) if r == s => Arm64::Page(r.register),
             _ => Arm64::Different,
         };
     }
@@ -478,11 +480,11 @@ fn arm64_alike(
                 ty.extend(arm64_extents(ix, &[v]));
             }
             _ if p.kind == q.kind => {}
-            (K::Imm(_), K::Imm(_)) => via_scan = true,
-            (K::Mem(m), K::Mem(n)) => {
+            (K::Immediate(_), K::Immediate(_)) => via_scan = true,
+            (K::Memory(m), K::Memory(n)) => {
                 let (mut m2, mut n2) = (m, n);
-                m2.offset = 0;
-                n2.offset = 0;
+                m2.displacement = 0;
+                n2.displacement = 0;
                 if m2 != n2 {
                     return Arm64::Different;
                 }
@@ -521,13 +523,17 @@ fn arm64_extents(i: &turbonop_arm64::Instruction, targets: &[u64]) -> Vec<Extent
 
 /// Whether `i` reads `reg` as an address's base (a memory operand's, or
 /// `ADD`'s source): what completes an `ADRP` that wrote it.
-fn arm64_uses(i: &turbonop_arm64::Instruction, reg: turbonop_arm64::Reg) -> bool {
+fn arm64_uses(i: &turbonop_arm64::Instruction, reg: turbonop_arm64::Register) -> bool {
     use turbonop_arm64::OperandKind as K;
-    i.operands().iter().enumerate().any(|(k, o)| match o.kind {
-        K::Mem(m) => m.base == reg,
-        K::Reg(r) => k > 0 && r.reg == reg,
-        _ => false,
-    })
+    // (Its registers alone: where it is doesn't matter.)
+    i.detailed_operands(0)
+        .iter()
+        .enumerate()
+        .any(|(k, o)| match o.kind {
+            K::Memory(m) => m.base == reg,
+            K::Register(r) => k > 0 && r.register == reg,
+            _ => false,
+        })
 }
 
 #[cfg(test)]
@@ -604,7 +610,7 @@ mod tests {
     /// their count; a narrow form's width.
     #[test]
     fn arm64_accesses() {
-        let access = |w: u32| arm64_access(&turbonop_arm64::decode(w, 0x1000).unwrap());
+        let access = |w: u32| arm64_access(&turbonop_arm64::decode(w).unwrap());
         // LDP x0, x1, [x8, #16]
         assert_eq!(access(0xA941_0500), Some((16, 8)));
         // LDP w0, w1, [x8]

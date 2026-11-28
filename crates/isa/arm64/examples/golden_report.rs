@@ -23,8 +23,10 @@ fn main() {
         } else {
             u64::from_str_radix(address, 16).unwrap()
         };
-        let inst = turbonop_arm64::decode(w, address);
-        let ours = inst.map(|i| turbonop_arm64::format(&i)).unwrap_or_default();
+        let inst = turbonop_arm64::decode(w).ok();
+        let ours = inst
+            .map(|i| turbonop_arm64::format(&i, address))
+            .unwrap_or_default();
         let name = inst.map_or("(invalid)", |i| i.encoding_name());
         let same = if line.starts_with("- ") {
             // (FMININM postdates dumpbin: see tests/golden.rs.)

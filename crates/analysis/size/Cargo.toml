@@ -9,6 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+turbonop-isa.workspace = true
 turbonop-core.workspace = true
 turbonop-archive.workspace = true
 turbonop-linkmap.workspace = true

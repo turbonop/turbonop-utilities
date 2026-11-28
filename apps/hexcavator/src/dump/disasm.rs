@@ -244,9 +244,16 @@ fn sweep(
     offset
 }
 
-impl turbonop_arm64::Symbols for SymbolMap {
-    fn name_at(&self, address: u64) -> Option<&str> {
-        self.public_at(address)
+impl turbonop_isa::Resolver for SymbolMap {
+    fn resolve(&self, r: turbonop_isa::Reference, out: &mut dyn turbonop_isa::TokenSink) -> bool {
+        let turbonop_isa::Reference::Address(a) = r else {
+            return false;
+        };
+        let Some(name) = self.public_at(a) else {
+            return false;
+        };
+        out.token(turbonop_isa::TokenKind::Name, name);
+        true
     }
 }
 
@@ -272,11 +279,13 @@ fn arm64_listing(
             return Some(offset + n);
         }
         let word = u32::from_le_bytes(bytes[offset..offset + 4].try_into().ok()?);
-        let text =
-            turbonop_arm64::decode(word, here).map_or_else(String::new, |inst| match symbols {
-                Some(s) => turbonop_arm64::format_with(&inst, s),
-                None => turbonop_arm64::format(&inst),
-            });
+        let text = turbonop_arm64::decode(word).map_or_else(
+            |_| String::new(),
+            |inst| match symbols {
+                Some(s) => turbonop_arm64::format_with(&inst, here, s),
+                None => turbonop_arm64::format(&inst, here),
+            },
+        );
         let line = format!("  {here:016X}: {word:08X}  {text}");
         let _ = writeln!(out, "{}", line.trim_end());
         Some(offset + 4)

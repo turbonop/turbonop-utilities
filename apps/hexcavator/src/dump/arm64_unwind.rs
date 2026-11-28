@@ -395,12 +395,13 @@ impl Listing<'_, '_> {
             return (None, String::new());
         };
         let address = self.base + u64::from(self.begin) + u64::from(offset);
-        let text = turbonop_arm64::decode(word, address).map_or_else(String::new, |i| {
-            match self.symbols {
-                Some(s) => turbonop_arm64::format_with(&i, s),
-                None => turbonop_arm64::format(&i),
-            }
-        });
+        let text = turbonop_arm64::decode(word).map_or_else(
+            |_| String::new(),
+            |i| match self.symbols {
+                Some(s) => turbonop_arm64::format_with(&i, address, s),
+                None => turbonop_arm64::format(&i, address),
+            },
+        );
         (Some(word), text.trim_end().to_string())
     }
 

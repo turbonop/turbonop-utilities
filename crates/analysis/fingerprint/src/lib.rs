@@ -190,7 +190,7 @@ pub fn code(
                 };
                 let word = u32::from_le_bytes(w);
                 let mine = take_refs(&refs, &mut r, pc);
-                let Some(inst) = turbonop_arm64::decode(word, pc) else {
+                let Ok(inst) = turbonop_arm64::decode(word) else {
                     h.write_u32(word);
                     continue;
                 };
@@ -626,10 +626,10 @@ pub fn shape(arch: Arch, mode: turbonop_code::Mode, code: &[u8], start: u64) -> 
             }
         }
         Arch::Arm64 => {
-            for (i, w) in code.as_chunks::<4>().0.iter().enumerate() {
+            for w in code.as_chunks::<4>().0 {
                 let word = u32::from_le_bytes(*w);
-                match turbonop_arm64::decode(word, start + i as u64 * 4) {
-                    Some(inst) => {
+                match turbonop_arm64::decode(word) {
+                    Ok(inst) => {
                         for part in inst.encoding_name().split('_') {
                             if part != "32" && part != "64" {
                                 h.write(part.as_bytes());
@@ -638,7 +638,7 @@ pub fn shape(arch: Arch, mode: turbonop_code::Mode, code: &[u8], start: u64) -> 
                         }
                         h.write_u32(word & 0x3FF);
                     }
-                    None => h.write_u8(0xFF),
+                    Err(_) => h.write_u8(0xFF),
                 }
                 count += 1;
             }

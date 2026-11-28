@@ -765,8 +765,20 @@ fn x86(data: &[u8], _: &Scratch) {
 fn arm64(data: &[u8], _: &Scratch) {
     for (i, w) in data.as_chunks::<4>().0.iter().take(1 << 14).enumerate() {
         let word = u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
-        if let Some(inst) = turbonop_arm64::decode(word, i as u64 * 4) {
-            let _ = turbonop_arm64::format(&inst);
+        if let Ok(inst) = turbonop_arm64::decode(word) {
+            let at = i as u64 * 4;
+            let _ = turbonop_arm64::format(&inst, at);
+            // (And what the traits ask of it.)
+            let _ = (
+                inst.flow(at),
+                inst.attributes(),
+                inst.register_accesses().count(),
+            );
+            let _ = (
+                inst.memory_accesses(at).count(),
+                turbonop_isa::Operands::operands(&turbonop_arm64::Arm64, &(), &inst, at).count(),
+                inst.detailed_operands(at).len(),
+            );
         }
         let _ = turbonop_arm64::explain(word);
     }

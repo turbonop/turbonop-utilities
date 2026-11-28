@@ -192,9 +192,16 @@ impl turbonop_x86::format::Symbols for Names<'_> {
     }
 }
 
-impl turbonop_arm64::Symbols for Names<'_> {
-    fn name_at(&self, address: u64) -> Option<&str> {
-        self.name(address)
+impl turbonop_isa::Resolver for Names<'_> {
+    fn resolve(&self, r: turbonop_isa::Reference, out: &mut dyn turbonop_isa::TokenSink) -> bool {
+        let turbonop_isa::Reference::Address(a) = r else {
+            return false;
+        };
+        let Some(name) = self.name(a) else {
+            return false;
+        };
+        out.token(turbonop_isa::TokenKind::Name, name);
+        true
     }
 }
 
@@ -202,10 +209,12 @@ impl turbonop_arm64::Symbols for Names<'_> {
 /// and literal targets.
 struct Targets(std::cell::RefCell<Vec<u64>>);
 
-impl turbonop_arm64::Symbols for Targets {
-    fn name_at(&self, address: u64) -> Option<&str> {
-        self.0.borrow_mut().push(address);
-        None
+impl turbonop_isa::Resolver for Targets {
+    fn resolve(&self, r: turbonop_isa::Reference, _: &mut dyn turbonop_isa::TokenSink) -> bool {
+        if let turbonop_isa::Reference::Address(a) = r {
+            self.0.borrow_mut().push(a);
+        }
+        false
     }
 }
 
@@ -365,12 +374,12 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
             for w in f.code.as_chunks::<4>().0 {
                 let pc = f.address + rest as u64;
                 let word = u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
-                let Some(i) = turbonop_arm64::decode(word, pc) else {
+                let Ok(i) = turbonop_arm64::decode(word) else {
                     break;
                 };
                 // The formatter's own targets: branches' and literals'.
                 let record = Targets(Default::default());
-                turbonop_arm64::format_with(&i, &record);
+                turbonop_arm64::format_with(&i, pc, &record);
                 let named = record.0.into_inner();
                 let insn = turbonop_code::decode(Arch::Arm64, w, pc);
                 let flow = insn.map_or(Flow::Next, |c| c.flow);
@@ -591,7 +600,7 @@ pub fn decode(f: &Function<'_>, style: Labels) -> Listing {
                 turbonop_x86::format::format_with(i, &mut s, &names);
                 s
             }
-            Inst::Arm64(i) => turbonop_arm64::format_with(i, &names),
+            Inst::Arm64(i) => turbonop_arm64::format_with(i, d.pc, &names),
             Inst::RiscV(i) => {
                 let mut s = turbonop_riscv::format::format(i, d.pc, &riscv_features(f));
                 // (The target by its label or symbol, where it has one.)
@@ -933,30 +942,23 @@ mod tests {
         assert_eq!(l.blocks.len(), 1);
         assert_eq!(l.blocks[0].successors, [(0, Edge::Jump)]);
         // ARM64: conditional, test, and compare branches; calls; returns.
-        assert_eq!(turbonop_code::arm64_flow("B_only_condbranch"), Flow::Branch);
-        assert_eq!(turbonop_code::arm64_flow("CBZ_64_compbranch"), Flow::Branch);
-        assert_eq!(
-            turbonop_code::arm64_flow("TBNZ_only_testbranch"),
-            Flow::Branch
-        );
-        assert_eq!(turbonop_code::arm64_flow("B_only_branch_imm"), Flow::Jump);
-        assert_eq!(turbonop_code::arm64_flow("BR_64_branch_reg"), Flow::Jump);
-        assert_eq!(turbonop_code::arm64_flow("BRAA_64P_branch_reg"), Flow::Jump);
-        assert_eq!(turbonop_code::arm64_flow("BL_only_branch_imm"), Flow::Call);
-        assert_eq!(
-            turbonop_code::arm64_flow("BLRAAZ_64_branch_reg"),
-            Flow::Call
-        );
-        assert_eq!(
-            turbonop_code::arm64_flow("RET_64R_branch_reg"),
-            Flow::Return
-        );
-        assert_eq!(
-            turbonop_code::arm64_flow("RETAA_64E_branch_reg"),
-            Flow::Return
-        );
-        assert_eq!(turbonop_code::arm64_flow("BRK_EX_exception"), Flow::Stop);
-        assert_eq!(turbonop_code::arm64_flow("ADD_64_addsub_imm"), Flow::Next);
+        let arm64 = |w: u32| {
+            turbonop_code::decode(Arch::Arm64, &w.to_le_bytes(), 0x1000)
+                .unwrap()
+                .flow
+        };
+        assert_eq!(arm64(0x5400_0040), Flow::Branch); // b.eq
+        assert_eq!(arm64(0xB400_0040), Flow::Branch); // cbz x0
+        assert_eq!(arm64(0x3700_0040), Flow::Branch); // tbnz w0, #0
+        assert_eq!(arm64(0x1400_0002), Flow::Jump); // b
+        assert_eq!(arm64(0xD61F_0200), Flow::Jump); // br x16
+        assert_eq!(arm64(0xD71F_0A11), Flow::Jump); // braa x16, x17
+        assert_eq!(arm64(0x9400_0004), Flow::Call); // bl
+        assert_eq!(arm64(0xD63F_0A1F), Flow::Call); // blraaz x16
+        assert_eq!(arm64(0xD65F_03C0), Flow::Return); // ret
+        assert_eq!(arm64(0xD65F_0BFF), Flow::Return); // retaa
+        assert_eq!(arm64(0xD420_0000), Flow::Stop); // brk #0
+        assert_eq!(arm64(0x9100_0420), Flow::Next); // add x0, x1, #1
     }
 
     #[test]
@@ -1044,7 +1046,7 @@ mod tests {
         let got = refs(Arch::Arm64, &code, 0);
         assert_eq!(got, [(16, 0x10008), (28, 0x10008), (32, 0x10010)]);
         // An undecodable word ends the function.
-        assert!(turbonop_arm64::decode(0xFFFF_FFFF, 0).is_none());
+        assert!(turbonop_arm64::decode(0xFFFF_FFFF).is_err());
         assert_eq!(
             refs(
                 Arch::Arm64,

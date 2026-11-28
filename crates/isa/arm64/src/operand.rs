@@ -10,45 +10,22 @@
 //! records); [`Instruction::written_registers`] has the complete write
 //! set, implicit registers included.
 
-use crate::Instruction;
-use crate::access::{Element, Reg};
+use crate::access::{Element, Register};
 use crate::format::{Special, bitmask, fp_imm8, is_fp_imm8, number, raw, raw_value, special_value};
 use crate::tables::{
     Kind, NONE, OpSpec, REG_CLASSES, Symbol, attr, file, opk, role, symbol, value,
 };
+use crate::{Inst, Instruction};
 
-/// How an instruction uses an operand: for a register, whether it reads
-/// or writes it; for memory, whether it loads or stores.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Access {
-    /// Neither (an immediate, a prefetch's address).
-    None,
-    /// Read (or loaded from).
-    Read,
-    /// Written (or stored to).
-    Write,
-    /// Both.
-    ReadWrite,
-}
+pub use turbonop_isa::Access;
 
-impl Access {
-    fn from_bits(b: u8) -> Access {
-        match b & 3 {
-            1 => Access::Read,
-            2 => Access::Write,
-            3 => Access::ReadWrite,
-            _ => Access::None,
-        }
-    }
-
-    /// Whether it reads.
-    pub fn reads(self) -> bool {
-        matches!(self, Access::Read | Access::ReadWrite)
-    }
-
-    /// Whether it writes.
-    pub fn writes(self) -> bool {
-        matches!(self, Access::Write | Access::ReadWrite)
+/// An access from the access data's bits (1 read, 2 written).
+fn access_of_bits(b: u8) -> Access {
+    match b & 3 {
+        1 => Access::READ,
+        2 => Access::WRITE,
+        3 => Access::READ_WRITE,
+        _ => Access::NONE,
     }
 }
 
@@ -94,9 +71,9 @@ pub enum Predication {
 
 /// A register operand.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct RegOperand {
+pub struct RegisterOperand {
     /// The register, with its width.
-    pub reg: Reg,
+    pub register: Register,
     /// A vector's arrangement, or an SVE register's or tile's element
     /// size.
     pub arrangement: Option<Arrangement>,
@@ -106,7 +83,7 @@ pub struct RegOperand {
     pub predication: Predication,
     /// PSEL's predicate select: a register and an immediate
     /// (`p0.s[w12, 1]`).
-    pub select: Option<(Reg, u8)>,
+    pub select: Option<(Register, u8)>,
     /// Written back in place (MOPS's `x2!`).
     pub writeback: bool,
 }
@@ -114,9 +91,9 @@ pub struct RegOperand {
 /// A list of registers (`{ v0.16b, v1.16b }`, `{ z0.d-z3.d }`,
 /// `{ z0.s, z8.s }`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct RegList {
+pub struct RegisterList {
     /// The first register.
-    pub first: Reg,
+    pub first: Register,
     /// How many.
     pub count: u8,
     /// How far apart (1: consecutive, modulo 32 for V and Z, 16 for P).
@@ -127,26 +104,26 @@ pub struct RegList {
     pub lane: Option<u8>,
 }
 
-impl RegList {
+impl RegisterList {
     /// The list's registers, in order.
-    pub fn iter(&self) -> impl Iterator<Item = Reg> {
+    pub fn iter(&self) -> impl Iterator<Item = Register> {
         let (first, stride) = (*self, self.stride);
         (0..self.count).map(move |i| first.nth(u32::from(i) * u32::from(stride)))
     }
 
-    fn nth(&self, k: u32) -> Reg {
+    fn nth(&self, k: u32) -> Register {
         let wrap = |n: u8, m: u32| ((u32::from(n) + k) % m) as u8;
         match self.first {
-            Reg::V(n) => Reg::V(wrap(n, 32)),
-            Reg::Q(n) => Reg::Q(wrap(n, 32)),
-            Reg::D(n) => Reg::D(wrap(n, 32)),
-            Reg::Z(n) => Reg::Z(wrap(n, 32)),
-            Reg::P(n) => Reg::P(wrap(n, 16)),
-            Reg::Pn(n) => Reg::Pn(wrap(n, 16)),
-            Reg::X(n) if u32::from(n) + k >= 31 => Reg::Xzr,
-            Reg::X(n) => Reg::X((u32::from(n) + k) as u8),
-            Reg::W(n) if u32::from(n) + k >= 31 => Reg::Wzr,
-            Reg::W(n) => Reg::W((u32::from(n) + k) as u8),
+            Register::V(n) => Register::V(wrap(n, 32)),
+            Register::Q(n) => Register::Q(wrap(n, 32)),
+            Register::D(n) => Register::D(wrap(n, 32)),
+            Register::Z(n) => Register::Z(wrap(n, 32)),
+            Register::P(n) => Register::P(wrap(n, 16)),
+            Register::Pn(n) => Register::Pn(wrap(n, 16)),
+            Register::X(n) if u32::from(n) + k >= 31 => Register::Xzr,
+            Register::X(n) => Register::X((u32::from(n) + k) as u8),
+            Register::W(n) if u32::from(n) + k >= 31 => Register::Wzr,
+            Register::W(n) => Register::W((u32::from(n) + k) as u8),
             r => r,
         }
     }
@@ -217,7 +194,7 @@ impl ShiftKind {
 /// the encoded one).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs, reason = "the architecture's names")]
-pub enum Cond {
+pub enum Condition {
     Eq,
     Ne,
     Hs,
@@ -236,31 +213,31 @@ pub enum Cond {
     Nv,
 }
 
-impl Cond {
+impl Condition {
     /// The condition by its encoding (0 EQ to 15 NV).
-    pub fn from_bits(b: u8) -> Cond {
-        const ALL: [Cond; 16] = [
-            Cond::Eq,
-            Cond::Ne,
-            Cond::Hs,
-            Cond::Lo,
-            Cond::Mi,
-            Cond::Pl,
-            Cond::Vs,
-            Cond::Vc,
-            Cond::Hi,
-            Cond::Ls,
-            Cond::Ge,
-            Cond::Lt,
-            Cond::Gt,
-            Cond::Le,
-            Cond::Al,
-            Cond::Nv,
+    pub fn from_bits(b: u8) -> Condition {
+        const ALL: [Condition; 16] = [
+            Condition::Eq,
+            Condition::Ne,
+            Condition::Hs,
+            Condition::Lo,
+            Condition::Mi,
+            Condition::Pl,
+            Condition::Vs,
+            Condition::Vc,
+            Condition::Hi,
+            Condition::Ls,
+            Condition::Ge,
+            Condition::Lt,
+            Condition::Gt,
+            Condition::Le,
+            Condition::Al,
+            Condition::Nv,
         ];
         ALL[usize::from(b & 15)]
     }
 
-    fn parse(t: &str) -> Option<Cond> {
+    fn parse(t: &str) -> Option<Condition> {
         // ("CS|HS": either name.)
         let t = t.rsplit('|').next()?;
         const NAMES: [&str; 16] = [
@@ -272,13 +249,13 @@ impl Cond {
             "CC" => Some(3),
             _ => None,
         })?;
-        Some(Cond::from_bits(i as u8))
+        Some(Condition::from_bits(i as u8))
     }
 }
 
 /// How a memory operand's base is updated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AddrMode {
+pub enum AddressingMode {
     /// `[base, offset]`: not updated.
     Offset,
     /// `[base, offset]!`: the address is base + offset, written back to
@@ -291,24 +268,24 @@ pub enum AddrMode {
 
 /// A memory operand.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Mem {
+pub struct MemoryOperand {
     /// The base: X*n* or SP, or an SVE vector of addresses (`[z0.d, #8]`).
-    pub base: Reg,
+    pub base: Register,
     /// The base vector's element size (SVE).
     pub base_arrangement: Option<Arrangement>,
     /// An index register (`[x0, x1, lsl #3]`, `[x0, z1.d]`), or a
     /// post-index register (`[x0], x1`).
-    pub index: Option<Reg>,
+    pub index: Option<Register>,
     /// The index's shift or extend, and its amount.
     pub index_shift: Option<(ShiftKind, u8)>,
     /// The immediate offset, in bytes (or in vector lengths, with
-    /// `mul_vl`).
-    pub offset: i64,
+    /// `vector_length_units`).
+    pub displacement: i64,
     /// Whether the offset is in multiples of the vector (or predicate)
     /// length: `[x0, #1, mul vl]`.
-    pub mul_vl: bool,
+    pub vector_length_units: bool,
     /// Pre- or post-indexing (the base is written back), or neither.
-    pub mode: AddrMode,
+    pub mode: AddressingMode,
 }
 
 /// An SME ZA operand that selects part of ZA: an array vector group
@@ -322,7 +299,7 @@ pub struct ZaSlice {
     /// For tile slices: vertical (`V`) or horizontal (`H`).
     pub vertical: Option<bool>,
     /// The slice index register (W8-W11 or W12-W15).
-    pub index: Reg,
+    pub index: Register,
     /// The offset added to it.
     pub offset: u16,
     /// For a range of offsets (`0:1`), the last.
@@ -334,7 +311,7 @@ pub struct ZaSlice {
 /// A system register by its encoding (MRS and MSR).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[allow(missing_docs, reason = "the architecture's names")]
-pub struct SysReg {
+pub struct SystemRegister {
     pub op0: u8,
     pub op1: u8,
     pub crn: u8,
@@ -346,30 +323,30 @@ pub struct SysReg {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum OperandKind {
     /// A register.
-    Reg(RegOperand),
+    Register(RegisterOperand),
     /// A list of registers.
-    List(RegList),
+    List(RegisterList),
     /// An integer immediate (logical immediates decoded to their value;
     /// shifts' amounts are [`OperandKind::Shift`]).
-    Imm(i64),
+    Immediate(i64),
     /// A floating-point immediate.
-    FpImm(f64),
+    FloatImmediate(f64),
     /// A PC-relative target address.
     Label(u64),
     /// A condition.
-    Cond(Cond),
+    Condition(Condition),
     /// A shift or extend of the operand before it.
     Shift(ShiftKind, u8),
     /// SVE's `mul #<imm>`: a multiplier.
-    Mul(u8),
+    Multiplier(u8),
     /// A memory address.
-    Mem(Mem),
+    Memory(MemoryOperand),
     /// A part of ZA.
     Za(ZaSlice),
     /// ZERO's tiles: a mask of the 64-bit tiles ZA0.D to ZA7.D.
     ZaTiles(u8),
     /// A system register (MRS, MSR).
-    SysReg(SysReg),
+    SystemRegister(SystemRegister),
     /// A named option: a prefetch operation (`PLDL1KEEP`), barrier
     /// option (`SY`), SVE pattern (`POW2`), system operation (`IVAC`),
     /// PSTATE field, hint argument (`CSYNC`), ...
@@ -424,7 +401,7 @@ enum Val {
 
 /// What format.rs's `render_symbol` shows for `sym`, as a value (`None`
 /// where it shows nothing, or can't).
-fn sym_value(inst: &Instruction, sym: &Symbol) -> Option<Val> {
+fn sym_value(inst: &Inst, sym: &Symbol) -> Option<Val> {
     let w = inst.word;
     if let Some((p, v)) = sym.when()
         && value(p, w) != v
@@ -507,7 +484,7 @@ fn parse_int(t: &str) -> Option<i64> {
 }
 
 /// A part's value: its symbol's, or its literal's.
-fn part_value(inst: &Instruction, sym: u16, lit: &'static str) -> Option<Val> {
+fn part_value(inst: &Inst, sym: u16, lit: &'static str) -> Option<Val> {
     if sym == NONE {
         if lit.is_empty() {
             return None;
@@ -524,7 +501,7 @@ fn part_value(inst: &Instruction, sym: u16, lit: &'static str) -> Option<Val> {
     sym_value(inst, symbol(usize::from(sym)))
 }
 
-fn part_num(inst: &Instruction, sym: u16, lit: &'static str) -> Option<i64> {
+fn part_num(inst: &Inst, sym: u16, lit: &'static str) -> Option<i64> {
     match part_value(inst, sym, lit)? {
         Val::Num(n) => Some(n),
         Val::Text(t) => parse_int(t),
@@ -532,7 +509,7 @@ fn part_num(inst: &Instruction, sym: u16, lit: &'static str) -> Option<i64> {
     }
 }
 
-fn part_text(inst: &Instruction, sym: u16, lit: &'static str) -> Option<&'static str> {
+fn part_text(inst: &Inst, sym: u16, lit: &'static str) -> Option<&'static str> {
     match part_value(inst, sym, lit)? {
         Val::Text(t) => Some(t),
         _ => None,
@@ -541,11 +518,11 @@ fn part_text(inst: &Instruction, sym: u16, lit: &'static str) -> Option<&'static
 
 /// The register a symbol names (with `prefix`: `<V>`'s or `<R>`'s
 /// letter, or a template's literal one).
-fn register(inst: &Instruction, sym: u16, lit: &str, prefix: Option<u8>) -> Option<Reg> {
+fn register(inst: &Inst, sym: u16, lit: &str, prefix: Option<u8>) -> Option<Register> {
     if sym == NONE {
         return match lit {
-            "ZT0" => Some(Reg::Zt0),
-            "X16" => Some(Reg::X(16)),
+            "ZT0" => Some(Register::Zt0),
+            "X16" => Some(Register::X(16)),
             _ => None,
         };
     }
@@ -567,26 +544,26 @@ fn register(inst: &Instruction, sym: u16, lit: &str, prefix: Option<u8>) -> Opti
     };
     let n8 = (n & 0xFF) as u8;
     let gpr = |wide: bool, sp: bool| match (n8, wide, sp) {
-        (31, true, true) => Reg::Sp,
-        (31, false, true) => Reg::Wsp,
-        (31, true, false) => Reg::Xzr,
-        (31, false, false) => Reg::Wzr,
-        (_, true, _) => Reg::X(n8),
-        (_, false, _) => Reg::W(n8),
+        (31, true, true) => Register::Sp,
+        (31, false, true) => Register::Wsp,
+        (31, true, false) => Register::Xzr,
+        (31, false, false) => Register::Wzr,
+        (_, true, _) => Register::X(n8),
+        (_, false, _) => Register::W(n8),
     };
     // A prefix says the file.
     if let Some(p) = prefix {
         return Some(match p {
             b'W' => gpr(false, false),
             b'X' => gpr(true, false),
-            b'B' => Reg::B(n8),
-            b'H' => Reg::H(n8),
-            b'S' => Reg::S(n8),
-            b'D' => Reg::D(n8),
-            b'Q' => Reg::Q(n8),
-            b'V' => Reg::V(n8),
-            b'Z' => Reg::Z(n8),
-            b'P' => Reg::P(n8),
+            b'B' => Register::B(n8),
+            b'H' => Register::H(n8),
+            b'S' => Register::S(n8),
+            b'D' => Register::D(n8),
+            b'Q' => Register::Q(n8),
+            b'V' => Register::V(n8),
+            b'Z' => Register::Z(n8),
+            b'P' => Register::P(n8),
             _ => return None,
         });
     }
@@ -595,17 +572,17 @@ fn register(inst: &Instruction, sym: u16, lit: &str, prefix: Option<u8>) -> Opti
     match s.kind {
         Kind::Gpr(wide) | Kind::Pair(wide) => return Some(gpr(wide, false)),
         Kind::GprSp(wide) => return Some(gpr(wide, true)),
-        Kind::Pn => return Some(Reg::Pn(n8)),
+        Kind::Pn => return Some(Register::Pn(n8)),
         Kind::Reg(p) if p != "za" && !p.is_empty() && p != "C" => {
             return Some(match p {
-                "v" => Reg::V(n8),
-                "b" => Reg::B(n8),
-                "h" => Reg::H(n8),
-                "s" => Reg::S(n8),
-                "d" => Reg::D(n8),
-                "q" => Reg::Q(n8),
-                "z" => Reg::Z(n8),
-                "p" => Reg::P(n8),
+                "v" => Register::V(n8),
+                "b" => Register::B(n8),
+                "h" => Register::H(n8),
+                "s" => Register::S(n8),
+                "d" => Register::D(n8),
+                "q" => Register::Q(n8),
+                "z" => Register::Z(n8),
+                "p" => Register::P(n8),
                 _ => return None,
             });
         }
@@ -617,36 +594,36 @@ fn register(inst: &Instruction, sym: u16, lit: &str, prefix: Option<u8>) -> Opti
             file::XSP => gpr(true, true),
             file::W => gpr(false, false),
             file::WSP => gpr(false, true),
-            4 => Reg::B(n8),
-            5 => Reg::H(n8),
-            6 => Reg::S(n8),
-            7 => Reg::D(n8),
-            8 => Reg::Q(n8),
-            9 | 10 => Reg::V(n8),
-            file::Z => Reg::Z(n8),
-            file::P => Reg::P(n8),
-            file::PN => Reg::Pn(n8),
+            4 => Register::B(n8),
+            5 => Register::H(n8),
+            6 => Register::S(n8),
+            7 => Register::D(n8),
+            8 => Register::Q(n8),
+            9 | 10 => Register::V(n8),
+            file::Z => Register::Z(n8),
+            file::P => Register::P(n8),
+            file::PN => Register::Pn(n8),
             file::ZA => match Element::from_code(c.element) {
-                Some(e) => Reg::ZaTile(e, n8),
-                None => Reg::Za,
+                Some(e) => Register::ZaTile(e, n8),
+                None => Register::Za,
             },
-            _ => Reg::Zt0,
+            _ => Register::Zt0,
         });
     }
     Some(match s.kind {
         Kind::Gpr(wide) | Kind::Pair(wide) => gpr(wide, false),
         Kind::GprSp(wide) => gpr(wide, true),
-        Kind::Pn => Reg::Pn(n8),
+        Kind::Pn => Register::Pn(n8),
         Kind::Reg(p) => match p {
-            "v" => Reg::V(n8),
-            "b" => Reg::B(n8),
-            "h" => Reg::H(n8),
-            "s" => Reg::S(n8),
-            "d" => Reg::D(n8),
-            "q" => Reg::Q(n8),
-            "z" => Reg::Z(n8),
-            "p" => Reg::P(n8),
-            "za" => Reg::ZaTile(Element::B, n8),
+            "v" => Register::V(n8),
+            "b" => Register::B(n8),
+            "h" => Register::H(n8),
+            "s" => Register::S(n8),
+            "d" => Register::D(n8),
+            "q" => Register::Q(n8),
+            "z" => Register::Z(n8),
+            "p" => Register::P(n8),
+            "za" => Register::ZaTile(Element::B, n8),
             _ => return None,
         },
         _ => return None,
@@ -654,7 +631,7 @@ fn register(inst: &Instruction, sym: u16, lit: &str, prefix: Option<u8>) -> Opti
 }
 
 /// A register's prefix letter: `<V>`'s or `<R>`'s value, or a literal.
-fn prefix_letter(inst: &Instruction, sym: u16, lit: &'static str) -> Option<u8> {
+fn prefix_letter(inst: &Inst, sym: u16, lit: &'static str) -> Option<u8> {
     let t = if sym == NONE {
         lit
     } else {
@@ -664,7 +641,7 @@ fn prefix_letter(inst: &Instruction, sym: u16, lit: &'static str) -> Option<u8> 
 }
 
 /// The arrangement a part gives.
-fn arrangement(inst: &Instruction, sym: u16, lit: &'static str) -> Option<Arrangement> {
+fn arrangement(inst: &Inst, sym: u16, lit: &'static str) -> Option<Arrangement> {
     let t = if sym == NONE {
         lit
     } else {
@@ -674,7 +651,7 @@ fn arrangement(inst: &Instruction, sym: u16, lit: &'static str) -> Option<Arrang
 }
 
 /// A shift or extend from its name part and amount part.
-fn shift(inst: &Instruction, sym: u16, lit: &'static str) -> Option<(ShiftKind, u8)> {
+fn shift(inst: &Inst, sym: u16, lit: &'static str) -> Option<(ShiftKind, u8)> {
     let t = if sym == NONE {
         lit
     } else {
@@ -689,14 +666,67 @@ fn shift(inst: &Instruction, sym: u16, lit: &'static str) -> Option<(ShiftKind, 
 }
 
 impl Instruction {
-    /// The instruction's operands, in the order the formatter shows them
-    /// (an alias's, for an alias), with the condition Microsoft folds into
-    /// the mnemonic (`b.eq`, `cseleq`) last. Operands the word leaves out
-    /// (an optional shift that has no value) are left out.
-    pub fn operands(&self) -> Operands {
+    /// The instruction's operands (at `address`: a label's target is from
+    /// it), in the order the formatter shows them (an alias's, for an
+    /// alias), with the condition Microsoft folds into the mnemonic
+    /// (`b.eq`, `cseleq`) last. Operands the word leaves out (an optional
+    /// shift that has no value) are left out.
+    pub fn detailed_operands(&self, address: u64) -> Operands {
+        self.at(address).operands()
+    }
+
+    /// For tests: how many operands the template has (some may be left
+    /// out of [`Instruction::operands`], where the word has no value for
+    /// them).
+    #[doc(hidden)]
+    pub fn template_operand_count(&self) -> usize {
+        crate::tables::semantics(usize::from(self.encoding))
+            .operands
+            .len()
+    }
+}
+
+impl Inst {
+    /// The address its label operand names (a branch's target, `adr`'s
+    /// address, a literal's): that operand alone, not all of them.
+    pub(crate) fn label(&self) -> Option<u64> {
+        for spec in crate::tables::semantics(usize::from(self.encoding)).operands {
+            if spec.kind != opk::IMM {
+                continue;
+            }
+            let Some(&(_, s, l)) = spec.parts.iter().find(|p| p.0 == role::VALUE) else {
+                continue;
+            };
+            if s != NONE && matches!(symbol(usize::from(s)).kind, Kind::Label) {
+                return part_num(self, s, l).map(|n| n as u64);
+            }
+        }
+        None
+    }
+
+    /// Its memory operands alone (not evaluating the others).
+    pub(crate) fn memory_operands(&self) -> impl Iterator<Item = Operand> + use<> {
+        let mut out = [None; 2];
+        let mut n = 0;
+        for spec in crate::tables::semantics(usize::from(self.encoding)).operands {
+            if spec.kind != opk::MEM || n == out.len() {
+                continue;
+            }
+            if let Some(kind) = self.operand(spec) {
+                out[n] = Some(Operand {
+                    kind,
+                    access: access_of_bits(spec.access),
+                });
+                n += 1;
+            }
+        }
+        out.into_iter().flatten()
+    }
+
+    fn operands(&self) -> Operands {
         let blank = Operand {
-            kind: OperandKind::Imm(0),
-            access: Access::None,
+            kind: OperandKind::Immediate(0),
+            access: Access::NONE,
         };
         let mut out = Operands {
             ops: [blank; MAX_OPERANDS],
@@ -709,22 +739,12 @@ impl Instruction {
             if let Some(kind) = self.operand(spec) {
                 out.ops[usize::from(out.len)] = Operand {
                     kind,
-                    access: Access::from_bits(spec.access),
+                    access: access_of_bits(spec.access),
                 };
                 out.len += 1;
             }
         }
         out
-    }
-
-    /// For tests: how many operands the template has (some may be left
-    /// out of [`Instruction::operands`], where the word has no value for
-    /// them).
-    #[doc(hidden)]
-    pub fn template_operand_count(&self) -> usize {
-        crate::tables::semantics(usize::from(self.encoding))
-            .operands
-            .len()
     }
 
     fn operand(&self, spec: &OpSpec) -> Option<OperandKind> {
@@ -736,9 +756,9 @@ impl Instruction {
                 let (s, l) = find(role::REG)?;
                 let reg = register(self, s, l, prefix)?;
                 let arrangement = find(role::ARR).and_then(|(s, l)| arrangement(self, s, l));
-                OperandKind::Reg(RegOperand {
-                    reg: match (reg, arrangement) {
-                        (Reg::ZaTile(_, n), Some(a)) => Reg::ZaTile(a.element, n),
+                OperandKind::Register(RegisterOperand {
+                    register: match (reg, arrangement) {
+                        (Register::ZaTile(_, n), Some(a)) => Register::ZaTile(a.element, n),
                         (r, _) => r,
                     },
                     arrangement,
@@ -787,12 +807,15 @@ impl Instruction {
                     }
                 }
                 let first = first?;
-                let num = |r: Reg| match r {
-                    Reg::V(n) | Reg::Q(n) | Reg::D(n) | Reg::Z(n) | Reg::X(n) | Reg::W(n) => {
-                        Some((n, 32u8))
-                    }
-                    Reg::P(n) | Reg::Pn(n) => Some((n, 16)),
-                    Reg::Xzr | Reg::Wzr => Some((31, 32)),
+                let num = |r: Register| match r {
+                    Register::V(n)
+                    | Register::Q(n)
+                    | Register::D(n)
+                    | Register::Z(n)
+                    | Register::X(n)
+                    | Register::W(n) => Some((n, 32u8)),
+                    Register::P(n) | Register::Pn(n) => Some((n, 16)),
+                    Register::Xzr | Register::Wzr => Some((31, 32)),
                     _ => None,
                 };
                 let (f, m) = num(first)?;
@@ -804,7 +827,7 @@ impl Instruction {
                     (None, Some(s)) => (count, (num(s)?.0 + m - f) % m),
                     (None, None) => (1, 1),
                 };
-                OperandKind::List(RegList {
+                OperandKind::List(RegisterList {
                     first,
                     count,
                     stride,
@@ -819,22 +842,24 @@ impl Instruction {
                 if s != NONE {
                     let sym = symbol(usize::from(s));
                     if matches!(sym.display(), "<cond>" | "<invcond>") {
-                        return Some(OperandKind::Cond(Cond::parse(part_text(self, s, l)?)?));
+                        return Some(OperandKind::Condition(Condition::parse(part_text(
+                            self, s, l,
+                        )?)?));
                     }
                     if matches!(sym.kind, Kind::Label) {
                         return Some(OperandKind::Label(part_num(self, s, l)? as u64));
                     }
                 }
                 match part_value(self, s, l)? {
-                    Val::Num(n) => OperandKind::Imm(n),
-                    Val::Fp(f) => OperandKind::FpImm(f),
+                    Val::Num(n) => OperandKind::Immediate(n),
+                    Val::Fp(f) => OperandKind::FloatImmediate(f),
                     Val::Text(t) => {
                         if let Some(n) = parse_int(t) {
-                            OperandKind::Imm(n)
+                            OperandKind::Immediate(n)
                         } else if let Some(f) =
                             t.strip_prefix('#').and_then(|f| f.parse::<f64>().ok())
                         {
-                            OperandKind::FpImm(f)
+                            OperandKind::FloatImmediate(f)
                         } else {
                             OperandKind::Name(t)
                         }
@@ -843,7 +868,7 @@ impl Instruction {
             }
             opk::COND => {
                 let (s, l) = find(role::VALUE)?;
-                OperandKind::Cond(Cond::parse(part_text(self, s, l)?)?)
+                OperandKind::Condition(Condition::parse(part_text(self, s, l)?)?)
             }
             opk::SHIFT => {
                 let (s, l) = find(role::SHIFT)?;
@@ -855,19 +880,19 @@ impl Instruction {
             }
             opk::MUL => {
                 let (s, l) = find(role::VALUE)?;
-                OperandKind::Mul(part_num(self, s, l)? as u8)
+                OperandKind::Multiplier(part_num(self, s, l)? as u8)
             }
             opk::MEM => {
                 let (s, l) = find(role::REG)?;
                 let base = register(self, s, l, None)?;
-                let mut m = Mem {
+                let mut m = MemoryOperand {
                     base,
                     base_arrangement: None,
                     index: None,
                     index_shift: None,
-                    offset: 0,
-                    mul_vl: false,
-                    mode: AddrMode::Offset,
+                    displacement: 0,
+                    vector_length_units: false,
+                    mode: AddressingMode::Offset,
                 };
                 let mut last = role::REG;
                 for &(r, s, l) in parts {
@@ -876,16 +901,16 @@ impl Instruction {
                             m.base_arrangement = arrangement(self, s, l);
                         }
                         role::INDEX => m.index = register(self, s, l, None),
-                        role::OFFSET => m.offset = part_num(self, s, l).unwrap_or(0),
+                        role::OFFSET => m.displacement = part_num(self, s, l).unwrap_or(0),
                         role::SHIFT => m.index_shift = shift(self, s, l),
                         role::AMOUNT => {
                             if let Some((k, _)) = m.index_shift {
                                 m.index_shift = Some((k, part_num(self, s, l).unwrap_or(0) as u8));
                             }
                         }
-                        role::MULVL => m.mul_vl = true,
-                        role::WB => m.mode = AddrMode::PreIndex,
-                        role::POST => m.mode = AddrMode::PostIndex,
+                        role::MULVL => m.vector_length_units = true,
+                        role::WB => m.mode = AddressingMode::PreIndex,
+                        role::POST => m.mode = AddressingMode::PostIndex,
                         _ => {}
                     }
                     if r != role::ARR {
@@ -894,10 +919,10 @@ impl Instruction {
                 }
                 // (A post-index register XZR is the immediate form's: no
                 // index.)
-                if m.index == Some(Reg::Xzr) && m.mode == AddrMode::PostIndex {
+                if m.index == Some(Register::Xzr) && m.mode == AddressingMode::PostIndex {
                     m.index = None;
                 }
-                OperandKind::Mem(m)
+                OperandKind::Memory(m)
             }
             opk::ZA => {
                 let tile = find(role::TILE).and_then(|(s, l)| {
@@ -912,10 +937,10 @@ impl Instruction {
                     .map(|a| a.element);
                 let Some((is, il)) = find(role::ZAINDEX) else {
                     // A whole tile, or ZA.
-                    return Some(OperandKind::Reg(RegOperand {
-                        reg: match (tile, element) {
-                            (Some(t), Some(e)) => Reg::ZaTile(e, t),
-                            _ => Reg::Za,
+                    return Some(OperandKind::Register(RegisterOperand {
+                        register: match (tile, element) {
+                            (Some(t), Some(e)) => Register::ZaTile(e, t),
+                            _ => Register::Za,
                         },
                         arrangement: element.map(|e| Arrangement {
                             lanes: 0,
@@ -951,7 +976,7 @@ impl Instruction {
                 for (i, &(_, s, l)) in parts.iter().take(5).enumerate() {
                     v[i] = part_num(self, s, l)? as u8;
                 }
-                OperandKind::SysReg(SysReg {
+                OperandKind::SystemRegister(SystemRegister {
                     op0: v[0],
                     op1: v[1],
                     crn: v[2],
@@ -966,8 +991,8 @@ impl Instruction {
                 }
                 match part_value(self, s, l)? {
                     Val::Text(t) => OperandKind::Name(t),
-                    Val::Num(n) => OperandKind::Imm(n),
-                    Val::Fp(f) => OperandKind::FpImm(f),
+                    Val::Num(n) => OperandKind::Immediate(n),
+                    Val::Fp(f) => OperandKind::FloatImmediate(f),
                 }
             }
         })

@@ -109,10 +109,12 @@ fn arm64_branches() {
 #[test]
 fn arm64_targets_agree_with_the_formatter() {
     struct Record(core::cell::RefCell<Vec<u64>>);
-    impl turbonop_arm64::Symbols for Record {
-        fn name_at(&self, address: u64) -> Option<&str> {
-            self.0.borrow_mut().push(address);
-            None
+    impl turbonop_isa::Resolver for Record {
+        fn resolve(&self, r: turbonop_isa::Reference, _: &mut dyn turbonop_isa::TokenSink) -> bool {
+            if let turbonop_isa::Reference::Address(a) = r {
+                self.0.borrow_mut().push(a);
+            }
+            false
         }
     }
     let mut checked = 0;
@@ -122,14 +124,14 @@ fn arm64_targets_agree_with_the_formatter() {
         for low in (0..1u32 << 24).step_by(4093) {
             let word = top << 24 | low;
             let pc = 0x4000_0000;
-            let Some(i) = turbonop_arm64::decode(word, pc) else {
+            let Ok(i) = turbonop_arm64::decode(word) else {
                 continue;
             };
             let Some(insn) = decode(Arch::Arm64, &word.to_le_bytes(), pc) else {
                 continue;
             };
             let r = Record(core::cell::RefCell::new(Vec::new()));
-            turbonop_arm64::format_with(&i, &r);
+            turbonop_arm64::format_with(&i, pc, &r);
             let named = r.0.into_inner().first().copied();
             if matches!(insn.flow, Flow::Call | Flow::Jump | Flow::Branch) {
                 assert_eq!(insn.target, named, "{word:08x}");

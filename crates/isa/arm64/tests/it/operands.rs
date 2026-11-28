@@ -11,10 +11,10 @@
 
 use std::collections::BTreeMap;
 
-use turbonop_arm64::{Element, Instruction, OperandKind, Reg};
+use turbonop_arm64::{Element, Instruction, OperandKind, Register};
 
 /// Microsoft's name for a register (as format.rs's `gpr_name`).
-fn name(r: Reg) -> String {
+fn name(r: Register) -> String {
     let gpr = |n: u8, wide: bool| {
         let special = match (n, wide) {
             (16, true) => "xip0",
@@ -36,23 +36,23 @@ fn name(r: Reg) -> String {
         }
     };
     match r {
-        Reg::X(n) => gpr(n, true),
-        Reg::W(n) => gpr(n, false),
-        Reg::Sp => "sp".into(),
-        Reg::Wsp => "wsp".into(),
-        Reg::Xzr => "xzr".into(),
-        Reg::Wzr => "wzr".into(),
-        Reg::B(n) => format!("b{n}"),
-        Reg::H(n) => format!("h{n}"),
-        Reg::S(n) => format!("s{n}"),
-        Reg::D(n) => format!("d{n}"),
-        Reg::Q(n) => format!("q{n}"),
-        Reg::V(n) => format!("v{n}"),
-        Reg::Z(n) => format!("z{n}"),
-        Reg::P(n) => format!("p{n}"),
-        Reg::Pn(n) => format!("pn{n}"),
-        Reg::Za => "za".into(),
-        Reg::ZaTile(e, n) => format!(
+        Register::X(n) => gpr(n, true),
+        Register::W(n) => gpr(n, false),
+        Register::Sp => "sp".into(),
+        Register::Wsp => "wsp".into(),
+        Register::Xzr => "xzr".into(),
+        Register::Wzr => "wzr".into(),
+        Register::B(n) => format!("b{n}"),
+        Register::H(n) => format!("h{n}"),
+        Register::S(n) => format!("s{n}"),
+        Register::D(n) => format!("d{n}"),
+        Register::Q(n) => format!("q{n}"),
+        Register::V(n) => format!("v{n}"),
+        Register::Z(n) => format!("z{n}"),
+        Register::P(n) => format!("p{n}"),
+        Register::Pn(n) => format!("pn{n}"),
+        Register::Za => "za".into(),
+        Register::ZaTile(e, n) => format!(
             "za{n}.{}",
             match e {
                 Element::B => 'b',
@@ -62,7 +62,7 @@ fn name(r: Reg) -> String {
                 Element::Q => 'q',
             }
         ),
-        Reg::Zt0 => "zt0".into(),
+        Register::Zt0 => "zt0".into(),
         r => format!("{r:?}").to_ascii_lowercase(),
     }
 }
@@ -122,15 +122,15 @@ fn words() -> Vec<(u32, u64)> {
 }
 
 /// The registers an operand names.
-fn registers(k: &OperandKind) -> Vec<Reg> {
+fn registers(k: &OperandKind) -> Vec<Register> {
     match k {
-        OperandKind::Reg(r) => {
-            let mut v = vec![r.reg];
+        OperandKind::Register(r) => {
+            let mut v = vec![r.register];
             v.extend(r.select.map(|s| s.0));
             v
         }
         OperandKind::List(l) => l.iter().collect(),
-        OperandKind::Mem(m) => {
+        OperandKind::Memory(m) => {
             let mut v = vec![m.base];
             v.extend(m.index);
             v
@@ -140,9 +140,9 @@ fn registers(k: &OperandKind) -> Vec<Reg> {
     }
 }
 
-fn check(inst: &Instruction, failures: &mut BTreeMap<String, (usize, String)>) {
-    let text = turbonop_arm64::format(inst);
-    let ops = inst.operands();
+fn check(inst: &Instruction, address: u64, failures: &mut BTreeMap<String, (usize, String)>) {
+    let text = turbonop_arm64::format(inst, address);
+    let ops = inst.detailed_operands(address);
     let mut fail = |what: String| {
         let e = failures
             .entry(format!("{}: {what}", inst.encoding_name()))
@@ -170,16 +170,16 @@ fn check(inst: &Instruction, failures: &mut BTreeMap<String, (usize, String)>) {
             // (Lists show as ranges: their middle registers aren't named.)
             // (An optional zero register is left out: `tlbi vale1is`.)
             let named = has_token(&text, &name(r))
-                || matches!(r, Reg::Xzr | Reg::Wzr)
+                || matches!(r, Register::Xzr | Register::Wzr)
                 || matches!(op.kind, OperandKind::List(_))
-                || matches!(r, Reg::ZaTile(..));
+                || matches!(r, Register::ZaTile(..));
             if !named {
                 fail(format!("{} not in the text", name(r)));
             }
         }
         // A register operand's access is the write and read sets'.
-        let regs: Vec<Reg> = match &op.kind {
-            OperandKind::Reg(r) => vec![r.reg],
+        let regs: Vec<Register> = match &op.kind {
+            OperandKind::Register(r) => vec![r.register],
             OperandKind::List(l) => l.iter().collect(),
             _ => Vec::new(),
         };
@@ -194,7 +194,7 @@ fn check(inst: &Instruction, failures: &mut BTreeMap<String, (usize, String)>) {
                 fail(format!("{} read, not in the read set", name(r)));
             }
         }
-        if let OperandKind::Imm(v) = op.kind {
+        if let OperandKind::Immediate(v) = op.kind {
             let t = imm(v);
             // (SYS's CRn and CRm show as C<n>, in decimal.)
             if !has_token(&text, &t)
@@ -212,11 +212,11 @@ fn operands_agree_with_the_text_and_access() {
     let mut failures = BTreeMap::new();
     let mut count = 0;
     for (word, address) in words() {
-        let Some(inst) = turbonop_arm64::decode(word, address) else {
+        let Ok(inst) = turbonop_arm64::decode(word) else {
             continue;
         };
         count += 1;
-        check(&inst, &mut failures);
+        check(&inst, address, &mut failures);
     }
     let n: usize = failures.values().map(|v| v.0).sum();
     let report: Vec<String> = failures

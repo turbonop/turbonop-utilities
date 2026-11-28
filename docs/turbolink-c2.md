@@ -18,57 +18,169 @@ generate code, and writes the code as an ordinary COFF object. Linked by
 - a C++ DLL with exports, a static initializer, RTTI, and an exception
   thrown across it.
 
-(A library of `/GL` objects and incremental LTCG were observed but not
-yet driven.)
+(`ltcg-drive` doesn't drive a library of `/GL` objects or incremental
+LTCG. turbolink does libraries: below.)
 
 **turbolink links `/GL` objects itself.** `turbolink /LTCG` drives
-`c2.dll` (see "turbolink's LTCG" below). Four programs link and run as
+`c2.dll` (see "turbolink's LTCG" below). These link and run as
 `link.exe /LTCG`'s builds of them do, with the same output and exit
 code:
 - one C object;
 - two C objects, one's function inlined into the other's;
 - C++ with an exception, virtual calls and a static constructor;
-- `/GL` code with a native object.
+- `/GL` code with a native object;
+- a library of `/GL` objects:
+  - its members call one another and a native member of theirs;
+  - one member is reached only from a native library's member;
+  - one is never loaded;
+  - an import is called directly;
+  - also with a native object first;
+- C++ from a library of `/GL` objects (virtual calls, exceptions), with
+  and without `/DEBUG`;
+- functions and data nothing reaches, with `/OPT:REF` and `/OPT:NOREF`;
+- a `/GL` DLL whose exports are `dllexport`s, loaded by a native
+  program.
 
 Each image is the same size as `link.exe`'s. The bytes are not yet the
-same: 3,200 to 5,000 differ in a 10 to 12 KB image, and the generated
-`.text$mn` is 16 bytes shorter in the first program. The private
-repository's `ltcg_programs_run_as_link_exes` checks all four.
+same:
+- 208 to 493 differ in the 9.5 KB C images (3,284 to 3,565 before the
+  three lists and `Init`'s switches were link.exe's);
+- 1,299 in the 12 KB C++ one (4,997 before);
+- 2,580 in the two objects' `/DEBUG` build (6,175 before);
+- 8,000 to 12,000 in the C++ library and `/DEBUG` ones.
+
+The private repository's `ltcg_programs_run_as_link_exes` and
+`ltcg_libraries_run_as_link_exes` check them. Through the logging probe,
+turbolink's `Init` switches, the objects it opens (their order, offsets
+and sizes) and `CodeGen6`'s three lists are link.exe's in eleven links:
+the C library twice, C++, the unreached ones four ways (`/OPT:REF`,
+`/DEBUG /OPT:REF`, `/OPT:NOREF`, a DLL), the C++ library with and
+without `/DEBUG`, two objects, and the DLL. The one difference is below
+("Not yet done").
 
 ## turbolink's LTCG
 
 `crates/link/linker/src/c2.rs` holds all of the COM calls (the crate's
-only `unsafe` code). `ltcg.rs` holds the link logic. Before symbol
-resolution, `link::link` calls `ltcg::prepare`, which works in five
-steps:
+only `unsafe` code). `ltcg.rs` holds the link logic, as a `Host` that
+symbol resolution (`resolve::resolve_with`, through its `Ltcg` trait)
+drives. There is one resolve, as link.exe has one pass:
 
-1. **Find the back end.** It uses `TURBOLINK_C2` if that is set.
-   Otherwise it takes `c2.dll` from the first `PATH` directory that also
-   has `link.exe` or `cl.exe` (a developer prompt's `bin\Hostx64\x64`).
-   If no input is a `/GL` object, nothing is loaded and the link goes
-   on as before.
-2. **Open each `/GL` object.** It loads `c2.dll` (`Init`
-   `["-msilDebug"]`, then `SetPdbDll` with the full path of the
-   `mspdbcore.dll` beside it; a bare name fails with `E_FAIL`). Each
-   object is opened through `IObjFileForFile2`. Its publics
-   (`EnumPublics`: name, `SymType`, COMDAT selection, handle) and its
-   directives (`PbDirectives`) are read.
-3. **Resolve with stand-ins.** Each `/GL` object is replaced by a
+1. **Find the back end, when a `/GL` object first loads.** It uses
+   `TURBOLINK_C2` if that is set. Otherwise it takes `c2.dll` from the
+   first `PATH` directory that also has `link.exe` or `cl.exe` (a
+   developer prompt's `bin\Hostx64\x64`). A link with no `/GL` object
+   never loads it.
+2. **Open each `/GL` object as it loads**, a command-line input or a
+   library's member that the search loads. The back end is loaded with
+   link.exe's `Init` switches (`-optref` with `/OPT:REF`, `-msilDebug`
+   with `/DEBUG`), then `SetPdbDll` with the full path of the
+   `mspdbcore.dll` beside it (a bare name fails with `E_FAIL`). Each
+   object is opened through `IObjFileForFile2`, a member in its library
+   at its data's offset. Its publics (`EnumPublics`: name, `SymType`,
+   COMDAT selection, handle; a definition's references, `RgISymRefs`,
+   and size; a weak alias's default) and its directives
+   (`PbDirectives`) are read.
+3. **A stand-in in its place.** Each `/GL` object is resolved as a
    generated COFF *stand-in*. Each definition becomes a section of its
    own: COMDAT with the object's selection if it is a COMDAT, plain
    otherwise. References are undefined symbols, and the directives go
-   in `.drectve`. Statics are left out. An ordinary resolve over the
-   stand-ins and the native inputs then decides what is linked and
-   which libraries' members come in.
-4. **Generate code.** The roots are the IL definitions (`SymType` 2 or
-   4) that are referred to from outside the stand-ins, plus the entry
-   point, the exports and the `/INCLUDE`s. `CodeGen6` gets `-GA` for an
-   EXE or `-GD` for a DLL, those roots, and an empty second root list,
-   as `ltcg-drive` passes. The generated `ICOFFObj` is written as a
-   COFF object in the link's temporary directory.
-5. **Link the result.** The generated object takes the place of the
-   first `/GL` input, the other `/GL` inputs are dropped, and the link
-   resolves again and proceeds as a native one.
+   in `.drectve`. Statics and weak aliases are left out. The stand-ins'
+   references load library members as any object's do (a `/GL` member
+   too).
+4. **Generate code, once the search is over.** `CodeGen6` gets `-GA`
+   for an EXE or `-GD` for a DLL and three lists, as link.exe's
+   ("The three lists", below). The generated `ICOFFObj` comes back as a
+   COFF object in memory.
+5. **Link the result.** The stand-ins leave the link (what they defined
+   is undefined again; what only they referred to is no longer wanted).
+   The generated object joins it as its first file, named
+   `* CIL library *(* CIL module *)` as link.exe names it. The libraries
+   are searched again for what it refers to, and the link proceeds as a
+   native one. Members loaded for the IL's references stay, as with
+   link.exe.
+
+### What link.exe does with a library of `/GL` objects
+
+All [obs], from `/VERBOSE` and the probe, for the test programs above:
+
+- **One pass.** A `/GL` member is found and loaded like any member
+  (`Found lib_a`, `Loaded gl.lib(la.obj)`), for IL references and native
+  ones alike, in the search's order. Pass 1's search loads all of them,
+  then `Generating code`, `Finished generating code`, then one more
+  `Searching libraries` round (for the generated code's references)
+  before pass 2.
+- **The generated object is first.** Pass 2's module list starts with
+  `* CIL library *(* CIL module *)`, before every native object, even
+  with a native object first on the command line. The map agrees: the
+  generated functions are laid out before a native object's that comes
+  first on the command line.
+- **Members are opened as they load:** the command line's objects, then
+  each member in load order. Each member is opened as
+  `IObjFileForFile2("gl.lib", 0x8664, <its data's offset>, <its size>,
+  ...)`, after a `RequestPchSymbol("gl.lib", offset, size, ...)` that
+  returns `E_NOTIMPL`. turbolink skips that call. In link.exe's calls,
+  the size and kind arguments' upper 32 bits are garbage (DWORDs in
+  64-bit slots).
+
+### The three lists
+
+`CodeGen6`'s three input buffers are arrays of handles. What link.exe
+puts in them, as observed [obs] and as turbolink now makes them (the
+same lists in all eleven links compared):
+
+1. **The roots:** the IL definitions that a native object names (an
+   undefined symbol, or a copy of a COMDAT of its own, even one that
+   won: link.exe roots the IL's vtables and RTTI when a native library
+   member also has them), the entry point, the exports (`dllexport`s
+   among them) and the `/INCLUDE`s. It goes by name: the IL's copy that
+   won, else its first. A DLL with nothing exported and no entry point
+   has none, and link.exe goes on.
+2. **The imports called directly:** the IL's references (kind 1) that
+   resolved to an import's thunk, a function imported without
+   `__declspec(dllimport)` (`GetCurrentProcessId`, and vcruntime's
+   `_CxxThrowException`, `__CxxFrameHandler4`, `_purecall`...). The back
+   end then calls them through the import address table:
+   `__imp_GetCurrentProcessId` is what the generated code refers to.
+   `__imp_` references aren't listed.
+3. **The dead,** with `/OPT:REF` only (empty with `/OPT:NOREF`, and
+   with `/DEBUG` unless `/OPT:REF` is given): the IL's COMDATs and its
+   data (kind 4) that nothing reaches from the roots and the other
+   definitions (non-COMDAT functions and data, kind 2, and statics,
+   kind 8). Reaching goes through what each definition refers to
+   (`RgISymRefs`). A weak alias (kind 6) leads to its default, and a
+   reference to the copy that won. Examples:
+   - `la_also` and `lib_b_unused` (unreferenced functions in loaded
+     members);
+   - `dead_leaf`, called only by the dead `dead_root`: so it is
+     transitive;
+   - an inline `helper` called only by `dead_root`;
+   - the unused `_OptionsStorage` of `__local_stdio_scanf_options` (kind
+     4, though not a COMDAT);
+   - not `g_dead_data`, a plain global (kind 2, not a COMDAT).
+
+   The back end leaves them out. Without the list it keeps them: before
+   this list was passed, turbolink's own `/OPT:REF` dropped them from
+   the image.
+
+Facts this rests on [obs]:
+- **`IPublicSym2`** is `{14c0a371-7254-4eb5-b86e-c0d4db844720}`. link.exe
+  asks each definition for it, then calls `CRefs` (slot 9) and
+  `RgISymRefs` (slot 10). `RgISymRefs(ULONGLONG**)` fills the *caller's*
+  buffer through the pointer it's given. With a null pointer it returns
+  `S_OK` and writes nothing.
+- **Handles are unique within an object only.** A reference's handle
+  can equal another object's reference's (`lib_a` in `main.obj` and
+  `nat_in_lib` in `lb.obj` shared one). A definition's references are
+  its own object's publics, except that a COMDAT's copy can refer to
+  another object's (`std` inline functions in the C++ library test: the
+  back end seems to keep one copy's). Handle 0 is an empty reference
+  (throw information's unused fields).
+- **`SymType` 6** is a weak alias: `??_EShape@@UEAAPEAXI@Z` (a vector
+  deleting destructor), whose default (`SzNameDefaultSym`) is
+  presumably the `??_G` scalar one [inf]. The vtable refers to `??_E`.
+- **`IPublicSym3::Size`** is the definition's size: 24 for a
+  three-slot vtable, whose native copy's section is 32 bytes (the RTTI
+  locator's pointer before it).
 
 `/GL` objects without `/LTCG` are linked with LTCG anyway, with warning
 `LNK4197`, as `link.exe` does (it restarts the link). `/LTCG:STATUS` and
@@ -77,10 +189,13 @@ still "not yet". If `c2.dll` cannot be found or fails, the link stops
 with `LNK1257` and the back end's messages.
 
 **Not yet done:**
-- members of a library of `/GL` objects;
-- the second root list (native objects' references to IL definitions)
-  is empty;
-- link options are not mapped to back-end switches beyond `-GA`/`-GD`;
+- **The dead list, in one case.** In the C++ library test, `main` refers
+  to a handle (its last reference, after two empty ones, in a
+  `try`/`catch`) that no object's publics list. turbolink then passes
+  no dead list, which is safe: the back end keeps what link.exe would
+  have it drop. link.exe lists three there.
+- **Code-generation switches** beyond `-GA`/`-GD` (the earlier DLL
+  probe's `-ThrowingNew`, and the rest of the matrix);
 - incremental LTCG and PGO;
 - `/cgthreads`;
 - byte-identical images;
@@ -155,7 +270,8 @@ bodies [obs].
 | `512179b7-ae57-40a2-ac1e-5986586a6e4d` | IObjHandler10 | [obs][drive] |
 | `a9470bb0-911f-11d1-a712-0060083e8c78` | ICOFFObj | [obs][drive] |
 | `f23aafa9-3655-4b33-a84d-1eebfce232d3` | IPublicSym5 | [obs] |
-| `370ec183-8a62-4df7-8216-4cddb590f040` | IPublicSym3 | [obs] |
+| `370ec183-8a62-4df7-8216-4cddb590f040` | IPublicSym3 | [obs][drive] |
+| `14c0a371-7254-4eb5-b86e-c0d4db844720` | IPublicSym2 | [obs][drive] |
 | `47bfade0-1ca7-4b72-83db-018c5a316b54` | IEnumExternalFilenames2 | [obs] |
 | `02e37a58-b410-44f5-88e5-83fed6d99711` | IMemCoordinator (linker's) | [obs][drive] |
 | `c0c21495-7642-4e6b-8181-94ca7789b241` | ILinkNotify2 (linker's) | [obs][drive] |
@@ -220,7 +336,7 @@ IObjHandler6's table, which isn't folded there, names them [sym].
 | 6 | `SzName(ILinkDataRO**)` | [obs][drive] |
 | 7 | `SymType(enum*)` | [obs][drive] |
 | 8 | `SzNameDefaultSym(ILinkDataRO**)`: a weak external's default | [obs] |
-| 9, 10 | `CRefs(DWORD*)`, `RgISymRefs(ULONGLONG**)` (IPublicSym2 onward) | |
+| 9, 10 | `CRefs(DWORD*)`, `RgISymRefs(ULONGLONG**)` (IPublicSym2 onward): the caller's buffer, filled | [obs][drive] |
 | 11 | `Size(DWORD*)` (IPublicSym3 onward) | [obs] |
 | 12 | `SzCoffSectionName(ILinkDataRO**)` (IPublicSym4 onward) | |
 | 13 | `CxxModuleInfo(int*, int*, int*, ILinkDataRO**)` (IPublicSym5): C++ modules | [obs] |
@@ -231,7 +347,8 @@ IObjHandler6's table, which isn't folded there, names them [sym].
 |---|---|---|
 | 1 | a reference | `__imp_*`, `__security_check_cookie` |
 | 2 | an external definition | `main`; COMDATs such as `printf` (selection 2, "any") |
-| 4 | data | a static local of an inline function (`_OptionsStorage`): its exact meaning is [inf] |
+| 4 | data | a static local of an inline function (`_OptionsStorage`): its exact meaning is [inf]; the dead list takes it as a COMDAT |
+| 6 | a weak alias | `??_EShape@@UEAAPEAXI@Z`, a vector deleting destructor; `SzNameDefaultSym` names its default |
 | 8 | a static | `square` |
 
 IEnumPublics and the other enumerators follow COM's order: `Next(n,
@@ -362,8 +479,10 @@ What `link.exe /LTCG` does [obs], and `ltcg-drive` repeats [drive]:
 2. **`Init`.** It tries slot 9, the five-argument `Init`, which returns
    `E_NOTIMPL`, then calls slot 4, `Init(CLinkCG, 0, argc, argv)`. The
    argument vector is the linker's switches for the back end:
-   `["-msilDebug"]`; with `/LTCG:INCREMENTAL`, `["-msilDebug"
-   "-incremental" "-ipdb<file>.ipdb" "-iobj<file>.iobj"
+   `["-msilDebug"]` with `/DEBUG`, `["-optref"]` with `/OPT:REF` (the
+   default without `/DEBUG`), `["-optref" "-msilDebug"]` with both, and
+   `[]` with `/OPT:NOREF` [obs]; with `/LTCG:INCREMENTAL`,
+   `["-msilDebug" "-incremental" "-ipdb<file>.ipdb" "-iobj<file>.iobj"
    "-tsiobj<timestamp>"]`. During `Init` the back end gets
    IMemCoordinator from CLinkCG and registers its two handlers.
 3. **`SetPdbDll("mspdbcore.dll")`**, through IObjHandler9.
@@ -394,13 +513,15 @@ What `link.exe /LTCG` does [obs], and `ltcg-drive` repeats [drive]:
      `main` (the CRT's startup code calls it), `gl_plus_one` (called by
      the native object), and the DLL's exports and the EH and RTTI data
      that native code uses.
-   - **The second buffer** is an array of handles of IL references that
-     native code defines: `__CxxFrameHandler4`, `_CxxThrowException`,
-     `_purecall`, CRT helpers [obs]. The EXE tests passed none, and
-     `ltcg-drive` passed none for the DLL either. It still worked
-     [drive], so what the list changes is [inf] (perhaps only which
-     calls get optimized).
-   - **The third buffer** was always empty.
+   - **The second buffer** is an array of handles of the IL's
+     references that resolved to imports' thunks (functions imported
+     without `dllimport`): `__CxxFrameHandler4`, `_CxxThrowException`,
+     `_purecall`, `GetCurrentProcessId` [obs]. The back end then calls
+     them through `__imp_`. `ltcg-drive` passes none, and its output
+     still works [drive]. See "The three lists".
+   - **The third buffer**, with `/OPT:REF`, is the IL's COMDATs and
+     data that nothing reaches (empty in the first tests, which all
+     had `/DEBUG`). See "The three lists".
    - **The outputs** are two buffers of 12-byte records {object token,
      DWORD}, an `int` (0) and an empty buffer [obs]. Their meaning is
      unknown. `ltcg-drive` ignores them, and the result links and runs.
@@ -426,8 +547,8 @@ What `link.exe /LTCG` does [obs], and `ltcg-drive` repeats [drive]:
   remedy is the probe over a matrix of link options: a few hours.
 - **The outputs of `CodeGen6`.** The {token, DWORD} records, the
   `int`, the fourth buffer.
-- **The second root list's exact rule,** and whether getting it wrong
-  costs only optimization or correctness.
+- **What the dead list can't name:** a handle a definition refers to
+  that no object's publics list ("Not yet done").
 - **`IObjFile2` slot 10.** It's `CContrib` in c2 but `CloseCoffCon` in
   link.
 - **`SymType` 4's meaning,** and the values not seen yet.
@@ -487,8 +608,7 @@ can win over `link.exe` in an LTCG link.
 
 - **Basic LTCG** (open, resolve, generate, consume, for EXEs and DLLs,
   libraries included): about a day. `ltcg-drive` is most of the
-  conversation already. *Done for EXEs from objects, in about that time;
-  libraries remain.*
+  conversation already. *Done, libraries and the three lists included.*
 - **The switch matrix and the unknown outputs** with the probe: a few
   hours.
 - **Incremental LTCG, error paths, and the option corners:** a few

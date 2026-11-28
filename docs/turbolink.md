@@ -17,8 +17,10 @@ as the rest of this repository is.
   2. **LTCG** (`docs/turbolink-c2.md`): the interface between
      `link.exe` and `c2.dll`, learned from Microsoft's public symbols
      and a logging stand-in for `c2.dll`. turbolink now drives `c2.dll`
-     itself: `/GL` objects linked with `/LTCG` run as `link.exe`'s LTCG
-     builds do (one or two objects, C++, `/GL` with a native object).
+     itself: `/GL` objects linked with `/LTCG`, on the command line or in
+     libraries, run as `link.exe`'s LTCG builds do (C, C++ with
+     exceptions and virtual calls, `/GL` with native objects, a `/GL`
+     DLL).
 
 ## Scope
 
@@ -475,7 +477,8 @@ lists every COFF group with its address and size) and by experiment:
 3. **The PDB**: written by turbolink, in parallel; checked with DIA,
    WinDbg, and this repository's PDB reader.
 4. **Speed**: large links measured and made faster.
-5. **LTCG**, from what prong 2 learns. Started: `/GL` objects link and
-   run (`docs/turbolink-c2.md`, "turbolink's LTCG"); libraries of `/GL`
-   objects, the switch mapping, and byte identity remain.
+5. **LTCG**, from what prong 2 learns. Started: `/GL` objects and
+   libraries of them link and run, with `CodeGen6`'s three lists as
+   link.exe makes them (`docs/turbolink-c2.md`, "turbolink's LTCG"); the
+   code-generation switches and byte identity remain.
 6. **Other machines**: x86, ARM64, ARM64EC, ARM64X.

@@ -19,12 +19,20 @@ pub struct Public {
     /// Its name.
     pub name: Vec<u8>,
     /// Its kind (`SymType`): 1 a reference, 2 an external definition, 4
-    /// data, 8 a static.
+    /// data, 6 a weak alias (`??_E`, a vector deleting destructor, for
+    /// its `??_G`), 8 a static.
     pub kind: u32,
     /// The back end's handle for it (what code generation's roots list).
     pub handle: u64,
     /// Whether it's a COMDAT, and its selection.
     pub comdat: Option<u8>,
+    /// What a definition refers to (`RgISymRefs`): handles of the object's
+    /// publics, definitions and references (none for a reference).
+    pub refs: Vec<u64>,
+    /// Its size in bytes (`IPublicSym3::Size`; 0 for a reference).
+    pub size: u32,
+    /// A weak alias's default (`SzNameDefaultSym`: kind 6).
+    pub default: Option<Vec<u8>>,
 }
 
 /// A `/GL` object the back end opened.
@@ -34,6 +42,21 @@ pub struct IlObject {
     pub publics: Vec<Public>,
     /// Its linker directives (`.drectve`'s text).
     pub directives: Vec<u8>,
+}
+
+/// The three lists of handles code generation (`CodeGen6`) takes, as
+/// link.exe makes them (docs/turbolink-c2.md).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Lists<'a> {
+    /// The IL definitions something outside the IL refers to.
+    pub roots: &'a [u64],
+    /// The IL's references that are imports called directly (a thunk's
+    /// name, not `__imp_`): the back end calls them through the import
+    /// address table instead.
+    pub imports: &'a [u64],
+    /// With `/OPT:REF`, the IL's COMDAT definitions nothing reaches: the
+    /// back end leaves them out.
+    pub dead: &'a [u64],
 }
 
 #[cfg(all(windows, target_arch = "x86_64"))]
@@ -46,15 +69,15 @@ pub struct Backend;
 #[cfg(not(all(windows, target_arch = "x86_64")))]
 impl Backend {
     /// Not available here.
-    pub fn load(_: &std::path::Path) -> Result<Backend, String> {
+    pub fn load(_: &std::path::Path, _: &[&str]) -> Result<Backend, String> {
         Err("link-time code generation needs Windows x64 (the compiler's back end)".into())
     }
     /// Not available here.
-    pub fn open(&mut self, _: &std::path::Path, _: u32) -> Result<IlObject, String> {
+    pub fn open(&mut self, _: &std::path::Path, _: u32, _: u32) -> Result<IlObject, String> {
         Err("unavailable".into())
     }
     /// Not available here.
-    pub fn generate(&mut self, _: &[&str], _: &[u64], _: &[u8]) -> Result<Vec<u8>, String> {
+    pub fn generate(&mut self, _: &[&str], _: &Lists<'_>) -> Result<Vec<u8>, String> {
         Err("unavailable".into())
     }
 }
@@ -67,7 +90,7 @@ mod imp {
     use std::ffi::c_void;
     use std::path::Path;
 
-    use super::{IlObject, Public};
+    use super::{IlObject, Lists, Public};
 
     #[link(name = "kernel32", kind = "raw-dylib")]
     unsafe extern "system" {
@@ -119,6 +142,18 @@ mod imp {
         0x7642,
         0x4e6b,
         [0x81, 0x81, 0x94, 0xca, 0x77, 0x89, 0xb2, 0x41],
+    );
+    const IID_PUBLIC_SYM2: Guid = Guid(
+        0x14c0_a371,
+        0x7254,
+        0x4eb5,
+        [0xb8, 0x6e, 0xc0, 0xd4, 0xdb, 0x84, 0x47, 0x20],
+    );
+    const IID_PUBLIC_SYM3: Guid = Guid(
+        0x370e_c183,
+        0x8a62,
+        0x4df7,
+        [0x82, 0x16, 0x4c, 0xdd, 0xb5, 0x90, 0xf0, 0x40],
     );
     const IID_COFF_OBJ: Guid = Guid(
         0xa947_0bb0,
@@ -214,6 +249,45 @@ mod imp {
             d.truncate(end);
         }
         Ok(d)
+    }
+
+    /// What the public `sym` (a definition) refers to: `IPublicSym2`'s
+    /// `CRefs` (slot 9) and `RgISymRefs` (slot 10), as link.exe reads them.
+    fn references(sym: *mut c_void) -> Result<Vec<u64>, String> {
+        let sym2 = qi(sym, &IID_PUBLIC_SYM2)?;
+        let n = get_u32(sym2, 9, "CRefs");
+        let refs = n.and_then(|n| {
+            if n == 0 {
+                return Ok(Vec::new());
+            }
+            // (The caller's buffer, through a pointer to it, as link.exe
+            // passes its own.)
+            let mut buffer = vec![0u64; n as usize];
+            let mut list: *mut u64 = buffer.as_mut_ptr();
+            // SAFETY: RgISymRefs(ULONGLONG**): the back end writes `CRefs`
+            // handles to the buffer `*list` points at (`n` of them).
+            let hr = unsafe {
+                slot::<unsafe extern "system" fn(*mut c_void, *mut *mut u64) -> Hr>(sym2, 10)(
+                    sym2,
+                    &raw mut list,
+                )
+            };
+            if hr < 0 {
+                return Err(format!("RgISymRefs: {hr:#x}"));
+            }
+            Ok(buffer)
+        });
+        release(sym2);
+        refs
+    }
+
+    /// The public `sym`'s size: `IPublicSym3::Size` (slot 11), as
+    /// link.exe reads it.
+    fn public_size(sym: *mut c_void) -> Result<u32, String> {
+        let sym3 = qi(sym, &IID_PUBLIC_SYM3)?;
+        let size = get_u32(sym3, 11, "Size");
+        release(sym3);
+        size
     }
 
     // -----------------------------------------------------------------
@@ -407,8 +481,8 @@ mod imp {
 
     impl Backend {
         /// Loads `c2` and initializes it as link.exe does (`Init` with
-        /// `-msilDebug`, then `SetPdbDll` with the `mspdbcore.dll` beside it).
-        pub fn load(c2: &Path) -> Result<Backend, String> {
+        /// `switches`, then `SetPdbDll` with the `mspdbcore.dll` beside it).
+        pub fn load(c2: &Path, switches: &[&str]) -> Result<Backend, String> {
             let path = wide(&c2.display().to_string());
             // SAFETY: a NUL-terminated path; its dependencies found beside
             // it (LOAD_WITH_ALTERED_SEARCH_PATH).
@@ -433,8 +507,9 @@ mod imp {
                 return Err(format!("DllGetObjHandler: {hr:#x}"));
             }
             let cg = linker_object();
-            let init_switch = wide("-msilDebug");
-            let mut init_argv: Vec<*const u16> = vec![init_switch.as_ptr()];
+            let init_switches: Vec<Vec<u16>> = switches.iter().map(|s| wide(s)).collect();
+            let mut init_argv: Vec<*const u16> = init_switches.iter().map(Vec::as_ptr).collect();
+            let init_argc = i32::try_from(init_argv.len()).unwrap_or(0);
             // SAFETY: IObjHandler6::Init (slot 4): (IUnknown*, int, int argc,
             // WCHAR** argv), as link.exe calls it.
             let hr = unsafe {
@@ -446,7 +521,7 @@ mod imp {
                         i32,
                         *mut *const u16,
                     ) -> Hr,
-                >(h6, 4)(h6, cg, 0, 1, init_argv.as_mut_ptr())
+                >(h6, 4)(h6, cg, 0, init_argc, init_argv.as_mut_ptr())
             };
             if hr < 0 {
                 return Err(format!("the back end's Init: {hr:#x} {}", messages()));
@@ -473,9 +548,10 @@ mod imp {
             })
         }
 
-        /// Opens the `/GL` object at `path` (`size` bytes): its publics and
+        /// Opens the `/GL` object at `offset` in `path` (`size` bytes: a
+        /// library's member is opened in the library): its publics and
         /// directives.
-        pub fn open(&mut self, path: &Path, size: u32) -> Result<IlObject, String> {
+        pub fn open(&mut self, path: &Path, offset: u32, size: u32) -> Result<IlObject, String> {
             let w = wide(&path.display().to_string());
             // The object's token: link.exe's is its object's address; ours,
             // a block of its own (opaque to the back end).
@@ -503,7 +579,7 @@ mod imp {
                     self.h6,
                     w.as_ptr(),
                     machine,
-                    0,
+                    offset,
                     size,
                     token,
                     0,
@@ -571,11 +647,24 @@ mod imp {
                     };
                 let comdat = (hr >= 0 && is != 0).then_some(selection);
                 let name = bytes_to_nul(get_obj(sym, 6, "SzName")?)?;
+                let (refs, size) = if kind == 1 {
+                    (Vec::new(), 0)
+                } else {
+                    (references(sym)?, public_size(sym)?)
+                };
+                let default = if kind == 6 {
+                    Some(bytes_to_nul(get_obj(sym, 8, "SzNameDefaultSym")?)?)
+                } else {
+                    None
+                };
                 publics.push(Public {
                     name,
                     kind,
                     handle,
                     comdat,
+                    refs,
+                    size,
+                    default,
                 });
                 release(sym);
             }
@@ -587,21 +676,21 @@ mod imp {
             })
         }
 
-        /// Generates code (`CodeGen6`) with the back end's `switches` for
-        /// the IL definitions `roots` (handles), and returns the generated
-        /// object as a COFF file, `directives` in its `.drectve`.
+        /// Generates code (`CodeGen6`) with the back end's `switches` and
+        /// `lists`, and returns the generated object as a COFF file.
         pub fn generate(
             &mut self,
             switches: &[&str],
-            roots: &[u64],
-            directives: &[u8],
+            lists: &Lists<'_>,
         ) -> Result<Vec<u8>, String> {
             let h10 = qi(self.h6, &IID_OBJ_HANDLER10)?;
             let switches: Vec<Vec<u16>> = switches.iter().map(|s| wide(s)).collect();
             let mut argv: Vec<*const u16> = switches.iter().map(Vec::as_ptr).collect();
-            let roots_data = link_data(roots.iter().flat_map(|r| r.to_le_bytes()).collect());
-            let none1 = link_data(Vec::new());
-            let none2 = link_data(Vec::new());
+            let handles =
+                |list: &[u64]| link_data(list.iter().flat_map(|r| r.to_le_bytes()).collect());
+            let roots_data = handles(lists.roots);
+            let imports_data = handles(lists.imports);
+            let dead_data = handles(lists.dead);
             let (mut out1, mut out2, mut out3) = (
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
@@ -630,8 +719,8 @@ mod imp {
                     i32::try_from(argv.len()).unwrap_or(0),
                     argv.as_mut_ptr(),
                     roots_data,
-                    none1,
-                    none2,
+                    imports_data,
+                    dead_data,
                     &raw mut out1,
                     &raw mut out2,
                     &raw mut flag,
@@ -643,7 +732,7 @@ mod imp {
             }
             let first = *self.files.first().ok_or("no /GL objects")?;
             let coff = qi(first, &IID_COFF_OBJ)?;
-            write_coff(coff, directives)
+            write_coff(coff)
         }
     }
 
@@ -660,7 +749,7 @@ mod imp {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn write_coff(coff: *mut c_void, directives: &[u8]) -> Result<Vec<u8>, String> {
+    fn write_coff(coff: *mut c_void) -> Result<Vec<u8>, String> {
         // ICOFFObj: CContrib 4, GetContribForISec 10, GetSymbolTableRO 13.
         let ncontrib = get_u32(coff, 4, "CContrib")?;
         let mut sections = Vec::new();
@@ -704,15 +793,8 @@ mod imp {
             } else {
                 Vec::new()
             };
-            let (bytes, size) = if name == b".drectve" {
-                let mut b = bytes;
-                b.push(b' ');
-                b.extend_from_slice(directives);
-                let n = u32::try_from(b.len()).unwrap_or(0);
-                (b, n)
-            } else {
-                (bytes, size)
-            };
+            // (Its `.drectve` is blank: the objects' directives were the
+            // link's already, from their stand-ins.)
             sections.push(Section {
                 name,
                 characteristics,

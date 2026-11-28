@@ -340,8 +340,8 @@ disassembly, `size` with its findings, and the extension's pages.
   (its locals), and `.cil$in`: their contents.
 - **The back end's interface, the rest** (docs/turbolink-c2.md): the
   back-end switches each link option produces (the probe over a matrix
-  of options), `CodeGen6`'s outputs, the second root list's rule,
-  `SymType`'s values, and what hands native objects to the back end.
+  of options), `CodeGen6`'s outputs, `SymType`'s values (1, 2, 4, 6 and
+  8 seen), and what hands native objects to the back end.
 - **`ltcg-drive`'s gaps.** Libraries' members (opened at their offset),
   incremental LTCG, and the written object's debug information
   (`LNK4255` for two objects).
@@ -888,24 +888,39 @@ same but for the PDB's GUID, age, and name.
   invalid options), then the images that differ (76); run ARM64 and 32-bit
   x86 tests once those machines link.
 - **LTCG: the rest** ([docs/turbolink-c2.md](docs/turbolink-c2.md),
-  "turbolink's LTCG"). `/GL` objects link and run as `link.exe /LTCG`'s
-  builds do. Still to do:
-  - **Libraries of `/GL` objects:** open a member at its offset, and
-    take members in for IL references.
-  - **The second root list:** native objects' references to IL
-    definitions.
-  - **The switch mapping:** link options to back-end switches (`/DEBUG`,
-    `/OPT`, `/GUARD`, CET, `/DYNAMICBASE`...), learned with the probe.
-  - **Byte identity with `link.exe`:** 3,200 to 5,000 bytes differ in
-    the test images, and the generated `.text$mn` is 16 bytes shorter
-    for `hello`. Diff the generated objects first.
+  "turbolink's LTCG"). `/GL` objects, on the command line and in
+  libraries, link and run as `link.exe /LTCG`'s builds do, with
+  `CodeGen6`'s three lists and `Init`'s switches as link.exe's. Still to
+  do:
+  - **The dead list's gap:** a definition that refers to a handle no
+    object listed turns it off (the C++ library test's `main`, after two
+    empty references, in a `try`/`catch`): what that handle is. The back
+    end then keeps what link.exe has it drop (8,123 bytes differ there).
+  - **The switch mapping:** link options to the back end's
+    code-generation switches (`-GA`/`-GD` only so far; the DLL test's
+    `-ThrowingNew`; `/GUARD`, CET, `/DYNAMICBASE`...), learned with the
+    probe. `Init`'s (`-optref`, `-msilDebug`) are done.
+  - **Byte identity with `link.exe`:** 208 to 2,580 bytes differ in the
+    first four test images, 8,000 to 12,000 in the C++ library and
+    `/DEBUG` ones. In `hello`, one generated function's code and place
+    differ (`.text` 0x1010), and link.exe writes an `LTCG` debug
+    directory entry that turbolink doesn't. Diff the generated objects
+    first.
+  - **"Largest" COMDATs against native copies:** a stand-in's sections
+    are empty, so a native copy of an IL vtable (which also holds the
+    RTTI locator) always wins. link.exe roots the IL's copy either way,
+    as turbolink now does; which copy its image keeps isn't checked
+    (`IPublicSym3::Size` is read for it).
+  - **"Generating code" / "Finished generating code":** link.exe prints
+    them on every LTCG link; turbolink doesn't.
+  - **Kind 6 (weak aliases) in stand-ins:** a `??_E` vector deleting
+    destructor isn't defined by its stand-in, so a native reference to
+    one wouldn't find it before code generation.
   - **Incremental LTCG, PGO, `/LTCGOUT`, `/cgthreads`.**
   - **Speed:** run native work while `CodeGen6` runs, and read the
     `ICOFFObj` directly with no COFF round trip.
   - **One COM wrapper:** move `ltcg-drive` onto `turbonop-linker`'s
     `c2` module.
-  - **DLLs** (`-GD`) through turbolink: driven by `ltcg-drive`, but not
-    yet tested through turbolink.
 
 ## rtti-strip
 

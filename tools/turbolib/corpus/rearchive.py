@@ -4,8 +4,8 @@ member that isn't there, so neither copies it), without /MACHINE and with
 
     python rearchive.py <turbolib.exe> <dir>...
 
-Meant for ARM64 libraries (the SDK's um\arm64, ucrt\arm64, MSVC's
-lib\arm64). Runs at below-normal priority; results in a scratch directory,
+Meant for ARM64 libraries (the SDK's um/arm64 and ucrt/arm64, MSVC's
+lib/arm64). Runs at below-normal priority; results in a scratch directory,
 removed at the end. Prints counts and the first 60 differences.
 """
 import os, subprocess, sys, tempfile, collections

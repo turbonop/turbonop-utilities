@@ -3,8 +3,10 @@ archiver, runs their test suites, and measures the builds: the proof that
 turbolib can stand in for lib.exe on a large /Z7 project.
 
     python proof.py configure <mode> <build dir> [--linker link|lld]
-    python proof.py build <mode> <build dir> [-j N] [target...]
-    python proof.py test <mode> <build dir> <results dir> [suite...]
+    python proof.py clone <built dir> <build dir>
+    python proof.py build <mode> <build dir> [-j N] [--timeout S] [target...]
+    python proof.py test <mode> <build dir> <results dir> [suite...] [--timeout S]
+                    [--filter-out-file FILE] [--lit-opt=OPTION...]
     python proof.py stats <build dir> [--json FILE]
     python proof.py measure <mode> <build dir> <target>...
     python proof.py compare <base results> <other results>
@@ -21,10 +23,22 @@ target\\release\\turbolib.exe), copied once to <build dir>\\..\\turbolib-bin\\
 <mode>\\lib.exe: turbolib picks its `lib` personality from argv[0], and the
 copy keeps a rebuild of the repository from changing a build half way.
 
+`clone` copies a built directory (the baseline) for a build with another
+archiver, so that only the libraries and the programs are made again: its
+objects, generated files, and Ninja's logs, without its libraries,
+programs, PDBs, and test outputs. The copy must be as deep as the original
+(Ninja logs paths relative to the build directory). The `configure` that
+follows rewrites Ninja's log so that a compile whose command differs only
+in the build directory's own include, PCH, and forced-include paths counts
+as done; every archive, link, and custom command (tablegen, whose
+--write-if-changed outputs then stay as they were) runs again.
+
 `build` runs Ninja in the Visual Studio environment (vcvars64.bat) and
 appends the wall time to <build dir>\\proof-times.json. `test` runs the
 check targets (check-llvm, check-clang, check-lld by default) with lit's
-xunit output in <results dir>. `stats` reads .ninja_log: every step's time,
+xunit output in <results dir>; --filter-out-file names the tests to leave
+out (clang-slow.txt: Debug clang's slowest). Both run Ninja in a job object
+and stop every process in it after --timeout seconds. `stats` reads .ninja_log: every step's time,
 the archiver steps' (static libraries) total, the big programs' links, and
 the libraries' sizes. `measure` deletes each target's image, PDB, and
 incremental-link file and relinks it with Ninja (the build's own command,
@@ -34,6 +48,7 @@ the first results and not in the second.
 """
 import argparse
 import ctypes
+import glob
 import json
 import os
 import re
@@ -112,14 +127,243 @@ def configure(a):
             f"-DLLVM_LIT_TOOLS_DIR={LIT_TOOLS}",
             f"-DLLVM_PARALLEL_LINK_JOBS={a.link_jobs}"]
     if a.mode != "base":
-        args.append("-DCMAKE_AR=" + turbolib_copy(a.build_dir, a.mode, a.turbolib))
+        archiver = turbolib_copy(a.build_dir, a.mode, a.turbolib)
+        args.append("-DCMAKE_AR=" + archiver)
+        # A configured directory (a clone) keeps the archiver it found
+        # first: CMakeFiles/<version>/CMake<lang>Compiler.cmake sets
+        # CMAKE_AR over the cache's. Name the new one there too.
+        for d in glob.glob(os.path.join(a.build_dir, "CMakeFiles", "*", "CMake*Compiler.cmake")):
+            with open(d, encoding="utf-8") as f:
+                text = f.read()
+            new = re.sub(r'^set\(CMAKE_AR "[^"]*"\)$',
+                         lambda m: f'set(CMAKE_AR "{archiver.replace(chr(92), "/")}")', text,
+                         flags=re.M)
+            if new != text:
+                with open(d, "w", encoding="utf-8") as f:
+                    f.write(new)
     if a.mode == "fold-types":
         args.append("-DCMAKE_STATIC_LINKER_FLAGS=/machine:x64 /TURBOLIB:fold=identical "
                     "/TURBOLIB:precomp=library")
     if a.linker == "lld":
         args.append("-DCMAKE_LINKER=" + LLD)
     print(" ".join(args), flush=True)
-    sys.exit(subprocess.run(args, env=env).returncode)
+    rc = subprocess.run(args, env=env).returncode
+    mark = os.path.join(a.build_dir, CLONE_MARK)
+    if rc == 0 and os.path.exists(mark):
+        with open(mark) as f:
+            source = json.load(f)["source"]
+        rehash(source, os.path.abspath(a.build_dir), env)
+        os.rename(mark, mark + ".done")
+    sys.exit(rc)
+
+
+CLONE_MARK = "proof-clone.json"
+COMPILE_RULES = ("CXX_COMPILER__", "C_COMPILER__", "RC_COMPILER__", "ASM_MASM_COMPILER__")
+# The flags in which a compile command may name its build directory and
+# still compile the same: the build's own headers, PCH, and forced include.
+PATH_FLAGS = ("-I", "/I", "/Yu", "/Yc", "/Fp", "/FI", "-external:I", "/external:I")
+
+
+def clone(a):
+    """Copies a configured build directory for a build with another
+    archiver: its objects, generated files, and logs, without its libraries,
+    programs, PDBs, and test outputs, which the new build makes again. The
+    tablegen build (NATIVE) is copied whole and reused. `configure` then
+    regenerates the copy and keeps the compiles whose commands differ only
+    in the build directory's own include, PCH and forced-include paths (see
+    rehash), so the build archives every library and links every program
+    again and compiles nothing else."""
+    src, dst = os.path.abspath(a.source), os.path.abspath(a.build_dir)
+    if os.path.relpath(LLVM_SRC, src) != os.path.relpath(LLVM_SRC, dst):
+        # Ninja's logs hold paths relative to the build directory.
+        raise SystemExit(f"{dst} must be as deep as {src}: the paths Ninja logged are relative")
+    if os.path.exists(dst):
+        raise SystemExit(f"{dst} exists")
+    native = os.path.join(src, "NATIVE")
+    rc = subprocess.run(["robocopy", src, dst, "/E", "/COPY:DAT", "/DCOPY:T", "/MT:8", "/NFL", "/NDL",
+                         "/NP", "/R:1", "/W:1", "/XD", native, "Output", "/XF", "*.lib", "*.exe",
+                         "*.ilk", "*.pdb", "*.dll", "*.exp", "proof-times.json"]).returncode
+    if rc >= 8:
+        raise SystemExit(f"robocopy: exit {rc}")
+    rc = subprocess.run(["robocopy", native, os.path.join(dst, "NATIVE"), "/E", "/COPY:DAT", "/DCOPY:T",
+                         "/MT:8", "/NFL", "/NDL", "/NP", "/R:1", "/W:1"]).returncode
+    if rc >= 8:
+        raise SystemExit(f"robocopy: exit {rc}")
+    for cache in ("CMakeCache.txt", os.path.join("NATIVE", "CMakeCache.txt")):
+        path = os.path.join(dst, cache)
+        with open(path, encoding="utf-8", errors="surrogateescape") as f:
+            text = f.read()
+        with open(path, "w", encoding="utf-8", errors="surrogateescape") as f:
+            f.write(swap_root(text, src, dst))
+    with open(os.path.join(dst, CLONE_MARK), "w") as f:
+        json.dump({"source": src}, f)
+    # The tablegen build: regenerated here and reused whole (it is a build
+    # tool, archived by lib.exe in every mode).
+    env = vs_env()
+    native_dst = os.path.join(dst, "NATIVE")
+    r = subprocess.run([tool("cmake", env), native_dst], env=env)
+    if r.returncode:
+        raise SystemExit(f"cmake {native_dst}: exit {r.returncode}")
+    rehash(native, native_dst, env, every_rule=True)
+
+
+def root_pattern(root):
+    drive, rest = os.path.splitdrive(root)
+    parts = [p for p in re.split(r"[\\/]", rest) if p]
+    return re.compile(re.escape(drive) + "".join(r"([\\/])" + re.escape(p) if i == 0 else
+                                                 r"[\\/]" + re.escape(p)
+                                                 for i, p in enumerate(parts)) + r"(?![\w.-])",
+                      re.I)
+
+
+def swap_root(text, old, new):
+    """`text` with the directory `old` written as `new`, in either slash."""
+    drive, rest = os.path.splitdrive(new)
+    parts = [p for p in re.split(r"[\\/]", rest) if p]
+    return root_pattern(old).sub(lambda m: m.group(0)[:len(drive)] + "".join(
+        m.group(1) + p for p in parts), text)
+
+
+MASK64 = (1 << 64) - 1
+RAPID_SECRET = (0x2D358DCCAA6C78A5, 0x8BB84B93962EACC9, 0x4B33A62ED433D4A3)
+
+
+def rapid_mum(a, b):
+    p = a * b
+    return p & MASK64, p >> 64
+
+
+def rapid_mix(a, b):
+    lo, hi = rapid_mum(a, b)
+    return lo ^ hi
+
+
+def command_hash(data):
+    """Ninja's hash of a command in a v7 log (rapidhash, as
+    BuildLog::LogEntry::HashCommand computes it since Ninja 1.13)."""
+    s = RAPID_SECRET
+    n = len(data)
+
+    def r64(i):
+        return int.from_bytes(data[i:i + 8], "little")
+
+    def r32(i):
+        return int.from_bytes(data[i:i + 4], "little")
+
+    seed = 0xBDD89AA982704029
+    seed ^= rapid_mix(seed ^ s[0], s[1]) ^ n
+    if n <= 16:
+        if n >= 4:
+            last = n - 4
+            a = (r32(0) << 32) | r32(last)
+            delta = (n & 24) >> (n >> 3)
+            b = (r32(delta) << 32) | r32(last - delta)
+        elif n > 0:
+            a = (data[0] << 56) | (data[n >> 1] << 32) | data[n - 1]
+            b = 0
+        else:
+            a = b = 0
+    else:
+        p, i = 0, n
+        if i > 48:
+            see1 = see2 = seed
+            while i >= 48:
+                seed = rapid_mix(r64(p) ^ s[0], r64(p + 8) ^ seed)
+                see1 = rapid_mix(r64(p + 16) ^ s[1], r64(p + 24) ^ see1)
+                see2 = rapid_mix(r64(p + 32) ^ s[2], r64(p + 40) ^ see2)
+                p += 48
+                i -= 48
+            seed ^= see1 ^ see2
+        if i > 16:
+            seed = rapid_mix(r64(p) ^ s[2], r64(p + 8) ^ seed ^ s[1])
+            if i > 32:
+                seed = rapid_mix(r64(p + 16) ^ s[2], r64(p + 24) ^ seed)
+        a, b = r64(p + i - 16), r64(p + i - 8)
+    a, b = rapid_mum(a ^ s[1], b ^ seed)
+    return rapid_mix(a ^ s[0] ^ n, b ^ s[1])
+
+
+def compdb(build_dir, env):
+    """[(rule, output, command)] of every edge with a command."""
+    out = subprocess.run([tool("ninja", env), "-C", build_dir, "-t", "compdb"], env=env,
+                         capture_output=True, check=True).stdout
+    entries = json.loads(out.decode("utf-8", errors="surrogateescape"))
+    rules = {}
+    with open(os.path.join(build_dir, "build.ninja"), encoding="utf-8", errors="replace") as f:
+        for line in f:
+            m = re.match(r"build (.+?)(?<!\$): (\S+)", line)
+            if m:
+                first = re.split(r"(?<!\$) ", m.group(1))[0]
+                rules[first.replace("$:", ":").replace("$ ", " ").replace("/", "\\")] = m.group(2)
+    return [(rules.get(e["output"].replace("/", "\\"), "?"), e["output"], e["command"])
+            for e in entries]
+
+
+def rehash(src, dst, env, every_rule=False):
+    """Rewrites dst's .ninja_log so that the edges whose commands differ
+    from src's only by the build directory (in PATH_FLAGS, for compiles)
+    count as done: their outputs, copied from src, are what the new command
+    would make. Every other edge (archives, links, custom commands, and
+    compiles with the directory elsewhere, as in a -D) runs again."""
+    old_hash = {}
+    log = os.path.join(dst, ".ninja_log")
+    with open(log, encoding="utf-8", errors="surrogateescape") as f:
+        lines = f.readlines()
+    for line in lines[1:]:
+        p = line.rstrip("\n").split("\t")
+        if len(p) >= 5:
+            old_hash[p[3].replace("/", "\\")] = p[4]
+    new_root = root_pattern(dst)
+    remap, kept, rerun = {}, 0, 0
+    same_cache = {}
+
+    def same_file(token):
+        """Whether a token is a file of dst with the bytes of src's (a
+        generated source, such as cmake_pch.cxx or a tool's driver)."""
+        if token not in same_cache:
+            p, q = token.strip('"'), swap_root(token.strip('"'), dst, src)
+            same = False
+            if os.path.isfile(p) and os.path.isfile(q):
+                with open(p, "rb") as f, open(q, "rb") as g:
+                    same = f.read() == g.read()
+            same_cache[token] = same
+        return same_cache[token]
+
+    for rule, output, command in compdb(dst, env):
+        logged = old_hash.get(output.replace("/", "\\"))
+        if logged is None:
+            continue
+        if not every_rule and not rule.startswith(COMPILE_RULES):
+            rerun += 1
+            continue
+        if f"{command_hash(command.encode('utf-8', errors='surrogateescape')):x}" == logged:
+            kept += 1  # kept by an earlier rehash
+            continue
+        if not every_rule:
+            words = command.split()
+            elsewhere = [t for i, t in enumerate(words) if new_root.search(t)
+                         and not t.startswith(PATH_FLAGS) and not same_file(t)
+                         and not (i and words[i - 1] in PATH_FLAGS)]
+            if elsewhere:
+                print(f"proof: compiled again (the directory is in {elsewhere[0]}): {output}")
+                rerun += 1
+                continue
+        back = swap_root(command, dst, src).encode("utf-8", errors="surrogateescape")
+        if f"{command_hash(back):x}" != logged:
+            rerun += 1
+            continue
+        remap[logged] = f"{command_hash(command.encode('utf-8', errors='surrogateescape')):x}"
+        kept += 1
+    with open(log + ".tmp", "w", encoding="utf-8", errors="surrogateescape", newline="\n") as f:
+        f.write(lines[0])
+        for line in lines[1:]:
+            p = line.rstrip("\n").split("\t")
+            if len(p) >= 5 and p[4] in remap:
+                p[4] = remap[p[4]]
+                line = "\t".join(p) + "\n"
+            f.write(line)
+    os.replace(log + ".tmp", log)
+    print(f"proof: {dst}: {kept} steps kept from {src}, {rerun} to run again")
 
 
 def record_time(build_dir, entry):
@@ -138,7 +382,7 @@ def build(a):
     args = [tool("ninja", env), "-C", a.build_dir, f"-j{a.jobs}"] + (["-k", "0"] if a.keep_going else [])
     args += a.targets
     start = time.time()
-    rc = subprocess.run(args, env=env).returncode
+    rc = run_in_job(args, env, a.timeout)[1]
     seconds = time.time() - start
     record_time(a.build_dir, {"targets": a.targets or ["all"], "jobs": a.jobs,
                               "seconds": round(seconds, 1), "exit": rc,
@@ -156,19 +400,35 @@ def test(a):
         xml = os.path.join(os.path.abspath(a.results), suite + ".xml")
         e = dict(env)
         # lit splits LIT_OPTS as a POSIX shell would: backslashes would go.
-        e["LIT_OPTS"] = f"--xunit-xml-output={xml.replace(chr(92), '/')} --no-progress-bar -q"
+        e["LIT_OPTS"] = (f"--xunit-xml-output={xml.replace(chr(92), '/')} --no-progress-bar -q "
+                         + " ".join(a.lit_opts))
+        if a.filter_out_file:
+            # lit reads LIT_FILTER_OUT unsplit, so the regex keeps its backslashes.
+            e["LIT_FILTER_OUT"] = filter_out(a.filter_out_file)
         start = time.time()
         log = os.path.join(a.results, suite + ".log")
         with open(log, "w", encoding="utf-8", errors="replace") as f:
-            r = subprocess.run([tool("ninja", env), "-C", a.build_dir, f"-j{a.jobs}", suite], env=e,
-                               stdout=f, stderr=subprocess.STDOUT).returncode
+            f.write(f"proof: LIT_OPTS={e['LIT_OPTS']}\n")
+            f.flush()
+            r = run_in_job([tool("ninja", env), "-C", a.build_dir, f"-j{a.jobs}", suite], e,
+                           a.timeout, stdout=f)[1]
         seconds = time.time() - start
-        record_time(a.build_dir, {"targets": [suite], "seconds": round(seconds, 1), "exit": r,
+        record_time(a.build_dir, {"targets": [suite], "lit_opts": a.lit_opts,
+                                  "filter_out_file": a.filter_out_file,
+                                  "seconds": round(seconds, 1), "exit": r,
                                   "started": time.strftime("%Y-%m-%d %H:%M:%S",
                                                            time.localtime(start))})
         print(f"proof: {suite}: {seconds:.0f} s, exit {r}; {summary(xml)}", flush=True)
         rc = rc or r
     sys.exit(rc)
+
+
+def filter_out(path):
+    """lit's --filter-out regex from a file of regexes, one a line, each
+    matched against a test's path within its suite."""
+    with open(path, encoding="utf-8") as f:
+        lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    return r"^\S+ :: (?:" + "|".join(lines) + ")"
 
 
 def outcomes(xml):
@@ -300,19 +560,34 @@ class EXTENDED_LIMIT(ctypes.Structure):
                 ("PeakJobMemoryUsed", ctypes.c_size_t)]
 
 
-def run_in_job(args, env):
-    """Runs a command in a new job: (seconds, exit, peak process commit,
-    peak job commit)."""
+def run_in_job(args, env, timeout=None, stdout=None):
+    """Runs a command in a new job that dies with it: (seconds, exit, peak
+    process commit, peak job commit). Past `timeout` seconds every process
+    in the job is killed (exit 124): lit's workers and the compilers Ninja
+    started go too, which killing Ninja alone would leave running."""
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.CreateJobObjectW.restype = wintypes.HANDLE
     job = k32.CreateJobObjectW(None, None)
+    limit = EXTENDED_LIMIT()
+    limit.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not k32.SetInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(limit),
+                                       ctypes.sizeof(limit)):
+        raise SystemExit(f"SetInformationJobObject: {ctypes.get_last_error()}")
     start = time.perf_counter()
     # Suspended, so that every child process is born in the job.
-    p = subprocess.Popen(args, env=env, creationflags=0x4)  # CREATE_SUSPENDED
+    p = subprocess.Popen(args, env=env, stdout=stdout,
+                         stderr=subprocess.STDOUT if stdout else None,
+                         creationflags=0x4)  # CREATE_SUSPENDED
     if not k32.AssignProcessToJobObject(wintypes.HANDLE(job), wintypes.HANDLE(int(p._handle))):
         raise SystemExit(f"AssignProcessToJobObject: {ctypes.get_last_error()}")
     resume_main_thread(p.pid)
-    rc = p.wait()
+    try:
+        rc = p.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"proof: {timeout} s passed: stopping {' '.join(args)}", flush=True)
+        k32.TerminateJobObject(wintypes.HANDLE(job), 124)
+        rc = p.wait()
+        rc = 124
     seconds = time.perf_counter() - start
     info = EXTENDED_LIMIT()
     k32.QueryInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(info),
@@ -360,11 +635,18 @@ def main():
     c.add_argument("--linker", choices=["link", "lld"], default="link")
     c.add_argument("--turbolib", default=TURBOLIB)
     c.add_argument("--link-jobs", type=int, default=3)
+    cl = sub.add_parser("clone")
+    cl.add_argument("source")
+    cl.add_argument("build_dir")
+    rh = sub.add_parser("rehash")
+    rh.add_argument("source")
+    rh.add_argument("build_dir")
     b = sub.add_parser("build")
     b.add_argument("mode", choices=MODES)
     b.add_argument("build_dir")
     b.add_argument("-j", "--jobs", type=int, default=os.cpu_count())
     b.add_argument("-k", "--keep-going", action="store_true")
+    b.add_argument("--timeout", type=float, default=8 * 3600, help="seconds (default 8 hours)")
     b.add_argument("targets", nargs="*")
     t = sub.add_parser("test")
     t.add_argument("mode", choices=MODES)
@@ -372,6 +654,14 @@ def main():
     t.add_argument("results")
     t.add_argument("suites", nargs="*", default=["check-llvm", "check-clang", "check-lld"])
     t.add_argument("-j", "--jobs", type=int, default=os.cpu_count())
+    t.add_argument("--timeout", type=float, default=12 * 3600,
+                   help="seconds for each suite (default 12 hours)")
+    t.add_argument("--lit-opt", dest="lit_opts", action="append", default=[],
+                   help="more of lit's options, as --lit-opt=--filter-out=REGEX (LIT_OPTS is "
+                        "split as a POSIX shell would)")
+    t.add_argument("--filter-out-file",
+                   help="leave out the tests matching the file's regexes (one a line; see "
+                        "clang-slow.txt)")
     s = sub.add_parser("stats")
     s.add_argument("build_dir")
     s.add_argument("--json")
@@ -387,6 +677,9 @@ def main():
     r = sub.add_parser("summary")
     r.add_argument("xml", nargs="+")
     a = ap.parse_args()
+    if a.cmd == "rehash":
+        rehash(os.path.abspath(a.source), os.path.abspath(a.build_dir), vs_env())
+        return
     if a.cmd == "summary":
         for x in a.xml:
             o = outcomes(x)
@@ -395,7 +688,7 @@ def main():
                 if v == "fail":
                     print(f"  FAIL {t}")
         return
-    {"configure": configure, "build": build, "test": test, "stats": stats,
+    {"configure": configure, "clone": clone, "build": build, "test": test, "stats": stats,
      "measure": measure, "compare": compare}[a.cmd](a)
 
 

@@ -20,8 +20,10 @@ leave this list when they ship.
     (but S_CALLEES, S_CALLERS, S_INLINEES, S_HEAPALLOCSITE,
     S_CALLSITEINFO, and S_FILESTATIC have their indices mapped);
     LF_UDT_MOD_SRC_LINE's file is compared as its string and its module
-    by name. FPO, OMAP, the section headers stream's contents beyond
-    `sections()`, and LinkInfo aren't compared yet.
+    by name. The debug header's streams are compared (FPO and FrameData
+    by the function each is for, OMAP, the section headers), but the
+    exception, fixup, token/RID, xdata, and pdata streams, and
+    `/LinkInfo`, only as bytes.
   - link.exe's own PDBs differ from one `/Brepro` link of the same inputs
     to the next (same GUID): which module's copy of a type
     `LF_UDT_MOD_SRC_LINE` names, and which copy of a type S_UDT names. A

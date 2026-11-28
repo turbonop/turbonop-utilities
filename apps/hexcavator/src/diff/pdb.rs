@@ -876,6 +876,251 @@ fn names_text(s: &Side<'_>) -> Vec<String> {
     v
 }
 
+/// Each address's place, by the PDB's own public symbols: the name of the
+/// one at or before it, and the offset from it (`name+0x10`), so that
+/// records of what moved but is the same compare the same.
+struct Places {
+    /// (RVA, name), sorted.
+    at: Vec<(u32, String)>,
+}
+
+impl Places {
+    fn of(pdb: &Pdb<'_>) -> Places {
+        let mut at = Vec::new();
+        if let (Ok(p), Ok(sections)) = (pdb.publics(), pdb.sections()) {
+            let records = pdb.symbol_records();
+            for r in p.hash.records() {
+                let Some(off) = u32::try_from(r.offset.get())
+                    .ok()
+                    .and_then(|o| o.checked_sub(1))
+                else {
+                    continue;
+                };
+                let Some(rec) = records
+                    .get(off as usize..)
+                    .and_then(|d| SymbolIter::new(d, off).next())
+                else {
+                    continue;
+                };
+                if let Ok(Symbol::Public {
+                    offset,
+                    segment,
+                    name,
+                    ..
+                }) = rec.parse()
+                    && let Some(rva) = pdb.rva(&sections, segment, offset)
+                {
+                    at.push((rva, String::from_utf8_lossy(name).into_owned()));
+                }
+            }
+            // (And the modules' procedures: statics have no publics.)
+            if let Ok(dbi) = pdb.dbi() {
+                for m in dbi.modules() {
+                    let Ok(Some(stream)) = pdb.module_stream(m) else {
+                        continue;
+                    };
+                    for rec in stream.symbols() {
+                        if let Ok(Symbol::Procedure {
+                            offset,
+                            segment,
+                            name,
+                            ..
+                        }) = rec.parse()
+                            && let Some(rva) = pdb.rva(&sections, segment, offset)
+                        {
+                            at.push((rva, String::from_utf8_lossy(name).into_owned()));
+                        }
+                    }
+                }
+            }
+        }
+        // (A procedure's name and its public's at one address: one of them.)
+        at.sort();
+        at.dedup_by_key(|(rva, _)| *rva);
+        Places { at }
+    }
+
+    /// `rva` as a name and an offset (its RVA if no public is before it).
+    fn name(&self, rva: u32) -> String {
+        let i = self.at.partition_point(|(a, _)| *a <= rva);
+        match i.checked_sub(1).and_then(|i| self.at.get(i)) {
+            Some((at, name)) if *at == rva => name.clone(),
+            Some((at, name)) => format!("{name}+{:#x}", rva - at),
+            None => format!("{rva:#x}"),
+        }
+    }
+}
+
+/// What each of the optional debug header's streams says: x86's frame
+/// data (FPO and FrameData, by the functions they're for), OMAP, the
+/// section headers (and the original ones, before OMAP), and the rest as
+/// bytes; and `/LinkInfo`.
+fn debug_texts(s: &Side<'_>) -> BTreeMap<&'static str, Vec<String>> {
+    use turbonop_pdb::dbi::dbg_stream;
+    let mut out = BTreeMap::new();
+    let Ok(dbi) = s.pdb.dbi() else {
+        return out;
+    };
+    let places = Places::of(&s.pdb);
+    let names = s.pdb.names().ok();
+    let stream = |which: usize| {
+        let i = dbi.debug_stream(which)?;
+        s.pdb.msf().stream(i).ok()
+    };
+    if let Some(d) = stream(dbg_stream::FPO) {
+        let v = turbonop_unwind::windows_x86::Fpo::parse(&d)
+            .iter()
+            .map(|f| {
+                format!(
+                    "{}: size {:#x}, locals {}, params {}, prolog {}, regs {}, seh {}, bp {}, frame {}",
+                    places.name(f.start),
+                    f.size,
+                    f.locals,
+                    f.params,
+                    f.prolog,
+                    f.regs,
+                    f.has_seh,
+                    f.uses_bp,
+                    f.frame
+                )
+            })
+            .collect();
+        out.insert("FPO record", v);
+    }
+    if let Some(d) = stream(dbg_stream::NEW_FPO) {
+        let v = turbonop_unwind::windows_x86::FrameData::parse(&d)
+            .iter()
+            .map(|f| {
+                let program = names
+                    .as_ref()
+                    .and_then(|n| n.get(f.program))
+                    .map_or_else(
+                        || format!("#{}", f.program),
+                        |p| String::from_utf8_lossy(p).into_owned(),
+                    );
+                format!(
+                    "{}: size {:#x}, locals {}, params {}, max stack {}, prolog {}, saved {}, seh {}, eh {}, start {}, {program:?}",
+                    places.name(f.start),
+                    f.size,
+                    f.locals,
+                    f.params,
+                    f.max_stack,
+                    f.prolog,
+                    f.saved_regs,
+                    f.has_seh,
+                    f.has_eh,
+                    f.is_function_start
+                )
+            })
+            .collect();
+        out.insert("FrameData record", v);
+    }
+    for (which, what) in [
+        (dbg_stream::OMAP_TO_SRC, "OMAP (to source) entry"),
+        (dbg_stream::OMAP_FROM_SRC, "OMAP (from source) entry"),
+    ] {
+        if let Some(d) = stream(which) {
+            let v = d
+                .as_chunks::<8>()
+                .0
+                .iter()
+                .map(|e| {
+                    let w = |o: usize| u32::from_le_bytes([e[o], e[o + 1], e[o + 2], e[o + 3]]);
+                    format!("{:#x} -> {:#x}", w(0), w(4))
+                })
+                .collect();
+            out.insert(what, v);
+        }
+    }
+    for (which, what) in [
+        (dbg_stream::SECTION_HEADERS, "section header (debug stream)"),
+        (dbg_stream::SECTION_HEADERS_ORIG, "original section header"),
+    ] {
+        if let Some(d) = stream(which) {
+            let v = d
+                .as_chunks::<40>()
+                .0
+                .iter()
+                .map(|h| {
+                    let w = |o: usize| u32::from_le_bytes([h[o], h[o + 1], h[o + 2], h[o + 3]]);
+                    let name = String::from_utf8_lossy(&h[..8]).trim_end_matches('\0').to_string();
+                    format!(
+                        "{name}: virtual {:#x} at {:#x}, raw {:#x} at {:#x}, relocations at {:#x}, lines at {:#x}, {} relocations, {} lines, characteristics {:#x}",
+                        w(8),
+                        w(12),
+                        w(16),
+                        w(20),
+                        w(24),
+                        w(28),
+                        u16::from_le_bytes([h[32], h[33]]),
+                        u16::from_le_bytes([h[34], h[35]]),
+                        w(36)
+                    )
+                })
+                .collect();
+            out.insert(what, v);
+        }
+    }
+    // (The rest, as their bytes: the same or not.)
+    for (which, what) in [
+        (dbg_stream::EXCEPTION, "exception stream"),
+        (dbg_stream::FIXUP, "fixup stream"),
+        (dbg_stream::TOKEN_RID_MAP, "token/RID map"),
+        (dbg_stream::XDATA, "xdata stream"),
+        (dbg_stream::PDATA, "pdata stream"),
+    ] {
+        if let Some(d) = stream(which) {
+            let mut h = hasher();
+            h.write(&d);
+            out.insert(
+                what,
+                vec![format!("{} bytes, hash {:016x}", d.len(), h.finish())],
+            );
+        }
+    }
+    if let Some(d) = s
+        .pdb
+        .info()
+        .named_stream("/LinkInfo")
+        .and_then(|i| s.pdb.msf().stream(i).ok())
+    {
+        let mut h = hasher();
+        h.write(&d);
+        out.insert(
+            "/LinkInfo",
+            vec![format!("{} bytes, hash {:016x}", d.len(), h.finish())],
+        );
+    }
+    out
+}
+
+fn debug_streams(a: &Side<'_>, b: &Side<'_>, o: &Options) -> Part {
+    let mut p = Part::new(
+        "debug",
+        "Debug streams (FPO, FrameData, OMAP, section headers, /LinkInfo)",
+        o.rows,
+    );
+    let (ta, tb) = (debug_texts(a), debug_texts(b));
+    let kinds: std::collections::BTreeSet<&str> = ta.keys().chain(tb.keys()).copied().collect();
+    for what in kinds {
+        let (x, y) = (ta.get(what), tb.get(what));
+        match (x, y) {
+            (Some(x), Some(y)) => {
+                if what.contains("section header") {
+                    sequence_diff(&mut p, what, x, y);
+                } else {
+                    multiset_diff(&mut p, what, x, y);
+                }
+            }
+            (Some(_), None) => p.add(format!("{what}: only in a")),
+            (None, Some(_)) => p.add(format!("{what}: only in b")),
+            (None, None) => {}
+        }
+    }
+    p.note(format!("{} | {} of them", ta.len(), tb.len()));
+    p
+}
+
 /// Compares the PDBs `a` and `b`.
 pub(crate) fn compare(a: &[u8], b: &[u8], o: &Options) -> Result<Report, String> {
     let (sa, sb) = turbonop_par::join(|| Side::open(a, &o.a), || Side::open(b, &o.b));
@@ -892,6 +1137,7 @@ pub(crate) fn compare(a: &[u8], b: &[u8], o: &Options) -> Result<Report, String>
         "globals",
         "publics",
         "names",
+        "debug",
     ])?;
     let mut parts = Vec::new();
     if o.wants("info") {
@@ -951,6 +1197,9 @@ pub(crate) fn compare(a: &[u8], b: &[u8], o: &Options) -> Result<Report, String>
         let mut p = Part::new("names", "String table (/names)", o.rows);
         multiset_diff(&mut p, "string", &names_text(&sa), &names_text(&sb));
         parts.push(p);
+    }
+    if o.wants("debug") {
+        parts.push(debug_streams(&sa, &sb, o));
     }
     Ok(Report { kind: "pdb", parts })
 }

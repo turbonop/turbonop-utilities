@@ -327,6 +327,7 @@ dependencies = [
  "turbonop-query",
  "turbonop-signature",
  "turbonop-size",
+ "turbonop-unwind",
  "turbonop-wasm",
  "turbonop-x86",
  "turbonop-xref",

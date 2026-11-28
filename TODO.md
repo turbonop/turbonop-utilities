@@ -53,12 +53,6 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
-- **Release notes.** A release's notes are GitHub's list of the pull
-  requests since the last release (0.0.11's listed every one since the
-  first, its predecessors' drafts deleted); 0.0.11's were rewritten by
-  hand from the changes (what a user would notice, by command). The
-  release workflow should draft them so: from the pull requests' titles
-  and descriptions since the last tag, for editing before it publishes.
 - **hexcavator on crates.io.** `cargo binstall hexcavator` finds the crate
   on crates.io (its metadata names the release's programs); until it is
   published there (and with it every `turbonop-*` crate it depends on),

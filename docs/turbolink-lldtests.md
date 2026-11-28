@@ -28,9 +28,9 @@ start /low /b /wait turbolink-lldtests --tests <llvm-project>\lld\test\COFF ^
 
 - **passes**: every RUN line succeeded.
 - **skipped**: not run here: another machine than x64 (ARM, ARM64, ARM64EC,
-  32-bit x86, MIPS, by REQUIRES or by what the test names), LTO (bitcode
-  inputs), another lld flavor, or a feature this setup lacks (DIA SDK,
-  mt.exe, libxml2, GNU tar).
+  32-bit x86, MIPS, by REQUIRES, by what the test names, or by its
+  `Inputs/` files' machine), LTO (bitcode inputs), another lld flavor, or a
+  feature this setup lacks (DIA SDK, mt.exe, libxml2, GNU tar).
 - **lld's wording only**: turbolink did what lld does (failed where it
   fails, succeeded where it succeeds) and only lld's own text didn't match:
   its messages' wording, `/verbose` output checked from a file.
@@ -42,6 +42,9 @@ start /low /b /wait turbolink-lldtests --tests <llvm-project>\lld\test\COFF ^
 - **image differs**: a dump of turbolink's image (llvm-readobj, llvm-objdump,
   llvm-nm, llvm-pdbutil, ...) doesn't match the test's checks.
 - **harness**: a tool other than turbolink failed.
+- **link.exe differs from lld**: a test that fails where link.exe does
+  otherwise than lld (checked with link.exe; listed below, and in the
+  runner's `LINK_EXE_DIFFERS`).
 
 Where link.exe and lld differ, turbolink follows link.exe; such tests are
 listed below as they're found, with what link.exe does.
@@ -222,4 +225,24 @@ turbolink at main after #83 (the runner's first full run):
 
 ## Where link.exe differs from lld
 
-None recorded yet.
+Checked with link.exe 14.52 on the tests' own inputs; turbolink does what
+link.exe does.
+
+- **crt-chars.test:** a read-only `.CRT$XCA` and a writable `.CRT$XCU` make
+  two `.CRT` sections in link.exe (warning LNK4078), one in lld.
+- **output-chars.test:** link.exe keeps the two `.foo` sections (and the two
+  `.bar`) of different attributes apart; `/MERGE:.foo=.bar` moves only the
+  first `.foo` (the writable one stays `.foo`); `/SECTION:.foo,rwe` sets
+  every `.foo`. lld merges sections of one name. Sections outside link.exe's
+  fixed order go in input order.
+- **export-limit.s:** link.exe fails from 65,533 exports (LNK1189: the import
+  library's three objects and one per export pass 65,535), with /NOIMPLIB
+  too; lld links 65,535.
+- **invalid-obj.test:** link.exe stops with LNK1328 (missing string table);
+  lld's message differs.
+- **wholearchive-implib.s:** link.exe writes one import directory entry for
+  `lib.dll` (it uses the import library's descriptor objects); lld two.
+- **cfguard-weak-undef.s:** link.exe 14.52 crashes (C0000005) on it.
+- **implib-name.test, lib.test, strtab.s:** link.exe makes no import library
+  from `/DEF` without objects (LNK1159, or LNK1118 on lld's `.def`); that's
+  `lib /DEF`.

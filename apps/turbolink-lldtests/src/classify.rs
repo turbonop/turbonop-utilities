@@ -32,6 +32,9 @@ pub enum Class {
     Differs(String),
     /// A tool other than turbolink failed (the test's setup).
     Harness(String),
+    /// Failed where link.exe and lld differ (checked with link.exe;
+    /// turbolink does what link.exe does): how.
+    LinkExe(String),
 }
 
 impl Class {
@@ -47,6 +50,7 @@ impl Class {
             Class::Accepts(_) => "turbolink accepts",
             Class::Differs(_) => "image differs",
             Class::Harness(_) => "harness",
+            Class::LinkExe(_) => "link.exe differs from lld",
         }
     }
 
@@ -60,7 +64,8 @@ impl Class {
             | Class::Rejects(c)
             | Class::Accepts(c)
             | Class::Differs(c)
-            | Class::Harness(c) => c,
+            | Class::Harness(c)
+            | Class::LinkExe(c) => c,
         }
     }
 }
@@ -269,8 +274,48 @@ fn lld_only(line: &str) -> Option<String> {
     None
 }
 
+/// Tests where link.exe does otherwise than lld, checked with link.exe
+/// 14.52 on the tests' own inputs (turbolink follows link.exe): how.
+const LINK_EXE_DIFFERS: &[(&str, &str)] = &[
+    (
+        "crt-chars.test",
+        "a read-only and a writable .CRT stay two sections (LNK4078)",
+    ),
+    (
+        "output-chars.test",
+        "same-named sections of other attributes stay apart; /MERGE moves only the first",
+    ),
+    (
+        "export-limit.s",
+        "LNK1189 from 65,533 exports (the import library's objects)",
+    ),
+    ("invalid-obj.test", "LNK1328: missing string table"),
+    (
+        "wholearchive-implib.s",
+        "one import directory entry (the library's descriptor objects)",
+    ),
+    ("cfguard-weak-undef.s", "link.exe 14.52 crashes on it"),
+    (
+        "implib-name.test",
+        "no import library from /DEF without objects (that's lib /DEF)",
+    ),
+    (
+        "lib.test",
+        "no import library from /DEF without objects (that's lib /DEF)",
+    ),
+    (
+        "strtab.s",
+        "no import library from /DEF without objects (that's lib /DEF)",
+    ),
+];
+
 /// The class of test `t`'s outcome `o`.
 pub fn classify(t: &Test, o: &Outcome) -> Class {
+    if let Outcome::Failed { .. } = o
+        && let Some((_, how)) = LINK_EXE_DIFFERS.iter().find(|(n, _)| *n == t.name)
+    {
+        return Class::LinkExe((*how).to_owned());
+    }
     let expected = !t.xfail.is_empty();
     let Outcome::Failed {
         line,

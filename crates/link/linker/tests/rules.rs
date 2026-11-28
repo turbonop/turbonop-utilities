@@ -596,8 +596,9 @@ fn delay_inputs(dir: &Path) {
 
 /// Delay loading as link.exe lays it out (x64): a descriptor per DLL and a
 /// null one (`.didat$2`, `$3`); the name table (`$4`) and hint/names
-/// (`$6`); the bound table (`$7`, zeros, then 0x104 bytes of room); the
-/// address table in `.data`, each slot the address of its import's
+/// (`$6`); the bound table (`$7`, zeros, then room: 0x100 bytes and a tenth
+/// of the bound tables' size, 0x102 for these 24 bytes); the address table
+/// in `.data`, each slot the address of its import's
 /// `__imp_load_` thunk (with a base relocation); the tail merge and the
 /// thunks in `.text`, the tail merge's `.pdata` entry and unwind data.
 #[test]
@@ -641,9 +642,10 @@ fn delay_loading_is_link_exes() {
         data.2 <= handle && handle < data.2 + data.1,
         "so is the module handle"
     );
-    // The name table: hint/names, then 0.
+    // The name table: hint/names, then 0; in link.exe's sort (`qsort`'s
+    // order of the two imports and the table's end: g, then f).
     let names = at_rva(&image, int, 24);
-    for (k, (hint, name)) in [(7u16, &b"f\0"[..]), (9, b"g\0")].into_iter().enumerate() {
+    for (k, (hint, name)) in [(9u16, &b"g\0"[..]), (7, b"f\0")].into_iter().enumerate() {
         let entry = u32_at(names, 8 * k);
         assert_eq!(u32_at(names, 8 * k + 4), 0);
         let hn = at_rva(&image, entry, 4);
@@ -651,8 +653,13 @@ fn delay_loading_is_link_exes() {
         assert_eq!(&hn[2..4], name);
     }
     assert_eq!(&names[16..24], &[0; 8]);
-    // The bound table: zeros, and the room after it.
-    assert!(at_rva(&image, bound, 24 + 0x104).iter().all(|&b| b == 0));
+    // The bound table: zeros, and the room after it, which ends .rdata.
+    assert!(at_rva(&image, bound, 24 + 0x102).iter().all(|&b| b == 0));
+    let rdata = sections(&image)
+        .into_iter()
+        .find(|s| s.0 == ".rdata")
+        .expect(".rdata");
+    assert_eq!(rdata.2 + rdata.1, bound + 24 + 0x102, "the room's end");
     // The address table: each slot the address of its thunk, relocated.
     let slots = at_rva(&image, iat, 24);
     let relocations = base_relocation_sites(&image);
@@ -699,10 +706,10 @@ fn delay_loading_is_link_exes() {
         at_rva(&image, u32_at(entry, 8), 8),
         &[0x01, 0x18, 0x01, 0x00, 0x18, 0xC2, 0x00, 0x00]
     );
-    // main's calls reach the slots.
+    // main's calls reach the slots (f's second, g's first).
     let call = at_rva(&image, 0x1000, 12);
-    assert_eq!(rel32(call, 0x1000, 2), iat);
-    assert_eq!(rel32(call, 0x1000, 8), iat + 8);
+    assert_eq!(rel32(call, 0x1000, 2), iat + 8);
+    assert_eq!(rel32(call, 0x1000, 8), iat);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -740,6 +747,186 @@ fn delay_unload_and_nobind() {
     let nobind = link("/DELAY:NOBIND");
     let (desc, _) = directory(&nobind, 13);
     assert_eq!(u32_at(at_rva(&nobind, desc, 32), 20), 0, "no bound table");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An object whose `main` calls each of `names` through its `__imp_` slot,
+/// in order.
+fn calling(names: &[String]) -> Vec<u8> {
+    let mut text = Vec::new();
+    let mut relocations = Vec::new();
+    let mut syms = vec![Sym("main", 1)];
+    for (i, n) in names.iter().enumerate() {
+        text.extend_from_slice(&[0xFF, 0x15, 0, 0, 0, 0]);
+        relocations.push((n32(6 * i + 2), n32(i + 1), 4u16));
+        syms.push(Sym(String::leak(format!("__imp_{n}")), 0));
+    }
+    text.push(0xC3);
+    object(&text, &relocations, &syms)
+}
+
+/// Each delay-loaded DLL (in the directory's order): its name, its name
+/// table's RVA, and the names in it, in order. Each address table slot
+/// must lead to its own import's thunk, which names the slot.
+fn delay_tables(image: &[u8]) -> Vec<(String, u32, Vec<String>)> {
+    let (desc, size) = directory(image, 13);
+    let name = |rva: u32| {
+        let s = at_rva(image, rva, 64);
+        String::from_utf8_lossy(&s[..s.iter().position(|&b| b == 0).unwrap()]).into_owned()
+    };
+    let mut out = Vec::new();
+    for d in at_rva(image, desc, size as usize).chunks(32) {
+        if u32_at(d, 4) == 0 {
+            break;
+        }
+        let (iat, int) = (u32_at(d, 12), u32_at(d, 16));
+        let mut names = Vec::new();
+        for k in 0.. {
+            let entry = u32_at(at_rva(image, int + 8 * k, 8), 0);
+            if entry == 0 {
+                break;
+            }
+            names.push(name(entry + 2));
+            let slot = u64::from_le_bytes(at_rva(image, iat + 8 * k, 8).try_into().unwrap());
+            let thunk = u32::try_from(slot - 0x1_4000_0000).unwrap();
+            assert_eq!(rel32(at_rva(image, thunk, 12), thunk, 3), iat + 8 * k);
+        }
+        out.push((name(u32_at(d, 4)), int, names));
+    }
+    out
+}
+
+/// A delay-loaded DLL's name, address and unload tables are in link.exe's
+/// sort of them, not the order the imports loaded: link.exe `qsort`s each
+/// of those sections' pieces (every delay-loaded import that loaded, and
+/// each DLL's table end, made right after its first import) by the name of
+/// the archive member each came from (without its extension, compared
+/// case-sensitively), a DLL's end after its imports. `qsort` isn't stable,
+/// so a DLL's imports come out as it leaves them: loads A, B, C give C, B,
+/// A; more than 8 pieces, it partitions (A to H: A, G, B, C, D, E, F, H);
+/// and a DLL's order depends on the other DLLs' pieces too. The DLLs'
+/// tables are in their names' order, their descriptors (and bound tables
+/// and hint/names) in the order they loaded. (Each case's order is
+/// link.exe 14.52's for the same inputs.)
+#[test]
+fn delay_tables_are_in_link_exes_sort() {
+    let dir = scratch("delay-sort");
+    let helper = archive(&[(
+        "helper.obj",
+        defining("__delayLoadHelper2"),
+        &["__delayLoadHelper2"],
+    )]);
+    std::fs::write(dir.join("delay.lib"), helper).unwrap();
+    // A library for DLL `dll` (its members named so), importing `names`.
+    let library = |file: &str, dll: &str, names: &[String]| {
+        let symbols: Vec<[String; 2]> = names
+            .iter()
+            .map(|n| [n.clone(), format!("__imp_{n}")])
+            .collect();
+        let symbols: Vec<Vec<&str>> = symbols
+            .iter()
+            .map(|s| s.iter().map(String::as_str).collect())
+            .collect();
+        let members: Vec<(&str, Vec<u8>, &[&str])> = names
+            .iter()
+            .zip(&symbols)
+            .enumerate()
+            .map(|(i, (n, s))| (dll, import(dll, n, u16::try_from(i).unwrap()), s.as_slice()))
+            .collect();
+        std::fs::write(dir.join(file), archive(&members)).unwrap();
+    };
+    let words = |s: &str| -> Vec<String> { s.split(' ').map(str::to_owned).collect() };
+    // (Each link's inputs are new files: turbolink maps its inputs for good.)
+    let links = std::cell::Cell::new(0);
+    let link = |calls: &[String], libs: &[&str], extra: &[&str]| {
+        let main = format!("main{}.obj", links.replace(links.get() + 1));
+        std::fs::write(dir.join(&main), calling(calls)).unwrap();
+        let mut w = vec!["/NODEFAULTLIB", "/ENTRY:main", "/SUBSYSTEM:CONSOLE"];
+        w.extend_from_slice(extra);
+        w.push(&main);
+        w.extend_from_slice(libs);
+        w.push("delay.lib");
+        delay_tables(&run(&dir, &w).expect("links"))
+    };
+    // One DLL: the five orders of docs/turbolink.md, then 7, 8 and 20
+    // imports.
+    for (i, (loads, want)) in [
+        ("C D", "D C"),
+        ("C D S", "S D C"),
+        ("C D X S", "S D X C"),
+        ("C Q F X E G", "G Q F X E C"),
+        ("C Q F A X E B I M G", "C M Q F A X E B I G"),
+        ("A B C D E F G", "G B C D E F A"),
+        ("A B C D E F G H", "A G B C D E F H"),
+        (
+            "A B C D E F G H I J K L M N O P Q R S T",
+            "A S B C D E F G H I J K L M N O P Q R T",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let loads = words(loads);
+        let lib = format!("x{i}.lib");
+        library(&lib, "x.dll", &loads);
+        let got = link(&loads, &[&lib], &["/DELAYLOAD:x.dll"]);
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].2, words(want), "{loads:?}");
+        let unload = link(&loads, &[&lib], &["/DELAYLOAD:x.dll", "/DELAY:UNLOAD"]);
+        assert_eq!(unload[0].2, words(want), "{loads:?}, /DELAY:UNLOAD");
+    }
+    // Two DLLs: x's 9 imports and y's 3 sort together (13 pieces: x's
+    // partition isn't what it is alone); x's tables first, by name.
+    let xs = words("q0 q1 q2 q3 q4 q5 q6 q7 q8");
+    let ys = words("r0 r1 r2");
+    library("x.lib", "x.dll", &xs);
+    library("y.lib", "y.dll", &ys);
+    let both = [xs.clone(), ys.clone()].concat();
+    let got = link(
+        &both,
+        &["x.lib", "y.lib"],
+        &["/DELAYLOAD:x.dll", "/DELAYLOAD:y.dll"],
+    );
+    assert_eq!(got[0].2, words("q0 q8 q1 q2 q3 q4 q5 q6 q7"));
+    assert_eq!(got[1].2, words("r2 r1 r0"));
+    assert!(got[0].1 < got[1].1);
+    // y loaded first: its descriptor first, but x's tables still before
+    // y's; and names compare case-sensitively (`B` before `a`).
+    let a = words("a0 a1 a2");
+    let b = words("b0 b1");
+    library("a.lib", "a.dll", &a);
+    library("b.lib", "B.dll", &b);
+    let calls = [ys.clone(), xs.clone(), a, b].concat();
+    let got = link(
+        &calls,
+        &["y.lib", "x.lib", "a.lib", "b.lib"],
+        &[
+            "/DELAYLOAD:x.dll",
+            "/DELAYLOAD:y.dll",
+            "/DELAYLOAD:a.dll",
+            "/DELAYLOAD:B.dll",
+        ],
+    );
+    let dlls: Vec<&str> = got.iter().map(|g| g.0.as_str()).collect();
+    assert_eq!(dlls, ["y.dll", "x.dll", "a.dll", "B.dll"], "the load order");
+    let orders: Vec<String> = got.iter().map(|g| g.2.join(" ")).collect();
+    assert_eq!(
+        orders,
+        [
+            "r1 r0 r2",
+            "q2 q1 q4 q5 q6 q7 q8 q0 q3",
+            "a0 a1 a2",
+            "b0 b1"
+        ]
+    );
+    let mut by_table = got.clone();
+    by_table.sort_by_key(|g| g.1);
+    let dlls: Vec<&str> = by_table.iter().map(|g| g.0.as_str()).collect();
+    assert_eq!(
+        dlls,
+        ["B.dll", "a.dll", "x.dll", "y.dll"],
+        "the names' order"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -253,12 +253,36 @@ lists every COFF group with its address and size) and by experiment:
   name, handle, address table, name table, bound table and unload table
   RVAs), `$3` (the null descriptor), `$4` (each DLL's name table), `$6`
   (hint/names, in load order), `$7` (each DLL's bound table, zeros, then
-  0x104 bytes of room, or 0x108 so that the room ends 4 bytes past a
-  multiple of 8 from the descriptors' start; not with `/DELAY:NOBIND`), `$8` (each DLL's unload
-  table with `/DELAY:UNLOAD`: a copy of the address table), and `$5` (each
-  DLL's address table, in `.data`: each slot its thunk's address, with a
-  base relocation). The DLLs are in the order their first imports
-  loaded. A `/DELAYLOAD` DLL nothing imports from is LNK4199.
+  room: 0x100 bytes and a tenth of the bound tables' size as it was
+  before `/OPT:REF`, 8 bytes for each delay-loaded import that loaded
+  and each DLL's end; the room goes with the last delay-loaded import to
+  load, so there is none if `/OPT:REF` drops that import; no `$7` with
+  `/DELAY:NOBIND`), `$8` (each DLL's unload table with `/DELAY:UNLOAD`: a
+  copy of the address table), and `$5` (each DLL's address table, in
+  `.data`: each slot its thunk's address, with a base relocation). The
+  descriptors, bound tables and hint/names are in the order the DLLs'
+  first imports (and the imports) loaded. The name, address and unload
+  tables are in link.exe's sort of them. link.exe sorts each of those
+  sections' pieces with the CRT's `qsort`. The pieces are every
+  delay-loaded import that loaded (dead ones too, dropped after the
+  sort) in load order, plus each DLL's table end, made right after the
+  DLL's first import. The key is the file name, without directory or
+  extension (`_wsplitpath`'s), of the archive member each piece came
+  from (an import library's members are named for their DLL: `KERNEL32`),
+  compared case-sensitively (`wcscmp`: `SHELL32` before `ole32`), and a
+  DLL's end sorts after its imports. So the DLLs' tables are in their
+  names' order, and since `qsort` isn't stable, equal names stay where
+  it leaves them. At 8 pieces or fewer it selection-sorts, so one DLL's
+  loads A,B,C give C,B,A and A..G give G,B,C,D,E,F,A. Above 8 it
+  partitions, so A..H give A,G,B,C,D,E,F,H, and C,Q,F,A,X,E,B,I,M,G give
+  C,M,Q,F,A,X,E,B,I,G. Each DLL's order also depends on the other DLLs'
+  pieces: x's 9 imports alone give A,H,B..G,I, but followed by y's 3 they
+  give A,I,B..H. (Found with link.exe under a debugger: its comparison
+  function, at link+0xf1304 in 14.52.37029, compares the modules' file
+  names, then piece flags that set the table end apart. Checked against
+  link.exe on about 150 links of 1 to 7 DLLs, 0 to 20 imports each, dead
+  imports, `/OPT:ICF`, `/DELAY:UNLOAD`, `/DELAY:NOBIND`.) A `/DELAYLOAD`
+  DLL nothing imports from is LNK4199.
 - **`/GUARD:CF`'s tables**, groups of `.rdata` after `.CRT`'s: `.gfids`
   (the function table: what the kept `.gfids$y` sections name, the entry
   point, `__delayLoadHelper2` with delay loading, and each exported
@@ -409,10 +433,6 @@ lists every COFF group with its address and size) and by experiment:
   (the debug directory: CodeView, VC_FEATURE, then the coffgrp entry); the
   PDB is logically link.exe's (DIA reads it; `hexcavator diff` compares
   them), not byte for byte.
-- **Still different** (to do): a delay-loaded DLL's name and address tables with two or more imports
-  (link.exe's order isn't load order, and no `qsort` of it found yet:
-  loads C,D give D,C; C,D,S give S,D,C; C,D,X,S give S,D,X,C; C,Q,F,X,E,G
-  give G,Q,F,X,E,C; C,Q,F,A,X,E,B,I,M,G give C,M,Q,F,A,X,E,B,I,G).
 
 ## Verification
 

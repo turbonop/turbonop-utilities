@@ -680,7 +680,7 @@ fn one_library_alone_is_copied() {
     // Not as turbolib would write it: a date in each member header.
     let mut original = std::fs::read(dir.join("x.lib")).unwrap();
     let archive = turbonop_archive::Archive::parse(&original).unwrap();
-    let at = archive.files().last().unwrap().header_offset as usize + 16;
+    let at = usize::try_from(archive.files().last().unwrap().header_offset).unwrap() + 16;
     original[at..at + 12].copy_from_slice(b"1234567890  ");
     std::fs::write(dir.join("in.lib"), &original).unwrap();
     for words in [

@@ -524,6 +524,11 @@ impl<'a> Image<'a> {
                 }
             }
             ChunkKind::CoffGroups => {
+                // Its signature: `LTCG` in an LTCG link (with /LTCG, or /GL
+                // objects without it), as link.exe signs it; 0 otherwise.
+                if self.r.config.ltcg || self.r.ltcg {
+                    out[..4].copy_from_slice(&0x4C54_4347u32.to_le_bytes());
+                }
                 let mut at = 4usize;
                 for (start, size, name) in self.coff_groups() {
                     out[at..at + 4].copy_from_slice(&start.to_le_bytes());

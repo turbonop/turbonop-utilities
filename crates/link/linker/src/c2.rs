@@ -42,6 +42,20 @@ pub struct IlObject {
     pub publics: Vec<Public>,
     /// Its linker directives (`.drectve`'s text).
     pub directives: Vec<u8>,
+    /// The token it was opened with: the generated code's symbols name
+    /// the object they come from by it (`TkFile`).
+    pub token: u64,
+}
+
+/// The generated code: a COFF object, and for each of its symbol records
+/// the token of the object its definition comes from (`TkFile`; 0 for none,
+/// and for auxiliary records).
+#[derive(Clone, Debug, Default)]
+pub struct Generated {
+    /// The COFF object.
+    pub coff: Vec<u8>,
+    /// Each symbol record's object token.
+    pub files: Vec<u64>,
 }
 
 /// The three lists of handles code generation (`CodeGen6`) takes, as
@@ -77,7 +91,7 @@ impl Backend {
         Err("unavailable".into())
     }
     /// Not available here.
-    pub fn generate(&mut self, _: &[&str], _: &Lists<'_>) -> Result<Vec<u8>, String> {
+    pub fn generate(&mut self, _: &[&str], _: &Lists<'_>) -> Result<Generated, String> {
         Err("unavailable".into())
     }
 }
@@ -90,7 +104,7 @@ mod imp {
     use std::ffi::c_void;
     use std::path::Path;
 
-    use super::{IlObject, Lists, Public};
+    use super::{Generated, IlObject, Lists, Public};
 
     #[link(name = "kernel32", kind = "raw-dylib")]
     unsafe extern "system" {
@@ -671,6 +685,7 @@ mod imp {
             let directives = bytes_to_nul(get_obj(file, 8, "PbDirectives")?)?;
             self.files.push(file);
             Ok(IlObject {
+                token,
                 publics,
                 directives,
             })
@@ -682,7 +697,7 @@ mod imp {
             &mut self,
             switches: &[&str],
             lists: &Lists<'_>,
-        ) -> Result<Vec<u8>, String> {
+        ) -> Result<Generated, String> {
             let h10 = qi(self.h6, &IID_OBJ_HANDLER10)?;
             let switches: Vec<Vec<u16>> = switches.iter().map(|s| wide(s)).collect();
             let mut argv: Vec<*const u16> = switches.iter().map(Vec::as_ptr).collect();
@@ -749,7 +764,7 @@ mod imp {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn write_coff(coff: *mut c_void) -> Result<Vec<u8>, String> {
+    fn write_coff(coff: *mut c_void) -> Result<Generated, String> {
         // ICOFFObj: CContrib 4, GetContribForISec 10, GetSymbolTableRO 13.
         let ncontrib = get_u32(coff, 4, "CContrib")?;
         let mut sections = Vec::new();
@@ -810,6 +825,7 @@ mod imp {
         let nsyms = get_u32(tab, 3, "CSymbols")?;
         let mut strings: Vec<u8> = vec![0; 4];
         let mut symtab: Vec<u8> = Vec::new();
+        let mut files: Vec<u64> = Vec::new();
         let mut isym = 0u32;
         while isym < nsyms {
             let mut s = std::ptr::null_mut();
@@ -849,6 +865,15 @@ mod imp {
             }
             let value = get_u32(s, 11, "Value")?;
             let n = bytes_to_nul(get_obj(s, 8, "SzName")?)?;
+            // The object it comes from: TkFile (slot 9, ULONGLONG*), as
+            // link.exe asks each symbol.
+            let mut tk = 0u64;
+            // SAFETY: a getter of a ULONGLONG*.
+            let hr = unsafe {
+                slot::<unsafe extern "system" fn(*mut c_void, *mut u64) -> Hr>(s, 9)(s, &raw mut tk)
+            };
+            files.push(if hr < 0 { 0 } else { tk });
+            files.extend(std::iter::repeat_n(0, usize::from(naux)));
             let mut rec = [0u8; 18];
             if n.len() <= 8 {
                 rec[..n.len()].copy_from_slice(&n);
@@ -985,6 +1010,6 @@ mod imp {
         file.extend_from_slice(&body);
         file.extend_from_slice(&symtab);
         file.extend_from_slice(&strings);
-        Ok(file)
+        Ok(Generated { coff: file, files })
     }
 }

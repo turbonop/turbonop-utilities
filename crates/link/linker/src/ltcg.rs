@@ -129,7 +129,145 @@ impl Ltcg for Host {
             imports: &imports,
             dead: &dead,
         };
-        backend.generate(switches, &lists).map(leak).map_err(err)
+        // (link.exe's lines around code generation, on its output, with
+        // /LTCG:STATUS too: its progress meter isn't drawn.)
+        println!("Generating code");
+        let mut generated = backend.generate(switches, &lists).map_err(err)?;
+        println!("Finished generating code");
+        source_order(&mut generated.coff, &generated.files, &self.opened);
+        if let Some(p) = std::env::var_os("TURBOLINK_LTCG_KEEP") {
+            // (The generated object, kept for study.)
+            let _ = std::fs::write(p, &generated.coff);
+        }
+        Ok(leak(generated.coff))
+    }
+}
+
+/// Puts the generated object's sections in link.exe's order: each `/GL`
+/// object's code in the order the objects were opened, and within one
+/// object in its source's order (the reverse of the order the back end
+/// enumerates its publics in). A section is placed by the symbol that
+/// leads it (the first one defined in it), found by name among the
+/// publics of the object its symbol comes from (`TkFile`, `files`); an
+/// associative section goes with the one it is associated with. Sections
+/// placed neither way keep their places. Only the section table is
+/// reordered (and the symbols' section numbers with it): the contents stay.
+fn source_order(coff: &mut [u8], files: &[u64], opened: &[Opened]) {
+    let u16_at = |b: &[u8], at: usize| u16::from_le_bytes([b[at], b[at + 1]]);
+    let u32_at = |b: &[u8], at: usize| u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]]);
+    if coff.len() < 20 {
+        return;
+    }
+    let nsec = usize::from(u16_at(coff, 2));
+    let symbols_at = u32_at(coff, 8) as usize;
+    let nsyms = u32_at(coff, 12) as usize;
+    let headers_at = 20 + usize::from(u16_at(coff, 16));
+    let strings_at = symbols_at + 18 * nsyms;
+    if nsec < 2 || headers_at + 40 * nsec > coff.len() || strings_at > coff.len() {
+        return;
+    }
+    let name = |coff: &[u8], at: usize| -> Vec<u8> {
+        let raw = &coff[at..at + 8];
+        let bytes = if raw[..4] == [0; 4] {
+            let off = strings_at + u32_at(raw, 4) as usize;
+            let tail = coff.get(off..).unwrap_or(&[]);
+            &tail[..tail.iter().position(|&c| c == 0).unwrap_or(tail.len())]
+        } else {
+            &raw[..raw.iter().position(|&c| c == 0).unwrap_or(8)]
+        };
+        bytes.to_vec()
+    };
+    // Each section's leading symbol (its name and object) and, for an
+    // associative section, the section it goes with (1-based).
+    let mut leader: Vec<Option<(Vec<u8>, u64)>> = vec![None; nsec + 1];
+    let mut parent = vec![0usize; nsec + 1];
+    let mut i = 0;
+    while i < nsyms {
+        let at = symbols_at + 18 * i;
+        let section = i16::from_le_bytes([coff[at + 12], coff[at + 13]]);
+        let class = coff[at + 16];
+        let naux = usize::from(coff[at + 17]);
+        if let Ok(s) = usize::try_from(section)
+            && (1..=nsec).contains(&s)
+        {
+            if naux > 0 && class == 3 && i + 1 < nsyms {
+                // A section's definition: its selection, and with 5 the
+                // section it is associated with.
+                let aux = at + 18;
+                if coff[aux + 14] == 5 {
+                    parent[s] = usize::from(u16_at(coff, aux + 12));
+                }
+            } else if naux == 0 && matches!(class, 2 | 3) && leader[s].is_none() {
+                leader[s] = Some((name(coff, at), files.get(i).copied().unwrap_or(0)));
+            }
+        }
+        i += 1 + naux;
+    }
+    // Each object's publics' places, by name.
+    let places: Vec<Map<&[u8], usize>> = opened
+        .iter()
+        .map(|o| {
+            let mut m = Map::default();
+            for (j, p) in o.object.publics.iter().enumerate() {
+                m.entry(&p.name[..]).or_insert(j);
+            }
+            m
+        })
+        .collect();
+    let key_of = |s: usize| -> Option<(usize, usize)> {
+        let (n, tk) = leader.get(s)?.as_ref()?;
+        let k = opened.iter().position(|o| o.object.token == *tk)?;
+        let j = *places[k].get(&n[..])?;
+        Some((k, opened[k].object.publics.len() - j))
+    };
+    let keys: Vec<Option<(usize, usize)>> = (0..=nsec)
+        .map(|s| {
+            if s == 0 {
+                None
+            } else if parent[s] != 0 && parent[s] != s {
+                key_of(parent[s])
+            } else {
+                key_of(s)
+            }
+        })
+        .collect();
+    let placed: Vec<usize> = (1..=nsec).filter(|&s| keys[s].is_some()).collect();
+    let mut sorted = placed.clone();
+    sorted.sort_by_key(|&s| (keys[s], s));
+    if sorted == placed {
+        return;
+    }
+    // new_number[old] = new; the table rewritten.
+    let mut new_number: Vec<usize> = (0..=nsec).collect();
+    for (&slot, &s) in placed.iter().zip(&sorted) {
+        new_number[s] = slot;
+    }
+    let old: Vec<u8> = coff[headers_at..headers_at + 40 * nsec].to_vec();
+    for s in 1..=nsec {
+        let to = headers_at + 40 * (new_number[s] - 1);
+        coff[to..to + 40].copy_from_slice(&old[40 * (s - 1)..40 * s]);
+    }
+    let mut i = 0;
+    while i < nsyms {
+        let at = symbols_at + 18 * i;
+        let section = i16::from_le_bytes([coff[at + 12], coff[at + 13]]);
+        let class = coff[at + 16];
+        let naux = usize::from(coff[at + 17]);
+        if let Ok(s) = usize::try_from(section)
+            && (1..=nsec).contains(&s)
+        {
+            let n = i16::try_from(new_number[s]).unwrap_or(section);
+            coff[at + 12..at + 14].copy_from_slice(&n.to_le_bytes());
+            if naux > 0 && class == 3 && i + 1 < nsyms && coff[at + 18 + 14] == 5 {
+                let aux = at + 18;
+                let p = usize::from(u16_at(coff, aux + 12));
+                if (1..=nsec).contains(&p) {
+                    let n = u16::try_from(new_number[p]).unwrap_or(0);
+                    coff[aux + 12..aux + 14].copy_from_slice(&n.to_le_bytes());
+                }
+            }
+        }
+        i += 1 + naux;
     }
 }
 

@@ -63,7 +63,21 @@ pub fn entries(r: &Resolved, resources: Option<&crate::resources::Rsrc>) -> Vec<
     if !r.config.exports.is_empty() {
         walk.push(EXPORT_COMP_ID);
     }
-    walk.extend(r.files.iter().rev().filter(|f| f.library.is_none()).map(id));
+    // The command line's objects, the last first. The code generated for
+    // /GL objects is the last of them (it joins the link last, though it
+    // is laid out first), and counts once for each /GL object, as link.exe
+    // counts it.
+    let generated = |f: &&crate::resolve::File| f.name == crate::resolve::LTCG_FILE;
+    if let Some(f) = r.files.iter().find(generated) {
+        walk.extend(std::iter::repeat_n(id(f), r.ltcg_objects.max(1) as usize));
+    }
+    walk.extend(
+        r.files
+            .iter()
+            .rev()
+            .filter(|f| f.library.is_none() && !generated(f))
+            .map(id),
+    );
     // The libraries as they are searched: the command line's first.
     for &lib in &r.library_order {
         let mut members: Vec<&crate::resolve::File> =

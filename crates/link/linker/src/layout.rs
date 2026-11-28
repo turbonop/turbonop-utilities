@@ -466,12 +466,16 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
     // in order, then each library's, the last loaded first (LIBCMT's
     // ucrt_detection.obj's __scrt_ucrt_dll_is_in_use before
     // dyn_tls_dtor.obj's __dyn_tls_dtor_callback before dyn_tls_init.obj's
-    // __dyn_tls_init_callback); one file's by name.
+    // __dyn_tls_init_callback); one file's by name. The code generated for
+    // /GL objects joins the link last, and so do its commons.
     let owner = |g: u32| -> (u32, u32, &[u8]) {
         let global = &r.globals[g as usize];
         let Def::Common { file, .. } = global.def else {
             return (0, 0, global.name);
         };
+        if r.files[file as usize].name == crate::resolve::LTCG_FILE {
+            return (u32::MAX, 0, global.name);
+        }
         match r.files[file as usize].library {
             None => (0, file, global.name),
             Some(lib) => (lib + 1, u32::MAX - file, global.name),

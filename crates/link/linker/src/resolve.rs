@@ -237,6 +237,8 @@ pub struct Resolved {
     pub library_order: Vec<u32>,
     /// Whether the link had `/GL` objects (their code generated).
     pub ltcg: bool,
+    /// How many `/GL` objects there were.
+    pub ltcg_objects: u32,
 }
 
 /// Maps `path`, for the rest of the process (inputs are never unmapped:
@@ -317,6 +319,8 @@ struct Linker {
     stand_ins: Vec<u32>,
     /// Whether code was generated for `/GL` objects.
     generated: bool,
+    /// How many `/GL` objects there were.
+    ltcg_objects: u32,
     /// Time spent: reading libraries' indexes, parsing members, adding
     /// files' symbols.
     t_index: std::time::Duration,
@@ -782,12 +786,11 @@ impl Linker {
         match stand_in {
             Ok(object) => {
                 if self.stand_ins.is_empty() && !self.config.ltcg {
-                    // As link.exe restarts such a link with /LTCG.
-                    self.errors.push(LinkError::warning(
-                        4197,
-                        "/GL objects found; linking with /LTCG: add /LTCG to the link command line"
-                            .into(),
-                    ));
+                    // As link.exe restarts such a link with /LTCG, and
+                    // says so (on its output, with no number).
+                    println!(
+                        "{name} : MSIL .netmodule or module compiled with /GL found; restarting link with /LTCG; add /LTCG to the link command line to improve linker performance"
+                    );
                 }
                 self.stand_ins.push(place);
                 self.add_file(name, LoadedKind::Object(object));
@@ -868,6 +871,7 @@ impl Linker {
             }
         }
         self.renumber_files(&new_place);
+        self.ltcg_objects = crate::n32(self.stand_ins.len());
         self.stand_ins.clear();
         // What the files left refer to is wanted (by the first of them to
         // name it), as are the command line's names.
@@ -1484,6 +1488,7 @@ pub fn resolve_with(
         ltcg,
         stand_ins: Vec::new(),
         generated: false,
+        ltcg_objects: 0,
         t_index: std::time::Duration::ZERO,
         t_members: std::time::Duration::ZERO,
         t_add: std::time::Duration::ZERO,
@@ -1557,6 +1562,12 @@ pub fn resolve_with(
     times.push(("  libraries' indexes", lap.elapsed()));
     lap = std::time::Instant::now();
     l.search_libraries();
+    if l.stand_ins.is_empty() && l.config.ltcg {
+        // (link.exe's note, on its output.)
+        println!(
+            "LINK : /LTCG specified but no code generation required; remove /LTCG from the link command line to improve linker performance"
+        );
+    }
     if !l.stand_ins.is_empty() {
         times.push(("  library search (before code generation)", lap.elapsed()));
         lap = std::time::Instant::now();
@@ -1666,6 +1677,7 @@ pub fn resolve_with(
         .collect();
     Some(Resolved {
         ltcg: l.generated,
+        ltcg_objects: l.ltcg_objects,
         library_order,
         files: l.files,
         globals: l.globals,

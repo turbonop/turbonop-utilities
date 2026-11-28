@@ -24,6 +24,10 @@ pub fn describe(data: &[u8]) -> String {
     if let Some(desc) = describe_macho(data) {
         return desc;
     }
+    if turbonop_dex::header::is_dex(data) {
+        let version = String::from_utf8_lossy(&data[4..7]).into_owned();
+        return format!("Android DEX file (version {version})");
+    }
     if turbonop_wasm::is_wasm(data) {
         let version = data
             .get(4..8)

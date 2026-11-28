@@ -599,6 +599,77 @@ fn elf_details(e: &turbonop_elf::ElfFile<'_>) -> Vec<String> {
     out
 }
 
+/// What `hexcavator info` adds for an Android DEX file (each of a
+/// container's): its version, whether its checksum and signature are
+/// right, how many strings, types, fields, methods, and classes; how many
+/// methods have code, and its bytes.
+fn dex_details(data: &[u8]) -> Vec<String> {
+    let all = match turbonop_dex::Dex::parse_all(data) {
+        Ok(all) => all,
+        Err(e) => return vec![format!("unreadable: {e}")],
+    };
+    let mut out = Vec::new();
+    if all.len() > 1 {
+        out.push(format!("container of {} DEX files", all.len()));
+    }
+    for d in &all {
+        let h = d.header();
+        let v = d.verify();
+        let ok = |b: bool| if b { "valid" } else { "INVALID" };
+        let at = if all.len() > 1 {
+            format!(" at {:#x}", d.offset())
+        } else {
+            String::new()
+        };
+        out.push(format!(
+            "DEX {}{at}, {} bytes: checksum {:08x} {}, signature {} {}",
+            h.version_str(),
+            h.file_size,
+            h.checksum,
+            ok(v.checksum_ok),
+            h.signature
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>(),
+            ok(v.signature_ok)
+        ));
+        out.push(format!(
+            "{} strings, {} types, {} prototypes, {} fields, {} methods, {} classes",
+            h.string_ids_size,
+            h.type_ids_size,
+            h.proto_ids_size,
+            h.field_ids_size,
+            h.method_ids_size,
+            h.class_defs_size
+        ));
+        let (mut methods, mut code_bytes) = (0u64, 0u64);
+        for s in turbonop_dex::size::class_sizes(d).into_iter().flatten() {
+            for m in s.methods.iter().filter(|m| m.code != 0) {
+                methods += 1;
+                code_bytes += u64::from(m.code);
+            }
+        }
+        out.push(format!(
+            "{methods} methods with code, {code_bytes} bytes of code items"
+        ));
+        let extra: Vec<String> = [
+            (d.call_site_count(), "call sites"),
+            (d.method_handle_count(), "method handles"),
+        ]
+        .iter()
+        .filter(|(n, _)| *n != 0)
+        .map(|(n, what)| format!("{n} {what}"))
+        .collect();
+        if !extra.is_empty() {
+            out.push(extra.join(", "));
+        }
+        if d.hiddenapi_offset().is_some() {
+            out.push("hidden-API flags".to_string());
+        }
+    }
+    out
+}
+
 /// What `hexcavator info` adds for a WebAssembly module: its functions, data,
 /// custom sections, and debug links.
 fn wasm_details(m: &turbonop_wasm::Module<'_>) -> Vec<String> {
@@ -937,6 +1008,10 @@ fn info(args: &[String]) -> ExitCode {
                     }
                 } else if let Ok(m) = turbonop_wasm::Module::parse(&map) {
                     for line in wasm_details(&m) {
+                        let _ = writeln!(out, "  {line}");
+                    }
+                } else if turbonop_dex::header::is_dex(&map) {
+                    for line in dex_details(&map) {
                         let _ = writeln!(out, "  {line}");
                     }
                 } else if let Ok(o) = turbonop_pe::ltcg::LtcgObject::parse(&map) {

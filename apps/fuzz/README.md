@@ -59,6 +59,7 @@ Without it, mutation is blind (but much faster per input).
 | `coff`, `archive` | `dump /all`, `size` by sections, symbols, members |
 | `elf`, `macho`, `wasm` | `size` by every data source, `-disassemble` (text and JSON) |
 | `clr` | .NET assemblies and portable PDBs: every table, heap, name, signature, method body and its IL, custom attribute, resource, and PDB record; `info` |
+| `dex` | Android DEX files (and 041 containers): every id, class, code item and its instructions (as dexdump renders them), payload, debug information, annotation and encoded value, hidden-API flag, call site, method handle, class size; `info` |
 | `pdb` | `pdb -all`, `types`, and every `DebugInfo` query: symbols, lines, inline sites, annotations, classes, variables, layouts, values |
 | `etl` | the ETL reader: buffers, records, extended data, LZ77 decompression, the timestamp merge |
 | `etl-import` | importing ETL into the trace model: kernel event decoding, stack matching |

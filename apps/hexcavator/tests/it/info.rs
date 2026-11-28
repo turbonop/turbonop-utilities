@@ -77,3 +77,25 @@ fn managed() {
             .contains("\n  module Sample.Extra.netmodule (no assembly manifest)\n")
     );
 }
+
+#[test]
+fn dex() {
+    assert_eq!(
+        info("dex/Sample-039.dex"),
+        "Android DEX file (version 039), 21736 bytes\n  \
+         DEX 039, 21736 bytes: checksum 2e7f522b valid, signature d6a1a69d99f37dede50c9c57aeeaccf4ed10f4cc valid\n  \
+         413 strings, 101 types, 75 prototypes, 65 fields, 153 methods, 20 classes\n  \
+         76 methods with code, 5557 bytes of code items\n  \
+         2 call sites, 11 method handles\n"
+    );
+    let c = info("dex/Handmade-container.dex");
+    assert!(
+        c.starts_with("Android DEX file (version 041), 4000 bytes\n  container of 2 DEX files\n"),
+        "{c}"
+    );
+    assert!(
+        c.contains("\n  DEX 041 at 0xe24, 380 bytes: checksum fe6129a4 valid, "),
+        "{c}"
+    );
+    assert!(c.contains("\n  hidden-API flags\n"), "{c}");
+}

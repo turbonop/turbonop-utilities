@@ -25,6 +25,7 @@ turbonop-arm64.workspace = true
 turbonop-arm32.workspace = true
 turbonop-wasm.workspace = true
 turbonop-clr.workspace = true
+turbonop-dex.workspace = true
 turbonop-code.workspace = true
 turbonop-debuginfo.workspace = true
 turbonop-image.workspace = true

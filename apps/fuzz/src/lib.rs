@@ -90,6 +90,9 @@ fn is_clr(_: &Path, d: &[u8]) -> bool {
         || (starts(d, b"MZ")
             && turbonop_pe::PeFile::parse_image(d).is_ok_and(|pe| pe.clr().is_some()))
 }
+fn is_dex(_: &Path, d: &[u8]) -> bool {
+    turbonop_dex::header::is_dex(d)
+}
 fn is_wasm(_: &Path, d: &[u8]) -> bool {
     starts(d, b"\0asm")
 }
@@ -403,6 +406,106 @@ fn clr(data: &[u8], s: &Scratch) {
         let f = s.file("input-clr.bin", data);
         hexcavator(&["info", &f]);
     }
+}
+
+/// Android DEX files: every id, class's data, code item and its
+/// instructions (rendered), payload, debug information, annotation,
+/// encoded value, hidden-API flag, call site, and method handle; sizes;
+/// `info`.
+fn dex(data: &[u8], s: &Scratch) {
+    use turbonop_dex::text::{self, Style};
+    use turbonop_dex::{Dex, annotations, debug::DebugInfoItem, insn, size};
+    fn one(d: &Dex<'_>) {
+        let _ = (d.verify(), d.map());
+        for i in 0..d.string_count() {
+            let _ = d.string(i);
+        }
+        for i in 0..d.type_count() {
+            let _ = d.type_name(i);
+        }
+        let mut t = Vec::new();
+        for i in 0..d.proto_count() {
+            text::proto_signature(d, i, Style::Unicode, &mut t);
+        }
+        for i in 0..d.field_count() {
+            text::field_ref(d, i, Style::Dexdump, &mut t);
+        }
+        for i in 0..d.method_count() {
+            text::method_ref(d, i, Style::Unicode, &mut t);
+        }
+        for i in 0..d.method_handle_count() {
+            let _ = d.method_handle(i);
+        }
+        for i in 0..d.call_site_count() {
+            for v in d.call_site(i).unwrap_or_default() {
+                text::encoded_value(d, &v, Style::Unicode, &mut t);
+            }
+        }
+        let hidden = d.hiddenapi().ok().flatten();
+        for i in 0..d.class_def_count() {
+            let Ok(c) = d.class_def(i) else { continue };
+            let _ = d.interfaces(&c);
+            for v in d.static_values(&c).unwrap_or_default() {
+                text::encoded_value(d, &v, Style::Dexdump, &mut t);
+            }
+            if let Ok(dir) = annotations::AnnotationsDirectory::parse(d.data(), c.annotations_off) {
+                let mut sets = vec![dir.class_annotations_off];
+                sets.extend(dir.fields.iter().chain(&dir.methods).map(|x| x.1));
+                for &(_, off) in &dir.parameters {
+                    sets.extend(
+                        annotations::annotation_set_ref_list(d.data(), off).unwrap_or_default(),
+                    );
+                }
+                for s in sets {
+                    for a in annotations::annotations_of_set(d.data(), s).unwrap_or_default() {
+                        let v = turbonop_dex::EncodedValue::Annotation(a.annotation);
+                        text::encoded_value(d, &v, Style::Unicode, &mut t);
+                    }
+                }
+            }
+            let Ok(Some(cd)) = d.class_data(&c) else {
+                continue;
+            };
+            if let Some(h) = &hidden {
+                let _ = h.class_flags(i, &cd);
+            }
+            for m in cd.methods() {
+                let Ok(code) = d.code_item(m.code_off) else {
+                    continue;
+                };
+                for i in insn::decode(code.insns).flatten() {
+                    let _ = text::instruction(d, &i, Style::Dexdump);
+                    let _ = (
+                        insn::payload_of(code.insns, &i),
+                        insn::payload(code.insns, &i),
+                    );
+                }
+                if let Ok(debug) = DebugInfoItem::parse(d.data(), code.debug_info_off) {
+                    let _ = debug.positions();
+                    let _ = debug.locals(
+                        d,
+                        m.method_idx,
+                        m.access_flags & 8 != 0,
+                        code.registers_size,
+                        code.ins_size,
+                        code.insns_size(),
+                    );
+                }
+            }
+        }
+        let _ = size::class_sizes(d);
+        t.clear();
+    }
+    match Dex::parse_all(data) {
+        Ok(all) => all.iter().for_each(one),
+        Err(_) => {
+            if let Ok(d) = Dex::parse(data) {
+                one(&d);
+            }
+        }
+    }
+    let f = s.file("input-dex.bin", data);
+    hexcavator(&["info", &f]);
 }
 
 fn pdb(data: &[u8], s: &Scratch) {
@@ -914,6 +1017,12 @@ pub const TARGETS: &[Target] = &[
         about: ".NET assemblies and portable PDBs: metadata, signatures, IL, attributes, resources",
         seeds: is_clr,
         run: clr,
+    },
+    Target {
+        name: "dex",
+        about: "Android DEX files: ids, class data, code and its instructions, debug information, annotations, hidden-API flags",
+        seeds: is_dex,
+        run: dex,
     },
     Target {
         name: "pdb",

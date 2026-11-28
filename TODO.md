@@ -288,8 +288,39 @@ machine, not only native images (PE, ELF, Mach-O) and WebAssembly:
 - **Java.** Class files (constant pool, fields, methods, attributes,
   bytecode decoded) and JARs (zip archives of them, with their
   manifests): size by package, class, and method.
-- **Android.** DEX files (and APKs and AABs that hold them): their
-  classes, methods, Dalvik bytecode, and size by package.
+- **Android DEX files.** The parser is done: `turbonop-dex` reads DEX
+  files of versions 035 to 041 and 041's containers of several: the
+  header (Adler-32 checksum and SHA-1 signature verified), the map, every
+  id table (strings decoded from MUTF-8), type lists, class data, code
+  items with tries and catch handlers, debug information run to
+  positions and locals, annotations and every kind of encoded value,
+  static values, call sites, method handles, hidden-API flags, Dalvik
+  bytecode (every opcode and format, the payloads) rendered as dexdump
+  writes it with indices resolved, Java type names, and each class's and
+  method's bytes (`size::class_sizes`, `package_totals`). Tested against
+  dexdump byte for byte on d8's output for each version
+  (tools/dex/build.cmd), on hand-written files with every opcode, debug
+  opcode, value kind and hidden-API flag (tests/writer), and, where
+  there's an SDK, live on a two-file container and (`--ignored`) on d8's
+  own jar. `hexcavator info` shows each file's version, checksum and
+  signature, and counts. Left:
+  - **APKs and AABs**: the `classes*.dex` in them, once the zip reader
+    (`turbonop-zip`, from the Java work) is on main; and their resources
+    and native libraries, as a container's members for `size`.
+  - **`size`**: classes, methods, and packages as compilands (the
+    numbers are `size::class_sizes`'), with what belongs to no class:
+    ids, string data, the map, padding; shared annotation and debug
+    items are counted for the first class that refers to them.
+  - **`dump`, `symbols`, disassembly**: classes and methods as symbols
+    (`names` for Java's spellings), bytecode from `insn` and `text`;
+    `info -json`'s fields.
+  - **The extension's pages** for all of it.
+  - **Optimized formats**: odex/vdex/oat (ART's AOT output, ELF with
+    `oatdata`), CompactDex (`cdex`); dexdump's `-l xml` and `-g` CFGs
+    aren't needed.
+  - **Hidden-API flag names beyond 0–7 and 15**: dexdump calls 8–14
+    `UNSUPPORTED`; ours say `value-N` until ART's source says what they
+    are.
 - **Others to weigh:** Python bytecode (`.pyc`), Lua bytecode, BEAM
   (Erlang), and anything else with its own instruction set and metadata
   a user would want sized.

@@ -1039,3 +1039,184 @@ fn the_manifest_is_where_link_exe_puts_it() {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `/MAP` writes link.exe's map (CRLF lines): the image's name, its time
+/// stamp, its preferred load address, the groups (an empty `.edata` among
+/// them), the publics by address (link.exe's 29 absolutes first, each
+/// function marked `f`, each with its object), `__volatile_metadata`, the
+/// entry point, and the statics.
+#[test]
+fn the_map_is_link_exes() {
+    let dir = scratch("map");
+    std::fs::write(dir.join("main.obj"), defining("main")).unwrap();
+    std::fs::write(dir.join("other.obj"), defining("other")).unwrap();
+    let map = dir.join("out.map");
+    run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/ENTRY:main",
+            "/SUBSYSTEM:CONSOLE",
+            &format!("/MAP:{}", input(&dir, "out.map")),
+            "main.obj",
+            "other.obj",
+        ],
+    )
+    .expect("links");
+    let text = String::from_utf8(std::fs::read(&map).unwrap()).unwrap();
+    assert!(
+        text.ends_with("\r\n") && !text.replace("\r\n", "").contains('\n'),
+        "CRLF lines"
+    );
+    let lines: Vec<&str> = text.split("\r\n").collect();
+    assert_eq!(lines[0], " out");
+    assert!(lines[2].starts_with(" Timestamp is "), "{}", lines[2]);
+    assert_eq!(lines[4], " Preferred load address is 0000000140000000");
+    assert_eq!(
+        lines[6],
+        " Start         Length     Name                   Class"
+    );
+    assert_eq!(
+        lines[7],
+        " 0001:00000000 00000011H .text                   CODE"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with(" 0002:") && l.contains(" 00000000H .edata ")),
+        "the empty .edata group"
+    );
+    let publics = lines
+        .iter()
+        .position(|l| l.contains("Publics by Value"))
+        .expect("the publics");
+    assert_eq!(
+        lines[publics],
+        "  Address         Publics by Value              Rva+Base               Lib:Object"
+    );
+    assert_eq!(
+        lines[publics + 2],
+        " 0000:00000000       __AbsoluteZero             0000000000000000     <absolute>"
+    );
+    let absolutes = lines.iter().filter(|l| l.ends_with("<absolute>")).count();
+    assert_eq!(absolutes, 29);
+    assert!(lines.contains(
+        &" 0001:00000000       main                       0000000140001000 f   main.obj"
+    ));
+    assert!(lines.contains(
+        &" 0001:00000010       other                      0000000140001010 f   other.obj"
+    ));
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains(" __volatile_metadata ") && l.ends_with("<linker-defined>")),
+        "__volatile_metadata"
+    );
+    let entry = lines
+        .iter()
+        .position(|l| l.starts_with(" entry point at"))
+        .expect("the entry point");
+    assert_eq!(lines[entry], " entry point at        0001:00000000");
+    assert_eq!(lines[entry + 2], " Static symbols");
+    // And hexcavator reads it.
+    let parsed = turbonop_linkmap::parse(&text);
+    assert_eq!(parsed.module, "out");
+    assert_eq!(parsed.load_address, Some(0x1_4000_0000));
+    assert_eq!(parsed.entry_point, Some((1, 0)));
+    assert!(
+        parsed
+            .groups
+            .iter()
+            .any(|g| g.name == ".text" && g.length == 0x11)
+    );
+    let main = parsed
+        .symbols
+        .iter()
+        .find(|s| s.name == "main")
+        .expect("main");
+    assert_eq!(
+        (main.va, main.function, main.is_static),
+        (0x1_4000_1000, true, false)
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A DLL's export object (`.exp`, beside its import library) is link.exe's:
+/// an x64 object stamped 0xFFFFFFFF of `.edata` (the export directory, its
+/// addresses left to relocations), `.debug$S` (the object's name, the
+/// linker, its environment, and an `S_EXPORT` per export), and `.drectve`
+/// (with a `.def` file's `LIBRARY`: `/DLL /OUT:` its DLL); its symbols
+/// `@comp.id`, `@feat.00`, the two sections', the directory's parts, then
+/// the exports' (undefined). Without a `.def` file, no `.drectve`; with
+/// `/NOIMPLIB`, still an export object; none with `/NOEXP`.
+#[test]
+fn the_export_object_is_link_exes() {
+    let dir = scratch("exp");
+    std::fs::write(dir.join("f.obj"), defining("func")).unwrap();
+    std::fs::write(
+        dir.join("f.def"),
+        "LIBRARY named
+EXPORTS
+    func
+",
+    )
+    .unwrap();
+    let def = format!("/DEF:{}", input(&dir, "f.def"));
+    let link = |extra: &[&str]| {
+        let mut words = vec!["/NODEFAULTLIB", "/NOENTRY", "/DLL"];
+        words.extend_from_slice(extra);
+        words.push("f.obj");
+        run(&dir, &words).expect("links");
+    };
+    link(&[&def]);
+    let exp = std::fs::read(dir.join("out.exp")).expect("the export object");
+    assert!(dir.join("out.lib").exists(), "the import library");
+    assert_eq!(u16_at(&exp, 0), 0x8664);
+    assert_eq!(u16_at(&exp, 2), 3, "three sections");
+    assert_eq!(u32_at(&exp, 4), 0xFFFF_FFFF, "the time stamp");
+    let section = |i: usize| {
+        let h = 20 + 40 * i;
+        let name = String::from_utf8_lossy(&exp[h..h + 8])
+            .trim_end_matches('\0')
+            .to_owned();
+        let (size, at) = (u32_at(&exp, h + 16) as usize, u32_at(&exp, h + 20) as usize);
+        (name, u32_at(&exp, h + 36), exp[at..at + size].to_vec())
+    };
+    let (edata, debug, drectve) = (section(0), section(1), section(2));
+    assert_eq!((edata.0.as_str(), edata.1), (".edata", 0x4000_0040));
+    assert_eq!((debug.0.as_str(), debug.1), (".debug$S", 0x4210_0040));
+    assert_eq!((drectve.0.as_str(), drectve.1), (".drectve", 0x200));
+    // The directory: time stamp 0xFFFFFFFF, one function, one name.
+    assert_eq!(u32_at(&edata.2, 4), 0xFFFF_FFFF);
+    assert_eq!((u32_at(&edata.2, 20), u32_at(&edata.2, 24)), (1, 1));
+    assert_eq!(&drectve.2[..3], b"\xEF\xBB\xBF", "a byte order mark");
+    assert_eq!(&drectve.2[3..], b" /DLL /OUT:named.dll");
+    // .debug$S: CodeView 4, then S_OBJNAME naming the object.
+    assert_eq!(u32_at(&debug.2, 0), 4);
+    assert!(debug.2.windows(7).any(|w| w == b"out.exp"), "S_OBJNAME");
+    assert!(
+        debug.2.windows(18).any(|w| w == b"Microsoft (R) LINK"),
+        "S_COMPILE3"
+    );
+    assert!(debug.2.windows(5).any(|w| w == b"func\0"), "S_EXPORT");
+    // Without a .def file: no .drectve.
+    link(&["/EXPORT:func"]);
+    let exp = std::fs::read(dir.join("out.exp")).expect("the export object");
+    assert_eq!(u16_at(&exp, 2), 2, "two sections");
+    // With /NOIMPLIB, the export object alone; with /NOEXP, none.
+    for f in ["out.exp", "out.lib"] {
+        std::fs::remove_file(dir.join(f)).unwrap();
+    }
+    link(&[&def, "/NOIMPLIB"]);
+    assert!(
+        dir.join("out.exp").exists() && !dir.join("out.lib").exists(),
+        "/NOIMPLIB"
+    );
+    std::fs::remove_file(dir.join("out.exp")).unwrap();
+    link(&[&def, "/NOEXP"]);
+    assert!(
+        !dir.join("out.exp").exists() && dir.join("out.lib").exists(),
+        "/NOEXP"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

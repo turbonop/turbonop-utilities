@@ -723,15 +723,21 @@ same but for the PDB's GUID, age, and name.
 - **Not yet, for native x64 images:** delay loading on other machines;
   `/GUARD:CF` for objects not compiled with `/guard:cf` (link.exe's own
   address-taken analysis), `/GUARD:XFG`, and an exported function that is
-  also a target (its flag); `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
-  format, the `.exp` file, `/INCREMENTAL`'s padding (it links fully),
+  also a target (its flag); `/ORDER`, `/FUNCTIONPADMIN`, `/MAPINFO`'s
+  other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
+  library X and object Y" message, a `.def` file's forwarders in the
+  `.exp`, `/INCREMENTAL`'s padding (it links fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
   members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`, `/Brepro`'s hash.
-- **Byte identity, still different:** a DLL without imports or unwind
-  data (`/NOENTRY /NODEFAULTLIB`): link.exe puts `.edata` right after the
-  `.rdata` group, before `.rdata$voltmd`, not with the `.idata` groups; a
-  delay-loaded DLL's tables with
+- **Byte identity, still different:** the import library (`.lib` for a
+  DLL): link.exe's descriptor members have a `.debug$S` (3 sections to
+  turbolink's 2), its import members are in name order (turbolink's
+  reversed), and under `/Brepro` its member dates are -1 (turbolink's 0)
+  and its time stamps hashes; the map's `$R` symbols with two or more
+  `.res` files or an embedded manifest (cvtres's object for them: which
+  offsets, which origin), and a map of an LLVM-size link checked line for
+  line; a delay-loaded DLL's tables with
   two or more imports (link.exe's order, docs/turbolink.md);
   more large programs to check (`opt`, `clang`: `hexcavator diff` them;
   `llvm-tblgen` and `llc` are link.exe's images).

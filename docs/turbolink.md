@@ -263,6 +263,61 @@ lists every COFF group with its address and size) and by experiment:
   the Rich header an embedded manifest counts as resources (cvtres's
   entry, before the export object's), and with `.res` files besides,
   each `.res` counts as 0x00970000 first.
+- **The map** (`/MAP`, `crates/link/linker/src/map.rs`) is link.exe's,
+  line for line, but the time stamp's (link.exe prints its date in local
+  time; turbolink in UTC). CRLF lines: the output's stem, `Timestamp is`,
+  `Preferred load address is`, then every section's groups but `.reloc`'s
+  (`SSSS:OOOOOOOO LLLLLLLLH name CODE|DATA`), empty ones too: a group
+  with contents runs to the next group with any, an empty one starts
+  where what's before it ends and has no length (link.exe's room after
+  the delay bound tables is 0x103 bytes, so an empty group after it
+  starts a byte before turbolink's room ends). Then the publics by VA,
+  then name: 29 x64 absolutes link.exe always defines (`<absolute>`, a
+  `/GUARD` table that's in the image `<linker-defined>` where it is
+  instead), each object's externals with `f` for a function (type 0x20)
+  and `i` for one in an "any" COMDAT with an external leader, from
+  `lib:member` (the library as the link named it, without extension; the
+  member without directories) or the object's file name; commons
+  `<common>`; `__ImageBase` (if referenced) and `__volatile_metadata`
+  `<linker-defined>`; aliases at what they name (an import's thunk too);
+  import slots and thunks, and the import libraries' descriptors, null
+  descriptor, and null thunks where turbolink's tables put them; the
+  delay-load tables' names link.exe makes (`__tailMerge_dll` lower case,
+  `__imp_load_x` `f`, `__sz_DLL_dll`, `__hmod__DLL_dll`,
+  `__DELAY_IMPORT_DESCRIPTOR_dll`, `__NULL_DELAY_IMPORT_DESCRIPTOR`,
+  `\177DLL_NULL_THUNK_DATA_DLN`/`DLB`/`DLA`/`DLU`, from the DLL's first
+  import's library). Control bytes print as `\ooo`. Then `entry point
+  at`, and the statics: class 3 symbols without aux records, not in
+  `.pdata` or an empty section (MASM's `$xdatasym`); at one address by
+  the command line's objects first, then libraries' members, each by its
+  whole name as the link has it (a library's path and the member's, byte
+  order: libucrt's `internal\...` before `misc\...` before
+  `startup\...`), then by name. With `/GUARD:CF` the `.gfids$y`,
+  `.giats$y`, `.gljmp$y`, `.gehcont$y` statics are listed at their
+  values as RVAs, against the section their group is in (offsets wrap:
+  `0002:ffffe000`). The export object's statics (`.edata`, `rgpv`,
+  `rgszName`, `rgwOrd`, `szName`, `$N` and the ordinal) come from
+  `<out>.exp`; resources' `$R` and where cvtres put the data (six hex
+  digits) from their `.res`; each tail merge's unwind data `xdata`. With
+  `/MAPINFO:EXPORTS`, the exports by ordinal (`exported name:` when it
+  differs from the internal name). Formatted on every core. hexcavator
+  reads it (`turbonop-linkmap`).
+- **The export object** (`.exp`, `crates/link/linker/src/exp.rs`) is
+  link.exe's byte for byte but the linker's own path in `S_ENVBLOCK`
+  (and the lengths and offsets it moves): an x64 object stamped
+  0xFFFFFFFF; `.edata` (the directory with its addresses zero, ADDR32NB
+  relocations to `szName`, `rgpv`, `rgszName`, `rgwOrd`, then per export
+  by exported name its slot to its symbol and its name pointer to `$N`);
+  `.debug$S` (S_OBJNAME the `.exp`'s path as formed, S_COMPILE3 for LINK
+  14.52.37029, S_ENVBLOCK cwd and exe, an S_EXPORT per export by
+  exported name with its flags; with a `.def` file its SHA-256 (0xF4) and
+  absolute path (0xF3)); `.drectve` only when a `.def` file names the
+  image (` /DLL /OUT:x.dll` for `LIBRARY x`, ` /OUT:x.exe` for `NAME`),
+  with a NUL after it; the symbols `@comp.id`, `@feat.00` 0x810, the
+  sections', the directory's parts, `$N`s, then the exports' (sorted,
+  undefined). It's written beside the import library (`/IMPLIB`'s name
+  with `.exp`), with `/NOIMPLIB` too, not with `/NOEXP`. The import
+  library isn't yet link.exe's bytes (TODO.md).
 - **Resources** (`.res` files, cvtres's work): the directory (with its
   strings) is the `.rsrc$01` group, the data `.rsrc$02` from the next 16
   bytes, each resource's on 8 and the whole to 8; the Rich header has

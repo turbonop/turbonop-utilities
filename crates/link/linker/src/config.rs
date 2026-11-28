@@ -383,6 +383,9 @@ pub struct Config {
     /// The `.def` file's `LIBRARY` name: the DLL's name in its export
     /// directory (else the output's file name).
     pub library_name: Option<String>,
+    /// What the `.def` file's `LIBRARY` or `NAME` says to link with
+    /// (` /DLL /OUT:x.dll`): the export object's `.drectve`.
+    pub def_directives: Option<String>,
     /// `/IMPLIB`.
     pub implib: Option<PathBuf>,
     /// `/NOIMPLIB`.
@@ -521,6 +524,7 @@ impl Default for Config {
             exports: Vec::new(),
             def: None,
             library_name: None,
+            def_directives: None,
             implib: None,
             no_implib: false,
             no_exp: false,

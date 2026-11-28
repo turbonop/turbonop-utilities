@@ -112,9 +112,12 @@ pub fn link(mut config: Config) -> Outcome {
         }
     };
     let mut all = Vec::new();
-    for (name, data) in &resolved.resources {
+    for (source, (name, data)) in resolved.resources.iter().enumerate() {
         match crate::resources::parse_res(data) {
-            Ok(r) => all.extend(r),
+            Ok(r) => all.extend(r.into_iter().map(|mut r| {
+                r.source = crate::n32(source);
+                r
+            })),
             Err(m) => {
                 out.diagnostics.push(LinkError {
                     code: 1136,
@@ -222,27 +225,7 @@ pub fn link(mut config: Config) -> Outcome {
     }
     if let Some(map) = &resolved.config.map {
         let map_path = map.clone().unwrap_or_else(|| path.with_extension("map"));
-        let mut lines: Vec<(u32, String)> = (0..crate::n32(resolved.globals.len()))
-            .filter_map(|g| {
-                let rva = image.rva_of(g)?;
-                let global = &resolved.globals[g as usize];
-                let file = match global.def {
-                    resolve::Def::Section { file, .. } | resolve::Def::Common { file, .. } => {
-                        resolved.files[file as usize].name.as_str()
-                    }
-                    _ => "",
-                };
-                Some((
-                    rva,
-                    format!(
-                        "{rva:08x}  {}  {file}",
-                        String::from_utf8_lossy(global.name)
-                    ),
-                ))
-            })
-            .collect();
-        lines.sort();
-        let text: String = lines.into_iter().map(|(_, l)| l + "\n").collect();
+        let text = image.map(&bytes, &path);
         if let Err(e) = std::fs::write(&map_path, text) {
             out.diagnostics.push(LinkError {
                 code: 1104,
@@ -250,6 +233,7 @@ pub fn link(mut config: Config) -> Outcome {
                 warning: false,
             });
         }
+        lap("map", &mut out);
     }
     for p in problems {
         out.diagnostics.push(LinkError {
@@ -272,9 +256,7 @@ pub fn link(mut config: Config) -> Outcome {
     lap("output", &mut out);
     // The import library, for a DLL (or anything exporting).
     let c = &resolved.config;
-    if let Some(t) = &layout.exports
-        && !c.no_implib
-    {
+    if let Some(t) = &layout.exports {
         let lib_path = c
             .implib
             .clone()
@@ -284,15 +266,20 @@ pub fn link(mut config: Config) -> Outcome {
         for (k, (_, i)) in t.directory.names.iter().enumerate() {
             hints[*i] = u16::try_from(k).unwrap_or(0);
         }
-        let lib = implib::write(
-            &t.dll_name,
-            machine.number(),
-            machine.is_64(),
-            &t.directory.exports,
-            &hints,
-            crate::write::timestamp(c),
-        );
-        if let Err(e) = std::fs::write(&lib_path, lib) {
+        // (Not with /NOIMPLIB; the export object still, as link.exe.)
+        let lib = (!c.no_implib).then(|| {
+            implib::write(
+                &t.dll_name,
+                machine.number(),
+                machine.is_64(),
+                &t.directory.exports,
+                &hints,
+                crate::write::timestamp(c),
+            )
+        });
+        if let Some(lib) = lib
+            && let Err(e) = std::fs::write(&lib_path, lib)
+        {
             out.diagnostics.push(LinkError {
                 code: 1104,
                 message: format!("cannot open file '{}': {e}", lib_path.display()),
@@ -301,6 +288,49 @@ pub fn link(mut config: Config) -> Outcome {
             return out;
         }
         lap("import library", &mut out);
+        // The export object beside it (link.exe's .exp), unless /NOEXP.
+        if !c.no_exp {
+            let exp_path = lib_path.with_extension("exp");
+            let cwd = std::env::current_dir()
+                .map(|d| d.display().to_string())
+                .unwrap_or_default();
+            let exe = std::env::current_exe()
+                .map(|d| d.display().to_string())
+                .unwrap_or_default();
+            let def_text = c.def.as_ref().and_then(|d| std::fs::read(d).ok());
+            let def_path = c
+                .def
+                .as_ref()
+                .map(|d| std::path::absolute(d).unwrap_or_else(|_| d.clone()));
+            let ordinals_given: Vec<String> = c
+                .exports
+                .iter()
+                .filter(|e| e.ordinal.is_some())
+                .map(|e| crate::exports::exported_name(e).to_owned())
+                .collect();
+            let exp = crate::exp::write(
+                &t.directory,
+                &crate::exp::Inputs {
+                    path: &exp_path,
+                    dll_name: &t.dll_name,
+                    directives: c.def_directives.as_deref(),
+                    machine: machine.number(),
+                    def: def_path.as_deref().zip(def_text.as_deref()),
+                    cwd: &cwd,
+                    exe: &exe,
+                    ordinals_given: &ordinals_given,
+                },
+            );
+            if let Err(e) = std::fs::write(&exp_path, exp) {
+                out.diagnostics.push(LinkError {
+                    code: 1104,
+                    message: format!("cannot open file '{}': {e}", exp_path.display()),
+                    warning: false,
+                });
+                return out;
+            }
+            lap("export object", &mut out);
+        }
     }
     out.written = true;
     out

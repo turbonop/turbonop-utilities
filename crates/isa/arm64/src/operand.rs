@@ -10,12 +10,12 @@
 //! records); [`Instruction::written_registers`] has the complete write
 //! set, implicit registers included.
 
-use crate::Instruction;
 use crate::access::{Element, Reg};
 use crate::format::{Special, bitmask, fp_imm8, is_fp_imm8, number, raw, raw_value, special_value};
 use crate::tables::{
     Kind, NONE, OpSpec, REG_CLASSES, Symbol, attr, file, opk, role, symbol, value,
 };
+use crate::{Inst, Instruction};
 
 /// How an instruction uses an operand: for a register, whether it reads
 /// or writes it; for memory, whether it loads or stores.
@@ -424,7 +424,7 @@ enum Val {
 
 /// What format.rs's `render_symbol` shows for `sym`, as a value (`None`
 /// where it shows nothing, or can't).
-fn sym_value(inst: &Instruction, sym: &Symbol) -> Option<Val> {
+fn sym_value(inst: &Inst, sym: &Symbol) -> Option<Val> {
     let w = inst.word;
     if let Some((p, v)) = sym.when()
         && value(p, w) != v
@@ -507,7 +507,7 @@ fn parse_int(t: &str) -> Option<i64> {
 }
 
 /// A part's value: its symbol's, or its literal's.
-fn part_value(inst: &Instruction, sym: u16, lit: &'static str) -> Option<Val> {
+fn part_value(inst: &Inst, sym: u16, lit: &'static str) -> Option<Val> {
     if sym == NONE {
         if lit.is_empty() {
             return None;
@@ -524,7 +524,7 @@ fn part_value(inst: &Instruction, sym: u16, lit: &'static str) -> Option<Val> {
     sym_value(inst, symbol(usize::from(sym)))
 }
 
-fn part_num(inst: &Instruction, sym: u16, lit: &'static str) -> Option<i64> {
+fn part_num(inst: &Inst, sym: u16, lit: &'static str) -> Option<i64> {
     match part_value(inst, sym, lit)? {
         Val::Num(n) => Some(n),
         Val::Text(t) => parse_int(t),
@@ -532,7 +532,7 @@ fn part_num(inst: &Instruction, sym: u16, lit: &'static str) -> Option<i64> {
     }
 }
 
-fn part_text(inst: &Instruction, sym: u16, lit: &'static str) -> Option<&'static str> {
+fn part_text(inst: &Inst, sym: u16, lit: &'static str) -> Option<&'static str> {
     match part_value(inst, sym, lit)? {
         Val::Text(t) => Some(t),
         _ => None,
@@ -541,7 +541,7 @@ fn part_text(inst: &Instruction, sym: u16, lit: &'static str) -> Option<&'static
 
 /// The register a symbol names (with `prefix`: `<V>`'s or `<R>`'s
 /// letter, or a template's literal one).
-fn register(inst: &Instruction, sym: u16, lit: &str, prefix: Option<u8>) -> Option<Reg> {
+fn register(inst: &Inst, sym: u16, lit: &str, prefix: Option<u8>) -> Option<Reg> {
     if sym == NONE {
         return match lit {
             "ZT0" => Some(Reg::Zt0),
@@ -654,7 +654,7 @@ fn register(inst: &Instruction, sym: u16, lit: &str, prefix: Option<u8>) -> Opti
 }
 
 /// A register's prefix letter: `<V>`'s or `<R>`'s value, or a literal.
-fn prefix_letter(inst: &Instruction, sym: u16, lit: &'static str) -> Option<u8> {
+fn prefix_letter(inst: &Inst, sym: u16, lit: &'static str) -> Option<u8> {
     let t = if sym == NONE {
         lit
     } else {
@@ -664,7 +664,7 @@ fn prefix_letter(inst: &Instruction, sym: u16, lit: &'static str) -> Option<u8> 
 }
 
 /// The arrangement a part gives.
-fn arrangement(inst: &Instruction, sym: u16, lit: &'static str) -> Option<Arrangement> {
+fn arrangement(inst: &Inst, sym: u16, lit: &'static str) -> Option<Arrangement> {
     let t = if sym == NONE {
         lit
     } else {
@@ -674,7 +674,7 @@ fn arrangement(inst: &Instruction, sym: u16, lit: &'static str) -> Option<Arrang
 }
 
 /// A shift or extend from its name part and amount part.
-fn shift(inst: &Instruction, sym: u16, lit: &'static str) -> Option<(ShiftKind, u8)> {
+fn shift(inst: &Inst, sym: u16, lit: &'static str) -> Option<(ShiftKind, u8)> {
     let t = if sym == NONE {
         lit
     } else {
@@ -689,11 +689,45 @@ fn shift(inst: &Instruction, sym: u16, lit: &'static str) -> Option<(ShiftKind, 
 }
 
 impl Instruction {
-    /// The instruction's operands, in the order the formatter shows them
-    /// (an alias's, for an alias), with the condition Microsoft folds into
-    /// the mnemonic (`b.eq`, `cseleq`) last. Operands the word leaves out
-    /// (an optional shift that has no value) are left out.
-    pub fn operands(&self) -> Operands {
+    /// The instruction's operands (at `address`: a label's target is from
+    /// it), in the order the formatter shows them (an alias's, for an
+    /// alias), with the condition Microsoft folds into the mnemonic
+    /// (`b.eq`, `cseleq`) last. Operands the word leaves out (an optional
+    /// shift that has no value) are left out.
+    pub fn operands(&self, address: u64) -> Operands {
+        self.at(address).operands()
+    }
+
+    /// For tests: how many operands the template has (some may be left
+    /// out of [`Instruction::operands`], where the word has no value for
+    /// them).
+    #[doc(hidden)]
+    pub fn template_operand_count(&self) -> usize {
+        crate::tables::semantics(usize::from(self.encoding))
+            .operands
+            .len()
+    }
+}
+
+impl Inst {
+    /// The address its label operand names (a branch's target, `adr`'s
+    /// address, a literal's): that operand alone, not all of them.
+    pub(crate) fn label(&self) -> Option<u64> {
+        for spec in crate::tables::semantics(usize::from(self.encoding)).operands {
+            if spec.kind != opk::IMM {
+                continue;
+            }
+            let Some(&(_, s, l)) = spec.parts.iter().find(|p| p.0 == role::VALUE) else {
+                continue;
+            };
+            if s != NONE && matches!(symbol(usize::from(s)).kind, Kind::Label) {
+                return part_num(self, s, l).map(|n| n as u64);
+            }
+        }
+        None
+    }
+
+    fn operands(&self) -> Operands {
         let blank = Operand {
             kind: OperandKind::Imm(0),
             access: Access::None,
@@ -715,16 +749,6 @@ impl Instruction {
             }
         }
         out
-    }
-
-    /// For tests: how many operands the template has (some may be left
-    /// out of [`Instruction::operands`], where the word has no value for
-    /// them).
-    #[doc(hidden)]
-    pub fn template_operand_count(&self) -> usize {
-        crate::tables::semantics(usize::from(self.encoding))
-            .operands
-            .len()
     }
 
     fn operand(&self, spec: &OpSpec) -> Option<OperandKind> {

@@ -63,7 +63,7 @@ fn agrees_with_llvm() {
             p[4][2..].to_string(),
         );
         count += 1;
-        let Some(inst) = turbonop_arm64::decode(word, 0x1000) else {
+        let Some(inst) = turbonop_arm64::decode(word).ok() else {
             failures.push(format!("{word:08X} ({llvm}): doesn't decode"));
             continue;
         };
@@ -71,7 +71,7 @@ fn agrees_with_llvm() {
         let ours_r = inst.read_registers();
         let what = format!(
             "{word:08X} {} ({}, LLVM's {llvm})",
-            turbonop_arm64::format(&inst),
+            turbonop_arm64::format(&inst, 0x1000),
             inst.llvm_record()
         );
         // Where LLVM is wrong (tools/arm64/access.py's DROP): MRS writes
@@ -132,7 +132,7 @@ fn agrees_with_llvm() {
         .lines()
         .filter(|l| !l.starts_with('#'))
         .filter_map(|l| u32::from_str_radix(l.split(' ').next()?, 16).ok())
-        .filter_map(|w| turbonop_arm64::decode(w, 0x1000))
+        .filter_map(|w| turbonop_arm64::decode(w).ok())
         .map(|i| i.encoding_name())
         .collect();
     let uncovered: Vec<&&str> = all.difference(&covered).collect();

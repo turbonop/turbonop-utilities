@@ -146,7 +146,9 @@ const CASES: &[(u32, &str, &str, &str, &str)] = &[
 fn cases() {
     let mut failures = Vec::new();
     for &(word, what, writes, reads, mem) in CASES {
-        let inst = turbonop_arm64::decode(word, 0x1000).unwrap_or_else(|| panic!("{what}"));
+        let inst = turbonop_arm64::decode(word)
+            .ok()
+            .unwrap_or_else(|| panic!("{what}"));
         let (w, r) = (inst.written_registers(), inst.read_registers());
         let m = match (inst.reads_memory(), inst.writes_memory()) {
             (true, true) => "rw",
@@ -157,7 +159,7 @@ fn cases() {
         if w != set(writes) || r != set(reads) || m != mem {
             failures.push(format!(
                 "{what} ({}): writes {:?} reads {:?} memory {m:?}",
-                turbonop_arm64::format(&inst),
+                turbonop_arm64::format(&inst, 0x1000),
                 w.iter().collect::<Vec<_>>(),
                 r.iter().collect::<Vec<_>>()
             ));
@@ -168,7 +170,7 @@ fn cases() {
 
 #[test]
 fn effects() {
-    let e = |w: u32| turbonop_arm64::decode(w, 0).unwrap().effects();
+    let e = |w: u32| turbonop_arm64::decode(w).ok().unwrap().effects();
     assert!(e(0x9400_0040).contains(Effects::CALL));
     assert!(e(0xD63F_0100).contains(Effects::CALL | Effects::INDIRECT));
     assert!(e(0xD65F_03C0).contains(Effects::RETURN | Effects::NO_FALLTHROUGH));
@@ -182,7 +184,7 @@ fn effects() {
 
 #[test]
 fn system_state() {
-    let inst = |w: u32| turbonop_arm64::decode(w, 0).unwrap();
+    let inst = |w: u32| turbonop_arm64::decode(w).ok().unwrap();
     // MSR SVCR, as SMSTART and SMSTOP, zeroes the SVE and SME state.
     let w = inst(0xD51B_4240).written_registers();
     for r in [

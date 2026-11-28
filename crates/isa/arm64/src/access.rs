@@ -12,6 +12,8 @@
 //! registers the callee clobbers (see [`Effects::CALL`] and
 //! [`Effects::EXCEPTION`]).
 
+use turbonop_isa::{Access as AccessKind, Bits, Register, RegisterAccess, Rest};
+
 use crate::Instruction;
 use crate::tables::{REG_CLASSES, RegClass, file, flag, record, value};
 
@@ -474,7 +476,7 @@ impl Instruction {
     /// never in it.
     pub fn written_registers(&self) -> RegSet {
         let rec = self.record();
-        let w = self.word;
+        let w = self.word();
         let mut s = RegSet(rec.defs);
         for op in rec.ops {
             if op.access & 2 != 0 {
@@ -497,7 +499,7 @@ impl Instruction {
     /// registers are never in it.
     pub fn read_registers(&self) -> RegSet {
         let rec = self.record();
-        let w = self.word;
+        let w = self.word();
         let mut s = RegSet(rec.uses);
         for op in rec.ops {
             if op.access & 1 != 0 {
@@ -560,3 +562,193 @@ impl Instruction {
 
 #[allow(dead_code, reason = "a check of the numbering")]
 const _: () = assert!(id::END <= 128);
+
+/// The register of file `file` numbered `n`, as an access names it.
+fn file_register(file: u8, n: u32) -> Reg {
+    let r = (n % 32) as u8;
+    match file {
+        file::X if n >= 31 => Reg::Xzr,
+        file::XSP if n >= 31 => Reg::Sp,
+        file::X | file::XSP => Reg::X(r),
+        file::W if n >= 31 => Reg::Wzr,
+        file::WSP if n >= 31 => Reg::Wsp,
+        file::W | file::WSP => Reg::W(r),
+        4 => Reg::B(r),
+        5 => Reg::H(r),
+        6 => Reg::S(r),
+        // (A 64-bit vector is D*n*'s bits; a 128-bit one, Q*n*'s.)
+        7 | 9 => Reg::D(r),
+        8 | 10 => Reg::Q(r),
+        file::Z => Reg::Z(r),
+        file::P => Reg::P((n % 16) as u8),
+        file::PN => Reg::Pn((n % 16) as u8),
+        file::ZA => Reg::Za,
+        _ => Reg::Zt0,
+    }
+}
+
+/// The most explicit register accesses an instruction has: up to
+/// [`MAX_OPERANDS`](crate::MAX_OPERANDS) operands, each a list of up to
+/// four registers.
+const MAX_EXPLICIT: usize = 32;
+
+/// What a write of `r` does to the rest of its storage: every A64 write
+/// of a register zeroes the bits above it (W*n*'s of X*n*, a scalar's or
+/// a vector's of Z*n*), but a write of part of ZA (a tile) leaves the
+/// rest of ZA.
+fn rest_of(r: Reg) -> Rest {
+    match r {
+        Reg::ZaTile(..) | Reg::Za => Rest::Preserve,
+        _ => Rest::Zero,
+    }
+}
+
+fn access_of(read: bool, write: bool) -> AccessKind {
+    match (read, write) {
+        (true, true) => AccessKind::READ_WRITE,
+        (true, false) => AccessKind::READ,
+        (false, true) => AccessKind::WRITE,
+        (false, false) => AccessKind::NONE,
+    }
+}
+
+/// The storages (by [`Reg::id`]) in `bits`, each with how `reads` and
+/// `writes` have it.
+fn implicit_accesses(
+    bits: u128,
+    reads: u128,
+    writes: u128,
+    implicit: bool,
+) -> impl Iterator<Item = RegisterAccess<Reg>> {
+    let mut left = bits;
+    core::iter::from_fn(move || {
+        while left != 0 {
+            let id = left.trailing_zeros() as u8;
+            left &= left - 1;
+            let Some(register) = Reg::from_id(id) else {
+                continue;
+            };
+            let (r, w) = (reads >> id & 1 != 0, writes >> id & 1 != 0);
+            return Some(RegisterAccess {
+                register,
+                access: access_of(r, w),
+                rest: if w { rest_of(register) } else { Rest::Preserve },
+                implicit,
+            });
+        }
+        None
+    })
+}
+
+impl Instruction {
+    /// Every register the instruction reads or writes, each once (an
+    /// operand's register as the operand names it: `w0`, `d1`; an
+    /// implicit one, as its storage: NZCV, LR, FPCR), and how: the same
+    /// registers as [`read_registers`](Instruction::read_registers) and
+    /// [`written_registers`](Instruction::written_registers), each with
+    /// its width and what a write does to the rest of it.
+    pub fn register_accesses(&self) -> impl Iterator<Item = RegisterAccess<Reg>> + use<> {
+        let rec = self.record();
+        let w = self.word();
+        let mut explicit = [None::<RegisterAccess<Reg>>; MAX_EXPLICIT];
+        let mut count = 0;
+        // Storages the operands read and write, and those of fields that
+        // don't name a register (every register of their file, as the
+        // sets have them: never fewer).
+        let (mut named_r, mut named_w) = (0u128, 0u128);
+        let (mut file_r, mut file_w) = (0u128, 0u128);
+        for op in rec.ops {
+            let (read, write) = (op.access & 1 != 0, op.access & 2 != 0);
+            let c = &REG_CLASSES[usize::from(op.class)];
+            let v = value(op.bits, w);
+            let Some(&first) = c.firsts.get(v as usize).filter(|&&f| f != 255) else {
+                let mut s = RegSet::EMPTY;
+                s.add_file(c.file);
+                file_r |= if read { s.0 } else { 0 };
+                file_w |= if write { s.0 } else { 0 };
+                continue;
+            };
+            for i in 0..c.count {
+                let register = file_register(
+                    c.file,
+                    u32::from(first) + u32::from(i) * u32::from(c.stride),
+                );
+                if let Some(id) = register.id() {
+                    named_r |= u128::from(read) << id;
+                    named_w |= u128::from(write) << id;
+                }
+                let slot = explicit[..count]
+                    .iter_mut()
+                    .flatten()
+                    .find(|a| a.register == register);
+                if let Some(a) = slot {
+                    a.access = a.access.union(access_of(read, write));
+                    if write {
+                        a.rest = rest_of(register);
+                    }
+                } else {
+                    assert!(
+                        count < MAX_EXPLICIT,
+                        "more register accesses than operands have"
+                    );
+                    explicit[count] = Some(RegisterAccess {
+                        register,
+                        access: access_of(read, write),
+                        rest: if write {
+                            rest_of(register)
+                        } else {
+                            Rest::Preserve
+                        },
+                        implicit: false,
+                    });
+                    count += 1;
+                }
+            }
+        }
+        // The implicit ones: what the sets have that the operands don't.
+        let reads = self.read_registers().0 & !named_r;
+        let writes = self.written_registers().0 & !named_w;
+        let (file_r, file_w) = (file_r & reads, file_w & writes);
+        let (imp_r, imp_w) = (reads & !file_r, writes & !file_w);
+        explicit
+            .into_iter()
+            .flatten()
+            .chain(implicit_accesses(file_r | file_w, file_r, file_w, false))
+            .chain(implicit_accesses(imp_r | imp_w, imp_r, imp_w, true))
+    }
+}
+
+impl Register for Reg {
+    const STORAGE_COUNT: u16 = id::END as u16;
+
+    #[inline]
+    fn storage(self) -> Option<u16> {
+        self.id().map(u16::from)
+    }
+
+    /// Its bits of its storage. Z*n*'s, P*n*'s, and ZA's sizes are the
+    /// implementation's: these are the architecture's largest (2048-bit
+    /// vectors). A ZA tile's bits are spread through ZA: all of ZA's
+    /// (more than the tile's).
+    fn bits(self) -> Bits {
+        Bits::low(match self {
+            Reg::X(_) | Reg::Sp | Reg::Xzr | Reg::D(_) => 64,
+            Reg::W(_) | Reg::Wsp | Reg::Wzr | Reg::S(_) => 32,
+            Reg::B(_) => 8,
+            Reg::H(_) => 16,
+            Reg::Q(_) | Reg::V(_) => 128,
+            Reg::Z(_) => 2048,
+            Reg::P(_) | Reg::Pn(_) | Reg::Ffr => 256,
+            Reg::Za | Reg::ZaTile(..) => 2048 * 2048,
+            Reg::Zt0 => 512,
+            Reg::Nzcv
+            | Reg::Fpcr
+            | Reg::Fpsr
+            | Reg::Fpmr
+            | Reg::Vg
+            | Reg::Svcr
+            | Reg::Pstate
+            | Reg::SysRegs => 64,
+        })
+    }
+}

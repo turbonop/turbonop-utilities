@@ -27,33 +27,105 @@ mod operand;
 mod tables;
 
 pub use access::{Effects, Element, Reg, RegSet};
-pub use format::{Symbols, format, format_into, format_with};
+pub use format::{format, format_into, format_with};
 pub use operand::{
     Access, AddrMode, Arrangement, Cond, MAX_OPERANDS, Mem, Operand, OperandKind, Operands,
     Predication, RegList, RegOperand, ShiftKind, SysReg, ZaSlice,
 };
+pub use turbonop_isa::{Ref, Resolver};
+
+pub use isa::{Arm64, Syntax};
+pub use tables::opcodes;
+pub use turbonop_isa::DecodeError;
+
+mod isa;
+
+/// Which instruction an instruction is: its encoding in Arm's
+/// specification (an encoding in parts is one opcode). An alias is its
+/// own encoding: `mov x0, x1` is [`opcodes::MOV_ORR_64_LOG_SHIFT`]. Each
+/// has a constant in [`opcodes`], named for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Opcode(pub(crate) u16);
+
+impl Opcode {
+    /// The encoding's name in Arm's specification (`ADD_64_addsub_imm`).
+    pub fn name(self) -> &'static str {
+        encoding(usize::from(tables::OPCODE_FIRST[usize::from(self.0)])).name()
+    }
+
+    /// Its mnemonic, as the architecture writes it (`add`; `b` for
+    /// `b.<cond>`).
+    pub fn mnemonic(self) -> &'static str {
+        tables::OPCODE_MNEMONICS[usize::from(self.0)]
+    }
+
+    /// Every opcode, in order.
+    pub fn all() -> impl Iterator<Item = Opcode> {
+        (0..tables::OPCODE_FIRST.len() as u16).map(Opcode)
+    }
+
+    pub(crate) fn attrs(self) -> u8 {
+        tables::OPCODE_ATTRS[usize::from(self.0)]
+    }
+}
 
 use tables::{BUCKETS, Encoding, NONE, encoding, ms};
 
-/// A decoded instruction.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A decoded instruction: its word (as its four bytes, little-endian, as
+/// A64 code is whatever the data's byte order) and its encoding. Where it
+/// is isn't part of it: what depends on that (a branch's target, an
+/// `adrp`'s page) is asked with the address.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Instruction {
-    word: u32,
-    address: u64,
+    bytes: [u8; 4],
     encoding: u16,
+}
+
+const _: () = assert!(size_of::<Instruction>() == 6);
+
+/// An instruction at an address: what formatting and operands work on.
+#[derive(Clone, Copy)]
+pub(crate) struct Inst {
+    pub(crate) inst: Instruction,
+    pub(crate) word: u32,
+    pub(crate) address: u64,
+}
+
+impl core::ops::Deref for Inst {
+    type Target = Instruction;
+
+    #[inline]
+    fn deref(&self) -> &Instruction {
+        &self.inst
+    }
 }
 
 impl Instruction {
     /// The instruction's word.
     #[inline]
     pub fn word(&self) -> u32 {
-        self.word
+        u32::from_le_bytes(self.bytes)
     }
 
-    /// Its address.
+    /// Its bytes, as encoded.
     #[inline]
-    pub fn address(&self) -> u64 {
-        self.address
+    pub fn bytes(&self) -> &[u8; 4] {
+        &self.bytes
+    }
+
+    /// Which instruction it is.
+    #[inline]
+    pub fn opcode(&self) -> Opcode {
+        Opcode(tables::OPCODE_OF[usize::from(self.encoding)])
+    }
+
+    #[inline]
+    pub(crate) fn at(self, address: u64) -> Inst {
+        Inst {
+            inst: self,
+            word: self.word(),
+            address,
+        }
     }
 
     /// The encoding's name in ARM's ISA description, such as
@@ -82,7 +154,8 @@ impl Instruction {
     /// So are words whose should-be bits (Arm's `(0)` and `(1)`) differ.
     pub fn is_unpredictable(&self) -> bool {
         let e = self.encoding();
-        let unpredictable = |e: &Encoding| e.unpred(self.word) || !should_hold(e, self.word);
+        let w = self.word();
+        let unpredictable = |e: &Encoding| e.unpred(w) || !should_hold(e, w);
         unpredictable(e) || (e.alias_of != NONE && unpredictable(encoding(usize::from(e.alias_of))))
     }
 
@@ -91,8 +164,9 @@ impl Instruction {
     /// CONSTRAINED UNPREDICTABLE: decoded (and marked), not rejected.
     pub fn should_bits_hold(&self) -> bool {
         let e = self.encoding();
-        should_hold(e, self.word)
-            && (e.alias_of == NONE || should_hold(encoding(usize::from(e.alias_of)), self.word))
+        let w = self.word();
+        should_hold(e, w)
+            && (e.alias_of == NONE || should_hold(encoding(usize::from(e.alias_of)), w))
     }
 
     fn encoding(&self) -> &'static Encoding {
@@ -109,9 +183,12 @@ fn matches(e: &Encoding, w: u32) -> bool {
     w & e.mask == e.value && e.ne().iter().all(|&(m, v)| w & m != v) && !e.undef(w)
 }
 
-/// Decodes the instruction `word` at `address`, or `None` if it is not a
-/// valid (allocated, defined) encoding.
-pub fn decode(word: u32, address: u64) -> Option<Instruction> {
+/// Decodes the instruction `word`.
+///
+/// # Errors
+///
+/// [`DecodeError::Undefined`]: it isn't an allocated, defined encoding.
+pub fn decode(word: u32) -> Result<Instruction, DecodeError> {
     let candidates = BUCKETS[(word >> 21) as usize];
     // The base encoding: the most specific match that is not an alias,
     // among those whose should-be bits hold, else (CONSTRAINED
@@ -134,7 +211,9 @@ pub fn decode(word: u32, address: u64) -> Option<Instruction> {
         }
         base
     };
-    let base = best(true).or_else(|| best(false))?;
+    let base = best(true)
+        .or_else(|| best(false))
+        .ok_or(DecodeError::Undefined)?;
     // A preferred alias of it, if any.
     let mut chosen = base;
     for &i in candidates {
@@ -166,12 +245,11 @@ pub fn decode(word: u32, address: u64) -> Option<Instruction> {
         }
     }
     let inst = Instruction {
-        word,
-        address,
+        bytes: word.to_le_bytes(),
         encoding: chosen,
     };
-    if format::is_valid(&inst) {
-        return Some(inst);
+    if format::is_valid(&inst.at(0)) {
+        return Ok(inst);
     }
     // An alias whose operands do not render (such as a TLBI operation
     // with no name) falls back to the instruction it stands for.
@@ -181,7 +259,11 @@ pub fn decode(word: u32, address: u64) -> Option<Instruction> {
     };
     // Reserved operand values (such as an arrangement marked RESERVED)
     // make the encoding invalid.
-    format::is_valid(&inst).then_some(inst)
+    if format::is_valid(&inst.at(0)) {
+        Ok(inst)
+    } else {
+        Err(DecodeError::Undefined)
+    }
 }
 
 fn w_matches_alias(e: &Encoding, w: u32) -> bool {
@@ -206,11 +288,10 @@ pub fn explain(word: u32) -> alloc::string::String {
         out.push_str(if e.alias_of == NONE { "" } else { " alias" });
         out.push('\n');
         let inst = Instruction {
-            word,
-            address: 0,
+            bytes: word.to_le_bytes(),
             encoding: i,
         };
-        out.push_str(&format::explain_encoding(&inst));
+        out.push_str(&format::explain_encoding(&inst.at(0)));
     }
     out
 }
@@ -226,10 +307,10 @@ pub fn validity_disagrees(word: u32) -> Option<&'static str> {
             continue;
         }
         let inst = Instruction {
-            word,
-            address: 0,
+            bytes: word.to_le_bytes(),
             encoding: i,
-        };
+        }
+        .at(0);
         if format::is_valid(&inst) != format::renders_fully(&inst) {
             return Some(e.name());
         }

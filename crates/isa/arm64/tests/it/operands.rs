@@ -140,9 +140,9 @@ fn registers(k: &OperandKind) -> Vec<Reg> {
     }
 }
 
-fn check(inst: &Instruction, failures: &mut BTreeMap<String, (usize, String)>) {
-    let text = turbonop_arm64::format(inst);
-    let ops = inst.operands();
+fn check(inst: &Instruction, address: u64, failures: &mut BTreeMap<String, (usize, String)>) {
+    let text = turbonop_arm64::format(inst, address);
+    let ops = inst.operands(address);
     let mut fail = |what: String| {
         let e = failures
             .entry(format!("{}: {what}", inst.encoding_name()))
@@ -212,11 +212,11 @@ fn operands_agree_with_the_text_and_access() {
     let mut failures = BTreeMap::new();
     let mut count = 0;
     for (word, address) in words() {
-        let Some(inst) = turbonop_arm64::decode(word, address) else {
+        let Some(inst) = turbonop_arm64::decode(word).ok() else {
             continue;
         };
         count += 1;
-        check(&inst, &mut failures);
+        check(&inst, address, &mut failures);
     }
     let n: usize = failures.values().map(|v| v.0).sum();
     let report: Vec<String> = failures

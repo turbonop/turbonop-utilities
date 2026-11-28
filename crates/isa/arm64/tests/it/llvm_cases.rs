@@ -23,8 +23,8 @@ const CASES: &[(u32, Option<&str>)] = &[
 fn as_llvm_writes_them() {
     let mut failures = Vec::new();
     for &(word, want) in CASES {
-        let got = turbonop_arm64::decode(word, 0).map(|i| {
-            turbonop_arm64::format(&i)
+        let got = turbonop_arm64::decode(word).ok().map(|i| {
+            turbonop_arm64::format(&i, 0)
                 .split_whitespace()
                 .collect::<Vec<_>>()
                 .join(" ")

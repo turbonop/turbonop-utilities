@@ -5,17 +5,17 @@
 fn main() {
     for arg in std::env::args().skip(1) {
         let word = u32::from_str_radix(arg.trim_start_matches("0x"), 16).expect("a hex word");
-        let Some(inst) = turbonop_arm64::decode(word, 0x1000) else {
+        let Some(inst) = turbonop_arm64::decode(word).ok() else {
             println!("{word:08X}: not an instruction");
             continue;
         };
         println!(
             "{word:08X}: {} ({}, LLVM's {})",
-            turbonop_arm64::format(&inst),
+            turbonop_arm64::format(&inst, 0x1000),
             inst.encoding_name(),
             inst.llvm_record()
         );
-        for op in &inst.operands() {
+        for op in &inst.operands(0x1000) {
             println!("    {:?} {:?}", op.access, op.kind);
         }
         println!(

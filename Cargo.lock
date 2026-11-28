@@ -842,6 +842,7 @@ name = "turbonop-arm64"
 version = "0.0.7"
 dependencies = [
  "turbonop-global-alloc",
+ "turbonop-isa",
 ]
 
 [[package]]

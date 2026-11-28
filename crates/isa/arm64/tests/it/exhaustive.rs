@@ -25,8 +25,8 @@ const EXPLAIN_EVERY: u32 = 1 << 12;
 
 fn check(word: u32, decoded: &AtomicU64, failures: &std::sync::Mutex<Vec<String>>) {
     let address = u64::from(word) << 2;
-    let first = turbonop_arm64::decode(word, address);
-    let again = turbonop_arm64::decode(word, address);
+    let first = turbonop_arm64::decode(word).ok();
+    let again = turbonop_arm64::decode(word).ok();
     let fail = |why: String| {
         let mut f = failures.lock().unwrap();
         if f.len() < 100 {
@@ -44,13 +44,13 @@ fn check(word: u32, decoded: &AtomicU64, failures: &std::sync::Mutex<Vec<String>
     }
     if let Some(inst) = first {
         decoded.fetch_add(1, Ordering::Relaxed);
-        if inst.word() != word || inst.address() != address {
-            fail(format!("kept {:08x} at {:#x}", inst.word(), inst.address()));
+        if inst.word() != word || *inst.bytes() != word.to_le_bytes() {
+            fail(format!("kept {:08x}", inst.word()));
         }
         if inst.encoding_name().is_empty() || inst.class().is_empty() {
             fail("no encoding or class name".into());
         }
-        let text = turbonop_arm64::format(&inst);
+        let text = turbonop_arm64::format(&inst, address);
         // (A leading `?` marks a CONSTRAINED UNPREDICTABLE encoding.)
         if !text
             .trim_start_matches('?')
@@ -61,10 +61,10 @@ fn check(word: u32, decoded: &AtomicU64, failures: &std::sync::Mutex<Vec<String>
         {
             fail(format!("formats as {text:?}"));
         }
-        if again.map(|i| turbonop_arm64::format(&i)) != Some(text) {
+        if again.map(|i| turbonop_arm64::format(&i, address)) != Some(text) {
             fail("formats differently twice".into());
         }
-        let ops = inst.operands();
+        let ops = inst.operands(address);
         if ops.len() > inst.template_operand_count() {
             fail("more operands than its template".into());
         }

@@ -10,22 +10,10 @@ use alloc::{format, string::String, string::ToString, vec::Vec};
 
 use core::fmt::Write as _;
 
-use crate::Instruction;
 use crate::tables::{Kind, NONE, Symbol, Tok, attr, ms_mnemonic, rule, symbol, value};
+use crate::{Inst, Instruction};
 
-/// Names for addresses, for showing branch targets symbolically.
-pub trait Symbols {
-    /// The name of the symbol at `address`, if there is one.
-    fn name_at(&self, address: u64) -> Option<&str>;
-}
-
-struct NoSymbols;
-
-impl Symbols for NoSymbols {
-    fn name_at(&self, _: u64) -> Option<&str> {
-        None
-    }
-}
+use turbonop_isa::{Ref, Resolver, Unresolved};
 
 /// The column operands start at.
 const MNEMONIC_WIDTH: usize = 12;
@@ -124,9 +112,9 @@ fn fix_numbers_into(s: &str, out: &mut String) -> bool {
 /// optional group may leave out, or `None` (nothing written) if it does not
 /// render.
 fn render_symbol(
-    inst: &Instruction,
+    inst: &Inst,
     sym: &Symbol,
-    symbols: &dyn Symbols,
+    symbols: &dyn Resolver,
     out: &mut String,
 ) -> Option<bool> {
     let w = inst.word;
@@ -310,11 +298,8 @@ fn render_symbol(
             } else {
                 inst.address.wrapping_add(n as u64)
             };
-            match symbols.name_at(target) {
-                Some(s) => out.push_str(s),
-                None => {
-                    push_hex(out, target, 16);
-                }
+            if !symbols.resolve(Ref::Address(target), out) {
+                push_hex(out, target, 16);
             }
             return Some(false);
         }
@@ -353,9 +338,9 @@ fn render_symbol(
 /// (`floor`: where the text being rendered begins, which a left-out group's
 /// spaces stop at.)
 fn render(
-    inst: &Instruction,
+    inst: &Inst,
     toks: &[Tok],
-    symbols: &dyn Symbols,
+    symbols: &dyn Resolver,
     out: &mut String,
     floor: usize,
 ) -> Option<bool> {
@@ -404,7 +389,7 @@ fn render(
 
 /// Renders the instruction into `out`: mnemonic, padding, operands. If an
 /// operand is reserved, `None`, and `out` is as it was.
-fn render_all(inst: &Instruction, symbols: &dyn Symbols, out: &mut String) -> Option<()> {
+fn render_all(inst: &Inst, symbols: &dyn Resolver, out: &mut String) -> Option<()> {
     let start = out.len();
     let r = render_parts(inst, symbols, out, start);
     if r.is_none() {
@@ -413,12 +398,7 @@ fn render_all(inst: &Instruction, symbols: &dyn Symbols, out: &mut String) -> Op
     r
 }
 
-fn render_parts(
-    inst: &Instruction,
-    symbols: &dyn Symbols,
-    out: &mut String,
-    start: usize,
-) -> Option<()> {
+fn render_parts(inst: &Inst, symbols: &dyn Resolver, out: &mut String, start: usize) -> Option<()> {
     let e = inst.encoding();
     let w = inst.word;
     match ms_mnemonic(e) {
@@ -604,14 +584,14 @@ fn find(s: &str, pat: &str) -> Option<usize> {
 }
 
 /// Whether [`render_all`] is `Some` (what [`is_valid`] answers quickly).
-pub(crate) fn renders_fully(inst: &Instruction) -> bool {
-    render_all(inst, &NoSymbols, &mut String::new()).is_some()
+pub(crate) fn renders_fully(inst: &Inst) -> bool {
+    render_all(inst, &Unresolved, &mut String::new()).is_some()
 }
 
 /// Whether `inst` renders: [`render_all`] is `Some` exactly when this is
 /// true (what can fail there is a template's symbols, groups, and
 /// alternations, walked here the same way; the text is not built).
-pub(crate) fn is_valid(inst: &Instruction) -> bool {
+pub(crate) fn is_valid(inst: &Inst) -> bool {
     let e = inst.encoding();
     if !e.checked {
         return true;
@@ -626,7 +606,7 @@ pub(crate) fn is_valid(inst: &Instruction) -> bool {
 /// condition (`when`) doesn't hold, where its table has no row for the
 /// word (or the row is RESERVED), and where a logical immediate's bits
 /// are not a valid mask. Everything else renders.
-fn symbol_renders(inst: &Instruction, sym: &Symbol) -> bool {
+fn symbol_renders(inst: &Inst, sym: &Symbol) -> bool {
     let w = inst.word;
     if let Some((p, v)) = sym.when()
         && value(p, w) != v
@@ -668,7 +648,7 @@ fn symbol_renders(inst: &Instruction, sym: &Symbol) -> bool {
 }
 
 /// Whether [`render`] of `toks` is `Some`.
-fn renders(inst: &Instruction, toks: &[Tok]) -> bool {
+fn renders(inst: &Inst, toks: &[Tok]) -> bool {
     toks.iter().all(|t| match *t {
         Tok::Lit(_) => true,
         Tok::Sym(i) => symbol_renders(inst, symbol(usize::from(i))),
@@ -679,10 +659,10 @@ fn renders(inst: &Instruction, toks: &[Tok]) -> bool {
 /// For tools: how an encoding renders a word, operand by operand (the
 /// template, and each symbol's text, or `None` where it fails).
 #[doc(hidden)]
-pub fn explain_encoding(inst: &Instruction) -> alloc::string::String {
+pub(crate) fn explain_encoding(inst: &Inst) -> alloc::string::String {
     use core::fmt::Write as _;
     /// Each symbol of `toks`, and how it renders.
-    fn symbols_of(inst: &Instruction, toks: &[Tok], out: &mut String) {
+    fn symbols_of(inst: &Inst, toks: &[Tok], out: &mut String) {
         for t in toks {
             match *t {
                 Tok::Lit(_) => {}
@@ -690,7 +670,7 @@ pub fn explain_encoding(inst: &Instruction) -> alloc::string::String {
                 Tok::Sym(i) => {
                     let sym = symbol(usize::from(i));
                     let mut text = String::new();
-                    let r = render_symbol(inst, sym, &NoSymbols, &mut text).map(|_| text);
+                    let r = render_symbol(inst, sym, &Unresolved, &mut text).map(|_| text);
                     let _ = writeln!(
                         out,
                         "    {} {:?} attrs {:?} -> {:?}",
@@ -722,28 +702,30 @@ pub fn explain_encoding(inst: &Instruction) -> alloc::string::String {
     out
 }
 
-/// Formats an instruction: mnemonic, padding, operands.
-pub fn format(inst: &Instruction) -> String {
-    format_with(inst, &NoSymbols)
+/// Formats an instruction (at `address`): mnemonic, padding, operands.
+pub fn format(inst: &Instruction, address: u64) -> String {
+    format_with(inst, address, &Unresolved)
 }
 
-/// Formats an instruction, naming addresses through `symbols`.
-pub fn format_with(inst: &Instruction, symbols: &dyn Symbols) -> String {
+/// Formats an instruction (at `address`), naming addresses through
+/// `symbols` (what it doesn't name is written as a number).
+pub fn format_with(inst: &Instruction, address: u64, symbols: &dyn Resolver) -> String {
     let mut s = String::with_capacity(48);
-    format_into(inst, symbols, &mut s);
+    format_into(inst, address, symbols, &mut s);
     s
 }
 
-/// Formats an instruction into `out` (appended), naming addresses through
-/// `symbols`: [`format_with`] without allocating a string.
-pub fn format_into(inst: &Instruction, symbols: &dyn Symbols, out: &mut String) {
-    let _ = render_all(inst, symbols, out);
+/// Formats an instruction (at `address`) into `out` (appended), naming
+/// addresses through `symbols`: [`format_with`] without allocating a
+/// string.
+pub fn format_into(inst: &Instruction, address: u64, symbols: &dyn Resolver, out: &mut String) {
+    let _ = render_all(&inst.at(address), symbols, out);
 }
 /// Operands whose values the ISA description leaves to the reader: the
 /// bitfield aliases and wide-immediate moves. Writes the operand to `out`
 /// and returns whether it is a default, or returns `None` (nothing
 /// written) for other operands.
-fn special(inst: &Instruction, sym: &Symbol, out: &mut String) -> Option<bool> {
+fn special(inst: &Inst, sym: &Symbol, out: &mut String) -> Option<bool> {
     Some(match special_value(inst, sym)? {
         Special::Num(v, default) => {
             push_imm(out, v);
@@ -794,7 +776,7 @@ pub(crate) enum Special {
 }
 
 /// The value of the operands [`special`] shows, or `None` for others.
-pub(crate) fn special_value(inst: &Instruction, sym: &Symbol) -> Option<Special> {
+pub(crate) fn special_value(inst: &Inst, sym: &Symbol) -> Option<Special> {
     let w = inst.word;
     let name = inst.encoding_name();
     let size: i64 = if w >> 31 == 1 { 64 } else { 32 };
@@ -1069,7 +1051,7 @@ pub(crate) fn fp_imm8(imm8: u64) -> f64 {
 /// A logical immediate's value, as Microsoft shows it (general 64-bit
 /// masks signed; SVE masks at their element size), or `None` if its bits
 /// are not a valid mask.
-pub(crate) fn bitmask(inst: &Instruction) -> Option<i64> {
+pub(crate) fn bitmask(inst: &Inst) -> Option<i64> {
     let w = inst.word;
     // The fields' positions depend on the class: general forms have N in
     // bit 22, immr in 21:16, and imms in 15:10; SVE forms have

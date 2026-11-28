@@ -82,9 +82,13 @@ pub struct MemoryAccess<R> {
     pub segment: Option<R>,
     /// How its base is updated.
     pub update: Update<R>,
-    /// How many bytes, if a constant number (not: `rep movs`, a gather,
-    /// `xsave`).
+    /// How many bytes, if a constant number that is known (not: `rep
+    /// movs`, a gather, `xsave`; nor where the decoder doesn't know).
     pub size: Option<u32>,
+    /// Whether the displacement is in multiples of the vector length, not
+    /// bytes (SVE's `[x0, #1, mul vl]`): the implementation's, not known
+    /// as the code is decoded.
+    pub vector_length_units: bool,
     /// Which memory (WebAssembly's memory index, an address space); 0 if
     /// the instruction set has one.
     pub space: u32,
@@ -104,18 +108,21 @@ impl<R> MemoryAccess<R> {
             segment: None,
             update: Update::None,
             size,
+            vector_length_units: false,
             space: 0,
             implicit: false,
         }
     }
 
     /// The address, if it's a constant (absolute, or PC-relative), and
-    /// no segment is added to it.
+    /// no segment is added to it, and it's in bytes.
     #[inline]
     #[allow(clippy::cast_sign_loss)] // An address's bits.
     pub fn address(&self) -> Option<u64> {
         match (&self.base, &self.index, &self.segment) {
-            (Base::None | Base::Pc, None, None) => Some(self.displacement as u64),
+            (Base::None | Base::Pc, None, None) if !self.vector_length_units => {
+                Some(self.displacement as u64)
+            }
             _ => None,
         }
     }

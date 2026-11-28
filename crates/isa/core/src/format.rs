@@ -25,6 +25,9 @@ pub enum TokenKind {
     Punctuation,
     /// A comment.
     Comment,
+    /// Text not classified further (by a formatter that doesn't yet say
+    /// what its pieces are).
+    Text,
 }
 
 /// Receives formatted text, token by token.

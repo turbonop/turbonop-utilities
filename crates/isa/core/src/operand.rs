@@ -10,7 +10,8 @@ pub struct Immediate {
     /// Its value, as the instruction uses it (expanded, shifted, sign- or
     /// zero-extended to 64 bits as the instruction does).
     pub value: i64,
-    /// How many bits of the encoding hold it (its range, for a rewriter).
+    /// How many bits of the encoding hold it (its range, for a rewriter);
+    /// 0 if not known.
     pub bits: u8,
     /// Whether the encoding's bits are signed.
     pub signed: bool,

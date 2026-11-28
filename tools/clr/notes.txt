@@ -1,0 +1,1 @@
+Notes embedded as a plain manifest resource.

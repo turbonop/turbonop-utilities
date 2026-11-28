@@ -23,31 +23,19 @@ use std::path::{Path, PathBuf};
 use turbonop_archive::write::Layout;
 
 /// A member to write: its bytes, and the pieces those leave out (each one's
-/// offset in the member, and its bytes; see `turbonop_coff::Skeleton`).
+/// offset in the member, and its bytes, in order; see
+/// `turbonop_coff::Skeleton`).
 #[derive(Clone, Copy, Debug)]
 pub struct Bytes<'a> {
     pub data: &'a [u8],
     pub holes: &'a [(usize, &'a [u8])],
 }
 
-/// The member's bytes as pieces in order: the stretches of `data` between
-/// holes, and the holes' bytes.
-fn segments<'a>(b: Bytes<'a>) -> Vec<&'a [u8]> {
-    let mut holes: Vec<(usize, &[u8])> = b.holes.to_vec();
-    holes.sort_unstable_by_key(|h| h.0);
-    let mut out = Vec::with_capacity(holes.len() * 2 + 1);
-    let mut at = 0;
-    for (start, piece) in holes {
-        if start > at {
-            out.push(&b.data[at..start]);
-        }
-        out.push(piece);
-        at = start + piece.len();
+impl Bytes<'_> {
+    /// The member's length.
+    fn len(&self) -> usize {
+        self.data.len() + self.holes.iter().map(|h| h.1.len()).sum::<usize>()
     }
-    if at < b.data.len() {
-        out.push(&b.data[at..]);
-    }
-    out
 }
 
 /// The output is copied, on every thread, into chunks of this size, which
@@ -105,6 +93,114 @@ fn chunks<'a>(pieces: &[&'a [u8]]) -> Vec<Vec<&'a [u8]>> {
     out
 }
 
+/// How many chunks are in memory at once, at most (copied or being
+/// copied, and waiting to be written): bounded whatever the number of
+/// threads, so that many turbolib processes on a machine of many cores
+/// don't each hold a buffer per thread.
+#[cfg_attr(unix, allow(dead_code))]
+const IN_FLIGHT: usize = 12;
+
+/// Writes `chunks` in order on this thread, while up to `IN_FLIGHT - 1`
+/// other threads copy the chunks ahead into buffers (reused: at most
+/// `IN_FLIGHT` of them are ever made).
+#[cfg(not(unix))]
+fn write_chunked(file: &File, chunks: &[Vec<&[u8]>]) -> io::Result<()> {
+    use std::sync::{Condvar, Mutex};
+    struct State {
+        /// The chunks copied and not yet written, by number.
+        ready: std::collections::BTreeMap<usize, Vec<u8>>,
+        /// Buffers written, to reuse.
+        free: Vec<Vec<u8>>,
+        /// The next chunk to give a copier, and the next to write.
+        next: usize,
+        written: usize,
+        failed: bool,
+    }
+    let copiers = turbonop_par::threads()
+        .min(IN_FLIGHT - 1)
+        .min(chunks.len().saturating_sub(1));
+    let fill = |buf: &mut Vec<u8>, parts: &[&[u8]]| {
+        buf.clear();
+        for p in parts {
+            buf.extend_from_slice(p);
+        }
+    };
+    if copiers < 2 {
+        let mut buf = Vec::with_capacity(CHUNK);
+        for parts in chunks {
+            fill(&mut buf, parts);
+            io::Write::write_all(&mut &*file, &buf)?;
+        }
+        return Ok(());
+    }
+    let state = Mutex::new(State {
+        ready: std::collections::BTreeMap::new(),
+        free: Vec::new(),
+        next: 0,
+        written: 0,
+        failed: false,
+    });
+    let changed = Condvar::new();
+    let lock = || {
+        state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    std::thread::scope(|scope| {
+        for _ in 0..copiers {
+            scope.spawn(|| {
+                loop {
+                    // A chunk no further ahead of the writer than the
+                    // buffers allow.
+                    let (i, mut buf) = {
+                        let mut s = lock();
+                        while !s.failed && s.next < chunks.len() && s.next - s.written >= IN_FLIGHT
+                        {
+                            s = changed
+                                .wait(s)
+                                .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        }
+                        if s.failed || s.next >= chunks.len() {
+                            return;
+                        }
+                        let i = s.next;
+                        s.next += 1;
+                        (i, s.free.pop().unwrap_or_else(|| Vec::with_capacity(CHUNK)))
+                    };
+                    fill(&mut buf, &chunks[i]);
+                    lock().ready.insert(i, buf);
+                    changed.notify_all();
+                }
+            });
+        }
+        let mut result = Ok(());
+        for i in 0..chunks.len() {
+            let buf = {
+                let mut s = lock();
+                loop {
+                    if let Some(b) = s.ready.remove(&i) {
+                        break b;
+                    }
+                    s = changed
+                        .wait(s)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                }
+            };
+            result = io::Write::write_all(&mut &*file, &buf);
+            let mut s = lock();
+            s.written = i + 1;
+            s.free.push(buf);
+            s.failed |= result.is_err();
+            drop(s);
+            changed.notify_all();
+            if result.is_err() {
+                break;
+            }
+        }
+        result
+    })
+}
+
 /// Writes the library `layout` describes, with each member's bytes from
 /// `members`, to a new file beside `path`, and returns that file's path.
 /// `padding` is the byte after an odd-sized member.
@@ -113,7 +209,7 @@ pub fn write_beside(
     layout: &Layout<'_>,
     members: &[Bytes<'_>],
     padding: u8,
-) -> io::Result<PathBuf> {
+) -> io::Result<Temp> {
     let headers: Vec<[u8; 60]> = (0..members.len()).map(|i| layout.header(i)).collect();
     let pad = [padding];
     let mut pieces: Vec<&[u8]> = vec![layout.head()];
@@ -122,10 +218,8 @@ pub fn write_beside(
     for (i, m) in members.iter().enumerate() {
         misplaced |= at != layout.offset(i);
         pieces.push(&headers[i]);
-        for piece in segments(*m) {
-            pieces.push(piece);
-        }
-        if m.data.len() & 1 == 1 {
+        pieces.extend(turbonop_coff::skeleton_parts(m.data, m.holes));
+        if m.len() & 1 == 1 {
             pieces.push(&pad);
         }
         at += layout.span(i);
@@ -144,7 +238,7 @@ pub fn write_unix_parts_beside(
     path: &Path,
     layout: &turbonop_archive::unix::Layout,
     members: &[Vec<&[u8]>],
-) -> io::Result<PathBuf> {
+) -> io::Result<Temp> {
     const NEWLINES: [u8; 8] = [b'\n'; 8];
     let mut pieces: Vec<&[u8]> = vec![layout.head()];
     let mut at = layout.head().len() as u64;
@@ -174,60 +268,93 @@ pub fn write_unix_parts_beside(
 
 /// Writes `pieces`, in order, to a new file beside `path`, and returns
 /// that file's path.
-pub fn write_pieces_beside(path: &Path, pieces: &[&[u8]]) -> io::Result<PathBuf> {
+pub fn write_pieces_beside(path: &Path, pieces: &[&[u8]]) -> io::Result<Temp> {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".turbolib-{}.tmp", std::process::id()));
-    let temp = path.with_file_name(name);
-    let file = File::create(&temp)?;
+    let temp = Temp {
+        path: Some(path.with_file_name(name)),
+    };
+    let file = File::create(temp.path())?;
     #[cfg(unix)]
     let result = write_direct(&file, pieces);
     #[cfg(not(unix))]
-    let result = {
-        let chunks = chunks(pieces);
-        // A batch of chunks at a time is copied on every thread while one
-        // thread writes the batch before it.
-        let batch = turbonop_par::threads().max(1) * 2;
-        std::thread::scope(|scope| {
-            let (send, receive) = std::sync::mpsc::sync_channel::<Vec<Vec<u8>>>(1);
-            let writer = scope.spawn(|| -> io::Result<()> {
-                for bufs in receive {
-                    for b in bufs {
-                        io::Write::write_all(&mut &file, &b)?;
-                    }
-                }
-                Ok(())
-            });
-            for group in chunks.chunks(batch) {
-                let bufs = turbonop_par::map_balanced(group, 1, |parts| {
-                    let mut buf = Vec::with_capacity(CHUNK);
-                    for p in parts {
-                        buf.extend_from_slice(p);
-                    }
-                    buf
-                });
-                if send.send(bufs).is_err() {
-                    break;
-                }
-            }
-            drop(send);
-            writer.join().expect("the writer doesn't panic")
-        })
-    };
+    let result = write_chunked(&file, &chunks(pieces));
+    // (A full disk shows as a write's error: NTFS allocates as it writes.)
     drop(file);
-    match result {
-        Ok(()) => Ok(temp),
-        Err(e) => {
-            let _ = std::fs::remove_file(&temp);
-            Err(e)
+    // On an error, dropping `temp` removes the file.
+    result.map(|()| temp)
+}
+
+/// A library written beside its output. Dropped before it has replaced
+/// the output (an error, or a panic unwinding), it is removed, so nothing
+/// is left half-written.
+#[derive(Debug)]
+pub struct Temp {
+    path: Option<PathBuf>,
+}
+
+impl Temp {
+    /// Where it is.
+    pub fn path(&self) -> &Path {
+        self.path
+            .as_deref()
+            .expect("a Temp's path until it replaces")
+    }
+
+    /// Puts the written library in `path`'s place. Another process holding
+    /// the output open (a virus scanner, a linker, an editor) makes the
+    /// rename fail for a moment: it is tried again for up to `RETRY`.
+    /// A read-only output isn't, as `lib.exe` doesn't replace one either.
+    pub fn replace(mut self, path: &Path) -> io::Result<()> {
+        let from = self.path.take().expect("replaced once");
+        let result = retry(
+            RETRY,
+            || std::fs::rename(&from, path),
+            || !std::fs::metadata(path).is_ok_and(|m| m.permissions().readonly()),
+        );
+        if result.is_err() {
+            let _ = std::fs::remove_file(&from);
+        }
+        result
+    }
+}
+
+impl Drop for Temp {
+    fn drop(&mut self) {
+        if let Some(p) = &self.path {
+            let _ = std::fs::remove_file(p);
         }
     }
 }
 
-/// Puts the written library in its place.
-pub fn replace(temp: &Path, path: &Path) -> io::Result<()> {
-    std::fs::rename(temp, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(temp);
-    })
+/// How long a rename onto an output another process holds open is tried.
+pub const RETRY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether `e` is what Windows says while another process has a file open
+/// without sharing it for deletion, or a scanner has it locked: access
+/// denied (5), a sharing violation (32), a lock violation (33).
+fn transient(e: &io::Error) -> bool {
+    cfg!(windows) && matches!(e.raw_os_error(), Some(5 | 32 | 33))
+}
+
+/// `f`, tried again while it fails transiently and `worth` says so, for
+/// up to `limit`, waiting 10 ms, then longer, up to 250 ms, between tries.
+fn retry(
+    limit: std::time::Duration,
+    mut f: impl FnMut() -> io::Result<()>,
+    worth: impl Fn() -> bool,
+) -> io::Result<()> {
+    let start = std::time::Instant::now();
+    let mut wait = std::time::Duration::from_millis(10);
+    loop {
+        match f() {
+            Err(e) if transient(&e) && worth() && start.elapsed() + wait <= limit => {
+                std::thread::sleep(wait);
+                wait = (wait * 2).min(std::time::Duration::from_millis(250));
+            }
+            r => return r,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -10,12 +10,17 @@
 use turbonop_global_alloc as _;
 
 pub mod args;
+pub mod c2;
 pub mod config;
+pub mod exp;
 pub mod exports;
+pub mod guard;
 pub mod icf;
 pub mod implib;
 pub mod layout;
 pub mod link;
+pub mod ltcg;
+pub mod manifest;
 pub mod msqsort;
 pub mod object;
 pub mod pdb;

@@ -5,11 +5,11 @@
 //!
 //! - The list starts with the linker's own entry; each tool not seen yet is
 //!   put at the front, walking the inputs as link.exe's pass 2 does: the
-//!   command line's objects in order, then library by library, each one's
-//!   members from the last in the archive to the first (link.exe makes a
-//!   library's modules in the order of their offsets, each put at the
-//!   front of the library's list); so the list is newest first, the
-//!   linker last. An object without a
+//!   command line's objects from the last to the first, then library by
+//!   library, each one's members from the last in the archive to the first
+//!   (link.exe makes the command line's modules in order, and a library's
+//!   in the order of their offsets, each put at the front of its list); so
+//!   the list is newest first, the linker last. An object without a
 //!   `@comp.id` counts as 0, every import object as `0x00010000`.
 //! - The checksum: the stub's length, plus each of its bytes rotated left
 //!   by its offset (`e_lfanew` zero), plus each entry's ID rotated left by
@@ -33,6 +33,10 @@ pub const EXPORT_COMP_ID: u32 = 0x0100_90A5;
 /// makes of the `.res` files, seen before every input.
 pub const CVTRES_COMP_ID: u32 = 0x00FF_90A5;
 
+/// What each `.res` file counts as when a manifest is embedded too
+/// (product 0x97, build 0).
+pub const RES_BESIDE_MANIFEST_COMP_ID: u32 = 0x0097_0000;
+
 /// What an import object counts as.
 const IMPORT: u32 = 0x0001_0000;
 
@@ -40,19 +44,26 @@ const IMPORT: u32 = 0x0001_0000;
 pub const STUB: u32 = 0x80;
 
 /// The Rich header's entries (ID, count), in their order.
-pub fn entries(r: &Resolved) -> Vec<(u32, u32)> {
+pub fn entries(r: &Resolved, resources: Option<&crate::resources::Rsrc>) -> Vec<(u32, u32)> {
     let id = |f: &crate::resolve::File| match &f.kind {
         FileKind::Object { object, .. } => object.comp_id.unwrap_or(0),
         FileKind::Import { .. } => IMPORT,
     };
     let mut walk: Vec<u32> = Vec::new();
+    // (An embedded manifest with .res files besides: each .res counts
+    // first, as link.exe has rc.exe and cvtres rework them; then cvtres, for
+    // any resources; then the export object.)
+    if let Some(res) = resources {
+        walk.extend(std::iter::repeat_n(
+            RES_BESIDE_MANIFEST_COMP_ID,
+            res.res_beside_manifest as usize,
+        ));
+        walk.push(CVTRES_COMP_ID);
+    }
     if !r.config.exports.is_empty() {
         walk.push(EXPORT_COMP_ID);
     }
-    if !r.resources.is_empty() {
-        walk.push(CVTRES_COMP_ID);
-    }
-    walk.extend(r.files.iter().filter(|f| f.library.is_none()).map(id));
+    walk.extend(r.files.iter().rev().filter(|f| f.library.is_none()).map(id));
     // The libraries as they are searched: the command line's first.
     for &lib in &r.library_order {
         let mut members: Vec<&crate::resolve::File> =

@@ -301,6 +301,7 @@ dependencies = [
  "serde_json",
  "turbonop-archive",
  "turbonop-arm64",
+ "turbonop-clr",
  "turbonop-codeview",
  "turbonop-core",
  "turbonop-debuginfo",
@@ -843,6 +844,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-clr"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-par",
+ "turbonop-pe",
+]
+
+[[package]]
 name = "turbonop-code"
 version = "0.0.7"
 dependencies = [
@@ -875,6 +886,7 @@ dependencies = [
 name = "turbonop-coff"
 version = "0.0.7"
 dependencies = [
+ "memchr",
  "turbonop-archive",
  "turbonop-core",
  "turbonop-global-alloc",
@@ -1064,6 +1076,7 @@ dependencies = [
  "mimalloc",
  "turbonop-arm32",
  "turbonop-arm64",
+ "turbonop-clr",
  "turbonop-code",
  "turbonop-debuginfo",
  "turbonop-demangle",
@@ -1131,6 +1144,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-global-alloc",
  "turbonop-hash",
+ "turbonop-linkmap",
  "turbonop-mmap",
  "turbonop-par",
  "turbonop-pdb",
@@ -1330,6 +1344,7 @@ dependencies = [
  "turbonop-codeview",
  "turbonop-core",
  "turbonop-debuginfo",
+ "turbonop-demangle",
  "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-macho",
@@ -1516,6 +1531,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-turbolink-lldtests"
+version = "0.0.1"
+dependencies = [
+ "turbonop-global-alloc",
+ "turbonop-par",
+]
+
+[[package]]
 name = "turbonop-unwind"
 version = "0.0.7"
 dependencies = [
@@ -1550,6 +1573,7 @@ dependencies = [
  "turbonop-hash",
  "turbonop-macho",
  "turbonop-macho-object",
+ "turbonop-mmap",
  "turbonop-par",
  "turbonop-pdb",
  "turbonop-pe",

@@ -2,6 +2,9 @@
 //! its own part of the output, split with `split_at_mut`, relocated in
 //! place), the base relocations, and `.pdata` sorted.
 
+#[path = "map.rs"]
+mod map;
+
 use turbonop_hash::Map;
 
 use crate::config::{Config, Debug, Machine, Subsystem};
@@ -134,6 +137,20 @@ impl<'a> Image<'a> {
                 Def::Absolute(v) => Target::Absolute(v),
                 Def::Synthetic(Synthetic::ImageBase) => Target::Rva(0),
                 Def::Synthetic(Synthetic::Zero) => Target::Absolute(0),
+                Def::Synthetic(Synthetic::Guard(s)) => match s {
+                    crate::guard::Symbol::Table(i) => self
+                        .l
+                        .chunks
+                        .iter()
+                        .find(|c| c.kind == ChunkKind::GuardTable(i))
+                        .map_or(Target::Absolute(0), |c| Target::Rva(c.rva)),
+                    crate::guard::Symbol::Count(i) => {
+                        Target::Absolute(self.l.guard.table(i).len() as u64)
+                    }
+                    crate::guard::Symbol::Flags => {
+                        Target::Absolute(u64::from(crate::guard::flags(self.r, &self.l.guard)))
+                    }
+                },
                 Def::Synthetic(Synthetic::VolatileMetadata) => self
                     .l
                     .chunks
@@ -314,8 +331,37 @@ impl<'a> Image<'a> {
                             u32::MAX => 0,
                             g => self.rva_of(g).unwrap_or(0),
                         },
-                        &t.forwarders,
                     );
+                }
+            }
+            ChunkKind::GuardTable(i) => {
+                // The targets' RVAs, ascending (the functions' each with its
+                // metadata byte, if any has one).
+                let g = &self.l.guard;
+                let mut rvas: Vec<(u32, u8)> = g
+                    .table(i)
+                    .iter()
+                    .filter_map(|p| {
+                        let rva = match *p {
+                            crate::guard::Place::Chunk(c, off) => {
+                                Some(self.l.chunks[c as usize].rva + off)
+                            }
+                            crate::guard::Place::Slot(f) => self.import_slot(f),
+                        }?;
+                        Some((rva, g.function_flags.get(p).copied().unwrap_or(0)))
+                    })
+                    .collect();
+                rvas.sort_unstable();
+                let size = if i == 0 {
+                    crate::guard::function_entry_size(g) as usize
+                } else {
+                    4
+                };
+                for (k, (v, flags)) in rvas.into_iter().enumerate() {
+                    out[size * k..size * k + 4].copy_from_slice(&v.to_le_bytes());
+                    if size == 5 {
+                        out[size * k + 4] = flags;
+                    }
                 }
             }
             ChunkKind::Empty
@@ -353,7 +399,7 @@ impl<'a> Image<'a> {
             }
             ChunkKind::DelayNames(d) => {
                 let names = self.delay_rva(ChunkKind::DelayHintNames).unwrap_or(0);
-                for (k, &f) in self.l.delay_dlls[d as usize].imports.iter().enumerate() {
+                for (k, &f) in self.l.delay_tables[d as usize].iter().enumerate() {
                     let FileKind::Import { import, .. } = &self.r.files[f as usize].kind else {
                         continue;
                     };
@@ -382,7 +428,7 @@ impl<'a> Image<'a> {
             }
             ChunkKind::DelayAddresses(d) | ChunkKind::DelayUnload(d) => {
                 // Each slot starts at its import's __imp_load_ thunk.
-                for (k, &f) in self.l.delay_dlls[d as usize].imports.iter().enumerate() {
+                for (k, &f) in self.l.delay_tables[d as usize].iter().enumerate() {
                     let thunk = self.delay_rva(ChunkKind::DelayThunk(f)).unwrap_or(0);
                     let v = self.base + u64::from(thunk);
                     out[k * 8..k * 8 + 8].copy_from_slice(&v.to_le_bytes());
@@ -550,7 +596,12 @@ impl<'a> Image<'a> {
             let starts: Vec<Option<u32>> = s
                 .groups
                 .iter()
-                .map(|(_, chunks)| chunks.iter().map(|&c| self.l.chunks[c as usize].rva).min())
+                .map(|(_, chunks)| {
+                    let first = chunks.first().and_then(|c| self.l.group_starts.get(c));
+                    first
+                        .copied()
+                        .or_else(|| chunks.iter().map(|&c| self.l.chunks[c as usize].rva).min())
+                })
                 .collect();
             let end = s.rva + s.virtual_size;
             for (i, (name, _)) in s.groups.iter().enumerate() {
@@ -757,11 +808,13 @@ impl<'a> Image<'a> {
             at += sec.raw_size;
             let mut mine = mine;
             let mut offset = 0u32;
-            // Code's padding between chunks is int3 (0xCC), as link.exe's.
+            // Code's padding between chunks is int3 (0xCC), as link.exe's;
+            // after the last chunk with contents (before an empty group's
+            // place at the end), zeros.
             let code = sec.characteristics & scn::CNT_CODE != 0;
             for &c in &sec.chunks {
                 let chunk = &self.l.chunks[c as usize];
-                if chunk.uninitialized {
+                if chunk.uninitialized || chunk.size == 0 {
                     continue;
                 }
                 let start = chunk.rva - sec.rva;
@@ -833,22 +886,17 @@ impl<'a> Image<'a> {
                 f.copy_from_slice(&((old & !0x00F0_0000) | bits).to_le_bytes());
             }
         }
-        // /Brepro: the hash of the image (its time stamps and hash zero),
-        // whose last 4 bytes are the time stamp. (link.exe's hash covers
-        // something else, not found yet: see docs/turbolink.md.)
+        // /Brepro, as link.exe's IMAGE::Normalize does it: the SHA-256 of
+        // the image with its time stamps (the file header's, each debug
+        // directory entry's, the export directory's) and the PDB's GUID and
+        // age set to all ones, and the repro entry's length and hash to
+        // zeros; then the hash in the repro entry, its last 4 bytes as every
+        // time stamp, its first 16 as the PDB's GUID (the age as it was).
         if let Some(c) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Repro) {
             use sha2::Digest;
-            let hash: [u8; 32] = sha2::Sha256::digest(&out).into();
-            let at = self.file_offset(c.rva) as usize + 4;
-            out[at..at + 32].copy_from_slice(&hash);
-            let ts = [hash[28], hash[29], hash[30], hash[31]];
-            // The PDB's GUID is the hash's first 16 bytes (as link.exe's).
-            if let Some(cv) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::CodeView) {
-                let at = self.file_offset(cv.rva) as usize + 4;
-                out[at..at + 16].copy_from_slice(&hash[..16]);
-            }
             let pe = self.l.rich.2 as usize;
-            out[pe + 8..pe + 12].copy_from_slice(&ts);
+            let repro = self.file_offset(c.rva) as usize;
+            let mut stamps = vec![pe + 8];
             if let Some(d) = self
                 .l
                 .chunks
@@ -857,8 +905,36 @@ impl<'a> Image<'a> {
             {
                 let at = self.file_offset(d.rva) as usize;
                 for i in 0..crate::layout::debug_entries(&self.r.config).len() {
-                    out[at + i * 28 + 4..at + i * 28 + 8].copy_from_slice(&ts);
+                    stamps.push(at + i * 28 + 4);
                 }
+            }
+            if let Some(e) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Exports) {
+                stamps.push(self.file_offset(e.rva) as usize + 4);
+            }
+            let guid = self
+                .l
+                .chunks
+                .iter()
+                .find(|c| c.kind == ChunkKind::CodeView)
+                .map(|cv| self.file_offset(cv.rva) as usize + 4);
+            let mut normal = out.clone();
+            for &at in &stamps {
+                normal[at..at + 4].fill(0xFF);
+            }
+            if let Some(at) = guid {
+                // The GUID and the age after it.
+                normal[at..at + 20].fill(0xFF);
+            }
+            normal[repro..repro + 36].fill(0);
+            let hash: [u8; 32] = sha2::Sha256::digest(&normal).into();
+            drop(normal);
+            out[repro + 4..repro + 36].copy_from_slice(&hash);
+            let ts = [hash[28], hash[29], hash[30], hash[31]];
+            for &at in &stamps {
+                out[at..at + 4].copy_from_slice(&ts);
+            }
+            if let Some(at) = guid {
+                out[at..at + 16].copy_from_slice(&hash[..16]);
             }
         }
         (out, problems)
@@ -1008,8 +1084,26 @@ impl<'a> Image<'a> {
         w.u32(0); // loader flags
         w.u32(16);
         let mut dirs = [(0u32, 0u32); 16];
-        if let Some(e) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Exports) {
-            dirs[0] = (e.rva, e.size);
+        if let Some(i) = self
+            .l
+            .chunks
+            .iter()
+            .position(|c| c.kind == ChunkKind::Exports)
+        {
+            // Its size to 4 bytes, as link.exe gives it, unless nothing
+            // follows it in its section (then its own size).
+            let e = &self.l.chunks[i];
+            let last = self
+                .l
+                .sections
+                .iter()
+                .any(|s| s.chunks.last() == Some(&crate::n32(i)));
+            let size = if last {
+                e.size
+            } else {
+                crate::layout::align_up(e.size, 4)
+            };
+            dirs[0] = (e.rva, size);
         }
         if let Some(d) = self
             .l

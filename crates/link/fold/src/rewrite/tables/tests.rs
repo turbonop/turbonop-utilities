@@ -1,4 +1,4 @@
-use super::super::{Input, Options, Pull, rewrite, units};
+use super::super::{Input, Options, Pull, gathered as rewrite, units};
 use super::*;
 use std::collections::BTreeSet;
 use turbonop_coff::{Aux, File, SectionNumber};
@@ -438,7 +438,7 @@ fn identical_tables_hash_alike() {
         let u = f
             .units
             .iter()
-            .find(|u| u.externals.iter().any(|e| e == name))
+            .find(|u| u.externals.iter().any(|e| e.as_ref() == name))
             .unwrap();
         assert!(
             u.sections.iter().any(|&s| f.tables.get(s).is_some()),
@@ -576,7 +576,7 @@ fn a_table_of_code_that_stays_keeps_a_unit_s_label_from_folding() {
             .unwrap()
             .units
             .into_iter()
-            .find(|u| u.externals.iter().any(|e| e == b"?jumps@@YAHH@Z"))
+            .find(|u| u.externals.iter().any(|e| e.as_ref() == b"?jumps@@YAHH@Z"))
             .unwrap()
             .unfoldable
     };

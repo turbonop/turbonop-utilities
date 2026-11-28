@@ -841,11 +841,11 @@ pub(super) fn references(object: &Object<'_>, facts: &Facts, k: usize) -> u128 {
             names.push(t.name.as_bytes());
         }
     };
-    let closure = &facts.units[k].closure;
+    let closure = facts.units[k].closure();
     let nodes: Vec<Node> = if closure.is_empty() {
         vec![Node::Unit(k as u32)]
     } else {
-        closure.clone()
+        closure.to_vec()
     };
     for node in nodes {
         match node {
@@ -898,12 +898,12 @@ pub(super) fn references(object: &Object<'_>, facts: &Facts, k: usize) -> u128 {
 pub(super) fn settle(facts: &mut Facts) {
     let mut found: Vec<(usize, Unfoldable, String)> = Vec::new();
     for (k, u) in facts.units.iter().enumerate() {
-        if u.unfoldable.is_some() || u.closure.len() < 2 {
+        if u.unfoldable.is_some() || u.closure().len() < 2 {
             continue;
         }
-        for node in &u.closure[1..] {
+        for node in &u.closure()[1..] {
             if let Node::Unit(v) = *node
-                && let Some((why, what)) = &facts.units[v as usize].blocked
+                && let Some((why, what)) = facts.units[v as usize].blocked()
             {
                 found.push((k, *why, format!("a local unit it reaches: {what}")));
                 break;

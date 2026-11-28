@@ -288,6 +288,7 @@ pub fn maps_with_source_map(
         out.push((source, map));
     }
     Ok(Maps {
+        crate_hints: Default::default(),
         labels,
         base,
         sources: out,

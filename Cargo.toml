@@ -5,7 +5,7 @@ members = ["crates/*/*", "apps/*"]
 [workspace.package]
 version = "0.0.7"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 license = "Apache-2.0"
 authors = ["James McNellis <james@jamesmcnellis.com>"]
 repository = "https://github.com/turbonop/turbonop-utilities"
@@ -72,6 +72,7 @@ turbonop-dwarf = { path = "crates/symbols/dwarf" }
 turbonop-macho = { path = "crates/formats/macho" }
 turbonop-macho-object = { path = "crates/formats/macho-object" }
 turbonop-wasm = { path = "crates/formats/wasm" }
+turbonop-clr = { path = "crates/formats/clr" }
 turbonop-wasm-isa = { path = "crates/isa/wasm" }
 turbonop-pe = { path = "crates/formats/pe" }
 turbonop-coff = { path = "crates/formats/coff" }

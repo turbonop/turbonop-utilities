@@ -7,11 +7,12 @@ leave this list when they ship.
 ## TurboNOP's tools
 
 - **`hexcavator diff`, what's still to do.**
-  - Code compared by bytes, references resolved by name: a displacement
-    whose instruction has an immediate after it is resolved from the
-    field's end (the target's name usually still matches). Decoding the
-    instructions (turbonop-x86, turbonop-arm64) would make it exact, and
-    let ARM64's ADRP/ADD pairs and branches count as references.
+  - Code is compared by its instructions, decoded (x64, ARM64: branches,
+    RIP-relative operands, ADRP pairs, literal loads, each access in
+    full); x86's (32-bit) code, and bytes that don't decode, still by
+    bytes, a field's width at a time. Identical bytes are taken as the
+    same: an instruction that refers to the same address in both images
+    is not checked for what each image has there (the data parts tell).
   - With map-only names, statics one map lists and the other doesn't
     become "only in a"; functions without exception data are bounded by
     the next name either image has.
@@ -24,7 +25,18 @@ leave this list when they ship.
   - link.exe's own PDBs differ from one `/Brepro` link of the same inputs
     to the next (same GUID): which module's copy of a type
     `LF_UDT_MOD_SRC_LINE` names, and which copy of a type S_UDT names. A
-    turbolink PDB should be compared knowing that.
+    turbolink PDB should be compared knowing that. (compare-images now
+    compares those picks by what they say: the globals' and every
+    module's top-level S_UDT and S_CONSTANT as one set, tag-blind; a
+    UDT's source line in the same header file, or one line in common,
+    as a pick.)
+  - compare-images on thread-local variables: `S_GTHREAD32` and
+    `S_LTHREAD32` (`_Init_thread_epoch`, `PrettyStackTraceHead`) differ
+    between an original and a folded llvm-nm link, and with them their
+    modules' own records (`Parallel.cpp.obj`, `PrettyStackTrace.cpp.obj`,
+    `TimeProfiler.cpp.obj`): likely their `.tls` offsets aren't named
+    through the image as other addresses are. Find out, and compare them
+    by what they name.
 
 - **One site for every tool's web version.** GitHub Pages has one site per
   repository, and a deploy replaces all of it: hexcavator's release
@@ -41,12 +53,6 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
-- **Release notes.** A release's notes are GitHub's list of the pull
-  requests since the last release (0.0.11's listed every one since the
-  first, its predecessors' drafts deleted); 0.0.11's were rewritten by
-  hand from the changes (what a user would notice, by command). The
-  release workflow should draft them so: from the pull requests' titles
-  and descriptions since the last tag, for editing before it publishes.
 - **hexcavator on crates.io.** `cargo binstall hexcavator` finds the crate
   on crates.io (its metadata names the release's programs); until it is
   published there (and with it every `turbonop-*` crate it depends on),
@@ -240,13 +246,45 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 Binary analysis and size analysis for code that runs on a virtual
 machine, not only native images (PE, ELF, Mach-O) and WebAssembly:
 
-- **.NET assemblies.** A PE image's CLI header and metadata tables
-  (ECMA-335): types, methods, fields, and their sizes; IL bodies
-  decoded; resources; references to other assemblies; and what `size`
-  should attribute IL, metadata, strings, blobs, and resources to (by
-  type and namespace, as by compiland for native code). Portable PDBs
-  for their sources and lines. ReadyToRun images (native code beside the
-  IL) and Native AOT images (native, with .NET's own metadata) too.
+- **.NET assemblies.** The parser is done: `turbonop-clr` reads a PE
+  image's CLI header, the metadata root and every stream (`#~` and `#-`
+  with its `Ptr` tables, `#Strings`, `#US`, `#GUID`, `#Blob`, `#Pdb`),
+  every table of ECMA-335 II.22 and of the portable PDB with typed rows
+  and the lookups between them, every signature kind, names as IL spells
+  them, method bodies (tiny and fat, exception clauses) and their IL
+  (every opcode, tokens resolved), custom attribute values, permission
+  sets, marshalling descriptors, `.resources` files and their entries'
+  sizes, the strong-name signature, v-table fixups, document names and
+  sequence points, and the ReadyToRun header. Tested against
+  System.Reflection.Metadata (tools/clr/ClrDump.cs) on its fixtures and,
+  where there's a `dotnet`, on the framework's assemblies, every one. Left:
+  - **`size`**: attribute IL bodies, metadata tables, heap entries
+    (strings, blobs, user strings), and resources to their types and
+    namespaces (as compilands for native code), with the padding and
+    headers that belong to nothing.
+  - **`dump`, `symbols`, disassembly**: the tables, IL (as ildasm shows
+    it, from `il::decode` and `names`), and resources; `info -json`'s
+    fields (only the text `info` has the metadata now).
+  - **The extension's pages** for all of it.
+  - **ReadyToRun decoded**: method entry points (MethodDefEntryPoints,
+    InstanceMethodEntryPoints' native hashtables), RuntimeFunctions (the
+    native code, for size and disassembly), import sections and fixups,
+    inlining and debug info; composite images (whose header is the
+    `RTR_HEADER` export, not ManagedNativeHeader).
+  - **Native AOT images** (no CLI header: .NET's own metadata, the
+    `__ReadyToRunHeader` of the runtime's type manager).
+  - **Portable PDBs, the rest**: local constant signatures, import scope
+    blobs, custom debug information by kind (embedded sources, source
+    link, state machine scopes, dynamic locals); embedded PDBs (the debug
+    directory's deflated entry) and finding a PDB from the CodeView entry.
+  - **Custom attributes naming other assemblies' enums**: their
+    underlying types are only known from those assemblies
+    (`EnumTypes::add_assembly`); hexcavator should load the references it
+    can find (int32 is assumed otherwise, as System.Reflection.Metadata's
+    decoder does).
+  - **C++/CLI mixed images**: the v-table fixups' native thunks, native
+    method bodies (code type native, not IL), field-kind stand-alone
+    signatures; and edit-and-continue deltas (ENCLog, ENCMap applied).
 - **Java.** Class files (constant pool, fields, methods, attributes,
   bytecode decoded) and JARs (zip archives of them, with their
   manifests): size by package, class, and method.
@@ -307,15 +345,20 @@ disassembly, `size` with its findings, and the extension's pages.
   (its locals), and `.cil$in`: their contents.
 - **The back end's interface, the rest** (docs/turbolink-c2.md): the
   back-end switches each link option produces (the probe over a matrix
-  of options), `CodeGen6`'s outputs, the second root list's rule,
-  `SymType`'s values, and what hands native objects to the back end.
+  of options), `CodeGen6`'s outputs, `SymType`'s values (1, 2, 4, 6 and
+  8 seen), and what hands native objects to the back end.
 - **`ltcg-drive`'s gaps.** Libraries' members (opened at their offset),
   incremental LTCG, and the written object's debug information
   (`LNK4255` for two objects).
-- **`hexcavator vtables`, an unsized table's end.** It is inferred up
-  to the next symbol (or a `QueryInterface`), so a table with no symbol
-  right after one reads as more of it (link.exe's `std::function`s).
-  Where the image has RTTI, the locator before each table bounds it.
+- **`hexcavator vtables` without RTTI.** With RTTI, tables are found and
+  bounded by their locators (a stripped PDB's lambdas' tables too); an
+  image built without it (`/GR-`: link.exe) still infers a table with no
+  symbol, right after one, as more of it (link.exe's `std::function`s).
+  Heuristics to weigh: a second deleting destructor, or a run of slots
+  all of one other class. And a table RTTI names is named in the
+  demangler's long form (`` `int __cdecl main(int,char * *)'::`2'::<lambda_1> ``)
+  where functions' names have the short one (`` `main'::`2'::<lambda_1> ``):
+  its own class's slots aren't told from others' yet.
 
 ## Speed
 
@@ -388,6 +431,55 @@ x64. Where the 3.5 MB went:
   were enforced when `tools/turbolib/tables` ran (CET shadow stacks); the
   ARM64 programs, linked but not run; `.voltbl` and `.retplne` from
   compilers other than cl 14.52.
+- **Hardening (docs/turbolib-guide.md).** Done: a failed fold (panic,
+  layout, self-check) writes the unfolded library with one warning;
+  `verify` (on by default), `strict`, `inject-failure`; output retries and
+  cleanup; `tools/turbolib/incremental` (incremental, FASTLINK, LTCG,
+  lld-link; x64, x86, ARM64); `tools/turbolib/corpus/everylib.py`. Open:
+  - the self-check, made cheaper (the plan's "The self-check"), still
+    adds about 0.65-0.70x folding's CPU (`clangSema.lib`, `LLVMCore.lib`,
+    loaded machine) and a quarter more peak working set. Left: a third of
+    what remains is kernel time, mostly faulting in the mapping of the
+    library just written (prefetching the view would need new unsafe
+    FFI); the compare stage's name hashing (interning names once per
+    library would make its maps integer-keyed); and a cheaper mode to
+    decide on: `verify=links`, every check but units' and sections'
+    fingerprints (it would no longer prove that a moved COMDAT is
+    identical to the copy kept, nor that what members keep is unchanged
+    byte for byte: only that the same names are defined, referred to,
+    indexed, and loaded); then decide the default again;
+  - (Found: the 305 SDK libraries whose `--fold=none /Brepro` output
+    wasn't lib.exe's were lib.exe copying a lone library input byte for
+    byte; turbolib now copies it too.) Forced to write such a library
+    again (`/REMOVE` of a member that isn't there), lib.exe and turbolib
+    still differ on ARM64X import libraries (234 of the 305; the rest not
+    yet run): without `/MACHINE`, lib.exe drops the ARM64EC import
+    members that share a name with a native one and writes no
+    `/<ECSYMBOLS>/` (the library loses its EC half); turbolib keeps every
+    member and lists their EC names (`#name`, `__imp_aux_name`) in the
+    main index; with `/MACHINE:ARM64X` both keep every member but the
+    tables differ. Only re-archiving ARM64 import libraries meets this;
+    x64 and x86 libraries, and libraries made from objects, don't;
+  - the engine puts a COMDAT in two synthesized members (`libucrt.lib`,
+    `Uuid.lib`), and changes `.retplne` (`BufferOverflow.lib`): the
+    self-check falls back;
+  - folding a folded library works (the plan's "Folding a folded
+    library"; `tools/turbolib/refold/run.py`). Open: the inputs'
+    precompiled-types members stay beside the new one, so combining
+    folded libraries can grow them (drop an input's types member when
+    every user of it in the library was absorbed, and teach `verify` that
+    it may go); `lib.exe` combining a folded library warns LNK4006 for
+    `__turbolib$alias` (and fails under /WX): defining it so that lib.exe
+    doesn't count it as a definition (a COMDAT? both linkers' behavior to
+    measure first); compare-images compares FH4 C++ EH tables'
+    image-relative words (`$ip2state$`, `$stateUnwindMap$`) and `.pdata`
+    COMDATs' as bytes, not by what they name, so any two links of code
+    with them differ;
+  - `/GL` objects' index: `use_shared`-like inline functions' IL
+    references read as none (`turbonop_pe::ltcg::function_il`), so fewer
+    names are listed than lib.exe lists (tools/turbolib/incremental);
+  - link.exe's incremental relink after a `/Yu` library member changes
+    fails with lib.exe's library too (LNK1235; LNK1236 folded).
 - **Phase 1: what is left of the writers.**
   - CodeView: done (`symbol_refs`, `c13`, `write`, `remap`; checked on
     both corpora by `turbonop-codeview`'s `corpus` example). Still open:
@@ -429,6 +521,25 @@ x64. Where the 3.5 MB went:
   - `/<ECSYMBOLS>/` in verify; C13 subsections other than lines and
     inlinees (frame data, cross-scope imports and exports) in
     compare-images.
+  - **No folded COFF link has yet compared equivalent.** The proof run
+    (`tools/turbolib/proof`: a from-scratch Debug /Z7 LLVM+clang+lld
+    build, its 205 changed libraries folded, all 205 passing `verify`;
+    `llvm-objdump.exe` relinked) still fails compare-images after
+    moved `/RTC1` data was named by content and MSVC's jump-table
+    displacements inferred (branch turbolib-proof): link.exe /OPT:REF 241
+    failures (from 3,500), lld-link /OPT:REF 37,481. Left to explain,
+    each by an image's bytes: code operands naming another offset of the
+    same function (`getMappingClassString`+0x2ac and +0x29b, lld-link);
+    single differing bytes (`optimizeInstFromVEX3ToVEX2`+0x1678, link.exe);
+    lld-link's 8,004 read-only contributions only in each program; line
+    blocks of `std::_Optional_construct_base` constructors; 123 to 138
+    procedures' symbols (lambdas); `S_GTHREAD32`/`S_LTHREAD32` globals;
+    `Parallel.cpp`'s `.data` CRC.
+  - The proof run's other parts, not yet done: the two turbolib builds
+    (fold, fold+precomp) and their test suites against the baseline's;
+    the baseline's `check-clang` (Debug clang ran 7.5 h without finishing:
+    AArch64 SVE CodeGen tests) and `check-lld`; the debugger sessions in
+    folded functions (`proof/debug.py`, checked on the baseline only).
 - **Phase 2.4's open ends** (folded units' CodeView, done for x64 MSVC
   and clang-cl).
   - (Done: lld-link loaded members link.exe didn't, 2.8 MiB more code in
@@ -598,29 +709,40 @@ x64. Where the 3.5 MB went:
   (7.2), `--fold=identical` with `verify` (7.3), x86-64's FDEs and LSDAs
   moving with their units, givers' DWARF moving with their code,
   synthesized members' DWARF, and a Rust `compare-images` for Mach-O with
-  dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5), and the
-  corpus scripts (`tools/turbolib/macho-corpus`). Still open:
-  - **The size DWARF costs**: the folded corpus archives are 5.9% larger
-    (7.4: 9.1%; 1.0% smaller before synthesized members carried DWARF):
-    88.7 MB of synthesized members' DWARF per architecture, most of it
-    whole class definitions (dsymutil keeps only what linked DIEs reach)
-    and their strings. Sharing class definitions between synthesized
-    members isn't correct for dsymutil (7.5: they load and dead-strip
-    independently). Left: an opt-in `--debug-types=declarations` (14.9
-    MB, but 1.1% of the dSYM's type definitions lost); inline strings
-    (`DW_FORM_string`) for strings a synthesized member uses once (a few
-    percent of its DWARF); find out why dsymutil kept a giver's
-    unreferenced class definition (7.5), which decides whether givers may
-    also lose named types only dead code reached (6.7 MB of both
-    architectures' `llvm-ar` archives).
+  dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5),
+  dsymutil's keeping rules read and applied: givers without named types
+  no keepable DIE reaches, synthesized members declaring the classes
+  their givers define (opt-in: `--debug-types=shared`), single-use strings inline (7.6), and the corpus
+  scripts (`tools/turbolib/macho-corpus`). Still open:
+  - **The size DWARF costs, and class versions** (7.6): by default
+    (`--debug-types=complete`, 7.5's classes and dSYMs) the folded `llvm-ar`
+    archives are still 5.0% larger (7.5: 5.9%). `--debug-types=shared`
+    makes them 0.95% smaller, but which unit's version of a class template
+    specialization dsymutil keeps changes: the corpus links have 70 to 133 definitions whose original contents
+    (member lists) aren't in the folded dSYM (7.5: 21 to 38), and 4 to 6
+    lost (7.5: 9 to 11). It is dsymutil's completeness cascade (a version
+    is canonical only if complete, which depends on what earlier objects
+    made canonical), not a rule a member's DWARF can follow; 7.4's whole
+    classes changed versions too. Find whether lldb sees any difference
+    (it merges a class's declarations by name); measure the versions a
+    Mac build's dSYM has from build to build. Givers' classes hold only
+    without `-dead_strip` (see `relink.py --dead-strip`'s results in the
+    plan), and only when a giver loads the synthesized member. Making
+    `shared` the default needs those answered.
+  - **What's left of synthesized members' DWARF** (84 MB arm64 by
+    default, 40 with `shared`; most of the rest of a synthesized member is its load
+    commands and symbols): a unit with one code range could use
+    `DW_AT_low_pc`/`DW_AT_high_pc` and no `__debug_ranges` (about 1.3 MB
+    and a section header per member); `DW_FORM_ref2` in units under 64
+    KiB.
   - **`compare-images` on the corpus links isn't clean** (see 7.4): code
     and data past a local constant that a sizeless symbol can't bound
     (2 to 24 per program; bound them by the dSYM's variables' types);
     `RTTIRoot::anchor`'s unwind encoding (0 in the original, not
     explained); 1 to 9 subprograms described by another unit's copy with
     other DIEs (spot-checked, not proven: write a Mach-O `witness.py`);
-    9 to 11 type definitions only in the original and some with other
-    contents (which units' class templates dsymutil keeps).
+    type definitions only in the original and with other contents (see
+    the first point).
   - **Speed**: 3.55× the real tools' time folding in 7.4 (0.82× without),
     and 7.5's pruning adds about a quarter more CPU (every giver's DWARF
     walked; lookups, strings, accelerator tables, a second cut); most
@@ -651,6 +773,29 @@ x64. Where the 3.5 MB went:
     32-bit targets (i386, armv7, arm64_32: passed through); universal
     files with `--fold` (untested); `ar` (GNU) on Mach-O members (its index
     isn't modeled); `verify` doesn't read universal files.
+- **COFF speed and memory (the plan's Phase 5, "Memory and many
+  processes").** Done: compact members, objects read one at a time when
+  folding identical copies, a bounded writer, mimalloc's eager commit off,
+  slots shared among turbolib processes. Left:
+  - Wall times on a quiet machine (this round's were taken with another
+    build running): the 20 largest libraries against `lib.exe`, 1 to 8
+    threads, and a profile with `tools/turbolib/sample.py`.
+  - Done (2026-11-28, the plan's "Memory, round 2"): every mode reads
+    its objects one at a time, shared types, select-any, `--locals`, and
+    `--report odr` included; `strip` edits the object in place; unit facts
+    are 176 bytes (from 288), their names borrowed.
+  - Per-thread memory is still about 60 MiB a thread on clangSema.lib
+    (from 91): the 8 largest members' objects at once, and what is made of
+    them. Freed memory is reused across steps (mimalloc reclaims the
+    exited threads' segments: with `MIMALLOC_MAX_SEGMENT_RECLAIM=0`,
+    240 MiB more); what isn't reused is pages left part-used (purging at
+    once, `MIMALLOC_PURGE_DELAY=0`: 330 MiB less commit, 23% more CPU).
+    Left: a smaller object model (96 bytes a symbol, 128 a section, in
+    `turbonop-coff`), writing members as they are made rather than holding
+    them all (222 + 58 MiB on clangSema.lib), maybe a scoped thread pool.
+  - mimalloc's 32 MiB committed at start of every run: accepted (a run
+    that does real work uses it).
+  - Slots for the `ar` and `libtool` personalities (only `lib` takes them).
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with
@@ -662,28 +807,66 @@ x64. Where the 3.5 MB went:
 CRT, DLLs and import libraries, resources, delay loading, `/DEBUG` (the
 PDB), LLVM's `llvm-tblgen`. Byte for byte link.exe's images (time stamps
 aside): C and C++ with the dynamic, static, and debug CRTs, a DLL with
-exports, delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
+exports (and its x64 import library, byte for byte, and export object),
+delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
 same but for the PDB's GUID, age, and name.
 
-- **Not yet, for native x64 images:** delay loading's protected form (`/GUARD:CF`'s `.didat` section) and its
-  other machines, `/GUARD:CF`'s tables, `/GUARD:EHCONT`, manifests (`/MANIFEST`,
-  `/MANIFESTUAC`, embedding), `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
-  format, the `.exp` file, `/INCREMENTAL`'s padding (it links fully),
+- **Not yet, for native x64 images:** delay loading on other machines;
+  `/GUARD:XFG`; `/MAPINFO`'s
+  other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
+  library X and object Y" message, `/INCREMENTAL`'s padding (it links
+  fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
-  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`, `/Brepro`'s hash.
-- **Byte identity, still different:** a delay-loaded DLL's tables with
-  two or more imports (link.exe's order, docs/turbolink.md);
-  `llvm-tblgen`'s 4 bytes of padding before `.idata$2`; more large
-  programs to check (`llc`, `opt`: `hexcavator diff` them).
+  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
+- **Exports' diagnostics:** link.exe warns LNK4197 for a name exported
+  twice (turbolink keeps the first silently, as link.exe does) and reports
+  LNK2001 for a forwarder `x = dll.f` when nothing defines `f` (seen on
+  the command line and in a `.def` file; turbolink links it); the map's
+  statics for a forwarder (the `.exp`'s static named for the export, at
+  its string) aren't checked against link.exe's map.
+- **Byte identity, still different:** the import library and export
+  object on other machines than x64 (x86's decorated names; the
+  descriptors' CodeView machine for x86 and ARM64 is assumed, 3 and
+  0xF6); the map's `$R` symbols with two or more
+  `.res` files or an embedded manifest (cvtres's object for them: which
+  offsets, which origin), and a map of an LLVM-size link checked line for
+  line; the Rich header's order when an ml64 object comes before C
+  objects (link.exe lists masm's entry, 0x103, before the compiler's,
+  0x104, where turbolink lists them the other way round; seen with
+  `start.obj` from ml64, then cl's objects). llvm-tblgen, llc, opt,
+  llvm-mc and llvm-ar are link.exe's images (`llvm-nm` and
+  `llvm-objdump` to check again: their delay-load room, which the old
+  0x104-or-0x108 rule got wrong, is now link.exe's measured rule).
+- **Delay loading by archive member name:** link.exe matches
+  `/DELAYLOAD` against an import's archive member name, not the DLL
+  name in the import object. With x.dll's members renamed z.dll,
+  `/DELAYLOAD:x.dll` leaves x.dll an ordinary import and
+  `/DELAYLOAD:z.dll` delay-loads it (its descriptor still names x.dll).
+  turbolink matches the DLL name. The two names are the same in every
+  import library lib.exe or link.exe makes. The delay tables' sort uses
+  the member name, as link.exe does.
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
-  under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
+  under `/DEBUG` with `/OPT:REF`; the Rich
   header's walk when a library is searched in several passes (each pass's
   modules made in offset order?).
-- **Speed.** Measure large links (LLVM's) once the build machine is idle.
-  Layout hashes owned copies of names per chunk (24 ms of 90 for
-  `llvm-tblgen`); symbols are interned on one thread; the `/OPT:REF` mark
-  is serial; small inputs may read faster than they map.
+- **Speed.** On a quiet machine, `llc` (73 MB, every target) links in
+  1.29 s (median of five) against link.exe's 3.15 s. On a loaded machine
+  (other programs on every core, the disk busy) turbolink on all threads
+  lost to turbolink on one (11-27 s against 4-6 s, link.exe 8-12 s),
+  using no more CPU: its threads wait on each other. The mark (twice,
+  32 steps each) was most of it; it is one traversal now
+  (`turbonop_par::traverse`, no steps), 1.1-2.0 s to 60-160 ms each under
+  load. ICF refines classes now (only those of two or more, a class
+  that can't split seen at a glance, the rounds serial): 230 ms to 130 ms
+  quiet, its rounds 130-590 ms to 17-44 ms. Left, by `/TIME` under load:
+  the library search's serial walk
+  (adding each member's symbols, about 200 ms; its members are parsed
+  ahead by helper threads now, waiting on them 210 ms-1.8 s to
+  70-140 ms). Tried without gain: work in pieces taken from a
+  counter in turbonop_par's maps, and a parallel sort for ICF's class
+  count (slower, and once 2 s under load). Also: layout hashes owned
+  copies of names per chunk; symbols are interned on one thread.
 - **The PDB (`/DEBUG`), the rest.**
   - **Speed:** llvm-tblgen with `/Z7` objects only ties link.exe (the
     PDB about 300 ms of 390). Per stage:
@@ -703,12 +886,46 @@ same but for the PDB's GUID, age, and name.
   - **Not written:** `/LinkInfo`, `/TMCache`, `/UDTSRCLINEUNDONE`; x86
     FPO (only `FRAMEDATA`); incremental PDBs; page sizes over 4 KB (a PDB
     whose directory needs more than one block's list).
-  - **The `/Brepro` hash's input** (link.exe's GUID and time stamp come
-    from it).
-- **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
-  list of what passes.
-- **LTCG**, from [prong 2](docs/turbolink-c2.md) (`turbonop-ltcg-probe`'s
-  `ltcg-drive`).
+- **lld's COFF tests** ([the results](docs/turbolink-lldtests.md),
+  `apps/turbolink-lldtests`): 55 of 563 pass, 252 skipped (other machines,
+  LTO). Fix what turbolink rejects (77: crashes, unresolved externals,
+  commons, subsystem inference, `/TIMESTAMP`, `/SUMMARY`, `/LIB`, `/HELP`,
+  invalid options), then the images that differ (76); run ARM64 and 32-bit
+  x86 tests once those machines link.
+- **LTCG: the rest** ([docs/turbolink-c2.md](docs/turbolink-c2.md),
+  "turbolink's LTCG"). `/GL` objects, on the command line and in
+  libraries, link and run as `link.exe /LTCG`'s builds do, with
+  `CodeGen6`'s three lists and `Init`'s switches as link.exe's. Still to
+  do:
+  - **The dead list's gap:** a definition that refers to a handle no
+    object listed turns it off (the C++ library test's `main`, after two
+    empty references, in a `try`/`catch`): what that handle is. The back
+    end then keeps what link.exe has it drop (8,123 bytes differ there).
+  - **The switch mapping:** link options to the back end's
+    code-generation switches (`-GA`/`-GD` only so far; the DLL test's
+    `-ThrowingNew`; `/GUARD`, CET, `/DYNAMICBASE`...), learned with the
+    probe. `Init`'s (`-optref`, `-msilDebug`) are done.
+  - **Byte identity with `link.exe`:** 208 to 2,580 bytes differ in the
+    first four test images, 8,000 to 12,000 in the C++ library and
+    `/DEBUG` ones. In `hello`, one generated function's code and place
+    differ (`.text` 0x1010), and link.exe writes an `LTCG` debug
+    directory entry that turbolink doesn't. Diff the generated objects
+    first.
+  - **"Largest" COMDATs against native copies:** a stand-in's sections
+    are empty, so a native copy of an IL vtable (which also holds the
+    RTTI locator) always wins. link.exe roots the IL's copy either way,
+    as turbolink now does; which copy its image keeps isn't checked
+    (`IPublicSym3::Size` is read for it).
+  - **"Generating code" / "Finished generating code":** link.exe prints
+    them on every LTCG link; turbolink doesn't.
+  - **Kind 6 (weak aliases) in stand-ins:** a `??_E` vector deleting
+    destructor isn't defined by its stand-in, so a native reference to
+    one wouldn't find it before code generation.
+  - **Incremental LTCG, PGO, `/LTCGOUT`, `/cgthreads`.**
+  - **Speed:** run native work while `CodeGen6` runs, and read the
+    `ICOFFObj` directly with no COFF round trip.
+  - **One COM wrapper:** move `ltcg-drive` onto `turbonop-linker`'s
+    `c2` module.
 
 ## rtti-strip
 

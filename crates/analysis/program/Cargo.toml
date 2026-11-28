@@ -12,6 +12,7 @@ repository.workspace = true
 turbonop-codeview.workspace = true
 turbonop-mmap.workspace = true
 turbonop-image.workspace = true
+turbonop-demangle.workspace = true
 turbonop-macho.workspace = true
 turbonop-archive.workspace = true
 turbonop-debuginfo.workspace = true

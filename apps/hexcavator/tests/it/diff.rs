@@ -154,6 +154,46 @@ fn two_builds_of_one_program() {
     assert_eq!(code, 0, "{out}");
 }
 
+/// ARM64's builds of diff.cpp (testdata/diff): what moved is told from
+/// what changed by the instructions, decoded (branches, ADRP pairs, and
+/// what each loads in full), and 64-bit pointers in data by their
+/// targets. What differs is what diff.cpp changed, as on x64.
+#[test]
+fn two_arm64_builds_by_their_instructions() {
+    let (a, b) = (
+        testdata("diff/diff-arm64-v1.exe"),
+        testdata("diff/diff-arm64-v2.exe"),
+    );
+    let (code, out, err) = diff(&["-n".as_ref(), "0".as_ref(), a.as_os_str(), b.as_os_str()]);
+    assert_eq!(code, 1, "{out}{err}");
+    let summary = out
+        .lines()
+        .find(|l| l.contains("names in both"))
+        .unwrap_or_default();
+    assert!(summary.contains(" 4 differ;"), "{summary}");
+    for changed in [
+        "main(int, char**): contents differ",
+        "g_lookup: size 0x80 | 0x180",
+        "g_message: size 0x3 | 0x2f",
+        "transform(int): size 0x18 | 0x84",
+    ] {
+        assert!(out.contains(changed), "{changed}: {out}");
+    }
+    // Moved, not changed: code (branches, ADRP pairs, import thunks) and
+    // data (pointers to functions).
+    for moved in [
+        "_RTC_Initialize",
+        "mainCRTStartup",
+        "_cexit",
+        "pre_c_initializer",
+    ] {
+        assert!(
+            !out.contains(&format!("{moved}: contents differ")),
+            "{moved}: {out}"
+        );
+    }
+}
+
 #[test]
 fn coff_groups_in_dump_and_diff() {
     // link.exe's COFF groups (the POGO debug entry): how it laid the image

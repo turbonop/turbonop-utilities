@@ -113,3 +113,78 @@ fn usage_errors() {
     assert_eq!(code, 2);
     assert!(err.contains("usage: hexcavator vtables"), "{err}");
 }
+
+/// The vtables program's tables (tools/vtables), with its full PDB or its
+/// stripped one (public symbols only).
+fn vtables_program(arch: &str, stripped: bool) -> Vec<Value> {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/vtables");
+    let exe = dir.join(format!("vtables-{arch}.exe"));
+    let pdb = dir.join(if stripped {
+        format!("vtables-{arch}-stripped.pdb")
+    } else {
+        format!("vtables-{arch}.pdb")
+    });
+    let (code, out, err) = hexcavator(&[
+        "-json",
+        "-debug",
+        pdb.to_str().unwrap(),
+        exe.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{err}");
+    serde_json::from_str::<Value>(&out)
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .clone()
+}
+
+/// With RTTI, a table no symbol names (a lambda's std::function's, which
+/// a stripped PDB leaves out) is found by its locator and named for its
+/// class; and every table, with its full PDB or its stripped one, has the
+/// same slots (the tables before a lambda's end at its locator).
+#[test]
+fn tables_found_and_bounded_by_their_rtti() {
+    for arch in ["x64", "arm64"] {
+        let full = vtables_program(arch, false);
+        let stripped = vtables_program(arch, true);
+        let at = |t: &[Value]| -> Vec<(String, usize)> {
+            t.iter()
+                .map(|v| {
+                    (
+                        v["rva"].as_str().unwrap().to_string(),
+                        v["slots"].as_array().unwrap().len(),
+                    )
+                })
+                .collect()
+        };
+        assert_eq!(at(&full), at(&stripped), "{arch}");
+        assert!(full.iter().all(|t| t["by_rtti"] == false), "{arch}");
+        let lambdas: Vec<&Value> = stripped
+            .iter()
+            .filter(|t| t["name"].as_str().unwrap().contains("<lambda_"))
+            .collect();
+        assert_eq!(lambdas.len(), 3, "{arch}");
+        for t in &lambdas {
+            assert_eq!(t["by_rtti"], true, "{arch}");
+            assert_eq!(t["sized"], false, "{arch}");
+            assert!(
+                t["class"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("std::_Func_impl_no_alloc<"),
+                "{arch}: {}",
+                t["class"]
+            );
+            // _Copy, _Move, _Do_call, _Target_type, _Delete_this, and the
+            // destructor's.
+            assert_eq!(t["slots"].as_array().unwrap().len(), 6, "{arch}");
+        }
+        // A second base's table: named for that base.
+        assert!(
+            stripped
+                .iter()
+                .any(|t| t["name"] == "const Badge::`vftable'{for `Named'}"),
+            "{arch}"
+        );
+    }
+}

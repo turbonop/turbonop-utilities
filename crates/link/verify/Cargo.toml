@@ -31,3 +31,4 @@ workspace = true
 [dev-dependencies]
 turbonop-fold.workspace = true
 turbonop-global-alloc.workspace = true
+turbonop-mmap.workspace = true

@@ -1,0 +1,62 @@
+cor20 runtime=2.5 flags=0x00000001 entrypoint=0x00000000
+cor20 metadata=0x2064+0x214 resources=0x0+0x0 strongname=0x0+0x0
+cor20 codemanager=0x0+0x0 vtablefixups=0x0+0x0 eatjumps=0x0+0x0 managednative=0x0+0x0
+metadata version=v4.0.30319
+heap String offset=0x13c size=0xa1
+heap UserString offset=0x1e0 size=0x4
+heap Guid offset=0x1e4 size=0x10
+heap Blob offset=0x1f4 size=0x20
+table Module rows=1 rowsize=10 offset=0xa4
+table TypeRef rows=2 rowsize=6 offset=0xae
+table TypeDef rows=3 rowsize=14 offset=0xba
+table MethodDef rows=3 rowsize=14 offset=0xe4
+table MemberRef rows=2 rowsize=6 offset=0x10e
+table CustomAttribute rows=1 rowsize=6 offset=0x11a
+table AssemblyRef rows=1 rowsize=20 offset=0x120
+table NestedClass rows=1 rowsize=4 offset=0x134
+Module[1] generation=0 name=Sample.Extra.netmodule mvid=c543541a-49f9-4ac5-a36c-93a55d1a9dd0 encid=null encbaseid=null
+TypeRef[1] scope=0x23000001 ns=System.Runtime.CompilerServices name=RefSafetyRulesAttribute full=[System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute
+TypeRef[2] scope=0x23000001 ns=System name=Object full=[System.Runtime]System.Object
+TypeDef[1] flags=0x00000000 ns= name=<Module> full=<Module> extends=-
+  fields -
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[2] flags=0x00100001 ns=Sample.Extra name=FromModule full=Sample.Extra.FromModule extends=[System.Runtime]System.Object
+  fields -
+  methods 1-2
+  properties -
+  events -
+  nested 3
+TypeDef[3] flags=0x00100002 ns= name=Inside full=Sample.Extra.FromModule/Inside extends=[System.Runtime]System.Object
+  enclosing 0x02000002
+  fields -
+  methods 3
+  properties -
+  events -
+  nested -
+MethodDef[1] rva=0x2050 impl=0x0000 flags=0x0096 name=Value sig=int32 () owner=0x02000002
+  params -
+  body maxstack=8 size=4 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.i4.s 42
+  IL_0002: ret
+MethodDef[2] rva=0x2054 impl=0x0000 flags=0x1886 name=.ctor sig=instance void () owner=0x02000002
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ret
+MethodDef[3] rva=0x205c impl=0x0000 flags=0x1886 name=.ctor sig=instance void () owner=0x02000003
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ret
+MemberRef[1] parent=0x01000001 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute::.ctor(int32)
+MemberRef[2] parent=0x01000002 name=.ctor full=instance void [System.Runtime]System.Object::.ctor()
+CustomAttribute[1] parent=0x00000001 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute::.ctor(int32) value=(int32(11))
+AssemblyRef[1] version=8.0.0.0 flags=0x0 key=b03f5f7f11d50a3a name=System.Runtime culture= hash=
+US 0x1 ""
+US 0x2 ""
+US 0x3 ""

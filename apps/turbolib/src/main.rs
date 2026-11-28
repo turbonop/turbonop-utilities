@@ -8,9 +8,11 @@
 
 use turbonop_global_alloc as _;
 
+mod guard;
 mod msvc;
 mod output;
 mod settings;
+mod slots;
 mod unix;
 mod verify;
 
@@ -412,7 +414,9 @@ fn run_libtool(argv0: &str, args: &[String]) -> ! {
 fn main() -> ExitCode {
     // A batch program: keep freed memory for reuse (see the function).
     turbonop_global_alloc::for_batch_work();
-    let mut argv = std::env::args();
+    // (Arguments that aren't valid Unicode, which `std::env::args` panics
+    // on, are read lossily: they name no file either tool could open.)
+    let mut argv = std::env::args_os().map(|a| a.to_string_lossy().into_owned());
     let argv0 = argv.next().unwrap_or_default();
     let args: Vec<String> = argv.collect();
     if let Some(flavor) = personality(&argv0) {

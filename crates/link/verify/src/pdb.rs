@@ -90,9 +90,10 @@ struct Reduced {
     contributions: Vec<ContributionKey>,
     /// The sizes of the linker's sections and COFF groups.
     layout: Vec<(Vec<u8>, u32)>,
-    /// `S_UDT` and `S_CONSTANT` records, of the globals and of every
-    /// module: (hash, description).
-    udts: Vec<(u128, String)>,
+    /// The `S_UDT` and `S_CONSTANT` records of the globals and of every
+    /// module's top level: (hash, hash blind to translation units' tags,
+    /// description).
+    udts: Vec<(u128, u128, String)>,
     /// It has a module of a precompiled-types member turbolib made.
     pch: bool,
     /// The hashes of the types and ids something in the PDB reaches (see
@@ -290,6 +291,26 @@ fn compare_udt_lines(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     names.dedup();
     for n in names {
         match (a.get(n), b.get(n)) {
+            (Some(x), Some(y)) if x != y && x.iter().any(|l| y.contains(l)) => {
+                rep.expect(
+                    "UDTs whose source lines differ, with one in common (the linker picked another)",
+                    || show(n),
+                );
+            }
+            (Some(x), Some(y))
+                if x != y
+                    && x.iter().any(|(f, _)| {
+                        y.iter()
+                            .any(|(g, _)| file_name(f).eq_ignore_ascii_case(file_name(g)))
+                    }) =>
+            {
+                // The same header from another place (another SDK's copy):
+                // the type itself is compared with the types.
+                rep.expect(
+                    "UDTs whose source lines are in another copy of the same header (the linker picked another)",
+                    || show(n),
+                );
+            }
             (Some(x), Some(y)) if x != y => {
                 rep.fail("UDTs whose source lines differ", || {
                     let line = |v: &Vec<(Vec<u8>, u32)>| {
@@ -315,8 +336,14 @@ fn compare_udt_lines(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
 fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     // Publics.
     rep.checked("publics", ra.publics.len() as u64);
+    // (turbolib's own names on either side: the first program may be
+    // linked against a library folded before, as when a folded library
+    // is folded again.)
     multisets(
-        ra.publics.iter().map(|(h, d, _)| (*h, d.clone())),
+        ra.publics
+            .iter()
+            .filter(|p| !p.2)
+            .map(|(h, d, _)| (*h, d.clone())),
         rb.publics
             .iter()
             .filter(|p| !p.2)
@@ -324,7 +351,7 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
         "publics",
         rep,
     );
-    for (_, d, renamed) in &rb.publics {
+    for (_, d, renamed) in ra.publics.iter().chain(&rb.publics) {
         if *renamed {
             rep.expect(
                 "publics of turbolib's renamed copies, anchors, and PCH symbols",
@@ -340,12 +367,12 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
         "globals",
         rep,
     );
-    // UDTs and constants: the linker keeps one record of each name in the
-    // globals, and leaves the other records of that name (another type, or
-    // another value) in their modules; which one it keeps follows the
-    // order it reads modules in, which differs between links. So the
-    // globals' and every module's are compared as one set.
-    let set = |r: &Reduced| -> Vec<(u128, String)> {
+    // UDTs and constants: the linker keeps one record of each name, and
+    // which one follows the order it reads modules in, which differs
+    // between links. Any one is right if they say the same: a record only
+    // in one PDB that the other has but for translation units' tags in
+    // unique names (another unit's copy of the same type) is expected.
+    let set = |r: &Reduced| -> Vec<(u128, u128, String)> {
         let mut v = r.udts.clone();
         v.sort();
         v.dedup_by(|x, y| x.0 == y.0);
@@ -353,12 +380,37 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
     };
     let (ua, ub) = (set(ra), set(rb));
     rep.checked("UDTs and constants (S_UDT, S_CONSTANT)", ua.len() as u64);
-    multisets(
-        ua.into_iter(),
-        ub.into_iter(),
-        "UDTs and constants (S_UDT, S_CONSTANT)",
-        rep,
-    );
+    let blind = |v: &[(u128, u128, String)]| -> Vec<u128> {
+        let mut t: Vec<u128> = v.iter().map(|x| x.1).collect();
+        t.sort_unstable();
+        t.dedup();
+        t
+    };
+    let (ta, tb) = (blind(&ua), blind(&ub));
+    let exact = |v: &[(u128, u128, String)]| -> Vec<u128> { v.iter().map(|x| x.0).collect() };
+    let (ea, eb) = (exact(&ua), exact(&ub));
+    for (only, other_exact, other_blind, which) in
+        [(&ua, &eb, &tb, "first"), (&ub, &ea, &ta, "second")]
+    {
+        for (h, t, d) in only {
+            if other_exact.binary_search(h).is_ok() {
+                continue;
+            }
+            if other_blind.binary_search(t).is_ok() {
+                rep.expect(
+                    &format!(
+                        "UDTs and constants only in the {which} PDB, the same but for translation units' tags (another unit's copy picked)"
+                    ),
+                    || d.clone(),
+                );
+            } else {
+                rep.fail(
+                    &format!("UDTs and constants (S_UDT, S_CONSTANT) only in the {which} PDB (or different)"),
+                    || d.clone(),
+                );
+            }
+        }
+    }
     let modules_of = |r: &Reduced| -> Map<String, Vec<Vec<u8>>> {
         let mut m: Map<String, Vec<Vec<u8>>> = Map::default();
         for (k, module) in &r.references {
@@ -737,11 +789,12 @@ struct ModuleFacts {
     /// The sizes of the linker's sections and COFF groups (`S_SECTION`,
     /// `S_COFFGROUP`), by name.
     layout: Vec<(Vec<u8>, u32)>,
-    /// Its top-level `S_UDT` and `S_CONSTANT` records: (hash, description).
-    udts: Vec<(u128, String)>,
     /// The type and id indices its symbols and inlinee lines name.
     root_types: Vec<u32>,
     root_ids: Vec<u32>,
+    /// Its top-level `S_UDT` and `S_CONSTANT` records: (hash, hash blind
+    /// to translation units' tags, description).
+    udts: Vec<(u128, u128, String)>,
 }
 
 /// The type and id indices a symbol record names.
@@ -765,8 +818,8 @@ fn roots_of(kind: u16, body: &[u8], types: &mut Vec<u32>, ids: &mut Vec<u32>) {
 fn module(
     p: &Linked<'_>,
     m: &turbonop_pdb::Module<'_>,
-    types: &Hashes,
-    ids: &Hashes,
+    (types, ids): (&Hashes, &Hashes),
+    (tagless_types, tagless_ids): (&Hashes, &Hashes),
     names: Option<&StringTable<'_>>,
 ) -> ModuleFacts {
     let mut out = ModuleFacts {
@@ -779,18 +832,27 @@ fn module(
         unknown_records: Map::default(),
         unknown_subsections: Map::default(),
         layout: Vec::new(),
-        udts: Vec::new(),
         root_types: Vec::new(),
         root_ids: Vec::new(),
+        udts: Vec::new(),
     };
     // A synthesized member: its S_OBJNAME says so (`turbolib:...`), or,
     // until its debug information is written (2.4), its name is the
-    // engine's (`turbolib<n>.obj`).
+    // engine's (`turbolib<n>.obj`, and since `turbolib<n>-<hex>.obj`).
     out.synthesized = m
         .name
         .strip_prefix(b"turbolib")
         .and_then(|r| r.strip_suffix(b".obj"))
-        .is_some_and(|n| !n.is_empty() && n.iter().all(u8::is_ascii_digit));
+        .is_some_and(|n| {
+            let (number, tag) = match n.iter().position(|&c| c == b'-') {
+                Some(at) => (&n[..at], &n[at + 1..]),
+                None => (n, &b"0"[..]),
+            };
+            !number.is_empty()
+                && number.iter().all(u8::is_ascii_digit)
+                && !tag.is_empty()
+                && tag.iter().all(u8::is_ascii_hexdigit)
+        });
     let Ok(Some(stream)) = p.pdb.module_stream(m) else {
         return out;
     };
@@ -802,6 +864,13 @@ fn module(
         p,
         types,
         ids,
+        names,
+        checksums,
+    };
+    let tagless = Context {
+        p,
+        types: tagless_types,
+        ids: tagless_ids,
         names,
         checksums,
     };
@@ -878,6 +947,14 @@ fn module(
             depth = 1;
             continue;
         }
+        // A UDT or constant at the top: compared with the globals' (the
+        // linker keeps one of each name there, and the others here).
+        if matches!(s.kind, kind::S_UDT | kind::S_CONSTANT) {
+            let mut t = H128::new();
+            tagless.symbol(s.kind, s.data, &mut t);
+            out.udts.push((record, t.finish(), describe(&s)));
+            continue;
+        }
         out.others.push(record);
     }
     // Subsections: lines and inlinees.
@@ -952,8 +1029,8 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
         names.as_ref(),
         true,
     );
-    r.tagless_types = tagless_types.hashes;
-    r.tagless_ids = tagless_ids.hashes;
+    r.tagless_types = tagless_types.hashes.clone();
+    r.tagless_ids = tagless_ids.hashes.clone();
     for (i, rec) in records.iter().enumerate() {
         if rec.kind == types::LF_UDT_MOD_SRC_LINE && rec.data.len() >= 12 {
             let u = |o: usize| {
@@ -986,6 +1063,14 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
         p,
         types: &r.types,
         ids: &r.ids,
+        names: names.as_ref(),
+        checksums: &[],
+    };
+    // The same, blind to translation units' tags (for UDTs and constants).
+    let tagless = Context {
+        p,
+        types: &tagless_types,
+        ids: &tagless_ids,
         names: names.as_ref(),
         checksums: &[],
     };
@@ -1049,7 +1134,9 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
                 }
             }
             if matches!(s.kind, kind::S_UDT | kind::S_CONSTANT) {
-                udts.push((h.finish(), description));
+                let mut t = H128::new();
+                tagless.symbol(s.kind, s.data, &mut t);
+                udts.push((h.finish(), t.finish(), description));
                 continue;
             }
             globals.push((h.finish(), description));
@@ -1062,7 +1149,13 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
 
     // Modules, in parallel.
     let reduced = turbonop_par::map_balanced(&modules, 1, |m| {
-        module(p, m, &r.types, &r.ids, names.as_ref())
+        module(
+            p,
+            m,
+            (&r.types, &r.ids),
+            (&tagless_types, &tagless_ids),
+            names.as_ref(),
+        )
     });
     for (i, m) in reduced.into_iter().enumerate() {
         r.procedures
@@ -1117,3 +1210,10 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
 
 #[cfg(test)]
 mod tests;
+
+/// The part of `path` after its last separator (either slash).
+fn file_name(path: &[u8]) -> &[u8] {
+    path.rsplit(|&c| c == b'/' || c == 0x5C)
+        .next()
+        .unwrap_or(path)
+}

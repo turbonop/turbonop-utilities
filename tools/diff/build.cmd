@@ -10,9 +10,17 @@ if /i not "%~d0"=="R:" (call "%~dp0..\neutral.cmd" "%~f0" & exit /b)
 set OUT=%~dp0..\..\testdata\diff
 if not exist "%OUT%" mkdir "%OUT%"
 for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VS=%%i
-call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" amd64 >nul 2>&1 || exit /b 1
-call :build v1 || exit /b 1
-call :build v2 /DV2 || exit /b 1
+call :arch amd64 "" || exit /b 1
+rem And for ARM64 (diff-arm64-v1.exe, diff-arm64-v2.exe): its references
+rem are instructions' fields (ADRP pairs, branches), not displacements.
+call :arch amd64_arm64 arm64- || exit /b 1
+exit /b 0
+
+:arch
+setlocal
+call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" %1 >nul 2>&1 || exit /b 1
+call :build %~2v1 || exit /b 1
+call :build %~2v2 /DV2 || exit /b 1
 exit /b 0
 
 :build

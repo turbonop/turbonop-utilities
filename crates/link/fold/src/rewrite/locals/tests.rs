@@ -155,10 +155,10 @@ pub(crate) fn string_user(name: &[u8], at: u32, pad: usize, addend: i32) -> Vec<
     })
 }
 
-fn unit_named<'f>(f: &'f Facts, name: &[u8]) -> &'f Unit {
+fn unit_named<'f, 'a>(f: &'f Facts<'a>, name: &[u8]) -> &'f Unit<'a> {
     f.units
         .iter()
-        .find(|u| u.externals.iter().any(|n| n == name))
+        .find(|u| u.externals.iter().any(|n| n.as_ref() == name))
         .unwrap()
 }
 
@@ -172,11 +172,11 @@ fn a_string_is_a_piece_copied_with_its_unit() {
     let f = find_with(&o, COPY).unwrap();
     let u = &f.units[0];
     assert_eq!(u.unfoldable, None, "{:?}", u.detail);
-    assert_eq!(u.edges.len(), 1);
+    assert_eq!(u.edges().len(), 1);
     assert_eq!(f.pieces.len(), 1);
     let p = &f.pieces[0];
     assert_eq!((p.start, p.end), (0, 8), "the string and its padding");
-    assert_eq!(u.closure, vec![Node::Unit(0), Node::Piece(0)]);
+    assert_eq!(u.closure(), [Node::Unit(0), Node::Piece(0)]);
 }
 
 #[test]
@@ -300,12 +300,12 @@ fn a_local_comdat_is_copied_with_what_reaches_it() {
     let f = find_with(&o, COPY).unwrap();
     let root = unit_named(&f, b"f");
     assert_eq!(root.unfoldable, None, "{:?}", root.detail);
-    assert_eq!(root.closure, vec![Node::Unit(0), Node::Unit(1)]);
+    assert_eq!(root.closure(), [Node::Unit(0), Node::Unit(1)]);
     let h = &f.units[1];
-    assert!(h.pure_local);
-    assert!(!h.pinned);
-    assert_eq!(h.referrers, vec![0]);
-    assert_eq!(h.blocked, None);
+    assert!(h.pure_local());
+    assert!(!h.pinned());
+    assert_eq!(h.referrers(), [0]);
+    assert_eq!(h.blocked(), None);
     // Never folded by itself.
     assert_eq!(h.unfoldable, Some(Unfoldable::InternalLinkage));
     // Another translation unit's anonymous namespace: the same code.
@@ -326,7 +326,7 @@ fn a_local_comdat_that_code_outside_units_reaches_is_pinned() {
         reloc(o, g, 1, h);
     });
     let f = find_with(&object(&d), COPY).unwrap();
-    assert!(f.units[1].pinned);
+    assert!(f.units[1].pinned());
     // It can still be copied.
     assert_eq!(unit_named(&f, b"f").unfoldable, None);
 }
@@ -362,11 +362,8 @@ fn registration_sections_are_never_copied() {
         reloc(o, text, 3, r);
     });
     let f = find_with(&object(&d), COPY).unwrap();
-    let rtc = f.units.iter().find(|u| u.pure_local).unwrap();
-    assert_eq!(
-        rtc.blocked.as_ref().map(|b| b.0),
-        Some(Unfoldable::LocalReference)
-    );
+    let rtc = f.units.iter().find(|u| u.pure_local()).unwrap();
+    assert_eq!(rtc.blocked().map(|b| b.0), Some(Unfoldable::LocalReference));
     assert_eq!(
         unit_named(&f, b"f").unfoldable,
         Some(Unfoldable::LocalReference),
@@ -462,7 +459,7 @@ fn references_name_what_a_copy_needs_resolved() {
     let (d, e) = (make(true), make(false));
     let (od, oe) = (object(&d), object(&e));
     let (fd, fe) = (find_with(&od, COPY).unwrap(), find_with(&oe, COPY).unwrap());
-    assert_eq!(fd.units[0].externals, [b"f".to_vec()]);
+    assert_eq!(fd.units[0].externals, [&b"f"[..]]);
     // The local unit's reference to y counts.
     assert_ne!(references(&od, &fd, 0), references(&oe, &fe, 0));
 }

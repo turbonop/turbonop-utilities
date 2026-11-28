@@ -152,6 +152,8 @@ pub(super) struct Facts {
     /// into a link).
     precomp_record: Option<Vec<u8>>,
     pch_symbol: Option<Vec<u8>>,
+    /// Whether each unit has debug sections.
+    pub has_debug: Vec<bool>,
 }
 
 impl Facts {
@@ -377,10 +379,20 @@ pub(super) fn read(object: &Object<'_>, facts: &mut units::Facts) -> Facts {
         }
     }
 
+    d.has_debug = facts
+        .units
+        .iter()
+        .map(|u| {
+            u.sections
+                .iter()
+                .any(|s| units::is_debug(object.sections[s.index()].name.as_bytes()))
+        })
+        .collect();
+
     // Each unit's debug sections (and each local unit's that could be
     // copied, under --locals=copy).
     for u in &mut facts.units {
-        let local = u.pure_local && u.blocked.is_none();
+        let local = u.pure_local() && u.blocked().is_none();
         if u.unfoldable.is_some() && !local {
             continue;
         }
@@ -405,7 +417,7 @@ pub(super) fn read(object: &Object<'_>, facts: &mut units::Facts) -> Facts {
         }
         if let Some(w) = why {
             if local {
-                u.blocked = Some((Unfoldable::DebugInfo, w));
+                u.block(Unfoldable::DebugInfo, w);
             } else {
                 u.unfoldable = Some(Unfoldable::DebugInfo);
                 u.detail = Some(w);
@@ -582,17 +594,7 @@ pub(super) fn resolve(parsed: &mut [Parsed<'_>], absorb: bool) {
             parsed[m].debug.absorbed = absorb;
             continue;
         }
-        let object = parsed[m].object.as_ref().expect("types come from objects");
-        let has_debug: Vec<bool> = parsed[m]
-            .facts
-            .units
-            .iter()
-            .map(|u| {
-                u.sections
-                    .iter()
-                    .any(|s| units::is_debug(object.sections[s.index()].name.as_bytes()))
-            })
-            .collect();
+        let has_debug = parsed[m].debug.has_debug.clone();
         for (u, has) in parsed[m].facts.units.iter_mut().zip(has_debug) {
             let why = || {
                 format!(
@@ -603,8 +605,8 @@ pub(super) fn resolve(parsed: &mut [Parsed<'_>], absorb: bool) {
             if has && u.unfoldable.is_none() {
                 u.unfoldable = Some(Unfoldable::PrecompMissing);
                 u.detail = Some(why());
-            } else if has && u.pure_local && u.blocked.is_none() {
-                u.blocked = Some((Unfoldable::PrecompMissing, why()));
+            } else if has && u.pure_local() && u.blocked().is_none() {
+                u.block(Unfoldable::PrecompMissing, why());
             }
         }
     }
@@ -639,12 +641,12 @@ const SERVER_AGE: usize = 2 + 16;
 
 /// Whether two PCH objects' type sections are the same bytes.
 fn same_types(a: &Parsed<'_>, b: &Parsed<'_>) -> bool {
-    let bytes = |p: &Parsed<'_>| match (&p.debug.types, &p.object) {
-        (Types::Records { section, .. }, Some(o)) => {
-            Some(o.sections[section.index()].bytes().to_vec())
+    fn bytes<'p>(p: &'p Parsed<'_>) -> Option<&'p [u8]> {
+        match &p.debug.types {
+            Types::Records { .. } if p.is_object => Some(p.types),
+            _ => None,
         }
-        _ => None,
-    };
+    }
     bytes(a) == bytes(b)
 }
 
@@ -660,6 +662,8 @@ struct Moved {
 /// A synthesized member's CodeView, built as its units are copied in.
 pub(super) struct Builder<'p, 'a> {
     parsed: &'p [Parsed<'a>],
+    /// Where the units' objects are.
+    objects: super::Objects<'p, 'a>,
     /// The library's shared types (`--precomp=library`), and whether this
     /// member uses them: its units' members name no other PCH.
     plan: Option<&'p precomp::Plan>,
@@ -737,16 +741,22 @@ pub(super) fn record<'p>(parsed: &'p [Parsed<'_>], m: usize, v: u32) -> &'p [u8]
     else {
         panic!("an index into a member without records");
     };
-    let data = parsed[m].object.as_ref().expect("an object").sections[section.index()].bytes();
+    let _ = section;
+    let data = parsed[m].types;
     let at = offsets[(v - base) as usize] as usize;
     let len = usize::from(u16::from_le_bytes([data[at], data[at + 1]]));
     &data[at..at + 2 + len]
 }
 
 impl<'p, 'a> Builder<'p, 'a> {
-    pub(super) fn new(parsed: &'p [Parsed<'a>], plan: Option<&'p precomp::Plan>) -> Self {
+    pub(super) fn new(
+        parsed: &'p [Parsed<'a>],
+        objects: super::Objects<'p, 'a>,
+        plan: Option<&'p precomp::Plan>,
+    ) -> Self {
         Self {
             parsed,
+            objects,
             plan,
             sharing: None,
             types: Vec::new(),
@@ -774,7 +784,7 @@ impl<'p, 'a> Builder<'p, 'a> {
         let parsed = self.parsed;
         let mut m0 = None;
         for &(m, u, _) in units {
-            let object = parsed[m].object.as_ref().expect("units come from objects");
+            let object = self.objects.get(m);
             if parsed[m].facts.units[u]
                 .sections
                 .iter()
@@ -793,10 +803,7 @@ impl<'p, 'a> Builder<'p, 'a> {
             self.base = p.start + p.count;
             self.precomp = Some((record.clone(), symbol.clone()));
         } else if let Some(pch) = self.plan.and_then(|plan| {
-            plan.pch_for_units(
-                parsed[m0].object.as_ref().expect("an object").machine,
-                units.iter().map(|&(m, _, _)| m),
-            )
+            plan.pch_for_units(parsed[m0].machine, units.iter().map(|&(m, _, _)| m))
         }) {
             // The library's shared types: its records that are shared are
             // the precompiled-types member's.

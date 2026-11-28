@@ -383,6 +383,9 @@ pub struct Config {
     /// The `.def` file's `LIBRARY` name: the DLL's name in its export
     /// directory (else the output's file name).
     pub library_name: Option<String>,
+    /// What the `.def` file's `LIBRARY` or `NAME` says to link with
+    /// (` /DLL /OUT:x.dll`): the export object's `.drectve`.
+    pub def_directives: Option<String>,
     /// `/IMPLIB`.
     pub implib: Option<PathBuf>,
     /// `/NOIMPLIB`.
@@ -445,6 +448,9 @@ pub struct Config {
     pub force_unresolved: bool,
     /// `/MANIFEST`.
     pub manifest: Manifest,
+    /// Whether `/MANIFEST` was given (without it, a `/MANIFESTDEPENDENCY`
+    /// asks for a manifest beside the image, as link.exe writes one).
+    pub manifest_given: bool,
     /// `/MANIFESTUAC`; `None`: the default fragment; `Some(None)`:
     /// `/MANIFESTUAC:NO`.
     pub manifest_uac: Option<Option<String>>,
@@ -518,6 +524,7 @@ impl Default for Config {
             exports: Vec::new(),
             def: None,
             library_name: None,
+            def_directives: None,
             implib: None,
             no_implib: false,
             no_exp: false,
@@ -549,6 +556,7 @@ impl Default for Config {
             force_multiple: false,
             force_unresolved: false,
             manifest: Manifest::No,
+            manifest_given: false,
             manifest_uac: None,
             manifest_dependencies: Vec::new(),
             manifest_file: None,
@@ -990,6 +998,9 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
             }
         };
     }
+    if name == "manifest" {
+        c.manifest_given = true;
+    }
     match name {
         "out" => c.out = need(d).map(PathBuf::from),
         "machine" => match value.and_then(Machine::parse) {
@@ -1308,11 +1319,17 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
         "verbose" => c.verbose = true,
         "time" | "time+" => c.time = true,
         "ltcg" | "ltcgout" | "useprofile" | "genprofile" | "fastgenprofile" => {
-            if name == "ltcg" && value.is_some_and(|v| v.eq_ignore_ascii_case("off")) {
+            let v = value.map(str::to_ascii_lowercase);
+            if name == "ltcg" && v.as_deref() == Some("off") {
                 c.ltcg = false;
             } else {
                 c.ltcg = true;
-                d.push(Diagnostic::NotYet(arg.to_string()));
+                // (Plain LTCG is done; incremental LTCG and PGO aren't yet.)
+                let plain =
+                    name == "ltcg" && matches!(v.as_deref(), None | Some("status" | "nostatus"));
+                if !plain {
+                    d.push(Diagnostic::NotYet(arg.to_string()));
+                }
             }
         }
         "incremental" => match yes_no(value) {

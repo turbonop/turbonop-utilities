@@ -49,4 +49,4 @@ pub use object::{
     Name, Object, Relocation, Section, SectionData, SectionDefinition, SectionId, SectionNumber,
     Style, Symbol, SymbolId, WeakExternal, comdat_select, storage_class, symbol_type, weak_search,
 };
-pub use write::Skeleton;
+pub use write::{Skeleton, parts as skeleton_parts};

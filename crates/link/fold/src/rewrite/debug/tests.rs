@@ -10,7 +10,7 @@
 //! the record it is in, its place there, and its target's name. The two
 //! must be the same.
 
-use super::super::{Input, Options, Pull, rewrite};
+use super::super::{Input, Options, Pull, gathered as rewrite};
 use super::*;
 use crate::hash::H128;
 use turbonop_coff::File;
@@ -727,7 +727,15 @@ fn annotations_that_change_length_rebuild_the_section() {
         }];
         let parsed: Vec<Parsed<'_>> = input
             .iter()
-            .map(|i| super::super::parse(i, units::Mode::default()))
+            .map(|i| {
+                super::super::parse(
+                    i,
+                    super::super::Needs {
+                        keep: true,
+                        ..Default::default()
+                    },
+                )
+            })
             .collect();
         let o = parsed[0].object.as_ref().unwrap();
         let s = stream(o, None);
@@ -739,7 +747,7 @@ fn annotations_that_change_length_rebuild_the_section() {
                 if sec.name.as_bytes() != b".debug$S" {
                     continue;
                 }
-                let mut b = Builder::new(&parsed, None);
+                let mut b = Builder::new(&parsed, super::super::Objects::kept(&parsed), None);
                 b.checksums.resize(0x4000, 0);
                 let mut copy = b.section(k, 0, id, sec);
                 copy.relocations = sec

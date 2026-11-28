@@ -19,6 +19,7 @@
 //! where they are, aside), lines, checksums, and inlinee lines, the
 //! globals, the publics, and the string table.
 
+mod code;
 mod image;
 mod pdb;
 mod symbols;

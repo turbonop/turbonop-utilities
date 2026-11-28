@@ -196,8 +196,11 @@ struct Library {
     archive: Archive<'static>,
     /// Each symbol's member (its header's offset), the first member that
     /// defines it.
-    index: Map<&'static [u8], u64>,
+    index: std::sync::Arc<Map<&'static [u8], u64>>,
     loaded: Set<u64>,
+    /// Members parsed ahead and not loaded (yet): kept from walk to walk,
+    /// so that none is parsed twice.
+    parsed: Map<u64, Parsed>,
 }
 
 /// The link after symbol resolution.
@@ -687,8 +690,9 @@ impl Linker {
         self.libraries.push(Library {
             path,
             archive,
-            index,
+            index: std::sync::Arc::new(index),
             loaded: Set::default(),
+            parsed: Map::default(),
             default,
         });
         self.t_index += start.elapsed();
@@ -710,6 +714,30 @@ impl Linker {
     /// Searches the libraries as `link.exe` does (see the module's
     /// documentation).
     fn search_libraries(&mut self) {
+        let prefetch = Prefetch {
+            state: std::sync::Mutex::new(PrefetchState::default()),
+            work: std::sync::Condvar::new(),
+            ready: std::sync::Condvar::new(),
+        };
+        let prefetch = &prefetch;
+        std::thread::scope(|scope| {
+            let mut helpers = Vec::new();
+            self.search_with(prefetch, &mut || {
+                if helpers.is_empty() {
+                    let n = turbonop_par::threads().saturating_sub(1);
+                    helpers.extend((0..n).map(|_| scope.spawn(move || prefetch.work())));
+                }
+            });
+            prefetch.shut_down();
+            for h in helpers {
+                h.join().unwrap_or_else(|e| std::panic::resume_unwind(e));
+            }
+        });
+    }
+
+    /// The search, its members parsed by `prefetch`'s helpers (started by
+    /// `start` when a walk first needs them).
+    fn search_with(&mut self, prefetch: &Prefetch, start: &mut dyn FnMut()) {
         loop {
             let mut loaded_any = false;
             // The command line's libraries in their order, then the default
@@ -724,82 +752,53 @@ impl Linker {
                 let Some(&lib) = order.get(position) else {
                     break;
                 };
+                position += 1;
                 // link.exe's walk: the undefined symbols in order, a member
                 // loaded as soon as one is found (what it leaves undefined
                 // joins the end of the list, and is reached in this walk).
-                // Members are parsed ahead, in parallel: all the list needs
-                // now, and again whenever the walk finds one not parsed.
+                // Members are parsed ahead, on the other threads, while the
+                // walk goes on: all the list needs now, then what each
+                // parsed member's undefined symbols lead to in the library.
                 let mut pending = std::mem::take(&mut self.pending);
                 pending.retain(|&g| self.wanted(&self.globals[g as usize]));
                 self.pending = pending;
-                let mut parsed: Map<u64, Result<(String, LoadedKind), String>> = Map::default();
-                let mut logged = false;
-                let mut i = 0;
-                while i < self.pending.len() {
-                    let g = self.pending[i];
-                    i += 1;
-                    if !self.wanted(&self.globals[g as usize]) {
-                        continue;
-                    }
+                let first: Vec<u64> = {
                     let library = &self.libraries[lib];
-                    let Some(&member) = library.index.get(self.globals[g as usize].name) else {
-                        continue;
-                    };
-                    if library.loaded.contains(&member) {
-                        continue;
-                    }
-                    if !parsed.contains_key(&member) {
-                        let ahead: Vec<u64> = {
-                            let mut seen = Set::default();
-                            self.pending[i - 1..]
-                                .iter()
-                                .filter_map(|&g| {
-                                    library.index.get(self.globals[g as usize].name).copied()
-                                })
-                                .filter(|m| !library.loaded.contains(m) && !parsed.contains_key(m))
-                                .filter(|m| seen.insert(*m))
-                                .collect()
-                        };
-                        let archive = library.archive;
-                        let path = library.path.display().to_string();
-                        let start = std::time::Instant::now();
-                        let results = turbonop_par::map(&ahead, 8, |&offset| {
-                            let Some(m) = archive.member_at_offset(offset) else {
-                                return Err(format!("{path}: no member at offset {offset:#x}"));
-                            };
-                            let name = format!("{path}({})", String::from_utf8_lossy(&m.name));
-                            load(m.data, &name).map(|k| (name, k))
-                        });
-                        self.t_members += start.elapsed();
-                        parsed.extend(ahead.into_iter().zip(results));
-                    }
-                    if self.config.verbose {
-                        if !logged {
-                            self.log.push(format!(
-                                "    Searching {}:",
-                                self.libraries[lib].path.display()
-                            ));
-                            logged = true;
-                        }
-                        self.log.push(format!(
-                            "      Found {}",
-                            String::from_utf8_lossy(self.globals[g as usize].name)
-                        ));
-                    }
-                    self.libraries[lib].loaded.insert(member);
-                    match parsed.remove(&member) {
-                        Some(Ok((name, kind))) => {
-                            self.loading_from = Some(crate::n32(lib));
-                            self.loading_member = Some(member);
-                            self.add(name, kind);
-                            self.loading_from = None;
-                        }
-                        Some(Err(m)) => self.errors.push(LinkError::error(1136, m)),
-                        None => {}
-                    }
-                    loaded_any = true;
+                    let mut seen = Set::default();
+                    self.pending
+                        .iter()
+                        .filter_map(|&g| library.index.get(self.globals[g as usize].name).copied())
+                        .filter(|m| !library.loaded.contains(m) && seen.insert(*m))
+                        .collect()
+                };
+                if first.is_empty() {
+                    continue;
                 }
-                position += 1;
+                start();
+                let library = &mut self.libraries[lib];
+                let done = std::mem::take(&mut library.parsed);
+                prefetch.begin(Session {
+                    index: library.index.clone(),
+                    archive: library.archive,
+                    path: library.path.display().to_string().into(),
+                    queue: first
+                        .iter()
+                        .filter(|m| !done.contains_key(m))
+                        .copied()
+                        .collect(),
+                    requested: library
+                        .loaded
+                        .iter()
+                        .chain(done.keys())
+                        .chain(&first)
+                        .copied()
+                        .collect(),
+                    started: done.keys().copied().collect(),
+                    done,
+                });
+                let index = library.index.clone();
+                self.walk(lib, &index, prefetch, &mut loaded_any);
+                self.libraries[lib].parsed = prefetch.end();
             }
             if !loaded_any && !self.resolve_aliases() {
                 // Once nothing more is needed, link.exe looks for the load
@@ -816,6 +815,59 @@ impl Linker {
                 }
                 break;
             }
+        }
+    }
+
+    /// One walk of library `lib` (its index `index`, taken out of it for
+    /// the walk), its members parsed by `prefetch`.
+    fn walk(
+        &mut self,
+        lib: usize,
+        index: &Map<&'static [u8], u64>,
+        prefetch: &Prefetch,
+        loaded_any: &mut bool,
+    ) {
+        let mut logged = false;
+        let mut i = 0;
+        while i < self.pending.len() {
+            let g = self.pending[i];
+            i += 1;
+            if !self.wanted(&self.globals[g as usize]) {
+                continue;
+            }
+            let Some(&member) = index.get(self.globals[g as usize].name) else {
+                continue;
+            };
+            if self.libraries[lib].loaded.contains(&member) {
+                continue;
+            }
+            let start = std::time::Instant::now();
+            let parsed = prefetch.get(member);
+            self.t_members += start.elapsed();
+            if self.config.verbose {
+                if !logged {
+                    self.log.push(format!(
+                        "    Searching {}:",
+                        self.libraries[lib].path.display()
+                    ));
+                    logged = true;
+                }
+                self.log.push(format!(
+                    "      Found {}",
+                    String::from_utf8_lossy(self.globals[g as usize].name)
+                ));
+            }
+            self.libraries[lib].loaded.insert(member);
+            match parsed {
+                Ok((name, kind)) => {
+                    self.loading_from = Some(crate::n32(lib));
+                    self.loading_member = Some(member);
+                    self.add(name, kind);
+                    self.loading_from = None;
+                }
+                Err(m) => self.errors.push(LinkError::error(1136, m)),
+            }
+            *loaded_any = true;
         }
     }
 
@@ -896,6 +948,200 @@ pub enum LoadedKind {
     Object(Object),
     /// An import object.
     Import(ImportObject<'static>),
+}
+
+/// Library members parsed ahead of a walk, by helper threads that last the
+/// whole search: those the walk will ask for, then what each one's
+/// undefined symbols lead to in the library (most of which the walk then
+/// loads). A walk never waits for the helpers but for a member one is
+/// parsing.
+struct Prefetch {
+    state: std::sync::Mutex<PrefetchState>,
+    /// Signalled when there's a member to parse, or the search is over.
+    work: std::sync::Condvar,
+    /// Signalled when a member is parsed.
+    ready: std::sync::Condvar,
+}
+
+/// How many library members were parsed (for `/TIME`).
+static PARSED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A parsed member (its name for messages, and what it is), or the error.
+type Parsed = Result<(String, LoadedKind), String>;
+
+/// What [`Prefetch`]'s threads share.
+#[derive(Default)]
+struct PrefetchState {
+    /// The walk going on, if any.
+    session: Option<Session>,
+    /// Which walk it is (a member parsed for an earlier one is dropped).
+    generation: u64,
+    /// Whether the search is over.
+    over: bool,
+}
+
+/// One walk of a library, as [`Prefetch`] parses its members.
+struct Session {
+    index: std::sync::Arc<Map<&'static [u8], u64>>,
+    archive: Archive<'static>,
+    path: std::sync::Arc<str>,
+    /// The members to parse, the walk's first.
+    queue: std::collections::VecDeque<u64>,
+    /// Every member queued, parsed or loaded.
+    requested: Set<u64>,
+    /// Every member a thread has started parsing (or that was parsed).
+    started: Set<u64>,
+    /// The members parsed and not yet taken.
+    done: Map<u64, Parsed>,
+}
+
+impl Prefetch {
+    fn lock(&self) -> std::sync::MutexGuard<'_, PrefetchState> {
+        self.state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// Starts a walk.
+    fn begin(&self, session: Session) {
+        let mut st = self.lock();
+        st.generation += 1;
+        st.session = Some(session);
+        drop(st);
+        self.work.notify_all();
+    }
+
+    /// Ends the walk: what was parsed and not taken.
+    fn end(&self) -> Map<u64, Parsed> {
+        self.lock()
+            .session
+            .take()
+            .map(|s| s.done)
+            .unwrap_or_default()
+    }
+
+    /// Ends the search: the helpers stop.
+    fn shut_down(&self) {
+        self.lock().over = true;
+        self.work.notify_all();
+    }
+
+    /// Parses the member at `offset` for walk `generation` (its library's
+    /// `archive`, `path` and `index`), and queues the members its undefined
+    /// symbols lead to.
+    fn parse(
+        &self,
+        offset: u64,
+        generation: u64,
+        archive: Archive<'static>,
+        path: &str,
+        index: &Map<&'static [u8], u64>,
+    ) {
+        PARSED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let parsed = match archive.member_at_offset(offset) {
+            None => Err(format!("{path}: no member at offset {offset:#x}")),
+            Some(m) => {
+                let name = format!("{path}({})", String::from_utf8_lossy(&m.name));
+                load(m.data, &name).map(|k| (name, k))
+            }
+        };
+        let mut next = Vec::new();
+        if let Ok((_, LoadedKind::Object(object))) = &parsed {
+            for sym in &object.symbols {
+                if matches!(sym.kind, SymbolKind::Undefined | SymbolKind::Weak { .. })
+                    && let Some(&m) = index.get(sym.name)
+                {
+                    next.push(m);
+                }
+            }
+        }
+        let mut st = self.lock();
+        if st.generation != generation {
+            return;
+        }
+        let Some(session) = st.session.as_mut() else {
+            return;
+        };
+        let mut queued = false;
+        for m in next {
+            if session.requested.insert(m) {
+                session.queue.push_back(m);
+                queued = true;
+            }
+        }
+        session.done.insert(offset, parsed);
+        drop(st);
+        self.ready.notify_all();
+        if queued {
+            self.work.notify_all();
+        }
+    }
+
+    /// A helper thread: parses what's queued until the search is over.
+    fn work(&self) {
+        loop {
+            let mut st = self.lock();
+            let job = loop {
+                if st.over {
+                    return;
+                }
+                let generation = st.generation;
+                if let Some(session) = st.session.as_mut() {
+                    let mut job = None;
+                    while let Some(m) = session.queue.pop_front() {
+                        if session.started.insert(m) {
+                            job = Some((
+                                m,
+                                generation,
+                                session.archive,
+                                session.path.clone(),
+                                session.index.clone(),
+                            ));
+                            break;
+                        }
+                    }
+                    if let Some(job) = job {
+                        break job;
+                    }
+                }
+                st = self
+                    .work
+                    .wait(st)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+            };
+            drop(st);
+            let (offset, generation, archive, path, index) = job;
+            self.parse(offset, generation, archive, &path, &index);
+        }
+    }
+
+    /// The member at `offset`, parsed: taken from what's done, parsed here
+    /// if no thread has started it, or waited for.
+    fn get(&self, offset: u64) -> Parsed {
+        let mut st = self.lock();
+        loop {
+            let generation = st.generation;
+            let Some(session) = st.session.as_mut() else {
+                return Err(format!("no walk going on for the member at {offset:#x}"));
+            };
+            if let Some(p) = session.done.remove(&offset) {
+                return p;
+            }
+            session.requested.insert(offset);
+            if session.started.insert(offset) {
+                let (archive, path, index) =
+                    (session.archive, session.path.clone(), session.index.clone());
+                drop(st);
+                self.parse(offset, generation, archive, &path, &index);
+                st = self.lock();
+                continue;
+            }
+            st = self
+                .ready
+                .wait(st)
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+    }
 }
 
 /// Reads an object or import object.
@@ -1070,6 +1316,13 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     times.push(("  library search", lap.elapsed()));
     times.push(("    of which: indexes", l.t_index));
     times.push(("    of which: members parsed", l.t_members));
+    if l.config.time {
+        eprintln!(
+            "turbolink:     library members: {} parsed, {} loaded",
+            PARSED.load(std::sync::atomic::Ordering::Relaxed),
+            l.libraries.iter().map(|b| b.loaded.len()).sum::<usize>()
+        );
+    }
     times.push(("  (all files' symbols added)", l.t_add));
 
     // A /DELAYLOAD DLL nothing imports from: link.exe's warning.

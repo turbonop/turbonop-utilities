@@ -5,7 +5,7 @@
 fn main() {
     for arg in std::env::args().skip(1) {
         let word = u32::from_str_radix(arg.trim_start_matches("0x"), 16).expect("a hex word");
-        let Some(inst) = turbonop_arm64::decode(word).ok() else {
+        let Ok(inst) = turbonop_arm64::decode(word) else {
             println!("{word:08X}: not an instruction");
             continue;
         };

@@ -44,6 +44,7 @@ turbonop-clr.workspace = true
 turbonop-signature.workspace = true
 turbonop-x86.workspace = true
 turbonop-arm64.workspace = true
+turbonop-isa.workspace = true
 turbonop-pdb.workspace = true
 turbonop-dwarf.workspace = true
 turbonop-demangle.workspace = true

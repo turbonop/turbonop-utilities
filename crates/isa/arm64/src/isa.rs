@@ -131,23 +131,21 @@ impl Instruction {
     /// known yet (`None`): they come from the architecture's decode
     /// pseudocode, which the tables don't have.
     pub fn memory_accesses(&self, address: u64) -> impl Iterator<Item = MemoryAccess<Reg>> + use<> {
-        let literal = self.reads_memory() && !self.effects().contains(Effects::BRANCH);
-        let ops = self.operands(address);
-        let mut out = [None; crate::MAX_OPERANDS];
-        let mut n = 0;
-        for o in &ops {
-            let m = match o.kind {
-                OperandKind::Mem(m) => memory(&m, o.access),
+        let at = self.at(address);
+        // (A load from a label is a literal's: PC-relative.)
+        let literal = (self.reads_memory() && !self.effects().contains(Effects::BRANCH))
+            .then(|| at.label())
+            .flatten()
+            .map(|t| {
                 #[allow(clippy::cast_possible_wrap)] // An address's bits.
-                OperandKind::Label(t) if literal => {
-                    MemoryAccess::new(AccessKind::READ, Base::Pc, t as i64, None)
-                }
-                _ => continue,
-            };
-            out[n] = Some(m);
-            n += 1;
-        }
-        out.into_iter().flatten()
+                MemoryAccess::new(AccessKind::READ, Base::Pc, t as i64, None)
+            });
+        at.memory_operands()
+            .filter_map(|o| match o.kind {
+                OperandKind::Mem(m) => Some(memory(&m, o.access)),
+                _ => None,
+            })
+            .chain(literal)
     }
 
     /// Its operands (at `address`), in the common form: a register list's

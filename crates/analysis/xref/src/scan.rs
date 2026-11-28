@@ -1151,129 +1151,86 @@ fn mips(
 }
 
 fn arm64(code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
+    use turbonop_arm64::{Reg, opcodes as op};
+    use turbonop_isa::{Base, FlowKind, Operand};
     // Each register's page, from an ADRP not yet overwritten; and each
     // register's address, from an ADD to a page or to another address (an
     // object's fields and arrays are reached from it).
     let mut pages = [None::<u64>; 32];
     let mut addrs = [None::<u64>; 32];
     for (i, w) in code.as_chunks::<4>().0.iter().enumerate() {
-        let word = u32::from_le_bytes([w[0], w[1], w[2], w[3]]);
+        let word = u32::from_le_bytes(*w);
         let pc = address.wrapping_add(i as u64 * 4);
-        let Some(inst) = turbonop_arm64::decode(word, pc) else {
+        let Ok(inst) = turbonop_arm64::decode(word) else {
             return;
         };
-        let name = inst.encoding_name();
+        let opcode = inst.opcode();
         let rd = (word & 31) as usize;
         let rn = ((word >> 5) & 31) as usize;
-        let adr_imm = || sext(((word >> 5) & 0x7FFFF) << 2 | ((word >> 29) & 3), 21);
         let mut push = |to: u64, via: Via| out.push(CodeRef { from: pc, to, via });
-        // The address an ADD computes, which its destination then holds.
+        // The address it computes, which its destination then holds.
         let mut computed = None;
-        match name {
-            "ADRP_only_pcreladdr" => {
-                pages[rd] = Some((pc & !0xFFF).wrapping_add_signed(adr_imm() << 12));
-                continue;
+        let mut page = None;
+        let flow = inst.flow(pc);
+        if let Some(to) = flow.direct_target() {
+            let via = if flow.kind == FlowKind::Call {
+                Via::Call
+            } else {
+                Via::Jump
+            };
+            push(to, via);
+        } else if opcode == op::ADRP_ONLY_PCRELADDR || opcode == op::ADR_ONLY_PCRELADDR {
+            let at = inst.common_operands(pc).find_map(|o| match o {
+                Operand::Address(a) => Some(a),
+                _ => None,
+            });
+            if opcode == op::ADRP_ONLY_PCRELADDR {
+                page = at;
+            } else if let Some(at) = at {
+                push(at, Via::AddressOf);
             }
-            "BL_only_branch_imm" | "B_only_branch_imm" => {
-                let to = pc.wrapping_add_signed(sext(word & 0x3FF_FFFF, 26) << 2);
-                push(
-                    to,
-                    if name.starts_with("BL") {
-                        Via::Call
-                    } else {
-                        Via::Jump
-                    },
-                );
-                continue;
-            }
-            "B_only_condbranch" | "BC_only_condbranch" => {
-                push(
-                    pc.wrapping_add_signed(sext((word >> 5) & 0x7FFFF, 19) << 2),
-                    Via::Jump,
-                );
-                continue;
-            }
-            "TBZ_only_testbranch" | "TBNZ_only_testbranch" => {
-                push(
-                    pc.wrapping_add_signed(sext((word >> 5) & 0x3FFF, 14) << 2),
-                    Via::Jump,
-                );
-                continue;
-            }
-            _ => {}
-        }
-        if name.ends_with("_compbranch") {
-            push(
-                pc.wrapping_add_signed(sext((word >> 5) & 0x7FFFF, 19) << 2),
-                Via::Jump,
-            );
-            continue;
-        }
-        if name == "ADR_only_pcreladdr" {
-            push(pc.wrapping_add_signed(adr_imm()), Via::AddressOf);
-        } else if name.ends_with("_loadlit") {
-            push(
-                pc.wrapping_add_signed(sext((word >> 5) & 0x7FFFF, 19) << 2),
-                Via::Address,
-            );
-        } else if name.ends_with("ADD_64_addsub_imm") {
+        } else if opcode == op::ADD_64_ADDSUB_IMM || opcode == op::MOV_ADD_64_ADDSUB_IMM {
             if let Some(base) = pages[rn].or(addrs[rn]) {
                 let shift = if (word >> 22) & 1 == 1 { 12 } else { 0 };
-                let imm = u64::from((word >> 10) & 0xFFF) << shift;
-                let to = base.wrapping_add(imm);
+                let to = base.wrapping_add(u64::from((word >> 10) & 0xFFF) << shift);
                 push(to, Via::AddressOf);
                 computed = Some(to);
             }
-        } else if name.ends_with("_ldst_regoff")
-            && let Some(base) = pages[rn].or(addrs[rn])
-        {
-            // An array's element: the array.
-            push(base, Via::Address);
-        } else if name.ends_with("_ldst_unscaled")
-            && let Some(base) = addrs[rn]
-        {
-            push(
-                base.wrapping_add_signed(sext((word >> 12) & 0x1FF, 9)),
-                Via::Address,
-            );
-        } else if name.ends_with("_ldst_pos")
-            && let Some(page) = pages[rn].or(addrs[rn])
-        {
-            let size = (word >> 30) & 3;
-            let simd = (word >> 26) & 1 == 1;
-            let opc = (word >> 22) & 3;
-            // A 128-bit SIMD access scales by 16, the rest by their size.
-            let scale = if simd && size == 0 && opc & 2 != 0 {
-                4
-            } else {
-                size
-            };
-            let imm = u64::from((word >> 10) & 0xFFF) << scale;
-            push(page.wrapping_add(imm), Via::Address);
+        } else if inst.reads_memory() || inst.writes_memory() {
+            for m in inst.memory_accesses(pc) {
+                match m.base {
+                    // A literal.
+                    Base::Pc => push(m.address().unwrap_or_default(), Via::Address),
+                    Base::Register(Reg::X(n)) if !m.vector_length_units => {
+                        let n = usize::from(n);
+                        let Some(base) = pages[n].or(addrs[n]) else {
+                            continue;
+                        };
+                        // An array's element (indexed): the array.
+                        let to = if m.index.is_some() {
+                            base
+                        } else {
+                            base.wrapping_add_signed(m.displacement)
+                        };
+                        push(to, Via::Address);
+                    }
+                    _ => {}
+                }
+            }
         }
-        // What the instruction may have written is no longer a page.
-        // (Stores and branches write no general register at bits 0-4;
-        // loads of SIMD registers don't either.)
-        let simd_load = name.starts_with("LD") && (word >> 26) & 1 == 1;
-        let writes_rd = !(name.starts_with("ST")
-            || name.starts_with('B')
-            || name.starts_with("CB")
-            || name.starts_with("TB")
-            || name.starts_with("RET")
-            || name.starts_with("PRFM")
-            || simd_load);
-        if writes_rd {
-            pages[rd] = None;
-            addrs[rd] = None;
+        // What the instruction may have written (its destinations, a
+        // written-back base, a call's link register) no longer holds an
+        // address.
+        // (X0 to X30 are the set's low bits.)
+        let mut written = inst.written_registers().bits() & ((1 << 31) - 1);
+        while written != 0 {
+            let n = written.trailing_zeros() as usize;
+            written &= written - 1;
+            pages[n] = None;
+            addrs[n] = None;
         }
-        if name.starts_with("LDP") && !simd_load {
-            pages[((word >> 10) & 31) as usize] = None;
-            addrs[((word >> 10) & 31) as usize] = None;
-        }
-        // Writeback (pre- or post-indexed) changes the base.
-        if name.contains("_ldst_immpre") || name.contains("_ldst_immpost") {
-            pages[rn] = None;
-            addrs[rn] = None;
+        if let Some(p) = page {
+            pages[rd] = Some(p);
         }
         if let Some(to) = computed {
             addrs[rd] = Some(to);

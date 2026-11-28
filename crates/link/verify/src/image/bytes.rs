@@ -960,7 +960,7 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
     let mut i = 0;
     while i < words {
         let (wa, wb) = (w(a.bytes, i), w(b.bytes, i));
-        let (Some(ia), Some(ib)) = (decode(wa, va_a(i)), decode(wb, va_b(i))) else {
+        let (Some(ia), Some(ib)) = (decode(wa).ok(), decode(wb).ok()) else {
             i += 1;
             continue;
         };
@@ -979,13 +979,13 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             i += 1;
             continue;
         }
-        let label = |ins: &turbonop_arm64::Instruction| {
-            ins.operands().iter().find_map(|o| match o.kind {
+        let label = |ins: &turbonop_arm64::Instruction, at: u64| {
+            ins.operands(at).iter().find_map(|o| match o.kind {
                 OperandKind::Label(t) => Some(t),
                 _ => None,
             })
         };
-        let (Some(ta), Some(tb)) = (label(&ia), label(&ib)) else {
+        let (Some(ta), Some(tb)) = (label(&ia, va_a(i)), label(&ib, va_b(i))) else {
             i += 1;
             continue;
         };
@@ -1002,7 +1002,7 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
         let mut completed = false;
         for j in i + 1..(i + 9).min(words) {
             let (ja, jb) = (w(a.bytes, j), w(b.bytes, j));
-            let (Some(xa), Some(xb)) = (decode(ja, va_a(j)), decode(jb, va_b(j))) else {
+            let (Some(xa), Some(xb)) = (decode(ja).ok(), decode(jb).ok()) else {
                 break;
             };
             if xa.encoding_name() != xb.encoding_name() || ja & !ARM64_IMM12 != jb & !ARM64_IMM12 {
@@ -1010,8 +1010,9 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             }
             let n = xa.encoding_name();
             let base = (ja >> 5) & 0x1F;
+            // (A memory operand's offset doesn't depend on where it is.)
             let offset = |x: &turbonop_arm64::Instruction| -> Option<i64> {
-                x.operands().iter().find_map(|o| match o.kind {
+                x.operands(0).iter().find_map(|o| match o.kind {
                     OperandKind::Mem(m) if m.mode == AddrMode::Offset && m.index.is_none() => {
                         Some(m.offset)
                     }

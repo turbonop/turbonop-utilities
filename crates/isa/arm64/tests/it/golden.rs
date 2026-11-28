@@ -20,7 +20,7 @@ fn golden() {
         let (word, expected) = rest.split_once(' ').unwrap_or((rest, ""));
         let word = u32::from_str_radix(word, 16).unwrap();
         if address == "-" {
-            if let Some(inst) = turbonop_arm64::decode(word).ok() {
+            if let Ok(inst) = turbonop_arm64::decode(word) {
                 if NEWER.iter().any(|(name, _)| *name == inst.encoding_name()) {
                     continue;
                 }

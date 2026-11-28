@@ -35,7 +35,7 @@ fn main() {
                 break;
             }
             let w = (next() & !mask) | value;
-            let Some(inst) = turbonop_arm64::decode(w).ok() else {
+            let Ok(inst) = turbonop_arm64::decode(w) else {
                 continue;
             };
             if inst.encoding_name() != name || inst.is_unpredictable() {

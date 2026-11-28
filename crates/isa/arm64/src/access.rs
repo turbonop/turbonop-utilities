@@ -477,20 +477,33 @@ impl Instruction {
     pub fn written_registers(&self) -> RegSet {
         let rec = self.record();
         let w = self.word();
-        let mut s = RegSet(rec.defs);
+        let mut s = RegSet(self.implicit_sets().1);
         for op in rec.ops {
             if op.access & 2 != 0 {
                 s.add_class(&REG_CLASSES[usize::from(op.class)], value(op.bits, w));
             }
         }
+        s
+    }
+
+    /// The registers it reads and writes that no operand names: its
+    /// record's implicit ones, the system register MRS reads or MSR
+    /// writes, and the stack pointer an MSR to SPSel picks.
+    fn implicit_sets(&self) -> (u128, u128) {
+        let rec = self.record();
+        let w = self.word();
+        let (mut r, mut wr) = (rec.uses, rec.defs);
+        if rec.flags & flag::MRS != 0 {
+            r |= sysreg((w >> 5) & 0x7FFF).0;
+        }
         if rec.flags & flag::MSR != 0 {
-            s = s.union(sysreg((w >> 5) & 0x7FFF));
+            wr |= sysreg((w >> 5) & 0x7FFF).0;
         }
         // MSR (immediate) to SPSel (op1 0, op2 5) picks the stack pointer.
         if rec.flags & flag::MSRIMM != 0 && (w >> 16) & 7 == 0 && (w >> 5) & 7 == 5 {
-            s.insert(Reg::Sp);
+            wr |= 1 << id::SP;
         }
-        s
+        (r, wr)
     }
 
     /// The registers the instruction may read: its source operands,
@@ -500,14 +513,11 @@ impl Instruction {
     pub fn read_registers(&self) -> RegSet {
         let rec = self.record();
         let w = self.word();
-        let mut s = RegSet(rec.uses);
+        let mut s = RegSet(self.implicit_sets().0);
         for op in rec.ops {
             if op.access & 1 != 0 {
                 s.add_class(&REG_CLASSES[usize::from(op.class)], value(op.bits, w));
             }
-        }
-        if rec.flags & flag::MRS != 0 {
-            s = s.union(sysreg((w >> 5) & 0x7FFF));
         }
         s
     }
@@ -705,11 +715,11 @@ impl Instruction {
                 }
             }
         }
-        // The implicit ones: what the sets have that the operands don't.
-        let reads = self.read_registers().0 & !named_r;
-        let writes = self.written_registers().0 & !named_w;
-        let (file_r, file_w) = (file_r & reads, file_w & writes);
-        let (imp_r, imp_w) = (reads & !file_r, writes & !file_w);
+        // The implicit ones (what the operands don't name), and the
+        // registers of fields that name none (as the sets have them).
+        let (imp_r, imp_w) = self.implicit_sets();
+        let (file_r, file_w) = (file_r & !named_r, file_w & !named_w);
+        let (imp_r, imp_w) = (imp_r & !named_r & !file_r, imp_w & !named_w & !file_w);
         explicit
             .into_iter()
             .flatten()

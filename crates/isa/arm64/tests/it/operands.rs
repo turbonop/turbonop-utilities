@@ -212,7 +212,7 @@ fn operands_agree_with_the_text_and_access() {
     let mut failures = BTreeMap::new();
     let mut count = 0;
     for (word, address) in words() {
-        let Some(inst) = turbonop_arm64::decode(word).ok() else {
+        let Ok(inst) = turbonop_arm64::decode(word) else {
             continue;
         };
         count += 1;

@@ -63,7 +63,7 @@ fn agrees_with_llvm() {
             p[4][2..].to_string(),
         );
         count += 1;
-        let Some(inst) = turbonop_arm64::decode(word).ok() else {
+        let Ok(inst) = turbonop_arm64::decode(word) else {
             failures.push(format!("{word:08X} ({llvm}): doesn't decode"));
             continue;
         };

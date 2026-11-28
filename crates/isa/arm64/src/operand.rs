@@ -727,6 +727,25 @@ impl Inst {
         None
     }
 
+    /// Its memory operands alone (not evaluating the others).
+    pub(crate) fn memory_operands(&self) -> impl Iterator<Item = Operand> + use<> {
+        let mut out = [None; 2];
+        let mut n = 0;
+        for spec in crate::tables::semantics(usize::from(self.encoding)).operands {
+            if spec.kind != opk::MEM || n == out.len() {
+                continue;
+            }
+            if let Some(kind) = self.operand(spec) {
+                out[n] = Some(Operand {
+                    kind,
+                    access: Access::from_bits(spec.access),
+                });
+                n += 1;
+            }
+        }
+        out.into_iter().flatten()
+    }
+
     fn operands(&self) -> Operands {
         let blank = Operand {
             kind: OperandKind::Imm(0),

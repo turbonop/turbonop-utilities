@@ -311,6 +311,112 @@ fn merge<T>(a: Vec<T>, b: Vec<T>, cmp: &impl Fn(&T, &T) -> std::cmp::Ordering) -
     out
 }
 
+/// Everything reachable from `roots`, each item visited once by whichever
+/// thread is free: `visit(item, more, acc)` handles an item, pushing what
+/// it leads to onto `more` (claiming them first, so nothing is pushed
+/// twice) and its findings into `acc`, one `acc` (from `new_acc`) per
+/// thread; the accumulators come back in no particular order.
+///
+/// Each thread works from a stack of its own, and while no work is queued
+/// for the others it hands half of its stack to the queue; one that runs
+/// out takes half of what's queued. There's no step to wait for the
+/// slowest thread at: on a machine busy with other programs, which pause
+/// some threads, the others take the work. Serial if `parallel` is false
+/// or there's one thread.
+pub fn traverse<T: Send, A: Send>(
+    roots: Vec<T>,
+    parallel: bool,
+    new_acc: impl Fn() -> A + Sync,
+    visit: impl Fn(T, &mut Vec<T>, &mut A) + Sync,
+) -> Vec<A> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Condvar, Mutex, PoisonError};
+    let threads = threads();
+    if threads < 2 || !parallel {
+        let mut acc = new_acc();
+        let mut stack = roots;
+        while let Some(x) = stack.pop() {
+            visit(x, &mut stack, &mut acc);
+        }
+        return vec![acc];
+    }
+    /// The queue, how many threads wait on it, and whether all is done.
+    struct Queue<T> {
+        items: Vec<T>,
+        waiting: usize,
+        done: bool,
+    }
+    let queue = Mutex::new(Queue {
+        items: roots,
+        waiting: 0,
+        done: false,
+    });
+    let wake = Condvar::new();
+    // How many items are queued (a hint, read without the lock).
+    let queued = AtomicUsize::new(1);
+    /// Ends the traversal if its thread panics, so the others don't wait
+    /// for it forever (the scope then passes the panic on).
+    struct OnPanic<'a, T>(&'a Mutex<Queue<T>>, &'a Condvar);
+    impl<T> Drop for OnPanic<'_, T> {
+        fn drop(&mut self) {
+            if std::thread::panicking() {
+                self.0.lock().unwrap_or_else(PoisonError::into_inner).done = true;
+                self.1.notify_all();
+            }
+        }
+    }
+    let work = || {
+        let _guard = OnPanic(&queue, &wake);
+        let mut acc = new_acc();
+        let mut stack: Vec<T> = Vec::new();
+        loop {
+            while let Some(x) = stack.pop() {
+                visit(x, &mut stack, &mut acc);
+                if stack.len() >= 2 && queued.load(Ordering::Relaxed) == 0 {
+                    let mut q = queue.lock().unwrap_or_else(PoisonError::into_inner);
+                    let half = stack.len() / 2;
+                    // The oldest half: what leads to the most.
+                    q.items.extend(stack.drain(..half));
+                    queued.store(q.items.len(), Ordering::Relaxed);
+                    if q.waiting > 0 {
+                        wake.notify_all();
+                    }
+                }
+            }
+            let mut q = queue.lock().unwrap_or_else(PoisonError::into_inner);
+            loop {
+                if q.done {
+                    return acc;
+                }
+                if !q.items.is_empty() {
+                    let take = q.items.len().div_ceil(2);
+                    let from = q.items.len() - take;
+                    stack.extend(q.items.drain(from..));
+                    queued.store(q.items.len(), Ordering::Relaxed);
+                    break;
+                }
+                q.waiting += 1;
+                if q.waiting == threads {
+                    q.done = true;
+                    wake.notify_all();
+                    return acc;
+                }
+                q = wake.wait(q).unwrap_or_else(PoisonError::into_inner);
+                q.waiting -= 1;
+            }
+        }
+    };
+    let work = &work;
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (1..threads).map(|_| scope.spawn(work)).collect();
+        let mut all = vec![work()];
+        for h in handles {
+            all.push(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
+        }
+        all
+    })
+}
+
 /// `a` and `b`, run at once.
 pub fn join<A: Send, B: Send>(a: impl FnOnce() -> A + Send, b: impl FnOnce() -> B) -> (A, B) {
     if threads() < 2 {
@@ -326,6 +432,52 @@ pub fn join<A: Send, B: Send>(a: impl FnOnce() -> A + Send, b: impl FnOnce() -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn traverse_visits_everything_reachable_once() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        // A graph: i leads to 2i+1 and 2i+2 (a binary tree) and to i/3,
+        // below 200_000; from roots 0 and 7.
+        let n = 200_000usize;
+        let seen: Vec<AtomicBool> = (0..n).map(|_| AtomicBool::new(false)).collect();
+        let claim = |i: usize| i < n && !seen[i].swap(true, Ordering::Relaxed);
+        let mut roots = Vec::new();
+        for r in [0usize, 7] {
+            if claim(r) {
+                roots.push(r);
+            }
+        }
+        for parallel in [false, true] {
+            if parallel {
+                for b in &seen {
+                    b.store(false, Ordering::Relaxed);
+                }
+                for &r in &roots {
+                    seen[r].store(true, Ordering::Relaxed);
+                }
+            }
+            let counts = traverse(
+                roots.clone(),
+                parallel,
+                || 0usize,
+                |i, more, count| {
+                    *count += 1;
+                    for j in [2 * i + 1, 2 * i + 2, i / 3] {
+                        if claim(j) {
+                            more.push(j);
+                        }
+                    }
+                },
+            );
+            assert_eq!(counts.iter().sum::<usize>(), n, "parallel {parallel}");
+            assert!(seen.iter().all(|b| b.load(Ordering::Relaxed)));
+        }
+        // Nothing to do: no thread waits forever.
+        assert_eq!(
+            traverse(Vec::<u32>::new(), true, || 0u32, |_, _, _| {}).len(),
+            threads()
+        );
+    }
 
     #[test]
     fn in_order() {

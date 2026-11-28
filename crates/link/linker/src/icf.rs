@@ -63,6 +63,7 @@ impl Hash2 {
 /// into (both as (file, section)). `live` says which sections are in the
 /// image.
 pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
+    let started = std::time::Instant::now();
     // The candidates, in link order; and each one's associative sections.
     let mut candidates: Vec<(u32, u32)> = Vec::new();
     let mut index: Map<(u32, u32), u32> = Map::default();
@@ -177,6 +178,7 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
     };
 
     // Each candidate's own parts, and the candidates it refers to.
+    let gathered = started.elapsed();
     let parts = turbonop_par::map(&candidates, 64, |&(f, s)| {
         let FileKind::Object { object, .. } = &r.files[f as usize].kind else {
             return ((0, 0), Vec::new());
@@ -283,6 +285,7 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
         (h.digest(), edges)
     });
     let (mut digests, edges): (Vec<Digest>, Vec<Vec<u32>>) = parts.into_iter().unzip();
+    let hashed = started.elapsed();
 
     // Rounds: each digest mixed with its targets' digests, until the
     // classes stop splitting (at most as many rounds as candidates).
@@ -294,7 +297,10 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
     };
     let mut classes = distinct(&digests);
     let indices: Vec<usize> = (0..candidates.len()).collect();
+    let mut rounds = 0;
+    let mut counting = std::time::Duration::ZERO;
     for _ in 0..candidates.len() {
+        rounds += 1;
         let next = turbonop_par::map(&indices, 1024, |&i| {
             let mut h = Hash2::new();
             h.u64(digests[i].0);
@@ -305,7 +311,9 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
             }
             h.digest()
         });
+        let counted = std::time::Instant::now();
         let n = distinct(&next);
+        counting += counted.elapsed();
         digests = next;
         if n == classes {
             break;
@@ -329,6 +337,16 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
         if name(i) < name(*l as usize) {
             *l = crate::n32(i);
         }
+    }
+    if r.config.time {
+        eprintln!(
+            "turbolink:     ICF: {} candidates gathered {:.3} ms, hashed {:.3} ms, {rounds} rounds {:.3} ms (counting classes {:.3} ms)",
+            candidates.len(),
+            gathered.as_secs_f64() * 1e3,
+            (hashed - gathered).as_secs_f64() * 1e3,
+            (started.elapsed() - hashed).as_secs_f64() * 1e3,
+            counting.as_secs_f64() * 1e3
+        );
     }
     let mut folded = Map::default();
     for (i, d) in digests.iter().enumerate() {

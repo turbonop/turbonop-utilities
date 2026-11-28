@@ -397,63 +397,53 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
     };
     let mut commons = Vec::new();
     let setup = started.elapsed();
-    let mut levels = 0usize;
     frontier.retain(|&i| claim(i as usize));
     for &g in roots {
         global(g, &mut frontier, &mut commons);
     }
-    while !frontier.is_empty() {
-        let steps = turbonop_par::map_chunks(&frontier, 256, |part| {
-            let mut next = Vec::new();
-            let mut commons = Vec::new();
-            for &i in part {
-                let i = i as usize;
-                let f = file_of(i);
-                let s = i - base[f];
-                let mut c = first_child[i];
-                while c != u32::MAX {
-                    if claim(c as usize) {
-                        next.push(redirect[c as usize]);
-                    }
-                    c = next_sibling[c as usize];
-                }
-                let FileKind::Object {
-                    object, globals, ..
-                } = &r.files[f].kind
-                else {
-                    continue;
-                };
-                for rel in object.sections[s].relocations {
-                    let k = rel.symbol_table_index.get() as usize;
-                    match globals.get(k) {
-                        Some(&g) if g != crate::resolve::NONE => {
-                            global(g, &mut next, &mut commons);
-                        }
-                        _ => {
-                            if let Some(sym) = object.symbols.get(k)
-                                && let SymbolKind::Local { section, .. } = sym.kind
-                            {
-                                let t = redirect[base[f] + section as usize] as usize;
-                                if claim(t) {
-                                    next.push(crate::n32(t));
-                                }
-                            }
+    // Every section reachable from the frontier, by whichever thread is
+    // free (no steps to wait at: see turbonop_par::traverse).
+    let parallel = total >= 4096;
+    let found = turbonop_par::traverse(frontier, parallel, Vec::new, |i, more, commons| {
+        let i = i as usize;
+        let f = file_of(i);
+        let s = i - base[f];
+        let mut c = first_child[i];
+        while c != u32::MAX {
+            if claim(c as usize) {
+                more.push(redirect[c as usize]);
+            }
+            c = next_sibling[c as usize];
+        }
+        let FileKind::Object {
+            object, globals, ..
+        } = &r.files[f].kind
+        else {
+            return;
+        };
+        for rel in object.sections[s].relocations {
+            let k = rel.symbol_table_index.get() as usize;
+            match globals.get(k) {
+                Some(&g) if g != crate::resolve::NONE => global(g, more, commons),
+                _ => {
+                    if let Some(sym) = object.symbols.get(k)
+                        && let SymbolKind::Local { section, .. } = sym.kind
+                    {
+                        let t = redirect[base[f] + section as usize] as usize;
+                        if claim(t) {
+                            more.push(crate::n32(t));
                         }
                     }
                 }
             }
-            vec![(next, commons)]
-        });
-        levels += 1;
-        frontier = Vec::new();
-        for (next, c) in steps {
-            frontier.extend(next);
-            commons.extend(c);
         }
+    });
+    for c in found {
+        commons.extend(c);
     }
     if r.config.time {
         eprintln!(
-            "turbolink:     mark: setup {:.3} ms, {levels} steps {:.3} ms, {total} sections",
+            "turbolink:     mark: setup {:.3} ms, traversal {:.3} ms, {total} sections",
             setup.as_secs_f64() * 1e3,
             (started.elapsed() - setup).as_secs_f64() * 1e3
         );

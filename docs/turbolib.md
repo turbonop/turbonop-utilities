@@ -341,6 +341,21 @@ What `lib.exe` indexes (measured):
 - An import object's code and constants get `__imp_X` and `X`, data only
   `__imp_X`; ARM64EC imports get their mangled and demangled names, and
   `__imp_aux_`, in `/<ECSYMBOLS>/`, after `//`.
+- Import objects archived again (rather than made by `lib /DEF`) are
+  listed with more names in an ARM64EC or ARM64X archive: an ARM64 one's
+  `__imp_aux_X` and `__auximpcopy_X` too, an ARM64EC or x64 one's
+  `__auximpcopy_X` and, for code, `__impchk_X`; in any other archive, an
+  ARM64EC import gets only `__imp_X` and `X` (demangled), in the linker
+  members. An ARM64 import library's descriptor objects' names are in
+  both tables. `/<ECSYMBOLS>/` is written only for `/MACHINE:ARM64EC` or
+  `ARM64X`, not for an ARM64EC machine inferred from a member.
+- Library members of other machines: the machine not given is the first
+  member's in the output's order; for ARM64, ARM64EC and x64 members are
+  left out without a word (an ARM64X library archived again without
+  `/MACHINE` loses its EC half), for an inferred ARM64EC x64 members, and
+  for x64 an ARM64 or ARM64EC member is LNK1392. (Measured on import
+  libraries from `.def` files: `tools/coff/arm64x.cmd`, whose 12 cases
+  turbolib's tests compare byte for byte.)
 
 Header fields: `lib.exe` dates tables and import members with the time of
 the run (mode 0), and objects with their file's time (mode `100666`, or

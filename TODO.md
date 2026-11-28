@@ -445,19 +445,32 @@ x64. Where the 3.5 MB went:
     indexed, and loaded); then decide the default again;
   - (Found: the 305 SDK libraries whose `--fold=none /Brepro` output
     wasn't lib.exe's were lib.exe copying a lone library input byte for
-    byte; turbolib now copies it too.) Forced to write such a library
-    again (`/REMOVE` of a member that isn't there), lib.exe and turbolib
-    still differ on ARM64X import libraries (234 of the 305; the rest not
-    yet run): without `/MACHINE`, lib.exe drops the ARM64EC import
-    members that share a name with a native one and writes no
-    `/<ECSYMBOLS>/` (the library loses its EC half); turbolib keeps every
-    member and lists their EC names (`#name`, `__imp_aux_name`) in the
-    main index; with `/MACHINE:ARM64X` both keep every member but the
-    tables differ. Only re-archiving ARM64 import libraries meets this;
-    x64 and x86 libraries, and libraries made from objects, don't;
-  - the engine puts a COMDAT in two synthesized members (`libucrt.lib`,
-    `Uuid.lib`), and changes `.retplne` (`BufferOverflow.lib`): the
-    self-check falls back;
+    byte; turbolib now copies it too, also when folding leaves it
+    unchanged or falls back.) (Done: ARM64X libraries archived again as
+    lib.exe 14.52 does: for ARM64, ARM64EC and x64 members left out; the
+    machine inferred from the first member in output order;
+    `/<ECSYMBOLS>/` only for `/MACHINE:ARM64EC|ARM64X`; import objects
+    listed with `__imp_aux_`, `__auximpcopy_`, `__impchk_`; see
+    `tools/coff/arm64x.cmd`.) Left: of the SDK's and MSVC's 566 ARM64
+    libraries archived again (`/REMOVE` of a member that isn't there),
+    47 differ in bytes and 10 in messages without `/MACHINE`, 80 and 87
+    with `/MACHINE:ARM64X` (the rest are lib.exe's bytes and messages);
+    mostly libraries with ARM64EC objects beside ARM64 ones (lib.exe's
+    LNK4006 between them, which members keep a name). Known in the
+    fixtures: where an ARM64EC and an x64 import define one name in an EC
+    archive, lib.exe sends `__imp_X` and `__auximpcopy_X` to the later
+    (x64) one and warns about the other four (turbolib: all to the first,
+    no LNK4006 in `/<ECSYMBOLS>/`), and doesn't warn about x64 and ARM64
+    descriptor objects' common names (turbolib does). Not yet tested:
+    whether any of it changes a link (link.exe on the differing pairs);
+  - (Done: `libucrt.lib`'s and `Uuid.lib`'s fallbacks were cl's C and C++
+    front ends' copies of one COMDAT, kept apart by the environment's
+    `@comp.id`/`S_COMPILE3`: verify allows them now; `BufferOverflow.lib`'s,
+    verify comparing `.retplne` as bytes: its records are entries now.)
+  - `turbolib verify` (not the self-check, which skips index checks the
+    original fails too) reports Microsoft's ARM64X libraries' EC
+    definitions as missing from the index: it doesn't read
+    `/<ECSYMBOLS>/`;
   - folding a folded library works (the plan's "Folding a folded
     library"; `tools/turbolib/refold/run.py`). Open: the inputs'
     precompiled-types members stay beside the new one, so combining
@@ -470,9 +483,9 @@ x64. Where the 3.5 MB went:
     image-relative words (`$ip2state$`, `$stateUnwindMap$`) and `.pdata`
     COMDATs' as bytes, not by what they name, so any two links of code
     with them differ;
-  - `/GL` objects' index: `use_shared`-like inline functions' IL
-    references read as none (`turbonop_pe::ltcg::function_il`), so fewer
-    names are listed than lib.exe lists (tools/turbolib/incremental);
+  - (Done: `/GL` objects' index: the IL's compressed fields (a body's
+    length, the reference count, each reference's use count) were read as
+    bytes, losing every reference after a large body; `tools/coff/ltcg-refs.cpp`.)
   - link.exe's incremental relink after a `/Yu` library member changes
     fails with lib.exe's library too (LNK1235; LNK1236 folded).
 - **Phase 1: what is left of the writers.**

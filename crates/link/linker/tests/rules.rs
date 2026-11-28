@@ -1644,3 +1644,270 @@ fn order_is_link_exes() {
     assert_eq!(at_rva(&image, xdata.0 + 8, 1), [2]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// An archive's members: each header and its data.
+fn archive_members(d: &[u8]) -> Vec<(&[u8], &[u8])> {
+    assert_eq!(&d[..8], b"!<arch>\n");
+    let mut out = Vec::new();
+    let mut at = 8;
+    while at < d.len() {
+        let h = &d[at..at + 60];
+        let size: usize = std::str::from_utf8(&h[48..58])
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        out.push((h, &d[at + 60..at + 60 + size]));
+        at += 60 + size + (size & 1);
+    }
+    out
+}
+
+/// A DLL's import library, as link.exe 14.52 writes it: every member's
+/// date -1; the descriptors (each with a `.debug$S` of `S_OBJNAME_ST` and
+/// `S_COMPILE2_ST`, and an `@comp.id` for product 0x101), then the short
+/// imports in the order of their names (bytes: `B` < `_` < `a`); the first
+/// linker member's symbols in the order the exports were given, each
+/// member's sorted, and the second linker member's members in that order
+/// too; each member's time stamp the first 4 bytes of its SHA-256 (with the
+/// stamp 0xFFFFFFFF) with the top two bits set; an export given an ordinal
+/// imported by it. And the image's ordinals: the unnumbered exports, by
+/// name, take the free ones from the smallest given up.
+#[test]
+fn the_import_library_is_link_exes() {
+    use sha2::Digest;
+    let dir = scratch("implib");
+    let names = ["zeta", "alpha", "Beta", "_under", "impl1", "impl2", "impl4"];
+    let syms: Vec<Sym> = names.iter().map(|&n| Sym(n, 1)).collect();
+    std::fs::write(dir.join("f.obj"), object(&[0xC3], &[], &syms)).unwrap();
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/NOENTRY",
+            "/DLL",
+            "/EXPORT:zeta",
+            "/EXPORT:x=impl2,@7",
+            "/EXPORT:alpha",
+            "/EXPORT:Beta",
+            "/EXPORT:impl1,DATA",
+            "/EXPORT:impl4,@4,NONAME",
+            "/EXPORT:_under",
+            "f.obj",
+        ],
+    )
+    .expect("links");
+    let lib = std::fs::read(dir.join("out.lib")).expect("the import library");
+    let members = archive_members(&lib);
+    assert_eq!(members.len(), 2 + 3 + 7);
+    for (h, _) in &members {
+        assert_eq!(&h[16..48], b"-1                      0       ", "the date");
+    }
+    let stamp = |data: &[u8], at: usize| {
+        let mut d = data.to_vec();
+        d[at..at + 4].fill(0xFF);
+        let h = sha2::Sha256::digest(&d);
+        u32::from_le_bytes([h[0], h[1], h[2], h[3]]) | 0xC000_0000
+    };
+    let section_names = |o: &[u8]| -> Vec<String> {
+        (0..usize::from(u16_at(o, 2)))
+            .map(|i| {
+                String::from_utf8_lossy(&o[20 + 40 * i..28 + 40 * i])
+                    .trim_end_matches('\0')
+                    .to_owned()
+            })
+            .collect()
+    };
+    // The descriptors' objects.
+    let wanted: [&[&str]; 3] = [
+        &[".debug$S", ".idata$2", ".idata$6"],
+        &[".debug$S", ".idata$3"],
+        &[".debug$S", ".idata$5", ".idata$4"],
+    ];
+    let mut want_debug = 2u32.to_le_bytes().to_vec();
+    want_debug.extend_from_slice(&[2 + 4 + 1 + 7, 0, 9, 0, 0, 0, 0, 0, 7]);
+    want_debug.extend_from_slice(b"out.img");
+    want_debug.extend_from_slice(&[39, 0, 0x13, 0x10, 7, 0, 0, 0, 0xD0, 0]);
+    want_debug.extend_from_slice(&[0, 0, 0, 0, 0, 0, 14, 0, 52, 0, 0xA5, 0x90, 18]);
+    want_debug.extend_from_slice(b"Microsoft (R) LINK");
+    for (k, want) in wanted.iter().enumerate() {
+        let (h, o) = members[2 + k];
+        assert_eq!(&h[..16], b"out.img/        ");
+        assert_eq!(section_names(o), *want);
+        assert_eq!(u32_at(o, 4), stamp(o, 4), "the time stamp");
+        // .debug$S: on 1, discardable, read-only.
+        assert_eq!(u32_at(o, 20 + 36), 0x4210_0040);
+        let at = u32_at(o, 20 + 20) as usize;
+        assert_eq!(&o[at..at + u32_at(o, 20 + 16) as usize], want_debug);
+        // The first symbol: @comp.id, absolute.
+        let symbols = u32_at(o, 8) as usize;
+        assert_eq!(&o[symbols..symbols + 8], b"@comp.id");
+        assert_eq!(u32_at(o, symbols + 8), 0x0101_90A5);
+        assert_eq!(u16_at(o, symbols + 12), 0xFFFF);
+    }
+    // The descriptor's .idata$6 has as its relocations' pointer .idata$2's
+    // (it has none).
+    let d = members[2].1;
+    assert_eq!(u16_at(d, 20 + 40 + 32), 3);
+    assert_eq!(u32_at(d, 20 + 80 + 24), u32_at(d, 20 + 40 + 24));
+    // The imports, by name: (name, hint or ordinal, type: code 0, data 1,
+    // and the name type (by name 1, by ordinal 0) << 2).
+    let imports: Vec<(&[u8], u16, u16)> = members[5..]
+        .iter()
+        .map(|(_, o)| {
+            assert_eq!(u32_at(o, 8), stamp(o, 8), "the time stamp");
+            let name = o[20..].split(|&b| b == 0).next().unwrap();
+            (name, u16_at(o, 16), u16_at(o, 18))
+        })
+        .collect();
+    assert_eq!(
+        imports,
+        [
+            (&b"Beta"[..], 0, 4),
+            (b"_under", 1, 4),
+            (b"alpha", 2, 4),
+            (b"impl1", 3, 5),
+            (b"impl4", 4, 0),
+            (b"x", 7, 0),
+            (b"zeta", 5, 4),
+        ]
+    );
+    // Each import member's offset in the file.
+    let mut offsets = std::collections::HashMap::new();
+    let mut at = 8u32;
+    for (_, o) in &members {
+        if o.starts_with(&[0, 0, 0xFF, 0xFF]) {
+            let name = o[20..].split(|&b| b == 0).next().unwrap();
+            offsets.insert(name.to_vec(), at);
+        }
+        at += 60 + n32(o.len() + (o.len() & 1));
+    }
+    // The first linker member: symbols as the exports were given, each
+    // member's sorted ("Beta" < "__imp_Beta" < "__imp_alpha" < "alpha"),
+    // and the offsets of the members where they are.
+    let first = members[0].1;
+    let count = u32::from_be_bytes(first[..4].try_into().unwrap()) as usize;
+    let strings: Vec<&[u8]> = first[4 + 4 * count..]
+        .split(|&b| b == 0)
+        .take(count)
+        .collect();
+    assert_eq!(
+        strings,
+        [
+            &b"__IMPORT_DESCRIPTOR_out"[..],
+            b"__NULL_IMPORT_DESCRIPTOR",
+            b"\x7fout_NULL_THUNK_DATA",
+            b"__imp_zeta",
+            b"zeta",
+            b"__imp_x",
+            b"x",
+            b"__imp_alpha",
+            b"alpha",
+            b"Beta",
+            b"__imp_Beta",
+            b"__imp_impl1",
+            b"__imp_impl4",
+            b"impl4",
+            b"__imp__under",
+            b"_under",
+        ]
+    );
+    let be = |i: usize| u32::from_be_bytes(first[4 + 4 * i..8 + 4 * i].try_into().unwrap());
+    assert_eq!(be(3), offsets[&b"zeta"[..]]);
+    assert_eq!(be(9), offsets[&b"Beta"[..]]);
+    // The second linker member's members: in that order too.
+    let second = members[1].1;
+    assert_eq!(u32_at(second, 0), 10);
+    let table: Vec<u32> = (3..10).map(|i| u32_at(second, 4 + 4 * i)).collect();
+    let given = ["zeta", "x", "alpha", "Beta", "impl1", "impl4", "_under"];
+    let want: Vec<u32> = given.iter().map(|n| offsets[n.as_bytes()]).collect();
+    assert_eq!(table, want);
+    // The image's ordinals: 4 and 7 given; Beta, _under, alpha, impl1,
+    // zeta (by name) take 5, 6, 8, 9, 10.
+    let (edata, _) = directory(&image, 0);
+    let header = at_rva(&image, edata, 40);
+    assert_eq!(u32_at(header, 16), 4, "the base");
+    assert_eq!(u32_at(header, 20), 7, "the functions");
+    let (names_at, ordinals_at) = (u32_at(header, 32), u32_at(header, 36));
+    let mut by_name = Vec::new();
+    for k in 0..u32_at(header, 24) {
+        let name_rva = u32_at(at_rva(&image, names_at + 4 * k, 4), 0);
+        let name = at_rva(&image, name_rva, 8)
+            .split(|&b| b == 0)
+            .next()
+            .unwrap();
+        let ordinal = u16_at(at_rva(&image, ordinals_at + 2 * k, 2), 0) + 4;
+        by_name.push((String::from_utf8_lossy(name).into_owned(), ordinal));
+    }
+    let want: Vec<(String, u16)> = [
+        ("Beta", 5),
+        ("_under", 6),
+        ("alpha", 8),
+        ("impl1", 9),
+        ("x", 7),
+        ("zeta", 10),
+    ]
+    .iter()
+    .map(|&(n, o)| (n.to_owned(), o))
+    .collect();
+    assert_eq!(by_name, want);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The export directory's strings, as link.exe lays them out: after the
+/// DLL's name, by export in the order of their names (not what `EXPORTAS`
+/// exports them as), each's name then its forwarder's; the name pointers
+/// sorted by exported name. And a name exported twice is kept once, the
+/// first (the command line's before an object's directive), by its name:
+/// `EXPORTAS` aside.
+#[test]
+fn the_export_directorys_strings_are_link_exes() {
+    let dir = scratch("edata-strings");
+    // (link.exe wants the forwarded function's name defined, Target.)
+    let syms = [Sym("alpha", 1), Sym("beta", 1), Sym("Target", 1)];
+    std::fs::write(dir.join("f.obj"), object(&[0xC3], &[], &syms)).unwrap();
+    std::fs::write(
+        dir.join("f.def"),
+        "LIBRARY out.img\nEXPORTS\n    fwd = other.Target\n",
+    )
+    .unwrap();
+    let def = format!("/DEF:{}", input(&dir, "f.def"));
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/NOENTRY",
+            "/DLL",
+            "/EXPORT:beta",
+            &def,
+            "/EXPORT:alpha,EXPORTAS,zz",
+            "/EXPORT:alpha",
+            "f.obj",
+        ],
+    )
+    .expect("links");
+    let (edata, _) = directory(&image, 0);
+    let header = at_rva(&image, edata, 40);
+    assert_eq!(u32_at(header, 20), 3, "three functions");
+    let names = u32_at(header, 24);
+    assert_eq!(names, 3);
+    let want = b"out.img\0zz\0beta\0fwd\0other.Target\0";
+    let strings = at_rva(&image, u32_at(header, 12), want.len());
+    assert_eq!(strings, want);
+    // The names sorted, and their ordinals: by name, alpha (zz), beta,
+    // fwd.
+    let (names_at, ordinals_at) = (u32_at(header, 32), u32_at(header, 36));
+    let mut sorted = Vec::new();
+    for k in 0..names {
+        let rva = u32_at(at_rva(&image, names_at + 4 * k, 4), 0);
+        let name = at_rva(&image, rva, 4).split(|&b| b == 0).next().unwrap();
+        let ordinal = u16_at(at_rva(&image, ordinals_at + 2 * k, 2), 0) + 1;
+        sorted.push((String::from_utf8_lossy(name).into_owned(), ordinal));
+    }
+    let want: Vec<(String, u16)> = [("beta", 2), ("fwd", 3), ("zz", 1)]
+        .iter()
+        .map(|&(n, o)| (n.to_owned(), o))
+        .collect();
+    assert_eq!(sorted, want);
+    let _ = std::fs::remove_dir_all(&dir);
+}

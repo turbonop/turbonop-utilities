@@ -326,6 +326,14 @@ pub fn link(mut config: Config) -> Outcome {
         for (k, (_, i)) in t.directory.names.iter().enumerate() {
             hints[*i] = u16::try_from(k).unwrap_or(0);
         }
+        // The exports given an ordinal (`@n`): imported by it, and so
+        // marked in the .exp.
+        let ordinals_given: Vec<String> = c
+            .exports
+            .iter()
+            .filter(|e| e.ordinal.is_some())
+            .map(|e| crate::exports::exported_name(e).to_owned())
+            .collect();
         // (Not with /NOIMPLIB; the export object still, as link.exe.)
         let lib = (!c.no_implib).then(|| {
             implib::write(
@@ -334,7 +342,7 @@ pub fn link(mut config: Config) -> Outcome {
                 machine.is_64(),
                 &t.directory.exports,
                 &hints,
-                crate::write::timestamp(c),
+                &ordinals_given,
             )
         });
         if let Some(lib) = lib
@@ -362,12 +370,6 @@ pub fn link(mut config: Config) -> Outcome {
                 .def
                 .as_ref()
                 .map(|d| std::path::absolute(d).unwrap_or_else(|_| d.clone()));
-            let ordinals_given: Vec<String> = c
-                .exports
-                .iter()
-                .filter(|e| e.ordinal.is_some())
-                .map(|e| crate::exports::exported_name(e).to_owned())
-                .collect();
             let exp = crate::exp::write(
                 &t.directory,
                 &crate::exp::Inputs {

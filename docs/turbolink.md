@@ -332,22 +332,61 @@ lists every COFF group with its address and size) and by experiment:
   `/MAPINFO:EXPORTS`, the exports by ordinal (`exported name:` when it
   differs from the internal name). Formatted on every core. hexcavator
   reads it (`turbonop-linkmap`).
+- **Exports** (`crates/link/linker/src/exports.rs`): one per name, the
+  first given (the command line's, then the `.def` file's, then the
+  objects' directives; by its name, not what `EXPORTAS` exports it as);
+  the unnumbered ones, in the order of their names, take the free
+  ordinals from the smallest given (1 if none) up, filling the gaps
+  between given ones (4 and 7 given: 5, 6, 8, ...). The directory's
+  strings, after the DLL's name, go by export in the order of their names
+  (`EXPORTAS` aside), each's exported name then its forwarder's string;
+  the name pointers are sorted by exported name.
 - **The export object** (`.exp`, `crates/link/linker/src/exp.rs`) is
   link.exe's byte for byte but the linker's own path in `S_ENVBLOCK`
   (and the lengths and offsets it moves): an x64 object stamped
-  0xFFFFFFFF; `.edata` (the directory with its addresses zero, ADDR32NB
-  relocations to `szName`, `rgpv`, `rgszName`, `rgwOrd`, then per export
-  by exported name its slot to its symbol and its name pointer to `$N`);
-  `.debug$S` (S_OBJNAME the `.exp`'s path as formed, S_COMPILE3 for LINK
-  14.52.37029, S_ENVBLOCK cwd and exe, an S_EXPORT per export by
-  exported name with its flags; with a `.def` file its SHA-256 (0xF4) and
-  absolute path (0xF3)); `.drectve` only when a `.def` file names the
-  image (` /DLL /OUT:x.dll` for `LIBRARY x`, ` /OUT:x.exe` for `NAME`),
-  with a NUL after it; the symbols `@comp.id`, `@feat.00` 0x810, the
-  sections', the directory's parts, `$N`s, then the exports' (sorted,
-  undefined). It's written beside the import library (`/IMPLIB`'s name
-  with `.exp`), with `/NOIMPLIB` too, not with `/NOEXP`. The import
-  library isn't yet link.exe's bytes (TODO.md).
+  0xFFFFFFFF; `.edata` (the directory with its addresses zero, a
+  forwarder's string in it, ADDR32NB relocations to `szName`, `rgpv`,
+  `rgszName`, `rgwOrd`, then per export, by the exports' names, its slot
+  to its symbol and, if it has a name, the next name pointer to its
+  string's `$N`); `.debug$S` (S_OBJNAME the `.exp`'s path as formed,
+  S_COMPILE3 for LINK 14.52.37029, S_ENVBLOCK cwd and exe, an S_EXPORT per
+  export by name with its flags (a forwarder 0x20, named for itself);
+  with a `.def` file its SHA-256 (0xF4) and absolute path (0xF3));
+  `.drectve` only when a `.def` file names the image (` /DLL /OUT:x.dll`
+  for `LIBRARY x`, ` /OUT:x.exe` for `NAME`), with a NUL after it; the
+  symbols `@comp.id`, `@feat.00` 0x810, the sections', the directory's
+  parts, `$N`s, then one per export by name: what it exports, undefined
+  (twice if two exports export it), or for a forwarder a static named
+  for the export at its string. It's written beside the import library
+  (`/IMPLIB`'s name with `.exp`), with `/NOIMPLIB` too, not with
+  `/NOEXP`.
+- **The import library** (`.lib`, `crates/link/linker/src/implib.rs`) is
+  link.exe's byte for byte, with and without `/Brepro` (it doesn't
+  change it), for x64:
+  - Members: the import descriptor, the null import descriptor, the null
+    thunk, then a short import object per export not `PRIVATE`, in the
+    order of their names (bytes: `B` < `_` < `a`). Each header's date is
+    -1, uid and gid blank, mode 0; a name of more than 15 bytes in `//`
+    (once, NUL-terminated, the member's `/0`).
+  - The first linker member's symbols are in the order the exports were
+    given (the exports' order above), each member's sorted (`Beta` before
+    `__imp_Beta`, `__imp_alpha` before `alpha`), at the members' offsets;
+    the second linker member's member table is in that order too (not the
+    file's), its symbols sorted with indices into it.
+  - Each member's time stamp is the first 4 bytes of the SHA-256 of the
+    member with its stamp 0xFFFFFFFF, little-endian, with the top two bits
+    set (proven on 84 members of 7 libraries).
+  - The descriptor objects: `.debug$S` first (on 1, discardable,
+    read-only: signature 2, `S_OBJNAME_ST` with signature 0 and the DLL's
+    name as a length-prefixed string, `S_COMPILE2_ST` for LINK, AMD64,
+    front end 0.0.0, back end 14.52.37029, "Microsoft (R) LINK"; not
+    padded), and `@comp.id` 0x010190A5 (product 0x101) the first symbol.
+    A section without relocations points at the last relocations before
+    it (the descriptor's `.idata$6` at `.idata$2`'s), 0 if none.
+  - An export given an ordinal (`@n`, on the command line or in the
+    `.def` file) is imported by its ordinal, as a `NONAME` one is; the
+    others by name with their hint (`EXPORTAS`: name type 4, the name
+    after the DLL's).
 - **Resources** (`.res` files, cvtres's work): the directory (with its
   strings) is the `.rsrc$01` group, the data `.rsrc$02` from the next 16
   bytes, each resource's on 8 and the whole to 8; the Rich header has
@@ -360,7 +399,8 @@ lists every COFF group with its address and size) and by experiment:
   DLL's is Windows' (entry point or not) and an EXE's is LNK1221.
 - **Status:** link.exe's images byte for byte, time stamps aside, for C
   and C++ (exceptions, TLS, iostreams) with the dynamic and the static
-  CRT, C with the debug CRT, a DLL with exports, delay loading,
+  CRT, C with the debug CRT, a DLL with exports (its import library byte
+  for byte too, and its export object), delay loading,
   resources, and `/GUARD:CF` (with indirect calls, long jumps,
   address-taken imports, delay loading, and `/GUARD:EHCONT`; tests check
   each); and LLVM's `llvm-tblgen` (4.8 MB) and `llc` (73 MB, every

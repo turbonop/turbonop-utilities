@@ -148,7 +148,16 @@ pub struct Command {
 
 /// turbolib's own long options.
 const TURBOLIB: &[&str] = &[
-    "fold", "pick", "pull", "locals", "precomp", "report", "threads", "diagnose", "stats",
+    "fold",
+    "pick",
+    "pull",
+    "locals",
+    "precomp",
+    "debug-types",
+    "report",
+    "threads",
+    "diagnose",
+    "stats",
 ];
 
 /// `--name[=value]` if it is one of turbolib's options.

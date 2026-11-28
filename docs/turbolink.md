@@ -125,7 +125,30 @@ lists every COFF group with its address and size) and by experiment:
 - **Groups in a section:** sorted by full name (`.CRT$XCA` before
   `.CRT$XCU`), sections merged in sorting among the section's own
   (`.00cfg` before `.CRT` before `.rdata` before `.xdata` in `.rdata`);
-  except `.idata$5` (the IAT) first and the rest of `.idata$` last.
+  except `.idata$5` (the IAT) first and the rest of `.idata$` last. The
+  export directory (`.edata`, an empty group without exports) follows
+  the inputs' groups, among the last ones by name (after `.didat$`,
+  before `.idata$` but `$5`, before uninitialized data); its directory
+  entry's size is rounded to 4 bytes unless it is last in its section; then
+  link.exe's `.rdata$voltmd` and `.rdata$zzzdbg` each go before the
+  first group whose name sorts after theirs (a DLL without imports or
+  unwind data: `.rdata`, `.edata`, `.rdata$voltmd`, `.rdata$zzzdbg`;
+  with unwind data: `.rdata`, `.rdata$voltmd`, `.rdata$zzzdbg`, `.xdata`,
+  `.edata`).
+- **`/ORDER:@file`:** each line a decorated name; the functions named go
+  first in their group (each group apart: a `.text$mn` function stays in
+  `.text$mn`), in the file's order, the rest after them as they were;
+  each function's associative sections (its unwind data) move with it.
+  A name no external symbol defines (a static function's too) is
+  LNK4037, `file : warning LNK4037: 'name' does not exist; ignored`.
+- **`/FUNCTIONPADMIN[:n]`:** `n` bytes of `int3` (6 on x64, 5 on x86
+  without a number) before each section that starts with a function (a
+  symbol at offset 0 whose type is a function's: a COMDAT or not, an
+  external or a static), then the section's alignment; and before
+  import thunks, delay-load thunks, and tail merges. None before an
+  assembler's code (its symbols have no type), nor before a section
+  whose function isn't at its start. A group starts before its first
+  section's padding (aligned).
 - **Imports:** built from the import libraries' own pieces (each short
   import's slots, the import descriptors, the null thunks), which sort
   by member name (the DLL's: byte order, upper case first): the IAT, the
@@ -167,7 +190,13 @@ lists every COFF group with its address and size) and by experiment:
   assembler's empty `.gssep$x` and `.gsspr$y`: the debug entry's size is
   the list's, the rest zeros), and, with
   `/Brepro`, the `repro` entry (32, then a 32-byte hash whose last 4
-  bytes are the time stamp). `/GUARD`'s tables (`.gfids$y` and the rest)
+  bytes are the time stamp). The hash, as link.exe's `IMAGE::Normalize`
+  computes it: SHA-256 of the whole image with every time stamp (the file
+  header's, each debug directory entry's, the export directory's) and,
+  with a PDB, the CodeView record's GUID and age set to all ones, and the
+  repro entry's length and hash to zeros; then its last 4 bytes are every
+  time stamp and its first 16 the PDB's GUID (the age as it was).
+  `/GUARD`'s tables (`.gfids$y` and the rest)
   are empty groups of `.rdata`.
 - **ICF:** folds code (only the C/C++ compiler's: an assembler's
   identical functions stay apart), unwind data (`.xdata`), and a
@@ -348,10 +377,7 @@ lists every COFF group with its address and size) and by experiment:
   (the debug directory: CodeView, VC_FEATURE, then the coffgrp entry); the
   PDB is logically link.exe's (DIA reads it; `hexcavator diff` compares
   them), not byte for byte.
-- **Still different** (to do): the
-  `/Brepro` hash (it depends on the output's contents, not its name or
-  the options, but isn't a plain SHA-1/256/512 or MD5 of the file with
-  its time stamps and hash zeroed); a delay-loaded DLL's name and address tables with two or more imports
+- **Still different** (to do): a delay-loaded DLL's name and address tables with two or more imports
   (link.exe's order isn't load order, and no `qsort` of it found yet:
   loads C,D give D,C; C,D,S give S,D,C; C,D,X,S give S,D,X,C; C,Q,F,X,E,G
   give G,Q,F,X,E,C; C,Q,F,A,X,E,B,I,M,G give C,M,Q,F,A,X,E,B,I,G).

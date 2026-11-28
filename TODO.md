@@ -496,6 +496,25 @@ x64. Where the 3.5 MB went:
   - `/<ECSYMBOLS>/` in verify; C13 subsections other than lines and
     inlinees (frame data, cross-scope imports and exports) in
     compare-images.
+  - **No folded COFF link has yet compared equivalent.** The proof run
+    (`tools/turbolib/proof`: a from-scratch Debug /Z7 LLVM+clang+lld
+    build, its 205 changed libraries folded, all 205 passing `verify`;
+    `llvm-objdump.exe` relinked) still fails compare-images after
+    moved `/RTC1` data was named by content and MSVC's jump-table
+    displacements inferred (branch turbolib-proof): link.exe /OPT:REF 241
+    failures (from 3,500), lld-link /OPT:REF 37,481. Left to explain,
+    each by an image's bytes: code operands naming another offset of the
+    same function (`getMappingClassString`+0x2ac and +0x29b, lld-link);
+    single differing bytes (`optimizeInstFromVEX3ToVEX2`+0x1678, link.exe);
+    lld-link's 8,004 read-only contributions only in each program; line
+    blocks of `std::_Optional_construct_base` constructors; 123 to 138
+    procedures' symbols (lambdas); `S_GTHREAD32`/`S_LTHREAD32` globals;
+    `Parallel.cpp`'s `.data` CRC.
+  - The proof run's other parts, not yet done: the two turbolib builds
+    (fold, fold+precomp) and their test suites against the baseline's;
+    the baseline's `check-clang` (Debug clang ran 7.5 h without finishing:
+    AArch64 SVE CodeGen tests) and `check-lld`; the debugger sessions in
+    folded functions (`proof/debug.py`, checked on the baseline only).
 - **Phase 2.4's open ends** (folded units' CodeView, done for x64 MSVC
   and clang-cl).
   - (Done: lld-link loaded members link.exe didn't, 2.8 MiB more code in
@@ -665,29 +684,40 @@ x64. Where the 3.5 MB went:
   (7.2), `--fold=identical` with `verify` (7.3), x86-64's FDEs and LSDAs
   moving with their units, givers' DWARF moving with their code,
   synthesized members' DWARF, and a Rust `compare-images` for Mach-O with
-  dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5), and the
-  corpus scripts (`tools/turbolib/macho-corpus`). Still open:
-  - **The size DWARF costs**: the folded corpus archives are 5.9% larger
-    (7.4: 9.1%; 1.0% smaller before synthesized members carried DWARF):
-    88.7 MB of synthesized members' DWARF per architecture, most of it
-    whole class definitions (dsymutil keeps only what linked DIEs reach)
-    and their strings. Sharing class definitions between synthesized
-    members isn't correct for dsymutil (7.5: they load and dead-strip
-    independently). Left: an opt-in `--debug-types=declarations` (14.9
-    MB, but 1.1% of the dSYM's type definitions lost); inline strings
-    (`DW_FORM_string`) for strings a synthesized member uses once (a few
-    percent of its DWARF); find out why dsymutil kept a giver's
-    unreferenced class definition (7.5), which decides whether givers may
-    also lose named types only dead code reached (6.7 MB of both
-    architectures' `llvm-ar` archives).
+  dSYMs (7.4), givers' DWARF without the moved copies' DIEs (7.5),
+  dsymutil's keeping rules read and applied: givers without named types
+  no keepable DIE reaches, synthesized members declaring the classes
+  their givers define (opt-in: `--debug-types=shared`), single-use strings inline (7.6), and the corpus
+  scripts (`tools/turbolib/macho-corpus`). Still open:
+  - **The size DWARF costs, and class versions** (7.6): by default
+    (`--debug-types=complete`, 7.5's classes and dSYMs) the folded `llvm-ar`
+    archives are still 5.0% larger (7.5: 5.9%). `--debug-types=shared`
+    makes them 0.95% smaller, but which unit's version of a class template
+    specialization dsymutil keeps changes: the corpus links have 70 to 133 definitions whose original contents
+    (member lists) aren't in the folded dSYM (7.5: 21 to 38), and 4 to 6
+    lost (7.5: 9 to 11). It is dsymutil's completeness cascade (a version
+    is canonical only if complete, which depends on what earlier objects
+    made canonical), not a rule a member's DWARF can follow; 7.4's whole
+    classes changed versions too. Find whether lldb sees any difference
+    (it merges a class's declarations by name); measure the versions a
+    Mac build's dSYM has from build to build. Givers' classes hold only
+    without `-dead_strip` (see `relink.py --dead-strip`'s results in the
+    plan), and only when a giver loads the synthesized member. Making
+    `shared` the default needs those answered.
+  - **What's left of synthesized members' DWARF** (84 MB arm64 by
+    default, 40 with `shared`; most of the rest of a synthesized member is its load
+    commands and symbols): a unit with one code range could use
+    `DW_AT_low_pc`/`DW_AT_high_pc` and no `__debug_ranges` (about 1.3 MB
+    and a section header per member); `DW_FORM_ref2` in units under 64
+    KiB.
   - **`compare-images` on the corpus links isn't clean** (see 7.4): code
     and data past a local constant that a sizeless symbol can't bound
     (2 to 24 per program; bound them by the dSYM's variables' types);
     `RTTIRoot::anchor`'s unwind encoding (0 in the original, not
     explained); 1 to 9 subprograms described by another unit's copy with
     other DIEs (spot-checked, not proven: write a Mach-O `witness.py`);
-    9 to 11 type definitions only in the original and some with other
-    contents (which units' class templates dsymutil keeps).
+    type definitions only in the original and with other contents (see
+    the first point).
   - **Speed**: 3.55× the real tools' time folding in 7.4 (0.82× without),
     and 7.5's pruning adds about a quarter more CPU (every giver's DWARF
     walked; lookups, strings, accelerator tables, a second cut); most
@@ -725,15 +755,21 @@ x64. Where the 3.5 MB went:
   - Wall times on a quiet machine (this round's were taken with another
     build running): the 20 largest libraries against `lib.exe`, 1 to 8
     threads, and a profile with `tools/turbolib/sample.py`.
-  - Shared types, select-any, `--locals`, and `--report odr` still keep
-    every object (they compare or share across members): read them one at
-    a time too.
-  - Per-thread memory (about 90 MiB a thread on clangSema.lib): `strip`
-    clones the object it rewrites; threads' freed memory isn't reused by
-    the next step's new threads.
-  - The facts (437,527 units of 288 bytes, their names copied): borrow
-    names from the inputs, move what only `--locals` uses out of `Unit`.
-  - mimalloc's 32 MiB committed at start of every run.
+  - Done (2026-11-28, the plan's "Memory, round 2"): every mode reads
+    its objects one at a time, shared types, select-any, `--locals`, and
+    `--report odr` included; `strip` edits the object in place; unit facts
+    are 176 bytes (from 288), their names borrowed.
+  - Per-thread memory is still about 60 MiB a thread on clangSema.lib
+    (from 91): the 8 largest members' objects at once, and what is made of
+    them. Freed memory is reused across steps (mimalloc reclaims the
+    exited threads' segments: with `MIMALLOC_MAX_SEGMENT_RECLAIM=0`,
+    240 MiB more); what isn't reused is pages left part-used (purging at
+    once, `MIMALLOC_PURGE_DELAY=0`: 330 MiB less commit, 23% more CPU).
+    Left: a smaller object model (96 bytes a symbol, 128 a section, in
+    `turbonop-coff`), writing members as they are made rather than holding
+    them all (222 + 58 MiB on clangSema.lib), maybe a scoped thread pool.
+  - mimalloc's 32 MiB committed at start of every run: accepted (a run
+    that does real work uses it).
   - Slots for the `ar` and `libtool` personalities (only `lib` takes them).
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
@@ -750,13 +786,13 @@ exports, delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
 same but for the PDB's GUID, age, and name.
 
 - **Not yet, for native x64 images:** delay loading on other machines;
-  `/GUARD:XFG`; `/ORDER`, `/FUNCTIONPADMIN`, `/MAPINFO`'s
+  `/GUARD:XFG`; `/MAPINFO`'s
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
   library X and object Y" message, a `.def` file's forwarders in the
   `.exp`, `/INCREMENTAL`'s padding (it links fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
-  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`, `/Brepro`'s hash.
+  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
 - **Byte identity, still different:** the import library (`.lib` for a
   DLL): link.exe's descriptor members have a `.debug$S` (3 sections to
   turbolink's 2), its import members are in name order (turbolink's
@@ -806,8 +842,6 @@ same but for the PDB's GUID, age, and name.
   - **Not written:** `/LinkInfo`, `/TMCache`, `/UDTSRCLINEUNDONE`; x86
     FPO (only `FRAMEDATA`); incremental PDBs; page sizes over 4 KB (a PDB
     whose directory needs more than one block's list).
-  - **The `/Brepro` hash's input** (link.exe's GUID and time stamp come
-    from it).
 - **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
   list of what passes.
 - **LTCG: the rest** ([docs/turbolink-c2.md](docs/turbolink-c2.md),

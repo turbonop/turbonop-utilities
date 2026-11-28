@@ -246,6 +246,58 @@ fn image_relative_words_are_inferred() {
     assert!(rep.failed("functions or data whose bytes differ"));
 }
 
+/// `mov ecx, [rax + rcx*4 + table]`, then `ret`: MSVC's switch, the image
+/// base in rax and `table` the jump table's RVA.
+fn switch(table: u32) -> Vec<u8> {
+    let mut v = vec![0x8B, 0x8C, 0x88];
+    v.extend(table.to_le_bytes());
+    v.push(0xC3);
+    v
+}
+
+#[test]
+fn x64_image_relative_displacements_are_inferred() {
+    let (a, b) = images();
+    // The table at f+0x40 in each (the displacement is misaligned).
+    let (rep, f) = run(
+        &a,
+        0x1000,
+        &switch(0x1040),
+        &b,
+        0x2000,
+        &switch(0x2040),
+        Isa::X64,
+    );
+    assert!(rep.passed(), "{}", rep.text());
+    assert_eq!(f.inferred, 1);
+    // Another place in the second.
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &switch(0x1040),
+        &b,
+        0x2000,
+        &switch(0x2044),
+        Isa::X64,
+    );
+    assert!(
+        rep.failed("functions or data whose bytes differ"),
+        "{}",
+        rep.text()
+    );
+    // Another function in the second.
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &switch(0x3000),
+        &b,
+        0x2000,
+        &switch(0x3000 + 0x1000),
+        Isa::X64,
+    );
+    assert!(!rep.passed(), "{}", rep.text());
+}
+
 /// ARM64 words.
 fn bl(at: u32, target: u32) -> u32 {
     0x9400_0000 | ((target.wrapping_sub(at) >> 2) & 0x03FF_FFFF)

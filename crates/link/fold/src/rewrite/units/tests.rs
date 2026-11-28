@@ -23,7 +23,7 @@ fn object(data: &[u8]) -> Object<'_> {
 fn identities(f: &Facts) -> HashMap<Vec<u8>, u128> {
     f.units
         .iter()
-        .filter_map(|u| u.externals.first().map(|n| (n.clone(), u.identity)))
+        .filter_map(|u| u.externals.first().map(|n| (n.to_vec(), u.identity)))
         .collect()
 }
 

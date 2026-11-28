@@ -15,7 +15,7 @@ fn class(name: &[u8]) -> String {
     base.to_string()
 }
 
-type Copy<'a> = (&'a Object<'a>, &'a units::Facts, &'a Unit);
+type Copy<'a> = (&'a Object<'a>, &'a units::Facts<'a>, &'a Unit<'a>);
 
 /// What differs between two copies of one unit, in words.
 fn what(a: Copy<'_>, b: Copy<'_>) -> String {
@@ -105,7 +105,7 @@ fn main() {
         for (k, (_, f)) in objects.iter().enumerate() {
             for (u, unit) in f.units.iter().enumerate() {
                 if let Some(n) = unit.externals.first() {
-                    by_name.entry(n.as_slice()).or_default().push((k, u));
+                    by_name.entry(n.as_ref()).or_default().push((k, u));
                 }
             }
         }

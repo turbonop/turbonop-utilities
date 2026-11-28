@@ -257,8 +257,13 @@ pub(super) fn fill(
 }
 
 /// Builds the DWARF of a synthesized member holding `units` of `d`'s
-/// member (unit indexes).
-pub(super) fn build(d: &Debug<'_>, units: &[usize]) -> R<Option<Out>> {
+/// member (unit indexes); `supplied`, the classes its givers define (see
+/// [`dwarf::build`]).
+pub(super) fn build(
+    d: &Debug<'_>,
+    units: &[usize],
+    supplied: Option<&turbonop_hash::Set<u128>>,
+) -> R<Option<Out>> {
     let moved = units.iter().map(|&k| d.unit_atom[k]).collect();
-    dwarf::build(&d.src, &moved)
+    dwarf::build(&d.src, &moved, supplied)
 }

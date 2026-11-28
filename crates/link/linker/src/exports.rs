@@ -218,14 +218,15 @@ pub fn apply_def(c: &mut Config, def: &DefFile) {
 }
 
 /// The exports, merged (the first of each name wins, as link.exe keeps
-/// the first and warns, LNK4197) and given ordinals: explicit ones kept,
-/// the others numbered after the largest, in name order.
+/// the first and warns, LNK4197: by the name, not what `EXPORTAS` exports
+/// it as) and given ordinals: explicit ones kept, the others, in name
+/// order, the free ones from the smallest given (1 if none) up, as
+/// link.exe numbers them.
 pub fn finish(exports: &[Export]) -> Result<Vec<Export>, String> {
     let mut seen = turbonop_hash::Set::default();
     let mut out: Vec<Export> = Vec::new();
     for e in exports {
-        let key = e.export_as.clone().unwrap_or_else(|| e.name.clone());
-        if seen.insert(key) {
+        if seen.insert(e.name.clone()) {
             out.push(e.clone());
         }
     }
@@ -237,14 +238,17 @@ pub fn finish(exports: &[Export]) -> Result<Vec<Export>, String> {
             return Err(format!("ordinal {o} is exported twice"));
         }
     }
-    let mut next = out.iter().filter_map(|e| e.ordinal).max().unwrap_or(0);
+    let mut next = out.iter().filter_map(|e| e.ordinal).min().unwrap_or(1);
     let mut unnumbered: Vec<usize> = (0..out.len())
         .filter(|&i| out[i].ordinal.is_none())
         .collect();
-    unnumbered.sort_by(|&a, &b| exported_name(&out[a]).cmp(exported_name(&out[b])));
+    unnumbered.sort_by(|&a, &b| out[a].name.cmp(&out[b].name));
     for i in unnumbered {
-        next = next.checked_add(1).ok_or("more than 65535 exports")?;
+        while used.contains(&next) {
+            next = next.checked_add(1).ok_or("more than 65535 exports")?;
+        }
         out[i].ordinal = Some(next);
+        used.insert(next);
     }
     Ok(out)
 }
@@ -274,6 +278,8 @@ pub struct Directory {
     pub names: Vec<(String, usize)>,
     /// The size of the directory and everything it holds.
     pub size: u32,
+    /// Per export: its forwarder string, if it is one.
+    pub forwarders: Vec<Option<String>>,
 }
 
 /// Plans the export directory for `exports` (from [`finish`]), with
@@ -303,10 +309,44 @@ pub fn plan(exports: Vec<Export>, dll_name: &str, forwarders: &[Option<String>])
         functions,
         names,
         size,
+        forwarders: forwarders.to_vec(),
     }
 }
 
 impl Directory {
+    /// Where each export's strings are: its name (if it has one) and its
+    /// forwarder's (if it is one), offsets in the directory. As link.exe
+    /// lays them out: after the DLL's name, by export in the order of
+    /// their names (not what `EXPORTAS` exports them as), each's name
+    /// then its forwarder.
+    fn strings(&self, dll_name: &str) -> (Vec<Option<u32>>, Vec<Option<u32>>) {
+        let names_at = 40 + self.functions * 4;
+        let ordinals_at = names_at + crate::n32(self.names.len()) * 4;
+        let mut at =
+            ordinals_at + crate::n32(self.names.len()) * 2 + crate::n32(dll_name.len()) + 1;
+        let mut order: Vec<usize> = (0..self.exports.len()).collect();
+        order.sort_by(|&a, &b| self.exports[a].name.cmp(&self.exports[b].name));
+        let mut name_at = vec![None; self.exports.len()];
+        let mut forwarder_at = vec![None; self.exports.len()];
+        for i in order {
+            let e = &self.exports[i];
+            if !e.noname {
+                name_at[i] = Some(at);
+                at += crate::n32(exported_name(e).len()) + 1;
+            }
+            if let Some(f) = &self.forwarders[i] {
+                forwarder_at[i] = Some(at);
+                at += crate::n32(f.len()) + 1;
+            }
+        }
+        (name_at, forwarder_at)
+    }
+
+    /// The forwarders' strings' offsets in the directory, by export.
+    pub fn forwarder_offsets(&self, dll_name: &str) -> Vec<Option<u32>> {
+        self.strings(dll_name).1
+    }
+
     /// The export object's symbols (link.exe's `.exp`, which it links into
     /// the image) and their offsets in the directory: the section, the
     /// address table (`rgpv`), the name pointers (`rgszName`), the
@@ -324,11 +364,10 @@ impl Directory {
             ("rgwOrd".to_owned(), ordinals_at),
             ("szName".to_owned(), strings_at),
         ];
-        let mut at = strings_at + crate::n32(dll_name.len()) + 1;
-        for (name, i) in &self.names {
+        let (name_at, _) = self.strings(dll_name);
+        for (_, i) in &self.names {
             let ordinal = self.exports[*i].ordinal.unwrap_or(self.base);
-            out.push((format!("$N{ordinal:05}"), at));
-            at += crate::n32(name.len()) + 1;
+            out.push((format!("$N{ordinal:05}"), name_at[*i].unwrap_or(0)));
         }
         out
     }
@@ -342,42 +381,43 @@ impl Directory {
         dll_name: &str,
         timestamp: u32,
         address: impl Fn(usize) -> u32,
-        forwarders: &[Option<String>],
     ) {
         let functions_at = 40u32;
         let names_at = functions_at + self.functions * 4;
         let ordinals_at = names_at + crate::n32(self.names.len()) * 4;
-        let mut strings_at = ordinals_at + crate::n32(self.names.len()) * 2;
+        let strings_at = ordinals_at + crate::n32(self.names.len()) * 2;
         let put32 = |out: &mut [u8], at: u32, v: u32| {
             out[at as usize..at as usize + 4].copy_from_slice(&v.to_le_bytes());
         };
-        let mut put_string = |out: &mut [u8], s: &str| -> u32 {
-            let at = strings_at;
+        let put_string = |out: &mut [u8], at: u32, s: &str| {
             out[at as usize..at as usize + s.len()].copy_from_slice(s.as_bytes());
-            strings_at += crate::n32(s.len()) + 1;
-            rva + at
         };
-        let name_rva = put_string(out, dll_name);
+        put_string(out, strings_at, dll_name);
         put32(out, 4, timestamp);
-        put32(out, 12, name_rva);
+        put32(out, 12, rva + strings_at);
         put32(out, 16, u32::from(self.base));
         put32(out, 20, self.functions);
         put32(out, 24, crate::n32(self.names.len()));
         put32(out, 28, rva + functions_at);
         put32(out, 32, rva + names_at);
         put32(out, 36, rva + ordinals_at);
+        let (name_at, forwarder_at) = self.strings(dll_name);
         for (k, (name, i)) in self.names.iter().enumerate() {
-            let at = put_string(out, name);
-            put32(out, names_at + crate::n32(k) * 4, at);
+            let at = name_at[*i].unwrap_or(0);
+            put_string(out, at, name);
+            put32(out, names_at + crate::n32(k) * 4, rva + at);
             let ord = self.exports[*i].ordinal.unwrap_or(self.base) - self.base;
             let o = (ordinals_at + crate::n32(k) * 2) as usize;
             out[o..o + 2].copy_from_slice(&ord.to_le_bytes());
         }
         for (i, e) in self.exports.iter().enumerate() {
             let slot = u32::from(e.ordinal.unwrap_or(self.base) - self.base);
-            let target = match &forwarders[i] {
-                Some(f) => put_string(out, f),
-                None => address(i),
+            let target = match (&self.forwarders[i], forwarder_at[i]) {
+                (Some(f), Some(at)) => {
+                    put_string(out, at, f);
+                    rva + at
+                }
+                _ => address(i),
             };
             put32(out, functions_at + slot * 4, target);
         }

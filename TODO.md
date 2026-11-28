@@ -782,22 +782,28 @@ x64. Where the 3.5 MB went:
 CRT, DLLs and import libraries, resources, delay loading, `/DEBUG` (the
 PDB), LLVM's `llvm-tblgen`. Byte for byte link.exe's images (time stamps
 aside): C and C++ with the dynamic, static, and debug CRTs, a DLL with
-exports, delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
+exports (and its x64 import library, byte for byte, and export object),
+delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
 same but for the PDB's GUID, age, and name.
 
 - **Not yet, for native x64 images:** delay loading on other machines;
   `/GUARD:XFG`; `/MAPINFO`'s
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
-  library X and object Y" message, a `.def` file's forwarders in the
-  `.exp`, `/INCREMENTAL`'s padding (it links fully),
+  library X and object Y" message, `/INCREMENTAL`'s padding (it links
+  fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
   members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
-- **Byte identity, still different:** the import library (`.lib` for a
-  DLL): link.exe's descriptor members have a `.debug$S` (3 sections to
-  turbolink's 2), its import members are in name order (turbolink's
-  reversed), and under `/Brepro` its member dates are -1 (turbolink's 0)
-  and its time stamps hashes; the map's `$R` symbols with two or more
+- **Exports' diagnostics:** link.exe warns LNK4197 for a name exported
+  twice (turbolink keeps the first silently, as link.exe does) and reports
+  LNK2001 for a forwarder `x = dll.f` when nothing defines `f` (seen on
+  the command line and in a `.def` file; turbolink links it); the map's
+  statics for a forwarder (the `.exp`'s static named for the export, at
+  its string) aren't checked against link.exe's map.
+- **Byte identity, still different:** the import library and export
+  object on other machines than x64 (x86's decorated names; the
+  descriptors' CodeView machine for x86 and ARM64 is assumed, 3 and
+  0xF6); the map's `$R` symbols with two or more
   `.res` files or an embedded manifest (cvtres's object for them: which
   offsets, which origin), and a map of an LLVM-size link checked line for
   line; a delay-loaded DLL's tables with
@@ -810,7 +816,7 @@ same but for the PDB's GUID, age, and name.
   tables' alignment, or the first DLL in the directory). llvm-tblgen,
   llc, opt, llvm-mc and llvm-ar are link.exe's images.
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
-  under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
+  under `/DEBUG` with `/OPT:REF`; the Rich
   header's walk when a library is searched in several passes (each pass's
   modules made in offset order?).
 - **Speed.** On a quiet machine, `llc` (73 MB, every target) links in

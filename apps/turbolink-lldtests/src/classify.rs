@@ -316,7 +316,9 @@ pub fn classify(t: &Test, o: &Outcome) -> Class {
             .lines()
             .find(|l| l.contains(": error:") && !l.contains("FileCheck"))
         {
-            return Class::Differs(format!("{tool} failed: {}", normalize(l)));
+            // (The message, not the file and line it was in.)
+            let message = l.split("error: ").nth(1).unwrap_or(l);
+            return Class::Differs(format!("{tool} failed: {}", normalize(message)));
         }
         return Class::Differs(format!("{tool} | FileCheck"));
     }

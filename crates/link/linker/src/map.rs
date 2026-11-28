@@ -205,6 +205,10 @@ impl Image<'_> {
 
         // The publics.
         let mut publics: Vec<Entry> = Vec::new();
+        let has_feat = r.files.iter().any(|f| match &f.kind {
+            FileKind::Object { object, .. } => object.feat_00.is_some(),
+            FileKind::Import { .. } => false,
+        });
         for &name in ABSOLUTES {
             let target = r.names.get(name).map(|&g| self.global(g));
             if let Some(super::Target::Rva(rva)) = target {
@@ -218,7 +222,22 @@ impl Image<'_> {
                 ));
                 continue;
             }
+            // (__guard_flags that nothing refers to: link.exe still lists
+            // it "instrumented", 0x100, when an object has `@feat.00` (a
+            // compiler's: cl's 0x80010090 does), else 0.)
+            let unreferenced = r
+                .names
+                .get(name)
+                .is_none_or(|&g| r.globals[g as usize].referenced_by == NONE);
             let value = match target {
+                Some(super::Target::Absolute(0)) | None
+                    if unreferenced
+                        && name == b"__guard_flags"
+                        && !r.config.guard_cf
+                        && has_feat =>
+                {
+                    0x100
+                }
                 Some(super::Target::Absolute(v)) => v,
                 _ => 0,
             };

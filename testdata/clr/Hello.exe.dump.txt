@@ -1,0 +1,63 @@
+cor20 runtime=2.5 flags=0x00000003 entrypoint=0x06000001
+cor20 metadata=0x2060+0x318 resources=0x0+0x0 strongname=0x0+0x0
+cor20 codemanager=0x0+0x0 vtablefixups=0x0+0x0 eatjumps=0x0+0x0 managednative=0x0+0x0
+metadata version=v4.0.30319
+heap String offset=0x184 size=0x114
+heap UserString offset=0x298 size=0x10
+heap Guid offset=0x2a8 size=0x10
+heap Blob offset=0x2b8 size=0x60
+table Module rows=1 rowsize=10 offset=0xa8
+table TypeRef rows=7 rowsize=6 offset=0xb2
+table TypeDef rows=2 rowsize=14 offset=0xdc
+table MethodDef rows=1 rowsize=14 offset=0xf8
+table Param rows=1 rowsize=6 offset=0x106
+table MemberRef rows=5 rowsize=6 offset=0x10c
+table CustomAttribute rows=4 rowsize=6 offset=0x12a
+table Assembly rows=1 rowsize=22 offset=0x142
+table AssemblyRef rows=2 rowsize=20 offset=0x158
+Module[1] generation=0 name=Hello.exe mvid=74fe96df-965e-4dc1-acc8-4c7bf0a2a98d encid=null encbaseid=null
+TypeRef[1] scope=0x23000001 ns=System.Runtime.CompilerServices name=CompilationRelaxationsAttribute full=[System.Runtime]System.Runtime.CompilerServices.CompilationRelaxationsAttribute
+TypeRef[2] scope=0x23000001 ns=System.Runtime.CompilerServices name=RuntimeCompatibilityAttribute full=[System.Runtime]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute
+TypeRef[3] scope=0x23000001 ns=System.Diagnostics name=DebuggableAttribute full=[System.Runtime]System.Diagnostics.DebuggableAttribute
+TypeRef[4] scope=0x01000003 ns= name=DebuggingModes full=[System.Runtime]System.Diagnostics.DebuggableAttribute/DebuggingModes
+TypeRef[5] scope=0x23000001 ns=System.Runtime.CompilerServices name=RefSafetyRulesAttribute full=[System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute
+TypeRef[6] scope=0x23000001 ns=System name=Object full=[System.Runtime]System.Object
+TypeRef[7] scope=0x23000002 ns=System name=Console full=[System.Console]System.Console
+TypeDef[1] flags=0x00000000 ns= name=<Module> full=<Module> extends=-
+  fields -
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[2] flags=0x00100180 ns= name=Program full=Program extends=[System.Runtime]System.Object
+  fields -
+  methods 1
+  properties -
+  events -
+  nested -
+MethodDef[1] rva=0x2050 impl=0x0000 flags=0x0091 name=Main sig=int32 (string[]) owner=0x02000002
+  params 1
+  body maxstack=8 size=15 localsig=0x00000000 initlocals=False
+  IL_0000: ldstr "Hello"
+  IL_0005: call void [System.Console]System.Console::WriteLine(string)
+  IL_000a: ldarg.0
+  IL_000b: ldlen
+  IL_000c: conv.i4
+  IL_000d: ret
+Param[1] flags=0x0000 seq=1 name=args
+MemberRef[1] parent=0x01000001 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32)
+MemberRef[2] parent=0x01000002 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute::.ctor()
+MemberRef[3] parent=0x01000003 name=.ctor full=instance void [System.Runtime]System.Diagnostics.DebuggableAttribute::.ctor(valuetype [System.Runtime]System.Diagnostics.DebuggableAttribute/DebuggingModes)
+MemberRef[4] parent=0x01000005 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute::.ctor(int32)
+MemberRef[5] parent=0x01000007 name=WriteLine full=void [System.Console]System.Console::WriteLine(string)
+CustomAttribute[1] parent=0x00000001 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute::.ctor(int32) value=(int32(11))
+CustomAttribute[2] parent=0x20000001 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32) value=(int32(8))
+CustomAttribute[3] parent=0x20000001 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute::.ctor() value=() {property WrapNonExceptionThrows=bool(true)}
+CustomAttribute[4] parent=0x20000001 ctor=instance void [System.Runtime]System.Diagnostics.DebuggableAttribute::.ctor(valuetype [System.Runtime]System.Diagnostics.DebuggableAttribute/DebuggingModes) value=([System.Runtime]System.Diagnostics.DebuggableAttribute/DebuggingModes(2))
+Assembly[1] hash=0x8004 version=0.0.0.0 flags=0x0 key= name=Hello culture=
+AssemblyRef[1] version=8.0.0.0 flags=0x0 key=b03f5f7f11d50a3a name=System.Runtime culture= hash=
+AssemblyRef[2] version=8.0.0.0 flags=0x0 key=b03f5f7f11d50a3a name=System.Console culture= hash=
+US 0x1 "Hello"
+US 0xd ""
+US 0xe ""
+US 0xf ""

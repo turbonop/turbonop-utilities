@@ -486,6 +486,7 @@ fn pe_details(pe: &turbonop_pe::PeFile<'_>) -> Vec<String> {
                 format!(" ({})", flags.join(", "))
             }
         ));
+        out.extend(clr_details(pe));
     }
     if let Some(r) = pe.rich() {
         let objects: u64 = r.entries.iter().map(|e| u64::from(e.count)).sum();
@@ -510,6 +511,61 @@ fn pe_details(pe: &turbonop_pe::PeFile<'_>) -> Vec<String> {
     let bound = pe.bound_imports();
     if !bound.is_empty() {
         out.push(format!("{} bound imports", bound.len()));
+    }
+    out
+}
+
+/// What `hexcavator info` adds for a managed image: the assembly (or
+/// module), its references, its metadata tables' row counts, and a
+/// ReadyToRun header.
+fn clr_details(pe: &turbonop_pe::PeFile<'_>) -> Vec<String> {
+    use turbonop_clr::TableId;
+    let cli = match turbonop_clr::CliImage::parse(pe) {
+        Ok(Some(c)) => c,
+        Ok(None) => return Vec::new(),
+        Err(e) => return vec![format!("metadata unreadable: {e}")],
+    };
+    let md = cli.metadata();
+    let t = md.tables();
+    let mut out = Vec::new();
+    match (md.assembly_name(), md.assembly_version()) {
+        (Some(name), Some(v)) => out.push(format!(
+            "assembly {name} {v}, {} assembly references",
+            t.rows(TableId::AssemblyRef)
+        )),
+        _ => out.push(format!(
+            "module {} (no assembly manifest)",
+            md.module_name().unwrap_or_default()
+        )),
+    }
+    out.push(format!(
+        "{} types, {} methods, {} fields; {} type references, {} member references",
+        t.rows(TableId::TypeDef),
+        t.rows(TableId::MethodDef),
+        t.rows(TableId::Field),
+        t.rows(TableId::TypeRef),
+        t.rows(TableId::MemberRef)
+    ));
+    let rows: Vec<String> = md
+        .row_counts()
+        .iter()
+        .map(|(table, n)| format!("{table} {n}"))
+        .collect();
+    out.push(format!("metadata tables: {}", rows.join(", ")));
+    match cli.ready_to_run() {
+        Ok(Some(r)) => {
+            let compiler = cli
+                .compiler_identifier()
+                .map_or_else(String::new, |c| format!(", {c}"));
+            out.push(format!(
+                "ReadyToRun {}.{}, {} sections{compiler}",
+                r.major_version,
+                r.minor_version,
+                r.sections.len()
+            ));
+        }
+        Ok(None) => {}
+        Err(e) => out.push(format!("ReadyToRun header unreadable: {e}")),
     }
     out
 }

@@ -124,3 +124,13 @@ fn a_broken_library_shows_in_the_pdb() {
         r.text()
     );
 }
+
+#[test]
+fn a_source_line_in_another_copy_of_a_header_is_a_pick() {
+    let sdk_a = br"C:\Program Files (x86)\Windows Kits\10\include\10.0.26100.0\um\winnt.h";
+    let sdk_b = br"F:\1\s\src\ExternalAPIs\WindowsSDKInc\c\Include\10.0.28000.0\um/WINNT.H";
+    assert_eq!(super::file_name(sdk_a), b"winnt.h");
+    assert_eq!(super::file_name(sdk_b), b"WINNT.H");
+    assert_eq!(super::file_name(b"winnt.h"), b"winnt.h");
+    assert!(super::file_name(sdk_a).eq_ignore_ascii_case(super::file_name(sdk_b)));
+}

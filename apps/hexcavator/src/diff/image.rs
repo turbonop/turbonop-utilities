@@ -6,9 +6,9 @@ use super::symbols::{self, Names};
 use super::{Options, Part, Report};
 
 /// An image read for comparing.
-struct Side<'d> {
+pub(super) struct Side<'d> {
     data: &'d [u8],
-    pe: PeFile<'d>,
+    pub(super) pe: PeFile<'d>,
     /// The names both images have (to describe addresses alike).
     names: Names,
     /// Every name this image has.
@@ -96,6 +96,41 @@ impl<'d> Side<'d> {
         self.sections.iter().enumerate().find_map(|(i, s)| {
             (s.3 > 0 && off >= s.2 && off < s.2.saturating_add(s.3)).then(|| (i, s.0 + (off - s.2)))
         })
+    }
+
+    /// Whether `rva` is in a section of code.
+    pub(super) fn in_code(&self, rva: u32) -> bool {
+        self.pe.sections().iter().any(|s| {
+            let at = s.virtual_address.get();
+            rva >= at
+                && rva < at.saturating_add(s.virtual_size.get().max(s.size_of_raw_data.get()))
+                && s.characteristics.get() & 0x2000_0000 != 0
+        })
+    }
+
+    /// What holds `rva`, by the names both images have: their names and
+    /// the offset into it (`Some(None)`: in the image, but this image
+    /// names it otherwise, a name only it has); `None` outside the image.
+    pub(super) fn named(&self, rva: i64) -> Option<Option<(Vec<String>, u32)>> {
+        let rva = u32::try_from(rva).ok()?;
+        // (Inside the image, named or not; the headers by their RVA:
+        // __ImageBase is 0 in both.)
+        if !self
+            .sections
+            .iter()
+            .any(|x| rva >= x.0 && rva < x.0.saturating_add(x.1))
+        {
+            let headers = self.sections.first().map_or(0x1000, |x| x.0);
+            return (rva < headers).then(|| Some((vec![format!("headers+{rva:#x}")], 0)));
+        }
+        let shared = self.names.all_at(rva);
+        let own = self.all.at(rva).map(|(n, _)| n.rva);
+        if let (Some((_, off)), Some(start)) = (&shared, own)
+            && start != rva - off
+        {
+            return Some(None);
+        }
+        Some(shared.map(|(n, off)| (n.into_iter().map(str::to_owned).collect(), off)))
     }
 
     /// The bytes at `rva`, `len` of them (as many as the file has).
@@ -1311,7 +1346,7 @@ fn rich(a: &Side<'_>, b: &Side<'_>, o: &Options) -> Part {
 
 /// How two copies of one function or datum compare.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Same {
+pub(super) enum Same {
     /// Byte for byte.
     Identical,
     /// Only where they refer to what is elsewhere (a call, a pointer),
@@ -1368,8 +1403,12 @@ fn compare_copies(a: &Side<'_>, ra: u32, x: &[u8], b: &Side<'_>, rb: u32, y: &[u
         // pointer; each starting up to its width before `i`.
         let mut explained = None;
         // (width, how it's read: 0 relative, 1 an address, 2 an RVA)
+        // (A 64-bit image's pointers are 8 bytes, ARM64's too; only x64's
+        // code has 32-bit relative displacements.)
         let fields: &[(usize, u8)] = if x64 {
             &[(4, 0), (8, 1), (4, 2), (8, 2)]
+        } else if a.is64 {
+            &[(8, 1), (4, 2), (8, 2)]
         } else {
             &[(4, 1), (4, 2)]
         };
@@ -1402,28 +1441,7 @@ fn compare_copies(a: &Side<'_>, ra: u32, x: &[u8], b: &Side<'_>, rb: u32, y: &[u
                         2 => i64::try_from(value).ok()?,
                         _ => return None,
                     };
-                    let rva = u32::try_from(rva).ok()?;
-                    // (Inside the image, named or not; the headers by their
-                    // RVA: __ImageBase is 0 in both.)
-                    if !s
-                        .sections
-                        .iter()
-                        .any(|x| rva >= x.0 && rva < x.0.saturating_add(x.1))
-                    {
-                        let headers = s.sections.first().map_or(0x1000, |x| x.0);
-                        return (rva < headers)
-                            .then(|| Some((vec![format!("headers+{rva:#x}")], 0)));
-                    }
-                    // What holds the target, by the names both have: unless
-                    // this image names it otherwise (a name only it has).
-                    let shared = s.names.all_at(rva);
-                    let own = s.all.at(rva).map(|(n, _)| n.rva);
-                    if let (Some((_, off)), Some(start)) = (&shared, own)
-                        && start != rva - off
-                    {
-                        return Some(None);
-                    }
-                    Some(shared.map(|(n, off)| (n.into_iter().map(str::to_owned).collect(), off)))
+                    s.named(rva)
                 };
                 match (target(a, ra, x), target(b, rb, y)) {
                     // The same place: an offset into what has a name in both.
@@ -1544,10 +1562,14 @@ fn functions(a: &Side<'_>, b: &Side<'_>, o: &Options) -> Part {
         let (sa, sb) = (a.extent(ra, sa), b.extent(rb, sb));
         let size = sa.min(sb);
         let (x, y) = (a.bytes(ra, size), b.bytes(rb, size));
+        // (By their instructions where they decode; else by bytes.)
         let same = if sa != sb && sa != 0 && sb != 0 {
             Same::Different(0)
+        } else if x == y {
+            Same::Identical
         } else {
-            compare_copies(a, ra, x, b, rb, y)
+            super::code::compare(a, ra, x, b, rb, y)
+                .unwrap_or_else(|| compare_copies(a, ra, x, b, rb, y))
         };
         let bytes_at = |i: usize| {
             (

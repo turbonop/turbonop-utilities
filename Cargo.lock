@@ -302,6 +302,7 @@ dependencies = [
  "turbonop-archive",
  "turbonop-arm64",
  "turbonop-bitcode",
+ "turbonop-clr",
  "turbonop-codeview",
  "turbonop-core",
  "turbonop-debuginfo",
@@ -858,6 +859,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-clr"
+version = "0.0.7"
+dependencies = [
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-par",
+ "turbonop-pe",
+]
+
+[[package]]
 name = "turbonop-code"
 version = "0.0.7"
 dependencies = [
@@ -1080,6 +1091,7 @@ dependencies = [
  "turbonop-arm32",
  "turbonop-arm64",
  "turbonop-bitcode",
+ "turbonop-clr",
  "turbonop-code",
  "turbonop-debuginfo",
  "turbonop-demangle",
@@ -1346,6 +1358,7 @@ dependencies = [
  "turbonop-codeview",
  "turbonop-core",
  "turbonop-debuginfo",
+ "turbonop-demangle",
  "turbonop-global-alloc",
  "turbonop-image",
  "turbonop-macho",

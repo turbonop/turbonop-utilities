@@ -12,3 +12,5 @@ testdata/bitcode/* -text
 # archives' (copied in by tools/coff/imports.cmd) as Windows checked them out.
 tools/coff/imports/*.def -text
 tools/coff/archives/def/*.def text eol=crlf
+# Embedded and hashed into testdata/clr/Sample.dll as committed (CRLF).
+tools/clr/*.txt -text

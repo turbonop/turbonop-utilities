@@ -84,6 +84,12 @@ fn is_core(_: &Path, d: &[u8]) -> bool {
     // ET_CORE, either byte order.
     starts(d, b"\x7fELF") && (d.get(16..18) == Some(&[4, 0]) || d.get(16..18) == Some(&[0, 4]))
 }
+fn is_clr(_: &Path, d: &[u8]) -> bool {
+    // Managed PE images (a CLI header) and portable PDBs.
+    starts(d, b"BSJB")
+        || (starts(d, b"MZ")
+            && turbonop_pe::PeFile::parse_image(d).is_ok_and(|pe| pe.clr().is_some()))
+}
 fn is_wasm(_: &Path, d: &[u8]) -> bool {
     starts(d, b"\0asm")
 }
@@ -350,6 +356,101 @@ fn bitcode(data: &[u8], s: &Scratch) {
         module(e.data);
     }
     let _ = s;
+}
+
+/// .NET metadata: every table, heap, name, signature, method body and its
+/// IL, custom attribute, resource, and portable PDB record.
+fn clr(data: &[u8], s: &Scratch) {
+    use turbonop_clr::{CliImage, Metadata, TableId, Token, attributes, il, pdb, signature};
+    fn metadata(md: &Metadata<'_>) {
+        let enums = attributes::EnumTypes::of(md);
+        let _ = (md.strings().iter().count(), md.blobs().iter().count());
+        for (_, u) in md.user_strings().iter() {
+            let _ = u.to_string_lossy();
+        }
+        let rows = |t: TableId| md.tables().rows(t);
+        for rid in 1..=rows(TableId::TypeRef) {
+            let _ = md.type_ref_name(rid);
+        }
+        for rid in 1..=rows(TableId::TypeDef) {
+            let _ = (md.type_def_name(rid), attributes::serialized_name(md, rid));
+            let _ = (md.type_fields(rid).count(), md.type_methods(rid).count());
+            let _ = (
+                md.type_events(rid),
+                md.type_properties(rid),
+                md.nested_types(rid),
+            );
+            for g in md.generic_params(Token::new(TableId::TypeDef, rid)) {
+                let _ = md.generic_param_constraints(g);
+            }
+        }
+        for (table, n) in md.row_counts() {
+            for rid in 1..=n {
+                let token = Token::new(table, rid);
+                let _ = md.member_name(token);
+                let _ = md.type_token_name(token);
+                let _ = md.custom_attributes(token);
+            }
+        }
+        for rid in 1..=rows(TableId::MethodDef) {
+            let _ = md.method_params(rid).count();
+        }
+        for rid in 1..=rows(TableId::CustomAttribute) {
+            let _ = md.custom_attribute_value(rid, &enums);
+        }
+        for (_, r) in md.tables().iter::<turbonop_clr::tables::StandAloneSigRow>() {
+            if let Ok(b) = md.blob(r.signature) {
+                let _ = signature::parse_standalone_sig(b);
+            }
+        }
+        for (_, r) in md.tables().iter::<turbonop_clr::tables::DeclSecurityRow>() {
+            if let Ok(b) = md.blob(r.permission_set) {
+                let _ = attributes::decode_permission_set(b, &enums);
+            }
+        }
+        for (_, r) in md.tables().iter::<turbonop_clr::tables::FieldMarshalRow>() {
+            if let Ok(b) = md.blob(r.native_type) {
+                let _ = attributes::decode_marshal(b);
+            }
+        }
+        for rid in 1..=rows(TableId::Document) {
+            let _ = pdb::document_row_name(md, rid);
+        }
+        for rid in 1..=rows(TableId::MethodDebugInformation) {
+            let _ = pdb::method_sequence_points(md, rid);
+        }
+    }
+    if starts(data, b"BSJB") {
+        if let Ok(md) = Metadata::parse(data) {
+            metadata(&md);
+        }
+        return;
+    }
+    if let Ok(Some(cli)) = CliImage::parse_bytes(data) {
+        metadata(cli.metadata());
+        for (_, b) in cli.method_bodies() {
+            if let Ok(b) = b {
+                for i in il::decode(b.code).flatten() {
+                    let _ = cli.metadata().instruction_text(&i);
+                }
+            }
+        }
+        for r in cli.embedded_resources().into_iter().flatten() {
+            if let Ok(set) = turbonop_clr::resources::parse_resources(r.data) {
+                for e in &set.entries {
+                    let _ = e.value();
+                }
+            }
+        }
+        let _ = (
+            cli.strong_name_signature(),
+            cli.ready_to_run(),
+            cli.vtable_fixups(),
+        );
+        let _ = cli.compiler_identifier();
+        let f = s.file("input-clr.bin", data);
+        hexcavator(&["info", &f]);
+    }
 }
 
 fn pdb(data: &[u8], s: &Scratch) {
@@ -861,6 +962,12 @@ pub const TARGETS: &[Target] = &[
         about: "LLVM bitcode and other bitstreams: the dump, every module and body, embedded bitcode",
         seeds: is_bitcode,
         run: bitcode,
+    },
+    Target {
+        name: "clr",
+        about: ".NET assemblies and portable PDBs: metadata, signatures, IL, attributes, resources",
+        seeds: is_clr,
+        run: clr,
     },
     Target {
         name: "pdb",

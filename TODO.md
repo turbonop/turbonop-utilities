@@ -7,11 +7,12 @@ leave this list when they ship.
 ## TurboNOP's tools
 
 - **`hexcavator diff`, what's still to do.**
-  - Code compared by bytes, references resolved by name: a displacement
-    whose instruction has an immediate after it is resolved from the
-    field's end (the target's name usually still matches). Decoding the
-    instructions (turbonop-x86, turbonop-arm64) would make it exact, and
-    let ARM64's ADRP/ADD pairs and branches count as references.
+  - Code is compared by its instructions, decoded (x64, ARM64: branches,
+    RIP-relative operands, ADRP pairs, literal loads, each access in
+    full); x86's (32-bit) code, and bytes that don't decode, still by
+    bytes, a field's width at a time. Identical bytes are taken as the
+    same: an instruction that refers to the same address in both images
+    is not checked for what each image has there (the data parts tell).
   - With map-only names, statics one map lists and the other doesn't
     become "only in a"; functions without exception data are bounded by
     the next name either image has.
@@ -24,7 +25,18 @@ leave this list when they ship.
   - link.exe's own PDBs differ from one `/Brepro` link of the same inputs
     to the next (same GUID): which module's copy of a type
     `LF_UDT_MOD_SRC_LINE` names, and which copy of a type S_UDT names. A
-    turbolink PDB should be compared knowing that.
+    turbolink PDB should be compared knowing that. (compare-images now
+    compares those picks by what they say: the globals' and every
+    module's top-level S_UDT and S_CONSTANT as one set, tag-blind; a
+    UDT's source line in the same header file, or one line in common,
+    as a pick.)
+  - compare-images on thread-local variables: `S_GTHREAD32` and
+    `S_LTHREAD32` (`_Init_thread_epoch`, `PrettyStackTraceHead`) differ
+    between an original and a folded llvm-nm link, and with them their
+    modules' own records (`Parallel.cpp.obj`, `PrettyStackTrace.cpp.obj`,
+    `TimeProfiler.cpp.obj`): likely their `.tls` offsets aren't named
+    through the image as other addresses are. Find out, and compare them
+    by what they name.
 
 - **One site for every tool's web version.** GitHub Pages has one site per
   repository, and a deploy replaces all of it: hexcavator's release
@@ -41,12 +53,6 @@ leave this list when they ship.
   August 2027); macOS Tahoe 26 is the last macOS for Intel Macs, and Rust
   made the target Tier 2 in 1.90. When the runner goes, drop the build
   (or cross-compile it from Apple silicon, untested).
-- **Release notes.** A release's notes are GitHub's list of the pull
-  requests since the last release (0.0.11's listed every one since the
-  first, its predecessors' drafts deleted); 0.0.11's were rewritten by
-  hand from the changes (what a user would notice, by command). The
-  release workflow should draft them so: from the pull requests' titles
-  and descriptions since the last tag, for editing before it publishes.
 - **hexcavator on crates.io.** `cargo binstall hexcavator` finds the crate
   on crates.io (its metadata names the release's programs); until it is
   published there (and with it every `turbonop-*` crate it depends on),
@@ -240,13 +246,45 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 Binary analysis and size analysis for code that runs on a virtual
 machine, not only native images (PE, ELF, Mach-O) and WebAssembly:
 
-- **.NET assemblies.** A PE image's CLI header and metadata tables
-  (ECMA-335): types, methods, fields, and their sizes; IL bodies
-  decoded; resources; references to other assemblies; and what `size`
-  should attribute IL, metadata, strings, blobs, and resources to (by
-  type and namespace, as by compiland for native code). Portable PDBs
-  for their sources and lines. ReadyToRun images (native code beside the
-  IL) and Native AOT images (native, with .NET's own metadata) too.
+- **.NET assemblies.** The parser is done: `turbonop-clr` reads a PE
+  image's CLI header, the metadata root and every stream (`#~` and `#-`
+  with its `Ptr` tables, `#Strings`, `#US`, `#GUID`, `#Blob`, `#Pdb`),
+  every table of ECMA-335 II.22 and of the portable PDB with typed rows
+  and the lookups between them, every signature kind, names as IL spells
+  them, method bodies (tiny and fat, exception clauses) and their IL
+  (every opcode, tokens resolved), custom attribute values, permission
+  sets, marshalling descriptors, `.resources` files and their entries'
+  sizes, the strong-name signature, v-table fixups, document names and
+  sequence points, and the ReadyToRun header. Tested against
+  System.Reflection.Metadata (tools/clr/ClrDump.cs) on its fixtures and,
+  where there's a `dotnet`, on the framework's assemblies, every one. Left:
+  - **`size`**: attribute IL bodies, metadata tables, heap entries
+    (strings, blobs, user strings), and resources to their types and
+    namespaces (as compilands for native code), with the padding and
+    headers that belong to nothing.
+  - **`dump`, `symbols`, disassembly**: the tables, IL (as ildasm shows
+    it, from `il::decode` and `names`), and resources; `info -json`'s
+    fields (only the text `info` has the metadata now).
+  - **The extension's pages** for all of it.
+  - **ReadyToRun decoded**: method entry points (MethodDefEntryPoints,
+    InstanceMethodEntryPoints' native hashtables), RuntimeFunctions (the
+    native code, for size and disassembly), import sections and fixups,
+    inlining and debug info; composite images (whose header is the
+    `RTR_HEADER` export, not ManagedNativeHeader).
+  - **Native AOT images** (no CLI header: .NET's own metadata, the
+    `__ReadyToRunHeader` of the runtime's type manager).
+  - **Portable PDBs, the rest**: local constant signatures, import scope
+    blobs, custom debug information by kind (embedded sources, source
+    link, state machine scopes, dynamic locals); embedded PDBs (the debug
+    directory's deflated entry) and finding a PDB from the CodeView entry.
+  - **Custom attributes naming other assemblies' enums**: their
+    underlying types are only known from those assemblies
+    (`EnumTypes::add_assembly`); hexcavator should load the references it
+    can find (int32 is assumed otherwise, as System.Reflection.Metadata's
+    decoder does).
+  - **C++/CLI mixed images**: the v-table fixups' native thunks, native
+    method bodies (code type native, not IL), field-kind stand-alone
+    signatures; and edit-and-continue deltas (ENCLog, ENCMap applied).
 - **Java.** Class files (constant pool, fields, methods, attributes,
   bytecode decoded) and JARs (zip archives of them, with their
   manifests): size by package, class, and method.
@@ -307,10 +345,15 @@ disassembly, `size` with its findings, and the extension's pages.
 - **`ltcg-drive`'s gaps.** Libraries' members (opened at their offset),
   incremental LTCG, and the written object's debug information
   (`LNK4255` for two objects).
-- **`hexcavator vtables`, an unsized table's end.** It is inferred up
-  to the next symbol (or a `QueryInterface`), so a table with no symbol
-  right after one reads as more of it (link.exe's `std::function`s).
-  Where the image has RTTI, the locator before each table bounds it.
+- **`hexcavator vtables` without RTTI.** With RTTI, tables are found and
+  bounded by their locators (a stripped PDB's lambdas' tables too); an
+  image built without it (`/GR-`: link.exe) still infers a table with no
+  symbol, right after one, as more of it (link.exe's `std::function`s).
+  Heuristics to weigh: a second deleting destructor, or a run of slots
+  all of one other class. And a table RTTI names is named in the
+  demangler's long form (`` `int __cdecl main(int,char * *)'::`2'::<lambda_1> ``)
+  where functions' names have the short one (`` `main'::`2'::<lambda_1> ``):
+  its own class's slots aren't told from others' yet.
 
 ## LLVM bitcode
 
@@ -691,6 +734,23 @@ x64. Where the 3.5 MB went:
     32-bit targets (i386, armv7, arm64_32: passed through); universal
     files with `--fold` (untested); `ar` (GNU) on Mach-O members (its index
     isn't modeled); `verify` doesn't read universal files.
+- **COFF speed and memory (the plan's Phase 5, "Memory and many
+  processes").** Done: compact members, objects read one at a time when
+  folding identical copies, a bounded writer, mimalloc's eager commit off,
+  slots shared among turbolib processes. Left:
+  - Wall times on a quiet machine (this round's were taken with another
+    build running): the 20 largest libraries against `lib.exe`, 1 to 8
+    threads, and a profile with `tools/turbolib/sample.py`.
+  - Shared types, select-any, `--locals`, and `--report odr` still keep
+    every object (they compare or share across members): read them one at
+    a time too.
+  - Per-thread memory (about 90 MiB a thread on clangSema.lib): `strip`
+    clones the object it rewrites; threads' freed memory isn't reused by
+    the next step's new threads.
+  - The facts (437,527 units of 288 bytes, their names copied): borrow
+    names from the inputs, move what only `--locals` uses out of `Unit`.
+  - mimalloc's 32 MiB committed at start of every run.
+  - Slots for the `ar` and `libtool` personalities (only `lib` takes them).
 - **The analyzer's speed.** It reads 13.7 GiB in 14.7 s on 8 threads, and
   scales 3.2× from 1 thread to 8 on this PC. Its shards now read only
   their own units and records. Measure again, and profile with
@@ -708,8 +768,7 @@ same but for the PDB's GUID, age, and name.
 - **Not yet, for native x64 images:** delay loading on other machines;
   `/GUARD:CF` for objects not compiled with `/guard:cf` (link.exe's own
   address-taken analysis), `/GUARD:XFG`, and an exported function that is
-  also a target (its flag); manifests (`/MANIFEST`,
-  `/MANIFESTUAC`, embedding), `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
+  also a target (its flag); `/ORDER`, `/FUNCTIONPADMIN`, `/MAP`'s real
   format, the `.exp` file, `/INCREMENTAL`'s padding (it links fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
@@ -719,8 +778,8 @@ same but for the PDB's GUID, age, and name.
   `.rdata` group, before `.rdata$voltmd`, not with the `.idata` groups; a
   delay-loaded DLL's tables with
   two or more imports (link.exe's order, docs/turbolink.md);
-  `llvm-tblgen`'s 4 bytes of padding before `.idata$2`; more large
-  programs to check (`llc`, `opt`: `hexcavator diff` them).
+  more large programs to check (`opt`, `clang`: `hexcavator diff` them;
+  `llvm-tblgen` and `llc` are link.exe's images).
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
   under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
   header's walk when a library is searched in several passes (each pass's

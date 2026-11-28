@@ -8,7 +8,8 @@
 //! the hashes of the candidates its relocations refer to, until the
 //! number of distinct hashes stops growing. Candidates with one final
 //! hash (128 bits: two independent 64-bit hashes) are one class, kept as
-//! its member that comes first in the link's order (deterministic).
+//! its member that comes first in the image (its group, then the link's
+//! order: deterministic).
 
 use std::hash::{BuildHasher, Hasher};
 
@@ -120,12 +121,17 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
             // link.exe folds identical ones (LLVM's CheckAllNode's and
             // CheckAnyNode's, whose destructors fold), and no other constant
             // (not `??_8`, `??_R`, `??_C`, `?x@@3QBHB`, however identical).
-            let vtable = object
+            let leader = object
                 .comdat_leaders
                 .get(s)
                 .and_then(|&l| object.symbols.get(l as usize))
-                .is_some_and(|sym| sym.name.starts_with(b"??_7"));
-            if read_only && (code || unwind || vtable) {
+                .map_or(&b""[..], |sym| sym.name);
+            let vtable = leader.starts_with(b"??_7");
+            // (Nor a dynamic initializer or atexit destructor, `??__E` and
+            // `??__F`, whatever its group: link.exe folds none of LLVM's
+            // two thousand.)
+            let dynamic = leader.starts_with(b"??__E") || leader.starts_with(b"??__F");
+            if read_only && (code || unwind || vtable) && !dynamic {
                 index.insert((crate::n32(f), crate::n32(s)), crate::n32(candidates.len()));
                 candidates.push((crate::n32(f), crate::n32(s)));
             }
@@ -177,7 +183,14 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
         };
         let sec = &object.sections[s as usize];
         let mut h = Hash2::new();
-        h.bytes(sec.name);
+        // (The name without its `$` suffix: link.exe folds a .text$di
+        // function into a .text$mn one.)
+        let base = sec
+            .name
+            .iter()
+            .position(|&b| b == b'$')
+            .map_or(sec.name, |p| &sec.name[..p]);
+        h.bytes(base);
         h.u64(u64::from(sec.characteristics & scn::OUTPUT_MASK));
         h.u64(u64::from(sec.size));
         h.bytes(sec.data);
@@ -220,8 +233,17 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
                         h.u64(how);
                         h.u64(u64::from(v));
                     }
+                    // Another candidate: by what it folds to (its digest,
+                    // round by round), and by the kind of symbol that names
+                    // it: link.exe keeps a jump through an external symbol
+                    // apart from one through a static symbol, even when the
+                    // targets fold (LLVM's static get_deleter).
                     Target::Candidate(c, v) => {
-                        h.u64(2);
+                        let external = object
+                            .symbols
+                            .get(rel.symbol_table_index.get() as usize)
+                            .is_some_and(crate::object::Symbol::is_external);
+                        h.u64(if external { 2 } else { 9 });
                         h.u64(u64::from(v));
                         edges.push(c);
                     }
@@ -291,11 +313,26 @@ pub fn fold(r: &Resolved, live: &[Vec<bool>]) -> Map<(u32, u32), (u32, u32)> {
         classes = n;
     }
 
-    // Each class's leader: its first member.
+    // Each class's leader: its member first in the image's order, as
+    // link.exe keeps (its group, by name, then the link's order: a
+    // .text$di copy before a .text$mn one).
+    let name = |i: usize| {
+        let (f, s) = candidates[i];
+        match &r.files[f as usize].kind {
+            FileKind::Object { object, .. } => object.sections[s as usize].name,
+            FileKind::Import { .. } => &b""[..],
+        }
+    };
     let mut leader: Map<Digest, u32> = Map::default();
+    for (i, d) in digests.iter().enumerate() {
+        let l = leader.entry(*d).or_insert(crate::n32(i));
+        if name(i) < name(*l as usize) {
+            *l = crate::n32(i);
+        }
+    }
     let mut folded = Map::default();
     for (i, d) in digests.iter().enumerate() {
-        let l = *leader.entry(*d).or_insert(crate::n32(i));
+        let l = leader[d];
         if l != crate::n32(i) {
             folded.insert(candidates[i], candidates[l as usize]);
         }

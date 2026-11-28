@@ -117,3 +117,22 @@ fn bitcode() {
         "{macho}"
     );
 }
+
+#[test]
+fn managed() {
+    let sample = info("clr/Sample.dll");
+    assert!(
+        sample.starts_with(
+            "PE32 image, x86, 18432 bytes\n  \
+             managed: CLR 2.5, metadata v4.0.30319 (IL only, strong-name signed)\n  \
+             assembly Sample 1.2.3.4, 5 assembly references\n  \
+             24 types, 105 methods, 51 fields; 82 type references, 89 member references\n  \
+             metadata tables: Module 1, TypeRef 82, TypeDef 24, Field 51, MethodDef 105, "
+        ),
+        "{sample}"
+    );
+    assert!(
+        info("clr/Sample.Extra.netmodule")
+            .contains("\n  module Sample.Extra.netmodule (no assembly manifest)\n")
+    );
+}

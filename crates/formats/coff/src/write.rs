@@ -45,16 +45,103 @@ struct Plan {
 type Holes<'data> = Vec<(usize, &'data [u8])>;
 
 /// An object written but for its larger borrowed section data: the file's
-/// bytes with zeros where that data goes, and where each piece goes. Write
-/// [`bytes`](Self::bytes) with each [`holes`](Self::holes) piece over it,
-/// and it is the file [`Object::write`] makes, without a copy of the data
-/// the object borrows.
+/// other bytes, and where each piece of that data goes. The pieces put
+/// between the bytes, each at its offset, are the file [`Object::write`]
+/// makes, without a copy of the data the object borrows (and without
+/// memory set aside for it: only the bytes written are held).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Skeleton<'data> {
-    /// The file, with zeros in the holes.
+    /// The file without the holes: the bytes before the first hole, then
+    /// those between it and the next, and so on.
     pub bytes: Vec<u8>,
-    /// Each hole's offset in the file, and the bytes that fill it.
+    /// Each hole's offset in the file, and the bytes that fill it, in
+    /// order of offset.
     pub holes: Vec<(usize, &'data [u8])>,
+    /// Where the symbol table (and the string table after it) is in
+    /// [`bytes`](Self::bytes): the headers are where the file has them,
+    /// but holes may come before the symbol table.
+    pub symbol_table: u32,
+}
+
+impl Skeleton<'_> {
+    /// The file's length.
+    pub fn len(&self) -> usize {
+        self.bytes.len() + self.holes.iter().map(|h| h.1.len()).sum::<usize>()
+    }
+
+    /// Whether the file is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The file as pieces in order: the stretches of [`bytes`](Self::bytes)
+    /// between holes, and the holes' bytes.
+    pub fn parts(&self) -> Vec<&[u8]> {
+        parts(&self.bytes, &self.holes)
+    }
+
+    /// The file, gathered.
+    pub fn to_file(&self) -> Vec<u8> {
+        self.parts().concat()
+    }
+}
+
+/// The pieces of a file whose bytes but `holes` (sorted, at their offsets
+/// in the file) are `bytes`, in order (see [`Skeleton`]).
+pub fn parts<'a>(bytes: &'a [u8], holes: &[(usize, &'a [u8])]) -> Vec<&'a [u8]> {
+    let mut out = Vec::with_capacity(holes.len() * 2 + 1);
+    // The file's offset, and the bytes'.
+    let (mut at, mut taken) = (0, 0);
+    for &(start, piece) in holes {
+        if start > at {
+            out.push(&bytes[taken..taken + (start - at)]);
+            taken += start - at;
+        }
+        if !piece.is_empty() {
+            out.push(piece);
+        }
+        at = start + piece.len();
+    }
+    if taken < bytes.len() {
+        out.push(&bytes[taken..]);
+    }
+    out
+}
+
+/// Where writes go: the file, or the file without its holes (each write
+/// at a file offset is moved back by the holes before it; none falls in
+/// one).
+struct Out<'o> {
+    file: &'o mut [u8],
+    /// Each hole's offset and length, in order, and the total length of
+    /// the holes before each.
+    holes: Vec<(usize, usize)>,
+    before: Vec<usize>,
+}
+
+impl Out<'_> {
+    /// The length of the holes before `offset`.
+    fn shift(&self, offset: usize) -> usize {
+        let k = self.holes.partition_point(|h| h.0 <= offset);
+        match k.checked_sub(1) {
+            None => 0,
+            Some(j) => self.before[j] + self.holes[j].1,
+        }
+    }
+
+    fn at(&mut self, offset: usize, len: usize) -> &mut [u8] {
+        let k = self.holes.partition_point(|h| h.0 <= offset);
+        debug_assert!(
+            k == 0 || self.holes[k - 1].0 + self.holes[k - 1].1 <= offset || len == 0,
+            "a write in a hole"
+        );
+        debug_assert!(
+            self.holes.get(k).is_none_or(|&(h, _)| offset + len <= h),
+            "a write across a hole"
+        );
+        let at = offset - self.shift(offset);
+        &mut self.file[at..at + len]
+    }
 }
 
 impl<'data> Object<'data> {
@@ -70,8 +157,12 @@ impl<'data> Object<'data> {
     pub fn write_skeleton(&self, min: usize) -> Result<Skeleton<'data>> {
         let mut out = Vec::new();
         let mut holes = Vec::new();
-        self.write_impl(&mut out, Some((min, &mut holes)))?;
-        Ok(Skeleton { bytes: out, holes })
+        let symbol_table = self.write_impl(&mut out, Some((min, &mut holes)))?;
+        Ok(Skeleton {
+            bytes: out,
+            holes,
+            symbol_table,
+        })
     }
 
     /// Appends the object, as a file, to `out`.
@@ -83,14 +174,17 @@ impl<'data> Object<'data> {
     /// don't exist, a name with a NUL, more sections than the format
     /// allows, a header field the format lacks, or a file past 4 GiB.
     pub fn write_to(&self, out: &mut Vec<u8>) -> Result<()> {
-        self.write_impl(out, None)
+        self.write_impl(out, None).map(|_| ())
     }
 
+    /// Returns where the symbol table went in `out` (from the start of
+    /// what was written: not where the file has it, if holes come before
+    /// it).
     fn write_impl(
         &self,
         out: &mut Vec<u8>,
         mut holes: Option<(usize, &mut Holes<'data>)>,
-    ) -> Result<()> {
+    ) -> Result<u32> {
         self.check()?;
         let format = self.format;
         let stride = format.record_size();
@@ -139,23 +233,48 @@ impl<'data> Object<'data> {
             None => self.fresh_plan(records, table.len())?,
         };
 
-        let start = out.len();
-        if start == 0 {
-            // Zeroed memory from the allocator: what isn't written (holes
-            // left to fill) costs nothing.
-            *out = alloc::vec![0; plan.len];
-        } else {
-            out.resize(start + plan.len, 0);
+        // The holes: each borrowed piece of section data of `min` bytes or
+        // more, which isn't written (none among the headers, which stay
+        // where the file has them).
+        let headers = self.section_table_offset() + self.sections.len() * SECTION_HEADER_SIZE;
+        let hole = |s: &crate::object::Section<'_>, p: &Placement, min: usize| {
+            matches!(&s.data, SectionData::Bytes(Cow::Borrowed(bytes))
+                if bytes.len() >= min && !bytes.is_empty() && p.data as usize >= headers)
+        };
+        let mut gaps = Vec::new();
+        if let Some((min, holes)) = &mut holes {
+            for (s, p) in self.sections.iter().zip(&plan.sections) {
+                if let SectionData::Bytes(Cow::Borrowed(bytes)) = &s.data
+                    && hole(s, p, *min)
+                {
+                    holes.push((p.data as usize, *bytes));
+                }
+            }
+            holes.sort_unstable_by_key(|h| h.0);
+            gaps = holes.iter().map(|h| (h.0, h.1.len())).collect();
         }
-        let file = &mut out[start..];
-        self.write_header(file, &plan, records);
+        let mut before = Vec::with_capacity(gaps.len());
+        let mut total = 0;
+        for &(_, n) in &gaps {
+            before.push(total);
+            total += n;
+        }
+        let start = out.len();
+        out.resize(start + plan.len - total, 0);
+        let mut file = Out {
+            file: &mut out[start..],
+            holes: gaps,
+            before,
+        };
+        let header = self.section_table_offset();
+        self.write_header(file.at(0, header), &plan, records);
         let put16 = |b: &mut [u8], o: usize, v: u16| b[o..o + 2].copy_from_slice(&v.to_le_bytes());
         let put32 = |b: &mut [u8], o: usize, v: u32| b[o..o + 4].copy_from_slice(&v.to_le_bytes());
 
         // The section table, data, relocations, and line numbers.
         let table_at = self.section_table_offset();
         for (i, (s, p)) in self.sections.iter().zip(&plan.sections).enumerate() {
-            let h = &mut file[table_at + i * SECTION_HEADER_SIZE..][..SECTION_HEADER_SIZE];
+            let h = file.at(table_at + i * SECTION_HEADER_SIZE, SECTION_HEADER_SIZE);
             let field = match section_names[i] {
                 NameField::Field(f) => f,
                 NameField::Table(r, kept) => match kept {
@@ -192,27 +311,24 @@ impl<'data> Object<'data> {
             }
             put32(h, 36, characteristics);
 
-            match (&s.data, &mut holes) {
-                (SectionData::Bytes(Cow::Borrowed(bytes)), Some((min, holes)))
-                    if bytes.len() >= *min && !bytes.is_empty() =>
-                {
-                    holes.push((start + p.data as usize, *bytes));
-                }
+            match (&s.data, &holes) {
+                // A hole.
+                (_, Some((min, _))) if hole(s, p, *min) => {}
                 (SectionData::Bytes(bytes), _) if !bytes.is_empty() => {
-                    file[p.data as usize..][..bytes.len()].copy_from_slice(bytes);
+                    file.at(p.data as usize, bytes.len()).copy_from_slice(bytes);
                 }
                 _ => {}
             }
             let mut at = p.relocations as usize;
             if let Some((symbol, kind)) = p.extended {
-                let r = &mut file[at..at + RELOCATION_SIZE];
+                let r = file.at(at, RELOCATION_SIZE);
                 put32(r, 0, s.relocations.len() as u32 + 1);
                 put32(r, 4, symbol);
                 put16(r, 8, kind);
                 at += RELOCATION_SIZE;
             }
             for rel in &s.relocations {
-                let r = &mut file[at..at + RELOCATION_SIZE];
+                let r = file.at(at, RELOCATION_SIZE);
                 put32(r, 0, rel.offset);
                 put32(r, 4, indices[rel.symbol.index()]);
                 put16(r, 8, rel.kind);
@@ -220,7 +336,7 @@ impl<'data> Object<'data> {
             }
             let mut at = p.line_numbers as usize;
             for line in &s.line_numbers {
-                let r = &mut file[at..at + LINE_NUMBER_SIZE];
+                let r = file.at(at, LINE_NUMBER_SIZE);
                 match *line {
                     LineNumber::Function(symbol) => put32(r, 0, indices[symbol.index()]),
                     LineNumber::Line { address, number } => {
@@ -238,8 +354,9 @@ impl<'data> Object<'data> {
             sections: &plan.sections,
         };
         let mut at = plan.symbol_table as usize;
+        let symbol_table = (at - file.shift(at)) as u32;
         for (s, name) in self.symbols.iter().zip(&symbol_names) {
-            let r = &mut file[at..at + stride];
+            let r = file.at(at, stride);
             match *name {
                 NameField::Field(f) => r[..8].copy_from_slice(&f),
                 NameField::Table(i, _) => put32(r, 4, offsets[i]),
@@ -255,17 +372,17 @@ impl<'data> Object<'data> {
             let count = s.aux.count(stride);
             r[stride - 1] = count as u8;
             at += stride;
-            auxiliary::encode(&s.aux, format, &place, &mut file[at..at + count * stride]);
+            auxiliary::encode(&s.aux, format, &place, file.at(at, count * stride));
             at += count * stride;
         }
-        file[at..at + table.len()].copy_from_slice(table);
+        file.at(at, table.len()).copy_from_slice(table);
 
         if let Some(l) = fits {
             for (at, bytes) in &l.fill {
-                file[*at as usize..][..bytes.len()].copy_from_slice(bytes);
+                file.at(*at as usize, bytes.len()).copy_from_slice(bytes);
             }
         }
-        Ok(())
+        Ok(symbol_table)
     }
 
     fn section_table_offset(&self) -> usize {

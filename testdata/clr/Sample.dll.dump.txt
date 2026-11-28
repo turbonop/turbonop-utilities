@@ -1,0 +1,1860 @@
+cor20 runtime=2.5 flags=0x00000009 entrypoint=0x00000000
+cor20 metadata=0x2900+0x30f0 resources=0x59f0+0x370 strongname=0x5d60+0x80
+cor20 codemanager=0x0+0x0 vtablefixups=0x0+0x0 eatjumps=0x0+0x0 managednative=0x0+0x0
+metadata version=v4.0.30319
+heap String offset=0x1534 size=0xfc5
+heap UserString offset=0x24fc size=0xc8
+heap Guid offset=0x25c4 size=0x10
+heap Blob offset=0x25d4 size=0xb1c
+table Module rows=1 rowsize=10 offset=0x10c
+table TypeRef rows=82 rowsize=6 offset=0x116
+table TypeDef rows=24 rowsize=14 offset=0x302
+table Field rows=51 rowsize=6 offset=0x452
+table MethodDef rows=105 rowsize=14 offset=0x584
+table Param rows=88 rowsize=6 offset=0xb42
+table InterfaceImpl rows=9 rowsize=4 offset=0xd52
+table MemberRef rows=89 rowsize=6 offset=0xd76
+table Constant rows=17 rowsize=6 offset=0xf8c
+table CustomAttribute rows=74 rowsize=6 offset=0xff2
+table FieldMarshal rows=8 rowsize=4 offset=0x11ae
+table DeclSecurity rows=2 rowsize=6 offset=0x11ce
+table ClassLayout rows=5 rowsize=8 offset=0x11da
+table FieldLayout rows=3 rowsize=6 offset=0x1202
+table StandAloneSig rows=16 rowsize=2 offset=0x1214
+table EventMap rows=2 rowsize=4 offset=0x1234
+table Event rows=2 rowsize=6 offset=0x123c
+table PropertyMap rows=6 rowsize=4 offset=0x1248
+table Property rows=12 rowsize=6 offset=0x1260
+table MethodSemantics rows=21 rowsize=6 offset=0x12a8
+table MethodImpl rows=11 rowsize=6 offset=0x1326
+table ModuleRef rows=3 rowsize=2 offset=0x1368
+table TypeSpec rows=18 rowsize=2 offset=0x136e
+table ImplMap rows=3 rowsize=8 offset=0x1392
+table FieldRva rows=2 rowsize=6 offset=0x13aa
+table Assembly rows=1 rowsize=22 offset=0x13b6
+table AssemblyRef rows=5 rowsize=20 offset=0x13cc
+table File rows=2 rowsize=8 offset=0x1430
+table ExportedType rows=4 rowsize=14 offset=0x1440
+table ManifestResource rows=3 rowsize=12 offset=0x1478
+table NestedClass rows=8 rowsize=4 offset=0x149c
+table GenericParam rows=8 rowsize=8 offset=0x14bc
+table MethodSpec rows=6 rowsize=4 offset=0x14fc
+table GenericParamConstraint rows=7 rowsize=4 offset=0x1514
+Module[1] generation=0 name=Sample.dll mvid=2bb45a60-5b17-4a66-9aed-7b70fcc0db7d encid=null encbaseid=null
+TypeRef[1] scope=0x23000001 ns=System.Runtime.CompilerServices name=CompilationRelaxationsAttribute full=[System.Runtime]System.Runtime.CompilerServices.CompilationRelaxationsAttribute
+TypeRef[2] scope=0x23000001 ns=System.Runtime.CompilerServices name=RuntimeCompatibilityAttribute full=[System.Runtime]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute
+TypeRef[3] scope=0x23000001 ns=System.Diagnostics name=DebuggableAttribute full=[System.Runtime]System.Diagnostics.DebuggableAttribute
+TypeRef[4] scope=0x01000003 ns= name=DebuggingModes full=[System.Runtime]System.Diagnostics.DebuggableAttribute/DebuggingModes
+TypeRef[5] scope=0x23000001 ns=System.Reflection name=AssemblyTitleAttribute full=[System.Runtime]System.Reflection.AssemblyTitleAttribute
+TypeRef[6] scope=0x23000001 ns=System.Reflection name=AssemblyFileVersionAttribute full=[System.Runtime]System.Reflection.AssemblyFileVersionAttribute
+TypeRef[7] scope=0x23000001 ns=System name=Type full=[System.Runtime]System.Type
+TypeRef[8] scope=0x23000001 ns=System.Security.Permissions name=SecurityAction full=[System.Runtime]System.Security.Permissions.SecurityAction
+TypeRef[9] scope=0x23000001 ns=System.Security.Permissions name=SecurityPermissionAttribute full=[System.Runtime]System.Security.Permissions.SecurityPermissionAttribute
+TypeRef[10] scope=0x23000001 ns=System.Security name=UnverifiableCodeAttribute full=[System.Runtime]System.Security.UnverifiableCodeAttribute
+TypeRef[11] scope=0x23000001 ns=System.Runtime.CompilerServices name=RefSafetyRulesAttribute full=[System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute
+TypeRef[12] scope=0x23000001 ns=System.Runtime.InteropServices name=CharSet full=[System.Runtime]System.Runtime.InteropServices.CharSet
+TypeRef[13] scope=0x23000002 ns=System.Runtime.InteropServices name=DefaultCharSetAttribute full=[System.Runtime.InteropServices]System.Runtime.InteropServices.DefaultCharSetAttribute
+TypeRef[14] scope=0x23000001 ns=System name=Enum full=[System.Runtime]System.Enum
+TypeRef[15] scope=0x23000001 ns=System name=FlagsAttribute full=[System.Runtime]System.FlagsAttribute
+TypeRef[16] scope=0x23000001 ns=System name=AttributeTargets full=[System.Runtime]System.AttributeTargets
+TypeRef[17] scope=0x23000001 ns=System name=AttributeUsageAttribute full=[System.Runtime]System.AttributeUsageAttribute
+TypeRef[18] scope=0x23000001 ns=System name=Attribute full=[System.Runtime]System.Attribute
+TypeRef[19] scope=0x23000001 ns=System.Runtime.CompilerServices name=CompilerGeneratedAttribute full=[System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute
+TypeRef[20] scope=0x23000001 ns=System name=Object full=[System.Runtime]System.Object
+TypeRef[21] scope=0x23000001 ns=System.Security.Permissions name=CodeAccessSecurityAttribute full=[System.Runtime]System.Security.Permissions.CodeAccessSecurityAttribute
+TypeRef[22] scope=0x23000001 ns=System.Security name=IPermission full=[System.Runtime]System.Security.IPermission
+TypeRef[23] scope=0x23000001 ns=System name=EventHandler full=[System.Runtime]System.EventHandler
+TypeRef[24] scope=0x23000001 ns=System name=ValueType full=[System.Runtime]System.ValueType
+TypeRef[25] scope=0x23000001 ns=System.Runtime.CompilerServices name=FixedBufferAttribute full=[System.Runtime]System.Runtime.CompilerServices.FixedBufferAttribute
+TypeRef[26] scope=0x23000001 ns=System.Runtime.CompilerServices name=UnsafeValueTypeAttribute full=[System.Runtime]System.Runtime.CompilerServices.UnsafeValueTypeAttribute
+TypeRef[27] scope=0x23000001 ns=System.Reflection name=DefaultMemberAttribute full=[System.Runtime]System.Reflection.DefaultMemberAttribute
+TypeRef[28] scope=0x23000003 ns=System.Collections.Generic name=List`1 full=[System.Collections]System.Collections.Generic.List`1
+TypeRef[29] scope=0x23000001 ns=System name=IComparable`1 full=[System.Runtime]System.IComparable`1
+TypeRef[30] scope=0x23000001 ns=System.Runtime.CompilerServices name=IsVolatile full=[System.Runtime]System.Runtime.CompilerServices.IsVolatile
+TypeRef[31] scope=0x23000001 ns=System name=ReadOnlySpan`1 full=[System.Runtime]System.ReadOnlySpan`1
+TypeRef[32] scope=0x23000001 ns=System name=Exception full=[System.Runtime]System.Exception
+TypeRef[33] scope=0x23000001 ns=System.Runtime.CompilerServices name=IsReadOnlyAttribute full=[System.Runtime]System.Runtime.CompilerServices.IsReadOnlyAttribute
+TypeRef[34] scope=0x23000001 ns=System name=ArgIterator full=[System.Runtime]System.ArgIterator
+TypeRef[35] scope=0x23000001 ns=System.Collections.Generic name=IEnumerable`1 full=[System.Runtime]System.Collections.Generic.IEnumerable`1
+TypeRef[36] scope=0x23000001 ns=System.Runtime.CompilerServices name=IteratorStateMachineAttribute full=[System.Runtime]System.Runtime.CompilerServices.IteratorStateMachineAttribute
+TypeRef[37] scope=0x23000001 ns=System.Runtime.CompilerServices name=AsyncStateMachineAttribute full=[System.Runtime]System.Runtime.CompilerServices.AsyncStateMachineAttribute
+TypeRef[38] scope=0x23000001 ns=System.Threading.Tasks name=Task`1 full=[System.Runtime]System.Threading.Tasks.Task`1
+TypeRef[39] scope=0x23000001 ns=System name=Func`2 full=[System.Runtime]System.Func`2
+TypeRef[40] scope=0x23000001 ns=System name=ValueTuple`2 full=[System.Runtime]System.ValueTuple`2
+TypeRef[41] scope=0x23000001 ns=System name=RuntimeMethodHandle full=[System.Runtime]System.RuntimeMethodHandle
+TypeRef[42] scope=0x23000001 ns=System.Runtime.CompilerServices name=IAsyncStateMachine full=[System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine
+TypeRef[43] scope=0x23000001 ns=System.Runtime.CompilerServices name=YieldAwaitable full=[System.Runtime]System.Runtime.CompilerServices.YieldAwaitable
+TypeRef[44] scope=0x0100002b ns= name=YieldAwaiter full=[System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter
+TypeRef[45] scope=0x23000001 ns=System.Runtime.CompilerServices name=NullableAttribute full=[System.Runtime]System.Runtime.CompilerServices.NullableAttribute
+TypeRef[46] scope=0x23000001 ns=System.Runtime.CompilerServices name=AsyncTaskMethodBuilder`1 full=[System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1
+TypeRef[47] scope=0x23000001 ns=System.Diagnostics name=DebuggerHiddenAttribute full=[System.Runtime]System.Diagnostics.DebuggerHiddenAttribute
+TypeRef[48] scope=0x23000001 ns=System name=IDisposable full=[System.Runtime]System.IDisposable
+TypeRef[49] scope=0x23000001 ns=System.Collections name=IEnumerator full=[System.Runtime]System.Collections.IEnumerator
+TypeRef[50] scope=0x23000001 ns=System.Collections.Generic name=IEnumerator`1 full=[System.Runtime]System.Collections.Generic.IEnumerator`1
+TypeRef[51] scope=0x23000001 ns=System.Collections name=IEnumerable full=[System.Runtime]System.Collections.IEnumerable
+TypeRef[52] scope=0x23000001 ns=System name=MulticastDelegate full=[System.Runtime]System.MulticastDelegate
+TypeRef[53] scope=0x23000001 ns=System name=IAsyncResult full=[System.Runtime]System.IAsyncResult
+TypeRef[54] scope=0x23000001 ns=System name=AsyncCallback full=[System.Runtime]System.AsyncCallback
+TypeRef[55] scope=0x23000001 ns=System.Runtime.CompilerServices name=NullableContextAttribute full=[System.Runtime]System.Runtime.CompilerServices.NullableContextAttribute
+TypeRef[56] scope=0x23000001 ns=System name=IEquatable`1 full=[System.Runtime]System.IEquatable`1
+TypeRef[57] scope=0x23000001 ns=System.Runtime.CompilerServices name=IsExternalInit full=[System.Runtime]System.Runtime.CompilerServices.IsExternalInit
+TypeRef[58] scope=0x23000001 ns=System.Text name=StringBuilder full=[System.Runtime]System.Text.StringBuilder
+TypeRef[59] scope=0x23000001 ns=System.Runtime.CompilerServices name=IsUnmanagedAttribute full=[System.Runtime]System.Runtime.CompilerServices.IsUnmanagedAttribute
+TypeRef[60] scope=0x23000001 ns=System.Runtime.InteropServices name=UnmanagedType full=[System.Runtime]System.Runtime.InteropServices.UnmanagedType
+TypeRef[61] scope=0x23000001 ns=System.Runtime.CompilerServices name=RuntimeHelpers full=[System.Runtime]System.Runtime.CompilerServices.RuntimeHelpers
+TypeRef[62] scope=0x23000001 ns=System name=RuntimeFieldHandle full=[System.Runtime]System.RuntimeFieldHandle
+TypeRef[63] scope=0x23000001 ns=System name=Delegate full=[System.Runtime]System.Delegate
+TypeRef[64] scope=0x23000004 ns=System.Threading name=Interlocked full=[System.Threading]System.Threading.Interlocked
+TypeRef[65] scope=0x23000001 ns=System name=Double full=[System.Runtime]System.Double
+TypeRef[66] scope=0x23000001 ns=System name=EventArgs full=[System.Runtime]System.EventArgs
+TypeRef[67] scope=0x23000001 ns=System name=Byte full=[System.Runtime]System.Byte
+TypeRef[68] scope=0x23000001 ns=System name=Array full=[System.Runtime]System.Array
+TypeRef[69] scope=0x23000001 ns=System name=InvalidOperationException full=[System.Runtime]System.InvalidOperationException
+TypeRef[70] scope=0x23000001 ns=System name=String full=[System.Runtime]System.String
+TypeRef[71] scope=0x23000005 ns=System name=Console full=[System.Console]System.Console
+TypeRef[72] scope=0x23000001 ns=System name=Int32 full=[System.Runtime]System.Int32
+TypeRef[73] scope=0x23000001 ns=System name=RuntimeArgumentHandle full=[System.Runtime]System.RuntimeArgumentHandle
+TypeRef[74] scope=0x23000001 ns=System name=Activator full=[System.Runtime]System.Activator
+TypeRef[75] scope=0x23000001 ns=System name=Math full=[System.Runtime]System.Math
+TypeRef[76] scope=0x23000004 ns=System.Threading name=Volatile full=[System.Threading]System.Threading.Volatile
+TypeRef[77] scope=0x23000001 ns=System name=RuntimeTypeHandle full=[System.Runtime]System.RuntimeTypeHandle
+TypeRef[78] scope=0x23000001 ns=System.Runtime.CompilerServices name=Unsafe full=[System.Runtime]System.Runtime.CompilerServices.Unsafe
+TypeRef[79] scope=0x23000003 ns=System.Collections.Generic name=EqualityComparer`1 full=[System.Collections]System.Collections.Generic.EqualityComparer`1
+TypeRef[80] scope=0x23000001 ns=System.Threading.Tasks name=Task full=[System.Runtime]System.Threading.Tasks.Task
+TypeRef[81] scope=0x23000001 ns=System name=Environment full=[System.Runtime]System.Environment
+TypeRef[82] scope=0x23000001 ns=System name=NotSupportedException full=[System.Runtime]System.NotSupportedException
+TypeDef[1] flags=0x00000000 ns= name=<Module> full=<Module> extends=-
+  fields -
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[2] flags=0x00010101 ns=Sample name=Color full=Sample.Color extends=[System.Runtime]System.Enum
+  fields 1-4
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[3] flags=0x00010101 ns=Sample name=Access full=Sample.Access extends=[System.Runtime]System.Enum
+  fields 5-9
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[4] flags=0x00110101 ns=Sample name=NoteAttribute full=Sample.NoteAttribute extends=[System.Runtime]System.Attribute
+  fields 10-12
+  methods 1-5
+  properties 1
+  events -
+  nested -
+TypeDef[5] flags=0x00110101 ns=Sample name=GuardAttribute full=Sample.GuardAttribute extends=[System.Runtime]System.Security.Permissions.CodeAccessSecurityAttribute
+  fields 13
+  methods 6-9
+  properties 2
+  events -
+  nested -
+TypeDef[6] flags=0x001100a1 ns=Sample name=IShape full=Sample.IShape extends=-
+  fields -
+  methods 10-14
+  properties 3
+  events 1
+  nested -
+TypeDef[7] flags=0x00110111 ns=Sample name=Union full=Sample.Union extends=[System.Runtime]System.ValueType
+  layout pack=4 size=16
+  fields 14-16
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[8] flags=0x00110109 ns=Sample name=Native full=Sample.Native extends=[System.Runtime]System.ValueType
+  layout pack=1 size=0
+  fields 17-24
+  methods -
+  properties -
+  events -
+  nested 17
+TypeDef[9] flags=0x00152001 ns=Sample name=Circle full=Sample.Circle extends=[System.Runtime]System.Object
+  InterfaceImpl[1] Sample.IShape
+  InterfaceImpl[2] class [System.Runtime]System.IComparable`1<class Sample.Circle>
+  fields 25-34
+  methods 15-26
+  properties 4-7
+  events 2
+  nested 18
+TypeDef[10] flags=0x00110181 ns=Sample name=Code full=Sample.Code extends=[System.Runtime]System.Object
+  fields -
+  methods 27-63
+  properties -
+  events -
+  nested 19-21
+TypeDef[11] flags=0x00110081 ns=Sample name=Base`1 full=Sample.Base`1 extends=[System.Runtime]System.Object
+  GenericParam[1] index=0 flags=0x0000 name=T owner=0x0200000b
+  fields 35
+  methods 64-66
+  properties -
+  events -
+  nested -
+TypeDef[12] flags=0x00110101 ns=Sample name=Derived full=Sample.Derived extends=class Sample.Base`1<string>
+  fields -
+  methods 67-70
+  properties -
+  events -
+  nested -
+TypeDef[13] flags=0x00010101 ns=Sample name=Transform full=Sample.Transform extends=[System.Runtime]System.MulticastDelegate
+  fields -
+  methods 71-74
+  properties -
+  events -
+  nested -
+TypeDef[14] flags=0x00110001 ns=Sample name=Point full=Sample.Point extends=[System.Runtime]System.Object
+  InterfaceImpl[3] class [System.Runtime]System.IEquatable`1<class Sample.Point>
+  fields 36-37
+  methods 75-90
+  properties 8-10
+  events -
+  nested -
+TypeDef[15] flags=0x00110109 ns=Sample name=Holder`1 full=Sample.Holder`1 extends=[System.Runtime]System.ValueType
+  GenericParam[2] index=0 flags=0x0018 name=T owner=0x0200000f
+    GenericParamConstraint[1] class [System.Runtime]System.ValueType modreq([System.Runtime]System.Runtime.InteropServices.UnmanagedType)
+  fields 38
+  methods 91
+  properties -
+  events -
+  nested -
+TypeDef[16] flags=0x00000100 ns= name=<PrivateImplementationDetails> full=<PrivateImplementationDetails> extends=[System.Runtime]System.Object
+  fields 39-40
+  methods -
+  properties -
+  events -
+  nested 22-23
+TypeDef[17] flags=0x0011010a ns= name=<Buffer>e__FixedBuffer full=Sample.Native/<Buffer>e__FixedBuffer extends=[System.Runtime]System.ValueType
+  enclosing 0x02000008
+  layout pack=0 size=8
+  fields 41
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[18] flags=0x00110002 ns= name=Nested`1 full=Sample.Circle/Nested`1 extends=[System.Runtime]System.Object
+  enclosing 0x02000009
+  GenericParam[3] index=0 flags=0x0018 name=T owner=0x02000012
+    GenericParamConstraint[2] class [System.Runtime]System.IComparable`1<!0>
+    GenericParamConstraint[3] [System.Runtime]System.ValueType
+  fields 42
+  methods 92
+  properties -
+  events -
+  nested 24
+TypeDef[19] flags=0x00110103 ns= name=<>c__DisplayClass21_0 full=Sample.Code/<>c__DisplayClass21_0 extends=[System.Runtime]System.Object
+  enclosing 0x0200000a
+  fields 43
+  methods 93-94
+  properties -
+  events -
+  nested -
+TypeDef[20] flags=0x00110103 ns= name=<Async>d__20 full=Sample.Code/<Async>d__20 extends=[System.Runtime]System.ValueType
+  enclosing 0x0200000a
+  InterfaceImpl[4] [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine
+  fields 44-46
+  methods 95-96
+  properties -
+  events -
+  nested -
+TypeDef[21] flags=0x00110103 ns= name=<Iterator>d__19 full=Sample.Code/<Iterator>d__19 extends=[System.Runtime]System.Object
+  enclosing 0x0200000a
+  InterfaceImpl[5] class [System.Runtime]System.Collections.Generic.IEnumerable`1<int32>
+  InterfaceImpl[6] [System.Runtime]System.Collections.IEnumerable
+  InterfaceImpl[7] class [System.Runtime]System.Collections.Generic.IEnumerator`1<int32>
+  InterfaceImpl[8] [System.Runtime]System.Collections.IEnumerator
+  InterfaceImpl[9] [System.Runtime]System.IDisposable
+  fields 47-49
+  methods 97-104
+  properties 11-12
+  events -
+  nested -
+TypeDef[22] flags=0x00000115 ns= name=__StaticArrayInitTypeSize=17 full=<PrivateImplementationDetails>/__StaticArrayInitTypeSize=17 extends=[System.Runtime]System.ValueType
+  enclosing 0x02000010
+  layout pack=1 size=17
+  fields -
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[23] flags=0x00000115 ns= name=__StaticArrayInitTypeSize=24_Align=4 full=<PrivateImplementationDetails>/__StaticArrayInitTypeSize=24_Align=4 extends=[System.Runtime]System.ValueType
+  enclosing 0x02000010
+  layout pack=4 size=24
+  fields -
+  methods -
+  properties -
+  events -
+  nested -
+TypeDef[24] flags=0x00110002 ns= name=Deeper`1 full=Sample.Circle/Nested`1/Deeper`1 extends=[System.Runtime]System.Object
+  enclosing 0x02000012
+  GenericParam[4] index=0 flags=0x0018 name=T owner=0x02000018
+    GenericParamConstraint[4] class [System.Runtime]System.IComparable`1<!0>
+    GenericParamConstraint[5] [System.Runtime]System.ValueType
+  GenericParam[5] index=1 flags=0x0014 name=U owner=0x02000018
+  fields 50-51
+  methods 105
+  properties -
+  events -
+  nested -
+Field[1] flags=0x0606 name=value__ sig=uint8 owner=0x02000002
+Field[2] flags=0x8056 name=Red sig=valuetype Sample.Color owner=0x02000002
+  const Constant[1] type=0x05 value=00
+Field[3] flags=0x8056 name=Green sig=valuetype Sample.Color owner=0x02000002
+  const Constant[2] type=0x05 value=05
+Field[4] flags=0x8056 name=Blue sig=valuetype Sample.Color owner=0x02000002
+  const Constant[3] type=0x05 value=06
+Field[5] flags=0x0606 name=value__ sig=int64 owner=0x02000003
+Field[6] flags=0x8056 name=None sig=valuetype Sample.Access owner=0x02000003
+  const Constant[4] type=0x0a value=0000000000000000
+Field[7] flags=0x8056 name=Read sig=valuetype Sample.Access owner=0x02000003
+  const Constant[5] type=0x0a value=0100000000000000
+Field[8] flags=0x8056 name=Write sig=valuetype Sample.Access owner=0x02000003
+  const Constant[6] type=0x0a value=0200000000000000
+Field[9] flags=0x8056 name=All sig=valuetype Sample.Access owner=0x02000003
+  const Constant[7] type=0x0a value=0300000000000000
+Field[10] flags=0x0006 name=Number sig=int32 owner=0x02000004
+Field[11] flags=0x0006 name=Types sig=class [System.Runtime]System.Type[] owner=0x02000004
+Field[12] flags=0x0001 name=<Named>k__BackingField sig=string owner=0x02000004
+Field[13] flags=0x0001 name=<Level>k__BackingField sig=string owner=0x02000005
+Field[14] flags=0x0006 name=I sig=int32 owner=0x02000007
+  offset 0
+Field[15] flags=0x0006 name=F sig=float32 owner=0x02000007
+  offset 0
+Field[16] flags=0x0006 name=L sig=int64 owner=0x02000007
+  offset 8
+Field[17] flags=0x1006 name=Name sig=string owner=0x02000008
+  marshal 15
+Field[18] flags=0x1006 name=Four sig=int32[] owner=0x02000008
+  marshal 1e0407
+Field[19] flags=0x1006 name=Counted sig=int32[] owner=0x02000008
+  marshal 2a5001
+Field[20] flags=0x1006 name=Fixed sig=string owner=0x02000008
+  marshal 1720
+Field[21] flags=0x1006 name=Unknown sig=object owner=0x02000008
+  marshal 1c
+Field[22] flags=0x0006 name=Buffer sig=valuetype Sample.Native/<Buffer>e__FixedBuffer owner=0x02000008
+Field[23] flags=0x0006 name=Callback sig=method unmanaged cdecl int32 *(int32) owner=0x02000008
+Field[24] flags=0x0006 name=Managed sig=method string *(int32&) owner=0x02000008
+Field[25] flags=0x8056 name=Pi sig=float64 owner=0x02000009
+  const Constant[8] type=0x0d value=6e861bf0f9210940
+Field[26] flags=0x8056 name=Label sig=string owner=0x02000009
+  const Constant[9] type=0x0e value=63006900720063006c006500e9000326
+Field[27] flags=0x8056 name=Letter sig=char owner=0x02000009
+  const Constant[10] type=0x03 value=7800
+Field[28] flags=0x8056 name=Favorite sig=valuetype Sample.Color owner=0x02000009
+  const Constant[11] type=0x05 value=06
+Field[29] flags=0x8056 name=Nothing sig=object owner=0x02000009
+  const Constant[12] type=0x12 value=00000000
+Field[30] flags=0x0036 name=Table sig=uint8[] owner=0x02000009
+Field[31] flags=0x0001 name=radius sig=float64 owner=0x02000009
+Field[32] flags=0x0006 name=Version sig=int32 modreq([System.Runtime]System.Runtime.CompilerServices.IsVolatile) owner=0x02000009
+Field[33] flags=0x0086 name=Transient sig=int32 owner=0x02000009
+Field[34] flags=0x0001 name=Changed sig=class [System.Runtime]System.EventHandler owner=0x02000009
+Field[35] flags=0x0016 name=Count sig=int32 owner=0x0200000b
+Field[36] flags=0x0021 name=<X>k__BackingField sig=int32 owner=0x0200000e
+Field[37] flags=0x0021 name=<Y>k__BackingField sig=int32 owner=0x0200000e
+Field[38] flags=0x0006 name=Item sig=!0 owner=0x0200000f
+Field[39] flags=0x0133 name=197B93CAE488D58D929E2B5C281928D60E9685B6EB8995CA3754876945D862FA4 sig=valuetype <PrivateImplementationDetails>/__StaticArrayInitTypeSize=24_Align=4 owner=0x02000010
+  rva 0x5ef0
+Field[40] flags=0x0133 name=A9CE213E0C75B432A9E5C166E4F38E661EC95A3370CD111C72688ECB4B503205 sig=valuetype <PrivateImplementationDetails>/__StaticArrayInitTypeSize=17 owner=0x02000010
+  rva 0x5f08
+Field[41] flags=0x0006 name=FixedElementField sig=uint8 owner=0x02000011
+Field[42] flags=0x0006 name=Value sig=!0 owner=0x02000012
+Field[43] flags=0x0006 name=k sig=int32 owner=0x02000013
+Field[44] flags=0x0006 name=<>1__state sig=int32 owner=0x02000014
+Field[45] flags=0x0006 name=<>t__builder sig=valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32> owner=0x02000014
+Field[46] flags=0x0001 name=<>u__1 sig=valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter owner=0x02000014
+Field[47] flags=0x0001 name=<>1__state sig=int32 owner=0x02000015
+Field[48] flags=0x0001 name=<>2__current sig=int32 owner=0x02000015
+Field[49] flags=0x0001 name=<>l__initialThreadId sig=int32 owner=0x02000015
+Field[50] flags=0x0006 name=Inner sig=!1 owner=0x02000018
+Field[51] flags=0x0006 name=Outer sig=!0 owner=0x02000018
+MethodDef[1] rva=0x2050 impl=0x0000 flags=0x1886 name=.ctor sig=instance void (string, valuetype Sample.Color, class [System.Runtime]System.Type, object, int32[]) owner=0x02000004
+  params 1-5
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Attribute::.ctor()
+  IL_0006: ret
+MethodDef[2] rva=0x2058 impl=0x0000 flags=0x1886 name=.ctor sig=instance void (char, int8, uint64, float32, float64, bool) owner=0x02000004
+  params 6-11
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Attribute::.ctor()
+  IL_0006: ret
+MethodDef[3] rva=0x2060 impl=0x0000 flags=0x1886 name=.ctor sig=instance void (object[]) owner=0x02000004
+  params 12
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Attribute::.ctor()
+  IL_0006: ret
+MethodDef[4] rva=0x2068 impl=0x0000 flags=0x0886 name=get_Named sig=instance string () owner=0x02000004
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldfld string Sample.NoteAttribute::<Named>k__BackingField
+  IL_0006: ret
+MethodDef[5] rva=0x2070 impl=0x0000 flags=0x0886 name=set_Named sig=instance void (string) owner=0x02000004
+  params 13
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: stfld string Sample.NoteAttribute::<Named>k__BackingField
+  IL_0007: ret
+MethodDef[6] rva=0x2079 impl=0x0000 flags=0x1886 name=.ctor sig=instance void (valuetype [System.Runtime]System.Security.Permissions.SecurityAction) owner=0x02000005
+  params 14
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: call instance void [System.Runtime]System.Security.Permissions.CodeAccessSecurityAttribute::.ctor(valuetype [System.Runtime]System.Security.Permissions.SecurityAction)
+  IL_0007: ret
+MethodDef[7] rva=0x2082 impl=0x0000 flags=0x0886 name=get_Level sig=instance string () owner=0x02000005
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldfld string Sample.GuardAttribute::<Level>k__BackingField
+  IL_0006: ret
+MethodDef[8] rva=0x208a impl=0x0000 flags=0x0886 name=set_Level sig=instance void (string) owner=0x02000005
+  params 15
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: stfld string Sample.GuardAttribute::<Level>k__BackingField
+  IL_0007: ret
+MethodDef[9] rva=0x2093 impl=0x0000 flags=0x00c6 name=CreatePermission sig=instance class [System.Runtime]System.Security.IPermission () owner=0x02000005
+  params -
+  body maxstack=8 size=3 localsig=0x00000000 initlocals=False
+  IL_0000: ldnull
+  IL_0001: ret
+MethodDef[10] rva=0x0 impl=0x0000 flags=0x0dc6 name=get_Area sig=instance float64 () owner=0x02000006
+  params -
+MethodDef[11] rva=0x0 impl=0x0000 flags=0x0dc6 name=add_Changed sig=instance void (class [System.Runtime]System.EventHandler) owner=0x02000006
+  params 16
+MethodDef[12] rva=0x0 impl=0x0000 flags=0x0dc6 name=remove_Changed sig=instance void (class [System.Runtime]System.EventHandler) owner=0x02000006
+  params 17
+MethodDef[13] rva=0x0 impl=0x0000 flags=0x04d6 name=Unit sig=class Sample.IShape () owner=0x02000006
+  params -
+MethodDef[14] rva=0x2096 impl=0x0000 flags=0x01c6 name=Describe sig=instance string () owner=0x02000006
+  params -
+  body maxstack=8 size=7 localsig=0x00000000 initlocals=False
+  IL_0000: ldstr "shape"
+  IL_0005: ret
+MethodDef[15] rva=0x209d impl=0x0000 flags=0x0896 name=get_Primes sig=valuetype [System.Runtime]System.ReadOnlySpan`1<int32> () owner=0x02000009
+  params -
+  body maxstack=8 size=12 localsig=0x00000000 initlocals=False
+  IL_0000: ldtoken field valuetype <PrivateImplementationDetails>/__StaticArrayInitTypeSize=24_Align=4 <PrivateImplementationDetails>::197B93CAE488D58D929E2B5C281928D60E9685B6EB8995CA3754876945D862FA4
+  IL_0005: call generic<1> valuetype [System.Runtime]System.ReadOnlySpan`1<!!0> [System.Runtime]System.Runtime.CompilerServices.RuntimeHelpers::CreateSpan(valuetype [System.Runtime]System.RuntimeFieldHandle)<int32>
+  IL_000a: ret
+MethodDef[16] rva=0x20ac impl=0x0000 flags=0x09e6 name=add_Changed sig=instance void (class [System.Runtime]System.EventHandler) owner=0x02000009
+  params 18
+  body maxstack=3 size=53 localsig=0x11000001 initlocals=True
+  IL_0000: ldarg.0
+  IL_0001: ldfld class [System.Runtime]System.EventHandler Sample.Circle::Changed
+  IL_0006: stloc.0
+  IL_0007: ldloc.0
+  IL_0008: stloc.1
+  IL_0009: ldloc.1
+  IL_000a: ldarg.1
+  IL_000b: call class [System.Runtime]System.Delegate [System.Runtime]System.Delegate::Combine(class [System.Runtime]System.Delegate, class [System.Runtime]System.Delegate)
+  IL_0010: castclass [System.Runtime]System.EventHandler
+  IL_0015: stloc.2
+  IL_0016: ldarg.0
+  IL_0017: ldflda class [System.Runtime]System.EventHandler Sample.Circle::Changed
+  IL_001c: ldloc.2
+  IL_001d: ldloc.1
+  IL_001e: call generic<1> !!0 [System.Threading]System.Threading.Interlocked::CompareExchange(!!0&, !!0, !!0)<class [System.Runtime]System.EventHandler>
+  IL_0023: stloc.0
+  IL_0024: ldloc.0
+  IL_0025: ldloc.1
+  IL_0026: bne.un.s IL_0007
+  IL_0028: ret
+MethodDef[17] rva=0x20e4 impl=0x0000 flags=0x09e6 name=remove_Changed sig=instance void (class [System.Runtime]System.EventHandler) owner=0x02000009
+  params 19
+  body maxstack=3 size=53 localsig=0x11000001 initlocals=True
+  IL_0000: ldarg.0
+  IL_0001: ldfld class [System.Runtime]System.EventHandler Sample.Circle::Changed
+  IL_0006: stloc.0
+  IL_0007: ldloc.0
+  IL_0008: stloc.1
+  IL_0009: ldloc.1
+  IL_000a: ldarg.1
+  IL_000b: call class [System.Runtime]System.Delegate [System.Runtime]System.Delegate::Remove(class [System.Runtime]System.Delegate, class [System.Runtime]System.Delegate)
+  IL_0010: castclass [System.Runtime]System.EventHandler
+  IL_0015: stloc.2
+  IL_0016: ldarg.0
+  IL_0017: ldflda class [System.Runtime]System.EventHandler Sample.Circle::Changed
+  IL_001c: ldloc.2
+  IL_001d: ldloc.1
+  IL_001e: call generic<1> !!0 [System.Threading]System.Threading.Interlocked::CompareExchange(!!0&, !!0, !!0)<class [System.Runtime]System.EventHandler>
+  IL_0023: stloc.0
+  IL_0024: ldloc.0
+  IL_0025: ldloc.1
+  IL_0026: bne.un.s IL_0007
+  IL_0028: ret
+MethodDef[18] rva=0x2119 impl=0x0000 flags=0x0886 name=get_Area sig=instance float64 () owner=0x02000009
+  params -
+  body maxstack=8 size=25 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.r8 0x400921f9f01b866e
+  IL_0009: ldarg.0
+  IL_000a: ldfld float64 Sample.Circle::radius
+  IL_000f: mul
+  IL_0010: ldarg.0
+  IL_0011: ldfld float64 Sample.Circle::radius
+  IL_0016: mul
+  IL_0017: ret
+MethodDef[19] rva=0x2132 impl=0x0000 flags=0x0886 name=get_Item sig=instance float64 (int32) owner=0x02000009
+  params 20
+  body maxstack=8 size=11 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.1
+  IL_0001: conv.r8
+  IL_0002: ldarg.0
+  IL_0003: ldfld float64 Sample.Circle::radius
+  IL_0008: mul
+  IL_0009: ret
+MethodDef[20] rva=0x213d impl=0x0000 flags=0x0886 name=set_Item sig=instance void (int32, float64) owner=0x02000009
+  params 21-22
+  body maxstack=8 size=12 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.2
+  IL_0002: ldarg.1
+  IL_0003: conv.r8
+  IL_0004: div
+  IL_0005: stfld float64 Sample.Circle::radius
+  IL_000a: ret
+MethodDef[21] rva=0x2149 impl=0x0000 flags=0x0096 name=Unit sig=class Sample.IShape () owner=0x02000009
+  params -
+  body maxstack=8 size=16 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.r8 0x3ff0000000000000
+  IL_0009: newobj instance void Sample.Circle::.ctor(float64)
+  IL_000e: ret
+MethodDef[22] rva=0x2159 impl=0x0000 flags=0x1886 name=.ctor sig=instance void (float64) owner=0x02000009
+  params 23
+  body maxstack=8 size=15 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ldarg.0
+  IL_0007: ldarg.1
+  IL_0008: stfld float64 Sample.Circle::radius
+  IL_000d: ret
+MethodDef[23] rva=0x2168 impl=0x0000 flags=0x09e1 name=Sample.IShape.get_Area sig=instance float64 () owner=0x02000009
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance float64 Sample.Circle::get_Area()
+  IL_0006: ret
+MethodDef[24] rva=0x2170 impl=0x0000 flags=0x01e6 name=CompareTo sig=instance int32 (class Sample.Circle) owner=0x02000009
+  params 24
+  body maxstack=8 size=33 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldflda float64 Sample.Circle::radius
+  IL_0006: ldarg.1
+  IL_0007: brtrue.s IL_0014
+  IL_0009: ldc.r8 0x0000000000000000
+  IL_0012: br.s IL_001a
+  IL_0014: ldarg.1
+  IL_0015: ldfld float64 Sample.Circle::radius
+  IL_001a: call instance int32 [System.Runtime]System.Double::CompareTo(float64)
+  IL_001f: ret
+MethodDef[25] rva=0x2191 impl=0x0000 flags=0x01c4 name=OnChanged sig=instance void () owner=0x02000009
+  params -
+  body maxstack=8 size=24 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldfld class [System.Runtime]System.EventHandler Sample.Circle::Changed
+  IL_0006: dup
+  IL_0007: brtrue.s IL_000b
+  IL_0009: pop
+  IL_000a: ret
+  IL_000b: ldarg.0
+  IL_000c: ldsfld class [System.Runtime]System.EventArgs [System.Runtime]System.EventArgs::Empty
+  IL_0011: callvirt instance void [System.Runtime]System.EventHandler::Invoke(object, class [System.Runtime]System.EventArgs)
+  IL_0016: ret
+MethodDef[26] rva=0x21a9 impl=0x0000 flags=0x1891 name=.cctor sig=void () owner=0x02000009
+  params -
+  body maxstack=8 size=25 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.i4.s 17
+  IL_0002: newarr [System.Runtime]System.Byte
+  IL_0007: dup
+  IL_0008: ldtoken field valuetype <PrivateImplementationDetails>/__StaticArrayInitTypeSize=17 <PrivateImplementationDetails>::A9CE213E0C75B432A9E5C166E4F38E661EC95A3370CD111C72688ECB4B503205
+  IL_000d: call void [System.Runtime]System.Runtime.CompilerServices.RuntimeHelpers::InitializeArray(class [System.Runtime]System.Array, valuetype [System.Runtime]System.RuntimeFieldHandle)
+  IL_0012: stsfld uint8[] Sample.Circle::Table
+  IL_0017: ret
+MethodDef[27] rva=0x0 impl=0x0080 flags=0x2096 name=Ticks sig=uint32 () owner=0x0200000a
+  params -
+  import flags=0x0145 name=GetTickCount module=0x1a000001
+MethodDef[28] rva=0x0 impl=0x0080 flags=0x2096 name=MessageBoxW sig=int32 (native int, string, string, uint32) owner=0x0200000a
+  params 25-28
+  import flags=0x0104 name=MessageBoxW module=0x1a000002
+MethodDef[29] rva=0x0 impl=0x0080 flags=0x2096 name=Abs sig=int32 (int32) owner=0x0200000a
+  params 29-30
+  import flags=0x0204 name=abs module=0x1a000003
+MethodDef[30] rva=0x21c2 impl=0x0000 flags=0x0096 name=Switch sig=int32 (int32) owner=0x0200000a
+  params 31
+  body maxstack=8 size=46 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: switch (IL_001c, IL_001f, IL_0022, IL_0025, IL_0028)
+  IL_001a: br.s IL_002b
+  IL_001c: ldc.i4.s 10
+  IL_001e: ret
+  IL_001f: ldc.i4.s 20
+  IL_0021: ret
+  IL_0022: ldc.i4.s 30
+  IL_0024: ret
+  IL_0025: ldc.i4.s 45
+  IL_0027: ret
+  IL_0028: ldc.i4.s 99
+  IL_002a: ret
+  IL_002b: ldc.i4.m1
+  IL_002c: ret
+MethodDef[31] rva=0x21f0 impl=0x0000 flags=0x0096 name=Exceptions sig=string (int32) owner=0x0200000a
+  params 32
+  body maxstack=2 size=160 localsig=0x11000002 initlocals=True
+  .try IL_0000+0x11 handler IL_0031+0x9 filter IL_0011
+  .try IL_0000+0x11 handler IL_003a+0x9 catch [System.Runtime]System.Exception
+  .try IL_0000+0x45 handler IL_0045+0xb finally
+  .try IL_0000+0x52 handler IL_0052+0x3 catch [System.Runtime]System.Object
+  IL_0000: ldarg.0
+  IL_0001: ldc.i4.0
+  IL_0002: ble.s IL_000f
+  IL_0004: ldstr "x"
+  IL_0009: newobj instance void [System.Runtime]System.InvalidOperationException::.ctor(string)
+  IL_000e: throw
+  IL_000f: leave.s IL_0043
+  IL_0011: isinst [System.Runtime]System.InvalidOperationException
+  IL_0016: dup
+  IL_0017: brtrue.s IL_001d
+  IL_0019: pop
+  IL_001a: ldc.i4.0
+  IL_001b: br.s IL_002f
+  IL_001d: callvirt instance string [System.Runtime]System.Exception::get_Message()
+  IL_0022: ldstr "x"
+  IL_0027: call bool [System.Runtime]System.String::op_Equality(string, string)
+  IL_002c: ldc.i4.0
+  IL_002d: cgt.un
+  IL_002f: endfilter
+  IL_0031: pop
+  IL_0032: ldstr "filtered"
+  IL_0037: stloc.0
+  IL_0038: leave.s IL_005b
+  IL_003a: pop
+  IL_003b: ldstr "caught"
+  IL_0040: stloc.0
+  IL_0041: leave.s IL_005b
+  IL_0043: leave.s IL_0050
+  IL_0045: ldstr "finally"
+  IL_004a: call void [System.Console]System.Console::WriteLine(string)
+  IL_004f: endfinally
+  IL_0050: leave.s IL_0055
+  IL_0052: pop
+  IL_0053: leave.s IL_0055
+  IL_0055: ldstr "none"
+  IL_005a: ret
+  IL_005b: ldloc.0
+  IL_005c: ret
+MethodDef[32] rva=0x2290 impl=0x0000 flags=0x0096 name=Pointers sig=int32 (int32[]) owner=0x0200000a
+  params 33
+  body maxstack=3 size=44 localsig=0x11000003 initlocals=True
+  IL_0000: ldarg.0
+  IL_0001: dup
+  IL_0002: stloc.1
+  IL_0003: brfalse.s IL_000a
+  IL_0005: ldloc.1
+  IL_0006: ldlen
+  IL_0007: conv.i4
+  IL_0008: brtrue.s IL_000f
+  IL_000a: ldc.i4.0
+  IL_000b: conv.u
+  IL_000c: stloc.0
+  IL_000d: br.s IL_0018
+  IL_000f: ldloc.1
+  IL_0010: ldc.i4.0
+  IL_0011: ldelema [System.Runtime]System.Int32
+  IL_0016: conv.u
+  IL_0017: stloc.0
+  IL_0018: ldloc.0
+  IL_0019: ldind.i4
+  IL_001a: ldloc.0
+  IL_001b: ldc.i4.4
+  IL_001c: add
+  IL_001d: ldind.i4
+  IL_001e: add
+  IL_001f: ret
+MethodDef[33] rva=0x22bc impl=0x0000 flags=0x0096 name=RefReturn sig=int32& (int32[]) owner=0x0200000a
+  params 34
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldc.i4.0
+  IL_0002: ldelema [System.Runtime]System.Int32
+  IL_0007: ret
+MethodDef[34] rva=0x22c5 impl=0x0000 flags=0x0096 name=Modes sig=int32 (int32&, int32&, int32&) owner=0x0200000a
+  params 35-37
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.1
+  IL_0001: ldarg.0
+  IL_0002: ldind.i4
+  IL_0003: stind.i4
+  IL_0004: ldarg.2
+  IL_0005: ldind.i4
+  IL_0006: ret
+MethodDef[35] rva=0x22d0 impl=0x0000 flags=0x0096 name=VarArgs sig=vararg int32 (int32) owner=0x0200000a
+  params 38
+  body maxstack=2 size=31 localsig=0x11000004 initlocals=True
+  IL_0000: ldloca.s 0
+  IL_0002: arglist
+  IL_0004: call instance void [System.Runtime]System.ArgIterator::.ctor(valuetype [System.Runtime]System.RuntimeArgumentHandle)
+  IL_0009: ldarg.0
+  IL_000a: ldloca.s 0
+  IL_000c: call instance int32 [System.Runtime]System.ArgIterator::GetRemainingCount()
+  IL_0011: add
+  IL_0012: ret
+MethodDef[36] rva=0x22ef impl=0x0000 flags=0x0096 name=CallVarArgs sig=int32 () owner=0x0200000a
+  params -
+  body maxstack=8 size=23 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.i4.0
+  IL_0001: ldc.i4.1
+  IL_0002: ldstr "two"
+  IL_0007: ldc.r8 0x4008000000000000
+  IL_0010: call vararg int32 Sample.Code::VarArgs(int32, ..., int32, string, float64)
+  IL_0015: ret
+MethodDef[37] rva=0x2308 impl=0x0000 flags=0x0096 name=TypedRef sig=int32 () owner=0x0200000a
+  params -
+  body maxstack=1 size=28 localsig=0x11000005 initlocals=True
+  IL_0000: ldc.i4.5
+  IL_0001: stloc.0
+  IL_0002: ldloca.s 0
+  IL_0004: mkrefany [System.Runtime]System.Int32
+  IL_0009: refanyval [System.Runtime]System.Int32
+  IL_000e: ldind.i4
+  IL_000f: ret
+MethodDef[38] rva=0x2324 impl=0x0000 flags=0x0096 name=Generic sig=generic<2> !!0 (!!0, !!1) owner=0x0200000a
+  params 39-40
+  GenericParam[6] index=0 flags=0x0014 name=T owner=0x06000026
+  GenericParam[7] index=1 flags=0x0000 name=U owner=0x06000026
+    GenericParamConstraint[6] class [System.Runtime]System.Collections.Generic.IEnumerable`1<!!0>
+  body maxstack=8 size=17 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: dup
+  IL_0002: box !!0
+  IL_0007: brtrue.s IL_000f
+  IL_0009: pop
+  IL_000a: call generic<1> !!0 [System.Runtime]System.Activator::CreateInstance()<!!0>
+  IL_000f: ret
+MethodDef[39] rva=0x2335 impl=0x0000 flags=0x0096 name=UseGeneric sig=object () owner=0x0200000a
+  params -
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldnull
+  IL_0001: ldnull
+  IL_0002: call generic<2> !!0 Sample.Code::Generic(!!0, !!1)<object, class [System.Collections]System.Collections.Generic.List`1<object>>
+  IL_0007: ret
+MethodDef[40] rva=0x233e impl=0x0000 flags=0x0096 name=Matrix sig=int32[0...,0...] () owner=0x0200000a
+  params -
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.i4.2
+  IL_0001: ldc.i4.3
+  IL_0002: newobj instance void int32[0...,0...]::.ctor(int32, int32)
+  IL_0007: ret
+MethodDef[41] rva=0x2347 impl=0x0000 flags=0x0096 name=Jagged sig=int32[][] () owner=0x0200000a
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.i4.2
+  IL_0001: newarr int32[]
+  IL_0006: ret
+MethodDef[42] rva=0x234f impl=0x0000 flags=0x0096 name=Defaults sig=int64 (int64, string, valuetype Sample.Color, float64, object) owner=0x0200000a
+  params 41-45
+  body maxstack=8 size=3 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ret
+MethodDef[43] rva=0x2352 impl=0x0000 flags=0x0096 name=Strings sig=string () owner=0x0200000a
+  params -
+  body maxstack=8 size=7 localsig=0x00000000 initlocals=False
+  IL_0000: ldstr "hello\tworld\u2603\0end \"quoted\" \\ \r\n\u00ff"
+  IL_0005: ret
+MethodDef[44] rva=0x2359 impl=0x0000 flags=0x0096 name=Floats sig=float32 (float32) owner=0x0200000a
+  params 46
+  body maxstack=8 size=25 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldc.r4 0x40200000
+  IL_0006: mul
+  IL_0007: ldc.r8 0x4022000000000000
+  IL_0010: call float64 [System.Runtime]System.Math::Sqrt(float64)
+  IL_0015: conv.r4
+  IL_0016: add
+  IL_0017: ret
+MethodDef[45] rva=0x2372 impl=0x0000 flags=0x0096 name=Big sig=int64 () owner=0x0200000a
+  params -
+  body maxstack=8 size=11 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.i8 81985529216486895
+  IL_0009: ret
+MethodDef[46] rva=0x237d impl=0x0000 flags=0x0096 name=Iterator sig=class [System.Runtime]System.Collections.Generic.IEnumerable`1<int32> () owner=0x0200000a
+  params -
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.i4.s -2
+  IL_0002: newobj instance void Sample.Code/<Iterator>d__19::.ctor(int32)
+  IL_0007: ret
+MethodDef[47] rva=0x2388 impl=0x0000 flags=0x0096 name=Async sig=class [System.Runtime]System.Threading.Tasks.Task`1<int32> () owner=0x0200000a
+  params -
+  body maxstack=2 size=59 localsig=0x11000006 initlocals=True
+  IL_0000: ldloca.s 0
+  IL_0002: call valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<!0> valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::Create()
+  IL_0007: stfld valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32> Sample.Code/<Async>d__20::<>t__builder
+  IL_000c: ldloca.s 0
+  IL_000e: ldc.i4.m1
+  IL_000f: stfld int32 Sample.Code/<Async>d__20::<>1__state
+  IL_0014: ldloca.s 0
+  IL_0016: ldflda valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32> Sample.Code/<Async>d__20::<>t__builder
+  IL_001b: ldloca.s 0
+  IL_001d: call instance generic<1> void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::Start(!!0&)<valuetype Sample.Code/<Async>d__20>
+  IL_0022: ldloca.s 0
+  IL_0024: ldflda valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32> Sample.Code/<Async>d__20::<>t__builder
+  IL_0029: call instance class [System.Runtime]System.Threading.Tasks.Task`1<!0> valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::get_Task()
+  IL_002e: ret
+MethodDef[48] rva=0x23c3 impl=0x0000 flags=0x0096 name=Lambda sig=class [System.Runtime]System.Func`2<int32, int32> (int32) owner=0x0200000a
+  params 47
+  body maxstack=8 size=25 localsig=0x00000000 initlocals=False
+  IL_0000: newobj instance void Sample.Code/<>c__DisplayClass21_0::.ctor()
+  IL_0005: dup
+  IL_0006: ldarg.0
+  IL_0007: stfld int32 Sample.Code/<>c__DisplayClass21_0::k
+  IL_000c: ldftn instance int32 Sample.Code/<>c__DisplayClass21_0::<Lambda>b__0(int32)
+  IL_0012: newobj instance void class [System.Runtime]System.Func`2<int32, int32>::.ctor(object, native int)
+  IL_0017: ret
+MethodDef[49] rva=0x23dc impl=0x0000 flags=0x0096 name=StackAlloc sig=int32 () owner=0x0200000a
+  params -
+  body maxstack=2 size=31 localsig=0x11000007 initlocals=True
+  IL_0000: ldc.i4.s 16
+  IL_0002: conv.u
+  IL_0003: localloc
+  IL_0005: stloc.0
+  IL_0006: ldloc.0
+  IL_0007: ldc.i4.1
+  IL_0008: stind.i4
+  IL_0009: sizeof Sample.Union
+  IL_000f: ldloc.0
+  IL_0010: ldind.i4
+  IL_0011: add
+  IL_0012: ret
+MethodDef[50] rva=0x23fb impl=0x0000 flags=0x0096 name=Checked sig=int32 (int32, uint32) owner=0x0200000a
+  params 48-49
+  body maxstack=8 size=6 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: conv.ovf.i4.un
+  IL_0003: mul.ovf
+  IL_0004: ret
+MethodDef[51] rva=0x2404 impl=0x0000 flags=0x0096 name=CallFnPtr sig=int32 (method int32 *(int32)) owner=0x0200000a
+  params 50
+  body maxstack=2 size=22 localsig=0x11000008 initlocals=True
+  IL_0000: ldarg.0
+  IL_0001: stloc.0
+  IL_0002: ldc.i4.3
+  IL_0003: ldloc.0
+  IL_0004: calli int32 (int32)
+  IL_0009: ret
+MethodDef[52] rva=0x241a impl=0x0000 flags=0x0096 name=FnPtr sig=method int32 *(int32) () owner=0x0200000a
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldftn int32 Sample.Code::Square(int32)
+  IL_0006: ret
+MethodDef[53] rva=0x2422 impl=0x0000 flags=0x0091 name=Square sig=int32 (int32) owner=0x0200000a
+  params 51
+  body maxstack=8 size=5 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.0
+  IL_0002: mul
+  IL_0003: ret
+MethodDef[54] rva=0x2427 impl=0x0000 flags=0x0096 name=NativeInts sig=native int (native int, native uint) owner=0x0200000a
+  params 52-53
+  body maxstack=8 size=5 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: add
+  IL_0003: ret
+MethodDef[55] rva=0x242c impl=0x0000 flags=0x0096 name=Tuple sig=valuetype [System.Runtime]System.ValueTuple`2<int32, string> () owner=0x0200000a
+  params -
+  body maxstack=8 size=13 localsig=0x00000000 initlocals=False
+  IL_0000: ldc.i4.1
+  IL_0001: ldstr "a"
+  IL_0006: newobj instance void valuetype [System.Runtime]System.ValueTuple`2<int32, string>::.ctor(!0, !1)
+  IL_000b: ret
+MethodDef[56] rva=0x243c impl=0x0000 flags=0x0096 name=Locals sig=int32 (int32) owner=0x0200000a
+  params 54
+  body maxstack=4 size=69 localsig=0x1100000a initlocals=True
+  IL_0000: ldarg.0
+  IL_0001: stloc.0
+  IL_0002: ldc.i4.2
+  IL_0003: stloc.1
+  IL_0004: ldc.i4.3
+  IL_0005: stloc.2
+  IL_0006: ldc.i4.4
+  IL_0007: stloc.3
+  IL_0008: ldc.i4.5
+  IL_0009: stloc.s 4
+  IL_000b: ldarga.s 0
+  IL_000d: call instance string [System.Runtime]System.Int32::ToString()
+  IL_0012: stloc.s 5
+  IL_0014: ldc.i4.0
+  IL_0015: stloc.s 6
+  IL_0017: br.s IL_0032
+  IL_0019: ldloc.0
+  IL_001a: ldloc.1
+  IL_001b: ldloc.2
+  IL_001c: mul
+  IL_001d: ldloc.3
+  IL_001e: ldloc.s 4
+  IL_0020: div
+  IL_0021: sub
+  IL_0022: ldloc.s 5
+  IL_0024: callvirt instance int32 [System.Runtime]System.String::get_Length()
+  IL_0029: add
+  IL_002a: add
+  IL_002b: stloc.0
+  IL_002c: ldloc.s 6
+  IL_002e: ldc.i4.1
+  IL_002f: add
+  IL_0030: stloc.s 6
+  IL_0032: ldloc.s 6
+  IL_0034: ldarg.0
+  IL_0035: blt.s IL_0019
+  IL_0037: ldloc.0
+  IL_0038: ret
+MethodDef[57] rva=0x2481 impl=0x0000 flags=0x0096 name=Volatile sig=void (int32&) owner=0x0200000a
+  params 55
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldc.i4.1
+  IL_0002: call void [System.Threading]System.Threading.Volatile::Write(int32&, int32)
+  IL_0007: ret
+MethodDef[58] rva=0x248a impl=0x0000 flags=0x0096 name=Unbox sig=int32 (object) owner=0x0200000a
+  params 56
+  body maxstack=8 size=18 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: unbox.any [System.Runtime]System.Int32
+  IL_0006: ldarg.0
+  IL_0007: isinst [System.Runtime]System.String
+  IL_000c: ldnull
+  IL_000d: cgt.un
+  IL_000f: add
+  IL_0010: ret
+MethodDef[59] rva=0x249c impl=0x0000 flags=0x0096 name=Constrained sig=generic<1> !!0 (!!0) owner=0x0200000a
+  params 57
+  GenericParam[8] index=0 flags=0x0000 name=T owner=0x0600003b
+    GenericParamConstraint[7] class [System.Runtime]System.IComparable`1<!!0>
+  body maxstack=2 size=41 localsig=0x1100000b initlocals=True
+  IL_0000: ldarga.s 0
+  IL_0002: ldarg.0
+  IL_0003: constrained. !!0
+  IL_0009: callvirt instance int32 class [System.Runtime]System.IComparable`1<!!0>::CompareTo(!0)
+  IL_000e: ldc.i4.0
+  IL_000f: bgt.s IL_001b
+  IL_0011: ldloca.s 0
+  IL_0013: initobj !!0
+  IL_0019: ldloc.0
+  IL_001a: ret
+  IL_001b: ldarg.0
+  IL_001c: ret
+MethodDef[60] rva=0x24c5 impl=0x0000 flags=0x0096 name=Token sig=class [System.Runtime]System.Type () owner=0x0200000a
+  params -
+  body maxstack=8 size=12 localsig=0x00000000 initlocals=False
+  IL_0000: ldtoken Sample.Circle
+  IL_0005: call class [System.Runtime]System.Type [System.Runtime]System.Type::GetTypeFromHandle(valuetype [System.Runtime]System.RuntimeTypeHandle)
+  IL_000a: ret
+MethodDef[61] rva=0x24d4 impl=0x0000 flags=0x0096 name=MethodToken sig=valuetype [System.Runtime]System.RuntimeMethodHandle () owner=0x0200000a
+  params -
+  body maxstack=1 size=22 localsig=0x1100000c initlocals=True
+  IL_0000: ldloca.s 0
+  IL_0002: initobj [System.Runtime]System.RuntimeMethodHandle
+  IL_0008: ldloc.0
+  IL_0009: ret
+MethodDef[62] rva=0x24ea impl=0x0000 flags=0x0096 name=Blocks sig=void (uint8*, uint8*) owner=0x0200000a
+  params 58-59
+  body maxstack=8 size=18 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: ldc.i4.8
+  IL_0003: call void [System.Runtime]System.Runtime.CompilerServices.Unsafe::CopyBlock(void*, void*, uint32)
+  IL_0008: ldarg.0
+  IL_0009: ldc.i4.0
+  IL_000a: ldc.i4.8
+  IL_000b: call void [System.Runtime]System.Runtime.CompilerServices.Unsafe::InitBlock(void*, uint8, uint32)
+  IL_0010: ret
+MethodDef[63] rva=0x24fc impl=0x0000 flags=0x0096 name=DeepGeneric sig=class Sample.Circle/Nested`1/Deeper`1<int32, object> () owner=0x0200000a
+  params -
+  body maxstack=8 size=3 localsig=0x00000000 initlocals=False
+  IL_0000: ldnull
+  IL_0001: ret
+MethodDef[64] rva=0x0 impl=0x0000 flags=0x05c6 name=Get sig=instance !0 () owner=0x0200000b
+  params -
+MethodDef[65] rva=0x24ff impl=0x0000 flags=0x01c6 name=Set sig=instance void (!0) owner=0x0200000b
+  params 60
+  body maxstack=8 size=2 localsig=0x00000000 initlocals=False
+  IL_0000: ret
+MethodDef[66] rva=0x2501 impl=0x0000 flags=0x1884 name=.ctor sig=instance void () owner=0x0200000b
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ret
+MethodDef[67] rva=0x2509 impl=0x0000 flags=0x00c6 name=Get sig=instance string () owner=0x0200000c
+  params -
+  body maxstack=8 size=7 localsig=0x00000000 initlocals=False
+  IL_0000: ldstr "d"
+  IL_0005: ret
+MethodDef[68] rva=0x2510 impl=0x0000 flags=0x00c6 name=Set sig=instance void (string) owner=0x0200000c
+  params 61
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: call instance void class Sample.Base`1<string>::Set(!0)
+  IL_0007: ret
+MethodDef[69] rva=0x2519 impl=0x0000 flags=0x0086 name=UseCount sig=instance int32 () owner=0x0200000c
+  params -
+  body maxstack=8 size=7 localsig=0x00000000 initlocals=False
+  IL_0000: ldsfld int32 class Sample.Base`1<string>::Count
+  IL_0005: ret
+MethodDef[70] rva=0x2520 impl=0x0000 flags=0x1886 name=.ctor sig=instance void () owner=0x0200000c
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void class Sample.Base`1<string>::.ctor()
+  IL_0006: ret
+MethodDef[71] rva=0x0 impl=0x0003 flags=0x1886 name=.ctor sig=instance void (object, native int) owner=0x0200000d
+  params 62-63
+MethodDef[72] rva=0x0 impl=0x0003 flags=0x01c6 name=Invoke sig=instance int32 (int32) owner=0x0200000d
+  params 64
+MethodDef[73] rva=0x0 impl=0x0003 flags=0x01c6 name=BeginInvoke sig=instance class [System.Runtime]System.IAsyncResult (int32, class [System.Runtime]System.AsyncCallback, object) owner=0x0200000d
+  params 65-67
+MethodDef[74] rva=0x0 impl=0x0003 flags=0x01c6 name=EndInvoke sig=instance int32 (class [System.Runtime]System.IAsyncResult) owner=0x0200000d
+  params 68
+MethodDef[75] rva=0x2528 impl=0x0000 flags=0x1886 name=.ctor sig=instance void (int32, int32) owner=0x0200000e
+  params 69-70
+  body maxstack=8 size=22 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: stfld int32 Sample.Point::<X>k__BackingField
+  IL_0007: ldarg.0
+  IL_0008: ldarg.2
+  IL_0009: stfld int32 Sample.Point::<Y>k__BackingField
+  IL_000e: ldarg.0
+  IL_000f: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0014: ret
+MethodDef[76] rva=0x253e impl=0x0000 flags=0x09c4 name=get_EqualityContract sig=instance class [System.Runtime]System.Type () owner=0x0200000e
+  params -
+  body maxstack=8 size=12 localsig=0x00000000 initlocals=False
+  IL_0000: ldtoken Sample.Point
+  IL_0005: call class [System.Runtime]System.Type [System.Runtime]System.Type::GetTypeFromHandle(valuetype [System.Runtime]System.RuntimeTypeHandle)
+  IL_000a: ret
+MethodDef[77] rva=0x254a impl=0x0000 flags=0x0886 name=get_X sig=instance int32 () owner=0x0200000e
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldfld int32 Sample.Point::<X>k__BackingField
+  IL_0006: ret
+MethodDef[78] rva=0x2552 impl=0x0000 flags=0x0886 name=set_X sig=instance void modreq([System.Runtime]System.Runtime.CompilerServices.IsExternalInit) (int32) owner=0x0200000e
+  params 71
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: stfld int32 Sample.Point::<X>k__BackingField
+  IL_0007: ret
+MethodDef[79] rva=0x255b impl=0x0000 flags=0x0886 name=get_Y sig=instance int32 () owner=0x0200000e
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldfld int32 Sample.Point::<Y>k__BackingField
+  IL_0006: ret
+MethodDef[80] rva=0x2563 impl=0x0000 flags=0x0886 name=set_Y sig=instance void modreq([System.Runtime]System.Runtime.CompilerServices.IsExternalInit) (int32) owner=0x0200000e
+  params 72
+  body maxstack=8 size=9 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: stfld int32 Sample.Point::<Y>k__BackingField
+  IL_0007: ret
+MethodDef[81] rva=0x256c impl=0x0000 flags=0x00c6 name=ToString sig=instance string () owner=0x0200000e
+  params -
+  body maxstack=2 size=76 localsig=0x1100000d initlocals=True
+  IL_0000: newobj instance void [System.Runtime]System.Text.StringBuilder::.ctor()
+  IL_0005: stloc.0
+  IL_0006: ldloc.0
+  IL_0007: ldstr "Point"
+  IL_000c: callvirt instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(string)
+  IL_0011: pop
+  IL_0012: ldloc.0
+  IL_0013: ldstr " { "
+  IL_0018: callvirt instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(string)
+  IL_001d: pop
+  IL_001e: ldarg.0
+  IL_001f: ldloc.0
+  IL_0020: callvirt instance bool Sample.Point::PrintMembers(class [System.Runtime]System.Text.StringBuilder)
+  IL_0025: brfalse.s IL_0030
+  IL_0027: ldloc.0
+  IL_0028: ldc.i4.s 32
+  IL_002a: callvirt instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(char)
+  IL_002f: pop
+  IL_0030: ldloc.0
+  IL_0031: ldc.i4.s 125
+  IL_0033: callvirt instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(char)
+  IL_0038: pop
+  IL_0039: ldloc.0
+  IL_003a: callvirt instance string [System.Runtime]System.Object::ToString()
+  IL_003f: ret
+MethodDef[82] rva=0x25b8 impl=0x0000 flags=0x01c4 name=PrintMembers sig=instance bool (class [System.Runtime]System.Text.StringBuilder) owner=0x0200000e
+  params 73
+  body maxstack=2 size=97 localsig=0x11000005 initlocals=True
+  IL_0000: call void [System.Runtime]System.Runtime.CompilerServices.RuntimeHelpers::EnsureSufficientExecutionStack()
+  IL_0005: ldarg.1
+  IL_0006: ldstr "X = "
+  IL_000b: callvirt instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(string)
+  IL_0010: pop
+  IL_0011: ldarg.1
+  IL_0012: ldarg.0
+  IL_0013: call instance int32 Sample.Point::get_X()
+  IL_0018: stloc.0
+  IL_0019: ldloca.s 0
+  IL_001b: constrained. [System.Runtime]System.Int32
+  IL_0021: callvirt instance string [System.Runtime]System.Object::ToString()
+  IL_0026: callvirt instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(string)
+  IL_002b: pop
+  IL_002c: ldarg.1
+  IL_002d: ldstr ", Y = "
+  IL_0032: callvirt instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(string)
+  IL_0037: pop
+  IL_0038: ldarg.1
+  IL_0039: ldarg.0
+  IL_003a: call instance int32 Sample.Point::get_Y()
+  IL_003f: stloc.0
+  IL_0040: ldloca.s 0
+  IL_0042: constrained. [System.Runtime]System.Int32
+  IL_0048: callvirt instance string [System.Runtime]System.Object::ToString()
+  IL_004d: callvirt instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(string)
+  IL_0052: pop
+  IL_0053: ldc.i4.1
+  IL_0054: ret
+MethodDef[83] rva=0x2619 impl=0x0000 flags=0x0896 name=op_Inequality sig=bool (class Sample.Point, class Sample.Point) owner=0x0200000e
+  params 74-75
+  body maxstack=8 size=12 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: call bool Sample.Point::op_Equality(class Sample.Point, class Sample.Point)
+  IL_0007: ldc.i4.0
+  IL_0008: ceq
+  IL_000a: ret
+MethodDef[84] rva=0x2625 impl=0x0000 flags=0x0896 name=op_Equality sig=bool (class Sample.Point, class Sample.Point) owner=0x0200000e
+  params 76-77
+  body maxstack=8 size=20 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: beq.s IL_0011
+  IL_0004: ldarg.0
+  IL_0005: brfalse.s IL_000f
+  IL_0007: ldarg.0
+  IL_0008: ldarg.1
+  IL_0009: callvirt instance bool Sample.Point::Equals(class Sample.Point)
+  IL_000e: ret
+  IL_000f: ldc.i4.0
+  IL_0010: ret
+  IL_0011: ldc.i4.1
+  IL_0012: ret
+MethodDef[85] rva=0x2639 impl=0x0000 flags=0x00c6 name=GetHashCode sig=instance int32 () owner=0x0200000e
+  params -
+  body maxstack=8 size=64 localsig=0x00000000 initlocals=False
+  IL_0000: call class [System.Collections]System.Collections.Generic.EqualityComparer`1<!0> class [System.Collections]System.Collections.Generic.EqualityComparer`1<class [System.Runtime]System.Type>::get_Default()
+  IL_0005: ldarg.0
+  IL_0006: callvirt instance class [System.Runtime]System.Type Sample.Point::get_EqualityContract()
+  IL_000b: callvirt instance int32 class [System.Collections]System.Collections.Generic.EqualityComparer`1<class [System.Runtime]System.Type>::GetHashCode(!0)
+  IL_0010: ldc.i4 -1521134295
+  IL_0015: mul
+  IL_0016: call class [System.Collections]System.Collections.Generic.EqualityComparer`1<!0> class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::get_Default()
+  IL_001b: ldarg.0
+  IL_001c: ldfld int32 Sample.Point::<X>k__BackingField
+  IL_0021: callvirt instance int32 class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::GetHashCode(!0)
+  IL_0026: add
+  IL_0027: ldc.i4 -1521134295
+  IL_002c: mul
+  IL_002d: call class [System.Collections]System.Collections.Generic.EqualityComparer`1<!0> class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::get_Default()
+  IL_0032: ldarg.0
+  IL_0033: ldfld int32 Sample.Point::<Y>k__BackingField
+  IL_0038: callvirt instance int32 class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::GetHashCode(!0)
+  IL_003d: add
+  IL_003e: ret
+MethodDef[86] rva=0x2679 impl=0x0000 flags=0x00c6 name=Equals sig=instance bool (object) owner=0x0200000e
+  params 78
+  body maxstack=8 size=14 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: isinst Sample.Point
+  IL_0007: callvirt instance bool Sample.Point::Equals(class Sample.Point)
+  IL_000c: ret
+MethodDef[87] rva=0x2688 impl=0x0000 flags=0x01c6 name=Equals sig=instance bool (class Sample.Point) owner=0x0200000e
+  params 79
+  body maxstack=3 size=89 localsig=0x00000000 initlocals=True
+  IL_0000: ldarg.0
+  IL_0001: ldarg.1
+  IL_0002: beq.s IL_004b
+  IL_0004: ldarg.1
+  IL_0005: brfalse.s IL_0049
+  IL_0007: ldarg.0
+  IL_0008: callvirt instance class [System.Runtime]System.Type Sample.Point::get_EqualityContract()
+  IL_000d: ldarg.1
+  IL_000e: callvirt instance class [System.Runtime]System.Type Sample.Point::get_EqualityContract()
+  IL_0013: call bool [System.Runtime]System.Type::op_Equality(class [System.Runtime]System.Type, class [System.Runtime]System.Type)
+  IL_0018: brfalse.s IL_0049
+  IL_001a: call class [System.Collections]System.Collections.Generic.EqualityComparer`1<!0> class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::get_Default()
+  IL_001f: ldarg.0
+  IL_0020: ldfld int32 Sample.Point::<X>k__BackingField
+  IL_0025: ldarg.1
+  IL_0026: ldfld int32 Sample.Point::<X>k__BackingField
+  IL_002b: callvirt instance bool class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::Equals(!0, !0)
+  IL_0030: brfalse.s IL_0049
+  IL_0032: call class [System.Collections]System.Collections.Generic.EqualityComparer`1<!0> class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::get_Default()
+  IL_0037: ldarg.0
+  IL_0038: ldfld int32 Sample.Point::<Y>k__BackingField
+  IL_003d: ldarg.1
+  IL_003e: ldfld int32 Sample.Point::<Y>k__BackingField
+  IL_0043: callvirt instance bool class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::Equals(!0, !0)
+  IL_0048: ret
+  IL_0049: ldc.i4.0
+  IL_004a: ret
+  IL_004b: ldc.i4.1
+  IL_004c: ret
+MethodDef[88] rva=0x26e1 impl=0x0000 flags=0x01c6 name=<Clone>$ sig=instance class Sample.Point () owner=0x0200000e
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: newobj instance void Sample.Point::.ctor(class Sample.Point)
+  IL_0006: ret
+MethodDef[89] rva=0x26e9 impl=0x0000 flags=0x1884 name=.ctor sig=instance void (class Sample.Point) owner=0x0200000e
+  params 80
+  body maxstack=8 size=32 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ldarg.0
+  IL_0007: ldarg.1
+  IL_0008: ldfld int32 Sample.Point::<X>k__BackingField
+  IL_000d: stfld int32 Sample.Point::<X>k__BackingField
+  IL_0012: ldarg.0
+  IL_0013: ldarg.1
+  IL_0014: ldfld int32 Sample.Point::<Y>k__BackingField
+  IL_0019: stfld int32 Sample.Point::<Y>k__BackingField
+  IL_001e: ret
+MethodDef[90] rva=0x2709 impl=0x0000 flags=0x0086 name=Deconstruct sig=instance void (int32&, int32&) owner=0x0200000e
+  params 81-82
+  body maxstack=8 size=18 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.1
+  IL_0001: ldarg.0
+  IL_0002: call instance int32 Sample.Point::get_X()
+  IL_0007: stind.i4
+  IL_0008: ldarg.2
+  IL_0009: ldarg.0
+  IL_000a: call instance int32 Sample.Point::get_Y()
+  IL_000f: stind.i4
+  IL_0010: ret
+MethodDef[91] rva=0x271c impl=0x0000 flags=0x0096 name=Make sig=valuetype Sample.Holder`1<!0> (!0) owner=0x0200000f
+  params 83
+  body maxstack=2 size=30 localsig=0x1100000e initlocals=True
+  IL_0000: ldloca.s 0
+  IL_0002: initobj valuetype Sample.Holder`1<!0>
+  IL_0008: ldloca.s 0
+  IL_000a: ldarg.0
+  IL_000b: stfld !0 valuetype Sample.Holder`1<!0>::Item
+  IL_0010: ldloc.0
+  IL_0011: ret
+MethodDef[92] rva=0x273a impl=0x0000 flags=0x1886 name=.ctor sig=instance void () owner=0x02000012
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ret
+MethodDef[93] rva=0x2742 impl=0x0000 flags=0x1886 name=.ctor sig=instance void () owner=0x02000013
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ret
+MethodDef[94] rva=0x274a impl=0x0000 flags=0x0083 name=<Lambda>b__0 sig=instance int32 (int32) owner=0x02000013
+  params 84
+  body maxstack=8 size=10 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.1
+  IL_0001: ldarg.0
+  IL_0002: ldfld int32 Sample.Code/<>c__DisplayClass21_0::k
+  IL_0007: add
+  IL_0008: ret
+MethodDef[95] rva=0x2754 impl=0x0000 flags=0x01e1 name=MoveNext sig=instance void () owner=0x02000014
+  params -
+  body maxstack=3 size=180 localsig=0x1100000f initlocals=True
+  .try IL_0007+0x61 handler IL_0068+0x19 catch [System.Runtime]System.Exception
+  IL_0000: ldarg.0
+  IL_0001: ldfld int32 Sample.Code/<Async>d__20::<>1__state
+  IL_0006: stloc.0
+  IL_0007: ldloc.0
+  IL_0008: brfalse.s IL_0041
+  IL_000a: call valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable [System.Runtime]System.Threading.Tasks.Task::Yield()
+  IL_000f: stloc.3
+  IL_0010: ldloca.s 3
+  IL_0012: call instance valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable::GetAwaiter()
+  IL_0017: stloc.2
+  IL_0018: ldloca.s 2
+  IL_001a: call instance bool [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter::get_IsCompleted()
+  IL_001f: brtrue.s IL_005d
+  IL_0021: ldarg.0
+  IL_0022: ldc.i4.0
+  IL_0023: dup
+  IL_0024: stloc.0
+  IL_0025: stfld int32 Sample.Code/<Async>d__20::<>1__state
+  IL_002a: ldarg.0
+  IL_002b: ldloc.2
+  IL_002c: stfld valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter Sample.Code/<Async>d__20::<>u__1
+  IL_0031: ldarg.0
+  IL_0032: ldflda valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32> Sample.Code/<Async>d__20::<>t__builder
+  IL_0037: ldloca.s 2
+  IL_0039: ldarg.0
+  IL_003a: call instance generic<2> void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::AwaitUnsafeOnCompleted(!!0&, !!1&)<valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter, valuetype Sample.Code/<Async>d__20>
+  IL_003f: leave.s IL_0095
+  IL_0041: ldarg.0
+  IL_0042: ldfld valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter Sample.Code/<Async>d__20::<>u__1
+  IL_0047: stloc.2
+  IL_0048: ldarg.0
+  IL_0049: ldflda valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter Sample.Code/<Async>d__20::<>u__1
+  IL_004e: initobj [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter
+  IL_0054: ldarg.0
+  IL_0055: ldc.i4.m1
+  IL_0056: dup
+  IL_0057: stloc.0
+  IL_0058: stfld int32 Sample.Code/<Async>d__20::<>1__state
+  IL_005d: ldloca.s 2
+  IL_005f: call instance void [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter::GetResult()
+  IL_0064: ldc.i4.1
+  IL_0065: stloc.1
+  IL_0066: leave.s IL_0081
+  IL_0068: stloc.s 4
+  IL_006a: ldarg.0
+  IL_006b: ldc.i4.s -2
+  IL_006d: stfld int32 Sample.Code/<Async>d__20::<>1__state
+  IL_0072: ldarg.0
+  IL_0073: ldflda valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32> Sample.Code/<Async>d__20::<>t__builder
+  IL_0078: ldloc.s 4
+  IL_007a: call instance void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::SetException(class [System.Runtime]System.Exception)
+  IL_007f: leave.s IL_0095
+  IL_0081: ldarg.0
+  IL_0082: ldc.i4.s -2
+  IL_0084: stfld int32 Sample.Code/<Async>d__20::<>1__state
+  IL_0089: ldarg.0
+  IL_008a: ldflda valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32> Sample.Code/<Async>d__20::<>t__builder
+  IL_008f: ldloc.1
+  IL_0090: call instance void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::SetResult(!0)
+  IL_0095: ret
+MethodDef[96] rva=0x2808 impl=0x0000 flags=0x01e1 name=SetStateMachine sig=instance void (class [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine) owner=0x02000014
+  params 85
+  body maxstack=8 size=14 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldflda valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32> Sample.Code/<Async>d__20::<>t__builder
+  IL_0006: ldarg.1
+  IL_0007: call instance void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::SetStateMachine(class [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine)
+  IL_000c: ret
+MethodDef[97] rva=0x2816 impl=0x0000 flags=0x1886 name=.ctor sig=instance void (int32) owner=0x02000015
+  params 86
+  body maxstack=8 size=26 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ldarg.0
+  IL_0007: ldarg.1
+  IL_0008: stfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_000d: ldarg.0
+  IL_000e: call int32 [System.Runtime]System.Environment::get_CurrentManagedThreadId()
+  IL_0013: stfld int32 Sample.Code/<Iterator>d__19::<>l__initialThreadId
+  IL_0018: ret
+MethodDef[98] rva=0x2830 impl=0x0000 flags=0x01e1 name=System.IDisposable.Dispose sig=instance void () owner=0x02000015
+  params -
+  body maxstack=8 size=10 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldc.i4.s -2
+  IL_0003: stfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_0008: ret
+MethodDef[99] rva=0x283c impl=0x0000 flags=0x01e1 name=MoveNext sig=instance bool () owner=0x02000015
+  params -
+  body maxstack=2 size=94 localsig=0x11000005 initlocals=True
+  IL_0000: ldarg.0
+  IL_0001: ldfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_0006: stloc.0
+  IL_0007: ldloc.0
+  IL_0008: switch (IL_001b, IL_0032, IL_0049)
+  IL_0019: ldc.i4.0
+  IL_001a: ret
+  IL_001b: ldarg.0
+  IL_001c: ldc.i4.m1
+  IL_001d: stfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_0022: ldarg.0
+  IL_0023: ldc.i4.1
+  IL_0024: stfld int32 Sample.Code/<Iterator>d__19::<>2__current
+  IL_0029: ldarg.0
+  IL_002a: ldc.i4.1
+  IL_002b: stfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_0030: ldc.i4.1
+  IL_0031: ret
+  IL_0032: ldarg.0
+  IL_0033: ldc.i4.m1
+  IL_0034: stfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_0039: ldarg.0
+  IL_003a: ldc.i4.2
+  IL_003b: stfld int32 Sample.Code/<Iterator>d__19::<>2__current
+  IL_0040: ldarg.0
+  IL_0041: ldc.i4.2
+  IL_0042: stfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_0047: ldc.i4.1
+  IL_0048: ret
+  IL_0049: ldarg.0
+  IL_004a: ldc.i4.m1
+  IL_004b: stfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_0050: ldc.i4.0
+  IL_0051: ret
+MethodDef[100] rva=0x289a impl=0x0000 flags=0x09e1 name=System.Collections.Generic.IEnumerator<System.Int32>.get_Current sig=instance int32 () owner=0x02000015
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldfld int32 Sample.Code/<Iterator>d__19::<>2__current
+  IL_0006: ret
+MethodDef[101] rva=0x28a2 impl=0x0000 flags=0x01e1 name=System.Collections.IEnumerator.Reset sig=instance void () owner=0x02000015
+  params -
+  body maxstack=8 size=7 localsig=0x00000000 initlocals=False
+  IL_0000: newobj instance void [System.Runtime]System.NotSupportedException::.ctor()
+  IL_0005: throw
+MethodDef[102] rva=0x28a9 impl=0x0000 flags=0x09e1 name=System.Collections.IEnumerator.get_Current sig=instance object () owner=0x02000015
+  params -
+  body maxstack=8 size=13 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: ldfld int32 Sample.Code/<Iterator>d__19::<>2__current
+  IL_0006: box [System.Runtime]System.Int32
+  IL_000b: ret
+MethodDef[103] rva=0x28b8 impl=0x0000 flags=0x01e1 name=System.Collections.Generic.IEnumerable<System.Int32>.GetEnumerator sig=instance class [System.Runtime]System.Collections.Generic.IEnumerator`1<int32> () owner=0x02000015
+  params 87
+  body maxstack=2 size=55 localsig=0x11000010 initlocals=True
+  IL_0000: ldarg.0
+  IL_0001: ldfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_0006: ldc.i4.s -2
+  IL_0008: bne.un.s IL_0022
+  IL_000a: ldarg.0
+  IL_000b: ldfld int32 Sample.Code/<Iterator>d__19::<>l__initialThreadId
+  IL_0010: call int32 [System.Runtime]System.Environment::get_CurrentManagedThreadId()
+  IL_0015: bne.un.s IL_0022
+  IL_0017: ldarg.0
+  IL_0018: ldc.i4.0
+  IL_0019: stfld int32 Sample.Code/<Iterator>d__19::<>1__state
+  IL_001e: ldarg.0
+  IL_001f: stloc.0
+  IL_0020: br.s IL_0029
+  IL_0022: ldc.i4.0
+  IL_0023: newobj instance void Sample.Code/<Iterator>d__19::.ctor(int32)
+  IL_0028: stloc.0
+  IL_0029: ldloc.0
+  IL_002a: ret
+MethodDef[104] rva=0x28ef impl=0x0000 flags=0x01e1 name=System.Collections.IEnumerable.GetEnumerator sig=instance class [System.Runtime]System.Collections.IEnumerator () owner=0x02000015
+  params 88
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance class [System.Runtime]System.Collections.Generic.IEnumerator`1<int32> Sample.Code/<Iterator>d__19::System.Collections.Generic.IEnumerable<System.Int32>.GetEnumerator()
+  IL_0006: ret
+MethodDef[105] rva=0x28f7 impl=0x0000 flags=0x1886 name=.ctor sig=instance void () owner=0x02000018
+  params -
+  body maxstack=8 size=8 localsig=0x00000000 initlocals=False
+  IL_0000: ldarg.0
+  IL_0001: call instance void [System.Runtime]System.Object::.ctor()
+  IL_0006: ret
+Param[1] flags=0x0000 seq=1 name=text
+Param[2] flags=0x0000 seq=2 name=color
+Param[3] flags=0x0000 seq=3 name=type
+Param[4] flags=0x0000 seq=4 name=boxed
+Param[5] flags=0x0000 seq=5 name=values
+Param[6] flags=0x0000 seq=1 name=c
+Param[7] flags=0x0000 seq=2 name=b
+Param[8] flags=0x0000 seq=3 name=u
+Param[9] flags=0x0000 seq=4 name=f
+Param[10] flags=0x0000 seq=5 name=d
+Param[11] flags=0x0000 seq=6 name=flag
+Param[12] flags=0x0000 seq=1 name=many
+Param[13] flags=0x0000 seq=1 name=value
+Param[14] flags=0x0000 seq=1 name=action
+Param[15] flags=0x0000 seq=1 name=value
+Param[16] flags=0x0000 seq=1 name=value
+Param[17] flags=0x0000 seq=1 name=value
+Param[18] flags=0x0000 seq=1 name=value
+Param[19] flags=0x0000 seq=1 name=value
+Param[20] flags=0x0000 seq=1 name=i
+Param[21] flags=0x0000 seq=1 name=i
+Param[22] flags=0x0000 seq=2 name=value
+Param[23] flags=0x0000 seq=1 name=r
+Param[24] flags=0x0000 seq=1 name=other
+Param[25] flags=0x0000 seq=1 name=h
+Param[26] flags=0x2000 seq=2 name=text
+  marshal 15
+Param[27] flags=0x0000 seq=3 name=caption
+Param[28] flags=0x0000 seq=4 name=type
+Param[29] flags=0x2000 seq=0 name=
+  marshal 07
+Param[30] flags=0x2000 seq=1 name=x
+  marshal 07
+Param[31] flags=0x0000 seq=1 name=x
+Param[32] flags=0x0000 seq=1 name=x
+Param[33] flags=0x0000 seq=1 name=a
+Param[34] flags=0x0000 seq=1 name=a
+Param[35] flags=0x0001 seq=1 name=x
+Param[36] flags=0x0002 seq=2 name=y
+Param[37] flags=0x0000 seq=3 name=z
+Param[38] flags=0x0000 seq=1 name=first
+Param[39] flags=0x0000 seq=1 name=t
+Param[40] flags=0x0000 seq=2 name=u
+Param[41] flags=0x1010 seq=1 name=a
+  const Constant[13] type=0x0a value=0500000000000000
+Param[42] flags=0x1010 seq=2 name=s
+  const Constant[14] type=0x0e value=6400
+Param[43] flags=0x1010 seq=3 name=c
+  const Constant[15] type=0x05 value=05
+Param[44] flags=0x1010 seq=4 name=d
+  const Constant[16] type=0x0d value=000000000000f83f
+Param[45] flags=0x1010 seq=5 name=o
+  const Constant[17] type=0x12 value=00000000
+Param[46] flags=0x0000 seq=1 name=f
+Param[47] flags=0x0000 seq=1 name=k
+Param[48] flags=0x0000 seq=1 name=a
+Param[49] flags=0x0000 seq=2 name=b
+Param[50] flags=0x0000 seq=1 name=f
+Param[51] flags=0x0000 seq=1 name=x
+Param[52] flags=0x0000 seq=1 name=a
+Param[53] flags=0x0000 seq=2 name=b
+Param[54] flags=0x0000 seq=1 name=n
+Param[55] flags=0x0000 seq=1 name=x
+Param[56] flags=0x0000 seq=1 name=o
+Param[57] flags=0x0000 seq=1 name=t
+Param[58] flags=0x0000 seq=1 name=a
+Param[59] flags=0x0000 seq=2 name=b
+Param[60] flags=0x0000 seq=1 name=t
+Param[61] flags=0x0000 seq=1 name=s
+Param[62] flags=0x0000 seq=1 name=object
+Param[63] flags=0x0000 seq=2 name=method
+Param[64] flags=0x0000 seq=1 name=x
+Param[65] flags=0x0000 seq=1 name=x
+Param[66] flags=0x0000 seq=2 name=callback
+Param[67] flags=0x0000 seq=3 name=object
+Param[68] flags=0x0000 seq=1 name=result
+Param[69] flags=0x0000 seq=1 name=X
+Param[70] flags=0x0000 seq=2 name=Y
+Param[71] flags=0x0000 seq=1 name=value
+Param[72] flags=0x0000 seq=1 name=value
+Param[73] flags=0x0000 seq=1 name=builder
+Param[74] flags=0x0000 seq=1 name=left
+Param[75] flags=0x0000 seq=2 name=right
+Param[76] flags=0x0000 seq=1 name=left
+Param[77] flags=0x0000 seq=2 name=right
+Param[78] flags=0x0000 seq=1 name=obj
+Param[79] flags=0x0000 seq=1 name=other
+Param[80] flags=0x0000 seq=1 name=original
+Param[81] flags=0x0002 seq=1 name=X
+Param[82] flags=0x0002 seq=2 name=Y
+Param[83] flags=0x0000 seq=1 name=t
+Param[84] flags=0x0000 seq=1 name=x
+Param[85] flags=0x0000 seq=1 name=stateMachine
+Param[86] flags=0x0000 seq=1 name=<>1__state
+Param[87] flags=0x0000 seq=0 name=
+Param[88] flags=0x0000 seq=0 name=
+MemberRef[1] parent=0x01000001 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32)
+MemberRef[2] parent=0x01000002 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute::.ctor()
+MemberRef[3] parent=0x01000003 name=.ctor full=instance void [System.Runtime]System.Diagnostics.DebuggableAttribute::.ctor(valuetype [System.Runtime]System.Diagnostics.DebuggableAttribute/DebuggingModes)
+MemberRef[4] parent=0x01000005 name=.ctor full=instance void [System.Runtime]System.Reflection.AssemblyTitleAttribute::.ctor(string)
+MemberRef[5] parent=0x01000006 name=.ctor full=instance void [System.Runtime]System.Reflection.AssemblyFileVersionAttribute::.ctor(string)
+MemberRef[6] parent=0x01000009 name=.ctor full=instance void [System.Runtime]System.Security.Permissions.SecurityPermissionAttribute::.ctor(valuetype [System.Runtime]System.Security.Permissions.SecurityAction)
+MemberRef[7] parent=0x0100000a name=.ctor full=instance void [System.Runtime]System.Security.UnverifiableCodeAttribute::.ctor()
+MemberRef[8] parent=0x0100000b name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute::.ctor(int32)
+MemberRef[9] parent=0x0100000d name=.ctor full=instance void [System.Runtime.InteropServices]System.Runtime.InteropServices.DefaultCharSetAttribute::.ctor(valuetype [System.Runtime]System.Runtime.InteropServices.CharSet)
+MemberRef[10] parent=0x0100000f name=.ctor full=instance void [System.Runtime]System.FlagsAttribute::.ctor()
+MemberRef[11] parent=0x01000011 name=.ctor full=instance void [System.Runtime]System.AttributeUsageAttribute::.ctor(valuetype [System.Runtime]System.AttributeTargets)
+MemberRef[12] parent=0x01000013 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor()
+MemberRef[13] parent=0x01000019 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.FixedBufferAttribute::.ctor(class [System.Runtime]System.Type, int32)
+MemberRef[14] parent=0x0100001a name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.UnsafeValueTypeAttribute::.ctor()
+MemberRef[15] parent=0x0100001b name=.ctor full=instance void [System.Runtime]System.Reflection.DefaultMemberAttribute::.ctor(string)
+MemberRef[16] parent=0x01000021 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.IsReadOnlyAttribute::.ctor()
+MemberRef[17] parent=0x01000024 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.IteratorStateMachineAttribute::.ctor(class [System.Runtime]System.Type)
+MemberRef[18] parent=0x01000025 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.AsyncStateMachineAttribute::.ctor(class [System.Runtime]System.Type)
+MemberRef[19] parent=0x0100002a name=MoveNext full=instance void [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine::MoveNext()
+MemberRef[20] parent=0x0100002a name=SetStateMachine full=instance void [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine::SetStateMachine(class [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine)
+MemberRef[21] parent=0x0100002d name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.NullableAttribute::.ctor(uint8)
+MemberRef[22] parent=0x0100002f name=.ctor full=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor()
+MemberRef[23] parent=0x01000030 name=Dispose full=instance void [System.Runtime]System.IDisposable::Dispose()
+MemberRef[24] parent=0x01000031 name=MoveNext full=instance bool [System.Runtime]System.Collections.IEnumerator::MoveNext()
+MemberRef[25] parent=0x1b000005 name=get_Current full=instance !0 class [System.Runtime]System.Collections.Generic.IEnumerator`1<int32>::get_Current()
+MemberRef[26] parent=0x01000031 name=Reset full=instance void [System.Runtime]System.Collections.IEnumerator::Reset()
+MemberRef[27] parent=0x01000031 name=get_Current full=instance object [System.Runtime]System.Collections.IEnumerator::get_Current()
+MemberRef[28] parent=0x1b000006 name=GetEnumerator full=instance class [System.Runtime]System.Collections.Generic.IEnumerator`1<!0> class [System.Runtime]System.Collections.Generic.IEnumerable`1<int32>::GetEnumerator()
+MemberRef[29] parent=0x01000033 name=GetEnumerator full=instance class [System.Runtime]System.Collections.IEnumerator [System.Runtime]System.Collections.IEnumerable::GetEnumerator()
+MemberRef[30] parent=0x01000037 name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.NullableContextAttribute::.ctor(uint8)
+MemberRef[31] parent=0x0100003b name=.ctor full=instance void [System.Runtime]System.Runtime.CompilerServices.IsUnmanagedAttribute::.ctor()
+MemberRef[32] parent=0x01000012 name=.ctor full=instance void [System.Runtime]System.Attribute::.ctor()
+MemberRef[33] parent=0x01000015 name=.ctor full=instance void [System.Runtime]System.Security.Permissions.CodeAccessSecurityAttribute::.ctor(valuetype [System.Runtime]System.Security.Permissions.SecurityAction)
+MemberRef[34] parent=0x0100003d name=CreateSpan full=generic<1> valuetype [System.Runtime]System.ReadOnlySpan`1<!!0> [System.Runtime]System.Runtime.CompilerServices.RuntimeHelpers::CreateSpan(valuetype [System.Runtime]System.RuntimeFieldHandle)
+MemberRef[35] parent=0x0100003f name=Combine full=class [System.Runtime]System.Delegate [System.Runtime]System.Delegate::Combine(class [System.Runtime]System.Delegate, class [System.Runtime]System.Delegate)
+MemberRef[36] parent=0x01000040 name=CompareExchange full=generic<1> !!0 [System.Threading]System.Threading.Interlocked::CompareExchange(!!0&, !!0, !!0)
+MemberRef[37] parent=0x0100003f name=Remove full=class [System.Runtime]System.Delegate [System.Runtime]System.Delegate::Remove(class [System.Runtime]System.Delegate, class [System.Runtime]System.Delegate)
+MemberRef[38] parent=0x01000014 name=.ctor full=instance void [System.Runtime]System.Object::.ctor()
+MemberRef[39] parent=0x01000041 name=CompareTo full=instance int32 [System.Runtime]System.Double::CompareTo(float64)
+MemberRef[40] parent=0x01000042 name=Empty full=class [System.Runtime]System.EventArgs [System.Runtime]System.EventArgs::Empty
+MemberRef[41] parent=0x01000017 name=Invoke full=instance void [System.Runtime]System.EventHandler::Invoke(object, class [System.Runtime]System.EventArgs)
+MemberRef[42] parent=0x0100003d name=InitializeArray full=void [System.Runtime]System.Runtime.CompilerServices.RuntimeHelpers::InitializeArray(class [System.Runtime]System.Array, valuetype [System.Runtime]System.RuntimeFieldHandle)
+MemberRef[43] parent=0x01000045 name=.ctor full=instance void [System.Runtime]System.InvalidOperationException::.ctor(string)
+MemberRef[44] parent=0x01000020 name=get_Message full=instance string [System.Runtime]System.Exception::get_Message()
+MemberRef[45] parent=0x01000046 name=op_Equality full=bool [System.Runtime]System.String::op_Equality(string, string)
+MemberRef[46] parent=0x01000047 name=WriteLine full=void [System.Console]System.Console::WriteLine(string)
+MemberRef[47] parent=0x01000022 name=.ctor full=instance void [System.Runtime]System.ArgIterator::.ctor(valuetype [System.Runtime]System.RuntimeArgumentHandle)
+MemberRef[48] parent=0x01000022 name=GetRemainingCount full=instance int32 [System.Runtime]System.ArgIterator::GetRemainingCount()
+MemberRef[49] parent=0x06000023 name=VarArgs full=vararg int32 Sample.Code::VarArgs(int32, ..., int32, string, float64)
+MemberRef[50] parent=0x0100004a name=CreateInstance full=generic<1> !!0 [System.Runtime]System.Activator::CreateInstance()
+MemberRef[51] parent=0x1b00000b name=.ctor full=instance void int32[0...,0...]::.ctor(int32, int32)
+MemberRef[52] parent=0x0100004b name=Sqrt full=float64 [System.Runtime]System.Math::Sqrt(float64)
+MemberRef[53] parent=0x1b00000d name=Create full=valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<!0> valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::Create()
+MemberRef[54] parent=0x1b00000d name=Start full=instance generic<1> void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::Start(!!0&)
+MemberRef[55] parent=0x1b00000d name=get_Task full=instance class [System.Runtime]System.Threading.Tasks.Task`1<!0> valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::get_Task()
+MemberRef[56] parent=0x1b00000e name=.ctor full=instance void class [System.Runtime]System.Func`2<int32, int32>::.ctor(object, native int)
+MemberRef[57] parent=0x1b00000f name=.ctor full=instance void valuetype [System.Runtime]System.ValueTuple`2<int32, string>::.ctor(!0, !1)
+MemberRef[58] parent=0x01000048 name=ToString full=instance string [System.Runtime]System.Int32::ToString()
+MemberRef[59] parent=0x01000046 name=get_Length full=instance int32 [System.Runtime]System.String::get_Length()
+MemberRef[60] parent=0x0100004c name=Write full=void [System.Threading]System.Threading.Volatile::Write(int32&, int32)
+MemberRef[61] parent=0x1b000004 name=CompareTo full=instance int32 class [System.Runtime]System.IComparable`1<!!0>::CompareTo(!0)
+MemberRef[62] parent=0x01000007 name=GetTypeFromHandle full=class [System.Runtime]System.Type [System.Runtime]System.Type::GetTypeFromHandle(valuetype [System.Runtime]System.RuntimeTypeHandle)
+MemberRef[63] parent=0x0100004e name=CopyBlock full=void [System.Runtime]System.Runtime.CompilerServices.Unsafe::CopyBlock(void*, void*, uint32)
+MemberRef[64] parent=0x0100004e name=InitBlock full=void [System.Runtime]System.Runtime.CompilerServices.Unsafe::InitBlock(void*, uint8, uint32)
+MemberRef[65] parent=0x1b000007 name=Set full=instance void class Sample.Base`1<string>::Set(!0)
+MemberRef[66] parent=0x1b000007 name=Count full=int32 class Sample.Base`1<string>::Count
+MemberRef[67] parent=0x1b000007 name=.ctor full=instance void class Sample.Base`1<string>::.ctor()
+MemberRef[68] parent=0x0100003a name=.ctor full=instance void [System.Runtime]System.Text.StringBuilder::.ctor()
+MemberRef[69] parent=0x0100003a name=Append full=instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(string)
+MemberRef[70] parent=0x0100003a name=Append full=instance class [System.Runtime]System.Text.StringBuilder [System.Runtime]System.Text.StringBuilder::Append(char)
+MemberRef[71] parent=0x01000014 name=ToString full=instance string [System.Runtime]System.Object::ToString()
+MemberRef[72] parent=0x0100003d name=EnsureSufficientExecutionStack full=void [System.Runtime]System.Runtime.CompilerServices.RuntimeHelpers::EnsureSufficientExecutionStack()
+MemberRef[73] parent=0x1b000010 name=get_Default full=class [System.Collections]System.Collections.Generic.EqualityComparer`1<!0> class [System.Collections]System.Collections.Generic.EqualityComparer`1<class [System.Runtime]System.Type>::get_Default()
+MemberRef[74] parent=0x1b000010 name=GetHashCode full=instance int32 class [System.Collections]System.Collections.Generic.EqualityComparer`1<class [System.Runtime]System.Type>::GetHashCode(!0)
+MemberRef[75] parent=0x1b000011 name=get_Default full=class [System.Collections]System.Collections.Generic.EqualityComparer`1<!0> class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::get_Default()
+MemberRef[76] parent=0x1b000011 name=GetHashCode full=instance int32 class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::GetHashCode(!0)
+MemberRef[77] parent=0x01000007 name=op_Equality full=bool [System.Runtime]System.Type::op_Equality(class [System.Runtime]System.Type, class [System.Runtime]System.Type)
+MemberRef[78] parent=0x1b000011 name=Equals full=instance bool class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>::Equals(!0, !0)
+MemberRef[79] parent=0x1b000012 name=Item full=!0 valuetype Sample.Holder`1<!0>::Item
+MemberRef[80] parent=0x01000050 name=Yield full=valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable [System.Runtime]System.Threading.Tasks.Task::Yield()
+MemberRef[81] parent=0x0100002b name=GetAwaiter full=instance valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable::GetAwaiter()
+MemberRef[82] parent=0x0100002c name=get_IsCompleted full=instance bool [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter::get_IsCompleted()
+MemberRef[83] parent=0x1b00000d name=AwaitUnsafeOnCompleted full=instance generic<2> void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::AwaitUnsafeOnCompleted(!!0&, !!1&)
+MemberRef[84] parent=0x0100002c name=GetResult full=instance void [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter::GetResult()
+MemberRef[85] parent=0x1b00000d name=SetException full=instance void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::SetException(class [System.Runtime]System.Exception)
+MemberRef[86] parent=0x1b00000d name=SetResult full=instance void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::SetResult(!0)
+MemberRef[87] parent=0x1b00000d name=SetStateMachine full=instance void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::SetStateMachine(class [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine)
+MemberRef[88] parent=0x01000051 name=get_CurrentManagedThreadId full=int32 [System.Runtime]System.Environment::get_CurrentManagedThreadId()
+MemberRef[89] parent=0x01000052 name=.ctor full=instance void [System.Runtime]System.NotSupportedException::.ctor()
+Constant[1] type=0x05 parent=0x04000002 value=00
+Constant[2] type=0x05 parent=0x04000003 value=05
+Constant[3] type=0x05 parent=0x04000004 value=06
+Constant[4] type=0x0a parent=0x04000006 value=0000000000000000
+Constant[5] type=0x0a parent=0x04000007 value=0100000000000000
+Constant[6] type=0x0a parent=0x04000008 value=0200000000000000
+Constant[7] type=0x0a parent=0x04000009 value=0300000000000000
+Constant[8] type=0x0d parent=0x04000019 value=6e861bf0f9210940
+Constant[9] type=0x0e parent=0x0400001a value=63006900720063006c006500e9000326
+Constant[10] type=0x03 parent=0x0400001b value=7800
+Constant[11] type=0x05 parent=0x0400001c value=06
+Constant[12] type=0x12 parent=0x0400001d value=00000000
+Constant[13] type=0x0a parent=0x08000029 value=0500000000000000
+Constant[14] type=0x0e parent=0x0800002a value=6400
+Constant[15] type=0x05 parent=0x0800002b value=05
+Constant[16] type=0x0d parent=0x0800002c value=000000000000f83f
+Constant[17] type=0x12 parent=0x0800002d value=00000000
+CustomAttribute[1] parent=0x00000001 ctor=instance void [System.Runtime]System.Security.UnverifiableCodeAttribute::.ctor() value=()
+CustomAttribute[2] parent=0x00000001 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.RefSafetyRulesAttribute::.ctor(int32) value=(int32(11))
+CustomAttribute[3] parent=0x00000001 ctor=instance void [System.Runtime.InteropServices]System.Runtime.InteropServices.DefaultCharSetAttribute::.ctor(valuetype [System.Runtime]System.Runtime.InteropServices.CharSet) value=([System.Runtime]System.Runtime.InteropServices.CharSet(3))
+CustomAttribute[4] parent=0x20000001 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilationRelaxationsAttribute::.ctor(int32) value=(int32(8))
+CustomAttribute[5] parent=0x20000001 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.RuntimeCompatibilityAttribute::.ctor() value=() {property WrapNonExceptionThrows=bool(true)}
+CustomAttribute[6] parent=0x20000001 ctor=instance void [System.Runtime]System.Diagnostics.DebuggableAttribute::.ctor(valuetype [System.Runtime]System.Diagnostics.DebuggableAttribute/DebuggingModes) value=([System.Runtime]System.Diagnostics.DebuggableAttribute/DebuggingModes(2))
+CustomAttribute[7] parent=0x20000001 ctor=instance void [System.Runtime]System.Reflection.AssemblyTitleAttribute::.ctor(string) value=(string("Sample \u00e9"))
+CustomAttribute[8] parent=0x20000001 ctor=instance void [System.Runtime]System.Reflection.AssemblyFileVersionAttribute::.ctor(string) value=(string("5.6.7.8"))
+CustomAttribute[9] parent=0x20000001 ctor=instance void Sample.NoteAttribute::.ctor(string, valuetype Sample.Color, class [System.Runtime]System.Type, object, int32[]) value=(string("assembly"), Sample.Color(0), [System.Runtime]System.Type("System.Int32, System.Runtime, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"), Sample.Access(3), int32[](null))
+CustomAttribute[10] parent=0x2a000002 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.IsUnmanagedAttribute::.ctor() value=()
+CustomAttribute[11] parent=0x02000003 ctor=instance void [System.Runtime]System.FlagsAttribute::.ctor() value=()
+CustomAttribute[12] parent=0x09000003 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableAttribute::.ctor(uint8) value=(uint8(0))
+CustomAttribute[13] parent=0x06000004 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[14] parent=0x02000004 ctor=instance void [System.Runtime]System.AttributeUsageAttribute::.ctor(valuetype [System.Runtime]System.AttributeTargets) value=([System.Runtime]System.AttributeTargets(32767)) {property AllowMultiple=bool(true)}
+CustomAttribute[15] parent=0x06000005 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[16] parent=0x02000005 ctor=instance void [System.Runtime]System.AttributeUsageAttribute::.ctor(valuetype [System.Runtime]System.AttributeTargets) value=([System.Runtime]System.AttributeTargets(32767)) {property AllowMultiple=bool(true)}
+CustomAttribute[17] parent=0x06000007 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[18] parent=0x06000008 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[19] parent=0x17000008 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[20] parent=0x02000009 ctor=instance void [System.Runtime]System.Reflection.DefaultMemberAttribute::.ctor(string) value=(string("Item"))
+CustomAttribute[21] parent=0x02000009 ctor=instance void Sample.NoteAttribute::.ctor(string, valuetype Sample.Color, class [System.Runtime]System.Type, object, int32[]) value=(string("type"), Sample.Color(6), [System.Runtime]System.Type("System.Collections.Generic.List`1[[System.Int32, System.Runtime, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a]], System.Collections, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"), int32(42), int32[]([int32(1), int32(2), int32(3)])) {field Number=int32(7), property Named=string("n")}
+CustomAttribute[22] parent=0x02000009 ctor=instance void Sample.NoteAttribute::.ctor(char, int8, uint64, float32, float64, bool) value=(char(99), int8(-5), uint64(18446744073709551615), float32(0x3fc00000), float64(0xc002000000000000), bool(true)) {field Types=System.Type[]([System.Type("System.String, System.Runtime, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"), System.Type("Sample.Circle+Nested`1[[System.Int32, System.Runtime, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a]]")])}
+CustomAttribute[23] parent=0x02000009 ctor=instance void Sample.NoteAttribute::.ctor(object[]) value=(object[]([int32(1), string("two"), Sample.Color(5), System.Type("Sample.Union"), string(null), int64[]([int64(3)])]))
+CustomAttribute[24] parent=0x0600000b ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[25] parent=0x0600000c ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[26] parent=0x0400000c ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[27] parent=0x0400000d ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[28] parent=0x0200000e ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableContextAttribute::.ctor(uint8) value=(uint8(1))
+CustomAttribute[29] parent=0x0200000e ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableAttribute::.ctor(uint8) value=(uint8(0))
+CustomAttribute[30] parent=0x06000010 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[31] parent=0x02000010 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[32] parent=0x06000011 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[33] parent=0x02000011 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[34] parent=0x02000011 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.UnsafeValueTypeAttribute::.ctor() value=()
+CustomAttribute[35] parent=0x02000013 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[36] parent=0x02000014 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[37] parent=0x02000015 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[38] parent=0x04000016 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.FixedBufferAttribute::.ctor(class [System.Runtime]System.Type, int32) value=([System.Runtime]System.Type("System.Byte, System.Runtime, Version=8.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"), int32(8))
+CustomAttribute[39] parent=0x04000022 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[40] parent=0x08000023 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.IsReadOnlyAttribute::.ctor() value=()
+CustomAttribute[41] parent=0x04000024 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[42] parent=0x04000025 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[43] parent=0x0600002e ctor=instance void [System.Runtime]System.Runtime.CompilerServices.IteratorStateMachineAttribute::.ctor(class [System.Runtime]System.Type) value=([System.Runtime]System.Type("Sample.Code+<Iterator>d__19"))
+CustomAttribute[44] parent=0x0600002f ctor=instance void [System.Runtime]System.Runtime.CompilerServices.AsyncStateMachineAttribute::.ctor(class [System.Runtime]System.Type) value=([System.Runtime]System.Type("Sample.Code+<Async>d__20"))
+CustomAttribute[45] parent=0x0600004c ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[46] parent=0x0600004d ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[47] parent=0x0600004e ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[48] parent=0x0600004f ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[49] parent=0x06000050 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[50] parent=0x06000051 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[51] parent=0x06000052 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[52] parent=0x06000053 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableContextAttribute::.ctor(uint8) value=(uint8(2))
+CustomAttribute[53] parent=0x06000053 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[54] parent=0x06000054 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableContextAttribute::.ctor(uint8) value=(uint8(2))
+CustomAttribute[55] parent=0x06000054 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[56] parent=0x06000055 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[57] parent=0x08000055 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableAttribute::.ctor(uint8) value=(uint8(1))
+CustomAttribute[58] parent=0x06000056 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableContextAttribute::.ctor(uint8) value=(uint8(2))
+CustomAttribute[59] parent=0x06000056 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[60] parent=0x06000057 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableContextAttribute::.ctor(uint8) value=(uint8(2))
+CustomAttribute[61] parent=0x06000057 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[62] parent=0x08000057 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableAttribute::.ctor(uint8) value=(uint8(1))
+CustomAttribute[63] parent=0x06000058 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[64] parent=0x08000058 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.NullableAttribute::.ctor(uint8) value=(uint8(1))
+CustomAttribute[65] parent=0x06000059 ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[66] parent=0x0600005a ctor=instance void [System.Runtime]System.Runtime.CompilerServices.CompilerGeneratedAttribute::.ctor() value=()
+CustomAttribute[67] parent=0x06000060 ctor=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor() value=()
+CustomAttribute[68] parent=0x06000061 ctor=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor() value=()
+CustomAttribute[69] parent=0x06000062 ctor=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor() value=()
+CustomAttribute[70] parent=0x06000064 ctor=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor() value=()
+CustomAttribute[71] parent=0x06000065 ctor=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor() value=()
+CustomAttribute[72] parent=0x06000066 ctor=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor() value=()
+CustomAttribute[73] parent=0x06000067 ctor=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor() value=()
+CustomAttribute[74] parent=0x06000068 ctor=instance void [System.Runtime]System.Diagnostics.DebuggerHiddenAttribute::.ctor() value=()
+DeclSecurity[1] action=8 parent=0x20000001 set=2e01808a53797374656d2e53656375726974792e5065726d697373696f6e732e53656375726974795065726d697373696f6e4174747269627574652c2053797374656d2e52756e74696d652c2056657273696f6e3d382e302e302e302c2043756c747572653d6e65757472616c2c205075626c69634b6579546f6b656e3d623033663566376631316435306133611501540210536b6970566572696669636174696f6e01
+DeclSecurity[2] action=2 parent=0x02000009 set=2e016053616d706c652e47756172644174747269627574652c2053616d706c652c2056657273696f6e3d312e322e332e342c2043756c747572653d6e65757472616c2c205075626c69634b6579546f6b656e3d336332626366393738643636373734390e01540e054c6576656c0468696768
+StandAloneSig[1] locals (class [System.Runtime]System.EventHandler, class [System.Runtime]System.EventHandler, class [System.Runtime]System.EventHandler)
+StandAloneSig[2] locals (string)
+StandAloneSig[3] locals (int32*, int32[] pinned)
+StandAloneSig[4] locals (valuetype [System.Runtime]System.ArgIterator)
+StandAloneSig[5] locals (int32)
+StandAloneSig[6] locals (valuetype Sample.Code/<Async>d__20)
+StandAloneSig[7] locals (int32*)
+StandAloneSig[8] locals (method int32 *(int32))
+StandAloneSig[9] int32 (int32)
+StandAloneSig[10] locals (int32, int32, int32, int32, int32, string, int32)
+StandAloneSig[11] locals (!!0)
+StandAloneSig[12] locals (valuetype [System.Runtime]System.RuntimeMethodHandle)
+StandAloneSig[13] locals (class [System.Runtime]System.Text.StringBuilder)
+StandAloneSig[14] locals (valuetype Sample.Holder`1<!0>)
+StandAloneSig[15] locals (int32, int32, valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter, valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable, class [System.Runtime]System.Exception)
+StandAloneSig[16] locals (class Sample.Code/<Iterator>d__19)
+Event[1] flags=0x0000 name=Changed type=[System.Runtime]System.EventHandler add=0x0600000b remove=0x0600000c raise=0x00000000 others=
+Event[2] flags=0x0000 name=Changed type=[System.Runtime]System.EventHandler add=0x06000010 remove=0x06000011 raise=0x00000000 others=
+Property[1] flags=0x0000 name=Named sig=instance string () get=0x06000004 set=0x06000005 others=
+Property[2] flags=0x0000 name=Level sig=instance string () get=0x06000007 set=0x06000008 others=
+Property[3] flags=0x0000 name=Area sig=instance float64 () get=0x0600000a set=0x00000000 others=
+Property[4] flags=0x0000 name=Primes sig=valuetype [System.Runtime]System.ReadOnlySpan`1<int32> () get=0x0600000f set=0x00000000 others=
+Property[5] flags=0x0000 name=Area sig=instance float64 () get=0x06000012 set=0x00000000 others=
+Property[6] flags=0x0000 name=Item sig=instance float64 (int32) get=0x06000013 set=0x06000014 others=
+Property[7] flags=0x0000 name=Sample.IShape.Area sig=instance float64 () get=0x06000017 set=0x00000000 others=
+Property[8] flags=0x0000 name=EqualityContract sig=instance class [System.Runtime]System.Type () get=0x0600004c set=0x00000000 others=
+Property[9] flags=0x0000 name=X sig=instance int32 () get=0x0600004d set=0x0600004e others=
+Property[10] flags=0x0000 name=Y sig=instance int32 () get=0x0600004f set=0x06000050 others=
+Property[11] flags=0x0000 name=System.Collections.Generic.IEnumerator<System.Int32>.Current sig=instance int32 () get=0x06000064 set=0x00000000 others=
+Property[12] flags=0x0000 name=System.Collections.IEnumerator.Current sig=instance object () get=0x06000066 set=0x00000000 others=
+MethodImpl[1] class=0x02000009 body=instance float64 Sample.Circle::Sample.IShape.get_Area() decl=instance float64 Sample.IShape::get_Area()
+MethodImpl[2] class=0x02000009 body=class Sample.IShape Sample.Circle::Unit() decl=class Sample.IShape Sample.IShape::Unit()
+MethodImpl[3] class=0x02000014 body=instance void Sample.Code/<Async>d__20::MoveNext() decl=instance void [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine::MoveNext()
+MethodImpl[4] class=0x02000014 body=instance void Sample.Code/<Async>d__20::SetStateMachine(class [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine) decl=instance void [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine::SetStateMachine(class [System.Runtime]System.Runtime.CompilerServices.IAsyncStateMachine)
+MethodImpl[5] class=0x02000015 body=instance void Sample.Code/<Iterator>d__19::System.IDisposable.Dispose() decl=instance void [System.Runtime]System.IDisposable::Dispose()
+MethodImpl[6] class=0x02000015 body=instance bool Sample.Code/<Iterator>d__19::MoveNext() decl=instance bool [System.Runtime]System.Collections.IEnumerator::MoveNext()
+MethodImpl[7] class=0x02000015 body=instance int32 Sample.Code/<Iterator>d__19::System.Collections.Generic.IEnumerator<System.Int32>.get_Current() decl=instance !0 class [System.Runtime]System.Collections.Generic.IEnumerator`1<int32>::get_Current()
+MethodImpl[8] class=0x02000015 body=instance void Sample.Code/<Iterator>d__19::System.Collections.IEnumerator.Reset() decl=instance void [System.Runtime]System.Collections.IEnumerator::Reset()
+MethodImpl[9] class=0x02000015 body=instance object Sample.Code/<Iterator>d__19::System.Collections.IEnumerator.get_Current() decl=instance object [System.Runtime]System.Collections.IEnumerator::get_Current()
+MethodImpl[10] class=0x02000015 body=instance class [System.Runtime]System.Collections.Generic.IEnumerator`1<int32> Sample.Code/<Iterator>d__19::System.Collections.Generic.IEnumerable<System.Int32>.GetEnumerator() decl=instance class [System.Runtime]System.Collections.Generic.IEnumerator`1<!0> class [System.Runtime]System.Collections.Generic.IEnumerable`1<int32>::GetEnumerator()
+MethodImpl[11] class=0x02000015 body=instance class [System.Runtime]System.Collections.IEnumerator Sample.Code/<Iterator>d__19::System.Collections.IEnumerable.GetEnumerator() decl=instance class [System.Runtime]System.Collections.IEnumerator [System.Runtime]System.Collections.IEnumerable::GetEnumerator()
+ModuleRef[1] name=kernel32.dll
+ModuleRef[2] name=user32
+ModuleRef[3] name=libc
+TypeSpec[1] class [System.Runtime]System.IComparable`1<class Sample.Circle>
+TypeSpec[2] class [System.Runtime]System.IComparable`1<!0>
+TypeSpec[3] class [System.Runtime]System.Collections.Generic.IEnumerable`1<!!0>
+TypeSpec[4] class [System.Runtime]System.IComparable`1<!!0>
+TypeSpec[5] class [System.Runtime]System.Collections.Generic.IEnumerator`1<int32>
+TypeSpec[6] class [System.Runtime]System.Collections.Generic.IEnumerable`1<int32>
+TypeSpec[7] class Sample.Base`1<string>
+TypeSpec[8] class [System.Runtime]System.IEquatable`1<class Sample.Point>
+TypeSpec[9] class [System.Runtime]System.ValueType modreq([System.Runtime]System.Runtime.InteropServices.UnmanagedType)
+TypeSpec[10] !!0
+TypeSpec[11] int32[0...,0...]
+TypeSpec[12] int32[]
+TypeSpec[13] valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>
+TypeSpec[14] class [System.Runtime]System.Func`2<int32, int32>
+TypeSpec[15] valuetype [System.Runtime]System.ValueTuple`2<int32, string>
+TypeSpec[16] class [System.Collections]System.Collections.Generic.EqualityComparer`1<class [System.Runtime]System.Type>
+TypeSpec[17] class [System.Collections]System.Collections.Generic.EqualityComparer`1<int32>
+TypeSpec[18] valuetype Sample.Holder`1<!0>
+Assembly[1] hash=0x8004 version=1.2.3.4 flags=0x1 key=0024000004800000940000000602000000a4000052534131000400000100010011a97295bfe3489b5cefbd2cefc4a8f329c3b1452d48b8500d9a8002dfd11a688f0e01a1eaa987cf63c7c4fccdfa4f36ee9f00f6c0f9ff0833fee80c7d029b1dbdd9b8f9d3f4d8061f0556e9c815d29b6aa852aca08d164a57370b608c41869f14b767ef03b84090b4b37b0ad0ad3cc92244bea9ce7ce90ac1d4adc6e6f27ed6 name=Sample culture=
+AssemblyRef[1] version=8.0.0.0 flags=0x0 key=b03f5f7f11d50a3a name=System.Runtime culture= hash=
+AssemblyRef[2] version=8.0.0.0 flags=0x0 key=b03f5f7f11d50a3a name=System.Runtime.InteropServices culture= hash=
+AssemblyRef[3] version=8.0.0.0 flags=0x0 key=b03f5f7f11d50a3a name=System.Collections culture= hash=
+AssemblyRef[4] version=8.0.0.0 flags=0x0 key=b03f5f7f11d50a3a name=System.Threading culture= hash=
+AssemblyRef[5] version=8.0.0.0 flags=0x0 key=b03f5f7f11d50a3a name=System.Console culture= hash=
+File[1] metadata=True name=Sample.Extra.netmodule hash=c0d709b1999283d526d10ce6767892f975fa55d9
+File[2] metadata=False name=linked.txt hash=1d50909a7d3142d9cbd20728afb1c4e04fb7ac0b
+ExportedType[1] flags=0x00000001 forwarder=False typedef=0x2000002 ns=Sample.Extra name=FromModule impl=0x26000001
+ExportedType[2] flags=0x00000002 forwarder=False typedef=0x2000003 ns= name=Inside impl=0x27000001
+ExportedType[3] flags=0x00200000 forwarder=True typedef=0x0 ns=System.Collections.Generic name=Stack`1 impl=0x23000003
+ExportedType[4] flags=0x00000000 forwarder=False typedef=0x0 ns= name=Enumerator impl=0x27000003
+ManifestResource[1] offset=0x0 flags=0x1 name=Sample.Strings.resources impl=0x00000000
+  data size=0x332
+  entry "byte" type=ResourceTypeCode.Byte data=c8
+  entry "bytes" type=ResourceTypeCode.ByteArray data=050000000102030405
+  entry "date" type=ResourceTypeCode.DateTime data=005860c813bdd748
+  entry "decimal" type=ResourceTypeCode.Decimal data=15cd5b07000000000000000000000400
+  entry "double" type=ResourceTypeCode.Double data=00000000000004c0
+  entry "empty" type=ResourceTypeCode.String data=00
+  entry "flag" type=ResourceTypeCode.Boolean data=01
+  entry "float" type=ResourceTypeCode.Single data=0000a03f
+  entry "greeting" type=ResourceTypeCode.String data=1048656c6c6f2c207265736f7572636573
+  entry "int" type=ResourceTypeCode.Int32 data=c01dfeff
+  entry "letter" type=ResourceTypeCode.Char data=7100
+  entry "long" type=ResourceTypeCode.Int64 data=35fb048ee0feffff
+  entry "nothing" type=ResourceTypeCode.Null data=
+  entry "sbyte" type=ResourceTypeCode.SByte data=9c
+  entry "short" type=ResourceTypeCode.Int16 data=2efb
+  entry "span" type=ResourceTypeCode.TimeSpan data=507f9f5bda000000
+  entry "stream" type=ResourceTypeCode.Stream data=03000000090807
+  entry "uint" type=ResourceTypeCode.UInt32 data=00286bee
+  entry "ulong" type=ResourceTypeCode.UInt64 data=000008c5a1d8ccf9
+  entry "unicode \u00e9" type=ResourceTypeCode.String data=08e2988320736e6f77
+  entry "ushort" type=ResourceTypeCode.UInt16 data=e8fd
+ManifestResource[2] offset=0x338 flags=0x2 name=Sample.notes.txt impl=0x00000000
+  data size=0x2e
+ManifestResource[3] offset=0x0 flags=0x1 name=Sample.linked.txt impl=0x26000002
+MethodSpec[1] generic<1> valuetype [System.Runtime]System.ReadOnlySpan`1<!!0> [System.Runtime]System.Runtime.CompilerServices.RuntimeHelpers::CreateSpan(valuetype [System.Runtime]System.RuntimeFieldHandle)<int32>
+MethodSpec[2] generic<1> !!0 [System.Threading]System.Threading.Interlocked::CompareExchange(!!0&, !!0, !!0)<class [System.Runtime]System.EventHandler>
+MethodSpec[3] generic<1> !!0 [System.Runtime]System.Activator::CreateInstance()<!!0>
+MethodSpec[4] generic<2> !!0 Sample.Code::Generic(!!0, !!1)<object, class [System.Collections]System.Collections.Generic.List`1<object>>
+MethodSpec[5] instance generic<1> void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::Start(!!0&)<valuetype Sample.Code/<Async>d__20>
+MethodSpec[6] instance generic<2> void valuetype [System.Runtime]System.Runtime.CompilerServices.AsyncTaskMethodBuilder`1<int32>::AwaitUnsafeOnCompleted(!!0&, !!1&)<valuetype [System.Runtime]System.Runtime.CompilerServices.YieldAwaitable/YieldAwaiter, valuetype Sample.Code/<Async>d__20>
+US 0x1 "shape"
+US 0xd "x"
+US 0x11 "filtered"
+US 0x23 "caught"
+US 0x31 "finally"
+US 0x41 "none"
+US 0x4b "two"
+US 0x53 "hello\tworld\u2603\0end \"quoted\" \\ \r\n\u00ff"
+US 0x93 "a"
+US 0x97 "d"
+US 0x9b "Point"
+US 0xa7 " { "
+US 0xaf "X = "
+US 0xb9 ", Y = "
+US 0xc7 ""

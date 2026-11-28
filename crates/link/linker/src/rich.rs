@@ -33,6 +33,10 @@ pub const EXPORT_COMP_ID: u32 = 0x0100_90A5;
 /// makes of the `.res` files, seen before every input.
 pub const CVTRES_COMP_ID: u32 = 0x00FF_90A5;
 
+/// What each `.res` file counts as when a manifest is embedded too
+/// (product 0x97, build 0).
+pub const RES_BESIDE_MANIFEST_COMP_ID: u32 = 0x0097_0000;
+
 /// What an import object counts as.
 const IMPORT: u32 = 0x0001_0000;
 
@@ -40,17 +44,24 @@ const IMPORT: u32 = 0x0001_0000;
 pub const STUB: u32 = 0x80;
 
 /// The Rich header's entries (ID, count), in their order.
-pub fn entries(r: &Resolved) -> Vec<(u32, u32)> {
+pub fn entries(r: &Resolved, resources: Option<&crate::resources::Rsrc>) -> Vec<(u32, u32)> {
     let id = |f: &crate::resolve::File| match &f.kind {
         FileKind::Object { object, .. } => object.comp_id.unwrap_or(0),
         FileKind::Import { .. } => IMPORT,
     };
     let mut walk: Vec<u32> = Vec::new();
+    // (An embedded manifest with .res files besides: each .res counts
+    // first, as link.exe has rc.exe and cvtres rework them; then cvtres, for
+    // any resources; then the export object.)
+    if let Some(res) = resources {
+        walk.extend(std::iter::repeat_n(
+            RES_BESIDE_MANIFEST_COMP_ID,
+            res.res_beside_manifest as usize,
+        ));
+        walk.push(CVTRES_COMP_ID);
+    }
     if !r.config.exports.is_empty() {
         walk.push(EXPORT_COMP_ID);
-    }
-    if !r.resources.is_empty() {
-        walk.push(CVTRES_COMP_ID);
     }
     walk.extend(r.files.iter().filter(|f| f.library.is_none()).map(id));
     // The libraries as they are searched: the command line's first.

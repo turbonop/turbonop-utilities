@@ -433,10 +433,18 @@ x64. Where the 3.5 MB went:
   lld-link; x64, x86, ARM64); `tools/turbolib/corpus/everylib.py`. Open:
   - the self-check costs about as much as folding (more on a loaded
     machine): make it cheaper, then decide its default again;
-  - everylib.py against lib.exe's remaking: 305 of the 581 libraries
-    rerun showed turbolib `--fold=none /Brepro` not byte-identical to
-    `lib.exe /Brepro` (not looked into; the earlier relib.py checks were
-    without /Brepro on LLVM's libraries); rerun all 1,851 and the corpus;
+  - (Found: the 305 SDK libraries whose `--fold=none /Brepro` output
+    wasn't lib.exe's were lib.exe copying a lone library input byte for
+    byte; turbolib now copies it too.) Forced to write such a library
+    again (`/REMOVE` of a member that isn't there), lib.exe and turbolib
+    still differ on ARM64X import libraries (234 of the 305; the rest not
+    yet run): without `/MACHINE`, lib.exe drops the ARM64EC import
+    members that share a name with a native one and writes no
+    `/<ECSYMBOLS>/` (the library loses its EC half); turbolib keeps every
+    member and lists their EC names (`#name`, `__imp_aux_name`) in the
+    main index; with `/MACHINE:ARM64X` both keep every member but the
+    tables differ. Only re-archiving ARM64 import libraries meets this;
+    x64 and x86 libraries, and libraries made from objects, don't;
   - the engine puts a COMDAT in two synthesized members (`libucrt.lib`,
     `Uuid.lib`), and changes `.retplne` (`BufferOverflow.lib`): the
     self-check falls back;

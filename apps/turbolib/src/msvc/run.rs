@@ -546,7 +546,7 @@ fn build(
                     name: name.into_bytes(),
                     fields: style.object_fields(mtime, read_only),
                     data: &input.data,
-                    place: input.name.clone(),
+                    place: shown_file(flavor, &input.name),
                 }
             }
             order::Source::Member(i, m) => {
@@ -561,7 +561,11 @@ fn build(
                     name: member.name.to_vec(),
                     fields,
                     data: member.data,
-                    place: format!("{}({})", read[i].name, text(&member.name)),
+                    place: format!(
+                        "{}({})",
+                        shown_file(flavor, &read[i].name),
+                        text(&member.name)
+                    ),
                 }
             }
         });
@@ -1184,6 +1188,16 @@ fn stats_lines(r: &rewrite::Report, members: &[Placed<'_>]) -> Vec<String> {
         ));
     }
     out
+}
+
+/// How messages name an input file: `lib.exe` by its file name alone
+/// (measured: `sub\a.obj` and `d/x.lib(b.obj)` are `a.obj` and
+/// `x.lib(b.obj)` in LNK4006), `llvm-lib` as given.
+fn shown_file(flavor: Flavor, name: &str) -> String {
+    match flavor {
+        Flavor::Lib => name.rsplit(['\\', '/']).next().unwrap_or(name).to_string(),
+        Flavor::LlvmLib => name.to_string(),
+    }
 }
 
 /// One output member, before writing.

@@ -923,7 +923,11 @@ fn read_module<'d>(
         typed_pointers: false,
         type_index: None,
     };
-    r.read(&mut c)?;
+    // A module that can't be read to its end keeps what was read, with
+    // the error.
+    if let Err(e) = r.read(&mut c) {
+        r.m.errors.push(e);
+    }
     r.finish(origin);
     Ok(m)
 }

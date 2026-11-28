@@ -1521,3 +1521,21 @@ fn many_bodies_on_every_core() {
         assert!(b.error.is_none());
     }
 }
+
+#[test]
+fn circular_wide_types_have_bounded_names() {
+    // (A fuzzer's find.) Literal structures of 50 elements that refer to
+    // each other: their names would grow as 50^64.
+    let mut t = TypeTable::default();
+    t.types.push(Type::Struct {
+        name: None,
+        packed: false,
+        elements: vec![1; 50],
+        opaque: false,
+    });
+    t.types.push(Type::Array { len: 2, element: 0 });
+    let name = t.name(0);
+    // (What's open when the cap is reached still closes.)
+    assert!(name.len() < 4 * crate::types::MAX_NAME, "{}", name.len());
+    assert!(name.contains("..."));
+}

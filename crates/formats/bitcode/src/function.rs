@@ -441,7 +441,13 @@ impl<'d> FunctionBody<'d> {
         if (id as usize) < m.types.len() {
             return m.types.name(id);
         }
-        let mut t = m.types.clone();
+        // The module's types, then this body's.
+        let mut t = TypeTable {
+            types: Vec::with_capacity(m.types.len() + self.extra_types.len()),
+            declared: m.types.declared,
+            announced: None,
+        };
+        t.types.extend(m.types.types.iter().cloned());
         t.types.extend(self.extra_types.iter().cloned());
         t.name(id)
     }

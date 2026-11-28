@@ -118,6 +118,9 @@ pub struct TypeTable {
     pub announced: Option<u64>,
 }
 
+/// The longest a type's name is written (longer is cut short with `...`).
+pub const MAX_NAME: usize = 4096;
+
 /// Whether `name` can be written bare after `%` or `@` (LLVM's rule).
 fn is_bare(name: &[u8]) -> bool {
     !name.is_empty()
@@ -268,8 +271,12 @@ impl TypeTable {
     }
 
     fn write(&self, s: &mut String, id: u32, depth: u32) {
-        if depth > 64 {
-            s.push_str("...");
+        // Malformed tables can refer around in circles through wide types:
+        // the name is cut short rather than grown without end.
+        if depth > 64 || s.len() > MAX_NAME {
+            if !s.ends_with("...") {
+                s.push_str("...");
+            }
             return;
         }
         let Some(t) = self.get(id) else {

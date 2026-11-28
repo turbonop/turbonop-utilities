@@ -136,9 +136,19 @@ __s=$?; if [ $__s -ne 0 ]; then echo \"{FAIL}{i} $__s\" >&2; exit $__s; fi
             stdout,
             stderr,
         };
+    // (From a file: a long `-c` script with quotes doesn't reach Git's
+    // bash whole.)
+    let script_path = dir.join("run.sh");
+    if let Err(e) = std::fs::write(&script_path, &script) {
+        return failed(
+            0,
+            None,
+            String::new(),
+            format!("runner: can't write {}: {e}", script_path.display()),
+        );
+    }
     let child = Command::new(&setup.bash)
-        .arg("-c")
-        .arg(&script)
+        .arg(&script_path)
         .current_dir(&dir)
         .env("PATH", &path)
         .env("LLD_IN_TEST", "2")

@@ -136,6 +136,17 @@ fn main() -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
+    // (And turbolib beside it, if it's beside turbolink: `lld-link /lib`.)
+    if let Some(lib) = args
+        .turbolink
+        .parent()
+        .map(|d| d.join("turbolib.exe"))
+        .filter(|p| p.is_file())
+        && let Err(e) = std::fs::copy(&lib, shim.join("turbolib.exe"))
+    {
+        eprintln!("turbolink-lldtests: can't copy {}: {e}", lib.display());
+        return ExitCode::FAILURE;
+    }
     let setup = run::Setup {
         tests: args.tests.clone(),
         tools: args.tools.clone(),
@@ -154,6 +165,8 @@ fn main() -> ExitCode {
                 String::new(),
             );
         }
+        // (With the machines of the inputs it names: `%p/Inputs/x.yaml`.)
+        let text = format!("{text}\n{}", classify::inputs_text(&t, &setup.tests));
         if let Some(why) = classify::skip(&t, &text) {
             return (name.clone(), Class::Skipped(why), String::new());
         }

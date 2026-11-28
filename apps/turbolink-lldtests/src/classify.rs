@@ -117,7 +117,37 @@ const LLD_ONLY: &[&str] = &[
     "prefetch-inputs",
     "-version",
     "version",
+    // (link.exe ignores these, LNK4044.)
+    "timestamp",
+    "summary",
 ];
+
+/// What the inputs test `t` names from `Inputs/` say of their machine:
+/// a YAML input's text, `i386` for an x86 object.
+pub fn inputs_text(t: &Test, tests: &std::path::Path) -> String {
+    let mut out = String::new();
+    for r in &t.runs {
+        for w in r.split_whitespace() {
+            let Some(at) = w.find("Inputs/") else {
+                continue;
+            };
+            let name: String = w[at..]
+                .chars()
+                .take_while(|c| !matches!(c, '"' | '\'' | ')' | ','))
+                .collect();
+            let path = tests.join(&name);
+            if name.ends_with(".yaml") {
+                out.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+                out.push('\n');
+            } else if name.ends_with(".obj")
+                && std::fs::read(&path).is_ok_and(|b| b.get(..2) == Some(&[0x4c, 0x01][..]))
+            {
+                out.push_str("i386\n");
+            }
+        }
+    }
+    out
+}
 
 /// Whether test `t` (its text `text`) runs here, and if not, why.
 pub fn skip(t: &Test, text: &str) -> Option<String> {

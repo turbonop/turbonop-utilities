@@ -505,7 +505,9 @@ fn build(
                 "/MACHINE not specified; defaulting to X64",
             ))?;
         }
-        if let Some(target) = check.machine {
+        // (A lone library is lib.exe's copy, every member kept: folding it
+        // must keep them too.)
+        if let Some(target) = check.machine.filter(|_| !lone) {
             let explicit = opts.machine.is_some() || from_objects;
             let mut kept = Vec::with_capacity(ordered.members.len());
             for &s in &ordered.members {

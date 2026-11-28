@@ -85,6 +85,10 @@ def one(i, lib, a, scratch):
         if rc_ref != 0:
             return lib, "taken, though lib.exe refuses it", text_ref.strip().splitlines()[-1:]
         same = rc_plain == 0 and open(plain, "rb").read() == open(ref, "rb").read()
+        if open(out, "rb").read() == open(ref, "rb").read():
+            # Nothing folded: lib.exe's library, byte for byte (verify would
+            # only report what it doesn't read of the original's own index).
+            return lib, "ok, nothing folded (lib.exe's bytes)", (os.path.getsize(ref),) * 2
         v = subprocess.run([a.turbolib, "verify", ref, out], capture_output=True, text=True,
                            errors="replace", timeout=TIMEOUT, creationflags=LOW)
         sizes = (os.path.getsize(ref), os.path.getsize(out))

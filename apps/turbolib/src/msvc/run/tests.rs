@@ -845,6 +845,19 @@ fn arm64x_libraries_archived_again_are_lib_exes() {
             "{name}: not lib.exe's bytes"
         );
     }
+    // Alone, with folding on: lib.exe's copy, the EC half kept.
+    let mut env = env_in(&dir);
+    env.turbolib_options = Some("--fold=identical --precomp=library --strict".into());
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/out:alone.lib", "x.lib"]),
+        &env,
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    assert!(
+        std::fs::read(dir.join("alone.lib")).unwrap()
+            == std::fs::read(testdata("coff/arm64x/x.lib")).unwrap()
+    );
     // x64 then ARM64 (inferred x64): lib.exe stops.
     let o = run(
         Flavor::Lib,

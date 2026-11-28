@@ -1038,6 +1038,27 @@ fn disassemble(
             text
         });
     }
+    if turbonop_size::clr::is_managed(&data) {
+        let text = turbonop_size::clr::listing(&data, function)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        return Ok(if style == Style::Json {
+            let name = text
+                .lines()
+                .next()
+                .unwrap_or(function)
+                .trim_end_matches(':');
+            let mut s = serde_json::to_string_pretty(&serde_json::json!({
+                "name": name,
+                "isa": "cil",
+                "text": text,
+            }))
+            .unwrap_or_default();
+            s.push('\n');
+            s
+        } else {
+            text
+        });
+    }
     if data.starts_with(b"MZ") {
         return pe_listing(path, &data, function, pdb, style);
     }
@@ -1572,6 +1593,19 @@ fn build_maps(
         return Ok(maps);
     }
     let image = Image::parse(&image_map).map_err(|e| format!("{}: {e}", show(path)))?;
+    // A managed (.NET) image without a map: its model and symbols from its
+    // CLI metadata (types as compilands, namespaces as libraries).
+    if map.is_none() && turbonop_size::clr::is_managed(&image_map) {
+        let (model, syms) =
+            turbonop_size::clr::model(&image).map_err(|e| format!("{}: {e}", show(path)))?;
+        let inputs = sources::Inputs {
+            model: Some(&model),
+            symbols: Some(&syms),
+            file_name: &file_name,
+            lines: None,
+        };
+        return Ok(sources::maps(&image, inputs, sources));
+    }
     let maps = if let Some(map) = map {
         let (model, syms) = map_model(&image, map)?;
         let inputs = sources::Inputs {

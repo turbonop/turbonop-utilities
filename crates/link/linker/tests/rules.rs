@@ -2036,3 +2036,51 @@ fn a_disallowed_default_library_is_a_warning() {
     assert!(warnings.is_empty(), "a command line library: {warnings:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `SECREL7`: the byte (signed) plus the target's offset in its section,
+/// which must fit in 7 bits (LNK2014, the link failing); `SREL32`: left as
+/// it is. (As link.exe 14.52 applies them.)
+#[test]
+fn secrel7_and_srel32_are_link_exes() {
+    let dir = scratch("secrel7");
+    // main's .text: ret, then the fields; f (another object's) lands at
+    // offset 0x10 of .text.
+    let (secrel7, srel32) = (0xC, 0xE);
+    let text = [0xC3, 0xF0, 0x10, 0x00, 0x11, 0x22, 0x33, 0x44];
+    let syms = [Sym("main", 1), Sym("f", 0)];
+    let main = object(
+        &text,
+        &[(1, 1, secrel7), (2, 1, secrel7), (4, 1, srel32)],
+        &syms,
+    );
+    std::fs::write(dir.join("main.obj"), main).unwrap();
+    std::fs::write(dir.join("f.obj"), defining("f")).unwrap();
+    let words = [
+        "/NODEFAULTLIB",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        "main.obj",
+        "f.obj",
+    ];
+    let image = run(&dir, &words).expect("links");
+    let t = &sections(&image)[0];
+    assert_eq!(
+        at_rva(&image, t.2, 8),
+        [0xC3, 0x00, 0x20, 0x00, 0x11, 0x22, 0x33, 0x44],
+        "-16 + 0x10, 0x10 + 0x10, and SREL32's bytes as they were"
+    );
+    // 0x75 + 0x10 doesn't fit in 7 bits.
+    let text = [0xC3, 0x75, 0, 0, 0, 0, 0, 0];
+    let main = object(&text, &[(1, 1, secrel7)], &syms);
+    // (Another file: the first link keeps its inputs mapped.)
+    std::fs::write(dir.join("over.obj"), main).unwrap();
+    let words = [
+        "/NODEFAULTLIB",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        "over.obj",
+        "f.obj",
+    ];
+    assert!(run(&dir, &words).is_err(), "an overflow");
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -795,7 +795,8 @@ same but for the PDB's GUID, age, and name.
   fully),
   `/WHOLEARCHIVE`, link.exe's exit codes (the fatal error's number),
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
-  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
+  members), `IMAGE_REL_AMD64_TOKEN` (CLR's: link.exe 14.52 crashes on
+  it in a native link).
 - **Exports' diagnostics:** link.exe warns LNK4197 for a name exported
   twice (turbolink keeps the first silently, as link.exe does) and reports
   LNK2001 for a forwarder `x = dll.f` when nothing defines `f` (seen on

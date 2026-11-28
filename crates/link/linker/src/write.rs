@@ -34,6 +34,8 @@ mod amd64 {
     pub const REL32_5: u16 = 9;
     pub const SECTION: u16 = 0xA;
     pub const SECREL: u16 = 0xB;
+    pub const SECREL7: u16 = 0xC;
+    pub const SREL32: u16 = 0xE;
 }
 
 /// What the writer needs to find targets.
@@ -642,9 +644,11 @@ impl<'a> Image<'a> {
     ) -> Result<(), String> {
         let place = rva.wrapping_add(crate::n32(at));
         let size = match kind {
-            amd64::ABSOLUTE => return Ok(()),
+            // (A span-dependent value: link.exe leaves it as it is.)
+            amd64::ABSOLUTE | amd64::SREL32 => return Ok(()),
             amd64::ADDR64 => 8,
             amd64::SECTION => 2,
+            amd64::SECREL7 => 1,
             _ => 4,
         };
         let field = out
@@ -698,29 +702,41 @@ impl<'a> Image<'a> {
                 };
                 field.copy_from_slice(&n.to_le_bytes());
             }
-            amd64::SECREL => {
-                let off = match s {
-                    // A thread-local variable's: from the TLS template's
-                    // start (its .tls groups, wherever they were merged).
-                    Target::Rva(r) if self.tls.is_some_and(|(lo, hi)| r >= lo && r < hi) => {
-                        u64::from(r - self.tls.map_or(0, |t| t.0))
-                    }
-                    Target::Rva(r) => {
-                        let n = self.section_number(r);
-                        let start = n
-                            .checked_sub(1)
-                            .and_then(|i| self.l.sections.get(i as usize))
-                            .map_or(0, |sec| sec.rva);
-                        u64::from(r - start)
-                    }
-                    Target::Absolute(v) => v,
-                    Target::None => 0,
-                };
-                add32(field, off);
+            amd64::SECREL => add32(field, self.section_relative(s)),
+            amd64::SECREL7 => {
+                // The byte (signed) plus the offset, which must fit in 7
+                // bits (as link.exe's LNK2014 says).
+                let v = i64::from(field[0].cast_signed())
+                    + i64::try_from(self.section_relative(s)).unwrap_or(i64::MAX);
+                let v = u8::try_from(v).ok().filter(|&b| b < 0x80).ok_or_else(|| {
+                    "TLS relative fixup overflow; .tls section is too large (LNK2014)".to_owned()
+                })?;
+                field[0] = v;
             }
             other => return Err(format!("relocation type {other:#x} is not supported yet")),
         }
         Ok(())
+    }
+
+    /// `SECREL`'s value for target `s`: its offset in its section (a
+    /// thread-local variable's, from the TLS template's start, its .tls
+    /// groups wherever they were merged).
+    fn section_relative(&self, s: Target) -> u64 {
+        match s {
+            Target::Rva(r) if self.tls.is_some_and(|(lo, hi)| r >= lo && r < hi) => {
+                u64::from(r - self.tls.map_or(0, |t| t.0))
+            }
+            Target::Rva(r) => {
+                let n = self.section_number(r);
+                let start = n
+                    .checked_sub(1)
+                    .and_then(|i| self.l.sections.get(i as usize))
+                    .map_or(0, |sec| sec.rva);
+                u64::from(r - start)
+            }
+            Target::Absolute(v) => v,
+            Target::None => 0,
+        }
     }
 
     fn section_number(&self, rva: u32) -> u16 {

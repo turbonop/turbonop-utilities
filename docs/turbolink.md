@@ -275,6 +275,10 @@ lists every COFF group with its address and size) and by experiment:
   (the last of it and `LONGJMP` counts) writes no long-jump table and
   clears 0x10000; the delay-load
   address tables go to a `.didat` section of their own (read-write).
+- **x64's rarer relocations.** `SECREL7`: the byte, signed, plus the
+  target's offset in its section, which must come to 0..127 (otherwise
+  LNK2014, "TLS relative fixup overflow", and the link fails, LNK1165).
+  `SREL32` (span-dependent): link.exe leaves the field as it is.
 - **`/FAILIFMISMATCH` and `/DISALLOWLIB`** (objects' directives). The
   first value a `/FAILIFMISMATCH` key is given, in the order the files
   load, is what the rest must match: each file whose value differs is

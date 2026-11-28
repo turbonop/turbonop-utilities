@@ -3265,7 +3265,7 @@ both modes do.
 `full` itself is unchanged by this (its numbers before and after are
 within the noise). With `/Brepro`, all 245 libraries of `build-z7` were
 written byte for byte the same by `origin/main` and by this change with
-`verify=full`, `links`, and `off` (IDENTITY_RESULT).
+`verify=full`, `links`, and `off` (`perflib.py identical`, with `--fold=identical --precomp=library`; 245 of 245 identical, run at idle priority): so `links` rejected nothing `full` passed there.
 
 ### The tools: `verify` and `compare-images` (2.6)
 

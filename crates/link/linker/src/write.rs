@@ -1085,9 +1085,26 @@ impl<'a> Image<'a> {
         w.u32(0); // loader flags
         w.u32(16);
         let mut dirs = [(0u32, 0u32); 16];
-        if let Some(e) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Exports) {
-            // (Its size to 4 bytes, as link.exe gives it.)
-            dirs[0] = (e.rva, crate::layout::align_up(e.size, 4));
+        if let Some(i) = self
+            .l
+            .chunks
+            .iter()
+            .position(|c| c.kind == ChunkKind::Exports)
+        {
+            // Its size to 4 bytes, as link.exe gives it, unless nothing
+            // follows it in its section (then its own size).
+            let e = &self.l.chunks[i];
+            let last = self
+                .l
+                .sections
+                .iter()
+                .any(|s| s.chunks.last() == Some(&crate::n32(i)));
+            let size = if last {
+                e.size
+            } else {
+                crate::layout::align_up(e.size, 4)
+            };
+            dirs[0] = (e.rva, size);
         }
         if let Some(d) = self
             .l

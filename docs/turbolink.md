@@ -125,8 +125,10 @@ lists every COFF group with its address and size) and by experiment:
   `.CRT$XCU`), sections merged in sorting among the section's own
   (`.00cfg` before `.CRT` before `.rdata` before `.xdata` in `.rdata`);
   except `.idata$5` (the IAT) first and the rest of `.idata$` last. The
-  export directory (`.edata`) follows the inputs' groups, before the
-  last ones (`.idata$` but `$5`, `.didat$`, uninitialized data); then
+  export directory (`.edata`, an empty group without exports) follows
+  the inputs' groups, among the last ones by name (after `.didat$`,
+  before `.idata$` but `$5`, before uninitialized data); its directory
+  entry's size is rounded to 4 bytes unless it is last in its section; then
   link.exe's `.rdata$voltmd` and `.rdata$zzzdbg` each go before the
   first group whose name sorts after theirs (a DLL without imports or
   unwind data: `.rdata`, `.edata`, `.rdata$voltmd`, `.rdata$zzzdbg`;

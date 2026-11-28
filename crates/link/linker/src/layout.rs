@@ -1524,7 +1524,8 @@ pub fn layout(
             (bss(a), rank(ia), ia).cmp(&(bss(b), rank(ib), ib))
         });
         // The export directory, as link.exe places it: after the inputs'
-        // groups (before the imports'), and its own .rdata$voltmd and
+        // groups, among the last ones by name (after .didat$, before
+        // .idata$, before uninitialized data), and its own .rdata$voltmd and
         // .rdata$zzzdbg then each go before the first group that sorts after
         // them: a DLL without imports or unwind data has .rdata, .edata,
         // .rdata$voltmd; with unwind data, .rdata, .rdata$voltmd,
@@ -1541,7 +1542,15 @@ pub fn layout(
                     || i.starts_with(b".didat$")
                     || p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0
             };
-            let cut = rest.iter().position(|p| tail(p)).unwrap_or(rest.len());
+            // (Among the last groups by name: after .didat$, before .idata$.)
+            let cut = rest
+                .iter()
+                .position(|p| {
+                    tail(p)
+                        && (p.0.1.as_slice() > b".edata".as_slice()
+                            || p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0)
+                })
+                .unwrap_or(rest.len());
             let mut order: Vec<&Partial> = rest[..cut].to_vec();
             order.push(edata);
             for g in late_groups {

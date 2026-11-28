@@ -1,0 +1,7 @@
+version: 4
+producer: 24.0.0git c74b358f44c31e3615fe942556a41be8c9a8d877
+target triple: x86_64-apple-macosx11.0.0
+source filename: R:\tools\bitcode\embed.c
+D------X _embedded_entry
+D------- _embedded_counter
+

@@ -1,0 +1,97 @@
+version: 4
+producer: 24.0.0git c74b358f44c31e3615fe942556a41be8c9a8d877
+target triple: x86_64-unknown-linux-gnu
+source filename: every.ll
+dependent libraries:
+DU-----X declared
+DU-W---X declared_extern_weak
+DU-----X __imp_declared_dllimport
+DU-----X __gxx_personality_v0
+DU-----X __CxxFrameHandler3
+DU-----X thrower
+D------X add
+H--W---X linkonce_odr_function
+         comdat any any
+D--W---X weak_function
+P------X protected_function
+         section .text.protected
+D------X binary
+D------X casts
+D------X memory
+D------X vectors
+D------X aggregates
+D------X control
+D------X indirect
+D------X calls
+D------X more_calls
+D------X call_branch
+D------X itanium_eh
+D------X windows_eh
+D------X debug_records
+D------X bytes
+D------X types
+D------- external_var
+         section .data.every
+D-C----- common_var
+         size 32 align 16
+D--W---- weak_var
+         comdat any any
+D--W---- linkonce_var
+         comdat exactmatch exact
+D--W---- linkonce_odr_var
+         comdat largest largest
+D--W---- weak_odr_var
+         comdat nodeduplicate nodedup
+DU------ available_var
+D------- appending_var
+DU-W---- extern_weak_var
+DU------ declared_var
+H------- hidden_var
+P------- protected_var
+D------- dllexport_var
+DU------ __imp_dllimport_var
+D-----T- tls_general
+D-----T- tls_local_dynamic
+D-----T- tls_initial_exec
+D-----T- tls_local_exec
+D------- in_addrspace
+D------- samesize_var
+         comdat samesize samesize
+D------- partitioned
+D------- dso_local_var
+D------- externally_initialized
+D------- i128_value
+D------- half_value
+D------- bfloat_value
+D------- float_value
+D------- double_value
+D------- x86_fp80_value
+D------- fp128_value
+D------- ppc_fp128_value
+D------- struct_value
+D------- array_value
+D------- vector_value
+D------- zero_vector
+D------- string_value
+D------- nonnull_string
+D------- undef_value
+D------- poison_value
+D------- null_value
+D------- aggregate_ptrs
+D------- expr_ptrtoint
+D------- expr_binop
+D------- expr_gep_inrange
+D------- expr_blockaddress
+D------- expr_dso_local
+D------- expr_no_cfi
+D------- expr_ptrauth
+D------- expr_ptrtoaddr
+D------- byte_value
+D------- byte_array
+D---I--- alias
+         section .data.every
+H---I--- hidden_alias
+         section .data.every
+D------X ifunc
+D------X module_asm_symbol
+

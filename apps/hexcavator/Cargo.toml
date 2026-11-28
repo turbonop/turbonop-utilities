@@ -55,6 +55,7 @@ turbonop-lx.workspace = true
 turbonop-debuginfo.workspace = true
 turbonop-deps.workspace = true
 turbonop-wasm.workspace = true
+turbonop-bitcode.workspace = true
 turbonop-elf.workspace = true
 rustc-hash.workspace = true
 miniz_oxide.workspace = true

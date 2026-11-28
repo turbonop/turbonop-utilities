@@ -3,6 +3,8 @@
 *.bat text eol=crlf
 # Compared byte for byte (the xz streams hold text.txt as it is).
 testdata/xz/* -text
+# Compared byte for byte with what the tools wrote (LF), and binary.
+testdata/bitcode/* -text
 # Run by Linux shells (WSL), which misread CR line ends.
 *.sh text eol=lf
 # Hashed into lib /DEF's export files (their SHA-256), so the fixtures hold

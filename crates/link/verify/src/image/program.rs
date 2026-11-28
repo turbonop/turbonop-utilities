@@ -229,6 +229,18 @@ impl<'a> Linked<'a> {
         self.labels.get(i).filter(|l| l.rva == rva)
     }
 
+    /// Gives the contribution label starting at `rva` another name (no
+    /// other label names that address).
+    pub fn rename(&mut self, rva: u32, name: Box<[u8]>) {
+        let i = self.labels.partition_point(|l| l.rva < rva);
+        if let Some(l) = self.labels.get_mut(i)
+            && l.rva == rva
+            && l.priority == priority::CONTRIBUTION
+        {
+            l.name = name;
+        }
+    }
+
     /// Whether `rva` is in a procedure's code.
     pub fn in_code(&self, rva: u32) -> bool {
         let i = self.code.partition_point(|c| c.rva <= rva);

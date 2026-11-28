@@ -333,3 +333,25 @@ fn objects_and_their_crates() {
     assert_eq!(crate_of("[.rdata of foo.obj]"), None);
     assert_eq!(crate_of("[section .rdata]"), None);
 }
+
+/// MSVC's names of Rust's types are their insides' crates': an enum's
+/// method (`enum2$<alloc::...>::f`), a reference, a tuple.
+#[test]
+fn msvc_wrapped_types_are_their_crates() {
+    let c = |n: &str| crate_of(n);
+    assert_eq!(
+        c("enum2$<alloc::collections::btree::map::entry::Entry<u64,u64> >::or_insert<u64>(u64)")
+            .as_deref(),
+        Some("alloc")
+    );
+    assert_eq!(c("ref$<str$>").as_deref(), Some("[global]"));
+    assert_eq!(
+        c("tuple$<turbonop_size::Size,u64>::clone()").as_deref(),
+        Some("turbonop_size")
+    );
+    // (Not a wrapper: a generic's argument.)
+    assert_eq!(
+        c("core::ptr::drop_in_place<enum2$<foo::X> >(ptr)").as_deref(),
+        Some("core")
+    );
+}

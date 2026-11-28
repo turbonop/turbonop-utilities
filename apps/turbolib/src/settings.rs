@@ -13,11 +13,20 @@
 //! | `pull` | `preserve`, `relaxed` |
 //! | `locals` | `keep`, `copy`, `merge` |
 //! | `precomp` | `none`, `library`, `clustered`, `clustered=<n>` |
+//! | `debug-types` | `complete`, `shared` (Mach-O synthesized members' classes) |
 //! | `report` | `odr`: list the names whose definitions differ |
 //! | `threads` (or `j`) | a number of threads, at least 1 |
 //! | `diagnose` | say what was passed through, and why |
 //! | `stats` | report what was done, when the library is written |
 //! | `extract-whole` | `/EXTRACT` re-inlines folded units |
+//! | `verify` | `on` (or no value), `off`: check the folded library before it replaces the output |
+//! | `strict` | a fold that fails is an error, not the unfolded library (for testing) |
+//! | `inject-failure` | `panic`, `verify`, `layout`: make folding fail, to test the fallback |
+//!
+//! Folding never breaks a build: if it panics, if what it made can't be
+//! laid out, or (under `verify`) if the check finds the folded library not
+//! equivalent, the library is written unfolded, as `lib.exe` writes it,
+//! with one warning line saying why (`strict` makes that an error).
 //!
 //! The default folding is still `none` (`identical` is the plan's default,
 //! once the build systems using turbolib choose it). `pick` matters only
@@ -53,6 +62,19 @@ pub enum Locals {
     Merge,
 }
 
+/// `debug-types`: how a Mach-O synthesized member describes the classes
+/// its moved code names (see the plan's 7.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DebugTypes {
+    /// Whole, so that a dSYM has every class definition the original's
+    /// has, as the original's link kept it (the default).
+    Complete,
+    /// As declarations where every giver defines them in every link that
+    /// loads it: smaller, but which unit's version of a class the dSYM has
+    /// may change.
+    Shared,
+}
+
 /// `precomp`: shared types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Precomp {
@@ -71,12 +93,31 @@ pub struct Settings {
     pub pull: Pull,
     pub locals: Locals,
     pub precomp: Precomp,
+    pub debug_types: DebugTypes,
     pub threads: Option<usize>,
     pub diagnose: bool,
     pub stats: bool,
     pub extract_whole: bool,
     /// `report=odr`.
     pub report_odr: bool,
+    /// Check the folded library (`turbonop_verify`) before it is put in
+    /// place, and write the unfolded one if the check fails.
+    pub verify: bool,
+    /// A failed fold is an error rather than the unfolded library.
+    pub strict: bool,
+    /// A failure to make on purpose, to test the fallback.
+    pub inject: Option<Inject>,
+}
+
+/// `inject-failure`: where folding is made to fail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Inject {
+    /// Folding panics (on one of the worker threads, when there are any).
+    Panic,
+    /// The self-check reports a failure.
+    Verify,
+    /// Laying out the folded library fails.
+    Layout,
 }
 
 impl Default for Settings {
@@ -87,11 +128,15 @@ impl Default for Settings {
             pull: Pull::Preserve,
             locals: Locals::Keep,
             precomp: Precomp::None,
+            debug_types: DebugTypes::Complete,
             threads: None,
             diagnose: false,
             stats: false,
             extract_whole: false,
             report_odr: false,
+            verify: true,
+            strict: false,
+            inject: None,
         }
     }
 }
@@ -116,6 +161,8 @@ impl Settings {
             ("locals", Some("keep")) => self.locals = Locals::Keep,
             ("locals", Some("copy")) => self.locals = Locals::Copy,
             ("locals", Some("merge")) => self.locals = Locals::Merge,
+            ("debug-types", Some("complete")) => self.debug_types = DebugTypes::Complete,
+            ("debug-types", Some("shared")) => self.debug_types = DebugTypes::Shared,
             ("precomp", Some("none")) => self.precomp = Precomp::None,
             ("precomp", Some("library")) => self.precomp = Precomp::Library,
             ("precomp", Some("clustered")) => self.precomp = Precomp::Clustered(None),
@@ -135,6 +182,12 @@ impl Settings {
             ("stats", None) => self.stats = true,
             ("extract-whole", None) => self.extract_whole = true,
             ("report", Some("odr")) => self.report_odr = true,
+            ("verify", None | Some("on")) => self.verify = true,
+            ("verify", Some("off")) => self.verify = false,
+            ("strict", None) => self.strict = true,
+            ("inject-failure", Some("panic")) => self.inject = Some(Inject::Panic),
+            ("inject-failure", Some("verify")) => self.inject = Some(Inject::Verify),
+            ("inject-failure", Some("layout")) => self.inject = Some(Inject::Layout),
             _ => return Err(bad()),
         }
         Ok(())

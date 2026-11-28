@@ -246,13 +246,45 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
 Binary analysis and size analysis for code that runs on a virtual
 machine, not only native images (PE, ELF, Mach-O) and WebAssembly:
 
-- **.NET assemblies.** A PE image's CLI header and metadata tables
-  (ECMA-335): types, methods, fields, and their sizes; IL bodies
-  decoded; resources; references to other assemblies; and what `size`
-  should attribute IL, metadata, strings, blobs, and resources to (by
-  type and namespace, as by compiland for native code). Portable PDBs
-  for their sources and lines. ReadyToRun images (native code beside the
-  IL) and Native AOT images (native, with .NET's own metadata) too.
+- **.NET assemblies.** The parser is done: `turbonop-clr` reads a PE
+  image's CLI header, the metadata root and every stream (`#~` and `#-`
+  with its `Ptr` tables, `#Strings`, `#US`, `#GUID`, `#Blob`, `#Pdb`),
+  every table of ECMA-335 II.22 and of the portable PDB with typed rows
+  and the lookups between them, every signature kind, names as IL spells
+  them, method bodies (tiny and fat, exception clauses) and their IL
+  (every opcode, tokens resolved), custom attribute values, permission
+  sets, marshalling descriptors, `.resources` files and their entries'
+  sizes, the strong-name signature, v-table fixups, document names and
+  sequence points, and the ReadyToRun header. Tested against
+  System.Reflection.Metadata (tools/clr/ClrDump.cs) on its fixtures and,
+  where there's a `dotnet`, on the framework's assemblies, every one. Left:
+  - **`size`**: attribute IL bodies, metadata tables, heap entries
+    (strings, blobs, user strings), and resources to their types and
+    namespaces (as compilands for native code), with the padding and
+    headers that belong to nothing.
+  - **`dump`, `symbols`, disassembly**: the tables, IL (as ildasm shows
+    it, from `il::decode` and `names`), and resources; `info -json`'s
+    fields (only the text `info` has the metadata now).
+  - **The extension's pages** for all of it.
+  - **ReadyToRun decoded**: method entry points (MethodDefEntryPoints,
+    InstanceMethodEntryPoints' native hashtables), RuntimeFunctions (the
+    native code, for size and disassembly), import sections and fixups,
+    inlining and debug info; composite images (whose header is the
+    `RTR_HEADER` export, not ManagedNativeHeader).
+  - **Native AOT images** (no CLI header: .NET's own metadata, the
+    `__ReadyToRunHeader` of the runtime's type manager).
+  - **Portable PDBs, the rest**: local constant signatures, import scope
+    blobs, custom debug information by kind (embedded sources, source
+    link, state machine scopes, dynamic locals); embedded PDBs (the debug
+    directory's deflated entry) and finding a PDB from the CodeView entry.
+  - **Custom attributes naming other assemblies' enums**: their
+    underlying types are only known from those assemblies
+    (`EnumTypes::add_assembly`); hexcavator should load the references it
+    can find (int32 is assumed otherwise, as System.Reflection.Metadata's
+    decoder does).
+  - **C++/CLI mixed images**: the v-table fixups' native thunks, native
+    method bodies (code type native, not IL), field-kind stand-alone
+    signatures; and edit-and-continue deltas (ENCLog, ENCMap applied).
 - **Java.** Class files (constant pool, fields, methods, attributes,
   bytecode decoded) and JARs (zip archives of them, with their
   manifests): size by package, class, and method.

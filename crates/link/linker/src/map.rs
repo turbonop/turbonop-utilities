@@ -149,11 +149,7 @@ impl Image<'_> {
                         .iter()
                         .map(|&c| {
                             let chunk = &l.chunks[c as usize];
-                            // (link.exe's room after the bound tables is
-                            // 0x103 bytes, and the alignment after it the
-                            // 0x104th: an empty group after it starts there.)
-                            let short = u32::from(chunk.kind == ChunkKind::DelayBoundRoom);
-                            chunk.rva + chunk.size - short
+                            chunk.rva + chunk.size
                         })
                         .max()
                 })

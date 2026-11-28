@@ -106,7 +106,8 @@ pub enum ChunkKind {
     DelayHintNames,
     /// A delay-loaded DLL's bound address table (`.didat$7`, zeros).
     DelayBound(u32),
-    /// The room link.exe leaves after the bound tables (0x104 zero bytes).
+    /// The room link.exe leaves after the bound tables (zeros: 0x100 bytes
+    /// and a tenth of the bound tables' size).
     DelayBoundRoom,
     /// A delay-loaded DLL's unload table (`.didat$8`, `/DELAY:UNLOAD`: a
     /// copy of its address table).
@@ -200,8 +201,11 @@ pub struct Layout {
     /// The delay-loaded DLLs, in the order their first imports loaded.
     pub delay_dlls: Vec<Dll>,
     /// For each delay-loaded import file: its DLL's index (in `delay_dlls`)
-    /// and its place in the DLL's tables.
+    /// and its place in the DLL's name and address tables.
     pub delay_slots: Map<u32, (u32, u32)>,
+    /// Each delay-loaded DLL's imports in its name, address, and unload
+    /// tables' order (link.exe's sort of them: [`delay_tables`]).
+    pub delay_tables: Vec<Vec<u32>>,
     /// Each delay-loaded import's hint/name entry's offset in
     /// `DelayHintNames`.
     pub delay_name_offsets: Map<u32, u32>,
@@ -1131,11 +1135,20 @@ pub fn layout(
 
     // The delay-load tables (`.didat$`, as link.exe's groups): the
     // descriptors and their null one, each DLL's name table, the hint/name
-    // entries, each DLL's bound table (zeros, and 0x104 bytes of room
-    // after them; not with /DELAY:NOBIND), each one's unload table (with
-    // /DELAY:UNLOAD), and each one's address table (in .data). Each DLL's
-    // imports are in the order they loaded.
+    // entries, each DLL's bound table (zeros, and room after them all; not
+    // with /DELAY:NOBIND), each one's unload table (with
+    // /DELAY:UNLOAD), and each one's address table (in .data). The
+    // hint/names and bound tables are in the order the imports (and DLLs)
+    // loaded; the name, unload and address tables in link.exe's sort of
+    // them (`delay_tables`).
     let mut delay_name_offsets = Map::default();
+    let (delay_table_dlls, delay_tables, delay_room) =
+        delay_tables(r, config, &live.imports, &delay_dlls);
+    for (d, table) in delay_tables.iter().enumerate() {
+        for (k, &f) in table.iter().enumerate() {
+            delay_slots.insert(f, (crate::n32(d), crate::n32(k)));
+        }
+    }
     if !delay_dlls.is_empty() {
         let data = scn::CNT_INITIALIZED_DATA | scn::MEM_READ;
         let table = |n: usize| crate::n32((n + 1) * 8);
@@ -1149,13 +1162,13 @@ pub fn layout(
             ),
             (b".didat$3", data, ChunkKind::DelayNullDescriptor, 4, 32),
         ];
-        for (d, dll) in delay_dlls.iter().enumerate() {
+        for &d in &delay_table_dlls {
             tables.push((
                 b".didat$4",
                 data,
-                ChunkKind::DelayNames(crate::n32(d)),
+                ChunkKind::DelayNames(d),
                 8,
-                table(dll.imports.len()),
+                table(delay_dlls[d as usize].imports.len()),
             ));
         }
         let mut at = 0u32;
@@ -1180,26 +1193,28 @@ pub fn layout(
                     table(dll.imports.len()),
                 ));
             }
-            tables.push((b".didat$7", data, ChunkKind::DelayBoundRoom, 1, 0x104));
+            if let Some(room) = delay_room {
+                tables.push((b".didat$7", data, ChunkKind::DelayBoundRoom, 1, room));
+            }
         }
         if config.delay_unload {
-            for (d, dll) in delay_dlls.iter().enumerate() {
+            for &d in &delay_table_dlls {
                 tables.push((
                     b".didat$8",
                     data,
-                    ChunkKind::DelayUnload(crate::n32(d)),
+                    ChunkKind::DelayUnload(d),
                     8,
-                    table(dll.imports.len()),
+                    table(delay_dlls[d as usize].imports.len()),
                 ));
             }
         }
-        for (d, dll) in delay_dlls.iter().enumerate() {
+        for &d in &delay_table_dlls {
             tables.push((
                 b".didat$5",
                 data | scn::MEM_WRITE,
-                ChunkKind::DelayAddresses(crate::n32(d)),
+                ChunkKind::DelayAddresses(d),
                 8,
-                table(dll.imports.len()),
+                table(delay_dlls[d as usize].imports.len()),
             ));
         }
         for (name, chars, kind, align, size) in tables {
@@ -1629,6 +1644,7 @@ pub fn layout(
         directory_order,
         delay_dlls,
         delay_slots,
+        delay_tables,
         delay_name_offsets,
         folded,
         guard,
@@ -1739,10 +1755,6 @@ impl Layout {
                     group_start.insert(first, align);
                 }
             }
-            // (Where the delay-load descriptors start: the room after the
-            // bound tables ends 4 bytes past a multiple of 8 from there, as
-            // link.exe's does: 0x104 bytes, or 0x108.)
-            let mut delay_start = None;
             // With /FUNCTIONPADMIN, padding before each piece of code (a
             // function, a funclet, an import thunk), then its alignment.
             for &c in &s.chunks {
@@ -1757,14 +1769,6 @@ impl Layout {
                 let chunk = &mut self.chunks[c as usize];
                 at = align_up(at, chunk.align.max(group_align));
                 chunk.rva = rva + at;
-                match chunk.kind {
-                    ChunkKind::DelayDirectory => delay_start = Some(chunk.rva),
-                    ChunkKind::DelayBoundRoom => {
-                        let from = chunk.rva + 0x104 - delay_start.unwrap_or(chunk.rva);
-                        chunk.size = if from % 8 == 4 { 0x104 } else { 0x108 };
-                    }
-                    _ => {}
-                }
                 at += chunk.size;
                 if !chunk.uninitialized {
                     init_end = at;
@@ -1845,6 +1849,120 @@ impl Layout {
             .find(|c| c.kind == ChunkKind::ImportAddresses(d))?;
         Some(iat.rva + 8 * k)
     }
+}
+
+/// The order of the delay-loaded DLLs' name, address, and unload tables
+/// (`.didat$4`, `$5`, `$8`), as link.exe sorts them: the DLLs' order (their
+/// indices in `delay_dlls`), each one's imports in its tables, and the
+/// room link.exe leaves after the bound tables (`.didat$7`): 0x100 bytes
+/// and a tenth of the bound tables' size as they were before /OPT:REF
+/// (8 bytes for each import loaded and each DLL's end; measured over 1 to
+/// 7 DLLs of 0 to 20 imports). It goes with the last delay-loaded import
+/// to load: none if /OPT:REF drops that one.
+///
+/// link.exe sorts each of those sections' pieces with the CRT's `qsort`,
+/// by the file name (`_wsplitpath`'s, without directory or extension) of
+/// the module each came from: an import's archive member's name, which
+/// for an import library is its DLL's name. A DLL's table end (its null
+/// entry) sorts after its imports. Every delay-loaded import that loaded
+/// is in the sort (one `/OPT:REF` drops too, its place then dropped), in
+/// the order they loaded, each DLL's end right after its first import:
+/// link.exe makes it with the DLL's other pieces. `qsort` isn't stable,
+/// so equal names come out as it leaves them: loads A, B, C give C, B, A;
+/// A to H give A, G, B, C, D, E, F, H (more than 8 pieces, it partitions).
+fn delay_tables(
+    r: &Resolved,
+    config: &Config,
+    live: &[bool],
+    delay_dlls: &[Dll],
+) -> (Vec<u32>, Vec<Vec<u32>>, Option<u32>) {
+    let index: Map<&[u8], u32> = delay_dlls
+        .iter()
+        .enumerate()
+        .map(|(d, dll)| (dll.name, crate::n32(d)))
+        .collect();
+    // (the module's file name, the import (None: a DLL's end), its DLL's
+    // index (u32::MAX: one with nothing live)).
+    let mut pieces: Vec<(Vec<u16>, Option<u32>, u32)> = Vec::new();
+    let mut seen: Map<&[u8], ()> = Map::default();
+    for (f, file) in r.files.iter().enumerate() {
+        let FileKind::Import { import, .. } = &file.kind else {
+            continue;
+        };
+        if !config.is_delay_loaded(import.dll) {
+            continue;
+        }
+        let key = module_file_name(file);
+        let d = index.get(import.dll).copied().unwrap_or(u32::MAX);
+        let first = seen.insert(import.dll, ()).is_none();
+        pieces.push((key.clone(), Some(crate::n32(f)), d));
+        if first {
+            pieces.push((key, None, d));
+        }
+    }
+    let last_live = pieces
+        .iter()
+        .rev()
+        .find_map(|p| p.1)
+        .is_some_and(|f| live[f as usize]);
+    let room = last_live.then(|| 0x100 + 8 * crate::n32(pieces.len()) / 10);
+    crate::msqsort::qsort(&mut pieces, |a, b| match a.0.cmp(&b.0) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Greater => 1,
+        std::cmp::Ordering::Equal => i32::from(a.1.is_none()) - i32::from(b.1.is_none()),
+    });
+    let mut order = Vec::with_capacity(delay_dlls.len());
+    let mut placed = vec![false; delay_dlls.len()];
+    let mut tables = vec![Vec::new(); delay_dlls.len()];
+    for (_, f, d) in pieces {
+        let Some(slot) = placed.get_mut(d as usize) else {
+            continue;
+        };
+        if !*slot {
+            *slot = true;
+            order.push(d);
+        }
+        if let Some(f) = f
+            && live[f as usize]
+        {
+            tables[d as usize].push(f);
+        }
+    }
+    (order, tables, room)
+}
+
+/// The name link.exe sorts a module's pieces by: its file name, without
+/// directory or extension (as `_wsplitpath` splits it), of the archive
+/// member for a library's (`x.lib(KERNEL32.dll)`: `KERNEL32`), of the
+/// file otherwise; in UTF-16, as link.exe compares it.
+fn module_file_name(file: &crate::resolve::File) -> Vec<u16> {
+    let name = file.name.as_str();
+    let path = match file.library {
+        // `library(member)`: the member is in the last parentheses (a
+        // library's path may have its own, `Program Files (x86)`).
+        Some(_) => name
+            .strip_suffix(')')
+            .and_then(|n| {
+                let mut depth = 0usize;
+                n.char_indices().rev().find_map(|(i, c)| match c {
+                    ')' => {
+                        depth += 1;
+                        None
+                    }
+                    '(' if depth == 0 => Some(&n[i + 1..]),
+                    '(' => {
+                        depth -= 1;
+                        None
+                    }
+                    _ => None,
+                })
+            })
+            .unwrap_or(name),
+        None => name,
+    };
+    let base = path.rsplit(['\\', '/', ':']).next().unwrap_or(path);
+    let stem = base.rfind('.').map_or(base, |p| &base[..p]);
+    stem.encode_utf16().collect()
 }
 
 /// The name an import object is imported by, for its hint/name entry.

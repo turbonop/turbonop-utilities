@@ -45,11 +45,11 @@ fn main() {
                 }
                 println!(
                     "{path}\t{first}\t{:032x}\t{:?}\t{}",
-                    u.structural,
+                    u.structural(),
                     u.unfoldable,
                     u.detail.as_deref().unwrap_or("")
                 );
-                for node in u.closure.iter().skip(1) {
+                for node in u.closure().iter().skip(1) {
                     match *node {
                         Node::Piece(p) => {
                             let piece = &facts.pieces[p as usize];
@@ -70,8 +70,8 @@ fn main() {
                                 String::from_utf8_lossy(
                                     o.sections[v.leader.index()].name.as_bytes()
                                 ),
-                                v.structural,
-                                v.blocked
+                                v.structural(),
+                                v.blocked()
                             );
                         }
                     }

@@ -476,7 +476,7 @@ struct Parsed<'a> {
     is_object: bool,
     /// The object's machine (0 if it isn't one).
     machine: u16,
-    facts: Facts,
+    facts: Facts<'a>,
     passed: Option<Unfoldable>,
     debug: debug::Facts,
     /// Its types' section data (`.debug$T` or `.debug$P`), if it has
@@ -515,7 +515,8 @@ impl Needs {
             },
             precomp: !matches!(options.precomp, Precomp::None),
             clustered: matches!(options.precomp, Precomp::Clustered { .. }),
-            references: matches!(options.fold, Fold::SelectAny(_)) && options.pull == Pull::Preserve,
+            references: matches!(options.fold, Fold::SelectAny(_))
+                && options.pull == Pull::Preserve,
             keep: false,
         }
     }
@@ -700,12 +701,12 @@ fn definers<'p>(
         }
         for unit in &p.facts.units {
             for n in &unit.externals {
-                let e = one_code.entry(n.as_slice()).or_insert(Some(unit.code));
+                let e = one_code.entry(n.as_ref()).or_insert(Some(unit.code));
                 if *e != Some(unit.code) {
                     *e = None;
                 }
                 if keys {
-                    let e = one_key.entry(n.as_slice()).or_insert(Some(unit.name_key));
+                    let e = one_key.entry(n.as_ref()).or_insert(Some(unit.name_key));
                     if *e != Some(unit.name_key) {
                         *e = None;
                     }
@@ -713,9 +714,9 @@ fn definers<'p>(
             }
         }
         for n in &p.facts.other_definitions {
-            one_code.insert(n.as_slice(), None);
+            one_code.insert(n.as_ref(), None);
             if keys {
-                one_key.insert(n.as_slice(), None);
+                one_key.insert(n.as_ref(), None);
             }
         }
     }
@@ -1095,8 +1096,8 @@ struct Decider<'d, 'p, 'a> {
     synths: Vec<Synth>,
 }
 
-impl Decider<'_, '_, '_> {
-    fn unit(&self, (m, u): (usize, usize)) -> &units::Unit {
+impl<'a> Decider<'_, '_, 'a> {
+    fn unit(&self, (m, u): (usize, usize)) -> &units::Unit<'a> {
         &self.parsed[m].facts.units[u]
     }
 
@@ -1146,7 +1147,7 @@ impl Decider<'_, '_, '_> {
     fn definer_has_side_effects(&self, x: (usize, usize)) -> bool {
         self.unit(x).externals.iter().any(|n| {
             self.first_definer
-                .get(n.as_slice())
+                .get(n.as_ref())
                 .is_some_and(|&m| self.parsed[m].facts.side_effects)
         })
     }
@@ -1164,7 +1165,7 @@ impl Decider<'_, '_, '_> {
         // must have had no side effects (see `Pull::Preserve`).
         if self.options.pull == Pull::Preserve
             && self.unit(first).externals.iter().any(|n| {
-                self.one_code.get(n.as_slice()).copied().flatten() != Some(self.unit(first).code)
+                self.one_code.get(n.as_ref()).copied().flatten() != Some(self.unit(first).code)
             })
         {
             why = Some(Unfoldable::OtherDefinitions);
@@ -1220,7 +1221,12 @@ impl Decider<'_, '_, '_> {
         };
         if !agree {
             self.report.mismatches.push(Mismatch {
-                names: self.unit(first).externals.clone(),
+                names: self
+                    .unit(first)
+                    .externals
+                    .iter()
+                    .map(|n| n.to_vec())
+                    .collect(),
                 selection,
                 copies: c
                     .iter()
@@ -1270,7 +1276,7 @@ impl Decider<'_, '_, '_> {
             // this group's kind, so whichever copy a link would have kept,
             // it could have kept the survivor.
             if self.unit(first).externals.iter().any(|n| {
-                self.one_key.get(n.as_slice()).copied().flatten() != Some(self.unit(first).name_key)
+                self.one_key.get(n.as_ref()).copied().flatten() != Some(self.unit(first).name_key)
             }) {
                 why = Some(Unfoldable::OtherDefinitions);
             }
@@ -1356,11 +1362,11 @@ fn absorb(facts: &units::Facts, same: &[usize]) -> Vec<usize> {
     }
     let mut going = vec![false; n];
     for &u in same {
-        for node in facts.units[u].closure.iter().skip(1) {
+        for node in facts.units[u].closure().iter().skip(1) {
             if let locals::Node::Unit(v) = *node {
                 let v = v as usize;
                 let unit = &facts.units[v];
-                if unit.pure_local && !unit.pinned && unit.blocked.is_none() {
+                if unit.pure_local() && !unit.pinned() && unit.blocked().is_none() {
                     going[v] = true;
                 }
             }
@@ -1371,7 +1377,7 @@ fn absorb(facts: &units::Facts, same: &[usize]) -> Vec<usize> {
         for v in 0..n {
             if going[v]
                 && facts.units[v]
-                    .referrers
+                    .referrers()
                     .iter()
                     .any(|&r| !removed[r as usize] && !going[r as usize])
             {
@@ -1394,9 +1400,9 @@ fn local_copies(s: &Synth, parsed: &[Parsed<'_>], mode: Locals) -> Vec<LocalCopy
     let mut seen: HashMap<(u8, u128), ()> = HashMap::default();
     for &(m, u, _) in &s.units {
         let facts = &parsed[m].facts;
-        for &node in facts.units[u].closure.iter().skip(1) {
+        for &node in facts.units[u].closure().iter().skip(1) {
             let key = match (mode, node) {
-                (Locals::Merge, locals::Node::Unit(v)) => (1, facts.units[v as usize].structural),
+                (Locals::Merge, locals::Node::Unit(v)) => (1, facts.units[v as usize].structural()),
                 (Locals::Merge, locals::Node::Piece(p)) => (2, facts.pieces[p as usize].closure),
                 (_, locals::Node::Unit(v)) => (3, (m as u128) << 64 | u128::from(v)),
                 (_, locals::Node::Piece(p)) => (4, (m as u128) << 64 | u128::from(p)),
@@ -1420,7 +1426,7 @@ fn odr(inputs: &[Input<'_>], parsed: &[Parsed<'_>]) -> Vec<OdrFinding> {
             if unit.externals.is_empty() {
                 continue;
             }
-            let mut names: Vec<&[u8]> = unit.externals.iter().map(Vec::as_slice).collect();
+            let mut names: Vec<&[u8]> = unit.externals.iter().map(AsRef::as_ref).collect();
             names.sort_unstable();
             let mut h = H128::new();
             for n in names {
@@ -1437,15 +1443,15 @@ fn odr(inputs: &[Input<'_>], parsed: &[Parsed<'_>]) -> Vec<OdrFinding> {
     let mut out = Vec::new();
     for copies in found {
         let unit = |(m, u): (usize, usize)| &parsed[m].facts.units[u];
-        let first = unit(copies[0]).structural;
-        if copies.iter().all(|&x| unit(x).structural == first) {
+        let first = unit(copies[0]).structural();
+        if copies.iter().all(|&x| unit(x).structural() == first) {
             continue;
         }
         let mut variants: Vec<OdrVariant> = Vec::new();
         for &(m, u) in &copies {
             let x = unit((m, u));
             let name = inputs[m].name.to_vec();
-            match variants.iter_mut().find(|v| v.code == x.structural) {
+            match variants.iter_mut().find(|v| v.code == x.structural()) {
                 Some(v) => {
                     if v.members.last() != Some(&name) {
                         v.members.push(name);
@@ -1455,7 +1461,7 @@ fn odr(inputs: &[Input<'_>], parsed: &[Parsed<'_>]) -> Vec<OdrFinding> {
                     }
                 }
                 None => variants.push(OdrVariant {
-                    code: x.structural,
+                    code: x.structural(),
                     size: x.size,
                     selection: x.selection,
                     members: vec![name],
@@ -1473,7 +1479,11 @@ fn odr(inputs: &[Input<'_>], parsed: &[Parsed<'_>]) -> Vec<OdrFinding> {
         envs.sort_unstable();
         envs.dedup();
         out.push(OdrFinding {
-            names: unit(copies[0]).externals.clone(),
+            names: unit(copies[0])
+                .externals
+                .iter()
+                .map(|n| n.to_vec())
+                .collect(),
             same_environment: envs.len() < total,
             variants,
         });
@@ -2237,7 +2247,7 @@ fn synthesize<'a>(
             for r in &object.sections[id.index()].relocations {
                 let symbol = match placed[k].symbols.get(&r.symbol.0) {
                     Some(&inside) => inside,
-                    None => match copies.local(m, &unit.edges, r.symbol, &placed) {
+                    None => match copies.local(m, unit.edges(), r.symbol, &placed) {
                         Some(copy) => copy,
                         None => names.outside(&mut o, object, &object.symbols[r.symbol.index()]),
                     },
@@ -2283,7 +2293,7 @@ fn synthesize<'a>(
         &mut |o, k, old| {
             let (m, u, _) = placements[k];
             let object = objects.get(m);
-            match copies.local(m, &parsed[m].facts.units[u].edges, old, &placed) {
+            match copies.local(m, parsed[m].facts.units[u].edges(), old, &placed) {
                 Some(copy) => copy,
                 None => names.outside(o, object, &object.symbols[old.index()]),
             }
@@ -2373,7 +2383,7 @@ impl Copies<'_, '_, '_> {
 fn contents(parsed: &[Parsed<'_>], m: usize, node: locals::Node) -> (u8, u128) {
     let f = &parsed[m].facts;
     match node {
-        locals::Node::Unit(v) => (1, f.units[v as usize].structural),
+        locals::Node::Unit(v) => (1, f.units[v as usize].structural()),
         locals::Node::Piece(p) => (2, f.pieces[p as usize].closure),
     }
 }

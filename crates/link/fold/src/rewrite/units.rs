@@ -23,13 +23,15 @@ use super::Unfoldable;
 use super::locals::{self, Edge, Piece};
 use super::tables::{self, Tables};
 use crate::hash::H128;
+use std::borrow::Cow;
 use turbonop_coff::{
     Aux, Object, SectionData, SectionId, SectionNumber, SymbolId, comdat_select, storage_class,
 };
 
-/// One fold unit of a member.
+/// One fold unit of a member (`'a`: the member's bytes, whose names it
+/// borrows).
 #[derive(Clone, Debug)]
-pub struct Unit {
+pub struct Unit<'a> {
     /// The leader's section.
     pub leader: SectionId,
     /// The leader's section, then its associated sections, in section
@@ -38,7 +40,7 @@ pub struct Unit {
     /// The symbols defined in those sections, in symbol order.
     pub symbols: Vec<SymbolId>,
     /// The external symbols among them, by name.
-    pub externals: Vec<Vec<u8>>,
+    pub externals: Vec<Cow<'a, [u8]>>,
     /// The leader's selection.
     pub selection: u8,
     /// The bytes of its sections (data, relocations, and line numbers),
@@ -62,11 +64,18 @@ pub struct Unit {
     /// what the linker chooses among (`--fold=select-any`); 0 for a unit
     /// with no external name.
     pub name_key: u128,
+    /// What only `--locals` and `--report odr` use (under
+    /// [`Mode::structural`]; `None` otherwise).
+    pub local: Option<Box<LocalUnit>>,
+}
+
+/// What a unit is to internal linkage (`--locals`, `--report odr`).
+#[derive(Clone, Debug, Default)]
+pub struct LocalUnit {
     /// Its code with the internal-linkage things it reaches by content
     /// (see [`locals`](super::locals)): equal for copies that are the same
     /// but for which translation unit's locals they name. The same as
-    /// `code` for a unit that reaches none, and computed only when
-    /// [`Mode`] asks for it.
+    /// `code` for a unit that reaches none.
     pub structural: u128,
     /// The internal-linkage things outside it that it refers to, in the
     /// order its code names them (under [`Mode::structural`]).
@@ -89,9 +98,54 @@ pub struct Unit {
     pub closure: Vec<locals::Node>,
 }
 
+impl Unit<'_> {
+    /// [`LocalUnit::structural`], which is `code` when not computed.
+    pub fn structural(&self) -> u128 {
+        self.local.as_ref().map_or(self.code, |l| l.structural)
+    }
+
+    /// [`LocalUnit::edges`].
+    pub fn edges(&self) -> &[Edge] {
+        self.local.as_ref().map_or(&[], |l| &l.edges)
+    }
+
+    /// [`LocalUnit::closure`].
+    pub fn closure(&self) -> &[locals::Node] {
+        self.local.as_ref().map_or(&[], |l| &l.closure)
+    }
+
+    /// [`LocalUnit::pure_local`].
+    pub fn pure_local(&self) -> bool {
+        self.local.as_ref().is_some_and(|l| l.pure_local)
+    }
+
+    /// [`LocalUnit::pinned`].
+    pub fn pinned(&self) -> bool {
+        self.local.as_ref().is_some_and(|l| l.pinned)
+    }
+
+    /// [`LocalUnit::referrers`].
+    pub fn referrers(&self) -> &[u32] {
+        self.local.as_ref().map_or(&[], |l| &l.referrers)
+    }
+
+    /// [`LocalUnit::blocked`].
+    pub fn blocked(&self) -> Option<&(Unfoldable, String)> {
+        self.local.as_ref().and_then(|l| l.blocked.as_ref())
+    }
+
+    /// Sets [`LocalUnit::blocked`] (of a unit read under
+    /// [`Mode::structural`]).
+    pub fn block(&mut self, why: Unfoldable, what: String) {
+        if let Some(l) = &mut self.local {
+            l.blocked = Some((why, what));
+        }
+    }
+}
+
 /// What one member is, for folding.
 #[derive(Clone, Debug, Default)]
-pub struct Facts {
+pub struct Facts<'a> {
     /// The environment key (machine, `@feat.00`, `/FAILIFMISMATCH`, and the
     /// compiler's `S_COMPILE3`).
     pub environment: u128,
@@ -111,9 +165,9 @@ pub struct Facts {
     /// The `/FAILIFMISMATCH` directives, as written, in order.
     pub mismatches: Vec<Vec<u8>>,
     /// External symbols the member defines outside its units, by name.
-    pub other_definitions: Vec<Vec<u8>>,
+    pub other_definitions: Vec<Cow<'a, [u8]>>,
     /// Its units.
-    pub units: Vec<Unit>,
+    pub units: Vec<Unit<'a>>,
     /// Its side tables.
     pub tables: Tables,
     /// The pieces of its sections outside units that its units reach
@@ -268,13 +322,13 @@ impl Reasons {
 
 /// Finds the member's units and facts (`--locals=keep`). `Err` is why the
 /// member passes through whole.
-pub fn find(object: &Object<'_>) -> Result<Facts, Unfoldable> {
+pub fn find<'a>(object: &Object<'a>) -> Result<Facts<'a>, Unfoldable> {
     find_with(object, Mode::default())
 }
 
 /// Finds the member's units and facts, as `mode` says. `Err` is why the
 /// member passes through whole.
-pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
+pub fn find_with<'a>(object: &Object<'a>, mode: Mode) -> Result<Facts<'a>, Unfoldable> {
     let structural = mode.structural || mode.copy_locals;
     let n = object.sections.len();
     let mut facts = Facts::default();
@@ -401,7 +455,7 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
         None
     };
     let mut unit_of: Vec<Option<usize>> = vec![None; n];
-    let mut units: Vec<Unit> = Vec::new();
+    let mut units: Vec<Unit<'a>> = Vec::new();
     let mut unit_by_leader: Vec<Option<usize>> = vec![None; n];
     for (i, slot) in unit_of.iter_mut().enumerate() {
         if let Some(l) = leader(i) {
@@ -420,13 +474,7 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
                     leader_size: 0,
                     checksum: checksum[l],
                     name_key: 0,
-                    structural: 0,
-                    edges: Vec::new(),
-                    pure_local: false,
-                    pinned: false,
-                    referrers: Vec::new(),
-                    blocked: None,
-                    closure: Vec::new(),
+                    local: None,
                 });
                 units.len() - 1
             });
@@ -458,12 +506,12 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
             Some(u) => {
                 units[u].symbols.push(SymbolId(i as u32));
                 if s.is_external() {
-                    units[u].externals.push(s.name.as_bytes().to_vec());
+                    units[u].externals.push(s.name.data());
                 }
             }
             None => {
                 if s.is_external() && s.section.id().is_some() {
-                    facts.other_definitions.push(s.name.as_bytes().to_vec());
+                    facts.other_definitions.push(s.name.data());
                 }
             }
         }
@@ -641,10 +689,9 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
     for (k, u) in units.iter_mut().enumerate() {
         let keep = reasons.first[k].take();
         u.code = codes[k];
-        u.structural = codes[k];
         u.leader_size = object.sections[u.leader.index()].size();
         if !u.externals.is_empty() {
-            let mut names: Vec<&[u8]> = u.externals.iter().map(Vec::as_slice).collect();
+            let mut names: Vec<&[u8]> = u.externals.iter().map(AsRef::as_ref).collect();
             names.sort_unstable();
             let mut h = H128::new();
             h.u64(u64::from(u.selection));
@@ -657,24 +704,34 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
         match &mut analysis {
             Some(a) => {
                 let c = std::mem::take(&mut closures[k]);
-                u.structural = c.hash;
-                u.edges = std::mem::take(&mut a.edges[k]);
-                u.closure = c.nodes;
-                u.pure_local = a.pure[k];
-                u.pinned = a.pinned[k];
-                u.referrers = std::mem::take(&mut a.referrers[k]);
+                let mut local = Box::new(LocalUnit {
+                    structural: c.hash,
+                    edges: std::mem::take(&mut a.edges[k]),
+                    closure: c.nodes,
+                    pure_local: a.pure[k],
+                    pinned: a.pinned[k],
+                    referrers: std::mem::take(&mut a.referrers[k]),
+                    blocked: None,
+                });
+                let pure_local = local.pure_local;
+                let mut why = None;
                 if mode.copy_locals {
                     u.code = c.hash;
                     // What no mode lifts first, then what about its locals
                     // can't be copied.
-                    let why = reasons.hard[k]
+                    why = reasons.hard[k]
                         .take()
                         .or_else(|| a.hard[k].take())
                         .or(c.blocked);
-                    if u.pure_local {
+                    if pure_local {
                         // Never folded by itself: copied with what reaches
                         // it.
-                        u.blocked = why;
+                        local.blocked = why.take();
+                    }
+                }
+                u.local = Some(local);
+                if mode.copy_locals {
+                    if pure_local {
                         u.unfoldable = Some(Unfoldable::InternalLinkage);
                         u.detail = Some("copied with the units that reach it".into());
                     } else if let Some((w, d)) = why {
@@ -706,6 +763,8 @@ pub fn find_with(object: &Object<'_>, mode: Mode) -> Result<Facts, Unfoldable> {
             })
             .sum();
     }
+    // Kept until the members are made: without the doubling's spare room.
+    units.shrink_to_fit();
     facts.units = units;
     facts.tables = tables;
     facts.pieces = analysis.map(|a| a.pieces).unwrap_or_default();

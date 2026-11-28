@@ -194,6 +194,32 @@ fn two_arm64_builds_by_their_instructions() {
     }
 }
 
+/// The debug streams of x86 PDBs (testdata/x86fpo): their frame data
+/// compared by the functions it's for, so that what moved but is the
+/// same is no difference; a PDB is the same as itself.
+#[test]
+fn x86_frame_data_by_function() {
+    let fp = testdata("x86fpo/frames-fp.pdb");
+    let fpo = testdata("x86fpo/frames-fpo.pdb");
+    let (code, out, err) = diff(&["-n".as_ref(), "0".as_ref(), fp.as_os_str(), fpo.as_os_str()]);
+    assert_eq!(code, 1, "{out}{err}");
+    // (A frame pointer, or not: the same functions, framed otherwise.)
+    assert!(
+        out.contains("FrameData record only in a: _fprintf: size 0x23"),
+        "{out}"
+    );
+    assert!(
+        out.contains("FrameData record only in b: _fprintf: size 0x22"),
+        "{out}"
+    );
+    let (code, out, _) = diff(&[fp.as_os_str(), fp.as_os_str()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("Debug streams (FPO, FrameData, OMAP, section headers, /LinkInfo): the same"),
+        "{out}"
+    );
+}
+
 #[test]
 fn coff_groups_in_dump_and_diff() {
     // link.exe's COFF groups (the POGO debug entry): how it laid the image

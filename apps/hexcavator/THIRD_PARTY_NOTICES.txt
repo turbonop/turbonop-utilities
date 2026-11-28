@@ -213,10 +213,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ============================================================================
-hexcavator, turbonop-arm64, turbonop-demangle, turbonop-dwarf, turbonop-elf,
-turbonop-loongarch, turbonop-mips, turbonop-powerpc, turbonop-riscv,
-turbonop-x86: derived in part from the LLVM Project (Apache-2.0 WITH
-LLVM-exception)
+hexcavator, turbonop-arm64, turbonop-bitcode, turbonop-demangle,
+turbonop-dwarf, turbonop-elf, turbonop-loongarch, turbonop-mips,
+turbonop-powerpc, turbonop-riscv, turbonop-x86: derived in part from the
+LLVM Project (Apache-2.0 WITH LLVM-exception)
 ============================================================================
 
 ==============================================================================

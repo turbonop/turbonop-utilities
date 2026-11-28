@@ -195,11 +195,13 @@ pub fn label_crates(maps: &mut Maps, sources: &[Source]) {
         *source = Source::Crates;
         let mut to: turbonop_hash::Map<Label, Label> = turbonop_hash::Map::default();
         let labels = &mut maps.labels;
+        let hints = &maps.crate_hints;
         let mut relabel = |l: Label| -> Label {
             if let Some(&t) = to.get(&l) {
                 return t;
             }
-            let t = match crate_of(labels.name(l)) {
+            let hinted = hints.get(&l).cloned();
+            let t = match hinted.or_else(|| crate_of(labels.name(l))) {
                 Some(c) => labels.intern(&c),
                 None => l,
             };
@@ -232,6 +234,11 @@ pub fn crate_of(name: &str) -> Option<String> {
     }
     if name.starts_with('[') || name.is_empty() {
         return None;
+    }
+    // MSVC's names of Rust's types (`enum2$<T>`, `ref$<T>`, `tuple$<T, U>`,
+    // `slice2$<T>`): what's inside is whose (its first type's).
+    if let Some(inner) = msvc_wrapped(name) {
+        return crate_of(inner);
     }
     let first = |path: &str| -> Option<String> {
         let path = path
@@ -302,6 +309,10 @@ pub struct Maps {
     pub sources: Vec<(Source, DualMap)>,
     /// The file's size, all of which the maps label.
     pub file_size: u64,
+    /// The crates of symbols whose names don't say (LLVM's anonymous
+    /// constants, `anon.<hash>.<n>.llvm.<hash>`), by their labels: their
+    /// objects' (for the `crates` source; see [`label_crates`]).
+    pub crate_hints: turbonop_hash::Map<Label, String>,
     /// Whether rolling up counts short fallback ranges as padding of the
     /// range before them, as bloaty does (ELF, Mach-O, WebAssembly; not PE
     /// and COFF, whose reports follow SizeBench, which counts padding apart).
@@ -744,6 +755,49 @@ fn overlay(
     (out, placed)
 }
 
+/// The crates of `kept`'s anonymous constants (`names`, labeled `ls`),
+/// into `hints`: each its compiland's object's (the symbol's, or the
+/// contribution's at its address), if a Rust object's.
+fn anonymous_crates(
+    model: &Model,
+    kept: &[&Symbol],
+    names: &[&str],
+    ls: &[Label],
+    hints: &mut turbonop_hash::Map<Label, String>,
+) {
+    let compiland_at = |at: u64| {
+        let i = model.pieces.partition_point(|p| p.range.addr <= at);
+        let p = model.pieces.get(i.checked_sub(1)?)?;
+        (at < p.range.end()).then_some(p.compiland)
+    };
+    for ((s, name), &l) in kept.iter().zip(names).zip(ls) {
+        if !name.starts_with("anon.") {
+            continue;
+        }
+        let Some(c) = s
+            .compiland
+            .or_else(|| compiland_at(s.addr))
+            .and_then(|c| model.compilands.get(c as usize))
+        else {
+            continue;
+        };
+        let object = object_name(&c.name);
+        // (A Rust object's crate: other objects' names have a dot.)
+        if !object.is_empty() && !object.contains('.') {
+            hints.insert(l, object.to_string());
+        }
+    }
+}
+
+/// What an MSVC name of a Rust type wraps (`enum2$<alloc::X>::f` and
+/// `ref$<alloc::X>`: `alloc::X...`), if it is one: an identifier and `$<`.
+fn msvc_wrapped(name: &str) -> Option<&str> {
+    let at = name.find("$<")?;
+    let head = &name[..at];
+    (!head.is_empty() && head.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+        .then(|| &name[at + 2..])
+}
+
 /// A compiland's object, shortly: a Rust object's crate
 /// (`turbonop_powerpc-0123.turbonop_powerpc.4567-cgu.0.rcgu.o`:
 /// `turbonop_powerpc`), another's file name.
@@ -764,6 +818,7 @@ pub fn maps(image: &Image<'_>, inputs: Inputs<'_>, sources: &[Source]) -> Maps {
     };
     let base = pe_base(pe, &mut labels);
     let mut out = Vec::new();
+    let mut crate_hints = turbonop_hash::Map::default();
     for &source in sources {
         let mut map = DualMap::default();
         match source {
@@ -828,6 +883,9 @@ pub fn maps(image: &Image<'_>, inputs: Inputs<'_>, sources: &[Source]) -> Maps {
                     })
                     .collect();
                 let ls = labels.intern_many(&names);
+                if let Some(model) = inputs.model {
+                    anonymous_crates(model, &kept, &names, &ls, &mut crate_hints);
+                }
                 // The objects' pieces, laid out while the code is read for
                 // references (which they don't depend on).
                 let objects = std::thread::scope(|scope| {
@@ -894,6 +952,7 @@ pub fn maps(image: &Image<'_>, inputs: Inputs<'_>, sources: &[Source]) -> Maps {
     }
     Maps {
         labels,
+        crate_hints,
         base,
         sources: out,
         file_size: image.data().len() as u64,

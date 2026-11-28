@@ -1,0 +1,30 @@
+version: 4
+producer: 24.0.0git c74b358f44c31e3615fe942556a41be8c9a8d877
+target triple: x86_64-unknown-linux-gnu
+source filename: R:\tools\bitcode\kinds.c
+dependent libraries:
+D------X sum_va
+D------X mix
+D------X dispatch
+D------X computed
+D------X atomics
+D------X convert
+D------X make_pair
+D------X minimum
+D------X bits
+D------X asm_increment
+D------X negate
+D--W---X weak_function
+D------X alias_target
+D------X kinds_main
+D------- global_array
+D------- ptr_into_array
+D------- in_section
+         section .mydata
+D------- atomic_counter
+D------- operations
+DU------ external_value
+D-----T- tls_counter
+D---I--X alias_function
+D------X ifunc_function
+

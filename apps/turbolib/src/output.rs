@@ -209,7 +209,7 @@ pub fn write_beside(
     layout: &Layout<'_>,
     members: &[Bytes<'_>],
     padding: u8,
-) -> io::Result<PathBuf> {
+) -> io::Result<Temp> {
     let headers: Vec<[u8; 60]> = (0..members.len()).map(|i| layout.header(i)).collect();
     let pad = [padding];
     let mut pieces: Vec<&[u8]> = vec![layout.head()];
@@ -238,7 +238,7 @@ pub fn write_unix_parts_beside(
     path: &Path,
     layout: &turbonop_archive::unix::Layout,
     members: &[Vec<&[u8]>],
-) -> io::Result<PathBuf> {
+) -> io::Result<Temp> {
     const NEWLINES: [u8; 8] = [b'\n'; 8];
     let mut pieces: Vec<&[u8]> = vec![layout.head()];
     let mut at = layout.head().len() as u64;
@@ -268,30 +268,93 @@ pub fn write_unix_parts_beside(
 
 /// Writes `pieces`, in order, to a new file beside `path`, and returns
 /// that file's path.
-pub fn write_pieces_beside(path: &Path, pieces: &[&[u8]]) -> io::Result<PathBuf> {
+pub fn write_pieces_beside(path: &Path, pieces: &[&[u8]]) -> io::Result<Temp> {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
     name.push(format!(".turbolib-{}.tmp", std::process::id()));
-    let temp = path.with_file_name(name);
-    let file = File::create(&temp)?;
+    let temp = Temp {
+        path: Some(path.with_file_name(name)),
+    };
+    let file = File::create(temp.path())?;
     #[cfg(unix)]
     let result = write_direct(&file, pieces);
     #[cfg(not(unix))]
     let result = write_chunked(&file, &chunks(pieces));
+    // (A full disk shows as a write's error: NTFS allocates as it writes.)
     drop(file);
-    match result {
-        Ok(()) => Ok(temp),
-        Err(e) => {
-            let _ = std::fs::remove_file(&temp);
-            Err(e)
+    // On an error, dropping `temp` removes the file.
+    result.map(|()| temp)
+}
+
+/// A library written beside its output. Dropped before it has replaced
+/// the output (an error, or a panic unwinding), it is removed, so nothing
+/// is left half-written.
+#[derive(Debug)]
+pub struct Temp {
+    path: Option<PathBuf>,
+}
+
+impl Temp {
+    /// Where it is.
+    pub fn path(&self) -> &Path {
+        self.path
+            .as_deref()
+            .expect("a Temp's path until it replaces")
+    }
+
+    /// Puts the written library in `path`'s place. Another process holding
+    /// the output open (a virus scanner, a linker, an editor) makes the
+    /// rename fail for a moment: it is tried again for up to `RETRY`.
+    /// A read-only output isn't, as `lib.exe` doesn't replace one either.
+    pub fn replace(mut self, path: &Path) -> io::Result<()> {
+        let from = self.path.take().expect("replaced once");
+        let result = retry(
+            RETRY,
+            || std::fs::rename(&from, path),
+            || !std::fs::metadata(path).is_ok_and(|m| m.permissions().readonly()),
+        );
+        if result.is_err() {
+            let _ = std::fs::remove_file(&from);
+        }
+        result
+    }
+}
+
+impl Drop for Temp {
+    fn drop(&mut self) {
+        if let Some(p) = &self.path {
+            let _ = std::fs::remove_file(p);
         }
     }
 }
 
-/// Puts the written library in its place.
-pub fn replace(temp: &Path, path: &Path) -> io::Result<()> {
-    std::fs::rename(temp, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(temp);
-    })
+/// How long a rename onto an output another process holds open is tried.
+pub const RETRY: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether `e` is what Windows says while another process has a file open
+/// without sharing it for deletion, or a scanner has it locked: access
+/// denied (5), a sharing violation (32), a lock violation (33).
+fn transient(e: &io::Error) -> bool {
+    cfg!(windows) && matches!(e.raw_os_error(), Some(5 | 32 | 33))
+}
+
+/// `f`, tried again while it fails transiently and `worth` says so, for
+/// up to `limit`, waiting 10 ms, then longer, up to 250 ms, between tries.
+fn retry(
+    limit: std::time::Duration,
+    mut f: impl FnMut() -> io::Result<()>,
+    worth: impl Fn() -> bool,
+) -> io::Result<()> {
+    let start = std::time::Instant::now();
+    let mut wait = std::time::Duration::from_millis(10);
+    loop {
+        match f() {
+            Err(e) if transient(&e) && worth() && start.elapsed() + wait <= limit => {
+                std::thread::sleep(wait);
+                wait = (wait * 2).min(std::time::Duration::from_millis(250));
+            }
+            r => return r,
+        }
+    }
 }
 
 #[cfg(test)]

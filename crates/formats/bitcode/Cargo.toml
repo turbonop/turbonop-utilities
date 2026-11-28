@@ -1,0 +1,24 @@
+[package]
+name = "turbonop-bitcode"
+description = "LLVM bitcode: the bitstream container (any bitstream: IR, serialized diagnostics, remarks), and LLVM IR modules (types, globals, functions and their instructions, constants, metadata and debug information, the LTO symbol table), embedded in objects and archives too"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license = "Apache-2.0 AND Apache-2.0 WITH LLVM-exception"
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+turbonop-core.workspace = true
+turbonop-par.workspace = true
+turbonop-elf.workspace = true
+turbonop-macho.workspace = true
+turbonop-coff.workspace = true
+turbonop-wasm.workspace = true
+turbonop-archive.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true

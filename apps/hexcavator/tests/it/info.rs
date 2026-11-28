@@ -60,6 +60,65 @@ fn coff_objects() {
 }
 
 #[test]
+fn bitcode() {
+    let kinds = info("bitcode/kinds.bc");
+    assert!(kinds.starts_with("LLVM bitcode, "), "{kinds}");
+    assert!(
+        kinds.contains(
+            "\n  target x86_64-unknown-linux-gnu, from R:\\tools\\bitcode\\kinds.c (LLVM24"
+        ),
+        "{kinds}"
+    );
+    assert!(kinds.contains("\n  data layout: e-m:e-"), "{kinds}");
+    assert!(
+        kinds.contains(
+            "\n  17 functions defined, 8 declared; 9 globals, 1 aliases, 1 ifuncs, 0 comdats\n"
+        ),
+        "{kinds}"
+    );
+    assert!(
+        kinds.contains("\n  170 instructions in 33 basic blocks; function bodies "),
+        "{kinds}"
+    );
+    assert!(
+        kinds.contains("\n  debug information: 1 compile unit (clang version 24"),
+        "{kinds}"
+    );
+    let thin = info("bitcode/kinds-thin.bc");
+    assert!(
+        thin.contains("\n  ThinLTO summary\n  symbol table: 23 symbols\n"),
+        "{thin}"
+    );
+    let multi = info("bitcode/multi.bc");
+    assert!(
+        multi.contains("\n  module 1:\n    target x86_64-unknown-linux-gnu"),
+        "{multi}"
+    );
+    assert!(
+        multi.contains("\n  module 2:\n    target x86_64-unknown-linux-gnu, from every.ll"),
+        "{multi}"
+    );
+    assert!(info("bitcode/embed-darwin.bc").starts_with("LLVM bitcode (wrapped), 4064 bytes\n"));
+    assert!(info("bitcode/warn.dia").starts_with(
+        "clang serialized diagnostics (bitstream), 1224 bytes\n  6 top-level blocks\n"
+    ));
+    assert!(
+        info("bitcode/embed.opt.bitstream").starts_with("LLVM optimization remarks (bitstream), ")
+    );
+    // An object's embedded bitcode.
+    let elf = info("bitcode/embed-elf.o");
+    assert!(
+        elf.contains("\n  embedded bitcode: .llvmbc, 3716 bytes (x86_64-unknown-linux-gnu)\n"),
+        "{elf}"
+    );
+    let macho = info("bitcode/embed-macho.o");
+    assert!(
+        macho.contains("\n  embedded bitcode: __LLVM,__bitcode, "),
+        "{macho}"
+    );
+}
+
+#[test]
 fn managed() {
     let sample = info("clr/Sample.dll");
     assert!(

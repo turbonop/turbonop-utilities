@@ -336,8 +336,14 @@ fn compare_udt_lines(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
 fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     // Publics.
     rep.checked("publics", ra.publics.len() as u64);
+    // (turbolib's own names on either side: the first program may be
+    // linked against a library folded before, as when a folded library
+    // is folded again.)
     multisets(
-        ra.publics.iter().map(|(h, d, _)| (*h, d.clone())),
+        ra.publics
+            .iter()
+            .filter(|p| !p.2)
+            .map(|(h, d, _)| (*h, d.clone())),
         rb.publics
             .iter()
             .filter(|p| !p.2)
@@ -345,7 +351,7 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
         "publics",
         rep,
     );
-    for (_, d, renamed) in &rb.publics {
+    for (_, d, renamed) in ra.publics.iter().chain(&rb.publics) {
         if *renamed {
             rep.expect(
                 "publics of turbolib's renamed copies, anchors, and PCH symbols",
@@ -832,12 +838,21 @@ fn module(
     };
     // A synthesized member: its S_OBJNAME says so (`turbolib:...`), or,
     // until its debug information is written (2.4), its name is the
-    // engine's (`turbolib<n>.obj`).
+    // engine's (`turbolib<n>.obj`, and since `turbolib<n>-<hex>.obj`).
     out.synthesized = m
         .name
         .strip_prefix(b"turbolib")
         .and_then(|r| r.strip_suffix(b".obj"))
-        .is_some_and(|n| !n.is_empty() && n.iter().all(u8::is_ascii_digit));
+        .is_some_and(|n| {
+            let (number, tag) = match n.iter().position(|&c| c == b'-') {
+                Some(at) => (&n[..at], &n[at + 1..]),
+                None => (n, &b"0"[..]),
+            };
+            !number.is_empty()
+                && number.iter().all(u8::is_ascii_digit)
+                && !tag.is_empty()
+                && tag.iter().all(u8::is_ascii_hexdigit)
+        });
     let Ok(Some(stream)) = p.pdb.module_stream(m) else {
         return out;
     };

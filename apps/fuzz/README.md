@@ -12,7 +12,7 @@ It is in-house and runs on stable Rust, with no dependencies.
 
 Run it from the repository: its seeds are the files under `testdata`, each
 seeding the targets that read its kind (PE images, COFF objects, archives,
-ELF, Mach-O, WebAssembly, PDBs, text), and its findings go to
+ELF, Mach-O, WebAssembly, LLVM bitcode, PDBs, text), and its findings go to
 `fuzz-findings/`.
 
 ## How it works
@@ -58,6 +58,7 @@ Without it, mutation is blind (but much faster per input).
 | `pe` | `hexcavator dump /all /nopdb`, `size` by sections, `info`, `batch` |
 | `coff`, `archive` | `dump /all`, `size` by sections, symbols, members |
 | `elf`, `macho`, `wasm` | `size` by every data source, `-disassemble` (text and JSON) |
+| `bitcode` | LLVM bitcode and other bitstreams (diagnostics, remarks): the dump, every module, function body, and symbol table, and bitcode embedded in objects and archives |
 | `java` | Java class files: the constant pool and its lookups, every attribute, descriptors and signatures, bytecode, javap's text; `info` |
 | `zip` | ZIP archives and JARs: entries, extra fields, data descriptors, inflated data, manifests, multi-release layout, every class; `info` |
 | `clr` | .NET assemblies and portable PDBs: every table, heap, name, signature, method body and its IL, custom attribute, resource, and PDB record; `info` |

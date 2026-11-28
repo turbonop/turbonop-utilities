@@ -57,6 +57,8 @@ fn main() {
     let facts: Vec<units::Facts> = objects.iter().filter_map(|o| units::find(o).ok()).collect();
     let (mut u, mut usec, mut usym, mut uext, mut uext_bytes, mut nunits, mut other, mut rest) =
         (0, 0, 0, 0, 0, 0, 0, 0);
+    // The names' bytes, borrowed from the members (each was a copy before).
+    let mut borrowed = 0;
     for f in &facts {
         u += f.units.capacity() * size_of::<units::Unit>();
         nunits += f.units.len();
@@ -64,23 +66,40 @@ fn main() {
             usec += x.sections.capacity() * 4;
             usym += x.symbols.capacity() * 4;
             uext += x.externals.capacity() * 24;
-            uext_bytes += x.externals.iter().map(Vec::capacity).sum::<usize>();
-            rest += x.edges.capacity() * 16
-                + x.referrers.capacity() * 4
-                + x.closure.capacity() * 8
-                + x.detail.as_ref().map_or(0, String::capacity);
+            borrowed += x.externals.iter().map(|n| n.len()).sum::<usize>();
+            uext_bytes += x
+                .externals
+                .iter()
+                .map(|n| match n {
+                    std::borrow::Cow::Owned(v) => v.capacity(),
+                    std::borrow::Cow::Borrowed(_) => 0,
+                })
+                .sum::<usize>();
+            rest += x.local.as_ref().map_or(0, |l| {
+                size_of::<units::LocalUnit>()
+                    + l.edges.capacity() * 16
+                    + l.referrers.capacity() * 4
+                    + l.closure.capacity() * 8
+            }) + x.detail.as_ref().map_or(0, String::capacity);
         }
         other += f.other_definitions.capacity() * 24
-            + f.other_definitions.iter().map(Vec::capacity).sum::<usize>();
+            + f.other_definitions
+                .iter()
+                .map(|n| match n {
+                    std::borrow::Cow::Owned(v) => v.capacity(),
+                    std::borrow::Cow::Borrowed(_) => 0,
+                })
+                .sum::<usize>();
     }
     println!(
-        "{nunits} units ({} B each) {:.1} MiB; their sections {:.1}, symbols {:.1}, externals {:.1} + names {:.1}, the rest {:.1}; other definitions {:.1} MiB",
+        "{nunits} units ({} B each) {:.1} MiB; their sections {:.1}, symbols {:.1}, externals {:.1} + names {:.1} ({:.1} borrowed), the rest {:.1}; other definitions {:.1} MiB",
         size_of::<units::Unit>(),
         mib(u),
         mib(usec),
         mib(usym),
         mib(uext),
         mib(uext_bytes),
+        mib(borrowed),
         mib(rest),
         mib(other)
     );

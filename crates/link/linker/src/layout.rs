@@ -106,7 +106,8 @@ pub enum ChunkKind {
     DelayHintNames,
     /// A delay-loaded DLL's bound address table (`.didat$7`, zeros).
     DelayBound(u32),
-    /// The room link.exe leaves after the bound tables (0x104 zero bytes).
+    /// The room link.exe leaves after the bound tables (zeros: 0x100 bytes
+    /// and a tenth of the bound tables' size).
     DelayBoundRoom,
     /// A delay-loaded DLL's unload table (`.didat$8`, `/DELAY:UNLOAD`: a
     /// copy of its address table).
@@ -200,17 +201,32 @@ pub struct Layout {
     /// The delay-loaded DLLs, in the order their first imports loaded.
     pub delay_dlls: Vec<Dll>,
     /// For each delay-loaded import file: its DLL's index (in `delay_dlls`)
-    /// and its place in the DLL's tables.
+    /// and its place in the DLL's name and address tables.
     pub delay_slots: Map<u32, (u32, u32)>,
+    /// Each delay-loaded DLL's imports in its name, address, and unload
+    /// tables' order (link.exe's sort of them: [`delay_tables`]).
+    pub delay_tables: Vec<Vec<u32>>,
     /// Each delay-loaded import's hint/name entry's offset in
     /// `DelayHintNames`.
     pub delay_name_offsets: Map<u32, u32>,
+    /// `/OPT:ICF`'s folds: each folded section (file, section) and the one
+    /// it folded into (for the map's names in them).
+    pub folded: Map<(u32, u32), (u32, u32)>,
     /// `/GUARD:CF`'s tables' entries.
     pub guard: crate::guard::Tables,
     /// The headers' size (file-aligned).
     pub headers_size: u32,
     /// The optional header's size (240 for PE32+, 224 for PE32).
     pub optional_size: u32,
+    /// `/FUNCTIONPADMIN`'s bytes before each piece of code (0 without it).
+    pub function_pad: u32,
+    /// The chunks that padding goes before: code with a function symbol
+    /// in it (COMDAT or not; not an assembler's, whose symbols have no
+    /// type) and import thunks.
+    pub padded: turbonop_hash::Set<u32>,
+    /// Each group's start (by its first chunk), where it isn't its first
+    /// chunk's: padding before that chunk is the group's.
+    pub group_starts: Map<u32, u32>,
     /// The image's size in memory.
     pub image_size: u32,
     /// The file's size.
@@ -394,63 +410,53 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
     };
     let mut commons = Vec::new();
     let setup = started.elapsed();
-    let mut levels = 0usize;
     frontier.retain(|&i| claim(i as usize));
     for &g in roots {
         global(g, &mut frontier, &mut commons);
     }
-    while !frontier.is_empty() {
-        let steps = turbonop_par::map_chunks(&frontier, 256, |part| {
-            let mut next = Vec::new();
-            let mut commons = Vec::new();
-            for &i in part {
-                let i = i as usize;
-                let f = file_of(i);
-                let s = i - base[f];
-                let mut c = first_child[i];
-                while c != u32::MAX {
-                    if claim(c as usize) {
-                        next.push(redirect[c as usize]);
-                    }
-                    c = next_sibling[c as usize];
-                }
-                let FileKind::Object {
-                    object, globals, ..
-                } = &r.files[f].kind
-                else {
-                    continue;
-                };
-                for rel in object.sections[s].relocations {
-                    let k = rel.symbol_table_index.get() as usize;
-                    match globals.get(k) {
-                        Some(&g) if g != crate::resolve::NONE => {
-                            global(g, &mut next, &mut commons);
-                        }
-                        _ => {
-                            if let Some(sym) = object.symbols.get(k)
-                                && let SymbolKind::Local { section, .. } = sym.kind
-                            {
-                                let t = redirect[base[f] + section as usize] as usize;
-                                if claim(t) {
-                                    next.push(crate::n32(t));
-                                }
-                            }
+    // Every section reachable from the frontier, by whichever thread is
+    // free (no steps to wait at: see turbonop_par::traverse).
+    let parallel = total >= 4096;
+    let found = turbonop_par::traverse(frontier, parallel, Vec::new, |i, more, commons| {
+        let i = i as usize;
+        let f = file_of(i);
+        let s = i - base[f];
+        let mut c = first_child[i];
+        while c != u32::MAX {
+            if claim(c as usize) {
+                more.push(redirect[c as usize]);
+            }
+            c = next_sibling[c as usize];
+        }
+        let FileKind::Object {
+            object, globals, ..
+        } = &r.files[f].kind
+        else {
+            return;
+        };
+        for rel in object.sections[s].relocations {
+            let k = rel.symbol_table_index.get() as usize;
+            match globals.get(k) {
+                Some(&g) if g != crate::resolve::NONE => global(g, more, commons),
+                _ => {
+                    if let Some(sym) = object.symbols.get(k)
+                        && let SymbolKind::Local { section, .. } = sym.kind
+                    {
+                        let t = redirect[base[f] + section as usize] as usize;
+                        if claim(t) {
+                            more.push(crate::n32(t));
                         }
                     }
                 }
             }
-            vec![(next, commons)]
-        });
-        levels += 1;
-        frontier = Vec::new();
-        for (next, c) in steps {
-            frontier.extend(next);
-            commons.extend(c);
         }
+    });
+    for c in found {
+        commons.extend(c);
     }
     if r.config.time {
         eprintln!(
-            "turbolink:     mark: setup {:.3} ms, {levels} steps {:.3} ms, {total} sections",
+            "turbolink:     mark: setup {:.3} ms, traversal {:.3} ms, {total} sections",
             setup.as_secs_f64() * 1e3,
             (started.elapsed() - setup).as_secs_f64() * 1e3
         );
@@ -502,12 +508,24 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
 /// and its chunks.
 type Partial = ((Vec<u8>, Vec<u8>, u32), Vec<u32>);
 
+/// What becomes of an object's section in the layout.
+enum Fate {
+    /// A chunk (the section, its alignment).
+    Chunk(u32, u32),
+    /// Discarded or folded: its group stays (name, characteristics,
+    /// alignment).
+    Discarded(&'static [u8], u32, u32),
+    /// A /GUARD table not kept: its group is listed, empty.
+    EmptyGroup(&'static [u8], u32),
+}
+
 /// Lays the image out.
 pub fn layout(
     r: &Resolved,
     roots: &[u32],
     exports: Option<crate::exports::ExportTable>,
     resources: Option<crate::resources::Rsrc>,
+    order: &Map<(u32, u32), u32>,
 ) -> Layout {
     let config: &Config = &r.config;
     // (/TIME's breakdown of the layout.)
@@ -559,6 +577,7 @@ pub fn layout(
         }
     }
 
+    note("chunks: folds' leaders");
     let mut chunks: Vec<Chunk> = Vec::new();
     // Partial sections: (output name, input name, characteristics) and
     // their chunks in input order.
@@ -606,71 +625,100 @@ pub fn layout(
     let mut delay_index: Map<&'static [u8], u32> = Map::default();
     let mut delay_dlls: Vec<Dll> = Vec::new();
     let mut delay_slots: Map<u32, (u32, u32)> = Map::default();
+    // What becomes of each object's sections, worked out file by file in
+    // parallel; then, in order, the chunks are made.
+    let fates: Vec<Vec<Fate>> = turbonop_par::map_range(r.files.len(), 64, |f| {
+        let file = &r.files[f];
+        let FileKind::Object { object, .. } = &file.kind else {
+            return Vec::new();
+        };
+        // An import library's own pieces: the tables are built without
+        // them.
+        if file.idata.is_some() {
+            return Vec::new();
+        }
+        let mut fates = Vec::new();
+        for (s, sec) in object.sections.iter().enumerate() {
+            let key = (crate::n32(f), crate::n32(s));
+            if folded.contains_key(&key) {
+                // Folded: its symbols are its leader's (once every file's
+                // chunks are known: the leader may come later). Its group
+                // stays, as a discarded section's does (all of .text$yd
+                // folded into .text$di: an empty .text$yd still on 16
+                // bytes).
+                fates.push(Fate::Discarded(
+                    sec.name,
+                    sec.characteristics,
+                    sec.alignment(),
+                ));
+                continue;
+            }
+            if !live.sections[f][s] {
+                // /GUARD's tables: no contents, but their group is listed
+                // (as link.exe lists it).
+                if kept_section(r, f, s) && sec.is_image() {
+                    if dropped(sec.name) {
+                        fates.push(Fate::EmptyGroup(sec.name, sec.characteristics));
+                    } else {
+                        fates.push(Fate::Discarded(
+                            sec.name,
+                            sec.characteristics,
+                            sec.alignment(),
+                        ));
+                    }
+                }
+                continue;
+            }
+            if let Some((Selection::Associative(parent), _)) = sec.comdat
+                && folded.contains_key(&(key.0, parent))
+                && !leaders.contains(&key)
+            {
+                // A folded section's unwind data goes with it (unless other
+                // copies' unwind data was folded into it).
+                continue;
+            }
+            if !folded.is_empty()
+                && sec.name == b".pdata"
+                && pdata_function(r, f, s).is_some_and(|t| folded.contains_key(&t))
+            {
+                // The .pdata of a function folded into another (a C++
+                // funclet, .text$x, whose parent isn't folded): link.exe
+                // keeps one entry per function.
+                continue;
+            }
+            let align = sec
+                .alignment()
+                .max(class_align.get(&key).copied().unwrap_or(1));
+            fates.push(Fate::Chunk(crate::n32(s), align));
+        }
+        fates
+    });
     for (f, file) in r.files.iter().enumerate() {
         match &file.kind {
             FileKind::Object { object, .. } => {
                 let mut mine = vec![u32::MAX; object.sections.len()];
-                // An import library's own pieces: the tables are built
-                // without them.
-                if file.idata.is_some() {
-                    section_chunks.push(mine);
-                    continue;
-                }
-                for (s, sec) in object.sections.iter().enumerate() {
-                    let key = (crate::n32(f), crate::n32(s));
-                    if folded.contains_key(&key) {
-                        // Folded: its symbols are its leader's (once every
-                        // file's chunks are known: the leader may come
-                        // later). Its group stays, as a discarded section's
-                        // does (all of .text$yd folded into .text$di: an
-                        // empty .text$yd still on 16 bytes).
-                        discarded.push((sec.name, sec.characteristics, sec.alignment()));
-                        continue;
-                    }
-                    if !live.sections[f][s] {
-                        // /GUARD's tables: no contents, but their group is
-                        // listed (as link.exe lists it).
-                        if kept_section(r, f, s) && sec.is_image() {
-                            if dropped(sec.name) {
-                                empty_groups.push((sec.name, sec.characteristics));
-                            } else {
-                                discarded.push((sec.name, sec.characteristics, sec.alignment()));
-                            }
+                for fate in &fates[f] {
+                    match *fate {
+                        Fate::Discarded(name, chars, align) => discarded.push((name, chars, align)),
+                        Fate::EmptyGroup(name, chars) => empty_groups.push((name, chars)),
+                        Fate::Chunk(s, align) => {
+                            let sec = &object.sections[s as usize];
+                            let uninitialized =
+                                sec.characteristics & scn::CNT_UNINITIALIZED_DATA != 0;
+                            mine[s as usize] = add(
+                                sec.name,
+                                sec.characteristics,
+                                Chunk {
+                                    kind: ChunkKind::Input(crate::n32(f), s),
+                                    align,
+                                    size: sec.size,
+                                    uninitialized,
+                                    rva: 0,
+                                },
+                                &mut chunks,
+                            );
                         }
-                        continue;
                     }
-                    if let Some((Selection::Associative(parent), _)) = sec.comdat
-                        && folded.contains_key(&(key.0, parent))
-                        && !leaders.contains(&key)
-                    {
-                        // A folded section's unwind data goes with it (unless
-                        // other copies' unwind data was folded into it).
-                        continue;
-                    }
-                    if !folded.is_empty()
-                        && sec.name == b".pdata"
-                        && pdata_function(r, f, s).is_some_and(|t| folded.contains_key(&t))
-                    {
-                        // The .pdata of a function folded into another (a
-                        // C++ funclet, .text$x, whose parent isn't folded):
-                        // link.exe keeps one entry per function.
-                        continue;
-                    }
-                    let uninitialized = sec.characteristics & scn::CNT_UNINITIALIZED_DATA != 0;
-                    mine[s] = add(
-                        sec.name,
-                        sec.characteristics,
-                        Chunk {
-                            kind: ChunkKind::Input(crate::n32(f), crate::n32(s)),
-                            align: sec
-                                .alignment()
-                                .max(class_align.get(&key).copied().unwrap_or(1)),
-                            size: sec.size,
-                            uninitialized,
-                            rva: 0,
-                        },
-                        &mut chunks,
-                    );
                 }
                 section_chunks.push(mine);
             }
@@ -806,6 +854,7 @@ pub fn layout(
             }
         }
     }
+    note("chunks: inputs'");
     // The folded sections: each one's chunk is its leader's.
     for (&(f, s), &(lf, ls)) in &folded {
         let c = section_chunks[lf as usize][ls as usize];
@@ -817,25 +866,50 @@ pub fn layout(
     // descriptor and null thunk, from its import library). The directory
     // and the names keep that order; the lookup tables and the IAT are
     // sorted with qsort (not stable) by the DLL's name without its
-    // extension, a null thunk after the imports.
+    // extension, a null thunk after the imports. Every DLL's pieces are in
+    // the sort, even a DLL none of whose imports /OPT:REF keeps (its
+    // pieces then dropped with it): their places count.
     #[derive(Clone, Copy)]
     enum Piece {
         Import(u32),
         Descriptor(u32),
         NullThunk(u32),
     }
-    let stems: Map<&[u8], u32> = dlls
+    // Each DLL's name without its extension: the image's DLLs (as `dlls`
+    // indexes them), then those with nothing live.
+    let mut stem_names: Vec<&[u8]> = dlls
+        .iter()
+        .map(|dll| crate::resolve::dll_stem(dll.name))
+        .collect();
+    let mut stems: Map<&[u8], u32> = stem_names
         .iter()
         .enumerate()
-        .map(|(d, dll)| (crate::resolve::dll_stem(dll.name), crate::n32(d)))
+        .map(|(d, &s)| (s, crate::n32(d)))
         .collect();
+    fn stem_index<'a>(
+        stems: &mut Map<&'a [u8], u32>,
+        names: &mut Vec<&'a [u8]>,
+        s: &'a [u8],
+    ) -> u32 {
+        *stems.entry(s).or_insert_with(|| {
+            names.push(s);
+            crate::n32(names.len() - 1)
+        })
+    }
     let mut pieces = Vec::new();
+    let mut dll_of: Map<u32, u32> = Map::default();
     for (f, file) in r.files.iter().enumerate() {
         match (&file.idata, &file.kind) {
             // Every import loaded, used or not: link.exe sorts before
             // /OPT:REF drops the unused ones (their places count).
             (_, FileKind::Import { import, .. }) => {
-                if stems.contains_key(crate::resolve::dll_stem(import.dll)) {
+                if !config.is_delay_loaded(import.dll) {
+                    let d = stem_index(
+                        &mut stems,
+                        &mut stem_names,
+                        crate::resolve::dll_stem(import.dll),
+                    );
+                    dll_of.insert(crate::n32(f), d);
                     pieces.push(Piece::Import(crate::n32(f)));
                 }
             }
@@ -845,30 +919,21 @@ pub fn layout(
                 }
             }
             (Some(crate::resolve::IdataPiece::NullThunk(x)), _) => {
-                if let Some(&d) = stems.get(x.as_slice()) {
-                    pieces.push(Piece::NullThunk(d));
-                }
+                pieces.push(Piece::NullThunk(stem_index(&mut stems, &mut stem_names, x)));
             }
             _ => {}
         }
     }
-    let dll_of = |f: u32| match &r.files[f as usize].kind {
-        FileKind::Import { import, .. } => stems[crate::resolve::dll_stem(import.dll)],
-        FileKind::Object { .. } => 0,
-    };
     let mut iat: Vec<(u32, Option<u32>)> = pieces
         .iter()
         .filter_map(|p| match *p {
-            Piece::Import(f) => Some((dll_of(f), Some(f))),
+            Piece::Import(f) => Some((dll_of[&f], Some(f))),
             Piece::NullThunk(d) => Some((d, None)),
             Piece::Descriptor(_) => None,
         })
         .collect();
     crate::msqsort::qsort(&mut iat, |a, b| {
-        let (sa, sb) = (
-            crate::resolve::dll_stem(dlls[a.0 as usize].name),
-            crate::resolve::dll_stem(dlls[b.0 as usize].name),
-        );
+        let (sa, sb) = (stem_names[a.0 as usize], stem_names[b.0 as usize]);
         match sa.cmp(sb) {
             std::cmp::Ordering::Less => -1,
             std::cmp::Ordering::Greater => 1,
@@ -876,9 +941,13 @@ pub fn layout(
         }
     });
     // The DLLs in the tables' order; each one's imports in it.
-    let mut new_index = vec![u32::MAX; dlls.len()];
+    // (A DLL with nothing live, past `dlls`, has no tables: u32::MAX.)
+    let mut new_index = vec![u32::MAX; stem_names.len()];
     let mut sorted: Vec<Dll> = Vec::with_capacity(dlls.len());
     for &(d, f) in &iat {
+        if d as usize >= dlls.len() {
+            continue;
+        }
         if new_index[d as usize] == u32::MAX {
             new_index[d as usize] = crate::n32(sorted.len());
             sorted.push(Dll {
@@ -1118,11 +1187,20 @@ pub fn layout(
 
     // The delay-load tables (`.didat$`, as link.exe's groups): the
     // descriptors and their null one, each DLL's name table, the hint/name
-    // entries, each DLL's bound table (zeros, and 0x104 bytes of room
-    // after them; not with /DELAY:NOBIND), each one's unload table (with
-    // /DELAY:UNLOAD), and each one's address table (in .data). Each DLL's
-    // imports are in the order they loaded.
+    // entries, each DLL's bound table (zeros, and room after them all; not
+    // with /DELAY:NOBIND), each one's unload table (with
+    // /DELAY:UNLOAD), and each one's address table (in .data). The
+    // hint/names and bound tables are in the order the imports (and DLLs)
+    // loaded; the name, unload and address tables in link.exe's sort of
+    // them (`delay_tables`).
     let mut delay_name_offsets = Map::default();
+    let (delay_table_dlls, delay_tables, delay_room) =
+        delay_tables(r, config, &live.imports, &delay_dlls);
+    for (d, table) in delay_tables.iter().enumerate() {
+        for (k, &f) in table.iter().enumerate() {
+            delay_slots.insert(f, (crate::n32(d), crate::n32(k)));
+        }
+    }
     if !delay_dlls.is_empty() {
         let data = scn::CNT_INITIALIZED_DATA | scn::MEM_READ;
         let table = |n: usize| crate::n32((n + 1) * 8);
@@ -1136,13 +1214,13 @@ pub fn layout(
             ),
             (b".didat$3", data, ChunkKind::DelayNullDescriptor, 4, 32),
         ];
-        for (d, dll) in delay_dlls.iter().enumerate() {
+        for &d in &delay_table_dlls {
             tables.push((
                 b".didat$4",
                 data,
-                ChunkKind::DelayNames(crate::n32(d)),
+                ChunkKind::DelayNames(d),
                 8,
-                table(dll.imports.len()),
+                table(delay_dlls[d as usize].imports.len()),
             ));
         }
         let mut at = 0u32;
@@ -1167,26 +1245,28 @@ pub fn layout(
                     table(dll.imports.len()),
                 ));
             }
-            tables.push((b".didat$7", data, ChunkKind::DelayBoundRoom, 1, 0x104));
+            if let Some(room) = delay_room {
+                tables.push((b".didat$7", data, ChunkKind::DelayBoundRoom, 1, room));
+            }
         }
         if config.delay_unload {
-            for (d, dll) in delay_dlls.iter().enumerate() {
+            for &d in &delay_table_dlls {
                 tables.push((
                     b".didat$8",
                     data,
-                    ChunkKind::DelayUnload(crate::n32(d)),
+                    ChunkKind::DelayUnload(d),
                     8,
-                    table(dll.imports.len()),
+                    table(delay_dlls[d as usize].imports.len()),
                 ));
             }
         }
-        for (d, dll) in delay_dlls.iter().enumerate() {
+        for &d in &delay_table_dlls {
             tables.push((
                 b".didat$5",
                 data | scn::MEM_WRITE,
-                ChunkKind::DelayAddresses(crate::n32(d)),
+                ChunkKind::DelayAddresses(d),
                 8,
-                table(dll.imports.len()),
+                table(delay_dlls[d as usize].imports.len()),
             ));
         }
         for (name, chars, kind, align, size) in tables {
@@ -1331,6 +1411,7 @@ pub fn layout(
             );
         }
     }
+    note("chunks: the linker's");
     // The groups only discarded sections were in; and the groups with a
     // discarded section aligned more than what stays: such a group still
     // starts at that alignment, as link.exe places it (LIBCMTD's .rdata on
@@ -1384,6 +1465,11 @@ pub fn layout(
         partials.push(((output_name(name, &merges), name.to_vec(), chars), vec![c]));
         partial_index.insert((name, chars), partials.len() - 1);
     }
+    // An .edata group is always there (empty without exports), as link.exe
+    // lists it.
+    if exports.is_none() {
+        empty_groups.push((b".edata", scn::CNT_INITIALIZED_DATA | scn::MEM_READ));
+    }
     for (name, chars) in empty_groups {
         let chars = chars & scn::OUTPUT_MASK;
         partial_index.entry((name, chars)).or_insert_with(|| {
@@ -1400,6 +1486,28 @@ pub fn layout(
     // (the output section's own name's before those merged into it), and
     // uninitialized data last.
     note("chunks");
+    // /ORDER: in each group, the functions it names first, in its order,
+    // then the rest as they were (as link.exe orders them).
+    if !order.is_empty() {
+        for (_, list) in &mut partials {
+            // A function's associative sections (its unwind data) follow
+            // it.
+            list.sort_by_key(|&c| match chunks[c as usize].kind {
+                ChunkKind::Input(f, mut s) => {
+                    if let FileKind::Object { object, .. } = &r.files[f as usize].kind {
+                        for _ in 0..16 {
+                            match object.sections[s as usize].comdat {
+                                Some((Selection::Associative(p), _)) => s = p,
+                                _ => break,
+                            }
+                        }
+                    }
+                    order.get(&(f, s)).copied().unwrap_or(u32::MAX)
+                }
+                _ => u32::MAX,
+            });
+        }
+    }
     partials.sort_by(|a, b| a.0.cmp(&b.0));
     const ORDER: &[&[u8]] = &[b".text", b".rdata", b".data", b".pdata", b".tls", b".rsrc"];
     let mut out_names: Vec<(Vec<u8>, u32)> = Vec::new();
@@ -1466,16 +1574,13 @@ pub fn layout(
         // (input section name) by its name, the merged ones among the
         // section's own; except the imports': the address table
         // (`.idata$5`) first, the rest of `.idata$` last.
+        // (The export directory goes in below.)
         mine.sort_by(|a, b| {
             let rank = |i: &[u8]| {
                 if i == b".idata$5" {
                     0
-                } else if i.starts_with(b".idata$")
-                    || i.starts_with(b".edata")
-                    || i.starts_with(b".didat$")
-                {
-                    // (The export directory and the delay-load tables sort
-                    // among them too.)
+                } else if i.starts_with(b".idata$") || i.starts_with(b".didat$") {
+                    // (The delay-load tables sort among them too.)
                     2
                 } else {
                     1
@@ -1486,6 +1591,46 @@ pub fn layout(
             let bss = |p: &Partial| p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0;
             (bss(a), rank(ia), ia).cmp(&(bss(b), rank(ib), ib))
         });
+        // The export directory, as link.exe places it: after the inputs'
+        // groups, among the last ones by name (after .didat$, before
+        // .idata$, before uninitialized data), and its own .rdata$voltmd and
+        // .rdata$zzzdbg then each go before the first group that sorts after
+        // them: a DLL without imports or unwind data has .rdata, .edata,
+        // .rdata$voltmd; with unwind data, .rdata, .rdata$voltmd,
+        // .rdata$zzzdbg, .xdata, .edata.
+        if let Some(e) = mine.iter().position(|p| p.0.1.as_slice() == b".edata") {
+            let edata = mine.remove(e);
+            let late =
+                |p: &Partial| matches!(p.0.1.as_slice(), b".rdata$voltmd" | b".rdata$zzzdbg");
+            let (late_groups, rest): (Vec<&Partial>, Vec<&Partial>) =
+                mine.into_iter().partition(|p| late(p));
+            let tail = |p: &Partial| {
+                let i = p.0.1.as_slice();
+                (i.starts_with(b".idata$") && i != b".idata$5")
+                    || i.starts_with(b".didat$")
+                    || p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0
+            };
+            // (Among the last groups by name: after .didat$, before .idata$.)
+            let cut = rest
+                .iter()
+                .position(|p| {
+                    tail(p)
+                        && (p.0.1.as_slice() > b".edata".as_slice()
+                            || p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0)
+                })
+                .unwrap_or(rest.len());
+            let mut order: Vec<&Partial> = rest[..cut].to_vec();
+            order.push(edata);
+            for g in late_groups {
+                let at = order
+                    .iter()
+                    .position(|p| p.0.1 > g.0.1)
+                    .unwrap_or(order.len());
+                order.insert(at, g);
+            }
+            order.extend_from_slice(&rest[cut..]);
+            mine = order;
+        }
         s.groups = mine.iter().map(|p| (p.0.1.clone(), p.1.clone())).collect();
         let (init, uninit): (Vec<u32>, Vec<u32>) = mine
             .iter()
@@ -1552,10 +1697,20 @@ pub fn layout(
         directory_order,
         delay_dlls,
         delay_slots,
+        delay_tables,
         delay_name_offsets,
+        folded,
         guard,
         headers_size: 0,
         optional_size: optional,
+        padded: turbonop_hash::Set::default(),
+        group_starts: Map::default(),
+        // (link.exe's default: 6 bytes on x64, 5 on x86.)
+        function_pad: config.function_pad_min.map_or(0, |n| match n {
+            0 if optional == 240 => 6,
+            0 => 5,
+            n => n,
+        }),
         image_size: 0,
         file_size: 0,
         section_align,
@@ -1569,6 +1724,39 @@ pub fn layout(
         codeview_name: Vec::new(),
     };
     note("sections");
+    if l.function_pad > 0 {
+        // link.exe pads code with a function in it: a symbol, external or
+        // static, whose type is a function's (an assembler's code has none).
+        let mut functions = turbonop_hash::Set::<(u32, u32)>::default();
+        for (f, file) in r.files.iter().enumerate() {
+            if let FileKind::Object { object, .. } = &file.kind {
+                for s in &object.symbols {
+                    if let SymbolKind::Defined { section, value: 0 }
+                    | SymbolKind::Local { section, value: 0 } = s.kind
+                        && (s.ty >> 4) & 3 == 2
+                    {
+                        functions.insert((crate::n32(f), section));
+                    }
+                }
+            }
+        }
+        for (i, c) in l.chunks.iter().enumerate() {
+            let pad = match c.kind {
+                ChunkKind::Input(f, s) => match &r.files[f as usize].kind {
+                    FileKind::Object { object, .. } => {
+                        object.sections[s as usize].characteristics & scn::MEM_EXECUTE != 0
+                            && functions.contains(&(f, s))
+                    }
+                    FileKind::Import { .. } => false,
+                },
+                ChunkKind::Thunk(_) | ChunkKind::DelayThunk(_) | ChunkKind::TailMerge(_) => true,
+                _ => false,
+            };
+            if pad {
+                l.padded.insert(crate::n32(i));
+            }
+        }
+    }
     l.size_headers(header_sections);
     l.assign_addresses();
     l
@@ -1620,23 +1808,20 @@ impl Layout {
                     group_start.insert(first, align);
                 }
             }
-            // (Where the delay-load descriptors start: the room after the
-            // bound tables ends 4 bytes past a multiple of 8 from there, as
-            // link.exe's does: 0x104 bytes, or 0x108.)
-            let mut delay_start = None;
+            // With /FUNCTIONPADMIN, padding before each piece of code (a
+            // function, a funclet, an import thunk), then its alignment.
             for &c in &s.chunks {
                 let group_align = group_start.get(&c).copied().unwrap_or(1);
+                if self.function_pad > 0 && self.padded.contains(&c) {
+                    // The group starts before the padding, aligned.
+                    if group_start.contains_key(&c) {
+                        self.group_starts.insert(c, rva + align_up(at, group_align));
+                    }
+                    at += self.function_pad;
+                }
                 let chunk = &mut self.chunks[c as usize];
                 at = align_up(at, chunk.align.max(group_align));
                 chunk.rva = rva + at;
-                match chunk.kind {
-                    ChunkKind::DelayDirectory => delay_start = Some(chunk.rva),
-                    ChunkKind::DelayBoundRoom => {
-                        let from = chunk.rva + 0x104 - delay_start.unwrap_or(chunk.rva);
-                        chunk.size = if from % 8 == 4 { 0x104 } else { 0x108 };
-                    }
-                    _ => {}
-                }
                 at += chunk.size;
                 if !chunk.uninitialized {
                     init_end = at;
@@ -1717,6 +1902,120 @@ impl Layout {
             .find(|c| c.kind == ChunkKind::ImportAddresses(d))?;
         Some(iat.rva + 8 * k)
     }
+}
+
+/// The order of the delay-loaded DLLs' name, address, and unload tables
+/// (`.didat$4`, `$5`, `$8`), as link.exe sorts them: the DLLs' order (their
+/// indices in `delay_dlls`), each one's imports in its tables, and the
+/// room link.exe leaves after the bound tables (`.didat$7`): 0x100 bytes
+/// and a tenth of the bound tables' size as they were before /OPT:REF
+/// (8 bytes for each import loaded and each DLL's end; measured over 1 to
+/// 7 DLLs of 0 to 20 imports). It goes with the last delay-loaded import
+/// to load: none if /OPT:REF drops that one.
+///
+/// link.exe sorts each of those sections' pieces with the CRT's `qsort`,
+/// by the file name (`_wsplitpath`'s, without directory or extension) of
+/// the module each came from: an import's archive member's name, which
+/// for an import library is its DLL's name. A DLL's table end (its null
+/// entry) sorts after its imports. Every delay-loaded import that loaded
+/// is in the sort (one `/OPT:REF` drops too, its place then dropped), in
+/// the order they loaded, each DLL's end right after its first import:
+/// link.exe makes it with the DLL's other pieces. `qsort` isn't stable,
+/// so equal names come out as it leaves them: loads A, B, C give C, B, A;
+/// A to H give A, G, B, C, D, E, F, H (more than 8 pieces, it partitions).
+fn delay_tables(
+    r: &Resolved,
+    config: &Config,
+    live: &[bool],
+    delay_dlls: &[Dll],
+) -> (Vec<u32>, Vec<Vec<u32>>, Option<u32>) {
+    let index: Map<&[u8], u32> = delay_dlls
+        .iter()
+        .enumerate()
+        .map(|(d, dll)| (dll.name, crate::n32(d)))
+        .collect();
+    // (the module's file name, the import (None: a DLL's end), its DLL's
+    // index (u32::MAX: one with nothing live)).
+    let mut pieces: Vec<(Vec<u16>, Option<u32>, u32)> = Vec::new();
+    let mut seen: Map<&[u8], ()> = Map::default();
+    for (f, file) in r.files.iter().enumerate() {
+        let FileKind::Import { import, .. } = &file.kind else {
+            continue;
+        };
+        if !config.is_delay_loaded(import.dll) {
+            continue;
+        }
+        let key = module_file_name(file);
+        let d = index.get(import.dll).copied().unwrap_or(u32::MAX);
+        let first = seen.insert(import.dll, ()).is_none();
+        pieces.push((key.clone(), Some(crate::n32(f)), d));
+        if first {
+            pieces.push((key, None, d));
+        }
+    }
+    let last_live = pieces
+        .iter()
+        .rev()
+        .find_map(|p| p.1)
+        .is_some_and(|f| live[f as usize]);
+    let room = last_live.then(|| 0x100 + 8 * crate::n32(pieces.len()) / 10);
+    crate::msqsort::qsort(&mut pieces, |a, b| match a.0.cmp(&b.0) {
+        std::cmp::Ordering::Less => -1,
+        std::cmp::Ordering::Greater => 1,
+        std::cmp::Ordering::Equal => i32::from(a.1.is_none()) - i32::from(b.1.is_none()),
+    });
+    let mut order = Vec::with_capacity(delay_dlls.len());
+    let mut placed = vec![false; delay_dlls.len()];
+    let mut tables = vec![Vec::new(); delay_dlls.len()];
+    for (_, f, d) in pieces {
+        let Some(slot) = placed.get_mut(d as usize) else {
+            continue;
+        };
+        if !*slot {
+            *slot = true;
+            order.push(d);
+        }
+        if let Some(f) = f
+            && live[f as usize]
+        {
+            tables[d as usize].push(f);
+        }
+    }
+    (order, tables, room)
+}
+
+/// The name link.exe sorts a module's pieces by: its file name, without
+/// directory or extension (as `_wsplitpath` splits it), of the archive
+/// member for a library's (`x.lib(KERNEL32.dll)`: `KERNEL32`), of the
+/// file otherwise; in UTF-16, as link.exe compares it.
+fn module_file_name(file: &crate::resolve::File) -> Vec<u16> {
+    let name = file.name.as_str();
+    let path = match file.library {
+        // `library(member)`: the member is in the last parentheses (a
+        // library's path may have its own, `Program Files (x86)`).
+        Some(_) => name
+            .strip_suffix(')')
+            .and_then(|n| {
+                let mut depth = 0usize;
+                n.char_indices().rev().find_map(|(i, c)| match c {
+                    ')' => {
+                        depth += 1;
+                        None
+                    }
+                    '(' if depth == 0 => Some(&n[i + 1..]),
+                    '(' => {
+                        depth -= 1;
+                        None
+                    }
+                    _ => None,
+                })
+            })
+            .unwrap_or(name),
+        None => name,
+    };
+    let base = path.rsplit(['\\', '/', ':']).next().unwrap_or(path);
+    let stem = base.rfind('.').map_or(base, |p| &base[..p]);
+    stem.encode_utf16().collect()
 }
 
 /// The name an import object is imported by, for its hint/name entry.

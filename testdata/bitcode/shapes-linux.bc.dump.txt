@@ -1,0 +1,1855 @@
+<IDENTIFICATION_BLOCK_ID NumWords=5 BlockCodeSize=5>
+  <STRING abbrevid=4 op0=76 op1=76 op2=86 op3=77 op4=50 op5=52 op6=46 op7=48 op8=46 op9=48 op10=103 op11=105 op12=116/> record string = 'LLVM24.0.0git'
+  <EPOCH abbrevid=5 op0=0/>
+</IDENTIFICATION_BLOCK_ID>
+<MODULE_BLOCK NumWords=3673 BlockCodeSize=3>
+  <VERSION op0=2/>
+  <BLOCKINFO_BLOCK/>
+  <TYPE_BLOCK_ID NumWords=48 BlockCodeSize=4>
+    <NUMENTRY op0=42/>
+    <UnknownCode25 abbrevid=4 op0=0/>
+    <INTEGER op0=32/>
+    <STRUCT_ANON abbrevid=6 op0=0 op1=0 op2=0/>
+    <ARRAY abbrevid=9 op0=0 op1=0/>
+    <INTEGER op0=8/>
+    <ARRAY abbrevid=9 op0=9 op1=4/>
+    <STRUCT_NAME abbrevid=7 op0=115 op1=116 op2=114 op3=117 op4=99 op5=116 op6=46 op7=83 op8=104 op9=97 op10=112 op11=101/> record string = 'struct.Shape'
+    <STRUCT_NAMED abbrevid=8 op0=0 op1=0/>
+    <DOUBLE/>
+    <STRUCT_NAME abbrevid=7 op0=115 op1=116 op2=114 op3=117 op4=99 op5=116 op6=46 op7=67 op8=105 op9=114 op10=99 op11=108 op12=101/> record string = 'struct.Circle'
+    <STRUCT_NAMED abbrevid=8 op0=0 op1=6 op2=7/>
+    <ARRAY abbrevid=9 op0=2 op1=0/>
+    <ARRAY abbrevid=9 op0=6 op1=0/>
+    <STRUCT_ANON abbrevid=6 op0=0 op1=10/>
+    <STRUCT_ANON abbrevid=6 op0=0 op1=0 op2=0 op3=0/>
+    <ARRAY abbrevid=9 op0=8 op1=4/>
+    <ARRAY abbrevid=9 op0=7 op1=4/>
+    <ARRAY abbrevid=9 op0=6 op1=4/>
+    <STRUCT_ANON abbrevid=6 op0=0 op1=1 op2=0 op3=0/>
+    <ARRAY abbrevid=9 op0=1 op1=16/>
+    <VOID/>
+    <FUNCTION abbrevid=5 op0=0 op1=18 op2=1/>
+    <INTEGER op0=64/>
+    <FUNCTION abbrevid=5 op0=0 op1=0 op2=20/>
+    <FUNCTION abbrevid=5 op0=0 op1=18 op2=0 op3=0 op4=0/>
+    <FUNCTION abbrevid=5 op0=0 op1=1 op2=1/>
+    <FUNCTION abbrevid=5 op0=0 op1=18 op2=0 op3=7/>
+    <FUNCTION abbrevid=5 op0=1 op1=1/>
+    <FUNCTION abbrevid=5 op0=0 op1=7 op2=0/>
+    <FUNCTION abbrevid=5 op0=0 op1=18 op2=0/>
+    <FUNCTION abbrevid=5 op0=0 op1=1 op2=0/>
+    <FUNCTION abbrevid=5 op0=0 op1=0 op2=0/>
+    <FUNCTION abbrevid=5 op0=0 op1=18/>
+    <FUNCTION abbrevid=5 op0=0 op1=1 op2=0 op3=0 op4=0/>
+    <FUNCTION abbrevid=5 op0=0 op1=7 op2=0 op3=1/>
+    <FUNCTION abbrevid=5 op0=0 op1=1 op2=1 op3=1 op4=1/>
+    <FUNCTION abbrevid=5 op0=0 op1=20 op2=20 op3=20 op4=20/>
+    <FUNCTION abbrevid=5 op0=0 op1=18 op2=0 op3=20/>
+    <METADATA/>
+    <INTEGER op0=1/>
+    <LABEL/>
+    <STRUCT_NAME abbrevid=7 op0=115 op1=116 op2=114 op3=117 op4=99 op5=116 op6=46 op7=70 op8=97 op9=105 op10=108 op11=117 op12=114 op13=101/> record string = 'struct.Failure'
+    <STRUCT_NAMED abbrevid=8 op0=0 op1=1/>
+    <STRUCT_NAME abbrevid=7 op0=115 op1=116 op2=114 op3=117 op4=99 op5=116 op6=46 op7=83 op8=113 op9=117 op10=97 op11=114 op12=101/> record string = 'struct.Square'
+    <STRUCT_NAMED abbrevid=8 op0=0 op1=6 op2=7/>
+    <STRUCT_ANON abbrevid=6 op0=0 op1=0 op2=1/>
+  </TYPE_BLOCK_ID>
+  <PARAMATTR_GROUP_BLOCK_ID NumWords=317 BlockCodeSize=3>
+    <ENTRY op0=1 op1=4294967295 op2=0 op3=70 op4=0 op5=14 op6=0 op7=37 op8=1 op9=33 op10=2 op11=4 op12=102 op13=114 op14=97 op15=109 op16=101 op17=45 op18=112 op19=111 op20=105 op21=110 op22=116 op23=101 op24=114 op25=0 op26=97 op27=108 op28=108 op29=0 op30=4 op31=109 op32=105 op33=110 op34=45 op35=108 op36=101 op37=103 op38=97 op39=108 op40=45 op41=118 op42=101 op43=99 op44=116 op45=111 op46=114 op47=45 op48=119 op49=105 op50=100 op51=116 op52=104 op53=0 op54=48 op55=0 op56=4 op57=110 op58=111 op59=45 op60=116 op61=114 op62=97 op63=112 op64=112 op65=105 op66=110 op67=103 op68=45 op69=109 op70=97 op71=116 op72=104 op73=0 op74=116 op75=114 op76=117 op77=101 op78=0 op79=4 op80=115 op81=116 op82=97 op83=99 op84=107 op85=45 op86=112 op87=114 op88=111 op89=116 op90=101 op91=99 op92=116 op93=111 op94=114 op95=45 op96=98 op97=117 op98=102 op99=102 op100=101 op101=114 op102=45 op103=115 op104=105 op105=122 op106=101 op107=0 op108=56 op109=0 op110=4 op111=116 op112=97 op113=114 op114=103 op115=101 op116=116 op117=45 op118=99 op119=112 op120=117 op121=0 op122=120 op123=56 op124=54 op125=45 op126=54 op127=52 op128=0 op129=4 op130=116 op131=97 op132=114 op133=103 op134=101 op135=116 op136=45 op137=102 op138=101 op139=97 op140=116 op141=117 op142=114 op143=101 op144=115 op145=0 op146=43 op147=99 op148=109 op149=111 op150=118 op151=44 op152=43 op153=99 op154=120 op155=56 op156=44 op157=43 op158=102 op159=120 op160=115 op161=114 op162=44 op163=43 op164=109 op165=109 op166=120 op167=44 op168=43 op169=115 op170=115 op171=101 op172=44 op173=43 op174=115 op175=115 op176=101 op177=50 op178=44 op179=43 op180=120 op181=56 op182=55 op183=0 op184=4 op185=116 op186=117 op187=110 op188=101 op189=45 op190=99 op191=112 op192=117 op193=0 op194=103 op195=101 op196=110 op197=101 op198=114 op199=105 op200=99 op201=0/>
+    <ENTRY op0=2 op1=1 op2=0 op3=68/>
+    <ENTRY op0=3 op1=0 op2=0 op3=68/>
+    <ENTRY op0=4 op1=4294967295 op2=0 op3=70 op4=0 op5=14 op6=0 op7=18 op8=0 op9=37 op10=1 op11=33 op12=2 op13=4 op14=102 op15=114 op16=97 op17=109 op18=101 op19=45 op20=112 op21=111 op22=105 op23=110 op24=116 op25=101 op26=114 op27=0 op28=97 op29=108 op30=108 op31=0 op32=4 op33=109 op34=105 op35=110 op36=45 op37=108 op38=101 op39=103 op40=97 op41=108 op42=45 op43=118 op44=101 op45=99 op46=116 op47=111 op48=114 op49=45 op50=119 op51=105 op52=100 op53=116 op54=104 op55=0 op56=48 op57=0 op58=4 op59=110 op60=111 op61=45 op62=116 op63=114 op64=97 op65=112 op66=112 op67=105 op68=110 op69=103 op70=45 op71=109 op72=97 op73=116 op74=104 op75=0 op76=116 op77=114 op78=117 op79=101 op80=0 op81=4 op82=115 op83=116 op84=97 op85=99 op86=107 op87=45 op88=112 op89=114 op90=111 op91=116 op92=101 op93=99 op94=116 op95=111 op96=114 op97=45 op98=98 op99=117 op100=102 op101=102 op102=101 op103=114 op104=45 op105=115 op106=105 op107=122 op108=101 op109=0 op110=56 op111=0 op112=4 op113=116 op114=97 op115=114 op116=103 op117=101 op118=116 op119=45 op120=99 op121=112 op122=117 op123=0 op124=120 op125=56 op126=54 op127=45 op128=54 op129=52 op130=0 op131=4 op132=116 op133=97 op134=114 op135=103 op136=101 op137=116 op138=45 op139=102 op140=101 op141=97 op142=116 op143=117 op144=114 op145=101 op146=115 op147=0 op148=43 op149=99 op150=109 op151=111 op152=118 op153=44 op154=43 op155=99 op156=120 op157=56 op158=44 op159=43 op160=102 op161=120 op162=115 op163=114 op164=44 op165=43 op166=109 op167=109 op168=120 op169=44 op170=43 op171=115 op172=115 op173=101 op174=44 op175=43 op176=115 op177=115 op178=101 op179=50 op180=44 op181=43 op182=120 op183=56 op184=55 op185=0 op186=4 op187=116 op188=117 op189=110 op190=101 op191=45 op192=99 op193=112 op194=117 op195=0 op196=103 op197=101 op198=110 op199=101 op200=114 op201=105 op202=99 op203=0/>
+    <ENTRY op0=5 op1=1 op2=0 op3=68 op4=0 op5=39 op6=1 op7=1 op8=8 op9=1 op10=41 op11=16/>
+    <ENTRY op0=6 op1=2 op2=0 op3=68/>
+    <ENTRY op0=7 op1=1 op2=0 op3=68 op4=0 op5=39 op6=1 op7=1 op8=8 op9=1 op10=103 op11=16 op12=1 op13=41 op14=16/>
+    <ENTRY op0=8 op1=4294967295 op2=0 op3=18 op4=1 op5=86 op6=144115188075855872/>
+    <ENTRY op0=9 op1=4294967295 op2=0 op3=36 op4=0 op5=17 op6=0 op7=18 op8=1 op9=86 op10=144115188075855880/>
+    <ENTRY op0=10 op1=4294967295 op2=0 op3=14 op4=1 op5=33 op6=2 op7=4 op8=102 op9=114 op10=97 op11=109 op12=101 op13=45 op14=112 op15=111 op16=105 op17=110 op18=116 op19=101 op20=114 op21=0 op22=97 op23=108 op24=108 op25=0 op26=4 op27=109 op28=105 op29=110 op30=45 op31=108 op32=101 op33=103 op34=97 op35=108 op36=45 op37=118 op38=101 op39=99 op40=116 op41=111 op42=114 op43=45 op44=119 op45=105 op46=100 op47=116 op48=104 op49=0 op50=48 op51=0 op52=4 op53=110 op54=111 op55=45 op56=116 op57=114 op58=97 op59=112 op60=112 op61=105 op62=110 op63=103 op64=45 op65=109 op66=97 op67=116 op68=104 op69=0 op70=116 op71=114 op72=117 op73=101 op74=0 op75=4 op76=115 op77=116 op78=97 op79=99 op80=107 op81=45 op82=112 op83=114 op84=111 op85=116 op86=101 op87=99 op88=116 op89=111 op90=114 op91=45 op92=98 op93=117 op94=102 op95=102 op96=101 op97=114 op98=45 op99=115 op100=105 op101=122 op102=101 op103=0 op104=56 op105=0 op106=4 op107=116 op108=97 op109=114 op110=103 op111=101 op112=116 op113=45 op114=99 op115=112 op116=117 op117=0 op118=120 op119=56 op120=54 op121=45 op122=54 op123=52 op124=0 op125=4 op126=116 op127=97 op128=114 op129=103 op130=101 op131=116 op132=45 op133=102 op134=101 op135=97 op136=116 op137=117 op138=114 op139=101 op140=115 op141=0 op142=43 op143=99 op144=109 op145=111 op146=118 op147=44 op148=43 op149=99 op150=120 op151=56 op152=44 op153=43 op154=102 op155=120 op156=115 op157=114 op158=44 op159=43 op160=109 op161=109 op162=120 op163=44 op164=43 op165=115 op166=115 op167=101 op168=44 op169=43 op170=115 op171=115 op172=101 op173=50 op174=44 op175=43 op176=120 op177=56 op178=55 op179=0 op180=4 op181=116 op182=117 op183=110 op184=101 op185=45 op186=99 op187=112 op188=117 op189=0 op190=103 op191=101 op192=110 op193=101 op194=114 op195=105 op196=99 op197=0/>
+    <ENTRY op0=11 op1=4294967295 op2=0 op3=18/>
+    <ENTRY op0=12 op1=3 op2=0 op3=68/>
+    <ENTRY op0=13 op1=1 op2=0 op3=68 op4=0 op5=39 op6=1 op7=1 op8=8 op9=1 op10=41 op11=8/>
+    <ENTRY op0=14 op1=1 op2=0 op3=68 op4=0 op5=39 op6=1 op7=1 op8=8 op9=1 op10=103 op11=8 op12=1 op13=41 op14=8/>
+    <ENTRY op0=15 op1=4294967295 op2=0 op3=10 op4=0 op5=18 op6=4 op7=102 op8=114 op9=97 op10=109 op11=101 op12=45 op13=112 op14=111 op15=105 op16=110 op17=116 op18=101 op19=114 op20=0 op21=97 op22=108 op23=108 op24=0 op25=4 op26=110 op27=111 op28=45 op29=116 op30=114 op31=97 op32=112 op33=112 op34=105 op35=110 op36=103 op37=45 op38=109 op39=97 op40=116 op41=104 op42=0 op43=116 op44=114 op45=117 op46=101 op47=0 op48=4 op49=115 op50=116 op51=97 op52=99 op53=107 op54=45 op55=112 op56=114 op57=111 op58=116 op59=101 op60=99 op61=116 op62=111 op63=114 op64=45 op65=98 op66=117 op67=102 op68=102 op69=101 op70=114 op71=45 op72=115 op73=105 op74=122 op75=101 op76=0 op77=56 op78=0 op79=4 op80=116 op81=97 op82=114 op83=103 op84=101 op85=116 op86=45 op87=99 op88=112 op89=117 op90=0 op91=120 op92=56 op93=54 op94=45 op95=54 op96=52 op97=0 op98=4 op99=116 op100=97 op101=114 op102=103 op103=101 op104=116 op105=45 op106=102 op107=101 op108=97 op109=116 op110=117 op111=114 op112=101 op113=115 op114=0 op115=43 op116=99 op117=109 op118=111 op119=118 op120=44 op121=43 op122=99 op123=120 op124=56 op125=44 op126=43 op127=102 op128=120 op129=115 op130=114 op131=44 op132=43 op133=109 op134=109 op135=120 op136=44 op137=43 op138=115 op139=115 op140=101 op141=44 op142=43 op143=115 op144=115 op145=101 op146=50 op147=44 op148=43 op149=120 op150=56 op151=55 op152=0 op153=4 op154=116 op155=117 op156=110 op157=101 op158=45 op159=99 op160=112 op161=117 op162=0 op163=103 op164=101 op165=110 op166=101 op167=114 op168=105 op169=99 op170=0/>
+    <ENTRY op0=16 op1=4294967295 op2=0 op3=17/>
+    <ENTRY op0=17 op1=4294967295 op2=0 op3=35 op4=0 op5=18/>
+  </PARAMATTR_GROUP_BLOCK_ID>
+  <PARAMATTR_BLOCK NumWords=27 BlockCodeSize=3>
+    <ENTRY op0=1 op1=2/>
+    <ENTRY op0=1 op1=3 op2=2/>
+    <ENTRY op0=4 op1=5 op2=6/>
+    <ENTRY op0=4 op1=3 op2=5/>
+    <ENTRY op0=4 op1=7/>
+    <ENTRY op0=8/>
+    <ENTRY op0=9/>
+    <ENTRY op0=10/>
+    <ENTRY op0=11/>
+    <ENTRY op0=1 op1=3 op2=2 op3=6/>
+    <ENTRY op0=4 op1=3 op2=2/>
+    <ENTRY op0=4 op1=3 op2=2 op3=6 op4=12/>
+    <ENTRY op0=4 op1=13/>
+    <ENTRY op0=4 op1=5/>
+    <ENTRY op0=4 op1=14/>
+    <ENTRY op0=4 op1=3 op2=13/>
+    <ENTRY op0=15 op1=2 op2=6/>
+    <ENTRY op0=16/>
+    <ENTRY op0=5 op1=6/>
+    <ENTRY op0=2/>
+    <ENTRY op0=3 op1=5/>
+    <ENTRY op0=11 op1=7/>
+    <ENTRY op0=11 op1=13/>
+    <ENTRY op0=11 op1=14/>
+    <ENTRY op0=3 op1=13/>
+    <ENTRY op0=3 op1=2 op2=6/>
+    <ENTRY op0=3 op1=2 op2=6 op3=12/>
+    <ENTRY op0=3 op1=2/>
+    <ENTRY op0=17 op1=2 op2=6/>
+  </PARAMATTR_BLOCK>
+  <COMDAT op0=0 op1=12 op2=1/>
+  <COMDAT op0=12 op1=12 op2=1/>
+  <COMDAT op0=24 op1=11 op2=1/>
+  <COMDAT op0=35 op1=11 op2=1/>
+  <COMDAT op0=46 op1=11 op2=1/>
+  <COMDAT op0=57 op1=10 op2=1/>
+  <COMDAT op0=67 op1=10 op2=1/>
+  <COMDAT op0=77 op1=10 op2=1/>
+  <COMDAT op0=87 op1=11 op2=1/>
+  <COMDAT op0=98 op1=11 op2=1/>
+  <COMDAT op0=109 op1=11 op2=1/>
+  <COMDAT op0=120 op1=14 op2=1/>
+  <COMDAT op0=134 op1=18 op2=1/>
+  <COMDAT op0=152 op1=14 op2=1/>
+  <COMDAT op0=166 op1=14 op2=1/>
+  <COMDAT op0=180 op1=14 op2=1/>
+  <COMDAT op0=194 op1=25 op2=1/>
+  <COMDAT op0=219 op1=25 op2=1/>
+  <COMDAT op0=244 op1=18 op2=1/>
+  <COMDAT op0=262 op1=13 op2=1/>
+  <COMDAT op0=275 op1=14 op2=1/>
+  <COMDAT op0=289 op1=13 op2=1/>
+  <COMDAT op0=302 op1=13 op2=1/>
+  <COMDAT op0=315 op1=17 op2=1/>
+  <COMDAT op0=332 op1=14 op2=1/>
+  <COMDAT op0=346 op1=18 op2=1/>
+  <TRIPLE op0=120 op1=56 op2=54 op3=95 op4=54 op5=52 op6=45 op7=117 op8=110 op9=107 op10=110 op11=111 op12=119 op13=110 op14=45 op15=108 op16=105 op17=110 op18=117 op19=120 op20=45 op21=103 op22=110 op23=117/>
+  <DATALAYOUT op0=101 op1=45 op2=109 op3=58 op4=101 op5=45 op6=112 op7=50 op8=55 op9=48 op10=58 op11=51 op12=50 op13=58 op14=51 op15=50 op16=45 op17=112 op18=50 op19=55 op20=49 op21=58 op22=51 op23=50 op24=58 op25=51 op26=50 op27=45 op28=112 op29=50 op30=55 op31=50 op32=58 op33=54 op34=52 op35=58 op36=54 op37=52 op38=45 op39=105 op40=54 op41=52 op42=58 op43=54 op44=52 op45=45 op46=105 op47=49 op48=50 op49=56 op50=58 op51=49 op52=50 op53=56 op54=45 op55=102 op56=56 op57=48 op58=58 op59=49 op60=50 op61=56 op62=45 op63=110 op64=56 op65=58 op66=49 op67=54 op68=58 op69=51 op70=50 op71=58 op72=54 op73=52 op74=45 op75=83 op76=49 op77=50 op78=56/>
+  <SECTIONNAME op0=46 op1=116 op2=101 op3=120 op4=116 op5=46 op6=115 op7=116 op8=97 op9=114 op10=116 op11=117 op12=112/>
+  <SOURCE_FILENAME abbrevid=5 op0=82 op1=58 op2=92 op3=116 op4=111 op5=111 op6=108 op7=115 op8=92 op9=98 op10=105 op11=116 op12=99 op13=111 op14=100 op15=101 op16=92 op17=115 op18=104 op19=97 op20=112 op21=101 op22=115 op23=46 op24=99 op25=112 op26=112/> record string = 'R:\tools\bitcode\shapes.cpp'
+  <GUIDLIST abbrevid=6 op0=0 op1=0 op2=0 op3=0 op4=0 op5=0 op6=3749840861 op7=687014926 op8=0 op9=0 op10=0 op11=0 op12=4245125070 op13=1628476959 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=2531649053 op21=2927226308 op22=0 op23=0 op24=0 op25=0 op26=0 op27=0 op28=0 op29=0 op30=0 op31=0 op32=0 op33=0 op34=0 op35=0 op36=0 op37=0 op38=0 op39=0 op40=561660844 op41=2845066568 op42=0 op43=0 op44=3603249896 op45=1946747801 op46=2734587846 op47=62946214 op48=0 op49=0 op50=0 op51=0 op52=287235769 op53=2035969394 op54=0 op55=0 op56=0 op57=0 op58=2250602457 op59=606991382 op60=657136570 op61=3116774129 op62=2365307923 op63=1095744327 op64=1424073626 op65=449008745 op66=0 op67=0 op68=0 op69=0 op70=0 op71=0 op72=402464354 op73=866270326 op74=0 op75=0 op76=0 op77=0 op78=0 op79=0 op80=0 op81=0 op82=0 op83=0 op84=0 op85=0 op86=0 op87=0 op88=0 op89=0 op90=0 op91=0 op92=0 op93=0 op94=3596115880 op95=466726359 op96=0 op97=0 op98=478415251 op99=2270227567/>
+  <GLOBALVAR op0=364 op1=21 op2=1 op3=2 op4=54 op5=0 op6=3 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=385 op1=7 op2=1 op3=2 op4=54 op5=0 op6=3 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=0 op1=12 op2=2 op3=3 op4=57 op5=19 op6=4 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=1 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR abbrevid=4 op0=392 op1=37 op2=3 op3=2 op4=0 op5=0 op6=0 op7=0/>
+  <GLOBALVAR op0=12 op1=12 op2=5 op3=3 op4=58 op5=19 op6=1 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=2 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=429 op1=8 op2=8 op3=2 op4=59 op5=3 op6=4 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=437 op1=12 op2=4 op3=2 op4=0 op5=0 op6=0 op7=0 op8=1 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=449 op1=9 op2=9 op3=3 op4=60 op5=3 op6=5 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=24 op1=11 op2=11 op3=3 op4=63 op5=19 op6=4 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=3 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=35 op1=11 op2=12 op3=3 op4=65 op5=19 op6=4 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=4 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR abbrevid=4 op0=458 op1=40 op2=3 op3=2 op4=0 op5=0 op6=0 op7=0/>
+  <GLOBALVAR op0=46 op1=11 op2=13 op3=3 op4=66 op5=19 op6=1 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=5 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=57 op1=10 op2=2 op3=3 op4=67 op5=19 op6=4 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=6 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=67 op1=10 op2=14 op3=3 op4=68 op5=19 op6=1 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=7 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=77 op1=10 op2=11 op3=3 op4=70 op5=19 op6=4 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=8 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=498 op1=4 op2=15 op3=3 op4=71 op5=9 op6=1 op7=0 op8=0 op9=0 op10=1 op11=0 op12=0 op13=0 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=87 op1=11 op2=11 op3=3 op4=73 op5=19 op6=4 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=9 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=98 op1=11 op2=12 op3=3 op4=74 op5=19 op6=4 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=10 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=109 op1=11 op2=13 op3=3 op4=75 op5=19 op6=1 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=11 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=502 op1=6 op2=14 op3=3 op4=76 op5=9 op6=1 op7=0 op8=0 op9=0 op10=1 op11=0 op12=0 op13=0 op14=0 op15=1 op16=385 op17=0 op18=0 op19=0/>
+  <GLOBALVAR abbrevid=4 op0=508 op1=17 op2=17 op3=2 op4=79 op5=2 op6=0 op7=0/>
+  <FUNCTION op0=525 op1=13 op2=19 op3=0 op4=0 op5=0 op6=1 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=538 op1=24 op2=21 op3=0 op4=1 op5=0 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=562 op1=11 op2=22 op3=0 op4=1 op5=0 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=573 op1=11 op2=23 op3=0 op4=0 op5=0 op6=2 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=27 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=120 op1=14 op2=24 op3=0 op4=0 op5=19 op6=3 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=12 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=584 op1=20 op2=25 op3=0 op4=1 op5=0 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=134 op1=18 op2=26 op3=0 op4=0 op5=19 op6=4 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=13 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=152 op1=14 op2=27 op3=0 op4=0 op5=19 op6=5 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=14 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=604 op1=21 op2=28 op3=0 op4=1 op5=0 op6=6 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=625 op1=17 op2=29 op3=0 op4=1 op5=0 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=642 op1=15 op2=30 op3=0 op4=1 op5=0 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=657 op1=9 op2=30 op3=0 op4=1 op5=0 op6=7 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=666 op1=21 op2=30 op3=0 op4=0 op5=3 op6=8 op7=0 op8=1 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=166 op1=14 op2=24 op3=0 op4=0 op5=19 op6=3 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=15 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=180 op1=14 op2=27 op3=0 op4=0 op5=19 op6=5 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=16 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=687 op1=12 op2=31 op3=0 op4=1 op5=0 op6=9 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=699 op1=17 op2=32 op3=0 op4=0 op5=0 op6=10 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=716 op1=18 op2=23 op3=0 op4=0 op5=0 op6=11 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=734 op1=11 op2=23 op3=0 op4=0 op5=0 op6=1 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=27 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=194 op1=25 op2=33 op3=0 op4=0 op5=19 op6=12 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=17 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=219 op1=25 op2=34 op3=0 op4=0 op5=19 op6=12 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=18 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=244 op1=18 op2=29 op3=0 op4=0 op5=19 op6=4 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=19 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=262 op1=13 op2=27 op3=0 op4=0 op5=19 op6=13 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=20 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=275 op1=14 op2=27 op3=0 op4=0 op5=19 op6=14 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=21 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=289 op1=13 op2=27 op3=0 op4=0 op5=19 op6=15 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=22 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=302 op1=13 op2=27 op3=0 op4=0 op5=19 op6=13 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=23 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=745 op1=18 op2=30 op3=0 op4=1 op5=0 op6=0 op7=0 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=315 op1=17 op2=29 op3=0 op4=0 op5=19 op6=16 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=24 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=763 op1=7 op2=35 op3=0 op4=1 op5=0 op6=17 op7=0 op8=0 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=332 op1=14 op2=27 op3=0 op4=0 op5=19 op6=14 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=25 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=346 op1=18 op2=26 op3=0 op4=0 op5=19 op6=4 op7=2 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=26 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <FUNCTION op0=770 op1=25 op2=30 op3=0 op4=0 op5=3 op6=8 op7=0 op8=1 op9=0 op10=0 op11=0 op12=0 op13=0 op14=0 op15=0 op16=0 op17=1 op18=0 op19=385 op20=0 op21=0/>
+  <VSTOFFSET abbrevid=7 op0=3659/>
+  <CONSTANTS_BLOCK NumWords=48 BlockCodeSize=4>
+    <SETTYPE abbrevid=4 op0=1/>
+    <NULL/>
+    <SETTYPE abbrevid=4 op0=20/>
+    <INTEGER abbrevid=5 op0=32/>
+    <SETTYPE abbrevid=4 op0=0/>
+    <CE_GEP op0=4 op1=3 op2=0 op3=3 op4=20 op5=54/>
+    <SETTYPE abbrevid=4 op0=2/>
+    <AGGREGATE abbrevid=9 op0=55 op1=4/>
+    <SETTYPE abbrevid=4 op0=5/>
+    <CSTRING abbrevid=12 op0=55 op1=70 op2=97 op3=105 op4=108 op5=117 op6=114 op7=101/> record string = '7Failure'
+    <SETTYPE abbrevid=4 op0=8/>
+    <NULL/>
+    <SETTYPE abbrevid=4 op0=9/>
+    <AGGREGATE abbrevid=9 op0=24 op1=38/>
+    <SETTYPE abbrevid=4 op0=0/>
+    <NULL/>
+    <SETTYPE abbrevid=4 op0=10/>
+    <AGGREGATE abbrevid=9 op0=60 op1=9 op2=28 op3=44 op4=27 op5=42/>
+    <SETTYPE abbrevid=4 op0=11/>
+    <AGGREGATE abbrevid=9 op0=61/> record string = '='
+    <SETTYPE abbrevid=4 op0=0/>
+    <CE_GEP op0=4 op1=3 op2=0 op3=10 op4=20 op5=54/>
+    <SETTYPE abbrevid=4 op0=12/>
+    <AGGREGATE abbrevid=9 op0=63 op1=11 op2=12/>
+    <SETTYPE abbrevid=4 op0=13/>
+    <CSTRING abbrevid=12 op0=54 op1=83 op2=113 op3=117 op4=97 op5=114 op6=101/> record string = '6Square'
+    <SETTYPE abbrevid=4 op0=2/>
+    <AGGREGATE abbrevid=9 op0=55 op1=13/>
+    <SETTYPE abbrevid=4 op0=14/>
+    <CSTRING abbrevid=12 op0=53 op1=83 op2=104 op3=97 op4=112 op5=101/> record string = '5Shape'
+    <SETTYPE abbrevid=4 op0=10/>
+    <AGGREGATE abbrevid=9 op0=60 op1=12 op2=45 op3=46 op4=47 op5=48/>
+    <SETTYPE abbrevid=4 op0=11/>
+    <AGGREGATE abbrevid=9 op0=68/> record string = 'D'
+    <SETTYPE abbrevid=4 op0=15/>
+    <CSTRING abbrevid=12 op0=115 op1=104 op2=97 op3=112 op4=101/> record string = 'shape'
+    <SETTYPE abbrevid=4 op0=10/>
+    <AGGREGATE abbrevid=9 op0=60 op1=17 op2=35 op3=50 op4=51 op5=48/>
+    <SETTYPE abbrevid=4 op0=11/>
+    <AGGREGATE abbrevid=9 op0=71/> record string = 'G'
+    <SETTYPE abbrevid=4 op0=12/>
+    <AGGREGATE abbrevid=9 op0=63 op1=18 op2=12/>
+    <SETTYPE abbrevid=4 op0=13/>
+    <CSTRING abbrevid=12 op0=54 op1=67 op2=105 op3=114 op4=99 op5=108 op6=101/> record string = '6Circle'
+    <SETTYPE abbrevid=4 op0=14/>
+    <CSTRING abbrevid=12 op0=115 op1=113 op2=117 op3=97 op4=114 op5=101/> record string = 'square'
+    <SETTYPE abbrevid=4 op0=1/>
+    <INTEGER abbrevid=5 op0=131070/>
+    <SETTYPE abbrevid=4 op0=16/>
+    <AGGREGATE abbrevid=9 op0=76 op1=52 op2=60/> record string = 'L4<'
+    <SETTYPE abbrevid=4 op0=17/>
+    <AGGREGATE abbrevid=9 op0=77/> record string = 'M'
+    <SETTYPE abbrevid=4 op0=20/>
+    <INTEGER abbrevid=5 op0=64/>
+    <NULL/>
+    <INTEGER abbrevid=5 op0=112/>
+    <INTEGER abbrevid=5 op0=16/>
+    <INTEGER abbrevid=5 op0=14/>
+    <INTEGER abbrevid=5 op0=256/>
+    <INTEGER abbrevid=5 op0=128/>
+    <INTEGER abbrevid=5 op0=4/>
+    <INTEGER abbrevid=5 op0=96/>
+    <INTEGER abbrevid=5 op0=12/>
+    <SETTYPE abbrevid=4 op0=1/>
+    <INTEGER abbrevid=5 op0=14/>
+    <INTEGER abbrevid=5 op0=10/>
+    <INTEGER abbrevid=5 op0=4/>
+    <INTEGER abbrevid=5 op0=6/>
+    <INTEGER abbrevid=5 op0=16/>
+    <SETTYPE abbrevid=4 op0=20/>
+    <INTEGER abbrevid=5 op0=8/>
+  </CONSTANTS_BLOCK>
+  <METADATA_KIND_BLOCK NumWords=292 BlockCodeSize=3>
+    <KIND op0=0 op1=100 op2=98 op3=103/>
+    <KIND op0=1 op1=116 op2=98 op3=97 op4=97/>
+    <KIND op0=2 op1=112 op2=114 op3=111 op4=102/>
+    <KIND op0=3 op1=102 op2=112 op3=109 op4=97 op5=116 op6=104/>
+    <KIND op0=4 op1=114 op2=97 op3=110 op4=103 op5=101/>
+    <KIND op0=5 op1=116 op2=98 op3=97 op4=97 op5=46 op6=115 op7=116 op8=114 op9=117 op10=99 op11=116/>
+    <KIND op0=6 op1=105 op2=110 op3=118 op4=97 op5=114 op6=105 op7=97 op8=110 op9=116 op10=46 op11=108 op12=111 op13=97 op14=100/>
+    <KIND op0=7 op1=97 op2=108 op3=105 op4=97 op5=115 op6=46 op7=115 op8=99 op9=111 op10=112 op11=101/>
+    <KIND op0=8 op1=110 op2=111 op3=97 op4=108 op5=105 op6=97 op7=115/>
+    <KIND op0=9 op1=110 op2=111 op3=110 op4=116 op5=101 op6=109 op7=112 op8=111 op9=114 op10=97 op11=108/>
+    <KIND op0=10 op1=108 op2=108 op3=118 op4=109 op5=46 op6=109 op7=101 op8=109 op9=46 op10=112 op11=97 op12=114 op13=97 op14=108 op15=108 op16=101 op17=108 op18=95 op19=108 op20=111 op21=111 op22=112 op23=95 op24=97 op25=99 op26=99 op27=101 op28=115 op29=115/>
+    <KIND op0=11 op1=110 op2=111 op3=110 op4=110 op5=117 op6=108 op7=108/>
+    <KIND op0=12 op1=100 op2=101 op3=114 op4=101 op5=102 op6=101 op7=114 op8=101 op9=110 op10=99 op11=101 op12=97 op13=98 op14=108 op15=101/>
+    <KIND op0=13 op1=100 op2=101 op3=114 op4=101 op5=102 op6=101 op7=114 op8=101 op9=110 op10=99 op11=101 op12=97 op13=98 op14=108 op15=101 op16=95 op17=111 op18=114 op19=95 op20=110 op21=117 op22=108 op23=108/>
+    <KIND op0=14 op1=109 op2=97 op3=107 op4=101 op5=46 op6=105 op7=109 op8=112 op9=108 op10=105 op11=99 op12=105 op13=116/>
+    <KIND op0=15 op1=117 op2=110 op3=112 op4=114 op5=101 op6=100 op7=105 op8=99 op9=116 op10=97 op11=98 op12=108 op13=101/>
+    <KIND op0=16 op1=105 op2=110 op3=118 op4=97 op5=114 op6=105 op7=97 op8=110 op9=116 op10=46 op11=103 op12=114 op13=111 op14=117 op15=112/>
+    <KIND op0=17 op1=97 op2=108 op3=105 op4=103 op5=110/>
+    <KIND op0=18 op1=108 op2=108 op3=118 op4=109 op5=46 op6=108 op7=111 op8=111 op9=112/>
+    <KIND op0=19 op1=116 op2=121 op3=112 op4=101/>
+    <KIND op0=20 op1=115 op2=101 op3=99 op4=116 op5=105 op6=111 op7=110 op8=95 op9=112 op10=114 op11=101 op12=102 op13=105 op14=120/>
+    <KIND op0=21 op1=97 op2=98 op3=115 op4=111 op5=108 op6=117 op7=116 op8=101 op9=95 op10=115 op11=121 op12=109 op13=98 op14=111 op15=108/>
+    <KIND op0=22 op1=97 op2=115 op3=115 op4=111 op5=99 op6=105 op7=97 op8=116 op9=101 op10=100/>
+    <KIND op0=23 op1=99 op2=97 op3=108 op4=108 op5=101 op6=101 op7=115/>
+    <KIND op0=24 op1=105 op2=114 op3=114 op4=95 op5=108 op6=111 op7=111 op8=112/>
+    <KIND op0=25 op1=108 op2=108 op3=118 op4=109 op5=46 op6=97 op7=99 op8=99 op9=101 op10=115 op11=115 op12=46 op13=103 op14=114 op15=111 op16=117 op17=112/>
+    <KIND op0=26 op1=99 op2=97 op3=108 op4=108 op5=98 op6=97 op7=99 op8=107/>
+    <KIND op0=27 op1=108 op2=108 op3=118 op4=109 op5=46 op6=112 op7=114 op8=101 op9=115 op10=101 op11=114 op12=118 op13=101 op14=46 op15=97 op16=99 op17=99 op18=101 op19=115 op20=115 op21=46 op22=105 op23=110 op24=100 op25=101 op26=120/>
+    <KIND op0=28 op1=118 op2=99 op3=97 op4=108 op5=108 op6=95 op7=118 op8=105 op9=115 op10=105 op11=98 op12=105 op13=108 op14=105 op15=116 op16=121/>
+    <KIND op0=29 op1=110 op2=111 op3=117 op4=110 op5=100 op6=101 op7=102/>
+    <KIND op0=30 op1=97 op2=110 op3=110 op4=111 op5=116 op6=97 op7=116 op8=105 op9=111 op10=110/>
+    <KIND op0=31 op1=110 op2=111 op3=115 op4=97 op5=110 op6=105 op7=116 op8=105 op9=122 op10=101/>
+    <KIND op0=32 op1=102 op2=117 op3=110 op4=99 op5=95 op6=115 op7=97 op8=110 op9=105 op10=116 op11=105 op12=122 op13=101/>
+    <KIND op0=33 op1=101 op2=120 op3=99 op4=108 op5=117 op6=100 op7=101/>
+    <KIND op0=34 op1=109 op2=101 op3=109 op4=112 op5=114 op6=111 op7=102/>
+    <KIND op0=35 op1=99 op2=97 op3=108 op4=108 op5=115 op6=105 op7=116 op8=101/>
+    <KIND op0=36 op1=107 op2=99 op3=102 op4=105 op5=95 op6=116 op7=121 op8=112 op9=101/>
+    <KIND op0=37 op1=112 op2=99 op3=115 op4=101 op5=99 op6=116 op7=105 op8=111 op9=110 op10=115/>
+    <KIND op0=38 op1=68 op2=73 op3=65 op4=115 op5=115 op6=105 op7=103 op8=110 op9=73 op10=68/>
+    <KIND op0=39 op1=99 op2=111 op3=114 op4=111 op5=46 op6=111 op7=117 op8=116 op9=115 op10=105 op11=100 op12=101 op13=46 op14=102 op15=114 op16=97 op17=109 op18=101/>
+    <KIND op0=40 op1=109 op2=109 op3=114 op4=97/>
+    <KIND op0=41 op1=110 op2=111 op3=97 op4=108 op5=105 op6=97 op7=115 op8=46 op9=97 op10=100 op11=100 op12=114 op13=115 op14=112 op15=97 op16=99 op17=101/>
+    <KIND op0=42 op1=99 op2=97 op3=108 op4=108 op5=101 op6=101 op7=95 op8=116 op9=121 op10=112 op11=101/>
+    <KIND op0=43 op1=110 op2=111 op3=102 op4=114 op5=101 op6=101 op7=111 op8=98 op9=106/>
+    <KIND op0=44 op1=99 op2=97 op3=112 op4=116 op5=117 op6=114 op7=101 op8=115/>
+    <KIND op0=45 op1=97 op2=108 op3=108 op4=111 op5=99 op6=95 op7=116 op8=111 op9=107 op10=101 op11=110/>
+    <KIND op0=46 op1=105 op2=109 op3=112 op4=108 op5=105 op6=99 op7=105 op8=116 op9=46 op10=114 op11=101 op12=102/>
+    <KIND op0=47 op1=110 op2=111 op3=102 op4=112 op5=99 op6=108 op7=97 op8=115 op9=115/>
+    <KIND op0=48 op1=99 op2=97 op3=108 op4=108 op5=95 op6=116 op7=97 op8=114 op9=103 op10=101 op11=116/>
+    <KIND op0=49 op1=105 op2=110 op3=108 op4=105 op5=110 op6=101 op7=95 op8=104 op9=105 op10=115 op11=116 op12=111 op13=114 op14=121/>
+    <KIND op0=50 op1=101 op2=108 op3=102 op4=95 op5=115 op6=101 op7=99 op8=116 op9=105 op10=111 op11=110 op12=95 op13=112 op14=114 op15=111 op16=112 op17=101 op18=114 op19=116 op20=105 op21=101 op22=115/>
+    <KIND op0=51 op1=103 op2=117 op3=105 op4=100/>
+    <KIND op0=52 op1=109 op2=101 op3=109 op4=46 op5=99 op6=97 op7=99 op8=104 op9=101 op10=95 op11=104 op12=105 op13=110 op14=116/>
+    <KIND op0=53 op1=98 op2=108 op3=111 op4=99 op5=107 op6=46 op7=117 op8=110 op9=105 op10=102 op11=111 op12=114 op13=109 op14=105 op15=116 op16=121 op17=46 op18=112 op19=114 op20=111 op21=102 op22=105 op23=108 op24=101/>
+    <KIND op0=54 op1=99 op2=97 op3=108 op4=108 op5=103 op6=114 op7=97 op8=112 op9=104/>
+    <KIND op0=55 op1=109 op2=101 op3=116 op4=97 op5=100 op6=97 op7=116 op8=97 op9=95 op10=115 op11=101 op12=99 op13=116 op14=105 op15=111 op16=110 op17=95 op18=107 op19=105 op20=110 op21=100/>
+    <KIND op0=56 op1=97 op2=116 op3=111 op4=109 op5=105 op6=99 op7=46 op8=105 op9=103 op10=110 op11=111 op12=114 op13=101 op14=46 op15=100 op16=101 op17=110 op18=111 op19=114 op20=109 op21=97 op22=108 op23=46 op24=109 op25=111 op26=100 op27=101/>
+  </METADATA_KIND_BLOCK>
+  <METADATA_BLOCK NumWords=668 BlockCodeSize=4>
+    <STRINGS abbrevid=9 op0=61 op1=48/> num-strings = 61 {
+      'R:\\tools\\bitcode\\shapes.cpp'
+      'R:\\target\\fixtures\\bitcode'
+      '34131411e08f0b076252a6c353f4ff80'
+      'clang version 24.0.0git (https://github.com/llvm/llvm-project.git c74b358f44c31e3615fe942556a41be8c9a8d877)'
+      'int'
+      'Failure'
+      'code'
+      '_ZTS7Failure'
+      'char'
+      'table'
+      '_ZL5table'
+      '__clang_vtable'
+      '_ZTV6Circle'
+      'Circle'
+      'radius'
+      'double'
+      '_ZN6CircleC4Ed'
+      'area'
+      '_ZNK6Circle4areaEv'
+      'Shape'
+      '_vptr$Shape'
+      '__vtbl_ptr_type'
+      '~Shape'
+      '_ZN5ShapeD4Ev'
+      '_ZNK5Shape4areaEv'
+      'name'
+      '_ZNK5Shape4nameEv'
+      '_ZTS5Shape'
+      '_ZTS6Circle'
+      '_ZTV5Shape'
+      '_ZTV6Square'
+      'Square'
+      'side'
+      'destroyed'
+      '_ZN6SquareC4Ed'
+      '~Square'
+      '_ZN6SquareD4Ev'
+      '_ZNK6Square4areaEv'
+      '_ZNK6Square4nameEv'
+      '_ZTS6Square'
+      'unit'
+      '_ZL4unit'
+      'counter'
+      '_ZN6Square9destroyedE'
+      'Dwarf Version'
+      'Debug Info Version'
+      'debugger-tuning'
+      'gdb'
+      'PIC Level'
+      'PIE Level'
+      'uwtable'
+      'frame-pointer'
+      'x'
+      's'
+      'this'
+      '~Circle'
+      '_ZN6CircleD4Ev'
+      'T'
+      'v'
+      'lo'
+      'hi'
+    }
+    <INDEX_OFFSET abbrevid=7 op0=12328 op1=0/>
+    <VALUE op0=20 op1=79/>
+    <VALUE op0=20 op1=80/>
+    <VALUE op0=20 op1=81/>
+    <VALUE op0=20 op1=82/>
+    <VALUE op0=20 op1=83/>
+    <VALUE op0=20 op1=84/>
+    <VALUE op0=20 op1=85/>
+    <VALUE op0=20 op1=86/>
+    <VALUE op0=1 op1=53/>
+    <VALUE op0=20 op1=87/>
+    <VALUE op0=20 op1=88/>
+    <VALUE op0=1 op1=89/>
+    <VALUE op0=1 op1=90/>
+    <VALUE op0=1 op1=91/>
+    <VALUE op0=1 op1=92/>
+    <VALUE op0=1 op1=93/>
+    <COMPOSITE_TYPE op0=7 op1=19 op2=6 op3=95 op4=33 op5=0 op6=0 op7=62 op8=0 op9=63 op10=4194304 op11=97 op12=0 op13=0 op14=0 op15=8 op16=0 op17=0 op18=0 op19=0 op20=0 op21=0 op22=0 op23=0 op24=4294967295 op25=0/>
+    <GLOBAL_VAR op0=5 op1=0 op2=0 op3=0 op4=95 op5=17 op6=113 op7=1 op8=1 op9=0 op10=0 op11=0 op12=0/>
+    <GLOBAL_VAR op0=5 op1=91 op2=10 op3=11 op4=95 op5=70 op6=120 op7=1 op8=1 op9=0 op10=0 op11=0 op12=0/>
+    <COMPOSITE_TYPE op0=7 op1=19 op2=20 op3=95 op4=6 op5=0 op6=0 op7=68 op8=0 op9=63 op10=75497472 op11=154 op12=0 op13=81 op14=0 op15=28 op16=0 op17=0 op18=0 op19=0 op20=0 op21=0 op22=0 op23=0 op24=4294967295 op25=0/>
+    <COMPOSITE_TYPE op0=7 op1=19 op2=14 op3=95 op4=23 op5=0 op6=0 op7=67 op8=0 op9=63 op10=75497472 op11=135 op12=0 op13=81 op14=0 op15=29 op16=0 op17=0 op18=0 op19=0 op20=0 op21=0 op22=0 op23=0 op24=4294967295 op25=0/>
+    <GLOBAL_VAR op0=5 op1=91 op2=12 op3=13 op4=95 op5=0 op6=121 op7=0 op8=1 op9=122 op10=0 op11=64 op12=0/>
+    <GLOBAL_VAR op0=5 op1=0 op2=0 op3=0 op4=95 op5=9 op6=157 op7=1 op8=1 op9=0 op10=0 op11=0 op12=0/>
+    <GLOBAL_VAR op0=5 op1=91 op2=12 op3=30 op4=95 op5=0 op6=121 op7=0 op8=1 op9=158 op10=0 op11=64 op12=0/>
+    <COMPOSITE_TYPE op0=7 op1=19 op2=32 op3=95 op4=12 op5=0 op6=0 op7=67 op8=0 op9=63 op10=75497472 op11=178 op12=0 op13=81 op14=0 op15=40 op16=0 op17=0 op18=0 op19=0 op20=0 op21=0 op22=0 op23=0 op24=4294967295 op25=0/>
+    <GLOBAL_VAR op0=5 op1=91 op2=12 op3=31 op4=95 op5=0 op6=121 op7=0 op8=1 op9=159 op10=0 op11=64 op12=0/>
+    <GLOBAL_VAR op0=5 op1=91 op2=41 op3=42 op4=95 op5=57 op6=82 op7=1 op8=1 op9=0 op10=0 op11=0 op12=0/>
+    <GLOBAL_VAR op0=5 op1=91 op2=43 op3=0 op4=95 op5=37 op6=93 op7=0 op8=1 op9=0 op10=0 op11=0 op12=0/>
+    <GLOBAL_VAR op0=5 op1=91 op2=34 op3=44 op4=95 op5=21 op6=93 op7=0 op8=1 op9=162 op10=0 op11=0 op12=0/>
+    <COMPILE_UNIT op0=1 op1=33 op2=92 op3=4 op4=0 op5=0 op6=0 op7=0 op8=1 op9=0 op10=94 op11=0 op12=108 op13=0 op14=0 op15=0 op16=0 op17=0 op18=2 op19=0 op20=0 op21=0 op22=0 op23=0/>
+    <FILE op0=0 op1=1 op2=2 op3=1 op4=3/>
+    <BASIC_TYPE op0=2 op1=36 op2=5 op3=62 op4=0 op5=5 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0/>
+    <NODE op0=78 op1=93/>
+    <FILE op0=0 op1=1 op2=0 op3=1 op4=3/>
+    <DERIVED_TYPE op0=2 op1=13 op2=7 op3=95 op4=34 op5=78 op6=93 op7=62 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=96/>
+    <EXPRESSION op0=6/>
+    <GLOBAL_VAR_EXPR op0=0 op1=90 op2=98/>
+    <GLOBAL_VAR_EXPR op0=0 op1=89 op2=98/>
+    <GLOBAL_VAR_EXPR op0=0 op1=88 op2=98/>
+    <GLOBAL_VAR_EXPR op0=0 op1=87 op2=98/>
+    <GLOBAL_VAR_EXPR op0=0 op1=85 op2=98/>
+    <GLOBAL_VAR_EXPR op0=0 op1=84 op2=98/>
+    <GLOBAL_VAR_EXPR op0=0 op1=83 op2=98/>
+    <GLOBAL_VAR_EXPR op0=0 op1=80 op2=98/>
+    <GLOBAL_VAR_EXPR op0=0 op1=79 op2=98/>
+    <NODE op0=99 op1=100 op2=101 op3=102 op4=103 op5=104 op6=105 op7=106 op8=107/>
+    <BASIC_TYPE op0=2 op1=36 op2=9 op3=65 op4=0 op5=6 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0/>
+    <DERIVED_TYPE op0=2 op1=38 op2=0 op3=0 op4=0 op5=0 op6=109 op7=63 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <SUBRANGE op0=4 op1=66 op2=0 op3=0 op4=0/>
+    <NODE op0=111/>
+    <COMPOSITE_TYPE op0=6 op1=1 op2=0 op3=0 op4=0 op5=0 op6=110 op7=64 op8=0 op9=63 op10=0 op11=112 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0 op21=0 op22=0 op23=0 op24=4294967295 op25=0/>
+    <NODE op0=93 op1=93/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=114 op3=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=115 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=38 op2=0 op3=0 op4=0 op5=0 op6=116 op7=63 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <SUBRANGE op0=4 op1=69 op2=0 op3=0 op4=0/>
+    <NODE op0=118/>
+    <COMPOSITE_TYPE op0=6 op1=1 op2=0 op3=0 op4=0 op5=0 op6=117 op7=67 op8=0 op9=63 op10=0 op11=119 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0 op21=0 op22=0 op23=0 op24=4294967295 op25=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=0 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=52 op2=12 op3=95 op4=0 op5=82 op6=121 op7=63 op8=0 op9=63 op10=4161 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=28 op2=0 op3=0 op4=0 op5=82 op6=81 op7=63 op8=0 op9=63 op10=0 op11=70 op12=0 op13=0 op14=0/>
+    <BASIC_TYPE op0=2 op1=36 op2=16 op3=68 op4=0 op5=4 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0/>
+    <DERIVED_TYPE op0=2 op1=13 op2=15 op3=95 op4=24 op5=82 op6=124 op7=68 op8=0 op9=68 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=82 op7=68 op8=0 op9=63 op10=1088 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=0 op1=126 op2=124/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=127 op3=0/>
+    <SUBPROGRAM op0=6 op1=82 op2=14 op3=17 op4=95 op5=25 op6=128 op7=25 op8=0 op9=0 op10=0 op11=384 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <DERIVED_TYPE op0=2 op1=38 op2=0 op3=0 op4=0 op5=0 op6=82 op7=63 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=130 op7=68 op8=0 op9=63 op10=1088 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=124 op1=131/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=132 op3=0/>
+    <SUBPROGRAM op0=6 op1=82 op2=18 op3=19 op4=95 op5=26 op6=133 op7=26 op8=82 op9=1 op10=2 op11=256 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <NODE op0=123 op1=125 op2=129 op3=134/>
+    <NODE op0=93/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=136 op3=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=22 op3=0 op4=0 op5=0 op6=137 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=138 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=13 op2=21 op3=95 op4=0 op5=95 op6=139 op7=68 op8=0 op9=63 op10=64 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=81 op7=68 op8=0 op9=63 op10=1088 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=0 op1=141/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=142 op3=0/>
+    <SUBPROGRAM op0=6 op1=81 op2=23 op3=24 op4=95 op5=7 op6=143 op7=7 op8=81 op9=1 op10=0 op11=256 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <DERIVED_TYPE op0=2 op1=38 op2=0 op3=0 op4=0 op5=0 op6=81 op7=63 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=145 op7=68 op8=0 op9=63 op10=1088 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=124 op1=146/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=147 op3=0/>
+    <SUBPROGRAM op0=6 op1=81 op2=18 op3=25 op4=95 op5=8 op6=148 op7=8 op8=81 op9=2 op10=2 op11=256 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=110 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=150 op1=146/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=151 op3=0/>
+    <SUBPROGRAM op0=6 op1=81 op2=26 op3=27 op4=95 op5=9 op6=152 op7=9 op8=81 op9=1 op10=3 op11=256 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <NODE op0=140 op1=144 op2=149 op3=153/>
+    <SUBRANGE op0=4 op1=72 op2=0 op3=0 op4=0/>
+    <NODE op0=155/>
+    <COMPOSITE_TYPE op0=6 op1=1 op2=0 op3=0 op4=0 op5=0 op6=110 op7=71 op8=0 op9=63 op10=0 op11=156 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0 op21=0 op22=0 op23=0 op24=4294967295 op25=0/>
+    <DERIVED_TYPE op0=2 op1=52 op2=12 op3=95 op4=0 op5=81 op6=121 op7=63 op8=0 op9=63 op10=4161 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=52 op2=12 op3=95 op4=0 op5=86 op6=121 op7=63 op8=0 op9=63 op10=4161 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=28 op2=0 op3=0 op4=0 op5=86 op6=81 op7=63 op8=0 op9=63 op10=0 op11=70 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=13 op2=33 op3=95 op4=13 op5=86 op6=124 op7=68 op8=0 op9=68 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=52 op2=34 op3=95 op4=18 op5=86 op6=93 op7=63 op8=0 op9=63 op10=4096 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=86 op7=68 op8=0 op9=63 op10=1088 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=0 op1=163 op2=124/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=164 op3=0/>
+    <SUBPROGRAM op0=6 op1=86 op2=32 op3=35 op4=95 op5=14 op6=165 op7=14 op8=0 op9=0 op10=0 op11=384 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <NODE op0=0 op1=163/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=167 op3=0/>
+    <SUBPROGRAM op0=6 op1=86 op2=36 op3=37 op4=95 op5=15 op6=168 op7=15 op8=86 op9=1 op10=0 op11=256 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <DERIVED_TYPE op0=2 op1=38 op2=0 op3=0 op4=0 op5=0 op6=86 op7=63 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=170 op7=68 op8=0 op9=63 op10=1088 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=124 op1=171/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=172 op3=0/>
+    <SUBPROGRAM op0=6 op1=86 op2=18 op3=38 op4=95 op5=16 op6=173 op7=16 op8=86 op9=1 op10=2 op11=256 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <NODE op0=150 op1=171/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=175 op3=0/>
+    <SUBPROGRAM op0=6 op1=86 op2=26 op3=39 op4=95 op5=17 op6=176 op7=17 op8=86 op9=1 op10=3 op11=256 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <NODE op0=160 op1=161 op2=162 op3=166 op4=169 op5=174 op6=177/>
+    <NODE op0=73 op1=45 op2=74/>
+    <NODE op0=75 op1=46 op2=76/>
+    <NODE op0=75 op1=47 op2=48/>
+    <NODE op0=77 op1=49 op2=75/>
+    <NODE op0=73 op1=50 op2=75/>
+    <NODE op0=73 op1=51 op2=75/>
+    <NODE op0=73 op1=52 op2=75/>
+    <NODE op0=4/>
+    <NODE/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=86 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=170 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=82 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <NODE op0=0 op1=126/>
+    <SUBROUTINE_TYPE op0=2 op1=0 op2=191 op3=0/>
+    <SUBPROGRAM op0=6 op1=82 op2=56 op3=57 op4=0 op5=0 op6=192 op7=0 op8=82 op9=1 op10=0 op11=320 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+    <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=81 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+    <INDEX abbrevid=8 op0=0 op1=34 op2=34 op3=34 op4=34 op5=34 op6=34 op7=34 op8=34 op9=34 op10=34 op11=34 op12=34 op13=34 op14=34 op15=34 op16=34 op17=262 op18=106 op19=118 op20=268 op21=268 op22=124 op23=106 op24=124 op25=280 op26=124 op27=130 op28=124 op29=130 op30=184 op31=46 op32=100 op33=40 op34=46 op35=142 op36=28 op37=22 op38=52 op39=52 op40=52 op41=52 op42=52 op43=52 op44=52 op45=52 op46=52 op47=124 op48=100 op49=130 op50=52 op51=28 op52=232 op53=40 op54=46 op55=124 op56=130 op57=52 op58=28 op59=232 op60=118 op61=154 op62=136 op63=100 op64=136 op65=136 op66=46 op67=46 op68=166 op69=130 op70=136 op71=40 op72=46 op73=172 op74=64 op75=28 op76=46 op77=124 op78=124 op79=142 op80=136 op81=34 op82=46 op83=172 op84=130 op85=136 op86=40 op87=46 op88=172 op89=124 op90=40 op91=46 op92=172 op93=64 op94=52 op95=28 op96=232 op97=154 op98=154 op99=136 op100=142 op101=160 op102=136 op103=46 op104=46 op105=178 op106=34 op107=46 op108=184 op109=130 op110=136 op111=40 op112=46 op113=178 op114=40 op115=46 op116=178 op117=100 op118=52 op119=52 op120=52 op121=52 op122=52 op123=52 op124=52 op125=22 op126=16 op127=124 op128=124 op129=124 op130=34 op131=46 op132=178 (offset match)/>
+    <NAME abbrevid=10 op0=108 op1=108 op2=118 op3=109 op4=46 op5=100 op6=98 op7=103 op8=46 op9=99 op10=117/> record string = 'llvm.dbg.cu'
+    <NAMED_NODE op0=90/>
+    <NAME abbrevid=10 op0=108 op1=108 op2=118 op3=109 op4=46 op5=109 op6=111 op7=100 op8=117 op9=108 op10=101 op11=46 op12=102 op13=108 op14=97 op15=103 op16=115/> record string = 'llvm.module.flags'
+    <NAMED_NODE op0=178 op1=179 op2=180 op3=181 op4=182 op5=183 op6=184/>
+    <NAME abbrevid=10 op0=108 op1=108 op2=118 op3=109 op4=46 op5=105 op6=100 op7=101 op8=110 op9=116/> record string = 'llvm.ident'
+    <NAMED_NODE op0=185/>
+    <GLOBAL_DECL_ATTACHMENT op0=0 op1=0 op2=98/>
+    <GLOBAL_DECL_ATTACHMENT op0=1 op1=0 op2=99/>
+    <GLOBAL_DECL_ATTACHMENT op0=5 op1=0 op2=100/>
+    <GLOBAL_DECL_ATTACHMENT op0=7 op1=0 op2=105/>
+    <GLOBAL_DECL_ATTACHMENT op0=8 op1=0 op2=101/>
+    <GLOBAL_DECL_ATTACHMENT op0=14 op1=0 op2=102/>
+    <GLOBAL_DECL_ATTACHMENT op0=15 op1=0 op2=103/>
+    <GLOBAL_DECL_ATTACHMENT op0=16 op1=0 op2=104/>
+    <GLOBAL_DECL_ATTACHMENT op0=19 op1=0 op2=106/>
+  </METADATA_BLOCK>
+  <OPERAND_BUNDLE_TAGS_BLOCK NumWords=89 BlockCodeSize=3>
+    <OPERAND_BUNDLE_TAG op0=97 op1=108 op2=105 op3=103 op4=110/>
+    <OPERAND_BUNDLE_TAG op0=99 op1=111 op2=108 op3=100/>
+    <OPERAND_BUNDLE_TAG op0=100 op1=101 op2=114 op3=101 op4=102 op5=101 op6=114 op7=101 op8=110 op9=99 op10=101 op11=97 op12=98 op13=108 op14=101/>
+    <OPERAND_BUNDLE_TAG op0=100 op1=101 op2=114 op3=101 op4=102 op5=101 op6=114 op7=101 op8=110 op9=99 op10=101 op11=97 op12=98 op13=108 op14=101 op15=95 op16=111 op17=114 op18=95 op19=110 op20=117 op21=108 op22=108/>
+    <OPERAND_BUNDLE_TAG op0=105 op1=103 op2=110 op3=111 op4=114 op5=101/>
+    <OPERAND_BUNDLE_TAG op0=110 op1=111 op2=110 op3=110 op4=117 op5=108 op6=108/>
+    <OPERAND_BUNDLE_TAG op0=110 op1=111 op2=117 op3=110 op4=100 op5=101 op6=102/>
+    <OPERAND_BUNDLE_TAG op0=114 op1=97 op2=110 op3=103 op4=101/>
+    <OPERAND_BUNDLE_TAG op0=115 op1=101 op2=112 op3=97 op4=114 op5=97 op6=116 op7=101 op8=95 op9=115 op10=116 op11=111 op12=114 op13=97 op14=103 op15=101/>
+    <OPERAND_BUNDLE_TAG op0=100 op1=101 op2=111 op3=112 op4=116/>
+    <OPERAND_BUNDLE_TAG op0=102 op1=117 op2=110 op3=99 op4=108 op5=101 op6=116/>
+    <OPERAND_BUNDLE_TAG op0=103 op1=99 op2=45 op3=116 op4=114 op5=97 op6=110 op7=115 op8=105 op9=116 op10=105 op11=111 op12=110/>
+    <OPERAND_BUNDLE_TAG op0=99 op1=102 op2=103 op3=117 op4=97 op5=114 op6=100 op7=116 op8=97 op9=114 op10=103 op11=101 op12=116/>
+    <OPERAND_BUNDLE_TAG op0=112 op1=114 op2=101 op3=97 op4=108 op5=108 op6=111 op7=99 op8=97 op9=116 op10=101 op11=100/>
+    <OPERAND_BUNDLE_TAG op0=103 op1=99 op2=45 op3=108 op4=105 op5=118 op6=101/>
+    <OPERAND_BUNDLE_TAG op0=99 op1=108 op2=97 op3=110 op4=103 op5=46 op6=97 op7=114 op8=99 op9=46 op10=97 op11=116 op12=116 op13=97 op14=99 op15=104 op16=101 op17=100 op18=99 op19=97 op20=108 op21=108/>
+    <OPERAND_BUNDLE_TAG op0=112 op1=116 op2=114 op3=97 op4=117 op5=116 op6=104/>
+    <OPERAND_BUNDLE_TAG op0=107 op1=99 op2=102 op3=105/>
+    <OPERAND_BUNDLE_TAG op0=99 op1=111 op2=110 op3=118 op4=101 op5=114 op6=103 op7=101 op8=110 op9=99 op10=101 op11=99 op12=116 op13=114 op14=108/>
+    <OPERAND_BUNDLE_TAG op0=100 op1=101 op2=97 op3=99 op4=116 op5=105 op6=118 op7=97 op8=116 op9=105 op10=111 op11=110 op12=45 op13=115 op14=121 op15=109 op16=98 op17=111 op18=108/>
+  </OPERAND_BUNDLE_TAGS_BLOCK>
+  <UnknownBlock26 NumWords=6 BlockCodeSize=2>
+    <UnknownCode1 op0=115 op1=105 op2=110 op3=103 op4=108 op5=101 op6=116 op7=104 op8=114 op9=101 op10=97 op11=100/>
+    <UnknownCode1/>
+  </UnknownBlock26>
+  <FUNCTION_BLOCK NumWords=76 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=3/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=29 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=2 op1=4/> num-strings = 2 {
+        'may_throw'
+        '_Z9may_throwi'
+      }
+      <SUBPROGRAM op0=7 op1=95 op2=195 op3=196 op4=95 op5=39 op6=200 op7=39 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=0 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LEXICAL_BLOCK op0=1 op1=197 op2=95 op3=40 op4=9/>
+      <NODE op0=0 op1=93/>
+      <SUBROUTINE_TYPE op0=2 op1=0 op2=199 op3=0/>
+      <LOCAL_VAR op0=2 op1=197 op2=53 op3=95 op4=39 op5=93 op6=1 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=39 op2=46 op3=196 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=1 op1=1 op2=96 op3=67/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=3 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=40 op1=9 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=201 op1=200 op2=97 op3=202/>
+    <INST_CMP2 abbrevid=18 op0=1 op1=7 op2=38/>
+    <DEBUG_LOC abbrevid=21 op0=40 op1=11 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=15 op0=1 op1=2 op2=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_CALL op0=9 op1=32768 op2=21 op3=78 op4=6/>
+    <DEBUG_LOC abbrevid=21 op0=41 op1=9 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=7 op1=39 op2=1 op3=48 op4=48/>
+    <DEBUG_LOC abbrevid=21 op0=41 op1=22 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=5 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=41 op1=23 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_STORE abbrevid=5 op0=2 op1=1 op2=5 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=41 op1=22 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=18 op1=32768 op2=22 op3=80 op4=3 op5=101 op6=43/>
+    <DEBUG_LOC abbrevid=21 op0=41 op1=9 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_UNREACHABLE abbrevid=16/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=102 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=42 op1=5 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BINOP abbrevid=9 op0=1 op1=8 op2=0 op3=2/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=104 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC abbrevid=21 op0=43 op1=1 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=196/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=198 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=12/>
+    <CONSTANTS_BLOCK NumWords=2 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+      <INTEGER abbrevid=5 op0=3/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=51 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=3 op1=4/> num-strings = 3 {
+        'guarded'
+        '_Z7guardedi'
+        'f'
+      }
+      <VALUE op0=20 op1=94/>
+      <SUBPROGRAM op0=7 op1=95 op2=195 op3=196 op4=95 op5=45 op6=115 op7=45 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=0 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LEXICAL_BLOCK op0=1 op1=199 op2=95 op3=46 op4=9/>
+      <LEXICAL_BLOCK op0=1 op1=199 op2=95 op3=50 op4=32/>
+      <LEXICAL_BLOCK op0=1 op1=199 op2=95 op3=52 op4=19/>
+      <LOCAL_VAR op0=2 op1=199 op2=53 op3=95 op4=45 op5=93 op6=1 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=45 op2=17 op3=198 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=200 op2=54 op3=95 op4=47 op5=86 op6=0 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=47 op2=16 op3=199 op4=0 op5=0 op6=0 op7=0/>
+      <DERIVED_TYPE op0=2 op1=38 op2=0 op3=0 op4=0 op5=0 op6=78 op7=63 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+      <DERIVED_TYPE op0=2 op1=16 op2=0 op3=0 op4=0 op5=0 op6=207 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+      <LOCAL_VAR op0=2 op1=199 op2=197 op3=95 op4=50 op5=208 op6=0 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=50 op2=29 op3=198 op4=0 op5=0 op6=0 op7=0/>
+      <NODE op0=198/>
+      <VALUE op0=0 op1=99/>
+      <VALUE op0=0 op1=100/>
+      <VALUE op0=0 op1=103/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=1 op1=1 op2=96 op3=67/>
+    <INST_ALLOCA op0=1 op1=1 op2=96 op3=67/>
+    <INST_ALLOCA op0=40 op1=1 op2=96 op3=68/>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_ALLOCA op0=1 op1=1 op2=96 op3=67/>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=5 op1=9 op2=3 op3=0/>
+    <INST_LOAD abbrevid=4 op0=5 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=47 op1=18 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=203 op1=202 op2=97 op3=211/>
+    <DEBUG_RECORD_DECLARE op0=205 op1=204 op2=97 op3=212/>
+    <INST_CAST abbrevid=10 op0=1 op1=7 op2=6/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_INVOKE op0=19 op1=8192 op2=1 op3=4 op4=24 op5=81 op6=6 op7=1/>
+    <DEBUG_LOC abbrevid=21 op0=47 op1=16 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=7 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=48 op1=19 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_INVOKE op0=20 op1=8192 op2=2 op3=5 op4=19 op5=86 op6=1/>
+    <DEBUG_LOC abbrevid=21 op0=48 op1=9 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_INVOKE op0=21 op1=8192 op2=3 op3=5 op4=26 op5=80 op6=7/>
+    <DEBUG_LOC abbrevid=21 op0=49 op1=35 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CAST abbrevid=10 op0=1 op1=1 op2=4/>
+    <DEBUG_LOC abbrevid=21 op0=49 op1=33 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_STORE abbrevid=5 op0=11 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=49 op1=9 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=22 op1=32768 op2=27 op3=81 op4=9/>
+    <DEBUG_LOC abbrevid=21 op0=50 op1=5 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=11/>
+    <UnknownCode47 op0=41 op1=0 op2=2 op3=0 op4=107 op5=0 op6=49/>
+    <DEBUG_LOC abbrevid=21 op0=55 op1=1 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_EXTRACTVAL op0=1 op1=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=10 op1=1 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_EXTRACTVAL op0=2 op1=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=10 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BR abbrevid=14 op0=6/>
+    <DEBUG_LOC_AGAIN/>
+    <UnknownCode47 op0=41 op1=0 op2=2 op3=0 op4=110 op5=0 op6=52/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_EXTRACTVAL op0=1 op1=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=13 op1=1 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_EXTRACTVAL op0=2 op1=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=13 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_CALL op0=22 op1=32768 op2=27 op3=87 op4=15/>
+    <DEBUG_LOC abbrevid=21 op0=50 op1=5 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=6/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=13 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=50 op1=5 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=0 op1=32768 op2=28 op3=87 op4=114/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_CMP2 abbrevid=18 op0=2 op1=1 op2=32/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BR abbrevid=15 op0=7 op1=8 op2=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=17 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=50 op1=32 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=209 op1=208 op2=97 op3=213/>
+    <INST_CALL op0=9 op1=32768 op2=29 op3=89 op4=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=17 op1=1 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=17 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=51 op1=17 op2=201 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=7 op1=39 op2=1 op3=68 op4=68/>
+    <DEBUG_LOC abbrevid=21 op0=51 op1=19 op2=201 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BINOP abbrevid=9 op0=70 op1=1 op2=1 op3=2/>
+    <DEBUG_LOC abbrevid=21 op0=51 op1=16 op2=201 op3=0 op4=0 op5=0 op6=0/>
+    <INST_STORE abbrevid=5 op0=26 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=51 op1=9 op2=201 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=0 op1=32768 op2=30 op3=93/>
+    <DEBUG_LOC abbrevid=21 op0=52 op1=5 op2=201 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=11/>
+    <INST_LOAD abbrevid=4 op0=23 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=52 op1=19 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=9 op1=32768 op2=29 op3=95 op4=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=28 op1=29 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=53 op1=9 op2=202 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=0 op1=32768 op2=30 op3=95/>
+    <DEBUG_LOC abbrevid=21 op0=54 op1=5 op2=202 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=11/>
+    <INST_CALL op0=0 op1=32768 op2=30 op3=94/>
+    <DEBUG_LOC abbrevid=21 op0=50 op1=5 op2=200 op3=0 op4=0 op5=0 op6=0/>
+    <INST_UNREACHABLE abbrevid=16/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_UNREACHABLE abbrevid=16/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=28 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=55 op1=1 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=13 op0=1/>
+    <DEBUG_LOC_AGAIN/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=4 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=198/>
+      <ATTACHMENT op0=37 op1=11 op2=186 op3=17 op4=210/>
+    </METADATA_ATTACHMENT_BLOCK>
+    <USELIST_BLOCK_ID NumWords=7 BlockCodeSize=3>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=31/>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=30/>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=2 op3=3 op4=101/>
+      <USELIST_CODE_DEFAULT op0=0 op1=2 op2=1 op3=3 op4=98/>
+      <USELIST_CODE_BB op0=1 op1=0 op2=2 op3=11/>
+    </USELIST_BLOCK_ID>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=68 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=5 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+      <SETTYPE abbrevid=4 op0=0/>
+      <UnknownCode31 op0=4 op1=3 op2=32 op3=33 op4=64 op5=0 op6=8 op7=20 op8=54/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=28 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '_ZN6SquareC2Ed'
+      }
+      <SUBPROGRAM op0=7 op1=86 op2=32 op3=195 op4=95 op5=14 op6=165 op7=14 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=166 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=196 op2=55 op3=0 op4=0 op5=188 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=195 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=196 op2=54 op3=95 op4=14 op5=124 op6=2 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=14 op2=28 op3=195 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=99/>
+      <VALUE op0=0 op1=100/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=97 op3=68/>
+    <INST_ALLOCA op0=7 op1=1 op2=97 op3=68/>
+    <INST_STORE abbrevid=5 op0=2 op1=6 op2=4 op3=0/>
+    <INST_STORE abbrevid=5 op0=1 op1=5 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=197 op1=196 op2=97 op3=200/>
+    <INST_LOAD abbrevid=4 op0=2 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=199 op1=198 op2=97 op3=201/>
+    <INST_CALL op0=23 op1=32768 op2=27 op3=59 op4=1/>
+    <DEBUG_LOC abbrevid=21 op0=14 op1=14 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_STORE abbrevid=5 op0=1 op1=4 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=14 op1=41 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=7 op1=40 op2=1 op3=49 op4=5/>
+    <DEBUG_LOC abbrevid=21 op0=14 op1=33 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=3 op1=7 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=14 op1=38 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_STORE abbrevid=5 op0=2 op1=1 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=14 op1=33 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC abbrevid=21 op0=14 op1=42 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=44 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=15 BlockCodeSize=3>
+      <SUBPROGRAM op0=7 op1=86 op2=18 op3=38 op4=95 op5=16 op6=173 op7=16 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=174 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=195 op2=55 op3=0 op4=0 op5=189 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=4 op0=0 op1=0 op2=0 op3=194 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=196 op1=195 op2=97 op3=197/>
+    <INST_GEP abbrevid=17 op0=7 op1=40 op2=1 op3=46 op4=3/>
+    <DEBUG_LOC abbrevid=21 op0=16 op1=43 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=7 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_GEP abbrevid=17 op0=7 op1=40 op2=3 op3=48 op4=5/>
+    <DEBUG_LOC abbrevid=21 op0=16 op1=50 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=7 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BINOP abbrevid=8 op0=3 op1=1 op2=2/>
+    <DEBUG_LOC abbrevid=21 op0=16 op1=48 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=13 op0=1/>
+    <DEBUG_LOC abbrevid=21 op0=16 op1=36 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=194/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=61 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=5 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+      <SETTYPE abbrevid=4 op0=0/>
+      <UnknownCode31 op0=4 op1=3 op2=32 op3=33 op4=64 op5=0 op6=8 op7=20 op8=54/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=24 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '_ZN6SquareD2Ev'
+      }
+      <SUBPROGRAM op0=7 op1=86 op2=36 op3=195 op4=95 op5=15 op6=168 op7=15 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=169 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LEXICAL_BLOCK op0=1 op1=196 op2=95 op3=15 op4=24/>
+      <LOCAL_VAR op0=2 op1=196 op2=55 op3=0 op4=0 op5=188 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=195 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=98/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=4 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=198 op1=197 op2=97 op3=199/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=15 op1=24 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=100 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=15 op1=26 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BINOP abbrevid=9 op0=1 op1=5 op2=0 op3=2/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=102 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_CALL op0=24 op1=32768 op2=27 op3=57 op4=3/>
+    <DEBUG_LOC abbrevid=21 op0=15 op1=39 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC abbrevid=21 op0=15 op1=39 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+    <USELIST_BLOCK_ID NumWords=2 BlockCodeSize=3>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=27/>
+    </USELIST_BLOCK_ID>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=42 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=4 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=7/>
+      <FLOAT op0=4607182418800017408/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=17 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '__cxx_global_var_init'
+      }
+      <SUBPROGRAM op0=7 op1=95 op2=195 op3=0 op4=95 op5=0 op6=198 op7=0 op8=0 op9=12 op10=0 op11=64 op12=91 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <NODE op0=0/>
+      <SUBROUTINE_TYPE op0=2 op1=0 op2=197 op3=0/>
+    </METADATA_BLOCK>
+    <INST_CALL op0=19 op1=32768 op2=24 op3=62 op4=91 op5=1/>
+    <DEBUG_LOC abbrevid=21 op0=57 op1=15 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=9 op1=32768 op2=31 op3=60 op4=61 op5=91 op6=90/>
+    <DEBUG_LOC abbrevid=21 op0=0 op1=0 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC abbrevid=21 op0=57 op1=20 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=72 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=5 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+      <SETTYPE abbrevid=4 op0=0/>
+      <UnknownCode31 op0=4 op1=3 op2=32 op3=33 op4=64 op5=0 op6=16 op7=20 op8=54/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=28 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=2 op1=4/> num-strings = 2 {
+        '_ZN6CircleC2Ed'
+        'r'
+      }
+      <SUBPROGRAM op0=7 op1=82 op2=14 op3=195 op4=95 op5=25 op6=128 op7=25 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=129 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=197 op2=55 op3=0 op4=0 op5=190 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=196 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=197 op2=196 op3=95 op4=25 op5=124 op6=2 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=25 op2=28 op3=196 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=99/>
+      <VALUE op0=0 op1=100/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=97 op3=68/>
+    <INST_ALLOCA op0=7 op1=1 op2=97 op3=68/>
+    <INST_STORE abbrevid=5 op0=2 op1=6 op2=4 op3=0/>
+    <INST_STORE abbrevid=5 op0=1 op1=5 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=198 op1=197 op2=97 op3=201/>
+    <INST_LOAD abbrevid=4 op0=2 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=200 op1=199 op2=97 op3=202/>
+    <INST_CALL op0=23 op1=32768 op2=27 op3=59 op4=1/>
+    <DEBUG_LOC abbrevid=21 op0=25 op1=14 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_STORE abbrevid=5 op0=1 op1=4 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=25 op1=43 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=7 op1=8 op2=1 op3=49 op4=5/>
+    <DEBUG_LOC abbrevid=21 op0=25 op1=33 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=3 op1=7 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=25 op1=40 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_STORE abbrevid=5 op0=2 op1=1 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=25 op1=33 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC abbrevid=21 op0=25 op1=44 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=196/>
+    </METADATA_ATTACHMENT_BLOCK>
+    <USELIST_BLOCK_ID NumWords=2 BlockCodeSize=3>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=63/>
+    </USELIST_BLOCK_ID>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=46 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=24 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '_ZN6CircleD2Ev'
+      }
+      <SUBPROGRAM op0=7 op1=82 op2=56 op3=195 op4=95 op5=23 op6=192 op7=23 op8=0 op9=8 op10=0 op11=320 op12=91 op13=0 op14=193 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LEXICAL_BLOCK op0=1 op1=196 op2=95 op3=23 op4=8/>
+      <LOCAL_VAR op0=2 op1=196 op2=55 op3=0 op4=0 op5=190 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=195 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=198 op1=197 op2=97 op3=199/>
+    <INST_CALL op0=24 op1=32768 op2=27 op3=54 op4=1/>
+    <DEBUG_LOC abbrevid=21 op0=23 op1=8 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC abbrevid=21 op0=23 op1=8 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=153 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=5/>
+    <CONSTANTS_BLOCK NumWords=2 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+      <SETTYPE abbrevid=4 op0=7/>
+      <NULL/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=69 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=7 op1=8/> num-strings = 7 {
+        'total'
+        '_Z5totalPP5Shapei'
+        'shapes'
+        'n'
+        't'
+        'i'
+        'llvm.loop.mustprogress'
+      }
+      <SUBPROGRAM op0=7 op1=95 op2=195 op3=196 op4=95 op5=59 op6=208 op7=59 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=0 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LEXICAL_BLOCK op0=1 op1=202 op2=95 op3=61 op4=5/>
+      <LEXICAL_BLOCK op0=1 op1=203 op2=95 op3=61 op4=5/>
+      <DISTINCT_NODE op0=205 op1=217 op2=218 op3=219/>
+      <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=194 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+      <NODE op0=124 op1=206 op2=93/>
+      <SUBROUTINE_TYPE op0=2 op1=0 op2=207 op3=0/>
+      <LOCAL_VAR op0=2 op1=202 op2=197 op3=95 op4=59 op5=206 op6=1 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=59 op2=22 op3=201 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=202 op2=198 op3=95 op4=59 op5=93 op6=2 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=59 op2=34 op3=201 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=202 op2=199 op3=95 op4=60 op5=124 op6=0 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=60 op2=12 op3=201 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=203 op2=200 op3=95 op4=61 op5=93 op6=0 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=61 op2=14 op3=202 op4=0 op5=0 op6=0 op7=0/>
+      <LOCATION abbrevid=5 op0=0 op1=61 op2=5 op3=202 op4=0 op5=0 op6=0 op7=0/>
+      <LOCATION abbrevid=5 op0=0 op1=62 op2=30 op3=202 op4=0 op5=0 op6=0 op7=0/>
+      <NODE op0=201/>
+      <VALUE op0=0 op1=99/>
+      <VALUE op0=0 op1=100/>
+      <VALUE op0=0 op1=101/>
+      <VALUE op0=0 op1=102/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=97 op3=68/>
+    <INST_ALLOCA op0=1 op1=1 op2=97 op3=67/>
+    <INST_ALLOCA op0=7 op1=1 op2=97 op3=68/>
+    <INST_ALLOCA op0=1 op1=1 op2=97 op3=67/>
+    <INST_STORE abbrevid=5 op0=4 op1=8 op2=4 op3=0/>
+    <INST_STORE abbrevid=5 op0=3 op1=7 op2=3 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=209 op1=208 op2=97 op3=219/>
+    <INST_STORE abbrevid=5 op0=2 op1=5 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=60 op1=12 op2=202 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=211 op1=210 op2=97 op3=220/>
+    <DEBUG_RECORD_DECLARE op0=213 op1=212 op2=97 op3=221/>
+    <INST_STORE abbrevid=5 op0=1 op1=50 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=61 op1=14 op2=203 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=215 op1=214 op2=97 op3=222/>
+    <INST_BR abbrevid=14 op0=1/>
+    <DEBUG_LOC abbrevid=21 op0=61 op1=10 op2=203 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=61 op1=21 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=4 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=61 op1=25 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CMP2 abbrevid=18 op0=2 op1=1 op2=40/>
+    <DEBUG_LOC abbrevid=21 op0=61 op1=23 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=15 op0=2 op1=4 op2=1/>
+    <DEBUG_LOC abbrevid=21 op0=61 op1=5 op2=203 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=7 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=62 op1=14 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=5 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=62 op1=21 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CAST abbrevid=10 op0=1 op1=20 op2=2/>
+    <DEBUG_LOC abbrevid=21 op0=62 op1=14 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=3 op1=0 op2=3 op3=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=62 op1=25 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=3 op1=0 op2=1 op3=26/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_CALL op0=25 op1=32768 op2=26 op3=1 op4=4/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=14 op1=7 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=62 op1=11 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BINOP abbrevid=8 op0=1 op1=2 op2=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=16 op1=1 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BR abbrevid=14 op0=3/>
+    <DEBUG_LOC abbrevid=21 op0=62 op1=9 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=15 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=61 op1=28 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BINOP abbrevid=9 op0=1 op1=21 op2=0 op3=2/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=17 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BR abbrevid=14 op0=1/>
+    <DEBUG_LOC abbrevid=21 op0=61 op1=5 op2=204 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=18 op1=7 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=63 op1=12 op2=202 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=13 op0=1/>
+    <DEBUG_LOC abbrevid=21 op0=63 op1=5 op2=202 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=3 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=201/>
+      <ATTACHMENT op0=29 op1=18 op2=204/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=51 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=29 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=3 op1=4/> num-strings = 3 {
+        'detail'
+        'twice'
+        '_ZN6detail5twiceEi'
+      }
+      <SUBPROGRAM op0=7 op1=199 op2=196 op3=197 op4=95 op5=67 op6=115 op7=67 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=0 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <NAMESPACE op0=0 op1=0 op2=195/>
+      <LOCAL_VAR op0=2 op1=198 op2=53 op3=95 op4=67 op5=93 op6=1 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=67 op2=15 op3=197 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=1 op1=1 op2=96 op3=67/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=3 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=67 op1=27 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=200 op1=199 op2=97 op3=201/>
+    <INST_BINOP abbrevid=9 op0=1 op1=8 op2=2 op3=2/>
+    <DEBUG_LOC abbrevid=21 op0=67 op1=29 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=13 op0=1/>
+    <DEBUG_LOC abbrevid=21 op0=67 op1=20 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=197/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=182 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=8/>
+    <CONSTANTS_BLOCK NumWords=5 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+      <SETTYPE abbrevid=4 op0=20/>
+      <INTEGER abbrevid=5 op0=2/>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=200/>
+      <SETTYPE abbrevid=4 op0=20/>
+      <INTEGER abbrevid=5 op0=10/>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=230/>
+      <SETTYPE abbrevid=4 op0=41/>
+      <UnknownCode26/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=43 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=4 op1=4/> num-strings = 4 {
+        'shapes_main'
+        'argc'
+        'sq'
+        'list'
+      }
+      <SUBPROGRAM op0=7 op1=95 op2=195 op3=0 op4=95 op5=72 op6=115 op7=72 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=0 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=199 op2=196 op3=95 op4=72 op5=93 op6=1 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=72 op2=32 op3=198 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=199 op2=197 op3=95 op4=73 op5=86 op6=0 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=73 op2=12 op3=198 op4=0 op5=0 op6=0 op7=0/>
+      <COMPOSITE_TYPE op0=6 op1=1 op2=0 op3=0 op4=0 op5=0 op6=194 op7=67 op8=0 op9=63 op10=0 op11=119 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0 op21=0 op22=0 op23=0 op24=4294967295 op25=0/>
+      <LOCAL_VAR op0=2 op1=199 op2=198 op3=95 op4=74 op5=204 op6=0 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=74 op2=12 op3=198 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=102/>
+      <VALUE op0=0 op1=103/>
+      <VALUE op0=0 op1=104/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=1 op1=1 op2=96 op3=67/>
+    <INST_ALLOCA op0=40 op1=1 op2=96 op3=68/>
+    <INST_ALLOCA op0=9 op1=1 op2=96 op3=69/>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_ALLOCA op0=1 op1=1 op2=96 op3=67/>
+    <INST_STORE abbrevid=5 op0=5 op1=12 op2=3 op3=0/>
+    <INST_LOAD abbrevid=4 op0=5 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=73 op1=15 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=200 op1=199 op2=97 op3=206/>
+    <DEBUG_RECORD_DECLARE op0=202 op1=201 op2=97 op3=207/>
+    <INST_CAST abbrevid=10 op0=1 op1=7 op2=6/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_CALL op0=19 op1=32768 op2=24 op3=84 op4=6 op5=1/>
+    <DEBUG_LOC abbrevid=21 op0=73 op1=12 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_STORE abbrevid=5 op0=5 op1=6 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=74 op1=21 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=205 op1=204 op2=97 op3=208/>
+    <INST_GEP abbrevid=17 op0=3 op1=0 op2=5 op3=12/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=1 op1=105 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_GEP abbrevid=17 op0=3 op1=9 op2=6 op3=30 op4=30/>
+    <DEBUG_LOC abbrevid=21 op0=75 op1=49 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_INVOKE op0=26 op1=8192 op2=1 op3=6 op4=32 op5=74 op6=1 op7=20/>
+    <DEBUG_LOC abbrevid=21 op0=75 op1=43 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CAST abbrevid=10 op0=1 op1=1 op2=4/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_INVOKE op0=27 op1=8192 op2=2 op3=6 op4=33 op5=73 op6=1 op7=60 op8=15/>
+    <DEBUG_LOC abbrevid=21 op0=75 op1=12 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=12 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=76 op1=44 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CAST abbrevid=10 op0=1 op1=20 op2=2/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_INVOKE op0=27 op1=8192 op2=3 op3=6 op4=34 op5=75 op6=1 op7=19 op8=17/>
+    <DEBUG_LOC abbrevid=21 op0=76 op1=29 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CAST abbrevid=10 op0=1 op1=1 op2=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BINOP abbrevid=9 op0=5 op1=1 op2=0 op3=2/>
+    <DEBUG_LOC abbrevid=21 op0=75 op1=68 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=17 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=18 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BINOP abbrevid=8 op0=1 op1=24 op2=10/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=23 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CAST abbrevid=10 op0=1 op1=20 op2=2/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=12 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=3 op1=9 op2=115 op3=42 op4=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=22 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=28 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_INVOKE op0=28 op1=8192 op2=4 op3=6 op4=23 op5=2 op6=1/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=12 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BINOP abbrevid=9 op0=8 op1=1 op2=0 op3=2/>
+    <DEBUG_LOC abbrevid=21 op0=76 op1=57 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_INVOKE op0=21 op1=8192 op2=5 op3=6 op4=29 op5=85 op6=24/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=40 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=3 op1=4 op2=1 op3=48/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=1 op1=4 op2=1 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_CAST abbrevid=10 op0=1 op1=1 op2=2/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=37 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CMP2 abbrevid=18 op0=1 op1=31 op2=32/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=50 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CAST abbrevid=10 op0=1 op1=1 op2=1/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=36 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BINOP abbrevid=9 op0=7 op1=1 op2=0 op3=2/>
+    <DEBUG_LOC abbrevid=21 op0=77 op1=34 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=22 op1=32768 op2=27 op3=106 op4=31/>
+    <DEBUG_LOC abbrevid=21 op0=78 op1=1 op2=199 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=13 op0=1/>
+    <DEBUG_LOC_AGAIN/>
+    <UnknownCode47 op0=41 op1=1 op2=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_EXTRACTVAL op0=1 op1=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=31 op1=1 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_EXTRACTVAL op0=2 op1=1/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_STORE abbrevid=5 op0=31 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_CALL op0=22 op1=32768 op2=27 op3=109 op4=34/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BR abbrevid=14 op0=7/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=32 op1=0 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_LOAD abbrevid=4 op0=32 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_INSERTVAL op0=38 op1=2 op2=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_INSERTVAL op0=1 op1=2 op2=1/>
+    <DEBUG_LOC_AGAIN/>
+    <UnknownCode39 op0=1/>
+    <DEBUG_LOC_AGAIN/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=198/>
+    </METADATA_ATTACHMENT_BLOCK>
+    <USELIST_BLOCK_ID NumWords=4 BlockCodeSize=3>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=42/>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=26/>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=25/>
+    </USELIST_BLOCK_ID>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=108 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=7/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=46 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=2 op1=4/> num-strings = 2 {
+        'clamp_to<int>'
+        '_Z8clamp_toIiET_S0_S0_S0_'
+      }
+      <SUBPROGRAM op0=7 op1=95 op2=195 op3=196 op4=95 op5=29 op6=199 op7=29 op8=0 op9=8 op10=0 op11=256 op12=91 op13=201 op14=0 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <NODE op0=93 op1=93 op2=93 op3=93/>
+      <SUBROUTINE_TYPE op0=2 op1=0 op2=198 op3=0/>
+      <TEMPLATE_TYPE op0=0 op1=58 op2=93 op3=0/>
+      <NODE op0=200/>
+      <LOCAL_VAR op0=2 op1=197 op2=59 op3=95 op4=29 op5=93 op6=1 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=29 op2=36 op3=196 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=197 op2=60 op3=95 op4=29 op5=93 op6=2 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=29 op2=41 op3=196 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=197 op2=61 op3=95 op4=29 op5=93 op6=3 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=29 op2=47 op3=196 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=99/>
+      <VALUE op0=0 op1=100/>
+      <VALUE op0=0 op1=101/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=1 op1=1 op2=98 op3=67/>
+    <INST_ALLOCA op0=1 op1=1 op2=98 op3=67/>
+    <INST_ALLOCA op0=1 op1=1 op2=98 op3=67/>
+    <INST_STORE abbrevid=5 op0=3 op1=7 op2=3 op3=0/>
+    <INST_STORE abbrevid=5 op0=2 op1=6 op2=3 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=202 op1=201 op2=97 op3=207/>
+    <INST_STORE abbrevid=5 op0=1 op1=5 op2=3 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=204 op1=203 op2=97 op3=208/>
+    <INST_LOAD abbrevid=4 op0=3 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=12 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=206 op1=205 op2=97 op3=209/>
+    <INST_LOAD abbrevid=4 op0=3 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=16 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CMP2 abbrevid=18 op0=2 op1=1 op2=40/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=14 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=15 op0=1 op1=2 op2=1/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=12 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=5 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=21 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=6/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=12 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=7 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=27 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=6 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=31 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CMP2 abbrevid=18 op0=2 op1=1 op2=38/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=29 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=15 op0=3 op1=4 op2=1/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=27 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=8 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=36 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=5/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=27 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=11 op1=1 op2=3 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=41 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=5/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=27 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_PHI op0=1 op1=4 op2=3 op3=2 op4=4/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BR abbrevid=14 op0=6/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=12 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_PHI op0=1 op1=14 op2=1 op3=2 op4=5/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_RET abbrevid=13 op0=1/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=5 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=196/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=112 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=7/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=50 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=3 op1=4/> num-strings = 3 {
+        'clamp_to<long>'
+        '_Z8clamp_toIlET_S0_S0_S0_'
+        'long'
+      }
+      <SUBPROGRAM op0=7 op1=95 op2=195 op3=196 op4=95 op5=29 op6=201 op7=29 op8=0 op9=8 op10=0 op11=256 op12=91 op13=203 op14=0 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <BASIC_TYPE op0=2 op1=36 op2=197 op3=68 op4=0 op5=5 op6=0 op7=0 op8=0 op9=0 op10=0 op11=0/>
+      <NODE op0=199 op1=199 op2=199 op3=199/>
+      <SUBROUTINE_TYPE op0=2 op1=0 op2=200 op3=0/>
+      <TEMPLATE_TYPE op0=0 op1=58 op2=199 op3=0/>
+      <NODE op0=202/>
+      <LOCAL_VAR op0=2 op1=198 op2=59 op3=95 op4=29 op5=199 op6=1 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=29 op2=36 op3=197 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=198 op2=60 op3=95 op4=29 op5=199 op6=2 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=29 op2=41 op3=197 op4=0 op5=0 op6=0 op7=0/>
+      <LOCAL_VAR op0=2 op1=198 op2=61 op3=95 op4=29 op5=199 op6=3 op7=0 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=29 op2=47 op3=197 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=99/>
+      <VALUE op0=0 op1=100/>
+      <VALUE op0=0 op1=101/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=20 op1=1 op2=98 op3=68/>
+    <INST_ALLOCA op0=20 op1=1 op2=98 op3=68/>
+    <INST_ALLOCA op0=20 op1=1 op2=98 op3=68/>
+    <INST_STORE abbrevid=5 op0=3 op1=7 op2=4 op3=0/>
+    <INST_STORE abbrevid=5 op0=2 op1=6 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=204 op1=203 op2=97 op3=209/>
+    <INST_STORE abbrevid=5 op0=1 op1=5 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=206 op1=205 op2=97 op3=210/>
+    <INST_LOAD abbrevid=4 op0=3 op1=20 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=12 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <DEBUG_RECORD_DECLARE op0=208 op1=207 op2=97 op3=211/>
+    <INST_LOAD abbrevid=4 op0=3 op1=20 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=16 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CMP2 abbrevid=18 op0=2 op1=1 op2=40/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=14 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=15 op0=1 op1=2 op2=1/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=12 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=5 op1=20 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=21 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=6/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=12 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=7 op1=20 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=27 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=6 op1=20 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=31 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CMP2 abbrevid=18 op0=2 op1=1 op2=38/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=29 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=15 op0=3 op1=4 op2=1/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=27 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=8 op1=20 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=36 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=5/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=27 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=11 op1=20 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=41 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_BR abbrevid=14 op0=5/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=27 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_PHI op0=20 op1=4 op2=3 op3=2 op4=4/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BR abbrevid=14 op0=6/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=12 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <INST_PHI op0=20 op1=14 op2=1 op3=2 op4=5/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_RET abbrevid=13 op0=1/>
+    <DEBUG_LOC abbrevid=21 op0=30 op1=5 op2=198 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=197/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=33 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=15 BlockCodeSize=3>
+      <SUBPROGRAM op0=7 op1=86 op2=26 op3=39 op4=95 op5=17 op6=176 op7=17 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=177 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=195 op2=55 op3=0 op4=0 op5=189 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=4 op0=0 op1=0 op2=0 op3=194 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=196 op1=195 op2=97 op3=197/>
+    <INST_RET abbrevid=13 op0=80/>
+    <DEBUG_LOC abbrevid=21 op0=17 op1=41 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=194/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=61 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=5 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+      <SETTYPE abbrevid=4 op0=0/>
+      <UnknownCode31 op0=4 op1=3 op2=32 op3=33 op4=64 op5=0 op6=14 op7=20 op8=54/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=30 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=2 op1=4/> num-strings = 2 {
+        '_ZN5ShapeC2Ev'
+        '_ZN5ShapeC4Ev'
+      }
+      <SUBPROGRAM op0=7 op1=81 op2=20 op3=195 op4=95 op5=6 op6=143 op7=6 op8=0 op9=8 op10=0 op11=320 op12=91 op13=0 op14=198 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <SUBPROGRAM op0=6 op1=81 op2=20 op3=196 op4=0 op5=0 op6=143 op7=0 op8=0 op9=0 op10=0 op11=320 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=197 op2=55 op3=0 op4=0 op5=194 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=196 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=98/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=4 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=199 op1=198 op2=97 op3=200/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <DEBUG_LOC abbrevid=21 op0=6 op1=8 op2=197 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC_AGAIN/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=196/>
+    </METADATA_ATTACHMENT_BLOCK>
+    <USELIST_BLOCK_ID NumWords=6 BlockCodeSize=3>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=48/>
+      <USELIST_CODE_DEFAULT op0=1 op1=2 op2=0 op3=45/>
+      <USELIST_CODE_DEFAULT op0=1 op1=0 op2=55/>
+      <USELIST_CODE_DEFAULT op0=2 op1=1 op2=0 op3=12/>
+    </USELIST_BLOCK_ID>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=51 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=22 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '_ZN6SquareD0Ev'
+      }
+      <SUBPROGRAM op0=7 op1=86 op2=36 op3=195 op4=95 op5=15 op6=168 op7=15 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=169 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=196 op2=55 op3=0 op4=0 op5=188 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=195 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=197 op1=196 op2=97 op3=198/>
+    <INST_CALL op0=22 op1=32768 op2=27 op3=71 op4=1/>
+    <DEBUG_LOC abbrevid=21 op0=15 op1=24 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=29 op1=32768 op2=35 op3=50 op4=1 op5=45/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC abbrevid=21 op0=15 op1=39 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+    <USELIST_BLOCK_ID NumWords=2 BlockCodeSize=3>
+      <USELIST_CODE_DEFAULT op0=5 op1=3 op2=2 op3=1 op4=0 op5=4 op6=28/>
+    </USELIST_BLOCK_ID>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=40 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=22 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '_ZN5ShapeD2Ev'
+      }
+      <SUBPROGRAM op0=7 op1=81 op2=23 op3=195 op4=95 op5=7 op6=143 op7=7 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=144 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=196 op2=55 op3=0 op4=0 op5=194 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=195 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=197 op1=196 op2=97 op3=198/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC abbrevid=21 op0=7 op1=23 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=43 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=22 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '_ZN5ShapeD0Ev'
+      }
+      <SUBPROGRAM op0=7 op1=81 op2=23 op3=195 op4=95 op5=7 op6=143 op7=7 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=144 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=196 op2=55 op3=0 op4=0 op5=194 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=195 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=197 op1=196 op2=97 op3=198/>
+    <INST_CALL op0=0 op1=32768 op2=30 op3=67/>
+    <DEBUG_LOC abbrevid=21 op0=7 op1=22 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_UNREACHABLE abbrevid=16/>
+    <DEBUG_LOC_AGAIN/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=37 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=19 BlockCodeSize=3>
+      <SUBPROGRAM op0=7 op1=81 op2=26 op3=27 op4=95 op5=9 op6=152 op7=9 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=153 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=145 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+      <LOCAL_VAR op0=2 op1=195 op2=55 op3=0 op4=0 op5=196 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=4 op0=0 op1=0 op2=0 op3=194 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=197 op1=196 op2=97 op3=198/>
+    <INST_RET abbrevid=13 op0=84/>
+    <DEBUG_LOC abbrevid=21 op0=9 op1=40 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=194/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=51 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=22 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '_ZN6CircleD0Ev'
+      }
+      <SUBPROGRAM op0=7 op1=82 op2=56 op3=195 op4=95 op5=23 op6=192 op7=23 op8=0 op9=8 op10=0 op11=320 op12=91 op13=0 op14=193 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <LOCAL_VAR op0=2 op1=196 op2=55 op3=0 op4=0 op5=190 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=5 op0=0 op1=0 op2=0 op3=195 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=97/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=3 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=197 op1=196 op2=97 op3=198/>
+    <INST_CALL op0=22 op1=32768 op2=27 op3=64 op4=1/>
+    <DEBUG_LOC abbrevid=21 op0=23 op1=8 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_CALL op0=29 op1=32768 op2=35 op3=50 op4=1 op5=45/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_RET abbrevid=12/>
+    <DEBUG_LOC_AGAIN/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+    <USELIST_BLOCK_ID NumWords=2 BlockCodeSize=3>
+      <USELIST_CODE_DEFAULT op0=2 op1=0 op2=1 op3=35/>
+    </USELIST_BLOCK_ID>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=54 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=5 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=2/>
+      <SETTYPE abbrevid=4 op0=7/>
+      <FLOAT op0=4614256650576692846/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=19 BlockCodeSize=3>
+      <SUBPROGRAM op0=7 op1=82 op2=18 op3=19 op4=95 op5=26 op6=133 op7=26 op8=0 op9=8 op10=0 op11=256 op12=91 op13=0 op14=134 op15=187 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <DERIVED_TYPE op0=2 op1=15 op2=0 op3=0 op4=0 op5=0 op6=130 op7=68 op8=0 op9=63 op10=0 op11=0 op12=0 op13=0 op14=0/>
+      <LOCAL_VAR op0=2 op1=195 op2=55 op3=0 op4=0 op5=196 op6=1 op7=1088 op8=0 op9=0/>
+      <LOCATION abbrevid=4 op0=0 op1=0 op2=0 op3=194 op4=0 op5=0 op6=0 op7=0/>
+      <VALUE op0=0 op1=98/>
+    </METADATA_BLOCK>
+    <INST_ALLOCA op0=0 op1=1 op2=96 op3=68/>
+    <INST_STORE abbrevid=5 op0=1 op1=4 op2=4 op3=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=0 op2=4 op3=0/>
+    <DEBUG_RECORD_DECLARE op0=197 op1=196 op2=97 op3=198/>
+    <INST_GEP abbrevid=17 op0=7 op1=8 op2=1 op3=47 op4=4/>
+    <DEBUG_LOC abbrevid=21 op0=26 op1=53 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=7 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BINOP abbrevid=8 op0=5 op1=1 op2=2/>
+    <DEBUG_LOC abbrevid=21 op0=26 op1=51 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <INST_GEP abbrevid=17 op0=7 op1=8 op2=4 op3=50 op4=7/>
+    <DEBUG_LOC abbrevid=21 op0=26 op1=62 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <INST_LOAD abbrevid=4 op0=1 op1=7 op2=4 op3=0/>
+    <DEBUG_LOC_AGAIN/>
+    <INST_BINOP abbrevid=8 op0=3 op1=1 op2=2/>
+    <DEBUG_LOC abbrevid=21 op0=26 op1=60 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=13 op0=1/>
+    <DEBUG_LOC abbrevid=21 op0=26 op1=36 op2=195 op3=0 op4=0 op5=0 op6=0/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=194/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=30 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <METADATA_BLOCK NumWords=18 BlockCodeSize=3>
+      <STRINGS abbrevid=4 op0=1 op1=4/> num-strings = 1 {
+        '_GLOBAL__sub_I_shapes.cpp'
+      }
+      <SUBPROGRAM op0=7 op1=95 op2=0 op3=195 op4=95 op5=0 op6=197 op7=0 op8=0 op9=12 op10=0 op11=64 op12=91 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=0 op20=0/>
+      <SUBROUTINE_TYPE op0=2 op1=0 op2=187 op3=0/>
+    </METADATA_BLOCK>
+    <INST_CALL op0=0 op1=32768 op2=30 op3=62/>
+    <DEBUG_LOC abbrevid=21 op0=0 op1=0 op2=196 op3=0 op4=0 op5=0 op6=0/>
+    <INST_RET abbrevid=12/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=2 BlockCodeSize=3>
+      <ATTACHMENT op0=0 op1=195/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <VALUE_SYMTAB NumWords=21 BlockCodeSize=4>
+    <FNENTRY abbrevid=8 op0=21 op1=2002/>
+    <FNENTRY abbrevid=8 op0=24 op1=2080/>
+    <FNENTRY abbrevid=8 op0=25 op1=2280/>
+    <FNENTRY abbrevid=8 op0=27 op1=2350/>
+    <FNENTRY abbrevid=8 op0=28 op1=2396/>
+    <FNENTRY abbrevid=8 op0=33 op1=2459/>
+    <FNENTRY abbrevid=8 op0=34 op1=2503/>
+    <FNENTRY abbrevid=8 op0=35 op1=2577/>
+    <FNENTRY abbrevid=8 op0=37 op1=2625/>
+    <FNENTRY abbrevid=8 op0=38 op1=2780/>
+    <FNENTRY abbrevid=8 op0=39 op1=2833/>
+    <FNENTRY abbrevid=8 op0=40 op1=3017/>
+    <FNENTRY abbrevid=8 op0=41 op1=3127/>
+    <FNENTRY abbrevid=8 op0=42 op1=3241/>
+    <FNENTRY abbrevid=8 op0=43 op1=3276/>
+    <FNENTRY abbrevid=8 op0=44 op1=3339/>
+    <FNENTRY abbrevid=8 op0=45 op1=3392/>
+    <FNENTRY abbrevid=8 op0=46 op1=3434/>
+    <FNENTRY abbrevid=8 op0=48 op1=3479/>
+    <FNENTRY abbrevid=8 op0=50 op1=3518/>
+    <FNENTRY abbrevid=8 op0=51 op1=3571/>
+    <FNENTRY abbrevid=8 op0=52 op1=3627/>
+  </VALUE_SYMTAB>
+</MODULE_BLOCK>
+<SYMTAB_BLOCK NumWords=435 BlockCodeSize=3>
+  <BLOB abbrevid=4/> blob data = unprintable, 1728 bytes.
+</SYMTAB_BLOCK>
+<STRTAB_BLOCK NumWords=234 BlockCodeSize=3>
+  <BLOB abbrevid=4/> blob data = '_ZTI7Failure_ZTS7Failure_ZTV6Square_ZTI6Square_ZTS6Square_ZTI5Shape_ZTS5Shape_ZTV5Shape_ZTV6Circle_ZTI6Circle_ZTS6Circle_ZN6SquareC2Ed_ZNK6Square4areaEv_ZN6SquareD2Ev_ZN6CircleC2Ed_ZN6CircleD2Ev_Z8clamp_toIiET_S0_S0_S0__Z8clamp_toIlET_S0_S0_S0__ZNK6Square4nameEv_ZN5ShapeC2Ev_ZN6SquareD0Ev_ZN5ShapeD2Ev_ZN5ShapeD0Ev_ZNK5Shape4nameEv_ZN6CircleD0Ev_ZNK6Circle4areaEv_ZN6Square9destroyedEcounter_ZTVN10__cxxabiv117__class_type_infoE_ZL4unit__dso_handle_ZL5table_ZTVN10__cxxabiv120__si_class_type_infoE.str.str.1llvm.global_ctors_Z9may_throwi__cxa_allocate_exception__cxa_throw_Z7guardedi__gxx_personality_v0llvm.eh.typeid.for.p0__cxa_begin_catch__cxa_end_catchllvm.trap__cxx_global_var_init__cxa_atexit_Z5totalPP5Shapei_ZN6detail5twiceEishapes_main__cxa_pure_virtual_ZdlPvm_GLOBAL__sub_I_shapes.cpp24.0.0git c74b358f44c31e3615fe942556a41be8c9a8d877x86_64-unknown-linux-gnuR:\tools\bitcode\shapes.cpp.text.startup.L.str.L.str.1'
+</STRTAB_BLOCK>
+
+
+Summary of shapes-linux.bc:
+         Total size: 139392b/17424.00B/4356W
+        Stream type: LLVM IR
+  # Toplevel Blocks: 4
+
+Per-block Summary:
+  Block ID #0 (BLOCKINFO_BLOCK):
+      Num Instances: 1
+         Total Size: 1280b/160.00B/40W
+    Percent of file: 0.9183%
+      Num SubBlocks: 0
+        Num Abbrevs: 28
+        Num Records: 3
+    Percent Abbrevs: 0.0000%
+
+  Block ID #8 (MODULE_BLOCK):
+      Num Instances: 1
+         Total Size: 14538b/1817.25B/454W
+    Percent of file: 10.4296%
+      Num SubBlocks: 32
+        Num Abbrevs: 4
+        Num Records: 86
+    Percent Abbrevs: 6.9767%
+
+  Block ID #9 (PARAMATTR_BLOCK):
+      Num Instances: 1
+         Total Size: 917b/114.62B/28W
+    Percent of file: 0.6579%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 29
+    Percent Abbrevs: 0.0000%
+
+  Block ID #10 (PARAMATTR_GROUP_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 10197b/1274.62B/318W
+    Percent of file: 7.3153%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 17
+    Percent Abbrevs: 0.0000%
+
+  Block ID #11 (CONSTANTS_BLOCK):
+      Num Instances: 22
+         Total Size: 4450b/556.25B/139W
+    Percent of file: 3.1924%
+       Average Size: 202.27/25.28B/6W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 4/1.818182e-01
+    Tot/Avg Records: 136/6.181818e+00
+    Percent Abbrevs: 89.7059%
+
+  Block ID #12 (FUNCTION_BLOCK):
+      Num Instances: 22
+         Total Size: 24429b/3053.62B/763W
+    Percent of file: 17.5254%
+       Average Size: 1110.41/138.80B/34W
+  Tot/Avg SubBlocks: 72/3.272727e+00
+    Tot/Avg Abbrevs: 0/0.000000e+00
+    Tot/Avg Records: 569/2.586364e+01
+    Percent Abbrevs: 62.0387%
+
+  Block ID #13 (IDENTIFICATION_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 214b/26.75B/6W
+    Percent of file: 0.1535%
+      Num SubBlocks: 0
+        Num Abbrevs: 2
+        Num Records: 2
+    Percent Abbrevs: 100.0000%
+
+  Block ID #14 (VALUE_SYMTAB):
+      Num Instances: 1
+         Total Size: 725b/90.62B/22W
+    Percent of file: 0.5201%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 22
+    Percent Abbrevs: 100.0000%
+
+  Block ID #15 (METADATA_BLOCK):
+      Num Instances: 23
+         Total Size: 43104b/5388.00B/1347W
+    Percent of file: 30.9229%
+       Average Size: 1874.09/234.26B/58W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 45/1.956522e+00
+    Tot/Avg Records: 328/1.426087e+01
+    Percent Abbrevs: 17.9878%
+
+  Block ID #16 (METADATA_ATTACHMENT_BLOCK):
+      Num Instances: 22
+         Total Size: 2661b/332.62B/83W
+    Percent of file: 1.9090%
+       Average Size: 120.95/15.12B/3W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 0/0.000000e+00
+    Tot/Avg Records: 24/1.090909e+00
+    Percent Abbrevs: 0.0000%
+
+  Block ID #17 (TYPE_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 1589b/198.62B/49W
+    Percent of file: 1.1400%
+      Num SubBlocks: 0
+        Num Abbrevs: 6
+        Num Records: 47
+    Percent Abbrevs: 80.8511%
+
+  Block ID #18 (USELIST_BLOCK_ID):
+      Num Instances: 7
+         Total Size: 1157b/144.62B/36W
+    Percent of file: 0.8300%
+       Average Size: 165.29/20.66B/5W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 0/0.000000e+00
+    Tot/Avg Records: 16/2.285714e+00
+    Percent Abbrevs: 0.0000%
+
+  Block ID #21 (OPERAND_BUNDLE_TAGS_BLOCK):
+      Num Instances: 1
+         Total Size: 2901b/362.62B/90W
+    Percent of file: 2.0812%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 20
+    Percent Abbrevs: 0.0000%
+
+  Block ID #22 (METADATA_KIND_BLOCK):
+      Num Instances: 1
+         Total Size: 9397b/1174.62B/293W
+    Percent of file: 6.7414%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 57
+    Percent Abbrevs: 0.0000%
+
+  Block ID #23 (STRTAB_BLOCK):
+      Num Instances: 1
+         Total Size: 7542b/942.75B/235W
+    Percent of file: 5.4106%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 1
+    Percent Abbrevs: 100.0000%
+
+  Block ID #25 (SYMTAB_BLOCK):
+      Num Instances: 1
+         Total Size: 13974b/1746.75B/436W
+    Percent of file: 10.0250%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 1
+    Percent Abbrevs: 100.0000%
+
+  Block ID #26:
+      Num Instances: 1
+         Total Size: 245b/30.62B/7W
+    Percent of file: 0.1758%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 2
+    Percent Abbrevs: 0.0000%
+

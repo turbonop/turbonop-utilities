@@ -404,7 +404,11 @@ fn borrowed<'d>(name: &Name<'d>) -> &'d [u8] {
 /// records (if it has one), hashed. A unit's shape is its selection and
 /// its non-debug sections' shapes, in any order (summed); a piece's, its
 /// selection and its own.
-pub fn shape(o: &Object<'_>, s: usize, definition: Option<turbonop_coff::SectionDefinition>) -> u128 {
+pub fn shape(
+    o: &Object<'_>,
+    s: usize,
+    definition: Option<turbonop_coff::SectionDefinition>,
+) -> u128 {
     let sec = &o.sections[s];
     let mut h = H128::new();
     h.bytes(sec.name.as_bytes());
@@ -630,7 +634,15 @@ fn coff<'d>(o: &Object<'d>, reading: Reading) -> Coff<'d> {
     c.environment = env.finish();
 
     if !reading.contents && !structural {
-        shapes(o, &mut c, &definition, &roots, &leader, &sections_of, &starts, &unit_of);
+        shapes(
+            o,
+            &mut c,
+            &definition,
+            &roots,
+            &leader,
+            (&sections_of, &starts),
+            &unit_of,
+        );
         finish(o, &mut c, structural);
         return c;
     }
@@ -860,15 +872,15 @@ fn coff<'d>(o: &Object<'d>, reading: Reading) -> Coff<'d> {
 }
 
 /// `verify=links`'s units and pieces: each fingerprinted by its shape (see
-/// [`shape`]), in the order [`coff`] makes them.
+/// [`shape`]), in the order [`coff`] makes them (unit u's sections are
+/// `sections_of[starts[u]..starts[u + 1]]`).
 fn shapes<'d>(
     o: &Object<'d>,
     c: &mut Coff<'d>,
     definition: &[Option<usize>],
     roots: &[usize],
     leader: &[Option<usize>],
-    sections_of: &[usize],
-    starts: &[usize],
+    (sections_of, starts): (&[usize], &[usize]),
     unit_of: &[Option<u32>],
 ) {
     // Each section's definition.

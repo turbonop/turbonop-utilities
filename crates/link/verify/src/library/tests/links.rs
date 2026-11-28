@@ -77,9 +77,19 @@ fn links_passes_what_full_passes() {
     for pull in [Pull::Relaxed, Pull::Preserve] {
         both(&lib, &archive(&folded(), None), pull, &[]);
     }
-    both(&lib, &archive(&folded_preserving(), None), Pull::Preserve, &[]);
+    both(
+        &lib,
+        &archive(&folded_preserving(), None),
+        Pull::Preserve,
+        &[],
+    );
     let m = folded_with_aliases(ALIAS_DEFAULT);
-    both(&lib, &archive(&m, Some(engine_index(&m))), Pull::Preserve, &[]);
+    both(
+        &lib,
+        &archive(&m, Some(engine_index(&m))),
+        Pull::Preserve,
+        &[],
+    );
     let mut m = folded();
     let s = m.pop().unwrap();
     m.insert(0, s);
@@ -131,7 +141,13 @@ fn links_catches_a_wrong_index() {
     let mut index: Vec<(Vec<u8>, usize)> = first_definers(&m)
         .into_iter()
         .filter(|(n, _)| n != b"?compute@@YAHXZ")
-        .map(|(n, i)| if n == SHARED_ADD && i == c { (n, b) } else { (n, i) })
+        .map(|(n, i)| {
+            if n == SHARED_ADD && i == c {
+                (n, b)
+            } else {
+                (n, i)
+            }
+        })
         .collect();
     index.push((b"?gl_value@@YAHH@Z".to_vec(), find(&m, b"gl.obj")));
     both(
@@ -178,7 +194,11 @@ fn links_catches_a_changed_load_order() {
     m.swap(a, b);
     let full = verify_at(&lib, &archive(&m, None), Pull::Preserve, Depth::Full);
     let links = verify_at(&lib, &archive(&m, None), Pull::Preserve, Depth::Links);
-    assert!(links.failed("original members out of order"), "{}", links.text());
+    assert!(
+        links.failed("original members out of order"),
+        "{}",
+        links.text()
+    );
     assert_eq!(failures(&full), failures(&links), "{}", links.text());
     // A member anchoring no synthesized member: its moved COMDATs wouldn't
     // be loaded with it.
@@ -441,11 +461,13 @@ fn links_with_locals_is_full() {
         ..Options::default()
     };
     assert!(o.contents());
-    assert!(!Options {
-        depth: Depth::Links,
-        ..Options::default()
-    }
-    .contents());
+    assert!(
+        !Options {
+            depth: Depth::Links,
+            ..Options::default()
+        }
+        .contents()
+    );
     let lib = fixture("verify.lib");
     let mut m = folded();
     let s = m.len() - 1;

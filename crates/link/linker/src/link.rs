@@ -39,8 +39,8 @@ fn function_order(
     file: &std::path::Path,
     diagnostics: &mut Vec<LinkError>,
 ) -> Result<turbonop_hash::Map<(u32, u32), u32>, String> {
-    let text = std::fs::read(file)
-        .map_err(|e| format!("cannot open file '{}': {e}", file.display()))?;
+    let text =
+        std::fs::read(file).map_err(|e| format!("cannot open file '{}': {e}", file.display()))?;
     let text = crate::args::decode_text(&text);
     let mut order = turbonop_hash::Map::default();
     for name in text.lines().map(str::trim).filter(|l| !l.is_empty()) {

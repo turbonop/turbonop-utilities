@@ -1506,33 +1506,19 @@ pub fn layout(
         // (input section name) by its name, the merged ones among the
         // section's own; except the imports': the address table
         // (`.idata$5`) first, the rest of `.idata$` last.
-        // (The export directory sorts among the imports' groups, or with
-        // no imports right after the .rdata group: a DLL with no imports.)
-        let imports = mine
-            .iter()
-            .any(|p| p.0.1.starts_with(b".idata$") || p.0.1.starts_with(b".didat$"));
+        // (The export directory goes in below.)
         mine.sort_by(|a, b| {
             let rank = |i: &[u8]| {
                 if i == b".idata$5" {
                     0
-                } else if i.starts_with(b".idata$")
-                    || (i.starts_with(b".edata") && imports)
-                    || i.starts_with(b".didat$")
-                {
+                } else if i.starts_with(b".idata$") || i.starts_with(b".didat$") {
                     // (The delay-load tables sort among them too.)
                     2
                 } else {
                     1
                 }
             };
-            let key = |i: &[u8]| -> Vec<u8> {
-                if i.starts_with(b".edata") && !imports {
-                    b".rdata\0".to_vec()
-                } else {
-                    i.to_vec()
-                }
-            };
-            let (ia, ib) = (&key(&a.0.1), &key(&b.0.1));
+            let (ia, ib) = (&a.0.1, &b.0.1);
             // Uninitialized data (.bss) after the rest, as it is laid out.
             let bss = |p: &Partial| p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0;
             (bss(a), rank(ia), ia).cmp(&(bss(b), rank(ib), ib))
@@ -1540,8 +1526,9 @@ pub fn layout(
         // The export directory, as link.exe places it: after the inputs'
         // groups (before the imports'), and its own .rdata$voltmd and
         // .rdata$zzzdbg then each go before the first group that sorts after
-        // them (so after .edata when no other group intervenes: a DLL
-        // without unwind data has .rdata, .edata, .rdata$voltmd).
+        // them: a DLL without imports or unwind data has .rdata, .edata,
+        // .rdata$voltmd; with unwind data, .rdata, .rdata$voltmd,
+        // .rdata$zzzdbg, .xdata, .edata.
         if let Some(e) = mine.iter().position(|p| p.0.1.as_slice() == b".edata") {
             let edata = mine.remove(e);
             let late =

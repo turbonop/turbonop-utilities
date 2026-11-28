@@ -1221,7 +1221,6 @@ EXPORTS
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-
 /// /Brepro, as link.exe's IMAGE::Normalize computes it: the SHA-256 of the
 /// image with every time stamp (the file header's, each debug directory
 /// entry's) all ones and the repro entry's length and hash zero; the hash
@@ -1355,7 +1354,11 @@ fn coff(sections: &[Section], symbols: &[Symbol]) -> Vec<u8> {
         let mut n = [0u8; 8];
         n[..short.len()].copy_from_slice(short);
         headers.extend_from_slice(&n);
-        let relocated = if sec.relocations.is_empty() { 0 } else { n32(relocations_at) };
+        let relocated = if sec.relocations.is_empty() {
+            0
+        } else {
+            n32(relocations_at)
+        };
         for v in [0, 0, n32(sec.data.len()), n32(data_at), relocated, 0] {
             headers.extend_from_slice(&v.to_le_bytes());
         }
@@ -1394,7 +1397,11 @@ fn coff_groups(image: &[u8]) -> Vec<(u32, u32, String)> {
         while at + 8 <= data.len() {
             let (rva, len) = (u32_at(&data, at), u32_at(&data, at + 4));
             let end = data[at + 8..].iter().position(|&b| b == 0).unwrap() + at + 8;
-            groups.push((rva, len, String::from_utf8_lossy(&data[at + 8..end]).into_owned()));
+            groups.push((
+                rva,
+                len,
+                String::from_utf8_lossy(&data[at + 8..end]).into_owned(),
+            ));
             at = (end + 1 + 3) & !3;
         }
     }
@@ -1410,22 +1417,43 @@ fn coff_groups(image: &[u8]) -> Vec<(u32, u32, String)> {
 /// - e: a static function at 1, `e` (no type) at 0;
 /// - f: `f` (no type) at 0 and a function `ff` at 0 too (padded).
 fn padded_inputs(dir: &Path) {
-    let calls: Vec<u8> = (0..6).flat_map(|_| [0xE8, 0, 0, 0, 0]).chain([0xC3]).collect();
+    let calls: Vec<u8> = (0..6)
+        .flat_map(|_| [0xE8, 0, 0, 0, 0])
+        .chain([0xC3])
+        .collect();
     let relocations: Vec<(u32, u32, u16)> = (0..6).map(|k| (1 + 5 * k, 3 + k, 4)).collect();
     let mut symbols = vec![Symbol("main", 0, 1, 0x20, 2)];
     for n in ["a", "b", "c", "d", "e", "f"] {
         symbols.push(Symbol(n, 0, 0, 0, 2));
     }
-    std::fs::write(dir.join("main.obj"), coff(&[code(&calls, &relocations, false)], &symbols)).unwrap();
+    std::fs::write(
+        dir.join("main.obj"),
+        coff(&[code(&calls, &relocations, false)], &symbols),
+    )
+    .unwrap();
     let one = |name: &str, body: &[u8], comdat: bool, symbols: &[Symbol]| {
-        std::fs::write(dir.join(format!("{name}.obj")), coff(&[code(body, &[], comdat)], symbols)).unwrap();
+        std::fs::write(
+            dir.join(format!("{name}.obj")),
+            coff(&[code(body, &[], comdat)], symbols),
+        )
+        .unwrap();
     };
     one("a", &[0xB0, 1, 0xC3], false, &[Symbol("a", 0, 1, 0x20, 2)]);
     one("b", &[0xB0, 2, 0xC3], false, &[Symbol("b", 0, 1, 0, 2)]);
     one("c", &[0xB0, 3, 0xC3], true, &[Symbol("c", 0, 1, 0, 2)]);
     one("d", &[0xB0, 4, 0xC3], true, &[Symbol("d", 0, 1, 0x20, 2)]);
-    one("e", &[0xB0, 5, 0xC3, 0xC3], false, &[Symbol("e", 0, 1, 0, 2), Symbol("s", 1, 1, 0x20, 3)]);
-    one("f", &[0xB0, 6, 0xC3], false, &[Symbol("f", 0, 1, 0, 2), Symbol("ff", 0, 1, 0x20, 2)]);
+    one(
+        "e",
+        &[0xB0, 5, 0xC3, 0xC3],
+        false,
+        &[Symbol("e", 0, 1, 0, 2), Symbol("s", 1, 1, 0x20, 3)],
+    );
+    one(
+        "f",
+        &[0xB0, 6, 0xC3],
+        false,
+        &[Symbol("f", 0, 1, 0, 2), Symbol("ff", 0, 1, 0x20, 2)],
+    );
 }
 
 /// /FUNCTIONPADMIN: padding (int3) before each piece of code with a
@@ -1437,27 +1465,47 @@ fn function_padding_is_link_exes() {
     let dir = scratch("padmin");
     padded_inputs(&dir);
     let link = |pad: &str| {
-        let mut words = vec!["/NODEFAULTLIB", "/ENTRY:main", "/SUBSYSTEM:CONSOLE", pad, "main.obj"];
+        let mut words = vec![
+            "/NODEFAULTLIB",
+            "/ENTRY:main",
+            "/SUBSYSTEM:CONSOLE",
+            pad,
+            "main.obj",
+        ];
         words.extend(["a.obj", "b.obj", "c.obj", "d.obj", "e.obj", "f.obj"]);
         run(&dir, &words).expect("links")
     };
     let targets = |image: &[u8], main: u32| {
         let code = at_rva(image, main, 30).to_vec();
-        (0..6).map(|k| rel32(&code, main, 1 + 5 * k)).collect::<Vec<u32>>()
+        (0..6)
+            .map(|k| rel32(&code, main, 1 + 5 * k))
+            .collect::<Vec<u32>>()
     };
     let plain = link("/OPT:NOREF");
-    assert_eq!(targets(&plain, 0x1000), [0x1020, 0x1030, 0x1040, 0x1050, 0x1060, 0x1070]);
+    assert_eq!(
+        targets(&plain, 0x1000),
+        [0x1020, 0x1030, 0x1040, 0x1050, 0x1060, 0x1070]
+    );
     // main: 16 bytes of padding, then main (31 bytes); a padded (16, then
     // aligned to 16); b, c not; d padded; e not; f padded.
     let sixteen = link("/FUNCTIONPADMIN:16");
-    assert_eq!(targets(&sixteen, 0x1010), [0x1040, 0x1050, 0x1060, 0x1080, 0x1090, 0x10B0]);
+    assert_eq!(
+        targets(&sixteen, 0x1010),
+        [0x1040, 0x1050, 0x1060, 0x1080, 0x1090, 0x10B0]
+    );
     assert!(at_rva(&sixteen, 0x1000, 16).iter().all(|&b| b == 0xCC));
     assert!(at_rva(&sixteen, 0x1043, 13).iter().all(|&b| b == 0xCC));
     let groups = coff_groups(&sixteen);
-    assert_eq!((groups[0].0, groups[0].1, groups[0].2.as_str()), (0x1000, 0xB3, ".text$mn"));
+    assert_eq!(
+        (groups[0].0, groups[0].1, groups[0].2.as_str()),
+        (0x1000, 0xB3, ".text$mn")
+    );
     // 6: main on 16 after the padding, a 6 bytes past its end, aligned.
     let six = link("/FUNCTIONPADMIN");
-    assert_eq!(targets(&six, 0x1010), [0x1040, 0x1050, 0x1060, 0x1070, 0x1080, 0x1090]);
+    assert_eq!(
+        targets(&six, 0x1010),
+        [0x1040, 0x1050, 0x1060, 0x1070, 0x1080, 0x1090]
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1469,10 +1517,65 @@ fn function_padding_is_link_exes() {
 fn the_export_directory_is_where_link_exe_puts_it() {
     let dir = scratch("edata");
     std::fs::write(dir.join("e.obj"), defining("exported")).unwrap();
-    let image = run(&dir, &["/NODEFAULTLIB", "/DLL", "/NOENTRY", "/EXPORT:exported", "e.obj"])
-        .expect("links");
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/DLL",
+            "/NOENTRY",
+            "/EXPORT:exported",
+            "e.obj",
+        ],
+    )
+    .expect("links");
     let names: Vec<String> = coff_groups(&image).into_iter().map(|g| g.2).collect();
-    assert_eq!(names, [".text", ".rdata", ".edata", ".rdata$voltmd", ".rdata$zzzdbg"]);
+    assert_eq!(
+        names,
+        [
+            ".text",
+            ".rdata",
+            ".edata",
+            ".rdata$voltmd",
+            ".rdata$zzzdbg"
+        ]
+    );
+    // With unwind data (.xdata), .edata is after it, and link.exe's own
+    // groups before it.
+    let xdata = Section {
+        name: ".xdata",
+        characteristics: 0x4030_0040,
+        data: vec![1, 4, 1, 0, 4, 0x42, 0, 0],
+        relocations: Vec::new(),
+        comdat: None,
+    };
+    let object = coff(
+        &[code(&[0xC3], &[], false), xdata],
+        &[Symbol("exported", 0, 1, 0x20, 2)],
+    );
+    std::fs::write(dir.join("u.obj"), object).unwrap();
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/DLL",
+            "/NOENTRY",
+            "/EXPORT:exported",
+            "u.obj",
+        ],
+    )
+    .expect("links");
+    let names: Vec<String> = coff_groups(&image).into_iter().map(|g| g.2).collect();
+    assert_eq!(
+        names,
+        [
+            ".text$mn",
+            ".rdata",
+            ".rdata$voltmd",
+            ".rdata$zzzdbg",
+            ".xdata",
+            ".edata"
+        ]
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1487,7 +1590,11 @@ fn ordered_inputs(dir: &Path) {
         comdat: Some((5, with)),
     };
     let sections = [
-        code(&[0xE8, 0, 0, 0, 0, 0xE8, 0, 0, 0, 0, 0xC3], &[(1, 11, 4), (6, 12, 4)], true),
+        code(
+            &[0xE8, 0, 0, 0, 0, 0xE8, 0, 0, 0, 0, 0xC3],
+            &[(1, 11, 4), (6, 12, 4)],
+            true,
+        ),
         code(&[0xB0, 1, 0xC3], &[], true),
         xdata(1, 2),
         code(&[0xB0, 2, 0xC3], &[], true),
@@ -1510,7 +1617,13 @@ fn order_is_link_exes() {
     ordered_inputs(&dir);
     std::fs::write(dir.join("order.txt"), "g\nnosuchfunction\nf\n").unwrap();
     let order = format!("/ORDER:@{}", input(&dir, "order.txt"));
-    let words = ["/NODEFAULTLIB", "/ENTRY:main", "/SUBSYSTEM:CONSOLE", order.as_str(), "o.obj"];
+    let words = [
+        "/NODEFAULTLIB",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        order.as_str(),
+        "o.obj",
+    ];
     let (image, warnings) = run_with_warnings(&dir, &words);
     let image = image.expect("links");
     assert_eq!(warnings, [4037]);
@@ -1518,10 +1631,16 @@ fn order_is_link_exes() {
     let code = at_rva(&image, 0x1020, 11).to_vec();
     assert_eq!(at_rva(&image, 0x1000, 3), [0xB0, 2, 0xC3]);
     assert_eq!(at_rva(&image, 0x1010, 3), [0xB0, 1, 0xC3]);
-    assert_eq!([rel32(&code, 0x1020, 1), rel32(&code, 0x1020, 6)], [0x1010, 0x1000]);
+    assert_eq!(
+        [rel32(&code, 0x1020, 1), rel32(&code, 0x1020, 6)],
+        [0x1010, 0x1000]
+    );
     // g's unwind data first.
     let groups = coff_groups(&image);
-    let xdata = groups.iter().find(|g| g.2 == ".xdata").expect("an .xdata group");
+    let xdata = groups
+        .iter()
+        .find(|g| g.2 == ".xdata")
+        .expect("an .xdata group");
     assert_eq!(at_rva(&image, xdata.0 + 8, 1), [2]);
     let _ = std::fs::remove_dir_all(&dir);
 }

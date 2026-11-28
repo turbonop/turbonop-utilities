@@ -129,7 +129,9 @@ lists every COFF group with its address and size) and by experiment:
   last ones (`.idata$` but `$5`, `.didat$`, uninitialized data); then
   link.exe's `.rdata$voltmd` and `.rdata$zzzdbg` each go before the
   first group whose name sorts after theirs (a DLL without imports or
-  unwind data: `.rdata`, `.edata`, `.rdata$voltmd`, `.rdata$zzzdbg`).
+  unwind data: `.rdata`, `.edata`, `.rdata$voltmd`, `.rdata$zzzdbg`;
+  with unwind data: `.rdata`, `.rdata$voltmd`, `.rdata$zzzdbg`, `.xdata`,
+  `.edata`).
 - **`/ORDER:@file`:** each line a decorated name; the functions named go
   first in their group (each group apart: a `.text$mn` function stays in
   `.text$mn`), in the file's order, the rest after them as they were;

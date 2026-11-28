@@ -2574,12 +2574,21 @@ any object, so:
   folded libraries' synthesized members holding copies of one inline
   function are two members holding identical units, and the copy moves to
   one new synthesized member that both anchor.
-- **Precompiled types.** The input's precompiled-types member stays
-  (users in other libraries may name it); its users are absorbed, and a
-  member that shares the input's records again becomes a user of that
-  member. `verify` accepts the new reference to its PCH symbol when the
-  member's `LF_PRECOMP` names that member, which defines its PCH symbol
-  alone and has no side effects (so loading it resolves no other name).
+- **Precompiled types.** Where the library holds a precompiled-types
+  member turbolib made, the members of its machine keep their types as
+  they are, and no other such member is made for that machine: its users'
+  records are shared already. (Absorbed and shared again, as a compiler
+  PCH's users are, their records went into a new precompiled-types member
+  beside the inputs', which their other users keep: `LLVMSupport.lib` and
+  `LLVMCore.lib`, each folded, folded together came out 1.0% larger than
+  `lib.exe`'s combination of them, and 2.5% larger again folded alone.
+  And what the other members shared among themselves made yet another
+  member at each fold.) So objects added to a folded library don't share
+  types; their COMDATs fold as any others. Should a member become a user
+  of an input's types member, `verify` accepts its new reference to that
+  member's PCH symbol when the member's `LF_PRECOMP` names it and it
+  defines its PCH symbol alone and has no side effects (so that loading
+  it resolves no other name).
 - **Names.** New synthesized members skip the names input members have
   (`turbolib0.obj` is taken by the input's): two members of one name would
   be one too many, since `lib.exe` replaces one with the other when it
@@ -3131,6 +3140,35 @@ below); what it costs:
   checked the largest first.
 - `--stats` prints the time of each stage (`self-check ... original laid
   out and read ..., written library read ..., compared ...`).
+
+Measured with `tools/turbolib/corpus/perflib.py single` (median of 3
+interleaved rounds, `--fold=identical --precomp=library`, check on minus
+off, user and kernel CPU), against `origin/main` before the change, on a
+machine other sessions kept at 100% load (so the numbers are high, and
+noisy; old and new ran interleaved):
+
+| | `clangSema.lib` | `LLVMCore.lib` |
+|---|---|---|
+| CPU, 8 threads | 4.95 s to 3.70 s | 1.31 s to 1.14 s |
+| CPU, 1 thread | 4.55 s to 3.74 s | 1.44 s to 0.96 s |
+| peak commit added, 1 thread | 346 MB to 45 MB | 103 MB to 33 MB |
+| peak working set added, 8 threads | 554 MB to 517 MB | 236 MB to 182 MB |
+
+That leaves the check at about 0.65x folding's CPU (8 threads; folding
+itself 5.7 s and 1.6 s). A third of it is kernel time, most of it the
+faults of mapping the library just written to read it back (its pages are
+the file cache's: they count in the working set, not in the commit).
+
+**A cheaper mode, not written.** `verify=links` would run every check but
+the units' and sections' fingerprints: it would prove that the same names
+are defined (with their kinds), referred to, indexed, and loaded, that
+every moved COMDAT's names are aliases anchored to a synthesized member
+defining them, and that no strong definition moved; it would no longer
+prove that a moved COMDAT is identical to the copy that stands for it
+(the engine's identity hash), nor that what each member keeps (its
+COMDATs and its sections outside them) is unchanged byte for byte.
+Hashing is about a third of reading a member, so it would save perhaps
+a quarter of the check.
 
 ### The tools: `verify` and `compare-images` (2.6)
 

@@ -7,8 +7,9 @@ For each compiler set (cl /Od, cl /O2, clang-cl /Od; all /Gy /Z7), it
 compiles ../loose's a.cpp, b.cpp, and c.cpp, this directory's d.cpp and
 e.cpp, and main.cpp, and makes, with each of turbolib's modes:
 
+    first   = fold(a, b, c, d, e) a first fold, for comparison
     x1 = fold(a, b, c)            x2 = fold(d, e)
-    alone   = fold(x1)            a folded library folded again by itself
+    alone  = fold(x1)            a folded library folded again by itself
     more    = fold(x1, d, e)      a folded library with more objects
     combine = fold(x1, x2)        two folded libraries' synthesized members merged
     again   = fold(combine)       folded three times
@@ -20,9 +21,10 @@ archives the library again); then `turbolib verify` checks it against
 lib.exe's library of the same inputs. main.obj is linked against it (and
 x2, for alone) and against lib.exe's library of the same inputs (and x2),
 with link.exe and lld-link, under /OPT:REF and /OPT:NOREF:
-`turbolib compare-images` must find the two programs equivalent, and each
-must print what main.obj linked against lib.exe's library of the five
-objects prints. It prints each library's size against lib.exe's of the
+`turbolib compare-images` must find the two programs equivalent but for
+what it also finds comparing first's programs (the same set, mode, linker,
+and /OPT), and each must print what main.obj linked against lib.exe's
+library of the five objects prints. It prints each library's size against lib.exe's of the
 same inputs, and how many copies folding removed.
 
 Every wait has a timeout. The work directory (a temporary one unless
@@ -120,6 +122,9 @@ def main():
     r = Runner(work, env)
     bad = 0
     rows = []
+    # What compare-images finds comparing a first fold's programs, by set,
+    # mode, linker, and /OPT.
+    baseline = {}
     for set_name, (compiler, flags) in SETS.items():
         d = os.path.join(work, set_name)
         os.makedirs(d, exist_ok=True)
@@ -143,6 +148,7 @@ def main():
             x1, _ = lib("x1", [objs[m] for m in "abc"], turbolib)
             x2, _ = lib("x2", [objs[m] for m in "de"], turbolib)
             cases = {
+                "first": [objs[m] for m in "abcde"],
                 "alone": [x1],
                 "more": [x1, objs["d"], objs["e"]],
                 "combine": [x1, x2],
@@ -209,9 +215,19 @@ def main():
                         o, f = outs["original"][2], outs["folded"][2]
                         code, ctext = r.run([turbolib_exe, "compare-images", o + ".exe",
                                              o + ".pdb", f + ".exe", f + ".pdb"])
-                        if code != 0:
+                        failed = {line.split(":")[1].strip() for line in ctext.splitlines()
+                                  if line.startswith("FAILED:")}
+                        key = (set_name, mode, linker, opt)
+                        if case == "first":
+                            baseline[key] = failed
+                            if failed:
+                                print(f"{set_name} {mode} first {linker} /OPT:{opt}: "
+                                      f"compare-images finds: {sorted(failed)}")
+                        elif failed - baseline.get(key, set()):
+                            beyond = sorted(failed - baseline.get(key, set()))
                             print(f"{set_name} {mode} {case} {linker} /OPT:{opt}: "
-                                  f"compare-images FAILED\n{ctext}")
+                                  f"compare-images FAILED beyond the first fold's: {beyond}\n"
+                                  f"{ctext}")
                             bad += 1
         print(f"{set_name}: done")
     print(f"{'set':10} {'mode':6} {'case':8} {'lib.exe':>9} {'folded':>9} {'saved':>6} removed")

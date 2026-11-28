@@ -104,6 +104,9 @@ pub(crate) struct Linked<'a> {
     /// tables. (Their bytes hold time stamps, PDB signatures, and lists
     /// sorted by address.)
     pub tables: Vec<(u32, u32)>,
+    /// The TLS template (each thread's block is a copy): its RVA and size
+    /// with the zero fill.
+    pub tls: Option<(u32, u32)>,
 }
 
 impl<'a> Linked<'a> {
@@ -162,8 +165,17 @@ impl<'a> Linked<'a> {
             code: Vec::new(),
             relocations,
             tables: Vec::new(),
+            tls: None,
         };
         p.tables = p.table_ranges();
+        p.tls = p.pe.tls().and_then(|t| {
+            let start = p.rva(t.start_of_raw_data.get())?.get();
+            let end = p.rva(t.end_of_raw_data.get())?.get();
+            Some((
+                start,
+                end.checked_sub(start)?.saturating_add(t.size_of_zero_fill),
+            ))
+        });
         p.read_labels()?;
         Ok(p)
     }
@@ -257,6 +269,15 @@ impl<'a> Linked<'a> {
         &self.relocations[from..to]
     }
 
+    /// The name of a thread-local variable by its offset in the TLS
+    /// template (as code addresses it: `SECREL`, from the start of the
+    /// thread's block), if it is in it.
+    pub fn tls_at(&self, offset: i64) -> Option<(&[u8], u32)> {
+        let (start, size) = self.tls?;
+        let offset = u32::try_from(offset).ok().filter(|&o| o < size)?;
+        Linked::name(self, start + offset)
+    }
+
     pub fn rva(&self, va: u64) -> Option<Rva> {
         Va(va).to_rva(Va(self.image_base))
     }
@@ -271,7 +292,16 @@ impl<'a> Linked<'a> {
         use turbonop_pe::consts::directory;
         use turbonop_pe::load_config::field;
         let mut out = Vec::new();
-        for d in [directory::EXPORT, directory::DEBUG, directory::DELAY_IMPORT] {
+        // (The exception directory's `.pdata` is compared function by
+        // function, with its unwind data; the base relocations by what
+        // they relocate.)
+        for d in [
+            directory::EXPORT,
+            directory::DEBUG,
+            directory::DELAY_IMPORT,
+            directory::EXCEPTION,
+            directory::BASERELOC,
+        ] {
             if let Some(dd) = self.pe.data_directory(d)
                 && dd.size.get() > 0
             {
@@ -357,6 +387,7 @@ impl<'a> Linked<'a> {
         let modules: Vec<turbonop_pdb::Module<'_>> = dbi.modules().to_vec();
         let pdb = &self.pdb;
         let this = &*self;
+        let tls = self.tls;
         let found = turbonop_par::map_balanced(&modules, 1, |m| {
             let mut out: Vec<Found> = Vec::new();
             let Ok(Some(stream)) = pdb.module_stream(m) else {
@@ -378,15 +409,24 @@ impl<'a> Linked<'a> {
                             out.push((rva, priority::PROCEDURE, name.to_vec(), global, Some(len)));
                         }
                     }
-                    kind::S_GDATA32 | kind::S_LDATA32 => {
+                    // (Thread-local data too: its address is in `.tls`, the
+                    // template each thread's copy is made from.)
+                    kind::S_GDATA32 | kind::S_LDATA32 | kind::S_GTHREAD32 | kind::S_LTHREAD32 => {
                         if let Ok(Symbol::Data {
                             segment,
                             offset,
                             name,
                             global,
+                            thread,
                             ..
                         }) = r.parse()
-                            && let Some(rva) = this.rva_of(segment, offset)
+                            && let Some(rva) = if thread {
+                                // (A thread-local's offset is from the
+                                // template's start, as code's SECREL.)
+                                tls.and_then(|(start, _)| start.checked_add(offset))
+                            } else {
+                                this.rva_of(segment, offset)
+                            }
                         {
                             out.push((rva, priority::DATA, name.to_vec(), global, None));
                         }
@@ -519,6 +559,20 @@ impl super::bytes::Names for Linked<'_> {
 
     fn relocations_in(&self, rva: u32, len: u32) -> &[(u32, u8)] {
         Linked::relocations_in(self, rva, len)
+    }
+
+    fn tls(&self, offset: i64) -> Option<(&[u8], u32)> {
+        self.tls_at(offset)
+    }
+
+    fn procedure_end(&self, rva: u32) -> Option<u32> {
+        let i = self.code.partition_point(|c| c.rva <= rva).checked_sub(1)?;
+        let c = self.code[i];
+        (rva - c.rva < c.len).then_some(c.rva + c.len)
+    }
+
+    fn tls_in_section(&self) -> bool {
+        true
     }
 
     fn aliases(&self, rva: u32) -> &[Box<[u8]>] {

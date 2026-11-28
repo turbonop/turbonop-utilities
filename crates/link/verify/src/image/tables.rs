@@ -411,6 +411,33 @@ struct Unwind {
     info: Result<(u32, u32), u32>,
 }
 
+/// The regions of unwind information `.pdata` names (each compared with
+/// its function's): sorted, those that touch merged.
+pub(crate) fn unwind_ranges(p: &Linked<'_>) -> Vec<(u32, u32)> {
+    let mut v: Vec<(u32, u32)> = unwinds(p)
+        .into_iter()
+        .filter_map(|u| u.info.ok())
+        .map(|(rva, size)| (rva, rva.saturating_add(size)))
+        .collect();
+    v.sort_unstable();
+    let mut out: Vec<(u32, u32)> = Vec::with_capacity(v.len());
+    for (s, e) in v {
+        match out.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => out.push((s, e)),
+        }
+    }
+    out
+}
+
+/// Whether `[rva, rva + len)` is wholly unwind information (see
+/// [`unwind_ranges`]).
+pub(crate) fn covered(ranges: &[(u32, u32)], rva: u32, len: u32) -> bool {
+    let i = ranges.partition_point(|r| r.0 <= rva);
+    i.checked_sub(1)
+        .is_some_and(|i| rva.saturating_add(len) <= ranges[i].1 && len > 0)
+}
+
 fn unwinds(p: &Linked<'_>) -> Vec<Unwind> {
     p.pe.runtime_functions()
         .filter_map(|e| match e.function {

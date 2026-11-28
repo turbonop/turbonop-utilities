@@ -1,0 +1,13 @@
+# The generators of the instruction-set crates' decode tables (their
+# src/generated/), run by hand when their sources change: not a member of
+# the workspace, so that no build of it compiles them.
+[package]
+name = "isa-gen"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lints.clippy]
+cast_possible_truncation = "allow"

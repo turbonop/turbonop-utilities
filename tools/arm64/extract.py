@@ -18,7 +18,7 @@ attributes say where they came from: `src=mrs` (the grammar) or
 Usage: python extract.py <mrs.tar.gz or Instructions.json> <llvm aarch64.json> > a64.txt
 
 Then run access.py (what each encoding reads and writes, a64-access.txt):
-it follows a64.txt's encodings, and build.rs checks that it does.
+it follows a64.txt's encodings, and tools/isa-gen checks that it does.
 """
 
 import contextlib
@@ -79,10 +79,10 @@ def merge(pattern, fields, encodeset):
 
 
 # --------------------------------------------------------------------------
-# AST: conditions as ASL-like text, for build.rs's condition compiler.
+# AST: conditions as ASL-like text, for tools/isa-gen's condition compiler.
 
 def ast(node):
-    """Renders an AST node as the ASL subset build.rs compiles; None if it
+    """Renders an AST node as the ASL subset tools/isa-gen compiles; None if it
     has something that subset can't say."""
     t = node.get("_type", "")
     if t == "AST.Bool":

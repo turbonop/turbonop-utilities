@@ -423,7 +423,7 @@ annotated disassembly.
 Phase 7 needs this. So do the disassembly view (highlighting where a
 register is written and read) and the cross-reference scanner.
 
-- **x86** (`tables/*.txt`, `build.rs`):
+- **x86** (`tables/*.txt`, `tools/isa-gen`):
   - whether each operand is read, written, or both
   - implicit operands: `rDX` for `mul` and `div`; `rCX`, `rSI`, and `rDI`
     for string instructions; `rSP` and stack memory for `push`, `pop`,

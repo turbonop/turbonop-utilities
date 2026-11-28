@@ -18,6 +18,7 @@ use turbonop_global_alloc as _;
 
 extern crate alloc;
 
+#[path = "generated/tables.rs"]
 mod tables;
 
 pub mod format;

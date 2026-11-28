@@ -367,7 +367,7 @@ fn render(
                 let sym = symbol(usize::from(i));
                 let at = out.len();
                 all_default &= render_symbol(inst, sym, symbols, out)?;
-                // A number after a `#` (the literal's, which build.rs has
+                // A number after a `#` (the literal's, which tools/isa-gen has
                 // already put in Microsoft's form) is an immediate: hex from
                 // 10 on. (Not a floating-point immediate, `#1.5` or `#31`.)
                 let hash = if out[..at].ends_with('#') {

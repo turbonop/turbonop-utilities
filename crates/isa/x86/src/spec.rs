@@ -1,4 +1,4 @@
-//! The opcode-table types. `build.rs` compiles `tables/*.txt` into static
+//! The opcode-table types. `tools/isa-gen` compiles `tables/*.txt` into static
 //! arrays of these.
 
 /// Where an operand comes from.

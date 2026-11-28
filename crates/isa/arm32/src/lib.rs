@@ -54,7 +54,7 @@ pub struct Rule {
 /// The rule `id`.
 #[inline(never)]
 pub fn rule(id: &str) -> Option<&'static Rule> {
-    // (By build.rs's index of the rules by a hash of their IDs.)
+    // (By tools/isa-gen's index of the rules by a hash of their IDs.)
     let slots = tables::RULE_INDEX.len();
     let mut s = rule_hash(id) as usize & (slots - 1);
     for _ in 0..slots {
@@ -73,7 +73,7 @@ pub(crate) fn rule_at(index: usize) -> Option<&'static Rule> {
     tables::RULES.get(index)
 }
 
-/// The hash rule IDs are indexed by (FNV-1a; build.rs's `rule_hash`).
+/// The hash rule IDs are indexed by (FNV-1a; tools/isa-gen's `rule_hash`).
 fn rule_hash(id: &str) -> u32 {
     id.bytes().fold(0x811c_9dc5u32, |h, b| {
         (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
@@ -184,7 +184,7 @@ mod tables {
     // (Generated: conditions as the table writes them.)
     #![allow(unused_parens, clippy::all)]
     use super::{Encoding, NONE, Rule};
-    include!(concat!(env!("OUT_DIR"), "/tables.rs"));
+    include!("generated/tables.rs");
 }
 
 /// A decoded instruction.

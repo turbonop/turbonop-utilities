@@ -35,7 +35,6 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::Path;
 
-#[path = "build/access.rs"]
 mod access;
 
 const MAPS: &[(&str, usize)] = &[
@@ -592,9 +591,8 @@ fn variant(mnemonic: &str) -> String {
     s
 }
 
-fn main() {
+pub fn main(dest: &Path) {
     let dir = Path::new("tables");
-    println!("cargo:rerun-if-changed=tables");
     let mut files: Vec<_> = std::fs::read_dir(dir)
         .expect("tables directory")
         .map(|e| e.unwrap().path())
@@ -605,7 +603,6 @@ fn main() {
     let mut forms = Vec::new();
     let mut errors = Vec::new();
     for file in &files {
-        println!("cargo:rerun-if-changed={}", file.display());
         let text = std::fs::read_to_string(file).unwrap();
         let name = file.file_name().unwrap().to_string_lossy().into_owned();
         for (n, line) in text.lines().enumerate() {
@@ -659,7 +656,7 @@ fn main() {
     }
     if !errors.is_empty() {
         for e in &errors {
-            println!("cargo:warning={e}");
+            eprintln!("warning: {e}");
         }
         panic!("{} error(s) in opcode tables", errors.len());
     }
@@ -772,7 +769,7 @@ fn main() {
         .collect();
     if let Err(errors) = access::generate(&rules, &infos, &mut out) {
         for e in &errors {
-            println!("cargo:warning={e}");
+            eprintln!("warning: {e}");
         }
         panic!("{} error(s) in access rules", errors.len());
     }
@@ -799,6 +796,6 @@ fn main() {
     )
     .unwrap();
 
-    let out_path = Path::new(&std::env::var("OUT_DIR").unwrap()).join("tables.rs");
+    let out_path = dest.to_path_buf();
     std::fs::write(out_path, out).unwrap();
 }

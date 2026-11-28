@@ -7,7 +7,7 @@
 //! discard the results.
 //!
 //! The opcode tables live in `tables/*.txt`, in a compact notation based on
-//! the Intel SDM's opcode maps; `build.rs` compiles them.
+//! the Intel SDM's opcode maps; `tools/isa-gen` compiles them.
 //!
 //! [`format`] renders instructions in the MASM-style syntax of Microsoft's
 //! `dumpbin /disasm`.
@@ -38,7 +38,7 @@ mod spec;
 #[allow(clippy::all)]
 mod tables {
     use crate::spec::{AccessSpec, Entry, Imp, ImpKind, Loc, OpSpec, Size, Tuple, attr};
-    include!(concat!(env!("OUT_DIR"), "/tables.rs"));
+    include!("generated/tables.rs");
 
     impl Mnemonic {
         /// The mnemonic's name, in lowercase.

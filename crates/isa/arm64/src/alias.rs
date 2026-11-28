@@ -146,7 +146,7 @@ pub(crate) fn sve_move_mask_preferred(imm13: u64) -> bool {
 }
 
 /// `SysOp`: which kind of operation a SYS instruction performs. The
-/// values match the constants `build.rs` substitutes: 0 SYS, 1 AT, 2 DC,
+/// values match the constants `tools/isa-gen` substitutes: 0 SYS, 1 AT, 2 DC,
 /// 3 IC, 4 TLBI.
 pub(crate) fn sys_op(op1: u64, crn: u64, crm: u64, op2: u64) -> i64 {
     match (crn, crm) {

@@ -939,9 +939,8 @@ fn chunked(code: &mut String, name: &str, ty: &str, items: &str, n: usize) {
     let _ = writeln!(code, "pub(crate) const {name}_LEN: usize = {n};");
 }
 
-fn main() {
+pub fn main(dest: &Path) {
     let path = Path::new("tables/a64.txt");
-    println!("cargo:rerun-if-changed={}", path.display());
     let src = std::fs::read_to_string(path).unwrap();
     let (encs, files) = parse(&src);
 
@@ -1417,7 +1416,6 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
 
     // System register names, by op0:op1:CRn:CRm:op2.
     let sysregs_path = Path::new("tables/sysregs.txt");
-    println!("cargo:rerun-if-changed={}", sysregs_path.display());
     let mut sysregs: Vec<(u32, String)> = std::fs::read_to_string(sysregs_path)
         .unwrap()
         .lines()
@@ -1441,10 +1439,15 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
     }
     let _ = writeln!(code, "];");
 
-    let out = Path::new(&std::env::var("OUT_DIR").unwrap()).join("tables.rs");
-    std::fs::write(out, code).unwrap();
-    let report = Path::new(&std::env::var("OUT_DIR").unwrap()).join("warnings.txt");
-    std::fs::write(report, warnings.join("\n")).unwrap();
+    std::fs::write(dest, code).unwrap();
+    // Diagnostics for whoever regenerates (build.rs kept them in OUT_DIR).
+    let report = std::env::temp_dir().join("isa-gen-arm64-warnings.txt");
+    std::fs::write(&report, warnings.join("\n")).unwrap();
+    eprintln!(
+        "arm64: {} warnings, in {}",
+        warnings.len(),
+        report.display()
+    );
 }
 
 /// A table result that is a computed value: `UInt(<pieces>)`, optionally
@@ -2020,7 +2023,6 @@ struct AccessData {
 
 fn access_tables(encs: &[Enc], code: &mut String) -> AccessData {
     let path = Path::new("tables/a64-access.txt");
-    println!("cargo:rerun-if-changed={}", path.display());
     let src = std::fs::read_to_string(path).unwrap();
     let mut classes: Vec<String> = Vec::new();
     let mut class_index: HashMap<String, usize> = HashMap::new();

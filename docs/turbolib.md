@@ -3288,6 +3288,65 @@ for the UDTs both PDBs have one for (it writes them for some UDTs in some
 links, gives them to one of the same-named type records, and numbers
 their modules in its own order).
 
+What MSVC's code and data hold, and how it's read (from the Debug `/Z7`
+`/RTC1` proof run, 2026-11-28):
+
+- **Switch tables in a procedure.** MSVC puts a switch's jump table (RVAs
+  of the cases) and its byte index table in the procedure's code, after
+  its last instruction, and the PDB's procedure length covers them. A
+  dispatch `mov ecx, [rdx + rax*4 + T]` (or `movzx` with scale 1) whose
+  `T` is an RVA the same distance into the procedure in both images marks
+  `T` to the procedure's end as data: not decoded, its words compared as
+  RVAs. Elsewhere, an operand in code that names other things is a
+  difference unless words read as RVAs explain all its differing bytes;
+  outside a procedure, decoded operands explain only what words don't,
+  and decoding restarts at each procedure's start.
+- **Windows TLS.** A thread-local is named by its offset in the TLS
+  template (`SECREL`, from the TLS directory's start of raw data), and
+  `S_GTHREAD32`/`S_LTHREAD32` by their place in it. An immediate or
+  displacement is read as a `SECREL` only within 48 bytes of a read of the
+  TLS array (`gs:[58h]`, in both); an equal `mov r32, imm32` there that
+  indexes the block in one of the next six instructions must name the
+  same variable. Folding moves `inline thread_local` variables (COMDATs)
+  in the template.
+- **Unaligned RVAs in data.** `__CxxFrameHandler4`'s compressed tables
+  hold RVAs at any byte: in data, a difference no aligned word explains
+  may be explained by an unaligned one naming the same thing in both.
+- **Text isn't an RVA.** Naming data by content reads aligned words as
+  the RVAs of what starts there, but not words that read as text (`Pos\0`,
+  a `/RTC1` variable's name): those named whatever the layout put at that
+  address.
+
+What the debug information of another translation unit's copy changes.
+A duplicate COMDAT's copies are the same code but not the same debug
+information, and a folded library changes which copy a link keeps: the
+original link keeps the first loaded member's, the folded one the copy
+the synthesized member holds. Expected (each its own category):
+
+- procedures, types, and a module's own records the same but for
+  translation units' tags in unique names (lambdas' classes) and the
+  function attribute 0x08 (a bit `cvinfo.h` leaves unused; MSVC 14.52
+  sets it in some translation units' types of a constructor and not in
+  others', seen on the implicit constructors of the same classes);
+- procedures the same but for which definition of a class of a name they
+  name (MSVC lists in a class's fields the special members a translation
+  unit declares implicitly, so two translation units' definitions of one
+  class can differ);
+- line blocks of one line for a whole function, at a translation unit's
+  end (the line after its file's last, read from this machine's sources)
+  in one PDB at least: MSVC gives a function the compiler generates that
+  line. Paired by what their start names and their code size, then (the
+  same functions folded by link.exe's identical code folding into groups
+  labeled otherwise) by code size alone;
+- section contributions whose CRCs link.exe left 0 in one PDB (it leaves
+  them 0 for most of the data of turbolib's synthesized members, and for
+  some of the original objects'), paired by section, characteristics, and
+  size; their bytes are compared in the images.
+
+Thunks (`S_THUNK32`, an adjustor's COMDAT) are compared as procedures, by
+name: they move with folding. A module's own records are compared as a
+multiset.
+
 What `compare-images` can prove: that the two images hold the same
 contributions, each with the same bytes once every address field it
 found is replaced by what it names, and the same tables; and that the PDBs
@@ -3297,7 +3356,14 @@ hold the same records under the same reductions. What it can't:
   images, isn't checked (it can't be told from an integer); a differing
   word accepted as two RVAs naming the same thing is so by inference.
 - Outside a procedure's code (as the PDB gives it), equal bytes that
-  decode as PC-relative instructions are accepted (they may be data).
+  decode as PC-relative instructions are accepted (they may be data); and
+  so are, in a procedure, those from a switch table's start to its end
+  (likely all data: MSVC was seen putting its tables last, never code
+  after them).
+- One-line blocks at a translation unit's end are paired by code size
+  when what their start names differs, not by address.
+- An operand in code whose differing bytes words explain (as RVAs naming
+  the same thing in both) is accepted: an inference, as for data.
 - Bytes outside every contribution (headers, most of the linker's own
   tables) aren't compared; their count is reported.
 - x86 (32-bit) code isn't decoded, so x86 images are compared by base

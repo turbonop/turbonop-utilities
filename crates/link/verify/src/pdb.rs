@@ -275,6 +275,55 @@ fn compare_types(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep
     }
 }
 
+/// Whether line `line` of the file at `path` (read from this machine's
+/// disk) names the UDT `name` or a class template it is nested in: the
+/// last component of its name, or one with template arguments, without
+/// them (not a namespace).
+fn names_type(path: &[u8], line: u32, name: &[u8]) -> bool {
+    let Some(text) = std::str::from_utf8(path)
+        .ok()
+        .and_then(|p| std::fs::read(p).ok())
+    else {
+        return false;
+    };
+    let Some(l) = text
+        .split(|&c| c == b'\n')
+        .nth((line as usize).wrapping_sub(1))
+    else {
+        return false;
+    };
+    let l = String::from_utf8_lossy(l);
+    // Each component of the name outside template arguments, and whether
+    // it had them.
+    let name = String::from_utf8_lossy(name);
+    let mut parts: Vec<(String, bool)> = Vec::new();
+    let (mut depth, mut cur, mut templated) = (0usize, String::new(), false);
+    let mut chars = name.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '<' => {
+                depth += 1;
+                templated = true;
+            }
+            '>' => depth = depth.saturating_sub(1),
+            ':' if depth == 0 && chars.peek() == Some(&':') => {
+                chars.next();
+                parts.push((std::mem::take(&mut cur), templated));
+                templated = false;
+            }
+            _ if depth == 0 => cur.push(c),
+            _ => {}
+        }
+    }
+    parts.push((cur, true));
+    let ident = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+    parts.iter().filter(|p| p.1 && !p.0.is_empty()).any(|(p, _)| {
+        l.match_indices(p.as_str()).any(|(i, _)| {
+            !ident(l[..i].chars().next_back()) && !ident(l[i + p.len()..].chars().next())
+        })
+    })
+}
+
 /// UDTs' source lines (`LF_UDT_MOD_SRC_LINE`), by the UDT's name:
 /// link.exe writes one for a UDT in some links and not in others, and
 /// gives it to one of the type records of that name, so only the files
@@ -315,6 +364,18 @@ fn compare_udt_lines(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
                 // the type itself is compared with the types.
                 rep.expect(
                     "UDTs whose source lines are in another copy of the same header (the linker picked another)",
+                    || show(n),
+                );
+            }
+            (Some(x), Some(y))
+                if x != y && x.iter().chain(y).all(|(f, l)| names_type(f, *l, n)) =>
+            {
+                // Each translation unit gives a template's class the line
+                // it was instantiated from: its definition's, or an
+                // explicit instantiation's (`template class
+                // RegionBase<...>;`); the linker keeps the first it reads.
+                rep.expect(
+                    "UDTs whose source lines differ, each a line naming the type or a class template it is in (another translation unit's line kept)",
                     || show(n),
                 );
             }

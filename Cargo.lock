@@ -947,6 +947,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-dex"
+version = "0.0.7"
+dependencies = [
+ "sha1",
+ "turbonop-core",
+ "turbonop-global-alloc",
+ "turbonop-par",
+]
+
+[[package]]
 name = "turbonop-dwarf"
 version = "0.0.7"
 dependencies = [

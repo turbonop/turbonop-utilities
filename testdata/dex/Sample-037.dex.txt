@@ -1,0 +1,3707 @@
+Processing 'Sample-037.dex'...
+Opened 'Sample-037.dex', DEX version '037'
+DEX file header:
+magic               : 'dex\n037\0'
+checksum            : 160e8710
+signature           : 78c2...d2f9
+file_size           : 20536
+header_size         : 112
+link_size           : 0
+link_off            : 0 (0x000000)
+string_ids_size     : 392
+string_ids_off      : 112 (0x000070)
+type_ids_size       : 98
+type_ids_off        : 1680 (0x000690)
+proto_ids_size      : 67
+proto_ids_off       : 2072 (0x000818)
+field_ids_size      : 63
+field_ids_off       : 2876 (0x000b3c)
+method_ids_size     : 140
+method_ids_off      : 3380 (0x000d34)
+class_defs_size     : 19
+class_defs_off      : 4500 (0x001194)
+data_size           : 15428
+data_off            : 5108 (0x0013f4)
+
+Class #0 header:
+class_idx           : 6
+access_flags        : 13825 (0x3601)
+superclass_idx      : 50
+interfaces_off      : 11656 (0x002d88)
+source_file_idx     : 47
+annotations_off     : 19716 (0x004d04)
+class_data_off      : 18461 (0x00481d)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 0
+virtual_methods_size: 3
+
+Class #0 annotations:
+Annotations on class
+  VISIBILITY_RUNTIME Ljava/lang/annotation/Retention; value=RUNTIME
+  VISIBILITY_RUNTIME Ljava/lang/annotation/Target; value=TYPE
+
+Class #0            -
+  Class descriptor  : 'Lcom/android/tools/r8/annotations/LambdaMethod;'
+  Access flags      : 0x3601 (PUBLIC INTERFACE ABSTRACT SYNTHETIC ANNOTATION)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ljava/lang/annotation/Annotation;'
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+  Virtual methods   -
+    #0              : (in Lcom/android/tools/r8/annotations/LambdaMethod;)
+      name          : 'holder'
+      type          : '()Ljava/lang/String;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 0
+      code          : (none)
+
+    #1              : (in Lcom/android/tools/r8/annotations/LambdaMethod;)
+      name          : 'method'
+      type          : '()Ljava/lang/String;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 1
+      code          : (none)
+
+    #2              : (in Lcom/android/tools/r8/annotations/LambdaMethod;)
+      name          : 'proto'
+      type          : '()Ljava/lang/String;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 2
+      code          : (none)
+
+  source_file_idx   : 47 (D8$$SyntheticClass)
+
+Class #1 header:
+class_idx           : 32
+access_flags        : 1536 (0x0600)
+superclass_idx      : 50
+interfaces_off      : 11664 (0x002d90)
+source_file_idx     : 185
+annotations_off     : 0 (0x000000)
+class_data_off      : 18477 (0x00482d)
+static_fields_size  : 1
+instance_fields_size: 0
+direct_methods_size : 2
+virtual_methods_size: 2
+
+Class #1            -
+  Class descriptor  : 'Ldex/sample/Shape;'
+  Access flags      : 0x0600 (INTERFACE ABSTRACT)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ljava/io/Serializable;'
+  Static fields     -
+    #0              : (in Ldex/sample/Shape;)
+      name          : 'PI_ISH'
+      type          : 'D'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 3.14
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Shape;)
+      name          : 'lambda$unit$ba52f8ce$1'
+      type          : '()D'
+      access        : 0x1009 (PUBLIC STATIC SYNTHETIC)
+      method_idx    : 92
+      code          -
+      registers     : 2
+      ins           : 0
+      outs          : 0
+      insns size    : 3 16-bit code units
+00288c:                                        |[00288c] dex.sample.Shape.lambda$unit$ba52f8ce$1:()D
+00289c: 1900 f03f                              |0000: const-wide/high16 v0, #long 4607182418800017408 // #3ff0
+0028a0: 1000                                   |0002: return-wide v0
+      catches       : (none)
+      positions     :
+        0x0000 line=72
+      locals        :
+
+    #1              : (in Ldex/sample/Shape;)
+      name          : 'unit'
+      type          : '()Ldex/sample/Shape;'
+      access        : 0x0009 (PUBLIC STATIC)
+      method_idx    : 93
+      code          -
+      registers     : 1
+      ins           : 0
+      outs          : 1
+      insns size    : 6 16-bit code units
+002870:                                        |[002870] dex.sample.Shape.unit:()Ldex/sample/Shape;
+002880: 2200 1f00                              |0000: new-instance v0, Ldex/sample/Shape$0; // type@001f
+002884: 7010 5800 0000                         |0002: invoke-direct {v0}, Ldex/sample/Shape$0;.<init>:()V // method@0058
+00288a: 1100                                   |0005: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=72
+      locals        :
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Shape;)
+      name          : 'area'
+      type          : '()D'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 90
+      code          : (none)
+
+    #1              : (in Ldex/sample/Shape;)
+      name          : 'describe'
+      type          : '()Ljava/lang/String;'
+      access        : 0x0001 (PUBLIC)
+      method_idx    : 91
+      code          -
+      registers     : 5
+      ins           : 1
+      outs          : 3
+      insns size    : 24 16-bit code units
+0028a4:                                        |[0028a4] dex.sample.Shape.describe:()Ljava/lang/String;
+0028b4: 7210 5a00 0400                         |0000: invoke-interface {v4}, Ldex/sample/Shape;.area:()D // method@005a
+0028ba: 0b00                                   |0003: move-result-wide v0
+0028bc: 2202 3800                              |0004: new-instance v2, Ljava/lang/StringBuilder; // type@0038
+0028c0: 7010 7300 0200                         |0006: invoke-direct {v2}, Ljava/lang/StringBuilder;.<init>:()V // method@0073
+0028c6: 1a03 6401                              |0009: const-string v3, "shape of area " // string@0164
+0028ca: 6e20 7600 3200                         |000b: invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;.append:(Ljava/lang/String;)Ljava/lang/StringBuilder; // method@0076
+0028d0: 0c02                                   |000e: move-result-object v2
+0028d2: 6e30 7400 0201                         |000f: invoke-virtual {v2, v0, v1}, Ljava/lang/StringBuilder;.append:(D)Ljava/lang/StringBuilder; // method@0074
+0028d8: 0c00                                   |0012: move-result-object v0
+0028da: 6e10 7700 0000                         |0013: invoke-virtual {v0}, Ljava/lang/StringBuilder;.toString:()Ljava/lang/String; // method@0077
+0028e0: 0c00                                   |0016: move-result-object v0
+0028e2: 1100                                   |0017: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=68
+      locals        :
+        0x0000 - 0x0018 reg=4 this Ldex/sample/Shape;
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #2 header:
+class_idx           : 15
+access_flags        : 1024 (0x0400)
+superclass_idx      : 50
+interfaces_off      : 11672 (0x002d98)
+source_file_idx     : 185
+annotations_off     : 19732 (0x004d14)
+class_data_off      : 18500 (0x004844)
+static_fields_size  : 0
+instance_fields_size: 1
+direct_methods_size : 1
+virtual_methods_size: 3
+
+Class #2 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "<T::" "Ljava/lang/Comparable<" "TT;>;>" "Ljava/lang/Object;" "Ldex/sample/Shape;" }
+Annotations on field #0 'value'
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "TT;" }
+Annotations on method #5 'make'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "n" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "(I)TT;" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Throws; value={ Ljava/io/IOException; Ljava/lang/IllegalStateException; }
+Annotations on method #6 'nativeCall'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 } names={ "a" "b" }
+
+Class #2            -
+  Class descriptor  : 'Ldex/sample/Base;'
+  Access flags      : 0x0400 (ABSTRACT)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ldex/sample/Shape;'
+  Static fields     -
+  Instance fields   -
+    #0              : (in Ldex/sample/Base;)
+      name          : 'value'
+      type          : 'Ljava/lang/Comparable;'
+      access        : 0x0004 (PROTECTED)
+  Direct methods    -
+    #0              : (in Ldex/sample/Base;)
+      name          : '<init>'
+      type          : '()V'
+      access        : 0x10000 (CONSTRUCTOR)
+      method_idx    : 3
+      code          -
+      registers     : 1
+      ins           : 1
+      outs          : 1
+      insns size    : 4 16-bit code units
+00140c:                                        |[00140c] dex.sample.Base.<init>:()V
+00141c: 7010 6b00 0000                         |0000: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+001422: 0e00                                   |0003: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=76
+      locals        :
+        0x0000 - 0x0004 reg=0 this Ldex/sample/Base; Ldex/sample/Base<TT;>;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Base;)
+      name          : 'area'
+      type          : '()D'
+      access        : 0x0001 (PUBLIC)
+      method_idx    : 4
+      code          -
+      registers     : 3
+      ins           : 1
+      outs          : 0
+      insns size    : 3 16-bit code units
+0013f4:                                        |[0013f4] dex.sample.Base.area:()D
+001404: 1600 0000                              |0000: const-wide/16 v0, #int 0 // #0
+001408: 1000                                   |0002: return-wide v0
+      catches       : (none)
+      positions     :
+        0x0000 line=84
+      locals        :
+        0x0000 - 0x0003 reg=2 this Ldex/sample/Base; Ldex/sample/Base<TT;>;
+
+    #1              : (in Ldex/sample/Base;)
+      name          : 'make'
+      type          : '(I)Ljava/lang/Comparable;'
+      access        : 0x0400 (ABSTRACT)
+      method_idx    : 5
+      code          : (none)
+
+    #2              : (in Ldex/sample/Base;)
+      name          : 'nativeCall'
+      type          : '(IJ)J'
+      access        : 0x0100 (NATIVE)
+      method_idx    : 6
+      code          : (none)
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #3 header:
+class_idx           : 16
+access_flags        : 16400 (0x4010)
+superclass_idx      : 42
+interfaces_off      : 0 (0x000000)
+source_file_idx     : 185
+annotations_off     : 19772 (0x004d3c)
+class_data_off      : 18524 (0x00485c)
+static_fields_size  : 4
+instance_fields_size: 0
+direct_methods_size : 5
+virtual_methods_size: 1
+
+Class #3 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "Ljava/lang/Enum<" "Ldex/sample/Color;" ">;" }
+Annotations on method #9 '<init>'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 4096 4096 } names={ "$enum$name" "$enum$ordinal" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "()V" }
+Annotations on method #12 'valueOf'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 32768 } names={ "name" }
+
+Class #3            -
+  Class descriptor  : 'Ldex/sample/Color;'
+  Access flags      : 0x4010 (FINAL ENUM)
+  Superclass        : 'Ljava/lang/Enum;'
+  Interfaces        -
+  Static fields     -
+    #0              : (in Ldex/sample/Color;)
+      name          : '$VALUES'
+      type          : '[Ldex/sample/Color;'
+      access        : 0x101a (PRIVATE STATIC FINAL SYNTHETIC)
+    #1              : (in Ldex/sample/Color;)
+      name          : 'BLUE'
+      type          : 'Ldex/sample/Color;'
+      access        : 0x4019 (PUBLIC STATIC FINAL ENUM)
+    #2              : (in Ldex/sample/Color;)
+      name          : 'GREEN'
+      type          : 'Ldex/sample/Color;'
+      access        : 0x4019 (PUBLIC STATIC FINAL ENUM)
+    #3              : (in Ldex/sample/Color;)
+      name          : 'RED'
+      type          : 'Ldex/sample/Color;'
+      access        : 0x4019 (PUBLIC STATIC FINAL ENUM)
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Color;)
+      name          : '$values'
+      type          : '()[Ldex/sample/Color;'
+      access        : 0x100a (PRIVATE STATIC SYNTHETIC)
+      method_idx    : 7
+      code          -
+      registers     : 3
+      ins           : 0
+      outs          : 3
+      insns size    : 11 16-bit code units
+001480:                                        |[001480] dex.sample.Color.$values:()[Ldex/sample/Color;
+001490: 6200 0400                              |0000: sget-object v0, Ldex/sample/Color;.RED:Ldex/sample/Color; // field@0004
+001494: 6201 0300                              |0002: sget-object v1, Ldex/sample/Color;.GREEN:Ldex/sample/Color; // field@0003
+001498: 6202 0200                              |0004: sget-object v2, Ldex/sample/Color;.BLUE:Ldex/sample/Color; // field@0002
+00149c: 2430 5800 1002                         |0006: filled-new-array {v0, v1, v2}, [Ldex/sample/Color; // type@0058
+0014a2: 0c00                                   |0009: move-result-object v0
+0014a4: 1100                                   |000a: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=54
+      locals        :
+
+    #1              : (in Ldex/sample/Color;)
+      name          : '<clinit>'
+      type          : '()V'
+      access        : 0x10008 (STATIC CONSTRUCTOR)
+      method_idx    : 8
+      code          -
+      registers     : 3
+      ins           : 0
+      outs          : 3
+      insns size    : 37 16-bit code units
+0014cc:                                        |[0014cc] dex.sample.Color.<clinit>:()V
+0014dc: 2200 1000                              |0000: new-instance v0, Ldex/sample/Color; // type@0010
+0014e0: 1a01 b200                              |0002: const-string v1, "RED" // string@00b2
+0014e4: 1202                                   |0004: const/4 v2, #int 0 // #0
+0014e6: 7030 0900 1002                         |0005: invoke-direct {v0, v1, v2}, Ldex/sample/Color;.<init>:(Ljava/lang/String;I)V // method@0009
+0014ec: 6900 0400                              |0008: sput-object v0, Ldex/sample/Color;.RED:Ldex/sample/Color; // field@0004
+0014f0: 2200 1000                              |000a: new-instance v0, Ldex/sample/Color; // type@0010
+0014f4: 1a01 3700                              |000c: const-string v1, "GREEN" // string@0037
+0014f8: 1212                                   |000e: const/4 v2, #int 1 // #1
+0014fa: 7030 0900 1002                         |000f: invoke-direct {v0, v1, v2}, Ldex/sample/Color;.<init>:(Ljava/lang/String;I)V // method@0009
+001500: 6900 0300                              |0012: sput-object v0, Ldex/sample/Color;.GREEN:Ldex/sample/Color; // field@0003
+001504: 2200 1000                              |0014: new-instance v0, Ldex/sample/Color; // type@0010
+001508: 1a01 2500                              |0016: const-string v1, "BLUE" // string@0025
+00150c: 1222                                   |0018: const/4 v2, #int 2 // #2
+00150e: 7030 0900 1002                         |0019: invoke-direct {v0, v1, v2}, Ldex/sample/Color;.<init>:(Ljava/lang/String;I)V // method@0009
+001514: 6900 0200                              |001c: sput-object v0, Ldex/sample/Color;.BLUE:Ldex/sample/Color; // field@0002
+001518: 7100 0700 0000                         |001e: invoke-static {}, Ldex/sample/Color;.$values:()[Ldex/sample/Color; // method@0007
+00151e: 0c00                                   |0021: move-result-object v0
+001520: 6900 0100                              |0022: sput-object v0, Ldex/sample/Color;.$VALUES:[Ldex/sample/Color; // field@0001
+001524: 0e00                                   |0024: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=55
+        0x001e line=54
+      locals        :
+
+    #2              : (in Ldex/sample/Color;)
+      name          : '<init>'
+      type          : '(Ljava/lang/String;I)V'
+      access        : 0x10002 (PRIVATE CONSTRUCTOR)
+      method_idx    : 9
+      code          -
+      registers     : 3
+      ins           : 3
+      outs          : 3
+      insns size    : 4 16-bit code units
+001528:                                        |[001528] dex.sample.Color.<init>:(Ljava/lang/String;I)V
+001538: 7030 6500 1002                         |0000: invoke-direct {v0, v1, v2}, Ljava/lang/Enum;.<init>:(Ljava/lang/String;I)V // method@0065
+00153e: 0e00                                   |0003: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=54
+      locals        :
+        0x0000 - 0x0004 reg=0 this Ldex/sample/Color;
+        0x0000 - 0x0004 reg=1 (null) Ljava/lang/String;
+        0x0000 - 0x0004 reg=2 (null) I
+
+    #3              : (in Ldex/sample/Color;)
+      name          : 'valueOf'
+      type          : '(Ljava/lang/String;)Ldex/sample/Color;'
+      access        : 0x0009 (PUBLIC STATIC)
+      method_idx    : 12
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 2
+      insns size    : 9 16-bit code units
+00145c:                                        |[00145c] dex.sample.Color.valueOf:(Ljava/lang/String;)Ldex/sample/Color;
+00146c: 1c00 1000                              |0000: const-class v0, Ldex/sample/Color; // type@0010
+001470: 7120 6600 1000                         |0002: invoke-static {v0, v1}, Ljava/lang/Enum;.valueOf:(Ljava/lang/Class;Ljava/lang/String;)Ljava/lang/Enum; // method@0066
+001476: 0c00                                   |0005: move-result-object v0
+001478: 1f00 1000                              |0006: check-cast v0, Ldex/sample/Color; // type@0010
+00147c: 1100                                   |0008: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=54
+      locals        :
+        0x0000 - 0x0009 reg=1 name Ljava/lang/String;
+
+    #4              : (in Ldex/sample/Color;)
+      name          : 'values'
+      type          : '()[Ldex/sample/Color;'
+      access        : 0x0009 (PUBLIC STATIC)
+      method_idx    : 13
+      code          -
+      registers     : 1
+      ins           : 0
+      outs          : 1
+      insns size    : 9 16-bit code units
+0014a8:                                        |[0014a8] dex.sample.Color.values:()[Ldex/sample/Color;
+0014b8: 6200 0100                              |0000: sget-object v0, Ldex/sample/Color;.$VALUES:[Ldex/sample/Color; // field@0001
+0014bc: 6e10 8b00 0000                         |0002: invoke-virtual {v0}, [Ldex/sample/Color;.clone:()Ljava/lang/Object; // method@008b
+0014c2: 0c00                                   |0005: move-result-object v0
+0014c4: 1f00 5800                              |0006: check-cast v0, [Ldex/sample/Color; // type@0058
+0014c8: 1100                                   |0008: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=54
+      locals        :
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Color;)
+      name          : 'next'
+      type          : '()Ldex/sample/Color;'
+      access        : 0x0000 ()
+      method_idx    : 10
+      code          -
+      registers     : 4
+      ins           : 1
+      outs          : 1
+      insns size    : 19 16-bit code units
+001424:                                        |[001424] dex.sample.Color.next:()Ldex/sample/Color;
+001434: 7100 0d00 0000                         |0000: invoke-static {}, Ldex/sample/Color;.values:()[Ldex/sample/Color; // method@000d
+00143a: 0c00                                   |0003: move-result-object v0
+00143c: 6e10 0b00 0300                         |0004: invoke-virtual {v3}, Ldex/sample/Color;.ordinal:()I // method@000b
+001442: 0a01                                   |0007: move-result v1
+001444: d801 0101                              |0008: add-int/lit8 v1, v1, #int 1 // #01
+001448: 7100 0d00 0000                         |000a: invoke-static {}, Ldex/sample/Color;.values:()[Ldex/sample/Color; // method@000d
+00144e: 0c02                                   |000d: move-result-object v2
+001450: 2122                                   |000e: array-length v2, v2
+001452: b421                                   |000f: rem-int/2addr v1, v2
+001454: 4600 0001                              |0010: aget-object v0, v0, v1
+001458: 1100                                   |0012: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=58
+      locals        :
+        0x0000 - 0x0013 reg=3 this Ldex/sample/Color;
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #4 header:
+class_idx           : 17
+access_flags        : 9728 (0x2600)
+superclass_idx      : 50
+interfaces_off      : 11656 (0x002d88)
+source_file_idx     : 185
+annotations_off     : 19804 (0x004d5c)
+class_data_off      : 18572 (0x00488c)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 0
+virtual_methods_size: 17
+
+Class #4 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/AnnotationDefault; value=Ldex/sample/Everything; b=-1 c=8364 color=GREEN colors={ RED BLUE } d=-2.75e+100 f=1.5 i=305419896 ints={ 1 2 3 } j=-81985529216486895 note=Ldex/sample/Note; value="nested" notes={ Ldex/sample/Note; value="a" Ldex/sample/Note; level=2 value="b" } s=-300 str="default \"text\"" strings={ } type=[[I types={ Ljava/lang/String; V } z=true
+  VISIBILITY_RUNTIME Ljava/lang/annotation/Retention; value=RUNTIME
+  VISIBILITY_RUNTIME Ljava/lang/annotation/Target; value={ TYPE METHOD FIELD PARAMETER CONSTRUCTOR LOCAL_VARIABLE TYPE_USE }
+Annotations on method #28 'type'
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "()" "Ljava/lang/Class<" "*>;" }
+Annotations on method #29 'types'
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "()[" "Ljava/lang/Class<" "*>;" }
+
+Class #4            -
+  Class descriptor  : 'Ldex/sample/Everything;'
+  Access flags      : 0x2600 (INTERFACE ABSTRACT ANNOTATION)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ljava/lang/annotation/Annotation;'
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+  Virtual methods   -
+    #0              : (in Ldex/sample/Everything;)
+      name          : 'b'
+      type          : '()B'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 14
+      code          : (none)
+
+    #1              : (in Ldex/sample/Everything;)
+      name          : 'c'
+      type          : '()C'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 15
+      code          : (none)
+
+    #2              : (in Ldex/sample/Everything;)
+      name          : 'color'
+      type          : '()Ldex/sample/Color;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 16
+      code          : (none)
+
+    #3              : (in Ldex/sample/Everything;)
+      name          : 'colors'
+      type          : '()[Ldex/sample/Color;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 17
+      code          : (none)
+
+    #4              : (in Ldex/sample/Everything;)
+      name          : 'd'
+      type          : '()D'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 18
+      code          : (none)
+
+    #5              : (in Ldex/sample/Everything;)
+      name          : 'f'
+      type          : '()F'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 19
+      code          : (none)
+
+    #6              : (in Ldex/sample/Everything;)
+      name          : 'i'
+      type          : '()I'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 20
+      code          : (none)
+
+    #7              : (in Ldex/sample/Everything;)
+      name          : 'ints'
+      type          : '()[I'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 21
+      code          : (none)
+
+    #8              : (in Ldex/sample/Everything;)
+      name          : 'j'
+      type          : '()J'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 22
+      code          : (none)
+
+    #9              : (in Ldex/sample/Everything;)
+      name          : 'note'
+      type          : '()Ldex/sample/Note;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 23
+      code          : (none)
+
+    #10              : (in Ldex/sample/Everything;)
+      name          : 'notes'
+      type          : '()[Ldex/sample/Note;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 24
+      code          : (none)
+
+    #11              : (in Ldex/sample/Everything;)
+      name          : 's'
+      type          : '()S'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 25
+      code          : (none)
+
+    #12              : (in Ldex/sample/Everything;)
+      name          : 'str'
+      type          : '()Ljava/lang/String;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 26
+      code          : (none)
+
+    #13              : (in Ldex/sample/Everything;)
+      name          : 'strings'
+      type          : '()[Ljava/lang/String;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 27
+      code          : (none)
+
+    #14              : (in Ldex/sample/Everything;)
+      name          : 'type'
+      type          : '()Ljava/lang/Class;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 28
+      code          : (none)
+
+    #15              : (in Ldex/sample/Everything;)
+      name          : 'types'
+      type          : '()[Ljava/lang/Class;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 29
+      code          : (none)
+
+    #16              : (in Ldex/sample/Everything;)
+      name          : 'z'
+      type          : '()Z'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 30
+      code          : (none)
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #5 header:
+class_idx           : 18
+access_flags        : 9728 (0x2600)
+superclass_idx      : 50
+interfaces_off      : 11656 (0x002d88)
+source_file_idx     : 185
+annotations_off     : 19836 (0x004d7c)
+class_data_off      : 18644 (0x0048d4)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 0
+virtual_methods_size: 2
+
+Class #5 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/AnnotationDefault; value=Ldex/sample/Note; level=1
+  VISIBILITY_RUNTIME Ljava/lang/annotation/Retention; value=CLASS
+
+Class #5            -
+  Class descriptor  : 'Ldex/sample/Note;'
+  Access flags      : 0x2600 (INTERFACE ABSTRACT ANNOTATION)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ljava/lang/annotation/Annotation;'
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+  Virtual methods   -
+    #0              : (in Ldex/sample/Note;)
+      name          : 'level'
+      type          : '()I'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 31
+      code          : (none)
+
+    #1              : (in Ldex/sample/Note;)
+      name          : 'value'
+      type          : '()Ljava/lang/String;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 32
+      code          : (none)
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #6 header:
+class_idx           : 19
+access_flags        : 4113 (0x1011)
+superclass_idx      : 50
+interfaces_off      : 0 (0x000000)
+source_file_idx     : 47
+annotations_off     : 0 (0x000000)
+class_data_off      : 18656 (0x0048e0)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 1
+virtual_methods_size: 0
+
+Class #6            -
+  Class descriptor  : 'Ldex/sample/Sample$0;'
+  Access flags      : 0x1011 (PUBLIC FINAL SYNTHETIC)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$0;)
+      name          : 'm'
+      type          : '(Ljava/lang/String;)Ljava/lang/RuntimeException;'
+      access        : 0x1009 (PUBLIC STATIC SYNTHETIC)
+      method_idx    : 33
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 2
+      insns size    : 6 16-bit code units
+001540:                                        |[001540] dex.sample.Sample$0.m:(Ljava/lang/String;)Ljava/lang/RuntimeException;
+001550: 2200 3500                              |0000: new-instance v0, Ljava/lang/RuntimeException; // type@0035
+001554: 7020 6e00 1000                         |0002: invoke-direct {v0, v1}, Ljava/lang/RuntimeException;.<init>:(Ljava/lang/String;)V // method@006e
+00155a: 2700                                   |0005: throw v0
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0006 reg=1 (null) Ljava/lang/String;
+
+  Virtual methods   -
+  source_file_idx   : 47 (D8$$SyntheticClass)
+
+Class #7 header:
+class_idx           : 20
+access_flags        : 0 (0x0000)
+superclass_idx      : 50
+interfaces_off      : 11680 (0x002da0)
+source_file_idx     : 185
+annotations_off     : 19852 (0x004d8c)
+class_data_off      : 18665 (0x0048e9)
+static_fields_size  : 0
+instance_fields_size: 1
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #7 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/EnclosingMethod; value=lambdas
+  VISIBILITY_SYSTEM Ldalvik/annotation/InnerClass; accessFlags=0 name=null
+Annotations on method #34 '<init>'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 4112 } names={ "val$seed" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "()V" }
+
+Class #7            -
+  Class descriptor  : 'Ldex/sample/Sample$1;'
+  Access flags      : 0x0000 ()
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ljava/lang/Runnable;'
+  Static fields     -
+  Instance fields   -
+    #0              : (in Ldex/sample/Sample$1;)
+      name          : 'val$seed'
+      type          : 'I'
+      access        : 0x1010 (FINAL SYNTHETIC)
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$1;)
+      name          : '<init>'
+      type          : '(I)V'
+      access        : 0x10000 (CONSTRUCTOR)
+      method_idx    : 34
+      code          -
+      registers     : 2
+      ins           : 2
+      outs          : 1
+      insns size    : 6 16-bit code units
+00158c:                                        |[00158c] dex.sample.Sample$1.<init>:(I)V
+00159c: 5901 0500                              |0000: iput v1, v0, Ldex/sample/Sample$1;.val$seed:I // field@0005
+0015a0: 7010 6b00 0000                         |0002: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+0015a6: 0e00                                   |0005: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=420
+      locals        :
+        0x0000 - 0x0006 reg=0 this Ldex/sample/Sample$1;
+        0x0000 - 0x0006 reg=1 (null) I
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$1;)
+      name          : 'run'
+      type          : '()V'
+      access        : 0x0001 (PUBLIC)
+      method_idx    : 35
+      code          -
+      registers     : 3
+      ins           : 1
+      outs          : 0
+      insns size    : 8 16-bit code units
+0015a8:                                        |[0015a8] dex.sample.Sample$1.run:()V
+0015b8: 6000 2600                              |0000: sget v0, Ldex/sample/Sample;.counter:I // field@0026
+0015bc: 5221 0500                              |0002: iget v1, v2, Ldex/sample/Sample$1;.val$seed:I // field@0005
+0015c0: b010                                   |0004: add-int/2addr v0, v1
+0015c2: 6700 2600                              |0005: sput v0, Ldex/sample/Sample;.counter:I // field@0026
+0015c6: 0e00                                   |0007: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=423
+        0x0007 line=424
+      locals        :
+        0x0000 - 0x0008 reg=2 this Ldex/sample/Sample$1;
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #8 header:
+class_idx           : 21
+access_flags        : 0 (0x0000)
+superclass_idx      : 50
+interfaces_off      : 0 (0x000000)
+source_file_idx     : 185
+annotations_off     : 19876 (0x004da4)
+class_data_off      : 18682 (0x0048fa)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #8 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/EnclosingMethod; value=lambdas
+  VISIBILITY_SYSTEM Ldalvik/annotation/InnerClass; accessFlags=0 name="Local"
+Annotations on method #37 'twice'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "v" }
+
+Class #8            -
+  Class descriptor  : 'Ldex/sample/Sample$1Local;'
+  Access flags      : 0x0000 ()
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$1Local;)
+      name          : '<init>'
+      type          : '()V'
+      access        : 0x10000 (CONSTRUCTOR)
+      method_idx    : 36
+      code          -
+      registers     : 1
+      ins           : 1
+      outs          : 1
+      insns size    : 4 16-bit code units
+001574:                                        |[001574] dex.sample.Sample$1Local.<init>:()V
+001584: 7010 6b00 0000                         |0000: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+00158a: 0e00                                   |0003: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=415
+      locals        :
+        0x0000 - 0x0004 reg=0 this Ldex/sample/Sample$1Local;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$1Local;)
+      name          : 'twice'
+      type          : '(I)I'
+      access        : 0x0000 ()
+      method_idx    : 37
+      code          -
+      registers     : 3
+      ins           : 2
+      outs          : 0
+      insns size    : 3 16-bit code units
+00155c:                                        |[00155c] dex.sample.Sample$1Local.twice:(I)I
+00156c: da00 0202                              |0000: mul-int/lit8 v0, v2, #int 2 // #02
+001570: 0f00                                   |0002: return v0
+      catches       : (none)
+      positions     :
+        0x0000 line=417
+      locals        :
+        0x0000 - 0x0003 reg=1 this Ldex/sample/Sample$1Local;
+        0x0000 - 0x0003 reg=2 v I
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #9 header:
+class_idx           : 22
+access_flags        : 4096 (0x1000)
+superclass_idx      : 50
+interfaces_off      : 0 (0x000000)
+source_file_idx     : 185
+annotations_off     : 19900 (0x004dbc)
+class_data_off      : 18696 (0x004908)
+static_fields_size  : 1
+instance_fields_size: 0
+direct_methods_size : 1
+virtual_methods_size: 0
+
+Class #9 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/EnclosingClass; value=Ldex/sample/Sample;
+  VISIBILITY_SYSTEM Ldalvik/annotation/InnerClass; accessFlags=4104 name=null
+
+Class #9            -
+  Class descriptor  : 'Ldex/sample/Sample$2;'
+  Access flags      : 0x1000 (SYNTHETIC)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+  Static fields     -
+    #0              : (in Ldex/sample/Sample$2;)
+      name          : '$SwitchMap$dex$sample$Color'
+      type          : '[I'
+      access        : 0x1018 (STATIC FINAL SYNTHETIC)
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$2;)
+      name          : '<clinit>'
+      type          : '()V'
+      access        : 0x10008 (STATIC CONSTRUCTOR)
+      method_idx    : 38
+      code          -
+      registers     : 3
+      ins           : 0
+      outs          : 1
+      insns size    : 36 16-bit code units
+0015c8:                                        |[0015c8] dex.sample.Sample$2.<clinit>:()V
+0015d8: 7100 0d00 0000                         |0000: invoke-static {}, Ldex/sample/Color;.values:()[Ldex/sample/Color; // method@000d
+0015de: 0c00                                   |0003: move-result-object v0
+0015e0: 2100                                   |0004: array-length v0, v0
+0015e2: 2300 5600                              |0005: new-array v0, v0, [I // type@0056
+0015e6: 6900 0600                              |0007: sput-object v0, Ldex/sample/Sample$2;.$SwitchMap$dex$sample$Color:[I // field@0006
+0015ea: 6200 0600                              |0009: sget-object v0, Ldex/sample/Sample$2;.$SwitchMap$dex$sample$Color:[I // field@0006
+0015ee: 6201 0400                              |000b: sget-object v1, Ldex/sample/Color;.RED:Ldex/sample/Color; // field@0004
+0015f2: 6e10 0b00 0100                         |000d: invoke-virtual {v1}, Ldex/sample/Color;.ordinal:()I // method@000b
+0015f8: 0a01                                   |0010: move-result v1
+0015fa: 1212                                   |0011: const/4 v2, #int 1 // #1
+0015fc: 4b02 0001                              |0012: aput v2, v0, v1
+001600: 2802                                   |0014: goto 0016 // +0002
+001602: 0d00                                   |0015: move-exception v0
+001604: 6200 0600                              |0016: sget-object v0, Ldex/sample/Sample$2;.$SwitchMap$dex$sample$Color:[I // field@0006
+001608: 6201 0300                              |0018: sget-object v1, Ldex/sample/Color;.GREEN:Ldex/sample/Color; // field@0003
+00160c: 6e10 0b00 0100                         |001a: invoke-virtual {v1}, Ldex/sample/Color;.ordinal:()I // method@000b
+001612: 0a01                                   |001d: move-result v1
+001614: 1222                                   |001e: const/4 v2, #int 2 // #2
+001616: 4b02 0001                              |001f: aput v2, v0, v1
+00161a: 2802                                   |0021: goto 0023 // +0002
+00161c: 0d00                                   |0022: move-exception v0
+00161e: 0e00                                   |0023: return-void
+      catches       : 2
+        0x0009 - 0x0014
+          Ljava/lang/NoSuchFieldError; -> 0x0015
+        0x0016 - 0x0021
+          Ljava/lang/NoSuchFieldError; -> 0x0022
+      positions     :
+        0x0000 line=286
+      locals        :
+
+  Virtual methods   -
+  source_file_idx   : 185 (Sample.java)
+
+Class #10 header:
+class_idx           : 23
+access_flags        : 4113 (0x1011)
+superclass_idx      : 50
+interfaces_off      : 11688 (0x002da8)
+source_file_idx     : 47
+annotations_off     : 19916 (0x004dcc)
+class_data_off      : 18709 (0x004915)
+static_fields_size  : 0
+instance_fields_size: 1
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #10 annotations:
+Annotations on class
+  VISIBILITY_RUNTIME Lcom/android/tools/r8/annotations/LambdaMethod; holder="Ldex/sample/Sample;" method="lambda$lambdas$0" proto="(III)I"
+
+Class #10            -
+  Class descriptor  : 'Ldex/sample/Sample$3;'
+  Access flags      : 0x1011 (PUBLIC FINAL SYNTHETIC)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ljava/util/function/IntBinaryOperator;'
+  Static fields     -
+  Instance fields   -
+    #0              : (in Ldex/sample/Sample$3;)
+      name          : 'f$0'
+      type          : 'I'
+      access        : 0x1011 (PUBLIC FINAL SYNTHETIC)
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$3;)
+      name          : '<init>'
+      type          : '(I)V'
+      access        : 0x11001 (PUBLIC SYNTHETIC CONSTRUCTOR)
+      method_idx    : 39
+      code          -
+      registers     : 2
+      ins           : 2
+      outs          : 1
+      insns size    : 6 16-bit code units
+001658:                                        |[001658] dex.sample.Sample$3.<init>:(I)V
+001668: 7010 6b00 0000                         |0000: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+00166e: 5901 0700                              |0003: iput v1, v0, Ldex/sample/Sample$3;.f$0:I // field@0007
+001672: 0e00                                   |0005: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0006 reg=0 this Ldex/sample/Sample$3;
+        0x0000 - 0x0006 reg=1 (null) I
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$3;)
+      name          : 'applyAsInt'
+      type          : '(II)I'
+      access        : 0x0011 (PUBLIC FINAL)
+      method_idx    : 40
+      code          -
+      registers     : 4
+      ins           : 3
+      outs          : 3
+      insns size    : 7 16-bit code units
+001638:                                        |[001638] dex.sample.Sample$3.applyAsInt:(II)I
+001648: 5210 0700                              |0000: iget v0, v1, Ldex/sample/Sample$3;.f$0:I // field@0007
+00164c: 7130 4800 2003                         |0002: invoke-static {v0, v2, v3}, Ldex/sample/Sample;.lambda$lambdas$0:(III)I // method@0048
+001652: 0a02                                   |0005: move-result v2
+001654: 0f02                                   |0006: return v2
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0007 reg=1 this Ldex/sample/Sample$3;
+        0x0000 - 0x0007 reg=2 (null) I
+        0x0000 - 0x0007 reg=3 (null) I
+
+  source_file_idx   : 47 (D8$$SyntheticClass)
+
+Class #11 header:
+class_idx           : 24
+access_flags        : 4113 (0x1011)
+superclass_idx      : 50
+interfaces_off      : 11688 (0x002da8)
+source_file_idx     : 47
+annotations_off     : 19932 (0x004ddc)
+class_data_off      : 18726 (0x004926)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #11 annotations:
+Annotations on class
+  VISIBILITY_RUNTIME Lcom/android/tools/r8/annotations/LambdaMethod; holder="Ljava/lang/Math;" method="max" proto="(II)I"
+
+Class #11            -
+  Class descriptor  : 'Ldex/sample/Sample$4;'
+  Access flags      : 0x1011 (PUBLIC FINAL SYNTHETIC)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ljava/util/function/IntBinaryOperator;'
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$4;)
+      name          : '<init>'
+      type          : '()V'
+      access        : 0x11001 (PUBLIC SYNTHETIC CONSTRUCTOR)
+      method_idx    : 41
+      code          -
+      registers     : 1
+      ins           : 1
+      outs          : 1
+      insns size    : 4 16-bit code units
+001690:                                        |[001690] dex.sample.Sample$4.<init>:()V
+0016a0: 7010 6b00 0000                         |0000: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+0016a6: 0e00                                   |0003: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0004 reg=0 this Ldex/sample/Sample$4;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$4;)
+      name          : 'applyAsInt'
+      type          : '(II)I'
+      access        : 0x0011 (PUBLIC FINAL)
+      method_idx    : 42
+      code          -
+      registers     : 3
+      ins           : 3
+      outs          : 2
+      insns size    : 5 16-bit code units
+001674:                                        |[001674] dex.sample.Sample$4.applyAsInt:(II)I
+001684: 7120 6a00 2100                         |0000: invoke-static {v1, v2}, Ljava/lang/Math;.max:(II)I // method@006a
+00168a: 0a01                                   |0003: move-result v1
+00168c: 0f01                                   |0004: return v1
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0005 reg=0 this Ldex/sample/Sample$4;
+        0x0000 - 0x0005 reg=1 (null) I
+        0x0000 - 0x0005 reg=2 (null) I
+
+  source_file_idx   : 47 (D8$$SyntheticClass)
+
+Class #12 header:
+class_idx           : 25
+access_flags        : 4113 (0x1011)
+superclass_idx      : 50
+interfaces_off      : 11696 (0x002db0)
+source_file_idx     : 47
+annotations_off     : 19948 (0x004dec)
+class_data_off      : 18740 (0x004934)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #12 annotations:
+Annotations on class
+  VISIBILITY_RUNTIME Lcom/android/tools/r8/annotations/LambdaMethod; holder="Ldex/sample/Sample;" method="<init>" proto="()V"
+
+Class #12            -
+  Class descriptor  : 'Ldex/sample/Sample$5;'
+  Access flags      : 0x1011 (PUBLIC FINAL SYNTHETIC)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ljava/util/function/Supplier;'
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$5;)
+      name          : '<init>'
+      type          : '()V'
+      access        : 0x11001 (PUBLIC SYNTHETIC CONSTRUCTOR)
+      method_idx    : 43
+      code          -
+      registers     : 1
+      ins           : 1
+      outs          : 1
+      insns size    : 4 16-bit code units
+0016c4:                                        |[0016c4] dex.sample.Sample$5.<init>:()V
+0016d4: 7010 6b00 0000                         |0000: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+0016da: 0e00                                   |0003: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0004 reg=0 this Ldex/sample/Sample$5;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$5;)
+      name          : 'get'
+      type          : '()Ljava/lang/Object;'
+      access        : 0x0011 (PUBLIC FINAL)
+      method_idx    : 44
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 1
+      insns size    : 6 16-bit code units
+0016a8:                                        |[0016a8] dex.sample.Sample$5.get:()Ljava/lang/Object;
+0016b8: 2200 1e00                              |0000: new-instance v0, Ldex/sample/Sample; // type@001e
+0016bc: 7010 3900 0000                         |0002: invoke-direct {v0}, Ldex/sample/Sample;.<init>:()V // method@0039
+0016c2: 1100                                   |0005: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0006 reg=1 this Ldex/sample/Sample$5;
+
+  source_file_idx   : 47 (D8$$SyntheticClass)
+
+Class #13 header:
+class_idx           : 26
+access_flags        : 0 (0x0000)
+superclass_idx      : 50
+interfaces_off      : 0 (0x000000)
+source_file_idx     : 185
+annotations_off     : 19964 (0x004dfc)
+class_data_off      : 18754 (0x004942)
+static_fields_size  : 0
+instance_fields_size: 1
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #13 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/EnclosingClass; value=Ldex/sample/Sample;
+  VISIBILITY_SYSTEM Ldalvik/annotation/InnerClass; accessFlags=0 name="Inner"
+Annotations on method #45 '<init>'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 32784 } names={ "this$0" }
+
+Class #13            -
+  Class descriptor  : 'Ldex/sample/Sample$Inner;'
+  Access flags      : 0x0000 ()
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+  Static fields     -
+  Instance fields   -
+    #0              : (in Ldex/sample/Sample$Inner;)
+      name          : 'this$0'
+      type          : 'Ldex/sample/Sample;'
+      access        : 0x1010 (FINAL SYNTHETIC)
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$Inner;)
+      name          : '<init>'
+      type          : '(Ldex/sample/Sample;)V'
+      access        : 0x10000 (CONSTRUCTOR)
+      method_idx    : 45
+      code          -
+      registers     : 2
+      ins           : 2
+      outs          : 1
+      insns size    : 6 16-bit code units
+0016fc:                                        |[0016fc] dex.sample.Sample$Inner.<init>:(Ldex/sample/Sample;)V
+00170c: 5b01 0800                              |0000: iput-object v1, v0, Ldex/sample/Sample$Inner;.this$0:Ldex/sample/Sample; // field@0008
+001710: 7010 6b00 0000                         |0002: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+001716: 0e00                                   |0005: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=476
+      locals        :
+        0x0000 - 0x0006 reg=0 this Ldex/sample/Sample$Inner;
+        0x0000 - 0x0006 reg=1 this$0 Ldex/sample/Sample;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$Inner;)
+      name          : 'outer'
+      type          : '()I'
+      access        : 0x0000 ()
+      method_idx    : 46
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 1
+      insns size    : 7 16-bit code units
+0016dc:                                        |[0016dc] dex.sample.Sample$Inner.outer:()I
+0016ec: 5410 0800                              |0000: iget-object v0, v1, Ldex/sample/Sample$Inner;.this$0:Ldex/sample/Sample; // field@0008
+0016f0: 7110 3700 0000                         |0002: invoke-static {v0}, Ldex/sample/Sample;.-$$Nest$fgetinstanceInt:(Ldex/sample/Sample;)I // method@0037
+0016f6: 0a00                                   |0005: move-result v0
+0016f8: 0f00                                   |0006: return v0
+      catches       : (none)
+      positions     :
+        0x0000 line=478
+      locals        :
+        0x0000 - 0x0007 reg=1 this Ldex/sample/Sample$Inner;
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #14 header:
+class_idx           : 27
+access_flags        : 0 (0x0000)
+superclass_idx      : 70
+interfaces_off      : 0 (0x000000)
+source_file_idx     : 185
+annotations_off     : 19988 (0x004e14)
+class_data_off      : 18771 (0x004953)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #14 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/EnclosingClass; value=Ldex/sample/Sample;
+  VISIBILITY_SYSTEM Ldalvik/annotation/InnerClass; accessFlags=8 name="Nested"
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "<E:" "Ljava/lang/Object;" ">" "Ljava/util/ArrayList<" "TE;>;" }
+Annotations on method #48 'add'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "e" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "(TE;)Z" }
+
+Class #14            -
+  Class descriptor  : 'Ldex/sample/Sample$Nested;'
+  Access flags      : 0x0000 ()
+  Superclass        : 'Ljava/util/ArrayList;'
+  Interfaces        -
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$Nested;)
+      name          : '<init>'
+      type          : '()V'
+      access        : 0x10000 (CONSTRUCTOR)
+      method_idx    : 47
+      code          -
+      registers     : 1
+      ins           : 1
+      outs          : 1
+      insns size    : 4 16-bit code units
+001734:                                        |[001734] dex.sample.Sample$Nested.<init>:()V
+001744: 7010 7e00 0000                         |0000: invoke-direct {v0}, Ljava/util/ArrayList;.<init>:()V // method@007e
+00174a: 0e00                                   |0003: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=469
+      locals        :
+        0x0000 - 0x0004 reg=0 this Ldex/sample/Sample$Nested; Ldex/sample/Sample$Nested<TE;>;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$Nested;)
+      name          : 'add'
+      type          : '(Ljava/lang/Object;)Z'
+      access        : 0x0001 (PUBLIC)
+      method_idx    : 48
+      code          -
+      registers     : 3
+      ins           : 2
+      outs          : 2
+      insns size    : 5 16-bit code units
+001718:                                        |[001718] dex.sample.Sample$Nested.add:(Ljava/lang/Object;)Z
+001728: 6f20 7f00 2100                         |0000: invoke-super {v1, v2}, Ljava/util/ArrayList;.add:(Ljava/lang/Object;)Z // method@007f
+00172e: 0a00                                   |0003: move-result v0
+001730: 0f00                                   |0004: return v0
+      catches       : (none)
+      positions     :
+        0x0000 line=472
+      locals        :
+        0x0000 - 0x0005 reg=1 this Ldex/sample/Sample$Nested; Ldex/sample/Sample$Nested<TE;>;
+        0x0000 - 0x0005 reg=2 e Ljava/lang/Object; TE;
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #15 header:
+class_idx           : 29
+access_flags        : 1537 (0x0601)
+superclass_idx      : 50
+interfaces_off      : 0 (0x000000)
+source_file_idx     : 185
+annotations_off     : 20012 (0x004e2c)
+class_data_off      : 18785 (0x004961)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 2
+virtual_methods_size: 2
+
+Class #15 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/EnclosingClass; value=Ldex/sample/Sample;
+  VISIBILITY_SYSTEM Ldalvik/annotation/InnerClass; accessFlags=1545 name="Visitor"
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "<R:" "Ljava/lang/Object;" ">" "Ljava/lang/Object;" }
+Annotations on method #51 'constant'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "r" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "<R:" "Ljava/lang/Object;" ">(TR;)" "Ldex/sample/Sample$Visitor<" "TR;>;" }
+Annotations on method #53 'visit'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "s" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "(" "Ldex/sample/Sample;" ")TR;" }
+Annotations on method #54 'visitAll'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "all" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "([" "Ldex/sample/Sample;" ")TR;" }
+
+Class #15            -
+  Class descriptor  : 'Ldex/sample/Sample$Visitor;'
+  Access flags      : 0x0601 (PUBLIC INTERFACE ABSTRACT)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$Visitor;)
+      name          : 'constant'
+      type          : '(Ljava/lang/Object;)Ldex/sample/Sample$Visitor;'
+      access        : 0x0009 (PUBLIC STATIC)
+      method_idx    : 51
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 2
+      insns size    : 6 16-bit code units
+001788:                                        |[001788] dex.sample.Sample$Visitor.constant:(Ljava/lang/Object;)Ldex/sample/Sample$Visitor;
+001798: 2200 1c00                              |0000: new-instance v0, Ldex/sample/Sample$Visitor$0; // type@001c
+00179c: 7020 3100 1000                         |0002: invoke-direct {v0, v1}, Ldex/sample/Sample$Visitor$0;.<init>:(Ljava/lang/Object;)V // method@0031
+0017a2: 1100                                   |0005: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=494
+      locals        :
+        0x0000 - 0x0006 reg=1 r Ljava/lang/Object; TR;
+
+    #1              : (in Ldex/sample/Sample$Visitor;)
+      name          : 'lambda$constant$0'
+      type          : '(Ljava/lang/Object;Ldex/sample/Sample;)Ljava/lang/Object;'
+      access        : 0x1009 (PUBLIC STATIC SYNTHETIC)
+      method_idx    : 52
+      code          -
+      registers     : 2
+      ins           : 2
+      outs          : 0
+      insns size    : 1 16-bit code units
+0017a4:                                        |[0017a4] dex.sample.Sample$Visitor.lambda$constant$0:(Ljava/lang/Object;Ldex/sample/Sample;)Ljava/lang/Object;
+0017b4: 1100                                   |0000: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=494
+      locals        :
+        0x0000 - 0x0001 reg=0 r Ljava/lang/Object;
+        0x0000 - 0x0001 reg=1 s Ldex/sample/Sample;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$Visitor;)
+      name          : 'visit'
+      type          : '(Ldex/sample/Sample;)Ljava/lang/Object;'
+      access        : 0x0401 (PUBLIC ABSTRACT)
+      method_idx    : 53
+      code          : (none)
+
+    #1              : (in Ldex/sample/Sample$Visitor;)
+      name          : 'visitAll'
+      type          : '([Ldex/sample/Sample;)Ljava/lang/Object;'
+      access        : 0x0081 (PUBLIC VARARGS)
+      method_idx    : 54
+      code          -
+      registers     : 6
+      ins           : 2
+      outs          : 2
+      insns size    : 15 16-bit code units
+0017b8:                                        |[0017b8] dex.sample.Sample$Visitor.visitAll:([Ldex/sample/Sample;)Ljava/lang/Object;
+0017c8: 1200                                   |0000: const/4 v0, #int 0 // #0
+0017ca: 2151                                   |0001: array-length v1, v5
+0017cc: 1202                                   |0002: const/4 v2, #int 0 // #0
+0017ce: 3512 0b00                              |0003: if-ge v2, v1, 000e // +000b
+0017d2: 4603 0502                              |0005: aget-object v3, v5, v2
+0017d6: 7220 3500 3400                         |0007: invoke-interface {v4, v3}, Ldex/sample/Sample$Visitor;.visit:(Ldex/sample/Sample;)Ljava/lang/Object; // method@0035
+0017dc: 0c00                                   |000a: move-result-object v0
+0017de: d802 0201                              |000b: add-int/lit8 v2, v2, #int 1 // #01
+0017e2: 28f6                                   |000d: goto 0003 // -000a
+0017e4: 1100                                   |000e: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=486
+        0x0001 line=487
+        0x0007 line=488
+        0x000b line=487
+        0x000e line=490
+      locals        :
+        0x0007 - 0x000b reg=3 s Ldex/sample/Sample;
+        0x0001 - 0x000f reg=0 r Ljava/lang/Object; TR;
+        0x0000 - 0x000f reg=4 this Ldex/sample/Sample$Visitor; Ldex/sample/Sample$Visitor<TR;>;
+        0x0000 - 0x000f reg=5 all [Ldex/sample/Sample;
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #16 header:
+class_idx           : 28
+access_flags        : 4113 (0x1011)
+superclass_idx      : 50
+interfaces_off      : 11704 (0x002db8)
+source_file_idx     : 47
+annotations_off     : 20052 (0x004e54)
+class_data_off      : 18807 (0x004977)
+static_fields_size  : 0
+instance_fields_size: 1
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #16 annotations:
+Annotations on class
+  VISIBILITY_RUNTIME Lcom/android/tools/r8/annotations/LambdaMethod; holder="Ldex/sample/Sample$Visitor;" method="lambda$constant$0" proto="(Ljava/lang/Object;Ldex/sample/Sample;)Ljava/lang/Object;"
+
+Class #16            -
+  Class descriptor  : 'Ldex/sample/Sample$Visitor$0;'
+  Access flags      : 0x1011 (PUBLIC FINAL SYNTHETIC)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ldex/sample/Sample$Visitor;'
+  Static fields     -
+  Instance fields   -
+    #0              : (in Ldex/sample/Sample$Visitor$0;)
+      name          : 'f$0'
+      type          : 'Ljava/lang/Object;'
+      access        : 0x1011 (PUBLIC FINAL SYNTHETIC)
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample$Visitor$0;)
+      name          : '<init>'
+      type          : '(Ljava/lang/Object;)V'
+      access        : 0x11001 (PUBLIC SYNTHETIC CONSTRUCTOR)
+      method_idx    : 49
+      code          -
+      registers     : 2
+      ins           : 2
+      outs          : 1
+      insns size    : 6 16-bit code units
+00176c:                                        |[00176c] dex.sample.Sample$Visitor$0.<init>:(Ljava/lang/Object;)V
+00177c: 7010 6b00 0000                         |0000: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+001782: 5b01 0900                              |0003: iput-object v1, v0, Ldex/sample/Sample$Visitor$0;.f$0:Ljava/lang/Object; // field@0009
+001786: 0e00                                   |0005: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0006 reg=0 this Ldex/sample/Sample$Visitor$0;
+        0x0000 - 0x0006 reg=1 (null) Ljava/lang/Object;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample$Visitor$0;)
+      name          : 'visit'
+      type          : '(Ldex/sample/Sample;)Ljava/lang/Object;'
+      access        : 0x0011 (PUBLIC FINAL)
+      method_idx    : 50
+      code          -
+      registers     : 3
+      ins           : 2
+      outs          : 2
+      insns size    : 7 16-bit code units
+00174c:                                        |[00174c] dex.sample.Sample$Visitor$0.visit:(Ldex/sample/Sample;)Ljava/lang/Object;
+00175c: 5410 0900                              |0000: iget-object v0, v1, Ldex/sample/Sample$Visitor$0;.f$0:Ljava/lang/Object; // field@0009
+001760: 7120 3400 2000                         |0002: invoke-static {v0, v2}, Ldex/sample/Sample$Visitor;.lambda$constant$0:(Ljava/lang/Object;Ldex/sample/Sample;)Ljava/lang/Object; // method@0034
+001766: 0c02                                   |0005: move-result-object v2
+001768: 1102                                   |0006: return-object v2
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0007 reg=1 this Ldex/sample/Sample$Visitor$0;
+        0x0000 - 0x0007 reg=2 (null) Ldex/sample/Sample;
+
+  source_file_idx   : 47 (D8$$SyntheticClass)
+
+Class #17 header:
+class_idx           : 30
+access_flags        : 1 (0x0001)
+superclass_idx      : 15
+interfaces_off      : 11712 (0x002dc0)
+source_file_idx     : 185
+annotations_off     : 20068 (0x004e64)
+class_data_off      : 18824 (0x004988)
+static_fields_size  : 29
+instance_fields_size: 11
+direct_methods_size : 27
+virtual_methods_size: 6
+
+Class #17 annotations:
+Annotations on class
+  VISIBILITY_SYSTEM Ldalvik/annotation/MemberClasses; value={ Ldex/sample/Sample$Visitor; Ldex/sample/Sample$Inner; Ldex/sample/Sample$Nested; }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "Ldex/sample/Base<" "Ljava/lang/String;" ">;" "Ljava/lang/Cloneable;" }
+  VISIBILITY_RUNTIME Ldex/sample/Everything; b=7 c=120 color=BLUE colors={ } d=-inf f=nan i=-9 ints={ } j=10 note=Ldex/sample/Note; level=3 value="deep" notes={ Ldex/sample/Note; value="one" } s=8 str="Ã©tÃ© í ½í¸€" strings={ "x" "y" } type=Ljava/util/Map$Entry; types={ J } z=false
+Annotations on field #41 'generic'
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "Ljava/util/List<" "Ljava/util/Map<" "Ljava/lang/String;" "-" "Ljava/lang/Integer;" ">;>;" }
+Annotations on field #43 'instanceInt'
+  VISIBILITY_RUNTIME Ldex/sample/Everything;
+Annotations on method #58 '<init>'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 0 } names={ "a" "b" "c" }
+  VISIBILITY_RUNTIME Ldex/sample/Everything; i=1
+Annotations on method #60 'arrays'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "n" }
+Annotations on method #61 'branches'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 0 } names={ "a" "b" "o" }
+Annotations on method #62 'calls'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 } names={ "s" "list" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "(" "Ldex/sample/Shape;" "Ljava/util/List<" "Ljava/lang/String;" ">;)J" }
+Annotations on method #63 'colors'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "c" }
+Annotations on method #65 'conversions'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 0 0 } names={ "i" "j" "f" "d" }
+Annotations on method #66 'deprecated'
+  VISIBILITY_RUNTIME Ljava/lang/Deprecated;
+Annotations on method #67 'exceptions'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "s" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Throws; value={ Ljava/io/IOException; }
+Annotations on method #69 'floats'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 } names={ "a" "b" }
+Annotations on method #70 'handles'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 0 } names={ "h" "v" "arr" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Throws; value={ Ljava/lang/Throwable; }
+Annotations on method #71 'ints'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 } names={ "a" "b" }
+Annotations on method #73 'lambdas'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "seed" }
+Annotations on method #74 'locals'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 } names={ "map" "key" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "<K::" "Ljava/lang/Comparable<" "TK;>;V:" "Ljava/lang/Object;" ">(" "Ljava/util/Map<" "TK;" "Ljava/util/List<" "TV;>;>;TK;)I" }
+Annotations on method #75 'locked'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "o" }
+Annotations on method #76 'longs'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 0 } names={ "a" "b" "s" }
+Annotations on method #77 'lookup'
+  VISIBILITY_SYSTEM Ldalvik/annotation/Throws; value={ Ljava/lang/ReflectiveOperationException; }
+Annotations on method #78 'main'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "args" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Throws; value={ Ljava/lang/Throwable; }
+Annotations on method #79 'make'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 4096 } names={ "n" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Throws; value={ Ljava/io/IOException; Ljava/lang/IllegalStateException; }
+Annotations on method #80 'make'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "n" }
+Annotations on method #81 'many'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 0 0 0 0 0 0 0 } names={ "a" "b" "c" "d" "e" "f" "g" "h" }
+Annotations on method #82 'packed'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "x" }
+Annotations on method #84 'sparse'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "x" }
+Annotations on method #85 'strings'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "s" }
+Annotations on method #87 'varargs'
+  VISIBILITY_SYSTEM Ldalvik/annotation/MethodParameters; accessFlags={ 0 } names={ "items" }
+  VISIBILITY_SYSTEM Ldalvik/annotation/Signature; value={ "<T:" "Ljava/lang/Object;" ">([TT;)" "Ljava/util/List<" "TT;>;" }
+  VISIBILITY_RUNTIME Ljava/lang/SafeVarargs;
+Annotations on method #58 '<init>' parameters
+#0
+  empty-annotation-set
+#1
+  VISIBILITY_RUNTIME Ldex/sample/Everything; z=false
+#2
+  empty-annotation-set
+
+Class #17            -
+  Class descriptor  : 'Ldex/sample/Sample;'
+  Access flags      : 0x0001 (PUBLIC)
+  Superclass        : 'Ldex/sample/Base;'
+  Interfaces        -
+    #0              : 'Ljava/lang/Cloneable;'
+  Static fields     -
+    #0              : (in Ldex/sample/Sample;)
+      name          : 'B'
+      type          : 'B'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : -128
+    #1              : (in Ldex/sample/Sample;)
+      name          : 'BOOLS'
+      type          : '[Z'
+      access        : 0x0018 (STATIC FINAL)
+      value         : null
+    #2              : (in Ldex/sample/Sample;)
+      name          : 'BYTES'
+      type          : '[B'
+      access        : 0x0018 (STATIC FINAL)
+      value         : null
+    #3              : (in Ldex/sample/Sample;)
+      name          : 'C'
+      type          : 'C'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 65535
+    #4              : (in Ldex/sample/Sample;)
+      name          : 'CHARS'
+      type          : '[C'
+      access        : 0x0018 (STATIC FINAL)
+      value         : null
+    #5              : (in Ldex/sample/Sample;)
+      name          : 'CHAR_A'
+      type          : 'C'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 65
+    #6              : (in Ldex/sample/Sample;)
+      name          : 'CONTROLS'
+      type          : 'Ljava/lang/String;'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : "\001\002\003\004\005\006\007\b\t\n\013\f\r\016\017\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037\177"
+    #7              : (in Ldex/sample/Sample;)
+      name          : 'D'
+      type          : 'D'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 1e-300
+    #8              : (in Ldex/sample/Sample;)
+      name          : 'DOUBLES'
+      type          : '[D'
+      access        : 0x0018 (STATIC FINAL)
+      value         : null
+    #9              : (in Ldex/sample/Sample;)
+      name          : 'DOUBLE_INT'
+      type          : 'D'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 3
+    #10              : (in Ldex/sample/Sample;)
+      name          : 'F'
+      type          : 'F'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : -0
+    #11              : (in Ldex/sample/Sample;)
+      name          : 'FLOATS'
+      type          : '[F'
+      access        : 0x0018 (STATIC FINAL)
+      value         : null
+    #12              : (in Ldex/sample/Sample;)
+      name          : 'FLOAT_ONE'
+      type          : 'F'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 1
+    #13              : (in Ldex/sample/Sample;)
+      name          : 'I'
+      type          : 'I'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : -2147483648
+    #14              : (in Ldex/sample/Sample;)
+      name          : 'J'
+      type          : 'J'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 9223372036854775807
+    #15              : (in Ldex/sample/Sample;)
+      name          : 'LONGS'
+      type          : '[J'
+      access        : 0x0018 (STATIC FINAL)
+      value         : null
+    #16              : (in Ldex/sample/Sample;)
+      name          : 'LONG_SMALL'
+      type          : 'J'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 1
+    #17              : (in Ldex/sample/Sample;)
+      name          : 'NO'
+      type          : 'Z'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : false
+    #18              : (in Ldex/sample/Sample;)
+      name          : 'S'
+      type          : 'S'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 32767
+    #19              : (in Ldex/sample/Sample;)
+      name          : 'SHORTS'
+      type          : '[S'
+      access        : 0x0018 (STATIC FINAL)
+      value         : null
+    #20              : (in Ldex/sample/Sample;)
+      name          : 'SMALL'
+      type          : 'I'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : 5
+    #21              : (in Ldex/sample/Sample;)
+      name          : 'STR'
+      type          : 'Ljava/lang/String;'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : "static \"quoted\"\n\tÀ€\001\177Â€ß¿à €ï¿¿"
+    #22              : (in Ldex/sample/Sample;)
+      name          : 'SURROGATES'
+      type          : 'Ljava/lang/String;'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : "í ½í¸€ í¯¿í¿¿ í € lone"
+    #23              : (in Ldex/sample/Sample;)
+      name          : 'TABLE'
+      type          : '[I'
+      access        : 0x0018 (STATIC FINAL)
+      value         : null
+    #24              : (in Ldex/sample/Sample;)
+      name          : 'Z'
+      type          : 'Z'
+      access        : 0x0019 (PUBLIC STATIC FINAL)
+      value         : true
+    #25              : (in Ldex/sample/Sample;)
+      name          : 'computed'
+      type          : 'Ljava/lang/String;'
+      access        : 0x0008 (STATIC)
+    #26              : (in Ldex/sample/Sample;)
+      name          : 'counter'
+      type          : 'I'
+      access        : 0x0009 (PUBLIC STATIC)
+    #27              : (in Ldex/sample/Sample;)
+      name          : 'nothing'
+      type          : 'Ljava/lang/Object;'
+      access        : 0x0009 (PUBLIC STATIC)
+    #28              : (in Ldex/sample/Sample;)
+      name          : 'ticks'
+      type          : 'J'
+      access        : 0x0048 (STATIC VOLATILE)
+  Instance fields   -
+    #0              : (in Ldex/sample/Sample;)
+      name          : 'byteField'
+      type          : 'B'
+      access        : 0x0000 ()
+    #1              : (in Ldex/sample/Sample;)
+      name          : 'charField'
+      type          : 'C'
+      access        : 0x0000 ()
+    #2              : (in Ldex/sample/Sample;)
+      name          : 'flag'
+      type          : 'Z'
+      access        : 0x0000 ()
+    #3              : (in Ldex/sample/Sample;)
+      name          : 'floatField'
+      type          : 'F'
+      access        : 0x0000 ()
+    #4              : (in Ldex/sample/Sample;)
+      name          : 'generic'
+      type          : 'Ljava/util/List;'
+      access        : 0x0012 (PRIVATE FINAL)
+    #5              : (in Ldex/sample/Sample;)
+      name          : 'instanceDouble'
+      type          : 'D'
+      access        : 0x0000 ()
+    #6              : (in Ldex/sample/Sample;)
+      name          : 'instanceInt'
+      type          : 'I'
+      access        : 0x0082 (PRIVATE TRANSIENT)
+    #7              : (in Ldex/sample/Sample;)
+      name          : 'instanceLong'
+      type          : 'J'
+      access        : 0x0004 (PROTECTED)
+    #8              : (in Ldex/sample/Sample;)
+      name          : 'next'
+      type          : 'Ldex/sample/Sample;'
+      access        : 0x0000 ()
+    #9              : (in Ldex/sample/Sample;)
+      name          : 'shortField'
+      type          : 'S'
+      access        : 0x0000 ()
+    #10              : (in Ldex/sample/Sample;)
+      name          : 'siblings'
+      type          : '[Ldex/sample/Sample;'
+      access        : 0x0000 ()
+  Direct methods    -
+    #0              : (in Ldex/sample/Sample;)
+      name          : '-$$Nest$fgetinstanceInt'
+      type          : '(Ldex/sample/Sample;)I'
+      access        : 0x1048 (STATIC BRIDGE SYNTHETIC)
+      method_idx    : 55
+      code          -
+      registers     : 1
+      ins           : 1
+      outs          : 0
+      insns size    : 3 16-bit code units
+0018ac:                                        |[0018ac] dex.sample.Sample.-$$Nest$fgetinstanceInt:(Ldex/sample/Sample;)I
+0018bc: 5200 2b00                              |0000: iget v0, v0, Ldex/sample/Sample;.instanceInt:I // field@002b
+0018c0: 0f00                                   |0002: return v0
+      catches       : (none)
+      positions     :
+      locals        :
+
+    #1              : (in Ldex/sample/Sample;)
+      name          : '<clinit>'
+      type          : '()V'
+      access        : 0x10008 (STATIC CONSTRUCTOR)
+      method_idx    : 56
+      code          -
+      registers     : 2
+      ins           : 0
+      outs          : 2
+      insns size    : 168 16-bit code units
+002538:                                        |[002538] dex.sample.Sample.<clinit>:()V
+002548: 7100 7800 0000                         |0000: invoke-static {}, Ljava/lang/System;.nanoTime:()J // method@0078
+00254e: 0b00                                   |0003: move-result-wide v0
+002550: 7120 7200 1000                         |0004: invoke-static {v0, v1}, Ljava/lang/String;.valueOf:(J)Ljava/lang/String; // method@0072
+002556: 0c00                                   |0007: move-result-object v0
+002558: 6900 2500                              |0008: sput-object v0, Ldex/sample/Sample;.computed:Ljava/lang/String; // field@0025
+00255c: 1300 0a00                              |000a: const/16 v0, #int 10 // #a
+002560: 2300 5600                              |000c: new-array v0, v0, [I // type@0056
+002564: 2600 3a00 0000                         |000e: fill-array-data v0, 00000048 // +0000003a
+00256a: 6900 2100                              |0011: sput-object v0, Ldex/sample/Sample;.TABLE:[I // field@0021
+00256e: 1230                                   |0013: const/4 v0, #int 3 // #3
+002570: 2301 5700                              |0014: new-array v1, v0, [J // type@0057
+002574: 2601 4a00 0000                         |0016: fill-array-data v1, 00000060 // +0000004a
+00257a: 6901 1900                              |0019: sput-object v1, Ldex/sample/Sample;.LONGS:[J // field@0019
+00257e: 1251                                   |001b: const/4 v1, #int 5 // #5
+002580: 2311 5200                              |001c: new-array v1, v1, [B // type@0052
+002584: 2601 5200 0000                         |001e: fill-array-data v1, 00000070 // +00000052
+00258a: 6901 0c00                              |0021: sput-object v1, Ldex/sample/Sample;.BYTES:[B // field@000c
+00258e: 2301 5e00                              |0023: new-array v1, v0, [S // type@005e
+002592: 2601 5300 0000                         |0025: fill-array-data v1, 00000078 // +00000053
+002598: 6901 1d00                              |0028: sput-object v1, Ldex/sample/Sample;.SHORTS:[S // field@001d
+00259c: 2301 5300                              |002a: new-array v1, v0, [C // type@0053
+0025a0: 2601 5400 0000                         |002c: fill-array-data v1, 00000080 // +00000054
+0025a6: 6901 0e00                              |002f: sput-object v1, Ldex/sample/Sample;.CHARS:[C // field@000e
+0025aa: 2301 5f00                              |0031: new-array v1, v0, [Z // type@005f
+0025ae: 2601 5500 0000                         |0033: fill-array-data v1, 00000088 // +00000055
+0025b4: 6901 0b00                              |0036: sput-object v1, Ldex/sample/Sample;.BOOLS:[Z // field@000b
+0025b8: 2301 5500                              |0038: new-array v1, v0, [F // type@0055
+0025bc: 2601 5400 0000                         |003a: fill-array-data v1, 0000008e // +00000054
+0025c2: 6901 1500                              |003d: sput-object v1, Ldex/sample/Sample;.FLOATS:[F // field@0015
+0025c6: 2300 5400                              |003f: new-array v0, v0, [D // type@0054
+0025ca: 2600 5700 0000                         |0041: fill-array-data v0, 00000098 // +00000057
+0025d0: 6900 1200                              |0044: sput-object v0, Ldex/sample/Sample;.DOUBLES:[D // field@0012
+0025d4: 0e00                                   |0046: return-void
+0025d6: 0000                                   |0047: nop // spacer
+0025d8: 0003 0400 0a00 0000 0100 0000 0100 ... |0048: array-data (24 units)
+002608: 0003 0800 0300 0000 0000 0000 0001 ... |0060: array-data (16 units)
+002628: 0003 0100 0500 0000 01fe 03fc 0500     |0070: array-data (7 units)
+002636: 0000                                   |0077: nop // spacer
+002638: 0003 0200 0300 0000 e803 18fc ff7f     |0078: array-data (7 units)
+002646: 0000                                   |007f: nop // spacer
+002648: 0003 0200 0300 0000 6100 6200 3412     |0080: array-data (7 units)
+002656: 0000                                   |0087: nop // spacer
+002658: 0003 0100 0300 0000 0100 0100          |0088: array-data (6 units)
+002664: 0003 0400 0300 0000 0000 c03f 0000 ... |008e: array-data (10 units)
+002678: 0003 0800 0300 0000 182d 4454 fb21 ... |0098: array-data (16 units)
+      catches       : (none)
+      positions     :
+        0x0000 line=115
+        0x000a line=116
+        0x0013 line=117
+        0x001b line=118
+        0x0023 line=119
+        0x002a line=120
+        0x0031 line=121
+        0x0038 line=122
+        0x003f line=123
+      locals        :
+
+    #2              : (in Ldex/sample/Sample;)
+      name          : '<init>'
+      type          : '()V'
+      access        : 0x10001 (PUBLIC CONSTRUCTOR)
+      method_idx    : 57
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 1
+      insns size    : 11 16-bit code units
+002698:                                        |[002698] dex.sample.Sample.<init>:()V
+0026a8: 7010 0300 0100                         |0000: invoke-direct {v1}, Ldex/sample/Base;.<init>:()V // method@0003
+0026ae: 2200 4600                              |0003: new-instance v0, Ljava/util/ArrayList; // type@0046
+0026b2: 7010 7e00 0000                         |0005: invoke-direct {v0}, Ljava/util/ArrayList;.<init>:()V // method@007e
+0026b8: 5b10 2900                              |0008: iput-object v0, v1, Ldex/sample/Sample;.generic:Ljava/util/List; // field@0029
+0026bc: 0e00                                   |000a: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=138
+        0x0003 line=129
+        0x000a line=138
+      locals        :
+        0x0000 - 0x000b reg=1 this Ldex/sample/Sample;
+
+    #3              : (in Ldex/sample/Sample;)
+      name          : '<init>'
+      type          : '(ILjava/lang/String;J)V'
+      access        : 0x10004 (PROTECTED CONSTRUCTOR)
+      method_idx    : 58
+      code          -
+      registers     : 6
+      ins           : 5
+      outs          : 1
+      insns size    : 17 16-bit code units
+0026c0:                                        |[0026c0] dex.sample.Sample.<init>:(ILjava/lang/String;J)V
+0026d0: 7010 0300 0100                         |0000: invoke-direct {v1}, Ldex/sample/Base;.<init>:()V // method@0003
+0026d6: 2200 4600                              |0003: new-instance v0, Ljava/util/ArrayList; // type@0046
+0026da: 7010 7e00 0000                         |0005: invoke-direct {v0}, Ljava/util/ArrayList;.<init>:()V // method@007e
+0026e0: 5b10 2900                              |0008: iput-object v0, v1, Ldex/sample/Sample;.generic:Ljava/util/List; // field@0029
+0026e4: 5912 2b00                              |000a: iput v2, v1, Ldex/sample/Sample;.instanceInt:I // field@002b
+0026e8: 5b13 3200                              |000c: iput-object v3, v1, Ldex/sample/Sample;.value:Ljava/lang/Comparable; // field@0032
+0026ec: 5a14 2c00                              |000e: iput-wide v4, v1, Ldex/sample/Sample;.instanceLong:J // field@002c
+0026f0: 0e00                                   |0010: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=141
+        0x0003 line=129
+        0x000a line=142
+        0x000c line=143
+        0x000e line=144
+        0x0010 line=145
+      locals        :
+        0x0000 - 0x0011 reg=1 this Ldex/sample/Sample;
+        0x0000 - 0x0011 reg=2 a I
+        0x0000 - 0x0011 reg=3 b Ljava/lang/String;
+        0x0000 - 0x0011 reg=4 c J
+
+    #4              : (in Ldex/sample/Sample;)
+      name          : 'arrays'
+      type          : '(I)J'
+      access        : 0x0008 (STATIC)
+      method_idx    : 60
+      code          -
+      registers     : 27
+      ins           : 1
+      outs          : 7
+      insns size    : 266 16-bit code units
+001fb0:                                        |[001fb0] dex.sample.Sample.arrays:(I)J
+001fc0: 0200 1a00                              |0000: move/from16 v0, v26
+001fc4: 2307 5600                              |0002: new-array v7, v0, [I // type@0056
+001fc8: 2308 5700                              |0004: new-array v8, v0, [J // type@0057
+001fcc: 2309 5200                              |0006: new-array v9, v0, [B // type@0052
+001fd0: 230a 5300                              |0008: new-array v10, v0, [C // type@0053
+001fd4: 230b 5e00                              |000a: new-array v11, v0, [S // type@005e
+001fd8: 230c 5f00                              |000c: new-array v12, v0, [Z // type@005f
+001fdc: 230d 5500                              |000e: new-array v13, v0, [F // type@0055
+001fe0: 230e 5400                              |0010: new-array v14, v0, [D // type@0054
+001fe4: 230f 5c00                              |0012: new-array v15, v0, [Ljava/lang/Object; // type@005c
+001fe8: 1221                                   |0014: const/4 v1, #int 2 // #2
+001fea: 2312 5600                              |0015: new-array v2, v1, [I // type@0056
+001fee: 1310 0100                              |0017: const/16 v16, #int 1 // #1
+001ff2: 4b00 0210                              |0019: aput v0, v2, v16
+001ff6: 1311 0000                              |001b: const/16 v17, #int 0 // #0
+001ffa: 4b00 0211                              |001d: aput v0, v2, v17
+001ffe: 6203 3400                              |001f: sget-object v3, Ljava/lang/Integer;.TYPE:Ljava/lang/Class; // field@0034
+002002: 7120 7d00 2300                         |0021: invoke-static {v3, v2}, Ljava/lang/reflect/Array;.newInstance:(Ljava/lang/Class;[I)Ljava/lang/Object; // method@007d
+002008: 0c02                                   |0024: move-result-object v2
+00200a: 0812 0200                              |0025: move-object/from16 v18, v2
+00200e: 1f12 6000                              |0027: check-cast v18, [[I // type@0060
+002012: 2312 5600                              |0029: new-array v2, v1, [I // type@0056
+002016: 1313 0300                              |002b: const/16 v19, #int 3 // #3
+00201a: 4b13 0210                              |002d: aput v19, v2, v16
+00201e: 4b01 0211                              |002f: aput v1, v2, v17
+002022: 1c03 5d00                              |0031: const-class v3, [Ljava/lang/String; // type@005d
+002026: 7120 7d00 2300                         |0033: invoke-static {v3, v2}, Ljava/lang/reflect/Array;.newInstance:(Ljava/lang/Class;[I)Ljava/lang/Object; // method@007d
+00202c: 0c02                                   |0036: move-result-object v2
+00202e: 1f02 6100                              |0037: check-cast v2, [[[Ljava/lang/String; // type@0061
+002032: 4b10 0711                              |0039: aput v16, v7, v17
+002036: 1603 0200                              |003b: const-wide/16 v3, #int 2 // #2
+00203a: 4c03 0811                              |003d: aput-wide v3, v8, v17
+00203e: 4f13 0911                              |003f: aput-byte v19, v9, v17
+002042: 1303 6300                              |0041: const/16 v3, #int 99 // #63
+002046: 5003 0a11                              |0043: aput-char v3, v10, v17
+00204a: 1253                                   |0045: const/4 v3, #int 5 // #5
+00204c: 5103 0b11                              |0046: aput-short v3, v11, v17
+002050: 4e10 0c11                              |0048: aput-boolean v16, v12, v17
+002054: 1503 e040                              |004a: const/high16 v3, #int 1088421888 // #40e0
+002058: 4b03 0d11                              |004c: aput v3, v13, v17
+00205c: 1903 2040                              |004e: const-wide/high16 v3, #long 4620693217682128896 // #4020
+002060: 4c03 0e11                              |0050: aput-wide v3, v14, v17
+002064: 1a03 5001                              |0052: const-string v3, "o" // string@0150
+002068: 4d03 0f11                              |0054: aput-object v3, v15, v17
+00206c: 4603 1211                              |0056: aget-object v3, v18, v17
+002070: 2174                                   |0058: array-length v4, v7
+002072: 4b04 0311                              |0059: aput v4, v3, v17
+002076: 4603 0211                              |005b: aget-object v3, v2, v17
+00207a: 1a04 6001                              |005d: const-string v4, "s" // string@0160
+00207e: 2410 5d00 0400                         |005f: filled-new-array {v4}, [Ljava/lang/String; // type@005d
+002084: 0c04                                   |0062: move-result-object v4
+002086: 4d04 0311                              |0063: aput-object v4, v3, v17
+00208a: 1263                                   |0065: const/4 v3, #int 6 // #6
+00208c: 2334 5600                              |0066: new-array v4, v3, [I // type@0056
+002090: 2604 9200 0000                         |0068: fill-array-data v4, 000000fa // +00000092
+002096: 0814 0400                              |006b: move-object/from16 v20, v4
+00209a: d804 0001                              |006d: add-int/lit8 v4, v0, #int 1 // #01
+00209e: d805 0002                              |006f: add-int/lit8 v5, v0, #int 2 // #02
+0020a2: 2430 5600 4005                         |0071: filled-new-array {v0, v4, v5}, [I // type@0056
+0020a8: 0c04                                   |0074: move-result-object v4
+0020aa: 0815 0400                              |0075: move-object/from16 v21, v4
+0020ae: 0114                                   |0077: move v4, v1
+0020b0: 0201 1a00                              |0078: move/from16 v1, v26
+0020b4: 0725                                   |007a: move-object v5, v2
+0020b6: 0202 1a00                              |007b: move/from16 v2, v26
+0020ba: 0136                                   |007d: move v6, v3
+0020bc: 0203 1a00                              |007e: move/from16 v3, v26
+0020c0: 0216 0400                              |0080: move/from16 v22, v4
+0020c4: 0204 1a00                              |0082: move/from16 v4, v26
+0020c8: 0817 0500                              |0084: move-object/from16 v23, v5
+0020cc: 0205 1a00                              |0086: move/from16 v5, v26
+0020d0: 0218 0600                              |0088: move/from16 v24, v6
+0020d4: 0206 1a00                              |008a: move/from16 v6, v26
+0020d8: 0819 0700                              |008c: move-object/from16 v25, v7
+0020dc: 0807 1700                              |008e: move-object/from16 v7, v23
+0020e0: 2507 5600 0000                         |0090: filled-new-array/range {v0, v1, v2, v3, v4, v5, v6}, [I // type@0056
+0020e6: 0c01                                   |0093: move-result-object v1
+0020e8: 4400 1911                              |0094: aget v0, v25, v17
+0020ec: 8102                                   |0096: int-to-long v2, v0
+0020ee: 4504 0811                              |0097: aget-wide v4, v8, v17
+0020f2: bb42                                   |0099: add-long/2addr v2, v4
+0020f4: 4800 0911                              |009a: aget-byte v0, v9, v17
+0020f8: 8104                                   |009c: int-to-long v4, v0
+0020fa: bb42                                   |009d: add-long/2addr v2, v4
+0020fc: 4900 0a11                              |009e: aget-char v0, v10, v17
+002100: 8104                                   |00a0: int-to-long v4, v0
+002102: bb42                                   |00a1: add-long/2addr v2, v4
+002104: 4a00 0b11                              |00a2: aget-short v0, v11, v17
+002108: 8104                                   |00a4: int-to-long v4, v0
+00210a: bb42                                   |00a5: add-long/2addr v2, v4
+00210c: 4700 0c11                              |00a6: aget-boolean v0, v12, v17
+002110: 8104                                   |00a8: int-to-long v4, v0
+002112: bb42                                   |00a9: add-long/2addr v2, v4
+002114: 4400 0d11                              |00aa: aget v0, v13, v17
+002118: 8804                                   |00ac: float-to-long v4, v0
+00211a: bb42                                   |00ad: add-long/2addr v2, v4
+00211c: 4504 0e11                              |00ae: aget-wide v4, v14, v17
+002120: 8b44                                   |00b0: double-to-long v4, v4
+002122: bb42                                   |00b1: add-long/2addr v2, v4
+002124: 21f0                                   |00b2: array-length v0, v15
+002126: 8104                                   |00b3: int-to-long v4, v0
+002128: bb42                                   |00b4: add-long/2addr v2, v4
+00212a: 4600 1211                              |00b5: aget-object v0, v18, v17
+00212e: 4400 0011                              |00b7: aget v0, v0, v17
+002132: 8104                                   |00b9: int-to-long v4, v0
+002134: bb42                                   |00ba: add-long/2addr v2, v4
+002136: 2170                                   |00bb: array-length v0, v7
+002138: 8104                                   |00bc: int-to-long v4, v0
+00213a: bb42                                   |00bd: add-long/2addr v2, v4
+00213c: 4400 1410                              |00be: aget v0, v20, v16
+002140: 8104                                   |00c0: int-to-long v4, v0
+002142: bb42                                   |00c1: add-long/2addr v2, v4
+002144: 4400 1516                              |00c2: aget v0, v21, v22
+002148: 8104                                   |00c4: int-to-long v4, v0
+00214a: bb42                                   |00c5: add-long/2addr v2, v4
+00214c: 4400 0118                              |00c6: aget v0, v1, v24
+002150: 8104                                   |00c8: int-to-long v4, v0
+002152: bb42                                   |00c9: add-long/2addr v2, v4
+002154: 6200 2100                              |00ca: sget-object v0, Ldex/sample/Sample;.TABLE:[I // field@0021
+002158: 4400 0013                              |00cc: aget v0, v0, v19
+00215c: 8104                                   |00ce: int-to-long v4, v0
+00215e: bb42                                   |00cf: add-long/2addr v2, v4
+002160: 6200 1900                              |00d0: sget-object v0, Ldex/sample/Sample;.LONGS:[J // field@0019
+002164: 4504 0011                              |00d2: aget-wide v4, v0, v17
+002168: bb42                                   |00d4: add-long/2addr v2, v4
+00216a: 6200 0c00                              |00d5: sget-object v0, Ldex/sample/Sample;.BYTES:[B // field@000c
+00216e: 4800 0010                              |00d7: aget-byte v0, v0, v16
+002172: 8104                                   |00d9: int-to-long v4, v0
+002174: bb42                                   |00da: add-long/2addr v2, v4
+002176: 6200 1d00                              |00db: sget-object v0, Ldex/sample/Sample;.SHORTS:[S // field@001d
+00217a: 4a00 0016                              |00dd: aget-short v0, v0, v22
+00217e: 8104                                   |00df: int-to-long v4, v0
+002180: bb42                                   |00e0: add-long/2addr v2, v4
+002182: 6200 0e00                              |00e1: sget-object v0, Ldex/sample/Sample;.CHARS:[C // field@000e
+002186: 4900 0011                              |00e3: aget-char v0, v0, v17
+00218a: 8104                                   |00e5: int-to-long v4, v0
+00218c: bb42                                   |00e6: add-long/2addr v2, v4
+00218e: 6200 0b00                              |00e7: sget-object v0, Ldex/sample/Sample;.BOOLS:[Z // field@000b
+002192: 4700 0010                              |00e9: aget-boolean v0, v0, v16
+002196: 8104                                   |00eb: int-to-long v4, v0
+002198: bb42                                   |00ec: add-long/2addr v2, v4
+00219a: 6200 1500                              |00ed: sget-object v0, Ldex/sample/Sample;.FLOATS:[F // field@0015
+00219e: 4400 0011                              |00ef: aget v0, v0, v17
+0021a2: 8804                                   |00f1: float-to-long v4, v0
+0021a4: bb42                                   |00f2: add-long/2addr v2, v4
+0021a6: 6200 1200                              |00f3: sget-object v0, Ldex/sample/Sample;.DOUBLES:[D // field@0012
+0021aa: 4504 0010                              |00f5: aget-wide v4, v0, v16
+0021ae: 8b44                                   |00f7: double-to-long v4, v4
+0021b0: bb42                                   |00f8: add-long/2addr v2, v4
+0021b2: 1002                                   |00f9: return-wide v2
+0021b4: 0003 0400 0600 0000 0900 0000 0800 ... |00fa: array-data (16 units)
+      catches       : (none)
+      positions     :
+        0x0000 line=296
+        0x0004 line=297
+        0x0006 line=298
+        0x0008 line=299
+        0x000a line=300
+        0x000c line=301
+        0x000e line=302
+        0x0010 line=303
+        0x0012 line=304
+        0x0014 line=305
+        0x0029 line=306
+        0x0039 line=307
+        0x003b line=308
+        0x003f line=309
+        0x0041 line=310
+        0x0045 line=311
+        0x0048 line=312
+        0x004a line=313
+        0x004e line=314
+        0x0052 line=315
+        0x0056 line=316
+        0x005b line=317
+        0x0065 line=318
+        0x006d line=319
+        0x0077 line=320
+        0x0094 line=321
+        0x00e7 line=323
+        0x00f9 line=321
+      locals        :
+        0x0039 - 0x007b reg=2 cube [[[Ljava/lang/String;
+        0x007b - 0x0086 reg=5 cube [[[Ljava/lang/String;
+        0x0086 - 0x0090 reg=23 cube [[[Ljava/lang/String;
+        0x0004 - 0x0090 reg=7 ia [I
+        0x0094 - 0x010a reg=1 many [I
+        0x0090 - 0x010a reg=7 cube [[[Ljava/lang/String;
+        0x0006 - 0x010a reg=8 la [J
+        0x0008 - 0x010a reg=9 ba [B
+        0x000a - 0x010a reg=10 ca [C
+        0x000c - 0x010a reg=11 sa [S
+        0x000e - 0x010a reg=12 za [Z
+        0x0010 - 0x010a reg=13 fa [F
+        0x0012 - 0x010a reg=14 da [D
+        0x0014 - 0x010a reg=15 oa [Ljava/lang/Object;
+        0x0029 - 0x010a reg=18 grid [[I
+        0x006d - 0x010a reg=20 lit [I
+        0x0077 - 0x010a reg=21 few [I
+        0x0090 - 0x010a reg=25 ia [I
+        0x0000 - 0x010a reg=26 n I
+
+    #5              : (in Ldex/sample/Sample;)
+      name          : 'branches'
+      type          : '(IILjava/lang/Object;)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 61
+      code          -
+      registers     : 5
+      ins           : 3
+      outs          : 1
+      insns size    : 70 16-bit code units
+0018c4:                                        |[0018c4] dex.sample.Sample.branches:(IILjava/lang/Object;)I
+0018d4: 1200                                   |0000: const/4 v0, #int 0 // #0
+0018d6: 3902 0400                              |0001: if-nez v2, 0005 // +0004
+0018da: d800 0001                              |0003: add-int/lit8 v0, v0, #int 1 // #01
+0018de: 3802 0400                              |0005: if-eqz v2, 0009 // +0004
+0018e2: d800 0002                              |0007: add-int/lit8 v0, v0, #int 2 // #02
+0018e6: 3b02 0400                              |0009: if-gez v2, 000d // +0004
+0018ea: d800 0003                              |000b: add-int/lit8 v0, v0, #int 3 // #03
+0018ee: 3a02 0400                              |000d: if-ltz v2, 0011 // +0004
+0018f2: d800 0004                              |000f: add-int/lit8 v0, v0, #int 4 // #04
+0018f6: 3d02 0400                              |0011: if-lez v2, 0015 // +0004
+0018fa: d800 0005                              |0013: add-int/lit8 v0, v0, #int 5 // #05
+0018fe: 3c02 0400                              |0015: if-gtz v2, 0019 // +0004
+001902: d800 0006                              |0017: add-int/lit8 v0, v0, #int 6 // #06
+001906: 3332 0400                              |0019: if-ne v2, v3, 001d // +0004
+00190a: d800 0007                              |001b: add-int/lit8 v0, v0, #int 7 // #07
+00190e: 3232 0400                              |001d: if-eq v2, v3, 0021 // +0004
+001912: d800 0008                              |001f: add-int/lit8 v0, v0, #int 8 // #08
+001916: 3532 0400                              |0021: if-ge v2, v3, 0025 // +0004
+00191a: d800 0009                              |0023: add-int/lit8 v0, v0, #int 9 // #09
+00191e: 3432 0400                              |0025: if-lt v2, v3, 0029 // +0004
+001922: d800 000a                              |0027: add-int/lit8 v0, v0, #int 10 // #0a
+001926: 3732 0400                              |0029: if-le v2, v3, 002d // +0004
+00192a: d800 000b                              |002b: add-int/lit8 v0, v0, #int 11 // #0b
+00192e: 3632 0400                              |002d: if-gt v2, v3, 0031 // +0004
+001932: d800 000c                              |002f: add-int/lit8 v0, v0, #int 12 // #0c
+001936: 3904 0400                              |0031: if-nez v4, 0035 // +0004
+00193a: d800 000d                              |0033: add-int/lit8 v0, v0, #int 13 // #0d
+00193e: 3804 0400                              |0035: if-eqz v4, 0039 // +0004
+001942: d800 000e                              |0037: add-int/lit8 v0, v0, #int 14 // #0e
+001946: 2041 3700                              |0039: instance-of v1, v4, Ljava/lang/String; // type@0037
+00194a: 3801 0a00                              |003b: if-eqz v1, 0045 // +000a
+00194e: 0741                                   |003d: move-object v1, v4
+001950: 1f01 3700                              |003e: check-cast v1, Ljava/lang/String; // type@0037
+001954: 6e10 7100 0100                         |0040: invoke-virtual {v1}, Ljava/lang/String;.length:()I // method@0071
+00195a: 0a01                                   |0043: move-result v1
+00195c: b010                                   |0044: add-int/2addr v0, v1
+00195e: 0f00                                   |0045: return v0
+      catches       : (none)
+      positions     :
+        0x0000 line=233
+        0x0001 line=234
+        0x0005 line=235
+        0x0009 line=236
+        0x000d line=237
+        0x0011 line=238
+        0x0015 line=239
+        0x0019 line=240
+        0x001d line=241
+        0x0021 line=242
+        0x0025 line=243
+        0x0029 line=244
+        0x002d line=245
+        0x0031 line=246
+        0x0035 line=247
+        0x0039 line=248
+        0x0045 line=249
+      locals        :
+        0x0001 - 0x0046 reg=0 r I
+        0x0000 - 0x0046 reg=2 a I
+        0x0000 - 0x0046 reg=3 b I
+        0x0000 - 0x0046 reg=4 o Ljava/lang/Object;
+
+    #6              : (in Ldex/sample/Sample;)
+      name          : 'colors'
+      type          : '(Ldex/sample/Color;)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 63
+      code          -
+      registers     : 3
+      ins           : 1
+      outs          : 1
+      insns size    : 26 16-bit code units
+001960:                                        |[001960] dex.sample.Sample.colors:(Ldex/sample/Color;)I
+001970: 6200 0600                              |0000: sget-object v0, Ldex/sample/Sample$2;.$SwitchMap$dex$sample$Color:[I // field@0006
+001974: 6e10 0b00 0200                         |0002: invoke-virtual {v2}, Ldex/sample/Color;.ordinal:()I // method@000b
+00197a: 0a01                                   |0005: move-result v1
+00197c: 4400 0001                              |0006: aget v0, v0, v1
+001980: 2b00 0a00 0000                         |0008: packed-switch v0, 00000012 // +0000000a
+001986: 1230                                   |000b: const/4 v0, #int 3 // #3
+001988: 0f00                                   |000c: return v0
+00198a: 1220                                   |000d: const/4 v0, #int 2 // #2
+00198c: 0f00                                   |000e: return v0
+00198e: 1210                                   |000f: const/4 v0, #int 1 // #1
+001990: 0f00                                   |0010: return v0
+001992: 0000                                   |0011: nop // spacer
+001994: 0001 0200 0100 0000 0700 0000 0500 ... |0012: packed-switch-data (8 units)
+      catches       : (none)
+      positions     :
+        0x0000 line=286
+        0x000b line=289
+        0x000d line=288
+        0x000f line=287
+      locals        :
+        0x0000 - 0x001a reg=2 c Ldex/sample/Color;
+
+    #7              : (in Ldex/sample/Sample;)
+      name          : 'constants'
+      type          : '()J'
+      access        : 0x0008 (STATIC)
+      method_idx    : 64
+      code          -
+      registers     : 22
+      ins           : 0
+      outs          : 0
+      insns size    : 60 16-bit code units
+002280:                                        |[002280] dex.sample.Sample.constants:()J
+002290: 1270                                   |0000: const/4 v0, #int 7 // #7
+002292: 1281                                   |0001: const/4 v1, #int -8 // #f8
+002294: 1302 d204                              |0002: const/16 v2, #int 1234 // #4d2
+002298: 1403 7856 3412                         |0004: const v3, #float 5.69046e-28 // #12345678
+00229e: 1504 007f                              |0007: const/high16 v4, #int 2130706432 // #7f00
+0022a2: 1605 0700                              |0009: const-wide/16 v5, #int 7 // #7
+0022a6: 1607 0080                              |000b: const-wide/16 v7, #int -32768 // #8000
+0022aa: 1709 7856 3412                         |000d: const-wide/32 v9, #float 5.69046e-28 // #12345678
+0022b0: 180b efcd ab89 6745 2301               |0010: const-wide v11, #double 3.5127e-303 // #0123456789abcdef
+0022ba: 190d f07f                              |0015: const-wide/high16 v13, #long 9218868437227405312 // #7ff0
+0022be: 150f 0040                              |0017: const/high16 v15, #int 1073741824 // #4000
+0022c2: 0210 0000                              |0019: move/from16 v16, v0
+0022c6: 0211 0100                              |001b: move/from16 v17, v1
+0022ca: 1900 0040                              |001d: const-wide/high16 v0, #long 4611686018427387904 // #4000
+0022ce: 9012 1011                              |001f: add-int v18, v16, v17
+0022d2: 9012 1202                              |0021: add-int v18, v18, v2
+0022d6: 9012 1203                              |0023: add-int v18, v18, v3
+0022da: 9012 1204                              |0025: add-int v18, v18, v4
+0022de: 6712 2600                              |0027: sput v18, Ldex/sample/Sample;.counter:I // field@0026
+0022e2: 9b12 0507                              |0029: add-long v18, v5, v7
+0022e6: 9b12 1209                              |002b: add-long v18, v18, v9
+0022ea: 9b12 120b                              |002d: add-long v18, v18, v11
+0022ee: 9b12 120d                              |002f: add-long v18, v18, v13
+0022f2: 0214 0200                              |0031: move/from16 v20, v2
+0022f6: 0215 0300                              |0033: move/from16 v21, v3
+0022fa: 88f2                                   |0035: float-to-long v2, v15
+0022fc: 9b12 1202                              |0036: add-long v18, v18, v2
+002300: 8b02                                   |0038: double-to-long v2, v0
+002302: 9b12 1202                              |0039: add-long v18, v18, v2
+002306: 1012                                   |003b: return-wide v18
+      catches       : (none)
+      positions     :
+        0x0000 line=215
+        0x0001 line=216
+        0x0002 line=217
+        0x0004 line=218
+        0x0007 line=219
+        0x0009 line=220
+        0x000b line=221
+        0x000d line=222
+        0x0010 line=223
+        0x0015 line=224
+        0x0017 line=225
+        0x0019 line=226
+        0x001f line=227
+        0x0029 line=228
+      locals        :
+        0x0001 - 0x001d reg=0 a I
+        0x0002 - 0x001d reg=1 b I
+        0x0004 - 0x0035 reg=2 c I
+        0x0007 - 0x0035 reg=3 d I
+        0x001f - 0x003c reg=0 l D
+        0x0009 - 0x003c reg=4 e I
+        0x000b - 0x003c reg=5 f J
+        0x000d - 0x003c reg=7 g J
+        0x0010 - 0x003c reg=9 h J
+        0x0015 - 0x003c reg=11 i J
+        0x0017 - 0x003c reg=13 j J
+        0x0019 - 0x003c reg=15 k F
+        0x001d - 0x003c reg=16 a I
+        0x001d - 0x003c reg=17 b I
+        0x0035 - 0x003c reg=20 c I
+        0x0035 - 0x003c reg=21 d I
+
+    #8              : (in Ldex/sample/Sample;)
+      name          : 'conversions'
+      type          : '(IJFD)J'
+      access        : 0x0008 (STATIC)
+      method_idx    : 65
+      code          -
+      registers     : 22
+      ins           : 6
+      outs          : 0
+      insns size    : 44 16-bit code units
+002308:                                        |[002308] dex.sample.Sample.conversions:(IJFD)J
+002318: 0200 1000                              |0000: move/from16 v0, v16
+00231c: 0501 1100                              |0002: move-wide/from16 v1, v17
+002320: 0203 1300                              |0004: move/from16 v3, v19
+002324: 0504 1400                              |0006: move-wide/from16 v4, v20
+002328: 8d06                                   |0008: int-to-byte v6, v0
+00232a: 8e07                                   |0009: int-to-char v7, v0
+00232c: 8f08                                   |000a: int-to-short v8, v0
+00232e: 8109                                   |000b: int-to-long v9, v0
+002330: 883b                                   |000c: float-to-long v11, v3
+002332: bbb9                                   |000d: add-long/2addr v9, v11
+002334: 8b4b                                   |000e: double-to-long v11, v4
+002336: bbb9                                   |000f: add-long/2addr v9, v11
+002338: 841b                                   |0010: long-to-int v11, v1
+00233a: 873c                                   |0011: float-to-int v12, v3
+00233c: b0cb                                   |0012: add-int/2addr v11, v12
+00233e: 8a4c                                   |0013: double-to-int v12, v4
+002340: b0cb                                   |0014: add-int/2addr v11, v12
+002342: 81bb                                   |0015: int-to-long v11, v11
+002344: bbb9                                   |0016: add-long/2addr v9, v11
+002346: 820b                                   |0017: int-to-float v11, v0
+002348: 851c                                   |0018: long-to-float v12, v1
+00234a: c6cb                                   |0019: add-float/2addr v11, v12
+00234c: 8c4c                                   |001a: double-to-float v12, v4
+00234e: c6cb                                   |001b: add-float/2addr v11, v12
+002350: 830c                                   |001c: int-to-double v12, v0
+002352: 861e                                   |001d: long-to-double v14, v1
+002354: cbec                                   |001e: add-double/2addr v12, v14
+002356: 893e                                   |001f: float-to-double v14, v3
+002358: cbec                                   |0020: add-double/2addr v12, v14
+00235a: 816e                                   |0021: int-to-long v14, v6
+00235c: bb9e                                   |0022: add-long/2addr v14, v9
+00235e: 8170                                   |0023: int-to-long v0, v7
+002360: bb0e                                   |0024: add-long/2addr v14, v0
+002362: 8180                                   |0025: int-to-long v0, v8
+002364: bb0e                                   |0026: add-long/2addr v14, v0
+002366: 88b0                                   |0027: float-to-long v0, v11
+002368: bb0e                                   |0028: add-long/2addr v14, v0
+00236a: 8bc0                                   |0029: double-to-long v0, v12
+00236c: bb0e                                   |002a: add-long/2addr v14, v0
+00236e: 100e                                   |002b: return-wide v14
+      catches       : (none)
+      positions     :
+        0x0000 line=203
+        0x0009 line=204
+        0x000a line=205
+        0x000b line=206
+        0x0010 line=207
+        0x0017 line=208
+        0x001c line=209
+        0x0021 line=210
+      locals        :
+        0x0009 - 0x002c reg=6 b B
+        0x000a - 0x002c reg=7 c C
+        0x000b - 0x002c reg=8 s S
+        0x0010 - 0x002c reg=9 r J
+        0x001c - 0x002c reg=11 f2 F
+        0x0021 - 0x002c reg=12 d2 D
+        0x0000 - 0x002c reg=16 i I
+        0x0000 - 0x002c reg=17 j J
+        0x0000 - 0x002c reg=19 f F
+        0x0000 - 0x002c reg=20 d D
+
+    #9              : (in Ldex/sample/Sample;)
+      name          : 'deprecated'
+      type          : '()V'
+      access        : 0x0009 (PUBLIC STATIC)
+      method_idx    : 66
+      code          -
+      registers     : 0
+      ins           : 0
+      outs          : 0
+      insns size    : 1 16-bit code units
+0026f4:                                        |[0026f4] dex.sample.Sample.deprecated:()V
+002704: 0e00                                   |0000: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=499
+      locals        :
+
+    #10              : (in Ldex/sample/Sample;)
+      name          : 'exceptions'
+      type          : '(Ljava/lang/String;)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 67
+      code          -
+      registers     : 5
+      ins           : 1
+      outs          : 2
+      insns size    : 95 16-bit code units
+0019a4:                                        |[0019a4] dex.sample.Sample.exceptions:(Ljava/lang/String;)I
+0019b4: 1200                                   |0000: const/4 v0, #int 0 // #0
+0019b6: 7110 6900 0400                         |0001: invoke-static {v4}, Ljava/lang/Integer;.parseInt:(Ljava/lang/String;)I // method@0069
+0019bc: 0a01                                   |0004: move-result v1
+0019be: 6000 2600                              |0005: sget v0, Ldex/sample/Sample;.counter:I // field@0026
+0019c2: d800 0001                              |0007: add-int/lit8 v0, v0, #int 1 // #01
+0019c6: 6700 2600                              |0009: sput v0, Ldex/sample/Sample;.counter:I // field@0026
+0019ca: 2811                                   |000b: goto 001c // +0011
+0019cc: 0d01                                   |000c: move-exception v1
+0019ce: 6002 2600                              |000d: sget v2, Ldex/sample/Sample;.counter:I // field@0026
+0019d2: d802 0201                              |000f: add-int/lit8 v2, v2, #int 1 // #01
+0019d6: 6702 2600                              |0011: sput v2, Ldex/sample/Sample;.counter:I // field@0026
+0019da: 2701                                   |0013: throw v1
+0019dc: 0d01                                   |0014: move-exception v1
+0019de: 2802                                   |0015: goto 0017 // +0002
+0019e0: 0d01                                   |0016: move-exception v1
+0019e2: 12e1                                   |0017: const/4 v1, #int -2 // #fe
+0019e4: 28ed                                   |0018: goto 0005 // -0013
+0019e6: 0d01                                   |0019: move-exception v1
+0019e8: 12f1                                   |001a: const/4 v1, #int -1 // #ff
+0019ea: 28ea                                   |001b: goto 0005 // -0016
+0019ec: 1250                                   |001c: const/4 v0, #int 5 // #5
+0019ee: 3601 0400                              |001d: if-gt v1, v0, 0021 // +0004
+0019f2: 0000                                   |001f: nop // spacer
+0019f4: 2827                                   |0020: goto 0047 // +0027
+0019f6: 2200 2100                              |0021: new-instance v0, Ljava/io/IOException; // type@0021
+0019fa: 2202 3800                              |0023: new-instance v2, Ljava/lang/StringBuilder; // type@0038
+0019fe: 7010 7300 0200                         |0025: invoke-direct {v2}, Ljava/lang/StringBuilder;.<init>:()V // method@0073
+001a04: 1a03 f000                              |0028: const-string v3, "big " // string@00f0
+001a08: 6e20 7600 3200                         |002a: invoke-virtual {v2, v3}, Ljava/lang/StringBuilder;.append:(Ljava/lang/String;)Ljava/lang/StringBuilder; // method@0076
+001a0e: 0c02                                   |002d: move-result-object v2
+001a10: 6e20 7500 1200                         |002e: invoke-virtual {v2, v1}, Ljava/lang/StringBuilder;.append:(I)Ljava/lang/StringBuilder; // method@0075
+001a16: 0c02                                   |0031: move-result-object v2
+001a18: 6e10 7700 0200                         |0032: invoke-virtual {v2}, Ljava/lang/StringBuilder;.toString:()Ljava/lang/String; // method@0077
+001a1e: 0c02                                   |0035: move-result-object v2
+001a20: 7020 5e00 2000                         |0036: invoke-direct {v0, v2}, Ljava/io/IOException;.<init>:(Ljava/lang/String;)V // method@005e
+001a26: 2700                                   |0039: throw v0
+001a28: 0d00                                   |003a: move-exception v0
+001a2a: 2808                                   |003b: goto 0043 // +0008
+001a2c: 0d00                                   |003c: move-exception v0
+001a2e: 2202 2d00                              |003d: new-instance v2, Ljava/lang/IllegalStateException; // type@002d
+001a32: 7020 6800 0200                         |003f: invoke-direct {v2, v0}, Ljava/lang/IllegalStateException;.<init>:(Ljava/lang/Throwable;)V // method@0068
+001a38: 2702                                   |0042: throw v2
+001a3a: 6e10 6c00 0000                         |0043: invoke-virtual {v0}, Ljava/lang/Object;.hashCode:()I // method@006c
+001a40: 0a01                                   |0046: move-result v1
+001a42: 2200 2400                              |0047: new-instance v0, Ljava/io/StringReader; // type@0024
+001a46: 7020 6000 4000                         |0049: invoke-direct {v0, v4}, Ljava/io/StringReader;.<init>:(Ljava/lang/String;)V // method@0060
+001a4c: 6e10 6200 0000                         |004c: invoke-virtual {v0}, Ljava/io/StringReader;.read:()I // method@0062
+001a52: 0a02                                   |004f: move-result v2
+001a54: b021                                   |0050: add-int/2addr v1, v2
+001a56: 6e10 6100 0000                         |0051: invoke-virtual {v0}, Ljava/io/StringReader;.close:()V // method@0061
+001a5c: 0f01                                   |0054: return v1
+001a5e: 0d02                                   |0055: move-exception v2
+001a60: 6e10 6100 0000                         |0056: invoke-virtual {v0}, Ljava/io/StringReader;.close:()V // method@0061
+001a66: 2805                                   |0059: goto 005e // +0005
+001a68: 0d03                                   |005a: move-exception v3
+001a6a: 6e20 7900 3200                         |005b: invoke-virtual {v2, v3}, Ljava/lang/Throwable;.addSuppressed:(Ljava/lang/Throwable;)V // method@0079
+001a70: 2702                                   |005e: throw v2
+      catches       : 5
+        0x0001 - 0x0005
+          Ljava/lang/NumberFormatException; -> 0x0019
+          Ljava/lang/IllegalArgumentException; -> 0x0016
+          Ljava/lang/IllegalStateException; -> 0x0014
+          <any> -> 0x000c
+        0x0021 - 0x003a
+          Ljava/lang/RuntimeException; -> 0x003c
+          Ljava/lang/Error; -> 0x003a
+        0x003d - 0x0043
+          Ljava/lang/Error; -> 0x003a
+        0x004c - 0x0050
+          <any> -> 0x0055
+        0x0056 - 0x0059
+          <any> -> 0x005a
+      positions     :
+        0x0000 line=330
+        0x0001 line=332
+        0x0005 line=338
+        0x000b line=339
+        0x000c line=338
+        0x0013 line=339
+        0x0014 line=335
+        0x0017 line=336
+        0x0019 line=333
+        0x001a line=334
+        0x001c line=342
+        0x001f line=347
+        0x0020 line=350
+        0x0021 line=343
+        0x003a line=348
+        0x003c line=345
+        0x003d line=346
+        0x0043 line=349
+        0x0047 line=351
+        0x004c line=352
+        0x0051 line=353
+        0x0054 line=354
+        0x0055 line=351
+      locals        :
+        0x0001 - 0x0005 reg=0 r I
+        0x0005 - 0x000c reg=1 r I
+        0x000c - 0x0018 reg=0 r I
+        0x0017 - 0x0018 reg=1 e Ljava/lang/RuntimeException;
+        0x0018 - 0x0019 reg=1 r I
+        0x0019 - 0x001b reg=0 r I
+        0x001a - 0x001b reg=1 e Ljava/lang/NumberFormatException;
+        0x001b - 0x0039 reg=1 r I
+        0x0000 - 0x0039 reg=4 s Ljava/lang/String;
+        0x003a - 0x0042 reg=1 r I
+        0x003a - 0x0042 reg=4 s Ljava/lang/String;
+        0x003d - 0x0043 reg=0 e Ljava/lang/RuntimeException;
+        0x0043 - 0x0047 reg=0 e Ljava/lang/Error;
+        0x004c - 0x0054 reg=0 rd Ljava/io/StringReader;
+        0x0055 - 0x005f reg=0 rd Ljava/io/StringReader;
+        0x0043 - 0x005f reg=1 r I
+        0x0043 - 0x005f reg=4 s Ljava/lang/String;
+
+    #11              : (in Ldex/sample/Sample;)
+      name          : 'floats'
+      type          : '(FD)D'
+      access        : 0x0008 (STATIC)
+      method_idx    : 69
+      code          -
+      registers     : 13
+      ins           : 3
+      outs          : 0
+      insns size    : 76 16-bit code units
+001804:                                        |[001804] dex.sample.Sample.floats:(FD)D
+001814: 1500 c03f                              |0000: const/high16 v0, #int 1069547520 // #3fc0
+001818: c6a0                                   |0002: add-float/2addr v0, v10
+00181a: 1501 0040                              |0003: const/high16 v1, #int 1073741824 // #4000
+00181e: a802 0a01                              |0005: mul-float v2, v10, v1
+001822: 1503 4040                              |0007: const/high16 v3, #int 1077936128 // #4040
+001826: c932                                   |0009: div-float/2addr v2, v3
+001828: 1503 8040                              |000a: const/high16 v3, #int 1082130432 // #4080
+00182c: ca32                                   |000c: rem-float/2addr v2, v3
+00182e: c720                                   |000d: sub-float/2addr v0, v2
+001830: 8902                                   |000e: float-to-double v2, v0
+001832: cbb2                                   |000f: add-double/2addr v2, v11
+001834: ad04 020b                              |0010: mul-double v4, v2, v11
+001838: ae06 020b                              |0012: div-double v6, v2, v11
+00183c: 1908 1c40                              |0014: const-wide/high16 v8, #long 4619567317775286272 // #401c
+001840: cf86                                   |0016: rem-double/2addr v6, v8
+001842: cc64                                   |0017: sub-double/2addr v4, v6
+001844: 8042                                   |0018: neg-double v2, v4
+001846: 1504 803f                              |0019: const/high16 v4, #int 1065353216 // #3f80
+00184a: 2e04 0a04                              |001b: cmpg-float v4, v10, v4
+00184e: 3a04 1a00                              |001d: if-ltz v4, 0037 // +001a
+001852: 2d01 0a01                              |001f: cmpl-float v1, v10, v1
+001856: 3c01 1600                              |0021: if-gtz v1, 0037 // +0016
+00185a: 1904 0840                              |0023: const-wide/high16 v4, #long 4613937818241073152 // #4008
+00185e: 3001 0b04                              |0025: cmpg-double v1, v11, v4
+001862: 3d01 1000                              |0027: if-lez v1, 0037 // +0010
+001866: 1904 1040                              |0029: const-wide/high16 v4, #long 4616189618054758400 // #4010
+00186a: 2f01 0b04                              |002b: cmpl-double v1, v11, v4
+00186e: 3b01 0a00                              |002d: if-gez v1, 0037 // +000a
+001872: 2d01 0a00                              |002f: cmpl-float v1, v10, v0
+001876: 3801 0600                              |0031: if-eqz v1, 0037 // +0006
+00187a: 2f01 0b02                              |0033: cmpl-double v1, v11, v2
+00187e: 3801 0800                              |0035: if-eqz v1, 003d // +0008
+001882: 1804 0000 0020 5fa0 0242               |0037: const-wide v4, #double 1e+10 // #4202a05f20000000
+00188c: cb42                                   |003c: add-double/2addr v2, v4
+00188e: 8904                                   |003d: float-to-double v4, v0
+001890: cb24                                   |003e: add-double/2addr v4, v2
+001892: 1806 0000 00a0 0c24 fe40               |003f: const-wide v6, #double 123457 // #40fe240ca0000000
+00189c: cb64                                   |0044: add-double/2addr v4, v6
+00189e: 1806 9a99 9999 9999 b93f               |0045: const-wide v6, #double 0.1 // #3fb999999999999a
+0018a8: cb64                                   |004a: add-double/2addr v4, v6
+0018aa: 1004                                   |004b: return-wide v4
+      catches       : (none)
+      positions     :
+        0x0000 line=191
+        0x0003 line=192
+        0x000e line=193
+        0x0010 line=194
+        0x0018 line=195
+        0x0019 line=196
+        0x0037 line=197
+        0x003d line=199
+      locals        :
+        0x0010 - 0x0018 reg=2 d D
+        0x0018 - 0x0019 reg=4 d D
+        0x0003 - 0x004c reg=0 f F
+        0x0019 - 0x004c reg=2 d D
+        0x0000 - 0x004c reg=10 a F
+        0x0000 - 0x004c reg=11 b D
+
+    #12              : (in Ldex/sample/Sample;)
+      name          : 'handles'
+      type          : '(Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/VarHandle;[Ljava/lang/Object;)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 70
+      code          -
+      registers     : 6
+      ins           : 3
+      outs          : 1
+      insns size    : 19 16-bit code units
+001ab4:                                        |[001ab4] dex.sample.Sample.handles:(Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/VarHandle;[Ljava/lang/Object;)I
+001ac4: 1a00 4100                              |0000: const-string v0, "Instruction is unrepresentable in DEX V37: invoke-polymorphic" // string@0041
+001ac8: 7110 2100 0000                         |0002: invoke-static {v0}, Ldex/sample/Sample$0;.m:(Ljava/lang/String;)Ljava/lang/RuntimeException; // method@0021
+001ace: 1201                                   |0005: const/4 v1, #int 0 // #0
+001ad0: 7110 2100 0000                         |0006: invoke-static {v0}, Ldex/sample/Sample$0;.m:(Ljava/lang/String;)Ljava/lang/RuntimeException; // method@0021
+001ad6: 1202                                   |0009: const/4 v2, #int 0 // #0
+001ad8: 7110 2100 0000                         |000a: invoke-static {v0}, Ldex/sample/Sample$0;.m:(Ljava/lang/String;)Ljava/lang/RuntimeException; // method@0021
+001ade: 7110 2100 0000                         |000d: invoke-static {v0}, Ldex/sample/Sample$0;.m:(Ljava/lang/String;)Ljava/lang/RuntimeException; // method@0021
+001ae4: d800 0100                              |0010: add-int/lit8 v0, v1, #int 0 // #00
+001ae8: 0f00                                   |0012: return v0
+      catches       : (none)
+      positions     :
+        0x0000 line=433
+        0x0006 line=434
+        0x000a line=435
+        0x000d line=436
+      locals        :
+        0x0006 - 0x0013 reg=1 r I
+        0x000a - 0x0013 reg=2 o Ljava/lang/Object;
+        0x0000 - 0x0013 reg=3 h Ljava/lang/invoke/MethodHandle;
+        0x0000 - 0x0013 reg=4 v Ljava/lang/invoke/VarHandle;
+        0x0000 - 0x0013 reg=5 arr [Ljava/lang/Object;
+
+    #13              : (in Ldex/sample/Sample;)
+      name          : 'ints'
+      type          : '(II)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 71
+      code          -
+      registers     : 5
+      ins           : 2
+      outs          : 0
+      insns size    : 71 16-bit code units
+001aec:                                        |[001aec] dex.sample.Sample.ints:(II)I
+001afc: 9000 0304                              |0000: add-int v0, v3, v4
+001b00: 9201 0304                              |0002: mul-int v1, v3, v4
+001b04: b110                                   |0004: sub-int/2addr v0, v1
+001b06: de01 0401                              |0005: or-int/lit8 v1, v4, #int 1 // #01
+001b0a: b310                                   |0007: div-int/2addr v0, v1
+001b0c: dc00 0007                              |0008: rem-int/lit8 v0, v0, #int 7 // #07
+001b10: 1401 ff00 ff00                         |000a: const v1, #float 2.34184e-38 // #00ff00ff
+001b16: b510                                   |000d: and-int/2addr v0, v1
+001b18: d600 0010                              |000e: or-int/lit16 v0, v0, #int 4096 // #1000
+001b1c: b730                                   |0010: xor-int/2addr v0, v3
+001b1e: e000 0003                              |0011: shl-int/lit8 v0, v0, #int 3 // #03
+001b22: e100 0001                              |0013: shr-int/lit8 v0, v0, #int 1 // #01
+001b26: e200 0002                              |0015: ushr-int/lit8 v0, v0, #int 2 // #02
+001b2a: 7b00                                   |0017: neg-int v0, v0
+001b2c: 7c00                                   |0018: not-int v0, v0
+001b2e: d800 0064                              |0019: add-int/lit8 v0, v0, #int 100 // #64
+001b32: d000 e803                              |001b: add-int/lit16 v0, v0, #int 1000 // #03e8
+001b36: 1401 a086 0100                         |001d: const v1, #float 1.4013e-40 // #000186a0
+001b3c: b010                                   |0020: add-int/2addr v0, v1
+001b3e: da00 00fb                              |0021: mul-int/lit8 v0, v0, #int -5 // #fb
+001b42: d100 c800                              |0023: rsub-int v0, v0, #int 200 // #00c8
+001b46: d100 204e                              |0025: rsub-int v0, v0, #int 20000 // #4e20
+001b4a: db01 0003                              |0027: div-int/lit8 v1, v0, #int 3 // #03
+001b4e: d402 2c01                              |0029: rem-int/lit16 v2, v0, #int 300 // #012c
+001b52: b021                                   |002b: add-int/2addr v1, v2
+001b54: dd02 007f                              |002c: and-int/lit8 v2, v0, #int 127 // #7f
+001b58: b021                                   |002e: add-int/2addr v1, v2
+001b5a: de02 0009                              |002f: or-int/lit8 v2, v0, #int 9 // #09
+001b5e: b021                                   |0031: add-int/2addr v1, v2
+001b60: d702 e803                              |0032: xor-int/lit16 v2, v0, #int 1000 // #03e8
+001b64: b021                                   |0034: add-int/2addr v1, v2
+001b66: e000 0105                              |0035: shl-int/lit8 v0, v1, #int 5 // #05
+001b6a: e102 0106                              |0037: shr-int/lit8 v2, v1, #int 6 // #06
+001b6e: b020                                   |0039: add-int/2addr v0, v2
+001b70: e202 0107                              |003a: ushr-int/lit8 v2, v1, #int 7 // #07
+001b74: b020                                   |003c: add-int/2addr v0, v2
+001b76: 9801 0304                              |003d: shl-int v1, v3, v4
+001b7a: b001                                   |003f: add-int/2addr v1, v0
+001b7c: 9902 0304                              |0040: shr-int v2, v3, v4
+001b80: b021                                   |0042: add-int/2addr v1, v2
+001b82: 9a02 0304                              |0043: ushr-int v2, v3, v4
+001b86: b021                                   |0045: add-int/2addr v1, v2
+001b88: 0f01                                   |0046: return v1
+      catches       : (none)
+      positions     :
+        0x0000 line=154
+        0x0002 line=155
+        0x0005 line=156
+        0x0008 line=157
+        0x000a line=158
+        0x000e line=159
+        0x0010 line=160
+        0x0011 line=161
+        0x0013 line=162
+        0x0015 line=163
+        0x0017 line=164
+        0x0018 line=165
+        0x0019 line=166
+        0x001b line=167
+        0x001d line=168
+        0x0021 line=169
+        0x0023 line=170
+        0x0025 line=171
+        0x0027 line=172
+        0x0035 line=173
+        0x003d line=174
+      locals        :
+        0x0002 - 0x0035 reg=0 r I
+        0x0035 - 0x003d reg=1 r I
+        0x003d - 0x0047 reg=0 r I
+        0x0000 - 0x0047 reg=3 a I
+        0x0000 - 0x0047 reg=4 b I
+
+    #14              : (in Ldex/sample/Sample;)
+      name          : 'lambda$lambdas$0'
+      type          : '(III)I'
+      access        : 0x1008 (STATIC SYNTHETIC)
+      method_idx    : 72
+      code          -
+      registers     : 4
+      ins           : 3
+      outs          : 0
+      insns size    : 4 16-bit code units
+001b8c:                                        |[001b8c] dex.sample.Sample.lambda$lambdas$0:(III)I
+001b9c: 9000 0203                              |0000: add-int v0, v2, v3
+001ba0: b010                                   |0002: add-int/2addr v0, v1
+001ba2: 0f00                                   |0003: return v0
+      catches       : (none)
+      positions     :
+        0x0000 line=412
+      locals        :
+        0x0000 - 0x0004 reg=1 seed I
+        0x0000 - 0x0004 reg=2 x I
+        0x0000 - 0x0004 reg=3 y I
+
+    #15              : (in Ldex/sample/Sample;)
+      name          : 'lambdas'
+      type          : '(I)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 73
+      code          -
+      registers     : 9
+      ins           : 1
+      outs          : 3
+      insns size    : 55 16-bit code units
+001ba4:                                        |[001ba4] dex.sample.Sample.lambdas:(I)I
+001bb4: 2200 1700                              |0000: new-instance v0, Ldex/sample/Sample$3; // type@0017
+001bb8: 7020 2700 8000                         |0002: invoke-direct {v0, v8}, Ldex/sample/Sample$3;.<init>:(I)V // method@0027
+001bbe: 2201 1800                              |0005: new-instance v1, Ldex/sample/Sample$4; // type@0018
+001bc2: 7010 2900 0100                         |0007: invoke-direct {v1}, Ldex/sample/Sample$4;.<init>:()V // method@0029
+001bc8: 2202 1900                              |000a: new-instance v2, Ldex/sample/Sample$5; // type@0019
+001bcc: 7010 2b00 0200                         |000c: invoke-direct {v2}, Ldex/sample/Sample$5;.<init>:()V // method@002b
+001bd2: 2203 1400                              |000f: new-instance v3, Ldex/sample/Sample$1; // type@0014
+001bd6: 7020 2200 8300                         |0011: invoke-direct {v3, v8}, Ldex/sample/Sample$1;.<init>:(I)V // method@0022
+001bdc: 7210 6d00 0300                         |0014: invoke-interface {v3}, Ljava/lang/Runnable;.run:()V // method@006d
+001be2: 1224                                   |0017: const/4 v4, #int 2 // #2
+001be4: 1215                                   |0018: const/4 v5, #int 1 // #1
+001be6: 7230 8900 5004                         |0019: invoke-interface {v0, v5, v4}, Ljava/util/function/IntBinaryOperator;.applyAsInt:(II)I // method@0089
+001bec: 0a04                                   |001c: move-result v4
+001bee: 1236                                   |001d: const/4 v6, #int 3 // #3
+001bf0: 1247                                   |001e: const/4 v7, #int 4 // #4
+001bf2: 7230 8900 6107                         |001f: invoke-interface {v1, v6, v7}, Ljava/util/function/IntBinaryOperator;.applyAsInt:(II)I // method@0089
+001bf8: 0a06                                   |0022: move-result v6
+001bfa: b064                                   |0023: add-int/2addr v4, v6
+001bfc: 2206 1500                              |0024: new-instance v6, Ldex/sample/Sample$1Local; // type@0015
+001c00: 7010 2400 0600                         |0026: invoke-direct {v6}, Ldex/sample/Sample$1Local;.<init>:()V // method@0024
+001c06: 6e20 2500 8600                         |0029: invoke-virtual {v6, v8}, Ldex/sample/Sample$1Local;.twice:(I)I // method@0025
+001c0c: 0a06                                   |002c: move-result v6
+001c0e: b064                                   |002d: add-int/2addr v4, v6
+001c10: 7210 8a00 0200                         |002e: invoke-interface {v2}, Ljava/util/function/Supplier;.get:()Ljava/lang/Object; // method@008a
+001c16: 0c06                                   |0031: move-result-object v6
+001c18: 3906 0300                              |0032: if-nez v6, 0035 // +0003
+001c1c: 1205                                   |0034: const/4 v5, #int 0 // #0
+001c1e: b054                                   |0035: add-int/2addr v4, v5
+001c20: 0f04                                   |0036: return v4
+      catches       : (none)
+      positions     :
+        0x0000 line=412
+        0x0005 line=413
+        0x000a line=414
+        0x000f line=420
+        0x0014 line=426
+        0x0017 line=427
+        0x002e line=428
+        0x0036 line=427
+      locals        :
+        0x0005 - 0x0037 reg=0 add Ljava/util/function/IntBinaryOperator;
+        0x000a - 0x0037 reg=1 max Ljava/util/function/IntBinaryOperator;
+        0x000f - 0x0037 reg=2 make Ljava/util/function/Supplier; Ljava/util/function/Supplier<Ldex/sample/Sample;>;
+        0x0014 - 0x0037 reg=3 r Ljava/lang/Runnable;
+        0x0000 - 0x0037 reg=8 seed I
+
+    #16              : (in Ldex/sample/Sample;)
+      name          : 'locals'
+      type          : '(Ljava/util/Map;Ljava/lang/Comparable;)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 74
+      code          -
+      registers     : 9
+      ins           : 2
+      outs          : 2
+      insns size    : 73 16-bit code units
+001c24:                                        |[001c24] dex.sample.Sample.locals:(Ljava/util/Map;Ljava/lang/Comparable;)I
+001c34: 1200                                   |0000: const/4 v0, #int 0 // #0
+001c36: 7210 8700 0700                         |0001: invoke-interface {v7}, Ljava/util/Map;.entrySet:()Ljava/util/Set; // method@0087
+001c3c: 0c01                                   |0004: move-result-object v1
+001c3e: 7210 8800 0100                         |0005: invoke-interface {v1}, Ljava/util/Set;.iterator:()Ljava/util/Iterator; // method@0088
+001c44: 0c01                                   |0008: move-result-object v1
+001c46: 7210 8100 0100                         |0009: invoke-interface {v1}, Ljava/util/Iterator;.hasNext:()Z // method@0081
+001c4c: 0a02                                   |000c: move-result v2
+001c4e: 3802 2a00                              |000d: if-eqz v2, 0037 // +002a
+001c52: 7210 8200 0100                         |000f: invoke-interface {v1}, Ljava/util/Iterator;.next:()Ljava/lang/Object; // method@0082
+001c58: 0c02                                   |0012: move-result-object v2
+001c5a: 1f02 4a00                              |0013: check-cast v2, Ljava/util/Map$Entry; // type@004a
+001c5e: 7210 8600 0200                         |0015: invoke-interface {v2}, Ljava/util/Map$Entry;.getValue:()Ljava/lang/Object; // method@0086
+001c64: 0c03                                   |0018: move-result-object v3
+001c66: 1f03 4900                              |0019: check-cast v3, Ljava/util/List; // type@0049
+001c6a: 7210 8500 0200                         |001b: invoke-interface {v2}, Ljava/util/Map$Entry;.getKey:()Ljava/lang/Object; // method@0085
+001c70: 0c04                                   |001e: move-result-object v4
+001c72: 1f04 2800                              |001f: check-cast v4, Ljava/lang/Comparable; // type@0028
+001c76: 7220 6400 8400                         |0021: invoke-interface {v4, v8}, Ljava/lang/Comparable;.compareTo:(Ljava/lang/Object;)I // method@0064
+001c7c: 0a04                                   |0024: move-result v4
+001c7e: 3d04 0a00                              |0025: if-lez v4, 002f // +000a
+001c82: 7210 8400 0300                         |0027: invoke-interface {v3}, Ljava/util/List;.size:()I // method@0084
+001c88: 0a04                                   |002a: move-result v4
+001c8a: 8144                                   |002b: int-to-long v4, v4
+001c8c: 8446                                   |002c: long-to-int v6, v4
+001c8e: b060                                   |002d: add-int/2addr v0, v6
+001c90: 2808                                   |002e: goto 0036 // +0008
+001c92: 7210 8300 0300                         |002f: invoke-interface {v3}, Ljava/util/List;.hashCode:()I // method@0083
+001c98: 0a04                                   |0032: move-result v4
+001c9a: 8344                                   |0033: int-to-double v4, v4
+001c9c: 8a46                                   |0034: double-to-int v6, v4
+001c9e: b160                                   |0035: sub-int/2addr v0, v6
+001ca0: 28d3                                   |0036: goto 0009 // -002d
+001ca2: 1a01 6201                              |0037: const-string v1, "scope" // string@0162
+001ca6: 6e10 7100 0100                         |0039: invoke-virtual {v1}, Ljava/lang/String;.length:()I // method@0071
+001cac: 0a02                                   |003c: move-result v2
+001cae: b020                                   |003d: add-int/2addr v0, v2
+001cb0: 2201 3200                              |003e: new-instance v1, Ljava/lang/Object; // type@0032
+001cb4: 7010 6b00 0100                         |0040: invoke-direct {v1}, Ljava/lang/Object;.<init>:()V // method@006b
+001cba: 6e10 6c00 0100                         |0043: invoke-virtual {v1}, Ljava/lang/Object;.hashCode:()I // method@006c
+001cc0: 0a02                                   |0046: move-result v2
+001cc2: b020                                   |0047: add-int/2addr v0, v2
+001cc4: 0f00                                   |0048: return v0
+      catches       : (none)
+      positions     :
+        0x0000 line=446
+        0x0001 line=447
+        0x0015 line=448
+        0x001b line=449
+        0x0027 line=450
+        0x002c line=451
+        0x002e line=452
+        0x002f line=453
+        0x0034 line=454
+        0x0036 line=456
+        0x0037 line=458
+        0x0039 line=459
+        0x003e line=462
+        0x0043 line=463
+        0x0048 line=465
+      locals        :
+        0x002c - 0x002e reg=4 wide J
+        0x0015 - 0x0036 reg=2 e Ljava/util/Map$Entry; Ljava/util/Map$Entry<TK;Ljava/util/List<TV;>;>;
+        0x001b - 0x0036 reg=3 values Ljava/util/List; Ljava/util/List<TV;>;
+        0x0034 - 0x0036 reg=4 other D
+        0x0039 - 0x003e reg=1 s Ljava/lang/String;
+        0x0043 - 0x0048 reg=1 s Ljava/lang/Object;
+        0x0001 - 0x0049 reg=0 total I
+        0x0000 - 0x0049 reg=7 map Ljava/util/Map; Ljava/util/Map<TK;Ljava/util/List<TV;>;>;
+        0x0000 - 0x0049 reg=8 key Ljava/lang/Comparable; TK;
+
+    #17              : (in Ldex/sample/Sample;)
+      name          : 'longs'
+      type          : '(JJI)J'
+      access        : 0x0008 (STATIC)
+      method_idx    : 76
+      code          -
+      registers     : 13
+      ins           : 5
+      outs          : 0
+      insns size    : 53 16-bit code units
+00247c:                                        |[00247c] dex.sample.Sample.longs:(JJI)J
+00248c: 9b00 080a                              |0000: add-long v0, v8, v10
+002490: 9d02 080a                              |0002: mul-long v2, v8, v10
+002494: bc20                                   |0004: sub-long/2addr v0, v2
+002496: 1602 0100                              |0005: const-wide/16 v2, #int 1 // #1
+00249a: a104 0a02                              |0007: or-long v4, v10, v2
+00249e: be40                                   |0009: div-long/2addr v0, v4
+0024a0: 1604 0b00                              |000a: const-wide/16 v4, #int 11 // #b
+0024a4: bf40                                   |000c: rem-long/2addr v0, v4
+0024a6: a004 0008                              |000d: and-long v4, v0, v8
+0024aa: a206 000a                              |000f: xor-long v6, v0, v10
+0024ae: a100 0406                              |0011: or-long v0, v4, v6
+0024b2: a304 000c                              |0013: shl-long v4, v0, v12
+0024b6: a406 000c                              |0015: shr-long v6, v0, v12
+0024ba: bb64                                   |0017: add-long/2addr v4, v6
+0024bc: a506 000c                              |0018: ushr-long v6, v0, v12
+0024c0: bb64                                   |001a: add-long/2addr v4, v6
+0024c2: 7d40                                   |001b: neg-long v0, v4
+0024c4: 7e46                                   |001c: not-long v6, v4
+0024c6: bb60                                   |001d: add-long/2addr v0, v6
+0024c8: 3104 080a                              |001e: cmp-long v4, v8, v10
+0024cc: 3b04 0300                              |0020: if-gez v4, 0023 // +0003
+0024d0: bb20                                   |0022: add-long/2addr v0, v2
+0024d2: 1802 8967 4523 0100 0000               |0023: const-wide v2, #double 2.41436e-314 // #0000000123456789
+0024dc: bb02                                   |0028: add-long/2addr v2, v0
+0024de: 1904 0400                              |0029: const-wide/high16 v4, #long 1125899906842624 // #4
+0024e2: bb42                                   |002b: add-long/2addr v2, v4
+0024e4: 1704 ffff ff7f                         |002c: const-wide/32 v4, #float nan // #7fffffff
+0024ea: bb42                                   |002f: add-long/2addr v2, v4
+0024ec: 1704 4042 0f00                         |0030: const-wide/32 v4, #float 1.4013e-39 // #000f4240
+0024f2: bb42                                   |0033: add-long/2addr v2, v4
+0024f4: 1002                                   |0034: return-wide v2
+      catches       : (none)
+      positions     :
+        0x0000 line=178
+        0x0005 line=179
+        0x000a line=180
+        0x000d line=181
+        0x0013 line=182
+        0x001b line=183
+        0x001e line=184
+        0x0022 line=185
+        0x0023 line=187
+      locals        :
+        0x0005 - 0x001b reg=0 r J
+        0x001b - 0x001e reg=4 r J
+        0x001e - 0x0035 reg=0 r J
+        0x0000 - 0x0035 reg=8 a J
+        0x0000 - 0x0035 reg=10 b J
+        0x0000 - 0x0035 reg=12 s I
+
+    #18              : (in Ldex/sample/Sample;)
+      name          : 'lookup'
+      type          : '()Ljava/lang/invoke/MethodHandle;'
+      access        : 0x0008 (STATIC)
+      method_idx    : 77
+      code          -
+      registers     : 4
+      ins           : 0
+      outs          : 4
+      insns size    : 21 16-bit code units
+001f58:                                        |[001f58] dex.sample.Sample.lookup:()Ljava/lang/invoke/MethodHandle;
+001f68: 7100 7b00 0000                         |0000: invoke-static {}, Ljava/lang/invoke/MethodHandles;.lookup:()Ljava/lang/invoke/MethodHandles$Lookup; // method@007b
+001f6e: 0c00                                   |0003: move-result-object v0
+001f70: 6201 3400                              |0004: sget-object v1, Ljava/lang/Integer;.TYPE:Ljava/lang/Class; // field@0034
+001f74: 6202 3400                              |0006: sget-object v2, Ljava/lang/Integer;.TYPE:Ljava/lang/Class; // field@0034
+001f78: 7120 7c00 2100                         |0008: invoke-static {v1, v2}, Ljava/lang/invoke/MethodType;.methodType:(Ljava/lang/Class;Ljava/lang/Class;)Ljava/lang/invoke/MethodType; // method@007c
+001f7e: 0c01                                   |000b: move-result-object v1
+001f80: 1c02 1e00                              |000c: const-class v2, Ldex/sample/Sample; // type@001e
+001f84: 1a03 5701                              |000e: const-string v3, "packed" // string@0157
+001f88: 6e40 7a00 2013                         |0010: invoke-virtual {v0, v2, v3, v1}, Ljava/lang/invoke/MethodHandles$Lookup;.findStatic:(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle; // method@007a
+001f8e: 0c00                                   |0013: move-result-object v0
+001f90: 1100                                   |0014: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=440
+        0x0008 line=441
+        0x000c line=440
+      locals        :
+
+    #19              : (in Ldex/sample/Sample;)
+      name          : 'main'
+      type          : '([Ljava/lang/String;)V'
+      access        : 0x0009 (PUBLIC STATIC)
+      method_idx    : 78
+      code          -
+      registers     : 12
+      ins           : 1
+      outs          : 6
+      insns size    : 146 16-bit code units
+002708:                                        |[002708] dex.sample.Sample.main:([Ljava/lang/String;)V
+002718: 6200 3500                              |0000: sget-object v0, Ljava/lang/System;.out:Ljava/io/PrintStream; // field@0035
+00271c: 1211                                   |0002: const/4 v1, #int 1 // #1
+00271e: 1222                                   |0003: const/4 v2, #int 2 // #2
+002720: 7120 4700 2100                         |0004: invoke-static {v1, v2}, Ldex/sample/Sample;.ints:(II)I // method@0047
+002726: 0a03                                   |0007: move-result v3
+002728: 8133                                   |0008: int-to-long v3, v3
+00272a: 1605 0400                              |0009: const-wide/16 v5, #int 4 // #4
+00272e: 1257                                   |000b: const/4 v7, #int 5 // #5
+002730: 1608 0300                              |000c: const-wide/16 v8, #int 3 // #3
+002734: 7157 4c00 9865                         |000e: invoke-static {v8, v9, v5, v6, v7}, Ldex/sample/Sample;.longs:(JJI)J // method@004c
+00273a: 0b05                                   |0011: move-result-wide v5
+00273c: bb53                                   |0012: add-long/2addr v3, v5
+00273e: 8633                                   |0013: long-to-double v3, v3
+002740: 1505 803f                              |0014: const/high16 v5, #int 1065353216 // #3f80
+002744: 1906 0040                              |0016: const-wide/high16 v6, #long 4611686018427387904 // #4000
+002748: 7130 4500 6507                         |0018: invoke-static {v5, v6, v7}, Ldex/sample/Sample;.floats:(FD)D // method@0045
+00274e: 0b05                                   |001b: move-result-wide v5
+002750: cb53                                   |001c: add-double/2addr v3, v5
+002752: 7100 4000 0000                         |001d: invoke-static {}, Ldex/sample/Sample;.constants:()J // method@0040
+002758: 0b05                                   |0020: move-result-wide v5
+00275a: 8655                                   |0021: long-to-double v5, v5
+00275c: cb53                                   |0022: add-double/2addr v3, v5
+00275e: 1215                                   |0023: const/4 v5, #int 1 // #1
+002760: 1606 0200                              |0024: const-wide/16 v6, #int 2 // #2
+002764: 1508 4040                              |0026: const/high16 v8, #int 1077936128 // #4040
+002768: 1909 1040                              |0028: const-wide/high16 v9, #long 4616189618054758400 // #4010
+00276c: 7706 4100 0500                         |002a: invoke-static/range {v5, v6, v7, v8, v9, v10}, Ldex/sample/Sample;.conversions:(IJFD)J // method@0041
+002772: 0b05                                   |002d: move-result-wide v5
+002774: 8655                                   |002e: long-to-double v5, v5
+002776: cb53                                   |002f: add-double/2addr v3, v5
+002778: 1205                                   |0030: const/4 v5, #int 0 // #0
+00277a: 7130 3d00 2105                         |0031: invoke-static {v1, v2, v5}, Ldex/sample/Sample;.branches:(IILjava/lang/Object;)I // method@003d
+002780: 0a01                                   |0034: move-result v1
+002782: 8311                                   |0035: int-to-double v1, v1
+002784: cb13                                   |0036: add-double/2addr v3, v1
+002786: 1301 0c00                              |0037: const/16 v1, #int 12 // #c
+00278a: 7110 5200 0100                         |0039: invoke-static {v1}, Ldex/sample/Sample;.packed:(I)I // method@0052
+002790: 0a01                                   |003c: move-result v1
+002792: 8311                                   |003d: int-to-double v1, v1
+002794: cb13                                   |003e: add-double/2addr v3, v1
+002796: 1301 4d00                              |003f: const/16 v1, #int 77 // #4d
+00279a: 7110 5400 0100                         |0041: invoke-static {v1}, Ldex/sample/Sample;.sparse:(I)I // method@0054
+0027a0: 0a01                                   |0044: move-result v1
+0027a2: 8311                                   |0045: int-to-double v1, v1
+0027a4: cb13                                   |0046: add-double/2addr v3, v1
+0027a6: 1a01 ef00                              |0047: const-string v1, "beta" // string@00ef
+0027aa: 7110 5500 0100                         |0049: invoke-static {v1}, Ldex/sample/Sample;.strings:(Ljava/lang/String;)I // method@0055
+0027b0: 0a01                                   |004c: move-result v1
+0027b2: 8311                                   |004d: int-to-double v1, v1
+0027b4: cb13                                   |004e: add-double/2addr v3, v1
+0027b6: 6201 0400                              |004f: sget-object v1, Ldex/sample/Color;.RED:Ldex/sample/Color; // field@0004
+0027ba: 7110 3f00 0100                         |0051: invoke-static {v1}, Ldex/sample/Sample;.colors:(Ldex/sample/Color;)I // method@003f
+0027c0: 0a01                                   |0054: move-result v1
+0027c2: 8311                                   |0055: int-to-double v1, v1
+0027c4: cb13                                   |0056: add-double/2addr v3, v1
+0027c6: 1231                                   |0057: const/4 v1, #int 3 // #3
+0027c8: 7110 3c00 0100                         |0058: invoke-static {v1}, Ldex/sample/Sample;.arrays:(I)J // method@003c
+0027ce: 0b01                                   |005b: move-result-wide v1
+0027d0: 8611                                   |005c: long-to-double v1, v1
+0027d2: cb13                                   |005d: add-double/2addr v3, v1
+0027d4: 1a01 1500                              |005e: const-string v1, "12" // string@0015
+0027d8: 7110 4300 0100                         |0060: invoke-static {v1}, Ldex/sample/Sample;.exceptions:(Ljava/lang/String;)I // method@0043
+0027de: 0a01                                   |0063: move-result v1
+0027e0: 8311                                   |0064: int-to-double v1, v1
+0027e2: cb13                                   |0065: add-double/2addr v3, v1
+0027e4: 1241                                   |0066: const/4 v1, #int 4 // #4
+0027e6: 7110 4900 0100                         |0067: invoke-static {v1}, Ldex/sample/Sample;.lambdas:(I)I // method@0049
+0027ec: 0a01                                   |006a: move-result v1
+0027ee: 8311                                   |006b: int-to-double v1, v1
+0027f0: cb13                                   |006c: add-double/2addr v3, v1
+0027f2: 7100 5600 0000                         |006d: invoke-static {}, Ldex/sample/Sample;.unicode:()Ljava/lang/String; // method@0056
+0027f8: 0c01                                   |0070: move-result-object v1
+0027fa: 6202 2500                              |0071: sget-object v2, Ldex/sample/Sample;.computed:Ljava/lang/String; // field@0025
+0027fe: 2205 3800                              |0073: new-instance v5, Ljava/lang/StringBuilder; // type@0038
+002802: 7010 7300 0500                         |0075: invoke-direct {v5}, Ljava/lang/StringBuilder;.<init>:()V // method@0073
+002808: 6e30 7400 3504                         |0078: invoke-virtual {v5, v3, v4}, Ljava/lang/StringBuilder;.append:(D)Ljava/lang/StringBuilder; // method@0074
+00280e: 0c03                                   |007b: move-result-object v3
+002810: 6e20 7600 1300                         |007c: invoke-virtual {v3, v1}, Ljava/lang/StringBuilder;.append:(Ljava/lang/String;)Ljava/lang/StringBuilder; // method@0076
+002816: 0c01                                   |007f: move-result-object v1
+002818: 1a03 6a01                              |0080: const-string v3, "static \"quoted\"\n\tÀ€\001\177Â€ß¿à €ï¿¿í ½í¸€ í¯¿í¿¿ í € lone\001\002\003\004\005\006\007\b\t\n\013\f\r\016\017\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037\177" // string@016a
+00281c: 6e20 7600 3100                         |0082: invoke-virtual {v1, v3}, Ljava/lang/StringBuilder;.append:(Ljava/lang/String;)Ljava/lang/StringBuilder; // method@0076
+002822: 0c01                                   |0085: move-result-object v1
+002824: 6e20 7600 2100                         |0086: invoke-virtual {v1, v2}, Ljava/lang/StringBuilder;.append:(Ljava/lang/String;)Ljava/lang/StringBuilder; // method@0076
+00282a: 0c01                                   |0089: move-result-object v1
+00282c: 6e10 7700 0100                         |008a: invoke-virtual {v1}, Ljava/lang/StringBuilder;.toString:()Ljava/lang/String; // method@0077
+002832: 0c01                                   |008d: move-result-object v1
+002834: 6e20 5f00 1000                         |008e: invoke-virtual {v0, v1}, Ljava/io/PrintStream;.println:(Ljava/lang/String;)V // method@005f
+00283a: 0e00                                   |0091: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=511
+        0x0023 line=512
+        0x0047 line=513
+        0x0066 line=514
+        0x008e line=511
+        0x0091 line=515
+      locals        :
+        0x0000 - 0x0092 reg=11 args [Ljava/lang/String;
+
+    #20              : (in Ldex/sample/Sample;)
+      name          : 'many'
+      type          : '(IJDLjava/lang/Object;Ljava/lang/String;CBS)J'
+      access        : 0x0008 (STATIC)
+      method_idx    : 81
+      code          -
+      registers     : 14
+      ins           : 10
+      outs          : 1
+      insns size    : 23 16-bit code units
+0024f8:                                        |[0024f8] dex.sample.Sample.many:(IJDLjava/lang/Object;Ljava/lang/String;CBS)J
+002508: 8140                                   |0000: int-to-long v0, v4
+00250a: bb50                                   |0001: add-long/2addr v0, v5
+00250c: 8b72                                   |0002: double-to-long v2, v7
+00250e: bb20                                   |0003: add-long/2addr v0, v2
+002510: 6e10 6c00 0900                         |0004: invoke-virtual {v9}, Ljava/lang/Object;.hashCode:()I // method@006c
+002516: 0a02                                   |0007: move-result v2
+002518: 8122                                   |0008: int-to-long v2, v2
+00251a: bb20                                   |0009: add-long/2addr v0, v2
+00251c: 6e10 7100 0a00                         |000a: invoke-virtual {v10}, Ljava/lang/String;.length:()I // method@0071
+002522: 0a02                                   |000d: move-result v2
+002524: 8122                                   |000e: int-to-long v2, v2
+002526: bb20                                   |000f: add-long/2addr v0, v2
+002528: 81b2                                   |0010: int-to-long v2, v11
+00252a: bb20                                   |0011: add-long/2addr v0, v2
+00252c: 81c2                                   |0012: int-to-long v2, v12
+00252e: bb20                                   |0013: add-long/2addr v0, v2
+002530: 81d2                                   |0014: int-to-long v2, v13
+002532: bb20                                   |0015: add-long/2addr v0, v2
+002534: 1000                                   |0016: return-wide v0
+      catches       : (none)
+      positions     :
+        0x0000 line=392
+      locals        :
+        0x0000 - 0x0017 reg=4 a I
+        0x0000 - 0x0017 reg=5 b J
+        0x0000 - 0x0017 reg=7 c D
+        0x0000 - 0x0017 reg=9 d Ljava/lang/Object;
+        0x0000 - 0x0017 reg=10 e Ljava/lang/String;
+        0x0000 - 0x0017 reg=11 f C
+        0x0000 - 0x0017 reg=12 g B
+        0x0000 - 0x0017 reg=13 h S
+
+    #21              : (in Ldex/sample/Sample;)
+      name          : 'packed'
+      type          : '(I)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 82
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 0
+      insns size    : 34 16-bit code units
+001d74:                                        |[001d74] dex.sample.Sample.packed:(I)I
+001d84: 2b01 1200 0000                         |0000: packed-switch v1, 00000012 // +00000012
+001d8a: 12f0                                   |0003: const/4 v0, #int -1 // #ff
+001d8c: 0f00                                   |0004: return v0
+001d8e: 1300 1900                              |0005: const/16 v0, #int 25 // #19
+001d92: 0f00                                   |0007: return v0
+001d94: 1300 1000                              |0008: const/16 v0, #int 16 // #10
+001d98: 0f00                                   |000a: return v0
+001d9a: 1300 0900                              |000b: const/16 v0, #int 9 // #9
+001d9e: 0f00                                   |000d: return v0
+001da0: 1240                                   |000e: const/4 v0, #int 4 // #4
+001da2: 0f00                                   |000f: return v0
+001da4: 1210                                   |0010: const/4 v0, #int 1 // #1
+001da6: 0f00                                   |0011: return v0
+001da8: 0001 0600 0a00 0000 1000 0000 0e00 ... |0012: packed-switch-data (16 units)
+      catches       : (none)
+      positions     :
+        0x0000 line=254
+        0x0003 line=260
+        0x0005 line=259
+        0x0008 line=258
+        0x000b line=257
+        0x000e line=256
+        0x0010 line=255
+      locals        :
+        0x0000 - 0x0022 reg=1 x I
+
+    #22              : (in Ldex/sample/Sample;)
+      name          : 'privateCall'
+      type          : '()I'
+      access        : 0x0002 (PRIVATE)
+      method_idx    : 83
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 0
+      insns size    : 3 16-bit code units
+001dc8:                                        |[001dc8] dex.sample.Sample.privateCall:()I
+001dd8: 5210 2b00                              |0000: iget v0, v1, Ldex/sample/Sample;.instanceInt:I // field@002b
+001ddc: 0f00                                   |0002: return v0
+      catches       : (none)
+      positions     :
+        0x0000 line=407
+      locals        :
+        0x0000 - 0x0003 reg=1 this Ldex/sample/Sample;
+
+    #23              : (in Ldex/sample/Sample;)
+      name          : 'sparse'
+      type          : '(I)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 84
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 0
+      insns size    : 44 16-bit code units
+001de0:                                        |[001de0] dex.sample.Sample.sparse:(I)I
+001df0: 2c01 1200 0000                         |0000: sparse-switch v1, 00000012 // +00000012
+001df6: 1200                                   |0003: const/4 v0, #int 0 // #0
+001df8: 0f00                                   |0004: return v0
+001dfa: 1260                                   |0005: const/4 v0, #int 6 // #6
+001dfc: 0f00                                   |0006: return v0
+001dfe: 1250                                   |0007: const/4 v0, #int 5 // #5
+001e00: 0f00                                   |0008: return v0
+001e02: 1240                                   |0009: const/4 v0, #int 4 // #4
+001e04: 0f00                                   |000a: return v0
+001e06: 1230                                   |000b: const/4 v0, #int 3 // #3
+001e08: 0f00                                   |000c: return v0
+001e0a: 1220                                   |000d: const/4 v0, #int 2 // #2
+001e0c: 0f00                                   |000e: return v0
+001e0e: 1210                                   |000f: const/4 v0, #int 1 // #1
+001e10: 0f00                                   |0010: return v0
+001e12: 0000                                   |0011: nop // spacer
+001e14: 0002 0600 c0bd f0ff fbff ffff 0000 ... |0012: sparse-switch-data (26 units)
+      catches       : (none)
+      positions     :
+        0x0000 line=265
+        0x0003 line=272
+        0x0005 line=271
+        0x0007 line=270
+        0x0009 line=269
+        0x000b line=268
+        0x000d line=267
+        0x000f line=266
+      locals        :
+        0x0000 - 0x002c reg=1 x I
+
+    #24              : (in Ldex/sample/Sample;)
+      name          : 'strings'
+      type          : '(Ljava/lang/String;)I'
+      access        : 0x0008 (STATIC)
+      method_idx    : 85
+      code          -
+      registers     : 5
+      ins           : 1
+      outs          : 2
+      insns size    : 74 16-bit code units
+001e48:                                        |[001e48] dex.sample.Sample.strings:(Ljava/lang/String;)I
+001e58: 6e10 7000 0400                         |0000: invoke-virtual {v4}, Ljava/lang/String;.hashCode:()I // method@0070
+001e5e: 0a00                                   |0003: move-result v0
+001e60: 1201                                   |0004: const/4 v1, #int 0 // #0
+001e62: 1222                                   |0005: const/4 v2, #int 2 // #2
+001e64: 1213                                   |0006: const/4 v3, #int 1 // #1
+001e66: 2c00 2b00 0000                         |0007: sparse-switch v0, 00000032 // +0000002b
+001e6c: 281f                                   |000a: goto 0029 // +001f
+001e6e: 1a00 1801                              |000b: const-string v0, "gamma" // string@0118
+001e72: 6e20 6f00 0400                         |000d: invoke-virtual {v4, v0}, Ljava/lang/String;.equals:(Ljava/lang/Object;)Z // method@006f
+001e78: 0a00                                   |0010: move-result v0
+001e7a: 3800 f9ff                              |0011: if-eqz v0, 000a // -0007
+001e7e: 0120                                   |0013: move v0, v2
+001e80: 2816                                   |0014: goto 002a // +0016
+001e82: 1a00 e500                              |0015: const-string v0, "alpha" // string@00e5
+001e86: 6e20 6f00 0400                         |0017: invoke-virtual {v4, v0}, Ljava/lang/String;.equals:(Ljava/lang/Object;)Z // method@006f
+001e8c: 0a00                                   |001a: move-result v0
+001e8e: 3800 efff                              |001b: if-eqz v0, 000a // -0011
+001e92: 0110                                   |001d: move v0, v1
+001e94: 280c                                   |001e: goto 002a // +000c
+001e96: 1a00 ef00                              |001f: const-string v0, "beta" // string@00ef
+001e9a: 6e20 6f00 0400                         |0021: invoke-virtual {v4, v0}, Ljava/lang/String;.equals:(Ljava/lang/Object;)Z // method@006f
+001ea0: 0a00                                   |0024: move-result v0
+001ea2: 3800 e5ff                              |0025: if-eqz v0, 000a // -001b
+001ea6: 0130                                   |0027: move v0, v3
+001ea8: 2802                                   |0028: goto 002a // +0002
+001eaa: 12f0                                   |0029: const/4 v0, #int -1 // #ff
+001eac: 2b00 1600 0000                         |002a: packed-switch v0, 00000040 // +00000016
+001eb2: 0f01                                   |002d: return v1
+001eb4: 1230                                   |002e: const/4 v0, #int 3 // #3
+001eb6: 0f00                                   |002f: return v0
+001eb8: 0f02                                   |0030: return v2
+001eba: 0f03                                   |0031: return v3
+001ebc: 0002 0300 f015 2e00 5eb1 8905 a733 ... |0032: sparse-switch-data (14 units)
+001ed8: 0001 0300 0000 0000 0700 0000 0600 ... |0040: packed-switch-data (10 units)
+      catches       : (none)
+      positions     :
+        0x0000 line=277
+        0x002d line=281
+        0x002e line=280
+        0x0030 line=279
+        0x0031 line=278
+      locals        :
+        0x0000 - 0x004a reg=4 s Ljava/lang/String;
+
+    #25              : (in Ldex/sample/Sample;)
+      name          : 'unicode'
+      type          : '()Ljava/lang/String;'
+      access        : 0x0009 (PUBLIC STATIC)
+      method_idx    : 86
+      code          -
+      registers     : 1
+      ins           : 0
+      outs          : 0
+      insns size    : 3 16-bit code units
+001f40:                                        |[001f40] dex.sample.Sample.unicode:()Ljava/lang/String;
+001f50: 1a00 8601                              |0000: const-string v0, "Ã©ä¸­í ½í¸€À€end \"q\" \\ \n\r\t'" // string@0186
+001f54: 1100                                   |0002: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=507
+      locals        :
+
+    #26              : (in Ldex/sample/Sample;)
+      name          : 'varargs'
+      type          : '([Ljava/lang/Object;)Ljava/util/List;'
+      access        : 0x0089 (PUBLIC STATIC VARARGS)
+      method_idx    : 87
+      code          -
+      registers     : 2
+      ins           : 1
+      outs          : 1
+      insns size    : 5 16-bit code units
+001f94:                                        |[001f94] dex.sample.Sample.varargs:([Ljava/lang/Object;)Ljava/util/List;
+001fa4: 7110 8000 0100                         |0000: invoke-static {v1}, Ljava/util/Arrays;.asList:([Ljava/lang/Object;)Ljava/util/List; // method@0080
+001faa: 0c00                                   |0003: move-result-object v0
+001fac: 1100                                   |0004: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=503
+      locals        :
+        0x0000 - 0x0005 reg=1 items [Ljava/lang/Object; [TT;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Sample;)
+      name          : 'area'
+      type          : '()D'
+      access        : 0x1041 (PUBLIC BRIDGE SYNTHETIC)
+      method_idx    : 59
+      code          -
+      registers     : 3
+      ins           : 1
+      outs          : 1
+      insns size    : 5 16-bit code units
+0017e8:                                        |[0017e8] dex.sample.Sample.area:()D
+0017f8: 6f10 0400 0200                         |0000: invoke-super {v2}, Ldex/sample/Base;.area:()D // method@0004
+0017fe: 0b00                                   |0003: move-result-wide v0
+001800: 1000                                   |0004: return-wide v0
+      catches       : (none)
+      positions     :
+        0x0000 line=88
+      locals        :
+        0x0000 - 0x0005 reg=2 this Ldex/sample/Sample;
+
+    #1              : (in Ldex/sample/Sample;)
+      name          : 'calls'
+      type          : '(Ldex/sample/Shape;Ljava/util/List;)J'
+      access        : 0x0000 ()
+      method_idx    : 62
+      code          -
+      registers     : 13
+      ins           : 3
+      outs          : 10
+      insns size    : 77 16-bit code units
+0021d4:                                        |[0021d4] dex.sample.Sample.calls:(Ldex/sample/Shape;Ljava/util/List;)J
+0021e4: 1278                                   |0000: const/4 v8, #int 7 // #7
+0021e6: 1309 0800                              |0001: const/16 v9, #int 8 // #8
+0021ea: 1210                                   |0003: const/4 v0, #int 1 // #1
+0021ec: 1601 0200                              |0004: const-wide/16 v1, #int 2 // #2
+0021f0: 1903 0840                              |0006: const-wide/high16 v3, #long 4613937818241073152 // #4008
+0021f4: 1a06 0901                              |0008: const-string v6, "e" // string@0109
+0021f8: 1307 6600                              |000a: const/16 v7, #int 102 // #66
+0021fc: 07a5                                   |000c: move-object v5, v10
+0021fe: 770a 5100 0000                         |000d: invoke-static/range {v0, v1, v2, v3, v4, v5, v6, v7, v8, v9}, Ldex/sample/Sample;.many:(IJDLjava/lang/Object;Ljava/lang/String;CBS)J // method@0051
+002204: 0b00                                   |0010: move-result-wide v0
+002206: 7210 5b00 0b00                         |0011: invoke-interface {v11}, Ldex/sample/Shape;.describe:()Ljava/lang/String; // method@005b
+00220c: 0c02                                   |0014: move-result-object v2
+00220e: 6e10 7100 0200                         |0015: invoke-virtual {v2}, Ljava/lang/String;.length:()I // method@0071
+002214: 0a02                                   |0018: move-result v2
+002216: 8122                                   |0019: int-to-long v2, v2
+002218: bb20                                   |001a: add-long/2addr v0, v2
+00221a: 7210 8400 0c00                         |001b: invoke-interface {v12}, Ljava/util/List;.size:()I // method@0084
+002220: 0a02                                   |001e: move-result v2
+002222: 8122                                   |001f: int-to-long v2, v2
+002224: bb20                                   |0020: add-long/2addr v0, v2
+002226: 6f10 6c00 0a00                         |0021: invoke-super {v10}, Ljava/lang/Object;.hashCode:()I // method@006c
+00222c: 0a02                                   |0024: move-result v2
+00222e: 8122                                   |0025: int-to-long v2, v2
+002230: bb20                                   |0026: add-long/2addr v0, v2
+002232: 1232                                   |0027: const/4 v2, #int 3 // #3
+002234: 6e20 5000 2a00                         |0028: invoke-virtual {v10, v2}, Ldex/sample/Sample;.make:(I)Ljava/lang/String; // method@0050
+00223a: 0c02                                   |002b: move-result-object v2
+00223c: 6e10 7100 0200                         |002c: invoke-virtual {v2}, Ljava/lang/String;.length:()I // method@0071
+002242: 0a02                                   |002f: move-result v2
+002244: 8122                                   |0030: int-to-long v2, v2
+002246: bb20                                   |0031: add-long/2addr v0, v2
+002248: 7010 5300 0a00                         |0032: invoke-direct {v10}, Ldex/sample/Sample;.privateCall:()I // method@0053
+00224e: 0a02                                   |0035: move-result v2
+002250: 8122                                   |0036: int-to-long v2, v2
+002252: bb20                                   |0037: add-long/2addr v0, v2
+002254: 7100 5d00 0000                         |0038: invoke-static {}, Ldex/sample/Shape;.unit:()Ldex/sample/Shape; // method@005d
+00225a: 0c02                                   |003b: move-result-object v2
+00225c: 7210 5a00 0200                         |003c: invoke-interface {v2}, Ldex/sample/Shape;.area:()D // method@005a
+002262: 0b02                                   |003f: move-result-wide v2
+002264: 1604 0000                              |0040: const-wide/16 v4, #int 0 // #0
+002268: 2f02 0204                              |0042: cmpl-double v2, v2, v4
+00226c: 3d02 0500                              |0044: if-lez v2, 0049 // +0005
+002270: 1602 0100                              |0046: const-wide/16 v2, #int 1 // #1
+002274: 2803                                   |0048: goto 004b // +0003
+002276: 1602 0000                              |0049: const-wide/16 v2, #int 0 // #0
+00227a: bb20                                   |004b: add-long/2addr v0, v2
+00227c: 1000                                   |004c: return-wide v0
+      catches       : (none)
+      positions     :
+        0x0000 line=396
+        0x0011 line=397
+        0x001b line=398
+        0x0021 line=399
+        0x0027 line=400
+        0x0032 line=401
+        0x0038 line=402
+        0x004c line=403
+      locals        :
+        0x0011 - 0x004d reg=0 r J
+        0x0000 - 0x004d reg=10 this Ldex/sample/Sample;
+        0x0000 - 0x004d reg=11 s Ldex/sample/Shape;
+        0x0000 - 0x004d reg=12 list Ljava/util/List; Ljava/util/List<Ljava/lang/String;>;
+
+    #2              : (in Ldex/sample/Sample;)
+      name          : 'fields'
+      type          : '()J'
+      access        : 0x0000 ()
+      method_idx    : 68
+      code          -
+      registers     : 5
+      ins           : 1
+      outs          : 2
+      insns size    : 125 16-bit code units
+002370:                                        |[002370] dex.sample.Sample.fields:()J
+002380: 5240 2b00                              |0000: iget v0, v4, Ldex/sample/Sample;.instanceInt:I // field@002b
+002384: d800 0001                              |0002: add-int/lit8 v0, v0, #int 1 // #01
+002388: 5940 2b00                              |0004: iput v0, v4, Ldex/sample/Sample;.instanceInt:I // field@002b
+00238c: 5340 2c00                              |0006: iget-wide v0, v4, Ldex/sample/Sample;.instanceLong:J // field@002c
+002390: 1602 0200                              |0008: const-wide/16 v2, #int 2 // #2
+002394: bb20                                   |000a: add-long/2addr v0, v2
+002396: 5a40 2c00                              |000b: iput-wide v0, v4, Ldex/sample/Sample;.instanceLong:J // field@002c
+00239a: 5340 2a00                              |000d: iget-wide v0, v4, Ldex/sample/Sample;.instanceDouble:D // field@002a
+00239e: 1902 f83f                              |000f: const-wide/high16 v2, #long 4609434218613702656 // #3ff8
+0023a2: cd20                                   |0011: mul-double/2addr v0, v2
+0023a4: 5a40 2a00                              |0012: iput-wide v0, v4, Ldex/sample/Sample;.instanceDouble:D // field@002a
+0023a8: 5540 2700                              |0014: iget-boolean v0, v4, Ldex/sample/Sample;.flag:Z // field@0027
+0023ac: df00 0001                              |0016: xor-int/lit8 v0, v0, #int 1 // #01
+0023b0: 5c40 2700                              |0018: iput-boolean v0, v4, Ldex/sample/Sample;.flag:Z // field@0027
+0023b4: 5640 2300                              |001a: iget-byte v0, v4, Ldex/sample/Sample;.byteField:B // field@0023
+0023b8: d800 0001                              |001c: add-int/lit8 v0, v0, #int 1 // #01
+0023bc: 8d00                                   |001e: int-to-byte v0, v0
+0023be: 5d40 2300                              |001f: iput-byte v0, v4, Ldex/sample/Sample;.byteField:B // field@0023
+0023c2: 5740 2400                              |0021: iget-char v0, v4, Ldex/sample/Sample;.charField:C // field@0024
+0023c6: d800 0001                              |0023: add-int/lit8 v0, v0, #int 1 // #01
+0023ca: 8e00                                   |0025: int-to-char v0, v0
+0023cc: 5e40 2400                              |0026: iput-char v0, v4, Ldex/sample/Sample;.charField:C // field@0024
+0023d0: 5840 2f00                              |0028: iget-short v0, v4, Ldex/sample/Sample;.shortField:S // field@002f
+0023d4: d800 0001                              |002a: add-int/lit8 v0, v0, #int 1 // #01
+0023d8: 8f00                                   |002c: int-to-short v0, v0
+0023da: 5f40 2f00                              |002d: iput-short v0, v4, Ldex/sample/Sample;.shortField:S // field@002f
+0023de: 5240 2800                              |002f: iget v0, v4, Ldex/sample/Sample;.floatField:F // field@0028
+0023e2: 1501 803f                              |0031: const/high16 v1, #int 1065353216 // #3f80
+0023e6: c610                                   |0033: add-float/2addr v0, v1
+0023e8: 5940 2800                              |0034: iput v0, v4, Ldex/sample/Sample;.floatField:F // field@0028
+0023ec: 5b44 2d00                              |0036: iput-object v4, v4, Ldex/sample/Sample;.next:Ldex/sample/Sample; // field@002d
+0023f0: 5440 2d00                              |0038: iget-object v0, v4, Ldex/sample/Sample;.next:Ldex/sample/Sample; // field@002d
+0023f4: 2420 5a00 0400                         |003a: filled-new-array {v4, v0}, [Ldex/sample/Sample; // type@005a
+0023fa: 0c00                                   |003d: move-result-object v0
+0023fc: 5b40 3000                              |003e: iput-object v0, v4, Ldex/sample/Sample;.siblings:[Ldex/sample/Sample; // field@0030
+002400: 6000 2600                              |0040: sget v0, Ldex/sample/Sample;.counter:I // field@0026
+002404: 5241 2b00                              |0042: iget v1, v4, Ldex/sample/Sample;.instanceInt:I // field@002b
+002408: b010                                   |0044: add-int/2addr v0, v1
+00240a: 6700 2600                              |0045: sput v0, Ldex/sample/Sample;.counter:I // field@0026
+00240e: 6100 3100                              |0047: sget-wide v0, Ldex/sample/Sample;.ticks:J // field@0031
+002412: 1602 0100                              |0049: const-wide/16 v2, #int 1 // #1
+002416: bb20                                   |004b: add-long/2addr v0, v2
+002418: 6800 3100                              |004c: sput-wide v0, Ldex/sample/Sample;.ticks:J // field@0031
+00241c: 5440 2900                              |004e: iget-object v0, v4, Ldex/sample/Sample;.generic:Ljava/util/List; // field@0029
+002420: 6900 2e00                              |0050: sput-object v0, Ldex/sample/Sample;.nothing:Ljava/lang/Object; // field@002e
+002424: 5240 2b00                              |0052: iget v0, v4, Ldex/sample/Sample;.instanceInt:I // field@002b
+002428: 8100                                   |0054: int-to-long v0, v0
+00242a: 5342 2c00                              |0055: iget-wide v2, v4, Ldex/sample/Sample;.instanceLong:J // field@002c
+00242e: bb20                                   |0057: add-long/2addr v0, v2
+002430: 5342 2a00                              |0058: iget-wide v2, v4, Ldex/sample/Sample;.instanceDouble:D // field@002a
+002434: 8b22                                   |005a: double-to-long v2, v2
+002436: bb20                                   |005b: add-long/2addr v0, v2
+002438: 5542 2700                              |005c: iget-boolean v2, v4, Ldex/sample/Sample;.flag:Z // field@0027
+00243c: 8122                                   |005e: int-to-long v2, v2
+00243e: bb20                                   |005f: add-long/2addr v0, v2
+002440: 5642 2300                              |0060: iget-byte v2, v4, Ldex/sample/Sample;.byteField:B // field@0023
+002444: 8122                                   |0062: int-to-long v2, v2
+002446: bb20                                   |0063: add-long/2addr v0, v2
+002448: 5742 2400                              |0064: iget-char v2, v4, Ldex/sample/Sample;.charField:C // field@0024
+00244c: 8122                                   |0066: int-to-long v2, v2
+00244e: bb20                                   |0067: add-long/2addr v0, v2
+002450: 5842 2f00                              |0068: iget-short v2, v4, Ldex/sample/Sample;.shortField:S // field@002f
+002454: 8122                                   |006a: int-to-long v2, v2
+002456: bb20                                   |006b: add-long/2addr v0, v2
+002458: 5242 2800                              |006c: iget v2, v4, Ldex/sample/Sample;.floatField:F // field@0028
+00245c: 8822                                   |006e: float-to-long v2, v2
+00245e: bb20                                   |006f: add-long/2addr v0, v2
+002460: 6002 2600                              |0070: sget v2, Ldex/sample/Sample;.counter:I // field@0026
+002464: 8122                                   |0072: int-to-long v2, v2
+002466: bb20                                   |0073: add-long/2addr v0, v2
+002468: 6102 3100                              |0074: sget-wide v2, Ldex/sample/Sample;.ticks:J // field@0031
+00246c: bb20                                   |0076: add-long/2addr v0, v2
+00246e: 5442 3000                              |0077: iget-object v2, v4, Ldex/sample/Sample;.siblings:[Ldex/sample/Sample; // field@0030
+002472: 2122                                   |0079: array-length v2, v2
+002474: 8122                                   |007a: int-to-long v2, v2
+002476: bb20                                   |007b: add-long/2addr v0, v2
+002478: 1000                                   |007c: return-wide v0
+      catches       : (none)
+      positions     :
+        0x0000 line=372
+        0x0006 line=373
+        0x000d line=374
+        0x0014 line=375
+        0x001a line=376
+        0x0021 line=377
+        0x0028 line=378
+        0x002f line=379
+        0x0036 line=380
+        0x0038 line=381
+        0x0040 line=382
+        0x0047 line=383
+        0x004e line=384
+        0x0052 line=385
+      locals        :
+        0x0000 - 0x007d reg=4 this Ldex/sample/Sample;
+
+    #3              : (in Ldex/sample/Sample;)
+      name          : 'locked'
+      type          : '(Ljava/lang/Object;)I'
+      access        : 0x20000 (DECLARED_SYNCHRONIZED)
+      method_idx    : 75
+      code          -
+      registers     : 3
+      ins           : 2
+      outs          : 1
+      insns size    : 49 16-bit code units
+001cc8:                                        |[001cc8] dex.sample.Sample.locked:(Ljava/lang/Object;)I
+001cd8: 1d01                                   |0000: monitor-enter v1
+001cda: 1d02                                   |0001: monitor-enter v2
+001cdc: 2020 5a00                              |0002: instance-of v0, v2, [Ldex/sample/Sample; // type@005a
+001ce0: 3800 0900                              |0004: if-eqz v0, 000d // +0009
+001ce4: 0720                                   |0006: move-object v0, v2
+001ce6: 1f00 5a00                              |0007: check-cast v0, [Ldex/sample/Sample; // type@005a
+001cea: 2100                                   |0009: array-length v0, v0
+001cec: 1e02                                   |000a: monitor-exit v2
+001cee: 1e01                                   |000b: monitor-exit v1
+001cf0: 0f00                                   |000c: return v0
+001cf2: 1c00 1e00                              |000d: const-class v0, Ldex/sample/Sample; // type@001e
+001cf6: 3202 1400                              |000f: if-eq v2, v0, 0023 // +0014
+001cfa: 6200 3400                              |0011: sget-object v0, Ljava/lang/Integer;.TYPE:Ljava/lang/Class; // field@0034
+001cfe: 3202 1000                              |0013: if-eq v2, v0, 0023 // +0010
+001d02: 1c00 5d00                              |0015: const-class v0, [Ljava/lang/String; // type@005d
+001d06: 3202 0c00                              |0017: if-eq v2, v0, 0023 // +000c
+001d0a: 0720                                   |0019: move-object v0, v2
+001d0c: 1f00 2500                              |001a: check-cast v0, Ljava/lang/CharSequence; // type@0025
+001d10: 7210 6300 0000                         |001c: invoke-interface {v0}, Ljava/lang/CharSequence;.length:()I // method@0063
+001d16: 0a00                                   |001f: move-result v0
+001d18: 1e02                                   |0020: monitor-exit v2
+001d1a: 1e01                                   |0021: monitor-exit v1
+001d1c: 0f00                                   |0022: return v0
+001d1e: 2200 2c00                              |0023: new-instance v0, Ljava/lang/IllegalArgumentException; // type@002c
+001d22: 7010 6700 0000                         |0025: invoke-direct {v0}, Ljava/lang/IllegalArgumentException;.<init>:()V // method@0067
+001d28: 2700                                   |0028: throw v0
+001d2a: 0d00                                   |0029: move-exception v0
+001d2c: 1e02                                   |002a: monitor-exit v2
+001d2e: 2700                                   |002b: throw v0
+001d30: 0d00                                   |002c: move-exception v0
+001d32: 28fd                                   |002d: goto 002a // -0003
+001d34: 0d02                                   |002e: move-exception v2
+001d36: 1e01                                   |002f: monitor-exit v1
+001d38: 2702                                   |0030: throw v2
+      catches       : 6
+        0x0001 - 0x0002
+          <any> -> 0x002e
+        0x0002 - 0x000b
+          <any> -> 0x0029
+        0x000d - 0x0021
+          <any> -> 0x0029
+        0x0023 - 0x0029
+          <any> -> 0x0029
+        0x002a - 0x002b
+          <any> -> 0x002c
+        0x002b - 0x0030
+          <any> -> 0x002e
+      positions     :
+        0x0001 line=359
+        0x0002 line=360
+        0x0006 line=361
+        0x000d line=363
+        0x0019 line=366
+        0x0023 line=364
+        0x0029 line=367
+        0x002e line=358
+      locals        :
+        0x0000 - 0x0028 reg=2 o Ljava/lang/Object;
+        0x0000 - 0x002c reg=1 this Ldex/sample/Sample;
+        0x0029 - 0x002e reg=2 o Ljava/lang/Object;
+
+    #4              : (in Ldex/sample/Sample;)
+      name          : 'make'
+      type          : '(I)Ljava/lang/Comparable;'
+      access        : 0x1040 (BRIDGE SYNTHETIC)
+      method_idx    : 79
+      code          -
+      registers     : 2
+      ins           : 2
+      outs          : 2
+      insns size    : 5 16-bit code units
+001eec:                                        |[001eec] dex.sample.Sample.make:(I)Ljava/lang/Comparable;
+001efc: 6e20 5000 1000                         |0000: invoke-virtual {v0, v1}, Ldex/sample/Sample;.make:(I)Ljava/lang/String; // method@0050
+001f02: 0c01                                   |0003: move-result-object v1
+001f04: 1101                                   |0004: return-object v1
+      catches       : (none)
+      positions     :
+        0x0000 line=88
+      locals        :
+        0x0000 - 0x0005 reg=0 this Ldex/sample/Sample;
+        0x0000 - 0x0005 reg=1 (null) I
+
+    #5              : (in Ldex/sample/Sample;)
+      name          : 'make'
+      type          : '(I)Ljava/lang/String;'
+      access        : 0x0000 ()
+      method_idx    : 80
+      code          -
+      registers     : 4
+      ins           : 2
+      outs          : 2
+      insns size    : 20 16-bit code units
+001f08:                                        |[001f08] dex.sample.Sample.make:(I)Ljava/lang/String;
+001f18: 2200 3800                              |0000: new-instance v0, Ljava/lang/StringBuilder; // type@0038
+001f1c: 7010 7300 0000                         |0002: invoke-direct {v0}, Ljava/lang/StringBuilder;.<init>:()V // method@0073
+001f22: 1a01 3d01                              |0005: const-string v1, "made " // string@013d
+001f26: 6e20 7600 1000                         |0007: invoke-virtual {v0, v1}, Ljava/lang/StringBuilder;.append:(Ljava/lang/String;)Ljava/lang/StringBuilder; // method@0076
+001f2c: 0c00                                   |000a: move-result-object v0
+001f2e: 6e20 7500 3000                         |000b: invoke-virtual {v0, v3}, Ljava/lang/StringBuilder;.append:(I)Ljava/lang/StringBuilder; // method@0075
+001f34: 0c00                                   |000e: move-result-object v0
+001f36: 6e10 7700 0000                         |000f: invoke-virtual {v0}, Ljava/lang/StringBuilder;.toString:()Ljava/lang/String; // method@0077
+001f3c: 0c00                                   |0012: move-result-object v0
+001f3e: 1100                                   |0013: return-object v0
+      catches       : (none)
+      positions     :
+        0x0000 line=149
+      locals        :
+        0x0000 - 0x0014 reg=2 this Ldex/sample/Sample;
+        0x0000 - 0x0014 reg=3 n I
+
+  source_file_idx   : 185 (Sample.java)
+
+Class #18 header:
+class_idx           : 31
+access_flags        : 4113 (0x1011)
+superclass_idx      : 50
+interfaces_off      : 11720 (0x002dc8)
+source_file_idx     : 47
+annotations_off     : 20300 (0x004f4c)
+class_data_off      : 19054 (0x004a6e)
+static_fields_size  : 0
+instance_fields_size: 0
+direct_methods_size : 1
+virtual_methods_size: 1
+
+Class #18 annotations:
+Annotations on class
+  VISIBILITY_RUNTIME Lcom/android/tools/r8/annotations/LambdaMethod; holder="Ldex/sample/Shape;" method="lambda$unit$ba52f8ce$1" proto="()D"
+
+Class #18            -
+  Class descriptor  : 'Ldex/sample/Shape$0;'
+  Access flags      : 0x1011 (PUBLIC FINAL SYNTHETIC)
+  Superclass        : 'Ljava/lang/Object;'
+  Interfaces        -
+    #0              : 'Ldex/sample/Shape;'
+    #1              : 'Ljava/io/Serializable;'
+  Static fields     -
+  Instance fields   -
+  Direct methods    -
+    #0              : (in Ldex/sample/Shape$0;)
+      name          : '<init>'
+      type          : '()V'
+      access        : 0x11001 (PUBLIC SYNTHETIC CONSTRUCTOR)
+      method_idx    : 88
+      code          -
+      registers     : 1
+      ins           : 1
+      outs          : 1
+      insns size    : 4 16-bit code units
+002858:                                        |[002858] dex.sample.Shape$0.<init>:()V
+002868: 7010 6b00 0000                         |0000: invoke-direct {v0}, Ljava/lang/Object;.<init>:()V // method@006b
+00286e: 0e00                                   |0003: return-void
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0004 reg=0 this Ldex/sample/Shape$0;
+
+  Virtual methods   -
+    #0              : (in Ldex/sample/Shape$0;)
+      name          : 'area'
+      type          : '()D'
+      access        : 0x0011 (PUBLIC FINAL)
+      method_idx    : 89
+      code          -
+      registers     : 3
+      ins           : 1
+      outs          : 0
+      insns size    : 5 16-bit code units
+00283c:                                        |[00283c] dex.sample.Shape$0.area:()D
+00284c: 7100 5c00 0000                         |0000: invoke-static {}, Ldex/sample/Shape;.lambda$unit$ba52f8ce$1:()D // method@005c
+002852: 0b00                                   |0003: move-result-wide v0
+002854: 1000                                   |0004: return-wide v0
+      catches       : (none)
+      positions     :
+        0x0000 line=0
+      locals        :
+        0x0000 - 0x0005 reg=2 this Ldex/sample/Shape$0;
+
+  source_file_idx   : 47 (D8$$SyntheticClass)
+

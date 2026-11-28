@@ -1,0 +1,21 @@
+[package]
+name = "turbonop-dex"
+description = "Android DEX files (Dalvik executables, versions 035 to 041 and the 041 container): ids, class data, code items, debug information, annotations and encoded values, hidden-API flags, and Dalvik bytecode decoded and rendered as dexdump does"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+turbonop-core.workspace = true
+turbonop-par.workspace = true
+# The signature's hash (never ours): RustCrypto's.
+sha1.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+turbonop-global-alloc.workspace = true

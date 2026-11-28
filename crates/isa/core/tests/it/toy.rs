@@ -2,10 +2,7 @@
 //! every trait, read by tools written against the traits alone (as real
 //! tools are).
 
-use alloc::string::String;
-use alloc::vec::Vec;
-
-use crate::*;
+use turbonop_isa::*;
 
 /// The toy's registers: r0 to r7 (64-bit), their low halves h0 to h7, a
 /// zero register, and a flags register.
@@ -316,7 +313,7 @@ fn sweep<I: Isa>(isa: &I, code: &[u8], address: u64) -> Vec<(u64, I::Instruction
 /// The addresses that start basic blocks.
 fn leaders<I: Isa>(isa: &I, code: &[u8], address: u64) -> Vec<u64> {
     let cx = isa.context(code, address);
-    let mut out = alloc::vec![address];
+    let mut out = vec![address];
     for (at, i) in sweep(isa, code, address) {
         let f = isa.flow(&cx, &i, at);
         out.extend(f.direct_target());

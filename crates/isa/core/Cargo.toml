@@ -8,6 +8,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+# (No unit tests: their build of the crate would be wasted. The workspace's
+# tests check that a target marked so has none.)
+[lib]
+test = false
+
 [lints]
 workspace = true
 

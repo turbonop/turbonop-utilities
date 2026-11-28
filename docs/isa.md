@@ -81,9 +81,12 @@ container (a .NET token, a WebAssembly index, a symbol) is resolved by a
 - Files: `lib.rs` (the `Isa` value and re-exports), `decode.rs`,
   `register.rs`, `operand.rs`, `access.rs` (registers and memory),
   `flow.rs`, `format.rs`, `tables.rs` (generated); more as an ISA needs.
-- Tests: unit tests of private items in `src/tests.rs`; everything else
-  in one integration binary, `tests/it/main.rs` and its modules (one
-  binary links once); golden files beside it in `tests/data/`.
+- Tests: one integration binary, `tests/it/main.rs` and its modules (one
+  binary links once), golden files in `tests/data/`; and `[lib] test =
+  false`, so that `cargo test` doesn't build the crate a second time
+  (`hexcavator`'s tests check that such a crate has no unit tests). Unit
+  tests (`src/tests.rs`, the lib's tests on) only for what can't be
+  reached from outside.
 - Licenses of what tables are generated from (`LICENSE-LLVM`,
   `LICENSE-ARM`, `NOTICE-XED`) at the crate's root, and in its
   `license` field.

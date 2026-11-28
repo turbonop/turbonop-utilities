@@ -59,8 +59,24 @@ pub mod acc {
 /// the first 18 bits, `?` for those that mean nothing for `what`.
 pub fn access_flags_text(flags: u32, what: AccessFor) -> String {
     const CLASS: [&str; 18] = [
-        "PUBLIC", "PRIVATE", "PROTECTED", "STATIC", "FINAL", "?", "?", "?", "?", "INTERFACE",
-        "ABSTRACT", "?", "SYNTHETIC", "ANNOTATION", "ENUM", "?", "VERIFIED", "OPTIMIZED",
+        "PUBLIC",
+        "PRIVATE",
+        "PROTECTED",
+        "STATIC",
+        "FINAL",
+        "?",
+        "?",
+        "?",
+        "?",
+        "INTERFACE",
+        "ABSTRACT",
+        "?",
+        "SYNTHETIC",
+        "ANNOTATION",
+        "ENUM",
+        "?",
+        "VERIFIED",
+        "OPTIMIZED",
     ];
     const METHOD: [&str; 18] = [
         "PUBLIC",
@@ -83,8 +99,24 @@ pub fn access_flags_text(flags: u32, what: AccessFor) -> String {
         "DECLARED_SYNCHRONIZED",
     ];
     const FIELD: [&str; 18] = [
-        "PUBLIC", "PRIVATE", "PROTECTED", "STATIC", "FINAL", "?", "VOLATILE", "TRANSIENT", "?",
-        "?", "?", "?", "SYNTHETIC", "?", "ENUM", "?", "?", "?",
+        "PUBLIC",
+        "PRIVATE",
+        "PROTECTED",
+        "STATIC",
+        "FINAL",
+        "?",
+        "VOLATILE",
+        "TRANSIENT",
+        "?",
+        "?",
+        "?",
+        "?",
+        "SYNTHETIC",
+        "?",
+        "ENUM",
+        "?",
+        "?",
+        "?",
     ];
     let table = match what {
         AccessFor::Class => &CLASS,
@@ -194,7 +226,10 @@ pub fn descriptor_to_java(descriptor: &str) -> String {
 /// A class's package (`java.lang` for `Ljava/lang/String;`; empty for the
 /// default package, arrays, and primitives).
 pub fn package_of(descriptor: &str) -> String {
-    match descriptor.strip_prefix('L').and_then(|d| d.strip_suffix(';')) {
+    match descriptor
+        .strip_prefix('L')
+        .and_then(|d| d.strip_suffix(';'))
+    {
         Some(name) => name
             .rsplit_once('/')
             .map_or_else(String::new, |(p, _)| p.replace('/', ".")),
@@ -271,7 +306,10 @@ mod tests {
 
     #[test]
     fn access_flags() {
-        assert_eq!(access_flags_text(0x1011, AccessFor::Class), "PUBLIC FINAL SYNTHETIC");
+        assert_eq!(
+            access_flags_text(0x1011, AccessFor::Class),
+            "PUBLIC FINAL SYNTHETIC"
+        );
         assert_eq!(
             access_flags_text(0x1_1001, AccessFor::Method),
             "PUBLIC SYNTHETIC CONSTRUCTOR"

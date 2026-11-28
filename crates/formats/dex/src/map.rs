@@ -156,7 +156,7 @@ pub fn parse(data: &[u8], off: u32) -> Result<Vec<MapItem>> {
     if off == 0 {
         return Err(Error::new(ErrorKind::Malformed, 0, "map_off"));
     }
-    if off % 4 != 0 {
+    if !off.is_multiple_of(4) {
         return Err(Error::new(
             ErrorKind::Malformed,
             u64::from(off),
@@ -185,7 +185,11 @@ mod tests {
 
     #[test]
     fn codes_round_trip() {
-        for v in (0..=0x10u16).chain(0x1000..0x1004).chain(0x2000..0x2008).chain([0xF000, 0xFFFF]) {
+        for v in (0..=0x10u16)
+            .chain(0x1000..0x1004)
+            .chain(0x2000..0x2008)
+            .chain([0xF000, 0xFFFF])
+        {
             assert_eq!(MapItemType::from_u16(v).code(), v);
         }
         assert_eq!(MapItemType::from_u16(0x2001).name(), "TYPE_CODE_ITEM");

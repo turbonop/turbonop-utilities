@@ -235,7 +235,15 @@ impl DebugInfoItem {
         insns_size: u32,
     ) -> (Vec<Local>, Result<()>) {
         let mut out = Vec::new();
-        let r = self.run_locals(dex, method_idx, is_static, registers_size, ins_size, insns_size, &mut out);
+        let r = self.run_locals(
+            dex,
+            method_idx,
+            is_static,
+            registers_size,
+            ins_size,
+            insns_size,
+            &mut out,
+        );
         (out, r)
     }
 
@@ -250,21 +258,24 @@ impl DebugInfoItem {
         insns_size: u32,
         out: &mut Vec<Local>,
     ) -> Result<()> {
-        let bad = |what: &'static str| Error::new(ErrorKind::Malformed, u64::from(self.offset), what);
+        let bad =
+            |what: &'static str| Error::new(ErrorKind::Malformed, u64::from(self.offset), what);
         let method = dex.method(method_idx)?;
         let params = dex.proto_parameters(u32::from(method.proto_idx))?;
         let n = usize::from(registers_size);
-        let mut live: Vec<Option<Local>> = vec![None; n];
-        // Whether each register's local is live (a local stays after it
-        // ends, for a restart).
-        let mut is_live = vec![false; n];
+        // Each register's local, and whether it's live (a local stays after
+        // it ends, for a restart); by register, for the end. (A map, not
+        // ART's array of every register: a damaged registers_size can't
+        // cost 64K entries a method.)
+        let mut regs: std::collections::BTreeMap<usize, (Local, bool)> =
+            std::collections::BTreeMap::new();
         let mut arg_reg = registers_size.wrapping_sub(ins_size);
         let mut address = 0u32;
         if !is_static {
             if usize::from(arg_reg) >= n {
                 return Err(bad("debug info: arg reg >= reg size"));
             }
-            live[usize::from(arg_reg)] = Some(Local {
+            let l = Local {
                 reg: arg_reg,
                 start: 0,
                 end: 0,
@@ -272,8 +283,8 @@ impl DebugInfoItem {
                 name_idx: None,
                 type_idx: Some(u32::from(method.class_idx)),
                 signature_idx: None,
-            });
-            is_live[usize::from(arg_reg)] = true;
+            };
+            regs.insert(usize::from(arg_reg), (l, true));
             arg_reg = arg_reg.wrapping_add(1);
         }
         if params.len() != self.parameter_names.len() {
@@ -283,7 +294,7 @@ impl DebugInfoItem {
             if usize::from(arg_reg) >= n {
                 return Err(bad("debug info: arg reg >= reg size"));
             }
-            live[usize::from(arg_reg)] = Some(Local {
+            let l = Local {
                 reg: arg_reg,
                 start: address,
                 end: 0,
@@ -291,10 +302,12 @@ impl DebugInfoItem {
                 name_idx: *name,
                 type_idx: Some(u32::from(ty)),
                 signature_idx: None,
-            });
-            is_live[usize::from(arg_reg)] = true;
+            };
+            regs.insert(usize::from(arg_reg), (l, true));
             let wide = matches!(
-                dex.type_descriptor(u32::from(ty)).ok().and_then(|d| d.first()),
+                dex.type_descriptor(u32::from(ty))
+                    .ok()
+                    .and_then(|d| d.first()),
                 Some(b'D' | b'J')
             );
             arg_reg = arg_reg.wrapping_add(if wide { 2 } else { 1 });
@@ -302,10 +315,8 @@ impl DebugInfoItem {
         for &o in &self.ops {
             match o {
                 DebugOp::EndSequence => {
-                    for (reg, l) in live.iter_mut().enumerate() {
-                        if is_live[reg]
-                            && let Some(l) = l
-                        {
+                    for (l, live) in regs.values_mut() {
+                        if *live {
                             l.end = insns_size;
                             out.push(*l);
                         }
@@ -324,9 +335,7 @@ impl DebugInfoItem {
                     if r >= n {
                         return Err(bad("debug info: reg > reg size"));
                     }
-                    if is_live[r]
-                        && let Some(mut l) = live[r]
-                    {
+                    if let Some(&(mut l, true)) = regs.get(&r) {
                         l.end = address;
                         // (d8 declares generic parameters null in the
                         // header and starts them again at 0: ART drops
@@ -339,7 +348,7 @@ impl DebugInfoItem {
                     let type_idx = type_idx.map(|t| t & 0xFFFF).filter(|&t| t != 0xFFFF);
                     #[allow(clippy::cast_possible_truncation)]
                     let reg = reg as u16;
-                    live[r] = Some(Local {
+                    let l = Local {
                         reg,
                         start: address,
                         end: 0,
@@ -347,32 +356,32 @@ impl DebugInfoItem {
                         name_idx,
                         type_idx,
                         signature_idx,
-                    });
-                    is_live[r] = true;
+                    };
+                    regs.insert(r, (l, true));
                 }
                 DebugOp::EndLocal(reg) => {
                     let r = (reg & 0xFFFF) as usize; // (ART keeps registers in 16 bits.)
                     if r >= n {
                         return Err(bad("debug info: reg >= reg size"));
                     }
-                    if !is_live[r] {
-                        return Err(bad("debug info: end without start"));
+                    match regs.get_mut(&r) {
+                        Some((l, live @ true)) => {
+                            l.end = address;
+                            out.push(*l);
+                            *live = false;
+                        }
+                        _ => return Err(bad("debug info: end without start")),
                     }
-                    if let Some(l) = &mut live[r] {
-                        l.end = address;
-                        out.push(*l);
-                    }
-                    is_live[r] = false;
                 }
                 DebugOp::RestartLocal(reg) => {
                     let r = (reg & 0xFFFF) as usize; // (ART keeps registers in 16 bits.)
                     if r >= n {
                         return Err(bad("debug info: reg >= reg size"));
                     }
-                    if !is_live[r] {
-                        // (A register never started restarts as ART's
-                        // empty local: no name, no type, register 0.)
-                        let l = live[r].get_or_insert(Local {
+                    // (A register never started restarts as ART's empty
+                    // local: no name, no type, register 0.)
+                    let (l, live) = regs.entry(r).or_insert((
+                        Local {
                             reg: 0,
                             start: 0,
                             end: 0,
@@ -380,13 +389,17 @@ impl DebugInfoItem {
                             name_idx: None,
                             type_idx: None,
                             signature_idx: None,
-                        });
+                        },
+                        false,
+                    ));
+                    if !*live {
                         l.start = address;
-                        is_live[r] = true;
+                        *live = true;
                     }
                 }
                 DebugOp::Special(s) => {
-                    address = address.wrapping_add(u32::from((s - op::FIRST_SPECIAL) / op::LINE_RANGE));
+                    address =
+                        address.wrapping_add(u32::from((s - op::FIRST_SPECIAL) / op::LINE_RANGE));
                 }
                 DebugOp::AdvanceLine(_)
                 | DebugOp::SetPrologueEnd
@@ -425,7 +438,9 @@ mod tests {
         assert_eq!(item.parameter_names, [None]);
         let p = item.positions();
         assert_eq!(
-            p.iter().map(|p| (p.address, p.line, p.source_file_idx, p.prologue_end)).collect::<Vec<_>>(),
+            p.iter()
+                .map(|p| (p.address, p.line, p.source_file_idx, p.prologue_end))
+                .collect::<Vec<_>>(),
             [(0, 10, None, true), (5, 13, Some(5), false)]
         );
         for cut in 2..d.len() {

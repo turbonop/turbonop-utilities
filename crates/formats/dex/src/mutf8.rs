@@ -32,7 +32,9 @@ pub fn decode_utf16(bytes: &[u8]) -> Result<Vec<u16>, Mutf8Error> {
             out.push(u16::from(b));
             i += 1;
         } else if b & 0xE0 == 0xC0 {
-            out.push((u16::from(b & 0x1F) << 6) | cont(i + 1).map_err(|_| Mutf8Error { offset: i })?);
+            out.push(
+                (u16::from(b & 0x1F) << 6) | cont(i + 1).map_err(|_| Mutf8Error { offset: i })?,
+            );
             i += 2;
         } else if b & 0xF0 == 0xE0 {
             let (c1, c2) = (cont(i + 1), cont(i + 2));
@@ -135,11 +137,22 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        for s in ["", "abc", "\u{e9}t\u{e9}", "\u{4e2d}", "nul\0nul", "\u{1F600}", "\u{ffff}"] {
+        for s in [
+            "",
+            "abc",
+            "\u{e9}t\u{e9}",
+            "\u{4e2d}",
+            "nul\0nul",
+            "\u{1F600}",
+            "\u{ffff}",
+        ] {
             let e = encode(s);
             assert!(!e.contains(&0), "{s:?}");
             assert_eq!(decode(&e).unwrap(), s);
-            assert_eq!(decode_utf16(&e).unwrap(), s.encode_utf16().collect::<Vec<_>>());
+            assert_eq!(
+                decode_utf16(&e).unwrap(),
+                s.encode_utf16().collect::<Vec<_>>()
+            );
         }
         assert_eq!(encode("\0"), [0xC0, 0x80]);
         // A supplementary character: a surrogate pair, three bytes each.
@@ -155,10 +168,20 @@ mod tests {
         lone.push(b'x');
         assert_eq!(decode_utf16(&lone).unwrap(), [0xD800, u16::from(b'x')]);
         assert_eq!(decode(&lone).unwrap(), "\u{FFFD}x");
-        for bad in [&[0x80][..], &[0xC0], &[0xE0, 0x80], &[0xF8], &[0], &[0xF4, 0x90, 0x80, 0x80]] {
+        for bad in [
+            &[0x80][..],
+            &[0xC0],
+            &[0xE0, 0x80],
+            &[0xF8],
+            &[0],
+            &[0xF4, 0x90, 0x80, 0x80],
+        ] {
             assert!(decode(bad).is_err(), "{bad:?}");
         }
         assert_eq!(decode(&[b'a', 0xFF, b'b']).unwrap_err().offset, 1);
-        assert_eq!(decode_lossy(&[b'a', 0xFF, b'b', 0xC3]), "a\u{FFFD}b\u{FFFD}");
+        assert_eq!(
+            decode_lossy(&[b'a', 0xFF, b'b', 0xC3]),
+            "a\u{FFFD}b\u{FFFD}"
+        );
     }
 }

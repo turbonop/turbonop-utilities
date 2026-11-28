@@ -107,7 +107,11 @@ impl<'d> HiddenApi<'d> {
     /// Class `class_def_idx`'s flags, if it has them: one for each of its
     /// fields (static, then instance) and methods (direct, then virtual),
     /// in its class data's order.
-    pub fn class_flags(&self, class_def_idx: u32, class_data: &ClassData) -> Result<Option<Vec<u32>>> {
+    pub fn class_flags(
+        &self,
+        class_def_idx: u32,
+        class_data: &ClassData,
+    ) -> Result<Option<Vec<u32>>> {
         let at = self.class_offset(class_def_idx)?;
         if at == 0 {
             return Ok(None);
@@ -121,9 +125,10 @@ impl<'d> HiddenApi<'d> {
         let n = c.check_count(n as u32, 1, "hiddenapi flags")?;
         let mut flags = Vec::with_capacity(n);
         for _ in 0..n {
-            flags.push(c.uleb128("hiddenapi flags").map_err(|e| {
-                Error::new(e.kind, e.offset + u64::from(self.offset), e.what)
-            })?);
+            flags.push(
+                c.uleb128("hiddenapi flags")
+                    .map_err(|e| Error::new(e.kind, e.offset + u64::from(self.offset), e.what))?,
+            );
         }
         Ok(Some(flags))
     }
@@ -145,10 +150,21 @@ mod tests {
         let h = HiddenApi::parse(&d, 4, 2).unwrap();
         assert_eq!(h.size(), 16);
         let cd = ClassData {
-            static_fields: vec![EncodedField { field_idx: 0, access_flags: 0 }],
+            static_fields: vec![EncodedField {
+                field_idx: 0,
+                access_flags: 0,
+            }],
             virtual_methods: vec![
-                EncodedMethod { method_idx: 0, access_flags: 0, code_off: 0 },
-                EncodedMethod { method_idx: 1, access_flags: 0, code_off: 0 },
+                EncodedMethod {
+                    method_idx: 0,
+                    access_flags: 0,
+                    code_off: 0,
+                },
+                EncodedMethod {
+                    method_idx: 1,
+                    access_flags: 0,
+                    code_off: 0,
+                },
             ],
             ..ClassData::default()
         };

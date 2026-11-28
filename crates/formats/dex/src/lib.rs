@@ -213,8 +213,10 @@ impl<'d> TypeList<'d> {
     /// The types (type indices).
     pub fn iter(&self) -> impl ExactSizeIterator<Item = u16> + 'd {
         self.entries
-            .chunks_exact(2)
-            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_le_bytes(*b))
     }
 
     /// Its size in the file: the count and the entries.
@@ -344,8 +346,7 @@ impl<'d> Dex<'d> {
                         call_site_ids = table(data, item.offset, item.size, 4, "call_site_ids")?;
                     }
                     MapItemType::MethodHandleItem => {
-                        method_handles =
-                            table(data, item.offset, item.size, 8, "method_handles")?;
+                        method_handles = table(data, item.offset, item.size, 8, "method_handles")?;
                     }
                     MapItemType::HiddenapiClassDataItem => hiddenapi_off = Some(item.offset),
                     _ => {}
@@ -407,16 +408,20 @@ impl<'d> Dex<'d> {
     /// at once, and the checksum on every core.
     pub fn verify(&self) -> Verification {
         let bytes = self.bytes();
-        let (checksum, signature) = turbonop_par::join(
-            || header::adler32(bytes.get(12..).unwrap_or_default()),
-            || {
-                use sha1::Digest;
-                let digest = sha1::Sha1::digest(bytes.get(32..).unwrap_or_default());
-                let mut s = [0u8; 20];
-                s.copy_from_slice(&digest);
-                s
-            },
-        );
+        let adler = || header::adler32(bytes.get(12..).unwrap_or_default());
+        let sha = || {
+            use sha1::Digest;
+            let digest = sha1::Sha1::digest(bytes.get(32..).unwrap_or_default());
+            let mut s = [0u8; 20];
+            s.copy_from_slice(&digest);
+            s
+        };
+        // (A thread costs more than hashing a small file.)
+        let (checksum, signature) = if bytes.len() < 1 << 20 {
+            (adler(), sha())
+        } else {
+            turbonop_par::join(adler, sha)
+        };
         let complete = bytes.len() == self.header.file_size as usize;
         Verification {
             checksum,
@@ -460,10 +465,11 @@ impl<'d> Dex<'d> {
         let most = (utf16_size as usize).saturating_mul(3).saturating_add(1);
         let rest = self.data.get(start..).unwrap_or_default();
         let rest = &rest[..rest.len().min(most)];
-        let len = rest
-            .iter()
-            .position(|&b| b == 0)
-            .ok_or(Error::new(ErrorKind::Truncated, start as u64, "string data"))?;
+        let len = rest.iter().position(|&b| b == 0).ok_or(Error::new(
+            ErrorKind::Truncated,
+            start as u64,
+            "string data",
+        ))?;
         Ok((utf16_size, &rest[..len]))
     }
 
@@ -478,7 +484,7 @@ impl<'d> Dex<'d> {
         mutf8::decode(bytes).map_err(|e| {
             Error::new(
                 ErrorKind::Malformed,
-                self.string_data_offset(i).unwrap_or(0) as u64 + e.offset as u64,
+                u64::from(self.string_data_offset(i).unwrap_or(0)) + e.offset as u64,
                 "MUTF-8 string",
             )
         })
@@ -543,7 +549,7 @@ impl<'d> Dex<'d> {
         if off == 0 {
             return Ok(TypeList::default());
         }
-        if off % 4 != 0 {
+        if !off.is_multiple_of(4) {
             return Err(Error::new(
                 ErrorKind::Malformed,
                 u64::from(off),
@@ -719,7 +725,9 @@ impl<'d> Dex<'d> {
     pub fn hiddenapi(&self) -> Result<Option<hiddenapi::HiddenApi<'d>>> {
         match self.hiddenapi_off {
             None => Ok(None),
-            Some(off) => hiddenapi::HiddenApi::parse(self.data, off, self.class_def_count()).map(Some),
+            Some(off) => {
+                hiddenapi::HiddenApi::parse(self.data, off, self.class_def_count()).map(Some)
+            }
         }
     }
 }

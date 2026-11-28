@@ -239,7 +239,11 @@ mod tests {
         assert!(Cursor::at(&data, 0).bytes(usize::MAX, "x").is_err());
         assert!(Cursor::at(&data, 0).check_count(9, 1, "n").is_err());
         assert_eq!(Cursor::at(&data, 0).check_count(4, 2, "n").unwrap(), 4);
-        assert!(Cursor::at(&data, 0).check_count(u32::MAX, usize::MAX, "n").is_err());
+        assert!(
+            Cursor::at(&data, 0)
+                .check_count(u32::MAX, usize::MAX, "n")
+                .is_err()
+        );
         assert_eq!(u16_at(&data, 7), None);
         assert_eq!(u32_at(&data, 4), Some(0x0001_8005));
         assert_eq!(u32_at(&data, usize::MAX), None);

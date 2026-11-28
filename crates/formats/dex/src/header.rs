@@ -246,7 +246,9 @@ mod tests {
         assert_eq!(adler32(b""), 1);
         assert_eq!(adler32(b"a"), 0x0062_0062);
         assert_eq!(adler32(b"Wikipedia"), 0x11E6_0398);
-        let big: Vec<u8> = (0..5_000_000u32).map(|i| (i * 7 + i / 255) as u8).collect();
+        let big: Vec<u8> = (0..5_000_000u32)
+            .map(|i| ((i * 7 + i / 255) & 0xFF) as u8)
+            .collect();
         assert_eq!(adler32(&big), adler32_update(1, &big));
         for split in [0, 1, 5552, 65521, 1 << 20, big.len()] {
             let (x, y) = big.split_at(split);

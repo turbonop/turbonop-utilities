@@ -55,7 +55,7 @@ pub struct CodeItem<'d> {
 impl<'d> CodeItem<'d> {
     /// Parses the code item at `off` of `data`.
     pub fn parse(data: &'d [u8], off: u32) -> Result<Self> {
-        if off % 4 != 0 {
+        if !off.is_multiple_of(4) {
             return Err(Error::new(
                 ErrorKind::Malformed,
                 u64::from(off),
@@ -189,13 +189,18 @@ mod tests {
         encode_uleb128(7, &mut h);
         encode_uleb128(0x10, &mut h);
         encode_uleb128(0x20, &mut h);
-        let second = h.len() as u16;
+        let second = u16::try_from(h.len()).unwrap();
         encode_sleb128(0, &mut h);
         encode_uleb128(0x30, &mut h);
         let d = item(&[0x0e00, 0, 0], &[(0, 2, 1), (1, 1, second)], &h);
         let code = CodeItem::parse(&d, 4).unwrap();
         assert_eq!(
-            (code.registers_size, code.ins_size, code.outs_size, code.debug_info_off),
+            (
+                code.registers_size,
+                code.ins_size,
+                code.outs_size,
+                code.debug_info_off
+            ),
             (3, 1, 2, 0x1234)
         );
         assert_eq!(code.insns_size(), 3);
@@ -203,7 +208,10 @@ mod tests {
         assert_eq!(code.unit(3), None);
         assert_eq!(code.size as usize, d.len() - 4);
         let first = code.handler(1).unwrap();
-        assert_eq!((first.handlers.as_slice(), first.catch_all), (&[(7, 0x10)][..], Some(0x20)));
+        assert_eq!(
+            (first.handlers.as_slice(), first.catch_all),
+            (&[(7, 0x10)][..], Some(0x20))
+        );
         let other = code.handler(second).unwrap();
         assert_eq!((other.handlers.len(), other.catch_all), (0, Some(0x30)));
         assert!(code.handler(99).is_none());

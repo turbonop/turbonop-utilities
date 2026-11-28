@@ -39,7 +39,10 @@ fn check(name: &str, data: &[u8]) {
         }
     }
     let committed = std::fs::read(dir.join(name)).unwrap();
-    assert!(committed == data, "{name}: the writer no longer writes it as committed (bless it)");
+    assert!(
+        committed == data,
+        "{name}: the writer no longer writes it as committed (bless it)"
+    );
     let theirs = crlf_to_lf(&std::fs::read(dir.join(format!("{name}.txt"))).unwrap());
     let ours = dump::dump(name, data);
     if let Some(d) = dump::first_difference(&ours, &theirs) {

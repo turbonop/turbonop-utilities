@@ -11,7 +11,13 @@
 //! handles of each kind and a call site; an interface with no source
 //! file.
 
-#![allow(dead_code, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#![allow(
+    dead_code,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::type_complexity,
+    clippy::vec_init_then_push
+)]
 
 use super::writer::{Annotations, Class, Code, Contents, Ids, Method};
 use turbonop_dex::value::{EncodedAnnotation, EncodedValue as V};
@@ -120,7 +126,8 @@ fn all_code(i: &Ids) -> Code {
     // Each switch and fill-array-data, to point at its payload.
     let mut fixups: Vec<(usize, usize)> = Vec::new();
     let op = |o: u8, rest: u8| u16::from(o) | (u16::from(rest) << 8);
-    let nib = |o: u8, a: u8, b: u8| u16::from(o) | (u16::from(a & 0xF) << 8) | (u16::from(b & 0xF) << 12);
+    let nib =
+        |o: u8, a: u8, b: u8| u16::from(o) | (u16::from(a & 0xF) << 8) | (u16::from(b & 0xF) << 12);
     for code in 0..=255u8 {
         use turbonop_dex::insn::{Format::*, IndexType, OPCODES};
         let info = &OPCODES[usize::from(code)];
@@ -163,11 +170,15 @@ fn all_code(i: &Ids) -> Code {
                 fixups.push((at, fixups.len()));
                 c.extend([op(code, 9), 0, 0]);
             }
-            F31c => c.extend([op(code, 10), u16::from(index), 0]),
+            F31c => c.extend([op(code, 10), index, 0]),
             F35c if code == 0x24 => c.extend([0x5000 | u16::from(code) | 0x0F00, index, 0xEDCB]),
             F35c if code == 0xFC => c.extend([u16::from(code), 0, 0]),
             F35c if code == 0x72 => c.extend([0x1000 | u16::from(code), index, 0x0009]),
-            F35c => c.extend([u16::from(code) | (u16::from(code - 0x6D) << 12) | 0x0400, index, 0x3210]),
+            F35c => c.extend([
+                u16::from(code) | (u16::from(code - 0x6D) << 12) | 0x0400,
+                index,
+                0x3210,
+            ]),
             F3rc => c.extend([op(code, 3), index, 0x0100]),
             F45cc => c.extend([0x2000 | u16::from(code), index, 0x0001, proto]),
             F4rcc => c.extend([op(code, 2), index, 0x00FE, proto]),
@@ -188,8 +199,12 @@ fn all_code(i: &Ids) -> Code {
     // The payloads: packed-switch, sparse-switch, then array data of 4,
     // 1, and 8 bytes.
     let mut payloads: Vec<Vec<u16>> = Vec::new();
-    payloads.push(vec![0x0100, 3, 0xFFFE, 0xFFFF, 4, 0, 0xFFFC, 0xFFFF, 0x10, 0]);
-    payloads.push(vec![0x0200, 2, 0x0000, 0x8000, 0x0005, 0x0000, 3, 0, 0xFFFD, 0xFFFF]);
+    payloads.push(vec![
+        0x0100, 3, 0xFFFE, 0xFFFF, 4, 0, 0xFFFC, 0xFFFF, 0x10, 0,
+    ]);
+    payloads.push(vec![
+        0x0200, 2, 0x0000, 0x8000, 0x0005, 0x0000, 3, 0, 0xFFFD, 0xFFFF,
+    ]);
     payloads.push(vec![0x0300, 4, 3, 0, 1, 0, 0xFFFF, 0xFFFF, 0x5678, 0x1234]);
     payloads.push(vec![0x0300, 1, 3, 0, 0x0201, 0x0003]);
     payloads.push(vec![0x0300, 8, 1, 0, 0x0001, 0x0002, 0x0003, 0x8004]);
@@ -335,9 +350,17 @@ fn every_value(i: &Ids) -> Vec<(&'static str, V)> {
         ("en", V::Enum(i.f(HAND, "sInt"))),
         (
             "arr",
-            V::Array(vec![V::Int(1), V::Array(vec![]), V::Null, V::Boolean(false)]),
+            V::Array(vec![
+                V::Int(1),
+                V::Array(vec![]),
+                V::Null,
+                V::Boolean(false),
+            ]),
         ),
-        ("ann", V::Annotation(ann(i, ANN, vec![("value", V::Int(7))]))),
+        (
+            "ann",
+            V::Annotation(ann(i, ANN, vec![("value", V::Int(7))])),
+        ),
         ("nul", V::Null),
         ("z", V::Boolean(true)),
     ]
@@ -355,7 +378,8 @@ impl Odd for Ids {
 
 fn hand(i: &Ids, version: u32) -> Contents {
     let static_values = {
-        let mut fields: Vec<(u32, &str)> = STATICS.iter().map(|(n, _)| (i.f(HAND, n), *n)).collect();
+        let mut fields: Vec<(u32, &str)> =
+            STATICS.iter().map(|(n, _)| (i.f(HAND, n), *n)).collect();
         fields.sort_unstable();
         fields
             .iter()
@@ -383,7 +407,10 @@ fn hand(i: &Ids, version: u32) -> Contents {
         .map(|(k, (n, _))| (i.f(HAND, n), if k % 2 == 0 { 0x19 } else { 0x8 }))
         .collect();
     statics.sort_unstable();
-    let instance = vec![(i.f(HAND, "iInt"), 0x2), (i.f(HAND, "iObj"), 0x4 | 0x40 | 0x80)];
+    let instance = vec![
+        (i.f(HAND, "iInt"), 0x2),
+        (i.f(HAND, "iObj"), 0x4 | 0x40 | 0x80),
+    ];
     let broken = Code {
         registers: 2,
         ins: 0,
@@ -464,7 +491,13 @@ fn hand(i: &Ids, version: u32) -> Contents {
     virtual_methods.sort_by_key(|m| m.method_idx);
     let members = statics.len() + instance.len() + direct.len() + virtual_methods.len();
     let flags: Vec<u32> = (0..members as u32)
-        .map(|k| if k < 16 { k } else { [0x10, 0x20, 0x21, 0x31, 0x40][k as usize - 16] })
+        .map(|k| {
+            if k < 16 {
+                k
+            } else {
+                [0x10, 0x20, 0x21, 0x31, 0x40][k as usize - 16]
+            }
+        })
         .collect();
     let all_idx = i.m(HAND, "all");
     let annotations = Annotations {
@@ -473,13 +506,22 @@ fn hand(i: &Ids, version: u32) -> Contents {
             (2, ann(i, "Ljava/lang/Exception;", vec![])),
         ],
         fields: vec![
-            (i.f(HAND, "sInt"), vec![(1, ann(i, ANN, vec![("value", V::Int(1))]))]),
+            (
+                i.f(HAND, "sInt"),
+                vec![(1, ann(i, ANN, vec![("value", V::Int(1))]))],
+            ),
             (i.f(HAND, "iObj"), vec![(1, ann(i, ANN, vec![]))]),
         ],
-        methods: vec![(all_idx, vec![(2, ann(i, ANN, vec![("z", V::Boolean(false))]))])],
+        methods: vec![(
+            all_idx,
+            vec![(2, ann(i, ANN, vec![("z", V::Boolean(false))]))],
+        )],
         parameters: vec![(
             all_idx,
-            vec![Some(vec![(1, ann(i, ANN, vec![("value", V::Int(2))]))]), None],
+            vec![
+                Some(vec![(1, ann(i, ANN, vec![("value", V::Int(2))]))]),
+                None,
+            ],
         )],
     };
     let hand = Class {

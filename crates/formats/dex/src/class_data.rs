@@ -130,11 +130,15 @@ mod tests {
         let cd = ClassData::parse(&d, 3).unwrap();
         assert_eq!(cd.size as usize, d.len() - 3);
         assert_eq!(
-            cd.fields().map(|f| (f.field_idx, f.access_flags)).collect::<Vec<_>>(),
+            cd.fields()
+                .map(|f| (f.field_idx, f.access_flags))
+                .collect::<Vec<_>>(),
             [(5, 0x19), (2, 2), (9, 0x10)]
         );
         assert_eq!(
-            cd.methods().map(|m| (m.method_idx, m.access_flags, m.code_off)).collect::<Vec<_>>(),
+            cd.methods()
+                .map(|m| (m.method_idx, m.access_flags, m.code_off))
+                .collect::<Vec<_>>(),
             [(300, 0x1_0008, 0x1000), (4, 0x401, 0)]
         );
         for cut in 3..d.len() {

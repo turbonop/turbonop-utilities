@@ -56,7 +56,7 @@ pub struct AnnotationItem {
 }
 
 fn aligned(off: u32, what: &'static str) -> Result<()> {
-    if off % 4 == 0 {
+    if off.is_multiple_of(4) {
         Ok(())
     } else {
         Err(Error::new(ErrorKind::Malformed, u64::from(off), what))
@@ -163,7 +163,12 @@ mod tests {
         let dir = AnnotationsDirectory::parse(&d, 0).unwrap();
         assert_eq!(dir.size, 40);
         assert_eq!(
-            (dir.class_annotations_off, dir.fields.as_slice(), dir.methods.as_slice(), dir.parameters.as_slice()),
+            (
+                dir.class_annotations_off,
+                dir.fields.as_slice(),
+                dir.methods.as_slice(),
+                dir.parameters.as_slice()
+            ),
             (0x30, &[(7, 0x30)][..], &[(8, 0x30)][..], &[(9, 0x40)][..])
         );
         assert_eq!(annotation_set_ref_list(&d, 0x40).unwrap(), [0x30, 0]);

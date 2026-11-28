@@ -56,7 +56,10 @@ fn ids_resolve() {
         if d == b"Ldex/sample/Sample;" {
             found = true;
             assert_ne!(class.superclass_idx, NO_INDEX);
-            assert_eq!(dex.type_descriptor(class.superclass_idx).unwrap(), b"Ldex/sample/Base;");
+            assert_eq!(
+                dex.type_descriptor(class.superclass_idx).unwrap(),
+                b"Ldex/sample/Base;"
+            );
             let ifaces: Vec<_> = dex
                 .interfaces(&class)
                 .unwrap()
@@ -84,8 +87,13 @@ fn ids_resolve() {
     }
     assert!(found);
     // The strings with escapes and surrogates decode.
-    let all: Vec<String> = (0..dex.string_count()).map(|i| dex.string(i).unwrap()).collect();
-    assert!(all.iter().any(|s| s.starts_with("\u{e9}\u{4e2d}\u{1F600}\0end")));
+    let all: Vec<String> = (0..dex.string_count())
+        .map(|i| dex.string(i).unwrap())
+        .collect();
+    assert!(
+        all.iter()
+            .any(|s| s.starts_with("\u{e9}\u{4e2d}\u{1F600}\0end"))
+    );
     assert!(all.iter().any(|s| s.contains("\u{FFFD} lone")));
     // Call sites and method handles: every kind.
     assert_eq!(dex.call_site_count(), 2);
@@ -113,7 +121,7 @@ fn sizes_add_up() {
         .into_iter()
         .collect::<turbonop_core::Result<_>>()
         .unwrap();
-    assert_eq!(sizes.len() as u32, dex.class_def_count());
+    assert_eq!(sizes.len(), dex.class_def_count() as usize);
     let total: u64 = sizes.iter().map(crate::size::ClassSize::total).sum();
     assert!(total > 0 && total < data.len() as u64);
     let code: u64 = sizes

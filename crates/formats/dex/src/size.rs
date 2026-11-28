@@ -9,7 +9,9 @@
 
 use turbonop_core::Result;
 
-use crate::annotations::{AnnotationsDirectory, annotation_item, annotation_set, annotation_set_ref_list};
+use crate::annotations::{
+    AnnotationsDirectory, annotation_item, annotation_set, annotation_set_ref_list,
+};
 use crate::debug::DebugInfoItem;
 use crate::{ClassDef, Dex, names};
 
@@ -109,7 +111,11 @@ fn pieces(dex: &Dex<'_>, i: u32, class: &ClassDef) -> Result<Pieces> {
     let interfaces = dex.interfaces(class)?;
     if !interfaces.is_empty() {
         #[allow(clippy::cast_possible_truncation)]
-        shared.push((class.interfaces_off, interfaces.byte_size() as u32, Part::Interfaces));
+        shared.push((
+            class.interfaces_off,
+            interfaces.byte_size() as u32,
+            Part::Interfaces,
+        ));
     }
     if class.static_values_off != 0 {
         let (_, n) = crate::value::parse_array_sized(data, class.static_values_off)?;

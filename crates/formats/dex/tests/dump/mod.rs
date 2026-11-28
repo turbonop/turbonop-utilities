@@ -3,7 +3,11 @@
 //! fields (static values included) and methods (code, disassembly,
 //! catches, positions, locals), then the method handles and call sites.
 
-#![allow(dead_code, clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+#![allow(
+    dead_code,
+    clippy::cast_possible_wrap,
+    clippy::cast_possible_truncation
+)]
 
 use std::io::Write as _;
 
@@ -18,11 +22,13 @@ const S: Style = Style::Dexdump;
 
 /// A string's bytes, or what printf writes for a null pointer.
 fn string(dex: &Dex<'_>, idx: u32) -> Vec<u8> {
-    dex.string_bytes(idx).map_or_else(|_| b"(null)".to_vec(), <[u8]>::to_vec)
+    dex.string_bytes(idx)
+        .map_or_else(|_| b"(null)".to_vec(), <[u8]>::to_vec)
 }
 
 fn descriptor(dex: &Dex<'_>, idx: u32) -> Vec<u8> {
-    dex.type_descriptor(idx).map_or_else(|_| b"(null)".to_vec(), <[u8]>::to_vec)
+    dex.type_descriptor(idx)
+        .map_or_else(|_| b"(null)".to_vec(), <[u8]>::to_vec)
 }
 
 /// dexdump's `descriptorToDot`: `Ljava/lang/String;` as
@@ -99,10 +105,26 @@ fn file_header(dex: &Dex<'_>, out: &mut Vec<u8>) {
     }
     let _ = writeln!(out, "link_size           : {}", h.link_size as i32);
     let pair = |out: &mut Vec<u8>, name: &str, size: u32, off: u32| {
-        let _ = writeln!(out, "{name}_size{:pad$}: {}", "", size as i32, pad = 15 - name.len());
-        let _ = writeln!(out, "{name}_off{:pad$}: {} (0x{off:06x})", "", off as i32, pad = 16 - name.len());
+        let _ = writeln!(
+            out,
+            "{name}_size{:pad$}: {}",
+            "",
+            size as i32,
+            pad = 15 - name.len()
+        );
+        let _ = writeln!(
+            out,
+            "{name}_off{:pad$}: {} (0x{off:06x})",
+            "",
+            off as i32,
+            pad = 16 - name.len()
+        );
     };
-    let _ = writeln!(out, "link_off            : {} (0x{:06x})", h.link_off as i32, h.link_off);
+    let _ = writeln!(
+        out,
+        "link_off            : {} (0x{:06x})",
+        h.link_off as i32, h.link_off
+    );
     pair(out, "string_ids", h.string_ids_size, h.string_ids_off);
     pair(out, "type_ids", h.type_ids_size, h.type_ids_off);
     pair(out, "proto_ids", h.proto_ids_size, h.proto_ids_off);
@@ -117,12 +139,28 @@ fn class_header(dex: &Dex<'_>, i: u32, c: &ClassDef, out: &mut Vec<u8>) {
     let cd = dex.class_data(c).ok().flatten().unwrap_or_default();
     let _ = writeln!(out, "Class #{i} header:");
     let _ = writeln!(out, "class_idx           : {}", c.class_idx & 0xFFFF);
-    let _ = writeln!(out, "access_flags        : {} (0x{:04x})", c.access_flags as i32, c.access_flags);
+    let _ = writeln!(
+        out,
+        "access_flags        : {} (0x{:04x})",
+        c.access_flags as i32, c.access_flags
+    );
     let _ = writeln!(out, "superclass_idx      : {}", c.superclass_idx & 0xFFFF);
-    let _ = writeln!(out, "interfaces_off      : {} (0x{:06x})", c.interfaces_off as i32, c.interfaces_off);
+    let _ = writeln!(
+        out,
+        "interfaces_off      : {} (0x{:06x})",
+        c.interfaces_off as i32, c.interfaces_off
+    );
     let _ = writeln!(out, "source_file_idx     : {}", c.source_file_idx as i32);
-    let _ = writeln!(out, "annotations_off     : {} (0x{:06x})", c.annotations_off as i32, c.annotations_off);
-    let _ = writeln!(out, "class_data_off      : {} (0x{:06x})", c.class_data_off as i32, c.class_data_off);
+    let _ = writeln!(
+        out,
+        "annotations_off     : {} (0x{:06x})",
+        c.annotations_off as i32, c.annotations_off
+    );
+    let _ = writeln!(
+        out,
+        "class_data_off      : {} (0x{:06x})",
+        c.class_data_off as i32, c.class_data_off
+    );
     let _ = writeln!(out, "static_fields_size  : {}", cd.static_fields.len());
     let _ = writeln!(out, "instance_fields_size: {}", cd.instance_fields.len());
     let _ = writeln!(out, "direct_methods_size : {}", cd.direct_methods.len());
@@ -165,21 +203,30 @@ fn class_annotations(dex: &Dex<'_>, i: u32, c: &ClassDef, out: &mut Vec<u8>) {
         annotation_set(dex, dir.class_annotations_off, out);
     }
     for &(f, off) in &dir.fields {
-        let name = dex.field(f).map(|f| string(dex, f.name_idx)).unwrap_or_default();
+        let name = dex
+            .field(f)
+            .map(|f| string(dex, f.name_idx))
+            .unwrap_or_default();
         let _ = write!(out, "Annotations on field #{f} '");
         out.extend_from_slice(&name);
         out.extend_from_slice(b"'\n");
         annotation_set(dex, off, out);
     }
     for &(m, off) in &dir.methods {
-        let name = dex.method(m).map(|m| string(dex, m.name_idx)).unwrap_or_default();
+        let name = dex
+            .method(m)
+            .map(|m| string(dex, m.name_idx))
+            .unwrap_or_default();
         let _ = write!(out, "Annotations on method #{m} '");
         out.extend_from_slice(&name);
         out.extend_from_slice(b"'\n");
         annotation_set(dex, off, out);
     }
     for &(m, off) in &dir.parameters {
-        let name = dex.method(m).map(|m| string(dex, m.name_idx)).unwrap_or_default();
+        let name = dex
+            .method(m)
+            .map(|m| string(dex, m.name_idx))
+            .unwrap_or_default();
         let _ = write!(out, "Annotations on method #{m} '");
         out.extend_from_slice(&name);
         out.extend_from_slice(b"' parameters\n");
@@ -220,11 +267,17 @@ fn field(
 ) {
     let id = dex.field(f.field_idx).ok();
     let _ = write!(out, "    #{i}              : (in ");
-    out.extend_from_slice(&id.map(|id| descriptor(dex, u32::from(id.class_idx))).unwrap_or_default());
+    out.extend_from_slice(
+        &id.map(|id| descriptor(dex, u32::from(id.class_idx)))
+            .unwrap_or_default(),
+    );
     out.extend_from_slice(b")\n      name          : '");
     out.extend_from_slice(&id.map(|id| string(dex, id.name_idx)).unwrap_or_default());
     out.extend_from_slice(b"'\n      type          : '");
-    out.extend_from_slice(&id.map(|id| descriptor(dex, u32::from(id.type_idx))).unwrap_or_default());
+    out.extend_from_slice(
+        &id.map(|id| descriptor(dex, u32::from(id.type_idx)))
+            .unwrap_or_default(),
+    );
     let _ = writeln!(
         out,
         "'\n      access        : 0x{:04x} ({})",
@@ -243,13 +296,23 @@ fn code(dex: &Dex<'_>, m: &EncodedMethod, item: &CodeItem<'_>, out: &mut Vec<u8>
     let _ = writeln!(out, "      registers     : {}", item.registers_size);
     let _ = writeln!(out, "      ins           : {}", item.ins_size);
     let _ = writeln!(out, "      outs          : {}", item.outs_size);
-    let _ = writeln!(out, "      insns size    : {} 16-bit code units", item.insns_size());
+    let _ = writeln!(
+        out,
+        "      insns size    : {} 16-bit code units",
+        item.insns_size()
+    );
     // The disassembly.
     let id = dex.method(m.method_idx).ok();
     let base = item.offset;
-    let _ = write!(out, "{base:06x}:                                        |[{base:06x}] ");
+    let _ = write!(
+        out,
+        "{base:06x}:                                        |[{base:06x}] "
+    );
     if let Some(id) = id {
-        out.extend_from_slice(&descriptor_to_dot(&descriptor(dex, u32::from(id.class_idx))));
+        out.extend_from_slice(&descriptor_to_dot(&descriptor(
+            dex,
+            u32::from(id.class_idx),
+        )));
         out.push(b'.');
         out.extend_from_slice(&string(dex, id.name_idx));
         out.push(b':');
@@ -323,7 +386,11 @@ fn code(dex: &Dex<'_>, m: &EncodedMethod, item: &CodeItem<'_>, out: &mut Vec<u8>
             item.insns_size(),
         );
         for l in locals {
-            let _ = write!(out, "        0x{:04x} - 0x{:04x} reg={} ", l.start, l.end, l.reg);
+            let _ = write!(
+                out,
+                "        0x{:04x} - 0x{:04x} reg={} ",
+                l.start, l.end, l.reg
+            );
             if l.is_this {
                 out.extend_from_slice(b"this");
             } else {
@@ -349,7 +416,10 @@ fn code(dex: &Dex<'_>, m: &EncodedMethod, item: &CodeItem<'_>, out: &mut Vec<u8>
 fn method(dex: &Dex<'_>, i: usize, m: &EncodedMethod, hidden: Option<u32>, out: &mut Vec<u8>) {
     let id = dex.method(m.method_idx).ok();
     let _ = write!(out, "    #{i}              : (in ");
-    out.extend_from_slice(&id.map(|id| descriptor(dex, u32::from(id.class_idx))).unwrap_or_default());
+    out.extend_from_slice(
+        &id.map(|id| descriptor(dex, u32::from(id.class_idx)))
+            .unwrap_or_default(),
+    );
     out.extend_from_slice(b")\n      name          : '");
     out.extend_from_slice(&id.map(|id| string(dex, id.name_idx)).unwrap_or_default());
     out.extend_from_slice(b"'\n      type          : '");
@@ -447,7 +517,9 @@ fn method_handle(dex: &Dex<'_>, i: u32, out: &mut Vec<u8>) {
             let idx = u32::from(mh.field_or_method_idx);
             let is_instance = !matches!(
                 kind,
-                MethodHandleKind::StaticPut | MethodHandleKind::StaticGet | MethodHandleKind::InvokeStatic
+                MethodHandleKind::StaticPut
+                    | MethodHandleKind::StaticGet
+                    | MethodHandleKind::InvokeStatic
             );
             if kind.is_field() {
                 let f = dex.field(idx).unwrap();
@@ -501,8 +573,16 @@ fn call_site(dex: &Dex<'_>, i: u32, out: &mut Vec<u8>) {
         | EncodedValue::Type(x) => *x,
         _ => 0,
     };
-    let _ = writeln!(out, "Call site #{i}: // offset {}", dex.call_site_offset(i).unwrap());
-    let _ = writeln!(out, "  link_argument[0] : {} (MethodHandle)", idx(&values[0]));
+    let _ = writeln!(
+        out,
+        "Call site #{i}: // offset {}",
+        dex.call_site_offset(i).unwrap()
+    );
+    let _ = writeln!(
+        out,
+        "  link_argument[0] : {} (MethodHandle)",
+        idx(&values[0])
+    );
     out.extend_from_slice(b"  link_argument[1] : ");
     out.extend_from_slice(&string(dex, idx(&values[1])));
     out.extend_from_slice(b" (String)\n  link_argument[2] : ");
@@ -530,7 +610,14 @@ fn call_site(dex: &Dex<'_>, i: u32, out: &mut Vec<u8>) {
             }
             EncodedValue::Type(t) => (descriptor(dex, *t), "Class"),
             EncodedValue::Null => (b"null".to_vec(), "Null"),
-            EncodedValue::Boolean(b) => (if *b { b"true".to_vec() } else { b"false".to_vec() }, "boolean"),
+            EncodedValue::Boolean(b) => (
+                if *b {
+                    b"true".to_vec()
+                } else {
+                    b"false".to_vec()
+                },
+                "boolean",
+            ),
             _ => (b"?".to_vec(), "?"),
         };
         let _ = write!(out, "  link_argument[{j}] : ");
@@ -578,7 +665,11 @@ pub fn first_difference(ours: &[u8], theirs: &[u8]) -> Option<String> {
     for i in 0..a.len().max(b.len()) {
         let (x, y) = (a.get(i), b.get(i));
         if x != y {
-            let show = |l: Option<&&[u8]>| l.map_or("<end>".to_string(), |l| String::from_utf8_lossy(l).into_owned());
+            let show = |l: Option<&&[u8]>| {
+                l.map_or("<end>".to_string(), |l| {
+                    String::from_utf8_lossy(l).into_owned()
+                })
+            };
             let context: Vec<String> = b[i.saturating_sub(5)..i.min(b.len())]
                 .iter()
                 .map(|l| String::from_utf8_lossy(l).into_owned())

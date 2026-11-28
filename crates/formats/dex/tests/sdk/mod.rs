@@ -23,7 +23,9 @@ pub fn build_tools() -> Option<PathBuf> {
         roots.push(Path::new(&h).join("Android/Sdk"));
         roots.push(Path::new(&h).join("Library/Android/sdk"));
     }
-    roots.into_iter().find_map(|r| newest(&r.join("build-tools")))
+    roots
+        .into_iter()
+        .find_map(|r| newest(&r.join("build-tools")))
 }
 
 /// The newest platform's `android.jar`.
@@ -60,12 +62,19 @@ pub fn dexdump() -> Option<PathBuf> {
 
 /// A `java` (JAVA_HOME's, Android Studio's, or PATH's).
 pub fn java(tool: &str) -> Option<PathBuf> {
-    let exe = if cfg!(windows) { format!("{tool}.exe") } else { tool.to_string() };
-    let mut homes: Vec<PathBuf> = std::env::var_os("JAVA_HOME").map(PathBuf::from).into_iter().collect();
-    if let Some(p) = std::env::var_os("ProgramFiles") {
-        if let Ok(rd) = std::fs::read_dir(Path::new(&p).join("Android/openjdk")) {
-            homes.extend(rd.filter_map(|e| e.ok().map(|e| e.path())));
-        }
+    let exe = if cfg!(windows) {
+        format!("{tool}.exe")
+    } else {
+        tool.to_string()
+    };
+    let mut homes: Vec<PathBuf> = std::env::var_os("JAVA_HOME")
+        .map(PathBuf::from)
+        .into_iter()
+        .collect();
+    if let Some(p) = std::env::var_os("ProgramFiles")
+        && let Ok(rd) = std::fs::read_dir(Path::new(&p).join("Android/openjdk"))
+    {
+        homes.extend(rd.filter_map(|e| e.ok().map(|e| e.path())));
     }
     for h in homes {
         let p = h.join("bin").join(&exe);

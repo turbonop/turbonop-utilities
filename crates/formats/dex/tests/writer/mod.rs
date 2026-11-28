@@ -5,7 +5,13 @@
 //! unique, items in sections of their own kind, aligned, and the map,
 //! checksum, and signature right.
 
-#![allow(dead_code, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+#![allow(
+    dead_code,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::type_complexity,
+    clippy::vec_init_then_push
+)]
 
 use std::collections::BTreeMap;
 
@@ -120,7 +126,10 @@ impl Ids {
             .map(shorty_char)
             .collect();
         self.string(&shorty);
-        let p = (ret.to_string(), params.iter().map(|s| (*s).to_string()).collect());
+        let p = (
+            ret.to_string(),
+            params.iter().map(|s| (*s).to_string()).collect(),
+        );
         if !self.protos.contains(&p) {
             self.protos.push(p);
         }
@@ -170,12 +179,8 @@ impl Ids {
         self.fields
             .sort_by_key(|f| (tidx(&f.0), sidx(&f.1), tidx(&f.2)));
         let protos = self.protos.clone();
-        let pidx = |r: &str, p: &[String]| {
-            protos
-                .iter()
-                .position(|x| x.0 == r && x.1 == p)
-                .unwrap()
-        };
+        let pidx =
+            |r: &str, p: &[String]| protos.iter().position(|x| x.0 == r && x.1 == p).unwrap();
         self.methods
             .sort_by_key(|m| (tidx(&m.0), sidx(&m.1), pidx(&m.2, &m.3)));
         self.frozen = true;
@@ -318,7 +323,7 @@ struct Out {
 
 impl Out {
     fn align(&mut self, n: usize) {
-        while (self.b.len() - self.base) % n != 0 {
+        while !(self.b.len() - self.base).is_multiple_of(n) {
             self.b.push(0);
         }
     }
@@ -557,7 +562,7 @@ pub fn build_at(ids: &Ids, c: &Contents, prefix: Vec<u8>) -> Vec<u8> {
         }
         for list in [&class.static_fields, &class.instance_fields] {
             let mut prev = 0;
-            for &(f, a) in list.iter() {
+            for &(f, a) in list {
                 encode_uleb128(f - prev, b);
                 encode_uleb128(a, b);
                 prev = f;
@@ -566,7 +571,7 @@ pub fn build_at(ids: &Ids, c: &Contents, prefix: Vec<u8>) -> Vec<u8> {
         let mut mi = 0;
         for list in [&class.direct_methods, &class.virtual_methods] {
             let mut prev = 0;
-            for m in list.iter() {
+            for m in list {
                 encode_uleb128(m.method_idx - prev, b);
                 encode_uleb128(m.access, b);
                 encode_uleb128(code_at.get(&(ci, mi)).copied().unwrap_or(0), b);
@@ -602,8 +607,14 @@ pub fn build_at(ids: &Ids, c: &Contents, prefix: Vec<u8>) -> Vec<u8> {
     let items_start = at(&o);
     let mut nitems = 0;
     // (Each class's sets, each a list of item offsets in type order.)
-    let mut class_sets: Vec<Option<(Vec<u32>, Vec<Vec<u32>>, Vec<Vec<u32>>, Vec<Vec<Option<Vec<u32>>>>)>> =
-        Vec::new();
+    let mut class_sets: Vec<
+        Option<(
+            Vec<u32>,
+            Vec<Vec<u32>>,
+            Vec<Vec<u32>>,
+            Vec<Vec<Option<Vec<u32>>>>,
+        )>,
+    > = Vec::new();
     let mut item = |o: &mut Out, a: &Annotation| -> u32 {
         let p = o.pos();
         o.b.push(a.0);
@@ -645,7 +656,10 @@ pub fn build_at(ids: &Ids, c: &Contents, prefix: Vec<u8>) -> Vec<u8> {
             .iter()
             .map(|(_, ps)| {
                 ps.iter()
-                    .map(|s| s.as_ref().map(|s| sorted(s).iter().map(|x| item(&mut o, x)).collect()))
+                    .map(|s| {
+                        s.as_ref()
+                            .map(|s| sorted(s).iter().map(|x| item(&mut o, x)).collect())
+                    })
                     .collect()
             })
             .collect();
@@ -671,12 +685,20 @@ pub fn build_at(ids: &Ids, c: &Contents, prefix: Vec<u8>) -> Vec<u8> {
             set_offsets.push(None);
             continue;
         };
-        let class_off = if class_set.is_empty() { 0 } else { set(&mut o, class_set) };
+        let class_off = if class_set.is_empty() {
+            0
+        } else {
+            set(&mut o, class_set)
+        };
         let f: Vec<u32> = fields.iter().map(|s| set(&mut o, s)).collect();
         let m: Vec<u32> = methods.iter().map(|s| set(&mut o, s)).collect();
         let p: Vec<Vec<u32>> = params
             .iter()
-            .map(|ps| ps.iter().map(|s| s.as_ref().map_or(0, |s| set(&mut o, s))).collect())
+            .map(|ps| {
+                ps.iter()
+                    .map(|s| s.as_ref().map_or(0, |s| set(&mut o, s)))
+                    .collect()
+            })
             .collect();
         set_offsets.push(Some((class_off, f, m, p)));
     }
@@ -795,7 +817,9 @@ pub fn build_at(ids: &Ids, c: &Contents, prefix: Vec<u8>) -> Vec<u8> {
     let h = base;
     let b = &mut o.b;
     b[h..h + 8].copy_from_slice(format!("dex\n{:03}\0", c.version).as_bytes());
-    let put = |b: &mut Vec<u8>, at: usize, v: u32| b[h + at..h + at + 4].copy_from_slice(&v.to_le_bytes());
+    let put = |b: &mut Vec<u8>, at: usize, v: u32| {
+        b[h + at..h + at + 4].copy_from_slice(&v.to_le_bytes());
+    };
     put(b, 32, end - base as u32);
     put(b, 36, header_size as u32);
     put(b, 40, 0x1234_5678);

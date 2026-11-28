@@ -313,7 +313,12 @@ pub fn instruction(dex: &Dex<'_>, insn: &Instruction, style: Style) -> Vec<u8> {
             if insn.opcode == 0x15 {
                 let _ = write!(out, " v{a}, #int {} // #{:x}", (b << 16) as i32, b as u16);
             } else {
-                let _ = write!(out, " v{a}, #long {} // #{:x}", (u64::from(b) << 48) as i64, b as u16);
+                let _ = write!(
+                    out,
+                    " v{a}, #long {} // #{:x}",
+                    (u64::from(b) << 48) as i64,
+                    b as u16
+                );
             }
         }
         Format::F21c | Format::F31c | Format::F20bc => {
@@ -419,18 +424,14 @@ pub fn encoded_value(dex: &Dex<'_>, v: &EncodedValue, style: Style, out: &mut Ve
             out.push(b'"');
         }
         EncodedValue::Type(i) => descriptor_or(dex, *i, style, out),
-        EncodedValue::Field(i) | EncodedValue::Enum(i) => {
-            match dex.field(*i) {
-                Ok(f) if string(dex, f.name_idx, style, out) => {}
-                _ => out.extend_from_slice(b"<field?>"),
-            }
-        }
-        EncodedValue::Method(i) => {
-            match dex.method(*i) {
-                Ok(m) if string(dex, m.name_idx, style, out) => {}
-                _ => out.extend_from_slice(b"<method?>"),
-            }
-        }
+        EncodedValue::Field(i) | EncodedValue::Enum(i) => match dex.field(*i) {
+            Ok(f) if string(dex, f.name_idx, style, out) => {}
+            _ => out.extend_from_slice(b"<field?>"),
+        },
+        EncodedValue::Method(i) => match dex.method(*i) {
+            Ok(m) if string(dex, m.name_idx, style, out) => {}
+            _ => out.extend_from_slice(b"<method?>"),
+        },
         EncodedValue::Array(items) => {
             out.push(b'{');
             for x in items {
@@ -491,13 +492,19 @@ mod tests {
         ] {
             assert_eq!(format_g(v), s, "{v}");
         }
-        assert_eq!(format_g(f64::from(f32::from_bits(0x1234_5678))), "5.69046e-28");
+        assert_eq!(
+            format_g(f64::from(f32::from_bits(0x1234_5678))),
+            "5.69046e-28"
+        );
     }
 
     #[test]
     fn escapes() {
         let mut out = Vec::new();
         escape(b"a\"b\\c\n\r\t\x08\x0c\x01\x07\x0b\x7f'\xc0\x80", &mut out);
-        assert_eq!(out, b"a\\\"b\\\\c\\n\\r\\t\\b\\f\\001\\007\\013\\177'\xc0\x80");
+        assert_eq!(
+            out,
+            b"a\\\"b\\\\c\\n\\r\\t\\b\\f\\001\\007\\013\\177'\xc0\x80"
+        );
     }
 }

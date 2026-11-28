@@ -588,7 +588,8 @@ fn width_at(insns: &[u8], pc: usize) -> Option<(u32, Kind)> {
             }
             ARRAY_DATA_SIGNATURE => {
                 let width = u64::from(unit(insns, pc + 1)?);
-                let size = u64::from(unit(insns, pc + 2)?) | (u64::from(unit(insns, pc + 3)?) << 16);
+                let size =
+                    u64::from(unit(insns, pc + 2)?) | (u64::from(unit(insns, pc + 3)?) << 16);
                 let units = (width * size).div_ceil(2) + 4;
                 return Some((u32::try_from(units).ok()?, Kind::FillArrayDataPayload));
             }
@@ -775,7 +776,8 @@ pub fn payload<'d>(insns: &'d [u8], insn: &Instruction) -> Result<Payload<'d>> {
     let bad = || Error::new(ErrorKind::Truncated, u64::from(insn.address) * 2, "payload");
     let u = |i: usize| unit(insns, p + i).ok_or_else(bad);
     #[allow(clippy::cast_possible_wrap)]
-    let w = |i: usize| -> Result<i32> { Ok((u32::from(u(i)?) | (u32::from(u(i + 1)?) << 16)) as i32) };
+    let w =
+        |i: usize| -> Result<i32> { Ok((u32::from(u(i)?) | (u32::from(u(i + 1)?) << 16)) as i32) };
     match insn.kind {
         Kind::Op => Err(Error::new(
             ErrorKind::Malformed,
@@ -791,7 +793,9 @@ pub fn payload<'d>(insns: &'d [u8], insn: &Instruction) -> Result<Payload<'d>> {
         Kind::SparseSwitchPayload => {
             let n = usize::from(u(1)?);
             let keys = (0..n).map(|i| w(2 + 2 * i)).collect::<Result<_>>()?;
-            let targets = (0..n).map(|i| w(2 + 2 * n + 2 * i)).collect::<Result<_>>()?;
+            let targets = (0..n)
+                .map(|i| w(2 + 2 * n + 2 * i))
+                .collect::<Result<_>>()?;
             Ok(Payload::SparseSwitch { keys, targets })
         }
         Kind::FillArrayDataPayload => {
@@ -801,7 +805,9 @@ pub fn payload<'d>(insns: &'d [u8], insn: &Instruction) -> Result<Payload<'d>> {
                 .checked_mul(size as usize)
                 .ok_or_else(bad)?;
             let start = (p + 4) * 2;
-            let data = insns.get(start..start.checked_add(len).ok_or_else(bad)?).ok_or_else(bad)?;
+            let data = insns
+                .get(start..start.checked_add(len).ok_or_else(bad)?)
+                .ok_or_else(bad)?;
             Ok(Payload::FillArrayData {
                 element_width,
                 size,
@@ -862,11 +868,17 @@ mod tests {
         assert_eq!((i.a, i.b, i.c), (4, 4, u32::MAX));
         // invoke-virtual {v0, v4, v5, v6, v7}, method@0021
         let i = decode_at(&bytes(&[0x576E, 0x0021, 0x6540]), 0).unwrap();
-        assert_eq!((i.a, i.b, i.arg_registers()), (5, 0x21, &[0, 4, 5, 6, 7][..]));
+        assert_eq!(
+            (i.a, i.b, i.arg_registers()),
+            (5, 0x21, &[0, 4, 5, 6, 7][..])
+        );
         assert_eq!(i.index(), Some(0x21));
         // invoke-polymorphic {v1, v0}, method@0023, proto@0001
         let i = decode_at(&bytes(&[0x20FA, 0x0023, 0x0001, 0x0001]), 0).unwrap();
-        assert_eq!((i.a, i.arg_registers(), i.b, i.h), (2, &[1, 0][..], 0x23, 1));
+        assert_eq!(
+            (i.a, i.arg_registers(), i.b, i.h),
+            (2, &[1, 0][..], 0x23, 1)
+        );
         // filled-new-array/range {v0 .. v6}, type@0059
         let i = decode_at(&bytes(&[0x0725, 0x0059, 0x0000]), 0).unwrap();
         assert_eq!((i.a, i.b, i.c), (7, 0x59, 0));
@@ -892,20 +904,30 @@ mod tests {
         assert_eq!((all[1].kind, all[1].width), (Kind::PackedSwitchPayload, 8));
         assert_eq!(
             payload_of(&code, &all[0]).unwrap(),
-            Payload::PackedSwitch { first_key: 10, targets: vec![5, 6] }
+            Payload::PackedSwitch {
+                first_key: 10,
+                targets: vec![5, 6]
+            }
         );
         let code = bytes(&[0x0200, 1, 7, 0, 9, 0]);
         let p = decode_at(&code, 0).unwrap();
         assert_eq!(
             payload(&code, &p).unwrap(),
-            Payload::SparseSwitch { keys: vec![7], targets: vec![9] }
+            Payload::SparseSwitch {
+                keys: vec![7],
+                targets: vec![9]
+            }
         );
         let code = bytes(&[0x0300, 1, 3, 0, 0x0201, 0x0003]);
         let p = decode_at(&code, 0).unwrap();
         assert_eq!(p.width, 6);
         assert_eq!(
             payload(&code, &p).unwrap(),
-            Payload::FillArrayData { element_width: 1, size: 3, data: &[1, 2, 3] }
+            Payload::FillArrayData {
+                element_width: 1,
+                size: 3,
+                data: &[1, 2, 3]
+            }
         );
         // Truncated: the size says more than there is.
         assert!(decode_at(&bytes(&[0x0300, 4, 0xFFFF, 0xFFFF]), 0).is_err());

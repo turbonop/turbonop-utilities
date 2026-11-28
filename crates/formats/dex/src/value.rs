@@ -286,22 +286,37 @@ mod tests {
     #[test]
     fn every_kind() {
         assert_eq!(value(&[0x00, 0xFF]).unwrap(), EncodedValue::Byte(-1));
-        assert_eq!(value(&[0x22, 0x00, 0x80]).unwrap(), EncodedValue::Short(-32768));
+        assert_eq!(
+            value(&[0x22, 0x00, 0x80]).unwrap(),
+            EncodedValue::Short(-32768)
+        );
         // Shorter than their type: sign- or zero-extended.
         assert_eq!(value(&[0x02, 0x80]).unwrap(), EncodedValue::Short(-128));
         assert_eq!(value(&[0x03, 0x80]).unwrap(), EncodedValue::Char(0x80));
-        assert_eq!(value(&[0x44, 0x34, 0x12, 0xFF]).unwrap(), EncodedValue::Int(-0xEDCC));
+        assert_eq!(
+            value(&[0x44, 0x34, 0x12, 0xFF]).unwrap(),
+            EncodedValue::Int(-0xEDCC)
+        );
         assert_eq!(value(&[0x06, 0xFE]).unwrap(), EncodedValue::Long(-2));
         assert_eq!(
             value(&[0xE6, 1, 2, 3, 4, 5, 6, 7, 0x80]).unwrap(),
             EncodedValue::Long(i64::from_le_bytes([1, 2, 3, 4, 5, 6, 7, 0x80]))
         );
         // Floats keep their high-order bytes: 1.0f is 3f800000.
-        assert_eq!(value(&[0x30, 0x80, 0x3F]).unwrap(), EncodedValue::Float(1.0));
-        assert_eq!(value(&[0x31, 0xF0, 0x3F]).unwrap(), EncodedValue::Double(1.0));
+        assert_eq!(
+            value(&[0x30, 0x80, 0x3F]).unwrap(),
+            EncodedValue::Float(1.0)
+        );
+        assert_eq!(
+            value(&[0x31, 0xF0, 0x3F]).unwrap(),
+            EncodedValue::Double(1.0)
+        );
         assert_eq!(value(&[0x15, 7]).unwrap(), EncodedValue::MethodType(7));
         assert_eq!(value(&[0x36, 1, 0]).unwrap(), EncodedValue::MethodHandle(1));
-        assert_eq!(value(&[0x77, 1, 2, 3, 4]).unwrap(), EncodedValue::String(0x0403_0201));
+        assert_eq!(
+            value(&[0x77, 1, 2, 3, 4]).unwrap(),
+            EncodedValue::String(0x0403_0201)
+        );
         assert_eq!(value(&[0x18, 2]).unwrap(), EncodedValue::Type(2));
         assert_eq!(value(&[0x19, 3]).unwrap(), EncodedValue::Field(3));
         assert_eq!(value(&[0x1A, 4]).unwrap(), EncodedValue::Method(4));
@@ -317,7 +332,14 @@ mod tests {
                 elements: vec![(4, EncodedValue::Boolean(false))]
             })
         );
-        for bytes in [&[0x00, 1][..], &[0x1E], &[0x1C, 0], &[0x3F], &[0x15, 0], &[0x16, 0]] {
+        for bytes in [
+            &[0x00, 1][..],
+            &[0x1E],
+            &[0x1C, 0],
+            &[0x3F],
+            &[0x15, 0],
+            &[0x16, 0],
+        ] {
             assert_eq!(value(bytes).unwrap().kind(), bytes[0] & 0x1F);
         }
     }
@@ -325,16 +347,16 @@ mod tests {
     #[test]
     fn damaged_values() {
         for bad in [
-            &[0x20, 0, 0][..], // a byte of two bytes
-            &[0x63, 0, 0, 0, 0], // a char of four
-            &[0x84, 0, 0, 0, 0, 0], // an int of five
-            &[0x70, 0, 0, 0, 0, 0], // a float of four, ok, then ... (below)
-            &[0x05],             // no such type
-            &[0x3E],             // null with an argument
-            &[0x5F],             // boolean 2
-            &[0x3C, 0],          // array with an argument
+            &[0x20, 0, 0][..],               // a byte of two bytes
+            &[0x63, 0, 0, 0, 0],             // a char of four
+            &[0x84, 0, 0, 0, 0, 0],          // an int of five
+            &[0x70, 0, 0, 0, 0, 0],          // a float of four, ok, then ... (below)
+            &[0x05],                         // no such type
+            &[0x3E],                         // null with an argument
+            &[0x5F],                         // boolean 2
+            &[0x3C, 0],                      // array with an argument
             &[0x1C, 0xFF, 0xFF, 0xFF, 0x0F], // a count beyond the data
-            &[0x06],             // truncated
+            &[0x06],                         // truncated
         ] {
             if bad == [0x70, 0, 0, 0, 0, 0] {
                 assert!(value(bad).is_ok());
@@ -343,10 +365,10 @@ mod tests {
             assert!(value(bad).is_err(), "{bad:?}");
         }
         // Nesting beyond MAX_DEPTH.
-        let mut deep = vec![0x1C, 1].repeat(MAX_DEPTH as usize + 2);
+        let mut deep = [0x1C, 1].repeat(MAX_DEPTH as usize + 2);
         deep.push(0x1E);
         assert_eq!(value(&deep).unwrap_err().what, "encoded value nesting");
-        let mut ok = vec![0x1C, 1].repeat(10);
+        let mut ok = [0x1C, 1].repeat(10);
         ok.push(0x1E);
         assert!(value(&ok).is_ok());
     }

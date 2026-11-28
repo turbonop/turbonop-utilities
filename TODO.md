@@ -811,10 +811,7 @@ same but for the PDB's GUID, age, and name.
   0xF6); the map's `$R` symbols with two or more
   `.res` files or an embedded manifest (cvtres's object for them: which
   offsets, which origin), and a map of an LLVM-size link checked line for
-  line; the Rich header's order when an ml64 object comes before C
-  objects (link.exe lists masm's entry, 0x103, before the compiler's,
-  0x104, where turbolink lists them the other way round; seen with
-  `start.obj` from ml64, then cl's objects). llvm-tblgen, llc, opt,
+  line. llvm-tblgen, llc, opt,
   llvm-mc and llvm-ar are link.exe's images (`llvm-nm` and
   `llvm-objdump` to check again: their delay-load room, which the old
   0x104-or-0x108 rule got wrong, is now link.exe's measured rule).

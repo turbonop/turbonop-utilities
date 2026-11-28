@@ -74,6 +74,7 @@ turbonop-macho-object = { path = "crates/formats/macho-object" }
 turbonop-wasm = { path = "crates/formats/wasm" }
 turbonop-bitcode = { path = "crates/formats/bitcode" }
 turbonop-clr = { path = "crates/formats/clr" }
+turbonop-isa = { path = "crates/isa/core" }
 turbonop-wasm-isa = { path = "crates/isa/wasm" }
 turbonop-pe = { path = "crates/formats/pe" }
 turbonop-coff = { path = "crates/formats/coff" }

@@ -116,7 +116,7 @@ pub fn decode(bytes: &[u8], features: &Features) -> Option<Instruction> {
 pub fn branch_target(i: &Instruction, address: u64) -> Option<u64> {
     let inst = i.inst();
     let t = i.target();
-    inst.ops.iter().enumerate().find_map(|(k, op)| {
+    inst.ops().iter().enumerate().find_map(|(k, op)| {
         let kind = t.kinds.get(usize::from(op.kind))?;
         if kind.print != turbonop_tablegen::Print::Branch {
             return None;

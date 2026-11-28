@@ -383,7 +383,7 @@ pub fn branch_target(i: &Instruction, address: u64) -> Option<u64> {
     use turbonop_tablegen::Decode;
     let t = i.target();
     let micro = is_micromips(i);
-    i.inst().ops.iter().enumerate().find_map(|(k, op)| {
+    i.inst().ops().iter().enumerate().find_map(|(k, op)| {
         let kind = t.kinds.get(usize::from(op.kind))?;
         let v = i.operands().get(k)?.imm()?;
         match kind.print {

@@ -400,9 +400,9 @@ x64. Where the 3.5 MB went:
     were before they became a character each) and its operand and field
     lists' `&str` names.
   - **x86's, 270 KB** (`ENTRIES`, 186 KB).
-  - The TableGen decoders' instructions are still 56 bytes: an index
-    into a string table, and into a table of operand lists, would make
-    them about 24.
+  - The TableGen decoders' operands (`Op`: a `&str` name and a slice of
+    fields, 40 bytes each) could be indexes too, as their instructions
+    are now (32 bytes, not 56).
 - **Generic code, about 1.15 MB**, counted to `core` (+668 KB), `std`
   (+306 KB), and `alloc` (+180 KB): our generics instantiated for each
   type, much of it likely `turbonop_par`'s (+111 KB itself, new)

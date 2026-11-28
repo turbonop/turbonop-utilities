@@ -773,8 +773,12 @@ class Extractor:
         w("];")
         w("")
         # Each list of operands once (most instructions share theirs with
-        # others): a static the instructions refer to.
+        # others): a static the instructions refer to, by its index in
+        # OP_LISTS. And each instruction's name and syntax in one string
+        # (TEXT), by offset.
         op_lists = {}
+        text = []
+        text_len = 0
         w("pub static INSTRUCTIONS: &[Inst] = &[")
         for i in self.insts:
             ops = []
@@ -793,16 +797,31 @@ class Extractor:
             n = op_lists.setdefault(ops_s, len(op_lists))
             if len(i["name"]) > 255:
                 raise ValueError(f"{i['name']}: a name longer than 255")
+            piece = i["name"] + i["asm"]
+            if not piece.isascii():
+                raise ValueError(f"{i['name']}: not ASCII")
+            at = text_len
+            text.append(piece)
+            text_len += len(piece)
+            if len(i["asm"]) > 0xFFFF or text_len > 0xFFFF_FFFF or n > 0xFFFF:
+                raise ValueError(f"{i['name']}: past an index's width")
+            # (The name and syntax are TEXT's at `at`; written here too, to
+            # read.)
             w(
-                f"    inst! {{ name: {json.dumps(i['name'])}, size: {i['size']}, space: {i['space']}, "
+                f"    inst! {{ name: {json.dumps(i['name'])}, at: {at}, size: {i['size']}, space: {i['space']}, "
                 f"mask: {i['mask']:#x}, value: {i['value']:#x}, pred: {i['pred']}, defs: {i['defs']}, "
-                f"asm: {json.dumps(i['asm'])}, ops: &OPS{n} }},"
+                f"asm: {json.dumps(i['asm'])}, ops: {n} }},"
             )
         w("];")
+        w("")
+        w(f"static TEXT: &str = {json.dumps(''.join(text))};")
         w("")
         for ops_s, n in op_lists.items():
             count = ops_s.count("Op {")
             w(f"static OPS{n}: [Op; {count}] = [{ops_s}];")
+        w("")
+        refs = ", ".join(f"&OPS{n}" for n in range(len(op_lists)))
+        w(f"static OP_LISTS: &[&[Op]] = &[{refs}];")
         w("")
 
         def cond_s(c):
@@ -890,6 +909,8 @@ class Extractor:
         w("    classes: CLASSES,")
         w("    kinds: KINDS,")
         w("    instructions: INSTRUCTIONS,")
+        w("    text: TEXT,")
+        w("    op_lists: OP_LISTS,")
         w("    aliases: ALIASES,")
         w("    uncompress: UNCOMPRESS,")
         w("    buckets16: BUCKETS16,")

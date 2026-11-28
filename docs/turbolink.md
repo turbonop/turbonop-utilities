@@ -168,6 +168,35 @@ lists every COFF group with its address and size) and by experiment:
   start, an `ADDR64` is the base with a base relocation), even with an
   `/ALTERNATENAME` for it, and it is no error. Only that suffix:
   `f$fo$` and `f_$fo_bdd$` are ordinary names.
+- **Alternate names and weak externals** (found with lld's COFF tests,
+  [docs/turbolink-lldtests.md](turbolink-lldtests.md)): a library's
+  definition still replaces an `/ALTERNATENAME`'s alias (its target is
+  then not needed); a regular weak external of a name wins over an
+  anti-dependency of it, whatever their order; neither a weak external's
+  default nor an `/ALTERNATENAME` target may be an anti-dependency's
+  alias (the name stays undefined). A weak `main` or `WinMain` counts for
+  the subsystem and the entry point.
+- **Locally imported symbols:** `__imp_x` that nothing defines while `x`
+  is defined is a pointer to `x` the linker adds after the debug directory
+  in the `.rdata` group (8 bytes, a base relocation), listed as
+  `<linker-defined>`; LNK4217 when a function refers to it, LNK4286
+  otherwise.
+- **Sections of one name, other attributes** stay apart (LNK4078: a
+  read-only `.CRT` and a writable one are two sections). `/MERGE` moves
+  only the first section of its name; `/SECTION` sets every one. Sections
+  outside the fixed order (`.text`, `.rdata`, `.data`, `.pdata`, `.tls`,
+  `.rsrc`) go in input order. With no code, BaseOfCode is 0x1000.
+- **Inputs:** an object named twice is taken once (LNK4042); NULs
+  separate directives as spaces do; an external absolute symbol defines
+  its name; `/WHOLEARCHIVE[:lib]` loads every member (a `/WHOLEARCHIVE:lib`
+  not among the inputs is one); an input that can't be read stops the link
+  (LNK1xxx); a long section name with no string table is LNK1328.
+- **`/FORCE`:** unresolved symbols are reported and linked to the image
+  base (LNK4088); a discardable section's reference to a discarded symbol
+  (DWARF's) is left as it is. An import library past 65,535 objects (three
+  and one per export) is LNK1189, even with `/NOIMPLIB`.
+- **`/LIB`** first on the command line runs turbolib (beside turbolink);
+  `/HELP`, `/?` or no arguments print the usage.
 - **Groups' alignment:** a group starts at the largest alignment of its
   contributions (an 8-byte `.bss` starts on 16 when another `.bss` of the
   group wants 16). Uninitialized groups (`.bss`) come after the rest.

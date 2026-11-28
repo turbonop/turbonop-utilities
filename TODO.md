@@ -851,11 +851,12 @@ same but for the PDB's GUID, age, and name.
     FPO (only `FRAMEDATA`); incremental PDBs; page sizes over 4 KB (a PDB
     whose directory needs more than one block's list).
 - **lld's COFF tests** ([the results](docs/turbolink-lldtests.md),
-  `apps/turbolink-lldtests`): 55 of 563 pass, 252 skipped (other machines,
-  LTO). Fix what turbolink rejects (77: crashes, unresolved externals,
-  commons, subsystem inference, `/TIMESTAMP`, `/SUMMARY`, `/LIB`, `/HELP`,
-  invalid options), then the images that differ (76); run ARM64 and 32-bit
-  x86 tests once those machines link.
+  `apps/turbolink-lldtests`): the images that differ, compared with
+  link.exe's; `/GUARD:NOLONGJMP` (no longjmp table; not supported yet);
+  run ARM64 and 32-bit x86 tests once those machines link.
+- **hexcavator diff, sections of one name:** two `.foo` sections pair by
+  name, so their contents are reported as differing when the images are
+  the same.
 - **LTCG: the rest** ([docs/turbolink-c2.md](docs/turbolink-c2.md),
   "turbolink's LTCG"). `/GL` objects link and run as `link.exe /LTCG`'s
   builds do. Still to do:

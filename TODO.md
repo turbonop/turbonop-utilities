@@ -241,6 +241,46 @@ ELF, Mach-O, and WebAssembly, with a PDB or DWARF. What's left:
   specification, tested against clang's own MIPS16 output (`-mips16 -S`
   against `-c`).
 
+## Instruction sets alike
+
+Every decoder on `turbonop-isa`'s interface (docs/isa.md), so that tools
+are written once over any instruction set. ARM64 is on it; what's left:
+
+- **ARM64's operands without text.** Its operand evaluator reads its
+  templates' text as it runs (`"<cond>"`, `"M"`, `Cond::parse`,
+  `ShiftKind::parse`): the generator should write typed operand specs
+  (kinds, fields, register files, enumerations as numbers), and the
+  formatter classify its tokens (`TokenKind`s, not one `Text`).
+- **ARM64's memory access sizes.** `MemoryAccess::size` is `None`:
+  each encoding's size (`datasize`, element counts) is in the
+  architecture's decode pseudocode, if AARCHMRS's open release has it
+  (see whether it does; else from LLVM's records where they say).
+- **ARM64's register accesses, faster.** `register_accesses` costs ~60
+  ns an instruction (the write set alone, ~20): a table of each record's
+  accesses, made as the tables are generated, would make it a lookup.
+- **x86** on the interface: its instruction as its bytes and a decode
+  header (measured against today's eager decode, ~100+ bytes), its
+  `Flow`, `Access`, and `Symbols` the shared ones.
+- **RISC-V, MIPS, PowerPC, LoongArch** (one engine, `turbonop-tablegen`):
+  generated opcode and operand-slot constants, so that no caller
+  matches `name()` or looks up `operand("rs1")`; register files as
+  typed registers; features as bits, not names.
+- **32-bit ARM**: `field("imm12")` and its encodings' names as numbers;
+  an IT block as a function's `Context`.
+- **WebAssembly and CIL**: `turbonop-wasm` (the format crate becoming
+  `turbonop-wasm-module`) and a new `turbonop-cil` (from
+  `turbonop-clr`'s `il.rs`, its tokens resolved by `turbonop-clr`
+  through a `Resolver`), with stack effects as a capability.
+- **The tools, once**: `turbonop-code`, `turbonop-size`'s listings,
+  `turbonop-fingerprint`, `turbonop-xref`, and `hexcavator diff` each
+  one generic path over the traits (their `match arch` gone), with one
+  dispatch per buffer (`turbonop-isa-any`). Fingerprints' ARM64 shape
+  still hashes encoding names' parts: an opcode's class (its encoding
+  less its width) should be a generated number.
+- **ARM64's compile time.** Its 8 MB of generated tables take 9 s to
+  compile (a clean build's longest crate): a denser encoding (packed
+  bytes, read by accessors) should be measured.
+
 ## Managed and other non-native binaries
 
 Binary analysis and size analysis for code that runs on a virtual

@@ -363,32 +363,50 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
     };
     // What global `g` keeps: a section (pushed to `next` if newly
     // claimed), a common, an import.
-    let global = |g: u32, next: &mut Vec<u32>, commons: &mut Vec<u32>| {
+    // What each global keeps, resolved once (on every core): its section's
+    // node, or a common, an import's address, an import's thunk; packed in
+    // 4 bytes, so the traversal reads one small array, not the globals'
+    // definitions through their aliases.
+    const COMMON: u32 = 1 << 30;
+    const ADDRESS: u32 = 2 << 30;
+    const THUNK: u32 = 3 << 30;
+    const KIND: u32 = 3 << 30;
+    let keeps = |g: u32| -> u32 {
         let mut g = g;
         for _ in 0..64 {
-            match r.globals[g as usize].def {
-                Def::Alias(t) => g = t,
-                Def::Section { file, section, .. } => {
-                    let i = redirect[base[file as usize] + section as usize] as usize;
-                    if claim(i) {
-                        next.push(crate::n32(i));
-                    }
-                    return;
+            return match r.globals[g as usize].def {
+                Def::Alias(t) => {
+                    g = t;
+                    continue;
                 }
-                Def::Common { .. } => {
-                    commons.push(g);
-                    return;
+                Def::Section { file, section, .. } => redirect[base[file as usize] + section as usize],
+                Def::Common { .. } => COMMON | g,
+                Def::ImportAddress(f) => ADDRESS | f,
+                Def::ImportThunk(f) => THUNK | f,
+                _ => u32::MAX,
+            };
+        }
+        u32::MAX
+    };
+    let all: Vec<u32> = (0..crate::n32(r.globals.len())).collect();
+    let kept_by: Vec<u32> = turbonop_par::map(&all, 1 << 14, |&g| keeps(g));
+    let global = |g: u32, next: &mut Vec<u32>, commons: &mut Vec<u32>| {
+        let k = kept_by[g as usize];
+        if k == u32::MAX {
+            return;
+        }
+        match k & KIND {
+            0 => {
+                if claim(k as usize) {
+                    next.push(k);
                 }
-                Def::ImportAddress(f) => {
-                    imports[f as usize].store(true, Ordering::Relaxed);
-                    return;
-                }
-                Def::ImportThunk(f) => {
-                    imports[f as usize].store(true, Ordering::Relaxed);
-                    thunks[f as usize].store(true, Ordering::Relaxed);
-                    return;
-                }
-                _ => return,
+            }
+            COMMON => commons.push(k & !KIND),
+            ADDRESS => imports[(k & !KIND) as usize].store(true, Ordering::Relaxed),
+            _ => {
+                let f = (k & !KIND) as usize;
+                imports[f].store(true, Ordering::Relaxed);
+                thunks[f].store(true, Ordering::Relaxed);
             }
         }
     };
@@ -400,7 +418,7 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
         global(g, &mut frontier, &mut commons);
     }
     while !frontier.is_empty() {
-        let steps = turbonop_par::map_chunks(&frontier, 256, |part| {
+        let steps = turbonop_par::map_chunks(&frontier, 4096, |part| {
             let mut next = Vec::new();
             let mut commons = Vec::new();
             for &i in part {

@@ -226,6 +226,11 @@ pub struct Resolved {
 /// Maps `path`, for the rest of the process (inputs are never unmapped:
 /// what refers to them lives as long, and the process's exit unmaps them).
 fn map(path: &Path) -> std::io::Result<&'static [u8]> {
+    // (An experiment: TURBOLINK_READ=1 reads each input whole, sequentially,
+    // rather than mapping it, for a disk too busy for page faults.)
+    if std::env::var_os("TURBOLINK_READ").is_some() {
+        return Ok(Box::leak(std::fs::read(path)?.into_boxed_slice()));
+    }
     let map = turbonop_mmap::Mmap::open(path)?;
     Ok(&Box::leak(Box::new(map))[..])
 }
@@ -298,6 +303,8 @@ struct Linker {
     /// files' symbols.
     t_index: std::time::Duration,
     t_members: std::time::Duration,
+    /// How many times members were parsed ahead, and how many in all.
+    t_batches: (usize, usize),
     t_add: std::time::Duration,
 }
 
@@ -763,7 +770,7 @@ impl Linker {
                         let archive = library.archive;
                         let path = library.path.display().to_string();
                         let start = std::time::Instant::now();
-                        let results = turbonop_par::map(&ahead, 8, |&offset| {
+                        let results = turbonop_par::map(&ahead, 32, |&offset| {
                             let Some(m) = archive.member_at_offset(offset) else {
                                 return Err(format!("{path}: no member at offset {offset:#x}"));
                             };
@@ -771,6 +778,8 @@ impl Linker {
                             load(m.data, &name).map(|k| (name, k))
                         });
                         self.t_members += start.elapsed();
+                        self.t_batches.0 += 1;
+                        self.t_batches.1 += ahead.len();
                         parsed.extend(ahead.into_iter().zip(results));
                     }
                     if self.config.verbose {
@@ -954,6 +963,7 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         resources: Vec::new(),
         t_index: std::time::Duration::ZERO,
         t_members: std::time::Duration::ZERO,
+        t_batches: (0, 0),
         t_add: std::time::Duration::ZERO,
     };
     let mut times = Vec::new();
@@ -1070,6 +1080,12 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     times.push(("  library search", lap.elapsed()));
     times.push(("    of which: indexes", l.t_index));
     times.push(("    of which: members parsed", l.t_members));
+    if l.config.time {
+        eprintln!(
+            "turbolink:     members parsed ahead: {} batches, {} members",
+            l.t_batches.0, l.t_batches.1
+        );
+    }
     times.push(("  (all files' symbols added)", l.t_add));
 
     // A /DELAYLOAD DLL nothing imports from: link.exe's warning.

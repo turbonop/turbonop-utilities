@@ -1,6 +1,10 @@
 //! Data parallelism: work over a slice split across every core, in order,
 //! with scoped threads (no pool, no dependencies). Below a size where
 //! threads cost more than they save, the work runs on the caller's thread.
+//! Above it, the work is in pieces the caller and the other threads take
+//! as they're free, so that a machine busy with other programs (which
+//! pauses some threads) slows the work little: an equal share each, up
+//! front, would wait on the slowest.
 
 #[cfg(test)]
 use turbonop_global_alloc as _;
@@ -59,6 +63,52 @@ fn chunk(len: usize, min: usize) -> Option<usize> {
     Some(len.div_ceil(threads).max(min.max(1)))
 }
 
+/// How many pieces per thread [`piece`] splits work into: enough that a
+/// thread the machine doesn't run for a while (other programs have the
+/// cores) holds up little, its pieces taken by the others.
+const PIECES_PER_THREAD: usize = 4;
+
+/// The piece size for `len` items, each at least `min`: a fraction of a
+/// thread's share; `None` if one thread should do it all.
+fn piece(len: usize, min: usize) -> Option<usize> {
+    let threads = threads();
+    if threads < 2 || len < min.max(1).saturating_mul(2) {
+        return None;
+    }
+    Some(len.div_ceil(threads * PIECES_PER_THREAD).max(min.max(1)))
+}
+
+/// `work` of each piece `0..pieces`, in order of the pieces: the caller and
+/// up to `threads() - 1` other threads each take the next piece as they're
+/// free, so no thread's equal share waits on one the machine has paused,
+/// and a thread that starts late finds the work done.
+fn pieces<R: Send>(pieces: usize, work: impl Fn(usize) -> R + Sync) -> Vec<R> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let helpers = threads().min(pieces).saturating_sub(1);
+    let next = AtomicUsize::new(0);
+    let run = || {
+        let mut mine = Vec::new();
+        loop {
+            let i = next.fetch_add(1, Ordering::Relaxed);
+            if i >= pieces {
+                return mine;
+            }
+            mine.push((i, work(i)));
+        }
+    };
+    let run = &run;
+    let mut done: Vec<(usize, R)> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..helpers).map(|_| scope.spawn(run)).collect();
+        let mut all = run();
+        for h in handles {
+            all.extend(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
+        }
+        all
+    });
+    done.sort_unstable_by_key(|&(i, _)| i);
+    done.into_iter().map(|(_, r)| r).collect()
+}
+
 /// `f` of each item, in order; split across the threads when there are
 /// at least twice `min` items.
 pub fn map<T: Sync, R: Send>(items: &[T], min: usize, f: impl Fn(&T) -> R + Sync) -> Vec<R> {
@@ -98,21 +148,18 @@ pub fn map_into<T: Send, R: Send>(
 /// `f` of each index of `0..len`, in order; split across the threads when
 /// there are at least twice `min` of them.
 pub fn map_range<R: Send>(len: usize, min: usize, f: impl Fn(usize) -> R + Sync) -> Vec<R> {
-    let Some(size) = chunk(len, min) else {
+    let Some(size) = piece(len, min) else {
         return (0..len).map(f).collect();
     };
-    let f = &f;
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..len)
-            .step_by(size)
-            .map(|at| scope.spawn(move || (at..len.min(at + size)).map(f).collect::<Vec<R>>()))
-            .collect();
-        let mut out = Vec::with_capacity(len);
-        for h in handles {
-            out.extend(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
-        }
-        out
-    })
+    let parts = pieces(len.div_ceil(size), |p| {
+        let at = p * size;
+        (at..len.min(at + size)).map(&f).collect::<Vec<R>>()
+    });
+    let mut out = Vec::with_capacity(len);
+    for part in parts {
+        out.extend(part);
+    }
+    out
 }
 
 /// `f` of each chunk of `items` (each chunk's results in order, the
@@ -123,21 +170,16 @@ pub fn map_chunks<T: Sync, R: Send>(
     min: usize,
     f: impl Fn(&[T]) -> Vec<R> + Sync,
 ) -> Vec<R> {
-    let Some(size) = chunk(items.len(), min) else {
+    let Some(size) = piece(items.len(), min) else {
         return f(items);
     };
-    let f = &f;
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = items
-            .chunks(size)
-            .map(|part| scope.spawn(move || f(part)))
-            .collect();
-        let mut out = Vec::with_capacity(items.len());
-        for h in handles {
-            out.extend(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
-        }
-        out
-    })
+    let parts: Vec<&[T]> = items.chunks(size).collect();
+    let done = pieces(parts.len(), |p| f(parts[p]));
+    let mut out = Vec::with_capacity(items.len());
+    for part in done {
+        out.extend(part);
+    }
+    out
 }
 
 /// `f` of each item, in order, for items whose costs differ widely (one
@@ -237,14 +279,20 @@ pub fn map_costed<R: Send>(
 
 /// `f` over chunks of `items`, mutably, in parallel.
 pub fn for_each_chunk_mut<T: Send>(items: &mut [T], min: usize, f: impl Fn(&mut [T]) + Sync) {
-    let Some(size) = chunk(items.len(), min) else {
+    let Some(size) = piece(items.len(), min) else {
         f(items);
         return;
     };
-    let f = &f;
-    std::thread::scope(|scope| {
-        for part in items.chunks_mut(size) {
-            scope.spawn(move || f(part));
+    let count = items.len().div_ceil(size);
+    // Each piece handed out once, to whichever thread is free.
+    let parts = std::sync::Mutex::new(items.chunks_mut(size));
+    pieces(count, |_| {
+        let part = parts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .next();
+        if let Some(part) = part {
+            f(part);
         }
     });
 }

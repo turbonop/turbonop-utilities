@@ -1220,3 +1220,427 @@ EXPORTS
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// /Brepro, as link.exe's IMAGE::Normalize computes it: the SHA-256 of the
+/// image with every time stamp (the file header's, each debug directory
+/// entry's) all ones and the repro entry's length and hash zero; the hash
+/// in the repro entry, its last 4 bytes the time stamps.
+#[test]
+fn brepro_is_link_exes_hash() {
+    use sha2::Digest;
+    let dir = scratch("brepro");
+    std::fs::write(dir.join("main.obj"), defining("main")).unwrap();
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/ENTRY:main",
+            "/SUBSYSTEM:CONSOLE",
+            "/Brepro",
+            "main.obj",
+        ],
+    )
+    .expect("links");
+    let pe = u32_at(&image, 0x3C) as usize;
+    let (debug, size) = directory(&image, 6);
+    let entries = at_rva(&image, debug, size as usize).to_vec();
+    let file_of = |rva: u32| {
+        let s = sections(&image)
+            .into_iter()
+            .find(|s| s.2 <= rva && rva < s.2 + s.1)
+            .unwrap();
+        (s.4 + rva - s.2) as usize
+    };
+    let mut normal = image.clone();
+    normal[pe + 8..pe + 12].fill(0xFF);
+    let mut repro = None;
+    for (i, e) in entries.chunks(28).enumerate() {
+        let at = file_of(debug) + 28 * i + 4;
+        normal[at..at + 4].fill(0xFF);
+        if u32_at(e, 12) == 16 {
+            repro = Some(u32_at(e, 24) as usize);
+        }
+    }
+    let repro = repro.expect("a repro entry");
+    assert_eq!(u32_at(&image, repro), 32);
+    normal[repro..repro + 36].fill(0);
+    let hash: [u8; 32] = sha2::Sha256::digest(&normal).into();
+    assert_eq!(&image[repro + 4..repro + 36], &hash);
+    assert_eq!(&image[pe + 8..pe + 12], &hash[28..]);
+    for i in 0..entries.len() / 28 {
+        let at = file_of(debug) + 28 * i + 4;
+        assert_eq!(&image[at..at + 4], &hash[28..], "entry {i}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A section of a made object: its name, characteristics, contents,
+/// relocations (offset, symbol index, type), and for a COMDAT its
+/// selection and (if associative) the 1-based section it goes with.
+struct Section {
+    name: &'static str,
+    characteristics: u32,
+    data: Vec<u8>,
+    relocations: Vec<(u32, u32, u16)>,
+    comdat: Option<(u8, u16)>,
+}
+
+/// Code (`.text$mn`), a COMDAT (selection any) if `comdat`.
+fn code(data: &[u8], relocations: &[(u32, u32, u16)], comdat: bool) -> Section {
+    Section {
+        name: ".text$mn",
+        characteristics: 0x6050_0020,
+        data: data.to_vec(),
+        relocations: relocations.to_vec(),
+        comdat: comdat.then_some((2, 0)),
+    }
+}
+
+/// A symbol of a made object: name, value, section (1-based; 0
+/// undefined), type, storage class.
+struct Symbol(&'static str, u32, i16, u16, u8);
+
+/// An x64 object of `sections` and `symbols`. Each section has its symbol
+/// (with its auxiliary record) first, so `symbols[k]` is symbol
+/// `2 * sections.len() + k`.
+fn coff(sections: &[Section], symbols: &[Symbol]) -> Vec<u8> {
+    let mut strings = Vec::new();
+    let mut name8 = |n: &str| -> [u8; 8] {
+        let n = n.as_bytes();
+        let mut r = [0u8; 8];
+        if n.len() <= 8 {
+            r[..n.len()].copy_from_slice(n);
+        } else {
+            r[4..].copy_from_slice(&(4 + n32(strings.len())).to_le_bytes());
+            strings.extend_from_slice(n);
+            strings.push(0);
+        }
+        r
+    };
+    let mut records = Vec::new();
+    for (i, sec) in sections.iter().enumerate() {
+        records.extend_from_slice(&name8(sec.name));
+        records.extend_from_slice(&0u32.to_le_bytes());
+        records.extend_from_slice(&(i16::try_from(i).unwrap() + 1).to_le_bytes());
+        records.extend_from_slice(&[0, 0, 3, 1]);
+        let (selection, with) = sec.comdat.unwrap_or((0, 0));
+        records.extend_from_slice(&n32(sec.data.len()).to_le_bytes());
+        records.extend_from_slice(&u16::try_from(sec.relocations.len()).unwrap().to_le_bytes());
+        records.extend_from_slice(&[0; 6]); // line numbers, checksum
+        records.extend_from_slice(&with.to_le_bytes());
+        records.extend_from_slice(&[selection, 0, 0, 0]);
+    }
+    for Symbol(name, value, section, ty, class) in symbols {
+        records.extend_from_slice(&name8(name));
+        records.extend_from_slice(&value.to_le_bytes());
+        records.extend_from_slice(&section.to_le_bytes());
+        records.extend_from_slice(&ty.to_le_bytes());
+        records.extend_from_slice(&[*class, 0]);
+    }
+    let mut headers = Vec::new();
+    let mut body = Vec::new();
+    let start = 20 + 40 * sections.len();
+    for sec in sections {
+        let data_at = start + body.len();
+        body.extend_from_slice(&sec.data);
+        let relocations_at = start + body.len();
+        for &(at, symbol, kind) in &sec.relocations {
+            body.extend_from_slice(&at.to_le_bytes());
+            body.extend_from_slice(&symbol.to_le_bytes());
+            body.extend_from_slice(&kind.to_le_bytes());
+        }
+        let short = sec.name.as_bytes();
+        assert!(short.len() <= 8);
+        let mut n = [0u8; 8];
+        n[..short.len()].copy_from_slice(short);
+        headers.extend_from_slice(&n);
+        let relocated = if sec.relocations.is_empty() {
+            0
+        } else {
+            n32(relocations_at)
+        };
+        for v in [0, 0, n32(sec.data.len()), n32(data_at), relocated, 0] {
+            headers.extend_from_slice(&v.to_le_bytes());
+        }
+        headers.extend_from_slice(&u16::try_from(sec.relocations.len()).unwrap().to_le_bytes());
+        headers.extend_from_slice(&0u16.to_le_bytes());
+        let comdat = if sec.comdat.is_some() { 0x1000 } else { 0 };
+        headers.extend_from_slice(&(sec.characteristics | comdat).to_le_bytes());
+    }
+    let mut o = Vec::new();
+    o.extend_from_slice(&0x8664u16.to_le_bytes());
+    o.extend_from_slice(&u16::try_from(sections.len()).unwrap().to_le_bytes());
+    o.extend_from_slice(&0u32.to_le_bytes());
+    o.extend_from_slice(&n32(start + body.len()).to_le_bytes());
+    o.extend_from_slice(&n32(2 * sections.len() + symbols.len()).to_le_bytes());
+    o.extend_from_slice(&[0; 4]);
+    o.extend(headers);
+    o.extend(body);
+    o.extend(records);
+    o.extend_from_slice(&(4 + n32(strings.len())).to_le_bytes());
+    o.extend(strings);
+    o
+}
+
+/// The COFF groups the image's POGO (coffgrp) debug entry lists: (RVA,
+/// size, name).
+fn coff_groups(image: &[u8]) -> Vec<(u32, u32, String)> {
+    let (debug, size) = directory(image, 6);
+    let entries = at_rva(image, debug, size as usize).to_vec();
+    let mut groups = Vec::new();
+    for e in entries.chunks(28) {
+        if u32_at(e, 12) != 13 {
+            continue;
+        }
+        let data = at_rva(image, u32_at(e, 20), u32_at(e, 16) as usize).to_vec();
+        let mut at = 4;
+        while at + 8 <= data.len() {
+            let (rva, len) = (u32_at(&data, at), u32_at(&data, at + 4));
+            let end = data[at + 8..].iter().position(|&b| b == 0).unwrap() + at + 8;
+            groups.push((
+                rva,
+                len,
+                String::from_utf8_lossy(&data[at + 8..end]).into_owned(),
+            ));
+            at = (end + 1 + 3) & !3;
+        }
+    }
+    groups
+}
+
+/// `main` (a function) calling `a`..`f`, each code of its own object
+/// (`mov al, n; ret`, or with a byte before it):
+/// - a: not a COMDAT, a function;
+/// - b: not a COMDAT, a symbol without a type (as an assembler's);
+/// - c: a COMDAT without a type;
+/// - d: a COMDAT function;
+/// - e: a static function at 1, `e` (no type) at 0;
+/// - f: `f` (no type) at 0 and a function `ff` at 0 too (padded).
+fn padded_inputs(dir: &Path) {
+    let calls: Vec<u8> = (0..6)
+        .flat_map(|_| [0xE8, 0, 0, 0, 0])
+        .chain([0xC3])
+        .collect();
+    let relocations: Vec<(u32, u32, u16)> = (0..6).map(|k| (1 + 5 * k, 3 + k, 4)).collect();
+    let mut symbols = vec![Symbol("main", 0, 1, 0x20, 2)];
+    for n in ["a", "b", "c", "d", "e", "f"] {
+        symbols.push(Symbol(n, 0, 0, 0, 2));
+    }
+    std::fs::write(
+        dir.join("main.obj"),
+        coff(&[code(&calls, &relocations, false)], &symbols),
+    )
+    .unwrap();
+    let one = |name: &str, body: &[u8], comdat: bool, symbols: &[Symbol]| {
+        std::fs::write(
+            dir.join(format!("{name}.obj")),
+            coff(&[code(body, &[], comdat)], symbols),
+        )
+        .unwrap();
+    };
+    one("a", &[0xB0, 1, 0xC3], false, &[Symbol("a", 0, 1, 0x20, 2)]);
+    one("b", &[0xB0, 2, 0xC3], false, &[Symbol("b", 0, 1, 0, 2)]);
+    one("c", &[0xB0, 3, 0xC3], true, &[Symbol("c", 0, 1, 0, 2)]);
+    one("d", &[0xB0, 4, 0xC3], true, &[Symbol("d", 0, 1, 0x20, 2)]);
+    one(
+        "e",
+        &[0xB0, 5, 0xC3, 0xC3],
+        false,
+        &[Symbol("e", 0, 1, 0, 2), Symbol("s", 1, 1, 0x20, 3)],
+    );
+    one(
+        "f",
+        &[0xB0, 6, 0xC3],
+        false,
+        &[Symbol("f", 0, 1, 0, 2), Symbol("ff", 0, 1, 0x20, 2)],
+    );
+}
+
+/// /FUNCTIONPADMIN: padding (int3) before each piece of code with a
+/// function at its start (COMDAT or not: by the symbol's type), then its
+/// alignment; none before code an assembler's symbols name. The group
+/// starts before the padding. Without a number, x64's is 6 bytes.
+#[test]
+fn function_padding_is_link_exes() {
+    let dir = scratch("padmin");
+    padded_inputs(&dir);
+    let link = |pad: &str| {
+        let mut words = vec![
+            "/NODEFAULTLIB",
+            "/ENTRY:main",
+            "/SUBSYSTEM:CONSOLE",
+            pad,
+            "main.obj",
+        ];
+        words.extend(["a.obj", "b.obj", "c.obj", "d.obj", "e.obj", "f.obj"]);
+        run(&dir, &words).expect("links")
+    };
+    let targets = |image: &[u8], main: u32| {
+        let code = at_rva(image, main, 30).to_vec();
+        (0..6)
+            .map(|k| rel32(&code, main, 1 + 5 * k))
+            .collect::<Vec<u32>>()
+    };
+    let plain = link("/OPT:NOREF");
+    assert_eq!(
+        targets(&plain, 0x1000),
+        [0x1020, 0x1030, 0x1040, 0x1050, 0x1060, 0x1070]
+    );
+    // main: 16 bytes of padding, then main (31 bytes); a padded (16, then
+    // aligned to 16); b, c not; d padded; e not; f padded.
+    let sixteen = link("/FUNCTIONPADMIN:16");
+    assert_eq!(
+        targets(&sixteen, 0x1010),
+        [0x1040, 0x1050, 0x1060, 0x1080, 0x1090, 0x10B0]
+    );
+    assert!(at_rva(&sixteen, 0x1000, 16).iter().all(|&b| b == 0xCC));
+    assert!(at_rva(&sixteen, 0x1043, 13).iter().all(|&b| b == 0xCC));
+    let groups = coff_groups(&sixteen);
+    assert_eq!(
+        (groups[0].0, groups[0].1, groups[0].2.as_str()),
+        (0x1000, 0xB3, ".text$mn")
+    );
+    // 6: main on 16 after the padding, a 6 bytes past its end, aligned.
+    let six = link("/FUNCTIONPADMIN");
+    assert_eq!(
+        targets(&six, 0x1010),
+        [0x1040, 0x1050, 0x1060, 0x1070, 0x1080, 0x1090]
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A DLL's export directory goes after the inputs' groups and before the
+/// imports'; link.exe's .rdata$voltmd and .rdata$zzzdbg then go before the
+/// first group that sorts after them: a DLL without imports or unwind
+/// data has .rdata, .edata, .rdata$voltmd, .rdata$zzzdbg.
+#[test]
+fn the_export_directory_is_where_link_exe_puts_it() {
+    let dir = scratch("edata");
+    std::fs::write(dir.join("e.obj"), defining("exported")).unwrap();
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/DLL",
+            "/NOENTRY",
+            "/EXPORT:exported",
+            "e.obj",
+        ],
+    )
+    .expect("links");
+    let names: Vec<String> = coff_groups(&image).into_iter().map(|g| g.2).collect();
+    assert_eq!(
+        names,
+        [
+            ".text",
+            ".rdata",
+            ".edata",
+            ".rdata$voltmd",
+            ".rdata$zzzdbg"
+        ]
+    );
+    // With unwind data (.xdata), .edata is after it, and link.exe's own
+    // groups before it.
+    let xdata = Section {
+        name: ".xdata",
+        characteristics: 0x4030_0040,
+        data: vec![1, 4, 1, 0, 4, 0x42, 0, 0],
+        relocations: Vec::new(),
+        comdat: None,
+    };
+    let object = coff(
+        &[code(&[0xC3], &[], false), xdata],
+        &[Symbol("exported", 0, 1, 0x20, 2)],
+    );
+    std::fs::write(dir.join("u.obj"), object).unwrap();
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/DLL",
+            "/NOENTRY",
+            "/EXPORT:exported",
+            "u.obj",
+        ],
+    )
+    .expect("links");
+    let names: Vec<String> = coff_groups(&image).into_iter().map(|g| g.2).collect();
+    assert_eq!(
+        names,
+        [
+            ".text$mn",
+            ".rdata",
+            ".rdata$voltmd",
+            ".rdata$zzzdbg",
+            ".xdata",
+            ".edata"
+        ]
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `main` calls `f` and `g`, COMDATs, each with unwind data (`.xdata`,
+/// associative): the order main, f, g.
+fn ordered_inputs(dir: &Path) {
+    let xdata = |n: u8, with: u16| Section {
+        name: ".xdata",
+        characteristics: 0x4030_0040,
+        data: vec![1, 4, 1, 0, 4, 0x42, 0, 0, n],
+        relocations: Vec::new(),
+        comdat: Some((5, with)),
+    };
+    let sections = [
+        code(
+            &[0xE8, 0, 0, 0, 0, 0xE8, 0, 0, 0, 0, 0xC3],
+            &[(1, 11, 4), (6, 12, 4)],
+            true,
+        ),
+        code(&[0xB0, 1, 0xC3], &[], true),
+        xdata(1, 2),
+        code(&[0xB0, 2, 0xC3], &[], true),
+        xdata(2, 4),
+    ];
+    let symbols = [
+        Symbol("main", 0, 1, 0x20, 2),
+        Symbol("f", 0, 2, 0x20, 2),
+        Symbol("g", 0, 4, 0x20, 2),
+    ];
+    std::fs::write(dir.join("o.obj"), coff(&sections, &symbols)).unwrap();
+}
+
+/// /ORDER:@file: the functions it names go first in their group, in its
+/// order, the rest after them as they were; their associative sections
+/// (unwind data) follow them. A name nothing defines is LNK4037.
+#[test]
+fn order_is_link_exes() {
+    let dir = scratch("order");
+    ordered_inputs(&dir);
+    std::fs::write(dir.join("order.txt"), "g\nnosuchfunction\nf\n").unwrap();
+    let order = format!("/ORDER:@{}", input(&dir, "order.txt"));
+    let words = [
+        "/NODEFAULTLIB",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        order.as_str(),
+        "o.obj",
+    ];
+    let (image, warnings) = run_with_warnings(&dir, &words);
+    let image = image.expect("links");
+    assert_eq!(warnings, [4037]);
+    // g, f, main.
+    let code = at_rva(&image, 0x1020, 11).to_vec();
+    assert_eq!(at_rva(&image, 0x1000, 3), [0xB0, 2, 0xC3]);
+    assert_eq!(at_rva(&image, 0x1010, 3), [0xB0, 1, 0xC3]);
+    assert_eq!(
+        [rel32(&code, 0x1020, 1), rel32(&code, 0x1020, 6)],
+        [0x1010, 0x1000]
+    );
+    // g's unwind data first.
+    let groups = coff_groups(&image);
+    let xdata = groups
+        .iter()
+        .find(|g| g.2 == ".xdata")
+        .expect("an .xdata group");
+    assert_eq!(at_rva(&image, xdata.0 + 8, 1), [2]);
+    let _ = std::fs::remove_dir_all(&dir);
+}

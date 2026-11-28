@@ -722,13 +722,13 @@ pub fn layout(
                 }
                 section_chunks.push(mine);
             }
-            FileKind::Import { import, .. } => {
+            FileKind::Import { import, delay, .. } => {
                 section_chunks.push(Vec::new());
                 if !live.imports[f] {
                     continue;
                 }
                 let code = scn::CNT_CODE | scn::MEM_EXECUTE | scn::MEM_READ;
-                if config.is_delay_loaded(import.dll) {
+                if *delay {
                     // A delay-loaded DLL's pieces, where its first import
                     // loads (as link.exe places them): the tail merge (code),
                     // its unwind data and .pdata entry, the DLL's name, its
@@ -902,8 +902,8 @@ pub fn layout(
         match (&file.idata, &file.kind) {
             // Every import loaded, used or not: link.exe sorts before
             // /OPT:REF drops the unused ones (their places count).
-            (_, FileKind::Import { import, .. }) => {
-                if !config.is_delay_loaded(import.dll) {
+            (_, FileKind::Import { import, delay, .. }) => {
+                if !delay {
                     let d = stem_index(
                         &mut stems,
                         &mut stem_names,
@@ -1195,7 +1195,7 @@ pub fn layout(
     // them (`delay_tables`).
     let mut delay_name_offsets = Map::default();
     let (delay_table_dlls, delay_tables, delay_room) =
-        delay_tables(r, config, &live.imports, &delay_dlls);
+        delay_tables(r, &live.imports, &delay_dlls);
     for (d, table) in delay_tables.iter().enumerate() {
         for (k, &f) in table.iter().enumerate() {
             delay_slots.insert(f, (crate::n32(d), crate::n32(k)));
@@ -1925,7 +1925,6 @@ impl Layout {
 /// A to H give A, G, B, C, D, E, F, H (more than 8 pieces, it partitions).
 fn delay_tables(
     r: &Resolved,
-    config: &Config,
     live: &[bool],
     delay_dlls: &[Dll],
 ) -> (Vec<u32>, Vec<Vec<u32>>, Option<u32>) {
@@ -1939,10 +1938,10 @@ fn delay_tables(
     let mut pieces: Vec<(Vec<u16>, Option<u32>, u32)> = Vec::new();
     let mut seen: Map<&[u8], ()> = Map::default();
     for (f, file) in r.files.iter().enumerate() {
-        let FileKind::Import { import, .. } = &file.kind else {
+        let FileKind::Import { import, delay, .. } = &file.kind else {
             continue;
         };
-        if !config.is_delay_loaded(import.dll) {
+        if !delay {
             continue;
         }
         let key = module_file_name(file);
@@ -1991,26 +1990,7 @@ fn delay_tables(
 fn module_file_name(file: &crate::resolve::File) -> Vec<u16> {
     let name = file.name.as_str();
     let path = match file.library {
-        // `library(member)`: the member is in the last parentheses (a
-        // library's path may have its own, `Program Files (x86)`).
-        Some(_) => name
-            .strip_suffix(')')
-            .and_then(|n| {
-                let mut depth = 0usize;
-                n.char_indices().rev().find_map(|(i, c)| match c {
-                    ')' => {
-                        depth += 1;
-                        None
-                    }
-                    '(' if depth == 0 => Some(&n[i + 1..]),
-                    '(' => {
-                        depth -= 1;
-                        None
-                    }
-                    _ => None,
-                })
-            })
-            .unwrap_or(name),
+        Some(_) => crate::resolve::member_name(name).unwrap_or(name),
         None => name,
     };
     let base = path.rsplit(['\\', '/', ':']).next().unwrap_or(path);

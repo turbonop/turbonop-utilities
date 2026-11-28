@@ -104,6 +104,26 @@ pub fn dll_stem(dll: &[u8]) -> &[u8] {
     }
 }
 
+/// The archive member's name in a library member's file name
+/// (`x.lib(KERNEL32.dll)`: `KERNEL32.dll`): what is in the last
+/// parentheses (a library's path may have its own: `Program Files (x86)`).
+pub fn member_name(name: &str) -> Option<&str> {
+    let n = name.strip_suffix(')')?;
+    let mut depth = 0usize;
+    n.char_indices().rev().find_map(|(i, c)| match c {
+        ')' => {
+            depth += 1;
+            None
+        }
+        '(' if depth == 0 => Some(&n[i + 1..]),
+        '(' => {
+            depth -= 1;
+            None
+        }
+        _ => None,
+    })
+}
+
 /// What a loaded file is.
 #[derive(Debug)]
 pub enum FileKind {
@@ -126,6 +146,8 @@ pub enum FileKind {
         address: u32,
         /// The thunk's global (functions only): the name itself.
         thunk: Option<u32>,
+        /// Whether it is delay-loaded (`/DELAYLOAD`).
+        delay: bool,
     },
 }
 
@@ -445,7 +467,15 @@ impl Linker {
                     self.define_import(t, Def::ImportThunk(place), &name);
                     t
                 });
-                if self.config.is_delay_loaded(import.dll) {
+                // /DELAYLOAD names the archive member an import came from
+                // (link.exe's rule: a member named z.dll of DLL x.dll is
+                // delay-loaded by /DELAYLOAD:z.dll, not x.dll); an import
+                // not from a library, by its DLL.
+                let delay = match self.loading_from.and_then(|_| member_name(&name)) {
+                    Some(member) => self.config.is_delay_loaded(member.as_bytes()),
+                    None => self.config.is_delay_loaded(import.dll),
+                };
+                if delay {
                     // A delay-loaded import wants no import descriptor, but
                     // the helper that loads its DLL (from delayimp.lib), as
                     // link.exe asks for it once the first one loads.
@@ -478,6 +508,7 @@ impl Linker {
                         import,
                         address,
                         thunk,
+                        delay,
                     },
                 });
             }
@@ -1598,10 +1629,17 @@ pub fn resolve_with(
     }
     times.push(("  (all files' symbols added)", l.t_add));
 
-    // A /DELAYLOAD DLL nothing imports from: link.exe's warning.
+    // A /DELAYLOAD DLL nothing imports from: link.exe's warning (by the
+    // name an import is delay-loaded by: its archive member's).
     for dll in &l.config.delay_load {
         let imported = l.files.iter().any(|f| match &f.kind {
-            FileKind::Import { import, .. } => import.dll.eq_ignore_ascii_case(dll.as_bytes()),
+            FileKind::Import { import, .. } => {
+                let by = match f.library.and_then(|_| member_name(&f.name)) {
+                    Some(member) => member.as_bytes(),
+                    None => import.dll,
+                };
+                by.eq_ignore_ascii_case(dll.as_bytes())
+            }
             FileKind::Object { .. } => false,
         });
         if !imported {

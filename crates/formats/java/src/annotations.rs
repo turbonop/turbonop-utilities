@@ -389,7 +389,7 @@ mod tests {
             b.extend_from_slice(&tail);
             let t = parse_type_annotation(&mut Cursor::new(&b)).unwrap();
             assert_eq!(t.target, want, "{bytes:?}");
-            assert_eq!(target_type_name(t.target_type).is_some(), true);
+            assert!(target_type_name(t.target_type).is_some());
         }
         // A path.
         let b = [0x13, 2, 0, 0, 3, 1, 0, 1, 0, 0];

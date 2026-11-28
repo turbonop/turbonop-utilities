@@ -18,7 +18,7 @@ use std::process::Command;
 use common::{first_difference, java_home, javap_body, jdk_version};
 use turbonop_java::attributes::AttributeValue;
 use turbonop_java::bytecode::{self, Operand};
-use turbonop_java::{AttributesExt, ClassFile, Constant};
+use turbonop_java::{ClassFile, Constant};
 
 /// A class file writer: a constant pool that shares its entries, and the
 /// parts appended as bytes.

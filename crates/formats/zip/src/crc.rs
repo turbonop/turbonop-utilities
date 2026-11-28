@@ -3,6 +3,7 @@
 
 const POLY: u32 = 0xEDB8_8320;
 
+#[allow(clippy::cast_possible_truncation)]
 const fn tables() -> [[u32; 256]; 8] {
     let mut t = [[0u32; 256]; 8];
     let mut i = 0;
@@ -35,8 +36,8 @@ static TABLES: [[u32; 256]; 8] = tables();
 pub fn crc32_update(crc: u32, data: &[u8]) -> u32 {
     let t = &TABLES;
     let mut c = !crc;
-    let mut chunks = data.chunks_exact(8);
-    for b in &mut chunks {
+    let (chunks, rest) = data.as_chunks::<8>();
+    for b in chunks {
         let lo = c ^ u32::from_le_bytes([b[0], b[1], b[2], b[3]]);
         let hi = u32::from_le_bytes([b[4], b[5], b[6], b[7]]);
         c = t[7][(lo & 0xFF) as usize]
@@ -48,7 +49,7 @@ pub fn crc32_update(crc: u32, data: &[u8]) -> u32 {
             ^ t[1][((hi >> 16) & 0xFF) as usize]
             ^ t[0][(hi >> 24) as usize];
     }
-    for &b in chunks.remainder() {
+    for &b in rest {
         c = (c >> 8) ^ t[0][((c ^ u32::from(b)) & 0xFF) as usize];
     }
     !c
@@ -60,6 +61,7 @@ pub fn crc32(data: &[u8]) -> u32 {
 }
 
 #[cfg(test)]
+#[allow(clippy::cast_possible_truncation)]
 mod tests {
     use super::*;
 

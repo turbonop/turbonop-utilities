@@ -504,10 +504,10 @@ impl<'d> Javap<'_, 'd> {
             self.w.print(&format!("class {n}"));
             return;
         }
-        if !cf.is_interface() {
-            self.w.print("class ");
-        } else {
+        if cf.is_interface() {
             self.w.print("interface ");
+        } else {
+            self.w.print("class ");
         }
         let name = self.class_java_name(cf.this_class);
         self.w.print(&name);
@@ -1093,7 +1093,7 @@ impl<'d> Javap<'_, 'd> {
     fn write_raw(&mut self, a: &Attribute<'d>, reason: Option<&str>) {
         let name = self.cp.utf8(a.name_index).map_or_else(
             |_| format!("attribute name = #{}", a.name_index),
-            |n| n.into_owned(),
+            std::borrow::Cow::into_owned,
         );
         let mut s = format!("  {name}: length = 0x{:X}", a.data.len());
         if let Some(r) = reason {

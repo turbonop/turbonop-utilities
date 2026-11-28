@@ -25,7 +25,6 @@ impl<'d> Cursor<'d> {
         Self { data, pos: 0, base }
     }
 
-
     pub(crate) fn remaining(&self) -> usize {
         self.data.len() - self.pos
     }
@@ -54,7 +53,6 @@ impl<'d> Cursor<'d> {
         Ok(b)
     }
 
-
     fn array<const N: usize>(&mut self, what: &'static str) -> Result<[u8; N]> {
         let b = self.bytes(N, what)?;
         let mut a = [0; N];
@@ -66,11 +64,9 @@ impl<'d> Cursor<'d> {
         Ok(self.array::<1>(what)?[0])
     }
 
-
     pub(crate) fn u16(&mut self, what: &'static str) -> Result<u16> {
         Ok(u16::from_be_bytes(self.array(what)?))
     }
-
 
     pub(crate) fn u32(&mut self, what: &'static str) -> Result<u32> {
         Ok(u32::from_be_bytes(self.array(what)?))

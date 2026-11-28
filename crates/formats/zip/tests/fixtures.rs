@@ -218,7 +218,11 @@ fn data_before_the_archive() {
 fn other_methods_are_named() {
     let data = testdata("methods.zip");
     let a = Archive::parse(&data).unwrap();
-    let methods: Vec<_> = a.entries().iter().map(|e| e.method_name()).collect();
+    let methods: Vec<_> = a
+        .entries()
+        .iter()
+        .map(turbonop_zip::Entry::method_name)
+        .collect();
     assert_eq!(methods, ["bzip2", "LZMA", "deflated"]);
     for e in &a.entries()[..2] {
         assert_eq!(a.read(e).unwrap_err().kind, ErrorKind::Unsupported);

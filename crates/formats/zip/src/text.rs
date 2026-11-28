@@ -75,7 +75,7 @@ impl DosDateTime {
 
     /// The second (even: 0 to 58, if it's valid).
     pub fn second(self) -> u8 {
-        ((self.time & 0x1F) * 2) as u8
+        (self.time & 0x1F) as u8 * 2
     }
 
     /// Whether every field is in its range (MS-DOS's zero date, 1980-00-00,

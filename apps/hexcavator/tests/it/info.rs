@@ -158,7 +158,10 @@ fn java() {
         assert!(jar.contains(line), "{jar}");
     }
     let mr = info("java/mr.jar");
-    assert!(mr.contains("class versions 52 to 61 (Java 8 to Java 17)"), "{mr}");
+    assert!(
+        mr.contains("class versions 52 to 61 (Java 8 to Java 17)"),
+        "{mr}"
+    );
     assert!(mr.contains("multi-release: versions 17"), "{mr}");
     assert_eq!(
         info("zip/prefixed.zip"),

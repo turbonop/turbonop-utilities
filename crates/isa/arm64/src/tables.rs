@@ -186,7 +186,7 @@ pub(crate) struct LlvmOperand {
 }
 
 /// What an LLVM record reads and writes: its register operands, its
-/// implicit registers (`RegSet` bits), and [`flag`]s.
+/// implicit registers (`RegisterSet` bits), and [`flag`]s.
 pub(crate) struct Record {
     #[allow(dead_code, reason = "for tools and debugging")]
     pub name: &'static str,

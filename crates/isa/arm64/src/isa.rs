@@ -8,8 +8,8 @@ use turbonop_isa::{
     RegisterAccess, Registers, Resolver, Target, TokenKind, TokenSink, Update,
 };
 
-use crate::access::{Effects, Reg};
-use crate::operand::{Access, AddrMode, Mem, OperandKind, ShiftKind};
+use crate::access::{Effects, Register};
+use crate::operand::{AddressingMode, MemoryOperand, OperandKind, ShiftKind};
 use crate::{Instruction, Opcode, opcodes};
 
 /// The A64 decoder: every encoding of the architecture, whatever the
@@ -130,7 +130,10 @@ impl Instruction {
     /// operands', and a literal load's (`ldr x0, <label>`). Sizes aren't
     /// known yet (`None`): they come from the architecture's decode
     /// pseudocode, which the tables don't have.
-    pub fn memory_accesses(&self, address: u64) -> impl Iterator<Item = MemoryAccess<Reg>> + use<> {
+    pub fn memory_accesses(
+        &self,
+        address: u64,
+    ) -> impl Iterator<Item = MemoryAccess<Register>> + use<> {
         let at = self.at(address);
         // (A load from a label is a literal's: PC-relative.)
         let literal = (self.reads_memory() && !self.effects().contains(Effects::BRANCH))
@@ -142,21 +145,22 @@ impl Instruction {
             });
         at.memory_operands()
             .filter_map(|o| match o.kind {
-                OperandKind::Mem(m) => Some(memory(&m, o.access)),
+                OperandKind::Memory(m) => Some(memory(&m, o.access)),
                 _ => None,
             })
             .chain(literal)
     }
 
-    /// Its operands (at `address`), in the common form: a register list's
+    /// Its operands (at `address`), in [`turbonop_isa`]'s common form (see
+    /// [`Operands`]): a register list's
     /// registers each an operand; a label a branch's
     /// [`Target`](IsaOperand::Target), a literal load's memory, or else
     /// (`adr`, `adrp`) an [`Address`](IsaOperand::Address); conditions,
     /// shifts, and the like [`Other`](IsaOperand::Other)
-    /// ([`Instruction::operands`] has them).
-    pub fn common_operands(&self, address: u64) -> impl Iterator<Item = IsaOperand<Reg>> + use<> {
+    /// ([`Instruction::detailed_operands`] has them).
+    fn common_operands(&self, address: u64) -> impl Iterator<Item = IsaOperand<Register>> + use<> {
         let e = self.effects();
-        let ops = self.operands(address);
+        let ops = self.detailed_operands(address);
         let mut out = [None; 4 * crate::MAX_OPERANDS];
         let mut n = 0;
         let mut push = |o| {
@@ -165,13 +169,13 @@ impl Instruction {
         };
         for o in &ops {
             match o.kind {
-                OperandKind::Reg(r) => push(IsaOperand::Register(r.reg, access(o.access))),
+                OperandKind::Register(r) => push(IsaOperand::Register(r.register, o.access)),
                 OperandKind::List(l) => {
                     for r in l.iter() {
-                        push(IsaOperand::Register(r, access(o.access)));
+                        push(IsaOperand::Register(r, o.access));
                     }
                 }
-                OperandKind::Imm(v) => push(IsaOperand::Immediate(Immediate {
+                OperandKind::Immediate(v) => push(IsaOperand::Immediate(Immediate {
                     value: v,
                     bits: 0,
                     signed: v < 0,
@@ -184,7 +188,7 @@ impl Instruction {
                     MemoryAccess::new(AccessKind::READ, Base::Pc, t as i64, None),
                 )),
                 OperandKind::Label(t) => push(IsaOperand::Address(t)),
-                OperandKind::Mem(m) => push(IsaOperand::Memory(memory(&m, o.access))),
+                OperandKind::Memory(m) => push(IsaOperand::Memory(memory(&m, o.access))),
                 _ => push(IsaOperand::Other),
             }
         }
@@ -192,19 +196,10 @@ impl Instruction {
     }
 }
 
-fn access(a: Access) -> AccessKind {
-    match (a.reads(), a.writes()) {
-        (true, true) => AccessKind::READ_WRITE,
-        (true, false) => AccessKind::READ,
-        (false, true) => AccessKind::WRITE,
-        (false, false) => AccessKind::NONE,
-    }
-}
-
 /// A memory operand as an access (its size not known: see
 /// [`Instruction::memory_accesses`]).
-fn memory(m: &Mem, a: Access) -> MemoryAccess<Reg> {
-    let index = |r: Reg| Index {
+fn memory(m: &MemoryOperand, a: AccessKind) -> MemoryAccess<Register> {
+    let index = |r: Register| Index {
         register: r,
         extend: match m.index_shift.map(|s| s.0) {
             Some(ShiftKind::Uxtw) => Extend::Zero(32),
@@ -217,26 +212,26 @@ fn memory(m: &Mem, a: Access) -> MemoryAccess<Reg> {
         },
         shift: m.index_shift.map_or(0, |s| s.1),
     };
-    let post = m.mode == AddrMode::PostIndex;
+    let post = m.mode == AddressingMode::PostIndex;
     MemoryAccess {
-        access: access(a),
+        access: a,
         base: Base::Register(m.base),
         // (Post-indexed: the access is at the base; the index or offset is
         // what it's advanced by.)
         index: if post { None } else { m.index.map(index) },
-        displacement: if post { 0 } else { m.offset },
+        displacement: if post { 0 } else { m.displacement },
         segment: None,
         update: match m.mode {
-            AddrMode::Offset => Update::None,
-            AddrMode::PreIndex => Update::Pre,
-            AddrMode::PostIndex => Update::Post(match m.index {
+            AddressingMode::Offset => Update::None,
+            AddressingMode::PreIndex => Update::Pre,
+            AddressingMode::PostIndex => Update::Post(match m.index {
                 Some(r) => Offset::Register(r),
-                None => Offset::Immediate(m.offset),
+                None => Offset::Immediate(m.displacement),
             }),
         },
         size: None,
-        vector_length_units: m.mul_vl,
-        space: 0,
+        vector_length_units: m.vector_length_units,
+        memory: 0,
         implicit: false,
     }
 }
@@ -288,8 +283,8 @@ impl Isa for Arm64 {
 }
 
 impl Registers for Arm64 {
-    type Register = Reg;
-    type RegisterSet = BitSet<Reg, 2>;
+    type Register = Register;
+    type RegisterSet = BitSet<Register, 2>;
 
     #[inline]
     fn register_accesses(
@@ -297,7 +292,7 @@ impl Registers for Arm64 {
         _: &(),
         i: &Instruction,
         _: u64,
-    ) -> impl Iterator<Item = RegisterAccess<Reg>> {
+    ) -> impl Iterator<Item = RegisterAccess<Register>> {
         i.register_accesses()
     }
 }
@@ -309,7 +304,7 @@ impl Memory for Arm64 {
         _: &(),
         i: &Instruction,
         address: u64,
-    ) -> impl Iterator<Item = MemoryAccess<Reg>> {
+    ) -> impl Iterator<Item = MemoryAccess<Register>> {
         i.memory_accesses(address)
     }
 }
@@ -321,7 +316,7 @@ impl Operands for Arm64 {
         _: &(),
         i: &Instruction,
         address: u64,
-    ) -> impl Iterator<Item = IsaOperand<Reg>> {
+    ) -> impl Iterator<Item = IsaOperand<Register>> {
         i.common_operands(address)
     }
 }
@@ -343,7 +338,7 @@ impl Format for Arm64 {
         /// `names` as a `dyn Resolver` (it may be unsized).
         struct Dyn<'a, N: ?Sized>(&'a N);
         impl<N: Resolver + ?Sized> Resolver for Dyn<'_, N> {
-            fn resolve(&self, r: turbonop_isa::Ref, out: &mut dyn TokenSink) -> bool {
+            fn resolve(&self, r: turbonop_isa::Reference, out: &mut dyn TokenSink) -> bool {
                 self.0.resolve(r, out)
             }
         }

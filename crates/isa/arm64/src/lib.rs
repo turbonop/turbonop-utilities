@@ -8,11 +8,12 @@
 //! disassembler's syntax (`dumpbin /disasm`).
 //!
 //! Each instruction also has its operands, typed
-//! ([`Instruction::operands`]), and what it reads and writes
-//! ([`Instruction::written_registers`], [`Instruction::read_registers`],
-//! [`Instruction::effects`]): LLVM's records for each encoding
-//! (`tables/a64-access.txt`, from `tools/arm64/access.py`), checked
-//! against llvm-mc.
+//! ([`Instruction::detailed_operands`]), what it reads and writes
+//! ([`Instruction::register_accesses`], [`Instruction::memory_accesses`]),
+//! and how control leaves it ([`Instruction::flow`]): from LLVM's records
+//! for each encoding (`tables/a64-access.txt`, from
+//! `tools/arm64/access.py`), checked against llvm-mc. [`Arm64`] is the
+//! decoder as [`turbonop_isa`]'s traits see it.
 
 #![no_std]
 #![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
@@ -26,13 +27,14 @@ mod format;
 mod operand;
 mod tables;
 
-pub use access::{Effects, Element, Reg, RegSet};
+pub use access::{Element, Register, RegisterSet};
 pub use format::{format, format_into, format_with};
 pub use operand::{
-    Access, AddrMode, Arrangement, Cond, MAX_OPERANDS, Mem, Operand, OperandKind, Operands,
-    Predication, RegList, RegOperand, ShiftKind, SysReg, ZaSlice,
+    Access, AddressingMode, Arrangement, Condition, MAX_OPERANDS, MemoryOperand, Operand,
+    OperandKind, Operands, Predication, RegisterList, RegisterOperand, ShiftKind, SystemRegister,
+    ZaSlice,
 };
-pub use turbonop_isa::{Ref, Resolver};
+pub use turbonop_isa::{Reference, Resolver};
 
 pub use isa::{Arm64, Syntax};
 pub use tables::opcodes;

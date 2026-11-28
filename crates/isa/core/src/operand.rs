@@ -1,6 +1,6 @@
 //! Operands, in a form common to every instruction set.
 
-use crate::format::Ref;
+use crate::format::Reference;
 use crate::memory::MemoryAccess;
 use crate::register::Access;
 
@@ -36,7 +36,7 @@ pub enum Operand<R> {
     Memory(MemoryAccess<R>),
     /// An entity named by an index or token (a function, a type, a
     /// field, a local): what it is, the caller's tables say.
-    Ref(Ref),
+    Reference(Reference),
     /// Something else (a condition code, a shift's kind, an arrangement,
     /// a system register's encoding): the instruction set's own operand
     /// says.

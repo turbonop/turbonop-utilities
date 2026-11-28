@@ -7885,121 +7885,121 @@ pub mod opcodes {
     use crate::Opcode;
 
     /// `add_z_p_zz_`.
-    pub const ADD_Z_P_ZZ_: Opcode = Opcode(0);
+    pub const ADD_Z_P_ZZ: Opcode = Opcode(0);
     /// `sub_z_p_zz_`.
-    pub const SUB_Z_P_ZZ_: Opcode = Opcode(1);
+    pub const SUB_Z_P_ZZ: Opcode = Opcode(1);
     /// `subr_z_p_zz_`.
-    pub const SUBR_Z_P_ZZ_: Opcode = Opcode(2);
+    pub const SUBR_Z_P_ZZ: Opcode = Opcode(2);
     /// `addpt_z_p_zz_`.
-    pub const ADDPT_Z_P_ZZ_: Opcode = Opcode(3);
+    pub const ADDPT_Z_P_ZZ: Opcode = Opcode(3);
     /// `subpt_z_p_zz_`.
-    pub const SUBPT_Z_P_ZZ_: Opcode = Opcode(4);
+    pub const SUBPT_Z_P_ZZ: Opcode = Opcode(4);
     /// `smax_z_p_zz_`.
-    pub const SMAX_Z_P_ZZ_: Opcode = Opcode(5);
+    pub const SMAX_Z_P_ZZ: Opcode = Opcode(5);
     /// `smin_z_p_zz_`.
-    pub const SMIN_Z_P_ZZ_: Opcode = Opcode(6);
+    pub const SMIN_Z_P_ZZ: Opcode = Opcode(6);
     /// `sabd_z_p_zz_`.
-    pub const SABD_Z_P_ZZ_: Opcode = Opcode(7);
+    pub const SABD_Z_P_ZZ: Opcode = Opcode(7);
     /// `umax_z_p_zz_`.
-    pub const UMAX_Z_P_ZZ_: Opcode = Opcode(8);
+    pub const UMAX_Z_P_ZZ: Opcode = Opcode(8);
     /// `umin_z_p_zz_`.
-    pub const UMIN_Z_P_ZZ_: Opcode = Opcode(9);
+    pub const UMIN_Z_P_ZZ: Opcode = Opcode(9);
     /// `uabd_z_p_zz_`.
-    pub const UABD_Z_P_ZZ_: Opcode = Opcode(10);
+    pub const UABD_Z_P_ZZ: Opcode = Opcode(10);
     /// `mul_z_p_zz_`.
-    pub const MUL_Z_P_ZZ_: Opcode = Opcode(11);
+    pub const MUL_Z_P_ZZ: Opcode = Opcode(11);
     /// `smulh_z_p_zz_`.
-    pub const SMULH_Z_P_ZZ_: Opcode = Opcode(12);
+    pub const SMULH_Z_P_ZZ: Opcode = Opcode(12);
     /// `umulh_z_p_zz_`.
-    pub const UMULH_Z_P_ZZ_: Opcode = Opcode(13);
+    pub const UMULH_Z_P_ZZ: Opcode = Opcode(13);
     /// `sdiv_z_p_zz_`.
-    pub const SDIV_Z_P_ZZ_: Opcode = Opcode(14);
+    pub const SDIV_Z_P_ZZ: Opcode = Opcode(14);
     /// `sdivr_z_p_zz_`.
-    pub const SDIVR_Z_P_ZZ_: Opcode = Opcode(15);
+    pub const SDIVR_Z_P_ZZ: Opcode = Opcode(15);
     /// `udiv_z_p_zz_`.
-    pub const UDIV_Z_P_ZZ_: Opcode = Opcode(16);
+    pub const UDIV_Z_P_ZZ: Opcode = Opcode(16);
     /// `udivr_z_p_zz_`.
-    pub const UDIVR_Z_P_ZZ_: Opcode = Opcode(17);
+    pub const UDIVR_Z_P_ZZ: Opcode = Opcode(17);
     /// `orr_z_p_zz_`.
-    pub const ORR_Z_P_ZZ_: Opcode = Opcode(18);
+    pub const ORR_Z_P_ZZ: Opcode = Opcode(18);
     /// `eor_z_p_zz_`.
-    pub const EOR_Z_P_ZZ_: Opcode = Opcode(19);
+    pub const EOR_Z_P_ZZ: Opcode = Opcode(19);
     /// `and_z_p_zz_`.
-    pub const AND_Z_P_ZZ_: Opcode = Opcode(20);
+    pub const AND_Z_P_ZZ: Opcode = Opcode(20);
     /// `bic_z_p_zz_`.
-    pub const BIC_Z_P_ZZ_: Opcode = Opcode(21);
+    pub const BIC_Z_P_ZZ: Opcode = Opcode(21);
     /// `saddv_r_p_z_`.
-    pub const SADDV_R_P_Z_: Opcode = Opcode(22);
+    pub const SADDV_R_P_Z: Opcode = Opcode(22);
     /// `uaddv_r_p_z_`.
-    pub const UADDV_R_P_Z_: Opcode = Opcode(23);
+    pub const UADDV_R_P_Z: Opcode = Opcode(23);
     /// `addqv_z_p_z_`.
-    pub const ADDQV_Z_P_Z_: Opcode = Opcode(24);
+    pub const ADDQV_Z_P_Z: Opcode = Opcode(24);
     /// `smaxv_r_p_z_`.
-    pub const SMAXV_R_P_Z_: Opcode = Opcode(25);
+    pub const SMAXV_R_P_Z: Opcode = Opcode(25);
     /// `sminv_r_p_z_`.
-    pub const SMINV_R_P_Z_: Opcode = Opcode(26);
+    pub const SMINV_R_P_Z: Opcode = Opcode(26);
     /// `umaxv_r_p_z_`.
-    pub const UMAXV_R_P_Z_: Opcode = Opcode(27);
+    pub const UMAXV_R_P_Z: Opcode = Opcode(27);
     /// `uminv_r_p_z_`.
-    pub const UMINV_R_P_Z_: Opcode = Opcode(28);
+    pub const UMINV_R_P_Z: Opcode = Opcode(28);
     /// `smaxqv_z_p_z_`.
-    pub const SMAXQV_Z_P_Z_: Opcode = Opcode(29);
+    pub const SMAXQV_Z_P_Z: Opcode = Opcode(29);
     /// `sminqv_z_p_z_`.
-    pub const SMINQV_Z_P_Z_: Opcode = Opcode(30);
+    pub const SMINQV_Z_P_Z: Opcode = Opcode(30);
     /// `umaxqv_z_p_z_`.
-    pub const UMAXQV_Z_P_Z_: Opcode = Opcode(31);
+    pub const UMAXQV_Z_P_Z: Opcode = Opcode(31);
     /// `uminqv_z_p_z_`.
-    pub const UMINQV_Z_P_Z_: Opcode = Opcode(32);
+    pub const UMINQV_Z_P_Z: Opcode = Opcode(32);
     /// `movprfx_z_p_z_`.
-    pub const MOVPRFX_Z_P_Z_: Opcode = Opcode(33);
+    pub const MOVPRFX_Z_P_Z: Opcode = Opcode(33);
     /// `orv_r_p_z_`.
-    pub const ORV_R_P_Z_: Opcode = Opcode(34);
+    pub const ORV_R_P_Z: Opcode = Opcode(34);
     /// `eorv_r_p_z_`.
-    pub const EORV_R_P_Z_: Opcode = Opcode(35);
+    pub const EORV_R_P_Z: Opcode = Opcode(35);
     /// `andv_r_p_z_`.
-    pub const ANDV_R_P_Z_: Opcode = Opcode(36);
+    pub const ANDV_R_P_Z: Opcode = Opcode(36);
     /// `orqv_z_p_z_`.
-    pub const ORQV_Z_P_Z_: Opcode = Opcode(37);
+    pub const ORQV_Z_P_Z: Opcode = Opcode(37);
     /// `eorqv_z_p_z_`.
-    pub const EORQV_Z_P_Z_: Opcode = Opcode(38);
+    pub const EORQV_Z_P_Z: Opcode = Opcode(38);
     /// `andqv_z_p_z_`.
-    pub const ANDQV_Z_P_Z_: Opcode = Opcode(39);
+    pub const ANDQV_Z_P_Z: Opcode = Opcode(39);
     /// `asr_z_p_zi_`.
-    pub const ASR_Z_P_ZI_: Opcode = Opcode(40);
+    pub const ASR_Z_P_ZI: Opcode = Opcode(40);
     /// `lsl_z_p_zi_`.
-    pub const LSL_Z_P_ZI_: Opcode = Opcode(41);
+    pub const LSL_Z_P_ZI: Opcode = Opcode(41);
     /// `asrd_z_p_zi_`.
-    pub const ASRD_Z_P_ZI_: Opcode = Opcode(42);
+    pub const ASRD_Z_P_ZI: Opcode = Opcode(42);
     /// `sqshl_z_p_zi_`.
-    pub const SQSHL_Z_P_ZI_: Opcode = Opcode(43);
+    pub const SQSHL_Z_P_ZI: Opcode = Opcode(43);
     /// `srshr_z_p_zi_`.
-    pub const SRSHR_Z_P_ZI_: Opcode = Opcode(44);
+    pub const SRSHR_Z_P_ZI: Opcode = Opcode(44);
     /// `sqshlu_z_p_zi_`.
-    pub const SQSHLU_Z_P_ZI_: Opcode = Opcode(45);
+    pub const SQSHLU_Z_P_ZI: Opcode = Opcode(45);
     /// `lsr_z_p_zi_`.
-    pub const LSR_Z_P_ZI_: Opcode = Opcode(46);
+    pub const LSR_Z_P_ZI: Opcode = Opcode(46);
     /// `uqshl_z_p_zi_`.
-    pub const UQSHL_Z_P_ZI_: Opcode = Opcode(47);
+    pub const UQSHL_Z_P_ZI: Opcode = Opcode(47);
     /// `urshr_z_p_zi_`.
-    pub const URSHR_Z_P_ZI_: Opcode = Opcode(48);
+    pub const URSHR_Z_P_ZI: Opcode = Opcode(48);
     /// `asr_z_p_zz_`.
-    pub const ASR_Z_P_ZZ_: Opcode = Opcode(49);
+    pub const ASR_Z_P_ZZ: Opcode = Opcode(49);
     /// `lsl_z_p_zz_`.
-    pub const LSL_Z_P_ZZ_: Opcode = Opcode(50);
+    pub const LSL_Z_P_ZZ: Opcode = Opcode(50);
     /// `asrr_z_p_zz_`.
-    pub const ASRR_Z_P_ZZ_: Opcode = Opcode(51);
+    pub const ASRR_Z_P_ZZ: Opcode = Opcode(51);
     /// `lslr_z_p_zz_`.
-    pub const LSLR_Z_P_ZZ_: Opcode = Opcode(52);
+    pub const LSLR_Z_P_ZZ: Opcode = Opcode(52);
     /// `lsr_z_p_zz_`.
-    pub const LSR_Z_P_ZZ_: Opcode = Opcode(53);
+    pub const LSR_Z_P_ZZ: Opcode = Opcode(53);
     /// `lsrr_z_p_zz_`.
-    pub const LSRR_Z_P_ZZ_: Opcode = Opcode(54);
+    pub const LSRR_Z_P_ZZ: Opcode = Opcode(54);
     /// `asr_z_p_zw_`.
-    pub const ASR_Z_P_ZW_: Opcode = Opcode(55);
+    pub const ASR_Z_P_ZW: Opcode = Opcode(55);
     /// `lsl_z_p_zw_`.
-    pub const LSL_Z_P_ZW_: Opcode = Opcode(56);
+    pub const LSL_Z_P_ZW: Opcode = Opcode(56);
     /// `lsr_z_p_zw_`.
-    pub const LSR_Z_P_ZW_: Opcode = Opcode(57);
+    pub const LSR_Z_P_ZW: Opcode = Opcode(57);
     /// `abs_z_p_z_m`.
     pub const ABS_Z_P_Z_M: Opcode = Opcode(58);
     /// `abs_z_p_z_z`.
@@ -8061,65 +8061,65 @@ pub mod opcodes {
     /// `not_z_p_z_z`.
     pub const NOT_Z_P_Z_Z: Opcode = Opcode(87);
     /// `mla_z_p_zzz_`.
-    pub const MLA_Z_P_ZZZ_: Opcode = Opcode(88);
+    pub const MLA_Z_P_ZZZ: Opcode = Opcode(88);
     /// `mls_z_p_zzz_`.
-    pub const MLS_Z_P_ZZZ_: Opcode = Opcode(89);
+    pub const MLS_Z_P_ZZZ: Opcode = Opcode(89);
     /// `mad_z_p_zzz_`.
-    pub const MAD_Z_P_ZZZ_: Opcode = Opcode(90);
+    pub const MAD_Z_P_ZZZ: Opcode = Opcode(90);
     /// `msb_z_p_zzz_`.
-    pub const MSB_Z_P_ZZZ_: Opcode = Opcode(91);
+    pub const MSB_Z_P_ZZZ: Opcode = Opcode(91);
     /// `add_z_zz_`.
-    pub const ADD_Z_ZZ_: Opcode = Opcode(92);
+    pub const ADD_Z_ZZ: Opcode = Opcode(92);
     /// `sub_z_zz_`.
-    pub const SUB_Z_ZZ_: Opcode = Opcode(93);
+    pub const SUB_Z_ZZ: Opcode = Opcode(93);
     /// `addpt_z_zz_`.
-    pub const ADDPT_Z_ZZ_: Opcode = Opcode(94);
+    pub const ADDPT_Z_ZZ: Opcode = Opcode(94);
     /// `subpt_z_zz_`.
-    pub const SUBPT_Z_ZZ_: Opcode = Opcode(95);
+    pub const SUBPT_Z_ZZ: Opcode = Opcode(95);
     /// `sqadd_z_zz_`.
-    pub const SQADD_Z_ZZ_: Opcode = Opcode(96);
+    pub const SQADD_Z_ZZ: Opcode = Opcode(96);
     /// `sqsub_z_zz_`.
-    pub const SQSUB_Z_ZZ_: Opcode = Opcode(97);
+    pub const SQSUB_Z_ZZ: Opcode = Opcode(97);
     /// `uqadd_z_zz_`.
-    pub const UQADD_Z_ZZ_: Opcode = Opcode(98);
+    pub const UQADD_Z_ZZ: Opcode = Opcode(98);
     /// `uqsub_z_zz_`.
-    pub const UQSUB_Z_ZZ_: Opcode = Opcode(99);
+    pub const UQSUB_Z_ZZ: Opcode = Opcode(99);
     /// `and_z_zz_`.
-    pub const AND_Z_ZZ_: Opcode = Opcode(100);
+    pub const AND_Z_ZZ: Opcode = Opcode(100);
     /// `orr_z_zz_`.
-    pub const ORR_Z_ZZ_: Opcode = Opcode(101);
+    pub const ORR_Z_ZZ: Opcode = Opcode(101);
     /// `mov_z_z__orr_z_zz_`.
-    pub const MOV_Z_Z__ORR_Z_ZZ_: Opcode = Opcode(102);
+    pub const MOV_Z_Z__ORR_Z_ZZ: Opcode = Opcode(102);
     /// `eor_z_zz_`.
-    pub const EOR_Z_ZZ_: Opcode = Opcode(103);
+    pub const EOR_Z_ZZ: Opcode = Opcode(103);
     /// `bic_z_zz_`.
-    pub const BIC_Z_ZZ_: Opcode = Opcode(104);
+    pub const BIC_Z_ZZ: Opcode = Opcode(104);
     /// `xar_z_zzi_`.
-    pub const XAR_Z_ZZI_: Opcode = Opcode(105);
+    pub const XAR_Z_ZZI: Opcode = Opcode(105);
     /// `eor3_z_zzz_`.
-    pub const EOR3_Z_ZZZ_: Opcode = Opcode(106);
+    pub const EOR3_Z_ZZZ: Opcode = Opcode(106);
     /// `bcax_z_zzz_`.
-    pub const BCAX_Z_ZZZ_: Opcode = Opcode(107);
+    pub const BCAX_Z_ZZZ: Opcode = Opcode(107);
     /// `bsl_z_zzz_`.
-    pub const BSL_Z_ZZZ_: Opcode = Opcode(108);
+    pub const BSL_Z_ZZZ: Opcode = Opcode(108);
     /// `bsl1n_z_zzz_`.
-    pub const BSL1N_Z_ZZZ_: Opcode = Opcode(109);
+    pub const BSL1N_Z_ZZZ: Opcode = Opcode(109);
     /// `bsl2n_z_zzz_`.
-    pub const BSL2N_Z_ZZZ_: Opcode = Opcode(110);
+    pub const BSL2N_Z_ZZZ: Opcode = Opcode(110);
     /// `nbsl_z_zzz_`.
-    pub const NBSL_Z_ZZZ_: Opcode = Opcode(111);
+    pub const NBSL_Z_ZZZ: Opcode = Opcode(111);
     /// `asr_z_zw_`.
-    pub const ASR_Z_ZW_: Opcode = Opcode(112);
+    pub const ASR_Z_ZW: Opcode = Opcode(112);
     /// `lsl_z_zw_`.
-    pub const LSL_Z_ZW_: Opcode = Opcode(113);
+    pub const LSL_Z_ZW: Opcode = Opcode(113);
     /// `lsr_z_zw_`.
-    pub const LSR_Z_ZW_: Opcode = Opcode(114);
+    pub const LSR_Z_ZW: Opcode = Opcode(114);
     /// `asr_z_zi_`.
-    pub const ASR_Z_ZI_: Opcode = Opcode(115);
+    pub const ASR_Z_ZI: Opcode = Opcode(115);
     /// `lsl_z_zi_`.
-    pub const LSL_Z_ZI_: Opcode = Opcode(116);
+    pub const LSL_Z_ZI: Opcode = Opcode(116);
     /// `lsr_z_zi_`.
-    pub const LSR_Z_ZI_: Opcode = Opcode(117);
+    pub const LSR_Z_ZI: Opcode = Opcode(117);
     /// `adr_z_az_d_s32_scaled`.
     pub const ADR_Z_AZ_D_S32_SCALED: Opcode = Opcode(118);
     /// `adr_z_az_d_u32_scaled`.
@@ -8127,107 +8127,107 @@ pub mod opcodes {
     /// `adr_z_az_sd_same_scaled`.
     pub const ADR_Z_AZ_SD_SAME_SCALED: Opcode = Opcode(120);
     /// `ftssel_z_zz_`.
-    pub const FTSSEL_Z_ZZ_: Opcode = Opcode(121);
+    pub const FTSSEL_Z_ZZ: Opcode = Opcode(121);
     /// `fexpa_z_z_`.
-    pub const FEXPA_Z_Z_: Opcode = Opcode(122);
+    pub const FEXPA_Z_Z: Opcode = Opcode(122);
     /// `movprfx_z_z_`.
-    pub const MOVPRFX_Z_Z_: Opcode = Opcode(123);
+    pub const MOVPRFX_Z_Z: Opcode = Opcode(123);
     /// `index_z_ii_`.
-    pub const INDEX_Z_II_: Opcode = Opcode(124);
+    pub const INDEX_Z_II: Opcode = Opcode(124);
     /// `index_z_ri_`.
-    pub const INDEX_Z_RI_: Opcode = Opcode(125);
+    pub const INDEX_Z_RI: Opcode = Opcode(125);
     /// `index_z_ir_`.
-    pub const INDEX_Z_IR_: Opcode = Opcode(126);
+    pub const INDEX_Z_IR: Opcode = Opcode(126);
     /// `index_z_rr_`.
-    pub const INDEX_Z_RR_: Opcode = Opcode(127);
+    pub const INDEX_Z_RR: Opcode = Opcode(127);
     /// `addvl_r_ri_`.
-    pub const ADDVL_R_RI_: Opcode = Opcode(128);
+    pub const ADDVL_R_RI: Opcode = Opcode(128);
     /// `addpl_r_ri_`.
-    pub const ADDPL_R_RI_: Opcode = Opcode(129);
+    pub const ADDPL_R_RI: Opcode = Opcode(129);
     /// `addsvl_r_ri_`.
-    pub const ADDSVL_R_RI_: Opcode = Opcode(130);
+    pub const ADDSVL_R_RI: Opcode = Opcode(130);
     /// `addspl_r_ri_`.
-    pub const ADDSPL_R_RI_: Opcode = Opcode(131);
+    pub const ADDSPL_R_RI: Opcode = Opcode(131);
     /// `rdvl_r_i_`.
-    pub const RDVL_R_I_: Opcode = Opcode(132);
+    pub const RDVL_R_I: Opcode = Opcode(132);
     /// `rdsvl_r_i_`.
-    pub const RDSVL_R_I_: Opcode = Opcode(133);
+    pub const RDSVL_R_I: Opcode = Opcode(133);
     /// `mul_z_zz_`.
-    pub const MUL_Z_ZZ_: Opcode = Opcode(134);
+    pub const MUL_Z_ZZ: Opcode = Opcode(134);
     /// `pmul_z_zz_`.
-    pub const PMUL_Z_ZZ_: Opcode = Opcode(135);
+    pub const PMUL_Z_ZZ: Opcode = Opcode(135);
     /// `smulh_z_zz_`.
-    pub const SMULH_Z_ZZ_: Opcode = Opcode(136);
+    pub const SMULH_Z_ZZ: Opcode = Opcode(136);
     /// `umulh_z_zz_`.
-    pub const UMULH_Z_ZZ_: Opcode = Opcode(137);
+    pub const UMULH_Z_ZZ: Opcode = Opcode(137);
     /// `sqdmulh_z_zz_`.
-    pub const SQDMULH_Z_ZZ_: Opcode = Opcode(138);
+    pub const SQDMULH_Z_ZZ: Opcode = Opcode(138);
     /// `sqrdmulh_z_zz_`.
-    pub const SQRDMULH_Z_ZZ_: Opcode = Opcode(139);
+    pub const SQRDMULH_Z_ZZ: Opcode = Opcode(139);
     /// `addqp_z_zz_`.
-    pub const ADDQP_Z_ZZ_: Opcode = Opcode(140);
+    pub const ADDQP_Z_ZZ: Opcode = Opcode(140);
     /// `addsubp_z_zz_`.
-    pub const ADDSUBP_Z_ZZ_: Opcode = Opcode(141);
+    pub const ADDSUBP_Z_ZZ: Opcode = Opcode(141);
     /// `sqinch_z_zs_`.
-    pub const SQINCH_Z_ZS_: Opcode = Opcode(142);
+    pub const SQINCH_Z_ZS: Opcode = Opcode(142);
     /// `sqdech_z_zs_`.
-    pub const SQDECH_Z_ZS_: Opcode = Opcode(143);
+    pub const SQDECH_Z_ZS: Opcode = Opcode(143);
     /// `uqinch_z_zs_`.
-    pub const UQINCH_Z_ZS_: Opcode = Opcode(144);
+    pub const UQINCH_Z_ZS: Opcode = Opcode(144);
     /// `uqdech_z_zs_`.
-    pub const UQDECH_Z_ZS_: Opcode = Opcode(145);
+    pub const UQDECH_Z_ZS: Opcode = Opcode(145);
     /// `sqincw_z_zs_`.
-    pub const SQINCW_Z_ZS_: Opcode = Opcode(146);
+    pub const SQINCW_Z_ZS: Opcode = Opcode(146);
     /// `sqdecw_z_zs_`.
-    pub const SQDECW_Z_ZS_: Opcode = Opcode(147);
+    pub const SQDECW_Z_ZS: Opcode = Opcode(147);
     /// `uqincw_z_zs_`.
-    pub const UQINCW_Z_ZS_: Opcode = Opcode(148);
+    pub const UQINCW_Z_ZS: Opcode = Opcode(148);
     /// `uqdecw_z_zs_`.
-    pub const UQDECW_Z_ZS_: Opcode = Opcode(149);
+    pub const UQDECW_Z_ZS: Opcode = Opcode(149);
     /// `sqincd_z_zs_`.
-    pub const SQINCD_Z_ZS_: Opcode = Opcode(150);
+    pub const SQINCD_Z_ZS: Opcode = Opcode(150);
     /// `sqdecd_z_zs_`.
-    pub const SQDECD_Z_ZS_: Opcode = Opcode(151);
+    pub const SQDECD_Z_ZS: Opcode = Opcode(151);
     /// `uqincd_z_zs_`.
-    pub const UQINCD_Z_ZS_: Opcode = Opcode(152);
+    pub const UQINCD_Z_ZS: Opcode = Opcode(152);
     /// `uqdecd_z_zs_`.
-    pub const UQDECD_Z_ZS_: Opcode = Opcode(153);
+    pub const UQDECD_Z_ZS: Opcode = Opcode(153);
     /// `inch_z_zs_`.
-    pub const INCH_Z_ZS_: Opcode = Opcode(154);
+    pub const INCH_Z_ZS: Opcode = Opcode(154);
     /// `dech_z_zs_`.
-    pub const DECH_Z_ZS_: Opcode = Opcode(155);
+    pub const DECH_Z_ZS: Opcode = Opcode(155);
     /// `incw_z_zs_`.
-    pub const INCW_Z_ZS_: Opcode = Opcode(156);
+    pub const INCW_Z_ZS: Opcode = Opcode(156);
     /// `decw_z_zs_`.
-    pub const DECW_Z_ZS_: Opcode = Opcode(157);
+    pub const DECW_Z_ZS: Opcode = Opcode(157);
     /// `incd_z_zs_`.
-    pub const INCD_Z_ZS_: Opcode = Opcode(158);
+    pub const INCD_Z_ZS: Opcode = Opcode(158);
     /// `decd_z_zs_`.
-    pub const DECD_Z_ZS_: Opcode = Opcode(159);
+    pub const DECD_Z_ZS: Opcode = Opcode(159);
     /// `cntb_r_s_`.
-    pub const CNTB_R_S_: Opcode = Opcode(160);
+    pub const CNTB_R_S: Opcode = Opcode(160);
     /// `cnth_r_s_`.
-    pub const CNTH_R_S_: Opcode = Opcode(161);
+    pub const CNTH_R_S: Opcode = Opcode(161);
     /// `cntw_r_s_`.
-    pub const CNTW_R_S_: Opcode = Opcode(162);
+    pub const CNTW_R_S: Opcode = Opcode(162);
     /// `cntd_r_s_`.
-    pub const CNTD_R_S_: Opcode = Opcode(163);
+    pub const CNTD_R_S: Opcode = Opcode(163);
     /// `incb_r_rs_`.
-    pub const INCB_R_RS_: Opcode = Opcode(164);
+    pub const INCB_R_RS: Opcode = Opcode(164);
     /// `decb_r_rs_`.
-    pub const DECB_R_RS_: Opcode = Opcode(165);
+    pub const DECB_R_RS: Opcode = Opcode(165);
     /// `inch_r_rs_`.
-    pub const INCH_R_RS_: Opcode = Opcode(166);
+    pub const INCH_R_RS: Opcode = Opcode(166);
     /// `dech_r_rs_`.
-    pub const DECH_R_RS_: Opcode = Opcode(167);
+    pub const DECH_R_RS: Opcode = Opcode(167);
     /// `incw_r_rs_`.
-    pub const INCW_R_RS_: Opcode = Opcode(168);
+    pub const INCW_R_RS: Opcode = Opcode(168);
     /// `decw_r_rs_`.
-    pub const DECW_R_RS_: Opcode = Opcode(169);
+    pub const DECW_R_RS: Opcode = Opcode(169);
     /// `incd_r_rs_`.
-    pub const INCD_R_RS_: Opcode = Opcode(170);
+    pub const INCD_R_RS: Opcode = Opcode(170);
     /// `decd_r_rs_`.
-    pub const DECD_R_RS_: Opcode = Opcode(171);
+    pub const DECD_R_RS: Opcode = Opcode(171);
     /// `sqincb_r_rs_sx`.
     pub const SQINCB_R_RS_SX: Opcode = Opcode(172);
     /// `uqincb_r_rs_uw`.
@@ -8293,35 +8293,35 @@ pub mod opcodes {
     /// `uqdecd_r_rs_x`.
     pub const UQDECD_R_RS_X: Opcode = Opcode(203);
     /// `orr_z_zi_`.
-    pub const ORR_Z_ZI_: Opcode = Opcode(204);
+    pub const ORR_Z_ZI: Opcode = Opcode(204);
     /// `orn_z_zi__orr_z_zi_`.
-    pub const ORN_Z_ZI__ORR_Z_ZI_: Opcode = Opcode(205);
+    pub const ORN_Z_ZI__ORR_Z_ZI: Opcode = Opcode(205);
     /// `eor_z_zi_`.
-    pub const EOR_Z_ZI_: Opcode = Opcode(206);
+    pub const EOR_Z_ZI: Opcode = Opcode(206);
     /// `eon_z_zi__eor_z_zi_`.
-    pub const EON_Z_ZI__EOR_Z_ZI_: Opcode = Opcode(207);
+    pub const EON_Z_ZI__EOR_Z_ZI: Opcode = Opcode(207);
     /// `and_z_zi_`.
-    pub const AND_Z_ZI_: Opcode = Opcode(208);
+    pub const AND_Z_ZI: Opcode = Opcode(208);
     /// `bic_z_zi__and_z_zi_`.
-    pub const BIC_Z_ZI__AND_Z_ZI_: Opcode = Opcode(209);
+    pub const BIC_Z_ZI__AND_Z_ZI: Opcode = Opcode(209);
     /// `dupm_z_i_`.
-    pub const DUPM_Z_I_: Opcode = Opcode(210);
+    pub const DUPM_Z_I: Opcode = Opcode(210);
     /// `mov_z_m__dupm_z_i_`.
-    pub const MOV_Z_M__DUPM_Z_I_: Opcode = Opcode(211);
+    pub const MOV_Z_M__DUPM_Z_I: Opcode = Opcode(211);
     /// `cpy_z_o_i_`.
-    pub const CPY_Z_O_I_: Opcode = Opcode(212);
+    pub const CPY_Z_O_I: Opcode = Opcode(212);
     /// `mov_z_o_i__cpy_z_o_i_`.
-    pub const MOV_Z_O_I__CPY_Z_O_I_: Opcode = Opcode(213);
+    pub const MOV_Z_O_I__CPY_Z_O_I: Opcode = Opcode(213);
     /// `cpy_z_p_i_`.
-    pub const CPY_Z_P_I_: Opcode = Opcode(214);
+    pub const CPY_Z_P_I: Opcode = Opcode(214);
     /// `fmov_z_p_0__cpy_z_p_i_`.
-    pub const FMOV_Z_P_0__CPY_Z_P_I_: Opcode = Opcode(215);
+    pub const FMOV_Z_P_0__CPY_Z_P_I: Opcode = Opcode(215);
     /// `mov_z_p_i__cpy_z_p_i_`.
-    pub const MOV_Z_P_I__CPY_Z_P_I_: Opcode = Opcode(216);
+    pub const MOV_Z_P_I__CPY_Z_P_I: Opcode = Opcode(216);
     /// `fcpy_z_p_i_`.
-    pub const FCPY_Z_P_I_: Opcode = Opcode(217);
+    pub const FCPY_Z_P_I: Opcode = Opcode(217);
     /// `fmov_z_p_i__fcpy_z_p_i_`.
-    pub const FMOV_Z_P_I__FCPY_Z_P_I_: Opcode = Opcode(218);
+    pub const FMOV_Z_P_I__FCPY_Z_P_I: Opcode = Opcode(218);
     /// `ext_z_zi_des`.
     pub const EXT_Z_ZI_DES: Opcode = Opcode(219);
     /// `ext_z_zi_con`.
@@ -8339,33 +8339,33 @@ pub mod opcodes {
     /// `trn2_z_zz_q`.
     pub const TRN2_Z_ZZ_Q: Opcode = Opcode(226);
     /// `dup_z_zi_`.
-    pub const DUP_Z_ZI_: Opcode = Opcode(227);
+    pub const DUP_Z_ZI: Opcode = Opcode(227);
     /// `mov_z_v__dup_z_zi_`.
-    pub const MOV_Z_V__DUP_Z_ZI_: Opcode = Opcode(228);
+    pub const MOV_Z_V__DUP_Z_ZI: Opcode = Opcode(228);
     /// `mov_z_zi__dup_z_zi_`.
-    pub const MOV_Z_ZI__DUP_Z_ZI_: Opcode = Opcode(229);
+    pub const MOV_Z_ZI__DUP_Z_ZI: Opcode = Opcode(229);
     /// `dupq_z_zi_`.
-    pub const DUPQ_Z_ZI_: Opcode = Opcode(230);
+    pub const DUPQ_Z_ZI: Opcode = Opcode(230);
     /// `extq_z_zi_des`.
     pub const EXTQ_Z_ZI_DES: Opcode = Opcode(231);
     /// `tbl_z_zz_2`.
     pub const TBL_Z_ZZ_2: Opcode = Opcode(232);
     /// `tbx_z_zz_`.
-    pub const TBX_Z_ZZ_: Opcode = Opcode(233);
+    pub const TBX_Z_ZZ: Opcode = Opcode(233);
     /// `tbl_z_zz_1`.
     pub const TBL_Z_ZZ_1: Opcode = Opcode(234);
     /// `tbxq_z_zz_`.
-    pub const TBXQ_Z_ZZ_: Opcode = Opcode(235);
+    pub const TBXQ_Z_ZZ: Opcode = Opcode(235);
     /// `dup_z_r_bhs_`.
-    pub const DUP_Z_R_BHS_: Opcode = Opcode(236);
+    pub const DUP_Z_R_BHS: Opcode = Opcode(236);
     /// `mov_z_r_bhs__dup_z_r_bhs_`.
-    pub const MOV_Z_R_BHS__DUP_Z_R_BHS_: Opcode = Opcode(237);
+    pub const MOV_Z_R_BHS__DUP_Z_R_BHS: Opcode = Opcode(237);
     /// `dup_z_r_d_`.
-    pub const DUP_Z_R_D_: Opcode = Opcode(238);
+    pub const DUP_Z_R_D: Opcode = Opcode(238);
     /// `mov_z_r_d__dup_z_r_d_`.
-    pub const MOV_Z_R_D__DUP_Z_R_D_: Opcode = Opcode(239);
+    pub const MOV_Z_R_D__DUP_Z_R_D: Opcode = Opcode(239);
     /// `insr_z_r_`.
-    pub const INSR_Z_R_: Opcode = Opcode(240);
+    pub const INSR_Z_R: Opcode = Opcode(240);
     /// `pmov_p_zi_b`.
     pub const PMOV_P_ZI_B: Opcode = Opcode(241);
     /// `pmov_p_zi_h`.
@@ -8383,59 +8383,59 @@ pub mod opcodes {
     /// `pmov_z_pi_d`.
     pub const PMOV_Z_PI_D: Opcode = Opcode(248);
     /// `sunpklo_z_z_`.
-    pub const SUNPKLO_Z_Z_: Opcode = Opcode(249);
+    pub const SUNPKLO_Z_Z: Opcode = Opcode(249);
     /// `sunpkhi_z_z_`.
-    pub const SUNPKHI_Z_Z_: Opcode = Opcode(250);
+    pub const SUNPKHI_Z_Z: Opcode = Opcode(250);
     /// `uunpklo_z_z_`.
-    pub const UUNPKLO_Z_Z_: Opcode = Opcode(251);
+    pub const UUNPKLO_Z_Z: Opcode = Opcode(251);
     /// `uunpkhi_z_z_`.
-    pub const UUNPKHI_Z_Z_: Opcode = Opcode(252);
+    pub const UUNPKHI_Z_Z: Opcode = Opcode(252);
     /// `insr_z_v_`.
-    pub const INSR_Z_V_: Opcode = Opcode(253);
+    pub const INSR_Z_V: Opcode = Opcode(253);
     /// `rev_z_z_`.
-    pub const REV_Z_Z_: Opcode = Opcode(254);
+    pub const REV_Z_Z: Opcode = Opcode(254);
     /// `zip1_p_pp_`.
-    pub const ZIP1_P_PP_: Opcode = Opcode(255);
+    pub const ZIP1_P_PP: Opcode = Opcode(255);
     /// `uzp1_p_pp_`.
-    pub const UZP1_P_PP_: Opcode = Opcode(256);
+    pub const UZP1_P_PP: Opcode = Opcode(256);
     /// `trn1_p_pp_`.
-    pub const TRN1_P_PP_: Opcode = Opcode(257);
+    pub const TRN1_P_PP: Opcode = Opcode(257);
     /// `zip2_p_pp_`.
-    pub const ZIP2_P_PP_: Opcode = Opcode(258);
+    pub const ZIP2_P_PP: Opcode = Opcode(258);
     /// `uzp2_p_pp_`.
-    pub const UZP2_P_PP_: Opcode = Opcode(259);
+    pub const UZP2_P_PP: Opcode = Opcode(259);
     /// `trn2_p_pp_`.
-    pub const TRN2_P_PP_: Opcode = Opcode(260);
+    pub const TRN2_P_PP: Opcode = Opcode(260);
     /// `punpklo_p_p_`.
-    pub const PUNPKLO_P_P_: Opcode = Opcode(261);
+    pub const PUNPKLO_P_P: Opcode = Opcode(261);
     /// `punpkhi_p_p_`.
-    pub const PUNPKHI_P_P_: Opcode = Opcode(262);
+    pub const PUNPKHI_P_P: Opcode = Opcode(262);
     /// `rev_p_p_`.
-    pub const REV_P_P_: Opcode = Opcode(263);
+    pub const REV_P_P: Opcode = Opcode(263);
     /// `zip1_z_zz_`.
-    pub const ZIP1_Z_ZZ_: Opcode = Opcode(264);
+    pub const ZIP1_Z_ZZ: Opcode = Opcode(264);
     /// `uzp1_z_zz_`.
-    pub const UZP1_Z_ZZ_: Opcode = Opcode(265);
+    pub const UZP1_Z_ZZ: Opcode = Opcode(265);
     /// `trn1_z_zz_`.
-    pub const TRN1_Z_ZZ_: Opcode = Opcode(266);
+    pub const TRN1_Z_ZZ: Opcode = Opcode(266);
     /// `zip2_z_zz_`.
-    pub const ZIP2_Z_ZZ_: Opcode = Opcode(267);
+    pub const ZIP2_Z_ZZ: Opcode = Opcode(267);
     /// `uzp2_z_zz_`.
-    pub const UZP2_Z_ZZ_: Opcode = Opcode(268);
+    pub const UZP2_Z_ZZ: Opcode = Opcode(268);
     /// `trn2_z_zz_`.
-    pub const TRN2_Z_ZZ_: Opcode = Opcode(269);
+    pub const TRN2_Z_ZZ: Opcode = Opcode(269);
     /// `cpy_z_p_v_`.
-    pub const CPY_Z_P_V_: Opcode = Opcode(270);
+    pub const CPY_Z_P_V: Opcode = Opcode(270);
     /// `mov_z_p_v__cpy_z_p_v_`.
-    pub const MOV_Z_P_V__CPY_Z_P_V_: Opcode = Opcode(271);
+    pub const MOV_Z_P_V__CPY_Z_P_V: Opcode = Opcode(271);
     /// `compact_z_p_z_s`.
     pub const COMPACT_Z_P_Z_S: Opcode = Opcode(272);
     /// `compact_z_p_z_`.
-    pub const COMPACT_Z_P_Z_: Opcode = Opcode(273);
+    pub const COMPACT_Z_P_Z: Opcode = Opcode(273);
     /// `lasta_v_p_z_`.
-    pub const LASTA_V_P_Z_: Opcode = Opcode(274);
+    pub const LASTA_V_P_Z: Opcode = Opcode(274);
     /// `lastb_v_p_z_`.
-    pub const LASTB_V_P_Z_: Opcode = Opcode(275);
+    pub const LASTB_V_P_Z: Opcode = Opcode(275);
     /// `revb_z_z_m`.
     pub const REVB_Z_Z_M: Opcode = Opcode(276);
     /// `revb_z_z_z`.
@@ -8453,103 +8453,103 @@ pub mod opcodes {
     /// `rbit_z_p_z_z`.
     pub const RBIT_Z_P_Z_Z: Opcode = Opcode(283);
     /// `clasta_z_p_zz_`.
-    pub const CLASTA_Z_P_ZZ_: Opcode = Opcode(284);
+    pub const CLASTA_Z_P_ZZ: Opcode = Opcode(284);
     /// `clastb_z_p_zz_`.
-    pub const CLASTB_Z_P_ZZ_: Opcode = Opcode(285);
+    pub const CLASTB_Z_P_ZZ: Opcode = Opcode(285);
     /// `clasta_v_p_z_`.
-    pub const CLASTA_V_P_Z_: Opcode = Opcode(286);
+    pub const CLASTA_V_P_Z: Opcode = Opcode(286);
     /// `clastb_v_p_z_`.
-    pub const CLASTB_V_P_Z_: Opcode = Opcode(287);
+    pub const CLASTB_V_P_Z: Opcode = Opcode(287);
     /// `splice_z_p_zz_des`.
     pub const SPLICE_Z_P_ZZ_DES: Opcode = Opcode(288);
     /// `splice_z_p_zz_con`.
     pub const SPLICE_Z_P_ZZ_CON: Opcode = Opcode(289);
     /// `lasta_r_p_z_`.
-    pub const LASTA_R_P_Z_: Opcode = Opcode(290);
+    pub const LASTA_R_P_Z: Opcode = Opcode(290);
     /// `lastb_r_p_z_`.
-    pub const LASTB_R_P_Z_: Opcode = Opcode(291);
+    pub const LASTB_R_P_Z: Opcode = Opcode(291);
     /// `cpy_z_p_r_bhs_`.
-    pub const CPY_Z_P_R_BHS_: Opcode = Opcode(292);
+    pub const CPY_Z_P_R_BHS: Opcode = Opcode(292);
     /// `mov_z_p_r_bhs__cpy_z_p_r_bhs_`.
-    pub const MOV_Z_P_R_BHS__CPY_Z_P_R_BHS_: Opcode = Opcode(293);
+    pub const MOV_Z_P_R_BHS__CPY_Z_P_R_BHS: Opcode = Opcode(293);
     /// `cpy_z_p_r_d_`.
-    pub const CPY_Z_P_R_D_: Opcode = Opcode(294);
+    pub const CPY_Z_P_R_D: Opcode = Opcode(294);
     /// `mov_z_p_r_d__cpy_z_p_r_d_`.
-    pub const MOV_Z_P_R_D__CPY_Z_P_R_D_: Opcode = Opcode(295);
+    pub const MOV_Z_P_R_D__CPY_Z_P_R_D: Opcode = Opcode(295);
     /// `clasta_r_p_z_`.
-    pub const CLASTA_R_P_Z_: Opcode = Opcode(296);
+    pub const CLASTA_R_P_Z: Opcode = Opcode(296);
     /// `clastb_r_p_z_`.
-    pub const CLASTB_R_P_Z_: Opcode = Opcode(297);
+    pub const CLASTB_R_P_Z: Opcode = Opcode(297);
     /// `revd_z_p_z_m`.
     pub const REVD_Z_P_Z_M: Opcode = Opcode(298);
     /// `revd_z_p_z_z`.
     pub const REVD_Z_P_Z_Z: Opcode = Opcode(299);
     /// `expand_z_p_z_`.
-    pub const EXPAND_Z_P_Z_: Opcode = Opcode(300);
+    pub const EXPAND_Z_P_Z: Opcode = Opcode(300);
     /// `sel_z_p_zz_`.
-    pub const SEL_Z_P_ZZ_: Opcode = Opcode(301);
+    pub const SEL_Z_P_ZZ: Opcode = Opcode(301);
     /// `mov_z_p_z__sel_z_p_zz_`.
-    pub const MOV_Z_P_Z__SEL_Z_P_ZZ_: Opcode = Opcode(302);
+    pub const MOV_Z_P_Z__SEL_Z_P_ZZ: Opcode = Opcode(302);
     /// `cmphs_p_p_zz_`.
-    pub const CMPHS_P_P_ZZ_: Opcode = Opcode(303);
+    pub const CMPHS_P_P_ZZ: Opcode = Opcode(303);
     /// `cmpls_p_p_zz__cmphs_p_p_zz_`.
-    pub const CMPLS_P_P_ZZ__CMPHS_P_P_ZZ_: Opcode = Opcode(304);
+    pub const CMPLS_P_P_ZZ__CMPHS_P_P_ZZ: Opcode = Opcode(304);
     /// `cmpge_p_p_zz_`.
-    pub const CMPGE_P_P_ZZ_: Opcode = Opcode(305);
+    pub const CMPGE_P_P_ZZ: Opcode = Opcode(305);
     /// `cmple_p_p_zz__cmpge_p_p_zz_`.
-    pub const CMPLE_P_P_ZZ__CMPGE_P_P_ZZ_: Opcode = Opcode(306);
+    pub const CMPLE_P_P_ZZ__CMPGE_P_P_ZZ: Opcode = Opcode(306);
     /// `cmpeq_p_p_zw_`.
-    pub const CMPEQ_P_P_ZW_: Opcode = Opcode(307);
+    pub const CMPEQ_P_P_ZW: Opcode = Opcode(307);
     /// `cmpeq_p_p_zz_`.
-    pub const CMPEQ_P_P_ZZ_: Opcode = Opcode(308);
+    pub const CMPEQ_P_P_ZZ: Opcode = Opcode(308);
     /// `cmphi_p_p_zz_`.
-    pub const CMPHI_P_P_ZZ_: Opcode = Opcode(309);
+    pub const CMPHI_P_P_ZZ: Opcode = Opcode(309);
     /// `cmplo_p_p_zz__cmphi_p_p_zz_`.
-    pub const CMPLO_P_P_ZZ__CMPHI_P_P_ZZ_: Opcode = Opcode(310);
+    pub const CMPLO_P_P_ZZ__CMPHI_P_P_ZZ: Opcode = Opcode(310);
     /// `cmpgt_p_p_zz_`.
-    pub const CMPGT_P_P_ZZ_: Opcode = Opcode(311);
+    pub const CMPGT_P_P_ZZ: Opcode = Opcode(311);
     /// `cmplt_p_p_zz__cmpgt_p_p_zz_`.
-    pub const CMPLT_P_P_ZZ__CMPGT_P_P_ZZ_: Opcode = Opcode(312);
+    pub const CMPLT_P_P_ZZ__CMPGT_P_P_ZZ: Opcode = Opcode(312);
     /// `cmpne_p_p_zw_`.
-    pub const CMPNE_P_P_ZW_: Opcode = Opcode(313);
+    pub const CMPNE_P_P_ZW: Opcode = Opcode(313);
     /// `cmpne_p_p_zz_`.
-    pub const CMPNE_P_P_ZZ_: Opcode = Opcode(314);
+    pub const CMPNE_P_P_ZZ: Opcode = Opcode(314);
     /// `cmpge_p_p_zw_`.
-    pub const CMPGE_P_P_ZW_: Opcode = Opcode(315);
+    pub const CMPGE_P_P_ZW: Opcode = Opcode(315);
     /// `cmphs_p_p_zw_`.
-    pub const CMPHS_P_P_ZW_: Opcode = Opcode(316);
+    pub const CMPHS_P_P_ZW: Opcode = Opcode(316);
     /// `cmpgt_p_p_zw_`.
-    pub const CMPGT_P_P_ZW_: Opcode = Opcode(317);
+    pub const CMPGT_P_P_ZW: Opcode = Opcode(317);
     /// `cmphi_p_p_zw_`.
-    pub const CMPHI_P_P_ZW_: Opcode = Opcode(318);
+    pub const CMPHI_P_P_ZW: Opcode = Opcode(318);
     /// `cmplt_p_p_zw_`.
-    pub const CMPLT_P_P_ZW_: Opcode = Opcode(319);
+    pub const CMPLT_P_P_ZW: Opcode = Opcode(319);
     /// `cmplo_p_p_zw_`.
-    pub const CMPLO_P_P_ZW_: Opcode = Opcode(320);
+    pub const CMPLO_P_P_ZW: Opcode = Opcode(320);
     /// `cmple_p_p_zw_`.
-    pub const CMPLE_P_P_ZW_: Opcode = Opcode(321);
+    pub const CMPLE_P_P_ZW: Opcode = Opcode(321);
     /// `cmpls_p_p_zw_`.
-    pub const CMPLS_P_P_ZW_: Opcode = Opcode(322);
+    pub const CMPLS_P_P_ZW: Opcode = Opcode(322);
     /// `cmphs_p_p_zi_`.
-    pub const CMPHS_P_P_ZI_: Opcode = Opcode(323);
+    pub const CMPHS_P_P_ZI: Opcode = Opcode(323);
     /// `cmphi_p_p_zi_`.
-    pub const CMPHI_P_P_ZI_: Opcode = Opcode(324);
+    pub const CMPHI_P_P_ZI: Opcode = Opcode(324);
     /// `cmplo_p_p_zi_`.
-    pub const CMPLO_P_P_ZI_: Opcode = Opcode(325);
+    pub const CMPLO_P_P_ZI: Opcode = Opcode(325);
     /// `cmpls_p_p_zi_`.
-    pub const CMPLS_P_P_ZI_: Opcode = Opcode(326);
+    pub const CMPLS_P_P_ZI: Opcode = Opcode(326);
     /// `cmpge_p_p_zi_`.
-    pub const CMPGE_P_P_ZI_: Opcode = Opcode(327);
+    pub const CMPGE_P_P_ZI: Opcode = Opcode(327);
     /// `cmpeq_p_p_zi_`.
-    pub const CMPEQ_P_P_ZI_: Opcode = Opcode(328);
+    pub const CMPEQ_P_P_ZI: Opcode = Opcode(328);
     /// `cmplt_p_p_zi_`.
-    pub const CMPLT_P_P_ZI_: Opcode = Opcode(329);
+    pub const CMPLT_P_P_ZI: Opcode = Opcode(329);
     /// `cmpgt_p_p_zi_`.
-    pub const CMPGT_P_P_ZI_: Opcode = Opcode(330);
+    pub const CMPGT_P_P_ZI: Opcode = Opcode(330);
     /// `cmpne_p_p_zi_`.
-    pub const CMPNE_P_P_ZI_: Opcode = Opcode(331);
+    pub const CMPNE_P_P_ZI: Opcode = Opcode(331);
     /// `cmple_p_p_zi_`.
-    pub const CMPLE_P_P_ZI_: Opcode = Opcode(332);
+    pub const CMPLE_P_P_ZI: Opcode = Opcode(332);
     /// `and_p_p_pp_z`.
     pub const AND_P_P_PP_Z: Opcode = Opcode(333);
     /// `movz_p_p_p__and_p_p_pp_z`.
@@ -8567,9 +8567,9 @@ pub mod opcodes {
     /// `not_p_p_p_z_eor_p_p_pp_z`.
     pub const NOT_P_P_P_Z_EOR_P_P_PP_Z: Opcode = Opcode(340);
     /// `sel_p_p_pp_`.
-    pub const SEL_P_P_PP_: Opcode = Opcode(341);
+    pub const SEL_P_P_PP: Opcode = Opcode(341);
     /// `movm_p_p_p__sel_p_p_pp_`.
-    pub const MOVM_P_P_P__SEL_P_P_PP_: Opcode = Opcode(342);
+    pub const MOVM_P_P_P__SEL_P_P_PP: Opcode = Opcode(342);
     /// `nor_p_p_pp_z`.
     pub const NOR_P_P_PP_Z: Opcode = Opcode(343);
     /// `nand_p_p_pp_z`.
@@ -8595,127 +8595,127 @@ pub mod opcodes {
     /// `nands_p_p_pp_z`.
     pub const NANDS_P_P_PP_Z: Opcode = Opcode(354);
     /// `brkpa_p_p_pp_`.
-    pub const BRKPA_P_P_PP_: Opcode = Opcode(355);
+    pub const BRKPA_P_P_PP: Opcode = Opcode(355);
     /// `brkpas_p_p_pp_`.
-    pub const BRKPAS_P_P_PP_: Opcode = Opcode(356);
+    pub const BRKPAS_P_P_PP: Opcode = Opcode(356);
     /// `brkpb_p_p_pp_`.
-    pub const BRKPB_P_P_PP_: Opcode = Opcode(357);
+    pub const BRKPB_P_P_PP: Opcode = Opcode(357);
     /// `brkpbs_p_p_pp_`.
-    pub const BRKPBS_P_P_PP_: Opcode = Opcode(358);
+    pub const BRKPBS_P_P_PP: Opcode = Opcode(358);
     /// `brka_p_p_p_`.
-    pub const BRKA_P_P_P_: Opcode = Opcode(359);
+    pub const BRKA_P_P_P: Opcode = Opcode(359);
     /// `brkas_p_p_p_z`.
     pub const BRKAS_P_P_P_Z: Opcode = Opcode(360);
     /// `brkb_p_p_p_`.
-    pub const BRKB_P_P_P_: Opcode = Opcode(361);
+    pub const BRKB_P_P_P: Opcode = Opcode(361);
     /// `brkbs_p_p_p_z`.
     pub const BRKBS_P_P_P_Z: Opcode = Opcode(362);
     /// `brkn_p_p_pp_`.
-    pub const BRKN_P_P_PP_: Opcode = Opcode(363);
+    pub const BRKN_P_P_PP: Opcode = Opcode(363);
     /// `brkns_p_p_pp_`.
-    pub const BRKNS_P_P_PP_: Opcode = Opcode(364);
+    pub const BRKNS_P_P_PP: Opcode = Opcode(364);
     /// `ptest__p_p_`.
-    pub const PTEST__P_P_: Opcode = Opcode(365);
+    pub const PTEST__P_P: Opcode = Opcode(365);
     /// `pfirst_p_p_p_`.
-    pub const PFIRST_P_P_P_: Opcode = Opcode(366);
+    pub const PFIRST_P_P_P: Opcode = Opcode(366);
     /// `pnext_p_p_p_`.
-    pub const PNEXT_P_P_P_: Opcode = Opcode(367);
+    pub const PNEXT_P_P_P: Opcode = Opcode(367);
     /// `ptrue_p_s_`.
-    pub const PTRUE_P_S_: Opcode = Opcode(368);
+    pub const PTRUE_P_S: Opcode = Opcode(368);
     /// `ptrues_p_s_`.
-    pub const PTRUES_P_S_: Opcode = Opcode(369);
+    pub const PTRUES_P_S: Opcode = Opcode(369);
     /// `pfalse_p_`.
-    pub const PFALSE_P_: Opcode = Opcode(370);
+    pub const PFALSE_P: Opcode = Opcode(370);
     /// `rdffr_p_p_f_`.
-    pub const RDFFR_P_P_F_: Opcode = Opcode(371);
+    pub const RDFFR_P_P_F: Opcode = Opcode(371);
     /// `rdffrs_p_p_f_`.
-    pub const RDFFRS_P_P_F_: Opcode = Opcode(372);
+    pub const RDFFRS_P_P_F: Opcode = Opcode(372);
     /// `rdffr_p_f_`.
-    pub const RDFFR_P_F_: Opcode = Opcode(373);
+    pub const RDFFR_P_F: Opcode = Opcode(373);
     /// `psel_p_ppi_`.
-    pub const PSEL_P_PPI_: Opcode = Opcode(374);
+    pub const PSEL_P_PPI: Opcode = Opcode(374);
     /// `whilege_pn_rr_`.
-    pub const WHILEGE_PN_RR_: Opcode = Opcode(375);
+    pub const WHILEGE_PN_RR: Opcode = Opcode(375);
     /// `whilehs_pn_rr_`.
-    pub const WHILEHS_PN_RR_: Opcode = Opcode(376);
+    pub const WHILEHS_PN_RR: Opcode = Opcode(376);
     /// `whilegt_pn_rr_`.
-    pub const WHILEGT_PN_RR_: Opcode = Opcode(377);
+    pub const WHILEGT_PN_RR: Opcode = Opcode(377);
     /// `whilehi_pn_rr_`.
-    pub const WHILEHI_PN_RR_: Opcode = Opcode(378);
+    pub const WHILEHI_PN_RR: Opcode = Opcode(378);
     /// `whilelt_pn_rr_`.
-    pub const WHILELT_PN_RR_: Opcode = Opcode(379);
+    pub const WHILELT_PN_RR: Opcode = Opcode(379);
     /// `whilelo_pn_rr_`.
-    pub const WHILELO_PN_RR_: Opcode = Opcode(380);
+    pub const WHILELO_PN_RR: Opcode = Opcode(380);
     /// `whilele_pn_rr_`.
-    pub const WHILELE_PN_RR_: Opcode = Opcode(381);
+    pub const WHILELE_PN_RR: Opcode = Opcode(381);
     /// `whilels_pn_rr_`.
-    pub const WHILELS_PN_RR_: Opcode = Opcode(382);
+    pub const WHILELS_PN_RR: Opcode = Opcode(382);
     /// `whilege_pp_rr_`.
-    pub const WHILEGE_PP_RR_: Opcode = Opcode(383);
+    pub const WHILEGE_PP_RR: Opcode = Opcode(383);
     /// `whilehs_pp_rr_`.
-    pub const WHILEHS_PP_RR_: Opcode = Opcode(384);
+    pub const WHILEHS_PP_RR: Opcode = Opcode(384);
     /// `whilegt_pp_rr_`.
-    pub const WHILEGT_PP_RR_: Opcode = Opcode(385);
+    pub const WHILEGT_PP_RR: Opcode = Opcode(385);
     /// `whilehi_pp_rr_`.
-    pub const WHILEHI_PP_RR_: Opcode = Opcode(386);
+    pub const WHILEHI_PP_RR: Opcode = Opcode(386);
     /// `whilelt_pp_rr_`.
-    pub const WHILELT_PP_RR_: Opcode = Opcode(387);
+    pub const WHILELT_PP_RR: Opcode = Opcode(387);
     /// `whilelo_pp_rr_`.
-    pub const WHILELO_PP_RR_: Opcode = Opcode(388);
+    pub const WHILELO_PP_RR: Opcode = Opcode(388);
     /// `whilele_pp_rr_`.
-    pub const WHILELE_PP_RR_: Opcode = Opcode(389);
+    pub const WHILELE_PP_RR: Opcode = Opcode(389);
     /// `whilels_pp_rr_`.
-    pub const WHILELS_PP_RR_: Opcode = Opcode(390);
+    pub const WHILELS_PP_RR: Opcode = Opcode(390);
     /// `pext_pn_rr_`.
-    pub const PEXT_PN_RR_: Opcode = Opcode(391);
+    pub const PEXT_PN_RR: Opcode = Opcode(391);
     /// `pext_pp_rr_`.
-    pub const PEXT_PP_RR_: Opcode = Opcode(392);
+    pub const PEXT_PP_RR: Opcode = Opcode(392);
     /// `ptrue_pn_i_`.
-    pub const PTRUE_PN_I_: Opcode = Opcode(393);
+    pub const PTRUE_PN_I: Opcode = Opcode(393);
     /// `whilege_p_p_rr_`.
-    pub const WHILEGE_P_P_RR_: Opcode = Opcode(394);
+    pub const WHILEGE_P_P_RR: Opcode = Opcode(394);
     /// `whilehs_p_p_rr_`.
-    pub const WHILEHS_P_P_RR_: Opcode = Opcode(395);
+    pub const WHILEHS_P_P_RR: Opcode = Opcode(395);
     /// `whilegt_p_p_rr_`.
-    pub const WHILEGT_P_P_RR_: Opcode = Opcode(396);
+    pub const WHILEGT_P_P_RR: Opcode = Opcode(396);
     /// `whilehi_p_p_rr_`.
-    pub const WHILEHI_P_P_RR_: Opcode = Opcode(397);
+    pub const WHILEHI_P_P_RR: Opcode = Opcode(397);
     /// `whilelt_p_p_rr_`.
-    pub const WHILELT_P_P_RR_: Opcode = Opcode(398);
+    pub const WHILELT_P_P_RR: Opcode = Opcode(398);
     /// `whilelo_p_p_rr_`.
-    pub const WHILELO_P_P_RR_: Opcode = Opcode(399);
+    pub const WHILELO_P_P_RR: Opcode = Opcode(399);
     /// `whilele_p_p_rr_`.
-    pub const WHILELE_P_P_RR_: Opcode = Opcode(400);
+    pub const WHILELE_P_P_RR: Opcode = Opcode(400);
     /// `whilels_p_p_rr_`.
-    pub const WHILELS_P_P_RR_: Opcode = Opcode(401);
+    pub const WHILELS_P_P_RR: Opcode = Opcode(401);
     /// `ctermeq_rr_`.
-    pub const CTERMEQ_RR_: Opcode = Opcode(402);
+    pub const CTERMEQ_RR: Opcode = Opcode(402);
     /// `ctermne_rr_`.
-    pub const CTERMNE_RR_: Opcode = Opcode(403);
+    pub const CTERMNE_RR: Opcode = Opcode(403);
     /// `whilewr_p_rr_`.
-    pub const WHILEWR_P_RR_: Opcode = Opcode(404);
+    pub const WHILEWR_P_RR: Opcode = Opcode(404);
     /// `whilerw_p_rr_`.
-    pub const WHILERW_P_RR_: Opcode = Opcode(405);
+    pub const WHILERW_P_RR: Opcode = Opcode(405);
     /// `cntp_r_p_p_`.
-    pub const CNTP_R_P_P_: Opcode = Opcode(406);
+    pub const CNTP_R_P_P: Opcode = Opcode(406);
     /// `firstp_r_p_p_`.
-    pub const FIRSTP_R_P_P_: Opcode = Opcode(407);
+    pub const FIRSTP_R_P_P: Opcode = Opcode(407);
     /// `lastp_r_p_p_`.
-    pub const LASTP_R_P_P_: Opcode = Opcode(408);
+    pub const LASTP_R_P_P: Opcode = Opcode(408);
     /// `cntp_r_pn_`.
-    pub const CNTP_R_PN_: Opcode = Opcode(409);
+    pub const CNTP_R_PN: Opcode = Opcode(409);
     /// `sqincp_z_p_z_`.
-    pub const SQINCP_Z_P_Z_: Opcode = Opcode(410);
+    pub const SQINCP_Z_P_Z: Opcode = Opcode(410);
     /// `sqdecp_z_p_z_`.
-    pub const SQDECP_Z_P_Z_: Opcode = Opcode(411);
+    pub const SQDECP_Z_P_Z: Opcode = Opcode(411);
     /// `uqincp_z_p_z_`.
-    pub const UQINCP_Z_P_Z_: Opcode = Opcode(412);
+    pub const UQINCP_Z_P_Z: Opcode = Opcode(412);
     /// `uqdecp_z_p_z_`.
-    pub const UQDECP_Z_P_Z_: Opcode = Opcode(413);
+    pub const UQDECP_Z_P_Z: Opcode = Opcode(413);
     /// `incp_z_p_z_`.
-    pub const INCP_Z_P_Z_: Opcode = Opcode(414);
+    pub const INCP_Z_P_Z: Opcode = Opcode(414);
     /// `decp_z_p_z_`.
-    pub const DECP_Z_P_Z_: Opcode = Opcode(415);
+    pub const DECP_Z_P_Z: Opcode = Opcode(415);
     /// `sqincp_r_p_r_sx`.
     pub const SQINCP_R_P_R_SX: Opcode = Opcode(416);
     /// `uqincp_r_p_r_uw`.
@@ -8733,119 +8733,119 @@ pub mod opcodes {
     /// `uqdecp_r_p_r_x`.
     pub const UQDECP_R_P_R_X: Opcode = Opcode(423);
     /// `incp_r_p_r_`.
-    pub const INCP_R_P_R_: Opcode = Opcode(424);
+    pub const INCP_R_P_R: Opcode = Opcode(424);
     /// `decp_r_p_r_`.
-    pub const DECP_R_P_R_: Opcode = Opcode(425);
+    pub const DECP_R_P_R: Opcode = Opcode(425);
     /// `wrffr_f_p_`.
-    pub const WRFFR_F_P_: Opcode = Opcode(426);
+    pub const WRFFR_F_P: Opcode = Opcode(426);
     /// `setffr_f_`.
-    pub const SETFFR_F_: Opcode = Opcode(427);
+    pub const SETFFR_F: Opcode = Opcode(427);
     /// `add_z_zi_`.
-    pub const ADD_Z_ZI_: Opcode = Opcode(428);
+    pub const ADD_Z_ZI: Opcode = Opcode(428);
     /// `sub_z_zi_`.
-    pub const SUB_Z_ZI_: Opcode = Opcode(429);
+    pub const SUB_Z_ZI: Opcode = Opcode(429);
     /// `subr_z_zi_`.
-    pub const SUBR_Z_ZI_: Opcode = Opcode(430);
+    pub const SUBR_Z_ZI: Opcode = Opcode(430);
     /// `sqadd_z_zi_`.
-    pub const SQADD_Z_ZI_: Opcode = Opcode(431);
+    pub const SQADD_Z_ZI: Opcode = Opcode(431);
     /// `sqsub_z_zi_`.
-    pub const SQSUB_Z_ZI_: Opcode = Opcode(432);
+    pub const SQSUB_Z_ZI: Opcode = Opcode(432);
     /// `uqadd_z_zi_`.
-    pub const UQADD_Z_ZI_: Opcode = Opcode(433);
+    pub const UQADD_Z_ZI: Opcode = Opcode(433);
     /// `uqsub_z_zi_`.
-    pub const UQSUB_Z_ZI_: Opcode = Opcode(434);
+    pub const UQSUB_Z_ZI: Opcode = Opcode(434);
     /// `smax_z_zi_`.
-    pub const SMAX_Z_ZI_: Opcode = Opcode(435);
+    pub const SMAX_Z_ZI: Opcode = Opcode(435);
     /// `smin_z_zi_`.
-    pub const SMIN_Z_ZI_: Opcode = Opcode(436);
+    pub const SMIN_Z_ZI: Opcode = Opcode(436);
     /// `umax_z_zi_`.
-    pub const UMAX_Z_ZI_: Opcode = Opcode(437);
+    pub const UMAX_Z_ZI: Opcode = Opcode(437);
     /// `umin_z_zi_`.
-    pub const UMIN_Z_ZI_: Opcode = Opcode(438);
+    pub const UMIN_Z_ZI: Opcode = Opcode(438);
     /// `mul_z_zi_`.
-    pub const MUL_Z_ZI_: Opcode = Opcode(439);
+    pub const MUL_Z_ZI: Opcode = Opcode(439);
     /// `dup_z_i_`.
-    pub const DUP_Z_I_: Opcode = Opcode(440);
+    pub const DUP_Z_I: Opcode = Opcode(440);
     /// `fmov_z_0__dup_z_i_`.
-    pub const FMOV_Z_0__DUP_Z_I_: Opcode = Opcode(441);
+    pub const FMOV_Z_0__DUP_Z_I: Opcode = Opcode(441);
     /// `mov_z_i__dup_z_i_`.
-    pub const MOV_Z_I__DUP_Z_I_: Opcode = Opcode(442);
+    pub const MOV_Z_I__DUP_Z_I: Opcode = Opcode(442);
     /// `fdup_z_i_`.
-    pub const FDUP_Z_I_: Opcode = Opcode(443);
+    pub const FDUP_Z_I: Opcode = Opcode(443);
     /// `fmov_z_i__fdup_z_i_`.
-    pub const FMOV_Z_I__FDUP_Z_I_: Opcode = Opcode(444);
+    pub const FMOV_Z_I__FDUP_Z_I: Opcode = Opcode(444);
     /// `sdot_z_zzz_`.
-    pub const SDOT_Z_ZZZ_: Opcode = Opcode(445);
+    pub const SDOT_Z_ZZZ: Opcode = Opcode(445);
     /// `sdot_z16_zzz_h`.
     pub const SDOT_Z16_ZZZ_H: Opcode = Opcode(446);
     /// `udot_z_zzz_`.
-    pub const UDOT_Z_ZZZ_: Opcode = Opcode(447);
+    pub const UDOT_Z_ZZZ: Opcode = Opcode(447);
     /// `udot_z16_zzz_h`.
     pub const UDOT_Z16_ZZZ_H: Opcode = Opcode(448);
     /// `sqdmlalbt_z_zzz_`.
-    pub const SQDMLALBT_Z_ZZZ_: Opcode = Opcode(449);
+    pub const SQDMLALBT_Z_ZZZ: Opcode = Opcode(449);
     /// `sqdmlslbt_z_zzz_`.
-    pub const SQDMLSLBT_Z_ZZZ_: Opcode = Opcode(450);
+    pub const SQDMLSLBT_Z_ZZZ: Opcode = Opcode(450);
     /// `cdot_z_zzz_`.
-    pub const CDOT_Z_ZZZ_: Opcode = Opcode(451);
+    pub const CDOT_Z_ZZZ: Opcode = Opcode(451);
     /// `cmla_z_zzz_`.
-    pub const CMLA_Z_ZZZ_: Opcode = Opcode(452);
+    pub const CMLA_Z_ZZZ: Opcode = Opcode(452);
     /// `sqrdcmlah_z_zzz_`.
-    pub const SQRDCMLAH_Z_ZZZ_: Opcode = Opcode(453);
+    pub const SQRDCMLAH_Z_ZZZ: Opcode = Opcode(453);
     /// `smlalb_z_zzz_`.
-    pub const SMLALB_Z_ZZZ_: Opcode = Opcode(454);
+    pub const SMLALB_Z_ZZZ: Opcode = Opcode(454);
     /// `smlslb_z_zzz_`.
-    pub const SMLSLB_Z_ZZZ_: Opcode = Opcode(455);
+    pub const SMLSLB_Z_ZZZ: Opcode = Opcode(455);
     /// `smlalt_z_zzz_`.
-    pub const SMLALT_Z_ZZZ_: Opcode = Opcode(456);
+    pub const SMLALT_Z_ZZZ: Opcode = Opcode(456);
     /// `smlslt_z_zzz_`.
-    pub const SMLSLT_Z_ZZZ_: Opcode = Opcode(457);
+    pub const SMLSLT_Z_ZZZ: Opcode = Opcode(457);
     /// `umlalb_z_zzz_`.
-    pub const UMLALB_Z_ZZZ_: Opcode = Opcode(458);
+    pub const UMLALB_Z_ZZZ: Opcode = Opcode(458);
     /// `umlslb_z_zzz_`.
-    pub const UMLSLB_Z_ZZZ_: Opcode = Opcode(459);
+    pub const UMLSLB_Z_ZZZ: Opcode = Opcode(459);
     /// `umlalt_z_zzz_`.
-    pub const UMLALT_Z_ZZZ_: Opcode = Opcode(460);
+    pub const UMLALT_Z_ZZZ: Opcode = Opcode(460);
     /// `umlslt_z_zzz_`.
-    pub const UMLSLT_Z_ZZZ_: Opcode = Opcode(461);
+    pub const UMLSLT_Z_ZZZ: Opcode = Opcode(461);
     /// `sqdmlalb_z_zzz_`.
-    pub const SQDMLALB_Z_ZZZ_: Opcode = Opcode(462);
+    pub const SQDMLALB_Z_ZZZ: Opcode = Opcode(462);
     /// `sqdmlslb_z_zzz_`.
-    pub const SQDMLSLB_Z_ZZZ_: Opcode = Opcode(463);
+    pub const SQDMLSLB_Z_ZZZ: Opcode = Opcode(463);
     /// `sqdmlalt_z_zzz_`.
-    pub const SQDMLALT_Z_ZZZ_: Opcode = Opcode(464);
+    pub const SQDMLALT_Z_ZZZ: Opcode = Opcode(464);
     /// `sqdmlslt_z_zzz_`.
-    pub const SQDMLSLT_Z_ZZZ_: Opcode = Opcode(465);
+    pub const SQDMLSLT_Z_ZZZ: Opcode = Opcode(465);
     /// `sqrdmlah_z_zzz_`.
-    pub const SQRDMLAH_Z_ZZZ_: Opcode = Opcode(466);
+    pub const SQRDMLAH_Z_ZZZ: Opcode = Opcode(466);
     /// `sqrdmlsh_z_zzz_`.
-    pub const SQRDMLSH_Z_ZZZ_: Opcode = Opcode(467);
+    pub const SQRDMLSH_Z_ZZZ: Opcode = Opcode(467);
     /// `usdot_z_zzz_s`.
     pub const USDOT_Z_ZZZ_S: Opcode = Opcode(468);
     /// `srshl_z_p_zz_`.
-    pub const SRSHL_Z_P_ZZ_: Opcode = Opcode(469);
+    pub const SRSHL_Z_P_ZZ: Opcode = Opcode(469);
     /// `srshlr_z_p_zz_`.
-    pub const SRSHLR_Z_P_ZZ_: Opcode = Opcode(470);
+    pub const SRSHLR_Z_P_ZZ: Opcode = Opcode(470);
     /// `sqshl_z_p_zz_`.
-    pub const SQSHL_Z_P_ZZ_: Opcode = Opcode(471);
+    pub const SQSHL_Z_P_ZZ: Opcode = Opcode(471);
     /// `sqrshl_z_p_zz_`.
-    pub const SQRSHL_Z_P_ZZ_: Opcode = Opcode(472);
+    pub const SQRSHL_Z_P_ZZ: Opcode = Opcode(472);
     /// `sqshlr_z_p_zz_`.
-    pub const SQSHLR_Z_P_ZZ_: Opcode = Opcode(473);
+    pub const SQSHLR_Z_P_ZZ: Opcode = Opcode(473);
     /// `sqrshlr_z_p_zz_`.
-    pub const SQRSHLR_Z_P_ZZ_: Opcode = Opcode(474);
+    pub const SQRSHLR_Z_P_ZZ: Opcode = Opcode(474);
     /// `urshl_z_p_zz_`.
-    pub const URSHL_Z_P_ZZ_: Opcode = Opcode(475);
+    pub const URSHL_Z_P_ZZ: Opcode = Opcode(475);
     /// `urshlr_z_p_zz_`.
-    pub const URSHLR_Z_P_ZZ_: Opcode = Opcode(476);
+    pub const URSHLR_Z_P_ZZ: Opcode = Opcode(476);
     /// `uqshl_z_p_zz_`.
-    pub const UQSHL_Z_P_ZZ_: Opcode = Opcode(477);
+    pub const UQSHL_Z_P_ZZ: Opcode = Opcode(477);
     /// `uqrshl_z_p_zz_`.
-    pub const UQRSHL_Z_P_ZZ_: Opcode = Opcode(478);
+    pub const UQRSHL_Z_P_ZZ: Opcode = Opcode(478);
     /// `uqshlr_z_p_zz_`.
-    pub const UQSHLR_Z_P_ZZ_: Opcode = Opcode(479);
+    pub const UQSHLR_Z_P_ZZ: Opcode = Opcode(479);
     /// `uqrshlr_z_p_zz_`.
-    pub const UQRSHLR_Z_P_ZZ_: Opcode = Opcode(480);
+    pub const UQRSHLR_Z_P_ZZ: Opcode = Opcode(480);
     /// `urecpe_z_p_z_m`.
     pub const URECPE_Z_P_Z_M: Opcode = Opcode(481);
     /// `urecpe_z_p_z_z`.
@@ -8863,83 +8863,83 @@ pub mod opcodes {
     /// `sqneg_z_p_z_z`.
     pub const SQNEG_Z_P_Z_Z: Opcode = Opcode(488);
     /// `sadalp_z_p_z_`.
-    pub const SADALP_Z_P_Z_: Opcode = Opcode(489);
+    pub const SADALP_Z_P_Z: Opcode = Opcode(489);
     /// `uadalp_z_p_z_`.
-    pub const UADALP_Z_P_Z_: Opcode = Opcode(490);
+    pub const UADALP_Z_P_Z: Opcode = Opcode(490);
     /// `shadd_z_p_zz_`.
-    pub const SHADD_Z_P_ZZ_: Opcode = Opcode(491);
+    pub const SHADD_Z_P_ZZ: Opcode = Opcode(491);
     /// `shsub_z_p_zz_`.
-    pub const SHSUB_Z_P_ZZ_: Opcode = Opcode(492);
+    pub const SHSUB_Z_P_ZZ: Opcode = Opcode(492);
     /// `srhadd_z_p_zz_`.
-    pub const SRHADD_Z_P_ZZ_: Opcode = Opcode(493);
+    pub const SRHADD_Z_P_ZZ: Opcode = Opcode(493);
     /// `shsubr_z_p_zz_`.
-    pub const SHSUBR_Z_P_ZZ_: Opcode = Opcode(494);
+    pub const SHSUBR_Z_P_ZZ: Opcode = Opcode(494);
     /// `uhadd_z_p_zz_`.
-    pub const UHADD_Z_P_ZZ_: Opcode = Opcode(495);
+    pub const UHADD_Z_P_ZZ: Opcode = Opcode(495);
     /// `uhsub_z_p_zz_`.
-    pub const UHSUB_Z_P_ZZ_: Opcode = Opcode(496);
+    pub const UHSUB_Z_P_ZZ: Opcode = Opcode(496);
     /// `urhadd_z_p_zz_`.
-    pub const URHADD_Z_P_ZZ_: Opcode = Opcode(497);
+    pub const URHADD_Z_P_ZZ: Opcode = Opcode(497);
     /// `uhsubr_z_p_zz_`.
-    pub const UHSUBR_Z_P_ZZ_: Opcode = Opcode(498);
+    pub const UHSUBR_Z_P_ZZ: Opcode = Opcode(498);
     /// `subp_z_p_zz_`.
-    pub const SUBP_Z_P_ZZ_: Opcode = Opcode(499);
+    pub const SUBP_Z_P_ZZ: Opcode = Opcode(499);
     /// `addp_z_p_zz_`.
-    pub const ADDP_Z_P_ZZ_: Opcode = Opcode(500);
+    pub const ADDP_Z_P_ZZ: Opcode = Opcode(500);
     /// `smaxp_z_p_zz_`.
-    pub const SMAXP_Z_P_ZZ_: Opcode = Opcode(501);
+    pub const SMAXP_Z_P_ZZ: Opcode = Opcode(501);
     /// `sminp_z_p_zz_`.
-    pub const SMINP_Z_P_ZZ_: Opcode = Opcode(502);
+    pub const SMINP_Z_P_ZZ: Opcode = Opcode(502);
     /// `umaxp_z_p_zz_`.
-    pub const UMAXP_Z_P_ZZ_: Opcode = Opcode(503);
+    pub const UMAXP_Z_P_ZZ: Opcode = Opcode(503);
     /// `uminp_z_p_zz_`.
-    pub const UMINP_Z_P_ZZ_: Opcode = Opcode(504);
+    pub const UMINP_Z_P_ZZ: Opcode = Opcode(504);
     /// `sqadd_z_p_zz_`.
-    pub const SQADD_Z_P_ZZ_: Opcode = Opcode(505);
+    pub const SQADD_Z_P_ZZ: Opcode = Opcode(505);
     /// `sqsub_z_p_zz_`.
-    pub const SQSUB_Z_P_ZZ_: Opcode = Opcode(506);
+    pub const SQSUB_Z_P_ZZ: Opcode = Opcode(506);
     /// `suqadd_z_p_zz_`.
-    pub const SUQADD_Z_P_ZZ_: Opcode = Opcode(507);
+    pub const SUQADD_Z_P_ZZ: Opcode = Opcode(507);
     /// `usqadd_z_p_zz_`.
-    pub const USQADD_Z_P_ZZ_: Opcode = Opcode(508);
+    pub const USQADD_Z_P_ZZ: Opcode = Opcode(508);
     /// `sqsubr_z_p_zz_`.
-    pub const SQSUBR_Z_P_ZZ_: Opcode = Opcode(509);
+    pub const SQSUBR_Z_P_ZZ: Opcode = Opcode(509);
     /// `uqadd_z_p_zz_`.
-    pub const UQADD_Z_P_ZZ_: Opcode = Opcode(510);
+    pub const UQADD_Z_P_ZZ: Opcode = Opcode(510);
     /// `uqsub_z_p_zz_`.
-    pub const UQSUB_Z_P_ZZ_: Opcode = Opcode(511);
+    pub const UQSUB_Z_P_ZZ: Opcode = Opcode(511);
     /// `uqsubr_z_p_zz_`.
-    pub const UQSUBR_Z_P_ZZ_: Opcode = Opcode(512);
+    pub const UQSUBR_Z_P_ZZ: Opcode = Opcode(512);
     /// `sclamp_z_zz_`.
-    pub const SCLAMP_Z_ZZ_: Opcode = Opcode(513);
+    pub const SCLAMP_Z_ZZ: Opcode = Opcode(513);
     /// `uclamp_z_zz_`.
-    pub const UCLAMP_Z_ZZ_: Opcode = Opcode(514);
+    pub const UCLAMP_Z_ZZ: Opcode = Opcode(514);
     /// `sdot_z32_zzz_`.
-    pub const SDOT_Z32_ZZZ_: Opcode = Opcode(515);
+    pub const SDOT_Z32_ZZZ: Opcode = Opcode(515);
     /// `udot_z32_zzz_`.
-    pub const UDOT_Z32_ZZZ_: Opcode = Opcode(516);
+    pub const UDOT_Z32_ZZZ: Opcode = Opcode(516);
     /// `sdot_z32_zzzi_`.
-    pub const SDOT_Z32_ZZZI_: Opcode = Opcode(517);
+    pub const SDOT_Z32_ZZZI: Opcode = Opcode(517);
     /// `udot_z32_zzzi_`.
-    pub const UDOT_Z32_ZZZI_: Opcode = Opcode(518);
+    pub const UDOT_Z32_ZZZI: Opcode = Opcode(518);
     /// `mlapt_z_zzz_`.
-    pub const MLAPT_Z_ZZZ_: Opcode = Opcode(519);
+    pub const MLAPT_Z_ZZZ: Opcode = Opcode(519);
     /// `madpt_z_zzz_`.
-    pub const MADPT_Z_ZZZ_: Opcode = Opcode(520);
+    pub const MADPT_Z_ZZZ: Opcode = Opcode(520);
     /// `sabal_z_zz_`.
-    pub const SABAL_Z_ZZ_: Opcode = Opcode(521);
+    pub const SABAL_Z_ZZ: Opcode = Opcode(521);
     /// `uabal_z_zz_`.
-    pub const UABAL_Z_ZZ_: Opcode = Opcode(522);
+    pub const UABAL_Z_ZZ: Opcode = Opcode(522);
     /// `zipq1_z_zz_`.
-    pub const ZIPQ1_Z_ZZ_: Opcode = Opcode(523);
+    pub const ZIPQ1_Z_ZZ: Opcode = Opcode(523);
     /// `uzpq1_z_zz_`.
-    pub const UZPQ1_Z_ZZ_: Opcode = Opcode(524);
+    pub const UZPQ1_Z_ZZ: Opcode = Opcode(524);
     /// `tblq_z_zz_`.
-    pub const TBLQ_Z_ZZ_: Opcode = Opcode(525);
+    pub const TBLQ_Z_ZZ: Opcode = Opcode(525);
     /// `zipq2_z_zz_`.
-    pub const ZIPQ2_Z_ZZ_: Opcode = Opcode(526);
+    pub const ZIPQ2_Z_ZZ: Opcode = Opcode(526);
     /// `uzpq2_z_zz_`.
-    pub const UZPQ2_Z_ZZ_: Opcode = Opcode(527);
+    pub const UZPQ2_Z_ZZ: Opcode = Opcode(527);
     /// `sdot_z_zzzi_s`.
     pub const SDOT_Z_ZZZI_S: Opcode = Opcode(528);
     /// `sdot_z_zzzi_d`.
@@ -9083,221 +9083,221 @@ pub mod opcodes {
     /// `mul_z_zzi_d`.
     pub const MUL_Z_ZZI_D: Opcode = Opcode(598);
     /// `saddlb_z_zz_`.
-    pub const SADDLB_Z_ZZ_: Opcode = Opcode(599);
+    pub const SADDLB_Z_ZZ: Opcode = Opcode(599);
     /// `ssublb_z_zz_`.
-    pub const SSUBLB_Z_ZZ_: Opcode = Opcode(600);
+    pub const SSUBLB_Z_ZZ: Opcode = Opcode(600);
     /// `sabdlb_z_zz_`.
-    pub const SABDLB_Z_ZZ_: Opcode = Opcode(601);
+    pub const SABDLB_Z_ZZ: Opcode = Opcode(601);
     /// `saddlt_z_zz_`.
-    pub const SADDLT_Z_ZZ_: Opcode = Opcode(602);
+    pub const SADDLT_Z_ZZ: Opcode = Opcode(602);
     /// `ssublt_z_zz_`.
-    pub const SSUBLT_Z_ZZ_: Opcode = Opcode(603);
+    pub const SSUBLT_Z_ZZ: Opcode = Opcode(603);
     /// `sabdlt_z_zz_`.
-    pub const SABDLT_Z_ZZ_: Opcode = Opcode(604);
+    pub const SABDLT_Z_ZZ: Opcode = Opcode(604);
     /// `uaddlb_z_zz_`.
-    pub const UADDLB_Z_ZZ_: Opcode = Opcode(605);
+    pub const UADDLB_Z_ZZ: Opcode = Opcode(605);
     /// `usublb_z_zz_`.
-    pub const USUBLB_Z_ZZ_: Opcode = Opcode(606);
+    pub const USUBLB_Z_ZZ: Opcode = Opcode(606);
     /// `uabdlb_z_zz_`.
-    pub const UABDLB_Z_ZZ_: Opcode = Opcode(607);
+    pub const UABDLB_Z_ZZ: Opcode = Opcode(607);
     /// `uaddlt_z_zz_`.
-    pub const UADDLT_Z_ZZ_: Opcode = Opcode(608);
+    pub const UADDLT_Z_ZZ: Opcode = Opcode(608);
     /// `usublt_z_zz_`.
-    pub const USUBLT_Z_ZZ_: Opcode = Opcode(609);
+    pub const USUBLT_Z_ZZ: Opcode = Opcode(609);
     /// `uabdlt_z_zz_`.
-    pub const UABDLT_Z_ZZ_: Opcode = Opcode(610);
+    pub const UABDLT_Z_ZZ: Opcode = Opcode(610);
     /// `saddwb_z_zz_`.
-    pub const SADDWB_Z_ZZ_: Opcode = Opcode(611);
+    pub const SADDWB_Z_ZZ: Opcode = Opcode(611);
     /// `ssubwb_z_zz_`.
-    pub const SSUBWB_Z_ZZ_: Opcode = Opcode(612);
+    pub const SSUBWB_Z_ZZ: Opcode = Opcode(612);
     /// `saddwt_z_zz_`.
-    pub const SADDWT_Z_ZZ_: Opcode = Opcode(613);
+    pub const SADDWT_Z_ZZ: Opcode = Opcode(613);
     /// `ssubwt_z_zz_`.
-    pub const SSUBWT_Z_ZZ_: Opcode = Opcode(614);
+    pub const SSUBWT_Z_ZZ: Opcode = Opcode(614);
     /// `uaddwb_z_zz_`.
-    pub const UADDWB_Z_ZZ_: Opcode = Opcode(615);
+    pub const UADDWB_Z_ZZ: Opcode = Opcode(615);
     /// `usubwb_z_zz_`.
-    pub const USUBWB_Z_ZZ_: Opcode = Opcode(616);
+    pub const USUBWB_Z_ZZ: Opcode = Opcode(616);
     /// `uaddwt_z_zz_`.
-    pub const UADDWT_Z_ZZ_: Opcode = Opcode(617);
+    pub const UADDWT_Z_ZZ: Opcode = Opcode(617);
     /// `usubwt_z_zz_`.
-    pub const USUBWT_Z_ZZ_: Opcode = Opcode(618);
+    pub const USUBWT_Z_ZZ: Opcode = Opcode(618);
     /// `sqdmullb_z_zz_`.
-    pub const SQDMULLB_Z_ZZ_: Opcode = Opcode(619);
+    pub const SQDMULLB_Z_ZZ: Opcode = Opcode(619);
     /// `pmullb_z_zz_q`.
     pub const PMULLB_Z_ZZ_Q: Opcode = Opcode(620);
     /// `pmullb_z_zz_`.
-    pub const PMULLB_Z_ZZ_: Opcode = Opcode(621);
+    pub const PMULLB_Z_ZZ: Opcode = Opcode(621);
     /// `smullb_z_zz_`.
-    pub const SMULLB_Z_ZZ_: Opcode = Opcode(622);
+    pub const SMULLB_Z_ZZ: Opcode = Opcode(622);
     /// `sqdmullt_z_zz_`.
-    pub const SQDMULLT_Z_ZZ_: Opcode = Opcode(623);
+    pub const SQDMULLT_Z_ZZ: Opcode = Opcode(623);
     /// `pmullt_z_zz_q`.
     pub const PMULLT_Z_ZZ_Q: Opcode = Opcode(624);
     /// `pmullt_z_zz_`.
-    pub const PMULLT_Z_ZZ_: Opcode = Opcode(625);
+    pub const PMULLT_Z_ZZ: Opcode = Opcode(625);
     /// `smullt_z_zz_`.
-    pub const SMULLT_Z_ZZ_: Opcode = Opcode(626);
+    pub const SMULLT_Z_ZZ: Opcode = Opcode(626);
     /// `umullb_z_zz_`.
-    pub const UMULLB_Z_ZZ_: Opcode = Opcode(627);
+    pub const UMULLB_Z_ZZ: Opcode = Opcode(627);
     /// `umullt_z_zz_`.
-    pub const UMULLT_Z_ZZ_: Opcode = Opcode(628);
+    pub const UMULLT_Z_ZZ: Opcode = Opcode(628);
     /// `saddlbt_z_zz_`.
-    pub const SADDLBT_Z_ZZ_: Opcode = Opcode(629);
+    pub const SADDLBT_Z_ZZ: Opcode = Opcode(629);
     /// `ssublbt_z_zz_`.
-    pub const SSUBLBT_Z_ZZ_: Opcode = Opcode(630);
+    pub const SSUBLBT_Z_ZZ: Opcode = Opcode(630);
     /// `ssubltb_z_zz_`.
-    pub const SSUBLTB_Z_ZZ_: Opcode = Opcode(631);
+    pub const SSUBLTB_Z_ZZ: Opcode = Opcode(631);
     /// `eorbt_z_zz_`.
-    pub const EORBT_Z_ZZ_: Opcode = Opcode(632);
+    pub const EORBT_Z_ZZ: Opcode = Opcode(632);
     /// `eortb_z_zz_`.
-    pub const EORTB_Z_ZZ_: Opcode = Opcode(633);
+    pub const EORTB_Z_ZZ: Opcode = Opcode(633);
     /// `smmla_z_zzz_`.
-    pub const SMMLA_Z_ZZZ_: Opcode = Opcode(634);
+    pub const SMMLA_Z_ZZZ: Opcode = Opcode(634);
     /// `usmmla_z_zzz_`.
-    pub const USMMLA_Z_ZZZ_: Opcode = Opcode(635);
+    pub const USMMLA_Z_ZZZ: Opcode = Opcode(635);
     /// `ummla_z_zzz_`.
-    pub const UMMLA_Z_ZZZ_: Opcode = Opcode(636);
+    pub const UMMLA_Z_ZZZ: Opcode = Opcode(636);
     /// `sshllb_z_zi_`.
-    pub const SSHLLB_Z_ZI_: Opcode = Opcode(637);
+    pub const SSHLLB_Z_ZI: Opcode = Opcode(637);
     /// `sshllt_z_zi_`.
-    pub const SSHLLT_Z_ZI_: Opcode = Opcode(638);
+    pub const SSHLLT_Z_ZI: Opcode = Opcode(638);
     /// `ushllb_z_zi_`.
-    pub const USHLLB_Z_ZI_: Opcode = Opcode(639);
+    pub const USHLLB_Z_ZI: Opcode = Opcode(639);
     /// `ushllt_z_zi_`.
-    pub const USHLLT_Z_ZI_: Opcode = Opcode(640);
+    pub const USHLLT_Z_ZI: Opcode = Opcode(640);
     /// `bext_z_zz_`.
-    pub const BEXT_Z_ZZ_: Opcode = Opcode(641);
+    pub const BEXT_Z_ZZ: Opcode = Opcode(641);
     /// `bdep_z_zz_`.
-    pub const BDEP_Z_ZZ_: Opcode = Opcode(642);
+    pub const BDEP_Z_ZZ: Opcode = Opcode(642);
     /// `bgrp_z_zz_`.
-    pub const BGRP_Z_ZZ_: Opcode = Opcode(643);
+    pub const BGRP_Z_ZZ: Opcode = Opcode(643);
     /// `sabalb_z_zzz_`.
-    pub const SABALB_Z_ZZZ_: Opcode = Opcode(644);
+    pub const SABALB_Z_ZZZ: Opcode = Opcode(644);
     /// `sabalt_z_zzz_`.
-    pub const SABALT_Z_ZZZ_: Opcode = Opcode(645);
+    pub const SABALT_Z_ZZZ: Opcode = Opcode(645);
     /// `uabalb_z_zzz_`.
-    pub const UABALB_Z_ZZZ_: Opcode = Opcode(646);
+    pub const UABALB_Z_ZZZ: Opcode = Opcode(646);
     /// `uabalt_z_zzz_`.
-    pub const UABALT_Z_ZZZ_: Opcode = Opcode(647);
+    pub const UABALT_Z_ZZZ: Opcode = Opcode(647);
     /// `adclb_z_zzz_`.
-    pub const ADCLB_Z_ZZZ_: Opcode = Opcode(648);
+    pub const ADCLB_Z_ZZZ: Opcode = Opcode(648);
     /// `sbclb_z_zzz_`.
-    pub const SBCLB_Z_ZZZ_: Opcode = Opcode(649);
+    pub const SBCLB_Z_ZZZ: Opcode = Opcode(649);
     /// `adclt_z_zzz_`.
-    pub const ADCLT_Z_ZZZ_: Opcode = Opcode(650);
+    pub const ADCLT_Z_ZZZ: Opcode = Opcode(650);
     /// `sbclt_z_zzz_`.
-    pub const SBCLT_Z_ZZZ_: Opcode = Opcode(651);
+    pub const SBCLT_Z_ZZZ: Opcode = Opcode(651);
     /// `cadd_z_zz_`.
-    pub const CADD_Z_ZZ_: Opcode = Opcode(652);
+    pub const CADD_Z_ZZ: Opcode = Opcode(652);
     /// `sqcadd_z_zz_`.
-    pub const SQCADD_Z_ZZ_: Opcode = Opcode(653);
+    pub const SQCADD_Z_ZZ: Opcode = Opcode(653);
     /// `ssra_z_zi_`.
-    pub const SSRA_Z_ZI_: Opcode = Opcode(654);
+    pub const SSRA_Z_ZI: Opcode = Opcode(654);
     /// `srsra_z_zi_`.
-    pub const SRSRA_Z_ZI_: Opcode = Opcode(655);
+    pub const SRSRA_Z_ZI: Opcode = Opcode(655);
     /// `usra_z_zi_`.
-    pub const USRA_Z_ZI_: Opcode = Opcode(656);
+    pub const USRA_Z_ZI: Opcode = Opcode(656);
     /// `ursra_z_zi_`.
-    pub const URSRA_Z_ZI_: Opcode = Opcode(657);
+    pub const URSRA_Z_ZI: Opcode = Opcode(657);
     /// `sri_z_zzi_`.
-    pub const SRI_Z_ZZI_: Opcode = Opcode(658);
+    pub const SRI_Z_ZZI: Opcode = Opcode(658);
     /// `sli_z_zzi_`.
-    pub const SLI_Z_ZZI_: Opcode = Opcode(659);
+    pub const SLI_Z_ZZI: Opcode = Opcode(659);
     /// `saba_z_zzz_`.
-    pub const SABA_Z_ZZZ_: Opcode = Opcode(660);
+    pub const SABA_Z_ZZZ: Opcode = Opcode(660);
     /// `uaba_z_zzz_`.
-    pub const UABA_Z_ZZZ_: Opcode = Opcode(661);
+    pub const UABA_Z_ZZZ: Opcode = Opcode(661);
     /// `sqshrunb_z_zi_`.
-    pub const SQSHRUNB_Z_ZI_: Opcode = Opcode(662);
+    pub const SQSHRUNB_Z_ZI: Opcode = Opcode(662);
     /// `sqrshrunb_z_zi_`.
-    pub const SQRSHRUNB_Z_ZI_: Opcode = Opcode(663);
+    pub const SQRSHRUNB_Z_ZI: Opcode = Opcode(663);
     /// `shrnb_z_zi_`.
-    pub const SHRNB_Z_ZI_: Opcode = Opcode(664);
+    pub const SHRNB_Z_ZI: Opcode = Opcode(664);
     /// `rshrnb_z_zi_`.
-    pub const RSHRNB_Z_ZI_: Opcode = Opcode(665);
+    pub const RSHRNB_Z_ZI: Opcode = Opcode(665);
     /// `sqshrnb_z_zi_`.
-    pub const SQSHRNB_Z_ZI_: Opcode = Opcode(666);
+    pub const SQSHRNB_Z_ZI: Opcode = Opcode(666);
     /// `sqrshrnb_z_zi_`.
-    pub const SQRSHRNB_Z_ZI_: Opcode = Opcode(667);
+    pub const SQRSHRNB_Z_ZI: Opcode = Opcode(667);
     /// `sqshrunt_z_zi_`.
-    pub const SQSHRUNT_Z_ZI_: Opcode = Opcode(668);
+    pub const SQSHRUNT_Z_ZI: Opcode = Opcode(668);
     /// `sqrshrunt_z_zi_`.
-    pub const SQRSHRUNT_Z_ZI_: Opcode = Opcode(669);
+    pub const SQRSHRUNT_Z_ZI: Opcode = Opcode(669);
     /// `shrnt_z_zi_`.
-    pub const SHRNT_Z_ZI_: Opcode = Opcode(670);
+    pub const SHRNT_Z_ZI: Opcode = Opcode(670);
     /// `rshrnt_z_zi_`.
-    pub const RSHRNT_Z_ZI_: Opcode = Opcode(671);
+    pub const RSHRNT_Z_ZI: Opcode = Opcode(671);
     /// `sqshrnt_z_zi_`.
-    pub const SQSHRNT_Z_ZI_: Opcode = Opcode(672);
+    pub const SQSHRNT_Z_ZI: Opcode = Opcode(672);
     /// `sqrshrnt_z_zi_`.
-    pub const SQRSHRNT_Z_ZI_: Opcode = Opcode(673);
+    pub const SQRSHRNT_Z_ZI: Opcode = Opcode(673);
     /// `uqshrnb_z_zi_`.
-    pub const UQSHRNB_Z_ZI_: Opcode = Opcode(674);
+    pub const UQSHRNB_Z_ZI: Opcode = Opcode(674);
     /// `uqrshrnb_z_zi_`.
-    pub const UQRSHRNB_Z_ZI_: Opcode = Opcode(675);
+    pub const UQRSHRNB_Z_ZI: Opcode = Opcode(675);
     /// `uqshrnt_z_zi_`.
-    pub const UQSHRNT_Z_ZI_: Opcode = Opcode(676);
+    pub const UQSHRNT_Z_ZI: Opcode = Opcode(676);
     /// `uqrshrnt_z_zi_`.
-    pub const UQRSHRNT_Z_ZI_: Opcode = Opcode(677);
+    pub const UQRSHRNT_Z_ZI: Opcode = Opcode(677);
     /// `sqrshrn_z_mz2_`.
-    pub const SQRSHRN_Z_MZ2_: Opcode = Opcode(678);
+    pub const SQRSHRN_Z_MZ2: Opcode = Opcode(678);
     /// `sqrshrn_z_mz2_b`.
     pub const SQRSHRN_Z_MZ2_B: Opcode = Opcode(679);
     /// `sqrshrun_z_mz2_`.
-    pub const SQRSHRUN_Z_MZ2_: Opcode = Opcode(680);
+    pub const SQRSHRUN_Z_MZ2: Opcode = Opcode(680);
     /// `sqrshrun_z_mz2_b`.
     pub const SQRSHRUN_Z_MZ2_B: Opcode = Opcode(681);
     /// `sqshrn_z_mz2_`.
-    pub const SQSHRN_Z_MZ2_: Opcode = Opcode(682);
+    pub const SQSHRN_Z_MZ2: Opcode = Opcode(682);
     /// `sqshrun_z_mz2_`.
-    pub const SQSHRUN_Z_MZ2_: Opcode = Opcode(683);
+    pub const SQSHRUN_Z_MZ2: Opcode = Opcode(683);
     /// `uqrshrn_z_mz2_`.
-    pub const UQRSHRN_Z_MZ2_: Opcode = Opcode(684);
+    pub const UQRSHRN_Z_MZ2: Opcode = Opcode(684);
     /// `uqrshrn_z_mz2_b`.
     pub const UQRSHRN_Z_MZ2_B: Opcode = Opcode(685);
     /// `uqshrn_z_mz2_`.
-    pub const UQSHRN_Z_MZ2_: Opcode = Opcode(686);
+    pub const UQSHRN_Z_MZ2: Opcode = Opcode(686);
     /// `sqxtnb_z_zz_`.
-    pub const SQXTNB_Z_ZZ_: Opcode = Opcode(687);
+    pub const SQXTNB_Z_ZZ: Opcode = Opcode(687);
     /// `sqxtunb_z_zz_`.
-    pub const SQXTUNB_Z_ZZ_: Opcode = Opcode(688);
+    pub const SQXTUNB_Z_ZZ: Opcode = Opcode(688);
     /// `sqxtnt_z_zz_`.
-    pub const SQXTNT_Z_ZZ_: Opcode = Opcode(689);
+    pub const SQXTNT_Z_ZZ: Opcode = Opcode(689);
     /// `sqxtunt_z_zz_`.
-    pub const SQXTUNT_Z_ZZ_: Opcode = Opcode(690);
+    pub const SQXTUNT_Z_ZZ: Opcode = Opcode(690);
     /// `uqxtnb_z_zz_`.
-    pub const UQXTNB_Z_ZZ_: Opcode = Opcode(691);
+    pub const UQXTNB_Z_ZZ: Opcode = Opcode(691);
     /// `uqxtnt_z_zz_`.
-    pub const UQXTNT_Z_ZZ_: Opcode = Opcode(692);
+    pub const UQXTNT_Z_ZZ: Opcode = Opcode(692);
     /// `sqcvtn_z_mz2_`.
-    pub const SQCVTN_Z_MZ2_: Opcode = Opcode(693);
+    pub const SQCVTN_Z_MZ2: Opcode = Opcode(693);
     /// `sqcvtun_z_mz2_`.
-    pub const SQCVTUN_Z_MZ2_: Opcode = Opcode(694);
+    pub const SQCVTUN_Z_MZ2: Opcode = Opcode(694);
     /// `uqcvtn_z_mz2_`.
-    pub const UQCVTN_Z_MZ2_: Opcode = Opcode(695);
+    pub const UQCVTN_Z_MZ2: Opcode = Opcode(695);
     /// `addhnb_z_zz_`.
-    pub const ADDHNB_Z_ZZ_: Opcode = Opcode(696);
+    pub const ADDHNB_Z_ZZ: Opcode = Opcode(696);
     /// `raddhnb_z_zz_`.
-    pub const RADDHNB_Z_ZZ_: Opcode = Opcode(697);
+    pub const RADDHNB_Z_ZZ: Opcode = Opcode(697);
     /// `subhnb_z_zz_`.
-    pub const SUBHNB_Z_ZZ_: Opcode = Opcode(698);
+    pub const SUBHNB_Z_ZZ: Opcode = Opcode(698);
     /// `rsubhnb_z_zz_`.
-    pub const RSUBHNB_Z_ZZ_: Opcode = Opcode(699);
+    pub const RSUBHNB_Z_ZZ: Opcode = Opcode(699);
     /// `addhnt_z_zz_`.
-    pub const ADDHNT_Z_ZZ_: Opcode = Opcode(700);
+    pub const ADDHNT_Z_ZZ: Opcode = Opcode(700);
     /// `raddhnt_z_zz_`.
-    pub const RADDHNT_Z_ZZ_: Opcode = Opcode(701);
+    pub const RADDHNT_Z_ZZ: Opcode = Opcode(701);
     /// `subhnt_z_zz_`.
-    pub const SUBHNT_Z_ZZ_: Opcode = Opcode(702);
+    pub const SUBHNT_Z_ZZ: Opcode = Opcode(702);
     /// `rsubhnt_z_zz_`.
-    pub const RSUBHNT_Z_ZZ_: Opcode = Opcode(703);
+    pub const RSUBHNT_Z_ZZ: Opcode = Opcode(703);
     /// `match_p_p_zz_`.
-    pub const MATCH_P_P_ZZ_: Opcode = Opcode(704);
+    pub const MATCH_P_P_ZZ: Opcode = Opcode(704);
     /// `nmatch_p_p_zz_`.
-    pub const NMATCH_P_P_ZZ_: Opcode = Opcode(705);
+    pub const NMATCH_P_P_ZZ: Opcode = Opcode(705);
     /// `histseg_z_zz_`.
-    pub const HISTSEG_Z_ZZ_: Opcode = Opcode(706);
+    pub const HISTSEG_Z_ZZ: Opcode = Opcode(706);
     /// `luti2_z_zz_8`.
     pub const LUTI2_Z_ZZ_8: Opcode = Opcode(707);
     /// `luti2_z_zz_16`.
@@ -9313,17 +9313,17 @@ pub mod opcodes {
     /// `luti6_z_zzz_16`.
     pub const LUTI6_Z_ZZZ_16: Opcode = Opcode(713);
     /// `histcnt_z_p_zz_`.
-    pub const HISTCNT_Z_P_ZZ_: Opcode = Opcode(714);
+    pub const HISTCNT_Z_P_ZZ: Opcode = Opcode(714);
     /// `aesmc_z_z_`.
-    pub const AESMC_Z_Z_: Opcode = Opcode(715);
+    pub const AESMC_Z_Z: Opcode = Opcode(715);
     /// `aesimc_z_z_`.
-    pub const AESIMC_Z_Z_: Opcode = Opcode(716);
+    pub const AESIMC_Z_Z: Opcode = Opcode(716);
     /// `aese_z_zz_`.
-    pub const AESE_Z_ZZ_: Opcode = Opcode(717);
+    pub const AESE_Z_ZZ: Opcode = Opcode(717);
     /// `aesd_z_zz_`.
-    pub const AESD_Z_ZZ_: Opcode = Opcode(718);
+    pub const AESD_Z_ZZ: Opcode = Opcode(718);
     /// `sm4e_z_zz_`.
-    pub const SM4E_Z_ZZ_: Opcode = Opcode(719);
+    pub const SM4E_Z_ZZ: Opcode = Opcode(719);
     /// `aese_mz_zzi_2x1`.
     pub const AESE_MZ_ZZI_2X1: Opcode = Opcode(720);
     /// `aesd_mz_zzi_2x1`.
@@ -9341,17 +9341,17 @@ pub mod opcodes {
     /// `aesdimc_mz_zzi_4x1`.
     pub const AESDIMC_MZ_ZZI_4X1: Opcode = Opcode(727);
     /// `sm4ekey_z_zz_`.
-    pub const SM4EKEY_Z_ZZ_: Opcode = Opcode(728);
+    pub const SM4EKEY_Z_ZZ: Opcode = Opcode(728);
     /// `rax1_z_zz_`.
-    pub const RAX1_Z_ZZ_: Opcode = Opcode(729);
+    pub const RAX1_Z_ZZ: Opcode = Opcode(729);
     /// `pmull_mz_zzw_1x2`.
     pub const PMULL_MZ_ZZW_1X2: Opcode = Opcode(730);
     /// `pmlal_mz_zzzw_1x2`.
     pub const PMLAL_MZ_ZZZW_1X2: Opcode = Opcode(731);
     /// `fcmla_z_p_zzz_`.
-    pub const FCMLA_Z_P_ZZZ_: Opcode = Opcode(732);
+    pub const FCMLA_Z_P_ZZZ: Opcode = Opcode(732);
     /// `fcadd_z_p_zz_`.
-    pub const FCADD_Z_P_ZZ_: Opcode = Opcode(733);
+    pub const FCADD_Z_P_ZZ: Opcode = Opcode(733);
     /// `fcvtxnt_z_p_z_d2sz`.
     pub const FCVTXNT_Z_P_Z_D2SZ: Opcode = Opcode(734);
     /// `fcvtnt_z_p_z_s2hz`.
@@ -9365,17 +9365,17 @@ pub mod opcodes {
     /// `fcvtlt_z_p_z_s2dz`.
     pub const FCVTLT_Z_P_Z_S2DZ: Opcode = Opcode(739);
     /// `fmaxinm_z_p_zz_`.
-    pub const FMAXINM_Z_P_ZZ_: Opcode = Opcode(740);
+    pub const FMAXINM_Z_P_ZZ: Opcode = Opcode(740);
     /// `fmininm_z_p_zz_`.
-    pub const FMININM_Z_P_ZZ_: Opcode = Opcode(741);
+    pub const FMININM_Z_P_ZZ: Opcode = Opcode(741);
     /// `fmaxmginm_z_p_zz_`.
-    pub const FMAXMGINM_Z_P_ZZ_: Opcode = Opcode(742);
+    pub const FMAXMGINM_Z_P_ZZ: Opcode = Opcode(742);
     /// `fminmginm_z_p_zz_`.
-    pub const FMINMGINM_Z_P_ZZ_: Opcode = Opcode(743);
+    pub const FMINMGINM_Z_P_ZZ: Opcode = Opcode(743);
     /// `fmaxmg_z_p_zz_`.
-    pub const FMAXMG_Z_P_ZZ_: Opcode = Opcode(744);
+    pub const FMAXMG_Z_P_ZZ: Opcode = Opcode(744);
     /// `fminmg_z_p_zz_`.
-    pub const FMINMG_Z_P_ZZ_: Opcode = Opcode(745);
+    pub const FMINMG_Z_P_ZZ: Opcode = Opcode(745);
     /// `fcvtxnt_z_p_z_d2s`.
     pub const FCVTXNT_Z_P_Z_D2S: Opcode = Opcode(746);
     /// `fcvtnt_z_p_z_s2h`.
@@ -9389,37 +9389,37 @@ pub mod opcodes {
     /// `fcvtlt_z_p_z_s2d`.
     pub const FCVTLT_Z_P_Z_S2D: Opcode = Opcode(751);
     /// `faddp_z_p_zz_`.
-    pub const FADDP_Z_P_ZZ_: Opcode = Opcode(752);
+    pub const FADDP_Z_P_ZZ: Opcode = Opcode(752);
     /// `fmaxnmp_z_p_zz_`.
-    pub const FMAXNMP_Z_P_ZZ_: Opcode = Opcode(753);
+    pub const FMAXNMP_Z_P_ZZ: Opcode = Opcode(753);
     /// `fminnmp_z_p_zz_`.
-    pub const FMINNMP_Z_P_ZZ_: Opcode = Opcode(754);
+    pub const FMINNMP_Z_P_ZZ: Opcode = Opcode(754);
     /// `fmaxp_z_p_zz_`.
-    pub const FMAXP_Z_P_ZZ_: Opcode = Opcode(755);
+    pub const FMAXP_Z_P_ZZ: Opcode = Opcode(755);
     /// `fminp_z_p_zz_`.
-    pub const FMINP_Z_P_ZZ_: Opcode = Opcode(756);
+    pub const FMINP_Z_P_ZZ: Opcode = Opcode(756);
     /// `faddqv_z_p_z_`.
-    pub const FADDQV_Z_P_Z_: Opcode = Opcode(757);
+    pub const FADDQV_Z_P_Z: Opcode = Opcode(757);
     /// `fmaxnmqv_z_p_z_`.
-    pub const FMAXNMQV_Z_P_Z_: Opcode = Opcode(758);
+    pub const FMAXNMQV_Z_P_Z: Opcode = Opcode(758);
     /// `fminnmqv_z_p_z_`.
-    pub const FMINNMQV_Z_P_Z_: Opcode = Opcode(759);
+    pub const FMINNMQV_Z_P_Z: Opcode = Opcode(759);
     /// `fmaxqv_z_p_z_`.
-    pub const FMAXQV_Z_P_Z_: Opcode = Opcode(760);
+    pub const FMAXQV_Z_P_Z: Opcode = Opcode(760);
     /// `fminqv_z_p_z_`.
-    pub const FMINQV_Z_P_Z_: Opcode = Opcode(761);
+    pub const FMINQV_Z_P_Z: Opcode = Opcode(761);
     /// `fmaxinmv_v_p_z_`.
-    pub const FMAXINMV_V_P_Z_: Opcode = Opcode(762);
+    pub const FMAXINMV_V_P_Z: Opcode = Opcode(762);
     /// `fmininmv_v_p_z_`.
-    pub const FMININMV_V_P_Z_: Opcode = Opcode(763);
+    pub const FMININMV_V_P_Z: Opcode = Opcode(763);
     /// `fmaxmginmv_v_p_z_`.
-    pub const FMAXMGINMV_V_P_Z_: Opcode = Opcode(764);
+    pub const FMAXMGINMV_V_P_Z: Opcode = Opcode(764);
     /// `fminmginmv_v_p_z_`.
-    pub const FMINMGINMV_V_P_Z_: Opcode = Opcode(765);
+    pub const FMINMGINMV_V_P_Z: Opcode = Opcode(765);
     /// `fmaxmgv_v_p_z_`.
-    pub const FMAXMGV_V_P_Z_: Opcode = Opcode(766);
+    pub const FMAXMGV_V_P_Z: Opcode = Opcode(766);
     /// `fminmgv_v_p_z_`.
-    pub const FMINMGV_V_P_Z_: Opcode = Opcode(767);
+    pub const FMINMGV_V_P_Z: Opcode = Opcode(767);
     /// `frintn_z_p_z_z`.
     pub const FRINTN_Z_P_Z_Z: Opcode = Opcode(768);
     /// `frintp_z_p_z_z`.
@@ -9549,85 +9549,85 @@ pub mod opcodes {
     /// `fmul_z_zzi_d`.
     pub const FMUL_Z_ZZI_D: Opcode = Opcode(831);
     /// `fclamp_z_zz_`.
-    pub const FCLAMP_Z_ZZ_: Opcode = Opcode(832);
+    pub const FCLAMP_Z_ZZ: Opcode = Opcode(832);
     /// `bfclamp_z_zz_`.
-    pub const BFCLAMP_Z_ZZ_: Opcode = Opcode(833);
+    pub const BFCLAMP_Z_ZZ: Opcode = Opcode(833);
     /// `fdot_z_zzzi_`.
-    pub const FDOT_Z_ZZZI_: Opcode = Opcode(834);
+    pub const FDOT_Z_ZZZI: Opcode = Opcode(834);
     /// `bfdot_z_zzzi_`.
-    pub const BFDOT_Z_ZZZI_: Opcode = Opcode(835);
+    pub const BFDOT_Z_ZZZI: Opcode = Opcode(835);
     /// `fdot_z_zz8z8i_`.
-    pub const FDOT_Z_ZZ8Z8I_: Opcode = Opcode(836);
+    pub const FDOT_Z_ZZ8Z8I: Opcode = Opcode(836);
     /// `fdot_z32_zz8z8i_`.
-    pub const FDOT_Z32_ZZ8Z8I_: Opcode = Opcode(837);
+    pub const FDOT_Z32_ZZ8Z8I: Opcode = Opcode(837);
     /// `fmlalb_z_zzzi_s`.
     pub const FMLALB_Z_ZZZI_S: Opcode = Opcode(838);
     /// `bfmlalb_z_zzzi_`.
-    pub const BFMLALB_Z_ZZZI_: Opcode = Opcode(839);
+    pub const BFMLALB_Z_ZZZI: Opcode = Opcode(839);
     /// `fmlslb_z_zzzi_s`.
     pub const FMLSLB_Z_ZZZI_S: Opcode = Opcode(840);
     /// `bfmlslb_z_zzzi_`.
-    pub const BFMLSLB_Z_ZZZI_: Opcode = Opcode(841);
+    pub const BFMLSLB_Z_ZZZI: Opcode = Opcode(841);
     /// `fmlalt_z_zzzi_s`.
     pub const FMLALT_Z_ZZZI_S: Opcode = Opcode(842);
     /// `bfmlalt_z_zzzi_`.
-    pub const BFMLALT_Z_ZZZI_: Opcode = Opcode(843);
+    pub const BFMLALT_Z_ZZZI: Opcode = Opcode(843);
     /// `fmlslt_z_zzzi_s`.
     pub const FMLSLT_Z_ZZZI_S: Opcode = Opcode(844);
     /// `bfmlslt_z_zzzi_`.
-    pub const BFMLSLT_Z_ZZZI_: Opcode = Opcode(845);
+    pub const BFMLSLT_Z_ZZZI: Opcode = Opcode(845);
     /// `fmlalb_z_z8z8z8i_`.
-    pub const FMLALB_Z_Z8Z8Z8I_: Opcode = Opcode(846);
+    pub const FMLALB_Z_Z8Z8Z8I: Opcode = Opcode(846);
     /// `fmlalt_z_z8z8z8i_`.
-    pub const FMLALT_Z_Z8Z8Z8I_: Opcode = Opcode(847);
+    pub const FMLALT_Z_Z8Z8Z8I: Opcode = Opcode(847);
     /// `fdot_z_zzz_`.
-    pub const FDOT_Z_ZZZ_: Opcode = Opcode(848);
+    pub const FDOT_Z_ZZZ: Opcode = Opcode(848);
     /// `bfdot_z_zzz_`.
-    pub const BFDOT_Z_ZZZ_: Opcode = Opcode(849);
+    pub const BFDOT_Z_ZZZ: Opcode = Opcode(849);
     /// `fdot_z_zz8z8_`.
-    pub const FDOT_Z_ZZ8Z8_: Opcode = Opcode(850);
+    pub const FDOT_Z_ZZ8Z8: Opcode = Opcode(850);
     /// `fdot_z32_zz8z8_`.
-    pub const FDOT_Z32_ZZ8Z8_: Opcode = Opcode(851);
+    pub const FDOT_Z32_ZZ8Z8: Opcode = Opcode(851);
     /// `fmlalb_z_zzz_`.
-    pub const FMLALB_Z_ZZZ_: Opcode = Opcode(852);
+    pub const FMLALB_Z_ZZZ: Opcode = Opcode(852);
     /// `bfmlalb_z_zzz_`.
-    pub const BFMLALB_Z_ZZZ_: Opcode = Opcode(853);
+    pub const BFMLALB_Z_ZZZ: Opcode = Opcode(853);
     /// `fmlslb_z_zzz_`.
-    pub const FMLSLB_Z_ZZZ_: Opcode = Opcode(854);
+    pub const FMLSLB_Z_ZZZ: Opcode = Opcode(854);
     /// `bfmlslb_z_zzz_`.
-    pub const BFMLSLB_Z_ZZZ_: Opcode = Opcode(855);
+    pub const BFMLSLB_Z_ZZZ: Opcode = Opcode(855);
     /// `fmlalt_z_zzz_`.
-    pub const FMLALT_Z_ZZZ_: Opcode = Opcode(856);
+    pub const FMLALT_Z_ZZZ: Opcode = Opcode(856);
     /// `bfmlalt_z_zzz_`.
-    pub const BFMLALT_Z_ZZZ_: Opcode = Opcode(857);
+    pub const BFMLALT_Z_ZZZ: Opcode = Opcode(857);
     /// `fmlslt_z_zzz_`.
-    pub const FMLSLT_Z_ZZZ_: Opcode = Opcode(858);
+    pub const FMLSLT_Z_ZZZ: Opcode = Opcode(858);
     /// `bfmlslt_z_zzz_`.
-    pub const BFMLSLT_Z_ZZZ_: Opcode = Opcode(859);
+    pub const BFMLSLT_Z_ZZZ: Opcode = Opcode(859);
     /// `fmlallbb_z32_z8z8z8_`.
-    pub const FMLALLBB_Z32_Z8Z8Z8_: Opcode = Opcode(860);
+    pub const FMLALLBB_Z32_Z8Z8Z8: Opcode = Opcode(860);
     /// `fmlallbt_z32_z8z8z8_`.
-    pub const FMLALLBT_Z32_Z8Z8Z8_: Opcode = Opcode(861);
+    pub const FMLALLBT_Z32_Z8Z8Z8: Opcode = Opcode(861);
     /// `fmlalltb_z32_z8z8z8_`.
-    pub const FMLALLTB_Z32_Z8Z8Z8_: Opcode = Opcode(862);
+    pub const FMLALLTB_Z32_Z8Z8Z8: Opcode = Opcode(862);
     /// `fmlalltt_z32_z8z8z8_`.
-    pub const FMLALLTT_Z32_Z8Z8Z8_: Opcode = Opcode(863);
+    pub const FMLALLTT_Z32_Z8Z8Z8: Opcode = Opcode(863);
     /// `fmlalb_z_z8z8z8_`.
-    pub const FMLALB_Z_Z8Z8Z8_: Opcode = Opcode(864);
+    pub const FMLALB_Z_Z8Z8Z8: Opcode = Opcode(864);
     /// `fmlalt_z_z8z8z8_`.
-    pub const FMLALT_Z_Z8Z8Z8_: Opcode = Opcode(865);
+    pub const FMLALT_Z_Z8Z8Z8: Opcode = Opcode(865);
     /// `fmlallbb_z32_z8z8z8i_`.
-    pub const FMLALLBB_Z32_Z8Z8Z8I_: Opcode = Opcode(866);
+    pub const FMLALLBB_Z32_Z8Z8Z8I: Opcode = Opcode(866);
     /// `fmlallbt_z32_z8z8z8i_`.
-    pub const FMLALLBT_Z32_Z8Z8Z8I_: Opcode = Opcode(867);
+    pub const FMLALLBT_Z32_Z8Z8Z8I: Opcode = Opcode(867);
     /// `fmlalltb_z32_z8z8z8i_`.
-    pub const FMLALLTB_Z32_Z8Z8Z8I_: Opcode = Opcode(868);
+    pub const FMLALLTB_Z32_Z8Z8Z8I: Opcode = Opcode(868);
     /// `fmlalltt_z32_z8z8z8i_`.
-    pub const FMLALLTT_Z32_Z8Z8Z8I_: Opcode = Opcode(869);
+    pub const FMLALLTT_Z32_Z8Z8Z8I: Opcode = Opcode(869);
     /// `fmmla_z32_zz8z8_`.
-    pub const FMMLA_Z32_ZZ8Z8_: Opcode = Opcode(870);
+    pub const FMMLA_Z32_ZZ8Z8: Opcode = Opcode(870);
     /// `fmmla_z16_zz8z8_`.
-    pub const FMMLA_Z16_ZZ8Z8_: Opcode = Opcode(871);
+    pub const FMMLA_Z16_ZZ8Z8: Opcode = Opcode(871);
     /// `fmmla_z_zzz_h`.
     pub const FMMLA_Z_ZZZ_H: Opcode = Opcode(872);
     /// `bfmmla_z_zzz_h`.
@@ -9635,129 +9635,129 @@ pub mod opcodes {
     /// `fmmla_z32_zzz_h`.
     pub const FMMLA_Z32_ZZZ_H: Opcode = Opcode(874);
     /// `bfmmla_z_zzz_`.
-    pub const BFMMLA_Z_ZZZ_: Opcode = Opcode(875);
+    pub const BFMMLA_Z_ZZZ: Opcode = Opcode(875);
     /// `fmmla_z_zzz_s`.
     pub const FMMLA_Z_ZZZ_S: Opcode = Opcode(876);
     /// `fmmla_z_zzz_d`.
     pub const FMMLA_Z_ZZZ_D: Opcode = Opcode(877);
     /// `fadd_z_zz_`.
-    pub const FADD_Z_ZZ_: Opcode = Opcode(878);
+    pub const FADD_Z_ZZ: Opcode = Opcode(878);
     /// `bfadd_z_zz_`.
-    pub const BFADD_Z_ZZ_: Opcode = Opcode(879);
+    pub const BFADD_Z_ZZ: Opcode = Opcode(879);
     /// `fsub_z_zz_`.
-    pub const FSUB_Z_ZZ_: Opcode = Opcode(880);
+    pub const FSUB_Z_ZZ: Opcode = Opcode(880);
     /// `bfsub_z_zz_`.
-    pub const BFSUB_Z_ZZ_: Opcode = Opcode(881);
+    pub const BFSUB_Z_ZZ: Opcode = Opcode(881);
     /// `fmul_z_zz_`.
-    pub const FMUL_Z_ZZ_: Opcode = Opcode(882);
+    pub const FMUL_Z_ZZ: Opcode = Opcode(882);
     /// `bfmul_z_zz_`.
-    pub const BFMUL_Z_ZZ_: Opcode = Opcode(883);
+    pub const BFMUL_Z_ZZ: Opcode = Opcode(883);
     /// `ftsmul_z_zz_`.
-    pub const FTSMUL_Z_ZZ_: Opcode = Opcode(884);
+    pub const FTSMUL_Z_ZZ: Opcode = Opcode(884);
     /// `fcmtl_p_zz_`.
-    pub const FCMTL_P_ZZ_: Opcode = Opcode(885);
+    pub const FCMTL_P_ZZ: Opcode = Opcode(885);
     /// `fcmtlmg_p_zz_`.
-    pub const FCMTLMG_P_ZZ_: Opcode = Opcode(886);
+    pub const FCMTLMG_P_ZZ: Opcode = Opcode(886);
     /// `frecps_z_zz_`.
-    pub const FRECPS_Z_ZZ_: Opcode = Opcode(887);
+    pub const FRECPS_Z_ZZ: Opcode = Opcode(887);
     /// `frsqrts_z_zz_`.
-    pub const FRSQRTS_Z_ZZ_: Opcode = Opcode(888);
+    pub const FRSQRTS_Z_ZZ: Opcode = Opcode(888);
     /// `faddv_v_p_z_`.
-    pub const FADDV_V_P_Z_: Opcode = Opcode(889);
+    pub const FADDV_V_P_Z: Opcode = Opcode(889);
     /// `fmaxnmv_v_p_z_`.
-    pub const FMAXNMV_V_P_Z_: Opcode = Opcode(890);
+    pub const FMAXNMV_V_P_Z: Opcode = Opcode(890);
     /// `fminnmv_v_p_z_`.
-    pub const FMINNMV_V_P_Z_: Opcode = Opcode(891);
+    pub const FMINNMV_V_P_Z: Opcode = Opcode(891);
     /// `fmaxv_v_p_z_`.
-    pub const FMAXV_V_P_Z_: Opcode = Opcode(892);
+    pub const FMAXV_V_P_Z: Opcode = Opcode(892);
     /// `fminv_v_p_z_`.
-    pub const FMINV_V_P_Z_: Opcode = Opcode(893);
+    pub const FMINV_V_P_Z: Opcode = Opcode(893);
     /// `fcmge_p_p_zz_`.
-    pub const FCMGE_P_P_ZZ_: Opcode = Opcode(894);
+    pub const FCMGE_P_P_ZZ: Opcode = Opcode(894);
     /// `fcmle_p_p_zz__fcmge_p_p_zz_`.
-    pub const FCMLE_P_P_ZZ__FCMGE_P_P_ZZ_: Opcode = Opcode(895);
+    pub const FCMLE_P_P_ZZ__FCMGE_P_P_ZZ: Opcode = Opcode(895);
     /// `fcmuo_p_p_zz_`.
-    pub const FCMUO_P_P_ZZ_: Opcode = Opcode(896);
+    pub const FCMUO_P_P_ZZ: Opcode = Opcode(896);
     /// `facge_p_p_zz_`.
-    pub const FACGE_P_P_ZZ_: Opcode = Opcode(897);
+    pub const FACGE_P_P_ZZ: Opcode = Opcode(897);
     /// `facle_p_p_zz__facge_p_p_zz_`.
-    pub const FACLE_P_P_ZZ__FACGE_P_P_ZZ_: Opcode = Opcode(898);
+    pub const FACLE_P_P_ZZ__FACGE_P_P_ZZ: Opcode = Opcode(898);
     /// `facgt_p_p_zz_`.
-    pub const FACGT_P_P_ZZ_: Opcode = Opcode(899);
+    pub const FACGT_P_P_ZZ: Opcode = Opcode(899);
     /// `faclt_p_p_zz__facgt_p_p_zz_`.
-    pub const FACLT_P_P_ZZ__FACGT_P_P_ZZ_: Opcode = Opcode(900);
+    pub const FACLT_P_P_ZZ__FACGT_P_P_ZZ: Opcode = Opcode(900);
     /// `fcmgt_p_p_zz_`.
-    pub const FCMGT_P_P_ZZ_: Opcode = Opcode(901);
+    pub const FCMGT_P_P_ZZ: Opcode = Opcode(901);
     /// `fcmlt_p_p_zz__fcmgt_p_p_zz_`.
-    pub const FCMLT_P_P_ZZ__FCMGT_P_P_ZZ_: Opcode = Opcode(902);
+    pub const FCMLT_P_P_ZZ__FCMGT_P_P_ZZ: Opcode = Opcode(902);
     /// `fcmeq_p_p_zz_`.
-    pub const FCMEQ_P_P_ZZ_: Opcode = Opcode(903);
+    pub const FCMEQ_P_P_ZZ: Opcode = Opcode(903);
     /// `fcmne_p_p_zz_`.
-    pub const FCMNE_P_P_ZZ_: Opcode = Opcode(904);
+    pub const FCMNE_P_P_ZZ: Opcode = Opcode(904);
     /// `fadd_z_p_zz_`.
-    pub const FADD_Z_P_ZZ_: Opcode = Opcode(905);
+    pub const FADD_Z_P_ZZ: Opcode = Opcode(905);
     /// `bfadd_z_p_zz_`.
-    pub const BFADD_Z_P_ZZ_: Opcode = Opcode(906);
+    pub const BFADD_Z_P_ZZ: Opcode = Opcode(906);
     /// `fsub_z_p_zz_`.
-    pub const FSUB_Z_P_ZZ_: Opcode = Opcode(907);
+    pub const FSUB_Z_P_ZZ: Opcode = Opcode(907);
     /// `bfsub_z_p_zz_`.
-    pub const BFSUB_Z_P_ZZ_: Opcode = Opcode(908);
+    pub const BFSUB_Z_P_ZZ: Opcode = Opcode(908);
     /// `fmul_z_p_zz_`.
-    pub const FMUL_Z_P_ZZ_: Opcode = Opcode(909);
+    pub const FMUL_Z_P_ZZ: Opcode = Opcode(909);
     /// `bfmul_z_p_zz_`.
-    pub const BFMUL_Z_P_ZZ_: Opcode = Opcode(910);
+    pub const BFMUL_Z_P_ZZ: Opcode = Opcode(910);
     /// `fsubr_z_p_zz_`.
-    pub const FSUBR_Z_P_ZZ_: Opcode = Opcode(911);
+    pub const FSUBR_Z_P_ZZ: Opcode = Opcode(911);
     /// `fmaxnm_z_p_zz_`.
-    pub const FMAXNM_Z_P_ZZ_: Opcode = Opcode(912);
+    pub const FMAXNM_Z_P_ZZ: Opcode = Opcode(912);
     /// `bfmaxnm_z_p_zz_`.
-    pub const BFMAXNM_Z_P_ZZ_: Opcode = Opcode(913);
+    pub const BFMAXNM_Z_P_ZZ: Opcode = Opcode(913);
     /// `fminnm_z_p_zz_`.
-    pub const FMINNM_Z_P_ZZ_: Opcode = Opcode(914);
+    pub const FMINNM_Z_P_ZZ: Opcode = Opcode(914);
     /// `bfminnm_z_p_zz_`.
-    pub const BFMINNM_Z_P_ZZ_: Opcode = Opcode(915);
+    pub const BFMINNM_Z_P_ZZ: Opcode = Opcode(915);
     /// `fmax_z_p_zz_`.
-    pub const FMAX_Z_P_ZZ_: Opcode = Opcode(916);
+    pub const FMAX_Z_P_ZZ: Opcode = Opcode(916);
     /// `bfmax_z_p_zz_`.
-    pub const BFMAX_Z_P_ZZ_: Opcode = Opcode(917);
+    pub const BFMAX_Z_P_ZZ: Opcode = Opcode(917);
     /// `fmin_z_p_zz_`.
-    pub const FMIN_Z_P_ZZ_: Opcode = Opcode(918);
+    pub const FMIN_Z_P_ZZ: Opcode = Opcode(918);
     /// `bfmin_z_p_zz_`.
-    pub const BFMIN_Z_P_ZZ_: Opcode = Opcode(919);
+    pub const BFMIN_Z_P_ZZ: Opcode = Opcode(919);
     /// `fabd_z_p_zz_`.
-    pub const FABD_Z_P_ZZ_: Opcode = Opcode(920);
+    pub const FABD_Z_P_ZZ: Opcode = Opcode(920);
     /// `fscale_z_p_zz_`.
-    pub const FSCALE_Z_P_ZZ_: Opcode = Opcode(921);
+    pub const FSCALE_Z_P_ZZ: Opcode = Opcode(921);
     /// `bfscale_z_p_zz_`.
-    pub const BFSCALE_Z_P_ZZ_: Opcode = Opcode(922);
+    pub const BFSCALE_Z_P_ZZ: Opcode = Opcode(922);
     /// `fmulx_z_p_zz_`.
-    pub const FMULX_Z_P_ZZ_: Opcode = Opcode(923);
+    pub const FMULX_Z_P_ZZ: Opcode = Opcode(923);
     /// `fdivr_z_p_zz_`.
-    pub const FDIVR_Z_P_ZZ_: Opcode = Opcode(924);
+    pub const FDIVR_Z_P_ZZ: Opcode = Opcode(924);
     /// `fdiv_z_p_zz_`.
-    pub const FDIV_Z_P_ZZ_: Opcode = Opcode(925);
+    pub const FDIV_Z_P_ZZ: Opcode = Opcode(925);
     /// `famax_z_p_zz_`.
-    pub const FAMAX_Z_P_ZZ_: Opcode = Opcode(926);
+    pub const FAMAX_Z_P_ZZ: Opcode = Opcode(926);
     /// `famin_z_p_zz_`.
-    pub const FAMIN_Z_P_ZZ_: Opcode = Opcode(927);
+    pub const FAMIN_Z_P_ZZ: Opcode = Opcode(927);
     /// `ftmad_z_zzi_`.
-    pub const FTMAD_Z_ZZI_: Opcode = Opcode(928);
+    pub const FTMAD_Z_ZZI: Opcode = Opcode(928);
     /// `fadd_z_p_zs_`.
-    pub const FADD_Z_P_ZS_: Opcode = Opcode(929);
+    pub const FADD_Z_P_ZS: Opcode = Opcode(929);
     /// `fsub_z_p_zs_`.
-    pub const FSUB_Z_P_ZS_: Opcode = Opcode(930);
+    pub const FSUB_Z_P_ZS: Opcode = Opcode(930);
     /// `fmul_z_p_zs_`.
-    pub const FMUL_Z_P_ZS_: Opcode = Opcode(931);
+    pub const FMUL_Z_P_ZS: Opcode = Opcode(931);
     /// `fsubr_z_p_zs_`.
-    pub const FSUBR_Z_P_ZS_: Opcode = Opcode(932);
+    pub const FSUBR_Z_P_ZS: Opcode = Opcode(932);
     /// `fmaxnm_z_p_zs_`.
-    pub const FMAXNM_Z_P_ZS_: Opcode = Opcode(933);
+    pub const FMAXNM_Z_P_ZS: Opcode = Opcode(933);
     /// `fminnm_z_p_zs_`.
-    pub const FMINNM_Z_P_ZS_: Opcode = Opcode(934);
+    pub const FMINNM_Z_P_ZS: Opcode = Opcode(934);
     /// `fmax_z_p_zs_`.
-    pub const FMAX_Z_P_ZS_: Opcode = Opcode(935);
+    pub const FMAX_Z_P_ZS: Opcode = Opcode(935);
     /// `fmin_z_p_zs_`.
-    pub const FMIN_Z_P_ZS_: Opcode = Opcode(936);
+    pub const FMIN_Z_P_ZS: Opcode = Opcode(936);
     /// `frintn_z_p_z_m`.
     pub const FRINTN_Z_P_Z_M: Opcode = Opcode(937);
     /// `frintp_z_p_z_m`.
@@ -9883,55 +9883,55 @@ pub mod opcodes {
     /// `fcvtnt_z8_mz2_s2b`.
     pub const FCVTNT_Z8_MZ2_S2B: Opcode = Opcode(998);
     /// `scvtf_z_z_`.
-    pub const SCVTF_Z_Z_: Opcode = Opcode(999);
+    pub const SCVTF_Z_Z: Opcode = Opcode(999);
     /// `scvtflt_z_z_`.
-    pub const SCVTFLT_Z_Z_: Opcode = Opcode(1000);
+    pub const SCVTFLT_Z_Z: Opcode = Opcode(1000);
     /// `ucvtf_z_z_`.
-    pub const UCVTF_Z_Z_: Opcode = Opcode(1001);
+    pub const UCVTF_Z_Z: Opcode = Opcode(1001);
     /// `ucvtflt_z_z_`.
-    pub const UCVTFLT_Z_Z_: Opcode = Opcode(1002);
+    pub const UCVTFLT_Z_Z: Opcode = Opcode(1002);
     /// `fcvtzsn_z_mz2_`.
-    pub const FCVTZSN_Z_MZ2_: Opcode = Opcode(1003);
+    pub const FCVTZSN_Z_MZ2: Opcode = Opcode(1003);
     /// `fcvtzun_z_mz2_`.
-    pub const FCVTZUN_Z_MZ2_: Opcode = Opcode(1004);
+    pub const FCVTZUN_Z_MZ2: Opcode = Opcode(1004);
     /// `frecpe_z_z_`.
-    pub const FRECPE_Z_Z_: Opcode = Opcode(1005);
+    pub const FRECPE_Z_Z: Opcode = Opcode(1005);
     /// `frsqrte_z_z_`.
-    pub const FRSQRTE_Z_Z_: Opcode = Opcode(1006);
+    pub const FRSQRTE_Z_Z: Opcode = Opcode(1006);
     /// `fcmge_p_p_z0_`.
-    pub const FCMGE_P_P_Z0_: Opcode = Opcode(1007);
+    pub const FCMGE_P_P_Z0: Opcode = Opcode(1007);
     /// `fcmeq_p_p_z0_`.
-    pub const FCMEQ_P_P_Z0_: Opcode = Opcode(1008);
+    pub const FCMEQ_P_P_Z0: Opcode = Opcode(1008);
     /// `fcmgt_p_p_z0_`.
-    pub const FCMGT_P_P_Z0_: Opcode = Opcode(1009);
+    pub const FCMGT_P_P_Z0: Opcode = Opcode(1009);
     /// `fcmlt_p_p_z0_`.
-    pub const FCMLT_P_P_Z0_: Opcode = Opcode(1010);
+    pub const FCMLT_P_P_Z0: Opcode = Opcode(1010);
     /// `fcmne_p_p_z0_`.
-    pub const FCMNE_P_P_Z0_: Opcode = Opcode(1011);
+    pub const FCMNE_P_P_Z0: Opcode = Opcode(1011);
     /// `fcmle_p_p_z0_`.
-    pub const FCMLE_P_P_Z0_: Opcode = Opcode(1012);
+    pub const FCMLE_P_P_Z0: Opcode = Opcode(1012);
     /// `fadda_v_p_z_`.
-    pub const FADDA_V_P_Z_: Opcode = Opcode(1013);
+    pub const FADDA_V_P_Z: Opcode = Opcode(1013);
     /// `fmla_z_p_zzz_`.
-    pub const FMLA_Z_P_ZZZ_: Opcode = Opcode(1014);
+    pub const FMLA_Z_P_ZZZ: Opcode = Opcode(1014);
     /// `bfmla_z_p_zzz_`.
-    pub const BFMLA_Z_P_ZZZ_: Opcode = Opcode(1015);
+    pub const BFMLA_Z_P_ZZZ: Opcode = Opcode(1015);
     /// `fmls_z_p_zzz_`.
-    pub const FMLS_Z_P_ZZZ_: Opcode = Opcode(1016);
+    pub const FMLS_Z_P_ZZZ: Opcode = Opcode(1016);
     /// `bfmls_z_p_zzz_`.
-    pub const BFMLS_Z_P_ZZZ_: Opcode = Opcode(1017);
+    pub const BFMLS_Z_P_ZZZ: Opcode = Opcode(1017);
     /// `fnmla_z_p_zzz_`.
-    pub const FNMLA_Z_P_ZZZ_: Opcode = Opcode(1018);
+    pub const FNMLA_Z_P_ZZZ: Opcode = Opcode(1018);
     /// `fnmls_z_p_zzz_`.
-    pub const FNMLS_Z_P_ZZZ_: Opcode = Opcode(1019);
+    pub const FNMLS_Z_P_ZZZ: Opcode = Opcode(1019);
     /// `fmad_z_p_zzz_`.
-    pub const FMAD_Z_P_ZZZ_: Opcode = Opcode(1020);
+    pub const FMAD_Z_P_ZZZ: Opcode = Opcode(1020);
     /// `fmsb_z_p_zzz_`.
-    pub const FMSB_Z_P_ZZZ_: Opcode = Opcode(1021);
+    pub const FMSB_Z_P_ZZZ: Opcode = Opcode(1021);
     /// `fnmad_z_p_zzz_`.
-    pub const FNMAD_Z_P_ZZZ_: Opcode = Opcode(1022);
+    pub const FNMAD_Z_P_ZZZ: Opcode = Opcode(1022);
     /// `fnmsb_z_p_zzz_`.
-    pub const FNMSB_Z_P_ZZZ_: Opcode = Opcode(1023);
+    pub const FNMSB_Z_P_ZZZ: Opcode = Opcode(1023);
     /// `ld1sb_z_p_bz_s_x32_unscaled`.
     pub const LD1SB_Z_P_BZ_S_X32_UNSCALED: Opcode = Opcode(1024);
     /// `ld1sh_z_p_bz_s_x32_unscaled`.
@@ -9973,11 +9973,11 @@ pub mod opcodes {
     /// `ldff1w_z_p_bz_s_x32_scaled`.
     pub const LDFF1W_Z_P_BZ_S_X32_SCALED: Opcode = Opcode(1043);
     /// `ldr_p_bi_`.
-    pub const LDR_P_BI_: Opcode = Opcode(1044);
+    pub const LDR_P_BI: Opcode = Opcode(1044);
     /// `ldr_z_bi_`.
-    pub const LDR_Z_BI_: Opcode = Opcode(1045);
+    pub const LDR_Z_BI: Opcode = Opcode(1045);
     /// `ldapro_z_bi_`.
-    pub const LDAPRO_Z_BI_: Opcode = Opcode(1046);
+    pub const LDAPRO_Z_BI: Opcode = Opcode(1046);
     /// `prfb_i_p_bi_s`.
     pub const PRFB_I_P_BI_S: Opcode = Opcode(1047);
     /// `prfh_i_p_bi_s`.
@@ -10485,23 +10485,23 @@ pub mod opcodes {
     /// `st4q_z_p_br_contiguous`.
     pub const ST4Q_Z_P_BR_CONTIGUOUS: Opcode = Opcode(1299);
     /// `str_p_bi_`.
-    pub const STR_P_BI_: Opcode = Opcode(1300);
+    pub const STR_P_BI: Opcode = Opcode(1300);
     /// `st1b_z_p_br_`.
-    pub const ST1B_Z_P_BR_: Opcode = Opcode(1301);
+    pub const ST1B_Z_P_BR: Opcode = Opcode(1301);
     /// `st1h_z_p_br_`.
-    pub const ST1H_Z_P_BR_: Opcode = Opcode(1302);
+    pub const ST1H_Z_P_BR: Opcode = Opcode(1302);
     /// `st1w_z_p_br_u128`.
     pub const ST1W_Z_P_BR_U128: Opcode = Opcode(1303);
     /// `st1w_z_p_br_`.
-    pub const ST1W_Z_P_BR_: Opcode = Opcode(1304);
+    pub const ST1W_Z_P_BR: Opcode = Opcode(1304);
     /// `st1d_z_p_br_u128`.
     pub const ST1D_Z_P_BR_U128: Opcode = Opcode(1305);
     /// `st1d_z_p_br_`.
-    pub const ST1D_Z_P_BR_: Opcode = Opcode(1306);
+    pub const ST1D_Z_P_BR: Opcode = Opcode(1306);
     /// `str_z_bi_`.
-    pub const STR_Z_BI_: Opcode = Opcode(1307);
+    pub const STR_Z_BI: Opcode = Opcode(1307);
     /// `stlro_z_bi_`.
-    pub const STLRO_Z_BI_: Opcode = Opcode(1308);
+    pub const STLRO_Z_BI: Opcode = Opcode(1308);
     /// `stnt1b_z_p_ar_d_64_unscaled`.
     pub const STNT1B_Z_P_AR_D_64_UNSCALED: Opcode = Opcode(1309);
     /// `stnt1h_z_p_ar_d_64_unscaled`.
@@ -10603,17 +10603,17 @@ pub mod opcodes {
     /// `st1w_z_p_ai_s`.
     pub const ST1W_Z_P_AI_S: Opcode = Opcode(1358);
     /// `st1b_z_p_bi_`.
-    pub const ST1B_Z_P_BI_: Opcode = Opcode(1359);
+    pub const ST1B_Z_P_BI: Opcode = Opcode(1359);
     /// `st1h_z_p_bi_`.
-    pub const ST1H_Z_P_BI_: Opcode = Opcode(1360);
+    pub const ST1H_Z_P_BI: Opcode = Opcode(1360);
     /// `st1w_z_p_bi_u128`.
     pub const ST1W_Z_P_BI_U128: Opcode = Opcode(1361);
     /// `st1w_z_p_bi_`.
-    pub const ST1W_Z_P_BI_: Opcode = Opcode(1362);
+    pub const ST1W_Z_P_BI: Opcode = Opcode(1362);
     /// `st1d_z_p_bi_u128`.
     pub const ST1D_Z_P_BI_U128: Opcode = Opcode(1363);
     /// `st1d_z_p_bi_`.
-    pub const ST1D_Z_P_BI_: Opcode = Opcode(1364);
+    pub const ST1D_Z_P_BI: Opcode = Opcode(1364);
     /// `stnt1b_z_p_bi_contiguous`.
     pub const STNT1B_Z_P_BI_CONTIGUOUS: Opcode = Opcode(1365);
     /// `stnt1h_z_p_bi_contiguous`.
@@ -11125,9 +11125,9 @@ pub mod opcodes {
     /// `fmops_za_pp_zz_32`.
     pub const FMOPS_ZA_PP_ZZ_32: Opcode = Opcode(1619);
     /// `bfmopa_za32_pp_zz_`.
-    pub const BFMOPA_ZA32_PP_ZZ_: Opcode = Opcode(1620);
+    pub const BFMOPA_ZA32_PP_ZZ: Opcode = Opcode(1620);
     /// `bfmops_za32_pp_zz_`.
-    pub const BFMOPS_ZA32_PP_ZZ_: Opcode = Opcode(1621);
+    pub const BFMOPS_ZA32_PP_ZZ: Opcode = Opcode(1621);
     /// `fmopa_za32_pp_zz_16`.
     pub const FMOPA_ZA32_PP_ZZ_16: Opcode = Opcode(1622);
     /// `fmops_za32_pp_zz_16`.
@@ -11427,7 +11427,7 @@ pub mod opcodes {
     /// `movaz_mz_za4_1`.
     pub const MOVAZ_MZ_ZA4_1: Opcode = Opcode(1770);
     /// `zero_za_i_`.
-    pub const ZERO_ZA_I_: Opcode = Opcode(1771);
+    pub const ZERO_ZA_I: Opcode = Opcode(1771);
     /// `zero_za1_ri_2`.
     pub const ZERO_ZA1_RI_2: Opcode = Opcode(1772);
     /// `zero_za1_ri_4`.
@@ -11445,13 +11445,13 @@ pub mod opcodes {
     /// `zero_za4_ri_4`.
     pub const ZERO_ZA4_RI_4: Opcode = Opcode(1779);
     /// `zero_zt_i_`.
-    pub const ZERO_ZT_I_: Opcode = Opcode(1780);
+    pub const ZERO_ZT_I: Opcode = Opcode(1780);
     /// `movt_r_zt_`.
-    pub const MOVT_R_ZT_: Opcode = Opcode(1781);
+    pub const MOVT_R_ZT: Opcode = Opcode(1781);
     /// `movt_zt_r_`.
-    pub const MOVT_ZT_R_: Opcode = Opcode(1782);
+    pub const MOVT_ZT_R: Opcode = Opcode(1782);
     /// `movt_zt_z_`.
-    pub const MOVT_ZT_Z_: Opcode = Opcode(1783);
+    pub const MOVT_ZT_Z: Opcode = Opcode(1783);
     /// `luti2_mz2_ztz_1`.
     pub const LUTI2_MZ2_ZTZ_1: Opcode = Opcode(1784);
     /// `luti4_mz2_ztz_1`.
@@ -11461,11 +11461,11 @@ pub mod opcodes {
     /// `luti4_mz4_ztz_1`.
     pub const LUTI4_MZ4_ZTZ_1: Opcode = Opcode(1787);
     /// `luti2_z_ztz_`.
-    pub const LUTI2_Z_ZTZ_: Opcode = Opcode(1788);
+    pub const LUTI2_Z_ZTZ: Opcode = Opcode(1788);
     /// `luti4_z_ztz_`.
-    pub const LUTI4_Z_ZTZ_: Opcode = Opcode(1789);
+    pub const LUTI4_Z_ZTZ: Opcode = Opcode(1789);
     /// `luti6_z_ztz_`.
-    pub const LUTI6_Z_ZTZ_: Opcode = Opcode(1790);
+    pub const LUTI6_Z_ZTZ: Opcode = Opcode(1790);
     /// `luti4_mz4_ztmz2_1`.
     pub const LUTI4_MZ4_ZTMZ2_1: Opcode = Opcode(1791);
     /// `luti6_mz4_ztmz3_1`.
@@ -12223,31 +12223,31 @@ pub mod opcodes {
     /// `uzp_mz_zz_2q`.
     pub const UZP_MZ_ZZ_2Q: Opcode = Opcode(2168);
     /// `sqrshr_z_mz2_`.
-    pub const SQRSHR_Z_MZ2_: Opcode = Opcode(2169);
+    pub const SQRSHR_Z_MZ2: Opcode = Opcode(2169);
     /// `sqrshru_z_mz2_`.
-    pub const SQRSHRU_Z_MZ2_: Opcode = Opcode(2170);
+    pub const SQRSHRU_Z_MZ2: Opcode = Opcode(2170);
     /// `uqrshr_z_mz2_`.
-    pub const UQRSHR_Z_MZ2_: Opcode = Opcode(2171);
+    pub const UQRSHR_Z_MZ2: Opcode = Opcode(2171);
     /// `sqrshr_z_mz4_`.
-    pub const SQRSHR_Z_MZ4_: Opcode = Opcode(2172);
+    pub const SQRSHR_Z_MZ4: Opcode = Opcode(2172);
     /// `sqrshru_z_mz4_`.
-    pub const SQRSHRU_Z_MZ4_: Opcode = Opcode(2173);
+    pub const SQRSHRU_Z_MZ4: Opcode = Opcode(2173);
     /// `sqrshrn_z_mz4_`.
-    pub const SQRSHRN_Z_MZ4_: Opcode = Opcode(2174);
+    pub const SQRSHRN_Z_MZ4: Opcode = Opcode(2174);
     /// `sqrshrun_z_mz4_`.
-    pub const SQRSHRUN_Z_MZ4_: Opcode = Opcode(2175);
+    pub const SQRSHRUN_Z_MZ4: Opcode = Opcode(2175);
     /// `uqrshr_z_mz4_`.
-    pub const UQRSHR_Z_MZ4_: Opcode = Opcode(2176);
+    pub const UQRSHR_Z_MZ4: Opcode = Opcode(2176);
     /// `uqrshrn_z_mz4_`.
-    pub const UQRSHRN_Z_MZ4_: Opcode = Opcode(2177);
+    pub const UQRSHRN_Z_MZ4: Opcode = Opcode(2177);
     /// `bfcvt_z_mz2_`.
-    pub const BFCVT_Z_MZ2_: Opcode = Opcode(2178);
+    pub const BFCVT_Z_MZ2: Opcode = Opcode(2178);
     /// `fcvt_z_mz2_`.
-    pub const FCVT_Z_MZ2_: Opcode = Opcode(2179);
+    pub const FCVT_Z_MZ2: Opcode = Opcode(2179);
     /// `bfcvtn_z_mz2_`.
-    pub const BFCVTN_Z_MZ2_: Opcode = Opcode(2180);
+    pub const BFCVTN_Z_MZ2: Opcode = Opcode(2180);
     /// `fcvtn_z_mz2_`.
-    pub const FCVTN_Z_MZ2_: Opcode = Opcode(2181);
+    pub const FCVTN_Z_MZ2: Opcode = Opcode(2181);
     /// `fcvtzs_mz_z_2`.
     pub const FCVTZS_MZ_Z_2: Opcode = Opcode(2182);
     /// `fcvtzu_mz_z_2`.
@@ -12257,35 +12257,35 @@ pub mod opcodes {
     /// `ucvtf_mz_z_2`.
     pub const UCVTF_MZ_Z_2: Opcode = Opcode(2185);
     /// `sqcvt_z_mz2_`.
-    pub const SQCVT_Z_MZ2_: Opcode = Opcode(2186);
+    pub const SQCVT_Z_MZ2: Opcode = Opcode(2186);
     /// `sqcvtu_z_mz2_`.
-    pub const SQCVTU_Z_MZ2_: Opcode = Opcode(2187);
+    pub const SQCVTU_Z_MZ2: Opcode = Opcode(2187);
     /// `uqcvt_z_mz2_`.
-    pub const UQCVT_Z_MZ2_: Opcode = Opcode(2188);
+    pub const UQCVT_Z_MZ2: Opcode = Opcode(2188);
     /// `bfcvt_z8_mz2_`.
-    pub const BFCVT_Z8_MZ2_: Opcode = Opcode(2189);
+    pub const BFCVT_Z8_MZ2: Opcode = Opcode(2189);
     /// `fcvt_z8_mz2_`.
-    pub const FCVT_Z8_MZ2_: Opcode = Opcode(2190);
+    pub const FCVT_Z8_MZ2: Opcode = Opcode(2190);
     /// `sunpk_mz_z_2`.
     pub const SUNPK_MZ_Z_2: Opcode = Opcode(2191);
     /// `uunpk_mz_z_2`.
     pub const UUNPK_MZ_Z_2: Opcode = Opcode(2192);
     /// `f1cvt_mz2_z8_`.
-    pub const F1CVT_MZ2_Z8_: Opcode = Opcode(2193);
+    pub const F1CVT_MZ2_Z8: Opcode = Opcode(2193);
     /// `bf1cvt_mz2_z8_`.
-    pub const BF1CVT_MZ2_Z8_: Opcode = Opcode(2194);
+    pub const BF1CVT_MZ2_Z8: Opcode = Opcode(2194);
     /// `f2cvt_mz2_z8_`.
-    pub const F2CVT_MZ2_Z8_: Opcode = Opcode(2195);
+    pub const F2CVT_MZ2_Z8: Opcode = Opcode(2195);
     /// `bf2cvt_mz2_z8_`.
-    pub const BF2CVT_MZ2_Z8_: Opcode = Opcode(2196);
+    pub const BF2CVT_MZ2_Z8: Opcode = Opcode(2196);
     /// `f1cvtl_mz2_z8_`.
-    pub const F1CVTL_MZ2_Z8_: Opcode = Opcode(2197);
+    pub const F1CVTL_MZ2_Z8: Opcode = Opcode(2197);
     /// `bf1cvtl_mz2_z8_`.
-    pub const BF1CVTL_MZ2_Z8_: Opcode = Opcode(2198);
+    pub const BF1CVTL_MZ2_Z8: Opcode = Opcode(2198);
     /// `f2cvtl_mz2_z8_`.
-    pub const F2CVTL_MZ2_Z8_: Opcode = Opcode(2199);
+    pub const F2CVTL_MZ2_Z8: Opcode = Opcode(2199);
     /// `bf2cvtl_mz2_z8_`.
-    pub const BF2CVTL_MZ2_Z8_: Opcode = Opcode(2200);
+    pub const BF2CVTL_MZ2_Z8: Opcode = Opcode(2200);
     /// `frintn_mz_z_2`.
     pub const FRINTN_MZ_Z_2: Opcode = Opcode(2201);
     /// `frintp_mz_z_2`.
@@ -12295,9 +12295,9 @@ pub mod opcodes {
     /// `frinta_mz_z_2`.
     pub const FRINTA_MZ_Z_2: Opcode = Opcode(2204);
     /// `fcvt_mz2_z_`.
-    pub const FCVT_MZ2_Z_: Opcode = Opcode(2205);
+    pub const FCVT_MZ2_Z: Opcode = Opcode(2205);
     /// `fcvtl_mz2_z_`.
-    pub const FCVTL_MZ2_Z_: Opcode = Opcode(2206);
+    pub const FCVTL_MZ2_Z: Opcode = Opcode(2206);
     /// `fcvtzs_mz_z_4`.
     pub const FCVTZS_MZ_Z_4: Opcode = Opcode(2207);
     /// `fcvtzu_mz_z_4`.
@@ -12307,21 +12307,21 @@ pub mod opcodes {
     /// `ucvtf_mz_z_4`.
     pub const UCVTF_MZ_Z_4: Opcode = Opcode(2210);
     /// `sqcvt_z_mz4_`.
-    pub const SQCVT_Z_MZ4_: Opcode = Opcode(2211);
+    pub const SQCVT_Z_MZ4: Opcode = Opcode(2211);
     /// `sqcvtu_z_mz4_`.
-    pub const SQCVTU_Z_MZ4_: Opcode = Opcode(2212);
+    pub const SQCVTU_Z_MZ4: Opcode = Opcode(2212);
     /// `sqcvtn_z_mz4_`.
-    pub const SQCVTN_Z_MZ4_: Opcode = Opcode(2213);
+    pub const SQCVTN_Z_MZ4: Opcode = Opcode(2213);
     /// `sqcvtun_z_mz4_`.
-    pub const SQCVTUN_Z_MZ4_: Opcode = Opcode(2214);
+    pub const SQCVTUN_Z_MZ4: Opcode = Opcode(2214);
     /// `uqcvt_z_mz4_`.
-    pub const UQCVT_Z_MZ4_: Opcode = Opcode(2215);
+    pub const UQCVT_Z_MZ4: Opcode = Opcode(2215);
     /// `uqcvtn_z_mz4_`.
-    pub const UQCVTN_Z_MZ4_: Opcode = Opcode(2216);
+    pub const UQCVTN_Z_MZ4: Opcode = Opcode(2216);
     /// `fcvt_z8_mz4_`.
-    pub const FCVT_Z8_MZ4_: Opcode = Opcode(2217);
+    pub const FCVT_Z8_MZ4: Opcode = Opcode(2217);
     /// `fcvtn_z8_mz4_`.
-    pub const FCVTN_Z8_MZ4_: Opcode = Opcode(2218);
+    pub const FCVTN_Z8_MZ4: Opcode = Opcode(2218);
     /// `sunpk_mz_z_4`.
     pub const SUNPK_MZ_Z_4: Opcode = Opcode(2219);
     /// `uunpk_mz_z_4`.
@@ -12363,33 +12363,33 @@ pub mod opcodes {
     /// `luti6_mz4_zmz2_4`.
     pub const LUTI6_MZ4_ZMZ2_4: Opcode = Opcode(2238);
     /// `ld1b_za_p_rrr_`.
-    pub const LD1B_ZA_P_RRR_: Opcode = Opcode(2239);
+    pub const LD1B_ZA_P_RRR: Opcode = Opcode(2239);
     /// `ld1h_za_p_rrr_`.
-    pub const LD1H_ZA_P_RRR_: Opcode = Opcode(2240);
+    pub const LD1H_ZA_P_RRR: Opcode = Opcode(2240);
     /// `ld1w_za_p_rrr_`.
-    pub const LD1W_ZA_P_RRR_: Opcode = Opcode(2241);
+    pub const LD1W_ZA_P_RRR: Opcode = Opcode(2241);
     /// `ld1d_za_p_rrr_`.
-    pub const LD1D_ZA_P_RRR_: Opcode = Opcode(2242);
+    pub const LD1D_ZA_P_RRR: Opcode = Opcode(2242);
     /// `st1b_za_p_rrr_`.
-    pub const ST1B_ZA_P_RRR_: Opcode = Opcode(2243);
+    pub const ST1B_ZA_P_RRR: Opcode = Opcode(2243);
     /// `st1h_za_p_rrr_`.
-    pub const ST1H_ZA_P_RRR_: Opcode = Opcode(2244);
+    pub const ST1H_ZA_P_RRR: Opcode = Opcode(2244);
     /// `st1w_za_p_rrr_`.
-    pub const ST1W_ZA_P_RRR_: Opcode = Opcode(2245);
+    pub const ST1W_ZA_P_RRR: Opcode = Opcode(2245);
     /// `st1d_za_p_rrr_`.
-    pub const ST1D_ZA_P_RRR_: Opcode = Opcode(2246);
+    pub const ST1D_ZA_P_RRR: Opcode = Opcode(2246);
     /// `ldr_za_ri_`.
-    pub const LDR_ZA_RI_: Opcode = Opcode(2247);
+    pub const LDR_ZA_RI: Opcode = Opcode(2247);
     /// `str_za_ri_`.
-    pub const STR_ZA_RI_: Opcode = Opcode(2248);
+    pub const STR_ZA_RI: Opcode = Opcode(2248);
     /// `ldr_zt_br_`.
-    pub const LDR_ZT_BR_: Opcode = Opcode(2249);
+    pub const LDR_ZT_BR: Opcode = Opcode(2249);
     /// `str_zt_br_`.
-    pub const STR_ZT_BR_: Opcode = Opcode(2250);
+    pub const STR_ZT_BR: Opcode = Opcode(2250);
     /// `ld1q_za_p_rrr_`.
-    pub const LD1Q_ZA_P_RRR_: Opcode = Opcode(2251);
+    pub const LD1Q_ZA_P_RRR: Opcode = Opcode(2251);
     /// `st1q_za_p_rrr_`.
-    pub const ST1Q_ZA_P_RRR_: Opcode = Opcode(2252);
+    pub const ST1Q_ZA_P_RRR: Opcode = Opcode(2252);
     /// `UDF_only_perm_undef`.
     pub const UDF_ONLY_PERM_UNDEF: Opcode = Opcode(2253);
     /// `AUTIASPPC_only_dp_1src_imm`.
@@ -16151,7 +16151,7 @@ pub mod opcodes {
     /// `BFDOT_asimdsame2_D`.
     pub const BFDOT_ASIMDSAME2_D: Opcode = Opcode(4132);
     /// `BFMLAL_asimdsame2_F_`.
-    pub const BFMLAL_ASIMDSAME2_F_: Opcode = Opcode(4133);
+    pub const BFMLAL_ASIMDSAME2_F: Opcode = Opcode(4133);
     /// `FMLALLBB_asimdsame2_G`.
     pub const FMLALLBB_ASIMDSAME2_G: Opcode = Opcode(4134);
     /// `FMLALLBT_asimdsame2_G`.

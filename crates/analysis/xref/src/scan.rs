@@ -1151,7 +1151,7 @@ fn mips(
 }
 
 fn arm64(code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
-    use turbonop_arm64::{Reg, opcodes as op};
+    use turbonop_arm64::{Register, opcodes as op};
     use turbonop_isa::{Base, FlowKind, Operand};
     // Each register's page, from an ADRP not yet overwritten; and each
     // register's address, from an ADD to a page or to another address (an
@@ -1180,10 +1180,11 @@ fn arm64(code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
             };
             push(to, via);
         } else if opcode == op::ADRP_ONLY_PCRELADDR || opcode == op::ADR_ONLY_PCRELADDR {
-            let at = inst.common_operands(pc).find_map(|o| match o {
-                Operand::Address(a) => Some(a),
-                _ => None,
-            });
+            let at = turbonop_isa::Operands::operands(&turbonop_arm64::Arm64, &(), &inst, pc)
+                .find_map(|o| match o {
+                    Operand::Address(a) => Some(a),
+                    _ => None,
+                });
             if opcode == op::ADRP_ONLY_PCRELADDR {
                 page = at;
             } else if let Some(at) = at {
@@ -1201,7 +1202,7 @@ fn arm64(code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
                 match m.base {
                     // A literal.
                     Base::Pc => push(m.address().unwrap_or_default(), Via::Address),
-                    Base::Register(Reg::X(n)) if !m.vector_length_units => {
+                    Base::Register(Register::X(n)) if !m.vector_length_units => {
                         let n = usize::from(n);
                         let Some(base) = pages[n].or(addrs[n]) else {
                             continue;
@@ -1222,7 +1223,7 @@ fn arm64(code: &[u8], address: u64, out: &mut Vec<CodeRef>) {
         // written-back base, a call's link register) no longer holds an
         // address.
         // (X0 to X30 are the set's low bits.)
-        let mut written = inst.written_registers().bits() & ((1 << 31) - 1);
+        let mut written = inst.written_registers().words()[0] & ((1 << 31) - 1);
         while written != 0 {
             let n = written.trailing_zeros() as usize;
             written &= written - 1;

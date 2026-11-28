@@ -245,8 +245,8 @@ fn sweep(
 }
 
 impl turbonop_isa::Resolver for SymbolMap {
-    fn resolve(&self, r: turbonop_isa::Ref, out: &mut dyn turbonop_isa::TokenSink) -> bool {
-        let turbonop_isa::Ref::Address(a) = r else {
+    fn resolve(&self, r: turbonop_isa::Reference, out: &mut dyn turbonop_isa::TokenSink) -> bool {
+        let turbonop_isa::Reference::Address(a) = r else {
             return false;
         };
         let Some(name) = self.public_at(a) else {

@@ -64,14 +64,15 @@ fn check(word: u32, decoded: &AtomicU64, failures: &std::sync::Mutex<Vec<String>
         if again.map(|i| turbonop_arm64::format(&i, address)) != Some(text) {
             fail("formats differently twice".into());
         }
-        let ops = inst.operands(address);
+        let ops = inst.detailed_operands(address);
         if ops.len() > inst.template_operand_count() {
             fail("more operands than its template".into());
         }
         let _ = (
             inst.written_registers(),
             inst.read_registers(),
-            inst.effects(),
+            inst.flow(address),
+            inst.attributes(),
             inst.reads_memory(),
             inst.writes_memory(),
         );

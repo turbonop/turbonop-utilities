@@ -69,10 +69,10 @@ mod register;
 pub use attributes::Attributes;
 pub use error::DecodeError;
 pub use flow::{ControlFlow, Delay, FlowKind, Target};
-pub use format::{Ref, Resolver, Space, TokenKind, TokenSink, Unresolved};
+pub use format::{IndexSpace, Reference, Resolver, TokenKind, TokenSink, Unresolved};
 pub use memory::{Base, Extend, Index, MemoryAccess, Offset, Update};
 pub use operand::{Immediate, Operand};
-pub use register::{Access, BitSet, Bits, Register, RegisterAccess, RegisterSet, Rest};
+pub use register::{Access, BitSet, Bits, OtherBits, Register, RegisterAccess, RegisterSet};
 
 use core::fmt::Debug;
 use core::hash::Hash;

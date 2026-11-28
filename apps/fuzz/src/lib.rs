@@ -776,7 +776,8 @@ fn arm64(data: &[u8], _: &Scratch) {
             );
             let _ = (
                 inst.memory_accesses(at).count(),
-                inst.common_operands(at).count(),
+                turbonop_isa::Operands::operands(&turbonop_arm64::Arm64, &(), &inst, at).count(),
+                inst.detailed_operands(at).len(),
             );
         }
         let _ = turbonop_arm64::explain(word);

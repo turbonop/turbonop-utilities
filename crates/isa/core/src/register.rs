@@ -46,6 +46,10 @@ pub trait Register: Copy + Eq + Hash + Debug + Send + Sync + 'static {
 
     /// Which bits of its storage it is.
     fn bits(self) -> Bits;
+
+    /// The register that is all of storage `s` (`rax`, `x0`, `z0`), if
+    /// there is one.
+    fn from_storage(s: u16) -> Option<Self>;
 }
 
 /// How an instruction accesses a register or memory: read, written,
@@ -103,16 +107,16 @@ impl Access {
 
 /// What a write of a register does to the rest of its storage.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum Rest {
+pub enum OtherBits {
     /// Keeps it (`ax`'s write of `rax`, legacy SSE's of a `ymm`).
     #[default]
-    Preserve,
+    Preserved,
     /// Zeroes it (`eax`'s write of `rax`, `w0`'s of `x0`, VEX's of a
     /// `zmm`).
-    Zero,
+    Zeroed,
     /// Fills it with the written bits' top bit (RV64's and MIPS64's
     /// 32-bit operations).
-    SignExtend,
+    SignExtended,
     /// Leaves it undefined.
     Undefined,
 }
@@ -125,7 +129,7 @@ pub struct RegisterAccess<R> {
     /// How it's accessed.
     pub access: Access,
     /// What a write does to the rest of its storage.
-    pub rest: Rest,
+    pub other_bits: OtherBits,
     /// Whether no operand names it (flags, the stack pointer of a push,
     /// a call's link register).
     pub implicit: bool,
@@ -164,6 +168,11 @@ pub trait RegisterSet<R: Register>: Copy + Default + Eq + Hash + Debug + Send + 
 
     /// Its storages, in order.
     fn storages(&self) -> impl Iterator<Item = u16>;
+
+    /// Its storages as the registers that are all of them, in order.
+    fn registers(&self) -> impl Iterator<Item = R> {
+        self.storages().filter_map(R::from_storage)
+    }
 }
 
 /// A set of `R`'s storages as `W` 64-bit words of bits: fixed size, no
@@ -223,7 +232,7 @@ impl<R, const W: usize> BitSet<R, W> {
 
     /// Whether it has storage `s`.
     #[inline]
-    pub const fn has(&self, s: u16) -> bool {
+    pub const fn contains_storage(&self, s: u16) -> bool {
         let s = s as usize;
         s < 64 * W && self.words[s / 64] >> (s % 64) & 1 != 0
     }
@@ -235,14 +244,14 @@ impl<R, const W: usize> BitSet<R, W> {
     /// If `s` is out of range (it isn't, from a register: that's checked
     /// as the set's [`insert`](RegisterSet::insert) compiles).
     #[inline]
-    pub fn add(&mut self, s: u16) {
+    pub fn insert_storage(&mut self, s: u16) {
         let s = s as usize;
         self.words[s / 64] |= 1 << (s % 64);
     }
 
     /// Removes storage `s`.
     #[inline]
-    pub fn take(&mut self, s: u16) {
+    pub fn remove_storage(&mut self, s: u16) {
         let s = s as usize;
         if s < 64 * W {
             self.words[s / 64] &= !(1 << (s % 64));
@@ -305,6 +314,15 @@ impl<R, const W: usize> BitSet<R, W> {
         &self.words
     }
 
+    /// The set whose storages are the bits of `words`.
+    #[inline]
+    pub const fn from_words(words: [u64; W]) -> Self {
+        BitSet {
+            words,
+            of: PhantomData,
+        }
+    }
+
     #[inline]
     fn zip(&self, other: &Self, f: impl Fn(u64, u64) -> u64) -> Self {
         let mut words = [0; W];
@@ -318,25 +336,62 @@ impl<R, const W: usize> BitSet<R, W> {
     }
 }
 
+/// [`RegisterSet`]'s methods, without it in scope.
+impl<R: Register, const W: usize> BitSet<R, W> {
+    /// Whether `r`'s storage is in it (never, for a register that has
+    /// none).
+    #[inline]
+    pub fn contains(&self, r: R) -> bool {
+        r.storage().is_some_and(|s| self.contains_storage(s))
+    }
+
+    /// Adds `r`'s storage (nothing, for a register that has none).
+    #[inline]
+    pub fn insert(&mut self, r: R) {
+        const { assert!(R::STORAGE_COUNT as usize <= 64 * W, "too few words") };
+        if let Some(s) = r.storage() {
+            self.insert_storage(s);
+        }
+    }
+
+    /// Removes `r`'s storage.
+    #[inline]
+    pub fn remove(&mut self, r: R) {
+        if let Some(s) = r.storage() {
+            self.remove_storage(s);
+        }
+    }
+
+    /// Its storages as the registers that are all of them, in order.
+    pub fn registers(&self) -> impl Iterator<Item = R> + use<R, W> {
+        self.storages().filter_map(R::from_storage)
+    }
+}
+
+impl<R: Register, const W: usize> FromIterator<R> for BitSet<R, W> {
+    fn from_iter<I: IntoIterator<Item = R>>(iter: I) -> Self {
+        let mut s = Self::EMPTY;
+        for r in iter {
+            s.insert(r);
+        }
+        s
+    }
+}
+
 impl<R: Register, const W: usize> RegisterSet<R> for BitSet<R, W> {
     #[inline]
     fn contains(&self, r: R) -> bool {
-        r.storage().is_some_and(|s| self.has(s))
+        BitSet::contains(self, r)
     }
 
     #[inline]
     fn insert(&mut self, r: R) {
-        const { assert!(R::STORAGE_COUNT as usize <= 64 * W, "too few words") };
-        if let Some(s) = r.storage() {
-            self.add(s);
-        }
+        BitSet::insert(self, r);
     }
 
     #[inline]
     fn remove(&mut self, r: R) {
-        if let Some(s) = r.storage() {
-            self.take(s);
-        }
+        BitSet::remove(self, r);
     }
 
     #[inline]

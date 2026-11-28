@@ -3,32 +3,32 @@
 //! write set is easiest to get wrong (writeback, pairs, status registers,
 //! LR, NZCV, FFR, the vector state).
 
-use turbonop_arm64::{Effects, Reg, RegSet};
+use turbonop_arm64::{Register, RegisterSet};
 
-fn set(list: &str) -> RegSet {
+fn set(list: &str) -> RegisterSet {
     list.split_whitespace()
         .map(|name| {
             let num = |p: &str| name.strip_prefix(p).and_then(|n| n.parse::<u8>().ok());
             if let Some(n) = num("X") {
-                return Reg::X(n);
+                return Register::X(n);
             }
             if let Some(n) = num("V") {
-                return Reg::V(n);
+                return Register::V(n);
             }
             if let Some(n) = num("P") {
-                return Reg::P(n);
+                return Register::P(n);
             }
             match name {
-                "SP" => Reg::Sp,
-                "LR" => Reg::X(30),
-                "NZCV" => Reg::Nzcv,
-                "FPCR" => Reg::Fpcr,
-                "FPSR" => Reg::Fpsr,
-                "FFR" => Reg::Ffr,
-                "ZA" => Reg::Za,
-                "ZT0" => Reg::Zt0,
-                "SVCR" => Reg::Svcr,
-                "SYS" => Reg::SysRegs,
+                "SP" => Register::Sp,
+                "LR" => Register::X(30),
+                "NZCV" => Register::Nzcv,
+                "FPCR" => Register::Fpcr,
+                "FPSR" => Register::Fpsr,
+                "FFR" => Register::Ffr,
+                "ZA" => Register::Za,
+                "ZT0" => Register::Zt0,
+                "SVCR" => Register::Svcr,
+                "SYS" => Register::SystemRegisters,
                 _ => panic!("{name}"),
             }
         })
@@ -160,8 +160,8 @@ fn cases() {
             failures.push(format!(
                 "{what} ({}): writes {:?} reads {:?} memory {m:?}",
                 turbonop_arm64::format(&inst, 0x1000),
-                w.iter().collect::<Vec<_>>(),
-                r.iter().collect::<Vec<_>>()
+                w.registers().collect::<Vec<_>>(),
+                r.registers().collect::<Vec<_>>()
             ));
         }
     }
@@ -169,17 +169,28 @@ fn cases() {
 }
 
 #[test]
-fn effects() {
-    let e = |w: u32| turbonop_arm64::decode(w).ok().unwrap().effects();
-    assert!(e(0x9400_0040).contains(Effects::CALL));
-    assert!(e(0xD63F_0100).contains(Effects::CALL | Effects::INDIRECT));
-    assert!(e(0xD65F_03C0).contains(Effects::RETURN | Effects::NO_FALLTHROUGH));
-    assert!(e(0xD61F_0200).contains(Effects::BRANCH | Effects::INDIRECT));
-    assert!(e(0x3400_0040).contains(Effects::BRANCH));
-    assert!(!e(0x3400_0040).contains(Effects::NO_FALLTHROUGH));
-    assert!(e(0xD400_0001).contains(Effects::EXCEPTION));
-    assert!(e(0x1E22_2820).contains(Effects::FP_EXCEPTION));
-    assert_eq!(e(0x0B02_0020), Effects::NONE);
+fn flow_and_attributes() {
+    use turbonop_isa::{Attributes, FlowKind, Target};
+    let i = |w: u32| turbonop_arm64::decode(w).unwrap();
+    let f = |w: u32| i(w).flow(0x1000);
+    assert_eq!(f(0x9400_0040).kind, FlowKind::Call);
+    assert_eq!(f(0xD63F_0100).kind, FlowKind::Call);
+    assert_eq!(f(0xD63F_0100).target, Target::Indirect);
+    assert_eq!(f(0xD65F_03C0).kind, FlowKind::Return);
+    assert!(!f(0xD65F_03C0).falls_through());
+    assert_eq!(f(0xD61F_0200).kind, FlowKind::Jump);
+    assert_eq!(f(0xD61F_0200).target, Target::Indirect);
+    assert_eq!(f(0x3400_0040).kind, FlowKind::Jump);
+    assert!(f(0x3400_0040).falls_through());
+    assert_eq!(f(0xD400_0001).kind, FlowKind::SystemCall);
+    assert!(
+        i(0x1E22_2820)
+            .attributes()
+            .contains(Attributes::FP_EXCEPTION)
+    );
+    let add = i(0x0B02_0020);
+    assert_eq!(add.flow(0x1000).kind, FlowKind::Next);
+    assert!(add.attributes().is_empty() && !add.reads_memory() && !add.writes_memory());
 }
 
 #[test]
@@ -188,13 +199,13 @@ fn system_state() {
     // MSR SVCR, as SMSTART and SMSTOP, zeroes the SVE and SME state.
     let w = inst(0xD51B_4240).written_registers();
     for r in [
-        Reg::Z(0),
-        Reg::Z(31),
-        Reg::P(15),
-        Reg::Ffr,
-        Reg::Za,
-        Reg::Zt0,
-        Reg::Svcr,
+        Register::Z(0),
+        Register::Z(31),
+        Register::P(15),
+        Register::Ffr,
+        Register::Za,
+        Register::Zt0,
+        Register::Svcr,
     ] {
         assert!(w.contains(r), "msr svcr: {r:?}");
     }
@@ -202,11 +213,11 @@ fn system_state() {
     assert!(inst(0xD50B_7420).writes_memory());
     // W, S, and Q writes are of X, V (and Z).
     let w = inst(0x0B02_0020).written_registers();
-    assert!(w.contains(Reg::W(0)) && w.contains(Reg::X(0)));
+    assert!(w.contains(Register::W(0)) && w.contains(Register::X(0)));
     let w = inst(0x1E22_2820).written_registers();
-    assert!(w.contains(Reg::S(0)) && w.contains(Reg::Q(0)) && w.contains(Reg::Z(0)));
+    assert!(w.contains(Register::S(0)) && w.contains(Register::Q(0)) && w.contains(Register::Z(0)));
     // The zero register is never written or read.
     let cmp = inst(0xF100_043F);
-    assert!(!cmp.written_registers().contains(Reg::Xzr));
+    assert!(!cmp.written_registers().contains(Register::Xzr));
     assert_eq!(cmp.written_registers().len(), 1);
 }

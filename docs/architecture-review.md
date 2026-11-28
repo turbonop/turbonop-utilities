@@ -15,6 +15,32 @@ Grown from the review of `crates/isa`; to become a skill.
   documentation structure?
 - How many crates does adding one more member touch? It should be one.
 
+## Names
+
+First principles, not categorical imperatives: bend one where that makes
+a better interface.
+
+- Do the names follow Rust's conventions and best practices (the API
+  guidelines: `SCREAMING_SNAKE_CASE` constants, `UpperCamelCase` types
+  with acronyms as words, `snake_case` functions, no `get_`)?
+- Are names full words (`Register`, not `Reg`), but for very common
+  things and terms of art (ours included, where the full name is
+  cumbersome)?
+- Are there as few terms as we can get away with: the same operation the
+  same verb everywhere (a `BitSet` and a `RegisterSet` both `contains`,
+  `insert`, `remove`), the same concept the same word (a memory operand's
+  `displacement` in every instruction set)?
+- Does each term mean one thing (not "object" for both an object file
+  and an object model; not "space" for both an index's kind and a
+  memory)?
+- Does the general name mean the general thing, and a more specific name
+  the more specific thing (the traits' `operands`, the common form; an
+  instruction set's richer form, `detailed_operands`)?
+- While rearchitecting: is anything named less clearly than it could
+  be? Rename it.
+- Generated names may be ugly; is their noise trimmed only where nothing
+  is lost (Arm's trailing `_`; `Opcode::name` keeps Arm's spelling)?
+
 ## Layering
 
 - Which way do dependencies point? Does a lower layer depend on a higher

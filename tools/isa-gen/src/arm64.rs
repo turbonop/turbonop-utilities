@@ -1414,7 +1414,9 @@ fn cond_{n_fns}(w: u32) -> bool {{ {c} }}"
         let mnemonic = word.split('%').next().unwrap().trim_end_matches('.').to_lowercase();
         assert!(!mnemonic.is_empty(), "{}: no mnemonic", e.name);
         let _ = write!(mnemonics_out, "{mnemonic:?},");
-        let constant = e.name.to_uppercase();
+        // (Arm's names end in `_` where their last part is empty: nothing
+        // that tells two apart, and `Opcode::name` keeps Arm's spelling.)
+        let constant = e.name.to_uppercase().trim_end_matches('_').to_string();
         if let Some(other) = const_names.insert(constant.clone(), &e.name) {
             panic!("{} and {other}: the same constant", e.name);
         }

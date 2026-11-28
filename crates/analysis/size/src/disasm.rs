@@ -193,8 +193,8 @@ impl turbonop_x86::format::Symbols for Names<'_> {
 }
 
 impl turbonop_isa::Resolver for Names<'_> {
-    fn resolve(&self, r: turbonop_isa::Ref, out: &mut dyn turbonop_isa::TokenSink) -> bool {
-        let turbonop_isa::Ref::Address(a) = r else {
+    fn resolve(&self, r: turbonop_isa::Reference, out: &mut dyn turbonop_isa::TokenSink) -> bool {
+        let turbonop_isa::Reference::Address(a) = r else {
             return false;
         };
         let Some(name) = self.name(a) else {
@@ -210,8 +210,8 @@ impl turbonop_isa::Resolver for Names<'_> {
 struct Targets(std::cell::RefCell<Vec<u64>>);
 
 impl turbonop_isa::Resolver for Targets {
-    fn resolve(&self, r: turbonop_isa::Ref, _: &mut dyn turbonop_isa::TokenSink) -> bool {
-        if let turbonop_isa::Ref::Address(a) = r {
+    fn resolve(&self, r: turbonop_isa::Reference, _: &mut dyn turbonop_isa::TokenSink) -> bool {
+        if let turbonop_isa::Reference::Address(a) = r {
             self.0.borrow_mut().push(a);
         }
         false

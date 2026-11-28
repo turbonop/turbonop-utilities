@@ -22,6 +22,7 @@ test = false
 [dependencies]
 hexcavator = { path = "../hexcavator" }
 turbonop-arm64.workspace = true
+turbonop-isa.workspace = true
 turbonop-arm32.workspace = true
 turbonop-wasm.workspace = true
 turbonop-bitcode.workspace = true

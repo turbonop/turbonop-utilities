@@ -110,8 +110,8 @@ fn arm64_branches() {
 fn arm64_targets_agree_with_the_formatter() {
     struct Record(core::cell::RefCell<Vec<u64>>);
     impl turbonop_isa::Resolver for Record {
-        fn resolve(&self, r: turbonop_isa::Ref, _: &mut dyn turbonop_isa::TokenSink) -> bool {
-            if let turbonop_isa::Ref::Address(a) = r {
+        fn resolve(&self, r: turbonop_isa::Reference, _: &mut dyn turbonop_isa::TokenSink) -> bool {
+            if let turbonop_isa::Reference::Address(a) = r {
                 self.0.borrow_mut().push(a);
             }
             false

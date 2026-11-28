@@ -15,14 +15,15 @@ fn main() {
             inst.encoding_name(),
             inst.llvm_record()
         );
-        for op in &inst.operands(0x1000) {
+        for op in &inst.detailed_operands(0x1000) {
             println!("    {:?} {:?}", op.access, op.kind);
         }
         println!(
-            "    writes {:?}\n    reads {:?}\n    {:?}",
-            inst.written_registers().iter().collect::<Vec<_>>(),
-            inst.read_registers().iter().collect::<Vec<_>>(),
-            inst.effects()
+            "    writes {:?}\n    reads {:?}\n    {:?}\n    {:?}",
+            inst.written_registers().registers().collect::<Vec<_>>(),
+            inst.read_registers().registers().collect::<Vec<_>>(),
+            inst.flow(0x1000),
+            inst.attributes()
         );
     }
 }

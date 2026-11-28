@@ -12,7 +12,7 @@
 //! registers the callee clobbers (see [`Effects::CALL`] and
 //! [`Effects::EXCEPTION`]).
 
-use turbonop_isa::{Access as AccessKind, Bits, Register, RegisterAccess, Rest};
+use turbonop_isa::{Access as AccessKind, Bits, OtherBits, RegisterAccess};
 
 use crate::Instruction;
 use crate::tables::{REG_CLASSES, RegClass, file, flag, record, value};
@@ -70,9 +70,9 @@ impl Element {
 /// zeroes the upper half: it writes all of X*n*); B*n*, H*n*, S*n*,
 /// D*n*, Q*n*, and V*n* are the low bits of Z*n* (and a write of any of
 /// them zeroes the bits above it); PN*n* is P*n*; ZA's tiles are parts
-/// of ZA. [`Reg::id`] says which register of a [`RegSet`] each is part of.
+/// of ZA. [`Register::id`] says which register of a [`RegisterSet`] each is part of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Reg {
+pub enum Register {
     /// X0 to X30 (64-bit).
     X(u8),
     /// W0 to W30 (32-bit).
@@ -96,7 +96,7 @@ pub enum Reg {
     /// Q0 to Q31 (128-bit).
     Q(u8),
     /// V0 to V31, as a vector (its operand's arrangement says how much
-    /// of it). In a [`RegSet`], all of V*n* and Z*n*.
+    /// of it). In a [`RegisterSet`], all of V*n* and Z*n*.
     V(u8),
     /// Z0 to Z31: SVE vectors (V*n* is the low 128 bits of each).
     Z(u8),
@@ -130,10 +130,10 @@ pub enum Reg {
     Pstate,
     /// Any other system register (TPIDR_EL0, PAR_EL1, GCSPR_EL0, ...)
     /// or system state (caches, TLBs): one register for all of them.
-    SysRegs,
+    SystemRegisters,
 }
 
-/// [`Reg::id`]s of the special registers (after X0-X30, SP, V0-V31, and
+/// [`Register::id`]s of the special registers (after X0-X30, SP, V0-V31, and
 /// P0-P15).
 mod id {
     pub const SP: u8 = 31;
@@ -154,54 +154,58 @@ mod id {
     pub const END: u8 = 91;
 }
 
-impl Reg {
-    /// The register's identity, what a [`RegSet`] holds: X*n* and W*n*
+impl Register {
+    /// The register's identity, what a [`RegisterSet`] holds: X*n* and W*n*
     /// are the same register, as are SP and WSP, V*n*, Z*n* and the
     /// scalars B*n* to Q*n*, P*n* and PN*n*, and ZA and its tiles. `None`
     /// for the zero registers, and for numbers out of range.
     pub fn id(self) -> Option<u8> {
         let num = |n: u8, limit: u8, base: u8| (n < limit).then_some(base + n);
         match self {
-            Reg::X(n) | Reg::W(n) => num(n, 31, 0),
-            Reg::Sp | Reg::Wsp => Some(id::SP),
-            Reg::Xzr | Reg::Wzr => None,
-            Reg::B(n) | Reg::H(n) | Reg::S(n) | Reg::D(n) | Reg::Q(n) | Reg::V(n) | Reg::Z(n) => {
-                num(n, 32, id::V)
-            }
-            Reg::P(n) | Reg::Pn(n) => num(n, 16, id::P),
-            Reg::Za | Reg::ZaTile(..) => Some(id::ZA),
-            Reg::Zt0 => Some(id::ZT0),
-            Reg::Ffr => Some(id::FFR),
-            Reg::Nzcv => Some(id::NZCV),
-            Reg::Fpcr => Some(id::FPCR),
-            Reg::Fpsr => Some(id::FPSR),
-            Reg::Fpmr => Some(id::FPMR),
-            Reg::Vg => Some(id::VG),
-            Reg::Svcr => Some(id::SVCR),
-            Reg::Pstate => Some(id::PSTATE),
-            Reg::SysRegs => Some(id::SYSREGS),
+            Register::X(n) | Register::W(n) => num(n, 31, 0),
+            Register::Sp | Register::Wsp => Some(id::SP),
+            Register::Xzr | Register::Wzr => None,
+            Register::B(n)
+            | Register::H(n)
+            | Register::S(n)
+            | Register::D(n)
+            | Register::Q(n)
+            | Register::V(n)
+            | Register::Z(n) => num(n, 32, id::V),
+            Register::P(n) | Register::Pn(n) => num(n, 16, id::P),
+            Register::Za | Register::ZaTile(..) => Some(id::ZA),
+            Register::Zt0 => Some(id::ZT0),
+            Register::Ffr => Some(id::FFR),
+            Register::Nzcv => Some(id::NZCV),
+            Register::Fpcr => Some(id::FPCR),
+            Register::Fpsr => Some(id::FPSR),
+            Register::Fpmr => Some(id::FPMR),
+            Register::Vg => Some(id::VG),
+            Register::Svcr => Some(id::SVCR),
+            Register::Pstate => Some(id::PSTATE),
+            Register::SystemRegisters => Some(id::SYSREGS),
         }
     }
 
-    /// The register a [`RegSet`] holds as `id`: X*n*, SP, V*n*, P*n*,
+    /// The register a [`RegisterSet`] holds as `id`: X*n*, SP, V*n*, P*n*,
     /// ZA, and the special registers.
-    pub fn from_id(id: u8) -> Option<Reg> {
+    pub fn from_id(id: u8) -> Option<Register> {
         Some(match id {
-            0..=30 => Reg::X(id),
-            id::SP => Reg::Sp,
-            32..=63 => Reg::V(id - id::V),
-            64..=79 => Reg::P(id - id::P),
-            id::FFR => Reg::Ffr,
-            id::ZA => Reg::Za,
-            id::ZT0 => Reg::Zt0,
-            id::NZCV => Reg::Nzcv,
-            id::FPCR => Reg::Fpcr,
-            id::FPSR => Reg::Fpsr,
-            id::FPMR => Reg::Fpmr,
-            id::VG => Reg::Vg,
-            id::SVCR => Reg::Svcr,
-            id::PSTATE => Reg::Pstate,
-            id::SYSREGS => Reg::SysRegs,
+            0..=30 => Register::X(id),
+            id::SP => Register::Sp,
+            32..=63 => Register::V(id - id::V),
+            64..=79 => Register::P(id - id::P),
+            id::FFR => Register::Ffr,
+            id::ZA => Register::Za,
+            id::ZT0 => Register::Zt0,
+            id::NZCV => Register::Nzcv,
+            id::FPCR => Register::Fpcr,
+            id::FPSR => Register::Fpsr,
+            id::FPMR => Register::Fpmr,
+            id::VG => Register::Vg,
+            id::SVCR => Register::Svcr,
+            id::PSTATE => Register::Pstate,
+            id::SYSREGS => Register::SystemRegisters,
             _ => return None,
         })
     }
@@ -211,101 +215,48 @@ impl Reg {
     /// implementation's, or ZA).
     pub fn bits(self) -> Option<u32> {
         Some(match self {
-            Reg::X(_) | Reg::Sp | Reg::Xzr | Reg::D(_) => 64,
-            Reg::W(_) | Reg::Wsp | Reg::Wzr | Reg::S(_) => 32,
-            Reg::B(_) => 8,
-            Reg::H(_) => 16,
-            Reg::Q(_) => 128,
-            Reg::Zt0 => 512,
-            Reg::Nzcv | Reg::Fpcr | Reg::Fpsr | Reg::Fpmr | Reg::Vg | Reg::Svcr => 64,
+            Register::X(_) | Register::Sp | Register::Xzr | Register::D(_) => 64,
+            Register::W(_) | Register::Wsp | Register::Wzr | Register::S(_) => 32,
+            Register::B(_) => 8,
+            Register::H(_) => 16,
+            Register::Q(_) => 128,
+            Register::Zt0 => 512,
+            Register::Nzcv
+            | Register::Fpcr
+            | Register::Fpsr
+            | Register::Fpmr
+            | Register::Vg
+            | Register::Svcr => 64,
             _ => return None,
         })
     }
 }
 
-/// A set of registers, by identity ([`Reg::id`]): fixed size, no
-/// allocation.
+/// A set of registers, by storage ([`Register::id`]): [`turbonop_isa`]'s,
+/// two words.
+pub type RegisterSet = turbonop_isa::BitSet<Register, 2>;
+
+/// A set of storages as one word of bits (what the access data holds),
+/// for the work of making a [`RegisterSet`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct RegSet(u128);
+pub(crate) struct Storages(pub(crate) u128);
 
-impl RegSet {
+impl Storages {
     /// No registers.
-    pub const EMPTY: RegSet = RegSet(0);
-
-    /// Whether the set has `r` (or the register it is part of).
-    #[inline]
-    pub fn contains(self, r: Reg) -> bool {
-        r.id().is_some_and(|i| self.0 >> i & 1 != 0)
-    }
+    pub const EMPTY: Storages = Storages(0);
 
     /// Adds `r` (the zero registers are never added).
     #[inline]
-    pub fn insert(&mut self, r: Reg) {
+    pub fn insert(&mut self, r: Register) {
         if let Some(i) = r.id() {
             self.0 |= 1 << i;
         }
     }
 
-    /// Removes `r`.
-    #[inline]
-    pub fn remove(&mut self, r: Reg) {
-        if let Some(i) = r.id() {
-            self.0 &= !(1 << i);
-        }
-    }
-
-    /// Whether the set is empty.
-    #[inline]
-    pub fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-
-    /// How many registers it has.
-    #[inline]
-    pub fn len(self) -> usize {
-        self.0.count_ones() as usize
-    }
-
-    /// The registers in either set.
-    #[inline]
-    #[must_use]
-    pub fn union(self, other: RegSet) -> RegSet {
-        RegSet(self.0 | other.0)
-    }
-
-    /// The registers in both sets.
-    #[inline]
-    #[must_use]
-    pub fn intersection(self, other: RegSet) -> RegSet {
-        RegSet(self.0 & other.0)
-    }
-
-    /// The registers in this set and not `other`.
-    #[inline]
-    #[must_use]
-    pub fn difference(self, other: RegSet) -> RegSet {
-        RegSet(self.0 & !other.0)
-    }
-
-    /// The set's registers, each as [`Reg::from_id`] names it, in order.
-    pub fn iter(self) -> impl Iterator<Item = Reg> {
-        let mut bits = self.0;
-        core::iter::from_fn(move || {
-            while bits != 0 {
-                let i = bits.trailing_zeros() as u8;
-                bits &= bits - 1;
-                if let Some(r) = Reg::from_id(i) {
-                    return Some(r);
-                }
-            }
-            None
-        })
-    }
-
-    /// The set as bits, by [`Reg::id`].
-    #[inline]
-    pub fn bits(self) -> u128 {
-        self.0
+    /// As a [`RegisterSet`].
+    #[allow(clippy::cast_possible_truncation)] // Its two halves.
+    pub(crate) fn set(self) -> RegisterSet {
+        RegisterSet::from_words([self.0 as u64, (self.0 >> 64) as u64])
     }
 
     /// Every X register, X0 to X30.
@@ -315,8 +266,8 @@ impl RegSet {
 
     fn add_file(&mut self, file: u8) {
         self.0 |= match file {
-            file::X | file::W => RegSet::all_x(),
-            file::XSP | file::WSP => RegSet::all_x() | 1 << id::SP,
+            file::X | file::W => Storages::all_x(),
+            file::XSP | file::WSP => Storages::all_x() | 1 << id::SP,
             file::B..=file::Z => u128::from(u32::MAX) << id::V,
             file::P | file::PN => 0xFFFF << id::P,
             file::ZA => 1 << id::ZA,
@@ -348,9 +299,9 @@ impl RegSet {
     }
 }
 
-impl FromIterator<Reg> for RegSet {
-    fn from_iter<I: IntoIterator<Item = Reg>>(iter: I) -> RegSet {
-        let mut s = RegSet::EMPTY;
+impl FromIterator<Register> for Storages {
+    fn from_iter<I: IntoIterator<Item = Register>>(iter: I) -> Storages {
+        let mut s = Storages::EMPTY;
         for r in iter {
             s.insert(r);
         }
@@ -361,7 +312,7 @@ impl FromIterator<Reg> for RegSet {
 /// What an instruction does besides computing registers: memory, control
 /// flow, and system effects.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Effects(u16);
+pub(crate) struct Effects(u16);
 
 impl Effects {
     /// It may read memory.
@@ -389,9 +340,6 @@ impl Effects {
     /// It may raise a floating-point exception (and so writes FPSR).
     pub const FP_EXCEPTION: Effects = Effects(1 << 9);
 
-    /// No effects.
-    pub const NONE: Effects = Effects(0);
-
     /// Whether it has every effect of `other`.
     #[inline]
     pub fn contains(self, other: Effects) -> bool {
@@ -403,12 +351,6 @@ impl Effects {
     pub fn intersects(self, other: Effects) -> bool {
         self.0 & other.0 != 0
     }
-
-    /// The effects as bits.
-    #[inline]
-    pub fn bits(self) -> u16 {
-        self.0
-    }
 }
 
 impl core::ops::BitOr for Effects {
@@ -419,30 +361,30 @@ impl core::ops::BitOr for Effects {
 }
 
 /// The system registers whose reads and writes mean more than
-/// [`Reg::SysRegs`], by op0:op1:CRn:CRm:op2 (MRS and MSR's bits 20:5).
-fn sysreg(key: u32) -> RegSet {
+/// [`Register::SystemRegisters`], by op0:op1:CRn:CRm:op2 (MRS and MSR's bits 20:5).
+fn sysreg(key: u32) -> Storages {
     const fn k(op0: u32, op1: u32, crn: u32, crm: u32, op2: u32) -> u32 {
         (op0 - 2) << 14 | op1 << 11 | crn << 7 | crm << 3 | op2
     }
-    let mut s = RegSet::EMPTY;
+    let mut s = Storages::EMPTY;
     let r = match key {
-        _ if key == k(3, 3, 4, 2, 0) => Reg::Nzcv,
-        _ if key == k(3, 3, 4, 4, 0) => Reg::Fpcr,
-        _ if key == k(3, 3, 4, 4, 1) => Reg::Fpsr,
-        _ if key == k(3, 3, 4, 4, 2) => Reg::Fpmr,
+        _ if key == k(3, 3, 4, 2, 0) => Register::Nzcv,
+        _ if key == k(3, 3, 4, 4, 0) => Register::Fpcr,
+        _ if key == k(3, 3, 4, 4, 1) => Register::Fpsr,
+        _ if key == k(3, 3, 4, 4, 2) => Register::Fpmr,
         _ if key == k(3, 3, 4, 2, 2) => {
             // SVCR: changing streaming mode or ZA zeroes the vector
             // state (as SMSTART and SMSTOP do).
             s.0 |= u128::from(u32::MAX) << id::V | 0xFFFF << id::P;
-            s.insert(Reg::Ffr);
-            s.insert(Reg::Za);
-            s.insert(Reg::Zt0);
-            Reg::Svcr
+            s.insert(Register::Ffr);
+            s.insert(Register::Za);
+            s.insert(Register::Zt0);
+            Register::Svcr
         }
         // SPSel picks the stack pointer; SP_EL0 is it when SPSel is 0.
         _ if key == k(3, 0, 4, 2, 0) || key == k(3, 0, 4, 1, 0) => {
-            s.insert(Reg::Sp);
-            Reg::Pstate
+            s.insert(Register::Sp);
+            Register::Pstate
         }
         // The other PSTATE fields: DAIF, CurrentEL, PAN, UAO, ALLINT, PM,
         // DIT, SSBS, TCO (op0 3, op1 0 or 3, CRn 4, CRm 2 or 3).
@@ -451,9 +393,9 @@ fn sysreg(key: u32) -> RegSet {
             && key >> 7 & 0xF == 4
             && matches!(key >> 3 & 0xF, 2 | 3) =>
         {
-            Reg::Pstate
+            Register::Pstate
         }
-        _ => Reg::SysRegs,
+        _ => Register::SystemRegisters,
     };
     s.insert(r);
     s
@@ -474,10 +416,14 @@ impl Instruction {
     /// write left out. A write of W*n* is a write of X*n* (it zeroes the
     /// upper half), and of S*n*, a write of Z*n*. The zero registers are
     /// never in it.
-    pub fn written_registers(&self) -> RegSet {
+    pub fn written_registers(&self) -> RegisterSet {
+        self.written_storages().set()
+    }
+
+    pub(crate) fn written_storages(&self) -> Storages {
         let rec = self.record();
         let w = self.word();
-        let mut s = RegSet(self.implicit_sets().1);
+        let mut s = Storages(self.implicit_sets().1);
         for op in rec.ops {
             if op.access & 2 != 0 {
                 s.add_class(&REG_CLASSES[usize::from(op.class)], value(op.bits, w));
@@ -510,10 +456,14 @@ impl Instruction {
     /// address registers, and implicit ones (NZCV for conditional
     /// instructions, FPCR for floating-point arithmetic, ...). The zero
     /// registers are never in it.
-    pub fn read_registers(&self) -> RegSet {
+    pub fn read_registers(&self) -> RegisterSet {
+        self.read_storages().set()
+    }
+
+    pub(crate) fn read_storages(&self) -> Storages {
         let rec = self.record();
         let w = self.word();
-        let mut s = RegSet(self.implicit_sets().0);
+        let mut s = Storages(self.implicit_sets().0);
         for op in rec.ops {
             if op.access & 1 != 0 {
                 s.add_class(&REG_CLASSES[usize::from(op.class)], value(op.bits, w));
@@ -536,7 +486,7 @@ impl Instruction {
 
     /// Its effects besides registers: memory, control flow, and system
     /// state.
-    pub fn effects(&self) -> Effects {
+    pub(crate) fn effects(&self) -> Effects {
         let f = self.record().flags;
         let mut e = 0u16;
         for (from, to) in [
@@ -574,26 +524,26 @@ impl Instruction {
 const _: () = assert!(id::END <= 128);
 
 /// The register of file `file` numbered `n`, as an access names it.
-fn file_register(file: u8, n: u32) -> Reg {
+fn file_register(file: u8, n: u32) -> Register {
     let r = (n % 32) as u8;
     match file {
-        file::X if n >= 31 => Reg::Xzr,
-        file::XSP if n >= 31 => Reg::Sp,
-        file::X | file::XSP => Reg::X(r),
-        file::W if n >= 31 => Reg::Wzr,
-        file::WSP if n >= 31 => Reg::Wsp,
-        file::W | file::WSP => Reg::W(r),
-        4 => Reg::B(r),
-        5 => Reg::H(r),
-        6 => Reg::S(r),
+        file::X if n >= 31 => Register::Xzr,
+        file::XSP if n >= 31 => Register::Sp,
+        file::X | file::XSP => Register::X(r),
+        file::W if n >= 31 => Register::Wzr,
+        file::WSP if n >= 31 => Register::Wsp,
+        file::W | file::WSP => Register::W(r),
+        4 => Register::B(r),
+        5 => Register::H(r),
+        6 => Register::S(r),
         // (A 64-bit vector is D*n*'s bits; a 128-bit one, Q*n*'s.)
-        7 | 9 => Reg::D(r),
-        8 | 10 => Reg::Q(r),
-        file::Z => Reg::Z(r),
-        file::P => Reg::P((n % 16) as u8),
-        file::PN => Reg::Pn((n % 16) as u8),
-        file::ZA => Reg::Za,
-        _ => Reg::Zt0,
+        7 | 9 => Register::D(r),
+        8 | 10 => Register::Q(r),
+        file::Z => Register::Z(r),
+        file::P => Register::P((n % 16) as u8),
+        file::PN => Register::Pn((n % 16) as u8),
+        file::ZA => Register::Za,
+        _ => Register::Zt0,
     }
 }
 
@@ -606,10 +556,10 @@ const MAX_EXPLICIT: usize = 32;
 /// of a register zeroes the bits above it (W*n*'s of X*n*, a scalar's or
 /// a vector's of Z*n*), but a write of part of ZA (a tile) leaves the
 /// rest of ZA.
-fn rest_of(r: Reg) -> Rest {
+fn rest_of(r: Register) -> OtherBits {
     match r {
-        Reg::ZaTile(..) | Reg::Za => Rest::Preserve,
-        _ => Rest::Zero,
+        Register::ZaTile(..) | Register::Za => OtherBits::Preserved,
+        _ => OtherBits::Zeroed,
     }
 }
 
@@ -622,27 +572,31 @@ fn access_of(read: bool, write: bool) -> AccessKind {
     }
 }
 
-/// The storages (by [`Reg::id`]) in `bits`, each with how `reads` and
+/// The storages (by [`Register::id`]) in `bits`, each with how `reads` and
 /// `writes` have it.
 fn implicit_accesses(
     bits: u128,
     reads: u128,
     writes: u128,
     implicit: bool,
-) -> impl Iterator<Item = RegisterAccess<Reg>> {
+) -> impl Iterator<Item = RegisterAccess<Register>> {
     let mut left = bits;
     core::iter::from_fn(move || {
         while left != 0 {
             let id = left.trailing_zeros() as u8;
             left &= left - 1;
-            let Some(register) = Reg::from_id(id) else {
+            let Some(register) = Register::from_id(id) else {
                 continue;
             };
             let (r, w) = (reads >> id & 1 != 0, writes >> id & 1 != 0);
             return Some(RegisterAccess {
                 register,
                 access: access_of(r, w),
-                rest: if w { rest_of(register) } else { Rest::Preserve },
+                other_bits: if w {
+                    rest_of(register)
+                } else {
+                    OtherBits::Preserved
+                },
                 implicit,
             });
         }
@@ -657,10 +611,10 @@ impl Instruction {
     /// registers as [`read_registers`](Instruction::read_registers) and
     /// [`written_registers`](Instruction::written_registers), each with
     /// its width and what a write does to the rest of it.
-    pub fn register_accesses(&self) -> impl Iterator<Item = RegisterAccess<Reg>> + use<> {
+    pub fn register_accesses(&self) -> impl Iterator<Item = RegisterAccess<Register>> + use<> {
         let rec = self.record();
         let w = self.word();
-        let mut explicit = [None::<RegisterAccess<Reg>>; MAX_EXPLICIT];
+        let mut explicit = [None::<RegisterAccess<Register>>; MAX_EXPLICIT];
         let mut count = 0;
         // Storages the operands read and write, and those of fields that
         // don't name a register (every register of their file, as the
@@ -672,7 +626,7 @@ impl Instruction {
             let c = &REG_CLASSES[usize::from(op.class)];
             let v = value(op.bits, w);
             let Some(&first) = c.firsts.get(v as usize).filter(|&&f| f != 255) else {
-                let mut s = RegSet::EMPTY;
+                let mut s = Storages::EMPTY;
                 s.add_file(c.file);
                 file_r |= if read { s.0 } else { 0 };
                 file_w |= if write { s.0 } else { 0 };
@@ -694,7 +648,7 @@ impl Instruction {
                 if let Some(a) = slot {
                     a.access = a.access.union(access_of(read, write));
                     if write {
-                        a.rest = rest_of(register);
+                        a.other_bits = rest_of(register);
                     }
                 } else {
                     assert!(
@@ -704,10 +658,10 @@ impl Instruction {
                     explicit[count] = Some(RegisterAccess {
                         register,
                         access: access_of(read, write),
-                        rest: if write {
+                        other_bits: if write {
                             rest_of(register)
                         } else {
-                            Rest::Preserve
+                            OtherBits::Preserved
                         },
                         implicit: false,
                     });
@@ -728,7 +682,7 @@ impl Instruction {
     }
 }
 
-impl Register for Reg {
+impl turbonop_isa::Register for Register {
     const STORAGE_COUNT: u16 = id::END as u16;
 
     #[inline]
@@ -740,25 +694,30 @@ impl Register for Reg {
     /// implementation's: these are the architecture's largest (2048-bit
     /// vectors). A ZA tile's bits are spread through ZA: all of ZA's
     /// (more than the tile's).
+    #[inline]
+    fn from_storage(s: u16) -> Option<Register> {
+        u8::try_from(s).ok().and_then(Register::from_id)
+    }
+
     fn bits(self) -> Bits {
         Bits::low(match self {
-            Reg::X(_) | Reg::Sp | Reg::Xzr | Reg::D(_) => 64,
-            Reg::W(_) | Reg::Wsp | Reg::Wzr | Reg::S(_) => 32,
-            Reg::B(_) => 8,
-            Reg::H(_) => 16,
-            Reg::Q(_) | Reg::V(_) => 128,
-            Reg::Z(_) => 2048,
-            Reg::P(_) | Reg::Pn(_) | Reg::Ffr => 256,
-            Reg::Za | Reg::ZaTile(..) => 2048 * 2048,
-            Reg::Zt0 => 512,
-            Reg::Nzcv
-            | Reg::Fpcr
-            | Reg::Fpsr
-            | Reg::Fpmr
-            | Reg::Vg
-            | Reg::Svcr
-            | Reg::Pstate
-            | Reg::SysRegs => 64,
+            Register::X(_) | Register::Sp | Register::Xzr | Register::D(_) => 64,
+            Register::W(_) | Register::Wsp | Register::Wzr | Register::S(_) => 32,
+            Register::B(_) => 8,
+            Register::H(_) => 16,
+            Register::Q(_) | Register::V(_) => 128,
+            Register::Z(_) => 2048,
+            Register::P(_) | Register::Pn(_) | Register::Ffr => 256,
+            Register::Za | Register::ZaTile(..) => 2048 * 2048,
+            Register::Zt0 => 512,
+            Register::Nzcv
+            | Register::Fpcr
+            | Register::Fpsr
+            | Register::Fpmr
+            | Register::Vg
+            | Register::Svcr
+            | Register::Pstate
+            | Register::SystemRegisters => 64,
         })
     }
 }

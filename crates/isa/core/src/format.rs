@@ -53,7 +53,7 @@ impl TokenSink for core::fmt::Formatter<'_> {
 /// Which kind of entity an index names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub enum Space {
+pub enum IndexSpace {
     /// A function.
     Function,
     /// A type (a signature, a class).
@@ -85,11 +85,11 @@ pub enum Space {
 /// What an operand names, for a [`Resolver`] to name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub enum Ref {
+pub enum Reference {
     /// An address.
     Address(u64),
     /// An index into a space (WebAssembly's, a constant pool's).
-    Index(Space, u32),
+    Index(IndexSpace, u32),
     /// A metadata token (.NET's: its table in its top byte).
     Token(u32),
 }
@@ -100,7 +100,7 @@ pub trait Resolver {
     /// Writes `r`'s name to `out` (as [`TokenKind::Name`] tokens, and
     /// others if it likes), and returns `true`; or writes nothing and
     /// returns `false`.
-    fn resolve(&self, r: Ref, out: &mut dyn TokenSink) -> bool;
+    fn resolve(&self, r: Reference, out: &mut dyn TokenSink) -> bool;
 }
 
 /// Names nothing.
@@ -109,7 +109,7 @@ pub struct Unresolved;
 
 impl Resolver for Unresolved {
     #[inline]
-    fn resolve(&self, _: Ref, _: &mut dyn TokenSink) -> bool {
+    fn resolve(&self, _: Reference, _: &mut dyn TokenSink) -> bool {
         false
     }
 }

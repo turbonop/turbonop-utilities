@@ -91,7 +91,7 @@ pub struct MemoryAccess<R> {
     pub vector_length_units: bool,
     /// Which memory (WebAssembly's memory index, an address space); 0 if
     /// the instruction set has one.
-    pub space: u32,
+    pub memory: u32,
     /// Whether no operand names it (a push's, a call's, `movs`'s).
     pub implicit: bool,
 }
@@ -109,7 +109,7 @@ impl<R> MemoryAccess<R> {
             update: Update::None,
             size,
             vector_length_units: false,
-            space: 0,
+            memory: 0,
             implicit: false,
         }
     }

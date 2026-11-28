@@ -900,7 +900,7 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
     pending: &mut Vec<Pending>,
     fields: &mut Fields,
 ) {
-    use turbonop_arm64::{AddrMode, OperandKind, decode};
+    use turbonop_arm64::{AddressingMode, OperandKind, decode};
     let words = hard.len() / 4;
     let w = |x: &[u8], i: usize| {
         u32::from_le_bytes([x[4 * i], x[4 * i + 1], x[4 * i + 2], x[4 * i + 3]])
@@ -980,7 +980,7 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             continue;
         }
         let label = |ins: &turbonop_arm64::Instruction, at: u64| {
-            ins.operands(at).iter().find_map(|o| match o.kind {
+            ins.detailed_operands(at).iter().find_map(|o| match o.kind {
                 OperandKind::Label(t) => Some(t),
                 _ => None,
             })
@@ -1012,9 +1012,11 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
             let base = (ja >> 5) & 0x1F;
             // (A memory operand's offset doesn't depend on where it is.)
             let offset = |x: &turbonop_arm64::Instruction| -> Option<i64> {
-                x.operands(0).iter().find_map(|o| match o.kind {
-                    OperandKind::Mem(m) if m.mode == AddrMode::Offset && m.index.is_none() => {
-                        Some(m.offset)
+                x.detailed_operands(0).iter().find_map(|o| match o.kind {
+                    OperandKind::Memory(m)
+                        if m.mode == AddressingMode::Offset && m.index.is_none() =>
+                    {
+                        Some(m.displacement)
                     }
                     _ => None,
                 })
@@ -1046,11 +1048,8 @@ fn arm64<A: Names + ?Sized, B: Names + ?Sized>(
                 // (Later loads and stores may use the page too, up to one
                 // that writes its register.)
             }
-            if xa
-                .written_registers()
-                .iter()
-                .any(|r| r.id() == Some(rd as u8))
-            {
+            // (By storage: 31 is SP's.)
+            if xa.written_registers().contains_storage(rd as u16) {
                 break;
             }
         }

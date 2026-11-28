@@ -13,7 +13,7 @@ use core::fmt::Write as _;
 use crate::tables::{Kind, NONE, Symbol, Tok, attr, ms_mnemonic, rule, symbol, value};
 use crate::{Inst, Instruction};
 
-use turbonop_isa::{Ref, Resolver, Unresolved};
+use turbonop_isa::{Reference, Resolver, Unresolved};
 
 /// The column operands start at.
 const MNEMONIC_WIDTH: usize = 12;
@@ -298,7 +298,7 @@ fn render_symbol(
             } else {
                 inst.address.wrapping_add(n as u64)
             };
-            if !symbols.resolve(Ref::Address(target), out) {
+            if !symbols.resolve(Reference::Address(target), out) {
                 push_hex(out, target, 16);
             }
             return Some(false);

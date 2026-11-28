@@ -2,10 +2,10 @@
 //! registers, memory, operands, and text, of known words; and over every
 //! encoding, the register accesses agree with the read and write sets.
 
-use turbonop_arm64::{Arm64, Instruction, Reg, opcodes};
+use turbonop_arm64::{Arm64, Instruction, Register, opcodes};
 use turbonop_isa::{
     Access, Attributes, Base, ControlFlow, DecodeError, FlowKind, Format, Isa, Memory,
-    MemoryAccess, Offset, Operand, Operands, Ref, RegisterSet, Registers, Resolver, Rest, Target,
+    MemoryAccess, Offset, Operand, Operands, OtherBits, Reference, Registers, Resolver, Target,
     TokenKind, TokenSink, Unresolved, Update,
 };
 
@@ -69,10 +69,10 @@ fn attributes() {
     assert!(a(0x1e62_2820).contains(Attributes::FP_EXCEPTION));
 }
 
-fn accesses(word: u32) -> Vec<(Reg, Access, Rest, bool)> {
+fn accesses(word: u32) -> Vec<(Register, Access, OtherBits, bool)> {
     let mut v: Vec<_> = Arm64
         .register_accesses(&(), &insn(word), AT)
-        .map(|a| (a.register, a.access, a.rest, a.implicit))
+        .map(|a| (a.register, a.access, a.other_bits, a.implicit))
         .collect();
     v.sort_by_key(|a| format!("{a:?}"));
     v
@@ -81,25 +81,31 @@ fn accesses(word: u32) -> Vec<(Reg, Access, Rest, bool)> {
 #[test]
 fn registers() {
     let (r, w, rw) = (Access::READ, Access::WRITE, Access::READ_WRITE);
-    let (keep, zero) = (Rest::Preserve, Rest::Zero);
+    let (keep, zero) = (OtherBits::Preserved, OtherBits::Zeroed);
     // add x0, x1, #1
     assert_eq!(
         accesses(0x9100_0420),
-        [(Reg::X(0), w, zero, false), (Reg::X(1), r, keep, false)]
+        [
+            (Register::X(0), w, zero, false),
+            (Register::X(1), r, keep, false)
+        ]
     );
     // adds w0, w1, #1: w0 (zeroing x0's top), and NZCV, implicitly.
     assert_eq!(
         accesses(0x3100_0420),
         [
-            (Reg::Nzcv, w, zero, true),
-            (Reg::W(0), w, zero, false),
-            (Reg::W(1), r, keep, false)
+            (Register::Nzcv, w, zero, true),
+            (Register::W(0), w, zero, false),
+            (Register::W(1), r, keep, false)
         ]
     );
     // add x0, x0, x1: x0 once, read and written.
     assert_eq!(
         accesses(0x8b01_0000),
-        [(Reg::X(0), rw, zero, false), (Reg::X(1), r, keep, false)]
+        [
+            (Register::X(0), rw, zero, false),
+            (Register::X(1), r, keep, false)
+        ]
     );
     // blr x30: x30 read (its operand) and written (the link), each once;
     // and SP, which LLVM's calls say they use (more than the
@@ -107,20 +113,20 @@ fn registers() {
     assert_eq!(
         accesses(0xd63f_03c0),
         [
-            (Reg::Sp, r, keep, true),
-            (Reg::X(30), r, keep, false),
-            (Reg::X(30), w, zero, true)
+            (Register::Sp, r, keep, true),
+            (Register::X(30), r, keep, false),
+            (Register::X(30), w, zero, true)
         ]
     );
     // b.eq reads NZCV.
-    assert_eq!(accesses(0x5400_0040), [(Reg::Nzcv, r, keep, true)]);
+    assert_eq!(accesses(0x5400_0040), [(Register::Nzcv, r, keep, true)]);
     // cmp x0, x1: the zero register it writes is no register at all.
     let (reads, writes) = Arm64.register_sets(&(), &insn(0xeb01_001f), AT);
-    assert!(reads.contains(Reg::X(0)) && reads.contains(Reg::W(1)));
-    assert!(writes.contains(Reg::Nzcv) && writes.len() == 1);
+    assert!(reads.contains(Register::X(0)) && reads.contains(Register::W(1)));
+    assert!(writes.contains(Register::Nzcv) && writes.len() == 1);
 }
 
-fn memory(word: u32) -> Vec<MemoryAccess<Reg>> {
+fn memory(word: u32) -> Vec<MemoryAccess<Register>> {
     Arm64.memory_accesses(&(), &insn(word), AT).collect()
 }
 
@@ -128,23 +134,23 @@ fn memory(word: u32) -> Vec<MemoryAccess<Reg>> {
 fn memory_accesses() {
     let at = |base, displacement| MemoryAccess::new(Access::READ, base, displacement, None);
     // ldr x0, [x1, #8]
-    assert_eq!(memory(0xf940_0420), [at(Base::Register(Reg::X(1)), 8)]);
+    assert_eq!(memory(0xf940_0420), [at(Base::Register(Register::X(1)), 8)]);
     // ldr x0, [x1], #8: at x1, which is then advanced.
     let post = MemoryAccess {
         update: Update::Post(Offset::Immediate(8)),
-        ..at(Base::Register(Reg::X(1)), 0)
+        ..at(Base::Register(Register::X(1)), 0)
     };
     assert_eq!(memory(0xf840_8420), [post]);
     // ldr x0, [x1, #8]!
     let pre = MemoryAccess {
         update: Update::Pre,
-        ..at(Base::Register(Reg::X(1)), 8)
+        ..at(Base::Register(Register::X(1)), 8)
     };
     assert_eq!(memory(0xf840_8c20), [pre]);
     // str x0, [sp, #16]
     let store = MemoryAccess {
         access: Access::WRITE,
-        ..at(Base::Register(Reg::Sp), 16)
+        ..at(Base::Register(Register::Sp), 16)
     };
     assert_eq!(memory(0xf900_0be0), [store]);
     // ldr x0, <literal>: PC-relative, resolved.
@@ -163,7 +169,7 @@ fn memory_accesses() {
 
 #[test]
 fn operands() {
-    let ops = |w| -> Vec<Operand<Reg>> { Arm64.operands(&(), &insn(w), AT).collect() };
+    let ops = |w| -> Vec<Operand<Register>> { Arm64.operands(&(), &insn(w), AT).collect() };
     // adrp x0, <page> (one page on): an address, from the instruction's
     // own.
     assert_eq!(
@@ -173,7 +179,7 @@ fn operands() {
     // b: a target; add: registers, then an immediate.
     assert_eq!(ops(0x1400_0002), [Operand::Target(AT + 8)]);
     let add = ops(0x9100_0420);
-    assert_eq!(add[0], Operand::Register(Reg::X(0), Access::WRITE));
+    assert_eq!(add[0], Operand::Register(Register::X(0), Access::WRITE));
     assert!(matches!(add[2], Operand::Immediate(i) if i.value == 1));
 }
 
@@ -181,8 +187,8 @@ fn operands() {
 fn text() {
     struct Names;
     impl Resolver for Names {
-        fn resolve(&self, r: Ref, out: &mut dyn TokenSink) -> bool {
-            if r == Ref::Address(AT + 8) {
+        fn resolve(&self, r: Reference, out: &mut dyn TokenSink) -> bool {
+            if r == Reference::Address(AT + 8) {
                 out.token(TokenKind::Name, "target");
                 return true;
             }
@@ -263,7 +269,9 @@ fn accesses_agree_with_the_sets_for_every_encoding() {
             let (reads, writes) = Arm64.register_sets(&(), &i, AT);
             let (old_r, old_w) = (i.read_registers(), i.written_registers());
             for id in 0..128u8 {
-                let Some(r) = Reg::from_id(id) else { continue };
+                let Some(r) = Register::from_id(id) else {
+                    continue;
+                };
                 assert_eq!(
                     reads.contains(r),
                     old_r.contains(r),

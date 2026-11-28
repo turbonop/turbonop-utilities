@@ -32,6 +32,14 @@ impl Register for Reg {
             _ => Bits::low(64),
         }
     }
+
+    fn from_storage(s: u16) -> Option<Reg> {
+        match s {
+            0..=7 => u8::try_from(s).ok().map(Reg::R),
+            8 => Some(Reg::Flags),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -159,10 +167,10 @@ impl Registers for Toy {
         i: &Insn,
         _: u64,
     ) -> impl Iterator<Item = RegisterAccess<Reg>> {
-        let explicit = |register, access, rest| RegisterAccess {
+        let explicit = |register, access, other_bits| RegisterAccess {
             register,
             access,
-            rest,
+            other_bits,
             implicit: false,
         };
         let mut out = [None; 3];
@@ -171,13 +179,17 @@ impl Registers for Toy {
                 out[0] = Some(explicit(
                     Reg::R(reg_a(i)),
                     Access::READ_WRITE,
-                    Rest::Preserve,
+                    OtherBits::Preserved,
                 ));
-                out[1] = Some(explicit(Reg::R(reg_b(i)), Access::READ, Rest::Preserve));
+                out[1] = Some(explicit(
+                    Reg::R(reg_b(i)),
+                    Access::READ,
+                    OtherBits::Preserved,
+                ));
                 out[2] = Some(RegisterAccess {
                     register: Reg::Flags,
                     access: Access::WRITE,
-                    rest: Rest::Preserve,
+                    other_bits: OtherBits::Preserved,
                     implicit: true,
                 });
             }
@@ -185,13 +197,17 @@ impl Registers for Toy {
                 out[0] = Some(RegisterAccess {
                     register: Reg::Flags,
                     access: Access::READ,
-                    rest: Rest::Preserve,
+                    other_bits: OtherBits::Preserved,
                     implicit: true,
                 });
             }
             Op::Load => {
-                out[0] = Some(explicit(Reg::H(reg_a(i)), Access::WRITE, Rest::Zero));
-                out[1] = Some(explicit(Reg::R(reg_b(i)), Access::READ, Rest::Preserve));
+                out[0] = Some(explicit(Reg::H(reg_a(i)), Access::WRITE, OtherBits::Zeroed));
+                out[1] = Some(explicit(
+                    Reg::R(reg_b(i)),
+                    Access::READ,
+                    OtherBits::Preserved,
+                ));
             }
             _ => {}
         }
@@ -272,7 +288,7 @@ impl Format for Toy {
                 }
                 Operand::Target(a) => {
                     let mut named = String::new();
-                    if names.resolve(Ref::Address(a), &mut named) {
+                    if names.resolve(Reference::Address(a), &mut named) {
                         out.token(TokenKind::Name, &named);
                     } else {
                         let _ = write!(text, "{a:#x}");
@@ -390,8 +406,8 @@ fn tools_read_the_toy_through_the_traits() {
 fn text_names_what_the_resolver_names() {
     struct Names;
     impl Resolver for Names {
-        fn resolve(&self, r: Ref, out: &mut dyn TokenSink) -> bool {
-            if r == Ref::Address(0x104) {
+        fn resolve(&self, r: Reference, out: &mut dyn TokenSink) -> bool {
+            if r == Reference::Address(0x104) {
                 out.token(TokenKind::Name, "loop");
                 return true;
             }
@@ -454,14 +470,14 @@ fn access_kinds() {
 #[test]
 fn bit_sets_by_storage() {
     let mut s = BitSet::<Reg, 2>::default();
-    s.add(0);
-    s.add(63);
-    s.add(64);
-    s.add(127);
+    s.insert_storage(0);
+    s.insert_storage(63);
+    s.insert_storage(64);
+    s.insert_storage(127);
     assert_eq!(s.storages().collect::<Vec<_>>(), [0, 63, 64, 127]);
-    assert!(s.has(64) && !s.has(65) && !s.has(500));
-    s.take(63);
-    s.take(500);
+    assert!(s.contains_storage(64) && !s.contains_storage(65) && !s.contains_storage(500));
+    s.remove_storage(63);
+    s.remove_storage(500);
     assert_eq!(s.len(), 3);
     // A register is in a set by its storage: h1 is r1's.
     let mut t = BitSet::<Reg, 1>::default();
@@ -476,6 +492,10 @@ fn bit_sets_by_storage() {
     assert_eq!(t.union(&u).storages().collect::<Vec<_>>(), [1, 8]);
     assert_eq!(u.difference(&t).storages().collect::<Vec<_>>(), [8]);
     assert!(t.difference(&u).is_empty());
+    assert_eq!(
+        RegisterSet::registers(&t.union(&u)).collect::<Vec<_>>(),
+        [Reg::R(1), Reg::Flags]
+    );
 }
 
 #[test]

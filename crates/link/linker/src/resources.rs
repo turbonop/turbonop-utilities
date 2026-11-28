@@ -25,6 +25,12 @@ pub struct Resource {
     pub language: u16,
     /// Its data.
     pub data: &'static [u8],
+    /// The `.res` file it's from (its index among the link's).
+    pub source: u32,
+    /// Where its data is in the resources' data as cvtres converts them
+    /// (each `.res` file's in order, each on 8 bytes): what its `$R`
+    /// symbol is named for.
+    pub converted: u32,
 }
 
 /// Reads one `.res` file's resources (the empty entry that starts every
@@ -79,6 +85,8 @@ pub fn parse_res(data: &'static [u8]) -> Result<Vec<Resource>, String> {
                 name,
                 language,
                 data: body,
+                source: 0,
+                converted: 0,
             });
         }
         at = (start + size + 3) & !3;
@@ -127,6 +135,11 @@ fn key(id: &Id) -> (u8, Vec<u16>, u16) {
 /// Plans `.rsrc` for `resources` (an error for two of one type, name, and
 /// language, which `link.exe` refuses: CVT1100).
 pub fn plan(mut resources: Vec<Resource>) -> Result<Rsrc, String> {
+    let mut at = 0u32;
+    for r in &mut resources {
+        r.converted = at;
+        at = (at + crate::n32(r.data.len()) + 7) & !7;
+    }
     resources.sort_by(|a, b| {
         (key(&a.ty), key(&a.name), a.language).cmp(&(key(&b.ty), key(&b.name), b.language))
     });
@@ -221,6 +234,22 @@ impl Tree {
 }
 
 impl Rsrc {
+    /// The `$R` symbols cvtres gives the resources' data (`$R` and where
+    /// the data was in its object, six hex digits), each with where the
+    /// data is in the section and its `.res` file.
+    pub fn symbols(&self) -> Vec<(String, u32, u32)> {
+        let mut at = self.directory_size;
+        self.resources
+            .iter()
+            .map(|r| {
+                at = (at + 7) & !7;
+                let here = at;
+                at += crate::n32(r.data.len());
+                (format!("$R{:06X}", r.converted), here, r.source)
+            })
+            .collect()
+    }
+
     /// Writes the section (at `rva`) into `out`.
     pub fn write(&self, out: &mut [u8], rva: u32) {
         let t = Tree::of(&self.resources);

@@ -392,7 +392,7 @@ pub(super) fn read(object: &Object<'_>, facts: &mut units::Facts) -> Facts {
     // Each unit's debug sections (and each local unit's that could be
     // copied, under --locals=copy).
     for u in &mut facts.units {
-        let local = u.pure_local && u.blocked.is_none();
+        let local = u.pure_local() && u.blocked().is_none();
         if u.unfoldable.is_some() && !local {
             continue;
         }
@@ -417,7 +417,7 @@ pub(super) fn read(object: &Object<'_>, facts: &mut units::Facts) -> Facts {
         }
         if let Some(w) = why {
             if local {
-                u.blocked = Some((Unfoldable::DebugInfo, w));
+                u.block(Unfoldable::DebugInfo, w);
             } else {
                 u.unfoldable = Some(Unfoldable::DebugInfo);
                 u.detail = Some(w);
@@ -605,8 +605,8 @@ pub(super) fn resolve(parsed: &mut [Parsed<'_>], absorb: bool) {
             if has && u.unfoldable.is_none() {
                 u.unfoldable = Some(Unfoldable::PrecompMissing);
                 u.detail = Some(why());
-            } else if has && u.pure_local && u.blocked.is_none() {
-                u.blocked = Some((Unfoldable::PrecompMissing, why()));
+            } else if has && u.pure_local() && u.blocked().is_none() {
+                u.block(Unfoldable::PrecompMissing, why());
             }
         }
     }

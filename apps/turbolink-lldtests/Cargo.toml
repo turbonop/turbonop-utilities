@@ -1,0 +1,20 @@
+[package]
+name = "turbonop-turbolink-lldtests"
+description = "Runs lld's COFF tests (llvm-project/lld/test/COFF) with turbolink in lld-link's place, and reports what passes and why the rest don't"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "turbolink-lldtests"
+path = "src/main.rs"
+
+[dependencies]
+turbonop-global-alloc.workspace = true
+turbonop-par.workspace = true
+
+[lints]
+workspace = true

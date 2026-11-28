@@ -886,6 +886,7 @@ dependencies = [
 name = "turbonop-coff"
 version = "0.0.7"
 dependencies = [
+ "memchr",
  "turbonop-archive",
  "turbonop-core",
  "turbonop-global-alloc",
@@ -1143,6 +1144,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-global-alloc",
  "turbonop-hash",
+ "turbonop-linkmap",
  "turbonop-mmap",
  "turbonop-par",
  "turbonop-pdb",
@@ -1529,6 +1531,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "turbonop-turbolink-lldtests"
+version = "0.0.1"
+dependencies = [
+ "turbonop-global-alloc",
+ "turbonop-par",
+]
+
+[[package]]
 name = "turbonop-unwind"
 version = "0.0.7"
 dependencies = [
@@ -1563,6 +1573,7 @@ dependencies = [
  "turbonop-hash",
  "turbonop-macho",
  "turbonop-macho-object",
+ "turbonop-mmap",
  "turbonop-par",
  "turbonop-pdb",
  "turbonop-pe",

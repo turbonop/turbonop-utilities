@@ -9,11 +9,15 @@ fn options_in_any_case() {
         "pull=relaxed",
         "locals=merge",
         "precomp=clustered=8",
+        "debug-types=Shared",
         "threads=3",
         "DIAGNOSE",
         "stats",
         "extract-whole",
         "report=ODR",
+        "verify=OFF",
+        "strict",
+        "inject-failure=panic",
     ] {
         s.apply(o).unwrap();
     }
@@ -25,13 +29,20 @@ fn options_in_any_case() {
             pull: Pull::Relaxed,
             locals: Locals::Merge,
             precomp: Precomp::Clustered(Some(8)),
+            debug_types: DebugTypes::Shared,
             threads: Some(3),
             diagnose: true,
             stats: true,
             extract_whole: true,
             report_odr: true,
+            verify: false,
+            strict: true,
+            inject: Some(Inject::Panic),
         }
     );
+    s.apply("verify").unwrap();
+    assert!(s.verify);
+    assert!(Settings::default().verify);
 }
 
 #[test]
@@ -43,9 +54,15 @@ fn bad_options() {
         "threads=0",
         "j=x",
         "precomp=clustered=0",
+        "debug-types",
+        "debug-types=declarations",
         "stats=yes",
         "report",
         "report=everything",
+        "verify=maybe",
+        "strict=yes",
+        "inject-failure",
+        "inject-failure=disk",
         "nope",
     ] {
         assert!(s.apply(o).is_err(), "{o}");

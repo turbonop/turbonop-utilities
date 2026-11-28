@@ -255,31 +255,30 @@ fn content(p: &Linked<'_>, c: &Contribution) -> Vec<u8> {
     out
 }
 
-/// Names the unlabeled read-only data whose labels match nothing in the
-/// other program by its content, in both programs, so that references to
-/// it compare by what it holds rather than by the module that held it.
+/// Names unlabeled read-only data by its content, in both programs, so
+/// that references to it compare by what it holds rather than by the
+/// module that held it.
 ///
 /// Folding moves a function's associative read-only data (MSVC's `/RTC1`
 /// variable descriptions and their names, say) with it, into another
 /// module, and nothing labels it but its contribution (module,
-/// characteristics, size, CRCs). That data refers to more such data, so a
+/// characteristics, size, CRCs); and a function whose copy came from
+/// another module refers to that module's copy of the data, while the
+/// first module's copy may stay for its other functions. That data refers to more such data, so a
 /// name by content is found in rounds: each round names every such
 /// contribution by its content with the previous round's names in it (see
 /// [`content`]), until a round tells no two contributions apart that the
 /// one before didn't, and joins none it had told apart (at most 16).
 ///
+/// Named so are the contributions whose labels the other program lacks,
+/// and, round by round, every other with the content of one named so.
 /// Two contributions of the same content then have one name, and are
 /// interchangeable: sound for data nothing writes (an address compared as
 /// a number is the exception, as everywhere in this comparison). Code and
 /// writable data keep their labels. Returns how many contributions were
 /// named.
 fn name_by_content(a: &mut Linked<'_>, b: &mut Linked<'_>) -> usize {
-    fn candidates(p: &Linked<'_>, other: &Linked<'_>) -> Vec<usize> {
-        let theirs: turbonop_hash::Set<&[u8]> = other
-            .contributions
-            .iter()
-            .map(|c| key(other, c).0)
-            .collect();
+    fn candidates(p: &Linked<'_>) -> Vec<usize> {
         p.contributions
             .iter()
             .enumerate()
@@ -290,15 +289,29 @@ fn name_by_content(a: &mut Linked<'_>, b: &mut Linked<'_>) -> usize {
                     && !p.in_tables(c.rva, c.size)
                     && p.label_at(c.rva)
                         .is_none_or(|l| l.priority >= priority::CONTRIBUTION)
-                    && !theirs.contains(&*c.label)
             })
             .map(|(i, _)| i)
             .collect()
     }
-    let (ca, cb) = (candidates(a, b), candidates(b, a));
+    let (ca, cb) = (candidates(a), candidates(b));
     if ca.is_empty() || cb.is_empty() {
         return 0;
     }
+    // Named by content: at first those whose labels the other program
+    // lacks; then also each with the content of one so named.
+    let lone = |p: &Linked<'_>, which: &[usize], other: &Linked<'_>| -> Vec<bool> {
+        let theirs: turbonop_hash::Set<&[u8]> = other
+            .contributions
+            .iter()
+            .map(|c| key(other, c).0)
+            .collect();
+        which
+            .iter()
+            .map(|&i| !theirs.contains(&*p.contributions[i].label))
+            .collect()
+    };
+    let mut named: Vec<bool> = lone(a, &ca, b);
+    named.extend(lone(b, &cb, a));
     // Each candidate's class in the round before (its label at first).
     let mut previous: Vec<usize> = (0..ca.len() + cb.len()).collect();
     for round in 0..16 {
@@ -322,11 +335,23 @@ fn name_by_content(a: &mut Linked<'_>, b: &mut Linked<'_>) -> usize {
             pairs.insert((o, n));
             olds.insert(o);
         }
-        let stable = round > 0 && pairs.len() == ids.len() && pairs.len() == olds.len();
+        let n_classes = ids.len();
+        drop(ids);
+        let mut stable = round > 0 && pairs.len() == n_classes && pairs.len() == olds.len();
         drop(xa);
         drop(xb);
-        fn apply(p: &mut Linked<'_>, which: &[usize], classes: &[usize]) {
-            for (&i, &class) in which.iter().zip(classes) {
+        let mut named_class = vec![false; n_classes];
+        for (&class, &n) in classes.iter().zip(&named) {
+            named_class[class] |= n;
+        }
+        for (n, &class) in named.iter_mut().zip(&classes) {
+            if !*n && named_class[class] {
+                *n = true;
+                stable = false;
+            }
+        }
+        fn apply(p: &mut Linked<'_>, which: &[usize], classes: &[usize], named: &[bool]) {
+            for ((&i, &class), _) in which.iter().zip(classes).zip(named).filter(|x| *x.1) {
                 let c = &p.contributions[i];
                 let name: Box<[u8]> = format!(
                     "[read-only data {:x} {:x} by content {class}]",
@@ -339,14 +364,14 @@ fn name_by_content(a: &mut Linked<'_>, b: &mut Linked<'_>) -> usize {
                 p.contributions[i].label = name;
             }
         }
-        apply(a, &ca, &classes[..ca.len()]);
-        apply(b, &cb, &classes[ca.len()..]);
+        apply(a, &ca, &classes[..ca.len()], &named[..ca.len()]);
+        apply(b, &cb, &classes[ca.len()..], &named[ca.len()..]);
         previous = classes;
         if stable {
             break;
         }
     }
-    ca.len() + cb.len()
+    named.iter().filter(|&&n| n).count()
 }
 
 fn contents(a: &Linked<'_>, b: &Linked<'_>, rep: &mut Report) {

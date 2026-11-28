@@ -458,8 +458,8 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
     for (u, &r) in roots.iter().enumerate() {
         sections_of[starts[u]] = r;
     }
-    for s in 0..n {
-        if let Some(u) = unit_of[s]
+    for (s, &unit) in unit_of.iter().enumerate() {
+        if let Some(u) = unit
             && roots[u as usize] != s
         {
             sections_of[next[u as usize]] = s;

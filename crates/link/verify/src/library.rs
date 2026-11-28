@@ -300,7 +300,7 @@ fn indexed<'s>(
                 .definitions
                 .iter()
                 .filter(|d| *d.name != *ALIAS_DEFAULT)
-                .map(|d| (Cow::Borrowed(&*d.name), d.kind))
+                .map(|d| (Cow::Borrowed(d.name), d.kind))
                 .collect(),
             Body::Import(names) => names
                 .iter()
@@ -338,7 +338,7 @@ fn indexed<'s>(
 /// name, selection, and environment.
 fn name_key(u: &member::Unit, environment: u128) -> u128 {
     let mut h = H128::new();
-    h.bytes(canonical(&u.leader));
+    h.bytes(canonical(u.leader));
     h.u64(u64::from(u.selection));
     h.u128(environment);
     h.finish()
@@ -446,7 +446,7 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         let anchored = r.members[j]
             .body
             .coff()
-            .is_some_and(|c| c.definitions.iter().any(|d| is_anchor(&d.name)));
+            .is_some_and(|c| c.definitions.iter().any(|d| is_anchor(d.name)));
         if anchored {
             synthesized.push(j);
         } else {
@@ -535,7 +535,7 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                 |i, m, out| {
                     if let Some(c) = m.body.coff() {
                         out.extend(c.undefined.iter().map(|n| (&**n, ())));
-                        out.extend(c.weak.iter().map(|w| (&*w.name, ())));
+                        out.extend(c.weak.iter().map(|w| (w.name, ())));
                         // `/INCLUDE` names it refers to too: a PCH user's
                         // PCH object's symbol, which synthesized members
                         // holding its units refer to.
@@ -588,12 +588,12 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
             continue;
         };
         for d in &c.definitions {
-            if is_anchor(&d.name) {
-                facts.anchor_of.insert(&*d.name, j);
+            if is_anchor(d.name) {
+                facts.anchor_of.insert(d.name, j);
             }
             facts
                 .synthesized_definitions
-                .entry(&*d.name)
+                .entry(d.name)
                 .or_default()
                 .push(j);
         }
@@ -734,7 +734,7 @@ fn anchored(c: &Coff, facts: &Facts<'_>) -> Vec<usize> {
         .undefined
         .iter()
         .map(|n| &**n)
-        .chain(c.weak.iter().map(|w| &*w.name))
+        .chain(c.weak.iter().map(|w| w.name))
         .filter_map(|n| facts.anchor_of.get(n).copied())
         .collect();
     out.sort_unstable();
@@ -786,7 +786,7 @@ fn check_member(
             .iter()
             .find(|p| !rc.pieces.contains(p))
             .or_else(|| rc.pieces.iter().find(|p| !oc.pieces.contains(p)))
-            .map_or_else(String::new, |p| show(&p.name));
+            .map_or_else(String::new, |p| show(p.name));
         rep.fail(
             "original members whose sections outside COMDATs changed",
             || format!("{}: {changed}", name()),
@@ -996,7 +996,7 @@ fn check_member(
         if !elsewhere {
             rep.fail(
                 "side-table entries neither in their member nor in a synthesized member it anchors",
-                || format!("{}: {} {}", name(), show(&e.0), show(&e.1)),
+                || format!("{}: {} {}", name(), show(e.0), show(&e.1)),
             );
         }
     }
@@ -1164,7 +1164,7 @@ fn check_synthesized(r: &Library<'_>, j: usize, facts: &Facts<'_>, rep: &mut Rep
         if !facts.original_units.contains(&u.key) {
             rep.fail(
                 "synthesized COMDATs that match no original copy (in their environment)",
-                || format!("{}: {}", r.name(j), show(&u.leader)),
+                || format!("{}: {}", r.name(j), show(u.leader)),
             );
         }
     }
@@ -1172,7 +1172,7 @@ fn check_synthesized(r: &Library<'_>, j: usize, facts: &Facts<'_>, rep: &mut Rep
         .undefined
         .iter()
         .map(|n| &**n)
-        .chain(c.weak.iter().map(|w| &*w.name))
+        .chain(c.weak.iter().map(|w| w.name))
     {
         if !facts.original_names.contains(&n) && !facts.anchor_of.contains_key(n) {
             rep.fail(

@@ -1545,10 +1545,8 @@ fn fuzzer_finds() {
     // Each an input the fuzzer found a panic with, kept in testdata.
     // fuzz-target-type.bin: an empty TYPE_CODE_TARGET_TYPE record.
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/bitcode");
-    for name in ["fuzz-target-type.bin"] {
-        let data = std::fs::read(dir.join(name)).unwrap();
-        exercise(&data);
-    }
+    let data = std::fs::read(dir.join("fuzz-target-type.bin")).unwrap();
+    exercise(&data);
     // And on its own: a target type with no operands.
     let data = module(2, &[(TYPE_CODE_TARGET_TYPE, vec![])], |_| {});
     let bc = Bitcode::parse(&data).unwrap();

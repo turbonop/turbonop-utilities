@@ -282,6 +282,30 @@ pub fn read(data: &[u8]) -> Body<'_> {
 /// static symbols outside them are by content (see the module's
 /// documentation).
 pub fn read_with(data: &[u8], structural: bool) -> Body<'_> {
+    read_as(
+        data,
+        Reading {
+            structural,
+            contents: true,
+        },
+    )
+}
+
+/// How a member is read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Reading {
+    /// Units' references to static symbols outside them by content (see
+    /// the module's documentation).
+    pub structural: bool,
+    /// Units and pieces fingerprinted by their contents. Without it
+    /// (`verify=links`), a unit's fingerprint is its shape alone (see
+    /// [`shape`]), a piece's too, and no relocations are read but those of
+    /// relocation tables (`.voltbl`), whose entries are relocations.
+    pub contents: bool,
+}
+
+/// Reads a member's data as `reading` says.
+pub fn read_as(data: &[u8], reading: Reading) -> Body<'_> {
     match turbonop_coff::kind(data) {
         Some(turbonop_coff::Kind::Import) => match ImportObject::parse(data) {
             Ok(i) => {
@@ -298,10 +322,17 @@ pub fn read_with(data: &[u8], structural: bool) -> Body<'_> {
         None => Body::Other("too short for an object".into()),
         // (Debug sections' relocations aren't read: nothing here looks
         // at them, and under /Z7 they are most of an object's.)
-        Some(_) => match Object::parse_with(data, |name| !name.starts_with(b".debug$")) {
-            Ok(o) => Body::Coff(Box::new(coff(&o, structural))),
-            Err(e) => Body::Other(e.to_string()),
-        },
+        Some(_) => {
+            let parsed = if reading.contents || reading.structural {
+                Object::parse_with(data, |name| !name.starts_with(b".debug$"))
+            } else {
+                Object::parse_with(data, |name| RELOCATION_TABLES.contains(&name))
+            };
+            match parsed {
+                Ok(o) => Body::Coff(Box::new(coff(&o, reading))),
+                Err(e) => Body::Other(e.to_string()),
+            }
+        }
     }
 }
 
@@ -368,7 +399,22 @@ fn borrowed<'d>(name: &Name<'d>) -> &'d [u8] {
     name.borrowed().unwrap_or_default()
 }
 
-fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
+/// A section's shape, as `verify=links` compares it: its name,
+/// characteristics, size, and the COMDAT checksum its section definition
+/// records (if it has one), hashed. A unit's shape is its selection and
+/// its non-debug sections' shapes, in any order (summed); a piece's, its
+/// selection and its own.
+pub fn shape(o: &Object<'_>, s: usize, definition: Option<turbonop_coff::SectionDefinition>) -> u128 {
+    let sec = &o.sections[s];
+    let mut h = H128::new();
+    h.bytes(sec.name.as_bytes());
+    h.u64(u64::from(sec.characteristics) | u64::from(sec.size()) << 32);
+    h.u64(definition.map_or(u64::MAX, |d| u64::from(d.checksum)));
+    h.finish()
+}
+
+fn coff<'d>(o: &Object<'d>, reading: Reading) -> Coff<'d> {
+    let structural = reading.structural;
     let n = o.sections.len();
     let mut c = Coff {
         machine: o.machine,
@@ -583,6 +629,12 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
     }
     c.environment = env.finish();
 
+    if !reading.contents && !structural {
+        shapes(o, &mut c, &definition, &roots, &leader, &sections_of, &starts, &unit_of);
+        finish(o, &mut c, structural);
+        return c;
+    }
+
     // Units' fingerprints. Each unit's sections in a canonical order: the
     // root, then the others by their contents, since tools write
     // associative sections in different orders; debug sections, which
@@ -783,13 +835,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
     // Pieces: the other sections.
     for (s, sec) in o.sections.iter().enumerate() {
         let name = borrowed(&sec.name);
-        if unit_of[s].is_some()
-            || name.starts_with(b".debug$")
-            || name == b".drectve"
-            || name == b".chks64"
-            || INDEX_TABLES.contains(&name)
-            || RELOCATION_TABLES.contains(&name)
-        {
+        if unit_of[s].is_some() || !is_piece(name) {
             continue;
         }
         let mut h = H128::new();
@@ -809,6 +855,84 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
             fingerprint: h.finish(),
         });
     }
+    finish(o, &mut c, structural);
+    c
+}
+
+/// `verify=links`'s units and pieces: each fingerprinted by its shape (see
+/// [`shape`]), in the order [`coff`] makes them.
+fn shapes<'d>(
+    o: &Object<'d>,
+    c: &mut Coff<'d>,
+    definition: &[Option<usize>],
+    roots: &[usize],
+    leader: &[Option<usize>],
+    sections_of: &[usize],
+    starts: &[usize],
+    unit_of: &[Option<u32>],
+) {
+    // Each section's definition.
+    let definitions: Vec<Option<turbonop_coff::SectionDefinition>> = definition
+        .iter()
+        .map(|d| d.and_then(|i| o.symbols[i].section_definition()).copied())
+        .collect();
+    let is_debug = |s: usize| borrowed(&o.sections[s].name).starts_with(b".debug$");
+    c.units.reserve_exact(roots.len());
+    for (u, &r) in roots.iter().enumerate() {
+        let Some(l) = leader[r] else { continue };
+        let d = definitions[r].unwrap_or_default();
+        let mut sum = 0u128;
+        let mut count = 0u64;
+        for &s in &sections_of[starts[u]..starts[u + 1]] {
+            if s != r && is_debug(s) {
+                continue;
+            }
+            sum = sum.wrapping_add(shape(o, s, definitions[s]));
+            count += 1;
+        }
+        let mut h = H128::new();
+        h.u64(u64::from(d.selection));
+        h.u64(count);
+        h.u128(sum);
+        c.units.push(Unit {
+            leader: borrowed(&o.symbols[l].name),
+            selection: d.selection,
+            fingerprint: h.finish(),
+            local: !o.symbols[l].is_external(),
+            size: o.sections[r].size(),
+            checksum: d.checksum,
+            key: 0,
+            id: 0,
+        });
+    }
+    for (s, sec) in o.sections.iter().enumerate() {
+        let name = borrowed(&sec.name);
+        if unit_of[s].is_some() || !is_piece(name) {
+            continue;
+        }
+        let mut h = H128::new();
+        h.u64(u64::from(definitions[s].map_or(0, |d| d.selection)));
+        h.u128(shape(o, s, definitions[s]));
+        c.pieces.push(Piece {
+            name,
+            fingerprint: h.finish(),
+        });
+    }
+}
+
+/// Whether a section outside every unit is a piece: not a debug section,
+/// side table, `.chks64`, or `.drectve`.
+fn is_piece(name: &[u8]) -> bool {
+    !(name.starts_with(b".debug$")
+        || name == b".drectve"
+        || name == b".chks64"
+        || INDEX_TABLES.contains(&name)
+        || RELOCATION_TABLES.contains(&name))
+}
+
+/// What [`coff`] does last: the pieces sorted, the units' keys and
+/// identities, and the PCH facts.
+fn finish(o: &Object<'_>, c: &mut Coff<'_>, structural: bool) {
     c.pieces.sort_unstable();
     for u in &mut c.units {
         u.key = unit_key(u.leader, u.local, u.fingerprint, c.environment, structural);
@@ -819,7 +943,6 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
     }
     c.pch_use = pch::use_in(o);
     c.pch = pch::pch_in(o);
-    c
 }
 
 /// What a static symbol outside a unit is in (under `structural`).

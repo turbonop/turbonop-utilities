@@ -148,6 +148,29 @@ pub enum Fold {
     SelectAny,
 }
 
+/// How much a check proves (turbolib's `verify=full` and `verify=links`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Depth {
+    /// Every check in the module's documentation: units and sections are
+    /// compared by their fingerprints, a hash of their whole canonical form
+    /// (bytes and relocations included; see [`member`]).
+    #[default]
+    Full,
+    /// Every check, but units and sections are compared by their shape
+    /// alone: each non-debug section's name, characteristics, size, and
+    /// recorded COMDAT checksum (the field of its section definition, as
+    /// the compiler wrote it, not computed here), and a unit's selection.
+    /// Bytes and relocations aren't read (but `.voltbl`'s, whose entries
+    /// are relocations), so it proves the same names are defined, with
+    /// their kinds, referred to, indexed, and loaded, and that each moved
+    /// COMDAT is held by an anchored copy of the same shape; not that the
+    /// copy is identical to the one it stands for, nor that what each
+    /// member keeps is unchanged byte for byte. Under
+    /// [`Options::locals`], whose units are keyed by content, the check is
+    /// [`Full`](Depth::Full) whatever this says.
+    Links,
+}
+
 /// The options of a check.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Options {
@@ -158,6 +181,22 @@ pub struct Options {
     /// (static COMDATs) may be copied into any number of synthesized
     /// members.
     pub locals: bool,
+    pub depth: Depth,
+}
+
+impl Options {
+    /// Whether units and sections are fingerprinted by their contents
+    /// ([`Depth::Full`], or [`Options::locals`]).
+    pub fn contents(&self) -> bool {
+        self.depth == Depth::Full || self.locals
+    }
+
+    fn reading(&self) -> member::Reading {
+        member::Reading {
+            structural: self.locals,
+            contents: self.contents(),
+        }
+    }
 }
 
 /// One member of a library.
@@ -179,11 +218,11 @@ struct Library<'a> {
 impl<'a> Library<'a> {
     /// Reads `files`, each on a core (the largest first), with `archive`'s
     /// index.
-    fn read(archive: &Archive<'a>, files: Files<'a>, structural: bool) -> Self {
+    fn read(archive: &Archive<'a>, files: Files<'a>, reading: member::Reading) -> Self {
         let bodies = turbonop_par::map_costed(
             files.len(),
             |i| files[i].2.len() as u64,
-            |i| member::read_with(files[i].2, structural),
+            |i| member::read_as(files[i].2, reading),
         );
         let members: Vec<Member<'a>> = files
             .into_iter()
@@ -234,7 +273,7 @@ fn open<'a>(data: &'a [u8], what: &str) -> Result<(Archive<'a>, Files<'a>), Stri
 /// documentation), reading every member on every core.
 pub fn verify(original: &[u8], rewritten: &[u8], options: &Options) -> Result<Report, String> {
     let (oa, of) = open(original, "the original library")?;
-    let o = Read(Library::read(&oa, of, options.locals));
+    let o = Read(Library::read(&oa, of, options.reading()));
     let r = read_rewritten(rewritten, options)?;
     Ok(compare(&o, &r, options))
 }
@@ -273,13 +312,13 @@ pub fn read_laid_out<'a>(
     options: &Options,
 ) -> Result<Read<'a>, String> {
     let (oa, _) = open(head, "the original library")?;
-    Ok(Read(Library::read(&oa, members, options.locals)))
+    Ok(Read(Library::read(&oa, members, options.reading())))
 }
 
 /// The rewritten library, read.
 pub fn read_rewritten<'a>(rewritten: &'a [u8], options: &Options) -> Result<Read<'a>, String> {
     let (ra, rf) = open(rewritten, "the rewritten library")?;
-    Ok(Read(Library::read(&ra, rf, options.locals)))
+    Ok(Read(Library::read(&ra, rf, options.reading())))
 }
 
 /// Checks that `rewritten` is equivalent to `original` (both read with
@@ -439,6 +478,12 @@ fn report_sorted(mut findings: Findings, report: &mut Report) {
 
 fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
     let mut report = Report::new();
+    if !options.contents() {
+        report.unchecked(
+            "contents of COMDATs and of sections outside them (verify=links: their names, characteristics, sizes, and recorded checksums compared, not their bytes or relocations)",
+            || "every COFF member's".into(),
+        );
+    }
     report.checked("original members", o.members.len() as u64);
     report.checked("rewritten members", r.members.len() as u64);
     for (lib, which) in [(o, "original"), (r, "rewritten")] {

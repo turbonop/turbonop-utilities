@@ -19,7 +19,7 @@
 //! | `diagnose` | say what was passed through, and why |
 //! | `stats` | report what was done, when the library is written |
 //! | `extract-whole` | `/EXTRACT` re-inlines folded units |
-//! | `verify` | `on` (or no value), `off`: check the folded library before it replaces the output |
+//! | `verify` | `full` (or `on`, or no value), `links`, `off`: check the folded library before it replaces the output, in full or its names and links alone |
 //! | `strict` | a fold that fails is an error, not the unfolded library (for testing) |
 //! | `inject-failure` | `panic`, `verify`, `layout`: make folding fail, to test the fallback |
 //!
@@ -102,11 +102,24 @@ pub struct Settings {
     pub report_odr: bool,
     /// Check the folded library (`turbonop_verify`) before it is put in
     /// place, and write the unfolded one if the check fails.
-    pub verify: bool,
+    pub verify: Verify,
     /// A failed fold is an error rather than the unfolded library.
     pub strict: bool,
     /// A failure to make on purpose, to test the fallback.
     pub inject: Option<Inject>,
+}
+
+/// `verify`: how the folded library is checked before it is put in place
+/// (see `turbonop_verify::library::Depth`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verify {
+    /// Not checked.
+    Off,
+    /// Every check, contents included (the default; `on`).
+    Full,
+    /// Every check of names, references, the index, and loading, without
+    /// the contents' fingerprints.
+    Links,
 }
 
 /// `inject-failure`: where folding is made to fail.
@@ -134,7 +147,7 @@ impl Default for Settings {
             stats: false,
             extract_whole: false,
             report_odr: false,
-            verify: true,
+            verify: Verify::Full,
             strict: false,
             inject: None,
         }
@@ -182,8 +195,9 @@ impl Settings {
             ("stats", None) => self.stats = true,
             ("extract-whole", None) => self.extract_whole = true,
             ("report", Some("odr")) => self.report_odr = true,
-            ("verify", None | Some("on")) => self.verify = true,
-            ("verify", Some("off")) => self.verify = false,
+            ("verify", None | Some("on" | "full")) => self.verify = Verify::Full,
+            ("verify", Some("links")) => self.verify = Verify::Links,
+            ("verify", Some("off")) => self.verify = Verify::Off,
             ("strict", None) => self.strict = true,
             ("inject-failure", Some("panic")) => self.inject = Some(Inject::Panic),
             ("inject-failure", Some("verify")) => self.inject = Some(Inject::Verify),

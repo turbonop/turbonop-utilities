@@ -5,7 +5,7 @@
 use std::process::ExitCode;
 use std::time::Instant;
 
-use turbonop_verify::library::{self, Fold, Pull};
+use turbonop_verify::library::{self, Depth, Fold, Pull};
 
 const VERIFY_USAGE: &str = "\
 usage: turbolib verify [options] <original library> <rewritten library>
@@ -34,6 +34,15 @@ options:
   --locals=copy, --locals=merge
                    by content, and local COMDATs may be copied into any
                    number of synthesized members
+  --check=full     compare COMDATs and sections by their whole contents
+                   (bytes and relocations; the default)
+  --check=links    compare them by their shape alone (each section's name,
+                   characteristics, size, and recorded checksum): the
+                   names defined, referred to, indexed, and loaded are
+                   checked as in full, but not that a moved COMDAT is
+                   identical to the copy kept, nor that what each member
+                   keeps is unchanged byte for byte (COFF libraries only;
+                   with --locals=copy or merge, the check is full)
   -j N             use N threads (1: no threads but this one)
   --examples=N     list N examples of each failure (0: all; default 5)
   --stats          say how long it took
@@ -105,6 +114,8 @@ fn parse(args: &[String], pull: bool) -> Result<Common, String> {
             "--fold=select-any" if pull => c.options.fold = Fold::SelectAny,
             "--locals=keep" if pull => c.options.locals = false,
             "--locals=copy" | "--locals=merge" if pull => c.options.locals = true,
+            "--check=full" if pull => c.options.depth = Depth::Full,
+            "--check=links" if pull => c.options.depth = Depth::Links,
             "-j" => threads(it.next().ok_or("-j needs a number")?)?,
             s if s.starts_with("-j") && s.len() > 2 => threads(&s[2..])?,
             s if s.starts_with('-') => return Err(format!("{s}: unknown option")),
@@ -136,10 +147,20 @@ pub fn verify(args: &[String]) -> ExitCode {
     let run = || -> Result<turbonop_verify::report::Report, String> {
         let a = map(&c.paths[0])?;
         let b = map(&c.paths[1])?;
+        let coff_only = || {
+            (c.options.depth == Depth::Links)
+                .then_some(Err("--check=links: COFF libraries only".to_string()))
+        };
         if turbonop_verify::elf::library::is_elf_archive(&a) {
+            if let Some(e) = coff_only() {
+                return e;
+            }
             return turbonop_verify::elf::library::verify(&a, &b, &c.options);
         }
         if turbonop_verify::macho::is_macho_archive(&a) {
+            if let Some(e) = coff_only() {
+                return e;
+            }
             return turbonop_verify::macho::verify(&a, &b, &c.options);
         }
         library::verify(&a, &b, &c.options)
@@ -230,5 +251,27 @@ fn finish(
             eprintln!("turbolib: {e}");
             ExitCode::from(2)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words(w: &[&str]) -> Vec<String> {
+        w.iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn check_depths() {
+        let c = parse(&words(&["a.lib", "b.lib"]), true).unwrap();
+        assert_eq!(c.options.depth, Depth::Full);
+        let c = parse(&words(&["--check=links", "a.lib", "b.lib"]), true).unwrap();
+        assert_eq!(c.options.depth, Depth::Links);
+        let c = parse(&words(&["--check=links", "--check=full", "a", "b"]), true).unwrap();
+        assert_eq!(c.options.depth, Depth::Full);
+        assert!(parse(&words(&["--check=names", "a", "b"]), true).is_err());
+        // compare-images takes no --check.
+        assert!(parse(&words(&["--check=links", "a", "b"]), false).is_err());
     }
 }

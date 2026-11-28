@@ -369,10 +369,11 @@ impl Linker {
                 crate::config::apply_directives(&mut self.config, &object.directives, &mut diags);
                 // /DISALLOWLIB: a default library the link uses anyway is
                 // LNK4098 (named for this file if the library comes later).
-                for lib in self.config.disallow_libs[disallow_before..].to_vec() {
-                    let stem = lib_stem(&lib);
+                for lib in &self.config.disallow_libs[disallow_before..] {
+                    let stem = lib_stem(lib);
                     if !self.disallowed.iter().any(|d| d.0 == stem) {
-                        self.disallowed.push((stem, lib, name.clone(), false));
+                        self.disallowed
+                            .push((stem, lib.clone(), name.clone(), false));
                     }
                 }
                 // /FAILIFMISMATCH: the first value a key is given (in the

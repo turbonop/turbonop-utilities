@@ -723,13 +723,13 @@ same but for the PDB's GUID, age, and name.
 - **Not yet, for native x64 images:** delay loading on other machines;
   `/GUARD:CF` for objects not compiled with `/guard:cf` (link.exe's own
   address-taken analysis), `/GUARD:XFG`, and an exported function that is
-  also a target (its flag); `/ORDER`, `/FUNCTIONPADMIN`, `/MAPINFO`'s
+  also a target (its flag); `/MAPINFO`'s
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
   library X and object Y" message, a `.def` file's forwarders in the
   `.exp`, `/INCREMENTAL`'s padding (it links fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
-  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`, `/Brepro`'s hash.
+  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
 - **Byte identity, still different:** the import library (`.lib` for a
   DLL): link.exe's descriptor members have a `.debug$S` (3 sections to
   turbolink's 2), its import members are in name order (turbolink's
@@ -768,8 +768,6 @@ same but for the PDB's GUID, age, and name.
   - **Not written:** `/LinkInfo`, `/TMCache`, `/UDTSRCLINEUNDONE`; x86
     FPO (only `FRAMEDATA`); incremental PDBs; page sizes over 4 KB (a PDB
     whose directory needs more than one block's list).
-  - **The `/Brepro` hash's input** (link.exe's GUID and time stamp come
-    from it).
 - **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
   list of what passes.
 - **LTCG**, from [prong 2](docs/turbolink-c2.md) (`turbonop-ltcg-probe`'s

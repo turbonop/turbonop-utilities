@@ -597,7 +597,12 @@ impl<'a> Image<'a> {
             let starts: Vec<Option<u32>> = s
                 .groups
                 .iter()
-                .map(|(_, chunks)| chunks.iter().map(|&c| self.l.chunks[c as usize].rva).min())
+                .map(|(_, chunks)| {
+                    let first = chunks.first().and_then(|c| self.l.group_starts.get(c));
+                    first
+                        .copied()
+                        .or_else(|| chunks.iter().map(|&c| self.l.chunks[c as usize].rva).min())
+                })
                 .collect();
             let end = s.rva + s.virtual_size;
             for (i, (name, _)) in s.groups.iter().enumerate() {
@@ -882,22 +887,17 @@ impl<'a> Image<'a> {
                 f.copy_from_slice(&((old & !0x00F0_0000) | bits).to_le_bytes());
             }
         }
-        // /Brepro: the hash of the image (its time stamps and hash zero),
-        // whose last 4 bytes are the time stamp. (link.exe's hash covers
-        // something else, not found yet: see docs/turbolink.md.)
+        // /Brepro, as link.exe's IMAGE::Normalize does it: the SHA-256 of
+        // the image with its time stamps (the file header's, each debug
+        // directory entry's, the export directory's) and the PDB's GUID and
+        // age set to all ones, and the repro entry's length and hash to
+        // zeros; then the hash in the repro entry, its last 4 bytes as every
+        // time stamp, its first 16 as the PDB's GUID (the age as it was).
         if let Some(c) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Repro) {
             use sha2::Digest;
-            let hash: [u8; 32] = sha2::Sha256::digest(&out).into();
-            let at = self.file_offset(c.rva) as usize + 4;
-            out[at..at + 32].copy_from_slice(&hash);
-            let ts = [hash[28], hash[29], hash[30], hash[31]];
-            // The PDB's GUID is the hash's first 16 bytes (as link.exe's).
-            if let Some(cv) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::CodeView) {
-                let at = self.file_offset(cv.rva) as usize + 4;
-                out[at..at + 16].copy_from_slice(&hash[..16]);
-            }
             let pe = self.l.rich.2 as usize;
-            out[pe + 8..pe + 12].copy_from_slice(&ts);
+            let repro = self.file_offset(c.rva) as usize;
+            let mut stamps = vec![pe + 8];
             if let Some(d) = self
                 .l
                 .chunks
@@ -906,8 +906,36 @@ impl<'a> Image<'a> {
             {
                 let at = self.file_offset(d.rva) as usize;
                 for i in 0..crate::layout::debug_entries(&self.r.config).len() {
-                    out[at + i * 28 + 4..at + i * 28 + 8].copy_from_slice(&ts);
+                    stamps.push(at + i * 28 + 4);
                 }
+            }
+            if let Some(e) = self.l.chunks.iter().find(|c| c.kind == ChunkKind::Exports) {
+                stamps.push(self.file_offset(e.rva) as usize + 4);
+            }
+            let guid = self
+                .l
+                .chunks
+                .iter()
+                .find(|c| c.kind == ChunkKind::CodeView)
+                .map(|cv| self.file_offset(cv.rva) as usize + 4);
+            let mut normal = out.clone();
+            for &at in &stamps {
+                normal[at..at + 4].fill(0xFF);
+            }
+            if let Some(at) = guid {
+                // The GUID and the age after it.
+                normal[at..at + 20].fill(0xFF);
+            }
+            normal[repro..repro + 36].fill(0);
+            let hash: [u8; 32] = sha2::Sha256::digest(&normal).into();
+            drop(normal);
+            out[repro + 4..repro + 36].copy_from_slice(&hash);
+            let ts = [hash[28], hash[29], hash[30], hash[31]];
+            for &at in &stamps {
+                out[at..at + 4].copy_from_slice(&ts);
+            }
+            if let Some(at) = guid {
+                out[at..at + 16].copy_from_slice(&hash[..16]);
             }
         }
         (out, problems)

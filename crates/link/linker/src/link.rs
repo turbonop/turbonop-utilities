@@ -31,6 +31,45 @@ pub fn output_path(c: &Config) -> Option<PathBuf> {
     p.file_name().map(PathBuf::from)
 }
 
+/// `/ORDER:@file`'s order: each named function's section (file, section)
+/// and its place in the file. A name nothing defines is LNK4037, as
+/// link.exe warns (and ignores it).
+fn function_order(
+    r: &resolve::Resolved,
+    file: &std::path::Path,
+    diagnostics: &mut Vec<LinkError>,
+) -> Result<turbonop_hash::Map<(u32, u32), u32>, String> {
+    let text = std::fs::read(file)
+        .map_err(|e| format!("cannot open file '{}': {e}", file.display()))?;
+    let text = crate::args::decode_text(&text);
+    let mut order = turbonop_hash::Map::default();
+    for name in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let place = r.names.get(name.as_bytes()).and_then(|&g| {
+            let mut g = g;
+            for _ in 0..64 {
+                match r.globals[g as usize].def {
+                    resolve::Def::Alias(t) => g = t,
+                    resolve::Def::Section { file, section, .. } => return Some((file, section)),
+                    _ => return None,
+                }
+            }
+            None
+        });
+        match place {
+            Some(p) => {
+                let n = crate::n32(order.len());
+                order.entry(p).or_insert(n);
+            }
+            None => diagnostics.push(LinkError {
+                code: 4037,
+                message: format!("{}: '{name}' does not exist; ignored", file.display()),
+                warning: true,
+            }),
+        }
+    }
+    Ok(order)
+}
+
 /// Links.
 pub fn link(mut config: Config) -> Outcome {
     let mut out = Outcome::default();
@@ -159,7 +198,21 @@ pub fn link(mut config: Config) -> Outcome {
             }
         }
     };
-    let mut layout = layout::layout(&resolved, &roots, export_table, resources);
+    let order = match &resolved.config.order {
+        Some(file) => match function_order(&resolved, file, &mut out.diagnostics) {
+            Ok(o) => o,
+            Err(m) => {
+                out.diagnostics.push(LinkError {
+                    code: 1104,
+                    message: m,
+                    warning: false,
+                });
+                return out;
+            }
+        },
+        None => turbonop_hash::Map::default(),
+    };
+    let mut layout = layout::layout(&resolved, &roots, export_table, resources, &order);
     let debug = resolved.config.debug != crate::config::Debug::None;
     let pdb_path = crate::pdb::pdb_path(&resolved, &path);
     if debug {

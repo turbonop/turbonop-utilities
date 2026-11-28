@@ -214,6 +214,15 @@ pub struct Layout {
     pub headers_size: u32,
     /// The optional header's size (240 for PE32+, 224 for PE32).
     pub optional_size: u32,
+    /// `/FUNCTIONPADMIN`'s bytes before each piece of code (0 without it).
+    pub function_pad: u32,
+    /// The chunks that padding goes before: code with a function symbol
+    /// in it (COMDAT or not; not an assembler's, whose symbols have no
+    /// type) and import thunks.
+    pub padded: turbonop_hash::Set<u32>,
+    /// Each group's start (by its first chunk), where it isn't its first
+    /// chunk's: padding before that chunk is the group's.
+    pub group_starts: Map<u32, u32>,
     /// The image's size in memory.
     pub image_size: u32,
     /// The file's size.
@@ -511,6 +520,7 @@ pub fn layout(
     roots: &[u32],
     exports: Option<crate::exports::ExportTable>,
     resources: Option<crate::resources::Rsrc>,
+    order: &Map<(u32, u32), u32>,
 ) -> Layout {
     let config: &Config = &r.config;
     // (/TIME's breakdown of the layout.)
@@ -1408,6 +1418,28 @@ pub fn layout(
     // (the output section's own name's before those merged into it), and
     // uninitialized data last.
     note("chunks");
+    // /ORDER: in each group, the functions it names first, in its order,
+    // then the rest as they were (as link.exe orders them).
+    if !order.is_empty() {
+        for (_, list) in &mut partials {
+            // A function's associative sections (its unwind data) follow
+            // it.
+            list.sort_by_key(|&c| match chunks[c as usize].kind {
+                ChunkKind::Input(f, mut s) => {
+                    if let FileKind::Object { object, .. } = &r.files[f as usize].kind {
+                        for _ in 0..16 {
+                            match object.sections[s as usize].comdat {
+                                Some((Selection::Associative(p), _)) => s = p,
+                                _ => break,
+                            }
+                        }
+                    }
+                    order.get(&(f, s)).copied().unwrap_or(u32::MAX)
+                }
+                _ => u32::MAX,
+            });
+        }
+    }
     partials.sort_by(|a, b| a.0.cmp(&b.0));
     const ORDER: &[&[u8]] = &[b".text", b".rdata", b".data", b".pdata", b".tls", b".rsrc"];
     let mut out_names: Vec<(Vec<u8>, u32)> = Vec::new();
@@ -1505,6 +1537,36 @@ pub fn layout(
             let bss = |p: &Partial| p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0;
             (bss(a), rank(ia), ia).cmp(&(bss(b), rank(ib), ib))
         });
+        // The export directory, as link.exe places it: after the inputs'
+        // groups (before the imports'), and its own .rdata$voltmd and
+        // .rdata$zzzdbg then each go before the first group that sorts after
+        // them (so after .edata when no other group intervenes: a DLL
+        // without unwind data has .rdata, .edata, .rdata$voltmd).
+        if let Some(e) = mine.iter().position(|p| p.0.1.as_slice() == b".edata") {
+            let edata = mine.remove(e);
+            let late =
+                |p: &Partial| matches!(p.0.1.as_slice(), b".rdata$voltmd" | b".rdata$zzzdbg");
+            let (late_groups, rest): (Vec<&Partial>, Vec<&Partial>) =
+                mine.into_iter().partition(|p| late(p));
+            let tail = |p: &Partial| {
+                let i = p.0.1.as_slice();
+                (i.starts_with(b".idata$") && i != b".idata$5")
+                    || i.starts_with(b".didat$")
+                    || p.0.2 & scn::CNT_UNINITIALIZED_DATA != 0
+            };
+            let cut = rest.iter().position(|p| tail(p)).unwrap_or(rest.len());
+            let mut order: Vec<&Partial> = rest[..cut].to_vec();
+            order.push(edata);
+            for g in late_groups {
+                let at = order
+                    .iter()
+                    .position(|p| p.0.1 > g.0.1)
+                    .unwrap_or(order.len());
+                order.insert(at, g);
+            }
+            order.extend_from_slice(&rest[cut..]);
+            mine = order;
+        }
         s.groups = mine.iter().map(|p| (p.0.1.clone(), p.1.clone())).collect();
         let (init, uninit): (Vec<u32>, Vec<u32>) = mine
             .iter()
@@ -1576,6 +1638,14 @@ pub fn layout(
         guard,
         headers_size: 0,
         optional_size: optional,
+        padded: turbonop_hash::Set::default(),
+        group_starts: Map::default(),
+        // (link.exe's default: 6 bytes on x64, 5 on x86.)
+        function_pad: config.function_pad_min.map_or(0, |n| match n {
+            0 if optional == 240 => 6,
+            0 => 5,
+            n => n,
+        }),
         image_size: 0,
         file_size: 0,
         section_align,
@@ -1589,6 +1659,39 @@ pub fn layout(
         codeview_name: Vec::new(),
     };
     note("sections");
+    if l.function_pad > 0 {
+        // link.exe pads code with a function in it: a symbol, external or
+        // static, whose type is a function's (an assembler's code has none).
+        let mut functions = turbonop_hash::Set::<(u32, u32)>::default();
+        for (f, file) in r.files.iter().enumerate() {
+            if let FileKind::Object { object, .. } = &file.kind {
+                for s in &object.symbols {
+                    if let SymbolKind::Defined { section, value: 0 }
+                    | SymbolKind::Local { section, value: 0 } = s.kind
+                        && (s.ty >> 4) & 3 == 2
+                    {
+                        functions.insert((crate::n32(f), section));
+                    }
+                }
+            }
+        }
+        for (i, c) in l.chunks.iter().enumerate() {
+            let pad = match c.kind {
+                ChunkKind::Input(f, s) => match &r.files[f as usize].kind {
+                    FileKind::Object { object, .. } => {
+                        object.sections[s as usize].characteristics & scn::MEM_EXECUTE != 0
+                            && functions.contains(&(f, s))
+                    }
+                    FileKind::Import { .. } => false,
+                },
+                ChunkKind::Thunk(_) | ChunkKind::DelayThunk(_) | ChunkKind::TailMerge(_) => true,
+                _ => false,
+            };
+            if pad {
+                l.padded.insert(crate::n32(i));
+            }
+        }
+    }
     l.size_headers(header_sections);
     l.assign_addresses();
     l
@@ -1644,8 +1747,17 @@ impl Layout {
             // bound tables ends 4 bytes past a multiple of 8 from there, as
             // link.exe's does: 0x104 bytes, or 0x108.)
             let mut delay_start = None;
+            // With /FUNCTIONPADMIN, padding before each piece of code (a
+            // function, a funclet, an import thunk), then its alignment.
             for &c in &s.chunks {
                 let group_align = group_start.get(&c).copied().unwrap_or(1);
+                if self.function_pad > 0 && self.padded.contains(&c) {
+                    // The group starts before the padding, aligned.
+                    if group_start.contains_key(&c) {
+                        self.group_starts.insert(c, rva + align_up(at, group_align));
+                    }
+                    at += self.function_pad;
+                }
                 let chunk = &mut self.chunks[c as usize];
                 at = align_up(at, chunk.align.max(group_align));
                 chunk.rva = rva + at;

@@ -40,8 +40,7 @@ fn label_like(p: &Files, parts: &[&[u8]]) -> Vec<u8> {
                 .iter()
                 .all(|s| x.name.windows(s.len()).any(|w| w == *s))
         })
-        .map(|x| x.name.to_vec())
-        .unwrap_or_else(|| panic!("a public of {parts:?}"))
+        .map_or_else(|| panic!("a label of {parts:?}"), |x| x.name.to_vec())
 }
 
 fn read(p: &Files, rva: u32, len: usize) -> Vec<u8> {

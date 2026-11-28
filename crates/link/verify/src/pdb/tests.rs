@@ -134,3 +134,94 @@ fn a_source_line_in_another_copy_of_a_header_is_a_pick() {
     assert_eq!(super::file_name(b"winnt.h"), b"winnt.h");
     assert!(super::file_name(sdk_a).eq_ignore_ascii_case(super::file_name(sdk_b)));
 }
+
+/// `compare_symbols` of the Debug fixture's programs (testdata/turbolib/
+/// equiv: the original and the folded), the second's reduction changed by
+/// `change`.
+fn symbols_changed(change: impl FnOnce(&mut Reduced)) -> Report {
+    let (x, y) = (read("equiv/link-original"), read("equiv/link-folded"));
+    let la = Linked::read(&x.0, &x.1, "a").unwrap();
+    let lb = Linked::read(&y.0, &y.1, "b").unwrap();
+    let ra = reduce(&la).unwrap();
+    let mut rb = reduce(&lb).unwrap();
+    change(&mut rb);
+    let mut rep = Report::new();
+    compare_symbols(&la, &lb, &ra, &rb, &mut rep);
+    rep
+}
+
+#[test]
+fn module_records_dropped_or_duplicated_are_caught() {
+    let r = symbols_changed(|_| {});
+    assert!(r.passed(), "{}", r.text());
+    // A module of an original member, with records of its own. (A
+    // synthesized member's module is only in the second program: its own
+    // records, S_OBJNAME and S_COMPILE3, have nothing to compare with.)
+    let own = |r: &Reduced, synthesized: bool| {
+        r.modules
+            .iter()
+            .position(|m| m.1 == synthesized && m.2.len() >= 2)
+            .expect("a module with records")
+    };
+    {
+        let synthesized = false;
+        // A record dropped.
+        let r = symbols_changed(|r| {
+            let i = own(r, synthesized);
+            let m = &mut r.modules[i];
+            m.2.pop();
+            m.3.pop();
+            m.4.pop();
+        });
+        assert!(!r.passed(), "dropped ({synthesized}):\n{}", r.text());
+        // A record twice.
+        let r = symbols_changed(|r| {
+            let i = own(r, synthesized);
+            let m = &mut r.modules[i];
+            let (h, d, t) = (m.2[0], m.3[0].clone(), m.4[0]);
+            m.2.push(h);
+            m.3.push(d);
+            m.4.push(t);
+        });
+        assert!(!r.passed(), "duplicated ({synthesized}):\n{}", r.text());
+    }
+    // A module twice, and a module dropped.
+    let r = symbols_changed(|r| {
+        let i = own(r, false);
+        let m = r.modules[i].clone();
+        r.modules.push(m);
+    });
+    assert!(!r.passed(), "a module twice:\n{}", r.text());
+    let r = symbols_changed(|r| {
+        let i = own(r, false);
+        r.modules.remove(i);
+    });
+    assert!(!r.passed(), "a module dropped:\n{}", r.text());
+}
+
+#[test]
+fn one_line_blocks_pair_whatever_their_order() {
+    // The first PDB: a function's one line not at its unit's end, and one
+    // at an end; the second: one at an end, and one not. Pairing the first's
+    // end with the second's end first would leave the other two unpaired
+    // (a line not at an end pairs only with an end); the order of the
+    // blocks follows the process's hash keys.
+    let block = |name: &[u8], h: u128, eof: bool| -> LineBlock {
+        (name.to_vec(), h, Some((0x33, eof)), show(name))
+    };
+    for flip in [false, true] {
+        // (Blocks are taken in the order of their hashes.)
+        let (hx, hy) = if flip { (2, 1) } else { (1, 2) };
+        let ra = Reduced {
+            lines: vec![block(b"x", hx, false), block(b"y", hy, true)],
+            ..Reduced::default()
+        };
+        let rb = Reduced {
+            lines: vec![block(b"p", 3, true), block(b"q", 4, false)],
+            ..Reduced::default()
+        };
+        let mut rep = Report::new();
+        lines_compared(&ra, &rb, &mut rep);
+        assert!(rep.passed(), "{flip}:\n{}", rep.text());
+    }
+}

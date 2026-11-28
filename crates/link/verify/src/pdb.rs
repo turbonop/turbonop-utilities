@@ -902,12 +902,22 @@ fn lines_compared(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
         }
         let mut taken = vec![false; only_b.len()];
         let mut left_a = Vec::new();
-        for x in only_a {
+        // (An end pairs with any one line; another line only with an end.
+        // So those not at an end take the ends first, and the ends then
+        // take other lines before ends: as many pair as can, whatever the
+        // order of the blocks, which follows the process's hash keys.)
+        let (mut first, ends_a): (Vec<_>, Vec<_>) = only_a
+            .into_iter()
+            .partition(|x| !matches!(x.2, Some((_, true))));
+        first.extend(ends_a);
+        for x in first {
             let found = match (key(&x), x.2) {
                 (Some(k), Some((_, eof))) => b.get_mut(&k).and_then(|(ends, others)| {
-                    // (An end pairs with any one line; another line only
-                    // with an end.)
-                    ends.pop().or_else(|| if eof { others.pop() } else { None })
+                    if eof {
+                        others.pop().or_else(|| ends.pop())
+                    } else {
+                        ends.pop()
+                    }
                 }),
                 _ => None,
             };

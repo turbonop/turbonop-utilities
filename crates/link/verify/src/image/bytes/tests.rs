@@ -748,6 +748,58 @@ fn windows_tls_offsets_are_named_near_a_read_of_the_tls_array() {
 }
 
 #[test]
+fn windows_tls_offsets_are_only_secrels() {
+    // A `SECREL` is 32 bits, in `mov r32, imm32` or a 32-bit displacement:
+    // near a read of the TLS array, other numbers that differ are
+    // differences, even where the two layouts would give them one
+    // variable's name (4 in the first and 8 in the second).
+    let (a, b) = images();
+    let a = Windows {
+        base: a,
+        tls: vec![(0, b"other"), (4, b"Enabled"), (8, b"threadIndex")],
+    };
+    let b = Windows {
+        base: b,
+        tls: vec![(0, b"other"), (4, b"threadIndex"), (8, b"Enabled")],
+    };
+    let with = |tail: &[u8]| {
+        let mut v = msvc_tls(0, true);
+        v.pop();
+        v.extend(tail);
+        v.push(0xC3);
+        v
+    };
+    for (x, y, what) in [
+        // add eax, 4 and add eax, 8
+        (&[0x83, 0xC0, 4][..], &[0x83, 0xC0, 8][..], "an imm8"),
+        // mov eax, [rsp+4] and mov eax, [rsp+8]
+        (&[0x8B, 0x44, 0x24, 4], &[0x8B, 0x44, 0x24, 8], "a disp8"),
+        // add eax, 4 and add eax, 8 (imm32)
+        (&[0x05, 4, 0, 0, 0], &[0x05, 8, 0, 0, 0], "an add's imm32"),
+    ] {
+        let (rep, _) = run(&a, 0x1000, &with(x), &b, 0x2000, &with(y), Isa::X64);
+        assert!(
+            rep.failed("functions or data whose bytes differ"),
+            "{what}:
+{}",
+            rep.text()
+        );
+    }
+    // A 32-bit displacement may be one: mov eax, [rcx+SECREL].
+    let (rep, f) = run(
+        &a,
+        0x1000,
+        &with(&[0x8B, 0x81, 4, 0, 0, 0]),
+        &b,
+        0x2000,
+        &with(&[0x8B, 0x81, 8, 0, 0, 0]),
+        Isa::X64,
+    );
+    assert!(rep.passed(), "{}", rep.text());
+    assert_eq!(f.tls, 1);
+}
+
+#[test]
 fn unaligned_rvas_in_data_are_inferred() {
     let (a, b) = images();
     // `__CxxFrameHandler4`'s compressed tables: a byte, then an RVA.

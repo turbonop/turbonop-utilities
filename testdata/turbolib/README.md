@@ -16,3 +16,12 @@ lld-link, from the sources beside it:
   addresses), `link-broken` (against broken.lib), `lld-1`, `lld-order`, and
   `lld-ghash` (`/DEBUG:GHASH`). Each is an `.exe` and its `.pdb`, for the
   `image` and `pdb` tests.
+- `equiv/`, built by `tools/turbolib/equiv/build.cmd`: a Debug program
+  (`cl /Od /Z7 /RTC1 /EHsc /MDd`; switch tables, inline thread_locals, a
+  lambda, exceptions, RTTI, two functions of the same code) linked by
+  link.exe and lld-link against a library (`*-original`) and against it
+  folded by turbolib (`*-folded`); and by link.exe against the folded
+  library broken by `breakfold.py` (`link-broken`: one of classify's
+  constants; `link-retarget`: a relocation of shared_all sent to a
+  function of the same code). `image::tests::equiv` changes the folded
+  programs as faults could and checks that compare-images catches each.

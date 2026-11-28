@@ -886,6 +886,7 @@ dependencies = [
 name = "turbonop-coff"
 version = "0.0.7"
 dependencies = [
+ "memchr",
  "turbonop-archive",
  "turbonop-core",
  "turbonop-global-alloc",
@@ -1572,6 +1573,7 @@ dependencies = [
  "turbonop-hash",
  "turbonop-macho",
  "turbonop-macho-object",
+ "turbonop-mmap",
  "turbonop-par",
  "turbonop-pdb",
  "turbonop-pe",

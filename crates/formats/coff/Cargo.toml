@@ -9,6 +9,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+memchr.workspace = true
 turbonop-core.workspace = true
 turbonop-pe.workspace = true
 

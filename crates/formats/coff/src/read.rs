@@ -229,6 +229,19 @@ impl<'data> Object<'data> {
     /// Import objects and other anonymous objects (`/GL` objects) are not
     /// COFF objects; see [`File`](crate::File) to pass them through.
     pub fn parse(data: &'data [u8]) -> Result<Self> {
+        Self::parse_with(data, |_| true)
+    }
+
+    /// Reads a COFF object as [`parse`](Self::parse) does, but reads the
+    /// relocations only of the sections whose names `relocations` accepts
+    /// (the others are left without any, though their ranges are still
+    /// checked). For readers that never look at some sections'
+    /// relocations (`.debug$S`'s are most of a `/Z7` object's); an object
+    /// read so isn't written back as it was ([`has_recorded_layout`]
+    /// is false).
+    ///
+    /// [`has_recorded_layout`]: Object::has_recorded_layout
+    pub fn parse_with(data: &'data [u8], relocations: impl Fn(&[u8]) -> bool) -> Result<Self> {
         let h = header(data)?;
         let format = h.format;
         let stride = format.record_size();
@@ -444,6 +457,7 @@ impl<'data> Object<'data> {
         }
 
         // Relocations and line numbers, which name symbols.
+        let mut skipped = false;
         for (section, (r, p)) in sections.iter_mut().zip(raw.iter().zip(&placements)) {
             if p.relocation_count == 0 {
                 read_line_numbers(section, r, data, &resolver);
@@ -461,6 +475,11 @@ impl<'data> Object<'data> {
                 u64::from(p.relocation_count) * RELOCATION_SIZE as u64,
                 "relocations",
             )?;
+            if !relocations(section.name.as_bytes()) {
+                skipped = true;
+                read_line_numbers(section, r, data, &resolver);
+                continue;
+            }
             section
                 .relocations
                 .reserve_exact(p.relocation_count as usize);
@@ -484,25 +503,29 @@ impl<'data> Object<'data> {
             read_line_numbers(section, r, data, &resolver);
         }
 
-        let fill = fill(
-            data,
-            &h,
-            &placements,
-            &symbol_range,
-            strings.map_or(0, <[u8]>::len),
-        );
-        let layout = Layout {
-            format,
-            optional_header: h.optional_header.len(),
-            sections: placements,
-            symbol_table: h.symbol_table,
-            symbol_records: h.symbols,
-            strings: strings.map(Cow::Borrowed),
-            // A file the reader accepted is addressed by 32-bit offsets,
-            // but may run past 4 GiB; such a file is not laid out again.
-            len: u32::try_from(data.len()).unwrap_or(u32::MAX),
-            fill,
-        };
+        // (Not for an object read without some relocations: it isn't
+        // written back as it was.)
+        let layout = (data.len() <= u32::MAX as usize && !skipped).then(|| {
+            let fill = fill(
+                data,
+                &h,
+                &placements,
+                &symbol_range,
+                strings.map_or(0, <[u8]>::len),
+            );
+            Layout {
+                format,
+                optional_header: h.optional_header.len(),
+                sections: placements,
+                symbol_table: h.symbol_table,
+                symbol_records: h.symbols,
+                strings: strings.map(Cow::Borrowed),
+                // A file the reader accepted is addressed by 32-bit offsets,
+                // but may run past 4 GiB; such a file is not laid out again.
+                len: u32::try_from(data.len()).unwrap_or(u32::MAX),
+                fill,
+            }
+        });
         Ok(Object {
             format,
             machine: h.machine,
@@ -517,7 +540,7 @@ impl<'data> Object<'data> {
             } else {
                 Style::Msvc
             },
-            layout: (data.len() <= u32::MAX as usize).then_some(layout),
+            layout,
         })
     }
 }

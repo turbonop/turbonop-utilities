@@ -126,7 +126,7 @@ struct Member<'a> {
     name: Cow<'a, [u8]>,
     offset: u64,
     data: &'a [u8],
-    body: Body,
+    body: Body<'a>,
 }
 
 /// A library, read.
@@ -138,18 +138,22 @@ struct Library<'a> {
 }
 
 impl<'a> Library<'a> {
-    fn new(
-        archive: &Archive<'a>,
-        files: Files<'a>,
-        bodies: &mut impl Iterator<Item = Body>,
-    ) -> Self {
+    /// Reads `files`, each on a core (the largest first), with `archive`'s
+    /// index.
+    fn read(archive: &Archive<'a>, files: Files<'a>, structural: bool) -> Self {
+        let bodies = turbonop_par::map_costed(
+            files.len(),
+            |i| files[i].2.len() as u64,
+            |i| member::read_with(files[i].2, structural),
+        );
         let members: Vec<Member<'a>> = files
             .into_iter()
-            .map(|(name, offset, data)| Member {
+            .zip(bodies)
+            .map(|((name, offset, data), body)| Member {
                 name,
                 offset,
                 data,
-                body: bodies.next().unwrap_or(Body::Other("not read".into())),
+                body,
             })
             .collect();
         let by_offset = members
@@ -191,7 +195,9 @@ fn open<'a>(data: &'a [u8], what: &str) -> Result<(Archive<'a>, Files<'a>), Stri
 /// documentation), reading every member on every core.
 pub fn verify(original: &[u8], rewritten: &[u8], options: &Options) -> Result<Report, String> {
     let (oa, of) = open(original, "the original library")?;
-    verify_files(&oa, of, rewritten, options)
+    let o = Read(Library::read(&oa, of, options.locals));
+    let r = read_rewritten(rewritten, options)?;
+    Ok(compare(&o, &r, options))
 }
 
 /// One member of a library laid out but not written: its name, its
@@ -210,26 +216,37 @@ pub fn verify_laid_out(
     rewritten: &[u8],
     options: &Options,
 ) -> Result<Report, String> {
-    let (oa, _) = open(head, "the original library")?;
-    verify_files(&oa, members, rewritten, options)
+    let o = read_laid_out(head, members, options)?;
+    let r = read_rewritten(rewritten, options)?;
+    Ok(compare(&o, &r, options))
 }
 
-fn verify_files<'a>(
-    oa: &Archive<'a>,
-    of: Files<'a>,
-    rewritten: &'a [u8],
+/// A library read for a check: each member's names, units, and
+/// fingerprints, borrowed from its bytes. [`verify_laid_out`] in steps,
+/// for a caller that reads the original while it writes the rewritten
+/// library.
+pub struct Read<'a>(Library<'a>);
+
+/// The original library, as for [`verify_laid_out`], read.
+pub fn read_laid_out<'a>(
+    head: &'a [u8],
+    members: Vec<LaidOut<'a>>,
     options: &Options,
-) -> Result<Report, String> {
+) -> Result<Read<'a>, String> {
+    let (oa, _) = open(head, "the original library")?;
+    Ok(Read(Library::read(&oa, members, options.locals)))
+}
+
+/// The rewritten library, read.
+pub fn read_rewritten<'a>(rewritten: &'a [u8], options: &Options) -> Result<Read<'a>, String> {
     let (ra, rf) = open(rewritten, "the rewritten library")?;
-    // Every member of both, read in parallel.
-    let all: Vec<&[u8]> = of.iter().chain(&rf).map(|m| m.2).collect();
-    let structural = options.locals;
-    let mut bodies =
-        turbonop_par::map_balanced(&all, 4, |d: &&[u8]| member::read_with(d, structural))
-            .into_iter();
-    let o = Library::new(oa, of, &mut bodies);
-    let r = Library::new(&ra, rf, &mut bodies);
-    Ok(check(&o, &r, options))
+    Ok(Read(Library::read(&ra, rf, options.locals)))
+}
+
+/// Checks that `rewritten` is equivalent to `original` (both read with
+/// `options`).
+pub fn compare(original: &Read<'_>, rewritten: &Read<'_>, options: &Options) -> Report {
+    check(&original.0, &rewritten.0, options)
 }
 
 /// The pairing of the two libraries' members.
@@ -315,19 +332,6 @@ fn indexed<'s>(
                 .unwrap_or_default(),
         })
         .collect()
-}
-
-/// A unit's key: its canonical leader name, fingerprint, and environment.
-/// (A local unit's leader name doesn't count under `--locals=copy`: its
-/// copies keep the name of the translation unit they came from.)
-fn unit_key(u: &member::Unit, environment: u128, locals: bool) -> u128 {
-    let mut h = H128::new();
-    if !(locals && u.local) {
-        h.bytes(canonical(&u.leader));
-    }
-    h.u128(u.fingerprint);
-    h.u128(environment);
-    h.finish()
 }
 
 /// A unit's key by name under `--fold=select-any`: its canonical leader
@@ -508,11 +512,7 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                 &coffs,
                 |_, c, out| {
                     if let Some(c) = c {
-                        out.extend(
-                            c.units
-                                .iter()
-                                .map(|u| (unit_key(u, c.environment, options.locals), ())),
-                        );
+                        out.extend(c.units.iter().map(|u| (u.key, ())));
                     }
                 },
                 |m, k, ()| {
@@ -573,11 +573,7 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                 .push(j);
         }
         for u in &c.units {
-            facts
-                .holders
-                .entry(unit_key(u, c.environment, options.locals))
-                .or_default()
-                .push(j);
+            facts.holders.entry(u.key).or_default().push(j);
             if options.fold == Fold::SelectAny && !u.local {
                 facts
                     .by_name
@@ -596,11 +592,16 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         .enumerate()
         .filter_map(|(i, j)| j.map(|j| (i, j)))
         .collect();
-    let reports = turbonop_par::map_balanced(&pairs, 16, |&(i, j)| {
-        let mut rep = Report::new();
-        check_member(o, r, i, j, &facts, &mut rep);
-        rep
-    });
+    let reports = turbonop_par::map_costed(
+        pairs.len(),
+        |k| o.members[pairs[k].0].data.len() as u64,
+        |k| {
+            let (i, j) = pairs[k];
+            let mut rep = Report::new();
+            check_member(o, r, i, j, &facts, &mut rep);
+            rep
+        },
+    );
     for rep in reports {
         report.merge(rep);
     }
@@ -618,12 +619,7 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         synthesized
             .iter()
             .filter_map(|&j| r.members[j].body.coff())
-            .flat_map(|c| {
-                c.units
-                    .iter()
-                    .filter(|u| u.local)
-                    .map(move |u| unit_key(u, c.environment, true))
-            })
+            .flat_map(|c| c.units.iter().filter(|u| u.local).map(|u| u.key))
             .collect()
     } else {
         Set::default()
@@ -645,12 +641,26 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         });
     }
 
-    // The archive indexes: what each member puts in it.
-    let (o_names, r_names) = turbonop_par::join(|| index_names(o, &oi), || index_names(r, &ri));
-    let (o_index, r_index) = turbonop_par::join(|| definitions(&o_names), || definitions(&r_names));
+    // The archive indexes: what each member puts in it (its definitions
+    // and its alias weak externals: an original without aliases puts in
+    // its definitions alone).
+    let has_aliases = |lib: &Library<'_>| {
+        lib.members.iter().any(|m| {
+            m.body.coff().is_some_and(|c| {
+                c.weak
+                    .iter()
+                    .any(|w| w.search == turbonop_coff::weak_search::ALIAS)
+            })
+        })
+    };
+    let (o_built, r_index) = turbonop_par::join(
+        || has_aliases(o).then(|| index_names(o, &oi)),
+        || index_names(r, &ri),
+    );
+    let o_index = o_built.as_ref().unwrap_or(&o_defs);
     let is_synthesized = |j: usize| synthesized.binary_search(&j).is_ok();
     let (a, b) = turbonop_par::join(
-        || check_index(o, &o_index, &|_| false, "original"),
+        || check_index(o, o_index, &|_| false, "original"),
         || check_index(r, &r_index, &is_synthesized, "rewritten"),
     );
     report.merge(a);
@@ -660,26 +670,28 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
     report
 }
 
-/// The names each member puts in the archive index: its [`indexed`] names
-/// and its alias weak externals.
-fn index_names<'s>(lib: &'s Library<'_>, indexed: &'s [Indexed<'s>]) -> Vec<Indexed<'s>> {
-    turbonop_par::map_range(lib.members.len(), 64, |i| {
-        let alias = Kind {
-            class: Class::Indexed,
-            selection: 0,
-        };
-        let Some(c) = lib.members[i].body.coff() else {
-            return indexed[i].clone();
-        };
-        let mut out = indexed[i].clone();
-        out.extend(
-            c.weak
-                .iter()
-                .filter(|w| w.search == turbonop_coff::weak_search::ALIAS)
-                .map(|w| (Cow::Borrowed(&*w.name), alias)),
-        );
-        out
-    })
+/// The names each member puts in the archive index, with their definers:
+/// its [`indexed`] names and its alias weak externals.
+fn index_names<'s>(lib: &'s Library<'_>, indexed: &'s [Indexed<'s>]) -> Definitions<'s> {
+    let alias = Kind {
+        class: Class::Indexed,
+        selection: 0,
+    };
+    Sharded::build(
+        indexed,
+        |i, list, out| {
+            out.extend(list.iter().map(|(n, k)| (&**n, (i, *k))));
+            if let Some(c) = lib.members[i].body.coff() {
+                out.extend(
+                    c.weak
+                        .iter()
+                        .filter(|w| w.search == turbonop_coff::weak_search::ALIAS)
+                        .map(|w| (w.name, (i, alias))),
+                );
+            }
+        },
+        |m: &mut Map<&'s [u8], Vec<(usize, Kind)>>, name, d| m.entry(name).or_default().push(d),
+    )
 }
 
 /// The synthesized members a member refers to by anchor.
@@ -706,7 +718,7 @@ fn check_member(
 ) {
     let (om, rm) = (&o.members[i], &r.members[j]);
     let (oc, rc) = match (&om.body, &rm.body) {
-        (Body::Coff(a), Body::Coff(b)) => (a, b),
+        (Body::Coff(a), Body::Coff(b)) => (&**a, &**b),
         (a, _) if a.passed_through() => {
             rep.checked("members passed through", 1);
             if om.data != rm.data {
@@ -778,8 +790,7 @@ fn check_member(
             });
             continue;
         }
-        let key = unit_key(u, oc.environment, facts.options.locals);
-        match facts.holders.get(&key) {
+        match facts.holders.get(&u.key) {
             None if facts.options.fold == Fold::SelectAny && !u.local => {
                 // Another copy of its name, as the selection allows.
                 let allowed = |&&(j, size, checksum): &&(usize, u32, u32)| {
@@ -1045,10 +1056,7 @@ fn check_synthesized(r: &Library<'_>, j: usize, facts: &Facts<'_>, rep: &mut Rep
     };
     for u in &c.units {
         rep.checked("COMDATs in synthesized members", 1);
-        if !facts
-            .original_units
-            .contains(&unit_key(u, c.environment, facts.options.locals))
-        {
+        if !facts.original_units.contains(&u.key) {
             rep.fail(
                 "synthesized COMDATs that match no original copy (in their environment)",
                 || format!("{}: {}", r.name(j), show(&u.leader)),
@@ -1231,20 +1239,27 @@ fn check_pull(o: &Library<'_>, r: &Library<'_>, p: &Pairing, options: &Options, 
 /// Each user of a turbolib precompiled-types member names one of the
 /// library's as link.exe pairs them (see [`pch`]).
 fn check_pch(r: &Library<'_>, rep: &mut Report) {
-    let pchs: Vec<(usize, pch::Pch)> = r
+    let pchs: Vec<(usize, &pch::Pch)> = r
         .members
         .iter()
         .enumerate()
         .filter(|(_, m)| pch::names_turbolib_pch(&m.name))
-        .filter_map(|(j, m)| pch::pch_of(m.data).map(|p| (j, p)))
+        .filter_map(|(j, m)| m.body.coff().and_then(|c| c.pch.as_ref()).map(|p| (j, p)))
         .collect();
-    let uses = turbonop_par::map_balanced(&r.members, 16, |m| {
-        pch::use_of(m.data).filter(|u| pch::names_turbolib_pch(&u.path))
-    });
+    let uses: Vec<Option<&pch::Use>> = r
+        .members
+        .iter()
+        .map(|m| {
+            m.body
+                .coff()
+                .and_then(|c| c.pch_use.as_ref())
+                .filter(|u| pch::names_turbolib_pch(&u.path))
+        })
+        .collect();
     for (j, u) in uses.iter().enumerate() {
         let Some(u) = u else { continue };
         rep.checked("users of turbolib's precompiled-types members", 1);
-        let named: Vec<&(usize, pch::Pch)> = pchs
+        let named: Vec<&(usize, &pch::Pch)> = pchs
             .iter()
             .filter(|(k, p)| pch::names(u, p, &r.members[*k].name))
             .collect();

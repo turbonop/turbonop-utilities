@@ -258,17 +258,33 @@ machine, not only native images (PE, ELF, Mach-O) and WebAssembly:
   sequence points, and the ReadyToRun header. Tested against
   System.Reflection.Metadata (tools/clr/ClrDump.cs) on its fixtures and,
   where there's a `dotnet`, on the framework's assemblies, every one. Left:
-  - **`size`**: attribute IL bodies, metadata tables, heap entries
-    (strings, blobs, user strings), and resources to their types and
-    namespaces (as compilands for native code), with the padding and
-    headers that belong to nothing.
-  - **`dump`, `symbols`, disassembly**: the tables, IL (as ildasm shows
-    it, from `il::decode` and `names`), and resources; `info -json`'s
-    fields (only the text `info` has the metadata now).
-  - **The extension's pages** for all of it.
-  - **ReadyToRun decoded**: method entry points (MethodDefEntryPoints,
-    InstanceMethodEntryPoints' native hashtables), RuntimeFunctions (the
-    native code, for size and disassembly), import sections and fixups,
+  - **`size`**: done for every data source (`turbonop_size::clr`): each
+    type is a compiland in its namespace's library, owning its methods'
+    IL bodies, its fields' initial data, its metadata rows, and the heap
+    entries only it refers to (`[metadata] <member>` symbols, charged to
+    the member); what no type owns is named for what it is (a table's
+    rows, a heap's shared entries, the headers, each resource, the
+    strong-name signature, ReadyToRun's header and sections). `crates`
+    gives namespaces; `-disassemble` lists a method's IL. Left:
+    - `-findings` and `-sizebench` on a managed image (they read
+      `DebugInfo`: findings could take it optionally, and find duplicate
+      field data and generic instantiations' bloat from the symbols);
+    - `query`, and the other commands that load a program
+      (`turbonop_program` has no managed images: give `Program` the
+      metadata's model and symbols when there's no PDB);
+    - a portable PDB's source lines for `sourcefiles` and `inlines`;
+    - attributing a C++/CLI image's native code from its PDB alongside
+      the metadata (such images are refused with a PDB now).
+  - **`dump`, disassembly**: the tables, IL (as ildasm shows it, beyond
+    `-disassemble`'s listing), and resources; `info -json`'s fields (only
+    the text `info` has the metadata now).
+  - **The extension's pages** for all of it (they read `size`'s output,
+    so its managed reports show; nothing .NET-specific is drawn yet).
+  - **ReadyToRun decoded**: method entry points (MethodDefEntryPoints'
+    native array, InstanceMethodEntryPoints' native hashtable), and
+    RuntimeFunctions (the native code: `size` labels the sections as
+    wholes, and should charge each method its native code too, and
+    disassemble it), import sections and fixups,
     inlining and debug info; composite images (whose header is the
     `RTR_HEADER` export, not ManagedNativeHeader).
   - **Native AOT images** (no CLI header: .NET's own metadata, the

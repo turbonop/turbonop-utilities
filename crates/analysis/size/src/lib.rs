@@ -23,6 +23,7 @@
 use turbonop_global_alloc as _;
 
 pub mod budget;
+pub mod clr;
 pub mod custom;
 pub mod describe;
 /// (Moved to the debug information crate, which reads DWARF too.)

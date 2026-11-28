@@ -1398,6 +1398,7 @@ dependencies = [
  "turbonop-archive",
  "turbonop-arm32",
  "turbonop-arm64",
+ "turbonop-clr",
  "turbonop-code",
  "turbonop-core",
  "turbonop-debuginfo",

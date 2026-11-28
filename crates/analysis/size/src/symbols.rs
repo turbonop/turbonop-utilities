@@ -84,6 +84,12 @@ pub enum SymbolKind {
     RsrcGroupCursor,
     /// A run of string tables.
     RsrcStringTables,
+    /// .NET metadata: a member's or type's rows and heap entries (named
+    /// `[metadata] <member>`, charged to it), or a table's or heap's that
+    /// no one member owns (`[CLR metadata: TypeRef]`).
+    ClrMetadata,
+    /// A .NET manifest resource embedded in the image.
+    ClrResource,
 }
 
 impl SymbolKind {
@@ -123,6 +129,8 @@ impl SymbolKind {
             K::RsrcGroupIcon => "resource-icon-group",
             K::RsrcGroupCursor => "resource-cursor-group",
             K::RsrcStringTables => "resource-string-tables",
+            K::ClrMetadata => "clr-metadata",
+            K::ClrResource => "clr-resource",
         }
     }
 
@@ -160,11 +168,14 @@ impl SymbolKind {
             SymbolKind::RsrcGroupIcon => "RsrcGroupIconDataSymbol",
             SymbolKind::RsrcGroupCursor => "RsrcGroupCursorDataSymbol",
             SymbolKind::RsrcStringTables => "RsrcGroupStringTablesDataSymbol",
+            // (SizeBench reads no managed code: names of their kind.)
+            SymbolKind::ClrMetadata => "ClrMetadataSymbol",
+            SymbolKind::ClrResource => "ClrResourceSymbol",
         }
     }
 
     /// Every kind, in declaration order (`ALL[k as usize] == k`).
-    pub const ALL: [SymbolKind; 31] = [
+    pub const ALL: [SymbolKind; 33] = [
         SymbolKind::Function,
         SymbolKind::PrimaryBlock,
         SymbolKind::SeparatedBlock,
@@ -196,6 +207,8 @@ impl SymbolKind {
         SymbolKind::RsrcGroupIcon,
         SymbolKind::RsrcGroupCursor,
         SymbolKind::RsrcStringTables,
+        SymbolKind::ClrMetadata,
+        SymbolKind::ClrResource,
     ];
 
     /// The prefix of the names of symbols of this kind that describe
@@ -213,6 +226,7 @@ impl SymbolKind {
             SymbolKind::HandlerMap => "[handlerMap]",
             SymbolKind::IpToStateMap => "[ip2state]",
             SymbolKind::SegmentMap => "[seg2ip2state]",
+            SymbolKind::ClrMetadata => "[metadata]",
             _ => return None,
         })
     }

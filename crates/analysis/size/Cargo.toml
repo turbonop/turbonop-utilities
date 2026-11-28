@@ -15,6 +15,7 @@ turbonop-linkmap.workspace = true
 turbonop-image.workspace = true
 turbonop-debuginfo.workspace = true
 turbonop-pe.workspace = true
+turbonop-clr.workspace = true
 turbonop-elf.workspace = true
 turbonop-dwarf.workspace = true
 turbonop-macho.workspace = true

@@ -2094,3 +2094,41 @@ fn two_functions_compared() {
         .collect();
     assert!(names.contains(&a) && names.contains(&b), "{names:?}");
 }
+
+/// A managed image: by its types, namespaces, and members, from its CLI
+/// metadata (no PDB), every byte labeled; and a method's IL.
+#[test]
+fn managed_images() {
+    let image = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/clr/Sample.dll");
+    let run = |args: &[&str]| {
+        let mut all: Vec<&std::ffi::OsStr> = args.iter().map(std::convert::AsRef::as_ref).collect();
+        all.push(image.as_os_str());
+        let (ok, out, err) = hexcavator(&all);
+        assert!(ok, "{args:?}: {err}");
+        out
+    };
+    let units = run(&["-d", "compileunits", "-n", "0", "-csv"]);
+    assert!(units.contains("Sample.Circle,"), "{units}");
+    assert!(units.contains("[CLR heap: #Strings],"), "{units}");
+    assert_eq!(csv_file_total(&units), 18432);
+    let namespaces = run(&["-d", "crates", "-n", "0", "-csv"]);
+    assert!(
+        namespaces.lines().any(|l| l.starts_with("Sample,")),
+        "{namespaces}"
+    );
+    assert!(
+        namespaces.contains("[global namespace],") || namespaces.contains("<Module>"),
+        "{namespaces}"
+    );
+    let symbols = run(&["-d", "symbols", "-n", "0", "-csv"]);
+    assert!(
+        symbols.contains("\"Sample.Code::Switch(int32)\"")
+            || symbols.contains("Sample.Code::Switch(int32),"),
+        "{symbols}"
+    );
+    assert_eq!(csv_file_total(&symbols), 18432);
+    let json = run(&["-d", "symbols", "-json"]);
+    assert!(json.contains("Sample.Circle"), "{json}");
+    let il = run(&["-disassemble", "Sample.Code::Switch(int32)"]);
+    assert!(il.contains(": switch (IL_"), "{il}");
+}

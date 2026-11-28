@@ -883,8 +883,27 @@ pub fn maps(image: &Image<'_>, inputs: Inputs<'_>, sources: &[Source]) -> Maps {
                     })
                     .collect();
                 let ls = labels.intern_many(&names);
+                // (A managed image's symbols are IL and metadata: its
+                // crates are its namespaces, and it has no native code to
+                // read for references.)
+                let managed = pe
+                    .data_directory(directory::COM_DESCRIPTOR)
+                    .is_some_and(|d| d.virtual_address.get() != 0 && d.size.get() != 0);
                 if let Some(model) = inputs.model {
                     anonymous_crates(model, &kept, &names, &ls, &mut crate_hints);
+                    if managed {
+                        for (s, &l) in kept.iter().zip(&ls) {
+                            let i = model.pieces.partition_point(|p| p.range.addr <= s.addr);
+                            if let Some(ns) = i
+                                .checked_sub(1)
+                                .and_then(|i| model.pieces.get(i))
+                                .filter(|p| s.addr < p.range.end())
+                                .and_then(|p| crate::clr::namespace_of(model, p.compiland))
+                            {
+                                crate_hints.insert(l, ns.to_string());
+                            }
+                        }
+                    }
                 }
                 // The objects' pieces, laid out while the code is read for
                 // references (which they don't depend on).
@@ -896,7 +915,9 @@ pub fn maps(image: &Image<'_>, inputs: Inputs<'_>, sources: &[Source]) -> Maps {
                         let size = s.size.vm.max(s.size.file);
                         map.add_vm(s.addr, s.addr.saturating_add(size), l, &base);
                     }
-                    if let Some(symbols) = inputs.symbols {
+                    if let Some(symbols) = inputs.symbols
+                        && !managed
+                    {
                         pe_references(pe, symbols, inputs.model, &mut map, &base);
                     }
                     objects.map(|h| h.join().unwrap_or_default())

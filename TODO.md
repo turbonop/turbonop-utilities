@@ -798,7 +798,7 @@ same but for the PDB's GUID, age, and name.
   errors, for `.text`; `.text=.rdata .rdata=.x .x=.text` is, for `.x`; `.x=.text .text=.y .y=.x`
   isn't, `.text` going to `.x`; cycles of absent sections aren't; plus LNK4254 for
   merges of different attributes; turbolink checks none: data in
-  C:\jm\dev-private	urbolink\mismatch\m*.cmd), long-form import objects (old `.idata$`
+  C:\jm\dev-private\turbolink\mismatch\m*.cmd), long-form import objects (old `.idata$`
   members), `IMAGE_REL_AMD64_TOKEN` (CLR's: link.exe 14.52 crashes on
   it in a native link).
 - **Exports' diagnostics:** link.exe warns LNK4197 for a name exported

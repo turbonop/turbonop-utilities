@@ -772,8 +772,25 @@ same but for the PDB's GUID, age, and name.
     from it).
 - **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
   list of what passes.
-- **LTCG**, from [prong 2](docs/turbolink-c2.md) (`turbonop-ltcg-probe`'s
-  `ltcg-drive`).
+- **LTCG: the rest** ([docs/turbolink-c2.md](docs/turbolink-c2.md),
+  "turbolink's LTCG"). `/GL` objects link and run as `link.exe /LTCG`'s
+  builds do. Still to do:
+  - **Libraries of `/GL` objects:** open a member at its offset, and
+    take members in for IL references.
+  - **The second root list:** native objects' references to IL
+    definitions.
+  - **The switch mapping:** link options to back-end switches (`/DEBUG`,
+    `/OPT`, `/GUARD`, CET, `/DYNAMICBASE`...), learned with the probe.
+  - **Byte identity with `link.exe`:** 3,200 to 5,000 bytes differ in
+    the test images, and the generated `.text$mn` is 16 bytes shorter
+    for `hello`. Diff the generated objects first.
+  - **Incremental LTCG, PGO, `/LTCGOUT`, `/cgthreads`.**
+  - **Speed:** run native work while `CodeGen6` runs, and read the
+    `ICOFFObj` directly with no COFF round trip.
+  - **One COM wrapper:** move `ltcg-drive` onto `turbonop-linker`'s
+    `c2` module.
+  - **DLLs** (`-GD`) through turbolink: driven by `ltcg-drive`, but not
+    yet tested through turbolink.
 
 ## rtti-strip
 

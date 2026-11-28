@@ -21,6 +21,74 @@ generate code, and writes the code as an ordinary COFF object. Linked by
 (A library of `/GL` objects and incremental LTCG were observed but not
 yet driven.)
 
+**turbolink links `/GL` objects itself.** `turbolink /LTCG` drives
+`c2.dll` (see "turbolink's LTCG" below). Four programs link and run as
+`link.exe /LTCG`'s builds of them do, with the same output and exit
+code:
+- one C object;
+- two C objects, one's function inlined into the other's;
+- C++ with an exception, virtual calls and a static constructor;
+- `/GL` code with a native object.
+
+Each image is the same size as `link.exe`'s. The bytes are not yet the
+same: 3,200 to 5,000 differ in a 10 to 12 KB image, and the generated
+`.text$mn` is 16 bytes shorter in the first program. The private
+repository's `ltcg_programs_run_as_link_exes` checks all four.
+
+## turbolink's LTCG
+
+`crates/link/linker/src/c2.rs` holds all of the COM calls (the crate's
+only `unsafe` code). `ltcg.rs` holds the link logic. Before symbol
+resolution, `link::link` calls `ltcg::prepare`, which works in five
+steps:
+
+1. **Find the back end.** It uses `TURBOLINK_C2` if that is set.
+   Otherwise it takes `c2.dll` from the first `PATH` directory that also
+   has `link.exe` or `cl.exe` (a developer prompt's `bin\Hostx64\x64`).
+   If no input is a `/GL` object, nothing is loaded and the link goes
+   on as before.
+2. **Open each `/GL` object.** It loads `c2.dll` (`Init`
+   `["-msilDebug"]`, then `SetPdbDll` with the full path of the
+   `mspdbcore.dll` beside it; a bare name fails with `E_FAIL`). Each
+   object is opened through `IObjFileForFile2`. Its publics
+   (`EnumPublics`: name, `SymType`, COMDAT selection, handle) and its
+   directives (`PbDirectives`) are read.
+3. **Resolve with stand-ins.** Each `/GL` object is replaced by a
+   generated COFF *stand-in*. Each definition becomes a section of its
+   own: COMDAT with the object's selection if it is a COMDAT, plain
+   otherwise. References are undefined symbols, and the directives go
+   in `.drectve`. Statics are left out. An ordinary resolve over the
+   stand-ins and the native inputs then decides what is linked and
+   which libraries' members come in.
+4. **Generate code.** The roots are the IL definitions (`SymType` 2 or
+   4) that are referred to from outside the stand-ins, plus the entry
+   point, the exports and the `/INCLUDE`s. `CodeGen6` gets `-GA` for an
+   EXE or `-GD` for a DLL, those roots, and an empty second root list,
+   as `ltcg-drive` passes. The generated `ICOFFObj` is written as a
+   COFF object in the link's temporary directory.
+5. **Link the result.** The generated object takes the place of the
+   first `/GL` input, the other `/GL` inputs are dropped, and the link
+   resolves again and proceeds as a native one.
+
+`/GL` objects without `/LTCG` are linked with LTCG anyway, with warning
+`LNK4197`, as `link.exe` does (it restarts the link). `/LTCG:STATUS` and
+`NOSTATUS` are accepted. `/LTCG:INCREMENTAL`, PGO and `/LTCGOUT` are
+still "not yet". If `c2.dll` cannot be found or fails, the link stops
+with `LNK1257` and the back end's messages.
+
+**Not yet done:**
+- members of a library of `/GL` objects;
+- the second root list (native objects' references to IL definitions)
+  is empty;
+- link options are not mapped to back-end switches beyond `-GA`/`-GD`;
+- incremental LTCG and PGO;
+- `/cgthreads`;
+- byte-identical images;
+- the overlap of native work with `CodeGen6`;
+- reading the `ICOFFObj` directly, instead of writing it and reading it
+  back;
+- one copy of the COM wrapper: `ltcg-drive` still has its own.
+
 ## Sources
 
 Every fact below is marked by where it comes from:
@@ -419,7 +487,8 @@ can win over `link.exe` in an LTCG link.
 
 - **Basic LTCG** (open, resolve, generate, consume, for EXEs and DLLs,
   libraries included): about a day. `ltcg-drive` is most of the
-  conversation already.
+  conversation already. *Done for EXEs from objects, in about that time;
+  libraries remain.*
 - **The switch matrix and the unknown outputs** with the probe: a few
   hours.
 - **Incremental LTCG, error paths, and the option corners:** a few

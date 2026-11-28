@@ -35,7 +35,7 @@ pub struct LinkError {
 }
 
 impl LinkError {
-    fn error(code: u32, message: String) -> LinkError {
+    pub(crate) fn error(code: u32, message: String) -> LinkError {
         LinkError {
             code,
             message,
@@ -43,7 +43,7 @@ impl LinkError {
         }
     }
 
-    fn warning(code: u32, message: String) -> LinkError {
+    pub(crate) fn warning(code: u32, message: String) -> LinkError {
         LinkError {
             code,
             message,

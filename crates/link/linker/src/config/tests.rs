@@ -141,13 +141,13 @@ fn manifests() {
 
 #[test]
 fn diagnostics() {
-    let (_, d) = config("/BOGUS /CLRIMAGETYPE:IJW /LTCG /WINMD /OUT /MACHINE:Z80");
+    let (_, d) = config("/BOGUS /CLRIMAGETYPE:IJW /LTCG:INCREMENTAL /WINMD /OUT /MACHINE:Z80");
     assert_eq!(
         d,
         [
             Diagnostic::Unknown("/BOGUS".into()),
             Diagnostic::Ignored("/CLRIMAGETYPE:IJW".into()),
-            Diagnostic::NotYet("/LTCG".into()),
+            Diagnostic::NotYet("/LTCG:INCREMENTAL".into()),
             Diagnostic::NotYet("/WINMD".into()),
             Diagnostic::Bad("option '/OUT' needs a value".into()),
             Diagnostic::Bad("invalid option '/MACHINE:Z80'".into()),
@@ -156,6 +156,11 @@ fn diagnostics() {
     // /LTCG:OFF asks for nothing.
     let (c, d) = config("/LTCG:OFF");
     assert!(!c.ltcg && d.is_empty());
+    // Plain /LTCG (and its STATUS forms) is supported.
+    for o in ["/LTCG", "/ltcg:status", "/LTCG:NOSTATUS"] {
+        let (c, d) = config(o);
+        assert!(c.ltcg && d.is_empty(), "{o}: {d:?}");
+    }
     // KNOWN is sorted and has no duplicates (a binary search could use it).
     assert!(KNOWN.windows(2).all(|w| w[0] < w[1]), "KNOWN is sorted");
     for name in IGNORED {

@@ -443,9 +443,20 @@ pub fn join<A: Send, B: Send>(a: impl FnOnce() -> A + Send, b: impl FnOnce() -> 
 mod tests {
     use super::*;
 
+    /// Held by each test that sets the thread limit, or depends on it
+    /// staying put (the limit is the process's: tests run at once).
+    static LIMIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn limit_lock() -> std::sync::MutexGuard<'static, ()> {
+        LIMIT_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     #[test]
     fn traverse_visits_everything_reachable_once() {
         use std::sync::atomic::{AtomicBool, Ordering};
+        let _limit = limit_lock();
         // A graph: i leads to 2i+1 and 2i+2 (a binary tree) and to i/3,
         // below 200_000; from roots 0 and 7.
         let n = 200_000usize;
@@ -491,6 +502,7 @@ mod tests {
 
     #[test]
     fn in_order() {
+        let _limit = limit_lock();
         let items: Vec<u32> = (0..10_000).collect();
         assert_eq!(
             map(&items, 10, |x| x * 2),

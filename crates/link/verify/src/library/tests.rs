@@ -741,11 +741,12 @@ fn aliased(data: &[u8], leaders: &[&[u8]], default: &[u8], anchor: &[u8]) -> Vec
     o.write().unwrap()
 }
 
-/// `data` with `__turbolib$alias` defined, as every synthesized member has.
-fn with_alias_default(data: &[u8]) -> Vec<u8> {
+/// `data` with `__turbolib$alias` defined, as every synthesized member of a
+/// library an earlier turbolib folded has.
+fn with_legacy_alias_default(data: &[u8]) -> Vec<u8> {
     let mut o = Object::parse(data).unwrap().into_owned();
     o.push_symbol(Symbol::new(
-        ALIAS_DEFAULT.to_vec(),
+        LEGACY_ALIAS_DEFAULT.to_vec(),
         0,
         SectionNumber::Absolute,
         0,
@@ -796,7 +797,10 @@ fn folded_with_aliases(default: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
     let mut m = members();
     let b = find(&m, b"b.obj");
     let c = find(&m, b"c.obj");
-    let s = with_alias_default(&synthesized(&m[b].1, &[SHARED_ADD, TWICE], false, ANCHOR));
+    let mut s = synthesized(&m[b].1, &[SHARED_ADD, TWICE], false, ANCHOR);
+    if default == LEGACY_ALIAS_DEFAULT {
+        s = with_legacy_alias_default(&s);
+    }
     for name in [&b"a.obj"[..], b"b.obj"] {
         let i = find(&m, name);
         m[i].1 = aliased(&m[i].1, &[SHARED_ADD, TWICE], default, ANCHOR);
@@ -806,10 +810,39 @@ fn folded_with_aliases(default: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
     m
 }
 
+/// `data` as the engine writes a member of a library folded before: each
+/// external record of `__turbolib$alias` an undefined `__ImageBase`.
+fn renewed(data: &[u8]) -> Vec<u8> {
+    let mut o = Object::parse(data).unwrap().into_owned();
+    for s in &mut o.symbols {
+        if s.is_external() && s.name == LEGACY_ALIAS_DEFAULT {
+            s.name = alias_default(0x8664).to_vec().into();
+            s.section = SectionNumber::Undefined;
+        }
+    }
+    o.write().unwrap()
+}
+
+#[test]
+fn the_alias_default_is_the_engines() {
+    for machine in [0x14C, 0x8664, 0xAA64, 0xA641, 0x1C4] {
+        assert_eq!(
+            alias_default(machine),
+            turbonop_fold::rewrite::alias_default(machine)
+        );
+    }
+    assert_eq!(alias_default(0x14C), b"___ImageBase");
+    assert_eq!(alias_default(0x8664), b"__ImageBase");
+    assert_eq!(
+        LEGACY_ALIAS_DEFAULT,
+        turbonop_fold::rewrite::LEGACY_ALIAS_DEFAULT
+    );
+}
+
 #[test]
 fn the_engines_alias_fold_passes_preserve_exactly() {
     let lib = fixture("verify.lib");
-    let m = folded_with_aliases(ALIAS_DEFAULT);
+    let m = folded_with_aliases(alias_default(0x8664));
     let r = verify_with(&lib, &archive(&m, Some(engine_index(&m))), Pull::Preserve);
     fails(&r, &[]);
     assert_eq!(r.checked_count("COMDATs moved out of original members"), 5);
@@ -822,6 +855,47 @@ fn the_engines_alias_fold_passes_preserve_exactly() {
     );
 }
 
+/// A library an earlier turbolib folded, with its synthesized member's
+/// absolute `__turbolib$alias`, passes as it is, and archived again in the
+/// new form (each record of the old default an undefined `__ImageBase`)
+/// passes against it.
+#[test]
+fn the_old_form_and_its_renewal_pass() {
+    let lib = fixture("verify.lib");
+    let old = folded_with_aliases(LEGACY_ALIAS_DEFAULT);
+    let old_lib = archive(&old, Some(engine_index(&old)));
+    let r = verify_with(&lib, &old_lib, Pull::Preserve);
+    fails(&r, &[]);
+    assert_eq!(r.checked_count("COMDATs moved out of original members"), 5);
+    let new: Vec<(Vec<u8>, Vec<u8>)> = old
+        .iter()
+        .map(|(n, d)| (n.clone(), renewed(d)))
+        .collect();
+    let new_lib = archive(&new, Some(engine_index(&new)));
+    let r = verify_with(&old_lib, &new_lib, Pull::Preserve);
+    fails(&r, &[]);
+    // And against the unfolded library.
+    let r = verify_with(&lib, &new_lib, Pull::Preserve);
+    fails(&r, &[]);
+}
+
+/// Members with aliases of the old default beside members with aliases of
+/// the new: link.exe's LNK1227 for a name with both.
+#[test]
+fn aliases_of_both_defaults_are_caught() {
+    let lib = fixture("verify.lib");
+    let mut m = folded_with_aliases(alias_default(0x8664));
+    let c = find(&m, b"c.obj");
+    let orig = members();
+    let c0 = find(&orig, b"c.obj");
+    m[c].1 = aliased(&orig[c0].1, &[SHARED_ADD], LEGACY_ALIAS_DEFAULT, ANCHOR);
+    let r = verify_with(&lib, &archive(&m, Some(engine_index(&m))), Pull::Preserve);
+    fails(
+        &r,
+        &["aliases of both defaults, __turbolib$alias and __ImageBase (LNK1227)"],
+    );
+}
+
 #[test]
 fn an_alias_with_another_default_is_caught() {
     let lib = fixture("verify.lib");
@@ -829,14 +903,14 @@ fn an_alias_with_another_default_is_caught() {
     let r = verify_with(&lib, &archive(&m, Some(engine_index(&m))), Pull::Preserve);
     fails(
         &r,
-        &["alias weak externals whose default isn't __turbolib$alias"],
+        &["alias weak externals whose default isn't __ImageBase (or the old __turbolib$alias)"],
     );
 }
 
 #[test]
 fn an_alias_no_anchored_member_defines_is_caught() {
     let lib = fixture("verify.lib");
-    let mut m = folded_with_aliases(ALIAS_DEFAULT);
+    let mut m = folded_with_aliases(alias_default(0x8664));
     // a.obj keeps its aliases but anchors no member that defines them.
     let a = find(&m, b"a.obj");
     let orig = members();
@@ -844,7 +918,7 @@ fn an_alias_no_anchored_member_defines_is_caught() {
     m[a].1 = aliased(
         &orig[a0].1,
         &[SHARED_ADD, TWICE],
-        ALIAS_DEFAULT,
+        alias_default(0x8664),
         b"__turbolib$anchor$9",
     );
     let r = verify_with(&lib, &archive(&m, Some(engine_index(&m))), Pull::Preserve);

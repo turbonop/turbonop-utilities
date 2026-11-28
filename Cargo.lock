@@ -1049,6 +1049,7 @@ dependencies = [
 name = "turbonop-fold"
 version = "0.0.7"
 dependencies = [
+ "memchr",
  "serde",
  "turbonop-archive",
  "turbonop-codeview",

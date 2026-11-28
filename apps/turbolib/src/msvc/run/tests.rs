@@ -611,9 +611,10 @@ fn long_and_non_ascii_paths_and_the_output_as_an_input() {
 /// alone (as a build that makes libraries of libraries does): each fold is
 /// kept (no fallback, under `strict`), passes `turbolib verify` against
 /// lib.exe's library of the same inputs, has no two members of one name
-/// (the new synthesized members skip the input's names), and warns no
-/// LNK4006 about the synthesized members' `__turbolib$alias`, which stays
-/// out of the index.
+/// (the new synthesized members skip the input's names), and has nothing
+/// two members define (lib.exe's LNK4006): the aliases' default is the
+/// linkers' `__ImageBase`, which no member defines and the index doesn't
+/// list.
 #[test]
 fn a_folded_library_archived_again() {
     use turbonop_verify::library;
@@ -656,13 +657,213 @@ fn a_folded_library_archived_again() {
             count,
             "{out}: two members of one name: {names:?}"
         );
-        assert!(
-            archive
-                .symbols()
-                .iter()
-                .all(|s| s.name != turbonop_fold::rewrite::ALIAS_DEFAULT),
-            "the alias default is never indexed"
-        );
+        assert_new_alias_form(&folded, out);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Each external record of `name` in the COFF members of `library`:
+/// (member, defined).
+fn records_of(library: &[u8], name: &[u8]) -> Vec<(String, bool)> {
+    let archive = turbonop_archive::Archive::parse(library).unwrap();
+    let mut out = Vec::new();
+    for m in archive.files() {
+        let Ok(turbonop_coff::File::Object(o)) = turbonop_coff::File::parse(m.data) else {
+            continue;
+        };
+        for s in &o.symbols {
+            if s.is_external() && s.name.as_bytes() == name {
+                out.push((
+                    text(&m.name),
+                    s.section != turbonop_coff::SectionNumber::Undefined,
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// What lib.exe would warn LNK4006 about archiving `library` again: names
+/// two members define strongly (`library::strong_definitions`, whose
+/// exemption for the old alias default doesn't matter: it mustn't be
+/// there).
+fn duplicate_strong_definitions(library: &[u8]) -> Vec<String> {
+    let archive = turbonop_archive::Archive::parse(library).unwrap();
+    let members: Vec<_> = archive.files().collect();
+    let strong: Vec<Vec<&[u8]>> = members
+        .iter()
+        .map(|m| crate::msvc::library::strong_definitions(m.data, None))
+        .collect();
+    let places: Vec<String> = members.iter().map(|m| text(&m.name)).collect();
+    crate::msvc::library::duplicate_warnings(&strong, &places)
+        .iter()
+        .map(|d| format!("{d:?}"))
+        .collect()
+}
+
+/// A folded library in the new form: no record of `__turbolib$alias`
+/// anywhere, `__ImageBase` neither defined nor indexed, each alias's
+/// default `__ImageBase`, and nothing lib.exe would warn LNK4006 about.
+fn assert_new_alias_form(library: &[u8], what: &str) {
+    let legacy = turbonop_fold::rewrite::LEGACY_ALIAS_DEFAULT;
+    let default = turbonop_fold::rewrite::alias_default(0x8664);
+    assert_eq!(records_of(library, legacy), [], "{what}: the old default");
+    let defaults = records_of(library, default);
+    assert!(!defaults.is_empty(), "{what}: no aliases");
+    assert!(
+        defaults.iter().all(|(_, defined)| !defined),
+        "{what}: {defaults:?}"
+    );
+    let archive = turbonop_archive::Archive::parse(library).unwrap();
+    assert!(
+        archive
+            .symbols()
+            .iter()
+            .all(|s| s.name != legacy && s.name != default),
+        "{what}: the alias default is never indexed"
+    );
+    for m in archive.files() {
+        let Ok(turbonop_coff::File::Object(o)) = turbonop_coff::File::parse(m.data) else {
+            continue;
+        };
+        for s in &o.symbols {
+            if let turbonop_coff::Aux::WeakExternal(w) = &s.aux
+                && w.search == turbonop_coff::weak_search::ALIAS
+            {
+                assert_eq!(o.symbols[w.tag.index()].name.as_bytes(), default, "{what}");
+            }
+        }
+    }
+    let dups = duplicate_strong_definitions(library);
+    assert!(dups.is_empty(), "{what}: {dups:?}");
+}
+
+/// `library` (turbolib's, in the new form) in the form an earlier turbolib
+/// wrote, its members written to `dir`: each alias's default
+/// `__turbolib$alias`, which each synthesized member defines as the
+/// absolute 0. The member names, in order.
+fn legacy_members(library: &[u8], dir: &Path) -> Vec<String> {
+    use turbonop_coff::{Name, SectionNumber, Symbol, storage_class};
+    let legacy = turbonop_fold::rewrite::LEGACY_ALIAS_DEFAULT;
+    let default = turbonop_fold::rewrite::alias_default(0x8664);
+    let archive = turbonop_archive::Archive::parse(library).unwrap();
+    let mut names = Vec::new();
+    for m in archive.files() {
+        let name = text(&m.name);
+        let data = match turbonop_coff::File::parse(m.data) {
+            Ok(turbonop_coff::File::Object(o)) => {
+                let mut o = o.into_owned();
+                for s in &mut o.symbols {
+                    if s.is_external() && s.name.as_bytes() == default {
+                        s.name = Name::new(legacy.to_vec());
+                    }
+                }
+                if name.starts_with("turbolib") {
+                    o.push_symbol(Symbol::new(
+                        Name::new(legacy.to_vec()),
+                        0,
+                        SectionNumber::Absolute,
+                        0,
+                        storage_class::EXTERNAL,
+                    ));
+                }
+                o.write().unwrap()
+            }
+            _ => m.data.to_vec(),
+        };
+        std::fs::write(dir.join(&name), data).unwrap();
+        names.push(name);
+    }
+    names
+}
+
+/// Archives `members` (files in `dir`) unfolded, as `out`.
+fn archive_unfolded(dir: &Path, out: &str, members: &[String]) {
+    let mut env = env_in(dir);
+    env.turbolib_options = Some("--fold=none".into());
+    let out_arg = format!("/OUT:{out}");
+    let args: Vec<&str> = ["/nologo", "/Brepro", out_arg.as_str()]
+        .into_iter()
+        .chain(members.iter().map(String::as_str))
+        .collect();
+    let o = run(Flavor::Lib, &w(&args), &env);
+    assert_eq!(o.exit, 0, "{o:?}");
+}
+
+/// The fixtures folded (into more than one synthesized member, so that
+/// lib.exe archiving the old form again warned LNK4006) have nothing two
+/// members define; in the old form, each synthesized member defined
+/// `__turbolib$alias`.
+#[test]
+fn a_folded_library_defines_nothing_twice() {
+    let dir = loose_dir("defines-once");
+    let o = lib_in(&dir, "x.lib", "--fold=identical --strict");
+    assert_eq!(o.exit, 0, "{o:?}");
+    let folded = std::fs::read(dir.join("x.lib")).unwrap();
+    let archive = turbonop_archive::Archive::parse(&folded).unwrap();
+    let synthesized = archive
+        .files()
+        .filter(|m| text(&m.name).starts_with("turbolib"))
+        .count();
+    assert!(synthesized > 1, "{synthesized} synthesized members");
+    assert_new_alias_form(&folded, "x.lib");
+    // The old form, as lib.exe would see it archiving it again.
+    let old = dir.join("old");
+    std::fs::create_dir_all(&old).unwrap();
+    let names = legacy_members(&folded, &old);
+    archive_unfolded(&old, "old.lib", &names);
+    let old_lib = std::fs::read(old.join("old.lib")).unwrap();
+    let legacy = turbonop_fold::rewrite::LEGACY_ALIAS_DEFAULT;
+    let defined = records_of(&old_lib, legacy)
+        .into_iter()
+        .filter(|(_, d)| *d)
+        .count();
+    assert_eq!(defined, synthesized);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A library an earlier turbolib folded (each alias's default the absolute
+/// `__turbolib$alias` every synthesized member defined) folded again, alone
+/// and with more objects: the fold is kept (under `strict`), passes
+/// `turbolib verify` against the unfolded library of the same inputs, and
+/// is in the new form throughout.
+#[test]
+fn a_library_folded_in_the_old_form_folds_again() {
+    use turbonop_verify::library;
+    let dir = loose_dir("old-form");
+    let mut env = env_in(&dir);
+    env.turbolib_options = Some("--fold=identical --precomp=library --strict".into());
+    let o = run(
+        Flavor::Lib,
+        &w(&["/nologo", "/Brepro", "/OUT:x.lib", "a.obj", "b.obj"]),
+        &env,
+    );
+    assert_eq!(o.exit, 0, "{o:?}");
+    let folded = std::fs::read(dir.join("x.lib")).unwrap();
+    let old = dir.join("old");
+    std::fs::create_dir_all(&old).unwrap();
+    let names = legacy_members(&folded, &old);
+    archive_unfolded(&old, "old.lib", &names);
+    std::fs::copy(dir.join("c.obj"), old.join("more.obj")).unwrap();
+    let mut env = env_in(&old);
+    env.turbolib_options = Some("--fold=identical --precomp=library --strict".into());
+    for (out, inputs) in [
+        ("alone.lib", &["old.lib"][..]),
+        ("more.lib", &["old.lib", "more.obj"][..]),
+    ] {
+        let out_arg = format!("/OUT:{out}");
+        let args = [&["/nologo", "/Brepro", &out_arg][..], inputs].concat();
+        let o = run(Flavor::Lib, &w(&args), &env);
+        assert_eq!(o.exit, 0, "{out}: {o:?}");
+        assert!(!o.stdout.contains("LNK4006"), "{out}: {o:?}");
+        let plain = format!("plain-{out}");
+        let inputs: Vec<String> = inputs.iter().map(ToString::to_string).collect();
+        archive_unfolded(&old, &plain, &inputs);
+        let folded = std::fs::read(old.join(out)).unwrap();
+        let original = std::fs::read(old.join(&plain)).unwrap();
+        let report = library::verify(&original, &folded, &library::Options::default()).unwrap();
+        assert!(report.passed(), "{out}: {}", report.text());
+        assert_new_alias_form(&folded, out);
     }
     let _ = std::fs::remove_dir_all(&dir);
 }

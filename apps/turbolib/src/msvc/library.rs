@@ -155,7 +155,8 @@ pub fn member_symbols<'d>(
 /// `NODUPLICATES` COMDAT, the ones LNK4006 is about. Read with the
 /// zero-copy reader: a COMDAT's selection is in its section symbol's
 /// auxiliary record (byte 14). `symbol_table` is as for [`member_symbols`].
-/// turbolib's absolute `__turbolib$alias` isn't one (see below).
+/// The absolute `__turbolib$alias` of libraries an earlier turbolib folded
+/// isn't one (see below).
 pub fn strong_definitions(data: &[u8], symbol_table: Option<u32>) -> Vec<&[u8]> {
     const IMAGE_SCN_LNK_COMDAT: u32 = 0x1000;
     const EXTERNAL: u8 = 2;
@@ -197,13 +198,14 @@ pub fn strong_definitions(data: &[u8], symbol_table: Option<u32>) -> Vec<&[u8]> 
             }
             _ => false,
         };
-        // (Not the absolute `__turbolib$alias` every synthesized member
-        // defines: its definitions are all the same, both linkers accept
-        // them, and lib.exe's LNK4006 about them would make a library
-        // made of folded libraries warn, or fail under /WX.)
+        // (Not the absolute `__turbolib$alias` every synthesized member of
+        // a library an earlier turbolib folded defines, LEGACY_ALIAS_DEFAULT:
+        // its definitions are all the same, both linkers accept them, and
+        // lib.exe's LNK4006 about them makes a library of such libraries
+        // warn, or fail under /WX. Folding one again leaves none.)
         if strong
             && let Some(name) = table.name(&s)
-            && !(s.section == -1 && name == turbonop_fold::rewrite::ALIAS_DEFAULT)
+            && !(s.section == -1 && name == turbonop_fold::rewrite::LEGACY_ALIAS_DEFAULT)
         {
             out.push(name);
         }

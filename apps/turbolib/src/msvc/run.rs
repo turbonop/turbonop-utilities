@@ -907,11 +907,11 @@ fn lay_out<'d>(
                 .collect();
         } else {
             // Never indexed, so it loads no member of its own (see
-            // ALIAS_DEFAULT): a synthesized member's, and one an input
-            // library's synthesized member defines (a library folded
-            // before, archived again).
+            // LEGACY_ALIAS_DEFAULT): what a synthesized member of a library
+            // an earlier turbolib folded defines, archived again unfolded.
+            // (Folded again, it is gone.)
             s.symbols
-                .retain(|x| *x.name != *turbonop_fold::rewrite::ALIAS_DEFAULT);
+                .retain(|x| *x.name != *turbonop_fold::rewrite::LEGACY_ALIAS_DEFAULT);
         }
         member_symbols.push(s);
     }

@@ -1,24 +1,30 @@
 //! Link-time code generation (`/LTCG`, for `/GL` objects), as link.exe does
-//! it (docs/turbolink-c2.md), in three steps:
+//! it (docs/turbolink-c2.md). Symbol resolution drives it (`resolve.rs`'s
+//! [`Ltcg`]), through [`Host`]:
 //!
-//! 1. The back end (`c2.dll`) opens each `/GL` object and reports its
-//!    publics and directives. turbolink resolves the link once with a
-//!    stand-in object for each (its definitions and references, its
-//!    directives), so the libraries load as they will.
-//! 2. The roots: the IL definitions something outside the IL refers to
-//!    (native objects and library members, the entry point, exports,
-//!    `/INCLUDE`s). The back end generates code for the program from them.
-//! 3. The generated object takes the `/GL` objects' place on the command
-//!    line, and the link goes on as an ordinary one.
+//! 1. Each `/GL` object, on the command line or a library's member, is
+//!    opened by the back end (`c2.dll`, loaded for the first one) as it
+//!    loads. Its publics (with what each definition refers to) and its
+//!    directives come back, and a stand-in COFF object with its definitions,
+//!    references and directives takes its place while symbols are resolved,
+//!    so that the libraries load as they will.
+//! 2. Once the libraries are searched, the back end generates code for the
+//!    program from three lists of its handles ([`lists`]): the IL
+//!    definitions something outside the IL refers to (the roots), the IL's
+//!    references that are imports called directly, and (with `/OPT:REF`)
+//!    the IL's COMDATs and data nothing reaches.
+//! 3. The generated object replaces the stand-ins, and the link goes on.
 //!
-//! A first version: `/GL` objects on the command line (not yet in
-//! libraries), the back end's default switches for an EXE or a DLL, no
-//! incremental LTCG.
+//! Still a first version: the back end's code-generation switches are
+//! `-GA` or `-GD` alone; no incremental LTCG, no PGO.
 
 use std::path::{Path, PathBuf};
 
+use turbonop_hash::{Map, Set};
+
+use crate::c2::{Backend, IlObject, Lists};
 use crate::config::Config;
-use crate::resolve::{FileKind, InputKind, LinkError};
+use crate::resolve::{Def, FileKind, LinkError, Ltcg, LtcgView, NONE};
 
 /// Where the back end is: `TURBOLINK_C2`, else `c2.dll` beside the
 /// `link.exe` (or `cl.exe`) found on `PATH`, else on `PATH` itself.
@@ -34,121 +40,333 @@ pub fn find_backend() -> Option<PathBuf> {
     })
 }
 
-/// The command line with its `/GL` objects replaced by the code the back
-/// end generates for them (`None`: there are none). The generated object
-/// is written to `temp`.
-pub fn prepare(config: &Config, temp: &Path) -> Result<Option<Config>, Vec<LinkError>> {
-    let err = |m: String| vec![LinkError::error(1257, m)];
-    let mut il: Vec<(usize, PathBuf, u32)> = Vec::new();
-    for (i, input) in config.inputs.iter().enumerate() {
-        let path = PathBuf::from(input);
-        let Ok(bytes) = std::fs::read(&path) else {
-            continue;
+/// The switches link.exe initializes the back end with: `-optref` with
+/// `/OPT:REF`, `-msilDebug` with `/DEBUG` (both, in that order, with
+/// both).
+pub fn init_switches(config: &Config) -> Vec<&'static str> {
+    let mut s = Vec::new();
+    if config.gc_sections() {
+        s.push("-optref");
+    }
+    if config.debug != crate::config::Debug::None {
+        s.push("-msilDebug");
+    }
+    s
+}
+
+/// A `/GL` object the back end opened, as the link has it.
+struct Opened {
+    /// Its file in the link (its stand-in's).
+    place: u32,
+    /// Its publics and directives.
+    object: IlObject,
+    /// Its definitions (indices into its publics), in its stand-in's order:
+    /// section `i + 1` (0-based) is definition `i`'s.
+    defs: Vec<usize>,
+}
+
+/// The link's link-time code generation: the back end, loaded for the
+/// first `/GL` object, and the objects it opened.
+#[derive(Default)]
+pub struct Host {
+    backend: Option<Backend>,
+    opened: Vec<Opened>,
+}
+
+impl Host {
+    /// No back end yet: it's loaded when a `/GL` object first needs it.
+    pub fn new() -> Host {
+        Host::default()
+    }
+}
+
+fn leak(bytes: Vec<u8>) -> &'static [u8] {
+    Box::leak(bytes.into_boxed_slice())
+}
+
+impl Ltcg for Host {
+    fn open(
+        &mut self,
+        config: &Config,
+        place: u32,
+        path: &Path,
+        offset: u64,
+        data: &'static [u8],
+    ) -> Result<&'static [u8], String> {
+        if self.backend.is_none() {
+            let c2 = find_backend().ok_or(
+                "link-time code generation needs the compiler's back end, c2.dll: not found (set TURBOLINK_C2, or run from a Visual C++ developer prompt)",
+            )?;
+            self.backend = Some(Backend::load(&c2, &init_switches(config))?);
+        }
+        let backend = self.backend.as_mut().ok_or("no back end")?;
+        let too_big = || format!("{}: too big for the back end", path.display());
+        let offset = u32::try_from(offset).map_err(|_| too_big())?;
+        let size = u32::try_from(data.len()).map_err(|_| too_big())?;
+        let object = backend.open(path, offset, size)?;
+        let defs = (0..object.publics.len())
+            .filter(|&i| is_definition(object.publics[i].kind))
+            .collect();
+        let bytes = leak(stand_in(&object));
+        self.opened.push(Opened {
+            place,
+            object,
+            defs,
+        });
+        Ok(bytes)
+    }
+
+    fn generate(&mut self, link: &LtcgView<'_>) -> Result<&'static [u8], Vec<LinkError>> {
+        let err = |m: String| vec![LinkError::error(1257, m)];
+        let (roots, imports, dead) = lists(&self.opened, link);
+        let backend = self
+            .backend
+            .as_mut()
+            .ok_or_else(|| err("no back end".into()))?;
+        let switches: &[&str] = if link.config.dll { &["-GD"] } else { &["-GA"] };
+        let lists = Lists {
+            roots: &roots,
+            imports: &imports,
+            dead: &dead,
         };
-        if crate::resolve::identify(&bytes) == InputKind::Ltcg {
-            let size = u32::try_from(bytes.len()).map_err(|_| err(format!("{input}: too big")))?;
-            il.push((i, path, size));
-        }
+        backend.generate(switches, &lists).map(leak).map_err(err)
     }
-    if il.is_empty() {
-        return Ok(None);
-    }
-    let c2 = find_backend().ok_or_else(|| {
-        err("link-time code generation needs the compiler's back end, c2.dll: not found (set TURBOLINK_C2, or run from a Visual C++ developer prompt)".into())
-    })?;
-    let mut backend = crate::c2::Backend::load(&c2).map_err(err)?;
+}
 
-    // 1. Each object, opened, and a stand-in for it.
-    std::fs::create_dir_all(temp).map_err(|e| err(format!("{}: {e}", temp.display())))?;
-    let mut objects = Vec::new();
-    for (_, path, size) in &il {
-        objects.push(backend.open(path, *size).map_err(err)?);
-    }
-    let mut first = config.clone();
-    let mut stand_ins = Vec::new();
-    for (k, ((i, _, _), object)) in il.iter().zip(&objects).enumerate() {
-        let p = temp.join(format!("ltcg-stand-in-{k}.obj"));
-        std::fs::write(&p, stand_in(object)).map_err(|e| err(format!("{}: {e}", p.display())))?;
-        first.inputs[*i] = p.display().to_string();
-        stand_ins.push(p.display().to_string());
-    }
-    let mut diagnostics = Vec::new();
-    let Some(resolved) = crate::resolve::resolve(first, &mut diagnostics) else {
-        return Err(diagnostics);
+/// Whether a public of kind (`SymType`) `kind` is a definition its stand-in
+/// has: an external definition (2) or data (4). (1 is a reference, 8 a
+/// static.)
+fn is_definition(kind: u32) -> bool {
+    matches!(kind, 2 | 4)
+}
+
+/// `CodeGen6`'s three lists, as link.exe makes them (docs/turbolink-c2.md):
+///
+/// - **The roots:** the IL definitions (those that won: a COMDAT's first
+///   copy) that something outside the IL names: a native object (one that
+///   refers to it, or has a copy of the COMDAT that lost to it), the entry
+///   point, an export, an `/INCLUDE`.
+/// - **The imports:** the IL's references that resolved to an import's
+///   thunk (a function imported without `__declspec(dllimport)`).
+/// - **The dead:** with `/OPT:REF`, the IL's COMDATs and data (kind 4)
+///   that won and that nothing reaches from the roots and from the
+///   definitions that are neither, through what each definition refers to
+///   (`RgISymRefs`; a weak alias, kind 6, leads to its default). If a
+///   definition refers to a handle no object listed, or to a kind not
+///   known, none are dead (the back end then keeps them, and the link's
+///   own `/OPT:REF` drops what it can).
+fn lists(opened: &[Opened], link: &LtcgView<'_>) -> (Vec<u64>, Vec<u64>, Vec<u64>) {
+    let by_place: Map<u32, usize> = opened
+        .iter()
+        .enumerate()
+        .map(|(k, o)| (o.place, k))
+        .collect();
+    // A global's definition, aliases followed: which object's which public,
+    // if it is the IL's.
+    let winner = |mut g: u32| -> Option<(usize, usize)> {
+        for _ in 0..64 {
+            match link.globals.get(g as usize)?.def {
+                Def::Alias(t) => g = t,
+                Def::Section { file, section, .. } => {
+                    let &k = by_place.get(&file)?;
+                    let i = usize::try_from(section).ok()?.checked_sub(1)?;
+                    return opened[k].defs.get(i).map(|&j| (k, j));
+                }
+                _ => return None,
+            }
+        }
+        None
     };
+    let global = |name: &[u8]| link.names.get(name).copied();
+    let handle = |(k, j): (usize, usize)| opened[k].object.publics[j].handle;
 
-    // 2. The roots: what refers to the IL from outside it.
-    let mut wanted: turbonop_hash::Set<&[u8]> = turbonop_hash::Set::default();
-    for file in &resolved.files {
-        if stand_ins.contains(&file.name) {
-            continue;
+    // The roots: by name, as link.exe roots them, whichever copy won (a
+    // vtable a native member has too, "largest", is the native's: its
+    // section holds the RTTI locator before it). The copy that won if it is
+    // the IL's, else the IL's first.
+    let mut first_def: Map<&[u8], (usize, usize)> = Map::default();
+    for (k, o) in opened.iter().enumerate() {
+        for &j in &o.defs {
+            first_def.entry(&o.object.publics[j].name).or_insert((k, j));
         }
-        if let FileKind::Object { object, .. } = &file.kind {
-            for s in &object.symbols {
-                if matches!(
-                    s.kind,
-                    crate::object::SymbolKind::Undefined | crate::object::SymbolKind::Weak { .. }
-                ) {
-                    wanted.insert(s.name);
+    }
+    let mut roots = Vec::new();
+    let mut rooted = Set::default();
+    let mut root = |g: u32, roots: &mut Vec<u64>| {
+        let d = winner(g).or_else(|| {
+            let name = link.globals.get(g as usize)?.name;
+            first_def.get(name).copied()
+        });
+        if let Some(d) = d
+            && rooted.insert(d)
+        {
+            roots.push(handle(d));
+        }
+    };
+    for (place, file) in link.files.iter().enumerate() {
+        if let FileKind::Object { globals, .. } = &file.kind {
+            // (A stand-in's own symbols don't count.)
+            if by_place.contains_key(&crate::n32(place)) {
+                continue;
+            }
+            // Any symbol of it: a reference, or a copy of a COMDAT that
+            // lost to the IL's (as link.exe roots the IL's vtables and
+            // RTTI that a native library member also has).
+            for &g in globals {
+                if g != NONE {
+                    root(g, &mut roots);
                 }
             }
         }
     }
-    if let Some(g) = resolved.entry {
-        wanted.insert(resolved.globals[g as usize].name);
+    if let Some(g) = link.entry {
+        root(g, &mut roots);
     }
-    let named: Vec<String> = config
+    let named: Vec<&str> = link
+        .config
         .exports
         .iter()
-        .map(|e| e.internal.clone().unwrap_or_else(|| e.name.clone()))
-        .chain(config.includes.iter().cloned())
+        .map(|e| e.internal.as_deref().unwrap_or(&e.name))
+        .chain(link.config.includes.iter().map(String::as_str))
         .collect();
-    for n in &named {
-        wanted.insert(n.as_bytes());
-    }
-    let mut roots = Vec::new();
-    let mut seen = turbonop_hash::Set::default();
-    for p in objects.iter().flat_map(|o| &o.publics) {
-        if matches!(p.kind, 2 | 4) && wanted.contains(p.name.as_slice()) && seen.insert(p.handle) {
-            roots.push(p.handle);
+    for n in named {
+        if let Some(g) = global(n.as_bytes()) {
+            root(g, &mut roots);
         }
     }
-    if roots.is_empty() {
-        return Err(err(
-            "link-time code generation: nothing refers to the /GL objects' code".into(),
-        ));
+
+    // The imports called directly.
+    let mut imports = Vec::new();
+    for o in opened {
+        for p in o.object.publics.iter().filter(|p| p.kind == 1) {
+            let mut g = global(&p.name);
+            for _ in 0..64 {
+                match g.and_then(|g| link.globals.get(g as usize)).map(|g| g.def) {
+                    Some(Def::Alias(t)) => g = Some(t),
+                    Some(Def::ImportThunk(_)) => {
+                        imports.push(p.handle);
+                        break;
+                    }
+                    _ => break,
+                }
+            }
+        }
     }
 
-    // 3. The code, in the first /GL object's place.
-    let switches: &[&str] = if config.dll { &["-GD"] } else { &["-GA"] };
-    let mut directives = Vec::new();
-    for o in &objects {
-        directives.push(b' ');
-        directives.extend_from_slice(&o.directives);
-    }
-    let generated = backend
-        .generate(switches, &roots, &directives)
-        .map_err(err)?;
-    let out = temp.join("ltcg.obj");
-    std::fs::write(&out, &generated).map_err(|e| err(format!("{}: {e}", out.display())))?;
-    let mut config = config.clone();
-    let first_il = il[0].0;
-    let replaced: turbonop_hash::Set<usize> = il.iter().map(|(i, _, _)| *i).collect();
-    config.inputs = config
-        .inputs
-        .iter()
-        .enumerate()
-        .filter_map(|(i, input)| {
-            if i == first_il {
-                Some(out.display().to_string())
-            } else if replaced.contains(&i) {
-                None
-            } else {
-                Some(input.clone())
+    // The dead: what the roots and the non-COMDAT definitions don't reach.
+    let mut dead = Vec::new();
+    if link.config.gc_sections() {
+        // (A definition refers to its own object's publics. Handles are
+        // unique within an object only: a reference's may be another
+        // object's too.)
+        let at: Vec<Map<u64, usize>> = opened
+            .iter()
+            .map(|o| {
+                let mut m = Map::default();
+                for (j, p) in o.object.publics.iter().enumerate() {
+                    m.entry(p.handle).or_insert(j);
+                }
+                m
+            })
+            .collect();
+        let mut anywhere: Map<u64, Vec<(usize, usize)>> = Map::default();
+        for (k, o) in opened.iter().enumerate() {
+            for (j, p) in o.object.publics.iter().enumerate() {
+                anywhere.entry(p.handle).or_default().push((k, j));
             }
-        })
-        .collect();
-    Ok(Some(config))
+        }
+        let mut live: Set<(usize, usize)> = Set::default();
+        let mut work: Vec<(usize, usize)> = Vec::new();
+        for (k, o) in opened.iter().enumerate() {
+            for (j, p) in o.object.publics.iter().enumerate() {
+                // (Kind 4, data, the back end leaves out as it does a
+                // COMDAT: link.exe lists it with them.)
+                if matches!(p.kind, 2 | 8) && p.comdat.is_none() {
+                    work.push((k, j));
+                }
+            }
+        }
+        work.extend(rooted.iter().copied());
+        let mut complete = true;
+        while let Some(d) = work.pop() {
+            if !live.insert(d) {
+                continue;
+            }
+            // (Handle 0 refers to nothing: an empty field, as a throw's
+            // information has.)
+            for h in opened[d.0].object.publics[d.1]
+                .refs
+                .iter()
+                .filter(|&&h| h != 0)
+            {
+                // (Its own object's public, else any object's: a COMDAT's
+                // copy may refer to another object's publics, as the back
+                // end keeps one copy. All of them: more live is safe.)
+                let found: Vec<(usize, usize)> = match at[d.0].get(h) {
+                    Some(&j) => vec![(d.0, j)],
+                    None => anywhere.get(h).cloned().unwrap_or_default(),
+                };
+                if found.is_empty() {
+                    complete = false;
+                }
+                for r in found {
+                    let p = &opened[r.0].object.publics[r.1];
+                    let mut names = vec![&p.name[..]];
+                    match p.kind {
+                        // A reference: the copy that won.
+                        1 => {}
+                        // A definition, and (a copy that lost) the copy that
+                        // won.
+                        2 | 4 => work.push(r),
+                        8 => {
+                            work.push(r);
+                            names.clear();
+                        }
+                        // A weak alias: its default, this object's or the
+                        // copy that won.
+                        6 => {
+                            let Some(default) = p.default.as_deref() else {
+                                complete = false;
+                                continue;
+                            };
+                            let o = &opened[r.0];
+                            work.extend(
+                                o.defs
+                                    .iter()
+                                    .filter(|&&j| o.object.publics[j].name == default)
+                                    .map(|&j| (r.0, j)),
+                            );
+                            names = vec![&p.name[..], default];
+                        }
+                        // (Another kind: what it leads to isn't known.)
+                        _ => {
+                            complete = false;
+                            continue;
+                        }
+                    }
+                    for name in names {
+                        if let Some(w) = global(name).and_then(winner) {
+                            work.push(w);
+                        }
+                    }
+                }
+            }
+        }
+        if complete {
+            for (k, o) in opened.iter().enumerate() {
+                for &j in &o.defs {
+                    let p = &o.object.publics[j];
+                    if (p.comdat.is_some() || p.kind == 4)
+                        && !live.contains(&(k, j))
+                        && global(&p.name).and_then(winner) == Some((k, j))
+                    {
+                        dead.push(p.handle);
+                    }
+                }
+            }
+        }
+    }
+    (roots, imports, dead)
 }
 
 /// A COFF object standing in for a `/GL` object during the first

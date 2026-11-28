@@ -3295,6 +3295,21 @@ time and memory compare. `clangSema.lib`, median of 2 interleaved rounds:
 | `--precomp=clustered`, 8 threads | 1,977 MiB | 1,330 MiB | 2,658 MiB | 2,134 MiB |
 
 CPU time was the same within the noise (4.9 to 5.5 s in every run).
+`build-z7`'s 20 largest libraries, 8 threads, the summed CPU time and
+the largest peak of any library (clangSema.lib), median of 2 rounds:
+
+| | CPU before | after | peak commit before | after | peak working set before | after |
+|---|---|---|---|---|---|---|
+| `--fold=none` | 15.0 s | 13.2 s | 227 MiB | 230 MiB | 1,112 MiB | 1,115 MiB |
+| `--fold=identical` | 38.9 s | 38.7 s | 1,536 MiB | 1,399 MiB | 2,316 MiB | 2,188 MiB |
+| `--precomp=library` | 46.0 s | 46.0 s | 2,136 MiB | 1,364 MiB | 2,753 MiB | 2,174 MiB |
+| `--precomp=clustered` | 48.6 s | 48.6 s | 1,978 MiB | 1,426 MiB | 2,625 MiB | 2,201 MiB |
+| `--fold=select-any` | 39.3 s | 40.1 s | 2,012 MiB | 1,399 MiB | 2,665 MiB | 2,199 MiB |
+| `--locals=copy` | 40.5 s | 40.2 s | 2,156 MiB | 1,451 MiB | 2,799 MiB | 2,229 MiB |
+| `--report odr` | 40.7 s | 41.0 s | 2,180 MiB | 1,337 MiB | 2,798 MiB | 2,169 MiB |
+
+(The modes after `--fold=none` fold identical copies, but for
+`select-any`.)
 
 - **Every mode one object at a time.** Shared types, select-any,
   `--locals`, and `--report odr` kept every object. Now what they need of

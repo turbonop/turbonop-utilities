@@ -687,6 +687,11 @@ fn main() {
     out.push_str("];\n\n");
 
     let ordered: Vec<usize> = groups.iter().flatten().copied().collect();
+    // Each entry's five operand specs, each set once (most entries share
+    // theirs), by index: OP_SETS.
+    let mut op_sets: Vec<String> = Vec::new();
+    let mut op_set_index: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     writeln!(
         out,
         "pub(crate) static ENTRIES: [Entry; {}] = [",
@@ -699,6 +704,13 @@ fn main() {
         while ops.len() < 5 {
             ops.push("OpSpec::NONE".to_string());
         }
+        let set = format!("[{}]", ops.join(", "));
+        let next = op_sets.len();
+        let set_index = *op_set_index.entry(set.clone()).or_insert(next);
+        if set_index == next {
+            op_sets.push(set);
+        }
+        assert!(set_index < usize::from(u16::MAX), "too many operand sets");
         let attrs = if f.attrs.is_empty() {
             "0".to_string()
         } else {
@@ -710,10 +722,9 @@ fn main() {
         };
         writeln!(
             out,
-            "    // {}\n    Entry {{ mnemonic: Mnemonic::{}, ops: [{}], pfx: {}, reg: {}, rm: {}, md: {}, w: {}, l: {}, mode: {}, os: {}, asz: {}, attrs: {attrs}, tuple: Tuple::{}, elem: {}, nd: {}, nf: {}, scc: {} }},",
+            "    // {}\n    Entry {{ mnemonic: Mnemonic::{}, ops: {set_index}, pfx: {}, reg: {}, rm: {}, md: {}, w: {}, l: {}, mode: {}, os: {}, asz: {}, attrs: {attrs}, tuple: Tuple::{}, elem: {}, nd: {}, nf: {}, scc: {} }},",
             f.origin,
             variant(&f.mnemonic),
-            ops.join(", "),
             f.pfx,
             f.reg,
             f.rm,
@@ -732,6 +743,13 @@ fn main() {
         .unwrap();
     }
     out.push_str("];\n\n");
+    writeln!(
+        out,
+        "pub(crate) static OP_SETS: [[OpSpec; 5]; {}] = [\n{}\n];\n",
+        op_sets.len(),
+        op_sets.join(",\n")
+    )
+    .unwrap();
 
     // Where each form came from, `file:line` (with the operands as
     // written): for tests and table tools.

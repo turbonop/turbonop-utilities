@@ -270,7 +270,9 @@ pub(crate) mod attr {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Entry {
     pub mnemonic: crate::Mnemonic,
-    pub ops: [OpSpec; 5],
+    /// Its operands' specs: an index into `OP_SETS` (see [`Entry::ops`]):
+    /// each set once, as most entries share theirs.
+    pub ops: u16,
     /// 0 = any, 1 = none of 66/F2/F3, 2 = 66, 3 = F3, 4 = F2.
     pub pfx: u8,
     /// Required ModRM.reg, or 0xFF.
@@ -299,6 +301,17 @@ pub(crate) struct Entry {
     pub nf: u8,
     /// APX CCMP/CTEST: the source condition this entry is for.
     pub scc: u8,
+}
+
+impl Entry {
+    /// Its operands' specs (`OpSpec::NONE` after the last).
+    #[inline]
+    pub fn ops(&self) -> &'static [OpSpec; 5] {
+        const NONE: [OpSpec; 5] = [OpSpec::NONE; 5];
+        crate::tables::OP_SETS
+            .get(usize::from(self.ops))
+            .unwrap_or(&NONE)
+    }
 }
 
 /// Opcode maps, in table order.

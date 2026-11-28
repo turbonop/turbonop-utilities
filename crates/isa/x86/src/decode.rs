@@ -643,7 +643,7 @@ impl<'a> Decoder<'a> {
                 let entries = &ENTRIES[usize::from(start)..usize::from(start) + usize::from(count)];
                 let has_form = |p: u8| entries.iter().any(|e| e.pfx == p);
                 let uses_xmm = |e: &Entry| {
-                    e.ops
+                    e.ops()
                         .iter()
                         .any(|o| matches!(o.loc, Loc::VecReg | Loc::VecRm | Loc::VecRmReg))
                 };
@@ -738,7 +738,7 @@ impl<'a> Decoder<'a> {
             Encoding::Vex | Encoding::Evex | Encoding::Xop
         ) && entry.attrs & attr::SCC == 0
         {
-            let uses = |l: Loc| entry.ops.iter().any(|o| o.loc == l);
+            let uses = |l: Loc| entry.ops().iter().any(|o| o.loc == l);
             let unused = if uses(Loc::VecVvvv)
                 || uses(Loc::GprVvvv)
                 || uses(Loc::KVvvv)
@@ -963,7 +963,7 @@ impl<'a> Decoder<'a> {
         let mut pseudo_imm = None;
         let mut is4 = 0u8;
 
-        for spec in e.ops.iter().take_while(|s| s.loc != Loc::None) {
+        for spec in e.ops().iter().take_while(|s| s.loc != Loc::None) {
             let op = match spec.loc {
                 Loc::None => unreachable!(),
                 Loc::GprRm | Loc::GprRmReg | Loc::Mem if modrm.md != 3 => {

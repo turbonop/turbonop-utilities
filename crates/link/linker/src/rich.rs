@@ -5,11 +5,11 @@
 //!
 //! - The list starts with the linker's own entry; each tool not seen yet is
 //!   put at the front, walking the inputs as link.exe's pass 2 does: the
-//!   command line's objects in order, then library by library, each one's
-//!   members from the last in the archive to the first (link.exe makes a
-//!   library's modules in the order of their offsets, each put at the
-//!   front of the library's list); so the list is newest first, the
-//!   linker last. An object without a
+//!   command line's objects from the last to the first, then library by
+//!   library, each one's members from the last in the archive to the first
+//!   (link.exe makes the command line's modules in order, and a library's
+//!   in the order of their offsets, each put at the front of its list); so
+//!   the list is newest first, the linker last. An object without a
 //!   `@comp.id` counts as 0, every import object as `0x00010000`.
 //! - The checksum: the stub's length, plus each of its bytes rotated left
 //!   by its offset (`e_lfanew` zero), plus each entry's ID rotated left by
@@ -63,7 +63,7 @@ pub fn entries(r: &Resolved, resources: Option<&crate::resources::Rsrc>) -> Vec<
     if !r.config.exports.is_empty() {
         walk.push(EXPORT_COMP_ID);
     }
-    walk.extend(r.files.iter().filter(|f| f.library.is_none()).map(id));
+    walk.extend(r.files.iter().rev().filter(|f| f.library.is_none()).map(id));
     // The libraries as they are searched: the command line's first.
     for &lib in &r.library_order {
         let mut members: Vec<&crate::resolve::File> =

@@ -787,9 +787,7 @@ delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
 same but for the PDB's GUID, age, and name.
 
 - **Not yet, for native x64 images:** delay loading on other machines;
-  `/GUARD:CF` for objects not compiled with `/guard:cf` (link.exe's own
-  address-taken analysis), `/GUARD:XFG`, and an exported function that is
-  also a target (its flag); `/MAPINFO`'s
+  `/GUARD:XFG`; `/MAPINFO`'s
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
   library X and object Y" message, `/INCREMENTAL`'s padding (it links
   fully),

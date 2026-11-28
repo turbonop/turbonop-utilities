@@ -15,9 +15,44 @@ struct Sym(&'static str, i16);
 /// An x64 object of one `.text` section (`text`, its relocations: offset,
 /// symbol index, type) and `syms`, all external.
 fn object(text: &[u8], relocations: &[(u32, u32, u16)], syms: &[Sym]) -> Vec<u8> {
+    let syms: Vec<Typed> = syms
+        .iter()
+        .map(|&Sym(name, section)| Typed {
+            name,
+            section,
+            value: 0,
+            ty: if section > 0 { 0x20 } else { 0 },
+            class: 2,
+        })
+        .collect();
+    object_typed(text, relocations, &syms)
+}
+
+/// A symbol of a made object, in full: its name, section (1-based; 0
+/// undefined, -1 absolute), value, type (0x20 a function) and storage
+/// class (2 external, 3 static).
+#[derive(Clone, Copy)]
+struct Typed {
+    name: &'static str,
+    section: i16,
+    value: u32,
+    ty: u16,
+    class: u8,
+}
+
+/// An x64 object of one `.text` section (`text`, its relocations: offset,
+/// symbol index, type) and `syms`.
+fn object_typed(text: &[u8], relocations: &[(u32, u32, u16)], syms: &[Typed]) -> Vec<u8> {
     let mut strings = Vec::new();
     let mut records = Vec::new();
-    for Sym(name, section) in syms {
+    for &Typed {
+        name,
+        section,
+        value,
+        ty,
+        class,
+    } in syms
+    {
         let n = name.as_bytes();
         if n.len() <= 8 {
             let mut short = [0u8; 8];
@@ -29,10 +64,10 @@ fn object(text: &[u8], relocations: &[(u32, u32, u16)], syms: &[Sym]) -> Vec<u8>
             strings.extend_from_slice(n);
             strings.push(0);
         }
-        records.extend_from_slice(&0u32.to_le_bytes()); // value
+        records.extend_from_slice(&value.to_le_bytes());
         records.extend_from_slice(&section.to_le_bytes());
-        records.extend_from_slice(&(if *section > 0 { 0x20u16 } else { 0 }).to_le_bytes());
-        records.push(2); // external
+        records.extend_from_slice(&ty.to_le_bytes());
+        records.push(class);
         records.push(0);
     }
     let text_at = 20 + 40;
@@ -2096,5 +2131,208 @@ fn the_export_directorys_strings_are_link_exes() {
         .map(|&(n, o)| (n.to_owned(), o))
         .collect();
     assert_eq!(sorted, want);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `/GUARD:CF` with an object not compiled with `/guard:cf` (no
+/// `@feat.00`): its functions that a `REL32` or `ADDR64` relocation refers
+/// to are targets, calls included, an import's thunk too, as their
+/// definitions are typed; not those `ADDR32NB` or `REL32_1` refer to, nor
+/// one defined untyped. In an object compiled with it (`@feat.00` 0x800),
+/// a call makes no target (a call to it from one compiled without does).
+/// (As link.exe 14.52 builds the table.)
+#[test]
+fn guard_cf_takes_the_targets_of_objects_compiled_without_it() {
+    let dir = scratch("guard-nocf");
+    let t = |name, value, ty| Typed {
+        name,
+        section: 1,
+        value,
+        ty,
+        class: 2,
+    };
+    let syms = [
+        t("main", 0, 0x20),
+        t("fA", 0x40, 0x20),
+        t("fB", 0x50, 0),
+        t("fC", 0x60, 0x20),
+        t("fD", 0x70, 0x20),
+        t("fE", 0x80, 0x20),
+        Typed {
+            class: 3,
+            ..t("fF", 0x90, 0x20)
+        },
+        Typed {
+            section: 0,
+            ..t("puts", 0, 0)
+        },
+        Typed {
+            section: 0,
+            ..t("__guard_fids_table", 0, 0)
+        },
+        Typed {
+            section: 0,
+            ..t("__guard_fids_count", 0, 0)
+        },
+        Typed {
+            section: 0,
+            ..t("gcaller", 0, 0x20)
+        },
+    ];
+    // main calls fA, fB, puts, fF, gcaller, and fD (REL32_1); then data:
+    // fC's ADDR32NB, the table's address and count, fE's address.
+    let mut text = vec![0; 0xA0];
+    for at in [0, 5, 10, 15, 20, 26] {
+        text[at] = 0xE8;
+    }
+    text[25] = 0x90;
+    text[31] = 0xC3;
+    for at in [0x40, 0x50, 0x60, 0x70, 0x80, 0x90] {
+        text[at] = 0xC3;
+    }
+    let (r32, r32_1, nb32, a64) = (4, 5, 3, 1);
+    let relocations = [
+        (1, 1, r32),
+        (6, 2, r32),
+        (11, 7, r32),
+        (16, 6, r32),
+        (21, 4, r32_1),
+        (27, 10, r32),
+        (0x20, 3, nb32),
+        (0x28, 8, a64),
+        (0x30, 9, a64),
+        (0x38, 5, a64),
+    ];
+    std::fs::write(
+        dir.join("main.obj"),
+        object_typed(&text, &relocations, &syms),
+    )
+    .unwrap();
+    // g.obj, compiled with /guard:cf: gcaller calls gx.
+    let g = [
+        Typed {
+            name: "@feat.00",
+            section: -1,
+            value: 0x800,
+            ty: 0,
+            class: 3,
+        },
+        t("gx", 0, 0x20),
+        t("gcaller", 0x10, 0x20),
+    ];
+    let mut gtext = vec![0; 0x20];
+    gtext[0] = 0xC3;
+    gtext[0x10] = 0xE8;
+    gtext[0x15] = 0xC3;
+    std::fs::write(
+        dir.join("g.obj"),
+        object_typed(&gtext, &[(0x11, 1, r32)], &g),
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("x.lib"),
+        archive(&[("x.dll", import("x.dll", "puts", 0), &["puts", "__imp_puts"])]),
+    )
+    .unwrap();
+    let image = run(
+        &dir,
+        &[
+            "/NODEFAULTLIB",
+            "/ENTRY:main",
+            "/SUBSYSTEM:CONSOLE",
+            "/GUARD:CF",
+            "main.obj",
+            "g.obj",
+            "x.lib",
+        ],
+    )
+    .expect("links");
+    let text_section = &sections(&image)[0];
+    assert_eq!(text_section.0, ".text");
+    let base = 0x1_4000_0000u64;
+    let code = at_rva(&image, text_section.2, 0xA0).to_vec();
+    let rva = text_section.2;
+    let at = |o: usize| u64::from_le_bytes(code[o..o + 8].try_into().unwrap());
+    let table = u32::try_from(at(0x28) - base).unwrap();
+    let count = usize::try_from(at(0x30)).unwrap();
+    let entries: Vec<u32> = (0..count)
+        .map(|i| u32_at(at_rva(&image, table + n32(4 * i), 4), 0))
+        .collect();
+    let target = |o| rel32(&code, rva, o);
+    let g_text = target(27) - 0x10;
+    let gx = rel32(at_rva(&image, g_text, 0x20), g_text, 0x11);
+    let mut expected = vec![
+        rva,        // main, the entry point
+        target(1),  // fA
+        target(11), // puts's thunk
+        target(16), // fF, static
+        rva + 0x80, // fE, by its address
+        target(27), // gcaller, in a /guard:cf object, called from main
+    ];
+    expected.sort_unstable();
+    assert_eq!(entries, expected);
+    for (what, not) in [
+        ("fB, untyped", target(6)),
+        ("fC, by ADDR32NB", rva + 0x60),
+        ("fD, by REL32_1", rva + 0x70),
+        ("gx, called from a /guard:cf object", gx),
+    ] {
+        assert!(!entries.contains(&not), "{what}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The Rich header lists the command line's objects' tools as link.exe
+/// walks them, from the last object to the first, each tool new to it put
+/// at the front (so a tool used first and last is listed after one used
+/// only between); then the linker.
+#[test]
+fn the_rich_header_lists_the_command_lines_tools_in_order() {
+    let dir = scratch("rich-order");
+    let made_by = |name: &'static str, comp_id: u32| {
+        let syms = [
+            Typed {
+                name: "@comp.id",
+                section: -1,
+                value: comp_id,
+                ty: 0,
+                class: 3,
+            },
+            Typed {
+                name,
+                section: 1,
+                value: 0,
+                ty: 0x20,
+                class: 2,
+            },
+        ];
+        object_typed(&[0xC3], &[], &syms)
+    };
+    std::fs::write(dir.join("a.obj"), made_by("main", 0x0104_0001)).unwrap();
+    std::fs::write(dir.join("b.obj"), made_by("b", 0x0105_0002)).unwrap();
+    std::fs::write(dir.join("c.obj"), made_by("c", 0x0104_0001)).unwrap();
+    for (order, expected) in [
+        (
+            ["a.obj", "b.obj", "c.obj"],
+            [(0x0105_0002, 1), (0x0104_0001, 2)],
+        ),
+        (
+            ["a.obj", "c.obj", "b.obj"],
+            [(0x0104_0001, 2), (0x0105_0002, 1)],
+        ),
+    ] {
+        let mut words = vec!["/NODEFAULTLIB", "/ENTRY:main", "/SUBSYSTEM:CONSOLE"];
+        words.extend(order);
+        let image = run(&dir, &words).expect("links");
+        let key = u32_at(&image, 0x84);
+        let entry = |i: usize| {
+            (
+                u32_at(&image, 0x90 + 8 * i) ^ key,
+                u32_at(&image, 0x94 + 8 * i) ^ key,
+            )
+        };
+        assert_eq!([entry(0), entry(1)], expected, "{order:?}");
+        assert_eq!(entry(2), (0x0102_90A5, 1));
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

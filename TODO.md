@@ -782,7 +782,8 @@ x64. Where the 3.5 MB went:
 CRT, DLLs and import libraries, resources, delay loading, `/DEBUG` (the
 PDB), LLVM's `llvm-tblgen`. Byte for byte link.exe's images (time stamps
 aside): C and C++ with the dynamic, static, and debug CRTs, a DLL with
-exports, delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
+exports (and its x64 import library, byte for byte, and export object),
+delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
 same but for the PDB's GUID, age, and name.
 
 - **Not yet, for native x64 images:** delay loading on other machines;
@@ -790,16 +791,21 @@ same but for the PDB's GUID, age, and name.
   address-taken analysis), `/GUARD:XFG`, and an exported function that is
   also a target (its flag); `/MAPINFO`'s
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
-  library X and object Y" message, a `.def` file's forwarders in the
-  `.exp`, `/INCREMENTAL`'s padding (it links fully),
+  library X and object Y" message, `/INCREMENTAL`'s padding (it links
+  fully),
   `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
   `/MERGE` cycles' error, long-form import objects (old `.idata$`
   members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
-- **Byte identity, still different:** the import library (`.lib` for a
-  DLL): link.exe's descriptor members have a `.debug$S` (3 sections to
-  turbolink's 2), its import members are in name order (turbolink's
-  reversed), and under `/Brepro` its member dates are -1 (turbolink's 0)
-  and its time stamps hashes; the map's `$R` symbols with two or more
+- **Exports' diagnostics:** link.exe warns LNK4197 for a name exported
+  twice (turbolink keeps the first silently, as link.exe does) and reports
+  LNK2001 for a forwarder `x = dll.f` when nothing defines `f` (seen on
+  the command line and in a `.def` file; turbolink links it); the map's
+  statics for a forwarder (the `.exp`'s static named for the export, at
+  its string) aren't checked against link.exe's map.
+- **Byte identity, still different:** the import library and export
+  object on other machines than x64 (x86's decorated names; the
+  descriptors' CodeView machine for x86 and ARM64 is assumed, 3 and
+  0xF6); the map's `$R` symbols with two or more
   `.res` files or an embedded manifest (cvtres's object for them: which
   offsets, which origin), and a map of an LLVM-size link checked line for
   line; the Rich header's order when an ml64 object comes before C
@@ -818,19 +824,26 @@ same but for the PDB's GUID, age, and name.
   import library lib.exe or link.exe makes. The delay tables' sort uses
   the member name, as link.exe does.
 - **link.exe's behavior to check, not assumed:** `/OPT:ICF`'s default
-  under `/DEBUG` with `/OPT:REF`; exports' ordinal numbering; the Rich
+  under `/DEBUG` with `/OPT:REF`; the Rich
   header's walk when a library is searched in several passes (each pass's
   modules made in offset order?).
 - **Speed.** On a quiet machine, `llc` (73 MB, every target) links in
   1.29 s (median of five) against link.exe's 3.15 s. On a loaded machine
   (other programs on every core, the disk busy) turbolink on all threads
   lost to turbolink on one (11-27 s against 4-6 s, link.exe 8-12 s),
-  using no more CPU: its threads wait on each other. Branch
-  `turbolink-next` has experiments for that (work in pieces taken from a
-  counter in turbonop_par; the mark's targets resolved once; higher
-  thresholds before parallelizing), neutral when quiet, not yet measured
-  cleanly under load. Also: layout hashes owned copies of names per chunk;
-  symbols are interned on one thread.
+  using no more CPU: its threads wait on each other. The mark (twice,
+  32 steps each) was most of it; it is one traversal now
+  (`turbonop_par::traverse`, no steps), 1.1-2.0 s to 60-160 ms each under
+  load. ICF refines classes now (only those of two or more, a class
+  that can't split seen at a glance, the rounds serial): 230 ms to 130 ms
+  quiet, its rounds 130-590 ms to 17-44 ms. Left, by `/TIME` under load:
+  the library search's serial walk
+  (adding each member's symbols, about 200 ms; its members are parsed
+  ahead by helper threads now, waiting on them 210 ms-1.8 s to
+  70-140 ms). Tried without gain: work in pieces taken from a
+  counter in turbonop_par's maps, and a parallel sort for ICF's class
+  count (slower, and once 2 s under load). Also: layout hashes owned
+  copies of names per chunk; symbols are interned on one thread.
 - **The PDB (`/DEBUG`), the rest.**
   - **Speed:** llvm-tblgen with `/Z7` objects only ties link.exe (the
     PDB about 300 ms of 390). Per stage:
@@ -850,8 +863,12 @@ same but for the PDB's GUID, age, and name.
   - **Not written:** `/LinkInfo`, `/TMCache`, `/UDTSRCLINEUNDONE`; x86
     FPO (only `FRAMEDATA`); incremental PDBs; page sizes over 4 KB (a PDB
     whose directory needs more than one block's list).
-- **lld's COFF tests** (`llvm-project/lld/test/COFF`): the runner, and a
-  list of what passes.
+- **lld's COFF tests** ([the results](docs/turbolink-lldtests.md),
+  `apps/turbolink-lldtests`): 55 of 563 pass, 252 skipped (other machines,
+  LTO). Fix what turbolink rejects (77: crashes, unresolved externals,
+  commons, subsystem inference, `/TIMESTAMP`, `/SUMMARY`, `/LIB`, `/HELP`,
+  invalid options), then the images that differ (76); run ARM64 and 32-bit
+  x86 tests once those machines link.
 - **LTCG: the rest** ([docs/turbolink-c2.md](docs/turbolink-c2.md),
   "turbolink's LTCG"). `/GL` objects link and run as `link.exe /LTCG`'s
   builds do. Still to do:

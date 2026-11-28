@@ -331,7 +331,6 @@ impl<'a> Image<'a> {
                             u32::MAX => 0,
                             g => self.rva_of(g).unwrap_or(0),
                         },
-                        &t.forwarders,
                     );
                 }
             }

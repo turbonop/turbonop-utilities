@@ -142,6 +142,10 @@ __s=$?; if [ $__s -ne 0 ]; then echo \"{FAIL}{i} $__s\" >&2; exit $__s; fi
         .current_dir(&dir)
         .env("PATH", &path)
         .env("LLD_IN_TEST", "2")
+        // (Git's bash rewrites a `/dll` argument as a path to a native
+        // program; lit passes it as it is.)
+        .env("MSYS_NO_PATHCONV", "1")
+        .env("MSYS2_ARG_CONV_EXCL", "*")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -294,12 +294,14 @@ fn dump(out: &mut dyn Write, pdb: &Pdb<'_>, o: &Options) -> io::Result<()> {
         for c in dbi.section_contribs().map_err(err)?.iter() {
             writeln!(
                 out,
-                "  {:04X}:{:08X} size {:8X} chars {:08X} module {}",
+                "  {:04X}:{:08X} size {:8X} chars {:08X} module {} crcs {:08X} {:08X}",
                 c.section.get(),
                 c.offset.get(),
                 c.size.get(),
                 c.characteristics.get(),
-                c.module_index.get()
+                c.module_index.get(),
+                c.data_crc.get(),
+                c.reloc_crc.get()
             )?;
         }
         writeln!(out)?;

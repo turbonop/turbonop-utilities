@@ -46,28 +46,15 @@ pub struct Inputs<'a> {
 /// The `.exp` object for `dir`.
 pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
     let exports = &dir.exports;
-    // Exports by their exported name (the order of the relocations and the
-    // S_EXPORT records).
-    let mut by_name: Vec<usize> = (0..exports.len()).collect();
-    by_name.sort_by(|&a, &b| {
-        crate::exports::exported_name(&exports[a]).cmp(crate::exports::exported_name(&exports[b]))
-    });
-    let internal = |e: &Export| -> String {
-        e.internal
-            .clone()
-            .unwrap_or_else(|| crate::exports::exported_name(e).to_owned())
-    };
+    // Exports by their names (what `EXPORTAS` exports as aside): the order
+    // of the strings and of the exports' symbols.
+    let mut by_own_name: Vec<usize> = (0..exports.len()).collect();
+    by_own_name.sort_by(|&a, &b| exports[a].name.cmp(&exports[b].name));
+    let internal = |e: &Export| -> String { e.internal.clone().unwrap_or_else(|| e.name.clone()) };
 
     // .edata: the directory, at 0, with no addresses yet.
     let mut edata = vec![0u8; dir.size as usize];
-    dir.write(
-        &mut edata,
-        0,
-        x.dll_name,
-        u32::MAX,
-        |_| 0,
-        &vec![None; exports.len()],
-    );
+    dir.write(&mut edata, 0, x.dll_name, u32::MAX, |_| 0);
     // The addresses the relocations fill are 0 in the object.
     let functions_at = 40u32;
     let names_at = functions_at + dir.functions * 4;
@@ -85,11 +72,18 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
     }
 
     // The symbols: @comp.id, @feat.00, the two sections', the tables', the
-    // names', then each export's symbol (undefined), by name.
+    // names', then each export's symbol, by the exports' names: what it
+    // exports (undefined), or a forwarder's string (a static named for the
+    // export, at the string).
     let statics = dir.symbols(x.dll_name);
-    let mut externals: Vec<String> = exports.iter().map(&internal).collect();
-    externals.sort();
-    externals.dedup();
+    let forwarder_at = dir.forwarder_offsets(x.dll_name);
+    let externals: Vec<(String, Option<u32>)> = by_own_name
+        .iter()
+        .map(|&i| match forwarder_at[i] {
+            Some(at) => (exports[i].name.clone(), Some(at)),
+            None => (internal(&exports[i]), None),
+        })
+        .collect();
     // Symbol indices: 0 @comp.id, 1 @feat.00, 2 .edata, 3 .debug$S, then
     // szName, rgpv, rgszName, rgwOrd, the names, then the externals.
     let local_names = ["szName", "rgpv", "rgszName", "rgwOrd"];
@@ -107,8 +101,9 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
             )
     };
     let first_external = 8 + crate::n32(statics.len() - 5);
-    let external_index =
-        |n: &str| first_external + crate::n32(externals.iter().position(|x| x == n).unwrap_or(0));
+    let external_index = |i: usize| {
+        first_external + crate::n32(by_own_name.iter().position(|&j| j == i).unwrap_or(0))
+    };
 
     // .edata's relocations: the directory's four addresses, then each export
     // (by name): its address, then its name's.
@@ -118,21 +113,28 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
         (32, local_index("rgszName")),
         (36, local_index("rgwOrd")),
     ];
-    for &i in &by_name {
+    // (As link.exe orders them: by export, by the exports' names, its slot
+    // to its symbol, and if it has a name, the next name pointer (by the
+    // table's order, sorted by exported name) to its string's symbol.)
+    let mut k = 0usize;
+    for &i in &by_own_name {
         let e = &exports[i];
         let slot = u32::from(e.ordinal.unwrap_or(dir.base) - dir.base);
-        relocations.push((crate::n32(eat(slot)), external_index(&internal(e))));
-        if let Some(k) = dir.names.iter().position(|&(_, j)| j == i) {
+        relocations.push((crate::n32(eat(slot)), external_index(i)));
+        if !e.noname
+            && let Some(&(_, j)) = dir.names.get(k)
+        {
             relocations.push((
                 names_at + 4 * crate::n32(k),
-                name_symbol(e.ordinal.unwrap_or(0)),
+                name_symbol(exports[j].ordinal.unwrap_or(0)),
             ));
+            k += 1;
         }
     }
     let _ = ordinals_at;
 
     // .debug$S.
-    let debug = debug_s(dir, x, &by_name, &internal);
+    let debug = debug_s(dir, x, &by_own_name, &internal);
     // .drectve.
     let drectve = x
         .directives
@@ -181,8 +183,11 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
     for (n, offset) in statics.iter().skip(5) {
         symbol(&mut symbols, name8(n), *offset, 1, 3);
     }
-    for n in &externals {
-        symbol(&mut symbols, name8(n), 0, 0, 2);
+    for (n, forwarder) in &externals {
+        match forwarder {
+            Some(at) => symbol(&mut symbols, name8(n), *at, 1, 3),
+            None => symbol(&mut symbols, name8(n), 0, 0, 2),
+        }
     }
     let count = crate::n32(symbols.len() / 18);
 
@@ -267,7 +272,7 @@ pub fn write(dir: &Directory, x: &Inputs<'_>) -> Vec<u8> {
 fn debug_s(
     dir: &Directory,
     x: &Inputs<'_>,
-    by_name: &[usize],
+    by_own_name: &[usize],
     internal: &dyn Fn(&Export) -> String,
 ) -> Vec<u8> {
     let mut symbols = Vec::new();
@@ -308,8 +313,8 @@ fn debug_s(
     }
     b.push(0);
     record(0x113D, &b);
-    // S_EXPORT per export, by exported name: ordinal, flags, the symbol.
-    for &i in by_name {
+    // S_EXPORT per export, by name (not EXPORTAS's): ordinal, flags, the symbol.
+    for &i in by_own_name {
         let e = &dir.exports[i];
         let mut flags = 0u16;
         if e.data {
@@ -327,9 +332,19 @@ fn debug_s(
         {
             flags |= 0x10;
         }
+        // A forwarder: flagged, by its own name.
+        let forwarded = dir.forwarders[i].is_some();
+        if forwarded {
+            flags |= 0x20;
+        }
+        let name = if forwarded {
+            e.name.clone()
+        } else {
+            internal(e)
+        };
         let mut b = e.ordinal.unwrap_or(0).to_le_bytes().to_vec();
         b.extend_from_slice(&flags.to_le_bytes());
-        b.extend_from_slice(internal(e).as_bytes());
+        b.extend_from_slice(name.as_bytes());
         b.push(0);
         record(0x1138, &b);
     }

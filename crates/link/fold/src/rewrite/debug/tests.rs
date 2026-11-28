@@ -727,7 +727,15 @@ fn annotations_that_change_length_rebuild_the_section() {
         }];
         let parsed: Vec<Parsed<'_>> = input
             .iter()
-            .map(|i| super::super::parse(i, units::Mode::default(), false))
+            .map(|i| {
+                super::super::parse(
+                    i,
+                    super::super::Needs {
+                        keep: true,
+                        ..Default::default()
+                    },
+                )
+            })
             .collect();
         let o = parsed[0].object.as_ref().unwrap();
         let s = stream(o, None);

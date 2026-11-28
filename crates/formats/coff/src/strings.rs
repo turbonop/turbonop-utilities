@@ -26,7 +26,7 @@ pub(crate) fn get(table: &[u8], offset: u32) -> Option<&[u8]> {
     if rest.is_empty() {
         return None;
     }
-    let len = rest.iter().position(|&b| b == 0).unwrap_or(rest.len());
+    let len = memchr::memchr(0, rest).unwrap_or(rest.len());
     Some(&rest[..len])
 }
 

@@ -570,7 +570,16 @@ fn sharing_again_changes_nothing() {
             .collect();
         let datas2: Vec<Vec<u8>> = flat.iter().map(|(_, d)| d.clone()).collect();
         let twice = run(&names2, &datas2, LIBRARY);
-        assert_eq!(twice.members.len(), flat.len());
+        assert_eq!(
+            twice.members.len(),
+            flat.len(),
+            "{:?}",
+            twice
+                .members
+                .iter()
+                .map(|m| String::from_utf8_lossy(&m.name).into_owned())
+                .collect::<Vec<_>>()
+        );
         for (m, (name, data)) in twice.members.iter().zip(&flat) {
             assert_eq!(m.name.as_ref(), name.as_slice());
             assert!(!m.synthesized);

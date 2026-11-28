@@ -24,6 +24,9 @@ pub fn describe(data: &[u8]) -> String {
     if let Some(desc) = describe_macho(data) {
         return desc;
     }
+    if let Some(desc) = describe_bitstream(data) {
+        return desc;
+    }
     if turbonop_wasm::is_wasm(data) {
         let version = data
             .get(4..8)
@@ -40,6 +43,28 @@ pub fn describe(data: &[u8]) -> String {
         return desc;
     }
     "unknown format".to_string()
+}
+
+/// LLVM bitcode (bare or in Darwin's wrapper), or another LLVM
+/// bitstream with a magic of its own, if `data` is.
+fn describe_bitstream(data: &[u8]) -> Option<String> {
+    use turbonop_bitcode::StreamKind;
+    if !turbonop_bitcode::is_bitcode(data)
+        && ![b"DIAG", b"RMRK", b"CPCH"]
+            .iter()
+            .any(|m| data.starts_with(*m))
+    {
+        return None;
+    }
+    let s = turbonop_bitcode::Stream::new(data).ok()?;
+    Some(match s.kind {
+        StreamKind::LlvmIr if s.wrapper.is_some() => "LLVM bitcode (wrapped)".to_string(),
+        StreamKind::LlvmIr => "LLVM bitcode".to_string(),
+        StreamKind::ClangDiagnostics => "clang serialized diagnostics (bitstream)".to_string(),
+        StreamKind::Remarks => "LLVM optimization remarks (bitstream)".to_string(),
+        StreamKind::ClangAst => "clang precompiled header or module (bitstream)".to_string(),
+        StreamKind::Unknown => "LLVM bitstream".to_string(),
+    })
 }
 
 /// A COFF object (or a /bigobj one, or an import object), if `data` is.

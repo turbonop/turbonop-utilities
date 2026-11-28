@@ -1,0 +1,387 @@
+<BITCODE_WRAPPER_HEADER Magic=0x0b17c0de Version=0x00000000 Offset=0x00000014 Size=0x00000fc8 CPUType=0x01000007/>
+<IDENTIFICATION_BLOCK_ID NumWords=5 BlockCodeSize=5>
+  <STRING abbrevid=4 op0=76 op1=76 op2=86 op3=77 op4=50 op5=52 op6=46 op7=48 op8=46 op9=48 op10=103 op11=105 op12=116/> record string = 'LLVM24.0.0git'
+  <EPOCH abbrevid=5 op0=0/>
+</IDENTIFICATION_BLOCK_ID>
+<MODULE_BLOCK NumWords=889 BlockCodeSize=3>
+  <VERSION op0=2/>
+  <BLOCKINFO_BLOCK/>
+  <TYPE_BLOCK_ID NumWords=12 BlockCodeSize=4>
+    <NUMENTRY op0=8/>
+    <UnknownCode25 abbrevid=4 op0=0/>
+    <INTEGER op0=32/>
+    <INTEGER op0=8/>
+    <ARRAY abbrevid=9 op0=9 op1=2/>
+    <FUNCTION abbrevid=5 op0=0 op1=1 op2=1/>
+    <METADATA/>
+    <INTEGER op0=64/>
+    <VOID/>
+  </TYPE_BLOCK_ID>
+  <PARAMATTR_GROUP_BLOCK_ID NumWords=181 BlockCodeSize=3>
+    <ENTRY op0=1 op1=4294967295 op2=0 op3=70 op4=0 op5=62 op6=0 op7=48 op8=0 op9=63 op10=0 op11=18 op12=0 op13=26 op14=0 op15=61 op16=1 op17=86 op18=144115188075856112 op19=1 op20=33 op21=2 op22=4 op23=102 op24=114 op25=97 op26=109 op27=101 op28=45 op29=112 op30=111 op31=105 op32=110 op33=116 op34=101 op35=114 op36=0 op37=97 op38=108 op39=108 op40=0 op41=4 op42=109 op43=105 op44=110 op45=45 op46=108 op47=101 op48=103 op49=97 op50=108 op51=45 op52=118 op53=101 op54=99 op55=116 op56=111 op57=114 op58=45 op59=119 op60=105 op61=100 op62=116 op63=104 op64=0 op65=48 op66=0 op67=4 op68=110 op69=111 op70=45 op71=116 op72=114 op73=97 op74=112 op75=112 op76=105 op77=110 op78=103 op79=45 op80=109 op81=97 op82=116 op83=104 op84=0 op85=116 op86=114 op87=117 op88=101 op89=0 op90=4 op91=115 op92=116 op93=97 op94=99 op95=107 op96=45 op97=112 op98=114 op99=111 op100=116 op101=101 op102=99 op103=116 op104=111 op105=114 op106=45 op107=98 op108=117 op109=102 op110=102 op111=101 op112=114 op113=45 op114=115 op115=105 op116=122 op117=101 op118=0 op119=56 op120=0 op121=4 op122=116 op123=97 op124=114 op125=103 op126=101 op127=116 op128=45 op129=99 op130=112 op131=117 op132=0 op133=112 op134=101 op135=110 op136=114 op137=121 op138=110 op139=0 op140=4 op141=116 op142=97 op143=114 op144=103 op145=101 op146=116 op147=45 op148=102 op149=101 op150=97 op151=116 op152=117 op153=114 op154=101 op155=115 op156=0 op157=43 op158=99 op159=109 op160=111 op161=118 op162=44 op163=43 op164=99 op165=120 op166=49 op167=54 op168=44 op169=43 op170=99 op171=120 op172=56 op173=44 op174=43 op175=102 op176=120 op177=115 op178=114 op179=44 op180=43 op181=109 op182=109 op183=120 op184=44 op185=43 op186=115 op187=97 op188=104 op189=102 op190=44 op191=43 op192=115 op193=115 op194=101 op195=44 op196=43 op197=115 op198=115 op199=101 op200=50 op201=44 op202=43 op203=115 op204=115 op205=101 op206=51 op207=44 op208=43 op209=115 op210=115 op211=101 op212=52 op213=46 op214=49 op215=44 op216=43 op217=115 op218=115 op219=115 op220=101 op221=51 op222=44 op223=43 op224=120 op225=56 op226=55 op227=0 op228=4 op229=116 op230=117 op231=110 op232=101 op233=45 op234=99 op235=112 op236=117 op237=0 op238=103 op239=101 op240=110 op241=101 op242=114 op243=105 op244=99 op245=0/>
+    <ENTRY op0=2 op1=1 op2=0 op3=68/>
+    <ENTRY op0=3 op1=4294967295 op2=0 op3=70 op4=0 op5=62 op6=0 op7=14 op8=0 op9=48 op10=0 op11=63 op12=0 op13=18 op14=0 op15=26 op16=0 op17=61 op18=1 op19=86 op20=144115188075855872 op21=1 op22=33 op23=2 op24=4 op25=102 op26=114 op27=97 op28=109 op29=101 op30=45 op31=112 op32=111 op33=105 op34=110 op35=116 op36=101 op37=114 op38=0 op39=97 op40=108 op41=108 op42=0 op43=4 op44=109 op45=105 op46=110 op47=45 op48=108 op49=101 op50=103 op51=97 op52=108 op53=45 op54=118 op55=101 op56=99 op57=116 op58=111 op59=114 op60=45 op61=119 op62=105 op63=100 op64=116 op65=104 op66=0 op67=48 op68=0 op69=4 op70=110 op71=111 op72=45 op73=116 op74=114 op75=97 op76=112 op77=112 op78=105 op79=110 op80=103 op81=45 op82=109 op83=97 op84=116 op85=104 op86=0 op87=116 op88=114 op89=117 op90=101 op91=0 op92=4 op93=115 op94=116 op95=97 op96=99 op97=107 op98=45 op99=112 op100=114 op101=111 op102=116 op103=101 op104=99 op105=116 op106=111 op107=114 op108=45 op109=98 op110=117 op111=102 op112=102 op113=101 op114=114 op115=45 op116=115 op117=105 op118=122 op119=101 op120=0 op121=56 op122=0 op123=4 op124=116 op125=97 op126=114 op127=103 op128=101 op129=116 op130=45 op131=99 op132=112 op133=117 op134=0 op135=112 op136=101 op137=110 op138=114 op139=121 op140=110 op141=0 op142=4 op143=116 op144=97 op145=114 op146=103 op147=101 op148=116 op149=45 op150=102 op151=101 op152=97 op153=116 op154=117 op155=114 op156=101 op157=115 op158=0 op159=43 op160=99 op161=109 op162=111 op163=118 op164=44 op165=43 op166=99 op167=120 op168=49 op169=54 op170=44 op171=43 op172=99 op173=120 op174=56 op175=44 op176=43 op177=102 op178=120 op179=115 op180=114 op181=44 op182=43 op183=109 op184=109 op185=120 op186=44 op187=43 op188=115 op189=97 op190=104 op191=102 op192=44 op193=43 op194=115 op195=115 op196=101 op197=44 op198=43 op199=115 op200=115 op201=101 op202=50 op203=44 op204=43 op205=115 op206=115 op207=101 op208=51 op209=44 op210=43 op211=115 op212=115 op213=101 op214=52 op215=46 op216=49 op217=44 op218=43 op219=115 op220=115 op221=115 op222=101 op223=51 op224=44 op225=43 op226=120 op227=56 op228=55 op229=0 op230=4 op231=116 op232=117 op233=110 op234=101 op235=45 op236=99 op237=112 op238=117 op239=0 op240=103 op241=101 op242=110 op243=101 op244=114 op245=105 op246=99 op247=0/>
+  </PARAMATTR_GROUP_BLOCK_ID>
+  <PARAMATTR_BLOCK NumWords=3 BlockCodeSize=3>
+    <ENTRY op0=1 op1=2/>
+    <ENTRY op0=3 op1=2/>
+    <ENTRY op0=2/>
+  </PARAMATTR_BLOCK>
+  <TRIPLE op0=120 op1=56 op2=54 op3=95 op4=54 op5=52 op6=45 op7=97 op8=112 op9=112 op10=108 op11=101 op12=45 op13=109 op14=97 op15=99 op16=111 op17=115 op18=120 op19=49 op20=49 op21=46 op22=48 op23=46 op24=48/>
+  <DATALAYOUT op0=101 op1=45 op2=109 op3=58 op4=111 op5=45 op6=112 op7=50 op8=55 op9=48 op10=58 op11=51 op12=50 op13=58 op14=51 op15=50 op16=45 op17=112 op18=50 op19=55 op20=49 op21=58 op22=51 op23=50 op24=58 op25=51 op26=50 op27=45 op28=112 op29=50 op30=55 op31=50 op32=58 op33=54 op34=52 op35=58 op36=54 op37=52 op38=45 op39=105 op40=54 op41=52 op42=58 op43=54 op44=52 op45=45 op46=105 op47=49 op48=50 op49=56 op50=58 op51=49 op52=50 op53=56 op54=45 op55=102 op56=56 op57=48 op58=58 op59=49 op60=50 op61=56 op62=45 op63=110 op64=56 op65=58 op66=49 op67=54 op68=58 op69=51 op70=50 op71=58 op72=54 op73=52 op74=45 op75=83 op76=49 op77=50 op78=56/>
+  <SOURCE_FILENAME abbrevid=5 op0=82 op1=58 op2=92 op3=116 op4=111 op5=111 op6=108 op7=115 op8=92 op9=98 op10=105 op11=116 op12=99 op13=111 op14=100 op15=101 op16=92 op17=101 op18=109 op19=98 op20=101 op21=100 op22=46 op23=99/> record string = 'R:\tools\bitcode\embed.c'
+  <GUIDLIST abbrevid=6 op0=3543964511 op1=4014046494 op2=916818868 op3=2816364750 op4=1135815066 op5=3611130040 op6=4078974390 op7=769795214/>
+  <GLOBALVAR op0=0 op1=16 op2=1 op3=2 op4=5 op5=0 op6=3 op7=0 op8=0 op9=0 op10=2 op11=0 op12=0 op13=0 op14=0 op15=0 op16=16 op17=0 op18=0 op19=0/>
+  <GLOBALVAR op0=16 op1=13 op2=3 op3=3 op4=14 op5=3 op6=1 op7=0 op8=0 op9=0 op10=1 op11=0 op12=0 op13=0 op14=0 op15=1 op16=16 op17=0 op18=0 op19=0/>
+  <FUNCTION op0=29 op1=14 op2=4 op3=0 op4=0 op5=0 op6=1 op7=0 op8=0 op9=0 op10=0 op11=2 op12=0 op13=0 op14=0 op15=0 op16=0 op17=0 op18=0 op19=16 op20=0 op21=0/>
+  <FUNCTION op0=43 op1=15 op2=4 op3=8 op4=0 op5=3 op6=2 op7=0 op8=0 op9=0 op10=0 op11=1 op12=0 op13=0 op14=0 op15=0 op16=0 op17=1 op18=0 op19=16 op20=0 op21=0/>
+  <VSTOFFSET abbrevid=7 op0=893/>
+  <CONSTANTS_BLOCK NumWords=19 BlockCodeSize=4>
+    <SETTYPE abbrevid=4 op0=1/>
+    <INTEGER abbrevid=5 op0=2/>
+    <INTEGER abbrevid=5 op0=4/>
+    <INTEGER abbrevid=5 op0=16/>
+    <INTEGER abbrevid=5 op0=14/>
+    <SETTYPE abbrevid=4 op0=6/>
+    <NULL/>
+    <INTEGER abbrevid=5 op0=6451064793531745733/>
+    <INTEGER abbrevid=5 op0=7875414114464211356/>
+    <INTEGER abbrevid=5 op0=-8690166940939128464/>
+    <INTEGER abbrevid=5 op0=1855364933336413925/>
+    <SETTYPE abbrevid=4 op0=3/>
+    <CSTRING abbrevid=12 op0=101 op1=109 op2=98 op3=101 op4=100 op5=100 op6=101 op7=100/> record string = 'embedded'
+  </CONSTANTS_BLOCK>
+  <METADATA_KIND_BLOCK NumWords=292 BlockCodeSize=3>
+    <KIND op0=0 op1=100 op2=98 op3=103/>
+    <KIND op0=1 op1=116 op2=98 op3=97 op4=97/>
+    <KIND op0=2 op1=112 op2=114 op3=111 op4=102/>
+    <KIND op0=3 op1=102 op2=112 op3=109 op4=97 op5=116 op6=104/>
+    <KIND op0=4 op1=114 op2=97 op3=110 op4=103 op5=101/>
+    <KIND op0=5 op1=116 op2=98 op3=97 op4=97 op5=46 op6=115 op7=116 op8=114 op9=117 op10=99 op11=116/>
+    <KIND op0=6 op1=105 op2=110 op3=118 op4=97 op5=114 op6=105 op7=97 op8=110 op9=116 op10=46 op11=108 op12=111 op13=97 op14=100/>
+    <KIND op0=7 op1=97 op2=108 op3=105 op4=97 op5=115 op6=46 op7=115 op8=99 op9=111 op10=112 op11=101/>
+    <KIND op0=8 op1=110 op2=111 op3=97 op4=108 op5=105 op6=97 op7=115/>
+    <KIND op0=9 op1=110 op2=111 op3=110 op4=116 op5=101 op6=109 op7=112 op8=111 op9=114 op10=97 op11=108/>
+    <KIND op0=10 op1=108 op2=108 op3=118 op4=109 op5=46 op6=109 op7=101 op8=109 op9=46 op10=112 op11=97 op12=114 op13=97 op14=108 op15=108 op16=101 op17=108 op18=95 op19=108 op20=111 op21=111 op22=112 op23=95 op24=97 op25=99 op26=99 op27=101 op28=115 op29=115/>
+    <KIND op0=11 op1=110 op2=111 op3=110 op4=110 op5=117 op6=108 op7=108/>
+    <KIND op0=12 op1=100 op2=101 op3=114 op4=101 op5=102 op6=101 op7=114 op8=101 op9=110 op10=99 op11=101 op12=97 op13=98 op14=108 op15=101/>
+    <KIND op0=13 op1=100 op2=101 op3=114 op4=101 op5=102 op6=101 op7=114 op8=101 op9=110 op10=99 op11=101 op12=97 op13=98 op14=108 op15=101 op16=95 op17=111 op18=114 op19=95 op20=110 op21=117 op22=108 op23=108/>
+    <KIND op0=14 op1=109 op2=97 op3=107 op4=101 op5=46 op6=105 op7=109 op8=112 op9=108 op10=105 op11=99 op12=105 op13=116/>
+    <KIND op0=15 op1=117 op2=110 op3=112 op4=114 op5=101 op6=100 op7=105 op8=99 op9=116 op10=97 op11=98 op12=108 op13=101/>
+    <KIND op0=16 op1=105 op2=110 op3=118 op4=97 op5=114 op6=105 op7=97 op8=110 op9=116 op10=46 op11=103 op12=114 op13=111 op14=117 op15=112/>
+    <KIND op0=17 op1=97 op2=108 op3=105 op4=103 op5=110/>
+    <KIND op0=18 op1=108 op2=108 op3=118 op4=109 op5=46 op6=108 op7=111 op8=111 op9=112/>
+    <KIND op0=19 op1=116 op2=121 op3=112 op4=101/>
+    <KIND op0=20 op1=115 op2=101 op3=99 op4=116 op5=105 op6=111 op7=110 op8=95 op9=112 op10=114 op11=101 op12=102 op13=105 op14=120/>
+    <KIND op0=21 op1=97 op2=98 op3=115 op4=111 op5=108 op6=117 op7=116 op8=101 op9=95 op10=115 op11=121 op12=109 op13=98 op14=111 op15=108/>
+    <KIND op0=22 op1=97 op2=115 op3=115 op4=111 op5=99 op6=105 op7=97 op8=116 op9=101 op10=100/>
+    <KIND op0=23 op1=99 op2=97 op3=108 op4=108 op5=101 op6=101 op7=115/>
+    <KIND op0=24 op1=105 op2=114 op3=114 op4=95 op5=108 op6=111 op7=111 op8=112/>
+    <KIND op0=25 op1=108 op2=108 op3=118 op4=109 op5=46 op6=97 op7=99 op8=99 op9=101 op10=115 op11=115 op12=46 op13=103 op14=114 op15=111 op16=117 op17=112/>
+    <KIND op0=26 op1=99 op2=97 op3=108 op4=108 op5=98 op6=97 op7=99 op8=107/>
+    <KIND op0=27 op1=108 op2=108 op3=118 op4=109 op5=46 op6=112 op7=114 op8=101 op9=115 op10=101 op11=114 op12=118 op13=101 op14=46 op15=97 op16=99 op17=99 op18=101 op19=115 op20=115 op21=46 op22=105 op23=110 op24=100 op25=101 op26=120/>
+    <KIND op0=28 op1=118 op2=99 op3=97 op4=108 op5=108 op6=95 op7=118 op8=105 op9=115 op10=105 op11=98 op12=105 op13=108 op14=105 op15=116 op16=121/>
+    <KIND op0=29 op1=110 op2=111 op3=117 op4=110 op5=100 op6=101 op7=102/>
+    <KIND op0=30 op1=97 op2=110 op3=110 op4=111 op5=116 op6=97 op7=116 op8=105 op9=111 op10=110/>
+    <KIND op0=31 op1=110 op2=111 op3=115 op4=97 op5=110 op6=105 op7=116 op8=105 op9=122 op10=101/>
+    <KIND op0=32 op1=102 op2=117 op3=110 op4=99 op5=95 op6=115 op7=97 op8=110 op9=105 op10=116 op11=105 op12=122 op13=101/>
+    <KIND op0=33 op1=101 op2=120 op3=99 op4=108 op5=117 op6=100 op7=101/>
+    <KIND op0=34 op1=109 op2=101 op3=109 op4=112 op5=114 op6=111 op7=102/>
+    <KIND op0=35 op1=99 op2=97 op3=108 op4=108 op5=115 op6=105 op7=116 op8=101/>
+    <KIND op0=36 op1=107 op2=99 op3=102 op4=105 op5=95 op6=116 op7=121 op8=112 op9=101/>
+    <KIND op0=37 op1=112 op2=99 op3=115 op4=101 op5=99 op6=116 op7=105 op8=111 op9=110 op10=115/>
+    <KIND op0=38 op1=68 op2=73 op3=65 op4=115 op5=115 op6=105 op7=103 op8=110 op9=73 op10=68/>
+    <KIND op0=39 op1=99 op2=111 op3=114 op4=111 op5=46 op6=111 op7=117 op8=116 op9=115 op10=105 op11=100 op12=101 op13=46 op14=102 op15=114 op16=97 op17=109 op18=101/>
+    <KIND op0=40 op1=109 op2=109 op3=114 op4=97/>
+    <KIND op0=41 op1=110 op2=111 op3=97 op4=108 op5=105 op6=97 op7=115 op8=46 op9=97 op10=100 op11=100 op12=114 op13=115 op14=112 op15=97 op16=99 op17=101/>
+    <KIND op0=42 op1=99 op2=97 op3=108 op4=108 op5=101 op6=101 op7=95 op8=116 op9=121 op10=112 op11=101/>
+    <KIND op0=43 op1=110 op2=111 op3=102 op4=114 op5=101 op6=101 op7=111 op8=98 op9=106/>
+    <KIND op0=44 op1=99 op2=97 op3=112 op4=116 op5=117 op6=114 op7=101 op8=115/>
+    <KIND op0=45 op1=97 op2=108 op3=108 op4=111 op5=99 op6=95 op7=116 op8=111 op9=107 op10=101 op11=110/>
+    <KIND op0=46 op1=105 op2=109 op3=112 op4=108 op5=105 op6=99 op7=105 op8=116 op9=46 op10=114 op11=101 op12=102/>
+    <KIND op0=47 op1=110 op2=111 op3=102 op4=112 op5=99 op6=108 op7=97 op8=115 op9=115/>
+    <KIND op0=48 op1=99 op2=97 op3=108 op4=108 op5=95 op6=116 op7=97 op8=114 op9=103 op10=101 op11=116/>
+    <KIND op0=49 op1=105 op2=110 op3=108 op4=105 op5=110 op6=101 op7=95 op8=104 op9=105 op10=115 op11=116 op12=111 op13=114 op14=121/>
+    <KIND op0=50 op1=101 op2=108 op3=102 op4=95 op5=115 op6=101 op7=99 op8=116 op9=105 op10=111 op11=110 op12=95 op13=112 op14=114 op15=111 op16=112 op17=101 op18=114 op19=116 op20=105 op21=101 op22=115/>
+    <KIND op0=51 op1=103 op2=117 op3=105 op4=100/>
+    <KIND op0=52 op1=109 op2=101 op3=109 op4=46 op5=99 op6=97 op7=99 op8=104 op9=101 op10=95 op11=104 op12=105 op13=110 op14=116/>
+    <KIND op0=53 op1=98 op2=108 op3=111 op4=99 op5=107 op6=46 op7=117 op8=110 op9=105 op10=102 op11=111 op12=114 op13=109 op14=105 op15=116 op16=121 op17=46 op18=112 op19=114 op20=111 op21=102 op22=105 op23=108 op24=101/>
+    <KIND op0=54 op1=99 op2=97 op3=108 op4=108 op5=103 op6=114 op7=97 op8=112 op9=104/>
+    <KIND op0=55 op1=109 op2=101 op3=116 op4=97 op5=100 op6=97 op7=116 op8=97 op9=95 op10=115 op11=101 op12=99 op13=116 op14=105 op15=111 op16=110 op17=95 op18=107 op19=105 op20=110 op21=100/>
+    <KIND op0=56 op1=97 op2=116 op3=111 op4=109 op5=105 op6=99 op7=46 op8=105 op9=103 op10=110 op11=111 op12=114 op13=101 op14=46 op15=100 op16=101 op17=110 op18=111 op19=114 op20=109 op21=97 op22=108 op23=46 op24=109 op25=111 op26=100 op27=101/>
+  </METADATA_KIND_BLOCK>
+  <METADATA_BLOCK NumWords=102 BlockCodeSize=4>
+    <STRINGS abbrevid=9 op0=10 op1=12/> num-strings = 10 {
+      'debugger-tuning'
+      'lldb'
+      'PIC Level'
+      'uwtable'
+      'frame-pointer'
+      'clang version 24.0.0git (https://github.com/llvm/llvm-project.git c74b358f44c31e3615fe942556a41be8c9a8d877)'
+      '__libc_errno'
+      'int'
+      'omnipotent char'
+      'Simple C/C++ TBAA'
+    }
+    <VALUE op0=1 op1=5/>
+    <VALUE op0=1 op1=6/>
+    <VALUE op0=1 op1=7/>
+    <VALUE op0=6 op1=8/>
+    <VALUE op0=6 op1=9/>
+    <VALUE op0=6 op1=10/>
+    <NODE op0=11 op1=1 op2=2/>
+    <NODE op0=12 op1=3 op2=11/>
+    <NODE op0=13 op1=4 op2=11/>
+    <NODE op0=13 op1=5 op2=11/>
+    <NODE op0=6/>
+    <NODE op0=10/>
+    <NODE op0=9 op1=22 op2=14/>
+    <NODE op0=8 op1=23 op2=14/>
+    <NODE op0=7 op1=24 op2=14/>
+    <NODE op0=25 op1=24 op2=14/>
+    <NODE op0=15/>
+    <NODE op0=16/>
+    <NAME abbrevid=10 op0=108 op1=108 op2=118 op3=109 op4=46 op5=109 op6=111 op7=100 op8=117 op9=108 op10=101 op11=46 op12=102 op13=108 op14=97 op15=103 op16=115/> record string = 'llvm.module.flags'
+    <NAMED_NODE op0=16 op1=17 op2=18 op3=19/>
+    <NAME abbrevid=10 op0=108 op1=108 op2=118 op3=109 op4=46 op5=105 op6=100 op7=101 op8=110 op9=116/> record string = 'llvm.ident'
+    <NAMED_NODE op0=20/>
+    <NAME abbrevid=10 op0=108 op1=108 op2=118 op3=109 op4=46 op5=101 op6=114 op7=114 op8=110 op9=111 op10=46 op11=116 op12=98 op13=97 op14=97/> record string = 'llvm.errno.tbaa'
+    <NAMED_NODE op0=25/>
+    <GLOBAL_DECL_ATTACHMENT op0=0 op1=51 op2=26/>
+    <GLOBAL_DECL_ATTACHMENT op0=1 op1=51 op2=27/>
+  </METADATA_BLOCK>
+  <OPERAND_BUNDLE_TAGS_BLOCK NumWords=89 BlockCodeSize=3>
+    <OPERAND_BUNDLE_TAG op0=97 op1=108 op2=105 op3=103 op4=110/>
+    <OPERAND_BUNDLE_TAG op0=99 op1=111 op2=108 op3=100/>
+    <OPERAND_BUNDLE_TAG op0=100 op1=101 op2=114 op3=101 op4=102 op5=101 op6=114 op7=101 op8=110 op9=99 op10=101 op11=97 op12=98 op13=108 op14=101/>
+    <OPERAND_BUNDLE_TAG op0=100 op1=101 op2=114 op3=101 op4=102 op5=101 op6=114 op7=101 op8=110 op9=99 op10=101 op11=97 op12=98 op13=108 op14=101 op15=95 op16=111 op17=114 op18=95 op19=110 op20=117 op21=108 op22=108/>
+    <OPERAND_BUNDLE_TAG op0=105 op1=103 op2=110 op3=111 op4=114 op5=101/>
+    <OPERAND_BUNDLE_TAG op0=110 op1=111 op2=110 op3=110 op4=117 op5=108 op6=108/>
+    <OPERAND_BUNDLE_TAG op0=110 op1=111 op2=117 op3=110 op4=100 op5=101 op6=102/>
+    <OPERAND_BUNDLE_TAG op0=114 op1=97 op2=110 op3=103 op4=101/>
+    <OPERAND_BUNDLE_TAG op0=115 op1=101 op2=112 op3=97 op4=114 op5=97 op6=116 op7=101 op8=95 op9=115 op10=116 op11=111 op12=114 op13=97 op14=103 op15=101/>
+    <OPERAND_BUNDLE_TAG op0=100 op1=101 op2=111 op3=112 op4=116/>
+    <OPERAND_BUNDLE_TAG op0=102 op1=117 op2=110 op3=99 op4=108 op5=101 op6=116/>
+    <OPERAND_BUNDLE_TAG op0=103 op1=99 op2=45 op3=116 op4=114 op5=97 op6=110 op7=115 op8=105 op9=116 op10=105 op11=111 op12=110/>
+    <OPERAND_BUNDLE_TAG op0=99 op1=102 op2=103 op3=117 op4=97 op5=114 op6=100 op7=116 op8=97 op9=114 op10=103 op11=101 op12=116/>
+    <OPERAND_BUNDLE_TAG op0=112 op1=114 op2=101 op3=97 op4=108 op5=108 op6=111 op7=99 op8=97 op9=116 op10=101 op11=100/>
+    <OPERAND_BUNDLE_TAG op0=103 op1=99 op2=45 op3=108 op4=105 op5=118 op6=101/>
+    <OPERAND_BUNDLE_TAG op0=99 op1=108 op2=97 op3=110 op4=103 op5=46 op6=97 op7=114 op8=99 op9=46 op10=97 op11=116 op12=116 op13=97 op14=99 op15=104 op16=101 op17=100 op18=99 op19=97 op20=108 op21=108/>
+    <OPERAND_BUNDLE_TAG op0=112 op1=116 op2=114 op3=97 op4=117 op5=116 op6=104/>
+    <OPERAND_BUNDLE_TAG op0=107 op1=99 op2=102 op3=105/>
+    <OPERAND_BUNDLE_TAG op0=99 op1=111 op2=110 op3=118 op4=101 op5=114 op6=103 op7=101 op8=110 op9=99 op10=101 op11=99 op12=116 op13=114 op14=108/>
+    <OPERAND_BUNDLE_TAG op0=100 op1=101 op2=97 op3=99 op4=116 op5=105 op6=118 op7=97 op8=116 op9=105 op10=111 op11=110 op12=45 op13=115 op14=121 op15=109 op16=98 op17=111 op18=108/>
+  </OPERAND_BUNDLE_TAGS_BLOCK>
+  <UnknownBlock26 NumWords=6 BlockCodeSize=2>
+    <UnknownCode1 op0=115 op1=105 op2=110 op3=103 op4=108 op5=101 op6=116 op7=104 op8=114 op9=101 op10=97 op11=100/>
+    <UnknownCode1/>
+  </UnknownBlock26>
+  <FUNCTION_BLOCK NumWords=18 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <METADATA_BLOCK NumWords=3 BlockCodeSize=3>
+      <VALUE op0=6 op1=11/>
+      <NODE op0=29/>
+      <NODE op0=24 op1=24 op2=14/>
+    </METADATA_BLOCK>
+    <INST_CALL op0=3 op1=32785 op2=4 op3=12 op4=1/>
+    <INST_LOAD abbrevid=4 op0=16 op1=1 op2=3 op3=0/>
+    <INST_BINOP abbrevid=9 op0=1 op1=2 op2=0 op3=2/>
+    <INST_STORE abbrevid=5 op0=18 op1=1 op2=3 op3=0/>
+    <INST_RET abbrevid=13 op0=1/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=4 BlockCodeSize=3>
+      <ATTACHMENT op0=51 op1=29/>
+      <ATTACHMENT op0=1 op1=1 op2=30/>
+      <ATTACHMENT op0=3 op1=1 op2=30/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <FUNCTION_BLOCK NumWords=21 BlockCodeSize=5>
+    <DECLAREBLOCKS op0=1/>
+    <CONSTANTS_BLOCK NumWords=1 BlockCodeSize=4>
+      <SETTYPE abbrevid=4 op0=1/>
+      <INTEGER abbrevid=5 op0=10/>
+    </CONSTANTS_BLOCK>
+    <METADATA_BLOCK NumWords=3 BlockCodeSize=3>
+      <VALUE op0=6 op1=12/>
+      <NODE op0=29/>
+      <NODE op0=23 op1=23 op2=14/>
+    </METADATA_BLOCK>
+    <INST_BINOP abbrevid=9 op0=2 op1=1 op2=2 op3=2/>
+    <INST_BINOP abbrevid=8 op0=3 op1=10 op2=10/>
+    <INST_CAST abbrevid=11 op0=1 op1=6 op2=1 op3=1/>
+    <INST_GEP abbrevid=17 op0=7 op1=2 op2=18 op3=1/>
+    <INST_LOAD abbrevid=4 op0=1 op1=2 op2=1 op3=0/>
+    <INST_CAST abbrevid=10 op0=1 op1=1 op2=2/>
+    <INST_BINOP abbrevid=9 op0=6 op1=1 op2=0 op3=2/>
+    <INST_RET abbrevid=13 op0=1/>
+    <METADATA_ATTACHMENT_BLOCK NumWords=3 BlockCodeSize=3>
+      <ATTACHMENT op0=51 op1=29/>
+      <ATTACHMENT op0=4 op1=1 op2=30/>
+    </METADATA_ATTACHMENT_BLOCK>
+  </FUNCTION_BLOCK>
+  <VALUE_SYMTAB NumWords=3 BlockCodeSize=4>
+    <FNENTRY abbrevid=8 op0=2 op1=850/>
+    <FNENTRY abbrevid=8 op0=3 op1=870/>
+  </VALUE_SYMTAB>
+</MODULE_BLOCK>
+<SYMTAB_BLOCK NumWords=49 BlockCodeSize=3>
+  <BLOB abbrevid=4/> blob data = unprintable, 184 bytes.
+</SYMTAB_BLOCK>
+<STRTAB_BLOCK NumWords=58 BlockCodeSize=3>
+  <BLOB abbrevid=4/> blob data = 'embedded_counterembedded_nameembedded_entryembedded_helper24.0.0git c74b358f44c31e3615fe942556a41be8c9a8d877x86_64-apple-macosx11.0.0R:\tools\bitcode\embed.c_embedded_entry_embedded_helper_embedded_counter_embedded_name'
+</STRTAB_BLOCK>
+
+
+Summary of embed-darwin.bc:
+         Total size: 32320b/4040.00B/1010W
+        Stream type: LLVM IR
+  # Toplevel Blocks: 4
+
+Per-block Summary:
+  Block ID #0 (BLOCKINFO_BLOCK):
+      Num Instances: 1
+         Total Size: 1280b/160.00B/40W
+    Percent of file: 3.9604%
+      Num SubBlocks: 0
+        Num Abbrevs: 28
+        Num Records: 3
+    Percent Abbrevs: 0.0000%
+
+  Block ID #8 (MODULE_BLOCK):
+      Num Instances: 1
+         Total Size: 2755b/344.38B/86W
+    Percent of file: 8.5241%
+      Num SubBlocks: 12
+        Num Abbrevs: 4
+        Num Records: 10
+    Percent Abbrevs: 30.0000%
+
+  Block ID #9 (PARAMATTR_BLOCK):
+      Num Instances: 1
+         Total Size: 149b/18.62B/4W
+    Percent of file: 0.4610%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 3
+    Percent Abbrevs: 0.0000%
+
+  Block ID #10 (PARAMATTR_GROUP_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 5845b/730.62B/182W
+    Percent of file: 18.0848%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 3
+    Percent Abbrevs: 0.0000%
+
+  Block ID #11 (CONSTANTS_BLOCK):
+      Num Instances: 2
+         Total Size: 765b/95.62B/23W
+    Percent of file: 2.3670%
+       Average Size: 382.50/47.81B/11W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 4/2.000000e+00
+    Tot/Avg Records: 15/7.500000e+00
+    Percent Abbrevs: 93.3333%
+
+  Block ID #12 (FUNCTION_BLOCK):
+      Num Instances: 2
+         Total Size: 621b/77.62B/19W
+    Percent of file: 1.9214%
+       Average Size: 310.50/38.81B/9W
+  Tot/Avg SubBlocks: 5/2.500000e+00
+    Tot/Avg Abbrevs: 0/0.000000e+00
+    Tot/Avg Records: 15/7.500000e+00
+    Percent Abbrevs: 80.0000%
+
+  Block ID #13 (IDENTIFICATION_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 214b/26.75B/6W
+    Percent of file: 0.6621%
+      Num SubBlocks: 0
+        Num Abbrevs: 2
+        Num Records: 2
+    Percent Abbrevs: 100.0000%
+
+  Block ID #14 (VALUE_SYMTAB):
+      Num Instances: 1
+         Total Size: 149b/18.62B/4W
+    Percent of file: 0.4610%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 2
+    Percent Abbrevs: 100.0000%
+
+  Block ID #15 (METADATA_BLOCK):
+      Num Instances: 3
+         Total Size: 3620b/452.50B/113W
+    Percent of file: 11.2005%
+       Average Size: 1206.67/150.83B/37W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 7/2.333333e+00
+    Tot/Avg Records: 33/1.100000e+01
+    Percent Abbrevs: 12.1212%
+
+  Block ID #16 (METADATA_ATTACHMENT_BLOCK):
+      Num Instances: 2
+         Total Size: 338b/42.25B/10W
+    Percent of file: 1.0458%
+       Average Size: 169.00/21.12B/5W
+  Tot/Avg SubBlocks: 0/0.000000e+00
+    Tot/Avg Abbrevs: 0/0.000000e+00
+    Tot/Avg Records: 5/2.500000e+00
+    Percent Abbrevs: 0.0000%
+
+  Block ID #17 (TYPE_BLOCK_ID):
+      Num Instances: 1
+         Total Size: 437b/54.62B/13W
+    Percent of file: 1.3521%
+      Num SubBlocks: 0
+        Num Abbrevs: 6
+        Num Records: 9
+    Percent Abbrevs: 33.3333%
+
+  Block ID #21 (OPERAND_BUNDLE_TAGS_BLOCK):
+      Num Instances: 1
+         Total Size: 2901b/362.62B/90W
+    Percent of file: 8.9759%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 20
+    Percent Abbrevs: 0.0000%
+
+  Block ID #22 (METADATA_KIND_BLOCK):
+      Num Instances: 1
+         Total Size: 9397b/1174.62B/293W
+    Percent of file: 29.0749%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 57
+    Percent Abbrevs: 0.0000%
+
+  Block ID #23 (STRTAB_BLOCK):
+      Num Instances: 1
+         Total Size: 1910b/238.75B/59W
+    Percent of file: 5.9097%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 1
+    Percent Abbrevs: 100.0000%
+
+  Block ID #25 (SYMTAB_BLOCK):
+      Num Instances: 1
+         Total Size: 1622b/202.75B/50W
+    Percent of file: 5.0186%
+      Num SubBlocks: 0
+        Num Abbrevs: 1
+        Num Records: 1
+    Percent Abbrevs: 100.0000%
+
+  Block ID #26:
+      Num Instances: 1
+         Total Size: 245b/30.62B/7W
+    Percent of file: 0.7580%
+      Num SubBlocks: 0
+        Num Abbrevs: 0
+        Num Records: 2
+    Percent Abbrevs: 0.0000%
+

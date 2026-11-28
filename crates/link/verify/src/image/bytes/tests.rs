@@ -34,6 +34,10 @@ impl Names for Fake {
         let to = self.relocations.partition_point(|r| r.0 < rva + len);
         &self.relocations[from..to]
     }
+
+    fn procedure_end(&self, rva: u32) -> Option<u32> {
+        self.in_code(rva).then_some(self.code.0 + self.code.1)
+    }
 }
 
 /// Two images: `f` at 0x1000 in the first and 0x2000 in the second, `g`
@@ -244,6 +248,58 @@ fn image_relative_words_are_inferred() {
     // Misaligned regions don't read words they don't hold.
     let (rep, _) = run(&a, 0x8001, &[1, 2, 3], &b, 0x9001, &[1, 2, 4], Isa::Data);
     assert!(rep.failed("functions or data whose bytes differ"));
+}
+
+/// `mov ecx, [rax + rcx*4 + table]`, then `ret`: MSVC's switch, the image
+/// base in rax and `table` the jump table's RVA.
+fn switch(table: u32) -> Vec<u8> {
+    let mut v = vec![0x8B, 0x8C, 0x88];
+    v.extend(table.to_le_bytes());
+    v.push(0xC3);
+    v
+}
+
+#[test]
+fn x64_image_relative_displacements_are_inferred() {
+    let (a, b) = images();
+    // The table at f+0x40 in each (the displacement is misaligned).
+    let (rep, f) = run(
+        &a,
+        0x1000,
+        &switch(0x1040),
+        &b,
+        0x2000,
+        &switch(0x2040),
+        Isa::X64,
+    );
+    assert!(rep.passed(), "{}", rep.text());
+    assert_eq!(f.inferred, 1);
+    // Another place in the second.
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &switch(0x1040),
+        &b,
+        0x2000,
+        &switch(0x2044),
+        Isa::X64,
+    );
+    assert!(
+        rep.failed("functions or data whose bytes differ"),
+        "{}",
+        rep.text()
+    );
+    // Another function in the second.
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &switch(0x3000),
+        &b,
+        0x2000,
+        &switch(0x3000 + 0x1000),
+        Isa::X64,
+    );
+    assert!(!rep.passed(), "{}", rep.text());
 }
 
 /// ARM64 words.
@@ -517,4 +573,209 @@ fn constants_named_by_contents_compare_as_far_as_they_are_read() {
         "{}",
         rep.text()
     );
+}
+
+/// MSVC's switch: `mov ecx, [rdx + rax*4 + T]; add rcx, rdx; jmp rcx`,
+/// then `int3` to T (f+0x10), then T's entries: RVAs of f+`cases`, then a
+/// byte table (`index`), all in the procedure.
+fn msvc_switch(f: u32, cases: &[u32], index: &[u8]) -> Vec<u8> {
+    let mut v = vec![0x8B, 0x8C, 0x82];
+    v.extend((f + 0x10).to_le_bytes());
+    v.extend([0x48, 0x03, 0xCA, 0xFF, 0xE1]);
+    v.resize(0x10, 0xCC);
+    for c in cases {
+        v.extend((f + c).to_le_bytes());
+    }
+    v.extend(index);
+    v
+}
+
+#[test]
+fn msvc_switch_tables_in_a_procedure_are_compared_as_words() {
+    let (mut a, mut b) = images();
+    a.code = (0x1000, 0x40);
+    b.code = (0x2000, 0x40);
+    // Entries whose bytes, read as instructions, are `call`s and `jns`s
+    // naming other things in the two (`e8 ..` and `79 00`).
+    let cases = [0x0e8, 0x079, 0x0c, 0x0e8];
+    let index = [0, 1, 2, 3, 0xe8, 0x79, 0x00, 1];
+    let x = msvc_switch(0x1000, &cases, &index);
+    let y = msvc_switch(0x2000, &cases, &index);
+    let (rep, f) = run(&a, 0x1000, &x, &b, 0x2000, &y, Isa::X64);
+    assert!(rep.passed(), "{}", rep.text());
+    // The table's displacement, and the four entries.
+    assert_eq!(f.inferred, 5);
+    // A case that goes elsewhere in the second.
+    let y = msvc_switch(0x2000, &[0x0e8, 0x079, 0x10, 0x0e8], &index);
+    let (rep, _) = run(&a, 0x1000, &x, &b, 0x2000, &y, Isa::X64);
+    assert!(
+        rep.failed("functions or data whose bytes differ"),
+        "{}",
+        rep.text()
+    );
+    // Another index.
+    let mut other = index;
+    other[2] = 1;
+    let y = msvc_switch(0x2000, &cases, &other);
+    let (rep, _) = run(&a, 0x1000, &x, &b, 0x2000, &y, Isa::X64);
+    assert!(!rep.passed(), "{}", rep.text());
+}
+
+#[test]
+fn operands_outside_procedures_explain_only_what_words_dont() {
+    // Data in a code contribution after the procedure: RVAs whose bytes
+    // decode as a `call` naming different things.
+    let (mut a, mut b) = images();
+    a.code = (0x1000, 0x10);
+    b.code = (0x2000, 0x10);
+    let region = |f: u32| {
+        let mut v = vec![0xC3];
+        v.resize(0x10, 0xCC);
+        v.extend((f + 0x8e8).to_le_bytes());
+        v.extend((f + 0x8e8).to_le_bytes());
+        v
+    };
+    let (rep, f) = run(
+        &a,
+        0x1000,
+        &region(0x1000),
+        &b,
+        0x2000,
+        &region(0x2000),
+        Isa::X64,
+    );
+    assert!(rep.passed(), "{}", rep.text());
+    assert_eq!(f.inferred, 2);
+}
+
+/// A Windows image's TLS: variables by their offsets in the template.
+struct Windows {
+    base: Fake,
+    tls: Vec<(i64, &'static [u8])>,
+}
+
+impl Names for Windows {
+    fn name(&self, rva: u32) -> Option<(&[u8], u32)> {
+        self.base.name(rva)
+    }
+
+    fn in_code(&self, rva: u32) -> bool {
+        self.base.in_code(rva)
+    }
+
+    fn image_base(&self) -> u64 {
+        BASE
+    }
+
+    fn relocations_in(&self, rva: u32, len: u32) -> &[(u32, u8)] {
+        self.base.relocations_in(rva, len)
+    }
+
+    fn tls(&self, offset: i64) -> Option<(&[u8], u32)> {
+        let (at, name) = self.tls.iter().rev().find(|t| t.0 <= offset)?;
+        Some((name, u32::try_from(offset - at).ok()?))
+    }
+
+    fn tls_in_section(&self) -> bool {
+        true
+    }
+}
+
+/// `mov eax, SECREL; mov rdx, gs:[58h] (or a nop of its length); mov
+/// rcx, [rdx+rcx*8]; movzx eax, byte ptr [rcx+rax]; ret`, as MSVC reads a
+/// thread-local `bool`.
+fn msvc_tls(secrel: u32, read: bool) -> Vec<u8> {
+    let mut v = vec![0xB8];
+    v.extend(secrel.to_le_bytes());
+    if read {
+        v.extend([0x65, 0x48, 0x8B, 0x14, 0x25, 0x58, 0, 0, 0]);
+    } else {
+        v.extend([0x66, 0x0F, 0x1F, 0x84, 0, 0, 0, 0, 0]);
+    }
+    v.extend([0x48, 0x8B, 0x0C, 0xCA, 0x0F, 0xB6, 0x04, 0x01, 0xC3]);
+    v
+}
+
+#[test]
+fn windows_tls_offsets_are_named_near_a_read_of_the_tls_array() {
+    let (a, b) = images();
+    // Enabled at 8 in the first, at 0xc in the second.
+    let a = Windows {
+        base: a,
+        tls: vec![(0, b"other"), (8, b"Enabled"), (0xc, b"threadIndex")],
+    };
+    let b = Windows {
+        base: b,
+        tls: vec![(0, b"other"), (8, b"threadIndex"), (0xc, b"Enabled")],
+    };
+    let (rep, f) = run(
+        &a,
+        0x1000,
+        &msvc_tls(8, true),
+        &b,
+        0x2000,
+        &msvc_tls(0xc, true),
+        Isa::X64,
+    );
+    assert!(rep.passed(), "{}", rep.text());
+    assert_eq!(f.tls, 1);
+    // Another variable.
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &msvc_tls(8, true),
+        &b,
+        0x2000,
+        &msvc_tls(8, true),
+        Isa::X64,
+    );
+    assert!(!rep.passed(), "{}", rep.text());
+    // No read of the TLS array: an integer, which differs.
+    let (rep, _) = run(
+        &a,
+        0x1000,
+        &msvc_tls(8, false),
+        &b,
+        0x2000,
+        &msvc_tls(0xc, false),
+        Isa::X64,
+    );
+    assert!(
+        rep.failed("functions or data whose bytes differ"),
+        "{}",
+        rep.text()
+    );
+}
+
+#[test]
+fn unaligned_rvas_in_data_are_inferred() {
+    let (a, b) = images();
+    // `__CxxFrameHandler4`'s compressed tables: a byte, then an RVA.
+    let table = |f: u32| {
+        let mut v = vec![0x78];
+        v.extend((f + 0x10).to_le_bytes());
+        v.extend([2, 4]);
+        v
+    };
+    let (rep, f) = run(
+        &a,
+        0x8000,
+        &table(0x1000),
+        &b,
+        0x9000,
+        &table(0x2000),
+        Isa::Data,
+    );
+    assert!(rep.passed(), "{}", rep.text());
+    assert_eq!(f.inferred, 1);
+    let (rep, _) = run(
+        &a,
+        0x8000,
+        &table(0x1000),
+        &b,
+        0x9000,
+        &table(0x2004),
+        Isa::Data,
+    );
+    assert!(rep.failed("functions or data whose bytes differ"));
 }

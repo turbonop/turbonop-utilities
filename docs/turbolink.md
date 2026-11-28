@@ -14,10 +14,13 @@ as the rest of this repository is.
 - Two prongs run in parallel:
   1. **The linker** (this document): native COFF objects and libraries to
      an x64 image, then its PDB.
-  2. **LTCG** (`docs/turbolink-c2.md`, branch `turbolink-c2`): the
-     interface between `link.exe` and `c2.dll`, learned from Microsoft's
-     public symbols and a logging stand-in for `c2.dll`, and how hard
-     driving `c2.dll` from turbolink would be.
+  2. **LTCG** (`docs/turbolink-c2.md`): the interface between
+     `link.exe` and `c2.dll`, learned from Microsoft's public symbols
+     and a logging stand-in for `c2.dll`. turbolink now drives `c2.dll`
+     itself: `/GL` objects linked with `/LTCG`, on the command line or in
+     libraries, run as `link.exe`'s LTCG builds do (C, C++ with
+     exceptions and virtual calls, `/GL` with native objects, a `/GL`
+     DLL).
 
 ## Scope
 
@@ -124,7 +127,30 @@ lists every COFF group with its address and size) and by experiment:
 - **Groups in a section:** sorted by full name (`.CRT$XCA` before
   `.CRT$XCU`), sections merged in sorting among the section's own
   (`.00cfg` before `.CRT` before `.rdata` before `.xdata` in `.rdata`);
-  except `.idata$5` (the IAT) first and the rest of `.idata$` last.
+  except `.idata$5` (the IAT) first and the rest of `.idata$` last. The
+  export directory (`.edata`, an empty group without exports) follows
+  the inputs' groups, among the last ones by name (after `.didat$`,
+  before `.idata$` but `$5`, before uninitialized data); its directory
+  entry's size is rounded to 4 bytes unless it is last in its section; then
+  link.exe's `.rdata$voltmd` and `.rdata$zzzdbg` each go before the
+  first group whose name sorts after theirs (a DLL without imports or
+  unwind data: `.rdata`, `.edata`, `.rdata$voltmd`, `.rdata$zzzdbg`;
+  with unwind data: `.rdata`, `.rdata$voltmd`, `.rdata$zzzdbg`, `.xdata`,
+  `.edata`).
+- **`/ORDER:@file`:** each line a decorated name; the functions named go
+  first in their group (each group apart: a `.text$mn` function stays in
+  `.text$mn`), in the file's order, the rest after them as they were;
+  each function's associative sections (its unwind data) move with it.
+  A name no external symbol defines (a static function's too) is
+  LNK4037, `file : warning LNK4037: 'name' does not exist; ignored`.
+- **`/FUNCTIONPADMIN[:n]`:** `n` bytes of `int3` (6 on x64, 5 on x86
+  without a number) before each section that starts with a function (a
+  symbol at offset 0 whose type is a function's: a COMDAT or not, an
+  external or a static), then the section's alignment; and before
+  import thunks, delay-load thunks, and tail merges. None before an
+  assembler's code (its symbols have no type), nor before a section
+  whose function isn't at its start. A group starts before its first
+  section's padding (aligned).
 - **Imports:** built from the import libraries' own pieces (each short
   import's slots, the import descriptors, the null thunks), which sort
   by member name (the DLL's: byte order, upper case first): the IAT, the
@@ -166,7 +192,13 @@ lists every COFF group with its address and size) and by experiment:
   assembler's empty `.gssep$x` and `.gsspr$y`: the debug entry's size is
   the list's, the rest zeros), and, with
   `/Brepro`, the `repro` entry (32, then a 32-byte hash whose last 4
-  bytes are the time stamp). `/GUARD`'s tables (`.gfids$y` and the rest)
+  bytes are the time stamp). The hash, as link.exe's `IMAGE::Normalize`
+  computes it: SHA-256 of the whole image with every time stamp (the file
+  header's, each debug directory entry's, the export directory's) and,
+  with a PDB, the CodeView record's GUID and age set to all ones, and the
+  repro entry's length and hash to zeros; then its last 4 bytes are every
+  time stamp and its first 16 the PDB's GUID (the age as it was).
+  `/GUARD`'s tables (`.gfids$y` and the rest)
   are empty groups of `.rdata`.
 - **ICF:** folds code (only the C/C++ compiler's: an assembler's
   identical functions stay apart), unwind data (`.xdata`), and a
@@ -198,13 +230,21 @@ lists every COFF group with its address and size) and by experiment:
   C runtime's `qsort` and `CompareIdataPCON`, which compares the DLLs'
   file names (case-sensitive), then section and module flags, and
   otherwise returns 0 (so `qsort`, not stable, decides). turbolink sorts
-  the same array with a port of the UCRT's `qsort`.
+  the same array with a port of the UCRT's `qsort`. The array holds every
+  import that loaded and every null thunk, of every DLL, in load order.
+  That includes a DLL none of whose imports `/OPT:REF` keeps (llvm-nm's
+  USER32, OLEAUT32 and api-ms-win-crt-time): its pieces are sorted and
+  then dropped with it, and their places change where the other DLLs'
+  imports land. (Seen under cdb: link.exe's llvm-nm sort has 318 pieces;
+  leaving out those 13 changed MSVCP140's, VCRUNTIME140's and seven
+  api-ms-win-crt DLLs' orders.)
 - **The Rich header** (link.exe's `CbBuildProdidBlock`): link.exe's own
   entry (0x102, build 37029) first in a list to whose front each new
-  `@comp.id` goes, walking the command line's objects in order, then each
-  library's members from the last in the archive to the first (link.exe
-  makes a library's modules in the order of their offsets, each put at
-  the front of its list: its `/VERBOSE` pass 2 lists them so). An import
+  `@comp.id` goes, walking the command line's objects from the last to
+  the first, then each library's members from the last in the archive to
+  the first (link.exe makes the command line's modules in order and a
+  library's in the order of their offsets, each put at the front of its
+  list: its `/VERBOSE` pass 2 lists them so). An import
   object is 0x00010000, an object without a `@comp.id` 0. The checksum is the stub's length, its bytes
   rotated left by their offsets (`e_lfanew` zero), and each entry's ID
   rotated left by its count; then `(checksum >> 5) % 3 + 1` empty
@@ -223,19 +263,50 @@ lists every COFF group with its address and size) and by experiment:
   name, handle, address table, name table, bound table and unload table
   RVAs), `$3` (the null descriptor), `$4` (each DLL's name table), `$6`
   (hint/names, in load order), `$7` (each DLL's bound table, zeros, then
-  0x104 bytes of room, or 0x108 so that the room ends 4 bytes past a
-  multiple of 8 from the descriptors' start; not with `/DELAY:NOBIND`), `$8` (each DLL's unload
-  table with `/DELAY:UNLOAD`: a copy of the address table), and `$5` (each
-  DLL's address table, in `.data`: each slot its thunk's address, with a
-  base relocation). The DLLs are in the order their first imports
-  loaded. A `/DELAYLOAD` DLL nothing imports from is LNK4199.
+  room: 0x100 bytes and a tenth of the bound tables' size as it was
+  before `/OPT:REF`, 8 bytes for each delay-loaded import that loaded
+  and each DLL's end; the room goes with the last delay-loaded import to
+  load, so there is none if `/OPT:REF` drops that import; no `$7` with
+  `/DELAY:NOBIND`), `$8` (each DLL's unload table with `/DELAY:UNLOAD`: a
+  copy of the address table), and `$5` (each DLL's address table, in
+  `.data`: each slot its thunk's address, with a base relocation). The
+  descriptors, bound tables and hint/names are in the order the DLLs'
+  first imports (and the imports) loaded. The name, address and unload
+  tables are in link.exe's sort of them. link.exe sorts each of those
+  sections' pieces with the CRT's `qsort`. The pieces are every
+  delay-loaded import that loaded (dead ones too, dropped after the
+  sort) in load order, plus each DLL's table end, made right after the
+  DLL's first import. The key is the file name, without directory or
+  extension (`_wsplitpath`'s), of the archive member each piece came
+  from (an import library's members are named for their DLL: `KERNEL32`),
+  compared case-sensitively (`wcscmp`: `SHELL32` before `ole32`), and a
+  DLL's end sorts after its imports. So the DLLs' tables are in their
+  names' order, and since `qsort` isn't stable, equal names stay where
+  it leaves them. At 8 pieces or fewer it selection-sorts, so one DLL's
+  loads A,B,C give C,B,A and A..G give G,B,C,D,E,F,A. Above 8 it
+  partitions, so A..H give A,G,B,C,D,E,F,H, and C,Q,F,A,X,E,B,I,M,G give
+  C,M,Q,F,A,X,E,B,I,G. Each DLL's order also depends on the other DLLs'
+  pieces: x's 9 imports alone give A,H,B..G,I, but followed by y's 3 they
+  give A,I,B..H. (Found with link.exe under a debugger: its comparison
+  function, at link+0xf1304 in 14.52.37029, compares the modules' file
+  names, then piece flags that set the table end apart. Checked against
+  link.exe on about 150 links of 1 to 7 DLLs, 0 to 20 imports each, dead
+  imports, `/OPT:ICF`, `/DELAY:UNLOAD`, `/DELAY:NOBIND`.) A `/DELAYLOAD`
+  DLL nothing imports from is LNK4199.
 - **`/GUARD:CF`'s tables**, groups of `.rdata` after `.CRT`'s: `.gfids`
   (the function table: what the kept `.gfids$y` sections name, the entry
   point, `__delayLoadHelper2` with delay loading, and each exported
   function not otherwise there with metadata flag 2, export suppressed),
   `.giats` (address-taken imports' slots, from `.giats$y`), `.gljmp`
   (long-jump targets, from `.gljmp$y`), and with `/GUARD:EHCONT`
-  `.gehcont`. Each is its targets' RVAs, ascending, each once; the
+  `.gehcont`. An object not compiled with `/guard:cf` (`@feat.00`
+  without 0x800) lists nothing, so every function one of its `REL32` or
+  `ADDR64` relocations refers to is in the function table, calls
+  included, an import's thunk too; the function as its definition is
+  typed (0x20, in a code section: a reference's type doesn't count), and
+  not for `ADDR32NB` (unwind data's), `REL32_1` to `_5`, `SECREL`,
+  `SECTION` or `SREL32` (link.exe rejects `ADDR32` with `/GUARD`, and
+  crashes on `TOKEN`). Each is its targets' RVAs, ascending, each once; the
   function table's entries take a metadata byte (5 bytes, stride 1 in
   `__guard_flags`' top nibble) once any has one. Every function in the
   table starts on 16 bytes (an import thunk, packed otherwise, too).
@@ -302,22 +373,61 @@ lists every COFF group with its address and size) and by experiment:
   `/MAPINFO:EXPORTS`, the exports by ordinal (`exported name:` when it
   differs from the internal name). Formatted on every core. hexcavator
   reads it (`turbonop-linkmap`).
+- **Exports** (`crates/link/linker/src/exports.rs`): one per name, the
+  first given (the command line's, then the `.def` file's, then the
+  objects' directives; by its name, not what `EXPORTAS` exports it as);
+  the unnumbered ones, in the order of their names, take the free
+  ordinals from the smallest given (1 if none) up, filling the gaps
+  between given ones (4 and 7 given: 5, 6, 8, ...). The directory's
+  strings, after the DLL's name, go by export in the order of their names
+  (`EXPORTAS` aside), each's exported name then its forwarder's string;
+  the name pointers are sorted by exported name.
 - **The export object** (`.exp`, `crates/link/linker/src/exp.rs`) is
   link.exe's byte for byte but the linker's own path in `S_ENVBLOCK`
   (and the lengths and offsets it moves): an x64 object stamped
-  0xFFFFFFFF; `.edata` (the directory with its addresses zero, ADDR32NB
-  relocations to `szName`, `rgpv`, `rgszName`, `rgwOrd`, then per export
-  by exported name its slot to its symbol and its name pointer to `$N`);
-  `.debug$S` (S_OBJNAME the `.exp`'s path as formed, S_COMPILE3 for LINK
-  14.52.37029, S_ENVBLOCK cwd and exe, an S_EXPORT per export by
-  exported name with its flags; with a `.def` file its SHA-256 (0xF4) and
-  absolute path (0xF3)); `.drectve` only when a `.def` file names the
-  image (` /DLL /OUT:x.dll` for `LIBRARY x`, ` /OUT:x.exe` for `NAME`),
-  with a NUL after it; the symbols `@comp.id`, `@feat.00` 0x810, the
-  sections', the directory's parts, `$N`s, then the exports' (sorted,
-  undefined). It's written beside the import library (`/IMPLIB`'s name
-  with `.exp`), with `/NOIMPLIB` too, not with `/NOEXP`. The import
-  library isn't yet link.exe's bytes (TODO.md).
+  0xFFFFFFFF; `.edata` (the directory with its addresses zero, a
+  forwarder's string in it, ADDR32NB relocations to `szName`, `rgpv`,
+  `rgszName`, `rgwOrd`, then per export, by the exports' names, its slot
+  to its symbol and, if it has a name, the next name pointer to its
+  string's `$N`); `.debug$S` (S_OBJNAME the `.exp`'s path as formed,
+  S_COMPILE3 for LINK 14.52.37029, S_ENVBLOCK cwd and exe, an S_EXPORT per
+  export by name with its flags (a forwarder 0x20, named for itself);
+  with a `.def` file its SHA-256 (0xF4) and absolute path (0xF3));
+  `.drectve` only when a `.def` file names the image (` /DLL /OUT:x.dll`
+  for `LIBRARY x`, ` /OUT:x.exe` for `NAME`), with a NUL after it; the
+  symbols `@comp.id`, `@feat.00` 0x810, the sections', the directory's
+  parts, `$N`s, then one per export by name: what it exports, undefined
+  (twice if two exports export it), or for a forwarder a static named
+  for the export at its string. It's written beside the import library
+  (`/IMPLIB`'s name with `.exp`), with `/NOIMPLIB` too, not with
+  `/NOEXP`.
+- **The import library** (`.lib`, `crates/link/linker/src/implib.rs`) is
+  link.exe's byte for byte, with and without `/Brepro` (it doesn't
+  change it), for x64:
+  - Members: the import descriptor, the null import descriptor, the null
+    thunk, then a short import object per export not `PRIVATE`, in the
+    order of their names (bytes: `B` < `_` < `a`). Each header's date is
+    -1, uid and gid blank, mode 0; a name of more than 15 bytes in `//`
+    (once, NUL-terminated, the member's `/0`).
+  - The first linker member's symbols are in the order the exports were
+    given (the exports' order above), each member's sorted (`Beta` before
+    `__imp_Beta`, `__imp_alpha` before `alpha`), at the members' offsets;
+    the second linker member's member table is in that order too (not the
+    file's), its symbols sorted with indices into it.
+  - Each member's time stamp is the first 4 bytes of the SHA-256 of the
+    member with its stamp 0xFFFFFFFF, little-endian, with the top two bits
+    set (proven on 84 members of 7 libraries).
+  - The descriptor objects: `.debug$S` first (on 1, discardable,
+    read-only: signature 2, `S_OBJNAME_ST` with signature 0 and the DLL's
+    name as a length-prefixed string, `S_COMPILE2_ST` for LINK, AMD64,
+    front end 0.0.0, back end 14.52.37029, "Microsoft (R) LINK"; not
+    padded), and `@comp.id` 0x010190A5 (product 0x101) the first symbol.
+    A section without relocations points at the last relocations before
+    it (the descriptor's `.idata$6` at `.idata$2`'s), 0 if none.
+  - An export given an ordinal (`@n`, on the command line or in the
+    `.def` file) is imported by its ordinal, as a `NONAME` one is; the
+    others by name with their hint (`EXPORTAS`: name type 4, the name
+    after the DLL's).
 - **Resources** (`.res` files, cvtres's work): the directory (with its
   strings) is the `.rsrc$01` group, the data `.rsrc$02` from the next 16
   bytes, each resource's on 8 and the whole to 8; the Rich header has
@@ -330,7 +440,8 @@ lists every COFF group with its address and size) and by experiment:
   DLL's is Windows' (entry point or not) and an EXE's is LNK1221.
 - **Status:** link.exe's images byte for byte, time stamps aside, for C
   and C++ (exceptions, TLS, iostreams) with the dynamic and the static
-  CRT, C with the debug CRT, a DLL with exports, delay loading,
+  CRT, C with the debug CRT, a DLL with exports (its import library byte
+  for byte too, and its export object), delay loading,
   resources, and `/GUARD:CF` (with indirect calls, long jumps,
   address-taken imports, delay loading, and `/GUARD:EHCONT`; tests check
   each); and LLVM's `llvm-tblgen` (4.8 MB) and `llc` (73 MB, every
@@ -339,13 +450,6 @@ lists every COFF group with its address and size) and by experiment:
   (the debug directory: CodeView, VC_FEATURE, then the coffgrp entry); the
   PDB is logically link.exe's (DIA reads it; `hexcavator diff` compares
   them), not byte for byte.
-- **Still different** (to do): the
-  `/Brepro` hash (it depends on the output's contents, not its name or
-  the options, but isn't a plain SHA-1/256/512 or MD5 of the file with
-  its time stamps and hash zeroed); a delay-loaded DLL's name and address tables with two or more imports
-  (link.exe's order isn't load order, and no `qsort` of it found yet:
-  loads C,D give D,C; C,D,S give S,D,C; C,D,X,S give S,D,X,C; C,Q,F,X,E,G
-  give G,Q,F,X,E,C; C,Q,F,A,X,E,B,I,M,G give C,M,Q,F,A,X,E,B,I,G).
 
 ## Verification
 
@@ -380,5 +484,8 @@ lists every COFF group with its address and size) and by experiment:
 3. **The PDB**: written by turbolink, in parallel; checked with DIA,
    WinDbg, and this repository's PDB reader.
 4. **Speed**: large links measured and made faster.
-5. **LTCG**, from what prong 2 learns.
+5. **LTCG**, from what prong 2 learns. Started: `/GL` objects and
+   libraries of them link and run, with `CodeGen6`'s three lists as
+   link.exe makes them (`docs/turbolink-c2.md`, "turbolink's LTCG"); the
+   code-generation switches and byte identity remain.
 6. **Other machines**: x86, ARM64, ARM64EC, ARM64X.

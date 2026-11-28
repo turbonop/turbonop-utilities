@@ -54,12 +54,40 @@ fn ordinals() {
     ])
     .unwrap();
     let got: Vec<_> = done.iter().map(|x| (x.name.as_str(), x.ordinal)).collect();
-    // Duplicates dropped; unnumbered ones after the largest, by name.
+    // Duplicates dropped; unnumbered ones from the smallest given, by name.
     assert_eq!(
         got,
         [("zeta", Some(5)), ("alpha", Some(3)), ("mid", Some(4))]
     );
     assert!(finish(&[e("a", Some(1)), e("b", Some(1))]).is_err());
+    // The free ordinals between the given ones first (link.exe's: 4 and 7
+    // given, the others 5, 6, 8), none below the smallest.
+    let done = finish(&[
+        e("c", None),
+        e("x", Some(7)),
+        e("a", None),
+        e("n", Some(4)),
+        e("b", None),
+    ])
+    .unwrap();
+    let got: Vec<_> = done.iter().map(|x| (x.name.as_str(), x.ordinal)).collect();
+    assert_eq!(
+        got,
+        [
+            ("c", Some(8)),
+            ("x", Some(7)),
+            ("a", Some(5)),
+            ("n", Some(4)),
+            ("b", Some(6))
+        ]
+    );
+    // One name exported twice, once as another (EXPORTAS): the first kept;
+    // numbered by its name, not what it is exported as.
+    let mut shown = e("alpha", None);
+    shown.export_as = Some("zz".into());
+    let done = finish(&[shown, e("beta", None), e("alpha", None)]).unwrap();
+    let got: Vec<_> = done.iter().map(|x| (exported_name(x), x.ordinal)).collect();
+    assert_eq!(got, [("zz", Some(1)), ("beta", Some(2))]);
 }
 
 #[test]
@@ -80,14 +108,7 @@ fn directory() {
         ["a_func", "b_func", "fwd"]
     );
     let mut out = vec![0u8; d.size as usize];
-    d.write(
-        &mut out,
-        0x5000,
-        "x.dll",
-        7,
-        |i| 0x1000 + crate::n32(i),
-        &forwarders,
-    );
+    d.write(&mut out, 0x5000, "x.dll", 7, |i| 0x1000 + crate::n32(i));
     let u32_at = |o: usize| u32::from_le_bytes(out[o..o + 4].try_into().unwrap());
     assert_eq!(u32_at(4), 7);
     assert_eq!(u32_at(16), 2); // base

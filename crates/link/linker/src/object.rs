@@ -185,13 +185,15 @@ pub struct Symbol {
 impl Symbol {
     /// Whether the symbol is external (in the link's symbol table).
     pub fn is_external(&self) -> bool {
-        matches!(
-            self.kind,
+        match self.kind {
             SymbolKind::Defined { .. }
-                | SymbolKind::Undefined
-                | SymbolKind::Common(_)
-                | SymbolKind::Weak { .. }
-        )
+            | SymbolKind::Undefined
+            | SymbolKind::Common(_)
+            | SymbolKind::Weak { .. } => true,
+            // (An external absolute symbol defines its name: `.set x, 1`.)
+            SymbolKind::Absolute(_) => self.class == class::EXTERNAL,
+            _ => false,
+        }
     }
 }
 
@@ -221,6 +223,10 @@ pub struct Object {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BadObject(pub String);
 
+/// The reason for an object with a long section name (`/4`) and no string
+/// table: link.exe's LNK1328.
+pub const MISSING_STRING_TABLE: &str = "missing string table";
+
 impl Object {
     /// Reads the object `data` (a regular or `/bigobj` COFF object).
     pub fn parse(data: &'static [u8]) -> Result<Object, BadObject> {
@@ -231,6 +237,9 @@ impl Object {
         let mut directives = Vec::new();
         for h in headers {
             let characteristics = h.characteristics.get();
+            if h.raw_name().first() == Some(&b'/') && file.string_table().is_empty() {
+                return Err(bad(MISSING_STRING_TABLE));
+            }
             let name = file.section_name(h);
             let size = h.size_of_raw_data.get();
             let contents = if characteristics & scn::CNT_UNINITIALIZED_DATA != 0 {

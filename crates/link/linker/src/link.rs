@@ -321,6 +321,19 @@ pub fn link(mut config: Config) -> Outcome {
             warning: false,
         });
     }
+    // The import library's objects (three, and one per export) number at
+    // most 65,535: past that link.exe fails (LNK1189), even with
+    // /NOIMPLIB, and writes no image.
+    if let Some(t) = &layout.exports {
+        let objects = 3 + t.directory.exports.iter().filter(|e| !e.private).count();
+        if objects > 0xFFFF {
+            out.diagnostics.push(LinkError {
+                code: 1189,
+                message: "library limit of 65535 objects exceeded".to_string(),
+                warning: false,
+            });
+        }
+    }
     if out.diagnostics.iter().any(|d| !d.warning) {
         return out;
     }

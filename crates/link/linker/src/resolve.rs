@@ -154,6 +154,10 @@ pub enum Def {
     /// Another global's definition (a weak external's default, an
     /// `/ALTERNATENAME`).
     Alias(u32),
+    /// `__imp_x` for an `x` the image defines itself (link.exe's locally
+    /// imported symbol, LNK4217): a pointer to global `x` the linker
+    /// adds to `.rdata`.
+    LocalImport(u32),
 }
 
 /// What the linker defines itself.
@@ -185,6 +189,13 @@ pub struct Global {
     /// Whether nothing is wrong if it stays undefined (`_load_config_used`:
     /// taken from a library if one has it).
     pub optional: bool,
+    /// Its alias is an `/ALTERNATENAME`'s: a library's definition still
+    /// replaces it, as link.exe takes one (the alternate name is for a
+    /// name nothing defines).
+    pub alternate: bool,
+    /// Only an `/ALTERNATENAME` asks for it (as its target): not needed
+    /// once nothing is an alias of it.
+    pub alias_only: bool,
 }
 
 /// A library being searched.
@@ -323,6 +334,8 @@ impl Linker {
             weak: None,
             referenced_by: NONE,
             optional: false,
+            alternate: false,
+            alias_only: false,
         });
         self.names.insert(name, g);
         self.pending.push(g);
@@ -396,6 +409,7 @@ impl Linker {
                     if self.globals[g as usize].referenced_by == NONE {
                         self.globals[g as usize].referenced_by = place;
                     }
+                    self.globals[g as usize].alias_only = false;
                 }
                 self.config.includes.extend(new_includes);
                 self.files.push(File {
@@ -493,10 +507,18 @@ impl Linker {
         if global.referenced_by == NONE {
             global.referenced_by = place;
         }
+        global.alias_only = false;
         match s.kind {
             SymbolKind::Undefined => {}
             SymbolKind::Weak { default, search } => {
-                if global.weak.is_none() {
+                // The first weak external of the name, but a regular one
+                // over an anti-dependency (`IMAGE_WEAK_EXTERN_ANTI_DEPENDENCY`,
+                // 4), as link.exe takes them.
+                let replaces = match global.weak {
+                    None => true,
+                    Some((_, _, old)) => old == 4 && search != 4,
+                };
+                if replaces {
                     global.weak = Some((place, default, search));
                 }
             }
@@ -510,7 +532,7 @@ impl Linker {
                 _ => {}
             },
             SymbolKind::Absolute(v) => match global.def {
-                Def::Undefined | Def::Synthetic(_) | Def::Common { .. } => {
+                Def::Undefined | Def::Synthetic(_) | Def::Common { .. } | Def::Alias(_) => {
                     global.def = Def::Absolute(u64::from(v));
                 }
                 Def::Absolute(old) if old == u64::from(v) => {}
@@ -646,17 +668,22 @@ impl Linker {
             return;
         }
         match self.find_library(name) {
-            Some(path) => self.add_library(path, true),
+            Some(path) => {
+                self.add_library(path, true);
+            }
             None => self
                 .errors
                 .push(LinkError::error(1104, format!("cannot open file '{name}'"))),
         }
     }
 
-    fn add_library(&mut self, path: PathBuf, default: bool) {
+    /// Adds the library at `path` to those searched (once); its index in
+    /// `libraries`, if it could be read.
+    fn add_library(&mut self, path: PathBuf, default: bool) -> Option<usize> {
         let key = path.to_string_lossy().to_ascii_lowercase();
         if !self.library_paths.insert(key) {
-            return;
+            let same = |l: &Library| path.as_os_str().eq_ignore_ascii_case(l.path.as_os_str());
+            return self.libraries.iter().position(same);
         }
         let data = match map(&path) {
             Ok(d) => d,
@@ -665,7 +692,7 @@ impl Linker {
                     1104,
                     format!("cannot open file '{}': {e}", path.display()),
                 ));
-                return;
+                return None;
             }
         };
         let archive = match Archive::parse(data) {
@@ -675,7 +702,7 @@ impl Linker {
                     1136,
                     format!("invalid or corrupt file '{}': {e}", path.display()),
                 ));
-                return;
+                return None;
             }
         };
         let start = std::time::Instant::now();
@@ -692,6 +719,56 @@ impl Linker {
             default,
         });
         self.t_index += start.elapsed();
+        Some(self.libraries.len() - 1)
+    }
+
+    /// Whether `/WHOLEARCHIVE` takes all of the library `path` (named
+    /// `given` on the command line): `/WHOLEARCHIVE` alone, or naming it
+    /// as given or by its file name.
+    fn whole(&self, given: &str, path: &Path) -> bool {
+        let file = path.file_name().map(|n| n.to_string_lossy().into_owned());
+        self.config.whole_archive.iter().any(|w| match w {
+            None => true,
+            Some(w) => {
+                w.eq_ignore_ascii_case(given)
+                    || file.as_ref().is_some_and(|f| w.eq_ignore_ascii_case(f))
+                    || Path::new(w).file_name().is_some_and(|n| {
+                        file.as_ref()
+                            .is_some_and(|f| n.to_string_lossy().eq_ignore_ascii_case(f))
+                    })
+            }
+        })
+    }
+
+    /// Loads every member of library `lib` (`/WHOLEARCHIVE`), in order,
+    /// as its members are when the search takes them.
+    fn load_whole(&mut self, lib: usize) {
+        let library = &self.libraries[lib];
+        let path = library.path.display().to_string();
+        let members: Vec<(u64, String, &'static [u8])> = library
+            .archive
+            .files()
+            .filter(|m| !library.loaded.contains(&m.header_offset))
+            .map(|m| {
+                let name = format!("{path}({})", String::from_utf8_lossy(&m.name));
+                (m.header_offset, name, m.data)
+            })
+            .collect();
+        let start = std::time::Instant::now();
+        let parsed = turbonop_par::map(&members, 8, |(_, name, data)| load(data, name));
+        self.t_members += start.elapsed();
+        for ((offset, name, _), r) in members.into_iter().zip(parsed) {
+            self.libraries[lib].loaded.insert(offset);
+            match r {
+                Ok(kind) => {
+                    self.loading_from = Some(crate::n32(lib));
+                    self.loading_member = Some(offset);
+                    self.add(name, kind);
+                    self.loading_from = None;
+                }
+                Err(e) => self.errors.push(e),
+            }
+        }
     }
 
     /// Whether `g` still wants a definition a library could give.
@@ -703,6 +780,8 @@ impl Linker {
                 Some((_, _, 1)) => false,
                 _ => g.referenced_by != NONE || g.optional,
             },
+            // (An /ALTERNATENAME's source is still looked for.)
+            Def::Alias(_) => g.alternate,
             _ => false,
         }
     }
@@ -732,7 +811,7 @@ impl Linker {
                 let mut pending = std::mem::take(&mut self.pending);
                 pending.retain(|&g| self.wanted(&self.globals[g as usize]));
                 self.pending = pending;
-                let mut parsed: Map<u64, Result<(String, LoadedKind), String>> = Map::default();
+                let mut parsed: Map<u64, Result<(String, LoadedKind), LinkError>> = Map::default();
                 let mut logged = false;
                 let mut i = 0;
                 while i < self.pending.len() {
@@ -765,7 +844,10 @@ impl Linker {
                         let start = std::time::Instant::now();
                         let results = turbonop_par::map(&ahead, 8, |&offset| {
                             let Some(m) = archive.member_at_offset(offset) else {
-                                return Err(format!("{path}: no member at offset {offset:#x}"));
+                                return Err(LinkError::error(
+                                    1136,
+                                    format!("{path}: no member at offset {offset:#x}"),
+                                ));
                             };
                             let name = format!("{path}({})", String::from_utf8_lossy(&m.name));
                             load(m.data, &name).map(|k| (name, k))
@@ -794,7 +876,7 @@ impl Linker {
                             self.add(name, kind);
                             self.loading_from = None;
                         }
-                        Some(Err(m)) => self.errors.push(LinkError::error(1136, m)),
+                        Some(Err(e)) => self.errors.push(e),
                         None => {}
                     }
                     loaded_any = true;
@@ -835,6 +917,17 @@ impl Linker {
                 } = &self.files[file as usize].kind
             {
                 let target = globals.get(default as usize).copied().unwrap_or(NONE);
+                // (Not a default that is itself only an anti-dependency's
+                // alias: link.exe doesn't follow such a chain, and the
+                // name stays undefined.)
+                let anti_chain = target != NONE && {
+                    let t = &self.globals[target as usize];
+                    matches!(t.def, Def::Undefined | Def::Alias(_))
+                        && matches!(t.weak, Some((_, _, 4)))
+                };
+                if anti_chain {
+                    continue;
+                }
                 if target != NONE && target != crate::n32(g) {
                     self.globals[g].def = Def::Alias(target);
                     changed = true;
@@ -864,14 +957,26 @@ impl Linker {
                 continue;
             }
             let by = global.referenced_by;
+            // (Not to an anti-dependency's alias: link.exe leaves the name
+            // undefined.)
+            if let Some(&t) = self.names.get(to.as_bytes()) {
+                let t = &self.globals[t as usize];
+                if matches!(t.def, Def::Undefined | Def::Alias(_))
+                    && matches!(t.weak, Some((_, _, 4)))
+                {
+                    continue;
+                }
+            }
             if self.config.verbose {
                 self.log
                     .push(format!("    {from} -> {to} (/ALTERNATENAME)"));
             }
             let t = self.intern(Box::leak(to.into_bytes().into_boxed_slice()));
             self.globals[g as usize].def = Def::Alias(t);
+            self.globals[g as usize].alternate = true;
             if self.globals[t as usize].referenced_by == NONE {
                 self.globals[t as usize].referenced_by = by;
+                self.globals[t as usize].alias_only = true;
             }
             changed = true;
         }
@@ -899,18 +1004,23 @@ pub enum LoadedKind {
 }
 
 /// Reads an object or import object.
-fn load(data: &'static [u8], name: &str) -> Result<LoadedKind, String> {
+fn load(data: &'static [u8], name: &str) -> Result<LoadedKind, LinkError> {
+    let corrupt = |m: String| LinkError::error(1136, m);
     match identify(data) {
         InputKind::Import => ImportObject::parse(data)
             .map(LoadedKind::Import)
-            .map_err(|e| format!("{name}: invalid import object: {e}")),
-        InputKind::Object => Object::parse(data)
-            .map(LoadedKind::Object)
-            .map_err(|e| format!("{name}: invalid or corrupt file: {}", e.0)),
-        InputKind::Ltcg => Err(format!(
+            .map_err(|e| corrupt(format!("{name}: invalid import object: {e}"))),
+        InputKind::Object => Object::parse(data).map(LoadedKind::Object).map_err(|e| {
+            if e.0 == crate::object::MISSING_STRING_TABLE {
+                LinkError::error(1328, format!("{name}: {}", e.0))
+            } else {
+                corrupt(format!("{name}: invalid or corrupt file: {}", e.0))
+            }
+        }),
+        InputKind::Ltcg => Err(corrupt(format!(
             "{name}: an LTCG (/GL) object: link-time code generation is not supported yet"
-        )),
-        _ => Err(format!("{name}: not an object")),
+        ))),
+        _ => Err(corrupt(format!("{name}: not an object"))),
     }
 }
 
@@ -990,20 +1100,71 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         {
             p = found;
         }
-        let data = map(&p).map_err(|e| format!("cannot open file '{path}': {e}"))?;
+        let data = map(&p)
+            .map_err(|e| LinkError::error(1104, format!("cannot open file '{path}': {e}")))?;
         Ok(match identify(data) {
             InputKind::Library => Input::Library(p),
             InputKind::Resources => Input::Resources(data),
             _ => Input::Loaded(load(data, path)?),
         })
     });
+    // An object named twice is taken once (link.exe's LNK4042).
+    let mut objects_seen: Set<String> = Set::default();
     for (path, r) in inputs.iter().zip(read) {
         match r {
-            Ok(Input::Loaded(kind)) => l.add(path.clone(), kind),
-            Ok(Input::Library(p)) => l.add_library(p, false),
+            Ok(Input::Loaded(kind)) => {
+                let full = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+                let shown = full.display().to_string();
+                let shown = shown.strip_prefix(r"\\?\").unwrap_or(&shown).to_owned();
+                if !objects_seen.insert(shown.to_ascii_lowercase()) {
+                    l.errors.push(LinkError::warning(
+                        4042,
+                        format!("{shown}: object specified more than once; extras ignored"),
+                    ));
+                    continue;
+                }
+                l.add(path.clone(), kind);
+            }
+            Ok(Input::Library(p)) => {
+                let whole = l.whole(path, &p);
+                if let Some(lib) = l.add_library(p, false)
+                    && whole
+                {
+                    l.load_whole(lib);
+                }
+            }
             Ok(Input::Resources(data)) => l.resources.push((path.clone(), data)),
-            Err(m) => l.errors.push(LinkError::error(1104, m)),
+            Err(e) => l.errors.push(e),
         }
+    }
+    // A `/WHOLEARCHIVE:lib` not among the inputs is one, after them.
+    for w in l.config.whole_archive.clone().into_iter().flatten() {
+        let named = l.libraries.iter().any(|lib| {
+            lib.path.file_name().is_some_and(|f| {
+                Path::new(&w)
+                    .file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(f))
+            })
+        });
+        if named {
+            continue;
+        }
+        match l.find_library(&w) {
+            Some(p) => {
+                if let Some(lib) = l.add_library(p, false) {
+                    l.load_whole(lib);
+                }
+            }
+            None => l
+                .errors
+                .push(LinkError::error(1181, format!("cannot open input file '{w}'"))),
+        }
+    }
+    // An input that can't be read stops the link there (link.exe's errors
+    // LNK1xxx are fatal).
+    if l.errors.iter().any(|e| !e.warning && (1000..2000).contains(&e.code)) {
+        errors.append(&mut l.errors);
+        return None;
     }
     times.push(("  inputs (objects read, added)", lap.elapsed()));
     lap = std::time::Instant::now();
@@ -1072,6 +1233,76 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     times.push(("    of which: members parsed", l.t_members));
     times.push(("  (all files' symbols added)", l.t_add));
 
+    // `__imp_x` still undefined while `x` is defined: link.exe points it
+    // at `x` (a pointer it adds), with a warning (LNK4217 if a function
+    // refers to it, LNK4286 if not). (An `x` that is a weak external no
+    // one else refers to takes its default for this.)
+    let mut wanted_weak = false;
+    for g in 0..l.globals.len() {
+        let global = &l.globals[g];
+        if global.def != Def::Undefined || global.referenced_by == NONE {
+            continue;
+        }
+        let by = global.referenced_by;
+        if let Some(x) = global.name.strip_prefix(b"__imp_")
+            && let Some(&t) = l.names.get(x)
+        {
+            let t = &mut l.globals[t as usize];
+            if t.def == Def::Undefined && t.weak.is_some() && t.referenced_by == NONE {
+                t.referenced_by = by;
+                wanted_weak = true;
+            }
+        }
+    }
+    if wanted_weak {
+        l.resolve_aliases();
+    }
+    for g in 0..l.globals.len() {
+        let global = &l.globals[g];
+        if global.def != Def::Undefined || global.referenced_by == NONE {
+            continue;
+        }
+        let Some(x) = global.name.strip_prefix(b"__imp_") else {
+            continue;
+        };
+        let Some(&t) = l.names.get(x) else {
+            continue;
+        };
+        // (Through aliases, to what defines it.)
+        let mut d = t;
+        for _ in 0..64 {
+            match l.globals[d as usize].def {
+                Def::Alias(next) => d = next,
+                _ => break,
+            }
+        }
+        if matches!(l.globals[d as usize].def, Def::Undefined | Def::Alias(_)) {
+            continue;
+        }
+        let by = global.referenced_by;
+        l.globals[g].def = Def::LocalImport(t);
+        let definer = match l.globals[d as usize].def {
+            Def::Section { file, .. } | Def::Common { file, .. } => {
+                l.files.get(file as usize).map(|f| f.name.clone())
+            }
+            _ => None,
+        };
+        let user = l.files.get(by as usize).map(|f| f.name.clone()).unwrap_or_default();
+        let x = String::from_utf8_lossy(x).into_owned();
+        let defined = definer.map_or_else(String::new, |d| format!(" defined in '{d}'"));
+        let warning = match referring_function(&l, by, crate::n32(g)) {
+            Some(f) => LinkError::warning(
+                4217,
+                format!("symbol '{x}'{defined} is imported by '{user}' in function '{f}'"),
+            ),
+            None => LinkError::warning(
+                4286,
+                format!("symbol '{x}'{defined} is imported by '{user}'"),
+            ),
+        };
+        l.errors.push(warning);
+    }
+
     // A /DELAYLOAD DLL nothing imports from: link.exe's warning.
     for dll in &l.config.delay_load {
         let imported = l.files.iter().any(|f| match &f.kind {
@@ -1091,10 +1322,13 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     // DLL's (Windows, entry point or not); an EXE's can't be inferred.
     if l.config.subsystem.is_none() {
         use crate::config::Subsystem;
+        // (A weak external counts: `main` as an alias of `default_main`.)
         let defined = |n: &str| {
-            l.names
-                .get(n.as_bytes())
-                .is_some_and(|&g| matches!(l.globals[g as usize].def, Def::Section { .. }))
+            l.names.get(n.as_bytes()).is_some_and(|&g| {
+                let g = &l.globals[g as usize];
+                matches!(g.def, Def::Section { .. } | Def::Alias(_))
+                    || (g.def == Def::Undefined && g.weak.is_some())
+            })
         };
         l.config.subsystem = if defined("main") || defined("wmain") {
             Some(Subsystem::Console)
@@ -1111,23 +1345,46 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         }
     }
 
-    // What is still undefined.
-    for g in &l.globals {
+    // What is still undefined (an /ALTERNATENAME's target only while
+    // something is still its alias: its source may have been defined by a
+    // library since).
+    let alias_targets: Set<u32> = l
+        .globals
+        .iter()
+        .filter_map(|g| match g.def {
+            Def::Alias(t) => Some(t),
+            _ => None,
+        })
+        .collect();
+    let mut forced = false;
+    for (i, g) in l.globals.iter().enumerate() {
+        if g.alias_only && !alias_targets.contains(&crate::n32(i)) {
+            continue;
+        }
         if g.def == Def::Undefined && g.referenced_by != NONE && !g.optional {
             let by = l
                 .files
                 .get(g.referenced_by as usize)
                 .map_or("<command line>", |f| f.name.as_str());
-            if !l.config.force_unresolved {
-                l.errors.push(LinkError::error(
-                    2001,
-                    format!(
-                        "{by}: unresolved external symbol {}",
-                        String::from_utf8_lossy(g.name)
-                    ),
-                ));
-            }
+            let message = format!(
+                "{by}: unresolved external symbol {}",
+                String::from_utf8_lossy(g.name)
+            );
+            // (With /FORCE, reported and linked to the image base, as
+            // link.exe does: not fatal.)
+            l.errors.push(if l.config.force_unresolved {
+                forced = true;
+                LinkError::warning(2001, message)
+            } else {
+                LinkError::error(2001, message)
+            });
         }
+    }
+    if forced {
+        l.errors.push(LinkError::warning(
+            4088,
+            "image being generated due to /FORCE option; image may not run".to_owned(),
+        ));
     }
     errors.append(&mut l.errors);
     if errors.iter().any(|e| !e.warning) {
@@ -1151,6 +1408,46 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
     })
 }
 
+/// The function of file `file` whose code first refers to global `g`
+/// (its name), if a function does.
+fn referring_function(l: &Linker, file: u32, g: u32) -> Option<String> {
+    let FileKind::Object {
+        object, globals, ..
+    } = &l.files.get(file as usize)?.kind
+    else {
+        return None;
+    };
+    for (s, section) in object.sections.iter().enumerate() {
+        for rel in section.relocations {
+            let i = rel.symbol_table_index.get() as usize;
+            if globals.get(i) != Some(&g) {
+                continue;
+            }
+            let at = rel.virtual_address.get();
+            let s = crate::n32(s);
+            // The function symbol at or before the reference, in its
+            // section.
+            let f = object
+                .symbols
+                .iter()
+                .filter(|sym| sym.ty & 0xF0 == 0x20)
+                .filter_map(|sym| match sym.kind {
+                    SymbolKind::Defined { section, value } | SymbolKind::Local { section, value }
+                        if section == s && value <= at =>
+                    {
+                        Some((value, sym.name))
+                    }
+                    _ => None,
+                })
+                .max_by_key(|&(v, _)| v);
+            if let Some((_, name)) = f {
+                return Some(String::from_utf8_lossy(name).into_owned());
+            }
+        }
+    }
+    None
+}
+
 /// The entry point's name: `/ENTRY`, or what `link.exe` picks for the
 /// subsystem (and, without `/SUBSYSTEM`, the subsystem from which of
 /// `main`, `wmain`, `WinMain`, `wWinMain` the objects define).
@@ -1162,10 +1459,12 @@ fn entry_point(l: &Linker) -> Option<String> {
     if let Some(e) = &l.config.entry {
         return Some(e.clone());
     }
+    // (A weak external counts, as link.exe infers it.)
     let defined = |n: &str| {
-        l.names
-            .get(n.as_bytes())
-            .is_some_and(|&g| l.globals[g as usize].def != Def::Undefined)
+        l.names.get(n.as_bytes()).is_some_and(|&g| {
+            let g = &l.globals[g as usize];
+            g.def != Def::Undefined || g.weak.is_some()
+        })
     };
     if l.config.dll {
         return Some("_DllMainCRTStartup".into());

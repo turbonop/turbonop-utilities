@@ -1074,8 +1074,11 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
                     "no" | "nocf" => c.guard_cf = false,
                     "ehcont" => c.guard_ehcont = true,
                     "ehcont-" | "noehcont" => c.guard_ehcont = false,
-                    // Kernel-mode and XFG variants.
-                    "retpoline" | "xfg" | "delayloadsignret" | "memcpy" => {
+                    // (link.exe's default: the longjmp targets' table with
+                    // /GUARD:CF; the same image.)
+                    "longjmp" => {}
+                    // Kernel-mode and XFG variants; no longjmp table.
+                    "retpoline" | "xfg" | "delayloadsignret" | "memcpy" | "nolongjmp" => {
                         d.push(Diagnostic::NotYet(format!("/GUARD:{p}")));
                     }
                     _ => bad(d),

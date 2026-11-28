@@ -155,5 +155,7 @@ fn reads_directives() {
         ]
     );
     assert!(directives(b"").is_empty());
+    // (NULs separate words too.)
+    assert_eq!(directives(b"-export:a \0-export:b\0-export:c").len(), 3);
     assert!(directives(b"\xEF\xBB\xBF /merge:a=b").len() == 1);
 }

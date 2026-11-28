@@ -427,6 +427,11 @@ impl<'data> PeFile<'data> {
             .collect()
     }
 
+    /// The COFF string table (empty if the file has none).
+    pub fn string_table(&self) -> StringTable<'data> {
+        self.strings
+    }
+
     /// A section's name, with `/offset` long names resolved through the
     /// string table. Falls back to the raw name if it cannot be resolved.
     pub fn section_name(&self, section: &'data SectionHeader) -> &'data [u8] {

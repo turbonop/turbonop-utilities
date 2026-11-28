@@ -988,7 +988,7 @@ pub fn build(
     for (g, global) in r.globals.iter().enumerate() {
         let g32 = crate::n32(g);
         match global.def {
-            Def::Common { .. } | Def::Alias(_) => {
+            Def::Common { .. } | Def::Alias(_) | Def::LocalImport(_) => {
                 if let Some(rva) = image.rva_of(g32) {
                     let (segment, offset) = image.section_offset(rva);
                     let flags = if code_section(segment) { 2 } else { 0 };

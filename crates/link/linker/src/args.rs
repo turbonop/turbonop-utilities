@@ -210,9 +210,10 @@ pub fn command_line(
 /// caller to warn of (as `link.exe` does, LNK4229).
 pub fn directives(text: &[u8]) -> Vec<Arg> {
     // A directive section is ANSI or UTF-8 text, sometimes with a UTF-8
-    // byte-order mark; NULs pad it.
-    let text = decode_text(text);
-    split_words(text.trim_end_matches('\0'))
+    // byte-order mark; NULs pad it, and separate words as spaces do (as
+    // link.exe reads them: `-export:f\0-export:g`).
+    let text = decode_text(text).replace('\0', " ");
+    split_words(&text)
         .iter()
         .filter(|w| !w.is_empty())
         .map(|w| Arg::parse(w))

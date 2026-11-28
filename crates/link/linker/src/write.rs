@@ -158,9 +158,14 @@ impl<'a> Image<'a> {
                     .find(|c| c.kind == ChunkKind::VolatileMetadata)
                     .map_or(Target::Absolute(0), |c| Target::Rva(c.rva)),
                 Def::ImportAddress(f) => self.import_slot(f).map_or(Target::None, Target::Rva),
+                Def::LocalImport(_) => self.l.local_imports.get(&g).map_or(Target::None, |&c| {
+                    Target::Rva(self.l.chunks[c as usize].rva)
+                }),
                 Def::ImportThunk(f) => self.l.thunk_chunks.get(&f).map_or(Target::None, |&c| {
                     Target::Rva(self.l.chunks[c as usize].rva)
                 }),
+                // (With /FORCE, as link.exe resolves it: the image base.)
+                Def::Undefined if self.r.config.force_unresolved => Target::Rva(0),
                 Def::Undefined => Target::None,
             };
         }
@@ -219,6 +224,14 @@ impl<'a> Image<'a> {
                 }
             }
         }
+        // The locally imported symbols' pointers.
+        for (&g, &c) in &self.l.local_imports {
+            if let Def::LocalImport(t) = self.r.globals[g as usize].def
+                && let Target::Rva(_) = self.global(t)
+            {
+                sites.push((self.l.chunks[c as usize].rva, 10));
+            }
+        }
         // The delay-load address tables (and unload tables): each slot holds
         // its thunk's address.
         for (d, dll) in self.l.delay_dlls.iter().enumerate() {
@@ -247,10 +260,17 @@ impl<'a> Image<'a> {
                 };
                 let sec = &object.sections[s as usize];
                 out[..sec.data.len()].copy_from_slice(sec.data);
+                // (A discardable section's reference to what isn't in the
+                // image, DWARF's to a discarded COMDAT's: left as it is,
+                // as link.exe leaves it.)
+                let discardable = sec.characteristics & scn::MEM_DISCARDABLE != 0;
                 for rel in sec.relocations {
                     let at = rel.virtual_address.get() as usize;
                     let kind = rel.kind.get();
                     let target = self.symbol(f, rel.symbol_table_index.get());
+                    if discardable && target == Target::None {
+                        continue;
+                    }
                     if let Err(m) = self.relocate(out, at, kind, target, chunk.rva) {
                         problems.push(format!("{}: {m}", self.r.files[f as usize].name));
                     }
@@ -486,6 +506,16 @@ impl<'a> Image<'a> {
                 out[3..7].copy_from_slice(&rel(slot, 7).to_le_bytes());
                 out[7] = 0xE9;
                 out[8..12].copy_from_slice(&rel(tail, 12).to_le_bytes());
+            }
+            ChunkKind::LocalImport(g) => {
+                if let Def::LocalImport(t) = self.r.globals[g as usize].def {
+                    let va = match self.global(t) {
+                        Target::Rva(r) => self.base + u64::from(r),
+                        Target::Absolute(v) => v,
+                        Target::None => 0,
+                    };
+                    out[..8].copy_from_slice(&va.to_le_bytes());
+                }
             }
             ChunkKind::VolatileMetadata => {
                 // Size 0x18, version 0x80008000, no tables.
@@ -1000,7 +1030,7 @@ impl<'a> Image<'a> {
         let base_of_code = sections
             .iter()
             .find(|s| s.characteristics & scn::CNT_CODE != 0)
-            .map_or(0, |s| s.rva);
+            .map_or(0x1000, |s| s.rva); // (link.exe's, with no code)
         w.u16(if is64 { 0x20B } else { 0x10B });
         w.bytes(&[14, 52]); // linker version (link.exe 14.52's, whose output this is)
         w.u32(code);
@@ -1014,7 +1044,7 @@ impl<'a> Image<'a> {
             let base_of_data = sections
                 .iter()
                 .find(|s| s.characteristics & scn::CNT_CODE == 0)
-                .map_or(0, |s| s.rva);
+                .map_or(0x1000, |s| s.rva); // (link.exe's, with no code)
             w.u32(base_of_data);
             w.u32(field32(self.base));
         }

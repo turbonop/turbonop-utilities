@@ -433,6 +433,17 @@ impl Image<'_> {
                         });
                     }
                 }
+                Def::LocalImport(_) => {
+                    if let Some(rva) = self.rva_of(g) {
+                        publics.push(at(
+                            rva,
+                            name.to_vec(),
+                            false,
+                            false,
+                            "<linker-defined>".into(),
+                        ));
+                    }
+                }
                 Def::Synthetic(Synthetic::VolatileMetadata) => {
                     if let Some(rva) = self.rva_of(g) {
                         publics.push(at(

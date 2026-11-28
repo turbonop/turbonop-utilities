@@ -179,6 +179,10 @@ impl<'data> SymbolTable<'data> {
     /// remain).
     pub fn get(&self, index: usize) -> Option<CoffSymbol<'data>> {
         let s = self.stride;
+        // (No table: a default one, of an object without symbols.)
+        if s == 0 {
+            return None;
+        }
         let r = self.data.get(index.checked_mul(s)?..)?.get(..s)?;
         let section = if s == 20 {
             i32::from_le_bytes([r[12], r[13], r[14], r[15]])

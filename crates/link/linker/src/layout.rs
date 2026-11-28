@@ -80,6 +80,8 @@ pub enum ChunkKind {
     ResourceData,
     /// The debug directory (at the end of the `.rdata` group).
     DebugDirectory,
+    /// A locally imported symbol's pointer (`__imp_x`, global `.0`).
+    LocalImport(u32),
     /// The `coffgrp` debug data: every COFF group's address, size, name.
     CoffGroups,
     /// `/Brepro`'s debug data: its hash.
@@ -192,6 +194,8 @@ pub struct Layout {
     pub import_slots: Map<u32, (u32, u32)>,
     /// For each import file with a thunk, the thunk's chunk.
     pub thunk_chunks: Map<u32, u32>,
+    /// Each locally imported `__imp_x` global's pointer chunk.
+    pub local_imports: Map<u32, u32>,
     /// The DLLs imported from, in the import tables' order (by name).
     pub dlls: Vec<Dll>,
     /// The import directory's order: each DLL (its index in `dlls`) as
@@ -379,7 +383,9 @@ fn mark(r: &Resolved, roots: &[u32], folded: &Map<(u32, u32), (u32, u32)>) -> Li
         let mut g = g;
         for _ in 0..64 {
             match r.globals[g as usize].def {
-                Def::Alias(t) => g = t,
+                // (A locally imported symbol's pointer keeps what it
+                // points to.)
+                Def::Alias(t) | Def::LocalImport(t) => g = t,
                 Def::Section { file, section, .. } => {
                     let i = redirect[base[file as usize] + section as usize] as usize;
                     if claim(i) {
@@ -580,6 +586,11 @@ pub fn layout(
     // the inputs' own bytes, so finding one copies nothing; the output
     // name is worked out once per distinct one.
     let mut partial_index: Map<(&'static [u8], u32), usize> = Map::default();
+    // Each name's first characteristics (`$` suffix aside): a `/MERGE`
+    // moves only the first section of its name, as link.exe does it; the
+    // name's groups of other characteristics stay a section of their own.
+    let mut first_chars: Map<Vec<u8>, u32> = Map::default();
+    let user_merges: Vec<&[u8]> = config.merges.iter().map(|(a, _)| a.as_bytes()).collect();
     let guard_cf = config.guard_cf;
     let mut add = |name: &'static [u8], chars: u32, chunk: Chunk, chunks: &mut Vec<Chunk>| -> u32 {
         let chars = chars & scn::OUTPUT_MASK;
@@ -598,7 +609,16 @@ pub fn layout(
                     b".data".to_vec()
                 }
             } else {
-                output_name(name, &merges)
+                let base = name
+                    .iter()
+                    .position(|&b| b == b'$')
+                    .map_or(name, |i| &name[..i]);
+                let first = *first_chars.entry(base.to_vec()).or_insert(chars);
+                if first != chars && user_merges.contains(&base) {
+                    base.to_vec()
+                } else {
+                    output_name(name, &merges)
+                }
             };
             let key = (out, name.to_vec(), chars);
             partials.push((key, Vec::new()));
@@ -1284,6 +1304,7 @@ pub fn layout(
     }
     let entries = crate::n32(debug_entries(config).len());
     let mut coff_groups = None;
+    let mut local_imports: Map<u32, u32> = Map::default();
     if entries > 0 {
         add(
             b".rdata",
@@ -1297,6 +1318,28 @@ pub fn layout(
             },
             &mut chunks,
         );
+    }
+    // The locally imported symbols' pointers, after the debug directory
+    // in the .rdata group, as link.exe places them.
+    for (g, global) in r.globals.iter().enumerate() {
+        if let Def::LocalImport(_) = global.def {
+            let g = crate::n32(g);
+            let c = add(
+                b".rdata",
+                data_ro,
+                Chunk {
+                    kind: ChunkKind::LocalImport(g),
+                    align: 8,
+                    size: 8,
+                    uninitialized: false,
+                    rva: 0,
+                },
+                &mut chunks,
+            );
+            local_imports.insert(g, c);
+        }
+    }
+    if entries > 0 {
         if config.debug != crate::config::Debug::None {
             // Sized once the PDB's name is known (`set_codeview_name`).
             for (kind, size) in [(ChunkKind::CodeView, 24), (ChunkKind::VcFeature, 20)] {
@@ -1413,8 +1456,8 @@ pub fn layout(
         });
     }
 
-    // Output sections: link.exe's order first, then the others as their
-    // first partial section sorts; within each, partial sections by name
+    // Output sections: link.exe's order first, then the others in input
+    // order (as link.exe meets them); within each, partial sections by name
     // (the output section's own name's before those merged into it), and
     // uninitialized data last.
     note("chunks");
@@ -1440,17 +1483,66 @@ pub fn layout(
             });
         }
     }
-    partials.sort_by(|a, b| a.0.cmp(&b.0));
-    const ORDER: &[&[u8]] = &[b".text", b".rdata", b".data", b".pdata", b".tls", b".rsrc"];
-    let mut out_names: Vec<(Vec<u8>, u32)> = Vec::new();
-    for ((out, _, chars), _) in &partials {
-        let chars = *chars;
-        if !out_names.iter().any(|(n, c)| n == out && *c == chars) {
-            out_names.push((out.clone(), chars));
+    // Where each partial section was first seen (they're in input order
+    // here): sections outside link.exe's fixed order go in input order.
+    // (A section's place is its own groups', not those merged into it; a
+    // section of merged groups only is where the first of them was.)
+    let own_group = |p: &Partial| {
+        let input = &p.0.1;
+        let base = input
+            .iter()
+            .position(|&b| b == b'$')
+            .map_or(&input[..], |i| &input[..i]);
+        base == p.0.0.as_slice()
+    };
+    let mut seen_name: Map<Vec<u8>, usize> = Map::default();
+    let mut seen_merged: Map<Vec<u8>, usize> = Map::default();
+    let mut seen_key: Map<(Vec<u8>, u32), usize> = Map::default();
+    for (i, p) in partials.iter().enumerate() {
+        if own_group(p) {
+            seen_name.entry(p.0.0.clone()).or_insert(i);
+            seen_key.entry((p.0.0.clone(), p.0.2)).or_insert(i);
+        } else {
+            seen_merged.entry(p.0.0.clone()).or_insert(i);
         }
     }
-    let rank = |name: &[u8], chars: u32| -> (u32, usize) {
+    partials.sort_by(|a, b| a.0.cmp(&b.0));
+    const ORDER: &[&[u8]] = &[b".text", b".rdata", b".data", b".pdata", b".tls", b".rsrc"];
+    // The output sections: each a name and its own groups'
+    // characteristics (a group is the section's own when its name is the
+    // section's, `$` suffix aside; the rest were merged into it). Sections
+    // of one name whose own groups' characteristics differ stay apart, as
+    // link.exe writes them (warning LNK4078: a read-only .CRT and a
+    // writable one); a merged group goes to its name's first section.
+    let own = own_group;
+    let mut out_names: Vec<(Vec<u8>, Option<u32>, u32)> = Vec::new();
+    for p in &partials {
+        let ((out, _, chars), _) = p;
+        if own(p) && !out_names.iter().any(|(n, c, _)| n == out && *c == Some(*chars)) {
+            out_names.push((out.clone(), Some(*chars), *chars));
+        }
+    }
+    // (A section of merged groups only: theirs, combined.)
+    for p in &partials {
+        let ((out, _, chars), _) = p;
+        if !own(p) {
+            match out_names.iter_mut().find(|(n, _, _)| n == out) {
+                Some((_, None, c)) => *c |= *chars,
+                Some(_) => {}
+                None => out_names.push((out.clone(), None, *chars)),
+            }
+        }
+    }
+    let rank = |name: &[u8], own: Option<u32>, chars: u32| -> (u32, usize, usize, usize) {
         let fixed = ORDER.iter().position(|o| *o == name).unwrap_or(ORDER.len());
+        let first = seen_name
+            .get(name)
+            .or_else(|| seen_merged.get(name))
+            .copied()
+            .unwrap_or(usize::MAX);
+        let first_own = own
+            .and_then(|c| seen_key.get(&(name.to_vec(), c)).copied())
+            .unwrap_or(usize::MAX);
         let order = if chars & scn::MEM_DISCARDABLE != 0 {
             2
         } else if name == b".rsrc" {
@@ -1458,50 +1550,43 @@ pub fn layout(
         } else {
             0
         };
-        (order, fixed)
+        (order, fixed, first, first_own)
     };
-    out_names.sort_by_key(|(n, c)| rank(n, *c));
-    // Sections of one name with different characteristics are one
-    // section, their characteristics combined (link.exe warns, LNK4078).
-    let mut sections: Vec<OutputSection> = Vec::new();
-    for (name, chars) in out_names {
-        match sections.iter_mut().find(|s| s.name == name) {
-            Some(s) => s.characteristics |= chars,
-            None => sections.push(OutputSection {
-                name,
-                characteristics: chars,
-                chunks: Vec::new(),
-                rva: 0,
-                virtual_size: 0,
-                raw_size: 0,
-                file_offset: 0,
-                groups: Vec::new(),
-            }),
-        }
-    }
-    // A section's characteristics are its own groups' (sections merged
-    // into it take its characteristics, as link.exe's merges do: .rdata
-    // stays read-only with .tls in it); a section of merged groups only,
-    // theirs.
-    for s in &mut sections {
-        let own = partials
+    out_names.sort_by_key(|(n, k, c)| rank(n, *k, *c));
+    let sections_keys: Vec<(Vec<u8>, Option<u32>)> =
+        out_names.iter().map(|(n, k, _)| (n.clone(), *k)).collect();
+    let mut sections: Vec<OutputSection> = out_names
+        .into_iter()
+        .map(|(name, _, characteristics)| OutputSection {
+            name,
+            characteristics,
+            chunks: Vec::new(),
+            rva: 0,
+            virtual_size: 0,
+            raw_size: 0,
+            file_offset: 0,
+            groups: Vec::new(),
+        })
+        .collect();
+    // Each partial section's output section.
+    let section_of: Vec<usize> = partials
+        .iter()
+        .map(|p| {
+            let ((out, _, chars), _) = p;
+            let wanted = if own(p) { Some(*chars) } else { None };
+            sections_keys
+                .iter()
+                .position(|(n, k)| n == out && (*k == wanted || wanted.is_none()))
+                .unwrap_or(0)
+        })
+        .collect();
+    for (i, s) in sections.iter_mut().enumerate() {
+        let mut mine: Vec<&Partial> = partials
             .iter()
-            .filter(|p| p.0.0 == s.name)
-            .filter(|p| {
-                let input = &p.0.1;
-                let base = input
-                    .iter()
-                    .position(|&b| b == b'$')
-                    .map_or(&input[..], |i| &input[..i]);
-                base == s.name.as_slice()
-            })
-            .fold(0, |a, p| a | p.0.2);
-        if own != 0 {
-            s.characteristics = own;
-        }
-    }
-    for s in &mut sections {
-        let mut mine: Vec<&Partial> = partials.iter().filter(|p| p.0.0 == s.name).collect();
+            .zip(&section_of)
+            .filter(|&(_, &o)| o == i)
+            .map(|(p, _)| p)
+            .collect();
         // link.exe's order (as its COFF groups record it): every group
         // (input section name) by its name, the merged ones among the
         // section's own; except the imports': the address table
@@ -1599,7 +1684,8 @@ pub fn layout(
     sections.retain(|s| s.chunks.iter().any(|&c| chunks[c as usize].size > 0));
     // `/SECTION` attributes.
     for a in &config.sections {
-        if let Some(s) = sections.iter_mut().find(|s| s.name == a.name.as_bytes()) {
+        // (Every section of the name, as link.exe sets them.)
+        for s in sections.iter_mut().filter(|s| s.name == a.name.as_bytes()) {
             s.characteristics = (s.characteristics | a.set) & !a.clear;
         }
     }
@@ -1625,6 +1711,7 @@ pub fn layout(
         common_chunks,
         import_slots,
         thunk_chunks,
+        local_imports,
         dlls,
         directory_order,
         delay_dlls,

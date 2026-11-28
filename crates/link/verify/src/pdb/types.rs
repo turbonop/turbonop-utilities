@@ -69,11 +69,18 @@ pub(crate) fn records<'s>(stream: &'s TypeStream<'_>) -> Vec<TypeRecord<'s>> {
 /// `cvinfo.h` leaves unused), which MSVC 14.52 sets in the type of a
 /// constructor in some translation units and not in others (seen on the
 /// implicit constructors of the same classes, in two objects).
+///
+/// With `by_name` too, a class, structure, union, interface, or enum is
+/// its kind and name (without tags) alone, not its fields: another
+/// translation unit's definition of a class can differ in the members it
+/// lists (MSVC lists the special members a translation unit declares
+/// implicitly, which follows what it uses).
 pub(crate) fn hash(
     records: &[TypeRecord<'_>],
     other: Option<(&Hashes, &[TypeRecord<'_>])>,
     names: Option<&turbonop_pdb::StringTable<'_>>,
     tagless: bool,
+    by_name: bool,
 ) -> Hashes {
     let other_hashes = other.map(|o| o.0);
     // Each record's index fields, in parallel.
@@ -143,6 +150,14 @@ pub(crate) fn hash(
                 _ => r.data,
             };
             let mut h = H128::new();
+            if by_name
+                && is_udt(r.kind)
+                && let Some(name) = r.name()
+            {
+                h.u64(0xDE);
+                h.bytes(&without_tags(name));
+                return h.finish();
+            }
             h.u64(u64::from(r.kind));
             match &refs[i] {
                 Err(_) => h.bytes(data),
@@ -199,6 +214,17 @@ pub(crate) fn hash(
         }
     }
     out
+}
+
+/// Whether a TPI record is a user-defined type (a class, structure, union,
+/// interface, or enum).
+fn is_udt(kind: u16) -> bool {
+    // LF_CLASS, LF_STRUCTURE, LF_UNION, LF_ENUM, LF_INTERFACE, and their
+    // 19-series forms.
+    matches!(
+        kind,
+        0x1504 | 0x1505 | 0x1506 | 0x1507 | 0x1519 | 0x1608 | 0x1609 | 0x160B | 0x160C
+    )
 }
 
 /// Where a function type's attributes (`CV_funcattr_t`) are in its

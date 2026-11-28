@@ -237,7 +237,7 @@ fn content(p: &Linked<'_>, c: &Contribution) -> Vec<u8> {
             r += 1;
             continue;
         }
-        if (c.rva as usize + at) & 3 == 0 && at + 4 <= data.len() {
+        if (c.rva as usize + at) & 3 == 0 && at + 4 <= data.len() && !text(&data[at..at + 4]) {
             let w = u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]);
             // Only a word naming the start of something: any small integer
             // (a size, an offset, four characters of a string) is an RVA in
@@ -253,6 +253,16 @@ fn content(p: &Linked<'_>, c: &Contribution) -> Vec<u8> {
         at += 1;
     }
     out
+}
+
+/// Whether a word's bytes read as text: a printable character, then
+/// printable characters or NULs (`Pos\0`, a variable's name in MSVC's
+/// `/RTC1` data). As an RVA it would name whatever starts there, which
+/// follows the layout; a real RVA that reads as text (about one in twenty)
+/// keeps its bytes, and its contribution then pairs with nothing (reported).
+fn text(w: &[u8]) -> bool {
+    let printable = |c: u8| (0x20..0x7F).contains(&c);
+    printable(w[0]) && w[1..].iter().all(|&c| c == 0 || printable(c))
 }
 
 /// Names unlabeled read-only data by its content, in both programs, so

@@ -593,8 +593,9 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
             && checked
             && ia.mnemonic() == Mnemonic::Mov
             && near_tls_read(at)
-            && let [Operand::Reg(_), Operand::Imm(xa)] = ia.operands()
+            && let [Operand::Reg(r), Operand::Imm(xa)] = ia.operands()
             && xa.size == 4
+            && indexes_soon(&a.bytes[at + n..len], base_a + (at + n) as u64, *r)
         {
             let v = i64::from(xa.value as u32);
             if let (Some(na), Some(nb)) = (a.image.tls(v), b.image.tls(v))
@@ -767,6 +768,33 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
 
 /// How far (in bytes) from a read of the TLS array a `SECREL` may be.
 const TLS_WINDOW: usize = 48;
+
+/// Whether one of the next few instructions of `code` addresses memory
+/// as `[base + r]` (or `[r + index]`), `r` the register (of any width) a
+/// `SECREL` was loaded into: MSVC's `movzx eax, byte ptr [rcx+rax]`, rcx
+/// the thread's block.
+fn indexes_soon(code: &[u8], va: u64, r: turbonop_x86::Register) -> bool {
+    use turbonop_x86::{Mode, Operand, decode};
+    let mut at = 0;
+    for _ in 0..6 {
+        let Ok(i) = decode(&code[at..], Mode::Bits64, va + at as u64) else {
+            return false;
+        };
+        let hit = i.operands().iter().any(|o| {
+            matches!(o, Operand::Mem(m) if m.base.is_some() && m.index.is_some()
+                && (m.base.is_some_and(|b| b.index() == r.index())
+                    || m.index.is_some_and(|x| x.index() == r.index())))
+        });
+        if hit {
+            return true;
+        }
+        at += i.len().max(1);
+        if at >= code.len() {
+            return false;
+        }
+    }
+    false
+}
 
 /// The offsets of the instructions in `code` that read the TLS array
 /// (`gs:[58h]`, x64 Windows), decoded from the start.

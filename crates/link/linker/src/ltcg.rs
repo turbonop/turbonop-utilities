@@ -39,15 +39,22 @@ pub fn find_backend() -> Option<PathBuf> {
 /// is written to `temp`.
 pub fn prepare(config: &Config, temp: &Path) -> Result<Option<Config>, Vec<LinkError>> {
     let err = |m: String| vec![LinkError::error(1257, m)];
+    // Which inputs are /GL objects: by each one's header alone (64 bytes
+    // of it), every input at once.
+    let found = turbonop_par::map(&config.inputs, 16, |input| {
+        use std::io::Read;
+        let mut file = std::fs::File::open(input).ok()?;
+        let mut head = Vec::with_capacity(64);
+        (&mut file).take(64).read_to_end(&mut head).ok()?;
+        (crate::resolve::identify(&head) == InputKind::Ltcg)
+            .then(|| file.metadata().map(|m| m.len()).ok())
+            .flatten()
+    });
     let mut il: Vec<(usize, PathBuf, u32)> = Vec::new();
-    for (i, input) in config.inputs.iter().enumerate() {
-        let path = PathBuf::from(input);
-        let Ok(bytes) = std::fs::read(&path) else {
-            continue;
-        };
-        if crate::resolve::identify(&bytes) == InputKind::Ltcg {
-            let size = u32::try_from(bytes.len()).map_err(|_| err(format!("{input}: too big")))?;
-            il.push((i, path, size));
+    for (i, (input, len)) in config.inputs.iter().zip(found).enumerate() {
+        if let Some(len) = len {
+            let size = u32::try_from(len).map_err(|_| err(format!("{input}: too big")))?;
+            il.push((i, PathBuf::from(input), size));
         }
     }
     if il.is_empty() {

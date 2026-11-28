@@ -198,3 +198,30 @@ fn module_records_dropped_or_duplicated_are_caught() {
     });
     assert!(!r.passed(), "a module dropped:\n{}", r.text());
 }
+
+#[test]
+fn one_line_blocks_pair_whatever_their_order() {
+    // The first PDB: a function's one line not at its unit's end, and one
+    // at an end; the second: one at an end, and one not. Pairing the first's
+    // end with the second's end first would leave the other two unpaired
+    // (a line not at an end pairs only with an end); the order of the
+    // blocks follows the process's hash keys.
+    let block = |name: &[u8], h: u128, eof: bool| -> LineBlock {
+        (name.to_vec(), h, Some((0x33, eof)), show(name))
+    };
+    for flip in [false, true] {
+        // (Blocks are taken in the order of their hashes.)
+        let (hx, hy) = if flip { (2, 1) } else { (1, 2) };
+        let ra = Reduced {
+            lines: vec![block(b"x", hx, false), block(b"y", hy, true)],
+            ..Reduced::default()
+        };
+        let rb = Reduced {
+            lines: vec![block(b"p", 3, true), block(b"q", 4, false)],
+            ..Reduced::default()
+        };
+        let mut rep = Report::new();
+        lines_compared(&ra, &rb, &mut rep);
+        assert!(rep.passed(), "{flip}:\n{}", rep.text());
+    }
+}

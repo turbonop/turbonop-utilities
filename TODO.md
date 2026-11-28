@@ -4,6 +4,47 @@ What's planned for TurboNOP's tools (Hexcavator so far) and their
 libraries, and what's waiting on something. Items
 leave this list when they ship.
 
+## Paused work
+
+Work in progress, paused on 2026-11-28 (each committed and pushed on its
+branch, with no pull request yet; each branch has origin/main of that day
+merged in). To resume: check the branch out in a worktree, merge
+origin/main again, do the next step, then open its pull request.
+
+- **Java class files, JARs, and ZIP** (branch `java-class`): the crates
+  `turbonop-zip` (ZIP64, data descriptors, every entry inflated and its
+  CRC checked; every archive of the machine's JDK read) and
+  `turbonop-java` (class files of every version, every attribute, all
+  opcodes; `javap -v -p` reproduced line for line on 46 fixtures and 22
+  JDK classes; all 27,860 classes of the JDK's jmods read; JARs with
+  their manifests and multi-release layout), `hexcavator info` on class
+  files, JARs, and ZIPs, and `java` and `zip` fuzz targets. Next: run
+  `cargo test -p hexcavator -p turbonop-fuzz` (since the merge: the new
+  `info::java`, `licenses`, and `self_contained` tests, and the fuzz
+  targets' seeds), fmt and clippy, then the pull request. Its TODO.md
+  entry says what's left (size by package, class, and method; dump and
+  symbols; JMOD and jimage).
+- **Android DEX** (branch `android-dex`): the crate `turbonop-dex`
+  (versions 035 to 041 and 041's containers, checksums and signatures,
+  every table, Dalvik bytecode of all formats; `dexdump` reproduced byte
+  for byte on d8's fixtures and hand-made ones), `hexcavator info` on a
+  `.dex`, a `dex` fuzz target. The Android SDK (build-tools 37.0.0) and a
+  JDK 21 are on this machine: `C:\Program Files (x86)\Android\android-sdk`,
+  `C:\Program Files\Android\openjdk\jdk-21.0.8`. Next: run hexcavator's
+  tests since the merge (`info::dex` hasn't run yet), then the pull
+  request. APKs and AABs wait for `turbonop-zip` (branch `java-class`).
+- **LTCG IL records** (branch `ltcg-records`): `.cil$gl`'s records walked
+  whole (443 of 443 objects to their ends), lib.exe's choice of public
+  definitions reproduced (`Globals::lib_listed`: 30,494 definitions, none
+  different), `.cil$sy`, `.cil$in`, and `.cil$ex`'s framing read, with
+  `hexcavator ltcg -records`, `-locals`, and `-init`; the format and how
+  sure each part is in `docs/ltcg-il.md`. Next: apply and test
+  `tools/ltcg-il/research/size-wip.patch` (`hexcavator size` of `/GL`
+  objects and libraries, against `testdata/ltcg-il/records.lib`), then
+  the pull request (a draft of its description is
+  `tools/ltcg-il/research/pr-draft.md`). Later: turbolib's `/GL` index
+  by `Globals::lib_listed`; `.cil$ex`'s bytecode.
+
 ## TurboNOP's tools
 
 - **`hexcavator diff`, what's still to do.**

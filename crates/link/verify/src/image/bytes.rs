@@ -448,6 +448,30 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
                 }
             }
         }
+        // Image-relative displacements (`mov ecx, [rax+rcx*4+T]`, the image
+        // base in rax and T the RVA of a jump table, as MSVC indexes a
+        // switch's): by inference, as image-relative words are below.
+        if ea != eb {
+            for (oa, ob) in ia.operands().iter().zip(ib.operands()) {
+                if let (Operand::Mem(ma), Operand::Mem(mb)) = (oa, ob)
+                    && !ma.is_rip_relative()
+                    && !mb.is_rip_relative()
+                    && ma.disp_size == 4
+                    && mb.disp_size == 4
+                    && ma.disp != mb.disp
+                    && ma.base == mb.base
+                    && ma.index == mb.index
+                    && let (Ok(ra), Ok(rb)) = (u32::try_from(ma.disp), u32::try_from(mb.disp))
+                    && a.image.name(ra).is_some()
+                    && same(a.image, Some(ra), b.image, Some(rb))
+                    && let Some(p) = field(ea, eb, 1, 4, ma.disp, mb.disp)
+                    && !masked[at + p..at + p + 4].contains(&true)
+                {
+                    masked[at + p..at + p + 4].fill(true);
+                    fields.inferred += 1;
+                }
+            }
+        }
         // mold's relaxed TLS accesses (above).
         let mut mask = |p: Option<usize>, size: usize, fields: &mut Fields| {
             if let Some(p) = p

@@ -455,6 +455,7 @@ pub fn maps(data: &[u8], file_name: &str, sources: &[Source]) -> Result<Maps> {
         out.push((source, map));
     }
     Ok(Maps {
+        crate_hints: Default::default(),
         labels: b.labels,
         base: b.base,
         sources: out,

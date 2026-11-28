@@ -383,6 +383,9 @@ pub struct Config {
     /// The `.def` file's `LIBRARY` name: the DLL's name in its export
     /// directory (else the output's file name).
     pub library_name: Option<String>,
+    /// What the `.def` file's `LIBRARY` or `NAME` says to link with
+    /// (` /DLL /OUT:x.dll`): the export object's `.drectve`.
+    pub def_directives: Option<String>,
     /// `/IMPLIB`.
     pub implib: Option<PathBuf>,
     /// `/NOIMPLIB`.
@@ -521,6 +524,7 @@ impl Default for Config {
             exports: Vec::new(),
             def: None,
             library_name: None,
+            def_directives: None,
             implib: None,
             no_implib: false,
             no_exp: false,
@@ -1315,11 +1319,17 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
         "verbose" => c.verbose = true,
         "time" | "time+" => c.time = true,
         "ltcg" | "ltcgout" | "useprofile" | "genprofile" | "fastgenprofile" => {
-            if name == "ltcg" && value.is_some_and(|v| v.eq_ignore_ascii_case("off")) {
+            let v = value.map(str::to_ascii_lowercase);
+            if name == "ltcg" && v.as_deref() == Some("off") {
                 c.ltcg = false;
             } else {
                 c.ltcg = true;
-                d.push(Diagnostic::NotYet(arg.to_string()));
+                // (Plain LTCG is done; incremental LTCG and PGO aren't yet.)
+                let plain =
+                    name == "ltcg" && matches!(v.as_deref(), None | Some("status" | "nostatus"));
+                if !plain {
+                    d.push(Diagnostic::NotYet(arg.to_string()));
+                }
             }
         }
         "incremental" => match yes_no(value) {

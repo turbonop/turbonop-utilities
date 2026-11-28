@@ -26,7 +26,7 @@ items leave TODO.md as they ship.
 | 2 Identical folding (COFF) | In progress (see [Phase 2 results](#phase-2-results)). Done: 2.1 and 2.2, the engine (`turbonop_fold::rewrite`) in the `lib` personality (`/TURBOLIB:fold=identical`), the side tables (2.3), and `--pull=preserve` and `relaxed` with `--locals=keep` (2.5). 2.4, folded units' debug information (see [2.4](#debug-information-24)). Done too: the link-equivalence checks (2.6: `turbolib verify`, `compare-images`). |
 | 3 Shared types: a synthesized precompiled-types object | In progress (see [Phase 3 results](#phase-3-results)): 3.1 to 3.4 done, as `--precomp=library` (opt-in; `none` stays the default until it is proven in more links); 3.5 done, as `--precomp=clustered[=<n>]` (opt-in; see [Phase 3.5 results](#phase-35-results-clustered)). |
 | 4 Less conservative folding | Done (see [Phase 4 results](#phase-4-results)): `--fold=select-any` with `--pick`, `--locals=copy` and `merge`, `--report odr`, and `verify`'s modes for them; opt-in (the defaults are unchanged). On LLVM they save little more than `identical` (0.15% of `build-z7` under `preserve`). |
-| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). Memory (2026-11-27): folding clangSema.lib peaks at 1.69 GiB of commit, from 2.39; 8 libraries at once share the cores (slots). |
+| 5 Speed | In progress (see [Phase 5](#phase-5-speed)): on the 20 largest libraries, turbolib takes 0.50× `lib.exe`'s time without folding, about 1.0× with it, and 1.06× with folding and shared types (0.92× on `build-z7-nopch`). Memory (2026-11-27): folding clangSema.lib peaks at 1.69 GiB of commit, from 2.39; 8 libraries at once share the cores (slots). Round 2 (2026-11-28): every mode reads its objects one at a time; with shared types clangSema.lib peaks at 1.33 GiB, from 1.97 (836 MiB on one thread, from 1,581). |
 | 6 ELF, with split DWARF | In progress (see [Phase 6 results](#phase-6-results)). Done: 6.1, the GNU and BSD archive writers (every archive of the gcc corpus written back byte for byte) and the `ar`, `llvm-ar`, and `ranlib` personalities (60 of 60 command lines as GNU `ar` and `llvm-ar` behave; all 265 libraries of the gcc build remade by its own commands, in 0.27× GNU `ar`'s time); 6.2, `turbonop-elf-object`, which every corpus object round-trips through byte-identically; 6.3, `--fold=identical` for ELF (`llvm-nm` and `llvm-readobj` link to the same members, symbols, and outputs with GNU ld, gold, lld, and mold); 6.4, ELF `verify` and `compare-images`; 6.5, folded functions' DWARF in synthesized members (DWARF 4 and 5, split DWARF 5 described unsplit): all 265 libraries of the gcc build folded (1.0% smaller, every folded function with DWARF) and verified; in the relinked programs every function and table equivalent and every subprogram described, 7 to 22 per program by another unit's copy; gdb sessions in folded functions the same; GNU's split DWARF 4 too; initializer entries in groups kept from folding; the original members loaded in the original order by all four linkers; the clang corpus (relib byte for byte, folded 2.4% smaller, verified, relinked; see 6.6); every differing description proven another unit's copy; folding the 20 largest libraries in 0.34× GNU `ar`'s time, 1.88× a Release `llvm-ar`'s (6.8, from 3.46×; noisy measurements); `compare-images` reading the clang corpus's last differences; CREL objects read, written, and folded (6.7). Not yet: `select-any` and `--locals` for ELF. |
 | 7 Mach-O | In progress (see [Phase 7 results](#phase-7-results)). Done: 7.1, Darwin archives (all 160 archives of the Mach-O corpus written back byte for byte and remade by their own commands; 41 of 41 command lines as `llvm-ar`, `llvm-ranlib`, and `llvm-libtool-darwin` behave) and the `libtool -static` personality (`llvm-libtool-darwin`'s; 0.70× the real tools' time); 7.2, `turbonop-macho-object` (all 5,732 corpus objects round-trip byte for byte, and laid out afresh reproduce LLVM's bytes); 7.3, a first `--fold=identical` for Mach-O, with `verify`; 7.4, x86-64's FDEs and LSDAs move with their units (x86-64 now folds as arm64 does: 36,348 units, 169,617 copies), givers' DWARF moves with their code, synthesized members carry their units' DWARF (every folded unit's), and `compare-images` for Mach-O (dSYMs' DWARF too); 7.5, givers' DWARF without the moved copies' DIEs (the folded links' dSYMs equivalent to 7.4's). Not yet: Apple's `libtool`/`ranlib`, linkers, and dsymutil (not available here); the size the DWARF costs (the folded archives are 5.9% larger; 7.4: 9.1%); speed (3.55× the real tools' time folding in 7.4, and pruning adds about a quarter more CPU). |
 
@@ -2214,7 +2214,8 @@ dSYMs are this LLVM's dsymutil's.
   template arguments, its synthesized member holds them as declarations,
   and dsymutil (classic, ODR uniquing) had kept a giver's definition that
   nothing in the dSYM referred to. Why it keeps it wasn't established
-  (dsymutil's source isn't read here); named types are kept since.
+  then (7.6 found it: an earlier `using namespace std::chrono` keeps the
+  namespace whole); named types were kept since.
 - **`verify`** checks pruned DWARF apart from the engine
   (`turbonop_verify::macho::pruned`): the two DIE trees aligned, only
   whole subtrees missing below the unit and namespaces; every kept DIE the
@@ -2250,6 +2251,147 @@ dSYMs are this LLVM's dsymutil's.
 | ELF | `libLLVMSupport.a`, `libLLVMCore.a`, `libLLVMObject.a` (the clang corpus) folded by 7.4's and this build: the same bytes (no shared code changed) |
 | prune's tests | a unit emitted whole and without what goes, compared byte for byte (`__debug_info`, `__debug_str`, relocations, the accelerator table); twins, offsets, bucket counts, NUL search |
 | speed (CPU, `-j 1`, 7.4's build and this one alternating, 3 runs each; the machine shared with another agent's ELF runs, so only the ratio is meaningful) | `libLLVMCore.a` arm64 +23%, `libLLVMSupport.a` x86-64 +26%: slower. Pruning reads every giver's DWARF (7.4 read only survivors'); single-threaded on `libLLVMCore.a` it is 0.69 s of 1.56 s of giver rewriting (walking the DIEs 0.18 s; the rest lookups, strings, lists, accelerator tables, a second cut). Not yet won back |
+
+### What dsymutil keeps, and synthesized members' classes from their givers (7.6)
+
+**dsymutil's rules** (the classic linker, Apple's; read in LLVM's
+`llvm/lib/DWARFLinker/Classic/DWARFLinker.cpp` and
+`DWARFLinkerDeclContext.cpp` at the corpus's LLVM, and checked with this
+LLVM's `dsymutil --linker=classic` on small programs):
+
+- **Per object, from its own roots.** `lookForDIEsToKeep` walks every DIE
+  of each unit in file order from the unit's DIE. Roots (`shouldKeepDIE`):
+  subprograms and labels whose `DW_AT_low_pc` relocation is in the debug
+  map (`shouldKeepSubprogramDIE`); variables and constants outside
+  functions with `DW_AT_const_value`, or with a location relocated into
+  the debug map (`shouldKeepVariableDIE`); base types,
+  `DW_TAG_imported_module`, `DW_TAG_imported_declaration`, and
+  `DW_TAG_imported_unit`, always. A kept DIE keeps its children (the keep
+  flag passes down), its ancestors (`lookForParentDIEsToKeep`), all the
+  children of an ancestor that is a class, structure, union, enumeration,
+  subprogram, lexical block, subroutine type, or common block
+  (`dieNeedsChildrenToBeMeaningful`), and what every reference attribute
+  but `DW_AT_sibling` names, with its children (`lookForRefDIEsToKeep`). A
+  DIE already kept isn't walked again. References are followed only
+  within the object (its units): an object's definition is in the dSYM
+  only if that object's own roots reach it. A definition is not kept
+  because it is "found in a live object".
+- **ODR uniquing, per link.** Each named type, namespace, member, and
+  external subprogram in named scopes has a declaration context
+  (`getChildDeclContext`: the parent's, the tag, the linkage name or name,
+  and but for namespaces the byte size, the resolved `DW_AT_decl_file`,
+  and `DW_AT_decl_line`; a declaration has no size or file, so its
+  context isn't its definition's). The first complete DIE of a context
+  kept, in debug-map order, becomes its canonical one
+  (`markODRCanonicalDie`; complete: not a declaration, and no member
+  reaching, through members, pointers, references, and typedefs, an
+  incomplete DIE: `updateChildIncompleteness`,
+  `updateRefIncompleteness`). An ODR reference (`DW_AT_type`,
+  `DW_AT_containing_type`, `DW_AT_specification`, `DW_AT_abstract_origin`,
+  `DW_AT_import`, `DW_AT_LLVM_alloc_type`; `isODRAttribute`) to a context
+  that has one isn't followed, and is pointed at it when cloned
+  (`cloneDieReferenceAttribute`). An incomplete definition is never
+  canonical, so it is kept from every object that reaches it (the
+  original `llvm-nm` arm64 dSYM has 18 definitions of `llvm::StringRef`).
+- **Why a giver's class definition nothing referred to was in a dSYM
+  (7.5).** An always-kept `DW_TAG_imported_module` keeps the namespace it
+  names through a dependency walk, with every child, unless something
+  had kept the namespace before it in file order. In
+  `ArchiveWriter.cpp.o`, `llvm/Support/Chrono.h`'s two `using namespace
+  std::chrono` (at 0xeb81 and 0xec2e, inside namespace `llvm`) come before
+  the `std::chrono` namespace DIE (0x3786e): in a link where nothing of
+  the object reaches into `std::chrono` first, every duration of it is in
+  the dSYM, with the `std::ratio` definitions they name. A small program
+  (`namespace ns` with classes only dead code names, and `using namespace
+  ns`) shows dsymutil keeping all of them; with the namespace's DIE kept
+  before the import (a child of it an always-kept import), none.
+
+**What follows for folding:**
+
+- **Givers may lose named types no DIE dsymutil can keep reaches.** A
+  giver's named type only dead code reaches (after 7.5's pruning) can be
+  kept by dsymutil only as a child of a namespace an import names (or a
+  descendant of one). `prune` now removes named types too, but those
+  inside a namespace something refers to; `verify` checks the same rule.
+  That is no change to any dSYM: a removed type was one no kept DIE
+  reached. (The dead entities inside an imported namespace went in 7.5
+  already: in a link that keeps such a namespace whole, the original's
+  dSYM had their DIEs, without addresses, and what only they named.)
+- **With `--debug-types=shared`, a synthesized member holds as
+  declarations the classes its givers define** (the default,
+  `--debug-types=complete`, keeps 7.5's whole classes: see the next
+  point). A synthesized member is loaded whenever one of its givers is
+  (by the giver's anchor). `turbonop_fold::macho::reach` works out, for
+  each giver after its cut, the class definitions it puts in the dSYM of
+  every link that loads it with all its code (no `-dead_strip`): its
+  roots (DIEs whose relocations still name what it holds), what dsymutil
+  keeps from them by the rules above, and the target of each ODR
+  reference to a DIE that may have a declaration context (dsymutil keeps
+  that from this object, or an earlier object's definition is the
+  canonical one), but nothing beyond such a target (another object's
+  version may be the dSYM's, and what that version names may differ),
+  nor a namespace's other children. Keys are dsymutil's context keys
+  (`turbonop_fold::dwarf::key`: tag, name, byte size, file by directory
+  and name, line, and the parent's key). A class the moved code names,
+  which 7.4 kept whole, is a declaration when every giver of the
+  synthesized member defines it so.
+- **What isn't kept: the versions.** dsymutil keeps one version of a
+  class template specialization per object that reaches it while it is
+  incomplete, and the first complete one, and which ones are complete
+  depends on what earlier objects made canonical (a member reaching a
+  type whose context is already canonical isn't followed, so doesn't
+  make it incomplete). Any change to what a synthesized member holds
+  changes that cascade. In the corpus, `llvm::gsym::SourceLocation` had
+  `FunctionInfo.cpp.o`'s definition in the original's dSYM and
+  `Symbolize.cpp.o`'s (an earlier object's) in the folded one's, though
+  both links load the objects in the same order and the giver's
+  surviving `FunctionInfo::lookup` still names it: `Symbolize.cpp.o`'s
+  version was incomplete in the original link and complete in the folded
+  one. 7.4's whole classes changed versions this way too (the classes
+  "with contents only in" one image of 7.4's table).
+- **Strings named once are inline** (`DW_FORM_string`) in a synthesized
+  member: 4 bytes smaller each, and no change to the dSYM (dsymutil
+  writes every string into its own table).
+
+Tried and not kept:
+
+| Variant | `llvm-ar` archives | `llvm-nm` arm64: types only in the original / with contents only in the original / only in the folded |
+|---|---|---|
+| 7.5 (classes the code names whole) | 1,626,635,896 | 9 / 38 / 114 |
+| reach followed to the end (through the classes ODR references name) | 1,476,852,664 | 21 / 516 / 4 |
+| reach to ODR targets and their ancestors | 1,522,627,136 | 4 / 134 / 52 |
+| reach to ODR targets (kept) | 1,525,594,296 | 4 / 133 / 54 |
+| ... and a class declared only if every giver's has its members | 1,597,908,384 | 9 / 112 / 112 |
+| ... and roots only strong definitions (a weak one's copy may be another object's) | 1,573,510,800 | 9 / 69 / 92 |
+| ... both | 1,610,137,096 | 9 / 58 / 114 |
+
+None of these reproduces the original's versions: the variants trade
+categories, and the ones that keep more classes whole (larger) do no
+better than 7.5 overall. The variant kept, as `--debug-types=shared`,
+loses the fewest definitions. The default stays 7.5's classes
+(`--debug-types=complete`), with the two changes that leave every dSYM as
+it was: givers' named types pruned and strings inline. The relinks show
+it: with the default, `compare-images` reports exactly 7.5's categories
+and counts in all 4 links (expected ones too).
+
+| Check | Result |
+|---|---|
+| size (`relib.py --options=--fold=identical`, and with `--debug-types=shared`) | the `llvm-ar` archives 1,536,552,752 bytes to 1,613,682,840 by default (5.0% larger; 7.5: 1,626,635,896, 5.9%) and 1,521,951,128 with `shared` (0.95% smaller; 1,525,594,296 before strings went inline); the `libtool` ones (with the universal files) 3,073,107,040 to 3,227,367,216 and 3,043,903,792 (7.5: 3,253,273,328). Synthesized members' DWARF, arm64: 84.1 MB by default (`__debug_info` 74.6, `__debug_line` 3.9, `__debug_abbrev` 3.3, `__debug_str` 1.7, `__debug_ranges` 0.7), 40.0 MB with `shared` (`__debug_str` 23.8, `__debug_info` 10.4, `__debug_line` 3.2, `__debug_abbrev` 1.9, `__debug_ranges` 0.7) before strings went inline; 7.5: 88.7 |
+| `relink.py` (4 links, against the originals) | by default: exactly 7.5's categories and counts, expected ones too, in all 4 links. With `shared`: the original members loaded in order; code, data, unwind information, imports, and subprograms as 7.5 (the same categories and counts); type definitions only in the original 4, 4, 6, 6 (7.5: 9, 9, 11, 11); with contents only in the original 133, 132, 71, 70 (7.5: 38, 38, 21, 21), only in the folded 54, 54, 30, 31 (7.5: 114, 115, 64, 66) |
+| `relink.py --dead-strip` (new: `-dead_strip`, as a Mac release build links) | against the originals linked the same way, by default: exactly 7.5's categories and counts in all 4 links. With `shared` (the build before strings went inline): the original members loaded in order; type definitions only in the original 95, 86, 94, 85 (7.5: 150, 141, 98, 89), with contents only in the original 125, 124, 100, 100 (7.5: 49, 49, 37, 38), only in the folded 57, 57, 41, 42 (7.5: 92, 93, 59, 61); code and subprograms as 7.5. Both settings lose definitions under `-dead_strip`: a giver's code that names a class may be stripped while the moved code stays |
+| `turbolib verify` of the 128 single-architecture archives | 128 pass |
+| `fixture.py` | 16 of 16 |
+| determinism | `libLLVMCore.a` arm64, `libLLVMSupport.a` x86-64, `libLLVMObject.a` arm64 (as `libtool -static`) with `-j 1`, `-j 3`, `-j 8`: the same bytes |
+| ELF | `libLLVMSupport.a`, `libLLVMCore.a`, `libLLVMObject.a` of the clang and gcc corpora folded by 7.5's build and this one: the same bytes |
+| speed (by default; CPU, user + system, `-j 1`, as `libtool -static`, 7.5's build and this one alternating, 3 runs each, the first left out) | `libLLVMCore.a` arm64 10.90 and 11.00 s against 10.73 and 10.44 s (3% more); `libLLVMSupport.a` x86-64 2.74 and 2.60 s against 2.75 and 2.48 s (2% more, within the runs' spread). The named types prune removes, and counting a synthesized member's strings, cost a little; not profiled |
+| speed (with `shared`; CPU, user + system, `-j 1`, as `libtool -static`, 7.5's build and this one alternating, 3 runs each, the first of each cold and left out; the machine's load about 4 from other work, so only the ratio is meaningful) | `libLLVMCore.a` arm64 9.30 and 9.20 s against 10.79 and 9.95 s (7% less: synthesized members' DWARF is smaller to build, which pays for walking every giver's DWARF once more in `reach`); `libLLVMSupport.a` x86-64 2.54 and 2.50 s against 2.43 and 2.41 s (4% more) |
+
+What it can't prove: with `shared`, the giver-supplied classes hold only for links
+without `-dead_strip` that load the synthesized member through a giver
+(a giver's code that names a class may be stripped while the moved code
+stays; a synthesized member loaded by its own name, with no giver, has
+only declarations); the versions of classes in a dSYM aren't preserved;
+the dSYMs are this LLVM's dsymutil's, and Apple's wasn't run.
 
 
 ## Decisions
@@ -2410,6 +2552,61 @@ select-any mode it bounds which copies may stand in for each other:
    members in input order, then synthesized members, then the
    precompiled-types member), both linker members, `/<ECSYMBOLS>/` when
    needed, and the long names.
+
+### Folding a folded library
+
+A build that makes libraries of libraries (Buck2's) gives turbolib its own
+output as input: synthesized members (`turbolib<n>.obj`), a
+precompiled-types member (`turbolib-types-<hash>.obj`), and members whose
+moved names are alias weak externals. The engine reads them as it reads
+any object, so:
+
+- **Folded members fold again.** An input's synthesized member is an
+  object like another: its units fold with other members' copies of them,
+  and it gives them up as an original member does (its names become
+  aliases, and it refers to the new synthesized member's anchor). A link
+  that loads a member of the input still loads, through that member's
+  anchor, the input's synthesized member, and through its anchor the new
+  one: the chain keeps the alias technique's guarantees (each loaded
+  member's moved names are defined by an alias until the anchors bring
+  their strong definitions; the index names the original definers).
+- **Synthesized members of several inputs merge** the same way: two
+  folded libraries' synthesized members holding copies of one inline
+  function are two members holding identical units, and the copy moves to
+  one new synthesized member that both anchor.
+- **Precompiled types.** Where the library holds a precompiled-types
+  member turbolib made, the members of its machine keep their types as
+  they are, and no other such member is made for that machine: its users'
+  records are shared already. (Absorbed and shared again, as a compiler
+  PCH's users are, their records went into a new precompiled-types member
+  beside the inputs', which their other users keep: `LLVMSupport.lib` and
+  `LLVMCore.lib`, each folded, folded together came out 1.0% larger than
+  `lib.exe`'s combination of them, and 2.5% larger again folded alone.
+  And what the other members shared among themselves made yet another
+  member at each fold.) So objects added to a folded library don't share
+  types; their COMDATs fold as any others. Should a member become a user
+  of an input's types member, `verify` accepts its new reference to that
+  member's PCH symbol when the member's `LF_PRECOMP` names it and it
+  defines its PCH symbol alone and has no side effects (so that loading
+  it resolves no other name).
+- **Names.** New synthesized members skip the names input members have
+  (`turbolib0.obj` is taken by the input's): two members of one name would
+  be one too many, since `lib.exe` replaces one with the other when it
+  archives the library again. A first fold's names are as before.
+- **`__turbolib$alias`.** Every synthesized member defines it, as the same
+  absolute 0. `lib.exe` warns LNK4006 for the second definition when it
+  combines a folded library with anything else (and fails under `/WX`,
+  LNK1218: measured with 14.52); turbolib's `lib` personality doesn't warn
+  about it. `lib.exe` also indexes it; turbolib never does, and `verify`
+  doesn't count that entry: a member that names it, as its aliases'
+  default, names an anchor too, whose member defines it.
+
+`tools/turbolib/refold/run.py` folds once, then folds again alone, with
+more objects, two folded libraries together, and a third time, with
+`--strict`; checks each with `verify` against `lib.exe`'s library of the
+same inputs, for members of one name; and links a program against each and
+against `lib.exe`'s library with both linkers, under `/OPT:REF` and
+`/OPT:NOREF`, for `compare-images` and the programs' output.
 
 ### Side tables
 
@@ -2689,6 +2886,15 @@ Synthesized members are indexed for their anchors alone (under
 | `library` (written; the default once it is proven in more links) | One precompiled-types member for the whole library (see [Phase 3 results](#phase-3-results)). |
 | `clustered`, `clustered=<n>` (written) | Up to *n* precompiled-types members (16 without *n*), each for a group of members, the groups chosen by a cost model of what links load (see [Phase 3.5 results](#phase-35-results-clustered)). |
 
+### `--debug-types`: a Mach-O synthesized member's classes (7.6)
+
+| Mode | Behavior |
+|---|---|
+| `complete` (default) | The classes the moved code names, and those its functions are members of, are whole in the synthesized member (dsymutil keeps only what the linked code's DIEs reach): the corpus links' dSYMs compare with the originals' as 7.5's did. |
+| `shared` | Such a class is a declaration when every giver of the synthesized member defines it in every link that loads the giver (`turbonop_fold::macho::reach`): the synthesized members' DWARF less than half. But which unit's version of a class template specialization dsymutil keeps then changes (70 to 133 classes per corpus link), and under `-dead_strip` a giver's code that defines a class may be stripped while the moved code that names it stays. See [7.6](#what-dsymutil-keeps-and-synthesized-members-classes-from-their-givers-76). |
+
+ELF and COFF ignore it.
+
 ### `--report odr`: names whose definitions differ
 
 `--report odr` (`/TURBOLIB:report=odr`) lists, after the library is
@@ -2788,11 +2994,13 @@ if measurements say it pays.
   thread count cannot change the output.
 - **Plan:** the sizes of every output member are computed first, then the
   archive's index and member offsets, all before any data is written.
-- **Make:** folding identical copies, a member's object isn't kept once
-  its facts are read: each member's object is read again for its
-  rewriting and the synthesized members whose units are its own, and let
-  go once they are made (the modes that compare or share across members,
-  shared types, select-any, `--locals`, `--report odr`, keep every object).
+- **Make:** in every mode, a member's object isn't kept once its facts
+  (and what shared types, select-any, and `--report odr` need of it) are
+  read: each member's object is read again for the synthesized members
+  whose units are its own and then its rewriting, which edits it in place
+  when nothing else holds it, and let go once they are made. A
+  synthesized member whose units are several members' (select-any's
+  largest pick, copies kept for side effects) reads them on its own.
   A rewritten or synthesized member is held as its bytes but its section
   data (holes, which are the inputs' bytes).
 - **Write:** in order, from one thread, while up to 11 others copy the
@@ -2840,7 +3048,7 @@ Within a personality, the format of the output follows the inputs (or
   `-D`, `-U`, and `-t`; turbolib's own options are `--<option>` words and
   `-j N` there.
 - **turbolib's own options.** These are `--fold`, `--pick`, `--pull`,
-  `--locals`, `--precomp`, `--report odr`, `--diagnose`, `--stats`, and
+  `--locals`, `--precomp`, `--debug-types`, `--report odr`, `--diagnose`, `--stats`, and
   `-j`. A personality accepts
   them in its own spelling (`/TURBOLIB:<option>` for `lib`) or from the
   `TURBOLIB_OPTIONS` environment variable, so a build system that can't
@@ -2900,6 +3108,67 @@ units. This is documented, and `/EXTRACT` can also re-inline them
   suites.
 - **Debuggers:** spot checks with the VS debugger and WinDbg on the
   corpus. Our own PDB reader does the systematic checking.
+
+### The self-check (`verify=on`)
+
+After folding, turbolib checks the library it wrote against the one it
+would have written unfolded, with `turbolib verify`'s checks
+(`turbonop_verify::library`), in the same process; if the check fails, the
+unfolded library is written instead. What it proves is `verify`'s (see
+below); what it costs:
+
+- **Reading.** Each member of both libraries is read once into a model
+  that borrows its names from the member's bytes (no copy of the millions
+  of names a large library has), with the relocations of `.debug$`
+  sections left unread (most of a `/Z7` object's; nothing checked looks
+  at them: debug information is `compare-images`'s). Each unit's
+  fingerprint is one pass of a two-lane 128-bit hash, keyed per process
+  with keys that aren't the folding engine's, over a canonical form whose
+  fixed-width fields are packed into words; associative sections are
+  ordered by name, characteristics, and size, and hashed for ordering only
+  when those tie. The facts the PCH checks need are read in the same pass
+  (they read every member again before). Members are read on every core,
+  the largest first.
+- **When.** The original library is laid out and read on the other cores
+  while the folded library is written (the write is I/O); then the written
+  file is mapped and read, and the two compared.
+- **Comparing.** Each original member is checked against its counterpart
+  through one table of the names either defines or refers to (each name
+  hashed once, then every check a walk of the table), with each unit's key
+  and identity computed once when it is read; the archive indexes'
+  names are gathered without copying each member's list; members are
+  checked the largest first.
+- `--stats` prints the time of each stage (`self-check ... original laid
+  out and read ..., written library read ..., compared ...`).
+
+Measured with `tools/turbolib/corpus/perflib.py single` (median of 3
+interleaved rounds, `--fold=identical --precomp=library`, check on minus
+off, user and kernel CPU), against `origin/main` before the change, on a
+machine other sessions kept at 100% load (so the numbers are high, and
+noisy; old and new ran interleaved):
+
+| | `clangSema.lib` | `LLVMCore.lib` |
+|---|---|---|
+| CPU, 8 threads | 4.95 s to 3.70 s | 1.31 s to 1.14 s |
+| CPU, 1 thread | 4.55 s to 3.74 s | 1.44 s to 0.96 s |
+| peak commit added, 1 thread | 346 MB to 45 MB | 103 MB to 33 MB |
+| peak working set added, 8 threads | 554 MB to 517 MB | 236 MB to 182 MB |
+
+That leaves the check at about 0.65x folding's CPU (8 threads; folding
+itself 5.7 s and 1.6 s). A third of it is kernel time, most of it the
+faults of mapping the library just written to read it back (its pages are
+the file cache's: they count in the working set, not in the commit).
+
+**A cheaper mode, not written.** `verify=links` would run every check but
+the units' and sections' fingerprints: it would prove that the same names
+are defined (with their kinds), referred to, indexed, and loaded, that
+every moved COMDAT's names are aliases anchored to a synthesized member
+defining them, and that no strong definition moved; it would no longer
+prove that a moved COMDAT is identical to the copy that stands for it
+(the engine's identity hash), nor that what each member keeps (its
+COMDATs and its sections outside them) is unchanged byte for byte.
+Hashing is about a third of reading a member, so it would save perhaps
+a quarter of the check.
 
 ### The tools: `verify` and `compare-images` (2.6)
 
@@ -3279,6 +3548,77 @@ What the memory was, and what changed:
   threads; under 4 MiB of input, one thread and no slot. Alone it gets
   every core; 8 at once on 8 cores, 12% less CPU and 37% less commit than
   8 threads each, and close to `-j1` everywhere.
+
+**Memory, round 2 (2026-11-28).** The same tools and the same caveat:
+another session's builds held the CPU at 100% throughout, so only CPU
+time and memory compare. `clangSema.lib`, median of 2 interleaved rounds:
+
+| | peak commit before | after | peak working set before | after |
+|---|---|---|---|---|
+| `--fold=identical`, 8 threads | 1,486 MiB | 1,296 MiB | 2,249 MiB | 2,135 MiB |
+| `--fold=identical`, 1 thread | 847 MiB | 820 MiB | 1,749 MiB | 1,718 MiB |
+| `--precomp=library`, 8 threads | 1,966 MiB | 1,333 MiB | 2,616 MiB | 2,138 MiB |
+| `--precomp=library`, 1 thread | 1,581 MiB | 836 MiB | 2,312 MiB | 1,720 MiB |
+| `--precomp=clustered`, 8 threads | 1,977 MiB | 1,330 MiB | 2,658 MiB | 2,134 MiB |
+
+CPU time was the same within the noise (4.9 to 5.5 s in every run).
+`build-z7`'s 20 largest libraries, 8 threads, the summed CPU time and
+the largest peak of any library (clangSema.lib), median of 2 rounds:
+
+| | CPU before | after | peak commit before | after | peak working set before | after |
+|---|---|---|---|---|---|---|
+| `--fold=none` | 15.0 s | 13.2 s | 227 MiB | 230 MiB | 1,112 MiB | 1,115 MiB |
+| `--fold=identical` | 38.9 s | 38.7 s | 1,536 MiB | 1,399 MiB | 2,316 MiB | 2,188 MiB |
+| `--precomp=library` | 46.0 s | 46.0 s | 2,136 MiB | 1,364 MiB | 2,753 MiB | 2,174 MiB |
+| `--precomp=clustered` | 48.6 s | 48.6 s | 1,978 MiB | 1,426 MiB | 2,625 MiB | 2,201 MiB |
+| `--fold=select-any` | 39.3 s | 40.1 s | 2,012 MiB | 1,399 MiB | 2,665 MiB | 2,199 MiB |
+| `--locals=copy` | 40.5 s | 40.2 s | 2,156 MiB | 1,451 MiB | 2,799 MiB | 2,229 MiB |
+| `--report odr` | 40.7 s | 41.0 s | 2,180 MiB | 1,337 MiB | 2,798 MiB | 2,169 MiB |
+
+(The modes after `--fold=none` fold identical copies, but for
+`select-any`.)
+
+- **Every mode one object at a time.** Shared types, select-any,
+  `--locals`, and `--report odr` kept every object. Now what they need of
+  an object beyond its facts is read with it: shared types' scan of its
+  `.debug$S` (whether it can be renumbered, and which of its PCH's
+  records it names), whether it defines one of turbolib's PCH symbols,
+  and under `clustered` its undefined names; select-any's references of
+  each unit. The types themselves were already borrowed from the inputs.
+  A member that may share types is rewritten from its object read again,
+  as one that gives up copies is. Shared types now cost what folding
+  alone does (1 thread: 836 MiB against 820).
+- **`strip` edits the object in place.** It cloned the object it
+  rewrote. A member's synthesized members are made first, and its
+  rewriting last takes the object (it copies it only if another thread is
+  still making one of them). The side tables are split from the symbols
+  as read, before the symbols change, and `.chks64` compares each
+  section's bytes with where they were when read. About 91 MiB a thread
+  became about 68 (the rewriting step: the 8 largest members' objects at
+  once, and what is made of them).
+- **Freed memory and new threads.** Not the cause it was thought to be:
+  mimalloc reclaims the segments that exited threads leave (with
+  `MIMALLOC_MAX_SEGMENT_RECLAIM=0`, 240 MiB more commit; raising it
+  changed nothing). The rest of the gap to what is live is pages left
+  part-used: purging at once (`MIMALLOC_PURGE_DELAY=0`) peaks at 1,036 MiB
+  against 1,368 MiB, but takes 23% more CPU.
+- **Slimmer unit facts.** A unit was 288 bytes and copied its external
+  names: now 176 bytes, the names borrowed from the members, and what
+  only `--locals` and `--report odr` use (structural code, edges,
+  closure, referrers, and so on) in a box of its own, there only in those
+  modes. clangSema.lib's 437,527 units: 73 MiB (with the vector trimmed
+  to size), from at least 120 MiB and 46 MiB of copied names, each its
+  own allocation (the `modelsize` example).
+- **mimalloc's 32 MiB at start**: accepted, since a run that does real
+  work uses it.
+
+Output is the same, byte for byte with `/Brepro`, on all 245 libraries
+of `build-z7`, at 1, 3, and the default number of threads, against the
+build before, in eight modes: `--fold=none`, `identical`,
+`identical --precomp=library`, `identical --precomp=clustered`,
+`select-any`, `select-any --pick=largest --precomp=library`,
+`identical --locals=copy`, and `identical --locals=merge --report=odr`
+(`perflib.py identical`).
 
 Profiling: without administrator rights, `tools/turbolib/sample.py`
 (suspends each thread, walks its stack with dbghelp, names frames from

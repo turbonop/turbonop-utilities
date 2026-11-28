@@ -125,6 +125,7 @@ fn folds_identical_weak_definitions() {
         &Options {
             pull: Pull::Preserve,
             salt: b"libt.a",
+            debug_types: DebugTypes::Complete,
         },
     );
     assert_eq!(report.folded, 1, "{report:?}");
@@ -177,6 +178,7 @@ fn folds_identical_weak_definitions() {
         &Options {
             pull: Pull::Preserve,
             salt: b"libt.a",
+            debug_types: DebugTypes::Complete,
         },
     );
     assert!(out.iter().zip(&again).all(|(x, y)| x.data == y.data));
@@ -201,6 +203,7 @@ fn different_copies_stay() {
         &Options {
             pull: Pull::Preserve,
             salt: b"",
+            debug_types: DebugTypes::Complete,
         },
     );
     assert_eq!(report.folded, 0);
@@ -210,4 +213,83 @@ fn different_copies_stay() {
         Some(&2),
         "{report:?}"
     );
+}
+
+/// The classes named in the DWARF of a synthesized member of the
+/// `--debug-types` fixture (`tools/turbolib/macho-types`), each with
+/// whether it is a declaration.
+fn synthesized_classes(debug_types: DebugTypes) -> BTreeMap<String, bool> {
+    use turbonop_dwarf::consts::{DW_AT_DECLARATION, DW_AT_NAME, DW_TAG_STRUCTURE_TYPE};
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../testdata/turbolib/macho-types");
+    let a = std::fs::read(dir.join("a-arm64.o")).unwrap();
+    let b = std::fs::read(dir.join("b-arm64.o")).unwrap();
+    let inputs = [
+        Input {
+            name: b"a.o",
+            data: &a,
+        },
+        Input {
+            name: b"b.o",
+            data: &b,
+        },
+    ];
+    let (out, report) = fold(
+        &inputs,
+        &Options {
+            pull: Pull::Preserve,
+            salt: b"libtypes.a",
+            debug_types,
+        },
+    );
+    assert_eq!(report.synthesized, 1, "{report:?}");
+    assert_eq!(report.debug_dropped, 0, "{report:?}");
+    let s = Object::parse(out[0].data.as_deref().unwrap()).unwrap();
+    let mut d = turbonop_dwarf::Sections::new(turbonop_core::Endian::Little);
+    for x in s.sections() {
+        if let Some(n) = x.name().strip_prefix(b"__debug_") {
+            d.set(n, x.bytes().unwrap_or(&[]));
+        }
+    }
+    let u = turbonop_dwarf::Unit::iter(d, turbonop_dwarf::UnitSection::Info, 0)
+        .next()
+        .unwrap();
+    let abbrevs = turbonop_dwarf::Abbrevs::parse(d.abbrev, u.abbrev_offset, d.endian).unwrap();
+    let mut classes = BTreeMap::new();
+    let mut r = u.dies();
+    let mut attrs = Vec::new();
+    while let Some(ab) = r.next(&abbrevs) {
+        r.attrs(&u, ab, &mut attrs).unwrap();
+        if ab.tag != DW_TAG_STRUCTURE_TYPE {
+            continue;
+        }
+        let name = attrs
+            .iter()
+            .find(|a| a.name == DW_AT_NAME)
+            .and_then(|a| u.string(&a.value))
+            .map(|s| String::from_utf8_lossy(s.bytes).into_owned())
+            .unwrap();
+        let decl = attrs.iter().any(|a| a.name == DW_AT_DECLARATION);
+        classes.insert(name, decl);
+    }
+    classes
+}
+
+/// `--debug-types=complete` (the default): the classes the moved code names
+/// are whole in the synthesized member.
+#[test]
+fn debug_types_complete_keeps_named_classes_whole() {
+    let c = synthesized_classes(DebugTypes::Complete);
+    assert_eq!(c.get("Point"), Some(&false), "{c:?}");
+    assert_eq!(c.get("Hidden"), Some(&false), "{c:?}");
+}
+
+/// `--debug-types=shared`: a class every giver's own code defines (`Point`,
+/// a's parameter, b's local) is a declaration; one only the moved code
+/// names (`Hidden`) stays whole.
+#[test]
+fn debug_types_shared_declares_what_the_givers_define() {
+    let c = synthesized_classes(DebugTypes::Shared);
+    assert_eq!(c.get("Point"), Some(&true), "{c:?}");
+    assert_eq!(c.get("Hidden"), Some(&false), "{c:?}");
 }

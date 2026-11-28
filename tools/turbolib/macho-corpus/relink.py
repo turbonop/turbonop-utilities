@@ -4,11 +4,12 @@ against the Mach-O corpus's libraries and against folded ones, and compares
 the two links. Nothing can be run without a Mac, so this compares what the
 images hold.
 
-    relink.py --folded DIR --turbolib PATH [--kind llvm-ar|libtool] [--keep]
+    relink.py --folded DIR --turbolib PATH [--kind llvm-ar|libtool] [--dead-strip] [--keep]
 
 DIR holds lib/<kind>/<arch>/lib*.a (relib.py's --out, run with
 --options=--fold=identical). Each link uses `-undefined dynamic_lookup`
-(there is no SDK to link against) and `-t`. Compared:
+(there is no SDK to link against) and `-t` (with --dead-strip, `-dead_strip`
+too, as a Mac release build links). Compared:
 
 - **members loaded**: `-t`'s list of archive members, in order, without the
   synthesized ones (`__turbolib.N.o`), which are counted;
@@ -51,10 +52,11 @@ def link_inputs(tool, arch, libdir):
     return objs, libs
 
 
-def link(tool, arch, libdir, out):
+def link(tool, arch, libdir, out, dead_strip=False):
     objs, libs = link_inputs(tool, arch, libdir)
+    strip = ["-dead_strip"] if dead_strip else []
     r = subprocess.run(NICE + [str(B / "ld64.lld"), "-arch", arch, "-platform_version", "macos", "13.0", "13.0",
-                               "-undefined", "dynamic_lookup", "-no_fixup_chains", "-o", out, *objs, *libs, "-t"],
+                               "-undefined", "dynamic_lookup", "-no_fixup_chains", *strip, "-o", out, *objs, *libs, "-t"],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"link failed: {r.stderr[:2000]}")
@@ -69,12 +71,12 @@ def dsym(image):
                    capture_output=True, check=True)
 
 
-def compare(tool, arch, kind, folded, tmp, turbolib):
+def compare(tool, arch, kind, folded, tmp, turbolib, dead_strip):
     name = Path(tool).name
     a = os.path.join(tmp, f"{name}-{arch}-orig")
     b = os.path.join(tmp, f"{name}-{arch}-fold")
-    ta = link(tool, arch, build.OUT / "lib" / kind, a)
-    tb = link(tool, arch, Path(folded) / "lib" / kind, b)
+    ta = link(tool, arch, build.OUT / "lib" / kind, a, dead_strip)
+    tb = link(tool, arch, Path(folded) / "lib" / kind, b, dead_strip)
     lines = [f"{name} {arch}:"]
     ma = [t for t in ta if "(" in t]
     mb = [t for t in tb if "(" in t and "__turbolib." not in t]
@@ -101,12 +103,13 @@ def main():
     ap.add_argument("--folded", required=True)
     ap.add_argument("--turbolib", required=True)
     ap.add_argument("--kind", default="llvm-ar")
+    ap.add_argument("--dead-strip", action="store_true", help="link with -dead_strip, as a Mac release build does")
     ap.add_argument("--keep", action="store_true")
     a = ap.parse_args()
     tmp = tempfile.mkdtemp(prefix="relink-macho-")
     configs = [(t, arch) for t in build.TOOLS for arch in build.ARCHS]
     with ThreadPoolExecutor(len(configs)) as ex:
-        results = list(ex.map(lambda c: compare(c[0], c[1], a.kind, a.folded, tmp, a.turbolib), configs))
+        results = list(ex.map(lambda c: compare(c[0], c[1], a.kind, a.folded, tmp, a.turbolib, a.dead_strip), configs))
     for _, text in results:
         print(text)
     good = sum(1 for ok, _ in results if ok)

@@ -657,7 +657,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
                 Some(records) => retpolines.extend(records),
                 None => c
                     .side
-                    .push((name.into(), b"<a table that can't be read>".to_vec().into())),
+                    .push((name, b"<a table that can't be read>".to_vec().into())),
             }
         } else if RELOCATION_TABLES.contains(&name) && unit_of[s].is_none() {
             for r in &sec.relocations {
@@ -928,7 +928,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
                     let piece = &c.pieces[p];
                     [
                         b"section ",
-                        &*piece.name,
+                        piece.name,
                         format!(" {:032x}", piece.fingerprint).as_bytes(),
                     ]
                     .concat()
@@ -941,7 +941,7 @@ fn coff<'d>(o: &Object<'d>, structural: bool) -> Coff<'d> {
         for p in pairs.chunks(4) {
             entry.extend_from_slice(format!("{p:02x?}").as_bytes());
         }
-        c.side.push((RETPOLINE_TABLE.into(), entry.into()));
+        c.side.push((RETPOLINE_TABLE, entry.into()));
     }
     c.side.sort_unstable();
     c.side.dedup();

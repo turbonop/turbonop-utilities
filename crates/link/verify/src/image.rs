@@ -260,11 +260,34 @@ fn content(p: &Linked<'_>, c: &Contribution) -> Vec<u8> {
                 continue;
             }
         }
+        // In data aligned to a byte, an RVA at any byte:
+        // `__CxxFrameHandler4`'s compressed tables (`.xdata`, aligned to a
+        // byte) hold them unaligned, a header byte and then RVAs, as
+        // `bytes::compare` reads them. (Only there: in other data, some
+        // unaligned window names a label's start by chance, in one image
+        // and not the other.)
+        if c.characteristics & (scn::CNT_CODE | ALIGN_MASK) == ALIGN_1BYTES
+            && (c.rva as usize + at) & 3 != 0
+            && at + 4 <= data.len()
+            && !text(&data[at..at + 4])
+        {
+            let w = u32::from_le_bytes([data[at], data[at + 1], data[at + 2], data[at + 3]]);
+            if let Some(n) = p.section_of(w).and(p.name(w)).filter(|n| n.1 == 0) {
+                out.extend_from_slice(format!("{n:?}").as_bytes());
+                at += 4;
+                continue;
+            }
+        }
         out.push(data[at]);
         at += 1;
     }
     out
 }
+
+/// A section's alignment, in its characteristics.
+const ALIGN_MASK: u32 = 0x00F0_0000;
+/// `IMAGE_SCN_ALIGN_1BYTES`.
+const ALIGN_1BYTES: u32 = 0x0010_0000;
 
 /// Whether a word's bytes read as text: a printable character, then
 /// printable characters or NULs (`Pos\0`, a variable's name in MSVC's

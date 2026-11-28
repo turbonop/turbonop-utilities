@@ -441,6 +441,9 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
     // gives it), so from the first one found to that end the bytes are
     // data: not decoded, compared as words (RVAs of the cases).
     let mut tables: Option<(usize, usize)> = None;
+    // The jump tables among them (scale 4): where each starts, and the
+    // procedure's end.
+    let mut jump_tables: Vec<(usize, usize)> = Vec::new();
     let mut at = 0;
     while at < len {
         if let Some((from, to)) = tables
@@ -575,7 +578,19 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
         // Thread-pointer offsets: displacements and immediates that name
         // the same TLS variable (another TLS layout moves them all).
         if ea != eb && (!in_section || near_tls_read(at)) {
+            // (Windows: a `SECREL` is 32 bits, a displacement or the
+            // immediate of a `mov`; any other number near a read of the TLS
+            // array that another layout would name the same is still a
+            // difference.)
+            let secrel = |o: &Operand| match o {
+                Operand::Mem(m) => m.disp_size == 4,
+                Operand::Imm(x) => ia.mnemonic() == Mnemonic::Mov && matches!(x.size, 4 | 8),
+                _ => false,
+            };
             for (oa, ob) in ia.operands().iter().zip(ib.operands()) {
+                if in_section && !secrel(oa) {
+                    continue;
+                }
                 let (va, vb, size) = match (oa, ob) {
                     (Operand::Mem(ma), Operand::Mem(mb))
                         if !ma.is_rip_relative()
@@ -667,6 +682,9 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
                     Some((_, t)) => (from, t.max(to)),
                     None => (from, to),
                 });
+                if ma.scale == 4 {
+                    jump_tables.push((from, to));
+                }
             }
         }
         // Image-relative displacements (`mov ecx, [rax+rcx*4+T]`, the image
@@ -796,6 +814,46 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
         }
         at += n;
     }
+    // Each jump table's entries name the same cases, even where their
+    // bytes are equal: they are RVAs, and the same RVA in two layouts is
+    // another place. A table runs while its entries are in the procedure,
+    // in both (an index table or padding, after it, isn't).
+    jump_tables.sort_unstable();
+    jump_tables.dedup();
+    for (from, to) in jump_tables {
+        let mut k = from;
+        while k + 4 <= to.min(len) {
+            let wa = word(a.bytes, k, 4) as u32;
+            let wb = word(b.bytes, k, 4) as u32;
+            let (ia, ib) = (
+                same_procedure(a.image, a.rva + from as u32, wa),
+                same_procedure(b.image, b.rva + from as u32, wb),
+            );
+            if !ia && !ib {
+                break;
+            }
+            if !(ia && ib && same(a.image, Some(wa), b.image, Some(wb))) {
+                fail(
+                    "jump table entries naming other code",
+                    format!(
+                        "at +{k:#x}: {} and {}",
+                        render(a.image.name(wa)),
+                        render(b.image.name(wb))
+                    ),
+                );
+                break;
+            }
+            k += 4;
+        }
+    }
+}
+
+/// Whether `w` is an RVA in the procedure that holds `rva`.
+fn same_procedure<N: Names + ?Sized>(image: &N, rva: u32, w: u32) -> bool {
+    image.in_code(w)
+        && image
+            .procedure_end(rva)
+            .is_some_and(|end| image.procedure_end(w) == Some(end))
 }
 
 /// How far (in bytes) from a read of the TLS array a `SECREL` may be.

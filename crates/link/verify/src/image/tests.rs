@@ -208,3 +208,5 @@ fn not_images_are_errors() {
     );
     assert!(bad.is_err());
 }
+
+mod equiv;

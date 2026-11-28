@@ -3297,7 +3297,10 @@ What MSVC's code and data hold, and how it's read (from the Debug `/Z7`
   dispatch `mov ecx, [rdx + rax*4 + T]` (or `movzx` with scale 1) whose
   `T` is an RVA the same distance into the procedure in both images marks
   `T` to the procedure's end as data: not decoded, its words compared as
-  RVAs. Elsewhere, an operand in code that names other things is a
+  RVAs. A jump table's entries (from a scale-4 dispatch's `T`, while
+  they are RVAs in the procedure, in both) must name the same cases even
+  where their bytes are equal: the same RVA in two layouts is another
+  place. Elsewhere, an operand in code that names other things is a
   difference unless words read as RVAs explain all its differing bytes;
   outside a procedure, decoded operands explain only what words don't,
   and decoding restarts at each procedure's start.
@@ -3305,17 +3308,26 @@ What MSVC's code and data hold, and how it's read (from the Debug `/Z7`
   template (`SECREL`, from the TLS directory's start of raw data), and
   `S_GTHREAD32`/`S_LTHREAD32` by their place in it. An immediate or
   displacement is read as a `SECREL` only within 48 bytes of a read of the
-  TLS array (`gs:[58h]`, in both); an equal `mov r32, imm32` there that
+  TLS array (`gs:[58h]`, in both), and only if it is 32 bits (a
+  displacement, or a `mov`'s immediate): a `SECREL` is, and a smaller or
+  other number there (`[rsp+8]`, `add eax, 4`) that another template
+  would name the same is still a difference; an equal `mov r32, imm32` there that
   indexes the block in one of the next six instructions must name the
   same variable. Folding moves `inline thread_local` variables (COMDATs)
   in the template.
 - **Unaligned RVAs in data.** `__CxxFrameHandler4`'s compressed tables
   hold RVAs at any byte: in data, a difference no aligned word explains
   may be explained by an unaligned one naming the same thing in both.
+  Naming data by content reads them too, in data aligned to a byte (as
+  `.xdata`'s FH4 tables are; elsewhere an unaligned window names some
+  label's start by chance).
 - **Text isn't an RVA.** Naming data by content reads aligned words as
   the RVAs of what starts there, but not words that read as text (`Pos\0`,
   a `/RTC1` variable's name): those named whatever the layout put at that
-  address.
+  address. (So a real RVA below 0x7F7F in data, two printable bytes and
+  two NULs, isn't read either: in a small image, data naming it pairs
+  with nothing, a false failure; the equivalence fixture pads `.text` to
+  avoid it.)
 
 What the debug information of another translation unit's copy changes.
 A duplicate COMDAT's copies are the same code but not the same debug

@@ -566,6 +566,15 @@ x64. Where the 3.5 MB went:
   - `/<ECSYMBOLS>/` in verify; C13 subsections other than lines and
     inlinees (frame data, cross-scope imports and exports) in
     compare-images.
+  - Rules the red-team pass (`image::tests::equiv`, on
+    `tools/turbolib/equiv`'s Debug fixture) left loose: an aligned RVA
+    in data whose bytes are equal in both images isn't checked to name the
+    same thing (only jump tables' entries are now); an equal 32-bit
+    displacement `SECREL` (`/O2`'s `mov eax, [rcx+SECREL]`) isn't checked
+    to name the same variable (only `mov r32, imm32` is); `$S<n>\0` at a
+    string's start is masked in any data, a literal's too (its public
+    still differs); a synthesized member's own module records
+    (`S_OBJNAME`, `S_COMPILE3`) are compared with nothing.
   - **The proof run's relinks compare equivalent** (branch
     turbolib-equiv; see the plan's "The tools" for the rules): llvm-objdump,
     clang, lld, and opt, relinked against the 205 folded libraries of the

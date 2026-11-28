@@ -83,10 +83,22 @@ fn links_passes_what_full_passes() {
         Pull::Preserve,
         &[],
     );
-    let m = folded_with_aliases(ALIAS_DEFAULT);
+    // The engine's aliases, of the new default and of the old (a library
+    // folded before), and the old renewed.
+    for default in [alias_default(0x8664), LEGACY_ALIAS_DEFAULT] {
+        let m = folded_with_aliases(default);
+        both(
+            &lib,
+            &archive(&m, Some(engine_index(&m))),
+            Pull::Preserve,
+            &[],
+        );
+    }
+    let old = folded_with_aliases(LEGACY_ALIAS_DEFAULT);
+    let new: Vec<(Vec<u8>, Vec<u8>)> = old.iter().map(|(n, d)| (n.clone(), renewed(d))).collect();
     both(
         &lib,
-        &archive(&m, Some(engine_index(&m))),
+        &archive(&new, Some(engine_index(&new))),
         Pull::Preserve,
         &[],
     );
@@ -275,8 +287,39 @@ fn links_catches_the_other_breaks_of_names_and_kinds() {
         &lib,
         &archive(&m, Some(engine_index(&m))),
         Pull::Preserve,
-        &["alias weak externals whose default isn't __turbolib$alias"],
+        &["alias weak externals whose default isn't __ImageBase (or the old __turbolib$alias)"],
     );
+    // Aliases of both defaults in one library (link.exe's LNK1227).
+    let mut m = folded_with_aliases(alias_default(0x8664));
+    let c = find(&m, b"c.obj");
+    let orig = members();
+    let c0 = find(&orig, b"c.obj");
+    m[c].1 = aliased(&orig[c0].1, &[SHARED_ADD], LEGACY_ALIAS_DEFAULT, ANCHOR);
+    both(
+        &lib,
+        &archive(&m, Some(engine_index(&m))),
+        Pull::Preserve,
+        &["aliases of both defaults, __turbolib$alias and __ImageBase (LNK1227)"],
+    );
+    // Aliases no anchored synthesized member defines.
+    let mut m = folded_with_aliases(alias_default(0x8664));
+    let a = find(&m, b"a.obj");
+    let a0 = find(&orig, b"a.obj");
+    m[a].1 = aliased(
+        &orig[a0].1,
+        &[SHARED_ADD, TWICE],
+        alias_default(0x8664),
+        b"__turbolib$anchor$9",
+    );
+    let rewritten = archive(&m, Some(engine_index(&m)));
+    let full = verify_at(&lib, &rewritten, Pull::Preserve, Depth::Full);
+    let links = verify_at(&lib, &rewritten, Pull::Preserve, Depth::Links);
+    assert!(
+        links.failed("aliases of moved symbols that no anchored synthesized member defines"),
+        "{}",
+        links.text()
+    );
+    assert_eq!(failures(&full), failures(&links), "{}", links.text());
     // A lost side-table entry.
     let mut m = members();
     let b = find(&m, b"b.obj");

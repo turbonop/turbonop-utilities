@@ -3217,7 +3217,9 @@ sections. Precisely:
   foldable and held by a synthesized member that the member anchors, in
   the member's environment (and no copy, by name and shape, in two
   synthesized members), its symbols left as aliases of
-  `__turbolib$alias`, references, or `NOLIBRARY` weak externals of their
+  `__ImageBase` (or, in a library folded before, the old
+  `__turbolib$alias`, but never both in one library), references, or
+  `NOLIBRARY` weak externals of their
   renamed copies, each defined by an anchored synthesized member; what
   synthesized members refer to (and, under `preserve`, nothing a member
   anchoring them didn't); both indexes; `--pull=preserve`'s loading; and

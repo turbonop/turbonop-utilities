@@ -2528,7 +2528,7 @@ select-any mode it bounds which copies may stand in for each other:
    - Remove the folded units' sections.
    - Make each removed leader (and each other external defined in the
      unit) an undefined external, and give the name a second symbol
-     record, an alias weak external whose default is `__turbolib$alias`
+     record, an alias weak external whose default is `__ImageBase`
      ([the alias technique](#the-alias-technique)).
    - Add an undefined reference to the **anchor** symbol of each
      synthesized member it gave units to. This keeps unreferenced COMDATs
@@ -2593,13 +2593,23 @@ any object, so:
   (`turbolib0.obj` is taken by the input's): two members of one name would
   be one too many, since `lib.exe` replaces one with the other when it
   archives the library again. A first fold's names are as before.
-- **`__turbolib$alias`.** Every synthesized member defines it, as the same
-  absolute 0. `lib.exe` warns LNK4006 for the second definition when it
-  combines a folded library with anything else (and fails under `/WX`,
-  LNK1218: measured with 14.52); turbolib's `lib` personality doesn't warn
-  about it. `lib.exe` also indexes it; turbolib never does, and `verify`
-  doesn't count that entry: a member that names it, as its aliases'
-  default, names an anchor too, whose member defines it.
+- **The old alias default.** Libraries folded before 2026-11-28 have
+  `__turbolib$alias` as their aliases' default, and every synthesized
+  member defines it, as the same absolute 0 ([the alias
+  technique](#the-alias-technique) has why it's gone). Folded again, each
+  member's records of it (a default, a definition) become undefined
+  references to `__ImageBase`, in place (no symbol moves), so the result is
+  in the new form throughout, and has no name aliased with both defaults
+  (link.exe's LNK1227 for two weak externals of one name with different
+  defaults). A link of an old-form library with a new-form one of the
+  same code fails with lld-link (duplicate symbols, measured on
+  `tools/turbolib/refold`'s objects; link.exe linked it): fold the old one
+  again first. A member the fold doesn't otherwise change is
+  rewritten for it alone: a quick look for the name's bytes finds them.
+  Archived again unfolded, the old form stays: turbolib's `lib` personality
+  doesn't warn LNK4006 for it, nor index it (`lib.exe` does both); `verify`
+  accepts a library in either form, not both, and doesn't count `lib.exe`'s
+  index entry for it.
 
 `tools/turbolib/refold/run.py` folds once, then folds again alone, with
 more objects, two folded libraries together, and a third time, with
@@ -2821,10 +2831,10 @@ and discard behavior under `/OPT:NOREF` exact in every mode.
 
 What `preserve` does for the units it folds. Each member that gave up a
 copy keeps each of the copy's names defined, as an alias weak external
-(`IMAGE_WEAK_EXTERN_SEARCH_ALIAS`) whose default is `__turbolib$alias`,
+(`IMAGE_WEAK_EXTERN_SEARCH_ALIAS`) whose default is `__ImageBase`,
 and refers to the anchor of the synthesized member holding the copy.
 Synthesized members are indexed for their anchors alone (under
-`preserve`), and never for `__turbolib$alias`. So:
+`preserve`). So:
 
 - **The index is the original's.** `lib.exe` indexes aliases, so each
   name still sends a link to the member it sent it to.
@@ -2836,14 +2846,42 @@ Synthesized members are indexed for their anchors alone (under
   original link never loaded (on `llvm-nm`, 652 original members against
   637, not all the same), and with them references no library could
   resolve.
-- **One default everywhere.** link.exe refuses two weak externals for one
-  name with different defaults (LNK1227), which two libraries that fold
-  the same inline function would otherwise give it (each its own anchor,
-  as a first version did). Both linkers require the default resolved, even
-  when a strong definition wins, so every synthesized member defines
-  `__turbolib$alias` as the absolute 0; both linkers accept the equal
-  absolutes. The default is never used: a strong definition always comes
-  with the alias.
+- **One default everywhere, defined by the linkers.** link.exe refuses
+  two weak externals for one name with different defaults (LNK1227), which
+  two libraries that fold the same inline function would otherwise give it
+  (each its own anchor, as a first version did). Both linkers require the
+  default resolved, even when a strong definition wins. The default is
+  `__ImageBase` (`___ImageBase` for x86), which link.exe and lld-link
+  define in every image, so no member defines it, and the index doesn't
+  list it. The default is never used: a strong definition always comes
+  with the alias, and no relocation names the default.
+
+  Until 2026-11-28 the default was `__turbolib$alias`, which every
+  synthesized member defined as the absolute 0. Both linkers accept equal
+  absolutes, but `lib.exe` (14.52) warns LNK4006 for each definition after
+  the first whenever it combines a folded library with anything else,
+  even another folded library (3,088 warnings for `LLVMSupport.lib` with
+  `LLVMCore.lib`), which `/WX` makes an error. Measured on
+  `tools/turbolib/refold`'s objects (cl `/Od`, cl `/O2`, clang-cl `/Od`),
+  linked against two folded libraries, against `lib.exe`'s and
+  `llvm-lib`'s combination of them, and against turbolib's fold of them,
+  with link.exe (`/OPT:REF`, `/OPT:NOREF`, `/INCREMENTAL`; all `/WX`) and
+  lld-link (`/OPT:REF`, `/OPT:NOREF`), each compared with the absolute's
+  links:
+
+  | The default | `lib.exe /WX` | The links |
+  |---|---|---|
+  | the absolute 0 in every synthesized member | LNK4006, fails | the baseline |
+  | the absolute 0 in one member per library | (not measured: two libraries still define it twice) | |
+  | a static (`IMAGE_SYM_CLASS_STATIC`) absolute in each member with aliases | no warning | link.exe: LNK1235 (corrupt symbol table); lld-link: duplicate symbols |
+  | a pick-any COMDAT (`.rdata$turbolib`, 0 or 1 byte) in every synthesized member | no warning | the image changes under `/OPT:NOREF` (the section is kept; link.exe's own records differ); lld-link loads an extra member of turbolib's fold of the two; link.exe refuses that fold (LNK1179, duplicate COMDAT); turbolib's self-check needed changes |
+  | `__ImageBase`, defined by the linkers | no warning (`llvm-lib` neither) | the same members, in the same order (`/VERBOSE`), the same output; compare-images finds lld-link's equivalent, and link.exe's differ only in what two links of the absolute's libraries differ in (UDTs' source lines in the PDB) |
+
+  And on `llvm-nm` (Debug `/Z7`, its 32 LLVM libraries folded with
+  `--precomp=library`): with both linkers, under `/OPT:REF` and
+  `/OPT:NOREF`, the same 7,527 (link.exe) and 7,159 (lld-link) members
+  load in the same order as with the absolute's libraries, compare-images
+  finds the programs equivalent (no failures), and neither linker warns.
 - **Two records of the name, the alias first.** The alias takes the
   name's original record; a plain undefined external of the name comes
   after it, and the member's relocations name that one. link.exe's ICF

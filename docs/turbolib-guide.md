@@ -134,10 +134,17 @@ unwind, and the PDBs' contents).
   larger than one fold of both), and each fold adds synthesized members
   of its own: two small folded libraries combined can come out larger
   than `lib.exe`'s combination of them.
-- **`lib.exe` combining a folded library** with anything else warns
-  LNK4006 for `__turbolib$alias` (each synthesized member defines it, as
-  the same absolute 0, which both linkers accept) and so fails under
-  `/WX`. turbolib, as the archiver, doesn't warn.
+- **Libraries folded before 2026-11-28** (each synthesized member defines
+  `__turbolib$alias`, the old default of the aliases): `lib.exe` combining
+  one with anything else warns LNK4006 for it, once per extra definition,
+  and so fails under `/WX`. Libraries folded since don't define it (the
+  default is `__ImageBase`, which the linkers define; [the alias
+  technique](turbolib.md#the-alias-technique)), so `lib.exe` and `llvm-lib`
+  combine them without a warning. Fold an old library again (turbolib
+  turns it into the new form), or make it again; don't link old and new
+  folded libraries of the same code together: lld-link refuses such a
+  link (duplicate symbols; measured with `tools/turbolib/refold`'s
+  objects, where link.exe linked it).
 - **The self-check rejects some folds**, which are then written unfolded
   with the warning: some SDK libraries (`libucrt.lib`, `Uuid.lib`: one
   COMDAT held by two synthesized members; `BufferOverflow.lib`:

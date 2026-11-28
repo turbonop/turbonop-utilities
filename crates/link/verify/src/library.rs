@@ -4,7 +4,7 @@
 //! The rewritten library may differ from the original only as turbolib's
 //! folding does (see `docs/turbolib.md`, "How it works"): COMDAT units move
 //! out of original members into synthesized members, the symbols they
-//! defined become alias weak externals whose default is [`ALIAS_DEFAULT`]
+//! defined become alias weak externals whose default is [`alias_default`]
 //! (or undefined, or `NOLIBRARY` weak externals whose default is a renamed
 //! copy), and each member that gave units away refers to the anchor of each
 //! synthesized member holding them. What is checked:
@@ -28,7 +28,7 @@
 //!   unchanged; each it lost was foldable (not `NODUPLICATES`) and is held,
 //!   in its environment, by a synthesized member whose anchor the member
 //!   refers to. Each symbol it defined is still defined, or (moved) now an
-//!   alias weak external whose default is [`ALIAS_DEFAULT`] and that a
+//!   alias weak external whose default is [`alias_default`] and that a
 //!   synthesized member it anchors defines, or undefined and defined
 //!   elsewhere, or a `NOLIBRARY` weak external whose default is the
 //!   renamed copy. Its undefined symbols are the original's
@@ -46,7 +46,8 @@
 //!   name sending to the first member in archive order that has it, and the
 //!   two linker members agree. A synthesized member's names other than its
 //!   anchors may go unlisted (as under `--pull=preserve`, so the index
-//!   names the original definers), and [`ALIAS_DEFAULT`] is never listed. Under
+//!   names the original definers), and [`LEGACY_ALIAS_DEFAULT`] is never
+//!   listed. Under
 //!   `--pull=preserve`, every symbol of the original's index sends to the
 //!   same member as in the original, or (reported as expected) to a
 //!   synthesized member when the original definer has no side effects of
@@ -54,6 +55,14 @@
 //!   engine folds them. That doesn't show that loading the definer had no
 //!   effect through what it refers to (which may load members that have
 //!   side effects); nothing here follows references.
+//!
+//! - **Libraries folded before** ([`LEGACY_ALIAS_DEFAULT`]): a library an
+//!   earlier turbolib folded is accepted in its own form (every alias's
+//!   default [`LEGACY_ALIAS_DEFAULT`]), and, folded again, in the new form:
+//!   the input members' records of the old default become undefined
+//!   references to [`alias_default`]. A library with aliases of both
+//!   defaults fails: link.exe refuses two weak externals of one name with
+//!   different defaults (LNK1227).
 //!
 //! What it can't prove: anything about debug information (see
 //! `compare-images`), and anything a linker does beyond loading members
@@ -65,9 +74,39 @@ pub mod member;
 pub mod pch;
 
 /// The default of the alias weak externals that keep moved symbols defined
-/// in their original members; each synthesized member defines it, and the
-/// index never lists it.
-pub const ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
+/// in their original members (as `turbonop_fold::rewrite::alias_default`
+/// writes it): `__ImageBase` (`___ImageBase` for x86), which both linkers
+/// define in every image, so that no member defines it.
+pub fn alias_default(machine: u16) -> &'static [u8] {
+    const IMAGE_FILE_MACHINE_I386: u16 = 0x014C;
+    if machine == IMAGE_FILE_MACHINE_I386 {
+        b"___ImageBase"
+    } else {
+        b"__ImageBase"
+    }
+}
+
+/// The aliases' default in libraries an earlier turbolib folded: each
+/// synthesized member defined it, as the absolute 0 (which made `lib.exe`
+/// warn LNK4006 combining them). The index never lists it.
+pub const LEGACY_ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
+
+/// Whether `name` is an alias default, of either form.
+fn is_alias_default(name: &[u8], machine: u16) -> bool {
+    name == alias_default(machine) || name == LEGACY_ALIAS_DEFAULT
+}
+
+/// Whether the rewritten member's weak external `r` is the original's `o`:
+/// the same, or an alias of a library folded before whose default is now
+/// in the new form.
+fn same_weak(o: &member::Weak<'_>, r: &member::Weak<'_>, machine: u16) -> bool {
+    o == r
+        || (o.name == r.name
+            && o.search == r.search
+            && o.search == turbonop_coff::weak_search::ALIAS
+            && o.alternate == LEGACY_ALIAS_DEFAULT
+            && r.alternate == alias_default(machine))
+}
 
 /// The start of a precompiled-types member's symbol (`--precomp=library`),
 /// which the members that share its types refer to as they do to anchors.
@@ -299,7 +338,7 @@ fn indexed<'s>(
             Body::Coff(c) => c
                 .definitions
                 .iter()
-                .filter(|d| *d.name != *ALIAS_DEFAULT)
+                .filter(|d| *d.name != *LEGACY_ALIAS_DEFAULT)
                 .map(|d| (Cow::Borrowed(d.name), d.kind))
                 .collect(),
             Body::Import(names) => names
@@ -438,7 +477,7 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
     // one too: each member that shares its types refers to it.)
     let is_anchor = |name: &[u8]| {
         (name.starts_with(RENAMED) || name.starts_with(PCH_SYMBOL))
-            && name != ALIAS_DEFAULT
+            && name != LEGACY_ALIAS_DEFAULT
             && !o_defs.contains(&canonical(name))
     };
     let mut synthesized = Vec::new();
@@ -456,6 +495,31 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
         }
     }
     report.checked("synthesized members", synthesized.len() as u64);
+    // One alias default across the library: of the old form or the new,
+    // not both (link.exe's LNK1227 for a name with both).
+    let forms = turbonop_par::map(&r.members, 64, |m| {
+        let Some(c) = m.body.coff() else {
+            return (false, false);
+        };
+        let aliases = c
+            .weak
+            .iter()
+            .filter(|w| w.search == turbonop_coff::weak_search::ALIAS);
+        let mut form = (false, false);
+        for w in aliases {
+            form.0 |= w.alternate == LEGACY_ALIAS_DEFAULT;
+            form.1 |= w.alternate == alias_default(c.machine);
+        }
+        form
+    });
+    let old_form = forms.iter().position(|f| f.0);
+    let new_form = forms.iter().position(|f| f.1);
+    if let (Some(i), Some(j)) = (old_form, new_form) {
+        report.fail(
+            "aliases of both defaults, __turbolib$alias and __ImageBase (LNK1227)",
+            || format!("{} and {}", r.name(i), r.name(j)),
+        );
+    }
 
     // Definitions across each library, shard by shard.
     let found = turbonop_par::map_balanced(o_defs.shards(), 1, |shard| {
@@ -603,7 +667,14 @@ fn check(o: &Library<'_>, r: &Library<'_>, options: &Options) -> Report {
                 .iter()
                 .copied()
                 .chain(c.weak.iter().map(|w| w.name))
-                .filter(|n| !n.starts_with(RENAMED) && !n.starts_with(PCH_SYMBOL) && !is_anchor(n))
+                // (Nor the alias default, which the linkers define: a
+                // reference to it loads nothing.)
+                .filter(|n| {
+                    !n.starts_with(RENAMED)
+                        && !n.starts_with(PCH_SYMBOL)
+                        && !is_anchor(n)
+                        && *n != alias_default(c.machine)
+                })
                 .collect(),
         );
         for u in &c.units {
@@ -899,6 +970,11 @@ fn check_member(
     for (n, s) in &mut names.list {
         let n: &[u8] = n;
         if let Some(d) = s.o_def {
+            // (A synthesized member of a library folded before, folded
+            // again: its definition of the old default is gone.)
+            if s.r_def.is_none() && d.name == LEGACY_ALIAS_DEFAULT {
+                continue;
+            }
             if let Some(now) = s.r_def {
                 if now.kind != d.kind {
                     rep.fail("definitions of original members changed kind", || {
@@ -913,27 +989,36 @@ fn check_member(
                 }
             } else {
                 s.moved = true;
-                check_moved(d, s, &synthesized, lost_units.as_slice(), facts, rep, &name);
+                check_moved(
+                    d,
+                    s,
+                    rc.machine,
+                    &synthesized,
+                    lost_units.as_slice(),
+                    facts,
+                    rep,
+                    &name,
+                );
             }
         } else if s.r_def.is_some() {
             rep.fail("definitions added to original members", || {
                 format!("{}: {}", name(), show(n))
             });
         }
-        if s.o_undef && !s.r_undef {
+        if s.o_undef && !s.r_undef && n != LEGACY_ALIAS_DEFAULT {
             rep.fail("undefined references that original members lost", || {
                 format!("{}: {}", name(), show(n))
             });
         }
         if let Some(w) = s.o_weak
-            && s.r_weak != Some(w)
+            && !s.r_weak.is_some_and(|r| same_weak(w, r, rc.machine))
         {
             rep.fail("weak externals of original members changed or lost", || {
                 format!("{}: {}", name(), show(n))
             });
         }
         if let Some(w) = s.r_weak
-            && s.o_weak != Some(w)
+            && !s.o_weak.is_some_and(|o| same_weak(o, w, rc.machine))
             && !s.moved
         {
             rep.fail("weak externals added to original members", || {
@@ -942,7 +1027,9 @@ fn check_member(
         }
     }
     // References added: moved symbols, the defaults of their weak
-    // externals (renamed copies), anchors, and precompiled-types members.
+    // externals (renamed copies, and the alias default, which loads
+    // nothing: the linkers define it), anchors, and precompiled-types
+    // members.
     let defaults: Set<&[u8]> = names
         .list
         .iter()
@@ -951,7 +1038,12 @@ fn check_member(
         .collect();
     for (n, s) in &names.list {
         let n: &[u8] = n;
-        if !s.r_undef || s.o_undef || s.moved || defaults.contains(n) {
+        if !s.r_undef
+            || s.o_undef
+            || s.moved
+            || defaults.contains(n)
+            || n == alias_default(rc.machine)
+        {
             continue;
         }
         // A precompiled-types member's symbol, which a member whose types
@@ -1084,9 +1176,11 @@ impl<'n, 'd> Names<'n, 'd> {
 /// has (`s` what the counterpart says of the name): it may only have moved
 /// with its COMDAT, and the counterpart must still name it as the engine
 /// writes it.
+#[allow(clippy::too_many_arguments)]
 fn check_moved(
     d: &member::Definition<'_>,
     s: &NameState<'_, '_>,
+    machine: u16,
     synthesized: &[usize],
     lost_units: &[bool],
     facts: &Facts<'_>,
@@ -1109,9 +1203,9 @@ fn check_moved(
     if let Some(w) = s.r_weak
         && w.search == turbonop_coff::weak_search::ALIAS
     {
-        if w.alternate != ALIAS_DEFAULT {
+        if !is_alias_default(w.alternate, machine) {
             rep.fail(
-                "alias weak externals whose default isn't __turbolib$alias",
+                "alias weak externals whose default isn't __ImageBase (or the old __turbolib$alias)",
                 || format!("{}: {}", name(), show(d.name)),
             );
         } else if !facts
@@ -1174,7 +1268,10 @@ fn check_synthesized(r: &Library<'_>, j: usize, facts: &Facts<'_>, rep: &mut Rep
         .map(|n| &**n)
         .chain(c.weak.iter().map(|w| w.name))
     {
-        if !facts.original_names.contains(&n) && !facts.anchor_of.contains_key(n) {
+        if !facts.original_names.contains(&n)
+            && !facts.anchor_of.contains_key(n)
+            && n != alias_default(c.machine)
+        {
             rep.fail(
                 "symbols synthesized members refer to that no original member defines or refers to",
                 || format!("{}: {}", r.name(j), show(n)),
@@ -1207,12 +1304,13 @@ fn check_index(
     let found = turbonop_par::map_range(entries.len().div_ceil(chunk), 1, |c| {
         let mut f: Vec<(usize, bool, String)> = Vec::new();
         for &(name, offset) in &entries[c * chunk..entries.len().min((c + 1) * chunk)] {
-            // (lib.exe indexes the absolute `__turbolib$alias` of a folded
-            // library's synthesized members when it archives one again;
-            // turbolib never does. It never decides what a link loads: a
-            // member referring to it, as its aliases' default, refers to
-            // an anchor too, whose member defines it.)
-            if name == ALIAS_DEFAULT {
+            // (lib.exe indexes the absolute `__turbolib$alias` of the
+            // synthesized members of a library an earlier turbolib folded
+            // when it archives one again; turbolib never does. It never
+            // decides what a link loads: a member referring to it, as its
+            // aliases' default, refers to an anchor too, whose member
+            // defines it.)
+            if name == LEGACY_ALIAS_DEFAULT {
                 continue;
             }
             let Some(d) = defs.get(&name).filter(|d| !d.is_empty()) else {
@@ -1306,12 +1404,13 @@ fn check_pull(o: &Library<'_>, r: &Library<'_>, p: &Pairing, options: &Options, 
         // (Whether the original definer has side effects, and the example.)
         let mut f: Vec<(bool, String)> = Vec::new();
         for &(name, offset) in &entries[c * chunk..entries.len().min((c + 1) * chunk)] {
-            // (lib.exe indexes the absolute `__turbolib$alias` of a folded
-            // library's synthesized members when it archives one again;
-            // turbolib never does. It never decides what a link loads: a
-            // member referring to it, as its aliases' default, refers to
-            // an anchor too, whose member defines it.)
-            if name == ALIAS_DEFAULT {
+            // (lib.exe indexes the absolute `__turbolib$alias` of the
+            // synthesized members of a library an earlier turbolib folded
+            // when it archives one again; turbolib never does. It never
+            // decides what a link loads: a member referring to it, as its
+            // aliases' default, refers to an anchor too, whose member
+            // defines it.)
+            if name == LEGACY_ALIAS_DEFAULT {
                 continue;
             }
             let Some(&i) = o.by_offset.get(&offset) else {

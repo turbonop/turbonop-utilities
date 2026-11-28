@@ -18,7 +18,7 @@
 //!    wanted exactly when one of those members is.
 //! 4. **Rewrite** each member that gave up copies: their sections go, the
 //!    symbols they defined become alias weak externals (see
-//!    [`ALIAS_DEFAULT`]), so the archive index names the same members for
+//!    [`alias_default`]), so the archive index names the same members for
 //!    them, and the member refers to each synthesized member's anchor.
 //! 5. **Write** each synthesized member: the surviving copies, their
 //!    outside references as undefined externals, an anchor (which alone the
@@ -985,7 +985,7 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
     };
     // A member that gives up copies or shares types, rewritten from its
     // object (read again).
-    let rewrite_member = |m: usize, object: Object<'a>| -> Rewritten<'a> {
+    let rewrite_member = |m: usize, mut object: Object<'a>| -> Rewritten<'a> {
         let input = &inputs[m];
         // Its shared types, if any (not of the sections it gives up).
         let edit = plan.as_ref().and_then(|plan| {
@@ -999,7 +999,26 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
         });
         let sizes = edit.as_ref().map(|e| (e.before, e.after));
         if removals[m].is_empty() && edit.is_none() {
-            return (m, passed_through(input), None);
+            // A member of a library folded before keeps nothing of the old
+            // form of the aliases' default (see `LEGACY_ALIAS_DEFAULT`).
+            if !renew_alias_default(&mut object) {
+                return (m, passed_through(input), None);
+            }
+            let skeleton = object
+                .write_skeleton(HOLE)
+                .expect("a member renamed in place fits its format");
+            return (
+                m,
+                OutputMember {
+                    name: Cow::Borrowed(input.name),
+                    data: Cow::Owned(skeleton.bytes),
+                    holes: skeleton.holes,
+                    symbol_table: Some(skeleton.symbol_table),
+                    synthesized: false,
+                    index_only: None,
+                },
+                None,
+            );
         }
         let refers: Vec<&[u8]> = anchors_of[m]
             .iter()
@@ -1019,9 +1038,13 @@ pub fn rewrite<'a>(inputs: &[Input<'a>], options: Options) -> Output<'a> {
             sizes,
         )
     };
-    let rewrites: Vec<bool> = (0..parsed.len())
-        .map(|m| !removals[m].is_empty() || plan.as_ref().is_some_and(|p| p.may_edit(m)))
-        .collect();
+    let rewrites: Vec<bool> = turbonop_par::map_range(parsed.len(), 64, |m| {
+        !removals[m].is_empty()
+            || plan.as_ref().is_some_and(|p| p.may_edit(m))
+            || (parsed[m].is_object
+                && parsed[m].passed.is_none()
+                && may_have_legacy_alias_default(inputs[m].data))
+    });
     let (members, made) = one_at_a_time_members(
         inputs,
         &parsed,
@@ -1572,9 +1595,60 @@ fn anchor_name(n: usize, s: &Synth, inputs: &[Input<'_>], parsed: &[Parsed<'_>])
 /// of the synthesized member holding the copy, whose strong definition
 /// overrides the alias. But it must be the same everywhere, since link.exe
 /// refuses two weak externals for one name with different defaults
-/// (LNK1227), and both linkers require it resolved: each synthesized member
-/// defines it, as the absolute 0.
-pub const ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
+/// (LNK1227), and both linkers require it resolved. It is `__ImageBase`
+/// (`___ImageBase` for x86, whose C names are decorated), which both
+/// linkers define themselves in every image, so that no member defines it:
+/// `lib.exe` warns LNK4006 for a name two members define (an error under
+/// `/WX`), which the absolute definition each synthesized member had
+/// ([`LEGACY_ALIAS_DEFAULT`]) made it do whenever it combined folded
+/// libraries. No relocation names the default, so nothing refers to the
+/// image base that didn't.
+pub fn alias_default(machine: u16) -> &'static [u8] {
+    const IMAGE_FILE_MACHINE_I386: u16 = 0x014C;
+    if machine == IMAGE_FILE_MACHINE_I386 {
+        b"___ImageBase"
+    } else {
+        b"__ImageBase"
+    }
+}
+
+/// The aliases' default as turbolib wrote it before [`alias_default`]: a
+/// name every synthesized member defined, as the absolute 0. A library
+/// folded then and folded again comes out in the new form: each record of
+/// the name, an alias's default or a definition, becomes an undefined
+/// reference to [`alias_default`] ([`renew_alias_default`]), so that one
+/// library never has aliases of one name with two defaults (LNK1227).
+pub const LEGACY_ALIAS_DEFAULT: &[u8] = b"__turbolib$alias";
+
+/// Turns each external record of [`LEGACY_ALIAS_DEFAULT`] in `object` (an
+/// alias's default, or a synthesized member's absolute definition) into an
+/// undefined [`alias_default`], in place, so that no symbol table index
+/// moves; and forgets the layout read, so that the string table written
+/// holds the names used, not the old one too. Whether there was one.
+fn renew_alias_default(object: &mut Object<'_>) -> bool {
+    let new = alias_default(object.machine);
+    let mut changed = false;
+    for s in &mut object.symbols {
+        if s.is_external() && s.name.as_bytes() == LEGACY_ALIAS_DEFAULT {
+            s.name = Name::new(new.to_vec());
+            s.section = SectionNumber::Undefined;
+            s.value = 0;
+            s.kind = 0;
+            s.aux = Aux::None;
+            changed = true;
+        }
+    }
+    if changed {
+        object.forget_layout();
+    }
+    changed
+}
+
+/// Whether a member may hold [`LEGACY_ALIAS_DEFAULT`] (a quick look at its
+/// bytes, for the name, which only turbolib writes).
+fn may_have_legacy_alias_default(data: &[u8]) -> bool {
+    memchr::memmem::find(data, LEGACY_ALIAS_DEFAULT).is_some()
+}
 
 /// A member (its `object`, as read, edited in place) with the copies it
 /// gives up removed.
@@ -1612,6 +1686,9 @@ fn strip<'a>(
     // and search: made after the edit, since an auxiliary record moves the
     // symbol table indices the side tables hold.
     let mut weak: Vec<(SymbolId, Vec<u8>, u32)> = Vec::new();
+    // (And the aliases a library folded before has, in the new form.)
+    renew_alias_default(&mut object);
+    let default = alias_default(object.machine);
     for &(u, how) in removals {
         let unit = &facts.units[u];
         for &id in &unit.symbols {
@@ -1620,11 +1697,11 @@ fn strip<'a>(
             }
             let name = object.symbols[id.index()].name.as_bytes();
             // A moved copy's name stays defined here, as an alias (see
-            // `ALIAS_DEFAULT`).
+            // `alias_default`).
             if how == Removal::Weak {
                 weak.push((id, renamed(name), weak_search::NOLIBRARY));
             } else {
-                weak.push((id, ALIAS_DEFAULT.to_vec(), weak_search::ALIAS));
+                weak.push((id, default.to_vec(), weak_search::ALIAS));
             }
             let s = &mut object.symbols[id.index()];
             s.section = SectionNumber::Undefined;
@@ -2332,17 +2409,6 @@ fn synthesize<'a>(
         0,
         storage_class::EXTERNAL,
     ));
-    // Each member with aliases refers to an anchor, so the synthesized
-    // member that resolves their default is loaded with them; the index
-    // doesn't list the default, so it never loads a member itself. Every
-    // synthesized member defines it alike, which both linkers accept.
-    o.push_symbol(Symbol::new(
-        Name::new(ALIAS_DEFAULT.to_vec()),
-        0,
-        SectionNumber::Absolute,
-        0,
-        storage_class::EXTERNAL,
-    ));
     if o.sections.len() > MAX_REGULAR_SECTIONS {
         o.set_format(Format::BigObj)
             .expect("a new object converts to big-obj");
@@ -2461,6 +2527,12 @@ impl Names {
         if let Some(&w) = self.weak.get(name) {
             return w;
         }
+        // (A library folded before: its aliases' default, in the new form.)
+        let default = if default == LEGACY_ALIAS_DEFAULT {
+            alias_default(object.machine)
+        } else {
+            default
+        };
         let tag = self.by_name(o, default, 0);
         let mut w = Symbol::new(
             Name::new(name.to_vec()),

@@ -509,14 +509,22 @@ x64. Where the 3.5 MB went:
     `Uuid.lib`), and changes `.retplne` (`BufferOverflow.lib`): the
     self-check falls back;
   - folding a folded library works (the plan's "Folding a folded
-    library"; `tools/turbolib/refold/run.py`). Open: the inputs'
+    library"; `tools/turbolib/refold/run.py`). Done: `lib.exe` (/WX)
+    combines folded libraries without LNK4006: the aliases' default is now
+    `__ImageBase`, which the linkers define, not `__turbolib$alias`, which
+    every synthesized member defined (the alias technique has the options
+    measured); libraries in the old form fold again into the new. Open:
+    a link of an old-form and a new-form library of the same code fails
+    with lld-link (duplicate symbols; could the new form keep the name
+    `__turbolib$alias`, as a NOLIBRARY weak external defaulting to
+    `__ImageBase`? measure both linkers); `refold/run.py` fails on main
+    too: link.exe's PDBs differ between links in UDTs' source lines (which
+    cases, at random), and lld-link's clang-od `more` programs differ under
+    /OPT:NOREF (every run); the inputs'
     precompiled-types members stay beside the new one, so combining
     folded libraries can grow them (drop an input's types member when
     every user of it in the library was absorbed, and teach `verify` that
-    it may go); `lib.exe` combining a folded library warns LNK4006 for
-    `__turbolib$alias` (and fails under /WX): defining it so that lib.exe
-    doesn't count it as a definition (a COMDAT? both linkers' behavior to
-    measure first); compare-images compares FH4 C++ EH tables'
+    it may go); compare-images compares FH4 C++ EH tables'
     image-relative words (`$ip2state$`, `$stateUnwindMap$`) and `.pdata`
     COMDATs' as bytes, not by what they name, so any two links of code
     with them differ;

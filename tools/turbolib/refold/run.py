@@ -1,7 +1,7 @@
 """Folds libraries that turbolib folded before, and checks the results:
 the case of a build that makes libraries of libraries (Buck2).
 
-    python run.py <turbolib.exe> [--work DIR] [--keep]
+    python run.py <turbolib.exe> [--work DIR] [--keep] [--inputs-from OLD]
 
 For each compiler set (cl /Od, cl /O2, clang-cl /Od; all /Gy /Z7), it
 compiles ../loose's a.cpp, b.cpp, and c.cpp, this directory's d.cpp and
@@ -13,6 +13,19 @@ e.cpp, and main.cpp, and makes, with each of turbolib's modes:
     more    = fold(x1, d, e)      a folded library with more objects
     combine = fold(x1, x2)        two folded libraries' synthesized members merged
     again   = fold(combine)       folded three times
+
+With --inputs-from, x1 and x2 are made by another turbolib.exe (an older
+one: a library folded in the old form, each alias's default the absolute
+`__turbolib$alias` every synthesized member defined), and the rest by
+<turbolib.exe>, as a build that keeps libraries an older turbolib made
+would. (The case that links x2 links it, against the fold, folded again,
+in the new form: lld-link refuses a link of old-form and new-form
+libraries of the same code, with duplicate symbols.)
+
+lib.exe, with /WX, archives each library again by itself, and makes the
+cases' lib.exe libraries (of folded libraries) with /WX too, unless they
+are of --inputs-from's: a warning (LNK4006 for a name two members define)
+is an error. llvm-lib combines x1 and x2 without a warning.
 
 Each is made with --strict, so a fold that the self-check rejects (or that
 fails otherwise) is an error, not the unfolded library; it must have no
@@ -106,6 +119,7 @@ def main():
     ap.add_argument("turbolib")
     ap.add_argument("--work")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--inputs-from", help="the turbolib.exe that makes x1 and x2")
     a = ap.parse_args()
     turbolib_exe = os.path.abspath(a.turbolib)
     work = os.path.abspath(a.work or tempfile.mkdtemp(prefix="turbolib-refold-"))
@@ -119,6 +133,13 @@ def main():
     # turbolib's lib personality: a copy named lib.exe.
     turbolib = os.path.join(work, "lib.exe")
     shutil.copyfile(turbolib_exe, turbolib)
+    # The turbolib that makes x1 and x2: the same, or --inputs-from's.
+    inputs_tool = turbolib
+    if a.inputs_from:
+        os.makedirs(os.path.join(work, "inputs-from"), exist_ok=True)
+        inputs_tool = os.path.join(work, "inputs-from", "lib.exe")
+        shutil.copyfile(os.path.abspath(a.inputs_from), inputs_tool)
+    tools["llvm-lib"] = os.path.join(LLVM_BIN, "llvm-lib.exe")
     r = Runner(work, env)
     bad = 0
     rows = []
@@ -139,14 +160,26 @@ def main():
         for mode, options in MODES.items():
             fold_env = dict(env, TURBOLIB_OPTIONS=options + " --strict --stats")
 
-            def lib(out, inputs, tool):
+            def lib(out, inputs, tool, wx=False):
                 path = os.path.join(d, f"{mode}-{out}.lib")
-                text = r.must([tool, "/nologo", "/Brepro", f"/out:{path}", *inputs],
-                              env=fold_env if tool == turbolib else env)
+                text = r.must([tool, "/nologo", "/Brepro", *(["/WX"] if wx else []),
+                               f"/out:{path}", *inputs],
+                              env=fold_env if tool in (turbolib, inputs_tool) else env)
                 return path, text
 
-            x1, _ = lib("x1", [objs[m] for m in "abc"], turbolib)
-            x2, _ = lib("x2", [objs[m] for m in "de"], turbolib)
+            def quiet(what, args):
+                """A tool that must succeed without a warning."""
+                nonlocal bad
+                code, text = r.run(args)
+                if code != 0 or "warning" in text.lower():
+                    print(f"{set_name} {mode} {what}: FAILED ({code})\n{text}")
+                    bad += 1
+
+            x1, _ = lib("x1", [objs[m] for m in "abc"], inputs_tool)
+            x2, _ = lib("x2", [objs[m] for m in "de"], inputs_tool)
+            x2_new = lib("x2-new", [x2], turbolib)[0] if a.inputs_from else None
+            quiet("llvm-lib x1 x2", [tools["llvm-lib"], "/WX",
+                                     f"/out:{os.path.join(d, mode + '-llvm-lib.lib')}", x1, x2])
             cases = {
                 "first": [objs[m] for m in "abcde"],
                 "alone": [x1],
@@ -157,8 +190,12 @@ def main():
             for case, inputs in list(cases.items()) + [("again", None)]:
                 if inputs is None:
                     inputs = [made["combine"]]
-                plain, _ = lib(f"{case}-plain", inputs, lib_exe)
+                # (lib.exe warns LNK4006 for the old form's alias default.)
+                plain, _ = lib(f"{case}-plain", inputs, lib_exe, wx=not a.inputs_from)
                 folded, text = lib(case, inputs, turbolib)
+                quiet(f"{case}: lib.exe /WX archiving it again",
+                      [lib_exe, "/nologo", "/Brepro", "/WX",
+                       f"/out:{os.path.join(d, mode + '-' + case + '-relib.lib')}", folded])
                 made[case] = folded
                 m = re.search(r"(\d+) groups folded, (\d+) copies removed", text)
                 removed = m.group(2) if m else "0"
@@ -176,8 +213,14 @@ def main():
                     bad += 1
                 rows.append((set_name, mode, case, os.path.getsize(plain),
                              os.path.getsize(folded), removed))
-                # (A case without d and e links them from x2.)
-                extra = [] if case != "alone" else [x2]
+                # (A case without d and e links them from x2. With
+                # --inputs-from, the folded library links x2 folded again,
+                # in the new form, and lib.exe's library x2 as it is: a link
+                # of old-form and new-form libraries of the same code fails
+                # with lld-link, duplicate symbols.)
+                extra = {"original": [] if case != "alone" else [x2],
+                         "folded": [] if case != "alone" else [x2_new or x2],
+                         "everything": []}
                 for linker in ("link", "lld-link"):
                     for opt in ("REF", "NOREF"):
                         outs = {}
@@ -193,7 +236,7 @@ def main():
                             shutil.copyfile(objs["main"], os.path.join(here, "main.obj"))
                             shutil.copyfile(library, os.path.join(here, "lib.lib"))
                             more = []
-                            for k, e in enumerate(extra if which != "everything" else []):
+                            for k, e in enumerate(extra[which]):
                                 shutil.copyfile(e, os.path.join(here, f"more{k}.lib"))
                                 more.append(f"more{k}.lib")
                             r.must([tools[linker], "/nologo", "/DEBUG", "/INCREMENTAL:NO",

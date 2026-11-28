@@ -189,7 +189,7 @@ fn anchors_come_before_every_other_external_record() {
                 && w.search == weak_search::ALIAS
             {
                 aliases += 1;
-                assert_eq!(o.symbols[w.tag.index()].name.as_bytes(), ALIAS_DEFAULT);
+                assert_eq!(o.symbols[w.tag.index()].name.as_bytes(), b"__ImageBase");
             }
         }
         assert!(aliases > 0);

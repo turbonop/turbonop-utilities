@@ -518,7 +518,7 @@ x64. Where the 3.5 MB went:
   compilers other than cl 14.52.
 - **Hardening (docs/turbolib-guide.md).** Done: a failed fold (panic,
   layout, self-check) writes the unfolded library with one warning;
-  `verify` (on by default), `strict`, `inject-failure`; output retries and
+  `verify` (`full` by default; `links`, `off`), `strict`, `inject-failure`; output retries and
   cleanup; `tools/turbolib/incremental` (incremental, FASTLINK, LTCG,
   lld-link; x64, x86, ARM64); `tools/turbolib/corpus/everylib.py`. Open:
   - the self-check, made cheaper (the plan's "The self-check"), still
@@ -527,12 +527,13 @@ x64. Where the 3.5 MB went:
     what remains is kernel time, mostly faulting in the mapping of the
     library just written (prefetching the view would need new unsafe
     FFI); the compare stage's name hashing (interning names once per
-    library would make its maps integer-keyed); and a cheaper mode to
-    decide on: `verify=links`, every check but units' and sections'
-    fingerprints (it would no longer prove that a moved COMDAT is
-    identical to the copy kept, nor that what members keep is unchanged
-    byte for byte: only that the same names are defined, referred to,
-    indexed, and loaded); then decide the default again;
+    library would make its maps integer-keyed). `verify=links` is done
+    (opt-in; `full` stays the default): every check but the contents'
+    fingerprints, about a quarter cheaper with 8 threads (clangSema 3.57 s
+    to 2.64 s, LLVMCore 0.94 s to 0.74 s; loaded machine), no commit
+    saved. Most of what either mode costs now is reading the members and
+    faulting in the written library; profile the read stage next (not
+    yet done);
   - (Found: the 305 SDK libraries whose `--fold=none /Brepro` output
     wasn't lib.exe's were lib.exe copying a lone library input byte for
     byte; turbolib now copies it too.) Forced to write such a library

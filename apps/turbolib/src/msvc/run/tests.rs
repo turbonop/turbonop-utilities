@@ -306,6 +306,7 @@ fn less_conservative_modes_verify() {
             pull: VPull::Preserve,
             fold: VFold::SelectAny,
             locals: false,
+            ..library::Options::default()
         },
     )
     .unwrap();
@@ -360,7 +361,12 @@ fn less_conservative_modes_verify() {
         let (o, folded) = lib("folded.lib", options);
         assert!(o.stdout.contains(says), "{options}: {o:?}");
         let check = |fold, locals| {
-            let options = library::Options { pull, fold, locals };
+            let options = library::Options {
+                pull,
+                fold,
+                locals,
+                ..library::Options::default()
+            };
             library::verify(&original, &folded, &options).unwrap()
         };
         let report = check(fold, locals);
@@ -940,3 +946,5 @@ fn one_library_alone_is_copied() {
     assert_ne!(std::fs::read(dir.join("f.lib")).unwrap(), original);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+mod links;

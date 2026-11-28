@@ -3098,7 +3098,7 @@ Within a personality, the format of the output follows the inputs (or
   mode would accept, and the projected PDB cost of each `--precomp`
   choice. It writes nothing.
 - `turbolib verify [--pull=preserve|relaxed] [--fold=identical|select-any]
-  [--locals=keep|copy|merge] original.lib compacted.lib`:
+  [--locals=keep|copy|merge] [--check=full|links] original.lib compacted.lib`:
   static equivalence. Every symbol the original defines is still defined,
   and each member's undefined symbols are the original's plus the folded
   ones. Every folded unit is present in exactly one synthesized member, and
@@ -3147,7 +3147,7 @@ units. This is documented, and `/EXTRACT` can also re-inline them
 - **Debuggers:** spot checks with the VS debugger and WinDbg on the
   corpus. Our own PDB reader does the systematic checking.
 
-### The self-check (`verify=on`)
+### The self-check (`verify=full`, `verify=links`)
 
 After folding, turbolib checks the library it wrote against the one it
 would have written unfolded, with `turbolib verify`'s checks
@@ -3197,16 +3197,77 @@ itself 5.7 s and 1.6 s). A third of it is kernel time, most of it the
 faults of mapping the library just written to read it back (its pages are
 the file cache's: they count in the working set, not in the commit).
 
-**A cheaper mode, not written.** `verify=links` would run every check but
-the units' and sections' fingerprints: it would prove that the same names
-are defined (with their kinds), referred to, indexed, and loaded, that
-every moved COMDAT's names are aliases anchored to a synthesized member
-defining them, and that no strong definition moved; it would no longer
-prove that a moved COMDAT is identical to the copy that stands for it
-(the engine's identity hash), nor that what each member keeps (its
-COMDATs and its sections outside them) is unchanged byte for byte.
-Hashing is about a third of reading a member, so it would save perhaps
-a quarter of the check.
+**`verify=links`, the lighter check.** `verify=full` (the default, also
+spelled `verify=on` and `verify`) is the check above. `verify=links`
+(`turbolib verify --check=links`; `turbonop_verify::library::Depth::Links`)
+runs every check of the next section, but compares units and sections by
+their *shape* instead of their fingerprints: a unit's selection and, for
+each of its non-debug sections (in any order), the name, characteristics,
+size, and the COMDAT checksum its section definition records; a section
+outside units, the same. It reads no relocations (but `.voltbl`'s, whose
+entries are relocations), hashes no bytes, and doesn't order associative
+sections. Precisely:
+
+- **It proves, as `full` does:** the members (every original one there,
+  in order; every added one synthesized; passed-through members byte for
+  byte); every original definition still defined with its kind, and no
+  new names but anchors and renamed copies; each member's directives,
+  environment, undefined references, weak externals, and side-table
+  entries changed only as folding changes them; each moved COMDAT
+  foldable and held by a synthesized member that the member anchors, in
+  the member's environment (and no copy, by name and shape, in two
+  synthesized members), its symbols left as aliases of
+  `__ImageBase` (or, in a library folded before, the old
+  `__turbolib$alias`, but never both in one library), references, or
+  `NOLIBRARY` weak externals of their
+  renamed copies, each defined by an anchored synthesized member; what
+  synthesized members refer to (and, under `preserve`, nothing a member
+  anchoring them didn't); both indexes; `--pull=preserve`'s loading; and
+  the precompiled-types pairing (paths, signatures, type counts).
+- **It doesn't prove:** that a moved COMDAT is identical to the copy that
+  stands for it (only that it has the same shape: two copies with other
+  bytes or relocations, of the same sizes, with the same recorded
+  checksums, pass), nor that what each member keeps (its COMDATs, its
+  sections outside them) is unchanged byte for byte (the same: a change
+  that keeps sizes and the recorded checksums passes). The recorded
+  checksum is the object's own field, not computed: it says the compiler
+  saw the same bytes only if nothing rewrote them since.
+- Under `--locals=copy` or `merge`, whose units are keyed by content,
+  `links` is `full`. ELF and Mach-O archives have no `links` check
+  (`turbolib verify --check=links` refuses them); their personalities
+  have no self-check.
+
+`full` stays the default: `links` is an opt-in for builds that trust the
+engine's copies and want the check's names-and-loading half for less.
+Tests: `turbonop_verify::library::tests::links` (each of the parent
+module's breaks of names, kinds, index, and loading fails `links` in the
+same categories as `full`; a moved COMDAT and a kept section with other
+bytes fail `full` alone) and `turbolib`'s `msvc::run::tests::links` (every
+spelling writes the same library; a failed `links` check falls back; a
+broken precompiled-types reference fails both).
+
+Measured as above (`perflib.py single`, median of 3 interleaved rounds of
+`origin/main` at f63024a8 and this change, `--fold=identical
+--precomp=library`, check minus `verify=off`, user and kernel CPU; the
+machine at 100% load from other sessions throughout, so noisy):
+
+| | `clangSema.lib` | `LLVMCore.lib` |
+|---|---|---|
+| CPU, 8 threads: `full` before, `full`, `links` | 3.96 s, 3.57 s, 2.64 s | 1.01 s, 0.94 s, 0.74 s |
+| CPU, 1 thread: `full` before, `full`, `links` | 2.31 s, 2.38 s, 2.10 s | 0.56 s, 0.62 s, 0.44 s |
+| peak commit added, 8 threads: `full`, `links` | 46 MB, 47 MB | 96 MB, 89 MB |
+| peak commit added, 1 thread: `full`, `links` | 45 MB, 45 MB | 33 MB, 33 MB |
+| peak working set added, 8 threads: `full`, `links` | 446 MB, 368 MB | 235 MB, 190 MB |
+
+So `links` saves about a quarter of the check with 8 threads (26% and
+21%), less with one (12% and 29%, noisier), and no commit. What remains
+is likely (not profiled) mostly reading the members (parsing symbols and
+sections) and the kernel time of faulting in the written library, which
+both modes do.
+`full` itself is unchanged by this (its numbers before and after are
+within the noise). With `/Brepro`, all 245 libraries of `build-z7` were
+written byte for byte the same by `origin/main` and by this change with
+`verify=full`, `links`, and `off` (`perflib.py identical`, with `--fold=identical --precomp=library`; 245 of 245 identical, run at idle priority): so `links` rejected nothing `full` passed there.
 
 ### The tools: `verify` and `compare-images` (2.6)
 

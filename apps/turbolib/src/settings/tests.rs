@@ -35,14 +35,58 @@ fn options_in_any_case() {
             stats: true,
             extract_whole: true,
             report_odr: true,
-            verify: false,
+            verify: Verify::Off,
             strict: true,
             inject: Some(Inject::Panic),
         }
     );
     s.apply("verify").unwrap();
-    assert!(s.verify);
-    assert!(Settings::default().verify);
+    assert_eq!(s.verify, Verify::Full);
+    assert_eq!(Settings::default().verify, Verify::Full);
+}
+
+/// `verify`'s spellings: the full check by default and under every name it
+/// had (`verify`, `verify=on`) or has (`verify=full`); `links` the lighter
+/// check; `off` none. The last one given wins, the command line's over
+/// `TURBOLIB_OPTIONS`'s.
+#[test]
+fn verify_modes() {
+    for (o, want) in [
+        ("verify", Verify::Full),
+        ("verify=on", Verify::Full),
+        ("VERIFY=ON", Verify::Full),
+        ("verify=full", Verify::Full),
+        ("verify=Full", Verify::Full),
+        ("verify=links", Verify::Links),
+        ("Verify=LINKS", Verify::Links),
+        ("verify=off", Verify::Off),
+    ] {
+        for start in [Verify::Off, Verify::Full, Verify::Links] {
+            let mut s = Settings {
+                verify: start,
+                ..Settings::default()
+            };
+            s.apply(o).unwrap();
+            assert_eq!(s.verify, want, "{o} after {start:?}");
+        }
+    }
+    let mut s = Settings::default();
+    s.apply_env("--verify=links").unwrap();
+    assert_eq!(s.verify, Verify::Links);
+    s.apply_env("--verify=off --verify=full").unwrap();
+    assert_eq!(s.verify, Verify::Full);
+    s.apply_env("--verify=links").unwrap();
+    s.apply("verify=on").unwrap();
+    assert_eq!(s.verify, Verify::Full);
+    for bad in [
+        "verify=link",
+        "verify=names",
+        "verify=deep",
+        "verify=links=1",
+        "verify=",
+    ] {
+        assert!(Settings::default().apply(bad).is_err(), "{bad}");
+    }
 }
 
 #[test]

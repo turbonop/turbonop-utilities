@@ -13,7 +13,7 @@ use super::library;
 use super::options::{self, Options};
 use super::order::{self, Input};
 use crate::output;
-use crate::settings::{Fold, Inject, Locals, Pick, Precomp, Pull, Settings};
+use crate::settings::{Fold, Inject, Locals, Pick, Precomp, Pull, Settings, Verify};
 use std::borrow::Cow;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -691,8 +691,7 @@ fn build(
             // The self-check's original (the unfolded library, laid out and
             // read) on the other cores while the folded library is written.
             let start = std::time::Instant::now();
-            let original = settings
-                .verify
+            let original = (settings.verify != Verify::Off)
                 .then(|| lay_out(flavor, style, ec, &unfolded))
                 .transpose()
                 .map_err(|d| {
@@ -940,6 +939,10 @@ fn verify_options(settings: &Settings) -> turbonop_verify::library::Options {
             Fold::None | Fold::Identical => v::Fold::Identical,
         },
         locals: settings.locals != Locals::Keep,
+        depth: match settings.verify {
+            Verify::Links => v::Depth::Links,
+            Verify::Full | Verify::Off => v::Depth::Full,
+        },
     }
 }
 

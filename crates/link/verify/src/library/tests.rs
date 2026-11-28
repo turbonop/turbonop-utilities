@@ -927,3 +927,5 @@ fn an_alias_no_anchored_member_defines_is_caught() {
         r.text()
     );
 }
+
+mod links;

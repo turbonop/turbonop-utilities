@@ -345,6 +345,8 @@ pub struct Config {
     pub guard_cf: bool,
     /// `/GUARD:EHCONT`.
     pub guard_ehcont: bool,
+    /// The long-jump table with `/GUARD:CF` (not with `/GUARD:NOLONGJMP`).
+    pub guard_longjmp: bool,
     /// `/HIGHENTROPYVA` aside, `/ALLOWBIND`; `false`: `NO_BIND`.
     pub allow_bind: bool,
     /// `/ALLOWISOLATION`; `false`: `NO_ISOLATION`.
@@ -365,7 +367,7 @@ pub struct Config {
     pub default_libs: Vec<String>,
     /// `/NODEFAULTLIB`.
     pub no_default_lib: NoDefaultLib,
-    /// `/DISALLOWLIB`s (lower case): libraries the link mustn't use (a
+    /// `/DISALLOWLIB`s, as written: libraries the link shouldn't use (a
     /// CRT's objects name the CRTs they can't be mixed with).
     pub disallow_libs: Vec<String>,
     /// `/INCLUDE`s: symbols to keep (and to pull from libraries).
@@ -506,6 +508,7 @@ impl Default for Config {
             cet_compat: false,
             guard_cf: false,
             guard_ehcont: false,
+            guard_longjmp: true,
             allow_bind: true,
             allow_isolation: true,
             integrity_check: false,
@@ -934,6 +937,11 @@ pub fn parse(args: &[Arg], diags: &mut Vec<Diagnostic>) -> Config {
     for a in args {
         match a {
             Arg::Input(path) => c.inputs.push(path.clone()),
+            // (Only a directive may give /FAILIFMISMATCH: on the command
+            // line link.exe doesn't know it, LNK4044.)
+            Arg::Option { name, .. } if name.eq_ignore_ascii_case("failifmismatch") => {
+                diags.push(Diagnostic::Unknown(a.to_string()));
+            }
             Arg::Option { name, value } => apply(&mut c, name, value.as_deref(), a, diags),
         }
     }
@@ -1074,6 +1082,8 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
                     "no" | "nocf" => c.guard_cf = false,
                     "ehcont" => c.guard_ehcont = true,
                     "ehcont-" | "noehcont" => c.guard_ehcont = false,
+                    "longjmp" => c.guard_longjmp = true,
+                    "nolongjmp" => c.guard_longjmp = false,
                     // Kernel-mode and XFG variants.
                     "retpoline" | "xfg" | "delayloadsignret" | "memcpy" => {
                         d.push(Diagnostic::NotYet(format!("/GUARD:{p}")));
@@ -1354,7 +1364,7 @@ fn apply(c: &mut Config, name: &str, value: Option<&str>, arg: &Arg, d: &mut Vec
         // for it to see).
         "disallowlib" => {
             if let Some(v) = need(d) {
-                c.disallow_libs.push(v.to_ascii_lowercase());
+                c.disallow_libs.push(v);
             }
         }
         "guardsym" | "inferasanlibs" => {}

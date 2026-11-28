@@ -641,9 +641,11 @@ pub fn build(
         warnings.push(format!("symbol records of kind {k:#06x} kept as they were (their index fields, if any, aren't renumbered)"));
     }
 
+    lap("  names: modules' files");
     // Typedefs of a tag to its own name (`typedef enum X X`) aren't
     // globals in link.exe's PDBs: the type has the name.
-    globals.retain(|g| {
+    // (Each one decided in parallel.)
+    let wanted = turbonop_par::map(&globals, 4096, |g| {
         if g.len() < 12 || u16::from_le_bytes([g[2], g[3]]) != 0x1108 {
             return true;
         }
@@ -659,6 +661,9 @@ pub fn build(
         turbonop_pdb_write::streams::tag(&merged.types.records[o as usize..])
             .is_none_or(|(_, n, _)| n != name)
     });
+    let mut wanted = wanted.into_iter();
+    globals.retain(|_| wanted.next().unwrap_or(true));
+    lap("  names: globals' typedefs");
     // 5. Each imported DLL's modules, as link.exe makes them: one named
     // for the DLL (the import library's descriptor), and `Import:` with a
     // thunk for each function imported by name.
@@ -781,6 +786,7 @@ pub fn build(
     }
     modules.extend(import_modules);
 
+    lap("  names: DLL modules");
     // 6. Section contributions, by section and offset; each module's
     // first.
     let mut contribs = Vec::new();
@@ -829,6 +835,7 @@ pub fn build(
         }
     }
 
+    lap("  names: contributions");
     // 7. `* Linker *`: the sections, and their groups (the input sections
     // of one name, in a row: `.text$mn`).
     let mut linker = ModuleStream::default();

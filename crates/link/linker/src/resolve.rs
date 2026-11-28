@@ -301,6 +301,14 @@ struct Linker {
     /// files' symbols.
     t_index: std::time::Duration,
     t_members: std::time::Duration,
+    /// /FAILIFMISMATCH's keys: the first value each was given, and by
+    /// which file.
+    mismatch_keys: Map<String, (String, String)>,
+    /// How many files' /FAILIFMISMATCH values didn't match (LNK2038).
+    mismatches: usize,
+    /// /DISALLOWLIB's libraries: the name's stem (lower case, no `.lib`),
+    /// as written, by which file, and whether LNK4098 was said for it.
+    disallowed: Vec<(String, String, String, bool)>,
     t_add: std::time::Duration,
 }
 
@@ -356,7 +364,39 @@ impl Linker {
                 let mut diags = Vec::new();
                 let before = self.config.default_libs.len();
                 let includes_before = self.config.includes.len();
+                let mismatch_before = self.config.fail_if_mismatch.len();
+                let disallow_before = self.config.disallow_libs.len();
                 crate::config::apply_directives(&mut self.config, &object.directives, &mut diags);
+                // /DISALLOWLIB: a default library the link uses anyway is
+                // LNK4098 (named for this file if the library comes later).
+                for lib in &self.config.disallow_libs[disallow_before..] {
+                    let stem = lib_stem(lib);
+                    if !self.disallowed.iter().any(|d| d.0 == stem) {
+                        self.disallowed
+                            .push((stem, lib.clone(), name.clone(), false));
+                    }
+                }
+                // /FAILIFMISMATCH: the first value a key is given (in the
+                // order the files load) is what the others must match;
+                // each one that doesn't is LNK2038, named for its file.
+                for (key, value) in &self.config.fail_if_mismatch[mismatch_before..] {
+                    match self.mismatch_keys.get(key) {
+                        None => {
+                            self.mismatch_keys
+                                .insert(key.clone(), (value.clone(), name.clone()));
+                        }
+                        Some((first, by)) if first != value => {
+                            self.errors.push(LinkError::error(
+                                2038,
+                                format!(
+                                    "{name}: mismatch detected for '{key}': value '{value}' doesn't match value '{first}' in {by}"
+                                ),
+                            ));
+                            self.mismatches += 1;
+                        }
+                        Some(_) => {}
+                    }
+                }
                 let new_includes = self.config.includes.split_off(includes_before);
                 for d in diags {
                     if let crate::config::Diagnostic::Bad(m) = d {
@@ -646,8 +686,13 @@ impl Linker {
             }
             _ => {}
         }
-        if !self.default_libs_seen.insert(stem) {
+        if !self.default_libs_seen.insert(stem.clone()) {
             return;
+        }
+        if let Some(d) = self.disallowed.iter_mut().find(|d| d.0 == stem && !d.3) {
+            d.3 = true;
+            self.errors
+                .push(LinkError::warning(4098, disallowed(&d.1, Some(&d.2))));
         }
         match self.find_library(name) {
             Some(path) => self.add_library(path, true),
@@ -1161,6 +1206,20 @@ fn load(data: &'static [u8], name: &str) -> Result<LoadedKind, String> {
     }
 }
 
+/// A library name's stem: lower case, without `.lib`.
+fn lib_stem(name: &str) -> String {
+    let key = name.to_ascii_lowercase();
+    key.strip_suffix(".lib").unwrap_or(&key).to_owned()
+}
+
+/// LNK4098's message for disallowed library `lib` (by `file`, if said
+/// when the library came).
+fn disallowed(lib: &str, file: Option<&str>) -> String {
+    let what =
+        format!("defaultlib '{lib}' conflicts with use of other libs; use /NODEFAULTLIB:library");
+    file.map_or_else(|| what.clone(), |f| format!("{f}: {what}"))
+}
+
 /// The symbols the linker defines, for objects that refer to them.
 const SYNTHETIC: &[&[u8]] = &[
     b"__guard_fids_count",
@@ -1202,6 +1261,9 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
         t_index: std::time::Duration::ZERO,
         t_members: std::time::Duration::ZERO,
         t_add: std::time::Duration::ZERO,
+        mismatch_keys: Map::default(),
+        disallowed: Vec::new(),
+        mismatches: 0,
     };
     let mut times = Vec::new();
     let mut lap = std::time::Instant::now();
@@ -1382,6 +1444,23 @@ pub fn resolve(config: Config, errors: &mut Vec<LinkError>) -> Option<Resolved> 
                 ));
             }
         }
+    }
+    // A default library disallowed after it was named: LNK4098, the link's.
+    for d in &mut l.disallowed {
+        if !d.3 && l.default_libs_seen.contains(&d.0) {
+            d.3 = true;
+            l.errors
+                .push(LinkError::warning(4098, disallowed(&d.1, None)));
+        }
+    }
+    // Mismatches end the link (LNK1319), unless unresolved symbols end it
+    // first (LNK1120, as link.exe reports it: the LNK1319 only with
+    // /FORCE:UNRESOLVED).
+    if l.mismatches > 0 && (l.config.force_unresolved || !l.errors.iter().any(|e| e.code == 2001)) {
+        l.errors.push(LinkError::error(
+            1319,
+            format!("{} mismatches detected", l.mismatches),
+        ));
     }
     errors.append(&mut l.errors);
     if errors.iter().any(|e| !e.warning) {

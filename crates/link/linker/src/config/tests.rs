@@ -182,3 +182,11 @@ fn directives_are_limited() {
     assert_eq!(c.out, None);
     assert_eq!(d.len(), 1);
 }
+
+#[test]
+fn failifmismatch_is_only_a_directive() {
+    // On the command line link.exe doesn't know it (LNK4044, ignored).
+    let (c, d) = config("/FAILIFMISMATCH:Key=Three x.obj");
+    assert!(c.fail_if_mismatch.is_empty());
+    assert_eq!(d, [Diagnostic::Unknown("/FAILIFMISMATCH:Key=Three".into())]);
+}

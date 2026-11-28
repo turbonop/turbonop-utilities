@@ -142,7 +142,7 @@ pub fn tables(
             let which = match sec.name {
                 b".gfids$y" => 0,
                 b".giats$y" => 1,
-                b".gljmp$y" => 2,
+                b".gljmp$y" if r.config.guard_longjmp => 2,
                 b".gehcont$y" if r.config.guard_ehcont => 3,
                 _ => continue,
             };
@@ -360,6 +360,10 @@ pub fn function_entry_size(t: &Tables) -> u32 {
 /// nibble.
 pub fn flags(r: &Resolved, t: &Tables) -> u32 {
     let mut f = 0x0001_7500;
+    // (Without the long-jump table with /GUARD:NOLONGJMP.)
+    if !r.config.guard_longjmp {
+        f &= !0x0001_0000;
+    }
     if r.config.guard_ehcont {
         f |= 0x0040_0000;
     }

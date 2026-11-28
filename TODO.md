@@ -811,9 +811,14 @@ same but for the PDB's GUID, age, and name.
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
   library X and object Y" message, `/INCREMENTAL`'s padding (it links
   fully),
-  `/WHOLEARCHIVE`, `/FAILIFMISMATCH` and `/DISALLOWLIB`'s checks,
-  `/MERGE` cycles' error, long-form import objects (old `.idata$`
-  members), `IMAGE_REL_AMD64_SECREL7`/`TOKEN`/`SREL32`.
+  `/WHOLEARCHIVE`, link.exe's exit codes (the fatal error's number),
+  `/MERGE` cycles' error (LNK1145, found so far: `.text=.text` and `.rdata=.text .text=.rdata` are
+  errors, for `.text`; `.text=.rdata .rdata=.x .x=.text` is, for `.x`; `.x=.text .text=.y .y=.x`
+  isn't, `.text` going to `.x`; cycles of absent sections aren't; plus LNK4254 for
+  merges of different attributes; turbolink checks none: data in
+  C:\jm\dev-private\turbolink\mismatch\m*.cmd), long-form import objects (old `.idata$`
+  members), `IMAGE_REL_AMD64_TOKEN` (CLR's: link.exe 14.52 crashes on
+  it in a native link).
 - **Exports' diagnostics:** link.exe warns LNK4197 for a name exported
   twice (turbolink keeps the first silently, as link.exe does) and reports
   LNK2001 for a forwarder `x = dll.f` when nothing defines `f` (seen on
@@ -826,10 +831,7 @@ same but for the PDB's GUID, age, and name.
   0xF6); the map's `$R` symbols with two or more
   `.res` files or an embedded manifest (cvtres's object for them: which
   offsets, which origin), and a map of an LLVM-size link checked line for
-  line; the Rich header's order when an ml64 object comes before C
-  objects (link.exe lists masm's entry, 0x103, before the compiler's,
-  0x104, where turbolink lists them the other way round; seen with
-  `start.obj` from ml64, then cl's objects). llvm-tblgen, llc, opt,
+  line. llvm-tblgen, llc, opt,
   llvm-mc and llvm-ar are link.exe's images (`llvm-nm` and
   `llvm-objdump` to check again: their delay-load room, which the old
   0x104-or-0x108 rule got wrong, is now link.exe's measured rule).

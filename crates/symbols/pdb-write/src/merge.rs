@@ -460,64 +460,84 @@ pub fn merge(
         (g >= 0x1000).then(|| (class, g - 0x1000))
     };
     let (type_roots, id_roots) = roots(&maps);
-    let mut keep_t = vec![false; ty.len()];
-    let mut keep_i = vec![false; id.len()];
+    // Each forward reference's definitions (by tag key, in order): the
+    // keys worked out in parallel.
+    let keys = turbonop_par::map(&ty, 1024, |(p, _, _)| match tag_key(record(p)) {
+        Some((false, class, key)) => Some((class, key)),
+        _ => None,
+    });
     let mut defs: turbonop_hash::Map<(u16, &[u8]), Vec<u32>> = turbonop_hash::Map::default();
-    for (g, (p, _, _)) in ty.iter().enumerate() {
-        if let Some((false, class, key)) = tag_key(record(p)) {
-            defs.entry((class, key)).or_default().push(crate::n32(g));
+    for (g, k) in keys.into_iter().enumerate() {
+        if let Some(k) = k {
+            defs.entry(k).or_default().push(crate::n32(g));
         }
     }
-    let mut work: Vec<(bool, u32)> = Vec::new();
-    work.extend(
-        type_roots
-            .iter()
-            .filter(|&&t| t >= 0x1000)
-            .map(|&t| (false, t - 0x1000)),
-    );
-    work.extend(
-        id_roots
-            .iter()
-            .filter(|&&t| t >= 0x1000)
-            .map(|&t| (true, t - 0x1000)),
-    );
-    let mut refs = Vec::new();
-    while let Some((is_id, g)) = work.pop() {
-        let (keep, list) = if is_id {
-            (&mut keep_i, &id)
-        } else {
-            (&mut keep_t, &ty)
-        };
-        let g = g as usize;
-        if g >= keep.len() || keep[g] {
-            continue;
-        }
-        keep[g] = true;
-        let p = &list[g].0;
+    lap("reach: definitions");
+    // Everything the roots reach, by whichever thread is free (the result
+    // is the same in any order).
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let seen_t: Vec<AtomicBool> = (0..ty.len()).map(|_| AtomicBool::new(false)).collect();
+    let seen_i: Vec<AtomicBool> = (0..id.len()).map(|_| AtomicBool::new(false)).collect();
+    let claim = |(is_id, g): (bool, u32)| {
+        let seen = if is_id { &seen_i } else { &seen_t };
+        seen.get(g as usize)
+            .is_some_and(|b| !b.swap(true, Ordering::Relaxed))
+    };
+    let roots: Vec<(bool, u32)> = type_roots
+        .iter()
+        .filter(|&&t| t >= 0x1000)
+        .map(|&t| (false, t - 0x1000))
+        .chain(
+            id_roots
+                .iter()
+                .filter(|&&t| t >= 0x1000)
+                .map(|&t| (true, t - 0x1000)),
+        )
+        .filter(|&x| claim(x))
+        .collect();
+    let parallel = ty.len() + id.len() >= 4096;
+    turbonop_par::traverse(roots, parallel, Vec::new, |(is_id, g), more, refs| {
+        let list = if is_id { &id } else { &ty };
+        let p = &list[g as usize].0;
         let r = record(p);
         let kind = u16::from_le_bytes([r[2], r[3]]);
         // (Source lines are written apart, below.)
         if matches!(kind, 0x1606 | 0x1607) {
-            keep[g] = false;
-            continue;
+            return;
         }
         refs.clear();
-        let _ = type_refs::refs(kind, &r[4..], &mut refs);
-        for f in &refs {
+        let _ = type_refs::refs(kind, &r[4..], refs);
+        for f in refs.iter() {
             let o = 4 + f.offset as usize;
             let ti = u32::from_le_bytes([r[o], r[o + 1], r[o + 2], r[o + 3]]);
-            work.extend(target(p.0 as usize, ti, f.id));
+            if let Some(x) = target(p.0 as usize, ti, f.id)
+                && claim(x)
+            {
+                more.push(x);
+            }
         }
         if !is_id && let Some((true, class, key)) = tag_key(r) {
-            work.extend(
-                defs.get(&(class, key))
-                    .into_iter()
-                    .flatten()
-                    .map(|&d| (false, d)),
-            );
+            for &d in defs.get(&(class, key)).into_iter().flatten() {
+                if claim((false, d)) {
+                    more.push((false, d));
+                }
+            }
         }
-    }
+    });
     drop(defs);
+    // Kept: what was reached, but source lines (written apart).
+    let kept = |list: &[(Place, u32, u32)], seen: &[AtomicBool]| -> Vec<bool> {
+        turbonop_par::map_range(list.len(), 4096, |g| {
+            seen[g].load(Ordering::Relaxed) && {
+                let r = record(&list[g].0);
+                !matches!(u16::from_le_bytes([r[2], r[3]]), 0x1606 | 0x1607)
+            }
+        })
+    };
+    let keep_t = kept(&ty, &seen_t);
+    let keep_i = kept(&id, &seen_i);
+    drop((seen_t, seen_i));
+    lap("reach: walk");
     // Source lines of kept UDTs, one each (the first source's).
     let mut lined = vec![false; ty.len()];
     let mut src_lines: Vec<(u32, Vec<u8>, u32, u32)> = Vec::new();
@@ -566,6 +586,7 @@ pub fn merge(
         lined[udt as usize] = true;
         src_lines.push((udt, file, u32_at(12), p.0));
     }
+    lap("reach: source lines");
     // Renumbered: the kept records, in order.
     let renumber = |keep: &[bool]| -> Vec<u32> {
         let mut n = 0x1000u32;

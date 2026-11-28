@@ -318,8 +318,8 @@ fn merge<T>(a: Vec<T>, b: Vec<T>, cmp: &impl Fn(&T, &T) -> std::cmp::Ordering) -
 /// thread; the accumulators come back in no particular order.
 ///
 /// Each thread works from a stack of its own, and while no work is queued
-/// for the others it hands half of its stack to the queue; one that runs
-/// out takes half of what's queued. There's no step to wait for the
+/// for the others it hands half of its stack to the queue (and, its stack
+/// past 256, all but 128); one that runs out takes half of what's queued. There's no step to wait for the
 /// slowest thread at: on a machine busy with other programs, which pause
 /// some threads, the others take the work. Serial if `parallel` is false
 /// or there's one thread.
@@ -354,6 +354,8 @@ pub fn traverse<T: Send, A: Send>(
     let wake = Condvar::new();
     // How many items are queued (a hint, read without the lock).
     let queued = AtomicUsize::new(1);
+    /// The most of its stack a thread keeps to itself, past twice this.
+    const KEEP: usize = 128;
     /// Ends the traversal if its thread panics, so the others don't wait
     /// for it forever (the scope then passes the panic on).
     struct OnPanic<'a, T>(&'a Mutex<Queue<T>>, &'a Condvar);
@@ -372,11 +374,19 @@ pub fn traverse<T: Send, A: Send>(
         loop {
             while let Some(x) = stack.pop() {
                 visit(x, &mut stack, &mut acc);
-                if stack.len() >= 2 && queued.load(Ordering::Relaxed) == 0 {
+                // Shared: half the stack while nothing is queued, and all
+                // but KEEP of a stack past twice that (a thread the machine
+                // pauses holds up only what it keeps).
+                let hungry = stack.len() >= 2 && queued.load(Ordering::Relaxed) == 0;
+                if hungry || stack.len() > 2 * KEEP {
                     let mut q = queue.lock().unwrap_or_else(PoisonError::into_inner);
-                    let half = stack.len() / 2;
-                    // The oldest half: what leads to the most.
-                    q.items.extend(stack.drain(..half));
+                    let give = if hungry {
+                        stack.len() / 2
+                    } else {
+                        stack.len() - KEEP
+                    };
+                    // The oldest: what leads to the most.
+                    q.items.extend(stack.drain(..give));
                     queued.store(q.items.len(), Ordering::Relaxed);
                     if q.waiting > 0 {
                         wake.notify_all();

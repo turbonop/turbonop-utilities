@@ -399,7 +399,8 @@ x64. Where the 3.5 MB went:
     their texts' and alternatives' `%{rule}` references, as templates'
     were before they became a character each) and its operand and field
     lists' `&str` names.
-  - **x86's, 270 KB** (`ENTRIES`, 186 KB).
+  - **x86's, about 180 KB** (`ENTRIES`' operand specs are each set
+    once now: 89 KB less): its other tables.
   - The TableGen decoders' instructions are still 56 bytes: an index
     into a string table, and into a table of operand lists, would make
     them about 24.

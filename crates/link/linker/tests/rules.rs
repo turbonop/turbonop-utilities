@@ -1062,15 +1062,26 @@ fn the_map_is_link_exes() {
     )
     .expect("links");
     let text = String::from_utf8(std::fs::read(&map).unwrap()).unwrap();
-    assert!(text.ends_with("\r\n") && !text.replace("\r\n", "").contains('\n'), "CRLF lines");
+    assert!(
+        text.ends_with("\r\n") && !text.replace("\r\n", "").contains('\n'),
+        "CRLF lines"
+    );
     let lines: Vec<&str> = text.split("\r\n").collect();
     assert_eq!(lines[0], " out");
     assert!(lines[2].starts_with(" Timestamp is "), "{}", lines[2]);
     assert_eq!(lines[4], " Preferred load address is 0000000140000000");
-    assert_eq!(lines[6], " Start         Length     Name                   Class");
-    assert_eq!(lines[7], " 0001:00000000 00000011H .text                   CODE");
+    assert_eq!(
+        lines[6],
+        " Start         Length     Name                   Class"
+    );
+    assert_eq!(
+        lines[7],
+        " 0001:00000000 00000011H .text                   CODE"
+    );
     assert!(
-        lines.iter().any(|l| l.starts_with(" 0002:") && l.contains(" 00000000H .edata ")),
+        lines
+            .iter()
+            .any(|l| l.starts_with(" 0002:") && l.contains(" 00000000H .edata ")),
         "the empty .edata group"
     );
     let publics = lines
@@ -1087,8 +1098,12 @@ fn the_map_is_link_exes() {
     );
     let absolutes = lines.iter().filter(|l| l.ends_with("<absolute>")).count();
     assert_eq!(absolutes, 29);
-    assert!(lines.contains(&" 0001:00000000       main                       0000000140001000 f   main.obj"));
-    assert!(lines.contains(&" 0001:00000010       other                      0000000140001010 f   other.obj"));
+    assert!(lines.contains(
+        &" 0001:00000000       main                       0000000140001000 f   main.obj"
+    ));
+    assert!(lines.contains(
+        &" 0001:00000010       other                      0000000140001010 f   other.obj"
+    ));
     assert!(
         lines
             .iter()
@@ -1101,6 +1116,14 @@ fn the_map_is_link_exes() {
         .expect("the entry point");
     assert_eq!(lines[entry], " entry point at        0001:00000000");
     assert_eq!(lines[entry + 2], " Static symbols");
+    // And hexcavator reads it.
+    let parsed = turbonop_linkmap::parse(&text);
+    assert_eq!(parsed.module, "out");
+    assert_eq!(parsed.load_address, Some(0x1_4000_0000));
+    assert_eq!(parsed.entry_point, Some((1, 0)));
+    assert!(parsed.groups.iter().any(|g| g.name == ".text" && g.length == 0x11));
+    let main = parsed.symbols.iter().find(|s| s.name == "main").expect("main");
+    assert_eq!((main.va, main.function, main.is_static), (0x1_4000_1000, true, false));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -1116,10 +1139,14 @@ fn the_map_is_link_exes() {
 fn the_export_object_is_link_exes() {
     let dir = scratch("exp");
     std::fs::write(dir.join("f.obj"), defining("func")).unwrap();
-    std::fs::write(dir.join("f.def"), "LIBRARY named
+    std::fs::write(
+        dir.join("f.def"),
+        "LIBRARY named
 EXPORTS
     func
-").unwrap();
+",
+    )
+    .unwrap();
     let def = format!("/DEF:{}", input(&dir, "f.def"));
     let link = |extra: &[&str]| {
         let mut words = vec!["/NODEFAULTLIB", "/NOENTRY", "/DLL"];
@@ -1135,7 +1162,9 @@ EXPORTS
     assert_eq!(u32_at(&exp, 4), 0xFFFF_FFFF, "the time stamp");
     let section = |i: usize| {
         let h = 20 + 40 * i;
-        let name = String::from_utf8_lossy(&exp[h..h + 8]).trim_end_matches('\0').to_owned();
+        let name = String::from_utf8_lossy(&exp[h..h + 8])
+            .trim_end_matches('\0')
+            .to_owned();
         let (size, at) = (u32_at(&exp, h + 16) as usize, u32_at(&exp, h + 20) as usize);
         (name, u32_at(&exp, h + 36), exp[at..at + size].to_vec())
     };
@@ -1151,7 +1180,10 @@ EXPORTS
     // .debug$S: CodeView 4, then S_OBJNAME naming the object.
     assert_eq!(u32_at(&debug.2, 0), 4);
     assert!(debug.2.windows(7).any(|w| w == b"out.exp"), "S_OBJNAME");
-    assert!(debug.2.windows(18).any(|w| w == b"Microsoft (R) LINK"), "S_COMPILE3");
+    assert!(
+        debug.2.windows(18).any(|w| w == b"Microsoft (R) LINK"),
+        "S_COMPILE3"
+    );
     assert!(debug.2.windows(5).any(|w| w == b"func\0"), "S_EXPORT");
     // Without a .def file: no .drectve.
     link(&["/EXPORT:func"]);
@@ -1162,9 +1194,15 @@ EXPORTS
         std::fs::remove_file(dir.join(f)).unwrap();
     }
     link(&[&def, "/NOIMPLIB"]);
-    assert!(dir.join("out.exp").exists() && !dir.join("out.lib").exists(), "/NOIMPLIB");
+    assert!(
+        dir.join("out.exp").exists() && !dir.join("out.lib").exists(),
+        "/NOIMPLIB"
+    );
     std::fs::remove_file(dir.join("out.exp")).unwrap();
     link(&[&def, "/NOEXP"]);
-    assert!(!dir.join("out.exp").exists() && dir.join("out.lib").exists(), "/NOEXP");
+    assert!(
+        !dir.join("out.exp").exists() && dir.join("out.lib").exists(),
+        "/NOEXP"
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

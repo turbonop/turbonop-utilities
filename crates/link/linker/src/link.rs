@@ -267,14 +267,16 @@ pub fn link(mut config: Config) -> Outcome {
             hints[*i] = u16::try_from(k).unwrap_or(0);
         }
         // (Not with /NOIMPLIB; the export object still, as link.exe.)
-        let lib = (!c.no_implib).then(|| implib::write(
-            &t.dll_name,
-            machine.number(),
-            machine.is_64(),
-            &t.directory.exports,
-            &hints,
-            crate::write::timestamp(c),
-        ));
+        let lib = (!c.no_implib).then(|| {
+            implib::write(
+                &t.dll_name,
+                machine.number(),
+                machine.is_64(),
+                &t.directory.exports,
+                &hints,
+                crate::write::timestamp(c),
+            )
+        });
         if let Some(lib) = lib
             && let Err(e) = std::fs::write(&lib_path, lib)
         {
@@ -296,7 +298,10 @@ pub fn link(mut config: Config) -> Outcome {
                 .map(|d| d.display().to_string())
                 .unwrap_or_default();
             let def_text = c.def.as_ref().and_then(|d| std::fs::read(d).ok());
-            let def_path = c.def.as_ref().map(|d| std::path::absolute(d).unwrap_or_else(|_| d.clone()));
+            let def_path = c
+                .def
+                .as_ref()
+                .map(|d| std::path::absolute(d).unwrap_or_else(|_| d.clone()));
             let ordinals_given: Vec<String> = c
                 .exports
                 .iter()

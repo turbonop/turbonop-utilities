@@ -1143,6 +1143,7 @@ dependencies = [
  "turbonop-core",
  "turbonop-global-alloc",
  "turbonop-hash",
+ "turbonop-linkmap",
  "turbonop-mmap",
  "turbonop-par",
  "turbonop-pdb",

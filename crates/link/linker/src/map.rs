@@ -106,11 +106,20 @@ impl Image<'_> {
             .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
         line(&mut out, format!(" {stem}").as_bytes());
         line(&mut out, b"");
-        line(&mut out, format!(" Timestamp is {stamp:08x} ({})", ctime(stamp)).as_bytes());
+        line(
+            &mut out,
+            format!(" Timestamp is {stamp:08x} ({})", ctime(stamp)).as_bytes(),
+        );
         line(&mut out, b"");
-        line(&mut out, format!(" Preferred load address is {:016x}", self.base).as_bytes());
+        line(
+            &mut out,
+            format!(" Preferred load address is {:016x}", self.base).as_bytes(),
+        );
         line(&mut out, b"");
-        line(&mut out, b" Start         Length     Name                   Class");
+        line(
+            &mut out,
+            b" Start         Length     Name                   Class",
+        );
         // The groups, empty ones too.
         let mut sections: Vec<(u32, u32)> = Vec::new(); // (rva, end) of each listed section
         for (i, s) in l.sections.iter().enumerate() {
@@ -151,13 +160,18 @@ impl Image<'_> {
                 .collect();
             let end = s.rva + s.virtual_size;
             for (g, (name, chunks)) in s.groups.iter().enumerate() {
-                let next = starts[g + 1..].iter().flatten().next().copied().unwrap_or(end);
+                let next = starts[g + 1..]
+                    .iter()
+                    .flatten()
+                    .next()
+                    .copied()
+                    .unwrap_or(end);
                 let start = starts[g]
                     .unwrap_or_else(|| ends[..g].iter().flatten().max().copied().unwrap_or(s.rva));
                 let full = chunks.iter().any(|&c| l.chunks[c as usize].size > 0);
                 let length = if full { next.saturating_sub(start) } else { 0 };
-                let mut text = format!(" {:04x}:{:08x} {:08x}H ", i + 1, start - s.rva, length)
-                    .into_bytes();
+                let mut text =
+                    format!(" {:04x}:{:08x} {:08x}H ", i + 1, start - s.rva, length).into_bytes();
                 text.extend_from_slice(name);
                 let pad = 23usize.saturating_sub(name.len());
                 text.extend(std::iter::repeat_n(b' ', pad));
@@ -172,7 +186,9 @@ impl Image<'_> {
                 .iter()
                 .enumerate()
                 .find(|&(_, &(lo, hi))| rva >= lo && rva < hi.max(lo + 1))
-                .map_or((0, rva), |(i, &(lo, _))| (u16::try_from(i + 1).unwrap_or(0), rva - lo))
+                .map_or((0, rva), |(i, &(lo, _))| {
+                    (u16::try_from(i + 1).unwrap_or(0), rva - lo)
+                })
         };
         let at = |rva: u32, name: Vec<u8>, function: bool, inline: bool, origin: String| {
             let (section, offset) = place(rva);
@@ -193,7 +209,13 @@ impl Image<'_> {
             let target = r.names.get(name).map(|&g| self.global(g));
             if let Some(super::Target::Rva(rva)) = target {
                 // (A /GUARD table: where it is.)
-                publics.push(at(rva, name.to_vec(), false, false, "<linker-defined>".into()));
+                publics.push(at(
+                    rva,
+                    name.to_vec(),
+                    false,
+                    false,
+                    "<linker-defined>".into(),
+                ));
                 continue;
             }
             let value = match target {
@@ -225,12 +247,14 @@ impl Image<'_> {
             let FileKind::Object { object, .. } = &r.files[f as usize].kind else {
                 return false;
             };
-            matches!(object.sections[s as usize].comdat, Some((Selection::Any, _)))
-                && object
-                    .comdat_leaders
-                    .get(s as usize)
-                    .and_then(|&k| object.symbols.get(k as usize))
-                    .is_some_and(crate::object::Symbol::is_external)
+            matches!(
+                object.sections[s as usize].comdat,
+                Some((Selection::Any, _))
+            ) && object
+                .comdat_leaders
+                .get(s as usize)
+                .and_then(|&k| object.symbols.get(k as usize))
+                .is_some_and(crate::object::Symbol::is_external)
         };
         let chunk_of = |f: u32, s: u32| self.chunk_of(f, s);
         let names_rva = self.names_rva();
@@ -241,7 +265,11 @@ impl Image<'_> {
                 continue;
             }
             match global.def {
-                Def::Section { file, section, value } => {
+                Def::Section {
+                    file,
+                    section,
+                    value,
+                } => {
                     let fi = &r.files[file as usize];
                     // An import library's own pieces: where turbolink's
                     // tables put them.
@@ -254,7 +282,10 @@ impl Image<'_> {
                     let Some(c) = chunk_of(file, section) else {
                         continue;
                     };
-                    let FileKind::Object { object, globals, .. } = &fi.kind else {
+                    let FileKind::Object {
+                        object, globals, ..
+                    } = &fi.kind
+                    else {
                         continue;
                     };
                     let function = globals
@@ -263,7 +294,13 @@ impl Image<'_> {
                         .and_then(|k| object.symbols.get(k))
                         .is_some_and(|s| s.ty & 0x30 == 0x20);
                     let rva = l.chunks[c as usize].rva + value;
-                    publics.push(at(rva, name.to_vec(), function, function && inline_chunk(c), file_origin(file)));
+                    publics.push(at(
+                        rva,
+                        name.to_vec(),
+                        function,
+                        function && inline_chunk(c),
+                        file_origin(file),
+                    ));
                 }
                 Def::Alias(_) => {
                     // An alternate name: listed at what it names, as that.
@@ -274,10 +311,16 @@ impl Image<'_> {
                             _ => break,
                         }
                     }
-                    if let Def::Section { file, section, value } = r.globals[t as usize].def
+                    if let Def::Section {
+                        file,
+                        section,
+                        value,
+                    } = r.globals[t as usize].def
                         && r.files[file as usize].idata.is_none()
                         && let Some(c) = self.chunk_of(file, section)
-                        && let FileKind::Object { object, globals, .. } = &r.files[file as usize].kind
+                        && let FileKind::Object {
+                            object, globals, ..
+                        } = &r.files[file as usize].kind
                     {
                         let function = globals
                             .iter()
@@ -285,13 +328,25 @@ impl Image<'_> {
                             .and_then(|k| object.symbols.get(k))
                             .is_some_and(|s| s.ty & 0x30 == 0x20);
                         let rva = l.chunks[c as usize].rva + value;
-                        publics.push(at(rva, name.to_vec(), function, function && inline_chunk(c), file_origin(file)));
+                        publics.push(at(
+                            rva,
+                            name.to_vec(),
+                            function,
+                            function && inline_chunk(c),
+                            file_origin(file),
+                        ));
                     }
                     // (An alias of an import's thunk or address: as that.)
                     match r.globals[t as usize].def {
                         Def::ImportThunk(f) => {
                             if let Some(&c) = l.thunk_chunks.get(&f) {
-                                publics.push(at(l.chunks[c as usize].rva, name.to_vec(), true, false, file_origin(f)));
+                                publics.push(at(
+                                    l.chunks[c as usize].rva,
+                                    name.to_vec(),
+                                    true,
+                                    false,
+                                    file_origin(f),
+                                ));
                             }
                         }
                         Def::ImportAddress(f) => {
@@ -323,7 +378,13 @@ impl Image<'_> {
                 }
                 Def::ImportThunk(f) => {
                     if let Some(&c) = l.thunk_chunks.get(&f) {
-                        publics.push(at(l.chunks[c as usize].rva, name.to_vec(), true, false, file_origin(f)));
+                        publics.push(at(
+                            l.chunks[c as usize].rva,
+                            name.to_vec(),
+                            true,
+                            false,
+                            file_origin(f),
+                        ));
                     }
                 }
                 Def::Absolute(v) => {
@@ -355,7 +416,13 @@ impl Image<'_> {
                 }
                 Def::Synthetic(Synthetic::VolatileMetadata) => {
                     if let Some(rva) = self.rva_of(g) {
-                        publics.push(at(rva, name.to_vec(), false, false, "<linker-defined>".into()));
+                        publics.push(at(
+                            rva,
+                            name.to_vec(),
+                            false,
+                            false,
+                            "<linker-defined>".into(),
+                        ));
                     }
                 }
                 _ => {}
@@ -370,7 +437,11 @@ impl Image<'_> {
                 continue;
             };
             let from = file_origin(first);
-            let underscored: Vec<u8> = dll.name.iter().map(|&b| if b == b'.' { b'_' } else { b }).collect();
+            let underscored: Vec<u8> = dll
+                .name
+                .iter()
+                .map(|&b| if b == b'.' { b'_' } else { b })
+                .collect();
             let lower = underscored.to_ascii_lowercase();
             let stem = crate::resolve::dll_stem(dll.name);
             let named = |prefix: &[u8], rest: &[u8]| [prefix, rest].concat();
@@ -382,10 +453,22 @@ impl Image<'_> {
             };
             put(ChunkKind::TailMerge(d), 0, named(b"__tailMerge_", &lower));
             put(ChunkKind::DelayDllName(d), 0, named(b"__sz_", &underscored));
-            put(ChunkKind::DelayHandle(d), 0, named(b"__hmod__", &underscored));
-            put(ChunkKind::DelayDirectory, 32 * d, named(b"__DELAY_IMPORT_DESCRIPTOR_", &lower));
+            put(
+                ChunkKind::DelayHandle(d),
+                0,
+                named(b"__hmod__", &underscored),
+            );
+            put(
+                ChunkKind::DelayDirectory,
+                32 * d,
+                named(b"__DELAY_IMPORT_DESCRIPTOR_", &lower),
+            );
             if d == 0 {
-                put(ChunkKind::DelayNullDescriptor, 0, b"__NULL_DELAY_IMPORT_DESCRIPTOR".to_vec());
+                put(
+                    ChunkKind::DelayNullDescriptor,
+                    0,
+                    b"__NULL_DELAY_IMPORT_DESCRIPTOR".to_vec(),
+                );
             }
             let thunk = |suffix: &[u8]| [b"\x7f", stem, b"_NULL_THUNK_DATA_", suffix].concat();
             put(ChunkKind::DelayNames(d), n, thunk(b"DLN"));
@@ -395,9 +478,18 @@ impl Image<'_> {
         }
         // (link.exe lists __volatile_metadata whenever it writes it.)
         if !r.names.contains_key(&b"__volatile_metadata"[..])
-            && let Some(c) = l.chunks.iter().find(|c| c.kind == ChunkKind::VolatileMetadata)
+            && let Some(c) = l
+                .chunks
+                .iter()
+                .find(|c| c.kind == ChunkKind::VolatileMetadata)
         {
-            publics.push(at(c.rva, b"__volatile_metadata".to_vec(), false, false, "<linker-defined>".into()));
+            publics.push(at(
+                c.rva,
+                b"__volatile_metadata".to_vec(),
+                false,
+                false,
+                "<linker-defined>".into(),
+            ));
         }
         sort(&mut publics);
         line(&mut out, b"");
@@ -409,12 +501,12 @@ impl Image<'_> {
         write_entries(&mut out, &publics);
 
         // The entry point.
-        let (es, eo) = r
-            .entry
-            .and_then(|g| self.rva_of(g))
-            .map_or((0, 0), place);
+        let (es, eo) = r.entry.and_then(|g| self.rva_of(g)).map_or((0, 0), place);
         line(&mut out, b"");
-        line(&mut out, format!(" entry point at        {es:04x}:{eo:08x}").as_bytes());
+        line(
+            &mut out,
+            format!(" entry point at        {es:04x}:{eo:08x}").as_bytes(),
+        );
         line(&mut out, b"");
 
         // The statics: every object's static symbols (not its sections' or
@@ -443,7 +535,10 @@ impl Image<'_> {
                 {
                     continue;
                 }
-                let sec_name = object.sections.get(section as usize).map_or(&[][..], |x| x.name);
+                let sec_name = object
+                    .sections
+                    .get(section as usize)
+                    .map_or(&[][..], |x| x.name);
                 if r.config.guard_cf
                     && chunk_of(f, section).is_none()
                     && GUARD_INPUTS.contains(&sec_name)
@@ -504,7 +599,10 @@ impl Image<'_> {
                     .resources
                     .get(source as usize)
                     .map_or_else(String::new, |(n, _)| origin(n, false));
-                statics.push((u32::MAX, at(c.rva + offset, name.into_bytes(), false, false, from)));
+                statics.push((
+                    u32::MAX,
+                    at(c.rva + offset, name.into_bytes(), false, false, from),
+                ));
             }
         }
         // Each delay-loaded DLL's tail merge's unwind data, `xdata`.
@@ -512,7 +610,10 @@ impl Image<'_> {
             if let Some(&first) = dll.imports.first()
                 && let Some(rva) = self.delay_rva(ChunkKind::TailMergeUnwind(crate::n32(d)))
             {
-                statics.push((first, at(rva, b"xdata".to_vec(), false, false, file_origin(first))));
+                statics.push((
+                    first,
+                    at(rva, b"xdata".to_vec(), false, false, file_origin(first)),
+                ));
             }
         }
         // The export object's (link.exe links its .exp into the image).
@@ -527,7 +628,10 @@ impl Image<'_> {
                 .with_extension("exp");
             let exp = origin(&exp.display().to_string(), false);
             for (name, offset) in t.directory.symbols(&t.dll_name) {
-                statics.push((u32::MAX, at(c.rva + offset, name.into_bytes(), false, false, exp.clone())));
+                statics.push((
+                    u32::MAX,
+                    at(c.rva + offset, name.into_bytes(), false, false, exp.clone()),
+                ));
             }
         }
         // (At one address: the command line's objects, then libraries'
@@ -538,7 +642,9 @@ impl Image<'_> {
                 (u8::from(file.library.is_some()), file.name.as_bytes())
             })
         };
-        turbonop_par::sort_by(&mut statics, |(fa, a), (fb, b)| (a.va, key(*fa), &a.name).cmp(&(b.va, key(*fb), &b.name)));
+        turbonop_par::sort_by(&mut statics, |(fa, a), (fb, b)| {
+            (a.va, key(*fa), &a.name).cmp(&(b.va, key(*fb), &b.name))
+        });
         let statics: Vec<Entry> = statics.into_iter().map(|(_, e)| e).collect();
         line(&mut out, b" Static symbols");
         line(&mut out, b"");
@@ -561,7 +667,10 @@ impl Image<'_> {
                 let internal = e.internal.as_deref().unwrap_or(exported);
                 line(&mut out, format!("{ordinal:>9}    {internal}").as_bytes());
                 if internal != exported {
-                    line(&mut out, format!("               exported name: {exported}").as_bytes());
+                    line(
+                        &mut out,
+                        format!("               exported name: {exported}").as_bytes(),
+                    );
                 }
             }
         }
@@ -580,10 +689,18 @@ fn write_entries(out: &mut Vec<u8>, entries: &[Entry]) {
     let parts = turbonop_par::map_chunks(entries, 4096, |part| {
         let mut text = Vec::new();
         for e in part {
-            let _ = write!(Bytes(&mut text), " {:04x}:{:08x}       ", e.section, e.offset);
+            let _ = write!(
+                Bytes(&mut text),
+                " {:04x}:{:08x}       ",
+                e.section,
+                e.offset
+            );
             let name = escaped(&e.name);
             text.extend_from_slice(&name);
-            text.extend(std::iter::repeat_n(b' ', 26usize.saturating_sub(name.len())));
+            text.extend(std::iter::repeat_n(
+                b' ',
+                26usize.saturating_sub(name.len()),
+            ));
             let _ = write!(
                 Bytes(&mut text),
                 " {:016x} {} {} {}\r\n",
@@ -712,7 +829,11 @@ impl Image<'_> {
         match piece {
             IdataPiece::Descriptor(stem) if name.starts_with(b"__IMPORT_DESCRIPTOR_") => {
                 let d = self.dll_by_stem(stem)?;
-                let slot = self.l.directory_order.iter().position(|&x| x as usize == d)?;
+                let slot = self
+                    .l
+                    .directory_order
+                    .iter()
+                    .position(|&x| x as usize == d)?;
                 Some(chunk(ChunkKind::ImportDirectory)?.rva + 20 * crate::n32(slot))
             }
             IdataPiece::NullDescriptor => Some(chunk(ChunkKind::NullImportDescriptor)?.rva),

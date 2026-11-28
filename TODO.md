@@ -721,8 +721,7 @@ exports, delay loading, resources; with `/DEBUG /INCREMENTAL:NO`, the
 same but for the PDB's GUID, age, and name.
 
 - **Not yet, for native x64 images:** delay loading on other machines;
-  `/GUARD:XFG`, and an exported function that is
-  also a target (its flag); `/ORDER`, `/FUNCTIONPADMIN`, `/MAPINFO`'s
+  `/GUARD:XFG`; `/ORDER`, `/FUNCTIONPADMIN`, `/MAPINFO`'s
   other options (`FIXUPS`; `/MAPINFO:EXPORTS` is done), the "Creating
   library X and object Y" message, a `.def` file's forwarders in the
   `.exp`, `/INCREMENTAL`'s padding (it links fully),

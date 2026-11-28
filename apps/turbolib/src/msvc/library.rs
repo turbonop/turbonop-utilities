@@ -136,10 +136,36 @@ pub fn member_symbols<'d>(
     ec: bool,
 ) -> Result<MemberSymbols<'d>, Diag> {
     use turbonop_archive::symbols::{self, SymbolsError};
+    use turbonop_pe::import_object::ImportObject;
+    // lib.exe archiving import objects again lists more of their names
+    // than `lib /DEF` does (see `archived_import_symbols`).
+    if flavor == Flavor::Lib
+        && symbol_table.is_none()
+        && ImportObject::is_import_object(data)
+        && let Ok(import) = ImportObject::parse(data)
+    {
+        return Ok(symbols::archived_import_symbols(&import, ec));
+    }
     let listed = match symbol_table {
         Some(at) => symbols::skeleton_symbols(data, at, tool(flavor), ec),
         None => symbols::member_symbols(data, tool(flavor), ec),
     };
+    // In an ARM64EC or ARM64X archive, lib.exe lists an import library's
+    // descriptor objects' names (`__IMPORT_DESCRIPTOR_x`, and the rest) in
+    // `/<ECSYMBOLS>/` too, when the object is ARM64 (an x64 one's are
+    // there already); other ARM64 objects' only in the linker members.
+    let listed = listed.map(|mut s| {
+        if flavor == Flavor::Lib && ec && !s.symbols.is_empty() {
+            let descriptors: Vec<MemberSymbol<'d>> = s
+                .symbols
+                .iter()
+                .filter(|m| symbols::is_import_descriptor(&m.name))
+                .cloned()
+                .collect();
+            s.ec_symbols.extend(descriptors);
+        }
+        s
+    });
     match listed {
         Ok(s) => Ok(s),
         Err(SymbolsError::Ltcg) => ltcg_symbols(data).ok_or_else(|| match flavor {

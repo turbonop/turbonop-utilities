@@ -313,5 +313,68 @@ pub fn import_symbols<'a>(
     }
 }
 
+/// An import object's symbols as `lib.exe` 14.52 lists them when it
+/// archives the object again (an input object, or a library's member),
+/// rather than making it from a `.def` file ([`import_symbols`]): in an
+/// ARM64EC or ARM64X archive (`/MACHINE:ARM64EC` or `ARM64X` given), with
+/// `S` the symbol, `D` it demangled and `M` mangled (measured on import
+/// libraries `lib /DEF` made and archived again):
+///
+/// | Import | ARM64 (linker members) | ARM64EC and x64 (`/<ECSYMBOLS>/`) |
+/// |---|---|---|
+/// | code | `S`, `__imp_S`, `__imp_aux_S`, `__auximpcopy_S` | `M`, `D`, `__imp_D`, `__imp_aux_D`, `__auximpcopy_D`, `__impchk_D` |
+/// | constant | `S`, `__imp_S`, `__imp_aux_S`, `__auximpcopy_S` | `D`, `__imp_D`, `__imp_aux_D`, `__auximpcopy_D` |
+/// | data | `__imp_S`, `__imp_aux_S`, `__auximpcopy_S` | `__imp_D`, `__imp_aux_D`, `__auximpcopy_D` |
+///
+/// In any other archive, `__imp_D` and `D` (code and constants) or
+/// `__imp_D` (data), in the linker members, for every machine.
+pub fn archived_import_symbols<'a>(
+    import: &ImportObject<'a>,
+    ec_archive: bool,
+) -> MemberSymbols<'a> {
+    let s = import.symbol;
+    let ec_machine = is_ec_machine(import.machine);
+    let d = if ec_machine {
+        ec_demangle(s)
+    } else {
+        Cow::Borrowed(s)
+    };
+    let mut v: Vec<Cow<'a, [u8]>> = Vec::with_capacity(6);
+    if !ec_archive {
+        v.push(concat(b"__imp_", &d));
+        if import.kind != ImportType::Data {
+            v.push(d);
+        }
+    } else {
+        if ec_machine
+            && import.kind == ImportType::Code
+            && let Some(m) = ec_mangle(s)
+        {
+            v.push(m);
+        }
+        v.push(concat(b"__imp_", &d));
+        v.push(concat(b"__imp_aux_", &d));
+        v.push(concat(b"__auximpcopy_", &d));
+        if ec_machine && import.kind == ImportType::Code {
+            v.push(concat(b"__impchk_", &d));
+        }
+        if import.kind != ImportType::Data {
+            v.push(d);
+        }
+    }
+    let symbols: Vec<MemberSymbol<'a>> = v.into_iter().map(MemberSymbol::defined).collect();
+    if ec_archive && ec_machine {
+        MemberSymbols {
+            symbols: Vec::new(),
+            ec_symbols: symbols,
+        }
+    } else {
+        MemberSymbols {
+            symbols,
+            ec_symbols: Vec::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

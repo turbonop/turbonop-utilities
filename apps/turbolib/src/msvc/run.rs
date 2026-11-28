@@ -402,28 +402,17 @@ fn build(
     // does the same unless it is to fold. (Its own tables would differ
     // where the input's weren't made from its members, as ARM64X import
     // libraries' /<ECSYMBOLS>/ aren't.)
+    // When folding, too, the library unfolded (nothing folded, or folding
+    // failed) is that copy, and lib.exe's warnings (LNK4068, LNK4006),
+    // which it doesn't give for a copy, aren't given.
     let folding =
         settings.fold != Fold::None || settings.precomp != Precomp::None || settings.report_odr;
-    if flavor == Flavor::Lib
-        && !folding
+    let lone = flavor == Flavor::Lib
         && read.len() == 1
         && opts.remove.is_empty()
-        && turbonop_archive::Archive::parse(&read[0].data).is_ok_and(|a| !a.is_thin())
-    {
-        if !r.write_output {
-            return Ok(());
-        }
-        let out = output_path(opts, &read);
-        let path = resolve(&env.cwd, &out);
-        let written = output::write_pieces_beside(&path, &[&read[0].data]);
-        // (The output may be the input: let it go first.)
-        drop(read);
-        if let Err(e) = written.and_then(|t| t.replace(&path)) {
-            let failed = r.report(Diag::fatal(1104, format!("cannot open file '{out}'")));
-            r.lines.push(format!("turbolib: {out}: {e}"));
-            return failed;
-        }
-        return Ok(());
+        && turbonop_archive::Archive::parse(&read[0].data).is_ok_and(|a| !a.is_thin());
+    if lone && !folding {
+        return copy_lone(opts, env, read, r);
     }
     // The threads to run: with others' turbolib processes in mind (see
     // `slots`), unless a number was given.
@@ -476,32 +465,69 @@ fn build(
                 return r.report(d);
             }
         }
-        for (i, kind) in read.iter().zip(&kinds) {
-            if *kind == InputKind::Library
-                && let Ok(archive) = turbonop_archive::Archive::parse(&i.data)
-            {
-                for m in archive.files() {
-                    if let Ok(k) = inputs::classify(flavor, "", m.data) {
-                        check.lib_member(k);
-                    }
-                }
-            }
-        }
-        if check.machine.is_none() {
-            r.report(Diag::warning(
-                4068,
-                "/MACHINE not specified; defaulting to X64",
-            ))?;
-        }
     }
     clock.lap("classify");
-    let ordered = match flavor {
+    let mut ordered = match flavor {
         Flavor::Lib => match order::lib_order(&inputs, &opts.remove, opts.verbose) {
             Ok(o) => o,
             Err(d) => return r.report(d),
         },
         Flavor::LlvmLib => order::llvm_order(&inputs),
     };
+    if flavor == Flavor::Lib {
+        // Library members' machines: see `members_for_machine`.
+        let archives: Vec<Option<turbonop_archive::Archive<'_>>> = read
+            .iter()
+            .zip(&kinds)
+            .map(|(i, k)| {
+                (*k == InputKind::Library)
+                    .then(|| turbonop_archive::Archive::parse(&i.data).ok())
+                    .flatten()
+            })
+            .collect();
+        let files: Vec<Vec<turbonop_archive::Member<'_>>> = archives
+            .iter()
+            .map(|a| a.map(|a| a.files().collect()).unwrap_or_default())
+            .collect();
+        let machine_of = |source: order::Source| match source {
+            order::Source::Member(i, m) => inputs::classify(flavor, "", files[i][m].data)
+                .ok()
+                .and_then(InputKind::machine),
+            order::Source::Object(_) => None,
+        };
+        let from_objects = check.machine.is_some();
+        if !from_objects {
+            check.machine = ordered.members.iter().find_map(|&s| machine_of(s));
+        }
+        if check.machine.is_none() && !lone {
+            r.report(Diag::warning(
+                4068,
+                "/MACHINE not specified; defaulting to X64",
+            ))?;
+        }
+        if let Some(target) = check.machine {
+            let explicit = opts.machine.is_some() || from_objects;
+            let mut kept = Vec::with_capacity(ordered.members.len());
+            for &s in &ordered.members {
+                match members_for_machine(target, explicit, machine_of(s)) {
+                    Ok(true) => kept.push(s),
+                    Ok(false) => {}
+                    Err(d) => {
+                        let order::Source::Member(i, m) = s else {
+                            unreachable!("objects are checked apart")
+                        };
+                        let place = format!(
+                            "{}({})",
+                            shown_file(flavor, &read[i].name),
+                            text(&files[i][m].name)
+                        );
+                        return r.report(d.on(place));
+                    }
+                }
+            }
+            ordered.members = kept;
+        }
+    }
     r.lines.extend(ordered.messages.iter().cloned());
     for w in ordered.warnings {
         r.report(w)?;
@@ -573,7 +599,7 @@ fn build(
 
     // lib.exe's warnings about names defined twice: folding moves no
     // strong definition, so they are the unfolded library's.
-    let duplicates = if flavor == Flavor::Lib {
+    let duplicates = if flavor == Flavor::Lib && !lone {
         let strong = turbonop_par::map(&members, 16, |m| library::strong_definitions(m.data, None));
         let places: Vec<String> = members.iter().map(|m| m.place.clone()).collect();
         library::duplicate_warnings(&strong, &places)
@@ -639,7 +665,16 @@ fn build(
         r.report(w)?;
     }
     clock.lap("fold");
-    let ec = matches!(check.machine, Some(inputs::ARM64EC | inputs::ARM64X));
+    // (lib.exe writes `/<ECSYMBOLS>/` only for `/MACHINE:ARM64EC` or
+    // `ARM64X`: a machine it infers from a library's ARM64EC member gives
+    // none, measured.)
+    let ec = match flavor {
+        Flavor::Lib => matches!(
+            opts.machine.map(options::Machine::number),
+            Some(inputs::ARM64EC | inputs::ARM64X)
+        ),
+        Flavor::LlvmLib => matches!(check.machine, Some(inputs::ARM64EC | inputs::ARM64X)),
+    };
     let unfolded: Vec<Final<'_>> = members
         .iter()
         .map(|m| Final {
@@ -758,6 +793,14 @@ fn build(
             "turbolib: warning: folding {out} failed, so it was written unfolded: {why}"
         ));
     }
+    if lone && (folded.is_none() || fell_back.is_some() || unchanged) {
+        drop(unfolded);
+        drop(folded);
+        drop(members);
+        drop(members_of);
+        drop(archives);
+        return copy_lone(opts, env, read, r);
+    }
     if folded.is_none() || fell_back.is_some() || unchanged {
         let layout = match lay_out(flavor, style, ec, &unfolded) {
             Ok(l) => l,
@@ -791,6 +834,56 @@ fn build(
     clock.lap("write");
     if settings.stats {
         r.lines.push(clock.report());
+    }
+    Ok(())
+}
+
+/// Whether `lib.exe` keeps a library's member of `machine` in a library for
+/// `target` (`explicit`: given by `/MACHINE` or an object, rather than
+/// inferred from the first member), or the error it stops with. lib.exe
+/// doesn't check library members against the machine as it checks
+/// objects, but measured with 14.52 on import libraries `lib /DEF` made:
+///
+/// - for ARM64, it leaves out ARM64EC and x64 members, without a word (so
+///   an ARM64X library archived again without `/MACHINE` loses its EC
+///   half, its first member being ARM64);
+/// - for an ARM64EC machine inferred from the first member, x64 members;
+/// - for x64, an ARM64 or ARM64EC member is LNK1392;
+/// - x86 and x64 members together are kept, and so is everything for
+///   ARM64X, and for ARM64EC given by `/MACHINE`.
+fn members_for_machine(target: u16, explicit: bool, machine: Option<u16>) -> Result<bool, Diag> {
+    use inputs::{ARM64, ARM64EC, X64};
+    let Some(m) = machine else {
+        return Ok(true);
+    };
+    Ok(match target {
+        ARM64 => !matches!(m, ARM64EC | X64),
+        ARM64EC if !explicit => m != X64,
+        X64 if matches!(m, ARM64 | ARM64EC) => {
+            return Err(Diag::fatal(
+                1392,
+                "Incompatible object type found. Did you mean /machine:arm64x or /machine:arm64ec?",
+            ));
+        }
+        _ => true,
+    })
+}
+
+/// lib.exe's library for one library given alone (no objects, no
+/// `/REMOVE`): the input, byte for byte.
+fn copy_lone(opts: &Options, env: &Env, read: Vec<Read>, r: &mut Reporter) -> Result<(), ()> {
+    if !r.write_output {
+        return Ok(());
+    }
+    let out = output_path(opts, &read);
+    let path = resolve(&env.cwd, &out);
+    let written = output::write_pieces_beside(&path, &[&read[0].data]);
+    // (The output may be the input: let it go first.)
+    drop(read);
+    if let Err(e) = written.and_then(|t| t.replace(&path)) {
+        let failed = r.report(Diag::fatal(1104, format!("cannot open file '{out}'")));
+        r.lines.push(format!("turbolib: {out}: {e}"));
+        return failed;
     }
     Ok(())
 }

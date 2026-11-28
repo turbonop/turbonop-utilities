@@ -199,14 +199,6 @@ impl MachineCheck {
         Ok(())
     }
 
-    /// Notes a library member (`lib.exe` doesn't check them, but the first
-    /// one's machine is the library's if nothing else sets it).
-    pub fn lib_member(&mut self, kind: InputKind) {
-        if self.machine.is_none() {
-            self.machine = kind.machine();
-        }
-    }
-
     /// Checks any input or member (`llvm-lib`), named `name`.
     pub fn llvm(&mut self, name: &str, kind: InputKind) -> Result<(), Diag> {
         // llvm-lib reads bitcode's triple; turbolib passes bitcode through

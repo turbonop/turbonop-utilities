@@ -350,32 +350,82 @@ pub struct Op {
 /// table, fixed bits, the features it needs (an index into the
 /// predicates), how many operands it writes, its syntax ([`Inst::asm`]),
 /// and its operands. (Made by [`inst!`].)
+///
+/// (Compact: a target has thousands. Its name and syntax are its
+/// target's `text` at `text_at`, and its operands its target's
+/// `op_lists[ops]`: see [`InstRef`], which [`Instruction::inst`] gives.)
 #[derive(Debug)]
 pub struct Inst {
-    /// Its name, then its syntax, in one string (one reference, not two:
-    /// a target has thousands).
     #[doc(hidden)]
-    pub text: &'static str,
+    pub text_at: u32,
+    #[doc(hidden)]
+    pub asm_len: u16,
     #[doc(hidden)]
     pub name_len: u8,
     pub size: u8,
     pub space: u8,
     pub defs: u8,
     pub pred: u16,
+    #[doc(hidden)]
+    pub ops: u16,
     pub mask: u64,
     pub value: u64,
-    pub ops: &'static [Op],
 }
 
 impl Inst {
+    /// Its LLVM name (`ADDI`, `C_ADDI`, `ADD_W`), in `t`'s text.
+    pub fn name_in(&self, t: &Target) -> &'static str {
+        let at = self.text_at as usize;
+        t.text
+            .get(at..at + usize::from(self.name_len))
+            .unwrap_or("")
+    }
+
+    /// Its syntax (operands as `$name`, `${name}`, or `${name:modifier}`),
+    /// in `t`'s text.
+    pub fn asm_in(&self, t: &Target) -> &'static str {
+        let at = self.text_at as usize + usize::from(self.name_len);
+        t.text.get(at..at + usize::from(self.asm_len)).unwrap_or("")
+    }
+
+    /// Its operands, in `t`'s lists.
+    pub fn ops_in(&self, t: &Target) -> &'static [Op] {
+        t.op_lists
+            .get(usize::from(self.ops))
+            .copied()
+            .unwrap_or(&[])
+    }
+}
+
+/// An [`Inst`] with its target: what reads its name, syntax, and
+/// operands. (It derefs to the [`Inst`].)
+#[derive(Clone, Copy, Debug)]
+pub struct InstRef {
+    pub target: &'static Target,
+    pub inst: &'static Inst,
+}
+
+impl core::ops::Deref for InstRef {
+    type Target = Inst;
+    fn deref(&self) -> &Inst {
+        self.inst
+    }
+}
+
+impl InstRef {
     /// Its LLVM name (`ADDI`, `C_ADDI`, `ADD_W`).
     pub fn name(&self) -> &'static str {
-        self.text.get(..usize::from(self.name_len)).unwrap_or("")
+        self.inst.name_in(self.target)
     }
 
     /// Its syntax: operands as `$name`, `${name}`, or `${name:modifier}`.
     pub fn asm(&self) -> &'static str {
-        self.text.get(usize::from(self.name_len)..).unwrap_or("")
+        self.inst.asm_in(self.target)
+    }
+
+    /// Its operands.
+    pub fn ops(&self) -> &'static [Op] {
+        self.inst.ops_in(self.target)
     }
 }
 
@@ -384,6 +434,7 @@ impl Inst {
 macro_rules! inst {
     {
         name: $name:literal,
+        at: $at:expr,
         size: $size:expr,
         space: $space:expr,
         mask: $mask:expr,
@@ -394,7 +445,11 @@ macro_rules! inst {
         ops: $ops:expr $(,)?
     } => {
         $crate::Inst {
-            text: concat!($name, $asm),
+            text_at: $at,
+            asm_len: {
+                assert!($asm.len() <= 0xFFFF, "an instruction's syntax is too long");
+                $asm.len() as u16
+            },
             name_len: {
                 assert!($name.len() <= 255, "an instruction's name is too long");
                 $name.len() as u8
@@ -481,6 +536,10 @@ pub struct Target {
     pub classes: &'static [Class],
     pub kinds: &'static [Kind],
     pub instructions: &'static [Inst],
+    /// Its instructions' names and syntax, one after another.
+    pub text: &'static str,
+    /// Its instructions' lists of operands, each once.
+    pub op_lists: &'static [&'static [Op]],
     pub aliases: &'static [Alias],
     pub uncompress: &'static [Uncompress],
     /// The instructions each value of a 16-bit encoding's key bits can be,
@@ -638,8 +697,11 @@ impl Eq for Instruction {}
 
 impl Instruction {
     /// Its description.
-    pub fn inst(&self) -> &'static Inst {
-        &self.target.instructions[usize::from(self.index)]
+    pub fn inst(&self) -> InstRef {
+        InstRef {
+            target: self.target,
+            inst: &self.target.instructions[usize::from(self.index)],
+        }
     }
 
     /// Its index among its target's instructions.
@@ -670,7 +732,7 @@ impl Instruction {
 
     /// Its operand named `name` (as its syntax names it).
     pub fn operand(&self, name: &str) -> Option<Operand> {
-        let i = self.inst().ops.iter().position(|o| o.name == name)?;
+        let i = self.inst().ops().iter().position(|o| o.name == name)?;
         self.operands().get(i).copied()
     }
 }
@@ -743,7 +805,7 @@ pub fn decode_as(
     rv64: bool,
     rve: bool,
 ) -> Option<Instruction> {
-    let index = t.instructions.iter().position(|i| i.name() == name)?;
+    let index = t.instructions.iter().position(|i| i.name_in(t) == name)?;
     let inst = &t.instructions[index];
     decode_operands(t, u16::try_from(index).ok()?, inst, w, rv64, rve)
 }
@@ -757,7 +819,7 @@ pub fn build(
     size: u8,
     operands: &[Operand],
 ) -> Option<Instruction> {
-    let index = t.instructions.iter().position(|i| i.name() == name)?;
+    let index = t.instructions.iter().position(|i| i.name_in(t) == name)?;
     if operands.len() > MAX_OPERANDS {
         return None;
     }
@@ -804,10 +866,10 @@ fn decode_operands(
     rve: bool,
 ) -> Option<Instruction> {
     let mut ops = [Operand::Imm(0); MAX_OPERANDS];
-    if inst.ops.len() > MAX_OPERANDS {
+    if inst.ops_in(t).len() > MAX_OPERANDS {
         return None;
     }
-    for (i, op) in inst.ops.iter().enumerate() {
+    for (i, op) in inst.ops_in(t).iter().enumerate() {
         let kind = t.kinds.get(usize::from(op.kind))?;
         // Its value: its fields', its fixed value, or its tied operand's
         // fields'.
@@ -815,7 +877,7 @@ fn decode_operands(
             (f, _, _) if !f.is_empty() => Some(field(w, f)),
             (_, Some(c), _) => Some(u64::from(c)),
             (_, None, Some(tie)) => {
-                let other = inst.ops.get(usize::from(tie))?;
+                let other = inst.ops_in(t).get(usize::from(tie))?;
                 match (other.fields, other.constant) {
                     (f, _) if !f.is_empty() => Some(field(w, f)),
                     (_, c) => c.map(u64::from),
@@ -830,7 +892,7 @@ fn decode_operands(
         index,
         size: inst.size,
         ops,
-        count: u8::try_from(inst.ops.len()).ok()?,
+        count: u8::try_from(inst.ops_in(t).len()).ok()?,
     })
 }
 
@@ -1176,7 +1238,7 @@ pub fn write(
             let print = r.print.unwrap_or_else(|| {
                 // (An operand the alias prints as the instruction does.)
                 i.inst()
-                    .ops
+                    .ops()
                     .get(usize::from(r.op))
                     .and_then(|o| t.kinds.get(usize::from(o.kind)))
                     .map_or(Print::Operand, |k| k.print)
@@ -1187,12 +1249,12 @@ pub fn write(
     }
     let inst = i.inst();
     write_asm(out, inst.asm(), |out, name, modifier| {
-        let Some(op) = inst.ops.iter().position(|o| o.name == name) else {
+        let Some(op) = inst.ops().iter().position(|o| o.name == name) else {
             return;
         };
         let print = t
             .kinds
-            .get(usize::from(inst.ops[op].kind))
+            .get(usize::from(inst.ops()[op].kind))
             .map_or(Print::Operand, |k| k.print);
         operand(out, op, print, modifier);
     });

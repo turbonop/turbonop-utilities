@@ -139,7 +139,7 @@ pub fn decode(bytes: &[u8], big: bool, features: &Features) -> Option<Instructio
 /// absolute target (`ba`, `bla`, `bca`).
 pub fn branch_target(i: &Instruction, address: u64, features: &Features) -> Option<u64> {
     let t = i.target();
-    i.inst().ops.iter().enumerate().find_map(|(k, op)| {
+    i.inst().ops().iter().enumerate().find_map(|(k, op)| {
         let kind = t.kinds.get(usize::from(op.kind))?;
         let v = i.operands().get(k)?.imm()?;
         let to = match kind.print {
@@ -159,7 +159,7 @@ pub fn branch_target(i: &Instruction, address: u64, features: &Features) -> Opti
 /// 8 and r1; a load's, a store's, a prefixed one's), if `i` has one.
 pub fn memory(i: &Instruction) -> Option<(i64, Reg)> {
     let t = i.target();
-    let k = i.inst().ops.iter().position(|op| {
+    let k = i.inst().ops().iter().position(|op| {
         t.kinds
             .get(usize::from(op.kind))
             .is_some_and(|kind| kind.print == turbonop_tablegen::Print::MemRegImm)
@@ -173,7 +173,7 @@ pub fn memory(i: &Instruction) -> Option<(i64, Reg)> {
 pub fn class_of(i: &Instruction, k: usize) -> &'static str {
     let t = i.target();
     i.inst()
-        .ops
+        .ops()
         .get(k)
         .and_then(|o| t.kinds.get(usize::from(o.kind)))
         .and_then(|kind| kind.class)

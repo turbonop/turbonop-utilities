@@ -97,6 +97,9 @@ pub fn make(c: &Config, out: &Path) -> Result<Option<Resource>, LinkError> {
                 name: Id::Number(id.unwrap_or(if c.dll { 2 } else { 1 })),
                 language: 0x409,
                 data: Box::leak(data.into_boxed_slice()),
+                // (The linker's own: from no .res file.)
+                source: u32::MAX,
+                converted: 0,
             }))
         }
     }

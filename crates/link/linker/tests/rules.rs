@@ -1037,6 +1037,8 @@ fn the_manifest_is_where_link_exe_puts_it() {
         link(&["/MANIFEST", "/MANIFESTINPUT:x.manifest"]),
         Err(vec![1220])
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
 
 /// `/MAP` writes link.exe's map (CRLF lines): the image's name, its time
 /// stamp, its preferred load address, the groups (an empty `.edata` among
@@ -1121,9 +1123,21 @@ fn the_map_is_link_exes() {
     assert_eq!(parsed.module, "out");
     assert_eq!(parsed.load_address, Some(0x1_4000_0000));
     assert_eq!(parsed.entry_point, Some((1, 0)));
-    assert!(parsed.groups.iter().any(|g| g.name == ".text" && g.length == 0x11));
-    let main = parsed.symbols.iter().find(|s| s.name == "main").expect("main");
-    assert_eq!((main.va, main.function, main.is_static), (0x1_4000_1000, true, false));
+    assert!(
+        parsed
+            .groups
+            .iter()
+            .any(|g| g.name == ".text" && g.length == 0x11)
+    );
+    let main = parsed
+        .symbols
+        .iter()
+        .find(|s| s.name == "main")
+        .expect("main");
+    assert_eq!(
+        (main.va, main.function, main.is_static),
+        (0x1_4000_1000, true, false)
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -595,6 +595,10 @@ impl Image<'_> {
             && let Some(c) = l.chunks.iter().find(|c| c.kind == ChunkKind::Resources)
         {
             for (name, offset, source) in res.symbols() {
+                // (Not the embedded manifest's: no `.res` file's.)
+                if source == u32::MAX {
+                    continue;
+                }
                 let from = r
                     .resources
                     .get(source as usize)

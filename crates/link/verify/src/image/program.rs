@@ -553,6 +553,12 @@ impl super::bytes::Names for Linked<'_> {
         self.tls_at(offset)
     }
 
+    fn procedure_end(&self, rva: u32) -> Option<u32> {
+        let i = self.code.partition_point(|c| c.rva <= rva).checked_sub(1)?;
+        let c = self.code[i];
+        (rva - c.rva < c.len).then_some(c.rva + c.len)
+    }
+
     fn tls_in_section(&self) -> bool {
         true
     }

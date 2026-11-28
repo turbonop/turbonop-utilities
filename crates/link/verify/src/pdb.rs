@@ -76,12 +76,17 @@ struct Reduced {
     /// References' (kind and name, the module they name).
     references: Vec<(String, Vec<u8>)>,
     /// (name, hash, module).
-    procedures: Vec<(Vec<u8>, u128, usize)>,
+    /// (name, hash, hash without translation units' tags, module)
+    procedures: Vec<(Vec<u8>, u128, u128, usize)>,
     /// Each module's name, whether it is synthesized, and its other
     /// records' hashes (sorted).
     modules: Vec<(Vec<u8>, bool, Vec<u128>)>,
     /// (what the block's start names, hash).
-    lines: Vec<(Vec<u8>, u128)>,
+    /// (what its start names, hash, and its code size if it is a
+    /// function's one line at its translation unit's end: see
+    /// [`at_end_of_file`])
+    /// and a description: its size, and its first file and line)
+    lines: Vec<(Vec<u8>, u128, Option<u32>, String)>,
     inlinees: Vec<u128>,
     /// Records whose fields aren't known, by kind; subsections not
     /// compared, by kind.
@@ -208,7 +213,7 @@ fn compare_types(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep
             if other_copy(h, &blind_a, &set_b) {
                 rep.expect(
                     &format!(
-                        "{what} only in the first PDB, the same but for translation units' tags in unique names (another translation unit's copy kept)"
+                        "{what} only in the first PDB, the same but for translation units' tags in unique names and constructors' attribute 0x08 (another translation unit's copy kept)"
                     ),
                     || describe(a, ids, x, h),
                 );
@@ -229,7 +234,7 @@ fn compare_types(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, rep
             if other_copy(h, &blind_b, &set_a) {
                 rep.expect(
                     &format!(
-                        "{what} only in the second PDB, the same but for translation units' tags in unique names (another translation unit's copy kept)"
+                        "{what} only in the second PDB, the same but for translation units' tags in unique names and constructors' attribute 0x08 (another translation unit's copy kept)"
                     ),
                     || describe(b, ids, y, h),
                 );
@@ -434,10 +439,10 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
 
     // Procedures, by name.
     rep.checked("procedures", ra.procedures.len() as u64);
-    let by_name = |r: &Reduced| -> Map<Vec<u8>, Vec<(u128, usize)>> {
-        let mut m: Map<Vec<u8>, Vec<(u128, usize)>> = Map::default();
-        for (n, h, module) in &r.procedures {
-            m.entry(n.clone()).or_default().push((*h, *module));
+    let by_name = |r: &Reduced| -> Map<Vec<u8>, Vec<(u128, usize, u128)>> {
+        let mut m: Map<Vec<u8>, Vec<(u128, usize, u128)>> = Map::default();
+        for (n, h, t, module) in &r.procedures {
+            m.entry(n.clone()).or_default().push((*h, *module, *t));
         }
         for v in m.values_mut() {
             v.sort_unstable();
@@ -466,10 +471,26 @@ fn compare_symbols(a: &Linked<'_>, b: &Linked<'_>, ra: &Reduced, rb: &Reduced, r
                         );
                     }
                 } else {
-                    rep.fail(
-                        "procedures whose symbols differ (signature, frame, locals, ranges, inline sites, ...)",
-                        || show(n),
-                    );
+                    // The same but for translation units' tags in the unique
+                    // names of the types they use (a lambda's class, say):
+                    // the copy of an inline function the link kept came
+                    // from another translation unit (see the types'
+                    // comparison).
+                    let mut tx: Vec<u128> = x.iter().map(|p| p.2).collect();
+                    let mut ty: Vec<u128> = y.iter().map(|p| p.2).collect();
+                    tx.sort_unstable();
+                    ty.sort_unstable();
+                    if tx == ty {
+                        rep.expect(
+                            "procedures the same but for translation units' tags in unique names and constructors' attribute 0x08 (another translation unit's copy kept)",
+                            || show(n),
+                        );
+                    } else {
+                        rep.fail(
+                            "procedures whose symbols differ (signature, frame, locals, ranges, inline sites, ...)",
+                            || show(n),
+                        );
+                    }
                 }
             }
             (None, None) => {}
@@ -543,12 +564,7 @@ fn compare_rest(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
         );
     }
     rep.checked("line blocks", ra.lines.len() as u64);
-    multisets(
-        ra.lines.iter().map(|(n, h)| (*h, show(n))),
-        rb.lines.iter().map(|(n, h)| (*h, show(n))),
-        "line blocks",
-        rep,
-    );
+    lines_compared(ra, rb, rep);
     let mut ia = ra.inlinees.clone();
     let mut ib = rb.inlinees.clone();
     for v in [&mut ia, &mut ib] {
@@ -568,26 +584,75 @@ fn compare_rest(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
     let mut cb = rb.contributions.clone();
     ca.sort();
     cb.sort();
-    if ca != cb {
-        let first = ca
+    let show_contribution = |c: &ContributionKey| {
+        format!(
+            "{} {:#x}, {:#x} bytes, CRCs {:#x} {:#x}",
+            show(&c.0),
+            c.1,
+            c.2,
+            c.3,
+            c.4
+        )
+    };
+    // (As multisets: both sorted.)
+    let (mut i, mut j) = (0, 0);
+    let (mut only_a, mut only_b) = (Vec::new(), Vec::new());
+    while i < ca.len() || j < cb.len() {
+        match (ca.get(i), cb.get(j)) {
+            (Some(x), Some(y)) if x == y => {
+                i += 1;
+                j += 1;
+            }
+            (Some(x), Some(y)) if x < y => {
+                only_a.push(x);
+                i += 1;
+            }
+            (Some(x), None) => {
+                only_a.push(x);
+                i += 1;
+            }
+            (_, Some(y)) => {
+                only_b.push(y);
+                j += 1;
+            }
+            (None, None) => break,
+        }
+    }
+    // link.exe leaves some contributions' CRCs 0 (most of the data of
+    // turbolib's synthesized members, and of some objects): those pair
+    // with one of the same section, characteristics, and size. (Their
+    // bytes are compared in the images.)
+    let mut unpaired: Map<(&[u8], u32, u32), Vec<&ContributionKey>> = Map::default();
+    for &c in &only_b {
+        unpaired.entry((&c.0, c.1, c.2)).or_default().push(c);
+    }
+    let zero = |c: &ContributionKey| c.3 == 0 && c.4 == 0;
+    let mut left_a = Vec::new();
+    for &c in &only_a {
+        let list = unpaired.entry((&c.0, c.1, c.2)).or_default();
+        let at = list
             .iter()
-            .find(|c| cb.binary_search(c).is_err())
-            .or_else(|| cb.iter().find(|c| ca.binary_search(c).is_err()));
-        rep.fail(
-            "section contributions that differ (section, characteristics, size, CRCs)",
-            || {
-                first.map_or_else(String::new, |c| {
-                    format!(
-                        "{} {:#x}, {:#x} bytes, CRCs {:#x} {:#x}",
-                        show(&c.0),
-                        c.1,
-                        c.2,
-                        c.3,
-                        c.4
-                    )
-                })
-            },
-        );
+            .position(|&d| zero(d) || zero(c));
+        match at {
+            Some(k) => {
+                list.swap_remove(k);
+                rep.expect(
+                    "section contributions whose CRCs the linker left 0 in one PDB",
+                    || show_contribution(c),
+                );
+            }
+            None => left_a.push(c),
+        }
+    }
+    let mut left_b: Vec<&ContributionKey> = unpaired.into_values().flatten().collect();
+    left_b.sort();
+    for (list, which) in [(left_a, "first"), (left_b, "second")] {
+        for c in list {
+            rep.fail(
+                "section contributions that differ (section, characteristics, size, CRCs)",
+                || format!("only in the {which}: {}", show_contribution(c)),
+            );
+        }
     }
     for (r, which) in [(ra, "first"), (rb, "second")] {
         let mut kinds: Vec<(&u16, &u64)> = r.unknown_records.iter().collect();
@@ -606,6 +671,156 @@ fn compare_rest(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
             });
         }
     }
+}
+
+/// Compares the line blocks as multisets. MSVC gives a function the
+/// compiler generates (an implicit constructor, say) one line: its
+/// translation unit's end (the line after its file's last). Copies of
+/// that function from two translation units are the same code with other
+/// lines, and folding may keep another's: such blocks, one line at the
+/// end of a file in both, at what the same name starts (with the same
+/// code size), pair as expected.
+fn lines_compared(ra: &Reduced, rb: &Reduced, rep: &mut Report) {
+    fn sorted(r: &Reduced) -> Vec<(u128, &[u8], Option<u32>, &str)> {
+        let mut v: Vec<(u128, &[u8], Option<u32>, &str)> = r
+            .lines
+            .iter()
+            .map(|(n, h, e, d)| (*h, n.as_slice(), *e, d.as_str()))
+            .collect();
+        v.sort_unstable();
+        v
+    }
+    let (a, b) = (sorted(ra), sorted(rb));
+    let (mut i, mut j) = (0, 0);
+    let (mut only_a, mut only_b) = (Vec::new(), Vec::new());
+    while i < a.len() || j < b.len() {
+        match (a.get(i), b.get(j)) {
+            (Some(x), Some(y)) if x.0 == y.0 => {
+                i += 1;
+                j += 1;
+            }
+            (Some(x), Some(y)) if x.0 < y.0 => {
+                only_a.push(*x);
+                i += 1;
+            }
+            (Some(x), None) => {
+                only_a.push(*x);
+                i += 1;
+            }
+            (_, Some(y)) => {
+                only_b.push(*y);
+                j += 1;
+            }
+            (None, None) => break,
+        }
+    }
+    // Paired by name and code size.
+    let mut ends: Map<(&[u8], u32), usize> = Map::default();
+    for y in &only_b {
+        if let Some(size) = y.2 {
+            *ends.entry((y.1, size)).or_insert(0) += 1;
+        }
+    }
+    let mut left_a = Vec::new();
+    for x in only_a {
+        match x.2.and_then(|size| ends.get_mut(&(x.1, size))).filter(|n| **n > 0) {
+            Some(n) => {
+                *n -= 1;
+                rep.expect(
+                    "line blocks of a function the compiler generated, at another translation unit's end (another translation unit's copy kept)",
+                    || x.3.to_string(),
+                );
+            }
+            None => left_a.push(x),
+        }
+    }
+    let mut left_b = Vec::new();
+    for y in only_b {
+        match y.2.and_then(|size| ends.get_mut(&(y.1, size))) {
+            // (Unpaired: more in the second than the first had.)
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                left_b.push(y);
+            }
+            Some(_) => {}
+            None => left_b.push(y),
+        }
+    }
+    // Then by code size alone: the same functions, folded by link.exe's
+    // identical code folding into groups that another layout labels
+    // otherwise (each such block is still one line at a translation unit's
+    // end, of the same size).
+    let mut sizes: Map<u32, usize> = Map::default();
+    for y in &left_b {
+        if let Some(size) = y.2 {
+            *sizes.entry(size).or_insert(0) += 1;
+        }
+    }
+    let mut still_a = Vec::new();
+    for x in left_a {
+        match x.2.and_then(|size| sizes.get_mut(&size)).filter(|n| **n > 0) {
+            Some(n) => {
+                *n -= 1;
+                rep.expect(
+                    "line blocks of a function the compiler generated, at another translation unit's end, at what another name starts (identical code folded otherwise)",
+                    || x.3.to_string(),
+                );
+            }
+            None => still_a.push(x),
+        }
+    }
+    let mut still_b = Vec::new();
+    for y in left_b {
+        match y.2.and_then(|size| sizes.get_mut(&size)) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                still_b.push(y);
+            }
+            Some(_) => {}
+            None => still_b.push(y),
+        }
+    }
+    let mut left_a: Vec<String> = still_a.iter().map(|x| x.3.to_string()).collect();
+    let mut left_b: Vec<String> = still_b.iter().map(|y| y.3.to_string()).collect();
+    left_a.sort();
+    left_b.sort();
+    for d in left_a {
+        rep.fail("line blocks only in the first PDB (or different)", || d);
+    }
+    for d in left_b {
+        rep.fail("line blocks only in the second PDB (or different)", || d);
+    }
+}
+
+/// Whether `line` is the line after the last of the file at `path` (where
+/// MSVC puts a function the compiler generates), the file read from this
+/// machine's disk (once each); false if it can't be read.
+fn at_end_of_file(path: &[u8], line: u32) -> bool {
+    use std::sync::{Mutex, OnceLock};
+    static LINES: OnceLock<Mutex<Map<Vec<u8>, Option<u32>>>> = OnceLock::new();
+    let cache = LINES.get_or_init(|| Mutex::new(Map::default()));
+    let known = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(path)
+        .copied();
+    let count = known.unwrap_or_else(|| {
+        let n = std::str::from_utf8(path)
+            .ok()
+            .and_then(|p| std::fs::read(p).ok())
+            .map(|d| {
+                let newlines = d.iter().filter(|&&c| c == b'\n').count();
+                // (A last line without its newline is a line too.)
+                let partial = usize::from(d.last().is_some_and(|&c| c != b'\n'));
+                u32::try_from(newlines + partial).unwrap_or(u32::MAX)
+            });
+        cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(path.to_vec(), n);
+        n
+    });
+    count.is_some_and(|n| line == n.saturating_add(1))
 }
 
 /// A record's kind and name, as text.
@@ -793,8 +1008,12 @@ struct ModuleFacts {
     name: Vec<u8>,
     synthesized: bool,
     others: Vec<u128>,
-    procedures: Vec<(Vec<u8>, u128)>,
-    lines: Vec<(Vec<u8>, u128)>,
+    procedures: Vec<(Vec<u8>, u128, u128)>,
+    /// (what its start names, hash, and its code size if it is a
+    /// function's one line at its translation unit's end: see
+    /// [`at_end_of_file`])
+    /// and a description: its size, and its first file and line)
+    lines: Vec<(Vec<u8>, u128, Option<u32>, String)>,
     inlinees: Vec<u128>,
     unknown_records: Map<u16, u64>,
     unknown_subsections: Map<u32, u64>,
@@ -889,7 +1108,7 @@ fn module(
     // Symbols: procedures (and other top-level scopes) as one hash each;
     // the rest one each.
     let mut depth = 0usize;
-    let mut scope: Option<(Vec<u8>, H128, bool)> = None;
+    let mut scope: Option<(Vec<u8>, H128, H128, bool)> = None;
     for s in stream.symbols() {
         roots_of(s.kind, s.data, &mut out.root_types, &mut out.root_ids);
         if s.kind == kind::S_OBJNAME
@@ -927,17 +1146,27 @@ fn module(
             *out.unknown_records.entry(s.kind).or_insert(0) += 1;
         }
         let record = h.finish();
-        if let Some((_, sh, _)) = &mut scope {
+        // The same without translation units' tags (only in a scope).
+        let tagless_record = || {
+            if layout.is_some() {
+                return record;
+            }
+            let mut t = H128::new();
+            tagless.symbol(s.kind, s.data, &mut t);
+            t.finish()
+        };
+        if let Some((_, sh, th, _)) = &mut scope {
             sh.u128(record);
+            th.u128(tagless_record());
             if opens_scope(s.kind) {
                 depth += 1;
             } else if closes_scope(s.kind) {
                 depth = depth.saturating_sub(1);
             }
             if depth == 0 {
-                let (name, sh, procedure) = scope.take().expect("in a scope");
+                let (name, sh, th, procedure) = scope.take().expect("in a scope");
                 if procedure {
-                    out.procedures.push((name, sh.finish()));
+                    out.procedures.push((name, sh.finish(), th.finish()));
                 } else {
                     let mut x = H128::new();
                     x.bytes(&name);
@@ -955,7 +1184,9 @@ fn module(
             let name = s.name().map_or_else(Vec::new, |n| canonical(n).to_vec());
             let mut sh = H128::new();
             sh.u128(record);
-            scope = Some((name, sh, procedure));
+            let mut th = H128::new();
+            th.u128(tagless_record());
+            scope = Some((name, sh, th, procedure));
             depth = 1;
             continue;
         }
@@ -985,6 +1216,13 @@ fn module(
                             || b"?".to_vec(),
                             |(n, o)| [n, format!("+{o:#x}").as_bytes()].concat(),
                         );
+                let end = (blocks.len() == 1
+                    && first.lines.len() == 1
+                    && first.lines[0].offset.get() == 0
+                    && cx
+                        .file(first.file)
+                        .is_some_and(|f| at_end_of_file(f, first.lines[0].line())))
+                .then_some(first.code_size);
                 let mut h = H128::new();
                 h.u64(u64::from(first.code_size));
                 for b in &blocks {
@@ -999,7 +1237,15 @@ fn module(
                         h.u64(u64::from(c.end.get()));
                     }
                 }
-                out.lines.push((name, h.finish()));
+                let desc = format!(
+                    "{} ({:#x} bytes, {} lines, {}:{})",
+                    show(&name),
+                    first.code_size,
+                    blocks.iter().map(|b| b.lines.len()).sum::<usize>(),
+                    cx.file(first.file).map_or_else(|| "?".into(), |f| show(file_name(f))),
+                    first.lines.first().map_or(0, |l| l.line())
+                );
+                out.lines.push((name, h.finish(), end, desc));
             }
             subsection::DEBUG_S_INLINEELINES => {
                 for l in lines::inlinee_lines(body) {
@@ -1171,7 +1417,7 @@ fn reduce(p: &Linked<'_>) -> Result<Reduced, String> {
     });
     for (i, m) in reduced.into_iter().enumerate() {
         r.procedures
-            .extend(m.procedures.into_iter().map(|(n, h)| (n, h, i)));
+            .extend(m.procedures.into_iter().map(|(n, h, t)| (n, h, t, i)));
         r.lines.extend(m.lines);
         r.inlinees.extend(m.inlinees);
         root_types.extend(m.root_types);

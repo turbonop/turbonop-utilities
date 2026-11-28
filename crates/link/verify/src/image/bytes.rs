@@ -52,6 +52,11 @@ pub(crate) trait Names {
         let _ = tpoff;
         None
     }
+    /// The end of the procedure whose code holds `rva`, if one does.
+    fn procedure_end(&self, rva: u32) -> Option<u32> {
+        let _ = rva;
+        None
+    }
     /// Whether [`tls`](Self::tls) takes an offset in the image's TLS
     /// section (Windows: code addresses a variable by its `SECREL` from the
     /// thread's block, which it reads from the TLS array at `gs:[58h]`),
@@ -395,8 +400,25 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
         let i = tls_reads.partition_point(|&p| p + TLS_WINDOW < at);
         tls_reads.get(i).is_some_and(|&p| p <= at + TLS_WINDOW)
     };
+    // MSVC's switch tables: `mov ecx, [rdx + rax*4 + T]` (and `movzx eax,
+    // byte ptr [rdx + rax + T]`, an index into it), the image base in rdx
+    // and T an RVA in the procedure, the same distance into it in both.
+    // MSVC puts them after the procedure's code, up to its end (as the PDB
+    // gives it), so from the first one found to that end the bytes are
+    // data: not decoded, compared as words (RVAs of the cases).
+    let mut tables: Option<(usize, usize)> = None;
     let mut at = 0;
     while at < len {
+        if let Some((from, to)) = tables
+            && at >= from
+            && at < to
+        {
+            at = to;
+            tables = None;
+            fs_loaded = None;
+            block.clear();
+            continue;
+        }
         let (Ok(ia), Ok(ib)) = (
             decode(&a.bytes[at..len], Mode::Bits64, base_a + at as u64),
             decode(&b.bytes[at..len], Mode::Bits64, base_b + at as u64),
@@ -561,6 +583,36 @@ fn x64<A: Names + ?Sized, B: Names + ?Sized>(
                     masked[at + p..at + p + size].fill(true);
                     fields.tls += 1;
                 }
+            }
+        }
+        for (oa, ob) in ia.operands().iter().zip(ib.operands()) {
+            if let (Operand::Mem(ma), Operand::Mem(mb)) = (oa, ob)
+                && !ma.is_rip_relative()
+                && ma.base.is_some()
+                && ma.index.is_some()
+                && matches!(ma.scale, 1 | 4)
+                && ma.disp_size == 4
+                && (mb.base, mb.index, mb.scale, mb.disp_size) == (ma.base, ma.index, ma.scale, 4)
+                && let (Ok(ta), Ok(tb)) = (u32::try_from(ma.disp), u32::try_from(mb.disp))
+                && let (Some(oa), Some(ob)) = (ta.checked_sub(a.rva), tb.checked_sub(b.rva))
+                && oa == ob
+                && (oa as usize) > at
+                && (oa as usize) < len
+                && a.image.in_code(ta)
+                && b.image.in_code(tb)
+            {
+                let from = oa as usize;
+                let to = a
+                    .image
+                    .procedure_end(ta)
+                    .zip(b.image.procedure_end(tb))
+                    .filter(|&(ea, eb)| ea - a.rva == eb - b.rva)
+                    .map_or(len, |(ea, _)| ((ea - a.rva) as usize).min(len));
+                tables = Some(match tables {
+                    Some((f, t)) if f <= from => (f, t.max(to)),
+                    Some((_, t)) => (from, t.max(to)),
+                    None => (from, to),
+                });
             }
         }
         // Image-relative displacements (`mov ecx, [rax+rcx*4+T]`, the image

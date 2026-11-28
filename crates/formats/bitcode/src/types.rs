@@ -536,8 +536,14 @@ impl TypeTable {
                 let n = crate::bitstream::idx(op(0)).min(ops.len().saturating_sub(1));
                 Type::Target {
                     name: name.take().unwrap_or_default(),
-                    types: ops[1..1 + n].iter().map(|&v| id(v)).collect(),
-                    ints: ops[1 + n..].to_vec(),
+                    // (An empty record has neither.)
+                    types: ops
+                        .get(1..1 + n)
+                        .unwrap_or(&[])
+                        .iter()
+                        .map(|&v| id(v))
+                        .collect(),
+                    ints: ops.get(1 + n..).unwrap_or(&[]).to_vec(),
                 }
             }
             TYPE_CODE_ARRAY => Type::Array {

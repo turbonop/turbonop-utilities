@@ -1539,3 +1539,18 @@ fn circular_wide_types_have_bounded_names() {
     assert!(name.len() < 4 * crate::types::MAX_NAME, "{}", name.len());
     assert!(name.contains("..."));
 }
+
+#[test]
+fn fuzzer_finds() {
+    // Each an input the fuzzer found a panic with, kept in testdata.
+    // fuzz-target-type.bin: an empty TYPE_CODE_TARGET_TYPE record.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/bitcode");
+    for name in ["fuzz-target-type.bin"] {
+        let data = std::fs::read(dir.join(name)).unwrap();
+        exercise(&data);
+    }
+    // And on its own: a target type with no operands.
+    let data = module(2, &[(TYPE_CODE_TARGET_TYPE, vec![])], |_| {});
+    let bc = Bitcode::parse(&data).unwrap();
+    assert_eq!(bc.modules[0].types.name(0), "target(\"\")");
+}

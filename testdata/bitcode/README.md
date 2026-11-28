@@ -18,6 +18,7 @@ crate's tests (`crates/formats/bitcode/tests`) compare against those.
 | `multi.bc` | `llvm-cat -b kinds-thin.bc every.bc`: two modules, each with its string table. |
 | `libbitcode.a` | `llvm-ar`: `kinds-thin.bc`, `every.bc`, and `embed-elf.o`. |
 | `warn.dia` | `warn.c`'s warnings, notes, and fix-its as clang's serialized diagnostics (`DIAG`). |
+| `fuzz-target-type.bin` | A fuzzer's find (from `kinds.bc`): a type table with an empty `TYPE_CODE_TARGET_TYPE` record, which panicked. |
 | `embed.opt.bitstream` | `embed.c`'s optimization remarks at `-O2`, as a remarks bitstream (`RMRK`). |
 
 The oracles' outputs, each beside its file:

@@ -49,16 +49,21 @@ def main():
     args = [a.cdb, "-lines", "-y", sym, "-c", commands, os.path.abspath(a.program)] + a.args
     p = subprocess.run(args, capture_output=True, text=True, errors="replace", timeout=600)
     out = p.stdout
-    start = out.find("==STACK==")
-    end = out.find("==END==")
-    text = out[start:end + 7] if 0 <= start < end else out
+    # The markers as .echo prints them, on lines of their own (cdb echoes
+    # the command line too).
+    m = re.search(r"^==STACK==$(.*?)^==END==$", out, re.S | re.M)
+    start = m.start() if m else -1
+    text = m.group(0) if m else out
+    # The module's name is the image's file name: two links compare.
+    module = re.sub(r"\W", "_", os.path.splitext(os.path.basename(a.program))[0])
+    text = text.replace(module + "!", "<module>!")
     if not a.raw:
         text = re.sub(r"\b(0x)?[0-9a-f]{8}`[0-9a-f]{8}\b", "<addr>", text)
         text = re.sub(r"\b0x[0-9a-f]{6,16}\b", "<addr>", text)
         text = re.sub(r"\+0x[0-9a-f]+\b", "+<off>", text)
         text = re.sub(r"\b[0-9a-f]{16}\b", "<addr>", text)
     print(text)
-    if start < 0 or "==END==" not in out:
+    if start < 0:
         print("debug.py: the session didn't reach the breakpoint", file=sys.stderr)
         sys.exit(1)
 

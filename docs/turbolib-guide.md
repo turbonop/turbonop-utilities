@@ -58,7 +58,7 @@ in `TURBOLIB_OPTIONS`, `--<option>` words. Names and values are in any case.
 |---|---|---|
 | `fold=none\|identical\|select-any` | `none` | `identical` keeps one copy of each COMDAT whose copies are identical; the library links as the original does. `select-any` is less conservative (see turbolib.md) |
 | `precomp=none\|library\|clustered[=n]` | `none` | `library` moves the type records two or more members share into one precompiled-types member, which the others refer to as `/Yu` objects refer to a PCH |
-| `verify=on\|off` | `on` | after folding, check the written library against the unfolded one (`turbolib verify`'s checks, in the same process); if the check fails, write the unfolded library instead |
+| `verify=full\|links\|off` | `full` | after folding, check the written library against the unfolded one (`turbolib verify`'s checks, in the same process); if the check fails, write the unfolded library instead. `full` (also spelled `on`, or `verify` alone) is every check; `links` is lighter and proves less (see [Checking a library](#checking-a-library)); `off` checks nothing |
 | `strict` | off | a fold that fails is an error (`LNK1000`) and nothing is written, instead of the unfolded library: for testing turbolib, not for builds |
 | `stats` | off | print what was folded and shared, and how long each stage took |
 | `diagnose` | off | say what was passed through, and why |
@@ -90,14 +90,37 @@ for byte.
 
 ## Checking a library
 
-The self-check (`verify=on`, the default) already runs on every folded
+The self-check (`verify=full`, the default) already runs on every folded
 library before it replaces the output. To check one by hand:
 
     lib /OUT:plain.lib <the same inputs>                       (real lib.exe, or turbolib without options)
-    turbolib verify plain.lib folded.lib
+    turbolib verify plain.lib folded.lib                       (--check=links for the lighter check)
 
 It prints what it checked and any failure by category, and exits with 1
-if anything failed. `turbolib compare-images a.exe a.pdb b.exe b.pdb`
+if anything failed.
+
+What each mode proves, of the folded library against the unfolded one
+(the self-check runs in the `lib` and `llvm-lib` personalities; the
+others accept the option in `TURBOLIB_OPTIONS` and have no self-check):
+
+| | `full` (default) | `links` | `off` |
+|---|---|---|---|
+| every original member there, in order; added members all synthesized; passed-through members (import, `/GL`) byte for byte | yes | yes | no |
+| every name the original defines still defined, with its kind (code, data, ...; COMDAT selection); no new names but turbolib's own | yes | yes | no |
+| each member's directives, environment, references, weak externals, and side-table entries as folding changes them, and no more | yes | yes | no |
+| each moved COMDAT foldable (not `NODUPLICATES`), held by a synthesized member the member refers to, in the same environment; its symbols aliases or references the engine's way | yes | yes | no |
+| both archive indexes right; under `pull=preserve`, every name loads the member it loaded before | yes | yes | no |
+| each `/Z7` user of a precompiled-types member pairs with it as link.exe pairs them (path, signature, type count) | yes | yes | no |
+| the moved COMDAT is **identical** to the copy that stands for it (bytes, relocations, symbols) | yes | no: the same shape only (each section's name, characteristics, size, and the checksum its object records, which `links` doesn't compute) | no |
+| what each member keeps (its COMDATs, its sections outside them) is **unchanged byte for byte** | yes | no: the same shape only | no |
+
+So `links` still catches a missing or misplaced definition, a wrong
+index, a changed load order, and a broken precompiled-types reference,
+but not a copy (or a kept section) with other bytes of the same size and
+recorded checksum. Neither mode checks debug information beyond the
+precompiled-types pairing (`compare-images` compares PDBs). With
+`locals=copy` or `merge`, `links` is `full` (those modes' units are keyed
+by content). `turbolib compare-images a.exe a.pdb b.exe b.pdb`
 compares two programs linked against the two libraries (functions, data,
 unwind, and the PDBs' contents).
 
@@ -149,11 +172,14 @@ unwind, and the PDBs' contents).
   with the warning: some SDK libraries (`libucrt.lib`, `Uuid.lib`: one
   COMDAT held by two synthesized members; `BufferOverflow.lib`:
   `.retplne`).
-- **The self-check's cost**: on a loaded machine it adds about 0.65× the
-  CPU folding takes on `clangSema.lib` (3.7 s against 5.7 s; it was 4.95 s)
-  and 0.70× on `LLVMCore.lib` (1.14 s against 1.62 s), and a fifth to a
-  third more peak working set (mostly the written library, mapped to be
-  read back); `verify=off` saves it.
+- **The self-check's cost**: on a loaded machine `full` adds about 0.65×
+  the CPU folding takes on `clangSema.lib` (3.6 s against 5.5 s) and
+  0.5× on `LLVMCore.lib` (0.94 s against 1.8 s); `links` about 0.5×
+  (2.6 s) and 0.4× (0.74 s); each adds about 45 MB (`clangSema.lib`) and
+  90 MB (`LLVMCore.lib`) of peak commit, and a fifth to a third more peak
+  working set (mostly the written library, mapped to be read back).
+  `verify=off` saves it all. (Measured beside other work at 100% load:
+  noisy; see turbolib.md's "The self-check".)
 - **Two folded libraries with identical shared types** in one link share
   one precompiled-types member, which is fine; two whose 32-bit PCH
   signatures collide by chance (about n²/2³³ for n libraries) make

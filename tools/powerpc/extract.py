@@ -1,4 +1,4 @@
-"""Writes crates/isa/powerpc/src/tables.rs: PowerPC's instructions as LLVM's
+"""Writes crates/isa/powerpc/src/generated/tables.rs: PowerPC's instructions as LLVM's
 TableGen describes them (`llvm-tblgen --dump-json` of
 llvm/lib/Target/PowerPC/PPC.td; see tools/tablegen/tablegen.py): those
 LLVM's disassembler decodes (32- and 64-bit, Altivec, VSX, the prefixed

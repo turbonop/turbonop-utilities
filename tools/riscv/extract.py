@@ -1,4 +1,4 @@
-"""Writes crates/isa/riscv/src/tables.rs: RISC-V's instructions as LLVM's
+"""Writes crates/isa/riscv/src/generated/tables.rs: RISC-V's instructions as LLVM's
 TableGen describes them (`llvm-tblgen --dump-json` of
 llvm/lib/Target/RISCV/RISCV.td; see tools/tablegen/tablegen.py): those of
 the standard extensions (not vendors', not experimental ones) that LLVM's

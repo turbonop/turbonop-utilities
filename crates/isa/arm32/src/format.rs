@@ -140,7 +140,7 @@ pub fn format_in_it(
     }
 }
 
-/// The rule a template refers to at the start of `t` (build.rs writes
+/// The rule a template refers to at the start of `t` (tools/isa-gen writes
 /// `%{Rd__4}` as one character, U+0100 + the rule's index), and the
 /// reference's length: `None` if `t` doesn't start with one; a rule of
 /// `None` if no rule has its index.

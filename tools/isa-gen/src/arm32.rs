@@ -8,7 +8,6 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
 
 #[derive(Default)]
 struct Enc {
@@ -287,9 +286,7 @@ fn bucket_bits(table: &str) -> (u32, u32) {
     }
 }
 
-fn main() {
-    println!("cargo:rerun-if-changed=tables/aarch32.txt");
-    println!("cargo:rerun-if-changed=build.rs");
+pub fn main(dest: &std::path::Path) {
     let src = std::fs::read_to_string("tables/aarch32.txt").unwrap();
     let (encs, mut rules) = parse(&src);
     let mut out = String::new();
@@ -527,8 +524,7 @@ fn main() {
         .unwrap();
     }
     writeln!(out, "];").unwrap();
-    let path = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("tables.rs");
-    std::fs::write(path, out).unwrap();
+    std::fs::write(dest, out).unwrap();
 }
 
 /// The hash `rule` indexes rule IDs by (FNV-1a; src/lib.rs's `rule_hash`).

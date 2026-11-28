@@ -1,4 +1,4 @@
-//! Types for the generated decode tables (see `build.rs`).
+//! Types for the generated decode tables (see `tools/isa-gen/src/arm64.rs`).
 
 #![allow(clippy::unreadable_literal)]
 
@@ -57,7 +57,7 @@ pub(crate) struct Encoding {
     /// For aliases: when to prefer the alias ([`Encoding::prefer`]): the
     /// same.
     pub prefer: u16,
-    /// The template compiled (see build.rs's `tokens`): the mnemonic and
+    /// The template compiled (see tools/isa-gen's `tokens`): the mnemonic and
     /// the operands ([`Encoding::mnem`], [`Encoding::ops`]: indexes into
     /// `TOK_LISTS`), and the condition operand folded into the mnemonic (a
     /// symbol, or `NONE`).
@@ -90,7 +90,7 @@ pub(crate) struct Semantics {
     pub operands: &'static [OpSpec],
 }
 
-/// An operand of an encoding (build.rs's `operand_specs`): its kind (an
+/// An operand of an encoding (tools/isa-gen's `operand_specs`): its kind (an
 /// [`opk`] constant), its access (1 read, 2 write; for memory, 1 load, 2
 /// store), and its parts: each a [`role`], a symbol (or `NONE`), and
 /// literal text.
@@ -100,8 +100,8 @@ pub(crate) struct OpSpec {
     pub parts: &'static [(u8, u16, &'static str)],
 }
 
-/// Operand kinds (build.rs's `opk`).
-#[allow(dead_code, reason = "the full set build.rs uses")]
+/// Operand kinds (tools/isa-gen's `opk`).
+#[allow(dead_code, reason = "the full set tools/isa-gen uses")]
 pub(crate) mod opk {
     pub const REG: u8 = 0;
     pub const LIST: u8 = 1;
@@ -117,8 +117,8 @@ pub(crate) mod opk {
     pub const NAME: u8 = 11;
 }
 
-/// The roles of an operand's parts (build.rs's `role`).
-#[allow(dead_code, reason = "the full set build.rs uses")]
+/// The roles of an operand's parts (tools/isa-gen's `role`).
+#[allow(dead_code, reason = "the full set tools/isa-gen uses")]
 pub(crate) mod role {
     pub const REG: u8 = 0;
     pub const PREFIX: u8 = 1;
@@ -159,7 +159,7 @@ pub(crate) struct RegClass {
     pub firsts: &'static [u8],
 }
 
-/// Register files (build.rs's `FILES`, in the same order).
+/// Register files (tools/isa-gen's `FILES`, in the same order).
 pub(crate) mod file {
     /// General-purpose, 64-bit (31 is the zero register).
     pub const X: u8 = 0;
@@ -196,7 +196,7 @@ pub(crate) struct Record {
     pub uses: u128,
 }
 
-/// Record flags (build.rs's `ACCESS_FLAGS`, in the same order).
+/// Record flags (tools/isa-gen's `ACCESS_FLAGS`, in the same order).
 pub(crate) mod flag {
     pub const LOAD: u32 = 1 << 0;
     pub const STORE: u32 = 1 << 1;
@@ -217,7 +217,7 @@ pub(crate) mod flag {
     pub const MSRIMM: u32 = 1 << 13;
 }
 
-/// Microsoft's formatting rules for particular encodings (build.rs's
+/// Microsoft's formatting rules for particular encodings (tools/isa-gen's
 /// `ms_rule`; see format.rs's `render_parts`).
 pub(crate) mod rule {
     /// None.
@@ -248,7 +248,7 @@ pub(crate) fn ms_mnemonic(e: &Encoding) -> Option<&'static str> {
 }
 
 /// Where Microsoft's disassembler prefers an alias differently from ARM
-/// (build.rs's `ms_preference`).
+/// (tools/isa-gen's `ms_preference`).
 pub(crate) mod ms {
     /// As ARM's description says.
     pub const ARM: u8 = 0;
@@ -306,7 +306,7 @@ pub(crate) fn toks(i: u16) -> &'static [Tok] {
 /// A table row: the mask and value it matches over the table's key, the
 /// result text, for computed results ("UInt(H:L:M)") the bits and
 /// `mul * bits + add`, and for results shown as they are, the text shown
-/// and whether it is a default (see build.rs's `shown_as_is`).
+/// and whether it is a default (see tools/isa-gen's `shown_as_is`).
 pub(crate) type Row = (
     u64,
     u64,
@@ -377,7 +377,7 @@ pub(crate) struct Symbol {
 }
 
 /// How a symbol without a table shows (worked out from its display name by
-/// build.rs's `symbol_kind`).
+/// tools/isa-gen's `symbol_kind`).
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Kind {
     /// The second register of a pair, `<X(t+1)>` (64-bit if true).
@@ -465,7 +465,7 @@ impl Symbol {
     }
 }
 
-/// The attributes the formatter tests, as flags (build.rs's `ATTR_FLAGS`,
+/// The attributes the formatter tests, as flags (tools/isa-gen's `ATTR_FLAGS`,
 /// in the same order): an attribute `a` or `a=value`.
 pub(crate) mod attr {
     pub const ORIMM: u32 = 1 << 0;
@@ -483,12 +483,12 @@ pub(crate) mod attr {
     pub const MULT16: u32 = 1 << 12;
     pub const DUPINDEX: u32 = 1 << 13;
     pub const ADD: u32 = 1 << 14;
-    /// Not an attribute: build.rs sets it where format.rs's `special` may
+    /// Not an attribute: tools/isa-gen sets it where format.rs's `special` may
     /// apply.
     pub const MAY_SPECIAL: u32 = 1 << 15;
 }
 
-include!(concat!(env!("OUT_DIR"), "/tables.rs"));
+include!("generated/tables.rs");
 
 impl Encoding {
     /// Its name (`ADD_32_addsub_imm`).
@@ -547,7 +547,7 @@ fn holds(i: u16, w: u32) -> bool {
 }
 
 // (The large tables are in chunks, which rustc type-checks in seconds
-// where one array takes minutes: see build.rs's `chunked`.)
+// where one array takes minutes: see tools/isa-gen's `chunked`.)
 
 /// The encoding at `i`.
 #[inline]

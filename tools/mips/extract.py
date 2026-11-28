@@ -1,4 +1,4 @@
-"""Writes crates/isa/mips/src/tables.rs: MIPS's instructions as LLVM's
+"""Writes crates/isa/mips/src/generated/tables.rs: MIPS's instructions as LLVM's
 TableGen describes them (`llvm-tblgen --dump-json` of
 llvm/lib/Target/Mips/Mips.td; see tools/tablegen/tablegen.py): those
 LLVM's disassembler decodes in its standard encoding (MIPS I to MIPS64

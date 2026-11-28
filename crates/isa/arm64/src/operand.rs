@@ -5,7 +5,7 @@
 //!
 //! The operands are the template's (what the formatter shows, in its
 //! order; an alias's, for an alias), each classified when the tables are
-//! built (build.rs's `operand_specs`) and evaluated here from the word.
+//! built (tools/isa-gen's `operand_specs`) and evaluated here from the word.
 //! Each says how the instruction uses it ([`Access`], from LLVM's
 //! records); [`Instruction::written_registers`] has the complete write
 //! set, implicit registers included.

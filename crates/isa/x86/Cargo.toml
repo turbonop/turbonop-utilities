@@ -7,7 +7,6 @@ rust-version.workspace = true
 license = "Apache-2.0 AND Apache-2.0 WITH LLVM-exception"
 authors.workspace = true
 repository.workspace = true
-build = "build.rs"
 
 [lints]
 workspace = true

@@ -95,7 +95,7 @@ SCOPE = {}
 
 
 def ast(node):
-    """Renders an AST node as the ASL subset build.rs compiles; None if it
+    """Renders an AST node as the ASL subset tools/isa-gen compiles; None if it
     has something that subset can't say."""
     t = node.get("_type", "")
     if t == "AST.Identifier" and node["value"] in SCOPE:

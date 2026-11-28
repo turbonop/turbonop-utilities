@@ -237,7 +237,7 @@ def one(arch, config, turbolib, diadump):
         text = archive(d, env, machine, turbolib, f"folded{suffix}.lib", members, True)
         check("warning" not in text, f"{tag}: turbolib folds without a warning", text)
         # Against turbolib's own unfolded library too, which is lib.exe's
-        # but for /GL members' index entries (see "known" below).
+        # (the /GL member's index entries too: its IL references read whole).
         e = dict(env)
         e["TURBOLIB_OPTIONS"] = "--fold=none"
         run([turbolib, "lib", "/nologo", f"/MACHINE:{machine}", f"/OUT:plain{suffix}.lib"] + members,
@@ -246,11 +246,7 @@ def one(arch, config, turbolib, diadump):
             v = subprocess.run([turbolib, "verify", f"{original}{suffix}.lib", f"folded{suffix}.lib"],
                                cwd=d, capture_output=True, text=True, timeout=TIMEOUT)
             what = f"{tag}: turbolib verify {original}{suffix}.lib folded{suffix}.lib"
-            if v.returncode != 0 and original == "unfolded" and "gl.obj" in members:
-                known(what, "lib.exe indexes inline functions of gl.obj (a /GL object) that "
-                      "turbolib's index doesn't (its IL references aren't all read)")
-            else:
-                check(v.returncode == 0, what, v.stdout[-2000:])
+            check(v.returncode == 0, what, v.stdout[-2000:])
         return os.path.getsize(os.path.join(d, f"unfolded{suffix}.lib")), \
             os.path.getsize(os.path.join(d, f"folded{suffix}.lib"))
 

@@ -36,16 +36,20 @@
 //!   (compressed; the bodies follow one another in the records' order,
 //!   after `.cil$ex`'s header, so each one's size is the distance to the
 //!   next);
-//! - a byte that grows with the body (what it counts is not known), and
-//!   eight bytes;
+//! - a compressed 16-bit value that grows with the body (what it counts
+//!   is not known), and eight bytes;
 //! - its parameter count (`this` counted), and what it refers to: a
-//!   count, then each symbol's id and how (1 directly: a call, or a
-//!   variable read or written; 2 its address taken; 0 a virtual call,
-//!   through the vtable).
+//!   compressed 32-bit count, then each symbol's id and how many times
+//!   the IL names it, a compressed 16-bit value. A call, a read, a write,
+//!   and an address taken each count one; a virtual function called
+//!   through its vtable is listed with 0, and the indirect calls as
+//!   uses of id 0.
 //!
-//! (Checked against `tools/coff/ltcg.cpp`: `exported` calls what it
-//! calls, reads `counter`, `banner`, and `elsewhere`, takes its string
-//! literals' addresses, and calls `area` virtually.)
+//! (Worked out from objects of `tools/coff/ltcg-refs.cpp`: a function
+//! naming one symbol 1 to 361 times, one naming 150 symbols, and bodies
+//! whose growing value passes 0x7F, which a single byte had read wrong:
+//! every reference after it was lost, as in `use_shared` of
+//! `tools/turbolib/incremental`.)
 
 use alloc::vec::Vec;
 use turbonop_core::{Error, ErrorKind, Result};
@@ -389,43 +393,27 @@ pub struct FunctionIl<'data> {
     pub symbols_offset: u32,
     /// How many parameters it takes (`this` counted).
     pub params: u8,
-    /// What it refers to: each symbol's id, and how.
+    /// What it refers to: each symbol's id, and how many times.
     refs: &'data [u8],
-    ref_count: u8,
-}
-
-/// How a function refers to a symbol.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RefKind {
-    /// Directly: it calls the function, or reads or writes the variable.
-    Direct,
-    /// It takes its address.
-    Address,
-    /// It calls the virtual function through a vtable.
-    Virtual,
-    Other(u8),
-}
-
-impl RefKind {
-    fn of(b: u8) -> Self {
-        match b {
-            0 => Self::Virtual,
-            1 => Self::Direct,
-            2 => Self::Address,
-            other => Self::Other(other),
-        }
-    }
+    ref_count: u32,
 }
 
 impl FunctionIl<'_> {
-    /// What it refers to: each symbol's id (as [`IlSymbol::id`]), and how.
-    pub fn refs(&self) -> impl Iterator<Item = (u32, RefKind)> + '_ {
+    /// What it refers to: each symbol's id (as [`IlSymbol::id`]; 0 for
+    /// indirect calls), and how many times its IL names it (0 for a
+    /// virtual function called through its vtable).
+    pub fn refs(&self) -> impl Iterator<Item = (u32, u16)> + '_ {
         let mut r = Reader { d: self.refs, p: 0 };
         (0..self.ref_count).map_while(move |_| {
             let id = r.id()?;
-            let kind = r.u8()?;
-            Some((id, RefKind::of(kind)))
+            let uses = r.c16()?;
+            Some((id, uses))
         })
+    }
+
+    /// How many symbols it refers to.
+    pub fn ref_count(&self) -> u32 {
+        self.ref_count
     }
 }
 
@@ -806,13 +794,14 @@ impl<'data> Globals<'data> {
         let id_index = r.u32()?;
         let il_offset = r.c32()?;
         let symbols_offset = r.c32()?;
-        r.p += 1 + 8;
+        r.c16()?;
+        r.p += 8;
         let params = r.u8()?;
-        let ref_count = r.u8()?;
+        let ref_count = r.c32()?;
         let start = r.p;
         for _ in 0..ref_count {
             r.id()?;
-            r.u8()?;
+            r.c16()?;
         }
         Some(FunctionIl {
             type_index,

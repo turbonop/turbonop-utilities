@@ -4,7 +4,7 @@ rem /Gy), objects-big.obj (/bigobj), objects-zi.obj (/Zi: its types in
 rem objects-zi.pdb, a type server), objects.lib (objects.obj and
 rem objects-big.obj), imports.lib (an import library from imports.def), and
 rem LTCG (/GL) objects: ltcg.obj (x64, from ltcg.cpp; and ltcg.lib of it) and
-rem ltcg-x86.obj (x86, from ltcg.c).
+rem ltcg-x86.obj (x86, from ltcg.c), and ltcg-refs.obj (x64, from ltcg-refs.cpp).
 setlocal
 rem (Run from R:, the repository mapped: see ..\neutral.cmd.)
 if /i not "%~d0"=="R:" (call "%~dp0..\neutral.cmd" "%~f0" & exit /b)
@@ -39,6 +39,12 @@ del ltcg-nogl.obj
 lib /nologo /Brepro /out:ltcg.lib ltcg.obj || exit /b 1
 dumpbin /nologo /headers ltcg.obj > ltcg.obj.headers.txt || exit /b 1
 dumpbin /nologo /linkermember:2 ltcg.lib > ltcg.lib.linkermember.txt || exit /b 1
+rem /GL IL references whose fields take more than a byte (ltcg-refs.cpp):
+rem lib.exe's index of them.
+cl /nologo /c /Od /Ob0 /GL /GS- /Brepro "%~dp0ltcg-refs.cpp" /Fo:ltcg-refs.obj || exit /b 1
+lib /nologo /Brepro /out:ltcg-refs.lib ltcg-refs.obj || exit /b 1
+dumpbin /nologo /linkermember:2 ltcg-refs.lib > ltcg-refs.lib.linkermember.txt || exit /b 1
+del ltcg-refs.lib
 setlocal
 call "%VS%\VC\Auxiliary\Build\vcvarsall.bat" x86 >nul 2>&1 || exit /b 1
 cl /nologo /c /O1 /GL /GS- /Brepro "%~dp0ltcg.c" /Fo:ltcg-x86.obj || exit /b 1

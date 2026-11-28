@@ -233,24 +233,49 @@ fn references() {
     };
     let e = of("exported");
     for want in [
-        "calls printf",
-        "uses ?counter@@3HA",
-        "uses ?banner@@3QBDB",
-        "uses ?elsewhere@@3HA",
-        "calls ?imported@@YAHH@Z",
-        "calls virtually ?area@Shape@@UEBAHXZ",
-        "calls ??0Square@@QEAA@H@Z",
-        "calls ?helper@@YAHH@Z",
-        "calls ?fail@@YAXPEBD@Z",
-        "calls ?callee_pops@@YAHHH@Z",
-        "calls ??$twice@H@@YAHH@Z",
-        "takes the address of ??_C@_08JKGPMEKK@negative@",
+        "indirect calls: 1",
+        "printf once",
+        "?counter@@3HA once",
+        "?banner@@3QBDB once",
+        "?elsewhere@@3HA once",
+        "?imported@@YAHH@Z once",
+        "?area@Shape@@UEBAHXZ 0 times (virtually)",
+        "??0Square@@QEAA@H@Z once",
+        "?helper@@YAHH@Z once",
+        "?fail@@YAXPEBD@Z once",
+        "?callee_pops@@YAHHH@Z once",
+        "??$twice@H@@YAHH@Z once",
+        "??_C@_08JKGPMEKK@negative@ 2 times",
     ] {
         assert!(e.iter().any(|l| l == want), "{want}: {e:#?}");
     }
-    assert_eq!(of("?helper@@YAHH@Z"), ["uses ?hidden@@3PAHA"]);
+    assert_eq!(of("?helper@@YAHH@Z"), ["?hidden@@3PAHA once"]);
     assert!(of("??$twice@H@@YAHH@Z").is_empty());
     assert_eq!(of("??0Square@@QEAA@H@Z").len(), 3, "{text}");
+}
+
+/// References whose compressed fields take more than a byte (a body's
+/// length past 0x7F, a use count past 0x7F, 150 references) are read whole,
+/// with what follows them.
+#[test]
+fn long_references() {
+    let text = hexcavator(&["ltcg", "-refs", "ltcg-refs.obj"]);
+    let of = |function: &str| -> Vec<String> {
+        text.lines()
+            .skip_while(|l| l.trim() != function)
+            .skip(1)
+            .take_while(|l| l.starts_with("      "))
+            .map(|l| l.trim().to_string())
+            .collect()
+    };
+    let wide = of("?wide@@YAHH@Z");
+    assert_eq!(wide.len(), 150, "{text}");
+    assert_eq!(wide[149], "?leaf159@@YAHH@Z once");
+    assert_eq!(
+        of("?hammer@@YAHH@Z"),
+        ["?counter@@3HA 201 times", "?after_hammer@@YAHH@Z once"]
+    );
+    assert_eq!(of("?long_body@@YAHH@Z"), ["?after_long@@YAHH@Z once"]);
 }
 
 /// Each function's IL: the bodies follow one another in `.cil$ex` after

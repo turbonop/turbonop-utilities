@@ -23,8 +23,8 @@ options:
   -directives   the linker directives (default)
   -symbols      the functions and variables (default)
   -publics      of those, only the public definitions
-  -refs         what each function refers to: what it calls (directly or
-                virtually), reads or writes, and takes the address of
+  -refs         what each function refers to (calls, reads, writes, and
+                addresses taken), and how many times its IL names each
   -types        the CodeView type and id records
   -all          everything above
 
@@ -331,7 +331,9 @@ fn dump_object(
     Ok(Ok(()))
 }
 
-/// What each function refers to, by name: calls, and uses.
+/// What each function refers to, by name, and how many times its IL
+/// names each (0: a virtual function called through its vtable; symbol 0:
+/// indirect calls).
 fn refs(out: &mut dyn Write, g: &ltcg::Globals<'_>) -> io::Result<()> {
     let by_id: std::collections::HashMap<u32, &ltcg::IlSymbol<'_>> =
         g.symbols.iter().map(|x| (x.id, x)).collect();
@@ -339,19 +341,16 @@ fn refs(out: &mut dyn Write, g: &ltcg::Globals<'_>) -> io::Result<()> {
     writeln!(out, "  References ({} functions)", with.len())?;
     for x in with {
         writeln!(out, "    {}", s(x.name))?;
-        for (id, kind) in x.il.iter().flat_map(ltcg::FunctionIl::refs) {
-            let target = by_id.get(&id);
-            let function = target.is_some_and(|t| matches!(t.kind, SymbolKind::Function { .. }));
-            let how = match kind {
-                ltcg::RefKind::Direct if function => "calls".to_string(),
-                ltcg::RefKind::Direct => "uses".to_string(),
-                ltcg::RefKind::Address => "takes the address of".to_string(),
-                ltcg::RefKind::Virtual => "calls virtually".to_string(),
-                ltcg::RefKind::Other(k) => format!("refers ({k}) to"),
+        for (id, uses) in x.il.iter().flat_map(ltcg::FunctionIl::refs) {
+            let times = match uses {
+                0 => "0 times (virtually)".to_string(),
+                1 => "once".to_string(),
+                n => format!("{n} times"),
             };
-            match target {
-                Some(t) => writeln!(out, "      {how} {}", s(t.name))?,
-                None => writeln!(out, "      {how} symbol {id:X}")?,
+            match (id, by_id.get(&id)) {
+                (0, _) => writeln!(out, "      indirect calls: {uses}")?,
+                (_, Some(t)) => writeln!(out, "      {} {times}", s(t.name))?,
+                (_, None) => writeln!(out, "      symbol {id:X} {times}")?,
             }
         }
     }

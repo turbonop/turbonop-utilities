@@ -31,6 +31,8 @@ fn ltcg_objects_index_as_lib_exe_does() {
     for (obj, listing) in [
         ("ltcg.obj", "ltcg.lib.linkermember.txt"),
         ("ltcg-x86.obj", "ltcg-x86.lib.linkermember.txt"),
+        // References whose compressed fields take more than a byte.
+        ("ltcg-refs.obj", "ltcg-refs.lib.linkermember.txt"),
     ] {
         let data = fixture(obj);
         let s = ltcg_symbols(&data).expect("a /GL object");

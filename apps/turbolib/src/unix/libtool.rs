@@ -705,7 +705,7 @@ fn write_universal(r: &mut Run<'_>, output: &str, plans: Vec<Plan>) -> Result<()
     let path = r.env.cwd.join(output);
     let temp = crate::output::write_pieces_beside(&path, &pieces)
         .map_err(|e| Fatal(format!("error: {output}: {}", run::io_text(&e))))?;
-    crate::output::replace(&temp, &path)
+    temp.replace(&path)
         .map_err(|e| Fatal(format!("error: {output}: {}", run::io_text(&e))))
 }
 

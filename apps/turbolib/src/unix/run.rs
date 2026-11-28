@@ -1206,7 +1206,8 @@ pub fn write_plan(run: &mut Run<'_>, archive: &str, plan: Plan) -> Result<(), Fa
         .map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
     drop(datas);
     drop(members);
-    output::replace(&temp, &path).map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
+    temp.replace(&path)
+        .map_err(|e| run.fatal(format!("{archive}: {}", io_text(&e))))?;
     Ok(())
 }
 

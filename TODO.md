@@ -426,6 +426,35 @@ x64. Where the 3.5 MB went:
   were enforced when `tools/turbolib/tables` ran (CET shadow stacks); the
   ARM64 programs, linked but not run; `.voltbl` and `.retplne` from
   compilers other than cl 14.52.
+- **Hardening (docs/turbolib-guide.md).** Done: a failed fold (panic,
+  layout, self-check) writes the unfolded library with one warning;
+  `verify` (on by default), `strict`, `inject-failure`; output retries and
+  cleanup; `tools/turbolib/incremental` (incremental, FASTLINK, LTCG,
+  lld-link; x64, x86, ARM64); `tools/turbolib/corpus/everylib.py`. Open:
+  - the self-check costs about as much as folding (more on a loaded
+    machine): make it cheaper, then decide its default again;
+  - (Found: the 305 SDK libraries whose `--fold=none /Brepro` output
+    wasn't lib.exe's were lib.exe copying a lone library input byte for
+    byte; turbolib now copies it too.) Forced to write such a library
+    again (`/REMOVE` of a member that isn't there), lib.exe and turbolib
+    still differ on ARM64X import libraries (234 of the 305; the rest not
+    yet run): without `/MACHINE`, lib.exe drops the ARM64EC import
+    members that share a name with a native one and writes no
+    `/<ECSYMBOLS>/` (the library loses its EC half); turbolib keeps every
+    member and lists their EC names (`#name`, `__imp_aux_name`) in the
+    main index; with `/MACHINE:ARM64X` both keep every member but the
+    tables differ. Only re-archiving ARM64 import libraries meets this;
+    x64 and x86 libraries, and libraries made from objects, don't;
+  - the engine puts a COMDAT in two synthesized members (`libucrt.lib`,
+    `Uuid.lib`), and changes `.retplne` (`BufferOverflow.lib`): the
+    self-check falls back;
+  - re-folding a folded library (or combining folded libraries) falls
+    back: a member newly refers to the input's precompiled-types member;
+  - `/GL` objects' index: `use_shared`-like inline functions' IL
+    references read as none (`turbonop_pe::ltcg::function_il`), so fewer
+    names are listed than lib.exe lists (tools/turbolib/incremental);
+  - link.exe's incremental relink after a `/Yu` library member changes
+    fails with lib.exe's library too (LNK1235; LNK1236 folded).
 - **Phase 1: what is left of the writers.**
   - CodeView: done (`symbol_refs`, `c13`, `write`, `remap`; checked on
     both corpora by `turbonop-codeview`'s `corpus` example). Still open:

@@ -191,6 +191,35 @@ fn open<'a>(data: &'a [u8], what: &str) -> Result<(Archive<'a>, Files<'a>), Stri
 /// documentation), reading every member on every core.
 pub fn verify(original: &[u8], rewritten: &[u8], options: &Options) -> Result<Report, String> {
     let (oa, of) = open(original, "the original library")?;
+    verify_files(&oa, of, rewritten, options)
+}
+
+/// One member of a library laid out but not written: its name, its
+/// header's offset, and its bytes.
+pub type LaidOut<'a> = (Cow<'a, [u8]>, u64, &'a [u8]);
+
+/// [`verify`], with the original library as a writer laid it out, never
+/// written in one piece: `head` is its start (the signature, the linker
+/// members, and the long names, as `turbonop_archive::write::Layout::head`
+/// gives it), and `members` each member's name, header offset, and bytes.
+/// turbolib's own check of what it wrote, against the library it would
+/// have written without folding.
+pub fn verify_laid_out(
+    head: &[u8],
+    members: Vec<LaidOut<'_>>,
+    rewritten: &[u8],
+    options: &Options,
+) -> Result<Report, String> {
+    let (oa, _) = open(head, "the original library")?;
+    verify_files(&oa, members, rewritten, options)
+}
+
+fn verify_files<'a>(
+    oa: &Archive<'a>,
+    of: Files<'a>,
+    rewritten: &'a [u8],
+    options: &Options,
+) -> Result<Report, String> {
     let (ra, rf) = open(rewritten, "the rewritten library")?;
     // Every member of both, read in parallel.
     let all: Vec<&[u8]> = of.iter().chain(&rf).map(|m| m.2).collect();
@@ -198,7 +227,7 @@ pub fn verify(original: &[u8], rewritten: &[u8], options: &Options) -> Result<Re
     let mut bodies =
         turbonop_par::map_balanced(&all, 4, |d: &&[u8]| member::read_with(d, structural))
             .into_iter();
-    let o = Library::new(&oa, of, &mut bodies);
+    let o = Library::new(oa, of, &mut bodies);
     let r = Library::new(&ra, rf, &mut bodies);
     Ok(check(&o, &r, options))
 }

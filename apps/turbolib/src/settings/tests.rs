@@ -14,6 +14,9 @@ fn options_in_any_case() {
         "stats",
         "extract-whole",
         "report=ODR",
+        "verify=OFF",
+        "strict",
+        "inject-failure=panic",
     ] {
         s.apply(o).unwrap();
     }
@@ -30,8 +33,14 @@ fn options_in_any_case() {
             stats: true,
             extract_whole: true,
             report_odr: true,
+            verify: false,
+            strict: true,
+            inject: Some(Inject::Panic),
         }
     );
+    s.apply("verify").unwrap();
+    assert!(s.verify);
+    assert!(Settings::default().verify);
 }
 
 #[test]
@@ -46,6 +55,10 @@ fn bad_options() {
         "stats=yes",
         "report",
         "report=everything",
+        "verify=maybe",
+        "strict=yes",
+        "inject-failure",
+        "inject-failure=disk",
         "nope",
     ] {
         assert!(s.apply(o).is_err(), "{o}");

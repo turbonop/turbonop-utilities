@@ -2336,3 +2336,182 @@ fn the_rich_header_lists_the_command_lines_tools_in_order() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Links `words` in `dir` to `dir/name` (its import library, with exports,
+/// `dir/` the name's stem `.lib`): the image's bytes, or the errors' codes.
+fn run_as(dir: &Path, words: &[&str], name: &str) -> Result<Vec<u8>, Vec<u32>> {
+    let argv = words.iter().map(|w| {
+        if w.starts_with('/') {
+            (*w).to_owned()
+        } else {
+            input(dir, w)
+        }
+    });
+    let words = args::command_line(argv, None, None, &|p| std::fs::read(p)).unwrap();
+    let mut diags = Vec::new();
+    let mut config = config::parse(&words, &mut diags);
+    let out = dir.join(name);
+    config.out = Some(out.clone());
+    let outcome = link::link(config);
+    if outcome.diagnostics.iter().any(|d| !d.warning) || !outcome.written {
+        return Err(outcome.diagnostics.iter().map(|d| d.code).collect());
+    }
+    Ok(std::fs::read(out).unwrap())
+}
+
+/// An x64 object: `main` (a non-COMDAT `.text$mn`) calls each of `live`
+/// through its `__imp_` slot; `dead` (a COMDAT, any, that nothing calls)
+/// calls each of `dead`. The names are 2 bytes (`__imp_xy`: 8).
+fn live_and_dead(live: &[&str], dead: &[&str]) -> Vec<u8> {
+    let calls = |names: &[&str], first: u32| {
+        let mut text = Vec::new();
+        let mut relocations = Vec::new();
+        for (i, _) in names.iter().enumerate() {
+            text.extend_from_slice(&[0xFF, 0x15, 0, 0, 0, 0]);
+            relocations.push((n32(6 * i + 2), first + n32(i)));
+        }
+        text.push(0xC3);
+        (text, relocations)
+    };
+    // Symbols: the COMDAT's section symbol and its aux, main, dead, then
+    // the live imports and the dead ones.
+    let (text1, rel1) = calls(live, 4);
+    let (text2, rel2) = calls(dead, 4 + n32(live.len()));
+    let at1 = 20 + 80;
+    let rel1_at = at1 + text1.len();
+    let at2 = rel1_at + 10 * rel1.len();
+    let rel2_at = at2 + text2.len();
+    let symbols_at = rel2_at + 10 * rel2.len();
+    let count = 4 + live.len() + dead.len();
+    let mut o = Vec::new();
+    for v in [0x8664u16, 2] {
+        o.extend_from_slice(&v.to_le_bytes());
+    }
+    for v in [0u32, n32(symbols_at), n32(count)] {
+        o.extend_from_slice(&v.to_le_bytes());
+    }
+    o.extend_from_slice(&[0; 4]);
+    let header = |o: &mut Vec<u8>, size: usize, raw: usize, rel: usize, n: usize, chars: u32| {
+        o.extend_from_slice(b".text$mn");
+        for v in [0, 0, n32(size), n32(raw), n32(rel), 0] {
+            o.extend_from_slice(&v.to_le_bytes());
+        }
+        o.extend_from_slice(&u16::try_from(n).unwrap().to_le_bytes());
+        o.extend_from_slice(&0u16.to_le_bytes());
+        o.extend_from_slice(&chars.to_le_bytes());
+    };
+    header(&mut o, text1.len(), at1, rel1_at, rel1.len(), 0x6050_0020);
+    header(&mut o, text2.len(), at2, rel2_at, rel2.len(), 0x6050_1020);
+    for (text, rel) in [(&text1, &rel1), (&text2, &rel2)] {
+        o.extend_from_slice(text);
+        for &(at, symbol) in rel {
+            o.extend_from_slice(&at.to_le_bytes());
+            o.extend_from_slice(&symbol.to_le_bytes());
+            o.extend_from_slice(&4u16.to_le_bytes()); // REL32
+        }
+    }
+    let symbol = |o: &mut Vec<u8>, name: &str, section: i16, ty: u16, class: u8, aux: u8| {
+        let mut short = [0u8; 8];
+        short[..name.len()].copy_from_slice(name.as_bytes());
+        o.extend_from_slice(&short);
+        o.extend_from_slice(&0u32.to_le_bytes());
+        o.extend_from_slice(&section.to_le_bytes());
+        o.extend_from_slice(&ty.to_le_bytes());
+        o.push(class);
+        o.push(aux);
+    };
+    symbol(&mut o, ".text$mn", 2, 0, 3, 1);
+    o.extend_from_slice(&n32(text2.len()).to_le_bytes());
+    o.extend_from_slice(&u16::try_from(rel2.len()).unwrap().to_le_bytes());
+    o.extend_from_slice(&[0; 2 + 4 + 2]); // line numbers, checksum, number
+    o.extend_from_slice(&[2, 0, 0, 0]); // selection: any
+    symbol(&mut o, "main", 1, 0x20, 2, 0);
+    symbol(&mut o, "dead", 2, 0x20, 2, 0);
+    for n in live.iter().chain(dead) {
+        symbol(&mut o, &format!("__imp_{n}"), 0, 0, 2, 0);
+    }
+    o.extend_from_slice(&4u32.to_le_bytes());
+    o
+}
+
+/// Each DLL's imports (by name), in the import directory's order.
+fn import_names(image: &[u8]) -> Vec<(String, Vec<String>)> {
+    let (rva, size) = directory(image, 1);
+    let name = |rva: u32| {
+        let s = at_rva(image, rva, 64);
+        String::from_utf8_lossy(&s[..s.iter().position(|&b| b == 0).unwrap()]).into_owned()
+    };
+    let mut out = Vec::new();
+    for d in at_rva(image, rva, size as usize).chunks(20) {
+        if u32_at(d, 12) == 0 {
+            break;
+        }
+        let mut names = Vec::new();
+        for k in 0.. {
+            let entry = u32_at(at_rva(image, u32_at(d, 0) + 8 * k, 8), 0);
+            if entry == 0 {
+                break;
+            }
+            names.push(name(entry + 2));
+        }
+        out.push((name(u32_at(d, 12)), names));
+    }
+    out
+}
+
+/// The import lookup tables and the IAT are link.exe's `qsort` of every
+/// import that loaded and each DLL's null thunk, by DLL name (each import
+/// library's DLL's, without the extension). That includes a DLL none of
+/// whose imports /OPT:REF keeps: its pieces are sorted too, then dropped
+/// with it, and their places count. Here a.dll's three imports (only `dead`
+/// calls them) and its null thunk come first, so b.dll's six come out of an
+/// 11-piece partition (B0 to B5, in order), not the 7-piece selection sort
+/// they'd get alone (B1, B2, B3, B4, B5, B0). (link.exe 14.52's orders for
+/// the same inputs.)
+#[test]
+fn a_dll_with_nothing_live_counts_in_the_import_sort() {
+    let dir = scratch("import-sort-dead");
+    let exports = |dll: &str, names: &[&'static str]| {
+        let syms: Vec<Sym> = names.iter().map(|&n| Sym(n, 1)).collect();
+        let obj = format!("{dll}.obj");
+        std::fs::write(dir.join(&obj), object(&[0xC3], &[], &syms)).unwrap();
+        let mut w = vec!["/NODEFAULTLIB", "/NOENTRY", "/DLL"];
+        let e: Vec<String> = names.iter().map(|n| format!("/EXPORT:{n}")).collect();
+        w.extend(e.iter().map(String::as_str));
+        w.push(&obj);
+        run_as(&dir, &w, &format!("{dll}.dll")).expect("the DLL links");
+    };
+    let a = ["A0", "A1", "A2"];
+    let b = ["B0", "B1", "B2", "B3", "B4", "B5"];
+    exports("a", &a);
+    exports("b", &b);
+    std::fs::write(dir.join("main.obj"), live_and_dead(&b, &a)).unwrap();
+    let link = |libs: &[&str], out: &str| {
+        let mut w = vec![
+            "/NODEFAULTLIB",
+            "/ENTRY:main",
+            "/SUBSYSTEM:CONSOLE",
+            "/OPT:REF",
+            "main.obj",
+        ];
+        w.extend_from_slice(libs);
+        import_names(&run_as(&dir, &w, out).expect("links"))
+    };
+    let both = link(&["a.lib", "b.lib"], "both.exe");
+    assert_eq!(both.len(), 1, "a.dll has nothing live: {both:?}");
+    assert_eq!(both[0].0, "b.dll");
+    assert_eq!(both[0].1, b);
+    // Without a.lib (and so without its pieces), b.dll's alone.
+    std::fs::write(dir.join("live.obj"), live_and_dead(&b, &[])).unwrap();
+    let w = [
+        "/NODEFAULTLIB",
+        "/ENTRY:main",
+        "/SUBSYSTEM:CONSOLE",
+        "/OPT:REF",
+        "live.obj",
+        "b.lib",
+    ];
+    let alone = import_names(&run_as(&dir, &w, "alone.exe").expect("links"));
+    assert_eq!(alone[0].1, ["B1", "B2", "B3", "B4", "B5", "B0"]);
+    let _ = std::fs::remove_dir_all(&dir);
+}

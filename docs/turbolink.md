@@ -230,7 +230,14 @@ lists every COFF group with its address and size) and by experiment:
   C runtime's `qsort` and `CompareIdataPCON`, which compares the DLLs'
   file names (case-sensitive), then section and module flags, and
   otherwise returns 0 (so `qsort`, not stable, decides). turbolink sorts
-  the same array with a port of the UCRT's `qsort`.
+  the same array with a port of the UCRT's `qsort`. The array holds every
+  import that loaded and every null thunk, of every DLL, in load order.
+  That includes a DLL none of whose imports `/OPT:REF` keeps (llvm-nm's
+  USER32, OLEAUT32 and api-ms-win-crt-time): its pieces are sorted and
+  then dropped with it, and their places change where the other DLLs'
+  imports land. (Seen under cdb: link.exe's llvm-nm sort has 318 pieces;
+  leaving out those 13 changed MSVCP140's, VCRUNTIME140's and seven
+  api-ms-win-crt DLLs' orders.)
 - **The Rich header** (link.exe's `CbBuildProdidBlock`): link.exe's own
   entry (0x102, build 37029) first in a list to whose front each new
   `@comp.id` goes, walking the command line's objects from the last to

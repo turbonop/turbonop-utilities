@@ -866,25 +866,50 @@ pub fn layout(
     // descriptor and null thunk, from its import library). The directory
     // and the names keep that order; the lookup tables and the IAT are
     // sorted with qsort (not stable) by the DLL's name without its
-    // extension, a null thunk after the imports.
+    // extension, a null thunk after the imports. Every DLL's pieces are in
+    // the sort, even a DLL none of whose imports /OPT:REF keeps (its
+    // pieces then dropped with it): their places count.
     #[derive(Clone, Copy)]
     enum Piece {
         Import(u32),
         Descriptor(u32),
         NullThunk(u32),
     }
-    let stems: Map<&[u8], u32> = dlls
+    // Each DLL's name without its extension: the image's DLLs (as `dlls`
+    // indexes them), then those with nothing live.
+    let mut stem_names: Vec<&[u8]> = dlls
+        .iter()
+        .map(|dll| crate::resolve::dll_stem(dll.name))
+        .collect();
+    let mut stems: Map<&[u8], u32> = stem_names
         .iter()
         .enumerate()
-        .map(|(d, dll)| (crate::resolve::dll_stem(dll.name), crate::n32(d)))
+        .map(|(d, &s)| (s, crate::n32(d)))
         .collect();
+    fn stem_index<'a>(
+        stems: &mut Map<&'a [u8], u32>,
+        names: &mut Vec<&'a [u8]>,
+        s: &'a [u8],
+    ) -> u32 {
+        *stems.entry(s).or_insert_with(|| {
+            names.push(s);
+            crate::n32(names.len() - 1)
+        })
+    }
     let mut pieces = Vec::new();
+    let mut dll_of: Map<u32, u32> = Map::default();
     for (f, file) in r.files.iter().enumerate() {
         match (&file.idata, &file.kind) {
             // Every import loaded, used or not: link.exe sorts before
             // /OPT:REF drops the unused ones (their places count).
             (_, FileKind::Import { import, .. }) => {
-                if stems.contains_key(crate::resolve::dll_stem(import.dll)) {
+                if !config.is_delay_loaded(import.dll) {
+                    let d = stem_index(
+                        &mut stems,
+                        &mut stem_names,
+                        crate::resolve::dll_stem(import.dll),
+                    );
+                    dll_of.insert(crate::n32(f), d);
                     pieces.push(Piece::Import(crate::n32(f)));
                 }
             }
@@ -894,30 +919,21 @@ pub fn layout(
                 }
             }
             (Some(crate::resolve::IdataPiece::NullThunk(x)), _) => {
-                if let Some(&d) = stems.get(x.as_slice()) {
-                    pieces.push(Piece::NullThunk(d));
-                }
+                pieces.push(Piece::NullThunk(stem_index(&mut stems, &mut stem_names, x)));
             }
             _ => {}
         }
     }
-    let dll_of = |f: u32| match &r.files[f as usize].kind {
-        FileKind::Import { import, .. } => stems[crate::resolve::dll_stem(import.dll)],
-        FileKind::Object { .. } => 0,
-    };
     let mut iat: Vec<(u32, Option<u32>)> = pieces
         .iter()
         .filter_map(|p| match *p {
-            Piece::Import(f) => Some((dll_of(f), Some(f))),
+            Piece::Import(f) => Some((dll_of[&f], Some(f))),
             Piece::NullThunk(d) => Some((d, None)),
             Piece::Descriptor(_) => None,
         })
         .collect();
     crate::msqsort::qsort(&mut iat, |a, b| {
-        let (sa, sb) = (
-            crate::resolve::dll_stem(dlls[a.0 as usize].name),
-            crate::resolve::dll_stem(dlls[b.0 as usize].name),
-        );
+        let (sa, sb) = (stem_names[a.0 as usize], stem_names[b.0 as usize]);
         match sa.cmp(sb) {
             std::cmp::Ordering::Less => -1,
             std::cmp::Ordering::Greater => 1,
@@ -925,9 +941,13 @@ pub fn layout(
         }
     });
     // The DLLs in the tables' order; each one's imports in it.
-    let mut new_index = vec![u32::MAX; dlls.len()];
+    // (A DLL with nothing live, past `dlls`, has no tables: u32::MAX.)
+    let mut new_index = vec![u32::MAX; stem_names.len()];
     let mut sorted: Vec<Dll> = Vec::with_capacity(dlls.len());
     for &(d, f) in &iat {
+        if d as usize >= dlls.len() {
+            continue;
+        }
         if new_index[d as usize] == u32::MAX {
             new_index[d as usize] = crate::n32(sorted.len());
             sorted.push(Dll {
